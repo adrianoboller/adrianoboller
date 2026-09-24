@@ -43,7 +43,7 @@ footer{max-width:1180px;margin:24px auto;padding:0 16px 24px;color:var(--fraco);
 <body>
 <header>
   <h1><b>phx</b>vpn — fluxograma e organograma</h1>
-  <p class="sub">Redes virtuais no estilo Radmin: modo servidor (OpenVPN + PostgreSQL) e modo P2P (Noise, sem servidor). Estado: 29 itens feitos, 14 faltando (67% feito), contados no <code>docs/PHXVPN.md</code> em 24/09/2026.</p>
+  <p class="sub">Redes virtuais no estilo Radmin: modo servidor (OpenVPN + PostgreSQL) e modo P2P (Noise, sem servidor). Estado: 30 itens feitos, 15 faltando (67% feito), contados no <code>docs/PHXVPN.md</code> em 24/09/2026.</p>
   <nav role="tablist">
     <button role="tab" data-aba="fluxo" aria-selected="true">Fluxograma</button>
     <button role="tab" data-aba="org" aria-selected="false">Organograma</button>
@@ -133,6 +133,7 @@ flowchart TD
   K --> K1[malha: controle 'P' espalha a lista de pares]:::cons
   K --> K2[ping 'E'/'e' e chat 'C' pela janela]:::cons
   K --> K3[refaz as chaves aos 120 s · rejeita aos 180 s ·<br/>par que reiniciou volta em ~15 s]:::cons
+  K --> K4[USB: servidor 3240 sobe junto,<br/>preso à placa, só pares]:::cons
   K --> Z([Desligar: espera o nó parar<br/>antes de liberar a porta]):::rec
   classDef cria stroke:#3ecf8e,stroke-width:2px
   classDef cons stroke:#5aa9ff,stroke-width:2px
@@ -220,11 +221,13 @@ flowchart TD
     NOISE[noise.rs · transporte.rs]
     REP[repasse.rs — intermediário com contas]
     TUN[tun.rs · tun_windows.rs · tap.rs]
+    USB[usb.rs — USB/IP, porta 3240<br/>presa à placa, só membros]
   end
   CORE[[phxsql-core<br/>JSON, SHA-256, HMAC, PBKDF2,<br/>ChaCha20/XChaCha, X25519, Ed25519, fio]]
   EXT1[(PostgreSQL)]
   EXT2[/OpenVPN 2.6+/]
   EXT3[/driver TAP-Windows6/]
+  EXT4[/kernel: usbip-host · vhci-hcd<br/>Windows: usbip-win2/]
   B1 --> CMD & HTTP & NO & REP
   B2 --> MESA & BAN
   B3 --> CON --> CMD
@@ -235,6 +238,7 @@ flowchart TD
   PG --> EXT1
   OVPN --> EXT2
   TUN --> EXT3
+  NO --> USB --> EXT4
   PKI & NOISE & REDE & HTTP --> CORE
   </pre></div>
 
