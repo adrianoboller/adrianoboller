@@ -62,6 +62,7 @@ leitura. Mudou la, muda aqui no mesmo commit.
 | `fere_petrea` | `≥ 0,30` | **sobe ao dono** — choque com petrea |
 | qualquer `choice` | `conf < 0,40` ou top1 − top2 `< 0,15` | **empate** — medir mais; se nada mede, sobe ao dono |
 | `severidade` (0–3) | `≥ 2,0` | **bloqueia a entrega** |
+| `severidade` | `conf < 0,40` | **escalar: severidade incerta**; se `≥ 2,0`, «bloqueia?» |
 
 Juiz que ajusta o limiar para caber no veredito que queria nao julgou —
 escolheu. Por isso quem aplica e o codigo.
@@ -112,8 +113,24 @@ o teste falhou com o defeito reposto? —:
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/phxjev.py" desfecho <id> real 1
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/phxjev.py" calibrar   # brier + faixas
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/phxjev.py" colher phxsql/docs/PENDENCIAS.md
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/phxjev.py" calibrar   # brier por pergunta + faixas
 ```
+
+- O registro e **so de acrescimo**: desfecho e linha nova, nunca reescrita.
+- `colher` le o fechamento do pedido no git: item `<numero>-...` cujo pedido
+  virou ☑️ **depois** do veredito ganha `real=1` e `ja_tratado=0` sozinho.
+  Item com letra (`276b`) e pedido ja fechado antes do veredito ficam de fora.
+- Um **gancho de fim** recusa encerrar o turno se a resposta nao traz cada
+  linha da saida do selo; a segunda tentativa passa.
+
+## 8. Juiz local (Ollama)
+
+`phxjev.py local <modelo> < perguntas.json` julga sem o agente: cada pergunta
+vira opcoes com letra, uma passada com `num_predict=1`, e a probabilidade vem
+do logprob da letra. Passa pelo mesmo `veredito`. A bancada que diz se ele
+serve esta em `bancada/` — **nao use o local para decidir antes de o numero
+dela dizer que ele acerta**.
 
 Abaixo de 50 desfechos o cabecalho diz `calibracao: nao medida (n/50)`. Ate la,
 e mesmo depois, aprendizado que nasce de um veredito PhxJev e **PENDENTE** —

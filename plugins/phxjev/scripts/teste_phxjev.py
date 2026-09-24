@@ -115,5 +115,89 @@ class Selo(unittest.TestCase):
             del os.environ["PHXJEV_REGISTRO"]
 
 
+class Melhorias(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.reg = os.path.join(self.dir, "r.jsonl")
+
+    def test_severidade_incerta_escala_e_nao_bloqueia_calada(self):
+        itens = [{"id": "a", "perguntas": {"real": noul(0.9), "severidade": {
+            "tipo": "score", "p": {"0": 0.1, "1": 0.2, "2": 0.3, "3": 0.4}, "evid": "x"}}}]
+        out = rodar(itens, self.reg)
+        self.assertIn("a.severidade: incerta", out)
+        self.assertIn("bloqueia?", out)
+
+    def test_desfecho_so_acrescenta(self):
+        rodar([{"id": "a", "perguntas": {"real": noul(0.8)}}], self.reg)
+        antes = open(self.reg, encoding="utf-8").read()
+        j.cmd_desfecho(j.ler(self.reg)[0]["id"], "real", "1", self.reg)
+        depois = open(self.reg, encoding="utf-8").read()
+        self.assertTrue(depois.startswith(antes))
+        self.assertEqual(j.ler(self.reg)[0]["desfecho"], {"real": "sim"})
+
+    def test_calibrar_separa_por_pergunta(self):
+        rodar([{"id": "a", "perguntas": {"real": noul(0.9), "ja_tratado": noul(0.1)}}], self.reg)
+        rid = j.ler(self.reg)[0]["id"]
+        j.cmd_desfecho(rid, "real", "0", self.reg)
+        j.cmd_desfecho(rid, "ja_tratado", "0", self.reg)
+        cal = j.cmd_calibrar(self.reg)
+        linha_real = [l for l in cal.splitlines() if l.startswith("real ")][0]
+        linha_jt = [l for l in cal.splitlines() if l.startswith("ja_tratado")][0]
+        self.assertIn("0.8100", linha_real)   # errou com 0,9
+        self.assertIn("0.0100", linha_jt)     # acertou com 0,9 no «nao»
+
+    def git(self, *a, data=None):
+        import subprocess
+        env = dict(os.environ, GIT_COMMITTER_DATE=data, GIT_AUTHOR_DATE=data) if data else None
+        subprocess.run(["git", "-C", self.dir, *a], check=True, capture_output=True, env=env)
+
+    def test_colher_so_o_pedido_fechado_depois_do_veredito(self):
+        pend = os.path.join(self.dir, "PENDENCIAS.md")
+        self.git("init", "-q")
+        self.git("config", "user.email", "t@t"); self.git("config", "user.name", "t")
+        open(pend, "w").write("| ☑️ | 10 | ja fechado |\n| ☐ | 11 | aberto |\n| ☐ | 12 | fica |\n")
+        self.git("add", "."); self.git("commit", "-qm", "a", data="2020-01-01T00:00:00")
+        itens = [{"id": f"{n}-x", "perguntas": {"real": noul(0.9), "ja_tratado": noul(0.1)}} for n in (10, 11, 12)]
+        itens.append({"id": "11b-parte", "perguntas": {"real": noul(0.9)}})
+        rodar(itens, self.reg)
+        open(pend, "w").write("| ☑️ | 10 | ja fechado |\n| ☑️ | 11 | aberto |\n| ☐ | 12 | fica |\n")
+        import time as t
+        t.sleep(1.1)
+        self.git("commit", "-qam", "fecha 11")
+        feitos, pulados = j.cmd_colher(pend, self.reg)
+        self.assertEqual(len(feitos), 2, feitos)          # real e ja_tratado do 11
+        self.assertTrue(all("-11-x." in f for f in feitos))
+        self.assertEqual(pulados, 1)                      # o 10 ja estava fechado
+        self.assertEqual(j.cmd_colher(pend, self.reg)[0], [])  # nao colhe duas vezes
+
+
+class Gancho(unittest.TestCase):
+    def transcricao(self, saida, final):
+        return [
+            {"type": "user", "message": {"role": "user", "content": "/phxjev-perguntar x"}},
+            {"type": "assistant", "message": {"content": [{"type": "tool_use", "input": {"command": "phxjev.py veredito"}}]}},
+            {"type": "user", "message": {"content": [{"type": "tool_result", "content": saida}]}},
+            {"type": "assistant", "message": {"content": [{"type": "text", "text": final}]}},
+        ]
+
+    def test_resumo_no_lugar_da_saida_e_recusado(self):
+        import gancho_selo as g
+        reg = os.path.join(tempfile.mkdtemp(), "r.jsonl")
+        saida = rodar([{"id": "a", "perguntas": {"real": noul(0.8)}}], reg)
+        self.assertTrue(g.faltas(self.transcricao(saida, "Veredito: real 0,8. Resumo."), reg))
+        encurtada = saida.replace(reg, "...")
+        self.assertTrue(g.faltas(self.transcricao(saida, encurtada), reg))
+
+    def test_saida_colada_passa_mesmo_com_cerca_e_resumo(self):
+        import gancho_selo as g
+        reg = os.path.join(tempfile.mkdtemp(), "r.jsonl")
+        saida = rodar([{"id": "a", "perguntas": {"real": noul(0.8)}}], reg)
+        self.assertEqual(g.faltas(self.transcricao(saida, "```\n" + saida + "```\nResumo depois."), reg), [])
+
+    def test_turno_sem_phxjev_passa(self):
+        import gancho_selo as g
+        self.assertEqual(g.faltas(self.transcricao("ok", "pronto"), "/nao/existe"), [])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

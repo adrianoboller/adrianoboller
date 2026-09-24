@@ -10,6 +10,8 @@ padrao.
 Uso:
   phxjev.py veredito  < julgamento.json
   phxjev.py desfecho  <id> <pergunta> <valor>   # 1/0 para noul, rotulo para choice, degrau para score
+  phxjev.py colher    <PENDENCIAS.md>            # desfechos que o fechamento do pedido prova
+  phxjev.py local     <modelo> < perguntas.json  # juiz local (Ollama), uma passada por pergunta
   phxjev.py calibrar
   phxjev.py mostrar   <selo>                     # a saida original, para conferir se foi editada
 """
@@ -138,8 +140,16 @@ def decidir(perguntas):
             partes.insert(0, "MANTER ☐")
         else:
             partes.insert(0, "MANTER ⏸")
-    if "severidade" in perguntas and g("severidade")["valor"] >= LIMIAR_SEVERIDADE:
-        partes.append("bloqueia")
+    if "severidade" in perguntas:
+        q = g("severidade")
+        # Severidade espalhada pela regua nao e severidade: e «nao sei». Ela
+        # nao some calada (as partes do 276 sairam com conf 0,16 a 0,28 sem
+        # nenhum aviso) e, perto do limiar, bloqueia com interrogacao.
+        incerta = q["conf"] < LIMIAR_CONF
+        if incerta:
+            escalar.append(f"severidade: incerta (conf {q['conf']:.2f})")
+        if q["valor"] >= LIMIAR_SEVERIDADE:
+            partes.append("bloqueia?" if incerta else "bloqueia")
     for nome, q in perguntas.items():
         if q["tipo"] == "noul" and nome not in ("real", "alcancavel", "ja_tratado") \
                 and not nome.startswith("fere_petrea") and nome != "defeito_ativo":
@@ -206,11 +216,31 @@ def cmd_veredito(entrada, saida, registro=REGISTRO):
     saida.write(texto + f"\nselo: {selo} (phxjev.py mostrar {selo})\n")
 
 
-def ler(registro):
+def linhas_do_registro(registro):
     if not os.path.exists(registro):
         return []
     with open(registro, encoding="utf-8") as f:
         return [json.loads(l) for l in f if l.strip()]
+
+
+def ler(registro):
+    """Vereditos com os desfechos aplicados.
+
+    O registro e so de acrescimo, como o `.reg`: um desfecho e uma linha nova
+    que aponta para o veredito, nunca reescrita do arquivo. Reescrever
+    conflitaria no git na primeira rodada com duas frentes. Desfecho gravado
+    dentro do veredito (o formato de antes) continua valendo.
+    """
+    vereditos, ordem = {}, []
+    for r in linhas_do_registro(registro):
+        if r.get("tipo") == "desfecho":
+            if r["ref"] in vereditos:
+                vereditos[r["ref"]].setdefault("desfecho", {})[r["pergunta"]] = r["valor"]
+            continue
+        r.setdefault("desfecho", {})
+        vereditos[r["id"]] = r
+        ordem.append(r["id"])
+    return [vereditos[i] for i in ordem]
 
 
 def gravar(registro, novos):
@@ -220,9 +250,8 @@ def gravar(registro, novos):
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
 
 
-def cmd_desfecho(rid, pergunta, valor, registro=REGISTRO):
-    todos = ler(registro)
-    alvo = [r for r in todos if r["id"] == rid]
+def cmd_desfecho(rid, pergunta, valor, registro=REGISTRO, fonte="manual"):
+    alvo = [r for r in ler(registro) if r["id"] == rid]
     if not alvo:
         raise Invalido(f"id {rid} nao esta no registro")
     q = alvo[0]["perguntas"].get(pergunta)
@@ -234,37 +263,98 @@ def cmd_desfecho(rid, pergunta, valor, registro=REGISTRO):
         valor = "sim" if valor == "1" else "nao"
     elif valor not in q["dist"]:
         raise Invalido(f"desfecho {valor!r} nao e opcao de {pergunta}: {sorted(q['dist'])}")
-    alvo[0]["desfecho"][pergunta] = valor
-    with open(registro, "w", encoding="utf-8") as f:
-        for r in todos:
-            f.write(json.dumps(r, ensure_ascii=False) + "\n")
+    gravar(registro, [{"tipo": "desfecho", "ref": rid, "pergunta": pergunta, "valor": valor,
+                       "fonte": fonte, "quando": time.strftime("%Y%m%d-%H%M%S")}])
     return f"{rid}.{pergunta} = {valor}"
 
 
-def pares(registro):
-    """(p prevista para o que aconteceu, e p de cada opcao com acerto 0/1)."""
+def fechamento_do_pedido(num, pendencias):
+    """Unix time do commit que pos o pedido em ☑️, ou None se nao esta ☑️."""
+    marca = f"| ☑️ | {num} |"
+    with open(pendencias, encoding="utf-8") as f:
+        if not any(l.startswith(marca) for l in f):
+            return None
+    r = subprocess.run(["git", "log", "--format=%ct %h", "-S", marca, "--", pendencias],
+                       capture_output=True, text=True, cwd=os.path.dirname(pendencias) or ".")
+    linhas = r.stdout.split()
+    # O mais recente: pedido reaberto e fechado de novo conta pelo ultimo
+    # fechamento. Data de COMMIT, nao de autor -- e quando entrou na branch.
+    # A mudanca que ainda nao foi comitada vale como agora.
+    return (int(linhas[0]), linhas[1]) if linhas else (int(time.time()), "nao-comitado")
+
+
+def cmd_colher(pendencias, registro=REGISTRO):
+    """Desfechos que o proprio PENDENCIAS.md prova, sem conferencia a mao.
+
+    So colhe o caso sem ambiguidade: item cujo id comeca pelo numero do pedido
+    SEM letra (276b nao diz qual parte o fechamento fechou), pedido que virou
+    ☑️ DEPOIS do veredito (entao o defeito existia quando o juiz olhou e foi
+    consertado: real=1, ja_tratado=0), e pergunta ainda sem desfecho.
+    Pedido ja ☑️ antes do veredito nao prova nada e fica de fora.
+    """
+    import re
+    feitos, pulados = [], 0
+    for r in ler(registro):
+        m = re.match(r"^(\d+)-", r.get("item", ""))
+        if not m:
+            continue
+        fech = fechamento_do_pedido(m.group(1), pendencias)
+        if fech is None:
+            continue
+        quando_veredito = time.mktime(time.strptime(r["id"][:15], "%Y%m%d-%H%M%S"))
+        if fech[0] < quando_veredito:
+            pulados += 1
+            continue
+        for pergunta, valor in (("real", "1"), ("ja_tratado", "0")):
+            if pergunta in r["perguntas"] and pergunta not in r["desfecho"]:
+                feitos.append(cmd_desfecho(r["id"], pergunta, valor, registro, f"colhido:{fech[1]}"))
+    return feitos, pulados
+
+
+def pares(registro, so=None):
+    """(pergunta, p de cada opcao, acerto 0/1) de tudo que tem desfecho."""
     for r in ler(registro):
         for nome, real in r.get("desfecho", {}).items():
-            dist = r["perguntas"][nome]["dist"]
-            for opcao, p in dist.items():
+            if so and nome != so:
+                continue
+            for opcao, p in r["perguntas"][nome]["dist"].items():
                 yield nome, p, 1 if opcao == real else 0
 
 
+def contar_desfechos(registro):
+    return sum(len(r.get("desfecho", {})) for r in ler(registro))
+
+
 def estado_calibracao(registro):
-    n = len({(r["id"], k) for r in ler(registro) for k in r.get("desfecho", {})})
+    n = contar_desfechos(registro)
     if n < MINIMO_PARA_CALIBRAR:
         return f"nao medida ({n}/{MINIMO_PARA_CALIBRAR} desfechos)"
     return f"medida em {n} desfechos (phxjev.py calibrar)"
 
 
+def brier(ps):
+    return sum((p - y) ** 2 for _, p, y in ps) / len(ps)
+
+
 def cmd_calibrar(registro=REGISTRO):
     ps = list(pares(registro))
-    n = len({(r["id"], k) for r in ler(registro) for k in r.get("desfecho", {})})
+    n = contar_desfechos(registro)
     out = [f"desfechos: {n} (minimo {MINIMO_PARA_CALIBRAR})"]
     if not ps:
         return "\n".join(out + ["sem desfecho registrado: nada a medir"])
-    brier = sum((p - y) ** 2 for _, p, y in ps) / len(ps)
-    out.append(f"brier: {brier:.4f} sobre {len(ps)} probabilidades (0 perfeito; 0,25 = chutar 0,5)")
+    out.append(f"brier: {brier(ps):.4f} sobre {len(ps)} probabilidades (0 perfeito; 0,25 = chutar 0,5)")
+    # Por pergunta: um Brier so deixa `real` otimista esconder `severidade` pessimista.
+    por = {}
+    for nome, p, y in ps:
+        por.setdefault(nome, []).append((nome, p, y))
+    out.append("pergunta            desfechos  brier   excesso de confianca")
+    for nome in sorted(por):
+        b = por[nome]
+        nd = sum(1 for r in ler(registro) if nome in r.get("desfecho", {}))
+        # excesso: media da p dada a opcao escolhida menos a taxa em que ela acertou
+        top = [(p, y) for _, p, y in b if p >= 0.5]
+        exc = (sum(p for p, _ in top) / len(top) - sum(y for _, y in top) / len(top)) if top else 0.0
+        out.append(f"{nome[:18]:18s}  {nd:9d}  {brier(b):.4f}  {exc:+.2f}")
     out.append("faixa      n   prevista  ocorrida")
     for i in range(10):
         lo, hi = i / 10, (i + 1) / 10
@@ -274,6 +364,75 @@ def cmd_calibrar(registro=REGISTRO):
     if n < MINIMO_PARA_CALIBRAR:
         out.append("INSUFICIENTE: abaixo do minimo, a tabela e anedota")
     return "\n".join(out)
+
+
+OLLAMA = "http://127.0.0.1:11434/api/generate"
+LETRAS = "ABCDEFGHIJ"
+
+
+def opcoes_de(q):
+    if q["tipo"] == "noul":
+        return ["sim", "nao"]
+    if q["tipo"] == "score":
+        return [str(k) for k in q.get("degraus", [0, 1, 2, 3])]
+    return list(q["opcoes"])
+
+
+def perguntar_local(modelo, estado, texto, opcoes, url=OLLAMA):
+    """Distribuicao sobre as opcoes numa passada so, pelos logprobs da letra.
+
+    E o que mais se aproxima do Jev sem os pesos dele: nada de texto gerado,
+    um token lido, e a probabilidade vem da conta do modelo e nao de um numero
+    que ele escreveu. Letra fora do top_logprobs recebe o piso, para que opcao
+    que o modelo nem considerou nao saia com zero absoluto.
+    """
+    import urllib.request
+    linhas = "\n".join(f"{LETRAS[i]}) {o}" for i, o in enumerate(opcoes))
+    prompt = (f"Contexto:\n{estado}\n\nPergunta: {texto}\n{linhas}\n"
+              f"Responda so com a letra.\nResposta:")
+    corpo = json.dumps({"model": modelo, "prompt": prompt, "stream": False,
+                        "logprobs": True, "top_logprobs": 20,
+                        "options": {"num_predict": 1, "temperature": 0}}).encode()
+    t0 = time.time()
+    req = urllib.request.Request(url, corpo, {"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=300) as r:
+        d = json.load(r)
+    ms = (time.time() - t0) * 1000
+    if d.get("error"):
+        raise Invalido(f"ollama: {d['error']}")
+    tops = (d.get("logprobs") or [{}])[0].get("top_logprobs") or []
+    massa = {}
+    for t in tops:
+        k = t.get("token", "").strip().rstrip(")").upper()
+        if len(k) == 1 and k in LETRAS[:len(opcoes)]:
+            massa[k] = massa.get(k, 0.0) + math.exp(t["logprob"])
+    piso = 1e-4
+    bruto = [massa.get(LETRAS[i], piso) for i in range(len(opcoes))]
+    soma = sum(bruto)
+    return {o: b / soma for o, b in zip(opcoes, bruto)}, ms, sum(massa.values())
+
+
+def cmd_local(modelo, entrada, saida, registro=REGISTRO, url=OLLAMA):
+    """Julga com o modelo local e passa pelo MESMO veredito (limiar, registro, selo)."""
+    j = json.loads(entrada)
+    estado = "\n".join(j.get("contexto") or j.get("estado") or [])
+    itens, tempos = [], []
+    for item in j.get("itens") or []:
+        pergs = {}
+        for nome, q in item["perguntas"].items():
+            ops = opcoes_de(q)
+            dist, ms, cobertura = perguntar_local(modelo, estado, q["pergunta"], ops, url)
+            tempos.append(ms)
+            ev = f"logprob:{modelo} cobertura {cobertura:.2f}"
+            if q["tipo"] == "noul":
+                pergs[nome] = {"tipo": "noul", "p": round(dist["sim"], 6), "evid": ev}
+            else:
+                pergs[nome] = {"tipo": q["tipo"], "p": dist, "evid": ev}
+        itens.append({"id": item["id"], "perguntas": pergs})
+    julg = {"preset": f"local:{modelo}", "estado": j.get("estado") or ["contexto local"], "itens": itens}
+    cmd_veredito(json.dumps(julg), saida, registro)
+    if tempos:
+        saida.write(f"latencia: {len(tempos)} perguntas, mediana {sorted(tempos)[len(tempos)//2]:.0f} ms\n")
 
 
 def cmd_mostrar(selo, registro=REGISTRO):
@@ -294,6 +453,12 @@ def main(argv):
             print(cmd_desfecho(*argv[2:5]))
         elif argv[1:2] == ["mostrar"] and len(argv) == 3:
             print(cmd_mostrar(argv[2]))
+        elif argv[1:2] == ["colher"] and len(argv) == 3:
+            feitos, pulados = cmd_colher(argv[2])
+            print("\n".join(feitos) or "nada novo a colher")
+            print(f"colhidos: {len(feitos)} · pulados (pedido ja fechado antes do veredito): {pulados}")
+        elif argv[1:2] == ["local"] and len(argv) == 3:
+            cmd_local(argv[2], sys.stdin.read(), sys.stdout)
         elif argv[1:2] == ["calibrar"]:
             print(cmd_calibrar())
         else:

@@ -32,6 +32,13 @@ Local, sem marketplace: `claude --plugin-dir plugins/phxjev`.
 /phxjev-perguntar noul "o .reg reaproveita slot excluido?"
 ```
 
+## Juiz local e bancada
+
+Ollama compilado do fonte (o binario da release nao passa pelo proxy), modelo
+pequeno, probabilidade pelo logprob da letra. `bancada/comparar.py` mede os
+dois juizes nas mesmas perguntas com verdade conferida; resultado com data em
+`bancada/resultados.json`.
+
 ## Testes
 
 ```
