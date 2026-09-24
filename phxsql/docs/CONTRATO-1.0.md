@@ -92,7 +92,7 @@ A regra primordial: **nunca se mata o pai que tem filhos.**
 | **G** | **A recuperação anda para a frente, nunca para trás** | `TRANSACOES.md` §5.2 |
 | **G** | **A matriz cruza 5 pontos de morte × 3 regimes, por `SIGKILL` de processo real** — nunca por teste unitário | `bancada/durabilidade/prova.py`; `TRANSACOES.md` §5.7 |
 | **G** | **Os quatro primeiros pontos têm a mesma garantia nos três regimes:** `gravar_marca` sincroniza sempre, incondicional ao regime, e uma queda de **processo** nunca perde um `write` que o kernel já recebeu. O regime só decide quanto tempo a marca fica pendurada — `por_operacao` 0/0/0, `por_lote` 1/1/0, `sistema` 1/1/1 | `TRANSACOES.md` §5.7 |
-| **G** | **Cascata parcial não acontece em silêncio.** Quando o índice da filha está sujo, a recuperação **recusa** cascatear e denuncia em `operacoes IMPOSSIVEIS`: 21 corridas, 1.200 filhas, 9 casos, 9 denunciados, zero calados | `TRANSACOES.md` §5.5.3 |
+| **G** | **Cascata parcial não acontece em silêncio numa QUEDA.** Quando o índice da filha está sujo, a recuperação **recusa** cascatear e denuncia em `operacoes IMPOSSIVEIS`: 21 corridas, 1.200 filhas, 9 casos, 9 denunciados, zero calados. **Exceção, até o pedido 490:** um **pânico** entre duas filhas da cascata solta do `ao_alterar` (fora de transação) sai **calado** — as filhas seguintes ficam na chave velha sem recusa, pior que a queda | `TRANSACOES.md` §5.5.3; a exceção em `SEGURANCA.md` §24.5 |
 
 ### 1.5 Replicação e cluster
 

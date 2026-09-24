@@ -834,6 +834,24 @@ pub struct Servidor {
     /// emprestimo: `&Raiz` (N leitores ao mesmo tempo) so alcanca tabela de
     /// LEITURA; `&mut Raiz` (um de cada vez) alcanca a `Instancia` inteira.
     dados: RwLock<Raiz>,
+    /// Quantos panicos desenrolaram com a trava de dados na mao, e quantos
+    /// deles o reparo TERMINOU -- pedido 451.
+    ///
+    /// # Por que dois contadores, e nao o veneno do `RwLock`
+    ///
+    /// O veneno nao sai: o `clear_poison` e de 1.77 e a casa promete 1.75
+    /// (`rust-version`). Entao a trava fica envenenada para sempre depois do
+    /// primeiro panico, e o que decide se ela volta a atender e ESTE par: com
+    /// os dois iguais, todo panico que a sujou ja passou pelo reparo do
+    /// `TravaMedida::drop`, e o estado do disco e o que o arranque deixaria.
+    /// Com eles diferentes, algum panico a sujou sem o reparo terminar, e ela
+    /// falha FECHADA como antes -- o `SP000010` que nomeia a trava.
+    ///
+    /// O panico conta ANTES do reparo, e o reparo conta DEPOIS de terminar:
+    /// quem ler os dois no meio (ninguem le, porque a trava ainda esta na mao
+    /// de quem repara) veria «falta reparo», que e o lado seguro.
+    panicos_na_trava: AtomicU64,
+    reparos_da_trava: AtomicU64,
     /// Quando o gravado vai de fato para o disco.
     janela: Janela,
     /// Tabelas escritas desde o ultimo `fsync`, como "database/tabela".
@@ -1095,6 +1113,42 @@ pub struct Servidor {
     passada_quebra_congelando: Mutex<Option<phxsql_store::congelamento::Congelada>>,
     #[cfg(test)]
     passada_quebra_congela: std::sync::atomic::AtomicBool,
+    /// So nos testes: a PROXIMA operacao com este nome arma, na thread que a
+    /// atende, o panico de teste do motor (`ndx::panico_de_teste`) -- pedido
+    /// 451. O panico e o do motor, no meio de uma escrita de verdade e com a
+    /// trava de dados na mao; o que este campo acrescenta e so ESCOLHER a
+    /// thread, porque a arma do motor e por thread e a conexao roda na dela.
+    ///
+    /// Por nome de operacao, e nao «a proxima tomada da trava»: o relogio de
+    /// fundo tambem toma a trava, e armar a thread dele deixaria a arma presa
+    /// num fio que nunca insere -- o teste esperaria um panico que nao vem.
+    #[cfg(test)]
+    panico_de_teste_na_op: Mutex<Option<(String, PanicoDeTeste)>>,
+    /// So nos testes: o reparo da trava falha de proposito, para a prova do
+    /// piso (H5) -- o processo tem de cair em vez de servir.
+    #[cfg(test)]
+    reparo_falha_de_teste: AtomicBool,
+    /// So nos testes: o reparo da trava entra em panico -- o panico duplo, que
+    /// o Rust transforma em `abort` (pedido 451, M3).
+    #[cfg(test)]
+    reparo_panica_de_teste: AtomicBool,
+    /// So nos testes: a releitura da marca em voo, no reparo, falha com erro
+    /// de E/S (pedido 451, M4). Injetado no `ler_marca`, e nao provocado no
+    /// sistema: o `EMFILE` de verdade exigiria baixar o limite de descritores
+    /// do processo inteiro, e o `chmod 000` nao impede a leitura de root. E o
+    /// arquivo tem de continuar la, inteiro -- e o apagamento dele que a
+    /// prova mede.
+    #[cfg(test)]
+    marca_ilegivel_de_teste: AtomicBool,
+    /// So nos testes: o fecho da janela entra em panico ao chegar na tabela
+    /// `.0` (vazia = a primeira), e so na thread cujo nome comeca com `.1`
+    /// (vazio = qualquer) -- pedido 451, A1 e A2. Dispara uma vez.
+    #[cfg(test)]
+    panico_no_fecho_de_teste: Mutex<Option<(String, String)>>,
+    /// So nos testes: o fecho da janela da esta tabela como NAO sincronizada
+    /// enquanto o campo estiver preenchido -- o erro de E/S que prende a marca.
+    #[cfg(test)]
+    fecho_falha_de_teste: Mutex<Option<String>>,
     /// O estado vivo do cluster -- `None` quando o `config.json` nao traz o
     /// bloco `cluster`, e ai NADA disto existe: nenhuma thread, nenhum portao.
     cluster: Option<Arc<crate::cluster::EstadoCluster>>,
@@ -1363,6 +1417,8 @@ impl Servidor {
             sujas: Mutex::new(std::collections::HashSet::new()),
             config,
             dados: RwLock::new(raiz),
+            panicos_na_trava: AtomicU64::new(0),
+            reparos_da_trava: AtomicU64::new(0),
             log: Mutex::new(log),
             lista_negra: Mutex::new(lista_negra),
             sessoes: Mutex::new(http::Sessoes::default()),
@@ -1402,6 +1458,18 @@ impl Servidor {
             passada_quebra_congelando: Mutex::new(None),
             #[cfg(test)]
             passada_quebra_congela: std::sync::atomic::AtomicBool::new(false),
+            #[cfg(test)]
+            panico_de_teste_na_op: Mutex::new(None),
+            #[cfg(test)]
+            reparo_falha_de_teste: AtomicBool::new(false),
+            #[cfg(test)]
+            reparo_panica_de_teste: AtomicBool::new(false),
+            #[cfg(test)]
+            marca_ilegivel_de_teste: AtomicBool::new(false),
+            #[cfg(test)]
+            panico_no_fecho_de_teste: Mutex::new(None),
+            #[cfg(test)]
+            fecho_falha_de_teste: Mutex::new(None),
             cargas: Mutex::new(crate::carga::Cargas::default()),
             marcas_pendentes: Mutex::new(Vec::new()),
             travas: Mutex::new(crate::travas::Travas::default()),
@@ -1714,7 +1782,12 @@ impl Servidor {
             a.esperando_trava();
         }
         let pedida = medindo.then(Instant::now);
-        let guarda = self.dados.write().map_err(|_| trava_envenenada());
+        // O veneno so passa quando o reparo o alcancou -- ver
+        // `panicos_na_trava` e o `TravaMedida::drop`, pedido 451.
+        let guarda = match self.dados.write() {
+            Ok(g) => Ok(g),
+            Err(veneno) => self.depois_do_veneno(veneno),
+        };
         // UM relogio para as duas contas: o instante em que a trava chegou na
         // mao e o fim da espera e o comeco da posse. Ler o relogio duas vezes
         // aqui pagaria duas chamadas para saber a mesma coisa.
@@ -1738,8 +1811,39 @@ impl Servidor {
             guarda,
             instancia,
             tomada: obtida,
-            telemetria: &self.telemetria,
+            servidor: self,
+            tomada_no_desenrolar: std::thread::panicking(),
+            marca_em_voo: None,
         })
+    }
+
+    /// A trava de dados achada ENVENENADA: volta a servir so se o reparo ja
+    /// alcancou todo panico que a sujou -- pedido 451.
+    ///
+    /// # Por que nao o motor da `TravaDaGuarda`
+    ///
+    /// Porque a pergunta e outra. A `TravaDaGuarda` (pedidos 436 e 447)
+    /// recupera SEMPRE, e esta certa em recuperar: o que ela guarda e
+    /// `HashMap` e `Vec`, que o desenrolar nao entorta. Aqui o que se entorta
+    /// e o DISCO, e recuperar sem reparar e a H2 ingenua que o parecer do DBA
+    /// reprovou -- escrever por cima de uma arvore rasgada e de uma marca
+    /// orfa. A decisao «recupera quando o reparo terminou» e desta trava so, e
+    /// mora num lugar so: as duas portas (`travar_dados` e
+    /// `travar_dados_para_ler`) chamam esta.
+    ///
+    /// # O aviso
+    ///
+    /// Sai UMA vez por panico, e nao a cada tomada: quem o escreve e o proprio
+    /// reparo, com o relatorio do que fez. Esta funcao fica calada no caminho
+    /// que recupera -- o veneno e permanente (1.75 nao tem `clear_poison`), e
+    /// um aviso por tomada seria uma linha por pedido, o aviso que ninguem le.
+    fn depois_do_veneno<G>(&self, veneno: std::sync::PoisonError<G>) -> Result<G> {
+        let panicos = self.panicos_na_trava.load(Ordering::SeqCst);
+        let reparos = self.reparos_da_trava.load(Ordering::SeqCst);
+        if panicos > 0 && reparos == panicos {
+            return Ok(veneno.into_inner());
+        }
+        Err(trava_de_dados_sem_reparo(panicos, reparos))
     }
 
     /// Toma a trava de dados PARA LER -- e e o unico lugar que a toma assim.
@@ -1803,7 +1907,14 @@ impl Servidor {
             a.esperando_trava();
         }
         let pedida = medindo.then(Instant::now);
-        let guarda = self.dados.read().map_err(|_| trava_envenenada());
+        // O leitor que entra em panico NAO envenena (regra do `RwLock` da
+        // `std`), mas acha o veneno do escritor -- e passa pelo MESMO portao
+        // da ficha exclusiva, senao a leitura continuaria trancada depois de
+        // o reparo terminar.
+        let guarda = match self.dados.read() {
+            Ok(g) => Ok(g),
+            Err(veneno) => self.depois_do_veneno(veneno),
+        };
         let obtida = medindo.then(Instant::now);
         if let Some(a) = &atividade {
             a.com_a_trava();
@@ -10243,6 +10354,8 @@ impl Servidor {
         } else {
             op
         };
+        #[cfg(test)]
+        self.armar_panico_de_teste(&op);
         let base = pedido.texto_ou("database", "").to_string();
 
         // Portao 0 -- a politica. Vale para todo mundo, root inclusive: e o
@@ -16057,7 +16170,7 @@ impl Servidor {
         // ORDEM UNICA DAS TRAVAS: dados primeiro, transacoes depois. Sempre.
         // Duas ordens diferentes em dois pontos e o abraco mortal classico, e
         // este servidor ja pagou tres vezes por uma trava tomada duas vezes.
-        let trava = self.travar_dados()?;
+        let mut trava = self.travar_dados()?;
         let (id, database, escritas) = {
             let mut reg = self.transacoes.lock().map_err(|_| trava_envenenada())?;
             let tx = reg.de_mut(sessao.ligacao).ok_or_else(sem_transacao)?;
@@ -16118,6 +16231,16 @@ impl Servidor {
             }
         };
         let carimbo = crate::agora_ms();
+        // A marca fica EM VOO na propria trava desde ANTES de ir ao disco --
+        // pedido 451 (M1): um panico daqui ate o destino dela estar decidido
+        // e reparado completando ESTA marca, e so ela. Antes da gravacao e nao
+        // depois: um panico entre o `fsync` e o retorno deixaria uma marca
+        // inteira que ninguem sabia que existia.
+        trava.marca_em_voo = Some(MarcaEmVoo {
+            database: database.clone(),
+            caminho: crate::transacao::caminho_da_marca(&dir, id),
+            gravada: false,
+        });
         // A marca vai ao disco e e SINCRONIZADA antes de a passada tocar em
         // qualquer arquivo de dado. A ordem inversa tem uma janela em que o
         // trabalho existe pela metade e nao ha intencao nenhuma no disco para
@@ -16133,6 +16256,11 @@ impl Servidor {
                 return Err(e);
             }
         };
+        // Daqui em diante a marca esta INTEIRA e sincronizada: se ela nao se
+        // reler no reparo, e a leitura que falhou, e nao o commit (M4).
+        if let Some(em_voo) = trava.marca_em_voo.as_mut() {
+            em_voo.gravada = true;
+        }
         self.depois_da_marca(trava, sessao, id, &database, escritas, &marca, inicio)
     }
 
@@ -16227,7 +16355,7 @@ impl Servidor {
     #[allow(clippy::too_many_arguments)]
     fn depois_da_marca(
         &self,
-        trava: TravaMedida<'_>,
+        mut trava: TravaMedida<'_>,
         sessao: &Sessao,
         id: u64,
         database: &str,
@@ -16241,6 +16369,11 @@ impl Servidor {
         let mut aplicadas = 0usize;
         match self.aplicar_conjunto(&trava, database, &escritas, sessao, &mut aplicadas) {
             Ok(depois_de_rodar) => {
+                // A passada terminou: a marca deixa de estar EM VOO antes de
+                // ir para as pendentes (pedido 451, M1). Completa-la num
+                // panico daqui em diante acharia tudo aplicado e APAGARIA o
+                // bilhete antes do `fsync` da janela.
+                trava.marca_em_voo = None;
                 // A marca so sai depois de a tabela estar sincronizada. A
                 // janela fechou na passada? Entao sai agora. Ainda aberta? A
                 // marca fica pendurada, e quem a apaga e o `descarregar_sujas`
@@ -16665,8 +16798,23 @@ impl Servidor {
     }
 
     fn descarregar_sujas_com(&self, dados: &Instancia) {
+        // Uma COPIA, e nao a lista drenada -- pedido 451, A1 do DBA.
+        //
+        // Drenar antes do trabalho tirava das sujas a tabela que ainda nao
+        // tinha ido ao disco: um panico no meio do laco perdia as chaves que
+        // faltavam, e o reparo da trava -- que comeca por este mesmo fecho --
+        // achava as sujas sem elas e drenava as marcas pendentes, apagando o
+        // bilhete de um commit cujo dado nao passou por `fsync`. A chave agora
+        // so sai quando a tabela dela sincronizou (`tirar_das_sujas`, a cada
+        // pedaco), e o que o panico interromper continua na lista.
+        //
+        // Tirar DEPOIS e seguro mesmo com alguem pondo a mesma chave de volta
+        // no meio (o `soltar_cargas_da_ligacao` faz isso sem a trava): toda
+        // escrita numa tabela exige esta trava, que esta na mao de quem
+        // sincroniza -- o que a chave de volta representa ja estava no
+        // `fsync` que acabou de acontecer.
         let lista: Vec<String> = match self.sujas.lock() {
-            Ok(mut s) => s.drain().collect(),
+            Ok(s) => s.iter().cloned().collect(),
             Err(_) => return,
         };
         // Lista vazia NAO volta daqui: segue ate a drenagem das marcas. Quem
@@ -16680,8 +16828,17 @@ impl Servidor {
         for pedaco in lista.chunks(FIOS_DO_FECHO) {
             let mut chaves: Vec<String> = Vec::with_capacity(pedaco.len());
             let mut abertas: Vec<Table> = Vec::with_capacity(pedaco.len());
+            // Chave sem `/` nao e tabela nenhuma: sai da lista, como saia
+            // quando a lista era drenada.
+            let mut sem_tabela: Vec<String> = Vec::new();
             for chave in pedaco {
+                #[cfg(test)]
+                if self.fecho_de_teste(chave) {
+                    faltaram.push(chave.clone());
+                    continue;
+                }
                 let Some((db, tab)) = chave.split_once('/') else {
+                    sem_tabela.push(chave.clone());
                     continue;
                 };
                 match dados
@@ -16697,12 +16854,16 @@ impl Servidor {
                     Err(_) => faltaram.push(chave.clone()),
                 }
             }
+            self.tirar_das_sujas(&sem_tabela);
             // Uma tabela so nao tem com quem se sobrepor: sem fio nenhum, o
             // caminho de K=1 continua sendo exatamente o de antes.
             if abertas.len() == 1 {
-                if let Err(e) = abertas[0].sincronizar() {
-                    self.fecho_recusado(&chaves[0], &e);
-                    faltaram.push(chaves.remove(0));
+                match abertas[0].sincronizar() {
+                    Ok(()) => self.tirar_das_sujas(&chaves),
+                    Err(e) => {
+                        self.fecho_recusado(&chaves[0], &e);
+                        faltaram.push(chaves.remove(0));
+                    }
                 }
                 continue;
             }
@@ -16725,17 +16886,23 @@ impl Servidor {
                     })
                     .collect()
             });
+            let mut quebradas = vec![false; chaves.len()];
             for (i, erro) in quebrados {
                 if let Some(e) = &erro {
                     self.fecho_recusado(&chaves[i], e);
                 }
+                quebradas[i] = true;
                 faltaram.push(chaves[i].clone());
             }
+            let sincronizadas: Vec<String> = chaves
+                .into_iter()
+                .zip(quebradas)
+                .filter(|(_, quebrou)| !quebrou)
+                .map(|(chave, _)| chave)
+                .collect();
+            self.tirar_das_sujas(&sincronizadas);
         }
         if !faltaram.is_empty() {
-            if let Ok(mut s) = self.sujas.lock() {
-                s.extend(faltaram);
-            }
             // Alguma tabela nao sincronizou: as marcas FICAM. Apaga-las agora
             // seria jogar fora o bilhete de um dado que pode nao estar no
             // disco -- e o bilhete e a unica coisa que o traz de volta.
@@ -16768,6 +16935,280 @@ impl Servidor {
         for marca in pendentes {
             let _ = std::fs::remove_file(marca);
         }
+    }
+
+    /// O REPARO da trava de dados, rodado pelo `TravaMedida::drop` no
+    /// desenrolar de um panico, com a trava ainda na mao -- pedido 451.
+    ///
+    /// # O desenho, que nao e desta frente
+    ///
+    /// E a H4 do DBA (`docs/propostas/parecer-dba-451-448-2026-09-24.md`): o
+    /// panico vira queda, e a queda se cura na hora, pela mao que caiu. A
+    /// convergencia dos quatro motores e no COMPORTAMENTO (10 de 10: descartar
+    /// o estado e passar pela recuperacao antes do proximo uso); o MEIO deles
+    /// desfaz, e aqui a ordem de digitacao proibe -- entao anda para a frente,
+    /// como no 426. A revisao adversaria do mesmo DBA
+    /// (`docs/propostas/parecer-dba-451-2026-09-24.md`) apertou quatro pontos,
+    /// e cada um esta nomeado abaixo.
+    ///
+    /// # O que ele faz, e em que ordem
+    ///
+    /// 1. `descarregar_sujas_com` -- sincroniza as tabelas da janela e so
+    ///    entao apaga as marcas pendentes, a ordem de sempre do group commit.
+    ///    A chave so sai das sujas depois do `fsync` dela (A1): o panico que
+    ///    interrompeu um fecho nao apaga bilhete de dado que nao foi ao disco;
+    /// 2. completa a marca EM VOO desta tomada, e so ela (M1), pelo
+    ///    [`crate::transacao::completar_marca`] -- o mesmo motor do braco de
+    ///    erro do `COMMIT`, em O(1). O `.ndx` que a queda deixou para tras e
+    ///    reconstruido por ser tabela nomeada na marca, e o `COMMIT` que
+    ///    morreu no meio da passada sai inteiro antes de o `AoSair` soltar as
+    ///    travas dele. As outras marcas do disco nao sao deste panico: a
+    ///    pendente espera o `fsync`, a do braco de erro ja foi tratada, a
+    ///    parada espera a chave -- completa-las reaplicaria `Atualizar` sem
+    ///    condicao;
+    /// 3. solta TODAS as copias residentes -- elas sao anotadas depois do
+    ///    disco, e a da operacao que morreu ficou atras dele;
+    /// 4. conta o reparo, e so ai a trava volta a atender.
+    ///
+    /// # O que ele NAO repara, e e pior que a queda: a cascata solta (490)
+    ///
+    /// A tabela que a operacao interrompida tocava FORA de transacao nao entra
+    /// em marca nenhuma e nao e reconstruida aqui. Num `inserir`, num
+    /// `atualizar` e num `excluir` o `.ndx` fica com o byte 52 em 1 (pedido
+    /// 456) e recusa, nomeando o indice, ate o `reindexar` -- o que ele ja faz
+    /// depois de um `SIGKILL` no mesmo ponto. **Na cascata do `ao_alterar`
+    /// solto, NAO:** a janela do `.ndx` da filha abre e fecha a cada linha, o
+    /// panico entre duas filhas acha `escritas_em_voo` em zero, o `Drop` baixa
+    /// o byte 52, e as filhas seguintes ficam na chave velha sem recusa
+    /// nenhuma. Ali o panico e PIOR que a queda, e o conserto e o pedido 490.
+    ///
+    /// # Por que TODOS os residentes, e nao os da tabela tocada
+    ///
+    /// Porque fora de transacao nao ha intencao escrita dizendo qual tabela a
+    /// operacao morta tocava -- saber isso exigiria cada caminho de escrita se
+    /// registrar, que e a H3 de novo. Soltar a mais custa uma recarga pedida
+    /// (`memoria_carregar`), e a leitura da memoria recusa dizendo isso;
+    /// soltar a menos serve uma copia que o disco desmente.
+    ///
+    /// # O piso: H5 -- e a thread de SERVICO (A2)
+    ///
+    /// Reparo que nao se pode afirmar vira QUEDA (`abort`), o meio do InnoDB:
+    /// o supervisor sobe o processo (`Restart=on-failure`, MANUAL.txt) e o
+    /// arranque repara com o servidor fechado para o mundo. Servir de estado
+    /// incerto e pior que cair. Um panico DENTRO do reparo e panico duplo, e o
+    /// Rust aborta sozinho -- o mesmo piso, pelo outro caminho.
+    ///
+    /// E a thread de servico vai direto ao piso. O reparo cura a trava e NAO
+    /// a thread: a de atendimento que morre leva a conexao dela, e o cliente
+    /// ve; a de servico (o relogio da janela, a replicacao, o backup, os
+    /// jobs) morre calada, e o que ela fazia para sem ninguem saber. Cair e o
+    /// que o postmaster do PostgreSQL faz quando um processo auxiliar morre --
+    /// derruba todos e sobe de novo, pela recuperacao -- e o que o InnoDB faz
+    /// com o `ut_a` de uma thread de fundo. O `catch_unwind` por volta de cada
+    /// laco foi a outra saida oferecida, e ficou de fora: seria a mesma
+    /// decisao escrita em cada laco que toma a trava, e o laco de amanha que
+    /// a esquecesse voltaria a morrer calado. A familia vem de quem subiu a
+    /// thread (`telemetria::subir`, o unico `spawn` do servidor), e nao de uma
+    /// lista de nomes.
+    fn reparar_a_trava(&self, dados: &Instancia, marca_em_voo: Option<&MarcaEmVoo>) {
+        let n = self.panicos_na_trava.fetch_add(1, Ordering::SeqCst) + 1;
+        if crate::telemetria::familia_desta_thread() == Some("servico") {
+            let fio = std::thread::current().name().unwrap_or("?").to_string();
+            dizer_no_diagnostico(&format!(
+                "PHXSQL: panico {n} com a trava de dados na mao na thread de \
+                 SERVICO {fio}. O reparo curaria a trava e nao a thread, que \
+                 morreria calada. O processo vai ABORTAR: o supervisor sobe de \
+                 novo, com todas as threads, e o arranque repara com a porta \
+                 fechada (pedido 451, A2)."
+            ));
+            std::process::abort();
+        }
+        let comeco = Instant::now();
+        match self.reparo_da_trava(dados, marca_em_voo) {
+            Ok(feito) => {
+                // So DEPOIS do reparo inteiro: e este numero que faz o
+                // `depois_do_veneno` deixar a trava atender de novo.
+                self.reparos_da_trava.fetch_add(1, Ordering::SeqCst);
+                dizer_no_diagnostico(&format!(
+                    "PHXSQL Reparo da trava de dados -- panico {n} com a trava na mao \
+                     (pedido 451)\n{feito}\x20 tempo ......................... {} ms\n\
+                     \x20 a trava volta a atender. A tabela que a operacao interrompida \
+                     gravava FORA de transacao pode ter ficado com o indice para tras: \
+                     se ela recusar mandando reparar, rode o `reindexar`. No meio da \
+                     cascata solta ela NAO recusa (pedido 490).",
+                    comeco.elapsed().as_millis()
+                ));
+            }
+            Err(motivo) => {
+                dizer_no_diagnostico(&format!(
+                    "PHXSQL: o reparo da trava de dados FALHOU depois do panico {n} \
+                     ({motivo}). O processo vai ABORTAR em vez de servir de estado \
+                     incerto: o supervisor sobe de novo e o arranque repara com a \
+                     porta fechada (pedido 451, H5)."
+                ));
+                std::process::abort();
+            }
+        }
+    }
+
+    /// So nos testes: o panico de teste pedido para ESTA operacao, na thread
+    /// que a atende. Ver `panico_de_teste_na_op`.
+    #[cfg(test)]
+    fn armar_panico_de_teste(&self, op: &str) {
+        let Ok(mut pedido) = self.panico_de_teste_na_op.lock() else {
+            return;
+        };
+        if !pedido.as_ref().is_some_and(|(o, _)| o == op) {
+            return;
+        }
+        let armado = pedido.take();
+        // A trava do campo sai ANTES do panico: cair com ela na mao a
+        // envenenaria, e o teste seguinte leria veneno em vez de arma.
+        drop(pedido);
+        match armado {
+            Some((_, PanicoDeTeste::NoMotor(ponto))) => {
+                phxsql_store::ndx::panico_de_teste::armar(ponto);
+            }
+            Some((_, PanicoDeTeste::ForaDaTrava)) => {
+                panic!("panico de teste FORA da trava, no despachar de {op}");
+            }
+            None => {}
+        }
+    }
+
+    /// So nos testes: o gancho do fecho da janela para `chave`. Entra em
+    /// panico se armado para ela e para esta thread; devolve `true` quando a
+    /// tabela deve contar como NAO sincronizada. Ver `panico_no_fecho_de_teste`.
+    #[cfg(test)]
+    fn fecho_de_teste(&self, chave: &str) -> bool {
+        let fio = std::thread::current().name().unwrap_or("").to_string();
+        if let Ok(mut armado) = self.panico_no_fecho_de_teste.lock() {
+            let dispara = armado.as_ref().is_some_and(|(alvo, prefixo)| {
+                (alvo.is_empty() || alvo == chave) && fio.starts_with(prefixo.as_str())
+            });
+            if dispara {
+                *armado = None;
+                drop(armado);
+                panic!("panico de teste no fecho da janela, em {chave} (thread {fio})");
+            }
+        }
+        self.fecho_falha_de_teste
+            .lock()
+            .map(|f| f.as_deref() == Some(chave))
+            .unwrap_or(false)
+    }
+
+    /// Tira das sujas as chaves que o fecho ja levou ao disco -- e so elas.
+    /// Ver o A1 no `descarregar_sujas_com`.
+    fn tirar_das_sujas(&self, chaves: &[String]) {
+        if chaves.is_empty() {
+            return;
+        }
+        if let Ok(mut s) = self.sujas.lock() {
+            for chave in chaves {
+                s.remove(chave);
+            }
+        }
+    }
+
+    /// O corpo do reparo: `Ok` com as linhas do relatorio, `Err` com o motivo
+    /// de ele nao poder ser afirmado. Ver [`Servidor::reparar_a_trava`].
+    fn reparo_da_trava(
+        &self,
+        dados: &Instancia,
+        marca_em_voo: Option<&MarcaEmVoo>,
+    ) -> std::result::Result<String, String> {
+        #[cfg(test)]
+        if self.reparo_falha_de_teste.load(Ordering::SeqCst) {
+            return Err("falha de teste forcada".into());
+        }
+        #[cfg(test)]
+        if self.reparo_panica_de_teste.load(Ordering::SeqCst) {
+            panic!("panico de teste DENTRO do reparo da trava");
+        }
+        let mut feito = String::new();
+        // 1. A janela de durabilidade, como o fecho de sempre. Tabela que nao
+        //    sincroniza continua suja e segura as marcas pendentes -- e o que o
+        //    fecho de sempre faz com ela, e nao e falha do reparo: a proxima
+        //    passada tenta de novo, e nenhuma marca sai antes do disco.
+        //
+        //    As sujas ENVENENADAS sao falha: o fecho volta calado sem elas, e
+        //    daqui em diante nenhuma gravacao se anotaria para o `fsync` -- a
+        //    janela inteira deixaria de valer, e isso nao se afirma de pe.
+        if self.sujas.is_poisoned() {
+            return Err("a trava das tabelas sujas esta envenenada: a janela de \
+                 durabilidade nao se afirma"
+                .into());
+        }
+        let sujas = self.sujas.lock().map(|s| s.len()).unwrap_or(0);
+        self.descarregar_sujas_com(dados);
+        let ficaram = self.sujas.lock().map(|s| s.len()).unwrap_or(0);
+        feito.push_str(&format!(
+            "\x20 tabelas da janela sincronizadas  {}{}\n",
+            sujas.saturating_sub(ficaram),
+            if ficaram > 0 {
+                format!("   ({ficaram} continuam devendo ao disco, e as marcas pendentes ficam)")
+            } else {
+                String::new()
+            }
+        ));
+        // 2. A marca EM VOO, e so ela. Completa-la com operacao impossivel,
+        //    ou parada por falta da chave, deixa a marca no disco -- e o
+        //    `AoSair` vai soltar as travas da transacao dela logo depois deste
+        //    reparo, deixando outro escritor tomar o rowid que ela reservou. O
+        //    arranque, com nada congelado e a porta fechada, e quem a resolve;
+        //    entao a resposta e cair, e nao seguir. E o mesmo criterio de
+        //    «pendente» do braco de erro do `COMMIT`.
+        //
+        //    E a marca que ja estava gravada e nao se releu (M4) tambem: sem o
+        //    `gravada`, a falha de leitura contava como «nao confere», a marca
+        //    saia do disco e a trava voltava a atender com a transacao
+        //    confirmada pela metade. Com ele a marca fica, a falha vai para as
+        //    impossiveis, e o arranque -- com descritores novos -- a completa.
+        if let Some(em_voo) = marca_em_voo {
+            let caminho = &em_voo.caminho;
+            #[cfg(test)]
+            if self.marca_ilegivel_de_teste.load(Ordering::SeqCst) {
+                crate::transacao::falhar_a_proxima_leitura_de_teste();
+            }
+            let r = crate::transacao::completar_marca_em_voo(
+                dados,
+                &em_voo.database,
+                caminho,
+                em_voo.gravada,
+            );
+            if r.houve() {
+                feito.push_str(&r.texto(&self.config.base));
+                feito.push('\n');
+            }
+            if !r.impossiveis.is_empty()
+                || !r.paradas.is_empty()
+                || (em_voo.gravada && r.completadas == 0)
+            {
+                return Err(format!(
+                    "a marca em voo {} nao se completou: {}",
+                    caminho.display(),
+                    r.impossiveis
+                        .iter()
+                        .chain(r.paradas.iter())
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join("; ")
+                ));
+            }
+        }
+        // 3. Os residentes. A trava deles envenenada ja recusa todo leitor da
+        //    memoria (pedido 458), entao nao ha copia servida para soltar.
+        let soltas = match self.residentes.lock() {
+            Ok(mut m) => {
+                let n = m.len();
+                m.clear();
+                n
+            }
+            Err(_) => 0,
+        };
+        feito.push_str(&format!("\x20 copias residentes soltas ...... {soltas}\n"));
+        Ok(feito)
     }
 
     /// Alguma tabela desta transacao continua devendo ao disco?
@@ -26358,6 +26799,46 @@ fn trava_envenenada() -> PhxError {
     PhxError::Corrompido("uma operacao anterior entrou em panico e deixou a trava suja".into())
 }
 
+/// Uma linha no erro padrao que NUNCA entra em panico.
+///
+/// O `eprintln!` entra em panico se o erro padrao estiver fechado -- e o
+/// reparo da trava roda no desenrolar de um panico, onde um segundo panico
+/// aborta o processo. Abortar por nao conseguir ESCREVER o relatorio de um
+/// reparo que deu certo seria derrubar todas as conexoes por um log.
+fn dizer_no_diagnostico(texto: &str) {
+    let _ = writeln!(std::io::stderr(), "{texto}");
+}
+
+/// So nos testes: o panico que o `panico_de_teste_na_op` pede -- pedido 451.
+#[cfg(test)]
+#[derive(Clone, Copy, Debug)]
+enum PanicoDeTeste {
+    /// O panico do motor, armado nesta thread: no meio de uma escrita de
+    /// verdade, com a trava de dados na mao.
+    NoMotor(phxsql_store::ndx::panico_de_teste::Ponto),
+    /// O panico ja no `despachar`, FORA da trava -- o que o `AoSair` da
+    /// conexao desenrola tomando a trava de novo (M2).
+    ForaDaTrava,
+}
+
+/// A trava de DADOS envenenada sem o reparo ter terminado -- pedido 451.
+///
+/// Separada da [`trava_envenenada`] porque diz outra coisa: aquela frase sai
+/// de 85 pontos de 14 `Mutex` (pedido 458, que nao e este), e esta nomeia a
+/// trava e o que ficou pendente. Com o reparo do `TravaMedida::drop` ela nao
+/// deveria sair nunca -- reparo que falha aborta o processo (H5). Ela e o
+/// FALHAR FECHADO de qualquer caminho que envenene a trava sem passar por la,
+/// e o motivo de ela nao ter virado `unreachable!`: um panico aqui seria o
+/// defeito que o pedido existe para fechar.
+fn trava_de_dados_sem_reparo(panicos: u64, reparos: u64) -> PhxError {
+    PhxError::Corrompido(format!(
+        "uma operacao anterior entrou em panico e deixou a trava suja: a trava \
+         de dados viu {panicos} panico(s) e {reparos} reparo(s) terminado(s), e \
+         nao volta a atender sem o reparo -- reinicie o servidor, o arranque \
+         repara"
+    ))
+}
+
 thread_local! {
     /// Esta thread ja esta com a trava de dados na mao?
     ///
@@ -26710,20 +27191,54 @@ fn conferir_versao_pedida(t: &mut Table, p: &Json, rowid: phxsql_core::RowId) ->
 /// A trava de dados com o cronometro por dentro.
 ///
 /// Ela se comporta como a `MutexGuard` que embrulha -- `Deref` e `DerefMut`
-/// entregam a `Instancia` --, e a unica coisa que acrescenta acontece no
-/// `Drop`: o tempo que ela ficou na mao entra na serie. Sem isso, «o servidor
-/// esta lento» nunca distinguiria fila de trabalho.
+/// entregam a `Instancia` --, e o que acrescenta acontece no `Drop`: o tempo
+/// que ela ficou na mao entra na serie, e -- so no desenrolar de um panico --
+/// o REPARO do pedido 451. Sem o primeiro, «o servidor esta lento» nunca
+/// distinguiria fila de trabalho; sem o segundo, um panico com ela na mao
+/// fechava a base inteira ate alguem reiniciar.
 struct TravaMedida<'a> {
     /// O guard de ESCRITA. Vive aqui so para excluir todo mundo enquanto esta
-    /// ficha existir -- quem chama nunca o ve.
+    /// ficha existir -- quem chama nunca o ve. E um CAMPO, e por isso cai
+    /// DEPOIS do corpo do `Drop`: o reparo roda com a trava ainda na mao.
     #[allow(dead_code)]
     guarda: std::sync::RwLockWriteGuard<'a, Raiz>,
     /// A ficha exclusiva, que morre junto com o guard acima.
     instancia: Instancia,
     /// Quando a trava foi obtida. `None` com a telemetria desligada -- e ai o
-    /// `Drop` nao faz nada.
+    /// cronometro nao faz nada.
     tomada: Option<Instant>,
-    telemetria: &'a crate::telemetria::Telemetria,
+    /// O servidor inteiro, e nao so a telemetria: o reparo precisa das
+    /// tabelas sujas, das marcas pendentes e dos residentes.
+    servidor: &'a Servidor,
+    /// A trava foi tomada DURANTE o desenrolar de um panico (pedido 451, M2)?
+    ///
+    /// E o `AoSair` de uma conexao que caiu por um panico FORA da trava: ele
+    /// solta a carga reservada e, para isso, descarrega as sujas -- tomando a
+    /// trava com `thread::panicking()` ja verdadeiro. Sem esta marca o `Drop`
+    /// acharia que o panico aconteceu com a trava na mao e repararia (ou
+    /// abortaria) por um panico que nunca tocou em dado. E a mesma regra do
+    /// veneno da `std`: guard tomado no desenrolar nao envenena ao cair.
+    tomada_no_desenrolar: bool,
+    /// A marca do `COMMIT` desta tomada, do instante antes de ela ir ao disco
+    /// ate o destino dela estar decidido -- ver [`MarcaEmVoo`].
+    ///
+    /// E a UNICA marca que um panico com a trava na mao pode deixar orfa: o
+    /// `COMMIT` grava a marca e faz a passada sob esta mesma tomada, e so ele
+    /// grava marca. Morar AQUI, e nao num campo do servidor, e o que faz ela
+    /// ainda existir quando o `Drop` roda: um registro com guarda propria,
+    /// declarada depois da trava, cairia ANTES dela no desenrolar.
+    marca_em_voo: Option<MarcaEmVoo>,
+}
+
+/// A marca do `COMMIT` em voo numa [`TravaMedida`] -- pedido 451.
+struct MarcaEmVoo {
+    database: String,
+    caminho: PathBuf,
+    /// O `gravar_marca` ja voltou `Ok`: a marca esta inteira e sincronizada no
+    /// disco. Antes disso, marca ausente ou que nao confere e commit que nunca
+    /// comecou; depois, marca que nao se rele e FALHA do reparo (M4 da segunda
+    /// revisao do DBA), e nao descarte.
+    gravada: bool,
 }
 
 impl std::ops::Deref for TravaMedida<'_> {
@@ -26772,12 +27287,43 @@ impl Drop for TravaDeLeitura<'_> {
 
 impl Drop for TravaMedida<'_> {
     fn drop(&mut self) {
+        // O PANICO COM A TRAVA NA MAO -- pedido 451, H4 do parecer do DBA.
+        //
+        // O portao vem ANTES de qualquer trabalho: fora do desenrolar isto e
+        // uma leitura de uma variavel da thread, e nada mais. Dentro dele, o
+        // reparo roda AQUI, e o lugar e a garantia inteira:
+        //
+        // * o guard e campo, e so cai depois deste corpo -- ninguem ve o
+        //   estado do meio;
+        // * o `AoSair` da conexao roda DEPOIS, mais acima na pilha -- as travas
+        //   da transacao que caiu (inclusive o fim de tabela que reservava os
+        //   rowids) so se soltam quando a marca dela ja foi completada;
+        // * e o unico lugar que toma a trava (`so_um_lugar_toma_a_trava`), entao
+        //   e o unico lugar onde o conserto precisa estar -- os ~90
+        //   `travar_dados()` do servidor nao sabem que ele existe (a H3 que o
+        //   parecer reprovou seria a mesma decisao escrita noventa vezes).
+        //
+        // A marca de reentrancia continua LIGADA durante o reparo de
+        // proposito: ele recebe a instancia por parametro, e se alguem um dia
+        // pedir a trava de dentro dele, recebe o erro nomeado em vez de
+        // esperar por si mesmo.
+        //
+        // E o panico tem de ter COMECADO com a trava na mao: tomada ja no
+        // desenrolar (o `AoSair` de um panico de fora), ela nao viu escrita
+        // nenhuma pela metade, e a `std` nem a envenena -- ver
+        // `tomada_no_desenrolar`.
+        if !self.tomada_no_desenrolar && std::thread::panicking() {
+            self.servidor
+                .reparar_a_trava(&self.instancia, self.marca_em_voo.as_ref());
+        }
         // Fora do `if`: a marca de reentrancia nao depende da telemetria, e
         // solta-la so com ela ligada trancaria a thread no modo comum -- que e
         // o modo em que os tres abracos mortais aconteceram.
         COM_A_TRAVA.with(|c| c.set(false));
         if let Some(t) = self.tomada {
-            self.telemetria.contar_trava(t.elapsed().as_micros() as u64);
+            self.servidor
+                .telemetria
+                .contar_trava(t.elapsed().as_micros() as u64);
             // A atividade deixa de ser a que segura todo mundo no MESMO
             // instante em que solta a trava -- e nao no fim do pedido. Entre
             // um e outro ela ainda monta a resposta, e acusa-la de segurar a
@@ -50151,17 +50697,11 @@ mod testes_das_threads {
         condicao()
     }
 
+    /// Um `ping` numa conexao nova, pelo cliente unico de teste. `None`: a
+    /// conexao foi recusada, ou caiu sem responder.
     fn ping(porta: u16) -> Option<String> {
-        let mut c = TcpStream::connect(("127.0.0.1", porta)).ok()?;
-        c.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
-        c.write_all(b"{\"op\":\"ping\",\"token\":\"t\"}\n").ok()?;
-        let mut linha = String::new();
-        BufReader::new(&c).read_line(&mut linha).ok()?;
-        if linha.is_empty() {
-            None
-        } else {
-            Some(linha)
-        }
+        crate::apoio_teste::Ligacao::tentar_com_prazo(porta, Duration::from_secs(3))?
+            .pedir(r#"{"op":"ping","token":"t"}"#)
     }
 
     /// Le uma resposta HTTP inteira (cabecalho e corpo) ate o outro lado fechar.
@@ -50363,11 +50903,11 @@ mod testes_das_threads {
         let porta = porta_de_dados_de_verdade(&s);
 
         // A primeira ocupa a unica vaga e fica aberta.
-        let mut a = TcpStream::connect(("127.0.0.1", porta)).unwrap();
-        a.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
-        a.write_all(b"{\"op\":\"ping\",\"token\":\"t\"}\n").unwrap();
-        let mut linha = String::new();
-        BufReader::new(&a).read_line(&mut linha).unwrap();
+        let mut a = crate::apoio_teste::Ligacao::tentar_com_prazo(porta, Duration::from_secs(3))
+            .expect("a primeira conexao foi recusada");
+        let linha = a
+            .pedir(r#"{"op":"ping","token":"t"}"#)
+            .expect("a primeira conexao caiu sem resposta");
         assert!(linha.contains("\"ok\":true"), "{linha}");
         assert_eq!(s.permissoes_de_dados.em_uso(), 1);
 
@@ -50631,15 +51171,10 @@ mod testes_da_saude_do_disco {
     /// Um `inserir` pelo soquete, na tabela quebrada. Devolve o `codigo` da
     /// resposta de erro.
     fn inserir_quebrado(porta: u16) -> u64 {
-        use std::io::{BufRead, BufReader, Write};
-        let mut c = TcpStream::connect(("127.0.0.1", porta)).unwrap();
-        c.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
-        c.write_all(
-            b"{\"token\":\"t\",\"op\":\"inserir\",\"database\":\"b\",\"tabela\":\"t\",\"valores\":{\"n\":2}}\n",
-        )
-        .unwrap();
-        let mut linha = String::new();
-        BufReader::new(&c).read_line(&mut linha).unwrap();
+        let linha = crate::apoio_teste::Ligacao::tentar_com_prazo(porta, Duration::from_secs(5))
+            .expect("a porta de dados recusou a conexao")
+            .pedir(r#"{"token":"t","op":"inserir","database":"b","tabela":"t","valores":{"n":2}}"#)
+            .expect("o inserir na tabela quebrada caiu sem resposta");
         let r = Json::analisar(&linha).unwrap();
         assert!(
             !r.booleano_ou("ok", true),
@@ -54469,5 +55004,1217 @@ mod testes_expurgo_da_trilha {
         let s2 = servidor(&dir2, 5);
         s2.subir_retencao_da_trilha();
         assert!(tem_relogio(&s2), "com prazo, o relogio devia ter subido");
+    }
+}
+
+/// O panico DENTRO da trava global de dados -- pedido 451, provado pelo
+/// SOQUETE.
+///
+/// # O que cada teste mede
+///
+/// O panico e o do motor (`ndx::panico_de_teste`), no meio de uma escrita de
+/// verdade -- o slot e o contador do `.reg` ja gravados, nenhuma chave no
+/// `.ndx` -- e na thread de uma conexao de verdade, com a trava de escrita na
+/// mao. Quem escolhe a thread e o campo `panico_de_teste_na_op`, que so existe
+/// com `cfg(test)`: nenhum pedido do fio arma coisa nenhuma.
+///
+/// Cada vermelho descreve o DANO medido, e nao o mecanismo: «o pedido de
+/// OUTRA conexao recebeu a trava suja», «a transacao confirmada saiu pela
+/// metade», «o processo seguiu servindo». Um vermelho que dissesse «o contador
+/// de reparos esta em zero» descreveria o conserto e esconderia o estrago.
+///
+/// # Por que `debug_assertions`
+///
+/// O gancho do motor so dispara com elas (em `release` ele nao existe), e sem
+/// o panico estes testes nao teriam o que provar -- o mesmo corte do
+/// `panico-no-meio-da-escrita.rs` do `phxsql-store`.
+#[cfg(all(test, debug_assertions))]
+mod testes_do_panico_sob_a_trava {
+    use super::*;
+    use phxsql_store::ndx::panico_de_teste::Ponto;
+
+    /// A variavel que diz ao processo FILHO onde trabalhar. Ver
+    /// [`filho_do_panico_451`].
+    const FILHO: &str = "PHXSQL_TESTE_451_FILHO";
+
+    fn config_base(dir: &std::path::Path) -> Config {
+        let mut c = Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            jobs: dir.join("jobs.json"),
+            token: "t".into(),
+            ..Config::default()
+        };
+        // O escape escrito: a cifra do fio nasce exigida (pedido 370), e
+        // estes testes conectam em claro porque medem OUTRA coisa.
+        c.cifra_fio.exigir = false;
+        c
+    }
+
+    /// A porta de dados pelo laco DE PRODUCAO: e a thread da conexao que
+    /// entra em panico, e o `AoSair` dela (que solta as travas da transacao)
+    /// tem de rodar como roda em producao.
+    fn porta_de_dados_de_verdade(s: &Arc<Servidor>) -> u16 {
+        let ouvinte = TcpListener::bind("127.0.0.1:0").unwrap();
+        let porta = ouvinte.local_addr().unwrap().port();
+        let s = Arc::clone(s);
+        std::thread::spawn(move || s.aceitar_ate_mandarem_parar(&ouvinte));
+        porta
+    }
+
+    use crate::apoio_teste::Ligacao;
+
+    /// Um pedido desta prova na ligacao dada -- a mesma, quando e a da
+    /// transacao. O corpo vai com o token numa linha so, e a resposta volta
+    /// analisada. `None` quando a conexao caiu sem responder, que e o que o
+    /// pedido que entra em panico produz. A leitura e a do cliente unico de
+    /// teste (`apoio_teste::Ligacao`): aqui fica so o formato do pedido.
+    fn falar(l: &mut Ligacao, corpo: &str) -> Option<Json> {
+        let corpo: String = corpo.split_whitespace().collect::<Vec<_>>().join(" ");
+        let r = l.pedir(&format!("{{\"token\":\"t\",{corpo}}}"))?;
+        Some(Json::analisar(&r).unwrap_or_else(|e| panic!("resposta ilegivel {r:?}: {e}")))
+    }
+
+    /// Um pedido numa conexao NOVA -- a «outra conexao» da prova.
+    fn pedir(porta: u16, corpo: &str) -> Option<Json> {
+        falar(&mut Ligacao::nova(porta), corpo)
+    }
+
+    /// O resultado, exigindo que o pedido tenha dado certo.
+    fn ok(r: Option<Json>, o_que: &str) -> Json {
+        let r = r.unwrap_or_else(|| panic!("{o_que}: a conexao caiu sem resposta"));
+        assert!(r.booleano_ou("ok", false), "{o_que}: {}", r.escrever());
+        r.campo("resultado").cloned().unwrap_or(r)
+    }
+
+    /// `loja.clientes` (indice unico `porId`) com os ids 1..=5, e
+    /// `loja.outra` com o id 1 -- a tabela que o panico NAO toca.
+    fn semear(porta: u16) {
+        ok(
+            pedir(porta, r#""op":"criar_database","database":"loja""#),
+            "criar_database",
+        );
+        ok(
+            pedir(
+                porta,
+                r#""op":"criar_tabela","database":"loja","tabela":"clientes",
+                   "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                              {"nome":"nome","tipo":"Str(20)"}],
+                   "indices":[{"nome":"porId","colunas":["id"],"unico":true}]"#,
+            ),
+            "criar_tabela clientes",
+        );
+        ok(
+            pedir(
+                porta,
+                r#""op":"criar_tabela","database":"loja","tabela":"outra",
+                   "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true}]"#,
+            ),
+            "criar_tabela outra",
+        );
+        for id in 1..=5 {
+            ok(
+                pedir(
+                    porta,
+                    &format!(
+                        r#""op":"inserir","database":"loja","tabela":"clientes",
+                           "valores":{{"id":{id},"nome":"C{id}"}}"#
+                    ),
+                ),
+                "semear clientes",
+            );
+        }
+        ok(
+            pedir(
+                porta,
+                r#""op":"inserir","database":"loja","tabela":"outra","valores":{"id":1}"#,
+            ),
+            "semear outra",
+        );
+    }
+
+    /// Os ids vivos que o `.reg` da tabela mostra, pelo `varrer`.
+    fn ids(porta: u16, tabela: &str) -> Vec<i64> {
+        let r = ok(
+            pedir(
+                porta,
+                &format!(r#""op":"varrer","database":"loja","tabela":"{tabela}","max":1000"#),
+            ),
+            &format!("varrer {tabela}"),
+        );
+        let mut v: Vec<i64> = r
+            .campo("linhas")
+            .and_then(Json::lista)
+            .unwrap_or(&[])
+            .iter()
+            .map(|l| l.inteiro_ou("id", -1))
+            .collect();
+        v.sort_unstable();
+        v
+    }
+
+    /// Todo id vivo e achado pela chave, UMA vez, e o `verificar` conta tantas
+    /// chaves no indice quantas linhas no `.reg` -- a pergunta que a tabela
+    /// tem de responder certo depois de um panico no meio da escrita.
+    fn conferir_indice(porta: u16, esperados: &[i64]) {
+        let vivos = ids(porta, "clientes");
+        assert_eq!(vivos, esperados, "as linhas vivas no .reg");
+        for id in &vivos {
+            let r = ok(
+                pedir(
+                    porta,
+                    &format!(
+                        r#""op":"buscar","database":"loja","tabela":"clientes",
+                           "indice":"porId","chave":[{id}]"#
+                    ),
+                ),
+                &format!("buscar {id}"),
+            );
+            assert_eq!(
+                r.inteiro_ou("encontrados", -1),
+                1,
+                "linha viva fora do indice (ou repetida nele): o id {id} esta vivo \
+                 no .reg e o indice responde {}",
+                r.escrever()
+            );
+        }
+        let v = ok(
+            pedir(
+                porta,
+                r#""op":"verificar","database":"loja","tabela":"clientes""#,
+            ),
+            "verificar",
+        );
+        assert_eq!(
+            v.inteiro_ou("registros", -1),
+            esperados.len() as i64,
+            "{}",
+            v.escrever()
+        );
+        assert_eq!(
+            v.campo("indices").map(|i| i.inteiro_ou("porId", -1)),
+            Some(esperados.len() as i64),
+            "o indice nao tem uma chave por linha viva: {}",
+            v.escrever()
+        );
+    }
+
+    /// As marcas `transacao_*.tx` que sobraram no diretorio da base.
+    fn marcas(dir: &std::path::Path) -> Vec<String> {
+        std::fs::read_dir(dir.join("loja"))
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.starts_with("transacao_") && n.ends_with(".tx"))
+            .collect()
+    }
+
+    fn armar(s: &Servidor, op: &str) {
+        *s.panico_de_teste_na_op.lock().unwrap() = Some((
+            op.into(),
+            PanicoDeTeste::NoMotor(Ponto::InserirDepoisDoContador),
+        ));
+    }
+
+    /// A janela que so fecha quando alguem manda: sem o relogio de fundo (que
+    /// estes testes nao sobem) e com o lote e o prazo fora de alcance, toda
+    /// marca de `COMMIT` fica PENDENTE ate um fecho explicito.
+    fn janela_parada(c: &mut Config) {
+        c.recursos.durabilidade = Durabilidade::PorLote;
+        c.recursos.lote_operacoes = 1_000_000;
+        c.recursos.lote_milissegundos = 600_000;
+    }
+
+    /// Um `COMMIT` de uma linha na `tabela`, por uma conexao propria.
+    fn commit_em(porta: u16, tabela: &str, id: i64) {
+        let mut tx = Ligacao::nova(porta);
+        ok(falar(&mut tx, r#""op":"begin","database":"loja""#), "begin");
+        ok(
+            falar(
+                &mut tx,
+                &format!(
+                    r#""op":"inserir","database":"loja","tabela":"{tabela}","valores":{{"id":{id}}}"#
+                ),
+            ),
+            "inserir na transacao",
+        );
+        ok(falar(&mut tx, r#""op":"commit""#), "commit");
+    }
+
+    /// `loja` com as tabelas `a` e `b`, so com o `id`.
+    fn duas_tabelas(porta: u16) {
+        ok(
+            pedir(porta, r#""op":"criar_database","database":"loja""#),
+            "criar_database",
+        );
+        for t in ["a", "b"] {
+            ok(
+                pedir(
+                    porta,
+                    &format!(
+                        r#""op":"criar_tabela","database":"loja","tabela":"{t}",
+                           "colunas":[{{"nome":"id","tipo":"Int8","obrigatoria":true}}]"#
+                    ),
+                ),
+                "criar_tabela",
+            );
+        }
+    }
+
+    /// O `nome` do cliente `id`, pelo `varrer`.
+    fn nome_do_cliente(porta: u16, id: i64) -> String {
+        let r = ok(
+            pedir(
+                porta,
+                r#""op":"varrer","database":"loja","tabela":"clientes","max":1000"#,
+            ),
+            "varrer clientes",
+        );
+        r.campo("linhas")
+            .and_then(Json::lista)
+            .unwrap_or(&[])
+            .iter()
+            .find(|l| l.inteiro_ou("id", -1) == id)
+            .map(|l| l.texto_ou("nome", "").to_string())
+            .unwrap_or_default()
+    }
+
+    /// **(a) e (b), fora de transacao.** O `inserir` morre com o slot e o
+    /// contador do `.reg` gravados e nenhuma chave no indice.
+    ///
+    /// Com o defeito (a H1 de antes): a trava fica envenenada para sempre, e
+    /// o pedido seguinte de OUTRA conexao, noutra tabela, recebe
+    /// `[SP000010] ... deixou a trava suja` ate o processo reiniciar.
+    ///
+    /// Com o conserto: a outra tabela atende na hora; a tabela tocada le pelo
+    /// `.reg` e RECUSA toda operacao de indice nomeando o indice -- nunca a
+    /// trava -- ate o `reindexar` (o byte 52 do pedido 456, o mesmo estado de
+    /// um `SIGKILL` no mesmo ponto); e depois dele cada linha viva esta no
+    /// indice uma vez, e a chave em voo continua unica.
+    ///
+    /// # A linha interrompida, e por que ela FICA
+    ///
+    /// O slot e o contador ja estavam no `.reg` quando o panico veio, e o
+    /// `.reg` nunca reaproveita slot: desfazer nao existe aqui (a ordem de
+    /// digitacao), e fora de transacao nao ha marca que diga que a escrita
+    /// nao aconteceu. Ela anda para a FRENTE, como depois de uma queda no
+    /// mesmo ponto -- e o que a prova cobra e que ela nao vire FANTASMA: viva
+    /// no `.reg` e fora do indice, ou dentro dele duas vezes.
+    #[test]
+    fn panico_no_meio_do_inserir_nao_fecha_a_base_e_nao_deixa_fantasma() {
+        let dir = DirTemp::novo("panico-451-inserir");
+        let s = Servidor::novo(config_base(&dir)).unwrap();
+        let porta = porta_de_dados_de_verdade(&s);
+        semear(porta);
+        // Uma copia residente, para a prova do terceiro passo do reparo.
+        ok(
+            pedir(
+                porta,
+                r#""op":"memoria_carregar","database":"loja","tabela":"clientes""#,
+            ),
+            "memoria_carregar",
+        );
+
+        armar(&s, "inserir");
+        let morto = pedir(
+            porta,
+            r#""op":"inserir","database":"loja","tabela":"clientes",
+               "valores":{"id":6,"nome":"C6"}"#,
+        );
+        assert!(
+            morto.is_none(),
+            "o inserir armado tinha de cair no panico, e respondeu {:?}",
+            morto.map(|j| j.escrever())
+        );
+        assert!(
+            s.panico_de_teste_na_op.lock().unwrap().is_none(),
+            "o gancho nao foi armado: o inserir nao passou pelo despachar"
+        );
+
+        // (a) O DANO primeiro: OUTRA conexao, OUTRA tabela.
+        let outra = pedir(
+            porta,
+            r#""op":"inserir","database":"loja","tabela":"outra","valores":{"id":2}"#,
+        )
+        .expect("o inserir seguinte, por OUTRA conexao, caiu sem resposta");
+        assert!(
+            outra.booleano_ou("ok", false),
+            "a trava de dados ficou FECHADA depois do panico: o inserir em OUTRA \
+             tabela, por OUTRA conexao, recebeu {}",
+            outra.escrever()
+        );
+        assert_eq!(
+            ids(porta, "outra"),
+            vec![1, 2],
+            "a tabela que o panico nao tocou"
+        );
+
+        // (b) A tabela tocada: o dado de antes continua la, lido pelo `.reg`.
+        let vivos = ids(porta, "clientes");
+        assert_eq!(
+            vivos,
+            vec![1, 2, 3, 4, 5, 6],
+            "o .reg depois do panico: o dado de antes tinha de continuar, e o slot \
+             ja gravado da linha interrompida anda para a frente"
+        );
+        // A copia residente e anotada DEPOIS do disco, e a da operacao que
+        // morreu ficou atras dele: servi-la seria mentir sobre o dado.
+        let memoria = pedir(
+            porta,
+            r#""op":"selecionar_memoria","database":"loja","tabela":"clientes""#,
+        )
+        .expect("o selecionar_memoria caiu sem resposta");
+        assert!(
+            !memoria.booleano_ou("ok", true) && memoria.escrever().contains("nao esta em memoria"),
+            "a copia residente continuou servindo depois do panico, com o .reg em \
+             {vivos:?}: {}",
+            memoria.escrever()
+        );
+        // E o indice recusa NOMEANDO-SE, ate o `reindexar` -- nunca a trava.
+        let recusa = pedir(
+            porta,
+            r#""op":"buscar","database":"loja","tabela":"clientes","indice":"porId","chave":[3]"#,
+        )
+        .expect("o buscar caiu sem resposta");
+        let texto = recusa.escrever();
+        assert!(
+            !recusa.booleano_ou("ok", true),
+            "o indice rasgado respondeu como se estivesse em dia: {texto}"
+        );
+        assert!(
+            texto.contains("clientes.ndx"),
+            "a recusa nao nomeou o indice: {texto}"
+        );
+        assert!(
+            texto.contains("reparar indice") && !texto.contains("trava suja"),
+            "a recusa nao mandou reconstruir o indice: {texto}"
+        );
+
+        ok(
+            pedir(
+                porta,
+                r#""op":"reindexar","database":"loja","tabela":"clientes""#,
+            ),
+            "reindexar",
+        );
+        conferir_indice(porta, &[1, 2, 3, 4, 5, 6]);
+        // A chave que estava em voo continua UNICA.
+        let repetida = pedir(
+            porta,
+            r#""op":"inserir","database":"loja","tabela":"clientes",
+               "valores":{"id":6,"nome":"de novo"}"#,
+        )
+        .expect("o inserir repetido caiu sem resposta");
+        assert!(
+            !repetida.booleano_ou("ok", true),
+            "chave duplicada aceita no indice unico depois do reparo: {}",
+            repetida.escrever()
+        );
+        ok(
+            pedir(
+                porta,
+                r#""op":"inserir","database":"loja","tabela":"clientes",
+                   "valores":{"id":7,"nome":"C7"}"#,
+            ),
+            "inserir depois do reindexar",
+        );
+        conferir_indice(porta, &[1, 2, 3, 4, 5, 6, 7]);
+    }
+
+    /// **A transacao confirmada, na hora.** O `COMMIT` grava a marca, e a
+    /// passada morre na PRIMEIRA escrita, com o slot gravado e o indice atras.
+    ///
+    /// Com o defeito: a base inteira responde a trava suja, e a marca orfa
+    /// espera o reinicio -- enquanto o `AoSair` ja soltou as travas da
+    /// transacao, inclusive o fim de tabela que reservava os rowids.
+    ///
+    /// Com o conserto: o reparo completa a marca ANTES de o `AoSair` rodar, e
+    /// OUTRA conexao ja ve a transacao inteira, o indice em dia (a recuperacao
+    /// o reconstroi por ser tabela nomeada na marca), nenhuma marca sobrando e
+    /// o rowid seguinte sem colidir com os reservados.
+    #[test]
+    fn panico_na_passada_do_commit_sai_com_a_transacao_inteira_na_hora() {
+        let dir = DirTemp::novo("panico-451-commit");
+        let s = Servidor::novo(config_base(&dir)).unwrap();
+        let porta = porta_de_dados_de_verdade(&s);
+        semear(porta);
+
+        let mut tx = Ligacao::nova(porta);
+        ok(falar(&mut tx, r#""op":"begin","database":"loja""#), "begin");
+        for id in [10, 11, 12] {
+            ok(
+                falar(
+                    &mut tx,
+                    &format!(
+                        r#""op":"inserir","database":"loja","tabela":"clientes",
+                       "valores":{{"id":{id},"nome":"T{id}"}}"#
+                    ),
+                ),
+                "inserir na transacao",
+            );
+        }
+        armar(&s, "commit");
+        let morto = falar(&mut tx, r#""op":"commit""#);
+        assert!(
+            morto.is_none(),
+            "o commit armado tinha de cair no panico, e respondeu {:?}",
+            morto.map(|j| j.escrever())
+        );
+        drop(tx);
+
+        // O DANO primeiro: OUTRA conexao le a tabela da transacao.
+        let lida = pedir(
+            porta,
+            r#""op":"varrer","database":"loja","tabela":"clientes","max":1000"#,
+        )
+        .expect("o varrer seguinte, por OUTRA conexao, caiu sem resposta");
+        assert!(
+            lida.booleano_ou("ok", false),
+            "a trava de dados ficou FECHADA depois do panico no COMMIT: OUTRA \
+             conexao recebeu {}",
+            lida.escrever()
+        );
+        assert_eq!(
+            ids(porta, "clientes"),
+            vec![1, 2, 3, 4, 5, 10, 11, 12],
+            "a transacao CONFIRMADA (a marca estava no disco) nao saiu inteira"
+        );
+        assert!(
+            marcas(&dir).is_empty(),
+            "a marca do commit completado ficou no disco: {:?}",
+            marcas(&dir)
+        );
+        conferir_indice(porta, &[1, 2, 3, 4, 5, 10, 11, 12]);
+        // O rowid seguinte nao colide com os que a transacao reservou.
+        let novo = ok(
+            pedir(
+                porta,
+                r#""op":"inserir","database":"loja","tabela":"clientes",
+                   "valores":{"id":13,"nome":"C13"}"#,
+            ),
+            "inserir depois do reparo",
+        );
+        assert_eq!(novo.inteiro_ou("rowid", -1), 9, "{}", novo.escrever());
+        conferir_indice(porta, &[1, 2, 3, 4, 5, 10, 11, 12, 13]);
+    }
+
+    /// **A1: o panico no meio do fecho da janela nao apaga a marca de quem nao
+    /// foi ao disco.**
+    ///
+    /// O `COMMIT` na `b` deixa a marca PENDENTE, esperando o `fsync` da `b`.
+    /// O fecho seguinte (o `bulkinsert(false)` da `a`, pela conexao) entra em
+    /// panico ao chegar na `b` -- e a `b` continua sem sincronizar, o erro de
+    /// E/S que prende a marca.
+    ///
+    /// Com o defeito (o fecho DRENAVA as sujas antes do trabalho): o panico
+    /// levou a `b` junto com a lista, o reparo achou as sujas vazias e drenou
+    /// as marcas pendentes -- o bilhete de um commit cujo dado nunca passou
+    /// por `fsync` saiu do disco. Com o conserto a chave so sai depois do
+    /// `fsync`, e a marca fica ate ele acontecer.
+    #[test]
+    fn panico_no_fecho_da_janela_nao_apaga_a_marca_de_quem_nao_foi_ao_disco() {
+        let dir = DirTemp::novo("panico-451-fecho");
+        let mut c = config_base(&dir);
+        janela_parada(&mut c);
+        let s = Servidor::novo(c).unwrap();
+        let porta = porta_de_dados_de_verdade(&s);
+        duas_tabelas(porta);
+
+        commit_em(porta, "b", 1);
+        let pendente = marcas(&dir);
+        assert_eq!(
+            pendente.len(),
+            1,
+            "premissa: a marca do commit tinha de ficar PENDENTE, esperando o fsync"
+        );
+
+        *s.panico_no_fecho_de_teste.lock().unwrap() = Some(("loja/b".into(), String::new()));
+        *s.fecho_falha_de_teste.lock().unwrap() = Some("loja/b".into());
+        let mut carga = Ligacao::nova(porta);
+        ok(
+            falar(
+                &mut carga,
+                r#""op":"bulkinsert","database":"loja","tabela":"a","ligado":true"#,
+            ),
+            "bulkinsert true",
+        );
+        let morto = falar(
+            &mut carga,
+            r#""op":"bulkinsert","database":"loja","tabela":"a","ligado":false"#,
+        );
+        assert!(
+            morto.is_none(),
+            "o bulkinsert(false) tinha de cair no panico do fecho, e respondeu {:?}",
+            morto.map(|j| j.escrever())
+        );
+        assert!(
+            s.panico_no_fecho_de_teste.lock().unwrap().is_none(),
+            "o gancho do fecho nao disparou: o teste nao chegou ao meio do laco"
+        );
+
+        // O DANO primeiro: o bilhete do commit.
+        assert_eq!(
+            marcas(&dir),
+            pendente,
+            "a marca do commit SUMIU e a `b` nunca foi ao disco: o panico no meio \
+             do fecho tirou a `b` das sujas, e o reparo drenou as marcas pendentes"
+        );
+        assert!(
+            s.sujas.lock().unwrap().contains("loja/b"),
+            "a `b` saiu das sujas sem ter sincronizado"
+        );
+
+        // Com a `b` voltando a sincronizar, o fecho seguinte leva a marca --
+        // depois do `fsync`, e so entao.
+        *s.fecho_falha_de_teste.lock().unwrap() = None;
+        s.descarregar_sujas();
+        assert!(
+            marcas(&dir).is_empty(),
+            "a marca nao saiu nem depois do fsync da `b`"
+        );
+        assert!(s.sujas.lock().unwrap().is_empty());
+    }
+
+    /// **M1: o reparo completa SO a marca em voo.**
+    ///
+    /// Uma marca que nao e deste panico -- a do braco de erro do `COMMIT` que
+    /// ficou para o arranque, ou a de um `unlink` que falhou -- esta no disco,
+    /// e uma gravacao MAIS NOVA ja passou pela mesma linha. O panico vem numa
+    /// terceira tabela.
+    ///
+    /// Com o defeito (o reparo varria todas as marcas): a velha foi completada
+    /// e reaplicou o `atualizar` sem condicao, desfazendo a gravacao mais
+    /// nova. Com o conserto o reparo nem a olha -- ela e do arranque.
+    #[test]
+    fn o_reparo_completa_so_a_marca_em_voo() {
+        let dir = DirTemp::novo("panico-451-so-a-em-voo");
+        let mut c = config_base(&dir);
+        janela_parada(&mut c);
+        let s = Servidor::novo(c).unwrap();
+        let porta = porta_de_dados_de_verdade(&s);
+        semear(porta);
+
+        let mut tx = Ligacao::nova(porta);
+        ok(falar(&mut tx, r#""op":"begin","database":"loja""#), "begin");
+        ok(
+            falar(
+                &mut tx,
+                r#""op":"atualizar","database":"loja","tabela":"clientes","rowid":1,
+                   "valores":{"id":1,"nome":"velho"}"#,
+            ),
+            "atualizar na transacao",
+        );
+        ok(falar(&mut tx, r#""op":"commit""#), "commit");
+        let pendente = marcas(&dir);
+        assert_eq!(pendente.len(), 1, "premissa: a marca do commit, pendente");
+        // A marca que NAO e deste panico: a mesma intencao, com outro nome.
+        let alheia = dir.join("loja").join("transacao_999999.tx");
+        std::fs::copy(dir.join("loja").join(&pendente[0]), &alheia).unwrap();
+
+        ok(
+            pedir(
+                porta,
+                r#""op":"atualizar","database":"loja","tabela":"clientes","rowid":1,
+                   "valores":{"id":1,"nome":"novo"}"#,
+            ),
+            "a gravacao mais nova",
+        );
+        assert_eq!(nome_do_cliente(porta, 1), "novo");
+
+        armar(&s, "inserir");
+        let morto = pedir(
+            porta,
+            r#""op":"inserir","database":"loja","tabela":"outra","valores":{"id":2}"#,
+        );
+        assert!(
+            morto.is_none(),
+            "o inserir armado tinha de cair no panico, e respondeu {:?}",
+            morto.map(|j| j.escrever())
+        );
+
+        let nome = nome_do_cliente(porta, 1);
+        assert_eq!(
+            nome, "novo",
+            "o reparo completou uma marca que NAO era do panico e desfez a \
+             gravacao mais nova: o cliente 1 voltou para {nome:?}"
+        );
+        assert!(
+            alheia.exists(),
+            "o reparo apagou uma marca que nao era dele -- ela e do arranque"
+        );
+    }
+
+    // --------------------------------------------- os processos filhos
+
+    /// A variavel que diz ao FILHO qual cenario montar. Ver
+    /// [`filho_do_panico_451`].
+    const CENARIO: &str = "PHXSQL_TESTE_451_CENARIO";
+
+    /// Sobe o FILHO: este mesmo binario de testes, reexecutado so no
+    /// [`filho_do_panico_451`], com o cenario pedido.
+    ///
+    /// # Por que um processo filho
+    ///
+    /// O que estas provas medem e se o PROCESSO cai -- e um `abort` dentro do
+    /// binario de testes derrubaria a suite inteira. E o molde do
+    /// `comum::tracar_syscalls` do `phxsql-store`: nenhum gatilho novo mora no
+    /// binario de producao, nem no de depuracao -- os ganchos sao `cfg(test)`.
+    ///
+    /// Pelo `sh`, com `ulimit -c 0`: o `abort` que a prova espera nao deixa
+    /// `core` na maquina de quem roda a suite com o limite aberto.
+    fn subir_filho(dir: &std::path::Path, cenario: &str) -> (std::process::Child, u16) {
+        let eu = std::env::current_exe().expect("o proprio binario de testes");
+        let nome = concat!(module_path!(), "::filho_do_panico_451");
+        let nome = nome.split_once("::").map_or(nome, |(_, resto)| resto);
+        let mut filho = std::process::Command::new("sh")
+            .args(["-c", "ulimit -c 0; exec \"$0\" \"$@\""])
+            .arg(eu)
+            .args([
+                nome,
+                "--exact",
+                "--ignored",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env(FILHO, dir)
+            .env(CENARIO, cenario)
+            .env("RUST_BACKTRACE", "0")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::fs::File::create(dir.join("filho.err")).unwrap())
+            .spawn()
+            .expect("lancar o filho");
+        let ate = Instant::now() + Duration::from_secs(30);
+        loop {
+            if let Some(p) = std::fs::read_to_string(dir.join("porta"))
+                .ok()
+                .and_then(|t| t.trim().parse().ok())
+            {
+                return (filho, p);
+            }
+            if Instant::now() > ate || filho.try_wait().unwrap().is_some() {
+                let _ = filho.kill();
+                let _ = filho.wait();
+                panic!("o filho nao publicou a porta: {}", diagnostico(dir));
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    /// O erro padrao do filho.
+    fn diagnostico(dir: &std::path::Path) -> String {
+        std::fs::read_to_string(dir.join("filho.err")).unwrap_or_default()
+    }
+
+    /// Espera o filho terminar, ate o prazo. `None`: continua de pe.
+    fn fim_do_filho(
+        filho: &mut std::process::Child,
+        prazo: Duration,
+    ) -> Option<std::process::ExitStatus> {
+        let ate = Instant::now() + prazo;
+        while Instant::now() < ate {
+            if let Some(st) = filho.try_wait().unwrap() {
+                return Some(st);
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        None
+    }
+
+    /// O filho caiu pelo `abort` (SIGABRT), com a porta fechada.
+    fn caiu_pelo_abort(st: std::process::ExitStatus, dir: &std::path::Path, porta: u16) {
+        use std::os::unix::process::ExitStatusExt;
+        assert_eq!(
+            st.signal(),
+            Some(6),
+            "o filho caiu, mas nao pelo abort do piso: {st:?}\n{}",
+            diagnostico(dir)
+        );
+        assert!(
+            TcpStream::connect(("127.0.0.1", porta)).is_err(),
+            "a porta do filho continua atendendo depois da queda"
+        );
+    }
+
+    /// O que o processo de pe responde -- o dano, quando o defeito esta la.
+    fn o_que_ele_serve(porta: u16) -> Option<String> {
+        pedir(
+            porta,
+            r#""op":"varrer","database":"loja","tabela":"clientes","max":1000"#,
+        )
+        .map(|j| j.escrever())
+    }
+
+    /// Um `COMMIT` de 10, 11 e 12 em `clientes`, que o filho armado derruba.
+    fn commit_que_cai(porta: u16) {
+        let mut tx = Ligacao::nova(porta);
+        ok(falar(&mut tx, r#""op":"begin","database":"loja""#), "begin");
+        for id in [10, 11, 12] {
+            ok(
+                falar(
+                    &mut tx,
+                    &format!(
+                        r#""op":"inserir","database":"loja","tabela":"clientes",
+                       "valores":{{"id":{id},"nome":"T{id}"}}"#
+                    ),
+                ),
+                "inserir na transacao",
+            );
+        }
+        let morto = falar(&mut tx, r#""op":"commit""#);
+        assert!(
+            morto.is_none(),
+            "o commit armado tinha de cair no panico, e respondeu {:?}",
+            morto.map(|j| j.escrever())
+        );
+    }
+
+    /// **(c) O piso, H5: o reparo que falha DERRUBA o processo.**
+    ///
+    /// Com o defeito (a H1, ou um reparo que falha e segue): o processo fica
+    /// DE PE servindo a trava suja. Com o conserto: ele aborta (SIGABRT), e o
+    /// arranque seguinte completa a transacao que a marca confirmou.
+    #[cfg(unix)]
+    #[test]
+    fn reparo_que_falha_derruba_o_processo_em_vez_de_servir() {
+        let dir = DirTemp::novo("panico-451-h5");
+        let (mut filho, porta) = subir_filho(&dir, "reparo_falha");
+        semear(porta);
+        commit_que_cai(porta);
+        let Some(st) = fim_do_filho(&mut filho, Duration::from_secs(10)) else {
+            let servindo = o_que_ele_serve(porta);
+            let _ = filho.kill();
+            let _ = filho.wait();
+            panic!(
+                "o reparo falhou e o processo seguiu DE PE, servindo de estado \
+                 incerto: {servindo:?}"
+            );
+        };
+        caiu_pelo_abort(st, &dir, porta);
+        assert!(
+            diagnostico(&dir).contains("reparo da trava de dados FALHOU"),
+            "o filho caiu sem dizer por que: {}",
+            diagnostico(&dir)
+        );
+        // E o arranque repara: a marca confirmada completa, o indice em dia.
+        assert_eq!(
+            marcas(&dir).len(),
+            1,
+            "a marca do commit tinha de estar no disco"
+        );
+        let s = Servidor::novo(config_base(&dir)).unwrap();
+        let porta = porta_de_dados_de_verdade(&s);
+        assert!(marcas(&dir).is_empty(), "o arranque nao completou a marca");
+        conferir_indice(porta, &[1, 2, 3, 4, 5, 10, 11, 12]);
+    }
+
+    /// **M3: a operacao IMPOSSIVEL depois do `completar` tambem derruba.**
+    ///
+    /// O gatilho e o pedido 448 (a FK da transacao so e conferida depois da
+    /// marca): a filha com mae inexistente entra na lista, a passada morre na
+    /// PRIMEIRA escrita, e a completacao da marca em voo esbarra na FK. A
+    /// marca fica no disco (`NoArranque::Nao`) e o `AoSair` soltaria as travas
+    /// da transacao em seguida.
+    ///
+    /// Com o defeito (o reparo que nao olha as impossiveis): o processo segue
+    /// de pe com a marca orfa no disco e as travas soltas. Com o conserto ele
+    /// cai, e o arranque a resolve com a porta fechada.
+    ///
+    /// Se o 448 fechar, a FK passa a recusar ANTES da marca, o commit responde
+    /// com erro em vez de cair, e este teste diz isso -- ele nao passa por
+    /// engano: troque o gatilho.
+    #[cfg(unix)]
+    #[test]
+    fn marca_em_voo_com_operacao_impossivel_derruba_o_processo() {
+        let dir = DirTemp::novo("panico-451-impossivel");
+        let (mut filho, porta) = subir_filho(&dir, "impossivel");
+        ok(
+            pedir(porta, r#""op":"criar_database","database":"loja""#),
+            "criar_database",
+        );
+        ok(
+            pedir(
+                porta,
+                r#""op":"criar_tabela","database":"loja","tabela":"clientes",
+                   "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                              {"nome":"nome","tipo":"Str(40)"}],
+                   "indices":[{"nome":"pk_id","colunas":["id"],"unico":true,"primario":true}]"#,
+            ),
+            "criar_tabela clientes",
+        );
+        ok(
+            pedir(
+                porta,
+                r#""op":"criar_tabela","database":"loja","tabela":"pedidos",
+                   "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                              {"nome":"cliente_id","tipo":"Int8"}],
+                   "indices":[{"nome":"pk_id","colunas":["id"],"unico":true,"primario":true},
+                              {"nome":"por_cliente","colunas":["cliente_id"]}],
+                   "chaves_estrangeiras":[{"nome":"fk_cliente","colunas":["cliente_id"],
+                                           "tabela_ref":"clientes","colunas_ref":["id"],
+                                           "verificar":true,"ao_alterar":"cascata"}]"#,
+            ),
+            "criar_tabela pedidos",
+        );
+        ok(
+            pedir(
+                porta,
+                r#""op":"inserir","database":"loja","tabela":"clientes",
+                   "valores":{"id":1,"nome":"Ana"}"#,
+            ),
+            "a mae",
+        );
+        let mut tx = Ligacao::nova(porta);
+        ok(falar(&mut tx, r#""op":"begin","database":"loja""#), "begin");
+        ok(
+            falar(
+                &mut tx,
+                r#""op":"inserir","database":"loja","tabela":"pedidos",
+                   "valores":{"id":1,"cliente_id":1}"#,
+            ),
+            "a filha com mae",
+        );
+        let orfa = falar(
+            &mut tx,
+            r#""op":"inserir","database":"loja","tabela":"pedidos",
+               "valores":{"id":2,"cliente_id":999}"#,
+        );
+        assert!(
+            orfa.as_ref().is_some_and(|j| j.booleano_ou("ok", false)),
+            "o 448 fechou? a filha sem mae foi recusada ANTES da marca, e este \
+             teste perdeu o gatilho da operacao impossivel: {:?}",
+            orfa.map(|j| j.escrever())
+        );
+        let morto = falar(&mut tx, r#""op":"commit""#);
+        assert!(
+            morto.is_none(),
+            "o commit armado tinha de cair no panico, e respondeu {:?}",
+            morto.map(|j| j.escrever())
+        );
+        drop(tx);
+
+        let Some(st) = fim_do_filho(&mut filho, Duration::from_secs(10)) else {
+            let sobrou = marcas(&dir);
+            let servindo = pedir(
+                porta,
+                r#""op":"inserir","database":"loja","tabela":"pedidos",
+                   "valores":{"id":3,"cliente_id":1}"#,
+            )
+            .map(|j| j.escrever());
+            let _ = filho.kill();
+            let _ = filho.wait();
+            panic!(
+                "a marca em voo com operacao impossivel ficou no disco ({sobrou:?}) \
+                 e o processo seguiu DE PE, com as travas da transacao soltas -- \
+                 outra conexao gravou na tabela reservada: {servindo:?}"
+            );
+        };
+        caiu_pelo_abort(st, &dir, porta);
+        assert!(
+            diagnostico(&dir).contains("nao se completou"),
+            "o filho caiu sem dizer que a marca em voo nao se completou: {}",
+            diagnostico(&dir)
+        );
+        // O arranque a resolve: a primeira escrita fica (a ordem de digitacao
+        // nao desfaz), a impossivel sai contada, a marca sai do disco.
+        assert_eq!(
+            marcas(&dir).len(),
+            1,
+            "a marca em voo tinha de estar no disco"
+        );
+        let s = Servidor::novo(config_base(&dir)).unwrap();
+        let porta = porta_de_dados_de_verdade(&s);
+        assert!(marcas(&dir).is_empty(), "o arranque nao resolveu a marca");
+        let r = ok(
+            pedir(
+                porta,
+                r#""op":"buscar","database":"loja","tabela":"pedidos","indice":"pk_id","chave":[1]"#,
+            ),
+            "buscar o pedido 1",
+        );
+        assert_eq!(r.inteiro_ou("encontrados", -1), 1, "{}", r.escrever());
+    }
+
+    /// **M4: a marca em voo JA GRAVADA que nao se rele derruba -- e FICA.**
+    ///
+    /// O `COMMIT` grava e sincroniza a marca, a passada morre na primeira
+    /// escrita, e a releitura da marca no reparo falha com erro de E/S (o
+    /// `EMFILE` ou o `EIO` de verdade; aqui, injetado no `ler_marca`). Nao e
+    /// «commit que nunca comecou»: e a leitura que falhou.
+    ///
+    /// Com o defeito (a falha contada como «nao confere»): a marca sai do
+    /// disco, e ou a trava volta a atender com a transacao pela metade, ou --
+    /// com o `completadas == 0` sozinho -- o processo cai e o arranque nao
+    /// acha bilhete nenhum. Com o conserto a marca fica, o processo cai, e o
+    /// arranque, com descritores novos, a le e completa: a transacao inteira.
+    #[cfg(unix)]
+    #[test]
+    fn marca_em_voo_que_nao_se_rele_derruba_o_processo_e_fica() {
+        let dir = DirTemp::novo("panico-451-ilegivel");
+        let (mut filho, porta) = subir_filho(&dir, "marca_ilegivel");
+        semear(porta);
+        commit_que_cai(porta);
+        let Some(st) = fim_do_filho(&mut filho, Duration::from_secs(10)) else {
+            let servindo = o_que_ele_serve(porta);
+            let _ = filho.kill();
+            let _ = filho.wait();
+            panic!(
+                "a marca em voo JA GRAVADA nao se releu, o reparo a tratou como \
+                 «nao confere», e a trava voltou a atender com a transacao \
+                 confirmada pela metade: {servindo:?}"
+            );
+        };
+        caiu_pelo_abort(st, &dir, porta);
+        // O DANO primeiro: o bilhete da transacao confirmada.
+        assert_eq!(
+            marcas(&dir).len(),
+            1,
+            "a marca confirmada SUMIU do disco: o reparo a apagou sem te-la lido, \
+             e o arranque nao tem bilhete para completar a transacao"
+        );
+        assert!(
+            diagnostico(&dir).contains("nao se releu"),
+            "o filho caiu sem dizer que a marca nao se releu: {}",
+            diagnostico(&dir)
+        );
+        let s = Servidor::novo(config_base(&dir)).unwrap();
+        let porta = porta_de_dados_de_verdade(&s);
+        assert!(marcas(&dir).is_empty(), "o arranque nao completou a marca");
+        conferir_indice(porta, &[1, 2, 3, 4, 5, 10, 11, 12]);
+    }
+
+    /// **M3: o panico DENTRO do reparo e panico duplo, e derruba.**
+    ///
+    /// O Rust aborta quando um panico escapa de um `Drop` no desenrolar -- e
+    /// o reparo mora num `Drop`. O que esta prova segura e que ninguem ponha
+    /// um `catch_unwind` em volta do reparo para «nao derrubar»: com ele, o
+    /// panico some, o reparo nao conta, e a trava fica fechada com o processo
+    /// de pe -- a H1 de volta, por dentro do conserto.
+    #[cfg(unix)]
+    #[test]
+    fn panico_dentro_do_reparo_derruba_o_processo() {
+        let dir = DirTemp::novo("panico-451-duplo");
+        let (mut filho, porta) = subir_filho(&dir, "panico_duplo");
+        semear(porta);
+        commit_que_cai(porta);
+        let Some(st) = fim_do_filho(&mut filho, Duration::from_secs(10)) else {
+            let servindo = o_que_ele_serve(porta);
+            let _ = filho.kill();
+            let _ = filho.wait();
+            panic!(
+                "o panico DENTRO do reparo foi engolido e o processo seguiu DE PE: \
+                 {servindo:?}"
+            );
+        };
+        caiu_pelo_abort(st, &dir, porta);
+        assert!(
+            diagnostico(&dir).contains("DENTRO do reparo"),
+            "o filho caiu sem o panico do reparo no diagnostico: {}",
+            diagnostico(&dir)
+        );
+        let s = Servidor::novo(config_base(&dir)).unwrap();
+        let porta = porta_de_dados_de_verdade(&s);
+        assert!(marcas(&dir).is_empty(), "o arranque nao completou a marca");
+        conferir_indice(porta, &[1, 2, 3, 4, 5, 10, 11, 12]);
+    }
+
+    /// **A2: o panico com a trava na mao numa thread de SERVICO derruba o
+    /// processo -- aqui, o relogio da janela.**
+    ///
+    /// Com o defeito (o reparo cura a trava e deixa a thread morrer): o
+    /// processo fica de pe, e a janela para de fechar sozinha -- o ultimo
+    /// commit de uma rajada fica sem `fsync` e com a marca no disco para
+    /// sempre. Com o conserto o processo cai; o processo novo sobe com o
+    /// relogio, e a janela volta a fechar.
+    #[cfg(unix)]
+    #[test]
+    fn panico_no_relogio_da_janela_derruba_o_processo_em_vez_de_parar_a_janela() {
+        let dir = DirTemp::novo("panico-451-relogio");
+        let (mut filho, porta) = subir_filho(&dir, "relogio");
+        duas_tabelas(porta);
+        // Dois commits seguidos: o primeiro pode fechar a janela sozinho, pelo
+        // prazo; o segundo fica pendente para o relogio -- que cai no fecho.
+        // Sem conferir a resposta: com o conserto o processo pode cair NO MEIO
+        // deles, assim que o relogio acha a primeira escrita pendente.
+        for id in [1, 2] {
+            let Some(mut tx) = Ligacao::tentar(porta) else {
+                break;
+            };
+            let _ = falar(&mut tx, r#""op":"begin","database":"loja""#);
+            let _ = falar(
+                &mut tx,
+                &format!(
+                    r#""op":"inserir","database":"loja","tabela":"b","valores":{{"id":{id}}}"#
+                ),
+            );
+            let _ = falar(&mut tx, r#""op":"commit""#);
+        }
+        let Some(st) = fim_do_filho(&mut filho, Duration::from_secs(10)) else {
+            // O processo ficou de pe: a janela ainda fecha?
+            commit_em(porta, "b", 3);
+            commit_em(porta, "b", 4);
+            std::thread::sleep(Duration::from_secs(2));
+            let sobrou = marcas(&dir);
+            let _ = filho.kill();
+            let _ = filho.wait();
+            panic!(
+                "o panico no relogio-gravacao nao derrubou o processo, e a janela \
+                 parou de fechar sozinha: {} marca(s) de commit ainda no disco 2 s \
+                 depois de um relogio de 150 ms ({sobrou:?}) -- a thread morreu \
+                 calada e ninguem a subiu\n{}",
+                sobrou.len(),
+                diagnostico(&dir)
+            );
+        };
+        caiu_pelo_abort(st, &dir, porta);
+        assert!(
+            diagnostico(&dir).contains("SERVICO relogio-grav"),
+            "o filho caiu sem nomear a thread de servico: {}",
+            diagnostico(&dir)
+        );
+        // O processo novo, com o relogio: a janela fecha de novo.
+        let mut c = config_base(&dir);
+        relogio_curto(&mut c);
+        let s = Servidor::novo(c).unwrap();
+        s.ligar_relogio_de_gravacao();
+        let porta = porta_de_dados_de_verdade(&s);
+        commit_em(porta, "b", 5);
+        commit_em(porta, "b", 6);
+        let ate = Instant::now() + Duration::from_secs(5);
+        while !marcas(&dir).is_empty() && Instant::now() < ate {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(
+            marcas(&dir).is_empty(),
+            "a janela nao fechou no processo novo: {:?}",
+            marcas(&dir)
+        );
+    }
+
+    /// **M2: o panico FORA da trava nao repara nem derruba.**
+    ///
+    /// A conexao tem uma carga reservada e cai por um panico no `despachar`,
+    /// antes de qualquer trava. O `AoSair` dela solta a carga e, para isso,
+    /// descarrega as sujas -- tomando a trava no desenrolar. O filho tem o
+    /// reparo que falha armado: se o reparo rodar, o processo aborta.
+    ///
+    /// Com o defeito (o portao so no `panicking()`): o reparo roda por um
+    /// panico que nunca tocou em dado, falha, e derruba o servidor de todos.
+    /// Com o conserto a conexao cai sozinha, a carga e solta, e o resto segue.
+    #[cfg(unix)]
+    #[test]
+    fn panico_fora_da_trava_nao_repara_nem_derruba() {
+        let dir = DirTemp::novo("panico-451-fora");
+        let (mut filho, porta) = subir_filho(&dir, "fora_da_trava");
+        duas_tabelas(porta);
+        let mut carga = Ligacao::nova(porta);
+        ok(
+            falar(
+                &mut carga,
+                r#""op":"bulkinsert","database":"loja","tabela":"a","ligado":true"#,
+            ),
+            "bulkinsert true",
+        );
+        ok(
+            falar(
+                &mut carga,
+                r#""op":"inserir","database":"loja","tabela":"a","valores":{"id":1}"#,
+            ),
+            "inserir na carga",
+        );
+        let morto = falar(&mut carga, r#""op":"ping""#);
+        assert!(
+            morto.is_none(),
+            "o ping armado tinha de cair no panico, e respondeu {:?}",
+            morto.map(|j| j.escrever())
+        );
+        drop(carga);
+
+        if let Some(st) = fim_do_filho(&mut filho, Duration::from_secs(3)) {
+            panic!(
+                "um panico FORA da trava derrubou o processo: o `AoSair` tomou a \
+                 trava no desenrolar e o reparo rodou (e, falhando, abortou) por um \
+                 panico que nunca tocou em dado -- {st:?}\n{}",
+                diagnostico(&dir)
+            );
+        }
+        // A carga foi solta, e o servidor atende: outra conexao a reserva.
+        let r = pedir(
+            porta,
+            r#""op":"bulkinsert","database":"loja","tabela":"a","ligado":true"#,
+        );
+        let _ = filho.kill();
+        let _ = filho.wait();
+        let r = r.expect("a reserva seguinte caiu sem resposta");
+        assert!(
+            r.booleano_ou("ok", false),
+            "a carga da conexao que caiu nao foi solta: {}",
+            r.escrever()
+        );
+        assert!(
+            !diagnostico(&dir).contains("Reparo da trava"),
+            "o reparo rodou por um panico de fora da trava: {}",
+            diagnostico(&dir)
+        );
+    }
+
+    /// O relogio da janela a cada 150 ms, e o lote fora de alcance: quem fecha
+    /// a janela quando ninguem grava e o relogio.
+    fn relogio_curto(c: &mut Config) {
+        c.recursos.durabilidade = Durabilidade::PorLote;
+        c.recursos.lote_operacoes = 1_000_000;
+        c.recursos.lote_milissegundos = 150;
+    }
+
+    /// O FILHO das provas de processo -- so roda reexecutado por elas, que
+    /// passam o diretorio pela variavel [`FILHO`] e o cenario pela
+    /// [`CENARIO`]. Sozinho, volta sem fazer nada.
+    ///
+    /// Sobe o servidor com o cenario armado, publica a porta num arquivo e
+    /// espera. Se ainda estiver aqui depois do prazo, o panico nao derrubou o
+    /// processo -- e o pai decide se isso e o defeito ou o certo.
+    #[test]
+    #[ignore = "so roda reexecutado pelas provas de processo do pedido 451"]
+    fn filho_do_panico_451() {
+        let Some(dir) = std::env::var_os(FILHO) else {
+            return;
+        };
+        let dir = PathBuf::from(dir);
+        let cenario = std::env::var(CENARIO).unwrap_or_default();
+        let mut c = config_base(&dir);
+        if cenario == "relogio" {
+            relogio_curto(&mut c);
+        }
+        let s = Servidor::novo(c).unwrap();
+        match cenario.as_str() {
+            "reparo_falha" => {
+                s.reparo_falha_de_teste.store(true, Ordering::SeqCst);
+                armar(&s, "commit");
+            }
+            "impossivel" => armar(&s, "commit"),
+            "marca_ilegivel" => {
+                s.marca_ilegivel_de_teste.store(true, Ordering::SeqCst);
+                armar(&s, "commit");
+            }
+            "panico_duplo" => {
+                s.reparo_panica_de_teste.store(true, Ordering::SeqCst);
+                armar(&s, "commit");
+            }
+            "relogio" => {
+                s.ligar_relogio_de_gravacao();
+                *s.panico_no_fecho_de_teste.lock().unwrap() =
+                    Some((String::new(), "relogio-grav".into()));
+            }
+            "fora_da_trava" => {
+                s.reparo_falha_de_teste.store(true, Ordering::SeqCst);
+                *s.panico_de_teste_na_op.lock().unwrap() =
+                    Some(("ping".into(), PanicoDeTeste::ForaDaTrava));
+            }
+            outro => panic!("cenario desconhecido: {outro:?}"),
+        }
+        let porta = porta_de_dados_de_verdade(&s);
+        std::fs::write(dir.join("porta"), porta.to_string()).unwrap();
+        std::thread::sleep(Duration::from_secs(60));
     }
 }

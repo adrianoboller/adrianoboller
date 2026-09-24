@@ -109,6 +109,62 @@ pub fn rele_falso() -> (u16, std::sync::mpsc::Receiver<String>) {
     (porta, recebe)
 }
 
+/// O cliente de teste da porta de dados: UMA linha de pedido, UMA de resposta.
+///
+/// Existe porque os testes do `servidor.rs` tinham um cliente cada um --
+/// leituras de linha escritas a mao no mesmo arquivo, cada uma com o seu
+/// prazo e o seu jeito de dizer «a conexao caiu» (pedido 451, a lei «funcao e
+/// comando nao se duplicam»). O `conferidor_canal` conta essas leituras, e a
+/// do cliente passa a ser uma so, aqui.
+///
+/// «A conexao caiu sem responder» e `None`, e nao panico: e exatamente o dano
+/// que metade destes testes mede -- o panico dentro do `atender`, a recusa
+/// acima do teto, a queda do processo filho.
+pub struct Ligacao {
+    escrita: std::net::TcpStream,
+    leitor: std::io::BufReader<std::net::TcpStream>,
+}
+
+impl Ligacao {
+    /// O prazo de leitura de quem nao pede outro: folgado, porque quem espera
+    /// a resposta e a propria prova, e um prazo curto numa maquina carregada
+    /// viraria teste que floca.
+    pub const PRAZO: std::time::Duration = std::time::Duration::from_secs(20);
+
+    /// Conecta, ou `None` se a porta recusar -- o servidor que ja caiu.
+    pub fn tentar(porta: u16) -> Option<Ligacao> {
+        Ligacao::tentar_com_prazo(porta, Ligacao::PRAZO)
+    }
+
+    /// O mesmo, com o prazo de leitura dito por quem chama.
+    pub fn tentar_com_prazo(porta: u16, prazo: std::time::Duration) -> Option<Ligacao> {
+        let fluxo = std::net::TcpStream::connect(("127.0.0.1", porta)).ok()?;
+        fluxo.set_read_timeout(Some(prazo)).ok()?;
+        Some(Ligacao {
+            escrita: fluxo.try_clone().ok()?,
+            leitor: std::io::BufReader::new(fluxo),
+        })
+    }
+
+    /// Conecta, e o teste para se a porta recusar.
+    pub fn nova(porta: u16) -> Ligacao {
+        Ligacao::tentar(porta)
+            .unwrap_or_else(|| panic!("a porta de dados {porta} recusou a conexao"))
+    }
+
+    /// Manda `linha` (sem a quebra) e devolve a resposta, sem a quebra. `None`
+    /// quando a conexao caiu, recusou a escrita ou fechou sem responder.
+    pub fn pedir(&mut self, linha: &str) -> Option<String> {
+        use std::io::{BufRead, Write};
+        writeln!(self.escrita, "{linha}").ok()?;
+        let mut resposta = String::new();
+        match self.leitor.read_line(&mut resposta) {
+            Ok(0) | Err(_) => None,
+            Ok(_) => Some(resposta.trim_end().to_string()),
+        }
+    }
+}
+
 #[cfg(test)]
 mod testes {
     use super::*;

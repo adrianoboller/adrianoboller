@@ -77,9 +77,9 @@
       "id": "sujas-com-a-trava",
       "titulo": "`descarregar_sujas()` chamado com a trava de dados já na mão",
       "veredito": "PROVADA",
-      "segundos": 38.48,
+      "segundos": 57.82,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-09-24 13:28"
     },
     {
       "id": "cadeia-sem-teto",
@@ -785,17 +785,17 @@
       "id": "fecho-em-paralelo-engole-o-erro",
       "titulo": "o `fsync` que falha dentro do fio, e o `join` que engole o erro",
       "veredito": "PROVADA",
-      "segundos": 38.8,
+      "segundos": 55.96,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-09-24 13:28"
     },
     {
       "id": "fecho-em-paralelo-fio-que-nao-sobe",
       "titulo": "uma tabela do fecho fica sem fio, e ninguém percebe",
       "veredito": "PROVADA",
-      "segundos": 39.68,
+      "segundos": 53.61,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-09-24 13:28"
     },
     {
       "id": "pagina-ordenada-varre-o-indice-inteiro",
@@ -1097,9 +1097,9 @@
       "id": "ficha-do-fio-pulada-no-panico",
       "titulo": "a ficha da thread na telemetria fica «viva» para sempre quando o corpo entra em pânico",
       "veredito": "PROVADA",
-      "segundos": 34.86,
+      "segundos": 64.93,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-09-24 13:28"
     },
     {
       "id": "disco-erro-de-es-sem-aviso",
@@ -1137,9 +1137,9 @@
       "id": "recuperacao-deixa-a-marca-orfa",
       "titulo": "a recuperação completa (ou descarta) a marca `.tx` e a deixa no disco",
       "veredito": "PROVADA",
-      "segundos": 49.87,
+      "segundos": 53.68,
       "notas": [],
-      "quando": "2026-09-24 01:13"
+      "quando": "2026-09-24 13:28"
     },
     {
       "id": "recuperacao-nao-completa-o-commit",
@@ -1169,17 +1169,17 @@
       "id": "bulkinsert-false-nao-drena-a-marca",
       "titulo": "o `bulkinsert(false)` sincroniza a tabela e deixa a marca `.tx` do COMMIT no disco",
       "veredito": "PROVADA",
-      "segundos": 37.9,
+      "segundos": 58.49,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-09-24 13:28"
     },
     {
       "id": "fecho-sem-suja-nao-drena-a-marca",
       "titulo": "o fecho da janela volta antes de drenar as marcas quando não há tabela suja",
       "veredito": "PROVADA",
-      "segundos": 37.97,
+      "segundos": 55.47,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-09-24 13:28"
     },
     {
       "id": "fsync-do-arquivo-limpo",
@@ -2017,9 +2017,9 @@
       "id": "copia-do-de-hex-envenena-a-trava-de-dados",
       "titulo": "o binário que corta um caractere envenena a trava global de dados",
       "veredito": "PROVADA",
-      "segundos": 15.71,
+      "segundos": 18.64,
       "notas": [],
-      "quando": "2026-09-24 02:38"
+      "quando": "2026-09-24 13:28"
     },
     {
       "id": "percent-da-web-fatia-texto-por-byte",
@@ -2380,6 +2380,102 @@
       "segundos": 9.57,
       "notas": [],
       "quando": "2026-09-24 04:09"
+    },
+    {
+      "id": "panico-sob-a-trava-sem-reparo",
+      "titulo": "um pânico com a trava global de dados na mão a envenena para sempre: toda conexão recebe «a trava suja» até reiniciar",
+      "veredito": "PROVADA",
+      "segundos": 65.27,
+      "notas": [],
+      "quando": "2026-09-24 13:28"
+    },
+    {
+      "id": "trava-de-dados-recupera-sem-reparar",
+      "titulo": "a trava de dados envenenada volta a atender sem reparo nenhum (a H2 ingênua): o disco rasgado e a cópia em RAM servidos como se nada tivesse havido",
+      "veredito": "PROVADA",
+      "segundos": 61.45,
+      "notas": [],
+      "quando": "2026-09-24 13:28"
+    },
+    {
+      "id": "reparo-da-trava-sem-o-piso",
+      "titulo": "o reparo da trava que falha deixa o processo de pé, servindo de estado incerto, em vez de abortar",
+      "veredito": "PROVADA",
+      "segundos": 53.05,
+      "notas": [],
+      "quando": "2026-09-24 13:28"
+    },
+    {
+      "id": "reparo-da-trava-sem-as-marcas-orfas",
+      "titulo": "o reparo da trava não completa a marca em voo: o COMMIT que morreu na passada sai pela metade, com as travas da transação já soltas",
+      "veredito": "PROVADA",
+      "segundos": 66.36,
+      "notas": [],
+      "quando": "2026-09-24 14:11"
+    },
+    {
+      "id": "reparo-varre-todas-as-marcas",
+      "titulo": "o reparo da trava completa marca que não é do pânico: reaplica um `atualizar` velho por cima da gravação mais nova",
+      "veredito": "PROVADA",
+      "segundos": 67.59,
+      "notas": [],
+      "quando": "2026-09-24 14:11"
+    },
+    {
+      "id": "reparo-da-trava-deixa-o-residente",
+      "titulo": "o reparo da trava deixa a cópia residente de pé: a memória serve a tabela atrás do disco depois do pânico",
+      "veredito": "PROVADA",
+      "segundos": 59.81,
+      "notas": [],
+      "quando": "2026-09-24 13:28"
+    },
+    {
+      "id": "fecho-drena-as-sujas-antes-do-fsync",
+      "titulo": "o fecho da janela esvazia a lista das tabelas sujas antes de sincronizar: um pânico no meio apaga a marca de commit cujo dado não foi ao disco",
+      "veredito": "PROVADA",
+      "segundos": 56.58,
+      "notas": [],
+      "quando": "2026-09-24 13:28"
+    },
+    {
+      "id": "panico-em-thread-de-servico-morre-calado",
+      "titulo": "o pânico com a trava na mão numa thread de serviço é reparado e a thread morre calada: a janela de gravação para de fechar sozinha",
+      "veredito": "PROVADA",
+      "segundos": 59.79,
+      "notas": [],
+      "quando": "2026-09-24 13:28"
+    },
+    {
+      "id": "reparo-no-desenrolar-de-panico-de-fora",
+      "titulo": "o `AoSair` de um pânico FORA da trava a toma no desenrolar, e o reparo roda (e pode abortar) por um pânico que nunca tocou em dado",
+      "veredito": "PROVADA",
+      "segundos": 59.61,
+      "notas": [],
+      "quando": "2026-09-24 13:28"
+    },
+    {
+      "id": "reparo-ignora-a-operacao-impossivel",
+      "titulo": "a marca em voo com operação impossível fica no disco e o processo segue de pé, com as travas da transação soltas",
+      "veredito": "PROVADA",
+      "segundos": 59.54,
+      "notas": [],
+      "quando": "2026-09-24 14:11"
+    },
+    {
+      "id": "reparo-apaga-a-marca-gravada-que-nao-se-rele",
+      "titulo": "a marca em voo JÁ GRAVADA que não se relê no reparo sai do disco como «não confere»: a transação confirmada fica pela metade, ou sem bilhete para o arranque",
+      "veredito": "PROVADA",
+      "segundos": 54.23,
+      "notas": [],
+      "quando": "2026-09-24 14:11"
+    },
+    {
+      "id": "reparo-com-panico-engolido",
+      "titulo": "um `catch_unwind` em volta do reparo engole o pânico duplo: a trava fica fechada com o processo de pé",
+      "veredito": "PROVADA",
+      "segundos": 60.67,
+      "notas": [],
+      "quando": "2026-09-24 13:28"
     },
     {
       "id": "cifra-do-fio-imposta",

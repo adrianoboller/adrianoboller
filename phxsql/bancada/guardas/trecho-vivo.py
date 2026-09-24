@@ -217,6 +217,20 @@ dia, nunca no desejado:
   (`config-phz-dois-presentes-escolhe-calado`, `config-phz-terceiro-nao-e-ignorado`
   e `config-phz-terceiro-nao-avisa-no-arranque`, esta agora nos `avisos` do
   `Config::ler`). Contado no dia: 296 entradas vivas + 1 aposentada.
+  **SUBIU para 309 em 24/09/2026** (pedido 451, integrado sobre o 481, que
+  tinha levado o piso a 297 no mesmo dia): doze guardas novas do panico com a
+  trava de dados na mao. Cinco da primeira entrega -- o `Drop` sem o reparo
+  (a H1 de antes), a trava que recupera sem reparar (a H2 ingenua que o DBA
+  reprovou), o reparo sem o piso (`abort`), o reparo sem as marcas orfas e o
+  reparo que deixa o residente. Seis da revisao adversaria do DBA -- o fecho
+  que drena as sujas antes do `fsync` (A1), a thread de servico que morre
+  calada (A2), o reparo que varre todas as marcas (M1), o reparo no
+  desenrolar de um panico de fora (M2), a marca em voo com operacao
+  impossivel e o panico duplo engolido (M3). E uma da segunda revisao: a
+  marca em voo ja gravada que nao se rele e sai do disco como «nao confere»
+  (M4). As duas frentes subiram o piso a partir de 286 sem se verem; a conta
+  certa so existe no encontro delas, e foi feita pelo integrador com o
+  `--catraca` na arvore combinada: 309.
   impedir. Ele e a unica coisa nesta regua que reprova o APAGAMENTO; tudo o
   mais aqui reprova o envelhecimento.
 
@@ -325,7 +339,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 297
+PISO_DAS_ENTRADAS = 309
 
 # ------------------------------------------------------------- APOSENTADAS
 #

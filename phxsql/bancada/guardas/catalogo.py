@@ -11589,4 +11589,457 @@ pub const ITERACOES_MINIMAS_DO_CADASTRO: u32 = phxsql_store::cofre::ITERACOES_MI
             "lista_e_extrai_a_arvore_que_o_7zip_gravou",
         ],
     },
+    # O panico DENTRO da trava global de dados -- pedido 451 (H4 do DBA, com a
+    # H5 de piso), e a revisao adversaria do mesmo DBA (A1, A2, M1, M2, M3).
+    # Cada entrada repoe UM passo do reparo do `TravaMedida::drop`, ou o piso.
+    # Os testes sao pelo soquete, com o panico armado por campo `cfg(test)`;
+    # os que provam que o PROCESSO cai sobem o proprio binario de testes como
+    # filho (`filho_do_panico_451`).
+    # -----------------------------------------------------------------------
+    {
+        "id": "panico-sob-a-trava-sem-reparo",
+        "titulo": "um pânico com a trava global de dados na mão a envenena para sempre: toda conexão recebe «a trava suja» até reiniciar",
+        "porque": (
+            "pedido 451, achado da frente 446: o `Bin` do `inserir` era UM "
+            "gatilho, e qualquer panico com a trava de escrita na mao a deixava "
+            "envenenada -- veneno de `RwLock` e permanente, o processo seguia de "
+            "pe e o `Restart=on-failure` nem disparava. O defeito reposto e a "
+            "H1 de antes: o `Drop` do `TravaMedida` sem o reparo. Sem ele o "
+            "contador de panicos nao anda, e as duas portas da trava falham "
+            "fechado como antes. Caem os tres, cada um nomeando o dano: a "
+            "OUTRA conexao fechada, a transacao confirmada presa na marca, o "
+            "processo de pe servindo `SP000010`."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        if !self.tomada_no_desenrolar && std::thread::panicking() {
+            self.servidor
+                .reparar_a_trava(&self.instancia, self.marca_em_voo.as_ref());
+        }
+""",
+        "troca": """        // DEFEITO REPOSTO (451): o panico com a trava na mao nao repara nada.
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_panico_sob_a_trava::panico_no_meio_do_inserir_nao_fecha_a_base_e_nao_deixa_fantasma",
+            "servidor::testes_do_panico_sob_a_trava::panico_na_passada_do_commit_sai_com_a_transacao_inteira_na_hora",
+            "servidor::testes_do_panico_sob_a_trava::reparo_que_falha_derruba_o_processo_em_vez_de_servir",
+        ],
+        "seguem": [
+            "servidor::testes_das_threads::panico_dentro_do_atender_devolve_a_vaga_da_porta_de_dados",
+            "servidor::testes_janela_e_cadeia::so_um_lugar_toma_a_trava",
+        ],
+        "prazo": 600,
+    },
+    {
+        "id": "trava-de-dados-recupera-sem-reparar",
+        "titulo": "a trava de dados envenenada volta a atender sem reparo nenhum (a H2 ingênua): o disco rasgado e a cópia em RAM servidos como se nada tivesse havido",
+        "porque": (
+            "pedido 451, a alternativa que o parecer do DBA REPROVOU: recuperar "
+            "a trava (`into_inner`) como a `TravaDaGuarda` do cluster faz, sem "
+            "o reparo. Ali recuperar e certo porque o que se entorta e "
+            "`HashMap`; aqui e o disco. Esta entrada existe porque a primeira "
+            "prova fora de transacao PASSAVA com ela -- o pedido 456 ja deixa o "
+            "disco honesto, e o estrago da H2 mora fora dele: a copia "
+            "residente, e a transacao confirmada com a marca orfa e as travas "
+            "ja soltas. Dois pontos distantes do `servidor.rs`, por isso "
+            "`trocas`."
+        ),
+        "trocas": [
+            {
+                "arquivo": "crates/phxsql-server/src/servidor.rs",
+                "trecho": """        if !self.tomada_no_desenrolar && std::thread::panicking() {
+            self.servidor
+                .reparar_a_trava(&self.instancia, self.marca_em_voo.as_ref());
+        }
+""",
+                "troca": """        // DEFEITO REPOSTO (451, H2 ingenua): nada se repara...
+""",
+            },
+            {
+                "arquivo": "crates/phxsql-server/src/servidor.rs",
+                "trecho": """        if panicos > 0 && reparos == panicos {
+            return Ok(veneno.into_inner());
+        }
+""",
+                "troca": """        // ...e a trava envenenada volta a atender assim mesmo.
+        return Ok(veneno.into_inner());
+""",
+            },
+        ],
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_panico_sob_a_trava::panico_no_meio_do_inserir_nao_fecha_a_base_e_nao_deixa_fantasma",
+            "servidor::testes_do_panico_sob_a_trava::panico_na_passada_do_commit_sai_com_a_transacao_inteira_na_hora",
+            "servidor::testes_do_panico_sob_a_trava::reparo_que_falha_derruba_o_processo_em_vez_de_servir",
+        ],
+        "seguem": [
+            "servidor::testes_janela_e_cadeia::so_um_lugar_toma_a_trava",
+        ],
+        "prazo": 600,
+    },
+    {
+        "id": "reparo-da-trava-sem-o-piso",
+        "titulo": "o reparo da trava que falha deixa o processo de pé, servindo de estado incerto, em vez de abortar",
+        "porque": (
+            "pedido 451, a H5 do parecer do DBA: reparo que nao se pode afirmar "
+            "(sujas envenenadas, marca em voo com operacao impossivel ou parada) "
+            "vira `abort`, o meio do InnoDB -- o supervisor sobe o processo e o "
+            "arranque repara com a porta fechada. Sem o `abort`, a trava falha "
+            "fechado com o `SP000010` nomeado e o processo NAO cai: e a H1 com "
+            "uma frase melhor. A prova e um processo FILHO (o proprio binario de "
+            "testes reexecutado), porque o que se prova e a queda do processo."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """                std::process::abort();
+""",
+        "troca": """                // DEFEITO REPOSTO (451): o reparo que falha segue de pe.
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_panico_sob_a_trava::reparo_que_falha_derruba_o_processo_em_vez_de_servir",
+            "servidor::testes_do_panico_sob_a_trava::marca_em_voo_com_operacao_impossivel_derruba_o_processo",
+        ],
+        "seguem": [
+            "servidor::testes_do_panico_sob_a_trava::panico_no_meio_do_inserir_nao_fecha_a_base_e_nao_deixa_fantasma",
+            "servidor::testes_do_panico_sob_a_trava::panico_na_passada_do_commit_sai_com_a_transacao_inteira_na_hora",
+            "servidor::testes_do_panico_sob_a_trava::panico_no_relogio_da_janela_derruba_o_processo_em_vez_de_parar_a_janela",
+        ],
+        "prazo": 600,
+    },
+    {
+        "id": "reparo-da-trava-sem-as-marcas-orfas",
+        "titulo": "o reparo da trava não completa a marca em voo: o COMMIT que morreu na passada sai pela metade, com as travas da transação já soltas",
+        "porque": (
+            "pedido 451: o `COMMIT` grava a marca e faz a passada sob UMA tomada "
+            "da trava, e a marca fica EM VOO na propria `TravaMedida` ate o "
+            "destino dela estar decidido. Sem o segundo passo do reparo (o "
+            "`completar_marca` dela, o mesmo motor do braco de erro), a trava "
+            "volta a atender e o `AoSair` solta as travas da transacao -- "
+            "inclusive o fim de tabela que reservava os rowids -- com a "
+            "transacao confirmada pela metade: medido, OUTRA conexao viu "
+            "[1..5, 10] em vez de [1..5, 10, 11, 12]."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        if let Some(em_voo) = marca_em_voo {
+            let caminho = &em_voo.caminho;
+""",
+        # O defeito e o passo 2 inteiro fora, e nao um `completar` vazio: desde
+        # o M4, o relatorio vazio de uma marca ja gravada cai no
+        # `completadas == 0` e aborta o binario de testes.
+        "troca": """        // DEFEITO REPOSTO (451): a marca em voo fica para o reinicio.
+        if let Some(em_voo) = marca_em_voo.filter(|_| false) {
+            let caminho = &em_voo.caminho;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_panico_sob_a_trava::panico_na_passada_do_commit_sai_com_a_transacao_inteira_na_hora",
+        ],
+        "seguem": [
+            "servidor::testes_do_panico_sob_a_trava::panico_no_meio_do_inserir_nao_fecha_a_base_e_nao_deixa_fantasma",
+            "servidor::testes_do_panico_sob_a_trava::o_reparo_completa_so_a_marca_em_voo",
+        ],
+        "prazo": 600,
+    },
+    {
+        "id": "reparo-varre-todas-as-marcas",
+        "titulo": "o reparo da trava completa marca que não é do pânico: reaplica um `atualizar` velho por cima da gravação mais nova",
+        "porque": (
+            "pedido 451, M1 da revisao do DBA: a primeira versao do reparo "
+            "varria todas as bases atras de marca orfa -- e achava tambem a que "
+            "o braco de erro do `COMMIT` deixou para o arranque, a de um "
+            "`unlink` que falhou e a parada sem chave. Completa-las reaplica o "
+            "`atualizar` SEM CONDICAO: medido, o cliente 1 voltou de «novo» "
+            "para «velho». E a varredura tambem completava a marca PENDENTE da "
+            "tabela que o fecho interrompido nao sincronizou, apagando o "
+            "bilhete. O conserto completa so a marca em voo desta tomada, em "
+            "O(1); o defeito reposto e a varredura, pelo proprio `recuperar`."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        if let Some(em_voo) = marca_em_voo {
+            let caminho = &em_voo.caminho;
+            #[cfg(test)]
+            if self.marca_ilegivel_de_teste.load(Ordering::SeqCst) {
+                crate::transacao::falhar_a_proxima_leitura_de_teste();
+            }
+            let r = crate::transacao::completar_marca_em_voo(
+                dados,
+                &em_voo.database,
+                caminho,
+                em_voo.gravada,
+            );
+""",
+        # A varredura SEMPRE, e nao so no ramo da marca em voo: reposta dentro
+        # do ramo ela passava (o `inserir` solto nem entra nele).
+        "troca": """        // DEFEITO REPOSTO (451, M1): o reparo varre TODAS as marcas do disco.
+        {
+            let _ = marca_em_voo;
+            let em_voo = MarcaEmVoo {
+                database: String::new(),
+                caminho: PathBuf::from("(todas)"),
+                gravada: false,
+            };
+            let caminho = &em_voo.caminho;
+            let r = crate::transacao::recuperar(dados);
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_panico_sob_a_trava::o_reparo_completa_so_a_marca_em_voo",
+            "servidor::testes_do_panico_sob_a_trava::panico_no_fecho_da_janela_nao_apaga_a_marca_de_quem_nao_foi_ao_disco",
+        ],
+        "seguem": [
+            "servidor::testes_do_panico_sob_a_trava::panico_na_passada_do_commit_sai_com_a_transacao_inteira_na_hora",
+            "servidor::testes_do_panico_sob_a_trava::panico_no_meio_do_inserir_nao_fecha_a_base_e_nao_deixa_fantasma",
+        ],
+        "prazo": 600,
+    },
+    {
+        "id": "reparo-da-trava-deixa-o-residente",
+        "titulo": "o reparo da trava deixa a cópia residente de pé: a memória serve a tabela atrás do disco depois do pânico",
+        "porque": (
+            "pedido 451, e a guarda que nasceu de um teste que passava por "
+            "engano: a primeira versao da prova fora de transacao conferia a "
+            "outra conexao, o `.reg`, o indice e o `reindexar` -- e PASSOU com "
+            "a H2 ingenua reposta (recuperar a trava sem reparar), porque o "
+            "pedido 456 ja deixa o disco dizendo a verdade. O que a H2 deixa "
+            "errado e a copia residente, anotada DEPOIS do disco: medido, o "
+            "`selecionar_memoria` devolveu 5 linhas com o `.reg` em 6."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        let soltas = match self.residentes.lock() {
+            Ok(mut m) => {
+                let n = m.len();
+                m.clear();
+                n
+            }
+            Err(_) => 0,
+        };
+""",
+        "troca": """        // DEFEITO REPOSTO (451): a copia residente, atras do disco, fica.
+        let soltas = 0;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_panico_sob_a_trava::panico_no_meio_do_inserir_nao_fecha_a_base_e_nao_deixa_fantasma",
+        ],
+        "seguem": [
+            "servidor::testes_do_panico_sob_a_trava::panico_na_passada_do_commit_sai_com_a_transacao_inteira_na_hora",
+            "servidor::testes_do_panico_sob_a_trava::reparo_que_falha_derruba_o_processo_em_vez_de_servir",
+        ],
+        "prazo": 600,
+    },
+    {
+        "id": "fecho-drena-as-sujas-antes-do-fsync",
+        "titulo": "o fecho da janela esvazia a lista das tabelas sujas antes de sincronizar: um pânico no meio apaga a marca de commit cujo dado não foi ao disco",
+        "porque": (
+            "pedido 451, A1 da revisao do DBA: o `descarregar_sujas_com` "
+            "DRENAVA as sujas numa lista local e so devolvia as que falharam no "
+            "fim. Um panico no meio do laco levava as chaves que faltavam, e o "
+            "reparo da trava -- que comeca por este mesmo fecho -- achava as "
+            "sujas sem elas e drenava as marcas pendentes: o bilhete de um "
+            "commit cujo dado nao passou por `fsync` saia do disco, e uma queda "
+            "de energia depois disso perde commit confirmado (o invariante do "
+            "`docs/CONCORRENCIA.md` §12.6). O conserto copia a lista e tira a "
+            "chave so depois do `fsync` dela; o defeito reposto e o de antes, "
+            "com a devolucao das que falharam."
+        ),
+        "trocas": [
+            {
+                "arquivo": "crates/phxsql-server/src/servidor.rs",
+                "trecho": """            Ok(s) => s.iter().cloned().collect(),
+""",
+                "troca": """            // DEFEITO REPOSTO (451, A1): a lista sai DRENADA, antes do fsync.
+            Ok(mut s) => s.drain().collect(),
+""",
+            },
+            {
+                "arquivo": "crates/phxsql-server/src/servidor.rs",
+                "trecho": """        if !faltaram.is_empty() {
+            // Alguma tabela nao sincronizou""",
+                "troca": """        if !faltaram.is_empty() {
+            if let Ok(mut s) = self.sujas.lock() {
+                s.extend(faltaram.iter().cloned());
+            }
+            // Alguma tabela nao sincronizou""",
+            },
+        ],
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_panico_sob_a_trava::panico_no_fecho_da_janela_nao_apaga_a_marca_de_quem_nao_foi_ao_disco",
+        ],
+        "seguem": [
+            "servidor::testes_janela_e_cadeia::com_todas_sincronizadas_as_marcas_saem",
+            "servidor::testes_janela_e_cadeia::tabela_que_nao_sincroniza_segura_as_marcas",
+            "servidor::testes_janela_e_cadeia::uma_tabela_so_grava_como_sempre",
+        ],
+        "prazo": 600,
+    },
+    {
+        "id": "panico-em-thread-de-servico-morre-calado",
+        "titulo": "o pânico com a trava na mão numa thread de serviço é reparado e a thread morre calada: a janela de gravação para de fechar sozinha",
+        "porque": (
+            "pedido 451, A2 da revisao do DBA: o reparo cura a trava e NAO a "
+            "thread. A de atendimento que morre leva a conexao, e o cliente ve; "
+            "a de servico -- `relogio-gravacao`, `replica-*`, `replica-cluster`, "
+            "`backup-agendado`, `relogio-jobs` -- morre calada. Medido com o "
+            "relogio da janela: o processo ficou de pe e a marca do ultimo "
+            "commit de uma rajada seguiu no disco 2 s depois de um relogio de "
+            "150 ms. O conserto aborta (H5) quando a familia que o "
+            "`telemetria::subir` registrou e `servico`; o defeito reposto e a "
+            "familia que nunca casa."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        if crate::telemetria::familia_desta_thread() == Some("servico") {
+""",
+        "troca": """        // DEFEITO REPOSTO (451, A2): a thread de servico repara e segue.
+        if crate::telemetria::familia_desta_thread() == Some("nunca") {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_panico_sob_a_trava::panico_no_relogio_da_janela_derruba_o_processo_em_vez_de_parar_a_janela",
+        ],
+        "seguem": [
+            "servidor::testes_do_panico_sob_a_trava::panico_no_meio_do_inserir_nao_fecha_a_base_e_nao_deixa_fantasma",
+            "servidor::testes_do_panico_sob_a_trava::panico_no_fecho_da_janela_nao_apaga_a_marca_de_quem_nao_foi_ao_disco",
+        ],
+        "prazo": 600,
+    },
+    {
+        "id": "reparo-no-desenrolar-de-panico-de-fora",
+        "titulo": "o `AoSair` de um pânico FORA da trava a toma no desenrolar, e o reparo roda (e pode abortar) por um pânico que nunca tocou em dado",
+        "porque": (
+            "pedido 451, M2 da revisao do DBA: o portao do reparo era so "
+            "`thread::panicking()`. A conexao com carga reservada que cai por um "
+            "panico fora da trava desenrola pelo `AoSair`, que solta a carga "
+            "descarregando as sujas -- e toma a trava com o panico ja em curso. "
+            "Medido pelo processo filho, com o reparo que falha armado: o "
+            "servidor de todos abortou. O conserto so repara quando a trava foi "
+            "tomada FORA do desenrolar -- a mesma regra com que a `std` decide "
+            "o veneno."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        if !self.tomada_no_desenrolar && std::thread::panicking() {
+""",
+        "troca": """        // DEFEITO REPOSTO (451, M2): o portao e so o panico da thread.
+        if std::thread::panicking() {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_panico_sob_a_trava::panico_fora_da_trava_nao_repara_nem_derruba",
+        ],
+        "seguem": [
+            "servidor::testes_do_panico_sob_a_trava::panico_no_meio_do_inserir_nao_fecha_a_base_e_nao_deixa_fantasma",
+            "servidor::testes_do_panico_sob_a_trava::panico_na_passada_do_commit_sai_com_a_transacao_inteira_na_hora",
+        ],
+        "prazo": 600,
+    },
+    {
+        "id": "reparo-ignora-a-operacao-impossivel",
+        "titulo": "a marca em voo com operação impossível fica no disco e o processo segue de pé, com as travas da transação soltas",
+        "porque": (
+            "pedido 451, M3 da revisao do DBA: completar a marca em voo com "
+            "`NoArranque::Nao` deixa no disco a marca cuja operacao nao entra, "
+            "e o `AoSair` solta as travas da transacao logo depois do reparo. "
+            "Medido pelo processo filho, com o gatilho do pedido 448 (a FK "
+            "conferida depois da marca): outra conexao gravou na tabela "
+            "reservada e tomou o rowid 2, que a marca prometia. O conserto trata "
+            "impossivel e parada como o braco de erro do `COMMIT` trata "
+            "«pendente», e cai (H5)."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """            if !r.impossiveis.is_empty()
+                || !r.paradas.is_empty()
+""",
+        "troca": """            // DEFEITO REPOSTO (451, M3): a impossivel nao derruba.
+            if false
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_panico_sob_a_trava::marca_em_voo_com_operacao_impossivel_derruba_o_processo",
+        ],
+        "seguem": [
+            "servidor::testes_do_panico_sob_a_trava::panico_na_passada_do_commit_sai_com_a_transacao_inteira_na_hora",
+            "servidor::testes_do_panico_sob_a_trava::reparo_que_falha_derruba_o_processo_em_vez_de_servir",
+        ],
+        "prazo": 600,
+    },
+    {
+        "id": "reparo-apaga-a-marca-gravada-que-nao-se-rele",
+        "titulo": "a marca em voo JÁ GRAVADA que não se relê no reparo sai do disco como «não confere»: a transação confirmada fica pela metade, ou sem bilhete para o arranque",
+        "porque": (
+            "pedido 451, M4 da segunda revisao do DBA: o `tratar_marca` junta o "
+            "`Err` de E/S do `ler_marca` com «nao confere», e o completar apaga "
+            "a marca. Um panico na passada e um `EMFILE` na releitura davam a "
+            "trava servindo com a transacao pela metade (medido: o `varrer` com "
+            "6 linhas). E o conserto como o parecer o escreveu -- so o "
+            "`gravada && completadas == 0` -- derrubava o processo com a marca "
+            "ja apagada: o arranque nao achava bilhete (medido: 0 marcas, "
+            "esperado 1). O conserto e a politica `NoArranque::Gravada`: a "
+            "marca que este processo gravou fica, e a falha vai para as "
+            "impossiveis. O defeito reposto e a marca tratada como nao gravada."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """                caminho,
+                em_voo.gravada,
+            );
+""",
+        "troca": """                caminho,
+                // DEFEITO REPOSTO (451, M4): a marca gravada vira «nao confere».
+                false,
+            );
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_panico_sob_a_trava::marca_em_voo_que_nao_se_rele_derruba_o_processo_e_fica",
+        ],
+        "seguem": [
+            "servidor::testes_do_panico_sob_a_trava::panico_na_passada_do_commit_sai_com_a_transacao_inteira_na_hora",
+            "servidor::testes_do_panico_sob_a_trava::marca_em_voo_com_operacao_impossivel_derruba_o_processo",
+        ],
+        "prazo": 600,
+    },
+    {
+        "id": "reparo-com-panico-engolido",
+        "titulo": "um `catch_unwind` em volta do reparo engole o pânico duplo: a trava fica fechada com o processo de pé",
+        "porque": (
+            "pedido 451, M3 da revisao do DBA: o panico DENTRO do reparo e "
+            "panico duplo, e o Rust aborta quando ele escapa de um `Drop` no "
+            "desenrolar -- o piso vem de graca. A guarda existe contra quem "
+            "embrulhar o reparo para «nao derrubar»: medido, o `catch_unwind` "
+            "dentro do `Drop` PEGA o panico aninhado, o reparo nao conta, e o "
+            "processo fica de pe respondendo «1 panico e 0 reparos» -- a H1 de "
+            "volta, por dentro do conserto."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        match self.reparo_da_trava(dados, marca_em_voo) {
+""",
+        "troca": """        // DEFEITO REPOSTO (451, M3): o panico do reparo engolido.
+        let Ok(resultado) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.reparo_da_trava(dados, marca_em_voo)
+        })) else {
+            return;
+        };
+        match resultado {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_panico_sob_a_trava::panico_dentro_do_reparo_derruba_o_processo",
+        ],
+        "seguem": [
+            "servidor::testes_do_panico_sob_a_trava::panico_na_passada_do_commit_sai_com_a_transacao_inteira_na_hora",
+            "servidor::testes_do_panico_sob_a_trava::reparo_que_falha_derruba_o_processo_em_vez_de_servir",
+        ],
+        "prazo": 600,
+    },
 ]

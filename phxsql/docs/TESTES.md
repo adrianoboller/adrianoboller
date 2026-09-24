@@ -852,7 +852,7 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `config-phz-copia-guardada-fica-aberta` | a copia em claro que a migracao guarda leva o `0644` da instalacao, com o token, para sempre | 1 | ✅ provada |
 | `config-phz-migra-o-link` | a migracao de um config que e LINK move so o link e diz que guardou o original | 1 | ✅ provada |
 | `config-phz-aviso-procura-a-copia-pelo-lido` | o aviso de arranque procura a copia em claro por um nome que a migracao nao usou, e cala | 1 | ✅ provada |
-| `gravar-privado-temporario-e-o-proprio-config` | o temporario do `gravar_privado` troca a extensao, e com `--config servidor.tmp` ele e o proprio config | 1 | ✅ provada |
+| `gravar-privado-temporario-e-o-proprio-config` | o temporario do `gravar_privado` troca a extensao, e com `--config servidor.tmp` ele e o proprio config | 2 | ✅ provada |
 | `config-phz-desfazer-apaga-a-unica-copia` | o desfazer da troca apaga o arquivo novo mesmo quando o velho sumiu, e diz que o velho «continua valendo» | 1 | ✅ provada |
 | `config-phz-grava-o-texto-cru` | o servidor que subiu de um `config.phz` grava o texto cru dentro dele: o token volta a ler-se num editor | 1 | ✅ provada |
 | `replica-lista-e-pedida-nao-imposta` | replicas_autorizadas vazia libera todos -- e so isso e' pedida, nao imposta | 1 | ✅ provada |
@@ -937,9 +937,21 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `phxzip-contagem-sem-teto` | a contagem de entradas do cabeçalho comprimido dimensiona vetores pelo que o arquivo declara | 1 | ✅ provada |
 | `phxzip-cabecalho-plano-sem-teto` | o cabeçalho gravado em claro é analisado inteiro mesmo acima de `Limites::cabecalho` | 1 | ✅ provada |
 | `phxzip-nome-repetido-na-leitura` | duas entradas com o mesmo nome: o extrator grava a segunda por cima da primeira, calado | 1 | ✅ provada |
+| `panico-sob-a-trava-sem-reparo` | um pânico com a trava global de dados na mão a envenena para sempre: toda conexão recebe «a trava suja» até reiniciar | 3 | ✅ provada |
+| `trava-de-dados-recupera-sem-reparar` | a trava de dados envenenada volta a atender sem reparo nenhum (a H2 ingênua): o disco rasgado e a cópia em RAM servidos como se nada tivesse havido | 3 | ✅ provada |
+| `reparo-da-trava-sem-o-piso` | o reparo da trava que falha deixa o processo de pé, servindo de estado incerto, em vez de abortar | 2 | ✅ provada |
+| `reparo-da-trava-sem-as-marcas-orfas` | o reparo da trava não completa a marca em voo: o COMMIT que morreu na passada sai pela metade, com as travas da transação já soltas | 1 | ✅ provada |
+| `reparo-varre-todas-as-marcas` | o reparo da trava completa marca que não é do pânico: reaplica um `atualizar` velho por cima da gravação mais nova | 2 | ✅ provada |
+| `reparo-da-trava-deixa-o-residente` | o reparo da trava deixa a cópia residente de pé: a memória serve a tabela atrás do disco depois do pânico | 1 | ✅ provada |
+| `fecho-drena-as-sujas-antes-do-fsync` | o fecho da janela esvazia a lista das tabelas sujas antes de sincronizar: um pânico no meio apaga a marca de commit cujo dado não foi ao disco | 1 | ✅ provada |
+| `panico-em-thread-de-servico-morre-calado` | o pânico com a trava na mão numa thread de serviço é reparado e a thread morre calada: a janela de gravação para de fechar sozinha | 1 | ✅ provada |
+| `reparo-no-desenrolar-de-panico-de-fora` | o `AoSair` de um pânico FORA da trava a toma no desenrolar, e o reparo roda (e pode abortar) por um pânico que nunca tocou em dado | 1 | ✅ provada |
+| `reparo-ignora-a-operacao-impossivel` | a marca em voo com operação impossível fica no disco e o processo segue de pé, com as travas da transação soltas | 1 | ✅ provada |
+| `reparo-apaga-a-marca-gravada-que-nao-se-rele` | a marca em voo JÁ GRAVADA que não se relê no reparo sai do disco como «não confere»: a transação confirmada fica pela metade, ou sem bilhete para o arranque | 1 | ✅ provada |
+| `reparo-com-panico-engolido` | um `catch_unwind` em volta do reparo engole o pânico duplo: a trava fica fechada com o processo de pé | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**297 guardas: 1 aposentada, 292 provadas, 4 redundantes** — 7576 s de mutação, medido em 2026-09-16 15:25.
+**309 guardas: 1 aposentada, 304 provadas, 4 redundantes** — 8426 s de mutação, medido em 2026-09-16 15:25.
 
 As guardas que esta corrida ainda cita, hoje aposentadas:
 

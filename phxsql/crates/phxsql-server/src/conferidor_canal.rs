@@ -90,16 +90,23 @@ pub const ISENTOS: &[(&str, usize, &str)] = &[
     ),
     (
         "crates/phxsql-server/src/apoio_teste.rs",
-        2,
-        "o rele SMTP falso dos testes (`rele_falso`): e o SERVIDOR de mentira \
-         lendo o comando do cliente",
+        3,
+        "o rele SMTP falso dos testes (`rele_falso`, 2): e o SERVIDOR de \
+         mentira lendo o comando do cliente; e o cliente UNICO de teste da \
+         porta de dados (`Ligacao`, 1), o outro lado do fio lendo a resposta. \
+         Subiu de 2 para 3 no pedido 451 porque os clientes de teste do \
+         `servidor.rs` (o `ping` e os de `testes_das_threads`, \
+         `testes_da_saude_do_disco` e `testes_do_panico_sob_a_trava`) \
+         viraram chamadas a ele -- a lei «funcao e comando nao se duplicam» -- \
+         e o `servidor.rs` desceu de 4 para 1: a soma dos dois foi de 6 para 4",
     ),
     (
         "crates/phxsql-server/src/servidor.rs",
-        4,
-        "clientes de teste dentro de `testes_firewall_e_mensagens`, \
-         `testes_das_threads` e `testes_da_saude_do_disco` -- o outro lado do \
-         fio, lendo a resposta",
+        1,
+        "a prova da drenagem do pedido 216 em `testes_firewall_e_mensagens`: \
+         le o que sobrou num `BufReader` sobre bytes em memoria, e nao um \
+         soquete -- e o que ela confere e justamente que a linha seguinte \
+         continua no leitor",
     ),
 ];
 

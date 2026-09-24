@@ -1287,6 +1287,7 @@ QA, com julgamento de pergunta, e a redação do H.
 | C — segunda e terceira revisoes do 368, segunda do 451, segunda do 448 | forte | formato em disco, durabilidade e concorrencia: sao os pareceres que decidem se entra |
 | C — catalogo de catastrofes do 496 | forte | prova contra o SO em montagem privada; achou cinco defeitos ativos |
 | SEC — conferencia do 497 | forte | leitura adversaria da redacao de erro |
+| 451 — o panico com a trava na mao, tres voltas | forte | concorrencia e durabilidade da marca do COMMIT; o integrador devolveu uma vez (quinto cliente de teste subia o `ISENTOS`) e o M4 do parecer foi trocado por um conserto que a frente provou necessario |
 
 **A integração achou o que nenhuma frente via, de novo por território de
 arquivo não bastar em worktree compartilhado**: `cargo fmt --all` de uma

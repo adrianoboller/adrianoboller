@@ -1240,6 +1240,10 @@ impl Telemetria {
         // `phxsqld` e o `top` nao ajuda ninguem.
         let nome_do_so: String = ficha.nome.chars().take(15).collect();
         let subiu = std::thread::Builder::new().name(nome_do_so).spawn(move || {
+            // A familia fica na thread para quem precisar perguntar de dentro
+            // dela se a morte dela seria vista -- o reparo da trava de dados
+            // (pedido 451, A2). Ver `familia_desta_thread`.
+            FAMILIA_DO_FIO.with(|f| f.set(Some(familia)));
             // A ficha morre no `Drop`, e nao numa chamada depois do corpo:
             // um panico dentro do corpo pulava o `fio_morreu`, e a thread
             // ficava «viva» no registro e no contador para sempre. E o
@@ -1645,6 +1649,25 @@ pub fn amarrar(a: Option<Arc<Atividade>>) -> Amarrada {
 /// A atividade que esta thread serve agora, se houver.
 pub fn corrente() -> Option<Arc<Atividade>> {
     CORRENTE.with(|c| c.borrow().clone())
+}
+
+thread_local! {
+    /// A familia com que [`Telemetria::subir`] subiu ESTA thread.
+    static FAMILIA_DO_FIO: std::cell::Cell<Option<&'static str>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// A familia da thread corrente, como `subir` a declarou -- `None` para quem
+/// nao nasceu por ele (a thread principal, as dos testes).
+///
+/// Existe para o reparo da trava de dados (pedido 451, A2) separar a thread
+/// de SERVICO, cuja morte ninguem ve, da de atendimento, cuja morte leva a
+/// conexao e o cliente ve. A pergunta mora aqui porque `subir` e o unico
+/// `spawn` do servidor: a familia ja e declarada em cada chamada, e ler o que
+/// foi declarado dispensa uma segunda lista de nomes de thread -- lista que
+/// envelheceria no dia em que nascesse um laco novo.
+pub fn familia_desta_thread() -> Option<&'static str> {
+    FAMILIA_DO_FIO.with(std::cell::Cell::get)
 }
 
 // ------------------------------------------------------------- /proc, na mao

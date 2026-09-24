@@ -1190,6 +1190,10 @@ impl Leitura {
 
 /// Le a marca de volta. Ver [`Leitura`] para as tres respostas.
 pub fn ler_marca(caminho: &Path) -> Result<Leitura> {
+    #[cfg(test)]
+    if LEITURA_FALHA_DE_TESTE.with(|f| f.replace(false)) {
+        return Err(std::io::Error::other("releitura da marca falhou (teste)").into());
+    }
     let b = std::fs::read(caminho)?;
     if b.len() < CAB_ATE_CRC + 4 || &b[..8] != MAGIC {
         return Ok(Leitura::NaoConfere);
@@ -1414,6 +1418,18 @@ impl Relatorio {
     }
 }
 
+#[cfg(test)]
+thread_local! {
+    /// So nos testes: a proxima `ler_marca` DESTA thread falha com erro de E/S.
+    static LEITURA_FALHA_DE_TESTE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// So nos testes: arma a falha de leitura acima -- pedido 451, M4.
+#[cfg(test)]
+pub(crate) fn falhar_a_proxima_leitura_de_teste() {
+    LEITURA_FALHA_DE_TESTE.with(|f| f.set(true));
+}
+
 /// Varre a base inteira atras de marcas orfas e **completa** o que achar.
 ///
 /// # Por que ela anda para a FRENTE, e nunca para tras
@@ -1476,6 +1492,14 @@ enum NoArranque {
     /// acabar. Apagar a marca aqui trocaria «completa no proximo arranque»
     /// por «perdida para sempre», numa transacao que JA esta confirmada.
     Nao,
+    /// A marca EM VOO que este processo acabou de gravar e sincronizar
+    /// (pedido 451, M4 da segunda revisao do DBA). Como o [`NoArranque::Nao`],
+    /// e mais uma coisa: ela nao pode deixar de se reler. Se deixa -- erro de
+    /// E/S, falta de descritor --, nao e «commit que nunca comecou», e apaga-la
+    /// jogaria fora a transacao confirmada: ela FICA, e a falha vai para as
+    /// impossiveis, que o reparo da trava troca pela queda (H5). O arranque, com
+    /// descritores novos, a le e completa.
+    Gravada,
 }
 
 /// Trata UMA marca achada: completa, descarta ou deixa parada. Devolve se ela
@@ -1506,6 +1530,24 @@ fn tratar_marca(
             r.paradas.push(format!("{}: {motivo}", caminho.display()));
             false
         }
+        // A marca que ESTE processo gravou e sincronizou, e que nao se releu:
+        // o que falhou foi a leitura, e nao o commit. Ver `NoArranque::Gravada`.
+        Err(e) if arranque == NoArranque::Gravada => {
+            r.impossiveis.push(format!(
+                "{}: a marca que este processo gravou e sincronizou nao se releu \
+                 ({e}); ela fica no disco para o arranque",
+                caminho.display()
+            ));
+            false
+        }
+        Ok(Leitura::NaoConfere) if arranque == NoArranque::Gravada => {
+            r.impossiveis.push(format!(
+                "{}: a marca que este processo gravou e sincronizou nao confere \
+                 mais; ela fica no disco para o arranque",
+                caminho.display()
+            ));
+            false
+        }
         // Marca que nao confere, ou que nem da para abrir: commit que nunca
         // comecou.
         _ => {
@@ -1531,11 +1573,40 @@ fn tratar_marca(
 /// fecho da janela de durabilidade (`marcas_pendentes`): nao ha o que
 /// completar nelas, e quem as apaga e quem sincroniza.
 pub fn completar_marca(dados: &Instancia, database: &str, caminho: &Path) -> Relatorio {
+    completar_com(dados, database, caminho, NoArranque::Nao)
+}
+
+/// A marca EM VOO do reparo da trava de dados (pedido 451). `gravada` diz se
+/// o `gravar_marca` dela ja voltou `Ok`: antes disso, marca que nao existe ou
+/// que nao confere e commit que nunca comecou, e sai como sempre; depois,
+/// marca que nao se rele FICA -- ver [`NoArranque::Gravada`].
+pub fn completar_marca_em_voo(
+    dados: &Instancia,
+    database: &str,
+    caminho: &Path,
+    gravada: bool,
+) -> Relatorio {
+    let politica = if gravada {
+        NoArranque::Gravada
+    } else {
+        NoArranque::Nao
+    };
+    completar_com(dados, database, caminho, politica)
+}
+
+/// O corpo comum do [`completar_marca`] e do [`completar_marca_em_voo`]: o
+/// que muda entre os dois e so a politica.
+fn completar_com(
+    dados: &Instancia,
+    database: &str,
+    caminho: &Path,
+    politica: NoArranque,
+) -> Relatorio {
     let comeco = std::time::Instant::now();
     let mut r = Relatorio::default();
     match dados.abrir_database(database) {
         Ok(db) => {
-            if tratar_marca(&db, caminho, &mut r, NoArranque::Nao) {
+            if tratar_marca(&db, caminho, &mut r, politica) {
                 let _ = std::fs::remove_file(caminho);
             }
         }

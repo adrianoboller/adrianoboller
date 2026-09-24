@@ -33,7 +33,7 @@ A resposta não é «sim» nem «não» para nenhuma das quatro. É esta:
 
 | letra | o que o motor **garante** | o que ele **não** garante | onde a configuração muda |
 |---|---|---|---|
-| **A** | o conjunto de escrita é aplicado inteiro ou não é aplicado; o `ROLLBACK` não consome slot, rowid nem evento; uma queda no meio da passada é **completada** no arranque pela marca `.tx`; dentro da transação a **cascata** do `ao_alterar` entra no conjunto de escrita (ACID-C, §2.4) — o `ROLLBACK` a alcança e o `COMMIT` a conta | fora de transação, a cascata do `atualizar` solto não é atômica por desenho — uma queda no meio dela é **denunciada ou consertada**, nunca silenciosa (§2.4) | nada: a marca `.tx` sincroniza nos três regimes |
+| **A** | o conjunto de escrita é aplicado inteiro ou não é aplicado; o `ROLLBACK` não consome slot, rowid nem evento; uma queda no meio da passada é **completada** no arranque pela marca `.tx`; dentro da transação a **cascata** do `ao_alterar` entra no conjunto de escrita (ACID-C, §2.4) — o `ROLLBACK` a alcança e o `COMMIT` a conta | fora de transação, a cascata do `atualizar` solto não é atômica por desenho — uma **queda** no meio dela é **denunciada ou consertada** (§2.4); um **pânico** no meio dela **não**: é pior que a queda e sai calado até o pedido 490 | nada: a marca `.tx` sincroniza nos três regimes |
 | **C** | tipo, tamanho, obrigatoriedade, unicidade e **integridade referencial** são impostos na gravação, em toda porta local; «nunca se mata o pai que tem filhos» vale de vez e suave | a réplica **aplica, não julga** — ela não confere o que o outro servidor já julgou; `SET NULL` não existe e não vem; a falta do índice da chave é recusada na **gravação**, não na declaração | `"verificar": false` na chave desliga a conferência daquela chave, e é escolha escrita |
 | **I** | leitura suja **não acontece**; a transação vê a própria escrita; uma **instrução** lê um estado consistente; escrita contra escrita é serializada por linha; **desde 16/09/2026**, quem pedir `"leitura_repetivel": true` (ou `BEGIN ISOLATION LEVEL REPEATABLE READ`) ganha leitura repetível e ausência de fantasma, pela trava compartilhada (§4.5) | por padrão (sem pedir) **leitura repetível não existe**: entre duas instruções tudo pode mudar. Fantasma, leitura não repetível e **skew de escrita** acontecem nesse regime, e estão medidos; `SERIALIZABLE` não se reivindica em regime nenhum | `"leitura_repetivel": true` no `begin`, ou `ISOLATION LEVEL REPEATABLE READ` no `BEGIN` SQL |
 | **D** | a marca `.tx` é sincronizada **antes** da passada e é o ponto de compromisso; um `COMMIT` que respondeu OK volta depois da queda nos três regimes | em `por_lote` (o padrão) e em `sistema`, uma escrita **comum** responde OK sem nenhum `fsync`; quem abre mão é quem configurou | `recursos.durabilidade`, e é o campo que mais muda o significado de «OK» |
@@ -294,7 +294,12 @@ O que **continua** verdadeiro FORA da transação: uma escrita solta (sem `BEGIN
 ainda cascateia dentro do próprio `atualizar`, e ali a cascata não é atômica por
 desenho — o que ela garante é que nada é gravado antes de a árvore inteira ser
 conferida, e que uma queda no meio dela é **denunciada** no relatório do
-arranque ou **consertada** por ele (pedido 172), nunca silenciosa. E há um
+arranque ou **consertada** por ele (pedido 172), nunca silenciosa. **O pânico
+no mesmo ponto não tem essa garantia** (pedido 490, achado do DBA na revisão do
+451): a janela do `.ndx` da filha abre e fecha a cada linha, o `Drop` do pânico
+entre duas filhas acha a escrita em voo em zero e baixa o byte 52, e as filhas
+seguintes ficam na chave velha sem recusa nenhuma — ali o pânico é pior que a
+queda, que deixa o byte em 1 e faz a tabela recusar. E há um
 canto, consistente com o `READ COMMITTED` desta casa: uma filha **inserida por
 outra conexão** sob a chave velha, entre o `empilhar` e o `COMMIT`, é um
 fantasma que a cascata da transação não vê — o mesmo fantasma que a §4.1 já
@@ -649,7 +654,8 @@ gravado e depois liberado por falha de E/S no índice (`operacoes IMPOSSIVEIS`,
   completada no arranque. Dentro da transação a cascata do `ao_alterar` **entra
   no conjunto de escrita** (ACID-C, super-journal): o `ROLLBACK` a alcança e o
   `COMMIT` a conta. Fora de transação, a cascata do `atualizar` solto é
-  denunciada ou consertada numa queda, nunca silenciosa.
+  denunciada ou consertada numa queda; num **pânico** entre duas filhas ela
+  sai calada, pior que a queda, até o pedido 490.
 * **C — consistência: imposta na gravação; dentro da transação a cascata é
   coberta.** Tipo, tamanho, obrigatoriedade, unicidade e integridade
   referencial são conferidos em toda porta local de escrita, e «nunca se mata o

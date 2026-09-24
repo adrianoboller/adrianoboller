@@ -4539,10 +4539,11 @@ espaço nas pontas inclusive), o pulso com prova de verdade, o `%C3%AA` da web.
 
 ### 21.6 O que ficou de fora, e por quê
 
-- **A trava global de dados continua falhando fechado para sempre** diante de
+- **A trava global de dados continuava falhando fechado para sempre** diante de
   qualquer pânico dentro dela. O `Bin` era um gatilho, não o único possível. Ao
   contrário do cluster, ali o desenrolar pode deixar uma escrita pela metade,
-  então recuperar é decisão do DBA, e não desta frente.
+  então recuperar era decisão do DBA, e não desta frente. **Decidida e
+  entregue no pedido 451 — §24.**
 - **A thread de pulso que morre por pânico não se desmarca do `pulsando`** —
   o supervisor não sobe outra para um id marcado. O gatilho conhecido fechou;
   a fragilidade é do laço, e o conserto (desmarcar no `Drop` ou `catch_unwind`
@@ -5032,3 +5033,240 @@ calado (revisão SEC do 481, MÉDIO 2). O `provar-guardas.py` os roda com
 `-- --include-ignored`, e cada guarda pelo binário põe o OUTRO teste que exige
 root no `seguem`: uma corrida sem root dá ESTRAGOU, e não um PROVADA que só
 provou a falta de privilégio.
+## 24. O pânico com a trava de dados na mão: a queda que se cura na hora (pedido 451)
+
+Achado da frente 446 (§21.6), decidido pelo DBA em
+`docs/propostas/parecer-dba-451-448-2026-09-24.md` (H4 com a H5 de piso),
+entregue sobre o pedido 456, que tornou o disco honesto no desenrolar, e
+apertado pela revisão adversária do mesmo DBA
+(`docs/propostas/parecer-dba-451-2026-09-24.md`: A1, A2, M1, M2 e M3; e
+`docs/propostas/parecer-dba-451-2a-2026-09-24.md`: M4, T1 e T2). O que se
+errou no caminho está em três cognições de 24/09/2026:
+`cognicao_prova-contra-a-alternativa-reprovada_20260924_1150.md`,
+`cognicao_drenar-antes-do-trabalho-o-panico-leva-junto_20260924_1305.md` e
+`cognicao_o-reparo-cura-a-trava-e-nao-a-thread_20260924_1305.md`.
+
+### 24.1 O que havia
+
+Qualquer pânico dentro da trava global de dados a deixava envenenada, e o
+veneno do `RwLock` é permanente: dali em diante **todo** pedido de dados, de
+**toda** conexão, recebia `[SP000010] ... deixou a trava suja` até alguém
+reiniciar — com o processo de pé, então o `Restart=on-failure` nem disparava.
+O `Bin` do 446 era um gatilho; o BEFORE interpretado sob a trava, o `expect` da
+passada e a aritmética de página do `.ndx` são outros.
+
+### 24.2 O desenho, e onde ele mora
+
+O reparo roda no `Drop` do `TravaMedida`: é o único lugar que toma a trava
+(`so_um_lugar_toma_a_trava`), o guard é campo e só cai **depois** do corpo do
+`Drop` (ninguém vê o estado do meio), e o `AoSair` da conexão roda **depois**,
+mais acima na pilha — as travas da transação que caiu só se soltam com a marca
+dela completada.
+
+**O portão (M2).** O reparo só roda quando o pânico **começou com a trava na
+mão**: `std::thread::panicking()` no `Drop` **e** falso na tomada
+(`tomada_no_desenrolar`). O `AoSair` de uma conexão que caiu por um pânico de
+fora toma a trava no desenrolar para soltar a carga reservada — sem o segundo
+teste, o reparo rodaria (e poderia abortar) por um pânico que nunca tocou em
+dado. É a mesma regra com que a `std` decide o veneno: guard tomado no
+desenrolar não envenena ao cair.
+
+**O que ele faz, em ordem** (`Servidor::reparar_a_trava`):
+
+1. `descarregar_sujas_com` — sincroniza a janela e só então apaga as marcas
+   pendentes. **A1:** a chave só sai das sujas depois do `fsync` dela (antes a
+   lista era drenada no começo, e o pânico no meio do laço levava as chaves
+   que faltavam); sujas envenenadas são falha do reparo;
+2. completa a **marca em voo** desta tomada, e só ela (**M1**) — o `COMMIT` a
+   registra na própria `TravaMedida` desde antes de gravá-la até o destino dela
+   estar decidido, e o reparo chama o `transacao::completar_marca_em_voo`, o
+   mesmo motor do braço de erro, em O(1). O `.ndx` que a queda deixou para trás
+   é reconstruído por ser tabela nomeada na marca. A `TravaMedida` sabe se o
+   `gravar_marca` já voltou `Ok` (**M4**): antes disso, marca ausente ou que
+   não confere é commit que nunca começou e sai; depois, marca que não se relê
+   é **falha** do reparo e fica no disco para o arranque — sem isso, a falha de
+   leitura contava como «não confere», a marca ia embora e a trava voltava a
+   atender com a transação confirmada pela metade;
+3. solta **todas** as cópias residentes — fora de transação não há intenção
+   escrita dizendo qual tabela a operação morta tocava;
+4. conta o reparo. Só então a trava volta a atender.
+
+O veneno não sai (`clear_poison` é de 1.77, a casa promete 1.75): quem decide
+é o par `panicos_na_trava`/`reparos_da_trava`. Iguais, as duas portas
+(`travar_dados` e `travar_dados_para_ler`) recuperam o guard; diferentes, falham
+fechado com o `SP000010` que agora **nomeia** a trava e a conta:
+
+```text
+uma operacao anterior entrou em panico e deixou a trava suja: a trava de dados
+viu 1 panico(s) e 0 reparo(s) terminado(s), e nao volta a atender sem o reparo
+-- reinicie o servidor, o arranque repara
+```
+
+**O piso, H5.** Reparo que não se pode afirmar vira `std::process::abort()`,
+depois de uma linha no erro padrão: sujas envenenadas, ou a marca em voo com
+operação impossível ou parada por falta de chave (o mesmo critério de
+«pendente» do braço de erro do `COMMIT` — o `AoSair` soltaria as travas e outro
+escritor tomaria o rowid reservado), e a marca já gravada que não se relê ou
+não se completa (M4). Pânico dentro do reparo é pânico duplo, e o
+Rust aborta quando ele escapa do `Drop` no desenrolar.
+
+**A thread de serviço vai direto ao piso (A2).** O reparo cura a trava e não a
+thread: a de atendimento que morre leva a conexão, e o cliente vê; a de
+serviço (`relogio-gravacao`, `replica-*`, `replica-cluster`, `backup-agendado`,
+`relogio-jobs`) morre calada. Pânico com a trava de ESCRITA na mão numa thread cuja
+família o `telemetria::subir` registrou como `servico` aborta sem reparar, e o
+arranque repara. Escolhido contra o `catch_unwind` por volta de cada laço, que
+seria a mesma decisão escrita em cada laço que toma a trava — o laço de amanhã
+que a esquecesse voltaria a morrer calado. É o comportamento dos maduros: o
+postmaster do PostgreSQL derruba todos os backends e reinicia pela recuperação
+quando um processo auxiliar morre, e o InnoDB aborta no `ut_a` de uma thread de
+fundo.
+
+**O preço, dito:** um pânico determinístico num laço de serviço vira laço de
+quedas do processo inteiro. Nos **jobs** e no **backup agendado** o laço não
+tem a cadência do job: tem a do **arranque**, porque os dois rodam de novo logo
+que o processo sobe — o `ultimos` dos jobs zera a cada arranque e o backup
+começa em `ultimo = 0`, e com zero o `hora_de_rodar` diz que venceu (no «a cada
+N» sempre; no de hora marcada, quando a hora do dia já passou, que é o caso de
+quem acabou de rodar). É pânico → abort → sobe → roda de novo → abort. Com a
+unidade do `MANUAL.txt` §7.4 (`Restart=on-failure`, sem `RestartSec` nem
+`StartLimit*`), o systemd desiste pelo limite padrão (5 partidas em 10 s), ou o
+servidor sobe e cai em laço; nos dois casos fica **fora do ar até alguém
+desligar à mão** — `"ligado": false` no `jobs.json`, ou `"agendado": false` no
+`backup` do `config.json` —, e a tela não alcança, porque o processo não fica
+de pé. Vale em todo nó do cluster onde o job estiver cadastrado: o relógio de
+jobs não olha o papel do nó. Não medido; é leitura do código, do segundo
+parecer do DBA (`docs/propostas/parecer-dba-451-2a-2026-09-24.md`, N1, que
+propõe a saída). Não é regressão: na H1 o mesmo gatilho envenenava a trava a
+cada arranque.
+
+E o alcance é o da trava de **ESCRITA**: uma thread de serviço que entra em
+pânico com a de **leitura** na mão, ou fora de trava, não envenena nada e
+continua morrendo calada (P1, ⏸).
+
+### 24.3 O que passou a valer
+
+| depois de um pânico com a trava na mão | antes (H1) | agora (H4) |
+|---|---|---|
+| outra conexão, outra tabela | `SP000010` até reiniciar | atende na hora |
+| a tabela tocada **fora** de transação, num `inserir`/`atualizar`/`excluir` | `SP000010` | lê pelo `.reg`; toda operação de índice recusa nomeando o `.ndx` e mandando `reparar indice`, até o `reindexar` — o estado de um `SIGKILL` no mesmo ponto |
+| a **cascata solta** do `ao_alterar`, entre duas filhas | `SP000010`, e o dano calado depois do reinício | **o dano calado na hora**: as filhas seguintes ficam na chave velha sem recusa — pior que a queda, pedido 490 |
+| `COMMIT` que morreu na passada, depois da marca | marca órfã até reiniciar, e as travas da transação já soltas | a transação sai **inteira** antes de o `AoSair` soltar as travas; o rowid seguinte não colide com os reservados |
+| pânico no meio do fecho da janela | a marca ficava, com a trava fechada até o arranque completá-la | a marca fica até o `fsync`, e a trava volta a atender (a primeira entrega do 451 a perdia: A1) |
+| `COMMIT` que morreu na passada e cuja marca, já gravada, não se relê no reparo | marca no disco, trava fechada até reiniciar | o processo **aborta**, e a marca **fica** para o arranque (M4) |
+| cópia residente (`memoria_carregar`) | continuava servindo, atrás do disco | solta; `selecionar_memoria` recusa até recarregar |
+| pânico numa thread de serviço, com a trava de **ESCRITA** na mão | `SP000010` até reiniciar | o processo **aborta** (SIGABRT); job e backup agendado rodam de novo no arranque e abortam de novo, até alguém desligá-los à mão (§24.2) |
+| pânico numa thread de serviço com a trava de **leitura**, ou fora de trava | a thread morria calada | igual: morre calada (P1, ⏸) |
+| pânico **fora** da trava, com o `AoSair` tomando-a no desenrolar | nada (não envenenava) | nada — nem reparo, nem queda |
+| reparo que falha | — | o processo **aborta** (SIGABRT) |
+| no erro padrão | nada | o bloco `PHXSQL Reparo da trava de dados`, uma vez por pânico, ou a linha do `abort` com o motivo |
+
+A escrita interrompida **fora** de transação anda para a frente, e não some:
+com o slot e o contador do `.reg` já gravados, o `.reg` nunca reaproveita slot
+e não há marca que diga que ela não aconteceu. O que a prova cobra é que ela
+não vire fantasma — viva no `.reg` e fora do índice, ou dentro dele duas vezes.
+
+Medido pelo DBA na revisão: o reparo de um pânico no `COMMIT` custa 5–6 ms (o
+`completar` 1–2 ms, com um índice reconstruído); no `inserir`, 3 ms. No caminho
+sem pânico, o custo é o `std::thread::panicking()` na tomada e no `Drop` —
+**não medido**.
+
+### 24.4 A prova, nos dois sentidos
+
+Pelo soquete, no laço de aceitação de produção, com o pânico armado por campos
+que só existem com `cfg(test)` — o do motor (`ndx::panico_de_teste`,
+`InserirDepoisDoContador`) na thread da conexão, o do fecho da janela numa
+thread escolhida pelo nome, e o do `despachar` fora da trava. Nenhum pedido do
+fio arma coisa nenhuma, e o binário de produção não tem gatilho novo. Os testes
+que provam que o **processo** cai sobem o próprio binário de testes como filho
+(`filho_do_panico_451`, `#[ignore]`, pelo `sh` com `ulimit -c 0`).
+
+Em `servidor::testes_do_panico_sob_a_trava`, onze testes (um é o filho), e o que
+cada defeito reposto derruba — medido repondo um de cada vez:
+
+| teste | defeito que o derruba | o vermelho |
+|---|---|---|
+| `panico_no_meio_do_inserir_nao_fecha_a_base_e_nao_deixa_fantasma` | H1; H2 ingênua | «a trava de dados ficou FECHADA ... recebeu [SP000010]»; «a copia residente continuou servindo ... achadas 5» com o `.reg` em 6 |
+| `panico_na_passada_do_commit_sai_com_a_transacao_inteira_na_hora` | H1; H2 ingênua; reparo sem a marca em voo | «a transacao CONFIRMADA nao saiu inteira» — `[1..5, 10]` em vez de `[1..5, 10, 11, 12]` |
+| `panico_no_fecho_da_janela_nao_apaga_a_marca_de_quem_nao_foi_ao_disco` | **A1** (o fecho que drena); **M1** (a varredura) | «a marca do commit SUMIU e a `b` nunca foi ao disco» |
+| `o_reparo_completa_so_a_marca_em_voo` | **M1** (o reparo que varre todas) | «desfez a gravacao mais nova: o cliente 1 voltou para "velho"» |
+| `panico_no_relogio_da_janela_derruba_o_processo_em_vez_de_parar_a_janela` | **A2** | «a janela parou de fechar sozinha: 1 marca(s) de commit ainda no disco 2 s depois de um relogio de 150 ms» |
+| `panico_fora_da_trava_nao_repara_nem_derruba` | **M2** (o portão só no `panicking()`) | «um panico FORA da trava derrubou o processo ... ExitStatus(signal 6)» |
+| `marca_em_voo_com_operacao_impossivel_derruba_o_processo` | **M3** (a impossível que não derruba); H5 | «a marca em voo com operacao impossivel ficou no disco e o processo seguiu DE PE ... outra conexao gravou na tabela reservada: rowid 2» |
+| `marca_em_voo_que_nao_se_rele_derruba_o_processo_e_fica` | **M4** (a releitura que falha contada como «não confere»); o conserto literal do parecer, só o `gravada && completadas == 0` | «a trava voltou a atender com a transacao confirmada pela metade» — o `varrer` com 6 linhas; com o conserto literal, «a marca confirmada SUMIU do disco ... left: 0 right: 1» |
+| `panico_dentro_do_reparo_derruba_o_processo` | **M3** (`catch_unwind` em volta do reparo) | «o panico DENTRO do reparo foi engolido e o processo seguiu DE PE: ... 1 panico(s) e 0 reparo(s)» |
+| `reparo_que_falha_derruba_o_processo_em_vez_de_servir` | H1; H2 ingênua; H5 | «o reparo falhou e o processo seguiu DE PE, servindo de estado incerto» |
+
+Três coisas que só a reposição mostrou:
+
+- **A primeira prova fora de transação passava com a H2 ingênua**: o pedido 456
+  já deixa o disco honesto, e o estrago da H2 mora fora dele. A conferência da
+  cópia residente entrou por isso.
+- **A primeira reposição do M1 passou**: ela trocou a completação pela
+  varredura *dentro* do ramo da marca em voo, que num `inserir` solto nem roda.
+  O defeito verdadeiro varre sempre; reposto assim, cai.
+- **O `catch_unwind` dentro de um `Drop` no desenrolar PEGA o pânico aninhado**
+  (Rust 1.94, medido): o piso do pânico duplo não é garantia da linguagem
+  contra quem embrulha o reparo, e por isso tem guarda.
+- **O conserto do M4 como o parecer o escreveu não bastava**: o
+  `gravada && completadas == 0` derruba o processo, mas o `completar_marca` já
+  tinha apagado a marca ilegível antes de devolver — o arranque não achava
+  bilhete. Por isso a política `NoArranque::Gravada` do `tratar_marca`: a
+  marca que este processo gravou e não se releu **fica**, e a falha vai para as
+  impossíveis. O `completadas == 0` ficou como segunda trava.
+
+Doze guardas no catálogo, e as oito vizinhas cujo trecho mora no fecho da
+janela, no `telemetria::subir` ou na recuperação — **19 de 19 PROVADAS** pelo
+`provar-guardas.py` em 24/09/2026; depois do M4, as três cujo trecho ele
+deslocou (reancoradas) e a dele, **4 de 4 PROVADAS** de novo no mesmo dia. A
+`reparo-da-trava-sem-as-marcas-orfas` passou a repor o passo 2 **inteiro** fora,
+e não um relatório vazio: desde o M4 o vazio de uma marca gravada cai no
+`completadas == 0` e aborta o binário de testes.
+
+| guarda | o que repõe | caíram |
+|---|---|---|
+| `panico-sob-a-trava-sem-reparo` | o `Drop` sem o reparo (a H1) | 3/3 |
+| `trava-de-dados-recupera-sem-reparar` | a H2 ingênua, em dois pontos (`trocas`) | 3/3 |
+| `reparo-da-trava-sem-o-piso` | o reparo que falha e segue, sem `abort` | 2/2 |
+| `reparo-da-trava-sem-as-marcas-orfas` | o reparo sem completar a marca em voo | 1/1 |
+| `reparo-varre-todas-as-marcas` | o reparo que varre o disco (M1) | 2/2 |
+| `reparo-da-trava-deixa-o-residente` | o reparo sem soltar os residentes | 1/1 |
+| `fecho-drena-as-sujas-antes-do-fsync` | o fecho que drena a lista (A1) | 1/1 |
+| `panico-em-thread-de-servico-morre-calado` | a família que nunca casa (A2) | 1/1 |
+| `reparo-no-desenrolar-de-panico-de-fora` | o portão só no `panicking()` (M2) | 1/1 |
+| `reparo-ignora-a-operacao-impossivel` | a impossível que não derruba (M3) | 1/1 |
+| `reparo-com-panico-engolido` | o `catch_unwind` em volta do reparo (M3) | 1/1 |
+| `reparo-apaga-a-marca-gravada-que-nao-se-rele` | a marca já gravada tratada como não gravada (M4) | 1/1 |
+
+As vizinhas, reprovadas contra o código novo e todas PROVADAS:
+`fecho-em-paralelo-engole-o-erro`, `fecho-em-paralelo-fio-que-nao-sobe`,
+`fecho-sem-suja-nao-drena-a-marca`, `bulkinsert-false-nao-drena-a-marca`,
+`sujas-com-a-trava`, `ficha-do-fio-pulada-no-panico`,
+`recuperacao-deixa-a-marca-orfa` e `copia-do-de-hex-envenena-a-trava-de-dados`.
+
+### 24.5 O que ficou de fora, e por quê
+
+- **A cascata solta (pedido 490).** Um pânico entre duas filhas de uma cascata
+  do `ao_alterar` fora de transação é **pior que a queda**: a janela do `.ndx`
+  da filha abre e fecha a cada linha, o `Drop` acha a escrita em voo em zero e
+  baixa o byte 52, e as filhas seguintes ficam na chave velha sem recusa. O
+  reparo não o alcança; o `MANUAL.txt` e o `docs/ACID.md` dizem isso.
+- **O `Mutex` de `transacoes` (pedido 458)** não muda: o pânico que o
+  envenena dentro do `COMMIT` também envenena a de dados (a de dados é tomada
+  antes, ordem única), e só a de dados se cura. O que muda é o raio: antes a
+  base inteira caía junto; agora só o que passa por `transacoes`.
+- **A guarda do `Bin` (`copia-do-de-hex-envenena-a-trava-de-dados`)** continua
+  pegando, com outro vermelho: a trava já não envenena, e o que sobra do
+  defeito é a conexão perdida.
+- **O evento do diário da escrita interrompida** não existe — o pânico veio
+  antes do `.log` —, e o reparo não o reescreve: a réplica não recebe aquela
+  linha. É o mesmo buraco de um `SIGKILL` no mesmo ponto (parecer, tabela (a)).
+- **O byte 52 levantado não passa por `fsync`** (baixo do DBA): é do `.ndx`, do
+  pedido 456, e não do reparo.
+- **A comparação com `SIGKILL` no mesmo ponto** (M3 do DBA) não tem prova
+  própria: a do `inserir` afirma o mesmo estado pela recusa nomeada, e não
+  mata o processo para comparar.
+- **Sem supervisor** (Windows sem Serviço, processo solto), a H5 é a H1 sem a
+  mensagem: o processo cai e ninguém o sobe. O `MANUAL.txt` traz o `sc
+  failure` do Windows, **não medido**.
+- **No cluster**, a H5 vira failover. Não medido.

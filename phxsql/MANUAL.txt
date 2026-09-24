@@ -343,8 +343,20 @@ Detalhes e o que a ligacao ensinou em docs/CONSOLE.md.
         systemctl daemon-reload
         systemctl enable --now phxsql
 
+    O Restart=on-failure nao e enfeite: e ele que traz o servidor de volta
+    quando o reparo de um panico com a trava de dados na mao falha e o
+    processo aborta de proposito (ver TRANSACOES, «se uma operacao entrar em
+    panico»). O arranque seguinte repara antes de abrir a porta.
+
     WINDOWS: crie um Servico do Windows apontando para phxsqld.exe. Ou uma
-    Tarefa Agendada disparada no logon. O diretorio de trabalho do servico
+    Tarefa Agendada disparada no logon. O equivalente do Restart=on-failure
+    e a recuperacao do servico -- na aba "Recuperacao", "Reiniciar o
+    servico" nas tres falhas, ou:
+
+        sc failure phxsql reset= 86400 actions= restart/5000/restart/5000/restart/5000
+
+    (Nao medido no Windows: o abort do reparo do pedido 451 so foi provado no
+    Linux.) O diretorio de trabalho do servico
     NAO PRECISA MAIS ser a pasta do config.json (ver CAMINHOS, 7.2) -- so
     importa se voce escreveu algum dos seis campos de caminho como relativo
     E quer que ele valha contra outra pasta.
@@ -2004,6 +2016,66 @@ TRANSACOES: BEGIN, COMMIT, ROLLBACK E SAVEPOINT
     aconteceu: a marca transacao_<id>.tx e sincronizada antes da passada e e o
     ponto de compromisso. No arranque, a recuperacao COMPLETA o commit -- ela
     anda para a frente, nunca para tras -- e imprime o bloco PHXSQL Recovery.
+
+    SE UMA OPERACAO ENTRAR EM PANICO COM A TRAVA DE DADOS NA MAO (defeito do
+    servidor, e nao do pedido), o servidor NAO fica mais respondendo
+    "[SP000010] ... deixou a trava suja" ate alguem reiniciar. A thread que
+    caiu repara na hora, ANTES de soltar a trava, fazendo o que o arranque
+    faria -- sincroniza as tabelas da janela, completa a marca .tx do COMMIT
+    que morreu no meio e solta as tabelas carregadas em memoria -- e imprime
+    no erro padrao, uma vez por panico:
+
+        PHXSQL Reparo da trava de dados -- panico 1 com a trava na mao
+
+    As outras conexoes seguem atendendo. O que o operador ve depois:
+
+      - a tabela que a operacao interrompida gravava FORA de transacao,
+        num inserir, atualizar ou excluir, recusa buscas e gravacoes dizendo
+        que o indice ficou para tras e mandando reparar -- rode
+        {"op":"reindexar",...} nela. E o mesmo estado que uma queda do
+        processo naquele ponto deixaria;
+      - EXCECAO, e ela e pior que a queda: um panico no MEIO DA CASCATA de
+        um atualizar solto (a filha seguindo a mae pela chave, fora de
+        transacao) NAO faz a filha recusar. As filhas que a cascata ainda nao
+        tinha alcancado ficam na chave velha, sem aviso nenhum. Numa queda no
+        mesmo ponto a filha recusaria. O conserto e o pedido 490; ate la,
+        depois de um panico, rode o reindexar e confira as filhas da tabela
+        que o atualizar tocava;
+      - uma tabela carregada com memoria_carregar precisa ser carregada de
+        novo: o selecionar_memoria recusa ate la.
+
+    Se o reparo NAO puder ser afirmado, o processo ABORTA (sinal SIGABRT) em
+    vez de servir de estado incerto, com uma linha "o reparo da trava de
+    dados FALHOU" no erro padrao. O mesmo acontece quando o panico e numa
+    thread de SERVICO -- o relogio que fecha a janela de gravacao, a
+    replicacao, o backup agendado, os jobs --, com a linha "thread de SERVICO"
+    no erro padrao: o reparo curaria a trava, mas a thread morreria calada e
+    o que ela fazia pararia sem ninguem saber. Quem sobe o processo de novo e
+    o supervisor -- o Restart=on-failure da secao 7.4 --, e o arranque repara
+    com a porta fechada. Sem supervisor, o servidor fica fora do ar ate alguem
+    subi-lo. Isso vale para o panico com a trava de ESCRITA na mao; com a de
+    leitura, ou fora de trava, a thread de servico continua morrendo calada.
+
+    UM JOB OU O BACKUP AGENDADO QUE ENTRA EM PANICO NAO CAI UMA VEZ SO. Os
+    dois rodam de novo logo que o servidor sobe -- o job "a cada N" sempre, o
+    de hora marcada quando a hora do dia ja passou --, entram em panico de
+    novo e derrubam o processo de novo. O systemd desiste depois de algumas
+    partidas seguidas (ou o servidor fica subindo e caindo), e a tela nao
+    ajuda, porque o servidor nao fica de pe. Para sair do laco, desligue o
+    culpado A MAO, com o servidor parado, e suba de novo:
+
+      - o job: "ligado": false na entrada dele no jobs.json;
+      - o backup agendado: "agendado": false no bloco "backup" do
+        config.json.
+
+    Se o systemd ja desistiu, zere a conta dele antes de subir:
+
+        systemctl reset-failed phxsql
+        systemctl start phxsql
+
+    O erro padrao da queda diz "thread de SERVICO" e o nome da thread
+    (relogio-jobs ou backup-agendado). No cluster, isso vale em todo no onde
+    o job estiver cadastrado, e nao so no master.
 
     SO PELA PORTA DE DADOS. HTTP nao tem conexao para a transacao morrer
     amarrada. Pela tela, mande as operacoes num pedido so.
