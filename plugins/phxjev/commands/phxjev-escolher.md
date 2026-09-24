@@ -19,3 +19,5 @@ Use a skill `phxjev` e aplique o preset **escolher** em: $ARGUMENTS
    das tres: choque com petrea, empate real ou produto.
 
 Registre tambem a opcao perdedora, com a `p` e o motivo em uma linha.
+
+Saida: JSON da secao 5 da skill passado ao `phxjev.py veredito`; mostre a saida dele sem editar.

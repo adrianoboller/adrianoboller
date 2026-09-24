@@ -18,4 +18,4 @@ Para cada achado:
 4. Aplique os limiares da secao 4 da skill, na ordem da tabela; o primeiro
    `descartar` encerra o achado.
 
-Saida: so o bloco da secao 5, ordenado por severidade.
+Saida: JSON da secao 5 da skill passado ao `phxjev.py veredito`; mostre a saida dele sem editar.

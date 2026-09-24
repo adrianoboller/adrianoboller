@@ -9,8 +9,8 @@ probabilidade por opcao, e o veredito tirado de **limiar fixo**.
 | | Jev | PhxJev | Restricao nossa que causou a divergencia |
 |---|---|---|---|
 | Quem julga | modelo proprio, via API paga | o proprio agente, pela skill | zero dependencia externa; sem chave |
-| Calibracao | medida | **nao medida** (declarada na saida) | nao ha bancada ainda — skill §7 |
-| Limiar | codigo | tabela fixa na skill | pedido: plugin em markdown |
+| Calibracao | medida | registro + `desfecho` + `calibrar` (Brier, faixas); **nao medida** abaixo de 50 desfechos | medida, nao declarada |
+| Limiar | codigo | codigo: `scripts/phxjev.py` (so `std`) | exercitado ao vivo, o juiz em markdown fugiu do formato |
 | Presets | review / why / pick / ask | revisar / porque / escolher / perguntar | + `defeito_ativo` (☐ × ⏸, decisao de 24/09) e `fere_petrea` + regua PG4/MDB3/MY2/SQ1 |
 | Evidencia | nao exige | **cada `p` cita `arquivo:linha`**; sem evidencia = 0,5 | modo honesto; diagnostico plausivel nao e medido |
 
@@ -30,6 +30,12 @@ Local, sem marketplace: `claude --plugin-dir plugins/phxjev`.
 /phxjev-porque   <sintoma> [hipA | hipB]
 /phxjev-escolher <decisao> : <opA> | <opB>
 /phxjev-perguntar noul "o .reg reaproveita slot excluido?"
+```
+
+## Testes
+
+```
+python3 plugins/phxjev/scripts/teste_phxjev.py
 ```
 
 ## Limite

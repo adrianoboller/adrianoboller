@@ -16,3 +16,5 @@ Use a skill `phxjev` e aplique o preset **porque** em: $ARGUMENTS
    de novo. Maximo de tres voltas; depois, sobe como empate real.
 
 Hipotese que morreu fica no bloco com a `p` dela — e resultado, nao sobra.
+
+Saida: JSON da secao 5 da skill passado ao `phxjev.py veredito`; mostre a saida dele sem editar.

@@ -8,4 +8,4 @@ Use a skill `phxjev` e responda como juiz tipado: $ARGUMENTS
 - Sem tipo declarado: pergunta de sim/nao vira `noul`; com opcoes, `choice`;
   com regua, `score`.
 - Monte o estado so com o que for lido agora; cite `arquivo:linha`.
-- Saida: so o bloco da secao 5 da skill, com `conf` e a linha `escalar`.
+- Saida: JSON da secao 5 da skill passado ao `phxjev.py veredito`; mostre a saida dele sem editar.

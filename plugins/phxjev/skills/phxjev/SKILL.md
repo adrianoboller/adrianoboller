@@ -47,7 +47,10 @@ menores em vez de resumir de memoria.
 4. **Sem prosa na saida.** O bloco da secao 5 e a resposta inteira; uma linha
    de motivo por pergunta, no maximo.
 
-## 4. Limiares fixos (o veredito sai daqui, nao do juiz)
+## 4. Limiares fixos (o veredito sai do script, nao do juiz)
+
+A tabela vive em `scripts/phxjev.py` (constantes `LIMIAR_*`); esta e a copia de
+leitura. Mudou la, muda aqui no mesmo commit.
 
 | Pergunta | Regra | Veredito |
 |---|---|---|
@@ -60,21 +63,34 @@ menores em vez de resumir de memoria.
 | qualquer `choice` | `conf < 0,40` ou top1 − top2 `< 0,15` | **empate** — medir mais; se nada mede, sobe ao dono |
 | `severidade` (0–3) | `≥ 2,0` | **bloqueia a entrega** |
 
-Os limiares sao **aplicados literalmente**. Juiz que ajusta o limiar para caber
-no veredito que queria nao julgou — escolheu.
+Juiz que ajusta o limiar para caber no veredito que queria nao julgou —
+escolheu. Por isso quem aplica e o codigo.
 
-## 5. Formato da saida
+## 5. Formato da saida: JSON para o script, nunca bloco escrito a mao
 
+Exercitado ao vivo, o juiz acertou a resposta e **fugiu do formato**
+(`conf: alto`, sem a linha da calibracao). Por isso o juiz so devolve
+probabilidades; confianca, limiar, veredito e registro saem do script:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/phxjev.py" veredito <<'JSON'
+{"preset": "revisar",
+ "estado": ["reg.rs:17-20", "reg.rs:2026"],
+ "itens": [
+  {"id": "a1", "motivo": "uma linha",
+   "perguntas": {
+     "real":          {"tipo": "noul",   "p": 0.92, "evid": "reg.rs:2026"},
+     "severidade":    {"tipo": "score",  "p": {"0":0.05,"1":0.15,"2":0.5,"3":0.3}, "evid": "reg.rs:17"},
+     "causa":         {"tipo": "choice", "p": {"A":0.7,"B":0.25,"outra":0.05}, "evid": "reg.rs:819"}}}]}
+JSON
 ```
-PhxJev · <preset> · calibracao: nao medida
-estado: <n> trechos lidos (<arquivo:linha>, ...)
-─────────────────────────────────────────────
-<id>  real 0.92  alcancavel 0.88  ja_tratado 0.07  sev 2.4/3 (conf 0.52)  → MANTER ☐ bloqueia
-      motivo: <uma linha, com arquivo:linha>
-<id>  real 0.31  ...                                                      → DESCARTAR (real<0.50)
-─────────────────────────────────────────────
-escalar: <lista do que tem conf<0.40, empate ou fere_petrea>
-```
+
+- **Nao escreva `conf`**: o script calcula (1 − entropia normalizada).
+- O script **recusa** p sem evidencia (fora de 0,5), choice que nao soma 1 e
+  estado vazio. Recusou: corrija o JSON, nao o limiar.
+- A resposta ao usuario e a **saida do script, copiada sem editar**.
+- Sem `CLAUDE_PLUGIN_ROOT` no ambiente, o script mora em
+  `plugins/phxjev/scripts/phxjev.py` do repositorio.
 
 ## 6. Presets
 
@@ -85,11 +101,17 @@ escalar: <lista do que tem conf<0.40, empate ou fere_petrea>
 | `/phxjev-escolher` | `melhor_opcao` (choice) + `fere_petrea` (noul por opcao) + convergencia dos motores |
 | `/phxjev-perguntar` | pergunta livre, tipo declarado pelo usuario |
 
-## 7. O que falta para deixar de ser palpite
+## 7. Calibracao: registro, desfecho, medida
 
-A calibracao se mede, nao se declara: guardar cada veredito do
-`/phxjev-revisar` junto do desfecho real (o achado virou conserto? o teste
-falhou com o defeito reposto?) e, com ≥50 pares, conferir por faixa se «0,8»
-acertou perto de 80%. Ate la, todo aprendizado que nascer de um veredito
-PhxJev e **PENDENTE** — veredito nao e evidencia validada e **nunca promove
-nada a FRUTIFERO**.
+Cada veredito entra em `.phxjev/registro.jsonl` (ou `$PHXJEV_REGISTRO`) com o
+desfecho pendente. Quando o desfecho for conhecido — o achado virou conserto?
+o teste falhou com o defeito reposto? —:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/phxjev.py" desfecho <id> real 1
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/phxjev.py" calibrar   # brier + faixas
+```
+
+Abaixo de 50 desfechos o cabecalho diz `calibracao: nao medida (n/50)`. Ate la,
+e mesmo depois, aprendizado que nasce de um veredito PhxJev e **PENDENTE** —
+veredito nao e evidencia validada e **nunca promove nada a FRUTIFERO**.
