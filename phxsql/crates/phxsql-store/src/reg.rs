@@ -792,9 +792,18 @@ impl RegFile {
     /// declara um indice `unico` sobre ela, e ai o proprio indice recusa a
     /// repeticao.
     pub fn proxima_da_sequencia(&mut self) -> u64 {
-        let v = self.na_faixa(self.proxima_sequencia.max(1));
-        self.proxima_sequencia = v + 1;
+        let (v, seguinte) = self.proxima_sem_andar(self.proxima_sequencia);
+        self.proxima_sequencia = seguinte;
         v
+    }
+
+    /// A conta do [`RegFile::proxima_da_sequencia`] sobre um contador de
+    /// FORA, sem andar o daqui: devolve o valor e o contador seguinte. E o
+    /// que a sobreposicao da transacao usa para prever o numero que a
+    /// gravacao vai dar -- pela mesma conta, com a faixa do no dentro.
+    pub fn proxima_sem_andar(&self, contador: u64) -> (u64, u64) {
+        let v = self.na_faixa(contador.max(1));
+        (v, v + 1)
     }
 
     /// O primeiro numero `>= piso` que cai na faixa DESTE no.
@@ -868,13 +877,20 @@ impl RegFile {
     /// Sem isto, inserir a sequencia 500 na mao e depois deixar o motor
     /// numerar devolveria 1, 2, 3... por cima do que ja existe.
     pub fn anotar_sequencia(&mut self, usado: u64) {
-        if usado >= self.proxima_sequencia {
+        self.proxima_sequencia = self.anotada(self.proxima_sequencia, usado);
+    }
+
+    /// A conta do [`RegFile::anotar_sequencia`] sobre um contador de fora.
+    pub fn anotada(&self, contador: u64, usado: u64) -> u64 {
+        if usado >= contador {
             // Arredonda para a PROPRIA faixa, e nao `usado + 1`: com faixa,
             // `usado + 1` e o proximo numero do OUTRO no. O defeito medido em
             // `docs/AUTONUMBER.md` («alfa ajustada para 1, beta para
             // 1.000.000; depois da primeira ida e volta o contador de alfa
             // estava em 1.000.002») e exatamente este.
-            self.proxima_sequencia = self.na_faixa(usado + 1);
+            self.na_faixa(usado + 1)
+        } else {
+            contador
         }
     }
 

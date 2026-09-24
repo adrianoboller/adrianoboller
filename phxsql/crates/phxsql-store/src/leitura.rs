@@ -32,7 +32,7 @@ use phxsql_core::error::Result;
 use phxsql_core::schema::Schema;
 use phxsql_core::RowId;
 
-use crate::table::{Linha, Salto, Sobreposicao, Table, Visao};
+use crate::table::{Linha, Pendente, Salto, Sobreposicao, Table, Visao};
 
 /// O que uma VARREDURA precisa de uma tabela -- e so isso.
 ///
@@ -195,6 +195,12 @@ impl TabelaLeitura {
     /// transacao, e quem olha a tela nao teria como saber qual das duas mente.
     pub fn sobrepor(&mut self, s: Sobreposicao) {
         self.0.sobrepor(s);
+    }
+
+    /// Dobra UMA escrita pendente, com a linha completada como a gravacao a
+    /// deixaria -- a mesma porta da tabela de escrita (`Table::sobrepor_mais`).
+    pub fn sobrepor_mais(&mut self, rowid: RowId, p: Pendente<'_>) -> Result<()> {
+        self.0.sobrepor_mais(rowid, p)
     }
 }
 

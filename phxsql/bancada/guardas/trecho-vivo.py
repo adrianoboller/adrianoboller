@@ -231,6 +231,13 @@ dia, nunca no desejado:
   (M4). As duas frentes subiram o piso a partir de 286 sem se verem; a conta
   certa so existe no encontro delas, e foi feita pelo integrador com o
   `--catraca` na arvore combinada: 309.
+  **SUBIU para 318 em 24/09/2026** (pedido 448, integrado sobre o 481 e o
+  451): nove guardas novas da pre-conferencia do COMMIT -- a pre-conferencia
+  desligada inteira, a lista que planeja a cascata de novo na passada (A1),
+  a sobreposicao copiada por plano (A2), a previsao que devolve a linha crua
+  (A3), o NULL que colide no indice unico (A4) e os buracos da `Sobreposicao`.
+  A frente contou 295 a partir de 286; a conta certa, de novo, so existe no
+  encontro das frentes, e foi feita pelo integrador com o `--catraca`: 318.
   impedir. Ele e a unica coisa nesta regua que reprova o APAGAMENTO; tudo o
   mais aqui reprova o envelhecimento.
 
@@ -339,7 +346,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 309
+PISO_DAS_ENTRADAS = 318
 
 # ------------------------------------------------------------- APOSENTADAS
 #

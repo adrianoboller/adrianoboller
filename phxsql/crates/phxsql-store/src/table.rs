@@ -10,8 +10,9 @@
 //! `.reg` e o que vai para os arquivos externos, e mantem os indices em dia a
 //! cada insercao, alteracao e exclusao.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, OnceLock};
 
 use phxsql_core::datahora::civil_de_dias;
 use phxsql_core::error::{PhxError, Result};
@@ -154,6 +155,10 @@ pub struct EscritaDaCascata {
     /// simetria com a mae; a passada achatada nao a reusa (nao ha cascata a
     /// replanejar -- a corrente inteira ja esta na lista).
     pub linha_antiga: Vec<Value>,
+    /// 1 para a filha da mae que mudou, 2 para a neta, e assim por diante --
+    /// cada elo vem logo depois de quem o puxou. A pre-conferencia do COMMIT
+    /// usa isto para saber de quem cada elo depende (pedido 448, achado A1).
+    pub nivel: usize,
 }
 
 /// Ate onde a conferencia da cascata desce antes de recusar.
@@ -254,7 +259,7 @@ pub enum Troca {
 /// antes de qualquer trabalho -- a licao do Profiler, que cobrava 7% da carga
 /// analisando meio megabyte de JSON *antes* de perguntar se estava ligado.
 /// Handle sem transacao nao consulta mapa nenhum.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Default)]
 pub struct Sobreposicao {
     trocas: BTreeMap<RowId, Troca>,
     /// Os rowids que nasceram aqui, na ordem em que foram pedidos.
@@ -264,11 +269,229 @@ pub struct Sobreposicao {
     /// sagrada. Nao ha ordenacao a inventar -- ha a ordem que o commit vai
     /// produzir, antecipada.
     novos: Vec<RowId>,
+    /// Os mesmos rowids de `novos`, para «ja nasceu?» custar um `HashSet` e
+    /// nao uma volta na lista -- a volta fazia a dobra de uma transacao
+    /// grande O(n^2).
+    em_novos: HashSet<RowId>,
+    /// Os que nasceram aqui e nao foram excluidos de vez depois. Era um mapa
+    /// a parte no servidor, ao dobrar a lista; mudou-se para ca para a dobra
+    /// ser UMA so -- a leitura da transacao e a pre-conferencia do COMMIT
+    /// (pedido 448) chamam a mesma [`Sobreposicao::empilhar`].
+    vivos: HashSet<RowId>,
+    /// O indice das linhas com troca pendente, montado na PRIMEIRA busca e
+    /// mantido pelo `Table::sobrepor_mais` dai em diante. Ver
+    /// [`ChavesPendentes`].
+    ///
+    /// `OnceLock`, e nao `Option`, por causa do achado A2: a sobreposicao e
+    /// COMPARTILHADA (`Arc`) entre o handle da transacao e a filha que o plano
+    /// do `ao_alterar` abre, e quem monta o indice por um lado tem de deixa-lo
+    /// montado para o outro -- sem copiar a sobreposicao para ter onde
+    /// escrever.
+    chaves: OnceLock<ChavesPendentes>,
+    /// Os contadores que a gravacao VAI consumir, previstos -- ver
+    /// [`Previsao`]. `None` ate a primeira linha que precise deles.
+    previsao: Option<Previsao>,
+}
+
+/// O que o `inserir` vai tirar dos contadores da tabela, previsto SEM tirar.
+///
+/// # Por que a sobreposicao precisa disto (achado A3 da revisao do DBA)
+///
+/// A sobreposicao guardava a linha CRUA do `empilhar`, e o store grava outra:
+/// a completada pelo DEFAULT, pela `Sequence` (nova na insercao, mantida na
+/// alteracao), pela coluna calculada e pelas colunas de sistema. Quem lia pela
+/// sobreposicao -- a leitura da transacao e a pre-conferencia do COMMIT --
+/// via uma linha que nunca ia existir: `[mae com codigo pelo DEFAULT 7,
+/// filha->7]` era recusada, e a busca pelo codigo da mae dentro da transacao
+/// nao a achava.
+///
+/// A linha passa a sair pelas MESMAS funcoes da gravacao (`completar`,
+/// `rownum_para`, `numerar_com`, `aplicar_regras`), com os contadores lidos
+/// daqui e nao do `.reg`: prever nao pode consumir numero, senao a leitura de
+/// uma transacao abriria buraco na `Sequence` de todo mundo. O previsto e
+/// exato porque a transacao que insere trava o FIM da tabela -- ninguem mais
+/// anexa entre o `empilhar` e o COMMIT.
+///
+/// O `rowstamp` e o `rowtime` NAO se preveem: o carimbo e um contador do
+/// PROCESSO, e o relogio e o da gravacao. A linha nascida na transacao fica
+/// com o valor inicial deles ate o COMMIT, e ninguem os referencia por chave.
+#[derive(Debug, Clone, Copy)]
+struct Previsao {
+    /// O proximo valor da `Sequence`, como o `.reg` o guarda.
+    sequencia: u64,
+    /// O proximo `rownum`.
+    rownum: u64,
+}
+
+/// As chaves que as linhas com troca pendente TEM, por indice -- o `.ndx` da
+/// sobreposicao.
+///
+/// # Por que existe, e o numero que o trouxe
+///
+/// O `buscar` da sobreposicao calculava a chave de CADA linha pendente a cada
+/// busca: linear no conjunto de escrita. Para a leitura dentro de uma
+/// transacao pequena isso nao aparecia; para a pre-conferencia do COMMIT
+/// (pedido 448), que busca a mae de cada filha da lista, virou O(n^2). Medido
+/// com `--example custo-da-pre-conferencia`, COMMIT de 10.000 escritas (mae e
+/// filha na mesma lista, mediana de 3): **72,6 ms antes do pedido e 6.550 ms
+/// com a busca linear -- 90x** (114x com as maes e as filhas em blocos),
+/// contra um teto de 2x que o parecer do DBA pos antes de embarcar. O parecer
+/// ja nomeava a saida -- «a sobreposicao ganha um mapa por (indice, chave)»
+/// --, e ela entrou depois do numero, e nao antes. Com ele: 107,0 ms (1,47x)
+/// a 10.000 e 1.330,9 contra 841,8 ms (1,58x) a 100.000, que e o teto padrao
+/// do conjunto de escrita.
+///
+/// Montado so na primeira busca, e nao ao sobrepor: a leitura da transacao
+/// abre a tabela sobreposta a cada operacao, e a maioria delas nao busca por
+/// chave -- montar para jogar fora seria o custo que o portao existe para nao
+/// pagar.
+#[derive(Debug, Clone, Default)]
+struct ChavesPendentes {
+    /// `(indice, chave)` -> os rowids pendentes que a tem, em ordem de
+    /// digitacao.
+    por_chave: HashMap<(usize, Vec<u8>), std::collections::BTreeSet<RowId>>,
+    /// rowid -> as chaves que ele pos em `por_chave`, para sair delas quando a
+    /// troca dele mudar.
+    de_rowid: HashMap<RowId, Vec<(usize, Vec<u8>)>>,
+}
+
+impl ChavesPendentes {
+    /// O rowid passa a ter `novas` -- e deixa de ter as que tinha.
+    fn trocar(&mut self, rowid: RowId, novas: Vec<(usize, Vec<u8>)>) {
+        for velha in self.de_rowid.remove(&rowid).unwrap_or_default() {
+            if let Some(rs) = self.por_chave.get_mut(&velha) {
+                rs.remove(&rowid);
+                if rs.is_empty() {
+                    self.por_chave.remove(&velha);
+                }
+            }
+        }
+        for nova in &novas {
+            self.por_chave
+                .entry(nova.clone())
+                .or_default()
+                .insert(rowid);
+        }
+        self.de_rowid.insert(rowid, novas);
+    }
+}
+
+/// Quantas vezes uma `Sobreposicao` inteira foi COPIADA neste processo.
+///
+/// Existe por causa do achado A2 da revisao do DBA ao pedido 448: o plano do
+/// `ao_alterar` da pre-conferencia abria cada filha com uma COPIA da
+/// sobreposicao dela, e o COMMIT com alteracao de chave virou O(n^2) sob a
+/// trava global -- 715 ms para 99,6 s com n = 8.000. A prova do conserto conta
+/// copias, e nao tempo: tempo de teste flutua, e contagem nao. O contador e um
+/// `fetch_add` por copia, e copia e justamente o que nao deve mais acontecer
+/// no caminho quente.
+static COPIAS_DA_SOBREPOSICAO: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Ver [`COPIAS_DA_SOBREPOSICAO`].
+pub fn copias_da_sobreposicao() -> u64 {
+    COPIAS_DA_SOBREPOSICAO.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+impl Clone for Sobreposicao {
+    fn clone(&self) -> Sobreposicao {
+        COPIAS_DA_SOBREPOSICAO.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        Sobreposicao {
+            trocas: self.trocas.clone(),
+            novos: self.novos.clone(),
+            em_novos: self.em_novos.clone(),
+            vivos: self.vivos.clone(),
+            chaves: self.chaves.clone(),
+            previsao: self.previsao,
+        }
+    }
+}
+
+/// Os contadores que a numeracao consome: o `.reg` de verdade, ou a previsao.
+trait Contadores {
+    fn proxima_sequencia(&mut self) -> u64;
+    fn anotar_sequencia(&mut self, usado: u64);
+}
+
+impl Contadores for RegFile {
+    fn proxima_sequencia(&mut self) -> u64 {
+        self.proxima_da_sequencia()
+    }
+    fn anotar_sequencia(&mut self, usado: u64) {
+        RegFile::anotar_sequencia(self, usado)
+    }
+}
+
+/// A `Sequence` prevista: a MESMA conta do `.reg` (a faixa do no inclusive),
+/// feita sobre uma copia do contador.
+struct ContadorPrevisto<'a> {
+    reg: &'a RegFile,
+    proxima: &'a mut u64,
+}
+
+impl Contadores for ContadorPrevisto<'_> {
+    fn proxima_sequencia(&mut self) -> u64 {
+        let (valor, seguinte) = self.reg.proxima_sem_andar(*self.proxima);
+        *self.proxima = seguinte;
+        valor
+    }
+    fn anotar_sequencia(&mut self, usado: u64) {
+        *self.proxima = self.reg.anotada(*self.proxima, usado);
+    }
+}
+
+/// Uma escrita pendente, na lingua do `store` -- que nao conhece `BEGIN` nem
+/// conjunto de escrita, so «este rowid passa a ser isto».
+#[derive(Debug, Clone, Copy)]
+pub enum Pendente<'a> {
+    Insercao(&'a [Value]),
+    /// A linha nova, e a ANTIGA quando quem chama a tem -- a transacao a
+    /// guarda do disco no `empilhar`. Vazia quando nao ha: ai a linha antiga
+    /// sai da propria sobreposicao, ou do disco.
+    Alteracao(&'a [Value], &'a [Value]),
+    /// Exclusao suave (`true`) ou restauracao (`false`).
+    Marca(bool),
+    /// Exclusao de vez.
+    Exclusao,
 }
 
 impl Sobreposicao {
     pub fn nova() -> Sobreposicao {
         Sobreposicao::default()
+    }
+
+    /// Dobra UMA escrita pendente sobre o que ja esta aqui.
+    ///
+    /// A ORDEM MANDA: `UPDATE x; DELETE x` termina em «sumida», e `INSERT;
+    /// excluir suave` termina na linha recem-criada JA marcada -- e nao numa
+    /// marca sobre um slot que ainda nao existe em disco, que sumiria a linha
+    /// inteira. `pos_soft` e a coluna de sistema, que so o esquema sabe.
+    pub fn empilhar(&mut self, rowid: RowId, p: Pendente<'_>, pos_soft: Option<usize>) {
+        // O indice das chaves pendentes nao sabe calcular chave -- isso e do
+        // `Table`. Quem mexe por aqui o invalida, e a proxima busca o remonta;
+        // o `Table::sobrepor_mais` o tira antes e o devolve atualizado.
+        self.chaves = OnceLock::new();
+        match p {
+            Pendente::Insercao(l) => self.nasceu(rowid, l.to_vec()),
+            // Alterar a linha que nasceu aqui troca a linha guardada, e nao
+            // empilha troca sobre um slot que ainda nao existe em disco.
+            Pendente::Alteracao(l, _) if self.vivos.contains(&rowid) => {
+                self.trocas.insert(rowid, Troca::Linha(l.to_vec()));
+            }
+            Pendente::Alteracao(l, _) => self.por(rowid, Troca::Linha(l.to_vec())),
+            Pendente::Marca(v) => {
+                let nascida = self.vivos.contains(&rowid);
+                match (self.trocas.get_mut(&rowid), pos_soft) {
+                    (Some(Troca::Linha(linha)), Some(i)) if nascida && i < linha.len() => {
+                        linha[i] = Value::Bool(v);
+                    }
+                    _ => self.por(rowid, Troca::Marca(v)),
+                }
+            }
+            Pendente::Exclusao => {
+                self.vivos.remove(&rowid);
+                self.por(rowid, Troca::Sumida);
+            }
+        }
     }
 
     /// Registra o que este rowid passa a ser. A ULTIMA escrita manda.
@@ -283,13 +506,19 @@ impl Sobreposicao {
     /// Registra uma linha que NASCEU nesta transacao.
     pub fn nasceu(&mut self, rowid: RowId, linha: Linha) {
         self.trocas.insert(rowid, Troca::Linha(linha));
-        if !self.novos.contains(&rowid) {
+        self.vivos.insert(rowid);
+        if self.em_novos.insert(rowid) {
             self.novos.push(rowid);
         }
     }
 
     pub fn vazia(&self) -> bool {
         self.trocas.is_empty()
+    }
+
+    /// A transacao ja escreveu este rowid (qualquer troca, inclusive sumida)?
+    pub fn tocou(&self, rowid: RowId) -> bool {
+        self.trocas.contains_key(&rowid)
     }
 }
 
@@ -320,7 +549,24 @@ pub trait MaesEmProgresso {
     /// commitado la). A ordem de aplicacao e o que preserva a petrea «so existe
     /// filho se o pai existir primeiro»: o pai so esta visivel neste handle se
     /// foi aplicado ANTES da filha na mesma passada.
+    ///
+    /// Serve tambem ao lado de BAIXO da mesma chave: o `excluir` pergunta por
+    /// aqui pela FILHA que a transacao ja tocou, pelo mesmo motivo -- um
+    /// segundo descritor sobre a filha escrita batia na guarda do `.ndx` e
+    /// mandava reparar um arquivo sao (pedido 448, a medicao 1 do parecer).
     fn mae(&mut self, tabela_ref: &str) -> Option<&mut Table>;
+
+    /// O que a transacao ja pediu na tabela `tabela` e ainda nao gravou, para
+    /// quem precisa ABRIR a irma por conta propria -- o plano do `ao_alterar`,
+    /// que guarda o handle da filha e desce ate a neta. Emprestar nao serve
+    /// ali: a mesma filha pode aparecer duas vezes na arvore (duas chaves para
+    /// a mesma mae).
+    ///
+    /// `None` na passada e na recuperacao, cujos handles ja aplicaram a lista
+    /// no disco e nao carregam sobreposicao nenhuma.
+    fn prefixo(&self, _tabela: &str) -> Option<Arc<Sobreposicao>> {
+        None
+    }
 }
 
 /// O que sai de [`Table::abrir_imagem`]: o payload cru e, para cada coluna
@@ -462,7 +708,7 @@ pub struct Table {
     ///
     /// `None` no caminho comum, que e o de todo mundo que nao esta dentro de
     /// um `BEGIN`. Ver [`Sobreposicao`].
-    sobreposta: Option<Sobreposicao>,
+    sobreposta: Option<Arc<Sobreposicao>>,
     /// Estamos aplicando um evento vindo do source? **A replica APLICA, nao
     /// JULGA.**
     ///
@@ -567,6 +813,36 @@ fn mudou_para_a_trilha(antes: &Value, depois: &Value) -> bool {
         (Value::Str(a) | Value::Memo(a), Value::Str(b) | Value::Memo(b)) => a != b,
         (a, b) => a != b,
     }
+}
+
+/// Onde comeca e que largura tem cada componente da chave do indice `idx`, e
+/// se ele e decrescente -- o que se precisa para ler a chave codificada de
+/// volta, componente a componente.
+fn camadas_do_indice(esquema: &Schema, idx: usize) -> Vec<(usize, bool)> {
+    esquema.indices()[idx]
+        .colunas
+        .iter()
+        .map(|ic| {
+            let largura = largura_componente(&esquema.colunas()[ic.coluna].ty).unwrap_or(0);
+            (largura, ic.desc)
+        })
+        .collect()
+}
+
+/// A chave codificada tem algum componente NULL? Ver
+/// `Table::participa_da_unicidade`.
+fn chave_tem_nulo(camadas: &[(usize, bool)], chave: &[u8]) -> bool {
+    let mut base = 0;
+    for &(largura, desc) in camadas {
+        let Some(componente) = chave.get(base..base + largura) else {
+            return false;
+        };
+        if phxsql_core::keyenc::componente_nulo(componente, desc) {
+            return true;
+        }
+        base += largura;
+    }
+    false
 }
 
 /// As chaves estrangeiras que pediram conferencia.
@@ -1691,10 +1967,6 @@ impl Table {
         !self.como_replica
     }
 
-    fn conferir_fks(&self, valores: &[Value]) -> Result<()> {
-        self.conferir_fks_com(valores, None)
-    }
-
     /// Confere as chaves estrangeiras, opcionalmente enxergando as MAES que a
     /// mesma transacao ja abriu (ver [`MaesEmProgresso`] e o P0 em
     /// `docs/ACID.md` §0). `maes = None` e o caminho de sempre: abre a mae do
@@ -1702,11 +1974,18 @@ impl Table {
     /// dela -- que ve o pai empilhado e nao cai na guarda de visibilidade do
     /// segundo descritor.
     fn conferir_fks_com(
-        &self,
+        &mut self,
         valores: &[Value],
         mut maes: Option<&mut dyn MaesEmProgresso>,
     ) -> Result<()> {
-        for fk in fks_que_conferem(&self.esquema) {
+        // Por posicao, e nao pelo iterador de `fks_que_conferem`: a
+        // auto-referencia confere contra ESTE handle, que e `&mut`, e o
+        // iterador seguraria o esquema emprestado durante a volta inteira.
+        for k in 0..self.esquema.chaves_estrangeiras().len() {
+            let fk = &self.esquema.chaves_estrangeiras()[k];
+            if !fk.verificar {
+                continue;
+            }
             // NULO satisfaz: nada a procurar.
             let mut chave = Vec::with_capacity(fk.colunas.len());
             let mut tem_nulo = false;
@@ -1724,6 +2003,18 @@ impl Table {
             }
 
             let ref_simples = nome_simples(&fk.tabela_ref);
+            // 0) A AUTO-REFERENCIA le ESTE handle, e nao um segundo descritor
+            // sobre a mesma tabela. O segundo nao ve o que este handle ja
+            // escreveu -- a guarda do `.ndx` recusa, e o chefe inserido duas
+            // linhas antes na mesma passada (ou no mesmo lote) vira «mae que
+            // nao existe». E na pre-conferencia do COMMIT (pedido 448) e este
+            // handle que carrega o prefixo da lista: a mesma visao, pelo
+            // mesmo caminho.
+            if ref_simples == self.nome {
+                let fk = fk.clone();
+                Self::conferir_uma_fk(self, &fk, &chave)?;
+                continue;
+            }
             // 1) A MAE QUE ESTA TRANSACAO JA ABRIU. Reusar o handle dela e o
             // conserto do P0: o pai empilhado esta no `.ndx` em memoria desse
             // handle, e o handle nao recusa a si mesmo -- some a guarda de
@@ -1840,17 +2131,17 @@ impl Table {
         if mae.esquema.coluna_softdeleted().is_some() {
             let mut viva = false;
             for &r in &achou {
-                // `reg.ler` devolve o payload cru; a marca sai do byte da
-                // coluna de sistema, sem decodificar a linha nem carregar
-                // `.bin`/`.memo` -- ler a linha inteira para olhar um byte
-                // custaria os anexos da mae por filha gravada. E o pai que a
-                // transacao acabou de empilhar ja esta no `.reg` deste handle
-                // (a passada o inseriu antes da filha), entao a leitura o ve.
-                if let Some(p) = mae.reg.ler(r)? {
-                    if !mae.marcada_no_payload(&p)? {
-                        viva = true;
-                        break;
-                    }
+                // `visivel` sem troca pendente le o payload cru e olha SO o
+                // byte da coluna de sistema, sem decodificar a linha nem
+                // carregar `.bin`/`.memo` -- o mesmo custo do `reg.ler` que
+                // estava aqui. Com troca pendente ele le por CIMA dela, e era
+                // esse o buraco (b) do pedido 448: `reg.ler` le por baixo, e
+                // em `[excluir_suave M, inserir filha->M]` a pre-conferencia
+                // do COMMIT via a mae viva que a propria lista ja tinha
+                // marcado.
+                if mae.visivel(r, None, Visao::Ativas)? {
+                    viva = true;
+                    break;
                 }
             }
             if !viva {
@@ -1900,11 +2191,8 @@ impl Table {
     /// que a acao e -- restringir, sempre --, e o interruptor diz se esta
     /// relacao ja e imposta; sao perguntas diferentes, e misturar as duas
     /// quebraria todo cliente que hoje apaga pais sem pedir nada.
-    fn conferir_filhas(&mut self, rowid: RowId) -> Result<()> {
-        self.conferir_filhas_com(rowid, None)
-    }
-
-    /// A mesma conferencia, aproveitando a linha que quem chama JA decodificou.
+    ///
+    /// # `ja_lida`: a linha que quem chama JA decodificou
     ///
     /// # Por que a linha entra por parametro
     ///
@@ -1921,7 +2209,23 @@ impl Table {
     /// referenciada por chave conferida nunca e externa. O caso impossivel
     /// mesmo assim tem porta: a chave que referencia coluna externa manda ler
     /// a linha inteira, em vez de sair calada com a chave pela metade.
-    fn conferir_filhas_com(&mut self, rowid: RowId, ja_lida: Option<&[Value]>) -> Result<()> {
+    ///
+    /// # `maes`, e por que a filha tambem vem emprestada
+    ///
+    /// Pelo motivo do P0, do outro lado da chave: a filha que a MESMA
+    /// transacao ja escreveu nao se le por um segundo descritor -- a guarda do
+    /// `.ndx` recusa e o recado manda reparar um arquivo sao. Medido antes do
+    /// pedido 448: `[excluir a filha de vez, excluir a mae]`, transacao
+    /// valida, saia da passada por esse erro e so se completava pela
+    /// recuperacao. Com o handle emprestado a pergunta e a do dono da lista,
+    /// e na pre-conferencia do COMMIT ele carrega o prefixo -- a filha que
+    /// nasceu antes da exclusao da mae conta, a que a lista ja apagou nao.
+    fn conferir_filhas_com(
+        &mut self,
+        rowid: RowId,
+        ja_lida: Option<&[Value]>,
+        mut maes: Option<&mut dyn MaesEmProgresso>,
+    ) -> Result<()> {
         let irmas = crate::catalogo::tabelas_em(&self.diretorio)?;
         let eu = self.nome.clone();
         // A LINHA NAO SE LE AQUI, e essa e a licao do Profiler: o portao vem
@@ -1981,7 +2285,14 @@ impl Table {
                 if chave.len() != fk.colunas_ref.len() {
                     continue;
                 }
-                let mut filha = Table::abrir(&self.diretorio, &irma)?;
+                let mut aberta_aqui;
+                let filha: &mut Table = match maes.as_deref_mut().and_then(|m| m.mae(&irma)) {
+                    Some(f) => f,
+                    None => {
+                        aberta_aqui = Table::abrir(&self.diretorio, &irma)?;
+                        &mut aberta_aqui
+                    }
+                };
                 let colunas: Vec<String> = fk
                     .colunas
                     .iter()
@@ -2113,7 +2424,7 @@ impl Table {
         // disco e nao ha o que proteger nela -- o que se protege sao as OUTRAS
         // filhas, e recusar inteiro manda o caso para `operacoes IMPOSSIVEIS`
         // em vez de deixar meia cascata numa recuperacao que ninguem assiste.
-        Self::conferir_a_arvore(&mut passos, 1)?;
+        Self::conferir_a_arvore(&mut passos, 1, None)?;
         self.aplicar_ao_alterar(passos)
     }
 
@@ -2159,7 +2470,11 @@ impl Table {
     /// `aplicar_ao_alterar` explica que a gravacao da filha e um `atualizar`
     /// INTEIRO porque e ele que mantem o indice, o diario e a trilha dela, e
     /// atalho por baixo deixaria a filha com indice mentindo.
-    fn conferir_a_arvore(passos: &mut [PassoAoAlterar], nivel: usize) -> Result<()> {
+    fn conferir_a_arvore(
+        passos: &mut [PassoAoAlterar],
+        nivel: usize,
+        irmas: Option<&dyn MaesEmProgresso>,
+    ) -> Result<()> {
         if nivel > TETO_DA_CASCATA {
             return Err(PhxError::Integridade(format!(
                 "a cascata do ao_alterar passou de {TETO_DA_CASCATA} niveis a partir de \
@@ -2186,8 +2501,10 @@ impl Table {
                 // AQUI mora a recusa que hoje chega tarde: `restringir` na neta
                 // sai deste planejamento como `Err`, e sobe sem ninguem ter
                 // gravado byte nenhum.
-                let mut netas = passo.filha.planejar_ao_alterar(&antes, &depois)?;
-                Self::conferir_a_arvore(&mut netas, nivel + 1)?;
+                let mut netas = passo
+                    .filha
+                    .planejar_ao_alterar_com(&antes, &depois, irmas)?;
+                Self::conferir_a_arvore(&mut netas, nivel + 1, irmas)?;
             }
         }
         Ok(())
@@ -2214,18 +2531,46 @@ impl Table {
         antes: &[Value],
         depois: &[Value],
     ) -> Result<Vec<EscritaDaCascata>> {
+        self.planejar_cascata_com(antes, depois, None)
+    }
+
+    /// O plano da cascata de uma alteracao que ainda chega CRUA -- como a
+    /// transacao a empilha. Completa a linha como o `atualizar` a gravaria
+    /// (a `Sequence` mantida, a calculada refeita) e so entao planeja: a
+    /// linha crua via a `Sequence` que o cliente nao mandou como uma chave que
+    /// virou NULO, e a cascata levava o NULO as filhas (achado A3 da revisao
+    /// do DBA ao 448).
+    pub fn planejar_cascata_da_alteracao(
+        &mut self,
+        antes: &[Value],
+        crua: &[Value],
+    ) -> Result<Vec<EscritaDaCascata>> {
+        let depois = self.linha_da_alteracao(crua, antes)?;
+        self.planejar_cascata_com(antes, &depois, None)
+    }
+
+    /// O mesmo plano, com cada irma aberta ENXERGANDO o que a transacao ja
+    /// pediu nela (`irmas.prefixo`) -- o replanejamento da pre-conferencia do
+    /// COMMIT (pedido 448). E a mesma travessia, e nao uma segunda: so muda o
+    /// que a filha aberta ve.
+    pub fn planejar_cascata_com(
+        &mut self,
+        antes: &[Value],
+        depois: &[Value],
+        irmas: Option<&dyn MaesEmProgresso>,
+    ) -> Result<Vec<EscritaDaCascata>> {
         // Mesmo portao do `atualizar`: na replica a cascata NAO se planeja --
         // o source ja cascateou, e cada evento vem replicado por conta propria.
         if !self.julga_integridade() {
             return Ok(Vec::new());
         }
-        let mut passos = self.planejar_ao_alterar(antes, depois)?;
+        let mut passos = self.planejar_ao_alterar_com(antes, depois, irmas)?;
         if passos.is_empty() {
             return Ok(Vec::new());
         }
-        Self::conferir_a_arvore(&mut passos, 1)?;
+        Self::conferir_a_arvore(&mut passos, 1, irmas)?;
         let mut lista = Vec::new();
-        Self::coletar_a_arvore(&mut passos, &mut lista)?;
+        Self::coletar_a_arvore(&mut passos, &mut lista, irmas, 1)?;
         Ok(lista)
     }
 
@@ -2236,6 +2581,8 @@ impl Table {
     fn coletar_a_arvore(
         passos: &mut [PassoAoAlterar],
         lista: &mut Vec<EscritaDaCascata>,
+        irmas: Option<&dyn MaesEmProgresso>,
+        nivel: usize,
     ) -> Result<()> {
         for passo in passos.iter_mut() {
             let alvos = std::mem::take(&mut passo.rowids);
@@ -2257,9 +2604,12 @@ impl Table {
                     rowid: r,
                     linha: depois.clone(),
                     linha_antiga: antes.clone(),
+                    nivel,
                 });
-                let mut netas = passo.filha.planejar_ao_alterar(&antes, &depois)?;
-                Self::coletar_a_arvore(&mut netas, lista)?;
+                let mut netas = passo
+                    .filha
+                    .planejar_ao_alterar_com(&antes, &depois, irmas)?;
+                Self::coletar_a_arvore(&mut netas, lista, irmas, nivel + 1)?;
             }
         }
         Ok(())
@@ -2299,6 +2649,19 @@ impl Table {
         &mut self,
         antes: &[Value],
         depois: &[Value],
+    ) -> Result<Vec<PassoAoAlterar>> {
+        self.planejar_ao_alterar_com(antes, depois, None)
+    }
+
+    /// `prefixos` so muda o que a filha ABERTA aqui enxerga: com ele, cada filha
+    /// ganha a sobreposicao do que a transacao ja pediu nela, e o plano sai
+    /// contra o disco MAIS o prefixo da lista (pedido 448). Sem ele, o disco,
+    /// como sempre.
+    fn planejar_ao_alterar_com(
+        &mut self,
+        antes: &[Value],
+        depois: &[Value],
+        prefixos: Option<&dyn MaesEmProgresso>,
     ) -> Result<Vec<PassoAoAlterar>> {
         if !self.alguma_coluna_indexada_mudou(antes, depois) {
             return Ok(Vec::new());
@@ -2405,6 +2768,9 @@ impl Table {
                 // o motor abre por baixo tem de sair igual, senao a garantia
                 // vale so para a escrita que passou pela mao de quem ligou.
                 let mut filha = Table::abrir(&self.diretorio, &irma)?;
+                if let Some(s) = prefixos.and_then(|m| m.prefixo(&irma)) {
+                    filha.sobrepor_compartilhada(s);
+                }
                 filha.ligar_imagem_no_diario(self.imagem_no_diario);
                 filha.ligar_imagem_na_exclusao(self.imagem_na_exclusao);
                 // A mesma exigencia dos DOIS lados que a chave conferida ja
@@ -2747,6 +3113,19 @@ impl Table {
     /// chegou a ter numero. Entre a reserva e o consumo ninguem mais toca o
     /// `Reg`, porque tudo acontece dentro do mesmo `&mut self`.
     fn numerar_linha(&mut self, valores: &mut [Value], anterior: Option<&Linha>) -> Option<u64> {
+        let proximo = self.reg.rownum_atual();
+        self.rownum_para(valores, anterior, proximo)
+    }
+
+    /// O corpo do [`Table::numerar_linha`] com o proximo numero vindo de
+    /// fora: do `.reg` na gravacao, da [`Previsao`] na sobreposicao. UMA
+    /// regra para as duas, para a linha prevista sair igual a gravada.
+    fn rownum_para(
+        &self,
+        valores: &mut [Value],
+        anterior: Option<&Linha>,
+        proximo: u64,
+    ) -> Option<u64> {
         let i = self.esquema.coluna_rownum()?;
         if let Some(linha) = anterior {
             // Alteracao: mantem o numero que a linha ja tinha.
@@ -2758,9 +3137,8 @@ impl Table {
             }
         }
         if !matches!(valores[i], Value::UInt(n) if n > 0) || anterior.is_none() {
-            let reservado = self.reg.rownum_atual();
-            valores[i] = Value::UInt(reservado);
-            return Some(reservado);
+            valores[i] = Value::UInt(proximo);
+            return Some(proximo);
         }
         None
     }
@@ -2812,11 +3190,7 @@ impl Table {
         };
         let t = self.esquema.coluna_rowtime();
         if let Some(linha) = anterior {
-            // Alteracao: mantem o que a linha ja tinha, inclusive o zero.
-            valores[i] = linha[i].clone();
-            if let Some(t) = t {
-                valores[t] = linha[t].clone();
-            }
+            self.manter_carimbo(valores, linha);
             return;
         }
         if self.como_replica {
@@ -2837,6 +3211,20 @@ impl Table {
         self.reg.anotar_carimbo(carimbo);
         if let Some(t) = t {
             valores[t] = Value::DateTime(crate::util::agora_ms());
+        }
+    }
+
+    /// A metade da alteracao do [`Table::carimbar_linha`]: mantem o que a
+    /// linha ja tinha, inclusive o zero. Separada porque a previsao da
+    /// sobreposicao a usa, e a metade da insercao ela nao pode usar -- o
+    /// carimbo novo sai de um contador do processo.
+    fn manter_carimbo(&self, valores: &mut [Value], anterior: &Linha) {
+        let Some(i) = self.esquema.coluna_rowstamp() else {
+            return;
+        };
+        valores[i] = anterior[i].clone();
+        if let Some(t) = self.esquema.coluna_rowtime() {
+            valores[t] = anterior[t].clone();
         }
     }
 
@@ -2900,6 +3288,19 @@ impl Table {
     /// Vale so para ESTE handle. Outra conexao abre o seu e continua vendo o
     /// disco -- que e a diferenca entre *read-your-own-writes* e leitura suja.
     pub fn sobrepor(&mut self, s: Sobreposicao) {
+        self.sobreposta = if s.vazia() { None } else { Some(Arc::new(s)) };
+    }
+
+    /// Passa a enxergar a MESMA sobreposicao de outro handle, sem copia-la.
+    ///
+    /// E o achado A2 da revisao do DBA ao pedido 448: o plano do `ao_alterar`
+    /// da pre-conferencia abre cada filha num handle proprio, e dava a ela uma
+    /// COPIA da sobreposicao da filha -- O(pendentes) por alteracao de chave,
+    /// O(n^2) no COMMIT, sob a trava global: 715 ms para 99,6 s com n = 8.000.
+    /// O plano so LE a sobreposicao, entao ela e dividida por `Arc`; e o
+    /// indice das chaves pendentes que um lado monta fica montado para o
+    /// outro (`OnceLock`).
+    pub fn sobrepor_compartilhada(&mut self, s: Arc<Sobreposicao>) {
         self.sobreposta = if s.vazia() { None } else { Some(s) };
     }
 
@@ -2932,6 +3333,273 @@ impl Table {
         self.sobreposta = None;
     }
 
+    /// O que este handle ve de pendente, para quem precisa abrir a MESMA
+    /// tabela por outro handle enxergando a mesma coisa -- o plano do
+    /// `ao_alterar` da pre-conferencia (ver [`MaesEmProgresso::prefixo`]).
+    pub fn sobreposicao(&self) -> Option<&Arc<Sobreposicao>> {
+        self.sobreposta.as_ref()
+    }
+
+    /// Dobra UMA escrita pendente na sobreposicao deste handle, com a linha
+    /// COMPLETADA como a gravacao a deixaria (achado A3 -- ver [`Previsao`]).
+    ///
+    /// E por aqui que a leitura da transacao monta a sobreposicao, escrita a
+    /// escrita. Se a linha nao se completa -- um CHECK que a linha completada
+    /// viola, por exemplo --, a crua entra no lugar e o erro volta: a leitura
+    /// continua mostrando o que foi pedido, e quem precisa da garantia (a
+    /// pre-conferencia) recusa.
+    pub fn sobrepor_mais(&mut self, rowid: RowId, p: Pendente<'_>) -> Result<()> {
+        let (prevista, erro) = match self.prever_pendente(rowid, p) {
+            Ok(l) => (l, None),
+            Err(e) => (None, Some(e)),
+        };
+        let p = match (&prevista, p) {
+            (Some(l), Pendente::Insercao(_)) => Pendente::Insercao(l),
+            (Some(l), Pendente::Alteracao(_, antiga)) => Pendente::Alteracao(l, antiga),
+            _ => p,
+        };
+        self.dobrar(rowid, p);
+        match erro {
+            Some(e) => Err(e),
+            None => Ok(()),
+        }
+    }
+
+    /// A linha completada de uma insercao ou alteracao pendente; `None` para
+    /// a marca e a exclusao, que nao carregam linha, e para a alteracao de
+    /// linha que ja nao existe.
+    fn prever_pendente(&mut self, rowid: RowId, p: Pendente<'_>) -> Result<Option<Linha>> {
+        let (valores, anterior) = match p {
+            Pendente::Insercao(l) => (l, None),
+            Pendente::Alteracao(l, antiga) => {
+                // A antiga que a transacao guardou do disco serve so enquanto
+                // a propria lista nao tocou a linha; depois, a antiga e a do
+                // prefixo -- e ela ja esta aqui, sem ler o disco.
+                let tocada = self.sobreposta.as_ref().is_some_and(|s| s.tocou(rowid));
+                let anterior = if !tocada && !antiga.is_empty() {
+                    Some(antiga.to_vec())
+                } else {
+                    self.resolver(rowid)?
+                };
+                match anterior {
+                    Some(a) => (l, Some(a)),
+                    None => return Ok(None),
+                }
+            }
+            _ => return Ok(None),
+        };
+        let mut previsao = self.previsao_atual();
+        let linha = self.prever_linha(valores, anterior.as_ref(), &mut previsao)?;
+        self.guardar_previsao(previsao);
+        Ok(Some(linha))
+    }
+
+    /// Os contadores previstos ate aqui, ou os do `.reg` na primeira vez.
+    fn previsao_atual(&self) -> Previsao {
+        self.sobreposta
+            .as_ref()
+            .and_then(|s| s.previsao)
+            .unwrap_or(Previsao {
+                sequencia: self.reg.sequencia_atual(),
+                rownum: self.reg.rownum_atual(),
+            })
+    }
+
+    fn guardar_previsao(&mut self, previsao: Previsao) {
+        let s = self
+            .sobreposta
+            .get_or_insert_with(|| Arc::new(Sobreposicao::default()));
+        Arc::make_mut(s).previsao = Some(previsao);
+    }
+
+    /// A linha como a gravacao a deixaria -- `anterior` nulo e o `inserir`,
+    /// presente e o `atualizar` --, pelas MESMAS funcoes que gravam e sem andar
+    /// contador nenhum. Ver [`Previsao`].
+    fn prever_linha(
+        &self,
+        valores: &[Value],
+        anterior: Option<&Linha>,
+        previsao: &mut Previsao,
+    ) -> Result<Linha> {
+        let mut linha = match self.completar(valores, anterior) {
+            Some(v) => v,
+            None => valores.to_vec(),
+        };
+        if let Some(n) = self.rownum_para(&mut linha, anterior, previsao.rownum) {
+            previsao.rownum = n + 1;
+        }
+        if let Some(a) = anterior {
+            self.manter_carimbo(&mut linha, a);
+        }
+        let mut contador = ContadorPrevisto {
+            reg: &self.reg,
+            proxima: &mut previsao.sequencia,
+        };
+        if let Some(v) = Self::numerar_com(
+            self.esquema.coluna_sequencia(),
+            self.coluna_do_uuid_gerado(),
+            &linha,
+            anterior,
+            &mut contador,
+            false,
+        )? {
+            linha = v;
+        }
+        if let Some(v) = self.aplicar_regras(&linha, anterior.is_none())? {
+            linha = v;
+        }
+        Ok(linha)
+    }
+
+    /// A linha que o `atualizar` gravaria no lugar de `anterior`, sem gravar.
+    ///
+    /// Para quem PLANEJA a cascata antes da gravacao -- o `empilhar` da
+    /// transacao. Planejar pela linha crua via a `Sequence` que o cliente nao
+    /// mandou como uma chave que virou NULO, e a cascata levava o NULO as
+    /// filhas: a filha perdia a mae sem ninguem ter pedido (achado A3).
+    pub fn linha_da_alteracao(&self, valores: &[Value], anterior: &[Value]) -> Result<Linha> {
+        let mut previsao = Previsao {
+            sequencia: self.reg.sequencia_atual(),
+            rownum: self.reg.rownum_atual(),
+        };
+        self.prever_linha(valores, Some(&anterior.to_vec()), &mut previsao)
+    }
+
+    /// Dobra a escrita na sobreposicao, mantendo o indice das chaves
+    /// pendentes em dia so para ESTE rowid -- e isso que deixa a
+    /// pre-conferencia em O(log n) por escrita. Se a chave nova nao se
+    /// calcula, o indice sai inteiro e a proxima busca o remonta, e o erro
+    /// aparece la, com quem buscou.
+    fn dobrar(&mut self, rowid: RowId, p: Pendente<'_>) {
+        let pos_soft = self.esquema.coluna_softdeleted();
+        let s = Arc::make_mut(
+            self.sobreposta
+                .get_or_insert_with(|| Arc::new(Sobreposicao::default())),
+        );
+        let chaves = s.chaves.take();
+        s.empilhar(rowid, p, pos_soft);
+        if let Some(mut c) = chaves {
+            if let Ok(novas) = self.chaves_da_pendente(rowid) {
+                c.trocar(rowid, novas);
+                if let Some(s) = self.sobreposta.as_mut() {
+                    let _ = Arc::make_mut(s).chaves.set(c);
+                }
+            }
+        }
+    }
+
+    /// As chaves que a linha pendente `rowid` tem, como a sobreposicao a ve.
+    fn chaves_da_pendente(&mut self, rowid: RowId) -> Result<Vec<(usize, Vec<u8>)>> {
+        let Some(linha) = self.resolver(rowid)? else {
+            return Ok(Vec::new());
+        };
+        let mut chaves = Vec::new();
+        for i in 0..self.esquema.indices().len() {
+            if let Some(k) = self.chave_se_pertence(i, &linha)? {
+                chaves.push((i, k));
+            }
+        }
+        Ok(chaves)
+    }
+
+    /// Monta o indice das chaves pendentes, se ainda nao existe -- NA
+    /// sobreposicao compartilhada, e nao numa copia: quem a divide por `Arc`
+    /// ganha o indice montado junto.
+    fn montar_chaves_pendentes(&mut self) -> Result<()> {
+        let Some(s) = self.sobreposta.clone() else {
+            return Ok(());
+        };
+        if s.chaves.get().is_some() {
+            return Ok(());
+        }
+        let mut c = ChavesPendentes::default();
+        for &r in s.trocas.keys() {
+            let chaves = self.chaves_da_pendente(r)?;
+            c.trocar(r, chaves);
+        }
+        let _ = s.chaves.set(c);
+        Ok(())
+    }
+
+    /// Este rowid nasceu nesta transacao? Pelo `HashSet`, e nao pela lista.
+    fn nasceu_aqui(&self, rowid: RowId) -> bool {
+        self.sobreposta
+            .as_ref()
+            .is_some_and(|s| s.em_novos.contains(&rowid))
+    }
+
+    /// **A pre-conferencia do COMMIT (pedido 448): a guarda de UMA escrita
+    /// pendente, e depois ela entra no prefixo.**
+    ///
+    /// Le o disco MAIS o prefixo que este handle e os de `maes` carregam, e
+    /// chama as MESMAS guardas que a passada chama depois da marca --
+    /// `conferir_as_maes`, `conferir_unicidade`, `conferir_exclusao_*`,
+    /// `conferir_restauracao` e o plano do `ao_alterar`. Uma segunda copia
+    /// delas seria a copia que diverge, e a divergencia apareceria justamente
+    /// como «a pre-conferencia aprovou e a passada recusou».
+    ///
+    /// A chave estrangeira confere a linha CRUA, como o `inserir` e o
+    /// `atualizar` conferem; a unicidade e o plano, a linha COMPLETADA, como
+    /// eles tambem fazem (achado A3). Conferida, a escrita entra no prefixo
+    /// deste handle -- e so entao, nunca antes.
+    ///
+    /// Na alteracao, devolve o plano do `ao_alterar` contra o disco e o
+    /// prefixo, achatado. Quem decide o que fazer com ele e o servidor, que e
+    /// quem conhece a lista: a cascata que ja esta na lista tem de COBRIR o
+    /// plano, e a que falta entra na lista (achado A1).
+    pub fn pre_conferir(
+        &mut self,
+        rowid: RowId,
+        p: Pendente<'_>,
+        motivo: &str,
+        maes: &mut dyn MaesEmProgresso,
+    ) -> Result<Vec<EscritaDaCascata>> {
+        match p {
+            Pendente::Insercao(l) => {
+                self.conferir_as_maes(l, Some(maes))?;
+                let mut previsao = self.previsao_atual();
+                let linha = self.prever_linha(l, None, &mut previsao)?;
+                self.conferir_unicidade(&linha, None)?;
+                self.guardar_previsao(previsao);
+                self.dobrar(rowid, Pendente::Insercao(&linha));
+                Ok(Vec::new())
+            }
+            Pendente::Alteracao(l, antiga) => {
+                self.conferir_as_maes(l, Some(&mut *maes))?;
+                let antes = self.ler(rowid)?.ok_or_else(|| {
+                    PhxError::NaoEncontrado(format!("registro {rowid} esta excluido"))
+                })?;
+                let mut previsao = self.previsao_atual();
+                let depois = self.prever_linha(l, Some(&antes), &mut previsao)?;
+                self.conferir_unicidade(&depois, Some(rowid))?;
+                let plano = self.planejar_cascata_com(&antes, &depois, Some(&*maes))?;
+                self.guardar_previsao(previsao);
+                self.dobrar(rowid, Pendente::Alteracao(&depois, antiga));
+                Ok(plano)
+            }
+            Pendente::Marca(true) => {
+                self.conferir_exclusao_suave(rowid, motivo, Some(maes))?;
+                self.dobrar(rowid, p);
+                Ok(Vec::new())
+            }
+            Pendente::Marca(false) => {
+                self.conferir_restauracao(rowid, Some(maes))?;
+                self.dobrar(rowid, p);
+                Ok(Vec::new())
+            }
+            Pendente::Exclusao => {
+                // O `excluir_de_vez` de linha que ja nao existe devolve «nada a
+                // fazer» antes de qualquer guarda; aqui, «nao existe» e a
+                // visao do prefixo, que e o disco que a passada tera.
+                if self.visivel(rowid, None, Visao::Todas)? {
+                    self.conferir_exclusao_de_vez(rowid, None, motivo, Some(maes))?;
+                }
+                self.dobrar(rowid, p);
+                Ok(Vec::new())
+            }
+        }
+    }
+
     /// O que a sobreposicao diz sobre este rowid. `None` = nada, siga o disco.
     ///
     /// O `as_ref()?` e o portao de custo zero: sem transacao a funcao devolve
@@ -2962,7 +3630,7 @@ impl Table {
                 // ler -- e o `.reg` responderia «fora da faixa» em vez de
                 // «nao ha». O caminho normal nao chega aqui (quem empilha ja
                 // funde a marca na propria linha), e este e o cinto.
-                if self.nascidos().contains(&rowid) {
+                if self.nasceu_aqui(rowid) {
                     return Ok(None);
                 }
                 let Some(mut l) = self.ler_do_disco(rowid)? else {
@@ -3087,10 +3755,32 @@ impl Table {
         valores: &[Value],
         anterior: Option<&Linha>,
     ) -> Result<Option<Vec<Value>>> {
-        // O portao vem ANTES do trabalho: tabela sem `Sequence` e sem
-        // identidade `Uuid` sai daqui sem copiar linha nenhuma.
         let sequencia = self.esquema.coluna_sequencia();
         let identidade = self.coluna_do_uuid_gerado();
+        Self::numerar_com(
+            sequencia,
+            identidade,
+            valores,
+            anterior,
+            &mut self.reg,
+            true,
+        )
+    }
+
+    /// O corpo do [`Table::numerar`] com os contadores vindos de fora: o
+    /// `.reg` na gravacao, que ANDA, e a [`Previsao`] na sobreposicao, que so
+    /// preve. `gerar_uuid` falso deixa a identidade de uma linha NOVA em
+    /// nulo -- um v7 e aleatorio, e previsto nao seria o gravado.
+    fn numerar_com(
+        sequencia: Option<usize>,
+        identidade: Option<usize>,
+        valores: &[Value],
+        anterior: Option<&Linha>,
+        contador: &mut dyn Contadores,
+        gerar_uuid: bool,
+    ) -> Result<Option<Vec<Value>>> {
+        // O portao vem ANTES do trabalho: tabela sem `Sequence` e sem
+        // identidade `Uuid` sai daqui sem copiar linha nenhuma.
         if sequencia.is_none() && identidade.is_none() {
             return Ok(None);
         }
@@ -3100,12 +3790,12 @@ impl Table {
                 Value::Null => {
                     let v = match anterior {
                         Some(linha) => linha[i].clone(),
-                        None => Value::UInt(self.reg.proxima_da_sequencia()),
+                        None => Value::UInt(contador.proxima_sequencia()),
                     };
                     novos.get_or_insert_with(|| valores.to_vec())[i] = v;
                 }
-                Value::UInt(n) => self.reg.anotar_sequencia(*n),
-                Value::Int(n) if *n >= 0 => self.reg.anotar_sequencia(*n as u64),
+                Value::UInt(n) => contador.anotar_sequencia(*n),
+                Value::Int(n) if *n >= 0 => contador.anotar_sequencia(*n as u64),
                 outro => {
                     return Err(PhxError::Tipo(format!(
                         "coluna de sequencia espera numero inteiro, recebeu {outro:?}"
@@ -3116,10 +3806,13 @@ impl Table {
         if let Some(i) = identidade {
             if valores[i].e_null() {
                 let v = match anterior {
-                    Some(linha) => linha[i].clone(),
-                    None => Value::Uuid(Uuid::v7()),
+                    Some(linha) => Some(linha[i].clone()),
+                    None if gerar_uuid => Some(Value::Uuid(Uuid::v7())),
+                    None => None,
                 };
-                novos.get_or_insert_with(|| valores.to_vec())[i] = v;
+                if let Some(v) = v {
+                    novos.get_or_insert_with(|| valores.to_vec())[i] = v;
+                }
             }
         }
         Ok(novos)
@@ -3451,6 +4144,41 @@ impl Table {
             .collect()
     }
 
+    /// A chave `chave` do indice `idx` entra na conferencia de unicidade?
+    ///
+    /// **A regra do NULL mora aqui, e so aqui** (pedido 448, achado A4 da
+    /// revisao do DBA). Os quatro motores -- PostgreSQL, MySQL, MariaDB e
+    /// SQLite -- aceitam varios NULL num indice UNICO: NULL nao e igual a
+    /// nada, nem a outro NULL, e uma chave com qualquer componente NULL nunca
+    /// colide. Aceite automatico.
+    ///
+    /// Antes, a mesma decisao estava escrita duas vezes e as duas divergiam:
+    /// o store dava DUPLICADO no segundo NULL, e a conferencia do servidor
+    /// pulava o NULL -- medido, `[id=3 email=x, id=4 email=NULL]` com um NULL
+    /// ja no disco saia com uma gravada e «DEFEITO DO MOTOR». Hoje o
+    /// `inserir`, o `atualizar`, a troca de chaves da marca, o `reindexar` e
+    /// a conferencia da transacao perguntam AQUI.
+    ///
+    /// A pergunta e feita sobre a chave CODIFICADA, e nao sobre os valores:
+    /// um indice por expressao (`lower(nome)`) tem NULL quando a expressao da
+    /// NULL, e so a chave sabe disso. O formato nao muda -- NULL sempre foi
+    /// codificado assim; muda so quem colide.
+    fn participa_da_unicidade(&self, idx: usize, chave: &[u8]) -> bool {
+        let def = &self.esquema.indices()[idx];
+        def.unico && !chave_tem_nulo(&camadas_do_indice(&self.esquema, idx), chave)
+    }
+
+    /// Poe a chave no indice conferindo a unicidade pela regra de cima.
+    fn inserir_chave(&mut self, idx: usize, chave: &[u8], rowid: RowId) -> Result<()> {
+        if self.participa_da_unicidade(idx, chave) && self.ndx.existe(idx, chave)? {
+            return Err(PhxError::Duplicado(format!(
+                "indice unico {} ja tem essa chave",
+                self.esquema.indices()[idx].nome
+            )));
+        }
+        self.ndx.inserir_ja_conferido(idx, chave, rowid)
+    }
+
     /// Troca as chaves de uma linha que mudou: sai de onde saiu, entra onde
     /// entrou, e muda onde a chave mudou. Um lugar so para o `atualizar` e
     /// para a marca de exclusao, que sao irmaos aqui.
@@ -3465,13 +4193,13 @@ impl Table {
                 (Some(a), Some(n)) if a == n => {}
                 (Some(a), Some(n)) => {
                     self.ndx.remover(i, a, rowid)?;
-                    self.ndx.inserir(i, n, rowid)?;
+                    self.inserir_chave(i, n, rowid)?;
                 }
                 (Some(a), None) => {
                     self.ndx.remover(i, a, rowid)?;
                 }
                 (None, Some(n)) => {
-                    self.ndx.inserir(i, n, rowid)?;
+                    self.inserir_chave(i, n, rowid)?;
                 }
                 (None, None) => {}
             }
@@ -3751,15 +4479,28 @@ impl Table {
         self.inserir_com_maes_opt(valores, Some(maes))
     }
 
+    /// A metade da guarda que o `inserir` e o `atualizar` dividem: a aridade e
+    /// as chaves estrangeiras da linha. UMA funcao, porque a pre-conferencia
+    /// do COMMIT (pedido 448) faz a MESMA pergunta antes da marca que a
+    /// passada faz depois -- e duas copias dela seriam duas respostas.
+    fn conferir_as_maes(
+        &mut self,
+        valores: &[Value],
+        maes: Option<&mut dyn MaesEmProgresso>,
+    ) -> Result<()> {
+        self.conferir_aridade(valores)?;
+        if fks_que_conferem(&self.esquema).next().is_some() && self.julga_integridade() {
+            self.conferir_fks_com(valores, maes)?;
+        }
+        Ok(())
+    }
+
     fn inserir_com_maes_opt(
         &mut self,
         valores: &[Value],
         maes: Option<&mut dyn MaesEmProgresso>,
     ) -> Result<RowId> {
-        self.conferir_aridade(valores)?;
-        if fks_que_conferem(&self.esquema).next().is_some() && self.julga_integridade() {
-            self.conferir_fks_com(valores, maes)?;
-        }
+        self.conferir_as_maes(valores, maes)?;
         // Numerar ANTES das chaves, pela mesma razao da sequencia: se a coluna
         // estiver num indice, a chave tem de ser a do numero gravado. So
         // RESERVA: o contador anda em `consumir_rownum`, la embaixo, depois
@@ -3809,7 +4550,7 @@ impl Table {
         // recebe muita insercao repetida iria inchando sem nunca crescer.
         for (i, chave) in chaves.iter().enumerate() {
             let Some(chave) = chave else { continue };
-            if self.ndx.indices()[i].unico && self.ndx.existe(i, chave)? {
+            if self.participa_da_unicidade(i, chave) && self.ndx.existe(i, chave)? {
                 return Err(PhxError::Duplicado(format!(
                     "indice unico {} ja tem essa chave",
                     self.ndx.indices()[i].nome
@@ -3985,8 +4726,7 @@ impl Table {
         // Linha que nasceu na transacao ainda nao tem slot: a versao dela e a
         // que o commit vai gravar, que e 1. Sem isto o `conferir_versao`
         // acusaria «excluido de vez» de uma linha recem-inserida.
-        if matches!(self.troca_de(rowid), Some(Troca::Linha(_))) && self.nascidos().contains(&rowid)
-        {
+        if matches!(self.troca_de(rowid), Some(Troca::Linha(_))) && self.nasceu_aqui(rowid) {
             return Ok(Some(1));
         }
         self.reg.versao(rowid)
@@ -4115,10 +4855,7 @@ impl Table {
         cascatear: bool,
         conferir_identidade: bool,
     ) -> Result<()> {
-        self.conferir_aridade(valores)?;
-        if fks_que_conferem(&self.esquema).next().is_some() && self.julga_integridade() {
-            self.conferir_fks_com(valores, maes)?;
-        }
+        self.conferir_as_maes(valores, maes)?;
         let antigo = self
             .reg
             .ler(rowid)?
@@ -4174,7 +4911,7 @@ impl Table {
         // Unicidade: so reclama se a chave mudou e ja pertence a outro rowid.
         for (i, nova) in chaves_novas.iter().enumerate() {
             let Some(nova) = nova else { continue };
-            if !self.ndx.indices()[i].unico || Some(nova) == chaves_antigas[i].as_ref() {
+            if !self.participa_da_unicidade(i, nova) || Some(nova) == chaves_antigas[i].as_ref() {
                 continue;
             }
             let donos = self.ndx.buscar(i, nova)?;
@@ -4232,7 +4969,7 @@ impl Table {
         // neta com `restringir` recusava depois de a avo estar gravada.
         // `is_empty()` mantem o portao -- alteracao sem cascata nao desce nada.
         if !cascata.is_empty() {
-            Self::conferir_a_arvore(&mut cascata, 1)?;
+            Self::conferir_a_arvore(&mut cascata, 1, None)?;
         }
 
         let ponteiros_antigos = self.ponteiros(&antigo)?;
@@ -4415,6 +5152,42 @@ impl Table {
     /// se ganha e a espera de disco; o que se arrisca esta escrito em
     /// `docs/DESEMPENHO.md` §4.12 e no `MANUAL.txt`.
     pub fn excluir_de_vez(&mut self, rowid: RowId, motivo: &str) -> Result<bool> {
+        self.excluir_de_vez_opt(rowid, motivo, None)
+    }
+
+    /// [`Table::excluir_de_vez`] enxergando as FILHAS que a transacao ja abriu
+    /// -- a passada do COMMIT e a recuperacao. Ver `conferir_filhas_com`.
+    pub fn excluir_de_vez_com_maes(
+        &mut self,
+        rowid: RowId,
+        motivo: &str,
+        maes: &mut dyn MaesEmProgresso,
+    ) -> Result<bool> {
+        self.excluir_de_vez_opt(rowid, motivo, Some(maes))
+    }
+
+    /// A guarda do `excluir_de_vez`, separada da gravacao para a
+    /// pre-conferencia do COMMIT (pedido 448) chamar a MESMA funcao que a
+    /// passada chama.
+    fn conferir_exclusao_de_vez(
+        &mut self,
+        rowid: RowId,
+        ja_lida: Option<&[Value]>,
+        motivo: &str,
+        maes: Option<&mut dyn MaesEmProgresso>,
+    ) -> Result<()> {
+        if self.julga_integridade() {
+            self.conferir_filhas_com(rowid, ja_lida, maes)?;
+        }
+        self.conferir_motivo(motivo)
+    }
+
+    fn excluir_de_vez_opt(
+        &mut self,
+        rowid: RowId,
+        motivo: &str,
+        maes: Option<&mut dyn MaesEmProgresso>,
+    ) -> Result<bool> {
         // O SLOT SE LE UMA VEZ SO'. Antes eram tres leituras da mesma linha
         // por exclusao -- 4,43 us, 15,5% do custo (`--example
         // custo-do-excluir`, 16/09/2026): o `conferir_filhas` lia e
@@ -4430,17 +5203,14 @@ impl Table {
             Some(p) => p,
         };
         let valores = self.decodificar(&payload, false)?;
-        if self.julga_integridade() {
-            // Com troca empilhada na transacao, a linha que vale e a que a
-            // sobreposicao diz -- e ai a conferencia le por la, como sempre
-            // leu. E o mesmo criterio do `varrer_com`, e nao um segundo.
-            let ja_lida = match self.troca_de(rowid) {
-                None => Some(valores.as_slice()),
-                Some(_) => None,
-            };
-            self.conferir_filhas_com(rowid, ja_lida)?;
-        }
-        self.conferir_motivo(motivo)?;
+        // Com troca empilhada na transacao, a linha que vale e a que a
+        // sobreposicao diz -- e ai a conferencia le por la, como sempre leu.
+        // E o mesmo criterio do `varrer_com`, e nao um segundo.
+        let ja_lida = match self.troca_de(rowid) {
+            None => Some(valores.as_slice()),
+            Some(_) => None,
+        };
+        self.conferir_exclusao_de_vez(rowid, ja_lida, motivo, maes)?;
 
         // O conteudo dos externos entra na lixeira junto: os ponteiros do
         // payload apontam para blocos que esta mesma exclusao vai liberar.
@@ -4526,12 +5296,42 @@ impl Table {
     /// marcada -- marcar duas vezes nao e erro, mas tambem nao gera um segundo
     /// motivo no `.reason`.
     pub fn excluir_suave(&mut self, rowid: RowId, motivo: &str) -> Result<bool> {
+        self.excluir_suave_opt(rowid, motivo, None)
+    }
+
+    /// [`Table::excluir_suave`] enxergando as FILHAS que a transacao ja abriu
+    /// -- a passada do COMMIT e a recuperacao.
+    pub fn excluir_suave_com_maes(
+        &mut self,
+        rowid: RowId,
+        motivo: &str,
+        maes: &mut dyn MaesEmProgresso,
+    ) -> Result<bool> {
+        self.excluir_suave_opt(rowid, motivo, Some(maes))
+    }
+
+    /// A guarda do `excluir_suave`, a MESMA na passada e na pre-conferencia.
+    fn conferir_exclusao_suave(
+        &mut self,
+        rowid: RowId,
+        motivo: &str,
+        maes: Option<&mut dyn MaesEmProgresso>,
+    ) -> Result<()> {
         // O suave tambem. Pai logicamente morto deixa filha apontando para
         // linha que a tela nao mostra mais -- e orfa que ninguem ve e pior que
         // orfa que da erro.
-        self.conferir_filhas(rowid)?;
+        self.conferir_filhas_com(rowid, None, maes)?;
         self.exigir_softdeleted()?;
-        self.conferir_motivo(motivo)?;
+        self.conferir_motivo(motivo)
+    }
+
+    fn excluir_suave_opt(
+        &mut self,
+        rowid: RowId,
+        motivo: &str,
+        maes: Option<&mut dyn MaesEmProgresso>,
+    ) -> Result<bool> {
+        self.conferir_exclusao_suave(rowid, motivo, maes)?;
         if !self.marcar(rowid, true)? {
             return Ok(false);
         }
@@ -4562,12 +5362,32 @@ impl Table {
     /// perguntar aqui e o de uma operacao rara: o portao das chaves que
     /// conferem continua vindo antes, e tabela sem chave conferida nao le nada.
     pub fn restaurar(&mut self, rowid: RowId, motivo: &str) -> Result<bool> {
+        self.restaurar_opt(rowid, motivo, None)
+    }
+
+    /// [`Table::restaurar`] enxergando as MAES que a transacao ja abriu -- a
+    /// passada do COMMIT e a recuperacao, como o `inserir` e o `atualizar`.
+    pub fn restaurar_com_maes(
+        &mut self,
+        rowid: RowId,
+        motivo: &str,
+        maes: &mut dyn MaesEmProgresso,
+    ) -> Result<bool> {
+        self.restaurar_opt(rowid, motivo, Some(maes))
+    }
+
+    /// A guarda do `restaurar`, a MESMA na passada e na pre-conferencia.
+    fn conferir_restauracao(
+        &mut self,
+        rowid: RowId,
+        maes: Option<&mut dyn MaesEmProgresso>,
+    ) -> Result<()> {
         self.exigir_softdeleted()?;
         if fks_que_conferem(&self.esquema).next().is_some() && self.julga_integridade() {
             // A linha so se le quando ha chave a conferir: sem elas, restaurar
             // continua custando o que sempre custou.
             if let Some(linha) = self.ler(rowid)? {
-                self.conferir_fks(&linha).map_err(|e| {
+                self.conferir_fks_com(&linha, maes).map_err(|e| {
                     PhxError::Integridade(format!(
                         "{}: a linha {rowid} nao pode voltar ({e})",
                         self.nome
@@ -4575,6 +5395,16 @@ impl Table {
                 })?;
             }
         }
+        Ok(())
+    }
+
+    fn restaurar_opt(
+        &mut self,
+        rowid: RowId,
+        motivo: &str,
+        maes: Option<&mut dyn MaesEmProgresso>,
+    ) -> Result<bool> {
+        self.conferir_restauracao(rowid, maes)?;
         if !self.marcar(rowid, false)? {
             return Ok(false);
         }
@@ -5310,7 +6140,7 @@ impl Table {
         // funcao ja devolvia para slot livre, e quem chama ja sabe trata-lo --
         // sem esta linha, o `.reg` recebia um rowid alem do fim e respondia
         // «fora da faixa 1..=1», que reprovava a varredura inteira.
-        if self.nascidos().contains(&rowid) {
+        if self.nasceu_aqui(rowid) {
             return Ok(0);
         }
         match self.reg.ler(rowid)? {
@@ -5868,11 +6698,63 @@ impl Table {
             .ok_or_else(|| PhxError::NaoEncontrado(format!("indice {indice} nao existe")))
     }
 
+    /// As chaves UNICAS desta linha que entram na conferencia de unicidade,
+    /// como `(indice, chave codificada)` -- as mesmas que o `inserir`
+    /// conferiria, pela mesma regra do NULL (`participa_da_unicidade`).
+    ///
+    /// Existe para o servidor NAO ter uma segunda ideia de unicidade: ele
+    /// guarda as chaves das linhas que a transacao empilhou, e antes guardava
+    /// o texto dos valores crus, com a regra do NULL escrita por ele.
+    pub fn chaves_unicas(&self, valores: &[Value]) -> Result<Vec<(String, Vec<u8>)>> {
+        let mut saida = Vec::new();
+        for i in 0..self.esquema.indices().len() {
+            if !self.esquema.indices()[i].unico {
+                continue;
+            }
+            if let Some(k) = self.chave_se_pertence(i, valores)? {
+                if self.participa_da_unicidade(i, &k) {
+                    saida.push((self.esquema.indices()[i].nome.clone(), k));
+                }
+            }
+        }
+        Ok(saida)
+    }
+
+    /// A unicidade de uma linha AINDA NAO gravada, contra o que este handle
+    /// enxerga -- o disco, e a sobreposicao da transacao quando ha.
+    ///
+    /// E a pergunta do `empilhar` (sem sobreposicao: contra o disco) e a da
+    /// pre-conferencia do COMMIT (com o prefixo da lista), e ela e a MESMA do
+    /// `inserir`: a chave codificada pela expressao do indice, e a regra do
+    /// NULL de `participa_da_unicidade`. `proprio` e o rowid da alteracao --
+    /// achar a si mesmo pela chave nao e duplicado.
+    pub fn conferir_unicidade(&mut self, valores: &[Value], proprio: Option<RowId>) -> Result<()> {
+        for (nome, k) in self.chaves_unicas(valores)? {
+            let i = self.idx_por_nome(&nome)?;
+            if self
+                .buscar_codificada(i, k)?
+                .iter()
+                .any(|&r| Some(r) != proprio)
+            {
+                return Err(PhxError::Duplicado(format!(
+                    "indice unico {nome} ja tem essa chave"
+                )));
+            }
+        }
+        Ok(())
+    }
+
     /// Rowids com a chave exata, em ordem de digitacao dentro da chave.
     pub fn buscar(&mut self, indice: &str, chave: &[Value]) -> Result<Vec<RowId>> {
         let i = self.idx_por_nome(indice)?;
         let valores = self.espalhar(i, chave)?;
         let codificada = self.chave_de_busca(i, &valores)?;
+        self.buscar_codificada(i, codificada)
+    }
+
+    /// O `buscar` pela chave JA codificada -- a de busca (sem avaliar a
+    /// expressao) ou a da linha (avaliando).
+    fn buscar_codificada(&mut self, i: usize, codificada: Vec<u8>) -> Result<Vec<RowId>> {
         let achados = self.ndx.buscar(i, &codificada)?;
         if self.sobreposta.is_none() {
             return Ok(achados);
@@ -5883,20 +6765,36 @@ impl Table {
         // `BEGIN; INSERT; buscar pela chave que acabei de inserir` devolveria
         // vazio, e a mesma linha apareceria na varredura -- duas respostas
         // diferentes para a mesma pergunta.
-        let mut saida = Vec::with_capacity(achados.len());
-        for r in achados {
-            if !matches!(self.troca_de(r), Some(Troca::Sumida)) {
-                saida.push(r);
-            }
+        //
+        // E nao so a NASCIDA: a linha do disco que a transacao ALTEROU tambem
+        // mudou de chave para quem le por aqui, e o `.ndx` ainda a guarda na
+        // chave velha. Era o buraco (a) do pedido 448 -- tirar do resultado so
+        // a `Sumida` deixava `[atualizar M: K->K', inserir filha->K]` achar M
+        // pela chave velha, e `[atualizar M K->K' com cascata, excluir M]` nao
+        // achar pela chave nova as filhas que a cascata acabou de mover. Toda
+        // linha com troca pendente sai da resposta do indice e volta pela
+        // chave que a troca lhe da; so as sem troca vem do `.ndx` como estao.
+        // A chave de cada pendente vem do indice da sobreposicao, e nao de
+        // recalcular todas a cada busca -- ver `ChavesPendentes`.
+        self.montar_chaves_pendentes()?;
+        let Some(s) = &self.sobreposta else {
+            return Ok(achados);
+        };
+        let mut saida: Vec<RowId> = achados
+            .into_iter()
+            .filter(|r| !s.trocas.contains_key(r))
+            .collect();
+        if let Some(rs) = s
+            .chaves
+            .get()
+            .and_then(|c| c.por_chave.get(&(i, codificada)))
+        {
+            saida.extend(rs.iter().copied());
         }
-        for r in self.nascidos() {
-            let Some(linha) = self.resolver(r)? else {
-                continue;
-            };
-            if self.chave_se_pertence(i, &linha)?.as_deref() == Some(&codificada[..]) {
-                saida.push(r);
-            }
-        }
+        // Em ordem de digitacao dentro da chave, como o `.ndx` entrega: a
+        // linha do disco que voltou pela chave nova tem de cair no lugar
+        // dela, e a nascida no fim, onde o `.reg` vai grava-la.
+        saida.sort_unstable();
         Ok(saida)
     }
 
@@ -6092,7 +6990,13 @@ impl Table {
         }
         panico_de_teste::passar(panico_de_teste::Ponto::NoMeioDoReindexar);
         for (i, lote) in lotes.into_iter().enumerate() {
-            self.ndx.construir_em_lote(i, lote)?;
+            // A mesma regra de unicidade do `inserir` -- NULL nao colide --, e
+            // nao a do `.ndx` sozinho, que nao sabe onde fica o NULL na chave.
+            let unico = self.esquema.indices()[i].unico;
+            let camadas = camadas_do_indice(&self.esquema, i);
+            self.ndx.construir_em_lote_participando(i, lote, &|k| {
+                unico && !chave_tem_nulo(&camadas, k)
+            })?;
         }
         Ok(())
     }

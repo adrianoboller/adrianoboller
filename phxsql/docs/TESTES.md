@@ -950,8 +950,17 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `reparo-apaga-a-marca-gravada-que-nao-se-rele` | a marca em voo JÁ GRAVADA que não se relê no reparo sai do disco como «não confere»: a transação confirmada fica pela metade, ou sem bilhete para o arranque | 1 | ✅ provada |
 | `reparo-com-panico-engolido` | um `catch_unwind` em volta do reparo engole o pânico duplo: a trava fica fechada com o processo de pé | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
+| `commit-sem-pre-conferencia` | o COMMIT confere a chave estrangeira so na passada, depois da marca, e grava a parte da frente | 10 | ✅ provada |
+| `sobreposicao-acha-pela-chave-velha` | o buscar da sobreposicao acha pela chave velha a linha do disco que o prefixo alterou | 1 | ✅ provada |
+| `mae-viva-lida-por-baixo-da-sobreposicao` | a conferencia de «mae viva» le o disco por baixo da marca pendente | 1 | ✅ provada |
+| `indice-da-sobreposicao-parado` | o indice das chaves pendentes fica no retrato da primeira busca | 1 | ✅ provada |
+| `passada-replaneja-a-cascata` | a passada replaneja a cascata depois da marca, e a lista valida sai pela metade | 2 | ✅ provada |
+| `prefixo-copia-a-sobreposicao` | o plano da cascata abre a filha com uma COPIA da sobreposicao dela | 1 | ✅ provada |
+| `sobreposicao-guarda-a-linha-crua` | a sobreposicao guarda a linha crua do empilhar, e nao a que o store vai gravar | 4 | ✅ provada |
+| `nulo-colide-no-unico` | o segundo NULL num indice unico cai em DUPLICADO | 1 | ✅ provada |
+| `nulo-colide-no-unico-do-commit` | o COMMIT com o segundo NULL num indice unico sai pela metade | 1 | ✅ provada |
 
-**309 guardas: 1 aposentada, 304 provadas, 4 redundantes** — 8426 s de mutação, medido em 2026-09-16 15:25.
+**318 guardas: 1 aposentada, 313 provadas, 4 redundantes** — 8735 s de mutação, medido em 2026-09-16 15:25.
 
 As guardas que esta corrida ainda cita, hoje aposentadas:
 

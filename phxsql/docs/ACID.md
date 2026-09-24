@@ -299,11 +299,179 @@ no mesmo ponto não tem essa garantia** (pedido 490, achado do DBA na revisão d
 451): a janela do `.ndx` da filha abre e fecha a cada linha, o `Drop` do pânico
 entre duas filhas acha a escrita em voo em zero e baixa o byte 52, e as filhas
 seguintes ficam na chave velha sem recusa nenhuma — ali o pânico é pior que a
-queda, que deixa o byte em 1 e faz a tabela recusar. E há um
-canto, consistente com o `READ COMMITTED` desta casa: uma filha **inserida por
-outra conexão** sob a chave velha, entre o `empilhar` e o `COMMIT`, é um
-fantasma que a cascata da transação não vê — o mesmo fantasma que a §4.1 já
-mede como *acontece*.
+queda, que deixa o byte em 1 e faz a tabela recusar. O canto
+que esta seção deixava aberto — uma filha que **outra conexão** põe sob a chave
+velha entre o `empilhar` e o `COMMIT`, e que a cascata da lista não leva —
+**deixou de virar órfã** no pedido 448: a conferência antes da marca (§2.5)
+replaneja a árvore, acha a filha que a lista não reescreve e recusa o `COMMIT`
+com zero gravado. O fantasma continua acontecendo para quem **lê** (§4.1); o que
+não acontece mais é ele sobreviver como órfã.
+
+### 2.5 A conferência antes da marca — pedido 448, 24/09/2026
+
+**O que valia antes, medido no HEAD pelos testes do pedido:** a chave
+estrangeira da transação só se conferia na passada, **depois** da marca. Com
+`[mãe, filha-órfã, outra]` a resposta era «as 1 anteriores JÁ ESTÃO gravadas» —
+a mãe ficava e o resto não. Com `[inserir filha→M, excluir M]` a resposta era
+`COMMITTED` com `completando: true`, a filha gravada, M viva e uma marca
+sobrando — e o aviso mandava reparar um `.ndx` são. E a filha que outra sessão
+apontou para a chave velha entre o `empilhar` e o `COMMIT` ficava **órfã**, com
+a resposta `COMMITTED` sem aviso nenhum. Fere o D2 do parecer do 426: a
+transação confirmada é inteira ou não é.
+
+**O que vale agora:** entre o `preparar_a_marca` e a marca, com a mesma trava
+que a passada usa, a lista inteira passa pela `pre_conferir_a_lista`, na ordem:
+
+* **visibilidade de PREFIXO** — a escrita *i* enxerga o disco mais as escritas
+  0..*i*−1, e nenhuma das que vêm depois. Cada uma entra na sobreposição do
+  handle dela só **depois** de conferida. É isso que mantém «filho antes do
+  pai» **recusado** sem `DEFERRABLE`, e é isso que deixa a exclusão da mãe ver a
+  filha nascida antes dela na lista;
+* a **chave estrangeira nos dois sentidos** (a filha aponta para mãe viva; a mãe
+  excluída não tem filha, contando as que nasceram, foram redirecionadas ou
+  apagadas no prefixo), a **árvore do `ao_alterar`** replanejada contra o disco
+  e o prefixo, e a **unicidade** — pelas **mesmas** guardas que a passada chama
+  (`Table::pre_conferir`), e não por uma segunda cópia delas;
+* **um planejador só** (achado A1 da revisão do DBA): o plano do `ao_alterar`
+  é o da pré-conferência, contra o disco e o prefixo, e os elos que faltam
+  **entram na lista antes da marca**, achatados, logo depois da alteração que
+  os puxou; toda alteração passa a ser aplicada **sem replanejar**, na passada
+  e na recuperação. A passada replanejava abrindo a filha por um segundo
+  descritor, e a guarda do `.ndx` sujo pela própria passada recusava mesmo com
+  o plano vazio — `[inserir pedido→A, alterar a chave de B]`, com B sem filha,
+  saía pela metade com «DEFEITO DO MOTOR». A marca v3 já carregava elo
+  achatado: o formato não muda. E a filha que a **própria** lista **inseriu**
+  acompanha a mãe, como no PostgreSQL, no MySQL e na MariaDB. A primeira
+  versão recusava `[inserir filha→5, mudar a mãe 5→6]` mandando refazer, e
+  refazer dava a mesma recusa. **Só a inserida.** Quando a lista **alterou** ou
+  **excluiu** a filha antes de mudar a chave da mãe, vale o elo que o `empilhar`
+  planejou olhando só o disco, e ele passa por cima do que a lista escreveu na
+  filha. É o achado N2 da segunda revisão do DBA
+  (`docs/propostas/parecer-dba-448-2a-2026-09-24.md`), medido igual no
+  `82a17ef` nos três primeiros casos:
+
+  | lista | PostgreSQL | hoje |
+  |---|---|---|
+  | `[filha id 10→11, mãe 5→6]` | id 11, código 6 | id 10 |
+  | `[filha troca de mãe 5→8, mãe 5→6]` | código 8 | código 6 |
+  | `[excluir suave a filha, mãe 5→6]` | filha excluída | filha ressuscita |
+  | `[excluir de vez a filha, mãe 5→6]` | `COMMIT` | recusa com zero gravado |
+
+  A chave estrangeira continua íntegra em todos os casos, mas o dado não: o que
+  a lista pediu para a filha se perde;
+* a cascata que **já estava na lista** (empilhada com filhas) tem de **cobrir**
+  o plano refeito: a filha que ele acha e que nenhuma escrita adiante reescreve
+  ou foi escrita pela lista — e o elo dela entra —, ou foi apontada para a
+  chave velha **por outra sessão** depois do `empilhar`, e aí o `COMMIT`
+  recusa dizendo isso: ela ficaria órfã, e numa transação nova o plano já a
+  encontra;
+* a linha que a sobreposição guarda é a **que o store vai gravar** (achado A3):
+  completada pelo DEFAULT, pela `Sequence` (a nova prevista na inserção, a
+  mantida na alteração), pela coluna calculada e pelas colunas de sistema,
+  **pelas mesmas funções da gravação** e sem consumir contador — prever não
+  pode abrir buraco na `Sequence`. Vale para a pré-conferência, para a leitura
+  dentro da transação e para o plano da cascata no `empilhar`, que via a
+  `Sequence` não mandada como chave que virou NULO e levava o NULO às filhas;
+* **NULL não colide num índice único** (achado A4), a regra dos quatro motores
+  — aceite automático. Ela estava escrita duas vezes e as duas divergiam: o
+  store dava `DUPLICADO` no segundo NULL e a conferência do servidor o pulava.
+  Hoje há um predicado só (`Table::participa_da_unicidade`), e o `inserir`, o
+  `atualizar`, a troca de chaves da marca, o `reindexar` e as duas
+  conferências da transação perguntam a ele. O formato não muda: o NULL sempre
+  se codificou assim; mudou quem colide.
+
+**A recusa:** erro do dado (`INTEGRIDADE`, `DUPLICADO`), **zero aplicado, sem
+marca**, `repetir` falso, a transação termina, e a mensagem nomeia a posição, a
+tabela e o rowid («o COMMIT recusou a escrita 2 de 3 (inserir em pedidos, rowid
+1) ANTES da marca»). É o que o PostgreSQL faz com restrição que falha no
+`COMMIT`. Quebra que não é do dado (E/S, tabela congelada) devolve a lista e
+deixa a transação `ACTIVE`, como o `preparar_a_marca` já fazia.
+
+**A ressalva: «chave estrangeira que falha sai com zero gravado» vale para a
+chave que o pedido MANDA.** A coluna de chave estrangeira preenchida por
+DEFAULT ou por coluna calculada **não é conferida**, nem aqui, nem fora da
+transação. O store confere as mães na linha **crua**, antes de `completar` e de
+`aplicar_regras`, e a pré-conferência herdou essa ordem. É o achado N1 da
+segunda revisão do DBA, e virou o pedido 514. Medido igual antes e depois do
+448, dentro e fora da transação:
+
+* um pedido com `cod_cliente` vindo do DEFAULT 7, sem mãe 7, é gravado órfão;
+* um item com `cod_cliente` calculado (`x+0`) é gravado com 9 e alterado para 8,
+  sem mãe nenhuma.
+
+Fere «chave declarada nasce conferida». Os três maduros conferem a linha final.
+
+**A passada continua conferindo, como cinto.** Recusa dela depois de a
+pré-conferência aprovar é defeito do motor, e a resposta diz isso. A prova do
+cinto roda com a pré-conferência desligada por um interruptor de teste
+(`sem_a_pre_conferencia_o_cinto_da_passada_diz_o_que_ficou`).
+
+**Dois buracos da sobreposição fecharam antes**, com prova própria
+(`crates/phxsql-store/tests/sobreposicao-da-pre-conferencia.rs`): o `buscar`
+não achava pela chave nova a linha do disco que o prefixo alterou (e a achava
+pela velha), e a conferência de «mãe viva» lia por baixo da marca pendente. Com
+qualquer um dos dois reposto, a pré-conferência **recusa transação válida**
+(`[mãe nova, filha, alterar a chave da mãe com cascata]`) — medido, não lido.
+
+**Custo, medido** (`--example custo-da-pre-conferencia`, só o `COMMIT`, n/2
+mães e n/2 filhas na mesma lista, mediana e faixa min–max; a tabela é da
+primeira versão, e a refeita com os consertos da revisão dá 72,3 → 110,3 ms
+intercalada e 69,0 → 99,5 ms em blocos a 10.000, 5 rodadas cada; a 100.000,
+uma rodada só e sem o binário de antes na mesma corrida, 1.430,7 ms
+intercalada e 1.331,3 ms em blocos — 1,70× e 1,58× dos 841 ms de baixo, ainda
+abaixo dos 2×):
+
+| escritas | arrumação | antes do 448 | com a pré-conferência | razão |
+|---|---|---|---|---|
+| 10.000 (5 rodadas) | intercalada | 72,6 ms (69,4–74,7) | 107,0 ms (105,6–136,1) | 1,47× |
+| 10.000 (5 rodadas) | em blocos | 73,2 ms (70,5–74,6) | 102,2 ms (99,8–109,3) | 1,40× |
+| 100.000 (3 rodadas) | intercalada | 841,8 ms (823,4–989,3) | 1.330,9 ms (1.259,0–1.336,6) | 1,58× |
+| 100.000 (3 rodadas) | em blocos | 841,3 ms (777,9–883,3) | 1.233,8 ms (1.207,7–1.243,6) | 1,47× |
+
+As faixas não se cruzam: o custo é real, e fica abaixo do teto de 2× que o
+parecer pôs antes de embarcar. Com a busca **linear** que a sobreposição tinha,
+o `COMMIT` de 10.000 ia a **6.550 ms (90×)** intercalada e **8.380 ms (114×)**
+em blocos — o índice das chaves pendentes (`ChavesPendentes`) entrou por causa
+desse número, e não antes dele.
+
+**E o custo da alteração de chave, que a revisão do DBA achou quadrático**
+(achado A2): o plano de cada alteração abria a filha com uma **cópia** da
+sobreposição dela. Com `n` filhas na lista e depois `n` alterações de chave
+(`custo-da-pre-conferencia chaves`), o `COMMIT` foi a 3.583,8 / 15.181,2 /
+92.618,7 ms para n = 2.000 / 4.000 / 8.000. A sobreposição passou a ser
+**dividida por `Arc`**, sem cópia — o plano só a lê — e o índice das chaves
+pendentes que um lado monta fica montado para o outro. A prova no teste conta
+as cópias, e não o tempo: `a2_o_plano_da_cascata_nao_copia_a_sobreposicao_da_filha`.
+Medido intercalado com o binário de antes do 448 (`82a17ef`), mediana de 3:
+
+| n | antes do 448 | primeira versão | com o `Arc` |
+|---|---|---|---|
+| 2.000 | 207,0 ms (188,9–226,0) | 3.583,8 ms | 628,7 ms (627,8–663,8) |
+| 4.000 | 375,1 ms (358,5–398,5) | 15.181,2 ms | 1.345,2 ms (1.302,1–1.348,2) |
+| 8.000 | 740,4 ms (724,9–783,4) | 92.618,7 ms | 2.763,1 ms (2.724,2–2.977,0) |
+
+**Linear de novo** (×2,14 e ×2,05 a cada dobra). O que sobra é uma constante,
+e ela passa do teto de 2×: **3,0× a 3,7×** do `COMMIT` de antes, cerca de
+345 µs por alteração contra 93 µs. O motivo está medido pelo que o código faz:
+cada alteração de chave replaneja a cascata contra o disco e o prefixo, e o
+plano abre a filha e lê o esquema das irmãs — trabalho que antes do 448 o
+`COMMIT` não fazia, porque ninguém replanejava. É a mesma família do «cada
+conferência reabre a mãe» (pedido 494, ⏸), e se conserta ali, emprestando o
+handle em vez de reabrir.
+
+**Formato em disco: não muda.** A marca `.tx` v3, o `PSCH` e o `.ndx` ficam
+intactos; a sobreposição mora na RAM.
+
+**O que continua fora, e tem pedido:**
+
+* a chave estrangeira conferida na **instrução** (459): os quatro motores
+  conferem ali, e aqui a filha órfã ainda só é recusada no `COMMIT`;
+* a trava na mãe (460): hoje, quando duas transações disputam a mesma mãe,
+  perde a da filha, recusada no `COMMIT`, em vez de esperar como nos três
+  maduros;
+* os cinco achados da segunda revisão do DBA, N1 a N5 (514 a 518), com os dois
+  de dado descritos acima: a chave vinda do DEFAULT ou da coluna calculada (N1)
+  e o elo do `empilhar` por cima da filha alterada na lista (N2).
 
 ---
 
@@ -385,6 +553,14 @@ o escopo efetivo passa a mostrá-la (expansão dinâmica, `docs/TRANSACOES.md`
 em `acidc_a_cascata_entra_no_conjunto_de_escrita_da_transacao` e nas irmãs de
 rollback e de recuperação. Ver a §2.4 para o mecanismo (super-journal) e o preço
 (portão antes do trabalho, tabelas filhas travadas só quando há cascata).
+
+E a restrição que a lista viola deixou de ser descoberta com metade dela no
+disco (pedido 448, §2.5): a chave estrangeira nos dois sentidos, o plano do
+`ao_alterar` e a unicidade se conferem na lista inteira antes da marca, com
+visibilidade de prefixo — o que mantém «só existe filho se o pai existir
+primeiro» valendo na ordem da lista, e não só no fim dela. Com a ressalva da
+§2.5: a chave preenchida por DEFAULT ou por coluna calculada não se confere
+(pedido 514).
 
 O que **não** entra por aqui, e continua sendo o que derruba *ACID compliant*
 seco: por padrão o isolamento é `READ COMMITTED` (§4), sem pedir não há
@@ -653,13 +829,18 @@ gravado e depois liberado por falha de E/S no índice (`operacoes IMPOSSIVEIS`,
   `ROLLBACK` não consome slot nem rowid, e uma queda no meio da passada é
   completada no arranque. Dentro da transação a cascata do `ao_alterar` **entra
   no conjunto de escrita** (ACID-C, super-journal): o `ROLLBACK` a alcança e o
-  `COMMIT` a conta. Fora de transação, a cascata do `atualizar` solto é
-  denunciada ou consertada numa queda; num **pânico** entre duas filhas ela
-  sai calada, pior que a queda, até o pedido 490.
+  `COMMIT` a conta. Desde o pedido 448 a lista inteira se confere **antes** da
+  marca (§2.5): chave estrangeira, cascata ou unicidade que falha sai com zero
+  gravado, e não mais com a parte da frente aplicada. A chave estrangeira que
+  vem do DEFAULT ou de coluna calculada não se confere (pedido 514). Fora de transação, a
+  cascata do `atualizar` solto é denunciada ou consertada numa queda; num
+  **pânico** entre duas filhas ela sai calada, pior que a queda, até o pedido 490.
 * **C — consistência: imposta na gravação; dentro da transação a cascata é
   coberta.** Tipo, tamanho, obrigatoriedade, unicidade e integridade
   referencial são conferidos em toda porta local de escrita, e «nunca se mata o
-  pai que tem filhos» vale nos dois excluires. Dentro da transação a cascata do
+  pai que tem filhos» vale nos dois excluires. A exceção é a chave estrangeira
+  preenchida por DEFAULT ou por coluna calculada, que não se confere
+  (pedido 514). Dentro da transação a cascata do
   `ao_alterar` passou a entrar no conjunto de escrita (ACID-C), então o
   `ROLLBACK` a desfaz e o escopo efetivo a mostra. A réplica aplica e não julga,
   por decisão medida.

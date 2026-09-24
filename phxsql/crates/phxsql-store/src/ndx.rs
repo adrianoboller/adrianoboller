@@ -1571,6 +1571,23 @@ impl NdxFile {
         self.construir_em_lote_com(idx, chaves, ENCHIMENTO_PADRAO)
     }
 
+    /// O mesmo, com a regra da unicidade vinda de quem conhece o esquema.
+    ///
+    /// O `.ndx` sabe que o indice e unico, mas nao sabe onde comeca cada
+    /// componente da chave -- e e disso que depende «esta chave tem NULL, e
+    /// NULL nao colide». Quem sabe e a `Table`, e ela passa a MESMA pergunta
+    /// que o `inserir` e o `atualizar` fazem (pedido 448, achado A4): sem
+    /// isto, o `reindexar` recusava a tabela que o `inserir` tinha aceitado.
+    pub fn construir_em_lote_participando(
+        &mut self,
+        idx: usize,
+        chaves: Vec<u8>,
+        participa: &dyn Fn(&[u8]) -> bool,
+    ) -> Result<()> {
+        let d = self.descritor(idx)?.clone();
+        self.na_janela(|n| n.construir_com(idx, &d, chaves, ENCHIMENTO_PADRAO, participa))
+    }
+
     /// O mesmo, escolhendo quanto de cada folha encher, em porcento.
     ///
     /// Existe separado porque o numero e uma troca medivel, e nao uma verdade:
@@ -1593,6 +1610,17 @@ impl NdxFile {
         d: &DescritorIndice,
         chaves: Vec<u8>,
         enchimento: usize,
+    ) -> Result<()> {
+        self.construir_com(idx, d, chaves, enchimento, &|_| true)
+    }
+
+    fn construir_com(
+        &mut self,
+        idx: usize,
+        d: &DescritorIndice,
+        chaves: Vec<u8>,
+        enchimento: usize,
+        participa: &dyn Fn(&[u8]) -> bool,
     ) -> Result<()> {
         let ck_len = d.ck_len();
         if !(1..=100).contains(&enchimento) {
@@ -1652,7 +1680,7 @@ impl NdxFile {
                     d.nome
                 )));
             }
-            if d.unico && x[..d.key_len] == y[..d.key_len] {
+            if d.unico && x[..d.key_len] == y[..d.key_len] && participa(&x[..d.key_len]) {
                 return Err(PhxError::Duplicado(format!(
                     "indice unico {}: chave repetida no lote",
                     d.nome

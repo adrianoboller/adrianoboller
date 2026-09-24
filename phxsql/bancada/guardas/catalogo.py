@@ -3079,17 +3079,24 @@ pub fn limpar() {
         # linha --, so a chamada de dentro dele. A amarra continua sendo o
         # comentario do `// Numerar ANTES`, que segue unico no arquivo (o
         # `atualizar_com_maes_opt` tem o mesmo `if`, e nao este comentario).
+        #
+        # ATUALIZADO em 24/09/2026 (pedido 448). O `if` do `inserir` e o do
+        # `atualizar` viraram UMA funcao, `conferir_as_maes`, que a
+        # pre-conferencia do COMMIT tambem chama -- a mesma pergunta nos tres
+        # lugares. O portao continua sendo o `&& self.julga_integridade()` da
+        # mesma linha; a amarra passa a ser o `Ok(())` do fim da funcao, que so
+        # ela tem logo depois deste `if`.
         "trecho": """        self.conferir_aridade(valores)?;
         if fks_que_conferem(&self.esquema).next().is_some() && self.julga_integridade() {
             self.conferir_fks_com(valores, maes)?;
         }
-        // Numerar ANTES das chaves, pela mesma razao da sequencia: se a coluna""",
+        Ok(())""",
         "troca": """        // DEFEITO REPOSTO: a replica volta a julgar o que a origem ja julgou.
         self.conferir_aridade(valores)?;
         if fks_que_conferem(&self.esquema).next().is_some() {
             self.conferir_fks_com(valores, maes)?;
         }
-        // Numerar ANTES das chaves, pela mesma razao da sequencia: se a coluna""",
+        Ok(())""",
         "pacote": "phxsql-store",
         "alvo": ["--test", "replicacao-integridade"],
         "caem": [
@@ -3501,7 +3508,9 @@ pub fn limpar() {
             "escrita e nada denuncia o buraco."
         ),
         "arquivo": "crates/phxsql-store/src/table.rs",
-        "trecho": """        Self::conferir_a_arvore(&mut passos, 1)?;
+        # ATUALIZADO em 24/09/2026 (pedido 448): a conferencia da arvore ganhou
+        # o parametro das irmas com prefixo, e a recuperacao passa `None`.
+        "trecho": """        Self::conferir_a_arvore(&mut passos, 1, None)?;
         self.aplicar_ao_alterar(passos)""",
         "troca": """        // DEFEITO REPOSTO: aplica sem conferir a arvore, que e como
         // `recascatear` nasceu -- grava a primeira filha e so entao recusa.
@@ -5930,14 +5939,18 @@ pub fn limpar() {
             "recebe `None` e a conferencia le por la, como sempre leu."
         ),
         "arquivo": "crates/phxsql-store/src/table.rs",
-        "trecho": """            let ja_lida = match self.troca_de(rowid) {
-                None => Some(valores.as_slice()),
-                Some(_) => None,
-            };
+        # ATUALIZADO em 24/09/2026 (pedido 448): a guarda saiu para
+        # `conferir_exclusao_de_vez`, que a pre-conferencia do COMMIT tambem
+        # chama, e a `ja_lida` subiu um nivel de recuo -- o `if julga` foi
+        # junto para dentro da guarda.
+        "trecho": """        let ja_lida = match self.troca_de(rowid) {
+            None => Some(valores.as_slice()),
+            Some(_) => None,
+        };
 """,
-        "troca": """            // DEFEITO REPOSTO (pedido 259): a linha desce VAZIA, e a
-            // conferencia responde «nao tem filha» para toda mae.
-            let ja_lida = Some(&valores[..0]);
+        "troca": """        // DEFEITO REPOSTO (pedido 259): a linha desce VAZIA, e a
+        // conferencia responde «nao tem filha» para toda mae.
+        let ja_lida = Some(&valores[..0]);
 """,
         "pacote": "phxsql-store",
         "alvo": ["--test", "chave-estrangeira"],
@@ -9883,8 +9896,11 @@ pub fn limpar() {
 """,
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
+        # ATUALIZADO em 24/09/2026 (pedido 448): com a pre-conferencia, este
+        # ramo virou o CINTO da passada, e o teste que o exercita liga o
+        # interruptor de teste que a desliga -- o nome mudou junto.
         "caem": [
-            "servidor::testes_transacoes::o_erro_do_dado_no_meio_da_lista_diz_o_que_ficou_e_o_arranque_nao_muda",
+            "servidor::testes_transacoes::sem_a_pre_conferencia_o_cinto_da_passada_diz_o_que_ficou",
         ],
         "seguem": [
             "servidor::testes_transacoes::a_filha_antes_do_pai_nao_deixa_marca_para_o_arranque",
@@ -12041,5 +12057,287 @@ pub const ITERACOES_MINIMAS_DO_CADASTRO: u32 = phxsql_store::cofre::ITERACOES_MI
             "servidor::testes_do_panico_sob_a_trava::reparo_que_falha_derruba_o_processo_em_vez_de_servir",
         ],
         "prazo": 600,
+    },
+    # -----------------------------------------------------------------------
+    # 448. A chave estrangeira da transacao conferida ANTES da marca
+    # -----------------------------------------------------------------------
+    {
+        "id": "commit-sem-pre-conferencia",
+        "titulo": "o COMMIT confere a chave estrangeira so na passada, depois da marca, e grava a parte da frente",
+        "porque": (
+            "pedido 448, medido no HEAD pelos testes do pedido: `[mae, "
+            "filha-orfa, outra]` gravava a mae e parava; `[inserir filha->M, "
+            "excluir M]` respondia COMMITTED com a filha gravada e M viva; a "
+            "filha que outra sessao apontou para a chave velha ficava orfa sem "
+            "aviso. Fere o D2 do parecer do 426: a transacao confirmada e "
+            "inteira ou nao e."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        let conferida = if pre_conferir {
+            self.pre_conferir_a_lista(&trava, &database, &escritas, sessao)
+""",
+        "troca": """        // DEFEITO REPOSTO (448): a lista vai para a marca sem conferir.
+        let conferida = if false && pre_conferir {
+            self.pre_conferir_a_lista(&trava, &database, &escritas, sessao)
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_transacoes::pre_conferencia_448::a_filha_orfa_no_meio_recusa_antes_da_marca_com_zero_gravado",
+            "servidor::testes_transacoes::pre_conferencia_448::inserir_a_filha_e_excluir_a_mae_recusa_antes_da_marca",
+            "servidor::testes_transacoes::pre_conferencia_448::alterar_a_chave_da_mae_e_apontar_para_a_velha_recusa",
+            "servidor::testes_transacoes::pre_conferencia_448::alterar_a_chave_com_cascata_e_excluir_a_mae_recusa",
+            "servidor::testes_transacoes::pre_conferencia_448::excluir_suave_a_mae_e_inserir_a_filha_recusa",
+            "servidor::testes_transacoes::pre_conferencia_448::a_chave_unica_tomada_no_prefixo_recusa_antes_da_marca",
+            "servidor::testes_transacoes::pre_conferencia_448::a_mae_apagada_por_outra_sessao_recusa_o_commit_com_zero_gravado",
+            "servidor::testes_transacoes::pre_conferencia_448::a_filha_redirecionada_fora_do_plano_nao_fica_orfa",
+            "servidor::testes_transacoes::revisao_do_dba_448::a1_a_filha_da_propria_lista_acompanha_a_chave_nova_da_mae",
+            # Cai por consequencia desde o achado A1: o plano da cascata mora na
+            # pre-conferencia, e sem ela a cascata que a lista nao levava some.
+            "servidor::testes_transacoes::pre_conferencia_448::a_cascata_implicita_numa_tabela_fora_da_lista_continua_valendo",
+        ],
+        "seguem": [
+            # O comportamento velho: a guarda nao pode estar recusando tudo.
+            "servidor::testes_transacoes::pre_conferencia_448::a_ordem_certa_continua_committed_e_inteira",
+            "servidor::testes_transacoes::pre_conferencia_448::excluir_a_filha_e_depois_a_mae_na_mesma_lista_confirma",
+            "servidor::testes_transacoes::p0_pai_empilhado_e_visivel_a_fk_da_filha_no_mesmo_commit",
+        ],
+    },
+    {
+        "id": "sobreposicao-acha-pela-chave-velha",
+        "titulo": "o buscar da sobreposicao acha pela chave velha a linha do disco que o prefixo alterou",
+        "porque": (
+            "buraco (a) do parecer do DBA para o 448: com ele, `[atualizar M "
+            "K->K', inserir filha->K]` passava na pre-conferencia e quebrava na "
+            "passada, depois da marca. Medido: reposto sozinho, ele tambem faz "
+            "a pre-conferencia RECUSAR transacao valida."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """            .filter(|r| !s.trocas.contains_key(r))
+""",
+        "troca": """            // DEFEITO REPOSTO (448a): so a `Sumida` sai do que o `.ndx` achou.
+            .filter(|r| !matches!(s.trocas.get(r), Some(Troca::Sumida)))
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "sobreposicao-da-pre-conferencia"],
+        "caem": [
+            "o_buscar_acha_pela_chave_nova_a_linha_do_disco_que_o_prefixo_alterou",
+        ],
+        "seguem": [
+            "a_mae_marcada_no_prefixo_nao_esta_viva_para_a_filha",
+        ],
+    },
+    {
+        "id": "mae-viva-lida-por-baixo-da-sobreposicao",
+        "titulo": "a conferencia de «mae viva» le o disco por baixo da marca pendente",
+        "porque": (
+            "buraco (b) do parecer do DBA para o 448: `reg.ler` le por baixo "
+            "da sobreposicao, e em `[excluir_suave M, inserir filha->M]` a "
+            "pre-conferencia via viva a mae que o proprio prefixo ja tinha "
+            "marcado."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """                if mae.visivel(r, None, Visao::Ativas)? {
+                    viva = true;
+                    break;
+                }
+""",
+        "troca": """                // DEFEITO REPOSTO (448b): a marca pendente nao conta.
+                if let Some(p) = mae.reg.ler(r)? {
+                    if !mae.marcada_no_payload(&p)? {
+                        viva = true;
+                        break;
+                    }
+                }
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "sobreposicao-da-pre-conferencia"],
+        "caem": [
+            "a_mae_marcada_no_prefixo_nao_esta_viva_para_a_filha",
+        ],
+        "seguem": [
+            "o_buscar_acha_pela_chave_nova_a_linha_do_disco_que_o_prefixo_alterou",
+            "o_buscar_continua_achando_a_chave_que_nao_mudou_e_a_nascida",
+        ],
+    },
+    {
+        "id": "indice-da-sobreposicao-parado",
+        "titulo": "o indice das chaves pendentes fica no retrato da primeira busca",
+        "porque": (
+            "o `ChavesPendentes` entrou no 448 porque a busca linear levava o "
+            "COMMIT de 10.000 escritas de 72,6 ms a 6.550 ms (90x). Ele e "
+            "montado na primeira busca e mantido por `sobrepor_mais`; se a "
+            "manutencao cair, a pre-conferencia passa a ver um prefixo parado."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """                c.trocar(rowid, novas);
+""",
+        "troca": """                // DEFEITO REPOSTO (448): o indice ja montado nao anda.
+                let _ = novas;
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "sobreposicao-da-pre-conferencia"],
+        "caem": [
+            "o_indice_das_pendentes_acompanha_a_troca_depois_da_primeira_busca",
+        ],
+        "seguem": [
+            "o_buscar_continua_achando_a_chave_que_nao_mudou_e_a_nascida",
+        ],
+    },
+    # -----------------------------------------------------------------------
+    # 448, a revisao do DBA (`docs/propostas/parecer-dba-448-2026-09-24.md`)
+    # -----------------------------------------------------------------------
+    {
+        "id": "passada-replaneja-a-cascata",
+        "titulo": "a passada replaneja a cascata depois da marca, e a lista valida sai pela metade",
+        "porque": (
+            "achado A1: `[inserir pedido->A, alterar a chave de B]`, com B sem "
+            "filha, gravava o pedido e parava em «DEFEITO DO MOTOR» -- a passada "
+            "planejava a cascata de B abrindo `pedidos` por um segundo "
+            "descritor, e a guarda do `.ndx` sujo pela propria passada recusava "
+            "mesmo com o plano vazio. O planejador passou a ser UM, o da "
+            "pre-conferencia: os elos entram na lista antes da marca."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        let escritas = if pre_conferir {
+            costurar_os_elos(escritas, elos)
+        } else {
+            escritas
+        };
+""",
+        "troca": """        // DEFEITO REPOSTO (448-A1): a lista vai para a marca sem os elos, e a
+        // passada volta a planejar a cascata por conta propria.
+        let escritas = if false && pre_conferir {
+            costurar_os_elos(escritas, elos)
+        } else {
+            let _ = elos;
+            escritas
+        };
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_transacoes::revisao_do_dba_448::a1_a_mae_sem_filha_muda_de_chave_depois_de_a_lista_escrever_na_filha",
+            "servidor::testes_transacoes::revisao_do_dba_448::a1_a_filha_da_propria_lista_acompanha_a_chave_nova_da_mae",
+        ],
+        "seguem": [
+            "servidor::testes_transacoes::pre_conferencia_448::a_ordem_certa_continua_committed_e_inteira",
+            "servidor::testes_transacoes::p0_pai_empilhado_e_visivel_a_fk_da_filha_no_mesmo_commit",
+        ],
+    },
+    {
+        "id": "prefixo-copia-a-sobreposicao",
+        "titulo": "o plano da cascata abre a filha com uma COPIA da sobreposicao dela",
+        "porque": (
+            "achado A2: uma copia por alteracao de chave, O(pendentes) cada, "
+            "O(n^2) no COMMIT sob a trava global -- 715 ms para 99,6 s com "
+            "n = 8.000 na sonda do DBA. A prova conta as copias, e nao o tempo."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """            .and_then(|(_, t)| t.sobreposicao().cloned())
+""",
+        "troca": """            // DEFEITO REPOSTO (448-A2): cada plano ganha uma copia inteira.
+            .and_then(|(_, t)| t.sobreposicao().map(|s| Arc::new((**s).clone())))
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_transacoes::revisao_do_dba_448::a2_o_plano_da_cascata_nao_copia_a_sobreposicao_da_filha",
+        ],
+        "seguem": [
+            "servidor::testes_transacoes::revisao_do_dba_448::a1_a_filha_da_propria_lista_acompanha_a_chave_nova_da_mae",
+            "servidor::testes_transacoes::pre_conferencia_448::a_ordem_certa_continua_committed_e_inteira",
+        ],
+    },
+    {
+        "id": "sobreposicao-guarda-a-linha-crua",
+        "titulo": "a sobreposicao guarda a linha crua do empilhar, e nao a que o store vai gravar",
+        "porque": (
+            "achado A3: o store completa a linha (DEFAULT, Sequence mantida, "
+            "calculada, colunas de sistema) e a sobreposicao nao. `[mae com "
+            "codigo pelo DEFAULT 7, filha->7]` era recusada, a busca dentro da "
+            "transacao nao achava a mae, e o `empilhar` planejava cascata para "
+            "NULO quando o cliente nao mandava a Sequence."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        if let Some(v) = self.aplicar_regras(&linha, anterior.is_none())? {
+            linha = v;
+        }
+        Ok(linha)
+""",
+        "troca": """        if let Some(v) = self.aplicar_regras(&linha, anterior.is_none())? {
+            linha = v;
+        }
+        // DEFEITO REPOSTO (448-A3): a previsao devolve a linha crua.
+        let _ = linha;
+        Ok(valores.to_vec())
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_transacoes::revisao_do_dba_448::a3_a_mae_com_codigo_pelo_padrao_e_a_filha_confirmam",
+            "servidor::testes_transacoes::revisao_do_dba_448::a3_atualizar_a_mae_sem_a_sequencia_e_a_filha_confirmam",
+            "servidor::testes_transacoes::revisao_do_dba_448::a3_atualizar_a_mae_sem_a_sequencia_e_excluir_de_vez_recusa_antes_da_marca",
+            "servidor::testes_transacoes::revisao_do_dba_448::a3_dentro_da_transacao_a_busca_ve_a_linha_como_sera_gravada",
+        ],
+        "seguem": [
+            "servidor::testes_transacoes::pre_conferencia_448::a_ordem_certa_continua_committed_e_inteira",
+        ],
+    },
+    {
+        "id": "nulo-colide-no-unico",
+        "titulo": "o segundo NULL num indice unico cai em DUPLICADO",
+        "porque": (
+            "achado A4: os quatro motores aceitam varios NULL num UNIQUE, e aqui "
+            "a regra estava escrita duas vezes e divergia -- o store recusava, a "
+            "conferencia do servidor pulava. Medido: com um NULL no disco, "
+            "`[id=3 email=x, id=4 email=NULL]` saia com uma gravada e «DEFEITO "
+            "DO MOTOR». Hoje a pergunta mora so em `participa_da_unicidade`."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """fn chave_tem_nulo(camadas: &[(usize, bool)], chave: &[u8]) -> bool {
+    let mut base = 0;
+""",
+        "troca": """fn chave_tem_nulo(camadas: &[(usize, bool)], chave: &[u8]) -> bool {
+    // DEFEITO REPOSTO (448-A4): NULL colide como qualquer valor.
+    if !camadas.is_empty() || chave.is_empty() {
+        return false;
+    }
+    let mut base = 0;
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "nulo-no-indice-unico"],
+        "caem": [
+            "varios_nulos_num_indice_unico_passam_por_todas_as_portas",
+        ],
+        "seguem": [],
+    },
+    {
+        "id": "nulo-colide-no-unico-do-commit",
+        "titulo": "o COMMIT com o segundo NULL num indice unico sai pela metade",
+        "porque": (
+            "achado A4, o lado do servidor: a mesma regra do NULL, pela "
+            "transacao inteira -- a pre-conferencia e a passada perguntam ao "
+            "mesmo predicado, e o COMMIT tem de sair limpo."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """fn chave_tem_nulo(camadas: &[(usize, bool)], chave: &[u8]) -> bool {
+    let mut base = 0;
+""",
+        "troca": """fn chave_tem_nulo(camadas: &[(usize, bool)], chave: &[u8]) -> bool {
+    // DEFEITO REPOSTO (448-A4): NULL colide como qualquer valor.
+    if !camadas.is_empty() || chave.is_empty() {
+        return false;
+    }
+    let mut base = 0;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_transacoes::revisao_do_dba_448::a4_dois_nulos_no_indice_unico_nao_colidem",
+        ],
+        "seguem": [
+            "servidor::testes_transacoes::pre_conferencia_448::a_chave_unica_tomada_no_prefixo_recusa_antes_da_marca",
+        ],
     },
 ]

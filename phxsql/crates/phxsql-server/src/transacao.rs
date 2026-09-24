@@ -1855,9 +1855,11 @@ fn aplicar_uma(
             }
             Ok(true)
         }
-        Acao::ExcluirSuave => Ok(t.excluir_suave(op.rowid, &op.motivo)?),
-        Acao::ExcluirDeVez => Ok(t.excluir_de_vez(op.rowid, &op.motivo)?),
-        Acao::Restaurar => Ok(t.restaurar(op.rowid, &op.motivo)?),
+        // O irmao da passada: as exclusoes emprestam as FILHAS que a mesma
+        // marca ja reaplicou, e a restauracao as MAES (pedido 448).
+        Acao::ExcluirSuave => Ok(t.excluir_suave_com_maes(op.rowid, &op.motivo, maes)?),
+        Acao::ExcluirDeVez => Ok(t.excluir_de_vez_com_maes(op.rowid, &op.motivo, maes)?),
+        Acao::Restaurar => Ok(t.restaurar_com_maes(op.rowid, &op.motivo, maes)?),
     }
 }
 

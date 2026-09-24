@@ -1288,6 +1288,9 @@ QA, com julgamento de pergunta, e a redação do H.
 | C — catalogo de catastrofes do 496 | forte | prova contra o SO em montagem privada; achou cinco defeitos ativos |
 | SEC — conferencia do 497 | forte | leitura adversaria da redacao de erro |
 | 451 — o panico com a trava na mao, tres voltas | forte | concorrencia e durabilidade da marca do COMMIT; o integrador devolveu uma vez (quinto cliente de teste subia o `ISENTOS`) e o M4 do parecer foi trocado por um conserto que a frente provou necessario |
+| 448 — FK e unicidade conferidas antes da marca, duas voltas | forte | integridade referencial e durabilidade do COMMIT; o DBA bloqueou a primeira (lista meio gravada, COMMIT quadratico, regressao do DEFAULT) |
+| 509+512 — fsync falho e `.ndx` sujo | forte | durabilidade provada contra o SO |
+| 506+507 — nome com letra e com ponto | medio | recusa na declaracao por uma funcao que ja existe |
 
 **A integração achou o que nenhuma frente via, de novo por território de
 arquivo não bastar em worktree compartilhado**: `cargo fmt --all` de uma

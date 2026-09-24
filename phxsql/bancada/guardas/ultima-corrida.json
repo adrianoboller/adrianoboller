@@ -585,9 +585,9 @@
       "id": "replica-julga-fk",
       "titulo": "a replica volta a conferir chave estrangeira no evento que aplica",
       "veredito": "PROVADA",
-      "segundos": 1.71,
+      "segundos": 4.44,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-09-24 13:44"
     },
     {
       "id": "cascata-sem-imagem-no-diario",
@@ -681,9 +681,9 @@
       "id": "recascata-sem-conferir-a-arvore",
       "titulo": "a recuperação gravava a primeira filha e só então descobria que a neta da segunda restringe",
       "veredito": "PROVADA",
-      "segundos": 1.8,
+      "segundos": 4.36,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-09-24 13:44"
     },
     {
       "id": "auto-referencia-em-silencio",
@@ -1233,9 +1233,9 @@
       "id": "linha-vazia-na-conferencia-de-filhas",
       "titulo": "a linha descida para a conferencia de filhas vai vazia, e toda mae parece sem filha",
       "veredito": "PROVADA",
-      "segundos": 1.99,
+      "segundos": 4.36,
       "notas": [],
-      "quando": "2026-09-24 04:34"
+      "quando": "2026-09-24 13:44"
     },
     {
       "id": "teto-de-64-bits-satura",
@@ -1993,9 +1993,9 @@
       "id": "commit-meio-sem-dizer-o-que-ficou",
       "titulo": "a chave que falha no meio da passada vira COMMITTED sem a escrita que falhou",
       "veredito": "PROVADA",
-      "segundos": 49.94,
+      "segundos": 52.16,
       "notas": [],
-      "quando": "2026-09-24 01:13"
+      "quando": "2026-09-24 13:44"
     },
     {
       "id": "de-hex-fatia-texto-por-byte",
@@ -2484,6 +2484,78 @@
       "segundos": 7.94,
       "notas": [],
       "quando": "2026-09-16 15:25"
+    },
+    {
+      "id": "commit-sem-pre-conferencia",
+      "titulo": "o COMMIT confere a chave estrangeira so na passada, depois da marca, e grava a parte da frente",
+      "veredito": "PROVADA",
+      "segundos": 62.53,
+      "notas": [],
+      "quando": "2026-09-24 13:47"
+    },
+    {
+      "id": "sobreposicao-acha-pela-chave-velha",
+      "titulo": "o buscar da sobreposicao acha pela chave velha a linha do disco que o prefixo alterou",
+      "veredito": "PROVADA",
+      "segundos": 4.4,
+      "notas": [],
+      "quando": "2026-09-24 13:44"
+    },
+    {
+      "id": "mae-viva-lida-por-baixo-da-sobreposicao",
+      "titulo": "a conferencia de «mae viva» le o disco por baixo da marca pendente",
+      "veredito": "PROVADA",
+      "segundos": 4.53,
+      "notas": [],
+      "quando": "2026-09-24 13:44"
+    },
+    {
+      "id": "indice-da-sobreposicao-parado",
+      "titulo": "o indice das chaves pendentes fica no retrato da primeira busca",
+      "veredito": "PROVADA",
+      "segundos": 4.68,
+      "notas": [],
+      "quando": "2026-09-24 13:44"
+    },
+    {
+      "id": "passada-replaneja-a-cascata",
+      "titulo": "a passada replaneja a cascata depois da marca, e a lista valida sai pela metade",
+      "veredito": "PROVADA",
+      "segundos": 62.24,
+      "notas": [],
+      "quando": "2026-09-24 13:44"
+    },
+    {
+      "id": "prefixo-copia-a-sobreposicao",
+      "titulo": "o plano da cascata abre a filha com uma COPIA da sobreposicao dela",
+      "veredito": "PROVADA",
+      "segundos": 49.18,
+      "notas": [],
+      "quando": "2026-09-24 13:44"
+    },
+    {
+      "id": "sobreposicao-guarda-a-linha-crua",
+      "titulo": "a sobreposicao guarda a linha crua do empilhar, e nao a que o store vai gravar",
+      "veredito": "PROVADA",
+      "segundos": 54.16,
+      "notas": [],
+      "quando": "2026-09-24 13:44"
+    },
+    {
+      "id": "nulo-colide-no-unico",
+      "titulo": "o segundo NULL num indice unico cai em DUPLICADO",
+      "veredito": "PROVADA",
+      "segundos": 4.55,
+      "notas": [],
+      "quando": "2026-09-24 13:44"
+    },
+    {
+      "id": "nulo-colide-no-unico-do-commit",
+      "titulo": "o COMMIT com o segundo NULL num indice unico sai pela metade",
+      "veredito": "PROVADA",
+      "segundos": 53.45,
+      "notas": [],
+      "quando": "2026-09-24 13:44"
     }
   ]
 }

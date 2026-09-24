@@ -60,6 +60,18 @@ fn escrever_f32_be(v: f32, dst: &mut [u8]) {
     dst[..4].copy_from_slice(&ordenavel.to_be_bytes());
 }
 
+/// O componente codificado `componente` e o de um NULL?
+///
+/// O inverso exato do que [`escrever_componente`] grava: NULL e o componente
+/// todo em zero (todo em `0xFF` em ordem decrescente), e qualquer valor
+/// comeca pelo marcador `0x01` (`0xFE` invertido). Mora AQUI, do lado de quem
+/// codifica, para a regra do NULL num indice unico -- NULL nao colide, que e o
+/// que PostgreSQL, MySQL, MariaDB e SQLite fazem -- ser lida da chave pelos
+/// mesmos bytes que a escreveram, e nao por uma segunda ideia do formato.
+pub fn componente_nulo(componente: &[u8], desc: bool) -> bool {
+    componente.first() == Some(&if desc { 0xFF } else { 0x00 })
+}
+
 /// Grava um componente de chave em `dst`, que precisa ter exatamente
 /// [`largura_componente`] bytes.
 ///

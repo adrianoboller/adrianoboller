@@ -95,6 +95,66 @@ impl phxsql_store::table::MaesEmProgresso for MaesAbertas<'_> {
             .cloned()?;
         self.abertas.get_mut(&chave)
     }
+
+    /// Na passada e na recuperacao os handles nao carregam sobreposicao -- a
+    /// lista ja foi aplicada no disco deles -- e isto devolve `None`. Na
+    /// pre-conferencia do COMMIT (pedido 448) eles carregam o prefixo, e o
+    /// plano do `ao_alterar` abre a filha enxergando-o. O MESMO mapa serve
+    /// aos tres: e a mesma pergunta, com o prefixo onde ele estiver.
+    fn prefixo(&self, tabela: &str) -> Option<Arc<phxsql_store::table::Sobreposicao>> {
+        self.abertas
+            .iter()
+            .find(|(k, _)| nome_simples_da_tabela(k).eq_ignore_ascii_case(tabela))
+            .and_then(|(_, t)| t.sobreposicao().cloned())
+    }
+}
+
+/// A recusa da pre-conferencia do COMMIT: a posicao da escrita do cliente
+/// (a partir de zero), o elo da cascata dela quando foi ele que recusou, e o
+/// erro.
+struct RecusaDaLista {
+    posicao: usize,
+    elo: Option<(String, u64)>,
+    erro: PhxError,
+}
+
+/// A lista que vai para a marca: a do cliente, com os elos que a
+/// pre-conferencia planejou logo depois de quem os puxou, e toda alteracao
+/// marcada para aplicar SEM replanejar -- a cascata inteira ja esta nela
+/// (achado A1 da revisao do DBA ao 448).
+fn costurar_os_elos(
+    escritas: Vec<crate::transacao::Escrita>,
+    elos: Vec<(usize, Vec<crate::transacao::Escrita>)>,
+) -> Vec<crate::transacao::Escrita> {
+    let extra: usize = elos.iter().map(|(_, v)| v.len()).sum();
+    let mut saida = Vec::with_capacity(escritas.len() + extra);
+    let mut elos = elos.into_iter().peekable();
+    for (i, mut e) in escritas.into_iter().enumerate() {
+        if e.acao == crate::transacao::Acao::Atualizar {
+            e.cascata_na_lista = true;
+        }
+        saida.push(e);
+        if elos.peek().is_some_and(|(j, _)| *j == i) {
+            if let Some((_, grupo)) = elos.next() {
+                saida.extend(grupo);
+            }
+        }
+    }
+    saida
+}
+
+/// A escrita da transacao na lingua do `store`. UM tradutor, para a leitura
+/// da transacao e a pre-conferencia do COMMIT dobrarem a lista do mesmo jeito.
+pub(crate) fn pendente_de(e: &crate::transacao::Escrita) -> phxsql_store::table::Pendente<'_> {
+    use crate::transacao::Acao;
+    use phxsql_store::table::Pendente;
+    match e.acao {
+        Acao::Inserir => Pendente::Insercao(&e.linha),
+        Acao::Atualizar => Pendente::Alteracao(&e.linha, &e.linha_antiga),
+        Acao::ExcluirSuave => Pendente::Marca(true),
+        Acao::Restaurar => Pendente::Marca(false),
+        Acao::ExcluirDeVez => Pendente::Exclusao,
+    }
 }
 
 /// Operacoes que alteram dados. Recusadas quando `somente_leitura` esta ligado.
@@ -1149,6 +1209,11 @@ pub struct Servidor {
     /// enquanto o campo estiver preenchido -- o erro de E/S que prende a marca.
     #[cfg(test)]
     fecho_falha_de_teste: Mutex<Option<String>>,
+    /// Desliga a pre-conferencia do COMMIT (pedido 448): e o DEFEITO REPOSTO
+    /// das provas dele, e e o que mantem o cinto da passada exercitado -- sem
+    /// isto, o braco «erro do dado com parte gravada» ficaria sem prova.
+    #[cfg(test)]
+    pre_conferencia_desligada: std::sync::atomic::AtomicBool,
     /// O estado vivo do cluster -- `None` quando o `config.json` nao traz o
     /// bloco `cluster`, e ai NADA disto existe: nenhuma thread, nenhum portao.
     cluster: Option<Arc<crate::cluster::EstadoCluster>>,
@@ -1470,6 +1535,8 @@ impl Servidor {
             panico_no_fecho_de_teste: Mutex::new(None),
             #[cfg(test)]
             fecho_falha_de_teste: Mutex::new(None),
+            #[cfg(test)]
+            pre_conferencia_desligada: std::sync::atomic::AtomicBool::new(false),
             cargas: Mutex::new(crate::carga::Cargas::default()),
             marcas_pendentes: Mutex::new(Vec::new()),
             travas: Mutex::new(crate::travas::Travas::default()),
@@ -11371,9 +11438,12 @@ impl Servidor {
         // ANTES do trabalho, e nao depois -- montar o mapa para a linha
         // seguinte apaga-lo custava O(pendentes) sob a trava.
         if sobrepor {
-            if let Some(sob) = self.sobreposicao(database, tabela, sessao, t.esquema()) {
-                t.sobrepor(sob);
-            }
+            self.sobreposicao(database, tabela, sessao, &mut |rowid, p| {
+                // O erro da previsao (um CHECK que a linha completada viola)
+                // nao impede a LEITURA: a linha crua entra no lugar, e quem
+                // recusa e a pre-conferencia do COMMIT.
+                let _ = t.sobrepor_mais(rowid, p);
+            });
         }
         Ok(t)
     }
@@ -11418,9 +11488,9 @@ impl Servidor {
         if (self.espelho() && !t.tem_espelho()) || t.tem_dado_pessoal() {
             return Ok(None);
         }
-        if let Some(sob) = self.sobreposicao(database, tabela, sessao, t.esquema()) {
-            t.sobrepor(sob);
-        }
+        self.sobreposicao(database, tabela, sessao, &mut |rowid, p| {
+            let _ = t.sobrepor_mais(rowid, p);
+        });
         Ok(Some(t))
     }
 
@@ -11436,79 +11506,38 @@ impl Servidor {
     /// # Por que a dobra acontece AQUI e nao no `transacao.rs`
     ///
     /// Porque marcar uma linha exige saber onde mora a coluna de sistema, e
-    /// isso e do ESQUEMA -- que so existe com a tabela aberta. Uma segunda
-    /// copia dessa regra no registro de transacoes seria a copia que envelhece.
-    /// O `esquema` chega por parametro, e nao a tabela: e a unica coisa que
-    /// esta funcao precisa dela, e assim ela serve as DUAS fichas -- a
-    /// exclusiva, que traz um `Table`, e a compartilhada, que traz uma
-    /// `TabelaLeitura`. Uma segunda copia para a segunda ficha divergiria, e a
-    /// divergencia apareceria como a mesma consulta enxergando a transacao num
-    /// caminho e o disco no outro.
+    /// completar uma linha exige a tabela inteira -- o DEFAULT, a `Sequence`,
+    /// a calculada (achado A3 da revisao do DBA ao 448). Quem dobra e a
+    /// PROPRIA tabela aberta (`sobrepor_mais`), pelas funcoes que gravam; esta
+    /// funcao so entrega as escritas, na ordem, a quem dobra -- e assim ela
+    /// serve as DUAS fichas, a exclusiva (`Table`) e a compartilhada
+    /// (`TabelaLeitura`). Uma segunda copia para a segunda ficha divergiria, e
+    /// a divergencia apareceria como a mesma consulta enxergando a transacao
+    /// num caminho e o disco no outro.
     fn sobreposicao(
         &self,
         database: &str,
         tabela: &str,
         sessao: &Sessao,
-        esquema: &phxsql_core::schema::Schema,
-    ) -> Option<phxsql_store::table::Sobreposicao> {
+        dobrar: &mut dyn FnMut(u64, phxsql_store::table::Pendente<'_>),
+    ) {
         if self.transacoes_abertas.load(Ordering::Relaxed) == 0 || sessao.ligacao == 0 {
-            return None;
+            return;
         }
-        let reg = self.transacoes.lock().ok()?;
-        let tx = reg.de(sessao.ligacao)?;
-        if tx.escritas.is_empty() {
-            return None;
-        }
-        let pos_soft = esquema.coluna_softdeleted();
-        let mut sob = phxsql_store::table::Sobreposicao::nova();
-        let mut houve = false;
-        // A ORDEM MANDA, e o `fold` e por isso: `BEGIN; UPDATE x; DELETE x`
-        // termina em «sumida», e `INSERT; excluir suave` termina na linha
-        // recem-criada JA marcada -- e nao numa marca sobre um slot que ainda
-        // nao existe em disco, que sumiria a linha inteira.
-        let mut nascidas: std::collections::HashMap<u64, Vec<phxsql_core::value::Value>> =
-            std::collections::HashMap::new();
+        let Ok(reg) = self.transacoes.lock() else {
+            return;
+        };
+        let Some(tx) = reg.de(sessao.ligacao) else {
+            return;
+        };
+        // A ORDEM MANDA, e a dobra e por isso -- ver `Sobreposicao::empilhar`,
+        // que e a MESMA que a pre-conferencia do COMMIT usa (pedido 448).
         for e in &tx.escritas {
             if !e.database.eq_ignore_ascii_case(database) || !e.tabela.eq_ignore_ascii_case(tabela)
             {
                 continue;
             }
-            houve = true;
-            match e.acao {
-                crate::transacao::Acao::Inserir => {
-                    nascidas.insert(e.rowid, e.linha.clone());
-                    sob.nasceu(e.rowid, e.linha.clone());
-                }
-                crate::transacao::Acao::Atualizar => match nascidas.get_mut(&e.rowid) {
-                    // Alterar uma linha que nasceu na propria transacao troca
-                    // a linha guardada, e nao empilha uma troca sobre um slot
-                    // que ainda nao existe em disco.
-                    Some(guardada) => {
-                        *guardada = e.linha.clone();
-                        sob.nasceu(e.rowid, e.linha.clone());
-                    }
-                    None => sob.por(e.rowid, phxsql_store::table::Troca::Linha(e.linha.clone())),
-                },
-                crate::transacao::Acao::ExcluirSuave | crate::transacao::Acao::Restaurar => {
-                    let marca = e.acao == crate::transacao::Acao::ExcluirSuave;
-                    match (nascidas.get_mut(&e.rowid), pos_soft) {
-                        (Some(linha), Some(i)) => {
-                            linha[i] = phxsql_core::value::Value::Bool(marca);
-                            sob.nasceu(e.rowid, linha.clone());
-                        }
-                        _ => sob.por(e.rowid, phxsql_store::table::Troca::Marca(marca)),
-                    }
-                }
-                crate::transacao::Acao::ExcluirDeVez => {
-                    nascidas.remove(&e.rowid);
-                    sob.por(e.rowid, phxsql_store::table::Troca::Sumida);
-                }
-            }
-        }
-        if houve {
-            Some(sob)
-        } else {
-            None
+            dobrar(e.rowid, pendente_de(e));
         }
     }
 
@@ -14878,7 +14907,9 @@ impl Servidor {
                         }
                     }
                 };
-                chaves.insert(i, chaves_unicas(t.esquema(), &e.linha));
+                if let Ok(c) = chaves_unicas(t, &e.linha) {
+                    chaves.insert(i, c);
+                }
             }
         }
         let mut t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
@@ -15075,7 +15106,7 @@ impl Servidor {
                     let valores = valores_do_indice(t.esquema(), &indice, &linha);
                     let tem_chave = !valores.is_empty() && !valores.iter().any(Value::e_null);
                     if tem_chave {
-                        let em_texto = chaves_unicas(t.esquema(), &linha)
+                        let em_texto = chaves_unicas(&t, &linha)?
                             .into_iter()
                             .find(|(i, _)| *i == indice)
                             .map(|(_, c)| c);
@@ -15169,7 +15200,7 @@ impl Servidor {
                             let plano = if nova.linha_antiga.is_empty() {
                                 Vec::new()
                             } else {
-                                t.planejar_cascata_para_lista(&nova.linha_antiga, &nova.linha)?
+                                t.planejar_cascata_da_alteracao(&nova.linha_antiga, &nova.linha)?
                             };
                             // A trava de dados sai ANTES da do registro de
                             // transacoes, como no caminho de sempre: a ordem
@@ -15215,15 +15246,8 @@ impl Servidor {
 
                 // A unicidade contra o INDICE, que e a mesma conferencia que o
                 // `inserir` de hoje faz antes de gravar byte nenhum.
-                let chaves = chaves_unicas(t.esquema(), &linha);
-                for (indice, _) in &chaves {
-                    let valores = valores_do_indice(t.esquema(), indice, &linha);
-                    if !t.buscar(indice, &valores)?.is_empty() {
-                        return Err(PhxError::Duplicado(format!(
-                            "indice unico {indice} ja tem essa chave"
-                        )));
-                    }
-                }
+                t.conferir_unicidade(&linha, None)?;
+                let chaves = chaves_unicas(&t, &linha)?;
                 // E contra o que esta transacao JA empilhou -- o indice em
                 // disco nao sabe das linhas que ainda estao na lista, e duas
                 // iguais dentro da mesma transacao passariam pela conferencia
@@ -15375,7 +15399,7 @@ impl Servidor {
         let plano_cascata = if escrita.acao == crate::transacao::Acao::Atualizar
             && !escrita.linha_antiga.is_empty()
         {
-            t.planejar_cascata_para_lista(&escrita.linha_antiga, &escrita.linha)?
+            t.planejar_cascata_da_alteracao(&escrita.linha_antiga, &escrita.linha)?
         } else {
             Vec::new()
         };
@@ -15520,7 +15544,7 @@ impl Servidor {
             // mesmas funcoes na mesma ordem, e um conserto que entrasse so la
             // deixaria a fase 3 da cascata pagando o mapa que ninguem le.
             let mut t = self.abrir_travada_sem_sobrepor(&trava, &ped, sessao)?;
-            let plano = t.planejar_cascata_para_lista(&mae.linha_antiga, &mae.linha)?;
+            let plano = t.planejar_cascata_da_alteracao(&mae.linha_antiga, &mae.linha)?;
             drop(t);
             drop(trava);
             plano
@@ -16230,6 +16254,68 @@ impl Servidor {
                 return Err(e);
             }
         };
+        // A LISTA INTEIRA se confere aqui, ainda antes da marca e com a mesma
+        // trava que a passada vai usar -- pedido 448. Fica FORA do
+        // `preparar_a_marca` de proposito: aquele volta cedo quando nada esta
+        // congelado, e a conferencia so rodaria em dia de migracao.
+        //
+        // Recusa do DADO com zero aplicado e o que o PostgreSQL faz com
+        // restricao que falha no COMMIT: a transacao termina, com o erro, e
+        // `repetir` e falso -- repetir a mesma lista daria o mesmo erro.
+        // Qualquer outra quebra aqui (E/S, tabela congelada) nao julgou lista
+        // nenhuma, e ela volta como no `preparar_a_marca`.
+        #[cfg(test)]
+        let pre_conferir = !self.pre_conferencia_desligada.load(Ordering::SeqCst);
+        #[cfg(not(test))]
+        let pre_conferir = true;
+        let conferida = if pre_conferir {
+            self.pre_conferir_a_lista(&trava, &database, &escritas, sessao)
+        } else {
+            Ok(Vec::new())
+        };
+        let elos = match conferida {
+            Ok(elos) => elos,
+            Err(recusa) => {
+                drop(trava);
+                if matches!(recusa.erro.codigo() / 1000, 2 | 3) {
+                    let w = &escritas[recusa.posicao];
+                    self.descartar_transacao(sessao.ligacao);
+                    let na_cascata = match &recusa.elo {
+                        Some((tabela, rowid)) => {
+                            format!(", no elo da cascata que ela leva a {tabela} rowid {rowid}")
+                        }
+                        None => String::new(),
+                    };
+                    return Err(com_nota(
+                        recusa.erro,
+                        &format!(
+                            "o COMMIT recusou a escrita {} de {quantas} ({} em {}, rowid \
+                             {}{na_cascata}) ANTES da marca: nada desta transacao foi \
+                             gravado, e ela terminou",
+                            recusa.posicao + 1,
+                            w.acao.nome(),
+                            w.tabela,
+                            w.rowid
+                        ),
+                    ));
+                }
+                self.devolver_a_lista(sessao.ligacao, escritas);
+                return Err(recusa.erro);
+            }
+        };
+        // UM planejador so (achado A1 da revisao do DBA): a cascata que a
+        // pre-conferencia planejou entra na lista AGORA, antes da marca, como
+        // elo achatado -- e a passada e a recuperacao aplicam cada alteracao
+        // SEM replanejar. A passada replanejava abrindo a filha por um
+        // segundo descritor, e a guarda do `.ndx` sujo pela propria passada
+        // recusava mesmo com o plano vazio: `[inserir pedido->A, alterar a
+        // chave de B]`, com B sem filha, saia pela metade e «DEFEITO DO
+        // MOTOR». A marca v3 ja carrega elo achatado; o formato nao muda.
+        let escritas = if pre_conferir {
+            costurar_os_elos(escritas, elos)
+        } else {
+            escritas
+        };
         let carimbo = crate::agora_ms();
         // A marca fica EM VOO na propria trava desde ANTES de ir ao disco --
         // pedido 451 (M1): um panico daqui ate o destino dela estar decidido
@@ -16319,6 +16405,232 @@ impl Servidor {
         Ok(dir)
     }
 
+    /// **A pre-conferencia do COMMIT (pedido 448):** a lista inteira, na
+    /// ordem, ANTES da marca -- a chave estrangeira nos dois sentidos, a arvore
+    /// do `ao_alterar` e a unicidade. Devolve a POSICAO (a partir de zero) da
+    /// primeira escrita recusada, junto do erro.
+    ///
+    /// # Por que ela existe, se a passada ja confere
+    ///
+    /// Porque a passada confere DEPOIS da marca, e ali recusa nao desfaz: a
+    /// ordem de digitacao proibe devolver slot, entao `[mae, filha-orfa,
+    /// outra]` saia com a mae gravada e o resto nao -- medido antes do
+    /// conserto, com a resposta dizendo «as 1 anteriores JA ESTAO gravadas».
+    /// Fere o D2 do parecer do 426: a transacao confirmada e inteira ou nao e.
+    /// A passada continua conferindo, como cinto.
+    ///
+    /// # A visibilidade e de PREFIXO, e e ela que segura a petrea
+    ///
+    /// A escrita i ve o disco mais as escritas 0..i-1, e nenhuma das que vem
+    /// depois: cada uma so entra na sobreposicao do handle dela DEPOIS de
+    /// conferida. E isso que mantem «filho antes do pai» recusado sem
+    /// `DEFERRABLE` -- a filha da posicao 1 nao ve a mae da posicao 2 --, e e
+    /// isso que deixa a exclusao da mae na posicao 2 ver a filha nascida na 1.
+    ///
+    /// # Uma guarda, e nao duas
+    ///
+    /// Cada escrita passa pela `Table::pre_conferir`, que chama as MESMAS
+    /// guardas que a passada chama, e pela `conferir_unicidade`, a mesma do
+    /// `empilhar`. O que so existe aqui e o que so a LISTA sabe: a cascata que
+    /// ja esta nela tem de cobrir o plano refeito, e a que a passada fara por
+    /// conta propria nao pode cair numa tabela que a propria lista escreveu.
+    fn pre_conferir_a_lista(
+        &self,
+        trava: &Instancia,
+        database: &str,
+        escritas: &[crate::transacao::Escrita],
+        sessao: &Sessao,
+    ) -> std::result::Result<Vec<(usize, Vec<crate::transacao::Escrita>)>, RecusaDaLista> {
+        use crate::transacao::Acao;
+        let recusa = |posicao: usize, elo: Option<(String, u64)>, erro: PhxError| RecusaDaLista {
+            posicao,
+            elo,
+            erro,
+        };
+        // Onde cada linha e reescrita pela lista, pela ULTIMA vez. A posicao e
+        // `(i, k)`: `k` zero e a escrita i do cliente, e `k` > 0 o k-esimo elo
+        // que a pre-conferencia pos depois dela. «Alguma escrita DEPOIS desta
+        // reescreve a filha» e uma consulta aqui, e nao uma volta na lista.
+        let mut reescrita_em: HashMap<(String, u64), (usize, usize)> = HashMap::new();
+        for (j, e) in escritas.iter().enumerate() {
+            if matches!(e.acao, Acao::Atualizar | Acao::ExcluirDeVez) {
+                let nome = nome_simples_da_tabela(&e.tabela).to_ascii_lowercase();
+                reescrita_em.insert((nome, e.rowid), (j, 0));
+            }
+        }
+        let mut abertas: HashMap<String, Table> = HashMap::new();
+        let mut elos_da_lista = Vec::new();
+        for (i, e) in escritas.iter().enumerate() {
+            let plano = self
+                .pre_conferir_uma(
+                    trava,
+                    database,
+                    sessao,
+                    &mut abertas,
+                    e,
+                    (i, 0),
+                    &reescrita_em,
+                )
+                .map_err(|erro| recusa(i, None, erro))?;
+            if plano.is_empty() {
+                continue;
+            }
+            // Os elos que faltam entram logo depois da escrita que os puxou,
+            // na ordem do plano -- pai antes de filha --, e cada um passa pela
+            // MESMA conferencia, com o prefixo que ja o inclui.
+            let elos: Vec<crate::transacao::Escrita> = plano
+                .into_iter()
+                .map(|elo| crate::transacao::Escrita {
+                    database: database.to_string(),
+                    tabela: elo.tabela,
+                    acao: Acao::Atualizar,
+                    rowid: elo.rowid,
+                    linha: elo.linha,
+                    linha_antiga: elo.linha_antiga,
+                    motivo: String::new(),
+                    cascata_na_lista: true,
+                })
+                .collect();
+            for (k, elo) in elos.iter().enumerate() {
+                let chave = (elo.tabela.to_ascii_lowercase(), elo.rowid);
+                let aqui = (i, k + 1);
+                let vale = reescrita_em.get(&chave).map_or(aqui, |&j| j.max(aqui));
+                reescrita_em.insert(chave, vale);
+            }
+            for (k, elo) in elos.iter().enumerate() {
+                let mais = self
+                    .pre_conferir_uma(
+                        trava,
+                        database,
+                        sessao,
+                        &mut abertas,
+                        elo,
+                        (i, k + 1),
+                        &reescrita_em,
+                    )
+                    .map_err(|erro| recusa(i, Some((elo.tabela.clone(), elo.rowid)), erro))?;
+                // O plano que puxou este elo ja desceu a arvore inteira com o
+                // prefixo; um elo que ainda ache filha por levar e um plano
+                // que o motor nao soube encadear -- e isso se diz, em vez de
+                // gravar meia cascata.
+                if !mais.is_empty() {
+                    return Err(recusa(
+                        i,
+                        Some((elo.tabela.clone(), elo.rowid)),
+                        PhxError::Integridade(format!(
+                            "a cascata desta alteracao desce por {} rowid {} e acha \
+                             filhas que o plano de cima nao levou ({} rowid {}) -- o \
+                             motor nao encadeia esse caminho; faca as alteracoes em \
+                             transacoes separadas, a da mae primeiro",
+                            elo.tabela, elo.rowid, mais[0].tabela, mais[0].rowid
+                        )),
+                    ));
+                }
+            }
+            elos_da_lista.push((i, elos));
+        }
+        Ok(elos_da_lista)
+    }
+
+    /// Uma escrita da pre-conferencia: abre a tabela dela (uma vez por
+    /// COMMIT), confere pela `Table::pre_conferir` -- que a poe no prefixo --
+    /// e devolve os elos da cascata que a lista ainda nao leva.
+    ///
+    /// # O que decide se um elo falta, ou se a escrita recusa
+    ///
+    /// O plano sai contra o disco E o prefixo. Para a alteracao empilhada
+    /// SEM cascata (`cascata_na_lista` falso), o plano inteiro falta: a
+    /// passada nao planeja mais nada, e o que a pre-conferencia nao puser na
+    /// lista nao acontece. Para a que JA leva a cascata, cada filha do plano
+    /// ou e reescrita adiante pela propria lista, ou foi escrita pela lista e
+    /// o `empilhar` nao a viu (o plano dele e so do disco) -- e ai o elo dela
+    /// falta --, ou mudou por OUTRA sessao depois do `empilhar`, e ai a
+    /// escrita recusa: a filha ficaria orfa, e a transacao que a trouxe nao a
+    /// conhece.
+    #[allow(clippy::too_many_arguments)]
+    fn pre_conferir_uma(
+        &self,
+        trava: &Instancia,
+        database: &str,
+        sessao: &Sessao,
+        abertas: &mut HashMap<String, Table>,
+        e: &crate::transacao::Escrita,
+        posicao: (usize, usize),
+        reescrita_em: &HashMap<(String, u64), (usize, usize)>,
+    ) -> Result<Vec<phxsql_store::table::EscritaDaCascata>> {
+        let chave = abertas
+            .keys()
+            .find(|k| {
+                nome_simples_da_tabela(k).eq_ignore_ascii_case(nome_simples_da_tabela(&e.tabela))
+            })
+            .cloned();
+        let chave = match chave {
+            Some(k) => k,
+            None => {
+                let ped = pedido_da_tabela(database, &e.tabela);
+                let t = self.abrir_travada_sem_sobrepor(trava, &ped, sessao)?;
+                abertas.insert(e.tabela.clone(), t);
+                e.tabela.clone()
+            }
+        };
+        let mut t = abertas
+            .remove(&chave)
+            .expect("a tabela acabou de ser achada ou inserida no mapa");
+        let plano = {
+            let mut maes = MaesAbertas { abertas };
+            t.pre_conferir(e.rowid, pendente_de(e), &e.motivo, &mut maes)
+        };
+        let tocou: Vec<bool> = match &plano {
+            Ok(plano) if e.cascata_na_lista => plano
+                .iter()
+                .map(|elo| {
+                    abertas
+                        .iter()
+                        .find(|(k, _)| nome_simples_da_tabela(k).eq_ignore_ascii_case(&elo.tabela))
+                        .and_then(|(_, f)| f.sobreposicao().map(|s| s.tocou(elo.rowid)))
+                        .unwrap_or(false)
+                })
+                .collect(),
+            _ => Vec::new(),
+        };
+        abertas.insert(chave, t);
+        let plano = plano?;
+        if !e.cascata_na_lista || plano.is_empty() {
+            return Ok(plano);
+        }
+        let mut faltam = Vec::new();
+        let mut pular_ate: Option<usize> = None;
+        for (n, elo) in plano.into_iter().enumerate() {
+            // A subarvore de uma filha que a lista ja reescreve adiante e dela:
+            // e la, na posicao dela, que o plano dela se refaz.
+            if let Some(nivel) = pular_ate {
+                if elo.nivel > nivel {
+                    continue;
+                }
+                pular_ate = None;
+            }
+            let adiante = reescrita_em
+                .get(&(elo.tabela.to_ascii_lowercase(), elo.rowid))
+                .is_some_and(|&j| j > posicao);
+            if adiante {
+                pular_ate = Some(elo.nivel);
+                continue;
+            }
+            if elo.nivel == 1 && !tocou[n] {
+                return Err(PhxError::Integridade(format!(
+                    "{}: a linha {} de {} passou a apontar para a chave que esta \
+                     alteracao muda DEPOIS de a alteracao ser empilhada, por outra \
+                     sessao -- a cascata que a transacao leva foi planejada antes e \
+                     nao a inclui, e ela ficaria orfa. Numa transacao nova o plano ja \
+                     a encontra",
+                    e.tabela, elo.rowid, elo.tabela
+                )));
+            }
+            faltam.push(elo);
+        }
+        Ok(faltam)
+    }
+
     /// Devolve a lista a transacao e a tira de `COMMITTING`: o `COMMIT` foi
     /// recusado ANTES da marca, e nada aconteceu.
     fn devolver_a_lista(&self, ligacao: u64, escritas: Vec<crate::transacao::Escrita>) {
@@ -16347,11 +16659,12 @@ impl Servidor {
     /// | qualquer outra | qualquer | `COMMITTED`: a transacao aconteceu, e o que falta se completa para a FRENTE, na hora e com a mesma trava |
     ///
     /// Nenhuma linha manda repetir com escrita aplicada -- a assertiva do §5
-    /// item 9 do parecer do 426. A terceira linha e a lacuna que sobra: a
-    /// chave estrangeira so e conferida na passada, depois da marca, e por
-    /// isso uma filha sem mae no meio da lista para a passada com parte ja
-    /// gravada. Dizer isso na resposta e o que o motor consegue sem conferir
-    /// a chave antes da marca -- que e outro pedido.
+    /// item 9 do parecer do 426. A terceira linha era a lacuna que sobrava --
+    /// a chave estrangeira so se conferia aqui, depois da marca -- e deixou de
+    /// ser caminho de dado valido no pedido 448: a `pre_conferir_a_lista` faz
+    /// as mesmas perguntas ANTES da marca e recusa com zero aplicado. Ela
+    /// continua aqui como CINTO, e quando dispara e defeito do motor (a
+    /// pre-conferencia aprovou o que a passada recusou), e a resposta diz isso.
     #[allow(clippy::too_many_arguments)]
     fn depois_da_marca(
         &self,
@@ -16436,7 +16749,9 @@ impl Servidor {
                             "o COMMIT parou na escrita {} de {quantas}, e as {aplicadas} \
                              anteriores JA ESTAO gravadas e nao se desfazem -- a ordem \
                              de digitacao proibe desfazer ({}). Nada mais desta \
-                             transacao sera aplicado; NAO a repita inteira",
+                             transacao sera aplicado; NAO a repita inteira. A \
+                             conferencia de antes da marca tinha aprovado esta lista: \
+                             isto e DEFEITO DO MOTOR, e vale reportar",
                             aplicadas + 1,
                             feitas.join(", ")
                         ),
@@ -16648,18 +16963,39 @@ impl Servidor {
                     }
                     self.residente_mut(&ped, |m| m.anotar_alteracao(e.rowid, &e.linha));
                 }
+                // As exclusoes emprestam as FILHAS que a passada ja abriu, e a
+                // restauracao as MAES -- o irmao do conserto do P0 (pedido
+                // 448). Um segundo descritor sobre a filha que a passada ja
+                // escreveu batia na guarda do `.ndx`, e `[excluir a filha de
+                // vez, excluir a mae]`, transacao valida, saia daqui mandando
+                // reparar um indice sao.
                 Acao::ExcluirSuave => {
-                    if t.excluir_suave(e.rowid, &e.motivo)? {
+                    let apagou = {
+                        let mut maes = MaesAbertas {
+                            abertas: &mut abertas,
+                        };
+                        t.excluir_suave_com_maes(e.rowid, &e.motivo, &mut maes)?
+                    };
+                    if apagou {
                         self.residente_mut(&ped, |m| m.anotar_exclusao(e.rowid));
                     }
                 }
                 Acao::ExcluirDeVez => {
-                    if t.excluir_de_vez(e.rowid, &e.motivo)? {
+                    let apagou = {
+                        let mut maes = MaesAbertas {
+                            abertas: &mut abertas,
+                        };
+                        t.excluir_de_vez_com_maes(e.rowid, &e.motivo, &mut maes)?
+                    };
+                    if apagou {
                         self.residente_mut(&ped, |m| m.anotar_exclusao(e.rowid));
                     }
                 }
                 Acao::Restaurar => {
-                    t.restaurar(e.rowid, &e.motivo)?;
+                    let mut maes = MaesAbertas {
+                        abertas: &mut abertas,
+                    };
+                    t.restaurar_com_maes(e.rowid, &e.motivo, &mut maes)?;
                 }
             }
             if ha_gatilhos {
@@ -27043,36 +27379,24 @@ fn valores_do_indice(esquema: &Schema, indice: &str, linha: &[Value]) -> Vec<Val
 /// # Por que a chave vira texto
 ///
 /// Porque ela e comparada com as das outras linhas EMPILHADAS, e a comparacao
-/// tem de ser exata e barata. O texto sai do `Debug` do valor de propósito: ele
-/// separa `Int(1)` de `Str("1")`, que numa comparacao por `para_texto` seriam
-/// a mesma chave -- e duas colunas de tipos diferentes nunca estao no mesmo
-/// indice, mas o dia em que estiverem nao pode virar um falso duplicado.
+/// tem de ser exata e barata. O texto e o hexadecimal da chave CODIFICADA pelo
+/// store -- a mesma que o `.ndx` compara --, e nao mais o `Debug` dos valores
+/// crus: com a chave do store, o indice por expressao compara o que a
+/// expressao da, e nao a coluna de onde ela saiu.
 ///
-/// **Indice com coluna NULA fica de fora**, e isso e deliberado: a sequencia e
-/// o rownum sao preenchidos pelo motor no momento da insercao, entao a chave
-/// deles ainda nao existe ao empilhar. Elas sao unicas por construcao -- quem
-/// as gera e um contador -- e conferir o nulo aqui recusaria a segunda linha
-/// de toda tabela com sequencia.
-fn chaves_unicas(esquema: &Schema, linha: &[Value]) -> Vec<(String, String)> {
-    let mut saida = Vec::new();
-    for def in esquema.indices() {
-        if !def.unico {
-            continue;
-        }
-        let valores = valores_do_indice(esquema, &def.nome, linha);
-        if valores.len() != def.colunas.len() || valores.iter().any(Value::e_null) {
-            continue;
-        }
-        saida.push((
-            def.nome.clone(),
-            valores
-                .iter()
-                .map(|v| format!("{v:?}"))
-                .collect::<Vec<_>>()
-                .join("\u{1}"),
-        ));
-    }
-    saida
+/// # E quem decide o que entra e o store (pedido 448, achado A4)
+///
+/// A regra do NULL -- chave com componente NULL nao colide -- era escrita aqui
+/// E no store, e as duas divergiam: o store dava DUPLICADO no segundo NULL e
+/// esta funcao o pulava. Hoje `Table::chaves_unicas` responde pelas duas
+/// (`participa_da_unicidade`). A sequencia e o rownum, que o motor so preenche
+/// na gravacao, continuam de fora pelo mesmo motivo de antes: ao empilhar eles
+/// ainda sao NULL, e NULL nao colide.
+fn chaves_unicas(t: &Table, linha: &[Value]) -> Result<Vec<(String, String)>> {
+    Ok(t.chaves_unicas(linha)?
+        .into_iter()
+        .map(|(indice, k)| (indice, bytes_para_hex(&k)))
+        .collect())
 }
 
 fn erro_do_gatilho(nome: &str, e: PhxError) -> PhxError {
@@ -43815,18 +44139,24 @@ mod testes_transacoes {
         );
     }
 
-    /// **426, a lacuna que sobra, escrita em vez de escondida:** erro do DADO
-    /// no MEIO da lista (a chave estrangeira so e conferida na passada). A
-    /// parte anterior ja esta gravada e nao se desfaz. O que o conserto
-    /// garante: a resposta DIZ quantas ficaram e manda nao repetir, `repetir`
-    /// e falso, e o arranque nao muda o passado -- a marca sai, e o pai que
-    /// vinha DEPOIS da filha orfa nao aparece sozinho ao reiniciar.
+    /// **426, o CINTO da passada:** erro do DADO no MEIO da lista, com a
+    /// pre-conferencia do pedido 448 DESLIGADA -- e o unico jeito de chegar a
+    /// esta linha da tabela do `depois_da_marca` sem defeito no motor. A parte
+    /// anterior ja esta gravada e nao se desfaz. O que o cinto garante: a
+    /// resposta DIZ quantas ficaram, manda nao repetir e diz que e defeito do
+    /// motor, `repetir` e falso, e o arranque nao muda o passado -- a marca
+    /// sai, e o pai que vinha DEPOIS da filha orfa nao aparece sozinho.
+    ///
+    /// Era o `o_erro_do_dado_no_meio_da_lista_...`, e mudou de lado
+    /// conscientemente: com a pre-conferencia LIGADA a mesma lista recusa com
+    /// zero gravado (`a_filha_orfa_no_meio_recusa_antes_da_marca_...`).
     #[test]
-    fn o_erro_do_dado_no_meio_da_lista_diz_o_que_ficou_e_o_arranque_nao_muda() {
+    fn sem_a_pre_conferencia_o_cinto_da_passada_diz_o_que_ficou() {
         let dir = dir_temp("426-meio");
         let s = servidor(&dir);
         let ses = sessao(4267);
         base_com_fk(&s, &ses);
+        s.pre_conferencia_desligada.store(true, Ordering::SeqCst);
         pede(&s, &ses, r#""op":"begin""#).unwrap();
         pede(
             &s,
@@ -43854,8 +44184,10 @@ mod testes_transacoes {
             "parte gravada e mandando repetir: {texto}"
         );
         assert!(
-            texto.contains("JA ESTAO gravadas") && texto.contains("clientes rowid 1"),
-            "a resposta tinha de dizer o que ficou gravado: {texto}"
+            texto.contains("JA ESTAO gravadas")
+                && texto.contains("clientes rowid 1")
+                && texto.contains("DEFEITO DO MOTOR"),
+            "a resposta tinha de dizer o que ficou gravado, e que e defeito: {texto}"
         );
         let antes = (quantas(&s, &ses, "clientes"), quantas(&s, &ses, "pedidos"));
         let sobraram = marcas_em(&dir.join("loja"));
@@ -43915,6 +44247,1021 @@ mod testes_transacoes {
             "o arranque tinha de completar a transacao que ficou na marca"
         );
         assert_eq!(marcas_em(&dir.join("loja")), 0);
+    }
+
+    /// **Pedido 448: a pre-conferencia da lista inteira ANTES da marca.**
+    ///
+    /// Cada prova confere o DISCO, e nao so o veredito -- esta casa ja pagou
+    /// por prova que conferia depois do dano: a contagem viva e os slots das
+    /// duas tabelas, as marcas `*.tx`, e de novo depois de reiniciar. O
+    /// retrato de antes da transacao tem de ser o retrato de depois da recusa.
+    mod pre_conferencia_448 {
+        use super::*;
+
+        /// (clientes vivos, pedidos vivos, slots de clientes, slots de
+        /// pedidos, marcas no disco). Slot conta tambem a linha que nasceu e
+        /// morreu: e ele que acusa «gravou e depois nao apareceu».
+        fn retrato(
+            s: &Arc<Servidor>,
+            ses: &Sessao,
+            dir: &std::path::Path,
+        ) -> (u64, u64, u64, u64, usize) {
+            (
+                quantas(s, ses, "clientes"),
+                quantas(s, ses, "pedidos"),
+                slots(s, ses, "clientes"),
+                slots(s, ses, "pedidos"),
+                marcas_em(&dir.join("loja")),
+            )
+        }
+
+        fn inserir(s: &Arc<Servidor>, ses: &Sessao, tabela: &str, linha: &str) {
+            pede(
+                s,
+                ses,
+                &format!(r#""op":"inserir","database":"loja","tabela":"{tabela}","linha":{linha}"#),
+            )
+            .unwrap();
+        }
+
+        /// A recusa que o 448 promete: erro do DADO, `repetir` falso, a
+        /// posicao e a tabela nomeadas, a transacao encerrada -- e o disco
+        /// igual ao de antes, inclusive depois de reiniciar.
+        fn confere_a_recusa(
+            s: Arc<Servidor>,
+            ses: &Sessao,
+            dir: &std::path::Path,
+            antes: (u64, u64, u64, u64, usize),
+            posicao: &str,
+            tabela: &str,
+            nome_do_erro: &str,
+        ) {
+            let r = pede(&s, ses, r#""op":"commit""#);
+            let depois = retrato(&s, ses, dir);
+            let e = match r {
+                Ok(j) => panic!(
+                    "o COMMIT tinha de recusar ANTES da marca, e respondeu {} \
+                     -- (clientes, pedidos, slots c, slots p, marcas) antes {antes:?}, \
+                     depois {depois:?}",
+                    j.escrever()
+                ),
+                Err(e) => e,
+            };
+            let texto = e.to_string();
+            assert_eq!(
+                depois, antes,
+                "(clientes, pedidos, slots c, slots p, marcas): a recusa deixou coisa \
+                 gravada -- {texto}"
+            );
+            assert_eq!(e.nome(), nome_do_erro, "{texto}");
+            assert!(
+                !e.adianta_repetir(),
+                "recusa do dado mandando repetir: {texto}"
+            );
+            assert!(
+                texto.contains(posicao) && texto.contains(tabela),
+                "a recusa tinha de nomear a posicao ({posicao}) e a tabela ({tabela}): {texto}"
+            );
+            assert!(
+                texto.contains("ANTES da marca"),
+                "a recusa tinha de dizer que nada foi gravado: {texto}"
+            );
+            let estado = pede(&s, ses, r#""op":"transacao""#).unwrap();
+            assert_eq!(
+                estado.texto_ou("transaction_state", ""),
+                "IDLE",
+                "a transacao recusada no COMMIT tinha de sair"
+            );
+            drop(s);
+            let s = servidor(dir);
+            assert_eq!(
+                retrato(&s, ses, dir),
+                antes,
+                "o arranque mudou o passado depois de uma recusa sem marca"
+            );
+        }
+
+        /// **A prova do pedido:** `[mae, filha-orfa, outra]`. Hoje a mae fica
+        /// gravada e a passada para na filha; com a pre-conferencia, zero.
+        /// Substitui `o_erro_do_dado_no_meio_da_lista_...`, que aceitava a
+        /// metade -- e muda de lado conscientemente, como o parecer manda.
+        #[test]
+        fn a_filha_orfa_no_meio_recusa_antes_da_marca_com_zero_gravado() {
+            let dir = dir_temp("448-meio");
+            let s = servidor(&dir);
+            let ses = sessao(4481);
+            base_com_fk(&s, &ses);
+            let antes = retrato(&s, &ses, &dir);
+            pede(&s, &ses, r#""op":"begin""#).unwrap();
+            inserir(&s, &ses, "clientes", r#"{"id":1,"nome":"Ana"}"#);
+            inserir(&s, &ses, "pedidos", r#"{"id":1,"cliente_id":2}"#);
+            inserir(&s, &ses, "clientes", r#"{"id":2,"nome":"Bia"}"#);
+            confere_a_recusa(
+                s,
+                &ses,
+                &dir,
+                antes,
+                "escrita 2 de 3",
+                "pedidos",
+                "INTEGRIDADE",
+            );
+        }
+
+        /// **Medicao 1 do parecer:** `[inserir filha->M, excluir M]`, com M ja
+        /// no disco. A exclusao tem de enxergar a filha do PREFIXO.
+        #[test]
+        fn inserir_a_filha_e_excluir_a_mae_recusa_antes_da_marca() {
+            let dir = dir_temp("448-filha-e-exclui");
+            let s = servidor(&dir);
+            let ses = sessao(4482);
+            base_com_fk(&s, &ses);
+            inserir(&s, &ses, "clientes", r#"{"id":1,"nome":"Ana"}"#);
+            let antes = retrato(&s, &ses, &dir);
+            pede(&s, &ses, r#""op":"begin""#).unwrap();
+            inserir(&s, &ses, "pedidos", r#"{"id":10,"cliente_id":1}"#);
+            pede(
+                &s,
+                &ses,
+                r#""op":"excluir","database":"loja","tabela":"clientes","rowid":1"#,
+            )
+            .unwrap();
+            confere_a_recusa(
+                s,
+                &ses,
+                &dir,
+                antes,
+                "escrita 2 de 2",
+                "clientes",
+                "INTEGRIDADE",
+            );
+        }
+
+        /// **Buraco (a) da sobreposicao:** `[atualizar M K->K', inserir
+        /// filha->K]`. A linha do disco cuja chave o prefixo ALTEROU nao pode
+        /// continuar sendo achada pela chave velha.
+        #[test]
+        fn alterar_a_chave_da_mae_e_apontar_para_a_velha_recusa() {
+            let dir = dir_temp("448-chave-velha");
+            let s = servidor(&dir);
+            let ses = sessao(4483);
+            base_com_fk(&s, &ses);
+            inserir(&s, &ses, "clientes", r#"{"id":1,"nome":"Ana"}"#);
+            let antes = retrato(&s, &ses, &dir);
+            pede(&s, &ses, r#""op":"begin""#).unwrap();
+            pede(
+                &s,
+                &ses,
+                r#""op":"atualizar","database":"loja","tabela":"clientes","rowid":1,
+                   "linha":{"id":5,"nome":"Ana"}"#,
+            )
+            .unwrap();
+            inserir(&s, &ses, "pedidos", r#"{"id":10,"cliente_id":1}"#);
+            confere_a_recusa(
+                s,
+                &ses,
+                &dir,
+                antes,
+                "escrita 2 de 2",
+                "pedidos",
+                "INTEGRIDADE",
+            );
+        }
+
+        /// **Buraco (a), o outro lado:** `[atualizar M K->K' com cascata,
+        /// excluir M]`. As filhas movidas para K' sao linhas do disco com
+        /// troca pendente -- e a exclusao da mae tem de acha-las pela chave NOVA.
+        #[test]
+        fn alterar_a_chave_com_cascata_e_excluir_a_mae_recusa() {
+            let dir = dir_temp("448-cascata-e-exclui");
+            let s = servidor(&dir);
+            let ses = sessao(4484);
+            base_com_fk(&s, &ses);
+            inserir(&s, &ses, "clientes", r#"{"id":1,"nome":"Ana"}"#);
+            inserir(&s, &ses, "pedidos", r#"{"id":10,"cliente_id":1}"#);
+            let antes = retrato(&s, &ses, &dir);
+            pede(&s, &ses, r#""op":"begin""#).unwrap();
+            let r = pede(
+                &s,
+                &ses,
+                r#""op":"atualizar","database":"loja","tabela":"clientes","rowid":1,
+                   "linha":{"id":5,"nome":"Ana"}"#,
+            )
+            .unwrap();
+            assert_eq!(
+                r.inteiro_ou("linhas", 0),
+                2,
+                "a cascata tinha de entrar na lista: {}",
+                r.escrever()
+            );
+            pede(
+                &s,
+                &ses,
+                r#""op":"excluir","database":"loja","tabela":"clientes","rowid":1"#,
+            )
+            .unwrap();
+            confere_a_recusa(
+                s,
+                &ses,
+                &dir,
+                antes,
+                "escrita 3 de 3",
+                "clientes",
+                "INTEGRIDADE",
+            );
+        }
+
+        /// **Buraco (b) da sobreposicao:** `[excluir_suave M, inserir
+        /// filha->M]`. A conferencia de «mae viva» nao pode ler por baixo da
+        /// marca pendente.
+        #[test]
+        fn excluir_suave_a_mae_e_inserir_a_filha_recusa() {
+            let dir = dir_temp("448-suave-e-filha");
+            let s = servidor(&dir);
+            let ses = sessao(4485);
+            base_com_fk(&s, &ses);
+            inserir(&s, &ses, "clientes", r#"{"id":1,"nome":"Ana"}"#);
+            let antes = retrato(&s, &ses, &dir);
+            pede(&s, &ses, r#""op":"begin""#).unwrap();
+            pede(
+                &s,
+                &ses,
+                r#""op":"excluir","database":"loja","tabela":"clientes","rowid":1"#,
+            )
+            .unwrap();
+            inserir(&s, &ses, "pedidos", r#"{"id":10,"cliente_id":1}"#);
+            confere_a_recusa(
+                s,
+                &ses,
+                &dir,
+                antes,
+                "escrita 2 de 2",
+                "pedidos",
+                "INTEGRIDADE",
+            );
+        }
+
+        /// **Unicidade de novo, no COMMIT:** `[atualizar R: chave -> K,
+        /// inserir K]`. O `empilhar` so guarda as chaves das insercoes, e o
+        /// `atualizar` que toma a chave passava para a passada.
+        #[test]
+        fn a_chave_unica_tomada_no_prefixo_recusa_antes_da_marca() {
+            let dir = dir_temp("448-unica");
+            let s = servidor(&dir);
+            let ses = sessao(4486);
+            base_com_fk(&s, &ses);
+            inserir(&s, &ses, "clientes", r#"{"id":1,"nome":"Ana"}"#);
+            let antes = retrato(&s, &ses, &dir);
+            pede(&s, &ses, r#""op":"begin""#).unwrap();
+            pede(
+                &s,
+                &ses,
+                r#""op":"atualizar","database":"loja","tabela":"clientes","rowid":1,
+                   "linha":{"id":7,"nome":"Ana"}"#,
+            )
+            .unwrap();
+            inserir(&s, &ses, "clientes", r#"{"id":7,"nome":"Bia"}"#);
+            confere_a_recusa(
+                s,
+                &ses,
+                &dir,
+                antes,
+                "escrita 2 de 2",
+                "clientes",
+                "DUPLICADO",
+            );
+        }
+
+        /// **Concorrencia (prova 8):** T1 empilha a filha de M; uma sessao comum
+        /// apaga M -- nada no disco aponta para M, entao passa. O COMMIT de T1
+        /// tem de recusar com zero aplicado, e nao gravar o que vinha antes.
+        #[test]
+        fn a_mae_apagada_por_outra_sessao_recusa_o_commit_com_zero_gravado() {
+            let dir = dir_temp("448-concorrencia");
+            let s = servidor(&dir);
+            let ses = sessao(4487);
+            let outra = sessao(4488);
+            base_com_fk(&s, &ses);
+            inserir(&s, &ses, "clientes", r#"{"id":1,"nome":"Ana"}"#);
+            pede(&s, &ses, r#""op":"begin""#).unwrap();
+            inserir(&s, &ses, "clientes", r#"{"id":2,"nome":"Bia"}"#);
+            inserir(&s, &ses, "pedidos", r#"{"id":10,"cliente_id":1}"#);
+            pede(
+                &s,
+                &outra,
+                r#""op":"excluir","database":"loja","tabela":"clientes","rowid":1,"fisico":true"#,
+            )
+            .expect("a sessao comum tinha de conseguir apagar a mae sem filha no disco");
+            let antes = retrato(&s, &outra, &dir);
+            confere_a_recusa(
+                s,
+                &ses,
+                &dir,
+                antes,
+                "escrita 2 de 2",
+                "pedidos",
+                "INTEGRIDADE",
+            );
+        }
+
+        /// **Medicao 2 do parecer (armadilha 3):** a filha FORA do plano do
+        /// `ao_alterar`, redirecionada para a chave velha entre o `empilhar` e
+        /// o COMMIT, nao pode ficar orfa. A pre-conferencia replaneja a arvore
+        /// contra o disco e o prefixo, acha a filha que a lista nao leva, e
+        /// recusa.
+        #[test]
+        fn a_filha_redirecionada_fora_do_plano_nao_fica_orfa() {
+            let dir = dir_temp("448-fora-do-plano");
+            let s = servidor(&dir);
+            let ses = sessao(4489);
+            let outra = sessao(4490);
+            base_com_fk(&s, &ses);
+            inserir(&s, &ses, "clientes", r#"{"id":1,"nome":"Ana"}"#);
+            inserir(&s, &ses, "clientes", r#"{"id":2,"nome":"Bia"}"#);
+            inserir(&s, &ses, "pedidos", r#"{"id":10,"cliente_id":1}"#);
+            inserir(&s, &ses, "pedidos", r#"{"id":11,"cliente_id":2}"#);
+            pede(&s, &ses, r#""op":"begin""#).unwrap();
+            let r = pede(
+                &s,
+                &ses,
+                r#""op":"atualizar","database":"loja","tabela":"clientes","rowid":1,
+                   "linha":{"id":5,"nome":"Ana"}"#,
+            )
+            .unwrap();
+            assert_eq!(r.inteiro_ou("linhas", 0), 2, "{}", r.escrever());
+            // A sessao comum aponta a filha R (rowid 2, fora do plano) para a
+            // chave VELHA da mae -- que no disco ainda existe.
+            pede(
+                &s,
+                &outra,
+                r#""op":"atualizar","database":"loja","tabela":"pedidos","rowid":2,
+                   "linha":{"id":11,"cliente_id":1}"#,
+            )
+            .expect("a sessao comum tinha de conseguir redirecionar a filha fora do plano");
+            let antes = retrato(&s, &outra, &dir);
+            let r = pede(&s, &ses, r#""op":"commit""#);
+            let veredito = match &r {
+                Ok(j) => j.escrever(),
+                Err(e) => e.to_string(),
+            };
+            // O que importa e o DADO: nenhuma filha pode apontar para mae que
+            // nao existe, qualquer que tenha sido o veredito.
+            let ids: Vec<i64> = pede(
+                &s,
+                &outra,
+                r#""op":"varrer","database":"loja","tabela":"clientes","max":100"#,
+            )
+            .unwrap()
+            .campo("linhas")
+            .and_then(Json::lista)
+            .unwrap_or(&[])
+            .iter()
+            .filter_map(|l| l.campo("id").and_then(Json::inteiro))
+            .collect();
+            let orfas = pede(
+                &s,
+                &outra,
+                r#""op":"varrer","database":"loja","tabela":"pedidos","max":100"#,
+            )
+            .unwrap()
+            .campo("linhas")
+            .and_then(Json::lista)
+            .unwrap_or(&[])
+            .iter()
+            .filter_map(|l| l.campo("cliente_id").and_then(Json::inteiro))
+            .filter(|c| !ids.contains(c))
+            .count();
+            assert_eq!(
+                (orfas, r.is_err(), retrato(&s, &outra, &dir)),
+                (0, true, antes),
+                "(filhas orfas, recusou?, retrato): a filha fora do plano ficou orfa ou \
+                 a recusa gravou -- COMMIT: {veredito}"
+            );
+            assert!(
+                veredito.contains("ANTES da marca") && veredito.contains("pedidos"),
+                "a recusa tinha de nomear a filha que a lista nao leva: {veredito}"
+            );
+        }
+
+        /// **A cascata IMPLICITA numa tabela que a lista nao tocou continua
+        /// valendo** -- o comportamento velho. A alteracao da chave foi
+        /// empilhada sem filha nenhuma (a lista nao leva cascata), e outra
+        /// sessao pos uma filha na chave velha antes do COMMIT: a passada
+        /// cascateia por conta propria, e a pre-conferencia nao pode recusar.
+        #[test]
+        fn a_cascata_implicita_numa_tabela_fora_da_lista_continua_valendo() {
+            let dir = dir_temp("448-implicita-fora");
+            let s = servidor(&dir);
+            let ses = sessao(4493);
+            let outra = sessao(4494);
+            base_com_fk(&s, &ses);
+            inserir(&s, &ses, "clientes", r#"{"id":1,"nome":"Ana"}"#);
+            pede(&s, &ses, r#""op":"begin""#).unwrap();
+            let r = pede(
+                &s,
+                &ses,
+                r#""op":"atualizar","database":"loja","tabela":"clientes","rowid":1,
+                   "linha":{"id":5,"nome":"Ana"}"#,
+            )
+            .unwrap();
+            assert_eq!(r.inteiro_ou("linhas", 0), 1, "{}", r.escrever());
+            inserir(&s, &outra, "pedidos", r#"{"id":10,"cliente_id":1}"#);
+            let r = pede(&s, &ses, r#""op":"commit""#).expect("transacao valida recusada");
+            assert_eq!(r.texto_ou("transaction_state", ""), "COMMITTED");
+            let pedidos = pede(
+                &s,
+                &ses,
+                r#""op":"varrer","database":"loja","tabela":"pedidos","max":10"#,
+            )
+            .unwrap();
+            let maes: Vec<i64> = pedidos
+                .campo("linhas")
+                .and_then(Json::lista)
+                .unwrap_or(&[])
+                .iter()
+                .filter_map(|l| l.campo("cliente_id").and_then(Json::inteiro))
+                .collect();
+            assert_eq!(maes, vec![5], "a cascata implicita nao acompanhou a mae");
+        }
+
+        /// **Excluir a filha e DEPOIS a mae, na mesma lista, e valido.** A
+        /// exclusao da mae tem de descontar a filha que o prefixo apagou -- e
+        /// o comportamento que nao pode quebrar.
+        #[test]
+        fn excluir_a_filha_e_depois_a_mae_na_mesma_lista_confirma() {
+            let dir = dir_temp("448-filha-e-mae");
+            let s = servidor(&dir);
+            let ses = sessao(4491);
+            base_com_fk(&s, &ses);
+            inserir(&s, &ses, "clientes", r#"{"id":1,"nome":"Ana"}"#);
+            inserir(&s, &ses, "pedidos", r#"{"id":10,"cliente_id":1}"#);
+            pede(&s, &ses, r#""op":"begin""#).unwrap();
+            pede(
+                &s,
+                &ses,
+                r#""op":"excluir","database":"loja","tabela":"pedidos","rowid":1,"fisico":true"#,
+            )
+            .unwrap();
+            pede(
+                &s,
+                &ses,
+                r#""op":"excluir","database":"loja","tabela":"clientes","rowid":1,"fisico":true"#,
+            )
+            .unwrap();
+            let r = pede(&s, &ses, r#""op":"commit""#);
+            let veredito = match &r {
+                Ok(j) => j.escrever(),
+                Err(e) => e.to_string(),
+            };
+            let r = r.unwrap_or_else(|_| panic!("transacao valida recusada: {veredito}"));
+            assert_eq!(
+                r.texto_ou("transaction_state", ""),
+                "COMMITTED",
+                "{veredito}"
+            );
+            assert!(r.campo("aviso").is_none(), "{veredito}");
+            // A marca de um COMMIT bom espera a janela de durabilidade fechar
+            // (o group commit); fechada a janela, ela tem de sair.
+            s.descarregar_sujas();
+            assert_eq!(
+                retrato(&s, &ses, &dir),
+                (0, 0, 1, 1, 0),
+                "a transacao valida nao saiu inteira: {veredito}"
+            );
+        }
+
+        /// **O comportamento VELHO, e o teste que mais importa:** mae nova e
+        /// filha na ordem certa, e a chave da mae alterada com a cascata na
+        /// lista -- COMMITTED e inteira, sem marca sobrando.
+        #[test]
+        fn a_ordem_certa_continua_committed_e_inteira() {
+            let dir = dir_temp("448-velho");
+            let s = servidor(&dir);
+            let ses = sessao(4492);
+            base_com_fk(&s, &ses);
+            inserir(&s, &ses, "clientes", r#"{"id":1,"nome":"Ana"}"#);
+            inserir(&s, &ses, "pedidos", r#"{"id":10,"cliente_id":1}"#);
+            pede(&s, &ses, r#""op":"begin""#).unwrap();
+            inserir(&s, &ses, "clientes", r#"{"id":2,"nome":"Bia"}"#);
+            inserir(&s, &ses, "pedidos", r#"{"id":11,"cliente_id":2}"#);
+            pede(
+                &s,
+                &ses,
+                r#""op":"atualizar","database":"loja","tabela":"clientes","rowid":1,
+                   "linha":{"id":5,"nome":"Ana"}"#,
+            )
+            .unwrap();
+            inserir(&s, &ses, "pedidos", r#"{"id":12,"cliente_id":5}"#);
+            let r = pede(&s, &ses, r#""op":"commit""#).expect("transacao valida recusada");
+            assert_eq!(r.texto_ou("transaction_state", ""), "COMMITTED");
+            assert_eq!(r.inteiro_ou("gravadas", 0), 5, "{}", r.escrever());
+            assert!(r.campo("aviso").is_none(), "{}", r.escrever());
+            s.descarregar_sujas();
+            assert_eq!(retrato(&s, &ses, &dir), (2, 3, 2, 3, 0));
+            let pedidos = pede(
+                &s,
+                &ses,
+                r#""op":"varrer","database":"loja","tabela":"pedidos","max":100"#,
+            )
+            .unwrap();
+            let maes: Vec<i64> = pedidos
+                .campo("linhas")
+                .and_then(Json::lista)
+                .unwrap_or(&[])
+                .iter()
+                .filter_map(|l| l.campo("cliente_id").and_then(Json::inteiro))
+                .collect();
+            assert_eq!(maes, vec![5, 2, 5], "a cascata nao acompanhou a mae");
+        }
+    }
+
+    /// **Pedido 448, a revisao do DBA** (`docs/propostas/parecer-dba-448-2026-09-24.md`):
+    /// os tres ALTOS que bloquearam a integracao, e o NULL no indice unico. Os
+    /// cenarios sao os da sonda dele; cada prova confere o DISCO e a resposta.
+    mod revisao_do_dba_448 {
+        use super::*;
+
+        /// `clientes(id, codigo, nome)` com `codigo` UNICO e referenciado por
+        /// `pedidos.cod_cliente` -- a chave que a mae MUDA sem mudar de `id`.
+        /// `codigo` entra com a declaracao que a prova pedir (DEFAULT,
+        /// `Sequence`, nada).
+        fn base_codigo(s: &Arc<Servidor>, ses: &Sessao, codigo: &str) {
+            pede(s, ses, r#""op":"criar_database","database":"loja""#).unwrap();
+            pede(
+                s,
+                ses,
+                &format!(
+                    r#""op":"criar_tabela","database":"loja","tabela":"clientes",
+                       "colunas":[{{"nome":"id","tipo":"Int8","obrigatoria":true}},{codigo},
+                                  {{"nome":"nome","tipo":"Str(20)"}}],
+                       "indices":[{{"nome":"pk","colunas":["id"],"unico":true,"primario":true}},
+                                  {{"nome":"por_codigo","colunas":["codigo"],"unico":true}}]"#
+                ),
+            )
+            .unwrap();
+            pede(
+                s,
+                ses,
+                r#""op":"criar_tabela","database":"loja","tabela":"pedidos",
+                   "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                              {"nome":"cod_cliente","tipo":"Int8"}],
+                   "indices":[{"nome":"pk","colunas":["id"],"unico":true,"primario":true},
+                              {"nome":"por_cliente","colunas":["cod_cliente"]}],
+                   "chaves_estrangeiras":[{"nome":"fk_cliente","colunas":["cod_cliente"],
+                                           "tabela_ref":"clientes","colunas_ref":["codigo"]}]"#,
+            )
+            .unwrap();
+        }
+
+        fn escreve(s: &Arc<Servidor>, ses: &Sessao, corpo: &str) {
+            pede(s, ses, corpo).unwrap_or_else(|e| panic!("{corpo}: {e}"));
+        }
+
+        /// A coluna `coluna` de cada linha viva de `tabela`, na ordem de digitacao.
+        fn coluna(s: &Arc<Servidor>, ses: &Sessao, tabela: &str, coluna: &str) -> Vec<i64> {
+            pede(
+                s,
+                ses,
+                &format!(r#""op":"varrer","database":"loja","tabela":"{tabela}","max":1000"#),
+            )
+            .unwrap()
+            .campo("linhas")
+            .and_then(Json::lista)
+            .unwrap_or(&[])
+            .iter()
+            .map(|l| l.campo(coluna).and_then(Json::inteiro).unwrap_or(-1))
+            .collect()
+        }
+
+        /// O COMMIT de uma lista VALIDA: `COMMITTED`, sem aviso, sem marca
+        /// sobrando depois de a janela fechar. Devolve o texto da resposta.
+        fn confirma(s: &Arc<Servidor>, ses: &Sessao, dir: &std::path::Path) -> String {
+            let r = pede(s, ses, r#""op":"commit""#);
+            let veredito = match &r {
+                Ok(j) => j.escrever(),
+                Err(e) => e.to_string(),
+            };
+            let r = r.unwrap_or_else(|_| panic!("lista valida recusada: {veredito}"));
+            assert_eq!(
+                r.texto_ou("transaction_state", ""),
+                "COMMITTED",
+                "{veredito}"
+            );
+            assert!(
+                r.campo("aviso").is_none(),
+                "lista valida com aviso: {veredito}"
+            );
+            s.descarregar_sujas();
+            assert_eq!(marcas_em(&dir.join("loja")), 0, "{veredito}");
+            veredito
+        }
+
+        // ------------------------------------------------------------- A1
+
+        /// **A1:** `[inserir pedido->A, alterar codigo de B 2->3]`, com B SEM
+        /// filha. A passada planejava a cascata de B abrindo `pedidos` por um
+        /// segundo descritor -- sujo pela propria passada, que acabara de
+        /// inserir o pedido -- e a guarda do `.ndx` recusava responder mesmo
+        /// com o plano vazio: o pedido ficava gravado, B nao mudava, e a
+        /// resposta dizia «DEFEITO DO MOTOR». O planejador passa a ser UM, o
+        /// da pre-conferencia, e a passada aplica sem replanejar.
+        #[test]
+        fn a1_a_mae_sem_filha_muda_de_chave_depois_de_a_lista_escrever_na_filha() {
+            let dir = dir_temp("448r-a1");
+            let s = servidor(&dir);
+            let ses = sessao(4501);
+            base_codigo(&s, &ses, r#"{"nome":"codigo","tipo":"Int8"}"#);
+            escreve(
+                &s,
+                &ses,
+                r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":1,"codigo":1,"nome":"a"}"#,
+            );
+            escreve(
+                &s,
+                &ses,
+                r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":2,"codigo":2,"nome":"b"}"#,
+            );
+            pede(&s, &ses, r#""op":"begin""#).unwrap();
+            escreve(
+                &s,
+                &ses,
+                r#""op":"inserir","database":"loja","tabela":"pedidos","linha":{"id":1,"cod_cliente":1}"#,
+            );
+            escreve(
+                &s,
+                &ses,
+                r#""op":"atualizar","database":"loja","tabela":"clientes","rowid":2,
+                   "linha":{"id":2,"codigo":3,"nome":"b"}"#,
+            );
+            confirma(&s, &ses, &dir);
+            assert_eq!(
+                (
+                    coluna(&s, &ses, "clientes", "codigo"),
+                    coluna(&s, &ses, "pedidos", "cod_cliente")
+                ),
+                (vec![1, 3], vec![1])
+            );
+        }
+
+        /// **A1, o achado 4(a) da frente:** `[inserir filha->5, alterar a
+        /// chave da mae 5->6]`. PG, MySQL e MariaDB aceitam -- a filha da
+        /// propria transacao acompanha a mae pelo `ON UPDATE CASCADE` -- e a
+        /// primeira versao do 448 recusava mandando refazer, o que dava a
+        /// mesma recusa. Com o planejador unico, o elo da filha entra na lista
+        /// antes da marca, e duas rodadas seguidas confirmam.
+        #[test]
+        fn a1_a_filha_da_propria_lista_acompanha_a_chave_nova_da_mae() {
+            let dir = dir_temp("448r-4a");
+            let s = servidor(&dir);
+            let ses = sessao(4502);
+            base_codigo(&s, &ses, r#"{"nome":"codigo","tipo":"Int8"}"#);
+            escreve(
+                &s,
+                &ses,
+                r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":1,"codigo":5,"nome":"a"}"#,
+            );
+            for (rodada, de, para) in [(1, 5, 6), (2, 6, 7)] {
+                pede(&s, &ses, r#""op":"begin""#).unwrap();
+                escreve(
+                    &s,
+                    &ses,
+                    &format!(
+                        r#""op":"inserir","database":"loja","tabela":"pedidos",
+                           "linha":{{"id":{rodada},"cod_cliente":{de}}}"#
+                    ),
+                );
+                escreve(
+                    &s,
+                    &ses,
+                    &format!(
+                        r#""op":"atualizar","database":"loja","tabela":"clientes","rowid":1,
+                           "linha":{{"id":1,"codigo":{para},"nome":"a"}}"#
+                    ),
+                );
+                confirma(&s, &ses, &dir);
+            }
+            assert_eq!(
+                (
+                    coluna(&s, &ses, "clientes", "codigo"),
+                    coluna(&s, &ses, "pedidos", "cod_cliente")
+                ),
+                (vec![7], vec![7, 7]),
+                "as filhas nao acompanharam a mae"
+            );
+        }
+
+        // ------------------------------------------------------------- A2
+
+        /// **A2: o plano do `ao_alterar` nao copia a sobreposicao.** `n` filhas
+        /// na lista e DEPOIS `k` alteracoes de chave de mae: o
+        /// `MaesAbertas::prefixo` copiava a sobreposicao inteira de `pedidos` a
+        /// cada alteracao -- O(n*k) sob a trava global, 715 ms para 99,6 s com
+        /// n = k = 8.000 na sonda do DBA. A prova conta as copias, e nao o
+        /// tempo; o tempo mora na bancada (`custo-da-pre-conferencia chaves`).
+        #[test]
+        fn a2_o_plano_da_cascata_nao_copia_a_sobreposicao_da_filha() {
+            let dir = dir_temp("448r-a2");
+            let s = servidor(&dir);
+            let ses = sessao(4503);
+            base_codigo(&s, &ses, r#"{"nome":"codigo","tipo":"Int8"}"#);
+            for i in 0..=5 {
+                escreve(
+                    &s,
+                    &ses,
+                    &format!(
+                        r#""op":"inserir","database":"loja","tabela":"clientes",
+                           "linha":{{"id":{i},"codigo":{i},"nome":"m"}}"#
+                    ),
+                );
+            }
+            pede(&s, &ses, r#""op":"begin""#).unwrap();
+            for i in 1..=20 {
+                escreve(
+                    &s,
+                    &ses,
+                    &format!(
+                        r#""op":"inserir","database":"loja","tabela":"pedidos",
+                           "linha":{{"id":{i},"cod_cliente":0}}"#
+                    ),
+                );
+            }
+            for i in 1..=5 {
+                escreve(
+                    &s,
+                    &ses,
+                    &format!(
+                        r#""op":"atualizar","database":"loja","tabela":"clientes","rowid":{},
+                           "linha":{{"id":{i},"codigo":{},"nome":"m"}}"#,
+                        i + 1,
+                        i + 100
+                    ),
+                );
+            }
+            // A contagem vem ANTES do veredito: a copia acontece na
+            // pre-conferencia, e um COMMIT que quebre depois dela nao pode
+            // esconder o que ela custou.
+            let antes = phxsql_store::table::copias_da_sobreposicao();
+            let r = pede(&s, &ses, r#""op":"commit""#);
+            let copias = phxsql_store::table::copias_da_sobreposicao() - antes;
+            assert_eq!(
+                copias,
+                0,
+                "o COMMIT copiou a sobreposicao {copias} vezes -- uma por alteracao de \
+                 chave, O(n) cada. COMMIT: {:?}",
+                r.as_ref().map(|j| j.escrever())
+            );
+            let r = r.expect("lista valida recusada");
+            assert_eq!(r.texto_ou("transaction_state", ""), "COMMITTED");
+            assert!(r.campo("aviso").is_none(), "{}", r.escrever());
+        }
+
+        // ------------------------------------------------------------- A3
+
+        /// **A3, o DEFAULT:** `[mae com codigo pelo DEFAULT 7, filha->7]`
+        /// confirmava antes do 448. A sobreposicao guardava a linha CRUA do
+        /// `empilhar` (codigo nulo), e a pre-conferencia nao achava a mae 7
+        /// que a passada ia gravar.
+        #[test]
+        fn a3_a_mae_com_codigo_pelo_padrao_e_a_filha_confirmam() {
+            let dir = dir_temp("448r-padrao");
+            let s = servidor(&dir);
+            let ses = sessao(4504);
+            base_codigo(&s, &ses, r#"{"nome":"codigo","tipo":"Int8","padrao":"7"}"#);
+            pede(&s, &ses, r#""op":"begin""#).unwrap();
+            escreve(
+                &s,
+                &ses,
+                r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":1,"nome":"a"}"#,
+            );
+            escreve(
+                &s,
+                &ses,
+                r#""op":"inserir","database":"loja","tabela":"pedidos","linha":{"id":1,"cod_cliente":7}"#,
+            );
+            confirma(&s, &ses, &dir);
+            assert_eq!(
+                (
+                    coluna(&s, &ses, "clientes", "codigo"),
+                    coluna(&s, &ses, "pedidos", "cod_cliente")
+                ),
+                (vec![7], vec![7])
+            );
+        }
+
+        /// **A3, a `Sequence` mantida:** atualizar so o nome da mae, sem
+        /// mandar a `Sequence`, e pendurar uma filha no codigo dela. O store
+        /// MANTEM o numero; a linha crua o tinha nulo.
+        #[test]
+        fn a3_atualizar_a_mae_sem_a_sequencia_e_a_filha_confirmam() {
+            let dir = dir_temp("448r-seq");
+            let s = servidor(&dir);
+            let ses = sessao(4505);
+            base_codigo(&s, &ses, r#"{"nome":"codigo","tipo":"Sequence"}"#);
+            escreve(
+                &s,
+                &ses,
+                r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":1,"nome":"a"}"#,
+            );
+            let cod = coluna(&s, &ses, "clientes", "codigo")[0];
+            assert!(cod > 0, "a sequencia nao numerou a mae");
+            pede(&s, &ses, r#""op":"begin""#).unwrap();
+            escreve(
+                &s,
+                &ses,
+                r#""op":"atualizar","database":"loja","tabela":"clientes","rowid":1,
+                   "linha":{"id":1,"nome":"b"}"#,
+            );
+            escreve(
+                &s,
+                &ses,
+                &format!(
+                    r#""op":"inserir","database":"loja","tabela":"pedidos",
+                       "linha":{{"id":1,"cod_cliente":{cod}}}"#
+                ),
+            );
+            confirma(&s, &ses, &dir);
+            assert_eq!(
+                (
+                    coluna(&s, &ses, "clientes", "codigo"),
+                    coluna(&s, &ses, "pedidos", "cod_cliente")
+                ),
+                (vec![cod], vec![cod])
+            );
+        }
+
+        /// **A3, o inverso:** `[atualizar a mae sem a Sequence, excluir de vez
+        /// a mae]`, com a filha no DISCO. A mae continua com o codigo, e tem
+        /// filha: a exclusao tem de recusar ANTES da marca. Com a linha crua,
+        /// o `empilhar` planejava uma cascata do codigo para NULO -- a filha
+        /// perdia a mae sem ninguem ter pedido -- e a mae saia.
+        #[test]
+        fn a3_atualizar_a_mae_sem_a_sequencia_e_excluir_de_vez_recusa_antes_da_marca() {
+            let dir = dir_temp("448r-seq-exclui");
+            let s = servidor(&dir);
+            let ses = sessao(4506);
+            base_codigo(&s, &ses, r#"{"nome":"codigo","tipo":"Sequence"}"#);
+            escreve(
+                &s,
+                &ses,
+                r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":1,"nome":"a"}"#,
+            );
+            let cod = coluna(&s, &ses, "clientes", "codigo")[0];
+            escreve(
+                &s,
+                &ses,
+                &format!(
+                    r#""op":"inserir","database":"loja","tabela":"pedidos",
+                       "linha":{{"id":1,"cod_cliente":{cod}}}"#
+                ),
+            );
+            pede(&s, &ses, r#""op":"begin""#).unwrap();
+            let r = pede(
+                &s,
+                &ses,
+                r#""op":"atualizar","database":"loja","tabela":"clientes","rowid":1,
+                   "linha":{"id":1,"nome":"b"}"#,
+            )
+            .unwrap();
+            assert_eq!(
+                r.inteiro_ou("linhas", 0),
+                1,
+                "mudar so o nome nao cascateia: {}",
+                r.escrever()
+            );
+            escreve(
+                &s,
+                &ses,
+                r#""op":"excluir","database":"loja","tabela":"clientes","rowid":1,"fisico":true"#,
+            );
+            let e = pede(&s, &ses, r#""op":"commit""#).expect_err("a mae com filha saiu");
+            let texto = e.to_string();
+            assert_eq!(e.nome(), "INTEGRIDADE", "{texto}");
+            assert!(texto.contains("ANTES da marca"), "{texto}");
+            assert_eq!(
+                (
+                    coluna(&s, &ses, "clientes", "codigo"),
+                    coluna(&s, &ses, "pedidos", "cod_cliente"),
+                    marcas_em(&dir.join("loja"))
+                ),
+                (vec![cod], vec![cod], 0),
+                "(maes, filhas, marcas): a recusa mexeu no disco -- {texto}"
+            );
+        }
+
+        /// **A3, a leitura:** dentro da transacao, a busca pela chave ve a
+        /// linha como o store vai grava-la -- o codigo do DEFAULT e a
+        /// `Sequence` mantida. A primeira versao do 448 regrediu as duas:
+        /// com o buraco (a) fechado, a linha alterada so e achada pela chave
+        /// que a troca lhe da, e a troca crua dava chave nula.
+        #[test]
+        fn a3_dentro_da_transacao_a_busca_ve_a_linha_como_sera_gravada() {
+            let buscar = |s: &Arc<Servidor>, ses: &Sessao, cod: i64| -> usize {
+                pede(
+                    s,
+                    ses,
+                    &format!(
+                        r#""op":"buscar","database":"loja","tabela":"clientes",
+                           "indice":"por_codigo","chave":[{cod}]"#
+                    ),
+                )
+                .unwrap()
+                .campo("linhas")
+                .and_then(Json::lista)
+                .map_or(0, |l| l.len())
+            };
+            let dir = dir_temp("448r-leitura");
+            let s = servidor(&dir);
+            let ses = sessao(4507);
+            base_codigo(&s, &ses, r#"{"nome":"codigo","tipo":"Int8","padrao":"7"}"#);
+            pede(&s, &ses, r#""op":"begin""#).unwrap();
+            escreve(
+                &s,
+                &ses,
+                r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":1,"nome":"a"}"#,
+            );
+            let padrao = buscar(&s, &ses, 7);
+            pede(&s, &ses, r#""op":"rollback""#).unwrap();
+
+            let dir = dir_temp("448r-leitura-seq");
+            let s = servidor(&dir);
+            base_codigo(&s, &ses, r#"{"nome":"codigo","tipo":"Sequence"}"#);
+            escreve(
+                &s,
+                &ses,
+                r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":1,"nome":"a"}"#,
+            );
+            let cod = coluna(&s, &ses, "clientes", "codigo")[0];
+            pede(&s, &ses, r#""op":"begin""#).unwrap();
+            escreve(
+                &s,
+                &ses,
+                r#""op":"atualizar","database":"loja","tabela":"clientes","rowid":1,
+                   "linha":{"id":1,"nome":"b"}"#,
+            );
+            let mantida = buscar(&s, &ses, cod);
+            assert_eq!(
+                (padrao, mantida),
+                (1, 1),
+                "(pelo DEFAULT, pela Sequence mantida): a busca dentro da transacao nao \
+                 achou a linha como ela vai ser gravada"
+            );
+        }
+
+        // ------------------------------------------------------------- A4
+
+        /// **A4: NULL nao colide num indice unico** -- PG, MySQL, MariaDB e
+        /// SQLite aceitam varios. O store dava DUPLICADO no segundo NULL, e a
+        /// pre-conferencia pulava o NULL: a mesma decisao escrita duas vezes,
+        /// divergindo. Medido pelo DBA: com um NULL no disco, `[id=3 email=x,
+        /// id=4 email=NULL]` saia com 1 gravada e «DEFEITO DO MOTOR».
+        #[test]
+        fn a4_dois_nulos_no_indice_unico_nao_colidem() {
+            let dir = dir_temp("448r-nulo");
+            let s = servidor(&dir);
+            let ses = sessao(4508);
+            pede(&s, &ses, r#""op":"criar_database","database":"loja""#).unwrap();
+            pede(
+                &s,
+                &ses,
+                r#""op":"criar_tabela","database":"loja","tabela":"clientes",
+                   "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                              {"nome":"email","tipo":"Str(20)"}],
+                   "indices":[{"nome":"pk","colunas":["id"],"unico":true,"primario":true},
+                              {"nome":"por_email","colunas":["email"],"unico":true}]"#,
+            )
+            .unwrap();
+            let insere = |id: i64, email: &str| {
+                pede(
+                    &s,
+                    &ses,
+                    &format!(
+                        r#""op":"inserir","database":"loja","tabela":"clientes",
+                           "linha":{{"id":{id},"email":{email}}}"#
+                    ),
+                )
+            };
+            insere(1, "null").unwrap();
+            let fora = insere(2, "null").map(|_| ()).map_err(|e| e.to_string());
+            pede(&s, &ses, r#""op":"begin""#).unwrap();
+            insere(3, r#""x""#).unwrap();
+            insere(4, "null").unwrap();
+            let r = pede(&s, &ses, r#""op":"commit""#);
+            let veredito = match &r {
+                Ok(j) => j.escrever(),
+                Err(e) => e.to_string(),
+            };
+            let repetido = insere(5, r#""x""#).map(|_| ()).map_err(|e| e.nome());
+            assert_eq!(
+                (
+                    fora,
+                    r.is_ok() && !veredito.contains("aviso"),
+                    quantas(&s, &ses, "clientes"),
+                    repetido
+                ),
+                (Ok(()), true, 4, Err("DUPLICADO")),
+                "(segundo NULL fora de transacao, COMMIT limpo, linhas, o nao-NULL \
+                 repetido): COMMIT {veredito}"
+            );
+        }
     }
 }
 
@@ -55821,9 +57168,10 @@ mod testes_do_panico_sob_a_trava {
     /// de pe com a marca orfa no disco e as travas soltas. Com o conserto ele
     /// cai, e o arranque a resolve com a porta fechada.
     ///
-    /// Se o 448 fechar, a FK passa a recusar ANTES da marca, o commit responde
-    /// com erro em vez de cair, e este teste diz isso -- ele nao passa por
-    /// engano: troque o gatilho.
+    /// O 448 fechou, e a FK passou a recusar ANTES da marca: o cenario do
+    /// filho desliga a pre-conferencia (`pre_conferencia_desligada`) para o
+    /// gatilho continuar existindo. Sem isso o commit responde com erro em vez
+    /// de cair, e este teste diz isso em vez de passar por engano.
     #[cfg(unix)]
     #[test]
     fn marca_em_voo_com_operacao_impossivel_derruba_o_processo() {
@@ -56192,7 +57540,18 @@ mod testes_do_panico_sob_a_trava {
                 s.reparo_falha_de_teste.store(true, Ordering::SeqCst);
                 armar(&s, "commit");
             }
-            "impossivel" => armar(&s, "commit"),
+            "impossivel" => {
+                // Desde o 448 a FK da lista e conferida ANTES da marca, e o
+                // gatilho natural deste cenario (a filha com mae inexistente)
+                // passou a ser recusado com zero gravado. O braco das
+                // impossiveis continua existindo para o que a pre-conferencia
+                // nao ve (a FK que vem do DEFAULT, pedido 514, e o disco que
+                // muda entre o plano e a passada), entao o cenario desliga a
+                // pre-conferencia -- o proprio defeito reposto do 448, so em
+                // `cfg(test)` -- para a FK chegar a passada como antes.
+                s.pre_conferencia_desligada.store(true, Ordering::SeqCst);
+                armar(&s, "commit");
+            }
             "marca_ilegivel" => {
                 s.marca_ilegivel_de_teste.store(true, Ordering::SeqCst);
                 armar(&s, "commit");

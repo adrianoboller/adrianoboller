@@ -1134,6 +1134,39 @@ Cada componente ocupa `1 + largura` bytes:
 - **NOCASE** aplica *fold* ASCII para maiúsculas antes de comparar, preservando
   o comprimento em bytes (mesma semântica do atributo NOCASE do Clarion(R)).
 
+### NULL num índice único não colide — e o binário anterior não sabe disso
+
+**Desde o pedido 448, uma chave com algum componente NULL não colide num índice
+único.** O PostgreSQL, o MySQL, a MariaDB e o SQLite aceitam vários NULL num
+`UNIQUE`, e isto entrou por aceite automático. Os bytes **não mudaram**: o NULL
+sempre se codificou com o byte de presença `0x00` (`0xFF` num componente DESC),
+e a chave completa sempre levou o rowid no fim. O que mudou foi **o que o
+índice único pode conter**: duas entradas com a mesma chave, as duas com NULL.
+A pergunta mora num lugar só, `Table::participa_da_unicidade`. O `inserir`, o
+`atualizar`, a troca de chaves da marca, o `reindexar`, a montagem do índice a
+partir do `.reg` e as conferências da transação perguntam todos a ela.
+
+**O binário anterior aceita o arquivo e reprova o conteúdo.** Medido pelo DBA
+(`docs/propostas/parecer-dba-448-2a-2026-09-24.md`, C1) com o `82a17ef`: o
+banco nasce no binário anterior, recebe o segundo NULL no binário novo e é
+reaberto no anterior. O `reindexar` recusa com «chave repetida no lote». O
+`.ndx` fica marcado «ficou para trás numa queda», e **toda operação na tabela
+passa a responder `CORROMPIDO`** até o binário novo abrir o banco e
+reindexar. O dado continua inteiro, mas a tabela fica parada. Daí as três
+regras:
+
+1. **Não há volta de versão** de um banco que já tenha dois NULL no mesmo
+   índice único. O binário novo abre sem aviso o banco que o anterior gravou;
+   a volta não funciona. O anterior não tem como perceber que a chave repetida
+   é legítima.
+2. **A réplica com o binário anterior para no segundo NULL.** Ela aplica o
+   evento pelo mesmo `inserir` (`Table::aplicar_evento`), e o `inserir`
+   anterior recusa a chave com `DUPLICADO`. A aplicação para ali, com a origem
+   seguindo em frente.
+3. **As réplicas se atualizam ANTES da origem.** Réplica nova com origem
+   antiga não encontra nada que não saiba ler. Origem nova com réplica antiga
+   para a réplica no primeiro NULL repetido.
+
 ### Remoção
 
 Remover tira a entrada da folha **sem rebalancear** a árvore. A busca continua
