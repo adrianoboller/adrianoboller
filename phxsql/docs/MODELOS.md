@@ -1265,6 +1265,9 @@ QA, com julgamento de pergunta, e a redação do H.
 | H — página dos testes com as provas | leve | gerador conferível contra os arquivos; nada decide, só mostra |
 | G — 477, a régua do `Debug` enxerga o `Segredo` | leve | crivo em Python que se prova rodando; o integrador repôs os dois defeitos e conferiu a régua velha em 0 |
 | B — 476, um comando para todas as catracas | leve | script em Python que se prova rodando; o integrador achou na integração o chamador que lia a prosa em vez do código de saída |
+| 450 etapa 2 — o `.phz` ligado ao config | forte | seguranca e migracao de arquivo em disco; duas voltas, porque DBA e SEC bloquearam a primeira |
+| C — parecer da etapa 2 do 450 | forte | formato em disco e migracao; achou a dica que truncaria o config extraido |
+| SEC — revisao da etapa 2 do 450 | forte | leitura adversaria de arquivo com segredo; provou pelo binario a copia em claro 644 e a pasta esvaziada |
 
 **A integração achou o que nenhuma frente via, de novo por território de
 arquivo não bastar em worktree compartilhado**: `cargo fmt --all` de uma

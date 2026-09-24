@@ -23,6 +23,7 @@ pub mod conferidor_temporarios;
 pub mod conferidor_texto_cru;
 pub mod conferidor_vermelhas;
 pub mod config;
+pub mod config_phz;
 pub mod consultar;
 pub mod dblink;
 pub mod diferencas;

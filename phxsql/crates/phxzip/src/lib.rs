@@ -86,7 +86,10 @@ pub use chave::{compressoes, CICLOS_MAXIMO, CICLOS_PADRAO};
 pub use erro::Erro;
 pub use escritor::{Escritor, Metodo, Opcoes};
 pub use leitor::{conferir_nome, Arquivo, Entrada, Limites};
-pub use phz::{desempacotar, desempacotar_com_teto, empacotar, empacotar_com_ciclos, EXTENSAO};
+pub use phz::{
+    desempacotar, desempacotar_com_limites, desempacotar_com_teto, empacotar, empacotar_com_ciclos,
+    EXTENSAO,
+};
 
 /// Segundos entre 1601-01-01 (a epoca do `FILETIME`) e 1970-01-01.
 const SEGUNDOS_1601_A_1970: i64 = 11_644_473_600;

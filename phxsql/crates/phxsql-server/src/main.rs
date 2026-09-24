@@ -12,6 +12,8 @@
 //! phxsqld --bloqueios              lista os IPs bloqueados
 //! phxsqld --desbloquear <ip>       tira um IP da lista
 //! phxsqld --mcp                    servidor MCP pela entrada/saida padrao
+//! phxsqld --empacotar-config       grava o config.json como config.phz
+//! phxsqld --desempacotar-config    o config.phz volta a config.json
 //! ```
 
 use std::process::ExitCode;
@@ -35,6 +37,14 @@ USO:
                                     1 = isolado, 2 = source, 3 = replica
   phxsqld --mcp [--usuario u] [--escrita]   servidor MCP (JSON-RPC por linha,
                                     pela entrada e pela saida padrao)
+  phxsqld --empacotar-config [--config <c>]
+                                    grava o config.json como config.phz (um 7z
+                                    com senha fixa: barreira contra editor, NAO
+                                    e cifra -- pedido 450). O .json sai do
+                                    caminho RENOMEADO, nunca apagado
+  phxsqld --desempacotar-config [--config <c>]
+                                    o config.phz volta a config.json, para
+                                    editar o que a tela nao grava
 
 O --mcp nasce SOMENTE LEITURA: do outro lado ha um modelo de linguagem, e nao
 uma pessoa. --escrita libera phx_inserir e phx_atualizar. A senha do --usuario
@@ -189,6 +199,65 @@ fn servir_mcp(args: &[String], config: phxsql_server::Config) -> ExitCode {
     }
 }
 
+/// `--empacotar-config` e `--desempacotar-config`: o `config.json` vira
+/// `config.phz` e volta (pedido 450).
+///
+/// O que se diz aqui e o que o operador precisa para agir: onde o original
+/// ficou -- e que a copia em claro fica ate ele a apagar, porque o servidor
+/// nao apaga arquivo de ninguem. A senha nunca aparece: nem aqui, nem no erro.
+/// O arquivo que vale para o `--config` pedido, para o erro nomear o que foi
+/// LIDO. Com os dois presentes, o proprio erro ja nomeia os dois.
+fn resolvido(pedido: &str) -> String {
+    phxsql_server::config_phz::resolver(std::path::Path::new(pedido))
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|_| pedido.to_string())
+}
+
+fn trocar_a_forma(pedido: &str, empacotar: bool) -> ExitCode {
+    use phxsql_server::config_phz::{desempacotar_arquivo, empacotar_arquivo, Troca};
+    let alvo = std::path::Path::new(pedido);
+    let r = if empacotar {
+        empacotar_arquivo(alvo)
+    } else {
+        desempacotar_arquivo(alvo)
+    };
+    match r {
+        Ok(Troca::JaEstava(real)) => {
+            println!(
+                "nada a fazer: {} ja esta {}",
+                real.display(),
+                if empacotar { "como .phz" } else { "em claro" }
+            );
+            ExitCode::SUCCESS
+        }
+        Ok(Troca::Feita { de, para, guardado }) if empacotar => {
+            println!("{} empacotado em {} (0600).", de.display(), para.display());
+            println!(
+                "o original, EM CLARO, foi guardado como {} (0600).",
+                guardado.display()
+            );
+            println!("suba o servidor como sempre (o mesmo --config serve) e, conferido,");
+            println!("apague essa copia: ela carrega o token e os hashes, e o servidor nao apaga.");
+            println!("o .phz e barreira contra editor, NAO e cifra (pedido 450).");
+            ExitCode::SUCCESS
+        }
+        Ok(Troca::Feita { de, para, guardado }) => {
+            println!("{} aberto em {} (0600).", de.display(), para.display());
+            println!("o .phz foi guardado como {} (0600).", guardado.display());
+            println!("o servidor passa a subir do .json EM CLARO, e o arranque avisa isso.");
+            println!(
+                "para empacotar de novo:  phxsqld --empacotar-config --config {}",
+                para.display()
+            );
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("a troca nao se completou em {}: {e}", resolvido(pedido));
+            ExitCode::FAILURE
+        }
+    }
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     // `--version` responde ANTES de tudo: sem ler `config.json`, sem conectar
@@ -247,14 +316,46 @@ fn main() -> ExitCode {
         None => "config.json".to_string(),
     };
 
+    // A troca de forma vem ANTES do `Config::ler` (revisao SEC de 24/09/2026,
+    // M2): um `.phz` que abre e nao passa na validacao -- um campo torto, um
+    // token vazio -- tem de poder sair pela ferramenta para ser consertado,
+    // e depois do `Config::ler` ele nunca chegava aqui. O empacotar confere
+    // que o texto e JSON; o resto da validacao e a do arranque seguinte.
+    if args.iter().any(|a| a == "--empacotar-config") {
+        return trocar_a_forma(&caminho, true);
+    }
+    if args.iter().any(|a| a == "--desempacotar-config") {
+        return trocar_a_forma(&caminho, false);
+    }
+
     let config = match Config::ler(&caminho) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("erro no {caminho}: {e}");
-            eprintln!("\ngere um modelo com:  phxsqld --exemplo 1 > config.json");
+            eprintln!("erro no {}: {e}", resolvido(&caminho));
+            // A dica do modelo so quando NAO HA configuracao nenhuma. Com um
+            // dos dois presentes -- o `.json` que o administrador extraiu do
+            // `.phz` para editar, um `.phz` corrompido, um `.json` com uma
+            // virgula a mais --, o `> config.json` dela TRUNCARIA o arquivo
+            // que o erro acima esta nomeando (parecer do DBA, 24/09/2026).
+            let (claro, phz) = phxsql_server::config_phz::par(std::path::Path::new(&caminho));
+            if !claro.exists() && !phz.exists() {
+                eprintln!(
+                    "\ngere um modelo com:  phxsqld --exemplo 1 > {}",
+                    claro.display()
+                );
+            }
             return ExitCode::FAILURE;
         }
     };
+
+    // A forma do arquivo que subiu: em claro diz como empacotar; em `.phz`
+    // diz se a copia em claro de uma migracao ainda esta ao lado -- achada
+    // pelo PEDIDO, que e de onde a migracao tirou o nome dela.
+    if let Some(aviso) = config.caminho.as_deref().and_then(|real| {
+        phxsql_server::config_phz::aviso_de_arranque(std::path::Path::new(&caminho), real)
+    }) {
+        eprintln!("AVISO: {aviso}");
+    }
 
     // Campo com nome errado nao derruba nada -- e por isso que precisa gritar.
     // O servidor sobe com o padrao e tudo PARECE certo ate alguem tentar

@@ -312,6 +312,30 @@
       "quando": "2026-09-24 02:38"
     },
     {
+      "id": "teto-do-fio-sem-a-constante",
+      "titulo": "o `Canal::ler` de producao troca `TETO_DO_REGISTRO` por um teto quase infinito",
+      "veredito": "PROVADA",
+      "segundos": 3.97,
+      "notas": [],
+      "quando": "2026-09-24 04:34"
+    },
+    {
+      "id": "teto-do-fio-sem-a-constante-no-soquete",
+      "titulo": "a mesma troca da constante por um teto quase infinito, vista pela rede",
+      "veredito": "PROVADA",
+      "segundos": 4.11,
+      "notas": [],
+      "quando": "2026-09-24 04:58"
+    },
+    {
+      "id": "teto-da-linha-sem-a-constante-no-soquete",
+      "titulo": "o `teto_da_linha` do servidor troca `TETO_DO_REGISTRO` por um teto quase infinito, visto pela rede",
+      "veredito": "PROVADA",
+      "segundos": 6.58,
+      "notas": [],
+      "quando": "2026-09-24 04:58"
+    },
+    {
       "id": "pulso-do-cluster-em-claro",
       "titulo": "o pulso da eleição saindo em claro com a cifra do cluster ligada",
       "veredito": "PROVADA",
@@ -376,6 +400,14 @@
       "segundos": 1.29,
       "notas": [],
       "quando": "2026-09-16 15:25"
+    },
+    {
+      "id": "ffi-punho-morto-lido-antes-de-conferir",
+      "titulo": "a fronteira volta a ler a etiqueta de DENTRO do punho antes de saber se ele ainda existe",
+      "veredito": "PROVADA",
+      "segundos": 1.44,
+      "notas": [],
+      "quando": "2026-09-24 04:37"
     },
     {
       "id": "ffi-texto-ate-o-byte-zero",
@@ -790,6 +822,30 @@
       "quando": "2026-09-16 15:25"
     },
     {
+      "id": "perfil-decide-so-pela-lista-e-nao-pelo-reg-cifrado",
+      "titulo": "o perfil.txt decide pela lista do config e a cifra acontece pela marca de coluna",
+      "veredito": "PROVADA",
+      "segundos": 42.51,
+      "notas": [],
+      "quando": "2026-09-24 04:34"
+    },
+    {
+      "id": "perfil-grava-o-erro-que-cita-o-valor",
+      "titulo": "o perfil.txt tapa o pedido e grava o erro, que cita o valor da coluna marcada",
+      "veredito": "PROVADA",
+      "segundos": 6.95,
+      "notas": [],
+      "quando": "2026-09-24 04:34"
+    },
+    {
+      "id": "profiler-ligado-sem-a-raiz-dos-dados",
+      "titulo": "o Profiler liga sem a raiz de dados e volta a decidir por um campo só",
+      "veredito": "PROVADA",
+      "segundos": 53.65,
+      "notas": [],
+      "quando": "2026-09-24 04:34"
+    },
+    {
       "id": "perfil-so-olha-a-tabela-do-primeiro-nivel",
       "titulo": "o Profiler so olha a tabela do primeiro nível e a junção vira a porta dos fundos",
       "veredito": "PROVADA",
@@ -1166,12 +1222,244 @@
       "quando": "2026-09-16 15:25"
     },
     {
+      "id": "varredura-sem-o-elo",
+      "titulo": "a varredura barata do diretorio perde a tabela alcancada por elo",
+      "veredito": "PROVADA",
+      "segundos": 1.96,
+      "notas": [],
+      "quando": "2026-09-24 04:34"
+    },
+    {
+      "id": "linha-vazia-na-conferencia-de-filhas",
+      "titulo": "a linha descida para a conferencia de filhas vai vazia, e toda mae parece sem filha",
+      "veredito": "PROVADA",
+      "segundos": 1.99,
+      "notas": [],
+      "quando": "2026-09-24 04:34"
+    },
+    {
+      "id": "teto-de-64-bits-satura",
+      "titulo": "número cru fora da faixa do `Int8` é GRAVADO saturado, e `1e21`, `1e30` e `1e300` viram todos o mesmo número",
+      "veredito": "PROVADA",
+      "segundos": 44.48,
+      "notas": [],
+      "quando": "2026-09-24 04:34"
+    },
+    {
+      "id": "saida-do-direito-por-coluna",
+      "titulo": "a recusa do direito por coluna manda «peça as colunas por varrer» também para o `agrupar` e para o `backup`",
+      "veredito": "PROVADA",
+      "segundos": 47.52,
+      "notas": [],
+      "quando": "2026-09-24 04:34"
+    },
+    {
+      "id": "check-que-se-contradiz-no-alter",
+      "titulo": "`acrescentar_coluna` aceita um `padrao` que viola o `check` declarado no MESMO comando, e todo `atualizar` da linha velha passa a recusar",
+      "veredito": "PROVADA",
+      "segundos": 2.05,
+      "notas": [],
+      "quando": "2026-09-24 04:34"
+    },
+    {
+      "id": "alter-com-regra-sem-aviso",
+      "titulo": "`acrescentar_coluna` com `check` ou `calculada` numa tabela com linha é aceito SEM AVISO, e a linha velha fica fora da regra",
+      "veredito": "PROVADA",
+      "segundos": 40.1,
+      "notas": [],
+      "quando": "2026-09-24 04:34"
+    },
+    {
+      "id": "upsert-parcial-vira-mescla",
+      "titulo": "o upsert sem o campo `atualizar` passa a MESCLAR, e a sincronia do DbLink perde a única forma de gravar NULO num destino",
+      "veredito": "PROVADA",
+      "segundos": 44.78,
+      "notas": [],
+      "quando": "2026-09-24 04:34"
+    },
+    {
+      "id": "direcao-do-indice-sem-saida",
+      "titulo": "a recusa por direção do índice explica bem por que não dá, e não diz o que fazer",
+      "veredito": "PROVADA",
+      "segundos": 2.03,
+      "notas": [],
+      "quando": "2026-09-24 04:34"
+    },
+    {
+      "id": "sha256-sem-somar-o-estado",
+      "titulo": "SHA-256 sem a realimentação do estado: a compressão vira permutação reversível",
+      "veredito": "PROVADA",
+      "segundos": 3.46,
+      "notas": [],
+      "quando": "2026-09-24 04:34"
+    },
+    {
+      "id": "sha256-com-o-tamanho-em-little-endian",
+      "titulo": "SHA-256 com o tamanho da mensagem, no padding, em little-endian",
+      "veredito": "PROVADA",
+      "segundos": 3.18,
+      "notas": [],
+      "quando": "2026-09-24 04:34"
+    },
+    {
+      "id": "hmac-com-a-chave-longa-truncada",
+      "titulo": "HMAC com a chave maior que o bloco TRUNCADA em vez de pré-hasheada",
+      "veredito": "PROVADA",
+      "segundos": 3.6,
+      "notas": [],
+      "quando": "2026-09-24 04:34"
+    },
+    {
+      "id": "pbkdf2-com-o-contador-de-bloco-parado",
+      "titulo": "PBKDF2 com o contador de bloco parado: saída longa repete o primeiro bloco",
+      "veredito": "PROVADA",
+      "segundos": 3.31,
+      "notas": [],
+      "quando": "2026-09-24 04:34"
+    },
+    {
+      "id": "pbkdf2-sem-o-xor-acumulado",
+      "titulo": "PBKDF2 sem o XOR acumulado: vira HMAC aplicado N vezes",
+      "veredito": "PROVADA",
+      "segundos": 3.56,
+      "notas": [],
+      "quando": "2026-09-24 04:34"
+    },
+    {
+      "id": "juntar-sem-portao",
+      "titulo": "`juntar` sem conferência própria: a tabela negada entra como lado B",
+      "veredito": "PROVADA",
+      "segundos": 49.92,
+      "notas": [],
+      "quando": "2026-09-24 04:34"
+    },
+    {
+      "id": "unir-sem-portao",
+      "titulo": "`unir` sem conferência própria: a tabela negada entra na LISTA",
+      "veredito": "PROVADA",
+      "segundos": 41.45,
+      "notas": [],
+      "quando": "2026-09-24 04:34"
+    },
+    {
+      "id": "diferencas-sem-portao",
+      "titulo": "`diferencas` sem conferência própria: a tabela negada entra em `a` ou em `b`",
+      "veredito": "PROVADA",
+      "segundos": 44.23,
+      "notas": [],
+      "quando": "2026-09-24 04:34"
+    },
+    {
+      "id": "derivado-sem-portao",
+      "titulo": "o portão some do irmão `executar_derivado`: o SQL inteiro vira a porta dos fundos",
+      "veredito": "PROVADA",
+      "segundos": 41.4,
+      "notas": [],
+      "quando": "2026-09-24 04:34"
+    },
+    {
+      "id": "ficha-do-usuario-devolve-o-hash",
+      "titulo": "a ficha do usuário passa a devolver o `senha_hash` junto",
+      "veredito": "PROVADA",
+      "segundos": 39.35,
+      "notas": [],
+      "quando": "2026-09-24 04:34"
+    },
+    {
+      "id": "senha-em-claro-no-cadastro",
+      "titulo": "a senha entra no config.json em texto puro: o `cifrar` sai do caminho de gravação",
+      "veredito": "PROVADA",
+      "segundos": 19.25,
+      "notas": [],
+      "quando": "2026-09-24 04:34"
+    },
+    {
+      "id": "senha-velha-fica-no-arquivo",
+      "titulo": "trocar a senha não leva junto a que estava em texto puro no arquivo",
+      "veredito": "PROVADA",
+      "segundos": 44.6,
+      "notas": [],
+      "quando": "2026-09-24 04:34"
+    },
+    {
       "id": "cifra-reserializa-a-senha",
       "titulo": "o `para_json` da cifra devolve a senha de verdade em vez de «(oculta)»",
       "veredito": "PROVADA",
       "segundos": 48.51,
       "notas": [],
       "quando": "2026-09-24 01:24"
+    },
+    {
+      "id": "debug-da-cifra-mostra-a-senha",
+      "titulo": "o `Debug` da cifra imprime a senha: um `dbg!` apressado a joga no log",
+      "veredito": "PROVADA",
+      "segundos": 7.63,
+      "notas": [],
+      "quando": "2026-09-24 04:58"
+    },
+    {
+      "id": "debug-do-segredo-mostra-o-valor",
+      "titulo": "o `Debug` do tipo `Segredo` imprime o valor: todo dono que o chamar vaza",
+      "veredito": "PROVADA",
+      "segundos": 4.94,
+      "notas": [],
+      "quando": "2026-09-24 04:58"
+    },
+    {
+      "id": "profiler-sem-a-senha-dentro-do-sql",
+      "titulo": "o Profiler perde a senha que está DENTRO da frase SQL, e não num campo",
+      "veredito": "PROVADA",
+      "segundos": 44.24,
+      "notas": [],
+      "quando": "2026-09-24 04:34"
+    },
+    {
+      "id": "comando-invalido-vira-texto-cru",
+      "titulo": "o SQL que o léxico recusa volta inteiro para o log, com a senha dentro",
+      "veredito": "PROVADA",
+      "segundos": 2.31,
+      "notas": [],
+      "quando": "2026-09-24 04:34"
+    },
+    {
+      "id": "trilha-sem-o-nome-de-segredo",
+      "titulo": "a trilha LGPD deixa de olhar o NOME da coluna e só analisa o valor",
+      "veredito": "PROVADA",
+      "segundos": 2.15,
+      "notas": [],
+      "quando": "2026-09-24 04:34"
+    },
+    {
+      "id": "trilha-so-olha-o-nome-da-coluna",
+      "titulo": "a trilha LGPD deixa de ANALISAR o valor e só confia no nome da coluna",
+      "veredito": "PROVADA",
+      "segundos": 2.03,
+      "notas": [],
+      "quando": "2026-09-24 04:34"
+    },
+    {
+      "id": "debug-da-ligacao-mostra-a-senha",
+      "titulo": "o `Debug` da ligação de DbLink imprime a senha e o token do outro banco",
+      "veredito": "PROVADA",
+      "segundos": 36.18,
+      "notas": [],
+      "quando": "2026-09-24 04:37"
+    },
+    {
+      "id": "fio-cifrado-manda-o-claro-junto",
+      "titulo": "o fio cifrado manda a linha em claro junto do registro selado",
+      "veredito": "PROVADA",
+      "segundos": 3.11,
+      "notas": [],
+      "quando": "2026-09-24 04:34"
+    },
+    {
+      "id": "diario-das-diretivas-guarda-o-segredo-anterior",
+      "titulo": "o diário das diretivas grava o valor ANTERIOR do campo sigiloso em claro",
+      "veredito": "PROVADA",
+      "segundos": 34.2,
+      "notas": [],
+      "quando": "2026-09-24 04:34"
     },
     {
       "id": "cluster-devolve-a-credencial-na-tela",
@@ -1182,6 +1470,14 @@
       "quando": "2026-09-17 05:03"
     },
     {
+      "id": "token-do-rest-entra-pela-tela",
+      "titulo": "o token da porta REST passa a se gravar pela tela de configuração",
+      "veredito": "PROVADA",
+      "segundos": 35.59,
+      "notas": [],
+      "quando": "2026-09-24 04:34"
+    },
+    {
       "id": "cifra-do-odbc-volta-a-nascer-em-claro",
       "titulo": "a receita do driver ODBC volta a nascer em claro, e o esquecimento vira o padrao",
       "veredito": "PROVADA",
@@ -1190,12 +1486,156 @@
       "quando": "2026-09-18 14:32"
     },
     {
+      "id": "receita-odbc-devolve-a-senha",
+      "titulo": "a connection string mascarada do ODBC devolve a senha inteira",
+      "veredito": "PROVADA",
+      "segundos": 1.81,
+      "notas": [],
+      "quando": "2026-09-24 04:34"
+    },
+    {
       "id": "cifra-do-fio-reserializa-a-privada",
       "titulo": "o `para_json` da cifra do fio devolve a chave privada em vez de «(oculta)»",
       "veredito": "PROVADA",
       "segundos": 48.63,
       "notas": [],
       "quando": "2026-09-24 01:24"
+    },
+    {
+      "id": "especificacao-openapi-leva-o-token",
+      "titulo": "a especificação OpenAPI, servida sem portão, passa a carregar o token da porta",
+      "veredito": "PROVADA",
+      "segundos": 43.25,
+      "notas": [],
+      "quando": "2026-09-24 04:34"
+    },
+    {
+      "id": "token-remoto-fora-da-lista-de-segredos",
+      "titulo": "o `token_remoto` sai da lista de segredos: o token do OUTRO servidor vai em claro para o `perfil.txt` e para a op `profiler`",
+      "veredito": "PROVADA",
+      "segundos": 56.02,
+      "notas": [],
+      "quando": "2026-09-24 04:34"
+    },
+    {
+      "id": "job-recusa-um-nome-e-grava-os-outros",
+      "titulo": "a guarda do job volta a recusar só `token`: `senha`/`token_remoto` vão para o `jobs.json` e voltam na ficha",
+      "veredito": "PROVADA",
+      "segundos": 40.46,
+      "notas": [],
+      "quando": "2026-09-24 04:34"
+    },
+    {
+      "id": "config-json-escreve-aberto-e-herda",
+      "titulo": "o `config.json` volta a nascer na permissão do `umask` e a herdar o `0644` do original",
+      "veredito": "PROVADA",
+      "segundos": 44.31,
+      "notas": [],
+      "quando": "2026-09-24 07:08"
+    },
+    {
+      "id": "config-phz-troca-escreve-aberto-e-herda",
+      "titulo": "a troca de forma (`--empacotar-config`/`--desempacotar-config`) grava o arquivo novo aberto, herdando o `0644` do original",
+      "veredito": "PROVADA",
+      "segundos": 43.17,
+      "notas": [],
+      "quando": "2026-09-24 07:08"
+    },
+    {
+      "id": "config-phz-abre-com-os-24-ciclos",
+      "titulo": "o `config.phz` volta a abrir com o teto de 24 ciclos: um cabecalho hostil custa 2^24 rodadas ja no arranque",
+      "veredito": "PROVADA",
+      "segundos": 84.15,
+      "notas": [],
+      "quando": "2026-09-24 07:08"
+    },
+    {
+      "id": "config-phz-abre-cabecalho-de-megabytes",
+      "titulo": "o `config.phz` volta a aceitar cabecalho de megabytes: um arquivo de KiB aloca o que o cabecalho declarar",
+      "veredito": "PROVADA",
+      "segundos": 43.28,
+      "notas": [],
+      "quando": "2026-09-24 07:08"
+    },
+    {
+      "id": "config-phz-dois-presentes-escolhe-calado",
+      "titulo": "com `config.json` E `config.phz` presentes, o servidor escolhe um calado e sobe",
+      "veredito": "PROVADA",
+      "segundos": 43.17,
+      "notas": [],
+      "quando": "2026-09-24 07:08"
+    },
+    {
+      "id": "config-json-claro-vira-phz-sem-pedir",
+      "titulo": "o servidor que subiu de um `config.json` em claro passa a grava-lo empacotado sem ninguem pedir",
+      "veredito": "PROVADA",
+      "segundos": 41.17,
+      "notas": [],
+      "quando": "2026-09-24 07:08"
+    },
+    {
+      "id": "config-dica-do-modelo-sobre-arquivo-presente",
+      "titulo": "o `phxsqld` que nao sobe manda gerar o modelo `> config.json` por cima do arquivo que o erro esta nomeando",
+      "veredito": "PROVADA",
+      "segundos": 12.31,
+      "notas": [],
+      "quando": "2026-09-24 07:08"
+    },
+    {
+      "id": "config-phz-troca-so-depois-de-validar",
+      "titulo": "a troca de forma so roda depois de o `Config::ler` aceitar: o `.phz` com um campo torto nao sai para conserto",
+      "veredito": "PROVADA",
+      "segundos": 12.21,
+      "notas": [],
+      "quando": "2026-09-24 07:08"
+    },
+    {
+      "id": "config-phz-copia-guardada-fica-aberta",
+      "titulo": "a copia em claro que a migracao guarda leva o `0644` da instalacao, com o token, para sempre",
+      "veredito": "PROVADA",
+      "segundos": 45.28,
+      "notas": [],
+      "quando": "2026-09-24 07:08"
+    },
+    {
+      "id": "config-phz-migra-o-link",
+      "titulo": "a migracao de um config que e LINK move so o link e diz que guardou o original",
+      "veredito": "PROVADA",
+      "segundos": 45.96,
+      "notas": [],
+      "quando": "2026-09-24 07:08"
+    },
+    {
+      "id": "config-phz-aviso-procura-a-copia-pelo-lido",
+      "titulo": "o aviso de arranque procura a copia em claro por um nome que a migracao nao usou, e cala",
+      "veredito": "PROVADA",
+      "segundos": 43.56,
+      "notas": [],
+      "quando": "2026-09-24 07:08"
+    },
+    {
+      "id": "gravar-privado-temporario-e-o-proprio-config",
+      "titulo": "o temporario do `gravar_privado` troca a extensao, e com `--config servidor.tmp` ele e o proprio config",
+      "veredito": "PROVADA",
+      "segundos": 45.67,
+      "notas": [],
+      "quando": "2026-09-24 07:08"
+    },
+    {
+      "id": "config-phz-desfazer-apaga-a-unica-copia",
+      "titulo": "o desfazer da troca apaga o arquivo novo mesmo quando o velho sumiu, e diz que o velho «continua valendo»",
+      "veredito": "PROVADA",
+      "segundos": 43.53,
+      "notas": [],
+      "quando": "2026-09-24 07:08"
+    },
+    {
+      "id": "config-phz-grava-o-texto-cru",
+      "titulo": "o servidor que subiu de um `config.phz` grava o texto cru dentro dele: o token volta a ler-se num editor",
+      "veredito": "PROVADA",
+      "segundos": 43.59,
+      "notas": [],
+      "quando": "2026-09-24 07:08"
     },
     {
       "id": "replica-lista-e-pedida-nao-imposta",
@@ -1254,12 +1694,60 @@
       "quando": "2026-09-24 00:45"
     },
     {
+      "id": "laco-preso-no-unico-secundario",
+      "titulo": "chave duplicada num índice único secundário prende o laço do bidirecional para sempre",
+      "veredito": "PROVADA",
+      "segundos": 27.08,
+      "notas": [],
+      "quando": "2026-09-24 04:34"
+    },
+    {
+      "id": "par-parado-reapresentado-a-cada-rodada",
+      "titulo": "a tabela parada por conflito volta a ser puxada a cada rodada, e o grito se repete para sempre",
+      "veredito": "PROVADA",
+      "segundos": 12.35,
+      "notas": [],
+      "quando": "2026-09-24 04:34"
+    },
+    {
+      "id": "dado-pessoal-no-grito-do-conflito",
+      "titulo": "o grito do conflito de unicidade publica a coluna marcada como dado pessoal",
+      "veredito": "PROVADA",
+      "segundos": 13.41,
+      "notas": [],
+      "quando": "2026-09-24 04:34"
+    },
+    {
+      "id": "so-o-disco-vem-da-porta-e-nao-de-desligar-depois",
+      "titulo": "o empilhar volta a abrir pela porta de sempre e desligar a sobreposicao na linha seguinte",
+      "veredito": "PROVADA",
+      "segundos": 41.97,
+      "notas": [],
+      "quando": "2026-09-24 04:34"
+    },
+    {
+      "id": "slot-de-outro-reg",
+      "titulo": "o sal deixa de ser por arquivo: o slot cifrado de um `.reg` abre no outro",
+      "veredito": "PROVADA",
+      "segundos": 12.59,
+      "notas": [],
+      "quando": "2026-09-24 04:34"
+    },
+    {
       "id": "pulso-sem-prova-de-identidade",
       "titulo": "o pulso do cluster aceitando identidade auto-declarada",
       "veredito": "PROVADA",
       "segundos": 19.19,
       "notas": [],
       "quando": "2026-09-24 00:51"
+    },
+    {
+      "id": "aperto-de-mao-sem-teto",
+      "titulo": "a leitura do aperto de mao fora do `Canal`, sem teto nenhum",
+      "veredito": "PROVADA",
+      "segundos": 46.39,
+      "notas": [],
+      "quando": "2026-09-24 04:34"
     },
     {
       "id": "erro-do-pulso-mapeia-quem-nao-tem-pino",
@@ -1470,6 +1958,14 @@
       "quando": "2026-09-24 01:49"
     },
     {
+      "id": "smtp-linha-sem-teto",
+      "titulo": "o cliente SMTP lê a linha do relé com `read_line` cru, sem teto de tamanho",
+      "veredito": "PROVADA",
+      "segundos": 41.29,
+      "notas": [],
+      "quando": "2026-09-24 04:34"
+    },
+    {
       "id": "teto-decidido-antes-do-bloqueio",
       "titulo": "o teto da linha é decidido antes de a leitura bloquear, e o usuário excluído enquanto esperava manda 1 MiB",
       "veredito": "PROVADA",
@@ -1524,14 +2020,6 @@
       "segundos": 10.5,
       "notas": [],
       "quando": "2026-09-24 02:38"
-    },
-    {
-      "id": "cifra-do-fio-imposta",
-      "titulo": "a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho",
-      "veredito": "PROVADA",
-      "segundos": 7.94,
-      "notas": [],
-      "quando": "2026-09-16 15:25"
     },
     {
       "id": "phxzip-bomba-do-lzma2",
@@ -1806,396 +2294,12 @@
       "quando": "2026-09-24 04:09"
     },
     {
-      "id": "alter-com-regra-sem-aviso",
-      "titulo": "`acrescentar_coluna` com `check` ou `calculada` numa tabela com linha é aceito SEM AVISO, e a linha velha fica fora da regra",
+      "id": "cifra-do-fio-imposta",
+      "titulo": "a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho",
       "veredito": "PROVADA",
-      "segundos": 40.1,
+      "segundos": 7.94,
       "notas": [],
-      "quando": "2026-09-24 04:34"
-    },
-    {
-      "id": "aperto-de-mao-sem-teto",
-      "titulo": "a leitura do aperto de mao fora do `Canal`, sem teto nenhum",
-      "veredito": "PROVADA",
-      "segundos": 46.39,
-      "notas": [],
-      "quando": "2026-09-24 04:34"
-    },
-    {
-      "id": "check-que-se-contradiz-no-alter",
-      "titulo": "`acrescentar_coluna` aceita um `padrao` que viola o `check` declarado no MESMO comando, e todo `atualizar` da linha velha passa a recusar",
-      "veredito": "PROVADA",
-      "segundos": 2.05,
-      "notas": [],
-      "quando": "2026-09-24 04:34"
-    },
-    {
-      "id": "comando-invalido-vira-texto-cru",
-      "titulo": "o SQL que o léxico recusa volta inteiro para o log, com a senha dentro",
-      "veredito": "PROVADA",
-      "segundos": 2.31,
-      "notas": [],
-      "quando": "2026-09-24 04:34"
-    },
-    {
-      "id": "config-json-escreve-aberto-e-herda",
-      "titulo": "o `config.json` volta a nascer na permissão do `umask` e a herdar o `0644` do original",
-      "veredito": "PROVADA",
-      "segundos": 46.91,
-      "notas": [],
-      "quando": "2026-09-24 04:34"
-    },
-    {
-      "id": "dado-pessoal-no-grito-do-conflito",
-      "titulo": "o grito do conflito de unicidade publica a coluna marcada como dado pessoal",
-      "veredito": "PROVADA",
-      "segundos": 13.41,
-      "notas": [],
-      "quando": "2026-09-24 04:34"
-    },
-    {
-      "id": "debug-da-cifra-mostra-a-senha",
-      "titulo": "o `Debug` da cifra imprime a senha: um `dbg!` apressado a joga no log",
-      "veredito": "PROVADA",
-      "segundos": 7.63,
-      "notas": [],
-      "quando": "2026-09-24 04:58"
-    },
-    {
-      "id": "derivado-sem-portao",
-      "titulo": "o portão some do irmão `executar_derivado`: o SQL inteiro vira a porta dos fundos",
-      "veredito": "PROVADA",
-      "segundos": 41.4,
-      "notas": [],
-      "quando": "2026-09-24 04:34"
-    },
-    {
-      "id": "diario-das-diretivas-guarda-o-segredo-anterior",
-      "titulo": "o diário das diretivas grava o valor ANTERIOR do campo sigiloso em claro",
-      "veredito": "PROVADA",
-      "segundos": 34.2,
-      "notas": [],
-      "quando": "2026-09-24 04:34"
-    },
-    {
-      "id": "diferencas-sem-portao",
-      "titulo": "`diferencas` sem conferência própria: a tabela negada entra em `a` ou em `b`",
-      "veredito": "PROVADA",
-      "segundos": 44.23,
-      "notas": [],
-      "quando": "2026-09-24 04:34"
-    },
-    {
-      "id": "direcao-do-indice-sem-saida",
-      "titulo": "a recusa por direção do índice explica bem por que não dá, e não diz o que fazer",
-      "veredito": "PROVADA",
-      "segundos": 2.03,
-      "notas": [],
-      "quando": "2026-09-24 04:34"
-    },
-    {
-      "id": "especificacao-openapi-leva-o-token",
-      "titulo": "a especificação OpenAPI, servida sem portão, passa a carregar o token da porta",
-      "veredito": "PROVADA",
-      "segundos": 43.25,
-      "notas": [],
-      "quando": "2026-09-24 04:34"
-    },
-    {
-      "id": "ficha-do-usuario-devolve-o-hash",
-      "titulo": "a ficha do usuário passa a devolver o `senha_hash` junto",
-      "veredito": "PROVADA",
-      "segundos": 39.35,
-      "notas": [],
-      "quando": "2026-09-24 04:34"
-    },
-    {
-      "id": "fio-cifrado-manda-o-claro-junto",
-      "titulo": "o fio cifrado manda a linha em claro junto do registro selado",
-      "veredito": "PROVADA",
-      "segundos": 3.11,
-      "notas": [],
-      "quando": "2026-09-24 04:34"
-    },
-    {
-      "id": "hmac-com-a-chave-longa-truncada",
-      "titulo": "HMAC com a chave maior que o bloco TRUNCADA em vez de pré-hasheada",
-      "veredito": "PROVADA",
-      "segundos": 3.6,
-      "notas": [],
-      "quando": "2026-09-24 04:34"
-    },
-    {
-      "id": "job-recusa-um-nome-e-grava-os-outros",
-      "titulo": "a guarda do job volta a recusar só `token`: `senha`/`token_remoto` vão para o `jobs.json` e voltam na ficha",
-      "veredito": "PROVADA",
-      "segundos": 40.46,
-      "notas": [],
-      "quando": "2026-09-24 04:34"
-    },
-    {
-      "id": "juntar-sem-portao",
-      "titulo": "`juntar` sem conferência própria: a tabela negada entra como lado B",
-      "veredito": "PROVADA",
-      "segundos": 49.92,
-      "notas": [],
-      "quando": "2026-09-24 04:34"
-    },
-    {
-      "id": "laco-preso-no-unico-secundario",
-      "titulo": "chave duplicada num índice único secundário prende o laço do bidirecional para sempre",
-      "veredito": "PROVADA",
-      "segundos": 27.08,
-      "notas": [],
-      "quando": "2026-09-24 04:34"
-    },
-    {
-      "id": "linha-vazia-na-conferencia-de-filhas",
-      "titulo": "a linha descida para a conferencia de filhas vai vazia, e toda mae parece sem filha",
-      "veredito": "PROVADA",
-      "segundos": 1.99,
-      "notas": [],
-      "quando": "2026-09-24 04:34"
-    },
-    {
-      "id": "par-parado-reapresentado-a-cada-rodada",
-      "titulo": "a tabela parada por conflito volta a ser puxada a cada rodada, e o grito se repete para sempre",
-      "veredito": "PROVADA",
-      "segundos": 12.35,
-      "notas": [],
-      "quando": "2026-09-24 04:34"
-    },
-    {
-      "id": "pbkdf2-com-o-contador-de-bloco-parado",
-      "titulo": "PBKDF2 com o contador de bloco parado: saída longa repete o primeiro bloco",
-      "veredito": "PROVADA",
-      "segundos": 3.31,
-      "notas": [],
-      "quando": "2026-09-24 04:34"
-    },
-    {
-      "id": "pbkdf2-sem-o-xor-acumulado",
-      "titulo": "PBKDF2 sem o XOR acumulado: vira HMAC aplicado N vezes",
-      "veredito": "PROVADA",
-      "segundos": 3.56,
-      "notas": [],
-      "quando": "2026-09-24 04:34"
-    },
-    {
-      "id": "perfil-decide-so-pela-lista-e-nao-pelo-reg-cifrado",
-      "titulo": "o perfil.txt decide pela lista do config e a cifra acontece pela marca de coluna",
-      "veredito": "PROVADA",
-      "segundos": 42.51,
-      "notas": [],
-      "quando": "2026-09-24 04:34"
-    },
-    {
-      "id": "perfil-grava-o-erro-que-cita-o-valor",
-      "titulo": "o perfil.txt tapa o pedido e grava o erro, que cita o valor da coluna marcada",
-      "veredito": "PROVADA",
-      "segundos": 6.95,
-      "notas": [],
-      "quando": "2026-09-24 04:34"
-    },
-    {
-      "id": "profiler-ligado-sem-a-raiz-dos-dados",
-      "titulo": "o Profiler liga sem a raiz de dados e volta a decidir por um campo só",
-      "veredito": "PROVADA",
-      "segundos": 53.65,
-      "notas": [],
-      "quando": "2026-09-24 04:34"
-    },
-    {
-      "id": "profiler-sem-a-senha-dentro-do-sql",
-      "titulo": "o Profiler perde a senha que está DENTRO da frase SQL, e não num campo",
-      "veredito": "PROVADA",
-      "segundos": 44.24,
-      "notas": [],
-      "quando": "2026-09-24 04:34"
-    },
-    {
-      "id": "receita-odbc-devolve-a-senha",
-      "titulo": "a connection string mascarada do ODBC devolve a senha inteira",
-      "veredito": "PROVADA",
-      "segundos": 1.81,
-      "notas": [],
-      "quando": "2026-09-24 04:34"
-    },
-    {
-      "id": "saida-do-direito-por-coluna",
-      "titulo": "a recusa do direito por coluna manda «peça as colunas por varrer» também para o `agrupar` e para o `backup`",
-      "veredito": "PROVADA",
-      "segundos": 47.52,
-      "notas": [],
-      "quando": "2026-09-24 04:34"
-    },
-    {
-      "id": "senha-em-claro-no-cadastro",
-      "titulo": "a senha entra no config.json em texto puro: o `cifrar` sai do caminho de gravação",
-      "veredito": "PROVADA",
-      "segundos": 19.25,
-      "notas": [],
-      "quando": "2026-09-24 04:34"
-    },
-    {
-      "id": "senha-velha-fica-no-arquivo",
-      "titulo": "trocar a senha não leva junto a que estava em texto puro no arquivo",
-      "veredito": "PROVADA",
-      "segundos": 44.6,
-      "notas": [],
-      "quando": "2026-09-24 04:34"
-    },
-    {
-      "id": "sha256-com-o-tamanho-em-little-endian",
-      "titulo": "SHA-256 com o tamanho da mensagem, no padding, em little-endian",
-      "veredito": "PROVADA",
-      "segundos": 3.18,
-      "notas": [],
-      "quando": "2026-09-24 04:34"
-    },
-    {
-      "id": "sha256-sem-somar-o-estado",
-      "titulo": "SHA-256 sem a realimentação do estado: a compressão vira permutação reversível",
-      "veredito": "PROVADA",
-      "segundos": 3.46,
-      "notas": [],
-      "quando": "2026-09-24 04:34"
-    },
-    {
-      "id": "slot-de-outro-reg",
-      "titulo": "o sal deixa de ser por arquivo: o slot cifrado de um `.reg` abre no outro",
-      "veredito": "PROVADA",
-      "segundos": 12.59,
-      "notas": [],
-      "quando": "2026-09-24 04:34"
-    },
-    {
-      "id": "smtp-linha-sem-teto",
-      "titulo": "o cliente SMTP lê a linha do relé com `read_line` cru, sem teto de tamanho",
-      "veredito": "PROVADA",
-      "segundos": 41.29,
-      "notas": [],
-      "quando": "2026-09-24 04:34"
-    },
-    {
-      "id": "so-o-disco-vem-da-porta-e-nao-de-desligar-depois",
-      "titulo": "o empilhar volta a abrir pela porta de sempre e desligar a sobreposicao na linha seguinte",
-      "veredito": "PROVADA",
-      "segundos": 41.97,
-      "notas": [],
-      "quando": "2026-09-24 04:34"
-    },
-    {
-      "id": "teto-de-64-bits-satura",
-      "titulo": "número cru fora da faixa do `Int8` é GRAVADO saturado, e `1e21`, `1e30` e `1e300` viram todos o mesmo número",
-      "veredito": "PROVADA",
-      "segundos": 44.48,
-      "notas": [],
-      "quando": "2026-09-24 04:34"
-    },
-    {
-      "id": "teto-do-fio-sem-a-constante",
-      "titulo": "o `Canal::ler` de producao troca `TETO_DO_REGISTRO` por um teto quase infinito",
-      "veredito": "PROVADA",
-      "segundos": 3.97,
-      "notas": [],
-      "quando": "2026-09-24 04:34"
-    },
-    {
-      "id": "teto-do-fio-sem-a-constante-no-soquete",
-      "titulo": "a mesma troca da constante por um teto quase infinito, vista pela rede",
-      "veredito": "PROVADA",
-      "segundos": 4.11,
-      "notas": [],
-      "quando": "2026-09-24 04:58"
-    },
-    {
-      "id": "token-do-rest-entra-pela-tela",
-      "titulo": "o token da porta REST passa a se gravar pela tela de configuração",
-      "veredito": "PROVADA",
-      "segundos": 35.59,
-      "notas": [],
-      "quando": "2026-09-24 04:34"
-    },
-    {
-      "id": "token-remoto-fora-da-lista-de-segredos",
-      "titulo": "o `token_remoto` sai da lista de segredos: o token do OUTRO servidor vai em claro para o `perfil.txt` e para a op `profiler`",
-      "veredito": "PROVADA",
-      "segundos": 56.02,
-      "notas": [],
-      "quando": "2026-09-24 04:34"
-    },
-    {
-      "id": "trilha-sem-o-nome-de-segredo",
-      "titulo": "a trilha LGPD deixa de olhar o NOME da coluna e só analisa o valor",
-      "veredito": "PROVADA",
-      "segundos": 2.15,
-      "notas": [],
-      "quando": "2026-09-24 04:34"
-    },
-    {
-      "id": "trilha-so-olha-o-nome-da-coluna",
-      "titulo": "a trilha LGPD deixa de ANALISAR o valor e só confia no nome da coluna",
-      "veredito": "PROVADA",
-      "segundos": 2.03,
-      "notas": [],
-      "quando": "2026-09-24 04:34"
-    },
-    {
-      "id": "unir-sem-portao",
-      "titulo": "`unir` sem conferência própria: a tabela negada entra na LISTA",
-      "veredito": "PROVADA",
-      "segundos": 41.45,
-      "notas": [],
-      "quando": "2026-09-24 04:34"
-    },
-    {
-      "id": "upsert-parcial-vira-mescla",
-      "titulo": "o upsert sem o campo `atualizar` passa a MESCLAR, e a sincronia do DbLink perde a única forma de gravar NULO num destino",
-      "veredito": "PROVADA",
-      "segundos": 44.78,
-      "notas": [],
-      "quando": "2026-09-24 04:34"
-    },
-    {
-      "id": "varredura-sem-o-elo",
-      "titulo": "a varredura barata do diretorio perde a tabela alcancada por elo",
-      "veredito": "PROVADA",
-      "segundos": 1.96,
-      "notas": [],
-      "quando": "2026-09-24 04:34"
-    },
-    {
-      "id": "debug-da-ligacao-mostra-a-senha",
-      "titulo": "o `Debug` da ligação de DbLink imprime a senha e o token do outro banco",
-      "veredito": "PROVADA",
-      "segundos": 36.18,
-      "notas": [],
-      "quando": "2026-09-24 04:37"
-    },
-    {
-      "id": "ffi-punho-morto-lido-antes-de-conferir",
-      "titulo": "a fronteira volta a ler a etiqueta de DENTRO do punho antes de saber se ele ainda existe",
-      "veredito": "PROVADA",
-      "segundos": 1.44,
-      "notas": [],
-      "quando": "2026-09-24 04:37"
-    },
-    {
-      "id": "debug-do-segredo-mostra-o-valor",
-      "titulo": "o `Debug` do tipo `Segredo` imprime o valor: todo dono que o chamar vaza",
-      "veredito": "PROVADA",
-      "segundos": 4.94,
-      "notas": [],
-      "quando": "2026-09-24 04:58"
-    },
-    {
-      "id": "teto-da-linha-sem-a-constante-no-soquete",
-      "titulo": "o `teto_da_linha` do servidor troca `TETO_DO_REGISTRO` por um teto quase infinito, visto pela rede",
-      "veredito": "PROVADA",
-      "segundos": 6.58,
-      "notas": [],
-      "quando": "2026-09-24 04:58"
+      "quando": "2026-09-16 15:25"
     }
   ]
 }

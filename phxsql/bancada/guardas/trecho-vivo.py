@@ -196,6 +196,17 @@ dia, nunca no desejado:
   `perfil-grava-o-erro-que-cita-o-valor` e
   `profiler-ligado-sem-a-raiz-dos-dados`). Contado no dia: 197 entradas, 197
   ids distintos, zero aposentadas.
+  **SUBIU para 279 em 24/09/2026** (pedido 450, etapa 2): seis guardas novas
+  do `config.phz` -- a irma de permissao da troca de forma, os dois tetos de
+  leitura do parecer SEC (ciclos e cabecalho), os dois presentes, e a forma
+  de gravar nos dois sentidos --, e a `config-json-escreve-aberto-e-herda`
+  re-apontada para o `config_phz.rs`, sem mudar a conta. Contado no dia pelo
+  `--numeros`: 279 entre vivas e aposentadas.
+  **SUBIU para 286 em 24/09/2026**, na mesma frente, pelas revisoes do DBA e
+  da SEC: sete guardas novas -- a dica do modelo so sem arquivo, a troca de
+  forma antes da validacao, a copia guardada em 0600, o config que e link, o
+  aviso pelo nome que a migracao usou, o temporario que era o proprio config
+  e o desfazer que apagava a unica copia.
   impedir. Ele e a unica coisa nesta regua que reprova o APAGAMENTO; tudo o
   mais aqui reprova o envelhecimento.
 
@@ -304,7 +315,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 273
+PISO_DAS_ENTRADAS = 286
 
 # ------------------------------------------------------------- APOSENTADAS
 #

@@ -9,8 +9,9 @@
 //! visualizador. **Nao e cifra contra quem tem o binario ou o repositorio**: o
 //! repositorio e publico e `strings` no binario entrega a senha. Nenhum
 //! documento pode chamar isto de cifra -- a mesma regra do
-//! `encryption_exigida` (pedido 366). A senha NAO mora aqui: e parametro, e a
-//! etapa 2 do pedido decide onde ela fica.
+//! `encryption_exigida` (pedido 366). A senha NAO mora aqui: e parametro. A do
+//! `config.phz` do servidor mora em `phxsql-server/src/config_phz.rs`
+//! (`SENHA_DO_PHZ`, etapa 2), ao lado do comentario que cita o pedido.
 //!
 //! # Com a senha constante, o `.phz` nao da sigilo NEM integridade
 //!
@@ -102,6 +103,22 @@ pub fn desempacotar_com_teto(
         cabecalho: teto.min(1 << 20),
         ..Limites::default()
     };
+    desempacotar_com_limites(arquivo, senha, limites)
+}
+
+/// Como [`desempacotar`], com os [`Limites`] inteiros de quem chama.
+///
+/// Existe para quem sabe o TAMANHO do que espera: o `.phz` de configuracao do
+/// servidor (pedido 450, etapa 2) tem uma entrada e um cabecalho de centenas
+/// de bytes, e abri-lo com o cabecalho de 1 MiB e as 65.536 contagens do
+/// padrao seria dar ao arquivo mais folga do que ele jamais precisa. A regra
+/// do `.phz` -- uma entrada, cifrada, que nao e pasta -- continua morando so
+/// aqui: quem aperta os limites nao reescreve a conferencia.
+pub fn desempacotar_com_limites(
+    arquivo: &[u8],
+    senha: &str,
+    limites: Limites,
+) -> Result<(String, Vec<u8>), Erro> {
     let mut a = Arquivo::abrir(arquivo, Some(senha), limites)?;
     let e = match a.entradas() {
         [] => return Err(Erro::SemEntrada),

@@ -24,6 +24,7 @@ phxsql-core = { path = "crates/phxsql-core" }
 phxsql-store = { path = "crates/phxsql-store" }
 phxsql-sql = { path = "crates/phxsql-sql" }
 phxsql-server = { path = "crates/phxsql-server" }
+phxzip = { path = "crates/phxzip" }
 
 [profile.release]
 opt-level = 3

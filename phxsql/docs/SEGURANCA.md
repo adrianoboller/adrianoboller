@@ -1318,8 +1318,10 @@ nenhuma aparece.
 
 Escreve num `.tmp` e troca com `rename`, o mesmo que o cadastro do DbLink faz:
 um corte de energia no meio deixa o `config.json` **antigo inteiro**, e não um
-pela metade — que não subiria. O temporário herda as permissões do original,
-porque o arquivo carrega o token e os hashes.
+pela metade — que não subiria. O temporário nasce `0600` desde o primeiro
+byte e **não** herda a permissão do original — herdava até o achado A4 (§17),
+e esta linha dizia isso como virtude. Desde o pedido 450 a mesma linha grava
+também o `config.phz` (§23).
 
 E a troca é **cirúrgica**: `Json::texto_trocar` acha o intervalo daquele valor
 no texto e troca só ele. Reserializar a árvore preservava valor, ordem e
@@ -4700,3 +4702,185 @@ A `teto-decidido-sem-refrescar-a-ficha` afirma também o que NÃO cai: sem o
 refresco, só o excluído fica com os 128 MiB; a conexão aberta antes do primeiro
 cadastro continua recusada, porque o cadastro vazio é lido vivo. É o que separa
 as duas metades do achado.
+
+## 23. O `config.phz`: barreira contra editor, e o que ele NÃO é (pedido 450)
+
+Decisão do dono, 24/09/2026, com o custo apresentado antes e confirmado: o
+`config.json` pode morar num `config.phz` — um 7z de uma entrada, escrito pelo
+`phxzip` —, com uma **senha fixa no código** (`SENHA_DO_PHZ`, em
+`crates/phxsql-server/src/config_phz.rs`). O formato está em `FORMATO.md` §20;
+aqui fica o que ele protege e o que não protege.
+
+### O que ele é, e o que ele não é
+
+**É barreira contra quem abre o arquivo num editor ou num visualizador**: o
+token, os hashes e o cadastro não aparecem — nem o nome da entrada, porque o
+cabeçalho também vai cifrado pelo 7z.
+
+**Não é cifra**, e nenhum documento pode chamá-lo assim (a regra do
+`encryption_exigida`, pedido 366). O repositório é público e a senha está nele;
+`strings` no binário a entrega; ela é a mesma em toda instalação. O parecer SEC
+de 24/09/2026 (`docs/propostas/parecer-sec-phxzip-2026-09-24.md`) tira a
+consequência que manda no resto desta seção:
+
+- **Sigilo zero.** Sal vazio: a chave AES é função pura da senha, a mesma em
+  todo servidor, derivável por quem lê o repositório.
+- **Integridade zero.** O conteúdo é conferido por CRC-32, que não é MAC, e o
+  AES-CBC do 7z não autentica. Quem consegue **escrever** o `config.phz` forja
+  uma configuração com todos os CRCs certos, e o servidor a aceita.
+
+**Choque com pétrea, registrado:** «senha nunca em texto puro, nem em
+arquivo». A senha do `.phz` está em texto puro no fonte, por decisão do dono; o
+comentário ao lado da constante cita o pedido 450.
+
+### Então a autenticidade vem da permissão do arquivo
+
+O `.phz` não acrescenta nem tira nada da proteção de verdade, que é quem pode
+ler e escrever o arquivo. O servidor grava o arquivo de configuração — claro ou
+`.phz` — **`0600` desde o primeiro byte**, por troca atômica, pelo mesmo
+`config::gravar_privado` do achado A4 (§17). Há **dois** lugares onde ele nasce,
+e cada um tem guarda própria no catálogo:
+
+| onde nasce | guarda | o defeito reposto |
+|---|---|---|
+| `gravar_texto` — a tela, o `ALTER SERVER`, o cadastro, os nós do cluster; as duas formas pela mesma linha | `config-json-escreve-aberto-e-herda` (re-apontada do `config.rs`) | `std::fs::write` e depois copiar a permissão do original |
+| `trocar` — `--empacotar-config` e `--desempacotar-config` | `config-phz-troca-escreve-aberto-e-herda` (nova, a irmã) | idem, herdando a do arquivo de origem |
+
+Provado também pelo sistema operacional, com o binário, em 24/09/2026 (`umask
+022`): `config.json` em `644` → `--empacotar-config` → `config.phz` em **600**;
+o `config.phz` aberto à mão para `644` → um `config_gravar` pela porta de dados →
+**600**; `--desempacotar-config` → `config.json` em **600**.
+
+**A cópia em claro que a migração guarda também nasce `0600`** — a revisão SEC
+de 24/09/2026 (achado A1, que bloqueou o commit) provou pelo binário o que a
+primeira versão deixava: o `rename` levava junto o `0644` de uma instalação
+aberta, e como ninguém mais regrava a cópia, o token ficava legível para sempre.
+Agora a cópia é um segundo nome (`hard_link`, que recusa se o destino existe —
+um `rename` trocaria por cima), fechado em `0600` no mesmo passo, e só então o
+nome velho sai. O arranque lembra dela enquanto existir, pelo MESMO nome que a
+migração usou (`copias_em_claro`, a partir do `--config` pedido — com `meu.conf`
+o aviso procurava `meu.json.migrado-para-phz` e nunca avisava).
+
+**Config que é link não se migra.** Com `run/config.json` apontando para
+`etc/config.json`, a troca renomeava o LINK, dizia «o original foi renomeado», e
+o `etc/config.json` de verdade ficava `644` com o token. Agora a troca recusa
+antes de tudo, nomeando o arquivo real; o link físico (mais de um nome no disco)
+recusa pelo mesmo motivo.
+
+**O temporário nunca é o config.** O `gravar_privado` usava
+`with_extension("tmp")`, e com `--config servidor.tmp` o temporário do
+`servidor.phz` ERA o `servidor.tmp` que se migrava: a gravação começava
+apagando o config, a cópia não se guardava, o desfazer apagava o `.phz`, e a
+pasta ficava **vazia** com a mensagem «servidor.tmp continua valendo» (médio 1
+da mesma revisão). O temporário passa a ser o nome inteiro mais `.tmp` — para o
+`dblink.json` e o `jobs.json` também, que passam pela mesma função —, e o
+desfazer só tira o arquivo novo se o velho ainda existe.
+
+### A leitura é de arquivo sem garantia de origem
+
+Pelo mesmo parecer: o `NumCyclesPower` do 7zAES vem do **arquivo**, e com o
+teto de 24 um cabeçalho cifrado custaria 2^24 SHA-256 (~42 s em depuração) no
+arranque, antes de qualquer conferência. O `config.phz` abre com limites do
+tamanho de um arquivo de uma entrada (`config_phz::limites_de_leitura`):
+ciclos até **19** (o que o 7-Zip grava), cabeçalho de **64 KiB**, **16**
+contagens, **2** derivações, tabela do LZMA de **64 KiB**, conteúdo de
+**16 MiB** — e a leitura do arquivo para em **17 MiB** e um byte: acima disso
+ele é recusado sem ler o resto, e a memória fica limitada a 17 MiB.
+O servidor grava com 2^10 rodadas: com a senha pública elas não compram nada, e
+cada leitura as paga.
+
+Toda recusa diz o nome estável do erro entre colchetes, e nenhuma diz a senha.
+A de senha errada diz **onde** a senha está (a constante e o arquivo), não qual
+ela é.
+
+### A senha não sai do processo
+
+Nenhuma mensagem do `config_phz.rs` nem do `main` interpola a senha. Duas
+provas: `a_senha_nao_aparece_em_mensagem_nenhuma` (as oito recusas hostis, os
+avisos de arranque, o conflito dos dois presentes, o `Debug` do `Config` e o
+JSON que a op `config` devolve) e, pelo binário,
+`a_migracao_pelo_binario_sobe_do_phz_e_a_senha_nao_sai_do_processo` (saída dos
+dois comandos de troca, erro padrão do servidor e as respostas do soquete,
+inclusive a de token errado).
+
+### Guarda nova entra pedida
+
+O servidor que sobe de um `config.json` em claro **continua** em claro e
+continua gravando em claro — os roteiros da bancada e os testes escrevem e
+relêem o `config.json`, e um servidor que o trocasse sozinho quebraria todos. O
+arranque avisa, com o comando. A migração é pedida
+(`phxsqld --empacotar-config`), a volta também (`--desempacotar-config`), e o
+`.json` em claro nunca é apagado: sai do caminho renomeado.
+
+**Os dois presentes, o servidor não sobe.** Fonte de verdade ambígua não se
+resolve por palpite — nem pela data. O caso real é o administrador que extraiu
+o `.phz` com o 7-Zip para editar: escolher o `.phz` perderia a edição calado;
+escolher o `.json` deixaria o `.phz` velho esperando o próximo engano. A
+mensagem nomeia os dois e as duas saídas.
+
+### O que ficou fora, e o motivo medido
+
+O `config.json` recusa alto quando não se lê. Os outros cinco JSON que o
+servidor lê e grava fazem o contrário — **leem o arquivo ilegível como vazio ou
+como o padrão**, e seguem —, e empacotar qualquer um deles faria o binário que
+não o abre **apagar em vez de recusar** (parecer do DBA de 24/09/2026):
+
+| arquivo | onde lê | o que um arquivo ilegível vira |
+|---|---|---|
+| `dblink.json` | `dblink/mod.rs:1297` | cadastro vazio; a primeira ligação salva regrava por cima. E a senha e o token de fora já vão selados com chave **externa** (pedido 372) |
+| `blacklist.json` | `blacklist.rs:494-497` | nenhum bloqueio, nenhuma whitelist |
+| `jobs.json` | `jobs.rs:434` | nenhum job |
+| `replicacao-posicoes.json` | `bidirecional.rs:579-584` | posições do zero (custa releitura) |
+| `cluster.estado.json` | `cluster.rs:321` | o papel do `config.json`: um master destronado volta **mandando** |
+
+A tela de Configurações não mudou: ela grava pelo servidor, e o servidor grava
+na forma de onde leu.
+
+### Antes de voltar ao binário anterior
+
+O binário anterior recusa subir diante de um diretório migrado — mas a dica
+dele manda gerar um `config.json` do zero, e quem obedece sobe com o token e os
+usuários do modelo. **Antes de voltar, `--desempacotar-config` com o binário
+novo.** E o deste binário só dá a dica do modelo quando não há arquivo nenhum:
+com um presente, ela truncaria o arquivo que o erro nomeia (parecer do DBA).
+
+### A prova, nos dois sentidos
+
+Catorze guardas no catálogo — uma re-apontada e treze novas —, **14 de 14
+PROVADAS** pelo `provar-guardas.py` em 24/09/2026 (árvore limpa:
+`phxsql-server --lib` verde, 1.407 testes; `--test config-phz` verde, 7):
+
+| guarda | o que repõe | caíram |
+|---|---|---|
+| `config-json-escreve-aberto-e-herda` | `gravar_texto` escreve no `umask` e herda a permissão | 2/2 (o claro e o `.phz`) |
+| `config-phz-troca-escreve-aberto-e-herda` | a troca de forma herda a permissão do original | 1/1 |
+| `config-phz-abre-com-os-24-ciclos` | `ciclos: CICLOS_MAXIMO` na leitura | 1/1 |
+| `config-phz-abre-cabecalho-de-megabytes` | cabeçalho de 8 MiB na leitura | 1/1 |
+| `config-phz-dois-presentes-escolhe-calado` | o `.phz` ganha calado quando há os dois | 1/1 |
+| `config-json-claro-vira-phz-sem-pedir` | a gravação empacota sempre | 1/1 |
+| `config-phz-grava-o-texto-cru` | a gravação ignora a extensão `.phz` | 1/1 |
+| `config-dica-do-modelo-sobre-arquivo-presente` | a dica `--exemplo 1 >` para qualquer erro (DBA) | 2/2 |
+| `config-phz-troca-so-depois-de-validar` | a troca de forma depois do `Config::ler` (SEC, M2) | 1/1 |
+| `config-phz-copia-guardada-fica-aberta` | a cópia guardada sem o `0600` (SEC, A1) | 1/1 |
+| `config-phz-migra-o-link` | a troca sem a recusa do link (SEC, A1) | 1/1 |
+| `config-phz-aviso-procura-a-copia-pelo-lido` | o aviso pelo par do arquivo lido (SEC, A1) | 1/1 |
+| `gravar-privado-temporario-e-o-proprio-config` | o temporário por `with_extension("tmp")` (SEC, M1) | 1/1 |
+| `config-phz-desfazer-apaga-a-unica-copia` | o desfazer sem olhar se o velho existe (SEC, M1) | 1/1 |
+
+E à mão, com o defeito reposto e desfeito por roteiro, as provas que o
+catálogo não carrega:
+
+| teste | o que repõe | o vermelho |
+|---|---|---|
+| `a_senha_nao_aparece_em_mensagem_nenhuma` | a senha na frase da recusa | «a senha vazou em: … [CICLOS_DEMAIS]» |
+| `a_migracao_pelo_binario_sobe_do_phz_e_a_senha_nao_sai_do_processo` | a senha no aviso de arranque | «a senha saiu do processo: AVISO: a copia EM CLARO…» |
+| `config_json_em_claro_sobe_e_o_arranque_diz_como_empacotar` | o `main` sem a linha do aviso | «o arranque ficou calado» |
+| `os_dois_presentes_o_binario_nao_sobe_e_nao_toca_em_nenhum` | o `resolver` escolhendo o `.phz` | «ainda rodava depois de 20 s: subiu como servidor» |
+| `o_7zip_do_sistema_abre_o_phz_do_servidor_e_o_servidor_le_o_do_7zip` (`#[ignore]`, precisa do `7z`) | o texto cru gravado como `.phz` | «7z x recusou o .phz do servidor» |
+| `a_troca_vai_e_volta_sem_apagar_copia_nenhuma` | o nome da cópia sempre o primeiro | a segunda migração sobrescreve a primeira |
+| `phz_hostil_recusa_com_erro_nomeado_sem_panico` | o teto do arquivo desligado | «esperava [GRANDE_DEMAIS]» |
+| `sem_configuracao_nenhuma_a_dica_do_modelo_continua` | a dica tirada de vez | sem a dica do modelo |
+
+O teste do binário que prova os dois presentes roda o `phxsqld` com **prazo**:
+com o defeito reposto o processo sobe como servidor, e um `output()` sem prazo
+esperaria para sempre em vez de reprovar.

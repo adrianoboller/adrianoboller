@@ -331,6 +331,94 @@ Detalhes e o que a ligacao ensinou em docs/CONSOLE.md.
     importa se voce escreveu algum dos seis campos de caminho como relativo
     E quer que ele valha contra outra pasta.
 
+7.5 O config.phz  (pedido 450)
+
+    O config.json pode morar num config.phz: um arquivo 7z de uma entrada,
+    com uma senha FIXA no binario. E BARREIRA CONTRA EDITOR -- quem abre o
+    arquivo num editor ou num visualizador nao le o token nem os hashes.
+    NAO E CIFRA: o repositorio e publico e a senha esta nele (constante
+    SENHA_DO_PHZ, em crates/phxsql-server/src/config_phz.rs), e ela e a
+    mesma em toda instalacao. Quem tem o binario ou o fonte abre o arquivo.
+
+    O .phz nao da sigilo nem INTEGRIDADE: quem consegue escrever nele forja
+    uma configuracao com todos os CRC certos. O que protege a configuracao
+    e a PERMISSAO do arquivo -- o servidor grava o .json e o .phz em 0600,
+    so o dono le e escreve. Nao afrouxe isso.
+
+    Empacotar (pedido; o servidor nunca faz sozinho):
+
+        systemctl stop phxsql
+        sudo -u phxsql phxsqld --empacotar-config \
+                               --config /opt/phxsql/config.json
+        systemctl start phxsql
+
+    PARE O SERVIDOR ANTES. O processo no ar continua apontando para o
+    arquivo de onde subiu, e a gravacao seguinte dele pela tela falha
+    ("nao consegui ler config.json") -- sem perda, mas sem efeito.
+
+    RODE COMO O USUARIO DO SERVICO (o User= da unidade, secao 7.4). O .phz
+    nasce 0600 do usuario que rodou o comando: rodado como root, o servico
+    que roda como phxsql nao consegue le-lo e nao sobe.
+
+    O config.json sai do caminho, guardado como config.json.migrado-para-phz
+    -- nunca apagado, e fechado em 0600. Ele continua EM CLARO: suba o
+    servidor, confira, e apague voce essa copia. Enquanto ela estiver la, o
+    arranque lembra.
+
+    Config que e LINK (simbolico ou fisico) nao se migra: a troca moveria so
+    o link, e o arquivo de verdade, com o token, ficaria onde esta. A recusa
+    diz qual e o arquivo real -- rode a troca com --config apontando para ele.
+
+    Se a troca parar por erro, o arquivo novo sai e o velho continua valendo.
+    Se o processo CAIR no meio (queda, kill), podem ficar os dois, com o
+    mesmo conteudo: o servidor nao sobe ate voce retirar um deles, e nada se
+    perde.
+
+    O --config NAO muda: com --config config.json, e so o config.phz ao
+    lado, o servidor sobe do .phz. A unidade do systemd continua a mesma.
+
+    Editar o que a tela nao grava (token, usuarios, seguranca):
+
+        phxsqld --desempacotar-config --config /opt/phxsql/config.json
+
+    O .phz volta a config.json (0600), e o .phz fica guardado como
+    config.phz.aberto-em-json. Edite, suba (o arranque avisa que esta em
+    claro) e empacote de novo. Uma copia de uma troca anterior nunca e
+    sobrescrita: a seguinte ganha .2, .3... As duas trocas rodam ANTES de
+    o servidor validar o arquivo: um .phz com um campo torto sai pela
+    ferramenta para ser consertado.
+
+    VOLTAR A UM BINARIO ANTERIOR: antes, rode --desempacotar-config com o
+    binario NOVO. O anterior nao conhece o .phz e recusa subir -- mas a dica
+    dele manda gerar um config.json do zero, e quem obedece sobe com o token
+    e os usuarios do modelo.
+
+    Pelo 7-Zip tambem da: o .phz e um 7z comum (LZMA2 e cabecalho cifrado),
+    e o servidor le o que o 7-Zip gravar com a mesma senha.
+
+    AS REGRAS
+
+    - So o config.json existe: o servidor sobe e AVISA no arranque que ele
+      esta em claro, com o comando que o empacota. Nada muda sem pedir, e a
+      tela, o ALTER SERVER e o cadastro continuam gravando em claro.
+    - So o config.phz existe: sobe dele, e toda gravacao volta ao .phz.
+    - OS DOIS EXISTEM: o servidor NAO SOBE, e diz os dois caminhos. Ele nao
+      escolhe por palpite -- nem pela data. Se vale o .json (voce o extraiu
+      para editar), retire o .phz e rode --empacotar-config; se vale o .phz,
+      retire o .json.
+    - NENHUM EXISTE: o erro de sempre, e so entao a dica
+      "phxsqld --exemplo 1 > config.json". Com qualquer um presente a dica
+      nao aparece: seguida, ela truncaria o arquivo que o erro nomeia.
+
+    O que NAO vai para o .phz: o dblink.json, o jobs.json, o
+    blacklist.json, o cluster.estado.json e o replicacao-posicoes.json.
+    Os cinco, diante de um arquivo que nao conseguem ler, seguem como se
+    ele estivesse VAZIO (o do cluster volta ao papel do config.json) -- e
+    empacota-los faria um binario que nao os abre apagar em vez de
+    recusar. O dblink.json, alem disso, ja guarda a senha e o token dos
+    bancos de fora selados com chave de fora do servidor (secao 15.8). Ver
+    docs/SEGURANCA.md secao 23 e docs/FORMATO.md secao 20.
+
 
 8. PROTOCOLO
 --------------------------------------------------------------------------------
@@ -3894,6 +3982,14 @@ incluindo multi-source e failover.
 --------------------------------------------------------------------------------
 "config.json sem token"
     Preencha o campo token. O servidor recusa subir sem ele.
+
+"existem os dois, config.json e config.phz"
+    Ha um config.json em claro E um config.phz ao lado, e o servidor nao
+    escolhe qual e a configuracao. Retire o que nao vale (secao 7.5).
+
+"o .phz nao abriu: ... [SENHA_ERRADA]"
+    O config.phz foi reempacotado com outra senha. O servidor so abre o que
+    foi gravado com a senha do pedido 450 (secao 7.5).
 
 "nao consegui escutar em 0.0.0.0:5000"
     Porta ocupada ou sem permissao. Troque o bind ou libere a porta.

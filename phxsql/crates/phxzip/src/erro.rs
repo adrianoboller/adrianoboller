@@ -152,7 +152,8 @@ impl fmt::Display for Erro {
             }
             Erro::SemCifra => write!(
                 f,
-                "o conteudo nao esta cifrado: e 7z, mas nao e um .phz protegido por senha"
+                "o conteudo nao passou pelo 7zAES: e 7z, mas nao e um .phz (a barreira \
+                 contra editor)"
             ),
             Erro::EntradaEPasta(nome) => {
                 write!(f, "a unica entrada do .phz e uma pasta: {nome}")

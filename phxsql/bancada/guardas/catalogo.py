@@ -7737,11 +7737,18 @@ pub fn limpar() {
             "`let _ =`; o `config.json` ainda herdava a permissao do original. A prova e do "
             "sistema operacional: o modo que o `stat` devolve, 644 com o defeito e 600 sem."
             "\n\nRAIO MEDIDO (17/09/2026): 1 dos 1.117 testes do `--lib` cai."
+            "\n\nRE-APONTADA em 24/09/2026 (pedido 450, etapa 2): a gravacao do arquivo de "
+            "configuracao saiu do `gravar_a_arvore` do `config.rs` para o `gravar_texto` do "
+            "`config_phz.rs`, que decide a forma (claro ou `.phz`) e grava as DUAS pela mesma "
+            "linha. Por isso o `caem` ganhou a irma do `.phz`: com o `.phz` sem integridade "
+            "(parecer SEC de 24/09), a permissao e o que sobra de autenticidade do config. O "
+            "outro lugar onde o arquivo nasce -- a troca de forma do `--empacotar-config` -- "
+            "tem guarda propria, `config-phz-troca-escreve-aberto-e-herda`."
         ),
-        "arquivo": "crates/phxsql-server/src/config.rs",
-        "trecho": """    gravar_privado(caminho, corpo.as_bytes())
-        .map_err(|e| PhxError::Esquema(format!("nao gravei {}: {e}", caminho.display())))?;
-    Ok(novo)
+        "arquivo": "crates/phxsql-server/src/config_phz.rs",
+        "trecho": """    crate::config::gravar_privado(caminho, corpo)
+        .map_err(|e| PhxError::Esquema(format!("nao gravei {}: {e}", caminho.display())))
+}
 """,
         "troca": """    // DEFEITO REPOSTO: escreve na permissao do umask e aperta depois, herdando
     // a do original -- o 0644 de instalacao fica 0644 para sempre.
@@ -7752,13 +7759,383 @@ pub fn limpar() {
         let _ = std::fs::set_permissions(&temporario, meta.permissions());
     }
     std::fs::rename(&temporario, caminho)
-        .map_err(|e| PhxError::Esquema(format!("nao troquei {}: {e}", caminho.display())))?;
-    Ok(novo)
+        .map_err(|e| PhxError::Esquema(format!("nao troquei {}: {e}", caminho.display())))
+}
 """,
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
-        "caem": ["config::testes_gravacao::o_config_regravado_nasce_0600_sem_herdar_o_original"],
-        "seguem": ["config::testes_gravacao::grava_o_pedido_e_preserva_o_resto", "config::testes_gravacao::gravar_privado_nasce_0600_mesmo_com_temporario_velho_aberto"],
+        "caem": [
+            "config::testes_gravacao::o_config_regravado_nasce_0600_sem_herdar_o_original",
+            "config_phz::testes::o_phz_regravado_nasce_0600_sem_herdar_o_original",
+        ],
+        "seguem": [
+            "config::testes_gravacao::grava_o_pedido_e_preserva_o_resto",
+            "config::testes_gravacao::gravar_privado_nasce_0600_mesmo_com_temporario_velho_aberto",
+            "config_phz::testes::o_servidor_le_o_phz_que_ele_mesmo_gravou",
+        ],
+    },
+    {
+        "id": "config-phz-troca-escreve-aberto-e-herda",
+        "titulo": "a troca de forma (`--empacotar-config`/`--desempacotar-config`) grava o arquivo novo aberto, herdando o `0644` do original",
+        "porque": (
+            "pedido 450, etapa 2 -- a guarda IRMA da `config-json-escreve-aberto-e-herda`. "
+            "«Irmao e quem chama as mesmas funcoes na mesma ordem»: a troca de forma e o "
+            "segundo lugar onde o arquivo de configuracao NASCE, e nasce com o token e os "
+            "hashes dentro. O parecer SEC de 24/09/2026 diz que o `.phz` nao da integridade "
+            "(senha publica, CRC nao e MAC) e que a autenticidade do config vem de FORA dele "
+            "-- da permissao do arquivo. Uma instalacao com o `config.json` em 0644 que "
+            "migrasse herdaria o 0644 no `.phz`, e a unica protecao que sobrava sumiria "
+            "calada. A prova le o modo pelo sistema operacional, nos dois sentidos da troca."
+        ),
+        "arquivo": "crates/phxsql-server/src/config_phz.rs",
+        "trecho": """    crate::config::gravar_privado(novo, corpo)
+        .map_err(|e| PhxError::Esquema(format!("nao gravei {}: {e}", novo.display())))?;
+""",
+        "troca": """    // DEFEITO REPOSTO: grava na permissao do umask e copia a do original --
+    // o .phz de uma instalacao em 0644 nasce 0644.
+    std::fs::write(novo, corpo)
+        .map_err(|e| PhxError::Esquema(format!("nao gravei {}: {e}", novo.display())))?;
+    if let Ok(meta) = std::fs::metadata(velho) {
+        let _ = std::fs::set_permissions(novo, meta.permissions());
+    }
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "config_phz::testes::a_troca_de_forma_grava_0600_sem_herdar_o_original",
+        ],
+        "seguem": [
+            "config_phz::testes::o_servidor_le_o_phz_que_ele_mesmo_gravou",
+            "config_phz::testes::o_phz_regravado_nasce_0600_sem_herdar_o_original",
+        ],
+    },
+    {
+        "id": "config-phz-abre-com-os-24-ciclos",
+        "titulo": "o `config.phz` volta a abrir com o teto de 24 ciclos: um cabecalho hostil custa 2^24 rodadas ja no arranque",
+        "porque": (
+            "pedido 450, etapa 2, e o achado ALTO do parecer SEC de 24/09/2026: o "
+            "`NumCyclesPower` do 7zAES vem do ARQUIVO, e com o teto de 24 um `.phz` de "
+            "cabecalho cifrado deriva 2^24 SHA-256 (~42 s em debug) antes de qualquer "
+            "conferencia. O servidor grava com 2^10 e o 7-Zip com 2^19, entao o teto de "
+            "leitura e 19. A prova mede o erro NOMEADO (`CICLOS_DEMAIS`) e o tempo."
+        ),
+        "arquivo": "crates/phxsql-server/src/config_phz.rs",
+        "trecho": """        ciclos: phxzip::CICLOS_PADRAO,
+""",
+        "troca": """        // DEFEITO REPOSTO: o teto do 7-Zip inteiro, que e o de arquivo confiavel.
+        ciclos: phxzip::CICLOS_MAXIMO,
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "config_phz::testes::phz_hostil_recusa_com_erro_nomeado_sem_panico",
+        ],
+        "seguem": [
+            "config_phz::testes::o_servidor_le_o_phz_que_ele_mesmo_gravou",
+        ],
+    },
+    {
+        "id": "config-phz-abre-cabecalho-de-megabytes",
+        "titulo": "o `config.phz` volta a aceitar cabecalho de megabytes: um arquivo de KiB aloca o que o cabecalho declarar",
+        "porque": (
+            "pedido 450, etapa 2, e o achado MEDIO do parecer SEC de 24/09/2026: o "
+            "cabecalho CODIFICADO de um 7z e pequeno no disco e grande depois de "
+            "descomprimido, e a memoria de abrir acompanha o teto do cabecalho. Um `.phz` "
+            "de configuracao tem uma entrada e centenas de bytes de cabecalho; o teto de "
+            "64 KiB recusa, pelo nome (`GRANDE_DEMAIS`), o de 80 KB que um nome de 40.000 "
+            "letras produz -- e que o teto de 8 MiB do padrao aceita."
+        ),
+        "arquivo": "crates/phxsql-server/src/config_phz.rs",
+        "trecho": """        cabecalho: 64 << 10,
+""",
+        "troca": """        // DEFEITO REPOSTO: o teto de cabecalho do padrao, para qualquer arquivo.
+        cabecalho: 8 << 20,
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "config_phz::testes::phz_hostil_recusa_com_erro_nomeado_sem_panico",
+        ],
+        "seguem": [
+            "config_phz::testes::o_servidor_le_o_phz_que_ele_mesmo_gravou",
+        ],
+    },
+    {
+        "id": "config-phz-dois-presentes-escolhe-calado",
+        "titulo": "com `config.json` E `config.phz` presentes, o servidor escolhe um calado e sobe",
+        "porque": (
+            "pedido 450, etapa 2: fonte de verdade ambigua nao se resolve por palpite. O "
+            "caso real e o administrador que extraiu o `.phz` com o 7-Zip para editar -- "
+            "escolher o `.phz` perde a edicao calado; escolher o `.json` deixa o `.phz` "
+            "velho esperando o proximo engano. A regra decidida: os dois presentes, o "
+            "servidor nao sobe, e a mensagem nomeia os dois e as duas saidas."
+        ),
+        "arquivo": "crates/phxsql-server/src/config_phz.rs",
+        "trecho": """    match (claro.exists(), phz.exists()) {
+        (true, true) => Err(PhxError::Conflito(format!(
+""",
+        "troca": """    match (claro.exists(), phz.exists()) {
+        // DEFEITO REPOSTO: o .phz ganha calado quando os dois existem.
+        (true, true) => Ok(phz),
+        #[allow(unreachable_patterns)]
+        (true, true) => Err(PhxError::Conflito(format!(
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "config_phz::testes::os_dois_presentes_nao_sobem_e_a_troca_nao_toca_em_nenhum",
+        ],
+        "seguem": [
+            "config_phz::testes::o_servidor_le_o_phz_que_ele_mesmo_gravou",
+            "config_phz::testes::config_json_em_claro_continua_em_claro_e_o_arranque_avisa",
+        ],
+    },
+    {
+        "id": "config-json-claro-vira-phz-sem-pedir",
+        "titulo": "o servidor que subiu de um `config.json` em claro passa a grava-lo empacotado sem ninguem pedir",
+        "porque": (
+            "pedido 450, etapa 2, e a petrea «guarda nova entra pedida, nao imposta»: cerca "
+            "de sessenta roteiros da bancada e os testes escrevem o `config.json` em claro e "
+            "o leem de volta depois de gravar pela tela. A forma de gravar segue a forma de "
+            "onde se leu; a migracao e o `phxsqld --empacotar-config`, pedido e dito no "
+            "arranque. O teste que trava isto e o do comportamento VELHO."
+        ),
+        "arquivo": "crates/phxsql-server/src/config_phz.rs",
+        "trecho": """    let corpo: &[u8] = if e_phz(caminho) {
+""",
+        "troca": """    // DEFEITO REPOSTO: empacota sempre, olhe a extensao ou nao.
+    let corpo: &[u8] = if e_phz(caminho) || !e_phz(caminho) {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "config_phz::testes::config_json_em_claro_continua_em_claro_e_o_arranque_avisa",
+        ],
+        "seguem": [
+            "config_phz::testes::o_servidor_le_o_phz_que_ele_mesmo_gravou",
+        ],
+    },
+    {
+        "id": "config-dica-do-modelo-sobre-arquivo-presente",
+        "titulo": "o `phxsqld` que nao sobe manda gerar o modelo `> config.json` por cima do arquivo que o erro esta nomeando",
+        "porque": (
+            "pedido 450, etapa 2 -- parecer do DBA de 24/09/2026, que BLOQUEOU o commit: a "
+            "dica `phxsqld --exemplo 1 > config.json` saia para QUALQUER erro do "
+            "`Config::ler`, inclusive o CONFLITO dos dois presentes e o `.phz` corrompido. "
+            "Quem segue a dica trunca o `.json` que o administrador extraiu do `.phz` para "
+            "editar -- o caso real do desenho. A dica so aparece quando nenhum dos dois do "
+            "par existe, e o teste do comportamento velho (sem arquivo nenhum, a dica "
+            "continua) fica no `seguem`."
+        ),
+        "arquivo": "crates/phxsql-server/src/main.rs",
+        "trecho": """            if !claro.exists() && !phz.exists() {
+""",
+        "troca": """            // DEFEITO REPOSTO: a dica para qualquer erro do Config::ler.
+            let _ = (&claro, &phz);
+            if true {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "config-phz"],
+        "caem": [
+            "os_dois_presentes_o_binario_nao_sobe_e_nao_toca_em_nenhum",
+            "arquivo_ilegivel_o_binario_nao_sobe_e_nao_manda_gerar_o_modelo",
+        ],
+        "seguem": [
+            "sem_configuracao_nenhuma_a_dica_do_modelo_continua",
+        ],
+    },
+    {
+        "id": "config-phz-troca-so-depois-de-validar",
+        "titulo": "a troca de forma so roda depois de o `Config::ler` aceitar: o `.phz` com um campo torto nao sai para conserto",
+        "porque": (
+            "pedido 450, etapa 2 -- revisao SEC de 24/09/2026, MEDIO 2: com a troca depois do "
+            "`Config::ler`, um `.phz` que abre e falha na validacao (um token vazio) nao "
+            "tinha como ser aberto pela ferramenta, e o erro ainda sugeria gerar o modelo por "
+            "cima. A troca roda antes, e o empacotar confere so que o texto e JSON."
+        ),
+        "arquivo": "crates/phxsql-server/src/main.rs",
+        "trecho": """    if args.iter().any(|a| a == "--empacotar-config") {
+        return trocar_a_forma(&caminho, true);
+    }
+    if args.iter().any(|a| a == "--desempacotar-config") {
+        return trocar_a_forma(&caminho, false);
+    }
+
+    let config = match Config::ler(&caminho) {
+""",
+        "troca": """    let config = match Config::ler(&caminho) {
+        // DEFEITO REPOSTO: a troca de forma so depois de o Config::ler aceitar.
+        Ok(c) if args.iter().any(|a| a == "--empacotar-config") => {
+            let _ = c;
+            return trocar_a_forma(&caminho, true);
+        }
+        Ok(c) if args.iter().any(|a| a == "--desempacotar-config") => {
+            let _ = c;
+            return trocar_a_forma(&caminho, false);
+        }
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "config-phz"],
+        "caem": [
+            "phz_que_nao_valida_sai_pelo_desempacotar",
+        ],
+        "seguem": [
+            "a_migracao_pelo_binario_sobe_do_phz_e_a_senha_nao_sai_do_processo",
+        ],
+    },
+    {
+        "id": "config-phz-copia-guardada-fica-aberta",
+        "titulo": "a copia em claro que a migracao guarda leva o `0644` da instalacao, com o token, para sempre",
+        "porque": (
+            "pedido 450, etapa 2 -- revisao SEC de 24/09/2026, achado A1 (BLOQUEOU), caso 1, "
+            "provado pelo binario: `config.json` 644 -> `--empacotar-config` -> "
+            "`config.json.migrado-para-phz` 644, porque a renomeacao mantem a permissao e "
+            "ninguem mais regrava a copia. O `.phz` nao tem integridade nem sigilo; a copia "
+            "em claro aberta anulava a barreira inteira. A copia nasce 0600 no mesmo passo."
+        ),
+        "arquivo": "crates/phxsql-server/src/config_phz.rs",
+        "trecho": """    let apertar_e_soltar = apertar(&guardado).and_then(|()| std::fs::remove_file(velho));
+""",
+        "troca": """    let apertar_e_soltar = std::fs::remove_file(velho); // DEFEITO REPOSTO: sem apertar
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "config_phz::testes::a_copia_guardada_pela_troca_nasce_0600",
+        ],
+        "seguem": [
+            "config_phz::testes::a_troca_de_forma_grava_0600_sem_herdar_o_original",
+        ],
+    },
+    {
+        "id": "config-phz-migra-o-link",
+        "titulo": "a migracao de um config que e LINK move so o link e diz que guardou o original",
+        "porque": (
+            "pedido 450, etapa 2 -- revisao SEC de 24/09/2026, achado A1, caso 2, provado "
+            "pelo binario: `run/config.json` -> `etc/config.json`. A troca renomeava o LINK, "
+            "a saida dizia «o original foi renomeado», e o `etc/config.json` real ficava 644 "
+            "com o token; apagada a copia, o aviso sumia e o segredo continuava legivel. O "
+            "link fisico e o mesmo caso por outra porta. A recusa nomeia o alvo real."
+        ),
+        "arquivo": "crates/phxsql-server/src/config_phz.rs",
+        "trecho": """    recusar_outro_nome(velho)?;
+""",
+        "troca": """    let _ = recusar_outro_nome(velho); // DEFEITO REPOSTO
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "config_phz::testes::config_que_e_link_nao_se_migra_e_a_recusa_nomeia_o_alvo",
+        ],
+        "seguem": [
+            "config_phz::testes::o_servidor_le_o_phz_que_ele_mesmo_gravou",
+        ],
+    },
+    {
+        "id": "config-phz-aviso-procura-a-copia-pelo-lido",
+        "titulo": "o aviso de arranque procura a copia em claro por um nome que a migracao nao usou, e cala",
+        "porque": (
+            "pedido 450, etapa 2 -- revisao SEC de 24/09/2026, achado A1, caso 3: com "
+            "`--config meu.conf`, a copia e `meu.conf.migrado-para-phz`, e o aviso tirava o "
+            "nome do arquivo LIDO (`meu.phz` -> `meu.json`) -- nunca avisava. Duas receitas "
+            "do mesmo nome; o conserto e uma funcao so (`copias_em_claro`) a partir do "
+            "PEDIDO, a mesma que a migracao usa."
+        ),
+        "arquivo": "crates/phxsql-server/src/config_phz.rs",
+        "trecho": """    let copias: Vec<String> = copias_em_claro(pedido)
+""",
+        "troca": """    let copias: Vec<String> = copias_em_claro(real) // DEFEITO REPOSTO
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "config_phz::testes::o_aviso_acha_a_copia_de_um_config_que_nao_se_chama_json",
+        ],
+        "seguem": [
+            "config_phz::testes::a_troca_vai_e_volta_sem_apagar_copia_nenhuma",
+        ],
+    },
+    {
+        "id": "gravar-privado-temporario-e-o-proprio-config",
+        "titulo": "o temporario do `gravar_privado` troca a extensao, e com `--config servidor.tmp` ele e o proprio config",
+        "porque": (
+            "pedido 450, etapa 2 -- revisao SEC de 24/09/2026, MEDIO 1, provado pelo "
+            "binario: `with_extension(\"tmp\")` do `servidor.phz` e o `servidor.tmp` que se "
+            "migrava. A gravacao comecava apagando o config, a copia nao se guardava "
+            "(ENOENT), o desfazer apagava o `.phz`, e a pasta ficava VAZIA com a mensagem "
+            "dizendo «servidor.tmp continua valendo». O temporario passa a ser o nome "
+            "inteiro mais `.tmp` -- vale para o `dblink.json` e o `jobs.json` tambem, que "
+            "passam pelo mesmo `gravar_privado`."
+        ),
+        "arquivo": "crates/phxsql-server/src/config.rs",
+        "trecho": """    let mut nome = caminho
+        .file_name()
+        .map(|n| n.to_os_string())
+        .unwrap_or_default();
+    nome.push(".tmp");
+    caminho.with_file_name(nome)
+""",
+        "troca": """    // DEFEITO REPOSTO: troca a extensao, e com servidor.tmp e o proprio config.
+    caminho.with_extension("tmp")
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "config_phz::testes::config_com_extensao_tmp_migra_sem_se_apagar",
+        ],
+        "seguem": [
+            "config::testes_gravacao::gravar_privado_nasce_0600_mesmo_com_temporario_velho_aberto",
+        ],
+    },
+    {
+        "id": "config-phz-desfazer-apaga-a-unica-copia",
+        "titulo": "o desfazer da troca apaga o arquivo novo mesmo quando o velho sumiu, e diz que o velho «continua valendo»",
+        "porque": (
+            "pedido 450, etapa 2 -- revisao SEC de 24/09/2026, MEDIO 1: a pasta vazia do "
+            "`servidor.tmp` era o temporario que colidia E o desfazer que nao olhava. O "
+            "desfazer so tira o novo se o velho ainda existe; sem o velho, o novo e a unica "
+            "copia, fica, e a mensagem diz que ele e o que sobrou."
+        ),
+        "arquivo": "crates/phxsql-server/src/config_phz.rs",
+        "trecho": """    if std::fs::symlink_metadata(velho).is_err() {
+""",
+        "troca": """    if false && std::fs::symlink_metadata(velho).is_err() { // DEFEITO REPOSTO
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "config_phz::testes::o_desfazer_nao_apaga_a_unica_copia_que_sobrou",
+        ],
+        "seguem": [
+            "config_phz::testes::config_com_extensao_tmp_migra_sem_se_apagar",
+        ],
+    },
+    {
+        "id": "config-phz-grava-o-texto-cru",
+        "titulo": "o servidor que subiu de um `config.phz` grava o texto cru dentro dele: o token volta a ler-se num editor",
+        "porque": (
+            "pedido 450, etapa 2: o `.phz` e a barreira contra quem abre o arquivo num "
+            "editor, e a tela, o `ALTER SERVER`, o cadastro e os nos do cluster regravam o "
+            "arquivo. Uma gravacao que ignorasse a extensao deixaria o JSON legivel dentro "
+            "do `config.phz` -- e o arranque seguinte recusaria o arquivo (`NAO_E_7Z`)."
+        ),
+        "arquivo": "crates/phxsql-server/src/config_phz.rs",
+        "trecho": """        empacotado = empacotar_conferido(caminho, texto)?;
+        &empacotado
+""",
+        "troca": """        // DEFEITO REPOSTO: grava o texto cru mesmo com a extensao .phz.
+        empacotado = Vec::<u8>::new();
+        let _ = &empacotado;
+        texto.as_bytes()
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "config_phz::testes::o_servidor_le_o_phz_que_ele_mesmo_gravou",
+        ],
+        "seguem": [
+            "config_phz::testes::config_json_em_claro_continua_em_claro_e_o_arranque_avisa",
+        ],
     },
     # -----------------------------------------------------------------------
     # 181. «guarda nova entra pedida, nao imposta» -- replicas_autorizadas

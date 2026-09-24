@@ -2942,7 +2942,220 @@ credencial nova recusar, dizendo por quê. Nada se perde (a chave velha de volta
 abre tudo); sem a velha, o caminho é o da chave perdida, acima. É pendência, e
 não comportamento escondido.
 
-## 20. O que este formato ainda não faz
+## 20. `config.phz` — o `config.json` empacotado (pedido 450)
+
+O arquivo de configuração do servidor pode morar num `.phz` em vez de num
+`.json` em claro — decisão do dono de 24/09/2026 (`docs/PENDENCIAS.md` #450).
+Não é arquivo do motor de dados: é o `config.json` inteiro, byte a byte,
+dentro de um 7z de uma entrada, escrito e lido pelo `phxzip`
+(`crates/phxzip`, o 7z escrito aqui) e ligado ao servidor em
+`crates/phxsql-server/src/config_phz.rs`.
+
+**É barreira contra editor, não é cifra.** A senha é uma constante do código
+(`SENHA_DO_PHZ`), pública com o repositório e a mesma em toda instalação; o
+sal é vazio, então a chave AES é a mesma em todo servidor. O `.phz` não dá
+sigilo **nem integridade** — o que confere o conteúdo é CRC-32, e quem escreve
+no arquivo forja uma configuração com todos os CRCs certos
+(`docs/propostas/parecer-sec-phxzip-2026-09-24.md`). A autenticidade vem da
+**permissão** do arquivo: `0600` desde o primeiro byte, por troca atômica,
+pelo mesmo `config::gravar_privado` do `config.json` (`SEGURANCA.md` §23).
+
+### O leiaute
+
+Um 7z comum, e é isso que deixa o 7-Zip abri-lo e regravá-lo:
+
+| parte | o que o servidor grava |
+|---|---|
+| assinatura | `37 7A BC AF 27 1C`, versão `00 04` |
+| entradas | **uma**, com o nome do `.json` do par (`config.json` para `config.phz`) |
+| conteúdo | o texto do `config.json`, UTF-8, sem mudar um byte |
+| compressão | LZMA2 |
+| cifra do 7z | 7zAES: AES-256-CBC, chave = SHA-256 iterado sobre `senha UTF-16LE ‖ contador`, sal vazio, IV sintético |
+| rodadas | 2^10 (`CICLOS_AO_GRAVAR`) — com a senha pública elas não compram nada, só custam leitura |
+| cabeçalho | também cifrado (`kEncodedHeader`), então nem o nome da entrada aparece |
+| conferência | CRC-32 do conteúdo e CRC-32 do dado cifrado (este, só nos que o `phxzip` grava) |
+
+Medido em 24/09/2026: um `config.json` de 87 bytes vira um `config.phz` de
+292. Pelo `phxsqld --usuarios` em binário de depuração (mediana de 15
+corridas), subir do `.json` custa 2,6 ms e do `.phz` 7,6 ms; um `.phz`
+regravado pelo 7-Zip, com as 2^19 rodadas dele, custa 1.987 ms (mediana de 5).
+
+### O par, e qual dos dois vale
+
+Do caminho pedido (`--config`, padrão `config.json`) sai o par: o claro e o
+`.phz` com o mesmo nome e a extensão trocada (`config.json` ↔ `config.phz`;
+`meu.conf` → `meu.phz`; um `.phz` pedido pelo nome tem `.json` como par).
+
+| existe | o servidor |
+|---|---|
+| só o `.json` | sobe dele, grava em claro, e o arranque **avisa** que está em claro e qual comando empacota |
+| só o `.phz` | sobe dele e toda gravação volta ao `.phz` — com o mesmo `--config config.json` de antes |
+| os dois | **não sobe** (`CONFLITO`), nomeando os dois arquivos e as duas saídas |
+| nenhum | o erro de sempre, e **só aqui** a dica `phxsqld --exemplo 1 > <o .json do par>` |
+
+A dica do modelo não aparece com um dos dois presentes: seguida ao pé da letra
+ela **trunca** o arquivo que o erro está nomeando — o `.json` que o
+administrador extraiu para editar, um `.phz` cortado, um `.json` com uma
+vírgula a mais (parecer do DBA de 24/09/2026; prova em
+`tests/config-phz.rs`).
+
+A forma de gravar segue a do arquivo lido (pela extensão), e nunca muda
+sozinha: é o que mantém funcionando quem escreve e relê o `config.json` em
+claro — os roteiros da bancada, os testes e todo cliente antigo.
+
+### A troca de forma, e os nomes que ela deixa
+
+`phxsqld --empacotar-config` grava o `.phz`, **relê do disco e compara byte a
+byte** com o `.json`, e só então tira o `.json` do caminho — guardado, nunca
+apagado: um segundo nome (`hard_link`, que recusa se o destino já existe, em
+vez de um `rename` que trocaria por cima), fechado em `0600`, e só então o nome
+velho sai. `--desempacotar-config` faz o inverso. As duas rodam **antes** de o
+servidor validar o arquivo, para que um `.phz` com um campo torto possa sair e
+ser consertado; o empacotar confere só que o texto é JSON. Config que é **link**
+— simbólico, ou físico com mais de um nome — é recusado antes de tudo, e a
+recusa nomeia o arquivo real: a troca renomearia só o link e deixaria o
+arquivo de verdade, com o token, onde está. **Pare o servidor antes:** o
+processo vivo continua apontando para o arquivo de onde subiu, e a gravação
+seguinte dele pela tela falha alto («nao consegui ler config.json») — sem
+perda, mas sem efeito.
+
+O que a troca garante depende do que a interrompe:
+
+- **Erro tratado** (a conferência não bate, a cópia não se guarda): o arquivo
+  novo sai e o velho continua valendo. Se nem a retirada der, a mensagem diz
+  que ficaram os dois. Se o velho **sumiu** no meio, o novo não sai — é a
+  única cópia —, e a mensagem diz que ele é o que sobrou.
+- **Queda ou `kill`** entre gravar o novo e renomear o velho: ficam **os dois,
+  idênticos**, e o arranque recusa (`CONFLITO`) até alguém retirar um; nada se
+  perde. Antes de o novo existir, sobra no máximo o temporário
+  (`config.phz.tmp`: o nome inteiro mais `.tmp`, que nunca é o do config nem
+  o do outro do par — com `--config servidor.tmp` o temporário antigo,
+  `with_extension("tmp")`, ERA o config), que ninguém lê e a gravação
+  seguinte apaga.
+- Não há `fsync` do diretório depois do `rename` — como em toda gravação de
+  configuração desta casa —, então uma queda de energia logo depois do sucesso
+  pode voltar a um dos dois estados de cima. Nenhum perde dado.
+
+| sobra | quando |
+|---|---|
+| `config.json.migrado-para-phz` | depois de `--empacotar-config`; **em claro** e fechado em `0600` — o administrador apaga, e o arranque lembra enquanto ela existir |
+| `config.phz.aberto-em-json` | depois de `--desempacotar-config`, também `0600` |
+| `….2`, `….3`, … até `….99` | quando o nome anterior já existe: uma cópia nunca é sobrescrita |
+
+### Voltar ao binário anterior
+
+O binário anterior a esta etapa não conhece o `.phz`: com `--config
+config.json` e só o `config.phz` ao lado, ele recusa subir («nao consegui
+ler») — e não escreve nada. Mas a dica dele manda gerar um `config.json` do
+zero, e quem obedece sobe o binário velho com o token e os usuários do
+**modelo** (o dado fica intacto; o binário novo, depois, recusa pelos dois
+presentes). **Antes de voltar, rode `phxsqld --desempacotar-config` com o
+binário NOVO.**
+
+### Os limites da leitura
+
+O `.phz` é lido inteiro para a memória, e por isso a leitura do disco para em
+17 MiB + 1 byte (16 MiB de conteúdo + 1 MiB de folga): passou disso, é
+recusado sem ler o resto — a memória fica limitada a 17 MiB, venha o arquivo
+do tamanho que vier. Depois, o 7z abre com limites do tamanho de um arquivo de uma entrada,
+e não com os do padrão (`config_phz::limites_de_leitura`):
+
+| limite | valor | por quê |
+|---|---|---|
+| `ciclos` | 19 | o que o 7-Zip grava; 24 custaria 2^24 SHA-256 **antes** de qualquer conferência |
+| `cabecalho` | 64 KiB | o de uma entrada tem centenas de bytes; o decodificado é que conta |
+| `entradas` | 16 | deixa duas entradas cair no erro que diz isso |
+| `derivacoes` | 2 | o 7-Zip usa uma |
+| `modelo` | 64 KiB | o LZMA2 não passa de 28 KiB |
+| `entrada`/`bloco` | 16 MiB | `phxzip::phz::TETO_PADRAO` |
+
+Toda recusa sai com o nome estável do erro entre colchetes (a tabela
+completa está em «Como se lê», abaixo) — e nunca com a senha.
+
+### Como se lê — o bastante para reimplementar a leitura
+
+A leitura aceita **mais** do que o servidor grava, porque tem de aceitar o que
+o 7-Zip grava quando o administrador reempacota. Na ordem:
+
+1. **O contêiner** é o 7z de `DOC/7zFormat.txt` do 7-Zip: assinatura de 6
+   bytes, versão maior `0` (a menor não importa), `StartHeader` com o
+   deslocamento, o tamanho e o CRC-32 do cabeçalho seguinte, e o próprio
+   `StartHeader` sob CRC-32. O cabeçalho seguinte é `kHeader` em claro **ou**
+   `kEncodedHeader` — um nível só: o decodificado tem de começar com
+   `kHeader`. Até 4 *coders* por bloco.
+2. **Métodos aceitos:** Copy (`00`), LZMA (`03 01 01`), LZMA2 (`21`) e 7zAES
+   (`06 F1 07 01`). Os que constam do `DOC/Methods.txt` recusam com
+   `[METODO_LEGADO]` e o nome (PPMd, Deflate, BZip2, BCJ, ZipCrypto…); os que
+   nem constam, com `[METODO_DESCONHECIDO]`. A lista está em
+   `crates/phxzip/src/leitor.rs` (`conferir_metodo`).
+3. **A chave do 7zAES** (lida em `CPP/7zip/Crypto/7zAes.cpp`, que não tem
+   documento de formato): as propriedades do *coder* trazem no byte 0 os
+   ciclos (6 bits de baixo) e dois bits que, somados ao byte 1, dão o tamanho
+   do sal e do IV (sal = bit 7 do byte 0 + nibble alto do byte 1; IV = bit 6 +
+   nibble baixo; IV completado com zeros até 16). A chave AES-256 é o SHA-256
+   de `2^ciclos` repetições de `sal ‖ senha ‖ contador`, com a senha em
+   **UTF-16LE** sem terminador e o contador em **64 bits little-endian**
+   começando em 0; ciclos `0x3F` é o caso especial sem hash (a chave é
+   `sal ‖ senha`, completada com zeros). O dado é AES-256-CBC com esse IV,
+   completado com zeros até o bloco — o tamanho real vem do cabeçalho, e não
+   há preenchimento PKCS.
+4. **A entrada:** tem de haver **exatamente uma**, que **não é pasta**, e cujo
+   conteúdo passou pelo 7zAES (conteúdo vazio vale se o cabeçalho veio
+   cifrado). O cabeçalho cifrado é **opcional** na leitura — o 7-Zip só o
+   cifra com `-mhe=on`. O **nome** da entrada passa pela conferência de
+   caminho (`[NOME_PERIGOSO]`) e é, fora isso, **ignorado**: o conteúdo é a
+   configuração, venha com o nome que vier.
+5. **O conteúdo** tem de ser UTF-8; depois é o `config.json` de sempre.
+
+| erro | quando |
+|---|---|
+| `NAO_E_7Z` | a assinatura não confere — inclusive um `.json` em claro com o nome `.phz` |
+| `VERSAO_NAO_SUPORTADA` | versão maior do 7z diferente de 0 |
+| `ESTRUTURA` | cabeçalho cortado, campo fora da faixa, tamanho que aponta para fora do arquivo |
+| `CORROMPIDO` | um CRC que a senha não alcança não bateu |
+| `SENHA_ERRADA` | o CRC do dado cifrado bateu e a decifração não fecha: só pode ser a senha (arquivos gravados pelo `phxzip`) |
+| `SENHA_ERRADA_OU_CORROMPIDO` | a decifração não fecha e o arquivo não guarda o CRC do cifrado (os do 7-Zip): o formato não separa os dois |
+| `METODO_LEGADO`, `METODO_DESCONHECIDO` | método fora dos quatro aceitos |
+| `NOME_PERIGOSO`, `NOME_REPETIDO` | nome com caminho absoluto, `..`, letra de unidade, NUL ou dispositivo do Windows; o mesmo nome duas vezes |
+| `GRANDE_DEMAIS` | o arquivo passa de 17 MiB, ou o que ele declara passa de um dos limites acima |
+| `CICLOS_DEMAIS` | o 7zAES pede mais de 2^19 rodadas |
+| `NAO_CABE` | um tamanho que não cabe no endereço da plataforma (alvo de 32 bits) |
+| `SEM_ENTRADA`, `MAIS_DE_UMA_ENTRADA` | zero entradas, ou mais de uma |
+| `ENTRADA_E_PASTA` | a única entrada é uma pasta |
+| `SEM_CIFRA` | é 7z, e o conteúdo não passou pelo 7zAES |
+| `CONTEUDO_NAO_E_TEXTO` | abriu, e o conteúdo não é UTF-8 |
+
+`SENHA_AUSENTE` e `ENTRADA_INEXISTENTE` existem no `phxzip` e não são
+alcançáveis por esta leitura: a senha vai sempre, e a entrada lida é a única.
+
+### A senha é parte do formato
+
+A camada `.phz` **não tem byte de versão**: o 7z tem o dele, mas nada no
+arquivo diz qual senha o gravou. A `SENHA_DO_PHZ` é, na prática, a versão —
+implícita. Trocá-la faria todo `config.phz` instalado virar `[SENHA_ERRADA]`
+no arranque seguinte, e isso é migração. **A senha não muda sem um leitor que
+aceite a anterior.**
+
+### O que fica FORA do `.phz`, e o motivo medido
+
+O `config.json` recusa alto quando não se lê: o binário anterior, diante de um
+`config.phz`, não sobe. Os outros cinco arquivos JSON que o servidor lê e
+grava fazem o contrário — **leem o arquivo ilegível como vazio ou como o
+padrão**, e seguem. Empacotar qualquer um deles faria o binário anterior (ou
+este, diante de um arquivo que não sabe abrir) apagar em vez de recusar:
+
+| arquivo | onde lê | o que um arquivo ilegível vira |
+|---|---|---|
+| `dblink.json` | `dblink/mod.rs:1297` | cadastro VAZIO; a primeira ligação salva regrava por cima das outras. E a senha e o token de fora já vão selados com chave **externa** (§19), cifra de verdade |
+| `blacklist.json` | `blacklist.rs:494-497` | nenhum bloqueio e nenhuma whitelist; a gravação seguinte perde os dois |
+| `jobs.json` | `jobs.rs:434` | nenhum job agendado |
+| `replicacao-posicoes.json` | `bidirecional.rs:579-584` | posições do zero: custa releitura, não dado |
+| `cluster.estado.json` | `cluster.rs:321` | o papel volta ao do `config.json` — um master destronado volta **mandando** (o comentário de `cluster.rs:308-310` diz) |
+
+Os de catálogo e dado (`gatilhos.json`, `procedimentos.json`, `visoes.json`,
+`_database.json`, `.pag`, `backup.json`) não são configuração do servidor.
+
+## 21. O que este formato ainda não faz
 
 Documentado aqui para não haver surpresa:
 

@@ -2313,7 +2313,7 @@ mod testes {
             modo, 0o600,
             "o dblink.json nasceu legivel por outros: {modo:o}"
         );
-        assert!(!caminho.with_extension("tmp").exists());
+        assert!(!crate::config::temporario_de(&caminho).exists());
         std::fs::remove_dir_all(&dir).ok();
     }
 

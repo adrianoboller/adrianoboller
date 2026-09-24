@@ -679,6 +679,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `amarra-exigida-ignorada` | o servidor exige a amarracao ao canal, mas o login nao a cobra | 1 | ✅ provada |
 | `remoto-em-claro-para-quem-exige` | o abrir_remoto manda o login em claro mesmo com cifra: true | 1 | ✅ provada |
 | `fio-sem-teto-de-registro` | a leitura do fio volta a ser ilimitada | 1 | ✅ provada |
+| `teto-do-fio-sem-a-constante` | o `Canal::ler` de producao troca `TETO_DO_REGISTRO` por um teto quase infinito | 1 | ✅ provada |
+| `teto-do-fio-sem-a-constante-no-soquete` | a mesma troca da constante por um teto quase infinito, vista pela rede | 1 | ✅ provada |
+| `teto-da-linha-sem-a-constante-no-soquete` | o `teto_da_linha` do servidor troca `TETO_DO_REGISTRO` por um teto quase infinito, visto pela rede | 1 | ✅ provada |
 | `pulso-do-cluster-em-claro` | o pulso da eleição saindo em claro com a cifra do cluster ligada | 1 | ✅ provada |
 | `replicacao-do-cluster-em-claro` | a replicação entre os nós do cluster saindo em claro | 1 | ✅ provada |
 | `alter-compacta-o-buraco` | a reescrita da coluna nova pula os slots excluídos e renumera o rowid | 1 | ✅ provada |
@@ -687,6 +690,7 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `alter-queda-no-meio` | o conjunto de volumes misturado abre e lê o volume 3 com a largura do 1 | 2 | ✅ provada |
 | `ffi-panico-atravessa` | o pânico atravessa a fronteira de C em vez de virar código de erro | 2 | ✅ provada |
 | `ffi-panico-nao-envenena` | o punho continua sendo usado depois de um pânico capturado | 1 | ✅ provada |
+| `ffi-punho-morto-lido-antes-de-conferir` | a fronteira volta a ler a etiqueta de DENTRO do punho antes de saber se ele ainda existe | 1 | ✅ provada |
 | `ffi-texto-ate-o-byte-zero` | a fronteira trunca o dado do cliente no primeiro byte zero | 2 | ✅ provada |
 | `ffi-erro-global` | a mensagem de erro é global e uma thread lê o erro da outra | 1 | ✅ provada |
 | `ffi-rowid-fora-e-erro` | «não há essa linha» volta de duas formas diferentes conforme o motivo | 1 | ✅ provada |
@@ -738,6 +742,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `pagina-ordenada-varre-o-indice-inteiro` | a grade ordenada percorre o índice inteiro para devolver 50 linhas | 2 | ✅ provada |
 | `cursor-do-pedaco-sem-o-mais-um` | o cursor da varredura em pedaços devolve de novo a linha da borda | 2 | ✅ provada |
 | `perfil-grava-o-texto-da-tabela-declarada` | o perfil.txt grava em claro o pedido de uma tabela declarada em cifra.tabelas | 4 | ✅ provada |
+| `perfil-decide-so-pela-lista-e-nao-pelo-reg-cifrado` | o perfil.txt decide pela lista do config e a cifra acontece pela marca de coluna | 2 | ✅ provada |
+| `perfil-grava-o-erro-que-cita-o-valor` | o perfil.txt tapa o pedido e grava o erro, que cita o valor da coluna marcada | 1 | ✅ provada |
+| `profiler-ligado-sem-a-raiz-dos-dados` | o Profiler liga sem a raiz de dados e volta a decidir por um campo só | 1 | ✅ provada |
 | `perfil-so-olha-a-tabela-do-primeiro-nivel` | o Profiler so olha a tabela do primeiro nível e a junção vira a porta dos fundos | 1 | ✅ provada |
 | `fase-da-telemetria-com-dado-do-usuario` | a fase do SQL Check passa a carregar dado do usuário, e o furo nasce calado | 1 | ✅ provada |
 | `cache-de-derivadas-sobrevive-a-troca-de-senha` | o cache de chaves derivadas responde a quem não deu a senha | 1 | ✅ provada |
@@ -785,10 +792,58 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `relogio-ao-alcance-do-teste` | o estado do gerador de v7 fica ao alcance de um teste, que o escreve para trás | 1 | ✅ provada |
 | `upsert-gatilho-do-ramo` | no upsert que atualiza, o BEFORE UPDATE vê a linha mesclada e o AFTER é o do ramo que ele virou | 5 | ✅ provada |
 | `threads-do-so-pela-diferenca` | a prova de que o SO viu a thread subida é a diferença entre duas leituras do total do processo | 1 | ✅ provada |
+| `varredura-sem-o-elo` | a varredura barata do diretorio perde a tabela alcancada por elo | 1 | ✅ provada |
+| `linha-vazia-na-conferencia-de-filhas` | a linha descida para a conferencia de filhas vai vazia, e toda mae parece sem filha | 3 | ✅ provada |
+| `teto-de-64-bits-satura` | número cru fora da faixa do `Int8` é GRAVADO saturado, e `1e21`, `1e30` e `1e300` viram todos o mesmo número | 2 | ✅ provada |
+| `saida-do-direito-por-coluna` | a recusa do direito por coluna manda «peça as colunas por varrer» também para o `agrupar` e para o `backup` | 1 | ✅ provada |
+| `check-que-se-contradiz-no-alter` | `acrescentar_coluna` aceita um `padrao` que viola o `check` declarado no MESMO comando, e todo `atualizar` da linha velha passa a recusar | 1 | ✅ provada |
+| `alter-com-regra-sem-aviso` | `acrescentar_coluna` com `check` ou `calculada` numa tabela com linha é aceito SEM AVISO, e a linha velha fica fora da regra | 1 | ✅ provada |
+| `upsert-parcial-vira-mescla` | o upsert sem o campo `atualizar` passa a MESCLAR, e a sincronia do DbLink perde a única forma de gravar NULO num destino | 1 | ✅ provada |
+| `direcao-do-indice-sem-saida` | a recusa por direção do índice explica bem por que não dá, e não diz o que fazer | 1 | ✅ provada |
+| `sha256-sem-somar-o-estado` | SHA-256 sem a realimentação do estado: a compressão vira permutação reversível | 4 | ✅ provada |
+| `sha256-com-o-tamanho-em-little-endian` | SHA-256 com o tamanho da mensagem, no padding, em little-endian | 4 | ✅ provada |
+| `hmac-com-a-chave-longa-truncada` | HMAC com a chave maior que o bloco TRUNCADA em vez de pré-hasheada | 2 | ✅ provada |
+| `pbkdf2-com-o-contador-de-bloco-parado` | PBKDF2 com o contador de bloco parado: saída longa repete o primeiro bloco | 1 | ✅ provada |
+| `pbkdf2-sem-o-xor-acumulado` | PBKDF2 sem o XOR acumulado: vira HMAC aplicado N vezes | 2 | ✅ provada |
+| `juntar-sem-portao` | `juntar` sem conferência própria: a tabela negada entra como lado B | 1 | ✅ provada |
+| `unir-sem-portao` | `unir` sem conferência própria: a tabela negada entra na LISTA | 1 | ✅ provada |
+| `diferencas-sem-portao` | `diferencas` sem conferência própria: a tabela negada entra em `a` ou em `b` | 1 | ✅ provada |
+| `derivado-sem-portao` | o portão some do irmão `executar_derivado`: o SQL inteiro vira a porta dos fundos | 8 | ✅ provada |
+| `ficha-do-usuario-devolve-o-hash` | a ficha do usuário passa a devolver o `senha_hash` junto | 2 | ✅ provada |
+| `senha-em-claro-no-cadastro` | a senha entra no config.json em texto puro: o `cifrar` sai do caminho de gravação | 2 | ✅ provada |
+| `senha-velha-fica-no-arquivo` | trocar a senha não leva junto a que estava em texto puro no arquivo | 1 | ✅ provada |
 | `cifra-reserializa-a-senha` | o `para_json` da cifra devolve a senha de verdade em vez de «(oculta)» | 2 | ✅ provada |
+| `debug-da-cifra-mostra-a-senha` | o `Debug` da cifra imprime a senha: um `dbg!` apressado a joga no log | 1 | ✅ provada |
+| `debug-do-segredo-mostra-o-valor` | o `Debug` do tipo `Segredo` imprime o valor: todo dono que o chamar vaza | 1 | ✅ provada |
+| `profiler-sem-a-senha-dentro-do-sql` | o Profiler perde a senha que está DENTRO da frase SQL, e não num campo | 1 | ✅ provada |
+| `comando-invalido-vira-texto-cru` | o SQL que o léxico recusa volta inteiro para o log, com a senha dentro | 1 | ✅ provada |
+| `trilha-sem-o-nome-de-segredo` | a trilha LGPD deixa de olhar o NOME da coluna e só analisa o valor | 1 | ✅ provada |
+| `trilha-so-olha-o-nome-da-coluna` | a trilha LGPD deixa de ANALISAR o valor e só confia no nome da coluna | 1 | ✅ provada |
+| `debug-da-ligacao-mostra-a-senha` | o `Debug` da ligação de DbLink imprime a senha e o token do outro banco | 1 | ✅ provada |
+| `fio-cifrado-manda-o-claro-junto` | o fio cifrado manda a linha em claro junto do registro selado | 1 | ✅ provada |
+| `diario-das-diretivas-guarda-o-segredo-anterior` | o diário das diretivas grava o valor ANTERIOR do campo sigiloso em claro | 1 | ✅ provada |
 | `cluster-devolve-a-credencial-na-tela` | o resumo do cluster na op `config` leva o token entre nós e o hash do replicador | 2 | ✅ provada |
+| `token-do-rest-entra-pela-tela` | o token da porta REST passa a se gravar pela tela de configuração | 1 | ✅ provada |
 | `cifra-do-odbc-volta-a-nascer-em-claro` | a receita do driver ODBC volta a nascer em claro, e o esquecimento vira o padrao | 5 | ✅ provada |
+| `receita-odbc-devolve-a-senha` | a connection string mascarada do ODBC devolve a senha inteira | 1 | ✅ provada |
 | `cifra-do-fio-reserializa-a-privada` | o `para_json` da cifra do fio devolve a chave privada em vez de «(oculta)» | 1 | ✅ provada |
+| `especificacao-openapi-leva-o-token` | a especificação OpenAPI, servida sem portão, passa a carregar o token da porta | 1 | ✅ provada |
+| `token-remoto-fora-da-lista-de-segredos` | o `token_remoto` sai da lista de segredos: o token do OUTRO servidor vai em claro para o `perfil.txt` e para a op `profiler` | 4 | ✅ provada |
+| `job-recusa-um-nome-e-grava-os-outros` | a guarda do job volta a recusar só `token`: `senha`/`token_remoto` vão para o `jobs.json` e voltam na ficha | 1 | ✅ provada |
+| `config-json-escreve-aberto-e-herda` | o `config.json` volta a nascer na permissão do `umask` e a herdar o `0644` do original | 2 | ✅ provada |
+| `config-phz-troca-escreve-aberto-e-herda` | a troca de forma (`--empacotar-config`/`--desempacotar-config`) grava o arquivo novo aberto, herdando o `0644` do original | 1 | ✅ provada |
+| `config-phz-abre-com-os-24-ciclos` | o `config.phz` volta a abrir com o teto de 24 ciclos: um cabecalho hostil custa 2^24 rodadas ja no arranque | 1 | ✅ provada |
+| `config-phz-abre-cabecalho-de-megabytes` | o `config.phz` volta a aceitar cabecalho de megabytes: um arquivo de KiB aloca o que o cabecalho declarar | 1 | ✅ provada |
+| `config-phz-dois-presentes-escolhe-calado` | com `config.json` E `config.phz` presentes, o servidor escolhe um calado e sobe | 1 | ✅ provada |
+| `config-json-claro-vira-phz-sem-pedir` | o servidor que subiu de um `config.json` em claro passa a grava-lo empacotado sem ninguem pedir | 1 | ✅ provada |
+| `config-dica-do-modelo-sobre-arquivo-presente` | o `phxsqld` que nao sobe manda gerar o modelo `> config.json` por cima do arquivo que o erro esta nomeando | 2 | ✅ provada |
+| `config-phz-troca-so-depois-de-validar` | a troca de forma so roda depois de o `Config::ler` aceitar: o `.phz` com um campo torto nao sai para conserto | 1 | ✅ provada |
+| `config-phz-copia-guardada-fica-aberta` | a copia em claro que a migracao guarda leva o `0644` da instalacao, com o token, para sempre | 1 | ✅ provada |
+| `config-phz-migra-o-link` | a migracao de um config que e LINK move so o link e diz que guardou o original | 1 | ✅ provada |
+| `config-phz-aviso-procura-a-copia-pelo-lido` | o aviso de arranque procura a copia em claro por um nome que a migracao nao usou, e cala | 1 | ✅ provada |
+| `gravar-privado-temporario-e-o-proprio-config` | o temporario do `gravar_privado` troca a extensao, e com `--config servidor.tmp` ele e o proprio config | 1 | ✅ provada |
+| `config-phz-desfazer-apaga-a-unica-copia` | o desfazer da troca apaga o arquivo novo mesmo quando o velho sumiu, e diz que o velho «continua valendo» | 1 | ✅ provada |
+| `config-phz-grava-o-texto-cru` | o servidor que subiu de um `config.phz` grava o texto cru dentro dele: o token volta a ler-se num editor | 1 | ✅ provada |
 | `replica-lista-e-pedida-nao-imposta` | replicas_autorizadas vazia libera todos -- e so isso e' pedida, nao imposta | 1 | ✅ provada |
 | `posicao-nao-encolhe-em-silencio` | tabela que nao abre some da soma do diario sem marcar `incompleta` | 1 | ✅ provada |
 | `eleicao-prefere-completa` | `cluster::vencedor` volta a comparar so a posicao numerica, ignorando `incompleta` | 1 | ✅ provada |
@@ -796,7 +851,13 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `spare-nao-atende-ninguem` | o papel Spare deixa de recusar toda operacao que nao esta em OPS_NO_SPARE | 1 | ✅ provada |
 | `read-replica-recusa-escrita` | `ReadReplica` deixa de recusar escrita e para de apontar o primario | 1 | ✅ provada |
 | `pulso-fora-da-lista-e-recusado` | `op_cluster_pulso` deixa de conferir o id contra a lista viva de nos | 1 | ✅ provada |
+| `laco-preso-no-unico-secundario` | chave duplicada num índice único secundário prende o laço do bidirecional para sempre | 3 | ✅ provada |
+| `par-parado-reapresentado-a-cada-rodada` | a tabela parada por conflito volta a ser puxada a cada rodada, e o grito se repete para sempre | 1 | ✅ provada |
+| `dado-pessoal-no-grito-do-conflito` | o grito do conflito de unicidade publica a coluna marcada como dado pessoal | 1 | ✅ provada |
+| `so-o-disco-vem-da-porta-e-nao-de-desligar-depois` | o empilhar volta a abrir pela porta de sempre e desligar a sobreposicao na linha seguinte | 1 | ✅ provada |
+| `slot-de-outro-reg` | o sal deixa de ser por arquivo: o slot cifrado de um `.reg` abre no outro | 2 | ✅ provada |
 | `pulso-sem-prova-de-identidade` | o pulso do cluster aceitando identidade auto-declarada | 3 | ✅ provada |
+| `aperto-de-mao-sem-teto` | a leitura do aperto de mao fora do `Canal`, sem teto nenhum | 1 | ✅ provada |
 | `erro-do-pulso-mapeia-quem-nao-tem-pino` | a recusa da prova do pulso dizendo quais nós ainda não têm pino | 1 | ✅ provada |
 | `pino-cego-sem-a-recusa-do-no-sem-pino` | a forja contra o pino cego entrando pelo nó sem pino | 1 | ✅ provada |
 | `nonce-do-pulso-sem-regua-de-bytes` | o nonce do pulso retido do tamanho que o remetente escolheu | 2 | ✅ provada |
@@ -823,6 +884,7 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `percent-da-web-fatia-texto-por-byte` | o %XX da porta web em pânico com caractere de vários bytes, sem login | 1 | ✅ provada |
 | `mapa-do-cluster-envenenado-vira-vazio` | o mapa de pulsos envenenado devolvido vazio: a eleição trava | 1 | ✅ provada |
 | `lista-do-cluster-envenenada-volta-ao-arranque` | a lista viva de nós envenenada respondida pelo config.json do arranque | 1 | ✅ provada |
+| `smtp-linha-sem-teto` | o cliente SMTP lê a linha do relé com `read_line` cru, sem teto de tamanho | 3 | ✅ provada |
 | `teto-decidido-antes-do-bloqueio` | o teto da linha é decidido antes de a leitura bloquear, e o usuário excluído enquanto esperava manda 1 MiB | 2 | ✅ provada |
 | `teto-decidido-sem-refrescar-a-ficha` | o teto é perguntado na hora certa, mas com a ficha da sessão que nunca se refrescou | 1 | ✅ provada |
 | `teto-refrescado-antes-do-bloqueio` | a ficha é refrescada antes de a leitura bloquear, e o excluído enquanto esperava continua com 128 MiB | 2 | ✅ provada |
@@ -830,7 +892,6 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `hexadecimal-ecoa-o-valor` | o erro do hexadecimal inválido devolve o valor recebido inteiro | 1 | ✅ provada |
 | `citar-sem-teto` | a citação do valor recebido numa mensagem de erro perde o teto, e os irmãos voltam a ecoar | 3 | ✅ provada |
 | `json-recebido-ecoa-o-valor` | a recusa de tipo do `inserir` devolve o JSON recebido inteiro, pelo fio e pelo `acessos.log` | 1 | ✅ provada |
-| `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 | `phxzip-bomba-do-lzma2` | o pedaço de LZMA2 que anuncia 2 MiB é decodificado inteiro antes de se saber que não cabe no teto | 1 | ✅ provada |
 | `phxzip-distancia-antes-da-janela` | a distância de um casamento LZMA lida do arquivo sem conferir contra o que já saiu | 1 | ✅ provada |
 | `phxzip-zip-slip` | entrada com `..` no nome extraída fora da pasta de destino (zip-slip) | 1 | ✅ provada |
@@ -865,57 +926,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `phxzip-contagem-sem-teto` | a contagem de entradas do cabeçalho comprimido dimensiona vetores pelo que o arquivo declara | 1 | ✅ provada |
 | `phxzip-cabecalho-plano-sem-teto` | o cabeçalho gravado em claro é analisado inteiro mesmo acima de `Limites::cabecalho` | 1 | ✅ provada |
 | `phxzip-nome-repetido-na-leitura` | duas entradas com o mesmo nome: o extrator grava a segunda por cima da primeira, calado | 1 | ✅ provada |
-| `alter-com-regra-sem-aviso` | `acrescentar_coluna` com `check` ou `calculada` numa tabela com linha é aceito SEM AVISO, e a linha velha fica fora da regra | 1 | ✅ provada |
-| `aperto-de-mao-sem-teto` | a leitura do aperto de mao fora do `Canal`, sem teto nenhum | 1 | ✅ provada |
-| `check-que-se-contradiz-no-alter` | `acrescentar_coluna` aceita um `padrao` que viola o `check` declarado no MESMO comando, e todo `atualizar` da linha velha passa a recusar | 1 | ✅ provada |
-| `comando-invalido-vira-texto-cru` | o SQL que o léxico recusa volta inteiro para o log, com a senha dentro | 1 | ✅ provada |
-| `config-json-escreve-aberto-e-herda` | o `config.json` volta a nascer na permissão do `umask` e a herdar o `0644` do original | 1 | ✅ provada |
-| `dado-pessoal-no-grito-do-conflito` | o grito do conflito de unicidade publica a coluna marcada como dado pessoal | 1 | ✅ provada |
-| `debug-da-cifra-mostra-a-senha` | o `Debug` da cifra imprime a senha: um `dbg!` apressado a joga no log | 1 | ✅ provada |
-| `derivado-sem-portao` | o portão some do irmão `executar_derivado`: o SQL inteiro vira a porta dos fundos | 8 | ✅ provada |
-| `diario-das-diretivas-guarda-o-segredo-anterior` | o diário das diretivas grava o valor ANTERIOR do campo sigiloso em claro | 1 | ✅ provada |
-| `diferencas-sem-portao` | `diferencas` sem conferência própria: a tabela negada entra em `a` ou em `b` | 1 | ✅ provada |
-| `direcao-do-indice-sem-saida` | a recusa por direção do índice explica bem por que não dá, e não diz o que fazer | 1 | ✅ provada |
-| `especificacao-openapi-leva-o-token` | a especificação OpenAPI, servida sem portão, passa a carregar o token da porta | 1 | ✅ provada |
-| `ficha-do-usuario-devolve-o-hash` | a ficha do usuário passa a devolver o `senha_hash` junto | 2 | ✅ provada |
-| `fio-cifrado-manda-o-claro-junto` | o fio cifrado manda a linha em claro junto do registro selado | 1 | ✅ provada |
-| `hmac-com-a-chave-longa-truncada` | HMAC com a chave maior que o bloco TRUNCADA em vez de pré-hasheada | 2 | ✅ provada |
-| `job-recusa-um-nome-e-grava-os-outros` | a guarda do job volta a recusar só `token`: `senha`/`token_remoto` vão para o `jobs.json` e voltam na ficha | 1 | ✅ provada |
-| `juntar-sem-portao` | `juntar` sem conferência própria: a tabela negada entra como lado B | 1 | ✅ provada |
-| `laco-preso-no-unico-secundario` | chave duplicada num índice único secundário prende o laço do bidirecional para sempre | 3 | ✅ provada |
-| `linha-vazia-na-conferencia-de-filhas` | a linha descida para a conferencia de filhas vai vazia, e toda mae parece sem filha | 3 | ✅ provada |
-| `par-parado-reapresentado-a-cada-rodada` | a tabela parada por conflito volta a ser puxada a cada rodada, e o grito se repete para sempre | 1 | ✅ provada |
-| `pbkdf2-com-o-contador-de-bloco-parado` | PBKDF2 com o contador de bloco parado: saída longa repete o primeiro bloco | 1 | ✅ provada |
-| `pbkdf2-sem-o-xor-acumulado` | PBKDF2 sem o XOR acumulado: vira HMAC aplicado N vezes | 2 | ✅ provada |
-| `perfil-decide-so-pela-lista-e-nao-pelo-reg-cifrado` | o perfil.txt decide pela lista do config e a cifra acontece pela marca de coluna | 2 | ✅ provada |
-| `perfil-grava-o-erro-que-cita-o-valor` | o perfil.txt tapa o pedido e grava o erro, que cita o valor da coluna marcada | 1 | ✅ provada |
-| `profiler-ligado-sem-a-raiz-dos-dados` | o Profiler liga sem a raiz de dados e volta a decidir por um campo só | 1 | ✅ provada |
-| `profiler-sem-a-senha-dentro-do-sql` | o Profiler perde a senha que está DENTRO da frase SQL, e não num campo | 1 | ✅ provada |
-| `receita-odbc-devolve-a-senha` | a connection string mascarada do ODBC devolve a senha inteira | 1 | ✅ provada |
-| `saida-do-direito-por-coluna` | a recusa do direito por coluna manda «peça as colunas por varrer» também para o `agrupar` e para o `backup` | 1 | ✅ provada |
-| `senha-em-claro-no-cadastro` | a senha entra no config.json em texto puro: o `cifrar` sai do caminho de gravação | 2 | ✅ provada |
-| `senha-velha-fica-no-arquivo` | trocar a senha não leva junto a que estava em texto puro no arquivo | 1 | ✅ provada |
-| `sha256-com-o-tamanho-em-little-endian` | SHA-256 com o tamanho da mensagem, no padding, em little-endian | 4 | ✅ provada |
-| `sha256-sem-somar-o-estado` | SHA-256 sem a realimentação do estado: a compressão vira permutação reversível | 4 | ✅ provada |
-| `slot-de-outro-reg` | o sal deixa de ser por arquivo: o slot cifrado de um `.reg` abre no outro | 2 | ✅ provada |
-| `smtp-linha-sem-teto` | o cliente SMTP lê a linha do relé com `read_line` cru, sem teto de tamanho | 3 | ✅ provada |
-| `so-o-disco-vem-da-porta-e-nao-de-desligar-depois` | o empilhar volta a abrir pela porta de sempre e desligar a sobreposicao na linha seguinte | 1 | ✅ provada |
-| `teto-de-64-bits-satura` | número cru fora da faixa do `Int8` é GRAVADO saturado, e `1e21`, `1e30` e `1e300` viram todos o mesmo número | 2 | ✅ provada |
-| `teto-do-fio-sem-a-constante` | o `Canal::ler` de producao troca `TETO_DO_REGISTRO` por um teto quase infinito | 1 | ✅ provada |
-| `teto-do-fio-sem-a-constante-no-soquete` | a mesma troca da constante por um teto quase infinito, vista pela rede | 1 | ✅ provada |
-| `token-do-rest-entra-pela-tela` | o token da porta REST passa a se gravar pela tela de configuração | 1 | ✅ provada |
-| `token-remoto-fora-da-lista-de-segredos` | o `token_remoto` sai da lista de segredos: o token do OUTRO servidor vai em claro para o `perfil.txt` e para a op `profiler` | 4 | ✅ provada |
-| `trilha-sem-o-nome-de-segredo` | a trilha LGPD deixa de olhar o NOME da coluna e só analisa o valor | 1 | ✅ provada |
-| `trilha-so-olha-o-nome-da-coluna` | a trilha LGPD deixa de ANALISAR o valor e só confia no nome da coluna | 1 | ✅ provada |
-| `unir-sem-portao` | `unir` sem conferência própria: a tabela negada entra na LISTA | 1 | ✅ provada |
-| `upsert-parcial-vira-mescla` | o upsert sem o campo `atualizar` passa a MESCLAR, e a sincronia do DbLink perde a única forma de gravar NULO num destino | 1 | ✅ provada |
-| `varredura-sem-o-elo` | a varredura barata do diretorio perde a tabela alcancada por elo | 1 | ✅ provada |
-| `debug-da-ligacao-mostra-a-senha` | o `Debug` da ligação de DbLink imprime a senha e o token do outro banco | 1 | ✅ provada |
-| `ffi-punho-morto-lido-antes-de-conferir` | a fronteira volta a ler a etiqueta de DENTRO do punho antes de saber se ele ainda existe | 1 | ✅ provada |
-| `debug-do-segredo-mostra-o-valor` | o `Debug` do tipo `Segredo` imprime o valor: todo dono que o chamar vaza | 1 | ✅ provada |
-| `teto-da-linha-sem-a-constante-no-soquete` | o `teto_da_linha` do servidor troca `TETO_DO_REGISTRO` por um teto quase infinito, visto pela rede | 1 | ✅ provada |
+| `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**273 guardas: 1 aposentada, 268 provadas, 4 redundantes** — 6390 s de mutação, medido em 2026-09-16 15:25.
+**286 guardas: 1 aposentada, 281 provadas, 4 redundantes** — 6934 s de mutação, medido em 2026-09-16 15:25.
 
 As guardas que esta corrida ainda cita, hoje aposentadas:
 

@@ -2706,6 +2706,25 @@ fn gravar_chave(caminho: &Path, chave: &[u8; 32]) -> std::io::Result<()> {
     arq.sync_all()
 }
 
+/// O temporario de [`gravar_privado`]: o nome INTEIRO mais `.tmp`.
+///
+/// Era `with_extension("tmp")`, que TROCA a extensao -- e com `--config
+/// servidor.tmp` o temporario era o proprio config: a gravacao comecava
+/// apagando-o (revisao SEC de 24/09/2026, pedido 450). E na troca de forma
+/// era pior: o temporario do `servidor.phz` e o `servidor.tmp` que se estava
+/// migrando. Acrescentar em vez de trocar da um nome sempre mais longo que o
+/// do arquivo, entao nunca e ele; e nunca e o outro do par `.json`/`.phz`,
+/// que termina em `.json` ou `.phz` e nao em `.tmp` acrescentado a um deles.
+/// Uma funcao so, para os testes perguntarem o MESMO nome que se grava.
+pub(crate) fn temporario_de(caminho: &Path) -> PathBuf {
+    let mut nome = caminho
+        .file_name()
+        .map(|n| n.to_os_string())
+        .unwrap_or_default();
+    nome.push(".tmp");
+    caminho.with_file_name(nome)
+}
+
 /// Grava `corpo` em `caminho` de forma atomica e 0600 desde o primeiro byte.
 ///
 /// # Os tres irmaos que faziam o contrario
@@ -2724,7 +2743,7 @@ fn gravar_chave(caminho: &Path, chave: &[u8; 32]) -> std::io::Result<()> {
 /// so a ausencia dele e engolida, porque ausencia e o caso normal.
 pub(crate) fn gravar_privado(caminho: &Path, corpo: &[u8]) -> std::io::Result<()> {
     use std::io::Write as _;
-    let temporario = caminho.with_extension("tmp");
+    let temporario = temporario_de(caminho);
     match std::fs::remove_file(&temporario) {
         Ok(()) => {}
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -4313,12 +4332,18 @@ impl Default for Config {
 }
 
 impl Config {
-    /// Le o `config.json` do caminho informado.
+    /// Le o `config.json` do caminho informado -- ou o `config.phz` ao lado
+    /// dele (pedido 450).
+    ///
+    /// O caminho PEDIDO nao e necessariamente o lido: do par claro/`.phz`,
+    /// vale o que existe, e os dois presentes recusam o arranque (a regra em
+    /// [`crate::config_phz`]). O `caminho` guardado no `Config` e o do arquivo
+    /// LIDO, e e por ele que as gravacoes decidem a forma: quem subiu de `.phz`
+    /// grava `.phz`, quem subiu em claro grava em claro.
     pub fn ler(caminho: impl AsRef<Path>) -> Result<Config> {
-        let caminho = caminho.as_ref();
-        let texto = std::fs::read_to_string(caminho).map_err(|e| {
-            PhxError::NaoEncontrado(format!("nao consegui ler {}: {e}", caminho.display()))
-        })?;
+        let lido = crate::config_phz::resolver(caminho.as_ref())?;
+        let caminho = lido.as_path();
+        let texto = crate::config_phz::ler_texto(caminho)?;
         let json = Json::analisar(&texto)?;
         let mut c = Config::de_json(&json)?;
         c.caminho = Some(caminho.to_path_buf());
@@ -5556,7 +5581,7 @@ pub fn valor_em(j: &Json, campo: &str) -> Option<Json> {
 ///
 /// Com este mapa a tela mostra o que esta no arquivo e avisa o que ainda vale.
 pub fn divergencias_do_arquivo(caminho: &Path, vivo: &Json) -> Vec<(String, Json)> {
-    let Ok(texto) = std::fs::read_to_string(caminho) else {
+    let Ok(texto) = crate::config_phz::ler_texto(caminho) else {
         return Vec::new();
     };
     let Ok(arquivo) = Json::analisar(&texto) else {
@@ -5643,9 +5668,7 @@ impl Config {
     /// cinto que confere o texto contra a arvore). Entao ha UM escritor, e
     /// dois porteiros na frente dele.
     fn gravar_arvore(caminho: &Path, mudancas: &[(String, Json)]) -> Result<Config> {
-        let texto = std::fs::read_to_string(caminho).map_err(|e| {
-            PhxError::NaoEncontrado(format!("nao consegui ler {}: {e}", caminho.display()))
-        })?;
+        let texto = crate::config_phz::ler_texto(caminho)?;
         let mut arvore = Json::analisar(&texto)?;
         for (campo, valor) in mudancas {
             match campo.split_once('.') {
@@ -5694,9 +5717,7 @@ impl Config {
         secao: &str,
         mexer: impl FnOnce(&mut Json) -> Result<()>,
     ) -> Result<Config> {
-        let texto = std::fs::read_to_string(caminho).map_err(|e| {
-            PhxError::NaoEncontrado(format!("nao consegui ler {}: {e}", caminho.display()))
-        })?;
+        let texto = crate::config_phz::ler_texto(caminho)?;
         let mut arvore = Json::analisar(&texto)?;
         mexer(&mut arvore)?;
         gravar_a_arvore(caminho, &texto, arvore, &[vec![secao.to_string()]])
@@ -5766,9 +5787,7 @@ impl Config {
             ));
         }
 
-        let texto = std::fs::read_to_string(caminho).map_err(|e| {
-            PhxError::NaoEncontrado(format!("nao consegui ler {}: {e}", caminho.display()))
-        })?;
+        let texto = crate::config_phz::ler_texto(caminho)?;
         let mut arvore = Json::analisar(&texto)?;
         let seguranca = match arvore.campo("seguranca") {
             None => Json::Objeto(Vec::new()),
@@ -5906,9 +5925,10 @@ fn gravar_a_arvore(
     // O arquivo carrega o token e os hashes: nasce 0600 desde o primeiro
     // byte e entra por troca atomica -- o mesmo molde da chave do fio e do
     // cadastro do DbLink, num lugar so. Ele NAO herda mais a permissao do
-    // original: um `0644` de instalacao virava `0644` para sempre.
-    gravar_privado(caminho, corpo.as_bytes())
-        .map_err(|e| PhxError::Esquema(format!("nao gravei {}: {e}", caminho.display())))?;
+    // original: um `0644` de instalacao virava `0644` para sempre. A FORMA
+    // (claro ou `.phz`, pedido 450) sai da extensao do arquivo que o servidor
+    // leu, e se decide no mesmo motor que o le.
+    crate::config_phz::gravar_texto(caminho, &corpo)?;
     Ok(novo)
 }
 
@@ -9178,7 +9198,7 @@ mod testes_gravacao {
             "o config.json continuou legivel por outros: {depois:o}"
         );
         assert!(
-            !caminho.with_extension("tmp").exists(),
+            !temporario_de(&caminho).exists(),
             "o temporario ficou para tras"
         );
     }
@@ -9198,7 +9218,7 @@ mod testes_gravacao {
         assert_eq!(modo(&caminho), 0o600);
         assert_eq!(std::fs::read_to_string(&caminho).unwrap(), "{\"a\":1}");
 
-        let tmp = caminho.with_extension("tmp");
+        let tmp = temporario_de(&caminho);
         std::fs::write(&tmp, "lixo de uma gravacao interrompida").unwrap();
         std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o644)).unwrap();
         gravar_privado(&caminho, b"{\"a\":2}").unwrap();

@@ -5644,7 +5644,7 @@ impl Servidor {
         // arranque para os campos que so valem no proximo. O diario tem de
         // dizer de que valor se saiu, e o arquivo e quem sabe.
         let antes: Vec<Json> = {
-            let arvore = std::fs::read_to_string(&caminho)
+            let arvore = crate::config_phz::ler_texto(&caminho)
                 .ok()
                 .and_then(|t| Json::analisar(&t).ok());
             mudancas

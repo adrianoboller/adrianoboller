@@ -752,7 +752,7 @@ mod testes {
             "o jobs.json nasceu legivel por outros: {modo:o}"
         );
         assert!(
-            !caminho.with_extension("tmp").exists(),
+            !crate::config::temporario_de(&caminho).exists(),
             "o temporario ficou para tras"
         );
     }
