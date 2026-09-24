@@ -456,3 +456,131 @@ fn dentro_do_tunel_o_pedido_de_compressao_e_ignorado() {
     assert!(dentro.contains("Blumenau"), "o conteudo sumiu: {dentro}");
     let _ = std::fs::remove_dir_all(&base);
 }
+
+// ---------------------------------------------------------------------------
+// Pelo SQL: um SELECT grande, comprimido no fio (pedido do dono, 24/09/2026)
+// ---------------------------------------------------------------------------
+
+/// Linhas do SELECT grande: dez lotes de [`LINHAS`].
+const LINHAS_SQL: usize = 50_000;
+
+/// O mesmo `varrer` provado acima, agora pelo caminho que o cliente usa de
+/// verdade: `op: sql` com um `SELECT` de 50.000 linhas. Prova quatro coisas
+/// numa corrida so -- a resposta comprimida volta IDENTICA byte a byte a sem
+/// compressao, encolhe de fato, as linhas chegam todas, e o tempo das duas
+/// fica impresso (medido, nao citado).
+#[test]
+fn select_grande_pelo_sql_volta_comprimido_e_identico() {
+    let base = pasta("sql-grande");
+    let porta = porta_livre();
+    let mut c = Config {
+        bind: format!("127.0.0.1:{porta}"),
+        base: base.to_path_buf(),
+        log_acessos: base.join("acessos.log"),
+        blacklist: base.join("blacklist.json"),
+        dblink: base.join("dblink.json"),
+        jobs: base.join("jobs.json"),
+        token: TOKEN.into(),
+        caminho: Some(base.join("config.json")),
+        max_linhas: (LINHAS_SQL as u64) * 2,
+        ..Default::default()
+    };
+    c.cifra_fio.exigir = false;
+    c.web.ligado = false;
+    let _s = no_ar(Servidor::novo(c).unwrap(), porta);
+    let mut conexao = Conexao::abrir(porta);
+    conexao
+        .escrita
+        .set_read_timeout(Some(Duration::from_secs(60)))
+        .unwrap();
+    let r = conexao.pedir(&format!(
+        r#"{{"token":"{TOKEN}","op":"criar_database","database":"vendas"}}"#
+    ));
+    assert!(r.contains("\"ok\":true"), "{r}");
+    let r = conexao.pedir(&format!(
+        r#"{{"token":"{TOKEN}","op":"criar_tabela","database":"vendas","tabela":"pedido","colunas":[{{"nome":"id","tipo":"Int8"}},{{"nome":"cliente","tipo":"Str(60)"}},{{"nome":"cidade","tipo":"Str(40)"}},{{"nome":"valor","tipo":"Int8"}}]}}"#
+    ));
+    assert!(r.contains("\"ok\":true"), "{r}");
+    let cidades = [
+        "Blumenau",
+        "Joinville",
+        "Curitiba",
+        "Porto Alegre",
+        "São Paulo",
+    ];
+    for lote in 0..(LINHAS_SQL / LINHAS) {
+        let linhas: Vec<String> = (1..=LINHAS)
+            .map(|i| {
+                let id = lote * LINHAS + i;
+                format!(
+                    r#"{{"id":{id},"cliente":"Cliente {id}","cidade":"{}","valor":{}}}"#,
+                    cidades[id % cidades.len()],
+                    (id * 37) % 10_000
+                )
+            })
+            .collect();
+        let r = conexao.pedir(&format!(
+            r#"{{"token":"{TOKEN}","op":"inserir_lote","database":"vendas","tabela":"pedido","linhas":[{}]}}"#,
+            linhas.join(",")
+        ));
+        assert!(r.contains("\"ok\":true"), "inserir_lote {lote}: {r}");
+    }
+    let sql = |comprimir: bool| {
+        format!(
+            r#"{{"token":"{TOKEN}","op":"sql","database":"vendas","texto":"SELECT id, cliente, cidade, valor FROM pedido"{}}}"#,
+            if comprimir {
+                r#","aceita_compressao":true"#
+            } else {
+                ""
+            }
+        )
+    };
+    let t = Instant::now();
+    let sem = conexao.pedir(&sql(false));
+    let t_sem = t.elapsed();
+    let t = Instant::now();
+    let com = conexao.pedir(&sql(true));
+    let t_com = t.elapsed();
+
+    assert!(!sem.contains("\"cz\""), "quem nao pediu recebeu comprimido");
+    assert!(
+        com.starts_with("{\"cz\":"),
+        "quem pediu nao recebeu comprimido: {}",
+        &com[..80.min(com.len())]
+    );
+    let aberto = descomprimir(&com);
+    // O `"ms"` do fim e o tempo DE CADA execucao (medido: 295 numa, 333 na
+    // outra) -- a unica coisa que muda entre as duas; o resto tem de bater
+    // byte a byte.
+    let sem_ms = |t: &str| t[..t.rfind(",\"ms\":").unwrap_or(t.len())].to_string();
+    assert_eq!(
+        sem_ms(&aberto),
+        sem_ms(&sem),
+        "a resposta comprimida nao reconstroi a mesma"
+    );
+    let j = Json::analisar(&aberto).unwrap();
+    assert!(
+        j.booleano_ou("ok", false),
+        "o SELECT falhou: {}",
+        &aberto[..200.min(aberto.len())]
+    );
+    let n = aberto.matches("\"Cliente ").count();
+    assert_eq!(n, LINHAS_SQL, "vieram {n} linhas");
+    let razao = sem.len() as f64 / com.len() as f64;
+    eprintln!(
+        "SELECT de {LINHAS_SQL} linhas: {} bytes sem, {} bytes com compressao ({razao:.2}x, {:.1}% menor); \
+         tempo {:.0} ms sem, {:.0} ms com",
+        sem.len(),
+        com.len(),
+        100.0 * (1.0 - com.len() as f64 / sem.len() as f64),
+        t_sem.as_secs_f64() * 1e3,
+        t_com.as_secs_f64() * 1e3
+    );
+    // Guarda pelo que o pedido 226 mediu com o DEFLATE desta casa (5,66x no
+    // varrer); com o envelope Base64, abaixo de 3x algo quebrou.
+    assert!(razao > 3.0, "comprimiu so {razao:.2}x");
+    if let Ok(pasta_saida) = std::env::var("PHXSQL_SALVAR_CZ") {
+        std::fs::write(format!("{pasta_saida}/select-sem.json"), &sem).unwrap();
+        std::fs::write(format!("{pasta_saida}/select-com.json"), &com).unwrap();
+    }
+}

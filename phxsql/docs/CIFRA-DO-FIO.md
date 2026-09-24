@@ -1051,3 +1051,31 @@ junto, com o nome antigo escrito no comentário: teste que muda de significado e
 fica com o nome de ontem mente para quem lê a lista. E os que **não** mudaram
 de significado são os do escape escrito — eles ficam iguais dos dois lados da
 virada, que é o que faz a virada ter um lado de fora.
+
+### 10.1 Pelo SQL, com um retorno grande (24/09/2026)
+
+Pedido do dono: comprimir, pelo SQL, um retorno grande. O teste
+`compressao-do-fio.rs::select_grande_pelo_sql_volta_comprimido_e_identico`
+faz, pelo soquete, `op: sql` com `SELECT id, cliente, cidade, valor FROM
+pedido` sobre **50.000 linhas**:
+
+| | Bytes no fio | Tempo (loopback, release) |
+|---|---|---|
+| sem `aceita_compressao` | 3.642.869 | 380 ms |
+| com `aceita_compressao` | **816.490** (4,46×, 77,6% menor) | 481 ms |
+| referência: `zlib` nível 6 + Base64 | 570.244 (6,4×) | — |
+
+- **Reconstrução idêntica**, com uma exceção: o `"ms"` do fim, que é o tempo
+  de cada execução (295 e 333 ms na primeira corrida). O teste o recorta e
+  compara o resto byte a byte.
+- **Leitor de fora:** o `zlib` do Python (`decompress(..., -15)`) abre o
+  envelope e dá o mesmo conteúdo.
+- **RED:** com o servidor ignorando o pedido, o teste reprova.
+- **No loopback comprimir custa ~100 ms**, porque ali não há rede a
+  economizar. Numa rede de 100 Mbit/s, os 2,8 MB a menos valem ~0,22 s: o
+  ganho é de quem está longe.
+- **A distância para o `zlib`** (816 KB contra 570 KB) é o Huffman fixo, já
+  anotado no `zip.rs`.
+- Pelo caminho, um aviso para quem for repetir: `ORDER BY id` sem índice na
+  coluna é recusado (`SP000018`). Aqui ele não é necessário, porque o `.reg`
+  devolve na ordem de digitação.
