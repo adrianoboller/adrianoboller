@@ -1168,6 +1168,14 @@
       "quando": "2026-09-16 15:25"
     },
     {
+      "id": "cifra-reserializa-a-senha",
+      "titulo": "o `para_json` da cifra devolve a senha de verdade em vez de «(oculta)»",
+      "veredito": "PROVADA",
+      "segundos": 48.51,
+      "notas": [],
+      "quando": "2026-09-24 01:24"
+    },
+    {
       "id": "cluster-devolve-a-credencial-na-tela",
       "titulo": "o resumo do cluster na op `config` leva o token entre nós e o hash do replicador",
       "veredito": "PROVADA",
@@ -1182,6 +1190,14 @@
       "segundos": 1.35,
       "notas": [],
       "quando": "2026-09-18 14:32"
+    },
+    {
+      "id": "cifra-do-fio-reserializa-a-privada",
+      "titulo": "o `para_json` da cifra do fio devolve a chave privada em vez de «(oculta)»",
+      "veredito": "PROVADA",
+      "segundos": 48.63,
+      "notas": [],
+      "quando": "2026-09-24 01:24"
     },
     {
       "id": "replica-lista-e-pedida-nao-imposta",

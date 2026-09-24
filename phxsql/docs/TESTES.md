@@ -785,8 +785,10 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `relogio-ao-alcance-do-teste` | o estado do gerador de v7 fica ao alcance de um teste, que o escreve para trás | 1 | ✅ provada |
 | `upsert-gatilho-do-ramo` | no upsert que atualiza, o BEFORE UPDATE vê a linha mesclada e o AFTER é o do ramo que ele virou | 5 | ✅ provada |
 | `threads-do-so-pela-diferenca` | a prova de que o SO viu a thread subida é a diferença entre duas leituras do total do processo | 1 | ✅ provada |
+| `cifra-reserializa-a-senha` | o `para_json` da cifra devolve a senha de verdade em vez de «(oculta)» | 2 | ✅ provada |
 | `cluster-devolve-a-credencial-na-tela` | o resumo do cluster na op `config` leva o token entre nós e o hash do replicador | 2 | ✅ provada |
 | `cifra-do-odbc-volta-a-nascer-em-claro` | a receita do driver ODBC volta a nascer em claro, e o esquecimento vira o padrao | 5 | ✅ provada |
+| `cifra-do-fio-reserializa-a-privada` | o `para_json` da cifra do fio devolve a chave privada em vez de «(oculta)» | 1 | ✅ provada |
 | `replica-lista-e-pedida-nao-imposta` | replicas_autorizadas vazia libera todos -- e so isso e' pedida, nao imposta | 1 | ✅ provada |
 | `posicao-nao-encolhe-em-silencio` | tabela que nao abre some da soma do diario sem marcar `incompleta` | 1 | ✅ provada |
 | `eleicao-prefere-completa` | `cluster::vencedor` volta a comparar so a posicao numerica, ignorando `incompleta` | 1 | ✅ provada |
@@ -817,9 +819,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `commit-meio-sem-dizer-o-que-ficou` | a chave que falha no meio da passada vira COMMITTED sem a escrita que falhou | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**175 das 221 guardas do catálogo: 1 aposentada, 169 provadas, 1 quebrada, 4 redundantes** — 4400 s de mutação, medido em 2026-09-16 15:25.
+**177 das 221 guardas do catálogo: 1 aposentada, 171 provadas, 1 quebrada, 4 redundantes** — 4497 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 47 das 221 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 47 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 45 das 221 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 45 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `teto-do-fio-sem-a-constante` — o `Canal::ler` de producao troca `TETO_DO_REGISTRO` por um teto quase infinito
 - `teto-do-fio-sem-a-constante-no-soquete` — a mesma troca da constante por um teto quase infinito, vista pela rede
@@ -846,7 +848,6 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `ficha-do-usuario-devolve-o-hash` — a ficha do usuário passa a devolver o `senha_hash` junto
 - `senha-em-claro-no-cadastro` — a senha entra no config.json em texto puro: o `cifrar` sai do caminho de gravação
 - `senha-velha-fica-no-arquivo` — trocar a senha não leva junto a que estava em texto puro no arquivo
-- `cifra-reserializa-a-senha` — o `para_json` da cifra devolve a senha de verdade em vez de «(oculta)»
 - `debug-da-cifra-mostra-a-senha` — o `Debug` da cifra imprime a senha: um `dbg!` apressado a joga no log
 - `profiler-sem-a-senha-dentro-do-sql` — o Profiler perde a senha que está DENTRO da frase SQL, e não num campo
 - `comando-invalido-vira-texto-cru` — o SQL que o léxico recusa volta inteiro para o log, com a senha dentro
@@ -857,7 +858,6 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `diario-das-diretivas-guarda-o-segredo-anterior` — o diário das diretivas grava o valor ANTERIOR do campo sigiloso em claro
 - `token-do-rest-entra-pela-tela` — o token da porta REST passa a se gravar pela tela de configuração
 - `receita-odbc-devolve-a-senha` — a connection string mascarada do ODBC devolve a senha inteira
-- `cifra-do-fio-reserializa-a-privada` — o `para_json` da cifra do fio devolve a chave privada em vez de «(oculta)»
 - `especificacao-openapi-leva-o-token` — a especificação OpenAPI, servida sem portão, passa a carregar o token da porta
 - `token-remoto-fora-da-lista-de-segredos` — o `token_remoto` sai da lista de segredos: o token do OUTRO servidor vai em claro para o `perfil.txt` e para a op `profiler`
 - `job-recusa-um-nome-e-grava-os-outros` — a guarda do job volta a recusar só `token`: `senha`/`token_remoto` vão para o `jobs.json` e voltam na ficha
