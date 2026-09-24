@@ -1263,6 +1263,7 @@ QA, com julgamento de pergunta, e a redação do H.
 | SEC — revisão da crate PhxZip | forte | leitura adversária de parser de arquivo hostil e de derivação de chave |
 | 471 — PhxZip abrindo arquivo hostil | forte | negação de serviço por CPU e memória em entrada não confiável |
 | H — página dos testes com as provas | leve | gerador conferível contra os arquivos; nada decide, só mostra |
+| G — 477, a régua do `Debug` enxerga o `Segredo` | leve | crivo em Python que se prova rodando; o integrador repôs os dois defeitos e conferiu a régua velha em 0 |
 
 **A integração achou o que nenhuma frente via, de novo por território de
 arquivo não bastar em worktree compartilhado**: `cargo fmt --all` de uma

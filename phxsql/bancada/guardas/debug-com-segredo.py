@@ -31,7 +31,9 @@ Esta e a regua; a guarda passa a ser o exemplo dela.
    nega o segredo (`NEGA_NO_NOME`: `senha_env` e o nome da variavel de
    ambiente; `chave_publica` e publica);
 2. o TIPO e portador de valor (`String`, `Vec<u8>`, `[u8; N]`, `Option<String>`
-   e os envoltorios obvios -- `portador()`), o que mata `usa_senha: bool`;
+   e os envoltorios obvios -- `portador()`), o que mata `usa_senha: bool` -- e
+   um tipo TAMBEM e portador quando o `impl Debug` de QUEM O USA o redige
+   (nunca por nome cravado: `Segredo` entra assim, pedido 477);
 3. o valor E MESMO segredo -- e isso so se decide LENDO o campo. `Botao.chave`
    e um seletor de CSS; `chave_do_fio` e a chave PUBLICA do pino. Nenhum
    casador de texto decide isso, entao os falsos positivos ficam DECLARADOS em
@@ -42,6 +44,40 @@ O que passa pelas tres CONTA quando a struct deriva `Debug` -- ou quando o
 `impl Debug` escrito a mao LE o campo (`.field("senha", &self.senha)`), que e
 o mesmo defeito por outro caminho: e literalmente a troca da guarda
 `debug-da-cifra-mostra-a-senha`. A regua enxerga os dois.
+
+# Tipos portadores descobertos, nao cravados (pedido 477)
+
+`Segredo` (`config.rs`) tem um campo (`valor: String`) que NAO casa o lexico --
+a parte 1 nunca o alcancaria pelo NOME dele. O que prova que `Segredo` E
+portador nao e o proprio tipo -- e QUEM O USA: `Cifra.senha`, `Email.senha`,
+`CifraFio.chave_privada`, `Definicao.senha`/`token` e `CifraDoDblink.segredo`
+sao campos cujo NOME casa o lexico, e o `impl Debug` a mao de cada DONO redige
+esse campo (literal ou `campo: _`, nunca o le cru) -- prova, de FORA, que o
+TIPO do campo carrega o segredo sozinho. `tipos_portadores_descobertos()`
+varre essa prova pelos `impl ... Debug for X` manuais e devolve o CONJUNTO de
+nomes; nenhum e digitado, e o `Segredo` entra por ela e nao por nome cravado.
+
+Um tipo descoberto entra em DOIS lugares do crivo:
+
+* como TIPO, em `portador()` -- um campo `outro: Segredo` (ou `Option<Segredo>`)
+  conta pela parte 2 como qualquer `String`, MESMO que o nome do campo nao
+  case o lexico: a struct que o contem DERIVANDO `Debug` ja e vazamento,
+  porque o derivado chamaria o `Debug` do `Segredo` -- que pode nem proteger
+  mais;
+* como DONO, nos CAMPOS do proprio tipo descoberto -- `Segredo.valor` passa a
+  contar mesmo o nome "valor" nao casando o lexico, porque a estrutura
+  INTEIRA so existe para carregar o segredo (e o proprio tipo DERIVAR
+  `Debug`, ou seu `impl` a mao passar a LER o campo cru, conta do mesmo jeito
+  -- e o defeito da guarda `debug-do-segredo-mostra-o-valor`).
+
+E a leitura, para um campo de TIPO descoberto, nao e a mesma regra da parte 3:
+passar o valor INTEIRO adiante (`.field("segredo", segredo)`, em
+`CifraDoDblink`) e SEGURO, porque quem imprime dali e o `Debug` PROPRIO do
+tipo -- a mesma camada que protege em toda parte. O que vaza e ir ALEM do
+valor bruto: um `.` logo depois do identificador (`self.senha.valor()`,
+literalmente a troca de `debug-da-cifra-mostra-a-senha`) -- `le_o_valor_do_campo()`
+so acusa isso. Sem essa distincao, `CifraDoDblink.segredo` seria um falso
+positivo eterno so por passar o `Segredo` adiante.
 
 # O que ela NAO ve, declarado
 
@@ -57,6 +93,16 @@ o mesmo defeito por outro caminho: e literalmente a troca da guarda
 * `crates/*/examples/` e `crates/*/tests/`: fora da regua, de proposito -- nao
   e codigo que sobe com o servidor. Medido em 17/09/2026: zero `derive(Debug)`
   com segredo la tambem.
+* Tipo descoberto por impl alheio PRECISA de pelo menos UM dono que o redija
+  HOJE (literal ou `campo: _`): se toda struct que usa um tipo custom so o
+  PASSA adiante (nunca o substitui nem descarta), a regua nunca aprende que o
+  tipo carrega segredo. E a descoberta e por NOME cravado no `impl`, sem
+  caminho de modulo: duas structs de arquivos diferentes com o mesmo nome
+  contam como o MESMO tipo portador -- inofensivo hoje (o `Segredo` de
+  `phxsql-store/src/cofre.rs`, sem relacao com o do `config.rs`, ja tinha o
+  unico campo portador dele pego pelo NOME), mas e o motivo de a lista viver
+  em `analisar()` e nao virar constante: ela e, na pratica, por nome cravado
+  tambem, so que o nome sai do codigo em vez de ser digitado aqui.
 
 # A catraca
 
@@ -438,12 +484,18 @@ RE_MAPA = re.compile(r"^(HashMap|BTreeMap)\s*<(.*)>$", re.S)
 LISTAS = ("Vec", "VecDeque", "HashSet", "BTreeSet")
 
 
-def portador(tipo, em_lista=False):
-    """Parte 2: o tipo carrega o valor -- texto ou bytes, direto ou envolto."""
+def portador(tipo, em_lista=False, extras=frozenset()):
+    """Parte 2: o tipo carrega o valor -- texto ou bytes, direto ou envolto --
+    ou um TIPO PORTADOR DESCOBERTO (`extras`, pedido 477): um nome como
+    `Segredo` que nao e String nem bytes por ESTRUTURA, mas que algum dono, em
+    outro lugar, provou carregar segredo ao redigi-lo no proprio `impl Debug`
+    (`tipos_portadores_descobertos()`, mais abaixo)."""
     t = RE_CAMINHO_STD.sub("", " ".join(tipo.split())).strip()
     m = RE_REF.match(t)
     if m:
-        return portador(m.group(1), em_lista)
+        return portador(m.group(1), em_lista, extras)
+    if t in extras:
+        return True
     if t in ("String", "str"):
         return True
     if re.match(r"^\[\s*u8\s*[;\]]", t):
@@ -456,14 +508,80 @@ def portador(tipo, em_lista=False):
         dentro = m.group(2).strip().rstrip(",").strip()
         if m.group(1) == "Cow":
             dentro = re.sub(r"^'\w+\s*,\s*", "", dentro)
-        return portador(dentro, em_lista or m.group(1) in LISTAS)
+        return portador(dentro, em_lista or m.group(1) in LISTAS, extras)
     m = RE_MAPA.match(t)
     if m:
         partes = pedacos_no_topo(m.group(2), 0, len(m.group(2)))
         if len(partes) >= 2:
             a, b = partes[1]
-            return portador(m.group(2)[a:b], True)
+            return portador(m.group(2)[a:b], True, extras)
     return False
+
+
+def desembrulhar(tipo, em_lista=False):
+    """O mesmo caminho de `portador()`, mas devolve o NOME de dentro em vez de
+    um booleano -- e o que a descoberta de tipos portadores usa para achar
+    `Segredo` dentro de `Option<Segredo>`, e para saber que `outro: Definicao`
+    NAO e primitivo mas tambem nao interessa (nao aparece redigido em lugar
+    nenhum, entao nunca entra no conjunto)."""
+    t = RE_CAMINHO_STD.sub("", " ".join(tipo.split())).strip()
+    m = RE_REF.match(t)
+    if m:
+        return desembrulhar(m.group(1), em_lista)
+    m = RE_ENVOLTORIO.match(t)
+    if m:
+        dentro = m.group(2).strip().rstrip(",").strip()
+        if m.group(1) == "Cow":
+            dentro = re.sub(r"^'\w+\s*,\s*", "", dentro)
+        return desembrulhar(dentro, em_lista or m.group(1) in LISTAS)
+    m = RE_MAPA.match(t)
+    if m:
+        partes = pedacos_no_topo(m.group(2), 0, len(m.group(2)))
+        if len(partes) >= 2:
+            a, b = partes[1]
+            return desembrulhar(m.group(2)[a:b], True)
+    return t
+
+
+RE_IDENTIFICADOR_SIMPLES = re.compile(r"^[A-Za-z_]\w*$")
+
+
+def eh_tipo_de_base(nome):
+    """Os tipos que `portador()` ja reconhece por ESTRUTURA -- descobrir de
+    novo so acrescentaria ruido ao conjunto (e `String` nunca e um tipo
+    "portador descoberto": e portador direto, sempre foi)."""
+    return nome in ("String", "str", "u8") or bool(re.match(r"^\[\s*u8\s*[;\]]", nome))
+
+
+def tipos_portadores_descobertos(itens):
+    """Descobre tipos portadores pelo `impl Debug` a mao de QUEM OS USA --
+    nunca pelo proprio tipo, e nunca por uma lista digitada (pedido 477).
+
+    Um campo cujo NOME casa o lexico e cujo `impl` a mao NAO o le cru (nem
+    substituido por literal, `.field("senha", &"(oculta)")`, nem descartado
+    com `campo: _`) prova, de FORA, que o TIPO do campo carrega o segredo
+    sozinho -- e essa prova sobrevive a mutacao de UM `impl` isolado, porque
+    normalmente ha mais de um dono (e o que faz `Segredo` continuar descoberto
+    mesmo quando SO o `impl Debug for Segredo` quebra: `Cifra`, `Email`,
+    `CifraFio`, `Definicao` e `CifraDoDblink` continuam provando).
+
+    Devolve (conjunto de nomes, evidencia por nome) -- a evidencia alimenta o
+    `--inventario`, para a lista nunca ficar invisivel."""
+    descobertos, evidencia = set(), {}
+    for it in itens:
+        if it.impl is None:
+            continue
+        for campo, tipo, linha in it.campos:
+            if not nome_de_segredo(campo):
+                continue
+            base = desembrulhar(tipo)
+            if eh_tipo_de_base(base) or not RE_IDENTIFICADOR_SIMPLES.match(base):
+                continue
+            if le_o_campo(it.impl, campo):
+                continue
+            descobertos.add(base)
+            evidencia.setdefault(base, (it.arquivo, linha, it.nome, campo))
+    return descobertos, evidencia
 
 
 def isencao(isentos, item, campo):
@@ -482,12 +600,30 @@ def le_o_campo(corpo, campo):
     return re.search(r"\b%s\b(?!\s*:\s*_)" % re.escape(nome), corpo) is not None
 
 
+def le_o_valor_do_campo(corpo, campo):
+    """A leitura de um campo de TIPO PORTADOR DESCOBERTO (`Segredo`) e outra
+    pergunta: passar o valor INTEIRO adiante e SEGURO, porque quem o imprime
+    dali e o `Debug` PROPRIO do tipo -- a mesma camada que protege em toda
+    parte (`.field("segredo", segredo)`, em `CifraDoDblink`, nao vaza nada).
+    O que fura essa camada e ir ALEM do valor bruto -- um metodo ou campo
+    acessado com `.` logo depois do identificador (`self.senha.valor()`, a
+    troca de `debug-da-cifra-mostra-a-senha`). Sem esta distincao, todo
+    passa-adiante seria um falso positivo."""
+    nome = campo.split("::")[-1]
+    if "." in nome:  # struct de tupla: `self.0.metodo()`
+        alvo = nome.split(".")[1]
+        return re.search(r"\.\s*%s\s*\.\s*[A-Za-z_]" % re.escape(alvo), corpo) is not None
+    return re.search(r"\b%s\b\s*\.\s*[A-Za-z_]" % re.escape(nome), corpo) is not None
+
+
 class Resultado:
     def __init__(self):
         self.vazam = []       # (arquivo, linha, item, campo, tipo, via)
         self.isentos = []     # (arquivo, linha, item, campo, entrada)
         self.sem_saida = []   # (arquivo, linha, item, campo, tipo, porque)
         self.notas = []
+        self.tipos_descobertos = []   # nomes, ordenados
+        self.evidencia_dos_tipos = {}  # nome -> (arquivo, linha, dono, campo)
 
 
 def analisar(arquivos, isentos=ISENTOS):
@@ -509,10 +645,25 @@ def analisar(arquivos, isentos=ISENTOS):
             continue
         donos[0].impl = corpo
 
+    descobertos, evidencia = tipos_portadores_descobertos(itens)
+    r.tipos_descobertos = sorted(descobertos)
+    r.evidencia_dos_tipos = evidencia
+
     usadas = {}
     for it in itens:
+        dono_e_portador = it.nome in descobertos
         for campo, tipo, linha in it.campos:
-            if not nome_de_segredo(campo) or not portador(tipo):
+            if not portador(tipo, extras=descobertos):
+                continue
+            # o NOME do campo casa o lexico (parte 1 de sempre), OU o DONO
+            # e ele proprio um tipo portador descoberto (`Segredo.valor` conta
+            # mesmo `valor` nao casando nada, porque a struct INTEIRA so
+            # existe para carregar o segredo), OU o TIPO do campo e um tipo
+            # portador descoberto (`outro: Segredo` conta mesmo `outro` nao
+            # casando nada -- pedido 477).
+            tipo_base = desembrulhar(tipo)
+            if not (nome_de_segredo(campo) or dono_e_portador
+                    or tipo_base in descobertos):
                 continue
             ent = isencao(isentos, it, campo)
             if ent:
@@ -521,15 +672,27 @@ def analisar(arquivos, isentos=ISENTOS):
                 continue
             if it.deriva:
                 r.vazam.append((it.arquivo, linha, it, campo, tipo, "derive(Debug)"))
-            elif it.impl is not None and le_o_campo(it.impl, campo):
-                r.vazam.append((it.arquivo, linha, it, campo, tipo,
-                                "impl Debug a mao LE o campo"))
-            elif it.impl is not None:
-                r.sem_saida.append((it.arquivo, linha, it, campo, tipo,
-                                    "impl Debug a mao o esconde"))
-            else:
+                continue
+            if it.impl is None:
                 r.sem_saida.append((it.arquivo, linha, it, campo, tipo,
                                     f"{it.especie} sem Debug"))
+                continue
+            # campo de tipo portador descoberto: passar o valor INTEIRO
+            # adiante e seguro (o `Debug` do proprio tipo protege); so ir
+            # ALEM dele (`self.senha.valor()`) vaza. Campo de tipo primitivo
+            # (String, bytes) continua na regra de sempre: qualquer mencao
+            # crua vaza.
+            if tipo_base in descobertos:
+                lido = le_o_valor_do_campo(it.impl, campo)
+                via = "impl Debug a mao EXTRAI o valor do tipo portador"
+            else:
+                lido = le_o_campo(it.impl, campo)
+                via = "impl Debug a mao LE o campo"
+            if lido:
+                r.vazam.append((it.arquivo, linha, it, campo, tipo, via))
+            else:
+                r.sem_saida.append((it.arquivo, linha, it, campo, tipo,
+                                    "impl Debug a mao o esconde"))
     r.estado_das_isencoes = []
     for ent in isentos:
         donos = usadas.get(ent, [])
@@ -601,6 +764,9 @@ def catraca():
     print(f"   isencoes declaradas: {len(r.estado_das_isencoes)} -- {vivas} vivas"
           + (f", {len(dorm)} dormente(s) ({', '.join(dorm)}: sem Debug hoje)"
              if dorm else ""))
+    print(f"   tipos portadores descobertos pelo impl alheio: "
+          f"{len(r.tipos_descobertos)}"
+          + (f" ({', '.join(r.tipos_descobertos)})" if r.tipos_descobertos else ""))
     for n in r.notas:
         print("   nota  " + n)
     imprimir_vazamentos(r)
@@ -650,7 +816,12 @@ def numeros():
 def inventario():
     r = analisar(ler_arvore(raiz_pedida()))
     print("=== campos que passam pelo nome e pelo tipo, em tres grupos ===\n")
-    print(f"-- CONTAM ({len(r.vazam)}): o Debug os imprime")
+    print(f"-- TIPOS PORTADORES DESCOBERTOS ({len(r.tipos_descobertos)}): nao "
+          "sao String/bytes por estrutura, mas algum dono os redige")
+    for nome in r.tipos_descobertos:
+        arquivo, linha, dono, campo = r.evidencia_dos_tipos[nome]
+        print(f"   {nome}  -- provado por {arquivo}:{linha}  {dono}.{campo}")
+    print(f"\n-- CONTAM ({len(r.vazam)}): o Debug os imprime")
     imprimir_vazamentos(r)
     print(f"\n-- ISENTOS ({len(r.isentos)}): lidos, e nao sao segredo")
     for arquivo, linha, it, campo, ent in r.isentos:
@@ -768,6 +939,42 @@ caso("genericos e where nao confundem o corpo",
 caso("`pub(crate)` entre o derive e a struct nao esconde o derive",
      "#[derive(Debug)]\npub(in crate::x) struct A { nonce: [u8; 12] }\n",
      ["A.nonce"])
+
+# --- pedido 477: o tipo portador DESCOBERTO pelo impl alheio, nao cravado ---
+
+caso("tipo portador descoberto pelo impl ALHEIO: quem so PASSA o valor "
+     "adiante fica limpo; quem EXTRAI conta",
+     "struct Cofre { valor: String }\n"
+     "impl std::fmt::Debug for Cofre {\n    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.write_str(\"Cofre(oculto)\") }\n}\n"
+     "struct Config { senha: Cofre }\n"
+     "impl std::fmt::Debug for Config {\n    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n        f.debug_struct(\"Config\").field(\"senha\", &\"(oculta)\").finish()\n    }\n}\n"
+     "struct Recado { senha: Cofre }\n"
+     "impl std::fmt::Debug for Recado {\n    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n        let Recado { senha } = self;\n        f.debug_struct(\"Recado\").field(\"senha\", senha).finish()\n    }\n}\n"
+     "struct Extrai { senha: Cofre }\n"
+     "impl std::fmt::Debug for Extrai {\n    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n        write!(f, \"{}\", self.senha.valor())\n    }\n}\n",
+     ["Extrai.senha"])
+caso("tipo descoberto: o PROPRIO tipo lendo o campo cru conta -- a troca da "
+     "guarda `debug-do-segredo-mostra-o-valor`",
+     "struct Cofre2 { valor: String }\n"
+     "impl std::fmt::Debug for Cofre2 {\n    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n        f.debug_struct(\"Cofre2\").field(\"valor\", &self.valor).finish()\n    }\n}\n"
+     "struct Config2 { senha: Cofre2 }\n"
+     "impl std::fmt::Debug for Config2 {\n    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n        f.debug_struct(\"Config2\").field(\"senha\", &\"(oculta)\").finish()\n    }\n}\n",
+     ["Cofre2.valor"])
+caso("tipo descoberto: campo de tipo portador conta ao DERIVAR, mesmo o nome "
+     "do campo nao casando o lexico",
+     "struct Cofre3 { valor: String }\n"
+     "impl std::fmt::Debug for Cofre3 {\n    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.write_str(\"Cofre3(oculto)\") }\n}\n"
+     "struct Config3 { senha: Cofre3 }\n"
+     "impl std::fmt::Debug for Config3 {\n    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n        f.debug_struct(\"Config3\").field(\"senha\", &\"(oculta)\").finish()\n    }\n}\n"
+     "#[derive(Debug)]\nstruct Empacota { guardado: Cofre3 }\n",
+     ["Empacota.guardado"])
+caso("tipo NAO descoberto se ninguem o redige -- todo mundo so PASSA o campo "
+     "adiante, e a regua continua sem ver (limite declarado no cabecalho)",
+     "struct Aberto { valor: String }\n"
+     "impl std::fmt::Debug for Aberto {\n    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { write!(f, \"{}\", self.valor) }\n}\n"
+     "struct Usa { senha: Aberto }\n"
+     "impl std::fmt::Debug for Usa {\n    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n        let Usa { senha } = self;\n        f.debug_struct(\"Usa\").field(\"senha\", senha).finish()\n    }\n}\n",
+     [])
 
 N_CASOS = len(CASOS)
 

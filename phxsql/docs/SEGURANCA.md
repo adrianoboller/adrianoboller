@@ -3872,6 +3872,36 @@ E duas guardas do que **não** pode sumir: `o_debug_da_ligacao_mantem_o_nome_da_
 variavel_de_ambiente` e, dentro das outras, a afirmação de que o pino e o nome
 da origem continuam visíveis. Esconder tudo seria a outra metade do estrago.
 
+### 16.5 A régua não enxergava `Segredo` — pedido 477
+
+*24/09/2026.* A revisão de prova real reapontou `debug-da-cifra-mostra-a-senha`
+e criou a irmã `debug-do-segredo-mostra-o-valor` (§16.4 do catálogo). Medido
+numa cópia: com cada defeito reposto, `debug-com-segredo.py --catraca`
+continuava em **0** — `Segredo` tem um campo (`valor: String`) que não casa o
+léxico, e o tipo não estava na lista de portadores da régua.
+
+O conserto não cravou `"Segredo"` em lugar nenhum: `tipos_portadores_
+descobertos()` varre os `impl Debug for X` manuais e aprende que um TIPO
+carrega segredo quando algum DONO, em outro arquivo, o redige num campo cujo
+nome casa o léxico (`Cifra.senha`, `Email.senha`, `CifraFio.chave_privada`,
+`Definicao.senha`/`token`, `CifraDoDblink.segredo` — cinco provas
+independentes, então a descoberta sobrevive à mutação de UMA delas). Um tipo
+descoberto entra em dois lugares: como TIPO em `portador()` (um campo de tipo
+`Segredo` conta mesmo com nome que não casa o léxico), e como DONO nos campos
+do próprio tipo (`Segredo.valor` passa a contar, porque a struct inteira só
+existe para carregar o segredo).
+
+A leitura de um campo de tipo descoberto usa uma régua PRÓPRIA
+(`le_o_valor_do_campo`), porque passar o valor inteiro adiante
+(`.field("segredo", segredo)`, em `CifraDoDblink`) é seguro — quem imprime
+dali é o `Debug` do próprio tipo — e só extrair o valor bruto (`self.senha.
+valor()`) vaza. Sem essa distinção `CifraDoDblink.segredo` seria falso
+positivo eterno. Medido na cópia, com os dois defeitos repostos separadamente,
+a catraca sobe para **1** em cada um, nomeando `Cifra.senha: Segredo` (extrai)
+e `Segredo.valor: String` (lê o campo); na árvore limpa continua em 0 — o teto
+não subiu. Prova real, quatro casos novos no `--autoteste` da própria régua
+(`bancada/guardas/debug-com-segredo.py`).
+
 ## 17. A lista por nome que envelhece, e a janela que não voltou ao irmão
 
 *17/09/2026.* A revisão SEC (`docs/propostas/revisao-sec-saidas-de-segredo.md`)
