@@ -1,0 +1,142 @@
+{
+ "descricao": "Casos com verdade conferida no codigo ou medida; o juiz Claude leu com ferramentas, o local recebe so o contexto.",
+ "casos": [
+  {
+   "id": "311",
+   "contexto": [
+    "Achado: O assistente de replicação mostra «PhxSql» com um buraco no lugar da versão — o `sondar_origem` não devolve `versao` nem `ms`",
+    "--- phxsql/crates/phxsql-server/src/servidor.rs:25118-25135\n        Ok(Json::objeto(vec![\n            (\"alcancavel\", Json::Bool(true)),\n            (\"host\", Json::texto_de(&origem.host)),\n            (\"porta\", Json::de_u64(origem.porta as u64)),\n            // Nunca token, nunca senha, nunca hash: a resposta do protocolo\n            // nao carrega credencial, nem a que quem perguntou acabou de\n            // mandar.\n            (\"papel\", Json::texto_de(papel_de_la)),\n            (\"id_servidor\", Json::texto_de(id_servidor)),\n            (\"imagem_da_linha\", Json::Bool(imagem)),\n            (\n                \"databases\",\n                Json::Lista(databases.iter().map(Json::texto_de).collect()),\n            ),\n            (\"tabelas\", Json::Lista(tabelas)),\n            (\n                \"sem_chave_unica\",\n                Json::Lista(sem_chave.iter().map(Json::texto_de).collect()),"
+   ],
+   "perguntas": {
+    "real": {
+     "tipo": "noul",
+     "pergunta": "O defeito descrito no achado existe no codigo mostrado?",
+     "verdade": "sim"
+    },
+    "ja_tratado": {
+     "tipo": "noul",
+     "pergunta": "O codigo mostrado ja corrige o defeito descrito no achado?",
+     "verdade": "nao"
+    }
+   }
+  },
+  {
+   "id": "345",
+   "contexto": [
+    "Achado: SEC 339(b) — o `.fts` nasce `644` e o `.lgpd` nasce `600`: o `apertar_permissao` nao alcancou o irmao",
+    "Unicas chamadas de apertar_permissao no repositorio:\nphxsql/crates/phxsql-store/src/trilha.rs:598:        apertar_permissao(&self.volumes.caminho(volume));\n"
+   ],
+   "perguntas": {
+    "real": {
+     "tipo": "noul",
+     "pergunta": "O defeito descrito no achado existe no codigo mostrado?",
+     "verdade": "sim"
+    },
+    "ja_tratado": {
+     "tipo": "noul",
+     "pergunta": "O codigo mostrado ja corrige o defeito descrito no achado?",
+     "verdade": "nao"
+    }
+   }
+  },
+  {
+   "id": "443",
+   "contexto": [
+    "Achado: MEDIO SEC -- o DbLink MySQL reserva `quantas` vindo do par, ate 2^64, e le quadro sem teto",
+    "--- phxsql/crates/phxsql-server/src/dblink/mysql.rs:294-304\n            _ => {}\n        }\n\n        let mut i = 0;\n        let quantas = le_lenenc(&primeiro, &mut i)\n            .ok_or_else(|| erro(\"nao entendi quantas colunas o resultado tem\".into()))?;\n        let mut colunas = Vec::with_capacity(quantas as usize);\n        for _ in 0..quantas {\n            let q = self.ler_quadro()?;\n            colunas.push(ler_coluna(&q)?);\n        }"
+   ],
+   "perguntas": {
+    "real": {
+     "tipo": "noul",
+     "pergunta": "O defeito descrito no achado existe no codigo mostrado?",
+     "verdade": "sim"
+    },
+    "ja_tratado": {
+     "tipo": "noul",
+     "pergunta": "O codigo mostrado ja corrige o defeito descrito no achado?",
+     "verdade": "nao"
+    }
+   }
+  },
+  {
+   "id": "452",
+   "contexto": [
+    "Achado: A thread de pulso que morre por panico nao se desmarca do `pulsando`: o par nunca mais e pulsado",
+    "--- phxsql/crates/phxsql-server/src/servidor.rs:3725-3742\n    fn laco_do_pulso(self: Arc<Self>, no: crate::config::NoCluster) {\n        let Some(estado) = self.cluster.clone() else {\n            return;\n        };\n        let intervalo = Duration::from_secs(estado.config.pulso_s);\n        loop {\n            // O no saiu da lista viva, ou mudou de endereco? A thread morre e\n            // o supervisor sobe outra com o endereco novo. Continuar seria\n            // pulsar um no que o cluster ja nao tem -- ou, pior, o endereco\n            // velho de um no que se mudou.\n            if estado.no(&no.id).as_ref() != Some(&no) {\n                estado.desmarcar_pulso(&no.id);\n                return;\n            }\n            let _ = self.pulsar(&estado, &no);\n            std::thread::sleep(intervalo);\n        }\n    }"
+   ],
+   "perguntas": {
+    "real": {
+     "tipo": "noul",
+     "pergunta": "O defeito descrito no achado existe no codigo mostrado?",
+     "verdade": "sim"
+    },
+    "ja_tratado": {
+     "tipo": "noul",
+     "pergunta": "O codigo mostrado ja corrige o defeito descrito no achado?",
+     "verdade": "nao"
+    }
+   }
+  },
+  {
+   "id": "276b",
+   "contexto": [
+    "Achado: a operacao dblink_salvar nao declara senha_env nem token_remoto_env no catalogo",
+    "--- phxsql/crates/phxsql-server/src/catalogo.rs:2291-2330\n        nome: \"dblink_salvar\",\n        apelidos: &[],\n        resumo: \"Grava ou substitui uma ligação pelo nome.\",\n        parametros: &[\n            obr(\"nome\", \"string\", \"o nome da ligação\"),\n            obr(\"motor\", \"string\", \"`mysql`, `postgres` ou `phxsql`\"),\n            obr(\"host\", \"string\", \"o endereço do outro servidor\"),\n            opc(\"porta\", \"integer\", \"a porta; sem ela, a do motor\"),\n            opc(\"usuario\", \"string\", \"o login no outro servidor\"),\n            opc(\n                \"senha\",\n                \"string\",\n                \"a senha; prefira `senha_env` com o nome de uma variável de ambiente\",\n            ),\n            opc(\n                \"senha_env\",\n                \"string\",\n                \"o NOME da variável de ambiente de onde a senha vem; o arquivo \\\n                 guarda só o nome. Variável que não existe no ambiente do \\\n                 servidor NÃO vira senha vazia: a ligação fica trancada, recusa \\\n                 conectar nomeando a variável, e a resposta a lista em \\\n                 `variaveis_ausentes`\",\n            ),\n            opc(\n                \"token_remoto\",\n                \"string\",\n                \"só para `phxsql`: o token de serviço do outro PhxSql. Não se \\\n                 chama `token` porque esse nome já é o portão 1 DESTE servidor, \\\n                 e o portão o leria primeiro. Prefira `token_remoto_env`\",\n            ),\n            opc(\n                \"token_remoto_env\",\n                \"string\",\n                \"só para `phxsql`: o NOME da variável de ambiente de onde o \\\n                 token vem, com a mesma regra da `senha_env` — variável que \\\n                 falta tranca a ligação, nunca vira token vazio\",\n            ),\n            opc(\"database\", \"string\", \"o banco padrão da ligação\"),\n            opc(\n                \"cifra\","
+   ],
+   "perguntas": {
+    "ja_tratado": {
+     "tipo": "noul",
+     "pergunta": "O codigo mostrado ja corrige o defeito descrito no achado?",
+     "verdade": "sim"
+    }
+   }
+  },
+  {
+   "id": "reg-slot",
+   "contexto": [
+    "--- phxsql/crates/phxsql-store/src/reg.rs:15-22\n//! # Ordem de digitacao\n//!\n//! Registros sao SEMPRE anexados no fim. Excluir marca o slot como livre, mas\n//! o slot nao e reaproveitado: isso manteria o arquivo compacto ao custo de\n//! quebrar a garantia de que percorrer o `.reg` do inicio ao fim devolve os\n//! registros na ordem em que foram digitados. O espaco de slots excluidos so\n//! volta com uma compactacao explicita.\n//!",
+    "--- phxsql/crates/phxsql-store/src/reg.rs:2022-2030\n    }\n\n    pub fn inserir_no_periodo(&mut self, payload: &[u8], chave: Option<i64>) -> Result<RowId> {\n        self.conferir_payload(payload)?;\n        let rowid = self.slot_count + 1;\n        let paginacao = self.esquema.paginacao();\n        let por_periodo = paginacao.modo.periodo().is_some();\n\n        if !por_periodo && !paginacao.cabe(rowid) {"
+   ],
+   "perguntas": {
+    "resposta": {
+     "tipo": "noul",
+     "pergunta": "O arquivo .reg reaproveita o slot de um registro excluido?",
+     "verdade": "nao"
+    }
+   }
+  },
+  {
+   "id": "321-causa",
+   "contexto": [
+    "Sintoma: o teste cai 1 em 5 com a maquina carregada, com '[SP000018] nao encontrado: database loja nao existe neste servidor'; o log do servidor imprime 'replicacao: criando loja.clientes aqui' DEPOIS do panico.",
+    "--- phxsql/crates/phxsql-server/tests/continuidade-da-replica.rs:132-180\n\nfn exigir(porta: u16, corpo: &str) -> Json {\n    let r = pedir(porta, corpo);\n    assert!(r.booleano_ou(\"ok\", false), \"{corpo} -> {}\", r.escrever());\n    r.campo(\"resultado\").cloned().unwrap_or(Json::Nulo)\n}\n\nfn criar_clientes(porta: u16) {\n    exigir(\n        porta,\n        r#\"\"op\":\"criar_tabela\",\"database\":\"loja\",\"tabela\":\"clientes\",\n           \"colunas\":[{\"nome\":\"id\",\"tipo\":\"Int4\",\"obrigatoria\":true}],\n           \"indices\":[{\"nome\":\"porId\",\"colunas\":[\"id\"],\"unico\":true,\"primario\":true}]\"#,\n    );\n}\n\nfn inserir(porta: u16, ids: impl Iterator<Item = i64>) {\n    for id in ids {\n        exigir(\n            porta,\n            &format!(\n                r#\"\"op\":\"inserir\",\"database\":\"loja\",\"tabela\":\"clientes\",\"linha\":{{\"id\":{id}}}\"#\n            ),\n        );\n    }\n}\n\n/// Quantos eventos `clientes` tem num servidor, pela op `posicao`.\nfn eventos_de_clientes(porta: u16) -> i64 {\n    exigir(porta, r#\"\"op\":\"posicao\",\"database\":\"loja\"\"#)\n        .campo(\"tabelas\")\n        .and_then(|t| t.campo(\"clientes\"))\n        .map(|c| c.inteiro_ou(\"eventos\", -1))\n        .unwrap_or(-1)\n}\n\nfn esperar_eventos(porta: u16, quantos: i64) {\n    let ate = Instant::now() + Duration::from_secs(20);\n    while Instant::now() < ate {\n        if eventos_de_clientes(porta) == quantos {\n            return;\n        }\n        std::thread::sleep(Duration::from_millis(100));\n    }\n    panic!(\n        \"a replica nao chegou a {quantos} evento(s) em 20 s (esta em {})\",\n        eventos_de_clientes(porta)\n    );\n}"
+   ],
+   "perguntas": {
+    "causa": {
+     "tipo": "choice",
+     "pergunta": "Qual a causa da falha?",
+     "opcoes": [
+      "o ajudante do teste trata 'database ainda nao existe' como erro fatal em vez de esperar",
+      "o servidor de producao deveria criar o database antes de aceitar conexoes",
+      "outra"
+     ],
+     "verdade": "o ajudante do teste trata 'database ainda nao existe' como erro fatal em vez de esperar"
+    }
+   }
+  },
+  {
+   "id": "321-depois",
+   "contexto": [
+    "Achado: esperar_eventos entra em panico quando a replica ainda nao criou o database (SP000018), em vez de esperar.",
+    "--- phxsql/crates/phxsql-server/tests/continuidade-da-replica.rs:159-200\n/// Quantos eventos `clientes` tem num servidor, pela op `posicao`.\nfn eventos_de_clientes(porta: u16) -> i64 {\n    exigir(porta, r#\"\"op\":\"posicao\",\"database\":\"loja\"\"#)\n        .campo(\"tabelas\")\n        .and_then(|t| t.campo(\"clientes\"))\n        .map(|c| c.inteiro_ou(\"eventos\", -1))\n        .unwrap_or(-1)\n}\n\n/// Como `eventos_de_clientes`, mas a base que a replica AINDA nao criou e\n/// «zero ate agora», nao erro. So a espera usa isto: ela pergunta enquanto a\n/// replica trabalha, e com a maquina carregada a primeira pergunta chega antes\n/// do `criando loja.clientes aqui` (pedido 321: 9 falhas em 10 sob carga).\n/// Qualquer outra recusa continua derrubando o teste.\nfn eventos_se_a_base_existe(porta: u16) -> i64 {\n    let r = pedir(porta, r#\"\"op\":\"posicao\",\"database\":\"loja\"\"#);\n    if !r.booleano_ou(\"ok\", false) {\n        let erro = r.escrever();\n        assert!(erro.contains(\"SP000018\"), \"posicao -> {erro}\");\n        return -1;\n    }\n    r.campo(\"resultado\")\n        .and_then(|x| x.campo(\"tabelas\"))\n        .and_then(|t| t.campo(\"clientes\"))\n        .map(|c| c.inteiro_ou(\"eventos\", -1))\n        .unwrap_or(-1)\n}\n\nfn esperar_eventos(porta: u16, quantos: i64) {\n    let ate = Instant::now() + Duration::from_secs(20);\n    while Instant::now() < ate {\n        if eventos_se_a_base_existe(porta) == quantos {\n            return;\n        }\n        std::thread::sleep(Duration::from_millis(100));\n    }\n    panic!(\n        \"a replica nao chegou a {quantos} evento(s) em 20 s (esta em {})\",\n        eventos_de_clientes(porta)\n    );\n}\n"
+   ],
+   "perguntas": {
+    "ja_tratado": {
+     "tipo": "noul",
+     "pergunta": "O codigo mostrado ja corrige o defeito descrito no achado?",
+     "verdade": "sim"
+    }
+   }
+  }
+ ]
+}

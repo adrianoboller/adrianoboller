@@ -1,0 +1,37 @@
+---
+description: Escolhe entre opcoes de projeto com probabilidade, confere petrea e aplica a regua dos motores (PG 4, MariaDB 3, MySQL 2, SQLite 1)
+argument-hint: "<decisao> : <opcao A> | <opcao B> | ..."
+allowed-tools: Bash(python3:*)
+---
+
+## O que voce precisa saber de si antes de julgar
+
+!`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/phxjev.py" juiz`
+
+!`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/phxjev.py" historico`
+
+Onde o historico diz **REBAIXE**, suas probabilidades altas naquela pergunta
+acertaram menos do que diziam: puxe-as para o meio. Onde diz **timido**, o
+contrario. Com «anedota», julgue so pela evidencia. Se o juiz em vigor for
+`local` ou `auto`, siga a secao 8 da skill em vez de responder voce mesmo.
+
+Use a skill `phxjev` e aplique o preset **escolher** em: $ARGUMENTS
+
+1. Estado: o codigo tocado, o `CLAUDE.md` do projeto (as petreas) e, se a
+   decisao e comportamento de banco, o que o help/fonte de PostgreSQL,
+   MariaDB, MySQL e SQLite dizem — com a fonte de cada um.
+2. `fere_petrea` (noul) por opcao, citando a petrea. `≥ 0,30` → a opcao sobe
+   ao dono como **choque com petrea**, e nao concorre.
+3. Se for comportamento de banco:
+   - os tres maduros convergem → a opcao deles vence, **sem pergunta**;
+   - divergem → soma dos pesos por opcao, **conta feita por comando**
+     (`python3 -c`), nunca de cabeca; o numero vai na saida.
+4. `melhor_opcao` (choice) sobre as que sobraram.
+5. Empate pela secao 4 que a pesquisa nao desfaz → sobe ao dono nomeando qual
+   das tres: choque com petrea, empate real ou produto.
+
+Registre tambem a opcao perdedora, com a `p` e o motivo em uma linha.
+
+Saida: JSON da secao 5 da skill passado ao `phxjev.py veredito`; mostre a saida dele sem editar.
+
+**Nao edite arquivos**: o PhxJev julga, nao conserta. Achado para documento vai na linha `motivo` e na resposta, depois da saida do script.

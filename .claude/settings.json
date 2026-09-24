@@ -1,0 +1,13 @@
+{
+  "extraKnownMarketplaces": {
+    "phoenix": {
+      "source": {
+        "source": "directory",
+        "path": "."
+      }
+    }
+  },
+  "enabledPlugins": {
+    "phxjev@phoenix": true
+  }
+}
