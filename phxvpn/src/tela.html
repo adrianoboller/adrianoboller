@@ -4,13 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>phxvpn</title>
+<link rel="icon" href="/simbolo.svg" type="image/svg+xml">
 <style>
 :root{--fundo:#010418;--painel:#0a1122;--linha:#1c2742;--texto:#DDE2EB;--fraco:#8a93a8;
 --acento:#FF4D10;--ambar:#FFC43D;--verde:#3ecf8e;--amarelo:#f5c542;--vermelho:#ff5a5a;--azul:#5aa9ff}
 *{box-sizing:border-box}
 body{margin:0;background:var(--fundo);color:var(--texto);font:15px/1.45 "Exo 2",system-ui,-apple-system,"Segoe UI",sans-serif}
 header{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--linha);flex-wrap:wrap}
-header h1{font-size:18px;margin:0;letter-spacing:.5px}
+header h1 img{display:block}
+header h1{display:flex;align-items:center;gap:8px;font-size:18px;margin:0;letter-spacing:.5px}
 header h1 b{color:var(--acento)}
 header .sub{color:var(--fraco);font-size:13px}
 header .dir{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
@@ -61,7 +63,7 @@ th{color:var(--fraco);font-weight:500;font-size:12px}
 </head>
 <body>
 <header>
-  <h1><b>phx</b>vpn</h1>
+  <h1><img src="/simbolo.svg" alt="" width="30" height="30"><span><b>phx</b>vpn</span></h1>
   <span class="sub" id="empresa-nome"></span>
   <div class="dir" id="barra" hidden>
     <span class="selo alerta" id="selo-cofre" hidden>cofre trancado</span>

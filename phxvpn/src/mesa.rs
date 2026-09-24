@@ -523,6 +523,7 @@ impl Mesa {
         match (p.metodo.as_str(), caminho) {
             ("GET", "/") => return Resposta::html(TELA),
             ("GET", "/mesa.js") => return Resposta::js(TELA_JS),
+            ("GET", "/simbolo.svg") => return Resposta::svg(web::SIMBOLO),
             _ => {}
         }
         let ficha_ok = p

@@ -24,6 +24,10 @@ const TETO_CORPO: usize = 256 * 1024;
 const PRAZO_PEDIDO: Duration = Duration::from_secs(10);
 
 /// O que a rota devolve.
+/// O simbolo da marca, o mesmo arquivo que a folha de marca usa -- um
+/// desenho so, sem copia.
+pub const SIMBOLO: &str = include_str!("../marca/simbolo.svg");
+
 pub struct Resposta {
     pub status: u16,
     pub tipo: &'static str,
@@ -43,6 +47,15 @@ impl Resposta {
         Resposta {
             status: 200,
             tipo: "text/html; charset=utf-8",
+            corpo: corpo.to_string(),
+        }
+    }
+
+    /// O simbolo da marca (`marca/simbolo.svg`), embutido no binario.
+    pub fn svg(corpo: &str) -> Resposta {
+        Resposta {
+            status: 200,
+            tipo: "image/svg+xml",
             corpo: corpo.to_string(),
         }
     }

@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>phxvpn</title>
+<link rel="icon" href="/simbolo.svg" type="image/svg+xml">
 <style>
 :root{--fundo:#010418;--painel:#0a1122;--painel2:#0d1630;--linha:#1c2742;--texto:#DDE2EB;--fraco:#8a93a8;
 --acento:#FF4D10;--ambar:#FFC43D;--verde:#3ecf8e;--vermelho:#ff5a5a;--azul:#5aa9ff;
@@ -14,7 +15,8 @@ html,body{height:100%}
 body{margin:0;background:var(--fundo);color:var(--texto);font:14px/1.45 "Exo 2",system-ui,-apple-system,"Segoe UI",sans-serif;
 display:grid;grid-template-rows:auto 1fr auto;min-height:100vh;overflow-x:hidden}
 header{display:flex;align-items:center;gap:10px;padding:10px var(--gutter);border-bottom:1px solid var(--linha);flex-wrap:wrap}
-header h1{font-size:18px;margin:0;letter-spacing:.3px}
+header h1 img{display:block}
+header h1{display:flex;align-items:center;gap:8px;font-size:18px;margin:0;letter-spacing:.3px}
 header h1 b{color:var(--acento)}
 #minha-chave{margin-left:auto;font:11px ui-monospace,monospace;color:var(--fraco);cursor:pointer;border:1px solid var(--linha);border-radius:10px;padding:2px 8px;max-width:40vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 button{font:inherit;cursor:pointer;background:transparent;border:1px solid var(--azul);color:var(--azul);border-radius:6px;padding:6px 11px;white-space:nowrap}
@@ -104,7 +106,7 @@ dialog h3{margin:12px 0 4px;font-size:13px;color:var(--fraco);font-weight:600}
 </head>
 <body>
 <header>
-  <h1><b>phx</b>vpn</h1>
+  <h1><img src="/simbolo.svg" alt="" width="30" height="30"><span><b>phx</b>vpn</span></h1>
   <span id="minha-chave" title="Sua chave pública (clique para copiar)">…</span>
   <button id="b-config" title="Configuração" style="padding:3px 9px">Configuração</button>
 </header>

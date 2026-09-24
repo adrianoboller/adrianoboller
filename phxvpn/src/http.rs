@@ -113,6 +113,9 @@ fn atender(pedido: &Pedido, estado: &Estado) -> Resposta {
     if pedido.metodo == "GET" && caminho == "/tela.js" {
         return Resposta::js(TELA_JS);
     }
+    if pedido.metodo == "GET" && caminho == "/simbolo.svg" {
+        return Resposta::svg(crate::web::SIMBOLO);
+    }
     match rotear(pedido, estado) {
         Ok(j) => Resposta::json(200, j.escrever()),
         Err((s, m)) => Resposta::json(s, erro_json(&m)),
