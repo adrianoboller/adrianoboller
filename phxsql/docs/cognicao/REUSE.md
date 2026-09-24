@@ -4,7 +4,7 @@
      `--catraca` reprova se este arquivo nao bater com o que o extrator
      geraria agora; rode o comando sem flag para atualizar. -->
 
-Gerado dos `cognicao_*.md` com `**Estado:** FRUTIFERO` -- 1 hoje, de 306 cognicoes no total.
+Gerado dos `cognicao_*.md` com `**Estado:** FRUTIFERO` -- 1 hoje, de 307 cognicoes no total.
 
 ## Prova diferencial contra o `HEAD` expira no proprio commit
 

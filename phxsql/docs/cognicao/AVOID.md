@@ -4,7 +4,7 @@
      `--catraca` reprova se este arquivo nao bater com o que o extrator
      geraria agora; rode o comando sem flag para atualizar. -->
 
-Gerado dos `cognicao_*.md` com `**Estado:** INFRUTIFERO` -- 1 hoje, de 306 cognicoes no total.
+Gerado dos `cognicao_*.md` com `**Estado:** INFRUTIFERO` -- 1 hoje, de 307 cognicoes no total.
 
 ## Juiz em markdown acerta a resposta e foge do formato: limiar e formato vão para código
 

@@ -1,0 +1,45 @@
+{
+ "medido_em": "2026-09-24 11:45 UTC",
+ "trabalho_igual": false,
+ "nota": "Claude leu o codigo com ferramentas; o local recebe so o trecho do casos.json",
+ "juizes": {
+  "claude (registro)": {
+   "n": 11,
+   "brier": 0.0029,
+   "acerto": 1.0
+  },
+  "local qwen2.5:1.5b": {
+   "n": 12,
+   "brier": 0.3152,
+   "acerto": 0.667,
+   "mediana_ms": 463
+  },
+  "local qwen2.5:1.5b (so as do claude)": {
+   "n": 11,
+   "brier": 0.2546,
+   "acerto": 0.727
+  },
+  "local qwen2.5:3b": {
+   "n": 12,
+   "brier": 0.1667,
+   "acerto": 0.833,
+   "mediana_ms": 6474
+  },
+  "local qwen2.5:3b (so as do claude)": {
+   "n": 11,
+   "brier": 0.0909,
+   "acerto": 0.909
+  },
+  "local qwen2.5:7b": {
+   "n": 12,
+   "brier": 0.2714,
+   "acerto": 0.667,
+   "mediana_ms": 14194
+  },
+  "local qwen2.5:7b (so as do claude)": {
+   "n": 11,
+   "brier": 0.2073,
+   "acerto": 0.727
+  }
+ }
+}
