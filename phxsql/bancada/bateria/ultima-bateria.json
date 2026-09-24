@@ -1,0 +1,189 @@
+{
+  "quando": "2026-09-24T04:03:40",
+  "segundos": 1551.3,
+  "partes": [
+    {
+      "id": "motor",
+      "veredito": "PASSOU",
+      "segundos": 173.8,
+      "motivo": "",
+      "log": "/tmp/phx-provar/motor.log"
+    },
+    {
+      "id": "tela",
+      "veredito": "PASSOU",
+      "segundos": 469.1,
+      "motivo": "",
+      "log": "/tmp/phx-provar/tela.log"
+    },
+    {
+      "id": "idiomas",
+      "veredito": "PASSOU",
+      "segundos": 12.0,
+      "motivo": "",
+      "log": "/tmp/phx-provar/idiomas.log"
+    },
+    {
+      "id": "ponta-a-ponta",
+      "veredito": "FALHOU",
+      "segundos": 28.6,
+      "motivo": "saiu com codigo 1",
+      "log": "/tmp/phx-provar/ponta-a-ponta.log"
+    },
+    {
+      "id": "cifra-do-fio",
+      "veredito": "PASSOU",
+      "segundos": 0.6,
+      "motivo": "",
+      "log": "/tmp/phx-provar/cifra-do-fio.log"
+    },
+    {
+      "id": "alter",
+      "veredito": "FALHOU",
+      "segundos": 2.6,
+      "motivo": "saiu com codigo 1",
+      "log": "/tmp/phx-provar/alter.log"
+    },
+    {
+      "id": "transacoes",
+      "veredito": "PASSOU",
+      "segundos": 6.3,
+      "motivo": "",
+      "log": "/tmp/phx-provar/transacoes.log"
+    },
+    {
+      "id": "manual",
+      "veredito": "PASSOU",
+      "segundos": 0.2,
+      "motivo": "",
+      "log": "/tmp/phx-provar/manual.log"
+    },
+    {
+      "id": "pacote",
+      "veredito": "PASSOU",
+      "segundos": 0.3,
+      "motivo": "",
+      "log": "/tmp/phx-provar/pacote.log"
+    },
+    {
+      "id": "rotinas",
+      "veredito": "PASSOU",
+      "segundos": 4.2,
+      "motivo": "",
+      "log": "/tmp/phx-provar/rotinas.log"
+    },
+    {
+      "id": "profiler",
+      "veredito": "PASSOU",
+      "segundos": 1.5,
+      "motivo": "",
+      "log": "/tmp/phx-provar/profiler.log"
+    },
+    {
+      "id": "profiler-custo-zero",
+      "veredito": "PASSOU",
+      "segundos": 360.6,
+      "motivo": "",
+      "log": "/tmp/phx-provar/profiler-custo-zero.log"
+    },
+    {
+      "id": "queda-na-exclusao",
+      "veredito": "PASSOU",
+      "segundos": 4.1,
+      "motivo": "",
+      "log": "/tmp/phx-provar/queda-na-exclusao.log"
+    },
+    {
+      "id": "telemetria-desenho",
+      "veredito": "PASSOU",
+      "segundos": 35.3,
+      "motivo": "",
+      "log": "/tmp/phx-provar/telemetria-desenho.log"
+    },
+    {
+      "id": "telemetria-interacao",
+      "veredito": "PASSOU",
+      "segundos": 11.7,
+      "motivo": "",
+      "log": "/tmp/phx-provar/telemetria-interacao.log"
+    },
+    {
+      "id": "telemetria-cores",
+      "veredito": "FALHOU",
+      "segundos": 1.4,
+      "motivo": "saiu com codigo 1",
+      "log": "/tmp/phx-provar/telemetria-cores.log"
+    },
+    {
+      "id": "cluster",
+      "veredito": "PASSOU",
+      "segundos": 50.9,
+      "motivo": "",
+      "log": "/tmp/phx-provar/cluster.log"
+    },
+    {
+      "id": "replicacao",
+      "veredito": "PASSOU",
+      "segundos": 84.7,
+      "motivo": "",
+      "log": "/tmp/phx-provar/replicacao.log"
+    },
+    {
+      "id": "trava",
+      "veredito": "PASSOU",
+      "segundos": 94.1,
+      "motivo": "",
+      "log": "/tmp/phx-provar/trava.log"
+    },
+    {
+      "id": "jobs",
+      "veredito": "PASSOU",
+      "segundos": 153.8,
+      "motivo": "",
+      "log": "/tmp/phx-provar/jobs.log"
+    },
+    {
+      "id": "profiler-disco",
+      "veredito": "RODOU",
+      "segundos": 7.4,
+      "motivo": "",
+      "log": "/tmp/phx-provar/profiler-disco.log"
+    },
+    {
+      "id": "dblink",
+      "veredito": "PASSOU",
+      "segundos": 1.4,
+      "motivo": "",
+      "log": "/tmp/phx-provar/dblink.log"
+    },
+    {
+      "id": "embutido",
+      "veredito": "FALHOU",
+      "segundos": 30.8,
+      "motivo": "saiu com codigo 1",
+      "log": "/tmp/phx-provar/embutido.log"
+    },
+    {
+      "id": "rest",
+      "veredito": "PASSOU",
+      "segundos": 4.0,
+      "motivo": "",
+      "log": "/tmp/phx-provar/rest.log"
+    },
+    {
+      "id": "rest-tela",
+      "veredito": "PASSOU",
+      "segundos": 10.0,
+      "motivo": "",
+      "log": "/tmp/phx-provar/rest-tela.log"
+    },
+    {
+      "id": "odbc",
+      "veredito": "PASSOU",
+      "segundos": 1.9,
+      "motivo": "",
+      "log": "/tmp/phx-provar/odbc.log"
+    }
+  ],
+  "commit": "0f7aab6"
+}

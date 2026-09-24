@@ -103,7 +103,7 @@ footer{margin-top:52px;padding-top:20px;border-top:1px solid var(--linha);
 
   <div class="placar">
     <div class="c"><div class="v">2.800</div><div class="r">testes</div></div>
-    <div class="c"><div class="v">241</div><div class="r">guardas</div></div>
+    <div class="c"><div class="v">270</div><div class="r">guardas</div></div>
     <div class="c"><div class="v">33</div><div class="r">casos de tela</div></div>
     <div class="c"><div class="v">29</div><div class="r">catracas</div></div>
     <div class="c"><div class="v">0</div><div class="r">dependências</div></div>
@@ -129,7 +129,7 @@ mais rasa: ela prova que a função faz o que o autor dela achou que faz.</p>
 periodicamente. Teste que passa por engano é pior que teste que falta, e esta
 camada existe por causa disso.</p>
 <div class="nota">
-  <b>241 guardas</b> no catálogo (<code>bancada/guardas/catalogo.py</code>),
+  <b>270 guardas</b> no catálogo (<code>bancada/guardas/catalogo.py</code>),
   cada uma com o defeito reposto, o arquivo, o trecho e quais testes têm de cair.
   Roda por <code>python3 bancada/guardas/provar-guardas.py</code>.
 </div>
@@ -143,12 +143,12 @@ camada existe por causa disso.</p>
   <code>bancada/guardas/ultima-corrida.json</code>.
 </div>
 <div class="placar">
-  <div class="c"><div class="v">190</div><div class="r">provada</div></div>
+  <div class="c"><div class="v">264</div><div class="r">provada</div></div>
   <div class="c"><div class="v">4</div><div class="r">redundante</div></div>
-  <div class="c"><div class="v">1</div><div class="r">quebrada</div></div>
-  <div class="c"><div class="v">46</div><div class="r">sem prova registrada</div></div>
+  <div class="c"><div class="v">0</div><div class="r">quebrada</div></div>
+  <div class="c"><div class="v">0</div><div class="r">sem prova registrada</div></div>
 </div>
-<p class="sub">Datas da última prova: 2026-09-16 — 133 · 2026-09-17 — 11 · 2026-09-18 — 3 · 2026-09-24 — 48. <b>1 guarda(s) aposentada(s)</b> — no arquivo, fora do catálogo, não contam como provada: <code>cifra-do-fio-imposta</code>.</p>
+<p class="sub">Datas da última prova: 2026-09-16 — 131 · 2026-09-17 — 11 · 2026-09-18 — 3 · 2026-09-24 — 125. <b>1 guarda(s) aposentada(s)</b> — no arquivo, fora do catálogo, não contam como provada: <code>cifra-do-fio-imposta</code>.</p>
 <p class="sub">Toda guarda que <b>não</b> é PROVADA — o que ainda não se pode
 afirmar:</p>
 <div class="rolo">
@@ -157,55 +157,10 @@ afirmar:</p>
     <tbody>
       <tr><td class="mono">aad-fora-do-slot</td><td><span class="veredito v-neutro"><span class="ic">≈</span>REDUNDANTE</span></td><td class="q mono">2026-09-16 15:25</td><td class="v">confirmado: tirar so o AAD nao e sentido por teste nenhum, porque o `nonce_de_pedaco` carrega o ROWID. Medido em 03/09/2026, e nao deduzido:…</td></tr>
       <tr><td class="mono">nonce-sem-endereco</td><td><span class="veredito v-neutro"><span class="ic">≈</span>REDUNDANTE</span></td><td class="q mono">2026-09-16 15:25</td><td class="v">confirmado: tirar so o endereco do nonce tambem passa despercebido, porque o AAD carrega o ROWID. Medido em 03/09/2026: tirando o endereco d…</td></tr>
-      <tr><td class="mono">trava-sem-guarda-de-reentrancia</td><td><span class="veredito v-falta"><span class="ic">⚠</span>QUEBRADA</span></td><td class="q mono">2026-09-16 15:25</td><td class="v">a rodada estourou o prazo do executor</td></tr>
-      <tr><td class="mono">teto-do-fio-sem-a-constante</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
-      <tr><td class="mono">teto-do-fio-sem-a-constante-no-soquete</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">teto-do-fio-sem-a-constante-no-soquete</td><td><span class="veredito v-mal"><span class="ic">✗</span>NAO PEGOU</span></td><td class="q mono">2026-09-24 04:34</td><td class="v">PASSOU COM O DEFEITO REPOSTO: o_pedido_acima_do_teto_recebe_a_recusa_e_entra_no_log_com_o_tamanho</td></tr>
       <tr><td class="mono">rest-fecha-sem-escoar</td><td><span class="veredito v-neutro"><span class="ic">≈</span>REDUNDANTE</span></td><td class="q mono">2026-09-16 15:25</td><td class="v">confirmado: nenhum teste de unidade sente isto, e nao poderia -- o RST e do sistema operacional, e so aparece com um soquete de verdade. Que…</td></tr>
       <tr><td class="mono">recuperar-sem-reindexar</td><td><span class="veredito v-neutro"><span class="ic">≈</span>REDUNDANTE</span></td><td class="q mono">2026-09-16 15:25</td><td class="v">confirmado: nenhum teste de unidade pega este defeito. O indice so fica para tras quando o PROCESSO morre no meio da passada, e isso so acon…</td></tr>
-      <tr><td class="mono">perfil-decide-so-pela-lista-e-nao-pelo-reg-cifrado</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
-      <tr><td class="mono">perfil-grava-o-erro-que-cita-o-valor</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
-      <tr><td class="mono">profiler-ligado-sem-a-raiz-dos-dados</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
-      <tr><td class="mono">varredura-sem-o-elo</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
-      <tr><td class="mono">linha-vazia-na-conferencia-de-filhas</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
-      <tr><td class="mono">teto-de-64-bits-satura</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
-      <tr><td class="mono">saida-do-direito-por-coluna</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
-      <tr><td class="mono">check-que-se-contradiz-no-alter</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
-      <tr><td class="mono">alter-com-regra-sem-aviso</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
-      <tr><td class="mono">upsert-parcial-vira-mescla</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
-      <tr><td class="mono">direcao-do-indice-sem-saida</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
-      <tr><td class="mono">sha256-sem-somar-o-estado</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
-      <tr><td class="mono">sha256-com-o-tamanho-em-little-endian</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
-      <tr><td class="mono">hmac-com-a-chave-longa-truncada</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
-      <tr><td class="mono">pbkdf2-com-o-contador-de-bloco-parado</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
-      <tr><td class="mono">pbkdf2-sem-o-xor-acumulado</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
-      <tr><td class="mono">juntar-sem-portao</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
-      <tr><td class="mono">unir-sem-portao</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
-      <tr><td class="mono">diferencas-sem-portao</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
-      <tr><td class="mono">derivado-sem-portao</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
-      <tr><td class="mono">ficha-do-usuario-devolve-o-hash</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
-      <tr><td class="mono">senha-em-claro-no-cadastro</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
-      <tr><td class="mono">senha-velha-fica-no-arquivo</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
-      <tr><td class="mono">debug-da-cifra-mostra-a-senha</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
-      <tr><td class="mono">profiler-sem-a-senha-dentro-do-sql</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
-      <tr><td class="mono">comando-invalido-vira-texto-cru</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
-      <tr><td class="mono">trilha-sem-o-nome-de-segredo</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
-      <tr><td class="mono">trilha-so-olha-o-nome-da-coluna</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
-      <tr><td class="mono">debug-da-ligacao-mostra-a-senha</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
-      <tr><td class="mono">fio-cifrado-manda-o-claro-junto</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
-      <tr><td class="mono">diario-das-diretivas-guarda-o-segredo-anterior</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
-      <tr><td class="mono">token-do-rest-entra-pela-tela</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
-      <tr><td class="mono">receita-odbc-devolve-a-senha</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
-      <tr><td class="mono">especificacao-openapi-leva-o-token</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
-      <tr><td class="mono">token-remoto-fora-da-lista-de-segredos</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
-      <tr><td class="mono">job-recusa-um-nome-e-grava-os-outros</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
-      <tr><td class="mono">config-json-escreve-aberto-e-herda</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
-      <tr><td class="mono">laco-preso-no-unico-secundario</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
-      <tr><td class="mono">par-parado-reapresentado-a-cada-rodada</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
-      <tr><td class="mono">dado-pessoal-no-grito-do-conflito</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
-      <tr><td class="mono">so-o-disco-vem-da-porta-e-nao-de-desligar-depois</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
-      <tr><td class="mono">slot-de-outro-reg</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
-      <tr><td class="mono">aperto-de-mao-sem-teto</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
-      <tr><td class="mono">smtp-linha-sem-teto</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">debug-da-cifra-mostra-a-senha</td><td><span class="veredito v-mal"><span class="ic">✗</span>NAO PEGOU</span></td><td class="q mono">2026-09-24 04:34</td><td class="v">PASSOU COM O DEFEITO REPOSTO: a_resposta_do_protocolo_nao_leva_a_senha</td></tr>
     </tbody>
   </table>
 </div>
@@ -263,15 +218,15 @@ medida</b> em vez de sumir da tabela.</p>
     <tbody>
       <tr><td class="nome">Comparativo — o que falta aqui, contra quem tem<div class="prova">a mesma pergunta em quatro motores vivos, com um controle positivo que TODOS têm de recusar — e sonda de efeito, nunca «aceitou»</div></td><td class="q mono">2026-09-17T19:41:13</td><td class="v"><b>capacidades perguntadas</b> 19 · <b>faltam ou pela metade aqui</b> 1</td></tr>
       <tr><td class="nome">Cobertura da tela sobre o protocolo<div class="prova">as duas listas saem do código — as operações do array OPERACOES e os arquivos da tela dos include_str! do http.rs</div></td><td class="q mono">2026-09-09T06:26:06</td><td class="v"><b>operações no catálogo</b> 136 · <b>alcançadas pela tela</b> 109</td></tr>
-      <tr><td class="nome">Cluster — eleição e promoção<div class="prova">três nós de verdade, um SMTP falso, e a promoção acontecendo quando o master cai</div></td><td class="q mono">2026-09-24 03:37 <span class="mtime" title="a data saiu do mtime do arquivo, e nao do proprio resultado">(mtime)</span></td><td class="v"><b>promoção em</b> 4,3 s · <b>escrita aceita em</b> 4,3 s · <b>época do nó isolado</b> 1 · <b>linhas no fim</b> 3.801</td></tr>
+      <tr><td class="nome">Cluster — eleição e promoção<div class="prova">três nós de verdade, um SMTP falso, e a promoção acontecendo quando o master cai</div></td><td class="q mono">2026-09-24 04:33 <span class="mtime" title="a data saiu do mtime do arquivo, e nao do proprio resultado">(mtime)</span></td><td class="v"><b>promoção em</b> 4,3 s · <b>escrita aceita em</b> 4,3 s · <b>época do nó isolado</b> 1 · <b>linhas no fim</b> 3.801</td></tr>
       <tr><td class="nome">Replicação — quatro servidores<div class="prova">master e três espelhos no ar, com retrato SHA-256 de cada linha nos quatro</div></td><td class="q mono">2026-09-17</td><td class="v"><b>master</b> 45.117 linhas/s · <b>réplica aplica</b> 43.606 eventos/s · <b>alcance</b> 2,3 s · <b>os quatro iguais no fim</b> sim</td></tr>
       <tr><td class="nome">Replicação — credencial recusada não bloqueia o IP<div class="prova">um master e uma réplica com o hash errado, pelo soquete: a réplica tenta UMA vez e estaciona, o blacklist.json fica vazio e o operador do mesmo IP entra — com dois controles na mesma corrida: cinco logins errados da própria bancada continuam bloqueando o master, e a origem fora do ar continua sendo procurada com recuo crescente</div></td><td class="q mono">2026-09-17 02:36:30</td><td class="v"><b>tentativas da réplica</b> 1 · <b>bloqueou o IP</b> NÃO · <b>operador derrubado</b> NÃO · <b>recuo de rede</b> [1.0, 2.0, 4.0, 8.0] s</td></tr>
       <tr><td class="nome">Telemetria — quanto custa ligar a instrumentação<div class="prova">um servidor só, com o interruptor virado em tempo de execução a cada par curto e a ordem alternada — o custo sai do PISO de cada lado (o efeito é aditivo; a média mede o vizinho) e só é declarado quando o teste de sinal passa a 3 sigma. Carga que não resolve aparece como «dentro do ruído», com a contagem dos pares ao lado</div></td><td class="q mono">2026-09-16T20:48:33</td><td class="v"><b>carga da máquina na corrida</b> 6,5 · <b>linhas no pior caso</b> 200.000</td></tr>
       <tr><td class="nome">Transações — atomicidade pelo soquete<div class="prova">SIGKILL no meio de um COMMIT de 3.000 linhas, e o banco reaberto depois — a exigência não é «as 3.000 estão lá», é NUNCA METADE, com o relatório dizendo qual dos dois. E o portão se prova apagando a marca .tx: sem ela o banco volta pela metade, que é o preço da garantia aparecendo</div></td><td class="q mono">2026-09-07 09:06</td><td class="v"><b>conferências pelo soquete</b> 36 · <b>falhas</b> 0 · <b>linhas depois da queda</b> 3.001 · <b>ficou pela metade</b> NÃO</td></tr>
       <tr><td class="nome">PITR — restaurar a um instante, pelo soquete<div class="prova">a linha 3 é gravada DEPOIS do corte e tem de NÃO aparecer no restaurado — e o mesmo backup restaurado sem ate volta com uma linha só, que é o controle positivo na mesma corrida. Sem ele, uma restauração que devolvesse duas linhas por acaso passaria</div></td><td class="q mono">2026-09-18 11:30</td><td class="v"><b>conferências pelo soquete</b> 22 · <b>falhas</b> 0 · <b>eventos reaplicados</b> 2 · <b>pulados depois do corte</b> 1</td></tr>
       <tr><td class="nome">Quórum — o que custaria esperar as réplicas<div class="prova">esta não prova recurso: mede o PREÇO de uma decisão que ainda não foi tomada. Separa o que a bancada de replicação somava num número só — os 826 ms publicados lá são 99,9% sono do laço, e o transporte custa 0,475 ms. Tudo em localhost: é o PISO, e a rede real custa mais</div></td><td class="q mono">2026-09-17 02:40</td><td class="v"><b>gravar no master</b> 0,152 ms · <b>levar a uma réplica</b> 0,349 ms · <b>commit esperando 2 de 3</b> 3,04 × · <b>commit esperando 3 de 3</b> 3,56 ×</td></tr>
-      <tr><td class="nome">ACID — as quatro letras<div class="prova">cada afirmação com o controle da mesma corrida; o nível de isolamento sai medido, não citado</div></td><td class="q mono">2026-09-24 03:37 <span class="mtime" title="a data saiu do mtime do arquivo, e nao do proprio resultado">(mtime)</span></td><td class="v"><b>versao</b> phxsqld 0.18.0 (41e82efa97c8) x86_64-unknown-linux-gnu · <b>rapido</b> NÃO</td></tr>
-      <tr><td class="nome">Durabilidade — o fecho da janela<div class="prova">os `fsync` contados por `strace` contra o `phxsqld` de pé</div></td><td class="q mono">2026-09-24 03:37 <span class="mtime" title="a data saiu do mtime do arquivo, e nao do proprio resultado">(mtime)</span></td><td class="v"><b>defeito_confirmado_a</b> NÃO</td></tr>
+      <tr><td class="nome">ACID — as quatro letras<div class="prova">cada afirmação com o controle da mesma corrida; o nível de isolamento sai medido, não citado</div></td><td class="q mono">2026-09-24 04:33 <span class="mtime" title="a data saiu do mtime do arquivo, e nao do proprio resultado">(mtime)</span></td><td class="v"><b>versao</b> phxsqld 0.18.0 (41e82efa97c8) x86_64-unknown-linux-gnu · <b>rapido</b> NÃO</td></tr>
+      <tr><td class="nome">Durabilidade — o fecho da janela<div class="prova">os `fsync` contados por `strace` contra o `phxsqld` de pé</div></td><td class="q mono">2026-09-24 04:33 <span class="mtime" title="a data saiu do mtime do arquivo, e nao do proprio resultado">(mtime)</span></td><td class="v"><b>defeito_confirmado_a</b> NÃO</td></tr>
       <tr><td class="nome">Carga — uma a uma contra o lote<div class="prova">o custo da viagem de rede, separado do custo de gravar</div></td><td class="q mono">2026-08-29</td><td class="v"><b>quando</b> 2026-08-29 · <b>versao</b> 0.17.0 · <b>linhas</b> 20.000 · <b>por_lote</b> 5.000</td></tr>
       <tr><td class="nome">Os três motores a um milhão<div class="prova">PhxSql, MySQL® e SQLite® intercalados na MESMA rodada, porque medidas de dias diferentes carregam o ambiente junto</div></td><td class="q mono">2026-09-08 02:49:47</td><td class="v"><b>linhas</b> 1.000.000 · <b>operacoes_por_fase_pontual</b> 20.000 · <b>rodadas</b> 3 · <b>medido_em</b> 2026-09-08 02:49:47</td></tr>
       <tr><td class="nome">Índice de texto — o `.fts` contra a varredura<div class="prova">as duas faixas respondem a MESMA pergunta e devolvem o MESMO conjunto de rowids -- o medidor aborta se não baterem, e aborta se nenhuma busca achar linha</div></td><td class="q mono">2026-09-07T01:09:13</td><td class="v"><b>índice sobre varredura</b> 31399,1 (21164,6–33443,8) × · <b>busca pelo índice</b> 137,73 (129,06–212,67) µs · <b>preço na escrita</b> 5,67 (5,38–6,06) × · <b>linhas achadas (conjuntos idênticos)</b> 9.339</td></tr>
@@ -291,7 +246,7 @@ e o pior deles quebrava todo salvar e todo incluir pela tela.</p>
   <b>33 casos</b> em <code>testes-web/casos/</code>, quase todos nos dois
   temas, contra um <code>phxsqld</code> de verdade num navegador de verdade — sem
   maquete e sem mockup. E <b>186 botões</b> com clique gravado
-  (<code>testes-web/botoes-exercitados.txt</code>, 2026-09-24 03:37 (mtime)):
+  (<code>testes-web/botoes-exercitados.txt</code>, 2026-09-24 04:33 (mtime)):
   a evidência é escrita pela própria corrida, e só em corrida <b>inteira e
   verde</b>, porque uma corrida que cai no meio grava menos do que provou.
 </div>
@@ -302,7 +257,48 @@ e o pior deles quebrava todo salvar e todo incluir pela tela.</p>
 e as demais partes num relatório único, cronometrado, sem esconder o que foi
 PULADO nem inventar um veredito para o que só RODOU: sonda sai zero sempre, e
 ninguém julgou o que ela mediu.</p>
-<div class="nota ausente"><b>NÃO RODADA.</b> o arquivo <code>bancada/bateria/ultima-bateria.json</code> não existe — rode <code>python3 provar.py --construir --json bancada/bateria/ultima-bateria.json</code></div>
+<div class="nota">
+  Corrida de <b>2026-09-24T04:03:40</b>, commit
+  <code>0f7aab6</code>,
+  25m51s no total.
+  <b>21</b> passaram, <b>4</b> falharam,
+  <b>0</b> puladas, <b>1</b> sondas
+  (rodaram e imprimiram — ninguém julgou, não é "passou").
+</div>
+
+<div class="rolo">
+  <table>
+    <thead><tr><th>parte</th><th>veredito</th><th class="n">segundos</th><th>motivo</th></tr></thead>
+    <tbody>
+      <tr><td class="nome"><code>motor</code><div class="prova">o motor, o protocolo e os portoes -- os testes de unidade e de integracao do workspace</div></td><td><span class="veredito v-ok"><span class="ic">✓</span>PASSOU</span></td><td class="n mono">2m53s</td><td class="v">—</td></tr>
+      <tr><td class="nome"><code>tela</code><div class="prova">a interface contra o servidor de verdade: 120 telas percorridas, o CSS global, o contraste, a primeira pintura</div></td><td><span class="veredito v-ok"><span class="ic">✓</span>PASSOU</span></td><td class="n mono">7m49s</td><td class="v">—</td></tr>
+      <tr><td class="nome"><code>idiomas</code><div class="prova">o caminho do idioma de ponta a ponta -- e o comportamento velho, que e o que mais importa numa guarda nova</div></td><td><span class="veredito v-ok"><span class="ic">✓</span>PASSOU</span></td><td class="n mono">12,0s</td><td class="v">—</td></tr>
+      <tr><td class="nome"><code>ponta-a-ponta</code><div class="prova">os seis itens do dono pelo SOQUETE: database, tabelas, UUID v7, gatilhos, procedimentos e carga</div></td><td><span class="veredito v-mal"><span class="ic">✗</span>FALHOU</span></td><td class="n mono">28,6s</td><td class="v">saiu com codigo 1</td></tr>
+      <tr><td class="nome"><code>cifra-do-fio</code><div class="prova">o aperto de mao da porta de dados contra um cliente escrito DE NOVO em Python: o cliente velho, o tunel, o pino, o registro repetido e o fio cortado</div></td><td><span class="veredito v-ok"><span class="ic">✓</span>PASSOU</span></td><td class="n mono">0,6s</td><td class="v">—</td></tr>
+      <tr><td class="nome"><code>alter</code><div class="prova">acrescentar coluna numa tabela com dado, pelo soquete: o rowid preservado, o backup, e a replica que ainda nao alterou</div></td><td><span class="veredito v-mal"><span class="ic">✗</span>FALHOU</span></td><td class="n mono">2,6s</td><td class="v">saiu com codigo 1</td></tr>
+      <tr><td class="nome"><code>transacoes</code><div class="prova">BEGIN/COMMIT/ROLLBACK/SAVEPOINT pelo soquete -- com SIGKILL no meio de um COMMIT, e o banco reabrindo para dizer o que aconteceu</div></td><td><span class="veredito v-ok"><span class="ic">✓</span>PASSOU</span></td><td class="n mono">6,3s</td><td class="v">—</td></tr>
+      <tr><td class="nome"><code>manual</code><div class="prova">os EXEMPLOS do MANUAL.txt rodados contra um servidor de verdade -- a secao de chave estrangeira prometia o que o motor recusa, e nada disso aparecia lendo</div></td><td><span class="veredito v-ok"><span class="ic">✓</span>PASSOU</span></td><td class="n mono">0,2s</td><td class="v">—</td></tr>
+      <tr><td class="nome"><code>pacote</code><div class="prova">as DUAS ferramentas que conferem um pacote -- o conferir-pacote e o sha256sum -c -- tem de concordar; discordaram por cinco dias e o pacote intacto reprovava</div></td><td><span class="veredito v-ok"><span class="ic">✓</span>PASSOU</span></td><td class="n mono">0,3s</td><td class="v">—</td></tr>
+      <tr><td class="nome"><code>rotinas</code><div class="prova">gatilhos e procedimentos pelo soquete, com o SIGNAL, o lote, o reinicio e a tabela sem gatilho</div></td><td><span class="veredito v-ok"><span class="ic">✓</span>PASSOU</span></td><td class="n mono">4,2s</td><td class="v">—</td></tr>
+      <tr><td class="nome"><code>profiler</code><div class="prova">a REDACAO do Profiler por soquete: vinte pedidos torcidos, e a sentinela procurada no anel e no .txt</div></td><td><span class="veredito v-ok"><span class="ic">✓</span>PASSOU</span></td><td class="n mono">1,5s</td><td class="v">—</td></tr>
+      <tr><td class="nome"><code>profiler-custo-zero</code><div class="prova">o Profiler DESLIGADO custa perto de zero -- TRAVADO contra o binario sem instrumentacao nenhuma, nao so medido</div></td><td><span class="veredito v-ok"><span class="ic">✓</span>PASSOU</span></td><td class="n mono">6m00s</td><td class="v">—</td></tr>
+      <tr><td class="nome"><code>queda-na-exclusao</code><div class="prova">que a janela de durabilidade da exclusao nao perde linha numa queda do PROCESSO: 150 exclusoes pelo soquete e um SIGKILL no meio da janela, nos dois modos</div></td><td><span class="veredito v-ok"><span class="ic">✓</span>PASSOU</span></td><td class="n mono">4,1s</td><td class="v">—</td></tr>
+      <tr><td class="nome"><code>telemetria-desenho</code><div class="prova">o painel de bolhas por MEDIDA: rotulo na esfera, alvo de clique, contraste nos dois temas</div></td><td><span class="veredito v-ok"><span class="ic">✓</span>PASSOU</span></td><td class="n mono">35,3s</td><td class="v">—</td></tr>
+      <tr><td class="nome"><code>telemetria-interacao</code><div class="prova">clicar na bolha menor com o painel em movimento, descer de nivel, voltar pela trilha</div></td><td><span class="veredito v-ok"><span class="ic">✓</span>PASSOU</span></td><td class="n mono">11,7s</td><td class="v">—</td></tr>
+      <tr><td class="nome"><code>telemetria-cores</code><div class="prova">as cores configuraveis do painel, exercitando: paleta escolhida na tela, salva, e conferida no painel</div></td><td><span class="veredito v-mal"><span class="ic">✗</span>FALHOU</span></td><td class="n mono">1,4s</td><td class="v">saiu com codigo 1</td></tr>
+      <tr><td class="nome"><code>cluster</code><div class="prova">eleicao e promocao automatica com tres servidores no ar e um SMTP falso capturando os avisos</div></td><td><span class="veredito v-ok"><span class="ic">✓</span>PASSOU</span></td><td class="n mono">50,9s</td><td class="v">—</td></tr>
+      <tr><td class="nome"><code>replicacao</code><div class="prova">os quatro modos de replicacao por soquete, com o comportamento velho dos Config_exemplo no fim</div></td><td><span class="veredito v-ok"><span class="ic">✓</span>PASSOU</span></td><td class="n mono">1m24s</td><td class="v">—</td></tr>
+      <tr><td class="nome"><code>trava</code><div class="prova">a trava de dados contra a leitura de rede: corte silencioso, alcance, queda de conexao e o abraco do bidirecional</div></td><td><span class="veredito v-ok"><span class="ic">✓</span>PASSOU</span></td><td class="n mono">1m34s</td><td class="v">—</td></tr>
+      <tr><td class="nome"><code>jobs</code><div class="prova">o aviso de jobs por e-mail, com SMTP falso -- e o servidor SEM bloco de e-mail, que nao pode mandar nada</div></td><td><span class="veredito v-ok"><span class="ic">✓</span>PASSOU</span></td><td class="n mono">2m33s</td><td class="v">—</td></tr>
+      <tr><td class="nome"><code>profiler-disco</code><div class="prova">o arquivo .txt do Profiler contra o SISTEMA OPERACIONAL: disco cheio, somente-leitura, reinicio, rotacao</div></td><td><span class="veredito v-neutro"><span class="ic">○</span>RODOU</span> <span class="q">(sonda — ninguém julgou)</span></td><td class="n mono">7,4s</td><td class="v">—</td></tr>
+      <tr><td class="nome"><code>dblink</code><div class="prova">a sincronia de tabelas primas contra um MySQL(R) de verdade: quem vence o conflito, e que exclusao nao viaja</div></td><td><span class="veredito v-ok"><span class="ic">✓</span>PASSOU</span></td><td class="n mono">1,4s</td><td class="v">—</td></tr>
+      <tr><td class="nome"><code>embutido</code><div class="prova">o PhxSql EMBUTIDO: um programa em C ligado a biblioteca, rodado contra o .a e contra o .so em x86-64 e contra o .a em ARM64 sob emulacao -- porque «compila» nao e «roda»</div></td><td><span class="veredito v-mal"><span class="ic">✗</span>FALHOU</span></td><td class="n mono">30,8s</td><td class="v">saiu com codigo 1</td></tr>
+      <tr><td class="nome"><code>rest</code><div class="prova">o webservice REST pelo soquete, com um cliente HTTP escrito na hora: o token da porta, o estreitamento que so ESTREITA, e a especificacao conferida rota a rota contra o servidor vivo</div></td><td><span class="veredito v-ok"><span class="ic">✓</span>PASSOU</span></td><td class="n mono">4,0s</td><td class="v">—</td></tr>
+      <tr><td class="nome"><code>rest-tela</code><div class="prova">a secao do webservice na tela de configuracao, exercitando: preencher, salvar, recarregar e trocar o idioma</div></td><td><span class="veredito v-ok"><span class="ic">✓</span>PASSOU</span></td><td class="n mono">10,0s</td><td class="v">—</td></tr>
+      <tr><td class="nome"><code>odbc</code><div class="prova">a ABI do driver ODBC pelo ctypes, sem passar pelo unixODBC -- a mesma .so que o gerenciador carregaria</div></td><td><span class="veredito v-ok"><span class="ic">✓</span>PASSOU</span></td><td class="n mono">1,9s</td><td class="v">—</td></tr>
+    </tbody>
+  </table>
+</div>
 
 <h2>7. O que estas provas NÃO cobrem</h2>
 <p class="sub">A parte que uma página de testes costuma esconder, e a única que
@@ -330,7 +326,7 @@ diz onde não confiar.</p>
 </div>
 
 <footer>
-  Gerado por <code>docs/dossie/pagina-dos-testes.py</code> em 24/09/2026 03:45. Nenhum
+  Gerado por <code>docs/dossie/pagina-dos-testes.py</code> em 24/09/2026 04:37. Nenhum
   número desta página foi digitado: eles saem do <code>CAPABILITIES.json</code>,
   do catálogo de guardas cruzado com <code>ultima-corrida.json</code>, dos
   <code>resultados.json</code> das bancadas, de <code>ultima-bateria.json</code>
