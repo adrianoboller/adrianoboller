@@ -24,7 +24,7 @@
 //! da tabela que nao esta no arquivo fica nula (ou com o padrao, no caso das
 //! colunas de sistema).
 
-use crate::error::{PhxError, Result};
+use crate::error::{citar, PhxError, Result};
 use crate::json::Json;
 
 /// Uma carga lida: o cabecalho e as linhas, tudo em texto.
@@ -566,7 +566,9 @@ pub fn texto_para_decimal(texto: &str, escala: u8) -> Result<i128> {
         Some(resto) => (true, resto),
         None => (false, t.strip_prefix('+').unwrap_or(t)),
     };
-    let invalido = || PhxError::Tipo(format!("decimal invalido: {texto:?}"));
+    // O valor sai pelo `citar`, e nao inteiro: a mensagem volta ao cliente e
+    // vai ao `acessos.log` -- pedido 453.
+    let invalido = || PhxError::Tipo(format!("decimal invalido: {}", citar(texto)));
     let (inteiro, fracao) = match t.split_once('.') {
         Some((a, b)) => (a, b),
         None => (t, ""),
@@ -580,7 +582,8 @@ pub fn texto_para_decimal(texto: &str, escala: u8) -> Result<i128> {
     // Mais casas do que a coluna tem seria perder centavo em silencio.
     if fracao.len() > escala as usize {
         return Err(PhxError::Tipo(format!(
-            "{texto:?} tem {} casas decimais e a coluna tem {escala}",
+            "{} tem {} casas decimais e a coluna tem {escala}",
+            citar(texto),
             fracao.len()
         )));
     }
@@ -605,7 +608,7 @@ pub fn texto_para_decimal(texto: &str, escala: u8) -> Result<i128> {
 /// Le uma data em `AAAA-MM-DD` e devolve dias desde a epoca.
 pub fn data_de_texto(t: &str) -> Result<i32> {
     let partes: Vec<&str> = t.trim().split('-').collect();
-    let invalida = || PhxError::Tipo(format!("data invalida: {t:?} (use AAAA-MM-DD)"));
+    let invalida = || PhxError::Tipo(format!("data invalida: {} (use AAAA-MM-DD)", citar(t)));
     if partes.len() != 3 {
         return Err(invalida());
     }
@@ -627,14 +630,38 @@ pub fn data_de_texto(t: &str) -> Result<i32> {
 /// trava envenenada para toda conexao seguinte. O que fica aqui e so o que o
 /// motor nao sabe: as duas frases de erro do tipo, que quem carrega uma
 /// planilha le.
+///
+/// # O erro cita o TAMANHO e a POSICAO, nunca o valor -- pedido 453
+///
+/// A frase ecoava o texto recebido inteiro (`{hex:?}`), e ela nao fica aqui:
+/// volta ao cliente, vai ao `acessos.log` e ao Profiler. Medido pelo soquete,
+/// um `inserir` com um megabyte torto numa coluna `Bin` devolvia 1.048.766
+/// bytes de resposta e crescia o log em 1.048.856 -- a cada pedido recusado.
+/// E aqui nem o [`citar`] serve: o valor de uma coluna `Bin` e CONTEUDO (um
+/// documento, uma imagem), e o comeco dele nao ajuda ninguem a achar o erro.
+/// Quem ajuda e a posicao do primeiro byte que nao e digito.
 pub fn hex_para_bytes(hex: &str) -> Result<Vec<u8>> {
     let t = hex.trim();
     if t.len() % 2 != 0 {
-        return Err(PhxError::Tipo(
-            "hexadecimal precisa ter quantidade par de digitos".into(),
-        ));
+        return Err(PhxError::Tipo(format!(
+            "hexadecimal precisa ter quantidade par de digitos (veio com {})",
+            t.len()
+        )));
     }
-    crate::hash::de_hex(t).ok_or_else(|| PhxError::Tipo(format!("hexadecimal invalido: {hex:?}")))
+    crate::hash::de_hex(t).ok_or_else(|| {
+        // A posicao conta sobre o texto RECEBIDO, de 1, e o espaco da ponta
+        // que o `trim` tirou continua contando -- senao ela apontaria para o
+        // byte errado de quem a for conferir no que mandou.
+        let antes = hex.len() - hex.trim_start().len();
+        let torto = t
+            .bytes()
+            .position(|b| crate::hash::digito_hex(b).is_none())
+            .map_or(0, |i| antes + i + 1);
+        PhxError::Tipo(format!(
+            "hexadecimal invalido: o byte {torto} de {} nao e digito hexadecimal",
+            hex.len()
+        ))
+    })
 }
 
 /// Normaliza numero escrito a brasileira para a forma que o analisador come.
@@ -677,7 +704,8 @@ pub fn valor_de_texto(t: &str, ty: &ColumnType) -> Result<Value> {
     if t.is_empty() {
         return Ok(Value::Null);
     }
-    let erro = |esperado: &str| PhxError::Tipo(format!("esperado {esperado}, recebido {t:?}"));
+    let erro =
+        |esperado: &str| PhxError::Tipo(format!("esperado {esperado}, recebido {}", citar(t)));
 
     Ok(match ty {
         ColumnType::Bool => match t.to_ascii_lowercase().as_str() {
@@ -1197,6 +1225,99 @@ mod testes_texto_para_valor {
         let torto = format!("{}", hex_para_bytes("zz").unwrap_err());
         assert!(torto.contains("hexadecimal invalido"), "{torto}");
         assert_eq!(hex_para_bytes(" 00FF ").unwrap(), vec![0, 255]);
+    }
+
+    /// **Pedido 453: o erro do hexadecimal cita o TAMANHO e a POSICAO, e
+    /// nunca o valor.**
+    ///
+    /// O dano que se mede e o tamanho da mensagem, porque ela e o que viaja:
+    /// volta ao cliente, vai ao `acessos.log` e ao Profiler. Com o defeito, o
+    /// megabyte recebido volta inteiro -- escapado por `{:?}`, e portanto um
+    /// pouco MAIOR que o valor.
+    #[test]
+    fn o_erro_do_hexadecimal_cita_tamanho_e_posicao_e_nunca_o_valor() {
+        // Um megabyte de hexadecimal valido com UM byte torto no meio: e o
+        // caso em que a posicao e o que acha o defeito, e o valor nao ajuda.
+        let mut torto = "ab".repeat(512 * 1024);
+        torto.replace_range(1000..1001, "z");
+        let e = hex_para_bytes(&torto).unwrap_err().to_string();
+        assert!(
+            e.len() < 200,
+            "o erro do hexadecimal tem {} bytes: ecoa o valor recebido",
+            e.len()
+        );
+        assert!(!e.contains("abab"), "o valor apareceu no erro: {e}");
+        assert!(e.contains("hexadecimal invalido"), "{e}");
+        assert!(e.contains(&torto.len().to_string()), "sem o tamanho: {e}");
+        // A posicao conta de 1, sobre o texto RECEBIDO -- o espaco da ponta
+        // que o `trim` tira continua contando, senao a posicao dita apontaria
+        // para o byte errado de quem a for conferir.
+        assert!(e.contains("byte 1001 "), "sem a posicao: {e}");
+        let com_espaco = hex_para_bytes(&format!("  {torto}"))
+            .unwrap_err()
+            .to_string();
+        assert!(com_espaco.contains("byte 1003 "), "{com_espaco}");
+        // O impar tambem diz o tamanho, e tambem nao ecoa.
+        let impar = hex_para_bytes(&"a".repeat(1 << 20 | 1))
+            .unwrap_err()
+            .to_string();
+        assert!(impar.len() < 200, "{} bytes", impar.len());
+    }
+
+    /// **Os IRMAOS do 453 -- os outros erros de conversao que ecoavam o texto
+    /// recebido inteiro.** Cada um recebe o mesmo megabyte e tem de responder
+    /// com a mensagem curta; e o CURTO continua citado, que e o que ajuda quem
+    /// digitou `2024-13-45` a ver o proprio erro.
+    #[test]
+    fn os_irmaos_de_conversao_nao_ecoam_o_valor_grande() {
+        let grande = "x".repeat(1 << 20);
+        let casas = format!("1.{}", "1".repeat(1 << 20));
+        let casos: Vec<(&str, PhxError)> = vec![
+            ("decimal", texto_para_decimal(&grande, 2).unwrap_err()),
+            (
+                "casas do decimal",
+                texto_para_decimal(&casas, 2).unwrap_err(),
+            ),
+            ("data", data_de_texto(&grande).unwrap_err()),
+            (
+                "inteiro da carga",
+                valor_de_texto(&grande, &ColumnType::Int8).unwrap_err(),
+            ),
+            (
+                "UUID da carga",
+                valor_de_texto(&grande, &ColumnType::Uuid).unwrap_err(),
+            ),
+            (
+                "UUID com 32 digitos e enchimento",
+                crate::uuid::Uuid::de_texto(&format!(
+                    "{{{}0123456789abcdef0123456789abcdeZ}}",
+                    "-".repeat(1 << 20)
+                ))
+                .unwrap_err(),
+            ),
+            (
+                "identificador de 256 bits",
+                crate::uuid::Uuid256::de_texto(&format!(
+                    "{}{}",
+                    " ".repeat(1 << 20),
+                    "z".repeat(64)
+                ))
+                .unwrap_err(),
+            ),
+        ];
+        // Todos os que ecoam, de uma vez: o vermelho e a tabela do dano.
+        let ecoam: Vec<String> = casos
+            .into_iter()
+            .map(|(quem, e)| (quem, e.to_string().len()))
+            .filter(|(_, n)| *n >= 300)
+            .map(|(quem, n)| format!("{quem}: {n} bytes"))
+            .collect();
+        assert!(
+            ecoam.is_empty(),
+            "erros de conversao que ecoam o megabyte recebido: {ecoam:?}"
+        );
+        let curto = data_de_texto("2024-13-45").unwrap_err().to_string();
+        assert!(curto.contains("\"2024-13-45\""), "{curto}");
     }
 
     #[test]

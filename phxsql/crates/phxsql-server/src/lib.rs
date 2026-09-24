@@ -14,6 +14,7 @@ pub mod catalogo;
 pub mod cluster;
 pub mod conferidor;
 pub mod conferidor_botoes;
+pub mod conferidor_canal;
 pub mod conferidor_dependencias;
 pub mod conferidor_grades;
 pub mod conferidor_inventario;

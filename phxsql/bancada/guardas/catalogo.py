@@ -1765,13 +1765,17 @@ GUARDAS = [
             "`teto-do-fio-sem-a-constante` e `-no-soquete` (pedido 303)."
         ),
         "arquivo": "crates/phxsql-core/src/fio.rs",
-        "trecho": """        let lidos = {
-            let mut limitado = <&mut L as std::io::Read>::take(leitor, teto + 1);
-            limitado.read_line(&mut linha)?
+        # O trecho andou com o pedido 442: a leitura passou a ser por BYTE
+        # (`read_until`), em duas partes, e a primeira e a que tem o `take`.
+        # O defeito continua o mesmo -- a leitura sem teto --, reposto na
+        # primeira parte, que e por onde toda linha entra.
+        "trecho": """        let mut lidos = {
+            let mut limitado = <&mut L as std::io::Read>::take(leitor, teto.saturating_add(1));
+            limitado.read_until(b'\\n', &mut bruto)? as u64
         };
 """,
         "troca": """        // DEFEITO REPOSTO: a leitura volta a ser ilimitada.
-        let lidos = leitor.read_line(&mut linha)?;
+        let mut lidos = leitor.read_until(b'\\n', &mut bruto)? as u64;
 """,
         "pacote": "phxsql-core",
         # NAO estenda o alvo desta entrada ao teste de soquete
@@ -9090,7 +9094,23 @@ pub fn limpar() {
             "motor (a petrea «funcao e comando vem do mesmo motor»)."
         ),
         "arquivo": "crates/phxsql-core/src/carga.rs",
-        "trecho": """    crate::hash::de_hex(t).ok_or_else(|| PhxError::Tipo(format!("hexadecimal invalido: {hex:?}")))
+        # O trecho andou com o pedido 453: o erro deixou de ecoar o valor e
+        # passou a citar tamanho e posicao, num fecho de varias linhas. O
+        # defeito reposto e o mesmo de sempre -- a copia com o corte por byte.
+        "trecho": """    crate::hash::de_hex(t).ok_or_else(|| {
+        // A posicao conta sobre o texto RECEBIDO, de 1, e o espaco da ponta
+        // que o `trim` tirou continua contando -- senao ela apontaria para o
+        // byte errado de quem a for conferir no que mandou.
+        let antes = hex.len() - hex.trim_start().len();
+        let torto = t
+            .bytes()
+            .position(|b| crate::hash::digito_hex(b).is_none())
+            .map_or(0, |i| antes + i + 1);
+        PhxError::Tipo(format!(
+            "hexadecimal invalido: o byte {torto} de {} nao e digito hexadecimal",
+            hex.len()
+        ))
+    })
 """,
         "troca": """    // DEFEITO REPOSTO (446): a copia do de_hex, com o corte por byte.
     (0..t.len())
@@ -9260,5 +9280,303 @@ pub fn limpar() {
             "cluster::testes::replica_redireciona_para_o_master",
         ],
         "prazo": 300,
+    },
+    # -----------------------------------------------------------------------
+    # Pedidos 439, 442 e 453 (24/09/2026): quanto este lado guarda do que o
+    # outro manda -- a linha do rele SMTP, a linha de quem ja nao e ninguem, a
+    # linha que ja foi respondida, e o valor torto citado na mensagem de erro.
+    # Numeradas pelo pedido, e nao na serie de cima, porque a serie cresce em
+    # paralelo por outras frentes na mesma arvore.
+    # -----------------------------------------------------------------------
+    # 439. O rele SMTP escolhe a memoria deste lado
+    {
+        "id": "smtp-linha-sem-teto",
+        "titulo": "o cliente SMTP lê a linha do relé com `read_line` cru, sem teto de tamanho",
+        "porque": (
+            "pedido 439, o sexto `read_line` de soquete fora do `Canal` e o "
+            "unico em producao depois do 434: teto de TEMPO e nenhum de "
+            "TAMANHO. Medido com um rele falso que nao quebra a linha: o "
+            "cliente tirou do soquete 8.388.610 bytes numa linha so, e o erro "
+            "do `enviar` carregou 8.388.651 bytes. O teste conta o que saiu do "
+            "SOQUETE, e nao o veredito: um cliente que lesse tudo e recusasse "
+            "depois daria o mesmo `Err` com a memoria ja gasta."
+        ),
+        "arquivo": "crates/phxsql-server/src/email.rs",
+        "trecho": """        let linha = match fio.ler_ate(leitor, TETO_DO_APERTO) {
+""",
+        "troca": """        // DEFEITO REPOSTO (439): a linha do rele por `read_line` cru, sem teto.
+        let _ = &mut fio;
+        let mut cru = String::new();
+        let lido = leitor
+            .read_line(&mut cru)
+            .map(|n| if n == 0 { Recebido::Fim } else { Recebido::Linha(cru) })
+            .map_err(PhxError::Io);
+        let linha = match lido {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "email::testes::a_linha_sem_fim_do_rele_para_no_teto_do_motor",
+            "email::testes::o_envio_contra_rele_sem_quebra_de_linha_desiste_no_teto",
+            # A catraca que nasceu com o conserto tem de acusar o mesmo defeito
+            # por outro caminho -- lendo o fonte, e nao o soquete.
+            "conferidor_canal::testes::ninguem_le_linha_de_soquete_fora_do_canal",
+        ],
+        "seguem": [
+            # O comportamento velho: a resposta de varias linhas do EHLO.
+            "email::testes::a_resposta_de_varias_linhas_continua_inteira",
+            "email::testes::o_cabecalho_sai_completo",
+        ],
+    },
+    # 442.1 O teto decidido antes de a leitura bloquear
+    {
+        "id": "teto-decidido-antes-do-bloqueio",
+        "titulo": "o teto da linha é decidido antes de a leitura bloquear, e o usuário excluído enquanto esperava manda 1 MiB",
+        "porque": (
+            "achado M1 da revisao SEC de 434/435, medido por soquete: a "
+            "conexao passa a vida parada na leitura, e o teto armado antes "
+            "dela valia pela espera inteira -- o usuario EXCLUIDO mandou 1 MiB "
+            "com `ok:true`, e a conexao aberta antes do primeiro cadastro "
+            "tambem. O conserto pergunta QUANDO a linha passa do teto de todos "
+            "(`Canal::ler_decidindo`), e nao antes."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """            let lida = canal.ler_decidindo(&mut leitor, TETO_DO_APERTO, &mut || {
+                self.refrescar_a_sessao(&mut sessao);
+                teto = self.teto_da_linha(&sessao, cifrado);
+                teto
+            });
+""",
+        "troca": """            // DEFEITO REPOSTO (442): o teto decidido ANTES de a leitura
+            // bloquear, com a ficha de quem a conexao era naquele instante.
+            teto = self.teto_da_linha(&sessao, cifrado);
+            let lida = canal.ler_ate(&mut leitor, teto);
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "teto-da-linha-anonima"],
+        "caem": [
+            "o_usuario_excluido_com_a_conexao_aberta_perde_o_teto_na_linha_seguinte",
+            "a_conexao_aberta_antes_do_primeiro_cadastro_perde_o_teto_quando_ele_nasce",
+        ],
+        "seguem": [
+            # Os comportamentos velhos do 434, que nao podem mudar.
+            "quem_continua_no_cadastro_continua_com_o_teto_do_registro",
+            "a_linha_grande_antes_do_login_e_recusada_pelo_teto_do_anonimo",
+            "depois_do_login_a_linha_grande_continua_passando",
+            "sem_cadastro_a_linha_grande_continua_passando",
+        ],
+    },
+    # 442.2 A pergunta na hora certa, com a ficha velha
+    {
+        "id": "teto-decidido-sem-refrescar-a-ficha",
+        "titulo": "o teto é perguntado na hora certa, mas com a ficha da sessão que nunca se refrescou",
+        "porque": (
+            "a outra metade do mesmo achado M1: o `refrescar_a_sessao` so rodava "
+            "dentro do `despachar`, DEPOIS da leitura, e os dois lados da mesma "
+            "pergunta (`ainda_anonima`) liam fichas de momentos diferentes. "
+            "Perguntar na hora certa sem refrescar deixa o excluido com os "
+            "128 MiB -- e so ele: a conexao aberta antes do primeiro cadastro "
+            "continua recusada, porque o cadastro vazio e lido vivo. E isso que "
+            "a lista `seguem` afirma, e e o que separa esta entrada da de cima."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """                self.refrescar_a_sessao(&mut sessao);
+                teto = self.teto_da_linha(&sessao, cifrado);
+""",
+        "troca": """                // DEFEITO REPOSTO (442): a pergunta na hora certa, com a ficha velha.
+                teto = self.teto_da_linha(&sessao, cifrado);
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "teto-da-linha-anonima"],
+        "caem": [
+            "o_usuario_excluido_com_a_conexao_aberta_perde_o_teto_na_linha_seguinte",
+        ],
+        "seguem": [
+            "a_conexao_aberta_antes_do_primeiro_cadastro_perde_o_teto_quando_ele_nasce",
+            "quem_continua_no_cadastro_continua_com_o_teto_do_registro",
+            "depois_do_login_a_linha_grande_continua_passando",
+        ],
+    },
+    # 442.2b O conserto plausivel: refrescar a ficha ANTES de armar a leitura
+    {
+        "id": "teto-refrescado-antes-do-bloqueio",
+        "titulo": "a ficha é refrescada antes de a leitura bloquear, e o excluído enquanto esperava continua com 128 MiB",
+        "porque": (
+            "a hipotese que morreu antes do conserto, agora medida: o conserto "
+            "com cara de certo era chamar `refrescar_a_sessao` no topo do laco, "
+            "antes do `teto_da_linha`. Ele fecha a exclusao que acontece ENTRE "
+            "duas linhas, e nao a que acontece com a conexao PARADA na leitura "
+            "-- que e o caso do achado M1 e o caso comum: a conexao ociosa "
+            "passa a vida ali. A entrada existe para que ninguem troque a "
+            "leitura decidida por este atalho sem ver o vermelho."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """            let lida = canal.ler_decidindo(&mut leitor, TETO_DO_APERTO, &mut || {
+                self.refrescar_a_sessao(&mut sessao);
+                teto = self.teto_da_linha(&sessao, cifrado);
+                teto
+            });
+""",
+        "troca": """            // DEFEITO REPOSTO (442): a ficha refrescada ANTES de armar a
+            // leitura -- o conserto plausivel, que nao alcanca a espera.
+            self.refrescar_a_sessao(&mut sessao);
+            teto = self.teto_da_linha(&sessao, cifrado);
+            let lida = canal.ler_ate(&mut leitor, teto);
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "teto-da-linha-anonima"],
+        "caem": [
+            "o_usuario_excluido_com_a_conexao_aberta_perde_o_teto_na_linha_seguinte",
+            "a_conexao_aberta_antes_do_primeiro_cadastro_perde_o_teto_quando_ele_nasce",
+        ],
+        "seguem": [
+            "quem_continua_no_cadastro_continua_com_o_teto_do_registro",
+            "a_linha_grande_antes_do_login_e_recusada_pelo_teto_do_anonimo",
+            "depois_do_login_a_linha_grande_continua_passando",
+            "sem_cadastro_a_linha_grande_continua_passando",
+        ],
+    },
+    # 442.3 A linha respondida continua na memoria
+    {
+        "id": "linha-residente-depois-da-resposta",
+        "titulo": "a linha já respondida fica residente enquanto a conexão espera a próxima",
+        "porque": (
+            "agravante medido do achado M1: `let mut linha;` morava FORA do "
+            "laco, e a `String` velha so morria quando a leitura seguinte "
+            "devolvia. Medido pelo `/proc/self/status` com o defeito: VmRSS de "
+            "13.640 kB para 80.252 kB OCIOSO depois de um ping de 64 MiB; com o "
+            "conserto, 13.592 -> 14.648 kB. O que depende do sistema "
+            "operacional se prova contra ele: a pergunta e se a memoria VOLTA, "
+            "e isso e o alocador e o kernel respondendo."
+        ),
+        "trocas": [
+            {
+                "arquivo": "crates/phxsql-server/src/servidor.rs",
+                "trecho": """        let mut canal = Canal::Claro;
+        loop {
+            // QUANTO ESTE LADO RESERVA ANTES DE SABER QUEM FALA -- pedido 434.
+""",
+                "troca": """        let mut canal = Canal::Claro;
+        // DEFEITO REPOSTO (442, 1/2): a linha mora fora do laco.
+        let mut linha;
+        loop {
+            // QUANTO ESTE LADO RESERVA ANTES DE SABER QUEM FALA -- pedido 434.
+""",
+            },
+            {
+                "arquivo": "crates/phxsql-server/src/servidor.rs",
+                "trecho": """            let linha = match lida {
+""",
+                "troca": """            // DEFEITO REPOSTO (442, 2/2): atribuida, e nao declarada aqui.
+            linha = match lida {
+""",
+            },
+        ],
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "linha-grande-nao-fica-residente"],
+        "caem": [
+            "a_linha_grande_nao_fica_residente_depois_da_resposta",
+        ],
+        "seguem": [],
+        "prazo": 300,
+    },
+    # 453.1 O hexadecimal torto ecoado inteiro
+    {
+        "id": "hexadecimal-ecoa-o-valor",
+        "titulo": "o erro do hexadecimal inválido devolve o valor recebido inteiro",
+        "porque": (
+            "pedido 453: `format!(\"hexadecimal invalido: {hex:?}\")`. A "
+            "mensagem nao fica onde nasce -- volta ao cliente, vai ao "
+            "`acessos.log` e ao Profiler. Medido pelo soquete, um megabyte "
+            "torto numa coluna `Bin` voltava em 1.048.766 bytes de resposta e "
+            "crescia o log em 1.048.856, a cada `inserir` recusado. O teste "
+            "mede o TAMANHO da mensagem, que e o dano."
+        ),
+        "arquivo": "crates/phxsql-core/src/carga.rs",
+        "trecho": """        PhxError::Tipo(format!(
+            "hexadecimal invalido: o byte {torto} de {} nao e digito hexadecimal",
+            hex.len()
+        ))
+""",
+        "troca": """        // DEFEITO REPOSTO (453): o erro ecoa o valor recebido inteiro.
+        let _ = torto;
+        PhxError::Tipo(format!("hexadecimal invalido: {hex:?}"))
+""",
+        "pacote": "phxsql-core",
+        "alvo": ["--lib"],
+        "caem": [
+            "carga::testes_texto_para_valor::o_erro_do_hexadecimal_cita_tamanho_e_posicao_e_nunca_o_valor",
+        ],
+        "seguem": [
+            "carga::testes_texto_para_valor::hex_para_bytes_recusa_sem_panico_o_que_nao_e_hexadecimal",
+            "carga::testes_texto_para_valor::os_irmaos_de_conversao_nao_ecoam_o_valor_grande",
+        ],
+    },
+    # 453.2 O motor da citacao sem teto
+    {
+        "id": "citar-sem-teto",
+        "titulo": "a citação do valor recebido numa mensagem de erro perde o teto, e os irmãos voltam a ecoar",
+        "porque": (
+            "os IRMAOS do 453: decimal, data, a conversao da carga, os tres "
+            "UUIDs e o literal da expressao ecoavam o texto recebido inteiro "
+            "(medido: de 1.048.622 a 1.048.724 bytes de mensagem para um "
+            "megabyte recebido). Todos passam pelo `error::citar` do motor, e "
+            "e por isso que a guarda e UMA: repor o defeito no motor derruba os "
+            "irmaos juntos. O hexadecimal nao passa pelo `citar` -- la o valor e "
+            "conteudo e sai so a posicao --, e a lista `seguem` afirma isso."
+        ),
+        "arquivo": "crates/phxsql-core/src/error.rs",
+        "trecho": """    if valor.len() <= TETO_DA_CITACAO {
+        format!("{valor:?}")
+    } else {
+        format!("<{} bytes>", valor.len())
+    }
+""",
+        "troca": """    // DEFEITO REPOSTO (453): o valor recebido citado inteiro, sem teto.
+    format!("{valor:?}")
+""",
+        "pacote": "phxsql-core",
+        "alvo": ["--lib"],
+        "caem": [
+            "error::testes_citar::o_curto_sai_citado_e_o_longo_vira_tamanho",
+            "carga::testes_texto_para_valor::os_irmaos_de_conversao_nao_ecoam_o_valor_grande",
+            "expressao::testes::o_literal_numerico_torto_nao_volta_inteiro_no_erro",
+        ],
+        "seguem": [
+            "carga::testes_texto_para_valor::o_erro_do_hexadecimal_cita_tamanho_e_posicao_e_nunca_o_valor",
+        ],
+    },
+    # 453.3 O JSON recebido pelo `{:?}`, do lado do protocolo
+    {
+        "id": "json-recebido-ecoa-o-valor",
+        "titulo": "a recusa de tipo do `inserir` devolve o JSON recebido inteiro, pelo fio e pelo `acessos.log`",
+        "porque": (
+            "o irmao do 453 do lado do protocolo: `json_para_valor` e os dois "
+            "leitores de inteiro recusavam com `recebido {j:?}`, e e por eles "
+            "que passa todo `inserir`, `alterar` e filtro. Medido pelo soquete: "
+            "um megabyte numa coluna `Int8` voltava em 1.048.778 bytes de "
+            "resposta e crescia o `acessos.log` em 1.048.868. Lista e objeto "
+            "viram a contagem, e nunca o conteudo, porque o tamanho do `{:?}` "
+            "deles so se sabe depois de pagar a copia inteira."
+        ),
+        "arquivo": "crates/phxsql-server/src/valores.rs",
+        "trecho": """    match j {
+        Json::Texto(t) => format!("Texto({})", citar(t)),
+        Json::Lista(l) => format!("Lista(<{} itens>)", l.len()),
+        Json::Objeto(o) => format!("Objeto(<{} campos>)", o.len()),
+        escalar => format!("{escalar:?}"),
+    }
+""",
+        "troca": """    // DEFEITO REPOSTO (453): o JSON recebido pelo `{:?}`, inteiro.
+    format!("{j:?}")
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "hexadecimal-do-fio"],
+        "caem": [
+            "o_valor_torto_grande_nao_volta_inteiro_nem_vai_ao_log",
+        ],
+        "seguem": [
+            "binario_que_corta_um_caractere_nao_envenena_a_trava_de_dados",
+        ],
     },
 ]

@@ -9570,17 +9570,35 @@ impl Servidor {
         // muda se o cliente pedir o aperto -- cliente que nunca ouviu falar
         // disto nunca pede, e para ele nada mudou.
         let mut canal = Canal::Claro;
-        let mut linha;
         loop {
             // QUANTO ESTE LADO RESERVA ANTES DE SABER QUEM FALA -- pedido 434.
             //
             // O teto vem do MOTOR, e a pergunta que ele responde muda com a
             // sessao: enquanto ninguem provou quem e, reservar 128 MiB e
             // deixar quem ainda nao e ninguem escolher a memoria deste lado.
-            // O `ler_ate` e o mesmo `ler` de sempre com o teto dito em voz
-            // alta -- nao ha leitura nova aqui, so a decisao de quanto.
-            let teto = self.teto_da_linha(&sessao, canal.cifrado());
-            linha = match canal.ler_ate(&mut leitor, teto) {
+            //
+            // E ela e feita QUANDO A LINHA PASSA do teto de todos, e nao antes
+            // de a leitura bloquear -- pedido 442. A conexao passa a vida
+            // parada aqui, e o cadastro muda enquanto ela espera: decidido
+            // antes, o teto de um usuario EXCLUIDO continuava o de quem ele
+            // era (medido: 1 MiB com `ok:true` depois da exclusao). A ficha
+            // se refresca na hora da pergunta, pela mesma funcao que o
+            // `despachar` usa, e a linha pequena -- quase todas -- nem
+            // pergunta.
+            let cifrado = canal.cifrado();
+            let mut teto = TETO_DO_APERTO;
+            // A linha mora DENTRO da volta, e nao fora do laco -- pedido 442,
+            // a metade da memoria. Declarada fora, a `String` velha so morria
+            // quando a leitura seguinte DEVOLVIA, e a conexao ociosa segurava
+            // a linha anterior inteira: medido, VmRSS de 13.640 kB para
+            // 80.252 kB parada depois de um ping de 64 MiB. Aqui ela cai no
+            // fim de cada volta, antes de a conexao voltar a esperar.
+            let lida = canal.ler_decidindo(&mut leitor, TETO_DO_APERTO, &mut || {
+                self.refrescar_a_sessao(&mut sessao);
+                teto = self.teto_da_linha(&sessao, cifrado);
+                teto
+            });
+            let linha = match lida {
                 Ok(Recebido::Linha(l)) => l,
                 // Fim limpo: EOF em claro, ou a despedida dentro do tunel.
                 Ok(Recebido::Fim) => return,
@@ -10086,6 +10104,16 @@ impl Servidor {
         if sessao.usuario.is_some() {
             return TETO_DO_REGISTRO;
         }
+    ///
+    /// # QUANDO se pergunta -- pedido 442
+    ///
+    /// So quando a linha ja passou do `TETO_DO_APERTO`, e com a ficha
+    /// refrescada naquele instante (`Canal::ler_decidindo`, no laco do
+    /// `atender`). Perguntada antes de a leitura bloquear, a resposta valia
+    /// pela vida inteira da espera -- e o usuario excluido enquanto a conexao
+    /// dele esperava continuava com os 128 MiB de quem ele era. Os dois
+    /// lugares que fazem esta pergunta (`ainda_anonima`, aqui e no portao do
+    /// login) passam a faze-la sobre a MESMA ficha: a do cadastro vivo.
         if self.config.cifra_fio.exigir && !cifrado {
             return TETO_DO_APERTO;
         }

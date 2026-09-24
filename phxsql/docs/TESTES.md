@@ -823,11 +823,18 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `percent-da-web-fatia-texto-por-byte` | o %XX da porta web em pânico com caractere de vários bytes, sem login | 1 | ✅ provada |
 | `mapa-do-cluster-envenenado-vira-vazio` | o mapa de pulsos envenenado devolvido vazio: a eleição trava | 1 | ✅ provada |
 | `lista-do-cluster-envenenada-volta-ao-arranque` | a lista viva de nós envenenada respondida pelo config.json do arranque | 1 | ✅ provada |
+| `teto-decidido-antes-do-bloqueio` | o teto da linha é decidido antes de a leitura bloquear, e o usuário excluído enquanto esperava manda 1 MiB | 2 | ✅ provada |
+| `teto-decidido-sem-refrescar-a-ficha` | o teto é perguntado na hora certa, mas com a ficha da sessão que nunca se refrescou | 1 | ✅ provada |
+| `teto-refrescado-antes-do-bloqueio` | a ficha é refrescada antes de a leitura bloquear, e o excluído enquanto esperava continua com 128 MiB | 2 | ✅ provada |
+| `linha-residente-depois-da-resposta` | a linha já respondida fica residente enquanto a conexão espera a próxima | 1 | ✅ provada |
+| `hexadecimal-ecoa-o-valor` | o erro do hexadecimal inválido devolve o valor recebido inteiro | 1 | ✅ provada |
+| `citar-sem-teto` | a citação do valor recebido numa mensagem de erro perde o teto, e os irmãos voltam a ecoar | 3 | ✅ provada |
+| `json-recebido-ecoa-o-valor` | a recusa de tipo do `inserir` devolve o JSON recebido inteiro, pelo fio e pelo `acessos.log` | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**183 das 227 guardas do catálogo: 1 aposentada, 177 provadas, 1 quebrada, 4 redundantes** — 4600 s de mutação, medido em 2026-09-16 15:25.
+**190 das 235 guardas do catálogo: 1 aposentada, 184 provadas, 1 quebrada, 4 redundantes** — 4694 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 45 das 227 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 45 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 46 das 235 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 46 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `teto-do-fio-sem-a-constante` — o `Canal::ler` de producao troca `TETO_DO_REGISTRO` por um teto quase infinito
 - `teto-do-fio-sem-a-constante-no-soquete` — a mesma troca da constante por um teto quase infinito, vista pela rede
@@ -874,6 +881,7 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `so-o-disco-vem-da-porta-e-nao-de-desligar-depois` — o empilhar volta a abrir pela porta de sempre e desligar a sobreposicao na linha seguinte
 - `slot-de-outro-reg` — o sal deixa de ser por arquivo: o slot cifrado de um `.reg` abre no outro
 - `aperto-de-mao-sem-teto` — a leitura do aperto de mao fora do `Canal`, sem teto nenhum
+- `smtp-linha-sem-teto` — o cliente SMTP lê a linha do relé com `read_line` cru, sem teto de tamanho
 
 As guardas que esta corrida ainda cita, hoje aposentadas:
 

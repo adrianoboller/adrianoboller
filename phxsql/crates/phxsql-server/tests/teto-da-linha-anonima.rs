@@ -310,3 +310,175 @@ fn esperar_no_log(caminho: &std::path::Path, pedaco: &str) -> String {
     }
     panic!("o `acessos.log` nunca trouxe «{pedaco}»; o que ele tem:\n{ultimo}");
 }
+
+// ---------------------------------------------------------------------------
+// Pedido 442 -- o teto escolhido com a ficha VELHA
+// ---------------------------------------------------------------------------
+//
+// O 434 decidia o teto ANTES de a leitura bloquear, com a sessao do jeito que
+// ela estava naquele instante. A conexao passa a vida parada dentro dessa
+// leitura -- e enquanto ela esta parada o cadastro muda. Medido pela revisao
+// de seguranca (achado M1): a conexao de um usuario EXCLUIDO ainda mandou
+// 1 MiB com `ok:true`, e a aberta antes do primeiro `usuario_criar` tambem.
+
+const SENHA_DA_ANA: &str = "segredo-da-ana";
+
+/// Um servidor que sobe de um ARQUIVO -- o `usuario_criar` e o
+/// `usuario_excluir` gravam o cadastro no `config.json`, e sem arquivo eles
+/// recusam antes de a prova comecar.
+fn subir_de_arquivo(base: &std::path::Path, usuarios: &str) -> (Arc<Servidor>, u16) {
+    let porta = porta_livre();
+    let caminho = base.join("config.json");
+    let texto = format!(
+        r#"{{ "bind": "127.0.0.1:{porta}", "base": {b:?}, "token": "{TOKEN}",
+              "log_acessos": {log:?}, "blacklist": {bl:?}, "dblink": {dbl:?},
+              "jobs": {jobs:?}, "usuarios": [{usuarios}],
+              "timeout_s": 60,
+              "cifra_fio": {{ "exigir": false }},
+              "web": {{ "ligado": false }} }}"#,
+        b = base.join("base").display().to_string(),
+        log = base.join("acessos.log").display().to_string(),
+        bl = base.join("blacklist.json").display().to_string(),
+        dbl = base.join("dblink.json").display().to_string(),
+        jobs = base.join("jobs.json").display().to_string(),
+    );
+    std::fs::write(&caminho, texto).unwrap();
+    let s = Servidor::novo(Config::ler(&caminho).unwrap()).unwrap();
+    let copia = Arc::clone(&s);
+    std::thread::spawn(move || {
+        let _ = copia.escutar();
+    });
+    let alvo: SocketAddr = format!("127.0.0.1:{porta}").parse().unwrap();
+    let ate = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < ate {
+        if TcpStream::connect_timeout(&alvo, Duration::from_millis(200)).is_ok() {
+            return (s, porta);
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    panic!("o servidor nao subiu na porta {porta}");
+}
+
+fn ficha(login: &str, senha: &str, supervisor: bool) -> String {
+    format!(
+        r#"{{ "login": "{login}", "senha_hash": "{}", "supervisor": {supervisor} }}"#,
+        phxsql_core::senha::cifrar_com(senha, 1)
+    )
+}
+
+/// Confere que a linha foi RECUSADA pelo teto do anonimo -- e o `acessos.log`
+/// diz quanto este lado aceitou guardar: o teto dele, e nao o do registro.
+fn recusada_pelo_teto_do_anonimo(d: &std::path::Path, r: &Json, quem: &str) {
+    assert!(
+        !r.booleano_ou("ok", true),
+        "{quem}: o servidor guardou a linha INTEIRA de 1 MiB (ok:true) -- a \
+         leitura usou o teto de 128 MiB de quem ja nao e ninguem"
+    );
+    assert_eq!(
+        r.texto_ou("nome", ""),
+        "LIMITE_EXCEDIDO",
+        "{quem}: {}",
+        r.escrever()
+    );
+    esperar_no_log(
+        &d.join("acessos.log"),
+        &format!("desta linha (teto {TETO_DO_APERTO})"),
+    );
+}
+
+/// **O usuario EXCLUIDO com a conexao aberta perde o teto de identificado na
+/// linha seguinte.**
+///
+/// A ordem e a do achado M1: ana entra e a conexao dela fica PARADA na
+/// leitura; root a exclui por outra conexao; ana manda 1 MiB. Com o defeito,
+/// a leitura ja estava armada com 128 MiB desde antes da exclusao, e a linha
+/// inteira entrava -- `ok:true` para quem nao existe mais.
+#[test]
+fn o_usuario_excluido_com_a_conexao_aberta_perde_o_teto_na_linha_seguinte() {
+    let d = pasta("excluido");
+    let (_s, porta) = subir_de_arquivo(
+        &d,
+        &format!(
+            "{}, {}",
+            ficha("root", SENHA, true),
+            ficha("ana", SENHA_DA_ANA, false)
+        ),
+    );
+    let mut ana = Ligacao::nova(porta);
+    let r = ana.mandar(&format!(
+        r#"{{"token":"{TOKEN}","op":"login","usuario":"ana","senha":"{SENHA_DA_ANA}"}}"#
+    ));
+    assert!(r.booleano_ou("ok", false), "login da ana: {}", r.escrever());
+    // A conexao da ana ja respondeu e voltou para a leitura: e ali que ela
+    // fica enquanto o cadastro muda.
+    let mut root = Ligacao::entrar(porta);
+    let r = root.mandar(&format!(
+        r#"{{"token":"{TOKEN}","op":"usuario_excluir","login":"ana"}}"#
+    ));
+    assert!(
+        r.booleano_ou("ok", false),
+        "excluir a ana: {}",
+        r.escrever()
+    );
+
+    let r = ana.mandar(&linha_de_um_mib());
+    recusada_pelo_teto_do_anonimo(&d, &r, "usuario excluido");
+}
+
+/// **O irmao: a conexao aberta ANTES do primeiro cadastro.**
+///
+/// Servidor sem usuario nenhum da o teto do registro a todos -- e o
+/// comportamento velho, travado acima. Mas quando o primeiro supervisor nasce,
+/// a conexao anonima que ja estava aberta deixa de estar num servidor sem
+/// cadastro, e a linha seguinte dela e a de um anonimo como outro qualquer.
+#[test]
+fn a_conexao_aberta_antes_do_primeiro_cadastro_perde_o_teto_quando_ele_nasce() {
+    let d = pasta("primeiro-cadastro");
+    let (_s, porta) = subir_de_arquivo(&d, "");
+    let mut antiga = Ligacao::nova(porta);
+    let r = antiga.mandar(&format!(r#"{{"token":"{TOKEN}","op":"ping"}}"#));
+    assert!(r.booleano_ou("ok", false), "ping: {}", r.escrever());
+
+    let mut outra = Ligacao::nova(porta);
+    let r = outra.mandar(&format!(
+        r#"{{"token":"{TOKEN}","op":"usuario_criar","login":"chefe","senha":"{SENHA}","supervisor":true}}"#
+    ));
+    assert!(
+        r.booleano_ou("ok", false),
+        "primeiro cadastro: {}",
+        r.escrever()
+    );
+
+    let r = antiga.mandar(&linha_de_um_mib());
+    recusada_pelo_teto_do_anonimo(&d, &r, "conexao aberta antes do cadastro");
+}
+
+/// **O COMPORTAMENTO VELHO: quem continua no cadastro continua com o teto do
+/// registro** -- inclusive quando o cadastro muda por causa de OUTRO usuario.
+/// Um conserto que refrescasse a ficha errado derrubaria o lote de todo mundo
+/// a cada `usuario_criar`.
+#[test]
+fn quem_continua_no_cadastro_continua_com_o_teto_do_registro() {
+    let d = pasta("continua");
+    let (_s, porta) = subir_de_arquivo(
+        &d,
+        &format!(
+            "{}, {}",
+            ficha("root", SENHA, true),
+            ficha("ana", SENHA_DA_ANA, false)
+        ),
+    );
+    let mut ana = Ligacao::nova(porta);
+    let r = ana.mandar(&format!(
+        r#"{{"token":"{TOKEN}","op":"login","usuario":"ana","senha":"{SENHA_DA_ANA}"}}"#
+    ));
+    assert!(r.booleano_ou("ok", false), "login da ana: {}", r.escrever());
+    let mut root = Ligacao::entrar(porta);
+    let r = root.mandar(&format!(
+        r#"{{"token":"{TOKEN}","op":"usuario_criar","login":"bia","senha":"{SENHA}"}}"#
+    ));
+    assert!(r.booleano_ou("ok", false), "criar a bia: {}", r.escrever());
+
+    let r = ana.mandar(&linha_de_um_mib());
+    assert!(r.booleano_ou("ok", false), "resposta: {}", r.escrever());
+}

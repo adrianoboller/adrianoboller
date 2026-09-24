@@ -48,6 +48,7 @@ use std::time::Duration;
 
 use phxsql_core::base64;
 use phxsql_core::error::{PhxError, Result};
+use phxsql_core::fio::{Canal, Recebido, TETO_DO_APERTO};
 
 use crate::config::Email;
 
@@ -159,38 +160,78 @@ impl Sessao {
         self.esperar(esperados)
     }
 
-    /// Le a resposta e confere o codigo.
-    ///
-    /// Resposta de SMTP pode vir em varias linhas: as intermediarias tem um
-    /// hifen depois do numero (`250-AUTH LOGIN`) e a ultima um espaco
-    /// (`250 OK`). Parar na primeira deixaria o resto no soquete e jogaria
-    /// todo o dialogo seguinte fora de sincronia.
     fn esperar(&mut self, esperados: &[u16]) -> Result<String> {
-        let ultima = loop {
-            let mut linha = String::new();
-            let lidos = self
-                .leitor
-                .read_line(&mut linha)
-                .map_err(|e| PhxError::Esquema(format!("smtp: leitura falhou: {e}")))?;
-            if lidos == 0 {
+        ler_resposta(&mut self.leitor, esperados)
+    }
+}
+
+/// Le a resposta e confere o codigo.
+///
+/// Resposta de SMTP pode vir em varias linhas: as intermediarias tem um
+/// hifen depois do numero (`250-AUTH LOGIN`) e a ultima um espaco
+/// (`250 OK`). Parar na primeira deixaria o resto no soquete e jogaria
+/// todo o dialogo seguinte fora de sincronia.
+///
+/// # A linha vem do MOTOR, com teto -- pedido 439
+///
+/// Este era o sexto `read_line` de soquete fora do [`Canal`], e o unico em
+/// codigo de producao depois do 434: teto de TEMPO (o `timeout_s`) e nenhum
+/// de TAMANHO. Medido com um rele falso que nao quebra a linha, o cliente
+/// tirava do soquete a oferta inteira -- 8.388.610 bytes numa linha so -- e
+/// so parava quando o rele parava. Um rele comprometido, ou quem esta no meio
+/// de um SMTP em claro, escolhia quanta memoria este lado reservava, que e a
+/// definicao do defeito do 434.
+///
+/// O conserto nao e um teto pendurado ao lado deste `read_line`: e ler pelo
+/// mesmo `ler_ate` que protege a porta de dados e a web. SMTP nao fala o
+/// protocolo do `Canal`, e o HTTP tambem nao -- a pergunta que o motor
+/// responde nao e «que protocolo», e «quanto eu reservo numa linha que vem do
+/// soquete». [`Canal::Claro`] e exatamente o que esta conexao e.
+///
+/// E o teto e o [`TETO_DO_APERTO`] que ja existia, e nao uma constante nova:
+/// ele responde pela linha lida de quem nao provou quem e, e o rele nunca
+/// prova -- nao ha TLS aqui (ver o topo do arquivo). A maior resposta legitima
+/// e a da RFC 5321, secao 4.5.3.1.5: 512 octetos por linha, codigo e CRLF
+/// inclusive. Sessenta e quatro KiB sao 128 vezes isso, e a folga e para o
+/// rele que nao segue a norma a letra.
+///
+/// O laco das linhas de continuacao nao tem teto de QUANTAS: cada linha e
+/// solta antes da seguinte, entao ele nao guarda memoria -- gasta tempo, e
+/// tempo e outra pergunta, que o `timeout_s` responde so pela metade (ele
+/// mede o silencio, e nao a conversa inteira).
+fn ler_resposta<L: BufRead>(leitor: &mut L, esperados: &[u16]) -> Result<String> {
+    let mut fio = Canal::Claro;
+    let ultima = loop {
+        let linha = match fio.ler_ate(leitor, TETO_DO_APERTO) {
+            Ok(Recebido::Linha(l)) => l,
+            Ok(Recebido::Fim) => {
                 return Err(PhxError::Esquema(
                     "smtp: o servidor fechou a conexao no meio da resposta".into(),
-                ));
+                ))
             }
-            let limpa = linha.trim_end().to_string();
-            if limpa.as_bytes().get(3) != Some(&b'-') {
-                break limpa;
+            // O teto vira erro do SMTP, com o nome do lado que o estourou --
+            // e continua `LimiteExcedido`, que e o que ele e.
+            Err(PhxError::LimiteExcedido(m)) => {
+                return Err(PhxError::LimiteExcedido(format!("smtp: {m}")))
             }
+            Err(PhxError::Io(e)) => {
+                return Err(PhxError::Esquema(format!("smtp: leitura falhou: {e}")))
+            }
+            Err(outro) => return Err(outro),
         };
-        let codigo: u16 = ultima
-            .get(..3)
-            .and_then(|c| c.parse().ok())
-            .ok_or_else(|| PhxError::Esquema(format!("smtp: resposta sem codigo: {ultima:?}")))?;
-        if esperados.contains(&codigo) {
-            Ok(ultima)
-        } else {
-            Err(PhxError::Esquema(format!("smtp recusou: {ultima}")))
+        let limpa = linha.trim_end().to_string();
+        if limpa.as_bytes().get(3) != Some(&b'-') {
+            break limpa;
         }
+    };
+    let codigo: u16 = ultima
+        .get(..3)
+        .and_then(|c| c.parse().ok())
+        .ok_or_else(|| PhxError::Esquema(format!("smtp: resposta sem codigo: {ultima:?}")))?;
+    if esperados.contains(&codigo) {
+        Ok(ultima)
+    } else {
+        Err(PhxError::Esquema(format!("smtp recusou: {ultima}")))
     }
 }
 
@@ -397,5 +438,135 @@ mod testes {
         let mut c = cfg();
         c.ligado = false;
         assert!(enviar(&c, "x", "y").is_err());
+    }
+
+    // -------------------------------------------------- pedido 439, o teto
+
+    /// Quanto a linha que o rele manda pode ter antes de o cliente desistir.
+    ///
+    /// 8 MiB: 128 vezes o teto do motor, e 16.384 vezes a maior linha que a
+    /// RFC 5321 (secao 4.5.3.1.5) permite a uma resposta, 512 octetos. A
+    /// folga separa «parou no teto» de «leu tudo» sem gastar mais memoria do
+    /// que a bateria precisa.
+    const OFERTA: usize = 8 * 1024 * 1024;
+
+    /// Um leitor que conta o que tirou do SOQUETE -- e o numero do dano.
+    ///
+    /// O veredito sozinho nao prova o conserto: um cliente que lesse a linha
+    /// inteira e so depois recusasse daria o mesmo `Err`, com a memoria ja
+    /// reservada. O que se mede e quanto saiu do soquete para dentro deste
+    /// processo.
+    struct Contador<R> {
+        dentro: R,
+        lidos: u64,
+    }
+
+    impl<R: std::io::Read> std::io::Read for Contador<R> {
+        fn read(&mut self, b: &mut [u8]) -> std::io::Result<usize> {
+            let n = self.dentro.read(b)?;
+            self.lidos += n as u64;
+            Ok(n)
+        }
+    }
+
+    /// Um rele que manda `OFERTA` bytes de digito SEM quebra de linha, depois
+    /// a quebra, e segura o soquete ate o outro lado fechar -- para o fim da
+    /// linha nao chegar por EOF, que mediria outra coisa.
+    ///
+    /// O digito e de proposito: `222...` tem codigo de tres digitos, e um
+    /// cliente sem teto chega ao fim, acha o codigo e recusa com a linha
+    /// INTEIRA dentro da mensagem de erro.
+    fn rele_que_nao_quebra_a_linha() -> u16 {
+        use std::io::{Read, Write};
+        let ouvinte = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let porta = ouvinte.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            let Ok((mut s, _)) = ouvinte.accept() else {
+                return;
+            };
+            let bloco = vec![b'2'; 64 * 1024];
+            let mut mandados = 0;
+            while mandados < OFERTA {
+                if s.write_all(&bloco).is_err() {
+                    return;
+                }
+                mandados += bloco.len();
+            }
+            let _ = s.write_all(b"\r\n");
+            let mut resto = [0u8; 64];
+            while matches!(s.read(&mut resto), Ok(n) if n > 0) {}
+        });
+        porta
+    }
+
+    /// **A linha sem fim do rele para no teto do MOTOR -- pedido 439.**
+    ///
+    /// Medido antes do conserto, por este teste: o cliente tirava do soquete
+    /// a oferta inteira (8.388.610 bytes) numa linha so, e a teria tirado ate
+    /// a memoria acabar se o rele nao parasse. Com o `ler_ate` do motor ele
+    /// tira o teto mais um, mais o que o `BufReader` ja tinha no buffer.
+    #[test]
+    fn a_linha_sem_fim_do_rele_para_no_teto_do_motor() {
+        use phxsql_core::fio::TETO_DO_APERTO;
+        let porta = rele_que_nao_quebra_a_linha();
+        let fluxo = TcpStream::connect(("127.0.0.1", porta)).unwrap();
+        fluxo
+            .set_read_timeout(Some(Duration::from_secs(20)))
+            .unwrap();
+        let mut leitor = BufReader::new(Contador {
+            dentro: fluxo,
+            lidos: 0,
+        });
+        let r = ler_resposta(&mut leitor, &[220]);
+        let lidos = leitor.get_ref().lidos;
+        eprintln!("o cliente SMTP tirou {lidos} bytes do soquete numa linha de {OFERTA}");
+        // O teto, o byte que prova o estouro e um buffer do `BufReader`.
+        let limite = TETO_DO_APERTO + 1 + 8 * 1024;
+        assert!(
+            lidos <= limite,
+            "o cliente SMTP tirou {lidos} bytes do soquete numa linha so, contra \
+             {limite} de teto: quem escolhe a memoria deste lado e o rele"
+        );
+        match r {
+            Err(PhxError::LimiteExcedido(m)) => {
+                assert!(m.starts_with("smtp:"), "{m}");
+                assert!(m.contains(&TETO_DO_APERTO.to_string()), "{m}");
+            }
+            outro => panic!("a linha acima do teto nao foi recusada pelo teto: {outro:?}"),
+        }
+    }
+
+    /// **E o envio inteiro desiste pelo mesmo teto, sem carregar a linha.**
+    ///
+    /// E o caminho de verdade (`enviar`), contra o mesmo rele: o erro que ele
+    /// devolve vai ao `eprintln!` do alerta e a resposta do `email_testar`, e
+    /// com a linha inteira dentro ele era um segundo lugar onde os 8 MiB
+    /// moravam.
+    #[test]
+    fn o_envio_contra_rele_sem_quebra_de_linha_desiste_no_teto() {
+        let mut c = cfg();
+        c.porta = rele_que_nao_quebra_a_linha();
+        c.timeout_s = 20;
+        let e = enviar(&c, "x", "y").unwrap_err();
+        let texto = e.to_string();
+        eprintln!("o erro do envio tem {} bytes: {texto}", texto.len());
+        assert!(
+            texto.len() < 1024,
+            "o erro do envio carrega {} bytes -- a linha do rele inteira",
+            texto.len()
+        );
+        assert!(matches!(e, PhxError::LimiteExcedido(_)), "{texto}");
+    }
+
+    /// **O comportamento VELHO: resposta de varias linhas continua lida
+    /// inteira** -- a do `EHLO`, que anuncia o `AUTH`. Um teto que cortasse a
+    /// continuacao deixaria o resto no soquete e o dialogo fora de sincronia.
+    #[test]
+    fn a_resposta_de_varias_linhas_continua_inteira() {
+        let bruto =
+            b"250-rele.exemplo\r\n250-SIZE 10240000\r\n250-AUTH LOGIN\r\n250 OK\r\n220 x\r\n";
+        let mut leitor = BufReader::new(&bruto[..]);
+        assert_eq!(ler_resposta(&mut leitor, &[250]).unwrap(), "250 OK");
+        assert_eq!(ler_resposta(&mut leitor, &[220]).unwrap(), "220 x");
     }
 }

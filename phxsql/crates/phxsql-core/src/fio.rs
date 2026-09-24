@@ -510,7 +510,12 @@ pub const TETO_DO_REGISTRO: u64 = 128 * 1024 * 1024;
 ///   96 bytes, e a linha inteira que a carrega nao passa de duzentos;
 /// * a linha da porta de dados ENQUANTO a sessao e anonima (pedido 434): as
 ///   unicas operacoes legitimas ali sao `ping`, `login`, `desafio`, `quem_sou`,
-///   `sair` e `catalogo`, e a maior delas nao chega a mil bytes.
+///   `sair` e `catalogo`, e a maior delas nao chega a mil bytes. E desde o
+///   pedido 442 ele e tambem o que TODA linha da porta de dados le antes de o
+///   teto dela ser decidido -- ver [`Canal::ler_decidindo`];
+/// * a resposta do rele SMTP (`email.rs`, pedido 439): o rele nunca prova
+///   quem e -- nao ha TLS ali --, e a maior linha legitima e a da RFC 5321,
+///   512 octetos.
 ///
 /// 64 KiB, e nao 200 bytes: a resposta de ERRO do aperto carrega texto
 /// traduzido e os campos da classificacao, e um teto colado no caso feliz
@@ -591,15 +596,70 @@ impl Canal {
     /// -- com quem escolhe o tamanho sendo o outro lado do fio. No canal, o
     /// teto vale para todo mundo que le, cifrado ou claro.
     pub fn ler_ate<L: BufRead>(&mut self, leitor: &mut L, teto: u64) -> Result<Recebido> {
-        let mut linha = String::new();
+        // O teto fixo e o caso particular do decidido: a pergunta, quando a
+        // linha passa dele, devolve ele mesmo -- e nao alarga nada.
+        self.ler_decidindo(leitor, teto, &mut || teto)
+    }
+
+    /// Le uma linha cujo teto so se DECIDE quando ela passa do pequeno --
+    /// pedido 442.
+    ///
+    /// # O defeito que isto conserta
+    ///
+    /// O laco da porta de dados escolhia o teto ANTES de a leitura bloquear,
+    /// com a sessao do jeito que ela estava naquele instante -- e a conexao
+    /// passa a vida parada dentro da leitura. Enquanto ela esperava, o
+    /// cadastro mudava: medido pela revisao de seguranca (achado M1), a
+    /// conexao de um usuario EXCLUIDO ainda mandou 1 MiB com `ok:true`, porque
+    /// a leitura ja estava armada com os 128 MiB de quem ele era antes.
+    ///
+    /// # Por que a pergunta vem DEPOIS de `teto_de_todos`, e so entao
+    ///
+    /// `teto_de_todos` e o que qualquer um tem, sem precisar ser ninguem. Ate
+    /// ali nao ha o que decidir. Quando a linha passa dele, a pergunta
+    /// `decidir` e feita NA HORA em que os bytes chegaram -- e nao na hora em
+    /// que a leitura foi armada, que pode ter sido horas antes. O que ela
+    /// devolve e o teto da linha inteira; menor ou igual ao que ja se leu, e
+    /// recusa com o teto dito.
+    ///
+    /// E o portao que vem antes do trabalho: a linha que cabe no pequeno --
+    /// quase todas -- nunca chega a perguntar, e nao paga nada.
+    ///
+    /// # Por BYTE, e so no fim o UTF-8
+    ///
+    /// A leitura e em duas partes, e a divisa entre elas pode cair no meio de
+    /// um caractere de varios bytes. O `read_line` confere o UTF-8 de cada
+    /// parte sozinha e recusaria a linha legitima; aqui os bytes se juntam e o
+    /// texto se confere uma vez, inteiro.
+    pub fn ler_decidindo<L: BufRead>(
+        &mut self,
+        leitor: &mut L,
+        teto_de_todos: u64,
+        decidir: &mut dyn FnMut() -> u64,
+    ) -> Result<Recebido> {
+        let mut bruto = Vec::new();
+        let mut teto = teto_de_todos;
         // O `+1` e o que separa "coube" de "estourou" sem contar o que ainda
         // vem. Passou do teto, a conexao esta no meio de uma linha e nao serve
         // mais: por isso a recusa e erro, e a proxima rodada abre outra.
-        let lidos = {
-            let mut limitado = <&mut L as std::io::Read>::take(leitor, teto + 1);
-            limitado.read_line(&mut linha)?
+        let mut lidos = {
+            let mut limitado = <&mut L as std::io::Read>::take(leitor, teto.saturating_add(1));
+            limitado.read_until(b'\n', &mut bruto)? as u64
         };
-        if lidos as u64 > teto {
+        if lidos > teto {
+            let decidido = decidir();
+            if decidido > teto {
+                // A linha pode ter acabado exatamente no byte do estouro: ai
+                // ela ja esta inteira, e so o teto muda.
+                if bruto.last() != Some(&b'\n') {
+                    let mut limitado =
+                        <&mut L as std::io::Read>::take(leitor, decidido.saturating_add(1) - lidos);
+                    lidos += limitado.read_until(b'\n', &mut bruto)? as u64;
+                }
+                teto = decidido;
+            }
+        }
+        if lidos > teto {
             // O TETO EM BYTES entra na mensagem ao lado da medida legivel, e
             // nao e preciosismo: quem le o `acessos.log` precisa comparar com o
             // que mediu, e "mais de 128 MiB" nao se compara com 134.217.729.
@@ -610,6 +670,14 @@ impl Canal {
                 conselho_do_teto(teto)
             )));
         }
+        // A mesma recusa que o `read_line` dava ao texto que nao e UTF-8, com
+        // a mesma frase: quem trata o erro de E/S nao ve diferenca.
+        let linha = String::from_utf8(bruto).map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "stream did not contain valid UTF-8",
+            )
+        })?;
         match self {
             Canal::Claro => {
                 if lidos == 0 {
@@ -981,6 +1049,66 @@ mod testes {
             claro.ler_ate(&mut magra.as_bytes(), teto).unwrap(),
             Recebido::Linha(magra.to_string())
         );
+    }
+
+    /// **O teto decidido: a pergunta vem quando a linha passa do pequeno, e
+    /// so entao -- pedido 442.**
+    ///
+    /// Os quatro casos que a decisao tem de separar, cada um contando QUANTO
+    /// foi lido e QUANTAS vezes se perguntou:
+    ///
+    /// * a linha que cabe no pequeno nao pergunta nada -- e o portao antes do
+    ///   trabalho, e e o caso de quase toda linha;
+    /// * a que passa e ouve «pode mais» e lida inteira, e a divisa entre as
+    ///   duas leituras cai no MEIO de um caractere de dois bytes, que o
+    ///   `read_line` de cada metade recusaria;
+    /// * a que passa e ouve «nao» para no pequeno, lida so ate ele mais um;
+    /// * a que acaba EXATAMENTE no byte do estouro nao le mais nada.
+    #[test]
+    fn o_teto_decidido_so_pergunta_quando_a_linha_passa_do_pequeno() {
+        let pequeno = 8u64;
+        let mut claro = Canal::Claro;
+
+        let mut perguntas = 0;
+        let mut fonte: &[u8] = b"curta\n";
+        let r = claro
+            .ler_decidindo(&mut fonte, pequeno, &mut || {
+                perguntas += 1;
+                1024
+            })
+            .unwrap();
+        assert_eq!(r, Recebido::Linha("curta\n".into()));
+        assert_eq!(perguntas, 0, "a linha que cabe no pequeno perguntou");
+
+        // `é` nos bytes 8 e 9: o estouro (byte 9) cai no meio dele.
+        let longa = "abcdefgh\u{e9}ijklmnop\n";
+        let mut fonte: &[u8] = longa.as_bytes();
+        let mut perguntas = 0;
+        let r = claro
+            .ler_decidindo(&mut fonte, pequeno, &mut || {
+                perguntas += 1;
+                1024
+            })
+            .unwrap();
+        assert_eq!(r, Recebido::Linha(longa.into()));
+        assert_eq!(perguntas, 1);
+
+        let gorda = format!("{}\n", "x".repeat(10_000));
+        let mut fonte: &[u8] = gorda.as_bytes();
+        let erro = claro
+            .ler_decidindo(&mut fonte, pequeno, &mut || pequeno)
+            .expect_err("o «nao» tem de recusar");
+        assert!(erro.to_string().contains("(8 bytes de teto)"), "{erro}");
+        assert_eq!(gorda.len() - fonte.len(), 9, "leu alem do pequeno mais um");
+
+        // Oito bytes e a quebra: nove, exatamente o estouro -- e a linha ja
+        // esta inteira. Nada mais se le: o que vem depois e a PROXIMA linha.
+        let mut fonte: &[u8] = b"12345678\nproxima\n";
+        let r = claro
+            .ler_decidindo(&mut fonte, pequeno, &mut || 1024)
+            .unwrap();
+        assert_eq!(r, Recebido::Linha("12345678\n".into()));
+        assert_eq!(fonte, b"proxima\n");
     }
 
     /// A recusa diz um TAMANHO, e nunca «0 MiB» -- achado B2 da revisao de

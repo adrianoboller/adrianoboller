@@ -405,6 +405,87 @@ fn binario_que_corta_um_caractere_nao_envenena_a_trava_de_dados() {
     assert_eq!(n, Some(1), "{}", lidas.escrever());
 }
 
+/// **Pedido 453, pelo soquete: o valor torto nao volta inteiro nem vai ao
+/// `acessos.log` inteiro.**
+///
+/// O dano e medido em BYTES nos dois lugares onde a mensagem de erro mora
+/// depois de sair do motor: a linha de resposta e o crescimento do
+/// `acessos.log`. Um megabyte de `z` numa coluna `Bin`, e o mesmo megabyte
+/// numa coluna `Int8` -- o irmao pelo `json_para_valor`, que e o caminho de
+/// todo `inserir`. Com o defeito, cada recusa escrevia o megabyte de volta no
+/// fio E no disco: quem tem direito de inserir enchia o log a um megabyte por
+/// pedido recusado.
+#[test]
+fn o_valor_torto_grande_nao_volta_inteiro_nem_vai_ao_log() {
+    let base = DirTemp::novo("hex-eco");
+    let porta = porta_livre();
+    let _s = subir_simples(&base, porta);
+    ok(
+        falar(porta, &pedido(r#""op":"criar_database","database":"loja""#)),
+        "criar_database",
+    );
+    ok(
+        falar(
+            porta,
+            &pedido(
+                r#""op":"criar_tabela","database":"loja","tabela":"anexos",
+                   "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                              {"nome":"dado","tipo":"Bin"},
+                              {"nome":"n","tipo":"Int8"}],
+                   "indices":[{"nome":"pk_id","colunas":["id"],"unico":true,"primario":true}]"#,
+            ),
+        ),
+        "criar_tabela",
+    );
+    let log = base.join("acessos.log");
+    let mb = 1 << 20;
+    let mut medidas = Vec::new();
+    for (coluna, quem) in [("dado", "o Bin"), ("n", "o Int8")] {
+        let antes = std::fs::metadata(&log).map(|m| m.len()).unwrap_or(0);
+        let resposta = falar(
+            porta,
+            &pedido(&format!(
+                r#""op":"inserir","database":"loja","tabela":"anexos","linha":{{"id":7,"{coluna}":"{}"}}"#,
+                "z".repeat(mb)
+            )),
+        )
+        .unwrap_or_else(|| panic!("{quem}: a conexao caiu sem resposta"));
+        assert!(
+            !Json::analisar(&resposta).unwrap().booleano_ou("ok", true),
+            "{quem}: o valor torto entrou"
+        );
+        // O servidor responde ANTES de anotar: espera a linha do log chegar.
+        let ate = Instant::now() + Duration::from_secs(10);
+        let mut cresceu = 0;
+        while Instant::now() < ate {
+            cresceu = std::fs::metadata(&log).map(|m| m.len()).unwrap_or(0) - antes;
+            if cresceu > 0 {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(cresceu > 0, "{quem}: a recusa nao foi anotada no log");
+        eprintln!(
+            "{quem}: resposta de {} bytes, acessos.log +{cresceu} bytes",
+            resposta.len()
+        );
+        medidas.push((quem, resposta.len() as u64, cresceu));
+    }
+    // Os dois lugares, dos dois caminhos, de uma vez: o vermelho e a tabela
+    // do dano, e nao so a primeira linha dela.
+    let ecoam: Vec<String> = medidas
+        .iter()
+        .filter(|(_, fio, disco)| *fio >= 2048 || *disco >= 2048)
+        .map(|(quem, fio, disco)| {
+            format!("{quem}: resposta de {fio} bytes, acessos.log +{disco} bytes")
+        })
+        .collect();
+    assert!(
+        ecoam.is_empty(),
+        "a recusa do valor torto de 1 MiB ecoou o valor: {ecoam:?}"
+    );
+}
+
 /* ------------------------------------------ 3. o %XX da porta web, sem login */
 
 fn subir_web(base: &std::path::Path) -> SocketAddr {

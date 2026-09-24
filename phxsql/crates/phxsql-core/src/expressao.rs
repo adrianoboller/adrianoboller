@@ -41,7 +41,7 @@
 //! nesta rodada, e recusa pelo nome.
 
 use crate::carga::{decimal_para_texto, texto_para_decimal, valor_de_texto};
-use crate::error::{PhxError, Result};
+use crate::error::{citar, PhxError, Result};
 use crate::types::ColumnType;
 use crate::value::Value;
 
@@ -518,7 +518,9 @@ fn lexer(texto: &str) -> Result<Vec<Token>> {
 }
 
 fn numero_de_texto(s: &str) -> Result<Numero> {
-    let invalido = || PhxError::Esquema(format!("numero invalido: {s:?}"));
+    // O literal sai pelo `citar` -- pedido 453: um literal de um megabyte de
+    // digitos nao ajuda ninguem a achar o erro, e a mensagem vai ao log.
+    let invalido = || PhxError::Esquema(format!("numero invalido: {}", citar(s)));
     match s.split_once('.') {
         None => Ok(Numero::Inteiro(s.parse().map_err(|_| invalido())?)),
         Some((_, fracao)) => {
@@ -1462,6 +1464,21 @@ mod testes {
             let e = Expressao::analisar(t).unwrap_err().to_string();
             assert!(e.contains(trecho), "{t:?} -> {e}");
         }
+    }
+
+    /// **Pedido 453, o irmao da expressao: o literal numerico torto nao volta
+    /// inteiro na mensagem.** Com o defeito, o megabyte de digitos voltava
+    /// escapado dentro do `numero invalido: ...`.
+    #[test]
+    fn o_literal_numerico_torto_nao_volta_inteiro_no_erro() {
+        let grande = format!("1.{}.1", "2".repeat(1 << 20));
+        let e = Expressao::analisar(&grande).unwrap_err().to_string();
+        assert!(e.contains("numero invalido"), "{}", &e[..e.len().min(200)]);
+        assert!(
+            e.len() < 300,
+            "o erro tem {} bytes: ecoa o literal recebido",
+            e.len()
+        );
     }
 
     #[test]

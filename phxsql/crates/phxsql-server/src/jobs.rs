@@ -59,8 +59,14 @@ impl Agenda {
     pub fn de_json(j: &Json) -> Result<Agenda> {
         let hora = j.texto_ou("hora", "").trim().to_string();
         if !hora.is_empty() {
+            // A hora recebida sai pelo `citar` do motor -- pedido 453: a
+            // recusa vai ao cliente e ao `acessos.log`, e quem escolhe o
+            // tamanho do campo e quem manda o pedido.
             let minuto_do_dia = minuto_do_dia(&hora).ok_or_else(|| {
-                PhxError::Esquema(format!("hora invalida: {hora:?} (use \"HH:MM\", 24 horas)"))
+                PhxError::Esquema(format!(
+                    "hora invalida: {} (use \"HH:MM\", 24 horas)",
+                    phxsql_core::error::citar(&hora)
+                ))
             })?;
             return Ok(Agenda::Diaria { minuto_do_dia });
         }
@@ -787,6 +793,25 @@ mod testes {
             .unwrap_err()
             .to_string();
         assert!(e.contains("HH:MM"), "{e}");
+        assert!(
+            e.contains("\"25:00\""),
+            "a hora curta tem de continuar citada: {e}"
+        );
+    }
+
+    /// **Pedido 453, o irmao da agenda: a hora torta grande nao volta
+    /// inteira.** A recusa vai ao cliente e ao `acessos.log`, e quem escolhe o
+    /// tamanho do campo e quem manda o pedido.
+    #[test]
+    fn hora_invalida_grande_nao_volta_inteira() {
+        let mut j = Json::objeto(vec![]);
+        j.definir("hora", Json::texto_de("9".repeat(1 << 20)));
+        let e = Agenda::de_json(&j).unwrap_err().to_string();
+        assert!(
+            e.len() < 300,
+            "o erro tem {} bytes: ecoa a hora recebida",
+            e.len()
+        );
     }
 
     #[test]

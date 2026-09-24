@@ -12,7 +12,7 @@
 //!   conferivel a olho nu.
 
 use phxsql_core::datahora::{data_iso, hora_iso};
-use phxsql_core::error::{PhxError, Result};
+use phxsql_core::error::{citar, PhxError, Result};
 use phxsql_core::json::Json;
 
 // As conversoes de TEXTO moram no nucleo, porque a linha de comando tambem
@@ -915,12 +915,16 @@ fn inteiro_com_sinal(j: &Json) -> Result<i64> {
             }
             if so_digitos(t) {
                 return Err(PhxError::LimiteExcedido(format!(
-                    "{t} nao cabe em inteiro de 64 bits com sinal ({} a {})",
+                    "{} nao cabe em inteiro de 64 bits com sinal ({} a {})",
+                    citar(t),
                     i64::MIN,
                     i64::MAX
                 )));
             }
-            Err(PhxError::Tipo(format!("esperado inteiro, recebido {j:?}")))
+            Err(PhxError::Tipo(format!(
+                "esperado inteiro, recebido {}",
+                recebido(j)
+            )))
         }
         Json::Numero(n) if n.is_finite() && n.fract() == 0.0 => {
             conferir_numero_cru(
@@ -931,7 +935,10 @@ fn inteiro_com_sinal(j: &Json) -> Result<i64> {
             )?;
             Ok(*n as i64)
         }
-        _ => Err(PhxError::Tipo(format!("esperado inteiro, recebido {j:?}"))),
+        _ => Err(PhxError::Tipo(format!(
+            "esperado inteiro, recebido {}",
+            recebido(j)
+        ))),
     }
 }
 
@@ -960,16 +967,21 @@ fn inteiro_sem_sinal(j: &Json, esperado: &str, destino: &str) -> Result<u64> {
             // tipo, e a mensagem tem de dizer isso para nao mandar procurar
             // um numero maior.
             if so_digitos(t) && t.starts_with('-') {
-                return Err(PhxError::Tipo(format!("{t} e negativo numa {destino}")));
+                return Err(PhxError::Tipo(format!(
+                    "{} e negativo numa {destino}",
+                    citar(t)
+                )));
             }
             if so_digitos(t) {
                 return Err(PhxError::LimiteExcedido(format!(
-                    "{t} nao cabe em inteiro de 64 bits sem sinal (0 a {})",
+                    "{} nao cabe em inteiro de 64 bits sem sinal (0 a {})",
+                    citar(t),
                     u64::MAX
                 )));
             }
             Err(PhxError::Tipo(format!(
-                "esperado {esperado}, recebido {j:?}"
+                "esperado {esperado}, recebido {}",
+                recebido(j)
             )))
         }
         Json::Numero(n) if n.is_finite() && n.fract() == 0.0 => {
@@ -983,8 +995,29 @@ fn inteiro_sem_sinal(j: &Json, esperado: &str, destino: &str) -> Result<u64> {
             Ok(*n as u64)
         }
         _ => Err(PhxError::Tipo(format!(
-            "esperado {esperado}, recebido {j:?}"
+            "esperado {esperado}, recebido {}",
+            recebido(j)
         ))),
+    }
+}
+
+/// O JSON recebido do jeito que ele pode aparecer numa mensagem de erro --
+/// pedido 453.
+///
+/// O `{:?}` do `Json` devolvia o valor INTEIRO, e a mensagem nao fica aqui:
+/// volta ao cliente, vai ao `acessos.log` e ao Profiler. Medido, um megabyte
+/// numa coluna `Int8` voltava em 1.048.778 bytes de resposta e crescia o log
+/// em 1.048.868 -- a cada pedido recusado. O texto passa pelo
+/// [`citar`] do motor, que e a mesma regra do resto da casa; lista e objeto
+/// viram a CONTAGEM, e nunca o conteudo, porque o tamanho do `{:?}` deles so
+/// se sabe depois de pagar a copia inteira. O curto sai exatamente como saia
+/// (`Texto("abc")`), que e o que mostra a quem digitou o proprio erro.
+fn recebido(j: &Json) -> String {
+    match j {
+        Json::Texto(t) => format!("Texto({})", citar(t)),
+        Json::Lista(l) => format!("Lista(<{} itens>)", l.len()),
+        Json::Objeto(o) => format!("Objeto(<{} campos>)", o.len()),
+        escalar => format!("{escalar:?}"),
     }
 }
 
@@ -993,7 +1026,8 @@ pub fn json_para_valor(j: &Json, ty: &ColumnType) -> Result<Value> {
     if j.e_nulo() {
         return Ok(Value::Null);
     }
-    let erro = |esperado: &str| PhxError::Tipo(format!("esperado {esperado}, recebido {j:?}"));
+    let erro =
+        |esperado: &str| PhxError::Tipo(format!("esperado {esperado}, recebido {}", recebido(j)));
 
     Ok(match ty {
         ColumnType::Bool => match j {
@@ -2938,5 +2972,67 @@ mod testes_id_de_coluna {
         )));
         let erro = e.expect_err("id repetido devia ser recusado").to_string();
         assert!(erro.contains("id") && erro.contains("txt"), "{erro}");
+    }
+}
+
+/// Pedido 453, os IRMAOS do lado do protocolo: a conversao do JSON do pedido
+/// para o valor da coluna, que e por onde passa todo `inserir`, `alterar` e
+/// filtro da porta de dados.
+#[cfg(test)]
+mod testes_eco_do_valor {
+    use super::*;
+
+    /// **Nenhum erro de conversao devolve o valor recebido inteiro.**
+    ///
+    /// O dano medido e o tamanho da mensagem: ela volta ao cliente, vai ao
+    /// `acessos.log` e ao Profiler. Com o defeito, o megabyte recebido volta
+    /// inteiro em cada caso, embrulhado no `{:?}` do `Json`.
+    #[test]
+    fn os_erros_de_conversao_do_json_nao_ecoam_o_valor_grande() {
+        let mb = 1 << 20;
+        let texto = Json::texto_de("x".repeat(mb));
+        let digitos = Json::texto_de("9".repeat(mb));
+        let negativo = Json::texto_de(format!("-{}", "9".repeat(mb)));
+        let lista = Json::Lista(vec![Json::texto_de("x".repeat(mb))]);
+        let casos: Vec<(&str, &Json, ColumnType)> = vec![
+            ("booleano", &texto, ColumnType::Bool),
+            ("inteiro com sinal", &texto, ColumnType::Int8),
+            ("inteiro sem sinal", &texto, ColumnType::UInt8),
+            ("inteiro que nao cabe", &digitos, ColumnType::Int8),
+            ("sem sinal que nao cabe", &digitos, ColumnType::UInt8),
+            ("negativo sem sinal", &negativo, ColumnType::UInt8),
+            ("real", &texto, ColumnType::Real8),
+            ("hora", &texto, ColumnType::Time),
+            ("texto recebendo lista", &lista, ColumnType::Str(40)),
+            ("sequencia", &texto, ColumnType::Sequence),
+        ];
+        // Todos os que ecoam, de uma vez: o vermelho e a tabela do dano.
+        let ecoam: Vec<String> = casos
+            .into_iter()
+            .map(|(quem, j, ty)| (quem, json_para_valor(j, &ty).expect_err(quem)))
+            .map(|(quem, e)| (quem, e.to_string().len()))
+            .filter(|(_, n)| *n >= 300)
+            .map(|(quem, n)| format!("{quem}: {n} bytes"))
+            .collect();
+        assert!(
+            ecoam.is_empty(),
+            "erros de conversao que ecoam o megabyte recebido: {ecoam:?}"
+        );
+    }
+
+    /// **O comportamento VELHO: o valor curto continua citado** -- e o que
+    /// mostra a quem mandou `"abc"` numa coluna inteira o que foi que ele
+    /// mandou. Tirar o valor de toda mensagem seria trocar um defeito de
+    /// tamanho por um de diagnostico.
+    #[test]
+    fn o_valor_curto_continua_citado_na_recusa() {
+        let e = json_para_valor(&Json::texto_de("abc"), &ColumnType::Int8)
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("\"abc\""), "{e}");
+        let e = json_para_valor(&Json::texto_de("-5"), &ColumnType::UInt8)
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("-5"), "{e}");
     }
 }

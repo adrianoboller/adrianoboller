@@ -378,7 +378,11 @@ pub fn valor_redigido(
     /// Acima disto o valor vira o tamanho. Um grito nao e um dump: ele existe
     /// para quem opera reconhecer a linha, e uma coluna de 4 KiB nao ajuda
     /// ninguem a reconhecer nada -- so enche o diario do processo.
-    const TETO_DO_VALOR: usize = 48;
+    ///
+    /// O numero e o do MOTOR (pedido 453): a mensagem de erro de conversao
+    /// faz a mesma pergunta -- quanto de um valor ajuda quem le --, e dois 48
+    /// escritos em dois lugares divergiriam no dia em que alguem mexesse num.
+    const TETO_DO_VALOR: usize = phxsql_core::error::TETO_DA_CITACAO;
 
     if v.e_null() {
         return "NULO".to_string();

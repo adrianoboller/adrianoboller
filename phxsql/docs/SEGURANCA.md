@@ -4515,3 +4515,158 @@ espaço nas pontas inclusive), o pulso com prova de verdade, o `%C3%AA` da web.
   o supervisor não sobe outra para um id marcado. O gatilho conhecido fechou;
   a fragilidade é do laço, e o conserto (desmarcar no `Drop` ou `catch_unwind`
   no laço) muda o que acontece com um pânico que se repete a cada pulso.
+
+## 22. Quanto este lado guarda do que o outro manda: o relé, a ficha velha e o eco (pedidos 439, 442 e 453)
+
+Três pedidos da mesma pergunta — **quem escolhe quanta memória, disco e log
+este lado gasta** —, cada um num canto diferente: a linha que o relé SMTP manda,
+a linha de quem já não é ninguém, e o valor torto citado de volta na mensagem de
+erro.
+
+### 22.1 O relé SMTP lia a linha sem teto (439)
+
+`email.rs` lia a resposta do relé com `read_line` **cru**: teto de TEMPO (o
+`timeout_s`) e nenhum de TAMANHO. Era o sexto sítio de leitura de soquete fora
+do `Canal`, e o único em produção depois do 434. A §19.7 o deixou de fora por
+«não é irmão: não fala o protocolo do fio»; o integrador discordou no próprio
+pedido, e a discordância se sustenta — o HTTP também não fala o protocolo e o
+434 o pôs no `Canal` assim mesmo. A pergunta que o motor responde não é «que
+protocolo», é **«quanto eu reservo numa linha que vem do soquete»**.
+
+O conserto é o mesmo `Canal::Claro.ler_ate` da porta de dados e da web, com o
+`TETO_DO_APERTO` que já existia — o relé nunca prova quem é (não há TLS ali), e
+a maior linha legítima é a da RFC 5321 §4.5.3.1.5: 512 octetos. Nenhuma
+constante nova.
+
+| medido com um relé falso que manda 8 MiB sem quebra de linha | antes | depois |
+|---|---|---|
+| bytes tirados do soquete numa linha só | **8.388.610** | **73.728** (teto + 1 + o resto do buffer do `BufReader`) |
+| tamanho do erro devolvido pelo `enviar` | **8.388.651** | **144** |
+
+O laço das linhas de continuação (`250-…`) continua sem teto de QUANTAS: cada
+linha é solta antes da seguinte, então ele não guarda memória — gasta tempo, e
+tempo o `timeout_s` responde só pela metade (mede o silêncio, não a conversa).
+Anotado, não consertado: é outra pergunta.
+
+**A catraca que o pedido mandava entrar junto**: `conferidor_canal.rs`,
+`TETO_LEITURA_FORA_DO_CANAL = 0`. Conta todo `read_line`/`read_until` em
+`crates/*/src` e isenta **por arquivo, com a quantidade e o motivo** (14 sítios:
+o motor, o teclado do `phxsql-cmd` e os servidores e clientes de mentira dos
+testes). Nasceu no número do dia (1, o `email.rs`) e desceu a zero no mesmo
+conserto. Por nome de método, e não «leitura de soquete»: o tipo do leitor o
+texto não diz, e o raio textual da proposta do QA erra nos dois sentidos. O que
+ela não pega está no topo do arquivo — `.lines()`, laço manual com `fill_buf`,
+`crates/*/tests`.
+
+### 22.2 O teto era decidido com a ficha VELHA (442)
+
+Achado M1 da revisão SEC de 434/435. O laço decidia o teto **antes de a leitura
+bloquear**, e a conexão passa a vida parada nessa leitura. Enquanto ela
+esperava o cadastro mudava, e a decisão valia pela espera inteira: o usuário
+excluído mandou 1 MiB com `ok:true`, e a conexão aberta antes do primeiro
+cadastro também.
+
+O conserto mora no **motor**: `Canal::ler_decidindo(leitor, teto_de_todos,
+decidir)`. Até o `TETO_DO_APERTO` ninguém pergunta nada — é o que qualquer um
+tem. Quando a linha passa dele, a pergunta é feita **na hora em que os bytes
+chegaram**, com a ficha refrescada pela mesma `refrescar_a_sessao` que o
+`despachar` usa. O `ler_ate` de sempre virou o caso particular (a pergunta
+devolve o próprio teto). É o portão antes do trabalho: a linha pequena — quase
+todas — não paga nada.
+
+A leitura passou a ser **por byte** (`read_until`) e o UTF-8 se confere uma vez,
+no fim: a divisa entre as duas partes pode cair no meio de um caractere, e o
+`read_line` de cada metade recusaria a linha legítima. De brinde, a linha acima
+do teto cortada no meio de um caractere passou a dar `LIMITE_EXCEDIDO` em vez
+de um erro de E/S.
+
+**A hipótese que morreu, medida**: refrescar a ficha no topo do laço, antes de
+armar a leitura. Fecha a exclusão que acontece ENTRE duas linhas, e não a que
+acontece com a conexão parada — que é o caso do achado e o caso comum. Virou a
+guarda `teto-refrescado-antes-do-bloqueio`, e os dois testes caem com ela.
+
+**A metade da memória.** `let mut linha;` morava fora do laço, e a `String`
+velha só morria quando a leitura seguinte devolvia. Agora ela mora dentro da
+volta e cai antes de a conexão voltar a esperar. Medido pelo `/proc/self/status`,
+com a conexão parada depois de um ping de 64 MiB:
+
+| | VmRSS basal | VmRSS ocioso depois da resposta |
+|---|---|---|
+| antes | 13.640 kB | **80.252 kB** (+66.612) |
+| depois | 13.592 kB | **14.648 kB** (+1.056) |
+
+### 22.3 O erro ecoava o valor recebido inteiro (453)
+
+`hex_para_bytes` recusava com `format!("hexadecimal invalido: {hex:?}")`, e a
+mensagem não fica onde nasce: volta ao cliente, vai ao `acessos.log` e ao
+Profiler. Agora cita o **tamanho e a posição do primeiro byte inválido**, nunca
+o valor — o valor de uma coluna `Bin` é conteúdo, e o começo dele não acha o
+erro de ninguém.
+
+Os **irmãos** — erros de conversão que interpolavam o texto recebido com `{:?}`
+— passaram pelo mesmo motor, `phxsql_core::error::citar`: curto (até
+`TETO_DA_CITACAO = 48` bytes) sai citado como sempre saiu, e acima disso sai o
+tamanho, nunca um pedaço. O 48 é o do grito do conflito de replicação
+(`bidirecional::valor_redigido`), que passou a ler a mesma constante: a mesma
+pergunta, uma resposta só.
+
+| medido pelo soquete: `inserir` com 1 MiB de `z` | antes | depois |
+|---|---|---|
+| coluna `Bin` — resposta / `acessos.log` | 1.048.766 / +1.048.856 bytes | 230 / +320 bytes |
+| coluna `Int8` — resposta / `acessos.log` | 1.048.778 / +1.048.868 bytes | 213 / +303 bytes |
+
+Consertados, com o número do «antes» de cada um (mensagem de erro para 1 MiB
+recebido): decimal (1.048.622) e as casas do decimal (1.048.650), data
+(1.048.636), a conversão da carga (1.048.631), os três do UUID (1.048.659,
+1.048.685 e 1.048.724), o literal numérico da expressão, e do lado do
+protocolo os dez caminhos do `json_para_valor` e dos dois leitores de inteiro
+(de 1.048.635 a 1.048.690) — lista e objeto viram a contagem, porque o tamanho
+do `{:?}` deles só se sabe pagando a cópia inteira. E a hora da agenda do job
+(1.048.646, reposto à mão).
+
+Deixados, e por quê:
+
+- **`value.rs::erro_tipo` e os doze do `keyenc.rs`** — disparam depois de o
+  valor já ter sido convertido pelo tipo da coluna; o descasamento ali é defeito
+  interno, não eco do fio.
+- **`expressao.rs`, «caractere … não tem lugar numa expressão (texto)»** — ecoa
+  o texto da expressão, e ela chega do fio (o `onde` do `varrer`). Mas é código,
+  não valor: expressão legítima passa de 48 bytes, e o texto é o diagnóstico. O
+  conserto certo é a posição e uma janela em volta — desenho próprio.
+- **`config.rs` e `dblink/dialeto.rs`** — território de outra frente nesta
+  rodada.
+- **as duas frases do SMTP que citam a resposta do relé** — o relé é o
+  diagnóstico, e agora o teto do motor as limita a 64 KiB.
+- **dado pessoal curto** — um CPF de 11 bytes digitado na coluna errada
+  continua citado na recusa, porque a conversão não recebe a marca da coluna. É
+  a pétrea da redação por esquema, que o `valor_redigido` cumpre e a conversão
+  não — anotado, não consertado aqui.
+
+### 22.4 A prova, nos dois sentidos
+
+Oito guardas novas no catálogo. Sete **PROVADAS** pelo `provar-guardas.py` em
+24/09/2026, junto com as duas que o conserto deslocou
+(`fio-sem-teto-de-registro` e `copia-do-de-hex-envenena-a-trava-de-dados`),
+remiradas no trecho novo — 9 de 9 nas duas corridas. A oitava, à mão:
+
+| guarda | o que repõe | caíram |
+|---|---|---|
+| `teto-decidido-antes-do-bloqueio` | o teto armado antes da leitura | 2/2 |
+| `teto-decidido-sem-refrescar-a-ficha` | a pergunta na hora certa, com a ficha velha | 1/1 |
+| `teto-refrescado-antes-do-bloqueio` | o conserto plausível, que não alcança a espera | 2/2 |
+| `linha-residente-depois-da-resposta` | a linha declarada fora do laço | 1/1 |
+| `hexadecimal-ecoa-o-valor` | o `{hex:?}` | 1/1 |
+| `citar-sem-teto` | o motor da citação sem teto | 3/3 |
+| `json-recebido-ecoa-o-valor` | o `{j:?}` do protocolo | 1/1 |
+| `smtp-linha-sem-teto` | o `read_line` cru do relé | 3/3, **à mão** |
+
+A do SMTP foi provada **à mão**, com a troca exata do catálogo: o binário
+`--lib` do servidor tem, nesta rodada, dois vermelhos de outra frente
+(`conferidor_dependencias` e `conferidor_temporarios`, do PhxZip), e o provador
+recusa provar sobre árvore limpa vermelha — com razão. Ela aparece como não
+julgada na tabela do `docs/TESTES.md` até a próxima corrida.
+
+A `teto-decidido-sem-refrescar-a-ficha` afirma também o que NÃO cai: sem o
+refresco, só o excluído fica com os 128 MiB; a conexão aberta antes do primeiro
+cadastro continua recusada, porque o cadastro vazio é lido vivo. É o que separa
+as duas metades do achado.

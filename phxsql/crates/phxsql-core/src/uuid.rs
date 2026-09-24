@@ -38,7 +38,7 @@
 
 use std::fmt;
 
-use crate::error::{PhxError, Result};
+use crate::error::{citar, PhxError, Result};
 
 /// Bytes de um UUID.
 pub const UUID_LEN: usize = 16;
@@ -299,14 +299,18 @@ impl Uuid {
             .filter(|c| *c != '-')
             .collect();
         if limpo.len() != 32 {
+            // O texto recebido sai pelo `citar` -- pedido 453: a mensagem vai
+            // ao cliente e ao `acessos.log`, e um UUID de um megabyte nao e
+            // UUID nenhum para citar.
             return Err(PhxError::Tipo(format!(
-                "UUID precisa de 32 digitos hexadecimais, veio {}: {s:?}",
-                limpo.len()
+                "UUID precisa de 32 digitos hexadecimais, veio {}: {}",
+                limpo.len(),
+                citar(s)
             )));
         }
         let mut b = [0u8; UUID_LEN];
         hex_para(&limpo, &mut b)
-            .map_err(|e| PhxError::Tipo(format!("UUID invalido {s:?}: {e}")))?;
+            .map_err(|e| PhxError::Tipo(format!("UUID invalido {}: {e}", citar(s))))?;
         Ok(Uuid(b))
     }
 }
@@ -341,7 +345,7 @@ impl Uuid256 {
         }
         let mut b = [0u8; UUID256_LEN];
         hex_para(limpo, &mut b)
-            .map_err(|e| PhxError::Tipo(format!("identificador invalido {s:?}: {e}")))?;
+            .map_err(|e| PhxError::Tipo(format!("identificador invalido {}: {e}", citar(s))))?;
         Ok(Uuid256(b))
     }
 }

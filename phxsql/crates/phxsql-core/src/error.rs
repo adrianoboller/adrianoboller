@@ -408,6 +408,36 @@ impl From<std::io::Error> for PhxError {
     }
 }
 
+/// Acima disto um valor RECEBIDO nao entra numa mensagem: vira o tamanho --
+/// pedido 453.
+///
+/// A mensagem de erro nao fica onde nasce: volta ao cliente, vai ao
+/// `acessos.log`, ao Profiler e ao grito do diario. Um valor citado inteiro
+/// faz o outro lado escolher quanto cada um desses lugares guarda -- medido,
+/// um `inserir` recusado por um megabyte torto escrevia o megabyte de volta no
+/// fio E no disco, a cada pedido.
+///
+/// 48, e nao outro numero, porque e o que o grito do conflito de replicacao ja
+/// usava (`bidirecional::valor_redigido`) para a mesma pergunta -- quanto de
+/// um valor ajuda quem le a reconhece-lo --, e duas respostas para a mesma
+/// pergunta divergiriam no dia em que alguem mexesse numa so. Cabe o que se
+/// digita errado: uma data, um numero, um UUID de 36.
+pub const TETO_DA_CITACAO: usize = 48;
+
+/// O valor recebido do jeito que ele pode aparecer numa mensagem de erro.
+///
+/// Curto, sai citado como sempre saiu (`"2024-13-45"`) -- e o que mostra a
+/// quem digitou o proprio erro. Acima do [`TETO_DA_CITACAO`] sai o TAMANHO, e
+/// nunca um pedaco: recortar mostraria o comeco e esconderia onde esta o
+/// problema, e o comeco pode ser justamente o dado que nao devia sair.
+pub fn citar(valor: &str) -> String {
+    if valor.len() <= TETO_DA_CITACAO {
+        format!("{valor:?}")
+    } else {
+        format!("<{} bytes>", valor.len())
+    }
+}
+
 #[cfg(test)]
 mod testes_codigo {
     use super::*;
@@ -693,5 +723,22 @@ mod testes_codigo {
         // ir ao endereco que a mensagem aponta.
         assert!(!PhxError::Redireciona(String::new()).adianta_repetir());
         assert_eq!(PhxError::Redireciona(String::new()).classe(), "acesso");
+    }
+}
+
+#[cfg(test)]
+mod testes_citar {
+    use super::*;
+
+    /// Os dois lados do teto: o curto sai citado e escapado, o longo sai como
+    /// tamanho -- e o limite exato fica do lado de quem cita.
+    #[test]
+    fn o_curto_sai_citado_e_o_longo_vira_tamanho() {
+        assert_eq!(citar("2024-13-45"), "\"2024-13-45\"");
+        assert_eq!(citar("a\nb"), "\"a\\nb\"");
+        let no_teto = "x".repeat(TETO_DA_CITACAO);
+        assert_eq!(citar(&no_teto), format!("{no_teto:?}"));
+        let acima = "x".repeat(TETO_DA_CITACAO + 1);
+        assert_eq!(citar(&acima), format!("<{} bytes>", TETO_DA_CITACAO + 1));
     }
 }

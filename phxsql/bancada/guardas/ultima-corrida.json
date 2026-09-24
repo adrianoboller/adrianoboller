@@ -309,9 +309,9 @@
       "id": "fio-sem-teto-de-registro",
       "titulo": "a leitura do fio volta a ser ilimitada",
       "veredito": "PROVADA",
-      "segundos": 2.45,
+      "segundos": 3.93,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-09-24 02:38"
     },
     {
       "id": "pulso-do-cluster-em-claro",
@@ -1443,9 +1443,9 @@
       "id": "copia-do-de-hex-envenena-a-trava-de-dados",
       "titulo": "o binário que corta um caractere envenena a trava global de dados",
       "veredito": "PROVADA",
-      "segundos": 15.02,
+      "segundos": 15.71,
       "notas": [],
-      "quando": "2026-09-24 01:49"
+      "quando": "2026-09-24 02:38"
     },
     {
       "id": "percent-da-web-fatia-texto-por-byte",
@@ -1470,6 +1470,62 @@
       "segundos": 36.38,
       "notas": [],
       "quando": "2026-09-24 01:49"
+    },
+    {
+      "id": "teto-decidido-antes-do-bloqueio",
+      "titulo": "o teto da linha é decidido antes de a leitura bloquear, e o usuário excluído enquanto esperava manda 1 MiB",
+      "veredito": "PROVADA",
+      "segundos": 17.02,
+      "notas": [],
+      "quando": "2026-09-24 02:38"
+    },
+    {
+      "id": "teto-decidido-sem-refrescar-a-ficha",
+      "titulo": "o teto é perguntado na hora certa, mas com a ficha da sessão que nunca se refrescou",
+      "veredito": "PROVADA",
+      "segundos": 11.81,
+      "notas": [],
+      "quando": "2026-09-24 02:38"
+    },
+    {
+      "id": "teto-refrescado-antes-do-bloqueio",
+      "titulo": "a ficha é refrescada antes de a leitura bloquear, e o excluído enquanto esperava continua com 128 MiB",
+      "veredito": "PROVADA",
+      "segundos": 10.32,
+      "notas": [],
+      "quando": "2026-09-24 02:39"
+    },
+    {
+      "id": "linha-residente-depois-da-resposta",
+      "titulo": "a linha já respondida fica residente enquanto a conexão espera a próxima",
+      "veredito": "PROVADA",
+      "segundos": 35.79,
+      "notas": [],
+      "quando": "2026-09-24 02:38"
+    },
+    {
+      "id": "hexadecimal-ecoa-o-valor",
+      "titulo": "o erro do hexadecimal inválido devolve o valor recebido inteiro",
+      "veredito": "PROVADA",
+      "segundos": 3.1,
+      "notas": [],
+      "quando": "2026-09-24 02:38"
+    },
+    {
+      "id": "citar-sem-teto",
+      "titulo": "a citação do valor recebido numa mensagem de erro perde o teto, e os irmãos voltam a ecoar",
+      "veredito": "PROVADA",
+      "segundos": 3.09,
+      "notas": [],
+      "quando": "2026-09-24 02:38"
+    },
+    {
+      "id": "json-recebido-ecoa-o-valor",
+      "titulo": "a recusa de tipo do `inserir` devolve o JSON recebido inteiro, pelo fio e pelo `acessos.log`",
+      "veredito": "PROVADA",
+      "segundos": 10.5,
+      "notas": [],
+      "quando": "2026-09-24 02:38"
     },
     {
       "id": "cifra-do-fio-imposta",
