@@ -1,0 +1,373 @@
+<meta charset="utf-8">
+<title>Pedidos 501 em diante do PhxSql (7/7)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+:root{
+  --papel:#fbf9f7; --papel-2:#f3efec; --papel-3:#e9e3de;
+  --tinta:#1a1210; --tinta-2:#4a3f3a; --tinta-3:#7a6d66;
+  --linha:#ded6d0;
+  --acento:#c63c0a;
+  --feito:#2f7a3e; --parcial:#8a6a1f; --planejado:#7a6d66;
+  --sombra:0 1px 2px rgba(26,18,16,.06),0 8px 24px rgba(26,18,16,.05);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --papel:#040814; --papel-2:#0a1122; --papel-3:#131c31;
+    --tinta:#dde2eb; --tinta-2:#a8b0c0; --tinta-3:#7c8598;
+    --linha:#1e2940;
+    --acento:#ff8a1c;
+    --feito:#5cbf74; --parcial:#d5a83c; --planejado:#7c8598;
+    --sombra:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.3);
+  }
+}
+:root[data-theme="dark"]{
+  --papel:#040814; --papel-2:#0a1122; --papel-3:#131c31;
+  --tinta:#dde2eb; --tinta-2:#a8b0c0; --tinta-3:#7c8598;
+  --linha:#1e2940;
+  --acento:#ff8a1c;
+  --feito:#5cbf74; --parcial:#d5a83c; --planejado:#7c8598;
+  --sombra:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.3);
+}
+*{box-sizing:border-box}
+body{
+  margin:0;background:var(--papel);color:var(--tinta);
+  font-family:"Source Serif 4",Georgia,"Times New Roman",serif;
+  font-size:16px;line-height:1.55;
+  -webkit-font-smoothing:antialiased;
+}
+h1,h2,h3,.rotulo,.pino,.filtros button{font-family:"Exo 2","Helvetica Neue",Arial,sans-serif}
+code,.mono,.num{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace}
+code{
+  font-size:.86em;background:var(--papel-2);
+  padding:1px 4px;border-radius:3px;color:var(--tinta-2);
+}
+.envelope{max-width:1080px;margin:0 auto;padding:0 20px 80px}
+
+header{padding:52px 0 28px;border-bottom:1px solid var(--linha)}
+.rotulo{
+  font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--acento);font-weight:600;margin-bottom:12px;
+}
+h1{
+  font-size:clamp(30px,5vw,46px);font-weight:700;line-height:1.08;
+  margin:0 0 14px;letter-spacing:-.015em;text-wrap:balance;
+}
+h1 .x{color:var(--acento)}
+.chamada{
+  max-width:64ch;color:var(--tinta-2);font-size:17px;margin:0 0 4px;
+}
+
+.faixas{
+  display:flex;flex-wrap:wrap;gap:8px;margin:22px 0 0;
+}
+.faixas a{
+  font-family:"IBM Plex Mono",monospace;font-size:12.5px;font-weight:500;
+  text-decoration:none;color:var(--tinta-2);
+  border:1px solid var(--linha);border-radius:999px;
+  padding:6px 14px;
+}
+.faixas a:hover{border-color:var(--acento);color:var(--acento)}
+.faixas a.ativa{
+  border-color:var(--acento);color:var(--acento);background:var(--papel-2);
+  font-weight:600;
+}
+
+.placar{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+  gap:10px;margin:30px 0 0;
+}
+.placar .c{
+  border:1px solid var(--linha);border-radius:6px;padding:14px 16px;
+  background:var(--papel-2);
+}
+.placar .v{
+  font-family:"Exo 2",sans-serif;font-size:34px;font-weight:700;
+  line-height:1;font-variant-numeric:tabular-nums;
+}
+.placar .r{
+  font-family:"IBM Plex Mono",monospace;font-size:10px;
+  letter-spacing:.13em;text-transform:uppercase;color:var(--tinta-3);
+  margin-top:7px;
+}
+.placar .feito .v{color:var(--feito)}
+.placar .parcial .v{color:var(--parcial)}
+.placar .planejado .v{color:var(--planejado)}
+
+.faixa-info{
+  margin:16px 0 0;padding:12px 16px;border-left:3px solid var(--acento);
+  background:var(--papel-2);border-radius:0 5px 5px 0;
+  font-size:14.5px;color:var(--tinta-2);
+}
+.faixa-info .rotulo-inline{
+  font-family:"Exo 2",sans-serif;font-weight:600;color:var(--tinta);
+  font-size:12px;text-transform:uppercase;letter-spacing:.08em;
+  margin-right:8px;
+}
+.faixa-info strong{color:var(--tinta);font-variant-numeric:tabular-nums}
+.faixa-info .feito{color:var(--feito)}
+.faixa-info .parcial{color:var(--parcial)}
+.faixa-info .planejado{color:var(--planejado)}
+
+h2{
+  font-size:22px;font-weight:600;margin:52px 0 6px;letter-spacing:-.01em;
+  scroll-margin-top:74px;
+}
+h2 + .sub{color:var(--tinta-3);font-size:15px;margin:0 0 20px;max-width:64ch}
+
+.barra{
+  position:sticky;top:0;z-index:5;background:var(--papel);
+  border-bottom:1px solid var(--linha);
+  padding:12px 0;margin:0 0 4px;
+  display:flex;flex-wrap:wrap;gap:10px;align-items:center;
+}
+.filtros{display:flex;flex-wrap:wrap;gap:6px}
+.filtros button{
+  font-size:12.5px;font-weight:500;cursor:pointer;
+  background:none;color:var(--tinta-2);
+  border:1px solid var(--linha);border-radius:999px;
+  padding:5px 13px;
+}
+.filtros button:hover{border-color:var(--acento);color:var(--acento)}
+.filtros button[aria-pressed="true"]{
+  border-color:var(--acento);color:var(--acento);
+  background:color-mix(in srgb,var(--acento) 9%,transparent);
+}
+.filtros button:focus-visible,input:focus-visible{
+  outline:2px solid var(--acento);outline-offset:2px;
+}
+input[type="search"]{
+  font-family:"Source Serif 4",Georgia,serif;font-size:14px;
+  background:var(--papel-2);color:var(--tinta);
+  border:1px solid var(--linha);border-radius:5px;
+  padding:6px 11px;min-width:190px;flex:1;max-width:280px;
+}
+.conta{
+  font-family:"IBM Plex Mono",monospace;font-size:11px;
+  color:var(--tinta-3);margin-left:auto;white-space:nowrap;
+}
+
+.rolo{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table{border-collapse:collapse;width:100%;min-width:660px}
+/* Cabecalho NAO grudento: `.rolo` tem `overflow-x:auto`, e isso faz dele um
+   contexto de rolagem proprio -- o `position:sticky` do `thead` passava a se
+   medir por ele e caia POR CIMA da primeira linha. Quem gruda e a barra de
+   filtro, que e onde esta a contagem. */
+thead th{
+  font-family:"IBM Plex Mono",monospace;font-weight:500;
+  font-size:10px;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--tinta-3);text-align:left;
+  padding:12px 12px 8px;border-bottom:1px solid var(--linha);
+  background:var(--papel);
+}
+tbody td{
+  padding:14px 12px;border-bottom:1px solid var(--linha);
+  vertical-align:top;font-size:15px;
+}
+tbody tr:hover td{background:var(--papel-2)}
+td.n{
+  font-size:12px;color:var(--tinta-3);text-align:right;
+  font-variant-numeric:tabular-nums;width:44px;white-space:nowrap;
+}
+td.p{width:34%;color:var(--tinta)}
+td.e{color:var(--tinta-2);font-size:14.5px}
+th.st,td.st{width:104px}
+
+/* A forma tambem carrega o estado, e nao so a cor: cheio, meio, vazio. */
+.pino{
+  display:inline-flex;align-items:center;gap:6px;
+  font-size:11px;font-weight:600;letter-spacing:.03em;white-space:nowrap;
+}
+.pino::before{
+  content:"";width:9px;height:9px;border-radius:50%;
+  border:1.5px solid currentColor;flex:none;
+}
+.pino.feito{color:var(--feito)}
+.pino.feito::before{background:currentColor}
+.pino.parcial{color:var(--parcial)}
+.pino.parcial::before{background:linear-gradient(90deg,currentColor 50%,transparent 50%)}
+.pino.planejado{color:var(--planejado)}
+
+.vazio{padding:38px 12px;color:var(--tinta-3);text-align:center;font-style:italic}
+
+.nota{
+  border-left:3px solid var(--acento);background:var(--papel-2);
+  padding:14px 18px;border-radius:0 5px 5px 0;margin:26px 0;
+  font-size:15px;color:var(--tinta-2);max-width:66ch;
+}
+.nota .t{
+  display:block;font-family:"Exo 2",sans-serif;font-weight:600;
+  color:var(--tinta);font-size:14px;margin-bottom:5px;
+}
+footer{
+  margin-top:56px;padding-top:22px;border-top:1px solid var(--linha);
+  color:var(--tinta-3);font-size:13.5px;max-width:66ch;
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+<style>
+.placar .depois .v{color:#5b4a9e}
+.faixa-info .depois{color:#5b4a9e}
+.pino.depois{color:#5b4a9e}
+.pino.depois::before{background:none;border-style:dashed}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]) .placar .depois .v,
+  :root:not([data-theme="light"]) .faixa-info .depois,
+  :root:not([data-theme="light"]) .pino.depois{color:#b7a6ea}
+}
+:root[data-theme="dark"] .placar .depois .v,
+:root[data-theme="dark"] .faixa-info .depois,
+:root[data-theme="dark"] .pino.depois{color:#b7a6ea}
+</style>
+<div class="envelope">
+<header>
+  <div class="rotulo">PhxSql · o dossiê do que foi pedido — página 7 de 7</div>
+  <h1>Pedidos 501 em diante<br>de 513 ao todo</h1>
+  <p class="chamada">Uma linha por pedido seu, na ordem em que você pediu. O
+  estado é <strong>medido contra o código</strong>, não contra a lembrança — foi
+  assim que a chave estrangeira saiu de «pronto» para «parcial», e o Centro de
+  Controle de «pronto» para «só navega».</p>
+  <p class="chamada">Esta lista deixou de caber numa página só (pedido 403,
+  23/09/2026): a publicada tinha 1.304.729 bytes, e republicá-la exigia reler
+  a versão antiga inteira. Ela virou <strong>7 páginas</strong>,
+  cortadas pelo <strong>tamanho medido</strong> de cada faixa de número de
+  pedido (nunca por número redondo) — esta é a faixa
+  <strong>501 em diante</strong>.</p>
+
+  <nav class="faixas" aria-label="As 7 páginas de pedidos, por faixa"><a href="https://claude.ai/artifact/4jSZ5yZFnjEnbGGbE3i5nz">1–190</a><a href="https://claude.ai/artifact/MAc3CcjfCPbjVm5sQZwYoC">191–260</a><a href="https://claude.ai/artifact/R4iGBeRQt7ao6yffQkmGCp">261–310</a><a href="https://claude.ai/artifact/S1oHX53g9q4oqHSn7Yv3vm">311–350</a><a href="pedidos-351-410.html">351–410</a><a href="pedidos-411-500.html">411–500</a><a href="pedidos-501-mais.html" class="ativa" aria-current="page">501 em diante</a></nav>
+
+  <div class="placar">
+    <div class="c"><div class="v">513</div><div class="r">pedidos, ao todo</div></div>
+    <div class="c feito"><div class="v">355</div><div class="r">feitos</div></div>
+    <div class="c parcial"><div class="v">16</div><div class="r">parciais</div></div>
+    <div class="c planejado"><div class="v">85</div><div class="r">planejados</div></div>
+    <div class="c depois"><div class="v">57</div><div class="r">depois da versão</div></div>
+  </div>
+
+  <div class="faixa-info">
+    <span class="rotulo-inline">Nesta página</span>
+    <strong>13</strong> pedidos (faixa 501 em diante) ·
+    <span class="feito">1 feitos</span> ·
+    <span class="parcial">0 parciais</span> ·
+    <span class="planejado">11 planejados</span> ·
+    <span class="depois">1 depois da versão</span>
+  </div>
+</header>
+
+<h2>O que está aberto, nesta faixa</h2>
+<p class="sub">Os 11 que não fecharam nesta faixa (11 sem começar), com o motivo de cada um. O motivo importa mais que o estado: uns esperam trabalho, outros esperam uma decisão sua, e outros esperam coisa de fora deste repositório. (1 ficaram para depois desta versão — veja a lista completa abaixo.)</p>
+<div class="rolo">
+  <table>
+    <thead><tr><th class="n">#</th><th class="st">estado</th><th>o que você pediu</th><th>onde está</th></tr></thead>
+    <tbody>
+      <tr data-e="planejado"><td class="n mono">502</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>Job ou backup agendado que entra em panico com a trava na mao derruba o servidor A CADA ARRANQUE, e nao na cadencia do job</strong></td><td class="e">Achado do papel C na segunda revisao do 451, 24/09/2026 (<code>docs/propostas/parecer-dba-451-2a-2026-09-24.md</code>), N1. Os dois rodam de novo logo na partida (<code>jobs.rs:410-416</code>, <code>:105</code>, <code>:109</code>; <code>servidor.rs:5544-5547</code>, <code>:7003-7025</code>): o servidor cai, volta, roda o job, cai de novo, ate o systemd desistir, e fica fora do ar ate alguem desligar o job a mao no arquivo. Nao e regressao do 451 (antes era a trava envenenada, com o mesmo efeito). Saidas: rodar o trabalho numa thread filha com <code>join</code>, virando corrida FALHOU, ou nao rodar de novo a corrida que nunca terminou. Os jobs rodam em todo no do cluster, porque ninguem confere o papel -- nao medido.</td></tr>
+      <tr data-e="planejado"><td class="n mono">503</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>O motor da marca do COMMIT apaga a marca sem te-la lido ou sem te-la sincronizado -- e um <code>sync_all</code> falho reaplica a transacao por cima de gravacao mais nova</strong></td><td class="e">Achado do papel C na segunda revisao do 451, 24/09/2026 (<code>docs/propostas/parecer-dba-451-2a-2026-09-24.md</code>), N2. (1) Erro de E/S na leitura da marca conta como «nao confere» e a marca sai: e o M4 do 451, tambem no arranque e no braco de erro do 426. (2) <code>let _ = t.sincronizar()</code> em <code>transacao.rs:1710</code> deixa a marca sair com o fsync falhado. (3) Um <code>sync_all</code> que falha deixa a marca inteira no disco enquanto o COMMIT responde «abortada» (<code>servidor.rs:16219-16228</code>), e o arranque seguinte aplica a transacao por cima de gravacao mais nova (<code>transacao.rs:1771</code>). Dado errado e durabilidade: entra na conta. O M4 entra junto com o 451; os outros dois ficam aqui.</td></tr>
+      <tr data-e="planejado"><td class="n mono">504</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>O SIGABRT da H5 pode deixar um core dump com a chave derivada do cofre</strong></td><td class="e">Achado do papel C na segunda revisao do 451, 24/09/2026 (<code>docs/propostas/parecer-dba-451-2a-2026-09-24.md</code>), N3, <strong>nao medido</strong>. A H5 do 451 aborta o processo de proposito; num sistema com core dump ligado, a memoria do processo vai para o disco, e nela a chave derivada do cofre. Conserto barato: escrever <code>0</code> em <code>/proc/self/coredump_filter</code> no arranque, ou <code>LimitCORE=0</code> na unidade do systemd. Seguranca, e na duvida fica na conta; medir antes de consertar.</td></tr>
+      <tr data-e="planejado"><td class="n mono">506</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>Nome de tabela com sufixo de LETRA (<code>x_A</code>) e aceito, some da arvore, e o DROP de <code>x</code> apaga os arquivos dele</strong></td><td class="e">Achado do papel C na terceira conferencia do 368, 24/09/2026 (<code>docs/propostas/parecer-dba-368-expurgo-3a-2026-09-24.md</code>), N1, <strong>anterior ao 368 e nao agravado por ele</strong>. <code>criar_tabela(&quot;x_A&quot;)</code> e aceito; logo depois <code>todas_as_tabelas</code> = <code>[&quot;x&quot;]</code> e <code>existe_tabela(&quot;x_A&quot;)</code> = false. Com <code>x_B</code>, o <code>excluir_tabela(&quot;x&quot;)</code> apagou 16 arquivos, 8 deles de <code>x_B</code>. A regra da letra no <code>nome_da_tabela</code> depende de <code>&lt;nome&gt;_A.reg</code> existir no disco, e o <code>pertence</code> do DROP nem pergunta. Defeito ativo: o DROP apaga outra tabela. Primeiro passo barato: estender o <code>exigir_nome_que_volta</code> do 368 aos 37 sufixos de letra; o conserto definitivo e o 508.</td></tr>
+      <tr data-e="planejado"><td class="n mono">507</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>Nome de tabela com ponto (<code>a.b</code>) e aceito na raiz e nao abre pelo nome qualificado</strong></td><td class="e">Achado do papel C na terceira conferencia do 368, 24/09/2026 (<code>docs/propostas/parecer-dba-368-expurgo-3a-2026-09-24.md</code>), N3. <code>a.b</code> aparece na arvore, mas o nome qualificado vira schema <code>a</code>, tabela <code>b</code>. A tabela existe e ninguem a alcanca pelo nome. Recusar na declaracao, pela mesma funcao unica do 368.</td></tr>
+      <tr data-e="planejado"><td class="n mono">508</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>O separador de volume no NOME do arquivo colide com nome de tabela: trocar o <code>_</code> por um caractere que nome de tabela nao aceita, antes de haver dado em producao</strong></td><td class="e">Achado do papel C na terceira conferencia do 368, 24/09/2026 (<code>docs/propostas/parecer-dba-368-expurgo-3a-2026-09-24.md</code>), item 4. Hoje <code>x_001.lgpd</code> e volume de <code>x</code>, e <code>vendas_2024</code> e recusado na declaracao (368). Os quatro motores aceitam <code>vendas_2024</code>: o PostgreSQL nomeia o arquivo por OID, e MySQL e MariaDB usam <code>#P#</code> nas particoes e codificam o <code>#</code> do nome. Convergem e nenhuma petrea se opoe, entao o comportamento entra por aceite automatico, e a petrea «mudanca de formato entra cedo» decide o momento. Custo medido: <strong>12 sitios em 9 arquivos</strong> compoem ou leem <code>_&lt;volume&gt;</code>. Ler os dois formatos nao basta, porque enquanto o <code>_NNN</code> antigo for reconhecido <code>vendas_2024.reg</code> segue ambiguo: e preciso renomear uma vez os volumes antigos, com marca de versao e teste de queda no meio. O caractere fica com o papel J (candidatos: <code>#</code> e <code>.</code>). Ate la, a recusa do 368 fica como guarda.</td></tr>
+      <tr data-e="planejado"><td class="n mono">509</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong><code>fsync</code> que falhou e repetido responde Ok, e o fecho apaga a marca: o dado some depois da remontagem</strong></td><td class="e">Achado do papel C no catalogo de catastrofes do 496, 24/09/2026 (<code>docs/propostas/parecer-dba-496-catastrofes-2026-09-24.md</code>), C1, <strong>provado contra o SO</strong> (ext4 sobre loop com provisionamento fino): o 1o <code>fsync</code> da EIO, o 2o e o 3o (ate com descritor novo) respondem Ok, e depois de remontar o dado nao esta no disco (3/3). No motor: 5.000 insercoes Ok, fecho 1 da ENOSPC, fecho 2 da Ok; remontado, o <code>.log</code> tem 0 de 5.000 eventos e o <code>.ndx</code> esta corrompido com a marca em 0 (3/3). Os quatro motores convergem (PG PANIC, MariaDB e MySQL <code>ib::fatal</code>, SQLite <code>IOERR_FSYNC</code>): entra por aceite automatico. Perde dado.</td></tr>
+      <tr data-e="planejado"><td class="n mono">510</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>Backup agendado que falha nao avisa ninguem: so <code>stderr</code>, e so tenta de novo na janela seguinte</strong></td><td class="e">Achado do papel C no catalogo de catastrofes do 496, 24/09/2026 (<code>docs/propostas/parecer-dba-496-catastrofes-2026-09-24.md</code>), C6, lido em <code>servidor.rs:5451</code>. O dono so descobre que nao tem backup no dia de restaurar. Avisar pelo carteiro que ja existe (o da saude do disco). Nao exercitado; medir a falha antes de fechar.</td></tr>
+      <tr data-e="planejado"><td class="n mono">511</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>O contador <code>rowstamp</code> empurrado por evento replicado da a volta: release devolve <code>u64::MAX, 0, 1</code>; debug entra em panico</strong></td><td class="e">Achado do papel C no catalogo de catastrofes do 496, 24/09/2026 (<code>docs/propostas/parecer-dba-496-catastrofes-2026-09-24.md</code>), C13. O <code>rowstamp</code> e a prova de que o pai veio antes do filho (decisao do dono de 17/09); um evento da replica pode empurra-lo ate o teto, e ele recomeca do zero. Fere a regra primordial vista pelo tempo. Probabilidade baixa, severidade de perda de garantia.</td></tr>
+      <tr data-e="planejado"><td class="n mono">512</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>Disco cheio deixa o <code>.ndx</code> com CRC invalido e a marca de sujo em 0 -- o arranque nao sabe que tem de reparar</strong></td><td class="e">Achado do papel C no catalogo de catastrofes do 496, 24/09/2026 (<code>docs/propostas/parecer-dba-496-catastrofes-2026-09-24.md</code>), C2b, <strong>provado nos dois sentidos</strong>: com o segundo fecho no mesmo punho (o caminho do <code>gravar_de_verdade</code>), byte 52 = 0 e CRC invalido; so com o <code>Drop</code>, byte 52 = 1 e o recado certo. Causa: <code>ndx.rs:301-306</code>, o <code>tirar_sujas</code> esquece a pagina que falhou de gravar.</td></tr>
+      <tr data-e="planejado"><td class="n mono">513</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>O backup segura a trava global de escrita durante a copia inteira: 100 GB sao 50 a 64 minutos com o banco parado para escrita</strong></td><td class="e">Achado do papel C no catalogo de catastrofes do 496, 24/09/2026 (<code>docs/propostas/parecer-dba-496-catastrofes-2026-09-24.md</code>), C5, <strong>hipotese a medir</strong>: a copia em zip anda a 26-34 MB/s e a leitura tambem para junto. Medir num banco grande antes de consertar; se confirmar, e o 496 que avisa e o backup que muda de trava.</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="nota">
+  <span class="t">Por que «parcial» e não «feito»</span>
+  Meio caminho andado continua sendo meio caminho, e a lista diz <em>qual</em>
+  metade — porque é a metade que falta que decide se o pedido serve para alguma
+  coisa hoje. O estado sai da primeira coluna do
+  <code>docs/PENDENCIAS.md</code>, que é medido contra o código; esta página
+  não tem opinião própria sobre nenhum item.
+</div>
+
+<h2 id="todos">Os 13 desta faixa (501 em diante), na ordem em que você pediu</h2>
+<p class="sub">A numeração é a sequência real dos seus pedidos — ela diz
+<em>quando</em> cada coisa foi pedida, e é por isso que vale mantê-la. As
+outras 6 faixas estão no menu acima.</p>
+
+<div class="barra">
+  <div class="filtros" role="group" aria-label="Filtrar por estado">
+    <button type="button" data-f="todos" aria-pressed="true">Todos</button>
+    <button type="button" data-f="feito" aria-pressed="false">Feitos</button>
+    <button type="button" data-f="parcial" aria-pressed="false">Parciais</button>
+    <button type="button" data-f="planejado" aria-pressed="false">Planejados</button>
+    <button type="button" data-f="depois" aria-pressed="false">Depois da versão</button>
+  </div>
+  <input type="search" id="busca" placeholder="procurar nesta faixa…" aria-label="Procurar nos pedidos desta faixa">
+  <span class="conta" id="conta"></span>
+</div>
+
+<div class="rolo">
+  <table id="tudo">
+    <thead><tr><th class="n">#</th><th class="st">estado</th><th>o que você pediu</th><th>o que existe hoje</th></tr></thead>
+    <tbody>
+      <tr data-e="feito"><td class="n mono">501</td><td class="st"><span class="pino feito">Feito</span></td><td class="p"><strong>O <code>comando_empilhado</code> do 215 nao confere o <code>;</code>: ligado, cinco pedidos legitimos bloquearam 127.0.0.1 por 60 minutos</strong></td><td class="e">Achado do papel J na pesquisa do 495, 24/09/2026 (<code>docs/propostas/pesquisa-495-ia-seguranca-2026-09-24.md</code>; prova em <code>bancada/seguranca/495/prova_215.py</code>). Com <code>seguranca.contar_injecao_sql</code> ligado, <code>LIMIT 0, 2</code>, <code>RETURNING</code> e <code>EXCEPT</code> -- SQL legitimo de outro dialeto, que o tradutor recusa -- contaram como comando empilhado, e o quinto pedido disparou o bloqueio e o firewall. No corpo legitimo do repositorio (1.186 textos) ele acusa 17, e 11 sao um comando so. Defeito ativo de disponibilidade quando o interruptor esta ligado; nasce desligado de fabrica, por isso ninguem viu. Conserto: fatia F0 do 495 (exigir o <code>;</code>), com os tres textos no teste do legitimo, que falha hoje. <strong>FECHADO em 24/09/2026.</strong> <code>comando_empilhado</code> so acusa quando ha um <code>;</code> em QUALQUER lugar da sobra, seguido de simbolo que nao e <code>;</code> (<code>p.s[p.i..]</code>). O léxico ja tira o <code>;</code> de dentro de literal e de comentario. A integracao devolveu a primeira versao: ela so olhava o <code>;</code> IMEDIATO e abria evasao (<code>... LIMIT 0, 2; DROP TABLE t</code> deixava de ser acusado, e o codigo antigo acusava). Prova validada pelo integrador na arvore exata: com o defeito original, o teste do legitimo cai; com a 1a versao, o do ataque cai; com o conserto final, 2/2. <code>prova_215.py</code> com o binario novo: <code>bloqueios: []</code>. A cognicao do corpo de falso positivo virou FRUTIFERO com essa evidencia.</td></tr>
+      <tr data-e="planejado"><td class="n mono">502</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>Job ou backup agendado que entra em panico com a trava na mao derruba o servidor A CADA ARRANQUE, e nao na cadencia do job</strong></td><td class="e">Achado do papel C na segunda revisao do 451, 24/09/2026 (<code>docs/propostas/parecer-dba-451-2a-2026-09-24.md</code>), N1. Os dois rodam de novo logo na partida (<code>jobs.rs:410-416</code>, <code>:105</code>, <code>:109</code>; <code>servidor.rs:5544-5547</code>, <code>:7003-7025</code>): o servidor cai, volta, roda o job, cai de novo, ate o systemd desistir, e fica fora do ar ate alguem desligar o job a mao no arquivo. Nao e regressao do 451 (antes era a trava envenenada, com o mesmo efeito). Saidas: rodar o trabalho numa thread filha com <code>join</code>, virando corrida FALHOU, ou nao rodar de novo a corrida que nunca terminou. Os jobs rodam em todo no do cluster, porque ninguem confere o papel -- nao medido.</td></tr>
+      <tr data-e="planejado"><td class="n mono">503</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>O motor da marca do COMMIT apaga a marca sem te-la lido ou sem te-la sincronizado -- e um <code>sync_all</code> falho reaplica a transacao por cima de gravacao mais nova</strong></td><td class="e">Achado do papel C na segunda revisao do 451, 24/09/2026 (<code>docs/propostas/parecer-dba-451-2a-2026-09-24.md</code>), N2. (1) Erro de E/S na leitura da marca conta como «nao confere» e a marca sai: e o M4 do 451, tambem no arranque e no braco de erro do 426. (2) <code>let _ = t.sincronizar()</code> em <code>transacao.rs:1710</code> deixa a marca sair com o fsync falhado. (3) Um <code>sync_all</code> que falha deixa a marca inteira no disco enquanto o COMMIT responde «abortada» (<code>servidor.rs:16219-16228</code>), e o arranque seguinte aplica a transacao por cima de gravacao mais nova (<code>transacao.rs:1771</code>). Dado errado e durabilidade: entra na conta. O M4 entra junto com o 451; os outros dois ficam aqui.</td></tr>
+      <tr data-e="planejado"><td class="n mono">504</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>O SIGABRT da H5 pode deixar um core dump com a chave derivada do cofre</strong></td><td class="e">Achado do papel C na segunda revisao do 451, 24/09/2026 (<code>docs/propostas/parecer-dba-451-2a-2026-09-24.md</code>), N3, <strong>nao medido</strong>. A H5 do 451 aborta o processo de proposito; num sistema com core dump ligado, a memoria do processo vai para o disco, e nela a chave derivada do cofre. Conserto barato: escrever <code>0</code> em <code>/proc/self/coredump_filter</code> no arranque, ou <code>LimitCORE=0</code> na unidade do systemd. Seguranca, e na duvida fica na conta; medir antes de consertar.</td></tr>
+      <tr data-e="depois"><td class="n mono">505</td><td class="st"><span class="pino depois">Depois da versão</span></td><td class="p"><strong>Os ⏸ da segunda revisao do 451: thread de servico que morre calada com a trava de leitura, a janela entre o <code>write()</code> e a <code>TravaMedida</code>, e tres textos imprecisos</strong></td><td class="e">Achado do papel C na segunda revisao do 451, 24/09/2026 (<code>docs/propostas/parecer-dba-451-2a-2026-09-24.md</code>), secao ⏸. P1: thread de servico que morre com a trava de LEITURA, ou fora de trava, continua calada (provado pela <code>std</code>: o leitor em panico nao envenena). P2: um panico entre o <code>write()</code> e a montagem da <code>TravaMedida</code> volta a H1 (<code>servidor.rs:1761-1791</code>). P3: o comentario do zerar esta impreciso (<code>servidor.rs:16338-16341</code>). P4: a coluna «antes (H1)» esta errada em <code>SEGURANCA.md:4981</code>. P5: a familia da thread e comparada por texto literal. Nenhum e defeito ativo nesta versao.</td></tr>
+      <tr data-e="planejado"><td class="n mono">506</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>Nome de tabela com sufixo de LETRA (<code>x_A</code>) e aceito, some da arvore, e o DROP de <code>x</code> apaga os arquivos dele</strong></td><td class="e">Achado do papel C na terceira conferencia do 368, 24/09/2026 (<code>docs/propostas/parecer-dba-368-expurgo-3a-2026-09-24.md</code>), N1, <strong>anterior ao 368 e nao agravado por ele</strong>. <code>criar_tabela(&quot;x_A&quot;)</code> e aceito; logo depois <code>todas_as_tabelas</code> = <code>[&quot;x&quot;]</code> e <code>existe_tabela(&quot;x_A&quot;)</code> = false. Com <code>x_B</code>, o <code>excluir_tabela(&quot;x&quot;)</code> apagou 16 arquivos, 8 deles de <code>x_B</code>. A regra da letra no <code>nome_da_tabela</code> depende de <code>&lt;nome&gt;_A.reg</code> existir no disco, e o <code>pertence</code> do DROP nem pergunta. Defeito ativo: o DROP apaga outra tabela. Primeiro passo barato: estender o <code>exigir_nome_que_volta</code> do 368 aos 37 sufixos de letra; o conserto definitivo e o 508.</td></tr>
+      <tr data-e="planejado"><td class="n mono">507</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>Nome de tabela com ponto (<code>a.b</code>) e aceito na raiz e nao abre pelo nome qualificado</strong></td><td class="e">Achado do papel C na terceira conferencia do 368, 24/09/2026 (<code>docs/propostas/parecer-dba-368-expurgo-3a-2026-09-24.md</code>), N3. <code>a.b</code> aparece na arvore, mas o nome qualificado vira schema <code>a</code>, tabela <code>b</code>. A tabela existe e ninguem a alcanca pelo nome. Recusar na declaracao, pela mesma funcao unica do 368.</td></tr>
+      <tr data-e="planejado"><td class="n mono">508</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>O separador de volume no NOME do arquivo colide com nome de tabela: trocar o <code>_</code> por um caractere que nome de tabela nao aceita, antes de haver dado em producao</strong></td><td class="e">Achado do papel C na terceira conferencia do 368, 24/09/2026 (<code>docs/propostas/parecer-dba-368-expurgo-3a-2026-09-24.md</code>), item 4. Hoje <code>x_001.lgpd</code> e volume de <code>x</code>, e <code>vendas_2024</code> e recusado na declaracao (368). Os quatro motores aceitam <code>vendas_2024</code>: o PostgreSQL nomeia o arquivo por OID, e MySQL e MariaDB usam <code>#P#</code> nas particoes e codificam o <code>#</code> do nome. Convergem e nenhuma petrea se opoe, entao o comportamento entra por aceite automatico, e a petrea «mudanca de formato entra cedo» decide o momento. Custo medido: <strong>12 sitios em 9 arquivos</strong> compoem ou leem <code>_&lt;volume&gt;</code>. Ler os dois formatos nao basta, porque enquanto o <code>_NNN</code> antigo for reconhecido <code>vendas_2024.reg</code> segue ambiguo: e preciso renomear uma vez os volumes antigos, com marca de versao e teste de queda no meio. O caractere fica com o papel J (candidatos: <code>#</code> e <code>.</code>). Ate la, a recusa do 368 fica como guarda.</td></tr>
+      <tr data-e="planejado"><td class="n mono">509</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong><code>fsync</code> que falhou e repetido responde Ok, e o fecho apaga a marca: o dado some depois da remontagem</strong></td><td class="e">Achado do papel C no catalogo de catastrofes do 496, 24/09/2026 (<code>docs/propostas/parecer-dba-496-catastrofes-2026-09-24.md</code>), C1, <strong>provado contra o SO</strong> (ext4 sobre loop com provisionamento fino): o 1o <code>fsync</code> da EIO, o 2o e o 3o (ate com descritor novo) respondem Ok, e depois de remontar o dado nao esta no disco (3/3). No motor: 5.000 insercoes Ok, fecho 1 da ENOSPC, fecho 2 da Ok; remontado, o <code>.log</code> tem 0 de 5.000 eventos e o <code>.ndx</code> esta corrompido com a marca em 0 (3/3). Os quatro motores convergem (PG PANIC, MariaDB e MySQL <code>ib::fatal</code>, SQLite <code>IOERR_FSYNC</code>): entra por aceite automatico. Perde dado.</td></tr>
+      <tr data-e="planejado"><td class="n mono">510</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>Backup agendado que falha nao avisa ninguem: so <code>stderr</code>, e so tenta de novo na janela seguinte</strong></td><td class="e">Achado do papel C no catalogo de catastrofes do 496, 24/09/2026 (<code>docs/propostas/parecer-dba-496-catastrofes-2026-09-24.md</code>), C6, lido em <code>servidor.rs:5451</code>. O dono so descobre que nao tem backup no dia de restaurar. Avisar pelo carteiro que ja existe (o da saude do disco). Nao exercitado; medir a falha antes de fechar.</td></tr>
+      <tr data-e="planejado"><td class="n mono">511</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>O contador <code>rowstamp</code> empurrado por evento replicado da a volta: release devolve <code>u64::MAX, 0, 1</code>; debug entra em panico</strong></td><td class="e">Achado do papel C no catalogo de catastrofes do 496, 24/09/2026 (<code>docs/propostas/parecer-dba-496-catastrofes-2026-09-24.md</code>), C13. O <code>rowstamp</code> e a prova de que o pai veio antes do filho (decisao do dono de 17/09); um evento da replica pode empurra-lo ate o teto, e ele recomeca do zero. Fere a regra primordial vista pelo tempo. Probabilidade baixa, severidade de perda de garantia.</td></tr>
+      <tr data-e="planejado"><td class="n mono">512</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>Disco cheio deixa o <code>.ndx</code> com CRC invalido e a marca de sujo em 0 -- o arranque nao sabe que tem de reparar</strong></td><td class="e">Achado do papel C no catalogo de catastrofes do 496, 24/09/2026 (<code>docs/propostas/parecer-dba-496-catastrofes-2026-09-24.md</code>), C2b, <strong>provado nos dois sentidos</strong>: com o segundo fecho no mesmo punho (o caminho do <code>gravar_de_verdade</code>), byte 52 = 0 e CRC invalido; so com o <code>Drop</code>, byte 52 = 1 e o recado certo. Causa: <code>ndx.rs:301-306</code>, o <code>tirar_sujas</code> esquece a pagina que falhou de gravar.</td></tr>
+      <tr data-e="planejado"><td class="n mono">513</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>O backup segura a trava global de escrita durante a copia inteira: 100 GB sao 50 a 64 minutos com o banco parado para escrita</strong></td><td class="e">Achado do papel C no catalogo de catastrofes do 496, 24/09/2026 (<code>docs/propostas/parecer-dba-496-catastrofes-2026-09-24.md</code>), C5, <strong>hipotese a medir</strong>: a copia em zip anda a 26-34 MB/s e a leitura tambem para junto. Medir num banco grande antes de consertar; se confirmar, e o 496 que avisa e o backup que muda de trava.</td></tr>
+    </tbody>
+  </table>
+  <div class="vazio" id="vazio" hidden>Nenhum pedido bate com isso.</div>
+</div>
+
+<footer>
+  Gerado de <code>docs/PENDENCIAS.md</code> por
+  <code>docs/dossie/pagina-dos-pedidos.py</code> — a lista não se digita, pela
+  mesma razão que o selo do dossiê não se digita. Esta é a página
+  <strong>7 de 7</strong> (faixa 501 em diante); as outras estão no
+  menu do topo. O dossiê técnico, com o formato byte a byte e a bancada
+  medida, é uma página à parte.
+</footer>
+</div>
+
+<script>
+(function(){
+  const linhas = Array.from(document.querySelectorAll('#tudo tbody tr'));
+  const botoes = Array.from(document.querySelectorAll('.filtros button'));
+  const busca  = document.getElementById('busca');
+  const conta  = document.getElementById('conta');
+  const vazio  = document.getElementById('vazio');
+  let filtro = 'todos';
+
+  // Sem isto, quem digita «indice» nao acha «indice» com acento -- e em
+  // portugues isso e a busca falhando calada, nao uma sutileza.
+  const achatar = t => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  linhas.forEach(tr => tr.dataset.busca = achatar(tr.textContent));
+
+  function aplicar(){
+    const q = achatar(busca.value.trim());
+    let vistos = 0;
+    for (const tr of linhas) {
+      const okEstado = filtro === 'todos' || tr.dataset.e === filtro;
+      const okTexto  = !q || tr.dataset.busca.includes(q);
+      const mostra = okEstado && okTexto;
+      tr.hidden = !mostra;
+      if (mostra) vistos++;
+    }
+    conta.textContent = vistos + ' de ' + linhas.length;
+    vazio.hidden = vistos !== 0;
+  }
+
+  botoes.forEach(b => b.addEventListener('click', () => {
+    filtro = b.dataset.f;
+    botoes.forEach(o => o.setAttribute('aria-pressed', String(o === b)));
+    aplicar();
+  }));
+  busca.addEventListener('input', aplicar);
+  aplicar();
+})();
+</script>
