@@ -165,10 +165,29 @@ fn eventos_de_clientes(porta: u16) -> i64 {
         .unwrap_or(-1)
 }
 
+/// Como `eventos_de_clientes`, mas a base que a replica AINDA nao criou e
+/// «zero ate agora», nao erro. So a espera usa isto: ela pergunta enquanto a
+/// replica trabalha, e com a maquina carregada a primeira pergunta chega antes
+/// do `criando loja.clientes aqui` (pedido 321: 9 falhas em 10 sob carga).
+/// Qualquer outra recusa continua derrubando o teste.
+fn eventos_se_a_base_existe(porta: u16) -> i64 {
+    let r = pedir(porta, r#""op":"posicao","database":"loja""#);
+    if !r.booleano_ou("ok", false) {
+        let erro = r.escrever();
+        assert!(erro.contains("SP000018"), "posicao -> {erro}");
+        return -1;
+    }
+    r.campo("resultado")
+        .and_then(|x| x.campo("tabelas"))
+        .and_then(|t| t.campo("clientes"))
+        .map(|c| c.inteiro_ou("eventos", -1))
+        .unwrap_or(-1)
+}
+
 fn esperar_eventos(porta: u16, quantos: i64) {
     let ate = Instant::now() + Duration::from_secs(20);
     while Instant::now() < ate {
-        if eventos_de_clientes(porta) == quantos {
+        if eventos_se_a_base_existe(porta) == quantos {
             return;
         }
         std::thread::sleep(Duration::from_millis(100));
