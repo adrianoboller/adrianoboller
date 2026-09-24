@@ -3236,8 +3236,14 @@ pub enum Durabilidade {
     /// padrao porque a janela e curta e o ganho e grande.
     #[default]
     PorLote,
-    /// Nunca chama `fsync`; deixa o sistema operacional decidir quando
-    /// descarregar. O mais rapido, e o que mais perde numa queda.
+    /// Nao chama `fsync` para o dado; deixa o sistema operacional decidir
+    /// quando descarregar. O mais rapido, e o que mais perde numa queda.
+    ///
+    /// Com uma excecao, e ela e de proposito (pedido 533): a SUBIDA da marca
+    /// de indice sujo (byte 52 do `.ndx`) vai ao disco por `fdatasync`, uma
+    /// por tabela ate o proximo `sincronizar`. Sem ela uma queda de energia
+    /// deixaria o indice mentir calado, e a regra primordial da integridade
+    /// vale mais que a promessa de velocidade do modo.
     Sistema,
 }
 

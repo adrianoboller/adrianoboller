@@ -145,3 +145,65 @@ pub fn porta_fechada() -> u16 {
         .unwrap()
         .port()
 }
+
+/// O `phxsqld` de verdade, morto no `Drop` -- inclusive quando o teste falha
+/// no meio de uma asserção (a licao do pedido 150).
+///
+/// # Por que mora aqui
+///
+/// Onze arquivos de `tests/` tem a propria copia deste guarda, do `pedir` e
+/// da espera pela porta (contado em 24/09/2026, pedido 542). O teste novo
+/// usa ESTA, e nao a decima segunda copia; trazer as onze para ca e trabalho
+/// de outra frente, e fica dito.
+#[allow(dead_code)]
+pub struct Filho(pub std::process::Child);
+
+impl Drop for Filho {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+/// A porta de dados que o PROPRIO `phxsqld` abriu, lida do erro padrao dele
+/// (pedido 401: o `config` pede a porta 0 e o sistema escolhe). Sai com
+/// `Err` e o texto do erro padrao quando o processo morreu ou nao abriu em
+/// 20 s.
+#[allow(dead_code)]
+pub fn porta_do_phxsqld(filho: &mut Filho, erro_padrao: &Path) -> Result<u16, String> {
+    const LINHA: &str = "porta de dados escutando em ";
+    let ate = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    loop {
+        let texto = std::fs::read_to_string(erro_padrao).unwrap_or_default();
+        if let Some(resto) = texto.lines().find_map(|l| l.strip_prefix(LINHA)) {
+            let alvo: std::net::SocketAddr = resto.trim().parse().unwrap();
+            return Ok(alvo.port());
+        }
+        if let Some(st) = filho.0.try_wait().unwrap() {
+            let texto = std::fs::read_to_string(erro_padrao).unwrap_or_default();
+            return Err(format!("o phxsqld saiu ({st}) sem abrir a porta: {texto}"));
+        }
+        if std::time::Instant::now() > ate {
+            return Err(format!("o phxsqld nao abriu a porta em 20 s: {texto}"));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+}
+
+/// Um pedido de uma linha pela porta de dados, e a resposta de uma linha.
+#[allow(dead_code)]
+pub fn pedir(porta: u16, linha: &str) -> String {
+    use std::io::{BufRead, Write};
+    let alvo: std::net::SocketAddr = format!("127.0.0.1:{porta}").parse().unwrap();
+    let fluxo =
+        std::net::TcpStream::connect_timeout(&alvo, std::time::Duration::from_secs(2)).unwrap();
+    fluxo
+        .set_read_timeout(Some(std::time::Duration::from_secs(10)))
+        .unwrap();
+    let mut escrita = fluxo.try_clone().unwrap();
+    let mut leitor = std::io::BufReader::new(fluxo);
+    writeln!(escrita, "{linha}").unwrap();
+    let mut resposta = String::new();
+    leitor.read_line(&mut resposta).unwrap();
+    resposta
+}

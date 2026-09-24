@@ -21,7 +21,7 @@
 //! Lines puro, e uma linha de texto solta so atrapalharia quem le com
 //! `Json::analisar` -- por isso eles NAO ganham cabecalho nenhum aqui.
 
-use std::fs::{File, OpenOptions};
+use std::fs::File;
 use std::path::Path;
 
 // Re-exportado (so dentro do crate, como o proprio `com_sufixo`), e nao so
@@ -77,7 +77,9 @@ pub fn girar(caminho: &Path, manter: usize) -> (Option<File>, bool) {
             deu_errado = true;
         }
     }
-    let novo = OpenOptions::new()
+    // 0600 pelo motor da permissao do banco (pedido 542): o arquivo que
+    // nasce no giro e o mesmo log, e nao pode nascer mais aberto que ele.
+    let novo = phxsql_store::permissao::opcoes_do_banco()
         .create(true)
         .append(true)
         .open(caminho)

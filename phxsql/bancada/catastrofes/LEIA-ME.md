@@ -1,9 +1,10 @@
-# O disco que recusa, contra o sistema operacional (pedidos 509, 512 e 522)
+# O disco que recusa — e a máquina que cai —, contra o sistema operacional (pedidos 509, 512, 522 e 533)
 
 ```bash
 sudo bancada/catastrofes/prova.sh              # constroi o executor e roda 3 rodadas
 P=binario RODADAS=3 SAIDA=x.json bancada/catastrofes/prova.sh
 P=binario-de-antes CENARIOS=522 SAIDA=antes.json bancada/catastrofes/prova.sh
+P=binario CENARIOS=533 SAIDA=resultados-533.json bancada/catastrofes/prova.sh
 python3 bancada/catastrofes/preco-do-522.py --binario target/release/phxsqld
 ```
 
@@ -27,6 +28,22 @@ Os testes de `crates/phxsql-store/tests/disco-que-recusa.rs` forjam a recusa
 | 509, o gancho do servidor (`ABORTA=1`) | — | `abort` na 1ª recusa, saída 134 (3/3) |
 | 522, provisionamento fino, `syncfs` com o disco cheio, fecha pelo `Drop` | byte 52 = **0**, `CRC inválido na página 3`, `precisa_reconstruir` falso (3/3) | byte 52 = 1, «reparar índice» (3/3) |
 | 522, o controle: cai sem `Drop` | byte 52 = 1, «reparar índice» (3/3) | byte 52 = 1, «reparar índice» (3/3) |
+
+E o **533**, medido na mesma data com o `queda.py` (ext4 sobre loop derrubado por
+`FS_IOC_SHUTDOWN` sem descarregar o cache, depois de o roteiro escolher por
+`sync_file_range` o que chegou ao disco), 30.000 filhas do cliente 1 sincronizadas
+e uma janela de 5.000 só fechada pelo `Drop`:
+
+| cenário 533 | antes (`resultados-533-antes.json`) | depois (`resultados-533.json`) |
+|---|---|---|
+| 5.000 filhas novas; o `.reg` chega, nada do `.ndx` | byte 52 = **0**, filhas do 2 = 0, `excluir` do pai = **Ok** (3/3) | byte 52 = 1, `precisa_reconstruir`, `excluir` recusa (3/3) |
+| as mesmas; chegam o `.reg` e as páginas 1.. do `.ndx`, a 0 não | byte 52 = **0**, «página fora do arquivo» nas filhas do 1, `excluir` do pai = **Ok** (3/3) | byte 52 = 1, `precisa_reconstruir`, `excluir` recusa (3/3) |
+| 5.000 filhas mudam de pai no mesmo slot; o `.reg` chega | byte 52 = **0**, `verificar` **OK**, `excluir` do pai = **Ok** (3/3) | byte 52 = 1, `precisa_reconstruir`, `excluir` recusa (3/3) |
+
+O executor de antes é o mesmo `disco-que-recusa.rs` compilado com o `fdatasync` da
+subida tirado de `NdxFile::levantar_marca` (a guarda `subida-do-byte-52-sem-fsync`
+repõe exatamente isso). O que o `queda.py` **não** emula está no cabeçalho dele: o
+cache volátil do próprio disco reordenando escritas.
 
 A coluna «antes» do 522 é `resultados-522-antes.json`: o mesmo roteiro com
 `CENARIOS=522` e o executor compilado sobre a árvore de antes do conserto

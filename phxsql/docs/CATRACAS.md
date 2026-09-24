@@ -54,7 +54,7 @@ um `TETO` para o portão dos geradores**: «um derivado velho» não é uma dív
 que encolhe de dez para nove — é zero ou não-zero, e um teto que aceitasse «só
 três painéis velhos» seria a catraca frouxa que a própria casa proíbe.
 
-## As cinco catracas de qualidade — medidas hoje
+## As seis catracas de qualidade — medidas hoje
 
 | Catraca | Onde mora | Teto | Medido hoje | Folga | Estado |
 |---|---|---:|---:|---:|---|
@@ -63,6 +63,7 @@ três painéis velhos» seria a catraca frouxa que a própria casa proíbe.
 | `TETO_COLADO` | `crates/phxsql-server/src/conferidor.rs:1088` | 0 | **0** | **0** | sem folga |
 | `TETO_FRASE_REPETIDA` | `crates/phxsql-server/src/conferidor.rs:1092` | 0 | **0** | **0** | sem folga |
 | `TETO_FSYNC_POR_FECHO_V2` | `crates/phxsql-store/src/conferidor_fsync.rs` | 8 | **8** | **0** | sem folga — **substitui a V1 (7)**, aposentada |
+| `TETO_FSYNC_DA_SUBIDA` | `crates/phxsql-store/src/conferidor_fsync.rs` | 1 | **1** | **0** | nasceu em 24/09/2026 no número medido (pedido 533) — ver §5b |
 
 As quatro primeiras foram medidas em 03/09/2026 (commit `5ca5326`, descrito no
 resto desta seção); a quinta é de 04/09/2026, desta rodada — a medição dela
@@ -263,6 +264,29 @@ e fazer nascer `TETO_FSYNC_POR_FECHO_V2` (8) no mesmo commit que liga o
 número medido virou 8, a V1 saiu e a V2 nasceu. A previsão escrita aqui em
 04/09 pela frente que criou a V1 se cumpriu sem uma linha de discussão — que é
 o que uma catraca bem documentada compra.
+
+### 5b. `TETO_FSYNC_DA_SUBIDA` — `fsync` gasto na subida do byte 52
+
+Nasceu em 24/09/2026 com o pedido 533, no número medido do dia: **1** numa
+janela sem `sincronizar` no meio, o `fdatasync` que leva ao disco o 1 do byte 52
+antes da primeira página suja. O preço é um por **passagem de 0 para 1**: um
+por tabela por janela no `por_lote`, que é o que o medidor mede; onde quem chama
+sincroniza sozinho (a cascata, o `por_operacao`, o `sistema`) a passagem se
+repete, e os números estão no `FORMATO.md` (parecer do DBA sobre o 533, C3). As duas catracas de `fsync` que já existiam são **cegas**
+a ele, medido pelo papel J e remedido aqui: a `TETO_FSYNC_POR_FECHO_V2` conta o
+que vem depois do marco do fecho (**8 → 8**) e a `alcancam-fsync-2` conta
+seções com a trava na mão (**23 → 23**). Sem esta, um segundo `fsync` na subida
+— o conserto ingênuo de sincronizar a cada página suja — entraria calado no
+laço quente de toda escrita.
+
+Mesma forma da V2 do fecho: a constante em `src/conferidor_fsync.rs`, o
+exemplo `fsync-da-subida` que se descreve com `--numeros` (1 / 1.000 / 10.000
+linhas na janela, sob `strace` num filho: 1, 1, 1), e o teste
+`tests/catraca-fsync-da-subida.rs` que roda o exemplo. A diferença: ela cobra
+também `medido > 0`, com o recado de que zero **não** é ganho — é o defeito do
+533 de volta (com ele reposto, o exemplo mede 0, 0, 0 e o teste cai). O
+auxiliar que acha o binário do exemplo e recusa o binário velho saiu da cópia
+que cada teste tinha para `tests/apoio/exemplo.rs`, um lugar só.
 
 ### 6. `TETO_TEMP_DIR_SOLTO` — diretório de teste criado sem guarda
 

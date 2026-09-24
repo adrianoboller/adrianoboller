@@ -13,7 +13,7 @@
 //! `FileManager` do Clarion(R) faz.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
-use std::fs::{File, OpenOptions};
+use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -715,7 +715,9 @@ impl Volumes {
                 )));
             }
             self.fechar_menos_usado();
-            let f = OpenOptions::new()
+            // Pelo motor da permissao (pedido 542): o volume que nasce aqui
+            // nasce 0600; o que ja existia fica como estava.
+            let f = crate::util::opcoes_do_banco()
                 .read(true)
                 .write(true)
                 .create(escrever)
@@ -766,7 +768,9 @@ impl Volumes {
             )));
         }
         self.fechar_menos_usado();
-        let f = OpenOptions::new()
+        // Pelo motor da permissao (pedido 542): `.reg`, `.memo`, `.bin`,
+        // `.trash`, `.reason`, `.log` e `.lgpd` nascem todos por aqui, 0600.
+        let f = crate::util::opcoes_do_banco()
             .read(true)
             .write(true)
             .create_new(true)
@@ -1394,9 +1398,10 @@ mod tests {
     /// ser solta -- ver a nota do modulo em `backup.rs`), e desde a condicao
     /// C2 do parecer do DBA o ZIP tem nome PARCIAL ate o `fsync`, trocado
     /// pelo final com `std::fs::rename` em `finalizar_zip`: o
-    /// `File::create(` conta 1, o `OpenOptions::new()` conta 1 e o
-    /// `fs::rename(` conta 1 -- tres, onde os tres `std::fs::write` antigos
-    /// contavam tres tambem, so que por um motivo diferente),
+    /// `recriar_do_banco(` (era `File::create(` ate o pedido 542) conta 1, o
+    /// `OpenOptions::new()` conta 1 e o `fs::rename(` conta 1 -- tres, onde
+    /// os tres `std::fs::write` antigos contavam tres tambem, so que por um
+    /// motivo diferente),
     /// `catalogo.rs` (a marca do database e as trocas de nome) e o proprio
     /// `volume.rs` -- tres desde o pedido 368: o terceiro e o `rename` de
     /// `fechar_ativo_da_trilha`, que troca o NOME de um volume ja escrito sem
@@ -1406,22 +1411,44 @@ mod tests {
     /// Conta so' ate' o primeiro `#[cfg(test)]` de cada arquivo: teste que
     /// escreve arquivo nao e' caminho de escrita do motor. E' igualdade, nao
     /// teto: quem tirar um caminho baixa o numero no mesmo commit.
+    ///
+    /// # Desde o pedido 542, as portas do motor da permissao tambem contam
+    ///
+    /// Todo arquivo do banco passou a nascer por `util::opcoes_do_banco` e
+    /// irmaos, e o texto `OpenOptions::new()` saiu dos chamadores -- sem as
+    /// portas novas na lista, o `Volumes` e o `.ndx` sumiam desta conta e um
+    /// caminho de escrita novo entrava por `opcoes_do_banco()` sem ninguem
+    /// ver. Com elas, os numeros de antes voltaram iguais em `backup.rs`,
+    /// `ndx.rs`, `pag.rs`, `reg.rs` e `volume.rs`; `catalogo.rs` (3 -> 5) e
+    /// `restaurar.rs` (2 -> 3) passaram a mostrar as COPIAS que o `fs::copy`
+    /// fazia sem entrar na lista -- o duplicar e o colar de tabela, e a
+    /// arvore copiada da restauracao --, e `util.rs` entra com as 8 do
+    /// proprio motor (definicoes e as chamadas entre as portas). A revisao SEC
+    /// do 542 fez 9: o `recriar_do_banco` reabre o arquivo regular que ja
+    /// existia SEM criar e sem truncar (`OpenOptions::new()`), para conferir o
+    /// inode antes de truncar -- e o que o impede de atravessar um link
+    /// plantado no nome.
     #[test]
     fn nenhum_caminho_de_escrita_novo_fora_do_volumes() {
         const HOJE: &[(&str, usize)] = &[
             ("backup.rs", 3),
-            ("catalogo.rs", 3),
+            ("catalogo.rs", 5),
             ("ndx.rs", 2),
             ("pag.rs", 2),
             ("reg.rs", 5),
-            ("restaurar.rs", 2),
+            ("restaurar.rs", 3),
+            ("util.rs", 9),
             ("volume.rs", 3),
         ];
-        const ABRIDORES: [&str; 4] = [
+        const ABRIDORES: [&str; 8] = [
             "OpenOptions::new()",
             "File::create(",
             "fs::write(",
             "fs::rename(",
+            "opcoes_do_banco()",
+            "recriar_do_banco(",
+            "escrever_do_banco(",
+            "copiar_do_banco(",
         ];
         let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
         let mut medido: BTreeMap<String, usize> = BTreeMap::new();

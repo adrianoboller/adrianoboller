@@ -133,7 +133,7 @@
 #[cfg(test)]
 use crate::apoio_teste::DirTemp;
 use std::collections::VecDeque;
-use std::fs::{File, OpenOptions};
+use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 
@@ -685,7 +685,9 @@ impl Profiler {
                     )));
                 }
             }
-            let mut f = OpenOptions::new()
+            // 0600 pelo motor da permissao do banco (pedido 542): o arquivo
+            // do Profiler guarda o que os pedidos carregavam.
+            let mut f = phxsql_store::permissao::opcoes_do_banco()
                 .create(true)
                 .append(true)
                 .open(&caminho)
@@ -1680,7 +1682,10 @@ mod testes {
         // hora. Entao o teste liga em memoria e troca o arquivo depois --
         // que e o caso de verdade: o disco enche DEPOIS.
         p.ligar(Filtro::default(), "", 10, 0).unwrap();
-        p.arquivo = OpenOptions::new().append(true).open("/dev/full").ok();
+        p.arquivo = std::fs::OpenOptions::new()
+            .append(true)
+            .open("/dev/full")
+            .ok();
         assert!(p.arquivo.is_some(), "sem /dev/full nao da para provar");
         let s = p.chegou("{}", "inserir", "a", "d", "t", "ip", 0).unwrap();
         p.terminou(s, 1, true, "");

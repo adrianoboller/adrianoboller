@@ -610,7 +610,9 @@ fn canario(caminho: &Path, agora_ms: i64, passada: u64) -> Result<(), (Tipo, Str
     conteudo.truncate(TAMANHO_DO_CANARIO);
     let esperado = conteudo.as_bytes();
 
-    let mut arquivo = std::fs::OpenOptions::new()
+    // Pelo motor da permissao do banco (pedido 542): o canario mora no
+    // diretorio de dados, e nasce como todo arquivo de la.
+    let mut arquivo = phxsql_store::permissao::opcoes_do_banco()
         .write(true)
         .create(true)
         .truncate(true)

@@ -896,8 +896,13 @@ RECURSOS DA MAQUINA
                       queda de energia, e custa 20x
         por_lote      fsync a cada N gravacoes ou T milissegundos, o que vier
                       primeiro. E o padrao
-        sistema       nunca chama fsync; o sistema operacional decide. O mais
-                      rapido, e o que mais perde numa queda
+        sistema       nao chama fsync para o dado; o sistema operacional
+                      decide. O mais rapido, e o que mais perde numa queda.
+                      Uma excecao, de proposito: a marca de indice sujo
+                      (byte 52 do .ndx) vai ao disco por fdatasync quando
+                      sobe -- um por tabela ate o proximo sincronizar --,
+                      porque sem ela uma queda deixaria o indice mentir
+                      calado (pedido 533)
 
     O QUE SE ARRISCA, exatamente. Os bytes vao para o sistema operacional em
     TODA gravacao, sempre -- um write direto, sem buffer nosso. Entao outro

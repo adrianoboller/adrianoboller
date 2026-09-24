@@ -3908,7 +3908,9 @@ pub fn limpar() {
                   "unica plateia que ele tem. E a janela nao precisa de queda -- o "
                   "`O_TRUNC` a abre a cada `sincronizar()`, por 33,2 us medidos.",
         "arquivo": "crates/phxsql-store/src/pag.rs",
-        "trecho": """    if let Err(e) = std::fs::write(&temporario, texto) {
+        # Pedido 542 (24/09/2026): o temporario passou a nascer pelo motor da
+        # permissao (`escrever_do_banco`, 0600); o defeito reposto e o mesmo.
+        "trecho": """    if let Err(e) = crate::util::escrever_do_banco(&temporario, texto) {
         let _ = std::fs::remove_file(&temporario);
         return Err(e.into());
     }
@@ -5283,7 +5285,10 @@ pub fn limpar() {
             "vale sem root, e o teste diz isso."
         ),
         "arquivo": "crates/phxsql-server/src/saude_do_disco.rs",
-        "trecho": """    let mut arquivo = std::fs::OpenOptions::new()
+        # Pedido 542 (24/09/2026): o canario passou a nascer pelo motor da
+        # permissao do banco (`opcoes_do_banco`, 0600); o defeito reposto e o
+        # mesmo -- o `open` que falha, engolido.
+        "trecho": """    let mut arquivo = phxsql_store::permissao::opcoes_do_banco()
         .write(true)
         .create(true)
         .truncate(true)
@@ -5292,7 +5297,7 @@ pub fn limpar() {
 """,
         "troca": """    // DEFEITO REPOSTO (pedido 249): o abrir que falha e engolido -- a
     // sonda diz «passou» num diretorio que nao aceita escrita.
-    let Ok(mut arquivo) = std::fs::OpenOptions::new()
+    let Ok(mut arquivo) = phxsql_store::permissao::opcoes_do_banco()
         .write(true)
         .create(true)
         .truncate(true)
@@ -14922,12 +14927,25 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "pagina, e so a pagina no disco e selada. Conserto vindo do MESMO "
             "motor que a trilha ja usa (`util::apertar_permissao`), nao uma "
             "segunda copia."
+            "\n\n"
+            "RE-APONTADA em 24/09/2026 (pedido 542): o aperto por caminho, "
+            "depois de criar, saiu do `fts.rs` e do `trilha.rs` -- todo arquivo "
+            "do banco passou a NASCER 0600 pelo motor da permissao "
+            "(`util::recriar_do_banco`), e o `.fts` nasce pelo `NdxFile::criar`. "
+            "O defeito reposto agora e o `open` de antes do 542 no `criar_com` "
+            "do `.ndx`, por onde o `.fts` nasce: sem o motor, ele volta a 644."
         ),
-        "arquivo": "crates/phxsql-store/src/fts.rs",
-        "trecho": """        apertar_permissao(caminho);
+        "arquivo": "crates/phxsql-store/src/ndx.rs",
+        "trecho": """        let arquivo = crate::util::recriar_do_banco(&caminho, true)?;
 """,
-        "troca": """        // DEFEITO REPOSTO (345): sem apertar a permissao, o .fts nasce
-        // 644.
+        "troca": """        // DEFEITO REPOSTO (345/542): o `open` sem o motor da permissao --
+        // o .ndx e o .fts nascem 644.
+        let arquivo = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&caminho)?;
 """,
         "pacote": "phxsql-store",
         "alvo": ["--lib"],
@@ -15858,6 +15876,36 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         ],
     },
     {
+        "id": "descida-do-punho-sem-o-fts",
+        "titulo": "a descida do punho de quem chama leva o `.ndx` e esquece o `.fts`: a busca de texto da mãe acha o nome velho",
+        "porque": (
+            "R1 da re-checagem do papel C ao C1 do pedido 540 (24/09/2026): a "
+            "guarda de cima tira a descida inteira, e o teste dela nao tem "
+            "indice de texto -- tirar so o bloco do `.fts` deixava tudo verde. "
+            "Medido na variante que desce so o `.ndx`, com a mae com indice de "
+            "texto e a sincronia trocando chave e nome: `procurar_texto` "
+            "`zeta` 0 e `alfa` 1, 5 de 5, calado (o `por_codigo` sai certo), "
+            "na hora e depois de reabrir."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        if let Some(f) = self.fts.as_mut() {
+            f.fechar()?;
+        }
+        self.ndx.fechar()
+""",
+        "troca": """        // DEFEITO REPOSTO (540, R1): a descida leva so o `.ndx`.
+        self.ndx.fechar()
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_transacoes::integridade_na_transacao::a_cascata_solta_depois_de_escrever_no_mesmo_punho_nao_perde_o_texto_da_mae",
+        ],
+        "seguem": [
+            "servidor::testes_transacoes::integridade_na_transacao::a_cascata_solta_depois_de_escrever_no_mesmo_punho_nao_perde_o_indice_da_mae",
+        ],
+    },
+    {
         "id": "varredura-encerra-quem-confirma",
         "titulo": "a varredura do prazo encerra a transação que está no COMMIT e solta as travas de quem ainda grava",
         "porque": (
@@ -15907,6 +15955,374 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         ],
         "seguem": [
             "servidor::testes_transacoes::a_quebra_de_acesso_antes_de_qualquer_byte_devolve_a_transacao",
+        ],
+    },
+    {
+        "id": "subida-do-byte-52-sem-fsync",
+        "titulo": "a SUBIDA do byte 52 volta a ir só ao cache do núcleo: numa queda de energia o disco guarda o `.reg` novo sob o 0 do último fecho, e o pai com filhas se apaga calado",
+        "porque": (
+            "pedido 533, C4 do parecer do papel C sobre o 522 e decisao do "
+            "papel J (a regra WAL dos quatro, 10 x 0). Medido contra o SO "
+            "(`bancada/catastrofes/prova.sh`, cenario 533, ext4 derrubado com "
+            "`FS_IOC_SHUTDOWN`): sem o `fdatasync` da subida, 9/9 com byte 52 = "
+            "0 e o `excluir` do pai com 5.000 filhas passando calado; com ele, "
+            "9/9 com byte 52 = 1 e a recusa. Aqui a recusa do `fdatasync` e "
+            "forjada: com o conserto o `inserir` recusa antes do `.reg`; com o "
+            "defeito a arma nem dispara. O `.fts` e um `.ndx` por dentro, e cai "
+            "junto."
+        ),
+        "arquivo": "crates/phxsql-store/src/ndx.rs",
+        "trecho": """        if let Err(e) = crate::sincronia::sync_data(&self.arquivo, &self.caminho) {
+            self.sujo = false;
+            return Err(e);
+        }
+""",
+        "troca": """        // DEFEITO REPOSTO (533): a subida fica so no cache do nucleo.
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "disco-que-recusa"],
+        "caem": [
+            "a_subida_recusada_recusa_antes_do_reg",
+            "a_subida_do_fts_tambem_vai_ao_disco",
+        ],
+        "seguem": [
+            "a_subida_sincroniza_uma_vez_por_janela",
+            "pagina_que_o_disco_recusou_continua_suja",
+        ],
+    },
+    {
+        "id": "subida-do-byte-52-sincroniza-a-cada-pagina",
+        "titulo": "a subida do byte 52 sincroniza a cada página suja, e não só na passagem de 0 para 1: um `fdatasync` no laço quente de toda escrita",
+        "porque": (
+            "pedido 533, o conserto INGENUO: por o `fdatasync` em toda subida, "
+            "e nao so na de 0 para 1, fecha o mesmo furo e poe um `fsync` por "
+            "pagina suja no laco quente. As catracas de `fsync` que ja "
+            "existiam sao cegas a ele (medido pelo papel J: "
+            "`TETO_FSYNC_POR_FECHO_V2` 8 -> 8, `alcancam-fsync-2` 23 -> 23); "
+            "quem o pega pelo nucleo e a `TETO_FSYNC_DA_SUBIDA`, e aqui, sem "
+            "`strace`, a arma forjada posta DEPOIS da primeira escrita da "
+            "janela, que nenhuma das 299 seguintes pode encontrar."
+        ),
+        "arquivo": "crates/phxsql-store/src/ndx.rs",
+        "trecho": """        if self.sujo {
+            return Ok(());
+        }
+        self.sujo = true;
+""",
+        "troca": """        if self.sujo {
+            // DEFEITO REPOSTO (533, o conserto ingenuo): um fdatasync a cada
+            // pagina suja, e nao so na passagem de 0 para 1.
+            return crate::sincronia::sync_data(&self.arquivo, &self.caminho);
+        }
+        self.sujo = true;
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "disco-que-recusa"],
+        "caem": ["a_subida_sincroniza_uma_vez_por_janela"],
+        "seguem": [
+            "a_subida_recusada_recusa_antes_do_reg",
+            "a_subida_do_fts_tambem_vai_ao_disco",
+        ],
+    },
+    {
+        "id": "arquivo-do-banco-nasce-aberto",
+        "titulo": "os arquivos do banco voltam a nascer na permissão do `umask`: `.reg`, `.ndx`, `.log`, `.lgpd`… `644`, legíveis por todo usuário da máquina",
+        "porque": (
+            "pedido 542, medido com `stat`: o `.reg` -- a linha inteira, em "
+            "claro com a cifra desligada, que e o padrao -- nascia `644`. "
+            "Decisao do papel J: «outros nao leem» e convergencia dos tres "
+            "maduros, e os tres impoem o modo em vez de herdar o `umask`. O "
+            "defeito reposto e o `mode(0o600)` fora do motor unico "
+            "(`util::opcoes_do_banco`); a prova roda num filho com "
+            "`umask 022` e confere a premissa antes."
+        ),
+        "arquivo": "crates/phxsql-store/src/util.rs",
+        "trecho": """        opcoes.mode(MODO_DO_ARQUIVO);
+""",
+        "troca": """        // DEFEITO REPOSTO (542): o arquivo nasce na permissao do umask.
+        let _ = (&mut opcoes, MODO_DO_ARQUIVO);
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "permissao-dos-arquivos"],
+        "caem": ["o_banco_nasce_0600_em_diretorio_0700"],
+        "seguem": [
+            "a_copia_do_backup_e_a_restauracao_ficam_so_do_dono",
+            "o_que_o_banco_refaz_nasce_0600_mesmo_por_cima_de_0644",
+        ],
+    },
+    {
+        "id": "diretorio-do-banco-nasce-aberto",
+        "titulo": "a raiz, o database, o palco da restauração e o destino do backup voltam a nascer `755`",
+        "porque": (
+            "pedido 542: o diretorio e a primeira porta -- o MariaDB grava "
+            "arquivo `0660` e fecha o grupo pelo diretorio `0700`, e aqui ele "
+            "protege tambem o arquivo que alguem criar ali por fora do motor. O "
+            "defeito reposto e o `mode(0o700)` fora do "
+            "`util::criar_diretorio_do_banco`."
+        ),
+        "arquivo": "crates/phxsql-store/src/util.rs",
+        "trecho": """        construtor.mode(MODO_DO_DIRETORIO);
+""",
+        "troca": """        // DEFEITO REPOSTO (542): o diretorio nasce na permissao do umask.
+        let _ = (&mut construtor, MODO_DO_DIRETORIO);
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "permissao-dos-arquivos"],
+        "caem": [
+            "o_banco_nasce_0600_em_diretorio_0700",
+            "a_copia_do_backup_e_a_restauracao_ficam_so_do_dono",
+        ],
+        "seguem": ["o_que_o_banco_refaz_nasce_0600_mesmo_por_cima_de_0644"],
+    },
+    {
+        "id": "arquivo-refeito-herda-o-modo-velho",
+        "titulo": "o arquivo que o banco REFAZ por cima de um antigo -- o `.ndx` e o `.fts` do `reindexar` -- herda o `644` dele",
+        "porque": (
+            "pedido 542: o `mode` do `open` so vale para o arquivo que NASCE, "
+            "e o `reindexar` trunca no mesmo caminho. Sem o `fchmod` no "
+            "descritor de `util::recriar_do_banco`, o `.ndx` refeito numa base "
+            "antiga sai `644` com a arvore inteira nova dentro. O `.reg`, que "
+            "o `reindexar` so le, continua como estava -- o que o banco nao "
+            "refaz, ele nao aperta."
+        ),
+        "arquivo": "crates/phxsql-store/src/util.rs",
+        "trecho": """    apertar_permissao(&arquivo);
+    Ok(arquivo)
+""",
+        "troca": """    // DEFEITO REPOSTO (542): o arquivo refeito fica com o modo antigo.
+    let _ = apertar_permissao;
+    Ok(arquivo)
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "permissao-dos-arquivos"],
+        "caem": ["o_que_o_banco_refaz_nasce_0600_mesmo_por_cima_de_0644"],
+        "seguem": ["o_banco_nasce_0600_em_diretorio_0700"],
+    },
+    {
+        "id": "copia-do-backup-nasce-aberta",
+        "titulo": "a cópia do backup volta a nascer `644` -- até a do `.lgpd`, que nasceu `600`",
+        "porque": (
+            "pedido 542, medido com `stat`: `File::create` no `backup.rs` nao "
+            "pede modo, e a copia de TUDO saia `644`, inclusive a do arquivo "
+            "que so existe `600` porque guarda dado pessoal em claro. Backup "
+            "costuma ir para disco de rede ou USB, que e onde mais gente "
+            "alcanca o arquivo."
+        ),
+        "arquivo": "crates/phxsql-store/src/backup.rs",
+        "trecho": """    let arquivo = crate::util::recriar_do_banco(alvo, false)?;
+""",
+        "troca": """    // DEFEITO REPOSTO (542): a copia nasce na permissao do umask.
+    let arquivo = std::fs::File::create(alvo)?;
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "permissao-dos-arquivos"],
+        "caem": ["a_copia_do_backup_e_a_restauracao_ficam_so_do_dono"],
+        "seguem": ["o_banco_nasce_0600_em_diretorio_0700"],
+    },
+    {
+        "id": "base-antiga-sem-alerta",
+        "titulo": "a base antiga, `644` em `755`, deixa de ser apontada: o motor não aperta o que existe e ninguém avisa",
+        "porque": (
+            "pedido 542, decisao do J pela regua: nao recusar arrancar (PG 4 "
+            "contra 6) e nao apertar calado (tiraria o acesso de quem le por "
+            "grupo). Sobra o ALERTA, e sem ele a base de antes do 542 fica "
+            "aberta para sempre sem ninguem saber."
+        ),
+        "arquivo": "crates/phxsql-store/src/util.rs",
+        "trecho": """        let (caminho, modo) = exemplo?;
+""",
+        "troca": """        // DEFEITO REPOSTO (542): a base larga nao alerta.
+        let (caminho, modo) = exemplo.filter(|_| false)?;
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "permissao-dos-arquivos"],
+        "caem": ["a_base_antiga_aberta_abre_grava_e_alerta"],
+        "seguem": ["o_banco_nasce_0600_em_diretorio_0700"],
+    },
+    {
+        "id": "arranque-nao-alerta-a-base-antiga",
+        "titulo": "o `phxsqld` sobe numa base `644`/`755` sem dizer nada",
+        "porque": (
+            "pedido 542: o alerta da base larga e uma linha no erro padrao do "
+            "PROCESSO, uma vez, no arranque -- e so se ve de fora. A prova sobe "
+            "o `phxsqld` de verdade com `umask 022`, duas vezes: a base que ele "
+            "cria nao alerta, e a mesma base afrouxada para `644`/`755` alerta "
+            "UMA vez e continua `644`."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        if let Some(aviso) = phxsql_store::permissao::permissao_larga(&config.base) {
+            eprintln!("AVISO: {aviso}");
+        }
+""",
+        "troca": """        // DEFEITO REPOSTO (542): o arranque nao alerta a base larga.
+        let _ = phxsql_store::permissao::permissao_larga;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "permissao-do-banco"],
+        "caem": ["a_base_antiga_sobe_com_um_alerta_e_nada_se_aperta"],
+        "seguem": ["a_base_que_o_servidor_cria_nasce_fechada_e_sem_alerta"],
+    },
+    {
+        "id": "backup-atravessa-link-plantado",
+        "titulo": "o motor da permissão volta a seguir o link simbólico no último nome: um link plantado no destino do backup faz o `.reg` ser gravado NA vítima de fora, e ela vira 0600",
+        "porque": (
+            "revisao SEC do 542, achado 1 (ALTA, CWE-59): o `recriar_do_banco` "
+            "abria com `create + truncate` e dava `fchmod` depois, os dois "
+            "seguindo link. O destino do backup e lugar onde outros escrevem; "
+            "medido pela SEC contra o `phxsqld`: vitima `0o644 -> 0o600` e o "
+            "conteudo virando `PHXREG`. A escrita de fora ja existia com o "
+            "`File::create` de antes; o `chmod` de fora nasceu com o motor do "
+            "542. O defeito reposto e o `open` de antes, e o link pendurado "
+            "(que o `O_CREAT` seguiria, criando o alvo) cai junto."
+        ),
+        "arquivo": "crates/phxsql-store/src/util.rs",
+        "trecho": """    match opcoes_do_banco()
+        .read(ler)
+        .write(true)
+        .create_new(true)
+        .open(caminho)
+    {
+        Ok(novo) => {
+            apertar_permissao(&novo);
+            return Ok(novo);
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+        Err(e) => return Err(e),
+    }
+    let nome = std::fs::symlink_metadata(caminho)?;
+    if !nome.file_type().is_file() {
+        return Err(recusa_do_nome(caminho, &nome));
+    }
+    let arquivo = OpenOptions::new().read(ler).write(true).open(caminho)?;
+    if !mesmo_arquivo(&arquivo.metadata()?, &nome) {
+        return Err(recusa_do_nome(caminho, &nome));
+    }
+    arquivo.set_len(0)?;
+""",
+        "troca": """    // DEFEITO REPOSTO (SEC 542, achado 1): segue o link no ultimo nome.
+    let _ = (recusa_do_nome, mesmo_arquivo);
+    let arquivo = opcoes_do_banco()
+        .read(ler)
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(caminho)?;
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "permissao-dos-arquivos"],
+        "caem": [
+            "o_backup_nao_atravessa_o_link_plantado_no_destino",
+            "o_motor_nao_atravessa_link_nem_pendurado",
+            "o_motor_recusa_fifo_sem_ficar_parado",
+        ],
+        "seguem": [
+            "o_que_o_banco_refaz_nasce_0600_mesmo_por_cima_de_0644",
+            "o_banco_nasce_0600_em_diretorio_0700",
+        ],
+    },
+    {
+        "id": "base-por-link-cala-o-alerta",
+        "titulo": "o alerta da base antiga cala quando `config.base` é um link simbólico",
+        "porque": (
+            "revisao SEC do 542, achado 2: o `permissao_larga` lia a PROPRIA "
+            "raiz por `lstat`, e o `continue` do link calava o alerta inteiro "
+            "na instalacao comum (`/var/lib/phxsql -> /mnt/dados`). Medido pela "
+            "SEC contra o `phxsqld`: 1 alerta pelo caminho real, 0 pelo link, "
+            "na mesma base. O topo se segue; o link DENTRO da arvore continua "
+            "sem contar."
+        ),
+        "arquivo": "crates/phxsql-store/src/util.rs",
+        "trecho": """            let lido = if topo {
+                std::fs::metadata(&atual)
+            } else {
+                std::fs::symlink_metadata(&atual)
+            };
+""",
+        "troca": """            // DEFEITO REPOSTO (SEC 542, achado 2): o topo tambem por lstat.
+            let _ = topo;
+            let lido = std::fs::symlink_metadata(&atual);
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "permissao-dos-arquivos"],
+        "caem": ["a_base_por_link_simbolico_tambem_alerta"],
+        "seguem": ["a_base_antiga_aberta_abre_grava_e_alerta"],
+    },
+    {
+        "id": "arranque-cala-o-alerta-da-base-por-link",
+        "titulo": "o `phxsqld` sobe numa base `644`/`755` alcançada por link simbólico sem dizer nada",
+        "porque": (
+            "revisao SEC do 542, achado 2, pelo binario de verdade: e a prova "
+            "de fora da guarda `base-por-link-cala-o-alerta`, no mesmo ponto "
+            "de reposicao -- o que o operador ve e a linha no erro padrao do "
+            "PROCESSO."
+        ),
+        "arquivo": "crates/phxsql-store/src/util.rs",
+        "trecho": """            let lido = if topo {
+                std::fs::metadata(&atual)
+            } else {
+                std::fs::symlink_metadata(&atual)
+            };
+""",
+        "troca": """            // DEFEITO REPOSTO (SEC 542, achado 2): o topo tambem por lstat.
+            let _ = topo;
+            let lido = std::fs::symlink_metadata(&atual);
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "permissao-do-banco"],
+        "caem": ["a_base_antiga_por_link_simbolico_tambem_alerta"],
+        "seguem": ["a_base_antiga_sobe_com_um_alerta_e_nada_se_aperta"],
+    },
+    {
+        "id": "ndx-novo-sobe-com-o-diretorio-vazio",
+        "titulo": "o primeiro cabeçalho durável de um `.ndx` novo leva o byte 52 em 1 e ZERO índices: a queda no meio do `reindexar` trava a tabela",
+        "porque": (
+            "parecer do papel C sobre o 533, P1: a subida roda na primeira "
+            "`gravar_pagina` de `criar_com`, e o `fdatasync` dela leva ao disco "
+            "o cabecalho daquele instante. Com as raizes empurradas depois de "
+            "cada folha, esse cabecalho tinha o diretorio VAZIO, e a tabela "
+            "reaberta recusava com «o .ndx tem 0 indices, o esquema do .reg "
+            "declara 2» -- sem porta que reconstrua sem abrir. Medido pelo DBA "
+            "por emulacao e pela ordem no strace; o 533 o torna deterministico "
+            "e o poe no caminho comum (o arranque do 522 reconstroi toda tabela "
+            "da ultima janela depois de uma queda). O defeito reposto e o laco "
+            "de antes."
+        ),
+        "arquivo": "crates/phxsql-store/src/ndx.rs",
+        "trecho": """            let raiz = n.alocar_pagina()?;
+            n.indices.push(DescritorIndice {
+                nome: idx.nome.clone(),
+                unico: idx.unico,
+                key_len,
+                raiz,
+                qtd_chaves: 0,
+            });
+        }
+        let raizes: Vec<u64> = n.indices.iter().map(|d| d.raiz).collect();
+        for raiz in raizes {
+            let mut folha = nova_pagina(page_size, TIPO_FOLHA);
+            n.gravar_pagina(raiz, &mut folha)?;
+        }
+""",
+        "troca": """            let raiz = n.alocar_pagina()?;
+            // DEFEITO REPOSTO (533, P1 do DBA): a folha antes do descritor --
+            // a primeira subida leva ao disco o diretorio vazio.
+            let mut folha = nova_pagina(page_size, TIPO_FOLHA);
+            n.gravar_pagina(raiz, &mut folha)?;
+            n.indices.push(DescritorIndice {
+                nome: idx.nome.clone(),
+                unico: idx.unico,
+                key_len,
+                raiz,
+                qtd_chaves: 0,
+            });
+        }
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "disco-que-recusa"],
+        "caem": ["o_ndx_refeito_leva_o_diretorio_inteiro_na_primeira_subida"],
+        "seguem": [
+            "a_subida_recusada_recusa_antes_do_reg",
+            "a_subida_sincroniza_uma_vez_por_janela",
         ],
     },
 ]

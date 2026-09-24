@@ -65,7 +65,7 @@
 //! para o nome final, depois do `fsync`.
 
 use std::collections::BTreeMap;
-use std::fs::{File, OpenOptions};
+use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
@@ -79,8 +79,14 @@ pub const MANIFESTO: &str = "backup.json";
 /// Grava `dados` em `alvo`, SEM sincronizar -- o `fsync` e' o passo de
 /// depois, [`sincronizar_copias`], porque quem chama pode estar com a trava de
 /// dados na mao (ver a nota do modulo).
+///
+/// Nasce pelo motor da permissao (pedido 542): 0600 no destino, qualquer que
+/// seja o `umask` e a permissao da origem. Era `File::create`, e a copia saia
+/// `0644` -- ate a do `.lgpd`, que nasceu `0600` justamente por guardar dado
+/// pessoal em claro. Backup costuma ir para disco de rede ou USB, que e onde
+/// mais gente alcanca o arquivo.
 fn escrever_sem_sync(alvo: &Path, dados: &[u8]) -> Result<()> {
-    let arquivo = File::create(alvo)?;
+    let arquivo = crate::util::recriar_do_banco(alvo, false)?;
     let mut w = std::io::BufWriter::new(&arquivo);
     w.write_all(dados)?;
     w.flush()?;
@@ -311,7 +317,7 @@ pub fn executar_zip(
             origem.display()
         )));
     }
-    std::fs::create_dir_all(pasta)?;
+    crate::util::criar_diretorio_do_banco(pasta)?;
     let alvo = pasta.join(nome_do_zip(
         if banco.is_empty() { "dados" } else { banco },
         admin,
@@ -444,7 +450,7 @@ pub fn executar(raiz: &Path, destino: &Path, _quando_ms: i64) -> Result<(Relator
             "o destino do backup nao pode ficar dentro da raiz de dados".into(),
         ));
     }
-    std::fs::create_dir_all(destino)?;
+    crate::util::criar_diretorio_do_banco(destino)?;
 
     let mut r = Relatorio::default();
     let mut caminhos = Vec::new();
@@ -453,7 +459,7 @@ pub fn executar(raiz: &Path, destino: &Path, _quando_ms: i64) -> Result<(Relator
         let dados = std::fs::read(&arquivo)?;
         let alvo = destino.join(&rel);
         if let Some(pai) = alvo.parent() {
-            std::fs::create_dir_all(pai)?;
+            crate::util::criar_diretorio_do_banco(pai)?;
         }
         escrever_sem_sync(&alvo, &dados)?;
         caminhos.push(alvo);

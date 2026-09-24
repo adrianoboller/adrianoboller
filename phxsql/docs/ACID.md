@@ -1005,7 +1005,7 @@ e `set_isolation_level_nomeia_o_nivel_real`. Ver `docs/PENDENCIAS.md` #246.
 |---|---|---|
 | `por_operacao` | **está no disco** | dentro da própria operação |
 | `por_lote` (**padrão**) | está no núcleo, e vai ao disco quando a janela fechar | ao fechar `lote_operacoes` (200) ou `lote_milissegundos` (200 ms), o que vier antes; o relógio de fundo fecha mesmo sem tráfego |
-| `sistema` | está no núcleo, e vai ao disco quando o sistema operacional quiser | nunca por conta própria — só no próximo arranque |
+| `sistema` | está no núcleo, e vai ao disco quando o sistema operacional quiser | nunca por conta própria — só no próximo arranque. A exceção é a marca de índice sujo: a **subida** do byte 52 do `.ndx` vai ao disco por `fdatasync`, uma por tabela até o próximo `sincronizar` (pedido 533), porque sem ela a queda deixaria o índice mentir calado |
 
 E a marca `.tx` **não obedece a esse campo**: `gravar_marca` chama `sync_all`
 incondicional. O regime decide quando a **tabela** sincroniza; quem decide se a

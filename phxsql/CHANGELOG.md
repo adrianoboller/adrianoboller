@@ -12,6 +12,63 @@ Os números são **medidos**, nunca estimados.
 
 ## Não lançado
 
+### 533, 542 — a subida do byte 52 vai ao disco, e o banco nasce 0600/0700
+
+**Corrigido**
+
+- **533** — o `.ndx` e o `.fts` subiam o byte 52 (índice sujo) só na
+  memória do SO: numa queda de energia o disco guardava páginas novas sob o 0
+  do último fecho, e o `excluir` de um pai com 5.000 filhas passava calado.
+  Agora a passagem de 0 para 1 vai ao disco por `fdatasync`, antes da primeira
+  página, pelo mesmo motor de sincronia do `sync_all`; no `.ndx` também antes
+  do slot do `.reg` e, se o disco recusar, a escrita recusa sem tocá-lo. No
+  `.fts` a subida vem depois do slot: o lado do `.reg` dele é o pedido 472.
+  Provado contra o SO
+  (ext4 sobre loop, `FS_IOC_SHUTDOWN`, 3 formas × 3 rodadas): antes 9/9 com o
+  byte em 0 e a exclusão passando, depois 9/9 com o byte em 1 e a exclusão
+  recusando.
+- **542** — a cópia do backup regravava tudo como `644`, e o `.reg` já
+  nascia `644`. Todo arquivo do banco (volumes, `.ndx`/`.fts`, `.pag`,
+  `_database.json`, cópias, backup, ZIP, restauração, visões, rotinas, logs,
+  Profiler, cluster, bidirecional, lista negra, canário) nasce `0600`, e o
+  diretório `0700`, por um motor único (`phxsql_store::permissao`); a cópia não
+  herda o modo da origem.
+- **533, P1 do parecer do DBA** — o primeiro cabeçalho que a subida levava ao
+  disco num `.ndx` novo tinha o byte em 1 e ZERO índices: uma queda no meio do
+  `reindexar` (o do arranque inclusive) travava a tabela em «`.ndx` tem 0
+  índices, o esquema do `.reg` declara 2». Os descritores entram antes da
+  primeira folha; o mesmo cabeçalho agora diz «marcado, reconstrua».
+- **542, revisão SEC** — o motor seguia o link simbólico no último nome: um
+  link plantado no destino do backup fazia o `.reg` ser gravado NA vítima de
+  fora, e ela virava `0600`. Agora `create_new`, `lstat` e a conferência do
+  inode recusam link, link pendurado, FIFO e troca durante a abertura, sem
+  apagar o que achou. E o alerta da base antiga deixa de calar quando
+  `config.base` é um link.
+
+**Mudado**
+
+- Custo da subida: um `fdatasync` por passagem de 0 para 1 — um por tabela
+  por janela no `por_lote`; no `por_operacao`, inserir 4+1 e excluir 6+1; na
+  cascata solta, +2/+3/+4/+5 sobre 8/15/22/29 `fsync` de 1 a 4 níveis; no
+  `sistema`, um por tabela até o próximo `sincronizar` — o regime que «nunca
+  chamava fsync» passa a chamar este (MANUAL, `config.rs`, `ACID.md`) (catraca nova
+  `TETO_FSYNC_DA_SUBIDA = 1`, medida em 1, 1 e 1 nas escalas de 1, 1.000 e
+  10.000 linhas). Ciclo do servidor 76,7/75,7/75,5 → 77,3/77,1/78,7 µs por
+  pedido, com as faixas se cruzando nas três rodadas: sem vencedor. Lote
+  4,88/4,96/4,82 → 5,01/5,01/5,03 µs por linha.
+- A base criada antes desta versão continua como está: o arranque do `phxsqld`
+  imprime um `AVISO` com o comando que fecha as permissões, sem recusar e sem
+  `chmod` calado.
+
+**Sabido**
+
+- O embutido (FFI) cria pelo motor, mas não recebe o alerta da base antiga
+  (`docs/SEGURANCA.md` §31).
+- O custo da varredura da raiz a cada arranque não foi medido.
+- O link num nome INTERMEDIÁRIO do destino (`dest/loja -> fora`) ainda leva o
+  arquivo para o outro lado (`docs/SEGURANCA.md` §31.6); fechá-lo pede
+  `openat`, que a `std` não dá.
+
 ### 537, 538, 539, 540, 559 — o que sobrou da integridade na transação
 
 **Corrigido**
@@ -32,6 +89,11 @@ Os números são **medidos**, nunca estimados.
   `op_atualizar` o custo não aparece: `por_lote` com duas filhas, mediana
   1,08–1,17 ms antes e 1,13–1,18 ms depois, faixas que se cruzam, e 18.332
   chamadas `write` na corrida inteira da sonda, antes e depois.
+  A re-checagem do papel C mediu 0 de 5 na mesma sonda e pediu uma prova
+  para a parte do `.fts` da descida: sem ela, a busca de texto da mãe errava
+  calada 5 de 5. O teste irmão com índice de texto na mãe fecha isso, e a
+  recusa no meio da cascata solta passa a dizer que as filhas na chave velha
+  ficam órfãs e como voltar.
 - **537** — o elo da cascata planejado no `empilhar` não travava a linha da
   filha, e o `COMMIT` regravava a filha inteira que tinha visto: a gravação de
   outra conexão na filha (`x = 1`) voltava a `x = 0`. Agora a linha é travada, e

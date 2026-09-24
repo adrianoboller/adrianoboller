@@ -328,6 +328,19 @@ dia, nunca no desejado:
   DBA): uma guarda -- a cascata solta que abria a passada com o punho de
   quem chama ainda sujo, e o `Drop` dele regravava o indice velho por cima
   do reconstruido. A conta do integrador, pelo `--catraca`.
+  **SUBIU para 442 em 24/09/2026** (condicao R1 da re-checagem do DBA
+  sobre o 540): uma guarda -- a descida do punho que fecha o `.ndx` e deixa
+  o `.fts` sujo, e a busca de texto da mae erra calada. Conta pelo
+  `--catraca`.
+  **SUBIU para 454 em 24/09/2026** (533 e 542, integrado sobre o
+  conserto do 540 e a guarda R1, com os consertos pedidos pelo SEC e pelo DBA): doze
+  guardas -- a subida do byte 52 sem `fdatasync` e a que sincroniza a cada
+  pagina, o `.ndx` novo que sobe com o diretorio vazio, o arquivo e o
+  diretorio do banco que nascem abertos, o arquivo refeito que herda o modo
+  velho, a copia do backup que nasce aberta, o backup que atravessa o link
+  plantado no destino, e a base antiga que o arranque nao alerta (duas) ou
+  cala quando a raiz e um link (duas). A frente contou 421 sobre a base
+  dela; a conta do integrador, pelo `--catraca`.
   **SUBIU para 300 em 24/09/2026, contado NA ARVORE DA FRENTE do 497** (e nao
   na combinada, que a linha do 345 acima reconcilia) (pedido 497, o literal do pedido no texto
   do erro que o `acessos.log` grava): tres guardas novas, uma por motor que
@@ -452,7 +465,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 441
+PISO_DAS_ENTRADAS = 454
 
 # ------------------------------------------------------------- APOSENTADAS
 #

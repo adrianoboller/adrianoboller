@@ -481,7 +481,7 @@ impl Rotinas {
             "gatilhos",
             Json::Lista(lista.iter().map(|g| g.para_disco()).collect()),
         )]);
-        std::fs::write(&arquivo, j.escrever_identado())?;
+        phxsql_store::permissao::escrever_do_banco(&arquivo, j.escrever_identado())?;
         Ok(())
     }
 
@@ -502,7 +502,7 @@ impl Rotinas {
             "procedimentos",
             Json::Lista(lista.iter().map(|p| p.para_disco()).collect()),
         )]);
-        std::fs::write(&arquivo, j.escrever_identado())?;
+        phxsql_store::permissao::escrever_do_banco(&arquivo, j.escrever_identado())?;
         Ok(())
     }
 }

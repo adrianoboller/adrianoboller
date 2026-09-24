@@ -234,7 +234,7 @@ impl Visoes {
             "visoes",
             Json::Lista(lista.iter().map(Visao::para_json).collect()),
         )]);
-        std::fs::write(&arquivo, corpo.escrever_identado())?;
+        phxsql_store::permissao::escrever_do_banco(&arquivo, corpo.escrever_identado())?;
         Ok(())
     }
 }

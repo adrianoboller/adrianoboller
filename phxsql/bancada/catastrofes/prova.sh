@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# O disco que RECUSA, contra o sistema operacional -- pedidos 509, 512 e 522.
+# O disco que RECUSA, contra o sistema operacional -- pedidos 509, 512, 522 e
+# 533.
 #
 #   sudo bancada/catastrofes/prova.sh            constroi o executor e roda
 #   P=/caminho/do/binario bancada/catastrofes/prova.sh   usa um binario pronto
@@ -25,9 +26,15 @@
 #              mede e o byte 52 que o disco guardou -- o `fechar` baixava o
 #              byte sem `fsync`, e o nucleo guardava o cabecalho limpo sobre
 #              paginas perdidas.
+#   533 (C4)   a QUEDA DE ENERGIA com a ordem escolhida (`queda.py`): o `.reg`
+#              chega; do `.ndx` nada, ou so as paginas a partir da 1; e o
+#              ext4 cai sem descarregar o resto (`FS_IOC_SHUTDOWN`). O que se
+#              mede e o byte 52 que o disco guardou e o `excluir` do pai com
+#              filhas -- sem o `fdatasync` da subida, o disco guardava o 0 do
+#              ultimo fecho e o pai com filhas se apagava calado.
 #   CENARIOS="522" roda so o 522: e o que compara o binario de antes com o de
 #              depois, porque os modos do 509 exigem o gancho que so existe
-#              desde o 509.
+#              desde o 509. O mesmo vale para CENARIOS="533".
 #
 # Precisa de root e `unshare -m`: toda montagem nasce e morre num espaco de
 # montagem privado, e nada toca o disco da maquina. Sem privilegio o roteiro
@@ -177,7 +184,34 @@ c522() {
   done
 }
 
-CENARIOS="${CENARIOS:-512 509 522}"
+# ------------------------------------------------------------------ 533 (C4)
+# Sem provisionamento fino: aqui nada recusa. Quem decide o que chegou ao disco
+# e o `queda.py`, e o resto do cache morre com o sistema de arquivos. A janela
+# e `inserir` (5.000 filhas novas do cliente 2) ou `mover` (5.000 filhas do 1
+# passam ao 2 no mesmo slot -- o `.reg` nem cresce).
+c533() {
+  local rotulo="$1" janela="$2" queda="$3" r img="$S/back/disco.img"
+  for r in $(seq 1 "$RODADAS"); do
+    mount -t tmpfs -o size=160m tmpfs "$S/back"
+    truncate -s 128M "$img"
+    mkfs.ext4 -q -F "$img"
+    LOOP="$(losetup -f --show "$img")"
+    mount -t ext4 "$LOOP" "$S/ext"
+    while IFS= read -r l; do anotar "$rotulo#$r" "$l"; done < <("$P" criar533 "$S/ext/db" 30000 2>&1)
+    sync
+    while IFS= read -r l; do anotar "$rotulo#$r" "$l"; done < <("$P" janela533 "$S/ext/db" 5000 "$janela" 2>&1)
+    while IFS= read -r l; do anotar "$rotulo#$r" "$l"; done < <(python3 "$AQUI/queda.py" "$S/ext/db" filhas "$queda" 2>&1)
+    umount "$S/ext"
+    mount -t ext4 "$LOOP" "$S/ext"
+    while IFS= read -r l; do anotar "$rotulo#$r" "remontado $l"; done < <("$P" conferir533 "$S/ext/db" 2>&1)
+    umount "$S/ext"
+    losetup -d "$LOOP"
+    LOOP=""
+    umount "$S/back"
+  done
+}
+
+CENARIOS="${CENARIOS:-512 509 522 533}"
 if [[ " $CENARIOS " == *" 512 "* ]]; then
 echo "== 512 (C2b): tmpfs de 512 KiB, segundo fecho no mesmo punho"
 c2b "512-mesmo-punho" ""
@@ -195,6 +229,14 @@ echo "== 522 (P4): provisionamento fino, syncfs com o disco cheio, fechar pelo D
 c522 "522-fechar" inserir
 echo "== 522 (P4): o controle -- o processo cai sem Drop"
 c522 "522-cai" inserir-e-cai
+fi
+if [[ " $CENARIOS " == *" 533 "* ]]; then
+echo "== 533 (C4'): 5.000 filhas novas, o .reg chega e nada do .ndx"
+c533 "533-inserir-nada" inserir nada
+echo "== 533 (C4): 5.000 filhas novas, o .reg e as paginas do .ndx chegam, a pagina 0 nao"
+c533 "533-inserir-paginas" inserir paginas
+echo "== 533 (move): 5.000 filhas mudam de pai no mesmo slot, o .reg chega e nada do .ndx"
+c533 "533-mover-nada" mover nada
 fi
 
 python3 - "$REG" "$SAIDA" "$P" "$RODADAS" <<'PY'

@@ -1099,7 +1099,8 @@ impl EstadoCluster {
             ("epoca", Json::de_u64(self.epoca())),
         ])
         .escrever();
-        std::fs::write(&self.caminho_estado, texto).map_err(|e| {
+        // 0600 pelo motor da permissao do banco (pedido 542).
+        phxsql_store::permissao::escrever_do_banco(&self.caminho_estado, texto).map_err(|e| {
             PhxError::Io(std::io::Error::other(format!(
                 "{}: {e}",
                 self.caminho_estado.display()

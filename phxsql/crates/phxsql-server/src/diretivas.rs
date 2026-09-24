@@ -34,7 +34,6 @@
 //! segredos envelhece calada, e o primeiro segredo que faltar nela vaza em
 //! texto puro num arquivo que ninguem trata como sigiloso.
 
-use std::fs::OpenOptions;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -215,8 +214,9 @@ impl Diario {
     /// ha sessao para acumular, e uma diretiva e rara o bastante para o
     /// `stat()` extra nao custar nada que importe.
     pub fn registrar(&self, a: &Alteracao) -> Result<()> {
+        // Pelo motor da permissao do banco (pedido 542): 0700 e 0600.
         if let Some(dir) = self.caminho.parent().filter(|d| !d.as_os_str().is_empty()) {
-            std::fs::create_dir_all(dir)?;
+            phxsql_store::permissao::criar_diretorio_do_banco(dir)?;
         }
         let linha = a.para_json().escrever();
         let cabem = linha.len() as u64 + 1;
@@ -236,13 +236,13 @@ impl Diario {
                 // O `girar` ja tentou reabrir e falhou -- tentar de novo
                 // aqui deixa o `?` abaixo contar o erro REAL do sistema de
                 // arquivos, em vez de engolir a falha em silencio.
-                None => OpenOptions::new()
+                None => phxsql_store::permissao::opcoes_do_banco()
                     .create(true)
                     .append(true)
                     .open(&self.caminho)?,
             }
         } else {
-            OpenOptions::new()
+            phxsql_store::permissao::opcoes_do_banco()
                 .create(true)
                 .append(true)
                 .open(&self.caminho)?

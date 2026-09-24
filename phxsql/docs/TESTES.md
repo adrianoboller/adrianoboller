@@ -967,9 +967,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `servidor-segue-de-pe-depois-do-fsync-recusado` | o servidor segue de pé depois de um `fsync` recusado, gravando num disco que já se sabe que mente | 1 | ✅ provada |
 | `completar-engole-a-tabela-que-nao-foi-ao-disco` | a recuperação engole o erro do `sincronizar` e apaga a marca de um commit cujo dado não foi ao disco | 1 | ✅ provada |
 
-**325 das 440 guardas do catálogo: 1 aposentada, 320 provadas, 4 redundantes** — 8922 s de mutação, medido em 2026-09-16 15:25.
+**325 das 453 guardas do catálogo: 1 aposentada, 320 provadas, 4 redundantes** — 8922 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 116 das 440 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 116 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 129 das 453 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 129 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
@@ -1085,8 +1085,21 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `cascata-solta-sem-marca` — a alteração solta que cascateia grava sem marca, e a queda no meio deixa filha na chave velha
 - `upsert-solto-cascateia-sem-marca` — o upsert solto que vira alteração com cascata grava pelo `atualizar` de dentro dele, sem marca
 - `cascata-solta-com-o-punho-de-quem-chama-sujo` — a cascata solta abre o punho da passada com o `t` de quem chama ainda sujo, e o `Drop` dele desfaz o índice da mãe
+- `descida-do-punho-sem-o-fts` — a descida do punho de quem chama leva o `.ndx` e esquece o `.fts`: a busca de texto da mãe acha o nome velho
 - `varredura-encerra-quem-confirma` — a varredura do prazo encerra a transação que está no COMMIT e solta as travas de quem ainda grava
 - `devolver-desfaz-o-abort-only` — a lista devolvida ao fim de um COMMIT recusado desfaz o ABORT_ONLY que chegou no meio
+- `subida-do-byte-52-sem-fsync` — a SUBIDA do byte 52 volta a ir só ao cache do núcleo: numa queda de energia o disco guarda o `.reg` novo sob o 0 do último fecho, e o pai com filhas se apaga calado
+- `subida-do-byte-52-sincroniza-a-cada-pagina` — a subida do byte 52 sincroniza a cada página suja, e não só na passagem de 0 para 1: um `fdatasync` no laço quente de toda escrita
+- `arquivo-do-banco-nasce-aberto` — os arquivos do banco voltam a nascer na permissão do `umask`: `.reg`, `.ndx`, `.log`, `.lgpd`… `644`, legíveis por todo usuário da máquina
+- `diretorio-do-banco-nasce-aberto` — a raiz, o database, o palco da restauração e o destino do backup voltam a nascer `755`
+- `arquivo-refeito-herda-o-modo-velho` — o arquivo que o banco REFAZ por cima de um antigo -- o `.ndx` e o `.fts` do `reindexar` -- herda o `644` dele
+- `copia-do-backup-nasce-aberta` — a cópia do backup volta a nascer `644` -- até a do `.lgpd`, que nasceu `600`
+- `base-antiga-sem-alerta` — a base antiga, `644` em `755`, deixa de ser apontada: o motor não aperta o que existe e ninguém avisa
+- `arranque-nao-alerta-a-base-antiga` — o `phxsqld` sobe numa base `644`/`755` sem dizer nada
+- `backup-atravessa-link-plantado` — o motor da permissão volta a seguir o link simbólico no último nome: um link plantado no destino do backup faz o `.reg` ser gravado NA vítima de fora, e ela vira 0600
+- `base-por-link-cala-o-alerta` — o alerta da base antiga cala quando `config.base` é um link simbólico
+- `arranque-cala-o-alerta-da-base-por-link` — o `phxsqld` sobe numa base `644`/`755` alcançada por link simbólico sem dizer nada
+- `ndx-novo-sobe-com-o-diretorio-vazio` — o primeiro cabeçalho durável de um `.ndx` novo leva o byte 52 em 1 e ZERO índices: a queda no meio do `reindexar` trava a tabela
 
 As guardas que esta corrida ainda cita, hoje aposentadas:
 

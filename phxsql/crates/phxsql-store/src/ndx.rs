@@ -856,12 +856,10 @@ impl NdxFile {
         // O arquivo vai ser truncado: o atestado do que morava aqui nao vale
         // para o que vai nascer (pedido 522).
         retirar_atestado(&caminho);
-        let arquivo = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(&caminho)?;
+        // Pelo motor da permissao (pedido 542): nasce 0600, e o `.ndx` que o
+        // `reindexar` refaz por cima de um `0644` antigo sai 0600 tambem -- o
+        // conteudo e novo. O `.fts` nasce por aqui (pedido 345).
+        let arquivo = crate::util::recriar_do_banco(&caminho, true)?;
 
         let mut n = NdxFile {
             arquivo,
@@ -885,13 +883,20 @@ impl NdxFile {
         };
         n.arquivo.set_len(page_size as u64)?;
 
+        // O diretorio INTEIRO antes da primeira folha (parecer do DBA sobre o
+        // 533, P1). A primeira `gravar_pagina` sobe a marca, e a subida grava o
+        // cabecalho e o leva ao disco: com as raizes alocadas e empurradas uma
+        // a uma, o cabecalho duravel saia com o byte 52 em 1 e ZERO indices, e
+        // uma queda de energia no meio de um `reindexar` -- o do arranque do
+        // 522 inclusive -- deixava a tabela travada em «o .ndx tem 0 indices,
+        // o esquema do .reg declara 2», sem porta que reconstrua sem abrir.
+        // Com o diretorio completo, o mesmo cabecalho diz «marcado, reconstrua»,
+        // que e o que a abertura sabe tratar. O leiaute nao muda: so a ordem.
         for (i, idx) in esquema.indices().iter().enumerate() {
             let key_len = esquema.largura_chave(i)?;
             let ck_len = key_len + ROWID_LEN;
             n.validar_capacidade(ck_len, &idx.nome)?;
             let raiz = n.alocar_pagina()?;
-            let mut folha = nova_pagina(page_size, TIPO_FOLHA);
-            n.gravar_pagina(raiz, &mut folha)?;
             n.indices.push(DescritorIndice {
                 nome: idx.nome.clone(),
                 unico: idx.unico,
@@ -899,6 +904,11 @@ impl NdxFile {
                 raiz,
                 qtd_chaves: 0,
             });
+        }
+        let raizes: Vec<u64> = n.indices.iter().map(|d| d.raiz).collect();
+        for raiz in raizes {
+            let mut folha = nova_pagina(page_size, TIPO_FOLHA);
+            n.gravar_pagina(raiz, &mut folha)?;
         }
         n.gravar_cabecalho()?;
         Ok(n)
@@ -1251,15 +1261,17 @@ impl NdxFile {
     /// marca de sujo no cabecalho, que faz a queda ser DETECTADA. Indice
     /// atrasado se reconstroi do `.reg`; indice atrasado em silencio, nao.
     fn gravar_pagina(&mut self, n: u64, p: &mut [u8]) -> Result<()> {
-        // A marca vai ao arquivo ANTES da primeira pagina suja existir. Ao
-        // contrario, uma queda no meio deixaria cabecalho limpo com paginas
-        // faltando -- que e exatamente o defeito que ela existe para impedir.
+        // A marca vai ao disco ANTES da primeira pagina suja existir (o
+        // `fdatasync` da subida, pedido 533). Ao contrario, uma queda no meio
+        // deixaria cabecalho limpo com paginas faltando -- que e exatamente o
+        // defeito que ela existe para impedir.
         self.levantar_marca()?;
         self.mudancas_na_arvore += 1;
         self.guardar_no_cache(n, p, true)
     }
 
-    /// Poe o byte 52 em 1 NO ARQUIVO, se ainda nao estiver.
+    /// Poe o byte 52 em 1 NO DISCO, se ainda nao estiver (no arquivo ate o
+    /// pedido 533; ver abaixo).
     ///
     /// Um lugar so para as duas portas que sobem a marca -- a primeira pagina
     /// suja e o [`NdxFile::comecar_escrita`] --, para a decisao «sobe antes de
@@ -1272,6 +1284,26 @@ impl NdxFile {
     /// para tras». Mesmo com o byte ja em 1 -- aberto atestado, o arquivo nao
     /// muda, mas a verdade sobre ele muda, e um panico no meio tem de deixar a
     /// reabertura mandando reconstruir.
+    ///
+    /// # E o 1 vai ao DISCO, e nao so ao arquivo -- pedido 533
+    ///
+    /// Sem o `fdatasync`, o 1 ficava no cache do nucleo, e uma queda de
+    /// energia podia guardar as paginas novas sob o 0 do ultimo fecho: o pai
+    /// com filhas se apagava calado (medido por emulacao no parecer do DBA do
+    /// 522, C4, e contra o SO na `bancada/catastrofes/`, cenario 533). O 0 ja
+    /// era duravel desde o 522; o par so segura queda de maquina com os dois.
+    /// Custa um `fdatasync` por passagem de 0 para 1 -- o que da um por
+    /// tabela por janela no `por_lote`, e um por tabela por `sincronizar` onde
+    /// quem chama sincroniza sozinho (a cascata, o `por_operacao`; ver o
+    /// `FORMATO.md`) --, e passa pelo motor [`crate::sincronia`] para valerem
+    /// o gancho de teste e a trava do 509/523. Basta o `fdatasync`: em regime
+    /// a pagina 0 ja existe e o tamanho nao muda; na criacao (`criar_com`) o
+    /// tamanho MUDA, e o `fdatasync` leva junto o metadado que a leitura
+    /// precisa. Se ele recusar, a marca em RAM volta a 0 e quem chamou recusa
+    /// antes de tocar o `.reg` (o `comecar_escrita` vem antes do slot) -- no
+    /// `.ndx`; o `.fts` sobe DEPOIS do slot, e esse lado e o pedido 472. A
+    /// catraca que o conta e `TETO_FSYNC_DA_SUBIDA`: as do fecho e da trava
+    /// sao cegas a ele, medido.
     fn levantar_marca(&mut self) -> Result<()> {
         if !self.mudou_desde_o_fecho {
             retirar_atestado(&self.caminho);
@@ -1282,6 +1314,10 @@ impl NdxFile {
         }
         self.sujo = true;
         if let Err(e) = self.gravar_cabecalho() {
+            self.sujo = false;
+            return Err(e);
+        }
+        if let Err(e) = crate::sincronia::sync_data(&self.arquivo, &self.caminho) {
             self.sujo = false;
             return Err(e);
         }

@@ -1,4 +1,5 @@
-//! A catraca do fecho de janela: quantos `fsync` ele custa.
+//! As catracas do `fsync` do motor: quantos custa o fecho de janela, e
+//! quantos custa a subida do byte 52 que a abre (pedido 533).
 //!
 //! O numero mora aqui, em `src/`, e nao no arquivo de teste que o cobra, por
 //! dois motivos que sao o mesmo motivo:
@@ -12,8 +13,9 @@
 //!   TETO*` para achar catraca que ninguem mede. Constante fora de `src/` nao
 //!   e' vista por nenhum dos dois lados: nem como medida, nem como buraco.
 //!
-//! Quem mede e' o exemplo `fsync-por-fecho`, que se descreve; quem cobra e' o
-//! teste `tests/catraca-fsync-por-fecho.rs`, que roda o exemplo.
+//! Quem mede e' o exemplo `fsync-por-fecho` (e o `fsync-da-subida`), que se
+//! descreve; quem cobra e' o teste `tests/catraca-fsync-por-fecho.rs` (e o
+//! `tests/catraca-fsync-da-subida.rs`), que roda o exemplo.
 
 /// Quantos `fsync` um fecho de janela pode custar. **So desce.**
 ///
@@ -59,3 +61,39 @@
 /// passasse a medir o segundo fecho seria OUTRA catraca, com outro nome; esta
 /// nao se remenda. Ver `docs/DESEMPENHO.md` §24.
 pub const TETO_FSYNC_POR_FECHO_V2: usize = 8;
+
+/// Quantos `fsync` a SUBIDA do byte 52 custa numa janela sem `sincronizar`
+/// no meio, por tabela. **So desce** -- e nao desce para zero sem desfazer o
+/// pedido 533.
+///
+/// O preco de verdade e um por PASSAGEM de 0 para 1: uma por janela no
+/// `por_lote`, que e o que o medidor mede; onde quem chama sincroniza sozinho
+/// (a cascata, o `por_operacao`, o `sistema`) a passagem se repete, e os
+/// numeros do papel C estao no `docs/FORMATO.md` (parecer do 533, C3).
+///
+/// # Por que ela nasce, e nasce em 1
+///
+/// Pedido 533: a subida do byte 52 ia ao arquivo sem `fsync`, e uma queda de
+/// energia podia guardar paginas novas sob o 0 do ultimo fecho. O conserto
+/// pos UM `fdatasync` em `NdxFile::levantar_marca`, so na passagem do byte de
+/// 0 para 1. As duas catracas de `fsync` que ja existiam sao CEGAS a ele,
+/// medido pelo papel J: a [`TETO_FSYNC_POR_FECHO_V2`] conta so' o que vem
+/// depois do marco do fecho (ficou em 8), e a `alcancam-fsync-2` do
+/// `mapa-da-trava.py` conta secoes, e as quatro que passaram a alcancar
+/// `fsync` pela subida ja estavam nas 23. Sem esta, um segundo `fsync` na
+/// subida -- o conserto ingenuo de sincronizar a cada pagina suja, que poria
+/// um `fsync` no laco quente -- entraria calado.
+///
+/// Nasce no numero medido do dia (24/09/2026, `fsync-da-subida` nas tres
+/// escalas), como toda catraca desta casa. Quem mede e' o exemplo
+/// `fsync-da-subida`; quem cobra e' `tests/catraca-fsync-da-subida.rs`.
+///
+/// # O que ela NAO mede
+///
+/// A ORDEM -- se o `fdatasync` vem antes da primeira escrita e se a recusa
+/// dele recusa o `inserir` -- e da guarda `a_subida_recusada_recusa_antes_do_reg`
+/// (`tests/disco-que-recusa.rs`). Esta conta; aquela prova a ordem. E uma
+/// tabela com `.fts` paga uma subida a mais (o `.fts` e um `.ndx` por
+/// dentro), que nao entra aqui: o medidor usa a tabela sem indice de texto,
+/// que e a regua fixa.
+pub const TETO_FSYNC_DA_SUBIDA: usize = 1;

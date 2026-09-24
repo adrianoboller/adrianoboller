@@ -246,10 +246,17 @@ impl NomeDaPassada {
         passada: "a cascata da alteracao",
         unidade: "alteracao",
         feita: "gravada",
+        // O remedio e o medido pelo papel C na re-checagem do C1 (P5,
+        // `parou2fk`): voltar a mae a chave velha leva junto as filhas que ja
+        // tinham ido, e sobra `clientes [5]`, `pedidos [5, 5]` -- ninguem
+        // orfao. A frase de antes do 540 dizia so «conserte-a antes de
+        // seguir», sem dizer como.
         conferida: "Antes da marca so a arvore da cascata foi conferida (restringir, \
-                    coluna calculada, profundidade), e nao a unicidade nem a FK de \
-                    cada linha: as filhas que faltam ficaram na chave velha, e isto \
-                    vale reportar",
+                    coluna calculada, CHECK, profundidade), e nao a unicidade nem a FK \
+                    de cada linha. As filhas que ficaram na chave velha estao ORFAS \
+                    quando essa chave era so desta mae: volte a mae a chave velha, que \
+                    as reencontra e leva de volta as que ja tinham ido, ou aponte as \
+                    que faltam para a chave nova. Isto vale reportar",
     };
 }
 
@@ -1574,6 +1581,13 @@ impl Servidor {
         let (max_linhas, somente_leitura, espelho) =
             (config.max_linhas, config.somente_leitura, config.espelho);
         let mut raiz = Raiz::nova(&config.base)?;
+        // A base que JA EXISTIA com permissao larga (pedido 542): o banco
+        // cria tudo 0600/0700 desde entao, mas nao aperta o que achou -- a
+        // regua do J nao recusa (PG 4 contra 6) e apertar calado tiraria o
+        // acesso de quem le por grupo. Sobra dizer, uma vez, no arranque.
+        if let Some(aviso) = phxsql_store::permissao::permissao_larga(&config.base) {
+            eprintln!("AVISO: {aviso}");
+        }
         // A RECUPERACAO, e ela vem antes de tudo o mais.
         //
         // Um `transacao_<id>.tx` orfao quer dizer uma coisa so: alguem morreu
@@ -5984,8 +5998,12 @@ impl Servidor {
             ),
         ])
         .escrever();
-        let _ = std::fs::create_dir_all(&self.config.backup.destino);
-        std::fs::write(&caminho, texto).ok().map(|_| caminho)
+        // Pelo motor da permissao do banco (pedido 542): o destino do backup
+        // nasce 0700 aqui como nasce no `backup.rs`, e a lapide 0600.
+        let _ = phxsql_store::permissao::criar_diretorio_do_banco(&self.config.backup.destino);
+        phxsql_store::permissao::escrever_do_banco(&caminho, texto)
+            .ok()
+            .map(|_| caminho)
     }
 
     /// A corrida do backup que derrubou o processo anterior: se a lapide esta
@@ -47774,17 +47792,23 @@ mod testes_transacoes {
         /// `pedidos.cod_cliente` com cascata no `ao_alterar` -- a chave que a
         /// mae muda sem mudar de `id`.
         fn base_codigo(s: &Arc<Servidor>, ses: &Sessao) {
+            base_codigo_com(s, ses, "");
+        }
+
+        /// A mesma base, com `extra` no fim do `criar_tabela` da mae -- o
+        /// indice de texto do irmao do C1 do 540, sem uma segunda copia da
+        /// base inteira.
+        fn base_codigo_com(s: &Arc<Servidor>, ses: &Sessao, extra: &str) {
             escreve(s, ses, r#""op":"criar_database","database":"loja""#);
-            escreve(
-                s,
-                ses,
+            let mae = String::from(
                 r#""op":"criar_tabela","database":"loja","tabela":"clientes",
                    "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
                               {"nome":"codigo","tipo":"Int8"},
                               {"nome":"nome","tipo":"Str(20)"}],
                    "indices":[{"nome":"pk","colunas":["id"],"unico":true,"primario":true},
                               {"nome":"por_codigo","colunas":["codigo"],"unico":true}]"#,
-            );
+            ) + extra;
+            escreve(s, ses, &mae);
             escreve(
                 s,
                 ses,
@@ -47883,16 +47907,49 @@ mod testes_transacoes {
 
         // ---------------------------------------------------------- 540, C1
 
+        /// O laco da sincronia do DbLink sobre `clientes`, sem o motor de la:
+        /// `aplicar_para_ca`, uma closure igual a do `op_dblink_sincronizar`
+        /// (o `alterar_solto` e o aviso guardado) e o `t.sincronizar()` do
+        /// fim. O fio nao entra: ele so traz as linhas, e nao toca no punho.
+        /// A linha nova (id 2, codigo 7) vem PRIMEIRO e suja o `t`; depois a
+        /// mae 1 muda de 5 para 6. Devolve os avisos de recuperacao.
+        fn sincronizar_pelo_mesmo_punho(
+            s: &Arc<Servidor>,
+            ses: &Sessao,
+            nome_da_nova: &str,
+            nome_da_mae: &str,
+        ) -> Vec<String> {
+            let mut trava = s.travar_dados().unwrap();
+            let ped = pedido_da_tabela("loja", "clientes");
+            let mut t = s.abrir_travada(&trava, &ped, ses).unwrap();
+            let mut avisos: Vec<String> = Vec::new();
+            let mut alterar = |t: &mut Table, rowid: u64, nova: &[Value]| {
+                let feita = s.alterar_solto(&mut trava, t, &ped, ses, rowid, nova)?;
+                avisos.extend(feita.aviso);
+                Ok(())
+            };
+            let linhas = vec![
+                vec![
+                    Value::Int(2),
+                    Value::Int(7),
+                    Value::Str(nome_da_nova.into()),
+                ],
+                vec![Value::Int(1), Value::Int(6), Value::Str(nome_da_mae.into())],
+            ];
+            let (inseridas, alteradas) =
+                crate::dblink::sincronia::aplicar_para_ca(&mut t, "pk", 0, &linhas, &mut alterar)
+                    .unwrap();
+            assert_eq!((inseridas, alteradas), (1, 1));
+            t.sincronizar().unwrap();
+            avisos
+        }
+
         /// **Pedido 540, C1 do papel C: o terceiro irmao, a sincronia do
         /// DbLink.** Ela grava pelo punho `t` -- a linha nova da rodada entra
         /// ANTES -- e, no MESMO punho, altera a mae que tem filha. Pela
         /// `op_atualizar` e pelo upsert o `t` chega limpo ao `alterar_solto`;
-        /// por aqui ele chega com pagina suja.
-        ///
-        /// O laco e o da sincronia, sem o motor de la: `aplicar_para_ca`, uma
-        /// closure igual a do `op_dblink_sincronizar` (o `alterar_solto` e o
-        /// aviso guardado) e o `t.sincronizar()` do fim. O fio nao entra: ele
-        /// so traz as linhas, e nao toca no punho.
+        /// por aqui ele chega com pagina suja. O laco e o
+        /// [`sincronizar_pelo_mesmo_punho`].
         ///
         /// # Prova real
         ///
@@ -47913,33 +47970,7 @@ mod testes_transacoes {
                 escreve(&s, &ses, &pedido(id, 5));
             }
 
-            let avisos = {
-                let mut trava = s.travar_dados().unwrap();
-                let ped = pedido_da_tabela("loja", "clientes");
-                let mut t = s.abrir_travada(&trava, &ped, &ses).unwrap();
-                let mut avisos: Vec<String> = Vec::new();
-                let mut alterar = |t: &mut Table, rowid: u64, nova: &[Value]| {
-                    let feita = s.alterar_solto(&mut trava, t, &ped, &ses, rowid, nova)?;
-                    avisos.extend(feita.aviso);
-                    Ok(())
-                };
-                // A linha nova primeiro (suja o `t`), e depois a mae 5 -> 6.
-                let linhas = vec![
-                    vec![Value::Int(2), Value::Int(7), Value::Str("c2".into())],
-                    vec![Value::Int(1), Value::Int(6), Value::Str("c1".into())],
-                ];
-                let (inseridas, alteradas) = crate::dblink::sincronia::aplicar_para_ca(
-                    &mut t,
-                    "pk",
-                    0,
-                    &linhas,
-                    &mut alterar,
-                )
-                .unwrap();
-                assert_eq!((inseridas, alteradas), (1, 1));
-                t.sincronizar().unwrap();
-                avisos
-            };
+            let avisos = sincronizar_pelo_mesmo_punho(&s, &ses, "c2", "c1");
 
             // O DANO primeiro: o indice unico da mae, e o que ele deixa entrar.
             let achados = |tabela: &str, indice: &str, chave: i64| {
@@ -47984,6 +48015,65 @@ mod testes_transacoes {
             }
             // E o mecanismo por ultimo: a passada nao quebrou, entao nao ha
             // aviso de recuperacao nenhum.
+            assert!(
+                avisos.is_empty(),
+                "a cascata da sincronia passou pela recuperacao: {avisos:?}"
+            );
+        }
+
+        /// **O irmao do C1 no `.fts` (R1 da re-checagem do papel C).** A
+        /// descida do `t` leva o `.ndx` E o `.fts`; o teste de cima nao tem
+        /// indice de texto, e tirar so a metade do `.fts` passava por ele
+        /// verde. Aqui a mae tem indice de texto no `nome`, e a sincronia
+        /// troca a chave e o nome dela (`alfa` -> `zeta`) depois de inserir
+        /// `nome7` pelo mesmo punho.
+        ///
+        /// # Prova real
+        ///
+        /// Com a descida levando so o `.ndx`, o texto sai errado e calado --
+        /// o `por_codigo` certo e `procurar_texto` achando o nome VELHO:
+        /// `zeta` 0 e `alfa` 1, 5 de 5 na sonda do papel C e o vermelho
+        /// medido aqui.
+        #[test]
+        fn a_cascata_solta_depois_de_escrever_no_mesmo_punho_nao_perde_o_texto_da_mae() {
+            let dir = dir_temp("540-c1-fts");
+            let s = servidor(&dir);
+            let ses = sessao(5402);
+            base_codigo_com(
+                &s,
+                &ses,
+                r#","indices_texto":[{"nome":"txt","coluna":"nome"}]"#,
+            );
+            escreve(
+                &s,
+                &ses,
+                r#""op":"inserir","database":"loja","tabela":"clientes",
+                   "linha":{"id":1,"codigo":5,"nome":"alfa"}"#,
+            );
+            for id in [10, 11] {
+                escreve(&s, &ses, &pedido(id, 5));
+            }
+
+            let avisos = sincronizar_pelo_mesmo_punho(&s, &ses, "nome7", "zeta");
+
+            let achados = |palavra: &str| {
+                escreve(
+                    &s,
+                    &ses,
+                    &format!(
+                        r#""op":"procurar_texto","database":"loja","tabela":"clientes",
+                           "indice":"txt","palavra":"{palavra}""#
+                    ),
+                )
+                .inteiro_ou("encontrados", -1)
+            };
+            for (palavra, esperados) in [("zeta", 1), ("alfa", 0), ("nome7", 1)] {
+                assert_eq!(
+                    achados(palavra),
+                    esperados,
+                    "o indice de texto da mae pela palavra {palavra:?} depois da sincronia"
+                );
+            }
             assert!(
                 avisos.is_empty(),
                 "a cascata da sincronia passou pela recuperacao: {avisos:?}"

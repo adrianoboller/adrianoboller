@@ -597,7 +597,8 @@ pub fn gravar_posicoes(caminho: &Path, posicoes: &HashMap<String, u64>) -> Resul
         .map(|(k, v)| (k.clone(), Json::de_u64(*v)))
         .collect();
     pares.sort_by(|a, b| a.0.cmp(&b.0));
-    std::fs::write(caminho, Json::Objeto(pares).escrever())?;
+    // 0600 pelo motor da permissao do banco (pedido 542).
+    phxsql_store::permissao::escrever_do_banco(caminho, Json::Objeto(pares).escrever())?;
     Ok(())
 }
 

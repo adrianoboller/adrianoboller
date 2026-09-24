@@ -701,7 +701,7 @@ impl Registro {
         )]);
         if let Some(pai) = self.caminho.parent() {
             if !pai.as_os_str().is_empty() {
-                std::fs::create_dir_all(pai)?;
+                phxsql_store::permissao::criar_diretorio_do_banco(pai)?;
             }
         }
         // 0600 desde o primeiro byte, e troca atomica: o mesmo molde da chave
@@ -779,12 +779,13 @@ impl Registro {
     /// motivo do `registrar`.
     fn acrescentar_no_log(&self, c: &Corrida) {
         let caminho = self.caminho_do_log();
+        // Pelo motor da permissao do banco (pedido 542): 0700 e 0600.
         if let Some(pai) = caminho.parent() {
             if !pai.as_os_str().is_empty() {
-                let _ = std::fs::create_dir_all(pai);
+                let _ = phxsql_store::permissao::criar_diretorio_do_banco(pai);
             }
         }
-        if let Ok(mut f) = std::fs::OpenOptions::new()
+        if let Ok(mut f) = phxsql_store::permissao::opcoes_do_banco()
             .create(true)
             .append(true)
             .open(&caminho)

@@ -26,22 +26,13 @@
 //! Quem mede e' o exemplo `o-comboio-em-paralelo --contar`; este arquivo roda
 //! o exemplo e cobra o veredito dele. Uma medicao so', num lugar so'.
 
-/// O binario do exemplo, ao lado do binario deste teste.
-fn caminho_do_exemplo() -> Option<std::path::PathBuf> {
-    let eu = std::env::current_exe().ok()?;
-    let deps = eu.parent()?; // target/<perfil>/deps
-    for base in [deps.parent(), Some(deps)].into_iter().flatten() {
-        let c = base.join("examples").join("o-comboio-em-paralelo");
-        if c.exists() {
-            return Some(c);
-        }
-    }
-    None
-}
+#[path = "apoio/exemplo.rs"]
+mod exemplo;
+use exemplo::caminho_do_exemplo;
 
 #[test]
 fn os_dois_arranjos_do_fecho_gastam_os_mesmos_fsync() {
-    let Some(exemplo) = caminho_do_exemplo() else {
+    let Some(exemplo) = caminho_do_exemplo("o-comboio-em-paralelo") else {
         panic!(
             "nao achei o binario do exemplo `o-comboio-em-paralelo` ao lado \
              deste teste. Rode `cargo test -p phxsql-store` (que compila os \

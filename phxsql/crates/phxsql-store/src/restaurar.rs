@@ -558,14 +558,18 @@ impl Preparada {
             let dentro = caminho.strip_prefix(&prefixo).unwrap_or(caminho);
             let alvo = palco.join(dentro);
             if let Some(pai) = alvo.parent() {
-                std::fs::create_dir_all(pai)?;
+                crate::util::criar_diretorio_do_banco(pai)?;
             }
             // Ao disco de verdade, e nao ao cache: o proximo passo e um
             // `rename`, e um rename e instantaneo mesmo quando o conteudo
             // ainda nao chegou no prato. Restaurar e raro; pagar o `fsync`
             // aqui e barato perto de descobrir depois que o database novo
             // ficou com um arquivo vazio.
-            let arquivo = File::create(&alvo)?;
+            //
+            // E nasce pelo motor da permissao (pedido 542): 0600, qualquer
+            // que seja o `umask` -- era `File::create`, e o database
+            // restaurado voltava `0644` inteiro.
+            let arquivo = crate::util::recriar_do_banco(&alvo, false)?;
             {
                 use std::io::Write;
                 let mut w = std::io::BufWriter::new(&arquivo);
@@ -617,7 +621,7 @@ impl Preparada {
                  restauracao POR CIMA -- que substitui o que esta la"
             )));
         }
-        std::fs::create_dir_all(base)?;
+        crate::util::criar_diretorio_do_banco(base)?;
 
         // O antigo sai da raiz ANTES de o novo entrar, e vai para fora dela:
         // um "banco.antigo" ao lado seria listado como database e apareceria
@@ -683,7 +687,10 @@ fn palco_para(base: &Path) -> Result<PathBuf> {
     let palco = vizinho_da_base(base, "restaurando")?;
     // Quando o vizinho nao aceita escrita, o temporario do sistema ainda
     // resolve -- so custa uma copia em vez do rename.
-    match std::fs::create_dir_all(&palco) {
+    //
+    // 0700 pelo motor da permissao (pedido 542): o palco VIRA o database no
+    // `rename` da troca, e leva o modo junto.
+    match crate::util::criar_diretorio_do_banco(&palco) {
         Ok(()) => Ok(palco),
         Err(_) => {
             let alternativo = std::env::temp_dir().join(
@@ -692,7 +699,7 @@ fn palco_para(base: &Path) -> Result<PathBuf> {
                     .map(|n| n.to_string_lossy().into_owned())
                     .unwrap_or_else(|| "phxsql-restaurando".into()),
             );
-            std::fs::create_dir_all(&alternativo)?;
+            crate::util::criar_diretorio_do_banco(&alternativo)?;
             Ok(alternativo)
         }
     }
@@ -708,8 +715,10 @@ fn renomear_ou_copiar(de: &Path, para: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Pelo motor da permissao (pedido 542): diretorio 0700 e arquivo 0600 no
+/// destino, sem herdar o modo da origem -- o `fs::copy` da `std` o herdaria.
 fn copiar_arvore(de: &Path, para: &Path) -> Result<()> {
-    std::fs::create_dir_all(para)?;
+    crate::util::criar_diretorio_do_banco(para)?;
     for entrada in std::fs::read_dir(de)? {
         let entrada = entrada?;
         let origem = entrada.path();
@@ -720,7 +729,7 @@ fn copiar_arvore(de: &Path, para: &Path) -> Result<()> {
         if origem.is_dir() {
             copiar_arvore(&origem, &alvo)?;
         } else {
-            std::fs::copy(&origem, &alvo)?;
+            crate::util::copiar_do_banco(&origem, &alvo)?;
         }
     }
     Ok(())

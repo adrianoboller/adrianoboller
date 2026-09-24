@@ -14,7 +14,7 @@
 
 #[cfg(test)]
 use crate::apoio_teste::DirTemp;
-use std::fs::{File, OpenOptions};
+use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 
@@ -151,10 +151,12 @@ impl LogAcessos {
     /// [`LogAcessos::definir_rodizio`].
     pub fn abrir(caminho: impl AsRef<Path>) -> Result<LogAcessos> {
         let caminho = caminho.as_ref().to_path_buf();
+        // Pelo motor da permissao do banco (pedido 542): o log de acessos
+        // guarda quem entrou e de onde, e nasce 0600 em diretorio 0700.
         if let Some(dir) = caminho.parent().filter(|d| !d.as_os_str().is_empty()) {
-            std::fs::create_dir_all(dir)?;
+            phxsql_store::permissao::criar_diretorio_do_banco(dir)?;
         }
-        let arquivo = OpenOptions::new()
+        let arquivo = phxsql_store::permissao::opcoes_do_banco()
             .create(true)
             .append(true)
             .open(&caminho)?;
@@ -392,7 +394,10 @@ mod tests {
             l.registrar(&acesso("10.0.0.1", 1_000, true)).unwrap();
         }
         {
-            let mut f = OpenOptions::new().append(true).open(&caminho).unwrap();
+            let mut f = std::fs::OpenOptions::new()
+                .append(true)
+                .open(&caminho)
+                .unwrap();
             writeln!(f, "{{isso nao e json").unwrap();
             writeln!(f).unwrap();
         }

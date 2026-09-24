@@ -73,8 +73,9 @@
 //! # Quem passa por aqui, e quem nao passa
 //!
 //! Todo `fsync` de arquivo de dado do `phxsql-store` (`Volumes`, `.ndx`, as
-//! copias do `.reg` e da restauracao): uma decisao so, e a que alguem
-//! esquecesse seria a que repete. O nome da funcao e `sync_all` de proposito
+//! copias do `.reg` e da restauracao), e o `fdatasync` da subida do byte 52
+//! ([`sync_data`], pedido 533): uma decisao so, e a que alguem esquecesse
+//! seria a que repete. O nome da funcao e `sync_all` de proposito
 //! -- o `bancada/concorrencia/mapa-da-trava.py` acha o `fsync` pelo texto
 //! `sync_all`, e um nome novo o esconderia um salto mais fundo sem nada ter
 //! mudado. Ficam fora, no servidor, os tres que nao sao dado de tabela: a
@@ -132,7 +133,24 @@ pub fn ao_recusar(gancho: fn(&Path, &io::Error)) {
 /// So para dado do BANCO. Quem escreve num disco que nao e o do banco --
 /// hoje so o [`crate::backup`] -- usa [`sync_all_sem_abortar`].
 pub fn sync_all(arquivo: &File, caminho: &Path) -> Result<()> {
-    sync_all_interno(arquivo, caminho, true)
+    sync_all_interno(arquivo, caminho, true, false)
+}
+
+/// O `fdatasync` do motor: a MESMA conta de [`sync_all`] -- a recusa anterior
+/// que impede repetir, a marca, o gancho do processo e o `falha_de_teste` de
+/// prova --, so' sem levar os metadados que a leitura nao precisa.
+///
+/// Existe para a subida do byte 52 do `.ndx` (pedido 533). Basta o
+/// `fdatasync`: em regime a pagina 0 ja existe e o tamanho nao muda; na
+/// criacao do `.ndx` o tamanho muda, e o `fdatasync` leva junto o metadado que
+/// a leitura precisa (POSIX; no Windows a `std` o faz igual ao `sync_all`).
+/// Passar pelo `File` cru
+/// pularia o gancho de teste e a trava do 509/523 -- e um `fsync` recusado ali
+/// deixaria o proximo responder Ok sem o dado, que e o que o 509 fecha. O nome
+/// termina em `sync_data` de proposito: o `mapa-da-trava.py` acha o `fsync`
+/// pelo texto (`sync_all` e `sync_data`), e um nome novo o esconderia.
+pub fn sync_data(arquivo: &File, caminho: &Path) -> Result<()> {
+    sync_all_interno(arquivo, caminho, true, true)
 }
 
 /// A MESMA conta de [`sync_all`] -- inclusive a marca em [`recusar`], que
@@ -150,18 +168,30 @@ pub fn sync_all(arquivo: &File, caminho: &Path) -> Result<()> {
 /// proprio phxsql-store (hoje so o [`crate::backup`]) -- o servidor e o
 /// FFI nao tem por que escolher pular o gancho de protecao do 509.
 pub(crate) fn sync_all_sem_abortar(arquivo: &File, caminho: &Path) -> Result<()> {
-    sync_all_interno(arquivo, caminho, false)
+    sync_all_interno(arquivo, caminho, false, false)
 }
 
-fn sync_all_interno(arquivo: &File, caminho: &Path, com_gancho: bool) -> Result<()> {
+fn sync_all_interno(
+    arquivo: &File,
+    caminho: &Path,
+    com_gancho: bool,
+    so_dados: bool,
+) -> Result<()> {
+    let descarregar = || {
+        if so_dados {
+            arquivo.sync_data()
+        } else {
+            arquivo.sync_all()
+        }
+    };
     conferir(caminho)?;
     #[cfg(debug_assertions)]
     let feito = match falha_de_teste::disparar(caminho, falha_de_teste::Onde::Fsync) {
         Some(e) => Err(e),
-        None => arquivo.sync_all(),
+        None => descarregar(),
     };
     #[cfg(not(debug_assertions))]
-    let feito = arquivo.sync_all();
+    let feito = descarregar();
     if let Err(e) = feito {
         recusar(caminho, &e);
         if com_gancho {
@@ -266,7 +296,8 @@ pub mod falha_de_teste {
     /// Onde a falha acontece.
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     pub enum Onde {
-        /// O `fsync` de [`super::sync_all`] devolve EIO.
+        /// O `fsync` de [`super::sync_all`] -- e o `fdatasync` de
+        /// [`super::sync_data`], que passa pelo mesmo ponto -- devolve EIO.
         Fsync,
         /// A gravacao de uma pagina do `.ndx` devolve ENOSPC -- o `write` do
         /// disco cheio, no despejo e no `descarregar`.

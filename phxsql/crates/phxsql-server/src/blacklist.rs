@@ -489,7 +489,7 @@ impl Blacklist {
     pub fn abrir(caminho: impl AsRef<Path>) -> Result<Blacklist> {
         let caminho = caminho.as_ref().to_path_buf();
         if let Some(dir) = caminho.parent().filter(|d| !d.as_os_str().is_empty()) {
-            std::fs::create_dir_all(dir)?;
+            phxsql_store::permissao::criar_diretorio_do_banco(dir)?;
         }
         let (bloqueios, whitelist) = match std::fs::read_to_string(&caminho) {
             Err(_) => (Vec::new(), Vec::new()),
@@ -613,7 +613,8 @@ impl Blacklist {
                 Json::Lista(self.bloqueios.iter().map(Bloqueio::para_json).collect()),
             ),
         ]);
-        std::fs::write(&self.caminho, doc.escrever_identado())?;
+        // 0600 pelo motor da permissao do banco (pedido 542).
+        phxsql_store::permissao::escrever_do_banco(&self.caminho, doc.escrever_identado())?;
         Ok(())
     }
 

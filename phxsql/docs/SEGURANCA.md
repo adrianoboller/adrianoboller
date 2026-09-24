@@ -6108,3 +6108,165 @@ Guardas: `transacoes-recuperadas-sem-sanear`,
 `transacoes-envenenadas-recusam-toda-conexao`, `veneno-dito-uma-vez-por-trava`
 e `trava-suja-sem-nome`, provadas à mão em 24/09/2026. E a `trava-da-guarda-recupera-calada` (436) foi
 **remirada** para o aviso novo e continua provada.
+
+## 31. Quem lê o arquivo do banco: 0600, 0700, e a base antiga que só se alerta (pedido 542)
+
+### 31.1 O que havia, medido com `stat`
+
+Na base viva o `.lgpd` era `600` (pedido 345 o apertava) e o `.fts` também
+(pedido 345, fáceis B); o `.reg` — a linha inteira, em claro com a cifra
+desligada, que é o padrão —, o `.ndx`, o `.memo`, o `.bin`, o `.trash` e o
+`.reason` nasciam `644`, em diretório `755`. Na cópia do backup **tudo** saía
+`644`, até o que nasceu `600`: o `File::create` do `backup.rs` não pedia modo — e
+a restauração, pelo mesmo `File::create`, devolveria o database `644` (lido no
+código; a prova de hoje o cobre). Com o defeito reposto, a prova
+lista os onze de uma tabela: `_database.json`, `.bin`, `.fts`, `.lgpd`, `.log`,
+`.memo`, `.ndx`, `.pag`, `.reason`, `.reg`, `.trash` — `644` cada um.
+
+### 31.2 A decisão, pela régua (papel J)
+
+`docs/propostas/pesquisa-rodada-2026-09-24.md` §2, medido nos quatro com
+`umask 022`: **«outros não leem» é convergência dos três maduros** (aceite
+automático); o grupo também não alcança o dado por padrão — PostgreSQL 4 +
+MariaDB 3 (o diretório `700` barra) = **7** contra MySQL 2 + SQLite 1 = **3**; e
+os três maduros **impõem** o modo em vez de herdar o `umask` — só o SQLite
+herda. Recusar arrancar com permissão larga é só o PostgreSQL (4) contra os
+outros três (6): **não recusa**.
+
+| o quê | modo |
+|---|---|
+| raiz de dados, database, schema, palco da restauração, destino do backup | **0700** quando nasce aqui |
+| todo arquivo que o banco cria: `.reg`, `.ndx`, `.memo`, `.bin`, `.trash`, `.reason`, `.log`, `.lgpd`, `.fts`, `.pag`, `_database.json`, as visões, os gatilhos e procedimentos, a cópia e o ZIP do backup, a restauração, o canário da saúde do disco, os logs do servidor (`acessos.log`, diretivas, jobs, Profiler), o estado do cluster e da bidirecional, a lista negra, a lápide do backup | **0600** |
+| o arquivo que o banco **refaz** por cima de um antigo (o `.ndx` e o `.fts` do `reindexar`, o `.novo` da troca do `.reg`, o temporário do `.pag`) | **0600** — o conteúdo é novo, e a permissão também |
+| o que já existia (base antiga) | **fica como estava**, com um alerta |
+
+Os segredos (`config.json`, `dblink.json`, `jobs.json`, a marca `.tx`) já
+nasciam `0600` pelo `create_new + mode` do `config.rs` e do `transacao.rs`, e
+não mudaram.
+
+### 31.3 Um motor só
+
+`phxsql-store/src/util.rs`: `opcoes_do_banco` (o `OpenOptions` com
+`mode(0o600)`), `recriar_do_banco` (cria ou trunca, e `fchmod` no descritor —
+para o arquivo refeito), `escrever_do_banco`, `copiar_do_banco` (sem herdar o
+modo da origem, que o `fs::copy` da `std` herdaria) e `criar_diretorio_do_banco`
+(`DirBuilder` com `mode(0o700)` em cada nível que nasce). O servidor os alcança
+por `phxsql_store::permissao`. **A permissão vai na criação**, e não num
+`set_permissions` depois de cada `File::create`: não há janela entre nascer
+aberto e apertar, e o lugar que alguém esquecesse nasceria aberto sem ninguém
+ver. O `apertar_permissao` do 345 virou a metade de `recriar_do_banco`, e o
+`.lgpd` e o `.fts` deixaram de se apertar por caminho depois de criar.
+
+O `umask` só **tira** bit: o `0600` pedido na criação sai `0600` com qualquer
+`umask` que deixe o dono escrever — o `022` da instalação inclusive, que é o que
+as provas põem. No Windows não há modo: vale a ACL herdada da pasta, como
+sempre valeu (`#[cfg(unix)]`; a compilação cruzada para `x86_64-pc-windows-gnu`
+passa).
+
+### 31.4 A base antiga: alerta, sem recusa e sem `chmod` calado
+
+Apertar sozinho tiraria o acesso de quem hoje lê por grupo — guarda imposta, e
+não pedida. Então o arranque do `phxsqld` varre a raiz uma vez
+(`permissao::permissao_larga`) e, achando arquivo ou diretório que outros
+alcançam, diz **uma** linha no erro padrão: quantos, um exemplo com o modo, e o
+comando que fecha (`chmod -R go-rwx <base>`). A base que o próprio servidor
+criou não alerta — aviso em todo arranque treina quem opera a não ler o aviso.
+O embutido (FFI) herda o motor da criação, mas não o alerta: quem embute decide
+o `umask` e o diretório do próprio processo.
+
+### 31.5 A prova, nos dois sentidos
+
+Cada prova do `phxsql-store` roda num processo filho com `umask 022` e confere
+a premissa antes (um `std::fs::write` cru tem de sair `644`) — senão um ambiente
+com `umask 077` faria o defeito passar:
+
+| prova | com o conserto | com o defeito reposto |
+|---|---|---|
+| `permissao-dos-arquivos::o_banco_nasce_0600_em_diretorio_0700` | tudo `600`/`700` | os onze arquivos `644` |
+| `permissao-dos-arquivos::a_copia_do_backup_e_a_restauracao_ficam_so_do_dono` | cópia, ZIP e restaurado `600`/`700` | a cópia inteira `644` |
+| `permissao-dos-arquivos::o_que_o_banco_refaz_nasce_0600_mesmo_por_cima_de_0644` | `.ndx` e `.fts` refeitos `600`, `.reg` `644` intocado | herdam o `644` |
+| `permissao-dos-arquivos::a_base_antiga_aberta_abre_grava_e_alerta` | abre, grava, alerta, nada apertado | sem o alerta, cai |
+| `permissao-do-banco` (o `phxsqld` de verdade, `umask 022`) | a base que ele cria `600`/`700` e sem alerta; a base `644`/`755` sobe com **um** alerta e o `.reg` continua `644` | sem o aviso no arranque, cai |
+
+As guardas estão no catálogo, cada uma provada nos dois sentidos pela
+árvore de trabalho em 24/09/2026 (o `caem` cai com o defeito reposto, o
+`seguem` fica): `arquivo-do-banco-nasce-aberto`,
+`diretorio-do-banco-nasce-aberto`, `arquivo-refeito-herda-o-modo-velho`,
+`copia-do-backup-nasce-aberta`, `base-antiga-sem-alerta`,
+`arranque-nao-alerta-a-base-antiga`, e três re-apontadas porque o texto do
+ponto de reposição mudou: `fts-nasce-com-permissao-aberta` (agora o `open` de
+antes do 542 no `.ndx`, por onde o `.fts` nasce), `pag-gravado-com-truncagem` e
+`disco-sonda-cega-ao-erro`.
+
+### 31.6 A revisão SEC: o link simbólico no destino, e a base alcançada por link
+
+A revisão adversária (`docs/propostas/parecer-sec-542-2026-09-24.md`, provas
+contra o `phxsqld` vivo com `umask 022`) liberou **com condição**, e os dois
+achados entraram no mesmo commit do 542.
+
+**Achado 1 (ALTA, CWE-59): o motor seguia o link simbólico no último nome.** O
+`recriar_do_banco` abria com `create + truncate` e dava o `fchmod` depois, e os
+dois seguem link. O destino do backup é, por desenho, lugar onde outros escrevem:
+com `dest/loja/c.reg -> vítima` plantado entre duas corridas, o backup gravava o
+`.reg` **na vítima**, fora do destino, e a mudava para `0600` — medido pela SEC,
+`0o644 -> 0o600` e o conteúdo virando `PHXREG`. A escrita de fora já existia com
+o `File::create` de antes; o `chmod` de fora nasceu com o motor do 542.
+
+O conserto é o motor, e não o backup, porque todo arquivo que o banco refaz passa
+por ele (o backup, a restauração, a cópia de tabela, o `.ndx` do `reindexar`, o
+`.novo` do `.reg`, o temporário do `.pag`). **Sem `O_NOFOLLOW`**: a `std` não o
+expõe, e o número muda de arquitetura (`0o400000` no x86, `0o100000` no ARM,
+`0x100` nos BSD) — digitado à mão, o errado não recusaria nada e ninguém veria. O
+mesmo efeito sai de três passos que a `std` tem:
+
+1. `create_new` (`O_EXCL`), que nunca segue link no último nome — nem o
+   **pendurado**, que com `O_CREAT` criaria o alvo do outro lado. É o caso comum
+   e custa o mesmo `open` de antes;
+2. se o nome já existe, `lstat`, e só **arquivo regular** segue: link, FIFO (cujo
+   `open` de escrita pararia esperando leitor, com a trava de dados na mão) e
+   dispositivo recusam sem abrir;
+3. abre **sem criar e sem truncar**, e só trunca (`set_len(0)`, pelo descritor)
+   se o `fstat` do que abriu é o **mesmo inode** do `lstat` — quem trocar o nome
+   por um link entre o passo 2 e o 3 é pego antes de o alvo perder um byte ou o
+   modo.
+
+Truncar o mesmo inode, e não apagar e criar de novo, é de propósito: o `.ndx` que
+o `reindexar` refaz pode ter outro punho aberto no processo, e ele tem de ver o
+arquivo novo, como via com o `O_TRUNC`. A recusa diz o que estava no nome («um
+link simbólico», «algo que não é arquivo regular») e manda tirá-lo; o motor
+**não apaga** o que achou.
+
+**Achado 2 (BAIXA/MÉDIA): o alerta da base antiga calava quando a raiz é um
+link.** O `permissao_larga` lia a própria raiz por `lstat`, e o `continue` do
+link apagava o alerta inteiro na instalação comum (`/var/lib/phxsql ->
+/mnt/dados`) — medido pela SEC: 1 alerta pelo caminho real, 0 pelo link, na
+mesma base. Hoje o topo se segue (`metadata`), e os nomes **dentro** da árvore
+continuam por `lstat`: um link lá dentro, para um `0644` de fora, não conta — o
+alvo dele não é do banco.
+
+**Achado 3 (INFO)** fica como está, com o motivo da SEC: o `0o600` dos segredos
+(`config.rs`, `transacao.rs`, `config_phz.rs`) responde outra pergunta
+(`create_new`, sem truncar), e o motor de criar-ou-refazer não serve para eles.
+
+**O que fica de fora, dito, e é achado para pedido próprio:** o link num nome
+**intermediário** (`dest/loja -> fora`). O `create_dir_all` o aceita como
+diretório que já existe, e o arquivo vai para o outro lado — nasce novo, ou, se
+lá houver um arquivo regular com o nome de um arquivo do banco, é truncado e
+apertado. Fechá-lo pede abrir diretório a diretório sem seguir link (`openat`),
+que a `std` não dá. E a troca de um arquivo regular por uma FIFO entre o passo 2
+e o 3 ainda pararia o `open`: janela estreita, e anterior ao 542 (o
+`File::create` parava sempre).
+
+| prova (`crates/phxsql-store/tests/permissao-dos-arquivos.rs`, salvo dito) | com o conserto | com o defeito reposto |
+|---|---|---|
+| `o_backup_nao_atravessa_o_link_plantado_no_destino` | a corrida recusa nomeando o link; a vítima fica com conteúdo e modo; o reuso por cima do destino povoado passa | «o backup gravou ATRAVÉS do link plantado no destino» |
+| `o_motor_nao_atravessa_link_nem_pendurado` | `copiar_do_banco` e `escrever_do_banco` recusam o link e o pendurado; o alvo do pendurado não nasce | a vítima muda |
+| `o_motor_recusa_fifo_sem_ficar_parado` | recusa na hora | «ficou parado 5 s abrindo uma FIFO» |
+| `a_base_por_link_simbolico_tambem_alerta` | alerta pelo link como pelo caminho real; a base fechada não alerta, nem com link de dentro para fora | sem alerta pelo link |
+| `permissao-do-banco::a_base_antiga_por_link_simbolico_tambem_alerta` (o `phxsqld`) | **um** alerta, e o `.reg` continua `644` | sem alerta |
+
+Guardas novas, provadas nos dois sentidos pela árvore de trabalho:
+`backup-atravessa-link-plantado`, `base-por-link-cala-o-alerta` e
+`arranque-cala-o-alerta-da-base-por-link`.
+
+**Re-checagem (24/09/2026, 21:20).** O SEC e o juiz mediram três resíduos com o binário consertado, e eles ficam abertos: o link num nome INTERMEDIÁRIO do destino (pedido 568: `ok:true` e a tabela de outro database vivo sobrescrita), o arquivo regular de OUTRO dono que já está no destino, inclusive o `.part` do ZIP (569), e a FIFO na janela entre o `lstat` e o `open`, com o `fsync` da cópia reaberto pelo nome (570). O 542 fecha o `umask` e o link no último nome; não fecha «o backup não grava fora de si».

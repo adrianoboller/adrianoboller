@@ -42,6 +42,18 @@ pub mod trilha;
 mod util;
 pub mod volume;
 
+/// O motor da permissao dos arquivos do banco (pedido 542): 0600 em todo
+/// arquivo e 0700 em todo diretorio que o banco cria, e o alerta da base
+/// antiga. Mora em `util`; o servidor o alcanca por aqui para os arquivos
+/// que ELE cria (visoes, rotinas, logs, a lapide do backup) nascerem pela
+/// mesma decisao, e nao por uma segunda copia dela.
+pub mod permissao {
+    pub use crate::util::{
+        copiar_do_banco, criar_diretorio_do_banco, escrever_do_banco, opcoes_do_banco,
+        permissao_larga, recriar_do_banco, MODO_DO_ARQUIVO, MODO_DO_DIRETORIO,
+    };
+}
+
 pub use blob::{BlobFile, EstatisticaBlob, MAGIC_BIN, MAGIC_MEMO};
 pub use catalogo::{qualificar, separar_qualificado, Aberta, Database, Instancia, Raiz};
 pub use ledger::{

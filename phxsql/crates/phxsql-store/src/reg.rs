@@ -78,7 +78,7 @@
 //! sobre coluna marcada guarda a chave em claro e revela a ORDEM. Ver
 //! `docs/SEGURANCA.md` §11.
 
-use std::fs::{File, OpenOptions};
+use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
@@ -2504,11 +2504,9 @@ fn reescrever_volume(
 
     let mut de = File::open(caminho)?;
     let tamanho = de.metadata()?.len();
-    let mut para = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(&tmp)?;
+    // Pelo motor da permissao (pedido 542): o `.novo` vira o `.reg`, e um
+    // `.novo` largado por uma troca interrompida nao empresta o modo dele.
+    let mut para = crate::util::recriar_do_banco(&tmp, false)?;
     para.write_all(cab)?;
     para.write_all(esquema_bytes)?;
     let escrito = cab.len() as u64 + esquema_bytes.len() as u64;
@@ -2746,11 +2744,8 @@ fn escrever_volume_alargado(
     let mut de = std::io::BufReader::with_capacity(1 << 20, de);
     de.seek(SeekFrom::Start(origem))?;
 
-    let para = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(&tmp)?;
+    // Pelo motor da permissao (pedido 542) -- o irmao de cima.
+    let para = crate::util::recriar_do_banco(&tmp, false)?;
     let mut para = std::io::BufWriter::with_capacity(1 << 20, para);
     para.write_all(cab)?;
     para.write_all(esquema_bytes)?;

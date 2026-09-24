@@ -1,4 +1,5 @@
-//! O disco que recusa, contra o SISTEMA OPERACIONAL -- pedidos 509, 512 e 522.
+//! O disco que recusa, contra o SISTEMA OPERACIONAL -- pedidos 509, 512, 522
+//! e 533.
 //!
 //! O executor da `bancada/catastrofes/`, que o chama dentro de um `unshare -m`
 //! com tmpfs pequeno ou ext4 sobre loop com provisionamento fino. Sozinho ele
@@ -23,8 +24,25 @@
 //!                                       gancho do servidor (o abort na recusa)
 //! disco-que-recusa conferir DIR         o byte 52, o indice e o diario
 //!                                       (SO_LER=1: sem gravar nada)
+//! disco-que-recusa criar533 DIR N1      `clientes` (10) e N1 `filhas` do
+//!                                       cliente 1, com FK conferida; janela
+//!                                       FECHADA (byte 52 em 0 no disco)
+//! disco-que-recusa janela533 DIR N2 M   abre a janela seguinte das filhas e sai
+//!                                       pelo `Drop`, sem fecho: M=inserir poe
+//!                                       N2 filhas do cliente 2; M=mover passa
+//!                                       N2 filhas do 1 ao 2 no MESMO slot
+//! disco-que-recusa conferir533 DIR      o byte 52 das filhas, as filhas de
+//!                                       cada cliente pelo indice, e o
+//!                                       `excluir` do cliente 2 (o pai com
+//!                                       filhas: a regra primordial)
 //! ```
+//!
+//! Os tres de 533 sao a emulacao do papel C (C4) e do J (C4', `nada` e
+//! `move`) levada ao disco de verdade: quem decide o que chegou ao disco e o
+//! roteiro (`bancada/catastrofes/queda.py`, com `sync_file_range`, `fsync` e
+//! `FS_IOC_SHUTDOWN`), e nao um `std::fs::write` do arquivo velho por cima.
 
+use phxsql_core::schema::ForeignKey;
 use phxsql_core::{Column, ColumnType, IndexColumn, IndexDef, Schema, Value};
 use phxsql_store::log::Operacao;
 use phxsql_store::table::Table;
@@ -79,6 +97,81 @@ fn conferir(dir: &Path) {
     match t.verificar() {
         Ok(r) => println!("verificar=OK registros={}", r.registros),
         Err(e) => println!("verificar=ERRO {e}"),
+    }
+}
+
+/// A mae do pedido 533: dez clientes, a chave pelo `id`.
+fn clientes() -> Schema {
+    Schema::new(
+        "clientes",
+        vec![Column::new("id", ColumnType::Int4).obrigatoria()],
+        vec![IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico()],
+    )
+    .unwrap()
+}
+
+/// A filha, com a FK conferida -- e o indice `porCliente` que a mae consulta
+/// para responder «alguem aponta para mim?» antes de se deixar excluir.
+fn filhas() -> Schema {
+    Schema::new(
+        "filhas",
+        vec![
+            Column::new("id", ColumnType::Int4).obrigatoria(),
+            Column::new("cliente_id", ColumnType::Int4),
+        ],
+        vec![
+            IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico(),
+            IndexDef::new("porCliente", vec![IndexColumn::asc(1)]),
+        ],
+    )
+    .unwrap()
+    .com_chaves_estrangeiras(vec![ForeignKey::new(
+        "fk_cliente",
+        vec![1],
+        "clientes",
+        vec!["id".into()],
+    )
+    .conferindo(true)])
+    .unwrap()
+}
+
+/// O texto do erro numa linha so, curto: o roteiro guarda uma linha por passo.
+fn curto(e: impl std::fmt::Display) -> String {
+    let s = e.to_string().replace('\n', " ");
+    s.chars().take(110).collect()
+}
+
+/// Quantas filhas o INDICE diz que o cliente `c` tem.
+fn quantas(f: &mut Table, c: i64) -> String {
+    match f.buscar("porCliente", &[Value::Int(c)]) {
+        Ok(v) => v.len().to_string(),
+        Err(e) => format!("ERRO {}", curto(e)),
+    }
+}
+
+fn conferir533(dir: &Path) {
+    let cru = std::fs::read(dir.join("filhas.ndx")).unwrap_or_default();
+    println!("byte52={}", cru.get(52).copied().unwrap_or(255));
+    let mut f = match Table::abrir(dir, "filhas") {
+        Ok(t) => t,
+        Err(e) => return println!("abrir=ERRO {}", curto(e)),
+    };
+    let (c1, c2) = (quantas(&mut f, 1), quantas(&mut f, 2));
+    println!(
+        "vivas={} precisa_reconstruir={} filhas_c1={c1} filhas_c2={c2}",
+        f.registros(),
+        f.indice_precisa_reconstruir()
+    );
+    match f.verificar() {
+        Ok(_) => println!("verificar=OK"),
+        Err(e) => println!("verificar=ERRO {}", curto(e)),
+    }
+    drop(f);
+    let mut m = Table::abrir(dir, "clientes").unwrap();
+    let r = m.buscar("porId", &[Value::Int(2)]).unwrap();
+    match m.excluir(r[0]) {
+        Ok(ok) => println!("excluir_cliente_2=OK {ok}"),
+        Err(e) => println!("excluir_cliente_2=ERRO {}", curto(e)),
     }
 }
 
@@ -174,6 +267,42 @@ fn main() {
             fecho("fecho2", dir);
         }
         "conferir" => conferir(dir),
+        "criar533" => {
+            let n1: i64 = a[3].parse().unwrap();
+            let mut m = Table::criar(dir, clientes()).unwrap();
+            for i in 1..=10 {
+                m.inserir(&[Value::Int(i)]).unwrap();
+            }
+            m.sincronizar().unwrap();
+            let mut f = Table::criar(dir, filhas()).unwrap();
+            for i in 1..=n1 {
+                f.inserir(&[Value::Int(i), Value::Int(1)]).unwrap();
+            }
+            f.sincronizar().unwrap();
+            println!("criar533 filhas_c1={n1}, janela fechada");
+        }
+        // A janela seguinte, que sai pelo `Drop` -- o `fechar` leva as
+        // paginas ao nucleo e deixa o 1, sem `fsync`, como o servidor entre
+        // dois fechos. O que chega ao disco depois disso e do roteiro.
+        "janela533" => {
+            let n2: i64 = a[3].parse().unwrap();
+            let mut f = Table::abrir(dir, "filhas").unwrap();
+            let base = f.registros() as i64;
+            let mut ok = 0;
+            if a[4] == "mover" {
+                let rs = f.buscar("porCliente", &[Value::Int(1)]).unwrap();
+                for r in rs.iter().take(n2 as usize) {
+                    let l = f.ler(*r).unwrap().unwrap();
+                    ok += usize::from(f.atualizar(*r, &[l[0].clone(), Value::Int(2)]).is_ok());
+                }
+            } else {
+                for i in 1..=n2 {
+                    ok += usize::from(f.inserir(&[Value::Int(base + i), Value::Int(2)]).is_ok());
+                }
+            }
+            println!("janela533 {} ok={ok} de {n2}, sem fecho", a[4]);
+        }
+        "conferir533" => conferir533(dir),
         outro => {
             eprintln!("modo desconhecido: {outro}");
             std::process::exit(2);

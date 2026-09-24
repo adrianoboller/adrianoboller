@@ -1324,6 +1324,11 @@ QA, com julgamento de pergunta, e a redação do H.
 | DBA — revisao do 533 | forte | formato em disco e ordem de escrita contra queda de energia |
 | SEC — revisao do 542 | forte | permissao do dado em repouso, symlink e TOCTOU |
 | juiz PhxJev — P2, P3 e o acrescimo ao 472 do DBA sobre o 533 | medio | duas propostas de adiar e um acrescimo lido; o veredito sai do limiar do script |
+| DBA — re-checagem do conserto C1 do 540 | forte | concorrencia de descritores e durabilidade: a descida no meio da janela |
+| SEC — re-checagem do 542 | forte | symlink, dono e FIFO no destino do backup, medidos contra o binario |
+| juiz PhxJev — P5 do DBA e os residuos do SEC no 542 | forte | integridade (orfa) e seguranca do backup: defeito ativo pede juizo |
+| SEC — revisao de faceis E | forte | seguranca: redacao de segredo, injecao no DbLink, direito por caixa do nome |
+| juiz PhxJev — achados do SEC em faceis E | forte | direito contornado e dado pessoal no erro remoto |
 
 **Convocacao do dono em 24/09/2026, 18:40** («toda a equipe em alerta e revisao
 nessa rodada»). Convocados: A (integrador), B (quatro frentes), C (revisoes em

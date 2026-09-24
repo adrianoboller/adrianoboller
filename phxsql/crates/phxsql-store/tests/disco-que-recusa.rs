@@ -370,3 +370,175 @@ fn o_diario_sozinho_tambem_nao_repete() {
          diretorio"
     );
 }
+
+/// O tamanho do arquivo no disco, e zero quando ele ainda nao existe.
+fn tamanho(p: &Path) -> u64 {
+    std::fs::metadata(p).map(|m| m.len()).unwrap_or(0)
+}
+
+/// **533: a SUBIDA do byte 52 vai ao disco antes da primeira escrita.**
+///
+/// Sem o `fdatasync` da subida, o 1 ficava no cache do nucleo e o `.reg`
+/// seguia gravando: numa queda de energia o disco guardava as paginas novas
+/// (ou so o `.reg` novo) sob o 0 do ultimo fecho, e a proxima abertura
+/// confiava na arvore -- o pai com filhas se apagava calado (parecer do DBA
+/// do 522, C4; a prova contra o SO e o cenario 533 da
+/// `bancada/catastrofes/`). Aqui a recusa e forjada no `fdatasync` do `.ndx`
+/// SO (a arma e por prefixo de texto): com o conserto, o `inserir` recusa e o
+/// `.reg` nao anda; com o defeito, a arma nem dispara, porque nada sincroniza
+/// na subida, e a linha entra com o 1 so no cache.
+#[test]
+fn a_subida_recusada_recusa_antes_do_reg() {
+    let d = DirTemp::novo("533-subida");
+    let mut t = Table::criar(&*d, esquema()).unwrap();
+    t.inserir(&linha(1)).unwrap();
+    t.sincronizar().unwrap();
+    assert_eq!(byte_52(&d), 0, "premissa: o fecho da janela baixou a marca");
+    let reg = d.join("pedidos.reg");
+    let (reg_antes, vivas_antes) = (tamanho(&reg), t.registros());
+    let ndx = d.join("pedidos.ndx");
+    falha_de_teste::armar(&ndx, Onde::Fsync, 1);
+    let r = t.inserir(&linha(2)).map_err(|e| e.to_string());
+    falha_de_teste::desarmar(&ndx);
+    assert!(
+        r.is_err(),
+        "a linha entrou sem a subida do byte 52 ter ido ao disco: nenhum \
+         fdatasync passou pelo motor na primeira escrita da janela (pedido 533)"
+    );
+    assert_eq!(
+        tamanho(&reg),
+        reg_antes,
+        "o .reg cresceu com a subida recusada: a recusa veio DEPOIS do slot"
+    );
+    assert_eq!(t.registros(), vivas_antes, "a linha contou como viva");
+}
+
+/// **533: e so UMA vez por janela -- o segundo `fdatasync` nao entra calado.**
+///
+/// A subida paga um `fdatasync` na passagem de 0 para 1, e so ali: a arma
+/// posta DEPOIS da primeira escrita da janela nao pode disparar em nenhuma
+/// das 300 seguintes (que sujam e despejam paginas), e so o fecho a
+/// encontra. Com um `fdatasync` por pagina suja -- o conserto ingenuo --, a
+/// segunda linha ja recusa. A contagem pelo nucleo e a catraca
+/// `TETO_FSYNC_DA_SUBIDA` (`--example fsync-da-subida`).
+#[test]
+fn a_subida_sincroniza_uma_vez_por_janela() {
+    let d = DirTemp::novo("533-uma-vez");
+    let mut t = Table::criar(&*d, esquema()).unwrap();
+    t.sincronizar().unwrap();
+    t.inserir(&linha(1)).unwrap();
+    let ndx = d.join("pedidos.ndx");
+    falha_de_teste::armar(&ndx, Onde::Fsync, 1);
+    for id in 2..=300 {
+        if let Err(e) = t.inserir(&linha(id)) {
+            falha_de_teste::desarmar(&ndx);
+            panic!(
+                "a linha {id} achou um fdatasync no .ndx dentro da MESMA janela: \
+                 a subida sincroniza mais de uma vez ({e})"
+            );
+        }
+    }
+    let fecho = t.sincronizar();
+    falha_de_teste::desarmar(&ndx);
+    assert!(
+        fecho.is_err(),
+        "premissa: a arma continuava la para o fecho da janela encontrar"
+    );
+}
+
+/// **533, o irmao: o `.fts` tem a mesma marca, e a subida dele tambem vai ao
+/// disco.**
+///
+/// O `.fts` e um `.ndx` por dentro (`FtsFile` embrulha um `NdxFile`), entao o
+/// conserto e o MESMO `levantar_marca` -- este teste prova que o embrulho nao
+/// o contorna.
+///
+/// Prova so o lado da PAGINA: a subida do `.fts` vai ao disco antes da
+/// primeira pagina dele. O lado do `.reg` nao vale para o `.fts` -- o
+/// `indexar_texto` roda DEPOIS do slot (`Table::inserir`), entao uma queda
+/// entre o slot e a subida deixa o indice de texto atras com o 0, calado. Esse
+/// lado e o pedido 472 (parecer do DBA sobre o 533, C1).
+#[test]
+fn a_subida_do_fts_tambem_vai_ao_disco() {
+    use phxsql_store::fts::FtsFile;
+    let d = DirTemp::novo("533-fts");
+    let caminho = d.join("pedidos.fts");
+    let mut f = FtsFile::criar(&caminho, vec![true], false).unwrap();
+    f.indexar(0, 1, "a fenix guardada").unwrap();
+    f.sincronizar().unwrap();
+    assert_eq!(
+        std::fs::read(&caminho).unwrap()[52],
+        0,
+        "premissa: o fecho baixou a marca do .fts"
+    );
+    falha_de_teste::armar(&caminho, Onde::Fsync, 1);
+    let r = f.indexar(0, 2, "outra fenix");
+    falha_de_teste::desarmar(&caminho);
+    assert!(
+        r.is_err(),
+        "o .fts indexou sem a subida do byte 52 ter ido ao disco (pedido 533)"
+    );
+}
+
+/// Dois indices, para o diretorio vazio e o diretorio pela metade serem
+/// diferentes do inteiro.
+fn esquema_de_dois_indices() -> Schema {
+    Schema::new(
+        "pedidos",
+        vec![
+            Column::new("id", ColumnType::Int8).obrigatoria(),
+            Column::new("nome", ColumnType::Str(60)).obrigatoria(),
+            Column::new("cidade", ColumnType::Str(40)),
+        ],
+        vec![
+            IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico(),
+            IndexDef::new("porCidade", vec![IndexColumn::asc(2)]),
+        ],
+    )
+    .unwrap()
+}
+
+/// **533, P1 do parecer do DBA: o `.ndx` refeito leva o diretorio INTEIRO na
+/// primeira subida.**
+///
+/// A subida roda na primeira `gravar_pagina` de `criar_com`, e o `fdatasync`
+/// leva ao disco o cabecalho daquele instante. Com as raizes empurradas uma a
+/// uma depois de cada folha, esse cabecalho tinha o byte 52 em 1 e ZERO
+/// indices: uma queda de energia no meio do `reindexar` -- o do arranque do
+/// 522 inclusive -- deixava a tabela travada em «o .ndx tem 0 indices, o
+/// esquema do .reg declara 2», e nao ha porta que reconstrua sem abrir.
+///
+/// A queda se emula pela recusa forjada no `fdatasync` da subida: o cabecalho
+/// ja foi ao arquivo quando ele recusa, e depois da recusa nada mais o regrava
+/// (o `fechar` para em `pode_baixar_a_marca`). O que fica e o que o disco
+/// guardaria. Com o conserto a reabertura diz «marcado, reconstrua»; com o
+/// defeito, recusa abrir.
+#[test]
+fn o_ndx_refeito_leva_o_diretorio_inteiro_na_primeira_subida() {
+    let d = DirTemp::novo("533-p1-diretorio");
+    let mut t = Table::criar(&*d, esquema_de_dois_indices()).unwrap();
+    for id in 1..=200 {
+        t.inserir(&linha(id)).unwrap();
+    }
+    t.sincronizar().unwrap();
+    let ndx = d.join("pedidos.ndx");
+    falha_de_teste::armar(&ndx, Onde::Fsync, 1);
+    let refeito = t.reindexar().map(|_| ());
+    falha_de_teste::desarmar(&ndx);
+    assert!(
+        refeito.is_err(),
+        "premissa: a subida do .ndx refeito tinha de encontrar a recusa forjada"
+    );
+    drop(t);
+    assert_eq!(byte_52(&d), 1, "o cabecalho da subida tem o byte em 1");
+    match Table::abrir(&*d, "pedidos") {
+        Ok(t) => assert!(
+            t.indice_precisa_reconstruir(),
+            "a tabela abriu confiando num .ndx que a queda deixou pela metade"
+        ),
+        Err(e) => panic!(
+            "o cabecalho que a subida levou ao disco travou a tabela -- e nao ha \
+             porta que reconstrua sem abrir: {e}"
+        ),
+    }
+}

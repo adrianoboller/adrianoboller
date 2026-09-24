@@ -936,7 +936,8 @@ impl Table {
     /// sobrescrever dados por engano.
     pub fn criar(diretorio: impl AsRef<Path>, esquema: Schema) -> Result<Table> {
         let diretorio = resolver(diretorio.as_ref());
-        std::fs::create_dir_all(&diretorio)?;
+        // 0700 quando nasce aqui, pelo motor da permissao (pedido 542).
+        crate::util::criar_diretorio_do_banco(&diretorio)?;
         let nome = esquema.nome().to_string();
 
         let paginacao = esquema.paginacao();

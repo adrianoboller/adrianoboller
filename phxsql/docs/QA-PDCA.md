@@ -406,10 +406,11 @@ com o raciocínio de cada uma, está em `docs/CATRACAS.md`.
 | `TETO_INVENTARIO_DESCASADO` (extensoes que faltam ou sobram entre o codigo e as tres copias) | `crates/phxsql-server/src/conferidor_inventario.rs` | 0 | **0** | em cima, sem folga |
 | `TETO_SEGREDO_SOLTO` (arquivos com cara de chave na arvore do repositorio) | `crates/phxsql-server/src/conferidor_segredos.rs` | 0 | **0** | em cima, sem folga |
 | `TETO_TEMP_DIR_SOLTO` (chamadas a std::env::temp_dir() fora do catalogo) | `crates/phxsql-server/src/conferidor_temporarios.rs` | 0 | **0** | em cima, sem folga |
-| `TETO_ROTULOS_E_CRASE` (textos cravados fora da fabrica de idiomas) | `crates/phxsql-server/src/conferidor.rs` | 904 | **904** | em cima, sem folga |
+| `TETO_ROTULOS_E_CRASE` (textos cravados fora da fabrica de idiomas) | `crates/phxsql-server/src/conferidor.rs` | 880 | **880** | em cima, sem folga |
 | `TETO_COLADO` (chaves com os seis idiomas identicos) | `crates/phxsql-server/src/conferidor.rs` | 0 | **0** | em cima, sem folga |
 | `TETO_FRASE_REPETIDA` (frase longa repetida em tres ou mais idiomas) | `crates/phxsql-server/src/conferidor.rs` | 0 | **0** | em cima, sem folga |
 | `TETO_VERMELHA_SEM_PEDIDO` (provas vermelhas sem pedido no PENDENCIAS.md) | `crates/phxsql-server/src/conferidor_vermelhas.rs` | 0 | **0** | em cima, sem folga |
+| `TETO_FSYNC_DA_SUBIDA` (fsync gastos pela subida do byte 52 numa janela, por tabela) | `crates/phxsql-store/src/conferidor_fsync.rs` | 1 | **1** | em cima, sem folga |
 | `TETO_FSYNC_POR_FECHO_V2` (fsync gastos por fecho de janela de durabilidade) | `crates/phxsql-store/src/conferidor_fsync.rs` | 8 | **8** | em cima, sem folga |
 | `codigo-do-dono` (secoes criticas que rodam codigo do dono do banco com a trava na mao) | `bancada/concorrencia/mapa-da-trava.py` | 5 | **5** | em cima, sem folga |
 | `alcancam-fsync-2` (secoes criticas que alcancam `fsync` com a trava na mao) | `bancada/concorrencia/mapa-da-trava.py` | 23 | **23** | em cima, sem folga |
@@ -418,15 +419,21 @@ com o raciocínio de cada uma, está em `docs/CATRACAS.md`.
 | `catalogo-envelhecido` (entradas do catalogo de threads que nao casam com sitio nenhum) | `bancada/concorrencia/mapa-das-threads.py` | 0 | **0** | em cima, sem folga |
 | `TETO_DEBUG_COM_SEGREDO` (campos de segredo que o `Debug` de uma struct de crates/*/src imprime, derivado ou a mao) | `bancada/guardas/debug-com-segredo.py` | 0 | **0** | em cima, sem folga |
 | `TETO_PKILL_SEM_PID` (invocacoes reais de `pkill` em bancada/**/*.py e *.sh) | `bancada/guardas/pkill-sem-pid.py` | 0 | **0** | em cima, sem folga |
-| `TETO_TRECHO_MORTO` (entradas cujo trecho o codigo nao tem mais) | `bancada/guardas/trecho-vivo.py` | 0 | **4** | **REPROVANDO** — 4 acima |
+| `TETO_TRECHO_MORTO` (entradas cujo trecho o codigo nao tem mais) | `bancada/guardas/trecho-vivo.py` | 0 | **0** | em cima, sem folga |
 | `TETO_TRECHO_AMBIGUO` (entradas cujo trecho casa duas ou mais vezes no arquivo) | `bancada/guardas/trecho-vivo.py` | 0 | **0** | em cima, sem folga |
 | `TETO_TESTE_MORTO` (testes nomeados que nao existem como `fn` em crates/**/*.rs) | `bancada/guardas/trecho-vivo.py` | 0 | **0** | em cima, sem folga |
 | `TETO_TESTE_FORA_DO_BINARIO` (testes que existem, mas nao no binario que a entrada nomeia) | `bancada/guardas/trecho-vivo.py` | 0 | **0** | em cima, sem folga |
 | `TETO_TESTE_SEM_MODULO` (testes de alvo --lib nomeados sem o caminho do modulo) | `bancada/guardas/trecho-vivo.py` | 0 | **0** | em cima, sem folga |
-| `TETO_NAO_JULGADA_ESCONDIDA` (entradas que a ultima corrida nao julgou e que a pagina nao nomeia) | `bancada/guardas/trecho-vivo.py` | 0 | **2** | **REPROVANDO** — 2 acima |
-| `PISO_DAS_ENTRADAS` (entradas vivas do catalogo mais as aposentadas escritas) | `bancada/guardas/trecho-vivo.py` | piso 200 | **202** | **FROUXO** — 2 acima, suba-o |
+| `TETO_NAO_JULGADA_ESCONDIDA` (entradas que a ultima corrida nao julgou e que a pagina nao nomeia) | `bancada/guardas/trecho-vivo.py` | 0 | **0** | em cima, sem folga |
+| `PISO_DAS_ENTRADAS` (entradas vivas do catalogo mais as aposentadas escritas) | `bancada/guardas/trecho-vivo.py` | piso 448 | **448** | em cima, sem folga |
 
-*24 catraca(s) medida(s) por conferidor. Refaz com `python3 docs/qa/medir.py`.*
+*25 catraca(s) medida(s) por conferidor + 2 catraca(s) imposta(s) por teste sem `--numeros` = **27** catraca(s) ao todo. Refaz com `python3 docs/qa/medir.py`.*
+
+**Catracas impostas por teste que ainda NÃO respondem a `--numeros`.** São catraca de verdade — um teste do próprio
+arquivo afirma contra a constante —, só falta o exemplo em `crates/*/examples/*.rs` que a exponha (no molde de `textos-fora-da-fabrica.rs`). Sem ele esta tabela sabe o VALOR declarado, mas não o MEDIDO de hoje:
+
+- `TETO_LEITURA_FORA_DO_CANAL` — `crates/phxsql-server/src/conferidor_canal.rs:229`
+- `TETO_TXT_CRU_EM_HTML` — `crates/phxsql-server/src/conferidor_texto_cru.rs:142`
 
 **Constantes `TETO*`/`PISO*` que NENHUM conferidor reporta.** Elas não
 são catracas: são limites, ou promessas. A diferença importa — catraca
@@ -435,9 +442,15 @@ uma constante que seja limite de funcionamento sai daqui escrevendo
 `# nao-e-catraca: <motivo>` na própria linha dela:
 
 - `TETO` — `crates/phxsql-server/src/replica.rs:631`
-- `TETO_DO_APERTO` — `crates/phxsql-core/src/fio.rs:510`
+- `TETO_APERTO` — `bancada/seguranca/revisao-434-435/medir.py:13`
+- `TETO_DA_CITACAO` — `crates/phxsql-core/src/error.rs:449`
+- `TETO_DA_SENHA` — `crates/phxsql-core/src/senha.rs:67`
+- `TETO_DE_COLUNAS` — `crates/phxsql-server/src/dblink/mod.rs:121`
+- `TETO_DO_APERTO` — `crates/phxsql-core/src/fio.rs:524`
 - `TETO_DO_REGISTRO` — `crates/phxsql-core/src/fio.rs:495`
-- `TETO_TXT_CRU_EM_HTML` — `crates/phxsql-server/src/conferidor_texto_cru.rs:142`
+- `TETO_PADRAO` — `crates/phxzip/src/phz.rs:58`
+
+**Não consegui medir:** bancada/catracas/todas.py: nao rodou (1)
 <!-- catracas:fim -->
 
 > **Esta tabela NÃO se edita à mão — ela se gera.** Com

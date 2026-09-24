@@ -47,7 +47,7 @@ fn escrever_marca(diretorio: &Path, tipo: TipoDatabase) -> Result<()> {
         ("tipo", Json::texto_de(tipo.como_texto())),
         ("versao", Json::de_i64(1)),
     ]);
-    std::fs::write(diretorio.join(MARCA_DATABASE), j.escrever_identado())?;
+    crate::util::escrever_do_banco(&diretorio.join(MARCA_DATABASE), j.escrever_identado())?;
     Ok(())
 }
 
@@ -369,10 +369,11 @@ pub struct Instancia {
 }
 
 impl Instancia {
-    /// Abre (criando se preciso) a raiz de dados.
+    /// Abre (criando se preciso) a raiz de dados -- 0700 quando nasce aqui,
+    /// pelo motor da permissao (pedido 542).
     pub fn nova(base: impl AsRef<Path>) -> Result<Instancia> {
         let base = base.as_ref().to_path_buf();
-        std::fs::create_dir_all(&base)?;
+        crate::util::criar_diretorio_do_banco(&base)?;
         Ok(Instancia {
             base,
             _so_com_a_ficha: PhantomData,
@@ -397,7 +398,7 @@ impl Instancia {
         if caminho.exists() {
             return Err(PhxError::Esquema(format!("database {nome} ja existe")));
         }
-        std::fs::create_dir_all(&caminho)?;
+        crate::util::criar_diretorio_do_banco(&caminho)?;
         escrever_marca(&caminho, tipo)?;
         Ok(Database {
             nome: nome.to_string(),
@@ -527,10 +528,12 @@ pub enum Aberta {
 }
 
 impl Raiz {
-    /// Abre (criando se preciso) a raiz de dados.
+    /// Abre (criando se preciso) a raiz de dados -- 0700 quando nasce aqui,
+    /// pelo motor da permissao (pedido 542). A que ja existia fica como
+    /// estava; o alerta dela e do arranque (`permissao::permissao_larga`).
     pub fn nova(base: impl AsRef<Path>) -> Result<Raiz> {
         let base = base.as_ref().to_path_buf();
-        std::fs::create_dir_all(&base)?;
+        crate::util::criar_diretorio_do_banco(&base)?;
         Ok(Raiz { base })
     }
 
@@ -680,14 +683,14 @@ impl Database {
                 self.nome
             )));
         }
-        std::fs::create_dir_all(&caminho)?;
+        crate::util::criar_diretorio_do_banco(&caminho)?;
         Ok(caminho)
     }
 
     pub fn garantir_schema(&self, nome: &str) -> Result<PathBuf> {
         validar_nome("schema", nome)?;
         let caminho = self.caminho.join(nome);
-        std::fs::create_dir_all(&caminho)?;
+        crate::util::criar_diretorio_do_banco(&caminho)?;
         Ok(caminho)
     }
 
@@ -1168,7 +1171,9 @@ impl Database {
                     // Preserva o sufixo do volume: `precos_002.reg` vira
                     // `copia_002.reg`, nao `copia.reg`.
                     let novo = format!("{nome_d}{}", &f[nome_o.len()..]);
-                    std::fs::copy(arq.path(), dir_d.join(&novo))?;
+                    // Pelo motor da permissao (pedido 542): a copia nasce
+                    // 0600, sem herdar o modo da origem.
+                    crate::util::copiar_do_banco(&arq.path(), &dir_d.join(&novo))?;
                     // O atestado do pedido 522 vale para a copia: ela saiu do
                     // nucleo junto do `.reg` dela. Ver `ndx::levar_atestado`.
                     crate::ndx::levar_atestado(&arq.path(), &dir_d.join(&novo), false);
@@ -1234,7 +1239,9 @@ impl Database {
                 let f = f.to_string_lossy();
                 if pertence(&f, nome_o, ext) {
                     let novo = format!("{nome_d}{}", &f[nome_o.len()..]);
-                    std::fs::copy(arq.path(), dir_d.join(&novo))?;
+                    // Pelo motor da permissao (pedido 542): a copia nasce
+                    // 0600, sem herdar o modo da origem.
+                    crate::util::copiar_do_banco(&arq.path(), &dir_d.join(&novo))?;
                     // O mesmo do `duplicar_tabela`: o atestado vai junto.
                     crate::ndx::levar_atestado(&arq.path(), &dir_d.join(&novo), false);
                     copiados += 1;

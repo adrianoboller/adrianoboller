@@ -89,7 +89,7 @@ use phxsql_core::value::Value;
 use phxsql_core::RowId;
 
 use crate::cofre::{self, Cabecalho};
-use crate::util::{agora_ms, apertar_permissao, por_u16, por_u32, por_u64, Campos};
+use crate::util::{agora_ms, por_u16, por_u32, por_u64, Campos};
 use crate::volume::Volumes;
 
 pub const MAGIC_TRILHA: &[u8; 8] = b"PHXLGP\0\0";
@@ -855,8 +855,10 @@ impl TrilhaFile {
             self.volumes.apagar_volume(self.ativo)?;
             self.interrompido = false;
         }
+        // Nasce 0600 pelo motor da permissao, dentro do `Volumes::criar`
+        // (pedido 542) -- o aperto por caminho que morava aqui (pedido 345)
+        // virou a regra de todo arquivo do banco.
         self.volumes.criar(self.ativo)?;
-        apertar_permissao(&self.volumes.caminho(self.ativo));
         let cab = Cabecalho::novo(self.ativo)?;
         self.gravar_cab(cab)?;
         self.ativo_existe = true;

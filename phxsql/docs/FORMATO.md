@@ -1011,9 +1011,10 @@ queda do **processo** não podia atrasar o `.ndx` em relação ao `.reg`, porque
 
 A marca é o que torna isso aceitável, e a **ordem** é a garantia:
 
-1. antes da primeira página suja existir, o byte 52 vai a 1 **no arquivo** —
-   no núcleo, **sem `fsync`**: a subida segura a queda do processo, e **não**
-   a da máquina (ver «o que ainda não fecha», no pedido 522, abaixo);
+1. antes da primeira página suja existir, o byte 52 vai a 1 **no disco** —
+   gravado e levado por um `fdatasync` a cada passagem de 0 para 1 (pedido
+   533, abaixo): a subida segura a queda do processo **e** a da máquina. Até o
+   533 ela ia só ao núcleo, sem `fsync`;
 2. ela só volta a 0 depois de **todas** as páginas sujas terem ido ao disco —
    e «ir ao disco» quer dizer **`fsync`**: só o `sincronizar` grava o 0, e
    só depois dos dois `fsync` dele (as páginas, depois o cabeçalho). O
@@ -1178,20 +1179,102 @@ lê o 1 que o `fechar` novo deixou como queda — `precisa_reconstruir`,
 ele sempre leu. O byte
 continua querendo dizer a mesma coisa; o que mudou é quem pode escrever o 0.
 
-**O que ainda não fecha — os dois anteriores ao 522, e fora dele:**
+**A subida vai ao disco** (pedido 533, 24/09/2026; **o leiaute não muda, e não
+há migração** — muda *quando* o 1 fica durável). Até aqui o 1 ia ao núcleo sem
+`fsync`, e nada o ordenava no disco antes das páginas: o par só segurava a queda
+da máquina com as duas pontas duráveis, e o 522 tinha feito só a do 0. Hoje
+`NdxFile::levantar_marca` — o lugar único das duas portas que sobem a marca, e
+por onde o `.fts` também passa — grava o cabeçalho com o 1 e faz **um
+`fdatasync`** pelo motor `sincronia` (o gancho de teste e a trava do 509/523
+valem para ele), só na passagem de 0 para 1, **antes** da primeira página suja.
+No `.ndx` ela vem também **antes do slot do `.reg`** (o `comecar_escrita`); no
+`.fts`, **não**: o `indexar_texto` roda depois do slot, então o 533 fecha só o
+lado da página do `.fts`, e o lado do `.reg` à frente dele é o pedido **472**
+(parecer do DBA sobre o 533, C1). Basta o `fdatasync`: em regime a página 0 já
+existe e o tamanho não muda; **na criação** (`criar_com`, a primeira subida do
+`.ndx` novo) o tamanho **muda**, de 0 a 2 páginas, e o `fdatasync` leva junto o
+metadado que a leitura precisa (POSIX; no Windows a `std` faz o `sync_data`
+igual ao `sync_all`). Se ele recusar, a marca em RAM volta a 0 e a escrita
+recusa — no `.ndx`, sem tocar o `.reg`.
 
-- **a subida** da marca é gravada sem `fsync` — o 1 vai ao núcleo antes da
-  primeira página suja, mas nada o ordena no disco antes delas. **Medido por
-  emulação no arquivo** pelo papel C (parecer do 522, C4 — o estado que núcleo
-  e disco produzem sem `fsync`: as páginas novas chegam, a página 0 não): com
-  30.000 filhas de um cliente sincronizadas e 5.000 de outro só fechadas, o
-  índice relido por processo novo tem byte 52 = 0, `precisa_reconstruir`
-  falso, **nenhuma** filha do segundo cliente, e o `excluir` do pai com 5.000
-  filhas passa — a regra primordial quebrada, calada (3/3; igual antes do
-  522). Em outras formas de árvore sai ruidoso («página fora do arquivo»).
-  Fechá-lo custa um `fsync` por tabela por janela no caminho do pedido, com a
-  trava global — o que a `alcancam-fsync-2` não aceita sem decisão —, ou uma
-  geração por página conferida na leitura, que é formato;
+**E o primeiro cabeçalho durável de um `.ndx` novo leva o diretório inteiro**
+(parecer do DBA sobre o 533, P1, consertado no mesmo commit; **o leiaute não
+muda**, só a ordem). A subida roda na primeira `gravar_pagina` de `criar_com`, e
+as raízes eram empurradas no diretório uma a uma, depois de cada folha: o
+cabeçalho que o `fdatasync` levava tinha o byte em 1 e **zero** índices. Uma
+queda no meio do `reindexar` — o do arranque do 522 inclusive — deixava a tabela
+travada em «`.ndx` tem 0 índices, o esquema do `.reg` declara 2», sem porta que
+reconstrua sem abrir. Hoje os descritores entram antes da primeira folha, e o
+mesmo cabeçalho diz «marcado, reconstrua». Guarda
+`ndx-novo-sobe-com-o-diretorio-vazio`, com o vermelho medido na mensagem exata
+acima. Decisão do papel J pela régua dos quatro (`docs/propostas/pesquisa-rodada-2026-09-24.md`
+§1): «registro ou marca durável antes da página, por `fsync`» soma 10 × 0 — a
+regra WAL do PostgreSQL e do InnoDB, o journal do SQLite —, e a geração por
+página conferida na leitura morreu medida (18/18 calados na queda em que
+nenhuma página nova chega: não há o que conferir).
+
+Provado contra o SO (`bancada/catastrofes/prova.sh`, cenário `533`: ext4 sobre
+loop; `criar533` com 30.000 filhas do cliente 1 e a janela fechada; a janela
+seguinte sai pelo `Drop` sem fecho; `queda.py` leva ao disco só o que o cenário
+diz — `sync_file_range` e o `fsync` do `.reg` para o diário cometer o tamanho —
+e derruba o ext4 com `FS_IOC_SHUTDOWN` sem descarregar o resto; remontado), 3
+rodadas cada, em 24/09/2026:
+
+| cenário | antes (`resultados-533-antes.json`) | depois (`resultados-533.json`) |
+|---|---|---|
+| 5.000 filhas novas do cliente 2; o `.reg` chega, nada do `.ndx` | byte 52 = **0**, `precisa_reconstruir` falso, filhas do 2 = **0**, `excluir` do cliente 2 = **Ok** (3/3) | byte 52 = **1**, `precisa_reconstruir`, `excluir` recusa (3/3) |
+| as mesmas; o `.reg` e as páginas 1.. do `.ndx` chegam, a página 0 não | byte 52 = **0**, filhas do 1 = «página fora do arquivo», filhas do 2 = **0**, `excluir` do cliente 2 = **Ok** (3/3) | byte 52 = **1**, `precisa_reconstruir`, `excluir` recusa (3/3) |
+| 5.000 filhas passam do 1 ao 2 no mesmo slot; o `.reg` chega, nada do `.ndx` | byte 52 = **0**, filhas do 2 = **0**, `verificar` **OK**, `excluir` do cliente 2 = **Ok** (3/3) | byte 52 = **1**, `precisa_reconstruir`, `excluir` recusa (3/3) |
+
+Nas três formas, sem o conserto, o pai com 5.000 filhas se apagava calado — a
+regra primordial —, e na terceira nem o `verificar` acusava.
+
+**O preço**, medido no dia (release, carga 0,8–1,1): **um `fdatasync` por
+passagem de 0 para 1** — o que dá um por tabela por janela no `por_lote`, e um
+na criação de cada `.ndx`, cuja primeira página também sobe a marca. Onde quem
+chama sincroniza sozinho, a passagem se repete a cada `sincronizar`, e o preço
+vem com ela (medido pelo papel C, parecer do 533, §5, por `strace`):
+
+| regime ou caminho | `fsync` por operação | `fdatasync` por operação | a mais |
+|---|---:|---:|---:|
+| `por_operacao`, inserir | 4 | **1** | +25% |
+| `por_operacao`, excluir | 6 | **1** | +17% |
+| `por_operacao`, atualizar sem troca de chave | 4 | 0 | 0 |
+| cascata solta, 1 nível | 8 | **2** | +25% |
+| cascata solta, 2 níveis | 15 | **3** | +20% |
+| cascata solta, 3 níveis | 22 | **4** | +18% |
+| cascata solta, 4 níveis | 29 | **5** | +17% |
+
+A cascata chama `sincronizar` na mãe e em cada filha, então a subida é uma por
+tabela por cascata. No `sistema`, **um por tabela até o próximo `sincronizar`**
+— o regime que «nunca chama `fsync`» passa a chamar este, e o texto dele mudou
+(MANUAL, `config.rs`, `ACID.md` §5.1): a pétrea da integridade vale mais que a
+promessa de velocidade do modo. O `--example fsync-por-operacao` ainda não
+traça o `fdatasync` e publica 4 e 6 (⏸ do parecer, P2).
+
+No ciclo do servidor, pelo núcleo (`strace -c` sobre o `--example
+custo-do-byte-52`, 2.000 pedidos no ciclo do servidor mais um lote de 2.000): `fsync` **60 → 60** e
+`fdatasync` **0 → 13**, média de **98 µs** cada. No relógio (5 corridas por
+rodada, 3 rodadas intercaladas): pedido do ciclo do servidor **76,7 / 75,7 /
+75,5 → 77,3 / 77,1 / 78,7 µs**, com as faixas se cruzando nas três — **nenhum
+vencedor**; inserção em lote **4,88 / 4,96 / 4,82 → 5,01 / 5,01 / 5,03 µs por
+linha**, com as faixas se cruzando em duas das três. A conta que não depende do
+disco: no `por_lote` o fecho já paga **8** `fsync` por tabela por janela, e a
+subida acrescenta **1**. Tabela com índice de texto paga mais um, o do `.fts`. Em disco com FLUSH
+de verdade (sem o cache do hospedeiro desta máquina) o número por pedido é
+**raciocinado, não medido**: um `fdatasync` de 1 ms dividido pela janela de 200
+dá ~5 µs por pedido.
+
+As catracas de `fsync` que já existiam são **cegas** a ele, medido: a
+`TETO_FSYNC_POR_FECHO_V2` conta o que vem depois do marco do fecho e ficou em
+**8 → 8**; a `alcancam-fsync-2` conta seções, e as que passaram a alcançar
+`fsync` pela subida já estavam nas 23. Por isso nasceu a **`TETO_FSYNC_DA_SUBIDA`
+= 1** (`conferidor_fsync.rs`, medida pelo `--example fsync-da-subida` em três
+escalas, 1 / 1.000 / 10.000 linhas na janela: 1, 1, 1), que reprova o segundo
+`fsync` na subida — e o zero, que é este defeito de volta.
+
+**O que ainda não fecha — anterior ao 522, e fora dele:**
+
 - **o 0 fica durável antes do `.reg`**: o fecho da janela sincroniza o `.ndx`
   (páginas, depois o cabeçalho com o 0) antes do `fsync` do `.reg`. Uma queda
   da máquina entre os dois deixa o índice **à frente** do dado, marcado limpo

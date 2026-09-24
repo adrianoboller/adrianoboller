@@ -1,0 +1,95 @@
+{
+ "medido_em": "2026-09-24T19:54:21+00:00",
+ "nucleo": "6.18.44-fc-v37",
+ "binario": "disco-que-recusa-antes",
+ "rodadas": 3,
+ "cenarios": {
+  "533-inserir-nada": {
+   "1": [
+    "criar533 filhas_c1=30000, janela fechada",
+    "janela533 inserir ok=5000 de 5000, sem fecho",
+    "queda=nada reg=2030960 ndx=1863680",
+    "remontado byte52=0",
+    "remontado vivas=35000 precisa_reconstruir=false filhas_c1=30000 filhas_c2=0",
+    "remontado verificar=ERRO [SP000010] arquivo corrompido: filhas: indice porId tem 30000 chaves para 35000 registros",
+    "remontado excluir_cliente_2=OK true"
+   ],
+   "2": [
+    "criar533 filhas_c1=30000, janela fechada",
+    "janela533 inserir ok=5000 de 5000, sem fecho",
+    "queda=nada reg=2030960 ndx=1863680",
+    "remontado byte52=0",
+    "remontado vivas=35000 precisa_reconstruir=false filhas_c1=30000 filhas_c2=0",
+    "remontado verificar=ERRO [SP000010] arquivo corrompido: filhas: indice porId tem 30000 chaves para 35000 registros",
+    "remontado excluir_cliente_2=OK true"
+   ],
+   "3": [
+    "criar533 filhas_c1=30000, janela fechada",
+    "janela533 inserir ok=5000 de 5000, sem fecho",
+    "queda=nada reg=2030960 ndx=1863680",
+    "remontado byte52=0",
+    "remontado vivas=35000 precisa_reconstruir=false filhas_c1=30000 filhas_c2=0",
+    "remontado verificar=ERRO [SP000010] arquivo corrompido: filhas: indice porId tem 30000 chaves para 35000 registros",
+    "remontado excluir_cliente_2=OK true"
+   ]
+  },
+  "533-inserir-paginas": {
+   "1": [
+    "criar533 filhas_c1=30000, janela fechada",
+    "janela533 inserir ok=5000 de 5000, sem fecho",
+    "queda=paginas reg=2030960 ndx=1863680",
+    "remontado byte52=0",
+    "remontado vivas=35000 precisa_reconstruir=false filhas_c1=ERRO [SP000010] arquivo corrompido: pagina 388 fora do arquivo ext/db/filhas.ndx filhas_c2=0",
+    "remontado verificar=ERRO [SP000010] arquivo corrompido: pagina 387 fora do arquivo ext/db/filhas.ndx",
+    "remontado excluir_cliente_2=OK true"
+   ],
+   "2": [
+    "criar533 filhas_c1=30000, janela fechada",
+    "janela533 inserir ok=5000 de 5000, sem fecho",
+    "queda=paginas reg=2030960 ndx=1863680",
+    "remontado byte52=0",
+    "remontado vivas=35000 precisa_reconstruir=false filhas_c1=ERRO [SP000010] arquivo corrompido: pagina 388 fora do arquivo ext/db/filhas.ndx filhas_c2=0",
+    "remontado verificar=ERRO [SP000010] arquivo corrompido: pagina 387 fora do arquivo ext/db/filhas.ndx",
+    "remontado excluir_cliente_2=OK true"
+   ],
+   "3": [
+    "criar533 filhas_c1=30000, janela fechada",
+    "janela533 inserir ok=5000 de 5000, sem fecho",
+    "queda=paginas reg=2030960 ndx=1863680",
+    "remontado byte52=0",
+    "remontado vivas=35000 precisa_reconstruir=false filhas_c1=ERRO [SP000010] arquivo corrompido: pagina 388 fora do arquivo ext/db/filhas.ndx filhas_c2=0",
+    "remontado verificar=ERRO [SP000010] arquivo corrompido: pagina 387 fora do arquivo ext/db/filhas.ndx",
+    "remontado excluir_cliente_2=OK true"
+   ]
+  },
+  "533-mover-nada": {
+   "1": [
+    "criar533 filhas_c1=30000, janela fechada",
+    "janela533 mover ok=5000 de 5000, sem fecho",
+    "queda=nada reg=1740960 ndx=1724416",
+    "remontado byte52=0",
+    "remontado vivas=30000 precisa_reconstruir=false filhas_c1=30000 filhas_c2=0",
+    "remontado verificar=OK",
+    "remontado excluir_cliente_2=OK true"
+   ],
+   "2": [
+    "criar533 filhas_c1=30000, janela fechada",
+    "janela533 mover ok=5000 de 5000, sem fecho",
+    "queda=nada reg=1740960 ndx=1724416",
+    "remontado byte52=0",
+    "remontado vivas=30000 precisa_reconstruir=false filhas_c1=30000 filhas_c2=0",
+    "remontado verificar=OK",
+    "remontado excluir_cliente_2=OK true"
+   ],
+   "3": [
+    "criar533 filhas_c1=30000, janela fechada",
+    "janela533 mover ok=5000 de 5000, sem fecho",
+    "queda=nada reg=1740960 ndx=1724416",
+    "remontado byte52=0",
+    "remontado vivas=30000 precisa_reconstruir=false filhas_c1=30000 filhas_c2=0",
+    "remontado verificar=OK",
+    "remontado excluir_cliente_2=OK true"
+   ]
+  }
+ }
+}

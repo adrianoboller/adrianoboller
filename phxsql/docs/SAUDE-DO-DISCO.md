@@ -319,6 +319,28 @@ agenda. Tentar antes é decisão de política que o pedido não pediu.
   como fazer um `fsync` falhar sem injeção de falha no sistema de arquivos.
   Buraco dito, não escondido.
 
+### 6.1 A queda de energia no meio da janela (pedido 533, 24/09/2026)
+
+Não é coisa que a sonda veja — o disco não recusa nada, ele só perde o que
+estava no cache — e por isso a resposta mora no motor, e não aqui. Até o 533 a
+subida do byte 52 do `.ndx` ia ao núcleo **sem `fsync`**: numa queda de energia
+o disco podia guardar o `.reg` novo (ou as páginas novas do índice) sob o 0 do
+último fecho, e a abertura seguinte confiava na árvore. Medido contra o SO
+(`bancada/catastrofes/prova.sh`, cenário `533`, ext4 sobre loop derrubado com
+`FS_IOC_SHUTDOWN` sem descarregar o cache), 3 rodadas em cada uma de 3 formas de
+queda: **antes, 9 de 9** com byte 52 = 0 e o `excluir` do pai com 5.000 filhas
+passando calado; **depois, 9 de 9** com byte 52 = 1, `precisa_reconstruir` e o
+`excluir` recusando.
+
+O que mudou para quem opera: a subida passou a pagar **um `fdatasync` por
+passagem de 0 para 1** — um por tabela por janela no `por_lote`, e mais onde
+quem chama sincroniza sozinho (a cascata, o `por_operacao`, o `sistema`; tabela
+no `FORMATO.md`) — (média de 98 µs medida aqui; `fsync` do fecho **60 → 60**,
+`fdatasync` **0 → 13** em 2.000 pedidos mais um lote), e ele passa pelo mesmo
+motor `sincronia` dos outros: **recusado, o servidor cai** como cai no fecho
+(pedido 509), e a escrita recusa antes de tocar o `.reg`. Os números e as três
+formas estão no `docs/FORMATO.md`, § «A subida vai ao disco».
+
 ## 7. Provas reais, nos dois sentidos
 
 Medido em 16/09/2026 07:40 UTC, `cargo test -p phxsql-server --lib`: os 12

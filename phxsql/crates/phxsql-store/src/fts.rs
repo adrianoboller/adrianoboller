@@ -45,7 +45,6 @@ use phxsql_core::types::ColumnType;
 use phxsql_core::RowId;
 
 use crate::ndx::NdxFile;
-use crate::util::apertar_permissao;
 
 /// Extensao do arquivo, ao lado do `.ndx`.
 pub const EXT_FTS: &str = "fts";
@@ -147,21 +146,21 @@ impl FtsFile {
         Ok(FtsFile::com(ndx, dobra))
     }
 
-    /// Cria a arvore do `.fts` no disco, e aperta a permissao no MESMO
-    /// caminho que a trilha ja usa (`util::apertar_permissao`) -- o `.fts`
-    /// carrega a mesma classe de dado pessoal em claro que motivou a
-    /// permissao do `.lgpd` (pedido 345), inclusive com o cofre ligado
-    /// (pedido 340): a chave do indice guarda o termo em claro dentro da
-    /// pagina, so a pagina no disco e que pode ser selada.
+    /// Cria a arvore do `.fts` no disco. Ela nasce 0600 pelo motor da
+    /// permissao que TODO arquivo do banco usa (`util::recriar_do_banco`,
+    /// dentro do `NdxFile::criar`) -- o `.fts` carrega a mesma classe de dado
+    /// pessoal em claro que motivou a permissao do `.lgpd` (pedido 345),
+    /// inclusive com o cofre ligado (pedido 340): a chave do indice guarda o
+    /// termo em claro dentro da pagina, so a pagina no disco e que pode ser
+    /// selada. Ate o pedido 542 o aperto era AQUI, por caminho, depois de
+    /// criar; o motor o levou para a criacao de todos.
     fn arvore(caminho: &Path, quantos: usize, selar: bool) -> Result<NdxFile> {
         let esquema = esquema_do_indice(quantos);
-        let ndx = if selar {
+        if selar {
             NdxFile::criar_selado(caminho, &esquema)
         } else {
             NdxFile::criar(caminho, &esquema)
-        }?;
-        apertar_permissao(caminho);
-        Ok(ndx)
+        }
     }
 
     /// Recria o arquivo do zero, apagando o que estivesse la.

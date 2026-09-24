@@ -140,3 +140,67 @@ Rodei a `sonda-frente` (`integrada-bordas.txt`):
 ## Ao dono
 
 Nada hoje. O empate 5×5 do P2 só sobe se alguém propuser trocar a §7.3.
+
+## Re-checagem do conserto C1 — 24/09/2026, 21h
+
+- **Árvore conferida:** o worktree `agent-a16a2fd9082bb9b86` (`74fcb6f` + o conserto no índice; `74fcb6f` só difere do `08d1ce6` em documento). Para a pergunta 3, uma cópia da árvore do 533 (`agent-a77f80eb0fd44f980`, sem commit) com o patch do C1 aplicado limpo, fora do repositório.
+- **Sondas:** ficam em `scratchpad/dba-540c1/`. É a mesma `sonda/` da revisão anterior, com cinco modos novos. Foram compiladas contra quatro árvores: C1, 533+C1, a base `a494f33` e a variante «descida sem o `.fts`». Nada foi compilado no worktree.
+- **Ressalva de leitura:** os blocos «PHXSQL Recovery» ao reabrir são da sonda, que não sobe o relógio de gravação. A marca espera o `fsync` da janela, e sem o relógio ela fica para o arranque, que a completa. No servidor de verdade a janela fecha em ≤ 200 ms.
+
+### Veredito: **LIBERA COM CONDIÇÃO** — o 540 volta a feito com R1 no mesmo commit
+
+| # | Pergunta | Medido | Veredito |
+|---|---|---|---|
+| 1 | A sonda da sincronia | **0 de 5** (eram 5 de 5). O código 6 repetido volta `DUPLICADO` e a órfã no 5 volta `INTEGRIDADE`. Em outro processo: `buscar` 6 = 1 e 5 = 0, e o `verificar` dá 41/41. Na árvore 533+C1 também dá 0 de 5 | **LIBERA** |
+| 2 | A descida muda o que a janela promete? | **Não.** Com `t` sujo: 3 `write` no `.ndx`, **0** `fsync`/`fdatasync`, e o byte 52 fica **1** no disco antes e depois. O `Drop` depois da descida grava 0 bytes (mesmo conteúdo e mesmo `mtime`). Um processo novo recusa e manda reconstruir (o 522 segue de pé). Com `t` limpo (`op_atualizar`, upsert): **0** syscalls, mesmo conteúdo e mesmo `mtime` | **LIBERA** |
+| 3 | Com o 533, a descida faz pagar `fdatasync` por alteração? | **Não.** `fdatasync` no `clientes.ndx` = **1 por sincronização** com K = 1, 5 e 20 mães cascateando: o `fechar` deixa `sujo = true`, e o punho reaberto lê 1 atestado. O custo por alteração é o do próprio 540: um `fsync` da `.tx` por mãe (K = 20 dá 20). K = 20 leva 30,4–40,2 ms com cascata contra 6,8–8,2 ms sem, em 3 corridas | **LIBERA** |
+| 4 | A frase nova do `ParouNoMeio` | É verdadeira no que afirma, e **alcançável por modelo legal** (P5). Faltam duas coisas: a lista omite o CHECK, que o plano julga desde o 514, e a frase não diz que as filhas que ficaram na chave velha são **órfãs** nem o remédio. A frase de antes do 540 dizia «conserte-a antes de seguir» | **R2 (texto)** |
+| 5 | C3 | O CHANGELOG («Sabido»), o `ACID.md` e o `INTEGRIDADE.md` dizem agora «refaz só o elo», com o P1 medido. O `grep` por «não há update perdido» ou «impede que isso vire update perdido» dá **0** fora dos pareceres | **LIBERA** |
+
+**Achado novo: a metade `.fts` da descida não tem prova.**
+
+- **Medido na variante «descida só do `.ndx`»** (mãe com índice de texto, e a sincronia troca chave **e** nome): a busca de texto erra **5 de 5**.
+  - `zeta` = 0 e `alfa` = 1: acha o nome velho.
+  - O erro aparece na hora e continua depois de reabrir.
+  - É calado: o `por_codigo` sai certo.
+- **Na árvore C1:** 0 de 5.
+- **Por que nenhuma guarda pega:** o teste da frente usa a `base_codigo`, que não tem `indices_texto`. E a guarda do catálogo tira a chamada inteira. Tirar só o bloco do `.fts` deixa tudo verde.
+
+### Condições
+
+**R1 — guarda do `.fts`, no mesmo commit.**
+
+- **Teste:** o teste do C1, ou um irmão, ganha um índice de texto na mãe, e a linha alterada troca de nome. Ele confere o `procurar_texto` pelo nome novo (1) e pelo velho (0).
+- **Guarda do catálogo:** a `troca` tira só o `if let Some(f) = self.fts.as_mut() { f.fechar()?; }` do `Table::descer_ao_nucleo`. Em `caem` fica o teste novo.
+- **Prova:** vermelho com a troca, que a sonda mede em 5 de 5.
+- **Sem R1:** o 540 fica ◐.
+
+**R2 — texto do `DA_CASCATA_SOLTA.conferida`:**
+
+- pôr o CHECK na lista: «restringir, coluna calculada, CHECK, profundidade»;
+- dizer que as filhas que ficaram na chave velha estão órfãs quando a chave referenciada era só desta mãe;
+- dar o remédio medido: voltar a mãe à chave velha as reencontra. Medido: `clientes [5]`, `pedidos [5, 5]`. A outra saída é apontar as que faltam para a chave nova.
+
+### Pedido proposto (número: o próximo livre)
+
+**P5 — ☐ ALTO — «A cascata solta não passa pela pré-conferência do COMMIT: uma FK de linha que o plano não vê deixa a mãe gravada e as filhas órfãs»**
+
+- **Medido** (`parou2fk*.txt`). A filha `pedidos.cod` tem duas chaves na mesma coluna: `fk_cli` → `clientes(codigo)` e `fk_vend` → `vendedores(codigo)`. `clientes` e `vendedores` têm o 5. A mãe `clientes` muda 5 → 6:
+  - **solta:** `ParouNoMeio` na escrita 2 de 3, e fica `clientes [6]`, `pedidos [5, 5]`, com **2 órfãs de `fk_cli`**;
+  - **na transação:** o mesmo pedido volta «o COMMIT recusou a escrita 2 de 3 ANTES da marca: nada desta transação foi gravado».
+- **Pré-existente:** na base `a494f33` fica o mesmo estado, com outra frase. O 540 não piorou nem consertou isso, e por isso **não bloqueia o 540**.
+- **Pétrea:** fere «nunca se mata o pai que tem filhos». Uma órfã alcançável por modelagem aceita na declaração é defeito ativo, e por isso entra na conta.
+- **Alcance:** medido só por este caminho. Unicidade na filha sobre a coluna da chave ficou **não medida**.
+- **Conserto:** o `atualizar_com_a_marca` chama, antes do `gravar_marca`, **a mesma** pré-conferência que o COMMIT já roda. É um motor só: o `ParouNoMeio` alcançável por dado vira `NadaAplicado`, e a frase do R2 volta a ser a do COMMIT.
+- **Custo:** a leitura de cada linha do plano, a mesma que o COMMIT paga, numa operação rara (troca de chave com filhas).
+- **Formato:** não muda.
+
+### Arquivos (em `scratchpad/dba-540c1/`)
+
+| Pergunta | Arquivos |
+|---|---|
+| Q1 | `c1-sinc.txt`, `c1-sincdano.txt`, `c533-sinc.txt`, `c533-sincdano.txt` |
+| Q2 | `descer.txt` e `descer.strace` |
+| Q3 | `q3.txt` (contagem por arquivo, entre marcas no `strace`) |
+| Q4 e P5 | `parou2fk.txt` e `parou2fk-base.txt` |
+| R1 | `sincfts-c1.txt` e `sincfts-semfts.txt` |

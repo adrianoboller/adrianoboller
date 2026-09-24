@@ -82,7 +82,9 @@ pub fn escrever(
     let texto = montar(nome, esquema, baldes, volumes);
     // Falhar aqui nao pode deixar o temporario para tras: quem falha uma vez
     // costuma falhar de novo, e o resto viraria permanente.
-    if let Err(e) = std::fs::write(&temporario, texto) {
+    // Pelo motor da permissao (pedido 542): o temporario nasce 0600, e um
+    // `.pag.novo` largado por uma queda nao empresta o modo dele.
+    if let Err(e) = crate::util::escrever_do_banco(&temporario, texto) {
         let _ = std::fs::remove_file(&temporario);
         return Err(e.into());
     }
