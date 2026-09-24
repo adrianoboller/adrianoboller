@@ -223,7 +223,7 @@ footer{
 <div class="envelope">
 <header>
   <div class="rotulo">PhxSql · o dossiê do que foi pedido — página 7 de 7</div>
-  <h1>Pedidos 501 em diante<br>de 519 ao todo</h1>
+  <h1>Pedidos 501 em diante<br>de 521 ao todo</h1>
   <p class="chamada">Uma linha por pedido seu, na ordem em que você pediu. O
   estado é <strong>medido contra o código</strong>, não contra a lembrança — foi
   assim que a chave estrangeira saiu de «pronto» para «parcial», e o Centro de
@@ -238,25 +238,25 @@ footer{
   <nav class="faixas" aria-label="As 7 páginas de pedidos, por faixa"><a href="https://claude.ai/artifact/4jSZ5yZFnjEnbGGbE3i5nz">1–190</a><a href="https://claude.ai/artifact/MAc3CcjfCPbjVm5sQZwYoC">191–260</a><a href="https://claude.ai/artifact/R4iGBeRQt7ao6yffQkmGCp">261–310</a><a href="https://claude.ai/artifact/S1oHX53g9q4oqHSn7Yv3vm">311–350</a><a href="pedidos-351-410.html">351–410</a><a href="pedidos-411-500.html">411–500</a><a href="pedidos-501-mais.html" class="ativa" aria-current="page">501 em diante</a></nav>
 
   <div class="placar">
-    <div class="c"><div class="v">519</div><div class="r">pedidos, ao todo</div></div>
+    <div class="c"><div class="v">521</div><div class="r">pedidos, ao todo</div></div>
     <div class="c feito"><div class="v">360</div><div class="r">feitos</div></div>
     <div class="c parcial"><div class="v">16</div><div class="r">parciais</div></div>
-    <div class="c planejado"><div class="v">85</div><div class="r">planejados</div></div>
+    <div class="c planejado"><div class="v">87</div><div class="r">planejados</div></div>
     <div class="c depois"><div class="v">58</div><div class="r">depois da versão</div></div>
   </div>
 
   <div class="faixa-info">
     <span class="rotulo-inline">Nesta página</span>
-    <strong>19</strong> pedidos (faixa 501 em diante) ·
+    <strong>21</strong> pedidos (faixa 501 em diante) ·
     <span class="feito">3 feitos</span> ·
     <span class="parcial">0 parciais</span> ·
-    <span class="planejado">14 planejados</span> ·
+    <span class="planejado">16 planejados</span> ·
     <span class="depois">2 depois da versão</span>
   </div>
 </header>
 
 <h2>O que está aberto, nesta faixa</h2>
-<p class="sub">Os 14 que não fecharam nesta faixa (14 sem começar), com o motivo de cada um. O motivo importa mais que o estado: uns esperam trabalho, outros esperam uma decisão sua, e outros esperam coisa de fora deste repositório. (2 ficaram para depois desta versão — veja a lista completa abaixo.)</p>
+<p class="sub">Os 16 que não fecharam nesta faixa (16 sem começar), com o motivo de cada um. O motivo importa mais que o estado: uns esperam trabalho, outros esperam uma decisão sua, e outros esperam coisa de fora deste repositório. (2 ficaram para depois desta versão — veja a lista completa abaixo.)</p>
 <div class="rolo">
   <table>
     <thead><tr><th class="n">#</th><th class="st">estado</th><th>o que você pediu</th><th>onde está</th></tr></thead>
@@ -275,6 +275,8 @@ footer{
       <tr data-e="planejado"><td class="n mono">516</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>O elo implicito da cascata ignora a trava de outra transacao: leitura repetivel le 5 e depois 6</strong></td><td class="e">Achado do papel C na segunda revisao do 448, 24/09/2026 (<code>docs/propostas/parecer-dba-448-2a-2026-09-24.md</code>), N3, MEDIO, medido: T3 com <code>leitura_repetivel</code> le o valor antes e depois do elo de outra transacao. A garantia do nivel declarado nao vale para a filha alcancada pela cascata.</td></tr>
       <tr data-e="planejado"><td class="n mono">517</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>O bidirecional aceita indice unico sobre coluna que aceita NULL como identidade: NULL casa com NULL e sobrescreve a linha de outro</strong></td><td class="e">Achado do papel C na segunda revisao do 448, 24/09/2026 (<code>docs/propostas/parecer-dba-448-2a-2026-09-24.md</code>), N4, MEDIO, <strong>so por leitura</strong> (<code>bidirecional.rs:163</code>, <code>servidor.rs:5284</code>). Ja existia entre nos; com o A4 do 448 (NULL nao colide em indice unico) passa a valer dentro do mesmo no. Medir antes de consertar.</td></tr>
       <tr data-e="planejado"><td class="n mono">518</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>O <code>diff</code> com NULL repetido no indice some com linhas do relatorio</strong></td><td class="e">Achado do papel C na segunda revisao do 448, 24/09/2026 (<code>docs/propostas/parecer-dba-448-2a-2026-09-24.md</code>), N5, MEDIO, aberto pelo A4 do 448, so no relatorio (<code>diferencas.rs:135</code>). Nenhum dado gravado muda; o relatorio mente por omissao.</td></tr>
+      <tr data-e="planejado"><td class="n mono">520</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>O login de usuario INEXISTENTE gasta 1.000 iteracoes do PBKDF2 contra 210.000 do existente: o relogio diz quem existe</strong></td><td class="e">Achado do papel SEC na terceira revisao do 497, 24/09/2026 (<code>docs/propostas/parecer-sec-497-3a-2026-09-24.md</code>, «Fora do 497», N1), <code>usuarios.rs:~1385</code>. Medido em debug: <code>root</code> com senha errada 3,10 s, <code>nao_existe</code> 0,03 s -- e o comentario logo acima afirma que os dois «nao se distinguem pelo relogio». Enumeracao de usuarios. Alcance: exige o token de servico. Conserto proposto: o PBKDF2 de fachada com <code>ITERACOES_PADRAO</code>. Seguranca: entra na conta.</td></tr>
+      <tr data-e="planejado"><td class="n mono">521</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>Senha longa multiplica o custo do PBKDF2: a chave maior que 64 B e reduzida por SHA-256 a CADA iteracao</strong></td><td class="e">Achado do papel SEC na terceira revisao do 497, 24/09/2026 (<code>docs/propostas/parecer-sec-497-3a-2026-09-24.md</code>, «Fora do 497», N2), <code>hash.rs:~172-178</code>, laco em <code>:~215</code>. Medido em debug: login de <code>root</code> 3,10 s com 8 B, 6,38 s com 256 B, 13,98 s com 1 KiB; <code>CREATE USER</code> com senha de 1 MiB passou de 300 s sem resposta e sem linha no log. Antes da credencial a linha pode ter 64 KiB (<code>fio.rs:~524</code>). Conserto proposto: normalizar a chave uma vez (saida identica, os vetores do RFC continuam valendo) e um teto para o tamanho da senha. Negacao de servico: entra na conta.</td></tr>
     </tbody>
   </table>
 </div>
@@ -288,7 +290,7 @@ footer{
   não tem opinião própria sobre nenhum item.
 </div>
 
-<h2 id="todos">Os 19 desta faixa (501 em diante), na ordem em que você pediu</h2>
+<h2 id="todos">Os 21 desta faixa (501 em diante), na ordem em que você pediu</h2>
 <p class="sub">A numeração é a sequência real dos seus pedidos — ela diz
 <em>quando</em> cada coisa foi pedida, e é por isso que vale mantê-la. As
 outras 6 faixas estão no menu acima.</p>
@@ -328,6 +330,8 @@ outras 6 faixas estão no menu acima.</p>
       <tr data-e="planejado"><td class="n mono">517</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>O bidirecional aceita indice unico sobre coluna que aceita NULL como identidade: NULL casa com NULL e sobrescreve a linha de outro</strong></td><td class="e">Achado do papel C na segunda revisao do 448, 24/09/2026 (<code>docs/propostas/parecer-dba-448-2a-2026-09-24.md</code>), N4, MEDIO, <strong>so por leitura</strong> (<code>bidirecional.rs:163</code>, <code>servidor.rs:5284</code>). Ja existia entre nos; com o A4 do 448 (NULL nao colide em indice unico) passa a valer dentro do mesmo no. Medir antes de consertar.</td></tr>
       <tr data-e="planejado"><td class="n mono">518</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>O <code>diff</code> com NULL repetido no indice some com linhas do relatorio</strong></td><td class="e">Achado do papel C na segunda revisao do 448, 24/09/2026 (<code>docs/propostas/parecer-dba-448-2a-2026-09-24.md</code>), N5, MEDIO, aberto pelo A4 do 448, so no relatorio (<code>diferencas.rs:135</code>). Nenhum dado gravado muda; o relatorio mente por omissao.</td></tr>
       <tr data-e="depois"><td class="n mono">519</td><td class="st"><span class="pino depois">Depois da versão</span></td><td class="p"><strong>Os limites julgados na segunda revisao do 448: ordem do <code>varrer</code> na transacao, o custo 3,6-3,9x e as copias da regra do NULL</strong></td><td class="e">Achado do papel C na segunda revisao do 448, 24/09/2026 (<code>docs/propostas/parecer-dba-448-2a-2026-09-24.md</code>), ⏸. (1) O <code>varrer</code> por indice dentro da transacao poe a linha alterada na posicao da chave VELHA (<code>[99,2,3,4,5]</code>): so ordem, a existencia esta certa. (2) Custo no 494: a alteracao de chave com n filhas fica 3,6-3,9x o de antes; o caso comum da 2,03x com 10.000 filhas; +105 MB com 100.000 escritas. (3) Copias da regra do NULL sem uso ativo: <code>ndx.rs:1307</code>/<code>:1570</code>, o upsert (<code>upsert.rs:313</code>, <code>servidor.rs:14975</code>) e a closure do <code>reindexar</code> (<code>table.rs:6930</code>) -- unificar no <code>participa_da_unicidade</code>. (4) O AFTER UPDATE da filha agora dispara para o elo implicito dentro de transacao (<code>servidor.rs:16849</code>): o papel J confere a matriz dos motores.</td></tr>
+      <tr data-e="planejado"><td class="n mono">520</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>O login de usuario INEXISTENTE gasta 1.000 iteracoes do PBKDF2 contra 210.000 do existente: o relogio diz quem existe</strong></td><td class="e">Achado do papel SEC na terceira revisao do 497, 24/09/2026 (<code>docs/propostas/parecer-sec-497-3a-2026-09-24.md</code>, «Fora do 497», N1), <code>usuarios.rs:~1385</code>. Medido em debug: <code>root</code> com senha errada 3,10 s, <code>nao_existe</code> 0,03 s -- e o comentario logo acima afirma que os dois «nao se distinguem pelo relogio». Enumeracao de usuarios. Alcance: exige o token de servico. Conserto proposto: o PBKDF2 de fachada com <code>ITERACOES_PADRAO</code>. Seguranca: entra na conta.</td></tr>
+      <tr data-e="planejado"><td class="n mono">521</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>Senha longa multiplica o custo do PBKDF2: a chave maior que 64 B e reduzida por SHA-256 a CADA iteracao</strong></td><td class="e">Achado do papel SEC na terceira revisao do 497, 24/09/2026 (<code>docs/propostas/parecer-sec-497-3a-2026-09-24.md</code>, «Fora do 497», N2), <code>hash.rs:~172-178</code>, laco em <code>:~215</code>. Medido em debug: login de <code>root</code> 3,10 s com 8 B, 6,38 s com 256 B, 13,98 s com 1 KiB; <code>CREATE USER</code> com senha de 1 MiB passou de 300 s sem resposta e sem linha no log. Antes da credencial a linha pode ter 64 KiB (<code>fio.rs:~524</code>). Conserto proposto: normalizar a chave uma vez (saida identica, os vetores do RFC continuam valendo) e um teto para o tamanho da senha. Negacao de servico: entra na conta.</td></tr>
     </tbody>
   </table>
   <div class="vazio" id="vazio" hidden>Nenhum pedido bate com isso.</div>
