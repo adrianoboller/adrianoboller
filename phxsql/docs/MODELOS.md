@@ -1231,3 +1231,61 @@ clicando, nenhum deles visivel so lendo o codigo. Forte pelo mesmo motivo do
 clique, ela precisou **diagnosticar** por que `backupAgora` travava («rodando…»
 para sempre) e por que o CSV do pivo saia mudo — os dois exigiram ler a
 funcao inteira, nao so o seletor do botao.
+
+### Rodada da revisão SEC e dos gaps de 434/435 — 23/09/2026 (noite)
+
+Nove frentes convocadas na mesma rodada: seis de código em `crates/`, uma de
+pesquisa de semântica de motor (262), e duas que não compilam — a varredura do
+QA, com julgamento de pergunta, e a redação do H.
+
+| frente | escalão | por quê |
+|---|---|---|
+| 434 — teto antes da identidade | forte | protocolo de rede e memória pré-credencial |
+| 435 — oráculo do erro do pulso | forte | protocolo de cluster e criptografia |
+| 262 — gatilho AFTER no COMMIT (pesquisa) | forte | decide semântica de transação, não varre texto |
+| 419 — corte calado da composição | forte | o diagnóstico do pedido estava errado e a premissa tinha de ser medida antes |
+| 372 — senha do DbLink, a camada sem dono | forte | pétrea da senha |
+| 436 M1–M3 — guardas do pulso | forte | segurança de cluster |
+| SEC — revisão de 434 e 435 | forte | leitura adversária de criptografia |
+| QA — inventário do mesmo motor | médio | varredura com julgamento de pergunta, verificável |
+| H — cognições e MODELOS | médio | redação a partir de fatos dados; o leve arriscaria a nuance da terceira seção |
+
+**A integração achou o que nenhuma frente via, de novo por território de
+arquivo não bastar em worktree compartilhado**: `cargo fmt --all` de uma
+frente reformatou o arquivo de outra; a suíte da frente 435 fechou 2.820
+verdes e 0 vermelhos mas com `rc=1` porque outra frente trocou o `.rlib` do
+servidor no mesmo `target` no meio da corrida (registrado no próprio commit
+`a272d8f`, não arredondado para verde); e a árvore inteira parou de compilar
+quando a frente 372 mudou `cfg.senha()` para devolver `Result` e o chamador
+em `email.rs` ainda não tinha acompanhado — as três, cognição
+`cognicao_territorio-de-arquivo-nao-isola-frente_20260923_2349.md`.
+
+O achado central de 435 — o conserto do relógio (pino cego) abrindo um
+caminho onde a prova forjada fecha para qualquer par do cluster — só apareceu
+lendo a derivação da chave, não o relatório da frente; cognição
+`cognicao_conserto-que-abre-porta_20260923_2338.md`. E o pedido 437 nasceu de
+uma leitura cedo demais de um arquivo de saída (0 em 15 publicado, 0 em 45
+medido); cognição `cognicao_arquivo-de-saida-lido-cedo_20260923_2310.md`.
+
+**Papéis dispensados nesta rodada, com o motivo de quem decidiu** — e a primeira
+versão deste parágrafo, escrita por uma frente de redação, errou três dos quatro,
+e errou no sentido perigoso: dispensa registrada com o motivo errado ensina que um
+papel foi pensado quando não foi.
+
+- **C-DBA** — sem pergunta nova de formato ou garantia: 255 e 372 já têm parecer
+  (`docs/propostas/parecer-dba-372-e-255.md`) e o 426 tem a pesquisa dos quatro
+  motores; nenhuma frente mudou formato em disco.
+- **D-zelador** — **não** porque o disco esteve folgado: ele chegou a **2 GiB**. O
+  zelador rodou às 23:11 e liberou 1.172 MiB, e não toca o `target` de 11.955 MiB
+  porque há processo vivo com `cwd` ali. Rodá-lo de novo não liberaria nada.
+- **J-pesquisador** — convocado para o 262 e dispensado depois: as medições
+  pendentes (custo do 255, a mensagem do pânico do 437) pedem máquina parada, e com
+  três frentes compilando qualquer número seria ruído.
+- **Tradutor** — colide com a frente 372 na fábrica de idiomas e na catraca de
+  textos. É o caso dos «noventa minutos»: duas frentes na mesma catraca sem se verem.
+
+**Não dispensados**, ao contrário do que a primeira versão dizia: o **E-designer**
+está **dentro** da frente 372, que acrescenta `token_remoto_env` à tela do DbLink e
+tem de exercitá-la no navegador; e o **I-versionador** é o integrador — *só o
+integrador comita*, e foi ele quem comitou o 262 e o 435 no instante em que
+devolveram.
