@@ -273,17 +273,32 @@ Na saída, o mesmo: `(buffer, capacidade)` e o tamanho escrito. Os buffers de
 saída **também** recebem um `\0` no fim quando cabe, por conforto de quem vai
 `printf` — mas o tamanho é a verdade, e o `\0` é cortesia.
 
-### 3.6 Punho com etiqueta, e o que ela pega
+### 3.6 Punho: o registro decide, sem ler a memória
 
-Todo punho começa com uma etiqueta de 64 bits, própria de cada tipo. Toda
-chamada confere; `fechar` zera antes de liberar.
+Todo punho vivo está num **registro** da biblioteca — endereço e tipo —, que
+ganha a entrada no `Punho::novo` e a perde no `fechar` **antes** de a memória
+ser solta. Toda chamada consulta o registro **antes** de tocar no punho. É a
+mesma decisão que o `crates/phxsql-odbc/src/registro.rs` já tinha tomado para
+o handle do ODBC.
 
-Isso **pega**, na prática: punho já fechado (uso-depois-de-liberar no caso
-comum), punho do tipo errado passado na posição errada, memória zerada. Isso
-**não pega** e não promete pegar: memória recém-liberada e reocupada por outra
-coisa com o mesmo padrão de bytes. É uma rede, não um contrato — e está dito
-assim no cabeçalho, porque prometer mais seria o mesmo erro de dizer
-*ACID compliant* sem transação.
+Isso **pega**, em qualquer alocador: punho já fechado, fechado duas vezes, do
+tipo errado na posição errada, ponteiro inventado ou copiado. Isso **não
+pega**: o endereço que o alocador já reocupou com um punho **novo do mesmo
+tipo** — para a biblioteca ele está vivo, e está; só que é outro. Por isso o
+cabeçalho continua mandando zerar o ponteiro depois do `fechar`, e não promete
+mais do que isso.
+
+Até 24/09/2026 quem decidia era a etiqueta de 64 bits **lida de dentro do
+punho** — e conferir o punho liberado assim é ler memória morta. No glibc a
+página continua mapeada e a rede «funcionava»; no musl ela volta ao sistema no
+`free` e a rede **derrubava o processo** (§9.5). A etiqueta ficou no punho,
+com outro papel: ser reconhecível num despejo de memória e pegar o punho
+**vivo** cuja memória o chamador pisou.
+
+O registro custa uma consulta por chamada, e está medido na §9.5. Ele é
+repartido em 64 gavetas, cada uma na própria linha de cache, porque um mapa só
+enfileirava threads que usam punhos diferentes — que o contrato 5 do cabeçalho
+promete.
 
 ---
 
@@ -529,7 +544,7 @@ phx_base_fechar(base);
 | `libphxsql_ffi.a` (staticlib, **aarch64**) | 10.484.230 B |
 | o programa em C, ligado **estaticamente** ao motor | **2,7 MB** (x86-64) / 3,0 MB (ARM64) |
 | linhas da camada (`src/`, sem os testes) | 2.180 |
-| testes da camada | **26**, verdes |
+| testes da camada (`cargo test -p phxsql-ffi`, 24/09/2026) | **29**, verdes |
 | passos do programa em C | **40**, zero falhas |
 
 Um `.so` de **menos de 1 MB** com o motor inteiro dentro — B+tree, CRC-32,
@@ -539,7 +554,7 @@ de zero dependências: não há runtime de terceiro para arrastar junto.
 ### 9.2 As três provas, e o que cada uma pegou
 
 ```
-cargo test -p phxsql-ffi          26 verdes
+cargo test -p phxsql-ffi          29 verdes (24/09/2026)
 bancada/embutido/provar.sh        40 passos x 3 ligações, zero falhas
 python3 bancada/guardas/provar-guardas.py --so ffi-...   6 guardas PROVADAS
 ```
@@ -609,6 +624,73 @@ O **desempenho num aparelho de verdade**. O que se mede sob `qemu-user` é o
 custo da emulação, que traduz instrução por instrução; e o que se mede em
 x86-64 é outra máquina. Medir isso continua exigindo o aparelho — é a mesma
 fronteira honesta da §7.3 do `docs/EMPACOTAMENTO.md`.
+
+### 9.5 O SIGSEGV do ARM que parecia pânico (24/09/2026)
+
+A bateria da `0f7aab6` derrubou a perna ARM64: o backtrace do pânico
+`capacity overflow` (a contagem absurda da seção 6 do `prova.c`) e, logo
+depois, `qemu: uncaught target signal 11`. A leitura óbvia — o `catch_unwind`
+falhando no ARM estático, como já tinha falhado sem `--eh-frame-hdr` — estava
+**errada**. As hipóteses, escritas antes de medir:
+
+| hipótese | prova | deu |
+|---|---|---|
+| H1 o emulador | Rust puro, estático, musl aarch64, `catch_unwind` de `Vec::with_capacity(usize::MAX)` sob o mesmo qemu | capturou — morreu |
+| H2 a receita de ligação | biblioteca mínima + `main` em C pela **mesma** linha do `ld.lld` | capturou — morreu |
+| H3 o nosso caminho do pânico | a saída do `prova.c` num terminal, sem buffer | «ok contagem absurda vira erro»: **o pânico foi capturado** — morreu |
+| H4 o toolchain 1.94.1 | H1 e H2 já rodam nele | morreu com elas |
+| H5 o `RUST_BACKTRACE` | com, sem e `=0` | cai igual — morreu |
+| H6 leitura de punho liberado | `lldb` no gdbstub do qemu; `strace` | **sustentou** |
+
+O SIGSEGV é em `punho::com`, `ldr x8, [x19, #0xd78]` — a leitura da
+etiqueta —, vindo do `phx_tabela_registros` da `prova.c:266`: a seção 7, sobre
+o punho que o programa **acabou de fechar**. No musl o `free` dos 3.464 bytes
+do punho de tabela devolve a página inteira (`munmap` de 4.096 no `strace`,
+`SEGV_MAPERR` logo depois). **Não é o emulador nem o ARM**: o mesmo programa
+ligado ao musl em x86-64 **nativo** cai igual (código 139), e o teste de
+unidade `punho_liberado_nao_volta_a_ser_usado` derruba o binário inteiro em
+`--target x86_64-unknown-linux-musl`. O glibc só escondia.
+
+**Por que o log apontou o pânico:** num cano o stdout é bufferizado e o stderr
+não. O SIGSEGV levou junto as linhas «ok» da seção 6, e o pânico — capturado,
+impresso no stderr pelo gancho padrão — ficou como a última coisa visível. O
+`prova.c` agora descarrega o stdout a cada passo.
+
+**O conserto** é o registro da §3.6, e o teste que o trava é
+`copia_de_punho_vivo_nao_e_punho`: uma cópia byte a byte de um punho vivo tem
+a etiqueta certa no lugar certo e **não** é um punho. Ele cai com a conferência
+antiga em **qualquer** alocador — o `punho_liberado_nao_volta_a_ser_usado`
+passa por acaso no glibc, e por isso não bastava.
+
+Prova nos dois sentidos, 24/09/2026:
+
+| | conferência antiga (defeito reposto) | registro |
+|---|---|---|
+| `cargo test -p phxsql-ffi`, glibc | 28 passam, **1 cai** | 29/29 |
+| idem, musl x86-64 nativo | **SIGSEGV** (código 139) | 29/29 |
+| idem, ARM64 sob qemu | 28 passam, **1 cai** | 29/29 |
+| `provar.sh`, perna ARM64 | **SIGSEGV** depois da seção 6 | 40/40 |
+
+E o custo, medido em x86-64 com 10 milhões de chamadas por thread (programa
+de bancada fora do repositório, números da mesma máquina na mesma sessão):
+
+| | antes | registro num mapa só | registro em 64 gavetas |
+|---|---:|---:|---:|
+| `phx_tabela_colunas`, 1 thread | 3,0-4,5 ns | 20-24 ns | 18-19 ns |
+| idem, com 10.000 punhos de linha vivos | 3,1-3,2 ns | — | 20-21 ns |
+| idem, 4 threads em 4 punhos | 5-11 ns | **167-256 ns** | 19-43 ns |
+| `phx_ler` + `phx_linha_liberar`, 1 thread | 1,16-1,33 µs | 1,25-1,34 µs | 1,24-1,33 µs |
+
+A coluna do meio é a que obrigou a repartir. Na chamada mais barata da ABI o
+registro custa ~15 ns; numa leitura de verdade ele cai dentro do ruído de uma
+corrida para outra.
+
+**O que o hardware real provaria além disto:** nada que o qemu esteja
+escondendo neste caso — o x86-64 musl nativo reproduz sem emulador. O que
+continua sem medida é o aparelho com **MTE** ligado (ARMv8.5 ou mais novo,
+opcional no Android), em que ler memória liberada pode virar SIGSEGV mesmo com
+a página mapeada: o registro cobre esse caso pelo mesmo motivo — não lê —, mas
+ninguém rodou.
 
 ---
 

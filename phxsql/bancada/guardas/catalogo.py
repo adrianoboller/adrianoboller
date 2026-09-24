@@ -2128,6 +2128,41 @@ GUARDAS = [
         ],
     },
     {
+        "id": "ffi-punho-morto-lido-antes-de-conferir",
+        "titulo": "a fronteira volta a ler a etiqueta de DENTRO do punho antes de saber se ele ainda existe",
+        "porque": (
+            "achado pela bateria completa de 24/09/2026 (pedido 474): no "
+            "ARM64 estatico, `phx_tabela_registros` sobre um punho ja "
+            "fechado dava falha de segmentacao -- no musl o `free` devolve a "
+            "pagina ao sistema, e ler a etiqueta de la e ler memoria que nao "
+            "existe mais. No glibc a pagina fica e o defeito passa calado, "
+            "que e por que ele sobreviveu. O registro de punhos vivos e "
+            "consultado ANTES de tocar a memoria; uma copia byte a byte de "
+            "um punho vivo cai em qualquer alocador."
+        ),
+        "arquivo": "crates/phxsql-ffi/src/punho.rs",
+        "trecho": """    let achada = gaveta(p as usize)
+        .read()
+        .unwrap_or_else(PoisonError::into_inner)
+        .get(&(p as usize))
+        .copied();
+    decidir(achada, etiqueta)?;
+""",
+        "troca": """    // DEFEITO REPOSTO: a etiqueta volta a ser lida de dentro do punho,
+    // sem perguntar ao registro se ele ainda esta vivo.
+    decidir(Some((*p).etiqueta), etiqueta)?;
+""",
+        "pacote": "phxsql-ffi",
+        "alvo": ["--lib"],
+        "caem": [
+            "testes::copia_de_punho_vivo_nao_e_punho",
+        ],
+        "seguem": [
+            "testes::ciclo_basico_grava_le_e_varre",
+            "testes::panico_nao_atravessa_a_fronteira",
+        ],
+    },
+    {
         "id": "ffi-texto-ate-o-byte-zero",
         "titulo": "a fronteira trunca o dado do cliente no primeiro byte zero",
         "porque": (

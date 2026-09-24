@@ -42,11 +42,15 @@
  *    threads: nao. Dois punhos sobre a mesma tabela em threads diferentes:
  *    NAO TESTADO -- e nao prometemos o que nao medimos.
  *
- * 6. A ETIQUETA DO PUNHO E UMA REDE, NAO UM CONTRATO. Todo punho carrega uma
- *    marca conferida a cada chamada, e o "fechar" a zera. Isso PEGA punho ja
- *    liberado e punho do tipo errado no lugar errado. Isso NAO pega memoria
- *    liberada e reocupada por outra coisa. Trate como diagnostico, nao como
- *    garantia de seguranca.
+ * 6. PUNHO LIBERADO E RECUSADO SEM SER LIDO. Todo punho vivo esta num
+ *    registro da biblioteca (endereco e tipo), consultado a cada chamada
+ *    ANTES de a memoria do punho ser tocada; o "fechar" o tira de la antes de
+ *    soltar a memoria. Isso PEGA, em qualquer alocador: punho ja liberado,
+ *    liberado duas vezes, do tipo errado no lugar errado, e ponteiro que nao
+ *    saiu desta biblioteca -- todos devolvem PHX_ERRO_PONTEIRO. Isso NAO
+ *    pega o endereco que o alocador ja reocupou com um punho NOVO do mesmo
+ *    tipo: para a biblioteca ele esta vivo, e esta -- so que e outro. Zere o
+ *    seu ponteiro depois do fechar.
  */
 
 #ifndef PHXSQL_H

@@ -831,13 +831,48 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `citar-sem-teto` | a citação do valor recebido numa mensagem de erro perde o teto, e os irmãos voltam a ecoar | 3 | ✅ provada |
 | `json-recebido-ecoa-o-valor` | a recusa de tipo do `inserir` devolve o JSON recebido inteiro, pelo fio e pelo `acessos.log` | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
+| `phxzip-bomba-do-lzma2` | o pedaço de LZMA2 que anuncia 2 MiB é decodificado inteiro antes de se saber que não cabe no teto | 1 | ✅ provada |
+| `phxzip-distancia-antes-da-janela` | a distância de um casamento LZMA lida do arquivo sem conferir contra o que já saiu | 1 | ✅ provada |
+| `phxzip-zip-slip` | entrada com `..` no nome extraída fora da pasta de destino (zip-slip) | 1 | ✅ provada |
+| `phxzip-crc-do-cifrado` | byte trocado no dado cifrado relatado como «senha errada» porque o CRC do cifrado não foi conferido | 1 | ✅ provada |
+| `phxzip-crc-do-conteudo` | senha errada devolvendo lixo como se fosse o arquivo, porque o CRC do conteúdo não foi conferido | 1 | ✅ provada |
+| `phxzip-teto-do-declarado` | conteúdo acima do teto de quem chama é descompactado inteiro em vez de recusado pelo tamanho declarado | 1 | ✅ provada |
+| `drop-grava-o-ndx-rasgado` | o `Drop` do `.ndx` grava a árvore rasgada por um pânico no meio da escrita e baixa o byte 52: a tabela volta limpa e errada | 6 | ✅ provada |
+| `marca-do-ndx-sobe-depois-do-reg` | o byte 52 do `.ndx` só sobe na primeira página suja, depois de o `.reg` já ter gravado a linha: a queda no meio volta limpa | 3 | ✅ provada |
+| `drop-do-ndx-decide-por-panicking` | o `Drop` do `.ndx` decide por `thread::panicking()`: o pânico capturado e o `Drop` depois gravam a árvore rasgada como limpa | 1 | ✅ provada |
+| `drop-do-ndx-decide-por-panicking-pela-abi` | pela ABI de C, o punho envenenado por um pânico no meio da escrita, ao ser fechado, grava o índice rasgado como limpo | 1 | ✅ provada |
+| `sincronizar-limpa-o-ndx-aberto-sujo` | o `sincronizar` de um `.ndx` que abriu sujo grava o byte 52 em 0 sem reconstruir: a escrita do descritor que caiu fica fora do índice | 1 | ✅ provada |
+| `reindexar-sem-janela-grava-o-ndx-vazio` | um pânico no meio do `reindexar` grava o `.ndx` recém-recriado VAZIO e marcado limpo: a tabela inteira fica fora do índice | 1 | ✅ provada |
+| `janela-do-ndx-interrompe-em-toda-recusa` | «tabela cheia» fecha a janela do `.ndx` como interrompida: uma recusa comum passa a exigir `reparar indice` | 1 | ✅ provada |
+| `dblink-cifra-selo-ignorado` | com a chave mestra disponível, o `dblink.json` recebe a senha e o token em claro | 1 | ✅ provada |
+| `dblink-cifra-envelope-sem-nome` | o envelope da ligação A colado na linha da ligação B abre, e a B apresenta a senha de outro banco | 1 | ✅ provada |
+| `dblink-cifra-sem-prova` | a chave mestra errada abre o cadastro, e a ligação salva em seguida sai selada com ela | 1 | ✅ provada |
+| `dblink-cifra-chave-ausente-derruba` | sem a chave mestra, o cadastro recusa abrir e o servidor inteiro não sobe | 3 | ✅ provada |
+| `dblink-cifra-formato-2-sem-chave` | o `dblink.json` de hoje, sem chave declarada, ganha `formato: 2` ao ser regravado | 1 | ✅ provada |
+| `dblink-cifra-chave-dentro-da-pasta` | a chave mestra num arquivo dentro da pasta do banco é aceita, e viaja na mesma cópia que o cadastro | 1 | ✅ provada |
+| `dblink-cifra-rebaixa-calado` | sem a chave, a credencial nova vai em texto puro para dentro do cadastro cifrado | 3 | ✅ provada |
+| `dblink-cifra-perde-envelope-trancado` | salvar outra ligação sem a chave apaga o envelope da trancada, e a credencial some para sempre | 2 | ✅ provada |
+| `dblink-cifra-lista-na-chave-legada` | o formato 2 deixa a lista em `"dblink"`, e o binário anterior a lê e apaga os envelopes na primeira gravação | 1 | ✅ provada |
+| `dblink-cifra-link-seguido-de-ponto-ponto` | a chave mestra em `fora/link/../chave.hex` passa pela conferência e o kernel a abre dentro da pasta do banco | 1 | ✅ provada |
+| `dblink-cifra-le-caminho-diferente-do-conferido` | o diretório da chave trocado por um link depois do arranque leva a leitura para dentro da pasta do banco | 1 | ✅ provada |
+| `dblink-cifra-chave-pronta-sem-subchave` | dois cadastros com a mesma chave pronta cifram com a mesma chave e repetem o par (chave, nonce) da prova | 1 | ✅ provada |
+| `dblink-cifra-envelope-entrega-o-tamanho` | o envelope cifrado tem o tamanho exato da credencial, e o arquivo entrega quanto mede cada senha | 1 | ✅ provada |
+| `dblink-cifra-iteracoes-sem-teto` | o `dblink.json` escolhe as iterações do PBKDF2, e `u32::MAX` segura o arranque por ~99 minutos | 1 | ✅ provada |
+| `dblink-cifra-piso-do-cofre` | o cadastro aceita 10.000 iterações, e cada tentativa contra a prova sai 21 vezes mais barata que o padrão | 1 | ✅ provada |
+| `dblink-cifra-declaracao-torta-some` | `cifra_do_dblink` escrita torta vira «não declarada», e o cadastro fica em claro sem recusa nenhuma | 1 | ✅ provada |
+| `phxzip-ciclos-do-arquivo` | o 7zAES de um arquivo hostil pede 2^24 rodadas e o padrão deriva inteiro já no abrir | 1 | ✅ provada |
+| `phxzip-derivacoes-por-abertura` | um sal diferente em cada bloco fura o cache e cobra uma derivação inteira por bloco | 1 | ✅ provada |
+| `phxzip-contagem-sem-teto` | a contagem de entradas do cabeçalho comprimido dimensiona vetores pelo que o arquivo declara | 1 | ✅ provada |
+| `phxzip-cabecalho-plano-sem-teto` | o cabeçalho gravado em claro é analisado inteiro mesmo acima de `Limites::cabecalho` | 1 | ✅ provada |
+| `phxzip-nome-repetido-na-leitura` | duas entradas com o mesmo nome: o extrator grava a segunda por cima da primeira, calado | 1 | ✅ provada |
 
-**190 das 235 guardas do catálogo: 1 aposentada, 184 provadas, 1 quebrada, 4 redundantes** — 4694 s de mutação, medido em 2026-09-16 15:25.
+**224 das 270 guardas do catálogo: 1 aposentada, 218 provadas, 1 quebrada, 4 redundantes** — 5579 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 46 das 235 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 46 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 47 das 270 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 47 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `teto-do-fio-sem-a-constante` — o `Canal::ler` de producao troca `TETO_DO_REGISTRO` por um teto quase infinito
 - `teto-do-fio-sem-a-constante-no-soquete` — a mesma troca da constante por um teto quase infinito, vista pela rede
+- `ffi-punho-morto-lido-antes-de-conferir` — a fronteira volta a ler a etiqueta de DENTRO do punho antes de saber se ele ainda existe
 - `perfil-decide-so-pela-lista-e-nao-pelo-reg-cifrado` — o perfil.txt decide pela lista do config e a cifra acontece pela marca de coluna
 - `perfil-grava-o-erro-que-cita-o-valor` — o perfil.txt tapa o pedido e grava o erro, que cita o valor da coluna marcada
 - `profiler-ligado-sem-a-raiz-dos-dados` — o Profiler liga sem a raiz de dados e volta a decidir por um campo só

@@ -14,15 +14,18 @@
  * Porque ele e compilado para DUAS arquiteturas nesta maquina, e aqui nao ha
  * sysroot de aarch64 -- os cabecalhos do sistema sao do x86-64. Com
  * -nostdlibinc o clang usa so os cabecalhos DELE (stdint.h, stddef.h), que
- * sao por-alvo e corretos nos dois casos, e as tres funcoes de libc que este
- * programa usa entram declaradas a mao. E C valido, e mantem o MESMO fonte
- * nos dois lados -- que e o que faz a prova valer.
+ * sao por-alvo e corretos nos dois casos, e as duas funcoes de libc que este
+ * programa usa (printf e fflush) entram declaradas a mao. E C valido, e
+ * mantem o MESMO fonte nos dois lados -- que e o que faz a prova valer.
  */
 
 #include "phxsql.h"
 
 #ifdef PHX_SEM_CABECALHOS
 extern int printf(const char *fmt, ...);
+/* `struct _IO_FILE` e o nome do FILE no glibc e no musl. */
+struct _IO_FILE;
+extern int fflush(struct _IO_FILE *f);
 #else
 #include <stdio.h>
 #endif
@@ -40,6 +43,12 @@ static void conferir(int condicao, const char *o_que) {
         printf("  FALHA %s\n", o_que);
         erros++;
     }
+    /* Descarrega a cada passo. Num cano o stdout e bufferizado, e um SIGSEGV
+     * leva junto os ultimos passos -- em 24/09/2026 o log do ARM mostrou o
+     * panico da secao 6 (stderr, sem buffer) como a ultima coisa antes do
+     * SIGSEGV, e o diagnostico foi atras do panico, que tinha sido
+     * capturado. O SIGSEGV era a secao 7. */
+    fflush(0);
 }
 
 static void mostrar_erro(const char *onde, int32_t codigo) {

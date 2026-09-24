@@ -664,13 +664,56 @@ fn punho_liberado_nao_volta_a_ser_usado() {
         assert_eq!(
             phx_tabela_registros(tab, PHX_VISAO_ATIVAS, &mut qtd),
             erro::PHX_ERRO_PONTEIRO,
-            "punho ja liberado tinha de ser recusado pela etiqueta"
+            "punho ja liberado tinha de ser recusado pelo registro"
         );
         assert_eq!(
             phx_tabela_fechar(tab),
             erro::PHX_ERRO_PONTEIRO,
             "liberar duas vezes tinha de ser recusado"
         );
+        assert_eq!(phx_base_fechar(base), PHX_OK);
+    }
+}
+
+/// A conferencia do punho nao pode depender do que esta NA memoria apontada.
+///
+/// O teste de cima, sozinho, passa POR ACASO com o defeito de 24/09/2026 no
+/// glibc: ali a pagina do punho liberado continua mapeada e a etiqueta
+/// zerada ainda se le. No musl a mesma leitura e SIGSEGV -- o teste de cima
+/// derruba o binario inteiro em `--target x86_64-unknown-linux-musl`. Este
+/// cai em QUALQUER alocador: a copia byte a byte de um punho vivo tem a
+/// etiqueta certa no lugar certo e nao e um punho, e so a conferencia que
+/// nao le a memoria a recusa.
+#[test]
+fn copia_de_punho_vivo_nao_e_punho() {
+    unsafe {
+        let area = Area::nova("copia");
+        let (base, tab) = montar(&area, "clientes");
+
+        // `MaybeUninit`: a copia nunca e solta como punho, entao o motor que
+        // ela aponta nao e liberado duas vezes quando o teste acaba.
+        let mut copia: Box<std::mem::MaybeUninit<Punho<TabelaFFI>>> =
+            Box::new(std::mem::MaybeUninit::uninit());
+        std::ptr::copy_nonoverlapping(tab.cast_const(), copia.as_mut_ptr(), 1);
+        let falsa = copia.as_mut_ptr();
+
+        let mut qtd = 0usize;
+        assert_eq!(
+            phx_tabela_colunas(falsa, &mut qtd),
+            erro::PHX_ERRO_PONTEIRO,
+            "endereco que nao saiu do Punho::novo tinha de ser recusado"
+        );
+        assert_eq!(qtd, 0, "e nada foi lido atraves dele");
+        assert_eq!(
+            phx_tabela_fechar(falsa),
+            erro::PHX_ERRO_PONTEIRO,
+            "nem liberado"
+        );
+
+        // O original nao foi afetado pela copia recusada.
+        assert_eq!(phx_tabela_colunas(tab, &mut qtd), PHX_OK);
+        assert!(qtd > 0);
+        assert_eq!(phx_tabela_fechar(tab), PHX_OK);
         assert_eq!(phx_base_fechar(base), PHX_OK);
     }
 }
