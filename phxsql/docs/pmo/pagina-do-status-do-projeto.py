@@ -209,8 +209,15 @@ def num(v):
 
 def plural(rotulo):
     """«Parcial» -> «parciais»; «Feito» -> «feitos». So para a LINHA DO SCRIPT --
-    o rotulo da pagina sai do modulo dos pedidos, sem passar por aqui."""
+    o rotulo da pagina sai do modulo dos pedidos, sem passar por aqui.
+
+    «Depois da versão» (pedido 484) e' uma frase, nao um adjetivo -- "+s" no
+    fim viraria "versãos". Ela ja funciona no plural sem mudar nenhuma letra
+    ("2 depois da versão"), entao fica como esta.
+    """
     r = rotulo.lower()
+    if r == "depois da versão":
+        return r
     return r[:-1] + "is" if r.endswith("al") else r + "s"
 
 
@@ -234,7 +241,10 @@ def achar_gates(itens):
     """
     achados = []
     for it in itens:
-        if it["classe"] == "feito":
+        # `depois` (pedido 484, congelamento da 0.19) ja teve a decisao de
+        # adiar TOMADA -- nao e' um pedido esperando decisao do dono, e por
+        # isso nao vira gate: gate e' bloqueio, e o `⏸` e' o oposto disso.
+        if it["classe"] in ("feito", "depois"):
             continue
         cru = texto_puro(it["pedido"]) + " — " + texto_puro(it["estado"])
         baixo = cru.lower()
@@ -402,15 +412,33 @@ def ler_equipe():
 # ------------------------------------------------------------------ desenho
 
 def rosca(itens, estados):
-    """A rosca dos tres estados, em SVG a mao.
+    """A rosca dos QUATRO estados possiveis hoje, em SVG a mao (`⏸` entrou no
+    pedido 484 -- congelamento da 0.19).
 
     A FORMA carrega o estado, nao so a cor -- cheia (feito), hachurada
-    (parcial), so contorno (planejado) --, porque ler sem cor e o piso.
+    (parcial), so contorno (planejado), contorno tracejado (depois da
+    versao) --, porque ler sem cor e o piso.
     """
     total = len(itens)
     cx = cy = 116
     r_ext, r_int = 96, 60
     partes, angulo = [], 0.0
+    # As tres receitas abaixo tem de cobrir toda classe que `estados` (o
+    # ESTADOS do modulo dos pedidos) trouxer -- classe sem entrada aqui vira
+    # KeyError no dia em que alguem marcar um pedido com o simbolo. `.get`
+    # com um padrao neutro (contorno cinza) e' a rede de seguranca: melhor
+    # uma fatia sem graca do que a pagina inteira quebrando.
+    preenche_por_classe = {
+        "feito": "var(--feito)",
+        "parcial": "url(#hachura-parcial)",
+        "planejado": "none",
+        "depois": "none",
+    }
+    traco_por_classe = {
+        "feito": "var(--papel)", "parcial": "var(--parcial)",
+        "planejado": "var(--planejado)", "depois": "var(--depois)",
+    }
+    largura_por_classe = {"feito": 1.5, "parcial": 1.5, "planejado": 2, "depois": 2}
     for simbolo, (classe, rotulo) in estados.items():
         n = sum(1 for i in itens if i["classe"] == classe)
         if not n:
@@ -418,23 +446,22 @@ def rosca(itens, estados):
         varredura = 360.0 * n / total
         a0, a1 = angulo, angulo + varredura
         angulo = a1
-        preenche = {
-            "feito": "var(--feito)",
-            "parcial": "url(#hachura-parcial)",
-            "planejado": "none",
-        }[classe]
-        traco = {"feito": "var(--papel)", "parcial": "var(--parcial)",
-                 "planejado": "var(--planejado)"}[classe]
-        largura = {"feito": 1.5, "parcial": 1.5, "planejado": 2}[classe]
+        preenche = preenche_por_classe.get(classe, "none")
+        traco = traco_por_classe.get(classe, "var(--tinta-3)")
+        largura = largura_por_classe.get(classe, 1.5)
+        # So o «depois da versao» ganha traco tracejado -- e' o unico estado
+        # em que «fora da fatia solida» e' o proprio significado (adiado,
+        # nao aberto nem fechado).
+        dash = ' stroke-dasharray="4 3"' if classe == "depois" else ""
         titulo = f"{rotulo}: {num(n)} de {num(total)} ({porcento(n, total)}%)"
         if n == total:
             # Setor de 360 graus nao existe em `path`: vira anel inteiro.
             d = (f'<circle cx="{cx}" cy="{cy}" r="{(r_ext + r_int) / 2}" '
                  f'fill="none" stroke="{preenche if preenche != "none" else traco}" '
-                 f'stroke-width="{r_ext - r_int}"/>')
+                 f'stroke-width="{r_ext - r_int}"{dash}/>')
         else:
             d = (f'<path d="{setor(cx, cy, r_ext, r_int, a0, a1)}" '
-                 f'fill="{preenche}" stroke="{traco}" stroke-width="{largura}"/>')
+                 f'fill="{preenche}" stroke="{traco}" stroke-width="{largura}"{dash}/>')
         partes.append(f"<g><title>{esc(titulo)}</title>{d}</g>")
     return f"""<svg viewBox="0 0 232 232" role="img" width="232" height="232"
      aria-label="Rosca dos {num(total)} pedidos por estado" class="rosca">
@@ -565,7 +592,7 @@ CSS = """<style>
   --papel:#fbf9f7; --papel-2:#f3efec; --papel-3:#e9e3de;
   --tinta:#1a1210; --tinta-2:#4a3f3a; --tinta-3:#6b5e57;
   --linha:#ded6d0; --acento:#c63c0a;
-  --feito:#2f7a3e; --parcial:#7d5f18; --planejado:#6b5e57;
+  --feito:#2f7a3e; --parcial:#7d5f18; --planejado:#6b5e57; --depois:#5b4a9e;
   --aberto:#1f5c93; --entregue:#2f7a3e; --parado:#b5257f;
   --consultar:#1f5c93;
   --sombra:0 1px 2px rgba(26,18,16,.06),0 8px 24px rgba(26,18,16,.05);
@@ -575,7 +602,7 @@ CSS = """<style>
     --papel:#010418; --papel-2:#0a1122; --papel-3:#131c31;
     --tinta:#dde2eb; --tinta-2:#a8b0c0; --tinta-3:#848da0;
     --linha:#1e2940; --acento:#ff8a1c;
-    --feito:#5cbf74; --parcial:#d5a83c; --planejado:#8e9ab0;
+    --feito:#5cbf74; --parcial:#d5a83c; --planejado:#8e9ab0; --depois:#b7a6ea;
     --aberto:#5fa6e8; --entregue:#5cbf74; --parado:#ff8fc7;
     --consultar:#5fa6e8;
     --sombra:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.3);
@@ -585,7 +612,7 @@ CSS = """<style>
   --papel:#010418; --papel-2:#0a1122; --papel-3:#131c31;
   --tinta:#dde2eb; --tinta-2:#a8b0c0; --tinta-3:#848da0;
   --linha:#1e2940; --acento:#ff8a1c;
-  --feito:#5cbf74; --parcial:#d5a83c; --planejado:#8e9ab0;
+  --feito:#5cbf74; --parcial:#d5a83c; --planejado:#8e9ab0; --depois:#b7a6ea;
   --aberto:#5fa6e8; --entregue:#5cbf74; --parado:#ff8fc7;
   --consultar:#5fa6e8;
   --sombra:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.3);
@@ -642,6 +669,7 @@ body.com-abas .vista.ativa{display:block}
 .placar .q{font-size:10.5px;color:var(--tinta-3);margin-top:auto;font-family:"IBM Plex Mono",monospace}
 .placar .feito .v{color:var(--feito)} .placar .parcial .v{color:var(--parcial)}
 .placar .planejado .v{color:var(--planejado)} .placar .parado .v{color:var(--parado)}
+.placar .depois .v{color:var(--depois)}
 .placar .aberto .v{color:var(--aberto)} .placar .entregue .v{color:var(--entregue)}
 
 .duo{display:grid;grid-template-columns:minmax(232px,auto) minmax(240px,1fr);gap:22px;align-items:center;margin:18px 0 0}
@@ -654,6 +682,7 @@ body.com-abas .vista.ativa{display:block}
 .fatias .feito i{background:var(--feito)}
 .fatias .parcial i{background:repeating-linear-gradient(45deg,var(--parcial) 0 3px,transparent 3px 7px);border-color:var(--parcial)}
 .fatias .planejado i{background:transparent;border-color:var(--planejado)}
+.fatias .depois i{background:transparent;border-color:var(--depois);border-style:dashed}
 .fatias .n{font-family:"IBM Plex Mono",monospace;font-size:13px;font-variant-numeric:tabular-nums;color:var(--tinta-2)}
 .fatias .s{color:var(--tinta-3)}
 
@@ -680,6 +709,7 @@ body.com-abas .vista.ativa{display:block}
 .legenda .feito i{background:var(--feito)}
 .legenda .parcial i{background:repeating-linear-gradient(45deg,var(--parcial) 0 3px,transparent 3px 7px);border-color:var(--parcial)}
 .legenda .planejado i{border-color:var(--planejado)}
+.legenda .depois i{border-color:var(--depois);border-style:dashed}
 
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 0}
 .chip{font-family:"IBM Plex Mono",monospace;font-size:11.5px;border:1px solid var(--linha);
@@ -825,8 +855,12 @@ def vista_painel(itens, estados, hoje, board, cap, gates, frentes):
     fatias = []
     for _simbolo, (classe, rotulo) in estados.items():
         n = contas[classe]
+        # Mesma regra de `vista_fluxo`: toda classe de `estados` passa por
+        # aqui, mesmo com `n == 0` -- por isso o dicionario cobre as QUATRO,
+        # nao so as tres de antes do pedido 484.
         forma = {"feito": "barra cheia", "parcial": "hachurada",
-                 "planejado": "só contorno"}[classe]
+                 "planejado": "só contorno",
+                 "depois": "contorno tracejado"}[classe]
         fatias.append(
             f'<li class="{classe}"><i></i><span>{esc(rotulo)} '
             f'<span class="s">— {esc(forma)}</span></span>'
@@ -952,7 +986,13 @@ número sem data é retrato que nunca existiu.</p>
 
 def vista_fluxo(estados):
     legenda = []
-    formas = {"feito": "barra cheia", "parcial": "hachurada", "planejado": "só contorno"}
+    # `estados` e' o ESTADOS do modulo dos pedidos -- toda classe que ele
+    # tiver PRECISA de uma entrada aqui, mesmo que nenhum pedido use ainda
+    # (o `⏸`, pedido 484, e' exatamente esse caso hoje: zero no
+    # PENDENCIAS.md, e mesmo assim este dicionario roda para as QUATRO
+    # classes sem olhar quantidade nenhuma).
+    formas = {"feito": "barra cheia", "parcial": "hachurada",
+              "planejado": "só contorno", "depois": "contorno tracejado"}
     for simbolo, (classe, rotulo) in estados.items():
         legenda.append(
             f'<span class="{classe}"><i></i>{esc(simbolo)} {esc(rotulo)} '

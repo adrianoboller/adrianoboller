@@ -66,13 +66,26 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from dossie_da_pasta import achar_o_dossie  # noqa: E402
 
 # O estado vem do emoji da primeira coluna da tabela.
+#
+# O `⏸` entrou em 24/09/2026 (congelamento da 0.19, decisao do dono): um
+# achado de revisao que nao e' defeito ativo nem bloqueia a entrega sai da
+# conta do que falta para a VERSAO atual, mas continua visivel -- nunca
+# reclassificado para «feito» nem escondido. So o integrador marca; este
+# arquivo so' precisa aceitar o simbolo.
 ESTADOS = {
     "☑️": ("feito", "Feito"),
     "◐": ("parcial", "Parcial"),
     "☐": ("planejado", "Planejado"),
+    "⏸": ("depois", "Depois da versão"),
 }
 
-LINHA = re.compile(r"^\|\s*(☑️|◐|☐)\s*\|\s*(\d+)\s*\|\s*(.*?)\s*\|\s*(.*?)\s*\|\s*$")
+# O padrao sai dos SIMBOLOS de `ESTADOS`, nunca de uma segunda lista digitada
+# ao lado -- e' a mesma licao do pedido 150: duas listas do mesmo conjunto
+# divergem na primeira mudanca, e a que ninguem atualiza e' a que engole o
+# pedido em silencio.
+_SIMBOLOS = "|".join(re.escape(s) for s in ESTADOS)
+LINHA = re.compile(
+    rf"^\|\s*({_SIMBOLOS})\s*\|\s*(\d+)\s*\|\s*(.*?)\s*\|\s*(.*?)\s*\|\s*$")
 
 # Uma linha que TEM numero de pedido mas cujo estado nao e' um dos tres. Ela
 # existe porque o pedido 150 passou meses com um `⏳` que nao esta na legenda:
@@ -323,6 +336,15 @@ def ler():
                     "n": int(m.group(2)),
                     "pedido": marcar(m.group(3)),
                     "estado": marcar(m.group(4)),
+                    # Texto BRUTO (markdown, sem escapar) ao lado do HTML de
+                    # cima -- quem alimenta uma tabela MARKDOWN (como o
+                    # `docs/tecnologias/extrair.py`) usa estes dois campos em
+                    # vez de reescrever a regex e a guarda de estado
+                    # desconhecido numa segunda copia (achado da revisao de
+                    # QA no pedido 484: essa segunda copia deixava o `⏸`
+                    # sumir calado, o mesmo defeito do pedido 150).
+                    "pedido_md": m.group(3),
+                    "estado_md": m.group(4),
                 }
             )
     if not itens:
@@ -333,9 +355,40 @@ def ler():
     return itens
 
 
+# As classes saem de `ESTADOS.values()`, nunca de uma tupla digitada ao lado
+# -- estado novo em `ESTADOS` entra na contagem sozinho, sem tocar aqui.
+_CLASSES = tuple(classe for classe, _ in ESTADOS.values())
+
+
 def contas_de(itens):
-    return {c: sum(1 for i in itens if i["classe"] == c)
-            for c in ("feito", "parcial", "planejado")}
+    return {c: sum(1 for i in itens if i["classe"] == c) for c in _CLASSES}
+
+
+def percentual_falta(contas):
+    """Quanto falta para ESTA versao, sobre o que entra nela.
+
+    Formula do dono (24/09/2026, congelamento da 0.19): (parcial + planejado)
+    / (feito + parcial + planejado) -- os `depois da versao` ficam FORA dos
+    dois lados da conta, porque um pedido empurrado para depois nao pesa nem
+    a favor («feito») nem contra («falta») a versao atual. O numero de
+    `depois` nunca some, so' nao entra nesta divisao -- quem quiser mostra-lo
+    ao lado le `contas['depois']` direto.
+
+    Devolve `None` quando o denominador e' zero (nenhum pedido na versao),
+    em vez de forcar um 0,0% que esconderia a divisao vazia.
+    """
+    total = contas["feito"] + contas["parcial"] + contas["planejado"]
+    if not total:
+        return None
+    return 100.0 * (contas["parcial"] + contas["planejado"]) / total
+
+
+def pct_br(valor):
+    """Porcentagem com virgula e uma casa, como o resto da casa escreve;
+    «—» quando nao ha divisao (nenhum pedido na versao)."""
+    if valor is None:
+        return "—"
+    return f"{valor:.1f}".replace(".", ",") + "%"
 
 
 CABECA = """<meta charset="utf-8">
@@ -547,9 +600,33 @@ footer{
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>"""
 
+# O CSS do `depois da versao` vive FORA do `CABECA` de proposito: ele so entra
+# na pagina quando existe pelo menos um pedido com esse estado (`usa_depois`
+# em `cabeca()`). Se entrasse sempre, a pagina de hoje -- zero `⏸` no
+# PENDENCIAS.md -- mudaria de bytes sem ninguem ter usado o estado novo, e a
+# prova do pedido 484 exige exatamente o contrario: nada muda enquanto
+# ninguem usa. Cores proprias, self-contained (nao dependem de variavel nova
+# no `:root` do CABECA, pela mesma razao).
+CSS_DEPOIS = """
+<style>
+.placar .depois .v{color:#5b4a9e}
+.faixa-info .depois{color:#5b4a9e}
+.pino.depois{color:#5b4a9e}
+.pino.depois::before{background:none;border-style:dashed}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]) .placar .depois .v,
+  :root:not([data-theme="light"]) .faixa-info .depois,
+  :root:not([data-theme="light"]) .pino.depois{color:#b7a6ea}
+}
+:root[data-theme="dark"] .placar .depois .v,
+:root[data-theme="dark"] .faixa-info .depois,
+:root[data-theme="dark"] .pino.depois{color:#b7a6ea}
+</style>"""
 
-def cabeca(titulo):
-    return CABECA.replace("{titulo}", titulo)
+
+def cabeca(titulo, usa_depois=False):
+    txt = CABECA.replace("{titulo}", titulo)
+    return txt + CSS_DEPOIS if usa_depois else txt
 
 
 def navegacao(arquivo_atual, faixas):
@@ -578,7 +655,17 @@ def corpo(itens_geral, itens_faixa, arquivo_atual, ini, fim, rotulo, indice, fai
     cf = contas_de(itens_faixa)
     n_paginas = len(faixas)
 
-    abertos = [i for i in itens_faixa if i["classe"] != "feito"]
+    # `usa_depois` sai de `itens_geral` (nao so' desta faixa): o CSS, o botao
+    # de filtro e o cartao do placar geral sao os MESMOS em toda pagina, entao
+    # a decisao de mostra-los tem de ser a mesma em toda pagina -- senao a
+    # barra de navegacao mudaria de layout ao trocar de faixa. Com zero `⏸`
+    # no PENDENCIAS.md (hoje), esta conta e' sempre False e nada muda.
+    usa_depois = cg["depois"] > 0
+
+    # `depois da versao` sai da conta do que falta PARA ESTA VERSAO -- por
+    # isso nao entra em "o que esta aberto" (essa lista e' exatamente o
+    # numerador de `percentual_falta`: parcial + planejado).
+    abertos = [i for i in itens_faixa if i["classe"] not in ("feito", "depois")]
 
     if abertos:
         estados = []
@@ -595,9 +682,29 @@ def corpo(itens_geral, itens_faixa, arquivo_atual, ini, fim, rotulo, indice, fai
         )
     else:
         abertura = "Nenhum pedido em aberto nesta faixa."
+    if cf["depois"]:
+        abertura += (
+            f" ({cf['depois']} ficaram para depois desta versão — veja a "
+            f"lista completa abaixo.)"
+        )
 
     def linhas(ls):
         return "\n".join(linha_tr(i) for i in ls)
+
+    # Os tres pedacos abaixo so' existem quando ALGUEM usa o estado -- e' a
+    # mesma guarda do CSS em `cabeca()`: pagina de hoje (zero `⏸`) sai
+    # byte a byte igual a antes do pedido 484.
+    placar_depois = (
+        f'\n    <div class="c depois"><div class="v">{cg["depois"]}</div>'
+        f'<div class="r">depois da versão</div></div>'
+    ) if usa_depois else ""
+    faixa_info_depois = (
+        f' ·\n    <span class="depois">{cf["depois"]} depois da versão</span>'
+    ) if cf["depois"] else ""
+    botao_depois = (
+        '\n    <button type="button" data-f="depois" '
+        'aria-pressed="false">Depois da versão</button>'
+    ) if usa_depois else ""
 
     return f"""<div class="envelope">
 <header>
@@ -620,7 +727,7 @@ def corpo(itens_geral, itens_faixa, arquivo_atual, ini, fim, rotulo, indice, fai
     <div class="c"><div class="v">{n_geral}</div><div class="r">pedidos, ao todo</div></div>
     <div class="c feito"><div class="v">{cg['feito']}</div><div class="r">feitos</div></div>
     <div class="c parcial"><div class="v">{cg['parcial']}</div><div class="r">parciais</div></div>
-    <div class="c planejado"><div class="v">{cg['planejado']}</div><div class="r">planejados</div></div>
+    <div class="c planejado"><div class="v">{cg['planejado']}</div><div class="r">planejados</div></div>{placar_depois}
   </div>
 
   <div class="faixa-info">
@@ -628,7 +735,7 @@ def corpo(itens_geral, itens_faixa, arquivo_atual, ini, fim, rotulo, indice, fai
     <strong>{n_faixa}</strong> pedidos (faixa {rotulo}) ·
     <span class="feito">{cf['feito']} feitos</span> ·
     <span class="parcial">{cf['parcial']} parciais</span> ·
-    <span class="planejado">{cf['planejado']} planejados</span>
+    <span class="planejado">{cf['planejado']} planejados</span>{faixa_info_depois}
   </div>
 </header>
 
@@ -662,7 +769,7 @@ outras {n_paginas - 1} faixas estão no menu acima.</p>
     <button type="button" data-f="todos" aria-pressed="true">Todos</button>
     <button type="button" data-f="feito" aria-pressed="false">Feitos</button>
     <button type="button" data-f="parcial" aria-pressed="false">Parciais</button>
-    <button type="button" data-f="planejado" aria-pressed="false">Planejados</button>
+    <button type="button" data-f="planejado" aria-pressed="false">Planejados</button>{botao_depois}
   </div>
   <input type="search" id="busca" placeholder="procurar nesta faixa…" aria-label="Procurar nos pedidos desta faixa">
   <span class="conta" id="conta"></span>
@@ -740,15 +847,32 @@ def gravar_contagem(itens):
     `numeros-da-bancada.py`: quem conta e quem sabe contar.
 
     Nao mexe no pedido 403: continua contando TODOS os itens, sem faixa.
+
+    A clausula «depois da versao» so' entra na frase quando existe algum
+    `⏸` (pedido 484) -- sem isso a linha muda de texto no dia em que
+    ninguem pediu mudanca nenhuma, e o congelamento da 0.19 exige o
+    contrario: nada se altera enquanto o estado novo nao e' usado.
     """
     md = FONTE.read_text(encoding="utf-8")
     i, j = md.find(ABRE_C), md.find(FECHA_C)
     if i < 0 or j < 0:
         return False
     c = contas_de(itens)
-    bloco = (
-        f"**{len(itens)} pedidos: {c['feito']} feitos · {c['parcial']} parciais · "
-        f"{c['planejado']} planejados.**\n\n"
+    partes = [f"{c['feito']} feitos", f"{c['parcial']} parciais",
+              f"{c['planejado']} planejados"]
+    if c["depois"]:
+        partes.append(f"{c['depois']} depois da versão")
+    bloco = f"**{len(itens)} pedidos: " + " · ".join(partes) + ".**\n\n"
+    # O numero que o dono le e' a FALTA, e ele mudou de denominador em
+    # 24/09/2026: sem dizer isso ao lado, a queda de 29% para 19% pareceria
+    # trabalho feito, quando foi escopo empurrado para depois.
+    if c["depois"]:
+        bloco += (f"**Falta {pct_br(percentual_falta(c))} da versão** — "
+                  "(parciais + planejados) / (feitos + parciais + planejados). "
+                  "Desde 24/09/2026 os `⏸` saem dos dois lados da conta "
+                  "(decisão A do dono); antes dessa data o denominador era "
+                  "o total.\n\n")
+    bloco += (
         "*(Gerado por `docs/dossie/pagina-dos-pedidos.py` — não conte à mão. A\n"
         "conta sai da primeira coluna da tabela acima, e é a mesma que as\n"
         "páginas dos pedidos mostram: se discordarem, é porque alguém digitou\n"
@@ -782,6 +906,14 @@ def gravar_no_dossie(caminho, itens):
         (c["parcial"], "parciais"),
         (c["planejado"], "planejados"),
     ]
+    # A quinta ficha so' entra quando existe `⏸` de verdade (pedido 484) --
+    # senao o painel de hoje (zero `depois`) mudaria de bytes a toa.
+    if c["depois"]:
+        fichas.append((c["depois"], "depois da versão"))
+        # Ver `gravar_contagem`: a falta so' aparece com o aviso da troca de
+        # denominador, e so' existe desde que existe `⏸`.
+        fichas.append((pct_br(percentual_falta(c)),
+                       "falta da versão (sem ⏸, desde 24/09/2026)"))
     bloco = "\n" + "\n".join(
         f'    <div><div class="v">{v}</div><div class="r">{r}</div></div>'
         for v, r in fichas) + "\n  "
@@ -796,10 +928,11 @@ def gravar_faixas(itens):
     de (caminho, bytes) para o resumo final e para o relatorio do teto."""
     faixas = escolher_faixas(itens)
     saidas = []
+    usa_depois = contas_de(itens)["depois"] > 0
     for indice, (arquivo, grupo, ini, fim, rotulo) in enumerate(faixas, 1):
         caminho = PASTA_SAIDA / arquivo
         titulo = f"Pedidos {rotulo} do PhxSql ({indice}/{len(faixas)})"
-        conteudo = (cabeca(titulo) + "\n"
+        conteudo = (cabeca(titulo, usa_depois) + "\n"
                     + corpo(itens, grupo, arquivo, ini, fim, rotulo, indice, faixas)
                     + "\n")
         caminho.write_text(conteudo, encoding="utf-8")

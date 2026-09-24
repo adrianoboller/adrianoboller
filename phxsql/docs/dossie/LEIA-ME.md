@@ -573,8 +573,47 @@ bater — a navegação cai de volta no nome do arquivo até alguém atualizar a
 tabela; o script não finge que a URL antiga ainda serve.
 
 Nenhuma se edita — saem do `pagina-dos-pedidos.py`, que lê o
-`docs/PENDENCIAS.md` e conta os três estados sozinho. A fonte da verdade é o
+`docs/PENDENCIAS.md` e conta os estados sozinho. A fonte da verdade é o
 `.md`; mexeu lá, rode isto.
+
+### O quarto estado: `⏸` depois da versão (pedido 484, 24/09/2026)
+
+Decisão do dono, no congelamento de escopo da 0.19: um achado de revisão que
+**não é defeito ativo nem bloqueia a entrega** vira `⏸` no `PENDENCIAS.md` em
+vez de `☑️`/`◐`/`☐`. Ele continua **visível** — nunca some da tabela nem da
+contagem — mas sai da conta do que falta **para esta versão**. Só o
+integrador classifica; esta página só precisa aceitar o símbolo.
+
+| onde | o que muda |
+|---|---|
+| legenda do `PENDENCIAS.md` | ganha `· ⏸ depois da versão` ao lado dos três de sempre |
+| contagem de volta no `.md` | a frase ganha uma quarta cláusula, `N depois da versão`, **só quando existe pelo menos um** — sem nenhum `⏸`, a frase sai idêntica à de sempre |
+| painel do dossiê | ganha uma quinta ficha, pela mesma regra: só com `⏸` de verdade |
+| páginas `pedidos-*.html` | pino, cor (roxo, contorno tracejado) e filtro próprios — também só entram na página quando existe pelo menos um `⏸` em algum lugar do `PENDENCIAS.md` |
+
+A porcentagem «falta» é `(parcial + planejado) / (feito + parcial +
+planejado)` — os `⏸` ficam de fora dos **dois** lados da conta, porque um
+pedido empurrado para depois não pesa a favor («feito») nem contra («falta»)
+a versão atual. O número de `⏸` nunca some: quem quiser mostrá-lo ao lado lê
+`contas_de(itens)['depois']` direto (a função `percentual_falta()`, no mesmo
+módulo, é a fórmula pronta).
+
+**A garantia mais importante desta mudança é a que não se vê**: sem nenhum
+`⏸` no `PENDENCIAS.md`, o gerador produz exatamente os mesmos bytes de antes
+— contagem, painel e as seis páginas, uma por uma. É a mesma disciplina de
+«guarda nova entra pedida, não imposta»: o estado novo não pode custar nada
+para quem não o usa. `docs/dossie/prova-do-depois-da-versao.py` prova isso
+nos dois sentidos (com dois pedidos marcados `⏸`, numa cópia do `.md`), e
+também prova que o `docs/tecnologias/extrair.py` — que tinha a sua PRÓPRIA
+cópia da regex e da guarda de estado desconhecido — passou a usar o mesmo
+`ler()`, em vez de deixar o `⏸` sumir calado de uma segunda lista.
+
+Outros dois lugares que leem `ESTADOS`/`ler()` do mesmo módulo (nunca uma
+segunda cópia) e por isso também aceitam o `⏸` sem quebrar:
+`docs/pmo/pagina-do-status-do-projeto.py` (a rosca de quatro fatias e o
+léxico de gates, que passa a ignorar `⏸` — pedido já adiado não é bloqueio) e
+`docs/status/pagina-do-status-do-projeto.py` (as barras da seção «Os pedidos
+do dono», cujo denominador exclui `⏸` pela mesma fórmula).
 
 ## A página do status dos dez recursos
 

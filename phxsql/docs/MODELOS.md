@@ -1270,6 +1270,7 @@ QA, com julgamento de pergunta, e a redação do H.
 | SEC — revisao da etapa 2 do 450 | forte | leitura adversaria de arquivo com segredo; provou pelo binario a copia em claro 644 e a pasta esvaziada |
 | 478 — a instalacao nova termina em `.phz` | leve | roteiro, documentacao e uma prova em Python sobre um comando que ja existia; o integrador achou o empacotador pendurado com binario velho |
 | 483 — o `phxsqld` recusa flag desconhecida | leve | parser pequeno com inventario medido dos chamadores e prova pelo binario |
+| 484 — o quarto estado `⏸` nos geradores | medio | mexe no leitor unico que tres paginas e o documento de tecnologias usam, e a garantia principal e «sem `⏸` nada muda», provada byte a byte; o integrador achou a prova presa ao `HEAD` e a porcentagem calculada e nao mostrada |
 
 **A integração achou o que nenhuma frente via, de novo por território de
 arquivo não bastar em worktree compartilhado**: `cargo fmt --all` de uma

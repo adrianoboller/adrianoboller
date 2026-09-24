@@ -813,26 +813,55 @@ def bloco_testes() -> str | None:
 # =================================================== 6. RECUSADO, COM NUMERO
 
 
-LINHA_PEDIDO = re.compile(
-    r"^\|\s*(☑️|◐|☐)\s*\|\s*(\d+)\s*\|\s*(.*?)\s*\|\s*(.*?)\s*\|\s*$"
-)
+def _importar_pagina_dos_pedidos():
+    """Importa `docs/dossie/pagina-dos-pedidos.py` pelo CAMINHO -- o nome tem
+    hifen, entao `import` normal nao serve (mesmo padrao do `importar()` de
+    `docs/status/pagina-do-status-do-projeto.py`).
+
+    Existe para que a leitura do `PENDENCIAS.md` tenha UM motor so: esta
+    funcao tinha a sua PROPRIA copia da regex e da guarda de estado
+    desconhecido (achado da revisao de QA no pedido 484) -- uma linha `⏸`
+    sumia calada daqui, do mesmo jeito que o pedido 150 sumia antes de a
+    guarda nascer, so' que por um SEGUNDO caminho que ninguem mais lembrava
+    de checar.
+    """
+    caminho = RAIZ / "docs" / "dossie" / "pagina-dos-pedidos.py"
+    import importlib.util  # noqa: PLC0415
+
+    spec = importlib.util.spec_from_file_location("extrair_pedidos_py", caminho)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["extrair_pedidos_py"] = mod
+    pasta = str(caminho.parent)
+    removido = pasta not in sys.path
+    if removido:
+        sys.path.insert(0, pasta)
+    try:
+        spec.loader.exec_module(mod)
+    finally:
+        if removido:
+            sys.path.remove(pasta)
+    return mod
 
 
 def ler_pedidos():
-    fonte = RAIZ / "docs" / "PENDENCIAS.md"
-    itens = []
-    for l in linhas(fonte):
-        m = LINHA_PEDIDO.match(l)
-        if m:
-            itens.append(
-                {
-                    "estado": m.group(1),
-                    "n": int(m.group(2)),
-                    "pedido": m.group(3),
-                    "detalhe": m.group(4),
-                }
-            )
-    return itens
+    """Os pedidos do `PENDENCIAS.md`, pelo `ler()` de `pagina-dos-pedidos.py`
+    -- nunca uma segunda regex. `pedido`/`detalhe` aqui sao o texto BRUTO
+    (`pedido_md`/`estado_md`, markdown sem escapar): esta funcao alimenta uma
+    TABELA MARKDOWN (`bloco_recusados`, para o `TECNOLOGIAS.md`), nao HTML --
+    usar o `pedido`/`estado` (ja com `<code>`/`<strong>` etc.) do modulo
+    importado encheria a tabela markdown de tag HTML.
+    """
+    pedidos_py = _importar_pagina_dos_pedidos()
+    itens = pedidos_py.ler()
+    return [
+        {
+            "estado": i["classe"],
+            "n": i["n"],
+            "pedido": i["pedido_md"],
+            "detalhe": i["estado_md"],
+        }
+        for i in itens
+    ]
 
 
 def bloco_recusados() -> str:

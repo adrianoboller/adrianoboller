@@ -371,7 +371,7 @@ CSS = """<style>
   --papel:#fbf9f7; --papel-2:#f3efec; --papel-3:#e9e3de;
   --tinta:#1a1210; --tinta-2:#4a3f3a; --tinta-3:#756861;
   --linha:#ded6d0; --acento:#c63c0a; --marca:#010418;
-  --feito:#2f7a3e; --parcial:#84651d; --planejado:#756861;
+  --feito:#2f7a3e; --parcial:#84651d; --planejado:#756861; --depois:#5b4a9e;
   --aberto:#1f5c93; --entregue:#2f7a3e; --parado:#b5257f;
   --incluir:#2f7a3e; --alterar:#84651d; --marcar:#b5257f;
   --excluir:#b3261e; --consultar:#1f5c93;
@@ -385,7 +385,7 @@ CSS = """<style>
     --papel:#010418; --papel-2:#0a1122; --papel-3:#131c31;
     --tinta:#dde2eb; --tinta-2:#a8b0c0; --tinta-3:#848da0;
     --linha:#1e2940; --acento:#ff8a1c; --marca:#010418;
-    --feito:#5cbf74; --parcial:#d5a83c; --planejado:#8e9ab0;
+    --feito:#5cbf74; --parcial:#d5a83c; --planejado:#8e9ab0; --depois:#b7a6ea;
     --aberto:#5fa6e8; --entregue:#5cbf74; --parado:#ff8fc7;
     --incluir:#5cbf74; --alterar:#d5a83c; --marcar:#ff8fc7;
     --excluir:#ff8a80; --consultar:#5fa6e8;
@@ -399,7 +399,7 @@ CSS = """<style>
   --papel:#010418; --papel-2:#0a1122; --papel-3:#131c31;
   --tinta:#dde2eb; --tinta-2:#a8b0c0; --tinta-3:#848da0;
   --linha:#1e2940; --acento:#ff8a1c; --marca:#010418;
-  --feito:#5cbf74; --parcial:#d5a83c; --planejado:#8e9ab0;
+  --feito:#5cbf74; --parcial:#d5a83c; --planejado:#8e9ab0; --depois:#b7a6ea;
   --aberto:#5fa6e8; --entregue:#5cbf74; --parado:#ff8fc7;
   --incluir:#5cbf74; --alterar:#d5a83c; --marcar:#ff8fc7;
   --excluir:#ff8a80; --consultar:#5fa6e8;
@@ -472,6 +472,7 @@ p{margin:11px 0;max-width:76ch}
 .kpi .q{font-family:"IBM Plex Mono",monospace;font-size:10px;color:var(--tinta-3);margin-top:auto}
 .kpi.feito > b{color:var(--feito)} .kpi.parcial > b{color:var(--parcial)}
 .kpi.planejado > b{color:var(--planejado)} .kpi.falta > b{color:var(--falta)}
+.kpi.depois > b{color:var(--depois)}
 
 .cartao{background:var(--papel-2);border:1px solid var(--linha);border-radius:8px;
   padding:16px 18px;margin:16px 0;box-shadow:var(--sombra)}
@@ -521,6 +522,7 @@ tr.ausente td{color:var(--falta)}
 .barra-linha .t .b-parcial{background:repeating-linear-gradient(45deg,var(--parcial) 0 3px,transparent 3px 7px);
   border:1.4px solid var(--parcial)}
 .barra-linha .t .b-planejado{background:transparent;border:1.4px solid var(--planejado)}
+.barra-linha .t .b-depois{background:transparent;border:1.4px dashed var(--depois)}
 .barra-linha .t .b-aberto{background:transparent;border:1.4px solid var(--aberto)}
 .barra-linha .t .b-parado{background:repeating-linear-gradient(45deg,var(--parado) 0 3px,transparent 3px 7px);
   border:1.4px solid var(--parado)}
@@ -535,6 +537,7 @@ tr.ausente td{color:var(--falta)}
 .legenda .feito i{background:var(--feito)}
 .legenda .parcial i{background:repeating-linear-gradient(45deg,var(--parcial) 0 3px,transparent 3px 7px);border-color:var(--parcial)}
 .legenda .planejado i{border-color:var(--planejado)}
+.legenda .depois i{border-color:var(--depois);border-style:dashed}
 .legenda .aberto i{border-color:var(--aberto)}
 .legenda .entregue i{background:var(--entregue)}
 .legenda .parado i{background:repeating-linear-gradient(45deg,var(--parado) 0 3px,transparent 3px 7px);border-color:var(--parado)}
@@ -705,6 +708,12 @@ def secao_resumo(ctx):
     h.append(kpi(milhar(e["Parcial"]), "pedidos parciais", ctx["hoje"], classe="parcial"))
     h.append(kpi(milhar(e["Planejado"]), "pedidos planejados", ctx["hoje"],
                  classe="planejado"))
+    # «Depois da versão» (pedido 484, congelamento da 0.19) so' ganha cartao
+    # quando existe algum -- zero hoje, e o cartao so' apareceria no dia em
+    # que a outra frente marcar um pedido com `⏸` no PENDENCIAS.md.
+    if e.get("Depois da versão"):
+        h.append(kpi(milhar(e["Depois da versão"]), "pedidos depois da versão",
+                     ctx["hoje"], classe="depois"))
     if ctx["n_guardas"] is not None:
         h.append(kpi(milhar(ctx["n_guardas"]), "guardas no catálogo", ctx["hoje"]))
     h.append(kpi(milhar(len(ctx["tetos"])), "catracas no fonte", ctx["hoje"]))
@@ -901,23 +910,45 @@ def secao_capacidades(ctx):
 
 def secao_pedidos(ctx):
     itens, e = ctx["itens"], ctx["estados"]
-    total = len(itens)
+    # O denominador das barras EXCLUI "depois da versão" (pedido 484, formula
+    # do dono no congelamento da 0.19: falta = (parcial+planejado) /
+    # (feito+parcial+planejado)) -- contar os `⏸` aqui subestimaria o quanto
+    # falta de verdade PARA ESTA VERSAO. Hoje `depois` e' sempre 0, entao
+    # `total` continua igual a `len(itens)`.
+    depois = e.get("Depois da versão", 0)
+    total = e["Feito"] + e["Parcial"] + e["Planejado"]
+    barras_estado = [
+        barra("Feito", [("feito", e["Feito"])],
+              f'{milhar(e["Feito"])} · {pct(e["Feito"], total)}%', total),
+        barra("Parcial", [("parcial", e["Parcial"])],
+              f'{milhar(e["Parcial"])} · {pct(e["Parcial"], total)}%', total),
+        barra("Planejado", [("planejado", e["Planejado"])],
+              f'{milhar(e["Planejado"])} · {pct(e["Planejado"], total)}%', total),
+    ]
+    legenda_spans = ['<span class="feito"><i></i>feito</span>',
+                     '<span class="parcial"><i></i>parcial</span>',
+                     '<span class="planejado"><i></i>planejado</span>']
+    if depois:
+        # Barra e legenda propria so' quando existe pelo menos um -- o
+        # numero NUNCA some (fica no cartao do resumo mesmo com zero), mas
+        # esta barra especifica so' nasce quando ha algo para desenhar. Sem
+        # `total` proprio de proposito: ela nao e' fatia do que falta, e'
+        # visivel ao lado.
+        barras_estado.append(
+            barra("Depois da versão", [("depois", depois)],
+                  milhar(depois), depois))
+        legenda_spans.append('<span class="depois"><i></i>depois da versão</span>')
     linhas = [H2["pedidos"] + 'Os pedidos do dono</h2>',
               '<p class="sub">Um por linha do <code>docs/PENDENCIAS.md</code>, '
               'lido pelo mesmo <code>ler()</code> da página dos pedidos — duas '
-              'contagens divergiriam na primeira mudança de legenda.</p>',
-              '<div class="barras">',
-              barra("Feito", [("feito", e["Feito"])],
-                    f'{milhar(e["Feito"])} · {pct(e["Feito"], total)}%', total),
-              barra("Parcial", [("parcial", e["Parcial"])],
-                    f'{milhar(e["Parcial"])} · {pct(e["Parcial"], total)}%', total),
-              barra("Planejado", [("planejado", e["Planejado"])],
-                    f'{milhar(e["Planejado"])} · {pct(e["Planejado"], total)}%', total),
-              "</div>",
-              '<div class="legenda"><span class="feito"><i></i>feito</span>'
-              '<span class="parcial"><i></i>parcial</span>'
-              '<span class="planejado"><i></i>planejado</span></div>']
-    abertos = [i for i in itens if i["classe"] != "feito"]
+              'contagens divergiriam na primeira mudança de legenda. O '
+              'denominador das barras é <b>feito + parcial + planejado</b> — '
+              'um pedido «depois da versão» não pesa a favor nem contra o '
+              'que falta agora.</p>',
+              '<div class="barras">', *barras_estado, "</div>",
+              '<div class="legenda">' + "".join(legenda_spans) + '</div>']
+    abertos = [i for i in itens
+              if i["classe"] != "feito" and i["classe"] != "depois"]
     abertos.sort(key=lambda i: i["n"], reverse=True)
     linhas.append("<h3>Os dez pedidos abertos mais recentes</h3>")
     linhas.append('<div class="rolo"><table><thead><tr><th class="num">#</th>'
