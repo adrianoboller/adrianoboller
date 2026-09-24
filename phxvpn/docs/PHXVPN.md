@@ -59,6 +59,9 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [ ] Segurança A4 (inteiro): TLS no próprio painel — choque com a pétrea de zero dependência; hoje, proxy com TLS na frente
 - [ ] P2P no Windows: **prova numa máquina real** com OpenVPN (driver TAP e `netsh` — o roteiro `prova-windows.ps1` está pronto)
 - [ ] USB: **prova com dispositivo real** (este contêiner não tem USB nem os módulos `usbip-host`/`vhci-hcd`)
+- [ ] macOS, Android e iOS (OpenVPN e WireGuard têm; achado da validação de 24/09)
+- [ ] Auditoria de segurança externa (OpenVPN teve em 2017, o WireGuard tem verificação formal; aqui só revisão interna)
+- [ ] MFA / RADIUS / Active Directory no painel — **decisão de produto do dono** (Access Server, Windows e strongSwan têm)
 
 ## Portas e o controle de cada uma
 
@@ -648,29 +651,56 @@ pendrive. Três travas, cada uma provada:
   os módulos do kernel; o `usar`/`compartilhar` com hardware fica para uma
   máquina de verdade.
 
-## Comparativo
+## Comparativo (revisto em 24/09/2026)
 
-Legenda: **medido** = provado aqui; *citado* = documentação do fabricante,
-não verificado por nós.
+Resumo; cada célula dos concorrentes, com a fonte primária e a frase citada,
+está em [`propostas/matriz-vpns-2026-09-24.md`](propostas/matriz-vpns-2026-09-24.md)
+(108 células; 62 com fonte, 26 «não documentado»). **medido** = provado
+aqui; os demais são documentação do fabricante.
 
-| | **phxvpn** | Radmin VPN | OpenVPN |
+| | **phxvpn** | Radmin VPN | OpenVPN 2.6 | VPN do Windows | VPN do Linux (WireGuard / strongSwan) |
+|---|---|---|---|---|---|
+| Criar/entrar com nome + senha | **Sim** (P2P e painel) — medido | Sim | Não: arquivo por cliente | Não: perfil por conexão | Não: chave/arquivo por par |
+| Sem servidor nenhum | **Sim** (modo direto) — medido | Não: servidores do fabricante | Não (ponto a ponto é 1 par por processo) | Não | WireGuard sim, por par configurado à mão |
+| CGNAT dos dois lados | Relé **próprio**, cifrado ponta a ponta — medido | Relé **do fabricante** | Pelo servidor | Pelo servidor | Pelo servidor; strongSwan tem mediação IKEv2 |
+| Perfuração de NAT (hole punching) | **Ainda não** (usa o relé) | Sim, e cai para relé | Não | Não | Não no WireGuard |
+| Cifra documentada | Noise IKpsk2 + ChaCha20-Poly1305, vetor oficial — medido | só «AES 256-bit» | TLS + AES-GCM/ChaCha | IKEv2/SSTP/L2TP | Noise IK (WG) / IKEv2 (strongSwan) |
+| Barreira antes do aperto | PSK da rede + mac1/cookie — medido | não documentado | `tls-crypt`/`tls-crypt-v2` (chave de grupo) | cookies do IKEv2 | cookies (WG) / IKEv2 |
+| Revogar um membro | CRL + barreira pré-TLS (v2) — medido | não documentado | CRL | certificado/AD | remover a chave |
+| Chat e ping por membro | **Sim** — medido | Sim | Não | Não | Não |
+| USB pela rede | **Sim** (USB/IP) — medido no protocolo | Não | Não | Não | Não (usbip à parte) |
+| Serviço / inicia com o sistema | systemd e SCM — medido | Sim | Sim | Embutido | Embutido |
+| Linux / Windows | Sim / Sim (Windows real a provar) | Não / Sim | Sim / Sim | — / Sim | Sim / WireGuard sim |
+| macOS, Android, iOS | **Não** | Não | Sim | — | WireGuard sim |
+| MFA / RADIUS / AD | **Não** | Não | Access Server / plugins | Sim | strongSwan sim |
+| Auditoria externa | **Não** (revisão interna) | não documentada | Sim (2017) | Microsoft | WG: verificação formal |
+| Código | Aberto, zero crate | Fechado | Aberto (GPLv2) | Fechado | Aberto |
+
+**Bancada comparativa** (`bancada/comparativo/medir.sh`, 2026-09-24, 5 corridas,
+4 nucleos, 6.18.44-fc-v37; mesma topologia de dois netns, `iperf3` TCP de 5 s; tudo em espaço
+de usuário, porque o kernel daqui não tem o módulo do WireGuard nem o DCO do
+OpenVPN):
+
+| Túnel | Conectar | Mbit/s mín – mediana – máx | Ping |
 |---|---|---|---|
-| Código | Nosso, `MIT OR Apache-2.0`, zero crate | Fechado (Famatech) | Aberto, GPLv2 |
-| Topologia | Servidor **ou** P2P (direto / repasse / auto) | P2P com servidores do fabricante (*citado*) | Servidor central (hub) |
-| Servidor próprio | Sim: painel + PostgreSQL, e o intermediário é nosso | Não: coordenação e relé são do fabricante (*citado*) | Sim |
-| Sem servidor nenhum | Sim, no modo direto (LAN, IP público, IPv6) — **medido** | Não (*citado*) | Não (ponto a ponto só 1 par por processo) |
-| CGNAT dos dois lados | Pelo nosso intermediário, cifrado de ponta a ponta — **medido** | Relé do fabricante (*citado*) | Pelo servidor |
-| «Criar rede» / «entrar na rede» | Sim, nome + senha (painel); P2P por chave + senha | Sim, nome + senha | Não: arquivo de configuração por cliente |
-| Cifra | Noise IKpsk2 X25519 + ChaCha20-Poly1305, **conferido contra vetor oficial**; modo servidor TLS 1.3 Ed25519 | AES-256 (*citado*) | TLS (OpenSSL) + AES-GCM/ChaCha |
-| Senha da rede no protocolo | Vira PSK: sem ela o aperto não fecha — **medido** | Controle de acesso no servidor (*citado*) | Não tem |
-| Cadastro | PostgreSQL (empresa, servidores, usuários, redes) | Nuvem do fabricante | Arquivos |
-| Linux | Sim | Não (*citado*: só Windows) | Sim |
-| Windows | Modo servidor: sim (OpenVPN). P2P: **ainda não** (TAP-Windows6, em escrita) | Sim | Sim |
-| Vazão | 660 Mbit/s TCP pelo túnel P2P, uma corrida, contêiner — **medido** | Não medido por nós | Não medido por nós |
-| O que ainda falta aqui | Painel com 6 achados altos de segurança; sem HTTPS no painel; sem cliente de mesa | — | — |
+| **phxvpn** (ChaCha20-Poly1305) | 0,01 s | 624 – **651** – 664 | 0,498 ms |
+| WireGuard-go (ChaCha20-Poly1305) | 0,01 s | 655 – **662** – 731 | 0,739 ms |
+| OpenVPN AES-256-GCM | 2,33 s | 645 – **670** – 693 | 0,387 ms |
+| OpenVPN ChaCha20-Poly1305 | 2,33 s | 426 – **477** – 514 | 0,515 ms |
 
-Números do Radmin e do OpenVPN não foram medidos aqui. A comparação justa de
-vazão pede os três na mesma máquina e com o mesmo trabalho (regra da bancada).
+Pela regra das faixas (só há vencedor quando elas não se cruzam):
+- **Com a mesma cifra, o phxvpn vence o OpenVPN**: as faixas estão separadas.
+- **Contra o WireGuard-go e o OpenVPN com AES, é empate dentro do ruído**: as
+  faixas se cruzam.
+- **Conectar**: o P2P fecha no primeiro pacote; o OpenVPN leva 2,3 s no
+  aperto TLS.
+- Radmin e a VPN do Windows não rodam aqui: não medidos.
+
+**Uma conclusão minha que caiu:** com a primeira corrida de 3, eu escrevi aqui
+que o phxvpn ficava «~6% atrás do WireGuard» e que «o AES vence os dois».
+A segunda corrida de 3 já cruzou as faixas, e a de 5 confirmou o empate. Com
+três amostras, a diferença estava dentro do ruído — a mesma lição do pedido
+155 do PhxSql (vencedor declarado dentro do ruído).
 
 ## Modo P2P (decisão do papel J, 23/09/2026)
 
