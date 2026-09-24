@@ -4,7 +4,7 @@
      `--catraca` reprova se este arquivo nao bater com o que o extrator
      geraria agora; rode o comando sem flag para atualizar. -->
 
-Gerado dos `cognicao_*.md` com `**Estado:** FRUTIFERO` -- 3 hoje, de 320 cognicoes no total.
+Gerado dos `cognicao_*.md` com `**Estado:** FRUTIFERO` -- 4 hoje, de 321 cognicoes no total.
 
 ## Corpo de falso positivo tirado de uma fonte só mede essa fonte
 
@@ -15,6 +15,11 @@ Gerado dos `cognicao_*.md` com `**Estado:** FRUTIFERO` -- 3 hoje, de 320 cognico
 
 - Evidencia: `42e1bf3`; `docs/dossie/prova-do-depois-da-versao.py`
 - Arquivo: [cognicao_prova-contra-o-head-expira-no-proprio-commit_20260924_0955.md](cognicao_prova-contra-o-head-expira-no-proprio-commit_20260924_0955.md)
+
+## Recusa simétrica de sufixo de balde não é «só a letra 1»
+
+- Evidencia: `crates/phxsql-store/src/catalogo.rs::criar_recusa_sufixo_de_letra_da_particao_sem_perguntar_ao_disco`; `crates/phxsql-store/src/catalogo.rs::criar_recusa_ponto_no_nome_por_colidir_com_o_qualificado`. Validada pelo integrador, que nao e o autor do conserto, em 24/09/2026 na arvore exata: com as duas guardas novas de `exigir_nome_que_volta` neutralizadas, os dois testes caem (`catalogo.rs:2281` e `:2321`); com o conserto, os tres passam.
+- Arquivo: [cognicao_recusa-simetrica-de-sufixo-nao-e-so-a-letra-1_20260924_1438.md](cognicao_recusa-simetrica-de-sufixo-nao-e-so-a-letra-1_20260924_1438.md)
 
 ## Aviso de corte por teto: 01000, nunca 01004 -- e onde ele mora sozinho
 

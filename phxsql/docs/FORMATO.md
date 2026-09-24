@@ -1779,12 +1779,21 @@ obedece `registros_por_arquivo`, `max_arquivos` nem `recursos.diario_volume_mib`
   mediu o expurgo de `x` apagando-o (P2a). Quem protege é a **declaração**:
   `criar_tabela`, `duplicar_tabela`, `copiar_tabela_para` e `renomear_tabela`
   recusam, pela mesma função, o nome que o catálogo leria como volume de
-  outra tabela — **hoje só o sufixo de dígitos** (`_` seguido só de
-  dígitos). O de **letra** da partição só recusa quando o `_A.reg` do mesmo
-  prefixo já existe: `x_A` sozinho é **aceito** e some da árvore, medido pelo
-  papel C (pedido **506**); e o separador `_` de volume, que colide com
-  qualquer nome que o use, é o pedido **508**. A tabela `_NNN` criada antes
-  dessa recusa continua abrindo, com a colisão.
+  outra tabela — o sufixo `_` seguido só de dígitos, **ou uma das 37 letras
+  da partição alfanumérica** (pedido **506**), **ou um ponto**, que colide
+  com o separador do nome qualificado (pedido **507**). A recusa da letra é
+  **sintática**, sem perguntar ao disco: perguntar ao disco pergunta pelo
+  próprio arquivo que a declaração ainda não criou — `x_A` sozinho respondia
+  «não sou balde» antes de nascer e «sou o balde 1 de `x`» um instante depois,
+  e `x_B` nascia do lado sem erro nenhum porque o disco já tinha o `_A` que o
+  fazia parecer balde também; o `excluir_tabela("x")` seguinte apagava os 16
+  arquivos das duas, sem tabela `x` nenhuma (medido pelo papel C, N1). O
+  separador `_` de volume, que colide com qualquer nome que o use, continua
+  pendente: é o pedido **508**, mudança de formato. A tabela `_NNN`, `_A` ou
+  com ponto já criada antes dessas recusas continua **abrindo** pelo nome
+  exato — a recusa é só para o nome novo; `existe_tabela`/`todas_as_tabelas`
+  continuam sujeitas à mesma ambiguidade estrutural até o 508 fechar o
+  separador.
 
 **Migração, sem reescrita** — a trilha gravada antes do formato B abre como
 está:
