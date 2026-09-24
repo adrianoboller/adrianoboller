@@ -55,6 +55,12 @@ pub enum Tipo {
     Painel,
     Repasse,
     P2p,
+    /// Modo cliente do OpenVPN (entrar numa rede de outro servidor). E o
+    /// gap que o OpenVPN Connect cobre com "connect before logon": sem um
+    /// servico, o tunel so sobe depois que ALGUEM loga e roda
+    /// `phxvpn entrar --conectar` a mao -- igual falta no painel/repasse/p2p
+    /// antes de existirem os servicos deles.
+    Cliente,
 }
 
 impl Tipo {
@@ -63,7 +69,10 @@ impl Tipo {
             "painel" => Ok(Tipo::Painel),
             "repasse" => Ok(Tipo::Repasse),
             "p2p" => Ok(Tipo::P2p),
-            _ => Err(format!("serviço {t:?}? use painel, repasse ou p2p")),
+            "cliente" => Ok(Tipo::Cliente),
+            _ => Err(format!(
+                "serviço {t:?}? use painel, repasse, p2p ou cliente"
+            )),
         }
     }
 
@@ -72,16 +81,39 @@ impl Tipo {
             Tipo::Painel => "painel",
             Tipo::Repasse => "repasse",
             Tipo::P2p => "p2p",
+            Tipo::Cliente => "cliente",
         }
     }
 
-    /// Nome da unidade: `phxvpn-painel`, `phxvpn-repasse`, `phxvpn-p2p-<rede>`.
+    /// Nome da unidade: `phxvpn-painel`, `phxvpn-repasse`, `phxvpn-p2p-<rede>`,
+    /// `phxvpn-cliente-<rede>`.
     pub fn unidade(self, rede: Option<&str>) -> String {
         match (self, rede) {
             (Tipo::P2p, Some(r)) => format!("phxvpn-p2p-{}", limpo(r)),
+            (Tipo::Cliente, Some(r)) => format!("phxvpn-cliente-{}", limpo(r)),
             _ => format!("phxvpn-{}", self.nome()),
         }
     }
+}
+
+/// Devolve `args` sem a opcao `nome` e o valor dela. Usado quando o plano ja
+/// recalculou essa opcao (ex.: caminho canonicalizado) e nao pode deixar a
+/// versao crua do usuario voltar pela copia generica do resto dos args.
+fn sem_opcao(args: &[String], nome: &str) -> Vec<String> {
+    let mut saida = Vec::with_capacity(args.len());
+    let mut pular = false;
+    for a in args {
+        if pular {
+            pular = false;
+            continue;
+        }
+        if a == nome {
+            pular = true;
+            continue;
+        }
+        saida.push(a.clone());
+    }
+    saida
 }
 
 fn limpo(t: &str) -> String {
@@ -190,6 +222,16 @@ pub fn texto_da_unidade(
              RestrictAddressFamilies=AF_INET AF_INET6\n"
             .to_string(),
         Tipo::P2p => "User=root\n\
+             CapabilityBoundingSet=CAP_NET_ADMIN\n\
+             AmbientCapabilities=CAP_NET_ADMIN\n\
+             DevicePolicy=closed\n\
+             DeviceAllow=/dev/net/tun rw\n\
+             RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK\n"
+            .to_string(),
+        // O openvpn cliente cria a placa TUN e desce privilegio sozinho
+        // (--user/--group, quando o perfil pede); root aqui e so para a
+        // placa nascer.
+        Tipo::Cliente => "User=root\n\
              CapabilityBoundingSet=CAP_NET_ADMIN\n\
              AmbientCapabilities=CAP_NET_ADMIN\n\
              DevicePolicy=closed\n\
@@ -371,8 +413,44 @@ pub fn planejar(tipo: Tipo, args: &[String], exe: &Path) -> R<Plano> {
             }
             (Tipo::P2p.unidade(Some(&rede)), l)
         }
+        Tipo::Cliente => {
+            let perfil = valor("--perfil")
+                .ok_or("informe --perfil ARQUIVO.ovpn (baixado uma vez por `phxvpn entrar`)")?;
+            let caminho = std::path::PathBuf::from(&perfil);
+            if !caminho.is_file() {
+                return Err(format!(
+                    "{perfil}: nao existe -- rode `phxvpn entrar --saida {perfil} ...` primeiro"
+                ));
+            }
+            let caminho_absoluto = std::fs::canonicalize(&caminho)
+                .map_err(|e| format!("{perfil}: {e}"))?
+                .display()
+                .to_string();
+            // O nome da unidade vem do PERFIL, nao de uma rede pedida a
+            // parte -- e o unico identificador que o modo cliente tem: nao
+            // fala com o painel para saber o nome da rede, so consome o
+            // `.ovpn` ja emitido.
+            let nome_rede = caminho
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| "perfil".to_string());
+            let l = vec![
+                "cliente-rodar".to_string(),
+                "--perfil".into(),
+                caminho_absoluto,
+            ];
+            (Tipo::Cliente.unidade(Some(&nome_rede)), l)
+        }
     };
-    linha.extend(args.iter().cloned());
+    // O `--perfil` do Cliente ja entrou em `linha` CANONICALIZADO (caminho
+    // absoluto); copiar o `args` original de novo duplicaria a opcao com o
+    // caminho relativo que o usuario digitou.
+    let resto: Vec<String> = if tipo == Tipo::Cliente {
+        sem_opcao(args, "--perfil")
+    } else {
+        args.to_vec()
+    };
+    linha.extend(resto);
     let nomes: Vec<&str> = credenciais.iter().map(|(n, _)| n.as_str()).collect();
     // No Windows o «texto» e a linha que o SCM roda; no Linux, a unidade.
     let texto = if cfg!(windows) {
@@ -547,5 +625,55 @@ mod testes {
             "segredo nao entra em Environment="
         );
         assert!(p.contains("DeviceAllow=/dev/net/tun rw"));
+    }
+
+    // RED: sem o `sem_opcao(args, "--perfil")` na montagem do plano, o
+    // `--perfil` cru do usuario volta pela copia generica do resto dos
+    // argumentos, DEPOIS do canonicalizado que o proprio codigo ja pos --
+    // e a unidade sobe com dois `--perfil` na mesma linha.
+    #[test]
+    fn servico_cliente_nao_duplica_o_perfil() {
+        let dir =
+            std::env::temp_dir().join(format!("phxvpn-servico-cliente-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let perfil = dir.join("rede.ovpn");
+        std::fs::write(&perfil, b"perfil de mentira").unwrap();
+
+        let exe = Path::new("/usr/bin/phxvpn");
+        let plano = planejar(
+            Tipo::Cliente,
+            &["--perfil".to_string(), perfil.display().to_string()],
+            exe,
+        )
+        .unwrap();
+        let ocorrencias = plano.texto.matches("--perfil").count();
+        assert_eq!(ocorrencias, 1, "--perfil duplicado:\n{}", plano.texto);
+        assert!(plano.texto.contains("cliente-rodar"));
+        assert!(plano.texto.contains("CAP_NET_ADMIN"));
+        assert!(plano.unidade.starts_with("phxvpn-cliente-"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // RED: sem a conferencia `caminho.is_file()`, o servico "cliente" se
+    // instalaria apontando para um perfil que nunca existiu, e so falharia
+    // no proximo arranque da maquina -- tarde demais para quem esta
+    // instalando decidir algo a respeito.
+    #[test]
+    fn servico_cliente_recusa_perfil_inexistente() {
+        let exe = Path::new("/usr/bin/phxvpn");
+        let r = planejar(
+            Tipo::Cliente,
+            &[
+                "--perfil".to_string(),
+                "/tmp/phxvpn-perfil-que-nao-existe-de-verdade.ovpn".to_string(),
+            ],
+            exe,
+        );
+        assert!(r.is_err());
+    }
+
+    #[test]
+    fn tipo_de_texto_aceita_cliente() {
+        assert_eq!(Tipo::de_texto("cliente").unwrap(), Tipo::Cliente);
     }
 }

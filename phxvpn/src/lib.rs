@@ -2,6 +2,7 @@
 //! linha de comando e para os testes de integracao usarem o MESMO codigo.
 
 pub mod acl;
+pub mod atualizar;
 #[cfg(windows)]
 pub mod bandeja;
 pub mod cofre;

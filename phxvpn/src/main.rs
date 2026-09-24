@@ -77,6 +77,12 @@ const AJUDA: &str = "phxvpn -- redes virtuais no estilo Radmin, sobre OpenVPN
   phxvpn servico instalar painel [--openvpn ...]     (PHXVPN_PG no ambiente)
   phxvpn servico instalar repasse [--contas ARQ ...]
   phxvpn servico instalar p2p --rede NOME             (PHXVPN_SENHA_REDE)
+  phxvpn servico instalar cliente --perfil rede.ovpn
+      Modo cliente (entrar na rede de outro servidor) antes do login --
+      o gap do connect-before-logon do OpenVPN Connect: baixe o perfil
+      uma vez com `phxvpn entrar --saida rede.ovpn`, depois instale o
+      servico; ele sobe o `openvpn --config rede.ovpn` com a maquina,
+      sem ninguem logado (LocalSystem no Windows, root no Linux).
         [--mostrar] so imprime a unidade; [--sem-iniciar] liga no arranque
   phxvpn servico remover phxvpn-painel
       Linux/systemd. Os segredos viram credenciais CIFRADAS (systemd-creds),
@@ -91,15 +97,60 @@ const AJUDA: &str = "phxvpn -- redes virtuais no estilo Radmin, sobre OpenVPN
       os membros e o botao ligar/desligar. Ligar pede root/administrador.
       (No Windows tambem ha o phxvpnw.exe, que abre sem janela de console.)
 
+  phxvpn atualizar [--manifesto http://host/manifesto.json] [--verificar]
+      PHXVPN_ATUALIZAR_MANIFESTO vale como --manifesto. --verificar so diz se
+      ha versao mais nova, sem baixar nem trocar nada. Sem --verificar, baixa,
+      confere assinatura Ed25519 e SHA-256, recusa versao igual ou menor, e
+      troca o binario EM USO (atomico no Linux; no Windows, o antigo vira
+      .old e e limpo no proximo arranque).
+      Checagem periodica opcional: com PHXVPN_ATUALIZAR_MANIFESTO no
+      ambiente, `phxvpn painel` e `phxvpn mesa` avisam sozinhos quando ha
+      versao nova (nunca aplicam sozinhos). PHXVPN_ATUALIZAR_INTERVALO_S
+      muda o intervalo (padrao 21600 = 6h).
+  phxvpn atualizar-assinar --versao X.Y.Z --saida manifesto.json
+      --chave-privada ARQUIVO (ou PHXVPN_CHAVE_PRIVADA_ATUALIZACAO)
+      --alvo PLATAFORMA=URL,SHA256 [--alvo ...]
+      Gera e assina o manifesto (uso do publicar-atualizacao.sh).
+  phxvpn atualizar-gerar-chave
+      Gera um par Ed25519 novo para publicar atualizacoes (uso unico, por
+      quem for lancar de verdade -- a privada nunca vai para o repositorio).
+
   phxvpn versao
 ";
 
 fn main() {
+    // Sobra de uma troca de binario anterior (so existe passo intermediario
+    // no Windows -- o Linux troca atomico, sem sobra).
+    phxvpn::atualizar::limpar_binario_antigo();
     let args: Vec<String> = std::env::args().skip(1).collect();
     if let Err(e) = despachar(&args) {
         eprintln!("phxvpn: {e}");
         std::process::exit(1);
     }
+}
+
+/// Checagem periodica de atualizacao: so nasce se `PHXVPN_ATUALIZAR_MANIFESTO`
+/// estiver no ambiente -- guarda pedida, nao imposta, e sem custo nenhum em
+/// quem nunca a liga.
+fn talvez_checar_atualizacao() {
+    let Ok(url) = std::env::var("PHXVPN_ATUALIZAR_MANIFESTO") else {
+        return;
+    };
+    let Some(chave) = phxsql_core::ed25519::chave_de_hex(phxvpn::atualizar::CHAVE_PUBLICA_PADRAO)
+    else {
+        return;
+    };
+    let intervalo = std::env::var("PHXVPN_ATUALIZAR_INTERVALO_S")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .map(std::time::Duration::from_secs)
+        .unwrap_or(std::time::Duration::from_secs(6 * 3600));
+    phxvpn::atualizar::iniciar_verificacao_periodica(
+        url,
+        chave,
+        env!("CARGO_PKG_VERSION").to_string(),
+        intervalo,
+    );
 }
 
 /// Um comando do phxvpn. Separado do `main` para o servico do Windows rodar
@@ -128,6 +179,11 @@ fn despachar(args: &[String]) -> Result<(), String> {
             })
         }
         Some("servico") => cmd_servico(&args[1..]),
+        // Chamado pelo servico "cliente", nao por gente.
+        Some("cliente-rodar") => cmd_cliente_rodar(&args[1..]),
+        Some("atualizar") => cmd_atualizar(&args[1..]),
+        Some("atualizar-assinar") => cmd_atualizar_assinar(&args[1..]),
+        Some("atualizar-gerar-chave") => cmd_atualizar_gerar_chave(),
         // Chamado pelo gerenciador de servicos do Windows, nao por gente.
         #[cfg(windows)]
         Some("servico-rodar") => {
@@ -140,6 +196,7 @@ fn despachar(args: &[String]) -> Result<(), String> {
         Some("usb") => comandos::usb(&Opcoes::de_args(&args[1..], &[])).map(|t| print!("{t}")),
         Some("mesa") => {
             let o = Opcoes::de_args(&args[1..], &["sem-janela"]);
+            talvez_checar_atualizacao();
             phxvpn::mesa::principal(
                 o.um("pasta")
                     .map(PathBuf::from)
@@ -211,6 +268,7 @@ fn cmd_painel(args: &[String]) -> Result<(), String> {
         None
     };
     p.aquecer();
+    talvez_checar_atualizacao();
     let (destrancado, instalado) = (p.destrancado(), p.instalado()?);
     let nomes: Vec<String> = o.todos("nome").iter().map(|n| n.to_lowercase()).collect();
     let estado = Arc::new(http::Estado::novo(p, supervisor).com_hosts(&escuta, &nomes));
@@ -260,17 +318,36 @@ fn cmd_rede(args: &[String], criar: bool) -> Result<(), String> {
     )?;
     println!("perfil gravado em {arquivo} (contem a sua chave privada: guarde-o como senha)");
     if o.tem("conectar") {
-        let bin = supervisor::achar_no_path("openvpn").ok_or("openvpn nao esta no PATH")?;
-        let st = std::process::Command::new(bin)
-            .arg("--config")
-            .arg(&arquivo)
-            .status()
-            .map_err(|e| e.to_string())?;
-        if !st.success() {
-            return Err(format!("openvpn saiu com {st}"));
-        }
+        rodar_openvpn_cliente(&arquivo)?;
     }
     Ok(())
+}
+
+/// Sobe o `openvpn` cliente com um perfil `.ovpn` ja emitido e espera ele
+/// terminar. UM motor so: `entrar --conectar` (em primeiro plano) e
+/// `cliente-rodar` (dentro do servico "connect before logon") chamam esta
+/// mesma funcao -- nao duas copias que um conserto no processo filho
+/// esqueceria de repetir na outra.
+fn rodar_openvpn_cliente(perfil: &str) -> Result<(), String> {
+    let bin = supervisor::achar_no_path("openvpn").ok_or("openvpn nao esta no PATH")?;
+    let st = std::process::Command::new(bin)
+        .arg("--config")
+        .arg(perfil)
+        .status()
+        .map_err(|e| e.to_string())?;
+    if !st.success() {
+        return Err(format!("openvpn saiu com {st}"));
+    }
+    Ok(())
+}
+
+/// `phxvpn cliente-rodar --perfil ARQ`: o que o servico "cliente" executa.
+/// Nao e chamado por gente -- e o `ExecStart` de
+/// `phxvpn servico instalar cliente --perfil ...`.
+fn cmd_cliente_rodar(args: &[String]) -> Result<(), String> {
+    let o = Opcoes::de_args(args, &[]);
+    let perfil = o.um("perfil").ok_or("informe --perfil ARQUIVO.ovpn")?;
+    rodar_openvpn_cliente(perfil)
 }
 
 fn cmd_p2p(args: &[String]) -> Result<(), String> {
@@ -470,4 +547,97 @@ fn p2p_placa(o: &Opcoes) -> Result<(), String> {
         println!("no Linux a placa nasce sozinha no p2p ligar; nada a criar");
         Ok(())
     }
+}
+
+fn chave_publica_de_atualizacao() -> [u8; 32] {
+    phxsql_core::ed25519::chave_de_hex(phxvpn::atualizar::CHAVE_PUBLICA_PADRAO)
+        .expect("CHAVE_PUBLICA_PADRAO e uma constante do proprio binario, sempre valida")
+}
+
+fn cmd_atualizar(args: &[String]) -> Result<(), String> {
+    let o = Opcoes::de_args(args, &["verificar"]);
+    let url = o
+        .um("manifesto")
+        .map(str::to_string)
+        .or_else(|| std::env::var("PHXVPN_ATUALIZAR_MANIFESTO").ok())
+        .ok_or("informe --manifesto http://host/manifesto.json ou PHXVPN_ATUALIZAR_MANIFESTO")?;
+    let chave = chave_publica_de_atualizacao();
+    let versao_atual = env!("CARGO_PKG_VERSION");
+    if o.tem("verificar") {
+        let d = phxvpn::atualizar::verificar(&url, &chave, versao_atual)?;
+        if d.mais_novo {
+            println!(
+                "atualizacao disponivel: {} (atual: {versao_atual})",
+                d.versao
+            );
+        } else {
+            println!("ja esta na versao mais nova ({versao_atual})");
+        }
+        return Ok(());
+    }
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let versao = phxvpn::atualizar::aplicar(&url, &chave, versao_atual, &exe)?;
+    println!("atualizado para {versao} -- reinicie o phxvpn");
+    Ok(())
+}
+
+/// `phxvpn atualizar-assinar`: ferramenta de quem PUBLICA, chamada pelo
+/// `publicar-atualizacao.sh`. Nao roda em quem so consome a atualizacao.
+fn cmd_atualizar_assinar(args: &[String]) -> Result<(), String> {
+    use phxvpn::atualizar::{assinar_manifesto, Alvo, Manifesto};
+    let o = Opcoes::de_args(args, &[]);
+    let versao = o.um("versao").ok_or("informe --versao MAJOR.MINOR.PATCH")?;
+    let saida = o.um("saida").ok_or("informe --saida ARQUIVO")?;
+    let privada_txt = match o.um("chave-privada") {
+        Some(caminho) => std::fs::read_to_string(caminho).map_err(|e| format!("{caminho}: {e}"))?,
+        None => std::env::var("PHXVPN_CHAVE_PRIVADA_ATUALIZACAO").map_err(|_| {
+            "informe --chave-privada ARQUIVO ou PHXVPN_CHAVE_PRIVADA_ATUALIZACAO \
+             (a chave privada nunca vai para o repositorio)"
+        })?,
+    };
+    let privada = phxsql_core::ed25519::chave_de_hex(privada_txt.trim())
+        .ok_or("a chave privada nao e hex valido de 32 bytes")?;
+    let mut alvos = Vec::new();
+    for a in o.todos("alvo") {
+        let (plataforma, resto) = a
+            .split_once('=')
+            .ok_or_else(|| format!("--alvo {a:?}: use PLATAFORMA=URL,SHA256"))?;
+        let (url, sha256) = resto
+            .rsplit_once(',')
+            .ok_or_else(|| format!("--alvo {a:?}: use PLATAFORMA=URL,SHA256"))?;
+        alvos.push((
+            plataforma.to_string(),
+            Alvo {
+                url: url.to_string(),
+                sha256: sha256.trim().to_lowercase(),
+            },
+        ));
+    }
+    if alvos.is_empty() {
+        return Err("informe ao menos um --alvo PLATAFORMA=URL,SHA256".into());
+    }
+    let m = Manifesto {
+        versao: versao.to_string(),
+        alvos,
+    };
+    let texto = assinar_manifesto(&m, &privada);
+    std::fs::write(saida, texto).map_err(|e| format!("{saida}: {e}"))?;
+    println!("manifesto assinado gravado em {saida}");
+    Ok(())
+}
+
+fn cmd_atualizar_gerar_chave() -> Result<(), String> {
+    use phxsql_core::hash::para_hex;
+    let privada = phxsql_core::ed25519::gerar_privada();
+    let publica = phxsql_core::ed25519::chave_publica(&privada);
+    println!(
+        "privada: {} (NUNCA grave isto no repositorio; guarde por fora, ou em \
+         PHXVPN_CHAVE_PRIVADA_ATUALIZACAO na hora de publicar)",
+        para_hex(&privada)
+    );
+    println!(
+        "publica: {} (troque CHAVE_PUBLICA_PADRAO em src/atualizar.rs por esta antes do lancamento)",
+        para_hex(&publica)
+    );
+    Ok(())
 }

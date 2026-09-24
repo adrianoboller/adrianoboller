@@ -49,6 +49,8 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [x] Serviço do Windows (SCM por FFI, reinício em 5 s, registro em arquivo), segredos em DPAPI da máquina num arquivo só de SYSTEM e Administradores
 - [x] Interface responsiva (CSS grid + flexbox + container queries) na janela e no painel — rolagem lateral zero medida em 390, 820, 1280, 1920 e 3440 px
 - [x] Segurança C2: sorteio falha fechado (descritor único; `BCryptGenRandom` no Windows) — nunca mais mistura previsível
+- [x] Auto-atualização: `phxvpn atualizar [--manifesto URL] [--verificar]` — manifesto JSON assinado Ed25519 (chave publica embutida, `CHAVE_PUBLICA_PADRAO`), SHA-256 do binário conferido, downgrade recusado, troca atômica (Linux: `rename` no mesmo binário em uso; Windows: renomeia o `.exe` em uso para `.old` e escreve o novo, limpo no próximo arranque). `phxvpn atualizar-assinar` e `atualizar-gerar-chave` para quem publica; `publicar-atualizacao.sh` monta os binários pelo `cargo build --release` (mesmo caminho do `empacotar.sh`) e assina. Checagem periódica opcional (`PHXVPN_ATUALIZAR_MANIFESTO` no ambiente) no `painel` e na `mesa` — só avisa, nunca aplica sozinha
+- [x] Serviço "cliente" (`phxvpn servico instalar cliente --perfil rede.ovpn`): o modo cliente do OpenVPN (entrar na rede de OUTRO servidor) agora sobe com a máquina, antes do login — o gap de "connect before logon" do OpenVPN Connect. Reaproveita a MESMA função que `phxvpn entrar --conectar` já usava (`rodar_openvpn_cliente`), não uma segunda cópia
 
 ### Falta
 
@@ -62,6 +64,8 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [ ] macOS, Android e iOS (OpenVPN e WireGuard têm; achado da validação de 24/09)
 - [ ] Auditoria de segurança externa (OpenVPN teve em 2017, o WireGuard tem verificação formal; aqui só revisão interna)
 - [ ] MFA / RADIUS / Active Directory no painel — **decisão de produto do dono** (Access Server, Windows e strongSwan têm)
+- [ ] Windows ARM64: **medido, falta só o linker.** `rustup target add aarch64-pc-windows-gnullvm` baixa o `rust-std` e `cargo check --target aarch64-pc-windows-gnullvm` passa limpo (o código não tem nada arquitetura-específico) — mas `cargo build` para o mesmo alvo para em `error: linker aarch64-w64-mingw32-clang not found`. O Ubuntu deste contêiner empacota `gcc-mingw-w64-*` só para `x86_64` e `i686` (`apt-cache search mingw`, zero resultado para `aarch64`); a cadeia que falta é o `llvm-mingw` (clang + `aarch64-w64-mingw32` runtime), que não vem por `apt` — só baixando um toolchain de fora, o que esta rodada não fez por ser rede+binário de terceiro fora do gerenciador de pacotes do sistema, não uma crate Rust. `aarch64-pc-windows-msvc` nem chega a esse ponto: pede o Windows SDK/MSVC, que não existe aqui de jeito nenhum sem instalador da Microsoft. Não entrou no `empacotar.sh` por não linkar
+- [ ] P2P no Windows / serviço "cliente": prova numa máquina Windows REAL continua faltando (mesmo limite já registrado para o P2P — o Wine não tem o driver TAP); o serviço "cliente" foi só testado no Linux (`cargo test`) e no `--mostrar` (unidade gerada, sem instalar de fato)
 
 ## Portas e o controle de cada uma
 
@@ -557,6 +561,118 @@ O equivalente do `systemd-creds`:
 **O que o Wine faz e o Windows não:** quando o último processo de usuário
 sai, ele derruba os serviços. Na prova, um processo à toa segura o Wine,
 como uma máquina ligada seguraria o Windows.
+
+## Auto-atualização (24/09/2026)
+
+`phxvpn atualizar [--manifesto URL] [--verificar]`: baixa um MANIFESTO,
+confere a assinatura e o hash, e troca o binário em uso.
+
+**Formato do manifesto** (`src/atualizar.rs`):
+
+```json
+{
+  "corpo": {
+    "versao": "0.2.0",
+    "alvos": {
+      "linux-x86_64":   {"url": "https://.../phxvpn-linux-x86_64",   "sha256": "…"},
+      "windows-x86_64": {"url": "https://.../phxvpn-windows-x86_64.exe", "sha256": "…"}
+    }
+  },
+  "assinatura": "…128 hex (Ed25519)…"
+}
+```
+
+O `corpo` é assinado com Ed25519 (`phxsql-core/src/ed25519.rs`, o MESMO motor
+do PhxSql — função e comando não se duplicam). A chave pública de publicação
+(`CHAVE_PUBLICA_PADRAO`) fica embutida no binário; a privada nunca é gravada
+no repositório — `phxvpn atualizar-gerar-chave` gera o par uma vez, na
+máquina de quem publica, e `publicar-atualizacao.sh` só a recebe por caminho
+de arquivo ou `PHXVPN_CHAVE_PRIVADA_ATUALIZACAO`.
+
+**Por que HTTP simples basta, e o que ele NÃO cobre.** A integridade não
+depende do transporte: a assinatura prova quem publicou, o SHA-256 prova que
+o binário baixado é exatamente o apontado. Um atacante no meio pode ver ou
+derrubar o pedido, não pode forjar uma resposta que passe nas duas
+conferências. O limite, dito e não escondido: **não há sigilo de qual
+versão está sendo baixada**, nem de qual máquina fala com qual servidor de
+atualização — quem observa o fio vê o pedido.
+
+**Recusa downgrade** (`comparar_versoes`, MAJOR.MINOR.PATCH) e **falha
+fechado** em qualquer manifesto torto (JSON inválido, campo faltando, hex
+inválido, assinatura que não confere) — nunca aplica um manifesto parcial.
+
+**Troca atômica do binário em uso** (`trocar_binario`):
+- **Linux**: grava no mesmo diretório e troca por `rename` — atômico mesmo
+  com o processo rodando, porque a inode antiga continua aberta por quem já
+  o carregou;
+- **Windows**: não dá para sobrescrever o `.exe` em execução, mas dá para
+  **renomeá-lo** — o SO mantém a imagem mapeada pelo identificador antigo.
+  Move o atual para `.exe.old` e escreve o novo no nome de sempre;
+  `limpar_binario_antigo()` apaga a sobra no próximo arranque (chamada no
+  início do `main`).
+
+**Checagem periódica, opcional e sem custo desligada.** Com
+`PHXVPN_ATUALIZAR_MANIFESTO` no ambiente, `phxvpn painel` e `phxvpn mesa`
+sobem uma checagem de fundo (padrão 6 h, `PHXVPN_ATUALIZAR_INTERVALO_S`
+muda) que só **avisa** (`eprintln!`) — nunca aplica sozinha: trocar o
+binário de um processo em produção sem ninguém mandar é o tipo de guarda
+imposta que a casa recusa. Sem a variável, nasce zero thread, custo zero.
+
+**`publicar-atualizacao.sh`**: compila release (Linux + `x86_64-pc-windows-gnu`,
+o mesmo caminho do `empacotar.sh`), copia os binários com o nome que o
+manifesto vai apontar, calcula o SHA-256 de cada um e chama
+`phxvpn atualizar-assinar` para gravar o manifesto assinado. Windows ARM64
+não entra (ver "Falta" acima — falta o linker).
+
+**Testes** (`src/atualizar.rs`, 7): assinatura adulterada recusada;
+manifesto assinado por OUTRA chave recusado; SHA-256 errado recusado (o
+binário velho continua no lugar); versão igual e versão menor recusadas,
+versão maior passa dessa conferência; e a prova **ponta a ponta**: um
+`python3 -m http.server` real serve manifesto + binário, `aplicar()` baixa,
+confere as duas coisas e troca o arquivo "em uso" pelo conteúdo novo.
+
+**Prova manual pela CLI** (chave de teste, fora do repositório):
+`atualizar-gerar-chave` → `atualizar-assinar` → `python3 -m http.server` →
+`atualizar --verificar` (`atualizacao disponivel: 9.9.9`) → `atualizar`
+(troca o binário, `md5sum` antes/depois diferente) → manifesto com versão
+menor (`0.0.1`) recusado com "nunca se faz downgrade" → um caractere da
+assinatura trocado recusado com "assinatura … nao confere".
+
+## Conectar antes do login (24/09/2026)
+
+**P2P já cobria o gap.** `phxvpn servico instalar p2p --rede NOME` sobe como
+serviço `SERVICE_AUTO_START` (Windows, `servico_windows.rs`) / `systemd`
+habilitado (Linux) — os dois sobem com a máquina, antes de qualquer sessão
+de usuário, por definição do próprio sistema operacional (sessão 0 no
+Windows). Isso já estava coberto; só faltava dizer com qual comando.
+
+**O gap de verdade era o modo cliente** (`phxvpn entrar --conectar`, que
+entra na rede de OUTRO servidor rodando `openvpn --config perfil.ovpn`):
+não tinha serviço nenhum — só rodava a mão, depois do login. É exatamente o
+"connect before logon" que o OpenVPN Connect resolve e o phxvpn não tinha.
+
+**Serviço novo, tipo `Cliente`** (`src/servico.rs`):
+`phxvpn servico instalar cliente --perfil rede.ovpn` (perfil baixado uma vez
+por `phxvpn entrar --saida rede.ovpn`). O `ExecStart` chama
+`phxvpn cliente-rodar --perfil <caminho absoluto>`, que roda a MESMA função
+que `entrar --conectar` já usava (`rodar_openvpn_cliente`, extraída para as
+duas portas não divergirem) — `openvpn --config perfil` em primeiro plano,
+com `CAP_NET_ADMIN`/`root` para a placa TUN, igual ao serviço `p2p`.
+
+**Defeito achado testando, não lendo.** A primeira versão duplicava
+`--perfil` na linha do `ExecStart`: o plano montava o caminho canonicalizado
+e depois a cópia genérica dos argumentos originais (que outros tipos de
+serviço usam para repassar `--dados`, `--rede` etc.) reincluía o `--perfil`
+cru do usuário por cima. `sem_opcao()` filtra o `--perfil` original antes da
+cópia. RED: `servico_cliente_nao_duplica_o_perfil` conta as ocorrências de
+`"--perfil"` no texto da unidade e falha se não for exatamente 1.
+
+**Provado** (`cargo test`, Linux): unidade sem duplicar `--perfil`; recusa
+perfil inexistente na hora de instalar (`.is_file()`), não só no primeiro
+arranque; `Tipo::de_texto("cliente")`. **Não provado**: rodando de verdade
+sob o `systemd` ou o SCM do Windows (mesmo limite já registrado para
+painel/repasse/p2p — o contêiner não tem `systemd` como PID 1, e o Wine não
+segura serviço sem um processo de usuário vivo).
 
 ## USB pela rede (24/09/2026)
 
