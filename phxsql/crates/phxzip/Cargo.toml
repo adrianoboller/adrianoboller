@@ -1,0 +1,11 @@
+[package]
+name = "phxzip"
+description = "PhxZip: o formato 7z escrito aqui -- LZMA, LZMA2 e AES-256, sem std"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+# CRC-32 do 7z e SHA-256 da chave do 7zAES: o mesmo motor do PhxSql, sem copia.
+phxhash.workspace = true

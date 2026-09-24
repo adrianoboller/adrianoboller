@@ -3,6 +3,10 @@
 version = 3
 
 [[package]]
+name = "phxhash"
+version = "0.19.0"
+
+[[package]]
 name = "phxsql-cli"
 version = "0.19.0"
 dependencies = [
@@ -21,6 +25,9 @@ dependencies = [
 [[package]]
 name = "phxsql-core"
 version = "0.19.0"
+dependencies = [
+ "phxhash",
+]
 
 [[package]]
 name = "phxsql-ffi"
@@ -58,4 +65,19 @@ name = "phxsql-store"
 version = "0.19.0"
 dependencies = [
  "phxsql-core",
+]
+
+[[package]]
+name = "phxzip"
+version = "0.19.0"
+dependencies = [
+ "phxhash",
+]
+
+[[package]]
+name = "phxzip-cmd"
+version = "0.19.0"
+dependencies = [
+ "phxsql-core",
+ "phxzip",
 ]

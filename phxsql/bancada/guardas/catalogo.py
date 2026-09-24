@@ -6100,7 +6100,7 @@ pub fn limpar() {
             "de 1 em 1, de 7 em 7, de 64 em 64) fica VERDE, porque pergunta "
             "ao motor quebrado e recebe a mesma resposta quebrada duas vezes."
         ),
-        "arquivo": "crates/phxsql-core/src/hash.rs",
+        "arquivo": "crates/phxhash/src/hash.rs",
         "trecho": """        for (destino, valor) in self
             .estado
             .iter_mut()
@@ -6121,7 +6121,7 @@ pub fn limpar() {
             *destino = valor;
         }
 """,
-        "pacote": "phxsql-core",
+        "pacote": "phxhash",
         "alvo": ["--lib"],
         "caem": [
             "hash::tests::sha256_vetores_oficiais",
@@ -6156,7 +6156,7 @@ pub fn limpar() {
             "escolheria o vazio, e a guarda morreria calada. Os quatro casos "
             "da FIPS existem por isso."
         ),
-        "arquivo": "crates/phxsql-core/src/hash.rs",
+        "arquivo": "crates/phxhash/src/hash.rs",
         "trecho": """        self.atualizar_sem_contar(&bits.to_be_bytes());
 """,
         "troca": """        // DEFEITO REPOSTO: o tamanho da mensagem entra em little-endian. A
@@ -6164,7 +6164,7 @@ pub fn limpar() {
         // zero nas duas ordens.
         self.atualizar_sem_contar(&bits.to_le_bytes());
 """,
-        "pacote": "phxsql-core",
+        "pacote": "phxhash",
         "alvo": ["--lib"],
         "caem": [
             "hash::tests::sha256_vetores_oficiais",
@@ -6199,7 +6199,55 @@ pub fn limpar() {
             "cinco ja cobrem», o HMAC desta casa deixa de ser HMAC para toda "
             "chave longa e nada acusa."
         ),
-        "arquivo": "crates/phxsql-core/src/hash.rs",
+        "arquivo": "crates/phxhash/src/hash.rs",
+        "trecho": """    if chave.len() > SHA256_BLOCO {
+        chave_bloco[..SHA256_LEN].copy_from_slice(&sha256(chave));
+    } else {
+        chave_bloco[..chave.len()].copy_from_slice(chave);
+    }
+""",
+        "troca": """    // DEFEITO REPOSTO: os dois ramos viram um. A chave maior que o bloco
+    // entra TRUNCADA em vez de pre-hasheada -- e a RFC 2104 manda hashear.
+    let n = chave.len().min(SHA256_BLOCO);
+    chave_bloco[..n].copy_from_slice(&chave[..n]);
+""",
+        "pacote": "phxhash",
+        "alvo": ["--lib"],
+        "caem": [
+            "hash::tests::hmac_vetores_rfc4231",
+        ],
+        "seguem": [
+            # As chaves curtas nao sentem nada, e e esse o ponto: PBKDF2,
+            # senha e os outros dois casos do anexo A continuam verdes.
+            "hash::tests::sha256_vetores_oficiais",
+            "hash::tests::pbkdf2_vetores_conhecidos",
+            "hash::tests::pbkdf2_saida_longa_atravessa_varios_blocos",
+        ],
+    },
+    # O mesmo defeito, provado pelo lado do core: o hash.rs mudou para a
+    # `phxhash` (no_std, pedido 450) e a HKDF que o pega ficou no core.
+    {
+        "id": "hmac-com-a-chave-longa-truncada-pela-hkdf",
+        "titulo": "HMAC com a chave maior que o bloco TRUNCADA em vez de pré-hasheada",
+        "porque": (
+            "petrea do CLAUDE.md: «criptografia se confere contra vetor "
+            "oficial». Defeito reposto: o `if chave.len() > SHA256_BLOCO` some "
+            "e a chave passa a entrar cortada em 64 bytes. Escolhi este "
+            "porque e o defeito de ALCANCE ESTREITO -- e defeito de alcance "
+            "estreito e o que prova que UM vetor especifico da lista e "
+            "portante. Um `if`/`else` cujos dois ramos fazem "
+            "`copy_from_slice` num prefixo e o convite perfeito a "
+            "«simplificacao»: `let n = chave.len().min(BLOCO)` cobre os dois "
+            "casos, compila e passa em toda senha que alguem digita -- as do "
+            "`senha.rs` e do `cofre.rs` tem menos de 64 bytes. "
+            "Na suite inteira do `phxsql-core` so DUAS asercoes usam chave "
+            "maior que o bloco: o caso 6 da RFC 4231 (131 bytes de 0xaa) e o "
+            "sal de 80 bytes do anexo A.2 da RFC 5869, que entra na posicao "
+            "da chave do HMAC. Se alguem apagar o caso 6 «porque os outros "
+            "cinco ja cobrem», o HMAC desta casa deixa de ser HMAC para toda "
+            "chave longa e nada acusa."
+        ),
+        "arquivo": "crates/phxhash/src/hash.rs",
         "trecho": """    if chave.len() > SHA256_BLOCO {
         chave_bloco[..SHA256_LEN].copy_from_slice(&sha256(chave));
     } else {
@@ -6214,15 +6262,11 @@ pub fn limpar() {
         "pacote": "phxsql-core",
         "alvo": ["--lib"],
         "caem": [
-            "hash::tests::hmac_vetores_rfc4231",
             "hkdf::testes::caso_2_do_anexo_a",
         ],
         "seguem": [
             # As chaves curtas nao sentem nada, e e esse o ponto: PBKDF2,
             # senha e os outros dois casos do anexo A continuam verdes.
-            "hash::tests::sha256_vetores_oficiais",
-            "hash::tests::pbkdf2_vetores_conhecidos",
-            "hash::tests::pbkdf2_saida_longa_atravessa_varios_blocos",
             "hkdf::testes::caso_1_do_anexo_a",
             "hkdf::testes::caso_3_do_anexo_a",
             "senha::tests::cifra_e_confere",
@@ -6247,7 +6291,7 @@ pub fn limpar() {
             "derivada de 64 bytes com as duas metades IGUAIS -- metade da "
             "entropia, em silencio."
         ),
-        "arquivo": "crates/phxsql-core/src/hash.rs",
+        "arquivo": "crates/phxhash/src/hash.rs",
         "trecho": """        pos += n;
         bloco += 1;
 """,
@@ -6257,7 +6301,7 @@ pub fn limpar() {
         // acima disso os blocos saem repetidos.
         bloco = 1;
 """,
-        "pacote": "phxsql-core",
+        "pacote": "phxhash",
         "alvo": ["--lib"],
         "caem": [
             "hash::tests::pbkdf2_saida_longa_atravessa_varios_blocos",
@@ -6267,7 +6311,6 @@ pub fn limpar() {
             "hash::tests::pbkdf2_sal_diferente_muda_tudo",
             "hash::tests::sha256_vetores_oficiais",
             "hash::tests::hmac_vetores_rfc4231",
-            "senha::tests::cifra_e_confere",
         ],
     },
     {
@@ -6290,7 +6333,7 @@ pub fn limpar() {
             "«tirar o laco aninhado». O `seguem` desta entrada e o inventario "
             "do que ficou VERDE com o defeito de pe."
         ),
-        "arquivo": "crates/phxsql-core/src/hash.rs",
+        "arquivo": "crates/phxhash/src/hash.rs",
         "trecho": """        for _ in 1..iteracoes {
             u = hmac_sha256(senha, &u);
             for (a, b) in acumulado.iter_mut().zip(u.iter()) {
@@ -6306,7 +6349,7 @@ pub fn limpar() {
             acumulado = u;
         }
 """,
-        "pacote": "phxsql-core",
+        "pacote": "phxhash",
         "alvo": ["--lib"],
         "caem": [
             "hash::tests::pbkdf2_vetores_conhecidos",
@@ -6315,9 +6358,6 @@ pub fn limpar() {
         "seguem": [
             # O inventario do que NAO pega: propriedade, ida-e-volta e sal.
             "hash::tests::pbkdf2_sal_diferente_muda_tudo",
-            "senha::tests::cifra_e_confere",
-            "senha::tests::duas_senhas_iguais_dao_hashes_diferentes",
-            "senha::tests::hash_estragado_nunca_deixa_entrar",
             "hash::tests::sha256_vetores_oficiais",
             "hash::tests::hmac_vetores_rfc4231",
         ],
@@ -9003,7 +9043,7 @@ pub fn limpar() {
             "`[15, 15]`. Esta entrada prova o MOTOR; o dano pelo soquete esta "
             "nas duas seguintes."
         ),
-        "arquivo": "crates/phxsql-core/src/hash.rs",
+        "arquivo": "crates/phxhash/src/hash.rs",
         "trecho": """    let mut saida = Vec::with_capacity(t.len() / 2);
     for par in t.chunks_exact(2) {
         saida.push((digito_hex(par[0])? << 4) | digito_hex(par[1])?);
@@ -9011,13 +9051,13 @@ pub fn limpar() {
     Some(saida)
 """,
         "troca": """    // DEFEITO REPOSTO (446): fatia o TEXTO por byte, pelo from_str_radix.
-    let t = std::str::from_utf8(t).unwrap();
+    let t = core::str::from_utf8(t).unwrap();
     (0..t.len())
         .step_by(2)
         .map(|i| u8::from_str_radix(&t[i..i + 2], 16).ok())
         .collect()
 """,
-        "pacote": "phxsql-core",
+        "pacote": "phxhash",
         "alvo": ["--lib"],
         "caem": [
             "hash::tests::de_hex_com_caractere_de_varios_bytes_recusa_sem_panico",
@@ -9025,7 +9065,6 @@ pub fn limpar() {
         ],
         "seguem": [
             "hash::tests::hex_vai_e_volta",
-            "ed25519::tests::hexadecimal_recusa_tamanho_errado",
         ],
         "prazo": 300,
     },
@@ -9045,7 +9084,7 @@ pub fn limpar() {
             "1 pulso e mais nada. E o `hex_para_bytes` passou a chamar o motor, "
             "entao o `Bin` do `inserir` cai junto: a trava de dados envenena."
         ),
-        "arquivo": "crates/phxsql-core/src/hash.rs",
+        "arquivo": "crates/phxhash/src/hash.rs",
         "trecho": """    let mut saida = Vec::with_capacity(t.len() / 2);
     for par in t.chunks_exact(2) {
         saida.push((digito_hex(par[0])? << 4) | digito_hex(par[1])?);
@@ -9053,7 +9092,7 @@ pub fn limpar() {
     Some(saida)
 """,
         "troca": """    // DEFEITO REPOSTO (446): fatia o TEXTO por byte, pelo from_str_radix.
-    let t = std::str::from_utf8(t).unwrap();
+    let t = core::str::from_utf8(t).unwrap();
     (0..t.len())
         .step_by(2)
         .map(|i| u8::from_str_radix(&t[i..i + 2], 16).ok())

@@ -1,10 +1,9 @@
 [package]
-name = "phxsql-core"
-description = "Tipos, esquema, codificacao de chaves e utilitarios do PhxSql"
+name = "phxhash"
+description = "CRC-32 e SHA-256/HMAC/PBKDF2 sem std, para o PhxSql e o PhxZip"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
-phxhash.workspace = true

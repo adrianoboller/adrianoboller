@@ -1,0 +1,17 @@
+[package]
+name = "phxzip-cmd"
+description = "PhxZipCmd: o PhxZip no terminal -- cria, lista, testa e extrai 7z"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "phxzipcmd"
+path = "src/main.rs"
+
+[dependencies]
+phxzip.workspace = true
+# So pelo sorteio (`cifra::sortear`) do IV do AES: o mesmo gerador do PhxSql,
+# e nao um segundo jeito de pedir acaso ao sistema.
+phxsql-core.workspace = true

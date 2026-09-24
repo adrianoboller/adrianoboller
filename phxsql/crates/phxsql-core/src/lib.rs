@@ -19,7 +19,9 @@ pub mod asn1;
 pub mod base64;
 pub mod carga;
 pub mod cifra;
-pub mod crc;
+// CRC-32 e SHA-256 moram na `phxhash` (no_std, para o PhxZip); o caminho
+// `phxsql_core::crc`/`phxsql_core::hash` continua o mesmo.
+pub use phxhash::crc;
 pub mod datahora;
 pub mod desafio;
 pub mod ed25519;
@@ -27,7 +29,7 @@ pub mod error;
 pub mod expressao;
 pub mod fio;
 pub mod frogcript;
-pub mod hash;
+pub use phxhash::hash;
 pub mod hkdf;
 pub mod json;
 pub mod keyenc;

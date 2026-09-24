@@ -1,7 +1,10 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/phxhash",
     "crates/phxsql-core",
+    "crates/phxzip",
+    "crates/phxzip-cmd",
     "crates/phxsql-store",
     "crates/phxsql-sql",
     "crates/phxsql-cli",
@@ -19,6 +22,8 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/adrianoboller/adrianoboller"
 
 [workspace.dependencies]
+phxhash = { path = "crates/phxhash" }
+phxzip = { path = "crates/phxzip" }
 phxsql-core = { path = "crates/phxsql-core" }
 phxsql-store = { path = "crates/phxsql-store" }
 phxsql-sql = { path = "crates/phxsql-sql" }

@@ -1250,6 +1250,7 @@ QA, com julgamento de pergunta, e a redação do H.
 | 446 + 447 — hexadecimal do fio e trava envenenada | forte | pânico alcançável pela rede e estado do cluster na eleição |
 | 372 — cifra do dblink.json com chave externa | forte | formato em disco e criptografia |
 | 450 etapa 1 — PhxZip, o 7-Zip em Rust | forte | formato de arquivo, AES e descompressor escritos aqui, para nove alvos |
+| 450 etapa 1 + 454 (parte) — motor, `phxhash` e `phxzipcmd`, escritos pelo integrador sem subagente | forte | formato, AES e codificador são uma decisão só dos dois lados do mesmo estado; dividir em frentes custaria mais que escrever |
 | SEC — revisão de 434 e 435 | forte | leitura adversária de criptografia |
 | QA — inventário do mesmo motor | médio | varredura com julgamento de pergunta, verificável |
 | H — cognições e MODELOS | médio | redação a partir de fatos dados; o leve arriscaria a nuance da terceira seção |

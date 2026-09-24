@@ -53,7 +53,7 @@ Conferido contra o código, não contra a lembrança:
 | desafio aleatório assinado | Ed25519 (RFC 8032), e ele já corre **dentro** do túnel | `crates/phxsql-core/src/desafio.rs`, `ed25519.rs` |
 | chave privada nunca trafega | é assim desde o começo | `docs/SEGURANCA.md` §2 |
 | senha só dentro do canal | idem, e há teste que falha se a ficha vazar o hash | pétrea do `CLAUDE.md` |
-| comparação em tempo constante | `iguais_em_tempo_constante` | `crates/phxsql-core/src/hash.rs` |
+| comparação em tempo constante | `iguais_em_tempo_constante` | `crates/phxhash/src/hash.rs` |
 
 As primitivas foram todas escritas aqui e provadas contra vetor oficial:
 FIPS 180-4, RFC 4231, RFC 6070, RFC 8032, RFC 7748, RFC 5869, RFC 8439.

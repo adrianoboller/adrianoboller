@@ -8,6 +8,10 @@
 //! **Escopo.** Isto cobre derivacao de chave de senha. Nao e uma biblioteca de
 //! criptografia de proposito geral e nao deve ser usada como tal.
 
+use alloc::format;
+use alloc::string::String;
+use alloc::vec::Vec;
+
 const K: [u32; 64] = [
     0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
     0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
@@ -198,7 +202,7 @@ pub fn hmac_sha256(chave: &[u8], mensagem: &[u8]) -> [u8; SHA256_LEN] {
 /// PBKDF2-HMAC-SHA256 (RFC 2898).
 ///
 /// `iteracoes` e o custo: quanto maior, mais caro para quem tenta adivinhar a
-/// senha -- e para quem confere. Ver [`crate::senha`] para o valor adotado.
+/// senha -- e para quem confere. Ver `phxsql_core::senha` para o valor adotado.
 pub fn pbkdf2_sha256(senha: &[u8], sal: &[u8], iteracoes: u32, saida: &mut [u8]) {
     let iteracoes = iteracoes.max(1);
     let mut bloco = 1u32;
