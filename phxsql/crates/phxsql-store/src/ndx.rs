@@ -367,6 +367,32 @@ pub struct NdxFile {
     sujo: bool,
     /// O arquivo foi aberto com a marca de sujo: a arvore nao e confiavel.
     precisa_reconstruir: bool,
+    /// Quantas escritas estao abertas e ainda nao terminaram (pedido 456).
+    ///
+    /// # Por que o `Drop` precisa disto, e nao de `thread::panicking()`
+    ///
+    /// Uma escrita que muda a arvore -- ou que poe o `.reg` a frente dela --
+    /// passa por estados em que a arvore em RAM esta RASGADA: a metade
+    /// esquerda de uma divisao ja no cache e a direita ainda nao, ou a linha
+    /// ja viva no `.reg` e a chave ainda fora do indice. Um panico nesse meio
+    /// desenrola a pilha, e o `Drop` descarregava as paginas no estado em que
+    /// o panico as deixou e baixava o byte 52: a arvore rasgada ia ao disco
+    /// marcada LIMPA. Um `SIGKILL` no mesmo ponto perde as paginas e deixa o
+    /// byte em 1 -- o panico era pior que a queda.
+    ///
+    /// Decidir por `panicking()` nao alcanca o FFI: o `punho::com` captura o
+    /// panico, e o `liberar` roda o `Drop` DEPOIS, com `panicking()` falso. O
+    /// que sabe que a escrita nao terminou e a propria escrita, e por isso o
+    /// estado mora aqui.
+    escritas_em_voo: u32,
+    /// Uma escrita parou no meio com ERRO, depois de ja ter mexido: a arvore
+    /// nao presta ate o `reindexar`. E o irmao do panico que devolve `Err` --
+    /// ninguem desenrola, mas o estado do meio e o mesmo.
+    escrita_interrompida: bool,
+    /// Quantas vezes a arvore mudou em RAM. Serve so para separar o erro que
+    /// RECUSOU antes de mexer (a arvore continua inteira) do que interrompeu
+    /// depois de mexer (rasgada).
+    mudancas_na_arvore: u64,
 }
 
 // ---------------------------------------------------------------- paginas
@@ -604,6 +630,9 @@ impl NdxFile {
             estrutura_mudou: false,
             sujo: false,
             precisa_reconstruir: false,
+            escritas_em_voo: 0,
+            escrita_interrompida: false,
+            mudancas_na_arvore: 0,
         };
         n.arquivo.set_len(page_size as u64)?;
 
@@ -740,6 +769,9 @@ impl NdxFile {
             estrutura_mudou: false,
             sujo,
             precisa_reconstruir: sujo,
+            escritas_em_voo: 0,
+            escrita_interrompida: false,
+            mudancas_na_arvore: 0,
         })
     }
 
@@ -957,11 +989,28 @@ impl NdxFile {
         // A marca vai ao arquivo ANTES da primeira pagina suja existir. Ao
         // contrario, uma queda no meio deixaria cabecalho limpo com paginas
         // faltando -- que e exatamente o defeito que ela existe para impedir.
-        if !self.sujo {
-            self.sujo = true;
-            self.gravar_cabecalho()?;
-        }
+        self.levantar_marca()?;
+        self.mudancas_na_arvore += 1;
         self.guardar_no_cache(n, p, true)
+    }
+
+    /// Poe o byte 52 em 1 NO ARQUIVO, se ainda nao estiver.
+    ///
+    /// Um lugar so para as duas portas que sobem a marca -- a primeira pagina
+    /// suja e o [`NdxFile::comecar_escrita`] --, para a decisao «sobe antes de
+    /// escrever» nao divergir de si mesma. Se o cabecalho nao for ao disco, a
+    /// marca em RAM volta a 0: marca em RAM que o disco nao tem faria a
+    /// proxima pagina suja pular a subida, e a queda seguinte sairia calada.
+    fn levantar_marca(&mut self) -> Result<()> {
+        if self.sujo {
+            return Ok(());
+        }
+        self.sujo = true;
+        if let Err(e) = self.gravar_cabecalho() {
+            self.sujo = false;
+            return Err(e);
+        }
+        Ok(())
     }
 
     /// Sela e escreve de verdade. So o despejo e o `sincronizar` chamam.
@@ -1037,10 +1086,12 @@ impl NdxFile {
             // que o cache tem dela e o conteudo de antes de ela ser liberada.
             self.cache.esquecer(n);
             self.estrutura_mudou = true;
+            self.mudancas_na_arvore += 1;
             return Ok(n);
         }
         let n = self.qtd_paginas;
         self.qtd_paginas += 1;
+        self.mudancas_na_arvore += 1;
         self.arquivo
             .set_len(self.qtd_paginas * self.page_size as u64)?;
         self.estrutura_mudou = true;
@@ -1078,6 +1129,13 @@ impl NdxFile {
     /// Sao dois `fsync` por `sincronizar` -- que acontece uma vez por carga, e
     /// nao por linha.
     pub fn sincronizar(&mut self) -> Result<()> {
+        // A mesma porta do `fechar`, e ela faltava aqui (pedido 457): um
+        // arquivo aberto ja sujo passava por este caminho e saia com o byte 52
+        // em 0 sem ter sido reconstruido -- bastava um `atualizar` que nao
+        // troca chave, que nem toca o indice, seguido do fecho da janela.
+        if !self.pode_baixar_a_marca() {
+            return Ok(());
+        }
         self.descarregar()?;
         self.arquivo.flush()?;
         self.arquivo.sync_all()?;
@@ -1102,8 +1160,9 @@ impl NdxFile {
         // Um arquivo aberto JA sujo nao se limpa fechando: nada foi
         // reconstruido, e a arvore continua sem as chaves que faltam. So o
         // `reindexar`, que recria o arquivo, tira a marca -- senao bastaria
-        // alguem abrir e fechar para o defeito virar invisivel.
-        if self.precisa_reconstruir {
+        // alguem abrir e fechar para o defeito virar invisivel. E a escrita
+        // que nao terminou tambem nao se limpa fechando (pedido 456).
+        if !self.pode_baixar_a_marca() {
             return Ok(());
         }
         self.descarregar()?;
@@ -1112,6 +1171,80 @@ impl NdxFile {
             self.gravar_cabecalho()?;
         }
         Ok(())
+    }
+
+    /// A arvore em RAM pode ir ao disco marcada LIMPA?
+    ///
+    /// Tres «nao», todos pelo mesmo motivo -- a arvore pode estar atras do
+    /// `.reg` ou rasgada, e so o `reindexar` a conserta: aberta ja suja,
+    /// escrita em voo (um panico no meio) e escrita interrompida (um erro no
+    /// meio). Nos tres NADA desce: nem as paginas, que gravariam o estado do
+    /// meio como se fosse o fim, nem a marca, que diria que ele presta.
+    ///
+    /// E um lugar so para `fechar`, `sincronizar` e o `Drop` -- os tres que
+    /// baixam a marca. Foi a porta escrita em um e esquecida no irmao que
+    /// abriu o pedido 457.
+    fn pode_baixar_a_marca(&self) -> bool {
+        !self.precisa_reconstruir && self.escritas_em_voo == 0 && !self.escrita_interrompida
+    }
+
+    /// Abre uma escrita que vai por o `.reg` a frente desta arvore.
+    ///
+    /// Duas coisas, e as duas ANTES da primeira escrita de quem chama:
+    ///
+    /// 1. recusa se a arvore ja nao e confiavel. Recusar aqui, e nao na
+    ///    primeira operacao de indice, e recusar antes de o `.reg` gravar --
+    ///    depois, a recusa deixaria a linha no `.reg` e a chave fora;
+    /// 2. sobe o byte 52 NO ARQUIVO (pedido 456, camada 1). A primeira pagina
+    ///    suja ja subia, mas ela vem DEPOIS do `.reg`: um `SIGKILL` entre o
+    ///    slot gravado e a primeira chave deixava a linha viva fora do indice
+    ///    com o byte em 0. Quando a escrita suja pagina -- o caso de quem
+    ///    chama isto --, a subida so muda de lugar: o cabecalho vai ao disco
+    ///    uma vez, como ia.
+    ///
+    /// E liga o estado de escrita em voo, que so [`NdxFile::terminar_escrita`]
+    /// desliga. Enquanto ligado, nem `fechar`, nem `sincronizar`, nem o `Drop`
+    /// levam pagina ao disco ou baixam a marca.
+    pub fn comecar_escrita(&mut self) -> Result<()> {
+        self.conferir_confiavel()?;
+        self.levantar_marca()?;
+        self.escritas_em_voo += 1;
+        Ok(())
+    }
+
+    /// Fecha a escrita aberta por [`NdxFile::comecar_escrita`].
+    ///
+    /// `em_dia` diz se a arvore e o `.reg` voltaram a concordar. Falso e a
+    /// escrita que parou no meio com erro: a arvore passa a recusar ate o
+    /// `reindexar`, e o byte 52 nao desce mais -- a proxima abertura manda
+    /// reconstruir, que e o que ela faria depois de uma queda no mesmo ponto.
+    ///
+    /// Um panico nunca chega aqui, e e esse o desenho: o estado fica ligado
+    /// sozinho, sem ninguem precisar perguntar se a thread esta desenrolando.
+    pub fn terminar_escrita(&mut self, em_dia: bool) {
+        self.escritas_em_voo = self.escritas_em_voo.saturating_sub(1);
+        if !em_dia {
+            self.escrita_interrompida = true;
+        }
+    }
+
+    /// Roda uma mudanca da arvore com a escrita em voo ligada.
+    ///
+    /// Nao sobe a marca por conta propria: toda pagina suja ja passa por
+    /// `gravar_pagina`, que sobe. O que isto acrescenta e o estado, e com ele
+    /// o panico no meio de uma divisao de pagina deixa de ir ao disco.
+    ///
+    /// Erro ANTES de a arvore mudar e recusa -- a arvore continua inteira, e
+    /// quem chama pode seguir. Erro DEPOIS e interrupcao, e a arvore para de
+    /// responder: o despejo que falhou no meio de uma divisao ja perdeu uma
+    /// pagina, e seguir respondendo seria responder errado.
+    fn na_janela<T>(&mut self, mudar: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
+        self.escritas_em_voo += 1;
+        let antes = self.mudancas_na_arvore;
+        let r = mudar(self);
+        let em_dia = r.is_ok() || self.mudancas_na_arvore == antes;
+        self.terminar_escrita(em_dia);
+        r
     }
 
     /// O arquivo foi aberto com a marca de sujo levantada.
@@ -1128,6 +1261,17 @@ impl NdxFile {
             return Err(PhxError::Corrompido(format!(
                 "o indice de {} ficou para tras numa queda e nao e confiavel: \
                  reconstrua com `reparar indice` antes de usar",
+                self.caminho.display()
+            )));
+        }
+        // O mesmo estado da queda, visto de dentro do processo: a escrita que
+        // parou no meio deixou a arvore que a proxima abertura vai recusar.
+        // Recusar ja, e nao so depois de reabrir, e o que impede um lote que
+        // segue no erro de gravar as linhas seguintes numa arvore rasgada.
+        if self.escrita_interrompida {
+            return Err(PhxError::Corrompido(format!(
+                "uma escrita no indice de {} parou no meio e a arvore nao e \
+                 confiavel: reconstrua com `reparar indice` antes de usar",
                 self.caminho.display()
             )));
         }
@@ -1193,7 +1337,12 @@ impl NdxFile {
         }
 
         let ck = Self::chave_completa(chave, rowid);
-        if let Some((promovida, nova)) = self.inserir_rec(d.raiz, &ck, d.ck_len())? {
+        self.na_janela(|n| n.inserir_na_arvore(idx, &d, &ck))
+    }
+
+    /// A descida e a subida da insercao, ja dentro da escrita em voo.
+    fn inserir_na_arvore(&mut self, idx: usize, d: &DescritorIndice, ck: &[u8]) -> Result<()> {
+        if let Some((promovida, nova)) = self.inserir_rec(d.raiz, ck, d.ck_len())? {
             let nova_raiz = self.alocar_pagina()?;
             let mut p = nova_pagina(self.page_size, TIPO_INTERNO);
             pag_set_qtd(&mut p, 1);
@@ -1300,6 +1449,9 @@ impl NdxFile {
 
         let promovida = entradas[meio].clone();
         self.gravar_pagina(pagina, &mut esq)?;
+        // A metade esquerda ja esta no cache e a direita nao: a arvore em RAM
+        // esta rasgada, com metade das chaves da folha fora dela.
+        panico_de_teste::passar(panico_de_teste::Ponto::NoMeioDaDivisao);
         self.gravar_pagina(nova, &mut dir)?;
 
         // A folha seguinte passa a apontar para a nova como anterior.
@@ -1430,6 +1582,18 @@ impl NdxFile {
         enchimento: usize,
     ) -> Result<()> {
         let d = self.descritor(idx)?.clone();
+        // A construicao inteira e uma escrita em voo: um panico no meio dela
+        // deixaria meia arvore, e o `Drop` a gravaria como o indice inteiro.
+        self.na_janela(|n| n.construir(idx, &d, chaves, enchimento))
+    }
+
+    fn construir(
+        &mut self,
+        idx: usize,
+        d: &DescritorIndice,
+        chaves: Vec<u8>,
+        enchimento: usize,
+    ) -> Result<()> {
         let ck_len = d.ck_len();
         if !(1..=100).contains(&enchimento) {
             return Err(PhxError::Esquema(format!(
@@ -1801,6 +1965,16 @@ impl NdxFile {
     /// Remove a entrada (`chave`, `rowid`). Devolve `false` se nao existia.
     pub fn remover(&mut self, idx: usize, chave: &[u8], rowid: RowId) -> Result<bool> {
         let d = self.descritor(idx)?.clone();
+        self.na_janela(|n| n.remover_da_arvore(idx, &d, chave, rowid))
+    }
+
+    fn remover_da_arvore(
+        &mut self,
+        idx: usize,
+        d: &DescritorIndice,
+        chave: &[u8],
+        rowid: RowId,
+    ) -> Result<bool> {
         let ck_len = d.ck_len();
         let ck = Self::chave_completa(chave, rowid);
         let (pagina, pos, mut p) = self.descer(d.raiz, &ck, ck_len)?;
@@ -1877,12 +2051,18 @@ impl NdxFile {
 }
 
 impl Drop for NdxFile {
-    /// Rede de seguranca do fechamento limpo.
+    /// Rede de seguranca do fechamento limpo -- e SO do limpo.
     ///
     /// Quem esquecer de chamar `fechar` ou `sincronizar` ainda tem as paginas
     /// levadas ao arquivo aqui. E se a gravacao FALHAR, a marca de sujo fica
     /// levantada -- que e a resposta certa: o indice realmente nao presta, e a
     /// proxima abertura vai dizer isso em vez de responder errado.
+    ///
+    /// Com uma escrita em voo -- o `Drop` que roda no desenrolar de um panico,
+    /// ou o do punho do FFI liberado depois de um --, o `fechar` nao leva nada
+    /// ao disco (pedido 456): o disco fica exatamente como um `SIGKILL` no
+    /// mesmo ponto o deixaria, com o byte 52 em 1, e a proxima abertura manda
+    /// reconstruir.
     fn drop(&mut self) {
         let _ = self.fechar();
         // Os contadores deste arquivo entram na conta do processo aqui, e nao
@@ -1891,5 +2071,76 @@ impl Drop for NdxFile {
         CACHE_ACERTOS.fetch_add(self.cache.acertos, o);
         CACHE_FALTAS.fetch_add(self.cache.faltas, o);
         CACHE_GRAVACOES.fetch_add(self.gravacoes, o);
+    }
+}
+
+/// Pontos nomeados onde um TESTE manda a escrita entrar em panico.
+///
+/// Existe para a prova do pedido 456 conferir o DISCO depois de um panico de
+/// verdade no meio de uma escrita, e nao o veredito de uma funcao: o defeito
+/// era o `Drop` gravar o estado do meio, e so um panico no meio o mostra.
+///
+/// # Por que `debug_assertions`, e nao `cfg(test)`
+///
+/// `cfg(test)` so vale dentro do proprio crate, e a prova tambem passa pelo
+/// FFI, que compila este crate como dependencia comum. Em `release` o gancho
+/// nao existe: `passar` vira uma funcao vazia e o laco quente nao paga nem a
+/// leitura da variavel da thread -- instrumentacao desligada custa zero.
+///
+/// A arma e POR THREAD: os testes rodam em paralelo, e um gancho global
+/// derrubaria a escrita de um teste vizinho.
+#[doc(hidden)]
+pub mod panico_de_teste {
+    /// Onde o panico acontece. Cada um e um estado do meio que o `Drop` de
+    /// antes gravava como se fosse o fim.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum Ponto {
+        /// `NdxFile::inserir_folha`: a metade esquerda da folha dividida ja
+        /// esta no cache; a direita e o pai, nao.
+        NoMeioDaDivisao,
+        /// `Table::inserir`: o slot e o contador do `.reg` ja gravados, e
+        /// nenhuma chave no `.ndx`.
+        InserirDepoisDoContador,
+        /// `Table::atualizar` e o irmao `marcar`: o `.reg` com a linha nova, e
+        /// o `.ndx` com a chave velha.
+        AtualizarDepoisDoReg,
+        /// `Table::excluir_de_vez`: as chaves ja sairam do `.ndx`, e o slot
+        /// continua vivo no `.reg`.
+        ExcluirEntreRemoverEExcluir,
+        /// `Table::reindexar`: o `.ndx` ja recriado VAZIO, e o `.reg` varrido
+        /// sem nenhuma arvore montada ainda.
+        NoMeioDoReindexar,
+    }
+
+    #[cfg(debug_assertions)]
+    thread_local! {
+        static ARMADO: std::cell::Cell<Option<Ponto>> = const { std::cell::Cell::new(None) };
+    }
+
+    /// Arma o ponto NESTA thread. Dispara uma vez so, e desarma sozinho.
+    pub fn armar(p: Ponto) {
+        #[cfg(debug_assertions)]
+        ARMADO.with(|a| a.set(Some(p)));
+        #[cfg(not(debug_assertions))]
+        let _ = p;
+    }
+
+    /// Desarma, para o teste cujo panico nao aconteceu nao contaminar o
+    /// seguinte na mesma thread.
+    pub fn desarmar() {
+        #[cfg(debug_assertions)]
+        ARMADO.with(|a| a.set(None));
+    }
+
+    /// O ponto de passagem, no caminho de producao.
+    #[inline(always)]
+    pub(crate) fn passar(p: Ponto) {
+        #[cfg(debug_assertions)]
+        if ARMADO.with(|a| a.get()) == Some(p) {
+            ARMADO.with(|a| a.set(None));
+            panic!("panico de teste em {p:?}");
+        }
+        #[cfg(not(debug_assertions))]
+        let _ = p;
     }
 }

@@ -5266,10 +5266,14 @@ pub fn limpar() {
             "silencio, nao -- ninguem sabe."
         ),
         "arquivo": "crates/phxsql-store/src/ndx.rs",
-        "trecho": """        if !self.sujo {
-            self.sujo = true;
-            self.gravar_cabecalho()?;
-        }
+        # Pedido 456 (24/09/2026): a subida da marca virou `levantar_marca`,
+        # a porta unica que a primeira pagina suja e o `comecar_escrita`
+        # dividem. O ponto de reposicao andou com ela, e o defeito continua o
+        # mesmo: a primeira pagina suja nao levanta a marca. Os testes do
+        # binario `ndx` usam o `NdxFile` direto, sem `comecar_escrita`, entao
+        # a outra porta nao os alcanca.
+        "trecho": """        self.levantar_marca()?;
+        self.mudancas_na_arvore += 1;
         self.guardar_no_cache(n, p, true)
 """,
         # A primeira versao desta troca deixava `self.sujo = true` em RAM e so
@@ -5281,6 +5285,7 @@ pub fn limpar() {
         "troca": """        // DEFEITO REPOSTO: ninguem levanta a marca de sujo. O cabecalho no
         // disco diz «limpo» com pagina suja no cache -- a tomada chutada no
         // meio de uma carga deixa o indice atrasado EM SILENCIO.
+        self.mudancas_na_arvore += 1;
         self.guardar_no_cache(n, p, true)
 """,
         "pacote": "phxsql-store",
@@ -9782,6 +9787,263 @@ pub fn limpar() {
         ],
         "seguem": [
             "le_o_lzma2_com_cabecalho_claro_do_7zip",
+        ],
+    },
+    {
+        "id": "drop-grava-o-ndx-rasgado",
+        "titulo": "o `Drop` do `.ndx` grava a árvore rasgada por um pânico no meio da escrita e baixa o byte 52: a tabela volta limpa e errada",
+        "porque": (
+            "pedido 456, Achado 1 do DBA conferido no codigo: o `impl Drop for "
+            "NdxFile` chamava `fechar()` sem perguntar nada, e no desenrolar ele "
+            "levava ao disco as paginas no estado em que o panico as deixou e "
+            "gravava o byte 52 em 0. Um `SIGKILL` no mesmo ponto deixa o byte em "
+            "1 e a proxima abertura manda reconstruir -- o panico era pior que a "
+            "queda, e o `recuperar` do arranque so reindexa tabela com o byte em "
+            "1. Medido com o defeito de pe: chave duplicada aceita no indice "
+            "unico, mae apagada com filha viva, e linha viva fora do indice "
+            "(`CRC invalido na pagina 2`, a vizinha da divisao em branco)."
+        ),
+        "arquivo": "crates/phxsql-store/src/ndx.rs",
+        "trecho": """        !self.precisa_reconstruir && self.escritas_em_voo == 0 && !self.escrita_interrompida
+""",
+        "troca": """        // DEFEITO REPOSTO (456): so a marca da abertura segura o fechamento.
+        !self.precisa_reconstruir
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "panico-no-meio-da-escrita"],
+        "caem": [
+            "panico_no_meio_da_divisao_nao_grava_a_arvore_rasgada",
+            "panico_depois_do_contador_nao_aceita_chave_duplicada",
+            "panico_depois_do_reg_no_atualizar_nao_aceita_chave_duplicada",
+            "panico_entre_remover_e_excluir_nao_deixa_apagar_a_mae",
+            "panico_capturado_e_drop_depois_tambem_nao_grava_o_meio",
+            "panico_no_meio_do_reindexar_nao_grava_o_indice_vazio",
+        ],
+        "seguem": [
+            # A porta do 457 e a do arquivo aberto sujo, que continua de pe.
+            "sincronizar_nao_limpa_o_indice_que_abriu_sujo",
+            # O comportamento de antes: escrita que termina desce a marca.
+            "sem_panico_a_marca_desce_ao_fechar_como_antes",
+            "tabela_cheia_nao_deixa_o_indice_marcado",
+        ],
+    },
+    {
+        "id": "marca-do-ndx-sobe-depois-do-reg",
+        "titulo": "o byte 52 do `.ndx` só sobe na primeira página suja, depois de o `.reg` já ter gravado a linha: a queda no meio volta limpa",
+        "porque": (
+            "pedido 456, camada 1 do parecer do DBA: a primeira pagina suja vem "
+            "DEPOIS do slot e do contador do `.reg`, entao a queda (ou o panico) "
+            "entre os dois deixava a linha viva fora do indice com o byte em 0 "
+            "no disco. So o `Drop` que nao baixa a marca (camada 0) nao basta: "
+            "nesse ponto nenhuma pagina do `.ndx` sujou nesta sessao, e nao ha "
+            "marca nenhuma para ele preservar. A divisao e a exclusao seguem de "
+            "pe porque la a primeira escrita JA e a do `.ndx`."
+        ),
+        "arquivo": "crates/phxsql-store/src/ndx.rs",
+        "trecho": """        self.conferir_confiavel()?;
+        self.levantar_marca()?;
+        self.escritas_em_voo += 1;
+""",
+        "troca": """        self.conferir_confiavel()?;
+        // DEFEITO REPOSTO (456): a marca so sobe na primeira pagina suja.
+        self.escritas_em_voo += 1;
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "panico-no-meio-da-escrita"],
+        "caem": [
+            "panico_depois_do_contador_nao_aceita_chave_duplicada",
+            "panico_depois_do_reg_no_atualizar_nao_aceita_chave_duplicada",
+            "panico_capturado_e_drop_depois_tambem_nao_grava_o_meio",
+        ],
+        "seguem": [
+            "panico_no_meio_da_divisao_nao_grava_a_arvore_rasgada",
+            "panico_entre_remover_e_excluir_nao_deixa_apagar_a_mae",
+            "sem_panico_a_marca_desce_ao_fechar_como_antes",
+        ],
+    },
+    {
+        "id": "drop-do-ndx-decide-por-panicking",
+        "titulo": "o `Drop` do `.ndx` decide por `thread::panicking()`: o pânico capturado e o `Drop` depois gravam a árvore rasgada como limpa",
+        "porque": (
+            "pedido 456, o irmao que o parecer do DBA nomeou: o `punho::com` do "
+            "FFI captura o panico e o `liberar` roda o `Drop` DEPOIS, com "
+            "`panicking()` falso. Um conserto por `panicking()` passa nos quatro "
+            "testes em que a tabela morre no desenrolar -- que estao no "
+            "`seguem` desta entrada para provar exatamente isso -- e cai no que "
+            "solta a tabela depois de capturar. Por isso o estado e «escrita em "
+            "voo» no proprio `NdxFile`, e nao a pergunta a thread."
+        ),
+        "trocas": [
+            {
+                "arquivo": "crates/phxsql-store/src/ndx.rs",
+                "trecho": """        !self.precisa_reconstruir && self.escritas_em_voo == 0 && !self.escrita_interrompida
+""",
+                "troca": """        // DEFEITO REPOSTO (456): o estado em voo nao existe...
+        !self.precisa_reconstruir
+""",
+            },
+            {
+                "arquivo": "crates/phxsql-store/src/ndx.rs",
+                "trecho": """    fn drop(&mut self) {
+        let _ = self.fechar();
+""",
+                "troca": """    fn drop(&mut self) {
+        // ...e o `Drop` pergunta a thread se ela esta desenrolando.
+        if !std::thread::panicking() {
+            let _ = self.fechar();
+        }
+""",
+            },
+        ],
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "panico-no-meio-da-escrita"],
+        "caem": [
+            "panico_capturado_e_drop_depois_tambem_nao_grava_o_meio",
+        ],
+        "seguem": [
+            "panico_no_meio_da_divisao_nao_grava_a_arvore_rasgada",
+            "panico_depois_do_contador_nao_aceita_chave_duplicada",
+            "panico_depois_do_reg_no_atualizar_nao_aceita_chave_duplicada",
+            "panico_entre_remover_e_excluir_nao_deixa_apagar_a_mae",
+        ],
+    },
+    {
+        "id": "drop-do-ndx-decide-por-panicking-pela-abi",
+        "titulo": "pela ABI de C, o punho envenenado por um pânico no meio da escrita, ao ser fechado, grava o índice rasgado como limpo",
+        "porque": (
+            "pedido 456: o caminho do FFI provado pela propria fronteira, e nao "
+            "por uma imitacao dela no motor -- `phx_inserir` com o panico no "
+            "meio, `phx_tabela_fechar` no punho envenenado, e o id repetido "
+            "entrando de novo pela ABI. O defeito reposto e o conserto por "
+            "`thread::panicking()`, que e o que nao alcanca este caminho."
+        ),
+        "trocas": [
+            {
+                "arquivo": "crates/phxsql-store/src/ndx.rs",
+                "trecho": """        !self.precisa_reconstruir && self.escritas_em_voo == 0 && !self.escrita_interrompida
+""",
+                "troca": """        // DEFEITO REPOSTO (456): o estado em voo nao existe...
+        !self.precisa_reconstruir
+""",
+            },
+            {
+                "arquivo": "crates/phxsql-store/src/ndx.rs",
+                "trecho": """    fn drop(&mut self) {
+        let _ = self.fechar();
+""",
+                "troca": """    fn drop(&mut self) {
+        // ...e o `Drop` pergunta a thread se ela esta desenrolando.
+        if !std::thread::panicking() {
+            let _ = self.fechar();
+        }
+""",
+            },
+        ],
+        "pacote": "phxsql-ffi",
+        "alvo": ["--lib"],
+        "caem": [
+            "testes::panico_na_escrita_e_o_fechar_do_punho_nao_gravam_o_indice_rasgado",
+        ],
+        "seguem": [
+            "testes::panico_envenena_o_punho_e_so_o_fechar_passa",
+            "testes::panico_nao_atravessa_a_fronteira",
+        ],
+    },
+    {
+        "id": "sincronizar-limpa-o-ndx-aberto-sujo",
+        "titulo": "o `sincronizar` de um `.ndx` que abriu sujo grava o byte 52 em 0 sem reconstruir: a escrita do descritor que caiu fica fora do índice",
+        "porque": (
+            "pedido 457, achado do DBA conferido no codigo: o `fechar` voltava "
+            "cedo quando o arquivo abria sujo, e o irmao `sincronizar` nao. O "
+            "caminho e comum: um segundo descritor abre a tabela com escrita "
+            "pendente de outro, faz um `atualizar` que nao troca chave -- nada "
+            "nele toca o indice, entao nada recusa -- e o fecho da janela "
+            "sincroniza. Se o primeiro cair depois, o id que so ele tinha "
+            "gravado entra de novo no indice unico. A marca da prova e a de "
+            "verdade, deixada por um descritor vivo, e nao virada a mao."
+        ),
+        "arquivo": "crates/phxsql-store/src/ndx.rs",
+        "trecho": """        // troca chave, que nem toca o indice, seguido do fecho da janela.
+        if !self.pode_baixar_a_marca() {
+            return Ok(());
+        }
+""",
+        "troca": """        // troca chave, que nem toca o indice, seguido do fecho da janela.
+        // DEFEITO REPOSTO (457): o `sincronizar` sem a porta do `fechar`.
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "panico-no-meio-da-escrita"],
+        "caem": [
+            "sincronizar_nao_limpa_o_indice_que_abriu_sujo",
+        ],
+        "seguem": [
+            "sem_panico_a_marca_desce_ao_fechar_como_antes",
+            "panico_depois_do_contador_nao_aceita_chave_duplicada",
+        ],
+    },
+    {
+        "id": "reindexar-sem-janela-grava-o-ndx-vazio",
+        "titulo": "um pânico no meio do `reindexar` grava o `.ndx` recém-recriado VAZIO e marcado limpo: a tabela inteira fica fora do índice",
+        "porque": (
+            "pedido 456, o caminho irmao pela regra da casa -- quem chama as "
+            "mesmas pecas na mesma ordem: o `reindexar` recria o `.ndx` vazio "
+            "e so depois monta as arvores, entao entre os dois o indice esta "
+            "atras do `.reg` inteiro. Sem a janela, o `Drop` do desenrolar "
+            "gravava o arquivo vazio como limpo, e justamente o caminho que "
+            "existe para consertar indice deixava a tabela sem nenhuma chave. "
+            "Medido com o defeito de pe: «linha viva fora do indice: a linha 1 "
+            "... devolve []»."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        self.ndx.comecar_escrita()?;
+        let feito = self.montar_indices_do_reg();
+        self.ndx.terminar_escrita(feito.is_ok());
+        feito?;
+""",
+        "troca": """        // DEFEITO REPOSTO (456): o `reindexar` sem a janela.
+        self.montar_indices_do_reg()?;
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "panico-no-meio-da-escrita"],
+        "caem": [
+            "panico_no_meio_do_reindexar_nao_grava_o_indice_vazio",
+        ],
+        "seguem": [
+            "panico_no_meio_da_divisao_nao_grava_a_arvore_rasgada",
+            "panico_depois_do_contador_nao_aceita_chave_duplicada",
+        ],
+    },
+    {
+        "id": "janela-do-ndx-interrompe-em-toda-recusa",
+        "titulo": "«tabela cheia» fecha a janela do `.ndx` como interrompida: uma recusa comum passa a exigir `reparar indice`",
+        "porque": (
+            "pedido 456, o lado que a petrea «guarda nova entra pedida» manda "
+            "provar: o teste que trava e o do comportamento VELHO. A janela "
+            "abre antes do `.reg` gravar, e o `LimiteExcedido` recusa antes de "
+            "qualquer escrita -- a arvore continua em dia. Fechar a janela como "
+            "interrompida em todo erro do `.reg` deixaria o indice recusando "
+            "ate o reindexar e o byte 52 em 1 no disco, por uma recusa que o "
+            "cliente sempre recebeu e sempre soube tratar. O criterio e a "
+            "contagem de vivas: se ela andou, o slot existe para quem le o "
+            "`.reg`, e ai sim a arvore ficou atras."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """                    let em_dia = self.reg.registros() == vivas_antes;
+""",
+        "troca": """                    // DEFEITO REPOSTO (456): todo erro do `.reg` interrompe.
+                    let em_dia = {
+                        let _ = vivas_antes;
+                        false
+                    };
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "panico-no-meio-da-escrita"],
+        "caem": [
+            "tabela_cheia_nao_deixa_o_indice_marcado",
+        ],
+        "seguem": [
+            "panico_depois_do_contador_nao_aceita_chave_duplicada",
+            "sem_panico_a_marca_desce_ao_fechar_como_antes",
         ],
     },
 ]

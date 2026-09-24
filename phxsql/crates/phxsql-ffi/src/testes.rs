@@ -306,6 +306,93 @@ fn panico_envenena_o_punho_e_so_o_fechar_passa() {
     }
 }
 
+/// O `.ndx` de uma tabela, achado debaixo da area -- o teste nao repete a
+/// regra de onde o database mora, so procura o arquivo.
+fn achar_ndx(dir: &std::path::Path, tabela: &str) -> Option<std::path::PathBuf> {
+    for e in std::fs::read_dir(dir).ok()?.flatten() {
+        let p = e.path();
+        if p.is_dir() {
+            if let Some(achado) = achar_ndx(&p, tabela) {
+                return Some(achado);
+            }
+        } else if p
+            .file_name()
+            .is_some_and(|n| n == format!("{tabela}.ndx").as_str())
+        {
+            return Some(p);
+        }
+    }
+    None
+}
+
+/// O irmao que o pedido 456 nomeou: o `punho::com` captura o panico, e o
+/// `liberar` roda o `Drop` da tabela DEPOIS, com `thread::panicking()` FALSO.
+///
+/// O panico e de verdade, no meio da escrita -- depois do contador do `.reg`
+/// e antes da primeira chave -- pelo gancho que so os testes armam. Com o
+/// `Drop` de antes, o fechar do punho envenenado levava a arvore ao disco
+/// marcada limpa e a linha do panico ficava viva sem chave: o id repetido
+/// entrava de novo pela propria ABI. O teste pergunta isso ANTES de olhar o
+/// byte 52, para o vermelho nomear a garantia e nao o mecanismo.
+#[cfg(debug_assertions)]
+#[test]
+fn panico_na_escrita_e_o_fechar_do_punho_nao_gravam_o_indice_rasgado() {
+    use phxsql_store::ndx::panico_de_teste::{self, Ponto};
+    unsafe {
+        let area = Area::nova("panico-456");
+        let (base, tab) = montar(&area, "clientes");
+        for i in 1..=5 {
+            inserir(tab, i, "C");
+        }
+        assert_eq!(phx_sincronizar(tab), PHX_OK);
+        assert_eq!(phx_tabela_fechar(tab), PHX_OK);
+        let mut tab: *mut Punho<TabelaFFI> = std::ptr::null_mut();
+        let (p, t) = par("clientes");
+        assert_eq!(phx_tabela_abrir(base, p, t, &mut tab), PHX_OK);
+
+        panico_de_teste::armar(Ponto::InserirDepoisDoContador);
+        let linha = [v_int(6), v_bytes(PHX_TEXTO, b"C6"), v_nulo()];
+        let mut rowid = 0u64;
+        let r = phx_inserir(tab, linha.as_ptr(), linha.len(), &mut rowid);
+        panico_de_teste::desarmar();
+        assert_eq!(
+            r,
+            erro::PHX_ERRO_PANICO,
+            "o gancho nao disparou: {}",
+            erro_agora()
+        );
+        // O `Drop` da tabela roda AQUI, fora de qualquer desenrolar.
+        assert!(!std::thread::panicking());
+        assert_eq!(phx_tabela_fechar(tab), PHX_OK);
+
+        let mut de_novo: *mut Punho<TabelaFFI> = std::ptr::null_mut();
+        assert_eq!(phx_tabela_abrir(base, p, t, &mut de_novo), PHX_OK);
+        let linha = [v_int(6), v_bytes(PHX_TEXTO, b"de novo"), v_nulo()];
+        if phx_inserir(de_novo, linha.as_ptr(), linha.len(), &mut rowid) == PHX_OK {
+            panic!(
+                "chave duplicada aceita no indice unico: o id 6 ja esta vivo no \
+                 .reg (a linha do panico capturado) e entrou de novo pela ABI \
+                 como a linha {rowid}"
+            );
+        }
+        assert_eq!(phx_tabela_fechar(de_novo), PHX_OK);
+        assert_eq!(phx_base_fechar(base), PHX_OK);
+
+        let ndx = achar_ndx(&area.0, "clientes").expect("o .ndx de clientes sumiu");
+        assert_eq!(
+            std::fs::read(&ndx).unwrap()[52],
+            1,
+            "o fechar do punho envenenado tinha de deixar o byte 52 em 1"
+        );
+        let mut t = phxsql_store::table::Table::abrir(ndx.parent().unwrap(), "clientes").unwrap();
+        assert!(t.indice_precisa_reconstruir());
+        t.reindexar().unwrap();
+        let vivas = t.varrer().unwrap().len();
+        assert_eq!(vivas, 6, "a linha do panico ja estava no .reg");
+        assert_eq!(t.varrer_indice("porId").unwrap().len(), vivas);
+    }
+}
+
 /// Nenhuma funcao exportada pode escapar da blindagem.
 ///
 /// Ler o codigo nao pega isto: a funcao nova compila, passa nos testes dela e

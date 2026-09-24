@@ -1099,9 +1099,9 @@
       "id": "ndx-queda-com-cabecalho-limpo",
       "titulo": "a marca de sujo do `.ndx` fica só em RAM e a queda deixa o índice atrasado em silêncio",
       "veredito": "PROVADA",
-      "segundos": 2.02,
+      "segundos": 2.15,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-09-24 03:58"
     },
     {
       "id": "reserva-sobrevive-a-queda-da-ligacao",
@@ -1582,6 +1582,62 @@
       "segundos": 8.93,
       "notas": [],
       "quando": "2026-09-24 03:27"
+    },
+    {
+      "id": "drop-grava-o-ndx-rasgado",
+      "titulo": "o `Drop` do `.ndx` grava a árvore rasgada por um pânico no meio da escrita e baixa o byte 52: a tabela volta limpa e errada",
+      "veredito": "PROVADA",
+      "segundos": 1.58,
+      "notas": [],
+      "quando": "2026-09-24 03:58"
+    },
+    {
+      "id": "marca-do-ndx-sobe-depois-do-reg",
+      "titulo": "o byte 52 do `.ndx` só sobe na primeira página suja, depois de o `.reg` já ter gravado a linha: a queda no meio volta limpa",
+      "veredito": "PROVADA",
+      "segundos": 1.57,
+      "notas": [],
+      "quando": "2026-09-24 03:58"
+    },
+    {
+      "id": "drop-do-ndx-decide-por-panicking",
+      "titulo": "o `Drop` do `.ndx` decide por `thread::panicking()`: o pânico capturado e o `Drop` depois gravam a árvore rasgada como limpa",
+      "veredito": "PROVADA",
+      "segundos": 1.59,
+      "notas": [],
+      "quando": "2026-09-24 03:58"
+    },
+    {
+      "id": "drop-do-ndx-decide-por-panicking-pela-abi",
+      "titulo": "pela ABI de C, o punho envenenado por um pânico no meio da escrita, ao ser fechado, grava o índice rasgado como limpo",
+      "veredito": "PROVADA",
+      "segundos": 1.26,
+      "notas": [],
+      "quando": "2026-09-24 03:58"
+    },
+    {
+      "id": "sincronizar-limpa-o-ndx-aberto-sujo",
+      "titulo": "o `sincronizar` de um `.ndx` que abriu sujo grava o byte 52 em 0 sem reconstruir: a escrita do descritor que caiu fica fora do índice",
+      "veredito": "PROVADA",
+      "segundos": 1.63,
+      "notas": [],
+      "quando": "2026-09-24 03:58"
+    },
+    {
+      "id": "reindexar-sem-janela-grava-o-ndx-vazio",
+      "titulo": "um pânico no meio do `reindexar` grava o `.ndx` recém-recriado VAZIO e marcado limpo: a tabela inteira fica fora do índice",
+      "veredito": "PROVADA",
+      "segundos": 1.69,
+      "notas": [],
+      "quando": "2026-09-24 03:58"
+    },
+    {
+      "id": "janela-do-ndx-interrompe-em-toda-recusa",
+      "titulo": "«tabela cheia» fecha a janela do `.ndx` como interrompida: uma recusa comum passa a exigir `reparar indice`",
+      "veredito": "PROVADA",
+      "segundos": 1.58,
+      "notas": [],
+      "quando": "2026-09-24 03:58"
     }
   ]
 }

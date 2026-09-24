@@ -1258,6 +1258,11 @@ QA, com julgamento de pergunta, e a redação do H.
 | SEC — revisão de 434 e 435 | forte | leitura adversária de criptografia |
 | QA — inventário do mesmo motor | médio | varredura com julgamento de pergunta, verificável |
 | H — cognições e MODELOS | médio | redação a partir de fatos dados; o leve arriscaria a nuance da terceira seção |
+| SEC e C — revisões da 372 antes do commit | forte | criptografia e formato em disco; os dois acharam o mesmo apagamento calado por caminhos diferentes |
+| 456 + 457 — o pânico que grava o `.ndx` rasgado como limpo | forte | durabilidade e garantia de índice sob pânico, com prova pela ABI do FFI |
+| SEC — revisão da crate PhxZip | forte | leitura adversária de parser de arquivo hostil e de derivação de chave |
+| 471 — PhxZip abrindo arquivo hostil | forte | negação de serviço por CPU e memória em entrada não confiável |
+| H — página dos testes com as provas | leve | gerador conferível contra os arquivos; nada decide, só mostra |
 
 **A integração achou o que nenhuma frente via, de novo por território de
 arquivo não bastar em worktree compartilhado**: `cargo fmt --all` de uma

@@ -1024,6 +1024,13 @@ E fechar não limpa a marca de um arquivo que já foi **aberto** sujo: nada foi
 reconstruído. Só o `reindexar`, que recria o arquivo, a tira — senão bastaria
 abrir e fechar para o defeito virar invisível.
 
+**Quando ela sobe, e quando não desce** (pedidos 456 e 457, 24/09/2026; o
+formato não muda): o byte 52 vai a 1 antes da primeira escrita do `.reg` que o
+`.ndx` ainda não acompanha — no `inserir`, antes do slot; no `atualizar` que
+troca chave, antes de regravá-lo — e não desce, nem por `fechar`, nem por
+`sincronizar`, nem pelo `Drop` que roda no desenrolar de um pânico, enquanto
+houver escrita em voo ou interrompida no meio, nem num arquivo aberto sujo.
+
 **Não há migração.** Arquivo escrito antes da 0.18.0 tem zero no byte 52, e zero
 quer dizer «limpo» — que é a verdade para quem só escrevia através.
 

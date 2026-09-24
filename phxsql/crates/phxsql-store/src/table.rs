@@ -28,7 +28,7 @@ use crate::fts::{Achado, FtsFile, EXT_FTS};
 use crate::lixeira::{Descartada, LixeiraFile, EXT_TRASH};
 use crate::log::{Evento, LogFile, Operacao, EXT_LOG};
 use crate::motivo::{Motivo, MotivoFile, Tipo, EXT_REASON};
-use crate::ndx::NdxFile;
+use crate::ndx::{panico_de_teste, NdxFile};
 use crate::reg::RegFile;
 // Qualificado: `crate::log::Evento` ja ocupa o nome `Evento` aqui, e os dois
 // eventos sao coisas diferentes -- um e do diario, o outro e da trilha.
@@ -3479,6 +3479,63 @@ impl Table {
         Ok(())
     }
 
+    /// Abre a janela do `.ndx` quando alguma chave da linha vai mudar.
+    ///
+    /// Devolve se abriu. Sem chave mudando o indice nao se move, e abrir
+    /// custaria o cabecalho do `.ndx` numa alteracao que nunca o tocaria --
+    /// o caso comum de quem edita um campo fora de indice.
+    fn abrir_janela_das_chaves(
+        &mut self,
+        antigas: &[Option<Vec<u8>>],
+        novas: &[Option<Vec<u8>>],
+    ) -> Result<bool> {
+        let muda = antigas != novas;
+        if muda {
+            self.ndx.comecar_escrita()?;
+        }
+        Ok(muda)
+    }
+
+    /// Regrava a linha no `.reg` e poe o `.ndx` em dia com ela.
+    ///
+    /// Um lugar so para o `atualizar` e o `marcar`, que sao irmaos pela regra
+    /// da casa -- chamam as mesmas funcoes na mesma ordem: slot, contador de
+    /// marcadas, chaves. Com a janela aberta, o panico que cai entre o slot e
+    /// a ultima chave deixa o `.ndx` sem descarregar, e o erro fecha a janela
+    /// como interrompida -- nos dois irmaos, porque e o mesmo codigo.
+    fn regravar_com_chaves(
+        &mut self,
+        janela: bool,
+        rowid: RowId,
+        payload: &[u8],
+        delta: i64,
+        antigas: &[Option<Vec<u8>>],
+        novas: &[Option<Vec<u8>>],
+    ) -> Result<u64> {
+        let feito = self.regravar_e_trocar(rowid, payload, delta, antigas, novas);
+        if janela {
+            self.ndx.terminar_escrita(feito.is_ok());
+        }
+        feito
+    }
+
+    fn regravar_e_trocar(
+        &mut self,
+        rowid: RowId,
+        payload: &[u8],
+        delta: i64,
+        antigas: &[Option<Vec<u8>>],
+        novas: &[Option<Vec<u8>>],
+    ) -> Result<u64> {
+        let versao = self.reg.atualizar(rowid, payload)?;
+        if delta != 0 {
+            self.reg.mudar_marcadas(delta)?;
+        }
+        panico_de_teste::passar(panico_de_teste::Ponto::AtualizarDepoisDoReg);
+        self.trocar_chaves(rowid, antigas, novas)?;
+        Ok(versao)
+    }
+
     /// As regras de escrita do esquema, na ordem em que fazem sentido:
     /// DEFAULT (so no inserir, na coluna que veio nula), depois a coluna
     /// calculada (sempre, do que a linha tem), depois o CHECK (com a linha
@@ -3770,14 +3827,38 @@ impl Table {
             Some(_) => None,
             None => self.chave_do_periodo(valores)?,
         };
+        // A janela em que o `.reg` anda a frente do `.ndx` abre AQUI, antes
+        // do `rownum` e do slot (pedido 456): o byte 52 vai ao disco antes da
+        // primeira escrita que o indice ainda nao acompanha, e um panico ate a
+        // ultima chave deixa o `.ndx` sem descarregar. Linha que nao entra em
+        // indice nenhum nao abre janela -- nao ha arvore para ficar atras.
+        let janela = chaves.iter().any(Option::is_some);
+        if janela {
+            self.ndx.comecar_escrita()?;
+        }
         // A ultima guarda que recusa a linha ficou acima (a coluna obrigatoria
         // e a particao). Daqui para baixo ela vai ao disco: e AQUI que o
         // contador do `rownum` anda -- ver `numerar_linha`, pedido 291.
         self.consumir_rownum(rownum_reservado);
-        let rowid = match balde {
-            Some(balde) => self.reg.inserir_no_balde(&payload, balde)?,
-            None => self.reg.inserir_no_periodo(&payload, periodo)?,
+        let vivas_antes = self.reg.registros();
+        let gravada = match balde {
+            Some(balde) => self.reg.inserir_no_balde(&payload, balde),
+            None => self.reg.inserir_no_periodo(&payload, periodo),
         };
+        let rowid = match gravada {
+            Ok(rowid) => rowid,
+            Err(e) => {
+                // «Tabela cheia» recusa antes de gravar, e o indice continua
+                // em dia. Se a contagem de vivas andou, o slot ja existe para
+                // quem le o `.reg`, e a arvore nao tem a chave dele.
+                if janela {
+                    let em_dia = self.reg.registros() == vivas_antes;
+                    self.ndx.terminar_escrita(em_dia);
+                }
+                return Err(e);
+            }
+        };
+        panico_de_teste::passar(panico_de_teste::Ponto::InserirDepoisDoContador);
 
         for (i, chave) in chaves.iter().enumerate() {
             let Some(chave) = chave else { continue };
@@ -3785,16 +3866,23 @@ impl Table {
             // qualquer gravacao. Deixar o `inserir` conferir de novo custaria
             // uma segunda descida na arvore para a mesma resposta.
             if let Err(e) = self.ndx.inserir_ja_conferido(i, chave, rowid) {
-                // Desfaz o que ja entrou.
+                // Desfaz o que ja entrou -- e CONTA se desfez. O desfazer que
+                // falha deixa a linha no `.reg` com parte das chaves, e a
+                // janela so fecha em dia quando as duas pontas voltaram.
+                let mut desfez = true;
                 for (j, anterior) in chaves.iter().enumerate().take(i) {
                     if let Some(anterior) = anterior {
-                        let _ = self.ndx.remover(j, anterior, rowid);
+                        desfez &= matches!(self.ndx.remover(j, anterior, rowid), Ok(true));
                     }
                 }
-                let _ = self.reg.excluir(rowid);
+                desfez &= matches!(self.reg.excluir(rowid), Ok(true));
                 let _ = self.liberar_externos(&ponteiros);
+                self.ndx.terminar_escrita(desfez);
                 return Err(e);
             }
+        }
+        if janela {
+            self.ndx.terminar_escrita(true);
         }
         if nasce_marcada {
             self.reg.mudar_marcadas(1)?;
@@ -4153,13 +4241,18 @@ impl Table {
         // manda a coluna escrita pode virar o valor por aqui.
         let delta = i64::from(self.marcada_no_payload(&payload)?)
             - i64::from(self.marcada_no_payload(&antigo)?);
+        // A janela abre antes do `rownum`, pelo mesmo motivo do `inserir`:
+        // recusar depois do consumo gastaria um numero sem linha.
+        let janela = self.abrir_janela_das_chaves(&chaves_antigas, &chaves_novas)?;
         self.consumir_rownum(rownum_reservado);
-        let versao = self.reg.atualizar(rowid, &payload)?;
-        if delta != 0 {
-            self.reg.mudar_marcadas(delta)?;
-        }
-
-        self.trocar_chaves(rowid, &chaves_antigas, &chaves_novas)?;
+        let versao = self.regravar_com_chaves(
+            janela,
+            rowid,
+            &payload,
+            delta,
+            &chaves_antigas,
+            &chaves_novas,
+        )?;
         // O texto sai e entra, nesta ordem. A saida usa o payload ANTIGO --
         // que ainda esta na mao -- porque so ele sabe quais palavras a linha
         // tinha; desindexar pelo novo deixaria as velhas no indice, e o indice
@@ -4370,15 +4463,20 @@ impl Table {
         self.desindexar_texto(rowid, &payload)?;
 
         let chaves = self.todas_as_chaves(&valores)?;
-        for (i, chave) in chaves.iter().enumerate() {
-            if let Some(chave) = chave {
-                self.ndx.remover(i, chave, rowid)?;
-            }
+        // A janela vai da primeira chave tirada ate o slot liberado (pedido
+        // 456): no meio, a linha esta viva no `.reg` e fora do indice, e se a
+        // tabela e FILHA a busca reversa da mae nao a ve. O byte 52 ja subia
+        // aqui -- a primeira pagina suja e a da primeira chave, e ela vem
+        // antes do slot --; o que faltava era o `Drop` nao gravar o meio.
+        let janela = chaves.iter().any(Option::is_some);
+        if janela {
+            self.ndx.comecar_escrita()?;
         }
-        let ponteiros = self.ponteiros(&payload)?;
-        self.liberar_externos(&ponteiros)?;
-        let estava_marcada = self.marcada_no_payload(&payload)?;
-        let removeu = self.reg.excluir(rowid)?;
+        let feito = self.tirar_chaves_e_liberar(rowid, &chaves, &payload);
+        if janela {
+            self.ndx.terminar_escrita(feito.is_ok());
+        }
+        let (removeu, estava_marcada) = feito?;
         if removeu {
             if estava_marcada {
                 self.reg.mudar_marcadas(-1)?;
@@ -4399,6 +4497,27 @@ impl Table {
             )?;
         }
         Ok(removeu)
+    }
+
+    /// O miolo do `excluir_de_vez`, na ordem que a garantia pede: chaves,
+    /// anexos, slot. Devolve (o slot saiu?, a linha estava marcada?).
+    fn tirar_chaves_e_liberar(
+        &mut self,
+        rowid: RowId,
+        chaves: &[Option<Vec<u8>>],
+        payload: &[u8],
+    ) -> Result<(bool, bool)> {
+        for (i, chave) in chaves.iter().enumerate() {
+            if let Some(chave) = chave {
+                self.ndx.remover(i, chave, rowid)?;
+            }
+        }
+        panico_de_teste::passar(panico_de_teste::Ponto::ExcluirEntreRemoverEExcluir);
+        let ponteiros = self.ponteiros(payload)?;
+        self.liberar_externos(&ponteiros)?;
+        let estava_marcada = self.marcada_no_payload(payload)?;
+        let removeu = self.reg.excluir(rowid)?;
+        Ok((removeu, estava_marcada))
     }
 
     /// Marca a linha como excluida sem apagar nada.
@@ -4500,9 +4619,15 @@ impl Table {
         let chaves_antigas = self.todas_as_chaves(&antes)?;
         let chaves_novas = self.todas_as_chaves(&depois)?;
 
-        let versao = self.reg.atualizar(rowid, &payload)?;
-        self.reg.mudar_marcadas(if valor { 1 } else { -1 })?;
-        self.trocar_chaves(rowid, &chaves_antigas, &chaves_novas)?;
+        let janela = self.abrir_janela_das_chaves(&chaves_antigas, &chaves_novas)?;
+        let versao = self.regravar_com_chaves(
+            janela,
+            rowid,
+            &payload,
+            if valor { 1 } else { -1 },
+            &chaves_antigas,
+            &chaves_novas,
+        )?;
         // A marca vai para a replica como ALTERACAO, que e o que ela e no
         // `.reg`: o byte da coluna de sistema mudou e nada mais.
         self.anotar(Operacao::Alteracao, rowid, versao, &payload)?;
@@ -5859,7 +5984,28 @@ impl Table {
         // `NdxFile::criar` trunca o arquivo: a arvore antiga vai embora
         // inteira, em vez de ser remendada.
         self.ndx = NdxFile::criar(caminho(&self.diretorio, &self.nome, EXT_NDX), &self.esquema)?;
+        // Da criacao ate a ultima arvore montada o `.ndx` esta ATRAS do `.reg`
+        // -- vazio, no comeco. Um panico na varredura deixava o `Drop` gravar
+        // o arquivo vazio marcado limpo, e a tabela inteira ficava fora do
+        // indice, calada. E o irmao do pedido 456 que chama as mesmas pecas.
+        self.ndx.comecar_escrita()?;
+        let feito = self.montar_indices_do_reg();
+        self.ndx.terminar_escrita(feito.is_ok());
+        feito?;
+        // O `.fts` e o caminho IRMAO, e ele nao vinha junto: a propria
+        // mensagem do `.fts` manda «reconstrua o indice de texto com
+        // `reindexar`», e o `reindexar` nao sabia cumprir a ordem. Uma queda
+        // deixava o indice de texto marcado para sempre, e enquanto a marca
+        // estivesse la TODA gravacao na tabela recusava.
+        //
+        // Custa zero para quem nao declarou indice de texto: `reconstruir_fts`
+        // comeca pelo portao `self.fts.is_none()`.
+        self.reconstruir_fts()?;
+        self.ndx.verificar()
+    }
 
+    /// A varredura do `.reg` e a construcao em lote de cada indice.
+    fn montar_indices_do_reg(&mut self) -> Result<()> {
         // Uma varredura do `.reg` para TODOS os indices, e depois uma
         // construcao em lote por indice -- em vez de uma descida na arvore por
         // chave, que e o mesmo trabalho do caminho de dentro feito de novo.
@@ -5877,19 +6023,11 @@ impl Table {
             }
             rowid = id + 1;
         }
+        panico_de_teste::passar(panico_de_teste::Ponto::NoMeioDoReindexar);
         for (i, lote) in lotes.into_iter().enumerate() {
             self.ndx.construir_em_lote(i, lote)?;
         }
-        // O `.fts` e o caminho IRMAO, e ele nao vinha junto: a propria
-        // mensagem do `.fts` manda «reconstrua o indice de texto com
-        // `reindexar`», e o `reindexar` nao sabia cumprir a ordem. Uma queda
-        // deixava o indice de texto marcado para sempre, e enquanto a marca
-        // estivesse la TODA gravacao na tabela recusava.
-        //
-        // Custa zero para quem nao declarou indice de texto: `reconstruir_fts`
-        // comeca pelo portao `self.fts.is_none()`.
-        self.reconstruir_fts()?;
-        self.ndx.verificar()
+        Ok(())
     }
 
     /// Eventos do diario em ordem cronologica. `limite` zero devolve todos.
