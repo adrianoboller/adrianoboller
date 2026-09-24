@@ -1308,6 +1308,22 @@ QA, com julgamento de pergunta, e a redação do H.
 | faceis C — 464, 365, 458, 499 | forte | redacao de dado pessoal por analise, trava envenenada e portao de escrita da replica |
 | faceis D — 523, 544, 530, 463 (resto) | forte | durabilidade por caminho canonico, parser do fio, threads sem teto e prazo da conversa |
 | DBA — revisao do lote faceis B | forte | durabilidade do backup e disponibilidade: o fsync no destino que derrubava o servidor |
+| integridade 2 — 539, 538, 537, 540 | forte | concorrencia (trava no empilhar sem reabrir ciclo), gatilho na transacao e marca da cascata solta |
+| H — documentacao da rodada (CHANGELOG, tecnologias, cognicao) | medio | leitura de commit e extrator; verificavel, sem projeto |
+| J — 533, permissao dos arquivos e normalizacao do 365 | forte | formato em disco e ordem de escrita contra queda: projeto e risco |
+| tradutor — revisao multilingue da rodada | medio | chave e traducao nos seis idiomas: mecanico, mas sem compilar tem de acertar a sintaxe a mao |
+| QA — catracas e guardas da rodada | medio | leitura de diff e rodar as reguas em Python |
+| F — auditoria estatica das guardas novas | medio | ler troca e teste por guarda; o provador roda no fecho |
+| SEC — revisao da rodada (ABI nova, recusas novas) | forte | seguranca: ponteiro na ABI, oraculo em mensagem de recusa |
+
+**Convocacao do dono em 24/09/2026, 18:40** («toda a equipe em alerta e revisao
+nessa rodada»). Convocados: A (integrador), B (quatro frentes), C (revisoes em
+curso), F, G, H, J, SEC e o tradutor. **D, o zelador**, rodou e se ADIOU pela
+propria regra: quatro frentes compilando, e ele nao apaga o que processo vivo
+usa; o vigia segue a cada 30 min. **E, o designer**, fica convocado para o FECHO:
+a tela mudou hoje (438, 481, 372 e o PhxZip), e interface so se prova
+exercitando — o que pede um binario novo, que hoje competiria por disco com as
+quatro frentes. **I** e o integrador, com o pacote provado das 18:16.
 
 **A integração achou o que nenhuma frente via, de novo por território de
 arquivo não bastar em worktree compartilhado**: `cargo fmt --all` de uma
