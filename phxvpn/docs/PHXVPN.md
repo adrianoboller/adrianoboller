@@ -38,22 +38,20 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [x] Segurança A6: cliente PG recusa senha em claro, exige o SCRAM provado antes do «autenticado», teto de iterações
 - [x] Segurança M1, M2, M4, M5, M6, M7: teto de conexões e prazo total por pedido; segredo nasce 0600 e diretório 0700; senhas saem do ambiente; login só `[a-z0-9._-]`; cota de 3 redes por usuário; conexão do PG refeita e trava envenenada não derruba
 - [x] USB pela rede (USB/IP, porta 3240): compartilhar e usar no Linux só com `std` + sysfs; usar no Windows pelo usbip-win2; interopera com o `usbip` de referência
+- [x] **Túnel OpenVPN de verdade provado** (2.6.19, `prova-openvpn.sh`): PostgreSQL → painel → dois membros em netns, TLS 1.3/Ed25519, ping entre membros, removido barrado
+- [x] Segurança M3: OpenVPN troca para `nobody` depois de abrir a placa; `tls-crypt-v2` com uma chave por membro e a série dentro — removido barrado ANTES do TLS
+- [x] Arquivos que o OpenVPN relê (`crl.pem`, `ccd/`) gravados por troca atômica — nunca lidos pela metade
 - [x] Segurança C2: sorteio falha fechado (descritor único; `BCryptGenRandom` no Windows) — nunca mais mistura previsível
 
 ### Falta
 
-- [ ] Prova com o **túnel OpenVPN de verdade** — o binário `openvpn` não existe neste contêiner; o TLS foi provado com OpenSSL, o túnel não
-- [ ] TLS no próprio painel (hoje HTTP; escuta 127.0.0.1 por padrão) — esbarra na pétrea de zero dependência
 - [ ] Programa de mesa: ver o ícone da bandeja num Windows real (no Wine ele é registrado, mas não aparece na área de trabalho virtual) e bandeja no Linux (pede D-Bus)
-- [ ] Revogação por CRL (hoje: sair da rede apaga o `ccd/` e o `ccd-exclusive` barra)
 - [ ] Usar o certificado digital da empresa (A1/RSA) como AC — hoje ele é guardado só como identificação
 - [ ] Serviço do sistema (systemd / serviço do Windows) e pacote
 - [ ] P2P: rol de membros ASSINADO (hoje a lista viaja cifrada entre membros, com confiança transitiva)
 - [ ] P2P: descoberta — convite, broadcast na LAN e «farol» (membro alcançável que perfura NAT e faz relé)
-- [ ] Segurança M3 (resto): OpenVPN sem root (`user`/`group`) e `tls-crypt-v2` — pedem o binário `openvpn` para provar, ausente aqui
 - [ ] Segurança no Windows: ACL nos arquivos com chave (hoje herdam a do diretório; no Linux nascem 0600)
 - [ ] Segurança A4 (inteiro): TLS no próprio painel — choque com a pétrea de zero dependência; hoje, proxy com TLS na frente
-- [ ] P2P: a tela web do modo P2P (hoje: linha de comando e console)
 - [ ] P2P no Windows: **prova numa máquina real** com OpenVPN (driver TAP e `netsh` — o roteiro `prova-windows.ps1` está pronto)
 - [ ] P2P: `mac1`/cookie contra inundação de INICIO (o WireGuard tem; aqui ainda não)
 - [ ] USB: **prova com dispositivo real** (este contêiner não tem USB nem os módulos `usbip-host`/`vhci-hcd`); botões na janela do programa de mesa
@@ -330,6 +328,50 @@ parou na linha 2 com código 1; `LIGAR` + `PARES` pelo console em topologia
 de CGNAT pelo repasse, com ping 3/3. `BANCADA` nesta máquina: cifra a 2.582
 Mbit/s num núcleo e aperto completo em 1,14 ms. Compila para Windows
 (`cargo check --target x86_64-pc-windows-gnu`, 0 aviso); não rodado lá.
+
+## Modo servidor com o OpenVPN de verdade (24/09/2026)
+
+`sudo ./prova-openvpn.sh` refaz tudo numa máquina Linux: PostgreSQL
+descartável com SCRAM → `phxvpn painel --openvpn` → instalar → criar rede →
+dois membros em netns com o `openvpn` 2.6.19 → ping → remover um → reconectar.
+
+| Medido | Resultado |
+|---|---|
+| Canal de controle | TLS 1.3, `TLS_AES_256_GCM_SHA384`, certificado Ed25519 da nossa AC, troca X25519 |
+| Canal de dados | AES-256-GCM |
+| Membro → servidor / membro → membro | 0,6 ms / 0,8 ms, 0% de perda |
+| Processo do servidor | `UID set to nobody`, `GID set to nogroup` |
+| Membro removido reconectando | recusado **antes do TLS**: `TLS CRYPT V2 VERIFY SCRIPT ERROR` |
+
+**tls-crypt-v2.** Com a v1, todo membro tem a mesma chave, e quem sai continua
+podendo fazer o servidor abrir um TLS (a CRL só o barra depois). Agora cada
+membro leva a própria chave, embrulhada pela do servidor, com `serie:<hex>`
+dentro. O `openvpn` pergunta ao `phxvpn ovpn-v2-verificar`, e a série revogada
+não passa. O verificador falha fechado: sem lista, sem metadados ou com a
+série revogada, recusa.
+
+Hipóteses do J:
+- **Gerar o embrulho com AES escrito aqui: morreu.** O núcleo já recusou AES
+  em software, por vazar tempo.
+- **Deixar o próprio `openvpn` gerar: venceu.** O modo servidor já o exige.
+
+Sem `openvpn` no PATH, a rede nasce com a v1 e o painel avisa. A CRL continua
+valendo como segunda barreira.
+
+**O aviso `CRL: cannot read CRL from file`.** Aparece a cada releitura da CRL,
+seguido de `loaded 1 CRLs`. Três hipóteses, medidas num servidor isolado:
+- **H1, leitura no meio da gravação: morreu** — o aviso sai mesmo só com
+  `touch`;
+- **H3, a nossa codificação: morreu** — o aviso sai igual com a CRL regravada
+  pelo `openssl crl`;
+- **H2, peculiaridade do OpenVPN ao recarregar: venceu.** É inofensiva: a
+  revogação vale (`certificate revoked` no registro).
+
+H1 caiu como causa, mas mostrou um risco real: o painel regravava o `crl.pem`
+truncando o próprio arquivo, e um `openvpn` que o lesse pela metade ficaria
+sem CRL. Agora o painel grava num temporário e renomeia; no Windows, que não
+renomeia por cima de arquivo aberto, tenta de novo por até 1 s e, se não
+der, dá erro. O teste falha com a gravação antiga (RED).
 
 ## USB pela rede (24/09/2026)
 

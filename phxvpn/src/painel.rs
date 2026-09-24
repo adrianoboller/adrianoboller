@@ -455,7 +455,15 @@ impl Painel {
             .map_err(|_| "octeto invalido")?;
         let porta = (PORTA_BASE + octeto as u16).to_string();
         let hash = senha::cifrar_com(senha_rede, self.iteracoes);
-        let tc = pki::chave_tls_crypt();
+        // v2 (uma chave por membro) quando o `openvpn` esta a mao para
+        // gera-la; senao v1, e o registro diz qual.
+        let tc = match ovpn::gerar_v2_servidor() {
+            Some(k) => k,
+            None => {
+                eprintln!("phxvpn: rede «{nome}» com tls-crypt v1 (sem openvpn no PATH para a v2)");
+                pki::chave_tls_crypt()
+            }
+        };
         // O aad amarra o selo ao NOME da rede: nome e unico e nao muda.
         let tc_selada = cofre.selar(tc.as_bytes(), &format!("rede:{nome}"));
         self.pg()?
@@ -584,6 +592,13 @@ impl Painel {
             nome,
             porta,
             octeto,
+            v2: ovpn::e_v2(&tc),
+        };
+        // v2: a chave do membro leva a serie deste certificado dentro.
+        let tc = if rede.v2 {
+            ovpn::gerar_v2_cliente(&tc, &e.serie_hex)?
+        } else {
+            tc
         };
         self.materializar_rede(&rede_id)?;
         gravar(
@@ -811,6 +826,22 @@ impl Painel {
         }
         let dir = self.dir_rede(rede_id);
         criar_dir_privado(&dir.join("ccd"))?;
+        // O openvpn sem root rele `crl.pem` e `ccd/` a cada conexao: a pasta
+        // passa a ser de passagem (0711) do `dados` ate o `ccd`. Listar
+        // continua negado, e cada chave continua 0600.
+        #[cfg(unix)]
+        if !ovpn::sem_root().is_empty() {
+            use std::os::unix::fs::PermissionsExt;
+            for d in [
+                self.dados.clone(),
+                self.dados.join("redes"),
+                dir.clone(),
+                dir.join("ccd"),
+            ] {
+                fs::set_permissions(&d, fs::Permissions::from_mode(0o711))
+                    .map_err(|e| format!("permissao de {}: {e}", d.display()))?;
+            }
+        }
         let chave: [u8; 32] = cofre
             .abrir_com(&v("chave_selada"), &format!("servidor:{}", v("srv")))?
             .try_into()
@@ -821,12 +852,22 @@ impl Painel {
                 nome: &nome,
                 porta: v("porta").parse().map_err(|_| "porta invalida")?,
                 octeto: v("octeto").parse().map_err(|_| "octeto invalido")?,
+                v2: ovpn::e_v2(&String::from_utf8_lossy(&tc)),
             },
             &dir.display().to_string(),
         );
         let ac_pem = self.ac_pem()?;
         let crl = self.crl_pem()?;
         gravar(&dir.join("crl.pem"), crl.as_bytes(), false)?;
+        // A lista que o `ovpn-v2-verificar` le: as mesmas series da CRL.
+        let rev = self
+            .pg()?
+            .executar("SELECT serie FROM phx_revogado ORDER BY em", &[])?;
+        let lista: String = (0..rev.linhas.len())
+            .filter_map(|i| rev.valor(i, "serie"))
+            .map(|s| format!("{s}\n"))
+            .collect();
+        gravar(&dir.join("revogados.txt"), lista.as_bytes(), false)?;
         gravar(&dir.join("servidor.conf"), conf.as_bytes(), false)?;
         gravar(&dir.join("ca.crt"), ac_pem.as_bytes(), false)?;
         gravar(&dir.join("servidor.crt"), v("cert_pem").as_bytes(), false)?;
@@ -869,30 +910,56 @@ impl Painel {
 /// Grava; segredo nasce 0600 JA na criacao -- sem a janela de um `chmod`
 /// depois, em que a chave ficava legivel por todos (achado M2). Arquivo que
 /// ja existia com outra permissao e apertado tambem.
+/// Grava por temporario + renomear: quem le (o `openvpn` relendo o
+/// `crl.pem` a cada conexao, por exemplo) ve o arquivo velho inteiro ou o
+/// novo inteiro, nunca o meio. Um `crl.pem` lido pela metade deixa o
+/// servidor sem CRL -- e o revogado entra.
 fn gravar(caminho: &Path, dados: &[u8], secreto: bool) -> R<()> {
     use std::io::Write;
+    let tmp = caminho.with_extension("gravando");
+    let _ = fs::remove_file(&tmp);
     let mut o = fs::OpenOptions::new();
-    o.write(true).create(true).truncate(true);
+    o.write(true).create_new(true);
     #[cfg(unix)]
     if secreto {
         use std::os::unix::fs::OpenOptionsExt;
         o.mode(0o600);
     }
     let mut f = o
-        .open(caminho)
+        .open(&tmp)
         .map_err(|e| format!("gravar {}: {e}", caminho.display()))?;
-    #[cfg(unix)]
-    if secreto {
-        use std::os::unix::fs::PermissionsExt;
-        f.set_permissions(fs::Permissions::from_mode(0o600))
-            .map_err(|e| format!("permissao de {}: {e}", caminho.display()))?;
-    }
     // No Windows a permissao nao se restringe aqui: falta escrever a ACL
     // (pendencia no PHXVPN.md). O arquivo herda a do diretorio.
     #[cfg(not(unix))]
     let _ = secreto;
     f.write_all(dados)
-        .map_err(|e| format!("gravar {}: {e}", caminho.display()))
+        .and_then(|_| f.sync_all())
+        .map_err(|e| format!("gravar {}: {e}", caminho.display()))?;
+    drop(f);
+    trocar(&tmp, caminho).map_err(|e| format!("gravar {}: {e}", caminho.display()))
+}
+
+#[cfg(not(windows))]
+fn trocar(de: &Path, para: &Path) -> std::io::Result<()> {
+    fs::rename(de, para)
+}
+
+/// No Windows nao se troca o arquivo que outro processo tem aberto (o
+/// `openvpn` abre o `crl.pem` por milissegundos a cada releitura): tenta de
+/// novo por ate 1 s. Nao conseguindo, erro -- nunca gravar no lugar, que e
+/// o meio-arquivo que o renomear existe para evitar.
+#[cfg(windows)]
+fn trocar(de: &Path, para: &Path) -> std::io::Result<()> {
+    let mut ultimo = None;
+    for _ in 0..20 {
+        match fs::rename(de, para) {
+            Ok(()) => return Ok(()),
+            Err(e) => ultimo = Some(e),
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    let _ = fs::remove_file(de);
+    Err(ultimo.expect("tentou"))
 }
 
 /// Diretorio 0700: so o dono do painel entra (os de rede guardam chave).
@@ -1102,6 +1169,42 @@ pub fn validar_instalacao(i: &Instalacao) -> R<()> {
 #[cfg(test)]
 mod testes {
     use super::*;
+
+    /// Quem ja estava lendo o arquivo termina de ler o VELHO inteiro. Com
+    /// truncar-e-escrever no mesmo arquivo, o leitor via o novo (ou nada).
+    #[test]
+    fn gravar_troca_o_arquivo_inteiro_sem_meio() {
+        use std::io::Read;
+        let d = std::env::temp_dir().join(format!("phxvpn-gravar-{}", std::process::id()));
+        fs::create_dir_all(&d).unwrap();
+        let a = d.join("crl.pem");
+        gravar(&a, b"VELHO-INTEIRO", false).unwrap();
+        let mut leitor = fs::File::open(&a).unwrap();
+        #[cfg(not(windows))]
+        let visto = {
+            gravar(&a, b"novo", false).unwrap();
+            let mut v = String::new();
+            leitor.read_to_string(&mut v).unwrap();
+            v
+        };
+        // No Windows o leitor segura o arquivo: quem grava espera ele soltar
+        // (aqui, 150 ms depois) em vez de escrever por baixo dele.
+        #[cfg(windows)]
+        let visto = {
+            let mut v = String::new();
+            leitor.read_to_string(&mut v).unwrap();
+            let solta = std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(150));
+                drop(leitor);
+            });
+            gravar(&a, b"novo", false).unwrap();
+            solta.join().unwrap();
+            v
+        };
+        assert_eq!(visto, "VELHO-INTEIRO");
+        assert_eq!(fs::read_to_string(&a).unwrap(), "novo");
+        let _ = fs::remove_dir_all(&d);
+    }
 
     fn base() -> Instalacao {
         Instalacao {

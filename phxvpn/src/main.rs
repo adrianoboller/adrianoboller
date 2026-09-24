@@ -95,6 +95,21 @@ fn main() {
         Some("p2p") => cmd_p2p(&args[1..]),
         Some("repasse") => cmd_repasse(&args[1..]),
         Some("cmd") => phxvpn::console::principal(&args[1..]),
+        // Chamado pelo `openvpn` (tls-crypt-v2-verify), nao por gente: codigo
+        // de saida 0 aceita, 1 recusa.
+        Some("ovpn-v2-verificar") => {
+            let dir = PathBuf::from(args.get(1).map(String::as_str).unwrap_or(""));
+            let tipo = std::env::var("metadata_type").unwrap_or_default();
+            let meta = std::env::var("metadata_file")
+                .ok()
+                .and_then(|f| std::fs::read(f).ok())
+                .unwrap_or_default();
+            std::process::exit(if phxvpn::ovpn::verificar_v2(&dir, &tipo, &meta) {
+                0
+            } else {
+                1
+            })
+        }
         Some("usb") => comandos::usb(&Opcoes::de_args(&args[1..], &[])).map(|t| print!("{t}")),
         Some("mesa") => {
             let o = Opcoes::de_args(&args[1..], &["sem-janela"]);

@@ -1176,14 +1176,20 @@ mod testes {
         let (st, d) = importar_em(end, "1-1");
         assert_eq!(st, ST_OK);
         assert_eq!(d.unwrap().produto, 0x5583);
-        // Espera a thread do servidor escrever (ela responde e depois entrega).
-        for _ in 0..50 {
-            if sockfd.exists() {
+        // Espera a thread do servidor escrever -- o CONTEUDO, nao o arquivo:
+        // `fs::write` cria e so depois escreve, e sob carga a leitura caia
+        // no meio (falhou uma vez na suite inteira, 24/09).
+        let mut fd: i64 = -1;
+        for _ in 0..100 {
+            if let Some(n) = std::fs::read_to_string(&sockfd)
+                .ok()
+                .and_then(|t| t.trim().parse().ok())
+            {
+                fd = n;
                 break;
             }
             std::thread::sleep(Duration::from_millis(20));
         }
-        let fd: i64 = std::fs::read_to_string(&sockfd).unwrap().parse().unwrap();
         assert!(fd > 2, "descritor {fd}");
         // Nao compartilhado de verdade (usbhid) e busid torto: recusa igual.
         assert_eq!(importar_em(end, "1-2").0, ST_NA);
