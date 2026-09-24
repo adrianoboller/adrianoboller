@@ -516,11 +516,11 @@ fn rotear(p: &Pedido, e: &Estado) -> Saida {
             };
             conferido.map_err(|m| (400, m))?;
             reserva.acertou(&[&chave_rede]);
-            let proxy = Some(t("http_proxy")).filter(|p| !p.is_empty());
+            let proxy = crate::alcance::ProxyMembro::do_pedido(&corpo).map_err(|m| (400, m))?;
             let cliente = cliente_do_pedido(&corpo)?;
             let perfil = e
                 .painel()
-                .entrar_ja_conferido_com(&u, &nome, proxy.as_deref())
+                .entrar_com_proxy(&u, &nome, proxy)
                 .map_err(ruim)?;
             perfil_json(&nome, com_cliente(e, &nome, perfil, &cliente)?)
         }
@@ -542,6 +542,21 @@ fn rotear(p: &Pedido, e: &Estado) -> Saida {
             let u = usuario(p, e)?;
             let id = rede_id(&corpo)?;
             e.painel().membros(&u, id).map_err(|m| (403, m))
+        }
+        ("POST", "/api/redes/alcance") => {
+            let u = usuario(p, e)?;
+            let id = rede_id(&corpo)?;
+            e.painel().alcance(&u, id).map_err(|m| (403, m))
+        }
+        ("POST", "/api/redes/alcance/gravar") => {
+            let u = usuario(p, e)?;
+            // Abre porta no host (queda, port-share) e muda o perfil de todos:
+            // o degrau de abrir a LAN, admin e o codigo de quem o tem.
+            exigir_admin(&u)?;
+            exigir_codigo(e, &u, &t("codigo"), &chave_ip)?;
+            let id = rede_id(&corpo)?;
+            let novo = crate::alcance::Alcance::do_pedido(&corpo).map_err(|m| (400, m))?;
+            crate::alcance::gravar_e_aplicar(e, &u, id, &novo).map_err(ruim)
         }
         ("POST", "/api/redes/rotas") => {
             let u = usuario(p, e)?;
@@ -657,18 +672,11 @@ fn com_cliente(
 }
 
 fn perfil_json(rede: &str, perfil: String) -> Saida {
-    let arquivo: String = rede
-        .chars()
-        .map(|c| {
-            if c.is_alphanumeric() || c == '-' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect();
     Ok(Json::objeto(vec![
-        ("arquivo", Json::texto_de(format!("phxvpn-{arquivo}.ovpn"))),
+        (
+            "arquivo",
+            Json::texto_de(crate::ovpn::arquivo_do_perfil(rede)),
+        ),
         ("perfil", Json::texto_de(perfil)),
     ]))
 }
@@ -740,7 +748,7 @@ pub fn materializar_e_subir(e: &Estado) -> Result<(), String> {
     Ok(())
 }
 
-/// `protocolo` ("udp" | "tcp"), `porta` e `http_proxy` do pedido de criar
+/// `protocolo` ("udp" | "tcp"), `porta` e o proxy do pedido de criar
 /// rede. Ausentes: o de sempre (UDP, porta automatica, sem proxy).
 fn transporte_do_pedido(corpo: &Json) -> Result<crate::painel::Transporte, (u16, String)> {
     let tcp = match corpo.texto_ou("protocolo", "udp") {
@@ -757,10 +765,6 @@ fn transporte_do_pedido(corpo: &Json) -> Result<crate::painel::Transporte, (u16,
         ),
         None => None,
     };
-    let http_proxy = Some(corpo.texto_ou("http_proxy", "").to_string()).filter(|p| !p.is_empty());
-    Ok(crate::painel::Transporte {
-        tcp,
-        porta,
-        http_proxy,
-    })
+    let proxy = crate::alcance::ProxyMembro::do_pedido(corpo).map_err(|m| (400, m))?;
+    Ok(crate::painel::Transporte { tcp, porta, proxy })
 }

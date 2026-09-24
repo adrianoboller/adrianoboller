@@ -112,6 +112,7 @@ async function carregarRedes() {
       }
       await blocoRotas(bloco, r, membros);
       await blocoSaida(bloco, r);
+      await blocoAlcance(bloco, r);
     } catch (_) {}
     caixa.appendChild(bloco);
   }
@@ -224,6 +225,44 @@ async function blocoSaida(bloco, r) {
   bloco.appendChild(caixa);
 }
 
+// Alcance do servidor: enderecos alternativos, queda UDP->TCP e port-share.
+// Ver e do admin e do dono; mudar, so do admin (abre porta no host).
+async function blocoAlcance(bloco, r) {
+  if (!sessao.admin && r.dono !== sessao.login) return;
+  let a;
+  try { a = await api("POST", "/api/redes/alcance", { rede_id: r.id }); } catch (_) { return; }
+  const caixa = document.createElement("div"); caixa.className = "alcance";
+  const t = document.createElement("div"); t.className = "titulo"; t.textContent = "Alcance do servidor"; caixa.appendChild(t);
+  const partes = [];
+  if (a.remotos.length) partes.push(`alternativos: ${a.remotos.join(", ")}` + (a.aleatorio ? " (ordem sorteada)" : ""));
+  if (a.queda_tcp) partes.push(`queda UDP→TCP na porta ${a.queda_tcp}`);
+  if (a.port_share) partes.push(`porta TCP dividida com ${a.port_share}`);
+  const resumo = document.createElement("div"); resumo.className = "resumo"; resumo.textContent = partes.length ? partes.join(" · ") : "só o endereço do servidor"; caixa.appendChild(resumo);
+  if (sessao.admin) {
+    const f = document.createElement("form");
+    const campo = (rotulo, el, largo) => { const l = document.createElement("label"); l.className = "campo" + (largo ? " largo" : ""); const s = document.createElement("span"); s.textContent = rotulo; l.append(s, el); f.appendChild(l); return el; };
+    const rem = document.createElement("textarea"); rem.value = a.remotos.join("\n"); rem.placeholder = "vpn2.empresa.com.br\n200.1.2.3:1196";
+    campo("Endereços alternativos (um por linha, HOST ou HOST:PORTA)", rem, true);
+    const queda = document.createElement("input"); queda.type = "number"; queda.min = 1; queda.max = 65535; queda.placeholder = "443"; queda.value = a.queda_tcp || "";
+    const ps = document.createElement("input"); ps.placeholder = "127.0.0.1:8443"; ps.value = a.port_share || ""; ps.autocomplete = "off";
+    if (a.protocolo === "udp") campo("Queda para TCP (porta; vazio desliga)", queda);
+    campo("Dividir a porta TCP com HTTPS em (HOST:PORTA)", ps);
+    const sorteio = document.createElement("label"); sorteio.className = "marca largo";
+    const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = a.aleatorio;
+    sorteio.append(cb, " Sortear a ordem dos endereços (remote-random)"); f.appendChild(sorteio);
+    const b = document.createElement("button"); b.className = "altera largo"; b.type = "submit"; b.textContent = "Gravar alcance"; f.appendChild(b);
+    const aviso = document.createElement("p"); aviso.className = "msg largo"; aviso.id = "m-alcance-" + r.id; f.appendChild(aviso);
+    f.onsubmit = async (ev) => {
+      ev.preventDefault();
+      const corpo = { rede_id: r.id, remotos: rem.value, aleatorio: cb.checked, queda_tcp: a.protocolo === "udp" ? Number(queda.value || 0) : 0, port_share: ps.value.trim() };
+      if (sessao.mfa) { corpo.codigo = prompt("Código do autenticador") || ""; if (!corpo.codigo) return; }
+      try { const x = await api("POST", "/api/redes/alcance/gravar", corpo); await carregarRedes(); msg("m-redes", "alcance gravado; " + x.aviso, true); } catch (e) { msg(aviso.id, e.message); }
+    };
+    caixa.appendChild(f);
+  }
+  bloco.appendChild(caixa);
+}
+
 let modo = "criar";
 // O protocolo e do SERVIDOR (so faz sentido ao criar); o proxy vale nos dois
 // -- ele so muda o perfil .ovpn de quem baixa, nunca a rede em si.
@@ -232,7 +271,7 @@ function ajustarProxyPeloProtocolo() {
   const esconde = $("c-protocolo").value !== "tcp";
   $("c-proxy").hidden = esconde;
   // Campo escondido nao pode mandar um proxy que o UDP recusaria.
-  if (esconde) $("c-proxy").querySelector("input").value = "";
+  if (esconde) for (const i of $("c-proxy").querySelectorAll("input")) { if (i.type === "checkbox") i.checked = false; else i.value = ""; }
 }
 $("c-protocolo").onchange = ajustarProxyPeloProtocolo;
 function abrirDialogo(m) {

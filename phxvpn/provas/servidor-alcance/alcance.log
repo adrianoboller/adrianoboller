@@ -1,0 +1,8 @@
+alcance 1 ,"remotos":["192.168.92.1"] -> {"ok":true,"openvpn_reiniciado":true,"aviso":"os membros precisam baixar o perfil de novo (entrar na rede outra vez)"}
+alcance 1 ,"remotos":[] -> {"ok":true,"openvpn_reiniciado":true,"aviso":"os membros precisam baixar o perfil de novo (entrar na rede outra vez)"}
+alcance 1 ,"queda_tcp":443,"port_share":"127.0.0.1:9443" -> {"ok":true,"openvpn_reiniciado":true,"aviso":"os membros precisam baixar o perfil de novo (entrar na rede outra vez)"}
+alcance 1 ,"queda_tcp":443 -> {"ok":true,"openvpn_reiniciado":true,"aviso":"os membros precisam baixar o perfil de novo (entrar na rede outra vez)"}
+alcance 1  -> {"ok":true,"openvpn_reiniciado":true,"aviso":"os membros precisam baixar o perfil de novo (entrar na rede outra vez)"}
+alcance 2 ,"port_share":"127.0.0.1:9443" -> {"ok":true,"openvpn_reiniciado":true,"aviso":"os membros precisam baixar o perfil de novo (entrar na rede outra vez)"}
+alcance 2  -> {"ok":true,"openvpn_reiniciado":true,"aviso":"os membros precisam baixar o perfil de novo (entrar na rede outra vez)"}
+alcance 1 ,"queda_tcp":443 -> {"ok":true,"openvpn_reiniciado":true,"aviso":"os membros precisam baixar o perfil de novo (entrar na rede outra vez)"}

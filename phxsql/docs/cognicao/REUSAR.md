@@ -2,7 +2,7 @@
 
 # Reusar — sucessos comprovados
 
-296 cognições: **11 frutíferas**, **5 infrutíferas**, **280 pendentes** (sem evidência validada — não entram aqui).
+298 cognições: **13 frutíferas**, **5 infrutíferas**, **280 pendentes** (sem evidência validada — não entram aqui).
 
 Só entra o que tem evidência que o `classificar.py` conferiu. Antes de desenhar, procure aqui o que já se provou.
 
@@ -25,6 +25,20 @@ Protocolo com estado se prova também **reiniciando um dos lados no meio**. O ca
 Prova de troca de caminho roda **com tráfego no ar durante a troca**. Troca feita com o túnel parado só prova a ordem que o próprio nó escolhe; a ordem que a rede impõe (quem chega primeiro na conexão nova) só aparece quando outra thread tem pacote para mandar no mesmo instante.
 
 - Evidência: `phxvpn/provas/tcp/resultados.json`; teste `conexao_nova_comeca_pelo_registro_mesmo_com_trafego` (phxvpn/src/fio.rs)
+- Validado em: 24/09/2026
+
+## [Queda UDP→TCP no servidor 2.6: uma ponte TCP→UDP, e não dois `openvpn`](cognicao_queda-tcp-por-ponte-e-nao-dois-openvpn_20260924_1152.md)
+
+Antes de aceitar a receita de «dois processos» (ou de qualquer duplicação de servidor), pergunte o que cada promessa da casa vira do outro lado — e procure a peça que só muda o enquadramento.
+
+- Evidência: `phxvpn/provas/servidor-alcance/resultados.json`; `phxvpn/src/queda_tcp.rs`; `phxvpn/provas/servidor-alcance/rodar.sh`
+- Validado em: 24/09/2026
+
+## [Opção de conexão escrita depois de um `<connection>` não vale para ele](cognicao_opcao-depois-do-bloco-connection-nao-vale_20260924_1150.md)
+
+Em perfil com `<connection>`, os blocos são a ÚLTIMA coisa do arquivo; nada que alguém pendure depois pode ser opção de conexão.
+
+- Evidência: `phxvpn/provas/servidor-alcance/resultados.json`; `phxvpn/src/alcance.rs`; `phxvpn/provas/servidor-alcance/red.py`
 - Validado em: 24/09/2026
 
 ## [A lista de pares já perfura NAT cone — o farol só é indispensável no simétrico](cognicao_lista-de-pares-ja-perfura-nat-cone_20260924_0845.md)

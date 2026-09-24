@@ -381,12 +381,16 @@ impl<'a> Console<'a> {
                 let token = self.token()?.to_string();
                 let rede = arg(0).ok_or("informe o nome da rede")?.to_string();
                 let senha = (self.perguntar)("senha da rede", "PHXVPN_SENHA_REDE");
+                let senha_proxy = comandos::usuario_do_proxy_do_perfil(o).map(|u| {
+                    (self.perguntar)(&format!("senha de {u} no proxy"), "PHXVPN_SENHA_PROXY")
+                });
                 let arq = comandos::perfil_de_rede(
                     &self.painel,
                     &token,
                     cmd == "criarrede",
                     &rede,
                     &senha,
+                    senha_proxy.as_deref(),
                     o,
                 )?;
                 Ok(format!(

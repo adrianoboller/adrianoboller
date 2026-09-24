@@ -46,7 +46,7 @@ impl Rede<'_> {
     /// servidor: ao receber SIGTERM ele manda `RESTART` a todos e espera 2 s
     /// (multi.c, `multi_push_restart_schedule_exit`), e o membro volta em
     /// segundos em vez de esperar o `ping-restart 60`.
-    fn aviso_de_saida(&self) -> &'static str {
+    pub(crate) fn aviso_de_saida(&self) -> &'static str {
         if self.tcp {
             ""
         } else {
@@ -54,7 +54,7 @@ impl Rede<'_> {
         }
     }
 
-    fn proto(&self, lado: &str) -> String {
+    pub(crate) fn proto(&self, lado: &str) -> String {
         if self.tcp {
             format!("tcp-{lado}")
         } else {
@@ -353,6 +353,23 @@ pub fn ccd_membro(octeto: u8, host: u8) -> String {
     format!("ifconfig-push {} 255.255.255.0\n", ip_membro(octeto, host))
 }
 
+/// O nome do arquivo do perfil de uma rede: o painel o sugere na resposta e
+/// a linha de comando o usa quando nao ha `--saida` (e para por a
+/// credencial do proxy ao lado dele) -- uma regra so.
+pub fn arquivo_do_perfil(rede: &str) -> String {
+    let limpo: String = rede
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    format!("phxvpn-{limpo}.ovpn")
+}
+
 /// O perfil `.ovpn` do membro, com tudo embutido: um arquivo so, que o
 /// OpenVPN Connect, o OpenVPN GUI e o `openvpn --config` abrem igual.
 pub struct Perfil<'a> {
@@ -362,18 +379,18 @@ pub struct Perfil<'a> {
     pub cert_pem: &'a str,
     pub chave_pem: &'a str,
     pub tls_crypt: &'a str,
-    /// Proxy HTTP do lado do membro (`host:porta`, ja validado). So com TCP.
-    pub http_proxy: Option<(&'a str, u16)>,
+    /// Enderecos alternativos, queda para TCP e o proxy do membro
+    /// (`alcance.rs`). `None`: um `remote` so, sem proxy -- o perfil de antes.
+    pub conexao: Option<&'a crate::alcance::Conexao>,
 }
 
 pub fn perfil_membro(p: &Perfil) -> String {
+    let c = crate::alcance::partes(p.rede, p.servidor.endereco, p.conexao);
     format!(
         "# phxvpn -- rede «{rede}» em {srv}\n\
 client\n\
 dev tun\n\
-proto {proto}\n\
-remote {end} {porta}\n\
-{proxy}\
+{topo}\
 resolv-retry infinite\n\
 nobind\n\
 {saida}\
@@ -387,19 +404,13 @@ verb 3\n\
 <ca>\n{ca}</ca>\n\
 <cert>\n{cert}</cert>\n\
 <key>\n{key}</key>\n\
-{tc}",
+{tc}\
+{fim}",
         rede = p.rede.nome,
         srv = p.servidor.nome,
-        end = p.servidor.endereco,
-        porta = p.rede.porta,
-        proto = p.rede.proto("client"),
-        saida = p.rede.aviso_de_saida(),
-        proxy = match p.http_proxy {
-            // O OpenVPN so passa TCP por proxy HTTP; em UDP, a linha seria
-            // recusada ao abrir o perfil.
-            Some((h, porta)) if p.rede.tcp => format!("http-proxy {h} {porta}\n"),
-            _ => String::new(),
-        },
+        topo = c.topo,
+        saida = c.saida,
+        fim = c.fim,
         ca = p.ca_pem,
         cert = p.cert_pem,
         key = p.chave_pem,
@@ -457,7 +468,7 @@ mod testes {
                 cert_pem: "",
                 chave_pem: "",
                 tls_crypt: tc,
-                http_proxy: None,
+                conexao: None,
             })
         };
         assert!(p(&format!("{INICIO_V2_CLIENTE}\nxx\n")).contains("<tls-crypt-v2>"));
@@ -505,7 +516,7 @@ mod testes {
             cert_pem: "C\n",
             chave_pem: "K\n",
             tls_crypt: "T\n",
-            http_proxy: None,
+            conexao: None,
         });
         assert!(p.contains("remote vpn.empresa.com.br 1195\n"));
         assert!(p.contains("remote-cert-tls server\n"));
@@ -528,7 +539,10 @@ mod testes {
             nome: "vpn1",
             endereco: "vpn.empresa.com.br",
         };
-        let (h, p) = validar_http_proxy("proxy.hotel.local:3128").unwrap();
+        let conexao = crate::alcance::Conexao {
+            proxy: Some(crate::alcance::ProxyMembro::http("proxy.hotel.local:3128").unwrap()),
+            ..Default::default()
+        };
         let perfil = |rede: &Rede| {
             perfil_membro(&Perfil {
                 rede,
@@ -537,7 +551,7 @@ mod testes {
                 cert_pem: "",
                 chave_pem: "",
                 tls_crypt: "",
-                http_proxy: Some((&h, p)),
+                conexao: Some(&conexao),
             })
         };
         let t = perfil(&r);
@@ -573,7 +587,7 @@ mod testes {
                 cert_pem: "",
                 chave_pem: "",
                 tls_crypt: "",
-                http_proxy: None,
+                conexao: None,
             });
             let conf = conf_servidor(&r, "/d");
             let linha = "\nexplicit-exit-notify 1\n";

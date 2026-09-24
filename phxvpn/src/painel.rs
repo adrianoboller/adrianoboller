@@ -108,8 +108,8 @@ pub const PORTA_BASE: u16 = 1194;
 pub struct Transporte {
     pub tcp: bool,
     pub porta: Option<u16>,
-    /// `host:porta` do proxy que vai no perfil de quem cria/entra.
-    pub http_proxy: Option<String>,
+    /// O proxy (HTTP ou SOCKS, ja validado) que vai no perfil de quem cria.
+    pub proxy: Option<crate::alcance::ProxyMembro>,
 }
 
 /// Os campos da instalacao, na ordem da tela.
@@ -169,6 +169,7 @@ impl Painel {
         pg.lote(crate::credencial::ESQUEMA)?;
         pg.lote(crate::rotas::ESQUEMA)?;
         pg.lote(crate::saida::ESQUEMA)?;
+        pg.lote(crate::alcance::ESQUEMA)?;
         criar_dir_privado(dados)?;
         Ok(Painel {
             pg,
@@ -468,11 +469,9 @@ impl Painel {
         if t.porta.is_some() && !dono.admin {
             return Err("so o administrador escolhe a porta da rede".into());
         }
-        if t.http_proxy.is_some() && !t.tcp {
-            return Err("proxy HTTP so leva TCP: crie a rede com protocolo tcp".into());
-        }
-        if let Some(p) = &t.http_proxy {
-            ovpn::validar_http_proxy(p)?;
+        // Rede nasce sem queda para TCP: proxy so em rede TCP.
+        if t.proxy.is_some() && !t.tcp {
+            return Err("proxy so leva TCP: crie a rede com protocolo tcp".into());
         }
         validar_senha("senha da rede", senha_rede, 6)?;
         let cofre = self.cofre()?.clone();
@@ -515,7 +514,12 @@ impl Painel {
             .ok_or("as 254 sub-redes estao ocupadas")?
             .parse()
             .map_err(|_| "octeto invalido")?;
-        let porta = t.porta.unwrap_or(PORTA_BASE + octeto as u16).to_string();
+        let porta_n = t.porta.unwrap_or(PORTA_BASE + octeto as u16);
+        // A queda TCP de outra rede tambem escuta TCP no host.
+        if t.tcp {
+            self.porta_tcp_livre(porta_n, None)?;
+        }
+        let porta = porta_n.to_string();
         let hash = senha::cifrar_com(senha_rede, self.iteracoes);
         // v2 (uma chave por membro) quando o `openvpn` esta a mao para
         // gera-la; senao v1, e o registro diz qual.
@@ -552,7 +556,7 @@ impl Painel {
                     traduzir_unico(e, "ja existe rede com esse nome")
                 }
             })?;
-        self.entrar_ja_conferido_com(dono, nome, t.http_proxy.as_deref())
+        self.entrar_com_proxy(dono, nome, t.proxy.clone())
     }
 
     /// Primeira metade do «entrar»: o hash da senha da rede (o fictício se a
@@ -589,7 +593,20 @@ impl Painel {
         nome: &str,
         http_proxy: Option<&str>,
     ) -> R<String> {
-        let proxy = http_proxy.map(ovpn::validar_http_proxy).transpose()?;
+        let proxy = http_proxy
+            .map(crate::alcance::ProxyMembro::http)
+            .transpose()?;
+        self.entrar_com_proxy(usuario, nome, proxy)
+    }
+
+    /// O «entrar» inteiro: o perfil sai com o alcance da rede (enderecos
+    /// alternativos, queda para TCP) e o proxy do membro, HTTP ou SOCKS.
+    pub fn entrar_com_proxy(
+        &mut self,
+        usuario: &Usuario,
+        nome: &str,
+        proxy: Option<crate::alcance::ProxyMembro>,
+    ) -> R<String> {
         let cofre = self.cofre()?.clone();
         let r = self.pg()?.executar(
             "SELECT r.id, r.nome, r.octeto, r.porta, r.tls_crypt_selada, r.protocolo, \
@@ -677,9 +694,11 @@ impl Painel {
             v2: ovpn::e_v2(&tc),
             tcp: campo("protocolo") == "tcp",
         };
-        if proxy.is_some() && !rede.tcp {
-            return Err("proxy HTTP so leva TCP, e esta rede e UDP".into());
-        }
+        let conexao = crate::alcance::Conexao {
+            alcance: self.alcance_da_rede(&rede_id)?,
+            proxy,
+        };
+        crate::alcance::conferir_proxy(rede.tcp, &conexao)?;
         // v2: a chave do membro leva a serie deste certificado dentro.
         let tc = if rede.v2 {
             ovpn::gerar_v2_cliente(&tc, &e.serie_hex)?
@@ -707,7 +726,7 @@ impl Painel {
             cert_pem: &pki::cert_pem(&e.der),
             chave_pem: &pki::chave_pem(&e.privada),
             tls_crypt: &tc,
-            http_proxy: proxy.as_ref().map(|(h, p)| (h.as_str(), *p)),
+            conexao: Some(&conexao),
         });
         Ok(if mfa {
             perfil + crate::verificar::PERFIL_MFA
@@ -947,16 +966,15 @@ impl Painel {
             .try_into()
             .map_err(|_| "chave do servidor torta")?;
         let tc = cofre.abrir_com(&v("tls_crypt_selada"), &format!("rede:{nome}"))?;
-        let mut conf = ovpn::conf_servidor(
-            &ovpn::Rede {
-                nome: &nome,
-                porta: v("porta").parse().map_err(|_| "porta invalida")?,
-                octeto: v("octeto").parse().map_err(|_| "octeto invalido")?,
-                v2: ovpn::e_v2(&String::from_utf8_lossy(&tc)),
-                tcp: v("protocolo") == "tcp",
-            },
-            &dir.display().to_string(),
-        );
+        let rede = ovpn::Rede {
+            nome: &nome,
+            porta: v("porta").parse().map_err(|_| "porta invalida")?,
+            octeto: v("octeto").parse().map_err(|_| "octeto invalido")?,
+            v2: ovpn::e_v2(&String::from_utf8_lossy(&tc)),
+            tcp: v("protocolo") == "tcp",
+        };
+        let mut conf = ovpn::conf_servidor(&rede, &dir.display().to_string());
+        conf.push_str(&self.conf_do_alcance(rede_id, &dir, &rede)?);
         conf.push_str(&crate::credencial::conf(&self.dados, rede_id));
         conf.push_str(&self.conf_das_rotas(rede_id)?);
         conf.push_str(&self.conf_da_saida(rede_id)?);

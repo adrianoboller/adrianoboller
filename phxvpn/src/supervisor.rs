@@ -19,6 +19,14 @@
 //! como prova-lo aqui (sem Windows real), e o erro possivel -- a opcao mal
 //! formada -- impediria o OpenVPN de SUBIR, o que e pior que os 61 s de hoje.
 //!
+//! # A queda TCP sobe junto
+//!
+//! Rede UDP com queda para TCP tem a ponte (`queda_tcp.rs`) no lugar de um
+//! segundo `openvpn`: `garantir` le o `queda-tcp` da pasta e a abre, troca ou
+//! fecha; ela escreve no MESMO registro do OpenVPN da rede (a linha
+//! `queda-tcp:` diz o IP de fora de cada conexao, que o OpenVPN ve como
+//! loopback).
+//!
 //! # O log e nosso, e tem teto
 //!
 //! O OpenVPN escrevia direto num `openvpn.log` em append, para sempre. Girar
@@ -57,6 +65,9 @@ pub struct Supervisor {
     /// que sobe no lugar dele escrevem pelo MESMO, entao nao ha dois donos
     /// girando o mesmo arquivo.
     registros: Mutex<HashMap<PathBuf, Arc<Mutex<Registro>>>>,
+    /// A porta TCP das redes UDP com queda (`queda_tcp.rs`): no mesmo motor
+    /// que sobe o OpenVPN, para os dois subirem, reiniciarem e sairem juntos.
+    pontes: Mutex<HashMap<PathBuf, crate::queda_tcp::Ponte>>,
     teto_log: u64,
 }
 
@@ -82,11 +93,13 @@ impl Supervisor {
             binario,
             filhos: Mutex::new(HashMap::new()),
             registros: Mutex::new(HashMap::new()),
+            pontes: Mutex::new(HashMap::new()),
             teto_log,
         })
     }
 
     pub fn garantir(&self, nome: &str, dir: &Path) -> Result<(), String> {
+        self.garantir_ponte(nome, dir)?;
         let mut filhos = self.filhos.lock().expect("filhos");
         if let Some(f) = filhos.get_mut(dir) {
             if matches!(f.try_wait(), Ok(None)) {
@@ -114,6 +127,29 @@ impl Supervisor {
             filho.id()
         );
         filhos.insert(dir.to_path_buf(), filho);
+        Ok(())
+    }
+
+    /// A ponte da rede, do jeito que o arquivo `queda-tcp` da pasta manda:
+    /// igual, fica; mudou, cai e sobe a nova; sumiu, cai. Porta ocupada e
+    /// erro dito -- quem gravou o alcance desfaz.
+    fn garantir_ponte(&self, nome: &str, dir: &Path) -> Result<(), String> {
+        let conf = crate::queda_tcp::Conf::ler(dir)?;
+        let mut pontes = self.pontes.lock().expect("pontes");
+        if let (Some(p), Some(c)) = (pontes.get(dir), &conf) {
+            if p.conf() == c {
+                return Ok(());
+            }
+        }
+        // O `drop` fecha a escuta ANTES de a nova tentar a mesma porta.
+        drop(pontes.remove(dir));
+        if let Some(c) = conf {
+            let porta = c.porta;
+            let p = crate::queda_tcp::Ponte::abrir(c, self.registro(dir)?)
+                .map_err(|e| format!("queda TCP da rede «{nome}»: {e}"))?;
+            eprintln!("phxvpn: rede «{nome}» com queda TCP na porta {porta}");
+            pontes.insert(dir.to_path_buf(), p);
+        }
         Ok(())
     }
 
@@ -152,6 +188,9 @@ impl Drop for Supervisor {
     fn drop(&mut self) {
         if let Ok(mut f) = self.filhos.lock() {
             parar(f.drain().map(|(_, c)| c).collect());
+        }
+        if let Ok(mut p) = self.pontes.lock() {
+            p.clear();
         }
     }
 }
@@ -420,6 +459,72 @@ mod testes {
             assert_eq!(l, &format!("linha {i}"));
         }
         assert!(r.lock().unwrap().girado(1).exists(), "nao girou");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// A ponte segue o arquivo da pasta: nasce com ele, fica se nao mudou,
+    /// troca de porta se mudou e cai quando ele some -- e a porta velha
+    /// volta a ficar livre.
+    #[test]
+    fn ponte_segue_o_arquivo_da_pasta() {
+        let Ok(sup) = Supervisor::novo() else {
+            eprintln!("sem openvpn no PATH: teste pulado");
+            return;
+        };
+        let d = pasta("ponte");
+        let livre = || {
+            std::net::TcpListener::bind("127.0.0.1:0")
+                .unwrap()
+                .local_addr()
+                .unwrap()
+                .port()
+        };
+        let escuta = |p: u16| std::net::TcpStream::connect(("127.0.0.1", p)).is_ok();
+        let gravar_ps = |p: u16, ps: Option<(String, u16)>| {
+            std::fs::write(
+                d.join(crate::queda_tcp::ARQUIVO),
+                crate::queda_tcp::Conf {
+                    porta: p,
+                    udp: 9,
+                    port_share: ps,
+                }
+                .texto(),
+            )
+            .unwrap()
+        };
+        let gravar = |p: u16| gravar_ps(p, None);
+        sup.garantir_ponte("R", &d).unwrap();
+        assert!(
+            sup.pontes.lock().unwrap().is_empty(),
+            "sem arquivo, sem ponte"
+        );
+        let (a, b) = (livre(), livre());
+        gravar(a);
+        sup.garantir_ponte("R", &d).unwrap();
+        assert!(escuta(a));
+        sup.garantir_ponte("R", &d).unwrap();
+        assert!(escuta(a), "sem mudanca a ponte fica");
+        gravar(b);
+        sup.garantir_ponte("R", &d).unwrap();
+        assert!(escuta(b) && !escuta(a), "trocou de porta");
+        // A MESMA porta com outra conf: a velha larga a porta antes de a
+        // nova escutar nela (tirar o port-share de uma queda que ja existe).
+        gravar_ps(b, Some(("127.0.0.1".into(), 9)));
+        sup.garantir_ponte("R", &d).unwrap();
+        assert!(sup.pontes.lock().unwrap()[&d].conf().port_share.is_some());
+        assert!(escuta(b));
+        gravar(b);
+        sup.garantir_ponte("R", &d).unwrap();
+        assert_eq!(sup.pontes.lock().unwrap()[&d].conf().port_share, None);
+        assert!(escuta(b));
+        std::fs::remove_file(d.join(crate::queda_tcp::ARQUIVO)).unwrap();
+        sup.garantir_ponte("R", &d).unwrap();
+        assert!(!escuta(b), "sem arquivo a ponte cai");
+        // Porta ocupada: erro dito, com o nome da rede.
+        let ocupada = std::net::TcpListener::bind("0.0.0.0:0").unwrap();
+        gravar(ocupada.local_addr().unwrap().port());
+        let e = sup.garantir_ponte("Matriz", &d).unwrap_err();
+        assert!(e.contains("queda TCP da rede «Matriz»"), "{e}");
         let _ = std::fs::remove_dir_all(&d);
     }
 

@@ -24,10 +24,16 @@ const AJUDA: &str = "phxvpn -- redes virtuais no estilo Radmin, sobre OpenVPN
   phxvpn criar-rede --painel http://host:8470 --usuario LOGIN --rede NOME [--finalidade TEXTO]
                     [--protocolo udp|tcp] [--porta 443] [--http-proxy HOST:PORTA]
   phxvpn entrar     --painel http://host:8470 --usuario LOGIN --rede NOME [--saida ARQ.ovpn] [--conectar]
-                    [--http-proxy HOST:PORTA]
+                    [--http-proxy HOST:PORTA | --socks-proxy HOST:PORTA]
+                    [--proxy-usuario U | --proxy-perguntar]
       --protocolo tcp: a rede OpenVPN escuta em TCP (proto tcp-server) -- para
       membros atras de rede que so deixa TCP/443; --porta so o administrador.
-      --http-proxy: o perfil sai com http-proxy (so em rede TCP).
+      --http-proxy / --socks-proxy: o perfil sai com o proxy (rede TCP, ou
+      UDP com queda para TCP -- ai o proxy vai no bloco TCP).
+      --proxy-usuario U: usuario e senha (PHXVPN_SENHA_PROXY ou o terminal)
+      vao para <perfil>.proxy, 0600, e o perfil aponta para ele -- a senha
+      nunca vai ao painel nem ao perfil. --proxy-perguntar: o OpenVPN
+      pergunta ao conectar (so se o proxy pedir, no HTTP).
       --dns-linux systemd-resolved|resolvconf: o perfil chama o script que
       aplica o DNS empurrado (so no Linux; script-security 2). --sem-ipv6:
       maquina com o IPv6 desligado ignora o ifconfig-ipv6 do tunel total.
@@ -350,14 +356,23 @@ fn senha(var: &str, pergunta: &str) -> Result<String, String> {
 }
 
 fn cmd_rede(args: &[String], criar: bool) -> Result<(), String> {
-    let o = Opcoes::de_args(args, &["conectar", "sem-ipv6"]);
+    let o = Opcoes::de_args(args, &["conectar", "sem-ipv6", "proxy-perguntar"]);
     let painel = o.um("painel").unwrap_or("http://127.0.0.1:8470");
     let login = o.um("usuario").ok_or("informe --usuario")?;
     let rede = o.um("rede").ok_or("informe --rede")?;
     let s_login = senha("PHXVPN_SENHA", "senha do usuario")?;
     let s_rede = senha("PHXVPN_SENHA_REDE", "senha da rede")?;
+    let s_proxy = match comandos::usuario_do_proxy_do_perfil(&o) {
+        Some(u) => Some(senha(
+            "PHXVPN_SENHA_PROXY",
+            &format!("senha de {u} no proxy"),
+        )?),
+        None => None,
+    };
+    std::env::remove_var("PHXVPN_SENHA_PROXY");
     let (token, _) = comandos::login(painel, login, &s_login)?;
-    let arquivo = comandos::perfil_de_rede(painel, &token, criar, rede, &s_rede, &o)?;
+    let arquivo =
+        comandos::perfil_de_rede(painel, &token, criar, rede, &s_rede, s_proxy.as_deref(), &o)?;
     println!("perfil gravado em {arquivo} (contem a sua chave privada: guarde-o como senha)");
     if o.tem("conectar") {
         rodar_openvpn_cliente(&arquivo)?;

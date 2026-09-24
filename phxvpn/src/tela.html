@@ -74,6 +74,16 @@ button.exclui{border-color:var(--vermelho);color:var(--vermelho)}button.exclui:h
 .saida form{display:flex;flex-direction:column;gap:4px;margin-top:6px}
 .saida .dns{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
 .saida .dns input{flex:1 1 180px;min-width:0;background:#050a1c;color:var(--texto);border:1px solid var(--linha);border-radius:6px;padding:5px 8px;font:inherit;font-size:13px;font-family:ui-monospace,monospace}
+/* Alcance: enderecos (dado) em mono, sem caixa alta. A caixa de marcar
+   usa a .marca da saida, acima. */
+.alcance{border-top:1px solid var(--linha);padding:8px 12px 10px 16px;font-size:14px}
+.alcance .titulo{font-size:12px;color:var(--fraco);margin-bottom:4px}
+.alcance .resumo{font-family:ui-monospace,monospace;color:var(--ambar);font-size:12px;overflow-wrap:anywhere}
+.alcance form{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,170px),1fr));gap:8px;margin-top:6px}
+.alcance form .largo{grid-column:1/-1}
+.alcance form input,.alcance form textarea{font-family:ui-monospace,monospace}
+.linha-proxy{display:grid;grid-template-columns:minmax(90px,120px) minmax(0,1fr);gap:8px}
+.campo select{background:#050a1c;color:var(--texto);border:1px solid var(--linha);border-radius:6px;padding:8px;font:inherit}
 .selo{font-size:12px;border:1px solid var(--linha);border-radius:12px;padding:2px 8px;color:var(--fraco)}
 .selo.alerta{border-color:var(--amarelo);color:var(--amarelo)}
 dialog{background:var(--painel);color:var(--texto);border:1px solid var(--linha);border-radius:10px;max-width:460px;width:calc(100% - 32px)}
@@ -220,7 +230,14 @@ th{color:var(--fraco);font-weight:500;font-size:12px}
         <option value="udp">UDP (padrão)</option>
         <option value="tcp">TCP · porta 443</option></select></label>
     </fieldset>
-    <label class="campo" id="c-proxy" style="margin-top:8px"><span>Proxy HTTP no perfil (opcional, HOST:PORTA)</span><input name="http_proxy" placeholder="proxy.empresa:3128" autocomplete="off"></label>
+    <fieldset id="c-proxy" style="margin-top:8px">
+      <legend>Proxy no perfil (opcional)</legend>
+      <div class="linha-proxy">
+        <label class="campo"><span>Tipo</span><select name="proxy_tipo"><option value="http">HTTP</option><option value="socks">SOCKS5</option></select></label>
+        <label class="campo"><span>Proxy (HOST:PORTA)</span><input name="proxy" placeholder="proxy.empresa:3128" autocomplete="off"></label>
+      </div>
+      <label class="marca"><input type="checkbox" name="proxy_credencial" value="perguntar"> Pedir usuário e senha do proxy ao conectar (a senha nunca vai no perfil)</label>
+    </fieldset>
     <fieldset id="c-maquina" style="margin-top:8px">
       <legend>Esta máquina (muda só o seu perfil)</legend>
       <label class="campo"><span>DNS da VPN no Linux</span><select name="dns_linux">

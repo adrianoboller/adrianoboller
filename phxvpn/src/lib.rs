@@ -2,6 +2,7 @@
 //! linha de comando e para os testes de integracao usarem o MESMO codigo.
 
 pub mod acl;
+pub mod alcance;
 pub mod atualizar;
 #[cfg(windows)]
 pub mod bandeja;
@@ -26,6 +27,7 @@ pub mod p2p;
 pub mod painel;
 pub mod pg;
 pub mod pki;
+pub mod queda_tcp;
 pub mod rede_p2p;
 pub mod repasse;
 pub mod repasse_tcp;

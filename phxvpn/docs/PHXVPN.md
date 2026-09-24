@@ -64,6 +64,7 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [x] P2P: **difusão** — broadcast (`x.x.x.255`, `255.255.255.255`) e multicast (`224/4`) da placa vão cifrados a todos os pares com sessão, com teto por nó de origem (200 pacotes/s, 256 KiB/s, MTU) na saída E na entrada; só replica o que tem origem no próprio IP (sem laço); desliga por rede (`--sem-difusao`). Provado em três `netns`: 20/20 de cada destino nos dois receptores, SSDP acha os dois, desligada 0, rajada de 1000 → 200 — ver «P2P: difusão»
 - [x] Modo servidor: **redes alcançáveis** — LAN da empresa atrás do servidor (`push "route"`, NAT ou rota de volta, tabela `ip phxvpn` própria com guarda do isolamento — a guarda fica sempre que há rede, com ou sem rota) e filial atrás de um membro (`iroute`); só o admin inclui — provado com o `openvpn` 2.6.19 em netns, nft e iptables (`provas/rotas/`) — ver «Modo servidor: redes alcançáveis»
 - [x] Modo servidor: **túnel total** com o pacote inteiro (`redirect-gateway def1 ipv6` [+ `block-local`], `ifconfig-ipv6` fictício + `block-ipv6`, `block-outside-dns` empurrado, DNS pela VPN obrigatório, NAT de saída só para a internet) e **DNS da rede** (DNS da empresa empurrado, ou resolvedor embutido com `membro.rede.phx` e repasse) — provado com o `openvpn` 2.6.19 em netns, nft e iptables (`provas/tunel-total/`) — ver «Modo servidor: túnel total e DNS da rede»
+- [x] Modo servidor: **alcance** — endereços alternativos (`remote` a mais, `remote-random` opcional, espera de 10 s por endereço), **queda UDP→TCP** numa rede UDP (blocos `<connection>` no perfil, ponte TCP→UDP no supervisor — mesmo IP fixo, sem segundo `openvpn`), **`port-share`** da porta TCP com um HTTPS (na ponte e na rede TCP), e proxy do membro **HTTP ou SOCKS com usuário e senha** (arquivo 0600 ou perguntado ao conectar, nunca no perfil) — provado com o `openvpn` 2.6.19 em netns (`provas/servidor-alcance/`) — ver «Modo servidor: alcance»
 
 ### Falta
 
@@ -101,13 +102,13 @@ Da matriz em `docs/propostas/lacunas-openvpn-fonte-2026-09-24.md` (classe
 - [ ] MTU do P2P pelo repasse/farol (1.516 B > 1.500, calculado, não medido)
 - [x] `explicit-exit-notify 1` no perfil do membro (só UDP) — o membro some da lista em **10,4 s** (antes **131,1 s**), ver «Ciclo do OpenVPN e IPv6 por fora»
 - [x] Reinício do servidor com aviso: SIGTERM + prazo + `explicit-exit-notify 1` no servidor (só UDP; **Linux** — no Windows segue o `TerminateProcess`, ver a seção)
-- [ ] `remote` múltiplos / failover de servidor
-- [ ] Queda UDP→TCP no modo servidor (`<connection>`; multi-soquete só na 2.7)
-- [ ] `port-share` (TCP 443 dividindo porta com HTTPS)
+- [x] `remote` múltiplos / failover de servidor — principal morto → alternativo em **9,5 / 10,1 / 9,5 s** (ver «Modo servidor: alcance»)
+- [x] Queda UDP→TCP no modo servidor — ponte TCP→UDP no supervisor em vez de dois processos (a 2.7 tem multi-soquete); UDP bloqueado → TCP em **10,3 / 10,1 / 9,7 s**, mesmo IP fixo
+- [x] `port-share` (TCP dividindo porta com HTTPS) — na ponte da queda e na rede TCP (esta, só fora do Windows)
 - [x] Log do OpenVPN com teto: o supervisor lê a saída por pipe e gira `openvpn.log` a 10 MB, guardando 3
 - [ ] `tls-groups` híbrido pós-quântico (depende do OpenSSL 3.5 nos dois lados)
 - [ ] `mlock` (chave fora do swap)
-- [ ] `http-proxy-user-pass` / `socks-proxy`
+- [x] `http-proxy` com usuário e senha / `socks-proxy` — credencial em arquivo 0600 (linha de comando) ou perguntada ao conectar; SOCKS só em TCP (UDP pelo SOCKS não provado)
 - [ ] Certificado em cartão/repositório do Windows (`pkcs11-*`, `cryptoapicert`)
 - [ ] `multihome`
 - [ ] 2.7: `PUSH_UPDATE` (mudar rota/DNS sem reconectar)
@@ -1848,7 +1849,8 @@ coluna com `ALTER TABLE … ADD COLUMN IF NOT EXISTS`). O servidor sai com
 `http-proxy host porta`. O proxy é **validado** antes de entrar no perfil:
 o `.ovpn` é um arquivo de diretivas, e uma quebra de linha no campo seria
 `up /bin/sh …` no perfil de outra pessoa. Proxy em rede UDP é recusado (o
-OpenVPN recusaria o perfil).
+OpenVPN recusaria o perfil) — a não ser que a rede tenha queda para TCP: aí
+ele vai no bloco TCP (ver «Modo servidor: alcance»).
 
 **Prova (`prova-openvpn.sh`, parte TCP, `openvpn` 2.6.19, saída em
 `provas/tcp/prova-openvpn.txt`):** rede «Hotel» em `tcp-server` na 443; UDP
@@ -2236,6 +2238,105 @@ aviso, não queda».
 Achado de passagem: o laço UDP do `phxvpn repasse` morria no primeiro
 `ConnectionReset` — o Windows o devolve no `recv_from` quando um envio levou
 ICMP «porta inalcançável»; o nó já tratava isso, o repasse não. Agora trata.
+
+## Modo servidor: alcance — failover, queda UDP→TCP, port-share, proxy com senha (24/09/2026)
+
+Quatro itens da matriz de lacunas (classe **c**). Código novo em
+`src/alcance.rs` (modelo, perfil, API) e `src/queda_tcp.rs` (a ponte);
+ganchos em `ovpn.rs` (`Perfil.conexao` no lugar de `http_proxy`),
+`painel.rs` (esquema, «entrar», `materializar_rede`), `supervisor.rs`
+(`garantir_ponte`), `http.rs`, `comandos.rs`/`main.rs`/`console.rs` e a tela.
+
+| Por rede (só o **admin** grava; admin e dono veem) | Perfil | Servidor |
+|---|---|---|
+| Endereços alternativos (até 8, `host[:porta]`) | `remote` a mais; `server-poll-timeout 10` e `connect-retry 1 30` (o padrão espera **120 s** por endereço morto e **300 s** entre voltas) | — |
+| Sortear a ordem | `remote-random` | — |
+| Queda para TCP (rede UDP; porta, ex.: 443) | blocos `<connection>`: UDP de cada endereço primeiro, TCP depois | ponte TCP→UDP no supervisor |
+| `port-share host:porta` | — | rede TCP: `port-share` do OpenVPN; queda: a ponte decide |
+
+| Pelo membro, ao baixar o perfil | Linha no perfil |
+|---|---|
+| Proxy HTTP sem senha (o de antes) | `http-proxy h p` |
+| Proxy HTTP, «pedir ao conectar» | `http-proxy h p auto` — tenta sem, e só pergunta se vier 407 (terminal ou OpenVPN GUI, pela gerência) |
+| Proxy HTTP ou SOCKS, `--proxy-usuario U` (linha de comando) | `http-proxy h p "<perfil>.proxy" basic` / `socks-proxy h p "<perfil>.proxy"`; o arquivo nasce **0600** ao lado do perfil |
+
+**API:** `POST /api/redes/alcance {rede_id}`; `/api/redes/alcance/gravar
+{rede_id, remotos, aleatorio, queda_tcp, port_share, codigo}` (admin + código
+de quem tem autenticador: abre porta no host); `/api/redes/entrar` ganha
+`proxy`, `proxy_tipo` (`http`|`socks`), `proxy_credencial`
+(`nenhuma`|`perguntar`|`arquivo`) e `proxy_arquivo` (o `http_proxy` de antes
+continua valendo). **CLI:** `phxvpn entrar … --http-proxy H:P | --socks-proxy
+H:P [--proxy-usuario U | --proxy-perguntar]`, senha por
+`PHXVPN_SENHA_PROXY` ou o terminal. **Tela:** cartão da rede, «Alcance do
+servidor» (amarelo grava), e o diálogo de entrar com tipo de proxy e «pedir
+usuário e senha ao conectar».
+
+**Decisões, com a hipótese que morreu:**
+- **Queda: dois `openvpn` (UDP + TCP) — morreu.** É a receita da 2.6 (o
+  multi-soquete é da 2.7, `Changes.rst`), mas cada processo tem placa e
+  sub-rede próprias: o membro no TCP ganharia **outro IP** (o `ccd` fixa um),
+  o `client-to-client` não atravessa processos, e o kernel teria de
+  encaminhar entre as placas — `ip_forward` e a guarda de `rotas.rs` aberta.
+  **A ponte venceu:** o pacote do OpenVPN é igual nos dois transportes, só o
+  enquadramento muda (2 bytes de tamanho). O supervisor escuta TCP e entrega
+  cada quadro ao `openvpn` UDP da rede por `127.0.0.1`, um soquete por
+  conexão — medido: sem aviso de incompatibilidade, **mesmo IP (10.77.1.3)**
+  e **5/5** para o membro que ficou no UDP. Teto de **256** conexões por
+  ponte, 10 s para o primeiro byte, 180 s calado derruba.
+- **Origem pelo loopback:** para o OpenVPN todo cliente da ponte vem de
+  `127.x`, e o limitador do autenticador (`verificar.rs`) conta por
+  `untrusted_ip`. Com `127.0.0.1` para todos, um atacante pela 443 travaria
+  o código de quem caiu no TCP. Cada IP de fora ganha o seu `127.x.y.z`
+  (SHA-256 com chave do processo); a linha `phxvpn queda-tcp: <ip de fora>
+  entra como 127.x.y.z:porta` no `openvpn.log` faz a ponte.
+- **Blocos `<connection>` por último — medido, não escolhido:** opção de
+  conexão escrita depois de um bloco não vale para ele (`Option … is ignored
+  by previous <connection> blocks`, options.c:5617), e o `<tls-crypt>`
+  embutido é uma. Ver
+  `cognicao_opcao-depois-do-bloco-connection-nao-vale_20260924_1150.md`.
+- **Sortear com queda: recusado.** O `remote-random` embaralha a lista de
+  blocos inteira (client-options.rst:511): o TCP viria antes do UDP.
+- **Proxy só em TCP.** Rede UDP sem queda recusa proxy; com queda, ele vai no
+  bloco TCP. O SOCKS do OpenVPN leva UDP, mas isso não foi provado aqui.
+- **Senha do proxy nunca no perfil:** o `.ovpn` circula (e-mail, pendrive).
+  `<http-proxy-user-pass>` embutido existe e foi recusado por isso. Caminho do
+  arquivo: absoluto, entre aspas, `\` vira `/` (o OpenVPN lê `\` como
+  escape), sem aspas nem controle.
+- **`port-share` na rede TCP, só fora do Windows** (server-options.rst:438,
+  «Not implemented on Windows»); na ponte vale nos dois. A ponte decide pela
+  regra do próprio OpenVPN (`ps.c:975`): primeiro pacote com o opcode de
+  `HARD_RESET_CLIENT_V2/V3` e tamanho coerente vai ao OpenVPN; o resto
+  (ClientHello, `GET`) vai ao HTTPS. Sem `port-share` a ponte não examina
+  nada.
+- **Porta TCP nova no host é conferida contra as outras:** queda de outra
+  rede e porta de rede TCP. Porta ocupada por fora (outro programa) aparece
+  quando a ponte sobe — e aí o alcance **volta ao anterior** e o erro diz o
+  porquê, em vez de ficar gravado com nada escutando.
+
+**Prova** (`sudo provas/servidor-alcance/rodar.sh 3`; painel + PostgreSQL +
+`openvpn` 2.6.19 em netns, binário release; `resultados.json`):
+
+| Caso | Com | Sem (RED) |
+|---|---|---|
+| Endereço principal morto (descarta tudo) → alternativo | conecta em **9,5 / 10,1 / 9,5 s** | não conecta em 45 s |
+| UDP do membro bloqueado → queda TCP 443 | conecta em **10,3 / 10,1 / 9,7 s**; IP 10.77.1.3; ping ao admin no UDP **5/5**; o OpenVPN vê `127.65.233.200:43395` | rede sem queda: não conecta em 45 s; 443 sem ninguém |
+| `port-share` na ponte: `curl https://…:443/` com o membro no TCP | a página do HTTPS; o membro segue **2/2** | curl vazio |
+| `port-share` na rede TCP 8443 (o do OpenVPN) | a página; o membro conecta | curl vazio |
+| Só o proxy alcança o servidor, e ele pede senha (407) — arquivo pela CLI | conecta em **12,4 s**; arquivo **0600**; senha em 0 lugar do perfil e do painel | sem credencial: não conecta em 45 s (5 × `407`) |
+| O mesmo, «pedir ao conectar» (a gerência responde, como o OpenVPN GUI) | conecta em **12,6 s**, 1 pedido `Need 'HTTP Proxy'` | — |
+| SOCKS5 com usuário e senha, arquivo pela CLI | conecta em **9,7 s**; ping 3/3 | sem credencial: não conecta (4 × método recusado) |
+
+Os ~10 s de cada troca são o `server-poll-timeout` escolhido; com o proxy
+somam-se a tentativa UDP e a ida pelo proxy. **RED das guardas** (cada uma
+tirada do fonte, o teste dela reprova): **17/17**, `python3
+provas/servidor-alcance/red.py` → `resultados.json` → `red_das_guardas`.
+
+**Não medido / fica:** o membro que sai pela ponte continua na lista até o
+`ping-restart` do servidor (TCP fechado não vira `explicit-exit-notify`); o
+`client-connect` (histórico) vê o `127.x.y.z`, e a origem real está só no
+`openvpn.log`; SOCKS por UDP; `port-share` e a ponte num Windows real; queda
+com IPv6 por fora (este kernel não tem IPv6 — a ponte tenta `[::]` e cai no
+`0.0.0.0`).
 
 ## Limites que valem saber antes de usar
 

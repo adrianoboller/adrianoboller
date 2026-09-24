@@ -186,14 +186,28 @@ pub fn login(painel: &str, usuario: &str, senha: &str) -> R<(String, bool)> {
     ))
 }
 
+/// O usuario do proxy do PERFIL (`--proxy-usuario` junto de `--http-proxy`
+/// ou `--socks-proxy`), para quem chama pedir a senha dele antes
+/// (PHXVPN_SENHA_PROXY ou o terminal). `--proxy-perguntar` nao pede aqui: o
+/// OpenVPN pergunta ao conectar.
+pub fn usuario_do_proxy_do_perfil(o: &Opcoes) -> Option<&str> {
+    let tem_proxy = o.um("http-proxy").is_some() || o.um("socks-proxy").is_some();
+    nao_vazia(o.um("proxy-usuario")).filter(|_| tem_proxy && !o.tem("proxy-perguntar"))
+}
+
 /// Cria ou entra numa rede do painel e grava o perfil `.ovpn`. Devolve o
 /// caminho gravado.
+///
+/// Com `--proxy-usuario`, usuario e senha do proxy vao para `<perfil>.proxy`
+/// (0600, ao lado do perfil) e o perfil aponta para ele: a senha nunca vai
+/// ao painel nem ao perfil, que circula.
 pub fn perfil_de_rede(
     painel: &str,
     token: &str,
     criar: bool,
     rede: &str,
     senha_rede: &str,
+    senha_proxy: Option<&str>,
     o: &Opcoes,
 ) -> R<String> {
     let (finalidade, saida) = (o.um("finalidade").unwrap_or(""), o.um("saida"));
@@ -213,8 +227,50 @@ pub fn perfil_de_rede(
             pedido.push(("porta", Json::de_i64(n as i64)));
         }
     }
-    if let Some(p) = nao_vazia(o.um("http-proxy")) {
-        pedido.push(("http_proxy", Json::texto_de(p)));
+    let arquivo = saida
+        .map(str::to_string)
+        .unwrap_or_else(|| crate::ovpn::arquivo_do_perfil(rede));
+    let mut credencial = None;
+    let proxy = match (
+        nao_vazia(o.um("http-proxy")),
+        nao_vazia(o.um("socks-proxy")),
+    ) {
+        (Some(_), Some(_)) => return Err("--http-proxy ou --socks-proxy, nao os dois".into()),
+        (Some(p), None) => Some((p, "http")),
+        (None, Some(p)) => Some((p, "socks")),
+        (None, None) => None,
+    };
+    if let Some((endereco, tipo)) = proxy {
+        // HTTP sem credencial vai pelo campo de antes: painel antigo o
+        // entende, e o proxy nao some calado do perfil.
+        if tipo == "http" && usuario_do_proxy_do_perfil(o).is_none() && !o.tem("proxy-perguntar") {
+            pedido.push(("http_proxy", Json::texto_de(endereco)));
+        } else {
+            pedido.push(("proxy", Json::texto_de(endereco)));
+            pedido.push(("proxy_tipo", Json::texto_de(tipo)));
+        }
+        if o.tem("proxy-perguntar") {
+            pedido.push(("proxy_credencial", Json::texto_de("perguntar")));
+        } else if let Some(u) = usuario_do_proxy_do_perfil(o) {
+            let senha = senha_proxy.ok_or("senha do proxy nao informada")?;
+            if u.contains(['\r', '\n']) || senha.contains(['\r', '\n']) {
+                return Err("usuario e senha do proxy numa linha cada".into());
+            }
+            let mut caminho = std::path::PathBuf::from(format!("{arquivo}.proxy"));
+            if caminho.is_relative() {
+                caminho = std::env::current_dir()
+                    .map_err(|e| e.to_string())?
+                    .join(caminho);
+            }
+            let caminho = caminho.display().to_string();
+            pedido.push(("proxy_credencial", Json::texto_de("arquivo")));
+            pedido.push(("proxy_arquivo", Json::texto_de(&caminho)));
+            credencial = Some((caminho, format!("{u}\n{senha}\n")));
+        }
+    } else if o.um("proxy-usuario").is_some() || o.tem("proxy-perguntar") {
+        return Err(
+            "--proxy-usuario e --proxy-perguntar pedem --http-proxy ou --socks-proxy".into(),
+        );
     }
     // O que a maquina de quem baixa pede ao proprio perfil (saida.rs): o
     // painel confere a lista, aqui so se repassa.
@@ -236,9 +292,9 @@ pub fn perfil_de_rede(
         Some(token),
         Some(&Json::objeto(pedido)),
     )?;
-    let arquivo = saida
-        .map(str::to_string)
-        .unwrap_or_else(|| r.texto_ou("arquivo", "phxvpn.ovpn").to_string());
+    if let Some((caminho, conteudo)) = credencial {
+        gravar_secreto(&caminho, conteudo.as_bytes(), false)?;
+    }
     gravar_secreto(&arquivo, r.texto_ou("perfil", "").as_bytes(), false)?;
     Ok(arquivo)
 }
