@@ -27,6 +27,7 @@ pelo PID. Nunca toca em phxsqld de outra pessoa.
 """
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -843,64 +844,80 @@ def provar_pela_tela(tiros):
         falhas.append("a bateria da tela")
 
 
-def item_0_catraca_do_mapa():
-    """A catraca do mapa da trava, ANTES do servidor -- ela e estatica.
+ROTULOS_DAS_CATRACAS = {
+    # Nomes amigaveis para o relatorio da bateria -- NAO e uma segunda lista
+    # de "quais scripts sao catraca": essa decisao e' so' do `todas.py`, por
+    # varredura. Isto e so' cosmetico, e uma catraca nova (que o `todas.py`
+    # ache sozinho) ganha um rotulo generico no `.get(..., default)` abaixo
+    # em vez de ficar muda -- nunca soma no total sem aparecer no relatorio.
+    "mapa-da-trava.py": "as tres catracas do mapa da trava seguram",
+    "mapa-das-threads.py": "as duas catracas do mapa das threads seguram",
+    "debug-com-segredo.py": "a catraca do `Debug` com segredo segura",
+    "pkill-sem-pid.py": "a catraca do `pkill` sem PID segura",
+    "trecho-vivo.py": "a catraca do catalogo envelhecido segura",
+}
 
-    A §8 do docs/CONCORRENCIA.md pedia esta guarda desde 03/09, e a frente de
-    entao a deixou fora dizendo que exigiria mexer em `crates/`. Nao exige: a
-    regua e o `mapa-da-trava.py`, que le o fonte, e quem a roda e esta bateria,
-    que ja e Python.
 
-    Ela entra AQUI, e nao no fim, porque nao precisa de servidor nenhum -- e
-    porque uma secao critica nova que roda codigo do dono do banco sob a trava
-    global e defeito antes de qualquer teste de comportamento passar.
+def item_0_todas_as_catracas():
+    """TODAS as catracas em Python, num comando so' -- pedido 476.
+
+    Ate aqui, cada regua (mapa da trava, mapa das threads, `Debug` com
+    segredo, `pkill` sem PID, catalogo envelhecido) vivia numa chamada
+    propria, escrita a mao, so' aqui dentro. Foi exatamente essa lista
+    fechada que deixou a `debug-com-segredo.py` subir de 0 para 1 por quatro
+    commits sem ninguem ver (cognicao de 24/09/2026,
+    `docs/cognicao/cognicao_catraca-que-so-roda-dentro-da-bateria-nao-segura-a-integracao_20260924_0455.md`):
+    a lista sabia de tres catracas, e a quarta e a quinta so' apareciam mais
+    abaixo, dentro do item 0b.
+
+    Agora quem sabe quais catracas em Python existem e' o
+    `bancada/catracas/todas.py`, por VARREDURA do proprio `--catraca` de cada
+    script -- mesmo motor, nunca duas listas (lei do dono, 23/09/2026). Uma
+    catraca nova entra na proxima corrida sem editar esta funcao; se ela
+    nascer muda, sem imprimir nada, o `confere` de baixo reprova dizendo isso
+    em vez de contar como se tivesse passado.
+
+    Ela entra AQUI, ANTES do servidor, porque as cinco de hoje sao estaticas
+    -- e porque uma secao critica nova que roda codigo do dono do banco sob a
+    trava global e defeito antes de qualquer teste de comportamento passar.
     """
-    print("\n=== item 0: a catraca do mapa da trava ===")
-    mapa = os.path.join(AQUI, "..", "concorrencia", "mapa-da-trava.py")
-    r = subprocess.run([sys.executable, mapa, "--catraca"],
+    print("\n=== item 0: todas as catracas em Python (bancada/catracas/todas.py) ===")
+    comando = os.path.join(AQUI, "..", "catracas", "todas.py")
+    r = subprocess.run([sys.executable, comando],
                        capture_output=True, text=True)
+    vistas = set()
     for linha in r.stdout.splitlines():
+        # A secao das TETO_* do Rust nao se ecoa aqui: sao trinta e tantas
+        # linhas informativas que o `todas.py` ja lista sozinho, e nao rodam
+        # dentro da bateria (custo medido no proprio comando). Ecoar tudo
+        # transformaria todo log da bateria numa copia dela.
+        if linha.strip().startswith("=== TETO_*"):
+            break
         if linha.strip():
             print("  " + linha)
+        m = re.match(r"\s*(ok|REPROVADA|QUEBRADA\b.*?)\s{2,}(\S+\.py)\s+\(",
+                     linha)
+        if not m:
+            continue
+        estado, caminho = m.group(1), os.path.basename(m.group(2))
+        vistas.add(caminho)
+        rotulo = ROTULOS_DAS_CATRACAS.get(caminho, f"a catraca de {caminho} segura")
+        confere(rotulo, estado == "ok", True)
+    if not vistas:
+        # O comando mudou de saida e nenhuma linha casou o crivo -- silencio
+        # aqui e' a MESMA doenca que motivou o pedido 476: catraca some sem
+        # ninguem ver. Aparece como ERRO, nunca como corrida vazia e verde.
+        confere("o `todas.py` respondeu com catracas reconheciveis", False, True)
+    # O CODIGO DE SAIDA decide, como no `comunicacao.sh` -- as linhas acima so
+    # NOMEIAM. O crivo de texto pede dois espacos antes do caminho, e o
+    # `todas.py` alinha o estado em 32 colunas: um «QUEBRADA (medidor caiu:
+    # ...)» mais longo que isso sai com um espaco so', nao casa, e a catraca
+    # caida sumia da bateria com `falhas` vazio (medido pelo integrador em
+    # 24/09/2026, numa copia com uma regua que levanta excecao).
+    confere("o `todas.py` sai 0 -- nenhuma catraca reprova nem quebra",
+            r.returncode, 0)
     if r.returncode != 0 and r.stderr:
         print("  " + r.stderr.strip()[:400])
-    confere("as tres catracas do mapa da trava seguram", r.returncode, 0)
-
-
-def item_0c_catraca_do_mapa_das_threads():
-    """A catraca do mapa das threads (pedido 248), ANTES do servidor -- estatica.
-
-    A regua e o `mapa-das-threads.py`: todo lugar onde uma thread nasce fora
-    dos testes tem de estar no catalogo dele com o teto que a segura, ou com a
-    dispensa e o motivo. `spawn-sem-teto` e zero e nunca sobe -- um so ja e
-    uma enxurrada possivel, e a porta web viveu assim ate 16/09/2026 com o
-    proprio comentario confessando.
-    """
-    print("\n=== item 0c: a catraca do mapa das threads ===")
-    mapa = os.path.join(AQUI, "..", "concorrencia", "mapa-das-threads.py")
-    r = subprocess.run([sys.executable, mapa, "--catraca"],
-                       capture_output=True, text=True)
-    for linha in r.stdout.splitlines():
-        if linha.strip():
-            print("  " + linha)
-    if r.returncode != 0 and r.stderr:
-        print("  " + r.stderr.strip()[:400])
-    confere("as duas catracas do mapa das threads seguram", r.returncode, 0)
-
-    # CATRACA -- o `Debug` com segredo dentro: nove structs derivavam `Debug`
-    # carregando senha e token (consertadas em 74de67e), e a guarda
-    # `debug-da-cifra-mostra-a-senha` JA EXISTIA -- travava UMA struct, nao a
-    # lei. A regua e `bancada/guardas/debug-com-segredo.py`, nascida no numero
-    # medido do dia (0), com os falsos positivos declarados nela mesma.
-    catraca_debug = os.path.join(AQUI, "..", "guardas", "debug-com-segredo.py")
-    r = subprocess.run([sys.executable, catraca_debug, "--catraca"],
-                       capture_output=True, text=True)
-    for linha in r.stdout.splitlines():
-        if linha.strip():
-            print("  " + linha)
-    if r.returncode != 0 and r.stderr:
-        print("  " + r.stderr.strip()[:400])
-    confere("a catraca do `Debug` com segredo segura", r.returncode, 0)
 
 
 def item_0b_o_portao_nao_se_acha():
@@ -1015,35 +1032,12 @@ def item_0b_o_portao_nao_se_acha():
     # e volta a calar, para que o sentido 1 nao tenha passado por acaso
     maquina_limpa_ou_pulado("morta a bancada, o portao volta a dizer que nao ha medicao")
 
-    # CATRACA -- pedido 256: nenhuma bancada versionada mata com `pkill` sem
-    # PID (o comando nem aceita PID -- mata por NOME na maquina inteira). A
-    # regua e `bancada/guardas/pkill-sem-pid.py`, nascida no numero medido do
-    # dia (0, depois do conserto de `bancada/carga/{bulkinsert,medir}.py`).
-    catraca_pkill = os.path.join(AQUI, "..", "guardas", "pkill-sem-pid.py")
-    r = subprocess.run([sys.executable, catraca_pkill, "--catraca"],
-                       capture_output=True, text=True)
-    for linha in r.stdout.splitlines():
-        if linha.strip():
-            print("  " + linha)
-    if r.returncode != 0 and r.stderr:
-        print("  " + r.stderr.strip()[:400])
-    confere("a catraca do `pkill` sem PID segura", r.returncode, 0)
-
-    # CATRACA -- pedido 263: nenhuma entrada do catalogo de guardas aponta
-    # para um trecho ou um teste que o codigo nao tem mais. A corrida inteira
-    # do `provar-guardas.py` leva cerca de uma hora (ela repoe o defeito e
-    # roda `cargo test` 142 vezes), e foi por isso que UM commit de 12/09
-    # aposentou cinco guardas sem ninguem ver por quatro dias. Esta regua
-    # custa 0,18 s e pega essa classe -- nao substitui o provador.
-    catraca_catalogo = os.path.join(AQUI, "..", "guardas", "trecho-vivo.py")
-    r = subprocess.run([sys.executable, catraca_catalogo, "--catraca"],
-                       capture_output=True, text=True)
-    for linha in r.stdout.splitlines():
-        if linha.strip():
-            print("  " + linha)
-    if r.returncode != 0 and r.stderr:
-        print("  " + r.stderr.strip()[:400])
-    confere("a catraca do catalogo envelhecido segura", r.returncode, 0)
+    # As catracas do `pkill` sem PID (pedido 256) e do catalogo envelhecido
+    # (pedido 263) rodavam AQUI, cada uma com a propria chamada a
+    # `subprocess.run`. Pedido 476: mudaram de casa para `item_0_todas_as_
+    # catracas()`, que roda as CINCO catracas em Python por UM comando so'
+    # (`bancada/catracas/todas.py`) -- mesmo motor, nunca duas listas. Ficam
+    # aqui? nao: a lista fechada era exatamente o defeito que o 476 fecha.
 
 
 def main():
@@ -1060,9 +1054,8 @@ def main():
         os.makedirs(tiros, exist_ok=True)
 
     # Estatica e sem servidor: roda antes de subir qualquer coisa.
-    item_0_catraca_do_mapa()
+    item_0_todas_as_catracas()
     item_0b_o_portao_nao_se_acha()
-    item_0c_catraca_do_mapa_das_threads()
 
     srv = Servidor()
     resultados = {"quando": time.strftime("%Y-%m-%d"), "porta": PORTA}

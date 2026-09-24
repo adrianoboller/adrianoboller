@@ -64,7 +64,8 @@ uma vez** sem ninguém ver por quatro dias. A causa não é desleixo, é custo �
 o `provar-guardas.py` leva cerca de uma hora, porque repõe o defeito e roda
 `cargo test` 143 vezes. **Guarda que só se confere em uma hora é guarda que
 não se confere.** O `trecho-vivo.py` custa **0,200–0,206 s** (medido, cinco
-corridas a load ~1,0) e roda no item 0c da bateria. A quinta régua (pedido
+corridas a load ~1,0) e roda no item 0 da bateria, via `bancada/catracas/
+todas.py` (pedido 476, `docs/CATRACAS.md` §18). A quinta régua (pedido
 269) acrescentou **+10 ms**: medido no mesmo minuto e na mesma máquina a load
 2,5, sete corridas de cada lado, a mediana foi **197 ms** com quatro réguas e
 **207 ms** com cinco. O custo é medido a cada régua que entra, e não no fim —

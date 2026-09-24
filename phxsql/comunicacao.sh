@@ -286,32 +286,34 @@ fi
 # rodadas de portoes verdes -- porque ela so rodava no item 0 da bateria, e
 # a bateria e um comando que alguem tem de lembrar de dar (a ultima corrida
 # era de 29/08). Catraca que so roda onde ninguem roda e lembrete, nao guarda.
-# Os dois mapas leem SO o fonte (nada compila, ~2 s cada), entao cabem aqui:
-# reprovacao aparece de hora em hora como o que e -- papel que nao esta
-# cumprindo aparece como nao cumprindo -- ate alguem desfazer ou o dono
-# decidir a excecao (pendencia #252).
+#
+# Ate 24/09/2026 so os dois mapas cabiam aqui, com a lista escrita a mao --
+# e foi exatamente esse recorte que deixou a `debug-com-segredo.py` (e as
+# outras duas de `bancada/guardas/`) invisiveis tambem NESTE script, so'
+# achadas pela bateria completa dias depois (pedido 476, cognicao
+# `docs/cognicao/cognicao_catraca-que-so-roda-dentro-da-bateria-nao-segura-a-integracao_20260924_0455.md`).
+# Hoje a lista sai do `bancada/catracas/todas.py`, por VARREDURA do proprio
+# `--catraca` de cada script -- mesmo motor que a bateria chama, nunca duas
+# listas. Custo medido das cinco somadas: ~8 s, cabe no batimento de 15 min
+# do mesmo jeito que os dois mapas cabiam sozinhos.
 # Pelo PORTAO, que foi tomado ANTES do `cd` -- depois dele o `$0` relativo
 # mente (o comentario do topo ja dizia, e este bloco pagou para aprender).
 PHX="$(cd "$(dirname "$PORTAO")/.." && pwd)"
-for MAPA in "$PHX/bancada/concorrencia/mapa-da-trava.py" "$PHX/bancada/concorrencia/mapa-das-threads.py"; do
-  if [ ! -f "$MAPA" ]; then
-    echo "⚠️  medidor sumiu: $(basename "$MAPA") -- a catraca dele nao roda mais"
-    PROBLEMAS=$((PROBLEMAS+1))
-    continue
-  fi
-  # Os dois medidores acham a raiz pelo proprio caminho; rodam de qualquer cwd.
-  SAIDA="$(python3 "$MAPA" --catraca 2>&1)"
-  if printf '%s' "$SAIDA" | grep -q "REPROVAD"; then
-    echo "⚠️  catraca REPROVADA em $(basename "$MAPA"):"
-    printf '%s\n' "$SAIDA" | grep -E "SUBIU|DESCEU|REPROVADO:|catalogo-envelhecido +[1-9]|spawn-sem-teto +[1-9]" | sed 's/^ */    /' | head -4
-    PROBLEMAS=$((PROBLEMAS+1))
-  elif ! printf '%s' "$SAIDA" | grep -qE "APROVAD|seguram"; then
-    # `mapa-da-trava` termina em APROVADO/REPROVADO; `mapa-das-threads` em
-    # «As duas catracas seguram.» ou REPROVADO. Nada disso e' medidor quebrado.
-    echo "⚠️  $(basename "$MAPA") --catraca nao deu veredito -- medidor quebrado?"
+CATRACAS="$PHX/bancada/catracas/todas.py"
+if [ ! -f "$CATRACAS" ]; then
+  echo "⚠️  medidor sumiu: $(basename "$CATRACAS") -- as catracas em Python pararam de rodar aqui"
+  PROBLEMAS=$((PROBLEMAS+1))
+else
+  # `todas.py` acha a raiz pelo proprio caminho; roda de qualquer cwd. O
+  # codigo de saida e' quem decide (0 = todas seguram) -- nunca a prosa; a
+  # prosa so' serve para NOMEAR a catraca que nao segurou, no aviso abaixo.
+  SAIDA="$(python3 "$CATRACAS" 2>&1)"
+  if [ $? != 0 ]; then
+    echo "⚠️  catraca(s) em Python nao seguram (bancada/catracas/todas.py):"
+    printf '%s\n' "$SAIDA" | grep -E "^\s*(REPROVADA|QUEBRADA)" | sed 's/^ */    /' | head -6
     PROBLEMAS=$((PROBLEMAS+1))
   fi
-done
+fi
 
 # ---------------------------------------------------------------------------
 # A GUARDA DA CORRENTE, e ela existe porque o buraco cobrou.

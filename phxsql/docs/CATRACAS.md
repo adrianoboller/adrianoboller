@@ -616,8 +616,9 @@ empilhado»), que mexeu em `table.rs` e `transacao.rs`. Ninguém percebeu por
 porque repõe o defeito e roda `cargo test` para cada uma das 169 entradas.
 **Guarda que só se confere em uma hora é guarda que não se confere.**
 
-**Onde mora**: `bancada/guardas/trecho-vivo.py`, chamada pelo item 0c da
-bateria (`bancada/bateria/prova-bateria.py`) — estática, sem servidor e sem
+**Onde mora**: `bancada/guardas/trecho-vivo.py`, chamada pelo
+`bancada/catracas/todas.py` (§18), que a bateria roda no item 0 e o
+`comunicacao.sh` a cada batimento — estática, sem servidor e sem
 compilar nada.
 
 ### 12.1 As seis formas de QUEBRADA, e quais entraram na régua
@@ -1711,7 +1712,8 @@ nunca «0, em cima, sem folga». Ver
 
 **O que ela NÃO vê, declarado**: segredo em campo cujo nome não casa o léxico
 (`Direcao { k }` no `fio.rs`); `impl Display`; caminho indireto no `impl`;
-`examples/` e `tests/`. Quem a roda: a bateria (item 0c) e o inventário do
+`examples/` e `tests/`. Quem a roda: o `bancada/catracas/todas.py` (§18) — na bateria e no
+`comunicacao.sh` — e o inventário do
 `docs/qa/medir.py`, que a achou sozinho pelo `catraca:nome=`. Não roda no
 `cargo test`.
 
@@ -1893,6 +1895,91 @@ contado contra o código-fonte, e nenhum entra na tabela de catracas.
 - **`crates/phxsql-server/src/catalogo.rs:71`** (`const MAX: Parametro =
   ...`) — falso positivo: é a descrição do parâmetro `"max"` do protocolo
   (documentação do catálogo de operações), não um teto numérico.
+
+## 18. `bancada/catracas/todas.py` — UM comando que roda todas as catracas em Python
+
+**O defeito que a motivou** (pedido 476, cognição de 24/09/2026,
+`docs/cognicao/cognicao_catraca-que-so-roda-dentro-da-bateria-nao-segura-a-integracao_20260924_0455.md`):
+as cinco réguas em Python (§13 e §16 — os dois mapas de concorrência, o
+`Debug` com segredo, o `pkill` sem PID e o catálogo envelhecido) só eram
+chamadas de dentro do **item 0 da `bancada/bateria/prova-bateria.py`**, cada
+uma com a própria linha de `subprocess.run` escrita à mão — e algumas
+também de dentro do `comunicacao.sh`, com uma **segunda** lista, mais curta
+(só os dois mapas). O commit `de4ca0a` subiu a `debug-com-segredo.py` de 0
+para 1 e passou por `trecho-vivo.py --catraca`, pela suíte e pelo clippy sem
+reprovar nada — porque nenhum dos três chama a catraca certa pelo nome. Só a
+bateria completa, dias depois, achou.
+
+**O que ele faz**: varre todo `.py` do repositório atrás de uma linha que
+junte `sys.argv` (ou `add_argument`) com o texto `--catraca` — é assim que um
+script DECLARA o próprio modo `--catraca`, e não apenas o menciona ao chamar
+outro (um `subprocess.run([sys.executable, alvo, "--catraca"])` carrega
+`sys.executable`, nunca `sys.argv`, na mesma linha). Hoje isso acha as
+**cinco** de sempre; uma catraca nova em Python entra na próxima corrida sem
+editar nenhuma lista. Roda cada uma e julga pelo **código de saída** (0 =
+segura, != 0 = não segura) — nunca pela prosa, a mesma lei que o `--numeros`
+de cada régua já segue.
+
+**As TETO_\* do Rust** já são conferidas por `cargo test`; o comando lista
+toda `const TETO\w*` achada em `crates/**/*.rs` (src e examples) — **33**
+hoje — e diz, para cada uma, qual `#[test]` (no próprio arquivo ou nos
+`tests/*.rs` do mesmo crate) cita o nome dela: **19 achou candidato, 14
+não**. **Ele NÃO roda `cargo test` por padrão** — custo medido em
+24/09/2026: `cargo test -p phxsql-server --lib -- --list` (arrasta
+phxsql-core, phxsql-store e phxsql-sql, onde mora a maioria das TETO_*)
+levou **~19 s FRIO**, e continuou perto disso mesmo sem nenhuma linha mudar
+— o custo é o build de teste dos quatro crates, não a execução. Dezenove
+segundos é de mil a duas mil vezes o custo das cinco catracas em Python
+somadas (medido: **~7,9 s** as cinco juntas, numa corrida da árvore limpa —
+3,9 s do mapa da trava, 1,0 s do mapa das threads, 2,1 s do `Debug` com
+segredo, 0,04 s do `pkill`, 0,3 s do catálogo). Rodar o Rust em toda chamada
+tornaria o comando caro demais para o uso que o motiva — todo commit, pelo
+integrador. Quem quiser a conta na hora tem o `--com-rust`: builda e roda
+`cargo test --lib` dos crates com alguma TETO_*, medido em **~48 s** nesta
+árvore (`phxsql-core` + `phxsql-store` + `phxsql-server` + `phxzip`, frio).
+
+**A diferença entre REPROVADA e QUEBRADA**: as duas reprovam a chamada
+(código de saída != 0), mas o relatório diz qual é qual, porque só quem
+escreveu a régua sabe explicar o próprio número. QUEBRADA acontece em três
+casos — silêncio total (stdout e stderr vazios: o defeito nomeado pelo
+próprio pedido, "medidor quebrado não é verde" — um script que capturasse
+toda exceção e devolvesse `None`, que em Python vira saída 0, passaria por
+aprovado sem este crivo), exceção (saída != 0 com um `Traceback` no stderr),
+ou prazo estourado (padrão 120 s).
+
+**Onde ele passou a ser chamado** — mesmo motor, nunca duas listas (lei do
+dono, 23/09/2026):
+
+- `bancada/bateria/prova-bateria.py`: o antigo `item_0_catraca_do_mapa` e o
+  `item_0c_catraca_do_mapa_das_threads` viraram um só, `item_0_todas_as_
+  catracas`, que chama o comando e gera um `confere()` por catraca (rótulo
+  amigável por um dicionário só cosmético — a decisão de quais scripts SÃO
+  catraca continua vindo exclusivamente da varredura). As duas catracas que
+  moravam dentro do `item_0b` (`pkill` sem PID e catálogo envelhecido) saíram
+  de lá — moviam-se com o resto para o item 0, estático, antes do servidor.
+- `comunicacao.sh` (bloco "as catracas que só rodavam na bateria"): a lista
+  fechada de dois mapas virou uma chamada ao mesmo comando — o mesmo buraco
+  que motivou o pedido 476 também existia aqui: só os dois mapas cabiam no
+  batimento de 15 min, e as outras três só apareciam na bateria completa.
+  Custo das cinco somadas (~8 s) cabe no mesmo orçamento que os dois mapas
+  cabiam sozinhos.
+
+**A prova real, nos dois sentidos, numa CÓPIA da árvore** (nunca na viva):
+
+- **(a) defeito reposto sobe a catraca certa.** Trocado o `impl Debug` manual
+  de `Opcoes` (`crates/phxzip/src/escritor.rs`) por `#[derive(Debug)]`: o
+  comando reprova nomeando `crates/phxzip/src/escritor.rs:61  Opcoes.senha:
+  Option<String>  (derive(Debug))`, `SUBIU 1 (teto 0)`, saída 1. Desfeito, as
+  cinco voltam a `ok`, saída 0.
+- **(b) catraca nova entra sem editar lista nenhuma.** Um script sintético
+  (`if "--catraca" in sys.argv: sys.exit(1)`) apareceu na varredura (`--lista`
+  passou a mostrar **6** réguas em vez de 5) e foi rodado e reprovado
+  (`REPROVADA`) sem uma linha de configuração tocada.
+- **(c) medidor mudo reprova como QUEBRADA.** Um segundo script sintético
+  (`if "--catraca" in sys.argv: sys.exit(0)`, sem imprimir nada) saiu como
+  `QUEBRADA (nao imprime veredito)`, e a chamada inteira terminou em saída 1
+  — o silêncio sozinho já reprova, mesmo com código de saída 0 do filho.
+- **Árvore limpa**: as cinco `ok`, 33 TETO_* listadas, saída 0.
 
 ## Metodologia
 

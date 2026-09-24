@@ -2533,7 +2533,7 @@ no mesmo ponto — criar 500 threads de uma vez também custa —, então o núm
 sensível ao momento e é de **uma** corrida por braço. Quem quiser apertar ou
 alargar o 64 tem a bancada, e mede.
 
-### 17.7 O mapa e a catraca — item 0c da bateria
+### 17.7 O mapa e a catraca
 
 `bancada/concorrencia/mapa-das-threads.py`, no molde exato do
 `mapa-da-trava.py`: lê o fonte, acha `thread::spawn`, `thread::Builder::new`,
@@ -2545,9 +2545,12 @@ entradas, 0 sem teto, 0 envelhecidas**.
 
 Duas catracas, as duas em zero e nenhuma sobe: `spawn-sem-teto` (um só já é
 uma enxurrada possível) e `catalogo-envelhecido` (entrada que não casa com
-sítio nenhum: catálogo velho é pior que nenhum, porque parece completo). Roda
-como **item 0c** da `prova-bateria.py`, antes de qualquer servidor subir. O
-`--autoteste` repõe sete defeitos do próprio medidor — spawn em comentário,
+sítio nenhum: catálogo velho é pior que nenhum, porque parece completo).
+Rodava sozinha como **item 0c** da `prova-bateria.py`; desde o pedido 476
+(`docs/CATRACAS.md` §18) essa chamada — e as outras quatro catracas em
+Python — vêm de `bancada/catracas/todas.py`, por varredura do `--catraca` de
+cada script, e a bateria roda todas juntas no item 0, antes de qualquer
+servidor subir. O `--autoteste` repõe sete defeitos do próprio medidor — spawn em comentário,
 spawn dentro do módulo de testes, `fn subir(` contado como sítio, entrada que
 envelheceu — porque medidor estático nunca quebra, passa a responder outra
 coisa.

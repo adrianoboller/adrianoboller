@@ -48,8 +48,12 @@ python3 bancada/concorrencia/enxurrada-web.py --sem-teto          # o mesmo, com
 PHX_PHXSQLD=/outro/phxsqld python3 bancada/concorrencia/enxurrada-web.py --rotulo antes
 ```
 
-**As duas catracas do mapa das threads rodam como item 0c da bateria**, ao
-lado do item 0 do mapa da trava, pelo mesmo motivo: são estáticas. As duas
+**As duas catracas do mapa das threads rodam no item 0 da bateria**, ao lado
+das outras três (mapa da trava, `Debug` com segredo, `pkill` sem PID e
+catálogo envelhecido) — desde o pedido 476, pelo comando único
+`bancada/catracas/todas.py` (`docs/CATRACAS.md` §18), que a bateria chama uma
+vez em vez de cada régua ter a própria linha. São estáticas, por isso cabem
+antes de qualquer servidor subir. As duas
 estão em zero e nenhuma sobe — `spawn-sem-teto` porque um só já é uma
 enxurrada possível, `catalogo-envelhecido` porque entrada que não casa com
 sítio nenhum é catálogo descrevendo uma thread que não nasce mais ali. O
