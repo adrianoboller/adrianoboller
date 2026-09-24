@@ -1274,6 +1274,9 @@ QA, com julgamento de pergunta, e a redação do H.
 | 421 — o portao de commit num codigo so | forte (o integrador) | costura de portoes e prova com defeito reposto; achou a evidencia por commit que reprovava na arvore exata |
 | 482 — o log dos jobs pelo nome inteiro | medio | conserto delimitado com varredura roteirizada dos `with_extension(`; o motor do `temporario_de` generalizado em vez de duplicado |
 | 485 — a espera do teste da replica que caia na primeira resposta | forte (o integrador) | teste que floca e defeito ativo: medido no HEAD antes de culpar o commit, causa lida no teste, 20 de 20 com o conserto |
+| 481 — primeira volta | medio | frente de codigo delimitada; a SEC bloqueou (root tratado como terceiro) |
+| 481 — correcao do bloqueio da SEC | forte | seguranca de arranque: regua refeita, prova pelo SO com o servico como usuario comum |
+| SEC — revisao do 481, duas voltas | forte | leitura adversaria de arranque e permissao; provou o ALTO pelo binario e confirmou o conserto por mutacao |
 
 **A integração achou o que nenhuma frente via, de novo por território de
 arquivo não bastar em worktree compartilhado**: `cargo fmt --all` de uma

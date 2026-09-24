@@ -113,6 +113,19 @@ pub enum PhxError {
     /// problema. Um `COMMIT` que confirmasse trabalho meio invalido seria pior
     /// do que a recusa, e e exatamente isso que este erro impede.
     TransacaoAbortada(String),
+    /// O par de configuracao (`config.json` e `config.phz`) existe dos DOIS
+    /// lados, e o arranque nao tem como saber qual vale sem palpite.
+    ///
+    /// # Por que um erro proprio, e nao `Conflito`
+    ///
+    /// `Conflito` e a janela de ESCRITA que o MVCC um dia substitui -- outra
+    /// SESSAO mexeu no mesmo REGISTRO entre a leitura e a gravacao. Aqui nao
+    /// ha sessao nenhuma, nem registro: e o ARRANQUE, antes de qualquer
+    /// cliente existir, achando duas fontes de verdade para o MESMO arquivo
+    /// de configuracao. Pedido 481: com o prefixo de `Conflito` («conflito de
+    /// escrita»), o operador lia uma frase de disputa de dado para um
+    /// impasse de arranque que nada tem a ver com dado gravado.
+    ConfigAmbiguo(String),
 }
 
 impl PhxError {
@@ -163,6 +176,10 @@ impl PhxError {
             PhxError::EmTransacao(_) => 4005,
             PhxError::EmMigracao(_) => 4006,
             PhxError::Io(_) => 5001,
+            // Familia SISTEMA: o problema esta no ESTADO do sistema de
+            // arquivos (duas fontes de configuracao presentes), nao no
+            // pedido de um cliente nem no dado gravado numa tabela.
+            PhxError::ConfigAmbiguo(_) => 5002,
             PhxError::Cancelado(_) => 6001,
             PhxError::TransacaoAbortada(_) => 6002,
         }
@@ -193,6 +210,7 @@ impl PhxError {
             PhxError::Io(_) => "ERRO_DE_ES",
             PhxError::Cancelado(_) => "CANCELADO",
             PhxError::TransacaoAbortada(_) => "TRANSACAO_ABORTADA",
+            PhxError::ConfigAmbiguo(_) => "CONFIG_AMBIGUO",
         }
     }
 
@@ -281,6 +299,11 @@ impl PhxError {
             PhxError::Io(_) => "SP000010",
             // Cancelamento e literalmente o titulo da SP000012.
             PhxError::Cancelado(_) => "SP000012",
+            // O impasse do par (config.json/config.phz) nasceu de um
+            // parecer de seguranca (pedido 481, achado B2 do SEC) sobre o
+            // pedido 450: quem mexeria neste comportamento e a sprint de
+            // correcao de seguranca, nao a de MVCC/conflito de escrita.
+            PhxError::ConfigAmbiguo(_) => "SP000027",
         }
     }
 
@@ -375,6 +398,7 @@ impl PhxError {
             // Sem prefixo de recusa: quem le a resposta esta vendo o
             // resultado de um botao que ele mesmo apertou, e nao uma falha.
             PhxError::Cancelado(m) => m.clone(),
+            PhxError::ConfigAmbiguo(m) => format!("configuracao ambigua: {m}"),
         }
     }
 }
@@ -483,6 +507,7 @@ mod testes_codigo {
             PhxError::SpareEmEspera(String::new()),
             PhxError::Io(std::io::Error::other("x")),
             PhxError::Cancelado(String::new()),
+            PhxError::ConfigAmbiguo(String::new()),
         ]
     }
 
@@ -512,6 +537,7 @@ mod testes_codigo {
             PhxError::Redireciona(_) => "Redireciona",
             PhxError::TransacaoAbortada(_) => "TransacaoAbortada",
             PhxError::Cancelado(_) => "Cancelado",
+            PhxError::ConfigAmbiguo(_) => "ConfigAmbiguo",
         }
     }
 
@@ -533,7 +559,9 @@ mod testes_codigo {
         // e a olhar os testes que varrem `todas()`.
         // 19 -> 20 em 23/09/2026: a `EmMigracao` (4006), a tabela que esta
         // sendo reescrita inteira. Pedido 421.
-        assert_eq!(quantas, 20, "entrou ou saiu variante: {nomes:?}");
+        // 20 -> 21 em 24/09/2026: a `ConfigAmbiguo` (5002), o impasse do par
+        // config.json/config.phz -- pedido 481.
+        assert_eq!(quantas, 21, "entrou ou saiu variante: {nomes:?}");
     }
 
     /// **A sprint citada tem de EXISTIR no roteiro.**

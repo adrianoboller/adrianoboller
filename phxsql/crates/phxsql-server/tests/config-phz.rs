@@ -83,11 +83,40 @@ const CONFIG_DE_PROVA: &str = "{\n  \"bind\": \"127.0.0.1:0\",\n  \"token\": \"t
 /// subir com os dois arquivos presentes faria `output()` esperar para
 /// sempre. Passado o prazo, ele e morto e o teste falha dizendo que subiu.
 fn rodar(args: &[&str], config: &Path) -> (bool, String) {
+    rodar_como(Path::new(env!("CARGO_BIN_EXE_phxsqld")), None, args, config)
+}
+
+/// O `phxsqld` de `bin`, e com qual uid. `como: Some(uid)` roda o processo
+/// com esse uid e esse gid -- e so o root consegue, entao quem nao e root
+/// recebe um `spawn` que FALHA, nunca um teste verde que nao rodou. E o
+/// servico como usuario comum, o caso realista do pedido 481: o teste roda
+/// como root, e um servidor como root nunca exercitaria o uid de quem roda
+/// (revisao SEC do 481, MEDIO 3).
+fn comando(bin: &Path, como: Option<u32>, config: &Path) -> Command {
+    // Fora do Unix nao ha uid para trocar, e o `mut` sobra.
+    #[cfg_attr(not(unix), allow(unused_mut))]
+    let mut c = Command::new(bin);
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt as _;
+        if let Some(uid) = como {
+            // A pasta de trabalho de quem roda o teste pode nem ser
+            // atravessavel pelo servico (`~/.cache/phx-guardas` e do root,
+            // 0700): o servico roda de dentro da pasta do config.
+            c.uid(uid).gid(uid).current_dir(config.parent().unwrap());
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = (como, config);
+    c
+}
+
+fn rodar_como(bin: &Path, como: Option<u32>, args: &[&str], config: &Path) -> (bool, String) {
     let pasta = config.parent().unwrap();
     let saida = pasta.join("rodar-stdout.txt");
     let erro = pasta.join("rodar-stderr.txt");
     let mut filho = Filho(
-        Command::new(env!("CARGO_BIN_EXE_phxsqld"))
+        comando(bin, como, config)
             .args(args)
             .arg("--config")
             .arg(config)
@@ -116,9 +145,18 @@ fn rodar(args: &[&str], config: &Path) -> (bool, String) {
 
 /// Sobe o servidor com o erro padrao num arquivo, para ler DEPOIS do fim.
 fn subir(config: &Path, erro_padrao: &Path) -> Filho {
+    subir_como(
+        Path::new(env!("CARGO_BIN_EXE_phxsqld")),
+        None,
+        config,
+        erro_padrao,
+    )
+}
+
+fn subir_como(bin: &Path, como: Option<u32>, config: &Path, erro_padrao: &Path) -> Filho {
     let erro = std::fs::File::create(erro_padrao).unwrap();
     Filho(
-        Command::new(env!("CARGO_BIN_EXE_phxsqld"))
+        comando(bin, como, config)
             .arg("--config")
             .arg(config)
             .stdout(Stdio::null())
@@ -337,6 +375,178 @@ fn os_dois_presentes_o_binario_nao_sobe_e_nao_toca_em_nenhum() {
     }
     let depois = (std::fs::read(&claro).unwrap(), std::fs::read(&phz).unwrap());
     assert!(antes == depois, "um dos dois mudou");
+}
+
+/// O usuario de servico (`User=phxsql` do MANUAL §7.4) e um terceiro comum.
+#[cfg(unix)]
+const SERVICO: u32 = 65534;
+#[cfg(unix)]
+const TERCEIRO: u32 = 65533;
+
+/// O motivo dos dois testes que so o root roda: sem ele, `chown` e o
+/// `setuid` do filho FALHAM, e o teste cai dizendo isso -- nunca um verde
+/// que nao rodou (revisao SEC do 481, MEDIO 2).
+#[cfg(unix)]
+const SO_O_ROOT: &str = "exige root: chown, e o phxsqld rodando como o uid 65534";
+
+/// Muda dono e modo de um caminho -- e cai, com o motivo, sem privilegio.
+#[cfg(unix)]
+fn dar_a(caminho: &Path, dono: u32, modo: u32) {
+    use std::os::unix::fs::PermissionsExt as _;
+    std::os::unix::fs::chown(caminho, Some(dono), Some(dono))
+        .unwrap_or_else(|e| panic!("{SO_O_ROOT} ({e})"));
+    std::fs::set_permissions(caminho, std::fs::Permissions::from_mode(modo)).unwrap();
+}
+
+/// Uma copia do `phxsqld` que o uid do servico consegue executar: o do
+/// `target/` pode morar numa pasta que so o root atravessa (a arvore do
+/// `provar-guardas.py` e `~/.cache/phx-guardas`).
+#[cfg(unix)]
+fn binario_para_o_servico() -> (DirTemp, PathBuf) {
+    let d = DirTemp::novo("phz-481-bin");
+    let bin = d.join("phxsqld");
+    std::fs::copy(env!("CARGO_BIN_EXE_phxsqld"), &bin).unwrap();
+    dar_a(&d, 0, 0o755);
+    dar_a(&bin, 0, 0o755);
+    (d, bin)
+}
+
+/// A configuracao VELHA, a que carrega o token vazado: o `max_linhas` 99 e o
+/// que a denuncia na resposta do servidor. Sobe como servidor de verdade --
+/// e isso que faz o teste do ALTO cair pelo motivo certo com o defeito
+/// reposto, em vez de cair por um arranque que nem conseguiria subir.
+#[cfg(unix)]
+const CONFIG_VELHO: &str = "{\n  \"bind\": \"127.0.0.1:0\",\n  \"token\": \"t\",\n  \
+     \"max_linhas\": 99,\n  \"cifra_fio\": { \"exigir\": false },\n  \
+     \"web\": { \"ligado\": false }\n}\n";
+
+/// **Pedido 481, o achado ALTO da revisao SEC, pelo sistema operacional.**
+/// A instalacao do MANUAL §7.4 (`/opt/phxsql`, `User=phxsql`): a pasta e o
+/// `.phz` sao do servico, que grava o `.phz` por troca atomica. O
+/// administrador roda `sudo 7z x` e troca o token vazado -- e o `.json` nasce
+/// do ROOT. No reinicio, o servico (uid 65534, e nao root) NAO SOBE: dos dois,
+/// nenhum e plantado -- o root e quem administra, e a pasta nem tem sticky
+/// bit --, e a recusa de sempre vale. A frente anterior subia do `.phz` VELHO
+/// chamando o do root de terceiro, e o token revogado continuava valendo.
+///
+/// Derruba: a regra da frente anterior reposta -- o root como terceiro e a
+/// pasta sem sticky bit aceita (guarda `config-phz-par-root-vira-terceiro`).
+#[cfg(unix)]
+#[test]
+#[ignore = "exige root: chown, e o phxsqld rodando como o uid 65534 -- rode como root com `-- --include-ignored`"]
+fn o_json_do_root_ao_lado_do_phz_do_servico_recusa_o_arranque() {
+    let (_bin_d, bin) = binario_para_o_servico();
+    let d = DirTemp::novo("phz-481-alto");
+    let claro = d.join("config.json");
+    let phz = d.join("config.phz");
+    config_phz::gravar_texto(&phz, CONFIG_VELHO).unwrap();
+    std::fs::write(&claro, CONFIG_DE_PROVA).unwrap();
+    dar_a(&phz, SERVICO, 0o600);
+    dar_a(&claro, 0, 0o644); // o `sudo 7z x`, com a umask de sempre
+    dar_a(&d, SERVICO, 0o755); // a pasta do servico, sem sticky bit
+    let antes = (std::fs::read(&claro).unwrap(), std::fs::read(&phz).unwrap());
+
+    let (subiu, saida) = rodar_como(&bin, Some(SERVICO), &[], &claro);
+    assert!(
+        !subiu,
+        "o servico subiu com o .json do root ao lado: {saida}"
+    );
+    assert!(
+        saida.contains("configuracao ambigua: existem os dois"),
+        "nao foi a recusa do par: {saida}"
+    );
+    assert!(saida.contains(&claro.display().to_string()), "{saida}");
+    assert!(saida.contains(&phz.display().to_string()), "{saida}");
+    let depois = (std::fs::read(&claro).unwrap(), std::fs::read(&phz).unwrap());
+    assert!(antes == depois, "um dos dois mudou");
+}
+
+/// **Pedido 481, o que ele pede, pelo sistema operacional.** O `/tmp`
+/// classico (root, 1777): o `.json` e do servico, e um TERCEIRO comum plantou
+/// um `.phz` ao lado sem poder tocar no `.json`. O servico (uid 65534) sobe do
+/// SEU `.json` e avisa pelo erro padrao qual nome ignorou e de quem ele e --
+/// e a troca de forma pedida nesse estado recusa dizendo o que ha, e nao
+/// «apareceu durante a troca», que mandava procurar uma corrida que nao
+/// houve (revisao SEC do 481, BAIXO).
+///
+/// Derruba: o aviso fora dos `avisos` do `Config::ler` (guarda
+/// `config-phz-terceiro-nao-avisa-no-arranque`) e a troca sem olhar o
+/// ignorado (guarda `config-phz-troca-sobre-terceiro-diz-corrida`).
+#[cfg(unix)]
+#[test]
+#[ignore = "exige root: chown, e o phxsqld rodando como o uid 65534 -- rode como root com `-- --include-ignored`"]
+fn o_phz_de_um_terceiro_em_pasta_com_sticky_e_ignorado_e_o_servico_sobe_do_json() {
+    let (_bin_d, bin) = binario_para_o_servico();
+    let d = DirTemp::novo("phz-481-sticky");
+    let claro = d.join("config.json");
+    let phz = d.join("config.phz");
+    std::fs::write(&claro, CONFIG_DE_PROVA).unwrap();
+    config_phz::gravar_texto(&phz, CONFIG_VELHO).unwrap();
+    dar_a(&claro, SERVICO, 0o600);
+    dar_a(&phz, TERCEIRO, 0o644);
+    dar_a(&d, 0, 0o1777);
+    let phz_antes = std::fs::read(&phz).unwrap();
+
+    let erro_padrao = d.join("stderr.txt");
+    let filho = subir_como(&bin, Some(SERVICO), &claro, &erro_padrao);
+    let porta = porta_aberta(&erro_padrao); // so abre porta se SUBIU como servidor
+    let config = pedir(porta, r#"{"token":"t","op":"config"}"#);
+    assert!(
+        config.contains("\"max_linhas\":10"),
+        "subiu do .phz do terceiro, nao do .json: {config}"
+    );
+    drop(filho);
+
+    let erro = std::fs::read_to_string(&erro_padrao).unwrap();
+    let aviso = erro
+        .lines()
+        .find(|l| l.starts_with("AVISO:") && l.contains("TERCEIRO"))
+        .unwrap_or_else(|| panic!("o arranque calou o que ignorou: {erro}"));
+    assert!(aviso.contains(&phz.display().to_string()), "{aviso}");
+    assert!(aviso.contains(&format!("uid {TERCEIRO}")), "{aviso}");
+    assert!(aviso.contains(&claro.display().to_string()), "{aviso}");
+
+    // A troca pedida com o terceiro ocupando o nome de destino.
+    let (trocou, saida) = rodar_como(&bin, Some(SERVICO), &["--empacotar-config"], &claro);
+    assert!(
+        !trocou,
+        "a troca seguiu com o .phz do terceiro no caminho: {saida}"
+    );
+    assert!(
+        !saida.contains("apareceu durante a troca"),
+        "a troca culpou uma corrida que nao houve: {saida}"
+    );
+    assert!(saida.contains("configuracao ambigua"), "{saida}");
+    assert!(saida.contains(&phz.display().to_string()), "{saida}");
+    assert!(saida.contains(&format!("uid {TERCEIRO}")), "{saida}");
+
+    // Nada se apaga: o .phz do terceiro continua la, para quem investiga.
+    assert_eq!(
+        std::fs::read(&phz).unwrap(),
+        phz_antes,
+        "o .phz do terceiro mudou"
+    );
+    assert!(claro.exists(), "o .json do servico sumiu");
+
+    // O espelho, na volta: o `.phz` e do servico, o `.json` foi plantado, e
+    // o `--desempacotar-config` gravaria no nome do terceiro.
+    let d2 = DirTemp::novo("phz-481-sticky-volta");
+    let claro2 = d2.join("config.json");
+    let phz2 = d2.join("config.phz");
+    config_phz::gravar_texto(&phz2, CONFIG_DE_PROVA).unwrap();
+    std::fs::write(&claro2, CONFIG_VELHO).unwrap();
+    dar_a(&phz2, SERVICO, 0o600);
+    dar_a(&claro2, TERCEIRO, 0o644);
+    dar_a(&d2, 0, 0o1777);
+    let (trocou, saida) = rodar_como(&bin, Some(SERVICO), &["--desempacotar-config"], &phz2);
+    assert!(
+        !trocou,
+        "a volta seguiu com o .json do terceiro no caminho: {saida}"
+    );
+    assert!(!saida.contains("apareceu durante a troca"), "{saida}");
+    assert!(saida.contains(&claro2.display().to_string()), "{saida}");
+    assert!(saida.contains(&format!("uid {TERCEIRO}")), "{saida}");
+    assert_eq!(std::fs::read_to_string(&claro2).unwrap(), CONFIG_VELHO);
 }
 
 /// O irmao: UM arquivo presente e ilegivel -- um `.phz` cortado, ou um

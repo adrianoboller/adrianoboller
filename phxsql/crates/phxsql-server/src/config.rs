@@ -4376,12 +4376,17 @@ impl Config {
     /// LIDO, e e por ele que as gravacoes decidem a forma: quem subiu de `.phz`
     /// grava `.phz`, quem subiu em claro grava em claro.
     pub fn ler(caminho: impl AsRef<Path>) -> Result<Config> {
-        let lido = crate::config_phz::resolver(caminho.as_ref())?;
-        let caminho = lido.as_path();
+        let decisao = crate::config_phz::decidir(caminho.as_ref())?;
+        let caminho = decisao.lido.as_path();
         let texto = crate::config_phz::ler_texto(caminho)?;
         let json = Json::analisar(&texto)?;
         let mut c = Config::de_json(&json)?;
         c.caminho = Some(caminho.to_path_buf());
+        // Pedido 481: o nome do par ignorado por ser de terceiro vira aviso
+        // de arranque AQUI, da mesma decisao que escolheu o arquivo -- e nao
+        // de uma segunda consulta ao disco no `main`, que podia ver outra
+        // coisa e calar (revisao SEC do 481).
+        c.avisos.extend(decisao.aviso());
         // Caminhos relativos valem a partir do diretorio do config.json, NUNCA
         // do diretorio de trabalho de quem subiu o processo -- UMA funcao so
         // para os seis campos (pedido 225). Antes deste conserto, `dblink` e

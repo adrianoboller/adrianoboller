@@ -834,7 +834,18 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `config-phz-troca-escreve-aberto-e-herda` | a troca de forma (`--empacotar-config`/`--desempacotar-config`) grava o arquivo novo aberto, herdando o `0644` do original | 1 | ✅ provada |
 | `config-phz-abre-com-os-24-ciclos` | o `config.phz` volta a abrir com o teto de 24 ciclos: um cabecalho hostil custa 2^24 rodadas ja no arranque | 1 | ✅ provada |
 | `config-phz-abre-cabecalho-de-megabytes` | o `config.phz` volta a aceitar cabecalho de megabytes: um arquivo de KiB aloca o que o cabecalho declarar | 1 | ✅ provada |
-| `config-phz-dois-presentes-escolhe-calado` | com `config.json` E `config.phz` presentes, o servidor escolhe um calado e sobe | 1 | ✅ provada |
+| `config-phz-dois-presentes-escolhe-calado` | com `config.json` E `config.phz` presentes, o servidor escolhe um calado e sobe | 2 | ✅ provada |
+| `config-phz-terceiro-nao-e-ignorado` | o nome de um TERCEIRO numa pasta com sticky bit volta a travar o arranque | 1 | ✅ provada |
+| `config-phz-terceiro-nao-avisa-no-arranque` | o servidor ignora o nome de TERCEIRO e sobe calado sobre o que descartou | 1 | ✅ provada |
+| `config-phz-par-root-vira-terceiro` | o `.json` do ROOT ao lado do `.phz` do servico vira arquivo de terceiro, e o servico sobe do `.phz` VELHO | 1 | ✅ provada |
+| `config-phz-par-root-e-terceiro` | o root sai do lado de confianca: numa pasta com sticky bit, o `.json` dele vira arquivo de terceiro | 2 | ✅ provada |
+| `config-phz-par-sem-sticky-escolhe` | o nome de terceiro e ignorado numa pasta SEM sticky bit, onde quem o criou tambem troca o do servico | 1 | ✅ provada |
+| `config-phz-par-pasta-que-so-o-dono-grava` | o nome de outro dono e ignorado numa pasta com sticky bit que SO o dono grava | 1 | ✅ provada |
+| `config-phz-par-dono-da-pasta-vira-terceiro` | o nome do DONO da pasta e ignorado como se fosse de terceiro | 1 | ✅ provada |
+| `config-phz-par-falha-aberto` | o ramo que falha fechado escolhe o `.json` quando nenhum lado e de confianca | 4 | ✅ provada |
+| `config-phz-par-sem-euid-escolhe` | sem o uid de quem roda, o par supoe root e escolhe | 1 | ✅ provada |
+| `config-phz-euid-le-o-uid-real` | o uid de quem roda sai do campo REAL do `/proc/self/status`, e nao do efetivo | 1 | ✅ provada |
+| `config-phz-troca-sobre-terceiro-diz-corrida` | `--empacotar-config` com o `.phz` de um terceiro ao lado culpa uma corrida que nao houve | 1 | ✅ provada |
 | `config-json-claro-vira-phz-sem-pedir` | o servidor que subiu de um `config.json` em claro passa a grava-lo empacotado sem ninguem pedir | 1 | ✅ provada |
 | `config-dica-do-modelo-sobre-arquivo-presente` | o `phxsqld` que nao sobe manda gerar o modelo `> config.json` por cima do arquivo que o erro esta nomeando | 2 | ✅ provada |
 | `config-phz-troca-so-depois-de-validar` | a troca de forma so roda depois de o `Config::ler` aceitar: o `.phz` com um campo torto nao sai para conserto | 1 | ✅ provada |
@@ -928,7 +939,7 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `phxzip-nome-repetido-na-leitura` | duas entradas com o mesmo nome: o extrator grava a segunda por cima da primeira, calado | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**286 guardas: 1 aposentada, 281 provadas, 4 redundantes** — 6934 s de mutação, medido em 2026-09-16 15:25.
+**297 guardas: 1 aposentada, 292 provadas, 4 redundantes** — 7576 s de mutação, medido em 2026-09-16 15:25.
 
 As guardas que esta corrida ainda cita, hoje aposentadas:
 

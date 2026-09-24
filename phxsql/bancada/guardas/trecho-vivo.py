@@ -207,6 +207,16 @@ dia, nunca no desejado:
   forma antes da validacao, a copia guardada em 0600, o config que e link, o
   aviso pelo nome que a migracao usou, o temporario que era o proprio config
   e o desfazer que apagava a unica copia.
+  **SUBIU para 297 em 24/09/2026** (pedido 481, B2 do parecer SEC do 450,
+  na volta depois do BLOQUEIO da revisao SEC): nove guardas novas, uma por
+  condicao da excecao do par e por achado da SEC -- o root como terceiro
+  (pelo binario, com a regra da frente anterior reposta, e pelo motor), o
+  sticky bit, a pasta que so o dono grava, o dono da pasta, o ramo que falha
+  fechado, o uid que nao se leu, o uid real no lugar do efetivo e a troca
+  que culpava uma corrida --, e as tres da frente anterior re-apontadas
+  (`config-phz-dois-presentes-escolhe-calado`, `config-phz-terceiro-nao-e-ignorado`
+  e `config-phz-terceiro-nao-avisa-no-arranque`, esta agora nos `avisos` do
+  `Config::ler`). Contado no dia: 296 entradas vivas + 1 aposentada.
   impedir. Ele e a unica coisa nesta regua que reprova o APAGAMENTO; tudo o
   mais aqui reprova o envelhecimento.
 
@@ -315,7 +325,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 286
+PISO_DAS_ENTRADAS = 297
 
 # ------------------------------------------------------------- APOSENTADAS
 #

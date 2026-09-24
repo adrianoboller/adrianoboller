@@ -427,6 +427,24 @@ Detalhes e o que a ligacao ensinou em docs/CONSOLE.md.
       escolhe por palpite -- nem pela data. Se vale o .json (voce o extraiu
       para editar), retire o .phz e rode --empacotar-config; se vale o .phz,
       retire o .json.
+      A recusa tambem vale quando o .json e do root e o .phz e do servico:
+      e o caso de quem roda "sudo 7z x" para trocar um token. O servidor nao
+      sobe ate voce retirar um deles -- subir do .phz VELHO deixaria o token
+      trocado valendo.
+      EXCECAO UNICA (pedido 481): numa pasta com sticky bit onde outros
+      gravam (o /tmp classico), um TERCEIRO cria um dos dois sem poder mexer
+      no seu. O servidor sobe do outro e AVISA qual ignorou, e de quem ele
+      e -- so quando TUDO vale:
+        . a pasta do par tem sticky bit E e gravavel pelo grupo ou por todos;
+        . um dos dois e do usuario que roda o servidor, ou do root;
+        . o outro e de um terceiro: nem desse usuario, nem do root, nem do
+          dono da pasta.
+      Fora disso, a recusa de sempre -- inclusive quando o sistema nao diz
+      quem roda o servidor (fora do Linux). Numa pasta assim, edite o config
+      como o usuario do servico ou como root: um outro usuario seu seria
+      tratado como terceiro. E --empacotar-config / --desempacotar-config
+      recusam enquanto o do terceiro ocupar o nome de destino; so o dono dele,
+      o dono da pasta ou o root o retiram.
     - NENHUM EXISTE: o erro de sempre, e so entao a dica
       "phxsqld --exemplo 1 > config.json". Com qualquer um presente a dica
       nao aparece: seguida, ela truncaria o arquivo que o erro nomeia.

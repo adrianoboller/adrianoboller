@@ -1561,9 +1561,97 @@
       "id": "config-phz-dois-presentes-escolhe-calado",
       "titulo": "com `config.json` E `config.phz` presentes, o servidor escolhe um calado e sobe",
       "veredito": "PROVADA",
-      "segundos": 43.17,
+      "segundos": 60.95,
       "notas": [],
-      "quando": "2026-09-24 07:08"
+      "quando": "2026-09-24 12:01"
+    },
+    {
+      "id": "config-phz-terceiro-nao-e-ignorado",
+      "titulo": "o nome de um TERCEIRO numa pasta com sticky bit volta a travar o arranque",
+      "veredito": "PROVADA",
+      "segundos": 66.2,
+      "notas": [],
+      "quando": "2026-09-24 12:01"
+    },
+    {
+      "id": "config-phz-terceiro-nao-avisa-no-arranque",
+      "titulo": "o servidor ignora o nome de TERCEIRO e sobe calado sobre o que descartou",
+      "veredito": "PROVADA",
+      "segundos": 23.81,
+      "notas": [],
+      "quando": "2026-09-24 12:01"
+    },
+    {
+      "id": "config-phz-par-root-vira-terceiro",
+      "titulo": "o `.json` do ROOT ao lado do `.phz` do servico vira arquivo de terceiro, e o servico sobe do `.phz` VELHO",
+      "veredito": "PROVADA",
+      "segundos": 38.89,
+      "notas": [],
+      "quando": "2026-09-24 12:01"
+    },
+    {
+      "id": "config-phz-par-root-e-terceiro",
+      "titulo": "o root sai do lado de confianca: numa pasta com sticky bit, o `.json` dele vira arquivo de terceiro",
+      "veredito": "PROVADA",
+      "segundos": 59.91,
+      "notas": [],
+      "quando": "2026-09-24 12:01"
+    },
+    {
+      "id": "config-phz-par-sem-sticky-escolhe",
+      "titulo": "o nome de terceiro e ignorado numa pasta SEM sticky bit, onde quem o criou tambem troca o do servico",
+      "veredito": "PROVADA",
+      "segundos": 63.24,
+      "notas": [],
+      "quando": "2026-09-24 12:01"
+    },
+    {
+      "id": "config-phz-par-pasta-que-so-o-dono-grava",
+      "titulo": "o nome de outro dono e ignorado numa pasta com sticky bit que SO o dono grava",
+      "veredito": "PROVADA",
+      "segundos": 66.16,
+      "notas": [],
+      "quando": "2026-09-24 12:01"
+    },
+    {
+      "id": "config-phz-par-dono-da-pasta-vira-terceiro",
+      "titulo": "o nome do DONO da pasta e ignorado como se fosse de terceiro",
+      "veredito": "PROVADA",
+      "segundos": 70.14,
+      "notas": [],
+      "quando": "2026-09-24 12:01"
+    },
+    {
+      "id": "config-phz-par-falha-aberto",
+      "titulo": "o ramo que falha fechado escolhe o `.json` quando nenhum lado e de confianca",
+      "veredito": "PROVADA",
+      "segundos": 68.73,
+      "notas": [],
+      "quando": "2026-09-24 12:01"
+    },
+    {
+      "id": "config-phz-par-sem-euid-escolhe",
+      "titulo": "sem o uid de quem roda, o par supoe root e escolhe",
+      "veredito": "PROVADA",
+      "segundos": 70.4,
+      "notas": [],
+      "quando": "2026-09-24 12:01"
+    },
+    {
+      "id": "config-phz-euid-le-o-uid-real",
+      "titulo": "o uid de quem roda sai do campo REAL do `/proc/self/status`, e nao do efetivo",
+      "veredito": "PROVADA",
+      "segundos": 73.47,
+      "notas": [],
+      "quando": "2026-09-24 12:01"
+    },
+    {
+      "id": "config-phz-troca-sobre-terceiro-diz-corrida",
+      "titulo": "`--empacotar-config` com o `.phz` de um terceiro ao lado culpa uma corrida que nao houve",
+      "veredito": "PROVADA",
+      "segundos": 23.32,
+      "notas": [],
+      "quando": "2026-09-24 12:01"
     },
     {
       "id": "config-json-claro-vira-phz-sem-pedir",

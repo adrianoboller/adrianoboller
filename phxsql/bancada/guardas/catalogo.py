@@ -7867,27 +7867,339 @@ pub fn limpar() {
             "pedido 450, etapa 2: fonte de verdade ambigua nao se resolve por palpite. O "
             "caso real e o administrador que extraiu o `.phz` com o 7-Zip para editar -- "
             "escolher o `.phz` perde a edicao calado; escolher o `.json` deixa o `.phz` "
-            "velho esperando o proximo engano. A regra decidida: os dois presentes, o "
-            "servidor nao sobe, e a mensagem nomeia os dois e as duas saidas."
+            "velho esperando o proximo engano. A regra: os dois presentes, o servidor nao "
+            "sobe, e a mensagem nomeia os dois e as duas saidas -- inclusive numa pasta com "
+            "sticky bit, quando os dois sao do mesmo dono. A unica excecao (pedido 481, o "
+            "nome de um terceiro numa pasta com sticky bit) tem guardas proprias."
         ),
         "arquivo": "crates/phxsql-server/src/config_phz.rs",
-        "trecho": """    match (claro.exists(), phz.exists()) {
-        (true, true) => Err(PhxError::Conflito(format!(
+        "trecho": """        (true, true) => return decidir_os_dois(&claro, &phz),
 """,
-        "troca": """    match (claro.exists(), phz.exists()) {
-        // DEFEITO REPOSTO: o .phz ganha calado quando os dois existem.
-        (true, true) => Ok(phz),
-        #[allow(unreachable_patterns)]
-        (true, true) => Err(PhxError::Conflito(format!(
+        "troca": """        // DEFEITO REPOSTO: o .phz ganha calado quando os dois existem.
+        (true, true) => phz,
 """,
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
         "caem": [
-            "config_phz::testes::os_dois_presentes_nao_sobem_e_a_troca_nao_toca_em_nenhum",
+            "config_phz::testes::os_dois_presentes_mesmo_dono_nao_sobem_e_a_troca_nao_toca_em_nenhum",
+            "config_phz::testes::mesmo_dono_em_pasta_com_sticky_continua_recusando",
         ],
         "seguem": [
             "config_phz::testes::o_servidor_le_o_phz_que_ele_mesmo_gravou",
             "config_phz::testes::config_json_em_claro_continua_em_claro_e_o_arranque_avisa",
+        ],
+    },
+    {
+        "id": "config-phz-terceiro-nao-e-ignorado",
+        "titulo": "o nome de um TERCEIRO numa pasta com sticky bit volta a travar o arranque",
+        "porque": (
+            "pedido 481, achado B2 do parecer SEC do 450: numa pasta com sticky bit onde "
+            "outros gravam (o `/tmp` classico), um terceiro cria o `.phz` sem poder tocar no "
+            "`.json` do servico -- e a recusa dos dois presentes virava negacao de servico "
+            "para quem nunca escreveu ali. E o unico caso em que o sistema operacional prova "
+            "quem plantou o arquivo: o servidor sobe do nome do servico (ou do root) e avisa."
+        ),
+        "arquivo": "crates/phxsql-server/src/config_phz.rs",
+        "trecho": """    if de_confianca(claro) && de_terceiro(phz) {
+""",
+        "troca": """    // DEFEITO REPOSTO: o .phz de terceiro nunca e ignorado.
+    if false {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "config_phz::testes::par_terceiro_numa_pasta_com_sticky_e_ignorado",
+        ],
+        "seguem": [
+            "config_phz::testes::os_dois_presentes_mesmo_dono_nao_sobem_e_a_troca_nao_toca_em_nenhum",
+            "config_phz::testes::par_root_nunca_e_terceiro",
+        ],
+    },
+    {
+        "id": "config-phz-terceiro-nao-avisa-no-arranque",
+        "titulo": "o servidor ignora o nome de TERCEIRO e sobe calado sobre o que descartou",
+        "porque": (
+            "pedido 481: o motor pode ignorar o nome do terceiro certinho e ainda assim o "
+            "OPERADOR nunca saber. O aviso sai da MESMA decisao que escolheu o arquivo (os "
+            "`avisos` do `Config::ler`, que o `main` ja imprime) -- a frente anterior o "
+            "recalculava no `main` com uma segunda consulta ao disco, que podia ver outra "
+            "coisa e calar (revisao SEC do 481, BAIXO). Provado pelo BINARIO rodando como o "
+            "uid 65534, com `chown` de verdade: so o root roda (`--include-ignored`)."
+        ),
+        "arquivo": "crates/phxsql-server/src/config.rs",
+        "trecho": """        c.avisos.extend(decisao.aviso());
+""",
+        "troca": """        // DEFEITO REPOSTO: o aviso do terceiro ignorado nunca chega ao arranque.
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "config-phz", "--", "--include-ignored"],
+        "caem": [
+            "o_phz_de_um_terceiro_em_pasta_com_sticky_e_ignorado_e_o_servico_sobe_do_json",
+        ],
+        # O teste do ALTO tambem exige root: sem ele, o `seguem` cai e a corrida
+        # diz ESTRAGOU, em vez de um PROVADA que so provou a falta de privilegio.
+        "seguem": [
+            "o_json_do_root_ao_lado_do_phz_do_servico_recusa_o_arranque",
+            "os_dois_presentes_o_binario_nao_sobe_e_nao_toca_em_nenhum",
+        ],
+    },
+    {
+        "id": "config-phz-par-root-vira-terceiro",
+        "titulo": "o `.json` do ROOT ao lado do `.phz` do servico vira arquivo de terceiro, e o servico sobe do `.phz` VELHO",
+        "porque": (
+            "pedido 481, achado ALTO da revisao SEC, provado pelo sistema operacional: na "
+            "instalacao documentada (MANUAL §7.4, `/opt/phxsql`, `User=phxsql`) o `.phz` e do "
+            "servico, o administrador roda `sudo 7z x` para trocar um token vazado e o "
+            "`.json` nasce do root. A frente anterior chamava de terceiro todo dono diferente "
+            "do processo -- o root incluido -- e nao conferia o sticky bit que o MANUAL ja "
+            "prometia: o servico subia do `.phz` VELHO e o token revogado continuava valendo, "
+            "exatamente o que a recusa antiga protegia. O troco repoe aquela regra inteira."
+        ),
+        "arquivo": "crates/phxsql-server/src/config_phz.rs",
+        "trecho": """    if modo_da_pasta & STICKY == 0 {
+        return None;
+    }
+    if modo_da_pasta & GRAVAVEL_POR_OUTROS == 0 {
+        return None;
+    }
+    let de_confianca = |u: u32| u == euid || u == RAIZ;
+    let de_terceiro = |u: u32| !de_confianca(u) && u != dono_da_pasta;
+""",
+        "troca": """    // DEFEITO REPOSTO: a regra da frente anterior -- terceiro e todo dono que
+    // nao e o processo, o root incluido, com ou sem sticky bit na pasta.
+    let _ = (dono_da_pasta, modo_da_pasta, STICKY, GRAVAVEL_POR_OUTROS, RAIZ);
+    let de_confianca = |u: u32| u == euid;
+    let de_terceiro = |u: u32| u != euid;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "config-phz", "--", "--include-ignored"],
+        "caem": [
+            "o_json_do_root_ao_lado_do_phz_do_servico_recusa_o_arranque",
+        ],
+        "seguem": [
+            "o_phz_de_um_terceiro_em_pasta_com_sticky_e_ignorado_e_o_servico_sobe_do_json",
+            "os_dois_presentes_o_binario_nao_sobe_e_nao_toca_em_nenhum",
+        ],
+    },
+    {
+        "id": "config-phz-par-root-e-terceiro",
+        "titulo": "o root sai do lado de confianca: numa pasta com sticky bit, o `.json` dele vira arquivo de terceiro",
+        "porque": (
+            "pedido 481, achado ALTO da revisao SEC: o root e o administrador, nunca um "
+            "terceiro -- inclusive numa pasta com sticky bit que nao e dele, onde so a regra "
+            "do root impede o servico de subir do `.phz` VELHO. Guarda da condicao sozinha, "
+            "pelo motor; a regra da frente anterior inteira tem a sua, pelo binario."
+        ),
+        "arquivo": "crates/phxsql-server/src/config_phz.rs",
+        "trecho": """    let de_confianca = |u: u32| u == euid || u == RAIZ;
+""",
+        "troca": """    // DEFEITO REPOSTO: so o processo e de confianca; o root vira terceiro.
+    let de_confianca = |u: u32| u == euid;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "config_phz::testes::par_root_nunca_e_terceiro",
+            "config_phz::testes::par_sem_um_lado_de_confianca_recusa",
+        ],
+        "seguem": [
+            "config_phz::testes::par_sem_sticky_bit_recusa",
+            "config_phz::testes::os_dois_presentes_mesmo_dono_nao_sobem_e_a_troca_nao_toca_em_nenhum",
+        ],
+    },
+    {
+        "id": "config-phz-par-sem-sticky-escolhe",
+        "titulo": "o nome de terceiro e ignorado numa pasta SEM sticky bit, onde quem o criou tambem troca o do servico",
+        "porque": (
+            "pedido 481, revisao SEC: o MANUAL (§7.5) ja dizia que a excecao so vale em pasta "
+            "com sticky bit, e o codigo da frente anterior nao conferia o bit. Sem ele, quem "
+            "cria um nome na pasta tambem apaga ou troca o outro: nenhum dos dois merece mais "
+            "confianca, e a recusa de sempre vale."
+        ),
+        "arquivo": "crates/phxsql-server/src/config_phz.rs",
+        "trecho": """    if modo_da_pasta & STICKY == 0 {
+        return None;
+    }
+""",
+        "troca": """    // DEFEITO REPOSTO: a pasta sem sticky bit tambem abre a excecao.
+    let _ = STICKY;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "config_phz::testes::par_sem_sticky_bit_recusa",
+        ],
+        "seguem": [
+            "config_phz::testes::par_terceiro_numa_pasta_com_sticky_e_ignorado",
+            "config_phz::testes::par_pasta_que_outros_nao_gravam_recusa",
+        ],
+    },
+    {
+        "id": "config-phz-par-pasta-que-so-o-dono-grava",
+        "titulo": "o nome de outro dono e ignorado numa pasta com sticky bit que SO o dono grava",
+        "porque": (
+            "pedido 481, regua refeita: os tres maduros convergem em que o local que OUTROS "
+            "gravam e o inseguro (PostgreSQL pelo modo do diretorio de dados, MySQL e MariaDB "
+            "pelo modo do arquivo). Numa pasta 1755 ninguem alem do dono cria nome; o arquivo "
+            "de outro dono veio de um `chown` do root, que e decisao de quem administra -- e "
+            "nao um arquivo plantado."
+        ),
+        "arquivo": "crates/phxsql-server/src/config_phz.rs",
+        "trecho": """    if modo_da_pasta & GRAVAVEL_POR_OUTROS == 0 {
+        return None;
+    }
+""",
+        "troca": """    // DEFEITO REPOSTO: o sticky bit basta, mesmo onde so o dono grava.
+    let _ = GRAVAVEL_POR_OUTROS;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "config_phz::testes::par_pasta_que_outros_nao_gravam_recusa",
+        ],
+        "seguem": [
+            "config_phz::testes::par_terceiro_numa_pasta_com_sticky_e_ignorado",
+            "config_phz::testes::par_sem_sticky_bit_recusa",
+        ],
+    },
+    {
+        "id": "config-phz-par-dono-da-pasta-vira-terceiro",
+        "titulo": "o nome do DONO da pasta e ignorado como se fosse de terceiro",
+        "porque": (
+            "pedido 481: o sticky bit so impede o terceiro que NAO e o dono da pasta -- o dono "
+            "dela apaga e renomeia qualquer nome, com ou sem o bit. Um arquivo dele nao e o de "
+            "alguem que so consegue criar, e a recusa de sempre vale."
+        ),
+        "arquivo": "crates/phxsql-server/src/config_phz.rs",
+        "trecho": """    let de_terceiro = |u: u32| !de_confianca(u) && u != dono_da_pasta;
+""",
+        "troca": """    // DEFEITO REPOSTO: o dono da pasta conta como terceiro.
+    let de_terceiro = |u: u32| !de_confianca(u);
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "config_phz::testes::par_dono_da_pasta_nao_e_terceiro",
+        ],
+        "seguem": [
+            "config_phz::testes::par_terceiro_numa_pasta_com_sticky_e_ignorado",
+        ],
+    },
+    {
+        "id": "config-phz-par-falha-aberto",
+        "titulo": "o ramo que falha fechado escolhe o `.json` quando nenhum lado e de confianca",
+        "porque": (
+            "pedido 481, revisao SEC, MEDIO 1: a SEC trocou o «nenhum dono bate -> recusa» "
+            "por «escolhe o .json» e 15+8 testes passaram -- so o disco de verdade, e so como "
+            "root, exercitava o ramo. Com a decisao separada dos fatos, cada caso que chega "
+            "ao fim (os dois de terceiros, o mesmo dono, o root e o servico, o dono da pasta) "
+            "tem teste sem root, e o mesmo dono numa pasta 1777 se prova pelo disco."
+        ),
+        "arquivo": "crates/phxsql-server/src/config_phz.rs",
+        "trecho": """    if de_confianca(phz) && de_terceiro(claro) {
+        return Some((Vale::Phz, claro));
+    }
+    None
+}
+""",
+        "troca": """    if de_confianca(phz) && de_terceiro(claro) {
+        return Some((Vale::Phz, claro));
+    }
+    // DEFEITO REPOSTO (a mutacao da SEC): na duvida, escolhe o .json.
+    Some((Vale::Claro, phz))
+}
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "config_phz::testes::par_sem_um_lado_de_confianca_recusa",
+            "config_phz::testes::par_root_nunca_e_terceiro",
+            "config_phz::testes::par_dono_da_pasta_nao_e_terceiro",
+            "config_phz::testes::mesmo_dono_em_pasta_com_sticky_continua_recusando",
+        ],
+        "seguem": [
+            "config_phz::testes::par_sem_sticky_bit_recusa",
+            "config_phz::testes::par_pasta_que_outros_nao_gravam_recusa",
+            "config_phz::testes::par_sem_um_fato_recusa",
+        ],
+    },
+    {
+        "id": "config-phz-par-sem-euid-escolhe",
+        "titulo": "sem o uid de quem roda, o par supoe root e escolhe",
+        "porque": (
+            "pedido 481, revisao SEC, MEDIO 1: faltava teste para «a sonda falhou -> recusa». "
+            "Fora do Linux, ou com o `/proc/self/status` ilegivel, o uid de quem roda e «nao "
+            "sei» -- e «nao sei» e a recusa de sempre, nunca um palpite sobre quem e o dono."
+        ),
+        "arquivo": "crates/phxsql-server/src/config_phz.rs",
+        "trecho": """    let euid = f.euid?;
+""",
+        "troca": """    // DEFEITO REPOSTO: sem o uid de quem roda, supoe o root.
+    let euid = f.euid.unwrap_or(RAIZ);
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "config_phz::testes::par_sem_um_fato_recusa",
+        ],
+        "seguem": [
+            "config_phz::testes::par_terceiro_numa_pasta_com_sticky_e_ignorado",
+        ],
+    },
+    {
+        "id": "config-phz-euid-le-o-uid-real",
+        "titulo": "o uid de quem roda sai do campo REAL do `/proc/self/status`, e nao do efetivo",
+        "porque": (
+            "pedido 481, revisao SEC, BAIXO: o uid de quem roda deixou de sair de um "
+            "arquivo-sonda na pasta do par (lixo, escrita obrigatoria, e o `root_squash` do "
+            "NFS mentindo) e passou a sair do `Uid:` do `/proc/self/status`, que traz real, "
+            "efetivo, salvo e o do sistema de arquivos. Vale o EFETIVO: num binario com "
+            "setuid os dois diferem."
+        ),
+        "arquivo": "crates/phxsql-server/src/config_phz.rs",
+        "trecho": """    campos.split_whitespace().nth(1)?.parse().ok()
+""",
+        "troca": """    // DEFEITO REPOSTO: o uid REAL no lugar do efetivo.
+    campos.split_whitespace().next()?.parse().ok()
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "config_phz::testes::euid_sai_do_campo_efetivo_do_status",
+        ],
+        "seguem": [
+            "config_phz::testes::euid_do_processo_bate_com_o_dono_de_um_arquivo_novo",
+        ],
+    },
+    {
+        "id": "config-phz-troca-sobre-terceiro-diz-corrida",
+        "titulo": "`--empacotar-config` com o `.phz` de um terceiro ao lado culpa uma corrida que nao houve",
+        "porque": (
+            "pedido 481, revisao SEC, BAIXO: com o nome do terceiro ignorado pelo arranque, "
+            "a troca de forma grava justamente nesse nome -- e parava no «apareceu durante a "
+            "troca», que manda procurar uma corrida que nao houve. A recusa diz o que ha: de "
+            "quem e o nome ocupado, e que so o dono dele, o da pasta ou o root o retiram. "
+            "Provado pelo BINARIO como o uid 65534: so o root roda (`--include-ignored`)."
+        ),
+        "arquivo": "crates/phxsql-server/src/config_phz.rs",
+        "trecho": """    if e_phz(&decisao.lido) {
+        return Ok(Troca::JaEstava(decisao.lido));
+    }
+    recusar_troca_sobre_terceiro(&decisao)?;
+""",
+        "troca": """    if e_phz(&decisao.lido) {
+        return Ok(Troca::JaEstava(decisao.lido));
+    }
+    // DEFEITO REPOSTO: a troca nao olha o nome ignorado.
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "config-phz", "--", "--include-ignored"],
+        "caem": [
+            "o_phz_de_um_terceiro_em_pasta_com_sticky_e_ignorado_e_o_servico_sobe_do_json",
+        ],
+        "seguem": [
+            "o_json_do_root_ao_lado_do_phz_do_servico_recusa_o_arranque",
+            "os_dois_presentes_o_binario_nao_sobe_e_nao_toca_em_nenhum",
         ],
     },
     {

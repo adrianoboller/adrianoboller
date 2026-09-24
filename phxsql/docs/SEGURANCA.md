@@ -4818,6 +4818,127 @@ o `.phz` com o 7-Zip para editar: escolher o `.phz` perderia a edição calado;
 escolher o `.json` deixaria o `.phz` velho esperando o próximo engano. A
 mensagem nomeia os dois e as duas saídas.
 
+**A única exceção: o nome de um terceiro numa pasta com *sticky bit* (pedido
+481).** O achado B2 do parecer SEC da etapa 2: em pasta comum a recusa não é
+pior que o comportamento de sempre — quem cria arquivo ali também troca o
+`config.json`. Numa pasta com *sticky bit* onde outros gravam (o `/tmp`
+clássico), um terceiro cria o `.phz` sem poder tocar no `.json` do serviço, e
+a recusa virava negação de serviço para quem nunca escreveu ali. Nenhuma
+instalação documentada põe o config numa pasta assim (MANUAL §7.4:
+`/opt/phxsql`, do serviço, sem *sticky bit*; `docs/EMPACOTAMENTO.md` só usa
+`/tmp` para conferir o build limpo).
+
+*A primeira volta estava errada, e a revisão SEC a bloqueou (24/09/2026).* Ela
+ignorava «o arquivo cujo dono diverge do parceiro e não é o do processo» — e
+o **root** caía nessa conta. Na instalação do MANUAL, o administrador que roda
+`sudo 7z x` para trocar um token vazado cria um `.json` do root ao lado do
+`.phz` do serviço; no reinício, o serviço subia do `.phz` VELHO chamando o do
+root de terceiro, e o token revogado continuava valendo — exatamente o que a
+recusa protegia. E o *sticky bit* que o MANUAL prometia não era conferido. A
+régua dela respondia outra pergunta: MySQL e MariaDB ignoram o `my.cnf`
+**gravável por todos** (critério de MODO); nenhum ignora arquivo por ter
+OUTRO DONO.
+
+**A régua refeita.** Pergunta: *arquivo de configuração plantado por outro
+usuário numa pasta que outros gravam — recusar, ignorar com aviso, ou exigir
+dono/modo?* Três hipóteses, escritas antes de medir: **H1** recusar (o par
+presente recusa sempre); **H2** ignorar com aviso o arquivo que outro usuário
+pode ter posto, e subir do outro; **H3** exigir dono/modo — auditar o local e
+recusar arrancar de onde outros gravam, com ou sem ataque. Medido em
+24/09/2026 pelos binários desta máquina, e lido no fonte:
+
+| motor (peso) | config de OUTRO dono, modo seguro, pasta 1777 | config gravável por todos | o local | fonte |
+|---|---|---|---|---|
+| PostgreSQL 16.13 (4) | **lido**: `config_file=` de `nobody` (0644 e 0666) → sobe com o valor plantado; `postgresql.auto.conf` de `nobody` dentro do PGDATA → lido | lido | PGDATA 0777 ou 1777 → `FATAL: data directory "…" has invalid permissions`; de outro dono → `… has wrong ownership` | `utils/init/miscinit.c:363-399` (`checkDataDir`) |
+| MySQL 8.0.46 (2) | **lido**: `my.cnf` de `nobody` 0644 e 0600 → lido; `!includedir` com o plantado de `nobody` → lido e sobrepõe | `[Warning] World-writable config file '…' is ignored`, e sobe sem ele | não confere | `mysys/my_default.cc:1737-1749` |
+| MariaDB 11.8 (3) | **não medido nesta volta** (o docker estava parado); o fonte não confere dono — não há `st_uid` em `my_default.c` | ignora com aviso (`my_default.c:638-664`; a primeira volta mediu a mesma mensagem pelo binário 11.8.9) | não confere | `mysys/my_default.c` |
+| SQLite 3.45.1 (1) | sem arquivo de configuração de servidor — abstém-se | — | — | — |
+
+A conta:
+
+- *«Onde outros gravam é inseguro»*: PostgreSQL (o diretório) + MySQL +
+  MariaDB (o arquivo) = **9**, os três maduros convergem → entra sem pergunta:
+  a exceção só existe onde outros gravam de fato, e não onde só há o bit.
+- *«Achado o inseguro, recusar ou ignorar com aviso?»*: ignorar = MariaDB 3 +
+  MySQL 2 = **5** × recusar = PostgreSQL **4** → ignorar com aviso. Por um
+  ponto, e com o peso do MariaDB lido no fonte, não no binário desta volta —
+  sem ele, 2 × 4, e a recusa venceria. Por isso a exceção é a MAIS ESTREITA que
+  fecha o B2, e tudo fora dela é H1.
+- *«O dono do arquivo como critério?»*: **0**. Os dois medidos LEEM o plantado
+  de modo seguro — a SEC tinha razão. O PostgreSQL usa o dono só no diretório
+  de dados, e o comentário do `checkDataDir` diz por quê: é a trava que impede
+  dois postmasters no mesmo diretório, não a defesa contra arquivo plantado.
+- **H3 morre**: é o PostgreSQL (4) contra os dois (5), e recusaria de um dia
+  para o outro toda instalação com a pasta gravável pelo grupo, sem ninguém
+  pedir (pétrea «guarda nova entra pedida, não imposta»).
+
+**Por que o critério aqui é o dono — onde divergimos, e a restrição que
+causou.** O fonte do MySQL diz de onde vem o critério dele: *«This is mainly
+done to protect us to not read a file created by the mysqld server»*; e a
+documentação do `SELECT … INTO OUTFILE` diz que, até a 8.0.17, o arquivo que o
+servidor criava era **gravável por todos**. O `0666` é a MARCA que o canal de
+ataque deles deixa. O nosso canal é outro — um usuário comum numa pasta com
+*sticky bit* — e não deixa essa marca (ele escolhe o modo, e escolhe 0644),
+mas deixa uma que não consegue forjar: o **dono do nome**, que só o próprio
+dono ou o root mudam. É a regra deles re-decidida contra o nosso canal, e a
+restrição que a fez divergir é o **par**: dois nomes para uma configuração,
+que nenhum dos quatro tem.
+
+**A regra, e cada condição com o seu teste** (`terceiro_no_par`, em
+`config_phz.rs`). Os dois presentes são a recusa de sempre
+(`PhxError::ConfigAmbiguo`); o arranque só ignora um dos dois quando TUDO
+vale:
+
+1. a pasta do par tem *sticky bit* — sem ele, quem criou um nome também apaga
+   ou troca o outro (`par_sem_sticky_bit_recusa`);
+2. a pasta é gravável pelo grupo ou pelos outros — onde só o dono grava, um
+   nome de outro dono veio de um `chown` do root, que é decisão de quem
+   administra (`par_pasta_que_outros_nao_gravam_recusa`);
+3. um dos nomes é de confiança: do uid **efetivo** de quem roda, ou do
+   **root**, que nunca é terceiro (`par_root_nunca_e_terceiro`);
+4. o outro é de um terceiro: nem de confiança, nem do dono da pasta, que apaga
+   e renomeia qualquer nome dela (`par_dono_da_pasta_nao_e_terceiro`).
+
+Todo o resto — os dois de terceiros, o mesmo dono, o serviço e o root — é a
+recusa (`par_sem_um_lado_de_confianca_recusa`, e pelo disco, sem root,
+`mesmo_dono_em_pasta_com_sticky_continua_recusando`). E qualquer «não sei» — o
+uid que não se lê, o dono de um nome, a pasta — também
+(`par_sem_um_fato_recusa`). O dono lido é o do NOME (`lstat`): um link
+plantado é do terceiro, não do alvo para onde aponta.
+
+**O uid de quem roda** sai do campo efetivo do `Uid:` do `/proc/self/status`
+— sem `libc` (pétrea: zero dependências) e sem escrever nada na pasta. A
+primeira volta criava ali um arquivo-sonda: deixava lixo, exigia escrita, e
+num NFS com `root_squash` o dono do arquivo novo mente sobre quem o criou.
+Fora do Linux não há de onde ler, e a resposta é a recusa de sempre.
+
+**O aviso sai da própria decisão.** `decidir` devolve o arquivo lido E o nome
+ignorado com o dono; o `Config::ler` põe o aviso nos `avisos`, que o `main` já
+imprime. A primeira volta recalculava tudo no `main` com uma segunda sonda,
+que podia ver outra coisa e calar.
+
+**A troca de forma com o terceiro no caminho** — `--empacotar-config` ou
+`--desempacotar-config` gravariam justamente no nome ignorado — recusa dizendo
+de quem é o nome e quem pode retirá-lo, e não mais «apareceu durante a
+troca», que mandava procurar uma corrida que não houve.
+
+**O risco que fica, dito:** numa pasta com *sticky bit* onde outros gravam, um
+administrador que não é root nem o serviço, editando o config com a própria
+conta, é indistinguível de um terceiro — o arranque sobe do nome do serviço e
+avisa. Numa pasta assim, o config se administra como o serviço ou como root.
+E o arquivo ÚNICO plantado, sem o par, continua fora do alcance desta regra:
+é o pedido 479.
+
+**O código do erro mudou.** A recusa dos dois presentes saía com o prefixo de
+`PhxError::Conflito` («conflito de escrita») — a variante da janela de
+conflito de ESCRITA que o MVCC um dia substitui, sobre um REGISTRO disputado
+por duas sessões. Nada disso existe no impasse do par: não há sessão, não há
+registro, e a frase confundia quem lia um problema de arranque com uma disputa
+de dado. `PhxError::ConfigAmbiguo` (código **5002**, família `sistema`, sprint
+SP000027 — correção de segurança) é o erro próprio; o texto («existem os dois,
+… e o servidor não escolhe por palpite…») continua o mesmo, agora com o
+prefixo «configuracao ambigua».
+
 ### O que ficou fora, e o motivo medido
 
 O `config.json` recusa alto quando não se lê. Os outros cinco JSON que o
@@ -4846,9 +4967,13 @@ com um presente, ela truncaria o arquivo que o erro nomeia (parecer do DBA).
 
 ### A prova, nos dois sentidos
 
-Catorze guardas no catálogo — uma re-apontada e treze novas —, **14 de 14
-PROVADAS** pelo `provar-guardas.py` em 24/09/2026 (árvore limpa:
-`phxsql-server --lib` verde, 1.407 testes; `--test config-phz` verde, 7):
+Vinte e cinco guardas no catálogo, **todas PROVADAS** pelo `provar-guardas.py`
+em 24/09/2026: as catorze da etapa 2 do 450 (árvore limpa, 1.407 testes de
+`--lib`, 7 de `--test config-phz`) e as onze do pedido 481 — duas da primeira
+volta re-apontadas e nove novas —, que, com a `config-phz-dois-presentes-escolhe-calado`
+re-apontada, deram **12 de 12 PROVADAS** na segunda volta (árvore limpa:
+`--lib` verde, 1.418 testes; `--test config-phz -- --include-ignored` verde,
+10):
 
 | guarda | o que repõe | caíram |
 |---|---|---|
@@ -4856,7 +4981,7 @@ PROVADAS** pelo `provar-guardas.py` em 24/09/2026 (árvore limpa:
 | `config-phz-troca-escreve-aberto-e-herda` | a troca de forma herda a permissão do original | 1/1 |
 | `config-phz-abre-com-os-24-ciclos` | `ciclos: CICLOS_MAXIMO` na leitura | 1/1 |
 | `config-phz-abre-cabecalho-de-megabytes` | cabeçalho de 8 MiB na leitura | 1/1 |
-| `config-phz-dois-presentes-escolhe-calado` | o `.phz` ganha calado quando há os dois | 1/1 |
+| `config-phz-dois-presentes-escolhe-calado` | o `.phz` ganha calado quando há os dois (481: também numa pasta 1777 com os dois do mesmo dono) | 2/2 |
 | `config-json-claro-vira-phz-sem-pedir` | a gravação empacota sempre | 1/1 |
 | `config-phz-grava-o-texto-cru` | a gravação ignora a extensão `.phz` | 1/1 |
 | `config-dica-do-modelo-sobre-arquivo-presente` | a dica `--exemplo 1 >` para qualquer erro (DBA) | 2/2 |
@@ -4866,6 +4991,17 @@ PROVADAS** pelo `provar-guardas.py` em 24/09/2026 (árvore limpa:
 | `config-phz-aviso-procura-a-copia-pelo-lido` | o aviso pelo par do arquivo lido (SEC, A1) | 1/1 |
 | `gravar-privado-temporario-e-o-proprio-config` | o temporário por `with_extension("tmp")` (SEC, M1) | 1/1 |
 | `config-phz-desfazer-apaga-a-unica-copia` | o desfazer sem olhar se o velho existe (SEC, M1) | 1/1 |
+| `config-phz-terceiro-nao-e-ignorado` | o nome de TERCEIRO numa pasta com sticky bit volta a travar o arranque (481, B2) | 1/1 |
+| `config-phz-terceiro-nao-avisa-no-arranque` | o aviso fora dos `avisos` do `Config::ler` (481, pelo binário como uid 65534) | 1/1 |
+| `config-phz-par-root-vira-terceiro` | a regra da primeira volta inteira: o root como terceiro, sem sticky bit (481, ALTO, pelo binário como uid 65534) | 1/1 |
+| `config-phz-par-root-e-terceiro` | o root fora do lado de confiança, sozinho (481, ALTO, pelo motor) | 2/2 |
+| `config-phz-par-sem-sticky-escolhe` | a conferência do sticky bit tirada (481) | 1/1 |
+| `config-phz-par-pasta-que-so-o-dono-grava` | a conferência de «outros gravam» tirada (481, régua) | 1/1 |
+| `config-phz-par-dono-da-pasta-vira-terceiro` | o dono da pasta contado como terceiro (481) | 1/1 |
+| `config-phz-par-falha-aberto` | a mutação da SEC: o ramo que falha fechado escolhe o `.json` (481, MÉDIO 1) | 4/4 |
+| `config-phz-par-sem-euid-escolhe` | o uid que não se leu tomado como root (481, MÉDIO 1) | 1/1 |
+| `config-phz-euid-le-o-uid-real` | o uid real no lugar do efetivo (481, BAIXO) | 1/1 |
+| `config-phz-troca-sobre-terceiro-diz-corrida` | a troca sem olhar o nome ignorado: «apareceu durante a troca» (481, BAIXO, pelo binário) | 1/1 |
 
 E à mão, com o defeito reposto e desfeito por roteiro, as provas que o
 catálogo não carrega:
@@ -4880,7 +5016,19 @@ catálogo não carrega:
 | `a_troca_vai_e_volta_sem_apagar_copia_nenhuma` | o nome da cópia sempre o primeiro | a segunda migração sobrescreve a primeira |
 | `phz_hostil_recusa_com_erro_nomeado_sem_panico` | o teto do arquivo desligado | «esperava [GRANDE_DEMAIS]» |
 | `sem_configuracao_nenhuma_a_dica_do_modelo_continua` | a dica tirada de vez | sem a dica do modelo |
+| `o_json_do_root_ao_lado_do_phz_do_servico_recusa_o_arranque` (481, ALTO, pelo BINÁRIO como uid 65534) | o código da primeira volta inteiro (`config_phz.rs`, `config.rs`, `main.rs`) | «phxsqld [] ainda rodava depois de 20 s: subiu como servidor» |
+| `o_phz_de_um_terceiro_em_pasta_com_sticky_e_ignorado_e_o_servico_sobe_do_json` (481, idem) | o mesmo código da primeira volta | «a troca culpou uma corrida que nao houve: … conflito de escrita: … apareceu durante a troca» |
 
 O teste do binário que prova os dois presentes roda o `phxsqld` com **prazo**:
 com o defeito reposto o processo sobe como servidor, e um `output()` sem prazo
 esperaria para sempre em vez de reprovar.
+
+Os dois testes do pedido 481 pelo binário **exigem root** (`chown`, e o
+`phxsqld` rodando como o uid 65534 por `CommandExt::uid`). São `#[ignore]` com
+o motivo escrito — o `cargo test` de sempre os conta como ignorados, nunca
+como verdes — e, pedidos sem root (`-- --include-ignored`), **caem** dizendo
+isso. A primeira volta fazia `return` sem privilégio, e o cargo contava verde
+calado (revisão SEC do 481, MÉDIO 2). O `provar-guardas.py` os roda com
+`-- --include-ignored`, e cada guarda pelo binário põe o OUTRO teste que exige
+root no `seguem`: uma corrida sem root dá ESTRAGOU, e não um PROVADA que só
+provou a falta de privilégio.

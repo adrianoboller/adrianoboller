@@ -86,9 +86,11 @@ pub struct MensagemFabrica {
 
 /// Todas as mensagens que o servidor devolve pelo protocolo.
 ///
-/// As doze primeiras sao as MOLDURAS dos erros -- o prefixo do `Display` de
-/// cada variante de `PhxError`, com `{detalhe}` no lugar da parte variavel.
-/// As demais sao os textos que os portoes do servidor criam por inteiro.
+/// As vinte e uma primeiras sao as MOLDURAS dos erros -- o prefixo do
+/// `Display` de cada variante de `PhxError` (uma por variante; a `ConfigAmbiguo`
+/// entrou em 24/09/2026, pedido 481), com `{detalhe}` no lugar da parte
+/// variavel. As demais sao os textos que os portoes do servidor criam por
+/// inteiro.
 /// A parte variavel (`{detalhe}` e os outros parametros) continua no idioma
 /// em que o motor a escreveu: traduzir cada `format!` do motor e o passo
 /// seguinte, nao este.
@@ -324,6 +326,23 @@ pub const FABRICA: &[MensagemFabrica] = &[
             "errore di I/O: {detalhe}",
             "E/A-Fehler: {detalhe}",
             "error de E/S: {detalhe}",
+        ],
+    },
+    // `ConfigAmbiguo` so aparece no ARRANQUE (o `Config::ler` do `main`, antes
+    // de existir cliente ou idioma escolhido) -- hoje `texto_do_erro` nunca a
+    // alcanca de verdade. A entrada existe porque `decompor` e exaustivo
+    // sobre `PhxError` (nenhuma variante fica sem TextName, mesmo a que so um
+    // caminho futuro venha a devolver ao protocolo) e para nao deixar a
+    // fabrica incompleta se algum dia isto mudar.
+    MensagemFabrica {
+        nome: "erro.config_ambiguo",
+        textos: [
+            "configuracao ambigua: {detalhe}",
+            "configuration ambiguë : {detalhe}",
+            "ambiguous configuration: {detalhe}",
+            "configurazione ambigua: {detalhe}",
+            "mehrdeutige Konfiguration: {detalhe}",
+            "configuración ambigua: {detalhe}",
         ],
     },
     // -------------------------------------------------- textos dos portoes
@@ -794,6 +813,7 @@ pub fn decompor(e: &PhxError) -> (&'static str, String) {
             format!("{mensagem} (SIGNAL SQLSTATE {estado})"),
         ),
         PhxError::Io(m) => ("erro.erro_de_es", m.to_string()),
+        PhxError::ConfigAmbiguo(m) => ("erro.config_ambiguo", m.clone()),
     }
 }
 

@@ -30,6 +30,13 @@
 //!   e o administrador que extraiu o `.phz` com o 7-Zip para editar: escolher
 //!   o `.phz` perderia a edicao calado; escolher o `.json` deixaria o `.phz`
 //!   velho esperando o proximo engano.
+//!
+//!   Uma excecao so, a do pedido 481 (`terceiro_no_par`): numa pasta com
+//!   sticky bit onde outros gravam, o nome que e de um TERCEIRO -- nem de
+//!   quem roda o servidor, nem do root, nem do dono da pasta -- e ignorado,
+//!   com aviso, quando o outro e de quem roda ou do root. E o unico caso em
+//!   que o sistema operacional prova quem plantou o arquivo; em qualquer
+//!   duvida, a recusa de sempre.
 //! * Nenhum: o erro de sempre, com o texto de sempre.
 //!
 //! # A forma de gravar segue a forma de onde se leu
@@ -159,25 +166,244 @@ pub fn par(pedido: &Path) -> (PathBuf, PathBuf) {
 
 /// Qual arquivo do par vale -- a regra dos dois, no topo do modulo.
 pub fn resolver(pedido: &Path) -> Result<PathBuf> {
-    let (claro, phz) = par(pedido);
-    match (claro.exists(), phz.exists()) {
-        (true, true) => Err(PhxError::Conflito(format!(
-            "existem os dois, {} e {}, e o servidor nao escolhe por palpite qual \
-             deles e a configuracao. Se vale o .json (por exemplo, voce o \
-             extraiu do .phz para editar): retire o {} e rode \
-             `phxsqld --empacotar-config --config {}`. Se vale o .phz: retire \
-             (apague ou renomeie) o {}",
-            claro.display(),
-            phz.display(),
-            phz.display(),
-            claro.display(),
-            claro.display()
-        ))),
-        (false, true) => Ok(phz),
-        (true, false) => Ok(claro),
-        // Nenhum: o proprio pedido, e quem le da o erro de sempre.
-        (false, false) => Ok(pedido.to_path_buf()),
+    decidir(pedido).map(|d| d.lido)
+}
+
+/// O que o arranque decidiu sobre o par: o arquivo que vale e, quando o outro
+/// nome foi descartado por ser de um TERCEIRO (pedido 481), qual e de quem.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Decisao {
+    /// O arquivo que vale -- o mesmo que [`resolver`] devolve.
+    pub lido: PathBuf,
+    /// O outro nome do par, ignorado, e o uid do dono dele. `None` no caso
+    /// comum, em que so um dos dois existe.
+    pub ignorado: Option<(PathBuf, u32)>,
+}
+
+impl Decisao {
+    /// O aviso do arranque sobre o nome ignorado.
+    ///
+    /// Sai da MESMA decisao que escolheu o arquivo. A frente anterior o
+    /// recalculava no `main` com uma segunda consulta ao disco, que podia ver
+    /// outra coisa e calar (revisao SEC do 481, achado BAIXO). O
+    /// `Config::ler` o poe nos `avisos`, que o `main` ja imprime.
+    pub fn aviso(&self) -> Option<String> {
+        let (ignorado, dono) = self.ignorado.as_ref()?;
+        Some(format!(
+            "{} e de OUTRO usuario (uid {dono}) -- nem de quem roda o servidor, \
+             nem do root, nem do dono da pasta -- numa pasta com sticky bit onde \
+             outros gravam: foi ignorado como arquivo de TERCEIRO, e o servidor \
+             subiu de {}. Confira quem mais grava nesta pasta; o servidor nao \
+             apaga arquivo de ninguem",
+            ignorado.display(),
+            self.lido.display()
+        ))
     }
+}
+
+/// A [`Decisao`] do par do caminho pedido -- o motor UNICO de «qual vale».
+/// [`resolver`], o `Config::ler` e a troca de forma consomem o resultado;
+/// nenhum refaz a comparacao por conta propria.
+pub fn decidir(pedido: &Path) -> Result<Decisao> {
+    let (claro, phz) = par(pedido);
+    let lido = match (claro.exists(), phz.exists()) {
+        (true, true) => return decidir_os_dois(&claro, &phz),
+        (false, true) => phz,
+        (true, false) => claro,
+        // Nenhum: o proprio pedido, e quem le da o erro de sempre.
+        (false, false) => pedido.to_path_buf(),
+    };
+    Ok(Decisao {
+        lido,
+        ignorado: None,
+    })
+}
+
+/// Os dois presentes: a recusa de sempre, salvo a UNICA excecao que o
+/// sistema operacional prova sem palpite ([`terceiro_no_par`]).
+fn decidir_os_dois(claro: &Path, phz: &Path) -> Result<Decisao> {
+    let (lido, ignorado, dono) = match terceiro_no_par(&Fatos::do_disco(claro, phz)) {
+        Some((Vale::Claro, dono)) => (claro, phz, dono),
+        Some((Vale::Phz, dono)) => (phz, claro, dono),
+        None => return Err(par_ambiguo(claro, phz)),
+    };
+    Ok(Decisao {
+        lido: lido.to_path_buf(),
+        ignorado: Some((ignorado.to_path_buf(), dono)),
+    })
+}
+
+/// Qual dos dois nomes do par o arranque le quando a excecao vale.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Vale {
+    Claro,
+    Phz,
+}
+
+/// O que se le do disco para decidir o par.
+///
+/// Separado da decisao para que ela se prove caso a caso SEM `root`: o ramo
+/// que falha fechado sobrevivia a mutacao porque so o disco de verdade o
+/// exercitava, e so como root (revisao SEC do 481, MEDIO 1). `None` em
+/// qualquer campo e «nao sei» -- e «nao sei» e a recusa.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct Fatos {
+    /// O uid EFETIVO de quem roda este processo.
+    euid: Option<u32>,
+    /// Dono e `st_mode` da pasta do par.
+    pasta: Option<(u32, u32)>,
+    /// O dono do NOME de cada um (`lstat`, sem seguir link): numa pasta com
+    /// sticky bit, e o dono do nome -- e nao o do alvo de um link que um
+    /// terceiro plantou -- quem pode apaga-lo ou troca-lo.
+    dono_claro: Option<u32>,
+    dono_phz: Option<u32>,
+}
+
+const RAIZ: u32 = 0;
+/// `S_ISVTX` numa pasta: so o dono do nome, o dono da pasta ou o root apagam
+/// ou renomeiam um nome dela.
+const STICKY: u32 = 0o1000;
+/// Escrita para o grupo ou para os outros.
+const GRAVAVEL_POR_OUTROS: u32 = 0o022;
+
+/// A excecao do pedido 481, e so ela: qual nome vale e o uid do ignorado.
+///
+/// Os dois presentes sao a recusa de sempre ([`par_ambiguo`]). O arranque so
+/// ignora um dos dois quando TUDO isto vale, e cada condicao tem o seu
+/// motivo e o seu teste:
+///
+/// * a pasta tem **sticky bit** -- sem ele, quem criou um nome tambem apaga
+///   ou troca o outro, e nenhum dos dois merece mais confianca (o
+///   `MANUAL.txt` ja prometia isto, e a frente anterior nao cumpria);
+/// * a pasta e **gravavel pelo grupo ou pelos outros** -- so ai existe o
+///   terceiro que cria um nome sem poder tocar no do servico. Onde so o dono
+///   grava, um arquivo de outro dono veio de um `chown` do root, e isso e
+///   decisao de quem administra;
+/// * um dos nomes e de **confianca** -- do uid efetivo do processo ou do
+///   root. O ROOT NUNCA E TERCEIRO: e o administrador que roda `sudo 7z x`
+///   para trocar um token vazado, e trata-lo como terceiro subia do `.phz`
+///   VELHO com o token revogado valendo (revisao SEC do 481, achado ALTO,
+///   provado pelo sistema operacional);
+/// * o outro e de um **terceiro** -- nem de confianca, nem do dono da pasta,
+///   que apaga e renomeia qualquer nome dela, com ou sem sticky bit.
+///
+/// Qualquer outro caso -- inclusive os dois de terceiros, e o «nao sei» de
+/// qualquer fato -- e a recusa. Falhar fechado e o padrao.
+fn terceiro_no_par(f: &Fatos) -> Option<(Vale, u32)> {
+    let euid = f.euid?;
+    let (dono_da_pasta, modo_da_pasta) = f.pasta?;
+    let (claro, phz) = (f.dono_claro?, f.dono_phz?);
+    if modo_da_pasta & STICKY == 0 {
+        return None;
+    }
+    if modo_da_pasta & GRAVAVEL_POR_OUTROS == 0 {
+        return None;
+    }
+    let de_confianca = |u: u32| u == euid || u == RAIZ;
+    let de_terceiro = |u: u32| !de_confianca(u) && u != dono_da_pasta;
+    if de_confianca(claro) && de_terceiro(phz) {
+        return Some((Vale::Claro, phz));
+    }
+    if de_confianca(phz) && de_terceiro(claro) {
+        return Some((Vale::Phz, claro));
+    }
+    None
+}
+
+impl Fatos {
+    #[cfg(unix)]
+    fn do_disco(claro: &Path, phz: &Path) -> Fatos {
+        use std::os::unix::fs::MetadataExt as _;
+        let dono_do_nome = |p: &Path| std::fs::symlink_metadata(p).ok().map(|m| m.uid());
+        Fatos {
+            euid: euid_do_processo(),
+            pasta: std::fs::metadata(pasta_do_par(claro))
+                .ok()
+                .map(|m| (m.uid(), m.mode())),
+            dono_claro: dono_do_nome(claro),
+            dono_phz: dono_do_nome(phz),
+        }
+    }
+
+    /// Fora do Unix nao ha dono nem sticky bit que a `std` leia: tudo «nao
+    /// sei», e o par presente e a recusa de sempre.
+    #[cfg(not(unix))]
+    fn do_disco(_claro: &Path, _phz: &Path) -> Fatos {
+        Fatos::default()
+    }
+}
+
+/// A pasta onde o par mora. De `config.json` sem pasta, o `parent()` e `""`,
+/// que nao se le -- a pasta e a de trabalho.
+#[cfg(unix)]
+fn pasta_do_par(claro: &Path) -> &Path {
+    match claro.parent() {
+        Some(p) if !p.as_os_str().is_empty() => p,
+        _ => Path::new("."),
+    }
+}
+
+/// O uid EFETIVO deste processo, sem `libc` (petrea: zero dependencias
+/// externas) e sem escrever nada na pasta.
+///
+/// A frente anterior criava e apagava um arquivo-sonda na pasta do par: podia
+/// deixar lixo, precisava de escrita ali, e num NFS com `root_squash` o dono
+/// do arquivo novo mente sobre quem o criou (revisao SEC do 481, BAIXO). No
+/// Linux o kernel da o uid efetivo no `/proc/self/status`; onde nao ha isso
+/// (macOS, os BSD), a resposta e «nao sei», e o par presente e a recusa de
+/// sempre.
+#[cfg(unix)]
+fn euid_do_processo() -> Option<u32> {
+    if cfg!(any(target_os = "linux", target_os = "android")) {
+        euid_do_status(&std::fs::read_to_string("/proc/self/status").ok()?)
+    } else {
+        None
+    }
+}
+
+/// A linha `Uid:` do `/proc/<pid>/status` traz quatro numeros -- real,
+/// EFETIVO, salvo e o do sistema de arquivos (`proc(5)`). O efetivo e o
+/// segundo; o real nao serve, porque um binario com setuid tem os dois
+/// diferentes.
+#[cfg_attr(not(unix), allow(dead_code))]
+fn euid_do_status(status: &str) -> Option<u32> {
+    let campos = status.lines().find_map(|l| l.strip_prefix("Uid:"))?;
+    campos.split_whitespace().nth(1)?.parse().ok()
+}
+
+/// A mensagem do impasse -- os dois presentes e nenhum deles descartavel.
+/// `resolver` e os testes do par a montam pela MESMA funcao.
+fn par_ambiguo(claro: &Path, phz: &Path) -> PhxError {
+    PhxError::ConfigAmbiguo(format!(
+        "existem os dois, {} e {}, e o servidor nao escolhe por palpite qual \
+         deles e a configuracao. Se vale o .json (por exemplo, voce o \
+         extraiu do .phz para editar): retire o {} e rode \
+         `phxsqld --empacotar-config --config {}`. Se vale o .phz: retire \
+         (apague ou renomeie) o {}",
+        claro.display(),
+        phz.display(),
+        phz.display(),
+        claro.display(),
+        claro.display()
+    ))
+}
+
+/// A troca de forma grava no OUTRO nome do par. Quando o arranque ignorou
+/// esse nome por ser de terceiro, ele esta ocupado por um arquivo que nao e
+/// do servico -- e a troca parava no «apareceu durante a troca», que manda
+/// procurar uma corrida que nao houve (revisao SEC do 481, BAIXO).
+fn recusar_troca_sobre_terceiro(d: &Decisao) -> Result<()> {
+    let Some((ignorado, dono)) = &d.ignorado else {
+        return Ok(());
+    };
+    Err(PhxError::ConfigAmbiguo(format!(
+        "{} e de outro usuario (uid {dono}) numa pasta com sticky bit: o \
+         arranque o ignora e sobe de {}, mas a troca gravaria no nome dele. \
+         Nada foi mudado. Retire-o -- ali, so o dono dele, o dono da pasta ou \
+         o root conseguem -- e rode a troca de novo",
+        ignorado.display(),
+        d.lido.display()
+    )))
 }
 
 /// O texto do arquivo de configuracao, na forma que a extensao diz.
@@ -243,10 +469,11 @@ pub enum Troca {
 /// quando um passo falha, e quando o processo cai no meio, esta em [`trocar`].
 pub fn empacotar_arquivo(pedido: &Path) -> Result<Troca> {
     let (claro, phz) = par(pedido);
-    let real = existente(pedido)?;
-    if e_phz(&real) {
-        return Ok(Troca::JaEstava(real));
+    let decisao = existente(pedido)?;
+    if e_phz(&decisao.lido) {
+        return Ok(Troca::JaEstava(decisao.lido));
     }
+    recusar_troca_sobre_terceiro(&decisao)?;
     let texto = ler_claro(&claro)?;
     phxsql_core::json::Json::analisar(&texto).map_err(|e| {
         PhxError::Esquema(format!(
@@ -266,10 +493,11 @@ pub fn empacotar_arquivo(pedido: &Path) -> Result<Troca> {
 /// `.json` e avisa que ele esta em claro.
 pub fn desempacotar_arquivo(pedido: &Path) -> Result<Troca> {
     let (claro, phz) = par(pedido);
-    let real = existente(pedido)?;
-    if !e_phz(&real) {
-        return Ok(Troca::JaEstava(real));
+    let decisao = existente(pedido)?;
+    if !e_phz(&decisao.lido) {
+        return Ok(Troca::JaEstava(decisao.lido));
     }
+    recusar_troca_sobre_terceiro(&decisao)?;
     let texto = ler_texto(&phz)?;
     trocar(&phz, &claro, texto.as_bytes(), SUFIXO_DO_PHZ_ABERTO, &texto)
 }
@@ -326,12 +554,12 @@ pub fn copias_em_claro(pedido: &Path) -> Vec<PathBuf> {
 
 // ------------------------------------------------------------ por dentro
 
-/// O [`resolver`] que exige um arquivo de verdade: trocar a forma de uma
+/// A [`decidir`] que exige um arquivo de verdade: trocar a forma de uma
 /// configuracao que nao existe e erro, e nao «ja estava».
-fn existente(pedido: &Path) -> Result<PathBuf> {
-    let real = resolver(pedido)?;
-    if real.exists() {
-        return Ok(real);
+fn existente(pedido: &Path) -> Result<Decisao> {
+    let decisao = decidir(pedido)?;
+    if decisao.lido.exists() {
+        return Ok(decisao);
     }
     let (claro, phz) = par(pedido);
     Err(PhxError::NaoEncontrado(format!(
@@ -844,13 +1072,21 @@ mod testes {
         );
     }
 
-    /// **(d)** Os dois presentes: o servidor nao sobe, a mensagem nomeia os
-    /// dois e as duas saidas, e nenhuma troca de forma toca em nenhum deles.
+    /// **(d)** Os dois presentes, MESMO dono (o caso comum: a mesma conta
+    /// administra os dois): o servidor nao sobe, a mensagem nomeia os dois e
+    /// as duas saidas, e nenhuma troca de forma toca em nenhum deles.
     ///
-    /// Derruba: o `resolver` escolhendo um dos dois (qualquer um) no caso
-    /// `(true, true)` -- o `Config::ler` passa a subir, calado.
+    /// **O comportamento VELHO que o pedido 481 nao pode afrouxar** -- o
+    /// unico que mudou ali e o TIPO do erro (`Conflito` -> `ConfigAmbiguo`,
+    /// porque a mensagem antiga "conflito de escrita" nao descrevia um
+    /// impasse de arranque). A garantia -- nao escolher por palpite quando
+    /// os dois tem o mesmo dono -- continua identica.
+    ///
+    /// Derruba: o `decidir` escolhendo um dos dois (qualquer um) no caso
+    /// `(true, true)` -- o `Config::ler` passa a subir, calado (guarda
+    /// `config-phz-dois-presentes-escolhe-calado`).
     #[test]
-    fn os_dois_presentes_nao_sobem_e_a_troca_nao_toca_em_nenhum() {
+    fn os_dois_presentes_mesmo_dono_nao_sobem_e_a_troca_nao_toca_em_nenhum() {
         let d = DirTemp::novo("phz-d");
         let claro = d.join("config.json");
         let phz = d.join("config.phz");
@@ -861,7 +1097,7 @@ mod testes {
         for pedido in [&claro, &phz] {
             let e = Config::ler(pedido).expect_err("subiu com os dois presentes");
             let texto = e.to_string();
-            assert!(matches!(e, PhxError::Conflito(_)), "{texto}");
+            assert!(matches!(e, PhxError::ConfigAmbiguo(_)), "{texto}");
             assert!(texto.contains(&claro.display().to_string()), "{texto}");
             assert!(texto.contains(&phz.display().to_string()), "{texto}");
             assert!(texto.contains("--empacotar-config"), "{texto}");
@@ -871,6 +1107,303 @@ mod testes {
         let depois = (std::fs::read(&claro).unwrap(), std::fs::read(&phz).unwrap());
         assert!(antes == depois, "um dos dois mudou");
         assert_eq!(std::fs::read_dir(&*d).unwrap().count(), 2, "nasceu arquivo");
+    }
+
+    // ------------------------------------------ a regra do par (pedido 481)
+    //
+    // A decisao se prova pelos FATOS, sem `root`: cada condicao da excecao
+    // tem o seu teste, e cada um cai com a condicao tirada (as guardas
+    // `config-phz-par-*` do catalogo). O disco de verdade -- `chown`, sticky
+    // bit, o servidor rodando como o uid 65534 -- se prova pelo binario, em
+    // `tests/config-phz.rs`.
+
+    /// O usuario de servico (`User=phxsql` do MANUAL §7.4).
+    const SERVICO: u32 = 65534;
+    const TERCEIRO: u32 = 65533;
+    const OUTRO: u32 = 1000;
+    /// O `/tmp` classico: do root, 1777.
+    const TMP: (u32, u32) = (RAIZ, 0o1777);
+
+    /// Os fatos de um par com os dois nomes presentes. O `st_mode` da pasta
+    /// leva o tipo (`S_IFDIR`) junto, como o `metadata` devolve -- a regra
+    /// tem de ignora-lo.
+    fn fatos(euid: u32, pasta: (u32, u32), claro: u32, phz: u32) -> Fatos {
+        Fatos {
+            euid: Some(euid),
+            pasta: Some((pasta.0, 0o040000 | pasta.1)),
+            dono_claro: Some(claro),
+            dono_phz: Some(phz),
+        }
+    }
+
+    /// **Pedido 481, o que ele pede.** Numa pasta com sticky bit onde outros
+    /// gravam, o nome de um terceiro nao trava mais o arranque: vale o do
+    /// servico (ou o do root), dos dois lados do par.
+    ///
+    /// Derruba: a excecao desligada (guarda `config-phz-terceiro-nao-e-ignorado`).
+    #[test]
+    fn par_terceiro_numa_pasta_com_sticky_e_ignorado() {
+        // O B2 do parecer SEC do 450: o `.json` e do servico, um terceiro
+        // plantou o `.phz`.
+        assert_eq!(
+            terceiro_no_par(&fatos(SERVICO, TMP, SERVICO, TERCEIRO)),
+            Some((Vale::Claro, TERCEIRO))
+        );
+        // O espelho: o `.json` plantado, o `.phz` do servico.
+        assert_eq!(
+            terceiro_no_par(&fatos(SERVICO, TMP, TERCEIRO, SERVICO)),
+            Some((Vale::Phz, TERCEIRO))
+        );
+        // O do root tambem e de confianca: o administrador escreveu o `.json`.
+        assert_eq!(
+            terceiro_no_par(&fatos(SERVICO, TMP, RAIZ, TERCEIRO)),
+            Some((Vale::Claro, TERCEIRO))
+        );
+        // Gravavel so pelo grupo (1770) tambem e pasta onde outros gravam.
+        assert_eq!(
+            terceiro_no_par(&fatos(SERVICO, (RAIZ, 0o1770), SERVICO, TERCEIRO)),
+            Some((Vale::Claro, TERCEIRO))
+        );
+    }
+
+    /// **O achado ALTO da revisao SEC do 481.** A instalacao documentada
+    /// (MANUAL §7.4: `/opt/phxsql`, `User=phxsql`): o `.phz` e do servico,
+    /// que o grava por troca atomica; o administrador roda `sudo 7z x`, troca
+    /// o token vazado, e o `.json` nasce do ROOT. A frente anterior chamava o
+    /// root de terceiro e subia do `.phz` VELHO -- o token revogado
+    /// continuava valendo. O root e o administrador, nunca um terceiro.
+    ///
+    /// Derruba: o root fora de `de_confianca` -- inclusive numa pasta com
+    /// sticky bit (guarda `config-phz-par-root-vira-terceiro`).
+    #[test]
+    fn par_root_nunca_e_terceiro() {
+        // A pasta do servico, 0755, sem sticky: o caso do MANUAL.
+        assert_eq!(
+            terceiro_no_par(&fatos(SERVICO, (SERVICO, 0o755), RAIZ, SERVICO)),
+            None
+        );
+        // E numa pasta com sticky onde outros gravam, que NAO e do root --
+        // na do root, o root ja e o dono da pasta, e isso nao provaria nada.
+        for pasta in [(SERVICO, 0o1777), (OUTRO, 0o1777)] {
+            assert_eq!(
+                terceiro_no_par(&fatos(SERVICO, pasta, RAIZ, SERVICO)),
+                None,
+                "{pasta:?}"
+            );
+            assert_eq!(
+                terceiro_no_par(&fatos(SERVICO, pasta, SERVICO, RAIZ)),
+                None,
+                "{pasta:?}"
+            );
+        }
+    }
+
+    /// Sem sticky bit, quem criou um nome tambem apaga ou troca o outro:
+    /// nenhum dos dois merece mais confianca. O MANUAL ja prometia isto, e a
+    /// frente anterior nao conferia o bit.
+    ///
+    /// Derruba: a conferencia do sticky bit tirada (guarda
+    /// `config-phz-par-sem-sticky-escolhe`).
+    #[test]
+    fn par_sem_sticky_bit_recusa() {
+        for modo in [0o777, 0o775, 0o757] {
+            assert_eq!(
+                terceiro_no_par(&fatos(SERVICO, (RAIZ, modo), SERVICO, TERCEIRO)),
+                None,
+                "{modo:o}"
+            );
+        }
+    }
+
+    /// Sticky bit numa pasta que so o dono grava: nenhum terceiro cria nome
+    /// ali. O arquivo de outro dono veio de um `chown` do root, e isso e
+    /// decisao de quem administra, nao um arquivo plantado.
+    #[test]
+    fn par_pasta_que_outros_nao_gravam_recusa() {
+        for modo in [0o1755, 0o1750, 0o1700] {
+            assert_eq!(
+                terceiro_no_par(&fatos(SERVICO, (RAIZ, modo), SERVICO, TERCEIRO)),
+                None,
+                "{modo:o}"
+            );
+        }
+    }
+
+    /// O dono da pasta apaga e renomeia qualquer nome dela, com ou sem sticky
+    /// bit: um arquivo dele nao e o de alguem que so consegue CRIAR.
+    #[test]
+    fn par_dono_da_pasta_nao_e_terceiro() {
+        let pasta = (OUTRO, 0o1777);
+        assert_eq!(
+            terceiro_no_par(&fatos(SERVICO, pasta, SERVICO, OUTRO)),
+            None
+        );
+        assert_eq!(
+            terceiro_no_par(&fatos(SERVICO, pasta, OUTRO, SERVICO)),
+            None
+        );
+    }
+
+    /// **O ramo que falha fechado (revisao SEC do 481, MEDIO 1).** Nenhum dos
+    /// dois e de confianca, ou os dois sao do mesmo dono: nao ha «o seu» para
+    /// escolher, e a recusa de sempre vale. A SEC trocou este ramo por
+    /// «escolhe o .json» e 15+8 testes passaram; estes caem.
+    ///
+    /// Derruba: o `None` final de `terceiro_no_par` virando uma escolha
+    /// (guarda `config-phz-par-falha-aberto`).
+    #[test]
+    fn par_sem_um_lado_de_confianca_recusa() {
+        // Os dois de terceiros.
+        assert_eq!(terceiro_no_par(&fatos(SERVICO, TMP, OUTRO, TERCEIRO)), None);
+        // O mesmo dono nos dois, qualquer que seja.
+        for dono in [SERVICO, RAIZ, TERCEIRO] {
+            assert_eq!(
+                terceiro_no_par(&fatos(SERVICO, TMP, dono, dono)),
+                None,
+                "{dono}"
+            );
+        }
+        // O servico e o root, cada um com um: os dois de confianca, e nenhum
+        // e plantado -- e o ALTO numa pasta com sticky.
+        assert_eq!(
+            terceiro_no_par(&fatos(SERVICO, (OUTRO, 0o1777), RAIZ, SERVICO)),
+            None
+        );
+    }
+
+    /// **«Nao sei» e a recusa.** O uid de quem roda nao se leu (fora do
+    /// Linux, `/proc` ilegivel), ou o dono de um nome, ou a pasta: sem o
+    /// fato, nao se sabe quem e «o seu», e a frente anterior tambem nao tinha
+    /// teste para isto (revisao SEC do 481, MEDIO 1).
+    ///
+    /// Derruba: o uid desconhecido tomado como root (guarda
+    /// `config-phz-par-sem-euid-escolhe`).
+    #[test]
+    fn par_sem_um_fato_recusa() {
+        let controle = fatos(SERVICO, TMP, RAIZ, TERCEIRO);
+        assert!(
+            terceiro_no_par(&controle).is_some(),
+            "o controle tem de escolher, senao a prova nao prova nada"
+        );
+        let sem = [
+            Fatos {
+                euid: None,
+                ..controle
+            },
+            Fatos {
+                pasta: None,
+                ..controle
+            },
+            Fatos {
+                dono_claro: None,
+                ..controle
+            },
+            Fatos {
+                dono_phz: None,
+                ..controle
+            },
+        ];
+        for f in sem {
+            assert_eq!(terceiro_no_par(&f), None, "{f:?}");
+        }
+        // E fora do Unix os fatos nascem todos «nao sei».
+        assert_eq!(terceiro_no_par(&Fatos::default()), None);
+    }
+
+    /// O `Uid:` do `/proc/self/status` traz real, efetivo, salvo e o do
+    /// sistema de arquivos: vale o EFETIVO, o segundo.
+    #[test]
+    fn euid_sai_do_campo_efetivo_do_status() {
+        let status = "Name:\tphxsqld\nUmask:\t0022\nUid:\t1000\t65534\t1000\t65534\n\
+                      Gid:\t1000\t1000\t1000\t1000\n";
+        assert_eq!(euid_do_status(status), Some(65534));
+        assert_eq!(euid_do_status("Name:\tphxsqld\n"), None);
+        assert_eq!(euid_do_status("Uid:\t1000\n"), None);
+        assert_eq!(euid_do_status("Uid:\tx\ty\tz\tw\n"), None);
+    }
+
+    /// O uid lido do `/proc` contra o que o KERNEL diz, e nao contra a
+    /// propria funcao: um arquivo novo nasce do uid de quem o cria. A frente
+    /// anterior conferia a sonda com ela mesma (revisao SEC do 481, MEDIO 3).
+    /// O caso realista -- o servico como usuario comum -- se prova pelo
+    /// binario rodando como o uid 65534, em `tests/config-phz.rs`.
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[test]
+    fn euid_do_processo_bate_com_o_dono_de_um_arquivo_novo() {
+        use std::os::unix::fs::MetadataExt as _;
+        let d = DirTemp::novo("phz-euid");
+        let novo = d.join("novo");
+        std::fs::write(&novo, b"").unwrap();
+        assert_eq!(
+            euid_do_processo(),
+            Some(std::fs::metadata(&novo).unwrap().uid())
+        );
+        // `config.json` sem pasta mora na pasta de trabalho.
+        assert_eq!(pasta_do_par(Path::new("config.json")), Path::new("."));
+        assert_eq!(pasta_do_par(&d.join("config.json")), &*d);
+    }
+
+    /// Onde o `/proc/self/status` nao existe, o uid e «nao sei» -- e nao um
+    /// palpite.
+    #[cfg(all(unix, not(any(target_os = "linux", target_os = "android"))))]
+    #[test]
+    fn fora_do_linux_o_euid_e_nao_sei() {
+        assert_eq!(euid_do_processo(), None);
+    }
+
+    /// **O mesmo dono nos dois, numa pasta com sticky bit onde outros
+    /// gravam** -- pelo disco de verdade e sem `root`: a pasta e os dois
+    /// nomes sao do proprio teste. Passa pelas duas primeiras condicoes e cai
+    /// no ramo que falha fechado; a mutacao da SEC (o ramo escolhendo o
+    /// `.json`) o derruba.
+    #[cfg(unix)]
+    #[test]
+    fn mesmo_dono_em_pasta_com_sticky_continua_recusando() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let d = DirTemp::novo("phz-sticky-mesmo-dono");
+        std::fs::set_permissions(&*d, std::fs::Permissions::from_mode(0o1777)).unwrap();
+        let claro = d.join("config.json");
+        let phz = d.join("config.phz");
+        std::fs::write(&claro, CONFIG).unwrap();
+        gravar_texto(&phz, "{\"token\":\"t\",\"max_linhas\":99}").unwrap();
+
+        // Os fatos sao os do disco: a pasta com sticky, os dois do processo.
+        let f = Fatos::do_disco(&claro, &phz);
+        assert_eq!(f.pasta.map(|(_, modo)| modo & 0o7777), Some(0o1777));
+        assert!(f.euid.is_some(), "{f:?}");
+        assert_eq!(f.dono_claro, f.euid, "{f:?}");
+        assert_eq!(f.dono_phz, f.euid, "{f:?}");
+
+        let antes = (std::fs::read(&claro).unwrap(), std::fs::read(&phz).unwrap());
+        for pedido in [&claro, &phz] {
+            let e = Config::ler(pedido).expect_err("subiu com os dois do mesmo dono");
+            assert!(matches!(e, PhxError::ConfigAmbiguo(_)), "{e}");
+            assert!(matches!(
+                empacotar_arquivo(pedido),
+                Err(PhxError::ConfigAmbiguo(_))
+            ));
+            assert!(matches!(
+                desempacotar_arquivo(pedido),
+                Err(PhxError::ConfigAmbiguo(_))
+            ));
+        }
+        let depois = (std::fs::read(&claro).unwrap(), std::fs::read(&phz).unwrap());
+        assert!(antes == depois, "um dos dois mudou");
+    }
+
+    /// A mensagem do impasse diz o que e e o que fazer -- e nao «conflito de
+    /// escrita», o prefixo da janela de conflito de ESCRITA entre sessoes
+    /// (pedido 481).
+    #[test]
+    fn a_recusa_do_par_diz_configuracao_ambigua_e_nao_conflito_de_escrita() {
+        let e = par_ambiguo(Path::new("/x/config.json"), Path::new("/x/config.phz"));
+        let texto = e.to_string();
+        assert!(
+            texto.contains("configuracao ambigua: existem os dois"),
+            "{texto}"
+        );
+        assert!(!texto.contains("conflito"), "{texto}");
+        assert_eq!(e.codigo(), 5002);
     }
 
     /// A troca vai e volta sem apagar nada: o `.phz` aberto fica guardado, e
