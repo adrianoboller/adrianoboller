@@ -33,6 +33,7 @@ pub mod rotas;
 pub mod servico;
 #[cfg(windows)]
 pub mod servico_windows;
+pub mod soquete;
 pub mod supervisor;
 pub mod tap;
 pub mod totp;

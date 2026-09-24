@@ -2,7 +2,7 @@
 
 # Reusar — sucessos comprovados
 
-292 cognições: **9 frutíferas**, **4 infrutíferas**, **279 pendentes** (sem evidência validada — não entram aqui).
+294 cognições: **9 frutíferas**, **5 infrutíferas**, **280 pendentes** (sem evidência validada — não entram aqui).
 
 Só entra o que tem evidência que o `classificar.py` conferiu. Antes de desenhar, procure aqui o que já se provou.
 

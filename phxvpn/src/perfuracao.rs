@@ -148,7 +148,8 @@ fn endereco_de_bytes(b: &[u8]) -> Option<SocketAddr> {
         6 => IpAddr::V6(Ipv6Addr::from(<[u8; 16]>::try_from(&b[1..17]).ok()?)),
         _ => return None,
     };
-    (porta != 0).then_some(SocketAddr::new(ip, porta))
+    // O mapeado vira o IPv4 que ele e: e assim que a tabela de pares o guarda.
+    (porta != 0).then_some(crate::soquete::canonico(SocketAddr::new(ip, porta)))
 }
 
 /// APRESENTACAO: o repasse conta ao no onde o par esta.

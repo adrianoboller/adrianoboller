@@ -462,7 +462,7 @@ impl No {
         // esta registrado na tabela dele mesmo.
         if let Some(c) = f.candidatos.iter().find(|c| c.chave == *chave_dele) {
             if let Some(dentro) = embrulhado.get(36..) {
-                let _ = self.udp.send_to(dentro, c.endereco);
+                let _ = self.soquete(&c.endereco).send_to(dentro, c.endereco);
             }
             return;
         }
@@ -493,7 +493,7 @@ impl No {
         for a in &alvos {
             if let Rele::Farol(k) = a {
                 if let Some(c) = f.candidatos.iter().find(|c| c.chave == *k) {
-                    c.fio.enviar(&self.udp, embrulhado);
+                    c.fio.enviar(self.soquete(&c.fio.alvo_udp()), embrulhado);
                 }
             }
         }
@@ -612,7 +612,7 @@ impl No {
                 if let Ok(p) =
                     repasse::registro(&self.privada, &c.chave, transporte::carimbo_agora(), None)
                 {
-                    c.fio.enviar(&self.udp, &p);
+                    c.fio.enviar(self.soquete(&c.fio.alvo_udp()), &p);
                     c.fio.registro_enviado();
                     c.ultimo_registro = Some(Instant::now());
                 }

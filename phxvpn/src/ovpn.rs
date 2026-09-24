@@ -37,6 +37,23 @@ pub struct Rede<'a> {
 }
 
 impl Rede<'_> {
+    /// `explicit-exit-notify 1`, so em UDP. Em TCP o fim da conexao ja e o
+    /// aviso, e o OpenVPN descarta a linha com um NOTICE (options.c:3265-3268
+    /// da 2.6.19) -- escreve-la so poria ruido no log.
+    ///
+    /// No perfil: quem sai avisa, e some da lista de membros em ~9 s em vez
+    /// de ~129 s (o `keepalive 10 60` do servidor dobra para 120 s). No
+    /// servidor: ao receber SIGTERM ele manda `RESTART` a todos e espera 2 s
+    /// (multi.c, `multi_push_restart_schedule_exit`), e o membro volta em
+    /// segundos em vez de esperar o `ping-restart 60`.
+    fn aviso_de_saida(&self) -> &'static str {
+        if self.tcp {
+            ""
+        } else {
+            "explicit-exit-notify 1\n"
+        }
+    }
+
     fn proto(&self, lado: &str) -> String {
         if self.tcp {
             format!("tcp-{lado}")
@@ -95,6 +112,7 @@ client-to-client\n\
 client-config-dir {dir}/ccd\n\
 ccd-exclusive\n\
 keepalive 10 60\n\
+{saida}\
 persist-key\n\
 persist-tun\n\
 ca {dir}/ca.crt\n\
@@ -114,6 +132,7 @@ verb 3\n",
         porta = rede.porta,
         proto = rede.proto("server"),
         sub = subrede(rede.octeto),
+        saida = rede.aviso_de_saida(),
         sem_root = sem_root(),
         tls = if rede.v2 {
             // O comando roda a cada conexao, ANTES do TLS: membro removido
@@ -357,6 +376,7 @@ remote {end} {porta}\n\
 {proxy}\
 resolv-retry infinite\n\
 nobind\n\
+{saida}\
 persist-key\n\
 persist-tun\n\
 remote-cert-tls server\n\
@@ -373,6 +393,7 @@ verb 3\n\
         end = p.servidor.endereco,
         porta = p.rede.porta,
         proto = p.rede.proto("client"),
+        saida = p.rede.aviso_de_saida(),
         proxy = match p.http_proxy {
             // O OpenVPN so passa TCP por proxy HTTP; em UDP, a linha seria
             // recusada ao abrir o perfil.
@@ -526,6 +547,39 @@ mod testes {
         let t = perfil(&u);
         assert!(t.contains("proto udp\n") && !t.contains("http-proxy"));
         assert!(conf_servidor(&u, "/d").contains("proto udp\n"));
+    }
+
+    /// Em UDP, os dois lados avisam a saida: o membro que sai some da lista,
+    /// e o servidor que reinicia chama todos de volta. Em TCP a linha nao
+    /// vai -- o OpenVPN a ignoraria com um NOTICE.
+    #[test]
+    fn aviso_de_saida_so_em_udp_nos_dois_lados() {
+        let s = Servidor {
+            nome: "vpn1",
+            endereco: "vpn.empresa.com.br",
+        };
+        for tcp in [false, true] {
+            let r = Rede {
+                nome: "R",
+                porta: 1195,
+                octeto: 1,
+                v2: false,
+                tcp,
+            };
+            let perfil = perfil_membro(&Perfil {
+                rede: &r,
+                servidor: &s,
+                ca_pem: "",
+                cert_pem: "",
+                chave_pem: "",
+                tls_crypt: "",
+                http_proxy: None,
+            });
+            let conf = conf_servidor(&r, "/d");
+            let linha = "\nexplicit-exit-notify 1\n";
+            assert_eq!(perfil.contains(linha), !tcp, "perfil tcp={tcp}: {perfil}");
+            assert_eq!(conf.contains(linha), !tcp, "servidor tcp={tcp}: {conf}");
+        }
     }
 
     #[test]

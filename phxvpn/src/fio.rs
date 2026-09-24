@@ -496,6 +496,11 @@ impl FioRepasse {
         self.cfg.escolha
     }
 
+    /// Onde o repasse escuta UDP: a familia dele decide o soquete de saida.
+    pub fn alvo_udp(&self) -> SocketAddr {
+        self.alvo_udp
+    }
+
     pub fn alvo_tcp(&self) -> SocketAddr {
         SocketAddr::new(self.alvo_udp.ip(), self.cfg.porta_tcp)
     }

@@ -571,13 +571,27 @@ fn cmd_repasse(args: &[String]) -> Result<(), String> {
     let porta = opcao(args, "--porta").unwrap_or_else(|| "51821".into());
     let udp = std::net::UdpSocket::bind(format!("0.0.0.0:{porta}"))
         .map_err(|e| format!("porta UDP {porta}: {e}"))?;
+    // O IPv6 ao lado, na mesma porta; sem ele (maquina sem IPv6) o repasse
+    // segue so no IPv4 e diz isso -- ver `soquete.rs`.
+    let (udp6, aviso) = phxvpn::soquete::udp_v6_ao_lado(&udp);
+    if let Some(a) = aviso {
+        eprintln!("phxvpn: repasse {a}; segue so no IPv4");
+    }
     // TCP so quando pedido: e mais uma porta exposta, e 443 pede root.
     let tcp = match opcao(args, "--tcp") {
-        Some(p) => Some((
-            std::net::TcpListener::bind(format!("0.0.0.0:{p}"))
-                .map_err(|e| format!("porta TCP {p}: {e}"))?,
-            p,
-        )),
+        Some(p) => {
+            let ouvinte = std::net::TcpListener::bind(format!("0.0.0.0:{p}"))
+                .map_err(|e| format!("porta TCP {p}: {e}"))?;
+            let n: u16 = p.parse().map_err(|_| format!("porta TCP invalida: {p}"))?;
+            let ouvinte6 = match phxvpn::soquete::tcp_so_v6(n) {
+                Ok(o) => Some(o),
+                Err(e) => {
+                    eprintln!("phxvpn: repasse sem IPv6 na porta TCP {p}: {e}; segue so no IPv4");
+                    None
+                }
+            };
+            Some((ouvinte, ouvinte6, p))
+        }
         None => None,
     };
     let mut r = Repasse::novo(privada, permitidas);
@@ -598,14 +612,26 @@ fn cmd_repasse(args: &[String]) -> Result<(), String> {
     eprintln!(
         "phxvpn: repasse no ar -- UDP {porta}{}, chave {}",
         tcp.as_ref()
-            .map(|(_, p)| format!(" e TCP {p}"))
+            .map(|(_, _, p)| format!(" e TCP {p}"))
             .unwrap_or_default(),
         para_hex(&r.publica())
     );
-    let central = phxvpn::repasse_tcp::Central::nova(r, udp);
-    if let Some((ouvinte, _)) = tcp {
+    let central = phxvpn::repasse_tcp::Central::com_ipv6(r, udp, udp6);
+    if let Some((ouvinte, ouvinte6, _)) = tcp {
         let c = std::sync::Arc::clone(&central);
         std::thread::spawn(move || c.servir_tcp(ouvinte));
+        if let Some(o6) = ouvinte6 {
+            let c = std::sync::Arc::clone(&central);
+            std::thread::spawn(move || c.servir_tcp(o6));
+        }
+    }
+    {
+        let c = std::sync::Arc::clone(&central);
+        std::thread::spawn(move || {
+            if let Err(e) = c.servir_udp6() {
+                eprintln!("phxvpn: repasse: soquete IPv6 parou ({e}); segue so o IPv4");
+            }
+        });
     }
     central.servir_udp()
 }

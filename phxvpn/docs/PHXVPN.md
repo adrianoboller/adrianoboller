@@ -82,6 +82,35 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [ ] Windows ARM64: **medido, falta só o linker.** `rustup target add aarch64-pc-windows-gnullvm` baixa o `rust-std` e `cargo check --target aarch64-pc-windows-gnullvm` passa limpo (o código não tem nada arquitetura-específico) — mas `cargo build` para o mesmo alvo para em `error: linker aarch64-w64-mingw32-clang not found`. O Ubuntu deste contêiner empacota `gcc-mingw-w64-*` só para `x86_64` e `i686` (`apt-cache search mingw`, zero resultado para `aarch64`); a cadeia que falta é o `llvm-mingw` (clang + `aarch64-w64-mingw32` runtime), que não vem por `apt` — só baixando um toolchain de fora, o que esta rodada não fez por ser rede+binário de terceiro fora do gerenciador de pacotes do sistema, não uma crate Rust. `aarch64-pc-windows-msvc` nem chega a esse ponto: pede o Windows SDK/MSVC, que não existe aqui de jeito nenhum sem instalador da Microsoft. Não entrou no `empacotar.sh` por não linkar
 - [ ] P2P no Windows / serviço "cliente": prova numa máquina Windows REAL continua faltando (mesmo limite já registrado para o P2P — o Wine não tem o driver TAP); o serviço "cliente" foi só testado no Linux (`cargo test`) e no `--mostrar` (unidade gerada, sem instalar de fato)
 
+#### Lacunas contra o fonte do OpenVPN 2.6.19 (as 23 «falta e vale»)
+
+Da matriz em `docs/propostas/lacunas-openvpn-fonte-2026-09-24.md` (classe
+**c**), na ordem dela. Marcado só o que tem prova real e portões verdes.
+
+- [x] Broadcast IPv4 entre membros — P2P (ver «P2P: difusão»)
+- [x] Multicast entre membros — P2P (ver «P2P: difusão»)
+- [ ] Broadcast IPv4 entre membros — modo servidor (pede `dev tap` + `server-bridge`; o DCO não faz TAP)
+- [x] LAN da empresa atrás do servidor (ver «Modo servidor: redes alcançáveis»)
+- [x] LAN atrás de um membro / site-to-site (`iroute`; ver «Modo servidor: redes alcançáveis»)
+- [ ] Idem no P2P (faixa por par, tipo `AllowedIPs`)
+- [ ] Túnel total (`redirect-gateway def1`) — só com o pacote inteiro: `block-outside-dns`, `block-ipv6`, `block-local` e NAT
+- [ ] DNS empurrado + nomes dos membros
+- [ ] IPv6 dentro do túnel (`server-ipv6`; o P2P é só IPv4 por dentro)
+- [ ] **Transporte IPv6 por fora — P2P e repasse:** o código entrou (soquete IPv6 ao lado do IPv4, `src/soquete.rs`), com os testes da escolha do soquete e do endereço mapeado; **falta a prova em rede IPv6** — o kernel deste contêiner arranca com `ipv6.disable=1` e `socket(AF_INET6)` dá `EAFNOSUPPORT` até dentro de netns. Os dois testes de ida e volta por `::1` estão `#[ignore]` com o motivo; rodam com `cargo test -- --ignored` numa máquina com IPv6
+- [ ] MTU do P2P pelo repasse/farol (1.516 B > 1.500, calculado, não medido)
+- [x] `explicit-exit-notify 1` no perfil do membro (só UDP) — o membro some da lista em **10,4 s** (antes **131,1 s**), ver «Ciclo do OpenVPN e IPv6 por fora»
+- [x] Reinício do servidor com aviso: SIGTERM + prazo + `explicit-exit-notify 1` no servidor (só UDP; **Linux** — no Windows segue o `TerminateProcess`, ver a seção)
+- [ ] `remote` múltiplos / failover de servidor
+- [ ] Queda UDP→TCP no modo servidor (`<connection>`; multi-soquete só na 2.7)
+- [ ] `port-share` (TCP 443 dividindo porta com HTTPS)
+- [x] Log do OpenVPN com teto: o supervisor lê a saída por pipe e gira `openvpn.log` a 10 MB, guardando 3
+- [ ] `tls-groups` híbrido pós-quântico (depende do OpenSSL 3.5 nos dois lados)
+- [ ] `mlock` (chave fora do swap)
+- [ ] `http-proxy-user-pass` / `socks-proxy`
+- [ ] Certificado em cartão/repositório do Windows (`pkcs11-*`, `cryptoapicert`)
+- [ ] `multihome`
+- [ ] 2.7: `PUSH_UPDATE` (mudar rota/DNS sem reconectar)
+
 ## Portas e o controle de cada uma
 
 | Porta | Quem abre | Controle |
@@ -151,7 +180,7 @@ ainda é HTTP (A4 inteiro).
 | Modo | Comando | Quando |
 |---|---|---|
 | **Servidor** | `phxvpn painel` + OpenVPN | Empresa com servidor próprio; cadastro no PostgreSQL; tudo passa pelo servidor |
-| **P2P direto** | `phxvpn p2p ligar --modo direto` | Sem servidor nenhum: LAN, IP público, IPv6 ou NAT benigno |
+| **P2P direto** | `phxvpn p2p ligar --modo direto` | Sem servidor nenhum: LAN, IP público, IPv6 (soquete próprio desde 24/09/2026 — **sem prova em rede IPv6**, ver «Ciclo do OpenVPN e IPv6 por fora») ou NAT benigno |
 | **P2P repasse** | `--modo repasse --repasse CHAVE@HOST:PORTA` | CGNAT dos dois lados: passa pelo nosso servidor intermediário, que só carrega pacote cifrado |
 | **P2P auto** | `--modo auto --repasse …` | Tenta direto; sem resposta em 2 tentativas (~10 s), vai pelo intermediário — e, já por ele, perfura o NAT e migra ao direto quando der (`--sem-perfuracao` desliga) |
 
@@ -2006,6 +2035,77 @@ entra; rajada da placa; entrada por par). **Cada uma das 11 guardas foi
 retirada uma a uma e ao menos um teste falhou** (origem, IGMP, tamanho,
 escopo, teto de pacotes, de bytes, relógio, desligada na entrada, teto de
 saída, teto de entrada, a própria replicação).
+
+## Ciclo do OpenVPN e IPv6 por fora (24/09/2026)
+
+Itens 2, 3, 5 e 7 do top 10 de `docs/propostas/lacunas-openvpn-fonte-2026-09-24.md`.
+Prova: `sudo PHXVPN_BIN_VELHO=<binario de antes> ./provas/ciclo-openvpn/rodar.sh`
+— o MESMO roteiro com o binário novo (verde) e o de antes (RED), openvpn
+2.6.19 real, três netns; números em `provas/ciclo-openvpn/resultados.json`
+(n=1).
+
+| Medido | Antes (RED) | Agora |
+|---|---|---|
+| Membro sai (SIGTERM no cliente) → some do `status.log` | **131,1 s** | **10,4 s** |
+| Painel reinicia o OpenVPN (mudar exigência do autenticador) → os dois membros religam, contado do clique | **57,9 / 59,5 s** (esperam o `ping-restart 60`) | **3,2 / 3,4 s** (a chamada leva 2,2 s: o OpenVPN manda `RESTART` e sai 2 s depois) |
+| `openvpn.log` com teto de prova 4.096 B | 1 arquivo, 22.481 B, o `fd 1` do openvpn **é** o arquivo | 4 arquivos (atual + 3), maior 4.090 B, 0 linha partida, o `fd 1` é um `pipe` |
+
+**`explicit-exit-notify 1`, só em UDP, nos dois lados** (`ovpn.rs`). No perfil,
+o membro avisa que saiu; no servidor, o SIGTERM vira `RESTART` para todos
+(`multi.c`, `multi_push_restart_schedule_exit`, espera 2 s). Em TCP a linha
+não vai: o fim da conexão já é o aviso, e o OpenVPN a descarta com um NOTICE
+(`options.c:3265-3268`).
+
+**SIGTERM, prazo de 10 s, depois SIGKILL** (`supervisor.rs`), para uma rede ou
+para todas de uma vez (um prazo só). A trava fica segura durante a parada,
+senão outro `garantir` subiria um segundo OpenVPN na porta que o primeiro não
+largou. **No Windows fica o `TerminateProcess`:** o equivalente é o
+`--service <evento> 0` (o OpenVPN sai limpo quando o evento dispara), mas não
+há como prová-lo aqui, e errar a opção impediria o OpenVPN de subir — pior que
+os 60 s de hoje. Está na lista «Falta» junto das provas no Windows real.
+
+**Log por pipe, girado pelo supervisor** a 10 MB, guardando 3
+(`PHXVPN_OVPN_LOG_TETO` troca o teto, para a prova). Hipóteses:
+- **Girar por fora (renomear o `--log`): morreu.** O `--log` segura o
+  descritor até o processo morrer (log-options.rst), então ele continuaria
+  escrevendo no arquivo renomeado.
+- **Copiar e truncar: morreu.** Perde o que chega entre as duas coisas.
+- **Pipe + quem escreve é o supervisor: venceu.** Gira entre linhas (nenhuma
+  partida — conferido: toda linha dos 4 arquivos começa com o carimbo), fecha
+  o velho antes de renomear, e o OpenVPN nunca abre o arquivo. O custo é uma
+  thread por saída, que nunca para de drenar (pipe cheio pararia o OpenVPN);
+  linha sem quebra acima de 64 KiB sai partida em vez de crescer a memória.
+
+**IPv6 por fora: dois soquetes, não um `[::]` de pilha dupla** (`soquete.rs`).
+O OpenVPN abre um `[::]` com `IPV6_V6ONLY=0`; o WireGuard abre dois. Ficamos
+com dois porque (1) o caminho IPv4 fica byte a byte o de antes — broadcast da
+descoberta, rol e farol comparam `SocketAddr::V4`, e com pilha dupla todo
+endereço chegaria mapeado; (2) **este contêiner arranca com `ipv6.disable=1`**
+(`/proc/cmdline`): um `[::]` único derrubaria o nó inteiro aqui, e com dois o
+nó segue no IPv4 e diz `sem IPv6 na porta UDP …` (conferido no `phxvpn
+repasse`); (3) o Windows nasce com `IPV6_V6ONLY=1`, então lá bastam dois
+`bind` da `std`, e no Linux um `setsockopt` antes do `bind` (FFI, sem crate).
+Nó, repasse (UDP e TCP) e farol escolhem o soquete pela família do destino; a
+leitura do IPv6 é outra thread com o MESMO `da_rede`. Endereço mapeado
+(`::ffff:a.b.c.d`) vira o IPv4 ao ler par, rol e apresentação — e no rol
+assinado a escrita mapeada nem decodifica, por ser a segunda sequência
+assinável do mesmo endereço. Regressão IPv4 conferida: `provas/perfuracao`
+cone (migra ao direto em 2,0 s, 0 dado no repasse) e simétrico (20/20 pelo
+repasse) com o binário novo.
+
+**O que não foi provado:** tráfego por IPv6 de verdade. `socket(AF_INET6)` dá
+`EAFNOSUPPORT` neste kernel até dentro de netns, então a prova «netns só com
+IPv6 → ping pelo túnel» não é possível aqui. Os dois testes de ida e volta
+por `::1` (`soquete::…ida_e_volta_por_ipv6_de_verdade` e
+`p2p::…pacote_atravessa_so_pelo_ipv6`) estão `#[ignore]` com o motivo escrito
+e rodam com `cargo test -- --ignored` numa máquina com IPv6. O que roda aqui:
+a escolha do soquete por família (RED: devolver sempre o IPv4 reprova), o
+endereço mapeado (RED: tirar o `canonico` do rol reprova) e o «sem IPv6 vira
+aviso, não queda».
+
+Achado de passagem: o laço UDP do `phxvpn repasse` morria no primeiro
+`ConnectionReset` — o Windows o devolve no `recv_from` quando um envio levou
+ICMP «porta inalcançável»; o nó já tratava isso, o repasse não. Agora trata.
 
 ## Limites que valem saber antes de usar
 

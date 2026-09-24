@@ -839,6 +839,12 @@ pub fn p2p_montar(
     };
     let udp = std::net::UdpSocket::bind(format!("0.0.0.0:{porta}"))
         .map_err(|e| format!("porta UDP {porta}: {e}"))?;
+    // O IPv6 ao lado, na mesma porta -- ver `soquete.rs`. Sem ele, o no segue
+    // so no IPv4 e diz isso.
+    let (udp6, aviso) = crate::soquete::udp_v6_ao_lado(&udp);
+    if let Some(a) = aviso {
+        eprintln!("phxvpn: no {a}; segue so no IPv4");
+    }
     let tem_repasse = repasse.is_some();
     let descoberta = !o.tem("sem-descoberta") && rede.as_ref().map_or(true, |r| r.descoberta);
     let difusao = !o.tem("sem-difusao") && rede.as_ref().map_or(true, |r| r.difusao);
@@ -855,7 +861,7 @@ pub fn p2p_montar(
         .map(|t| t.parse::<u32>().ok().filter(|m| *m > 0))
         .map(|m| m.ok_or("--farol-mbit: inteiro positivo (Mbit/s)"))
         .transpose()?;
-    let mut no = p2p::No::novo(privada, psk, ip, udp, pares);
+    let mut no = p2p::No::novo(privada, psk, ip, udp, pares).com_udp6(udp6);
     no = if so_farol {
         no.com_repasse(p2p::Modo::Direto, None)?
             .com_modo_so_farol(modo)

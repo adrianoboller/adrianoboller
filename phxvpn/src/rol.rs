@@ -94,6 +94,9 @@ pub fn publica_do_dono(identidade: &[u8; 32], rede: &str) -> [u8; 32] {
 }
 
 fn endereco_em_bytes(a: SocketAddr) -> [u8; 19] {
+    // `::ffff:a.b.c.d` sai como o IPv4 que ele e: o endereco que chega pelo
+    // soquete IPv4 e V4, e o farol do rol tem de se comparar igual a ele.
+    let a = crate::soquete::canonico(a);
     let mut b = [0u8; 19];
     match a.ip() {
         IpAddr::V4(v) => {
@@ -115,7 +118,11 @@ fn endereco_de_bytes(b: &[u8]) -> Option<SocketAddr> {
     let porta = u16::from_be_bytes([b[17], b[18]]);
     let ip = match b[0] {
         4 if b[5..17].iter().all(|x| *x == 0) => IpAddr::V4(Ipv4Addr::new(b[1], b[2], b[3], b[4])),
-        6 => IpAddr::V6(Ipv6Addr::from(<[u8; 16]>::try_from(&b[1..17]).ok()?)),
+        // IPv4 mapeado e a segunda escrita do mesmo endereco: nao passa.
+        6 => match Ipv6Addr::from(<[u8; 16]>::try_from(&b[1..17]).ok()?) {
+            v if v.to_ipv4_mapped().is_some() => return None,
+            v => IpAddr::V6(v),
+        },
         _ => return None,
     };
     (porta != 0).then_some(SocketAddr::new(ip, porta))
@@ -243,7 +250,7 @@ impl Rol {
             .iter_mut()
             .find(|m| m.chave == *chave)
             .ok_or("essa chave nao esta no rol")?;
-        m.farol = endereco;
+        m.farol = endereco.map(crate::soquete::canonico);
         Rol::assinar(
             &self.rede,
             proxima_versao(self.versao),
@@ -479,6 +486,29 @@ mod testes {
         for corte in 0..b.len() {
             assert!(Rol::de_bytes(&b[..corte]).is_none());
         }
+    }
+
+    /// Farol escrito como `::ffff:a.b.c.d` e o farol `a.b.c.d`: e assim que
+    /// o endereco chega pelo soquete IPv4, e e com ele que o no compara. E a
+    /// escrita mapeada nos bytes nao passa -- seria a segunda sequencia
+    /// assinavel do mesmo rol.
+    #[test]
+    fn farol_mapeado_vira_o_ipv4_e_a_forma_mapeada_nao_decodifica() {
+        let (identidade, _, r) = base();
+        let v4: SocketAddr = "203.0.113.10:51820".parse().unwrap();
+        let mapeado: SocketAddr = "[::ffff:203.0.113.10]:51820".parse().unwrap();
+        let com = r.com_farol(&[1; 32], Some(mapeado), &identidade).unwrap();
+        assert_eq!(com.farois().collect::<Vec<_>>(), vec![([1; 32], v4)]);
+        assert_eq!(Rol::de_bytes(&com.para_bytes()).unwrap(), com);
+        let mut b = [0u8; 19];
+        b[0] = 6;
+        b[11] = 0xff;
+        b[12] = 0xff;
+        b[13..17].copy_from_slice(&[203, 0, 113, 10]);
+        b[17..].copy_from_slice(&51820u16.to_be_bytes());
+        assert_eq!(endereco_de_bytes(&b), None);
+        let v6: SocketAddr = "[2001:db8::a]:51820".parse().unwrap();
+        assert_eq!(endereco_de_bytes(&endereco_em_bytes(v6)), Some(v6));
     }
 
     /// Farol marcado: v2 faz ida e volta, a assinatura cobre o endereco

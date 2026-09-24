@@ -96,6 +96,7 @@ pub fn ler_par(texto: &str) -> Result<ParConfig, String> {
             std::net::ToSocketAddrs::to_socket_addrs(e)
                 .map_err(|x| format!("endereco {e}: {x}"))?
                 .next()
+                .map(crate::soquete::canonico)
                 .ok_or_else(|| format!("endereco {e} nao resolveu"))?,
         ),
         None => None,
@@ -243,6 +244,9 @@ pub struct No {
     ip: Ipv4Addr,
     estado: Mutex<Estado>,
     udp: UdpSocket,
+    /// O IPv6 ao lado do `udp`, na mesma porta -- ver `soquete.rs`. `None` em
+    /// maquina sem IPv6: o no segue so no IPv4.
+    udp6: Option<UdpSocket>,
     modo: Modo,
     repasse: Option<RepasseCfg>,
     /// So no modo `auto`: o segredo com o repasse para pedir apresentacao.
@@ -348,6 +352,7 @@ impl No {
                 indices: HashMap::new(),
             }),
             udp,
+            udp6: None,
             modo: Modo::Direto,
             repasse: None,
             perfurador: None,
@@ -378,6 +383,18 @@ impl No {
             farois: Mutex::new(farol::Farois::default()),
             difusao: difusao::Difusao::desligada(ip),
         }
+    }
+
+    /// Soquete IPv6 ao lado do IPv4 (o par ou o repasse com endereco IPv6
+    /// sai e chega por ele).
+    pub fn com_udp6(mut self, udp6: Option<UdpSocket>) -> No {
+        self.udp6 = udp6;
+        self
+    }
+
+    /// O soquete da familia de `destino`.
+    pub(crate) fn soquete(&self, destino: &SocketAddr) -> &UdpSocket {
+        crate::soquete::escolher(&self.udp, self.udp6.as_ref(), destino)
     }
 
     /// Liga (ou nao) o anuncio na LAN. O soquete precisa de `SO_BROADCAST`
@@ -618,7 +635,7 @@ impl No {
     /// Manda ao repasse pelo fio escolhido.
     fn ao_repasse(&self, pacote: &[u8]) {
         if let Some(f) = &self.fio {
-            f.enviar(&self.udp, pacote);
+            f.enviar(self.soquete(&f.alvo_udp()), pacote);
         }
     }
 
@@ -627,7 +644,7 @@ impl No {
     }
 
     fn enviar(&self, destino: SocketAddr, pacote: &[u8]) {
-        let _ = self.udp.send_to(pacote, destino);
+        let _ = self.soquete(&destino).send_to(pacote, destino);
     }
 
     /// Manda pelo caminho `via`; pelo repasse, embrulhado para a chave do par.
@@ -1177,7 +1194,7 @@ impl No {
     /// aperto sem resposta e comecar com quem tem endereco e nao tem sessao.
     pub fn tique(&self) {
         if let Some(f) = &self.fio {
-            f.vigiar(&self.udp);
+            f.vigiar(self.soquete(&f.alvo_udp()));
         }
         self.registrar_no_repasse();
         self.farol_tique();
@@ -1461,6 +1478,42 @@ pub fn rodar(no: Arc<No>, tun: crate::tun::Tun) -> Result<(), String> {
             }
         })
     };
+    // O IPv6 tem a sua propria thread de leitura, com o mesmo `da_rede`: a
+    // decisao sobre o datagrama e UMA, so a porta de entrada e que sao duas.
+    // Erro nele derruba so ele -- o IPv4 segue.
+    let ipv6 = match no.udp6.as_ref().map(UdpSocket::try_clone) {
+        Some(Ok(u6))
+            if u6
+                .set_read_timeout(Some(Duration::from_millis(500)))
+                .is_ok() =>
+        {
+            let (no, tun) = (Arc::clone(&no), Arc::clone(&tun));
+            Some(std::thread::spawn(move || {
+                let mut buf = vec![0u8; 65_535];
+                while !no.desligado() {
+                    match u6.recv_from(&mut buf) {
+                        Ok((n, de)) => {
+                            if let Some(ip) = no.da_rede(&buf[..n], de) {
+                                let _ = tun.escrever(&ip);
+                            }
+                        }
+                        Err(e) if erro_passageiro(&e) => {}
+                        Err(e) => {
+                            eprintln!("phxvpn: soquete IPv6 parou ({e}); segue so o IPv4");
+                            break;
+                        }
+                    }
+                }
+            }))
+        }
+        // Sair aqui deixaria a placa e o relogio rodando sem dono; sem o
+        // IPv6, o no segue como antes dele.
+        Some(_) => {
+            eprintln!("phxvpn: soquete IPv6 sem leitura; segue so o IPv4");
+            None
+        }
+        None => None,
+    };
     let udp = no.udp.try_clone().map_err(|e| e.to_string())?;
     udp.set_read_timeout(Some(Duration::from_millis(500)))
         .map_err(|e| e.to_string())?;
@@ -1475,18 +1528,7 @@ pub fn rodar(no: Arc<No>, tun: crate::tun::Tun) -> Result<(), String> {
                     let _ = tun.escrever(&ip);
                 }
             }
-            // ConnectionReset/Refused: o Windows os devolve no `recv_from` de
-            // UDP quando um envio anterior levou ICMP «porta inalcancavel» --
-            // exatamente a rede que bloqueia o UDP e manda o no para o TCP.
-            // Nao e o soquete que morreu; derrubar o no ali mataria a queda.
-            Err(e)
-                if matches!(
-                    e.kind(),
-                    std::io::ErrorKind::WouldBlock
-                        | std::io::ErrorKind::TimedOut
-                        | std::io::ErrorKind::ConnectionReset
-                        | std::io::ErrorKind::ConnectionRefused
-                ) => {}
+            Err(e) if erro_passageiro(&e) => {}
             Err(e) => {
                 no.desligar();
                 break Err(e.to_string());
@@ -1497,10 +1539,28 @@ pub fn rodar(no: Arc<No>, tun: crate::tun::Tun) -> Result<(), String> {
     // sistema apaga a interface.
     let _ = placa.join();
     let _ = relogio.join();
+    if let Some(t) = ipv6 {
+        let _ = t.join();
+    }
     if let Some(t) = tcp {
         let _ = t.join();
     }
     resultado
+}
+
+/// Erro de `recv_from` que nao e o soquete morrendo.
+///
+/// ConnectionReset/Refused: o Windows os devolve no `recv_from` de UDP quando
+/// um envio anterior levou ICMP «porta inalcancavel» -- exatamente a rede que
+/// bloqueia o UDP e manda o no para o TCP. Derrubar o no ali mataria a queda.
+fn erro_passageiro(e: &std::io::Error) -> bool {
+    matches!(
+        e.kind(),
+        std::io::ErrorKind::WouldBlock
+            | std::io::ErrorKind::TimedOut
+            | std::io::ErrorKind::ConnectionReset
+            | std::io::ErrorKind::ConnectionRefused
+    )
 }
 
 #[cfg(test)]
@@ -1568,6 +1628,68 @@ mod testes {
             }
         }
         None
+    }
+
+    /// Dois nos cujo UNICO caminho e o IPv6: A conhece B so por `[::1]`.
+    /// Com o soquete IPv6 de volta ao IPv4 so (o defeito de antes), o INICIO
+    /// nem sai -- `AF_INET` nao manda a destino IPv6.
+    #[test]
+    #[ignore = "pede IPv6 no kernel; este conteiner arranca com ipv6.disable=1"]
+    fn pacote_atravessa_so_pelo_ipv6() {
+        let (ka, kb) = (x25519::gerar_privada(), x25519::gerar_privada());
+        let (ua, ub) = (
+            UdpSocket::bind("127.0.0.1:0").unwrap(),
+            UdpSocket::bind("127.0.0.1:0").unwrap(),
+        );
+        let (a6, b6) = (
+            crate::soquete::udp_v6_ao_lado(&ua).0.expect("IPv6 em A"),
+            crate::soquete::udp_v6_ao_lado(&ub).0.expect("IPv6 em B"),
+        );
+        for u in [&a6, &b6] {
+            u.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+        }
+        let eb6: SocketAddr = format!("[::1]:{}", b6.local_addr().unwrap().port())
+            .parse()
+            .unwrap();
+        let psk = psk_da_rede("R", "senha-1", 1_000);
+        let a = No::novo(
+            ka,
+            psk,
+            "10.78.0.1".parse().unwrap(),
+            ua,
+            vec![ParConfig {
+                publica: x25519::chave_publica(&kb),
+                ip: "10.78.0.2".parse().unwrap(),
+                endereco: Some(eb6),
+            }],
+        )
+        .com_udp6(Some(a6));
+        let b = No::novo(
+            kb,
+            psk,
+            "10.78.0.2".parse().unwrap(),
+            ub,
+            vec![ParConfig {
+                publica: x25519::chave_publica(&ka),
+                ip: "10.78.0.1".parse().unwrap(),
+                endereco: None,
+            }],
+        )
+        .com_udp6(Some(b6));
+        let bombear6 = |no: &No| {
+            let mut buf = vec![0u8; 2048];
+            let (n, de) = no.udp6.as_ref().unwrap().recv_from(&mut buf).ok()?;
+            assert!(de.is_ipv6(), "chegou por {de}");
+            no.da_rede(&buf[..n], de)
+        };
+        let ida = ip([10, 78, 0, 1], [10, 78, 0, 2], b"ping");
+        a.da_placa(&ida);
+        assert!(bombear6(&b).is_none());
+        assert!(bombear6(&a).is_none());
+        assert_eq!(bombear6(&b).unwrap(), ida);
+        let volta = ip([10, 78, 0, 2], [10, 78, 0, 1], b"pong");
+        b.da_placa(&volta);
+        assert_eq!(bombear6(&a).unwrap(), volta, "B respondeu pelo IPv6");
     }
 
     #[test]

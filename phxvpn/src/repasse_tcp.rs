@@ -94,6 +94,8 @@ impl Saida {
 pub struct Central {
     repasse: Mutex<Repasse>,
     udp: UdpSocket,
+    /// O IPv6 ao lado, na mesma porta (ver `soquete.rs`).
+    udp6: Option<UdpSocket>,
     conexoes: Mutex<HashMap<SocketAddr, Arc<Saida>>>,
     anonimas: AtomicUsize,
     total: AtomicUsize,
@@ -101,9 +103,16 @@ pub struct Central {
 
 impl Central {
     pub fn nova(repasse: Repasse, udp: UdpSocket) -> Arc<Central> {
+        Central::com_ipv6(repasse, udp, None)
+    }
+
+    /// A mesma tabela atras de dois soquetes: um no no IPv6 e outro no IPv4
+    /// se encontram aqui como se encontram dois IPv4.
+    pub fn com_ipv6(repasse: Repasse, udp: UdpSocket, udp6: Option<UdpSocket>) -> Arc<Central> {
         Arc::new(Central {
             repasse: Mutex::new(repasse),
             udp,
+            udp6,
             conexoes: Mutex::new(HashMap::new()),
             anonimas: AtomicUsize::new(0),
             total: AtomicUsize::new(0),
@@ -125,7 +134,8 @@ impl Central {
     fn entregar(&self, alvo: Ponta, pacote: &[u8]) {
         match alvo {
             Ponta::Udp(a) => {
-                let _ = self.udp.send_to(pacote, a);
+                let _ =
+                    crate::soquete::escolher(&self.udp, self.udp6.as_ref(), &a).send_to(pacote, a);
             }
             Ponta::Tcp(a) => {
                 let s = self.conexoes.lock().expect("conexoes").get(&a).cloned();
@@ -138,9 +148,34 @@ impl Central {
 
     /// O laco do UDP (para sempre).
     pub fn servir_udp(self: &Arc<Self>) -> Result<(), String> {
+        self.servir(&self.udp)
+    }
+
+    /// O laco do UDP IPv6, se ele abriu (para sempre).
+    pub fn servir_udp6(self: &Arc<Self>) -> Result<(), String> {
+        match &self.udp6 {
+            Some(u) => self.servir(u),
+            None => Ok(()),
+        }
+    }
+
+    fn servir(&self, udp: &UdpSocket) -> Result<(), String> {
         let mut buf = vec![0u8; 65_535];
         loop {
-            let (n, de) = self.udp.recv_from(&mut buf).map_err(|e| e.to_string())?;
+            let (n, de) = match udp.recv_from(&mut buf) {
+                Ok(r) => r,
+                // O ICMP «porta inalcancavel» de um envio anterior volta aqui
+                // no Windows; nao e o soquete que morreu.
+                Err(e)
+                    if matches!(
+                        e.kind(),
+                        std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::ConnectionRefused
+                    ) =>
+                {
+                    continue
+                }
+                Err(e) => return Err(e.to_string()),
+            };
             if let Some((alvo, p)) = self.tratar(&buf[..n], Ponta::Udp(de)) {
                 self.entregar(alvo, &p);
             }
