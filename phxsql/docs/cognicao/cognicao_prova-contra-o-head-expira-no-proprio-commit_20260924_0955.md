@@ -40,3 +40,14 @@ mundo sem a mudança por conta própria, nunca lendo o arquivo vivo.**
 Só nesta prova (`ANTES = "257f854"` e `sem_depois()`). Não há conferidor que ache
 outra prova do repositório com `git show HEAD:` em papel de «antes». Esse buraco não
 virou pedido: é endurecimento, e a versão está congelada.
+
+## 6. O alcance, pago de novo 70 minutos depois
+
+A mesma armadilha, com o sinal trocado: a prova do `portoes.sh` (pedido 421)
+montava a árvore do HEAD e passou na árvore exata porque o HEAD ainda NÃO a
+continha. No commit `6fd7d5f` ela entrou no HEAD, o `todas.py` a achou como
+catraca, e ela se rodou dentro da própria árvore temporária. O `comunicacao.sh`
+acusou em minutos. **Árvore montada do HEAD mente nas duas direções:** antes do
+commit falta a peça nova, e depois ela mesma está lá. As peças sob prova vão
+da cópia viva.
+

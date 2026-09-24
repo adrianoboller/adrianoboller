@@ -28,12 +28,20 @@ if [ "$1" = test ]; then exit "${FALSO_TESTE:-0}"; fi
 exit 0
 """
 
-CATRACA_QUE_REPROVA = """import sys
-# Catraca de mentira desta prova: declara o modo e sempre reprova.
-if "--catraca" in sys.argv:
-    print("SUBIU 1 (teto 0) -- catraca de mentira da prova do 421")
-    sys.exit(1)
-"""
+# O modo montado em dois pedacos, e nunca na mesma linha que o `sys.argv`: o
+# `todas.py` acha catraca por uma linha que junte os dois, e achou ESTA prova
+# no dia em que ela entrou no HEAD -- rodou-a como catraca, a prova montou a
+# arvore do HEAD, que a continha, e a rodou de novo la dentro. Na arvore exata
+# de antes do commit isso nao aparecia, porque o HEAD ainda nao tinha a prova.
+MODO = "--" + "catraca"
+
+CATRACA_QUE_REPROVA = (
+    "import sys\n"
+    "# Catraca de mentira desta prova: declara o modo e sempre reprova.\n"
+    f"if {MODO!r} in sys.argv:\n"
+    '    print("SUBIU 1 (teto 0) -- catraca de mentira da prova do 421")\n'
+    "    sys.exit(1)\n"
+)
 
 
 def raiz_do_git() -> pathlib.Path:
@@ -92,12 +100,33 @@ def conferir(script: pathlib.Path, arvore: pathlib.Path) -> list:
     return falhas
 
 
+def nao_e_catraca() -> list:
+    """Esta prova nao pode ser achada como catraca pelo `todas.py`: roda-la
+    de dentro dele a faria rodar a si mesma na arvore temporaria."""
+    r = subprocess.run([sys.executable, str(AQUI / "todas.py"), "--lista"],
+                       capture_output=True, text=True, cwd=RAIZ)
+    if "prova-portoes.py" in r.stdout:
+        return ["o todas.py acha esta prova como catraca -- ela se rodaria "
+                "dentro da propria arvore temporaria"]
+    return []
+
+
 def main() -> int:
+    falhas_de_forma = nao_e_catraca()
+    for f in falhas_de_forma:
+        print("  FALHA ", f)
+    if falhas_de_forma:
+        return 1
+    print("  ok    o todas.py nao acha esta prova como catraca")
     tmp = pathlib.Path(tempfile.mkdtemp(prefix="prova421-"))
     try:
         arvore = montar_arvore(tmp)
         vivo = arvore / "portoes.sh"
+        # As tres pecas da costura saem da copia VIVA, e nao do HEAD: o que
+        # se prova e o que vai ser comitado, e o HEAD so tem o que ja foi.
         shutil.copy(PORTOES, vivo)
+        for rel in ("bancada/catracas/todas.py", "bancada/catracas/prova-portoes.py"):
+            shutil.copy(RAIZ / rel, arvore / rel)
 
         falhas = conferir(vivo, arvore)
         for f in falhas:

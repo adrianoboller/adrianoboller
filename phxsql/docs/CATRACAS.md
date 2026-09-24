@@ -2007,6 +2007,17 @@ nomeando «catracas». **Com o defeito reposto** (o mesmo script sem o passo das
 catracas), o terceiro caso sai 0 e a prova acusa. Sem isso, ela passaria por
 engano.
 
+**O defeito que o próprio commit trouxe, e o conserto** (24/09/2026, 11:05). A
+catraca de mentira estava escrita na prova numa linha só, com `sys.argv` e
+`--catraca` juntos. O `todas.py` acha catraca justamente por essa linha, e
+achou a prova. Rodou-a como catraca, e ela montou a árvore do HEAD, que já a
+continha, e se rodou de novo lá dentro. Na árvore exata de antes do commit isso
+não aparecia, porque o HEAD ainda não tinha a prova. Hoje o modo é montado em
+dois pedaços, a prova confere que o `todas.py --lista` não a acha (com a linha
+velha reposta, sai 1), e as três peças da costura (`portoes.sh`, `todas.py` e a
+própria prova) vão para a árvore temporária a partir da cópia viva, não do
+HEAD.
+
 ## Metodologia
 
 1. `grep -rn "TETO\|MAX\|LIMITE"` em `crates/*/src/**/*.rs` e em `bancada/`,
