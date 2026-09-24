@@ -1297,6 +1297,8 @@ QA, com julgamento de pergunta, e a redação do H.
 | 520+521 — relogio do login e PBKDF2 de senha longa | forte | criptografia conferida contra vetor, e oraculo de tempo |
 | lote 502+452+466+504+510 — o servidor fica de pe | forte | panico sob trava, threads de fundo e arranque: concorrencia e disponibilidade |
 | 522 — o `fechar` baixa o byte 52 sem fsync | forte | formato em disco e durabilidade contra o SO |
+| juiz PhxJev — 30 pedidos julgados (preset revisar) | forte | o veredito sai do limiar do script, mas a probabilidade por pergunta e juizo sobre defeito ativo |
+| lote 491+492+515+516+490 — integridade na transacao | forte | regra primordial da integridade e concorrencia da transacao |
 
 **A integração achou o que nenhuma frente via, de novo por território de
 arquivo não bastar em worktree compartilhado**: `cargo fmt --all` de uma
