@@ -137,6 +137,7 @@ pub const FABRICA_TELA: &[TextoDeFabrica] = &[
     texto!("tela.tema_para_escuro", "Mudar para o tema escuro", "Passer au thème sombre", "Switch to the dark theme", "Passa al tema scuro", "Zum dunklen Design wechseln", "Cambiar al tema oscuro"),
     texto!("tela.tema_dica", "Alternar tema claro e escuro", "Basculer entre thème clair et sombre", "Switch between light and dark theme", "Alterna tema chiaro e scuro", "Zwischen hellem und dunklem Design wechseln", "Alternar entre tema claro y oscuro"),
     texto!("tela.sair", "Sair", "Quitter", "Sign out", "Esci", "Abmelden", "Salir"),
+    texto!("tela.imprimir", "Imprimir", "Imprimer", "Print", "Stampa", "Drucken", "Imprimir"),
     texto!("tela.menu_principal", "Menu principal", "Menu principal", "Main menu", "Menu principale", "Hauptmenü", "Menú principal"),
     texto!("tela.barra_ferramentas", "Barra de ferramentas", "Barre d'outils", "Toolbar", "Barra degli strumenti", "Werkzeugleiste", "Barra de herramientas"),
     texto!("tela.navegacao", "Navegação", "Navigation", "Navigation", "Navigazione", "Navigation", "Navegación"),

@@ -433,10 +433,10 @@ window.PhxTelemetria = (function () {
   function defsDasEsferas() {
     const g = (id, cor) =>
       `<radialGradient id="${id}" cx="34%" cy="28%" r="72%">
-         <stop offset="0%" stop-color="#fff" stop-opacity=".85"/>
+         <stop offset="0%" style="stop-color:var(--luz)" stop-opacity=".85"/>
          <stop offset="26%" style="stop-color:${cor}" stop-opacity=".95"/>
          <stop offset="78%" style="stop-color:${cor}" stop-opacity="1"/>
-         <stop offset="100%" stop-color="#000" stop-opacity=".45"/>
+         <stop offset="100%" style="stop-color:var(--breu)" stop-opacity=".45"/>
        </radialGradient>`;
     return `<defs>
       ${Object.keys(NIVEIS).map(n => g("tlmEsfera-" + n, corDoNivel(n))).join("")}
@@ -445,7 +445,7 @@ window.PhxTelemetria = (function () {
         <stop offset="100%" style="stop-color:var(--painel)"/>
       </linearGradient>
       <filter id="tlmSombra" x="-30%" y="-30%" width="180%" height="180%">
-        <feDropShadow dx="2" dy="3" stdDeviation="2.5" flood-color="#000"
+        <feDropShadow dx="2" dy="3" stdDeviation="2.5" style="flood-color:var(--breu)"
                       flood-opacity=".38"/>
       </filter>
     </defs>`;
@@ -481,8 +481,8 @@ window.PhxTelemetria = (function () {
     const claro = 1.05 / (lum + 0.05);
     const escuro = (lum + 0.05) / (0.0055 + 0.05);
     return escuro >= claro
-      ? { tinta: "#0b0d16", contorno: "rgba(255,255,255,.6)", razao: escuro }
-      : { tinta: "#ffffff", contorno: "rgba(0,0,0,.6)", razao: claro };
+      ? { tinta: "var(--tinta-escura)", contorno: "rgba(255,255,255,.6)", razao: escuro }
+      : { tinta: "var(--tinta-clara)", contorno: "rgba(0,0,0,.6)", razao: claro };
   }
 
   /* Uma bolha de amostra, do tamanho de um botão, com a conta do contraste.
@@ -506,15 +506,15 @@ window.PhxTelemetria = (function () {
               "amostra da bolha {nivel}, contraste {razao} para 1"),
               { nivel: txt(v.txt, v.rot), razao: t.razao.toFixed(2) }))}">
          <defs><radialGradient id="${id}" cx="34%" cy="28%" r="72%">
-           <stop offset="0%" stop-color="#fff" stop-opacity=".85"/>
+           <stop offset="0%" style="stop-color:var(--luz)" stop-opacity=".85"/>
            <stop offset="26%" style="stop-color:${esc(c)}" stop-opacity=".95"/>
            <stop offset="78%" style="stop-color:${esc(c)}" stop-opacity="1"/>
-           <stop offset="100%" stop-color="#000" stop-opacity=".45"/>
+           <stop offset="100%" style="stop-color:var(--breu)" stop-opacity=".45"/>
          </radialGradient></defs>
          <circle cx="26" cy="26" r="23" fill="url(#${id})" stroke="${esc(c)}"
                  stroke-width="2" stroke-dasharray="${esc(v.traco)}"/>
          <text x="26" y="30" text-anchor="middle" font-size="13" font-weight="600"
-               fill="${t.tinta}" stroke="${t.contorno}" stroke-width=".7"
+               style="fill:${t.tinta};stroke:${t.contorno}" stroke-width=".7"
                paint-order="stroke">${esc(v.glifo || "#17")}</text>
        </svg>`;
     return { svg, razao: t.razao, passa: t.razao >= PISO_CONTRASTE, cor: c };
@@ -1317,8 +1317,10 @@ window.PhxTelemetria = (function () {
       // «branco», que é o que a referência usa, reprovaria em metade dos casos.
       const tn = tinta[a.nivel] || tinta.normal;
       [p.rotulo, p.sub].forEach(e => {
-        e.setAttribute("fill", tn.tinta);
-        e.setAttribute("stroke", tn.contorno);
+        // `style` e nao atributo: a tinta e `var(--…)`, e atributo de
+        // apresentacao do SVG nao resolve `var()`.
+        e.style.fill = tn.tinta;
+        e.style.stroke = tn.contorno;
       });
 
       const euMesmo = d0.voce === id;

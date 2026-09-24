@@ -19,6 +19,7 @@
   --laranja: #FF8A1C;
   --borda: #1d2740;
   --suave: #8d97ad;
+  --fundo-codigo: #060b1a;
 }
 * { box-sizing: border-box }
 body {
@@ -91,7 +92,7 @@ table.par td { padding: 6px 8px; border-bottom: 1px solid var(--borda); vertical
 .tipo { color: var(--laranja) }
 .obr { color: var(--ambar) }
 pre.curl {
-  background: #060b1a;
+  background: var(--fundo-codigo);
   border: 1px solid var(--borda);
   border-radius: 6px;
   padding: 12px;

@@ -425,7 +425,7 @@ varrer a tabela calado. Sem ORDER BY a ordem é a de DIGITAÇÃO.`;
   const RECEITAS = {
     sql: {
       rot:"Texto → SQL", txt:"tela.ia_r_sql",
-      ico: "⌕",
+      ico: "consulta",
       pede:"Descreva em português o que você quer consultar", pedeTxt:"tela.ia_r_sql_pede",
       exemplo:"os dez últimos clientes cadastrados", exemploTxt:"tela.ia_r_sql_ex",
       esquema: true,
@@ -442,7 +442,7 @@ diga qual cláusula falta.`,
     },
     explicar: {
       rot:"Explicar o SQL", txt:"tela.ia_r_explicar",
-      ico: "☰",
+      ico: "lista",
       pede:"Cole a consulta que você quer entender", pedeTxt:"tela.ia_r_explicar_pede",
       exemplo: "SELECT nome FROM clientes WHERE id = 7",
       esquema: true,
@@ -459,7 +459,7 @@ cláusula que a consulta não tem.`,
     },
     desempenho: {
       rot:"Índice / desempenho", txt:"tela.ia_r_indice",
-      ico: "◷",
+      ico: "indice",
       pede:"Cole a consulta que está lenta", pedeTxt:"tela.ia_r_indice_pede",
       exemplo: "SELECT * FROM pedidos WHERE cliente_id = 42",
       esquema: true,
@@ -480,7 +480,7 @@ Não afirme ganho em número: você não mediu nada.`,
     },
     modelar: {
       rot:"Modelar tabelas", txt:"tela.ia_r_modelar",
-      ico: "⛁",
+      ico: "banco",
       pede:"Descreva o negócio a modelar", pedeTxt:"tela.ia_r_modelar_pede",
       exemplo:"uma loja com clientes, pedidos e itens de pedido", exemploTxt:"tela.ia_r_modelar_ex",
       // O esquema do banco vai junto: é ele que deixa a proposta CRESCER sobre
@@ -968,7 +968,7 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
         ${Object.entries(RECEITAS).map(([k, r]) =>
           `<button class="botao mini consultar ia-rec" data-r="${k}"
             ${k === receitaAtual ? 'style="background:var(--acao-consultar);color:var(--fundo)"' : ""}
-            >${r.ico} ${E(txt(r.txt, r.rot))}</button>`).join("")}
+            >${icone(r.ico)} ${E(txt(r.txt, r.rot))}</button>`).join("")}
         <span class="cresce"></span>
         <span class="leg">${marcado(txt("tela.ia_modelo_em_uso", "modelo: `{m}`"),
           { m: c.modelo || MODELO_PADRAO })}</span>

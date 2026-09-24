@@ -2,6 +2,19 @@
 
 Formato baseado em *Keep a Changelog*. Versionamento semântico.
 
+## [0.9.4] — 2026-09-24 · **TODA COR VIRA TOKEN**
+
+A folha trazia 31 ocorrências de cor fixa fora do bloco de tokens: o fio entre as linhas,
+o fundo do hover, as cinco famílias de etiqueta, o chip do filtro, o popover.
+Quem hospedava a grade num tema escuro trocava os seis tokens de sempre e
+continuava com um **fio branco** (`#eceff2`) entre cada linha, no meio da
+página preta — medido no Centro de Controle do PhxSql, onde saltava à vista
+na primeira captura.
+
+Agora são 22 tokens novos no bloco `.phx-grid`, **com os mesmos valores de
+antes**: o tema claro da grade não muda um pixel, e quem hospeda troca o token
+em vez de sobrescrever a regra.
+
 ## [0.9.3] — 2026-09-04 · **A FONTE LOCAL SAI PARA FORA, PARA O FILTRO PODER DESCER**
 
 `PhxGrid._fonteLocal` passa a ser exposto. Ele já existia e já fazia tudo —

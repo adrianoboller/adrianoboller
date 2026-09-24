@@ -412,7 +412,7 @@ window.PhxTelas = (function () {
    *  um pino so: la ele quer dizer "fica assim quando eu voltar", e aqui
    *  tambem. */
   function glifoPino() {
-    try { return svgLateral("pino"); } catch (e) { return "📌"; }
+    try { return icone("pino"); } catch (e) { return ""; }
   }
 
   function pintarTira(r) {
@@ -441,14 +441,14 @@ window.PhxTelas = (function () {
            ${glifoPino()} <span class="num">${E(txt("tela.mt_pinar_aqui", "pinar aqui"))}</span></button>
          <button class="tira-bt" data-acao="devolver"
            title="${E(txt("tela.mt_devolver_dica", "Devolver esta tela para a janela principal e fechar esta"))}">
-           ⤺ <span class="num">${E(txt("tela.mt_devolver", "devolver"))}</span></button>`
+           ${icone("acoplar")} <span class="num">${E(txt("tela.mt_devolver", "devolver"))}</span></button>`
       : `<button class="tira-bt" data-acao="nova"
            title="${E(txt("tela.mt_nova_dica", "Abrir outra tela nesta região (a próxima escolha cai aqui)"))}">+</button>
          <button class="tira-bt" data-acao="soltar"
-           title="${E(txt("tela.mt_soltar_dica", "Soltar esta tela numa janela flutuante DENTRO da página, arrastável pelo cabeçalho e redimensionável pelo canto"))}">⇱</button>
+           title="${E(txt("tela.mt_soltar_dica", "Soltar esta tela numa janela flutuante DENTRO da página, arrastável pelo cabeçalho e redimensionável pelo canto"))}">${icone("janela")}</button>
          <button class="tira-bt" data-acao="destacar"
            title="${E(txt("tela.mt_destacar_dica", "Destacar numa janela do sistema, fora desta página (só serve para quem tem monitor separado — o modo em regiões não depende disto)"))}"
-           >⧉</button>`
+           >${icone("soltar")}</button>`
         + (primeira ? [1, 2, 3, 4].map(k => `<button class="tira-bt${
             k === n ? " sel" : ""}" data-acao="dividir" data-n="${k}"
             ${k > podeDividir ? "disabled" : ""}
@@ -457,7 +457,7 @@ window.PhxTelas = (function () {
               + (k > podeDividir ? " — " + E(preencher(
                   txt("tela.mt_nao_cabe", "não cabe: cada região precisa de {px}px"),
                   { px: MIN_REGIAO })) : "")
-              }">${"▮".repeat(k)}</button>`).join("") : "");
+              }">${icone(`regioes-${k}`)}</button>`).join("") : "");
 
     r.tira.innerHTML = abas + `<span class="tira-espaco"></span>` + controles;
   }
@@ -1319,7 +1319,7 @@ window.PhxTelas = (function () {
           title="${E(txt("tela.mt_pinar_solta_dica", "Pinar — guarda x, y, largura e altura desta janela neste navegador"))}"
           >${glifoPino()}</button>
         <button class="tira-x" data-jan="acoplar"
-          title="${E(txt("tela.mt_acoplar_dica", "Devolver esta tela para a área em regiões"))}">⇤</button>
+          title="${E(txt("tela.mt_acoplar_dica", "Devolver esta tela para a área em regiões"))}">${icone("acoplar")}</button>
         <button class="tira-x" data-jan="fechar" title="${E(txt("tela.mt_fechar_tela", "Fechar esta tela"))}">×</button>
       </div>
       <div class="jan-corpo"></div>

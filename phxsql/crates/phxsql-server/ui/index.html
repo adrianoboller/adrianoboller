@@ -1,24 +1,12 @@
 <title data-txt="tela.titulo_pagina">PhxSql — Centro de Controle</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAiCAMAAAAau2s5AAABIFBMVEX/ZAD/owP91g7/lwf/nQr/aAD/ogL/FAD/1iL/EAD/zyBEnf//LQAjo/+Q/6r/cQv2/Jj/XgBc7vT/xhf/n00AM///AP//oYj04lb/2lIi1/9VVf+cqv////IA/wD/AID/U5YzZv+qVf+M6eX/tP8A/4BVAP9V/6q5/wD/Kir/bUn/Zsz/vlcAZv8AAP8AgP8AAAAAVf//AAAAQP//VQD/NQD/RwD/hAD/BAD/NgD/WAL/BAD/RwD/SAD/ZgL/iQD/mAD/dwD/tgL/KAD/agL/pQH/GgH/JgD/NwD/VwD/ZwD/xQr/AgD/FQD/JwD/OAD/dQP/dQD/qAL/CAD/KgD/OQD/NgD/WAD/uAH//wAAqP+D//ut////FQD/JwD/RADIXQuSAAAAYHRSTlObHh5ammrPpOnVXQNqCgMmGtMGqwcFAQMtVQYDCAIBAgQFAwUDBAMGCwYHBV4FAgMAAwwEKxP2EC4uEU4VLzD29vX5FRP4Ek7w/fX5a20xUhRNNZD6qs5LbwUEBAMxzkq5EUlEAAAEBElEQVR42k2Uh3LjOAyGqS7LdlzS2yZbrp9Biurdvffe/f5vcbST21nOUOIAHwFQIn603WKMt1cEtgbGpVLpPEvYMIzzm5ngSteZDSOMdV3fE167uyCf43OdBU0ju0sABhr6FdHUG/iIlWUPXWeTrXH2mVM1kt8yF9IZB2v1X1I0cIlFh5cPkmViix3h1TXLjjHSGcf1VKqzupgzz5Pn/e579hKVFQlf1B4He52B+AsR1WvCambgnggaABDy9Flsmlyra+bEqAg8L5/B3M09TsNUkK817TEPu+JPUOR5UkQ7IvJyT/YhHE8gbfiimPR6KjvC5XAY+Kp6zV8zEPiyL/aqU9BDE9K3zkQsN6qi1lMfyZNe+g7CGZQtQDBtSOtqQ4b7m28Yp/+ZICRXe9VElnkope84uapq6yrHQK4h1xuNxpo81N91wwAiVqvJghKfB3wPLL68aZQ5gmAjN8RpOSlr4MTj+i0rJal2a1AEwD9gXS6Xp2JDJhzKhUI5kYSkkghgmu/3f4uFMovwrZTN/oCLWUzKAj9FMSKoUkFSpVsRiB++xZJckXtTeGUfW+p2KxKqJIiIOeR3EUXdToHNjuTrv0lJgnpVmQNsoQ4zF7oMECv0HA9FK2S3l7Ztm4dlp5BZy3JSkayobdvLto1WUaEiAaIUdexFJnO07YJHB5motuE4zvFGw7ch27vMZBZ2B9EbhF9pZjlPKcwYQdOM4ymfzz9wk2h4A17bVpR5u53hYkDpu1Gr2RrM2u0FgSgK/3jKPjy+FHc33hCTRbs9G7RqJ8n/He2fa8pxEATHeWvUPJ2sq202n89mi/VWywpb82MwUI4LCq+IXSoYpFJKKnXI1KzTaiJoj4+asBqtzMPgcHEMwABAuXoddOIGs1QQ0PeV5HP8wwPvOCQf0yBIzQKXAh47HJJi028edHeW6lNKXc88X1s2LS+ktK/0D3AK62ZOQM44NE3PJVZfcZ3asDWaCKIoSKPAjIAqfYsOvVWccxzk1E3f94d0nHP7r9YqNsdTQeDqG8jHb4HL89QLQz9mICG+GXlWk0pjWmu6Q5NcBq1F9RrlBRqFpmeSDaCJFEWUeE0aiU8QepmWdEndck2T8MhnG4gVm2iCOGdz58SWVQNRrIcn0/S5c2pC8mOuIBHLsnLO3W58jwwjDTmpFg6btIvA7Y/4c+aNw0mog85nt1DMeukWsWbGAKwHtuDZI3BnygIJf25ibjFXyIsOcMuuOhMYdFYqnMalr8YevKXiNIPZvFOYUJcqB3g+y0z20uAM/Clxe7AG7E9kRsrczrgB/GX8om9Mzc6Nrn/Igg5NlwbHUz8199ymfgH1/0HjQ0Av4+uLXkpDcPzSTykkh3/xlP4DLAPwBRpxba0AAAAASUVORK5CYII=">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<!-- A folha da fonte da marca NAO bloqueia a pintura, e o motivo e medido.
-     Bloqueante, ela para o parser ate a resposta chegar -- e a resposta que
-     nunca chega e o caso normal de um servidor de banco: rede que DESCARTA o
-     pacote (firewall com DROP, proxy que so responde reset depois do prazo)
-     em vez de recusar na hora. Medido nas duas redes, tres rodadas cada:
-     12,7 s de tela BRANCA quando o pedido e engolido, contra 0,12 s quando a
-     recusa e imediata -- 103x, e o usuario olhando o nada.
-     `media="print"` faz o navegador buscar SEM bloquear; o `onload` promove a
-     folha quando ela chega. Sem internet, a pilha de reserva assume e a
-     pagina continua inteira -- como ja continuava, so que na hora.
-     O `noscript` devolve o caminho antigo para quem desligou o script: ali a
-     pagina nao funciona mesmo, e a fonte bonita nao custa nada. -->
-<link rel="stylesheet" media="print" onload="this.media='all';this.onload=null"
-      href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
-<noscript><link rel="stylesheet"
-  href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"></noscript>
+<!-- As fontes da marca (Exo 2 e IBM Plex Mono) vem EMBUTIDAS no binario e
+     entram pelo `http::montar_pagina` (`phxsql_core::fontes`), em `data:`.
+     Ate 24/09/2026 vinham do Google Fonts, sem bloquear a pintura (12,7 s de
+     tela branca medidos quando a rede engolia o pedido) -- e mesmo assim,
+     sem internet, a marca sumia e a tela saia em Arial. Embutida, nao ha
+     pedido nenhum para engolir. -->
 
 <style>
 /* A marca do PhxSql e escura por natureza, e um console de banco se usa em
@@ -73,6 +61,11 @@
   --medida:74ch; --teto-cartao:520px; --teto-campo:340px;
   --sombra-fenix:0 6px 22px rgba(255,77,16,.28);
   --brilho-entrada:#0d1830; --tinta-botao:#160a00;
+  /* Luz e breu do sombreado das bolhas da telemetria, e as duas tintas do
+     rotulo dentro delas. Nao mudam com o tema: sao iluminacao e contraste
+     medido (a conta do `telemetria.js` usa a luminancia de `--tinta-escura`,
+     0,0055 -- quem mudar este valor muda a conta junto). */
+  --luz:#fff; --breu:#000; --tinta-escura:#0b0d16; --tinta-clara:#fff;
 }
 
 /* Tema claro. Nao e o escuro invertido: sobre papel, o vermelhao #ff4d10 da
@@ -116,6 +109,14 @@ body{
 }
 .mono,code,td.dado,th.dado,pre{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace}
 button{font-family:inherit;font-size:inherit;color:inherit;cursor:pointer}
+/* O icone do conjunto da casa (ver o `<svg class="sprite">` no inicio do
+   corpo). Tamanho em `em` para acompanhar o texto ao lado, e o traco aqui, e
+   nao no desenho: o `<use>` herda do `svg` que o chama, entao um so lugar
+   decide a espessura de todos. O sprite fica fora do fluxo sem `display:none`
+   -- simbolo dentro de um `display:none` nao desenha em todo navegador. */
+.sprite{position:absolute;width:0;height:0;overflow:hidden}
+svg.ic{width:1.15em;height:1.15em;flex:none;vertical-align:-.2em;
+  fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 :focus-visible{outline:2px solid var(--laranja);outline-offset:2px}
 
 /* --------------------------------------------------------------- entrada */
@@ -436,7 +437,7 @@ th input[type=checkbox],th input[type=radio]{
    significa alguma coisa sobre fundo transparente. */
 .botao.perigo{background:transparent;border:1px solid var(--log);color:var(--log);
               font-weight:500}
-.botao.perigo:hover{background:var(--log);color:#fff;border-color:var(--log)}
+.botao.perigo:hover{background:var(--log);color:var(--tinta-botao);border-color:var(--log)}
 
 /* AS CORES DA ACAO -- contorno, e nao fundo cheio.
    A licao esta duas linhas acima: fundo laranja com texto escuro em cima
@@ -453,7 +454,7 @@ th input[type=checkbox],th input[type=radio]{
 .botao.consultar{color:var(--acao-consultar)}
 .botao.incluir:hover{background:var(--acao-incluir);color:var(--fundo)}
 .botao.alterar:hover{background:var(--acao-alterar);color:var(--fundo)}
-.botao.excluir:hover{background:var(--acao-excluir);color:#fff}
+.botao.excluir:hover{background:var(--acao-excluir);color:var(--tinta-botao)}
 .botao.marcar:hover{background:var(--acao-marcar);color:var(--fundo)}
 .botao.consultar:hover{background:var(--acao-consultar);color:var(--fundo)}
 .botao.mini.incluir,.botao.mini.alterar,.botao.mini.excluir,
@@ -795,12 +796,21 @@ table.montar td{padding:5px 7px}
   display:flex;align-items:center;gap:1px;white-space:nowrap;
 }
 .menubar .titulo:hover{background:var(--painel-3);color:var(--texto)}
-.menubar .menu.aberto .titulo{background:var(--laranja);color:#fff}
+.menubar .menu.aberto .titulo{background:var(--laranja);color:var(--tinta-botao)}
 /* A letra sublinhada e a tecla de atalho com Alt, como manda a tradicao. */
 .menubar .titulo u{text-decoration:underline;text-underline-offset:2px}
 
+/* `position:fixed`, e nao `absolute`, e o motivo e um defeito medido: desde
+   que a barra ganhou `overflow-x:auto` (para rolar em tela estreita, la no
+   fim da folha), `overflow-y` deixou de poder ser `visible` -- o CSS obriga
+   o par -- e a lista, filha dela, passou a ser RECORTADA na altura da barra.
+   O menu abria (o titulo acendia) e a lista nao aparecia em tela nenhuma;
+   `elementFromPoint` no meio da lista devolvia o botao da barra de
+   ferramentas. Fixa, ela escapa do recorte; o `abrirMenu` a poe debaixo do
+   titulo e fecha quando a barra rola. */
 .menubar .lista{
-  display:none;position:absolute;top:100%;left:0;min-width:238px;
+  display:none;position:fixed;top:0;left:0;min-width:238px;
+  max-height:calc(100vh - 90px);overflow-y:auto;
   background:var(--painel);border:1px solid var(--linha-forte);
   border-radius:0 0 5px 5px;box-shadow:0 8px 24px rgba(0,0,0,.22);
   padding:4px 0;
@@ -812,7 +822,7 @@ table.montar td{padding:5px 7px}
   font-family:inherit;font-size:12.5px;color:var(--texto);cursor:pointer;
 }
 .menubar .item:hover:not(:disabled),
-.menubar .item:focus-visible{background:var(--laranja);color:#fff;outline:none}
+.menubar .item:focus-visible{background:var(--laranja);color:var(--tinta-botao);outline:none}
 .menubar .item:disabled{color:var(--texto-3);cursor:default;opacity:.55}
 .menubar .item .ico{width:16px;text-align:center;font-size:12px;flex:none}
 .menubar .item .rot{flex:1}
@@ -845,7 +855,7 @@ table.montar td{padding:5px 7px}
   font-family:inherit;font-size:12.5px;color:var(--texto);cursor:pointer;
 }
 #popup .item:hover:not(:disabled),
-#popup .item:focus-visible{background:var(--laranja);color:#fff;outline:none}
+#popup .item:focus-visible{background:var(--laranja);color:var(--tinta-botao);outline:none}
 #popup .item:disabled{color:var(--texto-3);cursor:default;opacity:.55}
 #popup .item .ico{width:16px;text-align:center;font-size:12px;flex:none}
 
@@ -879,6 +889,10 @@ table.montar td{padding:5px 7px}
   line-height:1;padding:0;color:var(--texto-2);
 }
 .tema:hover{border-color:var(--laranja);color:var(--laranja)}
+/* `display:grid` da classe venceria o atributo `hidden` -- o CSS global
+   mordendo de novo --, e o botao de imprimir apareceria em tela sem grade. */
+.tema[hidden]{display:none}
+.cabeca-impressa{display:none}
 body,.cartao,.barra,.arvore,table,td,th{
   transition:background-color .18s ease,color .18s ease,border-color .18s ease;
 }
@@ -1282,7 +1296,7 @@ tr.balde-vazio{opacity:.45}
                           border-color:var(--acao-incluir)}
 .botao.mini.alterar:hover{background:var(--acao-alterar);color:var(--fundo);
                           border-color:var(--acao-alterar)}
-.botao.mini.excluir:hover{background:var(--acao-excluir);color:#fff;
+.botao.mini.excluir:hover{background:var(--acao-excluir);color:var(--tinta-botao);
                           border-color:var(--acao-excluir)}
 .botao.mini.marcar:hover{background:var(--acao-marcar);color:var(--fundo);
                          border-color:var(--acao-marcar)}
@@ -1413,6 +1427,18 @@ table.conf td .leg{font-size:10.5px;color:var(--texto-3)}
 .phx-grid{
   --phx-bg:var(--painel); --phx-bg2:var(--painel-2); --phx-fg:var(--texto);
   --phx-meta:var(--texto-3); --phx-borda:var(--linha); --phx-acc:var(--laranja);
+  /* Os tokens que a v0.9.4 da grade abriu. O fio entre as linhas era um cinza
+     claro fixo e saia BRANCO no tema escuro -- a primeira captura desta tela
+     mostrava uma regua de linhas brancas. As etiquetas seguem a lei das cores
+     da acao: contorno, nunca fundo cheio. */
+  --phx-fio:var(--linha); --phx-hover:var(--painel-2); --phx-hover-forte:var(--realce);
+  --phx-sobre-acc:var(--tinta-botao); --phx-apagado:var(--texto-3);
+  --phx-pop-bg:var(--painel); --phx-pop-fg:var(--texto);
+  --phx-verde-bg:transparent; --phx-verde-fg:var(--acao-incluir); --phx-verde-bd:var(--acao-incluir);
+  --phx-ambar-bg:transparent; --phx-ambar-fg:var(--acao-alterar); --phx-ambar-bd:var(--acao-alterar);
+  --phx-azul-bg:transparent;  --phx-azul-fg:var(--acao-consultar); --phx-azul-bd:var(--acao-consultar);
+  --phx-verm-bg:transparent;  --phx-verm-fg:var(--acao-excluir); --phx-verm-bd:var(--acao-excluir);
+  --phx-cinza-bg:transparent; --phx-cinza-fg:var(--texto-3); --phx-cinza-bd:var(--linha-forte);
   font-family:"Exo 2","Helvetica Neue",Arial,sans-serif;
 }
 .phx-grid input,.phx-grid select,.phx-grid button{
@@ -1970,7 +1996,164 @@ td label,td .rot-dado{text-transform:none;letter-spacing:0;font-size:inherit;
   .tira-pino,.tira-x{min-width:28px;min-height:28px}
   .tira-bt{min-height:40px}
 }
+
+/* ============================================================ IMPRESSAO
+   Pedido 161 dizia «o PhxSql nao imprime nada -- nao ha window.print nem
+   @media print». Agora imprime a AREA DE DADOS da tela com foco, e so ela:
+   o cromo (barras, menu, arvore, abas, botoes) nao e dado e nao vai ao papel.
+
+   A cor sai dos TOKENS, e nao de regra por componente: no `beforeprint` a
+   pagina veste o tema claro (o que ja foi calibrado para papel, com as cores
+   da acao escurecidas por contraste) e aqui os neutros viram branco e preto.
+   Quem imprime no tema escuro recebe o mesmo papel de quem imprime no claro.
+
+   A grade: cabecalho repetido em toda pagina (`table-header-group`), linha
+   nunca partida ao meio (`break-inside:avoid`), e o envoltorio de rolagem
+   da PhxGrid (560px de altura) aberto -- senao sairia so o que cabe nele. */
+@media print{
+  @page{margin:12mm 10mm}
+  :root,:root[data-tema="claro"]{
+    --fundo:#fff; --painel:#fff; --painel-2:#fff; --painel-3:#fff; --realce:#fff;
+    --brilho-entrada:#fff; --linha:#b8b8b8; --linha-forte:#8a8a8a;
+    --texto:#000; --texto-2:#1f1f1f; --texto-3:#474747;
+  }
+  html,body{height:auto;overflow:visible;background:var(--fundo)}
+  #entrada,.barra,.menubar,#popup,#ferramentas,.lateral,.pega-arvore,.veu-arvore,
+  .tira,#abas,.regiao:not(.foco),.recado,#painel .acoes,#painel button,
+  .phx-frow,.phx-busca,.phx-filtros,.phx-groupbox,.phx-pag,.phx-colsel-envoltorio,
+  .phx-fbtn,.phx-col-resz,.phx-exp-btn,.phx-json-btn,.phx-popover,.phx-tam,.sprite{display:none!important}
+  #app,#app.ativo,.corpo,.regioes,.regiao,.tela,.painel,.phx-envoltorio{
+    display:block!important;height:auto!important;max-height:none!important;
+    overflow:visible!important;position:static!important;
+    box-shadow:none!important;border:0!important;padding:0!important;margin:0!important}
+  .cabeca-impressa{display:flex!important;align-items:center;gap:10px;
+    font-size:10px;color:var(--texto-3);border-bottom:1px solid var(--linha);
+    padding:0 0 6px!important;margin:0 0 10px!important}
+  .cabeca-impressa img{width:22px;height:auto}
+  .cabeca-impressa b{font-size:11px;color:var(--texto)}
+  .cabeca-impressa .quando{margin-left:auto}
+  .cabecalho{margin:0 0 8px!important;padding:0!important}
+  .phx-grid{border:0!important;border-radius:0!important;font-size:10px}
+  table{border-collapse:collapse!important;width:100%}
+  thead{display:table-header-group}
+  tfoot{display:table-footer-group}
+  tr,th,td{break-inside:avoid;page-break-inside:avoid}
+  th,.phx-th{position:static!important}
+  th,td{border-bottom:1px solid var(--linha)!important}
+  *{box-shadow:none!important;text-shadow:none!important;transition:none!important}
+}
 </style>
+
+<!-- O CONJUNTO DE ICONES DA CASA. Um desenho por `<symbol id="i-...">`, em
+     grade de 24, traco herdado de `svg.ic` (1,8 px, ponta redonda) e cor
+     `currentColor` -- o icone pega a cor do botao, entao as cores da acao e
+     os dois temas valem sem uma linha a mais. Quem desenha chama
+     `icone("nome")`, que devolve `<svg class="ic"><use href="#i-nome"/></svg>`.
+
+     Existe porque o simbolo Unicode que estava no lugar (o banco, o escudo,
+     a corrente, a lixeira...) e desenhado pela FONTE de quem abre, e nao por
+     nos: no Windows varios viravam quadradinho, noutros viravam emoji
+     colorido, e nenhum seguia o traco nem a cor da marca. Aqui e na pagina,
+     e nao em arquivo a parte, porque a mesma pagina e publicada como
+     artefato sem o `montar_pagina` em volta -- e um `<use>` sem o desenho no
+     mesmo documento nao desenha nada. Zero dependencias: cada desenho foi
+     feito aqui, a mao. -->
+<svg class="sprite" aria-hidden="true" focusable="false">
+<symbol id="i-aba-mais" viewBox="0 0 24 24"><rect x="3.5" y="4" width="17" height="16" rx="2"/><path d="M3.5 8.5h17M12 11.5v6M9 14.5h6"/></symbol>
+<symbol id="i-aba-menos" viewBox="0 0 24 24"><rect x="3.5" y="4" width="17" height="16" rx="2"/><path d="M3.5 8.5h17M9 14.5h6"/></symbol>
+<symbol id="i-acoplar" viewBox="0 0 24 24"><path d="M4 4.5v15"/><path d="M20 12H8.5M13.5 7l-5 5 5 5"/></symbol>
+<symbol id="i-ajuda" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.4 9.3a2.7 2.7 0 015.2.9c0 1.8-2.6 2.2-2.6 4"/><path d="M12 17.4v.1"/></symbol>
+<symbol id="i-atualizar" viewBox="0 0 24 24"><path d="M19.4 9A8 8 0 1 0 20 13"/><path d="M20 3.8V9h-5.2"/></symbol>
+<symbol id="i-banco" viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7.5" ry="3"/><path d="M4.5 6v12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V6"/><path d="M4.5 12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3"/></symbol>
+<symbol id="i-bandeira" viewBox="0 0 24 24"><path d="M5.5 21V3.8"/><path d="M5.5 4.5h11.5l-2.6 4 2.6 4H5.5"/></symbol>
+<symbol id="i-barras" viewBox="0 0 24 24"><path d="M3.5 20.5h17"/><rect x="5.5" y="11" width="3" height="6.5" rx=".6"/><rect x="10.5" y="5.5" width="3" height="12" rx=".6"/><rect x="15.5" y="13.5" width="3" height="4" rx=".6"/></symbol>
+<symbol id="i-cadeado" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V7.6a4 4 0 0 1 8 0v2.9M12 14.4v2.2"/></symbol>
+<symbol id="i-calendario" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M8 3v4M16 3v4"/></symbol>
+<symbol id="i-carregar" viewBox="0 0 24 24"><rect x="3.5" y="13.5" width="17" height="6.5" rx="1.5"/><path d="M7.5 16.8h1M11.5 16.8h1M15.5 16.8h1"/><path d="M12 3v7.5M8.6 7.2l3.4 3.4 3.4-3.4"/></symbol>
+<symbol id="i-catalogo" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="2"/><path d="M3.5 8.5h17M8.5 8.5v12"/><path d="M11.5 12h6M11.5 15.5h6"/></symbol>
+<symbol id="i-chave" viewBox="0 0 24 24"><circle cx="7.5" cy="12" r="4"/><path d="M11.5 12h9M17 12v3.4M20.5 12v2.6"/></symbol>
+<symbol id="i-chaves" viewBox="0 0 24 24"><path d="M9 4H8a2 2 0 0 0-2 2v3.5a2.5 2.5 0 0 1-2.5 2.5A2.5 2.5 0 0 1 6 14.5V18a2 2 0 0 0 2 2h1M15 4h1a2 2 0 0 1 2 2v3.5a2.5 2.5 0 0 0 2.5 2.5 2.5 2.5 0 0 0-2.5 2.5V18a2 2 0 0 1-2 2h-1"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+<symbol id="i-chevron-baixo" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+<symbol id="i-codigo" viewBox="0 0 24 24"><path d="M8.5 7L3.5 12l5 5M15.5 7l5 5-5 5M13.5 4.5l-3 15"/></symbol>
+<symbol id="i-cofre" viewBox="0 0 24 24"><path d="M12 3l8 3.5v5c0 4.6-3.3 8.3-8 9.5-4.7-1.2-8-4.9-8-9.5v-5z"/><path d="M12 8.5v7M8.5 12h7"/></symbol>
+<symbol id="i-colar" viewBox="0 0 24 24"><rect x="5.5" y="4.5" width="13" height="16" rx="2"/><path d="M9 4.5V3.5h6v2H9z"/><path d="M12 9.5v7M9 13.5l3 3 3-3"/></symbol>
+<symbol id="i-colunas" viewBox="0 0 24 24"><rect x="3.5" y="4" width="17" height="16" rx="2"/><path d="M9.2 4v16M14.8 4v16"/></symbol>
+<symbol id="i-consulta" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l4.5 4.5"/></symbol>
+<symbol id="i-copiar" viewBox="0 0 24 24"><rect x="5.5" y="4.5" width="13" height="16" rx="2"/><path d="M9 4.5V3.5h6v2H9z"/><path d="M9 11h6M9 14.5h6"/></symbol>
+<symbol id="i-correio" viewBox="0 0 24 24"><rect x="3" y="5.5" width="18" height="13" rx="2"/><path d="M3.6 7l8.4 6 8.4-6"/></symbol>
+<symbol id="i-corrente" viewBox="0 0 24 24"><rect x="2.5" y="8.5" width="6" height="7" rx="1.5"/><rect x="9.5" y="8.5" width="5" height="7" rx="1.5"/><rect x="15.5" y="8.5" width="6" height="7" rx="1.5"/><path d="M8.5 12h1M14.5 12h1"/></symbol>
+<symbol id="i-diagrama" viewBox="0 0 24 24"><rect x="2.8" y="3.5" width="8" height="6" rx="1.4"/><rect x="13.2" y="14.5" width="8" height="6" rx="1.4"/><path d="M6.8 9.5v5a1.6 1.6 0 001.6 1.6h4.2"/><path d="M11.2 15l1.8 1.6-1.8 1.6"/></symbol>
+<symbol id="i-diario" viewBox="0 0 24 24"><path d="M4.2 12a7.8 7.8 0 1 0 2.3-5.5"/><path d="M4.2 3.8v4.4h4.4"/><path d="M12 8v4.4l3 1.9"/></symbol>
+<symbol id="i-documento" viewBox="0 0 24 24"><path d="M6 3.5h8l4 4v13H6z"/><path d="M14 3.5v4h4M9 12h6M9 15.5h6"/></symbol>
+<symbol id="i-duplicar" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="12" height="14" rx="2"/><path d="M8.5 20.5h9a2 2 0 002-2v-11"/></symbol>
+<symbol id="i-editar" viewBox="0 0 24 24"><path d="M4 20l1-4.5L15.5 5a2.1 2.1 0 0 1 3 3L8 18.5z"/><path d="M13.5 7l3 3"/></symbol>
+<symbol id="i-elo" viewBox="0 0 24 24"><path d="M9.5 14.5l5-5"/><path d="M12.8 7.7l1.9-1.9a3.4 3.4 0 014.8 4.8l-1.9 1.9M11.2 16.3l-1.9 1.9a3.4 3.4 0 01-4.8-4.8l1.9-1.9"/></symbol>
+<symbol id="i-energia" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 6.5v6"/></symbol>
+<symbol id="i-engrenagem" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.6v2.6M12 18.8v2.6M21.4 12h-2.6M5.2 12H2.6M18.6 5.4l-1.8 1.8M7.2 16.8l-1.8 1.8M18.6 18.6l-1.8-1.8M7.2 7.2L5.4 5.4"/></symbol>
+<symbol id="i-escudo" viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4.2-3 7.6-7 9-4-1.4-7-4.8-7-9V6z"/><path d="M9 12l2 2 4-4"/></symbol>
+<symbol id="i-estrutura" viewBox="0 0 24 24"><rect x="3.5" y="4" width="17" height="16" rx="2"/><path d="M3.5 9h17M7.5 13h9M7.5 16.5h6"/></symbol>
+<symbol id="i-excluir" viewBox="0 0 24 24"><path d="M4 6.5h16M9.5 6.5v-2a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v2"/><path d="M6.2 6.5l.9 13a1.4 1.4 0 0 0 1.4 1.3h7a1.4 1.4 0 0 0 1.4-1.3l.9-13"/><path d="M10 11l4 5M14 11l-4 5"/></symbol>
+<symbol id="i-exportar" viewBox="0 0 24 24"><path d="M12 3v11M8 10.5l4 4 4-4" transform="rotate(180 12 12)"/><path d="M4 17.5v2a1.5 1.5 0 001.5 1.5h13a1.5 1.5 0 001.5-1.5v-2"/></symbol>
+<symbol id="i-faisca" viewBox="0 0 24 24"><path d="M12 3.5c.7 5 2.5 7.8 8.5 8.5-6 .7-7.8 3.5-8.5 8.5-.7-5-2.5-7.8-8.5-8.5 6-.7 7.8-3.5 8.5-8.5z"/></symbol>
+<symbol id="i-funcao" viewBox="0 0 24 24"><path d="M16.5 4.5c-2.6-1-4.4.2-5 2.8L9 17.6c-.6 2.5-2.3 3.4-4.5 2.4M8 10h7"/></symbol>
+<symbol id="i-gente" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c0-3.2 2.5-5.2 5.5-5.2s5.5 2 5.5 5.2"/><path d="M16 6.5a3 3 0 010 5.6M17 19c0-2.4-.8-4-2-5"/></symbol>
+<symbol id="i-gerir" viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7.5" ry="3"/><path d="M4.5 6v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V6"/><path d="M4.5 12v5.5c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V12"/></symbol>
+<symbol id="i-grade" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 9v11M15 9v11"/></symbol>
+<symbol id="i-idioma" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.4 2.4 3.7 5.2 3.7 8.5s-1.3 6.1-3.7 8.5c-2.4-2.4-3.7-5.2-3.7-8.5S9.6 5.9 12 3.5z"/></symbol>
+<symbol id="i-importar" viewBox="0 0 24 24"><path d="M12 3v11M8 10.5l4 4 4-4"/><path d="M4 17.5v2a1.5 1.5 0 001.5 1.5h13a1.5 1.5 0 001.5-1.5v-2"/></symbol>
+<symbol id="i-imprimir" viewBox="0 0 24 24"><path d="M7 9V3.5h10V9"/><rect x="3.5" y="9" width="17" height="7.5" rx="1.8"/><path d="M7 13.5h10v7H7z"/></symbol>
+<symbol id="i-indice" viewBox="0 0 24 24"><circle cx="6" cy="5.5" r="2.2"/><circle cx="6" cy="18.5" r="2.2"/><circle cx="18" cy="12" r="2.2"/><path d="M6 7.7v8.6M6 12h4.5a5.3 5.3 0 0 0 5.3-.1"/></symbol>
+<symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.5M12 7.6v.2"/></symbol>
+<symbol id="i-janela" viewBox="0 0 24 24"><rect x="3" y="9" width="12.5" height="11" rx="1.5"/><path d="M3 12.5h12.5M8 9V5.5A1.5 1.5 0 0 1 9.5 4h10A1.5 1.5 0 0 1 21 5.5v8a1.5 1.5 0 0 1-1.5 1.5h-4"/></symbol>
+<symbol id="i-lateral-abrir" viewBox="0 0 24 24"><rect x="3" y="4.6" width="18" height="14.8" rx="2"/><path d="M9.4 4.6v14.8"/><path d="M14.4 9.6L16.8 12l-2.4 2.4"/></symbol>
+<symbol id="i-lateral-fechar" viewBox="0 0 24 24"><rect x="3" y="4.6" width="18" height="14.8" rx="2"/><path d="M9.4 4.6v14.8"/><path d="M17.2 9.6L14.8 12l2.4 2.4"/></symbol>
+<symbol id="i-liberar" viewBox="0 0 24 24"><rect x="3.5" y="13.5" width="17" height="6.5" rx="1.5"/><path d="M7.5 16.8h1M11.5 16.8h1M15.5 16.8h1"/><path d="M12 10.5V3M8.6 6.4L12 3l3.4 3.4"/></symbol>
+<symbol id="i-lista" viewBox="0 0 24 24"><path d="M4 6.5h16M4 12h16M4 17.5h16"/></symbol>
+<symbol id="i-lixeira" viewBox="0 0 24 24"><path d="M4 6.5h16M9.5 6.5V4.6A1.1 1.1 0 0110.6 3.5h2.8a1.1 1.1 0 011.1 1.1v1.9"/><path d="M6.2 6.5l.9 13a1.4 1.4 0 001.4 1.3h7a1.4 1.4 0 001.4-1.3l.9-13"/><path d="M10.2 10.5v6.5M13.8 10.5v6.5"/></symbol>
+<symbol id="i-local" viewBox="0 0 24 24"><path d="M12 21s-6.5-6-6.5-11a6.5 6.5 0 0 1 13 0c0 5-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.4"/></symbol>
+<symbol id="i-lua" viewBox="0 0 24 24"><path d="M19.5 14.6A8 8 0 0 1 9.4 4.5a8 8 0 1 0 10.1 10.1z"/></symbol>
+<symbol id="i-mais" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="i-medidor" viewBox="0 0 24 24"><path d="M3 16.5a9 9 0 0118 0"/><path d="M12 16.5l4.4-4.9"/><circle cx="12" cy="16.5" r="1.5"/><path d="M5.6 11.4l1 .9M12 8.2v1.4M18.4 11.4l-1 .9"/></symbol>
+<symbol id="i-memoria" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.6"/><rect x="9.5" y="9.5" width="5" height="5" rx=".6"/><path d="M9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M3 15h3M18 9h3M18 15h3"/></symbol>
+<symbol id="i-mensagem" viewBox="0 0 24 24"><path d="M4 5.5h16v10.5H10l-4.5 3.8V16H4z"/><path d="M8 9.5h8M8 12.5h5"/></symbol>
+<symbol id="i-monitores" viewBox="0 0 24 24"><rect x="2.5" y="5" width="9" height="7.5" rx="1.2"/><rect x="12.5" y="5" width="9" height="7.5" rx="1.2"/><path d="M7 12.5V16M17 12.5V16M4.5 19h15"/></symbol>
+<symbol id="i-numero" viewBox="0 0 24 24"><path d="M9.5 4l-2 16M16.5 4l-2 16M4.5 9h16M3.5 15h16"/></symbol>
+<symbol id="i-pagina" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="2"/><path d="M3 9h18M6 6.8h.1M8.6 6.8h.1"/></symbol>
+<symbol id="i-painel" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="8" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="5" rx="1.5"/><rect x="13.5" y="11.5" width="7" height="9" rx="1.5"/><rect x="3.5" y="14.5" width="7" height="6" rx="1.5"/></symbol>
+<symbol id="i-particoes" viewBox="0 0 24 24"><rect x="4" y="3.5" width="16" height="4.6" rx="1.2"/><rect x="4" y="9.7" width="16" height="4.6" rx="1.2"/><rect x="4" y="15.9" width="16" height="4.6" rx="1.2"/></symbol>
+<symbol id="i-pino" viewBox="0 0 24 24"><path d="M9.2 3.6h5.6"/><path d="M10.5 3.6v6.1l-2.5 3.1h8l-2.5-3.1V3.6"/><path d="M12 12.8v7.6"/></symbol>
+<symbol id="i-pivot" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="1.8"/><path d="M3 9h18M9 4v16"/><path d="M12 12.5h2.5M12 16h5M15.5 12.5h2.5"/></symbol>
+<symbol id="i-porta" viewBox="0 0 24 24"><path d="M14 4h4.5A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5H14"/><path d="M4 12h11M11 8l4 4-4 4"/></symbol>
+<symbol id="i-privado" viewBox="0 0 24 24"><path d="M12 2.8l7.4 3v5.4c0 4.3-3.1 7.8-7.4 9-4.3-1.2-7.4-4.7-7.4-9V5.8z"/><rect x="9.2" y="11.4" width="5.6" height="4.6" rx="1"/><path d="M10.4 11.4v-1.5a1.6 1.6 0 013.2 0v1.5"/></symbol>
+<symbol id="i-proibido" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M6 6l12 12"/></symbol>
+<symbol id="i-pulso" viewBox="0 0 24 24"><path d="M2.5 12h4l2-6 3.5 12 2.5-7 1.8 3.4h5.2"/></symbol>
+<symbol id="i-raio" viewBox="0 0 24 24"><path d="M13.2 2.8L5.5 13.4h5.8l-1 7.8 7.7-10.6h-5.8z"/></symbol>
+<symbol id="i-rede" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.6"/><circle cx="4" cy="5" r="2"/><circle cx="20" cy="5" r="2"/><circle cx="4" cy="19" r="2"/><circle cx="20" cy="19" r="2"/><path d="M5.6 6.4l4.8 4.2M18.4 6.4l-4.8 4.2M5.6 17.6l4.8-4.2M18.4 17.6l-4.8-4.2"/></symbol>
+<symbol id="i-regioes-1" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="2"/></symbol>
+<symbol id="i-regioes-2" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M12 5v14"/></symbol>
+<symbol id="i-regioes-3" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M9.2 5v14M14.8 5v14"/></symbol>
+<symbol id="i-regioes-4" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M7.8 5v14M12 5v14M16.2 5v14"/></symbol>
+<symbol id="i-relogio" viewBox="0 0 24 24"><circle cx="12" cy="12.6" r="7.8"/><path d="M12 8.4v4.4l3 1.8"/><path d="M9.4 3.2h5.2"/></symbol>
+<symbol id="i-reparo" viewBox="0 0 24 24"><path d="M14.5 6.5a4 4 0 00-5.4 5.2L4 16.8 7.2 20l5.1-5.1a4 4 0 005.2-5.4l-2.6 2.6-2.1-2.1z"/></symbol>
+<symbol id="i-replica" viewBox="0 0 24 24"><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="6" r="2.6"/><circle cx="18" cy="18" r="2.6"/><path d="M8.3 10.8l7.3-3.6M8.3 13.2l7.3 3.6"/></symbol>
+<symbol id="i-restaurar" viewBox="0 0 24 24"><path d="M9.5 4.5L5 9l4.5 4.5"/><path d="M5 9h8.5a5.5 5.5 0 010 11H8"/></symbol>
+<symbol id="i-sair" viewBox="0 0 24 24"><path d="M10 4H5.5A1.5 1.5 0 0 0 4 5.5v13A1.5 1.5 0 0 0 5.5 20H10"/><path d="M9 12h11M16 8l4 4-4 4"/></symbol>
+<symbol id="i-selo" viewBox="0 0 24 24"><path d="M12 3l2.2 1.6 2.7-.1.8 2.6 2.2 1.6-.9 2.6.9 2.6-2.2 1.6-.8 2.6-2.7-.1L12 21l-2.2-1.6-2.7.1-.8-2.6-2.2-1.6.9-2.6-.9-2.6 2.2-1.6.8-2.6 2.7.1z"/><path d="M8.8 12.2l2.2 2.2 4.2-4.4"/></symbol>
+<symbol id="i-seta-dir" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+<symbol id="i-seta-esq" viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6"/></symbol>
+<symbol id="i-sol" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.8"/><path d="M12 2.8v2.1M12 19.1v2.1M2.8 12h2.1M19.1 12h2.1M5.5 5.5L7 7M17 17l1.5 1.5M5.5 18.5L7 17M17 7l1.5-1.5"/></symbol>
+<symbol id="i-soltar" viewBox="0 0 24 24"><path d="M13.5 4H20v6.5M20 4l-8.5 8.5"/><path d="M18 14v4.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 4 18.5v-11A1.5 1.5 0 0 1 5.5 6H10"/></symbol>
+<symbol id="i-tabelas" viewBox="0 0 24 24"><rect x="3" y="4" width="13" height="12" rx="1.6"/><path d="M3 8h13M8 8v8"/><path d="M8 8V4M19 8v12H8"/></symbol>
+<symbol id="i-tema" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor" stroke="none"/></symbol>
+<symbol id="i-texto" viewBox="0 0 24 24"><path d="M4 5.5h16M4 9.8h16M4 14.2h16M4 18.5h10"/></symbol>
+<symbol id="i-tomada" viewBox="0 0 24 24"><path d="M6 4v6a6 6 0 006 6 6 6 0 006-6V4"/><path d="M9 2v3M15 2v3M12 16v6"/></symbol>
+<symbol id="i-troca" viewBox="0 0 24 24"><path d="M4 8h13l-3.5-3.5M20 16H7l3.5 3.5"/></symbol>
+<symbol id="i-uniao" viewBox="0 0 24 24"><path d="M6 4v8a6 6 0 0 0 12 0V4"/><path d="M12 7v6M9 10h6"/></symbol>
+<symbol id="i-usuario" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.8"/><path d="M4.5 20.5c0-4 3.4-6.6 7.5-6.6s7.5 2.6 7.5 6.6"/></symbol>
+<symbol id="i-venn" viewBox="0 0 24 24"><circle cx="9.5" cy="12" r="6.5"/><circle cx="14.5" cy="12" r="6.5"/><path d="M12 6.2a6.5 6.5 0 000 11.6 6.5 6.5 0 000-11.6z" fill="currentColor" opacity=".55" stroke="none"/></symbol>
+<symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+</svg>
 
 <!-- =========================== ENTRADA =========================== -->
 <div id="entrada">
@@ -2047,7 +2230,7 @@ td label,td .rot-dado{text-transform:none;letter-spacing:0;font-size:inherit;
         <button class="bt-guardar" id="btGuardarConex"
                 data-txt="tela.guardar_conexao">Guardar esta conexão</button>
         <p class="conex-aviso">
-          <span class="cad" aria-hidden="true">&#128274;</span>
+          <span class="cad" aria-hidden="true"><svg class="ic"><use href="#i-cadeado"/></svg></span>
           <span data-txt="tela.conexoes_aviso">Ficam neste navegador, nunca no
             servidor. A senha e o token NÃO são guardados.</span>
         </p>
@@ -2060,6 +2243,10 @@ td label,td .rot-dado{text-transform:none;letter-spacing:0;font-size:inherit;
 
 <!-- ============================= APP ============================= -->
 <div id="app">
+  <!-- O cabecalho que so existe no PAPEL: logo pequeno, o banco e a hora da
+       impressao. Montado no `beforeprint` (ver `montarCabecaImpressa`), para
+       valer tambem no Ctrl+P, que nao passa pelo botao. -->
+  <div class="cabeca-impressa" id="cabecaImpressa" aria-hidden="true"></div>
   <div class="barra">
     <!-- O botao de recolher/reabrir o painel lateral. Mora na barra, que
          NUNCA some: painel que se fecha sem deixar por onde voltar e
@@ -2077,10 +2264,15 @@ td label,td .rot-dado{text-transform:none;letter-spacing:0;font-size:inherit;
          lua/sol ela fica onde a pessoa ja olha quando quer mexer na propria
          tela. Usa a mesma classe `tema` para nascer com o tamanho e o alvo de
          clique do vizinho, em vez de um estilo novo que o CSS global mordia. -->
+    <!-- Imprimir: so aparece quando a tela tem grade (ver `acenderImprimir`),
+         que e o unico lugar onde ha dado para ir ao papel. -->
+    <button class="tema" id="btImprimir" hidden
+            aria-label="Imprimir" data-txt-al="tela.imprimir"
+            title="Imprimir" data-txt-tt="tela.imprimir"><svg class="ic" aria-hidden="true"><use href="#i-imprimir"/></svg></button>
     <button class="tema" id="btAjuda"
             aria-label="Ajuda e sobre o PhxSql" data-txt-al="tela.menu_ajuda">?</button>
     <button class="tema" id="btTema"
-            aria-label="Alternar tema claro e escuro" data-txt-al="tela.tema_dica">🌓</button>
+            aria-label="Alternar tema claro e escuro" data-txt-al="tela.tema_dica"><svg class="ic" aria-hidden="true"><use href="#i-tema"/></svg></button>
     <span class="eu" id="eu"></span>
     <button class="botao secundario" id="btSair" data-txt="tela.sair">Sair</button>
   </div>
@@ -2144,6 +2336,15 @@ td label,td .rot-dado{text-transform:none;letter-spacing:0;font-size:inherit;
 
 <script>
 "use strict";
+
+/** Um icone do conjunto da casa -- o `<symbol id="i-nome">` do inicio do corpo.
+ *
+ *  E o UNICO jeito de desenhar icone nesta pagina (e no `multitela.js` e no
+ *  `claude.js`, que chamam este mesmo): o nome tem de existir no sprite, e o
+ *  conferidor `conferidor_tela` reprova o nome pedido que nao tem desenho. */
+function icone(nome) {
+  return `<svg class="ic" aria-hidden="true"><use href="#i-${nome}"/></svg>`;
+}
 
 // =====================================================================
 // Camada de acesso. Contra o servidor de verdade fala com POST /api; sem
@@ -2773,14 +2974,14 @@ function admGo(qual, novaAba) {
 async function montarArvore(abrirPainel = true) {
   const bancos = await api("bancos");
   est.bancos = bancos;
-  let html = `<div class="no painel" data-admin="painel"><span class="ic">◎</span>${
+  let html = `<div class="no painel" data-admin="painel"><span class="ic">${icone("painel")}</span>${
       esc(txt("tela.painel", "Painel"))}</div>
     <div class="grupo">${esc(txt("tela.bancos_de_dados", "Bancos de dados"))}
       <button class="mais" id="btNovoDb" title="${esc(txt("tela.novo_database", "Novo database"))}"
               aria-label="${esc(txt("tela.adicionar_database", "Adicionar um database"))}">+</button></div>`;
   for (const b of bancos) {
     const t = await api("tabelas", { database:b });
-    html += `<div class="no db" data-db="${esc(b)}"><span class="ic">▾</span>${esc(b)}</div>`;
+    html += `<div class="no db" data-db="${esc(b)}"><span class="ic">${icone("chevron-baixo")}</span>${esc(b)}</div>`;
     const raiz = t.tabelas.filter(x => !x.includes("."));
     const porEsq = {};
     for (const x of t.tabelas.filter(x => x.includes("."))) {
@@ -2789,12 +2990,12 @@ async function montarArvore(abrirPainel = true) {
     }
     for (const n of raiz)
       html += `<div class="no tab" data-db="${esc(b)}" data-tab="${esc(n)}">
-        <span class="ic">▤</span>${esc(n)}</div>`;
+        <span class="ic">${icone("grade")}</span>${esc(n)}</div>`;
     for (const e of Object.keys(porEsq).sort()) {
-      html += `<div class="no esq"><span class="ic">▾</span>${esc(e)}</div>`;
+      html += `<div class="no esq"><span class="ic">${icone("chevron-baixo")}</span>${esc(e)}</div>`;
       for (const n of porEsq[e])
         html += `<div class="no tab emesq" data-db="${esc(b)}" data-tab="${esc(e)}.${esc(n)}">
-          <span class="ic">▤</span>${esc(n)}</div>`;
+          <span class="ic">${icone("grade")}</span>${esc(n)}</div>`;
     }
     if (!t.tabelas.length)
       html += `<div class="vazio">${esc(txt("tela.sem_tabelas", "sem tabelas"))}</div>`;
@@ -2804,11 +3005,11 @@ async function montarArvore(abrirPainel = true) {
   // procura chave morta le LITERAL, e chave montada some dele -- passaria a
   // aprovar como viva uma chave que ninguem pede.
   for (const [chave, rotulo, ic, ch] of
-       [["usuarios","Usuários","◉","tela.usuarios"],
-        ["acessos","Acessos","◈","tela.acessos"],
-        ["bloqueios","Bloqueios","⛔","tela.bloqueios"],
-        ["idiomas","Idiomas","⚑","tela.idiomas"]])
-    html += `<div class="no" data-admin="${chave}"><span class="ic">${ic}</span>${
+       [["usuarios","Usuários","gente","tela.usuarios"],
+        ["acessos","Acessos","porta","tela.acessos"],
+        ["bloqueios","Bloqueios","proibido","tela.bloqueios"],
+        ["idiomas","Idiomas","idioma","tela.idiomas"]])
+    html += `<div class="no" data-admin="${chave}"><span class="ic">${icone(ic)}</span>${
       esc(txt(ch, rotulo))}</div>`;
 
   const a = $("#arvore");
@@ -4079,7 +4280,7 @@ async function abrirAdmin(qual) {
       const us = await api("usuarios");
       if (!aindaEMinha()) return;
       p.innerHTML = `<div class="ferramentas">
-          <button class="botao incluir" id="btNovoUsuario">✚ ${esc(txt("tela.tt_novo_usuario","Novo usuário"))}</button>
+          <button class="botao incluir" id="btNovoUsuario">${icone("mais")} ${esc(txt("tela.tt_novo_usuario","Novo usuário"))}</button>
         </div>
         <div id="gradeAdmUsuarios"></div>`;
       // Gap 230: ate aqui a grade so LIA. `usuario_criar`/`usuario_alterar`/
@@ -4405,7 +4606,7 @@ async function desenharFichaUsuario() {
         <td><b>${esc(b.nome)}</b></td>
         ${celulasAtividades("fu-perm", b.perm, `data-bi="${bi}"`)}
         <td><button type="button" class="mini perigo fu-rm-base" data-bi="${bi}"
-          title="${esc(txt("tela.tit_remover_base","remover esta base"))}">✕</button></td>
+          title="${esc(txt("tela.tit_remover_base","remover esta base"))}">${icone("x")}</button></td>
       </tr>
       <tr class="fu-tabelas-row"><td colspan="${ATIVIDADES_USUARIO.length + 2}">
         <div class="fu-tabelas-bloco">
@@ -4422,7 +4623,7 @@ async function desenharFichaUsuario() {
                 <td>${esc(t.nome)}</td>
                 ${celulasAtividades("fu-permt", t.perm, `data-bi="${bi}" data-ti="${ti}"`)}
                 <td><button type="button" class="mini perigo fu-rm-tab" data-bi="${bi}" data-ti="${ti}"
-                  title="${esc(txt("tela.tit_remover_tabela","remover esta tabela"))}">✕</button></td>
+                  title="${esc(txt("tela.tit_remover_tabela","remover esta tabela"))}">${icone("x")}</button></td>
               </tr>`).join("")
             }</tbody></table></div>` : ""}
         </div>
@@ -4644,7 +4845,8 @@ function dialogoExcluirUsuario(login, aoTerminar) {
 // anonima o acesso levanta excecao em vez de devolver vazio, entao toda
 // leitura e escrita vai dentro de try.
 // =====================================================================
-const TEMAS = { escuro:"🌙", claro:"☀️" };
+// O botao mostra o tema para onde o clique LEVA -- lua no claro, sol no escuro.
+const TEMAS = { escuro:"lua", claro:"sol" };
 
 /* ================================================== View Database e o editor
    Browse -> Form, que e o padrao do Clarion(R) de onde este projeto vem: uma
@@ -4773,7 +4975,7 @@ async function telaProcurarTexto(db, tab, indices) {
       <input id="ptPalavra" class="campo" style="width:auto;min-width:18rem;flex:none"
              placeholder="${esc(txt("tela.pt_palavra","palavra inteira"))}">
       <button class="botao consultar" id="ptIr">${esc(txt("tela.pt_procurar","Procurar"))}</button>
-      <button class="botao secundario" id="ptVoltar">← ${esc(tab)}</button>
+      <button class="botao secundario" id="ptVoltar">${icone("seta-esq")} ${esc(tab)}</button>
     </div>
     <p class="leg">${marcado(txt("tela.pt_alcance","Acha **palavra inteira**, não pedaço: “fen” não acha “fenix”."))}
       ${dobra ? marcado(txt("tela.pt_dobra","Este índice **dobra acento**: “fenix” acha “fênix”.")) : marcado(txt("tela.pt_sem_dobra","Este índice **não dobra acento**: “fenix” não acha “fênix”."))}</p>
@@ -4856,7 +5058,7 @@ async function verConteudoEditavel(db, tab, verExcluidos = false, cursor = null)
 
   const barra = `<div class="acoes">
       <button class="botao incluir" id="btNova">${esc(txt("tela.ce_nova_linha","Nova linha"))}</button>
-      <button class="botao secundario" id="btVoltarDb">← ${esc(db)}</button>
+      <button class="botao secundario" id="btVoltarDb">${icone("seta-esq")} ${esc(db)}</button>
       ${(e.indices_texto || []).length ? `<button class="botao consultar" id="btProcTexto">${esc(txt("tela.ce_procurar_texto","Procurar texto…"))}</button>` : ""}
       <span class="chip-visao">
         <button id="vwAtivas" class="${verExcluidos ? "" : "ativo"}">${esc(txt("tela.ce_ativas","ativas"))}</button>
@@ -5311,11 +5513,11 @@ async function gerirTabelas(db) {
   folha(preencher(txt("tela.tt_tabelas_de","Tabelas de {db}"), {db}),
     preencher(txt("tela.st_n_tabelas_clique_gerir","{n} tabela(s) · clique numa linha para gerir"), {n: nomes.length}),
     `<div class="acoes">
-       <button class="botao" id="btNovaTab">✚ ${esc(txt("tela.tt_nova_tabela","Nova tabela"))}…</button>
+       <button class="botao" id="btNovaTab">${icone("mais")} ${esc(txt("tela.tt_nova_tabela","Nova tabela"))}…</button>
        <button class="botao secundario" id="btColar" ${est.copia ? "" : "disabled"}>
-         ⧉ ${esc(txt("tela.gt_colar","Colar"))}${est.copia ? ` ${esc(est.copia.db)}.${esc(est.copia.tab)}` : ""}</button>
-       <button class="botao secundario" id="btRecarregarTabs">↻ ${esc(txt("tela.gt_atualizar","Atualizar"))}</button>
-       <button class="botao secundario" id="btGerirBanco">⛁ ${esc(preencher(txt("tela.gt_gerir_db_btn","Gerir {db}"), {db}))}</button>
+         ${icone("colar")} ${esc(txt("tela.gt_colar","Colar"))}${est.copia ? ` ${esc(est.copia.db)}.${esc(est.copia.tab)}` : ""}</button>
+       <button class="botao secundario" id="btRecarregarTabs">${icone("atualizar")} ${esc(txt("tela.gt_atualizar","Atualizar"))}</button>
+       <button class="botao secundario" id="btGerirBanco">${icone("gerir")} ${esc(preencher(txt("tela.gt_gerir_db_btn","Gerir {db}"), {db}))}</button>
        <span class="leg">${esc(txt("tela.gt_clique_oito_operacoes","clique numa linha para as oito operações"))}</span>
      </div>` +
     (nomes.length ? `<div id="gradeGerirTabs"></div>`
@@ -5385,46 +5587,46 @@ async function gerirTabela(db, tab) {
     </div>` : `<div class="aviso mal">${esc(erro)}</div>`;
 
   const OPS = [
-    ["estrutura", "▤", "Estrutura da tabela",
+    ["estrutura", icone("estrutura"), "Estrutura da tabela",
      "As colunas, os tipos, os índices e a paginação — como está gravado no cabeçalho do .reg.",
      () => { est.aba = "estrutura"; return abrirTabela(db, tab); }],
-    ["conteudo", "▦", "Editar conteúdo da tabela",
+    ["conteudo", icone("grade"), "Editar conteúdo da tabela",
      "A grade de dados: incluir, alterar e excluir linha a linha, com um campo por coluna.",
      () => verConteudoEditavel(db, tab)],
-    ["config", "⚙", "Configurações e diretivas",
+    ["config", icone("engrenagem"), "Configurações e diretivas",
      "A geometria decidida na criação, os índices e chaves, e o que a tabela herda do servidor.",
      () => verConfigTabela(db, tab)],
-    ["particoes", "◫", "Partições da tabela",
+    ["particoes", icone("particoes"), "Partições da tabela",
      "Em que volume cada rowid cai, e qual arquivo do disco guarda cada faixa.",
      () => verParticoes(db, tab)],
-    ["duplicar", "⧉", "Duplicar tabela",
+    ["duplicar", icone("duplicar"), "Duplicar tabela",
      "Copia os cinco arquivos para outro nome, aqui mesmo. A cópia nasce com os mesmos rowids e a mesma ordem.",
      () => duplicarTabelaPara(db, tab)],
-    ["copiar", "⎘", "Copiar tabela",
+    ["copiar", icone("copiar"), "Copiar tabela",
      "Põe esta tabela na área de transferência, para colar em outro banco ou schema.",
      () => copiarTabela(db, tab)],
-    ["colar", "⧉", "Colar aqui",
+    ["colar", icone("colar"), "Colar aqui",
      "Traz a tabela da área de transferência para este banco.",
      () => telaCopiarColar(db)],
-    ["reparar", "⛨", "Reparar tabela",
+    ["reparar", icone("reparo"), "Reparar tabela",
      "Confere cada slot no .reg contra o espelho .bkp e recupera o lado bom.",
      () => repararTabelaDe(db, tab)],
-    ["reindexar", "↻", "Reparar índice",
+    ["reindexar", icone("atualizar"), "Reparar índice",
      "Joga o .ndx fora e reconstrói a árvore inteira lendo o .reg.",
      () => reindexarTabelaDe(db, tab)],
-    ["nova", "✚", "Nova tabela neste database",
+    ["nova", icone("mais"), "Nova tabela neste database",
      "Colunas, índices e paginação. A paginação entra aqui e não muda depois.",
      () => telaNovaTabela(db)],
-    ["importar", "⭱", "Importar uma carga",
+    ["importar", icone("importar"), "Importar uma carga",
      "Cole CSV, TXT, JSON, XML ou HTML e grave de uma vez. Confere antes.",
      () => telaImportar(db, tab)],
-    ["lixeira", "♲", "Lixeira da tabela",
+    ["lixeira", icone("lixeira"), "Lixeira da tabela",
      "As linhas que saíram do .reg, inteiras e com os anexos. Só administrador.",
      () => telaLixeira(db, tab)],
-    ["motivos", "✎", "Motivos das exclusões",
+    ["motivos", icone("documento"), "Motivos das exclusões",
      "Por que cada linha foi excluída, por quem e quando. Só administrador.",
      () => telaMotivos(db, tab)],
-    ["excluir", "🗑", "Excluir tabela",
+    ["excluir", icone("excluir"), "Excluir tabela",
      "Apaga os sete arquivos da tabela de uma vez. Não há desfazer.",
      () => excluirTabelaDe(db, tab)],
   ];
@@ -5437,7 +5639,7 @@ async function gerirTabela(db, tab) {
          <span class="op-txt"><b>${esc(rot)}</b><span>${esc(diz)}</span></span>
        </button>`).join("")}</div>
      <div class="acoes">
-       <button class="botao secundario" id="btVoltarTabs">← ${esc(preencher(txt("tela.tt_tabelas_de","Tabelas de {db}"), {db}))}</button>
+       <button class="botao secundario" id="btVoltarTabs">${icone("seta-esq")} ${esc(preencher(txt("tela.tt_tabelas_de","Tabelas de {db}"), {db}))}</button>
      </div>`);
 
   $("#painel .ops").onclick = ev => {
@@ -5888,7 +6090,7 @@ function desenharNovaTabela(db) {
 
      <div class="acoes">
        <button class="botao" id="nt_criar">${esc(txt("tela.nt_criar_tabela","Criar tabela"))}</button>
-       <button class="botao secundario" id="nt_voltar">← ${esc(preencher(txt("tela.tt_tabelas_de","Tabelas de {db}"), {db}))}</button>
+       <button class="botao secundario" id="nt_voltar">${icone("seta-esq")} ${esc(preencher(txt("tela.tt_tabelas_de","Tabelas de {db}"), {db}))}</button>
        <span class="leg" id="nt_recado"></span>
      </div>
 
@@ -6144,7 +6346,7 @@ async function verSequencias(db) {
      </div>
 
      <div class="acoes">
-       <button class="botao secundario" id="btVoltaDb">← Gerir ${esc(db)}</button>
+       <button class="botao secundario" id="btVoltaDb">${icone("seta-esq")} Gerir ${esc(db)}</button>
      </div>`);
 
   $("#btVoltaDb").onclick = () => gerirDatabase(db);
@@ -6335,7 +6537,7 @@ async function pivotPasso1() {
     </div>
 
     <div class="acoes">
-      <button class="botao" id="pv_ir2">${esc(txt("tela.pv_escolher_campos","Escolher os campos"))} →</button>
+      <button class="botao" id="pv_ir2">${esc(txt("tela.pv_escolher_campos","Escolher os campos"))} ${icone("seta-dir")}</button>
     </div>` : ""}`;
 
   $$("#pvCorpo .linha-tab").forEach(tr => tr.onclick = () => {
@@ -6440,7 +6642,7 @@ async function pivotPasso2() {
         <div class="pv-paleta-lista">${campos.map(c => `
           <span class="pv-campo${usado(c.campo) ? " usado" : ""}" draggable="true"
                 data-campo="${esc(c.campo)}" title="${esc(c.de)} · ${esc(c.tipo)}">
-            <span class="pv-campo-ico">${c.data ? "◷" : c.numero ? "#" : "A"}</span>
+            <span class="pv-campo-ico">${c.data ? icone("calendario") : c.numero ? "#" : "A"}</span>
             ${esc(c.rotulo)}${c.campo.includes(".") ? `<em>${esc(c.campo.split(".")[0])}</em>` : ""}
           </span>`).join("")}</div>
       </div>
@@ -6458,7 +6660,7 @@ async function pivotPasso2() {
 
     <div class="acoes">
       <button class="botao" id="pv_montar">Montar a tabela dinâmica</button>
-      <button class="botao secundario" id="pv_voltar1">← Tabelas</button>
+      <button class="botao secundario" id="pv_voltar1">${icone("seta-esq")} Tabelas</button>
       <button class="botao secundario" id="pv_limpar">Limpar os eixos</button>
     </div>
 
@@ -6585,7 +6787,7 @@ async function pivotPasso3() {
     </tfoot></table></div>
 
     <div class="acoes">
-      <button class="botao secundario" id="pv_voltar2">← Trocar os campos</button>
+      <button class="botao secundario" id="pv_voltar2">${icone("seta-esq")} Trocar os campos</button>
       <button class="botao secundario" id="pv_csv">Copiar como CSV</button>
       <button class="botao secundario" id="pv_json">Ver o pedido</button>
     </div>
@@ -6624,7 +6826,7 @@ async function pivotPasso3() {
       juntar: w.juncoes, linhas: w.linhas, colunas: w.colunas,
       valor: w.valor ? w.valor.campo : undefined, agregador: w.agregador,
     }, null, 2))}</pre>
-    <div class="acoes"><button class="botao secundario" id="pv_volta3">← Resultado</button></div>`)
+    <div class="acoes"><button class="botao secundario" id="pv_volta3">${icone("seta-esq")} Resultado</button></div>`)
     || ($("#pv_volta3").onclick = () => desenharPivot());
 }
 
@@ -6827,48 +7029,48 @@ async function verConfigTabela(db, tab) {
 /** O que cada item de gestao do database faz -- ou por que ainda nao faz. */
 function itensDoDatabase(db) {
   return [
-    { g:"dados", ico:"▦", rot:"Tabelas", txt:"tela.mi_tabelas",
+    { g:"dados", ico:"tabelas", rot:"Tabelas", txt:"tela.mi_tabelas",
       diz:"As tabelas deste banco e as oito operações sobre cada uma.", dizTxt:"tela.dbit_tabelas_diz",
       faz:() => gerirTabelas(db) },
-    { g:"dados", ico:"▤", rot:"SysTables",
+    { g:"dados", ico:"catalogo", rot:"SysTables",
       diz:"O catálogo de tabelas em forma de dado: registros, chaves, partição.", dizTxt:"tela.dbit_systables_diz",
       faz:() => verSysTables(db) },
-    { g:"dados", ico:"☰", rot:"SysColumns",
+    { g:"dados", ico:"colunas", rot:"SysColumns",
       diz:"O dicionário de dados: cada campo com caption, máscara, tipo e papel na chave.", dizTxt:"tela.dbit_syscolumns_diz",
       faz:() => verSysColumns(db) },
-    { g:"dados", ico:"▦", rot:"Tabela dinâmica…", txt:"tela.mi_pivot",
+    { g:"dados", ico:"pivot", rot:"Tabela dinâmica…", txt:"tela.mi_pivot",
       diz:"Cruza uma tabela por dois eixos e soma no servidor — com junção a outras tabelas.", dizTxt:"tela.dbit_pivot_diz",
       faz:() => telaPivot(db) },
-    { g:"dados", ico:"№", rot:"Sequências", txt:"tela.dbit_sequencias",
+    { g:"dados", ico:"numero", rot:"Sequências", txt:"tela.dbit_sequencias",
       diz:"O contador de cada tabela do banco, e o ajuste para zerar ou pular uma faixa.", dizTxt:"tela.dbit_sequencias_diz",
       faz:() => verSequencias(db) },
-    { g:"dados", ico:"⧉", rot:"Copiar tabela…", txt:"tela.dbit_copiar_tabela",
+    { g:"dados", ico:"copiar", rot:"Copiar tabela…", txt:"tela.dbit_copiar_tabela",
       diz:"Copia uma tabela para outro banco ou schema, byte a byte.", dizTxt:"tela.dbit_copiar_tabela_diz",
       faz:() => telaCopiarColar(db) },
 
-    { g:"config", ico:"⚙", rot:"Configurações do banco", txt:"tela.dbit_config_banco",
+    { g:"config", ico:"engrenagem", rot:"Configurações do banco", txt:"tela.dbit_config_banco",
       diz:"Onde ele mora, quantos schemas e tabelas, e o que herda do servidor.", dizTxt:"tela.dbit_config_banco_diz",
       faz:() => verConfigBanco(db) },
-    { g:"config", ico:"⛨", rot:"Diretivas de acesso ao banco", txt:"tela.dbit_diretivas_banco",
+    { g:"config", ico:"escudo", rot:"Diretivas de acesso ao banco", txt:"tela.dbit_diretivas_banco",
       diz:"Quem alcança este banco e com que poder — e o que o servidor recusa antes de olhar.", dizTxt:"tela.dbit_diretivas_banco_diz",
       faz:() => verDiretivasDoBanco(db) },
-    { g:"config", ico:"✎", rot:"Editor de menu", txt:"tela.tt_editor_menu",
+    { g:"config", ico:"editar", rot:"Editor de menu", txt:"tela.tt_editor_menu",
       diz:"Trocar o nome exibido de qualquer item do menu e da barra.", dizTxt:"tela.dbit_editor_menu_diz",
       faz:editorDeMenu },
 
-    { g:"operacao", ico:"⇋", rot:"Sessões e conexões", txt:"tela.dbit_sessoes_conexoes",
+    { g:"operacao", ico:"tomada", rot:"Sessões e conexões", txt:"tela.dbit_sessoes_conexoes",
       diz:"Quem está falando agora, o que está executando, e como derrubar.", dizTxt:"tela.dbit_sessoes_conexoes_diz",
       faz:verSessoes },
-    { g:"operacao", ico:"◷", rot:"Estatísticas de uso", txt:"tela.dbit_estatisticas_uso",
+    { g:"operacao", ico:"barras", rot:"Estatísticas de uso", txt:"tela.dbit_estatisticas_uso",
       diz:"A cauda da latência, o que custa caro e por qual tabela.", dizTxt:"tela.dbit_estatisticas_uso_diz",
       faz:() => verEstatisticas() },
-    { g:"operacao", ico:"⊘", rot:"Arquivos bloqueados", txt:"tela.dbit_arquivos_bloqueados",
+    { g:"operacao", ico:"proibido", rot:"Arquivos bloqueados", txt:"tela.dbit_arquivos_bloqueados",
       diz:"Os IPs barrados, o motivo e até quando.", dizTxt:"tela.dbit_arquivos_bloqueados_diz",
       faz:() => irPara("bloqueios") },
-    { g:"operacao", ico:"⇄", rot:"Transações", txt:"tela.dbit_transacoes",
+    { g:"operacao", ico:"troca", rot:"Transações", txt:"tela.dbit_transacoes",
       diz:"O que existe hoje e o que falta para haver commit e rollback.", dizTxt:"tela.dbit_transacoes_diz",
       faz:verTransacoes },
-    { g:"operacao", ico:"⛁", rot:"Backup e restauração", txt:"tela.mi_backup_restauracao",
+    { g:"operacao", ico:"cofre", rot:"Backup e restauração", txt:"tela.mi_backup_restauracao",
       diz:"Copiar com manifesto SHA-256, conferir uma cópia, e o que falta para restaurar.", dizTxt:"tela.dbit_backup_restauracao_diz",
       faz:() => verBackupRestaure(db) },
 
@@ -6877,9 +7079,9 @@ function itensDoDatabase(db) {
     // tem e a mesma falha da configuracao que ninguem le, do avesso. Jobs tem
     // tela desde o pedido 51; gatilho e procedimento existem pela op `sql`, e
     // o que falta neles e a TELA -- que e o que o item passa a dizer.
-    { g:"operacao", ico:"⏱", rot:"Jobs de execução", txt:"tela.mi_jobs",
+    { g:"operacao", ico:"relogio", rot:"Jobs de execução", txt:"tela.mi_jobs",
       faz:telaJobs },
-    { g:"comando", ico:"⚡", rot:"Triggers", txt:"tela.dbit_triggers",
+    { g:"comando", ico:"raio", rot:"Triggers", txt:"tela.dbit_triggers",
       falta:"EXISTEM, e não por esta tela. `CREATE TRIGGER nome BEFORE|AFTER "
           + "INSERT|UPDATE|DELETE ON tabela FOR EACH ROW <corpo>` pela operação "
           + "`sql` — no dialeto do MySQL(R), similar e não idêntico, com 17 "
@@ -6887,14 +7089,14 @@ function itensDoDatabase(db) {
           + "`DROP TRIGGER` remove, e criar ou excluir exige `administrar`. "
           + "O que falta aqui é o formulário — e ele não entrou de propósito: "
           + "seria um SEGUNDO caminho para escrever rotina." },
-    { g:"comando", ico:"ƒ", rot:"Procedures", txt:"tela.dbit_procedures",
+    { g:"comando", ico:"funcao", rot:"Procedures", txt:"tela.dbit_procedures",
       falta:"EXISTEM, no MESMO interpretador do gatilho. `CREATE PROCEDURE` "
           + "com `IN`/`OUT`/`INOUT`, `CALL`, `SHOW PROCEDURES` e `DROP "
           + "PROCEDURE`, pela operação `sql`. Cada pedido que o corpo produz "
           + "sai pelo portão de sempre com a sessão de quem chamou — por isso "
           + "`CALL` não pede permissão própria: ele nunca dá poder que a "
           + "pessoa já não tivesse." },
-    { g:"falta", ico:"🔒", rot:"Modo exclusivo", txt:"tela.dbit_modo_exclusivo",
+    { g:"falta", ico:"cadeado", rot:"Modo exclusivo", txt:"tela.dbit_modo_exclusivo",
       falta:"Abrir a tabela em uso exclusivo, para reorganizar ou compactar sem "
           + "ninguém escrevendo junto. Hoje uma trava única já serializa todo "
           + "acesso a dados, então ninguém escreve ao mesmo tempo — mas não há "
@@ -6943,7 +7145,7 @@ async function gerirDatabase(db) {
       return `<h3 class="secao">${esc(txt(tituloTxt, titulo))}</h3>
         <div class="ops">${doGrupo.map(([it, i]) =>
           `<button class="op${it.faz ? "" : " afazer"}" data-op="${i}">
-             <span class="op-ico">${it.ico}</span>
+             <span class="op-ico">${icone(it.ico)}</span>
              <span class="op-txt"><b>${esc(txt(it.txt, it.rot))}</b><span>${esc(
                it.diz ? txt(it.dizTxt, it.diz) : txt("tela.dbit_ainda_nao_existe","ainda não existe — clique para ver o que falta"))}</span></span>
            </button>`).join("")}</div>`;
@@ -6984,7 +7186,7 @@ function telaCopiarColar(db) {
            Depois volte aqui — ou use o <em>Colar</em> da própria grade.</p>
          </div>
          <div class="acoes">
-           <button class="botao secundario" id="btIrTabelas">→ Tabelas de ${esc(db)}</button>
+           <button class="botao secundario" id="btIrTabelas">${icone("seta-dir")} Tabelas de ${esc(db)}</button>
          </div>`
       : `<form class="criar" id="formColar" autocomplete="off">
            <div class="bloco">
@@ -7105,7 +7307,7 @@ async function verDiretivasDoBanco(db) {
      </div>
 
      <div class="acoes">
-       <button class="botao secundario" id="btVoltaDb">← Gerir ${esc(db)}</button>
+       <button class="botao secundario" id="btVoltaDb">${icone("seta-esq")} Gerir ${esc(db)}</button>
      </div>`);
   $("#btVoltaDb").onclick = () => gerirDatabase(db);
 
@@ -7155,11 +7357,11 @@ async function verBackupRestaure(db) {
      </div>
 
      <div class="ops">
-       <button class="op" id="opBackup"><span class="op-ico">⛁</span>
+       <button class="op" id="opBackup"><span class="op-ico">${icone("cofre")}</span>
          <span class="op-txt"><b>Backup agora</b><span>Copia e confere, com manifesto SHA-256 de cada arquivo.</span></span></button>
-       <button class="op" id="opConferir"><span class="op-ico">✓</span>
+       <button class="op" id="opConferir"><span class="op-ico">${icone("check")}</span>
          <span class="op-txt"><b>Conferir uma cópia</b><span>Recalcula o SHA-256 de cada arquivo contra o manifesto.</span></span></button>
-       <button class="op" id="opRestaurar"><span class="op-ico">⤺</span>
+       <button class="op" id="opRestaurar"><span class="op-ico">${icone("restaurar")}</span>
          <span class="op-txt"><b>Restaurar…</b><span>Traz uma cópia de volta: com outro nome, ou por cima. Confere o SHA-256 antes de tocar no destino.</span></span></button>
      </div>
 
@@ -7175,7 +7377,7 @@ async function verBackupRestaure(db) {
      </div>
 
      <div class="acoes">
-       <button class="botao secundario" id="btVoltaDb">← Gerir ${esc(db)}</button>
+       <button class="botao secundario" id="btVoltaDb">${icone("seta-esq")} Gerir ${esc(db)}</button>
      </div>`);
 
   $("#opBackup").onclick = backupAgora;
@@ -7225,7 +7427,7 @@ async function telaRestaurarBackup(pasta) {
      </div>
 
      <div class="acoes">
-       <button class="botao secundario" id="btRstVolta">← Backup e restauração</button>
+       <button class="botao secundario" id="btRstVolta">${icone("seta-esq")} Backup e restauração</button>
      </div>`);
 
   $("#btRstVolta").onclick = () => verBackupRestaure(databaseCorrente());
@@ -7349,7 +7551,7 @@ async function verDentroDoBackup(origem, de) {
 
       <div class="ops">
         <div class="op fixa">
-          <span class="op-ico">✚</span>
+          <span class="op-ico">${icone("mais")}</span>
           <span class="op-txt"><b>Restaurar com outro nome</b>
             <span>Cria um database novo com o conteúdo da cópia. Não toca no que
             existe, não precisa parar nada, e dá para conferir o dado antes de
@@ -7360,7 +7562,7 @@ async function verDentroDoBackup(origem, de) {
         </div>
 
         <div class="op fixa perigo">
-          <span class="op-ico">⤺</span>
+          <span class="op-ico">${icone("restaurar")}</span>
           <span class="op-txt"><b>Restaurar por cima de ${esc(de)}</b>
             <span>Substitui o database inteiro pelo conteúdo da cópia. O que está
             lá <b>não é apagado</b>: sai da raiz de dados, e o caminho aparece na
@@ -7427,7 +7629,7 @@ async function restaurarAgora(origem, de, destino, porCima) {
          de apagar aquela pasta.</p></div>` : ""}
        <div class="acoes">
          <button class="botao mini consultar" id="btVerRestaurado">Abrir ${esc(r.database)}</button>
-         <button class="botao secundario" id="btRstOutra">← Restaurar outra cópia</button>
+         <button class="botao secundario" id="btRstOutra">${icone("seta-esq")} Restaurar outra cópia</button>
        </div>`);
     $("#btVerRestaurado").onclick = () => gerirTabelas(r.database);
     $("#btRstOutra").onclick = () => telaRestaurarBackup();
@@ -8275,7 +8477,7 @@ async function verConfigBanco(db) {
      ])}
 
      <div class="acoes">
-       <button class="botao secundario" id="btGerirDb">← Gerir ${esc(db)}</button>
+       <button class="botao secundario" id="btGerirDb">${icone("seta-esq")} Gerir ${esc(db)}</button>
      </div>`);
   const b = $("#btGerirDb");
   if (b) b.onclick = () => gerirDatabase(db);
@@ -8379,8 +8581,8 @@ async function verSysTables(db) {
 
   folha("SysTables" + " · " + db, preencher(txt("tela.st_n_tabelas_catalogo","{n} tabela(s) · o catálogo em forma de dado"), {n: linhas.length}),
     `<div class="acoes">
-       <button class="botao secundario" id="btSysCols">SysColumns →</button>
-       <button class="botao secundario" id="btVoltaDb">← Gerir ${esc(db)}</button>
+       <button class="botao secundario" id="btSysCols">SysColumns ${icone("seta-dir")}</button>
+       <button class="botao secundario" id="btVoltaDb">${icone("seta-esq")} Gerir ${esc(db)}</button>
      </div>
      <div id="gradeSys"></div>
      <div class="nota"><p>Uma linha por tabela do database. <em>bytes/linha</em> é o
@@ -8448,9 +8650,9 @@ async function verSysColumns(db, tabela_) {
   folha("SysColumns" + " · " + db + (tabela_ ? " · " + tabela_ : ""),
     preencher(txt("tela.st_n_colunas_dicionario","{n} coluna(s) · o dicionário de dados"), {n: linhas.length}),
     `<div class="acoes">
-       <button class="botao secundario" id="btSysTabs">← SysTables</button>
+       <button class="botao secundario" id="btSysTabs">${icone("seta-esq")} SysTables</button>
        ${tabela_ ? `<button class="botao secundario" id="btTodas">todas as tabelas</button>` : ""}
-       <button class="botao secundario" id="btVoltaDb">← Gerir ${esc(db)}</button>
+       <button class="botao secundario" id="btVoltaDb">${icone("seta-esq")} Gerir ${esc(db)}</button>
      </div>` +
     `<div id="gradeSysCol"></div>` +
     `<div class="nota"><p>O <code>id</code> é um UUID v7 sorteado quando a coluna
@@ -8842,13 +9044,13 @@ function ligarIdiomasAdmin() {
    para quem clica e para quem chama por `curl`. */
 
 const FORMATOS = [
-  { id:"xlsx", rot:"Excel",    ico:"▦", diz:"planilha formatada, com filtro e painel congelado", dizTxt:"tela.fmt_xlsx_diz" },
-  { id:"csv",  rot:"CSV",      ico:"☰", diz:"ponto e vírgula, decimal com vírgula, BOM para o acento", dizTxt:"tela.fmt_csv_diz" },
-  { id:"json", rot:"JSON",     ico:"{}", diz:"uma lista de objetos, tipos preservados", dizTxt:"tela.fmt_json_diz" },
-  { id:"xml",  rot:"XML",      ico:"◇", diz:"um elemento por linha, nulo declarado", dizTxt:"tela.fmt_xml_diz" },
-  { id:"html", rot:"HTML",     ico:"◫", diz:"tabela pronta, com filtro que funciona sem rede", dizTxt:"tela.fmt_html_diz" },
-  { id:"docx", rot:"Word",     ico:"▤", diz:"documento em paisagem, cabeçalho repetido por página", dizTxt:"tela.fmt_docx_diz" },
-  { id:"txt",  rot:"Texto",    txt:"tela.fmt_txt_rot", ico:"⌷", diz:"largura fixa, alinhado para ler no terminal", dizTxt:"tela.fmt_txt_diz" },
+  { id:"xlsx", rot:"Excel",    ico:"grade", diz:"planilha formatada, com filtro e painel congelado", dizTxt:"tela.fmt_xlsx_diz" },
+  { id:"csv",  rot:"CSV",      ico:"lista", diz:"ponto e vírgula, decimal com vírgula, BOM para o acento", dizTxt:"tela.fmt_csv_diz" },
+  { id:"json", rot:"JSON",     ico:"chaves", diz:"uma lista de objetos, tipos preservados", dizTxt:"tela.fmt_json_diz" },
+  { id:"xml",  rot:"XML",      ico:"codigo", diz:"um elemento por linha, nulo declarado", dizTxt:"tela.fmt_xml_diz" },
+  { id:"html", rot:"HTML",     ico:"pagina", diz:"tabela pronta, com filtro que funciona sem rede", dizTxt:"tela.fmt_html_diz" },
+  { id:"docx", rot:"Word",     ico:"documento", diz:"documento em paisagem, cabeçalho repetido por página", dizTxt:"tela.fmt_docx_diz" },
+  { id:"txt",  rot:"Texto",    txt:"tela.fmt_txt_rot", ico:"texto", diz:"largura fixa, alinhado para ler no terminal", dizTxt:"tela.fmt_txt_diz" },
 ];
 
 /// Entrega o arquivo ao navegador.
@@ -8882,7 +9084,7 @@ async function telaExportar(db, tab) {
   folha(preencher(txt("tela.tt_exportar","Exportar {tab}"), {tab}), preencher(txt("tela.st_escolha_formato","{db} · escolha o formato"), {db: esc(db)}),
     `<div class="formatos" id="fmts">
        ${FORMATOS.map(f => `<button class="fmt" data-f="${f.id}">
-            <span class="f-ico">${f.ico}</span>
+            <span class="f-ico">${icone(f.ico)}</span>
             <span class="f-rot">${f.txt ? esc(txt(f.txt, f.rot)) : f.rot}</span>
             <span class="f-ext">.${f.id}</span>
             <span class="f-diz">${esc(txt(f.dizTxt, f.diz))}</span>
@@ -8896,7 +9098,7 @@ async function telaExportar(db, tab) {
      </div>
      <div id="expSaida"></div>
      <div class="acoes">
-       <button class="botao secundario" id="btVoltaExp">← Gerir tabelas</button>
+       <button class="botao secundario" id="btVoltaExp">${icone("seta-esq")} Gerir tabelas</button>
      </div>`);
 
   $("#btVoltaExp").onclick = () => gerirTabelasAtual();
@@ -8964,7 +9166,7 @@ async function telaImportar(db, tab) {
      <div class="acoes">
        <button class="botao secundario" id="btPrever">Conferir</button>
        <button class="botao incluir" id="btImportar" disabled>Gravar</button>
-       <button class="botao secundario" id="btVoltaImp">← Gerir tabelas</button>
+       <button class="botao secundario" id="btVoltaImp">${icone("seta-esq")} Gerir tabelas</button>
      </div>
      <div id="impSaida"></div>`);
 
@@ -9097,13 +9299,13 @@ async function dialogoExcluir(db, tab, rowid, aoTerminar, versao) {
       <div class="sub">${esc(db)} · ${esc(tab)}</div>
       <div class="modos" id="modosExc">
         <button class="modo escolhido" data-modo="suave">
-          <span class="m-ico">🚫</span>
+          <span class="m-ico">${icone("proibido")}</span>
           <span><span class="m-rot">Marcar como excluído</span>
             <span class="m-diz">A linha some das listas e continua no
               <code>.reg</code>, inteira. Dá para restaurar.</span></span>
         </button>
         <button class="modo risco" data-modo="fisico">
-          <span class="m-ico">🗑</span>
+          <span class="m-ico">${icone("excluir")}</span>
           <span><span class="m-rot">Excluir de vez</span>
             <span class="m-diz">Sai do <code>.reg</code>. A linha inteira vai
               antes para o <code>.trash</code>, de onde só o administrador
@@ -9454,7 +9656,7 @@ async function telaLixeira(db, tab) {
          <code>ler</code> perdeu o direito àquela linha no instante em que ela
          foi excluída, e a lixeira devolveria o direito por outra porta.</p>
        <div class="acoes">
-         <button class="botao secundario" id="btVoltaLix">← Gerir tabelas</button>
+         <button class="botao secundario" id="btVoltaLix">${icone("seta-esq")} Gerir tabelas</button>
        </div>`);
     $("#btVoltaLix").onclick = () => gerirTabelasAtual();
     return;
@@ -9474,7 +9676,7 @@ async function telaLixeira(db, tab) {
             foi excluída de vez.</div>`
        : `<div id="gradeLixeira"></div>`}
      <div class="acoes">
-       <button class="botao secundario" id="btVoltaLix">← Gerir tabelas</button>
+       <button class="botao secundario" id="btVoltaLix">${icone("seta-esq")} Gerir tabelas</button>
        <button class="botao secundario" id="btVerMotivos">Ver os motivos</button>
        ${itens.length ? `<button class="botao perigo" id="btEsvaziar">Esvaziar a lixeira</button>` : ""}
      </div>`;
@@ -9574,7 +9776,7 @@ async function verLinhaDescartada(db, tab, uuid) {
        <code>${esc(item.uuid)}</code>. É um v7: ordenar por ele é ordenar por
        quando aconteceu.</p>
      <div class="acoes">
-       <button class="botao secundario" id="btVoltaLinha">← Lixeira</button>
+       <button class="botao secundario" id="btVoltaLinha">${icone("seta-esq")} Lixeira</button>
      </div>`);
   $("#btVoltaLinha").onclick = () => telaLixeira(db, tab);
 
@@ -9611,7 +9813,7 @@ async function telaMotivos(db, tab) {
          registro que foi excluído — «fraude», «pedido de remoção do titular»,
          «duplicidade com o contrato X». Por isso exige <b>administrar</b>.</p>
        <div class="acoes">
-         <button class="botao secundario" id="btVoltaMot">← Gerir tabelas</button>
+         <button class="botao secundario" id="btVoltaMot">${icone("seta-esq")} Gerir tabelas</button>
        </div>`);
     $("#btVoltaMot").onclick = () => gerirTabelasAtual();
     return;
@@ -9630,7 +9832,7 @@ async function telaMotivos(db, tab) {
        ? `<div class="aviso">Nenhuma exclusão registrada nesta tabela.</div>`
        : `<div id="gradeMotivos"></div>`}
      <div class="acoes">
-       <button class="botao secundario" id="btVoltaMot">← Gerir tabelas</button>
+       <button class="botao secundario" id="btVoltaMot">${icone("seta-esq")} Gerir tabelas</button>
        <button class="botao secundario" id="btVerLixo">Ver a lixeira</button>
      </div>`;
   $("#btVoltaMot").onclick = () => gerirTabelasAtual();
@@ -9860,7 +10062,7 @@ async function verEstatisticas(horas) {
          <option value="24">${esc(txt("tela.st_24h", "últimas 24 horas"))}</option>
          <option value="168">${esc(txt("tela.st_7d", "últimos 7 dias"))}</option>
        </select></label>
-       <button class="botao secundario" id="btSessoes">← ${esc(txt("tela.se_titulo", "Sessões"))}</button>
+       <button class="botao secundario" id="btSessoes">${icone("seta-esq")} ${esc(txt("tela.se_titulo", "Sessões"))}</button>
      </div>
      <div class="cartas">
        ${carta(txt("tela.st_carta_tempo_resposta", "Tempo de resposta"),
@@ -10169,7 +10371,7 @@ async function telaUniao(db) {
        ordem diferente empilhariam trocando os valores, caladas.</div>
      <div class="acoes">
        <button class="botao" id="unRodar">Unir</button>
-       <button class="botao secundario" id="unJuncao">← Junção</button>
+       <button class="botao secundario" id="unJuncao">${icone("seta-esq")} Junção</button>
      </div>
      <div id="unSaida"></div>`);
 
@@ -10388,8 +10590,8 @@ async function abrirTabelaDbl(tabela, salto = 0) {
       <span class="leg">${fmt(r.quantas)} linha(s)${salto ? ` a partir da ${fmt(salto + 1)}` : ""}${
         r.tem_mais ? " · há mais" : ""}</span>
       <span class="cresce"></span>
-      ${salto ? `<button class="botao secundario" id="btAnt">← anteriores</button>` : ""}
-      ${r.tem_mais ? `<button class="botao secundario" id="btProx">próximas →</button>` : ""}
+      ${salto ? `<button class="botao secundario" id="btAnt">${icone("seta-esq")} anteriores</button>` : ""}
+      ${r.tem_mais ? `<button class="botao secundario" id="btProx">próximas ${icone("seta-dir")}</button>` : ""}
       <button class="botao secundario" id="btEstr">Estrutura</button>
     </div>
     <div id="gradeDbl"></div>`;
@@ -10459,7 +10661,7 @@ async function estruturaDbl(tabela) {
      <h4 style="margin:18px 0 6px">${esc(txt("tela.aba_indices", "Índices"))}</h4>
      <div id="gradeDblIdx"></div>
      <div class="acoes">
-       <button class="botao secundario" id="btVoltaEstr">← ${esc(tabela)}</button>
+       <button class="botao secundario" id="btVoltaEstr">${icone("seta-esq")} ${esc(tabela)}</button>
      </div>`);
 
   // Os nomes de campo sao os do `SHOW FULL COLUMNS` e do `SHOW INDEX`, que sao
@@ -10587,7 +10789,7 @@ async function assistenteDbLink() {
           <span class="leg">— necessário para a sincronia empurrar; desmarcado, ela só puxa</span></span></label>
       </div>`,
       `<button class="botao secundario" id="azSair">${esc(txt("tela.cancelar", "Cancelar"))}</button>
-       <button class="botao incluir" id="azIr1">Testar a conexão →</button>`);
+       <button class="botao incluir" id="azIr1">Testar a conexão ${icone("seta-dir")}</button>`);
     $("#azSair").onclick = fechar;
     $("#azIr1").onclick = async () => {
       d.nome = $("#azNome").value.trim();
@@ -10622,13 +10824,13 @@ async function assistenteDbLink() {
         em ${t.ms} ms. Você é <code>${esc(t.usuario_efetivo || t.usuario || "?")}</code>
         do outro lado${t.database ? `, na base <code>${esc(t.database)}</code>` : ""}.</p></div>`,
         `<button class="botao secundario" id="azVolta">${esc(txt("tela.voltar", "← Voltar"))}</button>
-         <button class="botao incluir" id="azIr2">Escolher a base →</button>`);
+         <button class="botao incluir" id="azIr2">Escolher a base ${icone("seta-dir")}</button>`);
       $("#azVolta").onclick = passo1;
       $("#azIr2").onclick = passo3;
     } catch (e) {
       molde("Não conectou", 2,
         `<div class="aviso mal">${esc(String(e))}</div>`,
-        `<button class="botao secundario" id="azVolta">← Corrigir a conexão</button>`);
+        `<button class="botao secundario" id="azVolta">${icone("seta-esq")} Corrigir a conexão</button>`);
       $("#azVolta").onclick = passo1;
     }
   };
@@ -10649,7 +10851,7 @@ async function assistenteDbLink() {
             `<option ${x === az.base ? "selected" : ""}>${esc(x)}</option>`).join("")}
           </select></label></div>`,
         `<button class="botao secundario" id="azVolta">${esc(txt("tela.voltar", "← Voltar"))}</button>
-         <button class="botao incluir" id="azIr3">Escolher as tabelas →</button>`);
+         <button class="botao incluir" id="azIr3">Escolher as tabelas ${icone("seta-dir")}</button>`);
       $("#azVolta").onclick = passo2;
       $("#azIr3").onclick = async () => {
         az.base = $("#azBase").value;
@@ -10692,7 +10894,7 @@ async function assistenteDbLink() {
           <thead><tr><th></th><th>tabela de lá</th><th>sentido</th><th>conflito</th></tr></thead>
           <tbody>${linhas}</tbody></table></div>`,
         `<button class="botao secundario" id="azVolta">${esc(txt("tela.voltar", "← Voltar"))}</button>
-         <button class="botao incluir" id="azIr4">Ligar as marcadas →</button>`);
+         <button class="botao incluir" id="azIr4">Ligar as marcadas ${icone("seta-dir")}</button>`);
       $("#azVolta").onclick = passo3;
       $("#azIr4").onclick = async () => {
         az.local_db = $("#azLocal").value.trim();
@@ -10730,7 +10932,7 @@ async function assistenteDbLink() {
           <input id="azMin" class="campo" type="number" min="1" value="${az.job.minutos}"></label>
       </div>`,
       `<button class="botao secundario" id="azFim0">Concluir sem job</button>
-       <button class="botao incluir" id="azFim">Concluir →</button>`);
+       <button class="botao incluir" id="azFim">Concluir ${icone("seta-dir")}</button>`);
     $("#azFim0").onclick = () => concluir(null);
     $("#azFim").onclick = async () => {
       if (!$("#azJob").checked) return concluir(null);
@@ -10780,7 +10982,7 @@ async function telaDbLinkSql(nome) {
          placeholder="SELECT * FROM clientes WHERE cidade = 'Joinville'">SELECT </textarea>
        <div class="acoes">
          <button class="botao" id="btRodar">Executar</button>
-         <button class="botao secundario" id="btVoltaDbl">← DbLink</button>
+         <button class="botao secundario" id="btVoltaDbl">${icone("seta-esq")} DbLink</button>
        </div>
      </div>
      <div id="saidaSql"></div>`);
@@ -10846,7 +11048,7 @@ async function telaDbLinkDefinicoes() {
      </div>
      <div class="acoes">
        <button class="botao" id="btNovaLig">Nova ligação…</button>
-       <button class="botao secundario" id="btIrDbl">← DbLink</button>
+       <button class="botao secundario" id="btIrDbl">${icone("seta-esq")} DbLink</button>
      </div>`);
   $("#btNovaLig").onclick = () => editarDbLink(null);
   $("#btIrDbl").onclick = () => telaDbLink();
@@ -10947,7 +11149,7 @@ async function editarDbLink(nome) {
        <button class="botao" id="btGravar">Gravar</button>
        <button class="botao secundario" id="btTest2">Gravar e testar</button>
        ${l ? `<button class="botao perigo" id="btApagar">Excluir ligação</button>` : ""}
-       <button class="botao secundario" id="btVolta2">← Definições</button>
+       <button class="botao secundario" id="btVolta2">${icone("seta-esq")} Definições</button>
      </div>`);
 
   $("#btVolta2").onclick = () => telaDbLinkDefinicoes();
@@ -11025,58 +11227,11 @@ async function editarDbLink(nome) {
    Quando ele existe, o botao nasce apagado e clicar nele diz o que falta e do
    que depende, em vez de nao fazer nada. */
 
-const ICO = {
-  pulso: `<path d="M2.5 12h4l2-6 3.5 12 2.5-7 1.8 3.4h5.2" fill="none" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"/>`,
-  energia: `<circle cx="12" cy="12" r="9" fill="none" stroke-width="1.7"/><path d="M12 6.5v6" stroke-width="2" stroke-linecap="round"/>`,
-  consulta: `<circle cx="10.5" cy="10.5" r="6" fill="none" stroke-width="1.7"/><path d="M15 15l4.5 4.5" stroke-width="2" stroke-linecap="round"/>`,
-  gente: `<circle cx="9" cy="8" r="3.2" fill="none" stroke-width="1.6"/><path d="M3.5 19c0-3.2 2.5-5.2 5.5-5.2s5.5 2 5.5 5.2" fill="none" stroke-width="1.6"/><path d="M16 6.5a3 3 0 010 5.6M17 19c0-2.4-.8-4-2-5" fill="none" stroke-width="1.5"/>`,
-  escudo: `<path d="M12 3l7 3v6c0 4.2-3 7.6-7 9-4-1.4-7-4.8-7-9V6z" fill="none" stroke-width="1.6"/><path d="M9 12l2 2 4-4" fill="none" stroke-width="1.8" stroke-linecap="round"/>`,
-  banco: `<ellipse cx="12" cy="6" rx="7.5" ry="3" fill="none" stroke-width="1.6"/><path d="M4.5 6v12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V6" fill="none" stroke-width="1.6"/><path d="M4.5 12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3" fill="none" stroke-width="1.4"/>`,
-  duplicar: `<rect x="3.5" y="3.5" width="12" height="14" rx="2" fill="none" stroke-width="1.6"/><path d="M8.5 20.5h9a2 2 0 002-2v-11" fill="none" stroke-width="1.6"/>`,
-  tomada: `<path d="M6 4v6a6 6 0 006 6 6 6 0 006-6V4" fill="none" stroke-width="1.6"/><path d="M9 2v3M15 2v3M12 16v6" stroke-width="1.7" stroke-linecap="round"/>`,
-  troca: `<path d="M4 8h13l-3.5-3.5M20 16H7l3.5 3.5" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>`,
-  importar: `<path d="M12 3v11M8 10.5l4 4 4-4" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 17.5v2a1.5 1.5 0 001.5 1.5h13a1.5 1.5 0 001.5-1.5v-2" fill="none" stroke-width="1.6"/>`,
-  reparo: `<path d="M14.5 6.5a4 4 0 00-5.4 5.2L4 16.8 7.2 20l5.1-5.1a4 4 0 005.2-5.4l-2.6 2.6-2.1-2.1z" fill="none" stroke-width="1.6" stroke-linejoin="round"/>`,
-  // Seta que volta para dentro de uma caixa: a cópia entrando de novo. Espelho
-  // do `cofre`, que é a que sai.
-  voltar: `<path d="M9.5 4.5L5 9l4.5 4.5" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 9h8.5a5.5 5.5 0 010 11H8" fill="none" stroke-width="1.7" stroke-linecap="round"/>`,
-  cofre: `<path d="M12 3l8 3.5v5c0 4.6-3.3 8.3-8 9.5-4.7-1.2-8-4.9-8-9.5v-5z" fill="none" stroke-width="1.6"/><path d="M12 8.5v7M8.5 12h7" stroke-width="1.6" stroke-linecap="round"/>`,
-  // O cluster: quatro nos ligados ao do meio -- o desenho do pulso de todos
-  // com todos, que e o que o `laco_do_pulso` faz de verdade.
-  rede: `<circle cx="12" cy="12" r="2.6" fill="none" stroke-width="1.6"/><circle cx="4" cy="5" r="2" fill="none" stroke-width="1.5"/><circle cx="20" cy="5" r="2" fill="none" stroke-width="1.5"/><circle cx="4" cy="19" r="2" fill="none" stroke-width="1.5"/><circle cx="20" cy="19" r="2" fill="none" stroke-width="1.5"/><path d="M5.6 6.4l4.8 4.2M18.4 6.4l-4.8 4.2M5.6 17.6l4.8-4.2M18.4 17.6l-4.8-4.2" stroke-width="1.3"/>`,
-  replica: `<circle cx="6" cy="12" r="2.6" fill="none" stroke-width="1.6"/><circle cx="18" cy="6" r="2.6" fill="none" stroke-width="1.6"/><circle cx="18" cy="18" r="2.6" fill="none" stroke-width="1.6"/><path d="M8.3 10.8l7.3-3.6M8.3 13.2l7.3 3.6" stroke-width="1.5"/>`,
-  correio: `<rect x="3" y="5.5" width="18" height="13" rx="2" fill="none" stroke-width="1.6"/><path d="M3.6 7l8.4 6 8.4-6" fill="none" stroke-width="1.6" stroke-linecap="round"/>`,
-  corrente: `<rect x="2.5" y="8.5" width="6" height="7" rx="1.5" fill="none" stroke-width="1.6"/><rect x="9.5" y="8.5" width="5" height="7" rx="1.5" fill="none" stroke-width="1.6"/><rect x="15.5" y="8.5" width="6" height="7" rx="1.5" fill="none" stroke-width="1.6"/><path d="M8.5 12h1M14.5 12h1" stroke-width="1.7"/>`,
-  tabelas: `<rect x="3" y="4" width="13" height="12" rx="1.6" fill="none" stroke-width="1.5"/><path d="M3 8h13M8 8v8" stroke-width="1.3"/><path d="M8 8V4M19 8v12H8" fill="none" stroke-width="1.5" stroke-linecap="round"/>`,
-  pivot: `<rect x="3" y="4" width="18" height="16" rx="1.8" fill="none" stroke-width="1.5"/><path d="M3 9h18M9 4v16" stroke-width="1.4"/><path d="M12 12.5h2.5M12 16h5M15.5 12.5h2.5" stroke-width="1.5" stroke-linecap="round"/>`,
-  gerir: `<ellipse cx="12" cy="6" rx="7.5" ry="3" fill="none" stroke-width="1.5"/><path d="M4.5 6v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V6" fill="none" stroke-width="1.5"/><path d="M4.5 12v5.5c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V12" fill="none" stroke-width="1.5"/>`,
-  catalogo: `<rect x="3.5" y="3.5" width="17" height="17" rx="2" fill="none" stroke-width="1.5"/><path d="M3.5 8.5h17M8.5 8.5v12" stroke-width="1.3"/><path d="M11.5 12h6M11.5 15.5h6" stroke-width="1.3" stroke-linecap="round"/>`,
-  engrenagem: `<circle cx="12" cy="12" r="3.2" fill="none" stroke-width="1.5"/><path d="M12 2.6v2.6M12 18.8v2.6M21.4 12h-2.6M5.2 12H2.6M18.6 5.4l-1.8 1.8M7.2 16.8l-1.8 1.8M18.6 18.6l-1.8-1.8M7.2 7.2L5.4 5.4" stroke-width="1.5" stroke-linecap="round"/>`,
-  grade: `<rect x="3" y="4" width="18" height="16" rx="2" fill="none" stroke-width="1.6"/><path d="M3 9h18M9 9v11M15 9v11" stroke-width="1.4"/>`,
-  // Seta para baixo saindo de uma folha: o dado saindo da tabela para o disco
-  // de quem pediu. E o espelho do `importar`, de proposito.
-  lixeira: `<path d="M4 6.5h16M9.5 6.5V4.6A1.1 1.1 0 0110.6 3.5h2.8a1.1 1.1 0 011.1 1.1v1.9" fill="none" stroke-width="1.6" stroke-linecap="round"/><path d="M6.2 6.5l.9 13a1.4 1.4 0 001.4 1.3h7a1.4 1.4 0 001.4-1.3l.9-13" fill="none" stroke-width="1.6"/><path d="M10.2 10.5v6.5M13.8 10.5v6.5" fill="none" stroke-width="1.5" stroke-linecap="round"/>`,
-  exportar: `<path d="M12 3v11M8 10.5l4 4 4-4" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" transform="rotate(180 12 12)"/><path d="M4 17.5v2a1.5 1.5 0 001.5 1.5h13a1.5 1.5 0 001.5-1.5v-2" fill="none" stroke-width="1.6"/>`,
-  // Dois circulos que se cruzam, com o meio cheio: e o INNER JOIN, que e a
-  // junção que todo mundo desenha quando explica junção.
-  venn: `<circle cx="9.5" cy="12" r="6.5" fill="none" stroke-width="1.6"/><circle cx="14.5" cy="12" r="6.5" fill="none" stroke-width="1.6"/><path d="M12 6.2a6.5 6.5 0 000 11.6 6.5 6.5 0 000-11.6z" fill="currentColor" opacity=".55" stroke="none"/>`,
-  // Dois elos que se encaixam atravessando uma linha tracejada: a ligacao
-  // cruza a fronteira do servidor.
-  elo: `<path d="M9.5 14.5l5-5" stroke-width="1.7" stroke-linecap="round"/><path d="M12.8 7.7l1.9-1.9a3.4 3.4 0 014.8 4.8l-1.9 1.9M11.2 16.3l-1.9 1.9a3.4 3.4 0 01-4.8-4.8l1.9-1.9" fill="none" stroke-width="1.7" stroke-linecap="round"/>`,
-  ajuda: `<circle cx="12" cy="12" r="9" fill="none" stroke-width="1.6"/><path d="M9.4 9.3a2.7 2.7 0 015.2.9c0 1.8-2.6 2.2-2.6 4" fill="none" stroke-width="1.7" stroke-linecap="round"/><path d="M12 17.4v.1" stroke-width="2.2" stroke-linecap="round"/>`,
-  // Um relogio com a flecha de repeticao: agenda que volta. E de proposito
-  // parecido com o `troca`, porque job e ciclo.
-  relogio: `<circle cx="12" cy="12.6" r="7.8" fill="none" stroke-width="1.6"/><path d="M12 8.4v4.4l3 1.8" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M9.4 3.2h5.2" stroke-width="1.7" stroke-linecap="round"/>`,
-  // Um mostrador com ponteiro: o medidor de painel de instrumentos.
-  medidor: `<path d="M3 16.5a9 9 0 0118 0" fill="none" stroke-width="1.6" stroke-linecap="round"/><path d="M12 16.5l4.4-4.9" fill="none" stroke-width="1.6" stroke-linecap="round"/><circle cx="12" cy="16.5" r="1.5" fill="none" stroke-width="1.4"/><path d="M5.6 11.4l1 .9M12 8.2v1.4M18.4 11.4l-1 .9" fill="none" stroke-width="1.3" stroke-linecap="round"/>`,
-  // Duas caixas ligadas por uma linha com ponta: e o desenho do proprio ER.
-  diagrama: `<rect x="2.8" y="3.5" width="8" height="6" rx="1.4" fill="none" stroke-width="1.5"/><rect x="13.2" y="14.5" width="8" height="6" rx="1.4" fill="none" stroke-width="1.5"/><path d="M6.8 9.5v5a1.6 1.6 0 001.6 1.6h4.2" fill="none" stroke-width="1.5"/><path d="M11.2 15l1.8 1.6-1.8 1.6" fill="none" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>`,
-  // Escudo com um cadeado: o dado que a lei manda proteger.
-  privado: `<path d="M12 2.8l7.4 3v5.4c0 4.3-3.1 7.8-7.4 9-4.3-1.2-7.4-4.7-7.4-9V5.8z" fill="none" stroke-width="1.5"/><rect x="9.2" y="11.4" width="5.6" height="4.6" rx="1" fill="none" stroke-width="1.4"/><path d="M10.4 11.4v-1.5a1.6 1.6 0 013.2 0v1.5" fill="none" stroke-width="1.4"/>`,
-};
-
-const svg = nome =>
-  `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none">${ICO[nome]}</svg>`;
+// Os desenhos da barra de ferramentas moravam aqui, num objeto proprio. Foram
+// para o conjunto de icones da casa (o `<svg class="sprite">` no inicio do
+// corpo): era o segundo lugar da pagina desenhando icone, e a lei e que funcao
+// nao se duplica. `svg()` continua existindo so para nao mudar quem o chama.
+const svg = nome => icone(nome);
 
 /* A cor agrupa por familia, nao por gosto: a repeticao e inevitavel com mais
    ferramentas que matizes, e deve significar alguma coisa.
@@ -11139,7 +11294,7 @@ const FERRAMENTAS = [
   // Ao lado do Backup, e não escondida dentro da tela dele: o pedido chegou
   // como «falta o botão restaurar» com a tela de backup no ar há semanas.
   // Backup que não restaura não é backup, e botão que não se acha não existe.
-  { ico:"voltar",   rot:"Restaurar", txt:"tela.fer_restaurar",  cor:"var(--ambar)",  faz:() => telaRestaurarBackup(),
+  { ico:"restaurar", rot:"Restaurar", txt:"tela.fer_restaurar",  cor:"var(--ambar)",  faz:() => telaRestaurarBackup(),
     dica:"traz uma cópia de volta: com outro nome, ou por cima", dicaTxt:"tela.fer_dica_restaurar" },
   { ico:"lixeira",  rot:"Lixeira", txt:"tela.fer_lixeira",    cor:"var(--log)",    faz:() => telaLixeira() },
   { ico:"troca",    rot:"Transações", txt:"tela.mi_transacoes", cor:"var(--log)",    faz:verTransacoes },
@@ -11724,9 +11879,9 @@ async function telaDiagramaER(db) {
     `<div class="barra-acao">
        <label>Database<select id="erDb">${bancos.map(b =>
          `<option ${b === db ? "selected" : ""}>${esc(b)}</option>`).join("")}</select></label>
-       <button class="botao incluir" id="btErNova">✚ Nova tabela…</button>
-       <button class="botao incluir" id="btErDbl">⛓ Conexão DbLink…</button>
-       <button class="botao consultar" id="btErVer">↻ Redesenhar</button>
+       <button class="botao incluir" id="btErNova">${icone("mais")} Nova tabela…</button>
+       <button class="botao incluir" id="btErDbl">${icone("elo")} Conexão DbLink…</button>
+       <button class="botao consultar" id="btErVer">${icone("atualizar")} Redesenhar</button>
        <button class="botao secundario" id="btErArrumar"
          title="esquece as posições arrastadas e volta ao layout automático">Reorganizar</button>
      </div>
@@ -11919,7 +12074,7 @@ function cartaoTabelaER(db, nome) {
           : col.estrangeira ? `<b style="color:var(--ndx)">FK</b>` : ""}</td>
         <td class="dado">${esc(col.nome)}</td>
         <td class="dado">${esc(PhxER.tipoCurto(col))}</td>
-        <td class="num">${col.nullable === false ? "✓" : ""}</td>
+        <td class="num">${col.nullable === false ? icone("check") : ""}</td>
       </tr>`).join("")}</tbody></table></div>
 
     ${fks.length ? `<h3 style="font-size:12.5px;margin:14px 0 2px">Chaves
@@ -12376,7 +12531,7 @@ async function telaTrilhaLgpd(db, tab, tipo) {
   // do parametro nao pode sombrear a funcao global `txt()` de traducao, que
   // este ajudante passa a chamar.
   const valor = (bruto, redigido) => redigido
-    ? `<span class="pino mal" title="senha ou hash: o valor nunca entra na trilha">⛨ ${esc(txt("tela.pino_redigido","redigido"))}</span>`
+    ? `<span class="pino mal" title="senha ou hash: o valor nunca entra na trilha">${icone("escudo")} ${esc(txt("tela.pino_redigido","redigido"))}</span>`
     : (bruto === "" ? `<span class="leg">${esc(txt("tela.pino_vazio","(vazio)"))}</span>` : `<span class="dado">${esc(bruto)}</span>`);
 
   folha(txt("tela.tt_trilha_lgpd","Trilha de LGPD"), `${esc(db)}.${esc(tab)} · quem mexeu e quem viu`,
@@ -13070,7 +13225,7 @@ async function assistenteReplicacao() {
            </button>`).join("")}
       </div>`,
       `<button class="botao secundario" id="rzSair">${esc(txt("tela.cancelar", "Cancelar"))}</button>
-       <button class="botao incluir" id="rzIr1">Os servidores →</button>`);
+       <button class="botao incluir" id="rzIr1">Os servidores ${icone("seta-dir")}</button>`);
     $$("#rzModos .venn").forEach(b => b.onclick = () => {
       rz.modo = MODOS_REPLICA.find(m => m.id === b.dataset.m);
       $$("#rzModos .venn").forEach(x => x.classList.toggle("viva", x === b));
@@ -13214,7 +13369,7 @@ async function assistenteReplicacao() {
          ${rz.cifra ? `<p class="leg">${marcado(txt("tela.rz_sonda_cifra",
            "Com o túnel ligado, a falha também pode ser o outro servidor não atender o aperto "
            + "de mão: um source anterior a 18/09/2026 não atende, e \"cifra\": false é o escape escrito."))}</p>` : ""}</div>`,
-        `<button class="botao secundario" id="rzVolta">← Corrigir a conexão</button>`);
+        `<button class="botao secundario" id="rzVolta">${icone("seta-esq")} Corrigir a conexão</button>`);
       $("#rzVolta").onclick = passo2;
       return;
     }
@@ -13265,7 +13420,7 @@ async function assistenteReplicacao() {
       `<button class="botao secundario" id="rzVolta">${esc(txt("tela.voltar", "← Voltar"))}</button>
        ${trava
          ? `<button class="botao secundario" id="rzDeNovo">Testar de novo</button>`
-         : `<button class="botao incluir" id="rzIr3">O que replicar →</button>`}`);
+         : `<button class="botao incluir" id="rzIr3">O que replicar ${icone("seta-dir")}</button>`}`);
     $("#rzVolta").onclick = passo2;
     const dn = $("#rzDeNovo");
     if (dn) dn.onclick = passo3;
@@ -13304,7 +13459,7 @@ async function assistenteReplicacao() {
         linha inserida dos dois lados viraria duas. O motor recusa ligar o
         modo para tabela que não tenha; confira as chaves antes de aplicar.</p></div>` : ""}`,
       `<button class="botao secundario" id="rzVolta">${esc(txt("tela.voltar", "← Voltar"))}</button>
-       <button class="botao incluir" id="rzIr4">Streaming ou agendado →</button>`);
+       <button class="botao incluir" id="rzIr4">Streaming ou agendado ${icone("seta-dir")}</button>`);
     $("#rzTodos").onchange = ev => {
       rz.todos = ev.target.checked;
       $$("#rzBancos input").forEach(i => i.disabled = rz.todos);
@@ -13346,7 +13501,7 @@ async function assistenteReplicacao() {
         sempre a <b>contínua</b>: reserva agendada é reserva que perde o que
         aconteceu desde a última rodada.</p></div>` : ""}`,
       `<button class="botao secundario" id="rzVolta">${esc(txt("tela.voltar", "← Voltar"))}</button>
-       <button class="botao incluir" id="rzIr5">Aplicar e provar →</button>`);
+       <button class="botao incluir" id="rzIr5">Aplicar e provar ${icone("seta-dir")}</button>`);
     $("#rzVolta").onclick = passo4;
     $("#rzIr5").onclick = () => {
       rz.agenda = (corpo.querySelector('input[name="rzAg"]:checked') || {}).value || "streaming";
@@ -13411,7 +13566,7 @@ async function assistenteReplicacao() {
         rowids divergem e a replicação <b>para</b>. O assistente aplica isso
         junto.</p></div>` : ""}`,
       `<button class="botao secundario" id="rzVolta">${esc(txt("tela.voltar", "← Voltar"))}</button>
-       <button class="botao incluir" id="rzAplicar">Aplicar a configuração →</button>`);
+       <button class="botao incluir" id="rzAplicar">Aplicar a configuração ${icone("seta-dir")}</button>`);
     $("#rzVolta").onclick = passo5;
     $("#rzAplicar").onclick = async () => {
       recado("aplicando…");
@@ -14133,126 +14288,129 @@ const comTabela = () => !!est.atual;
 
 const MENUS = [
   ["Arquivo", "A", "tela.menu_arquivo", [
-    { rot:"Painel", txt:"tela.painel",              ico:"▦", tecla:"Alt+1", faz:() => irPara("painel") },
-    { rot:"Novo database…", txt:"tela.mi_novo_database",      ico:"✚",                faz:novoDatabase },
-    { rot:"View Database", txt:"tela.mi_view_database",       ico:"▦", tecla:"Alt+4", faz:viewDatabaseAtual },
+    { rot:"Painel", txt:"tela.painel",              ico:"painel", tecla:"Alt+1", faz:() => irPara("painel") },
+    { rot:"Novo database…", txt:"tela.mi_novo_database",      ico:"mais",                faz:novoDatabase },
+    { rot:"View Database", txt:"tela.mi_view_database",       ico:"banco", tecla:"Alt+4", faz:viewDatabaseAtual },
     "sep",
-    { rot:"Backup agora…", txt:"tela.mi_backup_agora",       ico:"⛁",  tecla:"Ctrl+B", faz:backupAgora },
-    { rot:"Conferir um backup…", txt:"tela.mi_conferir_backup", ico:"✓",                 faz:conferirBackup },
-    { rot:"Restaurar um backup…", txt:"tela.mi_restaurar_backup", ico:"⤺",                faz:() => telaRestaurarBackup() },
+    { rot:"Backup agora…", txt:"tela.mi_backup_agora",       ico:"cofre",  tecla:"Ctrl+B", faz:backupAgora },
+    { rot:"Imprimir", txt:"tela.imprimir", ico:"imprimir", tecla:"Ctrl+P", faz:() => window.print(),
+      quando:() => temGradeNaTela() },
     "sep",
-    { rot:"Sair", txt:"tela.sair",                ico:"⏻",                 faz:() => $("#btSair").click() },
+    { rot:"Conferir um backup…", txt:"tela.mi_conferir_backup", ico:"check",                 faz:conferirBackup },
+    { rot:"Restaurar um backup…", txt:"tela.mi_restaurar_backup", ico:"restaurar",                faz:() => telaRestaurarBackup() },
+    "sep",
+    { rot:"Sair", txt:"tela.sair",                ico:"sair",                 faz:() => $("#btSair").click() },
   ]],
 
   // Um menu so para tabela, e nao dois: "Tabela" (a escolhida na arvore) e
   // "Tabelas" (as do database) seriam vizinhos parecidos demais, e quem le a
   // barra teria de adivinhar em qual dos dois esta a operacao que quer.
   ["Banco", "B", "tela.menu_banco", [
-    { rot:"Gerir este banco", txt:"tela.mi_gerir_banco",     ico:"⛁", tecla:"Alt+6", faz:() => gerirDatabase() },
-    { rot:"Novo database…", txt:"tela.mi_novo_database",       ico:"✚", faz:novoDatabase },
+    { rot:"Gerir este banco", txt:"tela.mi_gerir_banco",     ico:"gerir", tecla:"Alt+6", faz:() => gerirDatabase() },
+    { rot:"Novo database…", txt:"tela.mi_novo_database",       ico:"mais", faz:novoDatabase },
     "sep",
-    { rot:"SysTables",            ico:"▤", faz:() => verSysTables() },
-    { rot:"SysColumns",           ico:"☰", faz:() => verSysColumns() },
-    { rot:"Tabela dinâmica…", txt:"tela.mi_pivot",     ico:"▦", faz:() => telaPivot() },
-    { rot:"Junção de tabelas…", txt:"tela.mi_juncao",   ico:"◉", faz:() => telaJuncao() },
-    { rot:"União de tabelas…", txt:"tela.mi_uniao",    ico:"⊎", faz:() => telaUniao() },
-    { rot:"Sequências", txt:"tela.mi_sequencias",           ico:"№", faz:() => verSequencias() },
-    { rot:"Diagrama ER…", txt:"tela.mi_diagrama_er",         ico:"◇", faz:() => telaDiagramaER() },
-    { rot:"Dado pessoal (LGPD)…", txt:"tela.mi_lgpd", ico:"⛨", faz:() => telaDadosPessoais(databaseCorrente()) },
+    { rot:"SysTables",            ico:"catalogo", faz:() => verSysTables() },
+    { rot:"SysColumns",           ico:"colunas", faz:() => verSysColumns() },
+    { rot:"Tabela dinâmica…", txt:"tela.mi_pivot",     ico:"pivot", faz:() => telaPivot() },
+    { rot:"Junção de tabelas…", txt:"tela.mi_juncao",   ico:"venn", faz:() => telaJuncao() },
+    { rot:"União de tabelas…", txt:"tela.mi_uniao",    ico:"uniao", faz:() => telaUniao() },
+    { rot:"Sequências", txt:"tela.mi_sequencias",           ico:"numero", faz:() => verSequencias() },
+    { rot:"Diagrama ER…", txt:"tela.mi_diagrama_er",         ico:"diagrama", faz:() => telaDiagramaER() },
+    { rot:"Dado pessoal (LGPD)…", txt:"tela.mi_lgpd", ico:"privado", faz:() => telaDadosPessoais(databaseCorrente()) },
     "sep",
-    { rot:"Copiar / colar tabela…", txt:"tela.mi_copiar_colar", ico:"⧉", faz:() => telaCopiarColar(databaseCorrente()) },
-    { rot:"Backup e restauração", txt:"tela.mi_backup_restauracao", ico:"⛁", faz:() => verBackupRestaure(databaseCorrente()) },
-    { rot:"Arquivos bloqueados", txt:"tela.mi_arquivos_bloqueados",  ico:"⊘", faz:() => irPara("bloqueios") },
-    { rot:"Transações", txt:"tela.mi_transacoes",           ico:"⇄", faz:verTransacoes },
+    { rot:"Copiar / colar tabela…", txt:"tela.mi_copiar_colar", ico:"copiar", faz:() => telaCopiarColar(databaseCorrente()) },
+    { rot:"Backup e restauração", txt:"tela.mi_backup_restauracao", ico:"cofre", faz:() => verBackupRestaure(databaseCorrente()) },
+    { rot:"Arquivos bloqueados", txt:"tela.mi_arquivos_bloqueados",  ico:"proibido", faz:() => irPara("bloqueios") },
+    { rot:"Transações", txt:"tela.mi_transacoes",           ico:"troca", faz:verTransacoes },
   ]],
 
   ["Tabelas", "T", "tela.menu_tabelas", [
-    { rot:"Gerir as tabelas", txt:"tela.mi_gerir_tabelas",     ico:"▦", tecla:"Alt+5", faz:gerirTabelasAtual },
-    { rot:"Nova tabela…", txt:"tela.mi_nova_tabela",         ico:"✚", faz:() => telaNovaTabela(databaseCorrente()) },
+    { rot:"Gerir as tabelas", txt:"tela.mi_gerir_tabelas",     ico:"tabelas", tecla:"Alt+5", faz:gerirTabelasAtual },
+    { rot:"Nova tabela…", txt:"tela.mi_nova_tabela",         ico:"mais", faz:() => telaNovaTabela(databaseCorrente()) },
     "sep",
-    { rot:"Estrutura da tabela", txt:"tela.mi_estrutura_tabela",  ico:"▤", tecla:"Alt+2", quando:comTabela, faz:() => irAba("estrutura") },
-    { rot:"Editar conteúdo", txt:"tela.mi_editar_conteudo",      ico:"▦", tecla:"Alt+3", quando:comTabela,
+    { rot:"Estrutura da tabela", txt:"tela.mi_estrutura_tabela",  ico:"estrutura", tecla:"Alt+2", quando:comTabela, faz:() => irAba("estrutura") },
+    { rot:"Editar conteúdo", txt:"tela.mi_editar_conteudo",      ico:"grade", tecla:"Alt+3", quando:comTabela,
       faz:() => verConteudoEditavel(est.atual.db, est.atual.tab) },
-    { rot:"Partições da tabela", txt:"tela.mi_particoes",  ico:"◫", quando:comTabela,
+    { rot:"Partições da tabela", txt:"tela.mi_particoes",  ico:"particoes", quando:comTabela,
       faz:() => verParticoes(est.atual.db, est.atual.tab) },
-    { rot:"Configurações e diretivas", txt:"tela.mi_config_diretivas", ico:"⚙", quando:comTabela,
+    { rot:"Configurações e diretivas", txt:"tela.mi_config_diretivas", ico:"engrenagem", quando:comTabela,
       faz:() => verConfigTabela(est.atual.db, est.atual.tab) },
-    { rot:"Índices", txt:"tela.aba_indices",              ico:"⑂", quando:comTabela, faz:() => irAba("indices") },
-    { rot:"Diário", txt:"tela.aba_diario",               ico:"◷", quando:comTabela, faz:() => irAba("diario") },
-    { rot:"Integridade", txt:"tela.aba_integridade",          ico:"⚑", quando:comTabela, faz:() => irAba("integridade") },
+    { rot:"Índices", txt:"tela.aba_indices",              ico:"indice", quando:comTabela, faz:() => irAba("indices") },
+    { rot:"Diário", txt:"tela.aba_diario",               ico:"diario", quando:comTabela, faz:() => irAba("diario") },
+    { rot:"Integridade", txt:"tela.aba_integridade",          ico:"chave", quando:comTabela, faz:() => irAba("integridade") },
     "sep",
     // Os tres arquivos que so o administrador le ficam juntos, e o menu diz
     // isso no rotulo: descobrir a restricao so depois de clicar e pior.
-    { rot:"Lixeira da tabela", txt:"tela.mi_lixeira",    ico:"♲", quando:comTabela, faz:() => telaLixeira() },
-    { rot:"Motivos das exclusões", txt:"tela.mi_motivos", ico:"✎", quando:comTabela, faz:() => telaMotivos() },
+    { rot:"Lixeira da tabela", txt:"tela.mi_lixeira",    ico:"lixeira", quando:comTabela, faz:() => telaLixeira() },
+    { rot:"Motivos das exclusões", txt:"tela.mi_motivos", ico:"documento", quando:comTabela, faz:() => telaMotivos() },
     "sep",
-    { rot:"Duplicar tabela…", txt:"tela.mi_duplicar_tabela",     ico:"⧉", quando:comTabela,
+    { rot:"Duplicar tabela…", txt:"tela.mi_duplicar_tabela",     ico:"duplicar", quando:comTabela,
       faz:() => duplicarTabelaPara(est.atual.db, est.atual.tab) },
-    { rot:"Verificar", txt:"tela.mi_verificar",            ico:"✓", quando:comTabela, faz:verificarTabela },
-    { rot:"Soma de verificação", txt:"tela.mi_checksum",  ico:"⑈", quando:comTabela, faz:() => checksumTabela() },
-    { rot:"Exportar…", txt:"tela.mi_exportar",            ico:"⭳", quando:comTabela, faz:() => telaExportar() },
-    { rot:"Importar carga…", txt:"tela.mi_importar",      ico:"⭱", quando:comTabela, faz:() => telaImportar() },
-    { rot:"Reparar índice…", txt:"tela.mi_reparar_indice",      ico:"↻", quando:comTabela, faz:reindexarTabela },
-    { rot:"Reparar tabela pelo espelho…", txt:"tela.mi_reparar_espelho", ico:"⛨", quando:comTabela, faz:repararTabela },
+    { rot:"Verificar", txt:"tela.mi_verificar",            ico:"check", quando:comTabela, faz:verificarTabela },
+    { rot:"Soma de verificação", txt:"tela.mi_checksum",  ico:"selo", quando:comTabela, faz:() => checksumTabela() },
+    { rot:"Exportar…", txt:"tela.mi_exportar",            ico:"exportar", quando:comTabela, faz:() => telaExportar() },
+    { rot:"Importar carga…", txt:"tela.mi_importar",      ico:"importar", quando:comTabela, faz:() => telaImportar() },
+    { rot:"Reparar índice…", txt:"tela.mi_reparar_indice",      ico:"atualizar", quando:comTabela, faz:reindexarTabela },
+    { rot:"Reparar tabela pelo espelho…", txt:"tela.mi_reparar_espelho", ico:"reparo", quando:comTabela, faz:repararTabela },
     "sep",
-    { rot:"Excluir tabela…", txt:"tela.mi_excluir_tabela",      ico:"🗑", quando:comTabela,
+    { rot:"Excluir tabela…", txt:"tela.mi_excluir_tabela",      ico:"excluir", quando:comTabela,
       faz:() => excluirTabelaDe(est.atual.db, est.atual.tab) },
   ]],
 
   ["Memória", "M", "tela.menu_memoria", [
-    { rot:"Carregar esta tabela na RAM", txt:"tela.mi_carregar_ram", ico:"⇧", quando:comTabela, faz:carregarNaMemoria },
-    { rot:"Tabelas residentes", txt:"tela.mi_residentes",          ico:"◍",                   faz:verResidentes },
-    { rot:"Liberar esta tabela", txt:"tela.mi_liberar",         ico:"⇩", quando:comTabela, faz:liberarDaMemoria },
+    { rot:"Carregar esta tabela na RAM", txt:"tela.mi_carregar_ram", ico:"carregar", quando:comTabela, faz:carregarNaMemoria },
+    { rot:"Tabelas residentes", txt:"tela.mi_residentes",          ico:"memoria",                   faz:verResidentes },
+    { rot:"Liberar esta tabela", txt:"tela.mi_liberar",         ico:"liberar", quando:comTabela, faz:liberarDaMemoria },
   ]],
 
   ["Administração", "d", "tela.administracao", [
-    { rot:"Usuários", txt:"tela.usuarios",      ico:"☺", faz:() => irPara("usuarios") },
-    { rot:"Acessos", txt:"tela.acessos",       ico:"◷", faz:() => irPara("acessos") },
-    { rot:"Bloqueios", txt:"tela.bloqueios",     ico:"⊘", faz:() => irPara("bloqueios") },
-    { rot:"Dado pessoal (LGPD)…", txt:"tela.mi_lgpd", ico:"⛨", faz:() => telaDadosPessoais() },
-    { rot:"Jobs de execução…", txt:"tela.mi_jobs",    ico:"⏱", faz:telaJobs },
+    { rot:"Usuários", txt:"tela.usuarios",      ico:"gente", faz:() => irPara("usuarios") },
+    { rot:"Acessos", txt:"tela.acessos",       ico:"porta", faz:() => irPara("acessos") },
+    { rot:"Bloqueios", txt:"tela.bloqueios",     ico:"proibido", faz:() => irPara("bloqueios") },
+    { rot:"Dado pessoal (LGPD)…", txt:"tela.mi_lgpd", ico:"privado", faz:() => telaDadosPessoais() },
+    { rot:"Jobs de execução…", txt:"tela.mi_jobs",    ico:"relogio", faz:telaJobs },
     "sep",
-    { rot:"Sessões agora", txt:"tela.mi_sessoes_agora", ico:"⇋", faz:verSessoes },
-    { rot:"Estatísticas de uso", txt:"tela.mi_estatisticas", ico:"◷", faz:() => verEstatisticas() },
-    { rot:"De onde vêm", txt:"tela.mi_de_onde_vem",   ico:"◎", faz:verIps },
-    { rot:"Configuração", txt:"tela.mi_configuracao",  ico:"⚙", faz:verConfig },
-    { rot:"Quem sou eu", txt:"tela.mi_quem_sou",   ico:"☰", faz:verQuemSou },
+    { rot:"Sessões agora", txt:"tela.mi_sessoes_agora", ico:"tomada", faz:verSessoes },
+    { rot:"Estatísticas de uso", txt:"tela.mi_estatisticas", ico:"barras", faz:() => verEstatisticas() },
+    { rot:"De onde vêm", txt:"tela.mi_de_onde_vem",   ico:"local", faz:verIps },
+    { rot:"Configuração", txt:"tela.mi_configuracao",  ico:"engrenagem", faz:verConfig },
+    { rot:"Quem sou eu", txt:"tela.mi_quem_sou",   ico:"usuario", faz:verQuemSou },
   ]],
 
   // A barra de ferramentas so se alcanca com o mouse. Este menu e a mesma
   // lista pelo teclado -- e onde mora a "Gestão de transações", que nao e
   // ferramenta de tabela nem de administracao.
   ["Ferramentas", "F", "tela.menu_ferramentas", [
-    { rot:"Gestão de transações", txt:"tela.mi_gestao_transacoes", ico:"⇄", faz:verTransacoes },
-    { rot:"Consulta SQL", txt:"tela.mi_consulta_sql",         ico:"⌕", faz:abrirConsulta },
-    { rot:"Tabela dinâmica…", txt:"tela.mi_pivot",     ico:"▦", tecla:"Alt+7", faz:() => telaPivot() },
-    { rot:"Junção de tabelas…", txt:"tela.mi_juncao",   ico:"◉", faz:() => telaJuncao() },
-    { rot:"União de tabelas…", txt:"tela.mi_uniao",    ico:"⊎", faz:() => telaUniao() },
+    { rot:"Gestão de transações", txt:"tela.mi_gestao_transacoes", ico:"troca", faz:verTransacoes },
+    { rot:"Consulta SQL", txt:"tela.mi_consulta_sql",         ico:"consulta", faz:abrirConsulta },
+    { rot:"Tabela dinâmica…", txt:"tela.mi_pivot",     ico:"pivot", tecla:"Alt+7", faz:() => telaPivot() },
+    { rot:"Junção de tabelas…", txt:"tela.mi_juncao",   ico:"venn", faz:() => telaJuncao() },
+    { rot:"União de tabelas…", txt:"tela.mi_uniao",    ico:"uniao", faz:() => telaUniao() },
     "sep",
-    { rot:"Serviço", txt:"tela.mi_servico",              ico:"⏻", faz:verServico },
-    { rot:"Jobs de execução…", txt:"tela.mi_jobs",    ico:"⏱", faz:telaJobs },
-    { rot:"Sessões e conexões", txt:"tela.mi_sessoes_conexoes",   ico:"⇋", faz:verSessoes },
-    { rot:"Estatísticas de uso…", txt:"tela.mi_estatisticas_p", ico:"◷", faz:() => verEstatisticas() },
-    { rot:"Replicação", txt:"tela.mi_replicacao",           ico:"⇉", faz:verReplicacao },
-    { rot:"Cluster", txt:"tela.mi_cluster",                ico:"◈", faz:verCluster },
+    { rot:"Serviço", txt:"tela.mi_servico",              ico:"energia", faz:verServico },
+    { rot:"Jobs de execução…", txt:"tela.mi_jobs",    ico:"relogio", faz:telaJobs },
+    { rot:"Sessões e conexões", txt:"tela.mi_sessoes_conexoes",   ico:"tomada", faz:verSessoes },
+    { rot:"Estatísticas de uso…", txt:"tela.mi_estatisticas_p", ico:"barras", faz:() => verEstatisticas() },
+    { rot:"Replicação", txt:"tela.mi_replicacao",           ico:"replica", faz:verReplicacao },
+    { rot:"Cluster", txt:"tela.mi_cluster",                ico:"rede", faz:verCluster },
     "sep",
-    { rot:"Telemetria ao vivo…", txt:"tela.mi_telemetria",  ico:"◔", faz:telaTelemetria },
-    { rot:"Profiler…", txt:"tela.mi_profiler",            ico:"∿", faz:verProfiler },
+    { rot:"Telemetria ao vivo…", txt:"tela.mi_telemetria",  ico:"medidor", faz:telaTelemetria },
+    { rot:"Profiler…", txt:"tela.mi_profiler",            ico:"pulso", faz:verProfiler },
     "sep",
-    { rot:"Reparar…", txt:"tela.mi_reparar",             ico:"⛨", faz:repararPeloMenu },
+    { rot:"Reparar…", txt:"tela.mi_reparar",             ico:"reparo", faz:repararPeloMenu },
     "sep",
     // As duas que AINDA NAO EXISTEM. Sairam da barra de ferramentas por
     // decisao do dono, e vieram para ca em vez de sumir: promessa visivel
     // continua sendo melhor que ausencia -- so muda de lugar, e agora fica no
     // fim do menu em vez de ocupar espaco na barra do que se usa todo dia.
     // O `falta` desliga o item e poe o motivo no `title`.
-    { rot:"Server Mail", txt:"tela.fer_server_mail", ico:"✉",
+    { rot:"Server Mail", txt:"tela.fer_server_mail", ico:"correio",
       falta:"O armazenamento serve bem — uma tabela de mensagens com pasta "
           + "indexada, corpo no .memo e anexo no .bin. Falta o serviço. O SMTP "
           + "de ENVIO já existe (é o que manda o alerta de disco), mas ele só "
           + "entrega para um relé interno e não sabe RECEBER — sem isso o "
           + "correio é de mão única." },
-    { rot:"Blockchain", txt:"tela.fer_blockchain", ico:"⛓",
+    { rot:"Blockchain", txt:"tela.fer_blockchain", ico:"corrente",
       falta:"O formato encaixa: a altura do bloco é o rowid, o Uuid256 guarda "
           + "um SHA-256 exato e a ordem de digitação é sagrada. Falta o "
           + "serviço — e, antes dele, as transações." },
@@ -14260,37 +14418,37 @@ const MENUS = [
 
   // Tres alcances, tres telas: o servidor inteiro, um banco, e quem entra.
   ["Configurações", "C", "tela.menu_configuracoes", [
-    { rot:"Gerais do servidor", txt:"tela.mi_gerais_servidor",   ico:"⚙", faz:verConfigServidor },
-    { rot:"Do banco atual", txt:"tela.mi_do_banco",       ico:"⛁", faz:() => verConfigBanco() },
-    { rot:"Dos usuários", txt:"tela.mi_dos_usuarios",         ico:"☺", faz:verConfigUsuarios },
+    { rot:"Gerais do servidor", txt:"tela.mi_gerais_servidor",   ico:"engrenagem", faz:verConfigServidor },
+    { rot:"Do banco atual", txt:"tela.mi_do_banco",       ico:"banco", faz:() => verConfigBanco() },
+    { rot:"Dos usuários", txt:"tela.mi_dos_usuarios",         ico:"gente", faz:verConfigUsuarios },
     "sep",
-    { rot:"Diretivas de acesso", txt:"tela.mi_diretivas_acesso",  ico:"⛨", faz:verDiretivas },
-    { rot:"Diretivas do banco", txt:"tela.mi_diretivas_banco",   ico:"⚑", faz:() => verDiretivasDoBanco() },
+    { rot:"Diretivas de acesso", txt:"tela.mi_diretivas_acesso",  ico:"escudo", faz:verDiretivas },
+    { rot:"Diretivas do banco", txt:"tela.mi_diretivas_banco",   ico:"bandeira", faz:() => verDiretivasDoBanco() },
     "sep",
     "sep",
-    { rot:"Definições do DbLink…", txt:"tela.mi_dblink", ico:"⛓", faz:telaDbLinkDefinicoes },
-    { rot:"Mensagens do servidor…", txt:"tela.mi_mensagens", ico:"⑆", faz:telaMensagens },
+    { rot:"Definições do DbLink…", txt:"tela.mi_dblink", ico:"elo", faz:telaDbLinkDefinicoes },
+    { rot:"Mensagens do servidor…", txt:"tela.mi_mensagens", ico:"mensagem", faz:telaMensagens },
     // A escolha do idioma tem de estar ONDE se procura configuracao. Ela ja
     // morava na arvore, em Administracao, que e onde ninguem procura idioma.
-    { rot:"Idiomas da interface…", txt:"tela.mi_idiomas", ico:"⚑", faz:() => irPara("idiomas") },
+    { rot:"Idiomas da interface…", txt:"tela.mi_idiomas", ico:"idioma", faz:() => irPara("idiomas") },
     "sep",
     // A tela mora em `ui/claude.js`, e a chamada dela sai do NAVEGADOR: o
     // servidor nunca vê a chave. O porquê está em docs/CLAUDE-IA.md.
-    { rot:"Integração com a Claude…", txt:"tela.mi_claude", ico:"✦", faz:() => PhxIA.telaConfig() },
-    { rot:"Editor de menu…", txt:"tela.mi_editor_menu",      ico:"✎", faz:editorDeMenu },
+    { rot:"Integração com a Claude…", txt:"tela.mi_claude", ico:"faisca", faz:() => PhxIA.telaConfig() },
+    { rot:"Editor de menu…", txt:"tela.mi_editor_menu",      ico:"editar", faz:editorDeMenu },
   ]],
 
   ["Ver", "V", "tela.menu_ver", [
-    { rot:"Atualizar", txt:"tela.mi_atualizar", ico:"↻", tecla:"F5", faz:atualizarVista },
-    { rot:"Tema claro / escuro", txt:"tela.mi_tema", ico:"🌓", faz:() => $("#btTema").click() },
+    { rot:"Atualizar", txt:"tela.mi_atualizar", ico:"atualizar", tecla:"F5", faz:atualizarVista },
+    { rot:"Tema claro / escuro", txt:"tela.mi_tema", ico:"tema", faz:() => $("#btTema").click() },
     "sep",
     // A area de trabalho: abas vivas e regioes lado a lado. Ver o cabecalho
     // de `ui/multitela.js` e `docs/MULTITELA.md`.
     // Alt+N e Alt+W, e nao Alt+T: o `T` ja abre o menu Tabelas, e trocar a
     // tecla debaixo do dedo de quem ja aprendeu vale menos que a aba nova.
-    { rot:"Nova aba nesta região", txt:"tela.mi_nova_aba", ico:"⊞", tecla:"Alt+N",
+    { rot:"Nova aba nesta região", txt:"tela.mi_nova_aba", ico:"aba-mais", tecla:"Alt+N",
       faz:() => PhxTelas.novaAba() },
-    { rot:"Fechar esta aba", txt:"tela.mi_fechar_aba", ico:"⊟", tecla:"Alt+W",
+    { rot:"Fechar esta aba", txt:"tela.mi_fechar_aba", ico:"aba-menos", tecla:"Alt+W",
       faz:() => PhxTelas.fecharAtiva(),
       // Regiao com uma aba so nao fecha a ultima: sobraria uma coluna vazia,
       // que e pior que a tela que estava la.
@@ -14299,25 +14457,25 @@ const MENUS = [
     // util e o que decide, e o item cinza ja diz isso antes de o dedo sair
     // do lugar. `quando` e reavaliado a cada abertura do menu, entao esticar
     // a janela acende os itens sozinho.
-    { rot:"Uma região", txt:"tela.mi_uma_regiao", ico:"▮", faz:() => PhxTelas.dividir(1) },
-    { rot:"Duas regiões", txt:"tela.mi_duas_regioes", ico:"▮▮", faz:() => PhxTelas.dividir(2),
+    { rot:"Uma região", txt:"tela.mi_uma_regiao", ico:"regioes-1", faz:() => PhxTelas.dividir(1) },
+    { rot:"Duas regiões", txt:"tela.mi_duas_regioes", ico:"regioes-2", faz:() => PhxTelas.dividir(2),
       quando:() => PhxTelas.maxRegioes() >= 2 },
-    { rot:"Três regiões", txt:"tela.mi_tres_regioes", ico:"▮▮▮", faz:() => PhxTelas.dividir(3),
+    { rot:"Três regiões", txt:"tela.mi_tres_regioes", ico:"regioes-3", faz:() => PhxTelas.dividir(3),
       quando:() => PhxTelas.maxRegioes() >= 3 },
-    { rot:"Quatro regiões", txt:"tela.mi_quatro_regioes", ico:"▮▮▮▮", faz:() => PhxTelas.dividir(4),
+    { rot:"Quatro regiões", txt:"tela.mi_quatro_regioes", ico:"regioes-4", faz:() => PhxTelas.dividir(4),
       quando:() => PhxTelas.maxRegioes() >= 4 },
     // O terceiro modo: janela flutuante DENTRO da pagina. Nao e janela do
     // sistema -- nao depende de popup, de permissao nem de navegador.
-    { rot:"Soltar esta tela numa janela", txt:"tela.mi_soltar", ico:"⇱",
+    { rot:"Soltar esta tela numa janela", txt:"tela.mi_soltar", ico:"janela",
       faz:() => PhxTelas.soltar() },
-    { rot:"Alinhar com as bordas dos monitores", txt:"tela.mi_alinhar", ico:"⧉",
+    { rot:"Alinhar com as bordas dos monitores", txt:"tela.mi_alinhar", ico:"monitores",
       faz:() => PhxTelas.alinharComOsMonitores() },
-    { rot:"Sobre o modo multitela…", txt:"tela.mi_sobre_multitela", ico:"◫", faz:() => PhxTelas.telaAjuda() },
+    { rot:"Sobre o modo multitela…", txt:"tela.mi_sobre_multitela", ico:"regioes-2", faz:() => PhxTelas.telaAjuda() },
   ]],
 
   ["Ajuda", "j", "tela.menu_ajuda", [
-    { rot:"Sobre o PhxSql", txt:"tela.mi_sobre", ico:"?", faz:verSobre },
-    { rot:"About — quem fez", txt:"tela.mi_creditos", ico:"◆", faz:verCreditos },
+    { rot:"Sobre o PhxSql", txt:"tela.mi_sobre", ico:"ajuda", faz:verSobre },
+    { rot:"About — quem fez", txt:"tela.mi_creditos", ico:"info", faz:verCreditos },
   ]],
 ];
 
@@ -14342,7 +14500,7 @@ function montarMenu() {
       const off = (it.quando && !it.quando()) || !!it.falta;
       return `<button class="item" role="menuitem" data-m="${i}" data-i="${j}"
         ${off ? "disabled" : ""}${it.falta ? ` title="${esc(it.falta)}"` : ""}
-        ><span class="ico">${it.ico || ""}</span
+        ><span class="ico">${it.ico ? icone(it.ico) : ""}</span
         ><span class="rot">${esc(rot(`menu.${i}.${j}`, txt(it.txt, it.rot)))}</span
         ><span class="tecla">${it.tecla || ""}</span></button>`;
     }).join("");
@@ -14390,7 +14548,13 @@ function abrirMenu(i) {
   const m = $(`.menubar .menu[data-m="${i}"]`);
   if (!m) return;
   m.classList.add("aberto");
-  m.querySelector(".titulo").setAttribute("aria-expanded", "true");
+  const titulo = m.querySelector(".titulo");
+  titulo.setAttribute("aria-expanded", "true");
+  // A lista e `position:fixed` (ver o CSS de `.menubar .lista`): quem a poe
+  // debaixo do titulo e esta conta, e nao o fluxo.
+  const r = titulo.getBoundingClientRect(), lista = m.querySelector(".lista");
+  lista.style.top = `${r.bottom}px`;
+  lista.style.left = `${Math.max(0, Math.min(r.left, innerWidth - lista.offsetWidth - 4))}px`;
   menuAberto = i;
 }
 
@@ -14425,6 +14589,10 @@ function ligarMenu() {
   document.addEventListener("click", ev => {
     if (!ev.target.closest("#menubar")) fecharMenu();
   });
+  // A lista fixa nao acompanha a barra que rola nem a janela que muda de
+  // tamanho: fechar e mais honesto que deixar a lista longe do titulo.
+  bar.addEventListener("scroll", fecharMenu);
+  window.addEventListener("resize", fecharMenu);
 
   document.addEventListener("keydown", ev => {
     if (ev.key === "Escape" && menuAberto !== null) {
@@ -14488,26 +14656,9 @@ function ligarMenu() {
 const CHAVE_LATERAL = "phxsql-lateral";
 const ARVORE_MIN = 180, ARVORE_MAX = 520, ARVORE_PADRAO = 268;
 
-const ICO_LATERAL = {
-  // Uma moldura com a coluna da esquerda marcada -- o desenho da propria
-  // tela --, mais a seta que diz para que lado o clique leva.
-  fechar: `<rect x="3" y="4.6" width="18" height="14.8" rx="2" stroke-width="1.5"/>`
-        + `<path d="M9.4 4.6v14.8" stroke-width="1.5"/>`
-        + `<path d="M17.2 9.6L14.8 12l2.4 2.4" stroke-width="1.5"`
-        + ` stroke-linecap="round" stroke-linejoin="round"/>`,
-  abrir:  `<rect x="3" y="4.6" width="18" height="14.8" rx="2" stroke-width="1.5"/>`
-        + `<path d="M9.4 4.6v14.8" stroke-width="1.5"/>`
-        + `<path d="M14.4 9.6L16.8 12l-2.4 2.4" stroke-width="1.5"`
-        + ` stroke-linecap="round" stroke-linejoin="round"/>`,
-  // Um alfinete: cabeca, corpo e ponta.
-  pino:   `<path d="M9.2 3.6h5.6" stroke-width="1.6" stroke-linecap="round"/>`
-        + `<path d="M10.5 3.6v6.1l-2.5 3.1h8l-2.5-3.1V3.6" stroke-width="1.5"`
-        + ` stroke-linejoin="round"/>`
-        + `<path d="M12 12.8v7.6" stroke-width="1.6" stroke-linecap="round"/>`,
-};
-
-const svgLateral = nome =>
-  `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none">${ICO_LATERAL[nome]}</svg>`;
+// Os tres desenhos da lateral (fechar, abrir, pino) tambem estao no conjunto
+// de icones da casa -- mesmo motivo do `svg()` da barra de ferramentas.
+const svgLateral = nome => icone(nome === "pino" ? "pino" : `lateral-${nome}`);
 
 /** Uma tela onde o painel lateral nao cabe ao lado do trabalho. */
 const telaEstreita = () => window.matchMedia("(max-width:640px)").matches;
@@ -14923,7 +15074,7 @@ async function checksumTabela(db, tab) {
        se entrasse, restaurar um backup daria outro número só porque os buracos
        caem em outro lugar.</div>
      <div class="acoes">
-       <button class="botao secundario" id="btVoltaCk">← Gerir tabelas</button>
+       <button class="botao secundario" id="btVoltaCk">${icone("seta-esq")} Gerir tabelas</button>
      </div>`);
   $("#btVoltaCk").onclick = () => gerirTabelasAtual();
 }
@@ -15179,7 +15330,7 @@ function aplicarTema(qual) {
   document.documentElement.setAttribute("data-tema", claro ? "claro" : "escuro");
   // O icone mostra PARA ONDE o clique leva, nao onde se esta: no escuro
   // aparece o sol, porque clicar acende.
-  $("#btTema").textContent = claro ? TEMAS.escuro : TEMAS.claro;
+  $("#btTema").innerHTML = icone(claro ? TEMAS.escuro : TEMAS.claro);
   $("#btTema").title = claro
     ? txt("tela.tema_para_escuro", "Mudar para o tema escuro")
     : txt("tela.tema_para_claro", "Mudar para o tema claro");
@@ -15210,13 +15361,14 @@ function fecharPopup() {
   p.innerHTML = "";
 }
 
-/** Os itens para um no da arvore: `[icone, rotulo, chave, faz, falta]`. */
+/** Os itens para um no da arvore: `[icone, rotulo, chave, faz, falta]` -- o
+ *  icone e o NOME no conjunto da casa, e o desenho sai do `icone()`. */
 function itensDoPopup(db, tab) {
   if (tab) {
     return [
-      ["⧉", "Duplicar tabela…", "tela.mi_duplicar_tabela",
+      ["duplicar", "Duplicar tabela…", "tela.mi_duplicar_tabela",
        () => duplicarTabelaPara(db, tab)],
-      ["⎘", "Copiar / colar tabela…", "tela.mi_copiar_colar",
+      ["copiar", "Copiar / colar tabela…", "tela.mi_copiar_colar",
        () => copiarTabela(db, tab)],
     ];
   }
@@ -15225,11 +15377,11 @@ function itensDoPopup(db, tab) {
     // desligado e com o motivo -- e o mesmo trato que a barra de ferramentas
     // dava as pecas por fazer. Promessa visivel e melhor que ausencia, e bem
     // melhor que um item que aceita o clique e nao faz nada.
-    ["⧉", "Duplicar", "tela.fer_duplicar", null,
+    ["duplicar", "Duplicar", "tela.fer_duplicar", null,
      "Copiar um database inteiro para outro nome. O backup já sabe copiar "
      + "árvore e conferir SHA-256; falta a operação que grava com outro nome "
      + "e reescreve o catálogo."],
-    ["⎘", "Copiar / colar tabela…", "tela.mi_copiar_colar",
+    ["copiar", "Copiar / colar tabela…", "tela.mi_copiar_colar",
      () => telaCopiarColar(db)],
   ];
 }
@@ -15249,7 +15401,7 @@ function abrirPopup(ev, db, tab) {
       <button class="item" role="menuitem" data-i="${i}"
         ${faz ? "" : "disabled"}
         ${falta ? `title="${esc(falta)}"` : ""}>
-        <span class="ic">${ico}</span><span>${esc(txt(chave, rot))}</span>
+        <span class="ic">${icone(ico)}</span><span>${esc(txt(chave, rot))}</span>
       </button>`).join("");
   p.hidden = false;
   // Posiciona DEPOIS de medir: o menu perto da borda precisa saber a propria
@@ -15283,6 +15435,60 @@ addEventListener("keydown", e => { if (e.key === "Escape") fecharPopup(); });
 addEventListener("scroll", fecharPopup, true);
 
 $("#btAjuda").onclick = () => verSobre();
+
+// ================================================================ impressao
+/** Ha grade na tela com foco? E so ali que o botao de imprimir faz sentido. */
+// Declaracao de funcao, e nao `const`: o menu Arquivo a chama no `quando`, e o
+// menu se monta antes de o script chegar aqui -- um `const` estaria na zona
+// morta e derrubaria a montagem.
+function temGradeNaTela() {
+  return !!document.querySelector("#painel .phx-grid, #painel table");
+}
+
+/** Acende o botao quando a tela ganha uma grade e apaga quando a perde. Um
+ *  observador so, na area das regioes, em vez de lembrar de chamar isto em
+ *  cada uma das ~50 telas -- a esquecida seria a tela com grade sem botao. */
+let imprimirAgendado = false;
+function acenderImprimir() {
+  if (imprimirAgendado) return;
+  imprimirAgendado = true;
+  requestAnimationFrame(() => {
+    imprimirAgendado = false;
+    $("#btImprimir").hidden = !temGradeNaTela();
+  });
+}
+new MutationObserver(acenderImprimir).observe($("#regioes"), { childList:true, subtree:true });
+
+/** O cabecalho do papel: o logo pequeno, o banco e a hora -- tudo DADO, sem
+ *  rotulo escrito, entao nao ha texto novo a traduzir. O titulo da tela (o
+ *  nome da tabela) ja vai impresso logo abaixo, no `#titulo`. */
+function montarCabecaImpressa() {
+  const db = (est.atual && est.atual.db) || est.database || "";
+  const logo = $(".barra .marca img");
+  let quando;
+  try {
+    quando = new Date().toLocaleString(document.documentElement.lang || "pt-BR",
+                                       { dateStyle:"short", timeStyle:"short" });
+  } catch { quando = new Date().toISOString().slice(0, 16).replace("T", " "); }
+  $("#cabecaImpressa").innerHTML = `${logo ? `<img src="${logo.src}" alt="">` : ""}
+    <b>PhxSql</b>${db ? `<span>${esc(db)}</span>` : ""}<span class="quando">${esc(quando)}</span>`;
+}
+
+// O papel veste o tema CLARO, que e o calibrado para contraste sobre branco
+// (as cores da acao ja escurecem la). Quem estava no escuro volta ao escuro.
+let temaAntesDeImprimir = null;
+window.addEventListener("beforeprint", () => {
+  montarCabecaImpressa();
+  temaAntesDeImprimir = document.documentElement.dataset.tema || "";
+  document.documentElement.dataset.tema = "claro";
+});
+window.addEventListener("afterprint", () => {
+  if (temaAntesDeImprimir === null) return;
+  if (temaAntesDeImprimir) document.documentElement.dataset.tema = temaAntesDeImprimir;
+  else delete document.documentElement.dataset.tema;
+  temaAntesDeImprimir = null;
+});
+$("#btImprimir").onclick = () => window.print();
 
 $("#btTema").onclick = () =>
   aplicarTema(document.documentElement.getAttribute("data-tema") === "claro"
@@ -15614,9 +15820,9 @@ function desenharConexoes() {
       </button>
       <span class="mexer">
         <button type="button" class="ren" data-i="${i}" title="${esc(ren)}"
-                aria-label="${esc(ren)}: ${esc(c.apelido)}">&#9998;</button>
+                aria-label="${esc(ren)}: ${esc(c.apelido)}">${icone("editar")}</button>
         <button type="button" class="rem" data-i="${i}" title="${esc(rem)}"
-                aria-label="${esc(rem)}: ${esc(c.apelido)}">&#10005;</button>
+                aria-label="${esc(rem)}: ${esc(c.apelido)}">${icone("x")}</button>
       </span>
     </div>`).join("");
   alvo.querySelectorAll(".abrir").forEach(b =>

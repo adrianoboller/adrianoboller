@@ -1404,7 +1404,11 @@ pub fn token_sem_definicao_e_sem_fallback() -> Vec<(&'static str, String)> {
 /// isso a guarda da paridade so vale para quem passa pelo `marcado()`.
 ///
 /// Medido pelo conferidor antes (904) e depois (880).
-pub const TETO_ROTULOS_E_CRASE: usize = 880;
+///
+/// 24/09/2026: **876**. Nao foi leva de traducao: o conjunto de icones da
+/// casa trocou a seta e o simbolo Unicode escritos no marcador dos botoes por
+/// `icone(...)`, e quatro achados sairam da contagem junto com o simbolo.
+pub const TETO_ROTULOS_E_CRASE: usize = 876;
 #[cfg(test)]
 mod testes {
     use std::collections::HashSet;

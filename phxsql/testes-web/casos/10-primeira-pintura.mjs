@@ -10,9 +10,13 @@
  * medir a maquina, e sim para falhar redondo no dia em que a folha voltar a
  * bloquear.
  *
- * Este caso tambem PROVA que a fonte continua sendo pedida: um conserto que
- * simplesmente removesse a fonte da marca passaria no tempo e reprovaria a
- * marca, que manda. */
+ * Desde 24/09/2026 a fonte vem EMBUTIDA (`phxsql_core::fontes`, em `data:`):
+ * a pagina nao pede fonte a ninguem. O caso mudou de pergunta junto -- antes
+ * provava que a fonte continuava sendo pedida (um conserto que tirasse a
+ * fonte passaria no tempo e reprovaria a marca); hoje prova que ela NAO e
+ * pedida fora e que, mesmo assim, a Exo 2 esta carregada. O buraco negro no
+ * Google continua armado: se alguem voltar a pedir a fonte la, a tela volta
+ * a esperar, e o caso acusa pelos dois lados. */
 import { verdade } from '../apoio.mjs';
 
 const TETO_MS = 3000;
@@ -51,11 +55,18 @@ export const caso = {
       `a tela de entrada levou ${ate} ms para aparecer com o pedido da fonte pendurado — `
       + 'a folha da fonte voltou a bloquear a pintura');
 
-    verdade(pediuAFonte,
-      'a pagina nao pediu a fonte da marca: rapida e sem Exo 2 nao e o conserto, '
-      + 'e a marca manda sobre a paleta');
+    verdade(!pediuAFonte,
+      'a pagina voltou a pedir a fonte ao Google Fonts: ela vem embutida no binario, '
+      + 'e sem internet a marca sumiria');
 
-    // E a pilha de reserva assume, em vez de a pagina ficar sem fonte nenhuma.
+    // A marca carregada SEM rede: o @font-face em data: resolveu a Exo 2.
+    const exo = await page.evaluate(async () => {
+      await document.fonts.load("600 16px 'Exo 2'");
+      return document.fonts.check("600 16px 'Exo 2'");
+    });
+    verdade(exo, 'a Exo 2 embutida nao carregou: a tela saiu na fonte de reserva');
+
+    // E a pilha de reserva continua la, para o dia em que a embutida falhar.
     const pilha = await page.evaluate(() => getComputedStyle(document.body).fontFamily);
     verdade(/Exo 2/.test(pilha) && /Arial|sans-serif/.test(pilha),
       `a pilha de fontes perdeu a reserva: ${pilha}`);

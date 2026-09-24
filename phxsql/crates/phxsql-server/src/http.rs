@@ -106,8 +106,10 @@ pub const ORIGEM_ANTHROPIC: &str = "https://api.anthropic.com";
 /// cabecalho pelo proprio analisador de HTML, exatamente como acontece quando
 /// a pagina e publicada como artefato.
 pub fn montar_pagina() -> String {
+    let fontes = phxsql_core::fontes::css_das_fontes();
     format!(
         "<!doctype html>\n<html lang=\"pt-BR\">\n<head>\n<meta charset=\"utf-8\">\n\
+         <style>\n{fontes}</style>\n\
          <style>\n{GRID_CSS}\n</style>\n<script>\n{GRID_JS}\n</script>\n\
          <script>\n{DIAGRAMA_JS}\n</script>\n\
          <style>\n{TELEMETRIA_CSS}\n</style>\n\
@@ -384,10 +386,10 @@ fn montar_com_folga_e_extras(
 // Cabecalhos de seguranca: a pagina nao vai para dentro de um quadro
 // alheio, nao adivinha tipo de conteudo e so conversa com esta origem.
 //
-// A unica coisa que ela busca fora e a fonte da marca, e so no HTML --
-// por isso a folga do `style-src`/`font-src` nao existe nas respostas de
-// dados. Servidor sem internet: a fonte nao carrega, a pilha de reserva
-// assume e a pagina continua inteira.
+// A fonte da marca vem EMBUTIDA em `data:` (`phxsql_core::fontes`), entao
+// `font-src data:` vale para toda pagina e nenhuma busca fonte fora. Ate
+// 24/09/2026 a folga era `fonts.googleapis.com`/`fonts.gstatic.com`, so no
+// HTML -- e sem internet a marca sumia.
 //
 // O `connect-src` da PAGINA ganhou uma segunda origem pelo mesmo desenho:
 // a integracao com a Claude chama `api.anthropic.com` do navegador, porque
@@ -397,12 +399,7 @@ fn montar_com_folga_e_extras(
 // continuam com `connect-src 'self'`, e nenhum `script-src` novo entra --
 // nenhum script de fora roda nesta pagina.
 fn estilo_e_conexao(externo: bool) -> (&'static str, String) {
-    let estilo = if externo {
-        "style-src 'unsafe-inline' https://fonts.googleapis.com; \
-         font-src https://fonts.gstatic.com; "
-    } else {
-        "style-src 'unsafe-inline'; "
-    };
+    let estilo = "style-src 'unsafe-inline'; font-src data:; ";
     let conexao = if externo {
         format!("connect-src 'self' {ORIGEM_ANTHROPIC}; ")
     } else {
@@ -1003,10 +1000,19 @@ mod tests {
     }
 
     #[test]
-    fn so_o_html_pode_buscar_a_fonte_da_marca() {
+    fn a_fonte_da_marca_vem_embutida_e_nada_busca_fonte_fora() {
         let pagina = montar_resposta(200, "text/html; charset=utf-8", "x");
-        assert!(pagina.contains("https://fonts.googleapis.com"));
-        assert!(pagina.contains("font-src https://fonts.gstatic.com"));
+        assert!(
+            !pagina.contains("fonts.g"),
+            "a CSP ainda abre o Google Fonts"
+        );
+        assert!(pagina.contains("font-src data:"));
+        let html = montar_pagina();
+        assert!(html.contains("@font-face{font-family:'Exo 2'"));
+        assert!(
+            !html.contains("fonts.googleapis.com"),
+            "a pagina ainda pede fonte ao Google"
+        );
 
         let dados = montar_resposta(200, "application/json; charset=utf-8", "{}");
         assert!(
