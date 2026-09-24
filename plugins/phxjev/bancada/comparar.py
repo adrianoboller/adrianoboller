@@ -38,16 +38,20 @@ def claude(caso_id, pergunta, registro):
 def resumo(pares):
     if not pares:
         return None
+    erros = [p for _, a, p in pares if not a]
     return {
         "n": len(pares),
-        "brier": round(sum(b for b, _ in pares) / len(pares), 4),
-        "acerto": round(sum(a for _, a in pares) / len(pares), 3),
+        "brier": round(sum(b for b, _, _ in pares) / len(pares), 4),
+        "acerto": round(sum(a for _, a, _ in pares) / len(pares), 3),
+        # a maior confianca dada a uma resposta errada: o portao do auto olha isto
+        "pior_erro": round(max(erros), 3) if erros else 0.0,
     }
 
 
 def brier_e_acerto(dist, verdade):
     b = sum((p - (1 if o == verdade else 0)) ** 2 for o, p in dist.items()) / len(dist)
-    return b, 1 if max(dist, key=dist.get) == verdade else 0
+    topo = max(dist, key=dist.get)
+    return b, 1 if topo == verdade else 0, dist[topo]
 
 
 def main(modelos):

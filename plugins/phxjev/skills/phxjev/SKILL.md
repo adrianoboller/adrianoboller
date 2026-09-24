@@ -124,14 +124,27 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/phxjev.py" calibrar   # brier por pergunt
 - Um **gancho de fim** recusa encerrar o turno se a resposta nao traz cada
   linha da saida do selo; a segunda tentativa passa.
 
-## 8. Juiz local (Ollama)
+## 8. Juiz local (Ollama) e a chave `claude | local | auto`
 
-`phxjev.py local <modelo> < perguntas.json` julga sem o agente: cada pergunta
-vira opcoes com letra, uma passada com `num_predict=1`, e a probabilidade vem
-do logprob da letra. Passa pelo mesmo `veredito`. A bancada que diz se ele
-serve esta em `bancada/` — **nao use o local para decidir antes de o numero
-dela dizer que ele acerta**.
+`phxjev.py juiz [claude|local|auto [modelo]]` grava a escolha em
+`.phxjev/config.json`. **O pedido nao manda sozinho**: `local` e `auto` so
+valem se o modelo passou na bancada (`bancada/resultados.json`: n >= 50,
+Brier < 0,10, nenhum erro com confianca > 0,90). Sem isso o comando responde
+`juiz claude: auto pedido, mas ...` com o motivo, e o juiz e voce.
 
-Abaixo de 50 desfechos o cabecalho diz `calibracao: nao medida (n/50)`. Ate la,
-e mesmo depois, aprendizado que nasce de um veredito PhxJev e **PENDENTE** —
-veredito nao e evidencia validada e **nunca promove nada a FRUTIFERO**.
+Quando o juiz em vigor for local ou auto, voce **nao** da probabilidade:
+monta as perguntas e passa ao modelo, com os trechos que leu como contexto.
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/phxjev.py" auto qwen2.5:3b <<'JSON'
+{"estado": ["reg.rs:17-20"], "contexto": ["<texto dos trechos lidos>"],
+ "itens": [{"id": "a1", "perguntas": {
+   "real": {"tipo": "noul", "pergunta": "O defeito descrito existe no codigo?"},
+   "causa": {"tipo": "choice", "pergunta": "Qual a causa?", "opcoes": ["A", "B", "outra"]}}}]}
+JSON
+```
+
+No `auto`, a linha `ESCALAR AO CLAUDE:` lista o que saiu incerto: essas
+perguntas voce julga pela secao 5, como sempre. Nada incerto some.
+
+Para instalar o Ollama: `/phxjev-local-instalar` (pede confirmacao antes).

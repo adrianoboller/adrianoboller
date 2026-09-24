@@ -222,5 +222,75 @@ class Gancho(unittest.TestCase):
         self.assertEqual(g.faltas(self.transcricao("ok", "pronto", "rode os testes"), "/nao/existe"), [])
 
 
+class Autocalibracao(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.reg = os.path.join(self.dir, "r.jsonl")
+
+    def povoar(self, n, p, taxa, juiz="claude"):
+        """n vereditos noul 'real' com p fixa, dos quais taxa*n eram verdade."""
+        linhas = []
+        for i in range(n):
+            rid = f"20260101-000000-{juiz}-{i}"
+            linhas.append({"id": rid, "juiz": juiz, "item": f"x{i}", "preset": "t", "veredito": "",
+                           "perguntas": {"real": {"tipo": "noul", "dist": {"sim": p, "nao": 1 - p}, "conf": 0}},
+                           "desfecho": {}})
+            linhas.append({"tipo": "desfecho", "ref": rid, "pergunta": "real",
+                           "valor": "sim" if i < round(taxa * n) else "nao"})
+        j.gravar(self.reg, linhas)
+
+    def test_platt_corrige_o_excesso_de_confianca(self):
+        self.povoar(60, 0.9, 0.6)
+        a = j.ajuste(self.reg, "claude", "real")
+        self.assertIsNotNone(a)
+        self.assertAlmostEqual(j.aplicar_ajuste(a, 0.9), 0.6, delta=0.03)
+
+    def test_sem_minimo_nao_ha_ajuste(self):
+        self.povoar(49, 0.9, 0.6)
+        self.assertIsNone(j.ajuste(self.reg, "claude", "real"))
+
+    def test_veredito_decide_pela_p_corrigida(self):
+        self.povoar(60, 0.9, 0.3)   # o juiz diz 0,9 e acerta 30%
+        out = rodar([{"id": "a", "perguntas": {"real": noul(0.9)}}], self.reg)
+        self.assertRegex(out, r"real 0\.90→0\.3[0-2]")
+        self.assertIn("DESCARTAR (real<0.50)", out)
+
+    def test_juizes_nao_se_misturam(self):
+        self.povoar(60, 0.9, 0.3, juiz="local:x")
+        self.assertIsNone(j.ajuste(self.reg, "claude", "real"))
+        self.assertIn("0 desfechos", j.cmd_historico("claude", self.reg))
+
+    def test_historico_manda_rebaixar_quem_exagera(self):
+        self.povoar(20, 0.9, 0.5)
+        self.assertIn("REBAIXE", j.cmd_historico("claude", self.reg))
+
+
+class Chave(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.cfg = os.path.join(self.dir, "c", "config.json")
+        self.ban = os.path.join(self.dir, "b.json")
+
+    def bancada(self, **r):
+        json.dump({"juizes": {"local m": r}}, open(self.ban, "w"))
+
+    def test_padrao_e_claude(self):
+        self.assertEqual(j.juiz_efetivo(self.cfg, self.ban)[0], "claude")
+
+    def test_auto_sem_qualificar_volta_ao_claude_dizendo_por_que(self):
+        self.bancada(n=12, brier=0.17, acerto=0.8, pior_erro=1.0)
+        frase = j.cmd_juiz(["auto", "m"], self.cfg, self.ban)
+        self.assertTrue(frase.startswith("juiz claude: auto pedido"), frase)
+        self.assertIn("n 12 < 50", frase)
+
+    def test_auto_qualificado_vale(self):
+        self.bancada(n=60, brier=0.05, acerto=0.95, pior_erro=0.8)
+        self.assertEqual(j.cmd_juiz(["auto", "m"], self.cfg, self.ban), "juiz auto com m (brier 0.05 em 60)")
+
+    def test_modo_invalido_recusa(self):
+        with self.assertRaises(j.Invalido):
+            j.cmd_juiz(["sempre"], self.cfg, self.ban)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

@@ -12,10 +12,14 @@ Uso:
   phxjev.py desfecho  <id> <pergunta> <valor>   # 1/0 para noul, rotulo para choice, degrau para score
   phxjev.py colher    <PENDENCIAS.md>            # desfechos que o fechamento do pedido prova
   phxjev.py local     <modelo> < perguntas.json  # juiz local (Ollama), uma passada por pergunta
+  phxjev.py auto      <modelo> < perguntas.json  # local; o incerto sobe ao Claude
+  phxjev.py juiz      [claude|local|auto [modelo]]  # o que vale, e por que (a bancada decide)
+  phxjev.py historico [juiz]                     # a calibracao do juiz, para ele ler antes
   phxjev.py calibrar
   phxjev.py mostrar   <selo>                     # a saida original, para conferir se foi editada
 """
 import hashlib
+import io
 import json
 import math
 import os
@@ -161,6 +165,8 @@ def decidir(perguntas):
 
 def fmt(nome, q):
     if q["tipo"] == "noul":
+        if "valor_cru" in q:
+            return f"{nome} {q['valor_cru']:.2f}→{q['valor']:.2f}"
         return f"{nome} {q['valor']:.2f}"
     if q["tipo"] == "score":
         topo = max(float(k) for k in q["dist"])
@@ -169,7 +175,7 @@ def fmt(nome, q):
     return f"{nome} [{dist}] (conf {q['conf']:.2f})"
 
 
-def cmd_veredito(entrada, saida, registro=REGISTRO):
+def cmd_veredito(entrada, saida, registro=REGISTRO, juiz="claude"):
     j = json.loads(entrada)
     estado = j.get("estado") or []
     if not estado:
@@ -177,7 +183,7 @@ def cmd_veredito(entrada, saida, registro=REGISTRO):
     preset = j.get("preset", "perguntar")
     carimbo = time.strftime("%Y%m%d-%H%M%S")
     linhas = [
-        f"PhxJev · {preset} · calibracao: {estado_calibracao(registro)}",
+        f"PhxJev · {preset} · juiz {juiz} · calibracao: {estado_calibracao(registro, juiz)}",
         f"estado: {len(estado)} trechos lidos ({', '.join(estado[:4])}{', ...' if len(estado) > 4 else ''})",
         "─" * 60,
     ]
@@ -188,6 +194,12 @@ def cmd_veredito(entrada, saida, registro=REGISTRO):
         for nome, q in (item.get("perguntas") or {}).items():
             tipo, dist, c, valor = normalizar(iid, nome, q)
             pergs[nome] = {"tipo": tipo, "dist": dist, "conf": c, "valor": valor, "evid": q.get("evid", "")}
+            a = ajuste(registro, juiz, nome) if tipo == "noul" else None
+            if a:
+                # O limiar decide pela p corrigida; o registro guarda a crua,
+                # porque e a crua que o proximo ajuste precisa para se medir.
+                corr = aplicar_ajuste(a, valor)
+                pergs[nome].update(valor_cru=valor, valor=corr, conf=conf_de([corr, 1 - corr]))
         if not pergs:
             raise Invalido(f"{iid}: nenhuma pergunta")
         veredito, escalar = decidir(pergs)
@@ -196,7 +208,7 @@ def cmd_veredito(entrada, saida, registro=REGISTRO):
             linhas.append(f"      motivo: {item['motivo']}")
         escalar_tudo += [f"{iid}.{e}" for e in escalar]
         registros.append({
-            "id": f"{carimbo}-{iid}", "preset": preset, "item": iid, "veredito": veredito,
+            "id": f"{carimbo}-{iid}", "preset": preset, "juiz": juiz, "item": iid, "veredito": veredito,
             "perguntas": {k: {"tipo": v["tipo"], "dist": v["dist"], "conf": round(v["conf"], 4)} for k, v in pergs.items()},
             "desfecho": {},
         })
@@ -317,9 +329,16 @@ def cmd_colher(pendencias, registro=REGISTRO):
     return feitos, pulados
 
 
-def pares(registro, so=None):
+def juiz_de(r):
+    # Veredito de antes do campo e do Claude: o juiz local nasceu depois dele.
+    return r.get("juiz", "claude")
+
+
+def pares(registro, so=None, juiz=None):
     """(pergunta, p de cada opcao, acerto 0/1) de tudo que tem desfecho."""
     for r in ler(registro):
+        if juiz and juiz_de(r) != juiz:
+            continue
         for nome, real in r.get("desfecho", {}).items():
             if so and nome != so:
                 continue
@@ -327,12 +346,13 @@ def pares(registro, so=None):
                 yield nome, p, 1 if opcao == real else 0
 
 
-def contar_desfechos(registro):
-    return sum(len(r.get("desfecho", {})) for r in ler(registro))
+def contar_desfechos(registro, juiz=None, pergunta=None):
+    return sum(1 for r in ler(registro) if not juiz or juiz_de(r) == juiz
+               for k in r.get("desfecho", {}) if not pergunta or k == pergunta)
 
 
-def estado_calibracao(registro):
-    n = contar_desfechos(registro)
+def estado_calibracao(registro, juiz=None):
+    n = contar_desfechos(registro, juiz)
     if n < MINIMO_PARA_CALIBRAR:
         return f"nao medida ({n}/{MINIMO_PARA_CALIBRAR} desfechos)"
     return f"medida em {n} desfechos (phxjev.py calibrar)"
@@ -340,6 +360,126 @@ def estado_calibracao(registro):
 
 def brier(ps):
     return sum((p - y) ** 2 for _, p, y in ps) / len(ps)
+
+
+MINIMO_PARA_AJUSTAR = 50
+
+
+def logit(p):
+    p = min(max(p, 1e-4), 1 - 1e-4)
+    return math.log(p / (1 - p))
+
+
+def sigmoide(x):
+    # Estavel nos dois lados: exp de numero grande estourava no ajuste.
+    if x >= 0:
+        return 1 / (1 + math.exp(-x))
+    e = math.exp(x)
+    return e / (1 + e)
+
+
+def ajustar_platt(xs, ys, voltas=50):
+    """a, b de p' = sigmoide(a*logit(p) + b), por Newton na verossimilhanca.
+
+    Dois parametros, e so. Com o nosso volume, qualquer coisa mais flexivel
+    (isotonica, por faixa) ajustaria o ruido. A penalidade puxa para a=1, b=0
+    («nao corrigir»): quando o juiz deu sempre a mesma p, a e b nao se
+    separam, e sem ela o Newton divergia ate estourar.
+    """
+    lam = 1.0
+
+    def custo(a, b):
+        t = 0.0
+        for x, y in zip(xs, ys):
+            p = min(max(sigmoide(a * x + b), 1e-12), 1 - 1e-12)
+            t -= y * math.log(p) + (1 - y) * math.log(1 - p)
+        return t + lam / 2 * ((a - 1) ** 2 + b ** 2)
+
+    a, b = 1.0, 0.0
+    for _ in range(voltas):
+        ga = gb = haa = hab = hbb = 0.0
+        for x, y in zip(xs, ys):
+            p = sigmoide(a * x + b)
+            e, w = p - y, p * (1 - p)
+            ga += e * x
+            gb += e
+            haa += w * x * x
+            hab += w * x
+            hbb += w
+        ga += lam * (a - 1)
+        gb += lam * b
+        haa += lam
+        hbb += lam
+        det = haa * hbb - hab * hab
+        if abs(det) < 1e-12:
+            break
+        da = (hbb * ga - hab * gb) / det
+        db = (haa * gb - hab * ga) / det
+        # Passo amortecido: o Newton cheio pulava o minimo e divergia (a=40
+        # quando o juiz dizia 0,9 e acertava 30%). So aceita o que desce.
+        atual, passo = custo(a, b), 1.0
+        while passo > 1e-6 and custo(a - passo * da, b - passo * db) > atual:
+            passo /= 2
+        a, b = a - passo * da, b - passo * db
+        if passo * (abs(da) + abs(db)) < 1e-9:
+            break
+    return a, b
+
+
+def ajuste(registro, juiz, pergunta):
+    """Ajuste de uma pergunta noul deste juiz, ou None abaixo do minimo."""
+    xs, ys = [], []
+    for r in ler(registro):
+        if juiz_de(r) != juiz or pergunta not in r.get("desfecho", {}):
+            continue
+        q = r["perguntas"][pergunta]
+        if q["tipo"] != "noul":
+            return None
+        xs.append(logit(q["dist"]["sim"]))
+        ys.append(1 if r["desfecho"][pergunta] == "sim" else 0)
+    if len(xs) < MINIMO_PARA_AJUSTAR:
+        return None
+    return ajustar_platt(xs, ys)
+
+
+def aplicar_ajuste(ab, p):
+    return sigmoide(ab[0] * logit(p) + ab[1])
+
+
+def excesso(ps):
+    top = [(p, y) for _, p, y in ps if p >= 0.5]
+    if not top:
+        return 0.0
+    return sum(p for p, _ in top) / len(top) - sum(y for _, y in top) / len(top)
+
+
+def cmd_historico(juiz="claude", registro=REGISTRO):
+    """O que o juiz precisa saber de si antes de julgar, em poucas linhas.
+
+    E a parte barata do que o Jev compra com treino de calibracao: o juiz ve
+    onde errou de confianca, por pergunta, antes de dar o proximo numero.
+    """
+    por = {}
+    for nome, p, y in pares(registro, juiz=juiz):
+        por.setdefault(nome, []).append((nome, p, y))
+    n = contar_desfechos(registro, juiz)
+    out = [f"historico do juiz {juiz}: {n} desfechos"]
+    if not por:
+        return out[0] + " -- nada medido ainda; julgue pela evidencia"
+    for nome in sorted(por):
+        nd = contar_desfechos(registro, juiz, nome)
+        e = excesso(por[nome])
+        dica = ""
+        if nd >= 10 and e > 0.10:
+            dica = " -> REBAIXE: suas p altas acertaram menos do que diziam"
+        elif nd >= 10 and e < -0.10:
+            dica = " -> voce foi timido: acertou mais do que disse"
+        elif nd < 10:
+            dica = " (anedota: menos de 10)"
+        a = ajuste(registro, juiz, nome)
+        corr = f", ajuste ativo a={a[0]:.2f} b={a[1]:+.2f}" if a else ""
+        out.append(f"  {nome}: {nd} desfechos, brier {brier(por[nome]):.3f}, excesso {e:+.2f}{corr}{dica}")
+    return "\n".join(out)
 
 
 def cmd_calibrar(registro=REGISTRO):
@@ -358,8 +498,7 @@ def cmd_calibrar(registro=REGISTRO):
         b = por[nome]
         nd = sum(1 for r in ler(registro) if nome in r.get("desfecho", {}))
         # excesso: media da p dada a opcao escolhida menos a taxa em que ela acertou
-        top = [(p, y) for _, p, y in b if p >= 0.5]
-        exc = (sum(p for p, _ in top) / len(top) - sum(y for _, y in top) / len(top)) if top else 0.0
+        exc = excesso(b)
         out.append(f"{nome[:18]:18s}  {nd:9d}  {brier(b):.4f}  {exc:+.2f}")
     out.append("faixa      n   prevista  ocorrida")
     for i in range(10):
@@ -438,9 +577,81 @@ def cmd_local(modelo, entrada, saida, registro=REGISTRO, url=OLLAMA):
                 pergs[nome] = {"tipo": q["tipo"], "p": dist, "evid": ev}
         itens.append({"id": item["id"], "perguntas": pergs})
     julg = {"preset": f"local:{modelo}", "estado": j.get("estado") or ["contexto local"], "itens": itens}
-    cmd_veredito(json.dumps(julg), saida, registro)
+    cmd_veredito(json.dumps(julg), saida, registro, juiz=f"local:{modelo}")
     if tempos:
         saida.write(f"latencia: {len(tempos)} perguntas, mediana {sorted(tempos)[len(tempos)//2]:.0f} ms\n")
+
+
+CONFIG = os.path.join(raiz(), ".phxjev", "config.json")
+BANCADA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "bancada", "resultados.json")
+MODOS = ("claude", "local", "auto")
+# A regra da cognicao de 24/09 (juiz local pequeno nao substitui o Claude),
+# agora em codigo: sem ela, «auto» seria so um nome.
+QUALIFICA_N, QUALIFICA_BRIER, QUALIFICA_PIOR_ERRO = 50, 0.10, 0.90
+
+
+def ler_config(config=CONFIG):
+    try:
+        with open(config, encoding="utf-8") as f:
+            c = json.load(f)
+    except (OSError, ValueError):
+        c = {}
+    return {"juiz": c.get("juiz", "claude"), "modelo": c.get("modelo", "qwen2.5:3b")}
+
+
+def qualificado(modelo, bancada=BANCADA):
+    """(passou?, motivo) do modelo local pela ultima bancada gravada."""
+    try:
+        with open(bancada, encoding="utf-8") as f:
+            r = json.load(f)["juizes"].get(f"local {modelo}")
+    except (OSError, ValueError, KeyError):
+        r = None
+    if not r:
+        return False, f"{modelo} nao foi medido na bancada"
+    falhas = []
+    if r["n"] < QUALIFICA_N:
+        falhas.append(f"n {r['n']} < {QUALIFICA_N}")
+    if r["brier"] >= QUALIFICA_BRIER:
+        falhas.append(f"brier {r['brier']} >= {QUALIFICA_BRIER}")
+    if r.get("pior_erro", 1.0) > QUALIFICA_PIOR_ERRO:
+        falhas.append(f"pior erro {r.get('pior_erro', 'nao medido')} > {QUALIFICA_PIOR_ERRO}")
+    return (not falhas), ("; ".join(falhas) or f"brier {r['brier']} em {r['n']}")
+
+
+def juiz_efetivo(config=CONFIG, bancada=BANCADA):
+    """(modo que vale, modelo, frase que diz por que) -- o pedido nao manda sozinho."""
+    c = ler_config(config)
+    if c["juiz"] == "claude":
+        return "claude", None, "juiz claude (configurado)"
+    ok, motivo = qualificado(c["modelo"], bancada)
+    if not ok:
+        return "claude", None, f"juiz claude: {c['juiz']} pedido, mas {motivo} (bancada)"
+    return c["juiz"], c["modelo"], f"juiz {c['juiz']} com {c['modelo']} ({motivo})"
+
+
+def cmd_juiz(args, config=CONFIG, bancada=BANCADA):
+    if args:
+        if args[0] not in MODOS:
+            raise Invalido(f"modo {args[0]!r}: use {'|'.join(MODOS)}")
+        c = ler_config(config)
+        c["juiz"] = args[0]
+        if len(args) > 1:
+            c["modelo"] = args[1]
+        os.makedirs(os.path.dirname(config), exist_ok=True)
+        with open(config, "w", encoding="utf-8") as f:
+            json.dump(c, f, ensure_ascii=False, indent=1)
+            f.write("\n")
+    return juiz_efetivo(config, bancada)[2]
+
+
+def cmd_auto(modelo, entrada, saida, registro=REGISTRO, url=OLLAMA):
+    """Local primeiro; o que sair incerto vai para o Claude, nunca some."""
+    buf = io.StringIO()
+    cmd_local(modelo, entrada, buf, registro, url)
+    texto = buf.getvalue()
+    saida.write(texto)
+    incertas = [l for l in texto.splitlines() if l.startswith("escalar:") and l != "escalar: nada"]
+    saida.write("ESCALAR AO CLAUDE: " + (incertas[0][9:] if incertas else "nada") + "\n")
 
 
 def cmd_mostrar(selo, registro=REGISTRO):
@@ -467,6 +678,12 @@ def main(argv):
             print(f"colhidos: {len(feitos)} · pulados (pedido ja fechado antes do veredito): {pulados}")
         elif argv[1:2] == ["local"] and len(argv) == 3:
             cmd_local(argv[2], sys.stdin.read(), sys.stdout)
+        elif argv[1:2] == ["historico"]:
+            print(cmd_historico(argv[2] if len(argv) > 2 else "claude"))
+        elif argv[1:2] == ["juiz"]:
+            print(cmd_juiz(argv[2:]))
+        elif argv[1:2] == ["auto"] and len(argv) == 3:
+            cmd_auto(argv[2], sys.stdin.read(), sys.stdout)
         elif argv[1:2] == ["calibrar"]:
             print(cmd_calibrar())
         else:
