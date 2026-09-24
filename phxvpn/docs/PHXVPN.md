@@ -44,13 +44,15 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [x] P2P: `mac1`/cookie contra inundação de INICIO — lixo recusado em 1,85 µs em vez de 198 µs (107×); sob carga, só com cookie e 5/s por origem
 - [x] USB na janela do programa de mesa: compartilhar, ver o dos membros, usar e soltar — exercitado com duas janelas e o túnel P2P de verdade
 - [x] Segurança no Windows: arquivos com chave e pastas de dados só do dono (DACL protegida, uma entrada, posta ANTES do segredo) — provado no essencial sob o Wine; a prova estrita está no `prova-windows.ps1` (passo 3b)
+- [x] Serviço do sistema no Linux (`phxvpn servico instalar painel|repasse|p2p`), segredos como credencial CIFRADA do systemd, nunca texto puro
+- [x] Pacotes por roteiro (`empacotar.sh`): `.deb`, `.msi` e `.zip` — instalados e removidos de verdade (`dpkg`, `msiexec` do Wine)
 - [x] Segurança C2: sorteio falha fechado (descritor único; `BCryptGenRandom` no Windows) — nunca mais mistura previsível
 
 ### Falta
 
 - [ ] Programa de mesa: ver o ícone da bandeja num Windows real (no Wine ele é registrado, mas não aparece na área de trabalho virtual) e bandeja no Linux (pede D-Bus)
 - [ ] Usar o certificado digital da empresa (A1/RSA) como AC — hoje ele é guardado só como identificação
-- [ ] Serviço do sistema (systemd / serviço do Windows) e pacote
+- [ ] Serviço do Windows (hoje, no Windows: «abrir com o sistema» pela bandeja, que pede login)
 - [ ] P2P: rol de membros ASSINADO (hoje a lista viaja cifrada entre membros, com confiança transitiva)
 - [ ] P2P: descoberta — convite, broadcast na LAN e «farol» (membro alcançável que perfura NAT e faz relé)
 - [ ] Segurança A4 (inteiro): TLS no próprio painel — choque com a pétrea de zero dependência; hoje, proxy com TLS na frente
@@ -442,6 +444,55 @@ Onde vale:
   no passo 3b do `prova-windows.ps1`.
 - **O Wine não implementa herança**: arquivo novo nasce do `umask`. Por isso
   cada segredo recebe a própria ACL, sem depender da herança da pasta.
+
+## Serviço do sistema e pacotes (24/09/2026)
+
+**Serviço (Linux, systemd).** `phxvpn servico instalar painel|repasse|p2p`
+escreve a unidade e a liga; `--mostrar` só a imprime.
+
+**O choque com pétrea, resolvido sem subir ao dono.** Serviço não tem quem
+digite senha, e "senha nunca em texto puro, nem em arquivo" proíbe o `.env`
+de costume. A saída é o mecanismo do próprio systemd:
+- `systemd-creds encrypt` guarda o segredo **cifrado** em `/etc/phxvpn/*.cred`
+  (chave do host, ou TPM quando há), recebendo-o pela entrada padrão, e não
+  pela linha de comando;
+- o systemd só o decifra em memória, para o processo (`LoadCredentialEncrypted`).
+
+O que cada serviço recebe:
+- **painel**: a conexão do PostgreSQL e, se pedida, a senha mestre;
+- **nó P2P**: a PSK **derivada** (não a senha), lida do nome gravado no
+  arquivo da rede — um nome digitado com outra caixa daria um túnel que nunca
+  fecha, sem aviso.
+
+| Serviço | Roda como | Endurecimento |
+|---|---|---|
+| painel | root (o `openvpn` cria a placa e desce a `nobody`) | só `/dev/net/tun`, capacidades mínimas, `ProtectSystem=strict` |
+| repasse | `DynamicUser`, **sem root** | nenhuma capacidade, sem dispositivos |
+| p2p | root só com `CAP_NET_ADMIN` | só `/dev/net/tun` |
+
+**Provas:**
+- as três unidades passam no `systemd-analyze verify` sem aviso nenhum, e
+  nenhuma contém segredo;
+- a credencial cifrada (223 bytes) não contém o texto da senha;
+- o painel sobe **só** com a credencial (sem `PHXVPN_PG`) e responde
+  `/api/estado`; sem credencial e sem variável, recusa com a frase certa.
+- **Não provado aqui**: o serviço rodando sob o systemd (o contêiner não tem
+  systemd como PID 1).
+
+**Pacotes** (`./empacotar.sh`, nunca à mão):
+
+| Pacote | Tamanho | Prova |
+|---|---|---|
+| `phxvpn_0.1.0_amd64.deb` | 809 KB | `dpkg -i` → `phxvpn versao` e `AUTOTESTE` ok → `dpkg -r` limpo |
+| `phxvpn-0.1.0-x64.msi` | 3,8 MB | `msiexec /i` do Wine → `phxvpn.exe versao` ok → `msiexec /x` limpo |
+| `phxvpn-0.1.0-windows-x64.zip` | 3,6 MB | — |
+
+O MSI não põe o phxvpn no PATH: o `wixl` não conhece a tabela `Environment`.
+O `UpgradeCode` é fixo, e é por ele que o Windows reconhece a versão nova
+como atualização.
+
+**Falta:** o serviço do Windows. No Windows, hoje, o programa sobe na bandeja
+por "abrir com o sistema", o que exige login.
 
 ## USB pela rede (24/09/2026)
 

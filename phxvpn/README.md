@@ -44,4 +44,11 @@ phxvpn usb compartilhar 1-1.2 --rede Matriz   # Linux, quem tem o dispositivo
 phxvpn usb usar 10.78.0.1 1-1.2               # Linux, ou Windows com usbip-win2
 ```
 
+Como serviço do sistema (Linux), e os pacotes (`.deb`, `.msi`, `.zip`):
+
+```bash
+sudo PHXVPN_PG="host=... password=..." phxvpn servico instalar painel --openvpn
+./empacotar.sh        # pacotes/ com SHA256SUMS
+```
+
 Desenho, provas, limites e o que falta: [`docs/PHXVPN.md`](docs/PHXVPN.md).

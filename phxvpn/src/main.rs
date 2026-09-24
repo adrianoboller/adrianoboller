@@ -74,6 +74,14 @@ const AJUDA: &str = "phxvpn -- redes virtuais no estilo Radmin, sobre OpenVPN
   phxvpn usb portas
       Usa aqui o dispositivo de um membro, como se estivesse espetado.
 
+  phxvpn servico instalar painel [--openvpn ...]     (PHXVPN_PG no ambiente)
+  phxvpn servico instalar repasse [--contas ARQ ...]
+  phxvpn servico instalar p2p --rede NOME             (PHXVPN_SENHA_REDE)
+        [--mostrar] so imprime a unidade; [--sem-iniciar] liga no arranque
+  phxvpn servico remover phxvpn-painel
+      Linux/systemd. Os segredos viram credenciais CIFRADAS (systemd-creds),
+      nunca texto puro em arquivo. Dados em /var/lib/phxvpn.
+
   phxvpn cmd  (ou phxvpncmd) [/MODO:painel|p2p|ferramentas] [/PAINEL:http://..]
              [/COMANDO:\"linha\"] [/ENTRADA:script.txt]
       Console no estilo do prompt do MS-DOS, com tres modos. AJUDA dentro dele.
@@ -110,6 +118,7 @@ fn main() {
                 1
             })
         }
+        Some("servico") => cmd_servico(&args[1..]),
         Some("usb") => comandos::usb(&Opcoes::de_args(&args[1..], &[])).map(|t| print!("{t}")),
         Some("mesa") => {
             let o = Opcoes::de_args(&args[1..], &["sem-janela"]);
@@ -167,14 +176,16 @@ fn cmd_painel(args: &[String]) -> Result<(), String> {
             }
             t.to_string()
         }
-        None => std::env::var("PHXVPN_PG")
-            .map_err(|_| "informe o PostgreSQL por PHXVPN_PG (ou --pg)")?,
+        // Como servico, a credencial cifrada do systemd; em primeiro plano,
+        // a variavel de ambiente.
+        None => phxvpn::servico::segredo("pg", "PHXVPN_PG")
+            .ok_or("informe o PostgreSQL por PHXVPN_PG (ou --pg)")?,
     };
     std::env::remove_var("PHXVPN_PG");
     let dados = PathBuf::from(o.um("dados").unwrap_or("phxvpn-dados"));
     let cfg = pg::Config::de_texto(&pg_texto)?;
     let mut p = painel::Painel::abrir(&cfg, &dados)?;
-    if let Ok(m) = std::env::var("PHXVPN_SENHA_MESTRE") {
+    if let Some(m) = phxvpn::servico::segredo("mestre", "PHXVPN_SENHA_MESTRE") {
         // Lida, sai do ambiente: nao fica em /proc/<pid>/environ (M4).
         std::env::remove_var("PHXVPN_SENHA_MESTRE");
         p.destrancar(&m)?;
@@ -285,6 +296,15 @@ fn cmd_p2p(args: &[String]) -> Result<(), String> {
 
 #[cfg(any(target_os = "linux", windows))]
 fn p2p_ligar(o: &Opcoes) -> Result<(), String> {
+    // Como servico: a PSK ja derivada, entregue cifrada pelo systemd.
+    if let Some(psk) = phxvpn::servico::credencial("psk") {
+        let psk: [u8; 32] = phxsql_core::hash::de_hex(&psk)
+            .and_then(|b| b.try_into().ok())
+            .ok_or("credencial psk torta")?;
+        let (no, tun, resumo) = comandos::p2p_preparar(o, comandos::Segredo::Psk(psk), None)?;
+        eprintln!("phxvpn: {resumo}");
+        return phxvpn::p2p::rodar(no, tun);
+    }
     let senha_rede = senha("PHXVPN_SENHA_REDE", "senha da rede")?;
     // A senha sai do ambiente assim que foi lida: nao fica em /proc/<pid>/environ.
     std::env::remove_var("PHXVPN_SENHA_REDE");
@@ -310,6 +330,50 @@ fn p2p_ligar(o: &Opcoes) -> Result<(), String> {
 #[cfg(not(any(target_os = "linux", windows)))]
 fn p2p_ligar(_o: &Opcoes) -> Result<(), String> {
     Err("o modo P2P ainda so roda no Linux (Windows: TAP-Windows6, em escrita)".into())
+}
+
+/// `phxvpn servico instalar painel|repasse|p2p [opcoes do servico]
+/// [--mostrar] [--sem-iniciar]` e `phxvpn servico remover <unidade>`.
+fn cmd_servico(args: &[String]) -> Result<(), String> {
+    use phxvpn::servico::{self, Tipo};
+    match args.first().map(String::as_str) {
+        Some("instalar") => {
+            let tipo = Tipo::de_texto(args.get(1).map(String::as_str).unwrap_or(""))?;
+            let resto: Vec<String> = args[2..]
+                .iter()
+                .filter(|a| *a != "--mostrar" && *a != "--sem-iniciar")
+                .cloned()
+                .collect();
+            let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+            let plano = servico::planejar(tipo, &resto, &exe)?;
+            if args.iter().any(|a| a == "--mostrar") {
+                // So a unidade: os segredos nunca saem na tela.
+                print!("# {}\n{}", plano.arquivo.display(), plano.texto);
+                for (n, _) in &plano.credenciais {
+                    println!(
+                        "# credencial cifrada: {}/{}-{n}.cred",
+                        servico::PASTA_CRED,
+                        plano.unidade
+                    );
+                }
+                return Ok(());
+            }
+            let m = servico::instalar(&plano, !args.iter().any(|a| a == "--sem-iniciar"))?;
+            println!("{m}");
+            Ok(())
+        }
+        Some("remover") => {
+            let u = args
+                .get(1)
+                .ok_or("informe a unidade (ex.: phxvpn-painel)")?;
+            println!("{}", servico::remover(u)?);
+            Ok(())
+        }
+        _ => Err(
+            "use: phxvpn servico instalar painel|repasse|p2p ... | phxvpn servico remover UNIDADE"
+                .into(),
+        ),
+    }
 }
 
 fn cmd_repasse(args: &[String]) -> Result<(), String> {

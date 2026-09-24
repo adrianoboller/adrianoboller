@@ -20,6 +20,7 @@ pub mod pg;
 pub mod pki;
 pub mod rede_p2p;
 pub mod repasse;
+pub mod servico;
 pub mod supervisor;
 pub mod tap;
 pub mod transporte;
