@@ -50,24 +50,34 @@ impl Limitador {
 
     pub fn falhou(&self, chave: &str) {
         let mut contas = self.contas.lock().unwrap_or_else(|e| e.into_inner());
-        if contas.len() >= TETO_CHAVES {
-            contas.retain(|_, c| c.ultima.elapsed() < ESQUECER);
+        contar(&mut contas, chave);
+    }
+
+    /// Reserva a tentativa ANTES do trabalho caro: confere e CONTA como
+    /// falha, tudo sob a mesma trava. Conferir antes e contar so depois do
+    /// PBKDF2 (~430 ms) deixava a janela aberta: 256 pedidos simultaneos
+    /// passavam todos pelo `antes`, porque nenhum tinha falhado AINDA. Quem
+    /// acerta chama [`Reserva::acertou`]; quem erra so deixa a reserva cair
+    /// (a falha ja esta contada).
+    pub fn reservar(&self, chaves: &[&str]) -> Result<Reserva<'_>, Duration> {
+        let mut contas = self.contas.lock().unwrap_or_else(|e| e.into_inner());
+        let agora = Instant::now();
+        let espera = chaves
+            .iter()
+            .filter_map(|c| contas.get(*c).and_then(|x| x.bloqueado_ate))
+            .filter(|ate| *ate > agora)
+            .map(|ate| ate - agora)
+            .max();
+        if let Some(falta) = espera {
+            return Err(falta);
         }
-        let c = contas.entry(chave.to_string()).or_insert(Conta {
-            falhas: 0,
-            ultima: Instant::now(),
-            bloqueado_ate: None,
-        });
-        if c.ultima.elapsed() >= ESQUECER {
-            c.falhas = 0;
+        for c in chaves {
+            contar(&mut contas, c);
         }
-        c.falhas += 1;
-        c.ultima = Instant::now();
-        if c.falhas > LIVRES {
-            let expoente = (c.falhas - LIVRES - 1).min(16);
-            let espera = Duration::from_secs(1u64 << expoente).min(TETO);
-            c.bloqueado_ate = Some(Instant::now() + espera);
-        }
+        Ok(Reserva {
+            limitador: self,
+            chaves: chaves.iter().map(|c| c.to_string()).collect(),
+        })
     }
 
     pub fn acertou(&self, chave: &str) {
@@ -84,6 +94,77 @@ impl Limitador {
             .filter_map(|c| self.antes(c).err())
             .max()
             .map_or(Ok(()), Err)
+    }
+}
+
+fn contar(contas: &mut HashMap<String, Conta>, chave: &str) {
+    if contas.len() >= TETO_CHAVES {
+        contas.retain(|_, c| c.ultima.elapsed() < ESQUECER);
+    }
+    let c = contas.entry(chave.to_string()).or_insert(Conta {
+        falhas: 0,
+        ultima: Instant::now(),
+        bloqueado_ate: None,
+    });
+    if c.ultima.elapsed() >= ESQUECER {
+        c.falhas = 0;
+    }
+    c.falhas += 1;
+    c.ultima = Instant::now();
+    if c.falhas > LIVRES {
+        let expoente = (c.falhas - LIVRES - 1).min(16);
+        let espera = Duration::from_secs(1u64 << expoente).min(TETO);
+        c.bloqueado_ate = Some(Instant::now() + espera);
+    }
+}
+
+/// Uma tentativa ja contada como falha, esperando o veredito.
+pub struct Reserva<'a> {
+    limitador: &'a Limitador,
+    chaves: Vec<String>,
+}
+
+impl Reserva<'_> {
+    /// Acertou: as chaves em `zerar` (a da conta) voltam a zero; as outras
+    /// (o IP) so devolvem esta tentativa -- quem acerta nao limpa o que
+    /// outros erraram do mesmo IP.
+    pub fn acertou(self, zerar: &[&str]) {
+        let mut contas = self
+            .limitador
+            .contas
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        for c in &self.chaves {
+            if zerar.contains(&c.as_str()) {
+                contas.remove(c);
+            } else {
+                devolver(&mut contas, c);
+            }
+        }
+    }
+
+    /// Nao foi tentativa de senha (o banco caiu, por exemplo): desfaz.
+    pub fn devolver(self) {
+        let mut contas = self
+            .limitador
+            .contas
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        for c in &self.chaves {
+            devolver(&mut contas, c);
+        }
+    }
+}
+
+fn devolver(contas: &mut HashMap<String, Conta>, chave: &str) {
+    if let Some(c) = contas.get_mut(chave) {
+        c.falhas = c.falhas.saturating_sub(1);
+        if c.falhas <= LIVRES {
+            c.bloqueado_ate = None;
+        }
+        if c.falhas == 0 {
+            contas.remove(chave);
+        }
     }
 }
 
@@ -131,5 +212,55 @@ mod testes {
         l.acertou("x");
         assert!(l.antes("x").is_ok());
         assert!(l.antes_de_todas(&["x", "y"]).is_ok());
+    }
+
+    /// ALTO 1 da revisao: 64 tentativas SIMULTANEAS, cada uma com 50 ms de
+    /// «PBKDF2» no meio. So LIVRES+1 podem chegar a conferir; o resto e 429.
+    /// RED: com `antes` + `falhou` depois do trabalho, passavam as 64.
+    #[test]
+    fn reserva_segura_tentativas_simultaneas() {
+        let l = std::sync::Arc::new(Limitador::default());
+        let passaram = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let barreira = std::sync::Arc::new(std::sync::Barrier::new(64));
+        let fios: Vec<_> = (0..64)
+            .map(|_| {
+                let (l, passaram, barreira) = (l.clone(), passaram.clone(), barreira.clone());
+                std::thread::spawn(move || {
+                    barreira.wait();
+                    if let Ok(r) = l.reservar(&["conta:ana", "ip-painel:x"]) {
+                        passaram.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        std::thread::sleep(Duration::from_millis(50));
+                        drop(r); // errou
+                    }
+                })
+            })
+            .collect();
+        for f in fios {
+            f.join().unwrap();
+        }
+        assert_eq!(
+            passaram.load(std::sync::atomic::Ordering::SeqCst),
+            LIVRES + 1
+        );
+    }
+
+    #[test]
+    fn reserva_que_acerta_nao_bloqueia_e_devolve_o_ip() {
+        let l = Limitador::default();
+        for _ in 0..(LIVRES * 3) {
+            l.reservar(&["conta:ana", "ip:x"])
+                .unwrap()
+                .acertou(&["conta:ana"]);
+        }
+        assert!(l.antes("ip:x").is_ok() && l.antes("conta:ana").is_ok());
+        // Erros de outra conta no mesmo IP continuam contados.
+        for _ in 0..LIVRES {
+            drop(l.reservar(&["conta:bia", "ip:x"]).unwrap());
+        }
+        l.reservar(&["conta:ana", "ip:x"])
+            .unwrap()
+            .acertou(&["conta:ana"]);
+        drop(l.reservar(&["conta:bia", "ip:x"]).unwrap());
+        assert!(l.antes("ip:x").is_err(), "acerto da ana nao limpa o IP");
     }
 }

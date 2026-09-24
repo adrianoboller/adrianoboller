@@ -54,7 +54,10 @@ async function carregarRedes() {
       b.onclick = async () => {
         const frase = r.exige_mfa ? `Dispensar o autenticador na rede «${r.nome}»?` : `Exigir usuário, senha e código do autenticador para conectar na rede «${r.nome}»? Os membros precisam baixar o perfil de novo.`;
         if (!confirm(frase)) return;
-        try { const x = await api("POST", "/api/redes/mfa", { rede_id: r.id, exige: !r.exige_mfa }); msg("m-redes", x.aviso, true); carregarRedes(); } catch (x) { msg("m-redes", x.message); }
+        // Quem tem autenticador prova o código para mudar a exigência.
+        let codigo = "";
+        if (sessao.mfa) { codigo = prompt("Código do autenticador") || ""; if (!codigo) return; }
+        try { const x = await api("POST", "/api/redes/mfa", { rede_id: r.id, exige: !r.exige_mfa, codigo }); msg("m-redes", x.aviso, true); carregarRedes(); } catch (x) { msg("m-redes", x.message); }
       };
       acoes.appendChild(b);
     }

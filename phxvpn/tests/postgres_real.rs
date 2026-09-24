@@ -200,8 +200,11 @@ fn autenticador_cadastro_reuso_e_rede_que_exige() {
     let ana = p.login("ana", "senha-ana-1").unwrap();
 
     // Rede exigindo: quem nao cadastrou e recusado no «entrar», com o motivo.
-    assert!(p.rede_definir_mfa(&ana, 1, true).is_err(), "so dono/admin");
-    p.rede_definir_mfa(&admin, 1, true).unwrap();
+    assert!(
+        p.rede_definir_mfa(&ana, 1, true, "").is_err(),
+        "so dono/admin"
+    );
+    p.rede_definir_mfa(&admin, 1, true, "").unwrap();
     let e = p.entrar_na_rede(&ana, "Matriz", "rede-123").unwrap_err();
     assert!(e.contains("exige o autenticador"), "{e}");
     let conf = std::fs::read_to_string(dados.join("redes/1/servidor.conf")).unwrap();
@@ -254,8 +257,34 @@ fn autenticador_cadastro_reuso_e_rede_que_exige() {
     // Admin zera; o dono dispensa e o conf perde o verificador.
     p.mfa_zerar(&admin, "ana").unwrap();
     assert!(!p.mfa_ativo(ana.id).unwrap());
-    p.rede_definir_mfa(&admin, 1, false).unwrap();
+    p.rede_definir_mfa(&admin, 1, false, "").unwrap();
     let conf = std::fs::read_to_string(dados.join("redes/1/servidor.conf")).unwrap();
     assert!(!conf.contains("auth-user-pass-verify"));
+
+    // MEDIO 7: quem tem autenticador prova o codigo para mudar a exigencia.
+    let j = p.mfa_iniciar(&admin).unwrap();
+    let seg_admin = totp::de_base32(j.texto_ou("segredo", "")).unwrap();
+    let cod_a = |t: u64| totp::formatar(totp::totp(&seg_admin, t, 6), 6);
+    p.mfa_confirmar(&admin, &cod_a(agora)).unwrap();
+    assert!(
+        p.rede_definir_mfa(&admin, 1, true, "").is_err(),
+        "sem codigo"
+    );
+    assert!(!p.rede_exige_mfa("1").unwrap());
+    p.rede_definir_mfa(&admin, 1, true, &cod_a(agora + 30))
+        .unwrap();
+    assert!(p.rede_exige_mfa("1").unwrap());
+
+    // MEDIO 4: sem o mfa.chave e com segredo no banco, nada nasce em
+    // silencio -- nem no conferir, nem num cadastro novo.
+    std::fs::remove_file(dados.join("mfa.chave")).unwrap();
+    assert!(p.mfa_conferir(admin.id, &cod_a(agora + 30)).is_err());
+    p.criar_usuario("bia", "senha-bia-1", "", false).unwrap();
+    let bia = p.login("bia", "senha-bia-1").unwrap();
+    assert!(p.mfa_iniciar(&bia).is_err());
+    assert!(
+        !dados.join("mfa.chave").exists(),
+        "recriou a chave em silencio"
+    );
     let _ = std::fs::remove_dir_all(&dados);
 }

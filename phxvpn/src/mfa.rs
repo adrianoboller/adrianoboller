@@ -42,26 +42,22 @@ ALTER TABLE phx_rede ADD COLUMN IF NOT EXISTS exige_mfa boolean NOT NULL DEFAULT
 
 const ARQUIVO_CHAVE: &str = "mfa.chave";
 
-/// A chave do selo do segredo TOTP; nasce na primeira vez, 0600.
-fn chave(dados: &Path) -> R<Cofre> {
+/// A chave do selo do segredo TOTP, 0600. So nasce quando `pode_nascer`
+/// (o `iniciar` com NENHUM segredo selado no banco): recriar em silencio uma
+/// chave perdida tornaria todo segredo ja cadastrado impossivel de abrir --
+/// e ninguem saberia por que os codigos pararam de bater.
+fn chave(dados: &Path, pode_nascer: bool) -> R<Cofre> {
     let caminho = dados.join(ARQUIVO_CHAVE);
     let bytes = match std::fs::read(&caminho) {
         Ok(b) => b,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound && pode_nascer => nascer(&caminho)?,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            use std::io::Write;
-            let nova = phxsql_core::senha::bytes_aleatorios(32);
-            let mut o = std::fs::OpenOptions::new();
-            o.write(true).create_new(true);
-            #[cfg(unix)]
-            std::os::unix::fs::OpenOptionsExt::mode(&mut o, 0o600);
-            let mut f = o
-                .open(&caminho)
-                .map_err(|e| format!("criar {}: {e}", caminho.display()))?;
-            crate::acl::so_do_dono(&caminho)?;
-            f.write_all(&nova)
-                .and_then(|_| f.sync_all())
-                .map_err(|e| format!("gravar {}: {e}", caminho.display()))?;
-            nova
+            eprintln!(
+                "phxvpn: ERRO {} nao existe, mas ha autenticador cadastrado no banco: \
+                 restaure o arquivo do backup da pasta de dados (sem ele nenhum codigo confere)",
+                caminho.display()
+            );
+            return Err("o autenticador está indisponível no painel (veja o log)".into());
         }
         Err(e) => return Err(format!("ler {}: {e}", caminho.display())),
     };
@@ -69,6 +65,38 @@ fn chave(dados: &Path) -> R<Cofre> {
         .try_into()
         .map_err(|_| format!("{} torta (tem de ter 32 bytes)", caminho.display()))?;
     Ok(Cofre::de_chave(k))
+}
+
+/// Cria o arquivo; se outro fio criou no meio (corrida de dois `iniciar`),
+/// le o dele em vez de sobrescrever.
+fn nascer(caminho: &Path) -> R<Vec<u8>> {
+    use std::io::Write;
+    let nova = phxsql_core::senha::bytes_aleatorios(32);
+    let tmp = caminho.with_extension("nascendo");
+    let _ = std::fs::remove_file(&tmp);
+    let mut o = std::fs::OpenOptions::new();
+    o.write(true).create_new(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut o, 0o600);
+    let mut f = o
+        .open(&tmp)
+        .map_err(|e| format!("criar {}: {e}", tmp.display()))?;
+    crate::acl::so_do_dono(&tmp)?;
+    f.write_all(&nova)
+        .and_then(|_| f.sync_all())
+        .map_err(|e| format!("gravar {}: {e}", tmp.display()))?;
+    drop(f);
+    // `hard_link` falha se o destino existe: o primeiro a chegar vence, sem
+    // arquivo pela metade nem sobrescrita.
+    let r = std::fs::hard_link(&tmp, caminho);
+    let _ = std::fs::remove_file(&tmp);
+    match r {
+        Ok(()) => Ok(nova),
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            std::fs::read(caminho).map_err(|e| format!("ler {}: {e}", caminho.display()))
+        }
+        Err(e) => Err(format!("criar {}: {e}", caminho.display())),
+    }
 }
 
 fn aad(usuario_id: i64, pendente: bool) -> String {
@@ -100,7 +128,12 @@ impl Painel {
             );
         }
         let segredo = phxsql_core::senha::bytes_aleatorios(totp::SEGREDO_LEN);
-        let selado = chave(self.dados())?.selar(&segredo, &aad(u.id, true));
+        let n = self.pg()?.executar(
+            "SELECT count(*) AS n FROM phx_usuario WHERE totp_selado IS NOT NULL OR totp_pendente IS NOT NULL",
+            &[],
+        )?;
+        let nenhum = n.valor(0, "n") == Some("0");
+        let selado = chave(self.dados(), nenhum)?.selar(&segredo, &aad(u.id, true));
         self.pg()?.executar(
             "UPDATE phx_usuario SET totp_pendente = $2 WHERE id = $1::int",
             &[Some(&u.id.to_string()), Some(&selado)],
@@ -132,7 +165,7 @@ impl Painel {
             .valor(0, "totp_pendente")
             .ok_or("comece o cadastro do autenticador antes de confirmar")?
             .to_string();
-        let k = chave(self.dados())?;
+        let k = chave(self.dados(), false)?;
         let segredo = k.abrir_com(&pendente, &aad(u.id, true))?;
         let passo = totp::conferir(&segredo, codigo, totp::agora(), 0)
             .ok_or("código do autenticador não confere")?;
@@ -161,7 +194,7 @@ impl Painel {
             .valor(0, "totp_ultimo")
             .and_then(|v| v.parse().ok())
             .unwrap_or(0);
-        let segredo = chave(self.dados())?.abrir_com(&selado, &aad(usuario_id, false))?;
+        let segredo = chave(self.dados(), false)?.abrir_com(&selado, &aad(usuario_id, false))?;
         let passo = totp::conferir(&segredo, codigo, totp::agora(), ultimo)
             .ok_or("código do autenticador não confere")?;
         // Condicional: quem chegou junto com o mesmo codigo perde aqui.
@@ -234,11 +267,16 @@ impl Painel {
     /// O dono da rede ou o administrador liga/desliga a exigencia. Os
     /// perfis baixados antes nao pedem codigo: quem liga manda os membros
     /// baixarem de novo (a resposta da API diz isso).
+    ///
+    /// Quem liga ou desliga e tem autenticador prova um `codigo`: sessao
+    /// roubada nao tira o segundo fator de uma rede. A flag so fica gravada
+    /// se o `servidor.conf` foi reescrito; senao volta ao que era.
     pub fn rede_definir_mfa(
         &mut self,
         ator: &Usuario,
         rede_id: i64,
         exige: bool,
+        codigo: &str,
     ) -> R<(String, PathBuf)> {
         let id = rede_id.to_string();
         let r = self.pg()?.executar(
@@ -255,11 +293,31 @@ impl Painel {
             );
         }
         let nome = r.valor(0, "nome").unwrap_or_default().to_string();
-        self.pg()?.executar(
-            "UPDATE phx_rede SET exige_mfa = $2::boolean WHERE id = $1::int",
-            &[Some(&id), Some(if exige { "true" } else { "false" })],
-        )?;
-        let dir = self.materializar_rede(&id)?;
+        if self.mfa_ativo(ator.id)? {
+            self.mfa_conferir(ator.id, codigo)?;
+        }
+        let dir = self.rede_gravar_mfa(rede_id, exige)?;
         Ok((nome, dir))
+    }
+
+    /// Grava a flag e reescreve o conf; se o conf nao se escreve, a flag
+    /// volta. Tambem e o caminho do desfazer quando o OpenVPN nao sobe.
+    pub fn rede_gravar_mfa(&mut self, rede_id: i64, exige: bool) -> R<PathBuf> {
+        let id = rede_id.to_string();
+        let grava = |p: &mut Painel, v: bool| {
+            p.pg()?.executar(
+                "UPDATE phx_rede SET exige_mfa = $2::boolean WHERE id = $1::int",
+                &[Some(&id), Some(if v { "true" } else { "false" })],
+            )
+        };
+        grava(self, exige)?;
+        match self.materializar_rede(&id) {
+            Ok(dir) => Ok(dir),
+            Err(e) => {
+                let _ = grava(self, !exige);
+                let _ = self.materializar_rede(&id);
+                Err(e)
+            }
+        }
     }
 }

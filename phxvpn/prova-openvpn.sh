@@ -114,7 +114,7 @@ if grep -q "tls-crypt-v2" "$T/ana.ovpn"; then
 else
   grep -q "certificate revoked" "$LOGSRV" || { echo "FALHOU: a recusa nao foi pela CRL"; exit 1; }
 fi
-grep -q "UID set to nobody" "$LOGSRV" || { echo "FALHOU: o openvpn ficou como root"; exit 1; }
+grep -q "UID set to \(phxvpn-ovpn\|nobody\)" "$LOGSRV" || { echo "FALHOU: o openvpn ficou como root"; exit 1; }
 grep -h "UID set" "$LOGSRV" | tail -1
 echo "== a ana removida NAO reconectou; o admin segue no ar:"
 ip netns exec pxc1 ping -c 2 -W 2 "$GW" | tail -1

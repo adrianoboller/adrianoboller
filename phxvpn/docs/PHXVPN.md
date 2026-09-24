@@ -39,7 +39,7 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [x] Segurança M1, M2, M4, M5, M6, M7: teto de conexões e prazo total por pedido; segredo nasce 0600 e diretório 0700; senhas saem do ambiente; login só `[a-z0-9._-]`; cota de 3 redes por usuário; conexão do PG refeita e trava envenenada não derruba
 - [x] USB pela rede (USB/IP, porta 3240): compartilhar e usar no Linux só com `std` + sysfs; usar no Windows pelo usbip-win2; interopera com o `usbip` de referência
 - [x] **Túnel OpenVPN de verdade provado** (2.6.19, `prova-openvpn.sh`): PostgreSQL → painel → dois membros em netns, TLS 1.3/Ed25519, ping entre membros, removido barrado
-- [x] Segurança M3: OpenVPN troca para `nobody` depois de abrir a placa; `tls-crypt-v2` com uma chave por membro e a série dentro — removido barrado ANTES do TLS
+- [x] Segurança M3: OpenVPN troca para o usuário próprio `phxvpn-ovpn` (antes `nobody`) depois de abrir a placa; `tls-crypt-v2` com uma chave por membro e a série dentro — removido barrado ANTES do TLS
 - [x] Arquivos que o OpenVPN relê (`crl.pem`, `ccd/`) gravados por troca atômica — nunca lidos pela metade
 - [x] P2P: `mac1`/cookie contra inundação de INICIO — lixo recusado em 1,85 µs em vez de 198 µs (107×); sob carga, só com cookie e 5/s por origem
 - [x] USB na janela do programa de mesa: compartilhar, ver o dos membros, usar e soltar — exercitado com duas janelas e o túnel P2P de verdade
@@ -82,7 +82,7 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 | UDP 51820 | nó P2P | chave do membro (Noise IK) + senha da rede (PSK) + ficha de convite para entrar |
 | UDP 51821 | `phxvpn repasse` | **usuário + senha** com `--contas` (sem, fica aberto e avisa) |
 | UDP 1195+ | OpenVPN (modo servidor) | certificado da AC + CRL + `ccd-exclusive` + `tls-crypt`; rede com MFA: + usuário, senha e código |
-| soquete `dados/verificar.sock` | `phxvpn painel` (Unix) | `SO_PEERCRED`: só root, o próprio painel e `nobody`; mesmo limitador de tentativas |
+| soquete `dados/verificar.sock` | `phxvpn painel` (Unix) | arquivo 0660 do grupo `phxvpn-ovpn` + `SO_PEERCRED` (root, o painel, `phxvpn-ovpn`); 32 perguntas de uma vez, 2 s para o pedido chegar; tentativa reservada antes do PBKDF2 |
 
 ### Contas do servidor intermediário
 
@@ -1154,13 +1154,19 @@ conecta: usuário, senha e código  →  SCRV1:base64(senha):base64(código)
 | HOTP/TOTP, base32, URI `otpauth://`, QR em SVG, SCRV1 | `src/totp.rs` | vetores do apêndice D da RFC 4226, apêndice B da RFC 6238 (SHA-1) e §10 da RFC 4648 |
 | HMAC-SHA1 | `phxsql-core/src/sha1.rs` | os 7 casos da RFC 2202; os aplicativos ignoram `algorithm=` e calculam SHA-1 |
 | Segredo selado, reuso, exigência por rede | `src/mfa.rs` | colunas novas por `ADD COLUMN IF NOT EXISTS` (banco instalado continua abrindo) |
-| Verificador do OpenVPN e soquete do painel | `src/verificar.rs` | o `openvpn` roda como `nobody` |
+| Verificador do OpenVPN e soquete do painel | `src/verificar.rs` | o `openvpn` roda como o usuário próprio `phxvpn-ovpn` |
 
 **O caminho da conexão.** `auth-user-pass-verify "phxvpn ovpn-mfa-verificar
-<soquete> <rede>" via-file` roda como `nobody` — sem a senha do PostgreSQL e
-sem a chave do selo. Ele só **pergunta** ao painel por um soquete Unix
-(`dados/verificar.sock`), e o painel confere quem pergunta pelo `SO_PEERCRED`
-(root, o próprio painel, `nobody`). O painel exige que o usuário digitado seja
+<soquete> <rede>" via-file` roda como o usuário do `openvpn` —
+`phxvpn-ovpn`, criado pelo `servico instalar painel` ou no arranque como root
+(`useradd --system`) — sem a senha do PostgreSQL e sem a chave do selo. Ele só
+**pergunta** ao painel por um soquete Unix (`dados/verificar.sock`), que tem
+duas portas: o arquivo (0660, grupo `phxvpn-ovpn`: quem não é do grupo nem
+conecta) e o `SO_PEERCRED` (root, o próprio painel e o uid `phxvpn-ovpn`).
+**Não** o `nobody`: aceito, todo daemon sem dono da máquina virava oráculo de
+senha e código (ALTO 2 da revisão). Sem conseguir criar o usuário próprio, o
+`openvpn` cai para `nobody`, e o painel avisa no arranque que o soquete passou
+a aceitar `nobody`. O painel exige que o usuário digitado seja
 o login do CN do certificado (`login.rede.série`) e a rede seja a do conf: o
 certificado da ana com a senha e o código do bruno não entra. A conferência é
 **adiada** (`auth_control_file`, código 2): o PBKDF2 não roda dentro do laço
@@ -1176,8 +1182,23 @@ resposta só, a do «Cadastrar»; depois de confirmado, nenhuma rota o devolve.
 **Reuso e tentativas.** `totp_ultimo` guarda o último passo aceito e a gravação
 é condicional (`totp_ultimo < passo`): o mesmo código não passa duas vezes —
 nem entre painel e VPN, nem depois de reiniciar, nem em duas conferências
-simultâneas. Erros contam no limitador do painel (`vpn:<login>`, `ip:`,
-`totp:<id>`). Senha errada e código errado dão a **mesma** frase no login.
+simultâneas. Senha errada e código errado dão a **mesma** frase no login.
+
+**Tentativas (ALTO 1 da revisão).** A tentativa é **reservada antes** do
+PBKDF2 (`guarda::reservar`: confere e conta, sob a mesma trava; quem acerta
+devolve). Antes, o limitador conferia antes e contava só depois dos ~430 ms, e
+256 pedidos simultâneos passavam todos. A conta é **uma** para os canais
+(`conta:<login>` no login do painel, na VPN, no cadastro e na exigência da
+rede): o orçamento de uma pessoa não se multiplica por porta. O IP é **por
+canal** (`ip-painel:`, `ip-vpn:`): erro na VPN não tranca o painel do mesmo IP.
+O IP do cliente IPv6 vem de `untrusted_ip6`.
+
+**Mudar a exigência da rede** pede o código de quem muda, se ele tem
+autenticador; e a flag só fica gravada se o `servidor.conf` foi reescrito e o
+OpenVPN reiniciou — senão volta ao que era. **`mfa.chave` ausente** com
+segredo no banco não se recria: o log diz a causa (restaurar do backup), e
+nenhum código confere até lá. O usuário digitado vai ao log só escapado e
+cortado em 32.
 
 **Prova (24/09/2026, `provas/mfa/rodar.sh`, `openvpn` 2.6.19 em dois netns,
 binário release; `provas/mfa/resultados.json`).** Código calculado pelo
@@ -1186,16 +1207,20 @@ binário release; `provas/mfa/resultados.json`).** Código calculado pelo
 | Caso | Resultado |
 |---|---|
 | senha errada + código válido | recusado (e o código continuou valendo) |
-| senha + código certos | **conectou em 1,23 s**; ping 3/3 pelo túnel |
+| senha + código certos | **conectou em 1,15 s**; ping 3/3 pelo túnel |
 | o mesmo código de novo | recusado |
 | código errado | recusado |
 | sem código (perfil respondido sem o desafio) | recusado |
-| **RED:** verificador trocado por `/bin/true` — senha errada; código errado | **conectou** / **conectou** (0,15 s): a prova reprova sem a conferência |
+| **Adverso:** 64 logins simultâneos, senha certa e código errado | **6** × 401 (LIVRES+1) e **58** × 429 |
+| **Adverso:** pergunta ao soquete como `nobody` | `PermissionError` (nem conecta) |
+| **Adverso:** como `nobody` com o grupo `phxvpn-ovpn` | conecta; `SO_PEERCRED` recusa (`{"ok":false}` e linha no log) |
+| pergunta como `phxvpn-ovpn` (senha errada) | atendido, recusado |
+| **RED:** verificador trocado por `/bin/true` — senha errada; código errado | **conectou** / **conectou** (0,14 s): a prova reprova sem a conferência |
 
-Conferências adiadas no servidor: 5/5; `openvpn` como `nobody`; senha, senha
+Conferências adiadas no servidor: 5/5; `openvpn` como `phxvpn-ovpn`; senha, senha
 errada ou segredo nos logs do painel e do OpenVPN: **0**. O desafio chegou ao
 cliente como `SC:1,Código do autenticador` (o perfil foi lido pelo próprio
-`openvpn`). Sem a conferência a conexão leva 0,15 s; com ela, 1,23 s — o
+`openvpn`). Sem a conferência a conexão leva 0,14 s; com ela, 1,15 s — o
 PBKDF2 e a volta pelo soquete.
 
 **Tela** (`provas/mfa/tela.sh`, Chromium): QR desenhado (220 px), chave de 32
@@ -1209,9 +1234,19 @@ recusava — agora o SVG é analisado como XML e posto no DOM.
 RED dos testes: aceitar o passo igual ao último (`>=` no lugar de `>`) reprova
 `janela_de_um_passo_e_sem_reuso` e `autenticador_cadastro_reuso_e_rede_que_exige`
 («reuso»); sem a recusa no serviço «cliente», reprova
-`servico_cliente_recusa_perfil_que_pede_codigo`.
+`servico_cliente_recusa_perfil_que_pede_codigo`; o limitador sem contar na
+reserva deixa passar **64 de 64** em `reserva_segura_tentativas_simultaneas`
+(esperado 6); aceitar `nobody` reprova
+`nobody_nao_pergunta_quando_ha_usuario_proprio`; sem pedir o código a quem
+muda a exigência, ou recriando o `mfa.chave` em silêncio, reprova
+`autenticador_cadastro_reuso_e_rede_que_exige`.
 
-**Limites.** O QR foi lido de volta só pelo leitor do núcleo (não há leitor de
+**Limites.** `cn` e `ip` chegam no pedido ao soquete, preenchidos pelo
+`openvpn`: um `openvpn` tomado pode mentir neles — mas ele já é quem decide
+quem entra no túnel. O token do `auth-gen-token` vale **12 h** sem código novo
+(achado 6), e tirar a exigência ou zerar o autenticador **não derruba** a
+sessão VPN nem a do painel já abertas (achado 12): valem até o token ou a
+sessão (8 h) vencerem. O QR foi lido de volta só pelo leitor do núcleo (não há leitor de
 terceiros neste contêiner); o `auth-gen-token` na renegociação de 1 h não foi
 medido; o verificador no Windows recusa tudo (sem soquete local lá); perder o
 `mfa.chave` desliga todo autenticador (vai no backup da pasta de dados).

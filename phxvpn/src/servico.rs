@@ -14,7 +14,7 @@
 //!
 //! | Serviço | Roda como | Credenciais |
 //! |---|---|---|
-//! | painel  | root (o `openvpn` cria a placa e desce para `nobody`) | `pg`, e `mestre` se pedida |
+//! | painel  | root (o `openvpn` cria a placa e desce para `phxvpn-ovpn`) | `pg`, e `mestre` se pedida |
 //! | repasse | usuário dinâmico, sem root nenhum | -- |
 //! | p2p     | root com só `CAP_NET_ADMIN` (placa virtual) | `psk` (a derivada, não a senha) |
 
@@ -208,7 +208,7 @@ pub fn texto_da_unidade(
                  SystemCallArchitectures=native\n";
     let proprio = match tipo {
         // O openvpn filho cria a placa (NET_ADMIN), escuta porta (BIND) e
-        // desce para nobody (SETUID/SETGID); o dono dos arquivos e root.
+        // desce para phxvpn-ovpn (SETUID/SETGID); o dono dos arquivos e root.
         Tipo::Painel => "User=root\n\
              CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_SETUID CAP_SETGID CAP_DAC_OVERRIDE CAP_CHOWN CAP_FOWNER\n\
              DevicePolicy=closed\n\
@@ -505,6 +505,13 @@ pub fn instalar(plano: &Plano, iniciar: bool) -> R<String> {
     }
     std::fs::write(&plano.arquivo, &plano.texto)
         .map_err(|e| format!("{}: {e} (precisa de root)", plano.arquivo.display()))?;
+    // Dentro da caixa do systemd o /etc e so de leitura: o usuario proprio
+    // do openvpn nasce aqui, na instalacao.
+    if plano.unidade.starts_with("phxvpn-painel") {
+        if let Err(e) = crate::ovpn::garantir_usuario_dedicado() {
+            eprintln!("phxvpn: AVISO {e}; o openvpn vai rodar como nobody");
+        }
+    }
     rodar("systemctl", &["daemon-reload"], None)?;
     if iniciar {
         rodar("systemctl", &["enable", "--now", &plano.unidade], None)?;

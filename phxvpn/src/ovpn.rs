@@ -204,22 +204,81 @@ pub fn verificar_v2(dir: &std::path::Path, tipo: &str, metadados: &[u8]) -> bool
     }
 }
 
+/// O usuario PROPRIO com que o `openvpn` do servidor roda depois de abrir
+/// a placa. Nao o `nobody`: o soquete do verificador (`verificar.rs`) aceita
+/// perguntas do usuario do OpenVPN, e `nobody` e de todo daemon sem dono da
+/// maquina -- qualquer um deles viraria oraculo de senha e codigo.
+pub const USUARIO_OVPN: &str = "phxvpn-ovpn";
+
+/// Cria o usuario de sistema (sem casa, sem shell) se faltar. Pede root, e
+/// roda fora da caixa do systemd (`ProtectSystem=strict` deixa o `/etc` so
+/// de leitura): no `servico instalar painel` e no arranque em primeiro plano.
+pub fn garantir_usuario_dedicado() -> Result<(), String> {
+    if cfg!(windows) || uid_gid(USUARIO_OVPN).is_some() {
+        return Ok(());
+    }
+    let r = std::process::Command::new("useradd")
+        .args([
+            "--system",
+            "--user-group",
+            "--no-create-home",
+            "--home-dir",
+            "/nonexistent",
+            "--shell",
+            "/usr/sbin/nologin",
+            USUARIO_OVPN,
+        ])
+        .output()
+        .map_err(|e| format!("useradd: {e}"))?;
+    if r.status.success() || uid_gid(USUARIO_OVPN).is_some() {
+        Ok(())
+    } else {
+        Err(format!(
+            "useradd {USUARIO_OVPN}: {}",
+            String::from_utf8_lossy(&r.stderr).trim()
+        ))
+    }
+}
+
+/// (uid, gid primario) de um usuario, lidos do `/etc/passwd`.
+pub fn uid_gid(nome: &str) -> Option<(u32, u32)> {
+    std::fs::read_to_string("/etc/passwd")
+        .ok()?
+        .lines()
+        .find_map(|l| {
+            let p: Vec<&str> = l.split(':').collect();
+            (p.len() > 3 && p[0] == nome).then(|| Some((p[2].parse().ok()?, p[3].parse().ok()?)))?
+        })
+}
+
+/// (usuario, grupo) para o `user`/`group` do conf: o proprio, se existe; se
+/// nao, `nobody` (e o verificador passa a aceitar `nobody` -- o painel avisa
+/// no arranque). O grupo do `nobody` muda entre distribuicoes (`nogroup` no
+/// Debian, `nobody` no Fedora).
+pub fn usuario_do_openvpn() -> Option<(String, String)> {
+    if cfg!(windows) {
+        return None;
+    }
+    if uid_gid(USUARIO_OVPN).is_some() {
+        return Some((USUARIO_OVPN.into(), USUARIO_OVPN.into()));
+    }
+    let grupos = std::fs::read_to_string("/etc/group").unwrap_or_default();
+    let tem = |g: &str| grupos.lines().any(|l| l.starts_with(&format!("{g}:")));
+    ["nogroup", "nobody"]
+        .into_iter()
+        .find(|g| tem(g))
+        .map(|g| ("nobody".into(), g.into()))
+}
+
 /// Depois de abrir a placa e ler as chaves, o `openvpn` troca de usuario:
 /// uma falha no processo que fala com a internet nao vira root. So o que
 /// ele rele a cada conexao (`crl.pem`, `ccd/`) precisa ser legivel por esse
 /// usuario -- por isso a pasta da rede e de passagem (0711), e as chaves
-/// continuam 0600, lidas antes da troca (`persist-key`).
-///
-/// O grupo muda de nome entre distribuicoes (`nogroup` no Debian, `nobody`
-/// no Fedora); o que existir no `/etc/group`. No Windows nao ha troca.
+/// continuam 0600, lidas antes da troca (`persist-key`). No Windows nao ha
+/// troca.
 pub fn sem_root() -> String {
-    if cfg!(windows) {
-        return String::new();
-    }
-    let grupos = std::fs::read_to_string("/etc/group").unwrap_or_default();
-    let tem = |g: &str| grupos.lines().any(|l| l.starts_with(&format!("{g}:")));
-    match ["nogroup", "nobody"].into_iter().find(|g| tem(g)) {
-        Some(g) => format!("user nobody\ngroup {g}\n"),
+    match usuario_do_openvpn() {
+        Some((u, g)) => format!("user {u}\ngroup {g}\n"),
         None => String::new(),
     }
 }

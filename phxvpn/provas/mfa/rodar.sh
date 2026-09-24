@@ -111,9 +111,58 @@ R_SEM=$(tentar sem-codigo "senha-da-ana-longa" "")
 
 LOGSRV="$T/dados/redes/$REDE_ID/openvpn.log"
 ADIADO=$(grep -c "deferred" "$LOGSRV" || true)
-NOBODY=$(grep -c "UID set to nobody" "$LOGSRV" || true)
+PROPRIO=$(grep -c "UID set to phxvpn-ovpn" "$LOGSRV" || true)
 RECUSAS=$(grep -c "recusado --" "$T/painel.log" || true)
 VAZOU=$( { grep -c -e "senha-da-ana-longa" -e "senha-errada-da-ana" -e "$SEGREDO" "$T/painel.log" "$LOGSRV" || true; } | awk -F: '{s+=$2} END {print s}')
+
+# --- Adverso 1 (ALTO 1): 64 logins SIMULTANEOS com a senha certa e codigo
+# errado. A tentativa se reserva antes do PBKDF2: so LIVRES+1 = 6 chegam a
+# conferir (401); o resto e 429. Antes do conserto passavam as 64.
+api POST /api/usuarios "$TK_ADMIN" '{"login":"bia","senha":"senha-da-bia-longa"}' >/dev/null
+TK_BIA=$(api POST /api/login "" '{"usuario":"bia","senha":"senha-da-bia-longa"}' | campo token)
+SEG_BIA=$(api POST /api/mfa/iniciar "$TK_BIA" '{}' | campo segredo)
+api POST /api/mfa/confirmar "$TK_BIA" "{\"codigo\":\"$(python3 "$AQUI/cliente.py" --codigo "$SEG_BIA" 0)\"}" >/dev/null
+CONCORRENTES=$(S python3 - <<'PY'
+import json, threading, urllib.request, urllib.error, collections
+c = collections.Counter(); trava = threading.Lock(); comeco = threading.Barrier(64)
+def um():
+    r = urllib.request.Request("http://127.0.0.1:8479/api/login", method="POST",
+        data=b'{"usuario":"bia","senha":"senha-da-bia-longa","codigo":"000000"}',
+        headers={"Content-Type": "application/json"})
+    comeco.wait()
+    try: s = urllib.request.urlopen(r, timeout=120).status
+    except urllib.error.HTTPError as e: s = e.code
+    except Exception as e: s = type(e).__name__
+    with trava: c[str(s)] += 1
+f = [threading.Thread(target=um) for _ in range(64)]
+[x.start() for x in f]; [x.join() for x in f]
+print(json.dumps(dict(c)))
+PY
+)
+echo "== 64 logins simultaneos, codigo errado: $CONCORRENTES"
+
+# --- Adverso 2 (ALTO 2): o soquete do verificador. nobody nem conecta
+# (arquivo 0660 do grupo phxvpn-ovpn); nobody COM o grupo conecta e o
+# SO_PEERCRED recusa; phxvpn-ovpn e atendido (e a senha errada, recusada).
+SOCK="$T/dados/verificar.sock"
+GID_OVPN=$(getent group phxvpn-ovpn | cut -d: -f3)
+perguntar() { # perguntar ARGS_SETPRIV...
+  setpriv "$@" python3 - "$SOCK" <<'PY'
+import json, socket, sys
+p = {"rede": "1", "cn": "ana.1.00000000", "usuario": "ana", "senha": "errada", "codigo": "000000", "ip": "192.0.2.9"}
+try:
+    s = socket.socket(socket.AF_UNIX); s.settimeout(5); s.connect(sys.argv[1])
+    s.sendall((json.dumps(p) + "\n").encode()); r = s.makefile().readline().strip()
+    print(r or "fechado")
+except Exception as e:
+    print(type(e).__name__)
+PY
+}
+SOCK_NOBODY=$(perguntar --reuid=65534 --regid=65534 --clear-groups)
+SOCK_NOBODY_GRUPO=$(perguntar --reuid=65534 --regid=65534 --groups="$GID_OVPN")
+SOCK_OVPN=$(perguntar --reuid="$(id -u phxvpn-ovpn)" --regid="$GID_OVPN" --clear-groups)
+echo "== soquete: nobody=$SOCK_NOBODY; nobody+grupo=$SOCK_NOBODY_GRUPO; phxvpn-ovpn=$SOCK_OVPN"
+RECUSA_PEERCRED=$(grep -c "usuário não autorizado" "$T/painel.log" || true)
 
 # --- RED: a conferencia trocada por /bin/true, mesmo servidor, mesmo perfil.
 # pgrep veria o openvpn de outras provas: so o deste netns, pelo conf dele.
@@ -135,8 +184,14 @@ OK=1
 [ "$(res "$R_REUSO")" = recusado ] || { echo "FALHOU: codigo reutilizado passou"; OK=0; }
 [ "$(res "$R_ERRADO")" = recusado ] || { echo "FALHOU: codigo errado passou"; OK=0; }
 [ "$(res "$R_SEM")" = recusado ] || { echo "FALHOU: sem codigo passou"; OK=0; }
-[ "$NOBODY" -ge 1 ] || { echo "FALHOU: o openvpn ficou como root"; OK=0; }
+[ "$PROPRIO" -ge 1 ] || { echo "FALHOU: o openvpn nao desceu para phxvpn-ovpn"; OK=0; }
 [ "$VAZOU" = 0 ] || { echo "FALHOU: senha ou segredo em log"; OK=0; }
+N401=$(python3 -c "import json,sys; print(json.loads(sys.argv[1]).get('401',0))" "$CONCORRENTES")
+N429=$(python3 -c "import json,sys; print(json.loads(sys.argv[1]).get('429',0))" "$CONCORRENTES")
+{ [ "$N401" -le 6 ] && [ $((N401 + N429)) = 64 ]; } || { echo "FALHOU: concorrencia furou o limitador ($CONCORRENTES)"; OK=0; }
+[ "$SOCK_NOBODY" = PermissionError ] || { echo "FALHOU: nobody conectou no soquete"; OK=0; }
+{ [ "$SOCK_NOBODY_GRUPO" = '{"ok":false}' ] && [ "$RECUSA_PEERCRED" -ge 1 ]; } || { echo "FALHOU: SO_PEERCRED nao recusou nobody"; OK=0; }
+[ "$SOCK_OVPN" = '{"ok":false}' ] || { echo "FALHOU: phxvpn-ovpn nao foi atendido"; OK=0; }
 # RED: sem a conferencia, as duas tentativas erradas conectam -- se nao
 # conectassem, os "recusado" de cima podiam vir de outra coisa.
 RED_OK=0
@@ -158,11 +213,14 @@ json.dump({
     "codigo_errado": r('''$R_ERRADO'''),
     "sem_codigo": r('''$R_SEM'''),
   },
+  "adverso_64_logins_simultaneos_codigo_errado": r('''$CONCORRENTES'''),
+  "adverso_soquete": {"nobody": "$SOCK_NOBODY", "nobody_com_grupo": r('''$SOCK_NOBODY_GRUPO'''),
+                      "recusas_por_peercred_no_log": $RECUSA_PEERCRED, "phxvpn_ovpn": r('''$SOCK_OVPN''')},
   "red_conferencia_trocada_por_bin_true": {
     "senha_errada": r('''$RED_SENHA'''),
     "codigo_errado": r('''$RED_CODIGO'''),
   },
-  "servidor": {"autenticacoes_adiadas": $ADIADO, "uid_nobody": $NOBODY >= 1,
+  "servidor": {"autenticacoes_adiadas": $ADIADO, "uid_phxvpn_ovpn": $PROPRIO >= 1,
                "recusas_no_log_do_painel": $RECUSAS,
                "senha_ou_segredo_em_log": $VAZOU},
   "passou": $OK == 1,

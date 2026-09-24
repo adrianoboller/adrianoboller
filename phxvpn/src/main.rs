@@ -284,9 +284,15 @@ fn cmd_painel(args: &[String]) -> Result<(), String> {
     let (destrancado, instalado) = (p.destrancado(), p.instalado()?);
     let nomes: Vec<String> = o.todos("nome").iter().map(|n| n.to_lowercase()).collect();
     let estado = Arc::new(http::Estado::novo(p, supervisor).com_hosts(&escuta, &nomes));
-    // Antes de subir o OpenVPN: rede que exige o autenticador pergunta aqui.
+    // Antes de subir o OpenVPN: o usuario proprio dele (em primeiro plano,
+    // como root; como servico ele nasceu no `servico instalar`) e o soquete
+    // onde rede que exige o autenticador pergunta. Falhar em criar o usuario
+    // nao para o painel: o `servir` avisa que caiu para nobody.
     #[cfg(unix)]
-    phxvpn::verificar::servir(estado.clone())?;
+    {
+        let _ = phxvpn::ovpn::garantir_usuario_dedicado();
+        phxvpn::verificar::servir(estado.clone())?;
+    }
     if destrancado {
         http::materializar_e_subir(&estado)?;
     }

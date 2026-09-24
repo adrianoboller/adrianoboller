@@ -4,21 +4,21 @@
 //!
 //! ```text
 //! cliente (auth-user-pass + static-challenge)
-//!   -> openvpn servidor (ja como nobody) grava usuario e senha num arquivo
+//!   -> openvpn servidor (ja como phxvpn-ovpn) grava usuario e senha num arquivo
 //!   -> `phxvpn ovpn-mfa-verificar SOQUETE REDE ARQUIVO`  (auth-user-pass-verify via-file)
 //!   -> soquete local do painel  -> PBKDF2 + TOTP + anti-reuso, no PostgreSQL
 //! ```
 //!
 //! # Por que um soquete do painel, e nao o verificador lendo o banco
 //!
-//! O `openvpn` troca para `nobody` depois de abrir a placa, e o verificador
-//! roda como ele. Ler o banco pediria a senha do PostgreSQL legivel por
-//! `nobody`; conferir o TOTP pediria a chave do selo do segredo tambem. Pelo
-//! soquete, o `nobody` so consegue PERGUNTAR «este usuario, esta senha, este
-//! codigo?» -- a mesma pergunta que qualquer um ja faz pela porta da VPN --, e
-//! a resposta passa pelo mesmo limitador de tentativas do painel. O painel
-//! confere quem pergunta pelo `SO_PEERCRED`: so root, o proprio painel e o
-//! usuario do OpenVPN.
+//! O `openvpn` troca para o usuario proprio `phxvpn-ovpn` depois de abrir a
+//! placa, e o verificador roda como ele. Ler o banco pediria a senha do
+//! PostgreSQL legivel por esse usuario; conferir o TOTP pediria a chave do
+//! selo tambem. Pelo soquete ele so consegue PERGUNTAR «este usuario, esta
+//! senha, este codigo?», e a resposta passa pelo limitador do painel, com a
+//! tentativa contada ANTES do PBKDF2. Quem pergunta passa por duas portas: o
+//! arquivo do soquete (0660, grupo `phxvpn-ovpn`) e o `SO_PEERCRED` (so o uid
+//! dele, root e o painel). Nao o `nobody`: ele e de todo daemon sem dono.
 //!
 //! # O usuario tem de ser o do certificado
 //!
@@ -105,7 +105,7 @@ pub fn pedido(rede: &str, cn: &str, usuario: &str, senha_crua: &str, ip: &str) -
     ])
 }
 
-// ------------------------------------------------ lado do OpenVPN (nobody) ----
+// ------------------------------------ lado do OpenVPN (usuario proprio) ----
 
 /// `phxvpn ovpn-mfa-verificar SOQUETE REDE ARQUIVO` -- chamado pelo
 /// `openvpn`. Codigo de saida: 0 aceita, 1 recusa, 2 adiado. Tudo o que der
@@ -121,14 +121,12 @@ pub fn principal(args: &[String]) -> i32 {
     let usuario = linhas.next().unwrap_or_default();
     let senha = linhas.next().unwrap_or_default();
     let var = |n: &str| std::env::var(n).unwrap_or_default();
-    let p = pedido(
-        rede,
-        &var("common_name"),
-        usuario,
-        senha,
-        &var("untrusted_ip"),
-    )
-    .escrever();
+    // Cliente por IPv6: o openvpn so preenche `untrusted_ip6`, e sem ele o
+    // limitador contaria todos esses clientes numa chave vazia so.
+    let ip = Some(var("untrusted_ip"))
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| var("untrusted_ip6"));
+    let p = pedido(rede, &var("common_name"), usuario, senha, &ip).escrever();
     let controle = var("auth_control_file");
     if !controle.is_empty() {
         if let Ok(eu) = std::env::current_exe() {
@@ -204,42 +202,77 @@ fn perguntar(_sock: &Path, _pedido: &str) -> bool {
 // ---------------------------------------------------- lado do painel ----
 
 /// A conferencia inteira de um pedido do verificador. `Err` traz o motivo,
-/// que vai para o log do painel -- nunca a senha nem o codigo.
+/// que vai para o log do painel -- nunca a senha nem o codigo, e o usuario
+/// digitado so escapado e cortado ([`para_log`]).
+///
+/// Limite que fica: `cn` e `ip` chegam no pedido. Quem os preenche e o
+/// `openvpn` (pelo ambiente do verificador), e so o usuario dele passa pelo
+/// `SO_PEERCRED`; um `openvpn` tomado pode mentir -- mas ele ja e quem decide
+/// quem entra no tunel.
 pub fn conferir(e: &Estado, j: &Json) -> Result<String, String> {
     let t = |c: &str| j.texto_ou(c, "").to_string();
     let (usuario, cn, rede) = (t("usuario"), t("cn"), t("rede"));
     let (login, rede_cn) = cn_login_rede(&cn).ok_or("CN fora do formato do phxvpn")?;
+    // A conta e a MESMA do painel (orcamento unico); o IP e so deste canal,
+    // para erro na VPN nao trancar o login do painel pelo mesmo IP.
+    let conta = crate::http::chave_conta(login);
+    let chave_ip = format!("ip-vpn:{}", t("ip"));
+    let reserva = e
+        .tentativas
+        .reservar(&[&conta, &chave_ip])
+        .map_err(crate::guarda::frase_de_bloqueio)?;
     if login != usuario {
-        return Err(format!("usuário «{usuario}» não é o do certificado"));
+        return Err(format!(
+            "usuário «{}» não é o do certificado",
+            para_log(&usuario)
+        ));
     }
     if rede_cn != rede {
         return Err("certificado de outra rede".into());
     }
-    let chave_login = format!("vpn:{login}");
-    let chave_ip = format!("ip:{}", t("ip"));
-    e.tentativas
-        .antes_de_todas(&[&chave_login, &chave_ip])
-        .map_err(crate::guarda::frase_de_bloqueio)?;
-    let falhou = |m: String| {
-        e.tentativas.falhou(&chave_login);
-        e.tentativas.falhou(&chave_ip);
-        m
+    let (u, hash) = match e.painel().hash_do_login(login) {
+        Ok(x) => x,
+        Err(m) => {
+            reserva.devolver();
+            return Err(m);
+        }
     };
-    let (u, hash) = e.painel().hash_do_login(login)?;
     let u = {
         let _vez = e.conferencias.adquirir();
         conferir_login(u, &hash, &t("senha"))
-    }
-    .map_err(falhou)?;
-    e.painel()
-        .mfa_conferir(u.id, &t("codigo"))
-        .map_err(falhou)?;
-    e.tentativas.acertou(&chave_login);
+    }?;
+    e.painel().mfa_conferir(u.id, &t("codigo"))?;
+    reserva.acertou(&[&conta]);
     Ok(u.login)
 }
 
-/// Quem pode perguntar: root, o proprio painel e o usuario com que o
-/// OpenVPN roda (`nobody`).
+/// Texto que veio de fora, para o log: so `[a-z0-9._-]`, ate 32.
+pub fn para_log(t: &str) -> String {
+    let limpo: String = t
+        .chars()
+        .take(32)
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || "._-".contains(c) {
+                c
+            } else {
+                '?'
+            }
+        })
+        .collect();
+    if t.chars().count() > 32 {
+        limpo + "…"
+    } else {
+        limpo
+    }
+}
+
+/// Quem pode perguntar: root, o proprio painel e o usuario do OpenVPN. NAO
+/// o `nobody` quando existe o usuario proprio (ALTO 2 da revisao: com
+/// `nobody` aceito, todo daemon sem dono da maquina era oraculo).
+pub fn uid_aceito(uid: u32, eu: u32, do_openvpn: Option<u32>) -> bool {
+    uid == 0 || uid == eu || Some(uid) == do_openvpn
+}
+
 #[cfg(target_os = "linux")]
 fn quem_pergunta_pode(s: &std::os::unix::net::UnixStream) -> bool {
     use std::os::unix::io::AsRawFd;
@@ -268,7 +301,10 @@ fn quem_pergunta_pode(s: &std::os::unix::net::UnixStream) -> bool {
     }
     // SAFETY: sem argumentos, nao falha.
     let eu = unsafe { geteuid() };
-    c.uid == 0 || c.uid == eu || Some(c.uid) == uid_de("nobody")
+    let do_openvpn = crate::ovpn::usuario_do_openvpn()
+        .and_then(|(u, _)| crate::ovpn::uid_gid(&u))
+        .map(|(uid, _)| uid);
+    uid_aceito(c.uid, eu, do_openvpn)
 }
 
 #[cfg(all(unix, not(target_os = "linux")))]
@@ -277,15 +313,23 @@ fn quem_pergunta_pode(_s: &std::os::unix::net::UnixStream) -> bool {
 }
 
 #[cfg(unix)]
-fn uid_de(nome: &str) -> Option<u32> {
-    std::fs::read_to_string("/etc/passwd")
+fn gid_do_grupo(nome: &str) -> Option<u32> {
+    std::fs::read_to_string("/etc/group")
         .ok()?
         .lines()
         .find_map(|l| {
-            let mut p = l.split(':');
-            (p.next()? == nome).then(|| p.nth(1)?.parse().ok())?
+            let p: Vec<&str> = l.split(':').collect();
+            (p.len() > 2 && p[0] == nome).then(|| p[2].parse().ok())?
         })
 }
+
+/// Perguntas atendidas ao mesmo tempo; a mais recusa na porta.
+#[cfg(unix)]
+const TETO_PERGUNTAS: usize = 32;
+/// Prazo para o pedido chegar: o verificador escreve na hora; quem conecta
+/// e fica mudo so segura uma vaga por isto.
+#[cfg(unix)]
+const PRAZO_PEDIDO: Duration = Duration::from_secs(2);
 
 /// Liga o soquete do verificador (uma thread por pergunta, com teto).
 #[cfg(unix)]
@@ -297,14 +341,28 @@ pub fn servir(e: std::sync::Arc<Estado>) -> Result<PathBuf, String> {
     let _ = std::fs::remove_file(&caminho);
     let ouvinte =
         UnixListener::bind(&caminho).map_err(|x| format!("soquete {}: {x}", caminho.display()))?;
-    // Conectar pede escrita no soquete; quem pode perguntar e o
-    // `SO_PEERCRED` que decide, nao a permissao do arquivo.
-    std::fs::set_permissions(&caminho, std::fs::Permissions::from_mode(0o666))
+    // Duas portas: o arquivo (0660, grupo do usuario do OpenVPN -- quem nao
+    // e do grupo nem conecta) e o `SO_PEERCRED` (so o uid dele, root e o
+    // painel). Sem o usuario proprio, o grupo e o do `nobody`, e o aviso diz.
+    let grupo = crate::ovpn::usuario_do_openvpn().map(|(_, g)| g);
+    let gid = grupo.as_deref().and_then(gid_do_grupo);
+    if let Some(gid) = gid {
+        std::os::unix::fs::chown(&caminho, None, Some(gid))
+            .map_err(|x| format!("dono de {}: {x}", caminho.display()))?;
+    }
+    std::fs::set_permissions(&caminho, std::fs::Permissions::from_mode(0o660))
         .map_err(|x| format!("permissao de {}: {x}", caminho.display()))?;
+    if crate::ovpn::usuario_do_openvpn().is_some_and(|(u, _)| u != crate::ovpn::USUARIO_OVPN) {
+        eprintln!(
+            "phxvpn: AVISO sem o usuario {}: o openvpn roda como nobody, e o soquete do \
+             verificador aceita qualquer processo nobody (crie-o: phxvpn servico instalar painel)",
+            crate::ovpn::USUARIO_OVPN
+        );
+    }
     let em_curso = std::sync::Arc::new(AtomicUsize::new(0));
     std::thread::spawn(move || {
         for s in ouvinte.incoming().flatten() {
-            if em_curso.load(Ordering::SeqCst) >= 64 {
+            if em_curso.load(Ordering::SeqCst) >= TETO_PERGUNTAS {
                 continue;
             }
             em_curso.fetch_add(1, Ordering::SeqCst);
@@ -320,9 +378,8 @@ pub fn servir(e: std::sync::Arc<Estado>) -> Result<PathBuf, String> {
 
 #[cfg(unix)]
 fn atender(e: &Estado, mut s: std::os::unix::net::UnixStream) {
-    let prazo = Some(Duration::from_secs(10));
-    let _ = s.set_read_timeout(prazo);
-    let _ = s.set_write_timeout(prazo);
+    let _ = s.set_read_timeout(Some(PRAZO_PEDIDO));
+    let _ = s.set_write_timeout(Some(PRAZO_PEDIDO));
     let ok = if quem_pergunta_pode(&s) {
         let mut linha = String::new();
         let lido = s
@@ -330,7 +387,7 @@ fn atender(e: &Estado, mut s: std::os::unix::net::UnixStream) {
             .map(|c| BufReader::new(c.take(TETO_PEDIDO)).read_line(&mut linha));
         match (lido, Json::analisar(linha.trim())) {
             (Ok(Ok(_)), Ok(j)) => {
-                let rede = j.texto_ou("rede", "").to_string();
+                let rede = para_log(j.texto_ou("rede", ""));
                 match conferir(e, &j) {
                     Ok(login) => {
                         eprintln!("phxvpn: VPN rede {rede}: «{login}» conferido (senha e código)");
@@ -400,7 +457,26 @@ mod testes {
     #[cfg(unix)]
     #[test]
     fn uid_do_root_sai_do_passwd() {
-        assert_eq!(uid_de("root"), Some(0));
-        assert_eq!(uid_de("ninguem-com-este-nome"), None);
+        assert_eq!(crate::ovpn::uid_gid("root"), Some((0, 0)));
+        assert_eq!(crate::ovpn::uid_gid("ninguem-com-este-nome"), None);
+    }
+
+    /// ALTO 2: com o usuario proprio existindo, `nobody` NAO pergunta.
+    /// RED: a regra antiga aceitava `nobody` sempre.
+    #[test]
+    fn nobody_nao_pergunta_quando_ha_usuario_proprio() {
+        let (painel, ovpn, nobody) = (0, 998, 65534);
+        assert!(uid_aceito(ovpn, painel, Some(ovpn)));
+        assert!(uid_aceito(0, 1000, Some(ovpn)));
+        assert!(!uid_aceito(nobody, painel, Some(ovpn)), "nobody passou");
+        assert!(!uid_aceito(1000, painel, Some(ovpn)));
+        assert!(!uid_aceito(1000, painel, None));
+    }
+
+    #[test]
+    fn usuario_digitado_vai_ao_log_escapado_e_cortado() {
+        assert_eq!(para_log("ana"), "ana");
+        assert_eq!(para_log("a\n phxvpn: aceito"), "a??phxvpn??aceito");
+        assert_eq!(para_log(&"x".repeat(40)), format!("{}…", "x".repeat(32)));
     }
 }

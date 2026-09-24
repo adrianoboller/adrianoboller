@@ -155,7 +155,8 @@ fn rotear(p: &Pedido, e: &Estado) -> Saida {
     };
     let t = |c: &str| corpo.texto_ou(c, "").to_string();
     let caminho = p.caminho.split('?').next().unwrap_or_default();
-    let chave_ip = format!("ip:{}", p.ip);
+    // Prefixo por canal: erro na VPN (soquete) nao tranca o IP no painel.
+    let chave_ip = format!("ip-painel:{}", p.ip);
 
     match (p.metodo.as_str(), caminho) {
         ("GET", "/api/estado") => {
@@ -184,7 +185,7 @@ fn rotear(p: &Pedido, e: &Estado) -> Saida {
             ]))
         }
         ("POST", "/api/instalar") => {
-            e.tentativas.antes(&chave_ip).map_err(bloqueado)?;
+            let reserva = e.tentativas.reservar(&[&chave_ip]).map_err(bloqueado)?;
             {
                 let codigo = e
                     .codigo_instalacao
@@ -198,7 +199,6 @@ fn rotear(p: &Pedido, e: &Estado) -> Saida {
                 });
                 if !bate {
                     drop(codigo);
-                    e.tentativas.falhou(&chave_ip);
                     return Err((
                         403,
                         "codigo de instalacao nao confere (ele aparece no terminal do painel)"
@@ -220,6 +220,7 @@ fn rotear(p: &Pedido, e: &Estado) -> Saida {
                 servidor_dns: t("servidor_dns"),
                 certificado_pem: t("certificado_pem"),
             };
+            reserva.acertou(&[]);
             e.painel().instalar(&i).map_err(ruim)?;
             // Uso unico: instalado, o codigo morre.
             *e.codigo_instalacao
@@ -229,13 +230,23 @@ fn rotear(p: &Pedido, e: &Estado) -> Saida {
         }
         ("POST", "/api/login") => {
             let login = t("usuario");
-            let chave_login = format!("login:{login}");
-            e.tentativas
-                .antes_de_todas(&[&chave_login, &chave_ip])
+            // A conta e UMA para os canais (painel, VPN, autenticador): o
+            // orcamento de tentativas de uma pessoa nao se multiplica por
+            // porta. Reservada ANTES do PBKDF2 (ver `guarda::reservar`).
+            let conta = chave_conta(&login);
+            let reserva = e
+                .tentativas
+                .reservar(&[&conta, &chave_ip])
                 .map_err(bloqueado)?;
             // Banco com a trava; PBKDF2 sem ela, e no maximo CONFERENCIAS de
             // uma vez -- o resto espera a vez em vez de parar o painel.
-            let (u, hash) = e.painel().hash_do_login(&login).map_err(ruim)?;
+            let (u, hash) = match e.painel().hash_do_login(&login) {
+                Ok(x) => x,
+                Err(m) => {
+                    reserva.devolver();
+                    return Err(ruim(m));
+                }
+            };
             let resultado = {
                 let _vez = e.conferencias.adquirir();
                 conferir_login(u, &hash, &t("senha"))
@@ -246,22 +257,22 @@ fn rotear(p: &Pedido, e: &Estado) -> Saida {
             let resultado = resultado.and_then(|u| {
                 let mut painel = e.painel();
                 match painel.mfa_ativo(u.id) {
-                    Ok(false) => Ok(u),
-                    Ok(true) => painel.mfa_conferir(u.id, &t("codigo")).map(|_| u),
+                    Ok(false) => Ok((u, false)),
+                    Ok(true) => painel.mfa_conferir(u.id, &t("codigo")).map(|_| (u, true)),
                     Err(x) => Err(x),
                 }
             });
-            let u = match resultado {
-                Ok(u) => {
-                    e.tentativas.acertou(&chave_login);
-                    u
+            let (u, mfa) = match resultado {
+                Ok(x) => {
+                    reserva.acertou(&[&conta]);
+                    x
                 }
-                Err(m) if m.starts_with("PostgreSQL ") => return Err(ruim(m)),
-                Err(_) => {
-                    e.tentativas.falhou(&chave_login);
-                    e.tentativas.falhou(&chave_ip);
-                    return Err((401, FRASE_LOGIN.into()));
+                Err(m) if m.starts_with("PostgreSQL ") => {
+                    reserva.devolver();
+                    return Err(ruim(m));
                 }
+                // A falha ja foi contada na reserva.
+                Err(_) => return Err((401, FRASE_LOGIN.into())),
             };
             let token = para_hex(&bytes_aleatorios(32));
             let mut s = e.sessoes();
@@ -271,6 +282,7 @@ fn rotear(p: &Pedido, e: &Estado) -> Saida {
                 ("token", Json::texto_de(token)),
                 ("login", Json::texto_de(u.login)),
                 ("admin", Json::de_bool(u.admin)),
+                ("mfa", Json::de_bool(mfa)),
             ]))
         }
         ("POST", "/api/sair") => {
@@ -283,12 +295,9 @@ fn rotear(p: &Pedido, e: &Estado) -> Saida {
             let u = usuario(p, e)?;
             exigir_admin(&u)?;
             let chave = format!("mestre:{}", u.id);
-            e.tentativas.antes(&chave).map_err(bloqueado)?;
-            if let Err(m) = e.painel().destrancar(&t("senha_mestre")) {
-                e.tentativas.falhou(&chave);
-                return Err(ruim(m));
-            }
-            e.tentativas.acertou(&chave);
+            let reserva = e.tentativas.reservar(&[&chave]).map_err(bloqueado)?;
+            e.painel().destrancar(&t("senha_mestre")).map_err(ruim)?;
+            reserva.acertou(&[&chave]);
             materializar_e_subir(e).map_err(ruim)?;
             ok()
         }
@@ -303,9 +312,10 @@ fn rotear(p: &Pedido, e: &Estado) -> Saida {
         }
         ("POST", "/api/mfa/confirmar") | ("POST", "/api/mfa/desativar") => {
             let u = usuario(p, e)?;
-            let chave = format!("totp:{}", u.id);
-            e.tentativas
-                .antes_de_todas(&[&chave, &chave_ip])
+            let conta = chave_conta(&u.login);
+            let reserva = e
+                .tentativas
+                .reservar(&[&conta, &chave_ip])
                 .map_err(bloqueado)?;
             let codigo = t("codigo");
             let r = if caminho.ends_with("confirmar") {
@@ -313,12 +323,8 @@ fn rotear(p: &Pedido, e: &Estado) -> Saida {
             } else {
                 e.painel().mfa_desativar(&u, &codigo)
             };
-            if let Err(m) = r {
-                e.tentativas.falhou(&chave);
-                e.tentativas.falhou(&chave_ip);
-                return Err(ruim(m));
-            }
-            e.tentativas.acertou(&chave);
+            r.map_err(ruim)?;
+            reserva.acertou(&[&conta]);
             ok()
         }
         ("POST", "/api/usuarios/mfa-zerar") => {
@@ -331,14 +337,28 @@ fn rotear(p: &Pedido, e: &Estado) -> Saida {
             let u = usuario(p, e)?;
             let id = rede_id(&corpo)?;
             let exige = corpo.booleano_ou("exige", false);
+            // Quem tem autenticador prova o codigo para mudar a exigencia:
+            // sessao roubada nao desliga o segundo fator de uma rede.
+            let conta = chave_conta(&u.login);
+            let reserva = e
+                .tentativas
+                .reservar(&[&conta, &chave_ip])
+                .map_err(bloqueado)?;
             let (nome, dir) = e
                 .painel()
-                .rede_definir_mfa(&u, id, exige)
+                .rede_definir_mfa(&u, id, exige, &t("codigo"))
                 .map_err(|m| (403, m))?;
-            // O OpenVPN so le o servidor.conf ao subir.
+            reserva.acertou(&[&conta]);
+            // O OpenVPN so le o servidor.conf ao subir. Se nao subir, a
+            // exigencia volta: a flag nunca diz «exige» com o servidor
+            // rodando sem o verificador.
             let reiniciado = match &e.supervisor {
                 Some(s) => {
-                    s.reiniciar(&nome, &dir).map_err(ruim)?;
+                    if let Err(m) = s.reiniciar(&nome, &dir) {
+                        let _ = e.painel().rede_gravar_mfa(id, !exige);
+                        let _ = s.reiniciar(&nome, &dir);
+                        return Err(ruim(m));
+                    }
                     true
                 }
                 None => false,
@@ -375,20 +395,23 @@ fn rotear(p: &Pedido, e: &Estado) -> Saida {
             // Por usuario E rede: quem erra a senha de uma rede nao trava as
             // outras; e o IP segura quem troca de conta.
             let chave_rede = format!("rede:{}:{nome}", u.id);
-            e.tentativas
-                .antes_de_todas(&[&chave_rede, &chave_ip])
+            let reserva = e
+                .tentativas
+                .reservar(&[&chave_rede, &chave_ip])
                 .map_err(bloqueado)?;
-            let hash = e.painel().hash_da_rede(&nome).map_err(ruim)?;
+            let hash = match e.painel().hash_da_rede(&nome) {
+                Ok(h) => h,
+                Err(m) => {
+                    reserva.devolver();
+                    return Err(ruim(m));
+                }
+            };
             let conferido = {
                 let _vez = e.conferencias.adquirir();
                 conferir_rede(&hash, &t("senha"))
             };
-            if let Err(m) = conferido {
-                e.tentativas.falhou(&chave_rede);
-                e.tentativas.falhou(&chave_ip);
-                return Err((400, m));
-            }
-            e.tentativas.acertou(&chave_rede);
+            conferido.map_err(|m| (400, m))?;
+            reserva.acertou(&[&chave_rede]);
             let perfil = e.painel().entrar_ja_conferido(&u, &nome).map_err(ruim)?;
             perfil_json(&nome, perfil)
         }
@@ -440,6 +463,11 @@ fn rotear(p: &Pedido, e: &Estado) -> Saida {
         }
         _ => Err((404, format!("rota desconhecida: {} {caminho}", p.metodo))),
     }
+}
+
+/// A chave da CONTA no limitador, a mesma em todos os canais.
+pub(crate) fn chave_conta(login: &str) -> String {
+    format!("conta:{login}")
 }
 
 fn rede_id(corpo: &Json) -> Result<i64, (u16, String)> {
