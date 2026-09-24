@@ -14057,7 +14057,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "id": "atestado-pelo-caminho-e-nao-pelo-arquivo",
         "titulo": "o atestado do processo vale para o caminho, e não para o arquivo: outro `.ndx` no mesmo lugar abre confiado",
         "porque": (
-            "pedido 522: restaurar por cima, renomear ou copiar outro `.ndx` "
+            "O segundo processo aqui e EMULADO pelo `esquecer_atestados_para_teste`: o registro de atestados so vive na memoria do processo, entao esquece-lo e o que um processo novo veria -- so o `fechar-do-embutido-nao-sincroniza` roda um processo de verdade. pedido 522: restaurar por cima, renomear ou copiar outro `.ndx` "
             "para o mesmo caminho poe ali um arquivo que o `fechar` nunca "
             "atestou. O CRC do cabecalho e o que amarra o atestado ao arquivo; "
             "sem ele, uma copia antiga marcada abre como coerente."
@@ -14142,7 +14142,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "id": "restauracao-nao-reconstroi-o-marcado",
         "titulo": "a restauração de backup devolve a tabela com o `.ndx` marcado, e ela recusa toda escrita até alguém mandar `reindexar`",
         "porque": (
-            "pedido 522: o backup copia o `.ndx` como o nucleo o tinha, e o de "
+            "O segundo processo aqui e EMULADO pelo `esquecer_atestados_para_teste`: o registro de atestados so vive na memoria do processo, entao esquece-lo e o que um processo novo veria -- so o `fechar-do-embutido-nao-sincroniza` roda um processo de verdade. pedido 522: o backup copia o `.ndx` como o nucleo o tinha, e o de "
             "toda tabela escrita desde o ultimo fecho da janela sai com o byte 52 "
             "em 1. Medido na suite do servidor ao entrar o 522: "
             "`restaurar_com_outro_nome_cria_o_banco_integro` e tres do PITR "
@@ -14162,7 +14162,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "id": "arranque-nao-reconstroi-o-marcado",
         "titulo": "o arranque não reconstrói o `.ndx` que o processo anterior só fechou: a tabela sobe recusando até alguém mandar `reindexar`",
         "porque": (
-            "pedido 522: o `fechar` deixa o 1, e o `phxsqld` so para por sinal. "
+            "O segundo processo aqui e EMULADO pelo `esquecer_atestados_para_teste`: o registro de atestados so vive na memoria do processo, entao esquece-lo e o que um processo novo veria -- so o `fechar-do-embutido-nao-sincroniza` roda um processo de verdade. pedido 522: o `fechar` deixa o 1, e o `phxsqld` so para por sinal. "
             "Medido contra o servidor de release (`preco-do-522.py`): 8 de 8 "
             "tabelas marcadas depois de um SIGKILL sob carga. Sem o passe da "
             "recuperacao, as oito subiam recusando."
@@ -14183,7 +14183,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "id": "atestado-fica-no-caminho-velho",
         "titulo": "renomear, duplicar ou colar uma tabela escrita desde o último fecho deixa o destino recusando tudo, sem queda nenhuma",
         "porque": (
-            "pedido 522, B1 do papel C: o atestado do processo e guardado pelo "
+            "O segundo processo aqui e EMULADO pelo `esquecer_atestados_para_teste`: o registro de atestados so vive na memoria do processo, entao esquece-lo e o que um processo novo veria -- so o `fechar-do-embutido-nao-sincroniza` roda um processo de verdade. pedido 522, B1 do papel C: o atestado do processo e guardado pelo "
             "caminho, e as tres operacoes poem o `.ndx` num caminho novo sem "
             "`fsync`. Medido: 9 recusas em 9 («arquivo corrompido: o indice "
             "ficou para tras numa queda»), contra 0 em 3 antes do 522. O "
@@ -14206,7 +14206,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "id": "renomear-esquece-o-atestado",
         "titulo": "o renomear move os arquivos e deixa o atestado no nome velho: a tabela renomeada recusa tudo",
         "porque": (
-            "pedido 522, B1, a porta do renomear -- o caso do «carrega `t_nova` "
+            "O segundo processo aqui e EMULADO pelo `esquecer_atestados_para_teste`: o registro de atestados so vive na memoria do processo, entao esquece-lo e o que um processo novo veria -- so o `fechar-do-embutido-nao-sincroniza` roda um processo de verdade. pedido 522, B1, a porta do renomear -- o caso do «carrega `t_nova` "
             "e renomeia para `t`». O motor e um so (`levar_atestado`); esta "
             "entrada prova que o CHAMADO no renomear e sentido, e nao so o "
             "motor."
@@ -14560,7 +14560,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "id": "aresta-velha-depois-do-savepoint",
         "titulo": "a transação barrada volta ao SAVEPOINT e a aresta velha faz a outra ceder num ciclo que não existe mais",
         "porque": (
-            "R1 da re-checagem do papel C ao C1: T1 barrada por T2 no COMMIT "
+            "pedido 516, R1 da re-checagem do papel C ao C1: T1 barrada por T2 no COMMIT "
             "volta ao SAVEPOINT (o elo que precisava de T2 sai com a lista) e "
             "passa a escrever outra filha; o COMMIT de T2 recebia «ciclo com "
             "T1» e cedia, e T1 confirmava logo depois sem precisar de nada de "
@@ -14587,7 +14587,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "id": "corrente-do-ciclo-atravessa-quem-nao-confirma",
         "titulo": "a corrente do ciclo atravessa transação em ABORT_ONLY, e a outra cede por quem nunca mais vai confirmar",
         "porque": (
-            "R1, a outra metade: a transacao em ABORT_ONLY (o teto, por "
+            "pedido 516, R1, a outra metade: a transacao em ABORT_ONLY (o teto, por "
             "exemplo) segura as travas ate o ROLLBACK e guarda a aresta, mas "
             "nao confirma mais. Esperar por ela e espera comum; ceder por "
             "causa dela e abortar sem ciclo."

@@ -299,7 +299,8 @@ dia, nunca no desejado:
   aperto de mao alem do fim e a contagem negativa do PostgreSQL no DbLink,
   o job que dispara job e a conversa SMTP sem prazo total. A frente contou
   392 sobre a base dela; a conta do integrador, pelo `--catraca`.
-  **SUBIU para 300 em 24/09/2026** (pedido 497, o literal do pedido no texto
+  **SUBIU para 300 em 24/09/2026, contado NA ARVORE DA FRENTE do 497** (e nao
+  na combinada, que a linha do 345 acima reconcilia) (pedido 497, o literal do pedido no texto
   do erro que o `acessos.log` grava): tres guardas novas, uma por motor que
   monta a mensagem -- o `descrever` do SQL, o `mostrar` da expressao -- e a
   do soquete, com a linha que o SEC citou reposta como era. Contado no dia:
