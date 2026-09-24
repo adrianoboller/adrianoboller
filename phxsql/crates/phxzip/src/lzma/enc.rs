@@ -309,12 +309,9 @@ impl<'a> Buscador<'a> {
             } else {
                 pos - delta
             };
-            let mut n = compr_maior.min(compr_menor);
-            if d[c + n] == d[p + n] {
-                n += 1;
-                while n < lim && d[c + n] == d[p + n] {
-                    n += 1;
-                }
+            let n0 = compr_maior.min(compr_menor);
+            let n = prefixo_igual(d, c, p, n0, lim);
+            if n > n0 {
                 if n > melhor {
                     melhor = n;
                     if let Some(s) = saida.as_deref_mut() {
@@ -464,8 +461,29 @@ impl<'a> Buscador<'a> {
 }
 
 pub(super) fn compr_comum(d: &[u8], p: usize, dist: usize, max: usize) -> usize {
-    let mut n = 0;
-    while n < max && d[p + n] == d[p + n - dist] {
+    prefixo_igual(d, p - dist, p, 0, max)
+}
+
+/// Quantos bytes `d[a..]` e `d[b..]` tem iguais a partir de `desde`, sem
+/// passar de `lim`. Oito de cada vez: o XOR das duas palavras e zero
+/// enquanto casam, e o primeiro byte diferente e o `trailing_zeros / 8` --
+/// na ordem da memoria, porque a palavra se le em little-endian EXPLICITO,
+/// entao vale igual no s390x big-endian. Byte a byte custava uma comparacao
+/// e duas checagens de limite por byte, no laco mais quente da busca.
+/// Quem chama garante `a + lim` e `b + lim` dentro de `d`.
+#[inline]
+pub(super) fn prefixo_igual(d: &[u8], a: usize, b: usize, desde: usize, lim: usize) -> usize {
+    let mut n = desde;
+    while n + 8 <= lim {
+        let x = u64::from_le_bytes(d[a + n..a + n + 8].try_into().unwrap_or([0; 8]));
+        let y = u64::from_le_bytes(d[b + n..b + n + 8].try_into().unwrap_or([0; 8]));
+        let z = x ^ y;
+        if z != 0 {
+            return n + (z.trailing_zeros() / 8) as usize;
+        }
+        n += 8;
+    }
+    while n < lim && d[a + n] == d[b + n] {
         n += 1;
     }
     n

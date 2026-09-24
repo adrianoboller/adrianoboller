@@ -396,7 +396,10 @@ fn descompacta_em_fios_o_lzma2_em_blocos_do_7zip() {
     // bytes do cabecalho inicial: se o 7-Zip nao tiver cortado em blocos, o
     // teste passaria sem ter exercitado o paralelo -- e tem de dizer.
     let (cortes, _) = phxzip::lzma::cortes_lzma2(&b[32..]).unwrap();
-    assert!(cortes.len() > 1, "o 7-Zip gravou um trecho so: nada a paralelizar");
+    assert!(
+        cortes.len() > 1,
+        "o 7-Zip gravou um trecho so: nada a paralelizar"
+    );
     for fios in [1, 4] {
         let lim = Limites {
             fios,

@@ -164,6 +164,27 @@ mais rápido e sem custo de tamanho. É o próximo alvo, junto com a
 descompactação, que é num fio só.
 
 
+### 3d-bis. Onde vai o tempo de um fio, e o que morreu medido (24/09/2026)
+
+Medido com callgrind (instruções, determinístico), no texto de 1,3 MB, nível 5:
+- **busca:** 43% (`casamentos`/`descer`);
+- **planejador:** 46% (`estender`);
+- **resto:** 11%.
+
+A busca já roda em fio próprio (§3d). Com vários fios, quem limita é o
+planejador, e por isso a busca em 2 estágios do 7-Zip (hash numa thread,
+árvore noutra) **não entrou**: ela aceleraria a metade que já não é o gargalo.
+
+| hipótese | medida | veredito |
+|---|---|---|
+| enumerar comprimentos só até o «bom» a partir da 2ª posição (`numFastBytes` do 7-Zip) | +0,3% de instruções, mesmo tamanho | morreu: o atalho do «bom» já cortava |
+| casamento novo começando em rep0 + 1 (`startLen` do 7-Zip) | −0,8% de instruções, mesmo tamanho | morreu: dentro do ruído |
+| comparar 8 bytes por vez (XOR + `trailing_zeros`) na árvore e no `compr_comum` | texto −0,6%; **binário de 11,7 MB −5,9%**; bytes iguais | **entrou** |
+
+O resto do custo está espalhado: preço do literal, arestas compostas e soma
+de preços. Não há um ponto quente, então o próximo ganho de um fio pede outro
+desenho do planejador, e não mais um ajuste de laço.
+
 ### 3e. Descompactação com vários fios (24/09/2026)
 
 Um fluxo LZMA2 gravado em blocos tem trechos que recomeçam o dicionário, e
