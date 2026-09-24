@@ -85,8 +85,8 @@ def capabilities():
     return d, quando_de(p, d)
 
 
-def guardas():
-    """Quantas guardas o catalogo tem, importando-o em vez de contando texto.
+def catalogo_guardas():
+    """As guardas do catalogo, importando-o em vez de contando texto.
 
     Contar `"id":` por regex mediria o arquivo; importar mede a LISTA, que e'
     o que a bateria percorre. Se um dia alguem montar a lista por laco, o
@@ -95,9 +95,77 @@ def guardas():
     sys.path.insert(0, str(RAIZ / "bancada" / "guardas"))
     try:
         import catalogo  # noqa: PLC0415
-        return len(catalogo.GUARDAS), None
+        return list(catalogo.GUARDAS), None
     except Exception as e:  # noqa: BLE001 -- qualquer falha vira linha na pagina
         return None, str(e)
+
+
+def guardas():
+    """Quantas guardas o catalogo tem -- o placar da capa."""
+    lista, erro = catalogo_guardas()
+    if lista is None:
+        return None, erro
+    return len(lista), None
+
+
+def provas_das_guardas():
+    """As PROVAS de cada guarda do catalogo, cruzadas com a ultima corrida.
+
+    O catalogo diz o que TEM de ser provado; `ultima-corrida.json` diz o que
+    FOI provado, e quando. Um id do catalogo que nao aparece na corrida NAO
+    some da pagina -- vira SEM PROVA REGISTRADA, pela mesma lei que faz uma
+    bancada sem arquivo de resultado aparecer como NAO MEDIDA em vez de sumir
+    da tabela. Guarda aposentada (no arquivo, fora do catalogo) e' contada a
+    parte: nao conta como provada.
+    """
+    catalogo_lista, erro_cat = catalogo_guardas()
+    dados, p = ler_json("bancada/guardas/ultima-corrida.json")
+    r = {"arquivo": str(p.relative_to(RAIZ)), "erro_catalogo": erro_cat,
+         "existe": False, "erro_json": None, "quando": "—",
+         "quando_mtime": False, "contagem": {}, "datas": {}, "tabela": [],
+         "aposentadas": []}
+    if erro_cat or catalogo_lista is None:
+        return r
+    if dados is None:
+        return r
+    if "__erro__" in dados:
+        r["erro_json"] = dados["__erro__"]
+        return r
+    r["existe"] = True
+    por_id = {g.get("id"): g for g in dados.get("guardas", [])}
+    cat_ids = [g["id"] for g in catalogo_lista]
+    quando, do_mtime = quando_de(p, dados)
+    r["quando"], r["quando_mtime"] = quando, do_mtime
+
+    contagem = {"PROVADA": 0, "REDUNDANTE": 0, "QUEBRADA": 0,
+                "SEM PROVA REGISTRADA": 0}
+    datas = {}
+    tabela = []
+    for gid in cat_ids:
+        g = por_id.get(gid)
+        if g is None:
+            contagem["SEM PROVA REGISTRADA"] += 1
+            tabela.append({"id": gid, "veredito": "SEM PROVA REGISTRADA",
+                            "quando": "—",
+                            "nota": "nao aparece na ultima corrida"})
+            continue
+        v = str(g.get("veredito") or "?")
+        contagem[v] = contagem.get(v, 0) + 1
+        dia = str(g.get("quando") or "")[:10]
+        if dia:
+            datas[dia] = datas.get(dia, 0) + 1
+        if v != "PROVADA":
+            notas = g.get("notas") or []
+            nota = notas[0] if notas else ""
+            if len(nota) > 140:
+                nota = nota[:140] + "…"
+            tabela.append({"id": gid, "veredito": v,
+                            "quando": g.get("quando") or "—", "nota": nota})
+    r["contagem"] = contagem
+    r["datas"] = dict(sorted(datas.items()))
+    r["tabela"] = tabela
+    r["aposentadas"] = sorted(set(por_id) - set(cat_ids))
+    return r
 
 
 def guardas_vermelhas():
@@ -163,6 +231,49 @@ def botoes_exercitados():
     linhas = [x for x in p.read_text(encoding="utf-8").splitlines()
               if x.strip() and not x.startswith("#")]
     return len(linhas), quando_de(p)
+
+
+def descricoes_das_partes():
+    """A descricao de cada parte de `provar.py`, direto do codigo.
+
+    E' o mesmo texto que `python3 provar.py --listar` imprime. Copiar a lista
+    aqui envelheceria assim que uma parte nova entrasse no `provar.py` e nao
+    nesta copia -- a mesma doenca da lista de tres arquivos que o rodape
+    publicava.
+    """
+    sys.path.insert(0, str(RAIZ))
+    try:
+        import provar  # noqa: PLC0415
+        return {p["id"]: p["prova"] for p in provar.PARTES}, None
+    except Exception as e:  # noqa: BLE001 -- qualquer falha vira nota na pagina
+        return {}, str(e)
+
+
+def bateria_inteira():
+    """A ultima corrida de `provar.py --json`, se ela existir.
+
+    Sem arquivo, a secao aparece como NAO RODADA com o comando -- nunca some.
+    """
+    dados, p = ler_json("bancada/bateria/ultima-bateria.json")
+    r = {"arquivo": str(p.relative_to(RAIZ)), "existe": False, "erro": None}
+    if dados is None:
+        return r
+    if "__erro__" in dados:
+        r["erro"] = dados["__erro__"]
+        return r
+    r["existe"] = True
+    quando, do_mtime = quando_de(p, dados)
+    r["quando"], r["quando_mtime"] = quando, do_mtime
+    r["commit"] = dados.get("commit")
+    r["segundos"] = dados.get("segundos")
+    partes = dados.get("partes") or []
+    r["partes"] = partes
+    contagem = {}
+    for pt in partes:
+        v = str(pt.get("veredito") or "?")
+        contagem[v] = contagem.get(v, 0) + 1
+    r["contagem"] = contagem
+    return r
 
 
 # As bancadas, e o que se le de cada uma. A tabela e' DECLARADA porque cada
@@ -436,6 +547,154 @@ def esc(s):
     return (str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
 
 
+# Cada veredito tem FORMA alem de cor -- um icone, nao so a cor do texto.
+# E' o mesmo cuidado da regua do QA (a barra carrega o tipo na forma: cheia,
+# meia, hachurada, so contorno) aplicado a um selo de texto: quem le em preto
+# e branco, ou no PDF em tinta unica, ainda distingue PROVADA de QUEBRADA.
+EMBLEMAS = {
+    "PROVADA":              ("v-ok",     "✓"),
+    "PASSOU":               ("v-ok",     "✓"),
+    "REDUNDANTE":           ("v-neutro", "≈"),
+    "RODOU":                ("v-neutro", "○"),
+    "QUEBRADA":             ("v-falta",  "⚠"),
+    "SEM PROVA REGISTRADA": ("v-falta",  "—"),
+    "PULADA":               ("v-falta",  "—"),
+    "FALHOU":               ("v-mal",    "✗"),
+    "NAO PEGOU":            ("v-mal",    "✗"),
+    "ESTRAGOU":             ("v-mal",    "✗"),
+}
+
+
+def emblema(v):
+    # RODOU e' SONDA, nao prova: ela sai zero sempre, e chamar isso de
+    # "passou" inventaria um veredito que ninguem deu -- por isso a nota ao
+    # lado, e nao so o icone neutro.
+    classe, icone = EMBLEMAS.get(v, ("v-neutro", "?"))
+    extra = (' <span class="q">(sonda — ninguém julgou)</span>'
+             if v == "RODOU" else "")
+    return (f'<span class="veredito {classe}"><span class="ic">{icone}</span>'
+            f'{esc(v)}</span>{extra}')
+
+
+def fmt_segundos(s):
+    if s is None:
+        return "—"
+    s = float(s)
+    if s >= 60:
+        return f"{int(s // 60)}m{int(s % 60):02d}s"
+    return f"{s:.1f}s".replace(".", ",")
+
+
+def linha_guarda_tabela(item):
+    return (f'<tr><td class="mono">{esc(item["id"])}</td>'
+            f'<td>{emblema(item["veredito"])}</td>'
+            f'<td class="q mono">{esc(item["quando"])}</td>'
+            f'<td class="v">{esc(item["nota"]) or "—"}</td></tr>')
+
+
+def linha_parte_bateria(pt, descricoes):
+    pid = pt.get("id", "?")
+    v = str(pt.get("veredito") or "?")
+    desc = descricoes.get(pid, "")
+    seg = fmt_segundos(pt.get("segundos"))
+    motivo = pt.get("motivo") or ""
+    mostra_motivo = motivo if v in ("PULADA", "FALHOU") and motivo else ""
+    sub = f'<div class="prova">{esc(desc)}</div>' if desc else ""
+    return (f'<tr><td class="nome"><code>{esc(pid)}</code>{sub}</td>'
+            f'<td>{emblema(v)}</td>'
+            f'<td class="n mono">{esc(seg)}</td>'
+            f'<td class="v">{esc(mostra_motivo) or "—"}</td></tr>')
+
+
+def bloco_provas_de_guardas(pg):
+    """O HTML da subsecao 2.1 -- a prova de cada guarda, nao so a contagem."""
+    if pg["erro_catalogo"]:
+        return (f'<div class="nota ausente"><b>catálogo ilegível.</b> '
+                f'{esc(pg["erro_catalogo"])}</div>')
+    if pg["erro_json"]:
+        return (f'<div class="nota ausente"><b>ilegível.</b> '
+                f'<code>{esc(pg["arquivo"])}</code>: {esc(pg["erro_json"])}</div>')
+    if not pg["existe"]:
+        return (f'<div class="nota ausente"><b>NÃO MEDIDA.</b> o arquivo '
+                f'<code>{esc(pg["arquivo"])}</code> não existe — rode '
+                f'<code>python3 bancada/guardas/provar-guardas.py --json '
+                f'{esc(pg["arquivo"])}</code></div>')
+    c = pg["contagem"]
+    marca = (' <span class="mtime" title="a data saiu do mtime do arquivo, '
+              'e nao do proprio resultado">(mtime)</span>' if pg["quando_mtime"]
+              else "")
+    datas = (" · ".join(f"{esc(d)} — {n}" for d, n in pg["datas"].items())
+              or "—")
+    aposentadas = pg["aposentadas"]
+    nota_aposentadas = (
+        f' <b>{len(aposentadas)} guarda(s) aposentada(s)</b> — no arquivo, '
+        f'fora do catálogo, não contam como provada: '
+        f'{", ".join(f"<code>{esc(a)}</code>" for a in aposentadas)}.'
+        if aposentadas else "")
+    linhas = "\n      ".join(linha_guarda_tabela(it) for it in pg["tabela"]) \
+        or '<tr><td colspan="4" class="v">todas as guardas do catálogo estão PROVADAS.</td></tr>'
+    return f"""<div class="nota">
+  Corrida de <b>{esc(pg["quando"])}</b>{marca}, do arquivo
+  <code>{esc(pg["arquivo"])}</code>.
+</div>
+<div class="placar">
+  <div class="c"><div class="v">{c.get("PROVADA", 0)}</div><div class="r">provada</div></div>
+  <div class="c"><div class="v">{c.get("REDUNDANTE", 0)}</div><div class="r">redundante</div></div>
+  <div class="c"><div class="v">{c.get("QUEBRADA", 0)}</div><div class="r">quebrada</div></div>
+  <div class="c"><div class="v">{c.get("SEM PROVA REGISTRADA", 0)}</div><div class="r">sem prova registrada</div></div>
+</div>
+<p class="sub">Datas da última prova: {datas}.{nota_aposentadas}</p>
+<p class="sub">Toda guarda que <b>não</b> é PROVADA — o que ainda não se pode
+afirmar:</p>
+<div class="rolo">
+  <table>
+    <thead><tr><th>id</th><th>veredito</th><th>quando</th><th>nota</th></tr></thead>
+    <tbody>
+      {linhas}
+    </tbody>
+  </table>
+</div>"""
+
+
+def bloco_bateria_inteira(b, descricoes, erro_descricoes):
+    """O HTML da secao 6 -- a bateria inteira, parte a parte."""
+    if not b["existe"]:
+        if b["erro"]:
+            return (f'<div class="nota ausente"><b>ilegível.</b> '
+                    f'<code>{esc(b["arquivo"])}</code>: {esc(b["erro"])}</div>')
+        return (f'<div class="nota ausente"><b>NÃO RODADA.</b> o arquivo '
+                f'<code>{esc(b["arquivo"])}</code> não existe — rode '
+                f'<code>python3 provar.py --construir --json '
+                f'{esc(b["arquivo"])}</code></div>')
+    c = b["contagem"]
+    marca = (' <span class="mtime" title="a data saiu do mtime do arquivo, '
+              'e nao do proprio resultado">(mtime)</span>' if b["quando_mtime"]
+              else "")
+    aviso_desc = (f'<p class="sub">descrição das partes indisponível: '
+                  f'{esc(erro_descricoes)}</p>' if erro_descricoes else "")
+    linhas = "\n      ".join(
+        linha_parte_bateria(pt, descricoes) for pt in b["partes"]) \
+        or '<tr><td colspan="4" class="v">nenhuma parte no relatório.</td></tr>'
+    commit = b.get("commit")
+    return f"""<div class="nota">
+  Corrida de <b>{esc(b["quando"])}</b>{marca}, commit
+  <code>{esc(str(commit)[:7]) if commit else "—"}</code>,
+  {esc(fmt_segundos(b.get("segundos")))} no total.
+  <b>{c.get("PASSOU", 0)}</b> passaram, <b>{c.get("FALHOU", 0)}</b> falharam,
+  <b>{c.get("PULADA", 0)}</b> puladas, <b>{c.get("RODOU", 0)}</b> sondas
+  (rodaram e imprimiram — ninguém julgou, não é "passou").
+</div>
+{aviso_desc}
+<div class="rolo">
+  <table>
+    <thead><tr><th>parte</th><th>veredito</th><th class="n">segundos</th><th>motivo</th></tr></thead>
+    <tbody>
+      {linhas}
+    </tbody>
+  </table>
+</div>"""
+
+
 def linha_bancada(b):
     dados, p = ler_json(b["json"])
     if dados is None:
@@ -484,6 +743,9 @@ def montar():
     vermelhas = guardas_vermelhas()
     casos = casos_de_tela()
     n_botoes, (botoes_quando, botoes_mtime) = botoes_exercitados()
+    provas_guardas = provas_das_guardas()
+    descricoes_partes, erro_descricoes = descricoes_das_partes()
+    bateria = bateria_inteira()
     agora = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
 
     # As guardas VERMELHAS vao no ALTO, antes de qualquer numero verde.
@@ -545,6 +807,9 @@ def montar():
         botoes_mtime=" (mtime)" if botoes_mtime else "",
         n_tetos=len(tetos), linhas_tetos=linhas_tetos,
         linhas_bancadas=linhas_bancadas,
+        bloco_provas_guardas=bloco_provas_de_guardas(provas_guardas),
+        bloco_bateria=bloco_bateria_inteira(
+            bateria, descricoes_partes, erro_descricoes),
     )
 
 
@@ -624,6 +889,18 @@ tr.ausente td{{color:var(--falta)}}
   padding:14px 18px;border-radius:0 5px 5px 0;margin:24px 0;font-size:15px;
   color:var(--tinta-2);max-width:68ch}}
 .nota b{{color:var(--tinta)}}
+.nota.ausente{{border-left-color:var(--falta);max-width:none}}
+.nota.ausente b{{color:var(--falta)}}
+/* O veredito carrega FORMA alem de cor -- um icone proprio por classe, para
+   quem le em preto e branco ainda distinguir PROVADA de QUEBRADA. */
+.veredito{{font-family:"IBM Plex Mono",monospace;font-size:12.5px;
+  font-weight:500;white-space:nowrap;display:inline-flex;align-items:center;
+  gap:5px}}
+.veredito .ic{{font-size:13px;line-height:1}}
+.v-ok{{color:var(--ok)}}
+.v-mal{{color:var(--log)}}
+.v-falta{{color:var(--falta)}}
+.v-neutro{{color:var(--tinta-3)}}
 ul.casos{{columns:250px;list-style:none;padding:0;margin:0;font-size:13.5px}}
 ul.casos li{{padding:2px 0}}
 footer{{margin-top:52px;padding-top:20px;border-top:1px solid var(--linha);
@@ -672,6 +949,12 @@ camada existe por causa disso.</p>
   Roda por <code>python3 bancada/guardas/provar-guardas.py</code>.
 </div>
 
+<h3>2.1 O que a última corrida provou — não só quantas há</h3>
+<p class="sub">Contar o catálogo diz o que TEM de ser provado; cruzar com a
+última corrida diz o que FOI. Id do catálogo ausente da corrida vira
+<b>SEM PROVA REGISTRADA</b> — não some da página.</p>
+{bloco_provas_guardas}
+
 <h2>3. As catracas</h2>
 <p class="sub">Número que <b>só desce</b>. E que <b>nunca sobe</b> — nem quando
 a régua muda: régua que passa a medir mais <b>aposenta</b> a catraca antiga e
@@ -714,7 +997,14 @@ e o pior deles quebrava todo salvar e todo incluir pela tela.</p>
 </div>
 <ul class="casos">{lista_casos}</ul>
 
-<h2>6. O que estas provas NÃO cobrem</h2>
+<h2>6. A bateria inteira — todas as camadas, num comando só</h2>
+<p class="sub"><code>python3 provar.py</code> soma o motor, as guardas, a tela
+e as demais partes num relatório único, cronometrado, sem esconder o que foi
+PULADO nem inventar um veredito para o que só RODOU: sonda sai zero sempre, e
+ninguém julgou o que ela mediu.</p>
+{bloco_bateria}
+
+<h2>7. O que estas provas NÃO cobrem</h2>
 <p class="sub">A parte que uma página de testes costuma esconder, e a única que
 diz onde não confiar.</p>
 <div class="nota">
@@ -742,9 +1032,11 @@ diz onde não confiar.</p>
 <footer>
   Gerado por <code>docs/dossie/pagina-dos-testes.py</code> em {agora}. Nenhum
   número desta página foi digitado: eles saem do <code>CAPABILITIES.json</code>,
-  do catálogo de guardas, dos <code>resultados.json</code> das bancadas, dos
-  arquivos de <code>testes-web/</code> e das constantes do próprio fonte. O
-  dossiê técnico e a relação dos pedidos são as outras duas páginas.
+  do catálogo de guardas cruzado com <code>ultima-corrida.json</code>, dos
+  <code>resultados.json</code> das bancadas, de <code>ultima-bateria.json</code>
+  e das partes do <code>provar.py</code>, dos arquivos de
+  <code>testes-web/</code> e das constantes do próprio fonte. O dossiê técnico
+  e a relação dos pedidos são as outras duas páginas.
 </footer>
 </div>
 """
