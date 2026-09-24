@@ -59,7 +59,8 @@ dialog h2{margin:0 0 10px;font-size:16px}
 <body>
 <header>
   <h1><b>phx</b>vpn</h1>
-  <span id="minha-chave" title="Sua chave publica (clique para copiar)">…</span>
+  <span id="minha-chave" title="Sua chave pública (clique para copiar)">…</span>
+  <button id="b-config" title="Configuração" style="padding:3px 9px">Configuração</button>
 </header>
 <div class="barra">
   <button class="inclui" id="b-criar">Criar rede</button>
@@ -74,17 +75,17 @@ dialog h2{margin:0 0 10px;font-size:16px}
   <label class="campo"><span>Meu IP virtual</span><input name="ip" value="10.78.0.1/24"></label>
   <label class="campo"><span>Modo</span><select name="modo">
     <option value="direto">Direto (sem servidor)</option>
-    <option value="auto">Auto (direto; se nao der, servidor intermediario)</option>
-    <option value="repasse">Sempre pelo servidor intermediario</option></select></label>
-  <label class="campo"><span>Servidor intermediario (CHAVE@HOST:PORTA, para auto e repasse)</span><input name="repasse"></label>
-  <label class="campo"><span>Meu usuario no servidor intermediario</span><input name="repasse_usuario" autocomplete="username"></label>
+    <option value="auto">Auto (direto; se não der, servidor intermediário)</option>
+    <option value="repasse">Sempre pelo servidor intermediário</option></select></label>
+  <label class="campo"><span>Servidor intermediário (CHAVE@HOST:PORTA, para auto e repasse)</span><input name="repasse"></label>
+  <label class="campo"><span>Meu usuário no servidor intermediário</span><input name="repasse_usuario" autocomplete="username"></label>
   <p class="msg"></p>
   <div class="linha-botoes"><button type="button" data-fechar>Cancelar</button><button class="inclui">Criar</button></div>
 </form></dialog>
 
 <dialog id="d-entrar"><form method="dialog" id="f-entrar">
   <h2>Entrar na rede</h2>
-  <label class="campo"><span>Codigo do convite</span><textarea name="codigo" required placeholder="phxvpn1...."></textarea></label>
+  <label class="campo"><span>Código do convite</span><textarea name="codigo" required placeholder="phxvpn1...."></textarea></label>
   <label class="campo"><span>Senha da rede</span><input name="senha" type="password" required autocomplete="off"></label>
   <p class="msg"></p>
   <div class="linha-botoes"><button type="button" data-fechar>Cancelar</button><button class="inclui">Entrar</button></div>
@@ -93,19 +94,19 @@ dialog h2{margin:0 0 10px;font-size:16px}
 <dialog id="d-convidar"><form method="dialog" id="f-convidar">
   <h2>Convidar para <span data-rede></span></h2>
   <label class="campo"><span>Senha da rede</span><input name="senha" type="password" required autocomplete="off"></label>
-  <label class="campo"><span>Meu endereco na internet (HOST:PORTA) — opcional</span><input name="endereco" placeholder="203.0.113.5:51820"></label>
+  <label class="campo"><span>Meu endereço na internet (HOST:PORTA) — opcional</span><input name="endereco" placeholder="203.0.113.5:51820"></label>
   <label class="campo"><span>Validade (horas)</span><input name="validade" value="24"></label>
-  <label class="campo" hidden><span>Codigo — mande por um canal seguro; vale uma entrada</span><textarea name="codigo" readonly></textarea></label>
+  <label class="campo" hidden><span>Código — mande por um canal seguro; vale uma entrada</span><textarea name="codigo" readonly></textarea></label>
   <p class="msg"></p>
-  <div class="linha-botoes"><button type="button" data-fechar>Fechar</button><button type="button" id="b-copiar" hidden>Copiar codigo</button><button class="inclui" id="b-gerar">Gerar convite</button></div>
+  <div class="linha-botoes"><button type="button" data-fechar>Fechar</button><button type="button" id="b-copiar" hidden>Copiar código</button><button class="inclui" id="b-gerar">Gerar convite</button></div>
 </form></dialog>
 
 <dialog id="d-ligar"><form method="dialog" id="f-ligar">
   <h2>Ligar <span data-rede></span></h2>
   <label class="campo"><span>Senha da rede</span><input name="senha" type="password" required autocomplete="off"></label>
   <fieldset id="repasse-conta" hidden style="border:1px solid var(--linha);border-radius:8px;margin:4px 0 8px;padding:8px">
-    <legend style="color:var(--ambar);font-size:12px;padding:0 6px">Servidor intermediario</legend>
-    <label class="campo"><span>Usuario</span><input name="repasse_usuario" autocomplete="username"></label>
+    <legend style="color:var(--ambar);font-size:12px;padding:0 6px">Servidor intermediário</legend>
+    <label class="campo"><span>Usuário</span><input name="repasse_usuario" autocomplete="username"></label>
     <label class="campo"><span>Senha</span><input name="repasse_senha" type="password" autocomplete="current-password"></label>
   </fieldset>
   <label style="display:flex;gap:8px;align-items:center;font-size:13px;margin:4px 0 6px"><input type="checkbox" name="lembrar" value="1" style="width:auto"> Lembrar a senha neste computador</label>
@@ -119,6 +120,14 @@ dialog h2{margin:0 0 10px;font-size:16px}
   <label class="campo"><input name="texto" maxlength="1000" autocomplete="off" placeholder="Mensagem (Enter envia)"></label>
   <p class="msg"></p>
   <div class="linha-botoes"><button type="button" data-fechar>Fechar</button><button class="inclui">Enviar</button></div>
+</form></dialog>
+
+<dialog id="d-config"><form method="dialog" id="f-config">
+  <h2>Configuração</h2>
+  <label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" name="inicia" style="width:auto"> Abrir o phxvpn junto com o sistema</label>
+  <p id="config-nota" style="color:var(--fraco);font-size:12px;margin:4px 0 8px"></p>
+  <p class="msg"></p>
+  <div class="linha-botoes"><button type="button" data-fechar>Fechar</button></div>
 </form></dialog>
 
 <script src="/mesa.js"></script>

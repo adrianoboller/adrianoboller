@@ -13,7 +13,7 @@ async function api(metodo, rota, corpo) {
     headers: { "Content-Type": "application/json", "Authorization": "Bearer " + ficha },
     body: corpo ? JSON.stringify(corpo) : undefined,
   });
-  const j = await r.json().catch(() => ({ erro: "resposta ilegivel" }));
+  const j = await r.json().catch(() => ({ erro: "resposta ilegível" }));
   if (!r.ok) throw new Error(j.erro || ("erro " + r.status));
   return j;
 }
@@ -22,7 +22,7 @@ function aviso(texto, ok) { const r = $("rodape"); r.textContent = texto || ""; 
 
 async function copiar(texto, rotulo) {
   try { await navigator.clipboard.writeText(texto); aviso(rotulo + " copiado", true); }
-  catch (_) { aviso("nao consegui copiar: selecione e copie a mao"); }
+  catch (_) { aviso("não consegui copiar: selecione e copie à mão"); }
 }
 
 let abertos = new Set();   // redes com os membros expandidos
@@ -49,7 +49,7 @@ function desenhar(redes) {
 function desenharTudo(redes) {
   const lista = $("lista"); lista.textContent = "";
   if (!redes.length) {
-    lista.appendChild(el("div", "vazio", "Nenhuma rede ainda. Crie uma, ou entre numa com o codigo de convite."));
+    lista.appendChild(el("div", "vazio", "Nenhuma rede ainda. Crie uma, ou entre numa com o código de convite."));
     return;
   }
   for (const r of redes) {
@@ -76,7 +76,7 @@ function desenharTudo(redes) {
     if (abertos.has(r.rede) || r.ligada) {
       for (const m of r.membros) {
         const linha = el("div", "membro");
-        const p = el("span", "ponto" + (m.online ? " on" : "")); p.title = m.online ? "conectado" : "sem sessao";
+        const p = el("span", "ponto" + (m.online ? " on" : "")); p.title = m.online ? "conectado" : "sem sessão";
         const ip = el("span", "ip", m.ip); ip.title = "clique para copiar"; ip.onclick = () => copiar(m.ip, "IP " + m.ip);
         const chave = el("span", "", m.chave); chave.style.color = "var(--fraco)"; chave.style.fontSize = "12px";
         const cam = el("span", "caminho", m.caminho === "-" ? m.sessao : `${m.caminho} · ${m.sessao}`);
@@ -215,8 +215,24 @@ async function desligar(rede, botao) {
   atualizar();
 }
 
+$("b-config").onclick = async () => {
+  const f = dialogo("d-config");
+  const caixa = f.querySelector("[name=inicia]");
+  try {
+    const s = await api("GET", "/api/sistema");
+    caixa.checked = s.inicia;
+    $("config-nota").textContent = s.bandeja
+      ? "Abre direto na bandeja, ao lado do relógio; o duplo clique no ícone abre esta janela."
+      : "No Linux, abre esta janela ao entrar. Ligar a rede exige permissão de administrador (root ou setcap).";
+  } catch (e) { f.querySelector(".msg").textContent = e.message; }
+  caixa.onchange = async () => {
+    try { aviso((await api("POST", "/api/sistema", { inicia: caixa.checked })).ok, true); }
+    catch (e) { f.querySelector(".msg").textContent = e.message; caixa.checked = !caixa.checked; }
+  };
+};
+
 (async () => {
-  if (!ficha) { aviso("abra esta janela pelo phxvpn (o endereco traz a ficha da sessao)"); return; }
+  if (!ficha) { aviso("abra esta janela pelo phxvpn (o endereço traz a ficha da sessão)"); return; }
   try { const c = (await api("GET", "/api/chave")).ok; const s = $("minha-chave"); s.textContent = c.slice(0, 12) + "…"; s.onclick = () => copiar(c, "Chave"); }
   catch (e) { aviso(e.message); }
   atualizar();

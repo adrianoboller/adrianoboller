@@ -28,6 +28,7 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [x] P2P no Windows: placa TAP-Windows6 em modo TUN só com APIs do sistema; `p2p placa` cria o adaptador pelo `tapctl.exe` do OpenVPN
 - [x] Programa de mesa (`phxvpn mesa`, `phxvpnw.exe` sem console): janela no estilo Radmin — criar, entrar por convite, convidar, ligar/desligar, membros com estado
 - [x] Programa de mesa: ping e chat por membro (dentro do túnel) e «lembrar a senha» (DPAPI no Windows)
+- [x] Programa de mesa: ícone na bandeja (Windows, `phxvpnw.exe --bandeja`) e «abrir com o sistema» (registro `Run` no Windows, autostart XDG no Linux)
 - [x] Servidor intermediário com contas de usuário e senha (`phxvpn repasse conta`, `--contas`)
 - [x] Console `phxvpncmd` (ou `phxvpn cmd`), estilo prompt do MS-DOS: modos Painel, P2P e Ferramentas; lote por arquivo (`/entrada:`) e linha única (`/comando:`)
 - [x] Segurança A1: revogação real — série no CN, reentrada revoga o perfil anterior, CRL Ed25519 no `crl-verify`, admin/dono remove membro
@@ -42,7 +43,7 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 
 - [ ] Prova com o **túnel OpenVPN de verdade** — o binário `openvpn` não existe neste contêiner; o TLS foi provado com OpenSSL, o túnel não
 - [ ] TLS no próprio painel (hoje HTTP; escuta 127.0.0.1 por padrão) — esbarra na pétrea de zero dependência
-- [ ] Programa de mesa: ícone na bandeja do Windows e abrir com o sistema
+- [ ] Programa de mesa: ver o ícone da bandeja num Windows real (no Wine ele é registrado, mas não aparece na área de trabalho virtual) e bandeja no Linux (pede D-Bus)
 - [ ] Revogação por CRL (hoje: sair da rede apaga o `ccd/` e o `ccd-exclusive` barra)
 - [ ] Usar o certificado digital da empresa (A1/RSA) como AC — hoje ele é guardado só como identificação
 - [ ] Serviço do sistema (systemd / serviço do Windows) e pacote
@@ -258,6 +259,33 @@ Dois defeitos achados nessa prova:
 2. A lista era redesenhada inteira a cada 2 s, o que pode engolir um clique.
    Agora só redesenha quando algo muda. Esse era o primeiro palpite para o
    defeito 1, e estava errado: está registrado na cognição.
+
+### Bandeja e «abrir com o sistema»
+
+**Bandeja (Windows):** `phxvpnw.exe` põe um ícone ao lado do relógio, pintado em
+código (círculo no vermelhão da marca, sem arquivo de recurso); duplo clique
+abre a janela, o botão direito mostra «Abrir phxvpn / Sair». FFI a `user32`,
+`shell32`, `gdi32`. **Abrir com o sistema** (Configuração, na janela): no
+Windows, o valor `phxvpn` em `HKCU\…\CurrentVersion\Run` →
+`phxvpnw.exe --bandeja` (sobe só na bandeja); no Linux,
+`~/.config/autostart/phxvpn.desktop`. Só a conta do usuário, nada que peça
+administrador.
+
+**Prova (24/09/2026):** sob o Wine, o teste liga, lê e apaga o valor no
+registro do Windows; a estrutura `NOTIFYICONDATAW` tem os 976 bytes do
+Windows; o `phxvpnw.exe --bandeja` rodando numa área de trabalho virtual
+(Xvfb) fica vivo no laço de mensagens, e o rastro do próprio Wine
+(`WINEDEBUG=+systray`) mostra `Shell_NotifyIconW cbSize=976`, `add_icon
+id=0x1` e `show_icon id=0x1`. **Não visto:** o ícone não apareceu na barra da
+área de trabalho virtual do Wine 9; a prova visual e o clique no menu ficam
+para um Windows real. Linux: a janela liga e desliga o autostart (o arquivo
+nasce e some), 0 erro de console. Bandeja no Linux: não há (pede D-Bus, que é
+biblioteca de fora).
+
+Defeito achado ao capturar: **o texto da janela estava todo sem acento**
+(«Configuracao», «codigo», «intermediario») — a lei da casa é identificador sem
+acento, **texto de interface com acento**. Corrigido na janela e nas frases do
+servidor que aparecem no rodapé; as prévias foram todas refeitas.
 
 Prévias de todas as telas em `docs/previa/` (janela: redes, criar, ligar com
 conta, entrar, conectado, convite; painel: instalação e redes; console).

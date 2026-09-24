@@ -225,7 +225,7 @@ impl Mesa {
                 ("chave", self.chave()),
             ]),
         )
-        .map(|_| format!("Voce entrou na rede {nome}. Clique em Ligar para conectar."))
+        .map(|_| format!("Você entrou na rede {nome}. Clique em Ligar para conectar."))
     }
 
     pub fn convidar(&self, rede: &str, senha: &str, endereco: &str, validade: &str) -> R<String> {
@@ -258,9 +258,9 @@ impl Mesa {
         ligadas.retain(|_, l| !l.fio.is_finished());
         if let Some(l) = ligadas.get(rede) {
             return Err(if l.no.desligado() {
-                format!("a rede {rede} ainda esta desligando; tente em um instante")
+                format!("a rede {rede} ainda está desligando; tente em um instante")
             } else {
-                format!("a rede {rede} ja esta ligada")
+                format!("a rede {rede} já está ligada")
             });
         }
         let arquivo = self.arquivo_da_rede(rede);
@@ -315,7 +315,7 @@ impl Mesa {
             Segredo::Psk(psk),
             credencial.map(SegredoRepasse::Credencial),
         )?;
-        let resumo = format!("Rede {rede} ligada: seu IP e {}.", no.ip());
+        let resumo = format!("Rede {rede} ligada: seu IP é {}.", no.ip());
         if lembrar {
             lembrar::guardar(
                 &self.pasta,
@@ -349,7 +349,7 @@ impl Mesa {
             .unwrap_or_else(|e| e.into_inner())
             .get(rede)
             .map(|l| Arc::clone(&l.no))
-            .ok_or_else(|| format!("a rede {rede} nao esta ligada"))?;
+            .ok_or_else(|| format!("a rede {rede} não está ligada"))?;
         no.desligar();
         drop(no);
         let inicio = std::time::Instant::now();
@@ -388,7 +388,7 @@ impl Mesa {
             .unwrap_or_else(|e| e.into_inner())
             .get(rede)
             .map(|l| Arc::clone(&l.no))
-            .ok_or_else(|| format!("a rede {rede} nao esta ligada"))
+            .ok_or_else(|| format!("a rede {rede} não está ligada"))
     }
 
     /// Ping PELO TUNEL ate o membro (eco de controle, sem ICMP).
@@ -457,7 +457,7 @@ impl Mesa {
         if !ficha_ok {
             return Resposta::erro(
                 401,
-                "ficha da sessao ausente ou errada: abra pela janela do phxvpn",
+                "ficha da sessão ausente ou errada: abra pela janela do phxvpn",
             );
         }
         let corpo = if p.corpo.trim().is_empty() {
@@ -509,6 +509,21 @@ impl Mesa {
                 }
             }
             ("POST", "/api/esquecer") => texto(self.esquecer(&t("rede"))),
+            ("GET", "/api/sistema") => Resposta::json(
+                200,
+                Json::objeto(vec![
+                    ("inicia", Json::de_bool(crate::iniciar::ligado().is_some())),
+                    ("bandeja", Json::de_bool(cfg!(windows))),
+                ])
+                .escrever(),
+            ),
+            ("POST", "/api/sistema") => texto(if corpo.booleano_ou("inicia", false) {
+                crate::iniciar::ligar()
+                    .map(|_| "O phxvpn vai abrir junto com o sistema.".to_string())
+            } else {
+                crate::iniciar::desligar()
+                    .map(|_| "O phxvpn não abre mais com o sistema.".to_string())
+            }),
             ("POST", "/api/desligar") => texto(self.desligar(&t("rede"))),
             _ => Resposta::erro(404, "rota desconhecida"),
         }
@@ -581,21 +596,48 @@ pub fn pasta_padrao() -> PathBuf {
         .unwrap_or_else(|_| PathBuf::from("phxvpn"))
 }
 
-/// `phxvpn mesa`: sobe a tela local e abre a janela.
-pub fn principal(pasta: PathBuf, porta: u16, abrir: bool) -> R<()> {
+/// A tela local pronta para atender: a URL ja existe (a bandeja precisa
+/// dela), o laco de pedidos roda quando `servir` for chamado.
+pub struct Preparada {
+    mesa: Arc<Mesa>,
+    ouvinte: TcpListener,
+    escuta: String,
+}
+
+impl Preparada {
+    pub fn url(&self) -> String {
+        format!("http://{}/#f={}", self.escuta, self.mesa.ficha())
+    }
+
+    pub fn servir(self) -> R<()> {
+        let hosts = web::hosts_de(&self.escuta, &[]);
+        let m = self.mesa;
+        web::servir(self.ouvinte, hosts, 64, move |p| m.tratar(p))
+    }
+}
+
+pub fn preparar(pasta: PathBuf, porta: u16) -> R<Preparada> {
     let mesa = Arc::new(Mesa::nova(pasta)?);
     let ouvinte =
         TcpListener::bind(("127.0.0.1", porta)).map_err(|e| format!("127.0.0.1:{porta}: {e}"))?;
     let escuta = ouvinte.local_addr().map_err(|e| e.to_string())?.to_string();
-    let url = format!("http://{escuta}/#f={}", mesa.ficha());
+    Ok(Preparada {
+        mesa,
+        ouvinte,
+        escuta,
+    })
+}
+
+/// `phxvpn mesa`: sobe a tela local e abre a janela.
+pub fn principal(pasta: PathBuf, porta: u16, abrir: bool) -> R<()> {
+    let p = preparar(pasta, porta)?;
+    let url = p.url();
     eprintln!("phxvpn: janela em {url}");
     eprintln!("phxvpn: (o endereco carrega a ficha da sessao: nao o compartilhe)");
     if abrir {
         eprintln!("phxvpn: {}", abrir_janela(&url));
     }
-    let hosts = web::hosts_de(&escuta, &[]);
-    let m = Arc::clone(&mesa);
-    web::servir(ouvinte, hosts, 64, move |p| m.tratar(p))
+    p.servir()
 }
 
 #[cfg(test)]
