@@ -223,7 +223,7 @@ footer{
 <div class="envelope">
 <header>
   <div class="rotulo">PhxSql · o dossiê do que foi pedido — página 7 de 7</div>
-  <h1>Pedidos 501 em diante<br>de 526 ao todo</h1>
+  <h1>Pedidos 501 em diante<br>de 527 ao todo</h1>
   <p class="chamada">Uma linha por pedido seu, na ordem em que você pediu. O
   estado é <strong>medido contra o código</strong>, não contra a lembrança — foi
   assim que a chave estrangeira saiu de «pronto» para «parcial», e o Centro de
@@ -238,25 +238,25 @@ footer{
   <nav class="faixas" aria-label="As 7 páginas de pedidos, por faixa"><a href="https://claude.ai/artifact/4jSZ5yZFnjEnbGGbE3i5nz">1–190</a><a href="https://claude.ai/artifact/MAc3CcjfCPbjVm5sQZwYoC">191–260</a><a href="https://claude.ai/artifact/R4iGBeRQt7ao6yffQkmGCp">261–310</a><a href="https://claude.ai/artifact/S1oHX53g9q4oqHSn7Yv3vm">311–350</a><a href="pedidos-351-410.html">351–410</a><a href="pedidos-411-500.html">411–500</a><a href="pedidos-501-mais.html" class="ativa" aria-current="page">501 em diante</a></nav>
 
   <div class="placar">
-    <div class="c"><div class="v">526</div><div class="r">pedidos, ao todo</div></div>
+    <div class="c"><div class="v">527</div><div class="r">pedidos, ao todo</div></div>
     <div class="c feito"><div class="v">361</div><div class="r">feitos</div></div>
     <div class="c parcial"><div class="v">16</div><div class="r">parciais</div></div>
-    <div class="c planejado"><div class="v">89</div><div class="r">planejados</div></div>
-    <div class="c depois"><div class="v">60</div><div class="r">depois da versão</div></div>
+    <div class="c planejado"><div class="v">81</div><div class="r">planejados</div></div>
+    <div class="c depois"><div class="v">69</div><div class="r">depois da versão</div></div>
   </div>
 
   <div class="faixa-info">
     <span class="rotulo-inline">Nesta página</span>
-    <strong>26</strong> pedidos (faixa 501 em diante) ·
+    <strong>27</strong> pedidos (faixa 501 em diante) ·
     <span class="feito">4 feitos</span> ·
     <span class="parcial">0 parciais</span> ·
     <span class="planejado">18 planejados</span> ·
-    <span class="depois">4 depois da versão</span>
+    <span class="depois">5 depois da versão</span>
   </div>
 </header>
 
 <h2>O que está aberto, nesta faixa</h2>
-<p class="sub">Os 18 que não fecharam nesta faixa (18 sem começar), com o motivo de cada um. O motivo importa mais que o estado: uns esperam trabalho, outros esperam uma decisão sua, e outros esperam coisa de fora deste repositório. (4 ficaram para depois desta versão — veja a lista completa abaixo.)</p>
+<p class="sub">Os 18 que não fecharam nesta faixa (18 sem começar), com o motivo de cada um. O motivo importa mais que o estado: uns esperam trabalho, outros esperam uma decisão sua, e outros esperam coisa de fora deste repositório. (5 ficaram para depois desta versão — veja a lista completa abaixo.)</p>
 <div class="rolo">
   <table>
     <thead><tr><th class="n">#</th><th class="st">estado</th><th>o que você pediu</th><th>onde está</th></tr></thead>
@@ -292,7 +292,7 @@ footer{
   não tem opinião própria sobre nenhum item.
 </div>
 
-<h2 id="todos">Os 26 desta faixa (501 em diante), na ordem em que você pediu</h2>
+<h2 id="todos">Os 27 desta faixa (501 em diante), na ordem em que você pediu</h2>
 <p class="sub">A numeração é a sequência real dos seus pedidos — ela diz
 <em>quando</em> cada coisa foi pedida, e é por isso que vale mantê-la. As
 outras 6 faixas estão no menu acima.</p>
@@ -339,6 +339,7 @@ outras 6 faixas estão no menu acima.</p>
       <tr data-e="planejado"><td class="n mono">524</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>O backup não faz <code>fsync</code> de nada, e o comentário que conta os caminhos de escrita diz que faz</strong></td><td class="e">Papel C, revisão da frente 509+512, 24/09/2026, <strong>lido</strong>: <code>backup.rs</code> tem 0 <code>sync_all</code> — cópia e manifesto por <code>std::fs::write</code> (<code>:325</code>, <code>:334</code>) — e <code>volume.rs:1347</code> diz «<code>backup.rs</code> (cópias, com <code>sync_all</code> próprio)». Backup que responde «concluído» pode não estar no disco do destino, justamente quando o operador apaga o anterior; e fica fora do 509, porque sem <code>fsync</code> não há recusa para ver. Conserto: <code>sincronia::sync_all</code> em cada cópia e no manifesto, manifesto por último (+ o <code>fsync</code> do diretório do 467); o comentário no mesmo commit.</td></tr>
       <tr data-e="depois"><td class="n mono">525</td><td class="st"><span class="pino depois">Depois da versão</span></td><td class="p"><strong>A <code>Sequence</code> gasta numero na linha recusada (FK desde o 514, CHECK e unicidade desde sempre): reservar e consumir depois da ultima guarda, como o <code>rownum</code> do 291</strong></td><td class="e">Achado do papel C na revisao do 514, 24/09/2026 (<code>docs/propostas/parecer-dba-514-2026-09-24.md</code>), P2. Medido: ids 1, 4, 5 num lote com duas recusas; o <code>9c4bbd0</code> ja pulava numero no CHECK e na unicidade; a op solta pelo servidor nao deixa buraco. Os quatro motores gastam o numero (10 de 10). A direcao do <code>AUTONUMBER.md</code> §B.3 e «devolver e o que o nosso formato permite de graca». Conserto: <code>proxima_sem_andar</code> na montagem da linha e anotar no lugar do <code>consumir_rownum</code>; formato nao muda. ⏸ porque nao ha dado errado nem garantia declarada; prometer <code>Sequence</code> sem buraco e decisao de produto do dono.</td></tr>
       <tr data-e="depois"><td class="n mono">526</td><td class="st"><span class="pino depois">Depois da versão</span></td><td class="p"><strong>O upsert decide pela chave CRUA: chave vinda do DEFAULT ou da calculada responde DUPLICADO, ate com <code>ignorar</code></strong></td><td class="e">Achado do papel C na revisao do 514, 24/09/2026 (<code>docs/propostas/parecer-dba-514-2026-09-24.md</code>), P3. Medido: <code>kv</code> com DEFAULT 5 e o 5 no disco da <code>DUPLICADO</code> com <code>atualizar</code> e com <code>ignorar</code>; a chave unica <code>k=x+0</code> da o mesmo. Nenhum dado errado. O PG calcula a tupla final antes do conflito; MySQL/MariaDB lidos, nao medidos (papel J confere antes do conserto). Conserto: <code>upsert::aplicar</code> (<code>upsert.rs</code> ~:312) decide pela linha prevista. Familia do 459, junto com a unicidade da instrucao que olha a linha crua.</td></tr>
+      <tr data-e="depois"><td class="n mono">527</td><td class="st"><span class="pino depois">Depois da versão</span></td><td class="p"><strong>O <code>conferidor_vermelhas.rs</code> aceita a prova vermelha pelo NOME do pedido no PENDENCIAS, sem olhar o estado: prova vermelha ligada a pedido ⏸ passa verde</strong></td><td class="e">Achado do papel G na triagem da decisao A, 24/09/2026 (<code>conferidor_vermelhas.rs</code> ~:70). Hoje ha 0 provas vermelhas na arvore, entao nada escapa agora; com a triagem mandando pedidos antigos para ⏸, a guarda passa a ter onde falhar. Conserto: exigir estado <code>☐</code>/<code>◐</code> do pedido citado. Processo interno, sem defeito ativo hoje: ⏸.</td></tr>
     </tbody>
   </table>
   <div class="vazio" id="vazio" hidden>Nenhum pedido bate com isso.</div>
