@@ -54,22 +54,46 @@ op_inserir (servidor.rs:11270)
        │  a trava cobre ABRIR E GRAVAR como um bloco só: o cabeçalho traz
        │  slot_count e proxima_sequencia, e duas operações que abrissem a
        │  tabela ao mesmo tempo gravariam no MESMO rowid, em silêncio.
-       └─ Table::inserir (table.rs:2591)
+       └─ Table::inserir
             1. conferir_aridade
-            2. conferir_fks            ── a regra primordial da integridade
-            3. completar               (table.rs:2073)  softdeleted=false, rownum=0
-            4. numerar_linha           (table.rs:2105)  rownum = proximo_do_rownum()
-            5. numerar                 (table.rs:2307)  Sequence:
+            ┌─ Table::linha_final ── a ordem «preencher, depois conferir» (pedido 514)
+            2. completar               softdeleted=false, rownum=0
+            3. numerar_linha           rownum RESERVADO (consumido no passo 8, pedido 291)
+            4. carimbar_linha          rowstamp/rowtime
+            5. numerar                 Sequence:
                  · Value::Null  → proxima_da_sequencia()   (reg.rs:693)
                  · Value::UInt(n) → anotar_sequencia(n)     (reg.rs:758)
-            6. todas_as_chaves + conferência de unicidade  ← ANTES de gravar
-            7. montar_payload, ponteiros (.bin/.memo)
-            8. reg.inserir* → rowid,  e gravar_contadores(1)  (reg.rs:799)
-            9. ndx.inserir_ja_conferido (com desfazer se falhar)
-           10. indexar_texto (.fts), anotar (.log)
+            6. aplicar_regras          DEFAULT, calculada, CHECK
+            7. conferir_as_maes        ── a regra primordial, na linha FINAL
+            └─
+            8. todas_as_chaves + conferência de unicidade  ← ANTES de gravar
+            9. montar_payload, ponteiros (.bin/.memo)
+           10. reg.inserir* → rowid,  e gravar_contadores(1)  (reg.rs:799)
+           11. ndx.inserir_ja_conferido (com desfazer se falhar)
+           12. indexar_texto (.fts), anotar (.log)
 ```
 
-**Por que os passos 4 e 5 vêm antes do 6.** Se a `Sequence` estiver num índice —
+As linhas do `table.rs` saíram do desenho: elas envelheciam a cada commit, e o
+nome da função é o que se procura.
+
+**A chave estrangeira vinha no passo 2, antes do `numerar`, até o pedido 514.**
+Ela conferia a linha crua, e o valor que o próprio motor escreve (DEFAULT,
+calculada, `Sequence` que é FK) passava por baixo dela: nulo satisfaz FK, e o
+DEFAULT punha o 7 depois. Os três maduros conferem a linha final.
+
+**E o preço, que é deste documento.** Vindo depois da `Sequence`, a linha
+recusada pela chave **gasta um número**, como a recusada pelo CHECK e pela
+unicidade já gastavam, e como gastam os quatro motores (PG `nextval`, InnoDB
+nos três modos de trava, MariaDB, SQLite). Conferir antes não dá, porque o
+DEFAULT e a calculada podem usar o número. O buraco, porém, é **adiado**, não
+inevitável: reservar e consumir depois da última guarda é o que o `rownum` já
+faz (pedido 291), e fica para depois da versão (P2). Medido pelo DBA: a op solta
+pelo servidor **não** deixa buraco (ids 1, 2), porque o handle nasce e morre com
+o pedido e o número gasto não vai ao cabeçalho. O `inserir_lote` e o handle
+longo deixam (ids 1, 4, 5 com duas recusas no lote). Num documento fiscal, é
+esse o caso que importa (§B.3).
+
+**Por que os passos 3 e 5 vêm antes do 8.** Se a `Sequence` estiver num índice —
 e ela é a chave primária de quase toda tabela nascida pela tela —, a chave
 conferida tem de ser a **do número que vai ser gravado**, e não a do nulo. O
 comentário do `table.rs:2605` diz exatamente isso.
@@ -400,10 +424,13 @@ quê não: `Sequence` é **uma por tabela por construção do tipo**, e `Uuid` n
 — a mesma tabela tem `id`, `empresa_id`, `empresa_a`, `empresa_b`
 (`crates/phxsql-store/examples/servermail-ciclo.rs`), e as três últimas são
 **referência**. Gerar um v7 numa coluna de referência inventaria um pai que não
-existe, e inventaria **depois** da conferência: `conferir_fks_com` roda antes de
-`numerar` e deixa o nulo passar — nulo satisfaz chave estrangeira, e é o SQL.
-Seria a pétrea «só existe filho se o pai existir primeiro» quebrada por um valor
-que o próprio motor inventou. **Medido com o defeito reposto:** sem a guarda da
+existe, e inventaria **depois** da conferência: `conferir_fks_com` rodava antes
+de `numerar` e deixava o nulo passar — nulo satisfaz chave estrangeira, e é o
+SQL. Seria a pétrea «só existe filho se o pai existir primeiro» quebrada por um
+valor que o próprio motor inventou. *Desde o pedido 514 a chave confere a linha
+final e recusaria o v7 inventado; a guarda fica, porque trocar a órfã por uma
+recusa que nenhum cliente consegue evitar não é conserto, e na chave com
+`verificar` desligado a órfã entraria igual.* **Medido com o defeito reposto:** sem a guarda da
 coluna de referência, a órfã entra e a tabela fica com 1 linha onde o teste
 exige 0 (`uuid_de_referencia_nao_nasce_sozinho`).
 

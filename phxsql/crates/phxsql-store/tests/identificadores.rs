@@ -501,8 +501,11 @@ fn uuid_que_aceita_nulo_continua_nulo() {
 fn uuid_de_referencia_nao_nasce_sozinho() {
     // A PETREA: «so existe filho se o pai existir primeiro». Numa tabela
     // 1-para-1 a chave primaria da filha TAMBEM aponta para a mae. Gerar um
-    // v7 ali inventaria um pai -- e inventaria DEPOIS da conferencia, que
-    // roda antes daqui e deixa o nulo passar. A orfa entraria sem ninguem ver.
+    // v7 ali inventaria um pai. Ate o pedido 514 a conferencia rodava antes
+    // daqui e deixava o nulo passar, e a orfa entraria sem ninguem ver; desde
+    // ele a conferencia ve a linha final e recusaria o v7 -- com um recado de
+    // FK que o cliente nao tem como evitar. Por isso a assertiva abaixo exige
+    // o erro VELHO de coluna obrigatoria: e ele que distingue a guarda.
     let d = temp("referencia");
     let mae = Schema::new(
         "pessoas",

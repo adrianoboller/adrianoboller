@@ -2470,6 +2470,65 @@ impl Table {
     /// `aplicar_ao_alterar` explica que a gravacao da filha e um `atualizar`
     /// INTEIRO porque e ele que mantem o indice, o diario e a trilha dela, e
     /// atalho por baixo deixaria a filha com indice mentindo.
+    /// A linha que a filha `r` tera depois do elo: a lida, com o destino da
+    /// chave por cima, e -- quando o esquema dela tem regra -- completada como
+    /// o `atualizar` a gravaria, com a calculada refeita e o CHECK julgado.
+    ///
+    /// Pedido 514, P1 da revisao do DBA: a arvore se conferia com a linha CRUA
+    /// da filha, e o que so a linha final recusa chegava na gravacao da filha,
+    /// DEPOIS de a mae estar no disco. Medido fora de transacao, nos dois
+    /// casos com a mae gravada e a filha para tras: a chave CALCULADA (`x + 0`)
+    /// desfazia o valor da cascata (mae em 8, filha em 9, orfa), e o CHECK da
+    /// filha recusava o valor novo (mae em 200, filha em 9).
+    ///
+    /// Desde o 514 a declaracao recusa o par calculada+cascata; esta e a
+    /// guarda da tabela que ja nasceu com ele, e ela troca a meia escrita por
+    /// uma recusa com zero gravado -- sem deixar a tabela de abrir.
+    ///
+    /// O portao vem ANTES do trabalho: filha sem DEFAULT, calculada ou CHECK
+    /// nao paga a previsao, porque ali a linha crua ja e a final.
+    fn linha_do_elo(passo: &PassoAoAlterar, r: RowId, antes: &Linha) -> Result<Linha> {
+        let mut depois = antes.clone();
+        for (c, v) in &passo.destino {
+            if let Some(alvo) = depois.get_mut(*c) {
+                *alvo = v.clone();
+            }
+        }
+        let filha = &passo.filha;
+        if !filha.esquema().tem_regras() {
+            return Ok(depois);
+        }
+        let prevista = filha.linha_da_alteracao(&depois, antes).map_err(|e| {
+            PhxError::Integridade(format!(
+                "a cascata da chave {:?} levaria a linha {r} de {} a um valor que ela \
+                 recusa ({e}). Nada foi gravado",
+                passo.chave, passo.nome
+            ))
+        })?;
+        for (c, v) in &passo.destino {
+            if prevista.get(*c) == Some(v) {
+                continue;
+            }
+            let col = &filha.esquema().colunas()[*c];
+            let porque = match &col.calculada {
+                Some(calc) => format!("e calculada ({})", calc.texto()),
+                None => "e refeita pelas regras do esquema".to_string(),
+            };
+            return Err(PhxError::Integridade(format!(
+                "a cascata da chave {:?} levaria {} a coluna {} da linha {r} de {}, mas a \
+                 coluna {porque} e a gravacao a deixaria em {} -- a filha ficaria orfa. \
+                 Nada foi gravado. Declare \"ao_alterar\": \"restringir\" nessa chave, ou \
+                 altere a filha antes de mudar a mae",
+                passo.chave,
+                v.para_texto(),
+                col.nome,
+                passo.nome,
+                prevista[*c].para_texto()
+            )));
+        }
+        Ok(prevista)
+    }
+
     fn conferir_a_arvore(
         passos: &mut [PassoAoAlterar],
         nivel: usize,
@@ -2492,12 +2551,7 @@ impl Table {
                 let Some(antes) = passo.filha.ler(r)? else {
                     continue;
                 };
-                let mut depois = antes.clone();
-                for (c, v) in &passo.destino {
-                    if let Some(alvo) = depois.get_mut(*c) {
-                        *alvo = v.clone();
-                    }
-                }
+                let depois = Self::linha_do_elo(passo, r, &antes)?;
                 // AQUI mora a recusa que hoje chega tarde: `restringir` na neta
                 // sai deste planejamento como `Err`, e sobe sem ninguem ter
                 // gravado byte nenhum.
@@ -2590,12 +2644,9 @@ impl Table {
                 let Some(antes) = passo.filha.ler(r)? else {
                     continue;
                 };
-                let mut depois = antes.clone();
-                for (c, v) in &passo.destino {
-                    if let Some(alvo) = depois.get_mut(*c) {
-                        *alvo = v.clone();
-                    }
-                }
+                // A MESMA linha do elo que a conferencia viu: duas travessias
+                // montando a filha de dois jeitos seriam duas arvores.
+                let depois = Self::linha_do_elo(passo, r, &antes)?;
                 // O elo desta filha entra ANTES dos elos das netas dela: a
                 // passada aplica na ordem, e a neta so confere a chave nova
                 // da filha depois de a filha ja te-la.
@@ -3538,9 +3589,11 @@ impl Table {
     /// delas seria a copia que diverge, e a divergencia apareceria justamente
     /// como «a pre-conferencia aprovou e a passada recusou».
     ///
-    /// A chave estrangeira confere a linha CRUA, como o `inserir` e o
-    /// `atualizar` conferem; a unicidade e o plano, a linha COMPLETADA, como
-    /// eles tambem fazem (achado A3). Conferida, a escrita entra no prefixo
+    /// A chave estrangeira, a unicidade e o plano conferem a linha PREVISTA
+    /// -- a que a passada vai gravar --, pela mesma [`Table::linha_final`] do
+    /// `inserir` e do `atualizar` (achado A3; e, para a chave, o pedido 514:
+    /// ate ali ela conferia a linha crua, e o DEFAULT sem mae passava aqui
+    /// para a passada gravar a orfa). Conferida, a escrita entra no prefixo
     /// deste handle -- e so entao, nunca antes.
     ///
     /// Na alteracao, devolve o plano do `ao_alterar` contra o disco e o
@@ -3556,21 +3609,22 @@ impl Table {
     ) -> Result<Vec<EscritaDaCascata>> {
         match p {
             Pendente::Insercao(l) => {
-                self.conferir_as_maes(l, Some(maes))?;
+                self.conferir_aridade(l)?;
                 let mut previsao = self.previsao_atual();
-                let linha = self.prever_linha(l, None, &mut previsao)?;
+                let (linha, _) = self.linha_final(l, None, Some(&mut previsao), Some(maes))?;
                 self.conferir_unicidade(&linha, None)?;
                 self.guardar_previsao(previsao);
                 self.dobrar(rowid, Pendente::Insercao(&linha));
                 Ok(Vec::new())
             }
             Pendente::Alteracao(l, antiga) => {
-                self.conferir_as_maes(l, Some(&mut *maes))?;
+                self.conferir_aridade(l)?;
                 let antes = self.ler(rowid)?.ok_or_else(|| {
                     PhxError::NaoEncontrado(format!("registro {rowid} esta excluido"))
                 })?;
                 let mut previsao = self.previsao_atual();
-                let depois = self.prever_linha(l, Some(&antes), &mut previsao)?;
+                let (depois, _) =
+                    self.linha_final(l, Some(&antes), Some(&mut previsao), Some(&mut *maes))?;
                 self.conferir_unicidade(&depois, Some(rowid))?;
                 let plano = self.planejar_cascata_com(&antes, &depois, Some(&*maes))?;
                 self.guardar_previsao(previsao);
@@ -3826,11 +3880,13 @@ impl Table {
     /// Porque `Sequence` e' uma por tabela por construcao do tipo, e `Uuid`
     /// nao e': uma tabela tem `id`, `empresa_id`, `empresa_a`, `empresa_b` --
     /// e as tres ultimas sao REFERENCIA. Gerar um v7 numa coluna de referencia
-    /// inventaria um pai que nao existe, e a orfa entraria SEM NINGUEM VER:
-    /// `conferir_fks_com` roda ANTES desta funcao e deixa o nulo passar (nulo
-    /// satisfaz chave estrangeira, e e o SQL). Seria a petrea «so existe filho
-    /// se o pai existir primeiro» quebrada por um valor que o proprio motor
-    /// inventou depois da conferencia.
+    /// inventaria um pai que nao existe. Quando esta guarda nasceu, a orfa
+    /// entrava SEM NINGUEM VER, porque a chave estrangeira era conferida antes
+    /// desta funcao e o nulo passava. Desde o pedido 514 a conferencia ve a
+    /// linha final e RECUSARIA o v7 inventado -- mas trocar a orfa por uma
+    /// recusa que nenhum cliente consegue evitar nao e conserto, e na chave
+    /// com `verificar` desligado a orfa entraria do mesmo jeito. A guarda fica
+    /// pelas duas razoes.
     ///
     /// # As tres condicoes, e o que cada uma compra
     ///
@@ -4479,20 +4535,112 @@ impl Table {
         self.inserir_com_maes_opt(valores, Some(maes))
     }
 
-    /// A metade da guarda que o `inserir` e o `atualizar` dividem: a aridade e
-    /// as chaves estrangeiras da linha. UMA funcao, porque a pre-conferencia
-    /// do COMMIT (pedido 448) faz a MESMA pergunta antes da marca que a
-    /// passada faz depois -- e duas copias dela seriam duas respostas.
+    /// As chaves estrangeiras da linha FINAL -- a que vai ao disco.
+    ///
+    /// So [`Table::linha_final`] chama, e isso e o conserto do pedido 514, nao
+    /// estilo: ate ali o `inserir`, o `atualizar` e a pre-conferencia do 448
+    /// chamavam esta funcao com a linha CRUA, antes de o motor preencher o
+    /// DEFAULT, a coluna calculada e a `Sequence`. Nulo satisfaz chave
+    /// estrangeira, entao `cod_cliente` nulo passava -- e o DEFAULT punha 7
+    /// DEPOIS, com a filha orfa indo ao disco. Chamada de um lugar so, a
+    /// ordem «preencher, depois conferir» nao tem como ser esquecida por um
+    /// caminho novo.
     fn conferir_as_maes(
         &mut self,
-        valores: &[Value],
+        linha_final: &[Value],
         maes: Option<&mut dyn MaesEmProgresso>,
     ) -> Result<()> {
-        self.conferir_aridade(valores)?;
         if fks_que_conferem(&self.esquema).next().is_some() && self.julga_integridade() {
-            self.conferir_fks_com(valores, maes)?;
+            self.conferir_fks_com(linha_final, maes)?;
         }
         Ok(())
+    }
+
+    /// A linha como vai ao disco, e as chaves estrangeiras conferidas SOBRE
+    /// ELA. `anterior` nulo e o `inserir`, presente e o `atualizar`.
+    ///
+    /// UMA funcao para os quatro caminhos -- `inserir`, `atualizar` e os dois
+    /// bracos da pre-conferencia do COMMIT -- porque a ordem e a garantia: a
+    /// FK tem de ver o valor que o proprio motor escreveu, e cada copia da
+    /// sequencia seria um lugar onde alguem poe a conferencia antes do
+    /// preenchimento de novo. PostgreSQL, MySQL e MariaDB conferem a linha
+    /// final (pedido 514, aceite automatico).
+    ///
+    /// `previsao` escolhe o contador, e so ele: `None` grava de verdade (anda
+    /// a `Sequence` e o carimbo, reserva o `rownum`); `Some` preve pelos
+    /// mesmos passos sem andar nada -- ver [`Previsao`].
+    ///
+    /// A cascata do `ao_alterar` escreve na filha por outro caminho, o ELO, e
+    /// ele tem a sua conferencia da linha final: a [`Table::linha_do_elo`]
+    /// (P1 do 514). Sem ela, a chave calculada desfazia o valor da cascata e a
+    /// filha ficava orfa com a mae ja gravada.
+    ///
+    /// **O preco na `Sequence`, medido:** a conferencia agora vem DEPOIS da
+    /// `Sequence`, entao a linha recusada pela chave gasta um numero -- como
+    /// a recusada pelo CHECK e pela unicidade ja gastavam, e como gastam os
+    /// quatro motores. Conferir ANTES nao da: o DEFAULT e a calculada podem
+    /// falar do numero gerado. Mas o buraco nao e inevitavel, e ADIADO:
+    /// consumir o numero so depois da ultima guarda e o que o `rownum` ja faz
+    /// (pedido 291), e fica para o P2, depois da versao. E o buraco so aparece onde o
+    /// handle vive alem da operacao: a op solta pelo servidor abre a tabela a
+    /// cada pedido, e o numero gasto some com o handle sem ir ao cabecalho (ids
+    /// 1, 2 medidos pelo DBA); o `inserir_lote` e o handle longo deixam o
+    /// buraco (ids 1, 4, 5 com duas recusas no lote).
+    fn linha_final(
+        &mut self,
+        valores: &[Value],
+        anterior: Option<&Linha>,
+        previsao: Option<&mut Previsao>,
+        maes: Option<&mut dyn MaesEmProgresso>,
+    ) -> Result<(Linha, Option<u64>)> {
+        let (linha, rownum_reservado) = match previsao {
+            None => self.preparar_para_gravar(valores, anterior)?,
+            Some(p) => (self.prever_linha(valores, anterior, p)?, None),
+        };
+        self.conferir_as_maes(&linha, maes)?;
+        Ok((linha, rownum_reservado))
+    }
+
+    /// Os passos que o `inserir` e o `atualizar` davam cada um na sua copia,
+    /// na mesma ordem -- o gemeo gravador do [`Table::prever_linha`]. Devolve
+    /// a linha e o `rownum` reservado, que o chamador consome depois da
+    /// ultima guarda.
+    fn preparar_para_gravar(
+        &mut self,
+        valores: &[Value],
+        anterior: Option<&Linha>,
+    ) -> Result<(Linha, Option<u64>)> {
+        // Sem a coluna de sistema nos valores, a alteracao herda a marca da
+        // linha: um `atualizar` de rotina nao ressuscita linha excluida.
+        let mut linha = match self.completar(valores, anterior) {
+            Some(v) => v,
+            None => valores.to_vec(),
+        };
+        // Numerar ANTES das chaves, pela mesma razao da sequencia: se a coluna
+        // estiver num indice, a chave tem de ser a do numero gravado. So
+        // RESERVA: o contador anda em `consumir_rownum`, depois da ultima
+        // guarda -- linha recusada nunca consome numero. Na alteracao, so a
+        // linha que ainda nao tinha (gravada antes de a coluna existir).
+        let rownum_reservado = self.numerar_linha(&mut linha, anterior);
+        // O IRMAO do `numerar_linha`: o carimbo tem de estar na linha ANTES
+        // das chaves, senao um indice sobre ele guardaria a chave do zero. Nao
+        // ha reserva aqui -- ao contrario do `rownum`, buraco no carimbo nao e
+        // divergencia: a replica honra o que veio e nunca gera o dela. Na
+        // alteracao ele so MANTEM o que a linha ja tinha.
+        self.carimbar_linha(&mut linha, anterior);
+        // A sequencia entra ANTES das chaves: se a coluna estiver num indice,
+        // a chave tem de ser a do numero que vai ser gravado, nao a do nulo.
+        // Na alteracao, nulo guarda o numero que a linha ja tinha.
+        if let Some(v) = self.numerar(&linha, anterior)? {
+            linha = v;
+        }
+        // DEFAULT (so no inserir), coluna calculada e CHECK, depois da
+        // sequencia (a expressao pode falar do numero gravado) e antes das
+        // chaves (a chave e a do valor que vai para o disco).
+        if let Some(v) = self.aplicar_regras(&linha, anterior.is_none())? {
+            linha = v;
+        }
+        Ok((linha, rownum_reservado))
     }
 
     fn inserir_com_maes_opt(
@@ -4500,46 +4648,9 @@ impl Table {
         valores: &[Value],
         maes: Option<&mut dyn MaesEmProgresso>,
     ) -> Result<RowId> {
-        self.conferir_as_maes(valores, maes)?;
-        // Numerar ANTES das chaves, pela mesma razao da sequencia: se a coluna
-        // estiver num indice, a chave tem de ser a do numero gravado. So
-        // RESERVA: o contador anda em `consumir_rownum`, la embaixo, depois
-        // da ultima guarda -- linha recusada nunca consome numero.
-        let mut completos = match self.completar(valores, None) {
-            Some(v) => v,
-            None => valores.to_vec(),
-        };
-        let rownum_reservado = self.numerar_linha(&mut completos, None);
-        // O IRMAO do `numerar_linha`, e entra na mesma ordem nos dois
-        // caminhos: o carimbo tem de estar na linha ANTES das chaves, senao
-        // um indice sobre ele guardaria a chave do zero. Nao ha reserva aqui
-        // -- ao contrario do `rownum`, buraco no carimbo nao e divergencia:
-        // a replica honra o que veio e nunca gera o dela.
-        self.carimbar_linha(&mut completos, None);
+        self.conferir_aridade(valores)?;
+        let (completos, rownum_reservado) = self.linha_final(valores, None, None, maes)?;
         let valores = &completos[..];
-
-        // A sequencia entra ANTES das chaves: se a coluna estiver num indice,
-        // a chave tem de ser a do numero que vai ser gravado, nao a do nulo.
-        let proprios;
-        let valores = match self.numerar(valores, None)? {
-            Some(v) => {
-                proprios = v;
-                &proprios[..]
-            }
-            None => valores,
-        };
-
-        // DEFAULT, coluna calculada e CHECK, depois da sequencia (a expressao
-        // pode falar do numero gravado) e antes das chaves (a chave e a do
-        // valor que vai para o disco).
-        let com_regras;
-        let valores = match self.aplicar_regras(valores, true)? {
-            Some(v) => {
-                com_regras = v;
-                &com_regras[..]
-            }
-            None => valores,
-        };
 
         let chaves = self.todas_as_chaves(valores)?;
 
@@ -4855,7 +4966,7 @@ impl Table {
         cascatear: bool,
         conferir_identidade: bool,
     ) -> Result<()> {
-        self.conferir_as_maes(valores, maes)?;
+        self.conferir_aridade(valores)?;
         let antigo = self
             .reg
             .ler(rowid)?
@@ -4869,41 +4980,11 @@ impl Table {
 
         let valores_antigos = self.decodificar(&antigo, false)?;
 
-        // Sem a coluna de sistema nos valores, herda a marca da linha: um
-        // `atualizar` de rotina nao ressuscita linha excluida por descuido.
-        let mut completos = match self.completar(valores, Some(&valores_antigos)) {
-            Some(v) => v,
-            None => valores.to_vec(),
-        };
-        // Reserva um numero so para a linha que ainda nao tinha (gravada antes
-        // de a coluna existir); o consumo vem depois das guardas, como no
-        // `inserir` -- irmao que chama as mesmas funcoes na mesma ordem.
-        let rownum_reservado = self.numerar_linha(&mut completos, Some(&valores_antigos));
-        // O irmao, na mesma ordem do `inserir`. Numa alteracao ele so MANTEM
-        // o que a linha ja tinha: o carimbo diz quando a linha nasceu, e quem
-        // manda a coluna escrita nao pode virar essa resposta por aqui.
-        self.carimbar_linha(&mut completos, Some(&valores_antigos));
+        // A mesma linha final do `inserir`, com a antiga ao lado: a calculada
+        // se refaz, e a chave estrangeira confere o que ela deu (pedido 514).
+        let (completos, rownum_reservado) =
+            self.linha_final(valores, Some(&valores_antigos), None, maes)?;
         let valores = &completos[..];
-
-        // Nulo na coluna de sequencia guarda o numero que a linha ja tinha.
-        let proprios;
-        let valores = match self.numerar(valores, Some(&valores_antigos))? {
-            Some(v) => {
-                proprios = v;
-                &proprios[..]
-            }
-            None => valores,
-        };
-
-        // Coluna calculada e CHECK (o DEFAULT e so do inserir).
-        let com_regras;
-        let valores = match self.aplicar_regras(valores, false)? {
-            Some(v) => {
-                com_regras = v;
-                &com_regras[..]
-            }
-            None => valores,
-        };
 
         let chaves_antigas = self.todas_as_chaves(&valores_antigos)?;
         let chaves_novas = self.todas_as_chaves(valores)?;

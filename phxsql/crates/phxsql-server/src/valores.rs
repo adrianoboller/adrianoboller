@@ -223,16 +223,60 @@ pub(crate) fn chave_estrangeira_de_json(
     //
     // Quem QUER declarar sem conferir continua podendo, mandando
     // `"verificar": false` -- e ai e escolha escrita, e nao esquecimento.
+    let ao_excluir = acao_ri_de_texto(f.texto_ou("ao_excluir", ""), Lado::AoExcluir)?;
+    let ao_alterar = acao_ri_de_texto(f.texto_ou("ao_alterar", ""), Lado::AoAlterar)?;
+    recusar_cascata_sobre_calculada(&nome, &posicoes, ao_alterar, esquema)?;
     Ok(ForeignKey::new(nome, posicoes, tabela_ref, colunas_ref)
-        .ao_excluir(acao_ri_de_texto(
-            f.texto_ou("ao_excluir", ""),
-            Lado::AoExcluir,
-        )?)
-        .ao_alterar(acao_ri_de_texto(
-            f.texto_ou("ao_alterar", ""),
-            Lado::AoAlterar,
-        )?)
+        .ao_excluir(ao_excluir)
+        .ao_alterar(ao_alterar)
         .conferindo(f.booleano_ou("verificar", true)))
+}
+
+/// A chave que passa por coluna CALCULADA nao aceita `ao_alterar` que
+/// ESCREVE nela -- cascata ou anular.
+///
+/// A cascata leva a chave nova da mae ate a coluna da filha, e a calculada e
+/// refeita a cada gravacao a partir das outras colunas: o valor levado some, e
+/// a filha fica apontando para a chave velha, que a mae acabou de deixar. Medido
+/// no pedido 514 (P1 da revisao do DBA): fora de transacao a mae ia para 8 e o
+/// item ficava em 9 -- orfa calada antes do 514, erro DEPOIS da mae gravada
+/// depois dele.
+///
+/// PostgreSQL (`tablecmds.c`, «invalid ON UPDATE action for foreign key
+/// constraint containing generated column», REL_17_STABLE), MySQL 8.0 («cannot
+/// use CASCADE, SET NULL, or SET DEFAULT as ON UPDATE») e MariaDB (ERROR 1905,
+/// «ON UPDATE CASCADE, ON UPDATE SET NULL [...] is not supported») recusam o
+/// mesmo par NA DECLARACAO: aceite automatico. `restringir` e `nada` continuam
+/// valendo -- os tres tambem os aceitam.
+///
+/// Mora aqui, e nao no `Schema`, pelo mesmo motivo do `ao_excluir`: o `Schema`
+/// e o caminho de LER o esquema gravado, e a tabela que ja nasceu com o par
+/// tem de continuar abrindo. Para ela, a guarda e a do `store`, que recusa a
+/// alteracao da mae antes da primeira escrita (`Table::conferir_a_arvore`).
+fn recusar_cascata_sobre_calculada(
+    nome: &str,
+    posicoes: &[usize],
+    ao_alterar: AcaoRi,
+    esquema: &Schema,
+) -> Result<()> {
+    if !matches!(ao_alterar, AcaoRi::Cascata | AcaoRi::AnularCampos) {
+        return Ok(());
+    }
+    for &p in posicoes {
+        let col = &esquema.colunas()[p];
+        if let Some(calc) = &col.calculada {
+            return Err(PhxError::Esquema(format!(
+                "{nome}: a coluna {} e calculada ({}), e a chave pede \"ao_alterar\": \
+                 {ao_alterar:?} -- a cascata levaria a chave nova da mae para uma coluna \
+                 que o motor recalcula a cada gravacao, e a filha ficaria orfa. Declare \
+                 \"ao_alterar\": \"restringir\" nesta chave, ou aponte a chave para uma \
+                 coluna comum",
+                col.nome,
+                calc.texto()
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// Qual das duas acoes esta sendo lida -- e elas NAO aceitam as mesmas coisas.

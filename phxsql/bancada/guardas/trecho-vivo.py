@@ -248,6 +248,11 @@ dia, nunca no desejado:
   **SUBIU para 325 em 24/09/2026** (509+512 integrado sobre o 448): a
   conta do encontro, pelo `--catraca` na arvore combinada -- as 318 do 448
   e as sete do disco que recusa: 324 entradas vivas + 1 aposentada.
+  **SUBIU para 329 em 24/09/2026** (pedido 514, integrado sobre o 509+512):
+  quatro guardas da FK conferida na linha final -- o DEFAULT e a calculada
+  pelo motor e pelo servidor, a cascata sobre calculada recusada na
+  declaracao e a cascata que conferia a filha crua. Contado pelo `--catraca`
+  na arvore combinada.
   impedir. Ele e a unica coisa nesta regua que reprova o APAGAMENTO; tudo o
   mais aqui reprova o envelhecimento.
 
@@ -356,7 +361,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 325
+PISO_DAS_ENTRADAS = 329
 
 # ------------------------------------------------------------- APOSENTADAS
 #

@@ -3086,15 +3086,19 @@ pub fn limpar() {
         # lugares. O portao continua sendo o `&& self.julga_integridade()` da
         # mesma linha; a amarra passa a ser o `Ok(())` do fim da funcao, que so
         # ela tem logo depois deste `if`.
-        "trecho": """        self.conferir_aridade(valores)?;
-        if fks_que_conferem(&self.esquema).next().is_some() && self.julga_integridade() {
-            self.conferir_fks_com(valores, maes)?;
+        #
+        # ATUALIZADO em 24/09/2026 (pedido 514). A `conferir_as_maes` passou a
+        # receber a linha FINAL (`linha_final`), chamada so pela `linha_final`
+        # depois do DEFAULT e da calculada, e a aridade saiu dela para a porta
+        # de cada caminho. O portao continua o `&& self.julga_integridade()` da
+        # mesma linha; a amarra agora e o nome do argumento, que so ela tem.
+        "trecho": """        if fks_que_conferem(&self.esquema).next().is_some() && self.julga_integridade() {
+            self.conferir_fks_com(linha_final, maes)?;
         }
         Ok(())""",
         "troca": """        // DEFEITO REPOSTO: a replica volta a julgar o que a origem ja julgou.
-        self.conferir_aridade(valores)?;
         if fks_que_conferem(&self.esquema).next().is_some() {
-            self.conferir_fks_com(valores, maes)?;
+            self.conferir_fks_com(linha_final, maes)?;
         }
         Ok(())""",
         "pacote": "phxsql-store",
@@ -12527,5 +12531,147 @@ pub const ITERACOES_MINIMAS_DO_CADASTRO: u32 = phxsql_store::cofre::ITERACOES_MI
             "servidor::testes_janela_e_cadeia::fsync_que_falha_no_fio_tambem_segura_as_marcas",
         ],
         "prazo": 600,
+    },
+    # -----------------------------------------------------------------------
+    # 514. A chave estrangeira conferida ANTES do DEFAULT e da calculada
+    # -----------------------------------------------------------------------
+    {
+        "id": "fk-antes-do-default",
+        "titulo": "a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã",
+        "porque": (
+            "pedido 514, N1 da segunda revisao do 448: `conferir_as_maes` "
+            "rodava com a linha CRUA, antes de `completar`/`numerar`/"
+            "`aplicar_regras`. Nulo satisfaz FK, entao `cod_cliente` nulo "
+            "passava e o DEFAULT punha 7 DEPOIS -- pedido orfao gravado fora "
+            "e dentro da transacao; a calculada `x + 0` e a `Sequence` que e "
+            "FK caiam pelo mesmo buraco, no `inserir`, no `atualizar` e nos "
+            "dois bracos da pre-conferencia. Hoje a ordem mora so em "
+            "`linha_final`."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        let (linha, rownum_reservado) = match previsao {
+            None => self.preparar_para_gravar(valores, anterior)?,
+            Some(p) => (self.prever_linha(valores, anterior, p)?, None),
+        };
+        self.conferir_as_maes(&linha, maes)?;
+""",
+        "troca": """        // DEFEITO REPOSTO (514): a FK confere a linha crua, antes do DEFAULT.
+        self.conferir_as_maes(valores, maes)?;
+        let (linha, rownum_reservado) = match previsao {
+            None => self.preparar_para_gravar(valores, anterior)?,
+            Some(p) => (self.prever_linha(valores, anterior, p)?, None),
+        };
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "fk-na-linha-final"],
+        "caem": [
+            "o_default_sem_mae_e_recusado_no_inserir",
+            "o_lote_confere_a_linha_final",
+            "a_calculada_sem_mae_e_recusada_no_inserir_e_no_atualizar",
+            "a_sequence_que_e_chave_estrangeira_confere_o_numero_gerado",
+            "a_pre_conferencia_confere_a_linha_prevista",
+        ],
+        "seguem": [
+            # O controle positivo: sem ele, um portao que recusasse toda linha
+            # com DEFAULT passaria pelos cinco de cima.
+            "o_default_com_mae_grava_e_o_valor_explicito_continua_mandando",
+        ],
+    },
+    {
+        "id": "fk-antes-do-default-pelo-servidor",
+        "titulo": "o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação",
+        "porque": (
+            "pedido 514, o caminho que o cliente usa: fora de transacao o "
+            "`inserir` respondia `{\"rowid\":1}`, e dentro o COMMIT respondia "
+            "`COMMITTED` com `gravadas: 1` -- a pre-conferencia do 448 herdava "
+            "a mesma ordem e aprovava a filha orfa antes da marca."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        let (linha, rownum_reservado) = match previsao {
+            None => self.preparar_para_gravar(valores, anterior)?,
+            Some(p) => (self.prever_linha(valores, anterior, p)?, None),
+        };
+        self.conferir_as_maes(&linha, maes)?;
+""",
+        "troca": """        // DEFEITO REPOSTO (514): a FK confere a linha crua, antes do DEFAULT.
+        self.conferir_as_maes(valores, maes)?;
+        let (linha, rownum_reservado) = match previsao {
+            None => self.preparar_para_gravar(valores, anterior)?,
+            Some(p) => (self.prever_linha(valores, anterior, p)?, None),
+        };
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_transacoes::pedido_514::o_default_sem_mae_e_recusado_fora_e_dentro_da_transacao",
+            "servidor::testes_transacoes::pedido_514::a_calculada_sem_mae_e_recusada_fora_e_dentro_da_transacao",
+        ],
+        "seguem": [
+            "servidor::testes_transacoes::pre_conferencia_448::a_ordem_certa_continua_committed_e_inteira",
+            "servidor::testes_transacoes::revisao_do_dba_448::a3_a_mae_com_codigo_pelo_padrao_e_a_filha_confirmam",
+        ],
+    },
+    {
+        "id": "cascata-sobre-calculada-na-declaracao",
+        "titulo": "a chave sobre coluna calculada é declarada em cascata, e a filha fica órfã quando a mãe troca de chave",
+        "porque": (
+            "pedido 514, P1 da revisao do DBA: `cod_cliente = x + 0` com "
+            "`ao_alterar` cascata; a mae troca 9 -> 8, a cascata leva o 8 e a "
+            "calculada o desfaz para 9. PostgreSQL (`tablecmds.c`, REL_17), "
+            "MySQL 8.0 e MariaDB (ERROR 1905) recusam o par na DECLARACAO -- "
+            "aceite automatico. O `ao_alterar` ausente vale cascata, entao "
+            "quem nao escreveu nada tambem cai."
+        ),
+        "arquivo": "crates/phxsql-server/src/valores.rs",
+        "trecho": """    recusar_cascata_sobre_calculada(&nome, &posicoes, ao_alterar, esquema)?;
+""",
+        "troca": """    // DEFEITO REPOSTO (514-P1): a declaracao aceita a calculada em cascata.
+    let _ = recusar_cascata_sobre_calculada;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_chave_estrangeira::chave_sobre_calculada_recusa_cascata_e_anular_na_declaracao",
+        ],
+        "seguem": [
+            # O par: a recusa e do PAR. Sem ele, um portao que recusasse toda
+            # chave calculada, ou toda cascata, passaria pelo `caem`.
+            "servidor::testes_chave_estrangeira::chave_sobre_calculada_com_restringir_ou_nada_e_chave_comum_em_cascata_continuam",
+            "servidor::testes_chave_estrangeira::ao_excluir_so_aceita_restringir",
+        ],
+    },
+    {
+        "id": "cascata-confere-a-filha-crua",
+        "titulo": "a cascata confere a filha crua, e a mãe fica gravada quando a linha final da filha recusa",
+        "porque": (
+            "pedido 514, P1 da revisao do DBA, o lado da tabela que JA nasceu "
+            "com o par: o `conferir_a_arvore` montava o `depois` da filha cru, "
+            "e a recusa so vinha na gravacao dela, com a mae no disco. Medido "
+            "fora de transacao: chave calculada deixava (mae 8, filha 9), e o "
+            "CHECK da filha deixava (mae 200, filha 9). Hoje o elo sai da "
+            "`linha_do_elo`, a linha final da filha."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        let filha = &passo.filha;
+        if !filha.esquema().tem_regras() {
+            return Ok(depois);
+        }
+""",
+        "troca": """        let filha = &passo.filha;
+        // DEFEITO REPOSTO (514-P1): o elo sai cru, sem a linha final da filha.
+        if !filha.esquema().tem_regras() || !depois.is_empty() {
+            return Ok(depois);
+        }
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "fk-na-linha-final"],
+        "caem": [
+            "a_cascata_sobre_calculada_recusa_antes_de_gravar_a_mae",
+            "o_check_da_filha_recusa_a_cascata_antes_de_gravar_a_mae",
+        ],
+        "seguem": [
+            "a_cascata_sobre_coluna_comum_com_regra_continua_levando_a_filha",
+            "a_tabela_velha_com_o_par_continua_abrindo_e_gravando",
+        ],
     },
 ]

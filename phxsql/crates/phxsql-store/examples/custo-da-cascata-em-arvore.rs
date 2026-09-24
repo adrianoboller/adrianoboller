@@ -14,6 +14,10 @@
 //!
 //! Roda com:
 //! `cargo run --release --example custo-da-cascata-em-arvore -p phxsql-store`
+//!
+//! Com `-- --com-regra`, cada elo ganha um CHECK na coluna da chave. E o caso
+//! que paga a `linha_do_elo` do pedido 514 (P1): filha com regra tem o elo
+//! conferido na linha FINAL, e a sem regra sai pelo portao sem pagar nada.
 
 use phxsql_core::schema::{AcaoRi, Column, ForeignKey, IndexColumn, IndexDef, Schema};
 use phxsql_core::types::ColumnType;
@@ -34,14 +38,22 @@ fn dir(rotulo: &str) -> std::path::PathBuf {
     d
 }
 
+/// `--com-regra`: cada elo ganha um CHECK na coluna da chave.
+fn com_regra() -> bool {
+    std::env::args().any(|a| a == "--com-regra")
+}
+
 /// Uma tabela do elo: `id` unico, `pai` indexado, chave para o elo de cima.
 fn elo(d: &std::path::Path, nome: &str, acima: Option<&str>) -> Table {
+    let pai = Column::new("pai", ColumnType::Int4);
+    let pai = if com_regra() {
+        pai.com_check("pai >= 0").unwrap()
+    } else {
+        pai
+    };
     let e = Schema::new(
         nome,
-        vec![
-            Column::new("id", ColumnType::Int4).obrigatoria(),
-            Column::new("pai", ColumnType::Int4),
-        ],
+        vec![Column::new("id", ColumnType::Int4).obrigatoria(), pai],
         vec![
             IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico(),
             IndexDef::new("porPai", vec![IndexColumn::asc(1)]),

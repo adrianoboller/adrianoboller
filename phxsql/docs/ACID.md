@@ -387,19 +387,54 @@ tabela e o rowid («o COMMIT recusou a escrita 2 de 3 (inserir em pedidos, rowid
 `COMMIT`. Quebra que não é do dado (E/S, tabela congelada) devolve a lista e
 deixa a transação `ACTIVE`, como o `preparar_a_marca` já fazia.
 
-**A ressalva: «chave estrangeira que falha sai com zero gravado» vale para a
-chave que o pedido MANDA.** A coluna de chave estrangeira preenchida por
-DEFAULT ou por coluna calculada **não é conferida**, nem aqui, nem fora da
-transação. O store confere as mães na linha **crua**, antes de `completar` e de
-`aplicar_regras`, e a pré-conferência herdou essa ordem. É o achado N1 da
-segunda revisão do DBA, e virou o pedido 514. Medido igual antes e depois do
-448, dentro e fora da transação:
+**A chave se confere na linha FINAL — pedido 514, 24/09/2026.** «Chave
+estrangeira que falha sai com zero gravado» valia só para a chave que o pedido
+MANDA. O store conferia as mães na linha **crua**, antes de `completar`, da
+`Sequence` e de `aplicar_regras`, e a pré-conferência herdou essa ordem. Então a
+coluna preenchida pelo próprio motor escapava, dentro e fora da transação. É o
+achado N1 da segunda revisão do DBA, medido igual antes e depois do 448:
 
-* um pedido com `cod_cliente` vindo do DEFAULT 7, sem mãe 7, é gravado órfão;
-* um item com `cod_cliente` calculado (`x+0`) é gravado com 9 e alterado para 8,
-  sem mãe nenhuma.
+* um pedido com `cod_cliente` vindo do DEFAULT 7, sem mãe 7, era gravado órfão;
+* um item com `cod_cliente` calculado (`x+0`) era gravado com 9 e alterado para
+  8, sem mãe nenhuma.
 
-Fere «chave declarada nasce conferida». Os três maduros conferem a linha final.
+Hoje a ordem «preencher, depois conferir» mora numa função só,
+`Table::linha_final`. O `inserir`, o `atualizar` e os dois braços da
+pré-conferência passam por ela, e a `conferir_as_maes` só é chamada dali. Os
+três maduros conferem a linha final: aceite automático. Isso vale também para a
+`Sequence` que é FK (a tabela 1-para-1): quem se confere é o número gerado.
+
+**E a cascata do `ao_alterar`, que escreve na filha por outro caminho.** A
+revisão do DBA mediu o irmão (P1): com a chave da filha **calculada**
+(`cod_cliente = x + 0`) e em cascata, a mãe trocava de 9 para 8, a cascata
+levava o 8 e a calculada o desfazia para 9. Fora de transação, antes do 514 a
+filha ficava órfã calada. Depois do 514 vinha um erro, mas só **depois** de a mãe
+estar gravada. Fechou por dois lados:
+
+* **na declaração**, que é onde os três maduros recusam o mesmo par
+  (PostgreSQL `tablecmds.c` REL_17, MySQL 8.0, MariaDB ERROR 1905): chave sobre
+  coluna calculada não aceita `ao_alterar` cascata nem anular, e a recusa
+  nomeia a coluna e pede `"restringir"`. O padrão cascata também cai, porque
+  quem não escreveu nada não escolheu nada;
+* **para a tabela que já nasceu com o par**, que continua abrindo, lendo e
+  gravando: a conferência da árvore passa cada filha pela linha final
+  (`Table::linha_do_elo`), e a alteração da mãe recusa **antes da primeira
+  escrita**, com zero gravado. O mesmo caminho pega o CHECK da filha que o
+  valor novo violaria (medido: mãe em 200 e filha em 9, antes).
+
+**O preço na `Sequence`, medido:** a conferência agora vem depois da `Sequence`,
+e a linha recusada pela chave **gasta um número**, como a recusada pelo CHECK e
+pela unicidade já gastavam, e como gastam os quatro motores. Conferir **antes**
+não dá: o DEFAULT e a calculada podem usar o número gerado. Mas o buraco **não é
+inevitável, é adiado**: consumir o número só depois da última guarda é o que o
+`rownum` já faz (pedido 291), e isso fica para depois da versão (P2). E o buraco
+só aparece onde o handle vive além da operação. A op solta pelo servidor abre a
+tabela a cada pedido, e o número gasto some com o handle sem ir ao cabeçalho
+(ids 1, 2, medidos pelo DBA). O `inserir_lote` e o handle longo deixam o buraco
+(ids 1, 4, 5 com duas recusas no lote).
+
+A prova está em `crates/phxsql-store/tests/fk-na-linha-final.rs` e em
+`testes_transacoes::pedido_514`, no servidor.
 
 **A passada continua conferindo, como cinto.** Recusa dela depois de a
 pré-conferência aprovar é defeito do motor, e a resposta diz isso. A prova do
@@ -469,9 +504,14 @@ intactos; a sobreposição mora na RAM.
 * a trava na mãe (460): hoje, quando duas transações disputam a mesma mãe,
   perde a da filha, recusada no `COMMIT`, em vez de esperar como nos três
   maduros;
-* os cinco achados da segunda revisão do DBA, N1 a N5 (514 a 518), com os dois
-  de dado descritos acima: a chave vinda do DEFAULT ou da coluna calculada (N1)
-  e o elo do `empilhar` por cima da filha alterada na lista (N2).
+* os achados N2 a N5 da segunda revisão do DBA (515 a 518). O de dado é o
+  descrito acima: o elo do `empilhar` por cima da filha alterada na lista (N2).
+  O N1 (514) fechou;
+* a unicidade da **instrução** (o `empilhar`) ainda olha a linha crua. Medido
+  numa coluna única com DEFAULT 7 e o 7 já no disco: a instrução empilha, e o
+  `COMMIT` recusa com zero gravado. O dado fica certo; o que muda é onde a
+  recusa cai: a transação inteira termina, e não só a instrução. É a família do
+  459.
 
 ---
 
@@ -558,9 +598,9 @@ E a restrição que a lista viola deixou de ser descoberta com metade dela no
 disco (pedido 448, §2.5): a chave estrangeira nos dois sentidos, o plano do
 `ao_alterar` e a unicidade se conferem na lista inteira antes da marca, com
 visibilidade de prefixo — o que mantém «só existe filho se o pai existir
-primeiro» valendo na ordem da lista, e não só no fim dela. Com a ressalva da
-§2.5: a chave preenchida por DEFAULT ou por coluna calculada não se confere
-(pedido 514).
+primeiro» valendo na ordem da lista, e não só no fim dela. E a chave se
+confere na linha que vai ao disco, inclusive a que o DEFAULT ou a coluna
+calculada preenchem (pedido 514, §2.5).
 
 O que **não** entra por aqui, e continua sendo o que derruba *ACID compliant*
 seco: por padrão o isolamento é `READ COMMITTED` (§4), sem pedir não há
@@ -831,15 +871,15 @@ gravado e depois liberado por falha de E/S no índice (`operacoes IMPOSSIVEIS`,
   no conjunto de escrita** (ACID-C, super-journal): o `ROLLBACK` a alcança e o
   `COMMIT` a conta. Desde o pedido 448 a lista inteira se confere **antes** da
   marca (§2.5): chave estrangeira, cascata ou unicidade que falha sai com zero
-  gravado, e não mais com a parte da frente aplicada. A chave estrangeira que
-  vem do DEFAULT ou de coluna calculada não se confere (pedido 514). Fora de transação, a
+  gravado, e não mais com a parte da frente aplicada. Desde o pedido 514 isso
+  vale também para a chave que vem do DEFAULT ou de coluna calculada. Fora de transação, a
   cascata do `atualizar` solto é denunciada ou consertada numa queda; num
   **pânico** entre duas filhas ela sai calada, pior que a queda, até o pedido 490.
 * **C — consistência: imposta na gravação; dentro da transação a cascata é
   coberta.** Tipo, tamanho, obrigatoriedade, unicidade e integridade
   referencial são conferidos em toda porta local de escrita, e «nunca se mata o
-  pai que tem filhos» vale nos dois excluires. A exceção é a chave estrangeira
-  preenchida por DEFAULT ou por coluna calculada, que não se confere
+  pai que tem filhos» vale nos dois excluires. A chave estrangeira se confere
+  na linha final, inclusive a que o DEFAULT ou a coluna calculada preenchem
   (pedido 514). Dentro da transação a cascata do
   `ao_alterar` passou a entrar no conjunto de escrita (ACID-C), então o
   `ROLLBACK` a desfaz e o escopo efetivo a mostra. A réplica aplica e não julga,
