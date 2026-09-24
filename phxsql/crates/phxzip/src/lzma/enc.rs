@@ -2,14 +2,15 @@
 //!
 //! # O que ele faz
 //!
-//! Busca por cadeia de dispersao de 4 bytes e as quatro distancias repetidas
-//! conferidas a cada posicao. Do nivel 5 em diante a escolha e por PRECO em
-//! bits, caminho minimo sobre os simbolos possiveis (`otimo.rs`); do 1 ao 4,
-//! gulosa com um passo de preguica.
+//! Busca por dispersao de 4 bytes -- cadeia nos niveis 1 a 4, arvore
+//! binaria nos 5 a 9, com cabecas proprias para os casamentos de 2 e 3
+//! bytes -- e as quatro distancias repetidas conferidas a cada posicao. Do
+//! nivel 5 em diante a escolha e por PRECO em bits, caminho minimo sobre os
+//! simbolos possiveis (`otimo.rs`); do 1 ao 4, gulosa com um passo de
+//! preguica.
 //!
-//! Medido contra o `7z -mf=off` (`docs/PHXZIP.md` §3): +3,6% de tamanho no
-//! nivel 5 e +2,0% no 9. O que falta para empatar e a arvore binaria de
-//! busca (`bt4`) e os casamentos de 2 bytes por dispersao -- nao medidos.
+//! Medido contra o `7z -mf=off -mmt=1` (`docs/PHXZIP.md` §3), no mesmo
+//! trabalho (mesmo dicionario, mesma profundidade, mesmo «bom»).
 //!
 //! # Os pedacos do LZMA2
 //!
@@ -36,12 +37,12 @@ const PEDACO_CRU_MAX: usize = 1 << 16;
 /// bem abaixo de 32 bytes, mesmo com as probabilidades mais desfavoraveis.
 const FOLGA: usize = 32;
 
-/// Quanto se procura: dicionario, profundidade da cadeia, «bom o bastante».
+/// Quanto se procura: dicionario, profundidade da busca, «bom o bastante».
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Nivel {
     /// Tamanho do dicionario, em bytes (potencia de 2).
     pub dicionario: u32,
-    /// Quantos candidatos da cadeia se conferem por posicao.
+    /// Quantos candidatos (da cadeia ou da arvore) se conferem por posicao.
     pub profundidade: u32,
     /// Casamento deste tamanho encerra a busca.
     pub bom: usize,
@@ -49,6 +50,10 @@ pub struct Nivel {
     pub preguicoso: bool,
     /// Analise otima por preco (o `GetOptimum` do 7-Zip, reescrito aqui).
     pub otimo: bool,
+    /// Busca por arvore binaria em vez de cadeia (ver `Buscador`).
+    pub arvore: bool,
+    /// Casamentos de 2 e 3 bytes, por dispersao propria.
+    pub curtos: bool,
 }
 
 impl Nivel {
@@ -57,8 +62,11 @@ impl Nivel {
     pub fn de(n: u8) -> Nivel {
         // Do 5 em diante a escolha e por preco em bits, e o «bom» e a
         // profundidade seguem o 7-Zip (fb e mc): o preco faz a busca render.
+        // O 1 tambem segue (`7z -mx1`: 256 KiB, mc 16, fb 32): com 64 KiB e
+        // profundidade 4 ele era mais rapido por fazer MENOS trabalho, e a
+        // comparacao com o 7-Zip deixava de ser de trabalho igual.
         let (log_dic, profundidade, bom, preguicoso, otimo) = match n {
-            0 | 1 => (16, 4, 16, false, false),
+            0 | 1 => (18, 16, 32, false, false),
             2 => (18, 8, 24, false, false),
             3 => (20, 12, 32, true, false),
             4 => (22, 16, 48, true, false),
@@ -74,38 +82,103 @@ impl Nivel {
             bom,
             preguicoso,
             otimo,
+            arvore: otimo,
+            curtos: otimo,
         }
     }
 }
 
+/// Posicao guardada como `p + 1`: o zero e «vazio».
+const VAZIO: u32 = 0;
+/// Teto das cabecas curtas (2 e 3 bytes): 64 Ki cada, 256 KiB. Com 16 bits
+/// a de 2 bytes e indice exato; abaixo disso as duas sao dispersao, e o
+/// candidato se confere byte a byte.
+const BITS_CURTOS_MAX: u32 = 16;
+
+/// A busca de casamentos. Duas estruturas sobre a mesma dispersao de 4 bytes:
+///
+/// - **cadeia** (niveis 1 a 4): cada posicao aponta a anterior com a mesma
+///   dispersao; barata de inserir, mas confere candidatos em ordem de idade,
+///   e o longo que mora fundo na cadeia fica fora da profundidade.
+/// - **arvore binaria** (5 a 9): cada dispersao e a raiz de uma arvore de
+///   posicoes ordenadas pelo sufixo. Descer dela confere os candidatos em
+///   ordem de PREFIXO COMUM crescente, entao o casamento longo aparece com
+///   poucos passos mesmo no texto repetitivo -- que era onde a cadeia perdia.
+///   Custa o dobro por byte de janela (dois filhos em vez de um anterior), e
+///   a insercao ja e a propria busca: nao existe inserir sem descer.
+///
+/// A ideia e a do `bt4` do `LzFind.c` do 7-Zip (dominio publico), reescrita:
+/// aqui a insercao e monotona e a busca pede a posicao, em vez de o
+/// localizador empurrar a posicao seguinte.
 pub(super) struct Buscador<'a> {
     dados: &'a [u8],
     cabeca: Vec<u32>,
-    anterior: Vec<u32>,
+    /// Cadeia: um anterior por posicao da janela. Arvore: dois filhos
+    /// (menor, maior) por posicao do ciclo.
+    filhos: Vec<u32>,
+    cab2: Vec<u32>,
+    cab3: Vec<u32>,
     mascara: usize,
     bits: u32,
+    bits_curtos: u32,
     janela: usize,
+    /// Tamanho do ciclo da arvore: `janela + 1`, para a distancia igual ao
+    /// dicionario (a maior que o decodificador aceita) nao cair no slot da
+    /// propria posicao que esta entrando.
+    ciclo: usize,
     profundidade: u32,
     bom: usize,
-    /// Proxima posicao a entrar na cadeia. A insercao e monotona: cada
-    /// posicao entra uma vez, na ordem -- quem pula um trecho (um casamento)
-    /// nao precisa lembrar de inserir o que pulou, e quem volta atras (o
-    /// planejador que descartou um plano) nao insere duas vezes.
+    arvore: bool,
+    curtos: bool,
+    /// Proxima posicao a entrar. A insercao e monotona: cada posicao entra
+    /// uma vez, na ordem -- quem pula um trecho (um casamento) nao precisa
+    /// lembrar de inserir o que pulou, e quem volta atras (o planejador que
+    /// descartou um plano) nao insere duas vezes.
     proximo: usize,
 }
 
 impl<'a> Buscador<'a> {
     fn novo(dados: &'a [u8], janela: usize, nivel: &Nivel) -> Buscador<'a> {
-        let bits = if dados.len() < (1 << 16) { 14 } else { 18 };
+        // As tabelas acompanham a janela, e a janela acompanha o dado: o
+        // mesmo nivel 5 que gasta 50 MiB num arquivo de 4 MiB tem de caber
+        // num microcontrolador comprimindo 4 KiB. Na arvore a colisao de
+        // dispersao pesa mais que na cadeia (cada raiz vira uma arvore mais
+        // funda), por isso ela ganha meia cabeca por byte de janela.
+        let log = janela.trailing_zeros();
+        let bits = if nivel.arvore {
+            (log - 1).clamp(12, 22)
+        } else if dados.len() < (1 << 16) {
+            14
+        } else {
+            18
+        };
+        let bits_curtos = log.clamp(10, BITS_CURTOS_MAX);
+        let ciclo = janela + 1;
+        let filhos = if nivel.arvore {
+            vec![VAZIO; 2 * ciclo]
+        } else {
+            vec![VAZIO; janela]
+        };
+        let (cab2, cab3) = if nivel.curtos {
+            (vec![VAZIO; 1 << bits_curtos], vec![VAZIO; 1 << bits_curtos])
+        } else {
+            (Vec::new(), Vec::new())
+        };
         Buscador {
             dados,
-            cabeca: vec![0; 1 << bits],
-            anterior: vec![0; janela],
+            cabeca: vec![VAZIO; 1 << bits],
+            filhos,
+            cab2,
+            cab3,
             mascara: janela - 1,
             bits,
+            bits_curtos,
             janela,
+            ciclo,
             profundidade: nivel.profundidade,
-            bom: nivel.bom,
+            bom: nivel.bom.min(COMPR_MAX),
+            arvore: nivel.arvore,
+            curtos: nivel.curtos,
             proximo: 0,
         }
     }
@@ -117,20 +190,147 @@ impl<'a> Buscador<'a> {
         (v.wrapping_mul(0x9E37_79B1) >> (32 - self.bits)) as usize
     }
 
+    #[inline]
+    fn dispersao2(&self, p: usize) -> usize {
+        let d = self.dados;
+        let v = u16::from_le_bytes([d[p], d[p + 1]]) as u32;
+        if self.bits_curtos == 16 {
+            v as usize
+        } else {
+            (v.wrapping_mul(0x9E37_79B1) >> (32 - self.bits_curtos)) as usize
+        }
+    }
+
+    #[inline]
+    fn dispersao3(&self, p: usize) -> usize {
+        let d = self.dados;
+        let v = u32::from_le_bytes([d[p], d[p + 1], d[p + 2], 0]);
+        (v.wrapping_mul(0x9E37_79B1) >> (32 - self.bits_curtos)) as usize
+    }
+
+    /// Candidatos curtos em `p` (o anterior de mesma dispersao de 2 e de 3
+    /// bytes), ja trocando as cabecas por `p`. Devolve as distancias, zero
+    /// quando nao ha.
+    #[inline]
+    fn curtos_em(&mut self, p: usize) -> (usize, usize) {
+        let h2 = self.dispersao2(p);
+        let h3 = self.dispersao3(p);
+        let c2 = core::mem::replace(&mut self.cab2[h2], p as u32 + 1);
+        let c3 = core::mem::replace(&mut self.cab3[h3], p as u32 + 1);
+        let dist = |c: u32| {
+            if c == VAZIO {
+                0
+            } else {
+                let dd = p - (c as usize - 1);
+                if dd > self.janela {
+                    0
+                } else {
+                    dd
+                }
+            }
+        };
+        (dist(c2), dist(c3))
+    }
+
     fn inserir_proximo(&mut self) {
         let p = self.proximo;
         self.proximo += 1;
         if p + 4 > self.dados.len() {
             return;
         }
+        if self.curtos {
+            self.curtos_em(p);
+        }
         let h = self.dispersao(p);
-        self.anterior[p & self.mascara] = self.cabeca[h];
-        self.cabeca[h] = p as u32 + 1;
+        let cand = core::mem::replace(&mut self.cabeca[h], p as u32 + 1);
+        if self.arvore {
+            let lim = self.bom.min(self.dados.len() - p);
+            self.descer(p, cand, lim, usize::MAX, None);
+        } else {
+            self.filhos[p & self.mascara] = cand;
+        }
+    }
+
+    /// Desce a arvore da raiz `cand` pondo `p` no lugar dela, e colhe em
+    /// `saida` (quando ha) os casamentos maiores que `melhor`.
+    ///
+    /// O caminho de `p` divide a arvore em dois: o que e menor que o sufixo
+    /// de `p` vai pendurado a esquerda dele, o maior a direita. `menor` e
+    /// `maior` sao os ponteiros ainda abertos de cada lado, e o prefixo que
+    /// cada lado ja confirmou (`compr_menor`, `compr_maior`) e o ponto de
+    /// partida da comparacao seguinte -- os dois limitam o sufixo por baixo e
+    /// por cima, entao o candidato seguinte casa ao menos o minimo dos dois.
+    ///
+    /// Casamento de `lim` bytes toma o lugar do no casado: a arvore trata
+    /// como iguais os sufixos que empatam ate o limite, e e isso que impede
+    /// o dado todo repetido de virar uma lista.
+    fn descer(
+        &mut self,
+        p: usize,
+        mut cand: u32,
+        lim: usize,
+        mut melhor: usize,
+        mut saida: Option<&mut Vec<(usize, usize)>>,
+    ) {
+        let d = self.dados;
+        let ciclo = self.ciclo;
+        let pos = p % ciclo;
+        let mut maior = 2 * pos + 1;
+        let mut menor = 2 * pos;
+        let (mut compr_maior, mut compr_menor) = (0usize, 0usize);
+        let mut resta = self.profundidade;
+        loop {
+            if cand == VAZIO {
+                break;
+            }
+            let c = cand as usize - 1;
+            let delta = p - c;
+            if resta == 0 || delta >= ciclo {
+                break;
+            }
+            resta -= 1;
+            let par = 2 * if delta > pos {
+                pos + ciclo - delta
+            } else {
+                pos - delta
+            };
+            let mut n = compr_maior.min(compr_menor);
+            if d[c + n] == d[p + n] {
+                n += 1;
+                while n < lim && d[c + n] == d[p + n] {
+                    n += 1;
+                }
+                if n > melhor {
+                    melhor = n;
+                    if let Some(s) = saida.as_deref_mut() {
+                        s.push((n, delta));
+                    }
+                }
+                if n == lim {
+                    self.filhos[menor] = self.filhos[par];
+                    self.filhos[maior] = self.filhos[par + 1];
+                    return;
+                }
+            }
+            if d[c + n] < d[p + n] {
+                self.filhos[menor] = cand;
+                menor = par + 1;
+                cand = self.filhos[menor];
+                compr_menor = n;
+            } else {
+                self.filhos[maior] = cand;
+                maior = par;
+                cand = self.filhos[maior];
+                compr_maior = n;
+            }
+        }
+        self.filhos[menor] = VAZIO;
+        self.filhos[maior] = VAZIO;
     }
 
     /// Todos os casamentos em `p` que melhoram o comprimento, do mais curto
-    /// (e mais perto) ao mais longo: para cada comprimento, a primeira
-    /// entrada que o alcanca tem a menor distancia -- e o que o preco quer.
+    /// ao mais longo: para cada comprimento, a entrada que o alcanca primeiro
+    /// e a mais perto que a busca viu -- e o que o preco quer.
     pub(super) fn todos(&mut self, p: usize, saida: &mut Vec<(usize, usize)>) {
         saida.clear();
         while self.proximo < p {
@@ -143,17 +343,79 @@ impl<'a> Buscador<'a> {
             }
             return;
         }
-        let h = self.dispersao(p);
-        let mut cand = self.cabeca[h];
-        if self.proximo == p {
-            self.inserir_proximo();
-        }
         let max = (d.len() - p).min(COMPR_MAX);
+        let h = self.dispersao(p);
+        if self.proximo > p {
+            // Posicao ja inserida: um plano descartado no fim de um pedaco
+            // cru. A arvore nao se consulta sem se reescrever, e sem
+            // casamento aqui so custa um literal; a cadeia ainda anda,
+            // pulando quem entrou depois de `p`.
+            if !self.arvore {
+                self.cadeia(p, self.cabeca[h], 0, max, saida);
+            }
+            return;
+        }
+        self.proximo += 1;
         let mut melhor = 0usize;
+        if self.curtos {
+            let (d2, d3) = self.curtos_em(p);
+            let mut dist = 0;
+            if d2 != 0 && d[p - d2..p - d2 + 2] == d[p..p + 2] {
+                melhor = 2;
+                dist = d2;
+                saida.push((2, d2));
+            }
+            if d3 != 0 && d3 != d2 && d[p - d3..p - d3 + 3] == d[p..p + 3] {
+                melhor = 3;
+                dist = d3;
+                saida.push((3, d3));
+            }
+            if melhor > 0 {
+                melhor = compr_comum(d, p, dist, max);
+                if let Some(ultimo) = saida.last_mut() {
+                    ultimo.0 = melhor;
+                }
+            }
+        }
+        let cand = core::mem::replace(&mut self.cabeca[h], p as u32 + 1);
+        if self.arvore {
+            let lim = self.bom.min(max);
+            // O curto ja do tamanho do limite: a arvore so insere.
+            // E nada abaixo do minimo: um byte so, que a dispersao deixa
+            // passar numa colisao, nao e casamento.
+            let desde = if melhor >= lim {
+                usize::MAX
+            } else {
+                melhor.max(COMPR_MIN - 1)
+            };
+            self.descer(p, cand, lim, desde, Some(saida));
+            // A arvore compara ate `lim`; quem chegou nele pode ir alem.
+            if let Some(ultimo) = saida.last_mut() {
+                if ultimo.0 == lim && lim < max {
+                    ultimo.0 = compr_comum(d, p, ultimo.1, max);
+                }
+            }
+        } else {
+            self.filhos[p & self.mascara] = cand;
+            if melhor < self.bom && melhor < max {
+                self.cadeia(p, cand, melhor, max, saida);
+            }
+        }
+    }
+
+    fn cadeia(
+        &self,
+        p: usize,
+        mut cand: u32,
+        mut melhor: usize,
+        max: usize,
+        saida: &mut Vec<(usize, usize)>,
+    ) {
+        let d = self.dados;
         let mut resta = self.profundidade;
-        while cand != 0 && resta > 0 {
+        while cand != VAZIO && resta > 0 {
             let c = cand as usize - 1;
-            let prox = self.anterior[c & self.mascara];
+            let prox = self.filhos[c & self.mascara];
             // Posicao ja inserida adiante de `p` (plano descartado): pula.
             if c < p {
                 let dist = p - c;
@@ -528,6 +790,23 @@ mod testes {
             .collect()
     }
 
+    /// Texto de tabela: linhas quase iguais, o caso em que a busca e o
+    /// preco mais se provam.
+    fn tabela(linhas: u32) -> Vec<u8> {
+        let mut t = Vec::new();
+        for i in 0..linhas {
+            let linha = alloc::format!(
+                "| {} | pedido {} do dono | estado {} | medido em {} |\n",
+                i % 97,
+                i * 7 % 450,
+                ["aberto", "feito", "parcial"][(i % 3) as usize],
+                i % 31
+            );
+            t.extend_from_slice(linha.as_bytes());
+        }
+        t
+    }
+
     #[test]
     fn vazio_e_um_byte() {
         assert_eq!(ida_e_volta(b"", 5), 1);
@@ -566,17 +845,7 @@ mod testes {
     /// deixasse de ser chamado, este teste cai.
     #[test]
     fn o_preco_ganha_do_guloso_em_texto() {
-        let mut t = Vec::new();
-        for i in 0..4000u32 {
-            let linha = alloc::format!(
-                "| {} | pedido {} do dono | estado {} | medido em {} |\n",
-                i % 97,
-                i * 7 % 450,
-                ["aberto", "feito", "parcial"][(i % 3) as usize],
-                i % 31
-            );
-            t.extend_from_slice(linha.as_bytes());
-        }
+        let t = tabela(4000);
         let otimo = Nivel::de(5);
         let guloso = Nivel {
             otimo: false,
@@ -606,5 +875,177 @@ mod testes {
             d.extend(copia);
         }
         ida_e_volta(&d, 9);
+    }
+
+    /// Confere cada casamento que a busca devolve em cada posicao: os bytes
+    /// batem, a distancia cabe na janela, e os comprimentos crescem. E o que
+    /// a arvore pode quebrar calada -- um ponteiro errado de filho ainda
+    /// comprime e ainda volta, so que um casamento falso sai como dado errado.
+    fn conferir_busca(d: &[u8], janela: usize, nivel: &Nivel) -> usize {
+        let mut b = Buscador::novo(d, janela, nivel);
+        let mut lista = Vec::new();
+        let mut maior = 0;
+        let mut p = 0;
+        while p < d.len() {
+            b.todos(p, &mut lista);
+            let mut ant = 0;
+            for &(l, dist) in &lista {
+                assert!(l > ant, "comprimentos fora de ordem em {p}: {lista:?}");
+                // Casamento de um byte custou um preco de comprimento
+                // indefinido no planejador (e estouro na conta, em debug).
+                assert!(!nivel.arvore || l >= COMPR_MIN, "casamento de {l} em {p}");
+                assert!(
+                    dist >= 1 && dist <= janela && dist <= p,
+                    "distancia {dist} em {p}"
+                );
+                assert!(p + l <= d.len());
+                assert_eq!(compr_comum(d, p, dist, l), l, "casamento falso em {p}");
+                ant = l;
+            }
+            maior = maior.max(ant);
+            // Pula como o codificador pula: as posicoes do meio entram pela
+            // insercao monotona, sem consulta.
+            p += if ant >= 8 { ant } else { 1 };
+        }
+        maior
+    }
+
+    #[test]
+    fn a_busca_so_devolve_casamento_verdadeiro_em_dado_adversario() {
+        let arvore = Nivel::de(5);
+        let cadeia = Nivel::de(1);
+        let casos: [Vec<u8>; 5] = [
+            vec![0u8; 20_000],
+            tabela(1500),
+            b"ab".repeat(9_000),
+            pseudo(30_000, 5),
+            {
+                let mut v = pseudo(3_000, 8);
+                for k in 0..6_000u32 {
+                    v.push((k % 7) as u8);
+                    v.push((k / 7 % 3) as u8);
+                }
+                v
+            },
+        ];
+        for d in &casos {
+            for janela in [4096, 1 << 16] {
+                conferir_busca(d, janela, &arvore);
+                conferir_busca(d, janela, &cadeia);
+            }
+        }
+        // O tudo-zero casa o maximo em quase toda posicao.
+        assert_eq!(conferir_busca(&casos[0], 4096, &arvore), COMPR_MAX);
+        assert!(conferir_busca(&casos[1], 1 << 16, &arvore) >= 40);
+    }
+
+    /// O casamento longo que mora FUNDO: mais de `profundidade` vizinhos
+    /// recentes dividem com ele os primeiros oito bytes. A cadeia confere
+    /// em ordem de idade e para antes de chegar nele; a arvore desce por
+    /// prefixo comum e o acha. Se os niveis 5-9 voltarem a cadeia, cai.
+    #[test]
+    fn a_arvore_acha_o_casamento_longo_que_a_cadeia_perde() {
+        let bloco = pseudo(400, 21);
+        let mut d = bloco.clone();
+        for k in 0..200u32 {
+            d.extend_from_slice(&bloco[..8]);
+            d.extend_from_slice(&pseudo(24, 1000 + k));
+        }
+        let alvo = d.len();
+        d.extend_from_slice(&bloco);
+        let achado = |nivel: Nivel| {
+            let mut b = Buscador::novo(&d, 1 << 16, &nivel);
+            let mut lista = Vec::new();
+            b.todos(alvo, &mut lista);
+            lista.last().copied().unwrap_or((0, 0))
+        };
+        assert_eq!(achado(Nivel::de(5)), (COMPR_MAX, alvo));
+        assert_eq!(achado(Nivel::de(9)), (COMPR_MAX, alvo));
+        // A mesma busca pela cadeia fica no prefixo -- o que prova que o
+        // dado de fato separa as duas.
+        let (l, _) = achado(Nivel {
+            arvore: false,
+            ..Nivel::de(5)
+        });
+        assert!(l < 16, "a cadeia achou {l}");
+        ida_e_volta(&d, 5);
+    }
+
+    /// Casamento de 2 e de 3 bytes: a dispersao de 4 nunca os ve. Se os
+    /// niveis 5-9 perderem as cabecas curtas, cai.
+    #[test]
+    fn casamentos_de_dois_e_tres_bytes() {
+        let d = b"xyQ...........xyzR..........xyz_";
+        let mut b = Buscador::novo(d, 4096, &Nivel::de(5));
+        let mut lista = Vec::new();
+        let p2 = 14; // "xyzR": so "xy" ja apareceu
+        assert_eq!(&d[p2..p2 + 4], b"xyzR");
+        b.todos(p2, &mut lista);
+        assert_eq!(lista.last(), Some(&(2, 14)), "{lista:?}");
+        let p3 = 28; // "xyz_": "xyz" ja apareceu
+        assert_eq!(&d[p3..p3 + 4], b"xyz_");
+        b.todos(p3, &mut lista);
+        assert_eq!(lista.last(), Some(&(3, 14)), "{lista:?}");
+    }
+
+    /// A distancia igual ao dicionario e a maior que o decodificador
+    /// aceita, e mora no slot vizinho do ciclo da arvore: um byte a menos
+    /// no ciclo e ela cai no slot da propria posicao que entra. Aleatorio
+    /// repetido exatamente a `janela` so comprime por ela; a um byte alem,
+    /// nao comprime.
+    #[test]
+    fn distancia_no_limite_da_janela() {
+        let r = pseudo(4096, 33);
+        // Sem as cabecas curtas, que achariam a mesma distancia por outro
+        // caminho e esconderiam o limite da arvore.
+        let nivel = Nivel {
+            dicionario: 4096,
+            curtos: false,
+            ..Nivel::de(9)
+        };
+        let mut d = r.clone();
+        d.extend_from_slice(&r);
+        let mut b = Buscador::novo(&d, 4096, &nivel);
+        let mut lista = Vec::new();
+        b.todos(4096, &mut lista);
+        assert_eq!(lista.last(), Some(&(COMPR_MAX, 4096)));
+        let (p, c) = codificar_lzma2(&d, nivel);
+        assert!(c.len() < 4096 + 400, "{}", c.len());
+        let mut v = Vec::new();
+        decodificar_lzma2(p, &c, d.len(), &mut v).unwrap();
+        assert_eq!(v, d);
+
+        let mut longe = r.clone();
+        longe.push(7);
+        longe.extend_from_slice(&r);
+        let mut b = Buscador::novo(&longe, 4096, &nivel);
+        b.todos(4097, &mut lista);
+        assert!(lista.iter().all(|&(_, dist)| dist <= 4096), "{lista:?}");
+        let (p, c) = codificar_lzma2(&longe, nivel);
+        let mut v = Vec::new();
+        decodificar_lzma2(p, &c, longe.len(), &mut v).unwrap();
+        assert_eq!(v, longe);
+    }
+
+    #[test]
+    fn ida_e_volta_adversaria_em_todos_os_niveis() {
+        let mut periodico = Vec::new();
+        for periodo in 1..=9usize {
+            let base = pseudo(periodo, periodo as u32);
+            for _ in 0..(3000 / periodo) {
+                periodico.extend_from_slice(&base);
+            }
+        }
+        let casos = [
+            vec![0u8; 1 << 20],
+            periodico,
+            pseudo(200_000, 44),
+            b"O pai veio antes do filho. ".repeat(20_000),
+        ];
+        for d in &casos {
+            for nivel in 1..=9 {
+                ida_e_volta(d, nivel);
+            }
+        }
     }
 }

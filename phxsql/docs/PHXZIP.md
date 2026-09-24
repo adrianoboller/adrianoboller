@@ -25,10 +25,17 @@ operacional; o core os reexporta, nenhum caminho de chamada mudou).
 
 | alvo | resultado nesta máquina |
 |---|---|
-| x86_64 Linux | roda — suíte e interoperabilidade |
-| `thumbv7em-none-eabihf` (Arduino ARM Cortex-M, sem SO) | compila |
-| `riscv32imc-unknown-none-elf` (ESP32-C3, sem SO) | compila |
-| Windows, ARM 32, Android, macOS, iOS, s390x | **NÃO MEDIDO nesta rodada** — a crate é `no_std` sobre bytes; a prova alvo a alvo do pedido 450 ainda falta |
+| x86_64 Linux | **roda** — suíte e interoperabilidade |
+| `armv7-unknown-linux-musleabihf` (ARM 32) | **roda** sob qemu-arm — suíte inteira, nenhum teste pulado, e ida e volta com sha256 igual |
+| `s390x-unknown-linux-gnu` (big-endian) | **roda** sob qemu-s390x — suíte inteira e ida e volta |
+| `x86_64-pc-windows-gnu` | **roda** sob wine — ida e volta com sha256 igual |
+| `aarch64-linux-android` | **liga** (NDK r27c); não rodou aqui |
+| macOS (aarch64, x86_64), iOS | **compila** a biblioteca; ligar exige o SDK da Apple |
+| `thumbv7em-none-eabihf` (Cortex-M), `riscv32imc-unknown-none-elf` (ESP32-C3) | **compila**, sem SO |
+| ESP32 clássico (Xtensa), AVR | **NÃO MEDIDO** — o Rust estável não tem esses alvos sem `-Z build-std` |
+
+Medido por `bancada/phxzip/plataformas.sh`, 24/09/2026 09:23 UTC; o cru, com o
+comando de cada alvo, está em `bancada/phxzip/resultados.json`.
 
 ## 3. Compressão, medida contra o 7-Zip
 
@@ -56,10 +63,47 @@ Descomprimir o mesmo arquivo: 0,04 s nos dois.
 | profundidade 128 no nível 5 | 569.262, 2× mais lento | caro demais |
 | dispersão de 4 bytes (menos candidatos inúteis na cadeia) | 573.581 (+3,6%) e mais rápido em todo nível | **entrou** |
 
-O que ainda falta para empatar, **não medido**: a árvore binária de busca
-(`bt4` do 7-Zip) e os casamentos de 2 bytes por dispersão própria. O nível 9
-é 3× mais lento que o do 7-Zip pelo mesmo motivo — a cadeia paga
-profundidade que a árvore não paga.
+### 3b. A árvore binária (a ideia do `bt4`, reescrita) — a diferença fechou
+
+Corpus congelado de 3.979.642 bytes (`PENDENCIAS.md`, `PHXZIP.md`, um PNG de
+2,3 MB, o binário `phxzipcmd`, um texto com acento), com os mesmos parâmetros
+acima. Foi a menor de 5 corridas, tempo de CPU, 24/09/2026:
+
+| nível | antes | depois | 7-Zip 23.01 | depois × 7z | CPU antes → depois (7z) |
+|---|---|---|---|---|---|
+| 1 | 3.004.747 | 2.978.831 | 2.952.884 | +0,88% | 0,37 → 0,46 s (0,36) |
+| 5 | 2.916.987 | 2.896.482 | 2.896.132 | **+0,012%** | 2,43 → 1,72 s (1,17) |
+| 9 | 2.906.924 | 2.895.954 | 2.895.649 | **+0,011%** | 3,43 → 1,75 s (1,17) |
+
+Só texto + binário (1.641.960 bytes, perto do corpus de cima):
+
+| nível | depois | 7z | depois × 7z | CPU (7z) |
+|---|---|---|---|---|
+| 1 | 644.483 | 618.012 | +4,3% | 0,11 s (0,11) |
+| 5 | 562.099 | 562.406 | **−0,05%** | 0,75 s (0,54) |
+| 9 | 561.447 | 561.944 | **−0,09%** | 0,81 s (0,57) |
+
+**Piora registrada:** no texto + binário o nível 5 ficou 21% mais lento
+(0,62 → 0,75 s). O ganho de tempo no corpus inteiro vem do dado
+incompressível. O `7z t` dá «Everything is Ok» nos três níveis.
+
+| # | hipótese | número (bytes, níveis 5 / 9) | veredito |
+|---|---|---|---|
+| H1 | árvore binária nos níveis 5–9 | −13.315 / −4.143 | **entrou** |
+| H2 | casamentos de 2 e 3 bytes com cabeças próprias | −3.746 / −3.744 | **entrou** |
+| H3 | nível 1 com o trabalho do `7z -mx1` (256 KiB, prof. 16, «bom» 32) | −25.916; 0,37 → 0,46 s | **entrou** |
+| H4 | cabeças da árvore acompanhando a janela | bytes iguais, 1,67 → 1,36 s | **entrou** |
+| H7 | zerar só os nós tocados do plano | bytes iguais, 1,75 → 1,67 s | **entrou** |
+| H9 | preços de comprimento numa passada | −5,5% de instruções | **entrou** |
+| H10 | arestas compostas do `GetOptimum` | −2.599 / −2.610 | **entrou** |
+| H11 | casamento ≥ «bom»: o plano termina ali | −504 / −23 | **entrou — era defeito** (cognição de 24/09 08:57) |
+| H5 | profundidade 48 no nível 9 | +99 | morreu |
+| H6 | casamentos curtos no guloso (níveis 1–4) | +767 / −383, mais lento | morreu |
+| H8 | atalho de literal sem casamento | igual, sem ganho | morreu |
+
+Memória: a árvore custa 8 B por byte de janela (a cadeia custa 4 B). As
+cabeças da árvore custam 2 B por byte de janela, com teto de 16 MiB. As
+cabeças curtas ficam em no máximo 512 KiB.
 
 ## 4. Decisões
 

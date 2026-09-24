@@ -14,14 +14,18 @@
 //!
 //! - **O estado de cada no se calcula quando o no e visitado**, a partir do
 //!   no anterior e da aresta que chegou nele, e nao ao relaxar a aresta. O de
-//!   la carrega varios casos especiais (literal seguido de repeticao na mesma
-//!   aresta, `Prev2`) para ganhar alguns bytes; aqui a aresta e sempre UM
-//!   simbolo, e a corretude do plano se confere lendo `derivar` inteiro.
+//!   la carrega os casos especiais no proprio no (`Prev2`); aqui a aresta
+//!   guarda os simbolos que a compoem, e a corretude do plano se confere
+//!   lendo `derivar` inteiro.
 //! - **Os precos de comprimento e distancia se refazem por volume** (a cada
 //!   `REFAZER` bytes), e nao por contador de uso. O desvio entre os dois e
 //!   pequeno, e o nosso nao pede contador em cada simbolo emitido.
-//! - **Os casamentos saem da cadeia de dispersao de 3 bytes**, sem arvore
-//!   binaria (`bt4`). Comprimento 2 so por repeticao.
+//! - **Arestas compostas, as duas do `GetOptimum`**: literal + repeticao 0, e
+//!   casamento (ou repeticao) cheio + literal + repeticao 0. O estado do no
+//!   alvo se deriva aplicando os simbolos da aresta em ordem (`transicao`),
+//!   entao o plano continua sem divergir do que o decodificador ve.
+//! - **Os casamentos saem da arvore binaria** (`Buscador`, niveis 5 a 9),
+//!   com os de 2 e 3 bytes por cabecas proprias.
 
 use alloc::collections::VecDeque;
 use alloc::vec;
@@ -94,14 +98,38 @@ fn p_arvore_reversa(probs: &[u16], bits: u32, mut v: u32) -> u32 {
     s
 }
 
-fn p_compr(c: &Comprimentos, pe: usize, compr: usize) -> u32 {
-    let l = (compr - COMPR_MIN) as u32;
-    if l < 8 {
-        p_bit(c.escolha, 0) + p_arvore(&c.baixo[pe], 3, l)
-    } else if l < 16 {
-        p_bit(c.escolha, 1) + p_bit(c.escolha2, 0) + p_arvore(&c.meio[pe], 3, l - 8)
-    } else {
-        p_bit(c.escolha, 1) + p_bit(c.escolha2, 1) + p_arvore(&c.alto, 8, l - 16)
+/// Precos de TODAS as folhas de uma arvore de `bits` bits, numa passada:
+/// cada no soma o preco do pai, em vez de cada folha refazer o caminho
+/// inteiro -- 510 precos de bit para as 256 folhas da arvore alta, contra
+/// 2.048 folha a folha.
+fn precos_da_arvore(probs: &[u16], bits: u32, saida: &mut [u32]) {
+    let folhas = 1usize << bits;
+    let mut no = [0u32; 512];
+    for m in 1..folhas {
+        no[2 * m] = no[m] + p_bit(probs[m], 0);
+        no[2 * m + 1] = no[m] + p_bit(probs[m], 1);
+    }
+    saida[..folhas].copy_from_slice(&no[folhas..2 * folhas]);
+}
+
+/// A tabela de precos de comprimento de um estado de posicao, de
+/// `COMPR_MIN` a `COMPR_MAX` -- o mesmo que `gravar_compr` escreve.
+fn precos_de_compr(c: &Comprimentos, pe: usize, saida: &mut [u32; COMPR_MAX + 1]) {
+    let mut folhas = [0u32; 256];
+    let e0 = p_bit(c.escolha, 0);
+    let e1 = p_bit(c.escolha, 1) + p_bit(c.escolha2, 0);
+    let e2 = p_bit(c.escolha, 1) + p_bit(c.escolha2, 1);
+    precos_da_arvore(&c.baixo[pe], 3, &mut folhas);
+    for i in 0..8 {
+        saida[COMPR_MIN + i] = e0 + folhas[i];
+    }
+    precos_da_arvore(&c.meio[pe], 3, &mut folhas);
+    for i in 0..8 {
+        saida[COMPR_MIN + 8 + i] = e1 + folhas[i];
+    }
+    precos_da_arvore(&c.alto, 8, &mut folhas);
+    for l in COMPR_MIN + 16..=COMPR_MAX {
+        saida[l] = e2 + folhas[l - COMPR_MIN - 16];
     }
 }
 
@@ -137,10 +165,8 @@ impl Precos {
     fn refazer(&mut self, m: &Modelo) {
         let estados_pos = 1usize << m.props.pb;
         for pe in 0..estados_pos {
-            for l in COMPR_MIN..=COMPR_MAX {
-                self.compr[pe][l] = p_compr(&m.compr, pe, l);
-                self.compr_rep[pe][l] = p_compr(&m.compr_rep, pe, l);
-            }
+            precos_de_compr(&m.compr, pe, &mut self.compr[pe]);
+            precos_de_compr(&m.compr_rep, pe, &mut self.compr_rep[pe]);
         }
         for ls in 0..ESTADOS_DE_COMPR {
             for f in 0..64u32 {
@@ -183,6 +209,10 @@ struct No {
     preco: u32,
     ant: u32,
     dec: Decisao,
+    /// Aresta composta: os simbolos que vem ANTES de `dec` na mesma aresta
+    /// (os `npre` primeiros de `pre`, em ordem). Ver `estender_composto`.
+    pre: [Decisao; 2],
+    npre: u8,
     estado: u8,
     reps: [u32; 4],
 }
@@ -191,6 +221,11 @@ struct No {
 pub(super) struct Otimo {
     nos: Vec<No>,
     lista: Vec<(usize, usize)>,
+    /// A posicao a que `lista` responde. A busca nao se repete numa posicao
+    /// ja inserida (a arvore so se consulta inserindo), entao o plano que
+    /// para diante de um casamento longo deixa a resposta guardada para o
+    /// plano seguinte, que comeca justamente ali.
+    lista_de: usize,
     precos: Precos,
     desde: usize,
     pronto: bool,
@@ -206,18 +241,45 @@ fn apos_literal(e: u8) -> u8 {
     }
 }
 
+/// O estado e as distancias depois de um simbolo -- a mesma transicao que
+/// `Escrita` faz ao emitir.
+fn transicao(estado: u8, reps: [u32; 4], dec: Decisao) -> (u8, [u32; 4]) {
+    match dec {
+        Decisao::Literal => (apos_literal(estado), reps),
+        Decisao::RepCurto => (if estado < 7 { 9 } else { 11 }, reps),
+        Decisao::Rep(i, _) => {
+            let mut r = reps;
+            let d = r[i as usize];
+            for k in (1..=i as usize).rev() {
+                r[k] = r[k - 1];
+            }
+            r[0] = d;
+            (if estado < 7 { 8 } else { 11 }, r)
+        }
+        Decisao::Casa(dist, _) => (
+            if estado < 7 { 7 } else { 10 },
+            [dist - 1, reps[0], reps[1], reps[2]],
+        ),
+    }
+}
+
 impl Otimo {
     pub(super) fn novo() -> Otimo {
         let vazio = No {
             preco: INFINITO,
             ant: 0,
             dec: Decisao::Literal,
+            pre: [Decisao::Literal; 2],
+            npre: 0,
             estado: 0,
             reps: [0; 4],
         };
         Otimo {
-            nos: vec![vazio; JANELA + COMPR_MAX + 2],
+            // A aresta composta mais longa passa de um casamento cheio,
+            // um literal e uma repeticao cheia alem do ultimo no visitado.
+            nos: vec![vazio; JANELA + 2 * COMPR_MAX + 3],
             lista: Vec::new(),
+            lista_de: usize::MAX,
             precos: Precos::novo(),
             desde: 0,
             pronto: false,
@@ -264,12 +326,35 @@ impl Otimo {
     }
 
     #[inline]
-    fn relaxar(&mut self, alvo: usize, preco: u32, ant: usize, dec: Decisao) {
+    fn relaxar(&mut self, alvo: usize, preco: u32, ant: usize, dec: Decisao) -> bool {
         if preco < self.nos[alvo].preco {
             let n = &mut self.nos[alvo];
             n.preco = preco;
             n.ant = ant as u32;
             n.dec = dec;
+            n.npre = 0;
+            true
+        } else {
+            false
+        }
+    }
+
+    #[inline]
+    fn relaxar_composto(
+        &mut self,
+        alvo: usize,
+        preco: u32,
+        ant: usize,
+        pre: &[Decisao],
+        dec: Decisao,
+    ) {
+        if preco < self.nos[alvo].preco {
+            let n = &mut self.nos[alvo];
+            n.preco = preco;
+            n.ant = ant as u32;
+            n.dec = dec;
+            n.pre[..pre.len()].copy_from_slice(pre);
+            n.npre = pre.len() as u8;
         }
     }
 
@@ -279,25 +364,15 @@ impl Otimo {
     fn derivar(&mut self, cur: usize) {
         let n = self.nos[cur];
         let a = self.nos[n.ant as usize];
-        let (estado, reps) = match n.dec {
-            Decisao::Literal => (apos_literal(a.estado), a.reps),
-            Decisao::RepCurto => (if a.estado < 7 { 9 } else { 11 }, a.reps),
-            Decisao::Rep(i, _) => {
-                let mut r = a.reps;
-                let d = r[i as usize];
-                for k in (1..=i as usize).rev() {
-                    r[k] = r[k - 1];
-                }
-                r[0] = d;
-                (if a.estado < 7 { 8 } else { 11 }, r)
-            }
-            Decisao::Casa(dist, _) => (
-                if a.estado < 7 { 7 } else { 10 },
-                [dist - 1, a.reps[0], a.reps[1], a.reps[2]],
-            ),
-        };
-        self.nos[cur].estado = estado;
-        self.nos[cur].reps = reps;
+        let mut t = (a.estado, a.reps);
+        for dec in n.pre[..n.npre as usize]
+            .iter()
+            .chain(core::iter::once(&n.dec))
+        {
+            t = transicao(t.0, t.1, *dec);
+        }
+        self.nos[cur].estado = t.0;
+        self.nos[cur].reps = t.1;
     }
 
     /// Relaxa todas as arestas que saem do no `cur` (posicao `p + cur`),
@@ -313,11 +388,30 @@ impl Otimo {
         let lit = no.preco
             + p_bit(m.e_casamento[st][pe], 0)
             + Self::p_literal(m, d, pos, no.estado, no.reps[0]);
-        self.relaxar(cur + 1, lit, cur, Decisao::Literal);
+        let literal_venceu = self.relaxar(cur + 1, lit, cur, Decisao::Literal);
+        let d0 = no.reps[0] as usize + 1;
+        if !literal_venceu
+            && d0 <= pos
+            && pos + 2 < d.len()
+            && d[pos] != d[pos - d0]
+            && d[pos + 1] == d[pos + 1 - d0]
+            && d[pos + 2] == d[pos + 2 - d0]
+        {
+            // Literal + repeticao da distancia de sempre: o caso da tabela
+            // em que so um digito mudou. Um simbolo por aresta nao o ve
+            // quando o literal sozinho perde o no seguinte para outro
+            // caminho, com outras distancias guardadas -- e so nesse caso:
+            // se o literal venceu, o no seguinte ja tem estas distancias.
+            let alvo = self.composto_rep0(m, d, pos + 1, apos_literal(no.estado), d0, lit);
+            if let Some((l2, preco)) = alvo {
+                let dec = Decisao::Rep(0, l2 as u16);
+                self.relaxar_composto(cur + 1 + l2, preco, cur, &[Decisao::Literal], dec);
+                longe = longe.max(cur + 1 + l2);
+            }
+        }
 
         let bit1 = no.preco + p_bit(m.e_casamento[st][pe], 1);
         let base_rep = bit1 + p_bit(m.e_rep[st], 1);
-        let d0 = no.reps[0] as usize + 1;
         if d0 <= pos && d[pos] == d[pos - d0] {
             let curto = base_rep + p_bit(m.e_rep_g0[st], 0) + p_bit(m.e_rep0_longo[st][pe], 0);
             self.relaxar(cur + 1, curto, cur, Decisao::RepCurto);
@@ -337,6 +431,10 @@ impl Otimo {
                 self.relaxar(cur + l, preco, cur, Decisao::Rep(i as u8, l as u16));
             }
             longe = longe.max(cur + l_max);
+            let primeiro = Decisao::Rep(i as u8, l_max as u16);
+            let preco = base + self.precos.compr_rep[pe][l_max];
+            let s1 = if st < 7 { 8 } else { 11 };
+            longe = longe.max(self.composto_lit_rep0(m, d, cur, pos, primeiro, s1, dist, preco));
         }
 
         let base_casa = bit1 + p_bit(m.e_rep[st], 0);
@@ -351,8 +449,89 @@ impl Otimo {
                 l += 1;
             }
             longe = longe.max(cur + ml);
+            let primeiro = Decisao::Casa(md as u32, ml as u16);
+            let preco =
+                base_casa + self.precos.compr[pe][ml] + self.precos.distancia((md - 1) as u32, ml);
+            let s1 = if st < 7 { 7 } else { 10 };
+            longe = longe.max(self.composto_lit_rep0(m, d, cur, pos, primeiro, s1, md, preco));
         }
         longe
+    }
+
+    /// Preco de uma repeticao da distancia `dist` como proximo simbolo em
+    /// `pos`, no estado `estado`, somado a `preco`. `None` quando nao casa
+    /// ao menos o minimo.
+    fn composto_rep0(
+        &self,
+        m: &Modelo,
+        d: &[u8],
+        pos: usize,
+        estado: u8,
+        dist: usize,
+        preco: u32,
+    ) -> Option<(usize, u32)> {
+        let max = (d.len() - pos).min(COMPR_MAX);
+        let l2 = compr_comum(d, pos, dist, max);
+        if l2 < COMPR_MIN {
+            return None;
+        }
+        let st = estado as usize;
+        let pe = m.pos_estado(pos as u64);
+        let preco = preco
+            + p_bit(m.e_casamento[st][pe], 1)
+            + p_bit(m.e_rep[st], 1)
+            + Self::p_indice_rep(m, 0, st, pe)
+            + self.precos.compr_rep[pe][l2];
+        Some((l2, preco))
+    }
+
+    /// Casamento (ou repeticao) cheio, literal, e repeticao da mesma
+    /// distancia: o casamento parou num byte diferente e o texto seguiu
+    /// igual. O literal ali sai CASADO (estado depois de casamento), que e
+    /// o que o torna barato, e a repeticao nao paga distancia. `primeiro`
+    /// ja custou `preco`; `s1` e o estado depois dele. Devolve o no mais
+    /// longe alcancado (ou `cur`).
+    #[allow(clippy::too_many_arguments)]
+    fn composto_lit_rep0(
+        &mut self,
+        m: &Modelo,
+        d: &[u8],
+        cur: usize,
+        pos: usize,
+        primeiro: Decisao,
+        s1: u8,
+        dist: usize,
+        preco: u32,
+    ) -> usize {
+        let l = primeiro.compr();
+        if l < COMPR_MIN {
+            // A cadeia deixa passar o casamento de um byte de uma colisao.
+            return cur;
+        }
+        let pos2 = pos + l;
+        // O byte depois do literal tem de continuar casando: conferido antes
+        // de pagar o preco do literal, que e o pedaco caro, e quase sempre
+        // falha.
+        if pos2 + 2 >= d.len()
+            || d[pos2] == d[pos2 - dist]
+            || d[pos2 + 1] != d[pos2 + 1 - dist]
+            || d[pos2 + 2] != d[pos2 + 2 - dist]
+        {
+            return cur;
+        }
+        let pe2 = m.pos_estado(pos2 as u64);
+        let lit = preco
+            + p_bit(m.e_casamento[s1 as usize][pe2], 0)
+            + Self::p_literal(m, d, pos2, s1, (dist - 1) as u32);
+        match self.composto_rep0(m, d, pos2 + 1, apos_literal(s1), dist, lit) {
+            Some((l2, total)) => {
+                let alvo = cur + l + 1 + l2;
+                let dec = Decisao::Rep(0, l2 as u16);
+                self.relaxar_composto(alvo, total, cur, &[primeiro, Decisao::Literal], dec);
+                alvo
+            }
+            None => cur,
+        }
     }
 
     /// Planeja os simbolos a partir de `p` e os poe em `fila`. O modelo `m`
@@ -372,7 +551,10 @@ impl Otimo {
             self.desde = 0;
         }
         let max = (d.len() - p).min(COMPR_MAX);
-        busca.todos(p, &mut self.lista);
+        if self.lista_de != p {
+            busca.todos(p, &mut self.lista);
+        }
+        self.lista_de = usize::MAX;
 
         // Atalhos: repeticao ou casamento «bom o bastante» sai direto.
         let mut rep_melhor = (0usize, 0usize);
@@ -399,11 +581,13 @@ impl Otimo {
             preco: 0,
             ant: 0,
             dec: Decisao::Literal,
+            pre: [Decisao::Literal; 2],
+            npre: 0,
             estado: m.estado as u8,
             reps: m.reps,
         };
         let mut fim = self.estender(m, d, p, 0);
-        let mut tocado = fim.max(COMPR_MAX);
+        let mut tocado = fim;
         let mut cur = 1;
         while cur < fim {
             self.derivar(cur);
@@ -411,16 +595,15 @@ impl Otimo {
                 break;
             }
             busca.todos(p + cur, &mut self.lista);
-            if let Some(&(l, dist)) = self.lista.last() {
+            if let Some(&(l, _)) = self.lista.last() {
                 if l >= bom {
-                    // Casamento longo a frente: o caminho passa por ele, sem
-                    // olhar alem -- e o que corta o custo em dado repetitivo.
-                    let n = &mut self.nos[cur + l];
-                    n.preco = 0;
-                    n.ant = cur as u32;
-                    n.dec = Decisao::Casa(dist as u32, l as u16);
-                    fim = cur + l;
-                    tocado = tocado.max(fim);
+                    // Casamento longo a frente: o plano acaba aqui, e o
+                    // seguinte comeca nele pelos atalhos -- que conferem a
+                    // repeticao ANTES do casamento novo. Forcar o casamento
+                    // daqui mesmo trocava a repeticao longa (sem distancia)
+                    // pela distancia cheia: +12% no texto de tabela.
+                    self.lista_de = p + cur;
+                    fim = cur;
                     break;
                 }
             }
@@ -436,6 +619,9 @@ impl Otimo {
         while k > 0 {
             let n = self.nos[k];
             fila.push_back(n.dec);
+            for pre in n.pre[..n.npre as usize].iter().rev() {
+                fila.push_back(*pre);
+            }
             k = n.ant as usize;
         }
         fila.make_contiguous()[inicio_fila..].reverse();
