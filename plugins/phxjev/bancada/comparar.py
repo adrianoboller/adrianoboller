@@ -21,11 +21,17 @@ import phxjev  # noqa: E402
 
 
 def claude(caso_id, pergunta, registro):
-    """Distribuicao que o juiz Claude deu para esta pergunta deste caso, se houver."""
+    """(distribuicao, desfecho) do veredito Claude desta pergunta que TEM desfecho.
+
+    O desfecho e a verdade do lado Claude, e nao o rotulo do casos.json: o
+    juiz escolheu os proprios nomes de opcao (H1_...), e comparar pelo texto
+    contou um acerto como erro. E so o veredito com desfecho conta -- o 321
+    tem dois no registro, e o primeiro (0,70) nao foi o conferido.
+    """
     prefixo = {"reg-slot": "reg-reaproveita", "321-causa": "causa-321"}.get(caso_id, caso_id + "-")
-    for r in phxjev.ler(registro):
-        if r["item"].startswith(prefixo) and pergunta in r["perguntas"]:
-            return r["perguntas"][pergunta]["dist"]
+    for r in reversed(phxjev.ler(registro)):
+        if r["item"].startswith(prefixo) and pergunta in r.get("desfecho", {}):
+            return r["perguntas"][pergunta]["dist"], r["desfecho"][pergunta]
     return None
 
 
@@ -55,7 +61,7 @@ def main(modelos):
         for nome, q in c["perguntas"].items():
             d = claude(c["id"], nome, phxjev.REGISTRO)
             if d:
-                lado_claude.append(brier_e_acerto(d, q["verdade"]))
+                lado_claude.append(brier_e_acerto(*d))
                 mesmas.append((c["id"], nome))
     res["juizes"]["claude (registro)"] = resumo(lado_claude)
     for m in modelos:
