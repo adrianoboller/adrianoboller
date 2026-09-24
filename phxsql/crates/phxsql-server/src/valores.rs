@@ -1258,6 +1258,43 @@ pub fn linha_para_json(linha: &[Value], esquema: &Schema) -> Json {
     )
 }
 
+/// Esta ALTERACAO herda a marca de excluida da linha atual? Sim quando a tabela
+/// tem a coluna de sistema e o pedido nao a mandou.
+///
+/// # Uma regra, e nao quatro copias (pedido 492)
+///
+/// `json_para_linha` preenche a coluna ausente com `false`, e sem a heranca um
+/// `atualizar` de rotina RESSUSCITARIA a linha excluida. A pergunta «veio?»
+/// estava escrita tres vezes -- `op_atualizar`, o `atualizar` empilhado e o
+/// upsert empilhado, este sem o caso da lista -- e faltava na quarta, o upsert
+/// solto, que ressuscitava a linha excluida fora de transacao e a mantinha
+/// excluida dentro. A mesma sequencia dava resultados diferentes conforme o
+/// caminho, que e o defeito do 492 visto de outro lado.
+pub fn herda_a_marca(valores: &Json, esquema: &Schema) -> bool {
+    let Some(i) = esquema.coluna_softdeleted() else {
+        return false;
+    };
+    let veio = match valores {
+        Json::Objeto(_) => valores
+            .campo(phxsql_core::schema::COLUNA_SOFTDELETED)
+            .is_some(),
+        Json::Lista(l) => l.len() > i,
+        _ => false,
+    };
+    !veio
+}
+
+/// Poe em `linha` a marca de excluida de `atual` -- a linha como ESTA para
+/// quem altera: o disco fora de transacao, e o que a transacao ve dentro dela
+/// (`linha_na_transacao`). Ver [`herda_a_marca`].
+pub fn herdar_a_marca(linha: &mut [Value], atual: &[Value], esquema: &Schema) {
+    if let Some(i) = esquema.coluna_softdeleted() {
+        if let (Some(destino), Some(v)) = (linha.get_mut(i), atual.get(i)) {
+            *destino = v.clone();
+        }
+    }
+}
+
 /// Aceita a linha como objeto (por nome de coluna) ou como lista (na ordem do
 /// esquema). Colunas ausentes no objeto entram como NULL.
 pub fn json_para_linha(j: &Json, esquema: &Schema) -> Result<Vec<Value>> {

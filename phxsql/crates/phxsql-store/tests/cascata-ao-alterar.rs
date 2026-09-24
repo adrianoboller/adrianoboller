@@ -740,3 +740,192 @@ fn a_procura_das_filhas_nao_manda_reparar_indice_sao() {
         "perdeu a causa: o recado tem de dizer qual arquivo e qual guarda -- {texto}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Pedido 491: a regra primordial vale tambem dentro da MESMA tabela
+// ---------------------------------------------------------------------------
+
+/// **Pedido 491.** «Nunca se mata o pai que tem filhos» vale quando o pai e o
+/// filho moram na mesma tabela. O `conferir_filhas_com` pulava a propria
+/// tabela (`if irma == eu { continue }`) -- entao excluir o chefe que tem
+/// subordinado respondia `Ok`, de vez e suave, e o subordinado ficava
+/// apontando para ninguem.
+///
+/// E os dois comportamentos que NAO mudam, porque o portao que recusasse tudo
+/// seria o defeito do outro lado: a linha que aponta so para SI MESMA sai (o
+/// PostgreSQL confere a FK depois de a linha sair, e ali nao sobra quem
+/// aponte), e o chefe sai depois que o subordinado saiu.
+///
+/// # Prova real
+///
+/// Repor o `continue` faz os dois `expect_err` responderem `Ok` -- o vermelho
+/// medido antes do conserto.
+#[test]
+fn excluir_o_chefe_que_tem_subordinado_recusa_de_vez_e_suave() {
+    let d = dir("auto-excluir");
+    let mut t = hierarquia(&d);
+    let chefe = t
+        .inserir(&[Value::Int(1), Value::Null, Value::Str("Ana".into())])
+        .unwrap();
+    let sub = t
+        .inserir(&[Value::Int(2), Value::Int(1), Value::Str("Bia".into())])
+        .unwrap();
+    t.sincronizar().unwrap();
+
+    let de_vez = t
+        .excluir_de_vez(chefe, "saiu")
+        .expect_err("o chefe com subordinado saiu de vez: o subordinado ficou orfao");
+    let suave = t
+        .excluir_suave(chefe, "saiu")
+        .expect_err("o chefe com subordinado saiu suave: o subordinado aponta para excluido");
+    for (como, e) in [("de vez", de_vez), ("suave", suave)] {
+        let texto = e.to_string();
+        assert!(
+            matches!(e, PhxError::Integridade(_)) && texto.contains("fk_chefe"),
+            "{como}: a recusa tem de nomear a chave -- {texto}"
+        );
+    }
+    let linha = t
+        .ler(chefe)
+        .unwrap()
+        .expect("o chefe sumiu apesar da recusa");
+    assert!(
+        !t.esta_excluida(&linha),
+        "o chefe ficou marcado apesar da recusa"
+    );
+
+    // O auto-laco: so ela aponta para si, e ela sai.
+    let dono = t
+        .inserir(&[Value::Int(3), Value::Null, Value::Str("Cid".into())])
+        .unwrap();
+    t.atualizar(
+        dono,
+        &[Value::Int(3), Value::Int(3), Value::Str("Cid".into())],
+    )
+    .unwrap();
+    assert!(
+        t.excluir_de_vez(dono, "saiu")
+            .expect("a linha que so aponta para si mesma tem de sair"),
+        "a linha do auto-laco nao saiu"
+    );
+    // A ordem certa: o subordinado, depois o chefe.
+    assert!(t.excluir_de_vez(sub, "saiu").unwrap());
+    assert!(t.excluir_de_vez(chefe, "saiu").unwrap());
+}
+
+// ---------------------------------------------------------------------------
+// Pedido 490: panico no meio da cascata
+// ---------------------------------------------------------------------------
+
+/// **Pedido 490.** Um panico ENTRE duas filhas da cascata do `ao_alterar`, com
+/// a mae ja gravada na chave nova, nao pode deixar as filhas seguintes na
+/// chave velha EM SILENCIO. Um `SIGKILL` no mesmo ponto deixa o byte 52 do
+/// `.ndx` da filha em 1, e a tabela recusa ate o `reindexar`; o panico tem de
+/// deixar o mesmo -- e deixava pior: a janela do `.ndx` da filha abria e
+/// fechava a CADA linha, o `Drop` do desenrolar achava `escritas_em_voo = 0`,
+/// descarregava e BAIXAVA o byte 52.
+///
+/// A mae ja esta gravada e a filha 2 continua na chave velha: fora de
+/// transacao nao ha marca que complete a cascata, e o `.reg` nao desfaz. O que
+/// a prova cobra e que isso RECUSE, e nao que suma.
+///
+/// # Prova real
+///
+/// Sem o conserto, `indice_precisa_reconstruir` volta falso e o `buscar` na
+/// filha responde como se nada tivesse acontecido -- o vermelho medido.
+#[test]
+fn panico_entre_duas_filhas_deixa_a_filha_recusando_como_um_sigkill() {
+    use phxsql_store::ndx::panico_de_teste::{armar, desarmar, Ponto};
+    let d = dir("panico-490");
+    let mut m = mae(&d);
+    let r = m
+        .inserir(&[Value::Int(1), Value::Str("Ana".into())])
+        .unwrap();
+    m.sincronizar().unwrap();
+    let mut f = filha(&d, AcaoRi::Cascata);
+    let p1 = f.inserir(&[Value::Int(10), Value::Int(1)]).unwrap();
+    let p2 = f.inserir(&[Value::Int(11), Value::Int(1)]).unwrap();
+    f.sincronizar().unwrap();
+    drop(f);
+
+    armar(Ponto::CascataEntreFilhas);
+    let morreu = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = m.atualizar(r, &[Value::Int(7), Value::Str("Ana".into())]);
+    }));
+    desarmar();
+    assert!(
+        morreu.is_err(),
+        "o panico armado entre as filhas nao aconteceu"
+    );
+    drop(m);
+
+    let mut f = Table::abrir(&d, "pedidos").unwrap();
+    // O dano, dito como e: a primeira filha acompanhou, a segunda nao.
+    assert_eq!(
+        (aponta_para(&mut f, p1), aponta_para(&mut f, p2)),
+        (Value::Int(7), Value::Int(1)),
+        "o ponto do panico nao e o que a prova diz"
+    );
+    assert!(
+        f.indice_precisa_reconstruir(),
+        "a filha ficou na chave velha e a tabela nao recusa: o panico foi pior \
+         que um SIGKILL no mesmo ponto"
+    );
+    let recusa = f.buscar("porCliente", &[Value::Int(1)]);
+    assert!(
+        recusa.is_err(),
+        "o indice da filha respondeu depois do panico no meio da cascata: {recusa:?}"
+    );
+    // E o caminho de volta e o de uma queda: o `reindexar`.
+    f.reindexar().unwrap();
+    assert_eq!(f.buscar("porCliente", &[Value::Int(1)]).unwrap(), vec![p2]);
+}
+
+/// **O irmao do 490, uma janela antes:** a mae ja esta no disco na chave nova,
+/// e o que para e o texto, o diario ou a trilha dela -- antes de a primeira
+/// filha acompanhar. A marca em voo entra logo depois da mae, e nao so quando
+/// a cascata comeca: sem isso as duas filhas ficavam na chave velha e a tabela
+/// delas respondia como se nada tivesse acontecido.
+///
+/// # Prova real
+///
+/// Mover o `comecar_cascata` de volta so para o `aplicar_ao_alterar` faz
+/// `indice_precisa_reconstruir` voltar falso aqui.
+#[test]
+fn panico_depois_da_mae_e_antes_da_primeira_filha_tambem_recusa() {
+    use phxsql_store::ndx::panico_de_teste::{armar, desarmar, Ponto};
+    let d = dir("panico-490-mae");
+    let mut m = mae(&d);
+    let r = m
+        .inserir(&[Value::Int(1), Value::Str("Ana".into())])
+        .unwrap();
+    m.sincronizar().unwrap();
+    let mut f = filha(&d, AcaoRi::Cascata);
+    let p1 = f.inserir(&[Value::Int(10), Value::Int(1)]).unwrap();
+    let p2 = f.inserir(&[Value::Int(11), Value::Int(1)]).unwrap();
+    f.sincronizar().unwrap();
+    drop(f);
+
+    armar(Ponto::CascataDepoisDaMae);
+    let morreu = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = m.atualizar(r, &[Value::Int(7), Value::Str("Ana".into())]);
+    }));
+    desarmar();
+    assert!(
+        morreu.is_err(),
+        "o panico armado depois da mae nao aconteceu"
+    );
+    drop(m);
+
+    let mut f = Table::abrir(&d, "pedidos").unwrap();
+    assert_eq!(
+        (aponta_para(&mut f, p1), aponta_para(&mut f, p2)),
+        (Value::Int(1), Value::Int(1)),
+        "o ponto do panico nao e o que a prova diz"
+    );
+    assert!(
+        f.indice_precisa_reconstruir(),
+        "a mae foi para a chave nova, as filhas ficaram na velha, e a tabela \
+         delas nao recusa"
+    );
+}

@@ -5157,7 +5157,7 @@ continua morrendo calada (P1, ⏸).
 |---|---|---|
 | outra conexão, outra tabela | `SP000010` até reiniciar | atende na hora |
 | a tabela tocada **fora** de transação, num `inserir`/`atualizar`/`excluir` | `SP000010` | lê pelo `.reg`; toda operação de índice recusa nomeando o `.ndx` e mandando `reparar indice`, até o `reindexar` — o estado de um `SIGKILL` no mesmo ponto |
-| a **cascata solta** do `ao_alterar`, entre duas filhas | `SP000010`, e o dano calado depois do reinício | **o dano calado na hora**: as filhas seguintes ficam na chave velha sem recusa — pior que a queda, pedido 490 |
+| a **cascata solta** do `ao_alterar`, entre duas filhas | `SP000010`, e o dano calado depois do reinício | desde o pedido 490, a tabela **filha** recusa até o `reindexar` — o estado de um `SIGKILL` no mesmo ponto — enquanto o processo vive; o arranque (pedido 522) a reconstrói sozinho e deixa só a contagem. As filhas seguintes continuam na chave velha, porque sem marca nada as completa |
 | `COMMIT` que morreu na passada, depois da marca | marca órfã até reiniciar, e as travas da transação já soltas | a transação sai **inteira** antes de o `AoSair` soltar as travas; o rowid seguinte não colide com os reservados |
 | pânico no meio do fecho da janela | a marca ficava, com a trava fechada até o arranque completá-la | a marca fica até o `fsync`, e a trava volta a atender (a primeira entrega do 451 a perdia: A1) |
 | `COMMIT` que morreu na passada e cuja marca, já gravada, não se relê no reparo | marca no disco, trava fechada até reiniciar | o processo **aborta**, e a marca **fica** para o arranque (M4) |
@@ -5253,12 +5253,15 @@ As vizinhas, reprovadas contra o código novo e todas PROVADAS:
 
 ### 24.5 O que ficou de fora, e por quê
 
-- **A cascata solta (pedido 490).** Um pânico entre duas filhas de uma cascata
-  do `ao_alterar` fora de transação é **pior que a queda**: a janela do `.ndx`
-  da filha abre e fecha a cada linha, o `Drop` acha a escrita em voo em zero e
-  baixa o byte 52 (desde o pedido 522, atesta o `.ndx` neste processo — o
-  efeito aqui dentro é o mesmo), e as filhas seguintes ficam na chave velha sem recusa. O
-  reparo não o alcança; o `MANUAL.txt` e o `docs/ACID.md` dizem isso.
+- **A cascata solta (pedido 490) — fechou no nível da queda.** Um pânico entre
+  duas filhas de uma cascata do `ao_alterar` fora de transação era **pior que
+  a queda**: a janela do `.ndx` da filha abria e fechava a cada linha, o `Drop`
+  achava a escrita em voo em zero e baixava o byte 52. Hoje a filha fica com a
+  cascata em voo desde que a mãe vai ao disco, e o `Drop` que a encontra ligada
+  levanta o byte: a tabela recusa até o `reindexar`, ou até o arranque
+  seguinte, que a reconstrói sozinho (pedido 522). O reparo continua sem
+  COMPLETAR a cascata — fora de transação não há marca —, e isso está no
+  `MANUAL.txt` e no `docs/ACID.md` §2.4.
 - **O `Mutex` de `transacoes` (pedido 458)** não muda: o pânico que o
   envenena dentro do `COMMIT` também envenena a de dados (a de dados é tomada
   antes, ordem única), e só a de dados se cura. O que muda é o raio: antes a

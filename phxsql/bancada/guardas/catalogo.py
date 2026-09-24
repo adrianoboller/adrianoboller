@@ -4826,10 +4826,29 @@ pub fn limpar() {
             "Achado A2 da revisao do motor (09/09/2026, p02_sql_on_conflict_set.py): o tradutor punha o SET em `atualizar`, `op_inserir` nunca o lia. Campo de protocolo sem leitor e primo do `recursos.cache_paginas` -- «configuracao que nao e lida mente». Repor o defeito e o `op_inserir` voltar a chamar o upsert sem o SET."
         ),
         "arquivo": "crates/phxsql-server/src/servidor.rs",
-        "trecho": """                crate::upsert::aplicar(&mut t, &indice, &linha, modo, atualizar, gancho)?
+        # ATUALIZADO em 24/09/2026 (pedido 492): a chamada ganhou o
+        # `herda_marca` e passou a quebrar linha; o ponto de reposicao e o
+        # mesmo argumento.
+        "trecho": """                crate::upsert::aplicar(
+                    &mut t,
+                    &indice,
+                    &linha,
+                    modo,
+                    atualizar,
+                    gancho,
+                    herda_marca,
+                )?
 """,
         "troca": """                // DEFEITO REPOSTO: o `atualizar` do pedido nao chega ao motor.
-                crate::upsert::aplicar(&mut t, &indice, &linha, modo, None, gancho)?
+                crate::upsert::aplicar(
+                    &mut t,
+                    &indice,
+                    &linha,
+                    modo,
+                    None,
+                    gancho,
+                    herda_marca,
+                )?
 """,
         "pacote": "phxsql-server",
         "alvo": ['--lib'],
@@ -6114,10 +6133,13 @@ pub fn limpar() {
             "esta guarda e hoje a unica coisa entre o conserto bem-intencionado e a "
             "regressao silenciosa. A forma segura ja existe: o campo `atualizar`."
         ),
+        # ATUALIZADO em 24/09/2026 (pedido 492): a leitura da `velha` ganhou o
+        # `herda_marca`, e a mescla um braco que herda SO a marca de excluida
+        # -- a coluna do usuario continua indo inteira, que e o contrato.
         "trocas": [
             {
                 "arquivo": "crates/phxsql-server/src/upsert.rs",
-                "trecho": "                let velha = if atualizar.is_some() || antes_de_atualizar.is_some() {\n",
+                "trecho": "                let velha = if atualizar.is_some() || antes_de_atualizar.is_some() || herda_marca {\n",
                 "troca": (
                     "                // DEFEITO REPOSTO (pedido 245, O3): le sempre, para mesclar.\n"
                     "                let velha = if true {\n"
@@ -6128,6 +6150,11 @@ pub fn limpar() {
                 "trecho": (
                     "                let mut gravada = match (atualizar, &velha) {\n"
                     "                    (Some(set), Some(v)) => Some(mesclar(v, set, t.esquema())?),\n"
+                    "                    (None, Some(v)) if herda_marca => {\n"
+                    "                        let mut nova = linha.to_vec();\n"
+                    "                        crate::valores::herdar_a_marca(&mut nova, v, t.esquema());\n"
+                    "                        Some(nova)\n"
+                    "                    }\n"
                     "                    _ => None,\n"
                     "                };\n"
                 ),
@@ -10792,10 +10819,21 @@ pub fn limpar() {
             },
             {
                 "arquivo": "crates/phxsql-store/src/ndx.rs",
+                # ATUALIZADO em 24/09/2026 (pedido 490): o `Drop` ganhou a
+                # cascata em voo antes do `fechar`; o ponto de reposicao e o
+                # mesmo `fechar`, e a cascata fica como esta.
                 "trecho": """    fn drop(&mut self) {
+        if self.cascata_em_voo {
+            self.escrita_interrompida = true;
+            let _ = self.levantar_marca();
+        }
         let _ = self.fechar();
 """,
                 "troca": """    fn drop(&mut self) {
+        if self.cascata_em_voo {
+            self.escrita_interrompida = true;
+            let _ = self.levantar_marca();
+        }
         // ...e o `Drop` pergunta a thread se ela esta desenrolando.
         if !std::thread::panicking() {
             let _ = self.fechar();
@@ -10839,10 +10877,21 @@ pub fn limpar() {
             },
             {
                 "arquivo": "crates/phxsql-store/src/ndx.rs",
+                # ATUALIZADO em 24/09/2026 (pedido 490): o `Drop` ganhou a
+                # cascata em voo antes do `fechar`; o ponto de reposicao e o
+                # mesmo `fechar`, e a cascata fica como esta.
                 "trecho": """    fn drop(&mut self) {
+        if self.cascata_em_voo {
+            self.escrita_interrompida = true;
+            let _ = self.levantar_marca();
+        }
         let _ = self.fechar();
 """,
                 "troca": """    fn drop(&mut self) {
+        if self.cascata_em_voo {
+            self.escrita_interrompida = true;
+            let _ = self.levantar_marca();
+        }
         // ...e o `Drop` pergunta a thread se ela esta desenrolando.
         if !std::thread::panicking() {
             let _ = self.fechar();
@@ -14219,5 +14268,398 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "alvo": ["--lib"],
         "caem": ["testes::phx_reindexar_conserta_o_indice_marcado_pela_abi"],
         "seguem": ["testes::phx_reindexar_com_punho_errado_devolve_codigo"],
+    },
+    {
+        "id": "auto-referencia-pulada-no-excluir",
+        "titulo": "excluir o chefe que tem subordinado na MESMA tabela responde Ok, e o subordinado fica órfão",
+        "porque": (
+            "pedido 491, A5 da revisao do DBA ao 448: `conferir_filhas_com` "
+            "pulava a propria tabela (`if irma == eu { continue }`). De vez e "
+            "suave, fora e dentro de transacao, o chefe saia e o subordinado "
+            "ficava apontando para ninguem -- a regra primordial valia so "
+            "entre tabelas diferentes."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """            let propria = irma == eu;
+""",
+        "troca": """            // DEFEITO REPOSTO (491): a propria tabela pulada.
+            if irma == eu {
+                continue;
+            }
+            let propria = false;
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "cascata-ao-alterar"],
+        "caem": [
+            "excluir_o_chefe_que_tem_subordinado_recusa_de_vez_e_suave",
+        ],
+        "seguem": [
+            "a_auto_referencia_recusa_em_vez_de_orfanar_calada",
+            "a_filha_acompanha_a_chave_que_a_mae_mudou",
+        ],
+    },
+    {
+        "id": "auto-referencia-pulada-no-excluir-pelo-servidor",
+        "titulo": "o chefe com subordinado sai pelo servidor, e na transação `[inserir 11->10, excluir 10]` confirma",
+        "porque": (
+            "pedido 491 pelo caminho do cliente: fora de transacao o "
+            "`excluir` respondia `excluido: true`; dentro, o COMMIT "
+            "respondia COMMITTED com o 11 apontando para um chefe excluido -- "
+            "a pre-conferencia do 448 chama a mesma guarda."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """            let propria = irma == eu;
+""",
+        "troca": """            // DEFEITO REPOSTO (491): a propria tabela pulada.
+            if irma == eu {
+                continue;
+            }
+            let propria = false;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_transacoes::integridade_na_transacao::fora_da_transacao_o_chefe_com_subordinado_nao_sai",
+            "servidor::testes_transacoes::integridade_na_transacao::na_transacao_o_subordinado_novo_segura_o_chefe",
+        ],
+        "seguem": [
+            "servidor::testes_transacoes::pre_conferencia_448::a_ordem_certa_continua_committed_e_inteira",
+        ],
+    },
+    {
+        "id": "auto-laco-conta-como-filha",
+        "titulo": "a linha que aponta só para si mesma é contada como filha dela, e nunca mais sai",
+        "porque": (
+            "pedido 491, o outro lado do portao: conferir a propria tabela sem "
+            "descontar a propria linha recusaria justamente o auto-laco, que "
+            "nao tem ninguem abaixo -- o PostgreSQL confere a chave depois de "
+            "a linha sair e a deixa sair. Portao que recusa tudo e o defeito "
+            "do lado de la."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """                if achadas.iter().any(|&r| !propria || r != rowid) {
+""",
+        "troca": """                // DEFEITO REPOSTO (491): o auto-laco conta como filha.
+                if !achadas.is_empty() {
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "cascata-ao-alterar"],
+        "caem": [
+            "excluir_o_chefe_que_tem_subordinado_recusa_de_vez_e_suave",
+        ],
+        "seguem": [
+            "restringir_recusa_e_a_mae_nao_se_mexe",
+        ],
+    },
+    {
+        "id": "renomear-pula-a-auto-referencia",
+        "titulo": "renomear a tabela que aponta para si mesma deixa a chave no nome velho, e o chefe com subordinado passa a sair",
+        "porque": (
+            "o irmao do pedido 491 no catalogo: `quem_aponta_para` pula a "
+            "propria tabela -- certo no `excluir_tabela`, que leva a chave "
+            "junto. No renomear, `equipe.chefe_id -> funcionarios.id` deixava "
+            "de se reconhecer, e o `excluir_de_vez` do chefe com subordinado "
+            "respondia Ok(true), medido."
+        ),
+        "arquivo": "crates/phxsql-store/src/catalogo.rs",
+        "trecho": """                .find(|fk| crate::table::nome_simples(&fk.tabela_ref) == nome_o)
+""",
+        "troca": """                // DEFEITO REPOSTO (491, irmao): o renomear pula a auto-referencia.
+                .find(|fk| crate::table::nome_simples(&fk.tabela_ref) == nome_o && false)
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": [
+            "catalogo::testes_copia_entre_bancos::renomear_recusa_a_tabela_que_aponta_para_si_mesma",
+        ],
+        "seguem": [
+            "catalogo::testes_copia_entre_bancos::renomear_recusa_a_mae_que_tem_filha_apontando",
+            "catalogo::testes_copia_entre_bancos::renomear_move_a_tabela_inteira",
+        ],
+    },
+    {
+        "id": "marca-do-disco-no-empilhar",
+        "titulo": "dentro da transação, alterar a linha excluída suave a ressuscita; fora, ela continua excluída",
+        "porque": (
+            "pedido 492, M4 da revisao do DBA ao 448: o `empilhar` copiava a "
+            "marca de excluida do DISCO para a linha empilhada, e "
+            "`[excluir suave M, atualizar M.nome]` confirmava com M viva. A "
+            "linha nascida na propria transacao nao herdava marca nenhuma."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """                if let Some(atual) = vista.as_deref() {
+""",
+        "troca": """                // DEFEITO REPOSTO (492): a marca herdada do DISCO.
+                if let Some(atual) = velha.as_deref() {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_transacoes::integridade_na_transacao::alterar_a_linha_excluida_nao_a_ressuscita_fora_nem_dentro",
+        ],
+        "seguem": [
+            "servidor::testes_transacoes::a_ultima_escrita_da_mesma_linha_e_a_que_manda",
+            "servidor::testes_transacoes::o_empilhar_le_o_disco_e_nao_a_lista_pendente",
+        ],
+    },
+    {
+        "id": "upsert-solto-ressuscita-a-excluida",
+        "titulo": "o upsert fora de transação ressuscita a linha excluída suave; o mesmo upsert dentro a mantém excluída",
+        "porque": (
+            "o irmao do 492 que copiava a mesma marca: a pergunta «o pedido "
+            "mandou a coluna de sistema?» estava escrita tres vezes e faltava "
+            "no `upsert::aplicar`, e `json_para_linha` preenche `false`. "
+            "Medido: `[excluir suave M, upsert M]` solto terminava com M viva."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """                let herda_marca = crate::valores::herda_a_marca(&valores_json, t.esquema());
+""",
+        "troca": """                // DEFEITO REPOSTO (492, irmao): o upsert solto nao herda a marca.
+                let herda_marca = false;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_transacoes::integridade_na_transacao::alterar_a_linha_excluida_nao_a_ressuscita_fora_nem_dentro",
+        ],
+        "seguem": [
+            "servidor::testes_transacoes::dentro_da_transacao_o_upsert_decide_contra_o_disco",
+        ],
+    },
+    {
+        "id": "mescla-do-upsert-sobre-o-disco",
+        "titulo": "o upsert com SET dentro da transação mescla sobre a linha do disco, e a excluída na lista ressuscita",
+        "porque": (
+            "pedido 492 pelo SET: a mescla partia da `velha` do disco, e a "
+            "marca de excluida que a lista tinha posto se perdia com o resto "
+            "do que ela ja tinha escrito na linha. Medido: `Fabi II` viva."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """                                linha = crate::upsert::mesclar(&vista, set, t.esquema())?;
+""",
+        "troca": """                                // DEFEITO REPOSTO (492): o SET mescla sobre o disco.
+                                linha = crate::upsert::mesclar(&velha, set, t.esquema())?;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_transacoes::integridade_na_transacao::alterar_a_linha_excluida_nao_a_ressuscita_fora_nem_dentro",
+        ],
+        "seguem": [
+            "servidor::testes_transacoes::dentro_da_transacao_o_upsert_decide_contra_o_disco",
+        ],
+    },
+    {
+        "id": "elo-do-empilhar-pelo-disco",
+        "titulo": "o elo que o `empilhar` planeja pelo disco sobrescreve o que a própria lista já escreveu na filha",
+        "porque": (
+            "pedido 515, N2 da segunda revisao do 448: `[filha id 10->11, mae "
+            "5->6]` terminava com id 10; `[filha troca de mae 15->8, mae "
+            "15->16]` com a filha na 16; `[excluir suave a filha, mae 25->26]` "
+            "ressuscitava a filha. A pre-conferencia tinha o plano certo e o "
+            "descartava como «adiante»."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        t.planejar_cascata_da_alteracao(antes, crua, Some(&prefixo))
+""",
+        "troca": """        // DEFEITO REPOSTO (515): o plano do empilhar so ve o disco.
+        let _ = &prefixo;
+        t.planejar_cascata_da_alteracao(antes, crua, None)
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_transacoes::integridade_na_transacao::o_elo_da_cascata_nao_desfaz_o_que_a_lista_escreveu_na_filha",
+        ],
+        "seguem": [
+            "servidor::testes_transacoes::revisao_do_dba_448::a1_a_filha_da_propria_lista_acompanha_a_chave_nova_da_mae",
+            "servidor::testes_transacoes::pre_conferencia_448::a_ordem_certa_continua_committed_e_inteira",
+        ],
+    },
+    {
+        "id": "elo-implicito-sem-trava",
+        "titulo": "o elo que só o COMMIT descobre escreve sem trava, e a leitura repetível de outra transação lê 5 e depois 6",
+        "porque": (
+            "pedido 516, N3 da segunda revisao do 448: T1 muda a chave da mae "
+            "sem filha; outra sessao poe a filha na chave velha; T3 com "
+            "`leitura_repetivel` le 5. O COMMIT de T1 levava o elo implicito "
+            "por cima da trava compartilhada de T3, que relia 6."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """            for elo in &elos {
+                let chave = crate::carga::chave(database, &elo.tabela);
+""",
+        "troca": """            // DEFEITO REPOSTO (516): o elo implicito nao trava.
+            for elo in elos.iter().take(0) {
+                let chave = crate::carga::chave(database, &elo.tabela);
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_transacoes::integridade_na_transacao::o_elo_implicito_respeita_a_leitura_repetivel_de_outra_transacao",
+        ],
+        "seguem": [
+            "servidor::testes_transacoes::pre_conferencia_448::a_cascata_implicita_numa_tabela_fora_da_lista_continua_valendo",
+        ],
+    },
+    {
+        "id": "ciclo-de-commits-sem-desempate",
+        "titulo": "dois COMMITs cujos elos se barram são mandados repetir para sempre, e ninguém confirma",
+        "porque": (
+            "condicao C1 do papel C ao 516: o COMMIT tenta a trava do elo uma "
+            "vez so e manda repetir; T1 barrado por T2 e T2 por T1 giraram "
+            "1.870 rodadas em 11 s na sonda do DBA. O desempate por idade -- a "
+            "MAIS NOVA do ciclo cede, qualquer que seja quem o descobre -- e "
+            "escolha nossa (wait-die), e nao copia de motor: o PG aborta sem "
+            "ordem garantida, e o InnoDB a mais leve."
+        ),
+        "arquivo": "crates/phxsql-server/src/transacao.rs",
+        "trecho": """            ceder: mais_nova == eu,
+""",
+        "troca": """            // DEFEITO REPOSTO (516, C1): ninguem cede.
+            ceder: false && mais_nova == eu,
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_transacoes::integridade_na_transacao::dois_commits_que_se_barram_cedem_pela_mais_nova",
+            "transacao::testes::o_ciclo_de_commits_barrados_cede_pela_mais_nova",
+        ],
+        "seguem": [
+            "servidor::testes_transacoes::integridade_na_transacao::o_elo_implicito_respeita_a_leitura_repetivel_de_outra_transacao",
+            "servidor::testes_transacoes::o_prazo_estourado_reverte_e_solta_as_travas",
+        ],
+    },
+    {
+        "id": "quem-cede-no-ciclo-segura-as-travas",
+        "titulo": "a transação que cede no ciclo de COMMITs volta ativa com as travas, e a mais velha continua barrada",
+        "porque": (
+            "C1 do 516, a outra metade do desempate: ceder e soltar as travas "
+            "AGORA, pelo gestor (`abortar_soltando`, a mesma porta do prazo "
+            "estourado). Devolver a lista como a recusa comum devolve manteria "
+            "o ciclo que o desempate existe para quebrar."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """                    let _ = self.abortar_soltando(sessao.ligacao, |_| m.clone());
+""",
+        "troca": """                    // DEFEITO REPOSTO (516, C1): quem cede volta com as travas.
+                    let _ = m;
+                    self.devolver_a_lista(sessao.ligacao, escritas);
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_transacoes::integridade_na_transacao::dois_commits_que_se_barram_cedem_pela_mais_nova",
+        ],
+        "seguem": [
+            "transacao::testes::o_ciclo_de_commits_barrados_cede_pela_mais_nova",
+            "servidor::testes_transacoes::integridade_na_transacao::o_elo_implicito_respeita_a_leitura_repetivel_de_outra_transacao",
+        ],
+    },
+    {
+        "id": "aresta-velha-depois-do-savepoint",
+        "titulo": "a transação barrada volta ao SAVEPOINT e a aresta velha faz a outra ceder num ciclo que não existe mais",
+        "porque": (
+            "R1 da re-checagem do papel C ao C1: T1 barrada por T2 no COMMIT "
+            "volta ao SAVEPOINT (o elo que precisava de T2 sai com a lista) e "
+            "passa a escrever outra filha; o COMMIT de T2 recebia «ciclo com "
+            "T1» e cedia, e T1 confirmava logo depois sem precisar de nada de "
+            "T2 -- aborto sem ciclo."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """            // desta a refaz, se ainda for barrado.
+            tx.commit_barrado_por = None;
+""",
+        "troca": """            // desta a refaz, se ainda for barrado.
+            // DEFEITO REPOSTO (R1): a aresta velha fica.
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_transacoes::integridade_na_transacao::voltar_ao_savepoint_apaga_a_aresta_do_commit_barrado",
+        ],
+        "seguem": [
+            "servidor::testes_transacoes::integridade_na_transacao::dois_commits_que_se_barram_cedem_pela_mais_nova",
+            "servidor::testes_transacoes::o_savepoint_trunca_a_lista_e_a_transacao_segue",
+        ],
+    },
+    {
+        "id": "corrente-do-ciclo-atravessa-quem-nao-confirma",
+        "titulo": "a corrente do ciclo atravessa transação em ABORT_ONLY, e a outra cede por quem nunca mais vai confirmar",
+        "porque": (
+            "R1, a outra metade: a transacao em ABORT_ONLY (o teto, por "
+            "exemplo) segura as travas ate o ROLLBACK e guarda a aresta, mas "
+            "nao confirma mais. Esperar por ela e espera comum; ceder por "
+            "causa dela e abortar sem ciclo."
+        ),
+        "arquivo": "crates/phxsql-server/src/transacao.rs",
+        "trecho": """            if outra.estado != Estado::Ativa {
+""",
+        "troca": """            // DEFEITO REPOSTO (R1): a corrente atravessa quem nao confirma.
+            if false && outra.estado != Estado::Ativa {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "transacao::testes::o_ciclo_de_commits_barrados_cede_pela_mais_nova",
+        ],
+        "seguem": [
+            "servidor::testes_transacoes::integridade_na_transacao::dois_commits_que_se_barram_cedem_pela_mais_nova",
+            "servidor::testes_transacoes::integridade_na_transacao::voltar_ao_savepoint_apaga_a_aresta_do_commit_barrado",
+        ],
+    },
+    {
+        "id": "cascata-em-voo-ignorada-no-drop",
+        "titulo": "pânico entre duas filhas da cascata solta deixa as seguintes na chave velha, e a tabela delas não recusa",
+        "porque": (
+            "pedido 490, A3 da revisao do DBA ao 451: a janela do `.ndx` da "
+            "filha abria e fechava a cada linha, o `Drop` do desenrolar achava "
+            "`escritas_em_voo = 0` e baixava o byte 52 -- pior que um SIGKILL "
+            "no mesmo ponto, que o deixa em 1."
+        ),
+        "arquivo": "crates/phxsql-store/src/ndx.rs",
+        "trecho": """        if self.cascata_em_voo {
+            self.escrita_interrompida = true;
+            let _ = self.levantar_marca();
+        }
+""",
+        "troca": """        // DEFEITO REPOSTO (490): o Drop ignora a cascata em voo.
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "cascata-ao-alterar"],
+        "caem": [
+            "panico_entre_duas_filhas_deixa_a_filha_recusando_como_um_sigkill",
+            "panico_depois_da_mae_e_antes_da_primeira_filha_tambem_recusa",
+        ],
+        "seguem": [
+            "a_cascata_alcanca_a_neta",
+            "a_filha_acompanha_a_chave_que_a_mae_mudou",
+        ],
+    },
+    {
+        "id": "cascata-em-voo-so-no-aplicar",
+        "titulo": "pânico depois de a mãe ir ao disco e antes da primeira filha deixa as filhas na chave velha, calado",
+        "porque": (
+            "o irmao do 490 uma janela antes: o texto, o diario e a trilha da "
+            "mae rodam DEPOIS de ela estar na chave nova e ANTES da cascata. "
+            "A marca em voo so no `aplicar_ao_alterar` nao alcancava essa "
+            "janela."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        for passo in &mut cascata {
+            passo.filha.ndx.comecar_cascata();
+        }
+""",
+        "troca": """        // DEFEITO REPOSTO (490, irmao): a marca so entra no aplicar_ao_alterar.
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "cascata-ao-alterar"],
+        "caem": [
+            "panico_depois_da_mae_e_antes_da_primeira_filha_tambem_recusa",
+        ],
+        "seguem": [
+            "panico_entre_duas_filhas_deixa_a_filha_recusando_como_um_sigkill",
+            "a_cascata_alcanca_a_neta",
+        ],
     },
 ]

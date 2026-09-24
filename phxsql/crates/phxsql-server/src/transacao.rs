@@ -367,6 +367,20 @@ pub struct Transacao {
     /// passariam pela conferencia contra o disco e quebrariam a passada no
     /// meio -- que e justamente o que este desenho nao pode ter.
     chaves: HashMap<String, HashSet<String>>,
+    /// A transacao que barrou o ULTIMO `COMMIT` desta, pela trava de um elo
+    /// da cascata (pedido 516, condicao C1 do papel C). `None` no comeco de
+    /// cada `COMMIT`. E a aresta do grafo de espera que o desempate le -- ver
+    /// [`Transacoes::commit_barrado`].
+    pub commit_barrado_por: Option<u64>,
+}
+
+/// O que o desempate do [`Transacoes::commit_barrado`] decidiu.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Ciclo {
+    /// A transacao que barrou este `COMMIT`.
+    pub outra: u64,
+    /// Esta e a MAIS NOVA do ciclo: ela cede.
+    pub ceder: bool,
 }
 
 impl Transacao {
@@ -637,9 +651,74 @@ impl Transacoes {
                 tabelas: Vec::new(),
                 motivo_do_aborto: String::new(),
                 chaves: HashMap::new(),
+                commit_barrado_por: None,
             },
         );
         Ok(id)
+    }
+
+    /// O `COMMIT` da transacao de `ligacao` foi barrado pela trava que a
+    /// transacao `por` segura. Anota a aresta e diz se ela FECHA um ciclo de
+    /// `COMMIT`s barrados -- e, fechando, quem cede.
+    ///
+    /// # Por que existe (condicao C1 do papel C ao 516)
+    ///
+    /// O `COMMIT` nao espera trava com a trava de dados na mao: tenta uma vez
+    /// e recusa com `repetir: true`. Isso matou o abraco com a trava global,
+    /// e criou outro: T1 barrado por T2 e T2 barrado por T1, os dois mandados
+    /// repetir, repetindo -- 1.870 rodadas em 11 s, medidas pelo papel C,
+    /// sem ninguem sair. O modulo `travas` diz «sem espera nao ha grafo de
+    /// espera»; a repeticao que o recado manda fazer E a espera, so que no
+    /// cliente, e o grafo volta por ela.
+    ///
+    /// # O desempate
+    ///
+    /// Segue a corrente `commit_barrado_por` a partir de `por`. Se ela volta a
+    /// esta transacao, ha ciclo, e a MAIS NOVA dele cede -- o id cresce na
+    /// ordem de abertura, entao a mais nova e a de id maior. Corrente que nao
+    /// volta a esta transacao nao e ciclo desta, e ninguem cede aqui.
+    ///
+    /// **A idade e escolha NOSSA, e nao copia de motor** (R2 da re-checagem
+    /// do papel C). O PostgreSQL aborta uma das transacoes do impasse sem
+    /// ordem garantida, e a documentacao dele diz para nao contar com qual; o
+    /// InnoDB aborta a mais LEVE, pelas linhas alteradas. Aqui a regra e a
+    /// idade, no molde do wait-die: e deterministica -- o mesmo ciclo cede
+    /// sempre pela mesma, quem quer que o descubra -- e garante progresso,
+    /// porque a mais velha nunca cede e cada rodada tira uma transacao do
+    /// ciclo.
+    ///
+    /// # So transacao ATIVA entra na corrente
+    ///
+    /// A aresta e de quem ainda vai mandar COMMIT de novo. A que esta em
+    /// `ABORT_ONLY` (pelo teto, por exemplo) segura as travas ate o ROLLBACK,
+    /// mas nao confirma mais: esperar por ela e espera comum, e fazer outra
+    /// ceder por causa dela seria abortar sem ciclo (R1). E o `rollback_para`
+    /// apaga a aresta, porque o elo que a criou pode ter saido com a lista.
+    pub fn commit_barrado(&mut self, ligacao: u64, por: u64) -> Option<Ciclo> {
+        let eu = {
+            let tx = self.dentro.get_mut(&ligacao)?;
+            tx.commit_barrado_por = Some(por);
+            tx.id
+        };
+        let mut no_ciclo = vec![eu];
+        let mut atual = por;
+        while atual != eu {
+            if no_ciclo.contains(&atual) {
+                // Um ciclo que nao passa por esta: e dos outros.
+                return None;
+            }
+            no_ciclo.push(atual);
+            let outra = self.por_id(atual)?;
+            if outra.estado != Estado::Ativa {
+                return None;
+            }
+            atual = outra.commit_barrado_por?;
+        }
+        let mais_nova = no_ciclo.iter().copied().max().unwrap_or(eu);
+        Some(Ciclo {
+            outra: por,
+            ceder: mais_nova == eu,
+        })
     }
 
     pub fn de(&self, ligacao: u64) -> Option<&Transacao> {
@@ -2170,6 +2249,73 @@ mod testes {
             escopo_modo: crate::travas::EscopoModo::Dinamico,
             leitura_repetivel: false,
         }
+    }
+
+    /// **O desempate do C1 (pedido 516)**, na regua pura: o ciclo de dois e o
+    /// de tres cedem pela MAIS NOVA, qualquer que seja quem o descobre; a
+    /// corrente que nao volta e a espera comum, e ninguem cede.
+    #[test]
+    fn o_ciclo_de_commits_barrados_cede_pela_mais_nova() {
+        let mut t = Transacoes::nova(1);
+        let a = t.abrir(1, "a", "ip", 0, &abertura()).unwrap();
+        let b = t.abrir(2, "b", "ip", 0, &abertura()).unwrap();
+        let c = t.abrir(3, "c", "ip", 0, &abertura()).unwrap();
+        assert!(a < b && b < c, "o id cresce na ordem de abertura");
+
+        // A corrente sem volta: a barrado por b, que nao esta barrado.
+        assert_eq!(t.commit_barrado(1, b), None);
+        // b barrado por a fecha o ciclo; b e a mais nova, e cede.
+        assert_eq!(
+            t.commit_barrado(2, a),
+            Some(Ciclo {
+                outra: a,
+                ceder: true
+            })
+        );
+        // Descoberto pela mais VELHA, o mesmo ciclo nao a faz ceder.
+        assert_eq!(
+            t.commit_barrado(1, b),
+            Some(Ciclo {
+                outra: b,
+                ceder: false
+            })
+        );
+
+        // Tres: a -> c -> b -> a. Quem cede e c, a mais nova, e so c.
+        let mut t = Transacoes::nova(1);
+        let a = t.abrir(1, "a", "ip", 0, &abertura()).unwrap();
+        let b = t.abrir(2, "b", "ip", 0, &abertura()).unwrap();
+        let c = t.abrir(3, "c", "ip", 0, &abertura()).unwrap();
+        assert_eq!(t.commit_barrado(1, c), None);
+        assert_eq!(t.commit_barrado(3, b), None);
+        assert_eq!(
+            t.commit_barrado(2, a),
+            Some(Ciclo {
+                outra: a,
+                ceder: false
+            })
+        );
+        assert_eq!(
+            t.commit_barrado(3, b),
+            Some(Ciclo {
+                outra: b,
+                ceder: true
+            })
+        );
+        // O ciclo dos OUTROS nao e desta: d barrada por a, que esta no ciclo
+        // a -> c -> b -> a, espera sem ceder.
+        let _d = t.abrir(4, "d", "ip", 0, &abertura()).unwrap();
+        assert_eq!(t.commit_barrado(4, a), None);
+
+        // R1: a aresta de uma transacao que nao vai mais confirmar nao fecha
+        // ciclo. a barrada por b, e a vai a ABORT_ONLY (o teto, por exemplo):
+        // b barrada por a e espera comum, e b NAO cede.
+        let mut t = Transacoes::nova(1);
+        let a = t.abrir(1, "a", "ip", 0, &abertura()).unwrap();
+        let b = t.abrir(2, "b", "ip", 0, &abertura()).unwrap();
+        assert_eq!(t.commit_barrado(1, b), None);
+        t.de_mut(1).unwrap().estado = Estado::AbortOnly;
+        assert_eq!(t.commit_barrado(2, a), None);
     }
 
     #[test]

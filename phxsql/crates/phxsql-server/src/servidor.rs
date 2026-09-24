@@ -109,6 +109,66 @@ impl phxsql_store::table::MaesEmProgresso for MaesAbertas<'_> {
     }
 }
 
+/// Esta escrita da lista e da tabela `tabela` do `database`? UM criterio, para
+/// a leitura da transacao (`sobreposicao`) e a linha que o `empilhar` ve
+/// (`linha_na_transacao`) nunca discordarem sobre de quem e cada escrita.
+fn escrita_da_tabela(e: &crate::transacao::Escrita, database: &str, tabela: &str) -> bool {
+    e.database.eq_ignore_ascii_case(database) && e.tabela.eq_ignore_ascii_case(tabela)
+}
+
+/// O que a transacao DESTA sessao ja pediu em cada tabela, montado so quando o
+/// plano do `ao_alterar` do `empilhar` pergunta -- pedido 515.
+///
+/// # Por que preguicoso
+///
+/// O `empilhar` abre a tabela sem sobreposicao nenhuma, e a razao e medida
+/// (`abrir_travada_sem_sobrepor`): montar o mapa da transacao custava
+/// O(pendentes) por instrucao sob a trava global. O plano so abre FILHA quando
+/// a chave referenciada mudou e ha irma apontando para ela -- o portao
+/// `alguma_coluna_indexada_mudou` sai antes --, entao e so ali que o prefixo
+/// da filha e montado, uma vez por filha e por instrucao. A alteracao que nao
+/// cascateia continua sem pagar nada.
+///
+/// A montagem e a da leitura da transacao (`abrir_travada`, que dobra a lista
+/// pela `sobreposicao`): o plano ve a filha como o `varrer` desta sessao a
+/// veria, e nao uma terceira versao dela.
+struct PrefixoDaSessao<'a> {
+    servidor: &'a Servidor,
+    trava: &'a Instancia,
+    database: &'a str,
+    /// O schema da MAE: a chave estrangeira nao atravessa diretorio, entao a
+    /// filha mora nele.
+    schema: Option<String>,
+    sessao: &'a Sessao,
+    montados: std::cell::RefCell<HashMap<String, Option<Arc<phxsql_store::table::Sobreposicao>>>>,
+}
+
+impl phxsql_store::table::MaesEmProgresso for PrefixoDaSessao<'_> {
+    /// Nenhum handle emprestado: o plano so PERGUNTA pelo prefixo, e a
+    /// conferencia de chave do `empilhar` ja le o disco por conta propria.
+    fn mae(&mut self, _tabela_ref: &str) -> Option<&mut Table> {
+        None
+    }
+
+    fn prefixo(&self, tabela: &str) -> Option<Arc<phxsql_store::table::Sobreposicao>> {
+        let chave = tabela.to_ascii_lowercase();
+        if let Some(s) = self.montados.borrow().get(&chave) {
+            return s.clone();
+        }
+        let qualificada = phxsql_store::catalogo::qualificar(self.schema.as_deref(), tabela);
+        let ped = pedido_da_tabela(self.database, &qualificada);
+        // Tabela que nao abre nao tem prefixo: o plano abre a mesma filha logo
+        // depois, e e ele quem diz o erro dela.
+        let s = self
+            .servidor
+            .abrir_travada(self.trava, &ped, self.sessao)
+            .ok()
+            .and_then(|t| t.sobreposicao().cloned());
+        self.montados.borrow_mut().insert(chave, s.clone());
+        s
+    }
+}
+
 /// A recusa da pre-conferencia do COMMIT: a posicao da escrita do cliente
 /// (a partir de zero), o elo da cascata dela quando foi ele que recusou, e o
 /// erro.
@@ -11850,12 +11910,77 @@ impl Servidor {
         // A ORDEM MANDA, e a dobra e por isso -- ver `Sobreposicao::empilhar`,
         // que e a MESMA que a pre-conferencia do COMMIT usa (pedido 448).
         for e in &tx.escritas {
-            if !e.database.eq_ignore_ascii_case(database) || !e.tabela.eq_ignore_ascii_case(tabela)
-            {
+            if !escrita_da_tabela(e, database, tabela) {
                 continue;
             }
             dobrar(e.rowid, pendente_de(e));
         }
+    }
+
+    /// A linha `rowid` como a transacao DESTA sessao a ve: o disco, com as
+    /// escritas que a propria lista ja pediu NESSA linha por cima.
+    ///
+    /// Pedidos 492 e 515. O `empilhar` le o disco de proposito (a dispensa do
+    /// `abrir_travada_sem_sobrepor`), e continua lendo para o que e do disco:
+    /// a existencia da linha e a `linha_antiga` da marca. Mas a marca de
+    /// excluida que a alteracao herda, a linha sobre a qual o upsert mescla o
+    /// SET e a linha de onde o plano da cascata parte sao da TRANSACAO: lidas
+    /// do disco, `[excluir suave M, atualizar M]` ressuscitava M so dentro de
+    /// transacao, e o elo sobrescrevia o que a lista ja tinha escrito na
+    /// filha.
+    ///
+    /// O custo e uma volta na lista -- a mesma do `nasceu_aqui`, que este
+    /// caminho ja paga -- e a dobra so das escritas DESTA linha, pela funcao
+    /// da leitura (`Table::ler_do_disco_com`), e nao a sobreposicao inteira
+    /// que a porta sem sobrepor existe para nao montar.
+    fn linha_na_transacao(
+        &self,
+        t: &mut Table,
+        database: &str,
+        tabela: &str,
+        rowid: u64,
+        sessao: &Sessao,
+    ) -> Result<Option<Vec<Value>>> {
+        let desta_linha: Vec<crate::transacao::Escrita> = {
+            let reg = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+            let tx = reg.de(sessao.ligacao).ok_or_else(sem_transacao)?;
+            tx.escritas
+                .iter()
+                .filter(|e| e.rowid == rowid && escrita_da_tabela(e, database, tabela))
+                .cloned()
+                .collect()
+        };
+        let pendentes: Vec<phxsql_store::table::Pendente<'_>> =
+            desta_linha.iter().map(pendente_de).collect();
+        t.ler_do_disco_com(rowid, &pendentes)
+    }
+
+    /// O plano da cascata de uma alteracao que a transacao esta EMPILHANDO,
+    /// contra o que ela ve (pedido 515): a mae parte de `antes` -- a linha
+    /// como a transacao a ve --, e cada filha que o plano abre enxerga o que a
+    /// lista ja pediu nela. Os tres pontos que planejam no `empilhar` (a
+    /// alteracao, o upsert que virou alteracao e a fase 3 da cascata) passam
+    /// por aqui, e nao cada um pelo seu caminho.
+    #[allow(clippy::too_many_arguments)]
+    fn planejar_cascata_empilhada(
+        &self,
+        trava: &Instancia,
+        t: &mut Table,
+        database: &str,
+        tabela: &str,
+        antes: &[Value],
+        crua: &[Value],
+        sessao: &Sessao,
+    ) -> Result<Vec<phxsql_store::table::EscritaDaCascata>> {
+        let prefixo = PrefixoDaSessao {
+            servidor: self,
+            trava,
+            database,
+            schema: phxsql_store::catalogo::separar_qualificado(tabela).0,
+            sessao,
+            montados: std::cell::RefCell::new(HashMap::new()),
+        };
+        t.planejar_cascata_da_alteracao(antes, crua, Some(&prefixo))
     }
 
     /// Anota na trilha que uma operacao LEU dado pessoal.
@@ -14746,8 +14871,9 @@ impl Servidor {
             id,
             &chave,
             Alvo::Tabela(crate::travas::Trava::Compartilhada),
+            Espera::AteOPrazo,
         ) {
-            Ok(()) => None,
+            Ok(_) => None,
             Err(e) => Some(Err(e)),
         }
     }
@@ -14897,7 +15023,13 @@ impl Servidor {
         // segurando o que a outra quer enquanto quer o que a outra segura.
         let modo = self.modo_da_transacao(sessao)?;
         for chave in &efetivas {
-            self.esperar_trava(sessao, id, chave, Alvo::Tabela(modo.na_tabela()))?;
+            self.esperar_trava(
+                sessao,
+                id,
+                chave,
+                Alvo::Tabela(modo.na_tabela()),
+                Espera::AteOPrazo,
+            )?;
         }
         Ok(())
     }
@@ -15147,6 +15279,12 @@ impl Servidor {
                 })?;
             let descartadas = tx.escritas.len().saturating_sub(ate);
             tx.escritas.truncate(ate);
+            // A aresta do COMMIT barrado falava da lista que acabou de ser
+            // cortada (R1 da re-checagem do papel C): o elo que precisava da
+            // outra transacao pode ter saido junto, e a aresta velha faria a
+            // outra ceder num ciclo que nao existe mais. O proximo COMMIT
+            // desta a refaz, se ainda for barrado.
+            tx.commit_barrado_por = None;
             // Os pontos criados DEPOIS deste somem; o proprio fica, e e o que
             // o SQL manda -- da para voltar ao mesmo ponto duas vezes.
             tx.pontos.retain(|x| x.ate <= ate);
@@ -15390,6 +15528,9 @@ impl Servidor {
             )));
         }
 
+        // A linha que a alteracao muda, como a transacao a ve -- ver
+        // `linha_na_transacao`. So o ramo do `atualizar` a preenche.
+        let mut vista_da_alteracao: Option<Vec<Value>> = None;
         let escrita = match acao {
             Acao::Inserir => {
                 let valores_json = p
@@ -15459,26 +15600,24 @@ impl Servidor {
                             // descreve.
                             self.travar_para_empilhar(sessao, &chave, rowid)?;
                             let velha = t.ler(rowid)?.unwrap_or_default();
+                            // A linha como a TRANSACAO a ve (pedido 492): a
+                            // `velha` do disco continua sendo a `linha_antiga`
+                            // da marca, mas a alteracao parte desta.
+                            let vista = self
+                                .linha_na_transacao(&mut t, &database, &tabela, rowid, sessao)?
+                                .unwrap_or_else(|| velha.clone());
                             // A coluna de sistema do softdeleted vem da linha
-                            // gravada quando o pedido nao a mandou -- a MESMA
+                            // atual quando o pedido nao a mandou -- a MESMA
                             // guarda do `atualizar`, porque isto virou um.
-                            if let Some(i) = t.esquema().coluna_softdeleted() {
-                                let veio = matches!(&valores_json, Json::Objeto(_))
-                                    && valores_json
-                                        .campo(phxsql_core::schema::COLUNA_SOFTDELETED)
-                                        .is_some();
-                                if !veio {
-                                    if let Some(v) = velha.get(i) {
-                                        linha[i] = v.clone();
-                                    }
-                                }
+                            if crate::valores::herda_a_marca(&valores_json, t.esquema()) {
+                                crate::valores::herdar_a_marca(&mut linha, &vista, t.esquema());
                             }
-                            // Com `atualizar`, o que empilha e a linha LIDA com
+                            // Com `atualizar`, o que empilha e a linha ATUAL com
                             // o SET por cima -- a mesma regra do `op_inserir`,
                             // porque isto virou um `atualizar` e o `VALUES`
                             // nao e para a linha que ja existe.
                             if let Some(set) = atualizar {
-                                linha = crate::upsert::mesclar(&velha, set, t.esquema())?;
+                                linha = crate::upsert::mesclar(&vista, set, t.esquema())?;
                             }
                             // O BEFORE UPDATE do ramo que o upsert virou, sobre
                             // a linha como VAI FICAR -- depois da mescla, com o
@@ -15512,12 +15651,21 @@ impl Servidor {
                             };
                             // ACID-C: o upsert que virou `atualizar` cascateia
                             // como qualquer alteracao. Planeja com a mae aberta
-                            // e a trava na mao (disco estavel), e so entao decide
-                            // o caminho.
+                            // e a trava na mao (disco estavel), contra o que a
+                            // transacao ve (pedido 515), e so entao decide o
+                            // caminho.
                             let plano = if nova.linha_antiga.is_empty() {
                                 Vec::new()
                             } else {
-                                t.planejar_cascata_da_alteracao(&nova.linha_antiga, &nova.linha)?
+                                self.planejar_cascata_empilhada(
+                                    &trava,
+                                    &mut t,
+                                    &database,
+                                    &tabela,
+                                    &vista,
+                                    &nova.linha,
+                                    sessao,
+                                )?
                             };
                             // A trava de dados sai ANTES da do registro de
                             // transacoes, como no caminho de sempre: a ordem
@@ -15626,18 +15774,24 @@ impl Servidor {
                         "rowid {rowid} nao existe em {database}.{tabela}"
                     )));
                 }
+                // A linha como a TRANSACAO a ve (pedido 492). A `velha` do
+                // disco decide se a linha existe e e a `linha_antiga` da marca;
+                // a marca herdada e o plano da cascata partem desta. Lida do
+                // disco, `[excluir suave M, atualizar M]` ressuscitava M so
+                // dentro de transacao -- e a nascida aqui, sem `velha`, nao
+                // herdava marca nenhuma.
+                let vista = self
+                    .linha_na_transacao(&mut t, &database, &tabela, rowid, sessao)?
+                    .or_else(|| velha.clone());
                 let mut linha = json_para_linha(&valores_json, t.esquema())?;
                 // A MESMA guarda do `op_atualizar`: quem nao mandou a coluna
                 // de sistema nao esta ressuscitando linha excluida.
-                if let (Some(i), Some(atual)) = (t.esquema().coluna_softdeleted(), velha.as_ref()) {
-                    let nome = phxsql_core::schema::COLUNA_SOFTDELETED;
-                    let veio = matches!(&valores_json, Json::Objeto(_))
-                        && valores_json.campo(nome).is_some()
-                        || matches!(&valores_json, Json::Lista(l) if l.len() > i);
-                    if !veio {
-                        linha[i] = atual[i].clone();
+                if let Some(atual) = vista.as_deref() {
+                    if crate::valores::herda_a_marca(&valores_json, t.esquema()) {
+                        crate::valores::herdar_a_marca(&mut linha, atual, t.esquema());
                     }
                 }
+                vista_da_alteracao = vista;
                 if !antes.is_empty() {
                     self.rodar_gatilhos_antes(
                         &antes,
@@ -15712,11 +15866,23 @@ impl Servidor {
         // `planejar_cascata_para_lista` sai de graca (`is_empty()`) no resto --
         // insercao, exclusao, ou alteracao que nao toca chave --, e por isso o
         // portao vem ANTES de qualquer trabalho de cascata. A mae ainda esta
-        // aberta e a trava de dados na mao, entao o plano le o disco estavel.
+        // aberta e a trava de dados na mao, entao o plano le o disco estavel --
+        // e, por cima dele, o que a transacao ja pediu (pedido 515).
         let plano_cascata = if escrita.acao == crate::transacao::Acao::Atualizar
             && !escrita.linha_antiga.is_empty()
         {
-            t.planejar_cascata_da_alteracao(&escrita.linha_antiga, &escrita.linha)?
+            let antes = vista_da_alteracao
+                .as_deref()
+                .unwrap_or(&escrita.linha_antiga);
+            self.planejar_cascata_empilhada(
+                &trava,
+                &mut t,
+                &database,
+                &tabela,
+                antes,
+                &escrita.linha,
+                sessao,
+            )?
         } else {
             Vec::new()
         };
@@ -15861,7 +16027,16 @@ impl Servidor {
             // mesmas funcoes na mesma ordem, e um conserto que entrasse so la
             // deixaria a fase 3 da cascata pagando o mapa que ninguem le.
             let mut t = self.abrir_travada_sem_sobrepor(&trava, &ped, sessao)?;
-            let plano = t.planejar_cascata_da_alteracao(&mae.linha_antiga, &mae.linha)?;
+            // O MESMO plano da fase 1, contra o que a transacao ve (pedido
+            // 515): a mae como a lista a deixou, e cada filha com o que a
+            // lista ja pediu nela. Refeito aqui porque o disco pode ter mudado
+            // na fresta -- a lista desta sessao, nao.
+            let antes = self
+                .linha_na_transacao(&mut t, database, tabela, mae.rowid, sessao)?
+                .unwrap_or_else(|| mae.linha_antiga.clone());
+            let plano = self.planejar_cascata_empilhada(
+                &trava, &mut t, database, tabela, &antes, &mae.linha, sessao,
+            )?;
             drop(t);
             drop(trava);
             plano
@@ -15964,6 +16139,28 @@ impl Servidor {
     /// inteiro; quem nao declara fica com o `LOCK TIMEOUT` de rede embaixo. E
     /// esse e exatamente o preco do `DYNAMIC`, dito antes de alguem descobrir.
     fn travar_para_empilhar(&self, sessao: &Sessao, chave: &str, rowid: u64) -> Result<()> {
+        // Esperando ate o prazo, a barrada nunca volta: vira o erro do LOCK
+        // TIMEOUT la dentro.
+        self.travar_para_escrever(sessao, chave, rowid, Espera::AteOPrazo)
+            .map(|_| ())
+    }
+
+    /// O corpo do [`Servidor::travar_para_empilhar`], com a espera escolhida.
+    ///
+    /// `Espera::Nenhuma` e a do COMMIT (pedido 516): o elo da cascata que so
+    /// a pre-conferencia descobre -- a filha que nasceu na chave velha depois
+    /// do `empilhar` -- escreve numa linha que a transacao nunca travou, e
+    /// passava por cima da leitura repetivel de outra transacao. Ele toma a
+    /// trava pelo mesmo caminho de toda escrita da transacao (escopo, tabela,
+    /// linha); o que muda e so que o COMMIT esta com a trava de dados na mao
+    /// e nao pode esperar ali -- a doenca dos 29.456 ms.
+    fn travar_para_escrever(
+        &self,
+        sessao: &Sessao,
+        chave: &str,
+        rowid: u64,
+        espera: Espera,
+    ) -> Result<Option<crate::travas::Barrada>> {
         let (id, modo, escopo_modo, no_escopo, declarou) = {
             let t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
             let tx = t.de(sessao.ligacao).ok_or_else(sem_transacao)?;
@@ -15993,15 +16190,19 @@ impl Servidor {
         // Tabela primeiro, linha depois -- e sempre nessa ordem, que e o que a
         // hierarquia de intencao existe para dar: quem quer a tabela inteira ve
         // a intencao de quem esta nas linhas sem varrer linha por linha.
-        self.esperar_trava(sessao, id, chave, Alvo::Tabela(modo.na_tabela()))?;
+        if let Some(b) =
+            self.esperar_trava(sessao, id, chave, Alvo::Tabela(modo.na_tabela()), espera)?
+        {
+            return Ok(Some(b));
+        }
         if modo.trava_linha() {
             // `rowid` ja vem sendo o FIM DA TABELA quando a acao e anexar: o
             // proximo slot e `slots() + 1` e ele e um so, entao duas
             // transacoes que anexam disputam o MESMO lugar -- e disputam de
             // verdade, porque o rowid e o endereco.
-            self.esperar_trava(sessao, id, chave, Alvo::Linha(rowid))?;
+            return self.esperar_trava(sessao, id, chave, Alvo::Linha(rowid), espera);
         }
-        Ok(())
+        Ok(None)
     }
 
     /// Toma uma trava, esperando no maximo o `LOCK TIMEOUT` desta transacao.
@@ -16021,7 +16222,22 @@ impl Servidor {
     /// disputa a cada 2 ms -- **13,2 ns** medidos em `DESEMPENHO.md` --, e
     /// quem espera ja esta parado de qualquer forma. Trocar isto por condvar e
     /// otimizar o caminho de quem ja perdeu.
-    fn esperar_trava(&self, sessao: &Sessao, id: u64, chave: &str, alvo: Alvo) -> Result<()> {
+    ///
+    /// # `Espera::Nenhuma`: uma tentativa, e a recusa diz por que
+    ///
+    /// E a do COMMIT, que esta com a trava de dados na mao (pedido 516). A
+    /// tentativa e a MESMA do laco -- `pegar_tabela`/`pegar_linha`, com o
+    /// mesmo recado de quem barrou --; o que ela nao faz e dormir, nem anotar
+    /// espera na ficha, nem estourar o prazo da transacao, que a lista do
+    /// COMMIT ja nao esta mais nela para jogar fora.
+    fn esperar_trava(
+        &self,
+        sessao: &Sessao,
+        id: u64,
+        chave: &str,
+        alvo: Alvo,
+        espera: Espera,
+    ) -> Result<Option<crate::travas::Barrada>> {
         let (prazo_ms, expira_ms) = {
             let t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
             let tx = t.de(sessao.ligacao).ok_or_else(sem_transacao)?;
@@ -16037,13 +16253,19 @@ impl Servidor {
                     Alvo::Linha(rowid) => tr.pegar_linha(chave, id, rowid),
                 };
                 match r {
+                    Ok(()) if espera == Espera::Nenhuma => return Ok(None),
                     Ok(()) => {
                         drop(tr);
                         self.anotar_espera(sessao, "");
-                        return Ok(());
+                        return Ok(None);
                     }
                     Err(b) => ultima = Some(b),
                 }
+            }
+            if espera == Espera::Nenhuma {
+                // Quem barrou volta INTEIRO, e nao numa frase: o COMMIT precisa
+                // do id dele para o desempate do ciclo (C1 do 516).
+                return Ok(ultima);
             }
             // O prazo da TRANSACAO tambem corta a espera: nao adianta esperar
             // 500 ms por uma trava se a transacao morre em 50.
@@ -16097,33 +16319,51 @@ impl Servidor {
     /// numero do prazo. A conexao continua viva e o cliente descobre pelo
     /// erro, que e o que ele sabe tratar.
     fn estourar_prazo(&self, sessao: &Sessao) -> PhxError {
-        let (id, prazo) = match self.transacoes.lock() {
-            Ok(mut t) => match t.de_mut(sessao.ligacao) {
-                Some(tx) => {
-                    tx.estado = crate::transacao::Estado::AbortOnly;
-                    tx.escritas.clear();
-                    tx.pontos.clear();
-                    tx.esperando.clear();
-                    let prazo = tx.expira_ms - tx.desde_ms;
-                    if tx.motivo_do_aborto.is_empty() {
-                        tx.motivo_do_aborto =
-                            format!("o TIMEOUT da transacao ({prazo} ms) estourou");
-                    }
-                    (tx.id, prazo)
-                }
-                None => return sem_transacao(),
-            },
-            Err(_) => return trava_envenenada(),
+        let r = self.abortar_soltando(sessao.ligacao, |tx| {
+            format!(
+                "o TIMEOUT da transacao ({} ms) estourou",
+                tx.expira_ms - tx.desde_ms
+            )
+        });
+        match r {
+            Ok((id, prazo)) => PhxError::TransacaoAbortada(format!(
+                "a transacao {id} passou do TIMEOUT de {prazo} ms e foi revertida; \
+                 as travas dela ja sairam. Mande ROLLBACK para fechar"
+            )),
+            Err(e) => e,
+        }
+    }
+
+    /// O gestor encerra a transacao de `ligacao`: `ABORT_ONLY`, lista fora,
+    /// travas soltas JA. Devolve `(id, prazo em ms)`.
+    ///
+    /// Uma porta para as duas causas -- o prazo estourado e o ciclo de
+    /// `COMMIT`s que cede pela mais nova (C1 do 516) --, porque as duas pedem
+    /// o mesmo: segurar tabela alheia depois de a transacao nao poder mais
+    /// confirmar e exatamente o que cada uma existe para impedir. O `motivo`
+    /// so entra se a transacao ainda nao tinha um.
+    fn abortar_soltando(
+        &self,
+        ligacao: u64,
+        motivo: impl FnOnce(&crate::transacao::Transacao) -> String,
+    ) -> Result<(u64, i64)> {
+        let (id, prazo) = {
+            let mut t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+            let tx = t.de_mut(ligacao).ok_or_else(sem_transacao)?;
+            tx.estado = crate::transacao::Estado::AbortOnly;
+            tx.escritas.clear();
+            tx.pontos.clear();
+            tx.esperando.clear();
+            tx.commit_barrado_por = None;
+            if tx.motivo_do_aborto.is_empty() {
+                tx.motivo_do_aborto = motivo(tx);
+            }
+            (tx.id, tx.expira_ms - tx.desde_ms)
         };
-        // As travas saem JA -- segurar tabela alheia depois do prazo e
-        // exatamente o que o prazo existe para impedir.
         if let Ok(mut tr) = self.travas.lock() {
             tr.soltar_tudo(id);
         }
-        PhxError::TransacaoAbortada(format!(
-            "a transacao {id} passou do TIMEOUT de {prazo} ms e foi revertida; \
-             as travas dela ja sairam. Mande ROLLBACK para fechar"
-        ))
+        Ok((id, prazo))
     }
 
     /// Poe o `STATEMENT TIMEOUT` desta transacao no relogio da operacao.
@@ -16535,6 +16775,10 @@ impl Servidor {
                 }
             }
             tx.estado = crate::transacao::Estado::Confirmando;
+            // A aresta do grafo de espera e deste COMMIT, e nao do anterior:
+            // se ele for barrado de novo, ela volta la embaixo, com quem
+            // barrou agora (C1 do 516).
+            tx.commit_barrado_por = None;
             // `take` e nao `clone`: depois de a marca estar no disco, a lista
             // em RAM deixou de ser a verdade -- a marca e. E cinco mil linhas
             // clonadas seriam cinco mil linhas de RAM para jogar fora.
@@ -16594,6 +16838,14 @@ impl Servidor {
             Ok(elos) => elos,
             Err(recusa) => {
                 drop(trava);
+                // A mais nova de um ciclo de COMMITs barrados CEDE (C1 do
+                // 516): encerrada pelo gestor, com as travas soltas agora, e
+                // nao devolvida -- devolver a lista com as travas seria manter
+                // o ciclo que o desempate existe para quebrar.
+                if let PhxError::TransacaoAbortada(m) = &recusa.erro {
+                    let _ = self.abortar_soltando(sessao.ligacao, |_| m.clone());
+                    return Err(recusa.erro);
+                }
                 if matches!(recusa.erro.codigo() / 1000, 2 | 3) {
                     let w = &escritas[recusa.posicao];
                     self.descartar_transacao(sessao.ligacao);
@@ -16808,6 +17060,23 @@ impl Servidor {
                     cascata_na_lista: true,
                 })
                 .collect();
+            // O elo que o COMMIT acrescenta escreve numa linha que a transacao
+            // pode nunca ter travado -- a filha que nasceu na chave velha
+            // depois do `empilhar` --, e passava por cima da leitura repetivel
+            // de outra transacao (pedido 516): T3 lia 5 e relia 6. Ele trava
+            // pelo mesmo caminho de toda escrita da transacao, sem esperar,
+            // porque a trava de dados esta na mao; quem ja tinha a trava (a
+            // linha que a lista escreveu) passa pela idempotencia do gestor.
+            for elo in &elos {
+                let chave = crate::carga::chave(database, &elo.tabela);
+                let barrada = self
+                    .travar_para_escrever(sessao, &chave, elo.rowid, Espera::Nenhuma)
+                    .map_err(|erro| recusa(i, Some((elo.tabela.clone(), elo.rowid)), erro))?;
+                if let Some(b) = barrada {
+                    let erro = self.elo_barrado(sessao, elo, &b);
+                    return Err(recusa(i, Some((elo.tabela.clone(), elo.rowid)), erro));
+                }
+            }
             for (k, elo) in elos.iter().enumerate() {
                 let chave = (elo.tabela.to_ascii_lowercase(), elo.rowid);
                 let aqui = (i, k + 1);
@@ -16847,6 +17116,52 @@ impl Servidor {
             elos_da_lista.push((i, elos));
         }
         Ok(elos_da_lista)
+    }
+
+    /// O erro do COMMIT cujo elo esbarrou na trava de `b` -- e o desempate
+    /// quando os dois COMMITs se barram (condicao C1 do papel C ao 516).
+    ///
+    /// Sem ciclo, e a espera comum: `EM_TRANSACAO`, `repetir: true`, nada
+    /// gravado e a transacao ativa. Com ciclo, a MAIS NOVA cede --
+    /// `TRANSACAO_ABORTADA`, `repetir: false` -- e a mais velha continua
+    /// mandada repetir: na proxima vez ela passa, porque o `op_commit` solta
+    /// as travas da que cedeu antes de responder. Medido pelo papel C sem o
+    /// desempate: 1.870 rodadas em 11 s com os dois mandados repetir, e
+    /// ninguem saia.
+    fn elo_barrado(
+        &self,
+        sessao: &Sessao,
+        elo: &crate::transacao::Escrita,
+        b: &crate::travas::Barrada,
+    ) -> PhxError {
+        let Ok(mut reg) = self.transacoes.lock() else {
+            return trava_envenenada();
+        };
+        let recado = reg.recado_da_barrada(b, crate::agora_ms());
+        let onde = format!(
+            "a cascata desta transacao leva o elo a {} rowid {}, que ela nao tinha \
+             travado -- {recado}",
+            elo.tabela, elo.rowid
+        );
+        match reg.commit_barrado(sessao.ligacao, b.transacao) {
+            Some(c) if c.ceder => PhxError::TransacaoAbortada(format!(
+                "{onde}; e o COMMIT dela tambem esta barrado por esta: ciclo com a \
+                 transacao {}. Esta e a mais nova e cede -- NADA foi gravado, as \
+                 travas dela ja sairam. Mande ROLLBACK",
+                c.outra
+            )),
+            Some(c) => PhxError::EmTransacao(format!(
+                "{onde}; ciclo com a transacao {}, que e a mais nova e cede no \
+                 COMMIT dela. NADA foi gravado e esta transacao continua ativa: \
+                 mande COMMIT de novo",
+                c.outra
+            )),
+            None => PhxError::EmTransacao(format!(
+                "{onde}. O COMMIT nao espera trava com a trava de dados na mao: NADA \
+                 foi gravado e a transacao continua ativa -- mande COMMIT de novo \
+                 quando a outra terminar, ou ROLLBACK"
+            )),
+        }
     }
 
     /// Uma escrita da pre-conferencia: abre a tabela dela (uma vez por
@@ -20705,7 +21020,16 @@ impl Servidor {
                     } else {
                         Some(&mut gancho)
                     };
-                crate::upsert::aplicar(&mut t, &indice, &linha, modo, atualizar, gancho)?
+                let herda_marca = crate::valores::herda_a_marca(&valores_json, t.esquema());
+                crate::upsert::aplicar(
+                    &mut t,
+                    &indice,
+                    &linha,
+                    modo,
+                    atualizar,
+                    gancho,
+                    herda_marca,
+                )?
             }
         };
         let rowid = feito.rowid;
@@ -21103,15 +21427,9 @@ impl Servidor {
         // muda. Sem isto, `json_para_linha` preencheria `false` e um
         // `atualizar` de rotina RESSUSCITARIA uma linha excluida -- sem erro
         // nenhum, e sem ninguem perceber ate a linha reaparecer na lista.
-        if let Some(i) = t.esquema().coluna_softdeleted() {
-            let nome = phxsql_core::schema::COLUNA_SOFTDELETED;
-            let veio = matches!(&valores_json, Json::Objeto(_))
-                && valores_json.campo(nome).is_some()
-                || matches!(&valores_json, Json::Lista(l) if l.len() > i);
-            if !veio {
-                if let Some(atual) = t.ler(rowid)? {
-                    linha[i] = atual[i].clone();
-                }
+        if crate::valores::herda_a_marca(&valores_json, t.esquema()) {
+            if let Some(atual) = t.ler(rowid)? {
+                crate::valores::herdar_a_marca(&mut linha, &atual, t.esquema());
             }
         }
 
@@ -27748,6 +28066,16 @@ fn trava_reentrante() -> PhxError {
 enum Alvo {
     Tabela(crate::travas::Trava),
     Linha(u64),
+}
+
+/// Quanto uma trava pedida espera por quem a segura.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Espera {
+    /// O `LOCK TIMEOUT` da transacao, FORA da trava de dados -- toda instrucao.
+    AteOPrazo,
+    /// Uma tentativa so: o COMMIT, que esta DENTRO da trava de dados (pedido
+    /// 516). Ver `Servidor::esperar_trava`.
+    Nenhuma,
 }
 
 /// Uma duracao do pedido, em milissegundos.
@@ -46390,6 +46718,593 @@ mod testes_transacoes {
             );
         }
     }
+
+    /// **Pedidos 491, 492, 515 e 516: a integridade DENTRO da transacao.**
+    /// Cada prova confere o DISCO depois do COMMIT (ou da recusa), e a que cabe
+    /// dos dois lados roda fora e dentro de transacao: a mesma sequencia tem
+    /// de dar o mesmo resultado nos dois.
+    mod integridade_na_transacao {
+        use super::*;
+
+        fn escreve(s: &Arc<Servidor>, ses: &Sessao, corpo: &str) -> Json {
+            pede(s, ses, corpo).unwrap_or_else(|e| panic!("{corpo}: {e}"))
+        }
+
+        /// A linha `rowid` de `tabela` com a coluna de sistema, ou `Nulo`.
+        fn linha(s: &Arc<Servidor>, ses: &Sessao, tabela: &str, rowid: u64) -> Json {
+            escreve(
+                s,
+                ses,
+                &format!(r#""op":"ler","database":"loja","tabela":"{tabela}","rowid":{rowid}"#),
+            )
+        }
+
+        fn excluida(l: &Json) -> bool {
+            l.booleano_ou(phxsql_core::schema::COLUNA_SOFTDELETED, false)
+        }
+
+        fn confirma(s: &Arc<Servidor>, ses: &Sessao) -> String {
+            let r = pede(s, ses, r#""op":"commit""#);
+            let veredito = match &r {
+                Ok(j) => j.escrever(),
+                Err(e) => e.to_string(),
+            };
+            let r = r.unwrap_or_else(|_| panic!("lista valida recusada: {veredito}"));
+            assert_eq!(
+                r.texto_ou("transaction_state", ""),
+                "COMMITTED",
+                "{veredito}"
+            );
+            veredito
+        }
+
+        // ------------------------------------------------------------- 491
+
+        /// `funcionarios(id, chefe_id, nome)`, `chefe_id -> funcionarios.id`
+        /// conferida, com indice dos dois lados.
+        fn hierarquia(s: &Arc<Servidor>, ses: &Sessao) {
+            escreve(s, ses, r#""op":"criar_database","database":"loja""#);
+            escreve(
+                s,
+                ses,
+                r#""op":"criar_tabela","database":"loja","tabela":"funcionarios",
+                   "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                              {"nome":"chefe_id","tipo":"Int8"},
+                              {"nome":"nome","tipo":"Str(20)"}],
+                   "indices":[{"nome":"pk","colunas":["id"],"unico":true,"primario":true},
+                              {"nome":"por_chefe","colunas":["chefe_id"]}],
+                   "chaves_estrangeiras":[{"nome":"fk_chefe","colunas":["chefe_id"],
+                                           "tabela_ref":"funcionarios","colunas_ref":["id"]}]"#,
+            );
+        }
+
+        fn funcionario(s: &Arc<Servidor>, ses: &Sessao, id: i64, chefe: Option<i64>) -> u64 {
+            let chefe = chefe.map_or("null".to_string(), |c| c.to_string());
+            let r = escreve(
+                s,
+                ses,
+                &format!(
+                    r#""op":"inserir","database":"loja","tabela":"funcionarios",
+                       "linha":{{"id":{id},"chefe_id":{chefe},"nome":"f{id}"}}"#
+                ),
+            );
+            r.inteiro_ou("rowid", -1) as u64
+        }
+
+        fn exclui(tabela: &str, rowid: u64, fisico: bool) -> String {
+            format!(
+                r#""op":"excluir","database":"loja","tabela":"{tabela}","rowid":{rowid},"fisico":{fisico}"#
+            )
+        }
+
+        /// **Pedido 491, fora de transacao:** excluir o chefe que tem
+        /// subordinado -- de vez e suave -- respondia `Ok`, e o subordinado
+        /// ficava apontando para ninguem. E os dois lados que nao mudam: a linha
+        /// que aponta so para si mesma sai, e o chefe sai depois do subordinado.
+        #[test]
+        fn fora_da_transacao_o_chefe_com_subordinado_nao_sai() {
+            let dir = dir_temp("491-fora");
+            let s = servidor(&dir);
+            let ses = sessao(4911);
+            hierarquia(&s, &ses);
+            let chefe = funcionario(&s, &ses, 1, None);
+            let sub = funcionario(&s, &ses, 2, Some(1));
+            for fisico in [true, false] {
+                match pede(&s, &ses, &exclui("funcionarios", chefe, fisico)) {
+                    Err(e) => assert!(
+                        e.nome() == "INTEGRIDADE" && e.to_string().contains("fk_chefe"),
+                        "fisico={fisico}: {e}"
+                    ),
+                    Ok(j) => panic!(
+                        "fisico={fisico}: o chefe com subordinado saiu e o subordinado \
+                         ficou orfao: {}",
+                        j.escrever()
+                    ),
+                }
+                let l = linha(&s, &ses, "funcionarios", chefe);
+                assert!(
+                    !matches!(l, Json::Nulo) && !excluida(&l),
+                    "fisico={fisico}: o chefe mudou apesar da recusa: {}",
+                    l.escrever()
+                );
+            }
+            let dono = funcionario(&s, &ses, 3, None);
+            escreve(
+                &s,
+                &ses,
+                &format!(
+                    r#""op":"atualizar","database":"loja","tabela":"funcionarios","rowid":{dono},
+                       "linha":{{"id":3,"chefe_id":3,"nome":"f3"}}"#
+                ),
+            );
+            escreve(&s, &ses, &exclui("funcionarios", dono, true));
+            escreve(&s, &ses, &exclui("funcionarios", sub, true));
+            escreve(&s, &ses, &exclui("funcionarios", chefe, true));
+            assert_eq!(quantas(&s, &ses, "funcionarios"), 0);
+        }
+
+        /// **Pedido 491, dentro:** `[inserir 11->10, excluir 10]` confirmava
+        /// com o 11 apontando para um chefe excluido. Suave e de vez recusam no
+        /// COMMIT, antes da marca e com zero gravado.
+        #[test]
+        fn na_transacao_o_subordinado_novo_segura_o_chefe() {
+            let dir = dir_temp("491-dentro");
+            let s = servidor(&dir);
+            let ses = sessao(4912);
+            hierarquia(&s, &ses);
+            let chefe = funcionario(&s, &ses, 10, None);
+            for fisico in [false, true] {
+                let antes = (
+                    quantas(&s, &ses, "funcionarios"),
+                    slots(&s, &ses, "funcionarios"),
+                );
+                escreve(&s, &ses, r#""op":"begin""#);
+                funcionario(&s, &ses, 11, Some(10));
+                escreve(&s, &ses, &exclui("funcionarios", chefe, fisico));
+                let r = pede(&s, &ses, r#""op":"commit""#);
+                let depois = (
+                    quantas(&s, &ses, "funcionarios"),
+                    slots(&s, &ses, "funcionarios"),
+                );
+                match r {
+                    Err(e) => {
+                        let texto = e.to_string();
+                        assert_eq!(e.nome(), "INTEGRIDADE", "fisico={fisico}: {texto}");
+                        assert!(
+                            texto.contains("fk_chefe") && texto.contains("ANTES da marca"),
+                            "fisico={fisico}: {texto}"
+                        );
+                        assert_eq!(depois, antes, "fisico={fisico}: (linhas, slots): {texto}");
+                    }
+                    Ok(j) => panic!(
+                        "fisico={fisico}: o COMMIT confirmou o subordinado de um chefe \
+                         excluido: {} -- (linhas, slots) antes {antes:?}, depois {depois:?}",
+                        j.escrever()
+                    ),
+                }
+                let l = linha(&s, &ses, "funcionarios", chefe);
+                assert!(!excluida(&l), "fisico={fisico}: {}", l.escrever());
+            }
+        }
+
+        // ------------------------------------------------------------- 492
+
+        /// **Pedido 492:** `[excluir suave M, atualizar M.nome]`. Fora de
+        /// transacao M continua excluida; dentro, o `empilhar` copiava a marca
+        /// do DISCO para a linha empilhada, e o COMMIT ressuscitava M. A mesma
+        /// sequencia tem de dar o mesmo resultado -- e tambem com a linha que
+        /// nasceu na propria transacao, e com o upsert que virou `atualizar`
+        /// (o irmao que copia a mesma marca, pelas mesmas funcoes).
+        #[test]
+        fn alterar_a_linha_excluida_nao_a_ressuscita_fora_nem_dentro() {
+            let dir = dir_temp("492");
+            let s = servidor(&dir);
+            let ses = sessao(4921);
+            base(&s, &ses);
+            let cli = |id: i64, nome: &str| {
+                format!(
+                    r#""op":"inserir","database":"loja","tabela":"clientes",
+                       "linha":{{"id":{id},"nome":"{nome}"}}"#
+                )
+            };
+            let altera = |r: u64, nome: &str| {
+                format!(
+                    r#""op":"atualizar","database":"loja","tabela":"clientes","rowid":{r},
+                       "linha":{{"id":{r},"nome":"{nome}"}}"#
+                )
+            };
+            let upsert = |r: u64, nome: &str| {
+                format!(
+                    r#""op":"inserir","database":"loja","tabela":"clientes",
+                       "linha":{{"id":{r},"nome":"{nome}"}},"se_existir":"atualizar""#
+                )
+            };
+            // Fora: a referencia, pelo `atualizar` e pelo upsert.
+            escreve(&s, &ses, &cli(1, "Ana"));
+            escreve(&s, &ses, &exclui("clientes", 1, false));
+            escreve(&s, &ses, &altera(1, "Ana II"));
+            escreve(&s, &ses, &cli(2, "Bia"));
+            escreve(&s, &ses, &exclui("clientes", 2, false));
+            escreve(&s, &ses, &upsert(2, "Bia II"));
+            // Dentro, a linha do disco.
+            escreve(&s, &ses, &cli(3, "Cid"));
+            escreve(&s, &ses, r#""op":"begin""#);
+            escreve(&s, &ses, &exclui("clientes", 3, false));
+            escreve(&s, &ses, &altera(3, "Cid II"));
+            confirma(&s, &ses);
+            // Dentro, a linha que nasceu na propria transacao.
+            escreve(&s, &ses, r#""op":"begin""#);
+            escreve(&s, &ses, &cli(4, "Dan"));
+            escreve(&s, &ses, &exclui("clientes", 4, false));
+            escreve(&s, &ses, &altera(4, "Dan II"));
+            confirma(&s, &ses);
+            // Dentro, o upsert que vira `atualizar`.
+            escreve(&s, &ses, &cli(5, "Eva"));
+            escreve(&s, &ses, r#""op":"begin""#);
+            escreve(&s, &ses, &exclui("clientes", 5, false));
+            escreve(&s, &ses, &upsert(5, "Eva II"));
+            confirma(&s, &ses);
+            // Dentro, o upsert com SET: a mescla parte da linha ATUAL.
+            escreve(&s, &ses, &cli(6, "Fabi"));
+            escreve(&s, &ses, r#""op":"begin""#);
+            escreve(&s, &ses, &exclui("clientes", 6, false));
+            escreve(
+                &s,
+                &ses,
+                r#""op":"inserir","database":"loja","tabela":"clientes",
+                   "linha":{"id":6,"nome":"nunca"},"se_existir":"atualizar",
+                   "atualizar":{"nome":"Fabi II"}"#,
+            );
+            confirma(&s, &ses);
+
+            let visto: Vec<(String, bool)> = (1..=6)
+                .map(|r| {
+                    let l = linha(&s, &ses, "clientes", r);
+                    (l.texto_ou("nome", "?").to_string(), excluida(&l))
+                })
+                .collect();
+            let esperado: Vec<(String, bool)> =
+                ["Ana II", "Bia II", "Cid II", "Dan II", "Eva II", "Fabi II"]
+                    .iter()
+                    .map(|n| (n.to_string(), true))
+                    .collect();
+            assert_eq!(
+                visto, esperado,
+                "(nome, excluida) de cada linha: alterada, e continua excluida"
+            );
+        }
+
+        // ------------------------------------------------------------- 515
+
+        /// `clientes(id, codigo, nome)` com `codigo` unico, referenciado por
+        /// `pedidos.cod_cliente` com cascata no `ao_alterar` -- a chave que a
+        /// mae muda sem mudar de `id`.
+        fn base_codigo(s: &Arc<Servidor>, ses: &Sessao) {
+            escreve(s, ses, r#""op":"criar_database","database":"loja""#);
+            escreve(
+                s,
+                ses,
+                r#""op":"criar_tabela","database":"loja","tabela":"clientes",
+                   "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                              {"nome":"codigo","tipo":"Int8"},
+                              {"nome":"nome","tipo":"Str(20)"}],
+                   "indices":[{"nome":"pk","colunas":["id"],"unico":true,"primario":true},
+                              {"nome":"por_codigo","colunas":["codigo"],"unico":true}]"#,
+            );
+            escreve(
+                s,
+                ses,
+                r#""op":"criar_tabela","database":"loja","tabela":"pedidos",
+                   "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                              {"nome":"cod_cliente","tipo":"Int8"}],
+                   "indices":[{"nome":"pk","colunas":["id"],"unico":true,"primario":true},
+                              {"nome":"por_cliente","colunas":["cod_cliente"]}],
+                   "chaves_estrangeiras":[{"nome":"fk_cliente","colunas":["cod_cliente"],
+                                           "tabela_ref":"clientes","colunas_ref":["codigo"]}]"#,
+            );
+        }
+
+        fn cliente(id: i64, codigo: i64) -> String {
+            format!(
+                r#""op":"inserir","database":"loja","tabela":"clientes",
+                   "linha":{{"id":{id},"codigo":{codigo},"nome":"c{id}"}}"#
+            )
+        }
+
+        fn muda_cliente(rowid: u64, id: i64, codigo: i64) -> String {
+            format!(
+                r#""op":"atualizar","database":"loja","tabela":"clientes","rowid":{rowid},
+                   "linha":{{"id":{id},"codigo":{codigo},"nome":"c{id}"}}"#
+            )
+        }
+
+        fn pedido(id: i64, codigo: i64) -> String {
+            format!(
+                r#""op":"inserir","database":"loja","tabela":"pedidos",
+                   "linha":{{"id":{id},"cod_cliente":{codigo}}}"#
+            )
+        }
+
+        fn muda_pedido(rowid: u64, id: i64, codigo: i64) -> String {
+            format!(
+                r#""op":"atualizar","database":"loja","tabela":"pedidos","rowid":{rowid},
+                   "linha":{{"id":{id},"cod_cliente":{codigo}}}"#
+            )
+        }
+
+        /// **Pedido 515 (N2 da segunda revisao do 448):** o elo que o
+        /// `empilhar` planejava pelo DISCO sobrescrevia o que a propria lista
+        /// ja tinha escrito na filha. As tres listas medidas pelo papel C, com
+        /// o que o PostgreSQL da ao lado:
+        ///
+        /// | lista | PG | antes |
+        /// |---|---|---|
+        /// | `[filha id 10->11, mae 5->6]` | id 11, cod 6 | id 10 |
+        /// | `[filha troca de mae 15->8, mae 15->16]` | cod 8 | cod 16 |
+        /// | `[excluir suave a filha, mae 25->26]` | excluida | ressuscita |
+        #[test]
+        fn o_elo_da_cascata_nao_desfaz_o_que_a_lista_escreveu_na_filha() {
+            let dir = dir_temp("515");
+            let s = servidor(&dir);
+            let ses = sessao(5151);
+            base_codigo(&s, &ses);
+            for (id, codigo) in [(1, 5), (2, 15), (3, 25), (4, 8)] {
+                escreve(&s, &ses, &cliente(id, codigo));
+            }
+            for (id, codigo) in [(10, 5), (20, 15), (30, 25)] {
+                escreve(&s, &ses, &pedido(id, codigo));
+            }
+
+            escreve(&s, &ses, r#""op":"begin""#);
+            escreve(&s, &ses, &muda_pedido(1, 11, 5));
+            escreve(&s, &ses, &muda_cliente(1, 1, 6));
+            confirma(&s, &ses);
+
+            escreve(&s, &ses, r#""op":"begin""#);
+            escreve(&s, &ses, &muda_pedido(2, 20, 8));
+            escreve(&s, &ses, &muda_cliente(2, 2, 16));
+            confirma(&s, &ses);
+
+            escreve(&s, &ses, r#""op":"begin""#);
+            escreve(&s, &ses, &exclui("pedidos", 3, false));
+            escreve(&s, &ses, &muda_cliente(3, 3, 26));
+            confirma(&s, &ses);
+
+            let visto: Vec<(i64, i64, bool)> = (1..=3)
+                .map(|r| {
+                    let l = linha(&s, &ses, "pedidos", r);
+                    (
+                        l.inteiro_ou("id", -1),
+                        l.inteiro_ou("cod_cliente", -1),
+                        excluida(&l),
+                    )
+                })
+                .collect();
+            assert_eq!(
+                visto,
+                vec![(11, 6, false), (20, 8, false), (30, 26, true)],
+                "(id, cod_cliente, excluida) de cada filha"
+            );
+        }
+
+        // ------------------------------------------------------------- 516
+
+        /// **Pedido 516 (N3 da segunda revisao do 448):** T1 muda a chave da
+        /// mae sem filha nenhuma; depois nasce a filha, por outra sessao; T3
+        /// abre com leitura repetivel e le a filha. O COMMIT de T1 leva a
+        /// cascata IMPLICITA -- o elo que so a pre-conferencia descobre -- e
+        /// ele passava por cima da trava compartilhada de T3: T3 relia 6 onde
+        /// tinha lido 5. O elo implicito toma a trava como qualquer escrita
+        /// da transacao, e o COMMIT nao espera com a trava de dados na mao:
+        /// recusa com nada gravado, a transacao continua ativa, e o COMMIT
+        /// seguinte, depois de T3 terminar, confirma.
+        #[test]
+        fn o_elo_implicito_respeita_a_leitura_repetivel_de_outra_transacao() {
+            let dir = dir_temp("516");
+            let s = servidor(&dir);
+            let t1 = sessao(5161);
+            let outra = sessao(5162);
+            let t3 = sessao(5163);
+            base_codigo(&s, &t1);
+            escreve(&s, &t1, &cliente(1, 5));
+
+            escreve(&s, &t1, r#""op":"begin","database":"loja""#);
+            let r = escreve(&s, &t1, &muda_cliente(1, 1, 6));
+            assert_eq!(
+                r.inteiro_ou("linhas", 0),
+                1,
+                "sem filha no empilhar, a lista nao leva elo: {}",
+                r.escrever()
+            );
+            escreve(&s, &outra, &pedido(10, 5));
+            escreve(
+                &s,
+                &t3,
+                r#""op":"begin","database":"loja","leitura_repetivel":true"#,
+            );
+            let cod = |ses: &Sessao| linha(&s, ses, "pedidos", 1).inteiro_ou("cod_cliente", -1);
+            assert_eq!(cod(&t3), 5, "a primeira leitura de T3");
+
+            let r = pede(&s, &t1, r#""op":"commit""#);
+            let veredito = match &r {
+                Ok(j) => j.escrever(),
+                Err(e) => e.to_string(),
+            };
+            assert_eq!(
+                cod(&t3),
+                5,
+                "a leitura repetivel de T3 releu outro valor: o COMMIT de T1 levou o \
+                 elo implicito por cima da trava dela -- {veredito}"
+            );
+            let e = r.expect_err("o COMMIT de T1 nao podia confirmar com T3 lendo a filha");
+            assert!(
+                matches!(e, PhxError::EmTransacao(_)) && veredito.contains("pedidos"),
+                "a recusa tem de ser de trava, nomeando a tabela do elo: {veredito}"
+            );
+            assert!(
+                e.adianta_repetir(),
+                "nada foi gravado: repetir o COMMIT tem de adiantar -- {veredito}"
+            );
+
+            escreve(&s, &t3, r#""op":"commit""#);
+            confirma(&s, &t1);
+            assert_eq!(cod(&outra), 6, "a cascata implicita nao acompanhou a mae");
+            assert_eq!(s.travas.lock().unwrap().quantas(), 0);
+        }
+
+        /// **C1 do papel C ao 516: dois COMMITs que se barram nao giram para
+        /// sempre.** T1 muda a mae `a`, T2 a mae `b`; outra sessao poe a
+        /// filha `c -> a` e a `d -> b`; T1 altera `d`, T2 altera `c`. O elo
+        /// que o COMMIT de cada um descobre esta travado pelo outro. Sem o
+        /// desempate os dois eram mandados repetir, e repetiam: 1.870 rodadas
+        /// em 11 s na sonda do DBA. Com ele a MAIS NOVA cede (`repetir:
+        /// false`), qualquer que seja a que descobre o ciclo, e a mais velha
+        /// confirma -- nas duas ordens.
+        ///
+        /// # Prova real
+        ///
+        /// Sem o desempate (`ceder` sempre falso), as 20 rodadas terminam com
+        /// os dois ainda em `EM_TRANSACAO` -- o vermelho medido.
+        #[test]
+        fn dois_commits_que_se_barram_cedem_pela_mais_nova() {
+            for (rodada_da_ordem, mais_nova_primeiro) in [(1, false), (2, true)] {
+                let dir = dir_temp(&format!("516-ciclo-{rodada_da_ordem}"));
+                let s = servidor(&dir);
+                let velha = sessao(5171);
+                let nova = sessao(5172);
+                let t0 = sessao(5173);
+                base_codigo(&s, &t0);
+                escreve(&s, &t0, &cliente(1, 1));
+                escreve(&s, &t0, &cliente(2, 2));
+                escreve(&s, &velha, r#""op":"begin""#);
+                escreve(&s, &velha, &muda_cliente(1, 1, 10));
+                escreve(&s, &nova, r#""op":"begin""#);
+                escreve(&s, &nova, &muda_cliente(2, 2, 20));
+                escreve(&s, &t0, &pedido(100, 1));
+                escreve(&s, &t0, &pedido(200, 2));
+                escreve(&s, &velha, &muda_pedido(2, 201, 2));
+                escreve(&s, &nova, &muda_pedido(1, 101, 1));
+
+                let ordem: [(&str, &Sessao); 2] = if mais_nova_primeiro {
+                    [("nova", &nova), ("velha", &velha)]
+                } else {
+                    [("velha", &velha), ("nova", &nova)]
+                };
+                let mut fim: HashMap<&str, std::result::Result<Json, PhxError>> = HashMap::new();
+                let mut rodadas = 0;
+                while fim.len() < 2 && rodadas < 20 {
+                    rodadas += 1;
+                    for (nome, ses) in ordem {
+                        if fim.contains_key(nome) {
+                            continue;
+                        }
+                        match pede(&s, ses, r#""op":"commit""#) {
+                            Err(PhxError::EmTransacao(_)) => {}
+                            outro => {
+                                fim.insert(nome, outro);
+                            }
+                        }
+                    }
+                }
+                assert_eq!(
+                    fim.len(),
+                    2,
+                    "ordem {rodada_da_ordem}: depois de {rodadas} rodadas os dois COMMITs \
+                     continuam se barrando, mandados repetir -- {fim:?}"
+                );
+                let v = fim.remove("velha").unwrap();
+                assert_eq!(
+                    v.as_ref()
+                        .map(|j| j.texto_ou("transaction_state", "").to_string())
+                        .ok(),
+                    Some("COMMITTED".to_string()),
+                    "ordem {rodada_da_ordem}: a mais velha tinha de confirmar: {v:?}"
+                );
+                let e = fim
+                    .remove("nova")
+                    .unwrap()
+                    .expect_err("a mais nova tinha de ceder");
+                assert!(
+                    matches!(e, PhxError::TransacaoAbortada(_))
+                        && !e.adianta_repetir()
+                        && e.to_string().contains("ciclo"),
+                    "ordem {rodada_da_ordem}: a mais nova cede sem mandar repetir, dizendo o \
+                     ciclo: {e}"
+                );
+                assert!(rodadas <= 3, "ordem {rodada_da_ordem}: {rodadas} rodadas");
+                escreve(&s, &nova, r#""op":"rollback""#);
+                // O dado: a da mais velha inteira, cascata junto; a da mais nova,
+                // nada.
+                let cods = |r: u64| linha(&s, &t0, "pedidos", r).inteiro_ou("cod_cliente", -1);
+                let ids = |r: u64| linha(&s, &t0, "pedidos", r).inteiro_ou("id", -1);
+                assert_eq!(
+                    ((ids(1), cods(1)), (ids(2), cods(2))),
+                    ((100, 10), (201, 2)),
+                    "ordem {rodada_da_ordem}: (id, cod) das filhas"
+                );
+                assert_eq!(s.travas.lock().unwrap().quantas(), 0);
+            }
+        }
+
+        /// **R1 da re-checagem do papel C: a aresta velha nao faz ninguem
+        /// ceder.** A velha e barrada por T2 no COMMIT (o elo de `a` esbarra
+        /// na filha que T2 travou), volta ao SAVEPOINT -- a alteracao de `a`
+        /// sai da lista -- e passa a escrever so a outra filha. O COMMIT de
+        /// T2, barrado pela velha nessa filha, NAO e ciclo: a velha nao
+        /// precisa mais de nada de T2. Com a aresta velha, T2 cedia
+        /// («ciclo com T1») e a velha confirmava logo depois sem ela --
+        /// aborto sem ciclo. Sem ela, T2 espera, e as duas confirmam.
+        ///
+        /// # Prova real
+        ///
+        /// Tirar a limpeza da aresta do `rollback_para` faz T2 receber
+        /// `TRANSACAO_ABORTADA` aqui -- o vermelho medido.
+        #[test]
+        fn voltar_ao_savepoint_apaga_a_aresta_do_commit_barrado() {
+            let dir = dir_temp("516-aresta-velha");
+            let s = servidor(&dir);
+            let velha = sessao(5181);
+            let nova = sessao(5182);
+            let t0 = sessao(5183);
+            base_codigo(&s, &t0);
+            escreve(&s, &t0, &cliente(1, 1));
+            escreve(&s, &t0, &cliente(2, 2));
+            escreve(&s, &velha, r#""op":"begin""#);
+            escreve(&s, &velha, r#""op":"savepoint","nome":"sp""#);
+            escreve(&s, &velha, &muda_cliente(1, 1, 10));
+            escreve(&s, &nova, r#""op":"begin""#);
+            escreve(&s, &nova, &muda_cliente(2, 2, 20));
+            escreve(&s, &t0, &pedido(100, 1));
+            escreve(&s, &t0, &pedido(200, 2));
+            escreve(&s, &nova, &muda_pedido(1, 101, 1));
+
+            let e = pede(&s, &velha, r#""op":"commit""#)
+                .expect_err("o elo de `a` esbarra na filha que T2 travou");
+            assert!(matches!(e, PhxError::EmTransacao(_)), "{e}");
+            escreve(&s, &velha, r#""op":"rollback_para","nome":"sp""#);
+            escreve(&s, &velha, &muda_pedido(2, 201, 2));
+
+            match pede(&s, &nova, r#""op":"commit""#) {
+                Err(PhxError::EmTransacao(_)) => {}
+                outro => panic!(
+                    "a velha ja nao precisa de nada de T2, e T2 foi tratada como ciclo: \
+                     {outro:?}"
+                ),
+            }
+            confirma(&s, &velha);
+            confirma(&s, &nova);
+            let par = |r: u64| {
+                let l = linha(&s, &t0, "pedidos", r);
+                (l.inteiro_ou("id", -1), l.inteiro_ou("cod_cliente", -1))
+            };
+            assert_eq!(
+                (par(1), par(2)),
+                ((101, 1), (201, 20)),
+                "(id, cod) das filhas: a velha sem a mae `a`, T2 com a cascata de `b`"
+            );
+            assert_eq!(s.travas.lock().unwrap().quantas(), 0);
+        }
+    }
 }
 
 /// O `WHERE` do `varrer`: o predicado que o protocolo nao tinha.
@@ -57972,6 +58887,177 @@ mod testes_do_panico_sob_a_trava {
         );
         assert_eq!(novo.inteiro_ou("rowid", -1), 9, "{}", novo.escrever());
         conferir_indice(porta, &[1, 2, 3, 4, 5, 10, 11, 12, 13]);
+    }
+
+    /// `loja.mae(id, codigo)` com `codigo` unico no 5, e `loja.filha` com duas
+    /// linhas apontando para ele, `ao_alterar` em cascata -- o cenario do
+    /// pedido 490.
+    fn semear_cascata(porta: u16) {
+        ok(
+            pedir(porta, r#""op":"criar_database","database":"loja""#),
+            "criar_database",
+        );
+        ok(
+            pedir(
+                porta,
+                r#""op":"criar_tabela","database":"loja","tabela":"mae",
+                   "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                              {"nome":"codigo","tipo":"Int8"}],
+                   "indices":[{"nome":"pk","colunas":["id"],"unico":true,"primario":true},
+                              {"nome":"por_codigo","colunas":["codigo"],"unico":true}]"#,
+            ),
+            "criar_tabela mae",
+        );
+        ok(
+            pedir(
+                porta,
+                r#""op":"criar_tabela","database":"loja","tabela":"filha",
+                   "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                              {"nome":"cod","tipo":"Int8"}],
+                   "indices":[{"nome":"pk","colunas":["id"],"unico":true,"primario":true},
+                              {"nome":"por_cod","colunas":["cod"]}],
+                   "chaves_estrangeiras":[{"nome":"fk_mae","colunas":["cod"],
+                                           "tabela_ref":"mae","colunas_ref":["codigo"]}]"#,
+            ),
+            "criar_tabela filha",
+        );
+        ok(
+            pedir(
+                porta,
+                r#""op":"inserir","database":"loja","tabela":"mae","valores":{"id":1,"codigo":5}"#,
+            ),
+            "semear mae",
+        );
+        for id in [10, 11] {
+            ok(
+                pedir(
+                    porta,
+                    &format!(
+                        r#""op":"inserir","database":"loja","tabela":"filha",
+                           "valores":{{"id":{id},"cod":5}}"#
+                    ),
+                ),
+                "semear filha",
+            );
+        }
+    }
+
+    /// Os `cod` da filha, em ordem de digitacao.
+    fn cods_da_filha(porta: u16) -> Vec<i64> {
+        let r = ok(
+            pedir(
+                porta,
+                r#""op":"varrer","database":"loja","tabela":"filha","max":100"#,
+            ),
+            "varrer filha",
+        );
+        r.campo("linhas")
+            .and_then(Json::lista)
+            .unwrap_or(&[])
+            .iter()
+            .map(|l| l.inteiro_ou("cod", -1))
+            .collect()
+    }
+
+    /// **Pedido 490, DENTRO de transacao -- o que o 451 ja cobre, medido.** A
+    /// cascata viaja achatada na lista (ACID-C), e a passada morre na mae,
+    /// com o `.reg` dela ja na chave nova e nenhum elo aplicado: a mae
+    /// gravada e as duas filhas na chave velha, o estado do meio. O reparo do
+    /// 451 completa a marca EM VOO pela recuperacao, e OUTRA conexao ja ve a
+    /// cascata inteira. Dentro de transacao o 490 nao existe; ele e so do
+    /// caminho sem marca.
+    #[test]
+    fn panico_no_meio_da_cascata_na_transacao_sai_com_a_cascata_inteira() {
+        let dir = DirTemp::novo("panico-490-tx");
+        let s = Servidor::novo(config_base(&dir)).unwrap();
+        let porta = porta_de_dados_de_verdade(&s);
+        semear_cascata(porta);
+
+        let mut tx = Ligacao::nova(porta);
+        ok(falar(&mut tx, r#""op":"begin","database":"loja""#), "begin");
+        let r = ok(
+            falar(
+                &mut tx,
+                r#""op":"atualizar","database":"loja","tabela":"mae","rowid":1,
+                   "valores":{"id":1,"codigo":6}"#,
+            ),
+            "atualizar a mae na transacao",
+        );
+        assert_eq!(r.inteiro_ou("linhas", 0), 3, "{}", r.escrever());
+        *s.panico_de_teste_na_op.lock().unwrap() = Some((
+            "commit".into(),
+            PanicoDeTeste::NoMotor(Ponto::AtualizarDepoisDoReg),
+        ));
+        let morto = falar(&mut tx, r#""op":"commit""#);
+        assert!(
+            morto.is_none(),
+            "o commit armado tinha de cair no panico, e respondeu {:?}",
+            morto.map(|j| j.escrever())
+        );
+        drop(tx);
+
+        assert_eq!(
+            cods_da_filha(porta),
+            vec![6, 6],
+            "a transacao CONFIRMADA (a marca estava no disco) nao levou a cascata inteira"
+        );
+        assert!(
+            marcas(&dir).is_empty(),
+            "a marca do commit completado ficou no disco: {:?}",
+            marcas(&dir)
+        );
+    }
+
+    /// **Pedido 490, FORA de transacao.** O `atualizar` solto da mae cascateia
+    /// por dentro do `Table`, sem marca, e o panico entre as duas filhas deixa
+    /// a segunda na chave velha. O `.reg` nao desfaz e nao ha marca que
+    /// complete -- entao o que a casa garante e o de uma queda no mesmo ponto:
+    /// a filha RECUSA, nomeando o indice, ate o `reindexar`. Antes do conserto
+    /// ela respondia em silencio, com a orfa dentro.
+    #[test]
+    fn panico_no_meio_da_cascata_fora_da_transacao_deixa_a_filha_recusando() {
+        let dir = DirTemp::novo("panico-490-fora");
+        let s = Servidor::novo(config_base(&dir)).unwrap();
+        let porta = porta_de_dados_de_verdade(&s);
+        semear_cascata(porta);
+
+        *s.panico_de_teste_na_op.lock().unwrap() = Some((
+            "atualizar".into(),
+            PanicoDeTeste::NoMotor(Ponto::CascataEntreFilhas),
+        ));
+        let morto = pedir(
+            porta,
+            r#""op":"atualizar","database":"loja","tabela":"mae","rowid":1,
+               "valores":{"id":1,"codigo":6}"#,
+        );
+        assert!(
+            morto.is_none(),
+            "o atualizar armado tinha de cair no panico, e respondeu {:?}",
+            morto.map(|j| j.escrever())
+        );
+
+        let recusa = pedir(
+            porta,
+            r#""op":"buscar","database":"loja","tabela":"filha","indice":"por_cod","chave":[5]"#,
+        )
+        .expect("o buscar caiu sem resposta");
+        let texto = recusa.escrever();
+        assert!(
+            !recusa.booleano_ou("ok", true) && texto.contains("filha.ndx"),
+            "a filha ficou na chave velha e o indice dela respondeu em silencio: {texto}"
+        );
+        ok(
+            pedir(
+                porta,
+                r#""op":"reindexar","database":"loja","tabela":"filha""#,
+            ),
+            "reindexar",
+        );
+        assert_eq!(
+            cods_da_filha(porta),
+            vec![6, 5],
+            "o ponto do panico: a primeira filha acompanhou, a segunda nao"
+        );
     }
 
     /// **A1: o panico no meio do fecho da janela nao apaga a marca de quem nao

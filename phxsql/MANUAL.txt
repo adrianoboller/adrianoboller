@@ -634,6 +634,20 @@ CHAVE ESTRANGEIRA NO criar_tabela
     filha, entao a mae pergunta as irmas. Excluir e raro, inserir e o laco
     quente -- pagar ali mantem o inserir sem custo nenhum.
 
+    NOTA DE ATUALIZACAO (pedido 491) -- a tabela que aponta para SI MESMA
+    (funcionarios.chefe_id -> funcionarios.id). Ate aqui o excluir dela nao
+    perguntava pelos subordinados, e o chefe que tinha subordinado saia,
+    deixando o subordinado orfao. Agora pergunta -- e a pergunta segue a
+    regra de cima: a coluna da chave (chefe_id) precisa de INDICE. Numa
+    tabela assim SEM esse indice, TODO excluir passa a ser recusado, de vez e
+    suave, inclusive o da linha que ninguem aponta (a folha), que antes saia.
+    O conserto e um dos dois:
+
+        crie o indice na coluna da chave (chefe_id), ou
+        declare a chave com "verificar": false, se ela e so desenho
+
+    A recusa nomeia a chave e o indice que falta.
+
     O QUE NAO E CONFERIDO, e por decisao escrita: o que chega pela REPLICACAO
     (o outro servidor ja julgou, e reconferir recusaria a metade de um par que
     chega fora de ordem) e o copiar_tabela_para. Os dois estao em
@@ -2033,7 +2047,21 @@ TRANSACOES: BEGIN, COMMIT, ROLLBACK E SAVEPOINT
     AS DUAS CLASSES DE ERRO, e o erro diz qual e pelo codigo:
 
         instrucao   chave duplicada, tipo errado -- a transacao segue ACTIVE
-        transacao   teto, E/S, prazo -- vai para ABORT_ONLY
+        transacao   teto, E/S, prazo, ciclo de COMMITs -- vai para ABORT_ONLY
+
+    O PROPRIO COMMIT PODE VOLTAR SEM TER GRAVADO NADA, por trava:
+
+        4005 EM_TRANSACAO, repetir: true
+            a cascata da mae leva a uma linha filha que outra transacao
+            trava (pedido 516). O COMMIT nao espera com a trava de dados na
+            mao: recusa, a transacao continua ACTIVE com a lista inteira, e
+            e so mandar COMMIT de novo quando a outra terminar.
+
+        6002 TRANSACAO_ABORTADA, repetir: false, "ciclo com a transacao N"
+            dois COMMITs se barram um ao outro assim. A MAIS NOVA cede: vai
+            para ABORT_ONLY, a lista sai, as travas saem na hora -- mande
+            ROLLBACK e refaca o trabalho. A mais velha recebe o 4005 e
+            confirma na tentativa seguinte.
 
     SE O PROCESSO MORRER NO MEIO DE UM COMMIT, o banco sabe dizer o que
     aconteceu: a marca transacao_<id>.tx e sincronizada antes da passada e e o
@@ -2057,13 +2085,17 @@ TRANSACOES: BEGIN, COMMIT, ROLLBACK E SAVEPOINT
         que o indice ficou para tras e mandando reparar -- rode
         {"op":"reindexar",...} nela. E o mesmo estado que uma queda do
         processo naquele ponto deixaria;
-      - EXCECAO, e ela e pior que a queda: um panico no MEIO DA CASCATA de
-        um atualizar solto (a filha seguindo a mae pela chave, fora de
-        transacao) NAO faz a filha recusar. As filhas que a cascata ainda nao
-        tinha alcancado ficam na chave velha, sem aviso nenhum. Numa queda no
-        mesmo ponto a filha recusaria. O conserto e o pedido 490; ate la,
-        depois de um panico, rode o reindexar e confira as filhas da tabela
-        que o atualizar tocava;
+      - um panico no MEIO DA CASCATA de um atualizar solto (a filha seguindo
+        a mae pela chave, fora de transacao) deixa a tabela FILHA recusando
+        do mesmo jeito, ate o reindexar -- o estado de uma queda no mesmo
+        ponto (pedido 490). A mae ja esta na chave nova e fora de transacao
+        nada completa a cascata. ATENCAO: esse sinal so dura ENQUANTO O
+        PROCESSO VIVE. O arranque reconstroi sozinho todo indice marcado
+        (pedido 522), entao depois de um reinicio a filha para de recusar, e
+        o unico rastro e a contagem "indices reconstruidos" no relatorio do
+        arranque. Viu essa contagem, ou viu a recusa: busque na filha pelo
+        valor VELHO da chave e acerte as linhas que ficaram nele -- o mesmo
+        vale depois de uma queda no meio da cascata solta;
       - uma tabela carregada com memoria_carregar precisa ser carregada de
         novo: o selecionar_memoria recusa ate la.
 

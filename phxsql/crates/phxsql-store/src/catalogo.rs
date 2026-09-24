@@ -1054,6 +1054,27 @@ impl Database {
                  existe. Tire a chave de {filha}, renomeie, e declare de novo"
             )));
         }
+        // A AUTO-REFERENCIA guarda a mae pelo nome do mesmo jeito, e o
+        // `quem_aponta_para` a pula -- certo para o `excluir_tabela`, que leva a
+        // chave junto com a tabela. Aqui ela ficaria apontando para o nome
+        // velho, deixaria de se reconhecer, e o chefe com subordinado passaria
+        // a sair orfao calado: o irmao do pedido 491 no catalogo.
+        if let Ok(reg) = crate::reg::RegFile::abrir(&dir_o, nome_o) {
+            if let Some(fk) = reg
+                .esquema()
+                .chaves_estrangeiras()
+                .iter()
+                .find(|fk| crate::table::nome_simples(&fk.tabela_ref) == nome_o)
+            {
+                return Err(PhxError::Integridade(format!(
+                    "a tabela {origem} nao pode ser renomeada: a chave {:?} dela \
+                     aponta para ela mesma, e a chave guarda a mae pelo NOME -- \
+                     renomear a deixaria apontando para uma tabela que nao existe. \
+                     Tire a chave, renomeie, e declare de novo",
+                    fk.nome
+                )));
+            }
+        }
 
         // Colher primeiro, mover depois: `read_dir` enquanto se renomeia dentro
         // do mesmo diretorio pode enxergar o nome novo.
@@ -2095,6 +2116,65 @@ mod testes_copia_entre_bancos {
         // E nada se moveu: recusar depois de mover metade seria pior.
         assert!(db.existe_tabela(None, "clientes").unwrap());
         assert!(!db.existe_tabela(None, "clientes_arquivados").unwrap());
+    }
+
+    /// **O irmao do pedido 491 no catalogo:** a auto-referencia tambem guarda
+    /// a mae pelo NOME. O `quem_aponta_para` pula a propria tabela -- certo no
+    /// `excluir_tabela`, que leva a chave junto --, e o renomear deixava
+    /// `equipe.chefe_id -> funcionarios.id`: a chave para de reconhecer a
+    /// propria tabela, e o chefe com subordinado passava a sair, orfao calado.
+    ///
+    /// # Prova real
+    ///
+    /// Sem a recusa, o renomear responde `Ok` e o `excluir_de_vez` do chefe na
+    /// tabela renomeada tambem -- o vermelho medido antes do conserto.
+    #[test]
+    fn renomear_recusa_a_tabela_que_aponta_para_si_mesma() {
+        use phxsql_core::schema::ForeignKey;
+        let base = crate::apoio_teste::DirTemp::novo("phx-renom-auto");
+        let cat = Instancia::nova(&base).unwrap();
+        let db = cat.criar_database("loja").unwrap();
+        let e = Schema::new(
+            "funcionarios",
+            vec![
+                Column::new("id", ColumnType::Int8).obrigatoria(),
+                Column::new("chefe_id", ColumnType::Int8),
+            ],
+            vec![
+                IndexDef::new("porId", vec![IndexColumn::asc(0)]).primaria(),
+                IndexDef::new("porChefe", vec![IndexColumn::asc(1)]),
+            ],
+        )
+        .unwrap()
+        .com_chaves_estrangeiras(vec![ForeignKey::new(
+            "fk_chefe",
+            vec![1],
+            "funcionarios",
+            vec!["id".into()],
+        )])
+        .unwrap();
+        db.criar_tabela(None, e).unwrap();
+
+        let r = db.renomear_tabela("funcionarios", "equipe");
+        let depois = if r.is_ok() {
+            // O dano, se passou: a regra do pai que tem filhos morreu nela.
+            let mut t = crate::table::Table::abrir(db.diretorio(None).unwrap(), "equipe").unwrap();
+            let chefe = t.inserir(&[Value::Int(1), Value::Null]).unwrap();
+            t.inserir(&[Value::Int(2), Value::Int(1)]).ok();
+            format!("excluir o chefe: {:?}", t.excluir_de_vez(chefe, "x"))
+        } else {
+            String::new()
+        };
+        let e = r.expect_err(&format!(
+            "a tabela que aponta para si mesma foi renomeada -- {depois}"
+        ));
+        let t = e.to_string();
+        assert!(
+            t.contains("fk_chefe"),
+            "a recusa tem de nomear a chave: {t}"
+        );
+        assert!(db.existe_tabela(None, "funcionarios").unwrap());
+        assert!(!db.existe_tabela(None, "equipe").unwrap());
     }
 
     /// **A regra primordial no nivel da TABELA.**

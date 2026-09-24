@@ -12,6 +12,22 @@ Os números são **medidos**, nunca estimados.
 
 ## Não lançado
 
+### 491 — excluir o chefe que tem subordinado na mesma tabela é recusado
+
+**Corrigido**
+
+- Numa tabela que aponta para si mesma (`funcionarios.chefe_id ->
+  funcionarios.id`), o `excluir` — de vez e suave, fora e dentro de transação
+  — não perguntava pelos subordinados, e o chefe saía deixando órfãos.
+
+**Mudado (nota de atualização)**
+
+- A pergunta usa o índice da coluna da chave, como em toda filha. Tabela com
+  auto-referência conferida e **sem índice** em `chefe_id` passa a recusar
+  **todo** `excluir`, inclusive o da linha que ninguém aponta, que antes saía.
+  Conserto: criar o índice, ou declarar a chave com `"verificar": false`.
+  Detalhes em `MANUAL.txt` e `docs/INTEGRIDADE.md` §7.4.
+
 ### 478 — o caminho de instalação documentado termina em `config.phz`
 
 Achado pelo integrador em 24/09/2026: a migração do pedido 450 nasceu PEDIDA,

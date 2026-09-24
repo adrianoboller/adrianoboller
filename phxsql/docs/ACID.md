@@ -33,7 +33,7 @@ A resposta não é «sim» nem «não» para nenhuma das quatro. É esta:
 
 | letra | o que o motor **garante** | o que ele **não** garante | onde a configuração muda |
 |---|---|---|---|
-| **A** | o conjunto de escrita é aplicado inteiro ou não é aplicado; o `ROLLBACK` não consome slot, rowid nem evento; uma queda no meio da passada é **completada** no arranque pela marca `.tx`; dentro da transação a **cascata** do `ao_alterar` entra no conjunto de escrita (ACID-C, §2.4) — o `ROLLBACK` a alcança e o `COMMIT` a conta | fora de transação, a cascata do `atualizar` solto não é atômica por desenho — uma **queda** no meio dela é **denunciada ou consertada** (§2.4); um **pânico** no meio dela **não**: é pior que a queda e sai calado até o pedido 490 | nada: a marca `.tx` sincroniza nos três regimes |
+| **A** | o conjunto de escrita é aplicado inteiro ou não é aplicado; o `ROLLBACK` não consome slot, rowid nem evento; uma queda no meio da passada é **completada** no arranque pela marca `.tx`; dentro da transação a **cascata** do `ao_alterar` entra no conjunto de escrita (ACID-C, §2.4) — o `ROLLBACK` a alcança e o `COMMIT` a conta | fora de transação, a cascata do `atualizar` solto não é atômica por desenho — uma **queda** no meio dela é **denunciada ou consertada** (§2.4); desde o pedido 490 um **pânico** no meio dela deixa a filha como a queda deixaria — a tabela recusa até o `reindexar` —, e não mais calada; as filhas que ficaram na chave velha continuam lá, porque sem marca nada as completa | nada: a marca `.tx` sincroniza nos três regimes |
 | **C** | tipo, tamanho, obrigatoriedade, unicidade e **integridade referencial** são impostos na gravação, em toda porta local; «nunca se mata o pai que tem filhos» vale de vez e suave | a réplica **aplica, não julga** — ela não confere o que o outro servidor já julgou; `SET NULL` não existe e não vem; a falta do índice da chave é recusada na **gravação**, não na declaração | `"verificar": false` na chave desliga a conferência daquela chave, e é escolha escrita |
 | **I** | leitura suja **não acontece**; a transação vê a própria escrita; uma **instrução** lê um estado consistente; escrita contra escrita é serializada por linha; **desde 16/09/2026**, quem pedir `"leitura_repetivel": true` (ou `BEGIN ISOLATION LEVEL REPEATABLE READ`) ganha leitura repetível e ausência de fantasma, pela trava compartilhada (§4.5) | por padrão (sem pedir) **leitura repetível não existe**: entre duas instruções tudo pode mudar. Fantasma, leitura não repetível e **skew de escrita** acontecem nesse regime, e estão medidos; `SERIALIZABLE` não se reivindica em regime nenhum | `"leitura_repetivel": true` no `begin`, ou `ISOLATION LEVEL REPEATABLE READ` no `BEGIN` SQL |
 | **D** | a marca `.tx` é sincronizada **antes** da passada e é o ponto de compromisso; um `COMMIT` que respondeu OK volta depois da queda nos três regimes | em `por_lote` (o padrão) e em `sistema`, uma escrita **comum** responde OK sem nenhum `fsync`; quem abre mão é quem configurou | `recursos.durabilidade`, e é o campo que mais muda o significado de «OK» |
@@ -295,12 +295,29 @@ ainda cascateia dentro do próprio `atualizar`, e ali a cascata não é atômica
 desenho — o que ela garante é que nada é gravado antes de a árvore inteira ser
 conferida, e que uma queda no meio dela é **denunciada** no relatório do
 arranque ou **consertada** por ele (pedido 172), nunca silenciosa. **O pânico
-no mesmo ponto não tem essa garantia** (pedido 490, achado do DBA na revisão do
-451): a janela do `.ndx` da filha abre e fecha a cada linha, o `Drop` do pânico
-entre duas filhas acha a escrita em voo em zero e baixa o byte 52 (desde o
-pedido 522, atesta o `.ndx` neste processo, com o mesmo efeito), e as filhas
-seguintes ficam na chave velha sem recusa nenhuma — ali o pânico é pior que a
-queda, que deixa o byte em 1 e faz a tabela recusar. O canto
+no mesmo ponto passou a ter a mesma garantia no pedido 490** (achado do DBA na
+revisão do 451). Até ali a janela do `.ndx` da filha abria e fechava a cada
+linha, o `Drop` do pânico entre duas filhas achava a escrita em voo em zero e
+baixava o byte 52, e as filhas seguintes ficavam na chave velha sem recusa
+nenhuma — pior que a queda, que deixa o byte em 1 e faz a tabela recusar.
+Hoje a filha fica com a **cascata em voo** desde que a mãe vai ao disco até o
+passo dela terminar, e o `Drop` que a encontra ligada **sobe** o byte 52: a
+tabela recusa até o `reindexar`, como depois de um `SIGKILL` — **enquanto o
+processo vive**: o arranque reconstrói sozinho todo `.ndx` marcado (pedido
+522), e depois de um reinício sobra só a contagem «índices reconstruídos». O
+que isso NÃO faz é completar a cascata — fora de transação não há marca —, e as filhas que
+ficaram para trás continuam lá depois do `reindexar`, à vista de quem busca pela chave velha e do `--example conferir-integridade`.
+Dentro de transação o 490 não existe: a cascata viaja achatada na lista, e o
+reparo do 451 completa a marca em voo (`panico_no_meio_da_cascata_na_transacao_sai_com_a_cascata_inteira`).
+
+A primeira receita, a do parecer — manter a janela do `.ndx` da filha aberta
+pelo passo inteiro —, **morreu medida**: com ela o `sincronizar` da filha não
+desce nada, a neta confere a chave dela num segundo descritor e bate na guarda,
+e `a_cascata_alcanca_a_neta` passou a recusar toda cascata de três níveis com a
+avó já gravada. A marca em voo só muda o `Drop`; o caminho que termina não vê
+diferença nenhuma. Prova: `panico_entre_duas_filhas_deixa_a_filha_recusando_como_um_sigkill`
+(store) e `panico_no_meio_da_cascata_fora_da_transacao_deixa_a_filha_recusando`
+(pelo soquete). O canto
 que esta seção deixava aberto — uma filha que **outra conexão** põe sob a chave
 velha entre o `empilhar` e o `COMMIT`, e que a cascata da lista não leva —
 **deixou de virar órfã** no pedido 448: a conferência antes da marca (§2.5)
@@ -344,22 +361,40 @@ que a passada usa, a lista inteira passa pela `pre_conferir_a_lista`, na ordem:
   achatado: o formato não muda. E a filha que a **própria** lista **inseriu**
   acompanha a mãe, como no PostgreSQL, no MySQL e na MariaDB. A primeira
   versão recusava `[inserir filha→5, mudar a mãe 5→6]` mandando refazer, e
-  refazer dava a mesma recusa. **Só a inserida.** Quando a lista **alterou** ou
-  **excluiu** a filha antes de mudar a chave da mãe, vale o elo que o `empilhar`
-  planejou olhando só o disco, e ele passa por cima do que a lista escreveu na
-  filha. É o achado N2 da segunda revisão do DBA
+  refazer dava a mesma recusa. **E, desde o pedido 515, também a alterada e a
+  excluída.** Até ali, quando a lista **alterava** ou **excluía** a filha antes
+  de mudar a chave da mãe, valia o elo que o `empilhar` planejava olhando só o
+  disco, e ele passava por cima do que a lista tinha escrito na filha — o
+  achado N2 da segunda revisão do DBA
   (`docs/propostas/parecer-dba-448-2a-2026-09-24.md`), medido igual no
-  `82a17ef` nos três primeiros casos:
+  `82a17ef`. Hoje o plano do `empilhar` parte da mãe como a **transação** a vê
+  e abre cada filha com o que a lista já pediu nela (o prefixo, montado só
+  quando o plano abre filha — a alteração que não cascateia não paga nada), e
+  o elo carrega a linha da filha como a lista a deixou:
 
-  | lista | PostgreSQL | hoje |
-  |---|---|---|
-  | `[filha id 10→11, mãe 5→6]` | id 11, código 6 | id 10 |
-  | `[filha troca de mãe 5→8, mãe 5→6]` | código 8 | código 6 |
-  | `[excluir suave a filha, mãe 5→6]` | filha excluída | filha ressuscita |
-  | `[excluir de vez a filha, mãe 5→6]` | `COMMIT` | recusa com zero gravado |
+  | lista | PostgreSQL | antes do 515 | hoje |
+  |---|---|---|---|
+  | `[filha id 10→11, mãe 5→6]` | id 11, código 6 | id 10 | id 11, código 6 |
+  | `[filha troca de mãe 15→8, mãe 15→16]` | código 8 | código 16 | código 8 |
+  | `[excluir suave a filha, mãe 25→26]` | filha excluída | filha ressuscita | excluída, código 26 |
+  | `[excluir de vez a filha, mãe 5→6]` | `COMMIT` | recusa com zero gravado | `COMMIT` |
 
-  A chave estrangeira continua íntegra em todos os casos, mas o dado não: o que
-  a lista pediu para a filha se perde;
+  A excluída suave acompanha a mãe **e continua excluída**: é o que o
+  `atualizar` solto faz com ela, e deixá-la na chave velha a tornaria órfã no
+  dia do `restaurar`. Prova: `o_elo_da_cascata_nao_desfaz_o_que_a_lista_escreveu_na_filha`;
+* **a alteração herda a marca de excluída da linha como a transação a vê**
+  (pedido 492, M4 da primeira revisão do DBA). `[excluir suave M, atualizar
+  M.nome]` confirmava com M **viva** dentro da transação e a mantinha excluída
+  fora: o `empilhar` copiava a marca do disco. A pergunta «o pedido mandou a
+  coluna de sistema?» estava escrita três vezes e faltava numa quarta — o
+  upsert solto, que ressuscitava a linha excluída **fora** de transação e a
+  mantinha excluída dentro. Hoje é uma função só (`valores::herda_a_marca`),
+  e a linha de onde a marca vem é a do disco fora da transação e a da
+  transação dentro dela (`Servidor::linha_na_transacao`, pela mesma dobra da
+  leitura, só das escritas daquela linha). Vale também para a linha que
+  nasceu na própria transação, que não herdava marca nenhuma, e para o upsert
+  com `atualizar`, que mesclava o SET sobre a linha do disco. Prova:
+  `alterar_a_linha_excluida_nao_a_ressuscita_fora_nem_dentro`;
 * a cascata que **já estava na lista** (empilhada com filhas) tem de **cobrir**
   o plano refeito: a filha que ele acha e que nenhuma escrita adiante reescreve
   ou foi escrita pela lista — e o elo dela entra —, ou foi apontada para a
@@ -505,9 +540,15 @@ intactos; a sobreposição mora na RAM.
 * a trava na mãe (460): hoje, quando duas transações disputam a mesma mãe,
   perde a da filha, recusada no `COMMIT`, em vez de esperar como nos três
   maduros;
-* os achados N2 a N5 da segunda revisão do DBA (515 a 518). O de dado é o
-  descrito acima: o elo do `empilhar` por cima da filha alterada na lista (N2).
-  O N1 (514) fechou;
+* os achados N4 e N5 da segunda revisão do DBA (517, 518). O N1 (514), o N2
+  (515, o elo por cima da filha alterada na lista) e o N3 (516, o elo
+  implícito por cima da leitura repetível de outra transação, §4.5) fecharam;
+* o **OLD** do gatilho BEFORE UPDATE que roda no `empilhar` continua sendo a
+  linha do **disco**, e não a da transação: `[atualizar M, atualizar M]` com
+  gatilho mostra ao segundo o OLD de antes do primeiro. Medido pelo papel C: um
+  gatilho de delta de estoque, na transação 5→3→1, dá **−4** aqui e **−2** no
+  PostgreSQL 16 e no MySQL 8.0 — antes e depois deste lote. É pedido novo (P2
+  do `docs/propostas/parecer-dba-integridade-2026-09-24.md`), da família do 492;
 * a unicidade da **instrução** (o `empilhar`) ainda olha a linha crua. Medido
   numa coluna única com DEFAULT 7 e o 7 já no disco: a instrução empilha, e o
   `COMMIT` recusa com zero gravado. O dado fica certo; o que muda é onde a
@@ -551,6 +592,24 @@ pergunta «alguém aponta para esta linha?» e `conferir_fks` pergunta «este pa
 está **vivo**?» (pedido 171, §2.1 de `docs/INTEGRIDADE.md`) — e as duas
 respostas seguem a mesma pétrea: *órfã que ninguém vê é pior que órfã que dá
 erro*.
+
+**E vale dentro da mesma tabela — pedido 491, 24/09/2026.** O
+`conferir_filhas_com` pulava a própria tabela (`if irma == eu { continue }`),
+então excluir o chefe que tem subordinado em `funcionarios.chefe_id ->
+funcionarios.id` respondia `Ok` — de vez e suave, fora e dentro de transação
+(`[inserir 11→10, excluir 10]` confirmava). Hoje a auto-referência entra na
+mesma volta, com o **próprio handle** no papel da filha — o que o
+`conferir_fks_com` já fazia do outro lado da chave, e o que faz a
+pré-conferência ver o subordinado nascido na lista. A linha que aponta **só
+para si mesma** sai, como no PostgreSQL, que confere a chave depois de a linha
+sair — decisão do dono sobre o empate 5×5 que o papel J mediu
+(`docs/propostas/pesquisa-autolaco-2026-09-24.md`). O irmão no catálogo também fechou: o `renomear_tabela` deixava a chave
+no nome velho e a regra parava de valer na tabela renomeada; agora recusa,
+como já recusava quando a filha é outra tabela. Provas:
+`excluir_o_chefe_que_tem_subordinado_recusa_de_vez_e_suave`,
+`fora_da_transacao_o_chefe_com_subordinado_nao_sai`,
+`na_transacao_o_subordinado_novo_segura_o_chefe` e
+`renomear_recusa_a_tabela_que_aponta_para_si_mesma`.
 
 **A chave declarada nasce conferida, e o interruptor só existe para o outro
 lado.** Quem quer declarar sem conferir manda `"verificar": false`, e aí é
@@ -747,6 +806,53 @@ Várias tabelas lidas saem coerentes porque cada uma toma a S pelo mesmo
 portão. A ficha (`op transacao`) devolve `"leitura_repetivel": true/false` e
 `transaction_isolation` com o texto do nível que está valendo (§0, §4.2).
 
+**O elo que só o COMMIT descobre também espera o leitor — pedido 516,
+24/09/2026.** A cascata **implícita** (T1 muda a chave da mãe sem filha
+nenhuma; depois a filha nasce na chave velha por outra sessão) era escrita pelo
+`COMMIT` de T1 numa linha que T1 nunca travou, e passava por cima da S de T3:
+T3 lia 5 e relia 6 (N3 da segunda revisão do DBA ao 448). Hoje cada elo que a
+pré-conferência acrescenta toma a trava pelo mesmo caminho de toda escrita da
+transação (escopo, tabela, linha — `travar_para_escrever`), **sem esperar**,
+porque o `COMMIT` está com a trava de dados na mão. Barrado, o `COMMIT` recusa
+com `EM_TRANSACAO` nomeando a tabela e quem segura, **nada gravado, a
+transação continua ativa** (`repetir: true`), e o `COMMIT` seguinte, depois de
+T3 terminar, confirma. Prova:
+`o_elo_implicito_respeita_a_leitura_repetivel_de_outra_transacao`.
+
+**E dois COMMITs que se barram não giram para sempre** (condição C1 do papel
+C). Não esperar trava no `COMMIT` tirou o abraço com a trava global e trouxe
+outro: T1 barrado por T2 e T2 barrado por T1, os dois mandados repetir, e
+repetindo — **1.870 rodadas em 11 s** na sonda do DBA, sem ninguém sair. «Sem
+espera não há grafo de espera» (`travas.rs`) deixa de valer quando a
+repetição que o recado manda fazer é a espera, só que do lado do cliente.
+Cada `COMMIT` barrado anota quem o barrou (`Transacao::commit_barrado_por`), e
+se a corrente dessas anotações volta a ele há ciclo: a **mais nova** do ciclo
+cede — `TRANSACAO_ABORTADA`, `repetir: false`, travas soltas na hora pela mesma
+porta do prazo estourado —, e a mais velha continua mandada repetir e passa na
+vez seguinte. **A idade é escolha nossa, não cópia de motor** (R2 da
+re-checagem do papel C): o PostgreSQL aborta uma das transações do impasse
+sem ordem garantida, e o InnoDB aborta a mais leve, pelas linhas alteradas.
+Aqui a regra é determinística — o mesmo ciclo cede sempre pela mesma, quem
+quer que o descubra — e garante progresso no molde do *wait-die*: a mais
+velha nunca cede. A corrente só atravessa transação **ativa** (a que está em
+`ABORT_ONLY` não confirma mais, e esperar por ela é espera comum), e o
+`rollback_para` apaga a aresta, porque o elo que a criou pode ter saído com a
+lista — sem isso a outra cedia num ciclo que já não existia (R1, prova
+`voltar_ao_savepoint_apaga_a_aresta_do_commit_barrado`).
+Prova, nas duas ordens: `dois_commits_que_se_barram_cedem_pela_mais_nova`
+(vermelho sem o desempate: 20 rodadas e os dois ainda em `EM_TRANSACAO`) e
+`o_ciclo_de_commits_barrados_cede_pela_mais_nova` (o ciclo de três e a corrente
+sem volta). O que continua sem teto é a espera comum: o `COMMIT` não confere o
+prazo da transação (medido pelo papel C, pedido novo).
+
+O que continua, e o papel C mediu: o elo que o `empilhar` planeja trava a
+**tabela** filha (intenção) e o fim dela, e não cada linha. Respeita a S, mas
+não a trava de LINHA de outra transação que escreve na mesma filha — e ali há
+**update perdido**: T2 grava `x = 1` na filha e confirma, e o `COMMIT` de T1
+regrava `x = 0`, a linha que o `empilhar` viu. Vale antes e depois deste lote;
+é pedido novo (P1 do `docs/propostas/parecer-dba-integridade-2026-09-24.md`).
+Esta seção dizia «sem dado errado, por leitura»: a medição desmentiu.
+
 **Custo e limite.** Custo zero para quem não pede — o gancho devolve antes de
 qualquer trava. A recusa por LOCK TIMEOUT é do **leitor** que pediu (o escritor
 mantém a vazão). **Não há detector de impasse**: duas transações repetíveis
@@ -874,12 +980,15 @@ gravado e depois liberado por falha de E/S no índice (`operacoes IMPOSSIVEIS`,
   marca (§2.5): chave estrangeira, cascata ou unicidade que falha sai com zero
   gravado, e não mais com a parte da frente aplicada. Desde o pedido 514 isso
   vale também para a chave que vem do DEFAULT ou de coluna calculada. Fora de transação, a
-  cascata do `atualizar` solto é denunciada ou consertada numa queda; num
-  **pânico** entre duas filhas ela sai calada, pior que a queda, até o pedido 490.
+  cascata do `atualizar` solto é denunciada ou consertada numa queda, e desde o
+  pedido 490 o **pânico** no meio dela deixa a filha como a queda deixaria:
+  recusando até o `reindexar` enquanto o processo vive (o arranque do pedido
+  522 a reconstrói sozinho), e não mais calada.
 * **C — consistência: imposta na gravação; dentro da transação a cascata é
   coberta.** Tipo, tamanho, obrigatoriedade, unicidade e integridade
   referencial são conferidos em toda porta local de escrita, e «nunca se mata o
-  pai que tem filhos» vale nos dois excluires. A chave estrangeira se confere
+  pai que tem filhos» vale nos dois excluires — desde o pedido 491 também
+  quando o pai e o filho moram na mesma tabela. A chave estrangeira se confere
   na linha final, inclusive a que o DEFAULT ou a coluna calculada preenchem
   (pedido 514). Dentro da transação a cascata do
   `ao_alterar` passou a entrar no conjunto de escrita (ACID-C), então o

@@ -355,6 +355,24 @@ rodada:** onde havia `continue` há recusa nomeando a chave e a tabela, estreita
 de propósito — só quando a coluna **referenciada** mudou. Guarda
 `auto-referencia-em-silencio`, provada nos dois sentidos.
 
+**O mesmo `continue` morava no irmão, e ficou depois do 174** (pedido 491, achado do
+papel C na revisão do 448): o `conferir_filhas_com` — a pergunta «alguém aponta
+para esta linha?» do `excluir` — pulava a própria tabela, e o chefe com
+subordinado saía, de vez e suave. Ali a resposta não é recusar a operação, é
+**conferir**: a pergunta não grava nada, então ela usa o próprio handle, que vê
+o que já escreveu. A linha que aponta só para si mesma sai — decisão do dono
+sobre o empate 5×5 medido pelo papel J (PG e SQLite aceitam, MySQL e MariaDB
+recusam; `docs/propostas/pesquisa-autolaco-2026-09-24.md`). Guardas
+`auto-referencia-pulada-no-excluir` e `auto-laco-conta-como-filha` — a segunda
+é o portão que recusaria tudo, do outro lado.
+
+**O preço, medido pelo papel C:** a pergunta usa o índice da coluna da chave,
+como toda filha (§1, «índice dos dois lados»). Numa tabela com auto-referência
+conferida e **sem índice** na coluna filha (`chefe_id`), **todo** `excluir`
+passa a recusar — de vez e suave, inclusive o da **folha**, que antes saía. A
+recusa diz o que falta; o conserto é criar o índice, ou declarar a chave com
+`"verificar": false`. Está no `MANUAL.txt` como nota de atualização.
+
 ### 7.5 O índice na declaração: havia uma terceira saída, e nós não a vimos
 
 > «MySQL requires indexes on foreign keys and referenced keys [...] **Such an

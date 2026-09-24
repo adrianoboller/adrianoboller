@@ -1036,6 +1036,17 @@ troca chave, antes de regravá-lo — e não desce, nem por `fechar`, nem por
 `sincronizar`, nem pelo `Drop` que roda no desenrolar de um pânico, enquanto
 houver escrita em voo ou interrompida no meio, nem num arquivo aberto sujo.
 
+**E a cascata interrompida** (pedido 490, 24/09/2026; o formato não muda): o
+`.ndx` da tabela FILHA de uma cascata do `ao_alterar` fica com a cascata em voo
+desde que a mãe vai ao disco até o passo daquela filha terminar. Isso não
+segura `fechar` nem `sincronizar` — entre duas linhas a árvore está inteira, e
+a neta confere a chave dela num segundo descritor, que precisa do byte em 0 —,
+mas o `Drop` que a encontra ligada **sobe** o byte 52 e não o baixa. É o estado
+de um `SIGKILL` no mesmo ponto: a tabela recusa até o `reindexar` — ou até o
+arranque seguinte, que reconstrói sozinho todo `.ndx` marcado (pedido 522). O byte
+continua querendo dizer a mesma coisa — «não confie nesta árvore sem
+reconstruir» —; o que mudou é que a cascata pela metade também o faz subir.
+
 **E com o disco que recusa** (pedidos 509 e 512, 24/09/2026; o formato não
 muda): a regra 2 só vale se a página que o disco recusou **continuar suja** — o
 cache baixava a flag de todas antes de gravar a primeira, e o segundo fecho

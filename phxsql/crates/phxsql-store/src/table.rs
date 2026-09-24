@@ -2239,15 +2239,26 @@ impl Table {
         // exclusao no caso comum -- que e o de tabela nenhuma referenciar esta.
         let mut minha: Option<Linha> = None;
         for irma in irmas {
-            if irma == eu {
-                continue;
-            }
-            let esquema = match crate::reg::RegFile::abrir(&self.diretorio, &irma) {
-                Ok(r) => r.esquema().clone(),
-                // Irma que nao abre nao e motivo para a mae nao poder sair: o
-                // erro dela e problema dela, e mistura-lo aqui faria uma
-                // tabela quebrada trancar exclusoes no banco inteiro.
-                Err(_) => continue,
+            // A AUTO-REFERENCIA entra na mesma volta, com ESTE handle no papel
+            // da filha (pedido 491). Ate aqui ela era um `continue` seco, e
+            // excluir o chefe que tem subordinado respondia `Ok` com o
+            // subordinado orfao -- de vez e suave, fora e dentro de transacao.
+            // O handle e o mesmo pelo motivo do `conferir_fks_com`, que ja
+            // conferia o outro lado da mesma chave assim: um segundo
+            // descritor nao ve o que este ja escreveu, e na pre-conferencia do
+            // COMMIT e este que carrega o prefixo da lista.
+            let propria = irma == eu;
+            let esquema = if propria {
+                self.esquema.clone()
+            } else {
+                match crate::reg::RegFile::abrir(&self.diretorio, &irma) {
+                    Ok(r) => r.esquema().clone(),
+                    // Irma que nao abre nao e motivo para a mae nao poder
+                    // sair: o erro dela e problema dela, e mistura-lo aqui
+                    // faria uma tabela quebrada trancar exclusoes no banco
+                    // inteiro.
+                    Err(_) => continue,
+                }
             };
             for fk in esquema.chaves_estrangeiras() {
                 if !fk.verificar || nome_simples(&fk.tabela_ref) != eu {
@@ -2291,11 +2302,15 @@ impl Table {
                     continue;
                 }
                 let mut aberta_aqui;
-                let filha: &mut Table = match maes.as_deref_mut().and_then(|m| m.mae(&irma)) {
-                    Some(f) => f,
-                    None => {
-                        aberta_aqui = Table::abrir(&self.diretorio, &irma)?;
-                        &mut aberta_aqui
+                let filha: &mut Table = if propria {
+                    &mut *self
+                } else {
+                    match maes.as_deref_mut().and_then(|m| m.mae(&irma)) {
+                        Some(f) => f,
+                        None => {
+                            aberta_aqui = Table::abrir(&self.diretorio, &irma)?;
+                            &mut aberta_aqui
+                        }
                     }
                 };
                 let colunas: Vec<String> = fk
@@ -2312,7 +2327,13 @@ impl Table {
                         colunas.join(", ")
                     )));
                 };
-                if !filha.buscar(&indice, &chave)?.is_empty() {
+                // A linha que aponta para SI MESMA nao e filha dela: o
+                // auto-laco sai, como no PostgreSQL, que confere a chave depois
+                // de a linha sair -- e ali nao sobra quem aponte. Sem este
+                // desconto o portao recusaria justamente a linha que nao tem
+                // ninguem abaixo dela.
+                let achadas = filha.buscar(&indice, &chave)?;
+                if achadas.iter().any(|&r| !propria || r != rowid) {
                     return Err(PhxError::Integridade(format!(
                         "{eu}: esta linha tem filhas em {irma} pela chave {:?}. \
                          Nunca se apaga o registro pai que tem filhos -- apague \
@@ -2389,11 +2410,14 @@ impl Table {
     ///
     /// # A auto-referencia fica de fora, e isso e escrito
     ///
-    /// `funcionarios.chefe_id -> funcionarios.id` nao cascateia. E o mesmo
-    /// limite que o `conferir_filhas` ja tem, e pela mesma razao: a tabela
+    /// `funcionarios.chefe_id -> funcionarios.id` nao cascateia: a tabela
     /// esta aberta e no meio de uma escrita, e um segundo descritor sobre ela
     /// leria o indice que ainda nao foi para o disco. Quem precisar da
-    /// hierarquia alterando a propria chave altera as filhas na mao.
+    /// hierarquia alterando a propria chave altera as filhas na mao -- e a
+    /// alteracao da chave referenciada RECUSA. O `conferir_filhas` tinha o
+    /// mesmo `continue` e deixava orfao calado ate o pedido 491; ele PERGUNTA
+    /// (nao grava), e por isso confere contra este mesmo handle, que a
+    /// cascata nao poderia usar para escrever.
     /// Refaz **so a cascata** de uma alteracao cuja mae ja esta gravada.
     ///
     /// # Por que a recuperacao precisa disto
@@ -2599,13 +2623,20 @@ impl Table {
     /// linha crua via a `Sequence` que o cliente nao mandou como uma chave que
     /// virou NULO, e a cascata levava o NULO as filhas (achado A3 da revisao
     /// do DBA ao 448).
+    ///
+    /// `irmas` e o que a transacao ja pediu nas FILHAS (pedido 515): o plano
+    /// do `empilhar` saia so do disco, e o elo dele sobrescrevia o que a
+    /// propria lista ja tinha escrito na filha -- o id trocado voltava, a
+    /// filha que tinha trocado de mae voltava para esta, e a excluida suave
+    /// ressuscitava. `antes` e a mae como a transacao a ve, pelo mesmo motivo.
     pub fn planejar_cascata_da_alteracao(
         &mut self,
         antes: &[Value],
         crua: &[Value],
+        irmas: Option<&dyn MaesEmProgresso>,
     ) -> Result<Vec<EscritaDaCascata>> {
         let depois = self.linha_da_alteracao(crua, antes)?;
-        self.planejar_cascata_com(antes, &depois, None)
+        self.planejar_cascata_com(antes, &depois, irmas)
     }
 
     /// O mesmo plano, com cada irma aberta ENXERGANDO o que a transacao ja
@@ -2960,9 +2991,32 @@ impl Table {
     /// recusar por motivo que nao e de integridade (E/S, indice para tras).
     /// Recusa depois de gravar ficou RARA; deixar de dizer o que aconteceu
     /// quando ela acontece seria trocar um buraco por um pior.
-    fn aplicar_ao_alterar(&mut self, passos: Vec<PassoAoAlterar>) -> Result<()> {
+    fn aplicar_ao_alterar(&mut self, mut passos: Vec<PassoAoAlterar>) -> Result<()> {
+        // A cascata fica EM VOO em toda filha que ela ainda vai tocar, desde
+        // ANTES da primeira escrita -- pedido 490. Um panico daqui ate o fim do
+        // passo dela deixa a filha como um `SIGKILL` deixaria: o byte 52 em 1,
+        // e a tabela recusando ate o `reindexar`. Sem isto a janela do `.ndx`
+        // da filha abria e fechava a CADA linha, o `Drop` do desenrolar achava
+        // `escritas_em_voo = 0` e BAIXAVA o byte, e as filhas r+1..n ficavam na
+        // chave velha que a mae ja nao tem -- sem recusa nenhuma.
+        //
+        // Nao e a janela do passo inteiro (`comecar_escrita`), que foi a
+        // primeira receita e morreu MEDIDA: com ela o `sincronizar` da filha
+        // nao desce nada, e a NETA, que confere a chave dela num segundo
+        // descritor, bate na guarda -- `a_cascata_alcanca_a_neta` recusava
+        // toda cascata de tres niveis, com a avo ja gravada. A marca em voo
+        // so muda o `Drop`; o caminho que termina nao ve diferenca nenhuma.
+        //
+        // Quem tira a marca de uma filha e o passo dela que TERMINA, e a
+        // recusa que DIZ o que ficou para tras -- a linha e a chave, logo
+        // abaixo. Todo o resto que para no meio (panico, ou erro que nao fala
+        // da cascata) deixa a marca, e a filha recusa ate o `reindexar`.
+        for passo in &mut passos {
+            passo.filha.ndx.comecar_cascata();
+        }
         self.sincronizar()?;
-        for mut passo in passos {
+        for i in 0..passos.len() {
+            let passo = &mut passos[i];
             for r in std::mem::take(&mut passo.rowids) {
                 // Linha que sumiu entre planejar e gravar nao e erro: outra
                 // sessao a apagou, e o que se ia consertar nela ja nao existe.
@@ -2978,16 +3032,22 @@ impl Table {
                 // e ele que mantem os indices dela, o diario, a trilha e a
                 // cascata da NETA. Um atalho por baixo economizaria pouco e
                 // deixaria a filha com indice mentindo.
-                passo.filha.atualizar(r, &linha).map_err(|e| {
-                    PhxError::Integridade(format!(
+                if let Err(e) = passo.filha.atualizar(r, &linha) {
+                    let erro = PhxError::Integridade(format!(
                         "{}: a linha mae mudou, e a alteracao NAO chegou a linha {r} de {} \
                          pela chave {:?} ({e}). Nao ha transacao aqui: a mae ja esta \
                          gravada, e essa filha ficou para tras -- conserte-a antes de \
                          seguir",
                         self.nome, passo.nome, passo.chave
-                    ))
-                })?;
+                    ));
+                    for resto in &mut passos[i..] {
+                        resto.filha.ndx.terminar_cascata();
+                    }
+                    return Err(erro);
+                }
+                panico_de_teste::passar(panico_de_teste::Ponto::CascataEntreFilhas);
             }
+            passo.filha.ndx.terminar_cascata();
             passo.filha.sincronizar()?;
         }
         Ok(())
@@ -3419,6 +3479,44 @@ impl Table {
             Some(e) => Err(e),
             None => Ok(()),
         }
+    }
+
+    /// A linha `rowid` do DISCO com `pendentes` -- as escritas que uma
+    /// transacao ja pediu NESTA linha, na ordem -- dobradas por cima, e sem
+    /// deixar nada dobrado neste handle depois.
+    ///
+    /// # Por que existe (pedidos 492 e 515)
+    ///
+    /// O `empilhar` abre a tabela SEM a sobreposicao, e com razao medida: ela
+    /// custava O(pendentes) por instrucao sob a trava global (ver
+    /// `abrir_travada_sem_sobrepor` no servidor). Mas duas decisoes dele
+    /// dependem da linha como a TRANSACAO a ve, e nao do disco: a marca de
+    /// excluida que a alteracao herda quando o pedido nao a manda (o disco
+    /// dizia viva, e `[excluir suave M, atualizar M]` ressuscitava M) e a
+    /// linha de onde o plano da cascata parte. So as escritas desta linha
+    /// entram -- O(escritas da linha), e nao O(lista) --, pela MESMA dobra da
+    /// leitura (`sobrepor_mais`): uma segunda regra de «qual escrita manda»
+    /// seria a copia que diverge.
+    ///
+    /// So para handle que ve o disco: a sobreposicao que houvesse aqui seria
+    /// posta de lado durante a leitura, e nao somada.
+    pub fn ler_do_disco_com(
+        &mut self,
+        rowid: RowId,
+        pendentes: &[Pendente<'_>],
+    ) -> Result<Option<Linha>> {
+        if pendentes.is_empty() {
+            return self.ler(rowid);
+        }
+        let guardada = self.sobreposta.take();
+        for p in pendentes {
+            // O erro da previsao nao impede a leitura: a linha crua entra no
+            // lugar, como no `abrir_travada` da leitura da transacao.
+            let _ = self.sobrepor_mais(rowid, *p);
+        }
+        let lida = self.ler(rowid);
+        self.sobreposta = guardada;
+        lida
     }
 
     /// A linha completada de uma insercao ou alteracao pendente; `None` para
@@ -5076,6 +5174,17 @@ impl Table {
             &chaves_antigas,
             &chaves_novas,
         )?;
+        // A mae esta no disco na chave nova: daqui ate a cascata terminar, as
+        // filhas estao atras dela (pedido 490). A marca em voo entra AGORA, e
+        // nao so no `aplicar_ao_alterar`, porque o texto, o diario e a trilha
+        // la embaixo tambem podem parar -- e parar ali deixava as filhas na
+        // chave velha sem nada no disco dizendo.
+        for passo in &mut cascata {
+            passo.filha.ndx.comecar_cascata();
+        }
+        if !cascata.is_empty() {
+            panico_de_teste::passar(panico_de_teste::Ponto::CascataDepoisDaMae);
+        }
         // O texto sai e entra, nesta ordem. A saida usa o payload ANTIGO --
         // que ainda esta na mao -- porque so ele sabe quais palavras a linha
         // tinha; desindexar pelo novo deixaria as velhas no indice, e o indice

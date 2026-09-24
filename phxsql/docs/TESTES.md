@@ -967,9 +967,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `servidor-segue-de-pe-depois-do-fsync-recusado` | o servidor segue de pé depois de um `fsync` recusado, gravando num disco que já se sabe que mente | 1 | ✅ provada |
 | `completar-engole-a-tabela-que-nao-foi-ao-disco` | a recuperação engole o erro do `sincronizar` e apaga a marca de um commit cujo dado não foi ao disco | 1 | ✅ provada |
 
-**325 das 385 guardas do catálogo: 1 aposentada, 320 provadas, 4 redundantes** — 8922 s de mutação, medido em 2026-09-16 15:25.
+**325 das 400 guardas do catálogo: 1 aposentada, 320 provadas, 4 redundantes** — 8922 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 61 das 385 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 61 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 76 das 400 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 76 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
@@ -1032,6 +1032,21 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `renomear-esquece-o-atestado` — o renomear move os arquivos e deixa o atestado no nome velho: a tabela renomeada recusa tudo
 - `fechar-do-embutido-nao-sincroniza` — o embutido que fecha a tabela sem `phx_sincronizar` não a abre no processo seguinte, e a ABI não tem como reconstruí-la
 - `phx-reindexar-nao-reindexa` — o `phx_reindexar` responde Ok sem reconstruir: o índice que a queda marcou continua recusando pela ABI
+- `auto-referencia-pulada-no-excluir` — excluir o chefe que tem subordinado na MESMA tabela responde Ok, e o subordinado fica órfão
+- `auto-referencia-pulada-no-excluir-pelo-servidor` — o chefe com subordinado sai pelo servidor, e na transação `[inserir 11->10, excluir 10]` confirma
+- `auto-laco-conta-como-filha` — a linha que aponta só para si mesma é contada como filha dela, e nunca mais sai
+- `renomear-pula-a-auto-referencia` — renomear a tabela que aponta para si mesma deixa a chave no nome velho, e o chefe com subordinado passa a sair
+- `marca-do-disco-no-empilhar` — dentro da transação, alterar a linha excluída suave a ressuscita; fora, ela continua excluída
+- `upsert-solto-ressuscita-a-excluida` — o upsert fora de transação ressuscita a linha excluída suave; o mesmo upsert dentro a mantém excluída
+- `mescla-do-upsert-sobre-o-disco` — o upsert com SET dentro da transação mescla sobre a linha do disco, e a excluída na lista ressuscita
+- `elo-do-empilhar-pelo-disco` — o elo que o `empilhar` planeja pelo disco sobrescreve o que a própria lista já escreveu na filha
+- `elo-implicito-sem-trava` — o elo que só o COMMIT descobre escreve sem trava, e a leitura repetível de outra transação lê 5 e depois 6
+- `ciclo-de-commits-sem-desempate` — dois COMMITs cujos elos se barram são mandados repetir para sempre, e ninguém confirma
+- `quem-cede-no-ciclo-segura-as-travas` — a transação que cede no ciclo de COMMITs volta ativa com as travas, e a mais velha continua barrada
+- `aresta-velha-depois-do-savepoint` — a transação barrada volta ao SAVEPOINT e a aresta velha faz a outra ceder num ciclo que não existe mais
+- `corrente-do-ciclo-atravessa-quem-nao-confirma` — a corrente do ciclo atravessa transação em ABORT_ONLY, e a outra cede por quem nunca mais vai confirmar
+- `cascata-em-voo-ignorada-no-drop` — pânico entre duas filhas da cascata solta deixa as seguintes na chave velha, e a tabela delas não recusa
+- `cascata-em-voo-so-no-aplicar` — pânico depois de a mãe ir ao disco e antes da primeira filha deixa as filhas na chave velha, calado
 
 As guardas que esta corrida ainda cita, hoje aposentadas:
 

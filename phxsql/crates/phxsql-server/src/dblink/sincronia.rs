@@ -469,7 +469,8 @@ pub fn aplicar_para_ca(
         // sincronia nao dispara gatilho nenhum -- nem o de INSERT --, porque
         // ela copia o que o outro lado ja julgou. Um BEFORE UPDATE aqui
         // julgaria a mesma linha duas vezes, e recusaria no meio de uma
-        // rodada que precisa ser reentravel.
+        // rodada que precisa ser reentravel. E sem herdar a marca de
+        // excluida: a linha de la e a verdade INTEIRA, marca inclusive.
         let feito = crate::upsert::aplicar(
             t,
             indice_da_chave,
@@ -477,6 +478,7 @@ pub fn aplicar_para_ca(
             crate::upsert::SeExistir::Atualizar,
             None,
             None,
+            false,
         )?;
         if feito.atualizada {
             alteradas += 1;

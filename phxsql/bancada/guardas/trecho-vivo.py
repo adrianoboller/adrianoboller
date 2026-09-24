@@ -285,6 +285,14 @@ dia, nunca no desejado:
   `reindexar`, a restauracao e o arranque que nao reconstroem a tabela
   marcada, o `fechar` do embutido e o `phx_reindexar`. A frente contou 337;
   a conta do integrador, pelo `--catraca` na arvore combinada.
+  **SUBIU para 401 em 24/09/2026** (lote de integridade na transacao, 491,
+  492, 515, 516 e 490, integrado sobre o 522): quinze guardas -- a
+  auto-referencia pulada no excluir (e pelo servidor), o auto-laco contado
+  como filha, o renomear que pula a auto-referencia, a marca e o elo do
+  `empilhar` lidos do disco, o upsert solto que ressuscita a excluida, o
+  elo implicito sem trava, o ciclo de COMMITs barrados sem desempate e as
+  tres arestas dele, e a cascata em voo que o Drop ignorava. A frente
+  contou 360 sobre a base dela; a conta do integrador, pelo `--catraca`.
   **SUBIU para 300 em 24/09/2026** (pedido 497, o literal do pedido no texto
   do erro que o `acessos.log` grava): tres guardas novas, uma por motor que
   monta a mensagem -- o `descrever` do SQL, o `mostrar` da expressao -- e a
@@ -408,7 +416,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 386
+PISO_DAS_ENTRADAS = 401
 
 # ------------------------------------------------------------- APOSENTADAS
 #

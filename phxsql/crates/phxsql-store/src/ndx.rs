@@ -617,6 +617,24 @@ pub struct NdxFile {
     /// RECUSOU antes de mexer (a arvore continua inteira) do que interrompeu
     /// depois de mexer (rasgada).
     mudancas_na_arvore: u64,
+    /// A cascata do `ao_alterar` ainda nao terminou nesta tabela filha
+    /// (pedido 490): a mae ja foi para a chave nova, e alguma linha daqui
+    /// pode estar na velha.
+    ///
+    /// # Por que nao e uma `escritas_em_voo` a mais
+    ///
+    /// A arvore desta filha NAO esta rasgada: cada linha da cascata abre e
+    /// fecha a sua janela, e entre duas linhas indice e `.reg` concordam. O
+    /// que falta e a cascata, e isso a arvore nao conserta. Por isso esta
+    /// marca nao segura o `sincronizar` nem o `fechar` -- a neta confere a
+    /// chave desta filha num segundo descritor, e precisa do byte 52 em 0 no
+    /// disco entre duas linhas (a janela do passo inteiro foi medida e
+    /// recusava toda cascata de tres niveis). Ela so muda o `Drop`: o handle
+    /// que morre com ela ligada -- o desenrolar de um panico -- deixa o disco
+    /// como um `SIGKILL` deixaria, com o byte em 1, e a tabela recusa ate o
+    /// `reindexar`. Mesmo desenho da `escritas_em_voo`: quem sabe que nao
+    /// terminou e o proprio trabalho, e nao `thread::panicking()`.
+    cascata_em_voo: bool,
 }
 
 // ---------------------------------------------------------------- paginas
@@ -862,6 +880,7 @@ impl NdxFile {
             escritas_em_voo: 0,
             escrita_interrompida: false,
             mudancas_na_arvore: 0,
+            cascata_em_voo: false,
         };
         n.arquivo.set_len(page_size as u64)?;
 
@@ -1012,6 +1031,7 @@ impl NdxFile {
             escritas_em_voo: 0,
             escrita_interrompida: false,
             mudancas_na_arvore: 0,
+            cascata_em_voo: false,
         })
     }
 
@@ -1559,6 +1579,17 @@ impl NdxFile {
         if !em_dia {
             self.escrita_interrompida = true;
         }
+    }
+
+    /// Esta tabela filha entra na cascata do `ao_alterar` -- ver o campo
+    /// `cascata_em_voo`. So o `Drop` olha para isto.
+    pub fn comecar_cascata(&mut self) {
+        self.cascata_em_voo = true;
+    }
+
+    /// A cascata terminou nesta filha, ou parou com um erro que ja se disse.
+    pub fn terminar_cascata(&mut self) {
+        self.cascata_em_voo = false;
     }
 
     /// Roda uma mudanca da arvore com a escrita em voo ligada.
@@ -2435,7 +2466,17 @@ impl Drop for NdxFile {
     /// ao disco (pedido 456): o disco fica exatamente como um `SIGKILL` no
     /// mesmo ponto o deixaria, com o byte 52 em 1, e a proxima abertura manda
     /// reconstruir.
+    ///
+    /// Com a cascata do `ao_alterar` em voo (pedido 490), o mesmo: a arvore
+    /// daqui esta inteira, mas a cascata nao, e o disco tem de dizer isso. O
+    /// byte SOBE aqui, porque entre duas linhas da cascata ele pode estar em
+    /// 0 -- o `sincronizar` que a neta precisa o baixou --, e sem subir o
+    /// panico continuaria mais calado que a queda.
     fn drop(&mut self) {
+        if self.cascata_em_voo {
+            self.escrita_interrompida = true;
+            let _ = self.levantar_marca();
+        }
         let _ = self.fechar();
         // Os contadores deste arquivo entram na conta do processo aqui, e nao
         // a cada toque de pagina: ver a nota em `contadores_de_cache`.
@@ -2482,6 +2523,12 @@ pub mod panico_de_teste {
         /// `Table::reindexar`: o `.ndx` ja recriado VAZIO, e o `.reg` varrido
         /// sem nenhuma arvore montada ainda.
         NoMeioDoReindexar,
+        /// A cascata do `ao_alterar` (pedido 490): a mae ja gravada na chave
+        /// nova, a filha `r` ja acompanhou, e a `r + 1` ainda nao.
+        CascataEntreFilhas,
+        /// O irmao do de cima: a mae ja gravada na chave nova, e o texto, o
+        /// diario e a trilha dela ainda por fazer -- nenhuma filha acompanhou.
+        CascataDepoisDaMae,
     }
 
     #[cfg(debug_assertions)]

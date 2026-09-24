@@ -301,6 +301,16 @@ impl Feito {
 /// estar no disco. Rodar antes da mescla o poria diante da linha do pedido
 /// -- que, com SET, nunca vai existir --; rodar depois da gravacao nao
 /// poderia mais recusar nada.
+///
+/// # A marca de excluida, quando o pedido nao a mandou
+///
+/// `herda_marca` (de [`crate::valores::herda_a_marca`]) faz a linha do
+/// pedido, sem SET, herdar a marca da linha gravada -- a guarda do
+/// `atualizar`, porque isto virou um. Faltava so aqui (pedido 492): o upsert
+/// solto RESSUSCITAVA a linha excluida suave, e o mesmo upsert dentro de
+/// transacao a mantinha excluida. Com SET a linha gravada ja e a base, e a
+/// marca dela vem junto.
+#[allow(clippy::too_many_arguments)]
 pub fn aplicar(
     t: &mut Table,
     indice: &str,
@@ -308,6 +318,7 @@ pub fn aplicar(
     modo: SeExistir,
     atualizar: Option<&Json>,
     antes_de_atualizar: Option<AntesDeAtualizar<'_>>,
+    herda_marca: bool,
 ) -> Result<Feito> {
     let chave = valores_do_indice(t.esquema(), indice, linha);
     if chave.is_empty() || chave.iter().any(Value::e_null) {
@@ -324,9 +335,10 @@ pub fn aplicar(
             }),
             SeExistir::Atualizar => {
                 // A linha gravada so e lida quando alguem precisa dela: o
-                // SET mescla por cima dela, e o gancho a recebe como OLD. O
-                // upsert sem nenhum dos dois continua sem pagar a leitura.
-                let velha = if atualizar.is_some() || antes_de_atualizar.is_some() {
+                // SET mescla por cima dela, o gancho a recebe como OLD, e a
+                // linha sem SET herda dela a marca de excluida. O upsert sem
+                // nenhum dos tres continua sem pagar a leitura.
+                let velha = if atualizar.is_some() || antes_de_atualizar.is_some() || herda_marca {
                     Some(t.ler(rowid)?.ok_or_else(|| {
                         PhxError::Corrompido(format!(
                             "o indice {indice} apontou para o rowid {rowid}, que nao \
@@ -338,6 +350,11 @@ pub fn aplicar(
                 };
                 let mut gravada = match (atualizar, &velha) {
                     (Some(set), Some(v)) => Some(mesclar(v, set, t.esquema())?),
+                    (None, Some(v)) if herda_marca => {
+                        let mut nova = linha.to_vec();
+                        crate::valores::herdar_a_marca(&mut nova, v, t.esquema());
+                        Some(nova)
+                    }
                     _ => None,
                 };
                 if let (Some(gancho), Some(v)) = (antes_de_atualizar, &velha) {
