@@ -42,6 +42,7 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [x] Segurança M3: OpenVPN troca para `nobody` depois de abrir a placa; `tls-crypt-v2` com uma chave por membro e a série dentro — removido barrado ANTES do TLS
 - [x] Arquivos que o OpenVPN relê (`crl.pem`, `ccd/`) gravados por troca atômica — nunca lidos pela metade
 - [x] P2P: `mac1`/cookie contra inundação de INICIO — lixo recusado em 1,85 µs em vez de 198 µs (107×); sob carga, só com cookie e 5/s por origem
+- [x] USB na janela do programa de mesa: compartilhar, ver o dos membros, usar e soltar — exercitado com duas janelas e o túnel P2P de verdade
 - [x] Segurança C2: sorteio falha fechado (descritor único; `BCryptGenRandom` no Windows) — nunca mais mistura previsível
 
 ### Falta
@@ -54,7 +55,7 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [ ] Segurança no Windows: ACL nos arquivos com chave (hoje herdam a do diretório; no Linux nascem 0600)
 - [ ] Segurança A4 (inteiro): TLS no próprio painel — choque com a pétrea de zero dependência; hoje, proxy com TLS na frente
 - [ ] P2P no Windows: **prova numa máquina real** com OpenVPN (driver TAP e `netsh` — o roteiro `prova-windows.ps1` está pronto)
-- [ ] USB: **prova com dispositivo real** (este contêiner não tem USB nem os módulos `usbip-host`/`vhci-hcd`); botões na janela do programa de mesa
+- [ ] USB: **prova com dispositivo real** (este contêiner não tem USB nem os módulos `usbip-host`/`vhci-hcd`)
 
 ## Portas e o controle de cada uma
 
@@ -455,6 +456,31 @@ phxvpn usb portas / soltar N / parar 1-1.2 --rede Matriz
 O servidor sobe sozinho com o `p2p ligar` (e com o «Ligar» da janela). Sem
 rede P2P (modo OpenVPN), roda avulso: `usb servir --ip IP --interface tun0
 --permitir 10.8.0.0/24 --busid 1-1`.
+
+**Na janela** (botão **USB** de cada rede, prévias 15–17): "Deste computador"
+(Compartilhar / Parar), "Dos membros" (Ver USB → Usar) e "Em uso aqui"
+(Soltar). As três portas (janela, console e linha de comando) chamam as mesmas
+funções do `usb.rs`; só a formatação muda.
+
+Exercitado com `provas/usb-janela/rodar.sh`:
+- duas janelas no Chromium, cada uma num `ip netns`, com o túnel P2P de
+  verdade e um sysfs de mentira em cada lado;
+- **o que o kernel faria, o roteiro faz à mão:** trocar o driver depois do
+  `bind` e marcar a porta usada.
+
+O que se mediu:
+- A compartilhou, e o sysfs recebeu `unbind` do `usb-storage`,
+  `add 1-1` e `bind`;
+- B viu o pendrive de A **pelo túnel**, clicou Usar, e então:
+  - A entregou o soquete ao `usbip-host`;
+  - B escreveu `0 11 65541 3` no `attach`;
+  - depois, Soltar escreveu `0` no `detach`;
+- nenhum erro no console das duas páginas.
+
+Dois defeitos achados só exercitando:
+- quem só compartilha via o erro cru "vhci-hcd não carregado" em "Em uso
+  aqui". Não ter o módulo é o normal nesse caso; agora a tela diz como usar;
+- as mensagens do motor iam sem acento para a tela.
 
 **Segurança.** O USB/IP não tem senha nem cifra; quem alcança a porta lê o
 pendrive. Três travas, cada uma provada:

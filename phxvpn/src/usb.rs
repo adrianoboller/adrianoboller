@@ -290,6 +290,16 @@ impl Sysfs {
         }
     }
 
+    /// O do sistema, ou o de `PHXVPN_SYSFS` (um sysfs de mentira: e como a
+    /// janela, o console e o servidor da rede se exercitam sem USB). Um
+    /// lugar so decide, para as tres portas nunca olharem kernels diferentes.
+    pub fn do_ambiente() -> Sysfs {
+        match std::env::var("PHXVPN_SYSFS") {
+            Ok(r) if !r.is_empty() => Sysfs::em(Path::new(&r)),
+            _ => Sysfs::sistema(),
+        }
+    }
+
     pub fn em(raiz: &Path) -> Sysfs {
         Sysfs {
             raiz: raiz.to_path_buf(),
@@ -312,9 +322,9 @@ impl Sysfs {
     fn escrever(&self, arquivo: &Path, texto: &str) -> R<()> {
         std::fs::write(arquivo, texto).map_err(|e| {
             let dica = if e.kind() == std::io::ErrorKind::PermissionDenied {
-                " (precisa de root)"
+                " (precisa de administrador: root)"
             } else if e.kind() == std::io::ErrorKind::NotFound {
-                " (modulo do kernel carregado? modprobe usbip-host / vhci-hcd)"
+                " (módulo do kernel carregado? modprobe usbip-host / vhci-hcd)"
             } else {
                 ""
             };
@@ -332,7 +342,7 @@ impl Sysfs {
         validar_busid(busid)?;
         let dir = self.dispositivos().join(busid);
         if !dir.is_dir() {
-            return Err(format!("nao ha dispositivo USB {busid} neste computador"));
+            return Err(format!("não há dispositivo USB {busid} neste computador"));
         }
         let at = |nome: &str| -> String {
             std::fs::read_to_string(dir.join(nome))
@@ -434,7 +444,7 @@ impl Sysfs {
         validar_busid(busid)?;
         self.ler(busid)?;
         if !self.host().is_dir() {
-            return Err("o modulo usbip-host nao esta carregado (sudo modprobe usbip-host)".into());
+            return Err("o módulo usbip-host não está carregado (sudo modprobe usbip-host)".into());
         }
         match self.driver(busid).as_deref() {
             Some("usbip-host") => return Ok(()),
@@ -481,7 +491,7 @@ impl Sysfs {
         let dir = self.vhci();
         let mut arquivos: Vec<PathBuf> = std::fs::read_dir(&dir)
             .map_err(|_| {
-                "o modulo vhci-hcd nao esta carregado (sudo modprobe vhci-hcd)".to_string()
+                "o módulo vhci-hcd não está carregado (sudo modprobe vhci-hcd)".to_string()
             })?
             .flatten()
             .map(|e| e.path())
@@ -533,6 +543,12 @@ impl Sysfs {
             format!("{remoto} {PORTA} {}\n", d.busid),
         );
         Ok(porta)
+    }
+
+    /// O controlador virtual existe? Sem ele nao ha o que listar em «em uso»
+    /// -- e isso e o normal de quem so compartilha, nao um erro.
+    pub fn tem_vhci(&self) -> bool {
+        self.vhci().is_dir()
     }
 
     pub fn soltar(&self, porta: u32) -> R<()> {
@@ -688,7 +704,7 @@ pub fn remotos(ip: Ipv4Addr) -> R<Vec<Dispositivo>> {
     c.write_all(&cabecalho(OP_REQ_DEVLIST, ST_OK))
         .map_err(|e| e.to_string())?;
     let (_, codigo, status) =
-        ler_cabecalho(&mut c).map_err(|_| format!("{ip} recusou (nao e membro desta rede?)"))?;
+        ler_cabecalho(&mut c).map_err(|_| format!("{ip} recusou (não é membro desta rede?)"))?;
     if codigo != OP_REP_DEVLIST || status != ST_OK {
         return Err(format!("{ip}: resposta USB/IP inesperada"));
     }
@@ -736,7 +752,7 @@ pub fn importar(ip: Ipv4Addr, busid: &str) -> R<(TcpStream, Dispositivo)> {
     }
     if status != ST_OK {
         return Err(format!(
-            "{ip} nao entregou {busid}: nao compartilhado nesta rede, ou ja em uso"
+            "{ip} não entregou {busid}: não está compartilhado nesta rede, ou já está em uso"
         ));
     }
     let mut d = [0u8; TAM_DISPOSITIVO];
@@ -783,23 +799,112 @@ pub fn soltar(_sysfs: &Sysfs, porta: u32) -> R<String> {
     usbip_win2(&["detach", "-p", &porta.to_string()])
 }
 
-/// O que esta anexado aqui, uma linha por porta.
+/// Uma porta em uso aqui: o numero (para soltar) e a descricao.
+#[derive(Clone, Debug, PartialEq)]
+pub struct EmUso {
+    pub porta: u32,
+    pub texto: String,
+}
+
+/// O que esta anexado aqui.
 #[cfg(unix)]
-pub fn em_uso(sysfs: &Sysfs) -> R<Vec<String>> {
+pub fn em_uso(sysfs: &Sysfs) -> R<Vec<EmUso>> {
     Ok(sysfs
         .portas()?
         .into_iter()
         .filter(Porta::em_uso)
-        .map(|p| {
-            let de = sysfs.origem(p.numero).unwrap_or_else(|| "?".into());
-            format!("porta {:<3} {}  (aqui: {})", p.numero, de, p.busid_local)
+        .map(|p| EmUso {
+            porta: p.numero,
+            texto: format!(
+                "{}  (aqui: {})",
+                sysfs.origem(p.numero).unwrap_or_else(|| "?".into()),
+                p.busid_local
+            ),
         })
         .collect())
 }
 
 #[cfg(windows)]
-pub fn em_uso(_sysfs: &Sysfs) -> R<Vec<String>> {
-    Ok(usbip_win2(&["port"])?.lines().map(str::to_string).collect())
+pub fn em_uso(_sysfs: &Sysfs) -> R<Vec<EmUso>> {
+    Ok(portas_do_usbip(&usbip_win2(&["port"])?))
+}
+
+/// Le a saida do `usbip port` (a de referencia e a do usbip-win2 seguem o
+/// mesmo molde): `Port 01: <Port in Use> at High Speed(480Mbps)` abre um
+/// bloco, as linhas seguintes o descrevem.
+pub fn portas_do_usbip(saida: &str) -> Vec<EmUso> {
+    let mut v: Vec<EmUso> = Vec::new();
+    for l in saida.lines() {
+        let t = l.trim();
+        if let Some(resto) = t.strip_prefix("Port ") {
+            if let Some((n, desc)) = resto.split_once(':') {
+                if let Ok(porta) = n.trim().parse() {
+                    v.push(EmUso {
+                        porta,
+                        texto: desc.trim().to_string(),
+                    });
+                    continue;
+                }
+            }
+        }
+        if let (Some(u), false) = (v.last_mut(), t.is_empty()) {
+            u.texto.push_str(" | ");
+            u.texto.push_str(t);
+        }
+    }
+    v
+}
+
+// ------------------------------------------------ operacoes por rede ----
+//
+// O MESMO motor para o `phxvpn usb`, o `USB` do console e os botoes da
+// janela: quem formata e cada porta; a decisao (o que se oferece em qual
+// rede) mora aqui.
+
+/// Um dispositivo daqui, com o estado dele nesta rede.
+pub struct Local {
+    pub dispositivo: Dispositivo,
+    /// Preso ao `usbip-host` (saiu deste computador).
+    pub preso: bool,
+    /// Na lista `usb` desta rede.
+    pub nesta_rede: bool,
+}
+
+pub fn locais_da_rede(sysfs: &Sysfs, rede: Option<&crate::rede_p2p::Rede>) -> R<Vec<Local>> {
+    Ok(sysfs
+        .locais()?
+        .into_iter()
+        .map(|d| Local {
+            preso: sysfs.driver(&d.busid).as_deref() == Some("usbip-host"),
+            nesta_rede: rede.is_some_and(|r| r.usb.contains(&d.busid)),
+            dispositivo: d,
+        })
+        .collect())
+}
+
+/// Prende ao `usbip-host` e poe na lista da rede (o servidor da rede ja
+/// ligada rele a lista a cada conexao: vale na hora).
+pub fn compartilhar_na_rede(sysfs: &Sysfs, caminho_rede: &str, busid: &str) -> R<String> {
+    let mut rede = crate::rede_p2p::Rede::ler(caminho_rede)?;
+    sysfs.compartilhar(busid)?;
+    if !rede.usb.iter().any(|u| u == busid) {
+        rede.usb.push(busid.to_string());
+        rede.gravar(caminho_rede)?;
+    }
+    Ok(format!(
+        "{busid} compartilhado na rede {} — este computador deixa de vê-lo até «parar»",
+        rede.nome
+    ))
+}
+
+/// Tira da lista da rede e devolve o dispositivo a este computador.
+pub fn parar_na_rede(sysfs: &Sysfs, caminho_rede: &str, busid: &str) -> R<String> {
+    validar_busid(busid)?;
+    let mut rede = crate::rede_p2p::Rede::ler(caminho_rede)?;
+    rede.usb.retain(|u| u != busid);
+    rede.gravar(caminho_rede)?;
+    sysfs.parar(busid)?;
+    Ok(format!("{busid} voltou para este computador"))
 }
 
 /// O `usbip.exe` do usbip-win2: na pasta de instalacao dele ou no PATH.
@@ -914,7 +1019,7 @@ pub fn servir_rede(
     let c1 = caminho_rede.clone();
     let proprio = rede.ip;
     let s = Servidor {
-        sysfs: Sysfs::sistema(),
+        sysfs: Sysfs::do_ambiente(),
         permitido: Arc::new(move |ip| {
             ip != proprio
                 && Rede::ler(&c1)
@@ -1100,6 +1205,22 @@ mod testes {
             "{t}"
         );
         let _ = std::fs::remove_dir_all(r);
+    }
+
+    #[test]
+    fn le_a_saida_do_usbip_port() {
+        let saida = "Imported USB devices\n====================\n\
+Port 00: <Port in Use> at High Speed(480Mbps)\n\
+       SanDisk Corp. : Ultra Fit (0781:5583)\n\
+       1-1 -> usbip://10.78.0.1:3240/1-1\n\
+Port 08: <Port in Use> at Super Speed(5000Mbps)\n";
+        let v = portas_do_usbip(saida);
+        assert_eq!(v.iter().map(|u| u.porta).collect::<Vec<_>>(), [0, 8]);
+        assert!(
+            v[0].texto.contains("usbip://10.78.0.1:3240/1-1"),
+            "{}",
+            v[0].texto
+        );
     }
 
     #[test]

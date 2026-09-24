@@ -554,7 +554,7 @@ pub fn usb(o: &Opcoes) -> R<String> {
     use crate::usb::{self, Sysfs};
     let sysfs = match o.um("sysfs") {
         Some(r) => Sysfs::em(std::path::Path::new(r)),
-        None => Sysfs::sistema(),
+        None => Sysfs::do_ambiente(),
     };
     let arg = |i: usize, oque: &str| -> R<&str> {
         o.posicionais
@@ -567,49 +567,39 @@ pub fn usb(o: &Opcoes) -> R<String> {
     };
     match o.posicionais.first().map(|a| a.to_lowercase()).as_deref() {
         Some("listar") | None => {
-            let v = sysfs.locais()?;
+            let rede = arquivo_da_rede_sem_posicional(o)
+                .ok()
+                .and_then(|c| Rede::ler(&c).ok());
+            let v = usb::locais_da_rede(&sysfs, rede.as_ref())?;
             if v.is_empty() {
                 return Ok("nenhum dispositivo USB neste computador\n".into());
             }
             Ok(v.iter()
-                .map(|d| {
-                    let marca = if sysfs.driver(&d.busid).as_deref() == Some("usbip-host") {
-                        "  [compartilhado]"
-                    } else {
-                        ""
+                .map(|l| {
+                    let marca = match (l.preso, l.nesta_rede) {
+                        (true, true) => "  [compartilhado nesta rede]",
+                        (true, false) => "  [compartilhado]",
+                        _ => "",
                     };
-                    format!("{}{marca}\n", d.resumo())
+                    format!("{}{marca}\n", l.dispositivo.resumo())
                 })
                 .collect())
         }
         Some("compartilhar") => {
             let busid = arg(1, "o busid (veja: usb listar)")?;
             let caminho = arquivo_da_rede_sem_posicional(o)?;
-            let mut rede = Rede::ler(&caminho)?;
-            sysfs.compartilhar(busid)?;
-            if !rede.usb.iter().any(|u| u == busid) {
-                rede.usb.push(busid.to_string());
-                rede.gravar(&caminho)?;
-            }
-            Ok(format!(
-                "{busid} compartilhado na rede {} -- este computador deixa de ve-lo ate «usb parar»\n",
-                rede.nome
-            ))
+            Ok(format!("{}\n", usb::compartilhar_na_rede(&sysfs, &caminho, busid)?))
         }
         Some("parar") => {
             let busid = arg(1, "o busid")?;
             let caminho = arquivo_da_rede_sem_posicional(o)?;
-            let mut rede = Rede::ler(&caminho)?;
-            rede.usb.retain(|u| u != busid);
-            rede.gravar(&caminho)?;
-            sysfs.parar(busid)?;
-            Ok(format!("{busid} voltou para este computador\n"))
+            Ok(format!("{}\n", usb::parar_na_rede(&sysfs, &caminho, busid)?))
         }
         Some("remotos") => {
             let de = ip(arg(1, "o IP virtual do membro")?)?;
             let v = usb::remotos(de)?;
             if v.is_empty() {
-                return Ok(format!("{de} nao compartilha nada nesta rede\n"));
+                return Ok(format!("{de} não compartilha nada nesta rede\n"));
             }
             Ok(v.iter().map(|d| format!("{}\n", d.resumo())).collect())
         }
@@ -629,7 +619,9 @@ pub fn usb(o: &Opcoes) -> R<String> {
             if v.is_empty() {
                 return Ok("nenhum USB remoto em uso aqui\n".into());
             }
-            Ok(v.iter().map(|l| format!("{l}\n")).collect())
+            Ok(v.iter()
+                .map(|u| format!("porta {:<3} {}\n", u.porta, u.texto))
+                .collect())
         }
         Some("servir") => usb_servir(o, sysfs),
         Some(outro) => Err(format!(

@@ -60,10 +60,11 @@ function desenharTudo(redes) {
     nome.onclick = () => { abertos.has(r.rede) ? abertos.delete(r.rede) : abertos.add(r.rede); atualizar(); };
     const acoes = el("span", "acoes");
     const conv = el("button", "", "Convidar"); conv.onclick = () => abrirConvidar(r.rede);
+    const usb = el("button", "", "USB"); usb.title = "compartilhar e usar dispositivos USB nesta rede"; usb.onclick = () => abrirUsb(r);
     const liga = el("button", r.ligada ? "exclui" : "inclui", r.desligando ? "Desligando…" : (r.ligada ? "Desligar" : "Ligar"));
     liga.disabled = !!r.desligando;
     liga.onclick = () => r.ligada ? desligar(r.rede, liga) : (r.lembrada ? ligarLembrada(r.rede, liga) : abrirLigar(r));
-    acoes.append(conv, liga);
+    acoes.append(usb, conv, liga);
     if (r.lembrada && !r.ligada) {
       const esq = el("button", "", "Esquecer senha"); esq.title = "apaga a senha lembrada neste computador";
       esq.onclick = async () => { try { aviso((await api("POST", "/api/esquecer", { rede: r.rede })).ok, true); } catch (e) { aviso(e.message); } atualizar(); };
@@ -207,6 +208,86 @@ function abrirLigar(r) {
     d.lembrar = d.lembrar === "1";
     if (!usa) { delete d.repasse_usuario; delete d.repasse_senha; }
     enviar(f, "/api/ligar", d, (x) => { $("d-ligar").close(); aviso(x.ok, true); atualizar(); }); };
+}
+
+// USB: o dialogo so desenha; quem decide e o motor (usb.rs), pela /api/usb.
+async function usbApi(corpo) { return api("POST", "/api/usb", corpo); }
+
+function linhaUsb(texto, marca, botoes) {
+  const l = el("div", "usb-linha");
+  l.append(el("span", "desc", texto));
+  if (marca) l.append(el("span", "marca", marca));
+  for (const b of botoes) l.append(b);
+  return l;
+}
+
+function botaoUsb(rotulo, classe, acao) {
+  const b = el("button", classe, rotulo); b.type = "button";
+  b.onclick = async () => {
+    const msg = $("f-usb").querySelector(".msg"); msg.textContent = ""; b.disabled = true;
+    try { const r = await acao(); if (r && r.ok) aviso(r.ok, true); }
+    catch (e) { msg.textContent = e.message; }
+    finally { b.disabled = false; }
+  };
+  return b;
+}
+
+async function desenharUsbLocais(rede) {
+  const caixa = $("usb-locais"); caixa.textContent = "";
+  try {
+    const v = await usbApi({ acao: "locais", rede });
+    if (!v.length) { caixa.append(el("div", "usb-vazio", "Nenhum dispositivo USB neste computador.")); return; }
+    for (const d of v) {
+      const marca = d.nesta_rede ? "compartilhado nesta rede" : (d.preso ? "compartilhado em outra rede" : "");
+      const b = d.nesta_rede
+        ? botaoUsb("Parar", "altera", async () => { const r = await usbApi({ acao: "parar", rede, busid: d.busid }); desenharUsbLocais(rede); return r; })
+        : botaoUsb("Compartilhar", "inclui", async () => { const r = await usbApi({ acao: "compartilhar", rede, busid: d.busid }); desenharUsbLocais(rede); return r; });
+      caixa.append(linhaUsb(d.resumo, marca, [b]));
+    }
+  } catch (e) { caixa.append(el("div", "usb-vazio", e.message)); }
+}
+
+async function desenharUsbPortas() {
+  const caixa = $("usb-portas"); caixa.textContent = "";
+  try {
+    const v = await usbApi({ acao: "portas" });
+    if (v.sem_vhci) { caixa.append(el("div", "usb-vazio", "Para usar o USB de outro membro, carregue o módulo do kernel: sudo modprobe vhci-hcd")); return; }
+    if (!v.length) { caixa.append(el("div", "usb-vazio", "Nenhum USB de outro membro em uso aqui.")); return; }
+    for (const u of v) {
+      caixa.append(linhaUsb(`porta ${u.porta} · ${u.texto}`, "", [
+        botaoUsb("Soltar", "altera", async () => { const r = await usbApi({ acao: "soltar", porta: u.porta }); desenharUsbPortas(); return r; }),
+      ]));
+    }
+  } catch (e) { caixa.append(el("div", "usb-vazio", e.message)); }
+}
+
+function desenharUsbMembros(r) {
+  const caixa = $("usb-membros"); caixa.textContent = "";
+  const online = r.ligada ? r.membros.filter((m) => m.online) : [];
+  if (!online.length) {
+    caixa.append(el("div", "usb-vazio", r.ligada ? "Nenhum membro conectado agora." : "Ligue a rede para ver o USB dos membros."));
+    return;
+  }
+  for (const m of online) {
+    const sub = el("div", "usb-sub");
+    const ver = botaoUsb("Ver USB", "", async () => {
+      sub.textContent = "";
+      const v = await usbApi({ acao: "remotos", ip: m.ip });
+      if (!v.length) sub.append(el("div", "usb-vazio", "Este membro não compartilha nada nesta rede."));
+      for (const d of v) {
+        sub.append(linhaUsb(d.resumo, "", [
+          botaoUsb("Usar", "inclui", async () => { const x = await usbApi({ acao: "usar", ip: m.ip, busid: d.busid }); desenharUsbPortas(); return x; }),
+        ]));
+      }
+    });
+    caixa.append(linhaUsb(m.ip, "", [ver]), sub);
+  }
+}
+
+function abrirUsb(r) {
+  dialogo("d-usb");
+  $("d-usb").querySelector("[data-rede]").textContent = r.rede;
+  desenharUsbLocais(r.rede); desenharUsbMembros(r); desenharUsbPortas();
 }
 
 async function desligar(rede, botao) {

@@ -19,6 +19,7 @@ button{font:inherit;cursor:pointer;background:transparent;border:1px solid var(-
 button:hover{background:var(--azul);color:var(--fundo)}
 button.inclui{border-color:var(--verde);color:var(--verde)}button.inclui:hover{background:var(--verde);color:var(--fundo)}
 button.exclui{border-color:var(--vermelho);color:var(--vermelho)}button.exclui:hover{background:var(--vermelho);color:var(--fundo)}
+button.altera{border-color:var(--ambar);color:var(--ambar)}button.altera:hover{background:var(--ambar);color:var(--fundo)}
 button:disabled{opacity:.5;cursor:wait}
 main{flex:1;overflow:auto;padding:0 14px 14px}
 .rede{border:1px solid var(--linha);border-radius:8px;margin-bottom:10px;background:var(--painel);overflow:hidden}
@@ -46,6 +47,14 @@ main{flex:1;overflow:auto;padding:0 14px 14px}
 dialog{background:var(--painel);color:var(--texto);border:1px solid var(--linha);border-radius:10px;width:calc(100% - 32px);max-width:420px}
 dialog::backdrop{background:rgba(0,0,0,.6)}
 dialog h2{margin:0 0 10px;font-size:16px}
+dialog h3{margin:12px 0 4px;font-size:13px;color:var(--fraco);font-weight:600}
+#d-usb{max-width:600px}
+.usb-linha{display:flex;align-items:center;gap:8px;padding:5px 0;border-top:1px solid var(--linha);font-size:13px;flex-wrap:wrap}
+.usb-linha .desc{font-family:ui-monospace,monospace;font-size:12px;flex:1;min-width:0;word-break:break-word}
+.usb-linha .marca{color:var(--ambar);font-size:11px}
+.usb-linha button{padding:2px 8px;font-size:12px}
+.usb-sub{padding-left:16px}
+.usb-vazio{color:var(--fraco);font-size:12px;padding:4px 0}
 .campo{display:flex;flex-direction:column;gap:3px;margin-bottom:8px}
 .campo span{font-size:12px;color:var(--fraco)}
 .campo input,.campo textarea,.campo select{width:100%;background:#050a1c;color:var(--texto);border:1px solid var(--linha);border-radius:6px;padding:7px;font:inherit}
@@ -120,6 +129,16 @@ dialog h2{margin:0 0 10px;font-size:16px}
   <label class="campo"><input name="texto" maxlength="1000" autocomplete="off" placeholder="Mensagem (Enter envia)"></label>
   <p class="msg"></p>
   <div class="linha-botoes"><button type="button" data-fechar>Fechar</button><button class="inclui">Enviar</button></div>
+</form></dialog>
+
+<dialog id="d-usb"><form method="dialog" id="f-usb">
+  <h2>USB — <span data-rede></span></h2>
+  <p style="color:var(--fraco);font-size:12px;margin:0 0 6px">Só os membros desta rede alcançam o que você compartilha, pelo túnel. Compartilhar e usar pedem administrador.</p>
+  <h3>Deste computador</h3><div id="usb-locais"></div>
+  <h3>Dos membros</h3><div id="usb-membros"></div>
+  <h3>Em uso aqui</h3><div id="usb-portas"></div>
+  <p class="msg"></p>
+  <div class="linha-botoes"><button type="button" data-fechar>Fechar</button></div>
 </form></dialog>
 
 <dialog id="d-config"><form method="dialog" id="f-config">

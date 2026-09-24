@@ -65,6 +65,8 @@ pub struct Mesa {
     pasta: PathBuf,
     ficha: String,
     ligadas: Mutex<HashMap<String, Ligada>>,
+    /// O kernel do USB (`Sysfs::do_ambiente`).
+    sysfs: crate::usb::Sysfs,
 }
 
 fn opcoes(pares: &[(&str, String)]) -> Opcoes {
@@ -84,6 +86,7 @@ impl Mesa {
             pasta,
             ficha: para_hex(&bytes_aleatorios(32)),
             ligadas: Mutex::new(HashMap::new()),
+            sysfs: crate::usb::Sysfs::do_ambiente(),
         })
     }
 
@@ -101,6 +104,76 @@ impl Mesa {
 
     fn arquivo_da_rede(&self, nome: &str) -> String {
         self.caminho(&Rede::caminho(nome))
+    }
+
+    /// USB pela janela: as mesmas operacoes do `phxvpn usb` (o motor e o
+    /// `usb.rs`), com resposta estruturada para a tela desenhar.
+    pub fn usb(&self, corpo: &Json) -> R<Json> {
+        use crate::usb;
+        let t = |c: &str| corpo.texto_ou(c, "").to_string();
+        let sysfs = self.sysfs.clone();
+        let ok = |m: String| Json::objeto(vec![("ok", Json::texto_de(m))]);
+        let ip = || -> R<std::net::Ipv4Addr> {
+            t("ip")
+                .parse()
+                .map_err(|_| "IP do membro invalido".to_string())
+        };
+        let dispositivo = |d: &usb::Dispositivo| {
+            vec![
+                ("busid", Json::texto_de(&d.busid)),
+                ("resumo", Json::texto_de(d.resumo())),
+            ]
+        };
+        match t("acao").as_str() {
+            "locais" => {
+                let rede = Rede::ler(&self.arquivo_da_rede(&t("rede"))).ok();
+                Ok(Json::Lista(
+                    usb::locais_da_rede(&sysfs, rede.as_ref())?
+                        .iter()
+                        .map(|l| {
+                            let mut c = dispositivo(&l.dispositivo);
+                            c.push(("preso", Json::de_bool(l.preso)));
+                            c.push(("nesta_rede", Json::de_bool(l.nesta_rede)));
+                            Json::objeto(c)
+                        })
+                        .collect(),
+                ))
+            }
+            "compartilhar" => {
+                usb::compartilhar_na_rede(&sysfs, &self.arquivo_da_rede(&t("rede")), &t("busid"))
+                    .map(ok)
+            }
+            "parar" => {
+                usb::parar_na_rede(&sysfs, &self.arquivo_da_rede(&t("rede")), &t("busid")).map(ok)
+            }
+            "remotos" => Ok(Json::Lista(
+                usb::remotos(ip()?)?
+                    .iter()
+                    .map(|d| Json::objeto(dispositivo(d)))
+                    .collect(),
+            )),
+            "usar" => usb::usar(&sysfs, ip()?, &t("busid")).map(ok),
+            // Sem o controlador virtual nao ha nada em uso: a tela diz como
+            // usar, sem tratar como falha (achado ao exercitar: aparecia o
+            // erro cru do lado de quem so compartilha).
+            #[cfg(unix)]
+            "portas" if !sysfs.tem_vhci() => {
+                Ok(Json::objeto(vec![("sem_vhci", Json::de_bool(true))]))
+            }
+            "portas" => Ok(Json::Lista(
+                usb::em_uso(&sysfs)?
+                    .into_iter()
+                    .map(|u| {
+                        Json::objeto(vec![
+                            ("porta", Json::de_i64(u.porta as i64)),
+                            ("texto", Json::texto_de(u.texto)),
+                        ])
+                    })
+                    .collect(),
+            )),
+            "soltar" => usb::soltar(&sysfs, corpo.inteiro_ou("porta", -1) as u32).map(ok),
+            outra => Err(format!("acao de USB desconhecida: {outra}")),
+        }
     }
 
     /// As redes desta pasta, com o estado de cada membro.
@@ -509,6 +582,10 @@ impl Mesa {
                 }
             }
             ("POST", "/api/esquecer") => texto(self.esquecer(&t("rede"))),
+            ("POST", "/api/usb") => match self.usb(&corpo) {
+                Ok(j) => Resposta::json(200, j.escrever()),
+                Err(e) => Resposta::erro(400, &e),
+            },
             ("GET", "/api/sistema") => Resposta::json(
                 200,
                 Json::objeto(vec![
