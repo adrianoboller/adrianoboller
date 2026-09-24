@@ -5,6 +5,8 @@ funções internas do phxsql ou phxmail ou Phxblockchain»*. Nasceu do pedido 45
 (os JSON de configuração gravados como `.phz`, no formato 7z, escrito dentro do
 PhxSql).
 
+**PhxZip** é o nome do 7-Zip em Rust desta casa — decisão do dono, 24/09/2026 —, e mora na crate `crates/phxzip`, para os três pilares o reusarem. Este fonte é a consulta dele.
+
 É consulta, **não dependência**: nada deste fonte compila junto do produto, e a
 pétrea de zero dependências continua inteira. O método é o mesmo do SHA-256 e
 do Cassandra (`docs/CASSANDRA.md`): ler, entender, reescrever contra as nossas
