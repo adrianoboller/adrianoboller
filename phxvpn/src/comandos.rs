@@ -531,6 +531,16 @@ pub fn p2p_farol(o: &Opcoes) -> R<String> {
         };
         let novo = rol.com_farol(&membro.chave, endereco, &privada)?;
         feito.push(format!("rol versao {}", novo.versao));
+        if endereco.is_some() {
+            // Rol com farol sai no formato v2, que no anterior a esta versao
+            // nao le: ele fica com o rol velho -- e deixa de receber as
+            // mudancas seguintes, inclusive as remocoes.
+            feito.push(
+                "ATENCAO: nos com phxvpn anterior ao farol deixam de receber o rol \
+                 (inclusive remocoes) -- atualize todos os membros"
+                    .into(),
+            );
+        }
         r.rol = Some(novo);
     }
     if eu {

@@ -59,7 +59,7 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [x] P2P: o `auto` **volta** do TCP ao UDP quando o UDP volta (sonda autenticada, 3 ecos seguidos, recuo 30 s → 5 min, recuo dobrado se cair logo depois de voltar) — provado em netns com ping contínuo pela troca
 - [x] Modo servidor OpenVPN em TCP: rede com `proto tcp-server` (porta 443 escolhida pelo administrador) e perfil com `proto tcp-client` e `http-proxy` opcional — provado com o `openvpn` 2.6.19 real, UDP bloqueado e só o proxy alcançando o servidor
 - [x] Três recursos que só existiam por CLI/API foram para a tela (24/09/2026): programa de mesa com **Remover membro** (só o DONO vê o botão), campo de **proxy HTTP** ao ligar rede P2P, e painel web com escolha de **protocolo UDP/TCP** ao criar rede e **proxy HTTP** ao baixar o perfil — ver a seção dedicada abaixo
-- [x] P2P: **farol** — um membro alcançável, marcado no rol assinado pelo dono e com o consentimento dele, faz o papel do repasse (registro, apresentação 10/11, relé cifrado) sem nenhum `phxvpn repasse`; provado em `netns` com NAT simétrico (20/20 pelo relé, 0 byte em claro no `tcpdump` do farol, membro fora do rol 0/5, sem o farol 0/20) e com dois faróis (o que carrega cai; volta pelo outro em 15,0 s) — ver «P2P: farol»
+- [x] P2P: **farol** — um membro alcançável, marcado no rol assinado pelo dono e com o consentimento dele, faz o papel do repasse (registro, apresentação 10/11, relé cifrado) sem nenhum `phxvpn repasse`; provado em `netns` com NAT simétrico (20/20 pelo relé, 0 byte em claro no `tcpdump` do farol, membro fora do rol 0/5, sem o farol 0/20) e com dois faróis (o que carrega cai; volta pelo outro em 15,2 s) — ver «P2P: farol»
 
 ### Falta
 
@@ -1725,9 +1725,27 @@ conta como mais um. Pacote para o **próprio** farol vai direto a ele (ele é
 alcançável por definição; embrulhado morreria nele mesmo).
 
 **Tetos.** Banda total `--farol-mbit` (padrão 100 Mbit/s) e metade por
-origem, em balde de fichas; REGISTRO no máximo 50/s e 5/s por IP, antes do
-DH; balde por origem só para endereço registrado (endereço forjado não cria
-entrada). Pacote acima do teto se perde, como no UDP: o farol não enfileira.
+origem, em balde de fichas; balde por origem só para endereço registrado
+(endereço forjado não cria entrada). Pacote acima do teto se perde, como no
+UDP: o farol não enfileira. REGISTRO, nesta ordem e tudo antes do DH: (1) a
+chave tem de estar no rol — busca num conjunto, sem gastar balde; (2) 5/s por
+IP, IPv6 agrupado por /64 (`guarda::chave_de_ip`), num mapa de até 4.096 IPs
+que, cheio, despeja o **mais antigo** (zerar tudo devolveria o balde cheio a
+quem acabou de ser contido); (3) 1/s com rajada de 5 **por chave do rol**.
+Não há balde global: a chave de um membro vista em claro e reenviada esgota o
+balde dele, não o dos outros.
+
+**Rotas só depois do Noise.** O `DE` diz a origem, mas quem a prova é a
+sessão: a rota de um par (por qual farol ou repasse falar com ele) só se grava
+depois que o `despachar` autenticou um pacote daquele par, a origem tem de
+ser membro do rol (senão o `DE` é descartado sem abrir o Noise), e o mapa se
+poda aos membros a cada rol novo. Antes, um `DE` com miolo lixo e origem de C
+mudava a rota de C.
+
+**Rol do disco conferido também na partida.** O arquivo da rede é gravado por
+outro processo: rol cuja assinatura não confere com a chave do dono é
+ignorado ao ligar (com aviso), e o nó fica como um convidado sem rol — sem
+farol — até o rol válido chegar pela malha.
 
 **Prova** (`provas/farol/rodar.sh`, release, `netns`; A em IP público
 203.0.113.10, B e C atrás de NATs com o firewall de roteador doméstico,
@@ -1739,10 +1757,10 @@ entrada). Pacote acima do teto se perde, como no UDP: o farol não enfileira.
 | NAT de C simétrico, A farol | 10,1 s | 20/20 | relé do farol | 40 pacotes, 44.960 B | **0** |
 | o mesmo, **sem** marcar o farol | — | **0/20** | nenhum | 0 | 0 |
 | X fora do rol, com a senha, `--repasse` apontando A | — | **0/5** | — | A recusou 3 | — |
-| cone, direto bloqueado até a 1ª rodada falhar | 10,9 s | 20/20 | **direto perfurado pela apresentação do farol** (84,0 s, a 2ª rodada) | 0 | 0 |
+| cone, direto bloqueado até a 1ª rodada falhar | 10,1 s | 20/20 | **direto perfurado pela apresentação do farol** (84,1 s, a 2ª rodada) | 0 | 0 |
 | cone, A farol | 1,0 s | 20/20 | direto (pela lista de pares) | 0 | 0 |
 | cone, **sem** farol | 1,0 s | 20/20 | direto (pela lista de pares) | 0 | 0 |
-| dois faróis, NAT simétrico; o que carrega cai | 10,0 s | 20/20 | relé; volta pelo outro em **15,0 s** (73 pings de 0,2 s perdidos) | 40 pacotes | 0 |
+| dois faróis, NAT simétrico; o que carrega cai | 10,9 s | 20/20 | relé; volta pelo outro em **15,2 s** (74 pings de 0,2 s perdidos) | 40 pacotes | 0 |
 
 Os ~10 s até o 1º ping pelo relé são as duas tentativas diretas do `auto`
 (5 s cada) ao endereço que a lista de pares ensinou — que no NAT simétrico
@@ -1769,10 +1787,32 @@ depois da queda) e a limpeza da tabela ao sair do rol
 `farol_no_rol_e_assinado_e_volta_ao_v1_sem_ele` (porta do farol trocada
 derruba a assinatura; membro que se marca com outra chave é recusado).
 
-**Limites:** farol só em UDP (quem só tem TCP/443 precisa do `phxvpn
-repasse --tcp`); endereço do farol é IP literal; trocar de farol leva ~15 s
-com tráfego; o consentimento gravado com a rede ligada pode ser regravado
-pelo nó (religue); a janela e o console ainda não têm `--farol`.
+**Revisão de segurança (24/09/2026), RED de cada conserto** (5 de 5
+acusados): chave fora do rol esgotava o balde global de REGISTRO
+(`chave_fora_do_rol_nao_esgota_o_balde_de_registro` — 60 registros de chave
+aleatória de 12 IPs, depois o de B registra); o balde global fazia a chave de
+um membro reenviada cortar os outros
+(`rajada_com_a_chave_de_um_membro_nao_corta_o_outro`); o mapa de IPs zerava
+acima de 4.096 (`balde_por_ip_despeja_o_mais_antigo_e_nao_zera`); `DE`
+forjado movia a rota (`de_forjado_nao_move_a_rota` — mil `DE` com origem
+aleatória ou de C e miolo lixo: rotas ≤ membros, a de C intacta); rol do
+disco sem conferir na partida
+(`rol_do_disco_sem_assinatura_do_dono_e_ignorado_na_partida`).
+
+**Limites:**
+- Farol só em UDP (quem só tem TCP/443 precisa do `phxvpn repasse --tcp`);
+  endereço do farol é IP literal; trocar de farol leva ~15 s com tráfego; o
+  consentimento gravado com a rede ligada pode ser regravado pelo nó
+  (religue); a janela e o console ainda não têm `--farol`.
+- **Nó anterior ao farol não lê o rol v2** — e, por isso, perde também as
+  mudanças seguintes do rol, **inclusive as remoções**: fica com o último rol
+  v1 que aceitou. Decisão do integrador, pela régua: não há frota em produção
+  (0.1), então não se bloqueia; o `p2p farol` avisa ao marcar.
+- **Refletor 1:1 por membro que forja origem.** Um membro do rol pode mandar
+  ao farol `PARA` com o endereço de origem forjado de outro membro registrado;
+  o farol entrega o `DE` ao destino como se viesse daquele membro (o Noise do
+  destino o descarta, mas o datagrama sai). É um para um, sem amplificação, e
+  só de quem já está no rol — o repasse externo tem o mesmo limite.
 
 ## Limites que valem saber antes de usar
 

@@ -369,7 +369,7 @@ impl Repasse {
             .is_some_and(|r| r.endereco == de)
     }
 
-    fn permitida(&self, k: &[u8; 32]) -> bool {
+    pub fn permitida(&self, k: &[u8; 32]) -> bool {
         self.permitidas.as_ref().map_or(true, |l| l.contains(k))
     }
 

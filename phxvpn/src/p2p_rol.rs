@@ -22,6 +22,25 @@ pub(super) fn rol_do_disco_se_mais_novo(rede: &Rede, caminho: &str) -> Option<ro
     }
 }
 
+/// O rol do arquivo, se a assinatura confere com o dono e o nome da rede.
+/// Rede sem dono (de antes do rol) fica como esta. Invalido: `None`, com
+/// aviso -- sem rol nao ha farol nem rota por farol.
+pub(super) fn rol_conferido_na_partida(rede: &Rede) -> Option<rol::Rol> {
+    let r = rede.rol.clone()?;
+    let Some(dono) = rede.dono else {
+        return Some(r);
+    };
+    if r.conferir(&dono, &rede.nome) {
+        return Some(r);
+    }
+    eprintln!(
+        "phxvpn: o rol no arquivo da rede {} NAO confere com a chave do dono -- \
+         ignorado (sem farol ate o rol valido chegar pela malha)",
+        rede.nome
+    );
+    None
+}
+
 /// Tira da malha quem nao passa em `fica`, e conserta o mapa de indices de
 /// sessao (que aponta para a POSICAO do par). As sessoes do par que sai
 /// morrem com ele: pacote dele nao acha mais indice.

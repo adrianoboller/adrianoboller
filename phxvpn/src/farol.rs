@@ -59,8 +59,12 @@
 //! # Tetos
 //!
 //! Banda total (`--farol-mbit`, padrao 100 Mbit/s) e por origem (metade),
-//! medidas em balde de fichas; REGISTRO no maximo 50/s e 5/s por IP, ANTES
-//! do Diffie-Hellman. Pacote acima do teto se perde, como no UDP -- o farol
+//! medidas em balde de fichas. REGISTRO: a chave tem de estar no rol (busca
+//! num conjunto) ANTES de gastar qualquer balde -- senao chave aleatoria
+//! esgotaria o balde de quem e membro --, e depois 5/s por IP (IPv6 por /64)
+//! e 1/s (rajada de 5) por CHAVE do rol, tudo antes do Diffie-Hellman. Sem
+//! balde global: a chave de um membro, vista em claro e reenviada, esgota o
+//! balde DELE, nao o dos outros. Pacote acima do teto se perde, como no UDP -- o farol
 //! nao enfileira nada, entao nao acumula memoria por causa do papel.
 
 use super::{Modo, No, Via};
@@ -68,15 +72,20 @@ use crate::fio::{CfgFio, FioRepasse};
 use crate::repasse::{self, Ponta, Repasse};
 use crate::transporte;
 use std::collections::{HashMap, HashSet};
-use std::net::{IpAddr, SocketAddr};
+use std::net::SocketAddr;
 use std::time::{Duration, Instant};
 
 /// Teto padrao de banda repassada pelo farol, em Mbit/s.
 pub const MBIT_PADRAO: u32 = 100;
-/// REGISTROs aceitos para conferencia (DH) por segundo, no total.
-pub const REGISTROS_POR_S: u32 = 50;
-/// ... e por IP de origem.
+/// REGISTROs aceitos para conferencia (DH) por IP de origem (IPv6 por /64)
+/// por segundo.
 pub const REGISTROS_POR_IP_POR_S: u32 = 5;
+/// ... e por chave do rol: o no legitimo renova a cada 20 s (2 s enquanto
+/// nao confirmado), entao 1/s com rajada de 5 nunca o corta.
+pub const REGISTROS_POR_CHAVE_POR_S: u32 = 1;
+const RAJADA_POR_CHAVE: f64 = 5.0;
+/// Teto de IPs lembrados no balde de REGISTRO; cheio, sai o mais antigo.
+pub const TETO_IPS_DE_REGISTRO: usize = 4096;
 /// De quanto em quanto tempo o farol diz o que repassou (so se mudou).
 const RELATAR: Duration = Duration::from_secs(5);
 
@@ -138,8 +147,10 @@ struct Servidor {
     banda_total: Balde,
     banda_por_origem: HashMap<SocketAddr, Balde>,
     bytes_por_s: f64,
-    registros: Balde,
-    registros_por_ip: HashMap<IpAddr, Balde>,
+    /// Chaves do rol -> balde. So chave permitida ganha entrada.
+    registros_por_chave: HashMap<[u8; 32], Balde>,
+    /// `guarda::chave_de_ip` (IPv6 agrupado por /64) -> balde.
+    registros_por_ip: HashMap<String, Balde>,
     contas: Contas,
     relatado: (Instant, Contas),
 }
@@ -154,7 +165,7 @@ impl Servidor {
             banda_total: Balde::novo(bytes_por_s, (bytes_por_s / 4.0).max(65_536.0)),
             banda_por_origem: HashMap::new(),
             bytes_por_s,
-            registros: Balde::novo(REGISTROS_POR_S as f64, REGISTROS_POR_S as f64),
+            registros_por_chave: HashMap::new(),
             registros_por_ip: HashMap::new(),
             contas: Contas::default(),
             relatado: (Instant::now(), Contas::default()),
@@ -165,17 +176,43 @@ impl Servidor {
     fn tratar(&mut self, dado: &[u8], de: SocketAddr) -> Option<(SocketAddr, Vec<u8>)> {
         let tipo = *dado.first()?;
         if tipo == repasse::TIPO_REGISTRO {
+            // Fora do rol morre aqui, sem gastar balde de ninguem.
+            let chave: [u8; 32] = dado.get(4..36)?.try_into().ok()?;
+            if dado.len() < repasse::REGISTRO_LEN || !self.repasse.permitida(&chave) {
+                self.contas.recusados += 1;
+                return None;
+            }
             // Os tetos vem ANTES do Diffie-Hellman que o REGISTRO custa.
-            if self.registros_por_ip.len() > 4096 {
-                self.registros_por_ip.clear();
+            let ip = crate::guarda::chave_de_ip("farol", &de.ip().to_string());
+            if !self.registros_por_ip.contains_key(&ip)
+                && self.registros_por_ip.len() >= TETO_IPS_DE_REGISTRO
+            {
+                // Despeja o mais antigo, nunca zera tudo: zerar devolveria o
+                // balde cheio a quem ja estava sendo contido.
+                if let Some(velho) = self
+                    .registros_por_ip
+                    .iter()
+                    .min_by_key(|(_, b)| b.visto)
+                    .map(|(k, _)| k.clone())
+                {
+                    self.registros_por_ip.remove(&velho);
+                }
             }
             let por_s = REGISTROS_POR_IP_POR_S as f64;
             let ip_ok = self
                 .registros_por_ip
-                .entry(de.ip())
+                .entry(ip)
                 .or_insert_with(|| Balde::novo(por_s, por_s))
                 .tirar(1.0);
-            if !ip_ok || !self.registros.tirar(1.0) {
+            let chave_ok = ip_ok
+                && self
+                    .registros_por_chave
+                    .entry(chave)
+                    .or_insert_with(|| {
+                        Balde::novo(REGISTROS_POR_CHAVE_POR_S as f64, RAJADA_POR_CHAVE)
+                    })
+                    .tirar(1.0);
+            if !chave_ok {
                 self.contas.cortados += 1;
                 return None;
             }
@@ -336,26 +373,47 @@ impl No {
                     return Some(None);
                 }
                 let chave = c.chave;
+                drop(f);
                 let Some((origem, dentro)) = repasse::desembrulhar_de(dado) else {
                     return Some(None);
                 };
-                let nova = f.rotas.insert(origem, Rele::Farol(chave)) != Some(Rele::Farol(chave));
-                drop(f);
-                if nova {
-                    let ip = self.rede.lock().expect("rede").as_ref().and_then(|(r, _)| {
-                        r.rol.as_ref().and_then(|x| x.membro(&origem)).map(|m| m.ip)
-                    });
-                    if let Some(ip) = ip {
-                        eprintln!("phxvpn: {ip} -- pelo farol {de}");
+                // Origem fora do rol: descarta sem nem abrir o Noise.
+                let ip = self.rede.lock().expect("rede").as_ref().and_then(|(r, _)| {
+                    r.rol.as_ref().and_then(|x| x.membro(&origem)).map(|m| m.ip)
+                });
+                let ip_do_par = ip?;
+                let antes = Instant::now();
+                let entregar = self.despachar(dentro, Via::Repasse, Some(origem));
+                // A rota so muda depois que o Noise autenticou o par: um `DE`
+                // forjado (origem de outro, miolo lixo) nao desvia ninguem.
+                if self.autenticado_desde(&origem, antes) {
+                    let mut f = self.farois.lock().expect("farol");
+                    let nova =
+                        f.rotas.insert(origem, Rele::Farol(chave)) != Some(Rele::Farol(chave));
+                    drop(f);
+                    if nova {
+                        eprintln!("phxvpn: {ip_do_par} -- pelo farol {de}");
                     }
                 }
-                Some(self.despachar(dentro, Via::Repasse, Some(origem)))
+                Some(entregar)
             }
             _ => None,
         }
     }
 
-    /// O par foi ouvido pelo repasse externo.
+    /// O par `chave` mandou pacote autenticado desde `antes`? Com isso a
+    /// rota vale o mesmo que o Noise: so quem tem a chave do par a move, e
+    /// so par que existe (o rol limita os pares) entra no mapa.
+    pub(super) fn autenticado_desde(&self, chave: &[u8; 32], antes: Instant) -> bool {
+        self.estado
+            .lock()
+            .expect("estado")
+            .pares
+            .iter()
+            .any(|p| p.publica == *chave && p.ouvido.is_some_and(|t| t >= antes))
+    }
+
+    /// O par foi ouvido (autenticado) pelo repasse externo.
     pub(super) fn ouvido_pelo_externo(&self, origem: [u8; 32]) {
         let mut f = self.farois.lock().expect("farol");
         if !f.candidatos.is_empty() {
@@ -460,9 +518,14 @@ impl No {
         let mut f = self.farois.lock().expect("farol");
         if versao != f.versao_vista {
             f.versao_vista = versao;
+            // Teto do mapa de rotas: os membros do rol (quem saiu, sai dele).
+            f.rotas.retain(|k, _| membros.contains(k));
             let marcado = farois.iter().any(|(k, _)| *k == self.minha_publica);
             match (marcado && f.consentido, f.servidor.as_mut()) {
-                (true, Some(s)) => s.repasse.trocar_permitidas(membros),
+                (true, Some(s)) => {
+                    s.registros_por_chave.retain(|k, _| membros.contains(k));
+                    s.repasse.trocar_permitidas(membros);
+                }
                 (true, None) => {
                     eprintln!(
                         "phxvpn: farol ligado -- repassa para os {} membros do rol, teto {} Mbit/s",
@@ -913,5 +976,215 @@ mod testes {
         }
         let conferidos = s.contas.registrados + s.contas.recusados - antes;
         assert!(conferidos <= 5, "{conferidos} REGISTROs conferidos");
+    }
+
+    fn registro_de(k: &[u8; 32], farol: &[u8; 32], n: u32) -> Vec<u8> {
+        let mut c = [0u8; 12];
+        c[8..].copy_from_slice(&n.to_be_bytes());
+        repasse::registro(k, farol, c, None).unwrap()
+    }
+
+    /// P1: chave fora do rol nao gasta balde de ninguem. 60 REGISTROs de
+    /// chave aleatoria vindos de 12 IPs, e o de B -- de um desses IPs --
+    /// ainda registra.
+    #[test]
+    fn chave_fora_do_rol_nao_esgota_o_balde_de_registro() {
+        let (ka, kb) = (x25519::gerar_privada(), x25519::gerar_privada());
+        let (pa, pb) = (x25519::chave_publica(&ka), x25519::chave_publica(&kb));
+        let mut s = Servidor::novo(ka, [pb].into_iter().collect(), 100);
+        let ip = |i: u8| -> SocketAddr { format!("198.51.100.{i}:4000").parse().unwrap() };
+        for n in 0..60u32 {
+            let lixo = x25519::gerar_privada();
+            assert!(s
+                .tratar(&registro_de(&lixo, &pa, n + 1), ip((n % 12) as u8 + 1))
+                .is_none());
+        }
+        assert_eq!(s.contas.cortados, 0, "{:?}", s.contas);
+        assert!(
+            s.tratar(&registro_de(&kb, &pa, 1), ip(1)).is_some(),
+            "o legitimo de B foi cortado: {:?}",
+            s.contas
+        );
+    }
+
+    /// P1: a chave de um membro, vista em claro e reenviada em rajada,
+    /// esgota o balde DELA -- nao o do outro membro.
+    #[test]
+    fn rajada_com_a_chave_de_um_membro_nao_corta_o_outro() {
+        let (ka, kb, kc) = (
+            x25519::gerar_privada(),
+            x25519::gerar_privada(),
+            x25519::gerar_privada(),
+        );
+        let pa = x25519::chave_publica(&ka);
+        let (pb, pc) = (x25519::chave_publica(&kb), x25519::chave_publica(&kc));
+        let mut s = Servidor::novo(ka, [pb, pc].into_iter().collect(), 100);
+        // O atacante reenvia a chave de B (com mac torto) de 50 IPs.
+        for i in 0..50u32 {
+            let mut p = registro_de(&kb, &pa, i + 1);
+            p[60] ^= 1;
+            let de: SocketAddr = format!("203.0.113.{}:9", i + 1).parse().unwrap();
+            s.tratar(&p, de);
+        }
+        let c: SocketAddr = "192.0.2.3:51820".parse().unwrap();
+        assert!(
+            s.tratar(&registro_de(&kc, &pa, 1), c).is_some(),
+            "C foi cortado pela rajada com a chave de B: {:?}",
+            s.contas
+        );
+    }
+
+    /// P1: o mapa de baldes por IP tem teto e despeja o MAIS ANTIGO -- nunca
+    /// zera tudo, senao o IP que acabou de ser contido voltaria cheio.
+    #[test]
+    fn balde_por_ip_despeja_o_mais_antigo_e_nao_zera() {
+        let (ka, kb, kc, kd) = (
+            x25519::gerar_privada(),
+            x25519::gerar_privada(),
+            x25519::gerar_privada(),
+            x25519::gerar_privada(),
+        );
+        let pa = x25519::chave_publica(&ka);
+        let ps: HashSet<[u8; 32]> = [&kb, &kc, &kd]
+            .iter()
+            .map(|k| x25519::chave_publica(k))
+            .collect();
+        let mut s = Servidor::novo(ka, ps, 100);
+        let ip_n = |i: u32| -> SocketAddr {
+            format!("10.{}.{}.{}:1", (i >> 16) & 255, (i >> 8) & 255, i & 255)
+                .parse()
+                .unwrap()
+        };
+        // Enche o mapa (chave D com mac torto: so conta balde, nao registra).
+        let mut torto = registro_de(&kd, &pa, 1);
+        torto[60] ^= 1;
+        for i in 0..TETO_IPS_DE_REGISTRO as u32 + 100 {
+            s.tratar(&torto, ip_n(i));
+        }
+        assert!(s.registros_por_ip.len() <= TETO_IPS_DE_REGISTRO);
+        // X esgota o balde do IP dele com a chave B...
+        let x: SocketAddr = "192.0.2.77:1".parse().unwrap();
+        for n in 0..6u32 {
+            s.tratar(&registro_de(&kb, &pa, 10 + n), x);
+        }
+        // ... chegam mais 5.000 IPs novos (o mapa esta cheio, e passa de
+        // cheio uma vez mais) enquanto X insiste de vez em quando ...
+        for i in 0..5000u32 {
+            s.tratar(&torto, ip_n(1_000_000 + i));
+            if i % 1000 == 999 {
+                s.tratar(&registro_de(&kb, &pa, 100 + i), x);
+            }
+        }
+        assert!(s.registros_por_ip.len() <= TETO_IPS_DE_REGISTRO);
+        // ... e X, agora com a chave C (balde de chave cheio), continua
+        // contido pelo balde do IP.
+        assert!(
+            s.tratar(&registro_de(&kc, &pa, 1), x).is_none(),
+            "o balde de X foi zerado"
+        );
+        // IPv6 do mesmo /64 dividem o balde.
+        let mut n6 = 0;
+        for i in 0..10u32 {
+            let de: SocketAddr = format!("[2001:db8:1:2::{:x}]:1", i + 1).parse().unwrap();
+            let antes = s.contas.cortados;
+            s.tratar(&torto, de);
+            if s.contas.cortados == antes {
+                n6 += 1;
+            }
+        }
+        assert!(
+            n6 <= REGISTROS_POR_IP_POR_S as usize,
+            "{n6} passaram do mesmo /64"
+        );
+    }
+
+    /// P2: `DE` forjado (origem aleatoria ou de um membro, miolo lixo) nao
+    /// grava rota: o mapa fica no teto do rol e a rota de C nao muda.
+    #[test]
+    fn de_forjado_nao_move_a_rota() {
+        let dir = pasta("de-forjado");
+        let ks: Vec<[u8; 32]> = (0..4).map(|_| x25519::gerar_privada()).collect();
+        let us: Vec<(UdpSocket, SocketAddr)> = (0..4).map(|_| soquete()).collect();
+        let (e1, e2) = (us[0].1, us[1].1);
+        let dono = rol::publica_do_dono(&ks[0], "R");
+        let r = rol::Rol::primeiro("R", membro(&ks[0], "10.78.0.1", Some(e1)), &ks[0])
+            .unwrap()
+            .com(membro(&ks[1], "10.78.0.4", Some(e2)), &ks[0])
+            .unwrap()
+            .com(membro(&ks[2], "10.78.0.2", None), &ks[0])
+            .unwrap()
+            .com(membro(&ks[3], "10.78.0.3", None), &ks[0])
+            .unwrap();
+        let mut us = us.into_iter();
+        let mut prox = || us.next().unwrap().0;
+        let f1 = no(&dir, ks[0], "10.78.0.1", prox(), Vec::new(), &r, dono).com_farol(true, None);
+        let f2 = no(&dir, ks[1], "10.78.0.4", prox(), Vec::new(), &r, dono).com_farol(true, None);
+        let b = no(&dir, ks[2], "10.78.0.2", prox(), Vec::new(), &r, dono)
+            .com_modo_so_farol(Modo::Repasse);
+        let c = no(&dir, ks[3], "10.78.0.3", prox(), Vec::new(), &r, dono)
+            .com_modo_so_farol(Modo::Repasse);
+        let todos = [&f1, &f2, &b, &c];
+        for _ in 0..2 {
+            for n in todos {
+                n.tique();
+            }
+            for _ in 0..10 {
+                for n in todos {
+                    bombear(n);
+                }
+            }
+        }
+        b.da_placa(&pacote_ip([10, 78, 0, 2], [10, 78, 0, 3], b"um"));
+        assert!(ate_entregar(&todos, &c).is_some());
+        let pc = c.publica();
+        let rota = *b.farois.lock().unwrap().rotas.get(&pc).expect("rota de C");
+        // Forja pelo OUTRO farol (o endereco que B aceita como farol).
+        let outro = match rota {
+            Rele::Farol(k) if k == f1.publica() => e2,
+            _ => e1,
+        };
+        for i in 0..1000u32 {
+            let origem = if i % 10 == 0 {
+                pc
+            } else {
+                x25519::chave_publica(&x25519::gerar_privada())
+            };
+            let mut miolo = vec![transporte::TIPO_DADOS, 0, 0, 0];
+            miolo.extend((0..60).map(|j| (i as u8).wrapping_mul(31).wrapping_add(j)));
+            let mut de = vec![repasse::TIPO_DE, 0, 0, 0];
+            de.extend_from_slice(&origem);
+            de.extend_from_slice(&miolo);
+            b.da_rede(&de, outro);
+        }
+        let f = b.farois.lock().unwrap();
+        assert!(f.rotas.len() <= r.membros.len(), "{} rotas", f.rotas.len());
+        assert_eq!(f.rotas.get(&pc), Some(&rota), "a rota de C mudou");
+        drop(f);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// P4: rol no arquivo com assinatura que nao e do dono (marcando um
+    /// farol) e ignorado na partida: nem serve, nem usa farol.
+    #[test]
+    fn rol_do_disco_sem_assinatura_do_dono_e_ignorado_na_partida() {
+        let dir = pasta("rol-forjado");
+        let (ka, kb) = (x25519::gerar_privada(), x25519::gerar_privada());
+        let (ua, ea) = soquete();
+        let (ub, _) = soquete();
+        let dono = rol::publica_do_dono(&ka, "R");
+        // Assinado por B, que nao e o dono, com A e B farois.
+        let forjado = rol::Rol::primeiro("R", membro(&ka, "10.78.0.1", Some(ea)), &kb)
+            .unwrap()
+            .com(membro(&kb, "10.78.0.2", Some(ea)), &kb)
+            .unwrap();
+        let a = no(&dir, ka, "10.78.0.1", ua, Vec::new(), &forjado, dono).com_farol(true, None);
+        let b = no(&dir, kb, "10.78.0.2", ub, Vec::new(), &forjado, dono)
+            .com_modo_so_farol(Modo::Repasse);
+        a.tique();
+        b.tique();
+        assert!(a.contas_do_farol().is_none(), "A serviu com rol forjado");
+        assert!(b.farois.lock().unwrap().candidatos.is_empty());
+        assert!(b.rede.lock().unwrap().as_ref().unwrap().0.rol.is_none());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

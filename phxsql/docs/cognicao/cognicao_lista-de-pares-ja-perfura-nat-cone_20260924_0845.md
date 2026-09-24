@@ -27,7 +27,7 @@ carregou **0** pacote de dados.
   relé (40 pacotes, 44.960 B no farol).
 - A perfuração **apresentada pelo farol** (tipos 10/11) só apareceu quando o
   direto foi bloqueado até a lista desistir (cenário `cone-libera`): fura na
-  2ª rodada, 84,0 s depois do início.
+  2ª rodada, 84,1 s depois do início.
 
 ## A regra
 

@@ -223,6 +223,9 @@ struct Par {
     ultimo_mac1: [u8; transporte::MAC_LEN],
     /// Perfuracao de NAT com este par (ver `perfuracao.rs`).
     furo: perfuracao::Furo,
+    /// Ultimo pacote AUTENTICADO (Noise) deste par. O farol so grava a rota
+    /// de um par depois de ver este instante andar (`farol.rs`).
+    ouvido: Option<Instant>,
 }
 
 struct Estado {
@@ -328,6 +331,7 @@ impl No {
                 cookie: None,
                 ultimo_mac1: [0; transporte::MAC_LEN],
                 furo: perfuracao::Furo::default(),
+                ouvido: None,
             })
             .collect();
         No {
@@ -384,7 +388,12 @@ impl No {
     /// Liga o no ao arquivo da rede: admite quem traz ficha de convite,
     /// apresenta a propria ficha (se veio de um convite) e grava o que
     /// aprender.
-    pub fn com_rede(self, rede: Rede, caminho: String) -> No {
+    pub fn com_rede(self, mut rede: Rede, caminho: String) -> No {
+        // O rol do arquivo so vale assinado pelo dono DESTA rede -- tambem na
+        // partida: e dele que sai quem e farol e quem pode usa-lo, e o disco
+        // e gravado por outro processo. Invalido, fica sem rol (como o
+        // convidado antes do primeiro), e o valido chega pela malha.
+        rede.rol = ganchos_do_rol::rol_conferido_na_partida(&rede);
         *self.ficha_de_entrada.lock().expect("ficha") = rede.ficha_de_entrada;
         *self.rede.lock().expect("rede") = Some((rede, caminho));
         self
@@ -452,6 +461,7 @@ impl No {
             cookie: None,
             ultimo_mac1: [0; transporte::MAC_LEN],
             furo: perfuracao::Furo::default(),
+            ouvido: None,
         }
     }
 
@@ -625,6 +635,7 @@ impl No {
     /// Pacote autenticado chegou por `via`: e por ali que se responde.
     /// `aperto`: INICIO ou RESPOSTA (ver `Furo::chegou`).
     fn aprender(par: &mut Par, via: Via, aperto: bool) {
+        par.ouvido = Some(Instant::now());
         if !par.furo.chegou(via, aperto) {
             return;
         }
@@ -762,8 +773,14 @@ impl No {
             return None;
         }
         let (origem, dentro) = repasse::desembrulhar_de(dado)?;
-        self.ouvido_pelo_externo(origem);
-        self.despachar(dentro, Via::Repasse, Some(origem))
+        // A rota so se grava DEPOIS de o Noise autenticar o par: o `DE` diz
+        // a origem, mas quem a prova e a sessao.
+        let antes = Instant::now();
+        let ip = self.despachar(dentro, Via::Repasse, Some(origem));
+        if self.autenticado_desde(&origem, antes) {
+            self.ouvido_pelo_externo(origem);
+        }
+        ip
     }
 
     /// `declarada`: a chave de origem que o repasse diz; tem de bater com a
