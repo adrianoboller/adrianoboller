@@ -123,3 +123,64 @@ O que cai é a **disponibilidade** (C1) e a **honestidade do artefato de backup*
 - **Para o J, junto do C1:** conferir se algum dos três maduros derruba o servidor por falha no
   destino de backup. Hipótese: não, porque `pg_basebackup` e `mariabackup` são clientes; falta
   conferir o alvo `server` do PG 15+.
+
+## Re-checagem, 24/09/2026 (a mesma árvore, depois de C1–C3)
+
+**Veredito: LIBERA COM CONDIÇÃO.** Resta uma condição, de uma linha: **não baixar
+`alcancam-fsync-2` para 21**. O 21 é artefato da régua, não melhora do código.
+C1, C2 e C3 estão fechados pela leitura. As provas em processo filho e com o defeito reposto
+foram relatadas pela frente; não as reproduzi.
+
+- **C1: fechado.** `sync_all_sem_abortar` tem **um só chamador**, `backup.rs:99`
+  (`sincronizar_arquivo`), alcançado só por `sincronizar`, `finalizar_manifesto` e `finalizar_zip`.
+  Quem chama esses três é só o `op_backup`, o agendado, o CLI e os testes. Todo caminho do banco
+  continua no `sync_all` com gancho: `volume.rs:929` e `:1033`, `reg.rs:2529` e `:2773`,
+  `ndx.rs:1193` e `:1198`, e `restaurar.rs:567` (a restauração escreve no banco, e está certo que
+  derrube). É um motor só: `sync_all_interno` recebe `com_gancho` como parâmetro.
+- **C2: fechado para o conteúdo.** O manifesto só nasce depois do `fsync` das cópias e fora da
+  trava (`backup.rs:473-477`; `servidor.rs:5689-5692` e `:21612-21615`; CLI `:695-698`). O ZIP
+  grava em `.part`, que o filtro do `op_backups` não reconhece, e só vira `.zip` depois do `fsync`
+  (`backup.rs:369-373`).
+- **C3: fechado.** Os três testes proíbem de novo «ficou para tras» e «reconstrua», e o
+  `util.rs:86-91` nomeia `.reg`, `.ndx`, `.log` e `.trash` como fora do alcance.
+- **O `rename` do `.part` não recebe `fsync` de diretório.** O comentário (`backup.rs:366-368`)
+  entrega isso ao 467, como a C4 pedia. A falha anda na direção segura: o `.part` já foi
+  sincronizado antes do `rename`, então perder o `rename` numa queda deixa o conteúdo inteiro sob
+  o nome parcial, fora da lista. O risco que sobra é a rotação apagar o zip velho antes de o nome
+  novo ser durável. O ext4 segura isso pela ordem do diário; o POSIX não garante. É o 467, e o 524
+  continua **◐**.
+- **Catraca, 21 contra 23: artefato.** Medi rodando o `mapa-da-trava.py --json` sobre cópias das
+  três pastas de fonte, da base `49b5426` e da árvore de agora. Saem duas seções, `empilhar` e
+  `empilhar_atualizar_com_cascata`, com o **mesmo caminho** de antes
+  (`abrir_travada_com → espelhar → sincronizar`).
+  - A confiança caiu de `sincronizar(11/11)` = 1,0 para `(11/12)` = 0,917. A 12ª definição é
+    `backup::sincronizar`.
+  - Ela chega ao `fsync` por `sync_all_sem_abortar → sync_all_interno`, que a régua não casa com
+    `\bsync_all\b` dentro de `SALTOS = 5`.
+  - **Prova:** na cópia, troquei só o texto da chamada em `backup.rs:99` de volta para
+    `sincronia::sync_all(`, e a catraca mediu **23 (teto 23)**.
+  - Baixar para 21 esconderia duas seções que continuam com `fsync` sob a trava. É o que o
+    `sincronia.rs:62-65` já avisava: um nome novo esconde o `fsync` um salto mais fundo.
+  - **Conserto:** o texto da chamada em `backup.rs:99` tem de carregar `sync_all` como palavra
+    (por exemplo `sincronia::sem_abortar::sync_all(`), e a catraca volta a medir 23.
+  - Mudar a régua não é conserto: régua que passa a medir mais aposenta a catraca, e isso seria
+    trocar um artefato por outro.
+- **Recomendações, sem bloquear:**
+  - (a) `sync_all_sem_abortar` como `pub(crate)`. Hoje é `pub`, e o compilador passaria a impedir
+    o servidor e o FFI de chamá-la.
+  - (b) O teste do C1 prova leitura depois da recusa (`o_que_ele_serve`). Falta provar uma
+    **escrita** com `commit` depois dela.
+  - (c) `executar` apagar o `backup.json` antigo antes da primeira cópia. Num destino reaproveitado,
+    uma recusa hoje deixa o manifesto **velho** listado. O `conferir` acusa pelo SHA, então isso
+    não é mentira calada, mas contradiz «a pasta fica sem manifesto».
+  - (d) O `util.rs` cita «N2» sem número. Abrir N1, N2 e N3 no `PENDENCIAS.md` e pôr o número no
+    comentário.
+- **Pedido novo, ☐ (travamento latente):** a recusa do backup marca o **diretório pai** do arquivo
+  que falhou em `RECUSADOS` (`sincronia.rs:189-196`). O `conferir` de todo `fsync` do banco
+  compara por prefixo. Com um destino que é **ancestral** da raiz, uma recusa no manifesto ou no
+  ZIP (por exemplo destino `/srv` e raiz `/srv/phxsql/dados`) faz todo `COMMIT` do banco responder
+  erro até reiniciar, sem `abort`. A guarda de `backup.rs` só recusa o destino DENTRO da raiz.
+  Direção: marcar o **arquivo**, e não o diretório, quando for sem gancho, ou recusar destino que
+  contém a raiz. Não medido.
+- **⏸:** `.part` de zip que falhou fica na pasta para sempre, porque a rotação só reconhece nome
+  final.
