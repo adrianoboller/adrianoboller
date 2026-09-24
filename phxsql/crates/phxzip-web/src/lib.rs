@@ -43,9 +43,10 @@ pub const PORTA_PADRAO: u16 = 4000;
 /// O endereco padrao: so a propria maquina.
 pub const ENDERECO_PADRAO: &str = "127.0.0.1";
 const PAGINA: &str = include_str!("../ui/index.html");
-/// O icone do PhxZip -- a fenix carregando o cadeado laranja (decisao do
-/// dono, 24/09/2026; `marca/vetor/gerar-phxzip.py`). O mesmo SVG vira o
-/// icone da aba e o simbolo do cabecalho.
+/// A marca do PhxZip: a fenix pousada sobre a palavra Zip (decisao do dono,
+/// 24/09/2026; `marca/vetor/gerar.py`). O logo inteiro vai no cabecalho; a
+/// fenix sobre o Z e o icone da aba, onde a palavra nao caberia.
+const LOGO_SVG: &str = include_str!("../../../marca/vetor/phxzip-simbolo.svg");
 const ICONE_SVG: &str = include_str!("../../../marca/vetor/phxzip-icone.svg");
 const COOKIE: &str = "phxzip_sessao";
 const SESSAO_MS: i64 = 30 * 60 * 1000;
@@ -154,7 +155,10 @@ fn pagina() -> &'static str {
     static P: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     P.get_or_init(|| {
         let icone = phxsql_core::base64::codificar(ICONE_SVG.as_bytes());
-        let simbolo = ICONE_SVG
+        // Recortado ao desenho (asas no alto, a descendente do p embaixo):
+        // o quadrado de 512 deixaria o logo miudo no cabecalho.
+        let simbolo = LOGO_SVG
+            .replacen("viewBox=\"0 0 512 512\"", "viewBox=\"90 52 332 412\"", 1)
             .split_once("<svg ")
             .map(|(_, r)| format!("<svg class=\"simbolo\" aria-hidden=\"true\" {r}"))
             .unwrap_or_default();

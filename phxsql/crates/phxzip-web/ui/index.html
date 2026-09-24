@@ -25,7 +25,9 @@
     border-bottom: 1px solid var(--borda); flex-wrap: wrap; }
   header h1 { margin: 0; font-size: 26px; font-weight: 600; letter-spacing: .02em; }
   header h1 span { color: var(--acento); }
-  header .simbolo { width: 58px; height: 58px; flex: none; }
+  header .simbolo { width: 74px; height: 92px; flex: none; }
+  /* O nome ja esta no logo (a fenix sobre «Zip»); o h1 fica para leitor de tela. */
+  .so-leitor { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .ic { width: 16px; height: 16px; vertical-align: -3px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
   .ic.pasta { color: var(--ambar); } .ic.cadeado { color: var(--laranja); } .ic.doc { color: var(--fraco); }
   header .sub { color: var(--fraco); font-size: 13px; }
@@ -97,7 +99,7 @@
 <header>
   <!--SIMBOLO-->
   <div>
-    <h1 class="marca">Phx<span>Zip</span></h1>
+    <h1 class="marca so-leitor">PhxZip</h1>
     <div class="sub" data-txt="sub">7z · LZMA2 · AES-256 — escrito em Rust, sem dependências</div>
   </div>
   <div class="dir">

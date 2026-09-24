@@ -24,9 +24,10 @@ from fontTools.varLib.instancer import instantiateVariableFont
 AQUI = Path(__file__).resolve().parent
 PRATA = "#DDE2EB"
 # Acento de cada produto -- so cores da paleta oficial (marca/LEIA-ME.md).
+# O PhxZip nao entra aqui: o logo dele e a fenix SOBRE a palavra Zip
+# (`phxzip()` abaixo), e um horizontal ao lado repetiria o nome.
 FAMILIA = {
     "PhxSql": "#FF8A1C",
-    "PhxZip": "#FFC43D",
     "PhxMail": "#FF4D10",
     "Phxblockchain": "#D71A1A",
 }
@@ -47,6 +48,7 @@ def palavra(f, texto, altura, cores):
     hmtx = f["hmtx"]
     x = 0.0
     saida = []
+    palavra.posicoes = []
     for i, ch in enumerate(texto):
         nome = cmap[ord(ch)]
         pen = SVGPathPen(gs)
@@ -54,6 +56,7 @@ def palavra(f, texto, altura, cores):
         tp = TransformPen(pen, (esc, 0, 0, -esc, x, altura))
         gs[nome].draw(tp)
         saida.append((pen.getCommands(), cores(i, ch)))
+        palavra.posicoes.append((x, hmtx[nome][0] * esc))
         x += hmtx[nome][0] * esc
     return saida, x
 
@@ -62,13 +65,8 @@ def fmt(d):
     return re.sub(r"(\d+\.\d{2})\d+", r"\1", d)
 
 
-# O simbolo de cada produto. Todos sao a mesma fenix; no PhxZip ela carrega
-# o cadeado laranja (decisao do dono, 24/09/2026 -- `gerar-phxzip.py`).
-SIMBOLO = {"PhxZip": "phxzip-simbolo.svg"}
-
-
 def simbolo_interno(produto=None):
-    s = (AQUI / SIMBOLO.get(produto, "phx-simbolo.svg")).read_text(encoding="utf-8")
+    s = (AQUI / "phx-simbolo.svg").read_text(encoding="utf-8")
     corpo = s[s.index(">", s.index("<svg")) + 1 : s.rindex("</svg>")]
     corpo = re.sub(r"<title>.*?</title>", "", corpo, flags=re.S)
     return corpo
@@ -109,6 +107,64 @@ def horizontal(f, produto, acento, assinatura=True):
         partes.append("</g>")
     partes.append("</svg>\n")
     return "\n".join(partes)
+
+
+def fenix(transform):
+    """A fenix pousada (asas, peito em chama, pescoco e cabeca), lida do
+    simbolo da familia -- mudar a asa la muda aqui na proxima corrida."""
+    base = (AQUI / "phx-simbolo.svg").read_text(encoding="utf-8")
+    defs = base[base.index("<defs>") : base.index("</defs>") + len("</defs>")]
+    cabeca = base[base.index("  <!-- a fenix: pescoco") : base.index("</svg>")]
+    corpo = (
+        f'<g transform="{transform}">'
+        '<use href="#asa-esq"/><use href="#asa-esq" transform="translate(512 0) scale(-1 1)"/>'
+        '<path fill="url(#fogo)" d="M256 336 C214 326 196 292 204 258 C210 234 228 222 248 220 '
+        'L284 224 C304 234 314 256 310 282 C304 312 286 330 256 336 Z"/>'
+        f"{cabeca}</g>"
+    )
+    return defs, corpo
+
+
+def garras(cx, y):
+    """As garras seguram o alto da palavra."""
+    e, d = cx - 20, cx + 20
+    return (
+        f'<g fill="none" stroke="#FFC43D" stroke-width="6" stroke-linecap="round">'
+        f'<path d="M{e} {y - 22} L{e - 6} {y} M{e} {y - 22} L{e + 4} {y + 2} M{e} {y - 22} L{e + 12} {y}"/>'
+        f'<path d="M{d} {y - 22} L{d - 10} {y} M{d} {y - 22} L{d} {y + 2} M{d} {y - 22} L{d + 10} {y}"/></g>'
+    )
+
+
+def phxzip(f, texto, alt, arquivo, titulo, pouso):
+    """Decisao do dono, 24/09/2026: «So a Phoenix sobre a palavra Zip.» A
+    fenix pousa na letra `pouso` (o pingo do i no logo, o Z no icone) e as
+    duas juntas leem PhxZip -- sem cilindro, sem cadeado, sem repetir o nome.
+
+    A primeira versao pos a fenix no centro da CAIXA, e ela flutuou: o
+    centro caia entre o i e o p, e sobrava vao entre o peito e as garras."""
+    caminhos, larg = palavra(f, texto, alt, lambda i, ch: "#FFC43D" if i == 0 else PRATA)
+    xl, al = palavra.posicoes[pouso]
+    L = 512
+    x0 = (L - larg) / 2
+    topo = 262
+    cx = x0 + xl + al / 2
+    # O peito termina (y=336 no simbolo) exatamente onde as garras comecam.
+    esc = 0.62
+    ty = topo - 22 - (336 - 250) * esc
+    defs, ave = fenix(f"translate({cx:.1f} {ty:.1f}) scale({esc}) translate(-256 -250)")
+    partes = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {L} 512" role="img" aria-label="PhxZip">',
+        f"<title>{titulo}</title>",
+        defs,
+        f'<circle cx="{cx:.1f}" cy="{topo - 60}" r="160" fill="url(#brilho)" opacity=".25"/>',
+        ave,
+        garras(round(cx), topo),
+        f'<g transform="translate({x0:.1f} {topo})">',
+    ]
+    for d, cor in caminhos:
+        partes.append(f'<path fill="{cor}" d="{fmt(d)}"/>')
+    partes.append("</g></svg>\n")
+    (AQUI / arquivo).write_text("\n".join(partes), encoding="utf-8")
 
 
 def monocromatico():
@@ -153,11 +209,13 @@ def main():
     f = fonte(sys.argv[1])
     (AQUI / "phx-simbolo-mono.svg").write_text(monocromatico(), encoding="utf-8")
     (AQUI / "phx-icone.svg").write_text(icone(), encoding="utf-8")
+    phxzip(f, "Zip", 150, "phxzip-simbolo.svg", "PhxZip — a fênix sobre a palavra Zip", 1)
+    phxzip(f, "Z", 200, "phxzip-icone.svg", "PhxZip — ícone: a fênix sobre o Z", 0)
     for produto, acento in FAMILIA.items():
         nome = produto.lower() + "-horizontal.svg"
         (AQUI / nome).write_text(horizontal(f, produto, acento), encoding="utf-8")
         print("gerado", nome)
-    print("gerados phx-simbolo-mono.svg e phx-icone.svg")
+    print("gerados phx-simbolo-mono.svg, phx-icone.svg, phxzip-simbolo.svg e phxzip-icone.svg")
     return 0
 
 

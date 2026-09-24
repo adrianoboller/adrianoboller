@@ -106,24 +106,26 @@ tamanho novo era um recorte à mão. Agora:
 | `vetor/phx-simbolo.svg` | o símbolo, **desenhado à mão** a partir da folha — a única fonte vetorial |
 | `vetor/phx-icone.svg` | o mesmo, para 16–48 px: sem trilhas nem luzes, traço mais grosso, cilindro mais claro |
 | `vetor/phx-simbolo-mono.svg` | uma cor só (`currentColor`), para impressão e carimbo; `--vazio` troca o papel |
-| `vetor/<produto>-horizontal.svg` | símbolo + palavra em **curvas** (Exo 2 SemiBold) + assinatura, para os quatro produtos |
+| `vetor/<produto>-horizontal.svg` | símbolo + palavra em **curvas** (Exo 2 SemiBold) + assinatura — PhxSql, PhxMail e Phxblockchain (o PhxZip tem logo próprio, abaixo) |
 | `derivados/vetor/` | PNG de 16 a 1200 px, Android 192/512, iOS 180 e o `phx.ico` (16/32/48/256) |
 
-### O símbolo do PhxZip — a fênix carregando o cadeado laranja
+### O logo do PhxZip — a fênix sobre a palavra Zip
 
-Decisão do dono, 24/09/2026, depois de ver a morsa e o cadeado lado a lado:
-*«Só o cadeado laranja já ficou bom. Phoenix carregando um cadeado 🔒
-laranja.»* A morsa saiu do repositório — um símbolo por vez.
+Decisão do dono, 24/09/2026, na terceira volta (morsa, depois cadeado):
+*«Só a Phoenix sobre a palavra Zip.»* A fênix pousa no pingo do «i», e as
+duas juntas leem **PhxZip** — sem cilindro, sem cadeado, e sem repetir o nome
+num horizontal ao lado. A morsa e o cadeado saíram do repositório.
 
 | Arquivo | O que é |
 |---|---|
-| `vetor/phxzip-simbolo.svg` | a fênix de asas abertas, com as garras na argola, carregando o cadeado laranja com o zíper |
-| `vetor/phxzip-icone.svg` | o mesmo, recortado para 16–48 px (legível em 32 px, medido na captura) |
+| `vetor/phxzip-simbolo.svg` | o logo: a fênix pousada no «i» de **Zip** (o Z em âmbar, o acento do PhxZip) |
+| `vetor/phxzip-icone.svg` | para 16–48 px: a fênix sobre o **Z** — a palavra inteira não se lê em 32 px |
 
-As asas, o pescoço e a cabeça vêm do `phx-simbolo.svg` por leitura
-(`vetor/gerar-phxzip.py`): a família continua sendo um desenho só de fênix.
+Os dois saem do `vetor/gerar.py` (a palavra precisa da fonte); a fênix vem do
+`phx-simbolo.svg` por leitura. A primeira versão pôs a ave no centro da caixa
+e ela flutuou — o centro caía entre o «i» e o «p».
 
-Refazer: `python3 vetor/gerar-phxzip.py`, depois `python3 vetor/gerar.py Exo2[wght].ttf` (precisa de `fontTools`,
+Refazer: `python3 vetor/gerar.py Exo2[wght].ttf` (precisa de `fontTools`,
 ferramenta de trabalho, não do produto) e `node vetor/exportar.mjs`.
 
 **Estado: PROPOSTA a aprovar pelo dono.** O SVG é uma redesenho fiel à

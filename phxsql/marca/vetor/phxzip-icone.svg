@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="56 30 400 440" role="img" aria-label="PhxZip">
-  <title>PhxZip — a fênix carregando o cadeado laranja</title>
-  <defs>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="PhxZip">
+<title>PhxZip — ícone: a fênix sobre o Z</title>
+<defs>
     <linearGradient id="fogo" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#FFC43D"/>
       <stop offset=".45" stop-color="#FF8A1C"/>
@@ -36,36 +36,16 @@
       <circle cx="90" cy="322" r="6" fill="#FFC43D" stroke="none"/>
       <circle cx="74" cy="356" r="6" fill="#FFC43D" stroke="none"/>
     </g>
-    </defs>
-  <circle cx="256" cy="250" r="200" fill="url(#brilho)" opacity=".28"/>
-
-  <!-- a fenix: asas abertas, peito em chama, pescoco e cabeca da familia -->
-  <g transform="translate(256 164) scale(.74) translate(-256 -250)">
-    <use href="#asa-esq"/>
-    <use href="#asa-esq" transform="translate(512 0) scale(-1 1)"/>
-    <path fill="url(#fogo)" d="M256 336 C214 326 196 292 204 258 C210 234 228 222 248 220 L284 224 C304 234 314 256 310 282 C304 312 286 330 256 336 Z"/>
-  <!-- a fenix: pescoco em S, cabeca com bico voltado para a direita e a
+  </defs>
+<circle cx="256.0" cy="202" r="160" fill="url(#brilho)" opacity=".25"/>
+<g transform="translate(256.0 186.7) scale(0.62) translate(-256 -250)"><use href="#asa-esq"/><use href="#asa-esq" transform="translate(512 0) scale(-1 1)"/><path fill="url(#fogo)" d="M256 336 C214 326 196 292 204 258 C210 234 228 222 248 220 L284 224 C304 234 314 256 310 282 C304 312 286 330 256 336 Z"/>  <!-- a fenix: pescoco em S, cabeca com bico voltado para a direita e a
        crista em tres penas -- sobe do cilindro -->
   <path fill="url(#fogo)" d="M234 240 C222 206 228 172 250 148 C262 134 278 124 296 122 C310 121 322 126 330 134 L352 142 L330 150 C320 152 310 150 302 146 C290 150 282 160 278 174 C272 196 276 218 288 240 Z"/>
   <path fill="#FFC43D" d="M300 124 C288 108 282 90 284 70 C292 88 302 98 314 104 C308 88 308 72 314 56 C320 76 330 90 344 98 C342 84 346 72 354 62 C356 84 352 104 340 120 C332 122 318 122 300 124 Z"/>
   <path fill="#FF8A1C" d="M330 134 L352 142 L330 150 C334 144 334 140 330 134 Z"/>
   <circle cx="314" cy="134" r="4" fill="#010418"/>
-  </g>
-
-  <!-- a argola, presa nas garras -->
-  <g transform="translate(0 14)"><path d="M200 318 V262 C200 230 226 206 256 206 C286 206 312 230 312 262 V318" fill="none" stroke="#DDE2EB" stroke-width="22" stroke-linecap="round"/>
-  <path d="M200 318 V262 C200 230 226 206 256 206 C286 206 312 230 312 262 V318" fill="none" stroke="#FFC43D" stroke-width="5" stroke-linecap="round" opacity=".7"/>
-  <g fill="none" stroke="#FFC43D" stroke-width="6" stroke-linecap="round">
-    <path d="M238 184 L232 208 M238 184 L244 210 M238 184 L224 204"/>
-    <path d="M274 184 L268 210 M274 184 L280 208 M274 184 L288 204"/>
-  </g>
-
-  <!-- o cadeado laranja, pendurado -->
-  <rect x="170" y="304" width="172" height="150" rx="28" fill="url(#fogo)" stroke="#FFC43D" stroke-width="5"/>
-  <rect x="186" y="320" width="140" height="11" rx="5.5" fill="#FFC43D" opacity=".55"/>
-  <!-- o buraco da chave, e o ziper que desce dele: um arquivo trancado -->
-  <circle cx="256" cy="368" r="20" fill="#010418"/>
-  <path d="M247 379 H265 L261 414 H251 Z" fill="#010418"/>
-  <path d="M256 422 V446" stroke="#010418" stroke-width="4" stroke-dasharray="5 4"/>
-  </g>
-</svg>
+</g>
+<g fill="none" stroke="#FFC43D" stroke-width="6" stroke-linecap="round"><path d="M236 240 L230 262 M236 240 L240 264 M236 240 L248 262"/><path d="M276 240 L266 262 M276 240 L276 264 M276 240 L286 262"/></g>
+<g transform="translate(172.4 262)">
+<path fill="#FFC43D" d="M113.20 27.90 153.01 28.19 52.33 172.09 12.32 171.80ZM155.29 171.80V200.0H12.32V171.80ZM153.01 0.0V28.19H14.39V0.0Z"/>
+</g></svg>
