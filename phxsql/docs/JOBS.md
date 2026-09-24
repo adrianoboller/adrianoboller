@@ -21,11 +21,14 @@ Três decisões que não são óbvias lendo a lista:
   implementações da mesma regra é o jeito clássico de a tela e o relógio
   discordarem.
 - **A última corrida sobrevive ao reinício; o agendamento não.** O `Registro`
-  semeia a última corrida de cada job da cauda do `jobs.log` no arranque —
-  é isso que deixa a tela dizer "falhou às 03:00" depois de um restart. Mas o
-  `ultimos` do agendamento continua zerando de propósito: um "a cada 6 h"
-  deve rodar logo depois do arranque, e semear o relógio do log mudaria esse
-  comportamento sem ninguém pedir.
+  semeia a última corrida de cada job da cauda do `.log` irmão do cadastro
+  (pedido 482: o nome inteiro do arquivo apontado em `"jobs"` mais `.log` —
+  `jobs.json` vira `jobs.json.log`; era `with_extension("log")`, que **trocava**
+  a extensão, e com `"jobs": "agenda.log"` o log virava o próprio cadastro) no
+  arranque — é isso que deixa a tela dizer "falhou às 03:00" depois de um
+  restart. Mas o `ultimos` do agendamento continua zerando de propósito: um
+  "a cada 6 h" deve rodar logo depois do arranque, e semear o relógio do log
+  mudaria esse comportamento sem ninguém pedir.
 - **`parado` é o vencido que ninguém vai rodar**: ligado, hora vencida, sem
   corrida em andamento e **sem relógio no ar** — o relógio só sobe no
   arranque, e só se já havia job ligado. O caso típico é real: o primeiro job

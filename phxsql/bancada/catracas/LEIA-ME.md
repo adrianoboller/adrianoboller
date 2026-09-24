@@ -29,3 +29,7 @@ verdade.
 
 Detalhe completo, custo medido e as três provas reais (defeito reposto,
 catraca nova achada sozinha, medidor mudo reprovando): `docs/CATRACAS.md` §18.
+
+**E o portão de commit que chama este comando junto com a suíte** é o
+`portoes.sh` da raiz (pedido 421, `docs/CATRACAS.md` §19): suíte verde com
+catraca reprovada sai vermelho, num código de saída só.

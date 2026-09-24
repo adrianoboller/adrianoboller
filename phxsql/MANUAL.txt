@@ -2456,8 +2456,8 @@ BARRA DE FERRAMENTAS
         Telemetria    graficos bolha ordenados por peso
         Profiler      o que chega pela porta de dados, antes de virar dado
         Jobs          cadastro em jobs.json, relogio de 30s e corridas
-                      append-only em jobs.log -- funciona, tela desde o
-                      pedido 51
+                      append-only no .log irmao (jobs.json.log) -- funciona,
+                      tela desde o pedido 51
         Backup        copia e confere, com manifesto SHA-256
         Restaurar     traz uma copia de volta: com outro nome, ou por cima
         Lixeira       as linhas que sairam do .reg, inteiras
@@ -2985,8 +2985,11 @@ AGENDADO
 
     Separado do config.json de proposito -- ele muda pela tela, e reescrever
     o config.json inteiro a cada job novo arriscaria os comentarios e o resto
-    da configuracao. As corridas vao para o jobs.log ao lado, uma linha JSON
-    por corrida, append-only.
+    da configuracao. As corridas vao para um .log IRMAO do cadastro -- o nome
+    INTEIRO do arquivo apontado em "jobs" mais ".log" (jobs.json vira
+    jobs.json.log; um "jobs" que ja terminasse em ".log" nunca vira o proprio
+    cadastro, porque acrescentar sempre da um nome mais longo que o original)
+    --, uma linha JSON por corrida, append-only.
 
     UM JOB RODA COMO GENTE, E NAO COMO O SERVIDOR
 
@@ -3057,8 +3060,8 @@ AGENDADO
         nunca_rodou  ligado, nunca rodou -- e NAO ha relogio para roda-lo
 
     Vem junto: "ultima" (a corrida inteira: quando, duracao, resultado ou
-    erro -- semeada da cauda do jobs.log no arranque, para sobreviver a um
-    reinicio), "proximo_ms"/"proxima" (a proxima prevista, pela MESMA conta
+    erro -- semeada da cauda do log de corridas no arranque, para sobreviver
+    a um reinicio), "proximo_ms"/"proxima" (a proxima prevista, pela MESMA conta
     do relogio), "vencido", "rodando" e "parado". PARADO e o vencido que
     ninguem vai rodar: ligado, hora vencida, sem relogio no ar.
 
@@ -3072,7 +3075,8 @@ AGENDADO
 
     O HISTORICO
 
-    Toda corrida entra no jobs.log e no acessos.log, tenha dado certo ou nao.
+    Toda corrida entra no log de corridas (o .log irmao do cadastro) e no
+    acessos.log, tenha dado certo ou nao.
     Job que falha calado nao existe. O "detalhe" e um RESUMO da resposta, e ele
     e obtido analisando e reserializando -- nunca recortando: uma varredura de
     vinte mil linhas vira "linhas: 20000 itens", e nao meio JSON cortado.

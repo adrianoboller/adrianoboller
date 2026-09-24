@@ -1,7 +1,7 @@
 # Prova diferencial contra o `HEAD` expira no proprio commit
 
 **Estado:** FRUTÍFERO
-**Evidência:** `42e1bf3`
+**Evidência:** `42e1bf3`; `docs/dossie/prova-do-depois-da-versao.py`
 
 Papel A (integração), 24/09/2026, pedido 484.
 

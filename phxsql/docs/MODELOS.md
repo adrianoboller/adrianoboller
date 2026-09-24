@@ -1271,6 +1271,9 @@ QA, com julgamento de pergunta, e a redação do H.
 | 478 — a instalacao nova termina em `.phz` | leve | roteiro, documentacao e uma prova em Python sobre um comando que ja existia; o integrador achou o empacotador pendurado com binario velho |
 | 483 — o `phxsqld` recusa flag desconhecida | leve | parser pequeno com inventario medido dos chamadores e prova pelo binario |
 | 484 — o quarto estado `⏸` nos geradores | medio | mexe no leitor unico que tres paginas e o documento de tecnologias usam, e a garantia principal e «sem `⏸` nada muda», provada byte a byte; o integrador achou a prova presa ao `HEAD` e a porcentagem calculada e nao mostrada |
+| 421 — o portao de commit num codigo so | forte (o integrador) | costura de portoes e prova com defeito reposto; achou a evidencia por commit que reprovava na arvore exata |
+| 482 — o log dos jobs pelo nome inteiro | medio | conserto delimitado com varredura roteirizada dos `with_extension(`; o motor do `temporario_de` generalizado em vez de duplicado |
+| 485 — a espera do teste da replica que caia na primeira resposta | forte (o integrador) | teste que floca e defeito ativo: medido no HEAD antes de culpar o commit, causa lida no teste, 20 de 20 com o conserto |
 
 **A integração achou o que nenhuma frente via, de novo por território de
 arquivo não bastar em worktree compartilhado**: `cargo fmt --all` de uma

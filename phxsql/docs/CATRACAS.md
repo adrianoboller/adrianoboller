@@ -1981,6 +1981,32 @@ dono, 23/09/2026):
   — o silêncio sozinho já reprova, mesmo com código de saída 0 do filho.
 - **Árvore limpa**: as cinco `ok`, 33 TETO_* listadas, saída 0.
 
+## 19. `portoes.sh` — os portões de commit num código de saída só (pedido 421)
+
+Em 23/09/2026 a árvore junta passou por `fmt`, `clippy` com zero avisos e
+2.739 testes verdes, e subiu com a catraca do mapa da trava reprovada
+(`alcancam-fsync-2 25`, teto 24). Os conferidores em Rust rodam dentro do
+`cargo test`. As catracas em Python ficam fora dele e só rodavam quando alguém
+lembrava. O `portoes.sh`, na raiz, roda os quatro passos sempre, mesmo depois
+de um vermelho: `fmt --check`, `clippy -D warnings`, `test --workspace` e o
+`todas.py`. Ele sai 0 só se os quatro saírem 0. O `-D warnings` é o que faz o
+«zero avisos» virar código de saída.
+
+- `--raiz DIR` roda numa árvore exata (a de `git archive`). Sem `.git` ali, ele
+  aponta `PHXSQL_GIT_DIR` para o repositório do próprio script. Sem isso, a
+  régua dos aprendizados reprova como «não conferível» toda evidência dada por
+  commit. Foi assim que a primeira cognição FRUTÍFERA de commit, a do 484, deixou
+  a árvore exata vermelha: medido, e consertado junto.
+- `PHX_CARGO` escolhe qual cargo chamar (`./cargo-da-frente.sh` quando há
+  frentes compilando).
+
+**Prova real** (`bancada/catracas/prova-portoes.py`, ~25 s, com um cargo falso
+porque o que se prova é a costura dos passos, não a suíte). Árvore limpa sai 0.
+Suíte vermelha sai 1. Suíte verde com uma catraca de mentira que reprova sai 1,
+nomeando «catracas». **Com o defeito reposto** (o mesmo script sem o passo das
+catracas), o terceiro caso sai 0 e a prova acusa. Sem isso, ela passaria por
+engano.
+
 ## Metodologia
 
 1. `grep -rn "TETO\|MAX\|LIMITE"` em `crates/*/src/**/*.rs` e em `bancada/`,

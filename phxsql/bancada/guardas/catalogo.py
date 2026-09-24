@@ -8057,7 +8057,7 @@ pub fn limpar() {
     },
     {
         "id": "gravar-privado-temporario-e-o-proprio-config",
-        "titulo": "o temporario do `gravar_privado` troca a extensao, e com `--config servidor.tmp` ele e o proprio config",
+        "titulo": "o irmao-por-sufixo troca a extensao, e com `--config servidor.tmp` (ou `\"jobs\": \"agenda.log\"`) o irmao e o proprio arquivo",
         "porque": (
             "pedido 450, etapa 2 -- revisao SEC de 24/09/2026, MEDIO 1, provado pelo "
             "binario: `with_extension(\"tmp\")` do `servidor.phz` e o `servidor.tmp` que se "
@@ -8065,23 +8065,31 @@ pub fn limpar() {
             "(ENOENT), o desfazer apagava o `.phz`, e a pasta ficava VAZIA com a mensagem "
             "dizendo «servidor.tmp continua valendo». O temporario passa a ser o nome "
             "inteiro mais `.tmp` -- vale para o `dblink.json` e o `jobs.json` tambem, que "
-            "passam pelo mesmo `gravar_privado`."
+            "passam pelo mesmo `gravar_privado`. Pedido 482: o MESMO desenho (e o mesmo "
+            "defeito) apareceu no log dos jobs, com `with_extension(\"log\")` -- "
+            "`\"jobs\": \"agenda.log\"` fazia o log ser o proprio cadastro. O trecho foi "
+            "generalizado em `irmao_por_sufixo`, o motor unico que `temporario_de` (`.tmp`) "
+            "e `irmao_do_log` (`.log`) agora compartilham -- por isso o trecho desta guarda "
+            "migrou para dentro dele, e a troca reproduz o `with_extension` para QUALQUER "
+            "sufixo (nao so `.tmp`), o que cobre os dois lados de uma vez."
         ),
         "arquivo": "crates/phxsql-server/src/config.rs",
         "trecho": """    let mut nome = caminho
         .file_name()
         .map(|n| n.to_os_string())
         .unwrap_or_default();
-    nome.push(".tmp");
+    nome.push(sufixo);
     caminho.with_file_name(nome)
 """,
-        "troca": """    // DEFEITO REPOSTO: troca a extensao, e com servidor.tmp e o proprio config.
-    caminho.with_extension("tmp")
+        "troca": """    // DEFEITO REPOSTO: troca a extensao -- servidor.tmp vira o proprio
+    // config, e agenda.log vira o proprio cadastro de jobs.
+    caminho.with_extension(sufixo.trim_start_matches('.'))
 """,
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
         "caem": [
             "config_phz::testes::config_com_extensao_tmp_migra_sem_se_apagar",
+            "jobs::testes::log_dos_jobs_nao_colide_com_cadastro_que_termina_em_log",
         ],
         "seguem": [
             "config::testes_gravacao::gravar_privado_nasce_0600_mesmo_com_temporario_velho_aberto",

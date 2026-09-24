@@ -570,8 +570,15 @@ impl Registro {
     }
 
     /// O `.log` das corridas, ao lado do cadastro.
+    ///
+    /// Era `with_extension("log")`, que TROCA a extensao -- e com `"jobs":
+    /// "agenda.log"` no config o log virava o proprio cadastro, porque
+    /// trocar ".log" por ".log" e' um no-op (pedido 482). Agora reusa o
+    /// MESMO motor do temporario de `gravar_privado` (`irmao_do_log`, nome
+    /// INTEIRO mais sufixo): o resultado e' sempre mais longo que
+    /// `self.caminho`, entao nunca pode ser ele.
     pub fn caminho_do_log(&self) -> PathBuf {
-        self.caminho.with_extension("log")
+        crate::config::irmao_do_log(&self.caminho)
     }
 
     /// A ultima corrida conhecida deste job, se houver.
@@ -1047,5 +1054,62 @@ mod testes {
         let h = r.historico(10);
         assert_eq!(h.len(), 1);
         assert_eq!(h[0].job, "bom");
+    }
+
+    /// Pedido 482: `caminho_do_log` usava `with_extension("log")`, que TROCA
+    /// a extensao. Com `"jobs": "agenda.log"` no config -- um nome que JA
+    /// termina em `.log` --, trocar ".log" por ".log" e um no-op: o log
+    /// virava o PROPRIO cadastro, e `registrar` escrevia a corrida em cima
+    /// dos jobs (append numa "escrita" que na verdade era o cadastro
+    /// inteiro). Prova real: cadastro num arquivo que TERMINA em `.log`,
+    /// registra uma corrida, e confere que o cadastro continua intacto
+    /// (bytes iguais, e ainda um cadastro que se rele) e que a corrida foi
+    /// para o irmao.
+    #[test]
+    fn log_dos_jobs_nao_colide_com_cadastro_que_termina_em_log() {
+        let dir = DirTemp::novo("colisao-log");
+        // O nome que fundou o pedido: um "jobs" do config que ja termina em
+        // ".log", como "agenda.log".
+        let caminho = dir.join("agenda.log");
+        let mut r = Registro::abrir(&caminho).unwrap();
+        r.salvar(Job::de_json(&job_json("noturno", "")).unwrap())
+            .unwrap();
+        let cadastro_antes = std::fs::read(&caminho).unwrap();
+        assert!(
+            !cadastro_antes.is_empty(),
+            "o cadastro tinha de ter sido gravado antes de registrar a corrida"
+        );
+
+        r.registrar(&Corrida {
+            quando_ms: 1,
+            job: "noturno".into(),
+            op: "ping".into(),
+            usuario: "adm".into(),
+            ok: true,
+            duracao_ms: 1,
+            detalhe: "ok".into(),
+        });
+
+        let log = r.caminho_do_log();
+        assert_ne!(
+            log, caminho,
+            "o log nao pode ser o proprio cadastro -- e exatamente o defeito do 482"
+        );
+        let cadastro_depois = std::fs::read(&caminho).unwrap();
+        assert_eq!(
+            cadastro_antes, cadastro_depois,
+            "registrar a corrida nao pode mexer um byte do cadastro"
+        );
+        // E o cadastro continua um cadastro VALIDO -- reabre e acha o job,
+        // em vez de ter virado uma linha de corrida por cima do JSON.
+        let r2 = Registro::abrir(&caminho).unwrap();
+        assert_eq!(r2.jobs.len(), 1, "o cadastro nao pode ter virado log");
+        assert_eq!(r2.jobs[0].nome, "noturno");
+        // E a corrida realmente foi para o irmao.
+        let texto_do_log = std::fs::read_to_string(&log).unwrap();
+        assert!(
+            texto_do_log.contains("\"noturno\""),
+            "a corrida nao apareceu no log: {texto_do_log}"
+        );
     }
 }

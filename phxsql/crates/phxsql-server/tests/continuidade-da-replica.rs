@@ -165,17 +165,42 @@ fn eventos_de_clientes(porta: u16) -> i64 {
         .unwrap_or(-1)
 }
 
+/// Os eventos de `loja/clientes` enquanto se ESPERA: a replica cria a base e
+/// a tabela sozinha, depois de subir, e ate la o `posicao` responde
+/// `NAO_ENCONTRADO`. Isso quer dizer «ainda nao chegou», nao «deu errado» --
+/// e o `exigir` de antes caia na primeira pergunta sempre que a replica
+/// perdia a corrida para o teste (medido em 24/09/2026: 4 quedas em 13
+/// corridas, e mais com a maquina carregada). Qualquer outro erro continua
+/// derrubando o teste.
+fn eventos_de_clientes_se_ja_chegou(porta: u16) -> i64 {
+    let r = pedir(porta, r#""op":"posicao","database":"loja""#);
+    if !r.booleano_ou("ok", false) {
+        assert_eq!(
+            r.campo("nome").and_then(Json::texto),
+            Some("NAO_ENCONTRADO"),
+            "posicao na replica falhou por outro motivo: {}",
+            r.escrever()
+        );
+        return -1;
+    }
+    r.campo("resultado")
+        .and_then(|res| res.campo("tabelas"))
+        .and_then(|t| t.campo("clientes"))
+        .map(|c| c.inteiro_ou("eventos", -1))
+        .unwrap_or(-1)
+}
+
 fn esperar_eventos(porta: u16, quantos: i64) {
     let ate = Instant::now() + Duration::from_secs(20);
     while Instant::now() < ate {
-        if eventos_de_clientes(porta) == quantos {
+        if eventos_de_clientes_se_ja_chegou(porta) == quantos {
             return;
         }
         std::thread::sleep(Duration::from_millis(100));
     }
     panic!(
         "a replica nao chegou a {quantos} evento(s) em 20 s (esta em {})",
-        eventos_de_clientes(porta)
+        eventos_de_clientes_se_ja_chegou(porta)
     );
 }
 

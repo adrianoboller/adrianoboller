@@ -8,5 +8,5 @@ Gerado dos `cognicao_*.md` com `**Estado:** FRUTIFERO` -- 1 hoje, de 305 cognico
 
 ## Prova diferencial contra o `HEAD` expira no proprio commit
 
-- Evidencia: `42e1bf3`
+- Evidencia: `42e1bf3`; `docs/dossie/prova-do-depois-da-versao.py`
 - Arquivo: [cognicao_prova-contra-o-head-expira-no-proprio-commit_20260924_0955.md](cognicao_prova-contra-o-head-expira-no-proprio-commit_20260924_0955.md)

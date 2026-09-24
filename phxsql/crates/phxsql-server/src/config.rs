@@ -2706,23 +2706,44 @@ fn gravar_chave(caminho: &Path, chave: &[u8; 32]) -> std::io::Result<()> {
     arq.sync_all()
 }
 
+/// Deriva um IRMAO de `caminho`, acrescentando `sufixo` (com o ponto, ex.
+/// `.tmp`) ao nome INTEIRO -- nunca troca a extensao.
+///
+/// E o motor por tras de [`temporario_de`], generalizado no pedido 482: o
+/// `caminho_do_log` dos jobs usava `with_extension("log")`, que TROCA a
+/// extensao, e com `"jobs": "agenda.log"` no config o log virava o proprio
+/// cadastro -- a gravacao do log passava a escrever em cima dos jobs.
+/// Acrescentar em vez de trocar da um nome sempre mais longo que o do
+/// arquivo, entao nunca e ele; e nunca e o outro lado de um par de extensoes
+/// fixas e distintas (como `.json`/`.phz`), que termina no proprio par e nao
+/// em `sufixo` acrescentado a um deles.
+fn irmao_por_sufixo(caminho: &Path, sufixo: &str) -> PathBuf {
+    let mut nome = caminho
+        .file_name()
+        .map(|n| n.to_os_string())
+        .unwrap_or_default();
+    nome.push(sufixo);
+    caminho.with_file_name(nome)
+}
+
 /// O temporario de [`gravar_privado`]: o nome INTEIRO mais `.tmp`.
 ///
 /// Era `with_extension("tmp")`, que TROCA a extensao -- e com `--config
 /// servidor.tmp` o temporario era o proprio config: a gravacao comecava
 /// apagando-o (revisao SEC de 24/09/2026, pedido 450). E na troca de forma
 /// era pior: o temporario do `servidor.phz` e o `servidor.tmp` que se estava
-/// migrando. Acrescentar em vez de trocar da um nome sempre mais longo que o
-/// do arquivo, entao nunca e ele; e nunca e o outro do par `.json`/`.phz`,
-/// que termina em `.json` ou `.phz` e nao em `.tmp` acrescentado a um deles.
-/// Uma funcao so, para os testes perguntarem o MESMO nome que se grava.
+/// migrando. Uma funcao so, para os testes perguntarem o MESMO nome que se
+/// grava -- ver [`irmao_por_sufixo`] para o motor, reusado pelo log dos jobs.
 pub(crate) fn temporario_de(caminho: &Path) -> PathBuf {
-    let mut nome = caminho
-        .file_name()
-        .map(|n| n.to_os_string())
-        .unwrap_or_default();
-    nome.push(".tmp");
-    caminho.with_file_name(nome)
+    irmao_por_sufixo(caminho, ".tmp")
+}
+
+/// O `.log` das corridas de um job, ao lado do cadastro -- ver
+/// [`irmao_por_sufixo`]. Pedido 482: reusa o MESMO motor de `temporario_de`
+/// em vez de `with_extension("log")`, que colidia com o proprio cadastro
+/// quando o administrador nomeava o `jobs` do config terminando em `.log`.
+pub(crate) fn irmao_do_log(caminho: &Path) -> PathBuf {
+    irmao_por_sufixo(caminho, ".log")
 }
 
 /// Grava `corpo` em `caminho` de forma atomica e 0600 desde o primeiro byte.

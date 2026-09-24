@@ -1066,6 +1066,10 @@ cargo clippy --workspace --all-targets     # tem de dar zero avisos
 cargo test --workspace
 ```
 
+Ou `./portoes.sh` (pedido 421), que roda os três e mais as catracas em Python
+(`bancada/catracas/todas.py`) e sai com UM código só: suíte verde com catraca
+reprovada é vermelho. Na árvore exata do commit: `./portoes.sh --raiz DIR`.
+
 Mexeu no formato em disco? Atualize `docs/FORMATO.md` no mesmo commit.
 
 ## Cores da ação, na interface

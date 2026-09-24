@@ -7988,7 +7988,8 @@ impl Servidor {
         t.push_str(
             "Enquanto o job continuar falhando, este aviso se repete no maximo uma vez \
              por janela de silêncio; quando ele voltar a rodar, a próxima falha avisa \
-             na hora. O histórico completo está na tela Jobs e no jobs.log.\n\n",
+             na hora. O histórico completo está na tela Jobs e no log de corridas, ao \
+             lado do cadastro de jobs.\n\n",
         );
         t.push_str(&format!("Servidor PhxSql {VERSAO}\n"));
         t
