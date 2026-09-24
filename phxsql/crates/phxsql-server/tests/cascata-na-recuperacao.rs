@@ -173,6 +173,7 @@ fn marca(db: &Database, id: u64, rowid: u64, antiga: &[Value]) {
             linha_antiga: antiga.to_vec(),
             motivo: String::new(),
             cascata_na_lista: false,
+            elo_do_empilhar: false,
         }],
     )
     .unwrap();
@@ -386,6 +387,7 @@ fn a_marca_da_versao_anterior_continua_sendo_completada() {
             linha_antiga: Vec::new(),
             motivo: String::new(),
             cascata_na_lista: false,
+            elo_do_empilhar: false,
         }],
     )
     .unwrap();

@@ -91,6 +91,18 @@ funções `CONCAT`, `UPPER`, `LOWER`, `TRIM`, `LENGTH`/`CHAR_LENGTH`, `ROUND`,
 | `AFTER UPDATE` | sim | não | sim |
 | `AFTER DELETE` | — | — | sim |
 
+**Dentro de uma transação, o `OLD` é a linha que a TRANSAÇÃO vê** (pedido 538,
+24/09/2026): o disco com o que a própria lista já escreveu nela. O `BEFORE`
+roda na instrução, e até o pedido 538 ele recebia a linha do disco — um
+gatilho de delta de estoque (`SET NEW.delta = NEW.qtd - OLD.qtd`) na transação
+5→3→1 dava **−4**, onde o PostgreSQL 16 e o MySQL 8.0 dão **−2** e o nosso fora
+de transação também. Vale para o `BEFORE UPDATE`, para o do upsert que vira
+alteração e para o `BEFORE DELETE`; a linha inserida na própria transação passa
+a ter `OLD` (pelo disco ela nem disparava o gatilho). O `AFTER` já estava certo:
+ele roda no `COMMIT`, com o `OLD` lido na passada imediatamente antes de cada
+escrita. Provas: `o_old_do_before_update_e_a_linha_que_a_transacao_ve` e
+`o_old_do_before_delete_e_a_linha_que_a_transacao_ve`.
+
 ### O upsert dispara os gatilhos do ramo que ele VIROU
 
 `inserir` com `se_existir` (o `ON CONFLICT`/`ON DUPLICATE KEY UPDATE` do SQL)

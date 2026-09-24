@@ -4959,6 +4959,23 @@ impl Table {
         self.resolver(rowid)
     }
 
+    /// A linha `rowid` como o `atualizar` a le para planejar a cascata: do
+    /// `.reg`, SEM carregar as colunas externas (`Bin`/`Memo`), que voltam
+    /// nulas (pedido 540).
+    ///
+    /// E a leitura que o proprio `atualizar` faz da linha velha
+    /// (`decodificar(.., false)`), e o plano precisa ser o dele: coluna externa
+    /// nao e chave de ninguem. Ler pelo [`Table::ler`] carregaria o bloco
+    /// externo -- e a linha com o `.memo` ilegivel, que o `atualizar` grava
+    /// dizendo na trilha que o antes nao se leu, passaria a ser recusada so
+    /// por o servidor ter perguntado antes.
+    pub fn ler_sem_externos(&mut self, rowid: RowId) -> Result<Option<Linha>> {
+        match self.reg.ler(rowid)? {
+            Some(payload) => Ok(Some(self.decodificar(&payload, false)?)),
+            None => Ok(None),
+        }
+    }
+
     /// A versao do registro: 1 quando nasce, +1 a cada regravacao.
     ///
     /// `None` quer dizer slot inativo -- nunca usado, ou excluido de vez.
@@ -5064,6 +5081,19 @@ impl Table {
         maes: &mut dyn MaesEmProgresso,
     ) -> Result<()> {
         self.atualizar_com_maes_opt(rowid, valores, Some(maes), false)
+    }
+
+    /// [`Table::atualizar`] SEM planejar a cascata, para quem ACABOU de
+    /// planeja-la com a mesma trava e a achou vazia (pedido 540).
+    ///
+    /// O servidor planeja a cascata da alteracao solta um passo antes, para
+    /// caber a marca `.tx` entre o plano e a primeira escrita. Quando o plano
+    /// sai vazio, refaze-lo aqui repetiria a varredura dos esquemas irmaos --
+    /// a parte cara, que so roda quando uma coluna indexada muda. Quem nao
+    /// planejou antes chama o [`Table::atualizar`]: pular a cascata sem ter
+    /// perguntado deixaria filha orfa.
+    pub fn atualizar_sem_cascata(&mut self, rowid: RowId, valores: &[Value]) -> Result<()> {
+        self.atualizar_com_maes_opt(rowid, valores, None, false)
     }
 
     fn atualizar_com_maes_opt(

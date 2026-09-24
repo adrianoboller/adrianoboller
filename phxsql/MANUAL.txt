@@ -2031,6 +2031,15 @@ TRANSACOES: BEGIN, COMMIT, ROLLBACK E SAVEPOINT
     segura. Uma transacao ESPERA ate o LOCK TIMEOUT dela; uma escrita comum,
     sem BEGIN, NAO espera -- ela nao declarou prazo nenhum.
 
+    A CASCATA TRAVA A LINHA DE CADA FILHA (pedido 537). Alterar na transacao
+    a chave de uma mae que tem filhas trava a linha de cada filha que a
+    cascata leva, e nao so a tabela: outra conexao que grava nessa filha
+    recebe o 4005 (sem BEGIN, na hora; em transacao, depois do LOCK TIMEOUT
+    dela) e grava depois do COMMIT. Antes, a gravacao dela passava -- e o
+    COMMIT da primeira a desfazia, regravando a filha inteira como a tinha
+    visto. E o COMMIT leva so a CHAVE nova para a filha, sobre a linha como
+    ela esta na hora.
+
     OS TRES PRAZOS sao problemas diferentes:
 
         TIMEOUT             a transacao inteira    transacao_prazo_min, 5 min
@@ -2040,6 +2049,11 @@ TRANSACOES: BEGIN, COMMIT, ROLLBACK E SAVEPOINT
     Estourado o TIMEOUT, quem encerra e o gestor e nunca uma thread morta: a
     transacao vai para ABORT_ONLY, solta as travas, joga a lista fora, e a
     proxima operacao recebe 6002 TRANSACAO_ABORTADA com o numero do prazo.
+    O COMMIT TAMBEM (pedido 539): COMMIT depois do TIMEOUT recebe o mesmo
+    6002, repetir: false, e NADA e gravado -- antes ele gravava a lista
+    vencida quando nenhuma outra conexao tinha varrido. Mande ROLLBACK. E a
+    transacao que ja esta NO COMMIT nao e encerrada pela varredura de outra
+    conexao (pedido 559): o prazo dela e o proprio COMMIT quem confere.
 
     OS ESTADOS: IDLE, ACTIVE, COMMITTING, COMMITTED, ROLLING_BACK, ROLLED_BACK
     e ABORT_ONLY. Em ABORT_ONLY o COMMIT RECUSA em vez de confirmar trabalho
@@ -2104,16 +2118,18 @@ TRANSACOES: BEGIN, COMMIT, ROLLBACK E SAVEPOINT
         {"op":"reindexar",...} nela. E o mesmo estado que uma queda do
         processo naquele ponto deixaria;
       - um panico no MEIO DA CASCATA de um atualizar solto (a filha seguindo
-        a mae pela chave, fora de transacao) deixa a tabela FILHA recusando
-        do mesmo jeito, ate o reindexar -- o estado de uma queda no mesmo
-        ponto (pedido 490). A mae ja esta na chave nova e fora de transacao
-        nada completa a cascata. ATENCAO: esse sinal so dura ENQUANTO O
-        PROCESSO VIVE. O arranque reconstroi sozinho todo indice marcado
-        (pedido 522), entao depois de um reinicio a filha para de recusar, e
-        o unico rastro e a contagem "indices reconstruidos" no relatorio do
-        arranque. Viu essa contagem, ou viu a recusa: busque na filha pelo
-        valor VELHO da chave e acerte as linhas que ficaram nele -- o mesmo
-        vale depois de uma queda no meio da cascata solta;
+        a mae pela chave, fora de transacao) sai com a cascata INTEIRA
+        (pedido 540): o atualizar -- e o upsert, e a sincronia do DbLink --
+        que muda a chave de uma mae com filhas grava a marca .tx ANTES, como
+        uma transacao de uma instrucao, e o reparo a completa. O mesmo vale
+        para uma QUEDA (SIGKILL, energia) no meio dela: o arranque completa a
+        marca e imprime o bloco PHXSQL Recovery. Custa um fsync de marca por
+        troca de chave com filha -- medido, a cascata solta ficou MAIS rapida
+        em por_lote, porque o fsync de cada tabela filha saiu para a janela.
+        So quem usa o motor EMBUTIDO (phxsql-store) e chama o atualizar dele
+        direto continua sem marca: ali a filha recusa ate o reindexar
+        (pedido 490), e as linhas que ficaram na chave VELHA continuam la --
+        busque na filha pelo valor velho e acerte-as;
       - uma tabela carregada com memoria_carregar precisa ser carregada de
         novo: o selecionar_memoria recusa ate la.
 

@@ -315,6 +315,15 @@ dia, nunca no desejado:
   trava suja sem nome, o veneno dito uma vez por trava, e as duas ops do no
   fora da lista de escrita e da lista do no. A frente contou 391 sobre a
   base dela; a conta do integrador, pelo `--catraca`.
+  **SUBIU para 440 em 24/09/2026** (integridade 2: 537, 538, 539, 540 e
+  559, integrado sobre os faceis C): dez guardas -- o COMMIT que ignorava o
+  prazo, o OLD dos BEFORE (update, upsert, delete) lido do disco, o elo do
+  `empilhar` sem trava de linha e regravando a linha inteira, a cascata
+  solta e o upsert solto sem marca, a varredura que encerrava quem confirma
+  e a lista devolvida que desfazia o ABORT_ONLY. A frente contou 411 sobre
+  a base dela; a conta do integrador, pelo `--catraca`. A guarda do 559 (b)
+  teve o trecho reposto a mao: a integracao trocou a tomada da trava pelo
+  `travar()` dos faceis C, e o recuo mudou.
   **SUBIU para 300 em 24/09/2026, contado NA ARVORE DA FRENTE do 497** (e nao
   na combinada, que a linha do 345 acima reconcilia) (pedido 497, o literal do pedido no texto
   do erro que o `acessos.log` grava): tres guardas novas, uma por motor que
@@ -439,7 +448,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 430
+PISO_DAS_ENTRADAS = 440
 
 # ------------------------------------------------------------- APOSENTADAS
 #

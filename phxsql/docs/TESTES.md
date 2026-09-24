@@ -950,7 +950,7 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `reparo-apaga-a-marca-gravada-que-nao-se-rele` | a marca em voo JÁ GRAVADA que não se relê no reparo sai do disco como «não confere»: a transação confirmada fica pela metade, ou sem bilhete para o arranque | 1 | ✅ provada |
 | `reparo-com-panico-engolido` | um `catch_unwind` em volta do reparo engole o pânico duplo: a trava fica fechada com o processo de pé | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
-| `commit-sem-pre-conferencia` | o COMMIT confere a chave estrangeira so na passada, depois da marca, e grava a parte da frente | 10 | ✅ provada |
+| `commit-sem-pre-conferencia` | o COMMIT confere a chave estrangeira so na passada, depois da marca, e grava a parte da frente | 9 | ✅ provada |
 | `sobreposicao-acha-pela-chave-velha` | o buscar da sobreposicao acha pela chave velha a linha do disco que o prefixo alterou | 1 | ✅ provada |
 | `mae-viva-lida-por-baixo-da-sobreposicao` | a conferencia de «mae viva» le o disco por baixo da marca pendente | 1 | ✅ provada |
 | `indice-da-sobreposicao-parado` | o indice das chaves pendentes fica no retrato da primeira busca | 1 | ✅ provada |
@@ -967,9 +967,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `servidor-segue-de-pe-depois-do-fsync-recusado` | o servidor segue de pé depois de um `fsync` recusado, gravando num disco que já se sabe que mente | 1 | ✅ provada |
 | `completar-engole-a-tabela-que-nao-foi-ao-disco` | a recuperação engole o erro do `sincronizar` e apaga a marca de um commit cujo dado não foi ao disco | 1 | ✅ provada |
 
-**325 das 429 guardas do catálogo: 1 aposentada, 320 provadas, 4 redundantes** — 8922 s de mutação, medido em 2026-09-16 15:25.
+**325 das 439 guardas do catálogo: 1 aposentada, 320 provadas, 4 redundantes** — 8922 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 105 das 429 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 105 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 115 das 439 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 115 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
@@ -1076,6 +1076,16 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `sql-vai-ao-perfil-com-o-literal-na-bateria-do-497` — O `sql` vai ao `perfil.txt` com o literal, visto pela bateria do 497 nas duas portas
 - `expurgar-trilha-fora-do-ops-do-no` — A réplica somente-leitura não expurga a própria trilha `.lgpd`
 - `veneno-dito-uma-vez-por-trava` — O segundo pânico com as transações na mão passa calado e sem saneamento
+- `commit-ignora-o-prazo` — o COMMIT depois do prazo da transação grava a lista inteira
+- `old-do-before-update-pelo-disco` — dentro da transação o OLD do BEFORE UPDATE é a linha do disco, e o delta de estoque sai -4 onde é -2
+- `old-do-upsert-pelo-disco` — o upsert que vira alteração na transação dá ao BEFORE UPDATE o OLD do disco
+- `old-do-before-delete-pelo-disco` — dentro da transação o BEFORE DELETE vê a linha do disco, e a nascida na transação nem dispara
+- `elo-do-empilhar-sem-trava-de-linha` — o elo que o empilhar planeja não trava a linha da filha, e a escrita de outra conexão nela passa
+- `elo-do-empilhar-regrava-a-linha-inteira` — o COMMIT regrava a filha inteira que o empilhar viu, e desfaz a cascata solta de outra mãe dela
+- `cascata-solta-sem-marca` — a alteração solta que cascateia grava sem marca, e a queda no meio deixa filha na chave velha
+- `upsert-solto-cascateia-sem-marca` — o upsert solto que vira alteração com cascata grava pelo `atualizar` de dentro dele, sem marca
+- `varredura-encerra-quem-confirma` — a varredura do prazo encerra a transação que está no COMMIT e solta as travas de quem ainda grava
+- `devolver-desfaz-o-abort-only` — a lista devolvida ao fim de um COMMIT recusado desfaz o ABORT_ONLY que chegou no meio
 
 As guardas que esta corrida ainda cita, hoje aposentadas:
 

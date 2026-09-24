@@ -455,11 +455,17 @@ pub fn chave_canonica(v: &Value) -> String {
 /// UMA coluna (ver `chave_canonica`); o `upsert` monta a chave a partir da
 /// definicao do indice, que e mais geral e da o mesmo resultado para um
 /// indice de uma coluna so.
+///
+/// `alterar` grava o ramo que atualiza -- a porta da alteracao solta do
+/// servidor, que poe a marca da cascata quando a chave que muda tem filha
+/// (pedido 540). A sincronia e o terceiro irmao do `op_atualizar`: chama o
+/// mesmo upsert, na mesma ordem, e cascateava sem marca.
 pub fn aplicar_para_ca(
     t: &mut Table,
     indice_da_chave: &str,
     pos_chave: usize,
     linhas: &[Vec<Value>],
+    alterar: crate::upsert::Alterar<'_>,
 ) -> Result<(u64, u64)> {
     let _ = pos_chave;
     let (mut inseridas, mut alteradas) = (0u64, 0u64);
@@ -479,6 +485,7 @@ pub fn aplicar_para_ca(
             None,
             None,
             false,
+            &mut *alterar,
         )?;
         if feito.atualizada {
             alteradas += 1;

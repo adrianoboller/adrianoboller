@@ -5257,7 +5257,7 @@ continua morrendo calada (P1, ⏸).
 |---|---|---|
 | outra conexão, outra tabela | `SP000010` até reiniciar | atende na hora |
 | a tabela tocada **fora** de transação, num `inserir`/`atualizar`/`excluir` | `SP000010` | lê pelo `.reg`; toda operação de índice recusa nomeando o `.ndx` e mandando `reparar indice`, até o `reindexar` — o estado de um `SIGKILL` no mesmo ponto |
-| a **cascata solta** do `ao_alterar`, entre duas filhas | `SP000010`, e o dano calado depois do reinício | desde o pedido 490, a tabela **filha** recusa até o `reindexar` — o estado de um `SIGKILL` no mesmo ponto — enquanto o processo vive; o arranque (pedido 522) a reconstrói sozinho e deixa só a contagem. As filhas seguintes continuam na chave velha, porque sem marca nada as completa |
+| a **cascata solta** do `ao_alterar`, entre duas filhas | `SP000010`, e o dano calado depois do reinício | desde o pedido 540 a cascata solta pelo servidor grava a marca antes, e o reparo a completa: a cascata sai **inteira**. Só o `Table::atualizar` do store embutido continua com o 490 (a filha recusa até o `reindexar`, e as seguintes ficam na chave velha) |
 | `COMMIT` que morreu na passada, depois da marca | marca órfã até reiniciar, e as travas da transação já soltas | a transação sai **inteira** antes de o `AoSair` soltar as travas; o rowid seguinte não colide com os reservados |
 | pânico no meio do fecho da janela | a marca ficava, com a trava fechada até o arranque completá-la | a marca fica até o `fsync`, e a trava volta a atender (a primeira entrega do 451 a perdia: A1) |
 | `COMMIT` que morreu na passada e cuja marca, já gravada, não se relê no reparo | marca no disco, trava fechada até reiniciar | o processo **aborta**, e a marca **fica** para o arranque (M4) |
@@ -5359,9 +5359,11 @@ As vizinhas, reprovadas contra o código novo e todas PROVADAS:
   achava a escrita em voo em zero e baixava o byte 52. Hoje a filha fica com a
   cascata em voo desde que a mãe vai ao disco, e o `Drop` que a encontra ligada
   levanta o byte: a tabela recusa até o `reindexar`, ou até o arranque
-  seguinte, que a reconstrói sozinho (pedido 522). O reparo continua sem
-  COMPLETAR a cascata — fora de transação não há marca —, e isso está no
-  `MANUAL.txt` e no `docs/ACID.md` §2.4.
+  seguinte, que a reconstrói sozinho (pedido 522). **E desde o pedido 540 o
+  reparo COMPLETA a cascata solta pelo servidor**: ela grava a marca antes,
+  como uma transação de uma instrução, e a marca fica em voo na trava. O 490
+  continua valendo para quem chama o `Table::atualizar` do store embutido,
+  sem servidor. Ver `MANUAL.txt` e `docs/ACID.md` §2.4.
 - **O `Mutex` de `transacoes` (pedido 458) passou a se curar também — §30.**
   O pânico que o envenena dentro do `COMMIT` envenena a de dados junto (a de
   dados é tomada antes, ordem única), e hoje as duas se curam. Esse pânico só

@@ -38,6 +38,7 @@ porta pergunta antes de gravar.
 | `Table::excluir` | `table.rs:2940` | **sim** | é o `excluir_de_vez` sem motivo escrito |
 | cascata do `ao_alterar` | `table.rs:1191` e `:1365` | **sim** | planeja, confere a **árvore inteira** (`:1157`) e só então grava |
 | `Table::recascatear` | `table.rs:1107` | **sim** | refaz só a cascata, pela linha antiga; idempotente |
+| alteração **solta** que cascateia, pelo servidor (`atualizar`, upsert, sincronia do DbLink) | `servidor.rs`, `alterar_solto` | **sim** | desde o pedido 540 é uma transação de uma instrução: o plano (a mesma árvore conferida) sai antes da primeira escrita, a mãe e as filhas vão achatadas para a marca `.tx`, e a passada do `COMMIT` as aplica — queda, `SIGKILL` ou pânico no meio são completados. Medido com o conserto desligado: `[5, 5]` depois do pânico, `[6, 5]` depois do `SIGKILL`; com ele, `[6, 6]` nos dois |
 | reaplicação da recuperação | `transacao.rs:1219` | **sim** | usa o `inserir`/`atualizar`/`excluir_*` de sempre, e **recascateia** |
 
 ### As portas que aplicam o que outro servidor já julgou
@@ -291,6 +292,12 @@ corrompida esconder as órfãs das outras.
 * **Filha em outro schema** não é vista pelo `excluir_tabela` nem pelo
   `renomear_tabela` (§2.2). O verificador tem o mesmo alcance: ele varre um
   diretório.
+* **A cascata SOLTA de uma mãe não pergunta pela trava de transação da
+  filha** (achado da frente do 537, 24/09/2026, lido no código): o portão das
+  escritas soltas olha só a tabela do pedido. O `COMMIT` da transação que
+  segura a filha refaz o elo dela sobre a linha atual (537), então não há
+  update perdido; a leitura repetível de outra transação sobre a filha pode
+  reler outro valor por esse caminho. Não medido — vai ao papel C.
 * **A exigência de índice dos dois lados é imposta na gravação, não na
   declaração.** Dá para declarar uma chave conferida sem os índices e só
   descobrir no primeiro `excluir`. O verificador relata; a recusa na declaração
@@ -333,6 +340,11 @@ A nossa cascata também não dispara, mas **por acidente de camada**: o `store`
 não conhece gatilho, e o interpretador mora no servidor. Comportamento certo
 pelo motivo errado é comportamento que a próxima refação quebra sem perceber.
 Agora está escrito como **decisão**, com quem mais a tomou.
+
+Desde o pedido 540 a cascata **solta** deixou de rodar dentro do `store` — ela
+passa pela passada do `COMMIT`, que sabe de gatilho — e a decisão continua
+valendo por escrito: a porta da alteração solta descarta a lista de AFTER dos
+elos e roda só o da mãe, como antes.
 
 ### 7.4 A auto-referência: eles RECUSAM, nós passamos em silêncio — é defeito
 

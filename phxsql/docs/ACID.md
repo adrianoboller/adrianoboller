@@ -33,7 +33,7 @@ A resposta não é «sim» nem «não» para nenhuma das quatro. É esta:
 
 | letra | o que o motor **garante** | o que ele **não** garante | onde a configuração muda |
 |---|---|---|---|
-| **A** | o conjunto de escrita é aplicado inteiro ou não é aplicado; o `ROLLBACK` não consome slot, rowid nem evento; uma queda no meio da passada é **completada** no arranque pela marca `.tx`; dentro da transação a **cascata** do `ao_alterar` entra no conjunto de escrita (ACID-C, §2.4) — o `ROLLBACK` a alcança e o `COMMIT` a conta | fora de transação, a cascata do `atualizar` solto não é atômica por desenho — uma **queda** no meio dela é **denunciada ou consertada** (§2.4); desde o pedido 490 um **pânico** no meio dela deixa a filha como a queda deixaria — a tabela recusa até o `reindexar` —, e não mais calada; as filhas que ficaram na chave velha continuam lá, porque sem marca nada as completa | nada: a marca `.tx` sincroniza nos três regimes |
+| **A** | o conjunto de escrita é aplicado inteiro ou não é aplicado; o `ROLLBACK` não consome slot, rowid nem evento; uma queda no meio da passada é **completada** no arranque pela marca `.tx`; dentro da transação a **cascata** do `ao_alterar` entra no conjunto de escrita (ACID-C, §2.4) — o `ROLLBACK` a alcança e o `COMMIT` a conta; **fora** de transação, desde o pedido 540, a alteração solta que cascateia é uma transação de uma instrução — grava a marca antes, e queda, `SIGKILL` ou pânico no meio dela são **completados** (§2.4) | quem usa o `phxsql-store` embutido e chama `Table::atualizar` direto não tem marca: ali vale só o 490 (a filha recusa até o `reindexar`), e as filhas que ficaram na chave velha continuam lá | nada: a marca `.tx` sincroniza nos três regimes |
 | **C** | tipo, tamanho, obrigatoriedade, unicidade e **integridade referencial** são impostos na gravação, em toda porta local; «nunca se mata o pai que tem filhos» vale de vez e suave | a réplica **aplica, não julga** — ela não confere o que o outro servidor já julgou; `SET NULL` não existe e não vem; a falta do índice da chave é recusada na **gravação**, não na declaração | `"verificar": false` na chave desliga a conferência daquela chave, e é escolha escrita |
 | **I** | leitura suja **não acontece**; a transação vê a própria escrita; uma **instrução** lê um estado consistente; escrita contra escrita é serializada por linha; **desde 16/09/2026**, quem pedir `"leitura_repetivel": true` (ou `BEGIN ISOLATION LEVEL REPEATABLE READ`) ganha leitura repetível e ausência de fantasma, pela trava compartilhada (§4.5) | por padrão (sem pedir) **leitura repetível não existe**: entre duas instruções tudo pode mudar. Fantasma, leitura não repetível e **skew de escrita** acontecem nesse regime, e estão medidos; `SERIALIZABLE` não se reivindica em regime nenhum | `"leitura_repetivel": true` no `begin`, ou `ISOLATION LEVEL REPEATABLE READ` no `BEGIN` SQL |
 | **D** | a marca `.tx` é sincronizada **antes** da passada e é o ponto de compromisso; um `COMMIT` que respondeu OK volta depois da queda nos três regimes | em `por_lote` (o padrão) e em `sistema`, uma escrita **comum** responde OK sem nenhum `fsync`; quem abre mão é quem configurou | `recursos.durabilidade`, e é o campo que mais muda o significado de «OK» |
@@ -290,24 +290,63 @@ planeja a cascata (`Table::planejar_cascata_para_lista`), e as tabelas filhas
 são travadas **fora** da transação apenas quando há cascata — custo zero para o
 resto.
 
-O que **continua** verdadeiro FORA da transação: uma escrita solta (sem `BEGIN`)
-ainda cascateia dentro do próprio `atualizar`, e ali a cascata não é atômica por
-desenho — o que ela garante é que nada é gravado antes de a árvore inteira ser
-conferida, e que uma queda no meio dela é **denunciada** no relatório do
-arranque ou **consertada** por ele (pedido 172), nunca silenciosa. **O pânico
-no mesmo ponto passou a ter a mesma garantia no pedido 490** (achado do DBA na
-revisão do 451). Até ali a janela do `.ndx` da filha abria e fechava a cada
-linha, o `Drop` do pânico entre duas filhas achava a escrita em voo em zero e
-baixava o byte 52, e as filhas seguintes ficavam na chave velha sem recusa
-nenhuma — pior que a queda, que deixa o byte em 1 e faz a tabela recusar.
-Hoje a filha fica com a **cascata em voo** desde que a mãe vai ao disco até o
-passo dela terminar, e o `Drop` que a encontra ligada **sobe** o byte 52: a
-tabela recusa até o `reindexar`, como depois de um `SIGKILL` — **enquanto o
-processo vive**: o arranque reconstrói sozinho todo `.ndx` marcado (pedido
-522), e depois de um reinício sobra só a contagem «índices reconstruídos». O
-que isso NÃO faz é completar a cascata — fora de transação não há marca —, e as filhas que
-ficaram para trás continuam lá depois do `reindexar`, à vista de quem busca pela chave velha e do `--example conferir-integridade`.
-Dentro de transação o 490 não existe: a cascata viaja achatada na lista, e o
+**FORA da transação, desde o pedido 540 (24/09/2026): a alteração solta que
+cascateia é uma transação de uma instrução.** Até ali uma escrita solta (sem
+`BEGIN`) cascateava dentro do próprio `Table::atualizar`, sem marca: o que ela
+garantia era que nada se gravava antes de a árvore inteira ser conferida, e que
+uma queda no meio era **denunciada** ou **consertada** pelo arranque (pedido
+172). O pedido 490 deu ao pânico a mesma garantia da queda — a filha recusava até
+o `reindexar` —, mas **nenhum dos dois completava a cascata**: o `reindexar` (e,
+com o 522, o próprio arranque) reconstruía o índice da filha com a órfã dentro.
+Medido na revisão do papel C (P4 do `docs/propostas/parecer-dba-integridade-2026-09-24.md`)
+e de novo nesta frente, com o conserto desligado: pânico depois de a mãe ir ao
+disco, filhas `[5, 5]` com a mãe em 6; `SIGKILL` entre as duas filhas, `[6, 5]`
+depois do arranque, e nenhuma marca no disco.
+
+Agora o `op_atualizar`, o upsert do `op_inserir` e a sincronia do DbLink passam
+pela mesma porta (`Servidor::alterar_solto`): o plano da cascata sai **antes** da
+primeira escrita (o mesmo `planejar_cascata_com`, a mesma árvore conferida) e,
+quando ele não é vazio, a mãe e cada filha vão **achatadas** para uma marca `.tx`
+sincronizada, e são aplicadas pela **mesma passada do `COMMIT`**
+(`passada_sob_a_marca`). O pânico é completado pelo reparo da trava (a marca fica
+EM VOO, pedido 451), o `SIGKILL` pelo arranque, a E/S que quebra no meio pela
+recuperação da hora. As filhas passam pelos punhos da passada, então entram na
+janela de durabilidade como a mãe, e a marca só sai depois do `fsync` delas — a
+cascata solta de antes nem punha a filha na janela. Formato da marca: **não
+muda** (é a v3 de sempre, com a mãe e os elos com `cascata_na_lista`).
+
+- **Custo, medido** (sonda da frente, `custo`, 300 alterações por rodada, três
+  rodadas intercaladas, mediana/p90 em µs): a cascata solta com duas filhas
+  ficou **mais rápida**, e não mais cara — em `por_lote`, 2.351–2.620 / 2.591–2.822
+  antes e 1.143–1.182 / 1.294–1.658 depois (o p90 de depois fica abaixo do
+  mínimo de antes; os máximos, de 5 a 8 ms nos dois, se cruzam); em
+  `por_operacao`, 2.848–3.272 antes e 2.538–2.940 depois, faixas que se
+  cruzam, então empate. O motivo está no código: a cascata do store sincroniza
+  a mãe e cada tabela filha na hora (`aplicar_ao_alterar`, o `sincronizar` de
+  que a neta precisa), e a passada troca esses `fsync` por **um** da marca, com
+  as tabelas na janela. A alteração sem filha não mudou: 87–88 µs nas duas
+  (o plano vazio grava por `Table::atualizar_sem_cascata`, sem refazer a
+  varredura das irmãs). O `fsync` da marca cai sob a trava global, como o do
+  `COMMIT`, e a catraca `alcancam-fsync-2` ficou em **23 = 23**: a seção do
+  `op_atualizar` já alcançava `fsync` pela janela.
+- **Provas** (`testes_do_panico_sob_a_trava`, pelo soquete):
+  `panico_no_meio_da_cascata_fora_da_transacao_sai_com_a_cascata_inteira`,
+  `panico_no_meio_da_cascata_do_upsert_solto_sai_com_a_cascata_inteira`,
+  `a_cascata_solta_sem_queda_grava_inteira_e_a_marca_espera_o_fsync` e, contra o
+  SO, `sigkill_no_meio_da_cascata_solta_o_arranque_a_completa` — um processo
+  filho parado no meio da cascata, morto por `SIGKILL` (sinal 9), e o arranque
+  seguinte acha `[6, 6]`, o índice da filha sem a chave velha e nenhuma marca
+  sobrando. Os quatro ficam vermelhos com o conserto desligado.
+- **O que fica:** quem usa o `phxsql-store` embutido e chama `Table::atualizar`
+  direto continua sem marca — ali vale o 490, a filha recusa até o
+  `reindexar`. Os gatilhos AFTER das filhas continuam não rodando na cascata
+  solta, como antes; os da mãe rodam, menos quando a recuperação precisou
+  completar a cascata (a resposta traz o `aviso`, como no `COMMIT`).
+
+O 490 continua valendo por baixo: a filha fica com a **cascata em voo** desde
+que a mãe vai ao disco até o passo dela terminar, e o `Drop` que a encontra
+ligada **sobe** o byte 52 — é isso que protege quem chama o `Table::atualizar`
+sem servidor. Dentro de transação a cascata sempre viajou achatada na lista, e o
 reparo do 451 completa a marca em voo (`panico_no_meio_da_cascata_na_transacao_sai_com_a_cascata_inteira`).
 
 A primeira receita, a do parecer — manter a janela do `.ndx` da filha aberta
@@ -316,8 +355,8 @@ desce nada, a neta confere a chave dela num segundo descritor e bate na guarda,
 e `a_cascata_alcanca_a_neta` passou a recusar toda cascata de três níveis com a
 avó já gravada. A marca em voo só muda o `Drop`; o caminho que termina não vê
 diferença nenhuma. Prova: `panico_entre_duas_filhas_deixa_a_filha_recusando_como_um_sigkill`
-(store) e `panico_no_meio_da_cascata_fora_da_transacao_deixa_a_filha_recusando`
-(pelo soquete). O canto
+(store); pelo soquete, desde o 540, a cascata solta nem chega a recusar — ela
+se completa. O canto
 que esta seção deixava aberto — uma filha que **outra conexão** põe sob a chave
 velha entre o `empilhar` e o `COMMIT`, e que a cascata da lista não leva —
 **deixou de virar órfã** no pedido 448: a conferência antes da marca (§2.5)
@@ -543,12 +582,20 @@ intactos; a sobreposição mora na RAM.
 * os achados N4 e N5 da segunda revisão do DBA (517, 518). O N1 (514), o N2
   (515, o elo por cima da filha alterada na lista) e o N3 (516, o elo
   implícito por cima da leitura repetível de outra transação, §4.5) fecharam;
-* o **OLD** do gatilho BEFORE UPDATE que roda no `empilhar` continua sendo a
-  linha do **disco**, e não a da transação: `[atualizar M, atualizar M]` com
-  gatilho mostra ao segundo o OLD de antes do primeiro. Medido pelo papel C: um
-  gatilho de delta de estoque, na transação 5→3→1, dá **−4** aqui e **−2** no
-  PostgreSQL 16 e no MySQL 8.0 — antes e depois deste lote. É pedido novo (P2
-  do `docs/propostas/parecer-dba-integridade-2026-09-24.md`), da família do 492;
+* ~~o **OLD** do gatilho BEFORE UPDATE que roda no `empilhar` era a linha do
+  **disco**~~ — **fechado no pedido 538** (24/09/2026). O OLD passou a ser a
+  `linha_na_transacao` do 492, o mesmo motor de «a linha que esta transação
+  vê»: o gatilho de delta de estoque na transação 5→3→1 dava **−4** e dá **−2**,
+  como o PostgreSQL 16 e o MySQL 8.0 (e como o nosso fora de transação). Os
+  irmãos que chamam o mesmo gatilho na mesma instrução foram junto: o upsert
+  que vira alteração (`[qtd 1→3, upsert SET qtd = 0]` dava −1, dá −3), o BEFORE
+  DELETE (a linha que a lista pôs em 3 saía pelo OLD 5 do disco) e a linha
+  nascida na própria transação, que pelo disco nem disparava o gatilho. O AFTER
+  UPDATE e o AFTER DELETE já estavam certos: rodam no `COMMIT` com o OLD lido na
+  passada, imediatamente antes de cada escrita. Provas:
+  `o_old_do_before_update_e_a_linha_que_a_transacao_ve` e
+  `o_old_do_before_delete_e_a_linha_que_a_transacao_ve`, vermelhas com o OLD de
+  volta ao disco;
 * a unicidade da **instrução** (o `empilhar`) ainda olha a linha crua. Medido
   numa coluna única com DEFAULT 7 e o 7 já no disco: a instrução empilha, e o
   `COMMIT` recusa com zero gravado. O dado fica certo; o que muda é onde a
@@ -842,16 +889,63 @@ lista — sem isso a outra cedia num ciclo que já não existia (R1, prova
 Prova, nas duas ordens: `dois_commits_que_se_barram_cedem_pela_mais_nova`
 (vermelho sem o desempate: 20 rodadas e os dois ainda em `EM_TRANSACAO`) e
 `o_ciclo_de_commits_barrados_cede_pela_mais_nova` (o ciclo de três e a corrente
-sem volta). O que continua sem teto é a espera comum: o `COMMIT` não confere o
-prazo da transação (medido pelo papel C, pedido novo).
+sem volta). **E o desempate tem teto desde o pedido 539**: o `COMMIT` confere o
+prazo da transação antes da marca, com a trava de dados na mão, pela mesma porta
+do prazo estourado (`estourar_prazo` → `abortar_soltando`). Medido pelo papel C
+antes: `COMMITTED` 600 ms depois de um prazo de 200 ms, porque o `COMMIT` é
+operação de controle, o portão não olha o prazo delas e a varredura só rodava no
+`begin` e no `transacoes` — o desfecho dependia de uma terceira conexão. Agora:
+`TRANSACAO_ABORTADA`, `repetir: false`, zero linhas, travas soltas; o
+`ROLLBACK` fecha. Vale também para a lista vazia. Prova:
+`o_commit_depois_do_prazo_nao_grava` (vermelho sem o conserto: `COMMITTED`,
+`gravadas: 1`). E o vizinho dele, o pedido 559: a **varredura** do prazo, que
+roda no `begin` de outra conexão sem a trava de dados, deixou de encerrar a
+transação que está **no** `COMMIT` — encerrá-la soltava as travas de quem ainda
+gravava (medido antes: `ABORT_ONLY` e as travas soltas no meio da passada) —, e
+a lista devolvida ao fim de um `COMMIT` recusado não desfaz mais um
+`ABORT_ONLY` que tenha chegado no meio (medido antes: voltava `ACTIVE`, com a
+lista e sem trava nenhuma). Provas:
+`a_varredura_do_prazo_nao_mexe_na_transacao_que_esta_confirmando` e
+`devolver_a_lista_nao_desfaz_o_abort_only`.
 
-O que continua, e o papel C mediu: o elo que o `empilhar` planeja trava a
-**tabela** filha (intenção) e o fim dela, e não cada linha. Respeita a S, mas
-não a trava de LINHA de outra transação que escreve na mesma filha — e ali há
-**update perdido**: T2 grava `x = 1` na filha e confirma, e o `COMMIT` de T1
-regrava `x = 0`, a linha que o `empilhar` viu. Vale antes e depois deste lote;
-é pedido novo (P1 do `docs/propostas/parecer-dba-integridade-2026-09-24.md`).
-Esta seção dizia «sem dado errado, por leitura»: a medição desmentiu.
+**O update perdido do elo planejado no `empilhar` fechou no pedido 537**
+(24/09/2026). O elo travava a **tabela** filha (intenção) e o fim dela, e não
+cada linha: T2 gravava `x = 1` na filha, solta ou em transação, e o `COMMIT` de
+T1 regravava `x = 0`, a linha que o `empilhar` viu (medido pelo papel C, P1).
+Agora são duas redes:
+
+- **a trava da LINHA** de cada filha do plano, pelo `travar_para_empilhar` (o
+  mesmo caminho de toda escrita da transação, esperando o `LOCK TIMEOUT` fora
+  da trava de dados). A escrita solta na filha recusa na hora
+  (`EM_TRANSACAO`, `repetir`), a de outra transação espera o `LOCK TIMEOUT`
+  dela, e as duas passam depois do `COMMIT` de T1. A filha que só aparece no
+  plano refeito é travada numa volta seguinte (quatro voltas no máximo; a
+  quinta recusa a instrução). Prova: `o_elo_do_empilhar_trava_a_linha_da_filha`;
+- **o elo refeito no `COMMIT`**: antes da marca, o elo do `empilhar` se refaz
+  sobre a linha ATUAL (o disco com o prefixo da lista), levando **só a chave**
+  — as colunas que o elo muda, e só onde a filha ainda tem o valor de antes.
+  É a rede para o que a trava não alcança: a cascata **solta** de outra mãe da
+  mesma filha escreve nela sem perguntar por trava de linha. Medido: o
+  vendedor 3 vira 4 fora de transação, a filha vai junto, e o elo de T1 (que
+  viu `cod_vend 3`) regravava a linha inteira — o `COMMIT` recusava pela
+  `fk_vend`. Agora confirma, com as duas chaves novas. Prova:
+  `o_commit_leva_so_a_chave_do_elo_sobre_a_linha_atual`. A marca recebe a linha
+  refeita, e o formato não muda.
+
+O desempate do 516 não reabre ciclo sem teto: a trava nova é de **instrução**
+(espera o `LOCK TIMEOUT`), e o ciclo de `COMMIT`s continua cedendo pela mais
+nova. Medido pela sonda do papel C (`c1` e `c1misto`), antes e depois: as seis
+bordas saem iguais linha a linha, menos a C1-C2, em que o `COMMIT` da mais nova
+com o prazo vencido passa a dizer o prazo (539) em vez do ciclo; o ciclo misto
+continua terminando no TIMEOUT da transação da instrução (2.005 ms, com 2.000
+de prazo).
+
+**O que ficou, e é achado novo desta frente:** a cascata SOLTA de outra mãe da
+mesma filha **não pergunta pela trava de transação da filha** — o portão das
+escritas soltas (`barrado_por_travas`) só olha a tabela do pedido. O refazer
+do `COMMIT` impede que isso vire update perdido, mas a leitura repetível de
+outra transação sobre a filha pode reler outro valor por esse caminho (lido no
+código, não medido: vai ao papel C como achado).
 
 **Custo e limite.** Custo zero para quem não pede — o gancho devolve antes de
 qualquer trava. A recusa por LOCK TIMEOUT é do **leitor** que pediu (o escritor
@@ -979,11 +1073,11 @@ gravado e depois liberado por falha de E/S no índice (`operacoes IMPOSSIVEIS`,
   `COMMIT` a conta. Desde o pedido 448 a lista inteira se confere **antes** da
   marca (§2.5): chave estrangeira, cascata ou unicidade que falha sai com zero
   gravado, e não mais com a parte da frente aplicada. Desde o pedido 514 isso
-  vale também para a chave que vem do DEFAULT ou de coluna calculada. Fora de transação, a
-  cascata do `atualizar` solto é denunciada ou consertada numa queda, e desde o
-  pedido 490 o **pânico** no meio dela deixa a filha como a queda deixaria:
-  recusando até o `reindexar` enquanto o processo vive (o arranque do pedido
-  522 a reconstrói sozinho), e não mais calada.
+  vale também para a chave que vem do DEFAULT ou de coluna calculada. Fora de transação,
+  desde o pedido 540, a alteração solta que cascateia é uma transação de uma
+  instrução: a marca vai antes, e queda, `SIGKILL` ou pânico no meio dela são
+  completados (§2.4). Só quem chama o `Table::atualizar` do store embutido
+  continua sem marca, com a garantia do 490 (a filha recusa até o `reindexar`).
 * **C — consistência: imposta na gravação; dentro da transação a cascata é
   coberta.** Tipo, tamanho, obrigatoriedade, unicidade e integridade
   referencial são conferidos em toda porta local de escrita, e «nunca se mata o

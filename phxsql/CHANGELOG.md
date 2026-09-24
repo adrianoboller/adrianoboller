@@ -12,6 +12,49 @@ Os números são **medidos**, nunca estimados.
 
 ## Não lançado
 
+### 537, 538, 539, 540, 559 — o que sobrou da integridade na transação
+
+**Corrigido**
+
+- **540** — a alteração solta (sem `BEGIN`) que muda a chave de uma mãe com
+  filhas cascateava sem marca `.tx`: pânico no meio deixava as filhas `[5, 5]`
+  com a mãe em 6, `SIGKILL` entre duas filhas deixava `[6, 5]` depois do
+  arranque. Agora ela é uma transação de uma instrução — o `atualizar`, o upsert
+  e a sincronia do DbLink gravam a marca antes e aplicam pela passada do
+  `COMMIT` —, e o reparo ou o arranque a completam: `[6, 6]`.
+- **537** — o elo da cascata planejado no `empilhar` não travava a linha da
+  filha, e o `COMMIT` regravava a filha inteira que tinha visto: a gravação de
+  outra conexão na filha (`x = 1`) voltava a `x = 0`. Agora a linha é travada, e
+  o `COMMIT` leva só a chave nova sobre a linha atual.
+- **538** — dentro da transação, o `OLD` do `BEFORE UPDATE` e do `BEFORE
+  DELETE` era a linha do disco: um gatilho de delta de estoque em 5→3→1 dava −4,
+  onde PostgreSQL 16 e MySQL 8.0 dão −2. Agora é a linha que a transação vê.
+- **539** — o `COMMIT` depois do prazo da transação gravava (`COMMITTED` 600 ms
+  depois de um prazo de 200 ms). Agora recusa com `TRANSACAO_ABORTADA`, nada
+  gravado.
+- **559** — a varredura do prazo, no `begin` de outra conexão, encerrava a
+  transação que estava no `COMMIT` e soltava as travas de quem ainda gravava; e
+  a lista devolvida por um `COMMIT` recusado desfazia um `ABORT_ONLY`. Os dois
+  fecharam.
+
+**Mudado**
+
+- Outra conexão que grava numa filha que a cascata de uma transação leva
+  recebe `4005 EM_TRANSACAO` (sem `BEGIN`, na hora; em transação, depois do
+  `LOCK TIMEOUT`) até o `COMMIT` dela — antes a gravação passava e era desfeita.
+- A cascata solta custa um `fsync` de marca, e ficou mais rápida em
+  `por_lote`: mediana de 2,35–2,62 ms para 1,14–1,18 ms com duas filhas (o
+  `fsync` de cada tabela filha foi para a janela). Sem filha, nada muda (88 µs).
+
+**Sabido**
+
+- Quem usa o `phxsql-store` embutido e chama `Table::atualizar` direto continua
+  sem marca na cascata: ali vale o pedido 490.
+- A cascata solta de outra mãe da mesma filha não pergunta pela trava de
+  transação da filha; o `COMMIT` refaz o elo e não há update perdido, mas a
+  leitura repetível de outra transação pode reler a filha (lido no código, não
+  medido).
+
 ### 544 — o parser do DbLink entrava em pânico com o par
 
 **Corrigido**

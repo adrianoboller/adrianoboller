@@ -284,6 +284,17 @@ pub struct Escrita {
     /// mexe em chave conferida), e ai a passada cascateia como antes -- que, sem
     /// filha, e um `is_empty()` de graca. Ver `docs/ACID.md` §2.4.
     pub cascata_na_lista: bool,
+    /// Pedido 537: este e um ELO planejado no `empilhar`, e a `linha` dele e
+    /// a filha como ela estava ENTAO, com a chave nova. O que vale dele e so a
+    /// chave: o COMMIT o refaz sobre a linha ATUAL antes da marca
+    /// (`Servidor::refazer_o_elo`), e a coluna que outra conexao mudou na
+    /// filha nesse meio tempo nao volta ao valor velho.
+    ///
+    /// So em memoria, e de proposito: a marca recebe a linha ja refeita, e a
+    /// passada e a recuperacao aplicam a linha inteira como sempre -- o
+    /// formato nao muda. Falso em todo o resto, inclusive no elo que o COMMIT
+    /// acrescenta, que ja nasce sobre a linha atual.
+    pub elo_do_empilhar: bool,
 }
 
 // ------------------------------------------------------------- a transacao
@@ -657,6 +668,17 @@ impl Transacoes {
         Ok(id)
     }
 
+    /// O numero da marca de uma escrita SOLTA que cascateia (pedido 540) --
+    /// a transacao de uma instrucao, que nao entra no registro.
+    ///
+    /// Sai do MESMO contador das transacoes: o numero e o nome do arquivo
+    /// `.tx`, e duas fontes de numero seriam duas chances de uma marca
+    /// sobrescrever a outra no mesmo diretorio.
+    pub fn numero_de_marca(&mut self) -> u64 {
+        self.proximo += 1;
+        self.proximo
+    }
+
     /// O `COMMIT` da transacao de `ligacao` foi barrado pela trava que a
     /// transacao `por` segura. Anota a aresta e diz se ela FECHA um ciclo de
     /// `COMMIT`s barrados -- e, fechando, quem cede.
@@ -808,10 +830,18 @@ impl Transacoes {
     }
 
     /// As transacoes vencidas, para o servidor as desfazer.
+    ///
+    /// A que esta no COMMIT (`Confirmando`) fica de fora -- pedido 559. A
+    /// varredura roda no `begin` de OUTRA conexao, sem a trava de dados, e o
+    /// COMMIT roda com ela na mao: encerra-la aqui soltava as travas de quem
+    /// ainda estava gravando, e outra transacao pegava a linha no meio da
+    /// passada. Quem decide o prazo dela e o proprio COMMIT, que o confere
+    /// antes da marca (pedido 539); depois da marca a transacao aconteceu, e
+    /// prazo nenhum a desfaz.
     pub fn vencidas(&self, agora_ms: i64) -> Vec<u64> {
         self.dentro
             .values()
-            .filter(|t| t.expira_ms <= agora_ms)
+            .filter(|t| t.expira_ms <= agora_ms && t.estado != Estado::Confirmando)
             .map(|t| t.ligacao)
             .collect()
     }
@@ -2108,6 +2138,7 @@ mod testes {
                 linha_antiga: Vec::new(),
                 motivo: String::new(),
                 cascata_na_lista: false,
+                elo_do_empilhar: false,
             },
             Escrita {
                 database: "loja".into(),
@@ -2118,6 +2149,7 @@ mod testes {
                 linha_antiga: Vec::new(),
                 motivo: "pedido do titular".into(),
                 cascata_na_lista: false,
+                elo_do_empilhar: false,
             },
         ];
         let caminho = gravar_marca(&d, 99, 1_700_000_000_000, &ops).unwrap();
@@ -2149,6 +2181,7 @@ mod testes {
             linha_antiga: Vec::new(),
             motivo: String::new(),
             cascata_na_lista: false,
+            elo_do_empilhar: false,
         }];
         let caminho = gravar_marca(&d, 1, 0, &ops).unwrap();
         let mut b = std::fs::read(&caminho).unwrap();
@@ -2174,6 +2207,7 @@ mod testes {
             linha_antiga: Vec::new(),
             motivo: String::new(),
             cascata_na_lista: false,
+            elo_do_empilhar: false,
         }];
         let caminho = gravar_marca(&d, 2, 0, &ops).unwrap();
         let b = std::fs::read(&caminho).unwrap();
@@ -2191,6 +2225,7 @@ mod testes {
             linha_antiga: Vec::new(),
             motivo: String::new(),
             cascata_na_lista: false,
+            elo_do_empilhar: false,
         }]
     }
 
@@ -2482,6 +2517,7 @@ mod testes {
                 linha_antiga: Vec::new(),
                 motivo: String::new(),
                 cascata_na_lista: false,
+                elo_do_empilhar: false,
             }],
         )
         .unwrap();

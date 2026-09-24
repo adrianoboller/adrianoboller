@@ -2535,6 +2535,8 @@ pub mod panico_de_teste {
     #[cfg(debug_assertions)]
     thread_local! {
         static ARMADO: std::cell::Cell<Option<Ponto>> = const { std::cell::Cell::new(None) };
+        static PAUSA: std::cell::RefCell<Option<(Ponto, u32, String)>> =
+            const { std::cell::RefCell::new(None) };
     }
 
     /// Arma o ponto NESTA thread. Dispara uma vez so, e desarma sozinho.
@@ -2545,20 +2547,65 @@ pub mod panico_de_teste {
         let _ = p;
     }
 
+    /// Arma uma PAUSA SEM FIM na `n`-esima passagem por `p`, NESTA thread
+    /// (pedido 540): a thread diz `aviso` no erro padrao e para para sempre,
+    /// com tudo o que tiver na mao -- a trava de dados inclusive.
+    ///
+    /// E o processo PARADO no meio da escrita, que a prova de `SIGKILL` mata.
+    /// O panico nao serve para ela: o desenrolar roda o reparo da trava, e o
+    /// que se prova ali e a queda SEM desenrolar nenhum. A contagem existe
+    /// porque o ponto e o mesmo para a mae e para cada filha da cascata, e o
+    /// estado que importa e o do meio -- uma filha gravada, a outra nao.
+    ///
+    /// O aviso vai pelo erro padrao, e a parada e `park`, de proposito: o
+    /// mapa da trava (`bancada/concorrencia/mapa-da-trava.py`) le este
+    /// arquivo como codigo de producao -- ele so separa `cfg(test)`, e este
+    /// gancho e `debug_assertions` porque o `cfg(test)` nao atravessa crate --,
+    /// e um `sleep` ou um `fs::write` aqui entrariam em toda secao que grava
+    /// uma linha. Em `release` o `passar` e vazio e nada disto existe.
+    pub fn armar_pausa(p: Ponto, n: u32, aviso: &str) {
+        #[cfg(debug_assertions)]
+        PAUSA.with(|a| *a.borrow_mut() = Some((p, n.max(1), aviso.to_string())));
+        #[cfg(not(debug_assertions))]
+        let _ = (p, n, aviso);
+    }
+
     /// Desarma, para o teste cujo panico nao aconteceu nao contaminar o
     /// seguinte na mesma thread.
     pub fn desarmar() {
         #[cfg(debug_assertions)]
-        ARMADO.with(|a| a.set(None));
+        {
+            ARMADO.with(|a| a.set(None));
+            PAUSA.with(|a| *a.borrow_mut() = None);
+        }
     }
 
     /// O ponto de passagem, no caminho de producao.
     #[inline(always)]
     pub(crate) fn passar(p: Ponto) {
         #[cfg(debug_assertions)]
-        if ARMADO.with(|a| a.get()) == Some(p) {
-            ARMADO.with(|a| a.set(None));
-            panic!("panico de teste em {p:?}");
+        {
+            if ARMADO.with(|a| a.get()) == Some(p) {
+                ARMADO.with(|a| a.set(None));
+                panic!("panico de teste em {p:?}");
+            }
+            let parar = PAUSA.with(|a| {
+                let mut a = a.borrow_mut();
+                match a.as_mut() {
+                    Some((q, n, _)) if *q == p && *n > 1 => {
+                        *n -= 1;
+                        None
+                    }
+                    Some((q, _, _)) if *q == p => a.take().map(|(_, _, aviso)| aviso),
+                    _ => None,
+                }
+            });
+            if let Some(aviso) = parar {
+                eprintln!("{aviso}");
+                loop {
+                    std::thread::park();
+                }
+            }
         }
         #[cfg(not(debug_assertions))]
         let _ = p;

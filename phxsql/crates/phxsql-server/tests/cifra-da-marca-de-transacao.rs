@@ -70,6 +70,7 @@ fn escritas() -> Vec<Escrita> {
             linha_antiga: vec![Value::Int(1), Value::Str(SEGREDO_ANTIGO.into())],
             motivo: String::new(),
             cascata_na_lista: true,
+            elo_do_empilhar: false,
         },
         Escrita {
             database: "loja".into(),
@@ -80,6 +81,7 @@ fn escritas() -> Vec<Escrita> {
             linha_antiga: Vec::new(),
             motivo: SEGREDO_MOTIVO.into(),
             cascata_na_lista: false,
+            elo_do_empilhar: false,
         },
     ]
 }

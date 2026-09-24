@@ -246,6 +246,18 @@ pub fn mesclar(velha: &[Value], set: &Json, esquema: &Schema) -> Result<Vec<Valu
 /// dele nao paga nem a leitura da linha velha.
 pub type AntesDeAtualizar<'a> = &'a mut dyn FnMut(&mut Vec<Value>, &[Value], &Schema) -> Result<()>;
 
+/// Quem GRAVA a alteracao do ramo que atualiza: `(tabela, rowid, linha)`.
+///
+/// Pedido 540. A alteracao que muda chave com filha cascateia, e a cascata
+/// solta passou a gravar a marca `.tx` antes, pelo servidor
+/// (`Servidor::alterar_solto`) -- que e quem tem a trava de dados e o
+/// registro das marcas. O upsert decide O QUE grava; quem chama decide COMO,
+/// e a gravacao pode trocar o punho `t` por um novo (a passada da marca grava
+/// pelos punhos dela). Um `t.atualizar` direto aqui deixaria o upsert solto
+/// e a sincronia do DbLink cascateando sem marca -- os dois irmaos do
+/// `op_atualizar`, que chamam as mesmas funcoes na mesma ordem.
+pub type Alterar<'a> = &'a mut dyn FnMut(&mut Table, u64, &[Value]) -> Result<()>;
+
 /// O que aconteceu com uma linha.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Feito {
@@ -309,6 +321,12 @@ impl Feito {
 /// solto RESSUSCITAVA a linha excluida suave, e o mesmo upsert dentro de
 /// transacao a mantinha excluida. Com SET a linha gravada ja e a base, e a
 /// marca dela vem junto.
+///
+/// # Quem grava a alteracao
+///
+/// `alterar` (ver [`Alterar`]): o ramo que atualiza decide a linha, e quem
+/// chama a grava -- com a marca da cascata, quando ha filha (pedido 540). A
+/// insercao continua aqui, porque inserir nao cascateia.
 #[allow(clippy::too_many_arguments)]
 pub fn aplicar(
     t: &mut Table,
@@ -318,6 +336,7 @@ pub fn aplicar(
     atualizar: Option<&Json>,
     antes_de_atualizar: Option<AntesDeAtualizar<'_>>,
     herda_marca: bool,
+    alterar: Alterar<'_>,
 ) -> Result<Feito> {
     let chave = valores_do_indice(t.esquema(), indice, linha);
     if chave.is_empty() || chave.iter().any(Value::e_null) {
@@ -361,7 +380,7 @@ pub fn aplicar(
                     gancho(&mut nova, v, t.esquema())?;
                     gravada = Some(nova);
                 }
-                t.atualizar(rowid, gravada.as_deref().unwrap_or(linha))?;
+                alterar(t, rowid, gravada.as_deref().unwrap_or(linha))?;
                 Ok(Feito {
                     rowid,
                     atualizada: true,

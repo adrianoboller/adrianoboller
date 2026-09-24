@@ -2720,6 +2720,17 @@ tenha chegado às tabelas ainda. É essa inversão que torna a resposta ao
 contrato inequívoca (`docs/TRANSACOES.md` §5.4) e que permite o `fsync` das
 tabelas ir para a janela de durabilidade em vez de acontecer por commit.
 
+**Quem mais grava uma marca** (pedido 540, 24/09/2026; **o leiaute não muda**):
+a alteração SOLTA — sem `BEGIN` — que muda a chave de uma mãe com filhas
+cascateando. Ela é uma transação de uma instrução: a mãe e cada filha vão para
+uma marca v3/v4 comum, todas com o byte `cascata_na_lista` em 1 (a mãe primeiro,
+os elos pai-antes-de-filha), e a recuperação a completa como completa a de um
+`COMMIT`. O `id` sai do mesmo contador das transações, e por isso nunca colide
+com o nome de uma. A leitura não distingue as duas, e não precisa: as duas se
+completam do mesmo jeito. O que o COMMIT passou a fazer com o elo planejado no
+`empilhar` (pedido 537, refazê-lo sobre a linha atual) também não toca o
+formato: a marca recebe a linha já refeita.
+
 ### O leiaute
 
 ```text
