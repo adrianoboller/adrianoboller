@@ -9,6 +9,7 @@ pub mod bandeja;
 pub mod cofre;
 pub mod comandos;
 pub mod console;
+pub mod cookie;
 pub mod credencial;
 pub mod descoberta;
 pub mod dns;

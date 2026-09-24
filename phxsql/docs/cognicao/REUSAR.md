@@ -85,9 +85,9 @@ Para provar o que acontece quando o caminho descarta fragmento, descarte-o antes
 
 ## [`force-cookie` só se prova com um cliente que NÃO manda o cookie](cognicao_force-cookie-so-se-prova-com-cliente-que-nao-manda_20260924_1213.md)
 
-Guarda que só muda o comportamento para o cliente velho se prova com o cliente velho: compile-o do fonte se não houver pacote.
+Guarda que só muda o comportamento para o cliente velho se prova com o cliente velho (compile-o do fonte se não houver pacote) — e entra pedida, medida contra a versão que as LTS empacotam, nunca contra a mais nova.
 
-- Evidência: `phxvpn/provas/operacao/resultados.json`; `phxvpn/provas/operacao/openvpn.sh`; teste `v2_em_udp_exige_o_cookie` (phxvpn/src/ovpn.rs)
+- Evidência: `phxvpn/provas/operacao/resultados.json`; `phxvpn/provas/operacao/openvpn.sh`; teste `force_cookie_so_quando_a_rede_pede_e_so_em_udp` (phxvpn/src/ovpn.rs); teste `force_cookie_nasce_desligado_e_o_admin_liga_por_rede` (phxvpn/tests/postgres_real.rs)
 - Validado em: 24/09/2026
 
 ## [Trocar o fio não reenvia o que já saiu pelo fio velho](cognicao_fio-novo-nao-refaz-o-aperto-pendente_20260924_0412.md)

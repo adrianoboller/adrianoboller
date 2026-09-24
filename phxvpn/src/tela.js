@@ -113,6 +113,7 @@ async function carregarRedes() {
       await blocoRotas(bloco, r, membros);
       await blocoSaida(bloco, r);
       await blocoAlcance(bloco, r);
+      await blocoCookie(bloco, r);
     } catch (_) {}
     caixa.appendChild(bloco);
   }
@@ -221,6 +222,38 @@ async function blocoSaida(bloco, r) {
       } catch (e) { msg(aviso.id, e.message); }
     };
     caixa.append(f, aviso);
+  }
+  bloco.appendChild(caixa);
+}
+
+// force-cookie da tls-crypt-v2: so o admin ve e muda. Nasce desligado
+// (tranca fora cliente anterior a 2.6); o aviso fica na frente do botao.
+async function blocoCookie(bloco, r) {
+  if (!sessao.admin) return;
+  let c;
+  try { c = await api("POST", "/api/redes/cookie", { rede_id: r.id }); } catch (_) { return; }
+  // Mesma forma da caixa de saida: linha de campo + botao, que ja tem CSS.
+  const caixa = document.createElement("div"); caixa.className = "saida";
+  const t = document.createElement("div"); t.className = "titulo"; t.textContent = "Aperto com cookie (force-cookie)"; caixa.appendChild(t);
+  const estado = document.createElement("div"); estado.className = "estado";
+  estado.textContent = c.impedimento ? `não se aplica: ${c.impedimento}` : (c.force_cookie ? "ligado" : "desligado (padrão)");
+  caixa.appendChild(estado);
+  if (!c.impedimento) {
+    const f = document.createElement("form");
+    const aviso = document.createElement("p"); aviso.className = "msg"; aviso.textContent = "Atenção: " + c.aviso + ".";
+    const cod = document.createElement("input"); cod.inputMode = "numeric"; cod.maxLength = 6; cod.placeholder = "código do autenticador (se cadastrado)"; cod.autocomplete = "one-time-code"; cod.setAttribute("aria-label", "Código do autenticador");
+    const b = document.createElement("button"); b.type = "submit"; b.className = "altera"; b.textContent = c.force_cookie ? "Desligar force-cookie" : "Ligar force-cookie";
+    const m = document.createElement("p"); m.className = "msg"; m.id = "m-cookie-" + r.id;
+    const linha = document.createElement("div"); linha.className = "dns"; linha.append(cod, b);
+    f.append(aviso, linha, m);
+    f.onsubmit = async (ev) => {
+      ev.preventDefault();
+      try {
+        await api("POST", "/api/redes/cookie/definir", { rede_id: r.id, force_cookie: !c.force_cookie, codigo: cod.value.trim() });
+        await carregarRedes(); msg("m-redes", c.force_cookie ? "force-cookie desligado" : "force-cookie ligado", true);
+      } catch (e) { msg(m.id, e.message); }
+    };
+    caixa.appendChild(f);
   }
   bloco.appendChild(caixa);
 }

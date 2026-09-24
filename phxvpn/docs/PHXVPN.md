@@ -2413,7 +2413,7 @@ arranque e a cada hora (`historico::vigiar`). Capturas em
 | A linha da ana | — | IP real `192.168.93.12`, VPN `10.77.1.3`, **10 s**, 23.635 B do membro / 23.352 B ao membro |
 | O admin, ainda conectado | — | «conectado» |
 | O que a ana vê | — | **1** linha, só a dela |
-| O caio pela ponte TCP (UDP bloqueado, `force-cookie` ligado, cliente 2.6.19) | — | entra; a linha tem IP real `192.168.93.13` (o `openvpn` o viu como `127.x.y.z`), «· TCP», **uma** linha, saída registrada 123 s depois |
+| O caio pela ponte TCP (UDP bloqueado, `force-cookie` ligado pelo admin, cliente 2.6.19) | — | entra; a linha tem IP real `192.168.93.13` (o `openvpn` o viu como `127.x.y.z`), «· TCP», **uma** linha, saída registrada 123 s depois |
 | Senhas no banco e nos logs | 0 | **0** |
 
 **Limite:** no Windows não há o soquete local — o `servidor.conf` lá não leva
@@ -2424,9 +2424,16 @@ os ganchos (o verificador também recusa tudo no Windows).
 Com a opção, o servidor só guarda estado de quem devolve o cookie (aperto sem
 estado): datagrama forjado não faz o servidor desembrulhar chave nem gastar
 memória. O padrão do OpenVPN ainda é `allow-noncookie`
-(tls-options.rst:511-516). **Decisão pela evidência: ligado sempre nas redes
-v2 em UDP** (`Rede::cookie`); em TCP a linha fica sem o parâmetro, que só o
-`mudp.c:122` lê.
+(tls-options.rst:511-516). **Decisão: opção POR REDE, desligada por padrão,
+ligada pelo administrador** (`src/cookie.rs`, coluna `phx_rede.force_cookie`;
+`POST /api/redes/cookie` e `/api/redes/cookie/definir`, com o código do
+autenticador de quem o tem; na tela, o bloco «Aperto com cookie» de cada rede,
+só para o admin, com o aviso *«clientes OpenVPN anteriores à 2.6 e Connect com
+núcleo anterior à 3.8 deixam de conectar»*). Só se aplica a rede
+`tls-crypt-v2` em UDP: na v1 não há cookie, e em TCP só o `mudp.c:122` lê a
+opção — a API recusa ligar ali, em vez de gravar um interruptor que o OpenVPN
+não lê. Ligar ou desligar reinicia o OpenVPN da rede (e volta atrás se ele não
+subir). Exercitado no Chromium (`TELA=cookie.mjs provas/operacao/tela.sh`): o admin vê «desligado (padrão)» com o aviso, liga, vê «ligado»; a ana não vê o bloco; 0 erro de console — `docs/previa/32-force-cookie-*.png`.
 
 - **Cliente 2.6 (e o OpenVPN GUI 2.6, que usa o mesmo núcleo):** manda o
   cookie — medido, entra.
@@ -2437,15 +2444,28 @@ v2 em UDP** (`Rede::cookie`); em TCP a linha fica sem o parâmetro, que só o
   desde o commit `2ff291e7` de 16/11/2022 — primeira etiqueta: `release/3.8`.
   O aplicativo Connect é fechado; o que se conferiu foi o núcleo dele. Connect
   com núcleo anterior ao 3.8 fica de fora — **não medido**.
-- **Cliente 2.5 e anteriores:** ficam de fora — é o preço da opção.
+- **Cliente 2.5 e anteriores:** ficam de fora — é o preço da opção. E o 2.5
+  ainda é o que as distribuições LTS empacotam (conferido em 24/09/2026):
+  **Ubuntu 22.04: 2.5.11** (`packages.ubuntu.com/jammy/openvpn`,
+  `2.5.11-0ubuntu0.22.04.4`); **RHEL/Rocky 9, pelo EPEL: 2.5.11**
+  (`mdapi.fedoraproject.org/epel9/pkg/openvpn`, `2.5.11-2.el9`); **RHEL/Rocky
+  8, pelo EPEL: 2.4.12** (`…/epel8/…`, `2.4.12-2.el8`) — o RHEL não traz o
+  OpenVPN na base. Já na 2.6: Ubuntu 24.04 (2.6.19), Debian 12 (2.6.14), EPEL 10
+  (2.7.7).
 
 | Medido (`openvpn.sh`, rede v2 UDP) | Cliente 2.6.19 | Cliente 2.5.11 (compilado do fonte) |
 |---|---|---|
-| Sem `force-cookie` (binário de antes, RED) | entra | **entra** |
-| Com `force-cookie` (agora) | entra | **não entra** em 25 s |
+| Rede recém-criada (agora: nasce **sem** `force-cookie`) | entra | **entra** |
+| Admin liga pela API (`/api/redes/cookie/definir`) | entra | **não entra** em 25 s |
 
-Hipótese que morreu: «deixar opção por rede, desligada por padrão» — só valia
-se o Connect não suportasse; suporta desde o núcleo 3.8.
+**Hipótese que morreu: «ligado sempre nas redes v2 em UDP»** — foi a primeira
+decisão desta frente, tomada só pelo suporte do Connect ≥ 3.8. Caiu pela lei
+«guarda nova entra pedida, não imposta»: ligada sempre, ela trancaria fora de
+um dia para o outro todo membro no pacote da LTS (2.5 no Ubuntu 22.04 e no
+EPEL 9, 2.4 no EPEL 8), sem ninguém ter pedido. Teste do comportamento velho:
+`force_cookie_nasce_desligado_e_o_admin_liga_por_rede` (RED: com a opção
+imposta, a rede recém-criada já sai com `force-cookie`) e
+`force_cookie_so_quando_a_rede_pede_e_so_em_udp`.
 
 ### MTU do P2P pelo repasse e pelo farol
 

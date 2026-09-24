@@ -2,7 +2,7 @@
  "prova": "operacao do phxvpn: historico, force-cookie, MTU do P2P e mlock",
  "openvpn": {
   "prova": "openvpn 2.6.19 em netns: historico de conexoes, tls-crypt-v2 force-cookie e mlock",
-  "medido_em": "2026-09-24T13:06:24+00:00",
+  "medido_em": "2026-09-24T13:21:58+00:00",
   "kernel": "6.18.44-fc-v37",
   "n": 1,
   "openvpn_servidor_e_cliente": "2.6.19",
@@ -12,7 +12,7 @@
    "rlimit_memlock_duro": "8192",
    "cap_ipc_lock": true,
    "cap_sys_resource": false,
-   "openvpn_mlock_direto": "2026-09-24 13:06:24 ERROR: setrlimit() failed: Operation not permitted (errno=1) 2026-09-24 13:06:24 Exiting due to fatal error",
+   "openvpn_mlock_direto": "2026-09-24 13:21:58 ERROR: setrlimit() failed: Operation not permitted (errno=1) 2026-09-24 13:21:58 Exiting due to fatal error",
    "openvpn_mlock_sobe_aqui": false
   },
   "novo": {
@@ -32,19 +32,19 @@
     "rede": "Matriz",
     "login": "ana",
     "ip_real": "192.168.93.12",
-    "porta_real": 45668,
+    "porta_real": 33733,
     "pela_ponte": false,
     "ip_vpn": "10.77.1.3",
-    "entrou_em": "2026-09-24T13:01:38Z",
-    "saiu_em": "2026-09-24T13:01:57Z",
+    "entrou_em": "2026-09-24T13:17:17Z",
+    "saiu_em": "2026-09-24T13:17:36Z",
     "segundos": 19,
-    "bytes_do_membro": 23675,
+    "bytes_do_membro": 23635,
     "bytes_ao_membro": 23392,
     "estado": "saiu"
    },
    "admin_estado": "conectado",
    "senhas_encontradas_em_banco_e_logs": 0,
-   "vmlck_painel_kib": 413464,
+   "vmlck_painel_kib": 413484,
    "vmlck_openvpn_kib": 0,
    "cliente_26_entrou": true,
    "cliente_25_entrou": false,
@@ -53,17 +53,18 @@
     "rede": "Matriz",
     "login": "caio",
     "ip_real": "192.168.93.13",
-    "porta_real": 59248,
+    "porta_real": 51988,
     "pela_ponte": true,
     "ip_vpn": "10.77.1.4",
-    "entrou_em": "2026-09-24T13:02:47Z",
-    "saiu_em": "2026-09-24T13:04:50Z",
+    "entrou_em": "2026-09-24T13:18:25Z",
+    "saiu_em": "2026-09-24T13:20:28Z",
     "segundos": 123,
     "bytes_do_membro": 3038,
     "bytes_ao_membro": 3218,
     "estado": "saiu",
     "linhas_do_caio": 1
-   }
+   },
+   "force_cookie_na_rede_recem_criada": false
   },
   "velho_red": {
    "rodada": "velho",
@@ -84,7 +85,8 @@
    "cliente_26_entrou": true,
    "cliente_25_entrou": true,
    "ponte_cliente_26_tcp_entrou": null,
-   "ponte_linha_do_caio": null
+   "ponte_linha_do_caio": null,
+   "force_cookie_na_rede_recem_criada": false
   },
   "confere_verde": true,
   "confere_red": true

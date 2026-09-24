@@ -10,7 +10,7 @@ RAIZ=$(cd "$AQUI/../.." && pwd)
 T=$(mktemp -d /tmp/phxvpn-tela-historico.XXXX)
 BIN=${PHXVPN_BIN:-$RAIZ/target/debug/phxvpn}
 PGBIN=$(ls -d /usr/lib/postgresql/*/bin | sort -V | tail -1)
-PGPORTA=55464; PAINEL=127.0.0.1:8495
+PGPORTA=${PHXVPN_PGPORTA:-55464}; PAINEL=127.0.0.1:8495
 mkdir -p "$T/pg" "$T/pgsock"; chmod 755 "$T"; chown postgres "$T/pg" "$T/pgsock"
 limpar() { set +e; [ -n "${PID:-}" ] && kill "$PID"; su postgres -c "$PGBIN/pg_ctl -D $T/pg -m fast stop" >/dev/null 2>&1; }
 trap limpar EXIT
@@ -51,4 +51,4 @@ mandar(tipo="entrou", rede=1, cn=cn["beto"], ip="203.0.113.44", porta=51230, ip_
 mandar(tipo="saiu", rede=1, cn=cn["beto"], ip="203.0.113.44", porta=50001, ip_vpn="10.77.1.4",
        desde=agora - 40 * 86400, duracao=42, bytes_do_membro=18_220, bytes_ao_membro=9_931)
 PY
-PAINEL="http://$PAINEL/" SAIDA=${SAIDA:-$RAIZ/docs/previa} /opt/node22/bin/node "$AQUI/tela.mjs"
+PAINEL="http://$PAINEL/" SAIDA=${SAIDA:-$RAIZ/docs/previa} /opt/node22/bin/node "$AQUI/${TELA:-tela.mjs}"

@@ -75,6 +75,8 @@ CREATE TABLE IF NOT EXISTS phx_rede (
 -- Banco criado antes do TCP: a coluna entra com o padrao de antes (udp).
 ALTER TABLE phx_rede ADD COLUMN IF NOT EXISTS protocolo text NOT NULL DEFAULT 'udp'
     CHECK (protocolo IN ('udp', 'tcp'));
+-- tls-crypt-v2 force-cookie por rede (cookie.rs): nasce desligado.
+ALTER TABLE phx_rede ADD COLUMN IF NOT EXISTS force_cookie boolean NOT NULL DEFAULT false;
 CREATE TABLE IF NOT EXISTS phx_membro (
     rede_id    int NOT NULL REFERENCES phx_rede ON DELETE RESTRICT,
     usuario_id int NOT NULL REFERENCES phx_usuario ON DELETE RESTRICT,
@@ -694,6 +696,8 @@ impl Painel {
             octeto,
             v2: ovpn::e_v2(&tc),
             tcp: campo("protocolo") == "tcp",
+            // O perfil nao muda com o cookie: e so do servidor.
+            cookie: false,
         };
         let conexao = crate::alcance::Conexao {
             alcance: self.alcance_da_rede(&rede_id)?,
@@ -941,7 +945,7 @@ impl Painel {
     pub fn materializar_rede(&mut self, rede_id: &str) -> R<PathBuf> {
         let cofre = self.cofre()?.clone();
         let r = self.pg()?.executar(
-            "SELECT r.nome, r.porta, r.octeto, r.tls_crypt_selada, r.protocolo, s.nome AS srv, s.cert_pem, s.chave_selada \
+            "SELECT r.nome, r.porta, r.octeto, r.tls_crypt_selada, r.protocolo, r.force_cookie, s.nome AS srv, s.cert_pem, s.chave_selada \
              FROM phx_rede r JOIN phx_servidor s ON s.id = r.servidor_id WHERE r.id = $1::int",
             &[Some(rede_id)],
         )?;
@@ -979,6 +983,7 @@ impl Painel {
             octeto: v("octeto").parse().map_err(|_| "octeto invalido")?,
             v2: ovpn::e_v2(&String::from_utf8_lossy(&tc)),
             tcp: v("protocolo") == "tcp",
+            cookie: v("force_cookie") == "t",
         };
         let mut conf = ovpn::conf_servidor(&rede, &dir.display().to_string());
         conf.push_str(&self.conf_do_alcance(rede_id, &dir, &rede)?);

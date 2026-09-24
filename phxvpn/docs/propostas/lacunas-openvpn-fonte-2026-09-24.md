@@ -117,7 +117,7 @@ defeito) · d **11** · dono **1** — **61** linhas.
 | 5 | **Reinício do servidor com aviso**: `SIGTERM` + `explicit-exit-notify 1` no servidor | Hoje todo membro fica 61 s no escuro a cada troca de MFA (**M4: 61 → 4 s**) | média | P |
 | 6 | **FEITO (24/09, `p2p::MTU` = 1.384, ver PHXVPN.md «Operação»; medido: relé com fragmento descartado 0,0 → 641,7 Mbit/s)** — **MTU do P2P pelo repasse/farol** (placa menor, ou MSS ajustado quando a via é o repasse) | 1.516 B > 1.500 — fragmenta, e CGNAT costuma jogar fragmento fora. **Raciocinado, não medido**: decide um `ping -M do -s 1392` pelo repasse em netns | média | P |
 | 7 | **Log do OpenVPN com teto** (rotação ou `log` + troca) | `openvpn.log` cresce para sempre em `verb 3` | média | P |
-| 8 | **FEITO (24/09, `ovpn.rs` `Rede::cookie`, só UDP; 2.6.19 entra, 2.5.11 não; OpenVPN 3 core ≥ 3.8 manda o cookie)** — **`tls-crypt-v2 … force-cookie`** | Tira a exaustão de estado do aperto; o padrão ainda é `allow-noncookie`. Só depois de provar Connect 3 e GUI 2.6 (os dois têm de mandar o cookie) | média | P |
+| 8 | **FEITO (24/09, opção POR REDE desligada por padrão, `src/cookie.rs`; o admin liga com o aviso; ligada: 2.6.19 entra, 2.5.11 não; OpenVPN 3 core ≥ 3.8 manda o cookie; o 2.5 ainda é o do Ubuntu 22.04 e do EPEL 9)** — **`tls-crypt-v2 … force-cookie`** | Tira a exaustão de estado do aperto; o padrão ainda é `allow-noncookie`. Só depois de provar Connect 3 e GUI 2.6 (os dois têm de mandar o cookie) | média | P |
 | 9 | **Site-to-site (`iroute`)** — LAN atrás de um membro, no mesmo `ccd` que já existe | Filial com roteador; o ccd e o `client-to-client` já estão lá | média | M |
 | 10 | **FEITO (24/09, `src/historico.rs`, pelo soquete do verificador; ver PHXVPN.md «Operação»)** — **Histórico de conexões** (`client-connect`/`client-disconnect` → PostgreSQL) | Auditoria «quem entrou quando» que o `status.log` não guarda | média | M |
 
@@ -157,7 +157,8 @@ servidor espera a 2.7 no servidor (multi-socket).
 - M1–M4 são **n=1**; M6 (MTU pelo repasse) **não foi medido**; DCO **não foi
   medido** (o módulo não foi carregado no laboratório).
 - O `force-cookie` (item 8) depende de o OpenVPN Connect 3 mandar o cookie —
-  **não conferido** no fonte do Connect.
+  **conferido depois** no fonte do OpenVPN 3 core (desde o 3.8, commit
+  `2ff291e7`); o aplicativo Connect, fechado, não.
 - A 2.7 foi lida **só** no `Changes.rst`, não no manual nem no fonte.
 - Broadcast no modo servidor por TAP (`server-bridge`): o custo real é o
   cliente — o suporte a TAP no OpenVPN Connect **não foi conferido** no fonte

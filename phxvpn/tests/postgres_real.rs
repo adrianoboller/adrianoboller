@@ -1314,3 +1314,108 @@ fn historico_pelo_soquete_escopo_retencao_e_integridade() {
     drop(e);
     let _ = std::fs::remove_dir_all(&dados);
 }
+
+/// `force-cookie` por rede (item 8, decisao do integrador pela lei «guarda
+/// nova entra pedida, nao imposta»): nasce desligado, so o admin liga (com o
+/// codigo, se tem autenticador), e o conf segue o que foi pedido.
+/// RED: com o `cookie` ignorado (ligado sempre), a rede recem-criada ja sai
+/// com `force-cookie` e a primeira conferencia reprova.
+#[test]
+fn force_cookie_nasce_desligado_e_o_admin_liga_por_rede() {
+    use phxsql_core::json::Json;
+    use phxvpn::http::{atender, Estado};
+    use phxvpn::web::Pedido;
+    let Some(base) = config() else {
+        eprintln!("NAO RODOU: defina PHXVPN_PG_TESTE");
+        return;
+    };
+    if phxvpn::supervisor::achar_no_path("openvpn").is_none() {
+        eprintln!("NAO RODOU o force-cookie: sem openvpn no PATH a rede nasce v1");
+        return;
+    }
+    let cfg = banco_novo(&base, "phxvpn_teste_cookie");
+    let dados = std::env::temp_dir().join(format!("phxvpn-teste-cookie-{}", std::process::id()));
+    let mut p = Painel::abrir(&cfg, &dados).unwrap();
+    p.iteracoes = 1_000;
+    p.instalar(&Instalacao {
+        empresa: "Empresa Teste".into(),
+        responsavel: "Fulano".into(),
+        email: "f@e.com".into(),
+        admin_usuario: "admin".into(),
+        admin_senha: "senha-admin".into(),
+        senha_mestre: "senha-mestre-longa".into(),
+        servidor_nome: "vpn1".into(),
+        servidor_ip: "203.0.113.10".into(),
+        ..Default::default()
+    })
+    .unwrap();
+    let admin = p.login("admin", "senha-admin").unwrap();
+    p.criar_rede(&admin, "Matriz", "rede-123", "", None)
+        .unwrap();
+    p.criar_usuario("ana", "senha-ana-1", "", false).unwrap();
+    let ana = p.login("ana", "senha-ana-1").unwrap();
+    p.entrar_na_rede(&ana, "Matriz", "rede-123").unwrap();
+    let e = Estado::novo(p, None);
+    let pedir = |caminho: &str, tk: Option<&str>, corpo: &str| -> (u16, Json) {
+        let r = atender(
+            &Pedido {
+                metodo: "POST".into(),
+                caminho: caminho.into(),
+                token: tk.map(str::to_string),
+                host: None,
+                tipo: Some("application/json".into()),
+                ip: "192.0.2.7".parse().unwrap(),
+                corpo: corpo.into(),
+            },
+            &e,
+        );
+        (r.status, Json::analisar(&r.corpo).unwrap())
+    };
+    let token = |login: &str, senha: &str| -> String {
+        let (_, j) = pedir(
+            "/api/login",
+            None,
+            &format!(r#"{{"usuario":"{login}","senha":"{senha}"}}"#),
+        );
+        j.texto_ou("token", "").to_string()
+    };
+    let conf = || std::fs::read_to_string(dados.join("redes/1/servidor.conf")).unwrap();
+    let (ta, tana) = (token("admin", "senha-admin"), token("ana", "senha-ana-1"));
+    // Nasce desligado: o 2.5 continua entrando.
+    let c = conf();
+    assert!(c.contains("tls-crypt-v2 "), "{c}");
+    assert!(!c.contains("force-cookie"), "nasceu ligado:\n{c}");
+    let (s, j) = pedir("/api/redes/cookie", Some(&ta), r#"{"rede_id":1}"#);
+    assert_eq!(s, 200, "{}", j.escrever());
+    assert!(!j.booleano_ou("force_cookie", true));
+    assert!(j.texto_ou("aviso", "").contains("anteriores à 2.6"));
+    // Membro nao ve nem muda.
+    assert_eq!(
+        pedir("/api/redes/cookie", Some(&tana), r#"{"rede_id":1}"#).0,
+        403
+    );
+    let (s, _) = pedir(
+        "/api/redes/cookie/definir",
+        Some(&tana),
+        r#"{"rede_id":1,"force_cookie":true}"#,
+    );
+    assert_eq!(s, 403);
+    assert!(!conf().contains("force-cookie"));
+    // O admin liga: o conf leva; desliga: volta ao de antes.
+    let (s, j) = pedir(
+        "/api/redes/cookie/definir",
+        Some(&ta),
+        r#"{"rede_id":1,"force_cookie":true}"#,
+    );
+    assert_eq!(s, 200, "{}", j.escrever());
+    assert!(conf().contains(" force-cookie\n"), "{}", conf());
+    let (s, _) = pedir(
+        "/api/redes/cookie/definir",
+        Some(&ta),
+        r#"{"rede_id":1,"force_cookie":false}"#,
+    );
+    assert_eq!(s, 200);
+    assert!(!conf().contains("force-cookie"));
+    drop(e);
+    let _ = std::fs::remove_dir_all(&dados);
+}

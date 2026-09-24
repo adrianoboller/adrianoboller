@@ -606,6 +606,27 @@ fn rotear(p: &Pedido, e: &Estado) -> Saida {
             let (nome, dir, antiga) = e.painel().saida_definir(&u, id, &nova).map_err(ruim)?;
             crate::saida::depois_de_mudar(e, id, &antiga, &nova, &nome, &dir).map_err(ruim)
         }
+        ("POST", "/api/redes/cookie") => {
+            let u = usuario(p, e)?;
+            let id = rede_id(&corpo)?;
+            e.painel().cookie(&u, id).map_err(|m| (403, m))
+        }
+        ("POST", "/api/redes/cookie/definir") => {
+            let u = usuario(p, e)?;
+            let id = rede_id(&corpo)?;
+            // Ligar tranca fora cliente antigo; desligar abre o aperto de
+            // novo: nos dois sentidos, admin e o codigo de quem o tem.
+            exigir_admin(&u)?;
+            exigir_codigo(e, &u, &t("codigo"), &chave_ip)?;
+            let liga = corpo
+                .campo("force_cookie")
+                .and_then(|j| match j {
+                    Json::Bool(b) => Some(*b),
+                    _ => None,
+                })
+                .ok_or((400, "force_cookie: true ou false".to_string()))?;
+            crate::cookie::definir_e_aplicar(e, &u, id, liga).map_err(ruim)
+        }
         ("GET", "/api/historico") => {
             let u = usuario(p, e)?;
             e.painel().historico(&u).map_err(ruim)

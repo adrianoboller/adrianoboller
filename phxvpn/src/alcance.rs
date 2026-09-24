@@ -666,6 +666,7 @@ mod testes {
             octeto: 1,
             v2: false,
             tcp,
+            cookie: false,
         }
     }
 

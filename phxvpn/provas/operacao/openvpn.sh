@@ -120,6 +120,12 @@ PY
   lista_tem() { [ "$(na_lista)" -eq "$1" ]; }
   entrou() { [ "$(completos "$1")" -gt 0 ]; }
 
+  # force-cookie nasce DESLIGADO (guarda nova entra pedida): confere, e o
+  # admin liga pela API -- o openvpn da rede reinicia com a opcao.
+  local cookie_padrao=0
+  grep -q "^tls-crypt-v2 .* force-cookie$" "$dir/servidor.conf" && cookie_padrao=1
+  api POST /api/redes/cookie/definir "$tk_admin" "{\"rede_id\":$rede_id,\"force_cookie\":true}" >/dev/null
+  sleep 3
   local conf_cookie=0 conf_hist=0 conf_mlock=0
   grep -q "^tls-crypt-v2 .* force-cookie$" "$dir/servidor.conf" && conf_cookie=1
   grep -q "^client-connect " "$dir/servidor.conf" && conf_hist=1
@@ -191,7 +197,7 @@ print(json.dumps({**l[0], 'linhas_do_caio': len(l)} if l else None))")
 
   python3 - "$rotulo" "$bin" "$T/hist-admin.json" "$T/hist-ana.json" "$linhas_banco" "$vazou" \
     "$conf_cookie" "$conf_hist" "$conf_mlock" "$vmlck_painel" "$vmlck_ovpn" "$a26" "$c25" \
-    "$ponte_entrou" "$ponte_linha" <<'PY'
+    "$ponte_entrou" "$ponte_linha" "$cookie_padrao" <<'PY'
 import json, sys
 a = sys.argv[1:]
 def carregar(f):
@@ -221,6 +227,7 @@ print(json.dumps({
     "cliente_25_entrou": None if a[12] == "null" else a[12] == "1",
     "ponte_cliente_26_tcp_entrou": None if a[13] == "null" else a[13] == "1",
     "ponte_linha_do_caio": json.loads(a[14]),
+    "force_cookie_na_rede_recem_criada": a[15] == "1",
 }, ensure_ascii=False))
 PY
   limpar
@@ -246,7 +253,8 @@ ambiente = {
 }
 ambiente["openvpn_mlock_sobe_aqui"] = "fatal error" not in ambiente["openvpn_mlock_direto"]
 ana = novo["ana"] or {}
-ok = (novo["conf_force_cookie"] and novo["conf_client_connect"]
+ok = (novo["conf_force_cookie"] and not novo["force_cookie_na_rede_recem_criada"]
+      and novo["conf_client_connect"]
       and novo["linhas_no_banco"] == 2 and novo["linhas_vistas_pelo_admin"] == 2
       and novo["linhas_vistas_pela_ana"] == 1 and novo["logins_vistos_pela_ana"] == ["ana"]
       and ana.get("estado") == "saiu" and ana.get("ip_real") == "192.168.93.12"
