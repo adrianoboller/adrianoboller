@@ -5,7 +5,7 @@
 //! a biblioteca nao pode ter por ser `no_std`: disco, relogio e acaso.
 //!
 //! ```text
-//! phxzipcmd a <arquivo.7z> <caminho>... [-p<senha>|-p-] [-mx=N] [--nomes-visiveis] [-y]
+//! phxzipcmd a <arquivo.7z> <caminho>... [-p<senha>|-p-] [-mx=N] [-mmt=N|-mmt=off] [--nomes-visiveis] [-y]
 //! phxzipcmd x <arquivo.7z> [-o<pasta>] [-p<senha>|-p-] [-y]
 //! phxzipcmd l <arquivo.7z> [-p<senha>|-p-]
 //! phxzipcmd t <arquivo.7z> [-p<senha>|-p-]
@@ -32,6 +32,8 @@ struct Args {
     caminhos: Vec<PathBuf>,
     senha: Option<String>,
     nivel: u8,
+    /// Fios da compactacao (`-mmt=`, o nome do 7-Zip). Padrao: os nucleos.
+    fios: usize,
     destino: PathBuf,
     nomes_visiveis: bool,
     sobrescrever: bool,
@@ -40,7 +42,7 @@ struct Args {
 fn uso() -> ExitCode {
     eprintln!(
         "PhxZipCmd {} -- 7z (LZMA2 + AES-256)\n\n\
-         uso:\n  phxzipcmd a <arquivo.7z> <caminho>... [-p<senha>|-p-] [-mx=0..9] [--nomes-visiveis] [-y]\n  \
+         uso:\n  phxzipcmd a <arquivo.7z> <caminho>... [-p<senha>|-p-] [-mx=0..9] [-mmt=N|-mmt=off] [--nomes-visiveis] [-y]\n  \
          phxzipcmd x <arquivo.7z> [-o<pasta>] [-p<senha>|-p-] [-y]\n  \
          phxzipcmd l <arquivo.7z> [-p<senha>|-p-]\n  \
          phxzipcmd t <arquivo.7z> [-p<senha>|-p-]",
@@ -58,6 +60,7 @@ fn ler_args() -> Result<Args, String> {
         caminhos: Vec::new(),
         senha: None,
         nivel: 5,
+        fios: phxzip::fios_padrao(),
         destino: PathBuf::from("."),
         nomes_visiveis: false,
         sobrescrever: false,
@@ -79,6 +82,17 @@ fn ler_args() -> Result<Args, String> {
                 .ok()
                 .filter(|n| *n <= 9)
                 .ok_or("-mx= vai de 0 a 9")?;
+        } else if let Some(n) = x.strip_prefix("-mmt=") {
+            // `off` e 1 dao o arquivo de um bloco so, o menor possivel; mais
+            // de 1 corta em blocos que compactam em paralelo.
+            a.fios = if n == "off" {
+                1
+            } else {
+                n.parse()
+                    .ok()
+                    .filter(|n| *n >= 1)
+                    .ok_or("-mmt= precisa de um numero >= 1 ou off")?
+            };
         } else if let Some(d) = x.strip_prefix("-o") {
             a.destino = PathBuf::from(d);
         } else if x == "--nomes-visiveis" {
@@ -224,6 +238,8 @@ fn criar(a: &Args) -> Result<(), Falha> {
         senha: a.senha.clone(),
         cifrar_nomes: !a.nomes_visiveis,
         acaso,
+        fios: a.fios,
+        bloco: 0,
     };
     let mut e = Escritor::novo(op);
     for c in &a.caminhos {

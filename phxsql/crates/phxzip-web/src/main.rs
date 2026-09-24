@@ -28,6 +28,10 @@ fn main() -> ExitCode {
             "--endereco" => c.endereco = valor(&mut args),
             "--usuario" => c.usuario = Some(valor(&mut args)).filter(|u| !u.is_empty()),
             "--senha-" => senha_da_entrada = true,
+            "--fios" => match valor(&mut args).parse::<usize>() {
+                Ok(f) if f > 0 => c.fios = f,
+                _ => return falha("--fios precisa de um numero positivo"),
+            },
             "--max-mib" => match valor(&mut args).parse::<usize>() {
                 Ok(m) if m > 0 => c.max_corpo = m << 20,
                 _ => return falha("--max-mib precisa de um numero positivo"),

@@ -15,7 +15,7 @@ name = "phxzipweb"
 path = "src/main.rs"
 
 [dependencies]
-phxzip.workspace = true
+phxzip = { workspace = true, features = ["std"] }
 phxsql-core.workspace = true
 # Pelo HTTP (`http::ler_pedido_binario`, `responder_*`) e pelas sessoes: o
 # mesmo motor da interface do PhxSql, e nao um segundo leitor de pedido

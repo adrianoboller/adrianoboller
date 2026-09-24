@@ -741,6 +741,15 @@ pub const FABRICA_ZIP: &[TextoDeFabrica] = &[
         "Zum dunklen Design wechseln",
         "Cambiar al tema oscuro"
     ),
+    texto!(
+        "zip.um_fio",
+        "menor arquivo (um fio, mais lento)",
+        "archive la plus petite (un seul fil, plus lent)",
+        "smallest archive (one thread, slower)",
+        "archivio più piccolo (un solo thread, più lento)",
+        "kleinstes Archiv (ein Thread, langsamer)",
+        "archivo más pequeño (un hilo, más lento)"
+    ),
 ];
 
 /// Os textos resolvidos no idioma pedido (nome da coluna da fabrica:

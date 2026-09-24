@@ -15,6 +15,9 @@ fn subir(com_login: bool, max_corpo: usize) -> u16 {
     let porta = ouvinte.local_addr().unwrap().port();
     let mut c = Config {
         max_corpo,
+        // Dois fios fixos: o padrao sai dos nucleos da maquina, e o teste do
+        // corte em blocos nao pode depender de onde roda.
+        fios: 2,
         ..Config::default()
     };
     if com_login {
@@ -277,4 +280,35 @@ fn extrair_tudo_devolve_a_lista_e_os_bytes_na_ordem() {
     );
     assert_eq!(r.codigo, 400);
     assert!(r.texto().contains("senha_errada"), "{}", r.texto());
+}
+
+/// A porta compacta em BLOCOS (dois fios, aqui) e o «menor arquivo» pede um
+/// bloco so: os dois abrem inteiros, e o de um bloco e menor -- e o preco da
+/// velocidade, que a tela deixa quem quer recusar.
+#[test]
+fn compactar_em_blocos_e_o_menor_arquivo_de_um_fio() {
+    let p = subir(false, 8 << 20);
+    let mut dados = Vec::new();
+    let mut x = 3u32;
+    while dados.len() < 2_600_000 {
+        x = x.wrapping_mul(1_103_515_245).wrapping_add(12345);
+        dados.extend_from_slice(format!("linha {} da porta 4000\n", x >> 17).as_bytes());
+    }
+    let pedir_7z = |um_fio: bool| {
+        let meta = format!(
+            r#"{{"nivel":1,"um_fio":{um_fio},"arquivos":[{{"nome":"a.txt","tamanho":{},"mtime":1790000000}}]}}"#,
+            dados.len()
+        );
+        let r = api(p, "/api/compactar", None, &envelope(&meta, &dados));
+        assert_eq!(r.codigo, 200, "{}", r.texto());
+        let a = Arquivo7z::abrir(&r.corpo, None, Limites::default()).unwrap();
+        assert_eq!(a.extrair(0).unwrap(), dados);
+        r.corpo.len()
+    };
+    let em_blocos = pedir_7z(false);
+    let um_bloco = pedir_7z(true);
+    assert!(
+        um_bloco < em_blocos,
+        "um bloco {um_bloco} devia sair menor que em blocos {em_blocos}"
+    );
 }

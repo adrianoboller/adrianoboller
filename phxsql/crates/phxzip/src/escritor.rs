@@ -19,7 +19,9 @@ use crate::caminho::caminho_seguro;
 use crate::chave::{derivar, ParamAes, CICLOS_PADRAO};
 use crate::erro::{Erro, Resultado};
 use crate::formato::*;
-use crate::lzma::{codificar_lzma2, Nivel};
+use crate::lzma::{
+    blocos_lzma2, codificar_bloco_lzma2, codificar_lzma2, juntar_blocos_lzma2, Nivel,
+};
 
 /// Opcoes de gravacao.
 #[derive(Clone)]
@@ -34,6 +36,36 @@ pub struct Opcoes {
     /// chama fornece. A biblioteca nao sorteia porque em microcontrolador nao
     /// ha fonte de acaso comum -- e um IV previsivel nao pode nascer calado.
     pub acaso: [u8; 32],
+    /// Quantos fios compactam. Com 1 (o padrao), o dado vira UM bloco LZMA2,
+    /// como sempre foi. Com mais de 1, o dado se corta em blocos de `bloco`
+    /// bytes que recomecam o dicionario e se compactam em paralelo (so com o
+    /// recurso `std`; sem ele, os mesmos blocos saem num fio so, com os mesmos
+    /// bytes). O arquivo continua 7z padrao.
+    pub fios: usize,
+    /// Tamanho do bloco quando `fios > 1`; 0 escolhe pelo nivel
+    /// ([`bloco_padrao`]). Os bytes do arquivo dependem daqui, e NAO de
+    /// quantos fios trabalharam.
+    pub bloco: usize,
+}
+
+/// Quantos fios a compactacao usa quando ninguem diz: os nucleos que o
+/// sistema oferece. UM lugar so -- o terminal e a porta web perguntam aqui,
+/// para os dois nunca divergirem sobre o que «automatico» quer dizer.
+#[cfg(feature = "std")]
+pub fn fios_padrao() -> usize {
+    std::thread::available_parallelism().map_or(1, |n| n.get())
+}
+
+/// O bloco que `bloco: 0` escolhe: um quarto do dicionario do nivel, com
+/// piso de 1 MiB e teto de 8 MiB -- nivel 5 corta em 4 MiB, do 7 ao 9 em 8.
+/// Medido em 21 MB e 4 nucleos (`docs/PHXZIP.md` §3d): 4 MiB compacta 3,9x
+/// mais rapido que um bloco so, por +3,7% de tamanho; o corte do 7-Zip (4x o
+/// dicionario) nao corta nada abaixo de 64 MiB, e o dobro do dicionario
+/// (8 MiB no nivel 5) ficava mais lento que o proprio 7-Zip com 4 fios.
+/// Dado menor que um bloco sai com os MESMOS bytes de um fio so.
+pub fn bloco_padrao(nivel: u8) -> usize {
+    let dic = Nivel::de(nivel.max(1)).dicionario as usize;
+    (dic / 4).clamp(1 << 20, 8 << 20)
 }
 
 impl core::fmt::Debug for Opcoes {
@@ -42,6 +74,8 @@ impl core::fmt::Debug for Opcoes {
             .field("nivel", &self.nivel)
             .field("senha", &self.senha.as_ref().map(|_| "<oculta>"))
             .field("cifrar_nomes", &self.cifrar_nomes)
+            .field("fios", &self.fios)
+            .field("bloco", &self.bloco)
             .finish()
     }
 }
@@ -53,6 +87,8 @@ impl Default for Opcoes {
             senha: None,
             cifrar_nomes: true,
             acaso: [0; 32],
+            fios: 1,
+            bloco: 0,
         }
     }
 }
@@ -157,7 +193,7 @@ impl Escritor {
         let mut cab = Vec::new();
         gravar_numero(&mut cab, K_CABECALHO);
         if !solido.is_empty() {
-            let (dado, pasta) = codificar(&solido, op.nivel, aes.as_ref(), iv(&op.acaso, 0));
+            let (dado, pasta) = codificar(&solido, op.nivel, aes.as_ref(), iv(&op.acaso, 0), op);
             gravar_numero(&mut cab, K_FLUXOS_PRINCIPAIS);
             gravar_fluxos(&mut cab, 0, dado.len() as u64, &pasta, None);
             // SubStreamsInfo: quantos, os tamanhos menos o ultimo, e os CRCs.
@@ -184,8 +220,13 @@ impl Escritor {
 
         // O cabecalho vai sempre comprimido, e cifrado quando os nomes vao.
         let aes_cab = if op.cifrar_nomes { aes.as_ref() } else { None };
-        let (dado_cab, pasta_cab) =
-            codificar(&cab, 5.max(op.nivel.min(9)), aes_cab, iv(&op.acaso, 1));
+        let (dado_cab, pasta_cab) = codificar(
+            &cab,
+            5.max(op.nivel.min(9)),
+            aes_cab,
+            iv(&op.acaso, 1),
+            &Opcoes::default(),
+        );
         let mut cod = Vec::new();
         gravar_numero(&mut cod, K_CABECALHO_CODIFICADO);
         gravar_fluxos(
@@ -319,9 +360,13 @@ fn codificar(
     nivel: u8,
     aes: Option<&Aes256>,
     iv: [u8; BLOCO],
+    op: &Opcoes,
 ) -> (Vec<u8>, PastaEscrita) {
     let (id, props, mut fluxo) = if nivel == 0 {
         (COPY, Vec::new(), dados.to_vec())
+    } else if op.fios > 1 {
+        let (p, c) = em_blocos(dados, Nivel::de(nivel), op.fios, op.bloco_efetivo(nivel));
+        (LZMA2, alloc::vec![p], c)
     } else {
         let (p, c) = codificar_lzma2(dados, Nivel::de(nivel));
         (LZMA2, alloc::vec![p], c)
@@ -344,6 +389,69 @@ fn codificar(
         pasta.tamanhos.push(real as u64);
     }
     (fluxo, pasta)
+}
+
+impl Opcoes {
+    fn bloco_efetivo(&self, nivel: u8) -> usize {
+        if self.bloco == 0 {
+            bloco_padrao(nivel)
+        } else {
+            self.bloco
+        }
+    }
+}
+
+/// Os blocos, compactados por ate `fios` fios. Cada fio pega o proximo bloco
+/// livre (um contador atomico), entao um bloco lento nao prende os outros; o
+/// resultado volta na ORDEM do corte, que e o que torna os bytes iguais em
+/// qualquer numero de fios. O numero de fios e limitado pelo de blocos: fio
+/// sem bloco nao nasce.
+#[cfg(feature = "std")]
+fn em_blocos(dados: &[u8], nivel: Nivel, fios: usize, bloco: usize) -> (u8, Vec<u8>) {
+    use core::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Mutex;
+
+    let partes: Vec<&[u8]> = blocos_lzma2(dados, bloco).collect();
+    let prontos: Vec<Mutex<Vec<u8>>> = partes.iter().map(|_| Mutex::new(Vec::new())).collect();
+    let proximo = AtomicUsize::new(0);
+    // Fios sobrando viram BUSCA em paralelo: na arvore (niveis 5 a 9) cada
+    // bloco pode levar dois fios, a busca numa thread e a codificacao noutra,
+    // sem custo de compressao. Mas so quando ha fio para os dois: com blocos
+    // de sobra, um fio por bloco rende mais (medido, 21 MB e 4 nucleos: 4
+    // blocos de 4 MiB em 4 fios, 3,23 s; os mesmos em 2x2 fios, 4,04 s).
+    let busca_em_fio = nivel.arvore && partes.len() * 2 <= fios;
+    let n = fios.min(partes.len()).max(1);
+    std::thread::scope(|s| {
+        for _ in 0..n {
+            s.spawn(|| loop {
+                let i = proximo.fetch_add(1, Ordering::Relaxed);
+                let Some(p) = partes.get(i) else { break };
+                let c = if busca_em_fio {
+                    crate::lzma::codificar_bloco_lzma2_em_fio(p, nivel)
+                } else {
+                    codificar_bloco_lzma2(p, nivel)
+                };
+                if let Ok(mut v) = prontos[i].lock() {
+                    *v = c;
+                }
+            });
+        }
+    });
+    let blocos: Vec<Vec<u8>> = prontos
+        .into_iter()
+        .map(|m| m.into_inner().unwrap_or_default())
+        .collect();
+    juntar_blocos_lzma2(dados.len(), bloco, nivel, &blocos)
+}
+
+/// Sem `std` nao ha fio: os mesmos blocos, um depois do outro -- e os mesmos
+/// bytes que o paralelo produziria.
+#[cfg(not(feature = "std"))]
+fn em_blocos(dados: &[u8], nivel: Nivel, _fios: usize, bloco: usize) -> (u8, Vec<u8>) {
+    let blocos: Vec<Vec<u8>> = blocos_lzma2(dados, bloco)
+        .map(|p| codificar_bloco_lzma2(p, nivel))
+        .collect();
+    juntar_blocos_lzma2(dados.len(), bloco, nivel, &blocos)
 }
 
 fn gravar_fluxos(cab: &mut Vec<u8>, pos: u64, tam: u64, pasta: &PastaEscrita, crc: Option<u32>) {
@@ -403,6 +511,50 @@ mod testes {
 
     /// Senha com o `acaso` do `Default` e recusa: o IV zero sairia igual em
     /// todo arquivo da mesma senha. Sem senha, o acaso nao importa e grava.
+    fn gravar_com(dados: &[u8], fios: usize, bloco: usize) -> Vec<u8> {
+        let mut e = Escritor::novo(Opcoes {
+            nivel: 5,
+            fios,
+            bloco,
+            ..Opcoes::default()
+        });
+        e.arquivo("a", dados.to_vec(), None, None).unwrap();
+        e.gravar().unwrap()
+    }
+
+    /// Texto que repete com variacao: comprime, mas nao trivialmente.
+    fn amostra(n: usize) -> Vec<u8> {
+        let mut v = Vec::with_capacity(n);
+        let mut x = 12345u32;
+        while v.len() < n {
+            x = x.wrapping_mul(1_103_515_245).wrapping_add(12345);
+            v.extend_from_slice(b"linha do PhxZip numero ");
+            v.extend_from_slice(alloc::format!("{}\n", x >> 20).as_bytes());
+        }
+        v.truncate(n);
+        v
+    }
+
+    /// Os bytes dependem do BLOCO e nao dos fios: 2 e 7 fios dao o mesmo
+    /// arquivo, e ele volta inteiro pelo leitor.
+    #[test]
+    fn em_blocos_os_bytes_nao_dependem_dos_fios_e_voltam_inteiros() {
+        let d = amostra(600_000);
+        let a = gravar_com(&d, 2, 1 << 16);
+        let b = gravar_com(&d, 7, 1 << 16);
+        assert_eq!(a, b, "o numero de fios mudou os bytes");
+        assert_ne!(a, gravar_com(&d, 1, 0), "o corte em blocos nao aconteceu");
+        let arq = crate::Arquivo7z::abrir(&a, None, crate::Limites::default()).unwrap();
+        assert_eq!(arq.extrair(0).unwrap(), d);
+    }
+
+    /// Dado menor que um bloco: nada a cortar, e o arquivo e o de um fio so.
+    #[test]
+    fn dado_menor_que_o_bloco_sai_igual_ao_de_um_fio() {
+        let d = amostra(50_000);
+        assert_eq!(gravar_com(&d, 4, 0), gravar_com(&d, 1, 0));
+    }
+
     #[test]
     fn senha_sem_acaso_e_recusada_e_sem_senha_nao() {
         let mut e = Escritor::novo(Opcoes {

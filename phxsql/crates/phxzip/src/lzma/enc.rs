@@ -137,6 +137,21 @@ pub(super) struct Buscador<'a> {
     proximo: usize,
 }
 
+/// De onde o planejador tira os casamentos de uma posicao. O [`Buscador`]
+/// responde na hora, no mesmo fio; a `FonteEmFio` responde com o que uma
+/// thread vizinha ja buscou -- e as duas respostas sao IGUAIS byte a byte,
+/// que e o que deixa a busca paralela sem mudar o arquivo.
+pub(super) trait Fonte {
+    /// Os casamentos em `p`, com a mesma regra de [`Buscador::todos`].
+    fn casamentos(&mut self, p: usize, saida: &mut Vec<(usize, usize)>);
+}
+
+impl Fonte for Buscador<'_> {
+    fn casamentos(&mut self, p: usize, saida: &mut Vec<(usize, usize)>) {
+        self.todos(p, saida);
+    }
+}
+
 impl<'a> Buscador<'a> {
     fn novo(dados: &'a [u8], janela: usize, nivel: &Nivel) -> Buscador<'a> {
         // As tabelas acompanham a janela, e a janela acompanha o dado: o
@@ -626,9 +641,9 @@ impl Escrita<'_> {
 
 /// A escolha gulosa (niveis 1 a 4): o maior casamento, repeticao quando ela
 /// empata, e um passo de preguica.
-fn planejar_guloso(
+fn planejar_guloso<F: Fonte>(
     e: &Escrita,
-    busca: &mut Buscador,
+    busca: &mut F,
     lista: &mut Vec<(usize, usize)>,
     adiantado: &mut Option<(usize, usize, usize)>,
     p: usize,
@@ -641,7 +656,7 @@ fn planejar_guloso(
     let (mc, md) = match adiantado.take() {
         Some((q, c, d)) if q == p => (c, d),
         _ => {
-            busca.todos(p, lista);
+            busca.casamentos(p, lista);
             lista.last().copied().unwrap_or((0, 0))
         }
     };
@@ -654,7 +669,7 @@ fn planejar_guloso(
     // Casamento de 3 muito longe custa mais que tres literais.
     if mc >= 4 || (mc == 3 && md <= 1 << 12) {
         if nivel.preguicoso && mc < nivel.bom && p + 1 < n {
-            busca.todos(p + 1, lista);
+            busca.casamentos(p + 1, lista);
             let (nc, nd) = lista.last().copied().unwrap_or((0, 0));
             if nc > mc + usize::from(nd > md.saturating_mul(8)) {
                 fila.push_back(Decisao::Literal);
@@ -676,15 +691,164 @@ fn planejar_guloso(
 /// Comprime `dados` em LZMA2. Devolve o byte de propriedade (dicionario) e o
 /// fluxo, pronto para o coder `21` do 7z.
 pub fn codificar_lzma2(dados: &[u8], nivel: Nivel) -> (u8, Vec<u8>) {
-    let n = dados.len();
-    // Dicionario maior que o dado so gasta memoria de quem descomprime.
-    let janela = (nivel.dicionario as usize)
+    let janela = janela_para(dados.len(), &nivel);
+    let mut saida = codificar_bloco_lzma2(dados, nivel);
+    saida.push(0);
+    (byte_lzma2(janela as u32), saida)
+}
+
+/// Dicionario maior que o dado so gasta memoria de quem descomprime.
+fn janela_para(n: usize, nivel: &Nivel) -> usize {
+    (nivel.dicionario as usize)
         .min(n.max(4096).next_power_of_two())
-        .max(4096);
-    let prop = byte_lzma2(janela as u32);
+        .max(4096)
+}
+
+/// Os pedacos do LZMA2 em que `dados` se divide para compactar em blocos
+/// INDEPENDENTES: cada um recomeca o dicionario, entao pode ser compactado em
+/// paralelo e o fluxo continua sendo um LZMA2 so, que qualquer 7-Zip abre. E
+/// o mesmo corte do `7z -mmt` e do `xz -T`: o preco e a compressao perder o
+/// passado na fronteira de cada bloco (medido em `docs/PHXZIP.md` §3d).
+///
+/// O corte depende so de `bloco`, nunca de quantos fios vao trabalhar: o
+/// mesmo arquivo sai com os mesmos bytes em 2 ou em 16 nucleos.
+pub fn blocos_lzma2(dados: &[u8], bloco: usize) -> impl Iterator<Item = &[u8]> {
+    dados.chunks(bloco.max(1 << 16))
+}
+
+/// Um bloco independente: pedacos LZMA2 que comecam reiniciando dicionario,
+/// propriedades e estado, SEM o byte de fim. Junte os blocos na ordem com
+/// [`juntar_blocos_lzma2`].
+pub fn codificar_bloco_lzma2(dados: &[u8], nivel: Nivel) -> Vec<u8> {
+    let janela = janela_para(dados.len(), &nivel);
+    let mut busca = Buscador::novo(dados, janela, &nivel);
+    codificar_com(dados, nivel, &mut busca)
+}
+
+/// Como [`codificar_bloco_lzma2`], com a BUSCA numa thread e a codificacao
+/// noutra -- o `MtFinder` do 7-Zip, reescrito: a thread da busca percorre
+/// TODAS as posicoes em ordem e manda os casamentos em lotes; a da
+/// codificacao pega os das posicoes que o planejador pede e descarta os
+/// outros. Os bytes saem iguais aos de um fio so (ha teste que exige), sem
+/// o custo de compressao do corte em blocos. So vale para a arvore (niveis 5
+/// a 9); a cadeia dos niveis baixos ja e barata e segue num fio.
+#[cfg(feature = "std")]
+pub fn codificar_bloco_lzma2_em_fio(dados: &[u8], nivel: Nivel) -> Vec<u8> {
+    if !nivel.arvore || dados.len() < LOTE {
+        return codificar_bloco_lzma2(dados, nivel);
+    }
+    let janela = janela_para(dados.len(), &nivel);
+    com_busca_em_fio(dados, janela, nivel, |f| codificar_com(dados, nivel, f))
+}
+
+/// Sobe a thread da busca e entrega a `FonteEmFio` a quem vai consumir; ao
+/// voltar, a fonte ja morreu e a thread ja foi juntada. Separado para o
+/// teste conferir o CONTRATO da fonte com qualquer sequencia de perguntas.
+#[cfg(feature = "std")]
+fn com_busca_em_fio<R>(
+    dados: &[u8],
+    janela: usize,
+    nivel: Nivel,
+    usar: impl FnOnce(&mut FonteEmFio) -> R,
+) -> R {
+    let (tx, rx) = std::sync::mpsc::sync_channel::<Lote>(LOTES_NO_CANO);
+    std::thread::scope(|s| {
+        s.spawn(move || {
+            let mut b = Buscador::novo(dados, janela, &nivel);
+            let mut lista = Vec::new();
+            let mut p = 0usize;
+            while p < dados.len() {
+                let fim = (p + LOTE).min(dados.len());
+                let mut lote = Lote {
+                    inicio: p,
+                    fim_de: Vec::with_capacity(fim - p),
+                    casa: Vec::with_capacity((fim - p) * 2),
+                };
+                for q in p..fim {
+                    b.todos(q, &mut lista);
+                    lote.casa
+                        .extend(lista.iter().map(|&(l, d)| (l as u32, d as u32)));
+                    lote.fim_de.push(lote.casa.len() as u32);
+                }
+                // A codificacao terminou antes (e soltou o cano): acabou.
+                if tx.send(lote).is_err() {
+                    return;
+                }
+                p = fim;
+            }
+        });
+        // A fonte morre no fim deste bloco, soltando o cano -- e a thread da
+        // busca, se ainda estiver mandando, para no `send` que falha.
+        let mut f = FonteEmFio {
+            rx,
+            lote: None,
+            proximo: 0,
+        };
+        usar(&mut f)
+    })
+}
+
+/// Posicoes por lote do cano da busca: grande o bastante para o custo do
+/// canal sumir, pequeno para a codificacao nao esperar muito pelo primeiro.
+#[cfg(feature = "std")]
+const LOTE: usize = 1 << 14;
+/// Lotes que a busca pode adiantar: o teto de memoria do cano.
+#[cfg(feature = "std")]
+const LOTES_NO_CANO: usize = 8;
+
+#[cfg(feature = "std")]
+struct Lote {
+    inicio: usize,
+    /// Onde terminam, em `casa`, os casamentos de cada posicao do lote.
+    fim_de: Vec<u32>,
+    casa: Vec<(u32, u32)>,
+}
+
+#[cfg(feature = "std")]
+struct FonteEmFio {
+    rx: std::sync::mpsc::Receiver<Lote>,
+    lote: Option<Lote>,
+    /// O mesmo `proximo` do `Buscador`: posicao ja passada volta vazia, como
+    /// la -- a arvore nao se consulta duas vezes, e responder diferente aqui
+    /// mudaria o arquivo.
+    proximo: usize,
+}
+
+#[cfg(feature = "std")]
+impl Fonte for FonteEmFio {
+    fn casamentos(&mut self, p: usize, saida: &mut Vec<(usize, usize)>) {
+        saida.clear();
+        if self.proximo > p {
+            return;
+        }
+        self.proximo = p + 1;
+        loop {
+            if let Some(l) = &self.lote {
+                if p < l.inicio + l.fim_de.len() {
+                    let i = p - l.inicio;
+                    let de = if i == 0 { 0 } else { l.fim_de[i - 1] as usize };
+                    let ate = l.fim_de[i] as usize;
+                    saida.extend(
+                        l.casa[de..ate]
+                            .iter()
+                            .map(|&(c, d)| (c as usize, d as usize)),
+                    );
+                    return;
+                }
+            }
+            match self.rx.recv() {
+                Ok(l) => self.lote = Some(l),
+                // A busca acabou antes de p: nao ha casamento a dar.
+                Err(_) => return,
+            }
+        }
+    }
+}
+
+fn codificar_com<F: Fonte>(dados: &[u8], nivel: Nivel, busca: &mut F) -> Vec<u8> {
+    let n = dados.len();
     let props = Props::PADRAO;
     let mut saida = Vec::with_capacity(n / 2 + 16);
-    let mut busca = Buscador::novo(dados, janela, &nivel);
     let mut e = Escrita {
         d: dados,
         m: Modelo::novo(props),
@@ -705,17 +869,9 @@ pub fn codificar_lzma2(dados: &[u8], nivel: Nivel) -> (u8, Vec<u8>) {
         {
             if fila.is_empty() {
                 if nivel.otimo {
-                    otimo.planejar(&e.m, dados, &mut busca, p, nivel.bom, &mut fila);
+                    otimo.planejar(&e.m, dados, busca, p, nivel.bom, &mut fila);
                 } else {
-                    planejar_guloso(
-                        &e,
-                        &mut busca,
-                        &mut lista,
-                        &mut adiantado,
-                        p,
-                        &nivel,
-                        &mut fila,
-                    );
+                    planejar_guloso(&e, busca, &mut lista, &mut adiantado, p, &nivel, &mut fila);
                 }
             }
             let Some(d) = fila.pop_front() else { break };
@@ -761,14 +917,99 @@ pub fn codificar_lzma2(dados: &[u8], nivel: Nivel) -> (u8, Vec<u8>) {
             quer_estado = false;
         }
     }
+    saida
+}
+
+/// O fluxo LZMA2 inteiro a partir dos blocos compactados, na ordem do corte:
+/// emenda e poe o byte de fim. A propriedade e a do maior dicionario que um
+/// bloco usou -- e o que quem descomprime tem de reservar.
+pub fn juntar_blocos_lzma2(
+    total: usize,
+    bloco: usize,
+    nivel: Nivel,
+    blocos: &[Vec<u8>],
+) -> (u8, Vec<u8>) {
+    let janela = janela_para(total.min(bloco.max(1 << 16)), &nivel);
+    let mut saida = Vec::with_capacity(blocos.iter().map(Vec::len).sum::<usize>() + 1);
+    for b in blocos {
+        saida.extend_from_slice(b);
+    }
     saida.push(0);
-    (prop, saida)
+    (byte_lzma2(janela as u32), saida)
 }
 
 #[cfg(test)]
 mod testes {
     use super::super::decodificar_lzma2;
     use super::*;
+
+    /// A busca noutra thread da os MESMOS bytes que a busca no mesmo fio --
+    /// e a garantia inteira da `FonteEmFio`. Dados que passam pelos caminhos
+    /// dificeis: texto, tabela repetitiva, aleatorio (pedaco cru, onde o
+    /// planejador descarta um plano e pergunta de novo por posicao passada) e
+    /// a mistura dos tres.
+    #[cfg(feature = "std")]
+    #[test]
+    fn a_busca_em_fio_da_os_mesmos_bytes_de_um_fio_so() {
+        let mut misto = tabela(3000);
+        misto.extend(pseudo(70_000, 9));
+        misto.extend(tabela(2000));
+        for (nome, d) in [
+            ("tabela", tabela(6000)),
+            ("aleatorio", pseudo(90_000, 3)),
+            ("misto", misto),
+        ] {
+            for n in [5u8, 7, 9] {
+                let um = codificar_bloco_lzma2(&d, Nivel::de(n));
+                let dois = codificar_bloco_lzma2_em_fio(&d, Nivel::de(n));
+                assert!(
+                    um == dois,
+                    "{nome}, nivel {n}: a busca em fio mudou os bytes"
+                );
+            }
+        }
+    }
+
+    /// O contrato da fonte, pergunta a pergunta: posicoes em ordem, com
+    /// saltos (o que um casamento pula), com VOLTAS (o plano descartado no fim
+    /// de um pedaco cru pergunta de novo por posicao passada) e atravessando a
+    /// fronteira dos lotes. O `Buscador` e a `FonteEmFio` respondem igual.
+    #[cfg(feature = "std")]
+    #[test]
+    fn a_fonte_em_fio_responde_como_o_buscador_ate_na_volta() {
+        let d = tabela(5000);
+        let nivel = Nivel::de(5);
+        let janela = janela_para(d.len(), &nivel);
+        let mut perguntas = Vec::new();
+        let mut p = 0usize;
+        let mut x = 1u32;
+        while p + 300 < d.len() {
+            perguntas.push(p);
+            x = x.wrapping_mul(1_103_515_245).wrapping_add(12345);
+            if x % 7 == 0 {
+                perguntas.push(p.saturating_sub(1 + (x as usize >> 8) % 40));
+            }
+            p += 1 + (x as usize >> 16) % 300;
+        }
+        let mut b = Buscador::novo(&d, janela, &nivel);
+        let mut esperado = Vec::new();
+        let mut l = Vec::new();
+        for &q in &perguntas {
+            b.todos(q, &mut l);
+            esperado.push(l.clone());
+        }
+        let obtido = com_busca_em_fio(&d, janela, nivel, |f| {
+            perguntas
+                .iter()
+                .map(|&q| {
+                    let mut l = Vec::new();
+                    f.casamentos(q, &mut l);
+                    l
+                })
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(obtido, esperado);
+    }
 
     fn ida_e_volta(d: &[u8], nivel: u8) -> usize {
         let (p, c) = codificar_lzma2(d, Nivel::de(nivel));

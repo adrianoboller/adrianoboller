@@ -96,6 +96,28 @@ CATALOGO = [
                 "inclusive em panico. Processo proprio (`phxzipweb`), fora do "
                 "`telemetria::subir` do servidor do PhxSql.",
     },
+    # --------------------------------- PhxZip, compactacao em blocos (fios)
+    {
+        "arquivo": "crates/phxzip/src/escritor.rs",
+        "agulha": "std::thread::scope(|s| {",
+        "nome": "phxzip: fios da compactacao em blocos",
+        "teto": "`fios.min(partes.len())`: nunca mais fios que blocos nem que "
+                "`Opcoes::fios`. `thread::scope` junta todas antes de voltar, "
+                "entao nenhuma sobrevive ao `gravar()`. Na porta web o teto "
+                "total e `max_conexoes x Config::fios` (32 x ate 4, o padrao); "
+                "no `phxzipcmd` e o `-mmt=` (padrao: os nucleos).",
+    },
+    {
+        "arquivo": "crates/phxzip/src/lzma/enc.rs",
+        "agulha": "let (tx, rx) = std::sync::mpsc::sync_channel::<Lote>(LOTES_NO_CANO);",
+        "nome": "phxzip: a busca de casamentos em fio proprio",
+        "teto": "UMA thread por bloco, e so quando o escritor sobra fio "
+                "(`partes.len() * 2 <= fios`). O cano e `sync_channel` de "
+                "`LOTES_NO_CANO` (8) lotes de `LOTE` posicoes: a busca nao "
+                "adianta mais que isso. `thread::scope` junta antes de voltar; "
+                "a codificacao solta o cano ao terminar e a busca para no "
+                "`send` que falha.",
+    },
     # ------------------------------------------------ o mecanismo, um so
     {
         "arquivo": "crates/phxsql-server/src/telemetria.rs",

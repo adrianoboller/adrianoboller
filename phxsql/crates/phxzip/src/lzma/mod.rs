@@ -16,7 +16,9 @@ mod modelo;
 mod otimo;
 
 pub use dec::DecodificadorLzma;
-pub use enc::{codificar_lzma2, Nivel};
+#[cfg(feature = "std")]
+pub use enc::codificar_bloco_lzma2_em_fio;
+pub use enc::{blocos_lzma2, codificar_bloco_lzma2, codificar_lzma2, juntar_blocos_lzma2, Nivel};
 pub use lzma2::decodificar_lzma2;
 
 /// Propriedades lc/lp/pb do LZMA.

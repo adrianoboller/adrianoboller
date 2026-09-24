@@ -6,6 +6,15 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[features]
+# Os fios da compactacao em blocos (Opcoes::fios). Desligado, a crate e
+# `no_std` e compacta os mesmos blocos num fio so -- com os MESMOS bytes.
+std = []
+
 [dependencies]
 # CRC-32 do 7z e SHA-256 da chave do 7zAES: o mesmo motor do PhxSql, sem copia.
 phxhash.workspace = true
+
+[[example]]
+name = "blocos"
+required-features = ["std"]

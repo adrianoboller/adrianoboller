@@ -90,10 +90,12 @@ def cruzam(a, b):
 
 
 def barras(titulo, sub, series, unidade, casas=0, menor_e_melhor=False,
-           faixas=None, vencedor=True, pares=False):
+           faixas=None, vencedor=True, pares=False, grupo=0):
     """Um grupo de barras horizontais.
 
     `series`: [(rotulo, valor), ...]. `faixas`: {rotulo: (min, max)} ou None.
+    `grupo`: generaliza `pares` para N barras que se comparam entre si (os
+    quatro lados de um nivel: PhxZip e 7-Zip, com um fio e com varios).
     `pares`: a serie vem em DUPLAS que se comparam entre si (nivel 1 do
     PhxZip contra nivel 1 do 7-Zip, ...): a cor e a do lado da dupla, e o
     vencedor se decide DENTRO de cada dupla -- declarar um campeao so entre
@@ -139,17 +141,22 @@ def barras(titulo, sub, series, unidade, casas=0, menor_e_melhor=False,
             return primeiro[0]
         return None
 
+    g = grupo or (2 if pares else 0)
     campeoes = set()
-    if vencedor and pares:
-        for k in range(0, len(series) - 1, 2):
-            c = vence(series[k:k + 2])
+    if vencedor and g:
+        for k in range(0, len(series) - 1, g):
+            c = vence(series[k:k + g])
             if c:
                 campeoes.add(c)
     elif vencedor:
         c = vence(validos)
         if c:
             campeoes.add(c)
-    cor_de = (lambda i: CORES[i % 2]) if pares else (lambda i: CORES[i % len(CORES)])
+    # Com grupo de 4 a ordem das cores e PhxZip, PhxZip varios fios, 7-Zip,
+    # 7-Zip varios fios: laranja e verde do nosso lado, azul e petroleo do dele.
+    cor_de = ((lambda i: CORES[[0, 2, 1, 3][i % 4]]) if g == 4 else
+              (lambda i: CORES[i % 2]) if g == 2 else
+              (lambda i: CORES[i % len(CORES)]))
 
     corpo = []
     for i, (rot, val) in enumerate(series):
@@ -497,15 +504,22 @@ def g_phxzip():
                 'Rode <code>python3 bancada/phxzip/comparar-7z.py</code>.</div>'], ("—", False)
     q = quando(p, d)
     out = []
-    nomes = {"texto": "Texto", "misto": "Texto + imagem + executável"}
+    nomes = {"texto": "Texto", "misto": "Texto + imagem + executável",
+             "grande": "Todos os documentos + os binários do 7-Zip"}
     for corpo, c in d.get("corpos", {}).items():
         niveis = c.get("niveis", {})
         arquivos = ", ".join(a["nome"] for a in c.get("arquivos", []))
 
+        mt = d.get("fios_mt")
+        lados = [("phxzip", "PhxZip"), ("phxzip_mt", f"PhxZip {mt} fios"),
+                 ("7zip", "7-Zip"), ("7zip_mt", f"7-Zip {mt} fios")]
+        lados = [l for l in lados if any(l[0] in m for m in niveis.values())]
+        g = len(lados)
+
         def serie(chave):
             s, f = [], {}
             for n, m in niveis.items():
-                for quem, rot in (("phxzip", "PhxZip"), ("7zip", "7-Zip")):
+                for quem, rot in lados:
                     r = f"nível {n} · {rot}"
                     v = m.get(quem, {}).get(chave)
                     if isinstance(v, dict):
@@ -515,10 +529,10 @@ def g_phxzip():
                         s.append((r, v))
             return s, f
 
-        def razoes(chave, sub=None):
+        def razoes(chave, sub=None, a_de="phxzip", b_de="7zip"):
             partes = []
             for n, m in niveis.items():
-                a, b = m.get("phxzip", {}).get(chave), m.get("7zip", {}).get(chave)
+                a, b = m.get(a_de, {}).get(chave), m.get(b_de, {}).get(chave)
                 if sub:
                     a, b = (a or {}).get(sub), (b or {}).get(sub)
                 if isinstance(a, (int, float)) and isinstance(b, (int, float)) and b:
@@ -528,21 +542,29 @@ def g_phxzip():
         titulo = f"{nomes.get(corpo, corpo)} — {num(c.get('bytes'))} bytes"
         s, _ = serie("bytes")
         out.append(barras(
-            f"{titulo}: tamanho do .7z", f"{esc(arquivos)}. PhxZip ÷ 7-Zip: "
-            f"{razoes('bytes')} (abaixo de 1 = o PhxZip gera menor).",
-            s, "bytes (menor é melhor)", 0, menor_e_melhor=True, pares=True))
+            f"{titulo}: tamanho do .7z", f"{esc(arquivos)}. PhxZip ÷ 7-Zip, um "
+            f"fio: {razoes('bytes')} (abaixo de 1 = o PhxZip gera menor)."
+            + (f" O corte em blocos dos fios custa: {razoes('bytes', None, 'phxzip_mt', 'phxzip')}."
+               if g == 4 else ""),
+            s, "bytes (menor é melhor)", 0, menor_e_melhor=True, grupo=g))
         s, f = serie("compactar_s")
         out.append(barras(
-            f"{titulo}: tempo para compactar", f"PhxZip ÷ 7-Zip: "
-            f"{razoes('compactar_s', 'mediana')} (acima de 1 = o PhxZip é mais lento).",
+            f"{titulo}: tempo para compactar", f"PhxZip ÷ 7-Zip, um fio: "
+            f"{razoes('compactar_s', 'mediana')} (acima de 1 = o PhxZip é mais lento)."
+            + (f" Com {mt} fios dos dois lados: "
+               f"{razoes('compactar_s', 'mediana', 'phxzip_mt', '7zip_mt')}."
+               f" O que os fios deram ao PhxZip (vários ÷ um): "
+               f"{razoes('compactar_s', 'mediana', 'phxzip_mt', 'phxzip')}."
+               if g == 4 else ""),
             s, "segundos (menor é melhor)", 3, menor_e_melhor=True, faixas=f,
-            pares=True))
+            grupo=g))
         s, f = serie("descompactar_s")
         out.append(barras(
             f"{titulo}: tempo para descompactar", f"PhxZip ÷ 7-Zip: "
-            f"{razoes('descompactar_s', 'mediana')}.",
+            f"{razoes('descompactar_s', 'mediana')}. A descompactação do PhxZip "
+            f"é num fio só nos dois lados dele.",
             s, "segundos (menor é melhor)", 3, menor_e_melhor=True, faixas=f,
-            pares=True))
+            grupo=g))
     out.append(f'<p class="sub">{esc(d.get("sete_zip", ""))} · '
                f'<code>{esc(d.get("comando_7z", ""))}</code> contra '
                f'<code>{esc(d.get("comando_phxzip", ""))}</code> · '

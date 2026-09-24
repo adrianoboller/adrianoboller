@@ -117,6 +117,53 @@ JSON, com a data. Em resumo:
 
 Esses são os dois próximos alvos de desempenho.
 
+### 3d. Compactação com vários fios (24/09/2026)
+
+Duas técnicas, as mesmas do `7z -mmt` e do `xz -T`, reescritas aqui:
+
+1. **Busca em fio próprio** (`codificar_bloco_lzma2_em_fio`). Uma thread
+   percorre todas as posições na árvore e manda os casamentos em lotes; a
+   outra planeja e codifica. A árvore só muda na inserção, nunca na coleta,
+   então os bytes saem **iguais** aos de um fio só, e há dois testes que exigem
+   isso. Um deles confere o contrato pergunta a pergunta, inclusive a pergunta
+   por posição já passada, e cai quando essa regra é quebrada. Ganho, 21 MB no
+   nível 5: 1,46×, sem custo de tamanho.
+2. **Blocos independentes** (`Opcoes::fios`/`bloco`). O dado se corta em blocos
+   que recomeçam o dicionário, compactados em paralelo, dentro de um fluxo
+   LZMA2 só: continua 7z padrão, e o 7-Zip abre (teste de interoperabilidade
+   com senha). Os bytes dependem do bloco e não do número de fios. Dado menor
+   que um bloco sai igual ao de um fio.
+
+Política: com blocos de sobra, um fio por bloco; com poucos blocos, dois fios
+por bloco (busca e codificação).
+
+**O tamanho do bloco padrão** (`bloco_padrao`) é um quarto do dicionário, com
+piso de 1 MiB e teto de 8 MiB: 4 MiB no nível 5 e 8 MiB do 7 ao 9. As
+hipóteses, medidas em 21 MB com 4 núcleos, no nível 5:
+
+| bloco | tamanho × 1 bloco | compactar × 1 fio | veredito |
+|---|---|---|---|
+| 1 MiB | +10,5% | 5,5× mais rápido | morreu: perde demais |
+| 4 MiB | +3,7% | 3,9× | **entrou (nível 5)** |
+| 8 MiB | +2,1% | 2,5× | entrou para os níveis 7 a 9 |
+| 4× o dicionário (o corte do 7-Zip) | 0 | nada abaixo de 64 MiB | morreu: não entrega tempo |
+
+**Onde se usa:**
+- `phxzipcmd`: `-mmt=N`, com padrão igual aos núcleos; `-mmt=off` dá o menor
+  arquivo.
+- porta web: `Config::fios` (`--fios`), com padrão de 4 no máximo, porque o teto
+  da porta é `max_conexoes × fios`. A tela oferece «menor arquivo (um fio, mais
+  lento)».
+- `phxsql-core` (`.phz`): um fio, porque o arquivo é pequeno.
+
+**O que se ganhou** (bancada `comparar-7z`, 4 fios, gráfico na página de
+gráficos): o tempo de compactar caiu 1,6× no texto de 1,3 MB, 2,8× no misto de
+6 MB e 2,6× no grande de 13 MB, que custa +4,0% de tamanho no nível 5 e +1,7%
+no 9. **O que ainda falta:** o 7-Zip com os mesmos 4 fios continua 1,1 a 1,6×
+mais rápido e sem custo de tamanho. É o próximo alvo, junto com a
+descompactação, que é num fio só.
+
+
 ## 4. Decisões
 
 - **7z, e não ZIP; só o conjunto atual** — decisão do dono (450, 454). O
@@ -139,6 +186,7 @@ Esses são os dois próximos alvos de desempenho.
 cargo build --release -p phxzip-web
 target/release/phxzipweb                                   # http://localhost:4000, sem login
 PHXZIP_WEB_SENHA='...' target/release/phxzipweb --usuario adriano   # login exigido
+target/release/phxzipweb --fios 2                                  # fios por compactacao (padrao: ate 4)
 ```
 
 - **Porta 4000** sai de uma constante só (`PORTA_PADRAO`); `--porta` troca.

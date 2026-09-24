@@ -166,6 +166,7 @@ fn opcoes(nivel: u8, senha: Option<&str>, cifrar_nomes: bool) -> Opcoes {
         senha: senha.map(String::from),
         cifrar_nomes,
         acaso: [0x5A; 32],
+        ..Opcoes::default()
     }
 }
 
@@ -238,8 +239,10 @@ fn arquivo_sem_entradas_e_o_7z_vazio_de_32_bytes() {
 struct DirTemp(PathBuf);
 
 impl DirTemp {
-    fn novo() -> DirTemp {
-        let d = std::env::temp_dir().join(format!("phxzip-interop-{}", std::process::id()));
+    /// Um nome POR TESTE: com so o pid, dois testes ao mesmo tempo apagavam a
+    /// pasta um do outro (visto quando o segundo teste com 7z entrou).
+    fn novo(nome: &str) -> DirTemp {
+        let d = std::env::temp_dir().join(format!("phxzip-interop-{}-{nome}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         DirTemp(d)
@@ -275,7 +278,7 @@ fn o_7zip_abre_o_que_o_phxzip_grava() {
         );
         return;
     };
-    let guarda = DirTemp::novo();
+    let guarda = DirTemp::novo("escrita");
     let dir = guarda.0.clone();
     for (i, (nivel, senha, nomes)) in [
         (0u8, None, false),
@@ -320,4 +323,44 @@ fn o_7zip_abre_o_que_o_phxzip_grava() {
             2048
         );
     }
+}
+
+/// Compactado em BLOCOS (varios fios): o fluxo LZMA2 recomeca o dicionario a
+/// cada bloco, e o 7-Zip tem de abrir e conferir o CRC igual. Com senha, para
+/// o bloco passar tambem pelo AES.
+#[test]
+fn o_7zip_abre_o_que_foi_compactado_em_blocos() {
+    let Some(sete) = sete_z() else {
+        eprintln!("NAO MEDIDO: 7z ausente; compactacao em blocos nao conferida");
+        return;
+    };
+    let mut dados = Vec::new();
+    let mut x = 7u32;
+    while dados.len() < 700_000 {
+        x = x.wrapping_mul(1_103_515_245).wrapping_add(12345);
+        dados.extend_from_slice(format!("registro {} do PhxZip\n", x >> 18).as_bytes());
+    }
+    let mut e = Escritor::novo(Opcoes {
+        nivel: 5,
+        senha: Some(SENHA.into()),
+        acaso: [0x33; 32],
+        fios: 3,
+        bloco: 1 << 16,
+        ..Opcoes::default()
+    });
+    e.arquivo("blocos.txt", dados.clone(), None, None).unwrap();
+    let guarda = DirTemp::novo("blocos");
+    let arq = guarda.0.join("blocos.7z");
+    std::fs::write(&arq, e.gravar().unwrap()).unwrap();
+    let destino = guarda.0.join("x");
+    let o = Command::new(&sete)
+        .arg("x")
+        .arg(&arq)
+        .arg(format!("-o{}", destino.display()))
+        .arg(format!("-p{SENHA}"))
+        .arg("-y")
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stdout));
+    assert_eq!(std::fs::read(destino.join("blocos.txt")).unwrap(), dados);
 }

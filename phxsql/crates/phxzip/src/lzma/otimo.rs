@@ -31,7 +31,7 @@ use alloc::collections::VecDeque;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use super::enc::{compr_comum, Buscador, Decisao};
+use super::enc::{compr_comum, Decisao, Fonte};
 use super::modelo::{
     estado_de_compr, Comprimentos, Modelo, COMPR_MAX, COMPR_MIN, DISTANCIAS_CHEIAS,
     ESTADOS_DE_COMPR, FIM_DO_MODELO_DE_POS, POS_MAX,
@@ -536,11 +536,11 @@ impl Otimo {
 
     /// Planeja os simbolos a partir de `p` e os poe em `fila`. O modelo `m`
     /// tem de estar exatamente no estado de `p` (a fila vazia garante).
-    pub(super) fn planejar(
+    pub(super) fn planejar<F: Fonte>(
         &mut self,
         m: &Modelo,
         d: &[u8],
-        busca: &mut Buscador,
+        busca: &mut F,
         p: usize,
         bom: usize,
         fila: &mut VecDeque<Decisao>,
@@ -552,7 +552,7 @@ impl Otimo {
         }
         let max = (d.len() - p).min(COMPR_MAX);
         if self.lista_de != p {
-            busca.todos(p, &mut self.lista);
+            busca.casamentos(p, &mut self.lista);
         }
         self.lista_de = usize::MAX;
 
@@ -594,7 +594,7 @@ impl Otimo {
             if cur >= JANELA {
                 break;
             }
-            busca.todos(p + cur, &mut self.lista);
+            busca.casamentos(p + cur, &mut self.lista);
             if let Some(&(l, _)) = self.lista.last() {
                 if l >= bom {
                     // Casamento longo a frente: o plano acaba aqui, e o

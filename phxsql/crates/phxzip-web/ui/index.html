@@ -216,6 +216,7 @@
       <input id="c_nome" class="caixa" value="phxzip.7z"></label>
     <div class="linha" style="margin-bottom:12px">
       <label class="marcar"><input id="c_visiveis" type="checkbox"><span data-txt="zip.nomes_visiveis">nomes visíveis sem senha</span></label>
+      <label class="marcar"><input id="c_um_fio" type="checkbox"><span data-txt="zip.um_fio">menor arquivo (um fio, mais lento)</span></label>
     </div>
     <button id="compactar" class="botao inclui" data-txt="zip.compactar">Compactar e baixar</button>
     <div id="c_prog" class="progresso oculto" role="status" aria-live="polite">
@@ -548,7 +549,7 @@ $('compactar').onclick = async () => {
   if (!itens.length) { mostrar('c_res', false, t('zip.escolha_antes')); return; }
   const senha = $('c_senha').value;
   if (senha !== $('c_senha2').value) { mostrar('c_res', false, t('zip.senha_difere')); $('c_senha2').focus(); return; }
-  const meta = { nivel: +$('c_nivel').value, senha, nomes_visiveis: $('c_visiveis').checked,
+  const meta = { nivel: +$('c_nivel').value, senha, nomes_visiveis: $('c_visiveis').checked, um_fio: $('c_um_fio').checked,
     arquivos: itens.map(x => ({ nome: x.nome, tamanho: x.arquivo.size, mtime: Math.floor(x.arquivo.lastModified / 1000) })) };
   const tamanhos = itens.map(x => x.arquivo.size);
   if (acimaDoTeto(meta, tamanhos)) {

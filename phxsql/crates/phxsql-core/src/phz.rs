@@ -176,6 +176,7 @@ pub fn empacotar(nome: &str, texto: &[u8]) -> io::Result<Vec<u8>> {
         senha: Some(SENHA_FIXA.to_string()),
         cifrar_nomes: true,
         acaso,
+        ..Opcoes::default()
     });
     e.arquivo(nome, texto.to_vec(), None, None)
         .map_err(|e| erro(e.to_string()))?;

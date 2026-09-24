@@ -11,7 +11,7 @@ name = "phxzipcmd"
 path = "src/main.rs"
 
 [dependencies]
-phxzip.workspace = true
+phxzip = { workspace = true, features = ["std"] }
 # So pelo sorteio (`cifra::sortear`) do IV do AES: o mesmo gerador do PhxSql,
 # e nao um segundo jeito de pedir acaso ao sistema.
 phxsql-core.workspace = true

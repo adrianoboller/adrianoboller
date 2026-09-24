@@ -69,6 +69,10 @@ pub struct Config {
     pub max_corpo: usize,
     /// Conexoes atendidas ao mesmo tempo.
     pub max_conexoes: usize,
+    /// Fios de UMA compactacao. O teto de fios da porta inteira e
+    /// `max_conexoes x fios`; o padrao limita a 4 para dezenas de pedidos ao
+    /// mesmo tempo nao brigarem por nucleo, e o `--fios` muda.
+    pub fios: usize,
 }
 
 impl std::fmt::Debug for Config {
@@ -91,6 +95,7 @@ impl Default for Config {
             senha_hash: None,
             max_corpo: 256 << 20,
             max_conexoes: 32,
+            fios: phxzip::fios_padrao().min(4),
         }
     }
 }
@@ -314,7 +319,7 @@ fn atender(mut fluxo: TcpStream, est: &Estado) {
         "/api/testar" => listar(&mut fluxo, &meta, bytes, true),
         "/api/extrair" => extrair(&mut fluxo, &meta, bytes),
         "/api/extrair_tudo" => extrair_tudo(&mut fluxo, &meta, bytes),
-        "/api/compactar" => compactar(&mut fluxo, &meta, bytes),
+        "/api/compactar" => compactar(&mut fluxo, &meta, bytes, est.config.fios),
         _ => {
             responder_erro(&mut fluxo, 404, "rota", "rota inexistente");
             Ok(())
@@ -524,7 +529,7 @@ fn extrair_tudo(fluxo: &mut TcpStream, meta: &Json, bytes: &[u8]) -> Result<(), 
     Ok(())
 }
 
-fn compactar(fluxo: &mut TcpStream, meta: &Json, bytes: &[u8]) -> Result<(), Erro> {
+fn compactar(fluxo: &mut TcpStream, meta: &Json, bytes: &[u8], fios: usize) -> Result<(), Erro> {
     let nivel = meta.inteiro_ou("nivel", 5).clamp(0, 9) as u8;
     let mut acaso = [0u8; 32];
     phxsql_core::cifra::sortear(&mut acaso);
@@ -533,6 +538,14 @@ fn compactar(fluxo: &mut TcpStream, meta: &Json, bytes: &[u8]) -> Result<(), Err
         senha: senha_do(meta).map(String::from),
         cifrar_nomes: !meta.booleano_ou("nomes_visiveis", false),
         acaso,
+        // «Menor arquivo» pede um bloco so: o corte em blocos e o que compra
+        // a velocidade, e custa alguns por cento de tamanho.
+        fios: if meta.booleano_ou("um_fio", false) {
+            1
+        } else {
+            fios
+        },
+        bloco: 0,
     };
     let mut esc = Escritor::novo(op);
     let lista = meta

@@ -4,6 +4,12 @@
 Grava `bancada/phxzip/comparar-7z.json`; o grafico da pagina de graficos
 (`docs/dossie/graficos-dos-testes.py`) sai dali, nunca da memoria.
 
+Quatro lados por nivel: cada um com UM fio e com VARIOS (os nucleos da
+maquina). Um fio contra um fio mede o codificador; varios contra varios mede
+o que quem espera o arquivo sente. O PhxZip com varios fios corta em blocos
+(docs/PHXZIP.md §3d) e perde alguns por cento de tamanho -- o grafico mostra
+os dois custos lado a lado, em vez de escolher o que favorece.
+
 Trabalho IGUAL, que e a regra da bancada (bancada/LEIA-ME.md):
 - o 7-Zip com `-mf=off` (sem o filtro BCJ que ele poe sozinho em executavel;
   o PhxZip nao tem filtro, por decisao do dono no pedido 454) e `-mmt=1`
@@ -24,6 +30,7 @@ Uso:  python3 bancada/phxzip/comparar-7z.py [corridas]
 Antes: cargo build --release -p phxzip-cmd
 """
 import datetime
+import glob
 import hashlib
 import json
 import os
@@ -47,7 +54,15 @@ CORPOS = {
     "texto": ["docs/PENDENCIAS.md", "docs/FORMATO.md", "MANUAL.txt"],
     "misto": ["docs/PENDENCIAS.md", "docs/FORMATO.md", "MANUAL.txt",
               "marca/phxsql-abertura.png", "/usr/lib/7zip/7z.so"],
+    # O GRANDE existe para o corte em blocos ter o que cortar: com 6 MB o
+    # nivel 5 (blocos de 4 MiB) faz dois blocos e o paralelo quase nao
+    # aparece. Todos os documentos + os binarios do 7-Zip do sistema.
+    "grande": ["docs/*.md", "MANUAL.txt", "marca/phxsql-abertura.png",
+               "/usr/lib/7zip/7z.so", "/usr/lib/7zip/7za", "/usr/lib/7zip/7zr",
+               "/usr/lib/7zip/7z", "/usr/lib/7zip/7zCon.sfx"],
 }
+NUCLEOS = os.cpu_count() or 1
+LADOS = [("phxzip", 1), ("phxzip", NUCLEOS), ("7zip", 1), ("7zip", NUCLEOS)]
 
 
 def sha(caminho):
@@ -95,8 +110,9 @@ def medir(corridas):
         .strftime("%Y-%m-%dT%H:%M:%SZ"),
         "corridas": corridas,
         "sete_zip": versao_7z(),
-        "comando_7z": "7z a -t7z -m0=lzma2 -mx=N -mf=off -mmt=1",
-        "comando_phxzip": "phxzipcmd a -mx=N",
+        "comando_7z": "7z a -t7z -m0=lzma2 -mx=N -mf=off -mmt=F",
+        "comando_phxzip": "phxzipcmd a -mx=N -mmt=F",
+        "fios_mt": NUCLEOS,
         "maquina": os.uname().machine + ", " + str(os.cpu_count()) + " nucleos",
         "corpos": {},
     }
@@ -105,35 +121,40 @@ def medir(corridas):
             orig = os.path.join(tmp, "orig")
             os.mkdir(orig)
             info = []
+            fontes = []
             for a in arquivos:
                 src = a if os.path.isabs(a) else os.path.join(RAIZ, a)
-                dst = os.path.join(orig, os.path.basename(a))
+                fontes += sorted(glob.glob(src)) if "*" in src else [src]
+            for src in fontes:
+                dst = os.path.join(orig, os.path.basename(src))
                 shutil.copyfile(src, dst)
-                info.append({"nome": os.path.basename(a),
+                info.append({"nome": os.path.basename(src),
                              "bytes": os.path.getsize(dst), "sha256": sha(dst)})
             total = sum(i["bytes"] for i in info)
             nomes = [i["nome"] for i in info]
             por_nivel = {}
             for n in NIVEIS:
                 med = {}
-                for quem in ("phxzip", "7zip"):
-                    arq = os.path.join(tmp, f"{quem}-{n}.7z")
+                for quem, fios in LADOS:
+                    lado = quem if fios == 1 else f"{quem}_mt"
+                    arq = os.path.join(tmp, f"{lado}-{n}.7z")
                     if quem == "phxzip":
-                        cmd_a = [PHX, "a", arq, *nomes, f"-mx={n}", "-y"]
+                        cmd_a = [PHX, "a", arq, *nomes, f"-mx={n}",
+                                 f"-mmt={fios}", "-y"]
                     else:
                         cmd_a = ["7z", "a", "-t7z", "-m0=lzma2", f"-mx={n}",
-                                 "-mf=off", "-mmt=1", arq, *nomes]
+                                 "-mf=off", f"-mmt={fios}", arq, *nomes]
                     comp, desc = [], []
                     for _ in range(corridas):
                         if os.path.exists(arq):
                             os.remove(arq)
                         comp.append(rodar(cmd_a, cwd=orig))
-                        out = os.path.join(tmp, f"x-{quem}-{n}")
+                        out = os.path.join(tmp, f"x-{lado}-{n}")
                         shutil.rmtree(out, ignore_errors=True)
                         if quem == "phxzip":
                             cmd_x = [PHX, "x", arq, f"-o{out}", "-y"]
                         else:
-                            cmd_x = ["7z", "x", "-mmt=1", f"-o{out}", "-y", arq]
+                            cmd_x = ["7z", "x", f"-mmt={fios}", f"-o{out}", "-y", arq]
                         desc.append(rodar(cmd_x))
                         conferir_iguais(orig, out)
                     tamanho = os.path.getsize(arq)
@@ -141,17 +162,17 @@ def medir(corridas):
                         # O arquivo nosso tem de abrir no 7-Zip, com o mesmo
                         # conteudo -- senao o tamanho nao vale nada.
                         rodar(["7z", "t", arq])
-                        cruz = os.path.join(tmp, f"cruz-{n}")
+                        cruz = os.path.join(tmp, f"cruz-{lado}-{n}")
                         rodar(["7z", "x", f"-o{cruz}", "-y", arq])
                         conferir_iguais(orig, cruz)
-                    med[quem] = {"bytes": tamanho,
+                    med[lado] = {"bytes": tamanho, "fios": fios,
                                  "compactar_s": resumo(comp),
                                  "descompactar_s": resumo(desc),
                                  "compactar_mb_s": total / 1e6 /
                                  statistics.median(comp),
                                  "descompactar_mb_s": total / 1e6 /
                                  statistics.median(desc)}
-                    print(f"{corpo:6} nivel {n} {quem:7} {tamanho:>10} bytes  "
+                    print(f"{corpo:6} nivel {n} {lado:9} {tamanho:>10} bytes  "
                           f"compacta {statistics.median(comp):.3f} s  "
                           f"descompacta {statistics.median(desc):.3f} s",
                           flush=True)

@@ -31,10 +31,12 @@
 //! assert_eq!(a.extrair(0).unwrap(), b"{\"porta\": 5433}");
 //! ```
 
-#![cfg_attr(not(test), no_std)]
+#![cfg_attr(not(any(test, feature = "std")), no_std)]
 #![warn(missing_docs)]
 
 extern crate alloc;
+#[cfg(feature = "std")]
+extern crate std;
 
 pub mod aes;
 pub mod caminho;
@@ -47,6 +49,8 @@ pub mod lzma;
 
 pub use caminho::caminho_seguro;
 pub use erro::{Erro, Resultado};
-pub use escritor::{Escritor, Opcoes};
+#[cfg(feature = "std")]
+pub use escritor::fios_padrao;
+pub use escritor::{bloco_padrao, Escritor, Opcoes};
 pub use formato::{filetime_de_unix, unix_de_filetime};
 pub use leitor::{Arquivo7z, Entrada, Limites};
