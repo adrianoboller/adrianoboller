@@ -21,3 +21,4 @@
 *.bundle
 phxsql-completo-*.tar.gz
 __pycache__/
+dist/

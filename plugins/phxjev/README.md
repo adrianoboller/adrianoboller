@@ -16,10 +16,18 @@ probabilidade por opcao, e o veredito tirado de **limiar fixo**.
 
 ## Instalar
 
+Direto do GitHub (a branch vai no `#`; sem ela, o marketplace le a branch
+padrao, que ainda nao tem o plugin):
+
 ```
-/plugin marketplace add adrianoboller/adrianoboller
+/plugin marketplace add adrianoboller/adrianoboller#claude/phxjev-markdown-plugin-vdvios
 /plugin install phxjev@phoenix
 ```
+
+Pelo pacote: `bash plugins/phxjev/empacotar.sh` gera `dist/phxjev-<versao>.zip`,
+`.tar.gz` e `.sha256` (so com testes verdes e plugin validado); descompacte e
+`/plugin marketplace add <pasta>`. O `bancada/` do pacote e a do PhxSql: serve
+de referencia, e os casos dela apontam para o codigo daqui.
 
 Local, sem marketplace: `claude --plugin-dir plugins/phxjev`.
 
