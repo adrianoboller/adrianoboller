@@ -61,6 +61,11 @@ const AJUDA: &str = "phxvpn -- redes virtuais no estilo Radmin, sobre OpenVPN
              [/COMANDO:\"linha\"] [/ENTRADA:script.txt]
       Console no estilo do prompt do MS-DOS, com tres modos. AJUDA dentro dele.
 
+  phxvpn mesa [--pasta DIR] [--porta N] [--sem-janela]
+      O programa de mesa (estilo Radmin): abre a janela com as redes P2P,
+      os membros e o botao ligar/desligar. Ligar pede root/administrador.
+      (No Windows tambem ha o phxvpnw.exe, que abre sem janela de console.)
+
   phxvpn versao
 ";
 
@@ -73,6 +78,16 @@ fn main() {
         Some("p2p") => cmd_p2p(&args[1..]),
         Some("repasse") => cmd_repasse(&args[1..]),
         Some("cmd") => phxvpn::console::principal(&args[1..]),
+        Some("mesa") => {
+            let o = Opcoes::de_args(&args[1..], &["sem-janela"]);
+            phxvpn::mesa::principal(
+                o.um("pasta")
+                    .map(PathBuf::from)
+                    .unwrap_or_else(phxvpn::mesa::pasta_padrao),
+                o.um("porta").and_then(|p| p.parse().ok()).unwrap_or(0),
+                !o.tem("sem-janela"),
+            )
+        }
         Some("versao") | Some("--version") => {
             println!("phxvpn {}", env!("CARGO_PKG_VERSION"));
             Ok(())

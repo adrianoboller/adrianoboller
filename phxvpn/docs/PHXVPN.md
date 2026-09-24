@@ -26,6 +26,7 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [x] P2P: servidor intermediário (`phxvpn repasse`) e modos `direto` / `repasse` / `auto` — provado numa topologia de CGNAT
 - [x] P2P: `p2p criar` / `p2p convidar` / `p2p entrar` — convite cifrado com a senha da rede, ficha de uso único, malha que se aprende pela lista de pares dentro do túnel
 - [x] P2P no Windows: placa TAP-Windows6 em modo TUN só com APIs do sistema; `p2p placa` cria o adaptador pelo `tapctl.exe` do OpenVPN
+- [x] Programa de mesa (`phxvpn mesa`, `phxvpnw.exe` sem console): janela no estilo Radmin — criar, entrar por convite, convidar, ligar/desligar, membros com estado
 - [x] Console `phxvpncmd` (ou `phxvpn cmd`), estilo prompt do MS-DOS: modos Painel, P2P e Ferramentas; lote por arquivo (`/entrada:`) e linha única (`/comando:`)
 - [x] Segurança A1: revogação real — série no CN, reentrada revoga o perfil anterior, CRL Ed25519 no `crl-verify`, admin/dono remove membro
 - [x] Segurança A2/A3: tentativas limitadas (login, IP, usuário+rede); PBKDF2 fora da trava com semáforo; hash fictício contra enumeração
@@ -39,7 +40,7 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 
 - [ ] Prova com o **túnel OpenVPN de verdade** — o binário `openvpn` não existe neste contêiner; o TLS foi provado com OpenSSL, o túnel não
 - [ ] TLS no próprio painel (hoje HTTP; escuta 127.0.0.1 por padrão) — esbarra na pétrea de zero dependência
-- [ ] Cliente de mesa tipo Radmin (ícone na bandeja, botão conectar) — hoje é o `.ovpn` + OpenVPN GUI/Connect
+- [ ] Programa de mesa: ícone na bandeja do Windows, abrir com o sistema, lembrar a senha da rede (selada), ping e chat por membro
 - [ ] Revogação por CRL (hoje: sair da rede apaga o `ccd/` e o `ccd-exclusive` barra)
 - [ ] Usar o certificado digital da empresa (A1/RSA) como AC — hoje ele é guardado só como identificação
 - [ ] Serviço do sistema (systemd / serviço do Windows) e pacote
@@ -162,6 +163,42 @@ UTF-16) moram em `src/tap.rs` para se testarem em qualquer sistema.
 **O que NÃO está provado:** o driver TAP, o `netsh` e o túnel num Windows
 real — o Wine não tem o driver. O `prova-windows.ps1` faz essa prova em cinco
 passos (autoteste, placa, convite, ligar, ping), como administrador.
+
+## Programa de mesa
+
+`phxvpn mesa` (no Windows também `phxvpnw.exe`, subsistema GUI: dois cliques,
+sem console). A janela lista as redes P2P deste computador; cada rede tem a
+lâmpada (ligada/desligada), **Convidar** e **Ligar/Desligar**, e embaixo os
+membros com bolinha de conectado, IP (clique copia), chave e caminho
+(direto/repasse). Redes e identidade ficam em `%APPDATA%\phxvpn` ou
+`~/.config/phxvpn`.
+
+**Desenho (papel J):** a tela é servida só em `127.0.0.1`, numa porta
+sorteada, e aberta como janela de aplicativo (`--app=`) do Edge, que todo
+Windows 10/11 tem, ou do Chromium no Linux; sem eles, o navegador padrão.
+Morreram: janela Win32 nativa (só Windows, milhares de linhas) e GTK
+(biblioteca externa, choca com a pétrea). **Guarda:** além das do `web.rs`,
+toda rota pede a **ficha da sessão** — 32 bytes sorteados a cada abertura,
+que chegam à janela no fragmento da URL (`#f=`), que não vai ao servidor nem
+ao Referer, e somem da barra de endereço depois de lidos.
+
+**Um motor só:** criar, convidar, entrar e ligar chamam o `comandos.rs` —
+o mesmo de `phxvpn p2p …` e do `phxvpncmd`; e o transporte HTTP (tetos,
+prazo, `Host`, JSON) saiu do painel para o `web.rs`, usado pelos dois.
+
+**Prova (24/09/2026):** duas janelas, cada uma num `ip netns`, operadas no
+Chromium: A cria «Matriz», gera o convite pela janela e liga; B cola o
+código (senha errada: «senha da rede errada, ou convite adulterado»), entra
+e liga; **B vê A conectado** (bolinha verde, «direto 192.0.2.1:51820»);
+ping de B a A pelo túnel 3/3; **Desligar** pela janela apaga a placa
+(`Device "phx0" does not exist`). O nó ganhou desligar de verdade: a placa é
+lida com `poll` (Linux) ou `WaitForSingleObject` + `CancelIoEx` (Windows),
+em fatias de 0,5 s. `phxvpnw.exe`: `Subsystem 2 (Windows GUI)`.
+
+Defeito achado ao exercitar: o rodapé mostrava texto de terminal («convide
+com p2p convidar» e o caminho do arquivo). A janela agora fala a língua dela.
+
+![Janela conectada](mesa-conectado.png) ![Convite](mesa-convite.png)
 
 ## Console `phxvpncmd`
 

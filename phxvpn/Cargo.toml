@@ -11,6 +11,10 @@ name = "phxvpn"
 path = "src/main.rs"
 
 [[bin]]
+name = "phxvpnw"
+path = "src/bin/phxvpnw.rs"
+
+[[bin]]
 name = "phxvpncmd"
 path = "src/bin/phxvpncmd.rs"
 

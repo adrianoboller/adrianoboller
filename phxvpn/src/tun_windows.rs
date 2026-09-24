@@ -103,6 +103,8 @@ extern "system" {
     fn GetOverlappedResult(h: Handle, ov: *mut Overlapped, feitos: *mut u32, esperar: i32) -> i32;
     fn CreateEventW(seg: *mut c_void, manual: i32, inicial: i32, nome: *const u16) -> Handle;
     fn CloseHandle(h: Handle) -> i32;
+    fn WaitForSingleObject(h: Handle, ms: u32) -> u32;
+    fn CancelIoEx(h: Handle, ov: *mut Overlapped) -> i32;
     fn GetLastError() -> u32;
 }
 
@@ -380,6 +382,52 @@ impl Tun {
             Ok(n as usize)
         } else {
             Err(std::io::Error::last_os_error())
+        }
+    }
+
+    /// Le um pacote, ou devolve `None` quando `parar` liga: espera o evento
+    /// em fatias de meio segundo e, para desligar, cancela a leitura pendente
+    /// (`CancelIoEx`) e ESPERA o cancelamento acabar -- o buffer nao pode sair
+    /// de cena com o driver ainda escrevendo nele.
+    pub fn ler_ou_parar(
+        &self,
+        buf: &mut [u8],
+        parar: &std::sync::atomic::AtomicBool,
+    ) -> std::io::Result<Option<usize>> {
+        use std::sync::atomic::Ordering;
+        const WAIT_OBJECT_0: u32 = 0;
+        let ev = self.leitura.lock().unwrap_or_else(|e| e.into_inner());
+        let mut ov = Overlapped {
+            interno: 0,
+            interno_alto: 0,
+            deslocamento: 0,
+            deslocamento_alto: 0,
+            evento: ev.0,
+        };
+        let mut n = 0u32;
+        // SAFETY: `buf` vive ate o GetOverlappedResult final (com espera).
+        unsafe {
+            if ReadFile(self.h, buf.as_mut_ptr(), buf.len() as u32, &mut n, &mut ov) != 0 {
+                return Ok(Some(n as usize));
+            }
+            if GetLastError() as i32 != ERROR_IO_PENDING {
+                return Err(std::io::Error::last_os_error());
+            }
+            loop {
+                if WaitForSingleObject(ev.0, 500) == WAIT_OBJECT_0 {
+                    break;
+                }
+                if parar.load(Ordering::Relaxed) {
+                    CancelIoEx(self.h, &mut ov);
+                    GetOverlappedResult(self.h, &mut ov, &mut n, 1);
+                    return Ok(None);
+                }
+            }
+            if GetOverlappedResult(self.h, &mut ov, &mut n, 1) != 0 {
+                Ok(Some(n as usize))
+            } else {
+                Err(std::io::Error::last_os_error())
+            }
         }
     }
 

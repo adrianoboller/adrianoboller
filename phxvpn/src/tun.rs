@@ -18,7 +18,16 @@ use std::os::fd::AsRawFd;
 
 extern "C" {
     fn ioctl(fd: i32, pedido: std::ffi::c_ulong, ...) -> i32;
+    fn poll(fds: *mut PollFd, n: std::ffi::c_ulong, espera_ms: i32) -> i32;
 }
+
+#[repr(C)]
+struct PollFd {
+    fd: i32,
+    eventos: i16,
+    devolvidos: i16,
+}
+const POLLIN: i16 = 0x1;
 
 const TUNSETIFF: std::ffi::c_ulong = 0x4004_54ca;
 const IFF_TUN: i16 = 0x0001;
@@ -119,6 +128,39 @@ impl Tun {
             arquivo,
             nome: nome.to_string(),
         })
+    }
+
+    /// Le um pacote, ou devolve `None` quando `parar` liga. Espera em fatias
+    /// de meio segundo (`poll`): um `read` bloqueado nao acordaria para
+    /// desligar a rede, e a placa so some quando o descritor fecha.
+    pub fn ler_ou_parar(
+        &self,
+        buf: &mut [u8],
+        parar: &std::sync::atomic::AtomicBool,
+    ) -> std::io::Result<Option<usize>> {
+        use std::sync::atomic::Ordering;
+        loop {
+            if parar.load(Ordering::Relaxed) {
+                return Ok(None);
+            }
+            let mut p = PollFd {
+                fd: self.arquivo.as_raw_fd(),
+                eventos: POLLIN,
+                devolvidos: 0,
+            };
+            // SAFETY: um PollFd valido, vivo durante a chamada.
+            let r = unsafe { poll(&mut p, 1, 500) };
+            if r < 0 {
+                let e = std::io::Error::last_os_error();
+                if e.kind() == std::io::ErrorKind::Interrupted {
+                    continue;
+                }
+                return Err(e);
+            }
+            if r > 0 {
+                return self.ler(buf).map(Some);
+            }
+        }
     }
 
     /// Le um pacote IP que o sistema mandou para a placa.

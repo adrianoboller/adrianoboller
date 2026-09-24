@@ -6,6 +6,7 @@ pub mod comandos;
 pub mod console;
 pub mod guarda;
 pub mod http;
+pub mod mesa;
 pub mod noise;
 pub mod ovpn;
 pub mod p2p;
@@ -22,3 +23,4 @@ pub mod tun;
 #[cfg(windows)]
 #[path = "tun_windows.rs"]
 pub mod tun;
+pub mod web;

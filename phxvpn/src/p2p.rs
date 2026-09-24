@@ -182,6 +182,9 @@ pub struct No {
     /// a ficha usada -- achado na prova com quatro nos, em que o segundo uso
     /// so foi barrado por acaso (o IP ja estava ocupado).
     fichas_usadas: Mutex<Vec<[u8; 16]>>,
+    /// Desligar a rede: as tres threads do `rodar` olham isto e saem; a placa
+    /// fecha junto e o sistema a apaga.
+    parar: std::sync::atomic::AtomicBool,
 }
 
 fn indice_novo(indices: &HashMap<u32, usize>) -> u32 {
@@ -246,6 +249,7 @@ impl No {
             rede: Mutex::new(None),
             ficha_de_entrada: Mutex::new(None),
             fichas_usadas: Mutex::new(Vec::new()),
+            parar: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -792,6 +796,15 @@ impl No {
         self.ip
     }
 
+    /// Pede para o `rodar` sair (em ate ~1 s).
+    pub fn desligar(&self) {
+        self.parar.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub fn desligado(&self) -> bool {
+        self.parar.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     /// Uma linha por par, para o console: IP, caminho, idade da sessao e o
     /// comeco da chave publica.
     pub fn situacao(&self) -> Vec<[String; 4]> {
@@ -827,30 +840,54 @@ impl No {
 #[cfg(any(target_os = "linux", windows))]
 pub fn rodar(no: Arc<No>, tun: crate::tun::Tun) -> Result<(), String> {
     let tun = Arc::new(tun);
-    {
+    let placa = {
         let (no, tun) = (Arc::clone(&no), Arc::clone(&tun));
         std::thread::spawn(move || {
             let mut buf = vec![0u8; 65_535];
-            while let Ok(n) = tun.ler(&mut buf) {
+            while let Ok(Some(n)) = tun.ler_ou_parar(&mut buf, &no.parar) {
                 no.da_placa(&buf[..n]);
             }
-        });
-    }
-    {
+        })
+    };
+    let relogio = {
         let no = Arc::clone(&no);
-        std::thread::spawn(move || loop {
-            no.tique();
-            std::thread::sleep(Duration::from_secs(1));
-        });
-    }
+        std::thread::spawn(move || {
+            while !no.desligado() {
+                no.tique();
+                std::thread::sleep(Duration::from_secs(1));
+            }
+        })
+    };
     let udp = no.udp.try_clone().map_err(|e| e.to_string())?;
+    udp.set_read_timeout(Some(Duration::from_millis(500)))
+        .map_err(|e| e.to_string())?;
     let mut buf = vec![0u8; 65_535];
-    loop {
-        let (n, de) = udp.recv_from(&mut buf).map_err(|e| e.to_string())?;
-        if let Some(ip) = no.da_rede(&buf[..n], de) {
-            let _ = tun.escrever(&ip);
+    let resultado = loop {
+        if no.desligado() {
+            break Ok(());
         }
-    }
+        match udp.recv_from(&mut buf) {
+            Ok((n, de)) => {
+                if let Some(ip) = no.da_rede(&buf[..n], de) {
+                    let _ = tun.escrever(&ip);
+                }
+            }
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                ) => {}
+            Err(e) => {
+                no.desligar();
+                break Err(e.to_string());
+            }
+        }
+    };
+    // Espera as outras duas: so entao a ultima referencia da placa cai e o
+    // sistema apaga a interface.
+    let _ = placa.join();
+    let _ = relogio.join();
+    resultado
 }
 
 #[cfg(test)]
