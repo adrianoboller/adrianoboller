@@ -48,7 +48,13 @@ pub enum Metodo {
 }
 
 /// O que se escolhe ao gravar.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// O `Debug` e escrito a mao porque carrega a senha: derivado, ele a imprime no
+/// dia em que alguem acrescentar um `dbg!` (a regua e a
+/// `bancada/guardas/debug-com-segredo.py`, que subiu de 0 para 1 quando esta
+/// struct nasceu com `derive(Debug)`). A desestruturacao sem `..` obriga quem
+/// acrescentar um campo a decidir se ele aparece.
+#[derive(Clone, PartialEq, Eq)]
 pub struct Opcoes {
     pub metodo: Metodo,
     /// Sem senha, nada e cifrado.
@@ -58,6 +64,25 @@ pub struct Opcoes {
     pub ciclos: u8,
     /// Cifrar tambem o cabecalho (nomes, tamanhos, datas). So vale com senha.
     pub cifrar_cabecalho: bool,
+}
+
+impl core::fmt::Debug for Opcoes {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        // A senha nem e lida: dizer se ela existe ja seria contar algo dela,
+        // e o molde da casa (`Cifra`, em config.rs) nao conta.
+        let Opcoes {
+            metodo,
+            senha: _,
+            ciclos,
+            cifrar_cabecalho,
+        } = self;
+        f.debug_struct("Opcoes")
+            .field("metodo", metodo)
+            .field("senha", &"(oculta)")
+            .field("ciclos", ciclos)
+            .field("cifrar_cabecalho", cifrar_cabecalho)
+            .finish()
+    }
 }
 
 impl Default for Opcoes {
@@ -426,6 +451,27 @@ impl Escritor {
 #[cfg(test)]
 mod testes {
     use super::*;
+
+    /// O `Debug` das opcoes nao leva a senha -- nem o valor, nem o tamanho.
+    /// Com `derive(Debug)` a senha sai inteira na string, e este teste cai.
+    #[test]
+    fn o_debug_das_opcoes_nao_mostra_a_senha() {
+        let senha = "s3nh4-que-nao-pode-aparecer";
+        let o = Opcoes {
+            senha: Some(String::from(senha)),
+            ..Opcoes::default()
+        };
+        let texto = alloc::format!("{o:?}");
+        assert_eq!(
+            texto.matches(senha).count(),
+            0,
+            "a senha apareceu no Debug das opcoes: {texto}"
+        );
+        assert!(
+            texto.contains("(oculta)"),
+            "o Debug nem diz que o campo esta oculto: {texto}"
+        );
+    }
     use crate::leitor::Cursor;
 
     #[test]
