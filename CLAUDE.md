@@ -288,6 +288,32 @@ a cognição é o **processo** — como se descobriu, o que se errou antes, e o
 número. Lei sem processo vira dogma que ninguém sabe defender; processo sem lei
 vira história que ninguém aplica.
 
+## Cláusula pétrea: aprendizado PENDENTE não vira FRUTÍFERO sem evidência
+
+Ordem do dono, 24/09/2026: *«Um aprendizado PENDENTE não pode virar FRUTÍFERO
+automaticamente: precisa de evidência validada. Falhas observadas entram como
+INFRUTÍFERO com causa/prevenção para alimentar avoid, enquanto sucessos
+comprovados alimentam reuse.»*
+
+Todo aprendizado tem um de três estados, e o estado padrão é **PENDENTE**:
+
+- **FRUTÍFERO** só com **evidência validada**, escrita no próprio arquivo: o
+  teste que falha com o defeito reposto e passa com o conserto, o número
+  medido e reproduzível, ou o commit onde a prova roda. Parecer bonito,
+  conserto que «funcionou» e tempo passado não são evidência. Nada promove
+  sozinho: nem um script, nem um agente, nem o integrador por conveniência.
+- **INFRUTÍFERO** é a falha observada, e entra **com a causa e a
+  prevenção**. Sem as duas não serve para nada, porque ninguém consegue
+  evitar o que não sabe por que aconteceu.
+- Os INFRUTÍFEROS alimentam o **avoid**, a lista do que não se repete. Os
+  FRUTÍFEROS comprovados alimentam o **reuse**, a lista do que se aplica de
+  novo. As duas listas **saem de um extrator**, lidas dos próprios arquivos,
+  e nunca são digitadas à mão.
+
+É a regra de «diagnóstico plausível não é diagnóstico medido» aplicada ao
+próprio acervo de aprendizados: sem ela, o reuse vira repositório de
+palpites que deram certo por outro motivo.
+
 ## A marca é oficial
 
 Os arquivos estão em `phxsql/marca/`, com a especificação em
