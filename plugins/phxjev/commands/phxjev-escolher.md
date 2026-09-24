@@ -21,3 +21,5 @@ Use a skill `phxjev` e aplique o preset **escolher** em: $ARGUMENTS
 Registre tambem a opcao perdedora, com a `p` e o motivo em uma linha.
 
 Saida: JSON da secao 5 da skill passado ao `phxjev.py veredito`; mostre a saida dele sem editar.
+
+**Nao edite arquivos**: o PhxJev julga, nao conserta. Achado para documento vai na linha `motivo` e na resposta, depois da saida do script.

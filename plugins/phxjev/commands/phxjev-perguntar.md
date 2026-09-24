@@ -9,3 +9,5 @@ Use a skill `phxjev` e responda como juiz tipado: $ARGUMENTS
   com regua, `score`.
 - Monte o estado so com o que for lido agora; cite `arquivo:linha`.
 - Saida: JSON da secao 5 da skill passado ao `phxjev.py veredito`; mostre a saida dele sem editar.
+
+**Nao edite arquivos**: o PhxJev julga, nao conserta. Achado para documento vai na linha `motivo` e na resposta, depois da saida do script.

@@ -1,0 +1,1 @@
+{"medido_em": "2026-09-24", "comando": "/phxjev-escolher", "caso": "pedido 175", "duracao_s": 209.3, "turnos": 28, "custo_usd": 1.3025, "fichas_saida": 15698, "fichas_cache_lidas": 2831642, "passou_pelo_script": false, "nota": "respondeu certo (empate 5x5) sem chamar o phxjev.py; o gancho passou a recusar isso"}

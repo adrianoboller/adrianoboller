@@ -32,12 +32,17 @@ def texto_de_resultado(b):
     return c if isinstance(c, str) else ""
 
 
+MARCA_DO_COMANDO = ("Use a skill `phxjev`", "/phxjev-")
+
+
 def turno(linhas):
-    """(selos gerados no turno, texto final do agente)."""
+    """(selos gerados no turno, texto final do agente, turno veio de /phxjev-?)."""
     inicio = 0
     for i, r in enumerate(linhas):
         if r.get("type") == "user" and any(b.get("type") == "text" for b in blocos(r)):
             inicio = i
+    pedido = "\n".join(b.get("text", "") for b in blocos(linhas[inicio])) if linhas else ""
+    do_comando = any(m in pedido for m in MARCA_DO_COMANDO)
     selos, ultimo_resultado = [], inicio
     for i in range(inicio, len(linhas)):
         for b in blocos(linhas[i]):
@@ -51,13 +56,17 @@ def turno(linhas):
         for b in blocos(r)
         if b.get("type") == "text"
     )
-    return list(dict.fromkeys(selos)), final
+    return list(dict.fromkeys(selos)), final, do_comando
 
 
 def faltas(linhas, registro):
-    selos, final = turno(linhas)
+    selos, final, do_comando = turno(linhas)
     presentes = {l.strip() for l in final.splitlines()}
     out = []
+    # O /phxjev-escolher do 175 respondeu sem chamar o script: sem selo, nao
+    # havia o que conferir. Turno que veio de um comando PhxJev tem de ter um.
+    if do_comando and not selos:
+        out.append(("nenhum", ["o comando /phxjev- terminou sem passar pelo phxjev.py veredito"]))
     for selo in selos:
         try:
             original = phxjev.cmd_mostrar(selo, registro)

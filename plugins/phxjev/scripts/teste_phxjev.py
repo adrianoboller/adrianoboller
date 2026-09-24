@@ -172,9 +172,9 @@ class Melhorias(unittest.TestCase):
 
 
 class Gancho(unittest.TestCase):
-    def transcricao(self, saida, final):
+    def transcricao(self, saida, final, pedido="/phxjev-perguntar x"):
         return [
-            {"type": "user", "message": {"role": "user", "content": "/phxjev-perguntar x"}},
+            {"type": "user", "message": {"role": "user", "content": pedido}},
             {"type": "assistant", "message": {"content": [{"type": "tool_use", "input": {"command": "phxjev.py veredito"}}]}},
             {"type": "user", "message": {"content": [{"type": "tool_result", "content": saida}]}},
             {"type": "assistant", "message": {"content": [{"type": "text", "text": final}]}},
@@ -194,9 +194,17 @@ class Gancho(unittest.TestCase):
         saida = rodar([{"id": "a", "perguntas": {"real": noul(0.8)}}], reg)
         self.assertEqual(g.faltas(self.transcricao(saida, "```\n" + saida + "```\nResumo depois."), reg), [])
 
+    def test_comando_phxjev_sem_script_e_recusado(self):
+        import gancho_selo as g
+        linhas = [
+            {"type": "user", "message": {"content": [{"type": "text", "text": "Use a skill `phxjev` e aplique o preset escolher"}]}},
+            {"type": "assistant", "message": {"content": [{"type": "text", "text": "Empate 5 a 5, sobe ao dono."}]}},
+        ]
+        self.assertTrue(g.faltas(linhas, "/nao/existe"))
+
     def test_turno_sem_phxjev_passa(self):
         import gancho_selo as g
-        self.assertEqual(g.faltas(self.transcricao("ok", "pronto"), "/nao/existe"), [])
+        self.assertEqual(g.faltas(self.transcricao("ok", "pronto", "rode os testes"), "/nao/existe"), [])
 
 
 if __name__ == "__main__":
