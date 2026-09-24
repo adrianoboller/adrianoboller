@@ -111,6 +111,7 @@ async function carregarRedes() {
         bloco.appendChild(l);
       }
       await blocoRotas(bloco, r, membros);
+      await blocoSaida(bloco, r);
     } catch (_) {}
     caixa.appendChild(bloco);
   }
@@ -170,6 +171,59 @@ async function blocoRotas(bloco, r, membros) {
   bloco.appendChild(caixa);
 }
 
+// Saida da rede: tunel total (a internet do membro pelo servidor) e o DNS
+// empurrado. Ligar e so do admin; o dono ve e pode desligar.
+async function blocoSaida(bloco, r) {
+  let s;
+  try { s = await api("POST", "/api/redes/saida", { rede_id: r.id }); } catch (_) { return; }
+  const pode = sessao.admin || r.dono === sessao.login;
+  const ligado = s.tunel_total || s.dns_nomes || s.dns_empresa;
+  if (!ligado && !sessao.admin) return;
+  const caixa = document.createElement("div"); caixa.className = "saida";
+  const t = document.createElement("div"); t.className = "titulo"; t.textContent = "Saída de internet e DNS"; caixa.appendChild(t);
+  const estado = document.createElement("div"); estado.className = "estado";
+  const parte = (rotulo, valor, mono) => {
+    const l = document.createElement("div");
+    const b = document.createElement("b"); b.textContent = rotulo;
+    const v = document.createElement("span"); if (mono) v.className = "zona"; v.textContent = valor;
+    l.append(b, " ", v); estado.appendChild(l);
+  };
+  parte("Túnel total:", s.tunel_total ? (s.bloquear_local ? "ligado, sem acesso à LAN local" : "ligado") : "desligado (só a VPN passa pelo servidor)");
+  if (s.dns_nomes) parte("Nomes:", `membro.${s.zona}`, true);
+  if (s.dns_empurrado) parte("DNS empurrado:", s.dns_empurrado, true);
+  caixa.appendChild(estado);
+  if (pode) {
+    const f = document.createElement("form");
+    const marca = (nome, texto, v) => {
+      const l = document.createElement("label"); l.className = "marca";
+      const i = document.createElement("input"); i.type = "checkbox"; i.name = nome; i.checked = v;
+      l.append(i, " " + texto); f.appendChild(l); return i;
+    };
+    const tt = marca("tunel_total", "Túnel total — toda a internet do membro sai pelo servidor (com bloqueio de DNS e IPv6 por fora)", s.tunel_total);
+    const bl = marca("bloquear_local", "Bloquear a LAN local do membro enquanto conectado", s.bloquear_local);
+    const nomes = marca("dns_nomes", `Nomes dos membros (membro.${s.zona}) pelo DNS do servidor`, s.dns_nomes);
+    const linha = document.createElement("div"); linha.className = "dns";
+    const dns = document.createElement("input"); dns.value = s.dns_empresa; dns.placeholder = "DNS da empresa (opcional): 192.168.10.53"; dns.setAttribute("aria-label", "DNS da empresa");
+    const b = document.createElement("button"); b.className = "altera"; b.type = "submit"; b.textContent = "Salvar saída";
+    linha.append(dns, b); f.appendChild(linha);
+    const aviso = document.createElement("p"); aviso.className = "msg"; aviso.id = "m-saida-" + r.id;
+    const ajustar = () => { bl.disabled = !tt.checked; if (!tt.checked) bl.checked = false; };
+    tt.onchange = ajustar; ajustar();
+    f.onsubmit = async (ev) => {
+      ev.preventDefault();
+      const corpo = { rede_id: r.id, tunel_total: tt.checked, bloquear_local: bl.checked, dns_nomes: nomes.checked, dns_empresa: dns.value.trim() };
+      if (sessao.admin && sessao.mfa) { corpo.codigo = prompt("Código do autenticador") || ""; if (!corpo.codigo) return; }
+      try {
+        const x = await api("POST", "/api/redes/saida/definir", corpo);
+        const fw = x.firewall || {};
+        await carregarRedes(); msg("m-redes", (fw.aviso ? `atenção: ${fw.aviso} — ` : "") + x.aviso, !fw.aviso);
+      } catch (e) { msg(aviso.id, e.message); }
+    };
+    caixa.append(f, aviso);
+  }
+  bloco.appendChild(caixa);
+}
+
 let modo = "criar";
 // O protocolo e do SERVIDOR (so faz sentido ao criar); o proxy vale nos dois
 // -- ele so muda o perfil .ovpn de quem baixa, nunca a rede em si.
@@ -197,7 +251,10 @@ $("d-cancelar").onclick = () => $("d-rede").close();
 $("f-rede").onsubmit = async (ev) => {
   ev.preventDefault();
   try {
-    const r = await api("POST", modo === "criar" ? "/api/redes" : "/api/redes/entrar", dados(ev.target));
+    const corpo = dados(ev.target);
+    // Caixa de marcar: o FormData manda "on" ou nada; o painel quer booleano.
+    corpo.sem_ipv6 = "sem_ipv6" in corpo;
+    const r = await api("POST", modo === "criar" ? "/api/redes" : "/api/redes/entrar", corpo);
     baixar(r.arquivo, r.perfil); $("d-rede").close(); carregarRedes();
   } catch (x) { msg("m-rede", x.message); }
 };

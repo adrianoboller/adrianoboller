@@ -910,3 +910,123 @@ fn rotas_conf_ccd_permissao_e_integridade() {
     assert!(!conf.contains("route"), "{conf}");
     let _ = std::fs::remove_dir_all(&dados);
 }
+
+/// Tunel total e DNS (saida.rs) contra o banco de verdade: quem pode ligar,
+/// o que vai para o conf, a combinacao recusada, as redes que saem pelo NAT
+/// e o `ccd/` do roteador da filial fora do tunel total.
+#[test]
+fn saida_tunel_total_dns_permissao_e_conf() {
+    use phxvpn::saida::{analisar_dns, Saida};
+    let Some(base) = config() else {
+        eprintln!("NAO RODOU: defina PHXVPN_PG_TESTE");
+        return;
+    };
+    let cfg = banco_novo(&base, "phxvpn_teste_saida");
+    let dados = std::env::temp_dir().join(format!("phxvpn-teste-saida-{}", std::process::id()));
+    let mut p = Painel::abrir(&cfg, &dados).unwrap();
+    p.iteracoes = 1_000;
+    p.instalar(&Instalacao {
+        empresa: "Empresa Teste".into(),
+        responsavel: "Fulano".into(),
+        email: "f@e.com".into(),
+        admin_usuario: "admin".into(),
+        admin_senha: "senha-admin".into(),
+        senha_mestre: "senha-mestre-longa".into(),
+        servidor_nome: "vpn1".into(),
+        servidor_ip: "203.0.113.10".into(),
+        ..Default::default()
+    })
+    .unwrap();
+    let admin = p.login("admin", "senha-admin").unwrap();
+    p.criar_rede(&admin, "Matriz São Paulo", "rede-123", "", None)
+        .unwrap();
+    p.criar_usuario("ana", "senha-ana-1", "", false).unwrap();
+    let ana = p.login("ana", "senha-ana-1").unwrap();
+    p.criar_rede(&ana, "Dela", "rede-456", "", None).unwrap();
+    let conf = || std::fs::read_to_string(dados.join("redes/1/servidor.conf")).unwrap();
+    let total = Saida {
+        tunel_total: true,
+        bloquear_local: true,
+        dns_nomes: true,
+        dns_empresa: vec![],
+    };
+    // Dona da rede nao faz do servidor a saida de internet.
+    let e = p.saida_definir(&ana, 2, &total).unwrap_err();
+    assert!(e.contains("administrador"), "{e}");
+    // Tunel total sem DNS: recusado, e nada gravado.
+    let sem_dns = Saida {
+        dns_nomes: false,
+        ..total.clone()
+    };
+    let e = p.saida_definir(&admin, 1, &sem_dns).unwrap_err();
+    assert!(e.contains("pede DNS"), "{e}");
+    assert!(!conf().contains("redirect-gateway"));
+    assert!(p.origens_do_tunel_total().unwrap().is_empty());
+
+    p.saida_definir(&admin, 1, &total).unwrap();
+    let c = conf();
+    for linha in [
+        "push \"redirect-gateway def1 ipv6 block-local\"\n",
+        "push \"block-ipv6\"\n",
+        "push \"block-outside-dns\"\n",
+        "push \"dhcp-option DNS 10.77.1.1\"\n",
+        "push \"dhcp-option DOMAIN matriz-sao-paulo.phx\"\n",
+    ] {
+        assert!(c.contains(linha), "faltou {linha:?}:\n{c}");
+    }
+    let tt = p.origens_do_tunel_total().unwrap();
+    assert_eq!(tt.len(), 1);
+    assert_eq!(tt[0].to_string(), "10.77.1.0/24");
+    let r = p.resolvedores(None).unwrap();
+    assert_eq!(r.len(), 1);
+    assert_eq!(r[0].zona, "matriz-sao-paulo.phx");
+    assert_eq!(r[0].escuta.to_string(), "10.77.1.1:53");
+    assert!(r[0].ccd.ends_with("redes/1/ccd"));
+
+    // DNS privado da empresa sem os nomes e sem rota: o membro nao chegaria.
+    let privado = Saida {
+        dns_nomes: false,
+        dns_empresa: analisar_dns("192.168.10.53").unwrap(),
+        ..total.clone()
+    };
+    let e = p.saida_definir(&admin, 1, &privado).unwrap_err();
+    assert!(e.contains("nenhuma rota"), "{e}");
+    p.rota_incluir(&admin, 1, "192.168.10.0/24", "nat", "")
+        .unwrap();
+    p.saida_definir(&admin, 1, &privado).unwrap();
+    let c = conf();
+    assert!(
+        c.contains("push \"dhcp-option DNS 192.168.10.53\"\n"),
+        "{c}"
+    );
+    assert!(!c.contains("DOMAIN"), "{c}");
+
+    // O roteador da filial fica fora do tunel total da rede.
+    p.criar_usuario("filial", "senha-filial-1", "", false)
+        .unwrap();
+    let filial = p.login("filial", "senha-filial-1").unwrap();
+    p.entrar_na_rede(&filial, "Matriz São Paulo", "rede-123")
+        .unwrap();
+    p.rota_incluir(&admin, 1, "192.168.20.0/24", "", "filial")
+        .unwrap();
+    let n = std::fs::read_dir(dados.join("redes/1/ccd"))
+        .unwrap()
+        .filter_map(|e| e.ok()?.file_name().into_string().ok())
+        .find(|n| n.starts_with("filial.1."))
+        .unwrap();
+    let ccd = std::fs::read_to_string(dados.join("redes/1/ccd").join(n)).unwrap();
+    assert!(ccd.contains("push-remove redirect-gateway\n"), "{ccd}");
+
+    // Desligar: o dono pode (estreita); a rede sai do NAT de saida.
+    p.rota_remover(&admin, 1, "192.168.20.0/24").unwrap();
+    p.saida_definir(&admin, 2, &total).unwrap();
+    p.saida_definir(&ana, 2, &Saida::default()).unwrap();
+    p.saida_definir(&admin, 1, &Saida::default()).unwrap();
+    assert!(p.origens_do_tunel_total().unwrap().is_empty());
+    let c = conf();
+    for nunca in ["redirect-gateway", "block-outside-dns", "dhcp-option"] {
+        assert!(!c.contains(nunca), "{nunca}:\n{c}");
+    }
+    assert!(p.resolvedores(None).unwrap().is_empty());
+    let _ = std::fs::remove_dir_all(&dados);
+}

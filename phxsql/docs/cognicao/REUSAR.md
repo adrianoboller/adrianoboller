@@ -2,9 +2,16 @@
 
 # Reusar — sucessos comprovados
 
-294 cognições: **9 frutíferas**, **5 infrutíferas**, **280 pendentes** (sem evidência validada — não entram aqui).
+296 cognições: **11 frutíferas**, **5 infrutíferas**, **280 pendentes** (sem evidência validada — não entram aqui).
 
 Só entra o que tem evidência que o `classificar.py` conferiu. Antes de desenhar, procure aqui o que já se provou.
+
+## [Túnel total é saída de INTERNET, não «tudo o que o servidor alcança»](cognicao_tunel-total-e-saida-de-internet-nao-tudo_20260924_1210.md)
+
+Ao abrir uma saída larga (0/0), escreva o que ela NÃO alcança antes do `accept` — faixa privada e link-local —, e confira quem chega ao host por INPUT: guarda de encaminhamento não vê endereço local.
+
+- Evidência: `phxvpn/provas/tunel-total/resultados.json`; `phxvpn/src/rotas.rs`; `phxvpn/src/dns.rs`
+- Validado em: 24/09/2026
 
 ## [Túnel que pinga não é túnel que se recupera](cognicao_tunel-que-pinga-nao-e-tunel-que-se-recupera_20260924_0010.md)
 
@@ -32,6 +39,13 @@ Numa malha com um membro alcançável, conte a lista de pares como perfurador: c
 Quem acende o encaminhamento do host acende JUNTO uma guarda que só deixa passar o par (origem da rede N, LAN da rede N) e descarta o resto do espaço da VPN — antes de escrever o `1` no `ip_forward`, e apagando os dois juntos.
 
 - Evidência: `phxvpn/provas/rotas/resultados.json`; `phxvpn/src/rotas.rs`; `phxvpn/provas/rotas/rodar.sh`
+- Validado em: 24/09/2026
+
+## [O `ifconfig-ipv6` que o manual manda empurrar derruba o cliente sem IPv6](cognicao_ifconfig-ipv6-empurrado-derruba-cliente-sem-ipv6_20260924_1151.md)
+
+Opção empurrada que CONFIGURA a placa (endereço, não rota) é fatal no cliente que não a suporta — antes de empurrar uma receita do manual, prove-a num cliente sem o recurso; e dê ao cliente o jeito de recusar pelo próprio perfil (`pull-filter`), porque o servidor não tem `push` condicional.
+
+- Evidência: `phxvpn/provas/tunel-total/resultados.json`; `phxvpn/src/saida.rs`; `phxvpn/provas/tunel-total/rodar.sh`
 - Validado em: 24/09/2026
 
 ## [A gerência do OpenVPN: `kill CN` não avisa o cliente; `client-kill` avisa](cognicao_gerencia-openvpn-kill-nao-avisa-o-cliente_20260924_0910.md)

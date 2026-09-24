@@ -10,6 +10,7 @@ pub mod comandos;
 pub mod console;
 pub mod credencial;
 pub mod descoberta;
+pub mod dns;
 #[cfg(windows)]
 pub mod dpapi;
 pub mod fio;
@@ -30,6 +31,7 @@ pub mod repasse;
 pub mod repasse_tcp;
 pub mod rol;
 pub mod rotas;
+pub mod saida;
 pub mod servico;
 #[cfg(windows)]
 pub mod servico_windows;

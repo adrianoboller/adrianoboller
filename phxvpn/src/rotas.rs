@@ -165,7 +165,11 @@ impl Cidr {
         self.rede & m == o.rede & m
     }
 
-    fn contem(&self, o: &Cidr) -> bool {
+    pub fn contem_ip(&self, ip: u32) -> bool {
+        ip & self.bits() == self.rede
+    }
+
+    pub(crate) fn contem(&self, o: &Cidr) -> bool {
         self.prefixo <= o.prefixo && o.rede & self.bits() == self.rede
     }
 
@@ -181,11 +185,16 @@ impl std::fmt::Display for Cidr {
     }
 }
 
+/// Endereco numa faixa privada (a lista das rotas).
+pub fn privada(ip: u32) -> bool {
+    PRIVADAS.iter().any(|p| p.contem_ip(ip))
+}
+
 /// O que pode ir pelo tunel, conferido sozinho (sem olhar as outras rotas).
 pub fn validar(c: &Cidr) -> Result<(), String> {
     if c.prefixo == 0 {
         return Err(
-            "0.0.0.0/0 e tunel total (toda a internet pela VPN): e outro recurso, e so entra com a protecao de vazamento de DNS -- aqui nao"
+            "0.0.0.0/0 e tunel total (toda a internet pela VPN): e a chave «tunel total» da rede, que leva junto a protecao de vazamento de DNS e IPv6 -- aqui nao"
                 .into(),
         );
     }
@@ -270,11 +279,24 @@ pub fn conf_servidor(rotas: &[Rota]) -> String {
 }
 
 /// O trecho do `ccd/` do membro que tem a filial atras.
+///
+/// E ele fica FORA do tunel total da rede (`saida.rs`): e um roteador, e o
+/// `redirect-gateway` mandaria a internet da filial inteira para o servidor,
+/// que a descarta (a filial esta na guarda). `push-remove` de opcao que nao
+/// foi empurrada nao faz nada, entao as linhas vao sempre -- sem precisar
+/// saber aqui se a rede tem tunel total.
 pub fn ccd_membro(filiais: &[Cidr]) -> String {
-    filiais
+    if filiais.is_empty() {
+        return String::new();
+    }
+    let mut s: String = filiais
         .iter()
         .map(|c| format!("iroute {0}\npush-remove \"route {0}\"\n", c.ovpn()))
-        .collect()
+        .collect();
+    for o in crate::saida::FORA_DO_ROTEADOR_DA_FILIAL {
+        s.push_str(&format!("push-remove {o}\n"));
+    }
+    s
 }
 
 // ------------------------------------------------------------ firewall ----
@@ -347,18 +369,35 @@ fn conjunto(c: &[Cidr]) -> String {
     }
 }
 
+/// O que o tunel total NUNCA alcanca pelo servidor: as faixas privadas e o
+/// link-local. Tunel total e SAIDA DE INTERNET; sem esta lista ele daria de
+/// brinde a LAN onde o servidor esta (e a LAN de outra rede) a quem so pediu
+/// internet -- e LAN pela VPN e so por rota, que so o admin inclui. A rota
+/// da propria rede continua passando: o `accept` dela vem antes.
+fn fora_do_tunel_total() -> Vec<Cidr> {
+    let mut v = PRIVADAS.to_vec();
+    v.push(Cidr {
+        rede: 0xa9fe_0000,
+        prefixo: 16,
+    });
+    v
+}
+
 /// O script do `nft -f -`. A tabela e SEMPRE recriada inteira numa transacao
 /// so (`add` + `delete` + definicao): o kernel troca a velha pela nova de uma
 /// vez, sem janela com o isolamento aberto. Sem nada a encaminhar, a tabela
 /// some -- e so ela.
-pub fn script_nft(rotas: &[Rota], ha_redes: bool) -> String {
+///
+/// `totais`: a /24 de cada rede com tunel total (`saida.rs`). Elas saem para
+/// a internet com NAT pelo servidor, e so para a internet.
+pub fn script_nft(rotas: &[Rota], totais: &[Cidr], ha_redes: bool) -> String {
     let mut s = format!("add table ip {TABELA_NFT}\ndelete table ip {TABELA_NFT}\n");
     if !ha_redes {
         return s;
     }
     let pares = pares(rotas);
     let recuo = |t: &str| t.lines().map(|l| format!("\t\t{l}\n")).collect::<String>();
-    if pares.is_empty() {
+    if pares.is_empty() && totais.is_empty() {
         let g = conjunto(&guarda(rotas));
         s.push_str(&format!(
             "table ip {TABELA_NFT} {{\n\
@@ -378,6 +417,18 @@ pub fn script_nft(rotas: &[Rota], ha_redes: bool) -> String {
                 nat.push_str(&format!("ip saddr {o} ip daddr {d} masquerade\n"));
             }
         }
+    }
+    if !totais.is_empty() {
+        // Depois das rotas (a LAN que o admin deu continua passando) e antes
+        // da guarda (que descartaria a propria rede, parte de 10.77/16).
+        let o = conjunto(totais);
+        let p = conjunto(&fora_do_tunel_total());
+        enc.push_str(&format!(
+            "ip saddr {o} ip daddr {p} drop\nip saddr {o} accept\n"
+        ));
+        // So o que SAI para a internet e mascarado: a rota de volta da mesma
+        // rede (sem NAT) continua mostrando o IP do membro a LAN.
+        nat.push_str(&format!("ip saddr {o} ip daddr != {p} masquerade\n"));
     }
     let g = conjunto(&guarda(rotas));
     enc.push_str(&format!("ip saddr {g} drop\nip daddr {g} drop\n"));
@@ -403,11 +454,17 @@ pub fn script_nft(rotas: &[Rota], ha_redes: bool) -> String {
 /// cadeia some mesmo quando o salto ja nao existe: declarar (`:NOME`) cria a
 /// que falta, e o `-X` seguinte a apaga. Condicionar o `-X` ao salto deixou
 /// uma cadeia orfa na prova (salto tirado a mao, cadeia ficou).
-pub fn script_iptables(rotas: &[Rota], ha_redes: bool, pula_enc: bool, pula_nat: bool) -> String {
+pub fn script_iptables(
+    rotas: &[Rota],
+    totais: &[Cidr],
+    ha_redes: bool,
+    pula_enc: bool,
+    pula_nat: bool,
+) -> String {
     let pares = pares(rotas);
     let mut f = String::from("*filter\n");
     let mut n = String::from("*nat\n");
-    if pares.is_empty() {
+    if pares.is_empty() && totais.is_empty() {
         if ha_redes {
             // So a guarda: sem NAT, sem aceitar nada -- entre as redes da
             // VPN (e as filiais delas) nada atravessa o kernel.
@@ -450,6 +507,16 @@ pub fn script_iptables(rotas: &[Rota], ha_redes: bool, pula_enc: bool, pula_nat:
                 }
             }
         }
+    }
+    // Tunel total: o mesmo lugar e a mesma regra do nft. O iptables nao nega
+    // uma lista, entao o NAT devolve (RETURN) o privado antes de mascarar.
+    for o in totais {
+        for p in fora_do_tunel_total() {
+            f.push_str(&format!("-A {CADEIA_ENC} -s {o} -d {p} -j DROP\n"));
+            n.push_str(&format!("-A {CADEIA_NAT} -s {o} -d {p} -j RETURN\n"));
+        }
+        f.push_str(&format!("-A {CADEIA_ENC} -s {o} -j ACCEPT\n"));
+        n.push_str(&format!("-A {CADEIA_NAT} -s {o} -j MASQUERADE\n"));
     }
     for g in guarda(rotas) {
         f.push_str(&format!("-A {CADEIA_ENC} -s {g} -j DROP\n"));
@@ -554,11 +621,11 @@ pub struct Aplicado {
 /// deixa remover igual a incluir, e o arranque igual aos dois) e acerta o
 /// `ip_forward`. Com rede e sem rota, fica so a guarda (sem NAT, sem mexer
 /// no `ip_forward`); sem rede nenhuma, a tabela some.
-pub fn aplicar(rotas: &[Rota], ha_redes: bool, dados: &Path) -> R<Aplicado> {
+pub fn aplicar(rotas: &[Rota], totais: &[Cidr], ha_redes: bool, dados: &Path) -> R<Aplicado> {
     let motor = detectar().ok_or(
         "sem nftables nem iptables no servidor: o isolamento entre as redes e o encaminhamento para a LAN nao tem como ser guardado",
     )?;
-    let vazio = pares(rotas).is_empty();
+    let vazio = pares(rotas).is_empty() && totais.is_empty();
     let marca = dados.join(ARQ_FORWARD_ANTES);
     if !vazio {
         let antes =
@@ -571,7 +638,11 @@ pub fn aplicar(rotas: &[Rota], ha_redes: bool, dados: &Path) -> R<Aplicado> {
     // guarda no lugar.
     match motor {
         Motor::Nft => {
-            rodar("nft", &["-f", "-"], Some(&script_nft(rotas, ha_redes)))?;
+            rodar(
+                "nft",
+                &["-f", "-"],
+                Some(&script_nft(rotas, totais, ha_redes)),
+            )?;
         }
         Motor::Iptables => {
             let tem = |t: &str, c: &str, alvo: &str| {
@@ -579,6 +650,7 @@ pub fn aplicar(rotas: &[Rota], ha_redes: bool, dados: &Path) -> R<Aplicado> {
             };
             let texto = script_iptables(
                 rotas,
+                totais,
                 ha_redes,
                 tem("filter", "FORWARD", CADEIA_ENC),
                 tem("nat", "POSTROUTING", CADEIA_NAT),
@@ -667,7 +739,7 @@ impl Painel {
         self.rotas_onde(&format!("{COLUNAS} ORDER BY t.rede_id, t.cidr"), &[])
     }
 
-    fn rotas_da_rede(&mut self, rede_id: &str) -> R<Vec<Rota>> {
+    pub(crate) fn rotas_da_rede(&mut self, rede_id: &str) -> R<Vec<Rota>> {
         self.rotas_onde(
             &format!("{COLUNAS} WHERE t.rede_id = $1::int ORDER BY t.cidr"),
             &[Some(rede_id)],
@@ -729,17 +801,24 @@ impl Painel {
         ))
     }
 
-    /// As rotas de uma rede, para quem a administra ou a integra.
-    pub fn rotas(&mut self, u: &Usuario, rede_id: i64) -> R<Json> {
-        let id = rede_id.to_string();
+    /// Quem ve a configuracao de uma rede (rotas, saida): o administrador,
+    /// o dono ou um membro.
+    pub(crate) fn pode_ver_rede(&mut self, u: &Usuario, rede_id: i64) -> R<()> {
         let pode = self.pg()?.executar(
             "SELECT 1 FROM phx_rede r WHERE r.id = $1::int AND (r.dono_id = $2::int \
                OR EXISTS (SELECT 1 FROM phx_membro m WHERE m.rede_id = r.id AND m.usuario_id = $2::int))",
-            &[Some(&id), Some(&u.id.to_string())],
+            &[Some(&rede_id.to_string()), Some(&u.id.to_string())],
         )?;
         if !u.admin && pode.linhas.is_empty() {
-            return Err("so o administrador, o dono ou um membro ve as rotas da rede".into());
+            return Err("so o administrador, o dono ou um membro ve a configuracao da rede".into());
         }
+        Ok(())
+    }
+
+    /// As rotas de uma rede, para quem a administra ou a integra.
+    pub fn rotas(&mut self, u: &Usuario, rede_id: i64) -> R<Json> {
+        let id = rede_id.to_string();
+        self.pode_ver_rede(u, rede_id)?;
         Ok(Json::Lista(
             self.rotas_da_rede(&id)?
                 .into_iter()
@@ -903,7 +982,7 @@ impl Painel {
 /// `dados/rotas.nft` (sempre -- quem sobe o OpenVPN por fora aplica ele) e,
 /// com o supervisor ligado, aplica no kernel.
 pub fn aplicar_no_host(e: &crate::http::Estado) -> R<Json> {
-    let (rotas, ha_redes, dados) = {
+    let (rotas, totais, ha_redes, dados) = {
         let mut p = e.painel();
         let n = p
             .pg()?
@@ -913,10 +992,19 @@ pub fn aplicar_no_host(e: &crate::http::Estado) -> R<Json> {
             .and_then(|v| v.parse::<i64>().ok())
             .unwrap_or(0)
             > 0;
-        (p.rotas_todas()?, ha, p.dados().to_path_buf())
+        (
+            p.rotas_todas()?,
+            p.origens_do_tunel_total()?,
+            ha,
+            p.dados().to_path_buf(),
+        )
     };
     let arquivo = dados.join("rotas.nft");
-    crate::painel::gravar(&arquivo, script_nft(&rotas, ha_redes).as_bytes(), false)?;
+    crate::painel::gravar(
+        &arquivo,
+        script_nft(&rotas, &totais, ha_redes).as_bytes(),
+        false,
+    )?;
     if e.supervisor.is_none() {
         return Ok(Json::objeto(vec![
             ("aplicado", Json::de_bool(false)),
@@ -929,7 +1017,7 @@ pub fn aplicar_no_host(e: &crate::http::Estado) -> R<Json> {
             ),
         ]));
     }
-    let a = aplicar(&rotas, ha_redes, &dados)?;
+    let a = aplicar(&rotas, &totais, ha_redes, &dados)?;
     Ok(Json::objeto(vec![
         ("aplicado", Json::de_bool(true)),
         (
@@ -953,19 +1041,39 @@ pub fn depois_de_mudar(
     nome: &str,
     dir: &Path,
 ) -> R<Json> {
-    let fw = match aplicar_no_host(e) {
-        Ok(j) => j,
-        Err(m) if incluiu => {
-            let _ = e.painel().rota_desfazer(rede_id, cidr);
+    let desfazer = || {
+        let _ = e.painel().rota_desfazer(rede_id, cidr);
+    };
+    efetivar(e, incluiu.then_some(&desfazer), "a rota", nome, dir)
+}
+
+/// O passo comum de quem muda o que o servidor encaminha (rota, tunel
+/// total): firewall do estado inteiro, depois o OpenVPN da rede. Mudanca que
+/// ALARGA traz `desfazer` -- se o firewall nao se aplica, ela sai do cadastro
+/// e o firewall volta, e o encaminhamento nunca fica dito sem guarda. A que
+/// estreita fica gravada, e o erro diz que o kernel ainda tem a regra velha.
+pub fn efetivar(
+    e: &crate::http::Estado,
+    desfazer: Option<&dyn Fn()>,
+    o_que: &str,
+    nome: &str,
+    dir: &Path,
+) -> R<Json> {
+    let fw = match (aplicar_no_host(e), desfazer) {
+        (Ok(j), _) => j,
+        (Err(m), Some(desfazer)) => {
+            desfazer();
             let _ = aplicar_no_host(e);
-            return Err(format!("a rota nao entrou: {m}"));
+            return Err(format!("{o_que} nao entrou: {m}"));
         }
-        Err(m) => {
+        (Err(m), None) => {
             return Err(format!(
-                "a rota saiu do cadastro, mas o firewall nao se reaplicou ({m}); o arranque seguinte do painel o reaplica"
+                "{o_que} mudou no cadastro, mas o firewall nao se reaplicou ({m}); o arranque seguinte do painel o reaplica"
             ))
         }
     };
+    // Os resolvedores seguem o cadastro (liga, desliga, zona nova).
+    crate::saida::acertar_dns(e);
     // O OpenVPN so le o conf ao subir: `push`/`route` novos pedem reinicio,
     // e os membros recebem as rotas ao reconectar.
     let reiniciado = match &e.supervisor {
@@ -1124,17 +1232,23 @@ mod testes {
         );
         assert!(conf_servidor(&[]).is_empty());
         let ccd = ccd_membro(&[c("192.168.20.0/24")]);
-        assert_eq!(
-            ccd,
-            "iroute 192.168.20.0 255.255.255.0\npush-remove \"route 192.168.20.0 255.255.255.0\"\n"
+        assert!(
+            ccd.starts_with(
+                "iroute 192.168.20.0 255.255.255.0\npush-remove \"route 192.168.20.0 255.255.255.0\"\n"
+            ),
+            "{ccd}"
         );
+        // O roteador da filial nao recebe o tunel total da rede.
+        assert!(ccd.contains("push-remove redirect-gateway\n"), "{ccd}");
+        assert!(ccd.contains("push-remove ifconfig-ipv6\n"), "{ccd}");
+        assert!(ccd_membro(&[]).is_empty());
     }
 
     #[test]
     fn sem_rede_nenhuma_a_tabela_some_e_so_ela() {
-        let s = script_nft(&[], false);
+        let s = script_nft(&[], &[], false);
         assert_eq!(s, "add table ip phxvpn\ndelete table ip phxvpn\n");
-        let t = script_iptables(&[], false, true, true);
+        let t = script_iptables(&[], &[], false, true, true);
         assert!(t.contains("-D FORWARD -j PHXVPN-ENC\n-X PHXVPN-ENC"), "{t}");
         assert!(
             t.contains("-D POSTROUTING -j PHXVPN-NAT\n-X PHXVPN-NAT"),
@@ -1142,7 +1256,7 @@ mod testes {
         );
         // Sem o salto (tirado por fora), a cadeia orfa some do mesmo jeito.
         assert_eq!(
-            script_iptables(&[], false, false, false),
+            script_iptables(&[], &[], false, false, false),
             "*filter\n:PHXVPN-ENC - [0:0]\n-X PHXVPN-ENC\nCOMMIT\n*nat\n:PHXVPN-NAT - [0:0]\n-X PHXVPN-NAT\nCOMMIT\n"
         );
     }
@@ -1151,7 +1265,7 @@ mod testes {
     /// e sem aceitar nada -- o host que ja encaminha nao abre A para B.
     #[test]
     fn com_rede_e_sem_rota_fica_so_a_guarda() {
-        let s = script_nft(&[], true);
+        let s = script_nft(&[], &[], true);
         assert!(
             s.contains("ip saddr 10.77.0.0/16 ip daddr 10.77.0.0/16 drop"),
             "{s}"
@@ -1162,12 +1276,12 @@ mod testes {
         );
         // So filial: ela entra na guarda (o trafego dela com os membros anda
         // dentro do OpenVPN, nada precisa do kernel).
-        let s = script_nft(&[rota(1, 1, "192.168.20.0/24", Some(7), false)], true);
+        let s = script_nft(&[rota(1, 1, "192.168.20.0/24", Some(7), false)], &[], true);
         assert!(
             s.contains("ip saddr { 10.77.0.0/16, 192.168.20.0/24 } ip daddr { 10.77.0.0/16, 192.168.20.0/24 } drop"),
             "{s}"
         );
-        let t = script_iptables(&[], true, false, true);
+        let t = script_iptables(&[], &[], true, false, true);
         assert!(
             t.contains("-A PHXVPN-ENC -s 10.77.0.0/16 -d 10.77.0.0/16 -j DROP"),
             "{t}"
@@ -1178,7 +1292,7 @@ mod testes {
             t.contains("-D POSTROUTING -j PHXVPN-NAT\n-X PHXVPN-NAT"),
             "{t}"
         );
-        assert!(!script_iptables(&[], true, true, false).contains("-I FORWARD"));
+        assert!(!script_iptables(&[], &[], true, true, false).contains("-I FORWARD"));
     }
 
     #[test]
@@ -1188,7 +1302,7 @@ mod testes {
             rota(1, 1, "192.168.20.0/24", Some(7), false),
             rota(2, 2, "172.16.5.0/24", None, false),
         ];
-        let s = script_nft(&rs, true);
+        let s = script_nft(&rs, &[], true);
         assert!(
             s.contains(
                 "ip saddr { 10.77.1.0/24, 192.168.20.0/24 } ip daddr 192.168.10.0/24 accept"
@@ -1215,12 +1329,66 @@ mod testes {
             .expect(&s);
         assert!(guarda > s.find("accept").unwrap());
         assert!(s.contains("ip daddr { 10.77.0.0/16, 192.168.20.0/24 } drop"));
-        let t = script_iptables(&rs, true, false, true);
+        let t = script_iptables(&rs, &[], true, false, true);
         assert!(t.contains("-A PHXVPN-ENC -s 10.77.1.0/24 -d 192.168.10.0/24 -j ACCEPT"));
         assert!(t.contains("-A PHXVPN-NAT -s 192.168.20.0/24 -d 192.168.10.0/24 -j MASQUERADE"));
         assert!(t.contains("-A PHXVPN-ENC -d 10.77.0.0/16 -j DROP"));
         assert!(t.contains("-I FORWARD 1 -j PHXVPN-ENC"));
         assert!(!t.contains("-I POSTROUTING"), "salto em dobro: {t}");
+    }
+
+    /// Tunel total: a rede sai para a internet com NAT, mas nao para faixa
+    /// privada (a LAN do servidor, a de outra rede) -- LAN so por rota. E a
+    /// rota da propria rede, e a rota de volta sem NAT, continuam iguais.
+    #[test]
+    fn tunel_total_sai_com_nat_so_para_a_internet() {
+        let rs = [
+            rota(1, 1, "192.168.10.0/24", None, false),
+            rota(2, 2, "172.16.5.0/24", None, true),
+        ];
+        let tt = [c("10.77.1.0/24")];
+        let s = script_nft(&rs, &tt, true);
+        let privadas =
+            "{ 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, 169.254.0.0/16 }";
+        let barra = format!("ip saddr 10.77.1.0/24 ip daddr {privadas} drop");
+        let sai = "ip saddr 10.77.1.0/24 accept";
+        let (i_rota, i_barra, i_sai, i_guarda) = (
+            s.find("ip saddr 10.77.1.0/24 ip daddr 192.168.10.0/24 accept")
+                .expect(&s),
+            s.find(&barra).expect(&s),
+            s.find(sai).expect(&s),
+            s.find("ip saddr 10.77.0.0/16 drop").expect(&s),
+        );
+        assert!(
+            i_rota < i_barra && i_barra < i_sai && i_sai < i_guarda,
+            "{s}"
+        );
+        assert!(
+            s.contains(&format!(
+                "ip saddr 10.77.1.0/24 ip daddr != {privadas} masquerade"
+            )),
+            "{s}"
+        );
+        // A rota de volta da mesma rede nao ganha NAT pelo tunel total.
+        assert!(!s.contains("ip saddr 10.77.1.0/24 masquerade"), "{s}");
+        // So o tunel total, sem rota nenhuma: sai do modo «so a guarda».
+        let s = script_nft(&[], &tt, true);
+        assert!(s.contains(sai) && s.contains("masquerade"), "{s}");
+        let t = script_iptables(&[], &tt, true, false, false);
+        let i_barra = t
+            .find("-A PHXVPN-ENC -s 10.77.1.0/24 -d 192.168.0.0/16 -j DROP")
+            .expect(&t);
+        let i_sai = t.find("-A PHXVPN-ENC -s 10.77.1.0/24 -j ACCEPT").expect(&t);
+        let i_guarda = t.find("-A PHXVPN-ENC -s 10.77.0.0/16 -j DROP").expect(&t);
+        assert!(i_barra < i_sai && i_sai < i_guarda, "{t}");
+        let i_volta = t
+            .find("-A PHXVPN-NAT -s 10.77.1.0/24 -d 10.0.0.0/8 -j RETURN")
+            .expect(&t);
+        let i_nat = t
+            .find("-A PHXVPN-NAT -s 10.77.1.0/24 -j MASQUERADE")
+            .expect(&t);
+        assert!(i_volta < i_nat, "{t}");
+        assert!(t.contains("-I POSTROUTING 1 -j PHXVPN-NAT"), "{t}");
     }
 
     #[test]

@@ -51,10 +51,10 @@ pacote cujo destino não é o IP de um par.
 | **LAN da empresa atrás do servidor** (`push "route …"` + encaminhamento/NAT no host) | **c** | server-options.rst:440; vpn-network-options.rst:370 | ovpn.rs:79-105 sem `push`; nenhum `ip_forward`/NAT no fonte (grep) | **alta** | M |
 | LAN atrás de um membro / site-to-site (`iroute` + `route` + `push route`) | c | server-options.rst:339-374 | ccd só leva `ifconfig-push` (ovpn.rs:326-328) | média | M |
 | Idem no P2P (faixa por par, tipo `AllowedIPs`) | c | — | um IP por par, origem conferida: p2p.rs:6-10, :1161-1162 | baixa | G |
-| Túnel total (`redirect-gateway def1` [+`ipv6`, `block-local`]) | c | vpn-network-options.rst:305-364 | ausente (ovpn.rs:343-363) | média | M |
-| Kill switch / `block-outside-dns` / `block-ipv6` | d **hoje** — sem túnel total nem DNS empurrado não há o que vazar; **viram obrigatórios se o túnel total entrar** | windows-options.rst:13-24; vpn-network-options.rst:12-19 | — | (cond.) | M |
+| Túnel total (`redirect-gateway def1` [+`ipv6`, `block-local`]) | c | vpn-network-options.rst:305-364 | **FEITO 24/09** — `saida.rs` + `rotas.rs` (PHXVPN.md «Modo servidor: túnel total e DNS da rede») | média | M |
+| Kill switch / `block-outside-dns` / `block-ipv6` | d **hoje** — sem túnel total nem DNS empurrado não há o que vazar; **viram obrigatórios se o túnel total entrar** | windows-options.rst:13-24; vpn-network-options.rst:12-19 | **FEITO 24/09** junto do túnel total (empurrados; não provados em tráfego) | (cond.) | M |
 | Split tunnel | a por desenho — só a /24 vai ao túnel | vpn-network-options.rst:485 | ovpn.rs:85-86; p2p.rs:719 | — | — |
-| DNS empurrado + nomes dos membros (`dns`, `dhcp-option`; 2.7: `dns-updown`, NRPT no Windows) | c | client-options.rst:175-224; vpn-network-options.rst:126; Changes.rst 2.7 «Client implementations for DNS options» | ausente nos dois modos | média | G (pede um DNS nosso) |
+| DNS empurrado + nomes dos membros (`dns`, `dhcp-option`; 2.7: `dns-updown`, NRPT no Windows) | c | client-options.rst:175-224; vpn-network-options.rst:126; Changes.rst 2.7 «Client implementations for DNS options» | **FEITO 24/09 no modo servidor** — `dns.rs` (resolvedor da zona) + `saida.rs`; P2P segue sem | média | G (pede um DNS nosso) |
 | IPv6 dentro do túnel (`server-ipv6`, `ifconfig-ipv6-push`) | c | server-options.rst:595, :311 | P2P só IPv4: p2p.rs:296-304, tun.rs:90; servidor sem `server-ipv6` | baixa | M |
 | **Transporte IPv6 por fora — P2P e repasse** | **c (defeito)** — o `PHXVPN.md:150` promete «IPv6» no direto | — | `bind("0.0.0.0")` em comandos.rs:838 e main.rs:563; **M5** | **alta** (doc mente) | P |
 | Transporte IPv6 por fora — servidor | a (padrão: bind dual-stack) | socket.c:3089; options.c:812 | ovpn.rs:82-83 (sem `local`) | — | — |

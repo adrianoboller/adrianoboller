@@ -1,0 +1,456 @@
+{
+  "prova": "phxvpn: tunel total e DNS da rede (saida.rs, dns.rs), openvpn 2.6.19 em netns",
+  "openvpn": "2.6.19",
+  "kernel": "ipv6.disable=1 (sem IPv6: o block-ipv6 nao se prova em trafego aqui)",
+  "n": 1,
+  "nft": {
+    "data": "2026-09-24T12:09:30+00:00",
+    "regras": {
+      "antes": {
+        "nossas": 1,
+        "ip_forward": 0
+      },
+      "com_tunel_total": {
+        "nossas": 6,
+        "ip_forward": 1
+      },
+      "depois_de_desligar": {
+        "nossas": 1,
+        "ip_forward": 0
+      }
+    },
+    "perfil_da_ana_linhas_pedidas": 3,
+    "conf_do_servidor": [
+      "push \"redirect-gateway def1 ipv6\"",
+      "push \"ifconfig-ipv6 fd70:6878:766e::2/64 fd70:6878:766e::1\"",
+      "push \"block-ipv6\"",
+      "block-ipv6",
+      "push \"block-outside-dns\"",
+      "push \"dhcp-option DNS 10.77.1.1\"",
+      "push \"dhcp-option DOMAIN matriz.phx\""
+    ],
+    "sem_tunel_total": {
+      "site_viu": "192.168.50.11",
+      "syn_na_wan_do_servidor": 0,
+      "syn_na_casa": 1,
+      "impressora_de_casa": "3/3",
+      "ana.matriz.phx": "nao",
+      "resolv_conf": "# escrito pelo up da VPN "
+    },
+    "com_tunel_total": {
+      "resposta": {
+        "ok": true,
+        "firewall": {
+          "aplicado": true,
+          "motor": "nft",
+          "regras": 6,
+          "aviso": null
+        },
+        "openvpn_reiniciado": true,
+        "aviso": "os membros recebem a mudança ao reconectar; no Linux, o DNS só se aplica com o perfil baixado pedindo o script (dns_linux)"
+      },
+      "rotas_da_ana": [
+        "0.0.0.0/1 via 10.77.1.1 dev tun0 ",
+        "default via 192.168.50.1 dev eth0 ",
+        "10.77.1.0/24 dev tun0 proto kernel scope link src 10.77.1.3 ",
+        "128.0.0.0/1 via 10.77.1.1 dev tun0 ",
+        "192.0.2.1 via 192.168.50.1 dev eth0 ",
+        "192.168.50.0/24 dev eth0 proto kernel scope link src 192.168.50.11 ",
+        ""
+      ],
+      "site_viu": "192.0.2.1",
+      "syn_na_wan_do_servidor": 1,
+      "syn_na_casa": 0,
+      "impressora_de_casa_sem_block_local": "3/3",
+      "lan_do_servidor_sem_rota_ping": "0/3",
+      "lan_do_servidor_sem_rota_tcp": "falhou",
+      "membro_de_outra_rede": "0/3",
+      "log_block_outside_dns_recusado_e_seguiu": 1,
+      "log_ifconfig_ipv6_filtrado": 1
+    },
+    "dns_nomes": {
+      "resolv_conf_da_ana": "# escrito pelo up da VPN nameserver 10.77.1.1 search matriz.phx ",
+      "ip_da_ana": "10.77.1.3",
+      "ana.matriz.phx": "10.77.1.3",
+      "ana_nome_curto_pela_search": "10.77.1.3",
+      "xavier.matriz.phx_de_outra_rede": "nao",
+      "site.externo.teste": "198.51.100.10",
+      "dns_externo_viu": [
+        "192.0.2.1 ana",
+        "192.0.2.1 site.externo.teste"
+      ],
+      "xavier_ping_ao_resolvedor_da_matriz": "3/3",
+      "xavier_pergunta_ao_resolvedor_da_matriz": "sem resposta",
+      "ana_pergunta_direto": "10.77.1.3"
+    },
+    "RED": {
+      "sem_nat_de_saida_site": "falhou",
+      "tunel_ingenuo_lan_do_servidor_ping": "3/3",
+      "tunel_ingenuo_lan_do_servidor_tcp": "192.168.10.1"
+    },
+    "block_local": {
+      "resposta": {
+        "ok": true,
+        "firewall": {
+          "aplicado": true,
+          "motor": "nft",
+          "regras": 6,
+          "aviso": null
+        },
+        "openvpn_reiniciado": true,
+        "aviso": "os membros recebem a mudança ao reconectar; no Linux, o DNS só se aplica com o perfil baixado pedindo o script (dns_linux)"
+      },
+      "impressora_de_casa": "0/3",
+      "gateway_de_casa": "3/3",
+      "site_viu": "192.0.2.1"
+    },
+    "ipv6_kernel_sem_ipv6": {
+      "perfil_sem_a_marca_morreu": true,
+      "log_linux_cant_add_ipv6": 1
+    },
+    "dns_empresa_sem_nomes": {
+      "resposta": {
+        "ok": true,
+        "firewall": {
+          "aplicado": true,
+          "motor": "nft",
+          "regras": 6,
+          "aviso": null
+        },
+        "openvpn_reiniciado": true,
+        "aviso": "os membros recebem a mudança ao reconectar; no Linux, o DNS só se aplica com o perfil baixado pedindo o script (dns_linux)"
+      },
+      "site.externo.teste": "198.51.100.10",
+      "dns_externo_viu_com_tunel_total": [
+        "192.0.2.1"
+      ],
+      "dns_externo_viu_sem_tunel_total": [
+        "192.168.50.11"
+      ],
+      "ana.matriz.phx_sem_os_nomes": "nao"
+    },
+    "fim": {
+      "resposta": {
+        "ok": true,
+        "firewall": {
+          "aplicado": true,
+          "motor": "nft",
+          "regras": 1,
+          "aviso": null
+        },
+        "openvpn_reiniciado": true,
+        "aviso": "os membros recebem a mudança ao reconectar; no Linux, o DNS só se aplica com o perfil baixado pedindo o script (dns_linux)"
+      },
+      "site_viu": "192.168.50.11",
+      "resolv_conf": "# escrito pelo up da VPN ",
+      "ana.matriz.phx": "nao"
+    },
+    "recusas_pela_api": {
+      "tunel_total_sem_dns": {
+        "erro": "tunel total pede DNS pela VPN: com o block-outside-dns o Windows so pergunta ao DNS do tunel -- ligue os nomes dos membros ou informe o DNS da empresa"
+      },
+      "block_local_sem_tunel_total": {
+        "erro": "bloquear a LAN local e parte do tunel total (block-local do redirect-gateway): ligue o tunel total"
+      },
+      "dns_privado_sem_rota": {
+        "erro": "o DNS 192.168.10.53 e de faixa privada e nao esta em nenhuma rota desta rede: inclua a rede dele em «redes alcancaveis», ou ligue os nomes dos membros (o servidor pergunta por eles)"
+      },
+      "dona_nao_admin": {
+        "erro": "so o administrador liga o tunel total, os nomes dos membros ou o DNS da rede"
+      },
+      "dns_linux_injetado": {
+        "erro": "dns_linux: resolvconf, systemd-resolved ou vazio"
+      }
+    },
+    "passou": true
+  },
+  "iptables": {
+    "data": "2026-09-24T12:12:28+00:00",
+    "regras": {
+      "antes": {
+        "nossas": 1,
+        "ip_forward": 0
+      },
+      "com_tunel_total": {
+        "nossas": 15,
+        "ip_forward": 1
+      },
+      "depois_de_desligar": {
+        "nossas": 1,
+        "ip_forward": 0
+      }
+    },
+    "perfil_da_ana_linhas_pedidas": 3,
+    "conf_do_servidor": [
+      "push \"redirect-gateway def1 ipv6\"",
+      "push \"ifconfig-ipv6 fd70:6878:766e::2/64 fd70:6878:766e::1\"",
+      "push \"block-ipv6\"",
+      "block-ipv6",
+      "push \"block-outside-dns\"",
+      "push \"dhcp-option DNS 10.77.1.1\"",
+      "push \"dhcp-option DOMAIN matriz.phx\""
+    ],
+    "sem_tunel_total": {
+      "site_viu": "192.168.50.11",
+      "syn_na_wan_do_servidor": 0,
+      "syn_na_casa": 1,
+      "impressora_de_casa": "3/3",
+      "ana.matriz.phx": "nao",
+      "resolv_conf": "# escrito pelo up da VPN "
+    },
+    "com_tunel_total": {
+      "resposta": {
+        "ok": true,
+        "firewall": {
+          "aplicado": true,
+          "motor": "iptables",
+          "regras": 15,
+          "aviso": null
+        },
+        "openvpn_reiniciado": true,
+        "aviso": "os membros recebem a mudança ao reconectar; no Linux, o DNS só se aplica com o perfil baixado pedindo o script (dns_linux)"
+      },
+      "rotas_da_ana": [
+        "0.0.0.0/1 via 10.77.1.1 dev tun0 ",
+        "default via 192.168.50.1 dev eth0 ",
+        "10.77.1.0/24 dev tun0 proto kernel scope link src 10.77.1.3 ",
+        "128.0.0.0/1 via 10.77.1.1 dev tun0 ",
+        "192.0.2.1 via 192.168.50.1 dev eth0 ",
+        "192.168.50.0/24 dev eth0 proto kernel scope link src 192.168.50.11 ",
+        ""
+      ],
+      "site_viu": "192.0.2.1",
+      "syn_na_wan_do_servidor": 1,
+      "syn_na_casa": 0,
+      "impressora_de_casa_sem_block_local": "3/3",
+      "lan_do_servidor_sem_rota_ping": "0/3",
+      "lan_do_servidor_sem_rota_tcp": "falhou",
+      "membro_de_outra_rede": "0/3",
+      "log_block_outside_dns_recusado_e_seguiu": 1,
+      "log_ifconfig_ipv6_filtrado": 1
+    },
+    "dns_nomes": {
+      "resolv_conf_da_ana": "# escrito pelo up da VPN nameserver 10.77.1.1 search matriz.phx ",
+      "ip_da_ana": "10.77.1.3",
+      "ana.matriz.phx": "10.77.1.3",
+      "ana_nome_curto_pela_search": "10.77.1.3",
+      "xavier.matriz.phx_de_outra_rede": "nao",
+      "site.externo.teste": "198.51.100.10",
+      "dns_externo_viu": [
+        "192.0.2.1 ana",
+        "192.0.2.1 site.externo.teste"
+      ],
+      "xavier_ping_ao_resolvedor_da_matriz": "3/3",
+      "xavier_pergunta_ao_resolvedor_da_matriz": "sem resposta",
+      "ana_pergunta_direto": "10.77.1.3"
+    },
+    "RED": {
+      "sem_nat_de_saida_site": "falhou",
+      "tunel_ingenuo_lan_do_servidor_ping": "3/3",
+      "tunel_ingenuo_lan_do_servidor_tcp": "192.168.10.1"
+    },
+    "block_local": {
+      "resposta": {
+        "ok": true,
+        "firewall": {
+          "aplicado": true,
+          "motor": "iptables",
+          "regras": 15,
+          "aviso": null
+        },
+        "openvpn_reiniciado": true,
+        "aviso": "os membros recebem a mudança ao reconectar; no Linux, o DNS só se aplica com o perfil baixado pedindo o script (dns_linux)"
+      },
+      "impressora_de_casa": "0/3",
+      "gateway_de_casa": "3/3",
+      "site_viu": "192.0.2.1"
+    },
+    "ipv6_kernel_sem_ipv6": {
+      "perfil_sem_a_marca_morreu": true,
+      "log_linux_cant_add_ipv6": 1
+    },
+    "dns_empresa_sem_nomes": {
+      "resposta": {
+        "ok": true,
+        "firewall": {
+          "aplicado": true,
+          "motor": "iptables",
+          "regras": 15,
+          "aviso": null
+        },
+        "openvpn_reiniciado": true,
+        "aviso": "os membros recebem a mudança ao reconectar; no Linux, o DNS só se aplica com o perfil baixado pedindo o script (dns_linux)"
+      },
+      "site.externo.teste": "198.51.100.10",
+      "dns_externo_viu_com_tunel_total": [
+        "192.0.2.1"
+      ],
+      "dns_externo_viu_sem_tunel_total": [
+        "192.168.50.11"
+      ],
+      "ana.matriz.phx_sem_os_nomes": "nao"
+    },
+    "fim": {
+      "resposta": {
+        "ok": true,
+        "firewall": {
+          "aplicado": true,
+          "motor": "iptables",
+          "regras": 1,
+          "aviso": null
+        },
+        "openvpn_reiniciado": true,
+        "aviso": "os membros recebem a mudança ao reconectar; no Linux, o DNS só se aplica com o perfil baixado pedindo o script (dns_linux)"
+      },
+      "site_viu": "192.168.50.11",
+      "resolv_conf": "# escrito pelo up da VPN ",
+      "ana.matriz.phx": "nao"
+    },
+    "recusas_pela_api": {
+      "tunel_total_sem_dns": {
+        "erro": "tunel total pede DNS pela VPN: com o block-outside-dns o Windows so pergunta ao DNS do tunel -- ligue os nomes dos membros ou informe o DNS da empresa"
+      },
+      "block_local_sem_tunel_total": {
+        "erro": "bloquear a LAN local e parte do tunel total (block-local do redirect-gateway): ligue o tunel total"
+      },
+      "dns_privado_sem_rota": {
+        "erro": "o DNS 192.168.10.53 e de faixa privada e nao esta em nenhuma rota desta rede: inclua a rede dele em «redes alcancaveis», ou ligue os nomes dos membros (o servidor pergunta por eles)"
+      },
+      "dona_nao_admin": {
+        "erro": "so o administrador liga o tunel total, os nomes dos membros ou o DNS da rede"
+      },
+      "dns_linux_injetado": {
+        "erro": "dns_linux: resolvconf, systemd-resolved ou vazio"
+      }
+    },
+    "passou": true
+  },
+  "red_das_guardas": {
+    "data": "2026-09-24T12:21:31+00:00",
+    "reprovaram": "17/17",
+    "guardas": [
+      {
+        "guarda": "tunel total nao alcanca faixa privada",
+        "teste": "rotas::testes::tunel_total_sai_com_nat_so_para_a_internet",
+        "resultado": "REPROVOU (bom)"
+      },
+      {
+        "guarda": "NAT de saida nao mascara o privado (rota de volta)",
+        "teste": "rotas::testes::tunel_total_sai_com_nat_so_para_a_internet",
+        "resultado": "REPROVOU (bom)"
+      },
+      {
+        "guarda": "iptables: DROP do privado antes do ACCEPT",
+        "teste": "rotas::testes::tunel_total_sai_com_nat_so_para_a_internet",
+        "resultado": "REPROVOU (bom)"
+      },
+      {
+        "guarda": "roteador da filial fora do tunel total",
+        "teste": "rotas::testes::conf_e_ccd_levam_as_diretivas",
+        "resultado": "REPROVOU (bom)"
+      },
+      {
+        "guarda": "resolvedor so responde a propria rede",
+        "teste": "dns::testes::resolvedor_responde_repassa_e_ignora_quem_e_de_fora",
+        "resultado": "REPROVOU (bom)"
+      },
+      {
+        "guarda": "nome so de ccd inteiro (sem .gravando)",
+        "teste": "dns::testes::nomes_saem_do_ccd_e_so_dos_arquivos_inteiros",
+        "resultado": "REPROVOU (bom)"
+      },
+      {
+        "guarda": "resposta de fora da zona nao e local",
+        "teste": "dns::testes::membro_da_zona_responde_o_ip_e_o_resto_vai_adiante",
+        "resultado": "REPROVOU (bom)"
+      },
+      {
+        "guarda": "tunel total pede DNS pela VPN",
+        "teste": "saida::testes::combinacao_torta_e_recusada_com_o_motivo",
+        "resultado": "REPROVOU (bom)"
+      },
+      {
+        "guarda": "block-local so com tunel total",
+        "teste": "saida::testes::combinacao_torta_e_recusada_com_o_motivo",
+        "resultado": "REPROVOU (bom)"
+      },
+      {
+        "guarda": "DNS privado precisa de rota",
+        "teste": "saida::testes::combinacao_torta_e_recusada_com_o_motivo",
+        "resultado": "REPROVOU (bom)"
+      },
+      {
+        "guarda": "pacote: block-outside-dns empurrado",
+        "teste": "saida::testes::tunel_total_leva_o_pacote_inteiro",
+        "resultado": "REPROVOU (bom)"
+      },
+      {
+        "guarda": "pacote: block-ipv6",
+        "teste": "saida::testes::tunel_total_leva_o_pacote_inteiro",
+        "resultado": "REPROVOU (bom)"
+      },
+      {
+        "guarda": "pacote: ifconfig-ipv6 ficticio",
+        "teste": "saida::testes::tunel_total_leva_o_pacote_inteiro",
+        "resultado": "REPROVOU (bom)"
+      },
+      {
+        "guarda": "DNS da empresa fora do espaco da VPN",
+        "teste": "saida::testes::dns_da_empresa_so_aceita_servidor_de_verdade",
+        "resultado": "REPROVOU (bom)"
+      },
+      {
+        "guarda": "dns_linux so da lista (sem injecao)",
+        "teste": "saida::testes::perfil_do_cliente_so_leva_o_que_foi_pedido",
+        "resultado": "REPROVOU (bom)"
+      },
+      {
+        "guarda": "DOMAIN-ROUTE . so com tunel total",
+        "teste": "saida::testes::perfil_do_cliente_so_leva_o_que_foi_pedido",
+        "resultado": "REPROVOU (bom)"
+      },
+      {
+        "guarda": "so o admin alarga a saida",
+        "teste": "postgres_real:saida_tunel_total_dns_permissao_e_conf",
+        "resultado": "REPROVOU (bom)"
+      }
+    ]
+  },
+  "tela": {
+    "data": "2026-09-24T12:16:26Z",
+    "admin_ve_o_bloco": true,
+    "estado_inicial": "Túnel total: desligado (só a VPN passa pelo servidor)",
+    "largura_da_caixa_de_marcar": 13,
+    "block_local_travado_sem_tunel": true,
+    "status_tunel_sem_dns": 400,
+    "recusa_sem_dns": "tunel total pede DNS pela VPN: com o block-outside-dns o Windows so pergunta ao DNS do tunel -- ligue os nomes dos membros ou informe o DNS da empresa",
+    "status_liga": 200,
+    "estado_ligado": "Túnel total: ligado, sem acesso à LAN localNomes: membro.matriz.phxDNS empurrado: 10.77.1.1",
+    "aviso": "atenção: painel sem --openvpn: o firewall nao foi aplicado; aplique /tmp/phxvpn-tela-tt-2/dados/rotas.nft (nft -f) e ligue o ip_forward — os membros recebem a mudança ao reconectar; no Linux, o DNS só se aplica com o perfil baixado pedindo o script (dns_linux)",
+    "caixa_da_zona": "none",
+    "fonte_da_zona": "ui-monospace, monospace",
+    "cor_do_salvar": "rgb(245, 197, 66)",
+    "rolagem_lateral_390": 0,
+    "membro_ve_estado": "Túnel total: ligado, sem acesso à LAN localNomes: membro.matriz.phxDNS empurrado: 10.77.1.1",
+    "membro_ve_formulario": false,
+    "largura_sem_ipv6": 13,
+    "corpo_do_entrar": {
+      "nome": "Matriz",
+      "finalidade": "",
+      "protocolo": "udp",
+      "http_proxy": "",
+      "dns_linux": "systemd-resolved",
+      "sem_ipv6": true
+    },
+    "perfil_linhas": [
+      "script-security 2",
+      "up /etc/openvpn/update-systemd-resolved",
+      "down /etc/openvpn/update-systemd-resolved",
+      "down-pre",
+      "dhcp-option DOMAIN-ROUTE .",
+      "pull-filter ignore \"ifconfig-ipv6\""
+    ],
+    "erros_de_pagina": [],
+    "passou": true
+  }
+}

@@ -62,6 +62,18 @@ button.exclui{border-color:var(--vermelho);color:var(--vermelho)}button.exclui:h
 .nova-rota input,.nova-rota select{background:#050a1c;color:var(--texto);border:1px solid var(--linha);border-radius:6px;padding:5px 8px;font:inherit;font-size:13px;min-width:0}
 .nova-rota input{flex:1 1 150px;font-family:ui-monospace,monospace}
 .nova-rota select{flex:1 1 180px}
+/* Saida da rede (tunel total e DNS): caixa de marcar fora do .campo, que
+   estica todo input a 100% -- a caixa viraria uma barra. */
+.marca{display:flex;align-items:center;gap:8px;font-size:14px;padding:2px 0}
+.marca input{width:auto;margin:0;accent-color:var(--acento)}
+.saida{border-top:1px solid var(--linha);padding:8px 12px 10px 16px;font-size:14px}
+.saida .titulo{font-size:12px;color:var(--fraco);margin-bottom:4px}
+.saida .estado{color:var(--fraco);font-size:13px}
+.saida .estado b{color:var(--texto);font-weight:600}
+.saida .zona{font-family:ui-monospace,monospace;color:var(--ambar)}
+.saida form{display:flex;flex-direction:column;gap:4px;margin-top:6px}
+.saida .dns{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.saida .dns input{flex:1 1 180px;min-width:0;background:#050a1c;color:var(--texto);border:1px solid var(--linha);border-radius:6px;padding:5px 8px;font:inherit;font-size:13px;font-family:ui-monospace,monospace}
 .selo{font-size:12px;border:1px solid var(--linha);border-radius:12px;padding:2px 8px;color:var(--fraco)}
 .selo.alerta{border-color:var(--amarelo);color:var(--amarelo)}
 dialog{background:var(--painel);color:var(--texto);border:1px solid var(--linha);border-radius:10px;max-width:460px;width:calc(100% - 32px)}
@@ -209,6 +221,14 @@ th{color:var(--fraco);font-weight:500;font-size:12px}
         <option value="tcp">TCP · porta 443</option></select></label>
     </fieldset>
     <label class="campo" id="c-proxy" style="margin-top:8px"><span>Proxy HTTP no perfil (opcional, HOST:PORTA)</span><input name="http_proxy" placeholder="proxy.empresa:3128" autocomplete="off"></label>
+    <fieldset id="c-maquina" style="margin-top:8px">
+      <legend>Esta máquina (muda só o seu perfil)</legend>
+      <label class="campo"><span>DNS da VPN no Linux</span><select name="dns_linux">
+        <option value="">Não aplicar (Windows, macOS, celular aplicam sozinhos)</option>
+        <option value="systemd-resolved">systemd-resolved (update-systemd-resolved)</option>
+        <option value="resolvconf">resolvconf (update-resolv-conf)</option></select></label>
+      <label class="marca"><input type="checkbox" name="sem_ipv6"> Esta máquina tem o IPv6 desligado</label>
+    </fieldset>
     <p class="msg" id="m-rede"></p>
     <div class="linha-botoes"><button type="button" id="d-cancelar">Cancelar</button><button class="inclui" type="submit" id="d-ok">Criar</button></div>
   </form>

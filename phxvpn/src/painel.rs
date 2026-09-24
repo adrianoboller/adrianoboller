@@ -168,6 +168,7 @@ impl Painel {
         pg.lote(crate::mfa::ESQUEMA)?;
         pg.lote(crate::credencial::ESQUEMA)?;
         pg.lote(crate::rotas::ESQUEMA)?;
+        pg.lote(crate::saida::ESQUEMA)?;
         criar_dir_privado(dados)?;
         Ok(Painel {
             pg,
@@ -904,7 +905,7 @@ impl Painel {
         Ok(pki::pem("X509 CRL", &der))
     }
 
-    fn dir_rede(&self, id: &str) -> PathBuf {
+    pub(crate) fn dir_rede(&self, id: &str) -> PathBuf {
         self.dados.join("redes").join(id)
     }
 
@@ -958,6 +959,7 @@ impl Painel {
         );
         conf.push_str(&crate::credencial::conf(&self.dados, rede_id));
         conf.push_str(&self.conf_das_rotas(rede_id)?);
+        conf.push_str(&self.conf_da_saida(rede_id)?);
         if self.rede_exige_mfa(rede_id)? {
             self.mfa_pode_subir(rede_id)?;
             conf.push_str(&crate::verificar::conf_servidor_mfa(&self.dados, rede_id));

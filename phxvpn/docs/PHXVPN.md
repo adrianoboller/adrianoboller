@@ -63,6 +63,7 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [x] Seis recursos foram para a tela (24/09/2026, o gancho de «um motor só»): painel web com **trocar a própria senha** (`/api/senha`, exige a senha atual e o código do autenticador de quem tem), **desativar/reativar usuário** (`/api/usuarios/ativo`, botão vermelho/verde) e **remover membro de rede** (`/api/redes/remover`); programa de mesa com **marcar/desmarcar farol** (`/api/farol`, mesmo motor de `phxvpn p2p farol` — o dono autoriza no rol com endereço, o próprio membro só consente localmente) e **selo discreto de farol** na linha do membro (o campo já existia em `situacao()`); e a **marca nova** — `/logo-128.png`/`/logo-32.png`, PNGs reduzidos (26 KiB e 2,3 KiB) do `marca/png/fenix-vpn-2000.png` de 4,4 MB, nunca o original embutido, servidos por rota própria no painel e na mesa (`web.rs`), com o SVG mantido para os outros usos. Nenhuma confirmação de exclusão usa `confirm()` do navegador — todas são diálogo dentro da página. Provado exercitando (Chromium, painel com PostgreSQL real; mesa com uma rede semeada pelo `cargo run --example semear_farol`, o mesmo atalho do teste de `mesa.rs`), capturas em `docs/previa/27` a `30` (390 e 1280 px, 0 erro de console)
 - [x] P2P: **difusão** — broadcast (`x.x.x.255`, `255.255.255.255`) e multicast (`224/4`) da placa vão cifrados a todos os pares com sessão, com teto por nó de origem (200 pacotes/s, 256 KiB/s, MTU) na saída E na entrada; só replica o que tem origem no próprio IP (sem laço); desliga por rede (`--sem-difusao`). Provado em três `netns`: 20/20 de cada destino nos dois receptores, SSDP acha os dois, desligada 0, rajada de 1000 → 200 — ver «P2P: difusão»
 - [x] Modo servidor: **redes alcançáveis** — LAN da empresa atrás do servidor (`push "route"`, NAT ou rota de volta, tabela `ip phxvpn` própria com guarda do isolamento — a guarda fica sempre que há rede, com ou sem rota) e filial atrás de um membro (`iroute`); só o admin inclui — provado com o `openvpn` 2.6.19 em netns, nft e iptables (`provas/rotas/`) — ver «Modo servidor: redes alcançáveis»
+- [x] Modo servidor: **túnel total** com o pacote inteiro (`redirect-gateway def1 ipv6` [+ `block-local`], `ifconfig-ipv6` fictício + `block-ipv6`, `block-outside-dns` empurrado, DNS pela VPN obrigatório, NAT de saída só para a internet) e **DNS da rede** (DNS da empresa empurrado, ou resolvedor embutido com `membro.rede.phx` e repasse) — provado com o `openvpn` 2.6.19 em netns, nft e iptables (`provas/tunel-total/`) — ver «Modo servidor: túnel total e DNS da rede»
 
 ### Falta
 
@@ -93,8 +94,8 @@ Da matriz em `docs/propostas/lacunas-openvpn-fonte-2026-09-24.md` (classe
 - [x] LAN da empresa atrás do servidor (ver «Modo servidor: redes alcançáveis»)
 - [x] LAN atrás de um membro / site-to-site (`iroute`; ver «Modo servidor: redes alcançáveis»)
 - [ ] Idem no P2P (faixa por par, tipo `AllowedIPs`)
-- [ ] Túnel total (`redirect-gateway def1`) — só com o pacote inteiro: `block-outside-dns`, `block-ipv6`, `block-local` e NAT
-- [ ] DNS empurrado + nomes dos membros
+- [x] Túnel total (`redirect-gateway def1`) — com o pacote inteiro: `block-outside-dns`, `block-ipv6`, `block-local` e NAT (ver «Modo servidor: túnel total e DNS da rede»; `block-ipv6` e `block-outside-dns` **gerados, não provados em tráfego** — kernel sem IPv6 aqui, e o segundo é só Windows)
+- [x] DNS empurrado + nomes dos membros (resolvedor embutido `membro.rede.phx`, só no modo servidor; o P2P não tem)
 - [ ] IPv6 dentro do túnel (`server-ipv6`; o P2P é só IPv4 por dentro)
 - [ ] **Transporte IPv6 por fora — P2P e repasse:** o código entrou (soquete IPv6 ao lado do IPv4, `src/soquete.rs`), com os testes da escolha do soquete e do endereço mapeado; **falta a prova em rede IPv6** — o kernel deste contêiner arranca com `ipv6.disable=1` e `socket(AF_INET6)` dá `EAFNOSUPPORT` até dentro de netns. Os dois testes de ida e volta por `::1` estão `#[ignore]` com o motivo; rodam com `cargo test -- --ignored` numa máquina com IPv6
 - [ ] MTU do P2P pelo repasse/farol (1.516 B > 1.500, calculado, não medido)
@@ -611,7 +612,7 @@ da rede, «Redes alcançáveis pela VPN», verde inclui, vermelho remove.
   tinha sumido: o `-X` deixou de depender do salto.
 - **Validação:** `a.b.c.d/p` estrito (sem zero à esquerda, sem bit de host —
   `192.168.10.5/24` responde «a rede é 192.168.10.0/24»); `0.0.0.0/0` recusado
-  com o motivo (túnel total é outro item, com proteção de DNS); só faixa
+  com o motivo (túnel total é a chave da saída da rede, com a proteção de DNS e IPv6 — seção seguinte); só faixa
   privada (10/8, 172.16/12, 192.168/16, 100.64/10); nada sobre
   `10.77.0.0/16`; na mesma rede nada se sobrepõe; filial não sobrepõe nada de
   outra rede (o kernel teria duas rotas); a mesma LAN atrás do servidor por
@@ -655,6 +656,135 @@ RED das guardas (cada uma tirada do fonte, o teste dela reprova): 11/11 —
 reconecta à mão; com o `kill` de hoje o supervisor deixa o cliente 61 s no
 `ping-restart` — é o item 5 das lacunas, de outra frente). Host que já tem
 `policy drop` no forward: só o aviso foi testado (unidade), não o tráfego.
+
+## Modo servidor: túnel total e DNS da rede (24/09/2026)
+
+Itens «Túnel total» e «DNS empurrado + nomes dos membros» das lacunas. Código
+em `src/saida.rs` (o que vai para o conf e o perfil, quem pode) e
+`src/dns.rs` (o resolvedor); o firewall é o MESMO motor das rotas
+(`rotas.rs`: tabela `ip phxvpn` / cadeias `PHXVPN-*`, guarda, `ip_forward`,
+e o `efetivar` que desfaz o que alarga quando o firewall não se aplica).
+Ganchos: `painel.rs` (esquema e conf), `http.rs` (duas rotas e o perfil),
+`rotas::ccd_membro` (roteador da filial).
+
+Por rede, o **administrador** liga (com o código de quem tem autenticador);
+o dono vê e pode **desligar**:
+
+| Chave | O que o painel escreve |
+|---|---|
+| Túnel total | `push "redirect-gateway def1 ipv6"`, `push "ifconfig-ipv6 fd70:6878:766e::2/64 …"`, `push "block-ipv6"` + `block-ipv6`, `push "block-outside-dns"`; NAT de saída e `ip_forward` no host |
+| Bloquear a LAN local | `block-local` no mesmo `redirect-gateway` (só com túnel total) |
+| Nomes dos membros | `push "dhcp-option DNS 10.77.N.1"` + `DOMAIN <rede>.phx`; resolvedor em `10.77.N.1:53` |
+| DNS da empresa | `push "dhcp-option DNS <ip>"` (até 2); com os nomes ligados, vira o DNS de cima do resolvedor |
+
+**API** (JSON, sessão): `POST /api/redes/saida` `{rede_id}`;
+`/api/redes/saida/definir` `{rede_id, tunel_total, bloquear_local, dns_nomes,
+dns_empresa, codigo}`. Perfil: `/api/redes/entrar` (e criar) aceitam
+`dns_linux` (`resolvconf` | `systemd-resolved`) e `sem_ipv6`; console
+`--dns-linux` e `--sem-ipv6`. Tela: cartão da rede, «Saída de internet e
+DNS» (amarelo altera); diálogo de entrar, «Esta máquina».
+
+**Decisões, com a hipótese que morreu:**
+- **«Túnel total = aceitar e mascarar tudo o que sai da rede»: morreu,
+  medido.** Dá de brinde a LAN do servidor a quem só pediu internet — RED:
+  ana → 192.168.10.5 (LAN do servidor, sem rota) **3/3**; com a guarda
+  **0/3**. Túnel total é saída de **internet**: faixa privada e link-local
+  ficam de fora (`drop` antes do `accept`; NAT só com `daddr !=` privada),
+  e a LAN continua sendo só por rota, que só o admin inclui. A rota de volta
+  (sem NAT) da mesma rede segue mostrando o IP do membro.
+- **«`block-ipv6` só com `redirect-gateway ipv6`, sem `ifconfig-ipv6`»:
+  morreu pelo manual** — o `block-ipv6` só age no pacote que chega à placa,
+  e sem IPv6 na placa as rotas IPv6 não se instalam (vpn-network-options.rst
+  :12-45 manda empurrar o `ifconfig-ipv6`). Entrou a receita do manual — e o
+  preço dela está medido: cliente Linux com `ipv6.disable=1` **morre** com
+  «Linux can't add IPv6 to interface tun0» + «Exiting due to fatal error»
+  (tun.c:1126, `M_FATAL`). Não há `push` condicional; quem baixa o perfil
+  numa máquina assim marca «sem IPv6» e o perfil leva `pull-filter ignore
+  "ifconfig-ipv6"` (conecta; as rotas IPv6 falham sem derrubar nada).
+- **`block-outside-dns` empurrado, nunca no perfil.** No Linux a opção é
+  desconhecida; empurrada, é aviso («Options error: Unrecognized option …
+  block-outside-dns») e o cliente segue — medido (windows-options.rst:13-24
+  diz o mesmo). No perfil seria fatal.
+- **Túnel total sem DNS pela VPN é recusado:** com o `block-outside-dns` o
+  Windows só pergunta ao DNS do túnel. **Block-local sem túnel total**,
+  recusado (é flag do `redirect-gateway`). **DNS da empresa em faixa
+  privada sem os nomes** precisa estar numa rota da rede — senão quem
+  pergunta é o membro, e a pergunta iria para a LAN de casa dele.
+- **DNS: «só empurrar o DNS da empresa» morreu como resposta inteira** — ele
+  não sabe dos membros (o IP deles vive no painel). **«Resolvedor embutido
+  da zona, com repasse» venceu** — o desenho do MagicDNS (Tailscale) e do
+  ZeroNSd (ZeroTier), que tiveram de escrever um; aqui em `std`, só `A`,
+  UDP, sem cache. O OpenVPN não tem DNS próprio (só `dhcp-option`).
+- **Os nomes saem do `ccd/`** (quem pode conectar, `ccd-exclusive`): um motor
+  só — sair, ser removido ou desativado tira o nome no mesmo passo.
+  `joao.silva` vira `joao-silva.matriz.phx`; acento some.
+- **Não é resolvedor aberto:** um soquete por rede em `10.77.N.1:53`, e só
+  responde a origem `10.77.N.0/24`. O endereço `10.77.B.1` é LOCAL do host
+  para o membro da rede A (entrega em INPUT, não em FORWARD): a guarda das
+  rotas não o cobre, a origem sim — o OpenVPN descarta origem que não é a do
+  membro. Medido: xavier (rede Outra) com rota manual pinga `10.77.1.1`
+  **3/3** e a pergunta DNS fica **sem resposta**.
+- **O roteador da filial fica fora do túnel total:** `push-remove` de
+  `redirect-gateway`, `ifconfig-ipv6`, `block-ipv6` e `block-outside-dns` no
+  `ccd/` de quem tem filial — senão a internet da filial inteira iria ao
+  servidor, que a descarta (a filial está na guarda).
+- **DNS no Linux só quando pedido:** o OpenVPN no Linux só põe o
+  `dhcp-option` no ambiente do `up` (vpn-network-options.rst:126-133). O
+  perfil leva `script-security 2` + `up`/`down` do `update-resolv-conf`
+  (pede o `resolvconf`) ou do `update-systemd-resolved` (+ `down-pre`, e
+  `dhcp-option DOMAIN-ROUTE .` só com túnel total) **só se quem baixa
+  escolher** — rodar script é decisão da máquina do membro. `dns_linux` só
+  aceita os dois valores (injeção de `up /bin/sh` recusada).
+
+**Prova** (`sudo provas/tunel-total/rodar.sh`, `MOTOR=nft|iptables`;
+`openvpn` 2.6.19 real, painel + PostgreSQL em netns; `resultados.json`, n=1
+por motor; o `update-resolv-conf` do pacote pede o `resolvconf`, que não há
+aqui — a prova troca pelo `up-dns.sh`, que faz o mesmo no `resolv.conf` do
+netns):
+
+| Caso | nft | iptables |
+|---|---|---|
+| Sem túnel total: IP que o site vê; SYN na wan do servidor / na casa | 192.168.50.11; 0 / 1 | 192.168.50.11; 0 / 1 |
+| Com túnel total: IP que o site vê; SYN na wan / na casa | **192.0.2.1**; 1 / 0 | **192.0.2.1**; 1 / 0 |
+| RED sem o NAT de saída: site | falhou | falhou |
+| LAN do servidor sem rota, com túnel total (ping; TCP) | 0/3; falhou | 0/3; falhou |
+| RED túnel «ingênuo» (accept + masquerade sem exceção) | **3/3** | **3/3** |
+| Membro de outra rede, com túnel total | 0/3 | 0/3 |
+| Impressora da casa: sem `block-local`; com (gateway de casa) | 3/3; **0/3** (3/3) | 3/3; **0/3** (3/3) |
+| `ana.matriz.phx` sem os nomes; com (= IP da ana); nome curto `ana` | não; 10.77.1.3; 10.77.1.3 | não; 10.77.1.3; 10.77.1.3 |
+| Nome externo pelo resolvedor; quem o DNS externo viu | 198.51.100.10; 192.0.2.1 | 198.51.100.10; 192.0.2.1 |
+| xavier (outra rede) → `10.77.1.1`: ping; pergunta DNS | 3/3; sem resposta | 3/3; sem resposta |
+| DNS da empresa (público) sem os nomes: quem o DNS externo viu com / sem túnel total | 192.0.2.1 / 192.168.50.11 | 192.0.2.1 / 192.168.50.11 |
+| Perfil sem «sem IPv6» neste kernel; com | FATAL; conecta | FATAL; conecta |
+| `block-outside-dns` empurrado ao Linux | recusado, segue | recusado, segue |
+| Regras nossas antes → túnel total → desligado; `ip_forward` | 1 → 6 → 1; 0 → 1 → 0 | 1 → 15 → 1; 0 → 1 → 0 |
+
+Recusas pela API: túnel total sem DNS, `block-local` sem túnel, DNS privado
+sem rota, dona não-admin, `dns_linux` com `up /bin/sh`. RED das guardas
+(`provas/tunel-total/red.py`, cada uma tirada do fonte, o teste dela
+reprova): **17/17**. Tela exercitada no Chromium
+(`provas/tunel-total/tela.sh`): a recusa sem DNS aparece, caixa de marcar com
+13 px (fora do `.campo input{width:100%}`), zona em mono sem caixa alta,
+rolagem lateral 0 em 390 px, o membro vê sem formulário, e o diálogo de
+entrar manda `dns_linux`/`sem_ipv6` — o perfil volta com as linhas.
+
+**Não provado aqui:**
+- `block-ipv6` em tráfego — o kernel deste contêiner arranca com
+  `ipv6.disable=1`; o que se provou é a morte sem a marca e a conexão com
+  ela. Com DCO o `block-ipv6` (que age no espaço do usuário) não responde o
+  ICMPv6, mas o IPv6 continua indo para o túnel e morrendo no servidor —
+  **raciocinado, não medido** (o módulo DCO não foi carregado).
+- `block-outside-dns` num Windows real (só gerado; o roteiro do Windows é o
+  `prova-windows.ps1`), nem o `update-systemd-resolved` (sem systemd no
+  netns).
+- O nome curto (`ana`) faz o glibc, depois do NODATA do `AAAA`, perguntar
+  `ana.` ao DNS de cima (o log do DNS externo viu `ana` vindo do servidor):
+  inofensivo, anotado.
+- Host com `policy drop` no INPUT (firewalld): a pergunta ao `10.77.N.1:53`
+  não chega — o painel não abre regra de entrada; fica dito aqui.
+- O Windows com `dhcp-option DOMAIN` só (sem túnel total): se o nome da
+  zona vai ao DNS do túnel depende da ordem das placas no Windows (a 2.6 não
+  põe NRPT; a 2.7 põe, pelo `--dns`) — não medido.
 
 ## P2P: `mac1` e cookie contra inundação (24/09/2026)
 

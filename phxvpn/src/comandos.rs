@@ -216,6 +216,14 @@ pub fn perfil_de_rede(
     if let Some(p) = nao_vazia(o.um("http-proxy")) {
         pedido.push(("http_proxy", Json::texto_de(p)));
     }
+    // O que a maquina de quem baixa pede ao proprio perfil (saida.rs): o
+    // painel confere a lista, aqui so se repassa.
+    if let Some(d) = nao_vazia(o.um("dns-linux")) {
+        pedido.push(("dns_linux", Json::texto_de(d)));
+    }
+    if o.tem("sem-ipv6") {
+        pedido.push(("sem_ipv6", Json::de_bool(true)));
+    }
     let rota = if criar {
         "/api/redes"
     } else {

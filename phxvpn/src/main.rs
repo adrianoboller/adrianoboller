@@ -28,6 +28,9 @@ const AJUDA: &str = "phxvpn -- redes virtuais no estilo Radmin, sobre OpenVPN
       --protocolo tcp: a rede OpenVPN escuta em TCP (proto tcp-server) -- para
       membros atras de rede que so deixa TCP/443; --porta so o administrador.
       --http-proxy: o perfil sai com http-proxy (so em rede TCP).
+      --dns-linux systemd-resolved|resolvconf: o perfil chama o script que
+      aplica o DNS empurrado (so no Linux; script-security 2). --sem-ipv6:
+      maquina com o IPv6 desligado ignora o ifconfig-ipv6 do tunel total.
       Senhas por PHXVPN_SENHA e PHXVPN_SENHA_REDE, ou perguntadas no terminal --
       nunca por argumento, que aparece na lista de processos. Quem cadastrou o
       autenticador passa o codigo em PHXVPN_CODIGO.
@@ -347,7 +350,7 @@ fn senha(var: &str, pergunta: &str) -> Result<String, String> {
 }
 
 fn cmd_rede(args: &[String], criar: bool) -> Result<(), String> {
-    let o = Opcoes::de_args(args, &["conectar"]);
+    let o = Opcoes::de_args(args, &["conectar", "sem-ipv6"]);
     let painel = o.um("painel").unwrap_or("http://127.0.0.1:8470");
     let login = o.um("usuario").ok_or("informe --usuario")?;
     let rede = o.um("rede").ok_or("informe --rede")?;

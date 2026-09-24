@@ -483,6 +483,7 @@ fn rotear(p: &Pedido, e: &Estado) -> Saida {
             let u = usuario(p, e)?;
             let servidor = corpo.campo("servidor_id").and_then(Json::inteiro);
             let transporte = transporte_do_pedido(&corpo)?;
+            let cliente = cliente_do_pedido(&corpo)?;
             let perfil = e
                 .painel()
                 .criar_rede_com(
@@ -495,7 +496,7 @@ fn rotear(p: &Pedido, e: &Estado) -> Saida {
                 )
                 .map_err(ruim)?;
             materializar_e_subir(e).map_err(ruim)?;
-            perfil_json(&t("nome"), perfil)
+            perfil_json(&t("nome"), com_cliente(e, &t("nome"), perfil, &cliente)?)
         }
         ("POST", "/api/redes/entrar") => {
             let u = usuario(p, e)?;
@@ -516,11 +517,12 @@ fn rotear(p: &Pedido, e: &Estado) -> Saida {
             conferido.map_err(|m| (400, m))?;
             reserva.acertou(&[&chave_rede]);
             let proxy = Some(t("http_proxy")).filter(|p| !p.is_empty());
+            let cliente = cliente_do_pedido(&corpo)?;
             let perfil = e
                 .painel()
                 .entrar_ja_conferido_com(&u, &nome, proxy.as_deref())
                 .map_err(ruim)?;
-            perfil_json(&nome, perfil)
+            perfil_json(&nome, com_cliente(e, &nome, perfil, &cliente)?)
         }
         ("POST", "/api/redes/sair") => {
             let u = usuario(p, e)?;
@@ -555,18 +557,7 @@ fn rotear(p: &Pedido, e: &Estado) -> Saida {
                 // Abrir a LAN da empresa e a mudanca mais larga do painel:
                 // sessao roubada nao a faz sem o codigo de quem o tem.
                 exigir_admin(&u)?;
-                let tem_mfa = e.painel().mfa_ativo(u.id).map_err(ruim)?;
-                if tem_mfa {
-                    let conta = crate::guarda::chave_conta(crate::guarda::Canal::Painel, &u.login);
-                    let reserva = e
-                        .tentativas
-                        .reservar(&[&conta, &chave_ip])
-                        .map_err(bloqueado)?;
-                    e.painel()
-                        .mfa_conferir(u.id, &t("codigo"))
-                        .map_err(|m| (403, m))?;
-                    reserva.acertou(&[&conta]);
-                }
+                exigir_codigo(e, &u, &t("codigo"), &chave_ip)?;
             }
             let (nome, dir) = if incluir {
                 e.painel()
@@ -576,6 +567,29 @@ fn rotear(p: &Pedido, e: &Estado) -> Saida {
             }
             .map_err(ruim)?;
             crate::rotas::depois_de_mudar(e, incluir, id, &cidr, &nome, &dir).map_err(ruim)
+        }
+        ("POST", "/api/redes/saida") => {
+            let u = usuario(p, e)?;
+            let id = rede_id(&corpo)?;
+            e.painel().saida(&u, id).map_err(|m| (403, m))
+        }
+        ("POST", "/api/redes/saida/definir") => {
+            let u = usuario(p, e)?;
+            let id = rede_id(&corpo)?;
+            let nova = crate::saida::Saida {
+                tunel_total: corpo.booleano_ou("tunel_total", false),
+                bloquear_local: corpo.booleano_ou("bloquear_local", false),
+                dns_nomes: corpo.booleano_ou("dns_nomes", false),
+                dns_empresa: crate::saida::analisar_dns(&t("dns_empresa")).map_err(|m| (400, m))?,
+            };
+            // Tunel total faz do servidor a saida de internet dos membros:
+            // o mesmo degrau de abrir a LAN (admin e o codigo de quem tem).
+            // Estreitar nao pede codigo.
+            if u.admin {
+                exigir_codigo(e, &u, &t("codigo"), &chave_ip)?;
+            }
+            let (nome, dir, antiga) = e.painel().saida_definir(&u, id, &nova).map_err(ruim)?;
+            crate::saida::depois_de_mudar(e, id, &antiga, &nova, &nome, &dir).map_err(ruim)
         }
         ("GET", "/api/usuarios") => {
             exigir_admin(&usuario(p, e)?)?;
@@ -619,6 +633,29 @@ fn ok() -> Saida {
     Ok(Json::objeto(vec![("ok", Json::de_bool(true))]))
 }
 
+/// `dns_linux` e `sem_ipv6` do pedido: o que a maquina de quem baixa pede
+/// ao proprio perfil (`saida.rs`). Conferido ANTES de emitir o certificado.
+fn cliente_do_pedido(corpo: &Json) -> Result<crate::saida::Cliente, (u16, String)> {
+    crate::saida::cliente(
+        corpo.texto_ou("dns_linux", ""),
+        corpo.booleano_ou("sem_ipv6", false),
+    )
+    .map_err(|m| (400, m))
+}
+
+fn com_cliente(
+    e: &Estado,
+    rede: &str,
+    perfil: String,
+    c: &crate::saida::Cliente,
+) -> Result<String, (u16, String)> {
+    if *c == crate::saida::Cliente::default() {
+        return Ok(perfil);
+    }
+    let s = e.painel().saida_por_nome(rede).map_err(ruim)?;
+    Ok(perfil + &crate::saida::perfil_cliente(c, &s))
+}
+
 fn perfil_json(rede: &str, perfil: String) -> Saida {
     let arquivo: String = rede
         .chars()
@@ -653,6 +690,30 @@ fn usuario(p: &Pedido, e: &Estado) -> Result<Usuario, (u16, String)> {
     }
 }
 
+/// O codigo do autenticador de quem o tem, antes de uma mudanca larga
+/// (rota para a LAN, tunel total): sessao roubada nao a faz. Conta como
+/// tentativa, com a mesma trava do login.
+fn exigir_codigo(
+    e: &Estado,
+    u: &Usuario,
+    codigo: &str,
+    chave_ip: &str,
+) -> Result<(), (u16, String)> {
+    if !e.painel().mfa_ativo(u.id).map_err(ruim)? {
+        return Ok(());
+    }
+    let conta = crate::guarda::chave_conta(crate::guarda::Canal::Painel, &u.login);
+    let reserva = e
+        .tentativas
+        .reservar(&[&conta, chave_ip])
+        .map_err(bloqueado)?;
+    e.painel()
+        .mfa_conferir(u.id, codigo)
+        .map_err(|m| (403, m))?;
+    reserva.acertou(&[&conta]);
+    Ok(())
+}
+
 fn exigir_admin(u: &Usuario) -> Result<(), (u16, String)> {
     if u.admin {
         Ok(())
@@ -675,6 +736,7 @@ pub fn materializar_e_subir(e: &Estado) -> Result<(), String> {
     if let Err(m) = crate::rotas::aplicar_no_host(e) {
         eprintln!("phxvpn: AVISO rotas: {m}");
     }
+    crate::saida::acertar_dns(e);
     Ok(())
 }
 
