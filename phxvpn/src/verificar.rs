@@ -213,9 +213,9 @@ pub fn conferir(e: &Estado, j: &Json) -> Result<String, String> {
     let t = |c: &str| j.texto_ou(c, "").to_string();
     let (usuario, cn, rede) = (t("usuario"), t("cn"), t("rede"));
     let (login, rede_cn) = cn_login_rede(&cn).ok_or("CN fora do formato do phxvpn")?;
-    // A conta e a MESMA do painel (orcamento unico); o IP e so deste canal,
-    // para erro na VPN nao trancar o login do painel pelo mesmo IP.
-    let conta = crate::http::chave_conta(login);
+    // Conta e IP so deste canal: erro no painel nao tranca a VPN de quem tem
+    // o certificado (decisao do dono, 24/09/2026), nem o contrario.
+    let conta = crate::guarda::chave_conta(crate::guarda::Canal::Vpn, login);
     let chave_ip = crate::guarda::chave_de_ip("ip-vpn", &t("ip"));
     let reserva = e
         .tentativas
@@ -421,6 +421,21 @@ fn atender(e: &Estado, mut s: std::os::unix::net::UnixStream) {
 #[cfg(test)]
 mod testes {
     use super::*;
+
+    /// Decisao do dono (24/09/2026): errar a senha no painel trava so o
+    /// painel. RED: com a conta unica entre canais, a VPN fica trancada.
+    #[test]
+    fn falha_no_painel_nao_tranca_a_vpn() {
+        use crate::guarda::{chave_conta, Canal, Limitador, LIVRES};
+        let l = Limitador::default();
+        let painel = chave_conta(Canal::Painel, "admin");
+        for _ in 0..=LIVRES {
+            drop(l.reservar(&[&painel]).unwrap());
+        }
+        assert!(l.reservar(&[&painel]).is_err(), "o painel tem de trancar");
+        l.reservar(&[&chave_conta(Canal::Vpn, "admin")])
+            .expect("a VPN do admin nao pode trancar por erro no painel");
+    }
 
     #[test]
     fn cn_da_o_login_e_a_rede() {

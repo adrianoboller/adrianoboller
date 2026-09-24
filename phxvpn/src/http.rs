@@ -233,7 +233,7 @@ fn rotear(p: &Pedido, e: &Estado) -> Saida {
             // A conta e UMA para os canais (painel, VPN, autenticador): o
             // orcamento de tentativas de uma pessoa nao se multiplica por
             // porta. Reservada ANTES do PBKDF2 (ver `guarda::reservar`).
-            let conta = chave_conta(&login);
+            let conta = crate::guarda::chave_conta(crate::guarda::Canal::Painel, &login);
             let reserva = e
                 .tentativas
                 .reservar(&[&conta, &chave_ip])
@@ -312,7 +312,7 @@ fn rotear(p: &Pedido, e: &Estado) -> Saida {
         }
         ("POST", "/api/mfa/confirmar") | ("POST", "/api/mfa/desativar") => {
             let u = usuario(p, e)?;
-            let conta = chave_conta(&u.login);
+            let conta = crate::guarda::chave_conta(crate::guarda::Canal::Painel, &u.login);
             let reserva = e
                 .tentativas
                 .reservar(&[&conta, &chave_ip])
@@ -339,7 +339,7 @@ fn rotear(p: &Pedido, e: &Estado) -> Saida {
             let exige = corpo.booleano_ou("exige", false);
             // Quem tem autenticador prova o codigo para mudar a exigencia:
             // sessao roubada nao desliga o segundo fator de uma rede.
-            let conta = chave_conta(&u.login);
+            let conta = crate::guarda::chave_conta(crate::guarda::Canal::Painel, &u.login);
             let reserva = e
                 .tentativas
                 .reservar(&[&conta, &chave_ip])
@@ -470,11 +470,6 @@ fn rotear(p: &Pedido, e: &Estado) -> Saida {
         }
         _ => Err((404, format!("rota desconhecida: {} {caminho}", p.metodo))),
     }
-}
-
-/// A chave da CONTA no limitador, a mesma em todos os canais.
-pub(crate) fn chave_conta(login: &str) -> String {
-    format!("conta:{login}")
 }
 
 fn rede_id(corpo: &Json) -> Result<i64, (u16, String)> {

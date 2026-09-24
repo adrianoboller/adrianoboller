@@ -1194,9 +1194,11 @@ simultâneas. Senha errada e código errado dão a **mesma** frase no login.
 **Tentativas (ALTO 1 da revisão).** A tentativa é **reservada antes** do
 PBKDF2 (`guarda::reservar`: confere e conta, sob a mesma trava; quem acerta
 devolve). Antes, o limitador conferia antes e contava só depois dos ~430 ms, e
-256 pedidos simultâneos passavam todos. A conta é **uma** para os canais
-(`conta:<login>` no login do painel, na VPN, no cadastro e na exigência da
-rede): o orçamento de uma pessoa não se multiplica por porta. O IP é **por
+256 pedidos simultâneos passavam todos. A conta é **por canal**
+(`conta-painel:<login>` no login, no cadastro e na exigência da rede;
+`conta-vpn:<login>` no verificador): decisão do dono em 24/09/2026, para
+erro no painel não trancar a VPN — o orçamento dobra, e o da VPN ainda pede
+o certificado. O IP é **por
 canal** (`ip-painel:`, `ip-vpn:`): erro na VPN não tranca o painel do mesmo IP.
 O IP do cliente IPv6 vem de `untrusted_ip6`, e IPv6 conta por **/64** (quem
 tem um /64 troca de endereço a cada tentativa sem custo) — no painel, no
@@ -1262,13 +1264,7 @@ endereço inteiro reprova `ipv6_conta_por_64`. O B6 (erro de banco contando
 como tentativa) não tem teste próprio: exigiria derrubar o PostgreSQL no meio
 de uma rota.
 
-**Limites.** **A conta é uma só em todos os canais, e isso tranca o admin
-também** (M3, decisão de produto do dono, não mudada): quem erra 6 vezes a
-senha do admin — pelo painel, pela VPN ou pelo cadastro — bloqueia a conta
-`admin` por até 15 min, e nesse intervalo o admin legítimo não entra no painel
-nem conecta na VPN. Cenário: um atacante com a porta do painel tranca o admin
-de propósito, repetindo a cada bloqueio. O IP por canal só alivia quando o
-admin vem de outro endereço; a conta continua trancada. `cn` e `ip` chegam no pedido ao soquete, preenchidos pelo
+**Limites.** **A conta é separada por canal** (M3, decisão do dono em 24/09/2026: travar só o painel): quem erra 6 vezes a senha do admin pelo painel tranca o **painel** por até 15 min, e a VPN de quem tem o certificado continua conectando; erro na VPN tranca só a VPN. O preço aceito: o orçamento de adivinhação dobra (painel + VPN), e na VPN ele ainda exige o certificado do membro. Travado por `falha_no_painel_nao_tranca_a_vpn` (reprova com a conta única). Continua valendo: um atacante com a porta do painel tranca o **painel** do admin de propósito, repetindo a cada bloqueio. `cn` e `ip` chegam no pedido ao soquete, preenchidos pelo
 `openvpn`: um `openvpn` tomado pode mentir neles — mas ele já é quem decide
 quem entra no túnel. O token do `auth-gen-token` vale **12 h** sem código novo
 (achado 6), e tirar a exigência ou zerar o autenticador **não derruba** a

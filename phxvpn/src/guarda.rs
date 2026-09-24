@@ -18,6 +18,25 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+/// Canal por onde chega a tentativa. A conta de um login e separada por
+/// canal: decisao do dono (24/09/2026) -- quem so sabe o login do admin e
+/// erra no painel trava o painel, nao a VPN de quem tem o certificado. O
+/// preco aceito: o orcamento de adivinhacao dobra (painel + VPN), e na VPN
+/// ele ainda exige o certificado do membro.
+#[derive(Clone, Copy)]
+pub enum Canal {
+    Painel,
+    Vpn,
+}
+
+/// A chave da CONTA no limitador, separada por canal.
+pub fn chave_conta(canal: Canal, login: &str) -> String {
+    match canal {
+        Canal::Painel => format!("conta-painel:{login}"),
+        Canal::Vpn => format!("conta-vpn:{login}"),
+    }
+}
+
 /// Falhas que nao bloqueiam.
 pub const LIVRES: u32 = 5;
 /// Bloqueio maximo depois de muitas falhas.
