@@ -68,7 +68,8 @@
   <g filter="url(#ibrilho)">
     <path d="M234 262 V244 A22 22 0 0 1 278 244 V262" fill="none" stroke="url(#iaro)" stroke-width="8" stroke-linecap="round"/>
     <rect x="222" y="256" width="68" height="54" rx="10" fill="#0b1024" stroke="#FFC43D" stroke-width="3"/>
-    <circle cx="256" cy="278" r="7" fill="#FF4D10"/><rect x="252.5" y="280" width="7" height="16" rx="2" fill="#FF4D10"/>
+    <text x="256" y="289" text-anchor="middle" font-family="'Exo 2','Segoe UI',Arial,sans-serif" font-weight="800" font-size="25" letter-spacing="1" fill="#FFC43D">VPN</text>
+    <circle cx="256" cy="297" r="3.6" fill="#FF4D10"/><rect x="254.2" y="298" width="3.6" height="8" rx="1.2" fill="#FF4D10"/>
   </g>
 
   <!-- o cano (tunel), com as garras por cima -->
