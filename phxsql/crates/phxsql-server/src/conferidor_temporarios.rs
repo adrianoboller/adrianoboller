@@ -93,6 +93,11 @@ pub const ISENTOS: &[(&str, usize, &str)] = &[
         "o guarda dos testes de integracao do phxsql-cmd",
     ),
     (
+        "crates/phxzip/tests/comum/mod.rs",
+        1,
+        "o guarda dos testes de integracao do phxzip",
+    ),
+    (
         "crates/phxsql-cli/src/main.rs",
         1,
         "guarda proprio: o cli e um BINARIO, nao tem biblioteca de onde importar",

@@ -1534,6 +1534,54 @@
       "segundos": 7.94,
       "notas": [],
       "quando": "2026-09-16 15:25"
+    },
+    {
+      "id": "phxzip-bomba-do-lzma2",
+      "titulo": "o pedaço de LZMA2 que anuncia 2 MiB é decodificado inteiro antes de se saber que não cabe no teto",
+      "veredito": "PROVADA",
+      "segundos": 1.24,
+      "notas": [],
+      "quando": "2026-09-24 03:27"
+    },
+    {
+      "id": "phxzip-distancia-antes-da-janela",
+      "titulo": "a distância de um casamento LZMA lida do arquivo sem conferir contra o que já saiu",
+      "veredito": "PROVADA",
+      "segundos": 1.16,
+      "notas": [],
+      "quando": "2026-09-24 03:27"
+    },
+    {
+      "id": "phxzip-zip-slip",
+      "titulo": "entrada com `..` no nome extraída fora da pasta de destino (zip-slip)",
+      "veredito": "PROVADA",
+      "segundos": 9.28,
+      "notas": [],
+      "quando": "2026-09-24 03:27"
+    },
+    {
+      "id": "phxzip-crc-do-cifrado",
+      "titulo": "byte trocado no dado cifrado relatado como «senha errada» porque o CRC do cifrado não foi conferido",
+      "veredito": "PROVADA",
+      "segundos": 9.65,
+      "notas": [],
+      "quando": "2026-09-24 03:27"
+    },
+    {
+      "id": "phxzip-crc-do-conteudo",
+      "titulo": "senha errada devolvendo lixo como se fosse o arquivo, porque o CRC do conteúdo não foi conferido",
+      "veredito": "PROVADA",
+      "segundos": 8.25,
+      "notas": [],
+      "quando": "2026-09-24 03:27"
+    },
+    {
+      "id": "phxzip-teto-do-declarado",
+      "titulo": "conteúdo acima do teto de quem chama é descompactado inteiro em vez de recusado pelo tamanho declarado",
+      "veredito": "PROVADA",
+      "segundos": 8.93,
+      "notas": [],
+      "quando": "2026-09-24 03:27"
     }
   ]
 }

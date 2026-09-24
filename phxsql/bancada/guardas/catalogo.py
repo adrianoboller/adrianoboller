@@ -9579,4 +9579,209 @@ pub fn limpar() {
             "binario_que_corta_um_caractere_nao_envenena_a_trava_de_dados",
         ],
     },
+    {
+        "id": "phxzip-bomba-do-lzma2",
+        "titulo": "o pedaço de LZMA2 que anuncia 2 MiB é decodificado inteiro antes de se saber que não cabe no teto",
+        "porque": (
+            "bomba de descompressao: 510 bytes do liblzma viram 3.000.000. O "
+            "pedaco LZMA2 ANUNCIA quanto produz, e o anuncio tem de ser "
+            "comparado com o que ainda cabe ANTES de decodificar um byte -- "
+            "sem isso a recusa chega no fim, depois de a memoria ja ter sido "
+            "gasta. Medido com a conferencia tirada: 3.000.000 bytes produzidos "
+            "com teto de 1.000."
+        ),
+        "arquivo": "crates/phxzip/src/lzma.rs",
+        "trecho": """        if desempacotado > tamanho - saida.len() {
+            return Err(FalhaLzma::PassouDoDeclarado);
+        }
+        let trecho = entrada
+""",
+        "troca": """        // DEFEITO REPOSTO (450): o anuncio do pedaco nao e conferido.
+        let trecho = entrada
+""",
+        "pacote": "phxzip",
+        "alvo": ["--lib"],
+        "caem": [
+            "lzma::testes::a_bomba_para_no_teto_sem_produzir_o_que_anuncia",
+        ],
+        "seguem": [
+            "lzma::testes::lzma2_segundo_pedaco_continua_o_estado",
+            "lzma::testes::lzma2_do_liblzma",
+        ],
+    },
+    {
+        "id": "phxzip-distancia-antes-da-janela",
+        "titulo": "a distância de um casamento LZMA lida do arquivo sem conferir contra o que já saiu",
+        "porque": (
+            "o decodificador usa a propria saida como janela; uma distancia "
+            "hostil maior do que o que ja saiu le antes do comeco do vetor. O "
+            "`C/LzmaDec.c:539` confere exatamente isto. Medido com a "
+            "conferencia tirada: um bit trocado num fluxo do liblzma derruba a "
+            "thread por indice fora do vetor."
+        ),
+        "arquivo": "crates/phxzip/src/lzma.rs",
+        "trecho": """        let d = m.reps[0] as usize;
+        if d >= pos || d >= jan.dic {
+            return Err(FalhaLzma::Invalido("distancia antes do comeco da janela"));
+        }
+        let tam = comprimento as usize + 2;
+""",
+        "troca": """        // DEFEITO REPOSTO (450): distancia sem conferencia.
+        let d = m.reps[0] as usize;
+        let tam = comprimento as usize + 2;
+""",
+        "pacote": "phxzip",
+        "alvo": ["--lib"],
+        "caem": [
+            "lzma::testes::fluxo_adulterado_nunca_derruba_a_thread",
+        ],
+        "seguem": [
+            "lzma::testes::lzma2_do_liblzma",
+            "lzma::testes::lzma1_do_liblzma_com_a_marca_de_fim",
+        ],
+    },
+    {
+        "id": "phxzip-zip-slip",
+        "titulo": "entrada com `..` no nome extraída fora da pasta de destino (zip-slip)",
+        "porque": (
+            "a web e o terminal do PhxZip vao extrair, e a conferencia do nome "
+            "mora NO MOTOR (decisao do dono, 24/09/2026) -- a que cada chamador "
+            "teria de lembrar e a que um deles esquece. A prova e pelo disco: "
+            "com a conferencia tirada o arquivo aparece FORA do destino, e o "
+            "vermelho diz o caminho e os bytes."
+        ),
+        "arquivo": "crates/phxzip/src/leitor.rs",
+        "trecho": """    if nome.split('/').any(|componente| componente == "..") {
+        return Err(perigoso());
+    }
+    Ok(nome)
+""",
+        "troca": """    // DEFEITO REPOSTO (450): `..` passa.
+    Ok(nome)
+""",
+        "pacote": "phxzip",
+        "alvo": ["--test", "phz"],
+        "caem": [
+            "nome_que_sobe_de_pasta_nao_escreve_fora_do_destino",
+        ],
+        "seguem": [
+            "lista_e_extrai_a_arvore_que_o_7zip_gravou",
+        ],
+    },
+    {
+        "id": "phxzip-crc-do-cifrado",
+        "titulo": "byte trocado no dado cifrado relatado como «senha errada» porque o CRC do cifrado não foi conferido",
+        "porque": (
+            "o 7zAES e CBC sem autenticacao: byte trocado e chave errada dao o "
+            "mesmo lixo. O que os separa e o CRC do dado CIFRADO, que o escritor "
+            "do PhxZip grava; confiar que ele existe sem conferi-lo faz o leitor "
+            "AFIRMAR senha errada diante de arquivo corrompido -- manda o "
+            "operador procurar a senha em vez do backup."
+        ),
+        "arquivo": "crates/phxzip/src/leitor.rs",
+        "trecho": """    let pack_conferido = match b.pack_crc {
+        Some(esperado) if crc32(empacotado) != esperado => {
+            return Err(Erro::Corrompido(format!(
+                "o CRC do {oque} empacotado nao bate"
+            )))
+        }
+        Some(_) => true,
+        None => false,
+    };
+""",
+        "troca": """    // DEFEITO REPOSTO (450): o CRC do cifrado e tido por conferido.
+    let pack_conferido = b.pack_crc.is_some();
+""",
+        "pacote": "phxzip",
+        "alvo": ["--test", "phz"],
+        "caem": [
+            "byte_trocado_em_qualquer_lugar_e_corrupcao_e_nao_senha",
+        ],
+        "seguem": [
+            "senha_errada_no_phz_do_phxzip_e_afirmada",
+        ],
+    },
+    {
+        "id": "phxzip-crc-do-conteudo",
+        "titulo": "senha errada devolvendo lixo como se fosse o arquivo, porque o CRC do conteúdo não foi conferido",
+        "porque": (
+            "com `Copy` por baixo do 7zAES nao ha decodificador que tropece no "
+            "lixo de uma chave errada: quem pega e so o CRC do conteudo "
+            "decifrado. Sem ele, a senha errada devolve bytes do tamanho certo "
+            "e o chamador os grava como configuracao."
+        ),
+        "arquivo": "crates/phxzip/src/leitor.rs",
+        "trecho": """    match esperado {
+        Some(c) if crc32(dado) != c => Err(depois_da_cifra(
+            dec.cifrado,
+            dec.pack_conferido,
+            Erro::Corrompido(format!("o CRC de {oque} nao bate")),
+        )),
+        _ => Ok(()),
+    }
+""",
+        "troca": """    // DEFEITO REPOSTO (450): o CRC do conteudo nao e conferido.
+    let _ = (dec, dado, esperado, oque);
+    Ok(())
+""",
+        "pacote": "phxzip",
+        "alvo": ["--test", "phz"],
+        "caem": [
+            "senha_errada_com_copy_nao_devolve_lixo",
+        ],
+        "seguem": [
+            "le_o_copy_do_7zip",
+        ],
+    },
+    {
+        "id": "phxzip-teto-do-declarado",
+        "titulo": "conteúdo acima do teto de quem chama é descompactado inteiro em vez de recusado pelo tamanho declarado",
+        "porque": (
+            "o teto do `desempacotar_com_teto` tem de valer contra o tamanho "
+            "que o arquivo DECLARA, antes de decodificar -- nos dois lugares "
+            "que o conferem, a entrada e cada coder do bloco. Medido com os "
+            "dois tirados: 100.000 bytes descompactados com teto de 1.000."
+        ),
+        "trocas": [
+            {
+                "arquivo": "crates/phxzip/src/leitor.rs",
+                "trecho": """        if e.tamanho > self.limites.entrada {
+            return Err(Erro::GrandeDemais {
+                oque: "entrada",
+                declarado: e.tamanho,
+                teto: self.limites.entrada,
+            });
+        }
+        let dec = self.decodificar_bloco(bloco)?;
+""",
+                "troca": """        // DEFEITO REPOSTO (450): a entrada nao confere o teto.
+        let dec = self.decodificar_bloco(bloco)?;
+""",
+            },
+            {
+                "arquivo": "crates/phxzip/src/leitor.rs",
+                "trecho": """    for &t in &b.tamanhos {
+        if t > teto {
+            return Err(Erro::GrandeDemais {
+                oque,
+                declarado: t,
+                teto,
+            });
+        }
+    }
+""",
+                "troca": """    // DEFEITO REPOSTO (450): o bloco nao confere o teto.
+    let _ = (teto, oque);
+""",
+            },
+        ],
+        "pacote": "phxzip",
+        "alvo": ["--test", "phz"],
+        "caem": [
+            "conteudo_acima_do_teto_e_recusado_pelo_declarado",
+        ],
+        "seguem": [
+            "le_o_lzma2_com_cabecalho_claro_do_7zip",
+        ],
+    },
 ]

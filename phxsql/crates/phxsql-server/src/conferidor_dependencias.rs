@@ -3,8 +3,8 @@
 //!
 //! # O que faltava
 //!
-//! Os oito `Cargo.toml` de `crates/*/` so declaram `phxsql-*.workspace =
-//! true` entre si hoje -- mas nada no repositorio IMPEDIA um `serde = "1.0"`
+//! Os `Cargo.toml` de `crates/*/` so declaram `phxsql-*.workspace = true`
+//! entre si hoje -- mas nada no repositorio IMPEDIA um `serde = "1.0"`
 //! de entrar num proximo commit. `cargo build --offline` recusa por
 //! ACIDENTE (falta a crate no cache local), nao por regra: numa maquina com
 //! a crate ja em cache, ou com rede, o build passaria calado. Este modulo e
@@ -15,7 +15,7 @@
 //! A primeira ideia foi procurar `source = "registry+..."` no `Cargo.lock`.
 //! Ela tem um furo: uma dependencia de CAMINHO apontando para FORA do
 //! workspace (`{ path = "../alguma-crate-de-fora" }`) tambem nao leva
-//! `source` -- os oito pacotes do proprio workspace, que sao path deps entre
+//! `source` -- os pacotes do proprio workspace, que sao path deps entre
 //! si, ja provam isso lendo o `Cargo.lock` de verdade (nenhum deles tem
 //! `source`). Comparar os NOMES do `Cargo.lock` contra os nomes que o
 //! `[workspace] members` do `Cargo.toml` raiz DECLARA fecha as duas portas
@@ -192,10 +192,15 @@ mod testes {
     fn workspace_zero_dependencia_externa() {
         let raiz = raiz_do_workspace();
         let permitidos = nomes_do_workspace(&raiz).expect("workspace legivel");
+        // Nove desde 24/09/2026: o `phxzip` (pedido 450) entrou de proposito,
+        // com uma dependencia so, de caminho, no `phxsql-core`. O numero e
+        // conferencia de sanidade DIGITADA de proposito: membro novo no
+        // workspace tem de ser um ato consciente de quem mexe aqui, e nao
+        // algo que o teste absorve calado.
         assert_eq!(
             permitidos.len(),
-            8,
-            "o workspace tem {} membro(s) declarado(s), nao 8 -- se um crate \
+            9,
+            "o workspace tem {} membro(s) declarado(s), nao 9 -- se um crate \
              novo entrou de proposito, o numero aqui e so uma conferencia \
              de sanidade e pode subir junto",
             permitidos.len()
@@ -292,7 +297,7 @@ dependencies = [
         assert!(externos.is_empty(), "{externos:?}");
     }
 
-    /// O `Cargo.toml` raiz declara exatamente os oito membros que os testes
+    /// O `Cargo.toml` raiz declara exatamente os membros que os testes
     /// acima assumem -- se um crate for acrescentado ou removido do
     /// workspace, este teste diz isso antes de qualquer coisa parecer
     /// misterioso nos de cima.

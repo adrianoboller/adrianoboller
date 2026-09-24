@@ -1,0 +1,19 @@
+[package]
+name = "phxzip"
+description = "PhxZip -- o 7-Zip em Rust, zero dependencias: formato 7z, 7zAES, LZMA e LZMA2"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+# Uma dependencia so, e de caminho: o CRC-32 e o SHA-256 do `phxsql-core`.
+# Reescrever os dois aqui seria a mesma decisao escrita duas vezes -- e a
+# segunda copia envelhece calada (petrea «funcao e comando vem do mesmo motor»).
+[dependencies]
+phxsql-core.workspace = true
+
+# `std` so liga o `impl std::error::Error`. O resto da crate e `core` + `alloc`,
+# para rodar igual em microcontrolador sem sistema operacional.
+[features]
+default = ["std"]
+std = []
