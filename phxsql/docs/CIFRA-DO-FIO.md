@@ -323,6 +323,20 @@ do túnel, são dois vereditos diferentes.
   ganha `CIFRA` e `CHAVE_DO_FIO=<hex>` (o pino) — e **desde o pedido 373
   (18/09/2026) a cifra é o PADRÃO da receita**: quem não escreve nada fala
   cifrado, e `CIFRA=0` é o escape escrito. Ver `docs/ODBC.md` §1.1 e a §10 aqui.
+* **O `Remoto` (o multi-servidor da interface).** `servidor::Remoto::cifrar`
+  (`crates/phxsql-server/src/servidor.rs:556`) reaproveita o mesmo
+  `fio::Iniciador` do core que a `replica::Cliente` usa — não é um segundo
+  código de aperto. Liga quando o destino em `web.servidores[]` tem
+  `"cifra": true`, padrão desde 18/09/2026 (§13, texto solto incluído). Ver
+  §10. **Este item saiu de "Também não vale" nesta rodada** — dizia o
+  contrário desde antes do §10 registrar o "FEITO", e as duas seções
+  discordavam (pedido 382).
+* **O DbLink para outro PhxSql.** `dblink/phx.rs:91` reaproveita o MESMO
+  `replica::Cliente` da réplica — o terceiro consumidor do mesmo código de
+  aperto, não um quarto. Cifra é o padrão desde 22/09/2026 (pedido 378, §13);
+  nos outros dois motores do DbLink (MySQL(R), PostgreSQL(R)) isto **não**
+  vale — ver "Também não vale", abaixo. Ver `docs/DBLINK.md` §"O fio do
+  terceiro motor: o túnel, e ligado de fábrica".
 
 ### Não vale: a interface web
 
@@ -344,12 +358,27 @@ não se entrega.
 
 ### Também não vale
 
-* **O `Remoto`** — a conexão que a interface usa para falar com outro PhxSql.
-  Está na §10 com o motivo. **O cluster deixou de estar aqui** — ele agora
-  cifra o tráfego inteiro (pulso e replicação) quando se pede; ver a §12.
+* **O DbLink para MySQL(R) e PostgreSQL(R).** É protocolo alheio — não há
+  aperto Noise do lado deles —, então `Motor::cifra_o_fio()` devolve `false`
+  para os dois, e `cifra` ou `chave_do_fio` na declaração de uma ligação com
+  esses motores é **erro na declaração**
+  (`conferir_cifra_do_motor`, `crates/phxsql-server/src/dblink/mod.rs`), não
+  um interruptor que fica sem efeito. Os sítios de rede desses dois motores —
+  `crates/phxsql-server/src/pg/mod.rs:578` e
+  `crates/phxsql-server/src/dblink/mysql.rs:415` — não implementam aperto
+  nenhum. Ver `docs/DBLINK.md` §"O limite honesto: não há TLS".
 * **Nada disto é TLS.** Não há certificado, não há cadeia, não há autoridade,
   não há revogação. A confiança é o pino, e o pino é responsabilidade de quem
   configura.
+
+**O `Remoto`, o cluster e o DbLink para outro PhxSql deixaram de estar aqui.**
+Os três passaram a cifrar quando se pede — estão na seção **Vale**, acima, e
+em §10, §12 e §13. Esta seção dizia o contrário do `Remoto` até esta rodada,
+enquanto a §10 já registrava "FEITO": duas seções do mesmo arquivo em
+desacordo, e a errada era a que um leitor apressado encontrava primeiro
+(achado do papel G, pedido 382, 22/09/2026). Resolvido pelo código: `Remoto`
+tem `fn cifrar` (`servidor.rs:556`) usando `fio::Iniciador::comecar`, exatamente
+como a `replica::Cliente` — o suporte já existia, só a prosa estava velha.
 
 ---
 
@@ -644,6 +673,24 @@ resposta de protocolo — o `/saude` diz por servidor apenas `cifra` e
   conserto: o pulso da eleição **e** a replicação entre os nós passam os dois a
   cifrar juntos, sob um único interruptor. Ver a **§12**, escrita para não se
   perder.
+* **O DbLink para outro PhxSql fala o aperto — FEITO (22/09/2026, pedido
+  378).** Faltava o campo: `dblink/phx.rs` já abria pelo mesmo
+  `replica::Cliente`, mas nunca chamava `cifrar`, e o `dblink.json` não tinha
+  onde escrever a decisão. O parecer do DBA (papel C) mediu por que a forma
+  dos três precedentes (`origens[]`, `cluster.nos[]`, ODBC) não bastava aqui —
+  o `dblink.json` é o único cadastro que o servidor reescreve INTEIRO a cada
+  salvar e cujo dono é polimórfico em três motores — e fechou com três
+  garantias que nenhum dos dois pedidos anteriores tinha: (1) herança no
+  quarto lugar (`op_dblink_salvar`), para salvar pela tela não apagar o pino
+  em silêncio; (2) `cifra: Option<bool>` privado (`Default` em `None`, não
+  `false`), o efetivo saindo de um método só; (3) `cifrar` antes de
+  `autenticar`, porque o token do DbLink viaja no primeiro pedido. Cifra
+  nasce **ligada** (`CIFRA_DE_SAIDA_PADRAO`), e é **recusada na declaração**
+  para motor diferente de `phxsql` (`Motor::cifra_o_fio()`,
+  `conferir_cifra_do_motor`) — nunca um interruptor mudo. Prova real:
+  `bancada/dblink/prova-do-tunel.py` (três `phxsqld`, um deles SURDO, 15
+  conferências verdes) e 17 testes novos. Ver `docs/DBLINK.md` §"O fio do
+  terceiro motor: o túnel, e ligado de fábrica", e §5 aqui.
 * **Moldura binária no lugar do Base64**, se os 33% doerem em alguma medição.
   Hoje não doeram porque ninguém mediu com o túnel ligado — e a regra da casa
   diz que isso é palpite até alguém medir.
@@ -974,6 +1021,42 @@ de mão não existe lá, e `cifra` ou `chave_do_fio` ali são **recusados na
 declaração** — aceitar seria um interruptor que não faz nada. Os detalhes do
 desenho (os três estados do campo, o que vai para o disco e a herança no
 salvar) estão em `docs/DBLINK.md`.
+
+### O censo dos sítios, e o comando que o refaz
+
+Achado do papel G em 22/09/2026 (pedido 382): esta tabela listava três saídas
+quando a busca no código já achava quatro, e o DbLink não aparecia em lugar
+nenhum do documento. Medido de novo agora, em vez de repetir o número de
+memória.
+
+**Sete** sítios de `TcpStream::connect*` de produção, medidos em 24/09/2026
+por `grep -rn "TcpStream::connect" crates/*/src`, com os dois sítios que são
+só comentário (`replica.rs:72`, `email.rs:124`) e os seis que vivem sob
+`#[cfg(test)]` (`replica.rs:789`, dentro de `mod testes_do_prazo_de_conexao`, e
+cinco em `servidor.rs`, dentro dos módulos de teste do fim do arquivo)
+excluídos à mão:
+
+| sítio | quem chama | aperto de mão |
+|---|---|---|
+| `crates/phxsql-odbc/src/conexao.rs:332` | driver ODBC → phxsqld | próprio, inline (`Iniciador::comecar`, `conexao.rs:460`) |
+| `crates/phxsql-server/src/replica.rs:112` | réplica → source; cluster (pulso e replicação, mesmo `replica::ligar`); DbLink → outro PhxSql (`dblink/phx.rs:91` reusa este cliente) | `replica::Cliente::cifrar` |
+| `crates/phxsql-server/src/servidor.rs:533` | `Remoto` (interface → outro PhxSql) | `servidor::Remoto::cifrar` (`servidor.rs:556`) |
+| `crates/phxsql-server/src/pg/mod.rs:578` | DbLink → PostgreSQL(R) | nenhum — protocolo alheio, recusado na declaração |
+| `crates/phxsql-server/src/dblink/mysql.rs:415` | DbLink → MySQL(R) | nenhum — protocolo alheio, idem |
+| `crates/phxsql-server/src/email.rs:134` | alerta por e-mail (SMTP) | nenhum — protocolo alheio, fora do escopo deste documento |
+| `crates/phxsql-server/src/servidor.rs:6584` | `acordar_o_accept` — auto-conexão de loopback para destravar o `accept` | nenhum — fecha antes de trocar um byte, não fala protocolo algum |
+
+**Três** implementações do aperto (o inline do ODBC, `replica::Cliente::cifrar`
+e `servidor::Remoto::cifrar`) cobrem as **quatro** saídas do nosso protocolo da
+tabela acima — `replica::Cliente` é reaproveitado duas vezes por cima do uso
+original (réplica): pelo cluster e pelo DbLink → PhxSql. Os outros quatro
+sítios não são saída do nosso protocolo: dois falam o fio de outro banco
+(recusados na declaração, ver §5 "Também não vale"), um fala SMTP, e um não
+fala protocolo nenhum. Este é o número que bate com o parecer do papel G: 7
+sítios, 3 implementações de aperto, 4 saídas do protocolo.
+
+**Para refazer o censo:** `grep -rn "TcpStream::connect" crates/*/src`,
+descartando à mão as linhas de comentário e as que vivem sob `#[cfg(test)]`.
 
 O padrão mora num lugar só — `CIFRA_DE_SAIDA_PADRAO`, em `config.rs` —, e os
 **quatro** leitores o citam pelo nome. **Mais o irmão que mora fora do arquivo**: a

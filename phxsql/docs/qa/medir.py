@@ -136,11 +136,71 @@ def perguntar_python(arq):
     return achadas, None
 
 
+def _corpos_de_assert(texto):
+    """Extrai o interior de cada `assert!`/`assert_eq!`/`assert_ne!`, com
+    parenteses balanceados.
+
+    Balanceado e nao so a linha, porque o `assert!(` costuma abrir numa linha
+    e levar a comparacao na seguinte -- e balanceado e nao so uma janela de
+    linhas, porque uma janela pega de vizinho um `panic!(...)` que so CITA a
+    constante num texto de erro, sem comparar nada contra ela (foi o primeiro
+    crivo desta funcao, e ele confundia `TETO_DO_REGISTRO` -- um LIMITE de
+    funcionamento, nao uma catraca -- com uma catraca real, porque o `panic!`
+    de perto tambem imprimia um `.len()` de outra variavel)."""
+    corpos = []
+    for m in re.finditer(r"\bassert(?:_eq|_ne)?!\s*\(", texto):
+        prof, j = 1, m.end()
+        while j < len(texto) and prof:
+            if texto[j] == "(":
+                prof += 1
+            elif texto[j] == ")":
+                prof -= 1
+            j += 1
+        corpos.append(texto[m.end():j - 1])
+    return corpos
+
+
+def _imposta_por_teste_no_proprio_arquivo(texto, nome):
+    """O const TETO* e' catraca de VERDADE quando um teste do PROPRIO
+    arquivo compara uma CONTAGEM (`.len()`) contra ela -- e nao so' um
+    LIMITE de funcionamento (um tamanho maximo aceito em producao, como
+    `TETO_DO_REGISTRO`), que tambem aparece perto de `assert!` sem ser
+    catraca de codigo.
+
+    Achado do pedido 384 (papel G, 22/09/2026): o `TETO_TXT_CRU_EM_HTML`
+    (`crates/phxsql-server/src/conferidor_texto_cru.rs`) e catraca e e
+    imposta por teste (`crus.len() <= TETO_TXT_CRU_EM_HTML` e
+    `assert_eq!(crus.len(), TETO_TXT_CRU_EM_HTML, ...)`), mas nao tem exemplo
+    que a exponha ao `--numeros` -- entao ela caia, ate aqui, na MESMA lista
+    das que «nao sao catracas: sao limites, ou promessas», e o inventario
+    contava uma a menos do que existe.
+
+    Este crivo NAO reimplementa o que o conferidor MEDE -- isso exigiria
+    compilar e rodar o Rust, que o piso de disco desta rodada proibe, e
+    duplicaria em Python a mesma decisao que o `.rs` ja toma (a licao do
+    rodape que publicou 780 KiB de uma lista copiada). Ele so' pergunta um
+    fato estrutural, sem executar nada: **ha, dentro do MESMO
+    `assert!`/`assert_eq!`/`assert_ne!`, o nome da constante E `.len()`
+    juntos?** So' entao alguem comparou uma contagem contra o teto -- a forma
+    que toda catraca ja cadastrada usa (`crus.len()`, `achados.len()`,
+    `textos.len()`...)."""
+    marca = texto.find("#[cfg(test)]")
+    if marca == -1:
+        return False
+    return any(
+        nome in corpo and ".len()" in corpo
+        for corpo in _corpos_de_assert(texto[marca:])
+    )
+
+
 def constantes_teto():
     """Toda `pub const TETO*` do Rust e todo `TETO*`/`PISO*` de `bancada/`.
 
     Serve para achar quem NAO tem conferidor: uma constante sem quem a
-    reporte nao e catraca, e uma promessa.
+    reporte nao e catraca, e uma promessa -- SALVO quando um teste do proprio
+    arquivo a impoe (`_imposta_por_teste_no_proprio_arquivo`), caso em que ela
+    e catraca real e entra numa lista PROPRIA (pedido 384), nao na dos
+    limites/promessas.
 
     O lado Python entrou em 16/09/2026 e traz uma diferenca que o lado Rust
     nao precisava. Em Rust, `pub const TETO*` dentro de `src/` e sinal forte.
@@ -158,17 +218,22 @@ def constantes_teto():
     buraco, e alguem decide qual das duas ela e."""
     achadas = {}
     for arq in RAIZ.glob("crates/*/src/**/*.rs"):
-        for n, linha in enumerate(arq.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+        texto = arq.read_text(encoding="utf-8", errors="replace")
+        for n, linha in enumerate(texto.splitlines(), 1):
             m = re.match(r"\s*pub const (TETO\w*)\s*:", linha)
             if m:
-                achadas[m.group(1)] = f"{arq.relative_to(RAIZ)}:{n}"
+                nome = m.group(1)
+                achadas[nome] = {
+                    "onde": f"{arq.relative_to(RAIZ)}:{n}",
+                    "testada": _imposta_por_teste_no_proprio_arquivo(texto, nome),
+                }
     for arq in sorted(RAIZ.glob("bancada/**/*.py")):
         if "__pycache__" in arq.parts:
             continue
         for n, linha in enumerate(arq.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
             m = re.match(r"((?:TETO|PISO)\w*)\s*=", linha)
             if m and "# nao-e-catraca:" not in linha:
-                achadas[m.group(1)] = f"{arq.relative_to(RAIZ)}:{n}"
+                achadas[m.group(1)] = {"onde": f"{arq.relative_to(RAIZ)}:{n}", "testada": False}
     return achadas
 
 
@@ -214,10 +279,30 @@ def tabela():
             f"{'piso ' if piso else ''}{fmt(valor)} | **{fmt(medido)}** | "
             f"{estado} |")
 
-    orfas = [(n, o) for n, o in sorted(constantes_teto().items()) if n not in vistos]
+    todas = constantes_teto()
+    orfas = [(n, i["onde"]) for n, i in sorted(todas.items())
+             if n not in vistos and not i["testada"]]
+    # Pedido 384: testada-mas-sem-`--numeros` NAO e a mesma coisa que
+    # limite/promessa -- e catraca real, so falta o exemplo que a exponha. Uma
+    # so lista misturando as duas contava uma catraca a menos do que existe.
+    sem_numeros = [(n, i["onde"]) for n, i in sorted(todas.items())
+                   if n not in vistos and i["testada"]]
+    total = len(vistos) + len(sem_numeros)
     linhas += ["",
-               f"*{len(vistos)} catraca(s) medida(s) por conferidor. "
+               f"*{len(vistos)} catraca(s) medida(s) por conferidor "
+               f"+ {len(sem_numeros)} catraca(s) imposta(s) por teste sem "
+               f"`--numeros` = **{total}** catraca(s) ao todo. "
                f"Refaz com `python3 docs/qa/medir.py`.*"]
+    if sem_numeros:
+        linhas += ["",
+                   "**Catracas impostas por teste que ainda NÃO respondem a "
+                   "`--numeros`.** São catraca de verdade — um teste do próprio",
+                   "arquivo afirma contra a constante —, só falta o exemplo em "
+                   "`crates/*/examples/*.rs` que a exponha (no molde de "
+                   "`textos-fora-da-fabrica.rs`). Sem ele esta tabela sabe o "
+                   "VALOR declarado, mas não o MEDIDO de hoje:",
+                   ""]
+        linhas += [f"- `{n}` — `{o}`" for n, o in sem_numeros]
     if orfas:
         linhas += ["",
                    "**Constantes `TETO*`/`PISO*` que NENHUM conferidor reporta.** Elas não",

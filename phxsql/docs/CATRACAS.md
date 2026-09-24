@@ -882,7 +882,7 @@ feita numa só):
 | Catraca | Medidor | Teto | Medido em 16/09/2026 | Estado |
 |---|---|---:|---:|---|
 | `codigo-do-dono` | `bancada/concorrencia/mapa-da-trava.py` | 5 | **5** | sem folga |
-| `alcancam-fsync-2` | `bancada/concorrencia/mapa-da-trava.py` | 24 | **24** (medido em 22/09/2026 pelo próprio `--catraca`) | **VERDE** — a `alcancam-fsync` (teto 22) foi **APOSENTADA** em 18/09/2026 por decisão do dono, e esta nasceu no número medido daquele dia. Régua que passa a medir outra coisa **aposenta** a catraca antiga e faz nascer uma nova; não se sobe teto com motivo escrito ao lado. Esta tabela publicou a aposentada como viva e **VERMELHA** por quatro dias — número digitado à mão envelhecendo dentro do documento que existe para dizer quais catracas seguram. O `2e51ac6` dizia ter consertado isso e alcançou o `QA-PDCA.md`: era o **irmão** que faltava. |
+| `alcancam-fsync-2` | `bancada/concorrencia/mapa-da-trava.py` | *sai da tupla `alcancam-fsync-2` em `CATRACAS`, `mapa-da-trava.py:717-718`* | **23** (medido em 24/09/2026 por `python3 bancada/concorrencia/mapa-da-trava.py --numeros`) | **VERDE em 22/09/2026** — a `alcancam-fsync` (teto 22) foi **APOSENTADA** em 18/09/2026 por decisão do dono, e esta nasceu no número medido daquele dia. Régua que passa a medir outra coisa **aposenta** a catraca antiga e faz nascer uma nova; não se sobe teto com motivo escrito ao lado. Esta tabela publicou a aposentada como viva e **VERMELHA** por quatro dias — número digitado à mão envelhecendo dentro do documento que existe para dizer quais catracas seguram. O `2e51ac6` dizia ter consertado isso e alcançou o `QA-PDCA.md`: era o **irmão** que faltava. **E esta linha envelheceu de novo, na mesma hora do mesmo jeito**: escrevia «24 \| 24» quando o teto já tinha descido para 23 em 23/09/2026 (pedido 421) — `op_migrar_esquema` e `op_acrescentar_coluna` saíram da trava global (`mapa-da-trava.py:703-716`), e ninguém trocou o dígito. A frente do pedido 422 viu e **não tocou**, e acertou: esta tabela é retrato DATADO do papel G, não coluna derivada — o defeito nunca foi o número errado, foi o número **digitado em prosa** quando `mapa-da-trava.py --numeros` já o imprime (pedido 423, 24/09/2026). Corrigido trocando o dígito pela fonte — a tupla e o arquivo — em vez de por outro número que envelheceria do mesmo jeito. |
 | `rede-ou-espera` | `bancada/concorrencia/mapa-da-trava.py` | 0 | **0** | sem folga |
 | `spawn-sem-teto` | `bancada/concorrencia/mapa-das-threads.py` | 0 | **0** | sem folga |
 | `catalogo-envelhecido` | `bancada/concorrencia/mapa-das-threads.py` | 0 | **0** | sem folga |
@@ -1154,24 +1154,62 @@ uma junção»), estavam de fora.
 
 ### 15.2 O que entrou, e o veredito de cada uma
 
-Nove entradas, **todas PROVADAS pelo provador oficial** em 16/09/2026, com a
-árvore limpa verde antes de cada bloco (348 testes no `phxsql-core --lib`,
-1.103 no `phxsql-server --lib`):
+**Corrigido em 24/09/2026 (pedido 383, achado do papel G em 22/09/2026).**
+Esta seção afirmava «todas PROVADAS pelo provador oficial em 16/09/2026» — mas
+nomeada e provada não são a mesma palavra, e é a segunda que o texto usava. O
+`bancada/guardas/ultima-corrida.json` é o registro da máquina, e as nove
+entradas nasceram **DEPOIS** da corrida que ele carrega (16/09 15:25): nenhuma
+delas jamais teve veredito gravado ali. Remedido agora, e não de memória —
+`python3 -c` lendo `bancada/guardas/catalogo.py` e
+`bancada/guardas/ultima-corrida.json` e comparando os nove `id` contra as
+chaves do registro:
 
 | guarda | defeito reposto | caem | veredito |
 |---|---|---:|---|
-| `sha256-sem-somar-o-estado` | a realimentação de Davies-Meyer vira atribuição | 4/4 | ✅ provada |
-| `sha256-com-o-tamanho-em-little-endian` | o tamanho da mensagem no padding em little-endian | 4/4 | ✅ provada |
-| `hmac-com-a-chave-longa-truncada` | chave > 64 bytes truncada em vez de pré-hasheada | 2/2 | ✅ provada |
-| `pbkdf2-com-o-contador-de-bloco-parado` | `bloco += 1` vira `bloco = 1` | 1/1 | ✅ provada |
-| `pbkdf2-sem-o-xor-acumulado` | o XOR acumulado vira atribuição | 2/2 | ✅ provada |
-| `juntar-sem-portao` | a conferência própria do `op_juntar` sai | 1/1 | ✅ provada |
-| `unir-sem-portao` | a conferência da LISTA do `op_unir` sai | 1/1 | ✅ provada |
-| `diferencas-sem-portao` | a conferência dos campos `a`/`b` do `op_diferencas` sai | 1/1 | ✅ provada |
-| `derivado-sem-portao` | `portoes_do_pedido` sai do irmão `executar_derivado` | 8/8 | ✅ provada |
+| `sha256-sem-somar-o-estado` | a realimentação de Davies-Meyer vira atribuição | 4/4 | sem veredito no registro da máquina |
+| `sha256-com-o-tamanho-em-little-endian` | o tamanho da mensagem no padding em little-endian | 4/4 | sem veredito no registro da máquina |
+| `hmac-com-a-chave-longa-truncada` | chave > 64 bytes truncada em vez de pré-hasheada | 2/2 | sem veredito no registro da máquina |
+| `pbkdf2-com-o-contador-de-bloco-parado` | `bloco += 1` vira `bloco = 1` | 1/1 | sem veredito no registro da máquina |
+| `pbkdf2-sem-o-xor-acumulado` | o XOR acumulado vira atribuição | 2/2 | sem veredito no registro da máquina |
+| `juntar-sem-portao` | a conferência própria do `op_juntar` sai | 1/1 | sem veredito no registro da máquina |
+| `unir-sem-portao` | a conferência da LISTA do `op_unir` sai | 1/1 | sem veredito no registro da máquina |
+| `diferencas-sem-portao` | a conferência dos campos `a`/`b` do `op_diferencas` sai | 1/1 | sem veredito no registro da máquina |
+| `derivado-sem-portao` | `portoes_do_pedido` sai do irmão `executar_derivado` | 8/8 | sem veredito no registro da máquina |
 
-Custo medido: 11,7 s para as cinco de criptografia (2,3–2,4 s cada) e 136 s
-para as quatro do portão (31–36 s cada, com a cópia quente).
+O "caem" (quantos testes o executor derruba com o defeito reposto) é o que a
+entrada do catálogo **declara**, não o que o provador confirmou — a coluna
+ficou porque descrever o defeito continua útil, mas ela não é prova. **Nenhuma
+das nove está QUEBRADA** — não há evidência de que falhem, só ausência de
+evidência de que passem. Isto não é a mesma coisa que "provada", e é
+exatamente a confusão que este achado corrige.
+
+Custo medido **na época em que a corrida original desta seção foi escrita**:
+11,7 s para as cinco de criptografia (2,3–2,4 s cada) e 136 s para as quatro do
+portão (31–36 s cada, com a cópia quente) — números de tempo de execução, não
+de veredito, e continuam válidos como estimativa de custo.
+
+**Para provar as nove e gravar o veredito no registro da máquina** (NÃO
+rodado nesta rodada — disco curto, outra frente compilando):
+
+```
+python3 bancada/guardas/provar-guardas.py \
+  --so sha256-sem-somar-o-estado \
+  --so sha256-com-o-tamanho-em-little-endian \
+  --so hmac-com-a-chave-longa-truncada \
+  --so pbkdf2-com-o-contador-de-bloco-parado \
+  --so pbkdf2-sem-o-xor-acumulado \
+  --so juntar-sem-portao \
+  --so unir-sem-portao \
+  --so diferencas-sem-portao \
+  --so derivado-sem-portao \
+  --json bancada/guardas/ultima-corrida.json
+```
+
+**Achado à parte, fora do escopo das nove:** o catálogo cresceu de **199**
+entradas (22/09/2026) para **235** hoje, e o `ultima-corrida.json` de **154**
+para **183** vereditos — medido agora, não repetindo o número do pedido. A
+`trava-sem-guarda-de-reentrancia` continua a única com veredito **QUEBRADA**
+no registro, parada desde 16/09 15:25 — decidi-la não é parte deste pedido.
 
 ### 15.3 A escolha do defeito é o trabalho, e ela se justifica entrada por entrada
 
