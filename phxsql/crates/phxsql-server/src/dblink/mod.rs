@@ -36,6 +36,8 @@ use std::time::Duration;
 use phxsql_core::error::{PhxError, Result};
 use phxsql_core::json::Json;
 
+use crate::config::Segredo;
+
 /// Qual banco esta do outro lado.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Motor {
@@ -138,7 +140,11 @@ pub struct Definicao {
     /// PRIVADA, como a do rele de e-mail: o servidor precisa apresenta-la ao
     /// outro banco, entao nao da para guardar so o hash -- mas ela nunca sai
     /// em JSON nem em log.
-    senha: String,
+    ///
+    /// Um [`Segredo`], e nao `String`, desde o pedido 372: a variavel de
+    /// `senha_env` que falta deixou de virar senha vazia e passou a ser o erro
+    /// que a nomeia, na hora de conectar.
+    senha: Segredo,
     /// Nome da variavel de ambiente de onde a senha veio, quando veio de la.
     pub senha_env: String,
     /// O token de servico do outro PhxSql -- so o motor `phxsql` o usa.
@@ -156,7 +162,7 @@ pub struct Definicao {
     /// responderia «token invalido» -- um erro que manda procurar no lugar
     /// errado, e que nenhum teste de unidade acharia. Foi a prova por soquete
     /// que pisou nele.
-    token: String,
+    token: Segredo,
     /// Nome da variavel de ambiente de onde o token veio, quando veio de la.
     pub token_env: String,
     pub database: String,
@@ -272,9 +278,9 @@ impl Default for Definicao {
             host: "127.0.0.1".into(),
             porta: 3306,
             usuario: String::new(),
-            senha: String::new(),
+            senha: Segredo::default(),
             senha_env: String::new(),
-            token: String::new(),
+            token: Segredo::default(),
             token_env: String::new(),
             database: String::new(),
             descricao: String::new(),
@@ -298,18 +304,14 @@ impl Definicao {
         let motor = Motor::de_texto(j.texto_ou("motor", "mysql"))?;
         let nome = j.texto_ou("nome", "").trim().to_string();
         validar_nome(&nome)?;
-        let senha_env = j.texto_ou("senha_env", "").trim().to_string();
-        let senha = if senha_env.is_empty() {
-            j.texto_ou("senha", "").to_string()
-        } else {
-            std::env::var(&senha_env).unwrap_or_default()
-        };
-        let token_env = j.texto_ou("token_remoto_env", "").trim().to_string();
-        let token = if token_env.is_empty() {
-            j.texto_ou("token_remoto", "").to_string()
-        } else {
-            std::env::var(&token_env).unwrap_or_default()
-        };
+        // A variavel que falta NAO derruba a leitura -- esta funcao le o
+        // `dblink.json` inteiro no arranque, e uma ligacao mal configurada
+        // recusaria o servidor todo. A falta fica guardada no [`Segredo`], e a
+        // ligacao nasce TRANCADA: so ela recusa, na hora de conectar, dizendo
+        // qual variavel faltou. Ver `Registro::avisos` para o aviso.
+        let quem = format!("a ligacao {nome:?} do DbLink");
+        let (senha, senha_env) = Segredo::ler(j, "senha", &quem);
+        let (token, token_env) = Segredo::ler(j, "token_remoto", &quem);
         // Valor que ninguem reconhece NAO desliga a cifra -- fica em `None`, e
         // `None` vale o padrao do motor. E a regra do `interruptor()` do ODBC
         // (pedido 373), pelo mesmo motivo: com o padrao ligado, um
@@ -360,7 +362,12 @@ impl Definicao {
 
     /// Como a definicao vai para o disco: com a senha, quando ela nao veio do
     /// ambiente. E o unico lugar em que ela e escrita.
-    fn para_disco(&self) -> Json {
+    ///
+    /// `Result` porque a senha so sai pelo portao do [`Segredo`]. Do arquivo
+    /// ele nunca recusa -- so recusa a variavel que faltou, e essa nunca chega
+    /// aqui, porque com `senha_env` o disco guarda o NOME. Se um dia chegar, a
+    /// gravacao recusa em vez de escrever uma senha vazia por cima da boa.
+    fn para_disco(&self) -> Result<Json> {
         let mut campos = vec![
             ("nome", Json::texto_de(&self.nome)),
             ("motor", Json::texto_de(self.motor.nome())),
@@ -374,14 +381,14 @@ impl Definicao {
             ("max_linhas", Json::de_u64(self.max_linhas)),
         ];
         if self.senha_env.is_empty() {
-            campos.push(("senha", Json::texto_de(&self.senha)));
+            campos.push(("senha", Json::texto_de(self.senha.valor()?)));
         } else {
             campos.push(("senha_env", Json::texto_de(&self.senha_env)));
         }
         if !self.token_env.is_empty() {
             campos.push(("token_remoto_env", Json::texto_de(&self.token_env)));
-        } else if !self.token.is_empty() {
-            campos.push(("token_remoto", Json::texto_de(&self.token)));
+        } else if self.token.escrito_no_arquivo() {
+            campos.push(("token_remoto", Json::texto_de(self.token.valor()?)));
         }
         if !self.sincronias.is_empty() {
             campos.push((
@@ -406,7 +413,7 @@ impl Definicao {
                 campos.push(("chave_do_fio", Json::texto_de(&self.chave_do_fio)));
             }
         }
-        Json::objeto(campos)
+        Ok(Json::objeto(campos))
     }
 
     /// Como a definicao aparece na tela e no protocolo: sem a senha, nunca.
@@ -439,33 +446,58 @@ impl Definicao {
             ("token_remoto_env", Json::texto_de(&self.token_env)),
             (
                 "token_remoto",
-                Json::texto_de(if self.token.is_empty() {
-                    "(vazio)"
-                } else if self.token_env.is_empty() {
-                    "(oculto)"
-                } else {
-                    "(do ambiente)"
-                }),
+                Json::texto_de(self.token.rotulo("(vazio)", "(oculto)", "(do ambiente)")),
             ),
             (
                 "senha",
-                Json::texto_de(if self.senha.is_empty() {
-                    "(vazia)"
-                } else if self.senha_env.is_empty() {
-                    "(oculta)"
-                } else {
-                    "(do ambiente)"
-                }),
+                Json::texto_de(self.senha.rotulo("(vazia)", "(oculta)", "(do ambiente)")),
             ),
+            // O NOME das variaveis que faltaram, e so o nome -- que nao e
+            // segredo, e ja sai em `senha_env`. Existe para a tela avisar no
+            // MOMENTO em que o nome errado e gravado, e nao so no dia do
+            // primeiro teste: a tela le a lista, e nao compara o rotulo.
+            ("variaveis_ausentes", Json::Lista(self.variaveis_ausentes())),
         ])
     }
 
-    pub fn senha(&self) -> &str {
-        &self.senha
+    /// As variaveis declaradas que este processo nao tem, pelo nome.
+    fn variaveis_ausentes(&self) -> Vec<Json> {
+        [
+            (&self.senha, &self.senha_env),
+            (&self.token, &self.token_env),
+        ]
+        .into_iter()
+        .filter(|(s, _)| s.falta().is_some())
+        .map(|(_, var)| Json::texto_de(var))
+        .collect()
     }
 
+    /// A senha para APRESENTAR ao outro banco -- ou o erro que nomeia a
+    /// variavel de `senha_env` que este processo nao tem.
+    ///
+    /// E o portao da ligacao TRANCADA: todo caminho que conecta passa por
+    /// aqui ou pelo [`Definicao::token_remoto`], e nenhum dos dois devolve o
+    /// vazio no lugar da falta.
+    pub fn senha(&self) -> Result<&str> {
+        self.senha.valor()
+    }
+
+    /// O token de servico do outro PhxSql, pelo mesmo portao da senha.
+    pub fn token_remoto(&self) -> Result<&str> {
+        self.token.valor()
+    }
+
+    /// O token cru, SEM portao -- so existe no binario de teste.
+    ///
+    /// Continua porque um teste do `servidor.rs`, que nao e desta frente,
+    /// compara o token herdado com `assert_eq!(d.token(), "TOK")`. Fora do
+    /// teste ele nao compila, e e isso que impede um caminho de conexao novo
+    /// de ler o vazio da ligacao trancada.
+    #[cfg(test)]
     pub fn token(&self) -> &str {
-        &self.token
+        self.token
+            .valor()
+            .unwrap_or_else(|e| panic!("token de ligacao trancada: {e}"))
     }
 
     /// A cifra que VALE para esta ligacao -- e o unico lugar que responde.
@@ -652,7 +684,7 @@ impl Definicao {
                 &self.host,
                 self.porta,
                 &self.usuario,
-                &self.senha,
+                self.senha()?,
                 &self.database,
                 Duration::from_secs(self.timeout_s),
             ),
@@ -676,7 +708,7 @@ impl Definicao {
                 &self.host,
                 self.porta,
                 &self.usuario,
-                &self.senha,
+                self.senha()?,
                 &self.database,
                 Duration::from_secs(self.timeout_s),
             ),
@@ -751,6 +783,58 @@ impl Registro {
         Ok(r)
     }
 
+    /// Os avisos do arranque sobre este cadastro (pedido 372). Quem os junta
+    /// e o `Config::ler`, na mesma lista que o `main` ja imprime.
+    ///
+    /// # Dois avisos, e para quem cada um fala
+    ///
+    /// **A variavel que falta**, um por falta: a ligacao esta TRANCADA e o
+    /// operador precisa saber antes do primeiro teste, e nao por ele.
+    ///
+    /// **A credencial em texto puro**, um so para o arquivo inteiro. Fala com
+    /// quem NAO registrou decisao -- a ligacao com senha ou token escritos no
+    /// arquivo -- e cala para quem escreveu `senha_env`/`token_remoto_env`, que
+    /// e o molde do aviso das saidas cifradas (`config.rs`): aviso que aparece
+    /// para sempre numa instalacao decidida e aviso que ninguem le. E nao ha
+    /// escape que o cale mantendo o claro, de proposito: a petrea e «senha
+    /// nunca em texto puro», e um interruptor para calar seria registrar a
+    /// decisao de quebra-la.
+    ///
+    /// Nunca a senha, nem pedaco, nem o tamanho: o aviso nomeia a ligacao e o
+    /// CAMPO, que e o que diz onde mexer.
+    pub fn avisos(&self) -> Vec<String> {
+        let mut avisos: Vec<String> = Vec::new();
+        let mut em_claro: Vec<String> = Vec::new();
+        for l in &self.ligacoes {
+            for (segredo, campo) in [(&l.senha, "senha"), (&l.token, "token_remoto")] {
+                if let Some(falta) = segredo.falta() {
+                    avisos.push(format!(
+                        "{falta}. A ligacao fica TRANCADA -- recusa conectar ate o \
+                         servidor subir com a variavel --, e o resto do servidor \
+                         sobe normalmente."
+                    ));
+                }
+                if segredo.escrito_no_arquivo() {
+                    em_claro.push(format!("{:?} ({campo})", l.nome));
+                }
+            }
+        }
+        if !em_claro.is_empty() {
+            avisos.push(format!(
+                "o cadastro do DbLink em {} guarda credencial do outro banco em \
+                 TEXTO PURO: {}. O arquivo nasce 0600, mas vai inteiro em toda \
+                 copia de backup e em todo disco levado. Tire-a de la escrevendo \
+                 senha_env / token_remoto_env com o nome de uma variavel de \
+                 ambiente -- a tela de Definicoes do DbLink oferece os dois --, e \
+                 TROQUE a credencial no outro banco: a que ja esteve neste disco \
+                 continua recuperavel nos blocos antigos e nas copias.",
+                self.caminho.display(),
+                em_claro.join(", ")
+            ));
+        }
+        avisos
+    }
+
     fn conferir_repetidos(&self) -> Result<()> {
         let mut vistos = std::collections::HashSet::new();
         for l in &self.ligacoes {
@@ -806,10 +890,12 @@ impl Registro {
     /// ja existia para a chave do fio e nao tinha voltado para ca (revisao
     /// SEC de 17/09/2026, achado A4). Agora e o mesmo escritor dos irmaos.
     fn gravar(&self) -> Result<()> {
-        let j = Json::objeto(vec![(
-            "dblink",
-            Json::Lista(self.ligacoes.iter().map(Definicao::para_disco).collect()),
-        )]);
+        let ligacoes = self
+            .ligacoes
+            .iter()
+            .map(Definicao::para_disco)
+            .collect::<Result<Vec<_>>>()?;
+        let j = Json::objeto(vec![("dblink", Json::Lista(ligacoes))]);
         crate::config::gravar_privado(&self.caminho, j.escrever_identado().as_bytes())
             .map_err(|e| PhxError::Esquema(format!("nao gravei {}: {e}", self.caminho.display())))
     }
@@ -996,7 +1082,7 @@ mod testes {
             &Json::analisar(r#"{"nome":"loja","senha":"segredo-do-outro-banco"}"#).unwrap(),
         )
         .unwrap();
-        assert_eq!(d.senha(), "segredo-do-outro-banco");
+        assert_eq!(d.senha().unwrap(), "segredo-do-outro-banco");
         let t = d.para_json().escrever();
         assert!(!t.contains("segredo-do-outro-banco"), "a senha vazou: {t}");
         assert!(t.contains("(oculta)"));
@@ -1031,7 +1117,7 @@ mod testes {
         )
         .unwrap();
         // O valor esta mesmo la -- senao a prova passaria por nao haver segredo.
-        assert_eq!(d.senha(), SENHA);
+        assert_eq!(d.senha().unwrap(), SENHA);
         assert_eq!(d.token(), TOKEN);
 
         for texto in [format!("{:?}", d), format!("{d:?}")] {
@@ -1125,7 +1211,7 @@ mod testes {
         assert!(!d.cifra(), "o escape escrito nao foi respeitado");
         assert_eq!(d.cifra_escrita(), Some(false));
         // E o escape sobrevive ao disco: e decisao, nao ruido.
-        let disco = d.para_disco().escrever();
+        let disco = d.para_disco().unwrap().escrever();
         assert!(disco.contains("\"cifra\":false"), "{disco}");
     }
 
@@ -1241,7 +1327,7 @@ mod testes {
             r#"{"nome":"erp","motor":"phxsql"}"#,
             r#"{"nome":"erp","motor":"phxsql","cifra":true}"#,
         ] {
-            let disco = lig(json).unwrap().para_disco().escrever();
+            let disco = lig(json).unwrap().para_disco().unwrap().escrever();
             assert!(
                 !disco.contains("\"cifra\""),
                 "o padrao foi fossilizado por {json}: {disco}"
@@ -1251,6 +1337,7 @@ mod testes {
         let disco = lig(r#"{"nome":"erp","motor":"mysql","cifra":false}"#)
             .unwrap()
             .para_disco()
+            .unwrap()
             .escrever();
         assert!(!disco.contains("cifra"), "{disco}");
         assert!(!disco.contains("chave_do_fio"), "{disco}");
@@ -1261,6 +1348,7 @@ mod testes {
         ))
         .unwrap()
         .para_disco()
+        .unwrap()
         .escrever();
         assert!(disco.contains(PINO), "{disco}");
     }
@@ -1458,7 +1546,7 @@ mod testes {
         .unwrap();
         let lido = Registro::abrir(&caminho).unwrap();
         assert_eq!(lido.ligacoes.len(), 1);
-        assert_eq!(lido.achar("LOJA").unwrap().senha(), "abc");
+        assert_eq!(lido.achar("LOJA").unwrap().senha().unwrap(), "abc");
         assert_eq!(lido.achar("loja").unwrap().host, "10.0.0.5");
         // Salvar de novo com o mesmo nome substitui, nao duplica.
         let mut r2 = lido;
@@ -1477,5 +1565,222 @@ mod testes {
             "10.0.0.9"
         );
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    // -----------------------------------------------------------------------
+    // Pedido 372: a variavel declarada que falta, e o texto puro no arquivo
+    // -----------------------------------------------------------------------
+    //
+    // Nomes de variavel UNICOS por teste, e as de falta nunca sao tocadas:
+    // `set_var` e estado global do processo e o `libtest` roda em paralelo
+    // (pedidos 247, 261, 267). A prova da falta nao mexe no ambiente -- so
+    // nomeia uma variavel que ninguem cria.
+
+    /// Nunca criada por ninguem: e a falta que se prova.
+    const SENHA_AUSENTE: &str = "PHXSQL_TESTE_372_DBLINK_SENHA_QUE_NINGUEM_EXPORTA";
+    const TOKEN_AUSENTE: &str = "PHXSQL_TESTE_372_DBLINK_TOKEN_QUE_NINGUEM_EXPORTA";
+
+    /// A senha de `senha_env` que falta NAO vira senha vazia: vira o erro que
+    /// nomeia a variavel e a ligacao, e ele vem ANTES da rede.
+    ///
+    /// Com o defeito reposto (`unwrap_or_default`) a senha sai `Ok("")`, e a
+    /// conexao vai ao outro banco apresentar senha vazia -- a primeira
+    /// assercao cai.
+    #[test]
+    fn senha_env_que_falta_e_erro_nomeado_e_nao_senha_vazia() {
+        let d = lig(&format!(
+            r#"{{"nome":"loja","motor":"mysql","host":"127.0.0.1","porta":1,
+                 "usuario":"u","senha_env":"{SENHA_AUSENTE}"}}"#
+        ))
+        .expect("a leitura NAO pode recusar: e ela que o arranque chama");
+        // `match`, e nao `expect_err`: com o defeito reposto o `Ok` traria
+        // o valor, e o `expect_err` o imprimiria na saida do teste.
+        let e = match d.senha() {
+            Ok(_) => panic!("variavel ausente virou senha -- o defeito do 372"),
+            Err(e) => e.to_string(),
+        };
+        assert!(
+            e.contains(SENHA_AUSENTE),
+            "o erro nao nomeia a variavel: {e}"
+        );
+        assert!(e.contains("\"loja\""), "o erro nao nomeia a ligacao: {e}");
+        assert!(e.contains("senha_env"), "o erro nao nomeia o campo: {e}");
+        // Os dois caminhos que conectam recusam pelo MESMO erro, e antes da
+        // rede: na porta 1 nao ha ninguem, entao um erro de conexao aqui
+        // seria a prova de que o portao ficou para depois do trabalho.
+        for erro in [
+            d.conectar().map(|_| ()).unwrap_err().to_string(),
+            d.abrir().map(|_| ()).unwrap_err().to_string(),
+        ] {
+            assert!(erro.contains(SENHA_AUSENTE), "conectou sem a senha: {erro}");
+        }
+        // A tela ve o estado e o NOME, nunca um valor.
+        let ficha = d.para_json();
+        assert_eq!(ficha.texto_ou("senha", ""), "(variavel ausente)");
+        assert_eq!(
+            ficha.campo("variaveis_ausentes").map(Json::escrever),
+            Some(format!("[\"{SENHA_AUSENTE}\"]"))
+        );
+    }
+
+    /// O irmao da senha, que o parecer do 372 nomeou: o token do outro PhxSql.
+    /// E o pior dos dois -- sem ele o outro servidor responde «token
+    /// invalido», e o erro manda procurar no lugar errado.
+    #[test]
+    fn token_remoto_env_que_falta_e_erro_nomeado_e_nao_token_vazio() {
+        let d = lig(&format!(
+            r#"{{"nome":"erp","motor":"phxsql","host":"127.0.0.1","porta":1,
+                 "cifra":false,"token_remoto_env":"{TOKEN_AUSENTE}"}}"#
+        ))
+        .expect("a leitura NAO pode recusar");
+        // `match`, e nao `expect_err`: com o defeito reposto o `Ok` traria
+        // o valor, e o `expect_err` o imprimiria na saida do teste.
+        let e = match d.token_remoto() {
+            Ok(_) => panic!("variavel ausente virou token -- o defeito do 372"),
+            Err(e) => e.to_string(),
+        };
+        assert!(e.contains(TOKEN_AUSENTE), "{e}");
+        assert!(e.contains("\"erp\""), "{e}");
+        assert!(e.contains("token_remoto_env"), "{e}");
+        let erro = d.abrir().map(|_| ()).unwrap_err().to_string();
+        assert!(erro.contains(TOKEN_AUSENTE), "conectou sem o token: {erro}");
+        assert_eq!(
+            d.para_json().texto_ou("token_remoto", ""),
+            "(variavel ausente)"
+        );
+    }
+
+    /// A ligacao mal configurada NAO derruba o arranque.
+    ///
+    /// O `Servidor::novo` abre o cadastro com `?`: se a falta virasse erro na
+    /// leitura, uma variavel do DbLink tiraria o motor de dados do ar. Este e
+    /// o teste dos DOIS sentidos: cai com o defeito reposto (a ligacao nao
+    /// tranca, e a senha sai vazia) e cai com o conserto errado (a leitura
+    /// recusando, e o `Registro::abrir` junto).
+    ///
+    /// E a ligacao VIZINHA, bem configurada, continua inteira.
+    #[test]
+    fn a_variavel_que_falta_tranca_so_a_ligacao_e_nao_o_arranque() {
+        let dir = DirTemp::novo("dblink-372-trancada");
+        let caminho = dir.join("dblink.json");
+        std::fs::write(
+            &caminho,
+            format!(
+                r#"{{"dblink":[
+                    {{"nome":"trancada","senha_env":"{SENHA_AUSENTE}"}},
+                    {{"nome":"boa","senha":"abc"}}]}}"#
+            ),
+        )
+        .unwrap();
+        let r = Registro::abrir(&caminho).expect("o cadastro recusou o arranque");
+        assert!(r.achar("trancada").unwrap().senha().is_err());
+        assert_eq!(r.achar("boa").unwrap().senha().unwrap(), "abc");
+
+        let avisos = r.avisos();
+        let falta = avisos
+            .iter()
+            .find(|a| a.contains(SENHA_AUSENTE))
+            .unwrap_or_else(|| panic!("a falta subiu calada: {avisos:?}"));
+        assert!(falta.contains("TRANCADA"), "{falta}");
+
+        // Gravar o cadastro com a ligacao trancada guarda o NOME da variavel,
+        // e nunca uma senha vazia no lugar -- o proximo arranque, com a
+        // variavel exportada, tem de conseguir le-la.
+        r.gravar().unwrap();
+        let disco = std::fs::read_to_string(&caminho).unwrap();
+        assert!(disco.contains(SENHA_AUSENTE), "{disco}");
+        let relido = Registro::abrir(&caminho).unwrap();
+        assert_eq!(relido.achar("trancada").unwrap().senha_env, SENHA_AUSENTE);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// O comportamento VELHO, que e o que mais importa numa guarda nova: sem
+    /// `_env`, e com `_env` e a variavel presente, nada muda -- nem o valor,
+    /// nem o rotulo da tela, nem o que vai para o disco.
+    #[test]
+    fn sem_env_e_com_a_variavel_presente_nada_muda() {
+        // Sem `_env`: a senha do arquivo, como sempre.
+        let d = lig(r#"{"nome":"loja","senha":"do-arquivo","motor":"phxsql","token_remoto":"t1"}"#)
+            .unwrap();
+        assert_eq!(d.senha().unwrap(), "do-arquivo");
+        assert_eq!(d.token_remoto().unwrap(), "t1");
+        assert_eq!(d.para_json().texto_ou("senha", ""), "(oculta)");
+        assert_eq!(d.para_json().texto_ou("token_remoto", ""), "(oculto)");
+        assert_eq!(
+            d.para_json()
+                .campo("variaveis_ausentes")
+                .map(Json::escrever),
+            Some("[]".to_string())
+        );
+
+        // Sem senha nenhuma: vazia, e vazia NAO e falta -- e decisao escrita.
+        let d = lig(r#"{"nome":"loja"}"#).unwrap();
+        assert_eq!(d.senha().unwrap(), "");
+        assert_eq!(d.para_json().texto_ou("senha", ""), "(vazia)");
+
+        // Com `_env` e a variavel PRESENTE: o valor do ambiente, e o disco
+        // guarda so o nome. Variavel so deste teste.
+        const SENHA_PRESENTE: &str = "PHXSQL_TESTE_372_DBLINK_SENHA_PRESENTE";
+        const TOKEN_PRESENTE: &str = "PHXSQL_TESTE_372_DBLINK_TOKEN_PRESENTE";
+        std::env::set_var(SENHA_PRESENTE, "valor-do-ambiente");
+        std::env::set_var(TOKEN_PRESENTE, "token-do-ambiente");
+        let d = lig(&format!(
+            r#"{{"nome":"loja","motor":"phxsql","senha_env":"{SENHA_PRESENTE}",
+                 "token_remoto_env":"{TOKEN_PRESENTE}"}}"#
+        ))
+        .unwrap();
+        assert_eq!(d.senha().unwrap(), "valor-do-ambiente");
+        assert_eq!(d.token_remoto().unwrap(), "token-do-ambiente");
+        assert_eq!(d.para_json().texto_ou("senha", ""), "(do ambiente)");
+        assert_eq!(d.para_json().texto_ou("token_remoto", ""), "(do ambiente)");
+        let disco = d.para_disco().unwrap().escrever();
+        assert!(!disco.contains("valor-do-ambiente"), "{disco}");
+        assert!(!disco.contains("token-do-ambiente"), "{disco}");
+        assert!(disco.contains(SENHA_PRESENTE), "{disco}");
+        assert!(disco.contains(TOKEN_PRESENTE), "{disco}");
+    }
+
+    /// O aviso do texto puro fala com quem NAO decidiu, e cala para quem
+    /// escreveu `_env`. E nunca imprime o valor.
+    #[test]
+    fn o_aviso_do_texto_puro_nomeia_ligacao_e_campo_e_nunca_o_valor() {
+        const SENHA: &str = "SENHA-QUE-NAO-PODE-SAIR-NO-AVISO";
+        const TOKEN: &str = "TOKEN-QUE-NAO-PODE-SAIR-NO-AVISO";
+        let r = Registro {
+            caminho: PathBuf::from("/srv/phx/dblink.json"),
+            ligacoes: vec![
+                lig(&format!(r#"{{"nome":"loja","senha":"{SENHA}"}}"#)).unwrap(),
+                lig(&format!(
+                    r#"{{"nome":"erp","motor":"phxsql","token_remoto":"{TOKEN}"}}"#
+                ))
+                .unwrap(),
+            ],
+        };
+        let avisos = r.avisos();
+        assert_eq!(
+            avisos.len(),
+            1,
+            "um aviso para o arquivo inteiro: {avisos:?}"
+        );
+        let a = &avisos[0];
+        assert!(a.contains("\"loja\" (senha)"), "{a}");
+        assert!(a.contains("\"erp\" (token_remoto)"), "{a}");
+        assert!(a.contains("/srv/phx/dblink.json"), "{a}");
+        assert!(!a.contains(SENHA), "o aviso imprimiu a senha: {a}");
+        assert!(!a.contains(TOKEN), "o aviso imprimiu o token: {a}");
+
+        // Quem decidiu -- `_env` nos dois, ou sem credencial nenhuma -- nao
+        // ouve nada. Aviso perpetuo em instalacao decidida gasta o aviso
+        // verdadeiro. A variavel ausente aqui teria aviso proprio, entao a
+        // prova usa uma que existe em todo processo.
+        let decidido = Registro {
+            caminho: PathBuf::from("/srv/phx/dblink.json"),
+            ligacoes: vec![
+                lig(r#"{"nome":"loja","senha_env":"PATH"}"#).unwrap(),
+                lig(r#"{"nome":"erp","motor":"phxsql","token_remoto_env":"PATH"}"#).unwrap(),
+                lig(r#"{"nome":"sem","usuario":"leitor"}"#).unwrap(),
+            ],
+        };
+        assert!(decidido.avisos().is_empty(), "{:?}", decidido.avisos());
     }
 }

@@ -78,7 +78,15 @@ impl Conexao {
     /// abriria uma conexao em claro que compila. `replica::ligar` recebe
     /// `&Origem` pelo mesmo motivo.
     pub fn abrir(d: &Definicao) -> Result<Conexao> {
-        let token = d.token();
+        // As duas credenciais pelo portao, e ANTES de ir a rede: a ligacao
+        // com `token_remoto_env` ou `senha_env` que falta recusa aqui,
+        // nomeando a variavel, em vez de bater no outro servidor sem token e
+        // ouvir «token invalido» -- que mandaria procurar no lugar errado.
+        // A senha so e pedida quando ha usuario: sem login ela nao e usada, e
+        // recusar por ela seria trancar uma ligacao que nao precisa dela.
+        let token = d.token_remoto()?;
+        let usuario = d.usuario.as_str();
+        let senha = if usuario.is_empty() { "" } else { d.senha()? };
         let espera = Duration::from_secs(d.timeout_s);
         let mut cliente = Cliente::conectar(&d.host, d.porta, token, espera)?;
         // O TUNEL antes de tudo, e aqui o motivo e mais forte que na replica:
@@ -93,8 +101,6 @@ impl Conexao {
         // O login vem DEPOIS do token porque e assim que o outro lado confere:
         // o portao do token e o primeiro, e um login com token errado responde
         // "token invalido" -- que mandaria procurar a senha no lugar errado.
-        let usuario = d.usuario.as_str();
-        let senha = d.senha();
         if !usuario.is_empty() {
             cliente
                 .autenticar(usuario, "", senha)

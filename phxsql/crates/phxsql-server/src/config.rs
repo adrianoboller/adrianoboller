@@ -1250,6 +1250,159 @@ impl Sms {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Os segredos que este servidor APRESENTA -- do arquivo ou do ambiente
+// ---------------------------------------------------------------------------
+
+/// Um segredo que este servidor precisa APRESENTAR a alguem -- a senha do rele
+/// de e-mail, a do cofre, a privada do fio, a senha e o token de uma ligacao do
+/// DbLink --, e que por isso se guarda inteiro, e nao em hash.
+///
+/// # Por que um tipo, e nao cinco `unwrap_or_default`
+///
+/// Os cinco donos liam `<campo>_env` do mesmo jeito, e erravam do mesmo jeito
+/// (pedido 372): variavel DECLARADA e AUSENTE virava segredo VAZIO, calado.
+/// Quem escreve `senha_env` esta tirando o segredo do arquivo; um nome digitado
+/// errado, ou a variavel que o servico nao exporta, fazia o servidor apresentar
+/// senha vazia -- e o erro vinha do OUTRO lado («access denied»), mandando
+/// procurar a credencial no lugar errado. Contra um destino cujo usuario tem
+/// senha vazia, autenticava.
+///
+/// «De onde vem este segredo» era UMA pergunta escrita cinco vezes; aqui ela e
+/// escrita uma, em [`Segredo::ler`]. E o valor so sai por [`Segredo::valor`],
+/// que devolve o ERRO NOMEADO quando a variavel faltou: nao ha caminho de
+/// leitura que entregue o vazio no lugar do erro.
+///
+/// # Por que a falta NAO e erro na leitura
+///
+/// Porque quem le e o arranque inteiro. O `dblink.json` passa pelo
+/// `Registro::abrir` com `?` antes de a porta abrir, e o `config.json` passa
+/// pelo [`Config::ler`], que o `--usuarios` e o `--chave-do-fio` tambem chamam
+/// -- de um terminal que nao tem o ambiente do servico. Recusar na leitura
+/// faria uma variavel do DbLink derrubar o motor de dados, e um administrador
+/// sem a variavel no terminal perder a linha de comando. A falta fica guardada,
+/// sai como AVISO no arranque, e vira ERRO para quem precisa do valor -- e so
+/// para ele.
+#[derive(Clone, Default)]
+pub struct Segredo {
+    valor: String,
+    origem: OrigemDoSegredo,
+}
+
+#[derive(Clone, Default)]
+enum OrigemDoSegredo {
+    #[default]
+    Arquivo,
+    Ambiente,
+    /// A mensagem inteira, montada na leitura: e so ali que se sabe quem
+    /// declarou a variavel.
+    Ausente(String),
+}
+
+/// `Debug` a mao, e pelo mesmo rotulo da tela: o derivado imprimiria o valor.
+/// Nenhum dono o chama hoje -- os cinco escrevem o proprio `Debug` --, mas o
+/// dia em que alguem trocar um `senha: _` por `.field("senha", &self.senha)`
+/// nao pode ser o dia em que a senha vaza.
+impl std::fmt::Debug for Segredo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.rotulo("(vazio)", "(oculto)", "(do ambiente)"))
+    }
+}
+
+impl Segredo {
+    /// Le o par `campo` / `campo_env` de um objeto do arquivo -- a UNICA funcao
+    /// que decide de onde o segredo vem.
+    ///
+    /// Devolve tambem o nome da variavel (aparado; vazio = veio do arquivo),
+    /// que cada dono guarda no seu `*_env` para a tela e para o disco.
+    ///
+    /// `quem` nomeia quem declarou, para a mensagem da falta: `alertas.email`,
+    /// `a ligacao "erp" do DbLink`. E o que faz o erro apontar para a
+    /// variavel, e nao para a autenticacao do outro lado.
+    pub fn ler(o: &Json, campo: &str, quem: &str) -> (Segredo, String) {
+        let campo_env = format!("{campo}_env");
+        let var = o.texto_ou(&campo_env, "").trim().to_string();
+        if var.is_empty() {
+            let valor = o.texto_ou(campo, "").to_string();
+            return (
+                Segredo {
+                    valor,
+                    origem: OrigemDoSegredo::Arquivo,
+                },
+                var,
+            );
+        }
+        let segredo = match std::env::var(&var) {
+            Ok(valor) => Segredo {
+                valor,
+                origem: OrigemDoSegredo::Ambiente,
+            },
+            Err(e) => {
+                let motivo = match e {
+                    std::env::VarError::NotPresent => "nao existe",
+                    std::env::VarError::NotUnicode(_) => "existe, mas nao e texto UTF-8,",
+                };
+                // O nome da variavel NAO e segredo -- a tela e o `Debug` ja o
+                // mostram --, e e ele que diz onde procurar. O valor, este
+                // caminho nem tem.
+                Segredo {
+                    valor: String::new(),
+                    origem: OrigemDoSegredo::Ausente(format!(
+                        "{quem} declara {campo_env} = {var:?}, e essa variavel \
+                         {motivo} no ambiente deste processo. O segredo NAO \
+                         virou vazio: corrija o nome, ou exporte a variavel no \
+                         ambiente de quem sobe o servidor e reinicie"
+                    )),
+                }
+            }
+        };
+        (segredo, var)
+    }
+
+    /// O valor, para APRESENTAR -- ou o erro que nomeia a variavel que faltou.
+    pub fn valor(&self) -> Result<&str> {
+        match &self.origem {
+            OrigemDoSegredo::Ausente(motivo) => Err(PhxError::Esquema(motivo.clone())),
+            _ => Ok(&self.valor),
+        }
+    }
+
+    /// A mensagem da falta, para o aviso do arranque. `None` quando nada
+    /// faltou -- inclusive quando o segredo esta vazio no arquivo, que e
+    /// decisao escrita, e nao variavel perdida.
+    pub fn falta(&self) -> Option<&str> {
+        match &self.origem {
+            OrigemDoSegredo::Ausente(motivo) => Some(motivo),
+            _ => None,
+        }
+    }
+
+    /// O segredo esta ESCRITO no arquivo, em texto puro?
+    ///
+    /// Vazio nao conta: nao ha o que vazar. Vindo do ambiente tambem nao: o
+    /// arquivo guarda so o nome da variavel.
+    pub fn escrito_no_arquivo(&self) -> bool {
+        matches!(self.origem, OrigemDoSegredo::Arquivo) && !self.valor.is_empty()
+    }
+
+    /// O rotulo que a tela e o protocolo mostram NO LUGAR do valor -- nunca o
+    /// valor, nem mascarado com asteriscos do tamanho certo: o tamanho ja e
+    /// informacao.
+    ///
+    /// Os tres rotulos vem do dono porque cada um ja tinha os seus (o token e
+    /// «oculto», a senha e «oculta», a privada vazia e «do arquivo»), e trocar
+    /// um rotulo e trocar o protocolo. O quarto estado e deste tipo, e e o
+    /// mesmo para os cinco: `(variavel ausente)`.
+    pub fn rotulo<'a>(&self, vazio: &'a str, oculto: &'a str, do_ambiente: &'a str) -> &'a str {
+        match self.origem {
+            OrigemDoSegredo::Ausente(_) => "(variavel ausente)",
+            _ if self.valor.is_empty() => vazio,
+            OrigemDoSegredo::Arquivo => oculto,
+            OrigemDoSegredo::Ambiente => do_ambiente,
+        }
+    }
+}
+
 /// Para onde o alerta vai, e com que credencial.
 ///
 /// # O que este cliente NAO faz
@@ -1290,7 +1443,7 @@ pub struct Email {
     /// `para_json` nunca a inclui. E a mesma regra da senha do usuario -- a
     /// diferenca e que esta o servidor precisa apresentar ao rele, entao nao
     /// da para guardar so o hash.
-    senha: String,
+    senha: Segredo,
     pub assunto: String,
     pub timeout_s: u64,
 }
@@ -1338,11 +1491,9 @@ impl Email {
         };
         // A senha pode vir de variavel de ambiente. E o caminho recomendado:
         // config.json costuma ir para o controle de versao, e variavel de
-        // ambiente nao.
-        let senha = match e.texto_ou("senha_env", "").trim() {
-            "" => e.texto_ou("senha", "").to_string(),
-            var => std::env::var(var).unwrap_or_default(),
-        };
+        // ambiente nao. A variavel que falta NAO vira senha vazia -- ver
+        // [`Segredo`].
+        let (senha, _) = Segredo::ler(e, "senha", "alertas.email");
         Ok(Email {
             ligado: e.booleano_ou("ligado", false),
             avisar_jobs: e.booleano_ou("avisar_jobs", false),
@@ -1362,8 +1513,11 @@ impl Email {
     }
 
     /// A senha do rele. O unico caminho de leitura -- e nao aparece em JSON.
-    pub fn senha(&self) -> &str {
-        &self.senha
+    ///
+    /// `Err` quando `senha_env` nomeia variavel que este processo nao tem: o
+    /// rele recebe o erro que aponta a variavel, e nunca uma senha vazia.
+    pub fn senha(&self) -> Result<&str> {
+        self.senha.valor()
     }
 
     fn validar(&self) -> Result<()> {
@@ -1414,13 +1568,14 @@ impl Email {
             ("usuario", Json::texto_de(&self.usuario)),
             // Nunca a senha. Nem mascarada com asteriscos do tamanho certo --
             // o tamanho ja e informacao.
+            //
+            // O rele nunca separou arquivo de ambiente na tela, e continua sem
+            // separar: o rotulo e protocolo, e trocar «(oculta)» por «(do
+            // ambiente)» aqui seria mudar o que a tela recebe sem ninguem ter
+            // pedido. O que entra e o quarto estado, a variavel que faltou.
             (
                 "senha",
-                Json::texto_de(if self.senha.is_empty() {
-                    "(vazia)"
-                } else {
-                    "(oculta)"
-                }),
+                Json::texto_de(self.senha.rotulo("(vazia)", "(oculta)", "(oculta)")),
             ),
             ("assunto", Json::texto_de(&self.assunto)),
             ("tls", Json::Bool(false)),
@@ -1452,7 +1607,7 @@ pub struct Cifra {
     pub ligada: bool,
     /// PRIVADA de proposito: quem quiser ler passa por [`Cifra::senha`], e o
     /// `para_json` nunca a inclui.
-    senha: String,
+    senha: Segredo,
     /// Nome da variavel de ambiente de onde a senha veio, quando veio de la.
     pub senha_env: String,
     /// Iteracoes do PBKDF2. Zero cai no padrao do cofre.
@@ -1522,12 +1677,13 @@ impl Cifra {
         // A senha pode vir do ambiente, e esse e o caminho recomendado:
         // `config.json` costuma ir para o controle de versao, e variavel de
         // ambiente nao.
-        let senha_env = c.texto_ou("senha_env", "").trim().to_string();
-        let senha = if senha_env.is_empty() {
-            c.texto_ou("senha", "").to_string()
-        } else {
-            std::env::var(&senha_env).unwrap_or_default()
-        };
+        //
+        // Este e o QUINTO dono, e nao estava na lista do pedido 372: o
+        // parecer contou quatro. Responde a mesma pergunta pelo mesmo
+        // caminho, entao e irmao -- e aqui a falta nem era calada, era pior:
+        // o cofre recusava dizendo «preencha cifra.senha ou cifra.senha_env»
+        // a quem tinha preenchido `senha_env`.
+        let (senha, senha_env) = Segredo::ler(c, "senha", "cifra");
         Cifra {
             ligada: c.booleano_ou("ligada", false),
             senha,
@@ -1692,8 +1848,10 @@ impl Cifra {
     }
 
     /// A senha do cofre. O unico caminho de leitura -- e nao aparece em JSON.
-    pub fn senha(&self) -> &str {
-        &self.senha
+    ///
+    /// `Err` quando `senha_env` nomeia variavel que este processo nao tem.
+    pub fn senha(&self) -> Result<&str> {
+        self.senha.valor()
     }
 
     /// Liga o cofre do processo, se a configuracao pediu.
@@ -1709,7 +1867,11 @@ impl Cifra {
             return Ok(());
         }
         let (modo, ajuste) = self.modo_e_ajuste()?;
-        phxsql_store::cofre::definir_com(&self.senha, self.iteracoes, modo, ajuste)
+        // A falta da variavel RECUSA o arranque aqui, como a senha vazia ja
+        // recusava -- e de proposito, ao contrario do DbLink: o cofre nao e
+        // acessorio. Subir sem a chave deixaria o diario cifrado sem abrir, e
+        // a unica coisa que muda e o erro, que passa a nomear a variavel.
+        phxsql_store::cofre::definir_com(self.senha()?, self.iteracoes, modo, ajuste)
     }
 
     pub fn para_json(&self) -> Json {
@@ -1740,13 +1902,7 @@ impl Cifra {
             // o tamanho ja e informacao.
             (
                 "senha",
-                Json::texto_de(if self.senha.is_empty() {
-                    "(vazia)"
-                } else if self.senha_env.is_empty() {
-                    "(oculta)"
-                } else {
-                    "(do ambiente)"
-                }),
+                Json::texto_de(self.senha.rotulo("(vazia)", "(oculta)", "(do ambiente)")),
             ),
             // A lista SAI inteira. Nome de tabela nao e segredo -- ele ja
             // aparece no esquema, no `.ndx` e na tela de estrutura --, e
@@ -1827,7 +1983,7 @@ pub struct CifraFio {
     pub exigir_amarra: bool,
     /// PRIVADA de proposito: quem quiser ler passa por [`CifraFio::estatica`],
     /// e o `para_json` nunca a inclui.
-    chave_privada: String,
+    chave_privada: Segredo,
     /// Nome da variavel de ambiente de onde a privada veio, quando veio de la.
     pub chave_privada_env: String,
     /// Onde a estatica e lida, ou criada na primeira vez que alguem pedir o
@@ -1867,7 +2023,7 @@ impl Default for CifraFio {
             // garantia anunciada.
             exigir: true,
             exigir_amarra: false,
-            chave_privada: String::new(),
+            chave_privada: Segredo::default(),
             chave_privada_env: String::new(),
             arquivo: PathBuf::from("chave-do-fio.hex"),
         }
@@ -1880,12 +2036,7 @@ impl CifraFio {
         let Some(c) = j.campo("cifra_fio") else {
             return padrao;
         };
-        let chave_privada_env = c.texto_ou("chave_privada_env", "").trim().to_string();
-        let chave_privada = if chave_privada_env.is_empty() {
-            c.texto_ou("chave_privada", "").trim().to_string()
-        } else {
-            std::env::var(&chave_privada_env).unwrap_or_default()
-        };
+        let (chave_privada, chave_privada_env) = Segredo::ler(c, "chave_privada", "cifra_fio");
         CifraFio {
             ligada: c.booleano_ou("ligada", padrao.ligada),
             exigir: c.booleano_ou("exigir", padrao.exigir),
@@ -1927,13 +2078,23 @@ impl CifraFio {
     /// a escrever arquivo que antes nao escrevia.
     pub fn estatica(&self, config_em: Option<&Path>) -> Result<([u8; 32], Vec<String>)> {
         let mut avisos = Vec::new();
-        if !self.chave_privada.is_empty() {
+        // Variavel DECLARADA manda -- inclusive quando falta ou chega vazia.
+        //
+        // Aqui o vazio calado era o pior dos cinco donos do pedido 372: a
+        // privada vazia fazia a busca seguir para o ARQUIVO, e o servidor
+        // trocava de identidade sem uma linha dizendo por que -- lia uma
+        // chave antiga, ou sorteava e gravava uma nova. O pino de todo
+        // cliente quebrava, e o `--chave-do-fio` imprimia a publica ERRADA
+        // para o operador pinar. Agora a falta e o erro que nomeia a variavel,
+        // e a busca so segue para o arquivo quando ninguem declarou nada.
+        let privada = self.chave_privada.valor()?;
+        if !self.chave_privada_env.is_empty() || !privada.trim().is_empty() {
             let de_onde = if self.chave_privada_env.is_empty() {
                 "cifra_fio.chave_privada".to_string()
             } else {
                 format!("a variavel {}", self.chave_privada_env)
             };
-            return Ok((chave_de_hex(&self.chave_privada, &de_onde)?, avisos));
+            return Ok((chave_de_hex(privada, &de_onde)?, avisos));
         }
 
         let caminho = self.caminho_da_chave(config_em);
@@ -1975,13 +2136,11 @@ impl CifraFio {
             // Nunca a privada -- nem mascarada, que o tamanho ja e informacao.
             (
                 "chave_privada",
-                Json::texto_de(if self.chave_privada.is_empty() {
-                    "(do arquivo)"
-                } else if self.chave_privada_env.is_empty() {
-                    "(oculta)"
-                } else {
-                    "(do ambiente)"
-                }),
+                Json::texto_de(self.chave_privada.rotulo(
+                    "(do arquivo)",
+                    "(oculta)",
+                    "(do ambiente)",
+                )),
             ),
         ])
     }
@@ -3640,6 +3799,7 @@ impl Config {
         c.dblink = resolver_caminho_do_config(&c.dblink, c.caminho.as_deref());
         c.jobs = resolver_caminho_do_config(&c.jobs, c.caminho.as_deref());
         c.backup.destino = resolver_caminho_do_config(&c.backup.destino, c.caminho.as_deref());
+        c.avisar_o_cadastro_do_dblink();
         c.validar()?;
         // A chave do cofre entra AQUI, e nao la no servidor, por uma razao
         // pratica: `ler` e o unico caminho por onde um `config.json` vira
@@ -3818,7 +3978,13 @@ impl Config {
         //
         // A mensagem nao nomeia o administrador -- ver
         // `Cifra::senha_e_de_algum_administrador`.
-        if c.cifra.ligada && Cifra::senha_e_de_algum_administrador(c.cifra.senha(), &c.cadastro) {
+        // Sem a variavel nao ha senha a comparar: a falta tem aviso proprio,
+        // logo abaixo, e o `aplicar` recusa o arranque com o nome dela.
+        if c.cifra.ligada
+            && c.cifra
+                .senha()
+                .is_ok_and(|s| Cifra::senha_e_de_algum_administrador(s, &c.cadastro))
+        {
             c.avisos.push(
                 "cifra.senha e igual a senha de um administrador deste servidor. \
                  A senha do banco VIAJA (o servidor precisa dela em claro para \
@@ -3828,9 +3994,69 @@ impl Config {
                     .to_string(),
             );
         }
+        c.avisar_os_segredos_que_faltam();
         c.avisar_o_que_viaja_em_claro();
         c.avisar_a_cifra_de_fabrica_das_saidas(saidas);
         Ok(c)
+    }
+
+    /// Os avisos do arranque sobre o `dblink.json` -- credencial em texto puro
+    /// e variavel declarada que falta (pedido 372) --, pela MESMA lista dos
+    /// outros avisos, que o `main` imprime.
+    ///
+    /// # Por que aqui, e nao onde o cadastro abre de verdade
+    ///
+    /// O cadastro abre no `Servidor::novo`, e ali nao ha lista de avisos: um
+    /// segundo jeito de avisar, ao lado deste, seria o mecanismo repetido que
+    /// a regra «funcao e comando vem do mesmo motor» proibe. Entao o `ler` so
+    /// PERGUNTA ao cadastro ([`crate::dblink::Registro::avisos`], onde a regra
+    /// mora) e poe a resposta na lista de sempre.
+    ///
+    /// Arquivo torto aqui e silencio, e nao erro: quem recusa o arranque por
+    /// ele continua sendo o `Servidor::novo`, com a mensagem dele. Duas
+    /// recusas do mesmo arquivo, com textos diferentes, mandariam procurar em
+    /// dois lugares.
+    fn avisar_o_cadastro_do_dblink(&mut self) {
+        if let Ok(cadastro) = crate::dblink::Registro::abrir(&self.dblink) {
+            self.avisos.extend(cadastro.avisos());
+        }
+    }
+
+    /// O aviso do arranque para cada `*_env` do `config.json` que nomeia
+    /// variavel que este processo nao tem (pedido 372).
+    ///
+    /// # Aviso, e nao recusa -- com uma excecao que ja recusava
+    ///
+    /// A falta vira ERRO em quem precisa do valor ([`Segredo::valor`]), e so
+    /// ali: o rele recusa o envio, o aperto de mao recusa o tunel. Recusar
+    /// aqui derrubaria o `--usuarios` de um administrador que roda a CLI sem o
+    /// ambiente do servico. A excecao e o cofre ligado: o `Cifra::aplicar`
+    /// continua recusando o arranque, como ja recusava a senha vazia -- agora
+    /// dizendo qual variavel faltou.
+    ///
+    /// Fala so com quem declarou e nao tem. Quem escreveu o segredo no arquivo,
+    /// ou exportou a variavel, nao ouve nada daqui.
+    fn avisar_os_segredos_que_faltam(&mut self) {
+        let donos = [
+            (
+                self.alertas.email.senha.falta(),
+                "o aviso por e-mail vai falhar ao se autenticar no rele",
+            ),
+            (
+                self.cifra.senha.falta(),
+                "com cifra.ligada, o arranque recusa -- o cofre nao abre sem a senha",
+            ),
+            (
+                self.cifra_fio.chave_privada.falta(),
+                "o aperto de mao da cifra do fio vai RECUSAR -- e a chave NAO foi \
+                 trocada pela do arquivo, que e o que acontecia antes",
+            ),
+        ];
+        let novos: Vec<String> = donos
+            .into_iter()
+            .filter_map(|(falta, consequencia)| falta.map(|f| format!("{f}. {consequencia}.")))
+            .collect();
+        self.avisos.extend(novos);
     }
 
     /// Os avisos do arranque sobre o que sai desta maquina em texto puro.
@@ -5151,7 +5377,7 @@ mod tests {
         let j = Json::analisar(r#"{"token":"t"}"#).unwrap();
         let c = Config::de_json(&j).unwrap();
         assert!(!c.cifra.ligada, "a cifra nao pode nascer ligada");
-        assert!(c.cifra.senha().is_empty());
+        assert!(c.cifra.senha().unwrap().is_empty());
         assert!(c.estranhas.is_empty());
         // E aplicar uma cifra desligada nao liga cofre nenhum.
         c.cifra.aplicar().unwrap();
@@ -5289,7 +5515,7 @@ mod tests {
         // Os valores estao mesmo la -- senao a prova passaria por nao haver
         // segredo nenhum para vazar.
         assert_eq!(c.token, TOKEN);
-        assert_eq!(c.alertas.email.senha(), SENHA_EMAIL);
+        assert_eq!(c.alertas.email.senha().unwrap(), SENHA_EMAIL);
         assert_eq!(c.rest.token, TOKEN_REST);
         assert_eq!(c.replicacao.origens[0].token, TOKEN_ORIGEM);
         assert_eq!(c.replicacao.origens[0].senha, SENHA_ORIGEM);
@@ -5488,7 +5714,7 @@ mod tests {
         .unwrap();
         let c = Config::de_json(&j).unwrap();
         assert!(c.cifra.ligada);
-        assert_eq!(c.cifra.senha(), "abre-te sesamo");
+        assert_eq!(c.cifra.senha().unwrap(), "abre-te sesamo");
         assert_eq!(c.cifra.iteracoes, 300_000);
         assert!(c.estranhas.is_empty(), "{:?}", c.estranhas);
     }
@@ -5556,8 +5782,8 @@ mod tests {
         // O caminho de leitura continua funcionando -- um `para_json` que
         // esconde tudo porque nao leu nada passaria neste teste sem valer.
         assert_eq!(c.token, "MARCA-TOKEN-SERVIDOR");
-        assert_eq!(c.cifra.senha(), "MARCA-SENHA-CIFRA");
-        assert_eq!(c.alertas.email.senha(), "MARCA-SENHA-RELE");
+        assert_eq!(c.cifra.senha().unwrap(), "MARCA-SENHA-CIFRA");
+        assert_eq!(c.alertas.email.senha().unwrap(), "MARCA-SENHA-RELE");
         assert_eq!(c.replicacao.origens[0].token, "MARCA-TOKEN-ORIGEM");
         assert_eq!(c.cluster.as_ref().unwrap().token, "MARCA-TOKEN-CLUSTER");
 
@@ -5620,6 +5846,147 @@ mod tests {
         );
     }
 
+    // ---------------------------------------------------------------------
+    // Pedido 372: a variavel declarada que falta. Nomes UNICOS por teste, e
+    // as de falta nunca sao tocadas -- `set_var` e global e o `libtest` roda
+    // em paralelo (pedidos 247, 261, 267).
+    // ---------------------------------------------------------------------
+
+    /// `cifra.senha_env` que falta: o cofre recusa NOMEANDO a variavel.
+    ///
+    /// O defeito aqui nao era calar -- era mentir: a senha vazia chegava ao
+    /// cofre, e ele respondia «preencha cifra.senha ou cifra.senha_env» a quem
+    /// tinha preenchido `senha_env`. Com o defeito reposto, `senha()` volta
+    /// `Ok("")` e a primeira assercao cai.
+    #[test]
+    fn a_senha_da_cifra_que_falta_no_ambiente_e_erro_nomeado() {
+        const AUSENTE: &str = "PHXSQL_TESTE_372_CIFRA_QUE_NINGUEM_EXPORTA";
+        let j = Json::analisar(&format!(
+            r#"{{"token":"t","cifra":{{"ligada":true,"senha_env":"{AUSENTE}"}}}}"#
+        ))
+        .unwrap();
+        let c = Config::de_json(&j).expect("a leitura NAO pode recusar pela falta");
+        // `match`, e nao `expect_err`: com o defeito reposto o `Ok` traria
+        // o valor, e o `expect_err` o imprimiria na saida do teste.
+        let e = match c.cifra.senha() {
+            Ok(_) => panic!("variavel ausente virou senha vazia -- o defeito do 372"),
+            Err(e) => e.to_string(),
+        };
+        assert!(e.contains(AUSENTE) && e.contains("cifra"), "{e}");
+        // O cofre ligado RECUSA o arranque, como ja recusava -- agora dizendo
+        // qual variavel. O erro sai antes de o cofre global ser tocado.
+        let e = c.cifra.aplicar().unwrap_err().to_string();
+        assert!(e.contains(AUSENTE), "o cofre recusou sem nomear: {e}");
+        assert!(!e.contains("preencha"), "o erro velho, que mentia: {e}");
+        assert!(
+            c.avisos.iter().any(|a| a.contains(AUSENTE)),
+            "a falta nao virou aviso: {:?}",
+            c.avisos
+        );
+        assert_eq!(
+            c.para_json()
+                .campo("cifra")
+                .map(|x| x.texto_ou("senha", "").to_string()),
+            Some("(variavel ausente)".to_string())
+        );
+    }
+
+    /// `cifra_fio.chave_privada_env` que falta NAO troca a identidade do
+    /// servidor pela do arquivo.
+    ///
+    /// Era o pior dos cinco: a privada vazia fazia a busca seguir para o
+    /// arquivo, e o servidor lia uma chave velha ou SORTEAVA e gravava uma
+    /// nova -- o pino de todo cliente quebrava calado. A prova olha o disco:
+    /// com o defeito reposto, `estatica` devolve `Ok` e o `chave-do-fio.hex`
+    /// nasce.
+    #[test]
+    fn a_privada_do_fio_que_falta_no_ambiente_nao_vira_a_do_arquivo() {
+        const AUSENTE: &str = "PHXSQL_TESTE_372_FIO_QUE_NINGUEM_EXPORTA";
+        let d = DirTemp::novo("fio-372-ausente");
+        let config = d.join("config.json");
+        let j = Json::analisar(&format!(
+            r#"{{"token":"t","cifra_fio":{{"chave_privada_env":"{AUSENTE}"}}}}"#
+        ))
+        .unwrap();
+        let c = Config::de_json(&j).expect("a leitura NAO pode recusar pela falta");
+        // `match`, e nao `expect_err`: com o defeito reposto o `Ok` traria
+        // o valor, e o `expect_err` o imprimiria na saida do teste.
+        let e = match c.cifra_fio.estatica(Some(&config)) {
+            Ok(_) => panic!("a falta virou a chave do arquivo -- o defeito do 372"),
+            Err(e) => e.to_string(),
+        };
+        assert!(e.contains(AUSENTE) && e.contains("cifra_fio"), "{e}");
+        assert!(
+            !d.join("chave-do-fio.hex").exists(),
+            "a falta da variavel SORTEOU uma identidade nova no disco"
+        );
+        assert!(
+            c.avisos.iter().any(|a| a.contains(AUSENTE)),
+            "a falta nao virou aviso: {:?}",
+            c.avisos
+        );
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// O comportamento VELHO da privada do fio: com a variavel PRESENTE, a
+    /// chave e a dela, e nenhum arquivo nasce.
+    #[test]
+    fn a_privada_do_fio_com_a_variavel_presente_nada_muda() {
+        const PRESENTE: &str = "PHXSQL_TESTE_372_FIO_PRESENTE";
+        let privada = "99aa99aa99aa99aa99aa99aa99aa99aa99aa99aa99aa99aa99aa99aa99aa99aa";
+        std::env::set_var(PRESENTE, privada);
+        let d = DirTemp::novo("fio-372-presente");
+        let config = d.join("config.json");
+        let j = Json::analisar(&format!(
+            r#"{{"token":"t","cifra_fio":{{"chave_privada_env":"{PRESENTE}"}}}}"#
+        ))
+        .unwrap();
+        let c = Config::de_json(&j).unwrap();
+        let (k, avisos) = c.cifra_fio.estatica(Some(&config)).unwrap();
+        assert!(avisos.is_empty(), "{avisos:?}");
+        assert_eq!(phxsql_core::hash::para_hex(&k), privada);
+        assert!(!d.join("chave-do-fio.hex").exists());
+        assert!(c.avisos.is_empty(), "{:?}", c.avisos);
+        let texto = c.para_json().escrever();
+        assert!(!texto.contains(privada), "{texto}");
+        assert!(texto.contains("(do ambiente)"), "{texto}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// O aviso do DbLink chega pela lista de sempre -- a do `Config::ler`, que
+    /// o `main` imprime -- e nao por um segundo mecanismo.
+    #[test]
+    fn o_ler_traz_o_aviso_do_texto_puro_do_dblink() {
+        let d = DirTemp::novo("config-372-dblink");
+        let config = d.join("config.json");
+        std::fs::write(&config, r#"{"token":"t"}"#).unwrap();
+        // Sem cadastro: nada, que e o arranque de quase todo servidor.
+        let c = Config::ler(&config).unwrap();
+        assert!(
+            !c.avisos.iter().any(|a| a.contains("DbLink")),
+            "{:?}",
+            c.avisos
+        );
+
+        std::fs::write(
+            d.join("dblink.json"),
+            r#"{"dblink":[{"nome":"loja","senha":"SEGREDO-372"}]}"#,
+        )
+        .unwrap();
+        let c = Config::ler(&config).unwrap();
+        let aviso = c
+            .avisos
+            .iter()
+            .find(|a| a.contains("TEXTO PURO"))
+            .unwrap_or_else(|| panic!("o texto puro subiu calado: {:?}", c.avisos));
+        assert!(aviso.contains("\"loja\" (senha)"), "{aviso}");
+        assert!(
+            !aviso.contains("SEGREDO-372"),
+            "o aviso imprimiu a senha: {aviso}"
+        );
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
     #[test]
     fn a_senha_da_cifra_pode_vir_do_ambiente() {
         std::env::set_var("PHXSQL_TESTE_CIFRA", "vinda do ambiente");
@@ -5628,7 +5995,7 @@ mod tests {
         )
         .unwrap();
         let c = Config::de_json(&j).unwrap();
-        assert_eq!(c.cifra.senha(), "vinda do ambiente");
+        assert_eq!(c.cifra.senha().unwrap(), "vinda do ambiente");
         let texto = c.para_json().escrever();
         assert!(!texto.contains("vinda do ambiente"), "{texto}");
         assert!(texto.contains("(do ambiente)"));
@@ -7796,7 +8163,7 @@ mod testes_alertas {
                 "servidor":"rele","de":"phx@x.com","para":["a@x.com"],
                 "usuario":"phx","senha":"segredo-do-rele"}}}"#,
         );
-        assert_eq!(c.alertas.email.senha(), "segredo-do-rele");
+        assert_eq!(c.alertas.email.senha().unwrap(), "segredo-do-rele");
         let texto = c.para_json().escrever();
         assert!(
             !texto.contains("segredo-do-rele"),
@@ -7854,7 +8221,45 @@ mod testes_alertas {
                 "servidor":"rele","de":"phx@x.com","para":["a@x.com"],
                 "senha_env":"PHXSQL_TESTE_SMTP"}}}"#,
         );
-        assert_eq!(c.alertas.email.senha(), "vinda-do-ambiente");
+        assert_eq!(c.alertas.email.senha().unwrap(), "vinda-do-ambiente");
+    }
+
+    /// `alertas.email.senha_env` que falta: o envio recusa NOMEANDO a
+    /// variavel, antes de ir ao rele -- e o arranque sobe.
+    ///
+    /// O rele e acessorio, como o DbLink: a falta nao derruba o servidor, vira
+    /// aviso no arranque e erro no envio. O rele aponta para a porta 1, onde
+    /// nao ha ninguem: um erro de conexao aqui seria a prova de que o portao
+    /// ficou para depois da rede. Com o defeito reposto, `senha()` volta
+    /// `Ok("")` e a primeira assercao cai.
+    #[test]
+    fn a_senha_do_rele_que_falta_no_ambiente_e_erro_nomeado() {
+        const AUSENTE: &str = "PHXSQL_TESTE_372_SMTP_QUE_NINGUEM_EXPORTA";
+        let c = de(&format!(
+            r#"{{"token":"x","alertas":{{"ligado":true,"email":{{"ligado":true,
+                "servidor":"127.0.0.1","porta":1,"de":"phx@x.com","para":["a@x.com"],
+                "usuario":"phx","senha_env":"{AUSENTE}"}}}}}}"#
+        ));
+        // `match`, e nao `expect_err`: com o defeito reposto o `Ok` traria
+        // o valor, e o `expect_err` o imprimiria na saida do teste.
+        let e = match c.alertas.email.senha() {
+            Ok(_) => panic!("variavel ausente virou senha vazia -- o defeito do 372"),
+            Err(e) => e.to_string(),
+        };
+        assert!(e.contains(AUSENTE) && e.contains("alertas.email"), "{e}");
+        let e = crate::email::enviar(&c.alertas.email, "a", "b")
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains(AUSENTE), "o envio foi a rede sem a senha: {e}");
+        assert!(
+            c.avisos.iter().any(|a| a.contains(AUSENTE)),
+            "a falta nao virou aviso: {:?}",
+            c.avisos
+        );
+        assert!(
+            c.para_json().escrever().contains("(variavel ausente)"),
+            "a tela nao ve a falta"
+        );
     }
 }
 

@@ -2303,11 +2303,27 @@ pub const OPERACOES: &[Operacao] = &[
                 "a senha; prefira `senha_env` com o nome de uma variável de ambiente",
             ),
             opc(
+                "senha_env",
+                "string",
+                "o NOME da variável de ambiente de onde a senha vem; o arquivo \
+                 guarda só o nome. Variável que não existe no ambiente do \
+                 servidor NÃO vira senha vazia: a ligação fica trancada, recusa \
+                 conectar nomeando a variável, e a resposta a lista em \
+                 `variaveis_ausentes`",
+            ),
+            opc(
                 "token_remoto",
                 "string",
                 "só para `phxsql`: o token de serviço do outro PhxSql. Não se \
                  chama `token` porque esse nome já é o portão 1 DESTE servidor, \
                  e o portão o leria primeiro. Prefira `token_remoto_env`",
+            ),
+            opc(
+                "token_remoto_env",
+                "string",
+                "só para `phxsql`: o NOME da variável de ambiente de onde o \
+                 token vem, com a mesma regra da `senha_env` — variável que \
+                 falta tranca a ligação, nunca vira token vazio",
             ),
             opc("database", "string", "o banco padrão da ligação"),
             opc(

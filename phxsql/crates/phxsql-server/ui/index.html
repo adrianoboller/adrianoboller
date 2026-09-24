@@ -1386,6 +1386,10 @@ td.num.mal{color:var(--log)}
 .form-dbl .linha-chk{grid-column:1/-1;flex-direction:row;align-items:center;
                      gap:8px;font-size:12px;color:var(--texto-2)}
 .form-dbl .linha-chk input{width:auto}
+/* Mesma mordida do `.acoes-da-grade[hidden]`: o `display:flex` do `.cmp`
+   ganha do `[hidden]` do navegador, e o campo do token apareceria em toda
+   ligacao MySQL(R), com rotulo e tudo, sem ninguem que o lesse. */
+.form-dbl .cmp[hidden]{display:none}
 /* O assistente do DbLink. As caixas de marcar reusam o .linha-chk do
    form-dbl de proposito: o input{width:100%} global ja transformou um radio
    numa bolinha do tamanho da celula uma vez, e o linha-chk e o lugar onde
@@ -10864,6 +10868,11 @@ async function telaDbLinkDefinicoes() {
       { campo:"usuario", titulo:txt("tela.col_usuario","usuário") },
       { campo:"database", titulo:txt("tela.col_base","base"), formato:v => v ? esc(v) : "—" },
       { campo:"senha", titulo:txt("tela.col_senha","senha") },
+      // O token so existe no motor phxsql, e e nele que a ligacao TRANCADA
+      // aparece: `(variavel ausente)` e o rotulo que o servidor manda, e ele
+      // vai como veio -- a tela nao reescreve estado de credencial.
+      { campo:"token_remoto", titulo:txt("tela.col_token","token"),
+        formato:(v, l) => l.motor === "phxsql" ? esc(v) : "—" },
       { campo:"somente_leitura", titulo:txt("tela.col_escrita","escrita"),
         formato:v => v ? `<span class="pino ok">só lê</span>` : `<span class="pino mal">escreve</span>` },
       { campo:"max_linhas", titulo:txt("tela.col_teto","teto"), tipo:"numero", formato:fmt },
@@ -10883,10 +10892,17 @@ async function editarDbLink(nome) {
   const d = await api("dblink");
   const l = nome ? (d.ligacoes || []).find(x => x.nome === nome) : null;
   const motores = d.motores || [];
-  const campo = (id, rot, valor, tipo = "text", dica = "") =>
-    `<label class="cmp"><span>${rot}</span>
+  // `extra` entra no <label>: e por onde os campos do token ganham o
+  // `data-so-phx` que os esconde nos motores que nao tem token.
+  const campo = (id, rot, valor, tipo = "text", dica = "", extra = "") =>
+    `<label class="cmp" ${extra}><span>${rot}</span>
        <input id="${id}" class="campo" type="${tipo}" value="${esc(String(valor ?? ""))}">
        ${dica ? `<span class="leg">${dica}</span>` : ""}</label>`;
+  // O token so existe no motor phxsql: nos outros ele nao teria leitor, e
+  // campo sem leitor mente. Escondido, e nao ausente, para a troca de motor
+  // no formulario nao obrigar a redesenhar a folha.
+  const ePhx = l ? l.motor === "phxsql" : false;
+  const soPhx = `data-so-phx ${ePhx ? "" : "hidden"}`;
 
   folha(l ? `Ligação ${l.nome}` : "Nova ligação",
     l ? "o apelido não muda — para renomear, crie outra e apague esta"
@@ -10903,10 +10919,18 @@ async function editarDbLink(nome) {
        ${campo("fHost", "Endereço", l ? l.host : "127.0.0.1")}
        ${campo("fPorta", "Porta", l ? l.porta : 3306, "number")}
        ${campo("fUsuario", "Usuário", l ? l.usuario : "")}
-       ${campo("fSenha", "Senha", "", "password",
-         l ? "em branco mantém a que já está guardada" : "fica no arquivo de ligações, com permissão 0600")}
-       ${campo("fSenhaEnv", "Variável de ambiente da senha", l ? l.senha_env : "", "text",
-         "preenchida, a senha vem daqui e não do arquivo")}
+       ${campo("fSenha", esc(txt("tela.dbl_senha", "Senha")), "", "password",
+         esc(l ? txt("tela.dbl_mantem_o_guardado", "em branco, fica o que já estava guardado")
+               : txt("tela.dbl_fica_no_arquivo", "fica no arquivo de ligações, em texto puro, com permissão 0600")))}
+       ${campo("fSenhaEnv", esc(txt("tela.dbl_senha_env", "Variável de ambiente da senha")), l ? l.senha_env : "", "text",
+         esc(txt("tela.dbl_env_dica", "preenchida, o segredo vem desta variável e não do arquivo")))}
+       ${campo("fToken", esc(txt("tela.dbl_token", "Token do outro PhxSql")), "", "password",
+         esc(l ? txt("tela.dbl_mantem_o_guardado", "em branco, fica o que já estava guardado")
+               : txt("tela.dbl_fica_no_arquivo", "fica no arquivo de ligações, em texto puro, com permissão 0600")),
+         soPhx)}
+       ${campo("fTokenEnv", esc(txt("tela.dbl_token_env", "Variável de ambiente do token")), l ? l.token_remoto_env : "", "text",
+         esc(txt("tela.dbl_env_dica", "preenchida, o segredo vem desta variável e não do arquivo")),
+         soPhx)}
        ${campo("fBase", "Base padrão", l ? l.database : "")}
        ${campo("fDesc", "Descrição", l ? l.descricao : "")}
        ${campo("fTeto", "Teto de linhas", l ? l.max_linhas : 1000, "number")}
@@ -10927,6 +10951,11 @@ async function editarDbLink(nome) {
      </div>`);
 
   $("#btVolta2").onclick = () => telaDbLinkDefinicoes();
+  $("#fMotor").onchange = () => {
+    const phx = $("#fMotor").value === "phxsql";
+    document.querySelectorAll(".form-dbl [data-so-phx]").forEach(e => { e.hidden = !phx; });
+  };
+  $("#fMotor").onchange();
   const gravar = async () => {
     const nomeF = (l ? l.nome : $("#fNome").value).trim();
     const p = {
@@ -10947,15 +10976,36 @@ async function editarDbLink(nome) {
     // que já está guardada — e é isso que faz editar a porta não apagar a
     // credencial.
     else if ($("#fSenha").value) p.senha = $("#fSenha").value;
-    await api("dblink_salvar", p);
-    return nomeF;
+    // O token com a MESMA regra da senha, e a condicao dele e dele: sem o
+    // campo, o servidor mantem o que ja esta guardado. So vai no motor que o
+    // le -- nos outros ele seria gravado sem leitor.
+    if (p.motor === "phxsql") {
+      const envTok = $("#fTokenEnv").value.trim();
+      if (envTok) p.token_remoto_env = envTok;
+      else if ($("#fToken").value) p.token_remoto = $("#fToken").value;
+    }
+    const r = await api("dblink_salvar", p);
+    // A variavel que nao existe no ambiente do servidor tranca a ligacao. O
+    // aviso vem AGORA, no momento em que o nome errado foi digitado, e nao
+    // no dia do primeiro teste. A tela le a lista de nomes do servidor, e
+    // nao compara o rotulo.
+    const ausentes = ((r && r.ligacao) || {}).variaveis_ausentes || [];
+    if (ausentes.length)
+      avisar(preencher(txt("tela.dbl_variavel_ausente",
+        "variável {v} ausente no ambiente do servidor — {n} gravada, mas trancada até ele subir com ela."),
+        { n: nomeF, v: ausentes.join(", ") }), true);
+    return { n: nomeF, trancada: ausentes.length > 0 };
   };
   $("#btGravar").onclick = async () => {
-    try { const n = await gravar(); avisar(preencher(txt("tela.g_ligacao_gravada","ligação {n} gravada"), {n})); telaDbLinkDefinicoes(); }
+    try {
+      const { n, trancada } = await gravar();
+      if (!trancada) avisar(preencher(txt("tela.g_ligacao_gravada","ligação {n} gravada"), {n}));
+      telaDbLinkDefinicoes();
+    }
     catch (e) { avisar(String(e), true); }
   };
   $("#btTest2").onclick = async () => {
-    try { const n = await gravar(); await testarDbLink(n); }
+    try { const { n } = await gravar(); await testarDbLink(n); }
     catch (e) { avisar(String(e), true); }
   };
   const ap = $("#btApagar");

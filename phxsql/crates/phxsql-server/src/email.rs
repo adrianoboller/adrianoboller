@@ -62,6 +62,15 @@ pub fn enviar(cfg: &Email, assunto: &str, corpo: &str) -> Result<String> {
     if cfg.para.is_empty() {
         return Err(PhxError::Esquema("alertas.email sem destinatario".into()));
     }
+    // A senha ANTES de ir a rede, e so quando ha login: a `senha_env` que
+    // falta e erro que se sabe aqui, nomeando a variavel -- ir ao rele para
+    // ouvir «535 authentication failed» mandaria procurar a senha no rele
+    // (pedido 372).
+    let senha = if cfg.usuario.is_empty() {
+        ""
+    } else {
+        cfg.senha()?
+    };
     let alvo = format!("{}:{}", cfg.servidor, cfg.porta);
     let espera = Duration::from_secs(cfg.timeout_s);
     let fluxo = conectar(&alvo, espera)?;
@@ -94,7 +103,7 @@ pub fn enviar(cfg: &Email, assunto: &str, corpo: &str) -> Result<String> {
         sessao.comando(&base64::codificar(cfg.usuario.as_bytes()), &[334])?;
         // A senha entra aqui e em lugar nenhum mais: o erro devolvido por
         // `esperar` traz a resposta do SERVIDOR, nunca o que foi enviado.
-        sessao.comando(&base64::codificar(cfg.senha().as_bytes()), &[235])?;
+        sessao.comando(&base64::codificar(senha.as_bytes()), &[235])?;
     }
 
     sessao.comando(&format!("MAIL FROM:<{}>", uma_linha_so(&cfg.de)?), &[250])?;
