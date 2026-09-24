@@ -426,7 +426,7 @@ fn p2p_ligar(o: &Opcoes) -> Result<(), String> {
         let psk: [u8; 32] = phxsql_core::hash::de_hex(&psk)
             .and_then(|b| b.try_into().ok())
             .ok_or("credencial psk torta")?;
-        let (no, tun, resumo) = comandos::p2p_preparar(o, comandos::Segredo::Psk(psk), None)?;
+        let (no, tun, resumo) = comandos::p2p_preparar(o, comandos::Segredo::Psk(psk), None, None)?;
         eprintln!("phxvpn: {resumo}");
         return phxvpn::p2p::rodar(no, tun);
     }
@@ -441,20 +441,25 @@ fn p2p_ligar(o: &Opcoes) -> Result<(), String> {
         None => None,
     };
     std::env::remove_var("PHXVPN_SENHA_REPASSE");
-    // A do proxy vai ao ambiente DESTE processo so ate o `p2p_montar` a ler
-    // (e apagar): nunca por argumento, que aparece na lista de processos.
-    if let Some(u) = comandos::usuario_do_proxy(o) {
-        if std::env::var_os("PHXVPN_SENHA_PROXY").is_none() {
-            let s = senha("PHXVPN_SENHA_PROXY", &format!("senha de {u} no proxy"))?;
-            std::env::set_var("PHXVPN_SENHA_PROXY", s);
-        }
-    }
+    // Le uma vez so, aqui no comeco -- dali pra baixo (fio_do_no) a senha
+    // viaja por PARAMETRO, nunca pelo ambiente do processo: a mesa e um
+    // processo longo, de varias threads, e `set_var`/`getenv` concorrentes
+    // sao indefinidos na glibc (por isso `unsafe` na edicao 2024).
+    let senha_proxy = match comandos::usuario_do_proxy(o) {
+        Some(u) => Some(senha(
+            "PHXVPN_SENHA_PROXY",
+            &format!("senha de {u} no proxy"),
+        )?),
+        None => None,
+    };
+    std::env::remove_var("PHXVPN_SENHA_PROXY");
     let (no, tun, resumo) = comandos::p2p_preparar(
         o,
         comandos::Segredo::Senha(&senha_rede),
         senha_repasse
             .as_deref()
             .map(comandos::SegredoRepasse::Senha),
+        senha_proxy,
     )?;
     eprintln!("phxvpn: {resumo}");
     phxvpn::p2p::rodar(no, tun)

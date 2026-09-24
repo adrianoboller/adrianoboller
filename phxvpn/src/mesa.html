@@ -160,9 +160,22 @@ dialog h3{margin:12px 0 4px;font-size:13px;color:var(--fraco);font-weight:600}
     <label class="campo"><span>Usuário</span><input name="repasse_usuario" autocomplete="username"></label>
     <label class="campo"><span>Senha</span><input name="repasse_senha" type="password" autocomplete="current-password"></label>
   </fieldset>
+  <fieldset style="border:1px solid var(--linha);border-radius:8px;margin:4px 0 8px;padding:8px">
+    <legend style="color:var(--fraco);font-size:12px;padding:0 6px">Proxy HTTP (opcional)</legend>
+    <label class="campo"><span>Endereço (HOST:PORTA)</span><input name="proxy" placeholder="proxy.empresa:3128" autocomplete="off"></label>
+    <label class="campo"><span>Usuário</span><input name="proxy_usuario" autocomplete="off"></label>
+    <label class="campo"><span>Senha</span><input name="proxy_senha" type="password" autocomplete="off"></label>
+  </fieldset>
   <label style="display:flex;gap:8px;align-items:center;font-size:13px;margin:4px 0 6px"><input type="checkbox" name="lembrar" value="1" style="width:auto"> Lembrar a senha neste computador</label>
   <p class="msg"></p>
   <div class="linha-botoes"><button type="button" data-fechar>Cancelar</button><button class="inclui">Ligar</button></div>
+</form></dialog>
+
+<dialog id="d-remover"><form method="dialog" id="f-remover">
+  <h2>Remover membro</h2>
+  <p>Remover <b data-ip></b> da rede <span data-rede></span>? O tunel dele cai com todos assim que a malha receber o rol novo.</p>
+  <p class="msg"></p>
+  <div class="linha-botoes"><button type="button" data-fechar>Cancelar</button><button class="exclui">Remover</button></div>
 </form></dialog>
 
 <dialog id="d-chat"><form method="dialog" id="f-chat">

@@ -102,14 +102,22 @@ function desenharTudo(redes) {
         const cam = el("span", "caminho", m.caminho === "-" ? m.sessao : `${m.caminho} · ${m.sessao}`);
         cam.dataset.k = r.rede + "|" + m.ip;
         linha.append(p, ip, chave, cam);
+        const grupo = el("span", "botoes");
         if (r.ligada && m.online) {
           const bp = el("button", "", "Ping"); bp.onclick = () => pingar(r.rede, m.ip, bp);
           const bc = el("button", "", "Chat" + (naoLidas[r.rede + "|" + m.ip] ? ` (${naoLidas[r.rede + "|" + m.ip]})` : ""));
           if (naoLidas[r.rede + "|" + m.ip]) bc.classList.add("novo");
           bc.onclick = () => abrirChat(r.rede, m.ip);
-          const grupo = el("span", "botoes"); grupo.append(bp, bc);
-          linha.append(grupo);
+          grupo.append(bp, bc);
         }
+        // So o DONO ve o botao (membro nao chega a pedir; o motor tambem
+        // recusa -- a tela so evita o pedido inutil), e nunca para si mesmo:
+        // remove independe de estar ligado, porque so reescreve o rol.
+        if (r.sou_dono && !m.eu) {
+          const br = el("button", "exclui", "Remover"); br.onclick = () => abrirRemover(r.rede, m.ip);
+          grupo.append(br);
+        }
+        if (grupo.childNodes.length) linha.append(grupo);
         bloco.appendChild(linha);
       }
       if (!r.membros.length) bloco.appendChild(el("div", "membro", "sem membros ainda — use Convidar"));
@@ -228,6 +236,15 @@ function abrirLigar(r) {
     d.lembrar = d.lembrar === "1";
     if (!usa) { delete d.repasse_usuario; delete d.repasse_senha; }
     enviar(f, "/api/ligar", d, (x) => { $("d-ligar").close(); aviso(x.ok, true); atualizar(); }); };
+}
+
+// Confirmacao DENTRO da pagina -- nada de confirm() do navegador.
+function abrirRemover(rede, ip) {
+  const f = dialogo("d-remover");
+  $("d-remover").querySelector("[data-rede]").textContent = rede;
+  $("d-remover").querySelector("[data-ip]").textContent = ip;
+  f.onsubmit = (ev) => { ev.preventDefault();
+    enviar(f, "/api/remover", { rede, ip }, (r) => { $("d-remover").close(); aviso(r.ok, true); atualizar(); }); };
 }
 
 // USB: o dialogo so desenha; quem decide e o motor (usb.rs), pela /api/usb.

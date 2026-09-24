@@ -57,6 +57,7 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [x] P2P: perfuração de NAT mediada pelo repasse (modo `auto`) — com dois NATs, o ping migra ao caminho direto em ~2 s e o repasse carrega **0** datagrama de dados; NAT simétrico ou sondas bloqueadas seguem pelo repasse
 - [x] P2P: fio TCP até o repasse (`--tcp`, quadro de 2 bytes como o OpenVPN) e por proxy HTTP `CONNECT` (`--proxy`); o `auto` cai de UDP para TCP sem confirmação em 10 s — provado com UDP bloqueado por iptables e com só o proxy alcançando o repasse
 - [x] Modo servidor OpenVPN em TCP: rede com `proto tcp-server` (porta 443 escolhida pelo administrador) e perfil com `proto tcp-client` e `http-proxy` opcional — provado com o `openvpn` 2.6.19 real, UDP bloqueado e só o proxy alcançando o servidor
+- [x] Três recursos que só existiam por CLI/API foram para a tela (24/09/2026): programa de mesa com **Remover membro** (só o DONO vê o botão), campo de **proxy HTTP** ao ligar rede P2P, e painel web com escolha de **protocolo UDP/TCP** ao criar rede e **proxy HTTP** ao baixar o perfil — ver a seção dedicada abaixo
 
 ### Falta
 
@@ -1388,12 +1389,80 @@ bloqueado nos dois membros e a 443 barrada para a ana — **sem** o
 vpn.prova.local:443 200` no proxy e ping ana → admin 5/5. Usuário comum
 pedindo porta é recusado.
 
+## Três recursos que só existiam por CLI/API foram para a tela (24/09/2026)
+
+Três recursos vivam prontos no motor (`comandos.rs`, `fio.rs`, `rede_p2p.rs`,
+`painel.rs`, `http.rs`) e só se alcançavam por linha de comando ou API crua.
+Um motor só: nenhuma decisão nova entrou, só o gancho na tela.
+
+**Remover membro, no programa de mesa.** O botão aparece por linha de
+membro, e só quando o campo `sou_dono` da rede (novo em `/api/redes`) é
+verdadeiro e o membro não sou eu — os dois calculados no servidor
+(`Mesa::redes`), comparando a identidade local com `rede.dono` (a mesma
+chave Ed25519 do rol, ver «P2P: rol assinado») e, por membro, com o rol.
+Confirmação é uma `dialog` da própria página (`d-remover`), nunca
+`confirm()` do navegador. O clique chama `POST /api/remover`, que é
+`Mesa::remover` chamando `comandos::p2p_remover` — o MESMO motor de
+`phxvpn p2p remover`; quem não é dono recebe o erro dele (400, "nesta rede
+só quem a criou remove membro"), a tela só evita o pedido inútil escondendo
+o botão. Não depende da rede estar ligada: o rol é editado no arquivo, e o
+nó (se ligado) o relê em até 2 s.
+
+**Proxy HTTP ao ligar, no programa de mesa.** Três campos novos no diálogo
+Ligar (host:porta, usuário, senha — `type=password`), sempre visíveis
+porque a decisão (exigir TCP e um `--repasse`) já é do motor, que recusa com
+a frase de sempre se não fizer sentido. `Mesa::ligar` ganhou os três
+parâmetros e monta as MESMAS opções `proxy`/`proxy-usuario` que o
+`--proxy`/`--proxy-usuario` da linha de comando; a senha nunca entra em
+`Opcoes` nem na resposta HTTP.
+
+A primeira versão mandava a senha por `PHXVPN_SENHA_PROXY` (a mesma variável
+que `fio_do_no` já lia para o `phxvpn p2p ligar`), e o **integrador recusou
+antes de integrar**: a mesa é processo longo, de várias threads, e pode ligar
+duas redes com proxies diferentes ao mesmo tempo — variável de ambiente é
+estado GLOBAL do processo, e `set_var` concorrente com `getenv` de outra
+thread é comportamento indefinido na `glibc` (por isso virou `unsafe` na
+edição 2024 do Rust). Duas ligações simultâneas trocariam a senha uma da
+outra. Corrigido para o mesmo padrão que `senha_rede`/`senha_repasse` já
+usavam: a senha viaja por **parâmetro**. `fio_do_no`, `p2p_montar` e
+`p2p_preparar` (`comandos.rs`) ganharam `senha_proxy: Option<String>`; a CLI
+(`main.rs`) lê `PHXVPN_SENHA_PROXY`/terminal **uma vez**, no começo, e passa
+adiante — o ambiente nunca mais é tocado depois disso; a mesa passa direto o
+que veio no corpo do pedido HTTP, sem nunca ler nem escrever o ambiente. O
+console (`console.rs`) ganhou o mesmo gancho de pergunta que já tinha para o
+repasse (`self.perguntar`), de graça.
+
+**Protocolo e proxy, no painel web.** O diálogo «Criar/Entrar na rede»
+ganhou um seletor de protocolo (UDP padrão, TCP · porta 443) — só ao
+CRIAR, porque é decisão do servidor — e um campo de proxy HTTP, nos dois
+modos: `criar_rede_com` já aceitava proxy para o perfil do próprio dono
+(exige TCP), e `/api/redes/entrar` já aceitava `http_proxy` para o perfil
+de quem entra. A tela só liga os dois campos que já existiam em
+`transporte_do_pedido` (`http.rs`); o campo de proxy some quando o
+protocolo é UDP (e limpa o valor, para não mandar um proxy que o motor
+recusaria).
+
+**Provas.** `cargo test --lib` (155/155, dois testes novos em `mesa.rs`):
+`remover_membro_pela_api_so_o_dono_remove` (RED: com `so_o_dono` removido de
+`comandos::p2p_remover`, o teste falha — «rede sem rol no arquivo» em vez do
+403 esperado) e `proxy_senha_nao_vaza_na_resposta_e_a_mesa_nao_toca_o_ambiente`
+(uma sentinela fica em `PHXVPN_SENHA_PROXY` antes da chamada e tem de sair
+INTACTA depois — nem escrita, nem apagada; RED: devolvendo o `set_var` que o
+integrador recusou, o teste falha porque a sentinela vira a senha do
+pedido). Exercitado no Chromium (`docs/previa/21` a `26`):
+zero erro de console, zero rolagem lateral em 390 e 1280 px; o botão Remover
+some para o próprio dono e aparece só para o outro membro (verificado
+chamando `desenharTudo()` direto na página com uma rede sintética, já que
+provar a admissão real no rol pede um aperto Noise completo — já provado em
+`provas/rol-descoberta`).
+
 ## Limites que valem saber antes de usar
 
 - **Fio TCP até o repasse:** fica no TCP até a conexão cair (não volta
-  sozinho a experimentar o UDP); a janela e a bandeja ainda não têm campo de
-  proxy (só a linha de comando, o console e o arquivo da rede); e o proxy
-  só com `Basic` — NTLM/Negotiate (proxy corporativo Windows) não.
+  sozinho a experimentar o UDP); a janela ganhou campo de proxy ao Ligar
+  (ver «Três recursos que só existiam por CLI/API foram para a tela»); a
+  bandeja continua sem ele. O proxy só com `Basic` — NTLM/Negotiate (proxy
+  corporativo Windows) não.
 
 - **Perfuração de NAT não passa por NAT simétrico** (nem por NAT Linux sem
   filtro de entrada na wan, ver acima): nesses casos o tráfego segue pelo

@@ -510,12 +510,19 @@ impl<'a> Console<'a> {
                         "PHXVPN_SENHA_REPASSE",
                     )
                 });
+                // Mesmo motor do PHXVPN_SENHA_REPASSE acima: o console nao
+                // tem campo proprio de proxy, mas se a rede ja tem um
+                // configurado (`--proxy` na criacao), pergunta a senha dele.
+                let senha_proxy = comandos::usuario_do_proxy(o).map(|u| {
+                    (self.perguntar)(&format!("senha de {u} no proxy"), "PHXVPN_SENHA_PROXY")
+                });
                 let (no, tun, resumo) = comandos::p2p_preparar(
                     o,
                     comandos::Segredo::Senha(&senha),
                     senha_repasse
                         .as_deref()
                         .map(comandos::SegredoRepasse::Senha),
+                    senha_proxy,
                 )?;
                 let n2 = std::sync::Arc::clone(&no);
                 std::thread::spawn(move || {

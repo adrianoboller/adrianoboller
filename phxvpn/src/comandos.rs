@@ -477,13 +477,17 @@ pub fn p2p_remover(o: &Opcoes) -> R<String> {
 /// Monta o no P2P. Com o arquivo da rede (`p2p criar` / `p2p entrar`), tudo
 /// sai dele; sem arquivo, das opcoes (`ip`, `par` repetido, `porta`, `modo`,
 /// `repasse`). Devolve o no, a placa ja ligada e um resumo.
+///
+/// `senha_proxy`: ver o comentario de `fio_do_no` -- por parametro, nunca
+/// pelo ambiente do processo.
 #[cfg(any(target_os = "linux", windows))]
 pub fn p2p_preparar(
     o: &Opcoes,
     rede: Segredo,
     repasse: Option<SegredoRepasse>,
+    senha_proxy: Option<String>,
 ) -> R<(std::sync::Arc<p2p::No>, crate::tun::Tun, String)> {
-    let (no, ip, prefixo, porta, modo) = p2p_montar(o, rede, repasse)?;
+    let (no, ip, prefixo, porta, modo) = p2p_montar(o, rede, repasse, senha_proxy)?;
     // No Windows e o nome do adaptador TAP criado pelo `p2p placa`.
     let padrao = if cfg!(windows) { "phxvpn" } else { "phx0" };
     let interface = o.um("interface").unwrap_or(padrao);
@@ -575,8 +579,20 @@ pub fn usuario_do_proxy(o: &Opcoes) -> Option<String> {
 
 /// O fio ate o repasse, das opcoes e do arquivo. Padrao `auto`: UDP e, sem
 /// confirmacao, TCP na 443. Proxy implica TCP (UDP nao passa por `CONNECT`).
-/// A senha do proxy sai de `PHXVPN_SENHA_PROXY` e o ambiente e limpo na hora.
-fn fio_do_no(o: &Opcoes, rede: Option<&crate::rede_p2p::Rede>) -> R<crate::fio::CfgFio> {
+///
+/// A senha do proxy chega por PARAMETRO, nunca pelo ambiente do processo:
+/// `set_var`/`remove_var` concorrentes com `getenv` de outra thread sao
+/// comportamento indefinido na `glibc` (por isso viraram `unsafe` na edicao
+/// 2024), e a mesa (`mesa.rs`) e um processo longo, de varias threads, que
+/// pode ligar duas redes com proxies diferentes ao mesmo tempo -- variavel
+/// de ambiente e um estado GLOBAL do processo, e duas ligacoes trocariam a
+/// senha uma da outra. Quem le do ambiente ou do terminal (a CLI, uma vez
+/// so, no comeco) e quem passa por parametro daqui pra baixo.
+fn fio_do_no(
+    o: &Opcoes,
+    rede: Option<&crate::rede_p2p::Rede>,
+    senha_proxy: Option<String>,
+) -> R<crate::fio::CfgFio> {
     use crate::fio::{CfgFio, Escolha, Proxy};
     let escolha = escolha_do_fio(o, rede.and_then(|r| r.fio.as_deref()))?;
     let porta_tcp = porta_tcp_do_repasse(o, rede.and_then(|r| r.repasse_tcp))?.unwrap_or(443);
@@ -585,15 +601,9 @@ fn fio_do_no(o: &Opcoes, rede: Option<&crate::rede_p2p::Rede>) -> R<crate::fio::
         .or_else(|| rede.and_then(|r| r.proxy.clone()));
     let proxy = match proxy_end {
         Some(end) => {
-            let senha = std::env::var("PHXVPN_SENHA_PROXY").ok();
-            std::env::remove_var("PHXVPN_SENHA_PROXY");
-            let cred = match (usuario_do_proxy(o), senha) {
+            let cred = match (usuario_do_proxy(o), senha_proxy) {
                 (Some(u), Some(s)) => Some((u, s)),
-                (Some(u), None) => {
-                    return Err(format!(
-                        "falta a senha do usuario {u} no proxy (PHXVPN_SENHA_PROXY)"
-                    ))
-                }
+                (Some(u), None) => return Err(format!("falta a senha do usuario {u} no proxy")),
                 (None, _) => None,
             };
             Some(Proxy::novo(&end, cred)?)
@@ -631,6 +641,7 @@ pub fn p2p_montar(
     o: &Opcoes,
     segredo: Segredo,
     segredo_repasse: Option<SegredoRepasse>,
+    senha_proxy: Option<String>,
 ) -> R<Montado> {
     use crate::rede_p2p::Rede;
     let privada = identidade(o.um("chave").unwrap_or("p2p.chave"))?;
@@ -742,7 +753,7 @@ pub fn p2p_montar(
         no = no.sem_perfuracao();
     }
     if tem_repasse {
-        no = no.com_fio(fio_do_no(o, rede.as_ref())?)?;
+        no = no.com_fio(fio_do_no(o, rede.as_ref(), senha_proxy)?)?;
     } else if o.tem("tcp") || nao_vazia(o.um("proxy")).is_some() {
         return Err("TCP e proxy sao o fio ate o repasse: informe --repasse".into());
     }

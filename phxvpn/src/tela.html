@@ -176,6 +176,13 @@ th{color:var(--fraco);font-weight:500;font-size:12px}
     <label class="campo"><span>Nome da rede</span><input name="nome" required></label>
     <label class="campo" style="margin-top:8px"><span>Senha da rede (mín. 6)</span><input name="senha" type="password" required minlength="6"></label>
     <label class="campo" style="margin-top:8px" id="c-finalidade"><span>Finalidade</span><input name="finalidade"></label>
+    <fieldset id="c-transporte" style="margin-top:8px">
+      <legend>Transporte (modo servidor)</legend>
+      <label class="campo"><span>Protocolo</span><select name="protocolo" id="c-protocolo">
+        <option value="udp">UDP (padrão)</option>
+        <option value="tcp">TCP · porta 443</option></select></label>
+    </fieldset>
+    <label class="campo" id="c-proxy" style="margin-top:8px"><span>Proxy HTTP no perfil (opcional, HOST:PORTA)</span><input name="http_proxy" placeholder="proxy.empresa:3128" autocomplete="off"></label>
     <p class="msg" id="m-rede"></p>
     <div class="linha-botoes"><button type="button" id="d-cancelar">Cancelar</button><button class="inclui" type="submit" id="d-ok">Criar</button></div>
   </form>

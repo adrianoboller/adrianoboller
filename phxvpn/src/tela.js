@@ -82,12 +82,24 @@ async function carregarRedes() {
 }
 
 let modo = "criar";
+// O protocolo e do SERVIDOR (so faz sentido ao criar); o proxy vale nos dois
+// -- ele so muda o perfil .ovpn de quem baixa, nunca a rede em si.
+function ajustarProxyPeloProtocolo() {
+  if (modo !== "criar") { $("c-proxy").hidden = false; return; }
+  const esconde = $("c-protocolo").value !== "tcp";
+  $("c-proxy").hidden = esconde;
+  // Campo escondido nao pode mandar um proxy que o UDP recusaria.
+  if (esconde) $("c-proxy").querySelector("input").value = "";
+}
+$("c-protocolo").onchange = ajustarProxyPeloProtocolo;
 function abrirDialogo(m) {
   modo = m; $("f-rede").reset(); msg("m-rede", "");
   $("d-titulo").textContent = m === "criar" ? "Criar rede" : "Entrar na rede";
   $("d-ok").textContent = m === "criar" ? "Criar" : "Entrar";
   $("d-ok").className = m === "criar" ? "inclui" : "";
   $("c-finalidade").hidden = m !== "criar";
+  $("c-transporte").hidden = m !== "criar";
+  ajustarProxyPeloProtocolo();
   $("d-rede").showModal();
 }
 $("b-criar").onclick = () => abrirDialogo("criar");

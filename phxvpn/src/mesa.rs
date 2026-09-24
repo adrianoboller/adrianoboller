@@ -183,6 +183,10 @@ impl Mesa {
         let mut ligadas = self.ligadas.lock().unwrap_or_else(|e| e.into_inner());
         // Rede cujo laco terminou (erro de rede, placa perdida) sai da lista.
         ligadas.retain(|_, l| !l.fio.is_finished());
+        // Precisa da identidade para saber, por rede, se EU sou o dono -- so
+        // quem assina o rol pode remover membro (comandos::p2p_remover).
+        let privada = comandos::identidade(&self.chave())?;
+        let minha_publica = phxsql_core::x25519::chave_publica(&privada);
         let mut nomes: Vec<(String, Rede)> = Vec::new();
         for e in std::fs::read_dir(&self.pasta)
             .map_err(|e| e.to_string())?
@@ -200,17 +204,34 @@ impl Mesa {
             .into_iter()
             .map(|(nome, r)| {
                 let ligada = ligadas.get(&nome);
+                // Rede sem rol assinado (criada antes dele) nao tem dono: o
+                // motor (`p2p_remover`) recusa remover ali, e o botao some.
+                let sou_dono = r.dono == Some(crate::rol::publica_do_dono(&privada, &r.nome));
+                // O IP e a chave AMBOS ficam atrelados no rol -- por IP se
+                // acha a chave completa de quem esta online (a `situacao()`
+                // so devolve os 6 bytes de exibicao, insuficientes para
+                // comparar com a minha).
+                let membro_no_rol = |ip: std::net::Ipv4Addr| -> Option<bool> {
+                    r.rol
+                        .as_ref()?
+                        .membros
+                        .iter()
+                        .find(|m| m.ip == ip)
+                        .map(|m| m.chave == minha_publica)
+                };
                 let membros: Vec<Json> = match ligada {
                     Some(l) => {
                         l.no.situacao()
                             .into_iter()
                             .map(|[ip, caminho, sessao, chave]| {
+                                let eu = ip.parse().ok().and_then(membro_no_rol).unwrap_or(false);
                                 Json::objeto(vec![
                                     ("ip", Json::texto_de(ip)),
                                     ("caminho", Json::texto_de(caminho)),
                                     ("sessao", Json::texto_de(sessao.clone())),
                                     ("online", Json::de_bool(sessao.ends_with(" s"))),
                                     ("chave", Json::texto_de(chave)),
+                                    ("eu", Json::de_bool(eu)),
                                 ])
                             })
                             .collect()
@@ -219,12 +240,14 @@ impl Mesa {
                         .pares
                         .iter()
                         .map(|p| {
+                            let eu = membro_no_rol(p.ip).unwrap_or(false);
                             Json::objeto(vec![
                                 ("ip", Json::texto_de(p.ip.to_string())),
                                 ("caminho", Json::texto_de("-")),
                                 ("sessao", Json::texto_de("rede desligada")),
                                 ("online", Json::de_bool(false)),
                                 ("chave", Json::texto_de(para_hex(&p.chave[..6]))),
+                                ("eu", Json::de_bool(eu)),
                             ])
                         })
                         .collect(),
@@ -246,6 +269,7 @@ impl Mesa {
                         "lembrada",
                         Json::de_bool(crate::lembrar::existe(&self.pasta, &nome)),
                     ),
+                    ("sou_dono", Json::de_bool(sou_dono)),
                     ("membros", Json::Lista(membros)),
                 ])
             })
@@ -303,6 +327,18 @@ impl Mesa {
         .map(|_| format!("Você entrou na rede {nome}. Clique em Ligar para conectar."))
     }
 
+    /// Remove um membro do rol. Mesmo motor de `phxvpn p2p remover`
+    /// (`comandos::p2p_remover`): so o dono passa, os demais sao recusados
+    /// LA dentro -- a tela so esconde o botao, nao repete a regra.
+    pub fn remover(&self, rede: &str, ip: &str) -> R<String> {
+        comandos::p2p_remover(&opcoes(&[
+            ("rede", rede.into()),
+            ("arquivo", self.arquivo_da_rede(rede)),
+            ("chave", self.chave()),
+            ("ip", ip.into()),
+        ]))
+    }
+
     pub fn convidar(&self, rede: &str, senha: &str, endereco: &str, validade: &str) -> R<String> {
         comandos::p2p_convidar(
             &opcoes(&[
@@ -318,13 +354,27 @@ impl Mesa {
 
     /// Liga a rede. Senha vazia com segredo lembrado usa o lembrado; com
     /// `lembrar`, guarda o segredo DERIVADO (nunca a senha) depois de ligar.
+    /// `proxy`/`proxy_usuario`/`proxy_senha` sao o MESMO caminho do
+    /// `--proxy`/`--proxy-usuario` da linha de comando (fio.rs). A senha do
+    /// proxy viaja por PARAMETRO ate `fio_do_no`, nunca pelo ambiente do
+    /// processo: a mesa e um processo longo, de varias threads, e pode ligar
+    /// duas redes com proxies diferentes ao mesmo tempo -- `set_var` e uma
+    /// mudanca GLOBAL do processo, e `set_var` concorrente com `getenv` de
+    /// outra thread e comportamento indefinido na `glibc` (dai virar
+    /// `unsafe` na edicao 2024 do Rust). A CLI le do ambiente/terminal UMA
+    /// vez, no comeco (`main.rs`); a mesa nunca toca o ambiente, passa o que
+    /// veio no pedido HTTP direto.
     #[cfg(any(target_os = "linux", windows))]
+    #[allow(clippy::too_many_arguments)]
     pub fn ligar(
         &self,
         rede: &str,
         senha: &str,
         repasse_usuario: &str,
         repasse_senha: &str,
+        proxy: &str,
+        proxy_usuario: &str,
+        proxy_senha: &str,
         lembrar: bool,
     ) -> R<String> {
         use crate::comandos::{Segredo, SegredoRepasse};
@@ -384,11 +434,18 @@ impl Mesa {
                     format!("phx{n}")
                 },
             ),
+            ("proxy", proxy.into()),
+            ("proxy-usuario", proxy_usuario.into()),
         ]);
+        // A senha do proxy so vale a pena mandar se ha proxy -- senao e um
+        // segredo carregado sem ninguem para le-lo.
+        let senha_proxy =
+            (!proxy.is_empty() && !proxy_senha.is_empty()).then(|| proxy_senha.to_string());
         let (no, tun, _) = comandos::p2p_preparar(
             &o,
             Segredo::Psk(psk),
             credencial.map(SegredoRepasse::Credencial),
+            senha_proxy,
         )?;
         let resumo = format!("Rede {rede} ligada: seu IP é {}.", no.ip());
         if lembrar {
@@ -408,7 +465,18 @@ impl Mesa {
     }
 
     #[cfg(not(any(target_os = "linux", windows)))]
-    pub fn ligar(&self, _rede: &str, _senha: &str, _u: &str, _s: &str, _l: bool) -> R<String> {
+    #[allow(clippy::too_many_arguments)]
+    pub fn ligar(
+        &self,
+        _rede: &str,
+        _senha: &str,
+        _u: &str,
+        _s: &str,
+        _proxy: &str,
+        _pu: &str,
+        _ps: &str,
+        _l: bool,
+    ) -> R<String> {
         Err("o P2P roda no Linux e no Windows".into())
     }
 
@@ -574,8 +642,12 @@ impl Mesa {
                 &t("senha"),
                 &t("repasse_usuario"),
                 &t("repasse_senha"),
+                &t("proxy"),
+                &t("proxy_usuario"),
+                &t("proxy_senha"),
                 corpo.booleano_ou("lembrar", false),
             )),
+            ("POST", "/api/remover") => texto(self.remover(&t("rede"), &t("ip"))),
             ("POST", "/api/ping") => texto(self.pingar(&t("rede"), &t("ip"))),
             ("POST", "/api/chat") => texto(self.conversar(&t("rede"), &t("ip"), &t("texto"))),
             ("POST", "/api/mensagens") => {
@@ -804,5 +876,165 @@ mod testes {
         assert!(redes.corpo.contains("\"ligada\":false"));
         let _ = std::fs::remove_dir_all(pa);
         let _ = std::fs::remove_dir_all(pb);
+    }
+
+    /// `Remover membro` pela API: so o dono passa. Nao depende de um aperto
+    /// Noise de verdade para admitir o segundo membro no rol (isso ja e
+    /// provado em `provas/rol-descoberta`) -- aqui o alvo e a ROTA: ela
+    /// chama o MESMO motor de `phxvpn p2p remover` e devolve o erro dele.
+    #[test]
+    fn remover_membro_pela_api_so_o_dono_remove() {
+        use crate::rede_p2p::Rede;
+        let (pa, pb) = (pasta("rm-a"), pasta("rm-b"));
+        let a = Mesa::nova(pa.clone()).unwrap();
+        let b = Mesa::nova(pb.clone()).unwrap();
+        let (fa, fb) = (a.ficha().to_string(), b.ficha().to_string());
+        let r = a.tratar(&pedido(
+            "POST",
+            "/api/criar",
+            Some(&fa),
+            r#"{"rede":"Equipe","ip":"10.78.5.1/24"}"#,
+        ));
+        assert_eq!(r.status, 200, "{}", r.corpo);
+        let conv = a.tratar(&pedido(
+            "POST",
+            "/api/convidar",
+            Some(&fa),
+            r#"{"rede":"Equipe","senha":"s-equipe-1"}"#,
+        ));
+        assert_eq!(conv.status, 200, "{}", conv.corpo);
+        let codigo = Json::analisar(&conv.corpo)
+            .unwrap()
+            .texto_ou("ok", "")
+            .to_string();
+        let entrar = b.tratar(&pedido(
+            "POST",
+            "/api/entrar",
+            Some(&fb),
+            &format!(r#"{{"codigo":"{codigo}","senha":"s-equipe-1"}}"#),
+        ));
+        assert_eq!(entrar.status, 200, "{}", entrar.corpo);
+
+        // O campo que a janela usa para mostrar (ou esconder) o botao.
+        let redes_a = a.redes().unwrap().escrever();
+        assert!(redes_a.contains("\"sou_dono\":true"), "{redes_a}");
+        let redes_b = b.redes().unwrap().escrever();
+        assert!(redes_b.contains("\"sou_dono\":false"), "{redes_b}");
+
+        // RED: B nao criou a rede -- a rota devolve 400 com o motivo do
+        // motor, nao 200. Sem a guarda em `p2p_remover`, isto passaria.
+        let recusado = b.tratar(&pedido(
+            "POST",
+            "/api/remover",
+            Some(&fb),
+            r#"{"rede":"Equipe","ip":"10.78.5.2"}"#,
+        ));
+        assert_eq!(recusado.status, 400, "{}", recusado.corpo);
+        assert!(
+            recusado.corpo.contains("so quem a criou"),
+            "{}",
+            recusado.corpo
+        );
+
+        // Admite um segundo membro no rol de A para exercitar a remocao do
+        // lado do dono, sem montar um segundo no P2P de verdade.
+        let arquivo_a = a.arquivo_da_rede("Equipe");
+        let mut ra = Rede::ler(&arquivo_a).unwrap();
+        let privada_a = comandos::identidade(&a.chave()).unwrap();
+        let chave_intrusa =
+            phxsql_core::x25519::chave_publica(&phxsql_core::x25519::gerar_privada());
+        let novo_rol = ra
+            .rol
+            .as_ref()
+            .unwrap()
+            .com(
+                crate::rol::Membro {
+                    chave: chave_intrusa,
+                    ip: "10.78.5.9".parse().unwrap(),
+                    nome: None,
+                },
+                &privada_a,
+            )
+            .unwrap();
+        ra.rol = Some(novo_rol);
+        ra.gravar(&arquivo_a).unwrap();
+
+        let aceito = a.tratar(&pedido(
+            "POST",
+            "/api/remover",
+            Some(&fa),
+            r#"{"rede":"Equipe","ip":"10.78.5.9"}"#,
+        ));
+        assert_eq!(aceito.status, 200, "{}", aceito.corpo);
+        assert!(
+            aceito.corpo.contains("10.78.5.9 removido"),
+            "{}",
+            aceito.corpo
+        );
+        let rf = Rede::ler(&arquivo_a).unwrap();
+        assert_eq!(rf.rol.unwrap().membros.len(), 1, "so o dono deveria sobrar");
+
+        let _ = std::fs::remove_dir_all(pa);
+        let _ = std::fs::remove_dir_all(pb);
+    }
+
+    /// A senha do proxy HTTP nunca aparece no corpo da resposta, e a MESA
+    /// NUNCA toca o ambiente do processo para carrega-la -- ela viaja por
+    /// parametro ate `fio_do_no` (`comandos.rs`). Isso importa porque a
+    /// mesa e um processo longo, de varias threads, que pode ligar duas
+    /// redes com proxies diferentes ao mesmo tempo: variavel de ambiente e
+    /// estado GLOBAL do processo, e `set_var` concorrente com `getenv` de
+    /// outra thread e indefinido na `glibc`. A prova: um valor SENTINELA
+    /// fica na variavel antes da chamada (simulando outro uso do processo,
+    /// ou so o ambiente do teste) e tem de sair INTACTO depois -- nem
+    /// escrito, nem apagado.
+    #[test]
+    fn proxy_senha_nao_vaza_na_resposta_e_a_mesa_nao_toca_o_ambiente() {
+        let p = pasta("proxy");
+        let m = Mesa::nova(p.clone()).unwrap();
+        let f = m.ficha().to_string();
+        let chave_repasse = "a".repeat(64);
+        let criar = m.tratar(&pedido(
+            "POST",
+            "/api/criar",
+            Some(&f),
+            &format!(
+                r#"{{"rede":"Sombra","ip":"10.78.6.1/24","modo":"repasse","repasse":"{chave_repasse}@203.0.113.9:51821"}}"#
+            ),
+        ));
+        assert_eq!(criar.status, 200, "{}", criar.corpo);
+        std::env::set_var("PHXVPN_SENHA_PROXY", "sentinela-nao-mexer");
+        let r = m.tratar(&pedido(
+            "POST",
+            "/api/ligar",
+            Some(&f),
+            r#"{"rede":"Sombra","senha":"senha-da-rede-123456","proxy":"proxy.exemplo:3128","proxy_usuario":"ana","proxy_senha":"segredo-do-proxy-XYZ"}"#,
+        ));
+        assert!(
+            !r.corpo.contains("segredo-do-proxy-XYZ"),
+            "senha do proxy vazou na resposta: {}",
+            r.corpo
+        );
+        // RED: se `Mesa::ligar` voltar a usar `std::env::set_var`, a
+        // sentinela e sobrescrita pela senha do pedido e este assert falha.
+        assert_eq!(
+            std::env::var("PHXVPN_SENHA_PROXY").ok(),
+            Some("sentinela-nao-mexer".to_string()),
+            "a mesa mexeu em PHXVPN_SENHA_PROXY -- a senha tem de viajar por parametro"
+        );
+        std::env::remove_var("PHXVPN_SENHA_PROXY");
+        if r.status == 200 {
+            // Desliga o que ligou -- senao a placa TUN e a thread ficam
+            // presas no processo depois do teste (este ambiente tem
+            // CAP_NET_ADMIN e a placa abre de verdade).
+            let d = m.tratar(&pedido(
+                "POST",
+                "/api/desligar",
+                Some(&f),
+                r#"{"rede":"Sombra"}"#,
+            ));
+            assert_eq!(d.status, 200, "{}", d.corpo);
+        }
+        let _ = std::fs::remove_dir_all(p);
     }
 }
