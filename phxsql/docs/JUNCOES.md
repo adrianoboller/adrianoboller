@@ -213,6 +213,47 @@ pede leitura repetível; quem não pedir sabe o que tem.
 é o que os três motores maduros dizem por extenso, e aqui o `max` do braço
 continua sendo teto de leitura com `truncado`, não um `LIMIT`.
 
+## O corte do sub-pedido aparece — e não vira recusa
+
+Todo sub-pedido de uma composição (`consultar` com `de`, `juntar[].de`,
+`escalar[].de`, `existe[].de`, `em[].de`, e o braço-pedido do `unir`) para em
+`recursos.max_linhas`. Quando para, a composição responde sobre um **pedaço**:
+o `IN` diz «não casa» à chave que casava, o `EXISTS` diz «não existe» à linha
+que existia, e a conta sai com cara de resposta. Desde o pedido 419 o
+`consultar` publica **`truncado`**, e o `unir` com `partes` soma o corte do
+braço ao que já publicava.
+
+Três decisões que ficam escritas porque elas foram medidas:
+
+- **O corte não recusa.** Quem hoje compõe dentro do teto continua compondo
+  igual; `truncado` é campo novo, e quem não o lê recebe o que recebia. O
+  pedido 419 chegou prescrevendo trocar a comparação `>` por `>=` no guarda de
+  memória do `linhas_do_sub_pedido`: medido, isso recusa `LIMITE_EXCEDIDO` a
+  uma tabela que **cabe inteira** no teto (`len() == teto`) — e recusa
+  justamente o resultado de quem foi cortado, que é o que se queria contar. A
+  comparação continua `>`, e o teste que trava isso é
+  `a_composicao_que_cabe_no_teto_nao_recusa_nem_acusa_corte`.
+- **Aquele guarda não dispara.** As quatro funções que atendem as cinco
+  operações da composição recortam por `limite(p)` = `min(max pedido, teto)`:
+  nenhuma consegue devolver **mais** que o teto. O guarda fica como rede da
+  operação que entrar na lista sem recortar, e o comentário diz isso em vez de
+  se declarar resolvido.
+- **`max` pedido é `LIMIT`, não truncamento.** `{"max":1,"ordem":[…]}` é o
+  idioma documentado do `escalar`; marcar `truncado` nele faria toda consulta
+  correta acender a bandeira, e bandeira que acende sempre é bandeira que
+  ninguém lê. Só conta o corte que o teto impôs — sub-pedido sem `max`, ou com
+  `max` acima do teto. O `truncado` de um `consultar` aninhado, esse, viaja
+  **sem** o crivo: um `max` no nível de fora não pode apagar o corte que
+  aconteceu três níveis abaixo.
+
+Cada operação avisa no dialeto que já tinha — `ha_mais` no `varrer`,
+`encontrados` acima das linhas no `buscar`, `truncado` no `agrupar` e no
+`consultar`. Nenhuma ganhou campo novo: dar a todas um `truncado` seria
+escrever a mesma decisão com um segundo nome ao lado do primeiro. Quem traduz
+os quatro dialetos é **uma** função, `parou_no_teto`, encostada na lista
+`OPS_QUE_DEVOLVEM_LINHAS`; operação nova cai no ramo `_` dela e conta como
+**cortada** até alguém dizer como ela avisa.
+
 ## As operações
 
 | Operação | O que faz |

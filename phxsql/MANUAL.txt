@@ -1907,11 +1907,19 @@ CONSULTAR: A COMPOSICAO
          "colunas":["p.id",{"coluna":"c.nome","apelido":"cliente"}],
          "ordem":[{"coluna":"p.id"}],"max":1000}
 
-    Resposta: {"devolvidas":n,"achadas":n,"colunas":[{nome,tipo}],
-    "linhas":[...]}. O "colunas" e o MODELO da linha -- nome e tipo de cada
-    coluna, na grafia do "esquema" --, e vem ANTES das linhas: e por ele que
-    um consultar aninhado e o cliente sabem a forma mesmo quando nao vem
-    linha nenhuma.
+    Resposta: {"devolvidas":n,"achadas":n,"truncado":false,
+    "colunas":[{nome,tipo}],"linhas":[...]}. O "colunas" e o MODELO da linha
+    -- nome e tipo de cada coluna, na grafia do "esquema" --, e vem ANTES das
+    linhas: e por ele que um consultar aninhado e o cliente sabem a forma
+    mesmo quando nao vem linha nenhuma.
+
+    "truncado" diz que esta resposta fala de um PEDACO: algum sub-pedido (o
+    "de", um lado de "juntar", o "escalar", o "existe" ou o "em") -- ou o
+    recorte deste nivel -- parou em recursos.max_linhas. Sem ele um IN sobre
+    meio conjunto responde "nao casa" a chave que casava, e o numero sai com
+    cara de resposta. O "max" que VOCE pediu no sub-pedido nao acende a
+    bandeira: ele e um LIMIT, e voce recebeu o que pediu. O corte nao recusa
+    -- quem ja compoe dentro do teto continua compondo igual.
 
     OS PASSOS, NESTA ORDEM: de -> juntar (na ordem) -> escalar -> existe ->
     em -> expressao -> janela -> ordem -> pular/max -> colunas. A projecao vem

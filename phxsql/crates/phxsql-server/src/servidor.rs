@@ -12303,13 +12303,23 @@ impl Servidor {
     /// receber `linhas: []` e responder «nenhuma linha» sobre um resultado que
     /// existe. Operacao nova nasce RECUSADA ate alguem decidir o contrario --
     /// o mesmo principio de `OPS_EMPILHAVEIS`.
+    ///
+    /// # O terceiro valor: o sub-pedido PAROU no teto?
+    ///
+    /// Um sub-pedido que parou em `recursos.max_linhas` entrega um PEDACO, e
+    /// a composicao monta a resposta sobre esse pedaco: o `IN` responde «nao
+    /// casa» a chave que casava, o `EXISTS` responde «nao existe» a linha que
+    /// existia, e a conta sai com cara de resposta (pedido 419). O corte nao
+    /// vira recusa -- quem ja compoe dentro do teto nao pode parar de compor
+    /// --, vira o `truncado` da resposta. Quem traduz o dialeto de cada
+    /// operacao e `parou_no_teto`, logo abaixo.
     fn linhas_do_sub_pedido(
         &self,
         sub: &Json,
         base_de_fora: &str,
         rotulo: &str,
         sessao: &Sessao,
-    ) -> Result<(Vec<crate::consultar::Linha>, crate::consultar::Modelo)> {
+    ) -> Result<(Vec<crate::consultar::Linha>, crate::consultar::Modelo, bool)> {
         const OPS_QUE_DEVOLVEM_LINHAS: &[&str] =
             &["varrer", "buscar", "agrupar", "group_by", "consultar"];
         let op = sub.texto_ou("op", "varrer").trim().to_string();
@@ -12337,6 +12347,20 @@ impl Servidor {
             ))
         })?;
         let teto = self.max_linhas();
+        // ESTA RECUSA NAO E QUEM ACUSA O CORTE, e o `>` esta certo.
+        //
+        // Medido em 23/09/2026, funcao por funcao, nas quatro que atendem as
+        // cinco operacoes da lista: `varrer_a_pagina`, `op_buscar`,
+        // `op_agrupar` e `op_consultar` recortam todas por `self.limite(p)`,
+        // que e `min(max pedido, teto)`. Nenhuma delas consegue devolver MAIS
+        // que o teto, entao este `if` nao dispara -- ele e a rede da operacao
+        // que entrar na lista sem recortar, nao o aviso de que houve corte.
+        //
+        // E por isso ele segue `>` e nao `>=`: `len() == teto` e exatamente o
+        // resultado de quem FOI cortado pelo teto, o caso comum. Um `>=` aqui
+        // viraria o aviso que faltava numa RECUSA nova, contra composicao que
+        // hoje responde sem erro -- protecao que quebra quem ja funciona e
+        // estrago, nao protecao.
         if lista.len() as u64 > teto {
             return Err(PhxError::LimiteExcedido(format!(
                 "o {rotulo} trouxe {} linhas, acima do teto de {teto} de \
@@ -12345,6 +12369,7 @@ impl Servidor {
                 lista.len()
             )));
         }
+        let cortado = Self::parou_no_teto(&op, &pedido, &bruto, lista.len(), teto);
         let linhas: Vec<crate::consultar::Linha> = lista
             .iter()
             .map(|l| match l {
@@ -12372,7 +12397,58 @@ impl Servidor {
                 .collect(),
             None => declarado,
         };
-        Ok((linhas, modelo))
+        Ok((linhas, modelo, cortado))
+    }
+
+    /// O sub-pedido parou porque o TETO mandou parar?
+    ///
+    /// # Por que cada operacao avisa de um jeito, e por que a traducao fica
+    /// AQUI
+    ///
+    /// Nenhuma das cinco precisou ganhar campo novo: as quatro ja dizem que
+    /// pararam, cada uma na forma que faz sentido para ela. Dar a todas um
+    /// `truncado` seria escrever a MESMA decisao com um segundo nome ao lado
+    /// do primeiro -- o `ha_mais` do `varrer` ja e essa resposta.
+    ///
+    /// O preco e que alguem tem de saber os quatro dialetos, e este alguem e
+    /// UM so: esta funcao, encostada na lista `OPS_QUE_DEVOLVEM_LINHAS` de
+    /// proposito. Operacao nova entra na lista de cima e cai no `_` daqui,
+    /// que conta como CORTADA ate alguem dizer como ela avisa -- pelo mesmo
+    /// principio que faz a lista nascer recusando: ruido chama atencao,
+    /// silencio nao.
+    ///
+    /// # O corte que o pedido PEDIU nao e truncamento
+    ///
+    /// `{"max":1,"ordem":[...]}` e o idioma documentado do `escalar`, e
+    /// `{"max":10}` num sub-pedido e um `LIMIT`. Marcar truncado neles faria
+    /// toda composicao correta acender a bandeira, e bandeira que acende
+    /// sempre e bandeira que ninguem le -- que e como o corte calado
+    /// sobreviveria ao proprio conserto. So conta o corte que o teto impos:
+    /// sub-pedido sem `max`, ou com `max` acima do teto.
+    fn parou_no_teto(op: &str, sub: &Json, bruto: &Json, trazidas: usize, teto: u64) -> bool {
+        let do_teto = o_teto_e_quem_corta(sub, teto);
+        match op {
+            // `ha_mais` e a pagina que nao terminou a tabela -- a MESMA
+            // pergunta que um `truncado` responderia.
+            "varrer" => do_teto && bruto.booleano_ou("ha_mais", false),
+            // O indice achou mais do que a pagina carregou. Aqui o par
+            // `encontrados`/`linhas` e que diz, porque a busca por chave nao
+            // tem cursor para ter `ha_mais`.
+            "buscar" => do_teto && bruto.inteiro_ou("encontrados", 0).max(0) as usize > trazidas,
+            // O `agrupar` varre a tabela INTEIRA e RECUSA quando os grupos
+            // passam do teto (`o_teto_de_grupos_recusa_nomeando`), entao o
+            // `truncado` dele so pode ser o `max` de quem pediu, e o crivo de
+            // cima o apaga. Le-se o campo mesmo assim, e nao um `false`
+            // cravado: o dia em que aquela recusa virar corte, este ramo ja
+            // esta certo -- um `false` aqui seria a decisao de la escrita de
+            // novo, em outro arquivo do raciocinio.
+            "agrupar" | "group_by" => do_teto && bruto.booleano_ou("truncado", false),
+            // O `consultar` JA aplicou esta regra nos sub-pedidos dele, e o
+            // `truncado` dele viaja SEM o crivo: um `max` no nivel de fora
+            // nao pode apagar o corte que aconteceu tres niveis abaixo.
+            "consultar" => bruto.booleano_ou("truncado", false),
+            _ => true,
+        }
     }
 
     /// O modelo de uma tabela como o `varrer` e o `buscar` a devolvem:
@@ -12457,7 +12533,11 @@ impl Servidor {
         let de = p
             .campo("de")
             .ok_or_else(|| PhxError::Esquema("o consultar precisa de \"de\"".into()))?;
-        let (mut linhas, mut modelo) = self.linhas_do_sub_pedido(de, &base, "\"de\"", sessao)?;
+        // `cortado` acumula o corte de TODOS os sub-pedidos, e nao so o do
+        // `de`: o `IN` sobre meio conjunto e o `EXISTS` sobre meio lado dao
+        // resposta errada com cara de certa, exatamente como o `de` cortado.
+        let (mut linhas, mut modelo, mut cortado) =
+            self.linhas_do_sub_pedido(de, &base, "\"de\"", sessao)?;
 
         // ------------------------------------------------------------ juntar
         //
@@ -12494,8 +12574,9 @@ impl Servidor {
                     )));
                 }
                 usados.push(ap.to_lowercase());
-                let (mut direita, mut modelo_dir) =
+                let (mut direita, mut modelo_dir, cortou) =
                     self.linhas_do_sub_pedido(sub, &base, &rotulo, sessao)?;
+                cortado |= cortou;
                 cs::prefixar(&mut direita, &mut modelo_dir, &ap);
 
                 let itens = j.campo("em").and_then(Json::lista).unwrap_or(&[]);
@@ -12621,7 +12702,9 @@ impl Servidor {
                 .campo("de")
                 .ok_or_else(|| PhxError::Esquema(format!("o escalar {i} precisa de \"de\"")))?;
             let rotulo = format!("\"escalar\"[{i}]");
-            let (dentro, modelo_dentro) = self.linhas_do_sub_pedido(sub, &base, &rotulo, sessao)?;
+            let (dentro, modelo_dentro, cortou) =
+                self.linhas_do_sub_pedido(sub, &base, &rotulo, sessao)?;
+            cortado |= cortou;
             // Zero ou duas linhas RECUSA nomeando. Escolher a primeira faria a
             // resposta depender da ordem em que o motor devolveu as linhas, e
             // «depende da ordem» num numero e o defeito que nao se acha.
@@ -12700,8 +12783,9 @@ impl Servidor {
                 .campo("de")
                 .ok_or_else(|| PhxError::Esquema(format!("o existe {i} precisa de \"de\"")))?;
             let ap = apelido_do_lado(item, sub, &rotulo)?;
-            let (mut dentro, mut modelo_dentro) =
+            let (mut dentro, mut modelo_dentro, cortou) =
                 self.linhas_do_sub_pedido(sub, &base, &rotulo, sessao)?;
+            cortado |= cortou;
             cs::prefixar(&mut dentro, &mut modelo_dentro, &ap);
             let itens = item.campo("em").and_then(Json::lista).unwrap_or(&[]);
             if itens.is_empty() {
@@ -12762,7 +12846,9 @@ impl Servidor {
                 PhxError::Esquema(format!("o item {i} de \"em\" precisa de \"de\""))
             })?;
             let rotulo = format!("\"em\"[{i}]");
-            let (dentro, modelo_dentro) = self.linhas_do_sub_pedido(sub, &base, &rotulo, sessao)?;
+            let (dentro, modelo_dentro, cortou) =
+                self.linhas_do_sub_pedido(sub, &base, &rotulo, sessao)?;
+            cortado |= cortou;
             let campo_alvo = item.texto_ou("campo", &coluna).trim().to_string();
             // O `campo` se resolve contra o MODELO do sub-pedido, como o
             // `escalar` e o `existe` ja faziam -- e nao contra cada linha. O
@@ -12904,6 +12990,13 @@ impl Servidor {
         let pular = p.inteiro_ou("pular", 0).max(0) as usize;
         let max = self.limite(p) as usize;
         let recorte: Vec<cs::Linha> = linhas.into_iter().skip(pular).take(max).collect();
+        // O recorte DESTE nivel corta pelo mesmo teto, e cortar aqui e tao
+        // calado quanto cortar la embaixo. So conta quando nao foi o `max` de
+        // quem pediu -- `pular` entra na conta porque o que ele pula nao e
+        // corte, e sim a janela que o pedido escolheu.
+        let cortado = cortado
+            || (achadas > (pular + recorte.len()) as u64
+                && o_teto_e_quem_corta(p, self.max_linhas()));
 
         // A PROJECAO VEM POR ULTIMO, e e por isso que `ordem` pode falar de uma
         // coluna que a resposta nao mostra.
@@ -12985,6 +13078,10 @@ impl Servidor {
             // `achadas` antes do recorte, como no `varrer`: sem ele quem
             // pagina nao sabe se a pagina e a ultima.
             ("achadas", Json::de_u64(achadas)),
+            // Algum sub-pedido -- ou o recorte daqui -- parou no teto, e
+            // entao esta resposta fala de um PEDACO. Campo novo: quem nao o
+            // le continua recebendo o que recebia (pedido 419).
+            ("truncado", Json::Bool(cortado)),
             // A forma da linha, ANTES das linhas: e por ela que um consultar
             // aninhado e o cliente sabem o que vem, mesmo quando nao vem nada.
             ("colunas", cs::modelo_para_json(&modelo_saida)),
@@ -22005,6 +22102,10 @@ impl Servidor {
         for (i, sub) in lista.iter().enumerate() {
             bracos.push(self.braco_da_uniao(sub, base, i + 1, sessao)?);
         }
+        // Lido ANTES de as linhas sairem dos bracos: o `truncado` da uniao
+        // contava so o corte DELA, e um braco que parou no teto empilhava
+        // meio braco anunciando uniao inteira.
+        let cortou_braco = bracos.iter().any(|b| b.cortado);
 
         // As linhas SAEM do braco em vez de serem clonadas: elas ja estao em
         // memoria uma vez, e uma uniao de 500.000 linhas nao paga a segunda
@@ -22063,7 +22164,7 @@ impl Servidor {
                 Json::Lista(r.por_parte.iter().map(|n| Json::de_u64(*n)).collect()),
             ),
             ("repetidas", Json::de_u64(r.repetidas)),
-            ("truncado", Json::Bool(r.truncado)),
+            ("truncado", Json::Bool(r.truncado || cortou_braco)),
             ("ms", Json::de_u64(comeco.elapsed().as_millis() as u64)),
         ]))
     }
@@ -22106,7 +22207,7 @@ impl Servidor {
         sessao: &Sessao,
     ) -> Result<BracoDaUniao> {
         let rotulo = format!("braco {ordinal} da uniao");
-        let (linhas, modelo) = self.linhas_do_sub_pedido(sub, base, &rotulo, sessao)?;
+        let (linhas, modelo, cortado) = self.linhas_do_sub_pedido(sub, base, &rotulo, sessao)?;
 
         let cabecalho: Vec<(String, ColumnType)> = modelo
             .into_iter()
@@ -22138,6 +22239,7 @@ impl Servidor {
             linhas: valores,
             cabecalho,
             tabelas: crate::direito_coluna::tabelas_do_pedido(&op, sub),
+            cortado,
         })
     }
 
@@ -26035,6 +26137,9 @@ struct BracoDaUniao {
     cabecalho: Vec<(String, ColumnType)>,
     /// As tabelas que o braco nomeia, para a resposta dizer o que leu.
     tabelas: Vec<String>,
+    /// O braco parou no teto e empilhou so um pedaco. Vive aqui e nao no
+    /// resultado da uniao porque o corte e DO BRACO: a uniao tem o dela.
+    cortado: bool,
 }
 
 /// Esta coluna e do MOTOR, e por isso nao entra numa uniao?
@@ -26049,6 +26154,17 @@ fn coluna_do_motor(nome: &str) -> bool {
     // e o numero do slot, que a resposta do `varrer` poe ao lado da linha --
     // entao ele NAO sai pela lista do `phxsql-core` e precisa do nome aqui.
     n == "rowid" || phxsql_core::schema::e_coluna_de_sistema(&n)
+}
+
+/// Quem cortou este pedido: o teto do servidor, ou o `max` de quem pediu?
+///
+/// Separa o truncamento (o teto decidiu, e ninguem foi avisado) do `LIMIT` (o
+/// pedido escolheu, e recebeu o que escolheu). Sem `max`, ou com `max` acima
+/// do teto, quem corta e o teto. Vive fora do `impl` porque `op_consultar` e
+/// `parou_no_teto` fazem a MESMA pergunta sobre pedidos de niveis diferentes.
+fn o_teto_e_quem_corta(p: &Json, teto: u64) -> bool {
+    let pedido = p.inteiro_ou("max", 0).max(0) as u64;
+    pedido == 0 || pedido > teto
 }
 
 struct LinhasEmMemoria(std::vec::IntoIter<Vec<Value>>);
@@ -51990,5 +52106,314 @@ mod testes_escala_decimal {
         ] {
             pede(&s, pedido).unwrap_or_else(|e| panic!("passou a recusar: {e} -- em {pedido}"));
         }
+    }
+}
+
+/// **O corte que o teto impoe tem de APARECER na composicao (pedido 419).**
+///
+/// A premissa que estes testes medem, e que desmente o diagnostico do pedido:
+/// nenhuma das cinco operacoes de `OPS_QUE_DEVOLVEM_LINHAS` consegue devolver
+/// MAIS que `recursos.max_linhas`, porque as quatro funcoes que as atendem
+/// recortam por `self.limite(p)`, que ja e `min(max pedido, teto)`. Entao o
+/// `if lista.len() as u64 > teto` de `linhas_do_sub_pedido` nunca dispara --
+/// e trocar o `>` por `>=`, como o pedido prescrevia, nao acusaria o empate:
+/// RECUSARIA justamente o caso em que o teto cortou, que e o que se quer
+/// contar.
+#[cfg(test)]
+mod testes_corte_da_composicao {
+    use super::*;
+
+    fn dir(rotulo: &str) -> DirTemp {
+        DirTemp::novo(&format!("corte-{rotulo}"))
+    }
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    /// `clientes` com DUAS linhas e `pedidos` com CINCO, sob um teto de 2.
+    ///
+    /// As duas contagens sao escolhidas para separar os dois casos que um teto
+    /// unico juntaria: `clientes` cabe INTEIRA no teto (e cabe com igualdade,
+    /// `len() == teto`, que e o empate do pedido) e `pedidos` nao cabe. Assim
+    /// um teste mede o corte e o outro mede o nao-corte no mesmo servidor.
+    fn servidor(d: &std::path::Path, max_linhas: u64) -> Arc<Servidor> {
+        let c = Config {
+            base: d.to_path_buf(),
+            log_acessos: d.join("acessos.log"),
+            blacklist: d.join("blacklist.json"),
+            dblink: d.join("dblink.json"),
+            token: "t".into(),
+            max_linhas,
+            ..Config::default()
+        };
+        let s = Servidor::novo(c).unwrap();
+        let dono = Sessao::default();
+        s.executar("criar_database", &pedido(r#"{"database":"b"}"#), &dono)
+            .unwrap();
+        for tab in ["clientes", "pedidos"] {
+            s.executar(
+                "criar_tabela",
+                &pedido(&format!(
+                    r#"{{"database":"b","tabela":"{tab}","colunas":[
+                        {{"nome":"id","tipo":"Int4","obrigatoria":true}},
+                        {{"nome":"nome","tipo":"Str(20)"}}],
+                     "indices":[{{"nome":"porId","colunas":["id"],"unico":true,
+                                  "primario":true}},
+                                {{"nome":"porNome","colunas":["nome"]}}]}}"#
+                )),
+                &dono,
+            )
+            .unwrap();
+        }
+        let grava = |tab: &str, ate: i64| {
+            for id in 1..=ate {
+                s.executar(
+                    "inserir",
+                    &pedido(&format!(
+                        r#"{{"database":"b","tabela":"{tab}","linha":
+                            {{"id":{id},"nome":"igual"}}}}"#
+                    )),
+                    &Sessao::default(),
+                )
+                .unwrap();
+            }
+        };
+        grava("clientes", 2);
+        grava("pedidos", 5);
+        s
+    }
+
+    fn consultar(s: &Arc<Servidor>, corpo: &str) -> Result<Json> {
+        s.executar(
+            "consultar",
+            &pedido(&format!(r#"{{"database":"b",{corpo}}}"#)),
+            &Sessao::default(),
+        )
+    }
+
+    /// **A PREMISSA, medida: o sub-pedido para EM `teto`, nunca acima dele --
+    /// e a composicao tem de dizer que parou.**
+    #[test]
+    fn o_sub_pedido_que_parou_no_teto_diz_que_parou() {
+        let d = dir("teto");
+        let s = servidor(&d, 2);
+        let r = consultar(&s, r#""de":{"op":"varrer","tabela":"pedidos"}"#).unwrap();
+        // EXATAMENTE o teto: o numero que o `>` de `linhas_do_sub_pedido`
+        // espera (3 ou mais) nao existe.
+        assert_eq!(r.inteiro_ou("devolvidas", -1), 2, "{r:?}");
+        assert_eq!(r.inteiro_ou("achadas", -1), 2, "{r:?}");
+        assert!(
+            r.booleano_ou("truncado", false),
+            "cortou tres das cinco linhas e nao disse: {r:?}"
+        );
+    }
+
+    /// **O COMPORTAMENTO VELHO: quem cabe no teto nao muda em nada -- nem
+    /// quando cabe com igualdade.** E o teste que reprova o `>=` que o pedido
+    /// 419 prescrevia.
+    #[test]
+    fn a_composicao_que_cabe_no_teto_nao_recusa_nem_acusa_corte() {
+        let d = dir("cabe");
+        let s = servidor(&d, 2);
+        let r = consultar(&s, r#""de":{"op":"varrer","tabela":"clientes"}"#)
+            .expect("passou a recusar quem cabe no teto");
+        assert_eq!(r.inteiro_ou("devolvidas", -1), 2, "{r:?}");
+        assert!(
+            !r.booleano_ou("truncado", true),
+            "disse que cortou sem ter cortado: {r:?}"
+        );
+    }
+
+    /// **O `max` que o sub-pedido PEDIU e um LIMIT, e nao um truncamento.**
+    /// `{"max":1,"ordem":[...]}` e o idioma documentado do `escalar`: bandeira
+    /// que acende em toda consulta correta e bandeira que ninguem le.
+    #[test]
+    fn o_max_pedido_pelo_sub_pedido_nao_conta_como_corte() {
+        let d = dir("limit");
+        let s = servidor(&d, 1000);
+        let r = consultar(
+            &s,
+            r#""de":{"op":"varrer","tabela":"clientes"},
+               "escalar":[{"nome":"topo","campo":"id",
+                           "de":{"op":"varrer","tabela":"pedidos","max":1,
+                                 "ordem":[{"coluna":"id"}]}}]"#,
+        )
+        .unwrap();
+        assert!(
+            !r.booleano_ou("truncado", true),
+            "o LIMIT de quem pediu virou truncamento: {r:?}"
+        );
+    }
+
+    /// **O lado de DENTRO do `em` cortado pelo teto aparece.** Um `IN` sobre
+    /// meio conjunto responde «nao casa» a linha que casava -- numero errado
+    /// com cara de resposta, que e o estrago que o 419 nomeia.
+    #[test]
+    fn o_em_sobre_conjunto_cortado_diz_que_cortou() {
+        let d = dir("em");
+        let s = servidor(&d, 2);
+        let r = consultar(
+            &s,
+            r#""de":{"op":"varrer","tabela":"clientes"},
+               "em":[{"coluna":"id","de":{"op":"varrer","tabela":"pedidos"},
+                      "campo":"id"}]"#,
+        )
+        .unwrap();
+        assert!(
+            r.booleano_ou("truncado", false),
+            "o IN leu duas das cinco chaves e nao disse: {r:?}"
+        );
+    }
+
+    /// O mesmo pelo `existe` -- a semijunção sobre um lado cortado.
+    #[test]
+    fn o_existe_sobre_lado_cortado_diz_que_cortou() {
+        let d = dir("existe");
+        let s = servidor(&d, 2);
+        let r = consultar(
+            &s,
+            r#""de":{"op":"varrer","tabela":"clientes"},
+               "existe":[{"apelido":"p","de":{"op":"varrer","tabela":"pedidos"},
+                          "em":[{"esquerda":"id","direita":"p.id"}]}]"#,
+        )
+        .unwrap();
+        assert!(
+            r.booleano_ou("truncado", false),
+            "a semijunção viu dois dos cinco e nao disse: {r:?}"
+        );
+    }
+
+    /// O `buscar` avisa por outro dialeto -- `encontrados` acima das linhas
+    /// que vieram --, e a composicao tem de entender esse tambem.
+    #[test]
+    fn o_buscar_cortado_no_indice_diz_que_cortou() {
+        let d = dir("buscar");
+        let s = servidor(&d, 2);
+        let r = consultar(
+            &s,
+            r#""de":{"op":"buscar","tabela":"pedidos","indice":"porNome",
+                     "chave":["igual"]}"#,
+        )
+        .unwrap();
+        assert_eq!(r.inteiro_ou("devolvidas", -1), 2, "{r:?}");
+        assert!(
+            r.booleano_ou("truncado", false),
+            "o indice achou cinco, a pagina levou duas, e ninguem disse: {r:?}"
+        );
+    }
+
+    /// **O lado DIREITO de uma junção cortado pelo teto aparece.** O lado de
+    /// fora cabe inteiro; a junção casa contra meia tabela e produziria menos
+    /// linhas do que existem, sem uma palavra.
+    #[test]
+    fn o_lado_direito_da_juncao_cortado_diz_que_cortou() {
+        let d = dir("juntar");
+        let s = servidor(&d, 2);
+        let r = consultar(
+            &s,
+            r#""de":{"op":"varrer","tabela":"clientes"},"apelido":"c",
+               "juntar":[{"apelido":"p","tipo":"interno",
+                          "de":{"op":"varrer","tabela":"pedidos"},
+                          "em":[{"esquerda":"c.id","direita":"p.id"}]}]"#,
+        )
+        .unwrap();
+        assert!(
+            r.booleano_ou("truncado", false),
+            "casou contra duas das cinco linhas e nao disse: {r:?}"
+        );
+    }
+
+    /// **O `max` de FORA nao apaga o corte de dentro.** O `escalar` pede
+    /// `max: 1` -- um LIMIT legitimo --, e o sub-pedido dele e um `consultar`
+    /// que ja parou no teto. E o caso que separa o crivo (`parou_no_teto`
+    /// filtra o `max` pedido) da propagacao (o `truncado` de um `consultar`
+    /// viaja inteiro): sem a segunda, o LIMIT de cima esconderia o corte de
+    /// baixo, e o numero sairia errado com cara de resposta.
+    #[test]
+    fn o_limit_de_fora_nao_esconde_o_corte_de_dentro() {
+        let d = dir("escalar");
+        let s = servidor(&d, 2);
+        let r = consultar(
+            &s,
+            r#""de":{"op":"varrer","tabela":"clientes"},
+               "escalar":[{"nome":"topo","campo":"id",
+                           "de":{"op":"consultar","max":1,
+                                 "colunas":["id"],
+                                 "de":{"op":"varrer","tabela":"pedidos"}}}]"#,
+        )
+        .unwrap();
+        assert!(
+            r.booleano_ou("truncado", false),
+            "o max de fora apagou o corte de tres linhas la dentro: {r:?}"
+        );
+    }
+
+    /// **O corte viaja pelos niveis.** Um `consultar` dentro de outro: o de
+    /// fora cabe no teto e mesmo assim tem de dizer que o de dentro nao coube.
+    #[test]
+    fn o_corte_de_tres_niveis_abaixo_sobe_ate_a_resposta() {
+        let d = dir("niveis");
+        let s = servidor(&d, 2);
+        let r = consultar(
+            &s,
+            r#""de":{"op":"consultar","de":{"op":"consultar",
+                     "de":{"op":"varrer","tabela":"pedidos"}}}"#,
+        )
+        .unwrap();
+        assert!(
+            r.booleano_ou("truncado", false),
+            "o corte morreu no caminho: {r:?}"
+        );
+    }
+
+    /// O braço de `unir` que chegou como PEDIDO passa pelo mesmo
+    /// `linhas_do_sub_pedido`, e e o SEXTO chamador dele: o corte do braço
+    /// tem de entrar no `truncado` que a uniao ja publica.
+    #[test]
+    fn o_braco_da_uniao_cortado_entra_no_truncado_dela() {
+        let d = dir("uniao");
+        let s = servidor(&d, 2);
+        let r = s
+            .executar(
+                "unir",
+                &pedido(
+                    r#"{"database":"b","partes":[
+                         {"op":"varrer","tabela":"clientes","colunas":["nome"]},
+                         {"op":"varrer","tabela":"pedidos","colunas":["nome"]}]}"#,
+                ),
+                &Sessao::default(),
+            )
+            .unwrap();
+        assert!(
+            r.booleano_ou("truncado", false),
+            "o braço leu duas das cinco e a uniao disse que estava inteira: {r:?}"
+        );
+    }
+
+    /// E o comportamento velho da uniao: dois braços que cabem nao acusam
+    /// corte nenhum.
+    #[test]
+    fn a_uniao_de_bracos_que_cabem_nao_acusa_corte() {
+        let d = dir("uniao-cabe");
+        let s = servidor(&d, 1000);
+        let r = s
+            .executar(
+                "unir",
+                &pedido(
+                    r#"{"database":"b","partes":[
+                         {"op":"varrer","tabela":"clientes","colunas":["nome"]},
+                         {"op":"varrer","tabela":"pedidos","colunas":["nome"]}]}"#,
+                ),
+                &Sessao::default(),
+            )
+            .unwrap();
+        // `distinta` e o padrao: os ids 1 e 2 repetem entre as duas tabelas.
+        assert_eq!(r.inteiro_ou("quantas", -1), 5, "{r:?}");
+        assert_eq!(r.inteiro_ou("repetidas", -1), 2, "{r:?}");
+        assert!(
+            !r.booleano_ou("truncado", true),
+            "disse que cortou sem cortar: {r:?}"
+        );
     }
 }
