@@ -29,6 +29,7 @@ mod ganchos_do_rol;
 pub mod perfuracao;
 use ganchos_do_rol::rol_do_disco_se_mais_novo;
 
+use crate::fio;
 use crate::noise;
 use crate::rede_p2p::{self, Rede};
 use crate::repasse;
@@ -238,6 +239,11 @@ pub struct No {
     repasse: Option<RepasseCfg>,
     /// So no modo `auto`: o segredo com o repasse para pedir apresentacao.
     perfurador: Option<perfuracao::Perfurador>,
+    /// O fio ate o repasse (UDP, TCP ou TCP por proxy): a UNICA decisao
+    /// sobre por onde vai o pacote embrulhado -- ver `fio.rs`.
+    fio: Option<fio::FioRepasse>,
+    /// A ultima `geracao` do fio que o tique viu.
+    fio_visto: std::sync::atomic::AtomicU64,
     ultimo_registro: Mutex<Option<Instant>>,
     /// O arquivo da rede (convites abertos, pares) e onde grava-lo. Sem ele
     /// (pares so pela linha de comando), nao ha admissao nem persistencia.
@@ -332,6 +338,8 @@ impl No {
             modo: Modo::Direto,
             repasse: None,
             perfurador: None,
+            fio: None,
+            fio_visto: std::sync::atomic::AtomicU64::new(0),
             ultimo_registro: Mutex::new(None),
             rede: Mutex::new(None),
             ficha_de_entrada: Mutex::new(None),
@@ -544,6 +552,15 @@ impl No {
             (Some(r), Modo::Auto) => perfuracao::Perfurador::novo(&self.privada, &r.publica),
             _ => None,
         };
+        self.fio = match &repasse {
+            Some(r) => Some(fio::FioRepasse::novo(
+                &self.privada,
+                &r.publica,
+                r.endereco,
+                fio::CfgFio::default(),
+            )?),
+            None => None,
+        };
         self.repasse = repasse;
         Ok(self)
     }
@@ -552,6 +569,35 @@ impl No {
     pub fn sem_perfuracao(mut self) -> No {
         self.perfurador = None;
         self
+    }
+
+    /// Escolhe o fio ate o repasse (depois do `com_repasse`). Sem chamar,
+    /// fica o de antes: so UDP.
+    pub fn com_fio(mut self, cfg: fio::CfgFio) -> Result<No, String> {
+        if cfg.escolha != fio::Escolha::Udp && self.repasse.is_none() {
+            return Err("TCP e proxy sao o fio ate o repasse: informe --repasse".into());
+        }
+        if let Some(r) = &self.repasse {
+            self.fio = Some(fio::FioRepasse::novo(
+                &self.privada,
+                &r.publica,
+                r.endereco,
+                cfg,
+            )?);
+        }
+        Ok(self)
+    }
+
+    /// O fio ate o repasse, se ha repasse.
+    pub fn fio(&self) -> Option<&fio::FioRepasse> {
+        self.fio.as_ref()
+    }
+
+    /// Manda ao repasse pelo fio escolhido.
+    fn ao_repasse(&self, pacote: &[u8]) {
+        if let Some(f) = &self.fio {
+            f.enviar(&self.udp, pacote);
+        }
     }
 
     pub fn publica(&self) -> [u8; 32] {
@@ -566,11 +612,7 @@ impl No {
     fn mandar(&self, via: Via, chave_dele: &[u8; 32], pacote: &[u8]) {
         match via {
             Via::Direta(a) => self.enviar(a, pacote),
-            Via::Repasse => {
-                if let Some(r) = &self.repasse {
-                    self.enviar(r.endereco, &repasse::embrulhar_para(chave_dele, pacote));
-                }
-            }
+            Via::Repasse => self.ao_repasse(&repasse::embrulhar_para(chave_dele, pacote)),
         }
     }
 
@@ -693,15 +735,23 @@ impl No {
         // Do repasse so se aceita `DE`, e so do endereco do repasse.
         if let Some(r) = &self.repasse {
             if de == r.endereco {
-                if dado.first() == Some(&perfuracao::TIPO_APRESENTACAO) {
-                    self.apresentado(dado);
-                    return None;
-                }
-                let (origem, dentro) = repasse::desembrulhar_de(dado)?;
-                return self.despachar(dentro, Via::Repasse, Some(origem));
+                return self.da_repasse(dado);
             }
         }
         self.despachar(dado, Via::Direta(de), None)
+    }
+
+    /// Um pacote do repasse, por qualquer fio (datagrama UDP ou quadro TCP).
+    pub fn da_repasse(&self, dado: &[u8]) -> Option<Vec<u8>> {
+        if self.fio.as_ref().is_some_and(|f| f.chegou(dado)) {
+            return None;
+        }
+        if dado.first() == Some(&perfuracao::TIPO_APRESENTACAO) {
+            self.apresentado(dado);
+            return None;
+        }
+        let (origem, dentro) = repasse::desembrulhar_de(dado)?;
+        self.despachar(dentro, Via::Repasse, Some(origem))
     }
 
     /// `declarada`: a chave de origem que o repasse diz; tem de bater com a
@@ -1085,13 +1135,28 @@ impl No {
     /// Chamado a cada segundo: manter vivo, refazer aperto vencido, repetir
     /// aperto sem resposta e comecar com quem tem endereco e nao tem sessao.
     pub fn tique(&self) {
+        if let Some(f) = &self.fio {
+            f.vigiar();
+        }
         self.registrar_no_repasse();
         self.anunciar();
+        // Fio novo ate o repasse: o aperto pendente foi pelo fio velho e se
+        // perdeu; refaz agora (o REGISTRO acabou de sair antes, pelo mesmo
+        // fio, entao o repasse ja conhece este no quando o INICIO chegar).
+        let fio_novo = self.fio.as_ref().is_some_and(|f| {
+            let g = f.geracao();
+            self.fio_visto.swap(g, std::sync::atomic::Ordering::Relaxed) != g
+        });
         let mut e = self.estado.lock().expect("estado");
         self.sincronizar_rol(&mut e);
         let furos = self.perfurar(&mut e);
         let mut vivos = Vec::new();
         for i in 0..e.pares.len() {
+            if fio_novo {
+                if let Some((velho, _, _)) = e.pares[i].pendente.take() {
+                    e.indices.remove(&velho);
+                }
+            }
             let surdo = e.pares[i]
                 .sem_resposta_desde
                 .is_some_and(|t| t.elapsed() >= SURDO_APOS);
@@ -1142,11 +1207,11 @@ impl No {
 
     /// Renova o registro no repasse (e, com isso, o furo no NAT ate ele).
     fn registrar_no_repasse(&self) {
-        let Some(r) = &self.repasse else {
+        let (Some(r), Some(f)) = (&self.repasse, &self.fio) else {
             return;
         };
         let mut ultimo = self.ultimo_registro.lock().expect("registro");
-        if ultimo.is_some_and(|t| t.elapsed() < repasse::RENOVAR_REGISTRO) {
+        if !f.registro_devido(*ultimo) {
             return;
         }
         if let Ok(p) = repasse::registro(
@@ -1155,7 +1220,8 @@ impl No {
             transporte::carimbo_agora(),
             r.conta.as_ref(),
         ) {
-            self.enviar(r.endereco, &p);
+            self.ao_repasse(&p);
+            f.registro_enviado();
             *ultimo = Some(Instant::now());
         }
     }
@@ -1288,7 +1354,10 @@ impl No {
             .map(|p| {
                 let via = match p.via {
                     Some(Via::Direta(a)) => format!("direto {a}"),
-                    Some(Via::Repasse) => "repasse".into(),
+                    Some(Via::Repasse) => match &self.fio {
+                        Some(f) if f.no_tcp() => format!("repasse ({})", f.descricao()),
+                        _ => "repasse".into(),
+                    },
                     None => "-".into(),
                 };
                 let sessao = match &p.atual {
@@ -1323,6 +1392,23 @@ pub fn rodar(no: Arc<No>, tun: crate::tun::Tun) -> Result<(), String> {
             }
         })
     };
+    // O fio TCP ate o repasse (quando pode haver): conecta, reconecta e le
+    // os quadros. Com o fio em UDP, so dorme.
+    let tcp = no
+        .fio
+        .as_ref()
+        .is_some_and(|f| f.escolha() != fio::Escolha::Udp)
+        .then(|| {
+            let (no, tun) = (Arc::clone(&no), Arc::clone(&tun));
+            std::thread::spawn(move || {
+                while !no.desligado() {
+                    let quadro = no.fio.as_ref().and_then(|f| f.receber());
+                    if let Some(ip) = quadro.and_then(|q| no.da_repasse(&q)) {
+                        let _ = tun.escrever(&ip);
+                    }
+                }
+            })
+        });
     let relogio = {
         let no = Arc::clone(&no);
         std::thread::spawn(move || {
@@ -1346,10 +1432,17 @@ pub fn rodar(no: Arc<No>, tun: crate::tun::Tun) -> Result<(), String> {
                     let _ = tun.escrever(&ip);
                 }
             }
+            // ConnectionReset/Refused: o Windows os devolve no `recv_from` de
+            // UDP quando um envio anterior levou ICMP «porta inalcancavel» --
+            // exatamente a rede que bloqueia o UDP e manda o no para o TCP.
+            // Nao e o soquete que morreu; derrubar o no ali mataria a queda.
             Err(e)
                 if matches!(
                     e.kind(),
-                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                    std::io::ErrorKind::WouldBlock
+                        | std::io::ErrorKind::TimedOut
+                        | std::io::ErrorKind::ConnectionReset
+                        | std::io::ErrorKind::ConnectionRefused
                 ) => {}
             Err(e) => {
                 no.desligar();
@@ -1361,6 +1454,9 @@ pub fn rodar(no: Arc<No>, tun: crate::tun::Tun) -> Result<(), String> {
     // sistema apaga a interface.
     let _ = placa.join();
     let _ = relogio.join();
+    if let Some(t) = tcp {
+        let _ = t.join();
+    }
     resultado
 }
 

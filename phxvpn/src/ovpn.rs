@@ -24,6 +24,41 @@ pub struct Rede<'a> {
     pub octeto: u8,
     /// Chave `tls-crypt-v2` (uma por membro) em vez da `tls-crypt` unica.
     pub v2: bool,
+    /// `proto tcp-server` / `tcp-client` em vez de UDP: a rede que so deixa
+    /// sair TCP/443, ou so por proxy HTTP (que so leva TCP).
+    pub tcp: bool,
+}
+
+impl Rede<'_> {
+    fn proto(&self, lado: &str) -> String {
+        if self.tcp {
+            format!("tcp-{lado}")
+        } else {
+            "udp".into()
+        }
+    }
+}
+
+/// `host:porta` de um proxy HTTP que pode ir para dentro do perfil. O perfil
+/// e um arquivo de diretivas, uma por linha: espaco ou quebra de linha aqui
+/// injetaria diretiva (`up /bin/sh ...`) no perfil de outra pessoa.
+pub fn validar_http_proxy(t: &str) -> Result<(String, u16), String> {
+    let (h, p) = t
+        .rsplit_once(':')
+        .ok_or("http-proxy no formato host:porta")?;
+    let porta = p
+        .parse::<u16>()
+        .ok()
+        .filter(|p| *p > 0)
+        .ok_or("http-proxy: porta invalida")?;
+    let h = h.trim_start_matches('[').trim_end_matches(']');
+    let ok = (1..=253).contains(&h.len())
+        && h.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b".-:".contains(&b));
+    if !ok {
+        return Err("http-proxy: host so com letras, digitos, ponto, hifen e dois-pontos".into());
+    }
+    Ok((h.to_string(), porta))
 }
 
 pub struct Servidor<'a> {
@@ -45,7 +80,7 @@ pub fn conf_servidor(rede: &Rede, dir: &str) -> String {
     format!(
         "# phxvpn -- rede «{nome}» (gerado; nao edite, o painel reescreve)\n\
 port {porta}\n\
-proto udp\n\
+proto {proto}\n\
 dev tun\n\
 topology subnet\n\
 server {sub} 255.255.255.0\n\
@@ -70,6 +105,7 @@ status-version 2\n\
 verb 3\n",
         nome = rede.nome,
         porta = rede.porta,
+        proto = rede.proto("server"),
         sub = subrede(rede.octeto),
         sem_root = sem_root(),
         tls = if rede.v2 {
@@ -297,6 +333,8 @@ pub struct Perfil<'a> {
     pub cert_pem: &'a str,
     pub chave_pem: &'a str,
     pub tls_crypt: &'a str,
+    /// Proxy HTTP do lado do membro (`host:porta`, ja validado). So com TCP.
+    pub http_proxy: Option<(&'a str, u16)>,
 }
 
 pub fn perfil_membro(p: &Perfil) -> String {
@@ -304,8 +342,9 @@ pub fn perfil_membro(p: &Perfil) -> String {
         "# phxvpn -- rede «{rede}» em {srv}\n\
 client\n\
 dev tun\n\
-proto udp\n\
+proto {proto}\n\
 remote {end} {porta}\n\
+{proxy}\
 resolv-retry infinite\n\
 nobind\n\
 persist-key\n\
@@ -323,6 +362,13 @@ verb 3\n\
         srv = p.servidor.nome,
         end = p.servidor.endereco,
         porta = p.rede.porta,
+        proto = p.rede.proto("client"),
+        proxy = match p.http_proxy {
+            // O OpenVPN so passa TCP por proxy HTTP; em UDP, a linha seria
+            // recusada ao abrir o perfil.
+            Some((h, porta)) if p.rede.tcp => format!("http-proxy {h} {porta}\n"),
+            _ => String::new(),
+        },
         ca = p.ca_pem,
         cert = p.cert_pem,
         key = p.chave_pem,
@@ -366,6 +412,7 @@ mod testes {
             porta: 1,
             octeto: 1,
             v2: true,
+            tcp: false,
         };
         let s = Servidor {
             nome: "s",
@@ -379,6 +426,7 @@ mod testes {
                 cert_pem: "",
                 chave_pem: "",
                 tls_crypt: tc,
+                http_proxy: None,
             })
         };
         assert!(p(&format!("{INICIO_V2_CLIENTE}\nxx\n")).contains("<tls-crypt-v2>"));
@@ -394,6 +442,7 @@ mod testes {
             porta: 1195,
             octeto: 1,
             v2: false,
+            tcp: false,
         };
         let c = conf_servidor(&r, "/var/lib/phxvpn/redes/1");
         assert!(c.contains("port 1195\n"));
@@ -412,6 +461,7 @@ mod testes {
             porta: 1195,
             octeto: 1,
             v2: false,
+            tcp: false,
         };
         let s = Servidor {
             nome: "vpn1",
@@ -424,10 +474,56 @@ mod testes {
             cert_pem: "C\n",
             chave_pem: "K\n",
             tls_crypt: "T\n",
+            http_proxy: None,
         });
         assert!(p.contains("remote vpn.empresa.com.br 1195\n"));
         assert!(p.contains("remote-cert-tls server\n"));
         assert!(p.contains("verify-x509-name vpn1 name\n"));
         assert!(p.contains("<key>\nK\n</key>"));
+    }
+
+    #[test]
+    fn rede_tcp_vira_tcp_server_e_perfil_tcp_client_com_proxy() {
+        let r = Rede {
+            nome: "Hotel",
+            porta: 443,
+            octeto: 2,
+            v2: false,
+            tcp: true,
+        };
+        let c = conf_servidor(&r, "/d");
+        assert!(c.contains("port 443\nproto tcp-server\n"), "{c}");
+        let s = Servidor {
+            nome: "vpn1",
+            endereco: "vpn.empresa.com.br",
+        };
+        let (h, p) = validar_http_proxy("proxy.hotel.local:3128").unwrap();
+        let perfil = |rede: &Rede| {
+            perfil_membro(&Perfil {
+                rede,
+                servidor: &s,
+                ca_pem: "",
+                cert_pem: "",
+                chave_pem: "",
+                tls_crypt: "",
+                http_proxy: Some((&h, p)),
+            })
+        };
+        let t = perfil(&r);
+        assert!(t.contains("proto tcp-client\nremote vpn.empresa.com.br 443\nhttp-proxy proxy.hotel.local 3128\n"), "{t}");
+        // Em UDP o proxy nao entra (o OpenVPN recusaria o perfil).
+        let u = Rede { tcp: false, ..r };
+        let t = perfil(&u);
+        assert!(t.contains("proto udp\n") && !t.contains("http-proxy"));
+        assert!(conf_servidor(&u, "/d").contains("proto udp\n"));
+    }
+
+    #[test]
+    fn http_proxy_nao_injeta_diretiva_no_perfil() {
+        assert!(validar_http_proxy("10.0.0.4:3128").is_ok());
+        assert!(validar_http_proxy("[2001:db8::1]:3128").is_ok());
+        for ruim in ["p:3128\nup /bin/sh", "p 3128", "p:0", "p", "p;x:1", ":3128"] {
+            assert!(validar_http_proxy(ruim).is_err(), "{ruim:?} passou");
+        }
     }
 }

@@ -194,15 +194,27 @@ pub fn perfil_de_rede(
     criar: bool,
     rede: &str,
     senha_rede: &str,
-    finalidade: &str,
-    saida: Option<&str>,
+    o: &Opcoes,
 ) -> R<String> {
+    let (finalidade, saida) = (o.um("finalidade").unwrap_or(""), o.um("saida"));
     let mut pedido = vec![
         ("nome", Json::texto_de(rede)),
         ("senha", Json::texto_de(senha_rede)),
     ];
     if criar {
         pedido.push(("finalidade", Json::texto_de(finalidade)));
+        // Rede OpenVPN por TCP (e porta, so o administrador): a rede que so
+        // deixa sair TCP/443.
+        if let Some(p) = nao_vazia(o.um("protocolo")) {
+            pedido.push(("protocolo", Json::texto_de(p)));
+        }
+        if let Some(p) = nao_vazia(o.um("porta")) {
+            let n: u16 = p.parse().map_err(|_| format!("porta invalida: {p}"))?;
+            pedido.push(("porta", Json::de_i64(n as i64)));
+        }
+    }
+    if let Some(p) = nao_vazia(o.um("http-proxy")) {
+        pedido.push(("http_proxy", Json::texto_de(p)));
     }
     let rota = if criar {
         "/api/redes"
@@ -305,6 +317,14 @@ pub fn p2p_criar(o: &Opcoes) -> R<String> {
     if let Some(u) = o.um("repasse-usuario") {
         crate::repasse::validar_usuario(u)?;
         r.repasse_usuario = Some(u.to_string());
+    }
+    // O fio ate o repasse fica no arquivo (a senha do proxy, nunca).
+    r.fio = escolha_do_fio(o, None)?.map(|e| e.texto().to_string());
+    r.repasse_tcp = porta_tcp_do_repasse(o, None)?;
+    r.proxy = nao_vazia(o.um("proxy")).map(str::to_string);
+    r.proxy_usuario = nao_vazia(o.um("proxy-usuario")).map(str::to_string);
+    if let Some(p) = &r.proxy {
+        crate::fio::Proxy::novo(p, None)?;
     }
     let caminho = arquivo_da_rede(o)?;
     if std::path::Path::new(&caminho).exists() {
@@ -469,7 +489,10 @@ pub fn p2p_preparar(
     let interface = o.um("interface").unwrap_or(padrao);
     let tun = crate::tun::Tun::abrir(interface, ip, prefixo, p2p::MTU)?;
     let resumo = format!(
-        "P2P no ar -- {interface} {ip}/{prefixo}, UDP {porta}, modo {modo:?}, chave {}",
+        "P2P no ar -- {interface} {ip}/{prefixo}, UDP {porta}, modo {modo:?}{}, chave {}",
+        no.fio()
+            .map(|f| format!(", fio do repasse {}", f.escolha().texto()))
+            .unwrap_or_default(),
         para_hex(&no.publica())
     );
     let no = std::sync::Arc::new(no);
@@ -508,6 +531,89 @@ pub enum Segredo<'a> {
 pub enum SegredoRepasse<'a> {
     Senha(&'a str),
     Credencial([u8; 32]),
+}
+
+fn nao_vazia(t: Option<&str>) -> Option<&str> {
+    t.filter(|t| !t.trim().is_empty())
+}
+
+/// `--tcp` (bandeira) ou `--fio auto|udp|tcp`, senao o do arquivo.
+fn escolha_do_fio(o: &Opcoes, arquivo: Option<&str>) -> R<Option<crate::fio::Escolha>> {
+    if o.tem("tcp") {
+        return Ok(Some(crate::fio::Escolha::Tcp));
+    }
+    nao_vazia(o.um("fio"))
+        .or(arquivo)
+        .map(crate::fio::Escolha::de_texto)
+        .transpose()
+}
+
+fn porta_tcp_do_repasse(o: &Opcoes, arquivo: Option<u16>) -> R<Option<u16>> {
+    match nao_vazia(o.um("repasse-tcp")) {
+        Some(p) => p
+            .parse::<u16>()
+            .ok()
+            .filter(|p| *p > 0)
+            .map(Some)
+            .ok_or_else(|| format!("porta TCP do repasse invalida: {p}")),
+        None => Ok(arquivo),
+    }
+}
+
+/// O usuario do proxy HTTP desta rede (opcao ou arquivo), para quem chama
+/// saber se precisa pedir a senha dele (PHXVPN_SENHA_PROXY).
+pub fn usuario_do_proxy(o: &Opcoes) -> Option<String> {
+    nao_vazia(o.um("proxy-usuario"))
+        .map(str::to_string)
+        .or_else(|| {
+            arquivo_da_rede(o)
+                .ok()
+                .and_then(|c| crate::rede_p2p::Rede::ler(&c).ok())
+                .and_then(|r| r.proxy_usuario)
+        })
+}
+
+/// O fio ate o repasse, das opcoes e do arquivo. Padrao `auto`: UDP e, sem
+/// confirmacao, TCP na 443. Proxy implica TCP (UDP nao passa por `CONNECT`).
+/// A senha do proxy sai de `PHXVPN_SENHA_PROXY` e o ambiente e limpo na hora.
+fn fio_do_no(o: &Opcoes, rede: Option<&crate::rede_p2p::Rede>) -> R<crate::fio::CfgFio> {
+    use crate::fio::{CfgFio, Escolha, Proxy};
+    let escolha = escolha_do_fio(o, rede.and_then(|r| r.fio.as_deref()))?;
+    let porta_tcp = porta_tcp_do_repasse(o, rede.and_then(|r| r.repasse_tcp))?.unwrap_or(443);
+    let proxy_end = nao_vazia(o.um("proxy"))
+        .map(str::to_string)
+        .or_else(|| rede.and_then(|r| r.proxy.clone()));
+    let proxy = match proxy_end {
+        Some(end) => {
+            let senha = std::env::var("PHXVPN_SENHA_PROXY").ok();
+            std::env::remove_var("PHXVPN_SENHA_PROXY");
+            let cred = match (usuario_do_proxy(o), senha) {
+                (Some(u), Some(s)) => Some((u, s)),
+                (Some(u), None) => {
+                    return Err(format!(
+                        "falta a senha do usuario {u} no proxy (PHXVPN_SENHA_PROXY)"
+                    ))
+                }
+                (None, _) => None,
+            };
+            Some(Proxy::novo(&end, cred)?)
+        }
+        None => None,
+    };
+    let escolha = match (escolha, &proxy) {
+        (Some(Escolha::Udp), Some(_)) => {
+            return Err("proxy HTTP so leva TCP: tire --fio udp ou o --proxy".into())
+        }
+        (_, Some(_)) => Escolha::Tcp,
+        (Some(e), None) => e,
+        (None, None) => Escolha::Auto,
+    };
+    Ok(CfgFio {
+        escolha,
+        porta_tcp,
+        proxy,
+        ..CfgFio::default()
+    })
 }
 
 /// O usuario do servidor intermediario desta rede (opcao ou arquivo), para
@@ -627,12 +733,18 @@ pub fn p2p_montar(
     };
     let udp = std::net::UdpSocket::bind(format!("0.0.0.0:{porta}"))
         .map_err(|e| format!("porta UDP {porta}: {e}"))?;
+    let tem_repasse = repasse.is_some();
     let descoberta = !o.tem("sem-descoberta") && rede.as_ref().map_or(true, |r| r.descoberta);
     let mut no = p2p::No::novo(privada, psk, ip, udp, pares)
         .com_repasse(modo, repasse)?
         .com_descoberta(descoberta);
     if o.tem("sem-perfuracao") {
         no = no.sem_perfuracao();
+    }
+    if tem_repasse {
+        no = no.com_fio(fio_do_no(o, rede.as_ref())?)?;
+    } else if o.tem("tcp") || nao_vazia(o.um("proxy")).is_some() {
+        return Err("TCP e proxy sao o fio ate o repasse: informe --repasse".into());
     }
     if let (Some(r), Some(c)) = (rede, caminho) {
         no = no.com_rede(r, c);

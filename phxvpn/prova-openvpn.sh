@@ -2,7 +2,10 @@
 # Prova do modo servidor com o OpenVPN DE VERDADE, de ponta a ponta, numa
 # maquina Linux so (root): PostgreSQL descartavel -> painel -> instalar ->
 # criar rede -> dois membros em netns com o `openvpn` -> ping entre eles ->
-# remover um -> a CRL o barra na reconexao.
+# remover um -> a CRL o barra na reconexao. Depois, o caso TCP: rede com
+# `proto tcp-server` na 443, UDP bloqueado nos dois membros, a ana so
+# alcanca o servidor por um proxy HTTP (CONNECT) -- com o `http-proxy` no
+# perfil passa; sem ele, nao.
 #
 # Uso:  sudo ./prova-openvpn.sh [pasta-de-trabalho]
 # Pede: openvpn 2.6+, postgresql 16 (initdb), python3, ip netns.
@@ -19,7 +22,7 @@ echo "== pasta: $T"
 
 limpar() {
   set +e
-  for n in pxc1 pxc2; do ip netns pids $n 2>/dev/null | xargs -r kill; ip netns del $n 2>/dev/null; rm -rf /etc/netns/$n; done
+  for n in pxc1 pxc2 pxp; do ip netns pids $n 2>/dev/null | xargs -r kill; ip netns del $n 2>/dev/null; rm -rf /etc/netns/$n; done
   [ -n "${PID_PAINEL:-}" ] && kill "$PID_PAINEL" 2>/dev/null
   pkill -x openvpn 2>/dev/null
   su postgres -c "$PGBIN/pg_ctl -D $T/pg -m fast stop" >/dev/null 2>&1
@@ -118,4 +121,53 @@ grep -q "UID set to \(phxvpn-ovpn\|nobody\)" "$LOGSRV" || { echo "FALHOU: o open
 grep -h "UID set" "$LOGSRV" | tail -1
 echo "== a ana removida NAO reconectou; o admin segue no ar:"
 ip netns exec pxc1 ping -c 2 -W 2 "$GW" | tail -1
+
+# ------------------------------------------------------------- TCP ----
+echo "== TCP: rede Hotel em proto tcp-server, porta 443"
+kill "$(cat "$T/c2b.log.pid")" 2>/dev/null
+# O proxy mora num netns proprio, que resolve o nome do servidor.
+ip netns add pxp; ip -n pxp link set lo up
+mkdir -p /etc/netns/pxp; echo "192.168.88.1 vpn.prova.local" > /etc/netns/pxp/hosts
+ip link add pxv3 type veth peer name eth0 netns pxp
+ip link set pxv3 master pxbr up
+ip -n pxp addr add 192.168.88.13/24 dev eth0; ip -n pxp link set eth0 up
+ip netns exec pxp python3 "$AQUI/provas/tcp/proxy.py" 3128 "" "$T/proxy.log" &
+# UDP bloqueado nos dois; a ana tambem nao alcanca a 443 direto: so o proxy.
+for n in pxc1 pxc2; do ip netns exec $n iptables -A OUTPUT -p udp -j DROP; done
+ip netns exec pxc2 iptables -A OUTPUT -p tcp -d 192.168.88.1 --dport 443 -j DROP
+api POST /api/redes "$TK_ADMIN" '{"nome":"Hotel","senha":"senha-da-rede","finalidade":"prova","protocolo":"tcp","porta":443}' | campo perfil > "$T/admin-tcp.ovpn"
+api POST /api/redes/entrar "$TK_ANA" '{"nome":"Hotel","senha":"senha-da-rede","http_proxy":"192.168.88.13:3128"}' | campo perfil > "$T/ana-tcp.ovpn"
+# Usuario comum nao escolhe porta.
+if api POST /api/redes "$TK_ANA" '{"nome":"Porta","senha":"senha-da-rede","protocolo":"tcp","porta":8443}' >/dev/null; then
+  echo "FALHOU: usuario comum escolheu a porta"; exit 1
+fi
+sleep 1
+CONFTCP=$(grep -l "^port 443" "$T"/dados/redes/*/servidor.conf)
+grep -q "^proto tcp-server" "$CONFTCP" || { echo "FALHOU: servidor sem proto tcp-server"; exit 1; }
+grep -h "^proto\|^remote\|^http-proxy" "$T/ana-tcp.ovpn" | sed 's/^/== perfil da ana: /'
+ss -ltnp | grep -q ":443 .*openvpn" || { echo "FALHOU: ninguem escuta TCP 443"; exit 1; }
+# Sentido 1: o mesmo perfil SEM o http-proxy nao passa (443 barrada).
+grep -v "^http-proxy" "$T/ana-tcp.ovpn" > "$T/ana-tcp-sem-proxy.ovpn"
+sobe pxc2 "$T/ana-tcp-sem-proxy.ovpn" "$T/c2t0.log"; sleep 10
+if grep -q "Initialization Sequence Completed" "$T/c2t0.log"; then
+  echo "FALHOU: sem proxy a ana conectou -- o bloqueio nao vale"; exit 1
+fi
+kill "$(cat "$T/c2t0.log.pid")"; sleep 1
+echo "== sem proxy: nao conectou (esperado)"
+# Sentido 2: com o proxy, passa.
+sobe pxc1 "$T/admin-tcp.ovpn" "$T/c1t.log"; sobe pxc2 "$T/ana-tcp.ovpn" "$T/c2t.log"
+for _ in $(seq 60); do
+  grep -q "Initialization Sequence Completed" "$T/c1t.log" 2>/dev/null &&
+  grep -q "Initialization Sequence Completed" "$T/c2t.log" 2>/dev/null && break; sleep 0.5
+done
+grep -q "Initialization Sequence Completed" "$T/c2t.log" || { echo "FALHOU: ana nao conectou pelo proxy"; tail -5 "$T/c2t.log"; exit 1; }
+IP1T=$(ip -n pxc1 -4 -o addr show | awk '/10\.77\.2\./{print $4}' | cut -d/ -f1)
+IP2T=$(ip -n pxc2 -4 -o addr show | awk '/10\.77\.2\./{print $4}' | cut -d/ -f1)
+echo "== TCP: admin=$IP1T ana=$IP2T"
+grep -h "TCP connection established\|Attempting to establish TCP" "$T/c2t.log" | tail -1
+grep "CONNECT" "$T/proxy.log" | tail -1 | sed 's/^/== proxy: /'
+grep -q "CONNECT vpn.prova.local:443 200" "$T/proxy.log" || { echo "FALHOU: a ana nao passou pelo proxy"; exit 1; }
+echo "== ana -> admin pela rede TCP, via proxy:"
+ip netns exec pxc2 ping -c 5 -W 2 "$IP1T" | tail -2
+ip netns exec pxc2 ping -c 5 -W 2 "$IP1T" >/dev/null || { echo "FALHOU: ping pela rede TCP"; exit 1; }
 echo "== PROVA OK"

@@ -22,7 +22,12 @@ const AJUDA: &str = "phxvpn -- redes virtuais no estilo Radmin, sobre OpenVPN
       --openvpn sobe um processo openvpn por rede.
 
   phxvpn criar-rede --painel http://host:8470 --usuario LOGIN --rede NOME [--finalidade TEXTO]
+                    [--protocolo udp|tcp] [--porta 443] [--http-proxy HOST:PORTA]
   phxvpn entrar     --painel http://host:8470 --usuario LOGIN --rede NOME [--saida ARQ.ovpn] [--conectar]
+                    [--http-proxy HOST:PORTA]
+      --protocolo tcp: a rede OpenVPN escuta em TCP (proto tcp-server) -- para
+      membros atras de rede que so deixa TCP/443; --porta so o administrador.
+      --http-proxy: o perfil sai com http-proxy (so em rede TCP).
       Senhas por PHXVPN_SENHA e PHXVPN_SENHA_REDE, ou perguntadas no terminal --
       nunca por argumento, que aparece na lista de processos. Quem cadastrou o
       autenticador passa o codigo em PHXVPN_CODIGO.
@@ -53,6 +58,8 @@ const AJUDA: &str = "phxvpn -- redes virtuais no estilo Radmin, sobre OpenVPN
   phxvpn p2p ligar --rede NOME --ip 10.78.0.1/24 [--porta 51820] [--chave p2p.chave]
                    [--interface phx0] --par CHAVE@IP[@HOST:PORTA] [--par ...]
                    [--modo direto|repasse|auto] [--repasse CHAVE@HOST:PORTA]
+                   [--fio auto|udp|tcp] [--tcp] [--repasse-tcp 443]
+                   [--proxy HOST:PORTA [--proxy-usuario U]]
       Modo P2P: liga a placa virtual e fala com os pares (Linux, como root).
       direto  -- so caminho direto, sem servidor nenhum (padrao);
       repasse -- tudo pelo servidor intermediario (CGNAT dos dois lados);
@@ -60,11 +67,16 @@ const AJUDA: &str = "phxvpn -- redes virtuais no estilo Radmin, sobre OpenVPN
                  intermediario, pede a ele o endereco publico do par e perfura
                  o NAT para migrar ao caminho direto (--sem-perfuracao desliga).
       O intermediario so carrega pacote cifrado de ponta a ponta.
+      Fio ate o intermediario: auto (padrao: UDP e, sem confirmacao em 10 s,
+      TCP na porta --repasse-tcp), udp, ou tcp (--tcp). --proxy passa pelo
+      CONNECT de um proxy HTTP (implica tcp); a senha do proxy vem de
+      PHXVPN_SENHA_PROXY ou do terminal. HTTPS_PROXY NAO e lido.
       Senha da rede por PHXVPN_SENHA_REDE ou no terminal.
 
-  phxvpn repasse [--porta 51821] [--chave repasse.chave] [--permitir ARQUIVO]
+  phxvpn repasse [--porta 51821] [--tcp 443] [--chave repasse.chave] [--permitir ARQUIVO]
                  [--contas repasse-contas.txt]
       Servidor intermediario do P2P. Mostra a chave publica para o --repasse.
+      --tcp: escuta tambem em TCP (redes que so deixam sair TCP/443 ou proxy).
       --permitir: arquivo com uma chave publica por linha (repasse fechado).
       --contas: so registra quem prova usuario e senha (recomendado).
   phxvpn repasse conta --usuario U [--contas repasse-contas.txt]
@@ -328,15 +340,7 @@ fn cmd_rede(args: &[String], criar: bool) -> Result<(), String> {
     let s_login = senha("PHXVPN_SENHA", "senha do usuario")?;
     let s_rede = senha("PHXVPN_SENHA_REDE", "senha da rede")?;
     let (token, _) = comandos::login(painel, login, &s_login)?;
-    let arquivo = comandos::perfil_de_rede(
-        painel,
-        &token,
-        criar,
-        rede,
-        &s_rede,
-        o.um("finalidade").unwrap_or(""),
-        o.um("saida"),
-    )?;
+    let arquivo = comandos::perfil_de_rede(painel, &token, criar, rede, &s_rede, &o)?;
     println!("perfil gravado em {arquivo} (contem a sua chave privada: guarde-o como senha)");
     if o.tem("conectar") {
         rodar_openvpn_cliente(&arquivo)?;
@@ -374,7 +378,7 @@ fn cmd_cliente_rodar(args: &[String]) -> Result<(), String> {
 fn cmd_p2p(args: &[String]) -> Result<(), String> {
     let o = Opcoes::de_args(
         &args[args.len().min(1)..],
-        &["sem-perfuracao", "sem-descoberta"],
+        &["sem-perfuracao", "sem-descoberta", "tcp"],
     );
     let arquivo = o.um("chave").or(o.um("arquivo")).unwrap_or("p2p.chave");
     match args.first().map(String::as_str) {
@@ -435,6 +439,14 @@ fn p2p_ligar(o: &Opcoes) -> Result<(), String> {
         None => None,
     };
     std::env::remove_var("PHXVPN_SENHA_REPASSE");
+    // A do proxy vai ao ambiente DESTE processo so ate o `p2p_montar` a ler
+    // (e apagar): nunca por argumento, que aparece na lista de processos.
+    if let Some(u) = comandos::usuario_do_proxy(o) {
+        if std::env::var_os("PHXVPN_SENHA_PROXY").is_none() {
+            let s = senha("PHXVPN_SENHA_PROXY", &format!("senha de {u} no proxy"))?;
+            std::env::set_var("PHXVPN_SENHA_PROXY", s);
+        }
+    }
     let (no, tun, resumo) = comandos::p2p_preparar(
         o,
         comandos::Segredo::Senha(&senha_rede),
@@ -529,6 +541,15 @@ fn cmd_repasse(args: &[String]) -> Result<(), String> {
     let porta = opcao(args, "--porta").unwrap_or_else(|| "51821".into());
     let udp = std::net::UdpSocket::bind(format!("0.0.0.0:{porta}"))
         .map_err(|e| format!("porta UDP {porta}: {e}"))?;
+    // TCP so quando pedido: e mais uma porta exposta, e 443 pede root.
+    let tcp = match opcao(args, "--tcp") {
+        Some(p) => Some((
+            std::net::TcpListener::bind(format!("0.0.0.0:{p}"))
+                .map_err(|e| format!("porta TCP {p}: {e}"))?,
+            p,
+        )),
+        None => None,
+    };
     let mut r = Repasse::novo(privada, permitidas);
     match opcao(args, "--contas") {
         Some(arq) => {
@@ -545,16 +566,18 @@ fn cmd_repasse(args: &[String]) -> Result<(), String> {
         ),
     }
     eprintln!(
-        "phxvpn: repasse no ar -- UDP {porta}, chave {}",
+        "phxvpn: repasse no ar -- UDP {porta}{}, chave {}",
+        tcp.as_ref()
+            .map(|(_, p)| format!(" e TCP {p}"))
+            .unwrap_or_default(),
         para_hex(&r.publica())
     );
-    let mut buf = vec![0u8; 65_535];
-    loop {
-        let (n, de) = udp.recv_from(&mut buf).map_err(|e| e.to_string())?;
-        if let Some((alvo, p)) = r.tratar(&buf[..n], de) {
-            let _ = udp.send_to(&p, alvo);
-        }
+    let central = phxvpn::repasse_tcp::Central::nova(r, udp);
+    if let Some((ouvinte, _)) = tcp {
+        let c = std::sync::Arc::clone(&central);
+        std::thread::spawn(move || c.servir_tcp(ouvinte));
     }
+    central.servir_udp()
 }
 
 /// `p2p placa`: no Windows, cria o adaptador TAP do phxvpn pelo `tapctl.exe`

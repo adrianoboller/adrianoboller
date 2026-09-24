@@ -12,7 +12,16 @@
 //! REGISTRO [7,0,0,0] chave_do_no:32 carimbo:12 mac:32
 //! PARA     [8,0,0,0] chave_destino:32 | pacote do par (INICIO/RESPOSTA/DADOS)
 //! DE       [9,0,0,0] chave_origem:32  | pacote do par
+//! CONFIRMA [12,0,0,0] carimbo:12 mac:32   (resposta a um REGISTRO valido)
 //! ```
+//!
+//! # Por que o repasse confirma o REGISTRO
+//!
+//! Sem resposta, o no nao distingue «o repasse esta la» de «a rede engole
+//! UDP» -- e e essa distincao que decide cair para TCP (`fio.rs`). A
+//! confirmacao so sai DEPOIS do mac conferido (nao amplifica: 48 bytes para
+//! 80) e leva um HMAC com o mesmo segredo `DH(no, repasse)`, entao um terceiro
+//! fora do caminho nao a forja para prender o no num UDP que nao passa.
 //!
 //! # Por que o REGISTRO prova a chave sem ida-e-volta
 //!
@@ -58,6 +67,9 @@ use std::time::{Duration, Instant};
 pub const TIPO_REGISTRO: u8 = 7;
 pub const TIPO_PARA: u8 = 8;
 pub const TIPO_DE: u8 = 9;
+/// 12, e nao 10/11: esses sao APRESENTAR/APRESENTACAO da perfuracao.
+pub const TIPO_CONFIRMA: u8 = 12;
+pub const CONFIRMA_LEN: usize = 4 + 12 + 32;
 
 pub const REGISTRO_LEN: usize = 4 + 32 + 12 + 32;
 /// O no renova o registro nesse ritmo -- tambem mantem aberto o furo do NAT.
@@ -161,6 +173,31 @@ fn mac(segredo: &[u8; 32], chave: &[u8; 32], carimbo: &[u8; 12]) -> [u8; 32] {
     hmac_sha256(segredo, &m)
 }
 
+fn mac_confirma(segredo: &[u8; 32], chave: &[u8; 32], carimbo: &[u8; 12]) -> [u8; 32] {
+    let mut m = b"phxvpn-repasse-confirma".to_vec();
+    m.extend_from_slice(chave);
+    m.extend_from_slice(carimbo);
+    hmac_sha256(segredo, &m)
+}
+
+fn confirmacao(segredo: &[u8; 32], chave: &[u8; 32], carimbo: &[u8; 12]) -> Vec<u8> {
+    let mut p = vec![TIPO_CONFIRMA, 0, 0, 0];
+    p.extend_from_slice(carimbo);
+    p.extend_from_slice(&mac_confirma(segredo, chave, carimbo));
+    p
+}
+
+/// Do lado do no: a CONFIRMA veio do repasse (mac com `DH(no, repasse)`)?
+/// Devolve o carimbo confirmado.
+pub fn conferir_confirmacao(segredo: &[u8; 32], chave_no: &[u8; 32], p: &[u8]) -> Option<[u8; 12]> {
+    if p.len() != CONFIRMA_LEN || p[..4] != [TIPO_CONFIRMA, 0, 0, 0] {
+        return None;
+    }
+    let carimbo: [u8; 12] = p[4..16].try_into().ok()?;
+    iguais_em_tempo_constante(&mac_confirma(segredo, chave_no, &carimbo), &p[16..])
+        .then_some(carimbo)
+}
+
 /// O REGISTRO que o no manda ao repasse. Com conta, acrescenta
 /// `tamanho:1 usuario mac_conta:32` depois dos 80 bytes de sempre.
 pub fn registro(
@@ -196,8 +233,26 @@ pub fn desembrulhar_de(p: &[u8]) -> Option<([u8; 32], &[u8])> {
         .then(|| (p[4..36].try_into().expect("32"), &p[36..]))
 }
 
+/// De onde o no fala com o repasse. O mesmo `ip:porta` pode existir em UDP e
+/// em TCP ao mesmo tempo (sao espacos de porta diferentes): sem o protocolo
+/// na chave, um datagrama UDP de `ip:porta` falaria em nome do no registrado
+/// por uma conexao TCP de mesmo `ip:porta`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Ponta {
+    Udp(SocketAddr),
+    Tcp(SocketAddr),
+}
+
+impl Ponta {
+    pub fn ip(&self) -> std::net::IpAddr {
+        match self {
+            Ponta::Udp(a) | Ponta::Tcp(a) => a.ip(),
+        }
+    }
+}
+
 struct Registro {
-    endereco: SocketAddr,
+    endereco: Ponta,
     carimbo: [u8; 12],
     visto: Instant,
     /// `DH(no, repasse)`, ja pago no registro: prova o APRESENTAR por HMAC.
@@ -207,7 +262,7 @@ struct Registro {
 pub struct Repasse {
     privada: [u8; 32],
     nos: HashMap<[u8; 32], Registro>,
-    por_endereco: HashMap<SocketAddr, [u8; 32]>,
+    por_endereco: HashMap<Ponta, [u8; 32]>,
     /// Com lista, so repassa entre chaves dela (repasse fechado da empresa).
     permitidas: Option<HashSet<[u8; 32]>>,
     /// Com contas, so registra quem prova usuario e senha.
@@ -250,13 +305,20 @@ impl Repasse {
             .filter(|r| r.visto.elapsed() < VALIDADE_REGISTRO)
     }
 
-    /// Trata um datagrama. Devolve o que mandar e para onde.
+    /// Trata um datagrama UDP. Devolve o que mandar e para onde -- so quando
+    /// o destino tambem e UDP; quem serve TCP junto usa o `tratar_de`.
     pub fn tratar(&mut self, dado: &[u8], de: SocketAddr) -> Option<(SocketAddr, Vec<u8>)> {
+        match self.tratar_de(dado, Ponta::Udp(de))? {
+            (Ponta::Udp(a), p) => Some((a, p)),
+            (Ponta::Tcp(_), _) => None,
+        }
+    }
+
+    /// Trata um pacote vindo de `de` (UDP ou um quadro de conexao TCP): a
+    /// MESMA conferencia para os dois fios.
+    pub fn tratar_de(&mut self, dado: &[u8], de: Ponta) -> Option<(Ponta, Vec<u8>)> {
         match *dado.first()? {
-            TIPO_REGISTRO => {
-                self.registrar(dado, de);
-                None
-            }
+            TIPO_REGISTRO => self.registrar(dado, de).map(|c| (de, c)),
             TIPO_PARA => {
                 if dado.len() <= 36 {
                     return None;
@@ -282,7 +344,14 @@ impl Repasse {
                 if !self.permitida(&par) {
                     return None;
                 }
-                let alvo = self.vivo(&par)?.endereco;
+                // Perfurar e achar o mapeamento UDP do NAT: no registrado
+                // por TCP (o dele ou o do par) nao tem o que apresentar.
+                let Ponta::Udp(_) = de else {
+                    return None;
+                };
+                let Ponta::Udp(alvo) = self.vivo(&par)?.endereco else {
+                    return None;
+                };
                 let resposta = self.mesa.pedir(dado, origem, &segredo, alvo)?;
                 Some((de, resposta))
             }
@@ -290,26 +359,25 @@ impl Repasse {
         }
     }
 
-    fn registrar(&mut self, dado: &[u8], de: SocketAddr) {
+    /// Registra o no; devolve a CONFIRMA, so quando o registro valeu.
+    fn registrar(&mut self, dado: &[u8], de: Ponta) -> Option<Vec<u8>> {
         if dado.len() < REGISTRO_LEN || dado[..4] != [TIPO_REGISTRO, 0, 0, 0] {
-            return;
+            return None;
         }
         let chave: [u8; 32] = dado[4..36].try_into().expect("32");
         let carimbo: [u8; 12] = dado[36..48].try_into().expect("12");
         if !self.permitida(&chave) {
-            return;
+            return None;
         }
         if let Some(contas) = &self.contas {
             // Conta primeiro: e so um HMAC; quem nao a tem nao custa DH.
             let resto = &dado[REGISTRO_LEN..];
-            let Some((&n, resto)) = resto.split_first() else {
-                return;
-            };
+            let (&n, resto) = resto.split_first()?;
             if resto.len() != n as usize + 32 {
-                return;
+                return None;
             }
             let Ok(usuario) = std::str::from_utf8(&resto[..n as usize]) else {
-                return;
+                return None;
             };
             let chave_ip = format!("ip:{}", de.ip());
             let chave_u = format!("usuario:{usuario}");
@@ -318,7 +386,7 @@ impl Repasse {
                 .antes_de_todas(&[&chave_ip, &chave_u])
                 .is_err()
             {
-                return;
+                return None;
             }
             let bate = contas.get(usuario).is_some_and(|cred| {
                 iguais_em_tempo_constante(
@@ -329,27 +397,27 @@ impl Repasse {
             if !bate {
                 self.tentativas.falhou(&chave_ip);
                 self.tentativas.falhou(&chave_u);
-                return;
+                return None;
             }
             self.tentativas.acertou(&chave_u);
         } else if dado.len() != REGISTRO_LEN && dado.len() < REGISTRO_LEN + 1 + 2 + 32 {
-            return;
+            return None;
         }
         let Ok(segredo) = x25519::segredo(&self.privada, &chave) else {
-            return;
+            return None;
         };
         if !iguais_em_tempo_constante(&mac(&segredo, &chave, &carimbo), &dado[48..80]) {
-            return;
+            return None;
         }
         if let Some(r) = self.nos.get(&chave) {
             if carimbo <= r.carimbo {
-                return;
+                return None;
             }
         } else if self.nos.len() >= TETO_NOS {
             self.nos
                 .retain(|_, r| r.visto.elapsed() < VALIDADE_REGISTRO);
             if self.nos.len() >= TETO_NOS {
-                return;
+                return None;
             }
         }
         if let Some(velho) = self.nos.get(&chave) {
@@ -365,6 +433,7 @@ impl Repasse {
                 segredo,
             },
         );
+        Some(confirmacao(&segredo, &chave, &carimbo))
     }
 }
 

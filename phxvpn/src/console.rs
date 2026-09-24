@@ -387,8 +387,7 @@ impl<'a> Console<'a> {
                     cmd == "criarrede",
                     &rede,
                     &senha,
-                    o.um("finalidade").unwrap_or(""),
-                    o.um("saida"),
+                    o,
                 )?;
                 Ok(format!(
                     "perfil gravado em {arq} (contem a sua chave privada: guarde-o como senha)\n"

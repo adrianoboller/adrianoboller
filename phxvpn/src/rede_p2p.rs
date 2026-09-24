@@ -67,6 +67,13 @@ pub struct Rede {
     /// Usuario deste computador no servidor intermediario (a senha nunca
     /// fica aqui: e pedida ao ligar).
     pub repasse_usuario: Option<String>,
+    /// Fio ate o repasse (`auto`, `udp`, `tcp`; ausente = `auto`), a porta
+    /// TCP dele e o proxy HTTP (`host:porta`) com o usuario. A senha do
+    /// proxy nunca fica aqui -- ver `fio.rs`.
+    pub fio: Option<String>,
+    pub repasse_tcp: Option<u16>,
+    pub proxy: Option<String>,
+    pub proxy_usuario: Option<String>,
     pub pares: Vec<Par>,
     pub convites: Vec<ConviteAberto>,
     /// Ficha que ESTE no apresenta ao entrar (veio do convite); some quando
@@ -159,6 +166,10 @@ impl Rede {
             modo: "direto".into(),
             repasse: None,
             repasse_usuario: None,
+            fio: None,
+            repasse_tcp: None,
+            proxy: None,
+            proxy_usuario: None,
             pares: Vec::new(),
             convites: Vec::new(),
             ficha_de_entrada: None,
@@ -207,6 +218,15 @@ impl Rede {
                     .map(Json::texto_de)
                     .unwrap_or(Json::Nulo),
             ),
+            ("fio", opcional(&self.fio)),
+            (
+                "repasse_tcp",
+                self.repasse_tcp
+                    .map(|p| Json::de_i64(p as i64))
+                    .unwrap_or(Json::Nulo),
+            ),
+            ("proxy", opcional(&self.proxy)),
+            ("proxy_usuario", opcional(&self.proxy_usuario)),
             ("pares", pares_json(&self.pares)),
             (
                 "convites",
@@ -286,6 +306,13 @@ impl Rede {
                 .campo("repasse_usuario")
                 .and_then(Json::texto)
                 .map(str::to_string),
+            fio: texto_opcional(j, "fio"),
+            repasse_tcp: j
+                .campo("repasse_tcp")
+                .and_then(Json::inteiro)
+                .and_then(|p| u16::try_from(p).ok()),
+            proxy: texto_opcional(j, "proxy"),
+            proxy_usuario: texto_opcional(j, "proxy_usuario"),
             pares: j
                 .campo("pares")
                 .and_then(Json::lista)
@@ -504,6 +531,14 @@ pub fn abrir_convite(codigo: &str, psk: &[u8; 32]) -> R<Convite> {
     Ok(c)
 }
 
+fn opcional(t: &Option<String>) -> Json {
+    t.clone().map(Json::texto_de).unwrap_or(Json::Nulo)
+}
+
+fn texto_opcional(j: &Json, campo: &str) -> Option<String> {
+    j.campo(campo).and_then(Json::texto).map(str::to_string)
+}
+
 /// A rede deste computador, montada a partir do convite aberto.
 pub fn rede_do_convidado(c: &Convite, porta: u16) -> Rede {
     Rede {
@@ -514,6 +549,10 @@ pub fn rede_do_convidado(c: &Convite, porta: u16) -> Rede {
         modo: c.modo.clone(),
         repasse: c.repasse.clone(),
         repasse_usuario: None,
+        fio: None,
+        repasse_tcp: None,
+        proxy: None,
+        proxy_usuario: None,
         pares: vec![c.anfitriao.clone()],
         convites: Vec::new(),
         ficha_de_entrada: Some(c.ficha),

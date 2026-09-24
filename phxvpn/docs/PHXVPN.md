@@ -55,6 +55,8 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [x] P2P: rol de membros ASSINADO (Ed25519 do dono, versão monotônica, anti-rollback) — `p2p remover` derruba o túnel do removido com todos, provado em três `netns`; rede criada antes continua com a confiança transitiva
 - [x] P2P: descoberta na LAN — anúncio broadcast cifrado com chave da PSK, sem nome de rede nem chave em claro; dois membros sem endereço nem repasse se acham em 459 ms (release, `netns`)
 - [x] P2P: perfuração de NAT mediada pelo repasse (modo `auto`) — com dois NATs, o ping migra ao caminho direto em ~2 s e o repasse carrega **0** datagrama de dados; NAT simétrico ou sondas bloqueadas seguem pelo repasse
+- [x] P2P: fio TCP até o repasse (`--tcp`, quadro de 2 bytes como o OpenVPN) e por proxy HTTP `CONNECT` (`--proxy`); o `auto` cai de UDP para TCP sem confirmação em 10 s — provado com UDP bloqueado por iptables e com só o proxy alcançando o repasse
+- [x] Modo servidor OpenVPN em TCP: rede com `proto tcp-server` (porta 443 escolhida pelo administrador) e perfil com `proto tcp-client` e `http-proxy` opcional — provado com o `openvpn` 2.6.19 real, UDP bloqueado e só o proxy alcançando o servidor
 
 ### Falta
 
@@ -81,7 +83,9 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 | TCP 127.0.0.1:sorteada | `phxvpn mesa` | só a própria máquina + ficha da sessão (32 bytes por abertura) |
 | UDP 51820 | nó P2P | chave do membro (Noise IK) + senha da rede (PSK) + ficha de convite para entrar |
 | UDP 51821 | `phxvpn repasse` | **usuário + senha** com `--contas` (sem, fica aberto e avisa) |
+| TCP 443 (só com `--tcp 443`) | `phxvpn repasse` | o MESMO controle do UDP (mesmo `tratar_de`); conexão anônima: 145 bytes, 5 s, no máximo 64; total 1.024 |
 | UDP 1195+ | OpenVPN (modo servidor) | certificado da AC + CRL + `ccd-exclusive` + `tls-crypt`; rede com MFA: + usuário, senha e código |
+| TCP 443 (rede criada com `protocolo: tcp`) | OpenVPN (modo servidor) | o mesmo; `tls-crypt-v2` barra antes do TLS também em TCP |
 | soquete `dados/verificar.sock` | `phxvpn painel` (Unix) | arquivo 0660 do grupo `phxvpn-ovpn` + `SO_PEERCRED` (root, o painel, `phxvpn-ovpn`); 32 perguntas de uma vez, 2 s para o pedido chegar; tentativa reservada antes do PBKDF2 |
 
 ### Contas do servidor intermediário
@@ -1251,7 +1255,126 @@ terceiros neste contêiner); o `auth-gen-token` na renegociação de 1 h não fo
 medido; o verificador no Windows recusa tudo (sem soquete local lá); perder o
 `mfa.chave` desliga todo autenticador (vai no backup da pasta de dados).
 
+## Rede que só deixa TCP/443, ou só o proxy (24/09/2026)
+
+O gap: o Radmin tem relay por TCP; o OpenVPN tem `proto tcp` e
+`--http-proxy`. O P2P e o repasse do phxvpn eram só UDP — rede de hotel,
+de escritório com proxy obrigatório ou de celular corporativo não passava.
+
+### P2P: o fio até o repasse (`src/fio.rs`, `src/repasse_tcp.rs`)
+
+```text
+repasse:  phxvpn repasse --porta 51821 --tcp 443 --contas repasse-contas.txt
+nó:       phxvpn p2p ligar ... --modo repasse --repasse CHAVE@HOST:51821
+             [--fio auto|udp|tcp] [--tcp] [--repasse-tcp 443]
+             [--proxy HOST:PORTA [--proxy-usuario U]]   (senha: PHXVPN_SENHA_PROXY ou terminal)
+```
+
+- **Uma decisão só.** O `p2p.rs` chama `ao_repasse(pacote)` e não sabe se é
+  UDP, TCP ou TCP por proxy: a escolha mora no `FioRepasse`. Os tipos de
+  pacote e o Noise são os mesmos; só o envelope muda.
+- **Quadro do OpenVPN:** prefixo de 2 bytes (tamanho, big-endian). Quadro
+  vazio ou acima do teto derruba a conexão.
+- **Como o nó sabe que o UDP não passa:** o repasse passou a **confirmar**
+  cada REGISTRO válido (`CONFIRMA`, tipo 12 — o 10 e o 11 são da
+  perfuração), com HMAC do mesmo `DH(nó, repasse)`: só sai depois do mac
+  conferido (48 bytes para 80, não amplifica) e um terceiro fora do caminho
+  não a forja. Sem confirmação, o REGISTRO se repete a cada 2 s (datagrama
+  perdido não é «UDP bloqueado»), e no `auto` a reserva de **10 s** leva ao
+  TCP. TCP que não confirma em 20 s volta ao UDP e tenta de novo com espera
+  crescente (1 s … 60 s): porta 443 aberta que não é o repasse não prende o nó.
+- **O repasse serve os dois fios pela MESMA tabela** (`Ponta::Udp` /
+  `Ponta::Tcp` — o protocolo entra na chave, porque o mesmo `ip:porta` existe
+  nos dois espaços de porta). A conta (HMAC antes do DH), o mac do REGISTRO,
+  o carimbo, a lista de permitidas e o limitador são os do UDP.
+- **Tetos, e nenhum alto de memória antes da prova:** conexão anônima lê no
+  máximo um quadro de REGISTRO (145 bytes), tem **5 s de prazo TOTAL** (um
+  byte a cada 4 s não a segura), não ganha fila nem thread de escrita, e o
+  primeiro quadro que não registra fecha a conexão. No máximo 64 anônimas e
+  1.024 no total. Registrada: fila de saída de 256 KiB; par lento perde
+  pacote (como no UDP) em vez de segurar o repasse.
+- **Proxy:** `CONNECT ip:porta HTTP/1.1`, `Basic` com usuário. A senha só
+  existe no cabeçalho mandado ao proxy; o `Debug` a esconde, e os erros dizem
+  o código (`407`) e nunca o cabeçalho. Endereço com espaço ou quebra de
+  linha é recusado (seria cabeçalho injetado).
+- **`HTTPS_PROXY` NÃO é lido — decisão, com as duas hipóteses:** (H1) ler
+  do ambiente, como `curl`; (H2) só explícito, como o `--http-proxy` do
+  OpenVPN. Venceu H2: essa variável existe para o tráfego web e costuma estar
+  definida sem que o usuário saiba — **neste contêiner ela existe** e aponta
+  para um proxy de outro serviço, que passaria a carregar a VPN calado. Quem
+  quer o proxy do ambiente escreve `--proxy` com ele.
+- **Aperto que ficou no fio velho:** quando o fio muda (TCP conectou, ou
+  voltou ao UDP), o tique refaz na hora o aperto pendente — sem isso ele
+  esperava o reenvio de 5 s (medido: primeiro ping 15,0 s no `auto` e 5,3 s
+  pelo proxy; depois, 11,0 s e 1,1 s).
+
+**Prova (`provas/tcp/rodar.sh`, 24/09/2026, quatro netns, UDP bloqueado por
+iptables no repasse; A e B sem caminho direto; `resultados.json`):**
+
+| Caso | Primeiro ping | Ping |
+|---|---|---|
+| `auto` (padrão), UDP bloqueado | 11,0 s | 5/5 |
+| `--fio udp`, UDP bloqueado | — | **0/5** (o outro sentido) |
+| `--tcp`, UDP bloqueado | 1,0 s | 5/5 |
+| só o proxy alcança; `--tcp` direto | — | **0/5** (controle: a regra vale) |
+| só o proxy alcança; `--proxy` com usuário e senha | 1,1 s | 5/5 |
+| só o proxy alcança; `--proxy` sem credencial | — | **0/5** (407 dito no registro) |
+
+Senha do proxy nos registros do phxvpn e do proxy: **0 ocorrência** (texto e
+base64). RED (unitários): sem a queda do `auto`,
+`auto_cai_para_tcp_e_o_pacote_atravessa` e `auto_cai_para_tcp_so_sem_confirmacao`
+reprovam; com o teto anônimo trocado pelo de 64 KiB,
+`anonima_que_nao_registra_e_fechada` reprova (o repasse esperou 5 s pelo resto
+do quadro em vez de fechar no cabeçalho).
+
+**Vazão pelo túnel** (mesmo `iperf3` TCP de 5 s, 5 corridas, repasse no meio
+nos três; mín – mediana – máx):
+
+| Fio até o repasse | Mbit/s | Ping |
+|---|---|---|
+| UDP | 412 – **448** – 451 | 0,735 ms |
+| TCP | 368 – **430** – 441 | 0,646 ms |
+| TCP via proxy (Python) | 275 – **378** – 395 | 1,233 ms |
+
+Pela regra das faixas: **UDP × TCP é empate** (as faixas se cruzam); o proxy
+fica abaixo do UDP (faixas separadas) — e o proxy é o `proxy.py` da prova, um
+laço Python de 64 KiB por leitura, não um Squid. Nas duas corridas anteriores
+do mesmo dia as medianas foram 412/320 e 388/410 (UDP/TCP): o ruído desta
+máquina entre corridas é maior que a diferença entre os fios. TCP dentro de
+TCP (o `iperf3` pelo túnel) não derreteu numa rede sem perda; com perda, o
+atraso de retransmissão das duas camadas se soma — o limite que o OpenVPN
+documenta para `proto tcp`.
+
+### Modo servidor: OpenVPN em TCP
+
+```text
+phxvpn criar-rede ... --protocolo tcp [--porta 443]      (porta: só o administrador)
+phxvpn entrar     ... [--http-proxy HOST:PORTA]            (só em rede TCP)
+API: POST /api/redes {"protocolo":"tcp","porta":443,"http_proxy":"h:p"}
+     POST /api/redes/entrar {"http_proxy":"h:p"}
+```
+
+A rede ganha a coluna `protocolo` (`udp` padrão; banco antigo recebe a
+coluna com `ALTER TABLE … ADD COLUMN IF NOT EXISTS`). O servidor sai com
+`proto tcp-server`; o perfil, com `proto tcp-client` e, se pedido,
+`http-proxy host porta`. O proxy é **validado** antes de entrar no perfil:
+o `.ovpn` é um arquivo de diretivas, e uma quebra de linha no campo seria
+`up /bin/sh …` no perfil de outra pessoa. Proxy em rede UDP é recusado (o
+OpenVPN recusaria o perfil).
+
+**Prova (`prova-openvpn.sh`, parte TCP, `openvpn` 2.6.19, saída em
+`provas/tcp/prova-openvpn.txt`):** rede «Hotel» em `tcp-server` na 443; UDP
+bloqueado nos dois membros e a 443 barrada para a ana — **sem** o
+`http-proxy` no perfil ela não conecta; **com** ele, `CONNECT
+vpn.prova.local:443 200` no proxy e ping ana → admin 5/5. Usuário comum
+pedindo porta é recusado.
+
 ## Limites que valem saber antes de usar
+
+- **Fio TCP até o repasse:** fica no TCP até a conexão cair (não volta
+  sozinho a experimentar o UDP); a janela e a bandeja ainda não têm campo de
+  proxy (só a linha de comando, o console e o arquivo da rede); e o proxy
+  só com `Basic` — NTLM/Negotiate (proxy corporativo Windows) não.
 
 - **Perfuração de NAT não passa por NAT simétrico** (nem por NAT Linux sem
   filtro de entrada na wan, ver acima): nesses casos o tráfego segue pelo

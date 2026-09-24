@@ -69,8 +69,12 @@ CREATE TABLE IF NOT EXISTS phx_rede (
     octeto           smallint NOT NULL UNIQUE CHECK (octeto BETWEEN 1 AND 254),
     porta            int NOT NULL UNIQUE CHECK (porta BETWEEN 1 AND 65535),
     tls_crypt_selada text NOT NULL,
+    protocolo        text NOT NULL DEFAULT 'udp' CHECK (protocolo IN ('udp', 'tcp')),
     criada_em        timestamptz NOT NULL DEFAULT now()
 );
+-- Banco criado antes do TCP: a coluna entra com o padrao de antes (udp).
+ALTER TABLE phx_rede ADD COLUMN IF NOT EXISTS protocolo text NOT NULL DEFAULT 'udp'
+    CHECK (protocolo IN ('udp', 'tcp'));
 CREATE TABLE IF NOT EXISTS phx_membro (
     rede_id    int NOT NULL REFERENCES phx_rede ON DELETE RESTRICT,
     usuario_id int NOT NULL REFERENCES phx_usuario ON DELETE RESTRICT,
@@ -97,6 +101,16 @@ pub const REDES_POR_USUARIO: i64 = 3;
 
 /// Porta da primeira rede; a rede de octeto N escuta em `PORTA_BASE + N`.
 pub const PORTA_BASE: u16 = 1194;
+
+/// Como a rede OpenVPN fala com o mundo. O padrao e o de sempre: UDP na
+/// porta `PORTA_BASE + octeto`.
+#[derive(Default, Clone, Debug)]
+pub struct Transporte {
+    pub tcp: bool,
+    pub porta: Option<u16>,
+    /// `host:porta` do proxy que vai no perfil de quem cria/entra.
+    pub http_proxy: Option<String>,
+}
 
 /// Os campos da instalacao, na ordem da tela.
 #[derive(Default, Clone)]
@@ -417,7 +431,38 @@ impl Painel {
         finalidade: &str,
         servidor_id: Option<i64>,
     ) -> R<String> {
+        self.criar_rede_com(
+            dono,
+            nome,
+            senha_rede,
+            finalidade,
+            servidor_id,
+            &Transporte::default(),
+        )
+    }
+
+    /// `criar_rede` escolhendo o transporte: UDP (padrao) ou TCP, a porta
+    /// (so o administrador escolhe -- 443 e porta do sistema), e o proxy
+    /// HTTP que vai no perfil de quem cria.
+    pub fn criar_rede_com(
+        &mut self,
+        dono: &Usuario,
+        nome: &str,
+        senha_rede: &str,
+        finalidade: &str,
+        servidor_id: Option<i64>,
+        t: &Transporte,
+    ) -> R<String> {
         validar_nome("nome da rede", nome)?;
+        if t.porta.is_some() && !dono.admin {
+            return Err("so o administrador escolhe a porta da rede".into());
+        }
+        if t.http_proxy.is_some() && !t.tcp {
+            return Err("proxy HTTP so leva TCP: crie a rede com protocolo tcp".into());
+        }
+        if let Some(p) = &t.http_proxy {
+            ovpn::validar_http_proxy(p)?;
+        }
         validar_senha("senha da rede", senha_rede, 6)?;
         let cofre = self.cofre()?.clone();
         if !dono.admin {
@@ -459,7 +504,7 @@ impl Painel {
             .ok_or("as 254 sub-redes estao ocupadas")?
             .parse()
             .map_err(|_| "octeto invalido")?;
-        let porta = (PORTA_BASE + octeto as u16).to_string();
+        let porta = t.porta.unwrap_or(PORTA_BASE + octeto as u16).to_string();
         let hash = senha::cifrar_com(senha_rede, self.iteracoes);
         // v2 (uma chave por membro) quando o `openvpn` esta a mao para
         // gera-la; senao v1, e o registro diz qual.
@@ -474,8 +519,8 @@ impl Painel {
         let tc_selada = cofre.selar(tc.as_bytes(), &format!("rede:{nome}"));
         self.pg()?
             .executar(
-                "INSERT INTO phx_rede (servidor_id, dono_id, nome, finalidade, senha_hash, octeto, porta, tls_crypt_selada) \
-                 VALUES ($1::int, $2::int, $3, $4, $5, $6::smallint, $7::int, $8)",
+                "INSERT INTO phx_rede (servidor_id, dono_id, nome, finalidade, senha_hash, octeto, porta, tls_crypt_selada, protocolo) \
+                 VALUES ($1::int, $2::int, $3, $4, $5, $6::smallint, $7::int, $8, $9)",
                 &[
                     Some(&srv),
                     Some(&dono.id.to_string()),
@@ -485,10 +530,18 @@ impl Painel {
                     Some(&octeto.to_string()),
                     Some(&porta),
                     Some(&tc_selada),
+                    Some(if t.tcp { "tcp" } else { "udp" }),
                 ],
             )
-            .map_err(|e| traduzir_unico(e, "ja existe rede com esse nome"))?;
-        self.entrar_ja_conferido(dono, nome)
+            .map_err(|e| {
+                // Duas UNIQUE podem bater: o nome, ou a porta escolhida.
+                if e.contains("porta") {
+                    traduzir_unico(e, &format!("a porta {porta} ja e de outra rede"))
+                } else {
+                    traduzir_unico(e, "ja existe rede com esse nome")
+                }
+            })?;
+        self.entrar_ja_conferido_com(dono, nome, t.http_proxy.as_deref())
     }
 
     /// Primeira metade do «entrar»: o hash da senha da rede (o fictício se a
@@ -514,9 +567,21 @@ impl Painel {
     /// Entra (ou reentra) na rede, com a senha dela JA conferida: reserva o
     /// IP fixo, emite certificado novo, revoga o anterior e devolve o perfil.
     pub fn entrar_ja_conferido(&mut self, usuario: &Usuario, nome: &str) -> R<String> {
+        self.entrar_ja_conferido_com(usuario, nome, None)
+    }
+
+    /// `entrar_ja_conferido` com o proxy HTTP do lado do membro (so em rede
+    /// TCP): o perfil sai com `http-proxy host porta`.
+    pub fn entrar_ja_conferido_com(
+        &mut self,
+        usuario: &Usuario,
+        nome: &str,
+        http_proxy: Option<&str>,
+    ) -> R<String> {
+        let proxy = http_proxy.map(ovpn::validar_http_proxy).transpose()?;
         let cofre = self.cofre()?.clone();
         let r = self.pg()?.executar(
-            "SELECT r.id, r.nome, r.octeto, r.porta, r.tls_crypt_selada, \
+            "SELECT r.id, r.nome, r.octeto, r.porta, r.tls_crypt_selada, r.protocolo, \
                     s.nome AS srv_nome, s.ip, s.dns \
              FROM phx_rede r JOIN phx_servidor s ON s.id = r.servidor_id WHERE r.nome = $1",
             &[Some(nome)],
@@ -599,7 +664,11 @@ impl Painel {
             porta,
             octeto,
             v2: ovpn::e_v2(&tc),
+            tcp: campo("protocolo") == "tcp",
         };
+        if proxy.is_some() && !rede.tcp {
+            return Err("proxy HTTP so leva TCP, e esta rede e UDP".into());
+        }
         // v2: a chave do membro leva a serie deste certificado dentro.
         let tc = if rede.v2 {
             ovpn::gerar_v2_cliente(&tc, &e.serie_hex)?
@@ -623,6 +692,7 @@ impl Painel {
             cert_pem: &pki::cert_pem(&e.der),
             chave_pem: &pki::chave_pem(&e.privada),
             tls_crypt: &tc,
+            http_proxy: proxy.as_ref().map(|(h, p)| (h.as_str(), *p)),
         });
         Ok(if mfa {
             perfil + crate::verificar::PERFIL_MFA
@@ -828,7 +898,7 @@ impl Painel {
     pub fn materializar_rede(&mut self, rede_id: &str) -> R<PathBuf> {
         let cofre = self.cofre()?.clone();
         let r = self.pg()?.executar(
-            "SELECT r.nome, r.porta, r.octeto, r.tls_crypt_selada, s.nome AS srv, s.cert_pem, s.chave_selada \
+            "SELECT r.nome, r.porta, r.octeto, r.tls_crypt_selada, r.protocolo, s.nome AS srv, s.cert_pem, s.chave_selada \
              FROM phx_rede r JOIN phx_servidor s ON s.id = r.servidor_id WHERE r.id = $1::int",
             &[Some(rede_id)],
         )?;
@@ -866,6 +936,7 @@ impl Painel {
                 porta: v("porta").parse().map_err(|_| "porta invalida")?,
                 octeto: v("octeto").parse().map_err(|_| "octeto invalido")?,
                 v2: ovpn::e_v2(&String::from_utf8_lossy(&tc)),
+                tcp: v("protocolo") == "tcp",
             },
             &dir.display().to_string(),
         );

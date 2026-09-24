@@ -382,9 +382,17 @@ fn rotear(p: &Pedido, e: &Estado) -> Saida {
         ("POST", "/api/redes") => {
             let u = usuario(p, e)?;
             let servidor = corpo.campo("servidor_id").and_then(Json::inteiro);
+            let transporte = transporte_do_pedido(&corpo)?;
             let perfil = e
                 .painel()
-                .criar_rede(&u, &t("nome"), &t("senha"), &t("finalidade"), servidor)
+                .criar_rede_com(
+                    &u,
+                    &t("nome"),
+                    &t("senha"),
+                    &t("finalidade"),
+                    servidor,
+                    &transporte,
+                )
                 .map_err(ruim)?;
             materializar_e_subir(e).map_err(ruim)?;
             perfil_json(&t("nome"), perfil)
@@ -412,7 +420,11 @@ fn rotear(p: &Pedido, e: &Estado) -> Saida {
             };
             conferido.map_err(|m| (400, m))?;
             reserva.acertou(&[&chave_rede]);
-            let perfil = e.painel().entrar_ja_conferido(&u, &nome).map_err(ruim)?;
+            let proxy = Some(t("http_proxy")).filter(|p| !p.is_empty());
+            let perfil = e
+                .painel()
+                .entrar_ja_conferido_com(&u, &nome, proxy.as_deref())
+                .map_err(ruim)?;
             perfil_json(&nome, perfil)
         }
         ("POST", "/api/redes/sair") => {
@@ -525,4 +537,29 @@ pub fn materializar_e_subir(e: &Estado) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// `protocolo` ("udp" | "tcp"), `porta` e `http_proxy` do pedido de criar
+/// rede. Ausentes: o de sempre (UDP, porta automatica, sem proxy).
+fn transporte_do_pedido(corpo: &Json) -> Result<crate::painel::Transporte, (u16, String)> {
+    let tcp = match corpo.texto_ou("protocolo", "udp") {
+        "udp" | "" => false,
+        "tcp" => true,
+        _ => return Err((400, "protocolo: udp ou tcp".into())),
+    };
+    let porta = match corpo.campo("porta").and_then(Json::inteiro) {
+        Some(p) => Some(
+            u16::try_from(p)
+                .ok()
+                .filter(|p| *p > 0)
+                .ok_or((400, "porta de 1 a 65535".to_string()))?,
+        ),
+        None => None,
+    };
+    let http_proxy = Some(corpo.texto_ou("http_proxy", "").to_string()).filter(|p| !p.is_empty());
+    Ok(crate::painel::Transporte {
+        tcp,
+        porta,
+        http_proxy,
+    })
 }
