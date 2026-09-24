@@ -60,6 +60,23 @@ aparecendo — em uma linha, não em três parágrafos. Papel que não está cum
 continua aparecendo como não cumprindo. O que morre é a narração; o que fica é
 a medição.
 
+## Decisão do dono: escopo congelado, cópias soltas e relatório enxuto
+
+Ordem do dono, 24/09/2026, depois de ver medido que o que falta subia (27,0% → 29,4% no mesmo
+dia, com 22 pedidos fechados e 46 abertos, 41 deles achados das nossas revisões):
+
+- **(A) Escopo da versão congelado.** Achado de revisão que **não** é defeito ativo nem bloqueia
+  a entrega nasce `⏸` («depois da versão»), e não `☐`. Ele fica visível, mas **fora** da
+  porcentagem do que falta. Defeito ativo (dado errado, segurança, travamento, garantia que não
+  vale, teste que floca), bloqueio de entrega e ordem do dono continuam na conta. **Na dúvida,
+  fica na conta**: esconder defeito é o erro que esta regra não pode cometer.
+- **(B) Cópias de frentes já integradas se apagam.** O zelador e o integrador podem apagar cópia
+  de trabalho de frente integrada, **depois de provar pelo caminho real** que nenhum processo a
+  usa, pelo `cwd`, pelos descritores e pelos mapas. Medido no dia: o disco estava em 696 MB livres
+  e subiu para 8,6 GiB.
+- **(C) Relatório pela metade.** Batimento de 15 min sem mudança sai em **duas linhas**. As
+  páginas se republicam **só no fecho da rodada**, não a cada commit.
+
 ## Cláusula pétrea: arquivos `.md` de apoio e controle de contexto
 
 Ordem do dono, 12/09/2026: *«Você está autorizado a fazer arquivos `.md` para
