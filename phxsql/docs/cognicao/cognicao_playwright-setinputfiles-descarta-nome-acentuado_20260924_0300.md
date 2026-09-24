@@ -33,5 +33,6 @@ prova de interoperabilidade termina num `diff` contra os originais, não num
 
 `escolherArquivo` no `video-phxzip.mjs` entra por buffer e **lança erro** se o
 navegador recebeu menos arquivos do que foram escolhidos. A cena 2 do vídeo
-termina em `diff -r`. Os outros roteiros de `testes-web/` que usam
-`setInputFiles` por caminho **não foram revistos** — buraco registrado.
+termina em `diff -r`. Varrido em `testes-web/`: nenhum outro roteiro usa `setInputFiles` hoje
+(`grep -l setInputFiles testes-web/*.mjs` devolve só este) — o próximo que
+usar herda a regra daqui, não uma guarda.
