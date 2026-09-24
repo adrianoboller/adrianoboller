@@ -6719,22 +6719,20 @@ pub fn limpar() {
             "leia como guarda nova."
         ),
         "arquivo": "crates/phxsql-server/src/config.rs",
+        # Reancorada em 24/09/2026: a 372 levou a decisao do rotulo para
+        # `Segredo::rotulo`, e o `if`/`else if` que este trecho copiava sumiu
+        # do `para_json`. O defeito reposto e o mesmo -- o valor no lugar do
+        # rotulo --, agora pela UNICA saida que o `Segredo` tem para o valor.
         "trecho": """            // Nunca a senha. Nem mascarada com asteriscos do tamanho certo --
             // o tamanho ja e informacao.
             (
                 "senha",
-                Json::texto_de(if self.senha.is_empty() {
-                    "(vazia)"
-                } else if self.senha_env.is_empty() {
-                    "(oculta)"
-                } else {
-                    "(do ambiente)"
-                }),
+                Json::texto_de(self.senha.rotulo("(vazia)", "(oculta)", "(do ambiente)")),
             ),
 """,
         "troca": """            // DEFEITO REPOSTO: a senha sai inteira, «para a tela de
             // configuracao conseguir salvar de volta sem apaga-la».
-            ("senha", Json::texto_de(&self.senha)),
+            ("senha", Json::texto_de(self.senha.valor().unwrap_or(""))),
 """,
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
@@ -7368,22 +7366,22 @@ pub fn limpar() {
             "VERDE com a privada saindo inteira. E o numero desta leva."
         ),
         "arquivo": "crates/phxsql-server/src/config.rs",
+        # Reancorada em 24/09/2026, pelo mesmo motivo da irma: a 372 levou o
+        # rotulo para `Segredo::rotulo`.
         "trecho": """            // Nunca a privada -- nem mascarada, que o tamanho ja e informacao.
             (
                 "chave_privada",
-                Json::texto_de(if self.chave_privada.is_empty() {
-                    "(do arquivo)"
-                } else if self.chave_privada_env.is_empty() {
-                    "(oculta)"
-                } else {
-                    "(do ambiente)"
-                }),
+                Json::texto_de(self.chave_privada.rotulo(
+                    "(do arquivo)",
+                    "(oculta)",
+                    "(do ambiente)",
+                )),
             ),
 """,
         "troca": """            // DEFEITO REPOSTO: a privada sai inteira, «para a tela conseguir
             // salvar a secao de volta sem apaga-la» -- o mesmo pedido que fez
             // a `Cifra` vizinha vazar, copiado para a irma.
-            ("chave_privada", Json::texto_de(&self.chave_privada)),
+            ("chave_privada", Json::texto_de(self.chave_privada.valor().unwrap_or(""))),
 """,
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
