@@ -109,21 +109,17 @@ tamanho novo era um recorte à mão. Agora:
 | `vetor/<produto>-horizontal.svg` | símbolo + palavra em **curvas** (Exo 2 SemiBold) + assinatura — PhxSql, PhxMail e Phxblockchain (o PhxZip tem logo próprio, abaixo) |
 | `derivados/vetor/` | PNG de 16 a 1200 px, Android 192/512, iOS 180 e o `phx.ico` (16/32/48/256) |
 
-### O logo do PhxZip — a fênix sobre a palavra Zip
+### O logo do PhxZip — só a palavra
 
-Decisão do dono, 24/09/2026, na terceira volta (morsa, depois cadeado):
-*«Só a Phoenix sobre a palavra Zip.»* A fênix pousa no pingo do «i», e as
-duas juntas leem **PhxZip** — sem cilindro, sem cadeado, e sem repetir o nome
-num horizontal ao lado. A morsa e o cadeado saíram do repositório.
+Decisão do dono, 24/09/2026, depois de três desenhos (morsa, cadeado, fênix
+sobre «Zip») recusados: *«Deixa a palavra PHXZIP.»* O logo é a palavra
+**PhxZip** em Exo 2 SemiBold, no padrão da folha do PhxSql — prata, com o
+`x` no âmbar do PhxZip. Nenhum desenho.
 
 | Arquivo | O que é |
 |---|---|
-| `vetor/phxzip-simbolo.svg` | o logo: a fênix pousada no «i» de **Zip** (o Z em âmbar, o acento do PhxZip) |
-| `vetor/phxzip-icone.svg` | para 16–48 px: a fênix sobre o **Z** — a palavra inteira não se lê em 32 px |
-
-Os dois saem do `vetor/gerar.py` (a palavra precisa da fonte); a fênix vem do
-`phx-simbolo.svg` por leitura. A primeira versão pôs a ave no centro da caixa
-e ela flutuou — o centro caía entre o «i» e o «p».
+| `vetor/phxzip-palavra.svg` | a palavra em curvas (não depende de a Exo 2 estar instalada) |
+| `vetor/phxzip-icone.svg` | ícone de aba: a letra **Z** em âmbar sobre `#010418` |
 
 Refazer: `python3 vetor/gerar.py Exo2[wght].ttf` (precisa de `fontTools`,
 ferramenta de trabalho, não do produto) e `node vetor/exportar.mjs`.

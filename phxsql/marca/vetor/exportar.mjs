@@ -32,7 +32,7 @@ const TABELA = [
   ['phx-icone.svg', 'ios-180.png', 180, '#010418'],
   ['phxzip-icone.svg', 'phxzip-icone-32.png', 32],
   ['phxzip-icone.svg', 'phxzip-icone-64.png', 64],
-  ['phxzip-simbolo.svg', 'phxzip-simbolo-512.png', 512],
+  ['phxzip-palavra.svg', 'phxzip-palavra-1200.png', 1200],
   ['phxsql-horizontal.svg', 'phxsql-horizontal-1200.png', 1200],
   ['phxmail-horizontal.svg', 'phxmail-horizontal-1200.png', 1200],
   ['phxblockchain-horizontal.svg', 'phxblockchain-horizontal-1200.png', 1200],
