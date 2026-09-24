@@ -238,10 +238,51 @@ fn tem_letras_da_senha(palavra: &str) -> bool {
 /// esteja, e reserializa o resto. O que nao se analisa nao vira texto: vira o
 /// tamanho em bytes, pelo mesmo motivo que o Profiler ja adota.
 pub fn sem_a_senha(texto: &str) -> String {
-    match redigir(texto) {
+    match redigir(texto, Redacao::Senha) {
         Some(saida) => saida,
         None => format!("<comando invalido, {} bytes>", texto.trim().len()),
     }
+}
+
+/// O comando com TODO literal trocado por `?` -- a forma que vai para o
+/// `perfil.txt` (pedido 365).
+///
+/// # Por que normalizar, e nao tapar o texto inteiro nem so a tabela
+///
+/// O pedido `sql` nomeia a tabela DENTRO da frase, e o crivo do Profiler
+/// (pedido 356) le o campo `"tabela"` -- entao a lista e a marca nao
+/// alcancavam o valor de um `INSERT` escrito em SQL. Os tres maduros
+/// convergem na resposta para o texto que vira estatistica: o
+/// `pg_stat_statements` do PostgreSQL(R) e o digest do `performance_schema`
+/// do MySQL(R) e do MariaDB trocam cada constante por um marcador e guardam
+/// o resto. O comando continua legivel (`INSERT INTO clientes ( id , cpf )
+/// VALUES ( ? , ? )`), que e o diagnostico; o valor, que nunca foi, sai.
+///
+/// E e a MESMA passada do [`sem_a_senha`], e nao um segundo lexico: a senha
+/// tem regra propria (tudo depois de `PASSWORD`, de qualquer tipo, inclusive
+/// palavra solta), e um normalizador separado teria de repeti-la -- o que
+/// alguem esquecesse numa das duas copias seria a senha no arquivo.
+///
+/// O identificador entre aspas DUPLAS sai como o `descrever` o escreve
+/// (`"***"`): no MySQL(R) e no MariaDB `"..."` e texto, e o CPF escrito do
+/// jeito deles viria por ai (parecer SEC do 497, P2). O que nao se analisa
+/// nao vira texto: vira o tamanho em bytes.
+pub fn normalizado(texto: &str) -> String {
+    match redigir(texto, Redacao::Literais) {
+        Some(saida) => saida,
+        None => format!("<comando invalido, {} bytes>", texto.trim().len()),
+    }
+}
+
+/// O que a passada da redacao tapa.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Redacao {
+    /// A senha e o literal de TEXTO: o [`sem_a_senha`], para a resposta, o
+    /// anel do Profiler e o `jobs.json`. Numero e nome citado ficam.
+    Senha,
+    /// Todo literal -- texto, numero, parametro -- vira `?`, e o nome citado
+    /// vira `"***"`: o [`normalizado`], para o `perfil.txt`.
+    Literais,
 }
 
 /// A redacao -- `None` quando o texto nao se analisa.
@@ -262,16 +303,23 @@ pub fn sem_a_senha(texto: &str) -> String {
 /// (`MASTER_PASSWORD="x"`, `SOURCE_PASSWORD=x`) -- terceira volta do parecer
 /// SEC. O comentario some porque o lexico o descarta: a linha comentada de um
 /// roteiro nao chega a saida.
-fn redigir(texto: &str) -> Option<String> {
+fn redigir(texto: &str, redacao: Redacao) -> Option<String> {
     let simbolos = lexico::analisar(texto).ok()?;
+    // O marcador que entra no lugar do literal. Na normalizacao a senha vira
+    // o MESMO `?` de todo literal: um marcador diferente diria a quem le o
+    // arquivo onde estava a senha.
+    let marca = match redacao {
+        Redacao::Senha => LITERAL_REDIGIDO,
+        Redacao::Literais => "?",
+    };
     let mut saida = String::with_capacity(texto.len());
     let mut depois_do_password = false;
-    for s in &simbolos {
+    for (i, s) in simbolos.iter().enumerate() {
         let fim = matches!(s.token, Token::PontoEVirgula);
         if depois_do_password && !fim {
-            if !saida.ends_with(LITERAL_REDIGIDO) {
+            if !saida.ends_with(marca) {
                 saida.push(' ');
-                saida.push_str(LITERAL_REDIGIDO);
+                saida.push_str(marca);
             }
             continue;
         }
@@ -279,21 +327,38 @@ fn redigir(texto: &str) -> Option<String> {
             saida.push(' ');
         }
         let (texto_do_simbolo, abre) = match &s.token {
-            Token::Texto(_) => (LITERAL_REDIGIDO.to_string(), false),
+            Token::Texto(_) => (marca.to_string(), false),
+            Token::Numero(_) | Token::Parametro(_) if redacao == Redacao::Literais => {
+                (marca.to_string(), false)
+            }
             // Entre aspas duplas com as letras da senha dentro: no MySQL(R)
             // aspas duplas sao texto (`CONNECTION "... password=x"`), e o
             // nome `"PASSWORD"` tambem vale a palavra.
             Token::Palavra {
                 texto,
                 citado: true,
-            } if tem_letras_da_senha(texto) => (LITERAL_REDIGIDO.to_string(), true),
+            } if tem_letras_da_senha(texto) => (marca.to_string(), true),
             // O nome entre aspas duplas ANTES do `PASSWORD` e o login, e o
             // Profiler existe para mostra-lo. Nao passa pelo `descrever`, que
-            // e a forma do ERRO e tapa o identificador citado.
+            // e a forma do ERRO e tapa o identificador citado. Na
+            // normalizacao ele CAI no `descrever` (`"***"`): o arquivo nao
+            // sabe se o `"..."` era nome ou o texto do dialeto do MySQL(R).
             Token::Palavra {
                 texto,
                 citado: true,
-            } => (format!("\"{}\"", texto.replace('"', "\"\"")), false),
+            } if redacao == Redacao::Senha => {
+                (format!("\"{}\"", texto.replace('"', "\"\"")), false)
+            }
+            // `TRUE`, `FALSE` e `NULL` em posicao de VALOR sao literais -- o
+            // lexico so os entrega como palavra. Num booleano marcado o dado
+            // e o proprio booleano (`VALUES (?, TRUE)` na coluna `hiv`), e o
+            // `pg_stat_statements` tambem os troca por marcador (parecer SEC
+            // da rodada, 24/09/2026, condicao do 365).
+            Token::Palavra { citado: false, .. }
+                if redacao == Redacao::Literais && constante_em_valor(&simbolos, i) =>
+            {
+                (marca.to_string(), false)
+            }
             Token::Palavra {
                 texto,
                 citado: false,
@@ -304,6 +369,31 @@ fn redigir(texto: &str) -> Option<String> {
         depois_do_password = abre;
     }
     Some(saida)
+}
+
+/// O simbolo `i` e `TRUE`, `FALSE` ou `NULL` em posicao de VALOR?
+///
+/// Fora de valor ficam os que sao a FORMA do comando, e nao dado: o teste
+/// `IS [NOT] NULL` / `IS [NOT] TRUE` e a restricao `NOT NULL` da declaracao.
+/// E a mesma fronteira do `pg_stat_statements`, que troca so o que e
+/// constante (`Const`) e deixa o `NullTest`/`BooleanTest` como estao. Nenhum
+/// dos que ficam carrega o valor de uma linha: `hiv IS TRUE` e a pergunta,
+/// e a resposta so sai na linha, que nao vai ao arquivo.
+fn constante_em_valor(simbolos: &[lexico::Simbolo], i: usize) -> bool {
+    let palavra = |j: usize| simbolos.get(j).and_then(|x| x.token.palavra_chave());
+    let Some(esta) = palavra(i) else {
+        return false;
+    };
+    if !matches!(esta.as_str(), "TRUE" | "FALSE" | "NULL") {
+        return false;
+    }
+    let antes = i.checked_sub(1).and_then(palavra);
+    let antes_de_antes = i.checked_sub(2).and_then(palavra);
+    match (antes_de_antes.as_deref(), antes.as_deref()) {
+        (_, Some("IS")) | (Some("IS"), Some("NOT")) => false,
+        (_, Some("NOT")) => esta != "NULL",
+        _ => true,
+    }
 }
 
 struct Passo<'a> {
@@ -658,5 +748,97 @@ mod testes {
         // O pedido montado continua levando a senha -- e ele que vai ao
         // servidor. O que se fecha e a saida de DIAGNOSTICO, nao o protocolo.
         assert!(c.pedido().escrever().contains("segredo1"));
+    }
+
+    /// Pedido 365: todo literal vira `?`, e o comando continua legivel.
+    #[test]
+    fn o_normalizado_troca_todo_literal_e_guarda_o_comando() {
+        let n = normalizado(
+            "INSERT INTO clientes (id, cpf, nasc, v) \
+             VALUES (7, '999.888.777-66', DATE '2001-02-03', -12.5), (?, ?, ?, ?)",
+        );
+        for dado in ["999", "777-66", "2001", "12.5", "7"] {
+            assert!(!n.contains(dado), "o literal {dado} ficou: {n}");
+        }
+        // Booleano e nulo em posicao de valor tambem sao literais -- a
+        // condicao do SEC no 365: num booleano marcado o dado e o booleano.
+        let b =
+            normalizado("INSERT INTO pacientes (id, hiv, obs, alta) VALUES (7, TRUE, NULL, false)");
+        for dado in ["TRUE", "NULL", "false", "7"] {
+            assert!(!b.contains(dado), "o literal {dado} ficou: {b}");
+        }
+        assert!(b.ends_with("VALUES ( ? , ? , ? , ? )"), "{b}");
+        assert_eq!(
+            normalizado("UPDATE pacientes SET hiv = FALSE WHERE id = 7"),
+            "UPDATE pacientes SET hiv = ? WHERE id = ?"
+        );
+        // O mesmo `NULL` que fica no `IS NULL` sai na comparacao, e o
+        // `DEFAULT` da declaracao tambem e valor.
+        assert_eq!(
+            normalizado("SELECT * FROM p WHERE obs IS NULL AND x = NULL"),
+            "SELECT * FROM p WHERE obs IS NULL AND x = ?"
+        );
+        assert_eq!(
+            normalizado("CREATE TABLE p (id INT NOT NULL, hiv BOOL DEFAULT FALSE)"),
+            "CREATE TABLE p ( id INT NOT NULL , hiv BOOL DEFAULT ? )"
+        );
+        assert!(n.starts_with("INSERT INTO clientes ( id , cpf"), "{n}");
+        assert!(n.contains("VALUES ( ? , ? , DATE ? , - ? )"), "{n}");
+        // O comentario some -- o lexico o descarta, e ele pode trazer dado.
+        let c = normalizado("SELECT * FROM t -- 999.888.777-66\nWHERE id = 1");
+        assert_eq!(c, "SELECT * FROM t WHERE id = ?");
+    }
+
+    /// O que e FORMA do comando fica: o teste de nulo e de verdade, e a
+    /// restricao da declaracao. Tapa-los cegaria o comando sem esconder dado
+    /// nenhum -- a resposta mora na linha, e a linha nao vai ao arquivo.
+    #[test]
+    fn o_normalizado_guarda_o_teste_de_nulo_e_a_restricao() {
+        let n = normalizado("SELECT * FROM p WHERE obs IS NULL AND hiv IS NOT TRUE AND x = 1");
+        assert!(n.contains("obs IS NULL AND hiv IS NOT TRUE"), "{n}");
+        let d = normalizado("CREATE TABLE p (id INT NOT NULL, hiv BOOL)");
+        assert!(d.contains("id INT NOT NULL"), "{d}");
+    }
+
+    /// A senha continua sob a regra dela: tudo depois de `PASSWORD`, de
+    /// qualquer tipo -- a palavra solta tambem, que nao e literal.
+    #[test]
+    fn o_normalizado_nao_perde_a_regra_da_senha() {
+        for (sql, senha) in [
+            ("CREATE USER carlos PASSWORD 'segredo1'", "segredo1"),
+            ("ALTER USER carlos PASSWORD segredo2", "segredo2"),
+            ("ALTER USER carlos IDENTIFIED BY \"segredo3\"", "segredo3"),
+        ] {
+            let n = normalizado(sql);
+            assert!(!n.contains(senha), "{sql} -> {n}");
+            assert!(n.contains("carlos"), "{sql} -> {n}");
+        }
+    }
+
+    /// O nome citado sai tapado (no dialeto do MySQL(R) `"..."` e texto), e o
+    /// que nao se analisa vira o tamanho.
+    #[test]
+    fn o_normalizado_tapa_o_citado_e_mede_o_que_nao_analisa() {
+        let n = normalizado("INSERT INTO t (a) VALUES (\"999.888.777-66\")");
+        assert!(!n.contains("999"), "{n}");
+        assert_eq!(
+            normalizado("SELECT '999.888.777-66"),
+            "<comando invalido, 22 bytes>"
+        );
+    }
+
+    /// O comportamento velho do `sem_a_senha`: numero e nome citado ficam,
+    /// so o texto e a senha saem. A passada e a mesma, e o modo novo nao
+    /// pode vazar para o de sempre.
+    #[test]
+    fn o_sem_a_senha_continua_como_era() {
+        assert_eq!(
+            sem_a_senha("SELECT * FROM \"t\" WHERE id = 7 AND n = 'x'"),
+            "SELECT * FROM \"t\" WHERE id = 7 AND n = '***'"
+        );
+        assert_eq!(
+            sem_a_senha("UPDATE t SET b = TRUE, c = NULL"),
+            "UPDATE t SET b = TRUE , c = NULL"
+        );
     }
 }

@@ -226,8 +226,7 @@ pub fn mesclar(velha: &[Value], set: &Json, esquema: &Schema) -> Result<Vec<Valu
         let i = esquema.coluna_por_nome(k).ok_or_else(|| {
             PhxError::Tipo(format!("coluna {k:?} nao existe em {}", esquema.nome()))
         })?;
-        let ty = &esquema.colunas()[i].ty;
-        nova[i] = crate::valores::json_para_valor(v, ty)?;
+        nova[i] = crate::valores::json_para_valor_da_coluna(v, &esquema.colunas()[i])?;
     }
     Ok(nova)
 }

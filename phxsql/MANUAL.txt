@@ -1923,7 +1923,8 @@ OPERACOES
     restaurar       database, tabela, rowid, [motivo], [versao]
     lixeira         database, tabela, [uuid], [limite], [com_anexos]
     motivos         database, tabela, [rowid], [limite]
-    esvaziar_lixeira database, tabela, motivo          nao tem volta
+    esvaziar_lixeira database, tabela, motivo          nao tem volta; esvazia
+                                    o .trash DESTE no, e roda tambem em replica
     expurgar_trilha database, tabela, ate|ate_ms, motivo, [fechar_ativo]
                                     apaga da trilha .lgpd os volumes FECHADOS
                                     INTEIROS cujo registro mais novo e anterior

@@ -1315,6 +1315,8 @@ QA, com julgamento de pergunta, e a redação do H.
 | QA — catracas e guardas da rodada | medio | leitura de diff e rodar as reguas em Python |
 | F — auditoria estatica das guardas novas | medio | ler troca e teste por guarda; o provador roda no fecho |
 | SEC — revisao da rodada (ABI nova, recusas novas) | forte | seguranca: ponteiro na ABI, oraculo em mensagem de recusa |
+| 533 + 542 — subida do byte 52 duravel e arquivos 0600 | forte | durabilidade contra queda (formato em disco) e permissao do dado em repouso |
+| juiz PhxJev — propostas do SEC e do DBA sobre faceis C | forte | o veredito sai do limiar do script, mas a probabilidade por pergunta e juizo sobre defeito ativo |
 
 **Convocacao do dono em 24/09/2026, 18:40** («toda a equipe em alerta e revisao
 nessa rodada»). Convocados: A (integrador), B (quatro frentes), C (revisoes em

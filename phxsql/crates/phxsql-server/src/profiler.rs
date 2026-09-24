@@ -294,6 +294,14 @@ pub struct Evento {
     pub bytes: usize,
     /// O pedido, com os campos sensiveis substituidos.
     pub pedido: String,
+    /// O pedido como ele vai para o ARQUIVO, quando nao e o mesmo do anel:
+    /// o `sql` com todo literal trocado por `?` (pedido 365). `None` e o
+    /// caso comum -- o arquivo leva o `pedido` de cima.
+    ///
+    /// Decidido em `chegou`, pelo mesmo motivo do `sigilo` ao lado: quem
+    /// decidisse na hora de escrever decidiria de novo em cada caminho de
+    /// escrita que nascer depois.
+    pub pedido_do_arquivo: Option<String>,
     /// O pedido toca tabela declarada em `cifra.tabelas` ou com `.reg` cifrado?
     ///
     /// Decidido em `chegou`, no MESMO percurso que redige o pedido, e nao na
@@ -343,6 +351,7 @@ impl Evento {
             // achar o pedido gigante que derrubou o servidor.
             self.sigilo
                 .no_lugar_do_pedido()
+                .or(self.pedido_do_arquivo.as_deref())
                 .unwrap_or(self.pedido.as_str()),
             // O ERRO tambem nao vai, e isso foi MEDIDO em 18/09/2026, ao
             // procurar quem na mesma linha nao tinha o campo novo: o texto do
@@ -358,7 +367,15 @@ impl Evento {
             // bytes. E o ANEL continua com o erro inteiro, pela mesma razao
             // que continua com o pedido -- a tela e do administrador, que tem
             // o `config.json` e portanto a senha do cofre.
-            match (self.erro.is_empty(), self.sigilo.esconde_o_texto()) {
+            //
+            // E o `sql` normalizado leva o erro pelo mesmo caminho (pedido
+            // 365): o texto dele sai sem literal, e o erro de conversao cita
+            // o literal -- `data invalida: "999.888.777-66"`. Tapar a frase e
+            // deixar o erro seria a licao acima de novo, na mesma coluna.
+            match (
+                self.erro.is_empty(),
+                self.sigilo.esconde_o_texto() || self.pedido_do_arquivo.is_some(),
+            ) {
                 (true, _) => String::new(),
                 (false, false) => format!("  <- {}", self.erro),
                 (false, true) => {
@@ -787,7 +804,13 @@ impl Profiler {
         //
         // O pedido e analisado UMA vez, e dessa mesma passada saem as duas
         // coisas: o texto redigido e a lista de tabelas que ele nomeia.
-        let (pedido, alvos) = analisar_pedido(linha_crua, database);
+        //
+        // A normalizacao do `sql` so existe para o ARQUIVO: sem `arquivo`
+        // pedido ela nao roda -- o portao antes do trabalho, como a pergunta
+        // ao disco do `sigilo_dos_alvos`.
+        let para_o_arquivo = !self.caminho.as_os_str().is_empty();
+        let (pedido, pedido_do_arquivo, alvos) =
+            analisar_pedido(linha_crua, database, para_o_arquivo);
         let evento = Evento {
             serial,
             quando_ms,
@@ -798,6 +821,7 @@ impl Profiler {
             tabela: de_uma_linha(tabela, TETO_DO_CAMPO),
             bytes: linha_crua.len(),
             pedido,
+            pedido_do_arquivo,
             sigilo: self.sigilo_dos_alvos(&alvos),
             duracao_ms: None,
             ok: None,
@@ -1023,7 +1047,7 @@ fn de_uma_linha(s: &str, teto: usize) -> String {
 /// entao nao se perde pedido legitimo nenhum: perde-se so o lixo, e o lixo e
 /// exatamente onde a senha apareceria por engano.
 pub fn redigir(linha: &str) -> String {
-    analisar_pedido(linha, "").0
+    analisar_pedido(linha, "", false).0
 }
 
 /// Redige o pedido **e** colhe as tabelas que ele nomeia, numa passada so.
@@ -1036,13 +1060,33 @@ pub fn redigir(linha: &str) -> String {
 /// lote de cinco mil linhas isso era meio megabyte de JSON analisado para
 /// jogar fora. Uma segunda funcao publica que reanalisasse a mesma linha para
 /// achar as tabelas repetiria o mesmo erro por outro nome.
-fn analisar_pedido(linha: &str, database: &str) -> (String, Vec<(String, String)>) {
+///
+/// # E o texto do ARQUIVO sai da mesma arvore
+///
+/// Com `para_o_arquivo`, a passada que redige ja normaliza o `sql` (pedido
+/// 365). Quando nao havia `sql` nenhum a arvore e a mesma do anel e serve aos
+/// dois -- o pedido comum nao paga uma segunda passada. So o `sql` observado
+/// com arquivo pede as duas, porque o anel continua com o texto inteiro.
+fn analisar_pedido(
+    linha: &str,
+    database: &str,
+    para_o_arquivo: bool,
+) -> (String, Option<String>, Vec<(String, String)>) {
     let tamanho = linha.trim().len();
     match Json::analisar(linha) {
         Ok(j @ Json::Objeto(_)) => {
             let mut alvos = Vec::new();
             colher_tabelas(&j, database, &mut alvos);
-            (limpar(&j).escrever(), alvos)
+            if !para_o_arquivo {
+                return (limpar(&j).escrever(), None, alvos);
+            }
+            let mut normalizou = false;
+            let do_arquivo = limpar_com(&j, true, &mut normalizou).escrever();
+            if normalizou {
+                (limpar(&j).escrever(), Some(do_arquivo), alvos)
+            } else {
+                (do_arquivo, None, alvos)
+            }
         }
         // Pedido que nao e objeto nao vira texto -- vira o tamanho. E sem
         // arvore nao ha tabela a colher: a lista sai vazia, e o evento cai no
@@ -1050,9 +1094,14 @@ fn analisar_pedido(linha: &str, database: &str) -> (String, Vec<(String, String)
         // texto nenhum.
         Ok(_) => (
             format!("<pedido nao e objeto, {tamanho} bytes>"),
+            None,
             Vec::new(),
         ),
-        Err(_) => (format!("<pedido invalido, {tamanho} bytes>"), Vec::new()),
+        Err(_) => (
+            format!("<pedido invalido, {tamanho} bytes>"),
+            None,
+            Vec::new(),
+        ),
     }
 }
 
@@ -1147,10 +1196,48 @@ fn sql_sem_senha(chave: &str, valor: &Json) -> Option<String> {
 /// (`jobs::Job::ficha`) devolve um pedido guardado, e redigi-lo por outra
 /// regua seria a mesma decisao escrita duas vezes.
 pub(crate) fn limpar(j: &Json) -> Json {
+    limpar_com(j, false, &mut false)
+}
+
+/// O pedido `sql` e so ele: o `op` diz, e nao o nome do campo.
+///
+/// `texto` tambem e o campo da carga COLADA do `inserir_lote` -- um CSV, que
+/// o lexico de SQL leria como lixo. Decidir pelo nome do campo normalizaria
+/// o que nao e SQL; decidir pelo `op` e analisar a arvore que ja esta na mao.
+fn e_pedido_sql(pares: &[(String, Json)]) -> bool {
+    pares.iter().any(|(k, v)| {
+        k.trim().eq_ignore_ascii_case("op")
+            && v.texto()
+                .is_some_and(|o| o.trim().eq_ignore_ascii_case("sql"))
+    })
+}
+
+/// A arvore redigida -- e, com `normalizar`, com o SQL de todo pedido `sql`
+/// trocado pelo [`phxsql_sql::usuario::normalizado`] (pedido 365).
+///
+/// Uma funcao so para as duas passadas, e nao uma copia da de cima com um
+/// ramo a mais: a regra do segredo por nome, a da senha no SQL e a dos
+/// `parametros` irmaos valem nas duas, e duas copias divergiriam no primeiro
+/// segredo novo. `normalizou` diz se algum `sql` foi normalizado -- quando
+/// nao, a arvore saiu igual a do anel.
+fn limpar_com(j: &Json, normalizar: bool, normalizou: &mut bool) -> Json {
     match j {
         Json::Objeto(pares) => {
-            let redigidos: Vec<Option<String>> =
-                pares.iter().map(|(k, v)| sql_sem_senha(k, v)).collect();
+            let e_sql = normalizar && e_pedido_sql(pares);
+            let redigidos: Vec<Option<String>> = pares
+                .iter()
+                .map(|(k, v)| {
+                    if e_sql && crate::segredos::e_campo_de_sql(k) {
+                        // O que nao e texto nao se analisa: vira o tamanho.
+                        *normalizou = true;
+                        return Some(match v.texto() {
+                            Some(t) => phxsql_sql::usuario::normalizado(t),
+                            None => format!("<sql nao e texto, {} bytes>", v.escrever().len()),
+                        });
+                    }
+                    sql_sem_senha(k, v)
+                })
+                .collect();
             // O SQL redigido leva junto os `parametros` IRMAOS, a lista
             // inteira -- pedido 497, B3 da terceira volta do parecer SEC.
             // `ALTER USER c PASSWORD ?` com `"parametros":["x"]` e o que o
@@ -1158,7 +1245,8 @@ pub(crate) fn limpar(j: &Json) -> Json {
             // injecao), e o `?` tapado no texto nao tapava o valor ao lado.
             // A lista inteira, e nao o parametro da posicao da senha: contar
             // os `?` ate a senha seria recortar o que o tradutor so decide
-            // depois.
+            // depois. E o SQL NORMALIZADO leva a lista pelo mesmo ramo (pedido
+            // 365): os `parametros` sao os literais que o `?` esconde.
             let tapa_parametros = redigidos.iter().any(Option::is_some);
             Json::Objeto(
                 pares
@@ -1174,13 +1262,18 @@ pub(crate) fn limpar(j: &Json) -> Json {
                         } else if tapa_parametros && k.trim().eq_ignore_ascii_case("parametros") {
                             (k.clone(), Json::Texto("***".into()))
                         } else {
-                            (k.clone(), limpar(v))
+                            (k.clone(), limpar_com(v, normalizar, normalizou))
                         }
                     })
                     .collect(),
             )
         }
-        Json::Lista(itens) => Json::Lista(itens.iter().map(limpar).collect()),
+        Json::Lista(itens) => Json::Lista(
+            itens
+                .iter()
+                .map(|i| limpar_com(i, normalizar, normalizou))
+                .collect(),
+        ),
         outro => outro.clone(),
     }
 }
@@ -2274,6 +2367,143 @@ mod testes_reg_cifrado {
             texto.contains("111.222.333-44"),
             "o nome do pedido virou caminho e alcancou um .reg fora da raiz de \
              dados:\n{texto}"
+        );
+    }
+}
+
+/// Pedido 365: o `sql` vai ao ARQUIVO com todo literal trocado por `?`.
+///
+/// Cada teste confere o arquivo em disco E o anel: o anel e o controle de que
+/// o administrador nao perdeu a tela, e o arquivo e o furo.
+#[cfg(test)]
+mod testes_sql_normalizado {
+    use super::*;
+
+    const CPF: &str = "999.888.777-66";
+
+    fn ligado(nome: &str, sigilosas: &[&str], arquivo: bool) -> (Profiler, PathBuf, DirTemp) {
+        let d = DirTemp::novo(&format!("prof-sql-{nome}"));
+        let caminho = d.join("perfil.txt");
+        let mut p = Profiler::default();
+        p.definir_sigilosas(&sigilosas.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+        let alvo = if arquivo {
+            caminho.to_str().unwrap().to_string()
+        } else {
+            String::new()
+        };
+        p.ligar(Filtro::default(), &alvo, 100, 1_700_000_000_000)
+            .unwrap();
+        (p, caminho, d)
+    }
+
+    fn perfilar(p: &mut Profiler, pedido: &str, erro: &str) {
+        let s = p
+            .chegou(pedido, "sql", "adm", "loja", "", "1.1.1.1", 0)
+            .unwrap();
+        p.terminou(s, 1, erro.is_empty(), erro);
+    }
+
+    /// **O vermelho do 365, nos dois casos que ele mediu**: tabela declarada
+    /// em `cifra.tabelas` e tabela sem declaracao nenhuma -- o `sql` nao
+    /// nomeia tabela em campo, entao a lista nao o alcanca, e a normalizacao
+    /// nao depende dela.
+    #[test]
+    fn o_sql_vai_ao_arquivo_sem_os_literais() {
+        for (nome, lista) in [
+            ("declarada", &["loja.clientes"][..]),
+            ("sem-lista", &[][..]),
+        ] {
+            let (mut p, arquivo, _g) = ligado(nome, lista, true);
+            let pedido = format!(
+                r#"{{"op":"sql","database":"loja","texto":"INSERT INTO clientes (id, cpf) VALUES (7, '{CPF}')"}}"#
+            );
+            perfilar(&mut p, &pedido, "");
+            let texto = std::fs::read_to_string(&arquivo).unwrap();
+            assert!(
+                !texto.contains(CPF),
+                "{nome}: o valor do INSERT foi para o perfil.txt:\n{texto}"
+            );
+            assert!(
+                texto.contains("INSERT INTO clientes"),
+                "{nome}: o arquivo ficou cego para o SQL, que e o uso principal \
+                 do Profiler:\n{texto}"
+            );
+            assert!(texto.contains("VALUES ( ? , ? )"), "{nome}:\n{texto}");
+            assert!(
+                p.eventos(1)[0].pedido.contains(CPF),
+                "{nome}: o anel perdeu o texto -- a tela e do administrador"
+            );
+        }
+    }
+
+    /// A coluna ao lado: o erro de conversao cita o literal, e sai do
+    /// arquivo como o TAMANHO -- a licao do 356 na mesma linha.
+    #[test]
+    fn o_erro_do_sql_normalizado_fica_fora_do_arquivo() {
+        let (mut p, arquivo, _g) = ligado("erro", &[], true);
+        let pedido = format!(
+            r#"{{"op":"sql","database":"loja","texto":"INSERT INTO t (d) VALUES ('{CPF}')"}}"#
+        );
+        let erro = format!("[SP000018] tipo invalido: data invalida: \"{CPF}\"");
+        perfilar(&mut p, &pedido, &erro);
+        let texto = std::fs::read_to_string(&arquivo).unwrap();
+        assert!(!texto.contains(CPF), "o erro levou o valor:\n{texto}");
+        assert!(texto.contains("erro nao gravado"), "{texto}");
+        assert!(p.eventos(1)[0].erro.contains(CPF), "o anel perdeu o erro");
+    }
+
+    /// Os `parametros` sao os literais que o `?` esconde, e saem juntos --
+    /// no `sql` de topo e no `sql` aninhado num job.
+    #[test]
+    fn os_parametros_do_sql_normalizado_saem_do_arquivo() {
+        let (mut p, arquivo, _g) = ligado("parametros", &[], true);
+        for pedido in [
+            format!(
+                r#"{{"op":"sql","texto":"INSERT INTO t (id, cpf) VALUES (?, ?)","parametros":[7,"{CPF}"]}}"#
+            ),
+            format!(
+                r#"{{"op":"job_salvar","pedido":{{"op":"sql","texto":"SELECT * FROM t WHERE cpf = '{CPF}'"}}}}"#
+            ),
+        ] {
+            perfilar(&mut p, &pedido, "");
+        }
+        let texto = std::fs::read_to_string(&arquivo).unwrap();
+        assert!(!texto.contains(CPF), "{texto}");
+        assert!(texto.contains("SELECT * FROM t WHERE cpf = ?"), "{texto}");
+    }
+
+    /// **O portao antes do trabalho.** Sem arquivo pedido a normalizacao nao
+    /// roda: ela so existe para o arquivo, e o Profiler da tela nao paga.
+    #[test]
+    fn sem_arquivo_o_sql_nao_e_normalizado() {
+        let (mut p, _arquivo, _g) = ligado("so-anel", &[], false);
+        let pedido = format!(
+            r#"{{"op":"sql","texto":"INSERT INTO clientes (id, cpf) VALUES (7, '{CPF}')"}}"#
+        );
+        perfilar(&mut p, &pedido, "");
+        assert_eq!(p.eventos(1)[0].pedido_do_arquivo, None);
+    }
+
+    /// **O comportamento velho**: pedido que nao e `sql` vai ao arquivo como
+    /// sempre foi -- inclusive a carga COLADA, cujo campo tambem se chama
+    /// `texto` e nao e SQL.
+    #[test]
+    fn o_que_nao_e_sql_vai_ao_arquivo_como_sempre() {
+        let (mut p, arquivo, _g) = ligado("velho", &[], true);
+        for pedido in [
+            r#"{"op":"inserir","database":"loja","tabela":"cidades","linha":{"nome":"Blumenau"}}"#,
+            r#"{"op":"inserir_lote","database":"loja","tabela":"cidades","texto":"nome\nIndaial"}"#,
+        ] {
+            let s = p
+                .chegou(pedido, "inserir", "adm", "loja", "cidades", "ip", 0)
+                .unwrap();
+            p.terminou(s, 1, true, "");
+            assert_eq!(p.eventos(1)[0].pedido_do_arquivo, None, "{pedido}");
+        }
+        let texto = std::fs::read_to_string(&arquivo).unwrap();
+        assert!(
+            texto.contains("Blumenau") && texto.contains("Indaial"),
+            "{texto}"
         );
     }
 }

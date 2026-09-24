@@ -2682,6 +2682,19 @@ mod testes {
         assert!(!a.escreve(), "o OPS_ESCRITA mudou: reveja este teste");
     }
 
+    /// Pedidos 368 e 499: `esvaziar_lixeira` e `expurgar_trilha` apagam sem
+    /// volta. Mexem so no arquivo deste no (`OPS_DO_NO`), e isso nao muda o
+    /// que o catalogo e o OpenAPI dizem: elas ESCREVEM, e a ponte MCP
+    /// somente-leitura nao as oferece.
+    #[test]
+    fn as_que_apagam_so_no_no_escrevem_e_nao_sao_ferramenta_mcp() {
+        for nome in ["esvaziar_lixeira", "expurgar_trilha"] {
+            let o = por_nome(nome).unwrap();
+            assert!(!o.ferramenta_mcp, "{nome} virou ferramenta MCP");
+            assert!(o.escreve(), "{nome}: o catalogo diz que so le");
+        }
+    }
+
     /// Pedido 276: o catálogo declarava só `token` para `replicacao_testar`,
     /// enquanto `origem_da_sonda` (`servidor.rs`) lê `token_remoto` primeiro
     /// e só cai no `token` como alias de compatibilidade. Quem lia só o

@@ -64,7 +64,12 @@ struct Caso {
     /// passaria como limpa. So onde a senha viaja (as letras `PASSWORD`,
     /// `IDENTIFIED`): nos outros o Profiler mostra o SQL e o pedido por
     /// desenho -- a coluna «perfil» do parecer SEC do 497. No comentario, a
-    /// forma redigida e o texto SEM ele.
+    /// forma redigida e o texto SEM ele. Desde o pedido 365 o arquivo leva o
+    /// `sql` NORMALIZADO: todo literal, a senha inclusive, sai `?` -- a prova
+    /// e a frase com o marcador no lugar, e nao mais o `'***'` do anel.
+    /// E todo `op:"sql"` tem prova, senha ou nao: o arquivo normaliza o SQL
+    /// inteiro, e o caso sem prova deixaria o 365 sem catraca nesta bateria
+    /// (recomendacao do parecer SEC da rodada, 24/09/2026).
     perfil: Option<&'static str>,
     /// Transacao so vale pela porta de dados: pela web o `BEGIN` recusa
     /// antes de ler o prazo, e o caso provaria outra recusa.
@@ -97,21 +102,21 @@ const CASOS: &[Caso] = &[
         caminho: "SQL, literal sem fechar",
         corpo: r#""op":"sql","database":"loja","texto":"SELECT n FROM t WHERE nome = 'SEGREDO123""#,
         trecho: "nao fechado",
-        perfil: None,
+        perfil: Some("<comando invalido"),
         pela_web: true,
     },
     Caso {
         caminho: "SQL, sobrou um literal",
         corpo: r#""op":"sql","database":"loja","texto":"SELECT n FROM t WHERE n = 1 'SEGREDO123'""#,
         trecho: "sobrou",
-        perfil: None,
+        perfil: Some("WHERE n = ? ?"),
         pela_web: true,
     },
     Caso {
         caminho: "SQL, literal onde vinha outra coisa",
         corpo: r#""op":"sql","database":"loja","texto":"INSERT INTO t (n) VALUES 'SEGREDO123'""#,
         trecho: "esperava",
-        perfil: None,
+        perfil: Some("VALUES ?"),
         pela_web: true,
     },
     Caso {
@@ -125,7 +130,7 @@ const CASOS: &[Caso] = &[
         caminho: "CREATE USER, literal no lugar do login",
         corpo: r#""op":"sql","database":"loja","texto":"CREATE USER 'SEGREDO123' PASSWORD 'x'""#,
         trecho: "login",
-        perfil: Some("'***'"),
+        perfil: Some("CREATE USER ? PASSWORD ?"),
         pela_web: true,
     },
     // B1: a senha com aspas nao dobradas deixa um pedaco dela SOBRANDO.
@@ -133,7 +138,7 @@ const CASOS: &[Caso] = &[
         caminho: "B1, CREATE USER, pedaco de senha que sobra",
         corpo: r#""op":"sql","database":"loja","texto":"CREATE USER c PASSWORD 'ab'SEGREDO123'cd'""#,
         trecho: "sobrou",
-        perfil: Some("'***'"),
+        perfil: Some("CREATE USER c PASSWORD ?"),
         pela_web: true,
     },
     // B2: a senha que nao e literal de aspas simples -- o costume do MySQL(R).
@@ -141,14 +146,14 @@ const CASOS: &[Caso] = &[
         caminho: "B2, CREATE USER, senha entre aspas duplas",
         corpo: r#""op":"sql","database":"loja","texto":"CREATE USER c PASSWORD \"SEGREDO123\"""#,
         trecho: "aspas simples",
-        perfil: Some("'***'"),
+        perfil: Some("CREATE USER c PASSWORD ?"),
         pela_web: true,
     },
     Caso {
         caminho: "B2, ALTER USER, senha sem aspas",
         corpo: r#""op":"sql","database":"loja","texto":"ALTER USER c PASSWORD SEGREDO123""#,
         trecho: "aspas simples",
-        perfil: Some("'***'"),
+        perfil: Some("ALTER USER c PASSWORD ?"),
         pela_web: true,
     },
     // P1: o literal do SQL que vira campo do pedido montado, e o id do fio.
@@ -156,14 +161,14 @@ const CASOS: &[Caso] = &[
         caminho: "P1, BEGIN TRANSACTION TIMEOUT acima do teto",
         corpo: r#""op":"sql","database":"loja","texto":"BEGIN TRANSACTION TIMEOUT 'SEGREDO123xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'""#,
         trecho: "nao entendi a duracao",
-        perfil: None,
+        perfil: Some("BEGIN TRANSACTION TIMEOUT ?"),
         pela_web: false,
     },
     Caso {
         caminho: "P1, LOCK TIMEOUT acima do teto",
         corpo: r#""op":"sql","database":"loja","texto":"BEGIN LOCK TIMEOUT 'SEGREDO123xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'""#,
         trecho: "nao entendi a duracao",
-        perfil: None,
+        perfil: Some("BEGIN LOCK TIMEOUT ?"),
         pela_web: false,
     },
     Caso {
@@ -178,14 +183,14 @@ const CASOS: &[Caso] = &[
         caminho: "P2, valor entre aspas duplas",
         corpo: r#""op":"sql","database":"loja","texto":"INSERT INTO t (n, nome) VALUES (2, \"SEGREDO123\")""#,
         trecho: "aspas simples",
-        perfil: None,
+        perfil: Some(r#"VALUES ( ? , \"***\" )"#),
         pela_web: true,
     },
     Caso {
         caminho: "P2, aspas duplas onde vinha palavra",
         corpo: r#""op":"sql","database":"loja","texto":"INSERT INTO t (n) VALUES \"SEGREDO123\"""#,
         trecho: "esperava",
-        perfil: None,
+        perfil: Some(r#"VALUES \"***\""#),
         pela_web: true,
     },
     // Segunda volta do parecer SEC. (1) O portao lido por espaco: o
@@ -195,21 +200,21 @@ const CASOS: &[Caso] = &[
         caminho: "2a volta, comentario de bloco antes do CREATE USER",
         corpo: r#""op":"sql","database":"loja","texto":"/* odbc */ CREATE USER c PASSWORD 'SEGREDO123'""#,
         trecho: "usuario_criar",
-        perfil: Some("'***'"),
+        perfil: Some("CREATE USER c PASSWORD ?"),
         pela_web: true,
     },
     Caso {
         caminho: "2a volta, comentario de linha antes do CREATE USER",
         corpo: r#""op":"sql","database":"loja","texto":"-- x\nCREATE USER c PASSWORD 'SEGREDO123'""#,
         trecho: "usuario_criar",
-        perfil: Some("'***'"),
+        perfil: Some("CREATE USER c PASSWORD ?"),
         pela_web: true,
     },
     Caso {
         caminho: "2a volta, comentario entre CREATE e USER",
         corpo: r#""op":"sql","database":"loja","texto":"CREATE/**/USER c PASSWORD 'SEGREDO123'""#,
         trecho: "usuario_criar",
-        perfil: Some("'***'"),
+        perfil: Some("CREATE USER c PASSWORD ?"),
         pela_web: true,
     },
     // (2) A senha depois de `IDENTIFIED BY` -- MySQL(R) e MariaDB.
@@ -217,21 +222,21 @@ const CASOS: &[Caso] = &[
         caminho: "2a volta, CREATE USER IDENTIFIED BY entre aspas duplas",
         corpo: r#""op":"sql","database":"loja","texto":"CREATE USER c IDENTIFIED BY \"SEGREDO123\"""#,
         trecho: "exige PASSWORD",
-        perfil: Some("'***'"),
+        perfil: Some("CREATE USER c IDENTIFIED ?"),
         pela_web: true,
     },
     Caso {
         caminho: "2a volta, CREATE USER IDENTIFIED BY sem aspas",
         corpo: r#""op":"sql","database":"loja","texto":"CREATE USER c IDENTIFIED BY SEGREDO123""#,
         trecho: "exige PASSWORD",
-        perfil: Some("'***'"),
+        perfil: Some("CREATE USER c IDENTIFIED ?"),
         pela_web: true,
     },
     Caso {
         caminho: "2a volta, ALTER USER IDENTIFIED BY",
         corpo: r#""op":"sql","database":"loja","texto":"ALTER USER c IDENTIFIED BY \"SEGREDO123\"""#,
         trecho: "exige PASSWORD",
-        perfil: Some("'***'"),
+        perfil: Some("ALTER USER c IDENTIFIED ?"),
         pela_web: true,
     },
     // (3) A senha em comando que este tradutor nem executa.
@@ -239,14 +244,14 @@ const CASOS: &[Caso] = &[
         caminho: "2a volta, ALTER ROLE PASSWORD (PostgreSQL)",
         corpo: r#""op":"sql","database":"loja","texto":"ALTER ROLE c PASSWORD 'SEGREDO123'""#,
         trecho: "nao e um comando desta camada",
-        perfil: Some("'***'"),
+        perfil: Some("ALTER ROLE c PASSWORD ?"),
         pela_web: true,
     },
     Caso {
         caminho: "2a volta, SET PASSWORD FOR (MySQL, MariaDB)",
         corpo: r#""op":"sql","database":"loja","texto":"SET PASSWORD FOR c = 'SEGREDO123'""#,
         trecho: "nao e um comando desta camada",
-        perfil: Some("'***'"),
+        perfil: Some("SET PASSWORD ?"),
         pela_web: true,
     },
     // Terceira volta do parecer SEC. B3: o valor do `?` ao lado do SQL com
@@ -286,28 +291,28 @@ const CASOS: &[Caso] = &[
         caminho: "B4, MASTER_PASSWORD",
         corpo: r#""op":"sql","database":"loja","texto":"CHANGE MASTER TO MASTER_PASSWORD='SEGREDO123'""#,
         trecho: "nao e um comando desta camada",
-        perfil: Some("MASTER_PASSWORD '***'"),
+        perfil: Some("MASTER_PASSWORD ?"),
         pela_web: true,
     },
     Caso {
         caminho: "B4, SOURCE_PASSWORD entre aspas duplas",
         corpo: r#""op":"sql","database":"loja","texto":"CHANGE REPLICATION SOURCE TO SOURCE_PASSWORD=\"SEGREDO123\"""#,
         trecho: "nao e um comando desta camada",
-        perfil: Some("SOURCE_PASSWORD '***'"),
+        perfil: Some("SOURCE_PASSWORD ?"),
         pela_web: true,
     },
     Caso {
         caminho: "B4, senha dentro do literal de conexao (PostgreSQL)",
         corpo: r#""op":"sql","database":"loja","texto":"CREATE SUBSCRIPTION s CONNECTION 'host=h password=SEGREDO123' PUBLICATION p""#,
         trecho: "cria TRIGGER ou PROCEDURE",
-        perfil: Some("CONNECTION '***'"),
+        perfil: Some("CONNECTION ?"),
         pela_web: true,
     },
     Caso {
         caminho: "B4, PASSWORD entre aspas duplas",
         corpo: r#""op":"sql","database":"loja","texto":"CREATE USER c \"PASSWORD\" 'SEGREDO123'""#,
         trecho: "exige PASSWORD",
-        perfil: Some("CREATE USER c '***'"),
+        perfil: Some("CREATE USER c ?"),
         pela_web: true,
     },
 ];

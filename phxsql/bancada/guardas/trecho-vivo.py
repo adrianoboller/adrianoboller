@@ -306,6 +306,15 @@ dia, nunca no desejado:
   derrubava o servidor e o NULL na chave do `diff` que apagava a linha
   irma. A frente contou 358 sobre a base dela; a conta do integrador, pelo
   `--catraca`.
+  **SUBIU para 430 em 24/09/2026** (faceis C: 464, 365, 458 e 499,
+  integrado sobre os faceis B): dezessete guardas -- a recusa que citava o
+  valor da coluna marcada (e a faixa do slot, a carga colada e o upsert),
+  o `sql` que ia ao perfil com o literal (pelo soquete, na bateria do 497 e
+  com o booleano cru), o erro do `sql` normalizado, o que nao e SQL, as
+  transacoes recuperadas sem sanear ou envenenadas para toda conexao, a
+  trava suja sem nome, o veneno dito uma vez por trava, e as duas ops do no
+  fora da lista de escrita e da lista do no. A frente contou 391 sobre a
+  base dela; a conta do integrador, pelo `--catraca`.
   **SUBIU para 300 em 24/09/2026, contado NA ARVORE DA FRENTE do 497** (e nao
   na combinada, que a linha do 345 acima reconcilia) (pedido 497, o literal do pedido no texto
   do erro que o `acessos.log` grava): tres guardas novas, uma por motor que
@@ -430,7 +439,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 413
+PISO_DAS_ENTRADAS = 430
 
 # ------------------------------------------------------------- APOSENTADAS
 #

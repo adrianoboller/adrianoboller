@@ -793,7 +793,11 @@ pub fn linha_de_texto(carga: &Carga, i: usize, esquema: &Schema) -> Result<Vec<V
         .iter()
         .map(
             |col| match carga.colunas.iter().position(|c| *c == col.nome) {
-                Some(j) => valor_de_texto(linha.get(j).map(String::as_str).unwrap_or(""), &col.ty),
+                // A recusa passa pela coluna, e nao sai direto do conversor:
+                // coluna marcada como dado pessoal nao cita o valor da
+                // celula (pedido 464) -- a mesma porta do protocolo.
+                Some(j) => valor_de_texto(linha.get(j).map(String::as_str).unwrap_or(""), &col.ty)
+                    .map_err(|e| col.recusa_de_valor(e)),
                 // A lista das colunas de sistema e o valor de partida de
                 // cada uma moram juntos, no `schema.rs`. O par cravado que
                 // estava aqui caia em `Value::Null` para qualquer coluna de

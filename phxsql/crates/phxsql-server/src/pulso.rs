@@ -229,16 +229,17 @@ pub(crate) fn forjar_contra_o_pino_cego(
 /// `Servidor::cadastro`). O que muda e o que aqueles calam: esta e trava de
 /// SEGURANCA, e quem faz menos do que promete tem de dizer que fez menos.
 ///
-/// # Uma vez, e nao a cada pulso -- e por que um tipo, e nao uma funcao
+/// # Uma vez por panico, e nao a cada pulso -- e por que um tipo
 ///
 /// O veneno nao sai: toda chamada seguinte acha a trava envenenada de novo, e
 /// o aviso numa funcao solta viraria uma linha por pulso -- o aviso que
 /// ninguem le. O `Mutex::clear_poison` resolveria sozinho, mas e de 1.77 e a
 /// casa promete 1.75 (`rust-version` do `Cargo.toml`). Entao a trava anda com
-/// a propria marca de «ja dito», e o aviso sai uma vez por trava. Um segundo
-/// panico com ela na mao nao repete o aviso -- e nao precisa: o proprio
-/// panico ja sai no log pelo gancho padrao, e o estado da guarda (recuperada)
-/// nao mudou.
+/// a propria marca, e quem a poe e a [`Tomada`]: ao cair no desenrolar de um
+/// panico, ela anota «sujou». A proxima tomada ve a marca, avisa, roda o
+/// saneamento e a limpa -- um aviso por PANICO, e nao por trava: com o veneno
+/// do `Mutex`, que nao sai, o segundo panico passaria calado e sem saneamento
+/// (pedido 458).
 ///
 /// Um tipo so para as tres travas (fila de nonces, TOFU e os avisos do M3):
 /// a decisao «recuperar e dizer» escrita uma vez, e nao repetida em cada
@@ -254,11 +255,65 @@ pub(crate) fn forjar_contra_o_pino_cego(
 /// que o desenrolar nao entorta --, entao a resposta vem deste motor, e nao
 /// de uma segunda copia dele no `cluster.rs`. O que muda de trava para trava
 /// e so o nome no aviso.
+///
+/// # E as transacoes do servidor -- pedido 458
+///
+/// Um panico com `transacoes` na mao envenenava a trava, e as 26 tomadas dela
+/// recusavam com `SP000010` dali em diante: BEGIN, COMMIT e ROLLBACK de TODA
+/// conexao, ate reiniciar. Atras dela nao ha disco -- «nada vai a disco antes
+/// do COMMIT» (`transacao.rs`) --, entao a pergunta e a mesma daqui. O que ela
+/// pede a mais e o [`nova_saneada`](Self::nova_saneada): o conjunto de escrita
+/// de uma transacao PODE ter ficado pela metade no meio de um empilhamento, e
+/// recuperar sem sanear deixaria o COMMIT seguinte confirmar meia operacao.
 pub(crate) struct TravaDaGuarda<T> {
     trava: Mutex<T>,
     /// Como a trava aparece no aviso: «a trava {nome} estava envenenada».
     nome: &'static str,
-    veneno_dito: AtomicBool,
+    /// Um panico caiu com esta trava na mao e ninguem o disse ainda. Posta
+    /// pela [`Tomada`] no desenrolar, limpa pela tomada seguinte.
+    sujou: AtomicBool,
+    /// O que se faz com o estado recuperado antes de devolve-lo, uma vez por
+    /// panico. `None` e o caso do cluster: o desenrolar nao entorta nada que
+    /// a guarda precise desfazer.
+    saneamento: Option<fn(&mut T)>,
+}
+
+/// A trava tomada: o guarda do `Mutex`, e a marca que o panico deixa.
+///
+/// Um tipo, e nao o `MutexGuard` cru, porque e no DROP que se sabe se a
+/// thread saiu em panico com a trava na mao -- o `std::thread::panicking` so
+/// responde enquanto o desenrolar corre. O `Mutex` tambem sabe (o veneno), mas
+/// para sempre; aqui se sabe uma vez.
+pub(crate) struct Tomada<'a, T> {
+    guarda: MutexGuard<'a, T>,
+    sujou: &'a AtomicBool,
+    /// A thread ja estava em panico quando tomou -- um `Drop` alheio tomando
+    /// a trava no meio do desenrolar. A mesma regra do veneno do `Mutex`: so
+    /// suja quem tomou em paz e caiu em panico com ela na mao.
+    ja_em_panico: bool,
+}
+
+impl<T> std::ops::Deref for Tomada<'_, T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        &self.guarda
+    }
+}
+
+impl<T> std::ops::DerefMut for Tomada<'_, T> {
+    fn deref_mut(&mut self) -> &mut T {
+        &mut self.guarda
+    }
+}
+
+impl<T> Drop for Tomada<'_, T> {
+    fn drop(&mut self) {
+        // Antes de o guarda soltar (os campos caem depois deste corpo): quem
+        // tomar a trava em seguida ja acha a marca.
+        if !self.ja_em_panico && std::thread::panicking() {
+            self.sujou.store(true, Ordering::SeqCst);
+        }
+    }
 }
 
 impl<T> TravaDaGuarda<T> {
@@ -266,25 +321,53 @@ impl<T> TravaDaGuarda<T> {
         TravaDaGuarda {
             trava: Mutex::new(valor),
             nome,
-            veneno_dito: AtomicBool::new(false),
+            sujou: AtomicBool::new(false),
+            saneamento: None,
+        }
+    }
+
+    /// A trava cujo estado recuperado passa por `saneamento` antes de voltar
+    /// a servir -- pedido 458. E a resposta para quem guarda trabalho EM
+    /// CURSO: recuperar o mapa sem desfazer o que o panico interrompeu seria
+    /// servir o estado incerto como se fosse certo.
+    pub(crate) fn nova_saneada(
+        nome: &'static str,
+        valor: T,
+        saneamento: fn(&mut T),
+    ) -> TravaDaGuarda<T> {
+        TravaDaGuarda {
+            saneamento: Some(saneamento),
+            ..TravaDaGuarda::nova(nome, valor)
         }
     }
 
     /// O `lock` que nao falha por veneno, e que nao cala quando acha um.
-    pub(crate) fn travar(&self) -> MutexGuard<'_, T> {
-        self.trava.lock().unwrap_or_else(|veneno| {
-            if !self.veneno_dito.swap(true, Ordering::Relaxed) {
-                eprintln!(
-                    "cluster: a trava {} estava ENVENENADA por um panico em \
-                     outra thread -- estado recuperado, e segue valendo o que \
-                     ja estava anotado nela. O panico esta acima deste aviso \
-                     no log; este aviso sai uma vez por trava, e nao a cada \
-                     pulso",
-                    self.nome
-                );
+    pub(crate) fn travar(&self) -> Tomada<'_, T> {
+        let mut guarda = self
+            .trava
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if self.sujou.swap(false, Ordering::SeqCst) {
+            if let Some(sanear) = self.saneamento {
+                sanear(&mut guarda);
             }
-            veneno.into_inner()
-        })
+            eprintln!(
+                "a trava {} estava ENVENENADA por um panico em outra thread -- \
+                 estado recuperado{}. O panico esta acima deste aviso no log; \
+                 este aviso sai uma vez por panico, e nao a cada pedido",
+                self.nome,
+                if self.saneamento.is_some() {
+                    " e SANEADO antes de voltar a servir"
+                } else {
+                    ", e segue valendo o que ja estava anotado nela"
+                }
+            );
+        }
+        Tomada {
+            guarda,
+            sujou: &self.sujou,
+            ja_em_panico: std::thread::panicking(),
+        }
     }
 
     /// Envenena a trava como um panico de verdade o faria: um panico com ela
@@ -298,7 +381,7 @@ impl<T> TravaDaGuarda<T> {
     #[cfg(test)]
     pub(crate) fn envenenar(&self) {
         let morreu = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let _na_mao = self.trava.lock();
+            let _na_mao = self.travar();
             panic!("panico de proposito, com a trava {} na mao", self.nome);
         }));
         assert!(morreu.is_err(), "o panico tinha de acontecer");

@@ -3212,6 +3212,9 @@ furo com a medição e não o conserta pela metade**. O registro dele na pendên
 integra a rodada, e pedido inventado aqui viraria ponteiro que parece rastreável
 e não é.
 
+**Fechado em 24/09/2026 pelo pedido 365 — §13.14.** A escolha não subiu ao
+dono: os três maduros convergem na resposta.
+
 #### Os testes, e a prova real nos dois sentidos
 
 | teste | onde | com o defeito reposto |
@@ -3237,6 +3240,102 @@ E o teste que mais importa continua sendo o do comportamento **velho**:
 `reg_em_claro_continua_com_o_texto`, que é o mesmo caso com o disco sendo
 consultado. Sem o segundo, um conserto que cegasse **toda** tabela passaria no
 primeiro.
+
+### 13.14 O `sql` vai ao arquivo NORMALIZADO (pedido 365)
+
+A decisão saiu da régua da casa, e não do dono: os três maduros convergem em
+**normalizar** o texto que vira estatística — o `pg_stat_statements` do
+PostgreSQL e o digest do `performance_schema` do MySQL e do MariaDB trocam
+cada constante por um marcador e guardam o resto. É a primeira das duas pontas
+da §13.13 (analisar no ponto de captura), e a pétrea escolhe o meio: **redigir
+analisando, nunca recortando**.
+
+**O que muda, e só no ARQUIVO.** Com o Profiler ligado e `arquivo` pedido, o
+texto de todo pedido `{"op":"sql"}` vai ao `perfil.txt` com **todo literal**
+(texto, número, data, parâmetro, e `TRUE`/`FALSE`/`NULL` em posição de valor)
+trocado por `?`, pelo **mesmo léxico** do
+`phxsql-sql` e pela **mesma passada** que já tapava a senha
+(`phxsql_sql::usuario::normalizado`, irmão do `sem_a_senha`: um motor, dois
+modos). Os `parametros` irmãos vão juntos como `"***"` — são os literais que o
+`?` esconde. O anel continua com o texto inteiro (a tela é do administrador,
+§13).
+
+```text
+antes:  sql  loja  ok 3ms  129B  {"token":"***","op":"sql","database":"loja",
+          "texto":"INSERT INTO clientes (id, cpf) VALUES (7, '111.222.333-44')"}
+agora:  ... "texto":"INSERT INTO clientes ( id , cpf ) VALUES ( ? , ? )"}
+```
+
+Três decisões, cada uma com o motivo no código:
+
+- **Quem decide é o `op`, e não o nome do campo.** `texto` é também o campo da
+  carga colada do `inserir_lote` (um CSV); decidir pelo nome passaria o CSV
+  pelo léxico de SQL. O `sql` aninhado (um job, um lote) é alcançado porque a
+  passada desce a árvore inteira.
+- **O erro vai junto, como o TAMANHO.** O erro de conversão cita o literal
+  (`data invalida: "999.888.777-66"`), e tapar a frase deixando o erro seria a
+  lição do §13.13 («o caminho irmão, na mesma linha») de novo. O `erro` de um
+  evento normalizado sai `<erro nao gravado, N bytes>` no arquivo.
+- **O nome entre aspas duplas sai `"***"`.** No MySQL e no MariaDB `"..."` é
+  texto, e o CPF escrito do jeito deles viria por aí — a mesma decisão do
+  parecer SEC do 497 (P2) para as mensagens. O que não se analisa vira
+  `<comando invalido, N bytes>`.
+
+**`TRUE`, `FALSE` e `NULL` — a condição do SEC** (parecer da rodada de
+24/09/2026, §6). O léxico os entrega como **palavra**, e a primeira versão os
+copiava: `INSERT INTO pacientes (id, hiv) VALUES (?, TRUE)` ia ao arquivo como
+`VALUES ( ? , TRUE )` — e num booleano marcado o dado **é** o booleano.
+Agora, em posição de valor, viram `?` no mesmo braço do léxico
+(`constante_em_valor`, `usuario.rs`). Ficam o que é **forma** do comando e não
+dado: `IS [NOT] NULL`, `IS [NOT] TRUE/FALSE` e a restrição `NOT NULL` — a
+mesma fronteira do `pg_stat_statements`, que troca o `Const` e deixa o
+`NullTest`/`BooleanTest`. O `sem_a_senha` (anel, resposta, `jobs.json`) não
+muda. Vermelho medido com o braço reposto: `o literal TRUE ficou: INSERT INTO
+pacientes ( id , hiv , obs , alta ) VALUES ( ? , TRUE , NULL , false )`.
+
+**O portão antes do trabalho.** Desligado, o Profiler continua custando zero:
+o espelho atômico decide antes de qualquer análise, como sempre. Ligado **sem
+arquivo** (a tela), a normalização não roda — só existe para o arquivo, e o
+teste `sem_arquivo_o_sql_nao_e_normalizado` trava isso. E o pedido que não é
+`sql` não paga passada nenhuma a mais: quando nada se normalizou, a árvore do
+arquivo é a mesma do anel e serve aos dois.
+
+**O preço, medido** — `cargo run --release -p phxsql-server --example
+custo-da-normalizacao`, 24/09/2026, mediana de 7 rodadas **intercaladas**, 200
+pedidos por rodada, o mesmo JSON com `op` `sql` contra `sqx` (que não
+normaliza), Profiler gravando arquivo; máquina com carga de outras frentes
+(load 3,2 em 4 núcleos):
+
+| frase | bytes | sem normalizar | normalizando | custo |
+|---|---|---|---|---|
+| um `INSERT` de uma linha | 141 | 5,28 µs | 9,00 µs | **+3,73 µs** (+71%) |
+| um `INSERT` de 1.000 linhas | 53.871 | 670,83 µs | 1.533,98 µs | **+863,15 µs** (+129%; 0,86 µs por linha) |
+
+Quem paga é só quem liga o Profiler **com arquivo** e observa `sql`. Cache ou
+amostragem cortariam o número e trariam de volta a pergunta «qual pedido o
+arquivo não mostrou?» — ficam **recusados com o número** nesta rodada.
+
+**Ficou de fora, nomeado:** `criar_visao` e `dblink_consultar` também levam SQL
+num campo `sql`, e não são `{"op":"sql"}`. A visão é definição de catálogo; o
+`dblink_consultar` fala o dialeto do outro servidor. Nenhum dos dois é irmão
+deste pelo critério da casa (não passam pelo mesmo `op_sql`), e os dois seguem
+com o texto no arquivo como antes.
+
+| teste | onde | com o defeito reposto |
+|---|---|---|
+| `o_sql_da_tabela_marcada_vai_ao_arquivo_sem_o_valor` | `tests/profiler-da-tabela-cifrada.rs` (soquete, cofre ligado) | **cai** |
+| `o_sql_vai_ao_arquivo_sem_os_literais` | `profiler.rs` (lista declarada e sem lista) | **cai** |
+| `o_erro_do_sql_normalizado_fica_fora_do_arquivo` | `profiler.rs` | **cai** |
+| `os_parametros_do_sql_normalizado_saem_do_arquivo` | `profiler.rs` | **cai** |
+| `o_que_nao_e_sql_vai_ao_arquivo_como_sempre` | `profiler.rs` | passa (comportamento velho); **cai** se decidir pelo nome do campo |
+| `sem_arquivo_o_sql_nao_e_normalizado` | `profiler.rs` | passa (é o portão) |
+| `o_normalizado_*`, `o_sem_a_senha_continua_como_era` | `phxsql-sql/src/usuario.rs` | o motor, e o modo velho intacto; `o_normalizado_troca_todo_literal_e_guarda_o_comando` **cai** com `TRUE`/`FALSE`/`NULL` crus |
+| `o_literal_do_pedido_nao_chega_ao_acessos_log` | `tests/erro-no-acessos-log.rs` (bateria do 497, porta de dados e web) | **cai**: os sete casos `op:"sql"` que não tinham prova de `perfil` ganharam uma (recomendação do SEC), e com o 365 reposto os sete vazam `SEGREDO123` no arquivo |
+
+Guardas: `sql-vai-ao-perfil-com-o-literal` (e as irmãs pelo soquete e na
+bateria do 497), `erro-do-sql-normalizado-vai-ao-arquivo`,
+`normaliza-o-que-nao-e-sql` e `normalizado-deixa-o-booleano-cru`, provadas à
+mão em 24/09/2026 (o provador inteiro não coube no disco da rodada).
 
 ---
 
@@ -4675,7 +4774,7 @@ Deixados, e por quê:
 - **dado pessoal curto** — um CPF de 11 bytes digitado na coluna errada
   continua citado na recusa, porque a conversão não recebe a marca da coluna. É
   a pétrea da redação por esquema, que o `valor_redigido` cumpre e a conversão
-  não — anotado, não consertado aqui.
+  não — anotado, não consertado aqui. **Consertado pelo pedido 464 — §29.**
 
 ### 22.4 A prova, nos dois sentidos
 
@@ -5263,10 +5362,15 @@ As vizinhas, reprovadas contra o código novo e todas PROVADAS:
   seguinte, que a reconstrói sozinho (pedido 522). O reparo continua sem
   COMPLETAR a cascata — fora de transação não há marca —, e isso está no
   `MANUAL.txt` e no `docs/ACID.md` §2.4.
-- **O `Mutex` de `transacoes` (pedido 458)** não muda: o pânico que o
-  envenena dentro do `COMMIT` também envenena a de dados (a de dados é tomada
-  antes, ordem única), e só a de dados se cura. O que muda é o raio: antes a
-  base inteira caía junto; agora só o que passa por `transacoes`.
+- **O `Mutex` de `transacoes` (pedido 458) passou a se curar também — §30.**
+  O pânico que o envenena dentro do `COMMIT` envenena a de dados junto (a de
+  dados é tomada antes, ordem única), e hoje as duas se curam. Esse pânico só
+  acontece **antes** da marca, porque o bloco de `transacoes` do `COMMIT`
+  fecha antes de a `marca_em_voo` nascer: o reparo desta seção acha a marca
+  vazia e não completa nada, e o saneamento do §30 aborta as transações
+  ATIVAS. As duas dividem o trabalho sem sobra — a de dados decide o COMMIT que
+  chegou à marca; a de `transacoes`, as que não chegaram (parecer do DBA aos
+  fáceis C, 24/09/2026).
 - **A guarda do `Bin` (`copia-do-de-hex-envenena-a-trava-de-dados`)** continua
   pegando, com outro vermelho: a trava já não envenena, e o que sobra do
   defeito é a conexão perdida.
@@ -5872,3 +5976,133 @@ E o comportamento velho: a conversa normal chega ao recibo
 200 ms contra 300 ms de silêncio — 1,8 s de conversa num prazo de 2,7 s —
 também (`o_rele_lento_que_responde_cada_passo_inteiro_cabe`). Guarda
 `smtp-sem-prazo-total-da-conversa`.
+
+## 29. A recusa que citava o dado pessoal curto (pedido 464)
+
+O `citar` do 453 (§22.3) põe teto no **tamanho** do valor citado e não sabe de
+quem é o valor: um CPF de 14 bytes cabe nos 48 e saía inteiro na recusa — que
+volta ao cliente, vai ao `acessos.log`, ao Profiler e ao grito do diário.
+Quem sabe que o valor é dado pessoal é a **marca da coluna**, e os
+conversores recebiam só o tipo.
+
+**O vermelho, medido antes do conserto**, com `nasc Date` e `doc Int4`
+marcadas:
+
+```text
+[SP000018] tipo invalido: data invalida: "999.888.777-66" (use AAAA-MM-DD)
+[SP000018] limite excedido: 99988877766 nao cabe em inteiro de 32 bits
+```
+
+**Agora:**
+
+```text
+[SP000018] tipo invalido: coluna "nasc" (Date, dado pessoal): o valor recebido
+  nao serve ao tipo; a recusa nao cita valor de coluna marcada
+```
+
+### Um motor só: a coluna responde «posso citar?»
+
+`Column::recusa_de_valor` (`phxsql-core/src/schema.rs`) é a decisão, escrita
+uma vez. Coluna sem marca devolve o erro como veio (o comportamento velho);
+coluna marcada troca o detalhe por coluna, tipo e grau, **com a mesma
+variante** — o código que o cliente trata não muda. `Corrompido`, `Io` e as
+outras passam intactas: disfarçar defeito interno de recusa de tipo o
+esconderia. E a redação é **por análise**: a mensagem do conversor é jogada
+fora inteira, e a nova sai só do esquema — recortar o valor de dentro da frase
+dependeria de cada conversor escrevê-la de um jeito, e ele aparece como texto,
+como número ou como `Debug` de um `Value`.
+
+As portas que passam por ela, contadas:
+
+| porta | conversor | quem chega |
+|---|---|---|
+| `json_para_valor_da_coluna` (`valores.rs`) | `json_para_valor` | `inserir` (objeto e lista), `atualizar`, `inserir_lote` com `linhas`, o filtro `onde`, a chave do `buscar`, o `SQL` (que vira os mesmos pedidos), o `NEW` do gatilho, o `default` do `acrescentar_coluna` |
+| `upsert::mesclar` | o mesmo | o `atualizar` do `se_existir` |
+| `carga::linha_de_texto` | `valor_de_texto` | a carga colada (`inserir_lote` com `texto`) e a linha de comando |
+| `Table::montar_payload` e `acrescentar_coluna` | `escrever_inline` | a faixa do tipo, que só se confere no slot — o `99988877766` acima |
+| `aplicar_regras` e a chave de índice por expressão | `coagir` | o padrão, a coluna calculada e o índice calculado |
+
+**Deixado, e por quê:** o `consultar::valor_tipado` joga o erro fora (a
+comparação cai no formato), então não há mensagem a redigir.
+
+| teste | caminho | com o defeito reposto |
+|---|---|---|
+| `a_recusa_do_protocolo_nao_cita_dado_pessoal` | seis pedidos: `inserir` (objeto e lista), `atualizar`, `inserir_lote`, filtro do `varrer`, `sql` | **cai** |
+| `a_recusa_do_upsert_nao_cita_dado_pessoal` | `mesclar` | **cai** |
+| `a_recusa_da_carga_colada_nao_cita_dado_pessoal` | `valor_de_texto` | **cai** |
+| `a_recusa_da_faixa_no_slot_nao_cita_dado_pessoal` | `escrever_inline` | **cai** |
+| `a_coluna_sem_marca_continua_citando_o_valor` | os três, sem marca | passa (comportamento velho) |
+
+Cada teste confere também que a recusa **nomeia a coluna** — a mensagem velha
+não a nomeava, então passar por qualquer outro erro não prova a porta. Os três
+irmãos foram repostos juntos e cada teste caiu só pelo dele. Guardas:
+`recusa-de-coluna-marcada-cita-o-valor`, `faixa-do-slot-cita-coluna-marcada`,
+`carga-colada-converte-sem-a-coluna` e `upsert-converte-sem-a-coluna`,
+provadas à mão em 24/09/2026.
+
+## 30. A trava suja que matava toda transação (pedido 458)
+
+O `SP000010` saía com a **mesma frase** — «uma operacao anterior entrou em
+panico e deixou a trava suja» — em **85** pontos de **14** travas do
+`servidor.rs`. E 26 desses pontos eram da trava `transacoes`: um pânico com
+ela na mão a envenenava, e BEGIN, COMMIT e ROLLBACK de **toda** conexão
+recusavam até o servidor reiniciar. Outras 14 tomadas dela (`if let Ok`,
+`.ok()?`) calavam em vez de recusar — e a limpeza da conexão que caía era uma
+delas.
+
+### A resposta depende do que há ATRÁS da trava
+
+- **Sem disco atrás, e com o saneamento conhecido: recupera.** `transacoes` e
+  `travas` passaram a ser `TravaDaGuarda` (o motor do 436/447). Atrás delas
+  não há disco — «nada vai a disco antes do COMMIT» (`transacao.rs`). Mas
+  recuperar às cegas não basta: o conjunto de escrita de uma transação pode
+  ter ficado pela metade no meio de um empilhamento, e o registro não sabe de
+  qual. Então a trava das transações passa por um **saneamento**
+  (`Transacoes::abortar_abertas`): toda transação ATIVA vai para `ABORT_ONLY`,
+  e só o ROLLBACK passa. É o que os três maduros fazem com o mesmo pânico — o
+  PostgreSQL reinicia todos os processos e desfaz toda transação em voo;
+  MySQL e MariaDB caem inteiros —, com a diferença de que aqui o servidor fica
+  de pé e a transação **nova** funciona.
+- **Com disco atrás: continua recusando, e agora diz QUAL.** Rotinas, visões,
+  DbLink, jobs, profiler, lista negra, residentes e as outras seguem
+  recusando, porque o que está atrás delas ninguém sabe sanear às cegas. A
+  diferença é a frase: `a trava "visoes" ficou suja: ... a recusa segue ate o
+  servidor reiniciar`. Um motor só para tomar — o `TomarTrava::tomar(nome)` —,
+  e não 85 `map_err` com a mesma frase: **54** tomadas em **16** travas
+  nomeadas.
+
+### O aviso: uma vez por PÂNICO, e não por trava
+
+O veneno do `Mutex` não sai (o `clear_poison` é de 1.77; a casa promete 1.75),
+e a `TravaDaGuarda` avisava uma vez **por trava**: o segundo pânico com ela na
+mão passaria calado — e, com o saneamento novo, sem saneamento. Agora quem
+anota é a `Tomada`, o guarda que a trava devolve: no `Drop`, se a thread está
+em pânico (`std::thread::panicking`), marca «sujou»; a tomada seguinte avisa,
+saneia e limpa a marca. O teste `trava_envenenada_nao_passa_calada` (uma linha
+de aviso para três pulsos depois de um pânico) segue verde.
+
+**O preço que ficou, e ele é escolha NOSSA:** a transação abortada pelo
+saneamento continua segurando as travas dela até o ROLLBACK, a queda da
+conexão ou o prazo (`transacao_prazo_min`, 5 por padrão) — a mesma escolha do
+`ABORT_ONLY` por erro de transação desta casa. **O PostgreSQL não faz assim**,
+e isto está medido pelo papel C no PG 16.13: a sessão em `idle in transaction
+(aborted)` fica com **0** travas no `pg_locks`, e outra sessão atualiza a
+mesma linha na hora. O PG solta no *abort*; nós, no fim da transação.
+
+E o saneamento **não** passa pela porta que o gestor usa para encerrar uma
+transação soltando as travas (`abortar_soltando`, a do prazo e do ciclo de
+COMMITs): ele roda de dentro da tomada de `transacoes`, e soltar travas dali
+tomaria `travas` com `transacoes` na mão — o inverso da ordem que o
+`barrado_por_travas` já usa (`travas` e, dentro dela, `transacoes`). Duas
+threads na ordem contrária é o impasse clássico.
+
+| teste | o que mede | com o defeito reposto |
+|---|---|---|
+| `o_panico_com_as_transacoes_na_mao_nao_mata_a_proxima` | a conexão 8 abre, grava e confirma depois do pânico; a 7, aberta no pânico, não confirma; a 9 grava na tabela que a 7 soltou | **cai** sem a recuperação (a 8 não abre) e **cai** sem o saneamento (a 7 confirmou: `"gravadas": 1`) |
+| `o_segundo_panico_com_as_transacoes_na_mao_tambem_saneia` | depois do primeiro pânico e do ROLLBACK da 7, a 8 abre e empilha, cai o segundo pânico, e o COMMIT da 8 recusa com `TRANSACAO_ABORTADA` (C3 do DBA) | **cai** com o aviso «uma vez por trava» reposto (a trava já envenenada não volta a sujar): a 8 confirma |
+| `a_trava_com_disco_atras_recusa_dizendo_qual` | a trava das visões suja recusa duas vezes, com `SP000010` e o nome | **cai** com a frase velha |
+
+Guardas: `transacoes-recuperadas-sem-sanear`,
+`transacoes-envenenadas-recusam-toda-conexao`, `veneno-dito-uma-vez-por-trava`
+e `trava-suja-sem-nome`, provadas à mão em 24/09/2026. E a `trava-da-guarda-recupera-calada` (436) foi
+**remirada** para o aviso novo e continua provada.

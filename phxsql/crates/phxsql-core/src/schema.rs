@@ -497,6 +497,59 @@ impl Column {
         self.padrao.is_some() || self.check.is_some() || self.calculada.is_some()
     }
 
+    /// A recusa de um valor PARA esta coluna, do jeito que ela pode sair
+    /// daqui -- pedido 464.
+    ///
+    /// # Por que a decisao mora na coluna, e nao no conversor
+    ///
+    /// O `citar` (pedido 453) poe teto no TAMANHO do valor citado, e nao sabe
+    /// de quem e o valor: um CPF de 14 bytes digitado na coluna errada cabia
+    /// no teto e saia inteiro na recusa -- que volta ao cliente, vai ao
+    /// `acessos.log`, ao Profiler e ao grito do diario. Quem sabe que o valor
+    /// e dado pessoal e a MARCA da coluna, e os conversores (`json_para_valor`
+    /// do protocolo, `valor_de_texto` da carga, `escrever_inline` do slot)
+    /// recebem so o tipo. Por isso a pergunta «posso citar?» e respondida aqui,
+    /// uma vez, e quem converte para uma coluna passa a recusa por esta porta
+    /// em vez de repetir um `if marcada` em cada chamador -- o que alguem
+    /// esquecesse viraria o furo.
+    ///
+    /// # Redige ANALISANDO, nunca recortando
+    ///
+    /// A mensagem do conversor e jogada fora inteira, e a nova se monta so do
+    /// que o esquema diz: o nome da coluna, o tipo e o grau. Recortar o valor
+    /// de dentro da mensagem dependeria de cada conversor escreve-la de um
+    /// jeito -- e o valor pode aparecer como texto, como numero (`12345678901
+    /// nao cabe em inteiro de 32 bits`) ou como `Debug` de um `Value`.
+    ///
+    /// So as recusas de VALOR mudam (`Tipo`, `LimiteExcedido`, `Esquema`),
+    /// com a mesma variante e portanto o mesmo codigo: o cliente que trata
+    /// pelo numero nao percebe a troca. `Corrompido`, `Io` e as demais nao
+    /// falam do valor e passam intactas -- disfarcar um defeito interno de
+    /// recusa de tipo esconderia o defeito.
+    ///
+    /// Coluna nao marcada devolve o erro como veio: o comportamento velho, em
+    /// que o valor curto citado e o que mostra a quem digitou o proprio erro.
+    pub fn recusa_de_valor(&self, e: PhxError) -> PhxError {
+        if !self.dado_pessoal.e_pessoal() {
+            return e;
+        }
+        let redigida = |motivo: &str| {
+            format!(
+                "coluna {:?} ({:?}, dado {}): o valor recebido {motivo}; \
+                 a recusa nao cita valor de coluna marcada",
+                self.nome,
+                self.ty,
+                self.dado_pessoal.nome()
+            )
+        };
+        match e {
+            PhxError::Tipo(_) => PhxError::Tipo(redigida("nao serve ao tipo")),
+            PhxError::LimiteExcedido(_) => PhxError::LimiteExcedido(redigida("nao cabe no tipo")),
+            PhxError::Esquema(_) => PhxError::Esquema(redigida("foi recusado")),
+            outro => outro,
+        }
+    }
+
     /// Classifica a coluna para a LGPD / GDPR.
     pub fn com_dado_pessoal(mut self, grau: DadoPessoal) -> Self {
         self.dado_pessoal = grau;
@@ -2354,6 +2407,49 @@ impl<'a> Leitor<'a> {
         let b = self.bytes(n)?;
         String::from_utf8(b.to_vec())
             .map_err(|e| PhxError::Esquema(format!("nome nao e UTF-8 valido: {e}")))
+    }
+}
+
+#[cfg(test)]
+mod testes_recusa_de_valor {
+    use super::*;
+
+    /// Pedido 464, pela porta so: a variante (e portanto o codigo) fica, o
+    /// detalhe troca, e o que nao e recusa de valor passa intacto.
+    #[test]
+    fn a_coluna_marcada_troca_o_detalhe_e_mantem_a_variante() {
+        let cpf = Column::new("cpf", ColumnType::Date).com_dado_pessoal(DadoPessoal::Pessoal);
+        let dito = "data invalida: \"999.888.777-66\"";
+        for (e, codigo) in [
+            (
+                PhxError::Tipo(dito.into()),
+                PhxError::Tipo(String::new()).codigo(),
+            ),
+            (
+                PhxError::LimiteExcedido(dito.into()),
+                PhxError::LimiteExcedido(String::new()).codigo(),
+            ),
+            (
+                PhxError::Esquema(dito.into()),
+                PhxError::Esquema(String::new()).codigo(),
+            ),
+        ] {
+            let r = cpf.recusa_de_valor(e);
+            assert_eq!(r.codigo(), codigo, "a variante mudou: {r}");
+            let t = r.to_string();
+            assert!(!t.contains("999"), "citou o valor: {t}");
+            assert!(t.contains("\"cpf\"") && t.contains("Date"), "{t}");
+        }
+        // Defeito interno nao se disfarca de recusa de tipo.
+        let r = cpf.recusa_de_valor(PhxError::Corrompido("espaco insuficiente".into()));
+        assert!(matches!(r, PhxError::Corrompido(ref d) if d == "espaco insuficiente"));
+    }
+
+    #[test]
+    fn a_coluna_sem_marca_devolve_a_recusa_como_veio() {
+        let c = Column::new("quando", ColumnType::Date);
+        let r = c.recusa_de_valor(PhxError::Tipo("data invalida: \"x\"".into()));
+        assert!(matches!(r, PhxError::Tipo(ref d) if d == "data invalida: \"x\""));
     }
 }
 

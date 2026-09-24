@@ -180,9 +180,12 @@ TRECHO_PERFIL_SEM_TEXTO = """            // O ARQUIVO nao leva o texto de tabela
             // achar o pedido gigante que derrubou o servidor.
             self.sigilo
                 .no_lugar_do_pedido()
+                .or(self.pedido_do_arquivo.as_deref())
                 .unwrap_or(self.pedido.as_str()),"""
 
-TROCA_PERFIL_SEM_TEXTO = """            self.pedido.as_str(),"""
+TROCA_PERFIL_SEM_TEXTO = """            self.pedido_do_arquivo
+                .as_deref()
+                .unwrap_or(self.pedido.as_str()),"""
 
 TRECHO_PERFIL_PELO_DISCO = """            RegNoDisco::Cifrado | RegNoDisco::Ilegivel => true,
             RegNoDisco::EmClaro | RegNoDisco::SemVolume => false,"""
@@ -244,7 +247,16 @@ GUARDAS = [
         Ok(j @ Json::Objeto(_)) => {
             let mut alvos = Vec::new();
             colher_tabelas(&j, database, &mut alvos);
-            (limpar(&j).escrever(), alvos)
+            if !para_o_arquivo {
+                return (limpar(&j).escrever(), None, alvos);
+            }
+            let mut normalizou = false;
+            let do_arquivo = limpar_com(&j, true, &mut normalizou).escrever();
+            if normalizou {
+                (limpar(&j).escrever(), Some(do_arquivo), alvos)
+            } else {
+                (do_arquivo, None, alvos)
+            }
         }
         // Pedido que nao e objeto nao vira texto -- vira o tamanho. E sem
         // arvore nao ha tabela a colher: a lista sai vazia, e o evento cai no
@@ -252,9 +264,14 @@ GUARDAS = [
         // texto nenhum.
         Ok(_) => (
             format!("<pedido nao e objeto, {tamanho} bytes>"),
+            None,
             Vec::new(),
         ),
-        Err(_) => (format!("<pedido invalido, {tamanho} bytes>"), Vec::new()),
+        Err(_) => (
+            format!("<pedido invalido, {tamanho} bytes>"),
+            None,
+            Vec::new(),
+        ),
     }
 """,
         "troca": r'''    // DEFEITO REPOSTO: recorta o texto cru em vez de analisar e reserializar.
@@ -278,7 +295,8 @@ GUARDAS = [
     if let Ok(j) = Json::analisar(linha) {
         colher_tabelas(&j, database, &mut alvos);
     }
-    (s, alvos)
+    let _ = para_o_arquivo;
+    (s, None, alvos)
 ''',
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
@@ -334,7 +352,16 @@ GUARDAS = [
         Ok(j @ Json::Objeto(_)) => {
             let mut alvos = Vec::new();
             colher_tabelas(&j, database, &mut alvos);
-            (limpar(&j).escrever(), alvos)
+            if !para_o_arquivo {
+                return (limpar(&j).escrever(), None, alvos);
+            }
+            let mut normalizou = false;
+            let do_arquivo = limpar_com(&j, true, &mut normalizou).escrever();
+            if normalizou {
+                (limpar(&j).escrever(), Some(do_arquivo), alvos)
+            } else {
+                (do_arquivo, None, alvos)
+            }
         }
         // Pedido que nao e objeto nao vira texto -- vira o tamanho. E sem
         // arvore nao ha tabela a colher: a lista sai vazia, e o evento cai no
@@ -342,9 +369,14 @@ GUARDAS = [
         // texto nenhum.
         Ok(_) => (
             format!("<pedido nao e objeto, {tamanho} bytes>"),
+            None,
             Vec::new(),
         ),
-        Err(_) => (format!("<pedido invalido, {tamanho} bytes>"), Vec::new()),
+        Err(_) => (
+            format!("<pedido invalido, {tamanho} bytes>"),
+            None,
+            Vec::new(),
+        ),
     }
 """,
         "troca": """    // DEFEITO REPOSTO: recorta procurando a PALAVRA `senha` e tapando o
@@ -371,7 +403,8 @@ GUARDAS = [
     if let Ok(j) = Json::analisar(linha) {
         colher_tabelas(&j, database, &mut alvos);
     }
-    (s, alvos)
+    let _ = para_o_arquivo;
+    (s, None, alvos)
 """,
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
@@ -7129,12 +7162,16 @@ pub fn limpar() {
         "arquivo": "crates/phxsql-sql/src/usuario.rs",
         # Re-apontada no pedido 497: a analise mudou para `redigir`, e o
         # ramo do que nao se analisa e o `None` do `sem_a_senha`.
-        "trecho": """        None => format!("<comando invalido, {} bytes>", texto.trim().len()),
+        "trecho": """    match redigir(texto, Redacao::Senha) {
+        Some(saida) => saida,
+        None => format!("<comando invalido, {} bytes>", texto.trim().len()),
 """,
         "troca": """        // DEFEITO REPOSTO: o comando que o lexico recusou volta inteiro,
         // «para o operador conseguir ver o erro de digitacao no log». O
         // comando que ele mais precisa ver e o que tem a aspas da senha
         // faltando -- e ai a senha vai junto.
+    match redigir(texto, Redacao::Senha) {
+        Some(saida) => saida,
         None => texto.trim().to_string(),
 """,
         "pacote": "phxsql-sql",
@@ -8732,7 +8769,7 @@ pub fn limpar() {
             "cluster usa para mandar o cliente para o no certo em vez de so recusar."
         ),
         "arquivo": "crates/phxsql-server/src/servidor.rs",
-        "trecho": """            Papel::ReadReplica if OPS_ESCRITA.contains(&op) => {
+        "trecho": """            Papel::ReadReplica if grava_dado_replicado(op) => {
                 return Err(PhxError::Redireciona(format!(
                     "REDIRECIONA {} -- este servidor e uma replica de leitura; \\
                      escreva no primario",
@@ -9372,22 +9409,19 @@ pub fn limpar() {
             "valendo) e so o do stderr cai: e ele que carrega a outra metade."
         ),
         "arquivo": "crates/phxsql-server/src/pulso.rs",
-        "trecho": """        self.trava.lock().unwrap_or_else(|veneno| {
-            if !self.veneno_dito.swap(true, Ordering::Relaxed) {
-                eprintln!(
-                    "cluster: a trava {} estava ENVENENADA por um panico em \\
-                     outra thread -- estado recuperado, e segue valendo o que \\
-                     ja estava anotado nela. O panico esta acima deste aviso \\
-                     no log; este aviso sai uma vez por trava, e nao a cada \\
-                     pulso",
-                    self.nome
-                );
-            }
-            veneno.into_inner()
-        })
+        "trecho": """            eprintln!(
+                "a trava {} estava ENVENENADA por um panico em outra thread -- \\
+                 estado recuperado{}. O panico esta acima deste aviso no log; \\
+                 este aviso sai uma vez por panico, e nao a cada pedido",
+                self.nome,
+                if self.saneamento.is_some() {
+                    " e SANEADO antes de voltar a servir"
+                } else {
+                    ", e segue valendo o que ja estava anotado nela"
+                }
+            );
 """,
-        "troca": """        // DEFEITO REPOSTO (436, M2): recupera, e cala.
-        self.trava.lock().unwrap_or_else(|veneno| veneno.into_inner())
+        "troca": """            // DEFEITO REPOSTO (436, M2): recupera, e cala.
 """,
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
@@ -15102,6 +15136,454 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "seguem": [
             "diferencas::testes::as_tres_listas_e_a_coluna_que_mudou",
             "diferencas::testes::a_chave_decimal_casa_por_valor",
+        ],
+    },
+    {
+        "id": "recusa-de-coluna-marcada-cita-o-valor",
+        "titulo": "A recusa de conversão cita o valor curto de coluna marcada como dado pessoal",
+        "porque": (
+            "pedido 464: o `citar` do 453 corta so o valor LONGO; um CPF de 14 "
+            "bytes digitado na coluna errada saia inteiro na recusa, que volta ao "
+            "cliente e vai ao `acessos.log`. A conversao nao recebia a marca da "
+            "coluna; agora a recusa passa pelo `Column::recusa_de_valor`, e "
+            "coluna marcada nomeia coluna e tipo sem o valor. `docs/SEGURANCA.md` "
+            "SS28."
+        ),
+        "arquivo": "crates/phxsql-core/src/schema.rs",
+        "trecho": """        if !self.dado_pessoal.e_pessoal() {
+            return e;
+        }
+        let redigida = |motivo: &str| {
+""",
+        "troca": """        // DEFEITO REPOSTO (464): a recusa sai como o conversor a escreveu.
+        if true {
+            return e;
+        }
+        let redigida = |motivo: &str| {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_recusa_sem_dado_pessoal::a_recusa_do_protocolo_nao_cita_dado_pessoal",
+            "servidor::testes_recusa_sem_dado_pessoal::a_recusa_do_upsert_nao_cita_dado_pessoal",
+            "servidor::testes_recusa_sem_dado_pessoal::a_recusa_da_carga_colada_nao_cita_dado_pessoal",
+            "servidor::testes_recusa_sem_dado_pessoal::a_recusa_da_faixa_no_slot_nao_cita_dado_pessoal",
+        ],
+        "seguem": [
+            "servidor::testes_recusa_sem_dado_pessoal::a_coluna_sem_marca_continua_citando_o_valor",
+        ],
+    },
+    {
+        "id": "faixa-do-slot-cita-coluna-marcada",
+        "titulo": "A faixa do tipo, conferida no slot, cita o número de coluna marcada",
+        "porque": (
+            "pedido 464, o irmao do protocolo: `\"99988877766\"` numa coluna "
+            "`Int4` converte para `Int` e so estoura no `escrever_inline` -- "
+            "`99988877766 nao cabe em inteiro de 32 bits`. A porta da coluna "
+            "entrou tambem no `montar_payload`."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """                _ => escrever_inline(valor, &ty, &mut payload[off..fim])
+                    .map_err(|e| self.esquema.colunas()[i].recusa_de_valor(e))?,
+""",
+        "troca": """                _ => escrever_inline(valor, &ty, &mut payload[off..fim])?,
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_recusa_sem_dado_pessoal::a_recusa_da_faixa_no_slot_nao_cita_dado_pessoal",
+        ],
+        "seguem": [
+            "servidor::testes_recusa_sem_dado_pessoal::a_recusa_do_protocolo_nao_cita_dado_pessoal",
+            "servidor::testes_recusa_sem_dado_pessoal::a_coluna_sem_marca_continua_citando_o_valor",
+        ],
+    },
+    {
+        "id": "carga-colada-converte-sem-a-coluna",
+        "titulo": "A carga colada converte a célula sem a marca da coluna",
+        "porque": (
+            "pedido 464, o irmao da carga: o `linha_de_texto` (`inserir_lote` "
+            "com `texto`, e a linha de comando) chama o `valor_de_texto` so com "
+            "o tipo, e a recusa citava a celula -- `data invalida: "
+            "\"999.888.777-66\"`."
+        ),
+        "arquivo": "crates/phxsql-core/src/carga.rs",
+        "trecho": """                Some(j) => valor_de_texto(linha.get(j).map(String::as_str).unwrap_or(""), &col.ty)
+                    .map_err(|e| col.recusa_de_valor(e)),
+""",
+        "troca": """                Some(j) => valor_de_texto(linha.get(j).map(String::as_str).unwrap_or(""), &col.ty),
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_recusa_sem_dado_pessoal::a_recusa_da_carga_colada_nao_cita_dado_pessoal",
+        ],
+        "seguem": [
+            "servidor::testes_recusa_sem_dado_pessoal::a_recusa_do_protocolo_nao_cita_dado_pessoal",
+            "servidor::testes_recusa_sem_dado_pessoal::a_coluna_sem_marca_continua_citando_o_valor",
+        ],
+    },
+    {
+        "id": "upsert-converte-sem-a-coluna",
+        "titulo": "O `atualizar` do upsert converte o valor sem a marca da coluna",
+        "porque": (
+            "pedido 464, o irmao do upsert: o `mesclar` (`se_existir: "
+            "atualizar` com `atualizar`) chamava o `json_para_valor` so com o "
+            "tipo, fora do `json_para_linha`."
+        ),
+        "arquivo": "crates/phxsql-server/src/upsert.rs",
+        "trecho": """        nova[i] = crate::valores::json_para_valor_da_coluna(v, &esquema.colunas()[i])?;
+""",
+        "troca": """        nova[i] = crate::valores::json_para_valor(v, &esquema.colunas()[i].ty)?;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_recusa_sem_dado_pessoal::a_recusa_do_upsert_nao_cita_dado_pessoal",
+        ],
+        "seguem": [
+            "servidor::testes_recusa_sem_dado_pessoal::a_recusa_do_protocolo_nao_cita_dado_pessoal",
+            "servidor::testes_recusa_sem_dado_pessoal::a_coluna_sem_marca_continua_citando_o_valor",
+        ],
+    },
+    {
+        "id": "sql-vai-ao-perfil-com-o-literal",
+        "titulo": "O `sql` vai ao `perfil.txt` com o literal dentro",
+        "porque": (
+            "pedido 365: o `{\"op\":\"sql\"}` nomeia a tabela DENTRO da frase, e o "
+            "crivo do 356 le o campo `\"tabela\"` -- o `INSERT` ia ao arquivo com o "
+            "CPF, mesmo de tabela cifrada. Os tres maduros normalizam o texto que "
+            "vira estatistica (`pg_stat_statements`, digest do "
+            "`performance_schema`); o arquivo leva todo literal como `?`. "
+            "`docs/SEGURANCA.md` SS13.14."
+        ),
+        "arquivo": "crates/phxsql-server/src/profiler.rs",
+        "trecho": """        let para_o_arquivo = !self.caminho.as_os_str().is_empty();
+""",
+        "troca": """        let para_o_arquivo = false;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "profiler::testes_sql_normalizado::o_sql_vai_ao_arquivo_sem_os_literais",
+            "profiler::testes_sql_normalizado::o_erro_do_sql_normalizado_fica_fora_do_arquivo",
+            "profiler::testes_sql_normalizado::os_parametros_do_sql_normalizado_saem_do_arquivo",
+        ],
+        "seguem": [
+            "profiler::testes_sql_normalizado::sem_arquivo_o_sql_nao_e_normalizado",
+            "profiler::testes_sql_normalizado::o_que_nao_e_sql_vai_ao_arquivo_como_sempre",
+            "profiler::testes::a_senha_dentro_do_texto_sql_tambem_sai",
+        ],
+    },
+    {
+        "id": "sql-vai-ao-perfil-com-o-literal-pelo-soquete",
+        "titulo": "O `INSERT` em SQL da tabela marcada vai ao `perfil.txt` com o valor, visto pelo soquete",
+        "porque": (
+            "pedido 365, a mesma troca provada com servidor de verdade, cofre "
+            "ligado e `cifra.tabelas` vazio -- o padrao de todo `config.json`, e "
+            "a condicao exata do furo medido em 18/09."
+        ),
+        "arquivo": "crates/phxsql-server/src/profiler.rs",
+        "trecho": """        let para_o_arquivo = !self.caminho.as_os_str().is_empty();
+""",
+        "troca": """        let para_o_arquivo = false;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "profiler-da-tabela-cifrada"],
+        "caem": [
+            "o_sql_da_tabela_marcada_vai_ao_arquivo_sem_o_valor",
+        ],
+        "seguem": [
+            "tabela_cifrada_pela_marca_de_coluna_tambem_cega_o_arquivo",
+            "o_erro_que_cita_o_valor_tambem_fica_fora_do_arquivo",
+        ],
+    },
+    {
+        "id": "erro-do-sql-normalizado-vai-ao-arquivo",
+        "titulo": "O `sql` normalizado leva ao arquivo o erro que cita o literal",
+        "porque": (
+            "pedido 365, a coluna ao lado: a licao que o 356 ja pagou na mesma "
+            "linha -- tapar o pedido e deixar o erro (`data invalida: "
+            "\"999.888.777-66\"`) vazar o dado pela vizinha."
+        ),
+        "arquivo": "crates/phxsql-server/src/profiler.rs",
+        "trecho": """                self.sigilo.esconde_o_texto() || self.pedido_do_arquivo.is_some(),
+""",
+        "troca": """                self.sigilo.esconde_o_texto(),
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "profiler::testes_sql_normalizado::o_erro_do_sql_normalizado_fica_fora_do_arquivo",
+        ],
+        "seguem": [
+            "profiler::testes_sql_normalizado::o_sql_vai_ao_arquivo_sem_os_literais",
+        ],
+    },
+    {
+        "id": "normaliza-o-que-nao-e-sql",
+        "titulo": "O Profiler normaliza pelo NOME do campo, e a carga colada vira lixo de léxico",
+        "porque": (
+            "pedido 365: `texto` e tambem o campo da carga COLADA do "
+            "`inserir_lote` (um CSV). Decidir pelo nome do campo passaria o CSV "
+            "pelo lexico de SQL; quem decide e o `op`."
+        ),
+        "arquivo": "crates/phxsql-server/src/profiler.rs",
+        "trecho": """            let e_sql = normalizar && e_pedido_sql(pares);
+""",
+        "troca": """            let e_sql = normalizar;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "profiler::testes_sql_normalizado::o_que_nao_e_sql_vai_ao_arquivo_como_sempre",
+        ],
+        "seguem": [
+            "profiler::testes_sql_normalizado::o_sql_vai_ao_arquivo_sem_os_literais",
+        ],
+    },
+    {
+        "id": "transacoes-recuperadas-sem-sanear",
+        "titulo": "O registro das transações volta do pânico sem sanear, e o COMMIT seguinte confirma o que ele não afirma",
+        "porque": (
+            "pedido 458: recuperar a trava das transacoes sem desfazer o que o "
+            "panico interrompeu deixa o conjunto de escrita de uma delas pela "
+            "metade -- e o COMMIT dela o grava. Medido: a transacao aberta no "
+            "panico confirmou (`gravadas: 1`)."
+        ),
+        "arquivo": "crates/phxsql-server/src/pulso.rs",
+        "trecho": """            saneamento: Some(saneamento),
+""",
+        "troca": """            saneamento: None,
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_trava_suja::o_panico_com_as_transacoes_na_mao_nao_mata_a_proxima",
+        ],
+        "seguem": [
+            "servidor::testes_trava_suja::a_trava_com_disco_atras_recusa_dizendo_qual",
+            "pulso::testes::trava_envenenada_nao_aceita_nonce_repetido",
+        ],
+    },
+    {
+        "id": "transacoes-envenenadas-recusam-toda-conexao",
+        "titulo": "Um pânico com as transações na mão mata toda transação de toda conexão até reiniciar",
+        "porque": (
+            "pedido 458: as 26 tomadas de `transacoes` recusavam com `SP000010` "
+            "depois de um panico -- BEGIN, COMMIT e ROLLBACK de todo mundo. Atras "
+            "delas nao ha disco, e a resposta e a da `TravaDaGuarda` (447). A "
+            "troca faz a trava suja recusar de novo."
+        ),
+        "arquivo": "crates/phxsql-server/src/pulso.rs",
+        "trecho": """        let mut guarda = self
+            .trava
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+""",
+        "troca": """        let mut guarda = self
+            .trava
+            .lock()
+            .expect("DEFEITO REPOSTO (458): a trava suja recusa");
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_trava_suja::o_panico_com_as_transacoes_na_mao_nao_mata_a_proxima",
+        ],
+        "seguem": [
+            "servidor::testes_trava_suja::a_trava_com_disco_atras_recusa_dizendo_qual",
+        ],
+    },
+    {
+        "id": "trava-suja-sem-nome",
+        "titulo": "O `SP000010` da trava suja sai com a MESMA frase em 85 pontos de 14 travas",
+        "porque": (
+            "pedido 458: quem lia a recusa nao sabia se era a trava das rotinas, "
+            "a do DbLink ou a das transacoes. A trava com disco atras continua "
+            "recusando, e agora diz qual."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """fn trava_envenenada(nome: &str) -> PhxError {
+    PhxError::Corrompido(format!(
+        "a trava \\"{nome}\\" ficou suja: uma operacao anterior entrou em panico \\
+         com ela na mao, e o estado atras dela nao se afirma -- a recusa segue \\
+         ate o servidor reiniciar"
+    ))
+}
+""",
+        "troca": """fn trava_envenenada(_nome: &str) -> PhxError {
+    PhxError::Corrompido("uma operacao anterior entrou em panico e deixou a trava suja".into())
+}
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_trava_suja::a_trava_com_disco_atras_recusa_dizendo_qual",
+        ],
+        "seguem": [
+            "servidor::testes_trava_suja::o_panico_com_as_transacoes_na_mao_nao_mata_a_proxima",
+        ],
+    },
+    {
+        "id": "esvaziar-lixeira-fora-do-ops-do-no",
+        "titulo": "A réplica somente-leitura não esvazia o próprio `.trash`, e a linha apagada no source fica nela para sempre",
+        "porque": (
+            "pedido 499, medido pelo soquete com source e replica de verdade: a "
+            "replica aplica a exclusao pelo `excluir_de_vez` e guarda a linha no "
+            "`.trash` DELA; o esvaziar do source nao vira evento; e o da replica "
+            "recusava com `[SP000025] ... somente leitura`. O mesmo furo que o C2 "
+            "do 368 fechou para a trilha. O conserto e o `OPS_DO_NO`, que so o "
+            "portao da replica le."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """pub(crate) const OPS_DO_NO: &[&str] = &["esvaziar_lixeira", "expurgar_trilha"];
+""",
+        "troca": """pub(crate) const OPS_DO_NO: &[&str] = &["expurgar_trilha"];
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "lixeira-da-replica"],
+        "caem": [
+            "a_replica_esvazia_a_propria_lixeira",
+        ],
+        "seguem": [
+            "o_somente_leitura_continua_recusando_o_que_grava_dado",
+            "as_ops_do_no_nao_entram_em_transacao",
+            "as_ops_do_no_esbarram_na_trava_de_outra_transacao",
+        ],
+    },
+    {
+        "id": "ops-do-no-fora-do-ops-escrita",
+        "titulo": "`esvaziar_lixeira` e `expurgar_trilha` fora do `OPS_ESCRITA`: rodam dentro de BEGIN sem voltar no ROLLBACK e passam por cima da trava de outra transação",
+        "porque": (
+            "parecer do DBA aos faceis C (B1/B2, 24/09/2026): o `OPS_ESCRITA` "
+            "responde seis perguntas, e a primeira versao do 499 tirou a op dele "
+            "para acertar so a da replica. Medido: `BEGIN; esvaziar_lixeira; "
+            "ROLLBACK` esvaziava e nao voltava (antes SP000018), e com outra "
+            "transacao segurando IX o esvaziar passava (antes SP000006). O "
+            "`expurgar_trilha` tinha o mesmo furo desde o 368."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """    "esvaziar_lixeira",
+    "expurgar_trilha",
+    // As tres que gravam na tabela de textos da tela. Num servidor somente
+""",
+        "troca": """    // As tres que gravam na tabela de textos da tela. Num servidor somente
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "lixeira-da-replica"],
+        "caem": [
+            "as_ops_do_no_nao_entram_em_transacao",
+            "as_ops_do_no_esbarram_na_trava_de_outra_transacao",
+        ],
+        "seguem": [
+            "a_replica_esvazia_a_propria_lixeira",
+            "o_somente_leitura_continua_recusando_o_que_grava_dado",
+        ],
+    },
+    {
+        "id": "normalizado-deixa-o-booleano-cru",
+        "titulo": "O `sql` normalizado deixa `TRUE`, `FALSE` e `NULL` crus no `perfil.txt`",
+        "porque": (
+            "condicao do SEC ao pedido 365 (parecer da rodada de 24/09/2026, "
+            "SS6): o lexico entrega `TRUE`/`FALSE`/`NULL` como PALAVRA, e o braco "
+            "que copia a palavra os levava ao arquivo -- `INSERT INTO pacientes "
+            "(id, hiv) VALUES (?, TRUE)`. Num booleano marcado o dado e o proprio "
+            "booleano; o `pg_stat_statements` tambem os troca por marcador."
+        ),
+        "arquivo": "crates/phxsql-sql/src/usuario.rs",
+        "trecho": """            Token::Palavra { citado: false, .. }
+                if redacao == Redacao::Literais && constante_em_valor(&simbolos, i) =>
+            {
+                (marca.to_string(), false)
+            }
+""",
+        "troca": """            Token::Palavra { citado: false, .. }
+                if redacao == Redacao::Literais && false && constante_em_valor(&simbolos, i) =>
+            {
+                (marca.to_string(), false)
+            }
+""",
+        "pacote": "phxsql-sql",
+        "alvo": ["--lib"],
+        "caem": [
+            "usuario::testes::o_normalizado_troca_todo_literal_e_guarda_o_comando",
+        ],
+        "seguem": [
+            "usuario::testes::o_normalizado_guarda_o_teste_de_nulo_e_a_restricao",
+            "usuario::testes::o_sem_a_senha_continua_como_era",
+        ],
+    },
+    {
+        "id": "sql-vai-ao-perfil-com-o-literal-na-bateria-do-497",
+        "titulo": "O `sql` vai ao `perfil.txt` com o literal, visto pela bateria do 497 nas duas portas",
+        "porque": (
+            "pedido 365, recomendacao do SEC (parecer da rodada de 24/09/2026, "
+            "SS6): todo caso `op:\"sql\"` de `tests/erro-no-acessos-log.rs` tem "
+            "prova de redacao no `perfil.txt`, e nao so os de senha -- assim a "
+            "normalizacao fica travada tambem na bateria que sobe o servidor e "
+            "manda pela porta de dados e pela web."
+        ),
+        "arquivo": "crates/phxsql-server/src/profiler.rs",
+        "trecho": """        let para_o_arquivo = !self.caminho.as_os_str().is_empty();
+""",
+        "troca": """        let para_o_arquivo = false;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "erro-no-acessos-log"],
+        "caem": [
+            "o_literal_do_pedido_nao_chega_ao_acessos_log",
+        ],
+        "seguem": [],
+    },
+    {
+        "id": "expurgar-trilha-fora-do-ops-do-no",
+        "titulo": "A réplica somente-leitura não expurga a própria trilha `.lgpd`",
+        "porque": (
+            "condicao C2 do papel C ao pedido 368: a trilha e arquivo LOCAL do "
+            "no, e o expurgo e manutencao dele. Estava garantida so pela AUSENCIA "
+            "no `OPS_ESCRITA` -- o que tirava a op tambem da transacao e da trava "
+            "(parecer do DBA aos faceis C). Agora e o `OPS_DO_NO`, e esta guarda "
+            "e a que faltava ao 368."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """pub(crate) const OPS_DO_NO: &[&str] = &["esvaziar_lixeira", "expurgar_trilha"];
+""",
+        "troca": """pub(crate) const OPS_DO_NO: &[&str] = &["esvaziar_lixeira"];
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_expurgo_da_trilha::o_expurgo_pede_administrar_e_roda_no_servidor_somente_leitura",
+            "servidor::testes_politica::o_que_grava_so_no_no_e_escrita_menos_para_a_replica",
+        ],
+        "seguem": [
+            "servidor::testes_politica::tudo_que_grava_esta_na_lista_de_escrita",
+        ],
+    },
+    {
+        "id": "veneno-dito-uma-vez-por-trava",
+        "titulo": "O segundo pânico com as transações na mão passa calado e sem saneamento",
+        "porque": (
+            "C3 do parecer do DBA aos faceis C (pedido 458): o veneno do `Mutex` "
+            "nao sai, e a marca «ja dito» por TRAVA (o `veneno_dito` de antes) "
+            "deixava o segundo panico sem aviso -- e, com o saneamento, sem "
+            "saneamento: a transacao aberta no segundo panico confirmava. A troca "
+            "repoe isso: trava ja envenenada nao volta a sujar."
+        ),
+        "arquivo": "crates/phxsql-server/src/pulso.rs",
+        "trecho": """            ja_em_panico: std::thread::panicking(),
+""",
+        "troca": """            ja_em_panico: std::thread::panicking() || self.trava.is_poisoned(),
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_trava_suja::o_segundo_panico_com_as_transacoes_na_mao_tambem_saneia",
+        ],
+        "seguem": [
+            "servidor::testes_trava_suja::o_panico_com_as_transacoes_na_mao_nao_mata_a_proxima",
+            "pulso::testes::trava_envenenada_nao_passa_calada",
         ],
     },
 ]

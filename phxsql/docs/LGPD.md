@@ -485,16 +485,47 @@ As duas metades entraram, e as duas chamam **o mesmo motor**
 - **pelo administrador** — a op `expurgar_trilha` (`database`, `tabela`,
   `ate` ou `ate_ms`, `motivo`, e `fechar_ativo` opcional), só `Administrar`.
 
-### A op é do nó (condição C2 do papel C)
+### A op é do nó (condição C2 do papel C, e o pedido 499)
 
 A trilha é um arquivo **local** de cada servidor — o fio da réplica não a
-carrega. Por isso `expurgar_trilha` **não** está no `OPS_ESCRITA`: roda em
-servidor somente-leitura e em réplica, sem recusa e sem redirecionamento ao
-primário, e apaga **a trilha daquele nó e só a dela**. Cada nó com
-`retencao_anos` faz a própria passada; limpar a trilha de todos os nós é
-mandar a op a cada um. O irmão `esvaziar_lixeira` continua no `OPS_ESCRITA`
-com o mesmo furo para o `.trash` — o parecer o nomeou e ele não é deste
-pedido.
+carrega. Por isso `expurgar_trilha` roda em servidor somente-leitura e em
+réplica, sem recusa e sem redirecionamento ao primário, e apaga **a trilha
+daquele nó e só a dela**. Cada nó com `retencao_anos` faz a própria passada;
+limpar a trilha de todos os nós é mandar a op a cada um.
+
+O irmão `esvaziar_lixeira` tinha o mesmo furo para o `.trash`, medido pelo
+soquete com source e réplica de verdade (`tests/lixeira-da-replica.rs`): a
+réplica aplica a exclusão do source pelo `excluir_de_vez` de sempre e guarda a
+linha inteira no `.trash` **dela**; o `esvaziar_lixeira` do source não vira
+evento (o diário continuou em 4 eventos) e não chega lá; e o da réplica
+recusava com `[SP000025] acesso negado: servidor em modo somente leitura`. A
+linha apagada a pedido do titular ficava no disco da réplica para sempre.
+
+**As duas estão no `OPS_DO_NO`, e continuam no `OPS_ESCRITA`.** A primeira
+versão do 499 tirou o esvaziar do `OPS_ESCRITA`, e o parecer do DBA
+(`docs/propostas/parecer-dba-faceis-c-2026-09-24.md`) mediu o preço: aquela
+lista responde seis perguntas, e tirar a op dela mudou as seis —
+`BEGIN; esvaziar_lixeira; ROLLBACK` esvaziava e não voltava, e o esvaziar
+passava por cima da trava de outra transação. O `expurgar_trilha` tinha o mesmo
+furo desde o 368. Agora a pergunta «grava o dado replicado?» (o portão do
+somente-leitura, da réplica de leitura e do cluster) lê uma lista própria, e
+as duas continuam escrita para tudo o mais: não entram em transação, esbarram
+na trava, contam como escrita na telemetria e no catálogo. Continuam pedindo
+`administrar` e `motivo`, e o rastro vai ao `.reason` antes.
+
+**O que o `.trash` por nó muda** — a ressalva que o pedido **297** já cobra
+(«mesmo `.trash`/`.reason`: NÃO, por desenho»), e que o 499 tornou ação do
+operador, e não só efeito da replicação:
+
+- **(a)** um expurgo por LGPD se manda **a cada nó**: o esvaziar do source não
+  chega à réplica, e o da réplica não volta ao source;
+- **(b)** depois de uma **promoção**, a lixeira do novo primário é a da
+  réplica: a linha que o source antigo já expurgou **reaparece** na `lixeira`
+  do promovido, se ninguém esvaziou a réplica;
+- **(c)** o **backup** de cada nó leva o `.trash` **dele**: restaurar o backup
+  da réplica devolve o que o source já tinha esvaziado;
+- **(d)** esvaziar a réplica apaga a **última cópia** de uma linha que o source
+  já esvaziou — é a intenção da LGPD, e é também o fim da recuperação por ali.
 
 ### Os volumes — formato B
 

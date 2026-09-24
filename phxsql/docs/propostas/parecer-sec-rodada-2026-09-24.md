@@ -369,6 +369,40 @@ O que o integrador perguntou, conferido no léxico (`lexico.rs`) e no
   modelo do 356. O arquivo já leva o valor de tabela NÃO sigilosa por
   desenho, e nenhuma das duas nomeia tabela local sigilosa.
 
+**Re-checagem do 365: LIBERA.** A condição fechou.
+
+- **A condição.** `constante_em_valor` (`usuario.rs:374-397`, no worktree)
+  troca `TRUE`/`FALSE`/`NULL` em posição de valor por `?`, `NOT TRUE`
+  inclusive. Ficam só `IS [NOT] NULL|TRUE` e a restrição `NOT NULL`, que são
+  forma do comando e não carregam valor de linha: é a fronteira do
+  `pg_stat_statements`.
+- **As 7 provas do 497.** Os 7 casos `op:"sql"` que estavam sem prova agora a
+  têm: sobram 0 casos `sql` com `perfil: None`.
+- **As constantes que o integrador perguntou:**
+  - `-5`, `+5` e `.5` saem `- ?`, `+ ?` e `. ?`: o sinal e o ponto são
+    símbolos à parte, e o dígito é sempre `Numero`;
+  - `5.` sai `? .`;
+  - `DEFAULT`, `CURRENT_DATE`/`CURRENT_TIMESTAMP` e `UNKNOWN` ficam, e é
+    certo que fiquem. São palavra da linguagem ou função do servidor, não dado
+    digitado, e o PG também não os troca. A gramática de dado (`sintaxe.rs`,
+    `rotina.rs`) só aceita `TRUE`/`FALSE`/`NULL` como constante de palavra.
+- **Residual, fora da condição.** Na gramática de diretivas (`diretiva.rs`),
+  «palavra solta é TEXTO», e ela fica crua no `perfil.txt` e no anel.
+  - O cenário: `ALTER SERVER SET token = abc123`. O `config` recusa, porque o
+    `token` não é campo editável, mas o Profiler captura antes da recusa. O
+    `abc123` sem aspas fica no arquivo, porque a regra da senha só conhece as
+    letras `PASSWORD`/`IDENTIFIED`.
+  - Com aspas já sai `?`.
+  - Proposta **C4 ☐ baixa**: na passada do `redigir`, o valor depois de
+    `SET <campo> =`, quando `diretivas::campo_sigiloso(campo)`, vira marca nos
+    dois modos. É o mesmo motor que já redige o diário.
+  - O teste: `sem_a_senha` e `normalizado` de
+    `ALTER SERVER SET alertas.email.senha = abc123` não contêm `abc123`.
+- **Informativo.** A palavra sem aspas no lugar de valor
+  (`VALUES (7, VERDADEIRO)`, `nome = José`) é recusada pela gramática e mesmo
+  assim fica no arquivo como identificador. O `pg_stat_statements` nem grava
+  comando que falha. Não é condição.
+
 ### A garantia do 497 continua
 
 - As 16 expectativas trocadas são a PROVA de redação (`novas.contains(prova)`).
@@ -391,7 +425,8 @@ do 497 (a catraca desce).
 
 | # | Estado proposto | Achado | Teste adverso |
 |---|---|---|---|
-| **C0** | condição do 365, no mesmo lote | `TRUE`/`FALSE` (e `NULL`) crus no `sql` normalizado | `normalizado("INSERT INTO p (id, hiv) VALUES (7, TRUE)")` não contém `TRUE` |
+| **C0** | condição do 365: **fechada** na re-checagem | `TRUE`/`FALSE` (e `NULL`) crus no `sql` normalizado | `normalizado("INSERT INTO p (id, hiv) VALUES (7, TRUE)")` não contém `TRUE` |
 | **C1** | ☐ baixa | O DbLink puxar cita a célula remota na recusa de coluna marcada | Par MySQL falso devolve `"999.888.777-66"` para uma coluna local `Date` marcada. O erro do `dblink_sincronizar` não contém `999` |
 | **C2** | ☐ média | O DbLink empurrar cita o valor local INTEIRO e sem teto (`{n:?}` do `nome_seguro`) | Linha local com `Memo` marcado de 200 KiB e uma quebra de linha, sentido empurrar. O erro não contém o texto, e tem menos de 1 KiB |
 | **C3** | ⏸ baixa | Recusa de avaliação de expressão cita número/booleano de coluna marcada de ORIGEM | Calculada não marcada `faixa Int1 = renda / 1000`, com `renda` marcada = 500000. O erro não contém `500` |
+| **C4** | ☐ baixa | Na diretiva `ALTER … SET <campo sigiloso> = <palavra sem aspas>`, o valor fica cru no `perfil.txt` e no anel (a regra da senha só conhece `PASSWORD`/`IDENTIFIED`) | `sem_a_senha` e `normalizado` de `ALTER SERVER SET alertas.email.senha = abc123` não contêm `abc123` |

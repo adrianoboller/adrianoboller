@@ -313,6 +313,64 @@ fn o_erro_que_cita_o_valor_tambem_fica_fora_do_arquivo() {
     cofre::desligar();
 }
 
+/// **Pedido 365, pelo soquete: o `sql` nomeia a tabela DENTRO da frase.**
+///
+/// O crivo acima le o campo `"tabela"`, e o `{"op":"sql"}` nao tem esse
+/// campo -- o `INSERT` da tabela marcada ia inteiro para o `perfil.txt`, com o
+/// CPF dentro, ao lado do `.reg` cifrado. Agora o texto do `sql` vai ao
+/// arquivo com todo literal trocado por `?` (a convergencia do
+/// `pg_stat_statements` e do digest do MySQL(R)/MariaDB), e o anel continua
+/// com o texto inteiro -- o controle de que a tela do administrador nao
+/// ficou cega.
+#[test]
+fn o_sql_da_tabela_marcada_vai_ao_arquivo_sem_o_valor() {
+    let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
+    cofre::desligar();
+    let d = DirTemp::novo("prof-sql");
+    let porta = servidor_com_cofre(&d);
+    let arquivo = d.join("perfil.txt");
+
+    pedir(porta, r#""op":"criar_database","database":"loja""#);
+    pedir(
+        porta,
+        r#""op":"criar_tabela","database":"loja","tabela":"clientes",
+           "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true},
+                      {"nome":"cpf","tipo":"Str(14)","dado_pessoal":"sensivel"}],
+           "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true}]"#,
+    );
+    pedir(
+        porta,
+        &format!(r#""op":"profiler_ligar","arquivo":"{}""#, arquivo.display()),
+    );
+    pedir(
+        porta,
+        &format!(
+            r#""op":"sql","database":"loja",
+               "texto":"INSERT INTO clientes (id, cpf) VALUES (7, '{CPF}')""#
+        ),
+    );
+
+    let anel = pedir(porta, r#""op":"profiler","max":50"#);
+    assert!(
+        anel.contains(CPF),
+        "o anel ficou cego para o sql: a tela e do administrador -- {anel}"
+    );
+
+    pedir(porta, r#""op":"profiler_desligar""#);
+    let texto = std::fs::read_to_string(&arquivo).unwrap();
+    assert!(
+        !texto.contains(CPF),
+        "o INSERT da tabela marcada foi para o perfil.txt com o valor:\n{texto}"
+    );
+    assert!(
+        texto.contains("INSERT INTO clientes"),
+        "o arquivo ficou cego para o SQL, que e o uso principal do \
+         Profiler:\n{texto}"
+    );
+
+    cofre::desligar();
+}
+
 /// Um pedido que o servidor tem de RECUSAR. Devolve a resposta.
 ///
 /// Separado do `pedir` porque aquele exige `"ok":true` -- e aqui o erro e o

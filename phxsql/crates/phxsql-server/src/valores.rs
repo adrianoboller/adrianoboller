@@ -1065,6 +1065,18 @@ fn recebido(j: &Json) -> String {
     }
 }
 
+/// JSON em valor de UMA COLUNA -- a porta de quem converte para gravar,
+/// filtrar ou buscar (pedido 464).
+///
+/// E o `json_para_valor` com a marca da coluna junto: a recusa passa pelo
+/// [`Column::recusa_de_valor`], e coluna marcada como dado pessoal nunca cita
+/// o valor recebido. Quem tem a coluna na mao chama ESTA; o
+/// `json_para_valor` so pelo tipo fica para quem nao tem coluna nenhuma (a
+/// comparacao do `consultar`, que joga o erro fora) e para os testes do tipo.
+pub fn json_para_valor_da_coluna(j: &Json, coluna: &Column) -> Result<Value> {
+    json_para_valor(j, &coluna.ty).map_err(|e| coluna.recusa_de_valor(e))
+}
+
 /// JSON em valor do PhxSql, guiado pelo tipo da coluna.
 pub fn json_para_valor(j: &Json, ty: &ColumnType) -> Result<Value> {
     if j.e_nulo() {
@@ -1348,7 +1360,7 @@ pub fn json_para_linha(j: &Json, esquema: &Schema) -> Result<Vec<Value>> {
                 .iter()
                 .enumerate()
                 .map(|(i, c)| match itens.get(i) {
-                    Some(v) => json_para_valor(v, &c.ty),
+                    Some(v) => json_para_valor_da_coluna(v, c),
                     None => Ok(padrao_de(i)),
                 })
                 .collect()
@@ -1366,7 +1378,7 @@ pub fn json_para_linha(j: &Json, esquema: &Schema) -> Result<Vec<Value>> {
                 .iter()
                 .enumerate()
                 .map(|(i, c)| match j.campo(&c.nome) {
-                    Some(v) => json_para_valor(v, &c.ty),
+                    Some(v) => json_para_valor_da_coluna(v, c),
                     None => Ok(padrao_de(i)),
                 })
                 .collect()
@@ -1398,7 +1410,7 @@ pub fn json_para_chave(j: &Json, esquema: &Schema, indice: usize) -> Result<Vec<
     itens
         .iter()
         .zip(def.colunas.iter())
-        .map(|(v, ic)| json_para_valor(v, &esquema.colunas()[ic.coluna].ty))
+        .map(|(v, ic)| json_para_valor_da_coluna(v, &esquema.colunas()[ic.coluna]))
         .collect()
 }
 

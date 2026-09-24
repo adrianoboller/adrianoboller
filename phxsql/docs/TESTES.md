@@ -967,9 +967,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `servidor-segue-de-pe-depois-do-fsync-recusado` | o servidor segue de pé depois de um `fsync` recusado, gravando num disco que já se sabe que mente | 1 | ✅ provada |
 | `completar-engole-a-tabela-que-nao-foi-ao-disco` | a recuperação engole o erro do `sincronizar` e apaga a marca de um commit cujo dado não foi ao disco | 1 | ✅ provada |
 
-**325 das 412 guardas do catálogo: 1 aposentada, 320 provadas, 4 redundantes** — 8922 s de mutação, medido em 2026-09-16 15:25.
+**325 das 429 guardas do catálogo: 1 aposentada, 320 provadas, 4 redundantes** — 8922 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 88 das 412 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 88 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 105 das 429 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 105 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
@@ -1059,6 +1059,23 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `backup-sem-fsync` — o backup responde "concluido" sem `fsync` nenhum
 - `backup-fsync-derruba-o-servidor` — o `fsync` recusado no DESTINO DE UM BACKUP derruba o servidor inteiro
 - `diff-null-na-chave-apaga-linha-irma` — o `diff` com NULL repetido no indice some com linhas do relatorio
+- `recusa-de-coluna-marcada-cita-o-valor` — A recusa de conversão cita o valor curto de coluna marcada como dado pessoal
+- `faixa-do-slot-cita-coluna-marcada` — A faixa do tipo, conferida no slot, cita o número de coluna marcada
+- `carga-colada-converte-sem-a-coluna` — A carga colada converte a célula sem a marca da coluna
+- `upsert-converte-sem-a-coluna` — O `atualizar` do upsert converte o valor sem a marca da coluna
+- `sql-vai-ao-perfil-com-o-literal` — O `sql` vai ao `perfil.txt` com o literal dentro
+- `sql-vai-ao-perfil-com-o-literal-pelo-soquete` — O `INSERT` em SQL da tabela marcada vai ao `perfil.txt` com o valor, visto pelo soquete
+- `erro-do-sql-normalizado-vai-ao-arquivo` — O `sql` normalizado leva ao arquivo o erro que cita o literal
+- `normaliza-o-que-nao-e-sql` — O Profiler normaliza pelo NOME do campo, e a carga colada vira lixo de léxico
+- `transacoes-recuperadas-sem-sanear` — O registro das transações volta do pânico sem sanear, e o COMMIT seguinte confirma o que ele não afirma
+- `transacoes-envenenadas-recusam-toda-conexao` — Um pânico com as transações na mão mata toda transação de toda conexão até reiniciar
+- `trava-suja-sem-nome` — O `SP000010` da trava suja sai com a MESMA frase em 85 pontos de 14 travas
+- `esvaziar-lixeira-fora-do-ops-do-no` — A réplica somente-leitura não esvazia o próprio `.trash`, e a linha apagada no source fica nela para sempre
+- `ops-do-no-fora-do-ops-escrita` — `esvaziar_lixeira` e `expurgar_trilha` fora do `OPS_ESCRITA`: rodam dentro de BEGIN sem voltar no ROLLBACK e passam por cima da trava de outra transação
+- `normalizado-deixa-o-booleano-cru` — O `sql` normalizado deixa `TRUE`, `FALSE` e `NULL` crus no `perfil.txt`
+- `sql-vai-ao-perfil-com-o-literal-na-bateria-do-497` — O `sql` vai ao `perfil.txt` com o literal, visto pela bateria do 497 nas duas portas
+- `expurgar-trilha-fora-do-ops-do-no` — A réplica somente-leitura não expurga a própria trilha `.lgpd`
+- `veneno-dito-uma-vez-por-trava` — O segundo pânico com as transações na mão passa calado e sem saneamento
 
 As guardas que esta corrida ainda cita, hoje aposentadas:
 

@@ -241,3 +241,109 @@ C1–C3 (458) e B3 (499) são condições dos próprios itens, e não pedidos no
 
 **Conferência: 2 de 2 itens com veredito, 100%.** O que falta é da frente:
 C1–C3 e B1–B3.
+
+---
+
+## Re-checagem — 24/09/2026
+
+*Só leitura, sem compilar, no mesmo worktree (`git diff HEAD`, HEAD =
+8e5a545). Os vermelhos que a frente declara (os testes novos caindo com o
+defeito reposto) são palavra dela: não recompilei para repô-los.*
+
+| item | veredito |
+|---|---|
+| **458** | **LIBERA** — C1, C2 e C3 fechadas |
+| **499** | **LIBERA** — B1, B2 e B3 fechadas |
+
+### 458
+
+- **C1 fechada.** Não sobrou nenhum «o PostgreSQL também», nem no teste nem
+  no `SEGURANCA.md`.
+  - O §29 escreve o preço como escolha **nossa**: a transação saneada segura
+    as travas até o ROLLBACK, a queda da conexão ou o prazo (5 por padrão),
+    com a medição do PG 16.13 (0 travas, a outra sessão atualiza na hora).
+  - O §29 também diz por que o saneamento não passa pelo `abortar_soltando`:
+    tomar `travas` com `transacoes` na mão inverteria o
+    `barrado_por_travas`.
+  - O comentário do teste (`servidor.rs:59838`) diz o mesmo.
+- **C2 fechada.** O §24.5 agora diz que as duas travas se curam, e descreve
+  a divisão marca/ATIVA sem sobra.
+- **C3 fechada.** Há teste do segundo pânico,
+  `o_segundo_panico_com_as_transacoes_na_mao_tambem_saneia`:
+  1. a 7 abre;
+  2. pânico;
+  3. o COMMIT da 7 recusa, e a 7 faz ROLLBACK;
+  4. a 8 abre e empilha;
+  5. segundo pânico;
+  6. o COMMIT da 8 recusa com `TRANSACAO_ABORTADA`, e a tabela fica vazia.
+
+  Ele mede o dado, e não só o veredito. A guarda
+  `veneno-dito-uma-vez-por-trava` entrou no catálogo.
+
+Fica o que já estava dito: o P5 (o prazo varre transação em `COMMITTING`)
+é anterior e segue proposto. As notas de integração do 458 continuam valendo:
+fique com o `abortar_soltando` do HEAD vivo, e o compilador obriga a converter
+as tomadas novas.
+
+### 499 — a pergunta do integrador
+
+**`grava_dado_replicado` é o ÚNICO leitor do `OPS_DO_NO`?** Sim. Fora dos
+testes, o `OPS_DO_NO` aparece só em `servidor.rs:307`, dentro do
+`grava_dado_replicado`. A função tem **dois** chamadores:
+
+- `:11009` — `Papel::ReadReplica` redireciona;
+- `:11063` — o portão 2b, que cobre o cluster (`recusa_de_escrita`) e, sem
+  cluster, o `somente_leitura()` vivo.
+
+Todas as outras decisões continuam lendo o `OPS_ESCRITA`, e é o certo para
+cada uma:
+
+- a transação: `:14721` («não entra em transação») e `:14672` (o gatilho
+  AFTER no COMMIT);
+- a trava de outra transação (`:11206`);
+- a telemetria (`:9580`, `:9995` e `:10422`);
+- o catálogo (`catalogo.rs:103`), que alimenta o `x-phxsql-escreve`
+  (`rest.rs:354`) e o filtro da ponte MCP (`mcp.rs:133`).
+
+O Profiler (`ESCRITAS`) já listava as duas, e agora as três listas
+concordam: «escreve» é sim nas três, e «grava o dado replicado?» é não só
+para as duas do nó.
+
+**Algum caminho ainda decide «réplica pode?» pela lista velha?** Não.
+
+| caminho | por onde passa | resultado para as ops do nó |
+|---|---|---|
+| soquete / `POST /api` | `despachar` → `portoes_do_pedido` | réplica e somente-leitura atendem |
+| job | `executar_job` → `portoes_do_pedido` (`:8350`, sob o usuário do job) | idem |
+| MCP | não oferece (`ferramenta_mcp` falso; `escreve()` verdadeiro, então a ponte somente-leitura também as esconde) | — |
+| cluster, nó não-master | portão 2b → `grava_dado_replicado` falso → não pergunta à eleição | atende (arquivo do nó) |
+| cluster promovido / spare promovido | o `papel_atual()` e o `somente_leitura` são **vivos** e lidos no mesmo portão | nada fica preso ao papel antigo |
+| SQL / ODBC / HTTP da tela | nenhum decide somente-leitura por conta própria (lido); a tela só rotula «grava / só lê» pelo `x-phxsql-escreve`, que agora diz «grava» | — |
+
+O único outro dono de «somente leitura» é o `dblink_consultar`
+(`:24545`). Ele responde outra pergunta, a da instrução remota, e não toca
+nas duas.
+
+**B2 fechada.** São dois testes pelo soquete em `tests/lixeira-da-replica.rs`,
+cada um cobrindo as **duas** ops:
+
+- `as_ops_do_no_nao_entram_em_transacao`: `BEGIN` + op, recusa «não entra em
+  transação», e a lixeira segue em 1 depois do ROLLBACK;
+- `as_ops_do_no_esbarram_na_trava_de_outra_transacao`: recusa com
+  `EM_TRANSACAO` enquanto a B segura a tabela. Depois do ROLLBACK da B, o
+  esvaziar passa, o que prova que a recusa foi pela trava.
+
+O `a_replica_esvazia_a_propria_lixeira` continua no arquivo, e o
+`tudo_que_grava_esta_na_lista_de_escrita` voltou a exigir as duas no
+`OPS_ESCRITA`.
+
+**B3 fechada.** O `LGPD.md` traz as duas listas e o porquê, as
+consequências (a)–(d) do `.trash` por nó, e aponta para o 297.
+
+**Resíduo, que não bloqueia:** o **spare** não atende as duas
+(`OPS_NO_SPARE` é lista de permissão, e elas não estão nela). O `.trash`
+dele só se esvazia depois de promovido, e aí vale o (b). Isso já era assim
+antes da frente.
+
+**Re-checagem: 2 de 2 itens liberados, 100%.** Das propostas, seguem abertas
+o P5 (☐, medir antes de consertar) e o P7 (⏸).

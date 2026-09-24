@@ -1259,7 +1259,7 @@ impl Table {
         // para o tipo, o erro aparece antes de qualquer arquivo ser tocado.
         let mut bytes = vec![0u8; coluna.ty.largura()];
         if let Some(v) = &padrao {
-            escrever_inline(v, &coluna.ty, &mut bytes)?;
+            escrever_inline(v, &coluna.ty, &mut bytes).map_err(|e| coluna.recusa_de_valor(e))?;
         }
 
         // A DECLARACAO que se contradiz recusa na declaracao, nao na gravacao
@@ -4103,8 +4103,8 @@ impl Table {
                     let dados = match valor {
                         Value::Bin(b) => b.clone(),
                         outro => {
-                            return Err(PhxError::Tipo(format!(
-                                "coluna {nome_col} espera Bin, recebeu {outro:?}"
+                            return Err(self.esquema.colunas()[i].recusa_de_valor(PhxError::Tipo(
+                                format!("coluna {nome_col} espera Bin, recebeu {outro:?}"),
                             )));
                         }
                     };
@@ -4116,8 +4116,8 @@ impl Table {
                     let texto = match valor {
                         Value::Memo(s) | Value::Str(s) => s.clone(),
                         outro => {
-                            return Err(PhxError::Tipo(format!(
-                                "coluna {nome_col} espera Memo, recebeu {outro:?}"
+                            return Err(self.esquema.colunas()[i].recusa_de_valor(PhxError::Tipo(
+                                format!("coluna {nome_col} espera Memo, recebeu {outro:?}"),
                             )));
                         }
                     };
@@ -4125,7 +4125,12 @@ impl Table {
                     let p = self.memo.gravar(&bytes)?;
                     p.escrever(&mut payload[off..fim])?;
                 }
-                _ => escrever_inline(valor, &ty, &mut payload[off..fim])?,
+                // A faixa do tipo se confere AQUI (`12345678901 nao cabe em
+                // inteiro de 32 bits`), depois da conversao do protocolo -- e
+                // a recusa cita o numero. Coluna marcada nao cita (pedido
+                // 464): a mesma porta do `json_para_valor_da_coluna`.
+                _ => escrever_inline(valor, &ty, &mut payload[off..fim])
+                    .map_err(|e| self.esquema.colunas()[i].recusa_de_valor(e))?,
             }
         }
         Ok(payload)
@@ -4269,6 +4274,7 @@ impl Table {
             let valor = match (avaliar, def.expressoes.get(k).and_then(Option::as_ref)) {
                 (true, Some(e)) => {
                     calculado = expressao::coagir(&e.avaliar(&self.resolvedor(valores))?, &col.ty)
+                        .map_err(|erro| col.recusa_de_valor(erro))
                         .map_err(|erro| PhxError::Tipo(format!("indice {}: {erro}", def.nome)))?;
                     &calculado
                 }
@@ -4458,6 +4464,7 @@ impl Table {
                 if let (true, Some(padrao)) = (linha[i].e_null(), &col.padrao) {
                     let v = padrao.avaliar(&self.resolvedor(&linha))?;
                     linha[i] = expressao::coagir(&v, &col.ty)
+                        .map_err(|e| col.recusa_de_valor(e))
                         .map_err(|e| PhxError::Tipo(format!("padrao de {}: {e}", col.nome)))?;
                 }
             }
@@ -4465,7 +4472,10 @@ impl Table {
         for (i, col) in colunas.iter().enumerate() {
             if let Some(calc) = &col.calculada {
                 let v = calc.avaliar(&self.resolvedor(&linha))?;
+                // A conta pode partir de coluna marcada, e o numero que ela
+                // devolve e o dado -- a recusa passa pela coluna (pedido 464).
                 linha[i] = expressao::coagir(&v, &col.ty)
+                    .map_err(|e| col.recusa_de_valor(e))
                     .map_err(|e| PhxError::Tipo(format!("coluna calculada {}: {e}", col.nome)))?;
             }
         }

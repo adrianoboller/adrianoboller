@@ -57,7 +57,7 @@ use phxsql_core::value::Value;
 
 use crate::pivot::{Agregador, Campo, Granularidade, Juncao};
 use crate::valores::{
-    bytes_para_hex, hex_para_bytes, json_para_chave, json_para_linha, json_para_valor,
+    bytes_para_hex, hex_para_bytes, json_para_chave, json_para_linha, json_para_valor_da_coluna,
     largura_do_tipo, linha_para_json,
 };
 
@@ -267,8 +267,8 @@ pub(crate) const OPS_ESCRITA: &[&str] = &[
     "start_transaction",
     "begin_transaction",
     "commit",
-    // Marcar, desmarcar e esvaziar mexem em dado gravado. Listar a lixeira e
-    // os motivos, nao -- essas duas so leem, e continuam valendo no modo
+    // Marcar e desmarcar mexem em dado gravado. Listar a lixeira e os
+    // motivos, nao -- essas duas so leem, e continuam valendo no modo
     // somente leitura, que e justamente quando alguem esta investigando.
     "restaurar",
     // Restaurar um backup grava um database inteiro de uma vez -- e a maior
@@ -276,14 +276,12 @@ pub(crate) const OPS_ESCRITA: &[&str] = &[
     // entra: ler a pasta nao muda byte nenhum, e e justamente o que se quer
     // poder fazer num servidor somente-leitura antes de decidir.
     "restaurar_backup",
+    // As duas que apagam sem volta um arquivo LOCAL do no. Sao escrita para
+    // toda pergunta desta lista -- nao entram em transacao, esbarram na trava
+    // de outra transacao, contam como escrita na telemetria e no catalogo --,
+    // e so a do somente-leitura/replica responde diferente: ver `OPS_DO_NO`.
     "esvaziar_lixeira",
-    // `expurgar_trilha` NAO entra, e a ausencia e decisao do papel C (pedido
-    // 368, condicao C2): a trilha `.lgpd` e arquivo LOCAL do no -- a replica
-    // escreve a dela (o registro de ACESSO nasce de leitura) e nao a recebe
-    // do source. Expurga-la e manutencao do arquivo deste servidor, como o
-    // relogio da retencao, que roda em todo no. Na lista, a replica de
-    // leitura redirecionaria para o primario, e o somente-leitura recusaria:
-    // o administrador nunca alcancaria a trilha da propria replica.
+    "expurgar_trilha",
     // As tres que gravam na tabela de textos da tela. Num servidor somente
     // leitura semear nao pode gravar, e as outras duas apagam trabalho.
     "idiomas_carga",
@@ -332,6 +330,42 @@ pub(crate) const OPS_ESCRITA: &[&str] = &[
     // `aplicar`: um spare roda com `somente_leitura` ligado, e e exatamente
     // nele que a promocao precisa funcionar. O portao dela e o `administrar`.
 ];
+
+/// As escritas que mexem so no arquivo DESTE no, e nao no dado replicado --
+/// pedidos 368 (C2) e 499.
+///
+/// # Por que uma segunda lista, e nao tirar do `OPS_ESCRITA`
+///
+/// O `OPS_ESCRITA` responde SEIS perguntas: o portao do somente-leitura e da
+/// replica, a transacao (o que nao se empilha nao entra), a trava de outra
+/// transacao, a telemetria, o `escreve` do catalogo e do OpenAPI. Tirar uma op
+/// de la para acertar a primeira mudou as seis, e isso foi MEDIDO pelo papel C
+/// (`docs/propostas/parecer-dba-faceis-c-2026-09-24.md`): `BEGIN;
+/// esvaziar_lixeira; ROLLBACK` esvaziava e nao voltava, e o esvaziar passava
+/// por cima da IX de outra transacao. Sao duas perguntas, e a lei dos iguais
+/// vale para quem responde a MESMA -- entao duas listas, e esta so e lida por
+/// [`grava_dado_replicado`].
+///
+/// # O que cada uma e
+///
+/// * `esvaziar_lixeira` -- a replica aplica a exclusao do source pelo
+///   `excluir_de_vez` de sempre e guarda a linha inteira no `.trash` DELA; o
+///   esvaziar do source nao vira evento e nao chega la. Barrada, a replica
+///   somente-leitura recusava o proprio administrador, e a linha apagada no
+///   source ficava no disco da replica para sempre (`tests/lixeira-da-replica.rs`).
+/// * `expurgar_trilha` -- a trilha `.lgpd` e local: a replica escreve a dela
+///   (o registro de ACESSO nasce de leitura) e nao a recebe do source.
+///
+/// As duas continuam pedindo `administrar` e `motivo`, e o rastro vai ao
+/// `.reason` antes.
+pub(crate) const OPS_DO_NO: &[&str] = &["esvaziar_lixeira", "expurgar_trilha"];
+
+/// Esta op grava o dado que a replicacao carrega? E a pergunta do portao do
+/// somente-leitura, da replica de leitura e do cluster -- e so dela. Ver
+/// [`OPS_DO_NO`].
+pub(crate) fn grava_dado_replicado(op: &str) -> bool {
+    OPS_ESCRITA.contains(&op) && !OPS_DO_NO.contains(&op)
+}
 
 /// O que um SPARE atende. Reserva e reserva: cliente comum nao le nem
 /// escreve; o que passa e administracao, monitoramento e a propria
@@ -1043,9 +1077,9 @@ pub struct Servidor {
     /// dados, senao uma transacao esperando outra seguraria o servidor
     /// inteiro -- que e a doenca que o `alcancar_tabela_bidi` ja mediu em
     /// 29.456 ms.
-    travas: Mutex<crate::travas::Travas>,
+    travas: crate::pulso::TravaDaGuarda<crate::travas::Travas>,
     /// As transacoes abertas, por conexao. Ver `crate::transacao`.
-    transacoes: Mutex<crate::transacao::Transacoes>,
+    transacoes: crate::pulso::TravaDaGuarda<crate::transacao::Transacoes>,
     /// Quantas transacoes estao abertas AGORA.
     ///
     /// # O portao que vem ANTES do trabalho
@@ -1647,8 +1681,21 @@ impl Servidor {
             pre_conferencia_desligada: std::sync::atomic::AtomicBool::new(false),
             cargas: Mutex::new(crate::carga::Cargas::default()),
             marcas_pendentes: Mutex::new(Vec::new()),
-            travas: Mutex::new(crate::travas::Travas::default()),
-            transacoes: Mutex::new(crate::transacao::Transacoes::nova(crate::agora_ms())),
+            // Pedido 458: as duas travas da vida de uma transacao nao tem
+            // disco atras, e um panico com uma delas na mao nao pode matar
+            // toda transacao de toda conexao ate reiniciar. O registro das
+            // transacoes passa pelo saneamento (as ativas vao para
+            // ABORT_ONLY); o das travas nao precisa, porque cada entrada e
+            // de uma transacao e sai com ela.
+            travas: crate::pulso::TravaDaGuarda::nova(
+                "das travas de transacao",
+                crate::travas::Travas::default(),
+            ),
+            transacoes: crate::pulso::TravaDaGuarda::nova_saneada(
+                "das transacoes abertas",
+                crate::transacao::Transacoes::nova(crate::agora_ms()),
+                crate::transacao::Transacoes::abortar_abertas,
+            ),
             transacoes_abertas: AtomicUsize::new(0),
             marcas_do_diario: Mutex::new(HashMap::new()),
             continuidade_da_replica: Mutex::new(HashMap::new()),
@@ -5394,7 +5441,7 @@ impl Servidor {
         meu_hash: u16,
     ) -> Result<()> {
         let total = tabela.eventos()?;
-        let mut guarda = self.toques_bidi.lock().map_err(|_| trava_envenenada())?;
+        let mut guarda = self.toques_bidi.tomar("toques_bidi")?;
         let mapa = guarda.entry(chave_tab.to_string()).or_default();
         // Em LOTES, com os mesmos dois tetos do `replicar`, e nao o diario
         // inteiro de uma vez: a primeira rodada do bidirecional numa tabela
@@ -5495,7 +5542,7 @@ impl Servidor {
         // evento remoto e descartado (a linha remota morre no outro `.reg`).
         // Ver `bidirecional::colisao_de_criacao`.
         let (vence, colisao) = {
-            let guarda = self.toques_bidi.lock().map_err(|_| trava_envenenada())?;
+            let guarda = self.toques_bidi.tomar("toques_bidi")?;
             let local = guarda
                 .get(chave_tab)
                 .and_then(|m| m.toques.get(&chave))
@@ -6571,7 +6618,7 @@ impl Servidor {
             trava.abrir_database(&base)?.tabelas(None)?.len()
         };
         let (gatilhos, procedimentos) = {
-            let r = self.rotinas.lock().map_err(|_| trava_envenenada())?;
+            let r = self.rotinas.tomar("rotinas")?;
             (
                 r.gatilhos_do_db(&base).len(),
                 r.procedimentos_do_db(&base).len(),
@@ -6688,7 +6735,7 @@ impl Servidor {
             })
             .collect();
         let gatilhos = {
-            let r = self.rotinas.lock().map_err(|_| trava_envenenada())?;
+            let r = self.rotinas.tomar("rotinas")?;
             r.gatilhos_do_db(&base)
                 .iter()
                 .filter(|g| g.tabela == tabela)
@@ -7063,10 +7110,7 @@ impl Servidor {
             ))
         })?;
         {
-            let mut prox = self
-                .proximo_ouvinte
-                .lock()
-                .map_err(|_| trava_envenenada())?;
+            let mut prox = self.proximo_ouvinte.tomar("proximo_ouvinte")?;
             *prox = Some(novo);
         }
         if no_ar {
@@ -7141,7 +7185,7 @@ impl Servidor {
             .lock()
             .map(|g| g.clone())
             .unwrap_or_default();
-        let r = self.jobs.lock().map_err(|_| trava_envenenada())?;
+        let r = self.jobs.tomar("jobs")?;
         // A lista vazia de um cadastro trancado seria mentira.
         r.exigir_legivel()?;
         let agora = crate::agora_ms();
@@ -7264,7 +7308,7 @@ impl Servidor {
                 "informe \"ligado\": true liga, false desliga".into(),
             ));
         };
-        let mut r = self.jobs.lock().map_err(|_| trava_envenenada())?;
+        let mut r = self.jobs.tomar("jobs")?;
         let mut job = r.achar(&nome)?.clone();
         let nome = job.nome.clone();
         job.ligado = ligado;
@@ -7283,7 +7327,7 @@ impl Servidor {
         // que o login nao existe as tres da manha, no historico, e pior do que
         // descobrir agora, com a tela aberta.
         self.sessao_do_job(&job)?;
-        let mut r = self.jobs.lock().map_err(|_| trava_envenenada())?;
+        let mut r = self.jobs.tomar("jobs")?;
         let nome = job.nome.clone();
         r.salvar(job)?;
         Ok(Json::objeto(vec![
@@ -7298,7 +7342,7 @@ impl Servidor {
 
     fn op_job_excluir(&self, p: &Json) -> Result<Json> {
         let nome = p.texto_ou("nome", "").trim().to_string();
-        let mut r = self.jobs.lock().map_err(|_| trava_envenenada())?;
+        let mut r = self.jobs.tomar("jobs")?;
         r.excluir(&nome)?;
         Ok(Json::objeto(vec![("excluido", Json::texto_de(nome))]))
     }
@@ -7481,10 +7525,7 @@ impl Servidor {
         let inicio = crate::agora_ms();
         // A copia sai de dentro da trava para o job poder rodar por segundos
         // sem prender o cadastro -- e a tela de jobs continua respondendo.
-        let job = match self.jobs.lock() {
-            Ok(r) => r.achar(nome)?.clone(),
-            Err(_) => return Err(trava_envenenada()),
-        };
+        let job = self.jobs.tomar("jobs")?.achar(nome)?.clone();
         let op = job.op().to_string();
 
         // A lapide ANTES de executar (pedido 502): se esta corrida derrubar o
@@ -9799,9 +9840,9 @@ impl Servidor {
                 ))),
             );
         }
-        let mut r = match conexao.lock() {
+        let mut r = match conexao.tomar("da conexao remota") {
             Ok(r) => r,
-            Err(_) => return (op, false, Err(trava_envenenada())),
+            Err(e) => return (op, false, Err(e)),
         };
         match r.conversar(linha) {
             Ok(resposta) => {
@@ -11060,7 +11101,7 @@ impl Servidor {
             // O mesmo erro do redirecionamento de cluster, e de proposito: para
             // o cliente, "escreveu no no errado, va para aquele" e UM evento so.
             // O `REDIRECIONA host:porta` na frente e o pedaco que ele recorta.
-            Papel::ReadReplica if OPS_ESCRITA.contains(&op) => {
+            Papel::ReadReplica if grava_dado_replicado(op) => {
                 return Err(PhxError::Redireciona(format!(
                     "REDIRECIONA {} -- este servidor e uma replica de leitura; \
                      escreva no primario",
@@ -11110,7 +11151,11 @@ impl Servidor {
         //
         // A recusa do somente-leitura sai pela tabela de mensagens (texto que
         // gente le, entao acompanha o idioma); a do cluster ja vem pronta.
-        if OPS_ESCRITA.contains(&op) {
+        //
+        // A pergunta e «grava o dado replicado?», e nao «escreve?»: o que so
+        // mexe no arquivo deste no (`OPS_DO_NO`) passa, porque e o
+        // administrador DESTE no que o alcanca -- pedidos 368 e 499.
+        if grava_dado_replicado(op) {
             if let Some(estado) = &self.cluster {
                 if let Some(recusa) = estado.recusa_de_escrita() {
                     return Err(recusa);
@@ -11936,9 +11981,7 @@ impl Servidor {
         if self.transacoes_abertas.load(Ordering::Relaxed) == 0 || sessao.ligacao == 0 {
             return;
         }
-        let Ok(reg) = self.transacoes.lock() else {
-            return;
-        };
+        let reg = self.transacoes.travar();
         let Some(tx) = reg.de(sessao.ligacao) else {
             return;
         };
@@ -11977,7 +12020,7 @@ impl Servidor {
         sessao: &Sessao,
     ) -> Result<Option<Vec<Value>>> {
         let desta_linha: Vec<crate::transacao::Escrita> = {
-            let reg = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+            let reg = self.transacoes.travar();
             let tx = reg.de(sessao.ligacao).ok_or_else(sem_transacao)?;
             tx.escritas
                 .iter()
@@ -12100,7 +12143,7 @@ impl Servidor {
     }
 
     fn op_bloqueios(&self) -> Result<Json> {
-        let lista = self.lista_negra.lock().map_err(|_| trava_envenenada())?;
+        let lista = self.lista_negra.tomar("lista_negra")?;
         let agora = crate::agora_ms();
         let p = &self.config.politica;
         Ok(Json::objeto(vec![
@@ -12165,7 +12208,7 @@ impl Servidor {
         if ip.is_empty() {
             return Err(PhxError::Esquema("informe \"ip\"".into()));
         }
-        let mut lista = self.lista_negra.lock().map_err(|_| trava_envenenada())?;
+        let mut lista = self.lista_negra.tomar("lista_negra")?;
         let tinha = lista.desbloquear(&ip, &self.config.politica)?;
         Ok(Json::objeto(vec![
             ("ip", Json::texto_de(&ip)),
@@ -12178,7 +12221,7 @@ impl Servidor {
     /// sozinho -- entrega o texto para quem tem o privilegio aplicar.
     fn op_bloqueios_exportar(&self, p: &Json) -> Result<Json> {
         let formato = p.texto_ou("formato", "texto").trim().to_string();
-        let lista = self.lista_negra.lock().map_err(|_| trava_envenenada())?;
+        let lista = self.lista_negra.tomar("lista_negra")?;
         let agora = crate::agora_ms();
         let texto = lista.exportar(&formato, agora)?;
         Ok(Json::objeto(vec![
@@ -12193,7 +12236,7 @@ impl Servidor {
     /// o arquivo, pelo mesmo motivo de sempre.
     fn op_whitelist_salvar(&self, p: &Json) -> Result<Json> {
         let regras = p.textos("whitelist");
-        let mut lista = self.lista_negra.lock().map_err(|_| trava_envenenada())?;
+        let mut lista = self.lista_negra.tomar("lista_negra")?;
         lista.definir_whitelist(regras)?;
         Ok(Json::objeto(vec![(
             "whitelist",
@@ -12812,7 +12855,7 @@ impl Servidor {
                 }
             }
         }
-        let mut v = self.visoes.lock().map_err(|_| trava_envenenada())?;
+        let mut v = self.visoes.tomar("visoes")?;
         let criada = v.criar(
             &base,
             &nome,
@@ -12830,7 +12873,7 @@ impl Servidor {
     /// `visoes`: o que ha, com o texto verbatim.
     fn op_visoes(&self, p: &Json) -> Result<Json> {
         let base = p.texto_ou("database", "").trim().to_string();
-        let v = self.visoes.lock().map_err(|_| trava_envenenada())?;
+        let v = self.visoes.tomar("visoes")?;
         Ok(Json::objeto(vec![
             ("database", Json::texto_de(&base)),
             (
@@ -12851,7 +12894,7 @@ impl Servidor {
     fn op_excluir_visao(&self, p: &Json) -> Result<Json> {
         let base = p.texto_ou("database", "").trim().to_string();
         let nome = p.texto_ou("nome", "").trim().to_string();
-        let mut v = self.visoes.lock().map_err(|_| trava_envenenada())?;
+        let mut v = self.visoes.tomar("visoes")?;
         let saiu = v.excluir(&base, &nome)?;
         self.ha_visoes.store(v.ha_visoes(), Ordering::Relaxed);
         Ok(Json::objeto(vec![
@@ -12897,7 +12940,7 @@ impl Servidor {
         }
         let alvo = selecao.de.nome_no_protocolo();
         let sql_da_visao = {
-            let v = self.visoes.lock().map_err(|_| trava_envenenada())?;
+            let v = self.visoes.tomar("visoes")?;
             match v.por_nome(base, &alvo) {
                 Some(x) => x.sql.clone(),
                 None => return Ok(None),
@@ -14615,7 +14658,7 @@ impl Servidor {
         }
 
         let agora = crate::agora_ms();
-        let mut cargas = self.cargas.lock().map_err(|_| trava_envenenada())?;
+        let mut cargas = self.cargas.tomar("cargas")?;
 
         if ligar {
             let prazo = self.config.recursos.carga_prazo_min as i64 * 60_000;
@@ -14693,7 +14736,7 @@ impl Servidor {
     /// `cargas`: quais tabelas estao reservadas agora, e por quem.
     fn op_cargas(&self) -> Result<Json> {
         let agora = crate::agora_ms();
-        let c = self.cargas.lock().map_err(|_| trava_envenenada())?;
+        let c = self.cargas.tomar("cargas")?;
         Ok(Json::objeto(vec![
             ("total", Json::de_u64(c.quantas() as u64)),
             (
@@ -14761,7 +14804,7 @@ impl Servidor {
         // A partir daqui ja se sabe que EXISTE transacao em algum lugar; falta
         // saber se e nesta conexao.
         let estado = {
-            let t = self.transacoes.lock().ok()?;
+            let t = self.transacoes.travar();
             t.de(sessao.ligacao)?.estado
         };
 
@@ -14800,14 +14843,11 @@ impl Servidor {
         // encerra e o gestor: `ABORT_ONLY`, travas soltas, lista jogada fora,
         // e a proxima operacao recebe o erro com o numero do prazo. Nenhuma
         // thread e morta -- matar thread deixaria estado interno pela metade.
-        let vencida = {
-            match self.transacoes.lock() {
-                Ok(t) => t
-                    .de(sessao.ligacao)
-                    .is_some_and(|tx| tx.expira_ms <= crate::agora_ms()),
-                Err(_) => false,
-            }
-        };
+        let vencida = self
+            .transacoes
+            .travar()
+            .de(sessao.ligacao)
+            .is_some_and(|tx| tx.expira_ms <= crate::agora_ms());
         if vencida && estado != crate::transacao::Estado::AbortOnly {
             return Some(Err(self.estourar_prazo(sessao)));
         }
@@ -14880,7 +14920,7 @@ impl Servidor {
             return None;
         }
         let (id, quer, database_tx) = {
-            let t = self.transacoes.lock().ok()?;
+            let t = self.transacoes.travar();
             let tx = t.de(sessao.ligacao)?;
             (tx.id, tx.leitura_repetivel, tx.database.clone())
         };
@@ -14916,15 +14956,12 @@ impl Servidor {
     fn motivo_do_aborto(&self, ligacao: u64) -> String {
         let padrao = "houve erro de TRANSACAO nesta conexao: a transacao nao \
                       pode ser confirmada. Mande ROLLBACK";
-        match self.transacoes.lock() {
-            Ok(t) => match t.de(ligacao) {
-                Some(tx) if !tx.motivo_do_aborto.is_empty() => format!(
-                    "{}; a transacao nao pode ser confirmada, mande ROLLBACK",
-                    tx.motivo_do_aborto
-                ),
-                _ => padrao.to_string(),
-            },
-            Err(_) => padrao.to_string(),
+        match self.transacoes.travar().de(ligacao) {
+            Some(tx) if !tx.motivo_do_aborto.is_empty() => format!(
+                "{}; a transacao nao pode ser confirmada, mande ROLLBACK",
+                tx.motivo_do_aborto
+            ),
+            _ => padrao.to_string(),
         }
     }
 
@@ -14933,12 +14970,10 @@ impl Servidor {
     /// Chamado quando um erro de classe TRANSACAO acontece: dali em diante o
     /// `COMMIT` recusa em vez de confirmar trabalho meio invalido.
     fn abortar_transacao(&self, ligacao: u64, motivo: &str) {
-        if let Ok(mut t) = self.transacoes.lock() {
-            if let Some(tx) = t.de_mut(ligacao) {
-                tx.estado = crate::transacao::Estado::AbortOnly;
-                if tx.motivo_do_aborto.is_empty() {
-                    tx.motivo_do_aborto = motivo.to_string();
-                }
+        if let Some(tx) = self.transacoes.travar().de_mut(ligacao) {
+            tx.estado = crate::transacao::Estado::AbortOnly;
+            if tx.motivo_do_aborto.is_empty() {
+                tx.motivo_do_aborto = motivo.to_string();
             }
         }
     }
@@ -14988,7 +15023,7 @@ impl Servidor {
         }
         let agora = crate::agora_ms();
         let id = {
-            let mut t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+            let mut t = self.transacoes.travar();
             t.abrir(sessao.ligacao, sessao.login(), &sessao.ip, agora, &abertura)?
         };
         // Depois de a transacao estar no mapa: o portao le este contador, e
@@ -15003,7 +15038,7 @@ impl Servidor {
             return Err(e);
         }
         let ficha = {
-            let t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+            let t = self.transacoes.travar();
             t.de(sessao.ligacao).ok_or_else(sem_transacao)?.ficha(agora)
         };
         Ok(self.juntar_travas(ficha, agora))
@@ -15043,7 +15078,7 @@ impl Servidor {
         }
         let efetivas = self.escopo_efetivo(database, declaradas, sessao)?;
         {
-            let mut t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+            let mut t = self.transacoes.travar();
             let tx = t.de_mut(sessao.ligacao).ok_or_else(sem_transacao)?;
             tx.database = database.to_string();
             tx.declaradas = declaradas
@@ -15161,7 +15196,7 @@ impl Servidor {
         if !self.ha_gatilhos.load(Ordering::Relaxed) {
             return Ok(Vec::new());
         }
-        let r = self.rotinas.lock().map_err(|_| trava_envenenada())?;
+        let r = self.rotinas.tomar("rotinas")?;
         let mut alvos = Vec::new();
         for evento in [
             phxsql_sql::rotina::Evento::Inserir,
@@ -15180,7 +15215,7 @@ impl Servidor {
     }
 
     fn modo_da_transacao(&self, sessao: &Sessao) -> Result<crate::travas::Modo> {
-        let t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+        let t = self.transacoes.travar();
         Ok(t.de(sessao.ligacao).ok_or_else(sem_transacao)?.modo)
     }
 
@@ -15189,7 +15224,7 @@ impl Servidor {
         if self.transacoes_abertas.load(Ordering::Relaxed) == 0 || sessao.ligacao == 0 {
             return Err(sem_transacao());
         }
-        let t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+        let t = self.transacoes.travar();
         match t.de(sessao.ligacao) {
             Some(tx) => Ok(tx.id),
             None => Err(sem_transacao()),
@@ -15205,7 +15240,7 @@ impl Servidor {
         let agora = crate::agora_ms();
         if self.transacoes_abertas.load(Ordering::Relaxed) > 0 && sessao.ligacao != 0 {
             let ficha = {
-                let t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+                let t = self.transacoes.travar();
                 t.de(sessao.ligacao).map(|tx| tx.ficha(agora))
             };
             if let Some(f) = ficha {
@@ -15231,7 +15266,7 @@ impl Servidor {
         self.limpar_transacoes_vencidas();
         let agora = crate::agora_ms();
         let fichas = {
-            let t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+            let t = self.transacoes.travar();
             t.todas(agora)
         };
         let quantas = fichas.len();
@@ -15253,7 +15288,7 @@ impl Servidor {
     fn op_savepoint(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
         let nome = nome_do_ponto(p)?;
         self.exigir_transacao(sessao)?;
-        let mut t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+        let mut t = self.transacoes.travar();
         let tx = t.de_mut(sessao.ligacao).ok_or_else(sem_transacao)?;
         if !tx.estado.aceita_trabalho() {
             return Err(PhxError::TransacaoAbortada(
@@ -15287,7 +15322,7 @@ impl Servidor {
         let nome = nome_do_ponto(p)?;
         self.exigir_transacao(sessao)?;
         let (descartadas, restantes, id) = {
-            let mut t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+            let mut t = self.transacoes.travar();
             let tx = t.de_mut(sessao.ligacao).ok_or_else(sem_transacao)?;
             // ABORT_ONLY NAO se conserta voltando a um ponto, e a diferenca
             // para o PostgreSQL(R) e deliberada: la TODO erro aborta a
@@ -15346,7 +15381,7 @@ impl Servidor {
     fn op_release_savepoint(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
         let nome = nome_do_ponto(p)?;
         self.exigir_transacao(sessao)?;
-        let mut t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+        let mut t = self.transacoes.travar();
         let tx = t.de_mut(sessao.ligacao).ok_or_else(sem_transacao)?;
         let ate = tx
             .pontos
@@ -15372,7 +15407,7 @@ impl Servidor {
         // indice, entao a trava de dados entra -- e entra ANTES da trava das
         // transacoes, que e a ordem unica deste servidor.
         let escritas: Vec<crate::transacao::Escrita> = {
-            let t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+            let t = self.transacoes.travar();
             match t.de(sessao.ligacao) {
                 Some(tx) => tx.escritas.clone(),
                 None => return Ok(()),
@@ -15402,7 +15437,7 @@ impl Servidor {
                 }
             }
         }
-        let mut t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+        let mut t = self.transacoes.travar();
         if let Some(tx) = t.de_mut(sessao.ligacao) {
             tx.refazer_chaves(&chaves);
         }
@@ -15455,7 +15490,7 @@ impl Servidor {
         // na restauracao; uma marca que cobrisse dois deixaria de valer no
         // instante em que alguem restaurasse um deles sozinho.
         {
-            let t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+            let t = self.transacoes.travar();
             let tx = t.de(sessao.ligacao).ok_or_else(sem_transacao)?;
             if !tx.database.is_empty() && !tx.database.eq_ignore_ascii_case(&database) {
                 return Err(PhxError::Esquema(format!(
@@ -15604,7 +15639,7 @@ impl Servidor {
                             .find(|(i, _)| *i == indice)
                             .map(|(_, c)| c);
                         if let Some(c) = &em_texto {
-                            let reg = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+                            let reg = self.transacoes.travar();
                             let tx = reg.de(sessao.ligacao).ok_or_else(sem_transacao)?;
                             if tx.chave_ja_empilhada(&tabela, &indice, c) {
                                 return Err(PhxError::Duplicado(format!(
@@ -15759,7 +15794,7 @@ impl Servidor {
                 // tentativa seguinte da mesma linha era acusada de duplicada
                 // por si mesma.
                 {
-                    let reg = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+                    let reg = self.transacoes.travar();
                     let tx = reg.de(sessao.ligacao).ok_or_else(sem_transacao)?;
                     let posicao = tx.escritas.len() + 1;
                     for (indice, chave) in &chaves {
@@ -15774,7 +15809,7 @@ impl Servidor {
                 }
                 chaves_novas = chaves;
                 let rowid = {
-                    let reg = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+                    let reg = self.transacoes.travar();
                     let tx = reg.de(sessao.ligacao).ok_or_else(sem_transacao)?;
                     t.slots() + 1 + tx.insercoes_em(&tabela)
                 };
@@ -15798,7 +15833,7 @@ impl Servidor {
                     .cloned()
                     .ok_or_else(|| PhxError::Esquema("informe \"valores\"".into()))?;
                 let nasceu_aqui = {
-                    let reg = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+                    let reg = self.transacoes.travar();
                     reg.de(sessao.ligacao)
                         .ok_or_else(sem_transacao)?
                         .nasceu_aqui(&tabela, rowid)
@@ -15861,7 +15896,7 @@ impl Servidor {
                 let rowid = self.rowid(p)?;
                 let motivo = p.texto_ou("motivo", "").trim().to_string();
                 let nasceu_aqui = {
-                    let reg = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+                    let reg = self.transacoes.travar();
                     reg.de(sessao.ligacao)
                         .ok_or_else(sem_transacao)?
                         .nasceu_aqui(&tabela, rowid)
@@ -15969,7 +16004,7 @@ impl Servidor {
         marca: Option<&'static str>,
     ) -> Result<Json> {
         let teto = self.config.recursos.transacao_max_linhas as usize;
-        let mut t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+        let mut t = self.transacoes.travar();
         let tx = t.de_mut(sessao.ligacao).ok_or_else(sem_transacao)?;
         if teto > 0 && tx.escritas.len() >= teto {
             // Erro de TRANSACAO, e nao de instrucao: o conjunto de escrita
@@ -16113,7 +16148,7 @@ impl Servidor {
         marca: Option<&'static str>,
     ) -> Result<Json> {
         let teto = self.config.recursos.transacao_max_linhas as usize;
-        let mut t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+        let mut t = self.transacoes.travar();
         let tx = t.de_mut(sessao.ligacao).ok_or_else(sem_transacao)?;
         if teto > 0 && tx.escritas.len() + grupo.len() > teto {
             tx.estado = crate::transacao::Estado::AbortOnly;
@@ -16197,7 +16232,7 @@ impl Servidor {
         espera: Espera,
     ) -> Result<Option<crate::travas::Barrada>> {
         let (id, modo, escopo_modo, no_escopo, declarou) = {
-            let t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+            let t = self.transacoes.travar();
             let tx = t.de(sessao.ligacao).ok_or_else(sem_transacao)?;
             (
                 tx.id,
@@ -16215,7 +16250,7 @@ impl Servidor {
                      DYNAMIC"
                 )));
             }
-            let mut t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+            let mut t = self.transacoes.travar();
             if let Some(tx) = t.de_mut(sessao.ligacao) {
                 tx.efetivas.push(chave.to_string());
                 crate::travas::em_ordem_canonica(&mut tx.efetivas);
@@ -16274,7 +16309,7 @@ impl Servidor {
         espera: Espera,
     ) -> Result<Option<crate::travas::Barrada>> {
         let (prazo_ms, expira_ms) = {
-            let t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+            let t = self.transacoes.travar();
             let tx = t.de(sessao.ligacao).ok_or_else(sem_transacao)?;
             (tx.lock_timeout_ms, tx.expira_ms)
         };
@@ -16282,7 +16317,7 @@ impl Servidor {
         let mut ultima: Option<crate::travas::Barrada>;
         loop {
             {
-                let mut tr = self.travas.lock().map_err(|_| trava_envenenada())?;
+                let mut tr = self.travas.travar();
                 let r = match alvo {
                     Alvo::Tabela(t) => tr.pegar_tabela(chave, id, t),
                     Alvo::Linha(rowid) => tr.pegar_linha(chave, id, rowid),
@@ -16310,7 +16345,7 @@ impl Servidor {
                 self.anotar_espera(sessao, "");
                 let b = ultima.expect("so se sai do laco com uma barrada na mao");
                 let recado = {
-                    let t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+                    let t = self.transacoes.travar();
                     t.recado_da_barrada(&b, crate::agora_ms())
                 };
                 if estourou_a_transacao {
@@ -16337,10 +16372,8 @@ impl Servidor {
 
     /// Anota (ou limpa) o que esta transacao espera, para a ficha.
     fn anotar_espera(&self, sessao: &Sessao, o_que: &str) {
-        if let Ok(mut t) = self.transacoes.lock() {
-            if let Some(tx) = t.de_mut(sessao.ligacao) {
-                tx.esperando = o_que.to_string();
-            }
+        if let Some(tx) = self.transacoes.travar().de_mut(sessao.ligacao) {
+            tx.esperando = o_que.to_string();
         }
     }
 
@@ -16383,7 +16416,7 @@ impl Servidor {
         motivo: impl FnOnce(&crate::transacao::Transacao) -> String,
     ) -> Result<(u64, i64)> {
         let (id, prazo) = {
-            let mut t = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+            let mut t = self.transacoes.travar();
             let tx = t.de_mut(ligacao).ok_or_else(sem_transacao)?;
             tx.estado = crate::transacao::Estado::AbortOnly;
             tx.escritas.clear();
@@ -16395,9 +16428,7 @@ impl Servidor {
             }
             (tx.id, tx.expira_ms - tx.desde_ms)
         };
-        if let Ok(mut tr) = self.travas.lock() {
-            tr.soltar_tudo(id);
-        }
+        self.travas.travar().soltar_tudo(id);
         Ok((id, prazo))
     }
 
@@ -16414,13 +16445,12 @@ impl Servidor {
     /// e e a diferenca entre um prazo que faz o que promete e um campo de
     /// configuracao que mente.
     fn por_prazo_na_operacao(&self, sessao: &Sessao) {
-        let prazo = match self.transacoes.lock() {
-            Ok(t) => t
-                .de(sessao.ligacao)
-                .map(|tx| tx.statement_timeout_ms)
-                .unwrap_or(0),
-            Err(_) => 0,
-        };
+        let prazo = self
+            .transacoes
+            .travar()
+            .de(sessao.ligacao)
+            .map(|tx| tx.statement_timeout_ms)
+            .unwrap_or(0);
         if prazo <= 0 {
             return;
         }
@@ -16446,10 +16476,7 @@ impl Servidor {
             .and_then(|(_, v)| v.inteiro())
             .unwrap_or(0)
             .max(0) as u64;
-        let travadas = match self.travas.lock() {
-            Ok(t) => t.ficha(id),
-            Err(_) => Vec::new(),
-        };
+        let travadas = self.travas.travar().ficha(id);
         let mut linhas_travadas = 0u64;
         let lista: Vec<Json> = travadas
             .iter()
@@ -16488,16 +16515,11 @@ impl Servidor {
         // `esperar_trava`; um pedido solto nao declarou nada e recusa na hora.
         // Deixar os dois passarem por aqui tiraria da transacao a espera que
         // ela pediu -- e o erro dela sairia sem sequer dizer LOCK TIMEOUT.
-        if self
-            .transacoes
-            .lock()
-            .ok()
-            .is_some_and(|t| t.de(sessao.ligacao).is_some())
-        {
+        if self.transacoes.travar().de(sessao.ligacao).is_some() {
             return None;
         }
         let meu = 0u64;
-        let travas = self.travas.lock().ok()?;
+        let travas = self.travas.travar();
         // O campo que este portao le e o furo: `tabela` cobre quase tudo, e
         // `destino` cobre as duas que gravam noutra tabela sem dize-lo ali
         // (`duplicar_tabela` e `copiar_tabela`).
@@ -16525,7 +16547,7 @@ impl Servidor {
             };
             if let Some(b) = barrada {
                 let agora = crate::agora_ms();
-                let t = self.transacoes.lock().ok()?;
+                let t = self.transacoes.travar();
                 return Some(t.recado_da_barrada(&b, agora));
             }
         }
@@ -16599,7 +16621,7 @@ impl Servidor {
             }
         }
         let barrada = {
-            let travas = self.travas.lock().map_err(|_| trava_envenenada())?;
+            let travas = self.travas.travar();
             chaves.iter().find_map(|(nome, chave)| {
                 travas
                     .conflito_de_tabela(chave, 0, crate::travas::Trava::Exclusiva)
@@ -16610,7 +16632,7 @@ impl Servidor {
             return Ok(None);
         };
         let recado = {
-            let reg = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+            let reg = self.transacoes.travar();
             reg.recado_da_barrada(&b, crate::agora_ms())
         };
         let ligacao = if nome.eq_ignore_ascii_case(t.nome()) {
@@ -16689,18 +16711,13 @@ impl Servidor {
     /// portas para uma saida so, porque tres implementacoes de "desfazer"
     /// seriam tres chances de esquecer o contador.
     fn descartar_transacao(&self, ligacao: u64) -> (u64, u64) {
-        let saiu = match self.transacoes.lock() {
-            Ok(mut t) => t.tirar(ligacao),
-            Err(_) => None,
-        };
+        let saiu = self.transacoes.travar().tirar(ligacao);
         match saiu {
             Some(tx) => {
                 // As travas saem JUNTO, e no mesmo lugar: uma segunda funcao
                 // para soltar travas seria uma segunda chance de esquecer, e
                 // trava esquecida trava a tabela para sempre.
-                if let Ok(mut tr) = self.travas.lock() {
-                    tr.soltar_tudo(tx.id);
-                }
+                self.travas.travar().soltar_tudo(tx.id);
                 self.transacoes_abertas.fetch_sub(1, Ordering::SeqCst);
                 (tx.id, tx.escritas.len() as u64)
             }
@@ -16728,10 +16745,7 @@ impl Servidor {
         if self.transacoes_abertas.load(Ordering::Relaxed) == 0 {
             return;
         }
-        let vencidas = match self.transacoes.lock() {
-            Ok(t) => t.vencidas(crate::agora_ms()),
-            Err(_) => return,
-        };
+        let vencidas = self.transacoes.travar().vencidas(crate::agora_ms());
         for l in vencidas {
             // **Ela nao SUMA: vira `ABORT_ONLY` e espera o dono.**
             //
@@ -16788,7 +16802,7 @@ impl Servidor {
         // este servidor ja pagou tres vezes por uma trava tomada duas vezes.
         let mut trava = self.travar_dados()?;
         let (id, database, escritas) = {
-            let mut reg = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+            let mut reg = self.transacoes.travar();
             let tx = reg.de_mut(sessao.ligacao).ok_or_else(sem_transacao)?;
             match tx.estado {
                 crate::transacao::Estado::AbortOnly => {
@@ -17169,9 +17183,7 @@ impl Servidor {
         elo: &crate::transacao::Escrita,
         b: &crate::travas::Barrada,
     ) -> PhxError {
-        let Ok(mut reg) = self.transacoes.lock() else {
-            return trava_envenenada();
-        };
+        let mut reg = self.transacoes.travar();
         let recado = reg.recado_da_barrada(b, crate::agora_ms());
         let onde = format!(
             "a cascata desta transacao leva o elo a {} rowid {}, que ela nao tinha \
@@ -17301,11 +17313,9 @@ impl Servidor {
     /// Devolve a lista a transacao e a tira de `COMMITTING`: o `COMMIT` foi
     /// recusado ANTES da marca, e nada aconteceu.
     fn devolver_a_lista(&self, ligacao: u64, escritas: Vec<crate::transacao::Escrita>) {
-        if let Ok(mut reg) = self.transacoes.lock() {
-            if let Some(tx) = reg.de_mut(ligacao) {
-                tx.escritas = escritas;
-                tx.estado = crate::transacao::Estado::Ativa;
-            }
+        if let Some(tx) = self.transacoes.travar().de_mut(ligacao) {
+            tx.escritas = escritas;
+            tx.estado = crate::transacao::Estado::Ativa;
         }
     }
 
@@ -18640,7 +18650,7 @@ impl Servidor {
         } else {
             match p.campo("default") {
                 None | Some(Json::Nulo) => None,
-                Some(j) => Some(crate::valores::json_para_valor(j, &coluna.ty)?),
+                Some(j) => Some(crate::valores::json_para_valor_da_coluna(j, &coluna)?),
             }
         };
 
@@ -19063,7 +19073,7 @@ impl Servidor {
         // dispararia contra uma homonima futura que nao tem nada com ele.
         let mut gatilhos_apagados = 0usize;
         if self.ha_gatilhos.load(Ordering::Relaxed) {
-            let mut r = self.rotinas.lock().map_err(|_| trava_envenenada())?;
+            let mut r = self.rotinas.tomar("rotinas")?;
             gatilhos_apagados = r.excluir_gatilhos_da_tabela(database, tabela)?;
             self.ha_gatilhos.store(r.ha_gatilhos(), Ordering::Relaxed);
         }
@@ -19735,7 +19745,7 @@ impl Servidor {
                 // o campo seria redundancia que um dia discorda.
                 def.database = String::new();
                 let g = {
-                    let mut r = self.rotinas.lock().map_err(|_| trava_envenenada())?;
+                    let mut r = self.rotinas.tomar("rotinas")?;
                     let g = r.criar_gatilho(&base, def, sessao.login())?;
                     self.ha_gatilhos.store(r.ha_gatilhos(), Ordering::Relaxed);
                     g
@@ -19753,7 +19763,7 @@ impl Servidor {
                 self.exigir_administrar_rotina(sessao, &base_do_pedido, "")?;
                 self.recusar_somente_leitura("excluir gatilho")?;
                 let saiu = {
-                    let mut r = self.rotinas.lock().map_err(|_| trava_envenenada())?;
+                    let mut r = self.rotinas.tomar("rotinas")?;
                     let saiu = r.excluir_gatilho(&base_do_pedido, &nome)?;
                     self.ha_gatilhos.store(r.ha_gatilhos(), Ordering::Relaxed);
                     saiu
@@ -19771,7 +19781,7 @@ impl Servidor {
             Comando::MostrarGatilhos => {
                 exigir_base(&base_do_pedido)?;
                 self.exigir_administrar_rotina(sessao, &base_do_pedido, "")?;
-                let r = self.rotinas.lock().map_err(|_| trava_envenenada())?;
+                let r = self.rotinas.tomar("rotinas")?;
                 let lista = r.gatilhos_do_db(&base_do_pedido);
                 Ok(Json::objeto(vec![
                     ("total", Json::de_u64(lista.len() as u64)),
@@ -19787,7 +19797,7 @@ impl Servidor {
                 self.recusar_somente_leitura("criar procedimento")?;
                 let quantos = def.parametros.len();
                 let nome = {
-                    let mut r = self.rotinas.lock().map_err(|_| trava_envenenada())?;
+                    let mut r = self.rotinas.tomar("rotinas")?;
                     r.criar_procedimento(&base_do_pedido, def, sessao.login())?
                         .nome
                         .clone()
@@ -19803,7 +19813,7 @@ impl Servidor {
                 self.exigir_administrar_rotina(sessao, &base_do_pedido, "")?;
                 self.recusar_somente_leitura("excluir procedimento")?;
                 let saiu = {
-                    let mut r = self.rotinas.lock().map_err(|_| trava_envenenada())?;
+                    let mut r = self.rotinas.tomar("rotinas")?;
                     r.excluir_procedimento(&base_do_pedido, &nome)?
                 };
                 if !saiu && !se_existe {
@@ -19819,7 +19829,7 @@ impl Servidor {
             Comando::MostrarProcedimentos => {
                 exigir_base(&base_do_pedido)?;
                 self.exigir_administrar_rotina(sessao, &base_do_pedido, "")?;
-                let r = self.rotinas.lock().map_err(|_| trava_envenenada())?;
+                let r = self.rotinas.tomar("rotinas")?;
                 let lista = r.procedimentos_do_db(&base_do_pedido);
                 Ok(Json::objeto(vec![
                     ("total", Json::de_u64(lista.len() as u64)),
@@ -19848,7 +19858,7 @@ impl Servidor {
         // A trava do registro solta ANTES de o corpo rodar: o Arc viaja, e o
         // corpo pode demorar o quanto o teto de passos permitir.
         let procedimento = {
-            let r = self.rotinas.lock().map_err(|_| trava_envenenada())?;
+            let r = self.rotinas.tomar("rotinas")?;
             r.procedimento(base, nome)
         }
         .ok_or_else(|| {
@@ -19967,7 +19977,7 @@ impl Servidor {
         if !self.ha_gatilhos.load(Ordering::Relaxed) {
             return Ok((Vec::new(), Vec::new()));
         }
-        let r = self.rotinas.lock().map_err(|_| trava_envenenada())?;
+        let r = self.rotinas.tomar("rotinas")?;
         Ok(r.gatilhos_de(
             p.texto_ou("database", "").trim(),
             p.texto_ou("tabela", "").trim(),
@@ -20003,7 +20013,7 @@ impl Servidor {
     /// `nova` e a linha que vai ser gravada (INSERT/UPDATE); `velha`, a que
     /// esta la (UPDATE/DELETE). O que o corpo tocar via `SET NEW.…` volta
     /// para a linha ja convertido no tipo da coluna — pelo MESMO
-    /// `json_para_valor` de qualquer pedido.
+    /// `json_para_valor_da_coluna` de qualquer pedido.
     fn rodar_gatilhos_antes(
         &self,
         gatilhos: &[Arc<crate::rotinas::Gatilho>],
@@ -20044,9 +20054,10 @@ impl Servidor {
                     continue;
                 };
                 let valor = objeto.campo(coluna).unwrap_or(&Json::Nulo);
-                linha[i] = json_para_valor(valor, &esquema.colunas()[i].ty).map_err(|e| {
-                    PhxError::Tipo(format!("gatilho gravou NEW.{coluna} invalido: {e}"))
-                })?;
+                linha[i] =
+                    json_para_valor_da_coluna(valor, &esquema.colunas()[i]).map_err(|e| {
+                        PhxError::Tipo(format!("gatilho gravou NEW.{coluna} invalido: {e}"))
+                    })?;
             }
         }
         Ok(())
@@ -22047,10 +22058,7 @@ impl Servidor {
         agora: i64,
         fechar_ativo: bool,
     ) -> Result<ExpurgoDaTabela> {
-        let _um_por_vez = self
-            .expurgo_da_trilha
-            .lock()
-            .map_err(|_| trava_envenenada())?;
+        let _um_por_vez = self.expurgo_da_trilha.tomar("expurgo_da_trilha")?;
         // Fase 1, COM a trava: fecha o ativo que passou da idade (ou que o
         // administrador mandou fechar) -- o expurgo nunca derruba o ativo, e
         // e fechando-o que a tabela de pouco movimento chega a ter o que
@@ -23198,7 +23206,7 @@ impl Servidor {
     /// dados nao havia como saber QUEM esta segurando -- so que estava lento.
     fn op_sessoes(&self) -> Result<Json> {
         let agora = crate::agora_ms();
-        let l = self.ligacoes.lock().map_err(|_| trava_envenenada())?;
+        let l = self.ligacoes.tomar("ligacoes")?;
         let todas = l.todas();
         // A mais demorada primeiro: quando algo trava, e ela que interessa.
         let mais_longa = todas
@@ -23585,7 +23593,7 @@ impl Servidor {
         // operacoes para a mesma pergunta.
         if let Some(texto) = p.campo("id").and_then(Json::texto) {
             if texto.chars().any(|c| !c.is_ascii_digit()) {
-                let mut s = self.sessoes.lock().map_err(|_| trava_envenenada())?;
+                let mut s = self.sessoes.tomar("sessoes")?;
                 if !s.encerrar_por_prefixo(texto) {
                     // Pelo `citar`, como o instante e a duracao: o id vem do
                     // fio e nao tinha teto (parecer SEC do 497, P1).
@@ -23615,7 +23623,7 @@ impl Servidor {
         }
         let id = id as u64;
         let agora = crate::agora_ms();
-        let mut l = self.ligacoes.lock().map_err(|_| trava_envenenada())?;
+        let mut l = self.ligacoes.tomar("ligacoes")?;
         let antes = l.todas().into_iter().find(|x| x.id == id);
         if !l.encerrar(id) {
             return Err(PhxError::NaoEncontrado(format!(
@@ -24739,7 +24747,7 @@ impl Servidor {
 
     /// As ligacoes cadastradas. A senha nunca vem junto.
     fn op_dblink(&self) -> Result<Json> {
-        let r = self.dblink.lock().map_err(|_| trava_envenenada())?;
+        let r = self.dblink.tomar("dblink")?;
         // A lista vazia de um cadastro trancado seria mentira: a tela diria
         // «nenhuma ligacao» com o arquivo cheio delas (pedido 466).
         r.exigir_legivel()?;
@@ -24775,7 +24783,7 @@ impl Servidor {
     /// de edicao funcionar: ela nunca RECEBE a senha, entao nao teria como
     /// devolve-la, e sem esta regra editar a porta apagaria a credencial.
     fn op_dblink_salvar(&self, p: &Json) -> Result<Json> {
-        let mut r = self.dblink.lock().map_err(|_| trava_envenenada())?;
+        let mut r = self.dblink.tomar("dblink")?;
         let mut d = Definicao::de_json(p)?;
         if let Ok(antiga) = r.achar(&d.nome) {
             if p.campo("senha").is_none() && d.senha_env.is_empty() {
@@ -24835,7 +24843,7 @@ impl Servidor {
 
     fn op_dblink_excluir(&self, p: &Json) -> Result<Json> {
         let nome = p.texto_ou("nome", "").to_string();
-        let mut r = self.dblink.lock().map_err(|_| trava_envenenada())?;
+        let mut r = self.dblink.tomar("dblink")?;
         let gravacao = r.excluir(&nome)?;
         Ok(Json::objeto(vec![
             ("excluido", Json::texto_de(nome)),
@@ -24852,7 +24860,7 @@ impl Servidor {
     /// responde.
     fn ligar(&self, p: &Json) -> Result<(Definicao, crate::dblink::Conexao)> {
         let d = {
-            let r = self.dblink.lock().map_err(|_| trava_envenenada())?;
+            let r = self.dblink.tomar("dblink")?;
             r.achar(p.texto_ou("dblink", p.texto_ou("nome", "")))?
                 .clone()
         };
@@ -24905,7 +24913,7 @@ impl Servidor {
         // conexao gasta uma ida a rede para dizer nao. A da ligacao precisa da
         // definicao, entao ela e achada primeiro, sem conectar.
         let d = {
-            let r = self.dblink.lock().map_err(|_| trava_envenenada())?;
+            let r = self.dblink.tomar("dblink")?;
             r.achar(p.texto_ou("dblink", p.texto_ou("nome", "")))?
                 .clone()
         };
@@ -25005,7 +25013,7 @@ impl Servidor {
         }
         c.encerrar();
         drop(dados);
-        let mut r = self.dblink.lock().map_err(|_| trava_envenenada())?;
+        let mut r = self.dblink.tomar("dblink")?;
         let gravacao = r.salvar(d)?;
         Ok(Json::objeto(vec![
             ("ligadas", Json::Lista(ligadas)),
@@ -26065,7 +26073,7 @@ impl Servidor {
         let ficha = ficha_residente(&Self::chave_residente(p), &m);
         let ms = inicio.elapsed().as_millis() as u64;
         let chave = Self::chave_residente(p);
-        let mut residentes = self.residentes.lock().map_err(|_| trava_envenenada())?;
+        let mut residentes = self.residentes.tomar("residentes")?;
 
         // O TETO de memoria das tabelas residentes.
         //
@@ -26107,8 +26115,7 @@ impl Servidor {
         let chave = Self::chave_residente(p);
         let saiu = self
             .residentes
-            .lock()
-            .map_err(|_| trava_envenenada())?
+            .tomar("residentes")?
             .remove(&chave)
             .is_some();
         Ok(Json::objeto(vec![
@@ -26119,7 +26126,7 @@ impl Servidor {
 
     /// O que esta residente agora.
     fn op_memoria(&self) -> Result<Json> {
-        let r = self.residentes.lock().map_err(|_| trava_envenenada())?;
+        let r = self.residentes.tomar("residentes")?;
         let mut chaves: Vec<&String> = r.keys().collect();
         chaves.sort();
         let agora = crate::agora_ms();
@@ -26156,7 +26163,7 @@ impl Servidor {
     /// a operacao lenta, calada, na hora errada.
     fn op_selecionar_memoria(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
         let chave = Self::chave_residente(p);
-        let r = self.residentes.lock().map_err(|_| trava_envenenada())?;
+        let r = self.residentes.tomar("residentes")?;
         let m = r.get(&chave).ok_or_else(|| {
             PhxError::NaoEncontrado(format!(
                 "{chave} nao esta em memoria; carregue antes com {{\"op\":\"memoria_carregar\",\"database\":...,\"tabela\":...}}"
@@ -26367,7 +26374,7 @@ impl Servidor {
         let arquivo = p.texto_ou("arquivo", "").to_string();
         let teto = p.inteiro_ou("guardar", 500).max(0) as usize;
         let agora = crate::agora_ms();
-        let mut prof = self.profiler.lock().map_err(|_| trava_envenenada())?;
+        let mut prof = self.profiler.tomar("profiler")?;
         // ANTES do `ligar`: e ele quem le o tamanho do arquivo que ja existe
         // para saber quanto falta para o primeiro rodizio.
         prof.definir_rodizio(
@@ -26422,7 +26429,7 @@ impl Servidor {
 
     fn op_profiler_desligar(&self, sessao: &Sessao) -> Result<Json> {
         self.portao_do_profiler(sessao)?;
-        let mut prof = self.profiler.lock().map_err(|_| trava_envenenada())?;
+        let mut prof = self.profiler.tomar("profiler")?;
         let n = prof.observados();
         prof.desligar(crate::agora_ms());
         self.profiler_ligado.store(false, Ordering::Relaxed);
@@ -26434,7 +26441,7 @@ impl Servidor {
 
     fn op_profiler_limpar(&self, sessao: &Sessao) -> Result<Json> {
         self.portao_do_profiler(sessao)?;
-        let mut prof = self.profiler.lock().map_err(|_| trava_envenenada())?;
+        let mut prof = self.profiler.tomar("profiler")?;
         prof.limpar();
         Ok(Json::objeto(vec![("limpo", Json::Bool(true))]))
     }
@@ -26446,7 +26453,7 @@ impl Servidor {
         // `desde_serial` deixa a tela pedir so o que ainda nao viu, em vez de
         // rebaixar o anel inteiro a cada atualizacao.
         let desde = p.inteiro_ou("desde_serial", 0).max(0) as u64;
-        let prof = self.profiler.lock().map_err(|_| trava_envenenada())?;
+        let prof = self.profiler.tomar("profiler")?;
         let f = prof.filtro();
 
         let eventos: Vec<Json> = prof
@@ -27050,14 +27057,12 @@ impl Servidor {
     /// cada tabela, a ultima rodada, o ultimo erro, e as tabelas recusadas
     /// com o motivo (ex.: sem chave unica no modo bidirecional).
     fn op_replicacao_estado(&self) -> Result<Json> {
-        let origens = match self.estado_replicacao.lock() {
-            Ok(e) => {
-                let mut pares: Vec<(String, Json)> =
-                    e.iter().map(|(k, v)| (k.clone(), v.para_json())).collect();
-                pares.sort_by(|a, b| a.0.cmp(&b.0));
-                Json::Objeto(pares)
-            }
-            Err(_) => return Err(trava_envenenada()),
+        let origens = {
+            let e = self.estado_replicacao.tomar("estado_replicacao")?;
+            let mut pares: Vec<(String, Json)> =
+                e.iter().map(|(k, v)| (k.clone(), v.para_json())).collect();
+            pares.sort_by(|a, b| a.0.cmp(&b.0));
+            Json::Objeto(pares)
         };
         // Colisoes de Sequence do modo multi (defeito (a)): so as tabelas com
         // count > 0 aparecem, para o campo ficar vazio no caso comum e gritar
@@ -27123,8 +27128,7 @@ impl Servidor {
     fn recusar_se_estacionada(&self, origem: &str) -> Result<()> {
         let parada = self
             .estado_replicacao
-            .lock()
-            .map_err(|_| trava_envenenada())?
+            .tomar("estado_replicacao")?
             .get(origem)
             .map(|e| e.parada.clone())
             .unwrap_or_default();
@@ -27155,10 +27159,7 @@ impl Servidor {
                 "informe \"origem\": um nome de replicacao.origens, ou cluster:<id>".into(),
             ));
         }
-        let mut estados = self
-            .estado_replicacao
-            .lock()
-            .map_err(|_| trava_envenenada())?;
+        let mut estados = self.estado_replicacao.tomar("estado_replicacao")?;
         let Some(estado) = estados.get_mut(&nome) else {
             let mut conhecidas: Vec<&String> = estados.keys().collect();
             conhecidas.sort();
@@ -27223,10 +27224,7 @@ impl Servidor {
                     .into(),
             ));
         }
-        let mut estados = self
-            .estado_replicacao
-            .lock()
-            .map_err(|_| trava_envenenada())?;
+        let mut estados = self.estado_replicacao.tomar("estado_replicacao")?;
         let Some(estado) = estados.get_mut(&nome) else {
             let mut conhecidas: Vec<&String> = estados.keys().collect();
             conhecidas.sort();
@@ -27418,7 +27416,7 @@ impl ExecutorLocal {
 
 impl crate::mcp::Executor for ExecutorLocal {
     fn executar(&self, pedido: &Json) -> Result<Json> {
-        let mut sessao = self.sessao.lock().map_err(|_| trava_envenenada())?;
+        let mut sessao = self.sessao.tomar("sessao")?;
         let quando_ms = crate::agora_ms();
         let inicio = Instant::now();
         let linha = pedido.escrever();
@@ -27947,8 +27945,41 @@ impl RetencaoDaTrilha {
     }
 }
 
-fn trava_envenenada() -> PhxError {
-    PhxError::Corrompido("uma operacao anterior entrou em panico e deixou a trava suja".into())
+/// A recusa de uma trava suja, NOMEANDO a trava -- pedido 458.
+///
+/// A frase era a mesma em 85 pontos de 14 travas: «uma operacao anterior
+/// entrou em panico e deixou a trava suja». Quem lia o `SP000010` nao tinha
+/// como saber se era a das rotinas, a do DbLink ou a das transacoes -- e cada
+/// uma pede um diagnostico diferente.
+fn trava_envenenada(nome: &str) -> PhxError {
+    PhxError::Corrompido(format!(
+        "a trava \"{nome}\" ficou suja: uma operacao anterior entrou em panico \
+         com ela na mao, e o estado atras dela nao se afirma -- a recusa segue \
+         ate o servidor reiniciar"
+    ))
+}
+
+/// Tomar uma trava do servidor que RECUSA quando esta suja -- pedido 458.
+///
+/// # Por que recusar aqui, e recuperar nas transacoes
+///
+/// Atras destas travas ha estado que o panico pode ter deixado pela metade
+/// e que ninguem sabe sanear as cegas: a lista de rotinas e visoes que se
+/// grava junto do disco, o registro de jobs do `jobs.json`, as ligacoes de
+/// DbLink. As duas da vida de uma transacao (`transacoes` e `travas`) sao
+/// `TravaDaGuarda`, porque atras delas nao ha disco e o saneamento e
+/// conhecido (`Transacoes::abortar_abertas`).
+///
+/// Um motor so para tomar, e nao 85 `map_err` com a mesma frase: a que
+/// alguem esquecesse de nomear seria a que ninguem acha no log.
+trait TomarTrava<T> {
+    fn tomar(&self, nome: &'static str) -> Result<std::sync::MutexGuard<'_, T>>;
+}
+
+impl<T> TomarTrava<T> for Mutex<T> {
+    fn tomar(&self, nome: &'static str) -> Result<std::sync::MutexGuard<'_, T>> {
+        self.lock().map_err(|_| trava_envenenada(nome))
+    }
 }
 
 /// O `fsync` recusado DERRUBA o processo -- pedido 509.
@@ -28063,9 +28094,9 @@ fn corrida_em_panico(panico: &str) -> PhxError {
 
 /// A trava de DADOS envenenada sem o reparo ter terminado -- pedido 451.
 ///
-/// Separada da [`trava_envenenada`] porque diz outra coisa: aquela frase sai
-/// de 85 pontos de 14 `Mutex` (pedido 458, que nao e este), e esta nomeia a
-/// trava e o que ficou pendente. Com o reparo do `TravaMedida::drop` ela nao
+/// Separada da [`trava_envenenada`] porque diz outra coisa: aquela e a
+/// recusa das travas comuns, tomadas pelo [`TomarTrava`] (pedido 458), e esta
+/// e a da trava de DADOS, com o que ficou pendente no reparo. Com o reparo do `TravaMedida::drop` ela nao
 /// deveria sair nunca -- reparo que falha aborta o processo (H5). Ela e o
 /// FALHAR FECHADO de qualquer caminho que envenene a trava sem passar por la,
 /// e o motivo de ela nao ter virado `unreachable!`: um panico aqui seria o
@@ -28816,7 +28847,7 @@ fn filtros_do_pedido(p: &Json, esquema: &phxsql_core::schema::Schema) -> Result<
         )?;
         let op = Operador::de_texto(f.texto_ou("op", "="))?;
         let valor = match f.campo("valor") {
-            Some(v) => crate::valores::json_para_valor(v, &esquema.colunas()[coluna].ty)?,
+            Some(v) => crate::valores::json_para_valor_da_coluna(v, &esquema.colunas()[coluna])?,
             None => phxsql_core::value::Value::Null,
         };
         onde.push(Filtro { coluna, op, valor });
@@ -29492,9 +29523,11 @@ mod testes_politica {
             // leitura nao deve poder interromper o trabalho de ninguem.
             "encerrar_sessao",
             // Restaurar desmarca a coluna de sistema, e esvaziar apaga a
-            // lixeira inteira: os dois gravam.
+            // lixeira inteira: os dois gravam. O esvaziar so mexe no no, e
+            // isso e outra lista (`OPS_DO_NO`), e nao a ausencia desta.
             "restaurar",
             "esvaziar_lixeira",
+            "expurgar_trilha",
             // Carga em lote grava, e grava muito.
             "inserir_lote",
             // Reservar a tabela e declarar que vai gravar.
@@ -29506,6 +29539,26 @@ mod testes_politica {
                  um servidor somente-leitura aceitaria"
             );
         }
+    }
+
+    /// As que gravam SO no arquivo deste no: escrita para toda pergunta do
+    /// `OPS_ESCRITA`, e fora so da do somente-leitura/replica -- pedidos
+    /// 368/C2 e 499. A prova pelo soquete esta em `tests/lixeira-da-replica.rs`.
+    #[test]
+    fn o_que_grava_so_no_no_e_escrita_menos_para_a_replica() {
+        for op in ["esvaziar_lixeira", "expurgar_trilha"] {
+            assert!(OPS_ESCRITA.contains(&op), "{op:?} deixou de ser escrita");
+            assert!(OPS_DO_NO.contains(&op), "{op:?} deixou de ser do no");
+            assert!(!grava_dado_replicado(op), "{op:?}");
+            assert_eq!(
+                Atividade::da_operacao(op),
+                Some(Atividade::Administrar),
+                "{op:?} apaga sem volta e saiu do portao do administrador"
+            );
+        }
+        // O controle: o resto da lista continua gravando dado replicado.
+        assert!(grava_dado_replicado("inserir") && grava_dado_replicado("restaurar"));
+        assert!(OPS_DO_NO.iter().all(|op| OPS_ESCRITA.contains(op)));
     }
 
     #[test]
@@ -43159,7 +43212,7 @@ mod testes_transacoes {
         let r = pede(&s, &ses, r#""op":"transacao""#).unwrap();
         assert_eq!(r.texto_ou("transaction_state", ""), "IDLE");
         // Nenhuma trava viva no servidor inteiro.
-        assert_eq!(s.travas.lock().unwrap().quantas(), 0);
+        assert_eq!(s.travas.travar().quantas(), 0);
     }
 
     // ------------------------------------ GAP 242: CHECK recusa NA INSTRUCAO
@@ -43621,7 +43674,7 @@ mod testes_transacoes {
         // **Zero slot queimado**, que e a regra petrea desta frente.
         assert_eq!(slots(&s, &ses, "clientes"), antes);
         assert_eq!(quantas(&s, &ses, "clientes"), 0);
-        assert_eq!(s.travas.lock().unwrap().quantas(), 0);
+        assert_eq!(s.travas.travar().quantas(), 0);
     }
 
     /// O INSERT pela camada SQL EMPILHA como qualquer `inserir`: a mesma
@@ -43692,7 +43745,7 @@ mod testes_transacoes {
         )
         .unwrap();
         assert_eq!(l.texto_ou("nome", ""), "c7");
-        assert_eq!(s.travas.lock().unwrap().quantas(), 0);
+        assert_eq!(s.travas.travar().quantas(), 0);
     }
 
     /// Um banco com `clientes` e `pedidos(cliente_id -> clientes.id)`, a chave
@@ -44580,7 +44633,7 @@ mod testes_transacoes {
 
         pede(&s, &a, r#""op":"commit""#).unwrap();
         pede(&s, &b, r#""op":"commit""#).unwrap();
-        assert_eq!(s.travas.lock().unwrap().quantas(), 0);
+        assert_eq!(s.travas.travar().quantas(), 0);
     }
 
     /// `LOCK MODE EXCLUSIVE` cria o conflito que o `AUTO` evita -- e e por
@@ -44794,7 +44847,7 @@ mod testes_transacoes {
     /// caminho exercitado continua sendo o de producao (a varredura ve a
     /// vencida, o gestor a encerra, o dono recebe o erro com o numero).
     fn vencer_agora(s: &Servidor, ligacao: u64) {
-        let mut t = s.transacoes.lock().unwrap();
+        let mut t = s.transacoes.travar();
         t.de_mut(ligacao).unwrap().expira_ms = crate::agora_ms() - 1;
     }
 
@@ -44814,7 +44867,7 @@ mod testes_transacoes {
             r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":1,"nome":"a"}"#,
         )
         .unwrap();
-        assert_eq!(s.travas.lock().unwrap().quantas(), 1);
+        assert_eq!(s.travas.travar().quantas(), 1);
         vencer_agora(&s, 7);
 
         let e = pede(
@@ -44826,7 +44879,7 @@ mod testes_transacoes {
         assert_eq!(e.nome(), "TRANSACAO_ABORTADA");
         assert!(e.to_string().contains("TIMEOUT"), "{e}");
         // As travas ja sairam.
-        assert_eq!(s.travas.lock().unwrap().quantas(), 0);
+        assert_eq!(s.travas.travar().quantas(), 0);
         pede(&s, &ses, r#""op":"rollback""#).unwrap();
         assert_eq!(quantas(&s, &ses, "clientes"), 0);
     }
@@ -44853,7 +44906,7 @@ mod testes_transacoes {
         assert!(e.to_string().contains("SCOPE"), "{e}");
         // E a transacao NAO ficou meio aberta: nenhuma trava presa, nenhum
         // contador subido.
-        assert_eq!(s.travas.lock().unwrap().quantas(), 0);
+        assert_eq!(s.travas.travar().quantas(), 0);
         assert_eq!(s.transacoes_abertas.load(Ordering::SeqCst), 0);
         let r = pede(&s, &ses, r#""op":"transacao""#).unwrap();
         assert_eq!(r.texto_ou("transaction_state", ""), "IDLE");
@@ -44880,14 +44933,14 @@ mod testes_transacoes {
             r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":1,"nome":"a"}"#,
         )
         .unwrap();
-        assert_eq!(s.travas.lock().unwrap().quantas(), 1);
+        assert_eq!(s.travas.travar().quantas(), 1);
         vencer_agora(&s, 1);
 
         // OUTRA conexao varre -- e e o `begin` dela que chama a varredura.
         pede(&s, &outro, r#""op":"begin""#).unwrap();
         // As travas do vencido sairam: e o que importa para quem esperava.
         assert_eq!(
-            s.travas.lock().unwrap().quantas(),
+            s.travas.travar().quantas(),
             0,
             "a varredura tem de soltar as travas da vencida"
         );
@@ -45001,10 +45054,10 @@ mod testes_transacoes {
             r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":1,"nome":"a"}"#,
         )
         .unwrap();
-        assert_eq!(s.travas.lock().unwrap().quantas(), 1);
+        assert_eq!(s.travas.travar().quantas(), 1);
         // E o que o laco da conexao faz na saida, por qualquer caminho.
         s.soltar_transacao_da_ligacao(7);
-        assert_eq!(s.travas.lock().unwrap().quantas(), 0);
+        assert_eq!(s.travas.travar().quantas(), 0);
         assert_eq!(quantas(&s, &ses, "clientes"), 0);
         assert_eq!(s.transacoes_abertas.load(Ordering::SeqCst), 0);
     }
@@ -47194,7 +47247,7 @@ mod testes_transacoes {
             escreve(&s, &t3, r#""op":"commit""#);
             confirma(&s, &t1);
             assert_eq!(cod(&outra), 6, "a cascata implicita nao acompanhou a mae");
-            assert_eq!(s.travas.lock().unwrap().quantas(), 0);
+            assert_eq!(s.travas.travar().quantas(), 0);
         }
 
         /// **C1 do papel C ao 516: dois COMMITs que se barram nao giram para
@@ -47287,7 +47340,7 @@ mod testes_transacoes {
                     ((100, 10), (201, 2)),
                     "ordem {rodada_da_ordem}: (id, cod) das filhas"
                 );
-                assert_eq!(s.travas.lock().unwrap().quantas(), 0);
+                assert_eq!(s.travas.travar().quantas(), 0);
             }
         }
 
@@ -47347,7 +47400,7 @@ mod testes_transacoes {
                 ((101, 1), (201, 20)),
                 "(id, cod) das filhas: a velha sem a mae `a`, T2 com a cascata de `b`"
             );
-            assert_eq!(s.travas.lock().unwrap().quantas(), 0);
+            assert_eq!(s.travas.travar().quantas(), 0);
         }
     }
 }
@@ -58296,13 +58349,14 @@ mod testes_expurgo_da_trilha {
         assert!(expurgos_no_reason(&s).is_empty());
     }
 
-    /// **C2: a trilha e do NO.** So administrador, e FORA do `OPS_ESCRITA`:
-    /// num servidor somente-leitura -- o que uma replica e -- o administrador
-    /// expurga a trilha dele. O controle no mesmo servidor: o
-    /// `esvaziar_lixeira`, que continua na lista, e recusado.
+    /// **C2: a trilha e do NO.** So administrador, e no `OPS_DO_NO`: num
+    /// servidor somente-leitura -- o que uma replica e -- o administrador
+    /// expurga a trilha dele. O controle no mesmo servidor: o `restaurar`, que
+    /// grava dado replicado, e recusado. (Era o `esvaziar_lixeira`, ate ele
+    /// entrar no `OPS_DO_NO` pelo mesmo motivo -- pedido 499.)
     ///
-    /// **Defeito reposto** (`expurgar_trilha` de volta no `OPS_ESCRITA`): a
-    /// replica recusa, e o `unwrap` do expurgo cai.
+    /// **Defeito reposto** (`expurgar_trilha` fora do `OPS_DO_NO`): a replica
+    /// recusa, e o `unwrap` do expurgo cai.
     #[test]
     fn o_expurgo_pede_administrar_e_roda_no_servidor_somente_leitura() {
         assert_eq!(
@@ -58319,13 +58373,13 @@ mod testes_expurgo_da_trilha {
         // outros testes pula o do somente-leitura.
         let s = servidor_com(&dir, 5, true);
         let mut sessao = Sessao::default();
-        let (_, _, lixeira) = s.despachar(
-            r#"{"token":"t","op":"esvaziar_lixeira","database":"b","tabela":"c","motivo":"x"}"#,
+        let (_, _, controle) = s.despachar(
+            r#"{"token":"t","op":"restaurar","database":"b","tabela":"c","rowid":1}"#,
             &mut sessao,
             "127.0.0.1",
         );
-        let lixeira = lixeira.unwrap_err();
-        assert!(matches!(lixeira, PhxError::Autorizacao(_)), "{lixeira}");
+        let controle = controle.unwrap_err();
+        assert!(matches!(controle, PhxError::Autorizacao(_)), "{controle}");
         // +1: o ultimo registro pode ser do MESMO milissegundo, e o limite
         // derruba so o que e ANTERIOR a ele.
         let agora = crate::agora_ms() + 1;
@@ -58346,7 +58400,7 @@ mod testes_expurgo_da_trilha {
         assert_eq!(no_disco(&dir), vec!["c.lgpd"]);
         // Por ULTIMO, para o defeito reposto cair no comportamento (a replica
         // recusando) e nao nesta linha, que so repete a lista.
-        assert!(!OPS_ESCRITA.contains(&"expurgar_trilha"));
+        assert!(!grava_dado_replicado("expurgar_trilha"));
     }
 
     /// **O relogio da retencao, na tabela PADRAO.** Com o prazo de 5 anos e a
@@ -60733,5 +60787,416 @@ mod testes_do_relogio_e_do_backup {
             .expect("o backup agendado FALHOU em disco cheio e ninguem foi avisado");
         let (_, texto) = corpo(&bruto);
         assert!(texto.contains("os error 28"), "nao e o ENOSPC: {texto}");
+    }
+}
+
+/// Pedido 464: a recusa de conversao nao cita o valor de coluna marcada como
+/// dado pessoal -- por NENHUM dos caminhos que convertem valor de coluna.
+///
+/// O `citar` do 453 corta o valor LONGO; o curto (um CPF, um e-mail) cabia no
+/// teto e saia inteiro na recusa, que volta ao cliente e vai ao
+/// `acessos.log`. Cada teste daqui e um caminho que chega a um conversor
+/// diferente, para que a guarda de cada porta caia sozinha: o protocolo
+/// (`json_para_linha`, o filtro e o SQL, que viaja pelo mesmo), o
+/// `atualizar` do upsert (`mesclar`), a carga colada (`valor_de_texto`) e a
+/// faixa do tipo, que so se confere no slot (`escrever_inline`).
+#[cfg(test)]
+mod testes_recusa_sem_dado_pessoal {
+    use super::*;
+
+    /// Curto de proposito: 14 bytes, bem abaixo do `TETO_DA_CITACAO` (48) --
+    /// e o caso que o teto do 453 nao alcanca.
+    const CPF: &str = "999.888.777-66";
+    /// Os digitos do CPF num `Int4`: converte para `Int` e so estoura a faixa
+    /// no slot.
+    const DOC: &str = "99988877766";
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    /// `b.p` com `nasc` e `doc` marcadas, e `quando`/`qtd` sem marca, do
+    /// mesmo tipo das marcadas -- o irmao que prova o comportamento velho.
+    fn servidor(dir: &Path) -> Arc<Servidor> {
+        let c = Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            token: "t".into(),
+            ..Config::default()
+        };
+        let s = Servidor::novo(c).unwrap();
+        let dono = Sessao::default();
+        s.executar("criar_database", &pedido(r#"{"database":"b"}"#), &dono)
+            .unwrap();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"p",
+                    "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                               {"nome":"nasc","tipo":"Date"},
+                               {"nome":"doc","tipo":"Int4"},
+                               {"nome":"quando","tipo":"Date"},
+                               {"nome":"qtd","tipo":"Int4"}],
+                    "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true}]}"#,
+            ),
+            &dono,
+        )
+        .unwrap();
+        s.executar(
+            "marcar_lgpd",
+            &pedido(
+                r#"{"database":"b","tabela":"p","colunas":{"nasc":"pessoal","doc":"sensivel"}}"#,
+            ),
+            &dono,
+        )
+        .unwrap();
+        s.executar(
+            "inserir",
+            &pedido(r#"{"database":"b","tabela":"p","linha":{"id":1}}"#),
+            &dono,
+        )
+        .unwrap();
+        s
+    }
+
+    /// A resposta inteira, recusa ou nao: o `inserir_lote` sem
+    /// `parar_no_erro` devolve `ok` com a recusa DENTRO.
+    fn resposta(s: &Arc<Servidor>, op: &str, corpo: &str) -> String {
+        match s.executar(op, &pedido(corpo), &Sessao::default()) {
+            Ok(j) => j.escrever(),
+            Err(e) => e.to_string(),
+        }
+    }
+
+    /// A recusa nomeia a coluna e nao cita o valor.
+    fn redigida(quem: &str, r: &str, valor: &str, coluna: &str) {
+        assert!(
+            !r.contains(valor),
+            "{quem}: a recusa citou o valor da coluna marcada: {r}"
+        );
+        assert!(
+            r.contains(coluna),
+            "{quem}: a recusa nao nomeia a coluna -- o teste passaria por \
+             qualquer erro que nao fosse o da conversao: {r}"
+        );
+    }
+
+    #[test]
+    fn a_recusa_do_protocolo_nao_cita_dado_pessoal() {
+        let dir = DirTemp::novo("recusa-464-protocolo");
+        let s = servidor(&dir);
+        for (quem, op, corpo) in [
+            (
+                "inserir",
+                "inserir",
+                format!(r#"{{"database":"b","tabela":"p","linha":{{"id":2,"nasc":"{CPF}"}}}}"#),
+            ),
+            (
+                "inserir por lista",
+                "inserir",
+                format!(r#"{{"database":"b","tabela":"p","linha":[2,"{CPF}",null,null,null]}}"#),
+            ),
+            (
+                "atualizar",
+                "atualizar",
+                format!(
+                    r#"{{"database":"b","tabela":"p","rowid":1,"valores":{{"id":1,"nasc":"{CPF}"}}}}"#
+                ),
+            ),
+            (
+                "inserir_lote",
+                "inserir_lote",
+                format!(
+                    r#"{{"database":"b","tabela":"p","parar_no_erro":false,
+                        "linhas":[{{"id":3,"nasc":"{CPF}"}}]}}"#
+                ),
+            ),
+            (
+                "filtro do varrer",
+                "varrer",
+                format!(
+                    r#"{{"database":"b","tabela":"p","onde":[{{"coluna":"nasc","valor":"{CPF}"}}]}}"#
+                ),
+            ),
+            (
+                "sql",
+                "sql",
+                format!(
+                    r#"{{"database":"b","texto":"INSERT INTO p (id, nasc) VALUES (4, '{CPF}')"}}"#
+                ),
+            ),
+        ] {
+            let r = resposta(&s, op, &corpo);
+            redigida(quem, &r, CPF, "nasc");
+        }
+    }
+
+    #[test]
+    fn a_recusa_do_upsert_nao_cita_dado_pessoal() {
+        let dir = DirTemp::novo("recusa-464-upsert");
+        let s = servidor(&dir);
+        let r = resposta(
+            &s,
+            "inserir",
+            &format!(
+                r#"{{"database":"b","tabela":"p","linha":{{"id":1}},
+                    "se_existir":"atualizar","atualizar":{{"nasc":"{CPF}"}}}}"#
+            ),
+        );
+        redigida("upsert", &r, CPF, "nasc");
+    }
+
+    #[test]
+    fn a_recusa_da_carga_colada_nao_cita_dado_pessoal() {
+        let dir = DirTemp::novo("recusa-464-carga");
+        let s = servidor(&dir);
+        let r = resposta(
+            &s,
+            "inserir_lote",
+            &format!(
+                r#"{{"database":"b","tabela":"p","formato":"csv","parar_no_erro":false,
+                    "texto":"id;nasc\n5;{CPF}\n"}}"#
+            ),
+        );
+        redigida("carga colada", &r, CPF, "nasc");
+    }
+
+    #[test]
+    fn a_recusa_da_faixa_no_slot_nao_cita_dado_pessoal() {
+        let dir = DirTemp::novo("recusa-464-faixa");
+        let s = servidor(&dir);
+        let r = resposta(
+            &s,
+            "inserir",
+            &format!(r#"{{"database":"b","tabela":"p","linha":{{"id":6,"doc":"{DOC}"}}}}"#),
+        );
+        redigida("faixa do Int4", &r, DOC, "doc");
+    }
+
+    /// **O comportamento velho.** Coluna sem marca continua citando o valor
+    /// curto -- e o que mostra a quem digitou o proprio erro. Uma guarda que
+    /// redigisse tudo passaria nos quatro testes de cima e cegaria o
+    /// diagnostico de toda tabela sem dado pessoal.
+    #[test]
+    fn a_coluna_sem_marca_continua_citando_o_valor() {
+        let dir = DirTemp::novo("recusa-464-velho");
+        let s = servidor(&dir);
+        for (quem, op, corpo, valor) in [
+            (
+                "inserir",
+                "inserir",
+                format!(r#"{{"database":"b","tabela":"p","linha":{{"id":7,"quando":"{CPF}"}}}}"#),
+                CPF,
+            ),
+            (
+                "carga colada",
+                "inserir_lote",
+                format!(
+                    r#"{{"database":"b","tabela":"p","formato":"csv","parar_no_erro":false,
+                        "texto":"id;quando\n8;{CPF}\n"}}"#
+                ),
+                CPF,
+            ),
+            (
+                "faixa do Int4",
+                "inserir",
+                format!(r#"{{"database":"b","tabela":"p","linha":{{"id":9,"qtd":"{DOC}"}}}}"#),
+                DOC,
+            ),
+        ] {
+            let r = resposta(&s, op, &corpo);
+            assert!(
+                r.contains(valor),
+                "{quem}: a coluna sem marca parou de citar: {r}"
+            );
+        }
+    }
+}
+
+/// Pedido 458: o `SP000010` nomeia a trava, e um panico com as transacoes na
+/// mao deixa de matar toda transacao de toda conexao ate reiniciar.
+#[cfg(test)]
+mod testes_trava_suja {
+    use super::*;
+
+    fn servidor(dir: &Path) -> Arc<Servidor> {
+        let c = Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            token: "t".into(),
+            ..Config::default()
+        };
+        Servidor::novo(c).unwrap()
+    }
+
+    fn sessao(ligacao: u64) -> Sessao {
+        Sessao {
+            ligacao,
+            ip: "127.0.0.1".into(),
+            ..Sessao::default()
+        }
+    }
+
+    fn pede(s: &Arc<Servidor>, ligacao: u64, corpo: &str) -> Result<Json> {
+        let mut ses = sessao(ligacao);
+        let (_, _, r) = s.despachar(
+            &format!(r#"{{"token":"t",{corpo}}}"#),
+            &mut ses,
+            "127.0.0.1",
+        );
+        r
+    }
+
+    fn ids(s: &Arc<Servidor>, tabela: &str) -> Vec<i64> {
+        let r = pede(
+            s,
+            1,
+            &format!(r#""op":"varrer","database":"loja","tabela":"{tabela}","max":100"#),
+        )
+        .unwrap();
+        let mut v: Vec<i64> = r
+            .campo("linhas")
+            .and_then(Json::lista)
+            .unwrap()
+            .iter()
+            .map(|l| l.inteiro_ou("id", -1))
+            .collect();
+        v.sort();
+        v
+    }
+
+    fn inserir(tabela: &str, id: i64) -> String {
+        format!(r#""op":"inserir","database":"loja","tabela":"{tabela}","linha":{{"id":{id}}}"#)
+    }
+
+    /// **O dano do achado, e o saneamento, na mesma corrida.**
+    ///
+    /// A conexao 7 abre transacao e empilha o id 1. Um panico cai com o
+    /// registro das transacoes na mao. Antes: toda tomada seguinte recusava
+    /// com `SP000010`, e a conexao 8 nao conseguia nem abrir transacao ate o
+    /// servidor reiniciar. Agora a 8 abre, grava e confirma -- e a 7, cujo
+    /// conjunto de escrita o registro nao pode afirmar inteiro, NAO confirma:
+    /// vai para `ABORT_ONLY` e so o ROLLBACK passa. Recuperar sem sanear
+    /// deixaria o COMMIT da 7 gravar o que o panico pode ter cortado ao meio.
+    ///
+    /// A 8 grava em OUTRA tabela de proposito: a 7 abortada segura a trava
+    /// de `clientes` ate o ROLLBACK, a queda ou o prazo. Isso e escolha NOSSA,
+    /// a mesma do `ABORT_ONLY` por erro de transacao -- o PostgreSQL(R) solta
+    /// as travas ja no abort, medido pelo papel C no PG 16.13. E o saneamento
+    /// nao as solta porque roda com `transacoes` na mao, e tomar `travas` dali
+    /// inverteria a ordem do `barrado_por_travas`. Quem espera por ela e a 9,
+    /// que so entra depois do ROLLBACK.
+    #[test]
+    fn o_panico_com_as_transacoes_na_mao_nao_mata_a_proxima() {
+        let dir = DirTemp::novo("trava-suja-transacoes");
+        let s = servidor(&dir);
+        pede(&s, 1, r#""op":"criar_database","database":"loja""#).unwrap();
+        pede(
+            &s,
+            1,
+            r#""op":"criar_tabela","database":"loja","tabela":"clientes",
+               "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true}],
+               "indices":[{"nome":"pk","colunas":["id"],"unico":true,"primario":true}]"#,
+        )
+        .unwrap();
+        pede(
+            &s,
+            1,
+            r#""op":"criar_tabela","database":"loja","tabela":"pedidos",
+               "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true}],
+               "indices":[{"nome":"pk","colunas":["id"],"unico":true,"primario":true}]"#,
+        )
+        .unwrap();
+
+        pede(&s, 7, r#""op":"begin""#).unwrap();
+        pede(&s, 7, &inserir("clientes", 1)).unwrap();
+
+        s.transacoes.envenenar();
+
+        pede(&s, 8, r#""op":"begin""#)
+            .unwrap_or_else(|e| panic!("a transacao NOVA morreu pelo panico alheio: {e}"));
+        pede(&s, 8, &inserir("pedidos", 2)).unwrap();
+        pede(&s, 8, r#""op":"commit""#).unwrap();
+        assert_eq!(ids(&s, "pedidos"), vec![2]);
+
+        let e = pede(&s, 7, r#""op":"commit""#)
+            .expect_err("a transacao aberta no panico confirmou o que o registro nao afirma");
+        assert_eq!(e.nome(), "TRANSACAO_ABORTADA", "{e}");
+        pede(&s, 7, r#""op":"rollback""#).unwrap();
+        assert!(
+            ids(&s, "clientes").is_empty(),
+            "o id 1 da transacao saneada foi gravado"
+        );
+
+        // O veneno do `Mutex` nao sai: a terceira transacao continua servida,
+        // agora na tabela que a 7 soltou no ROLLBACK.
+        pede(&s, 9, r#""op":"begin""#).unwrap();
+        pede(&s, 9, &inserir("clientes", 3)).unwrap();
+        pede(&s, 9, r#""op":"commit""#).unwrap();
+        assert_eq!(ids(&s, "clientes"), vec![3]);
+    }
+
+    /// **O SEGUNDO panico tambem saneia** -- C3 do parecer do DBA aos faceis
+    /// C. E a razao de a `Tomada` existir: o veneno do `Mutex` nao sai, e o
+    /// aviso «uma vez por trava» de antes (`veneno_dito`) passaria calado pelo
+    /// segundo panico -- e, com o saneamento no meio, sem saneamento. A 7 abre
+    /// e o primeiro panico a saneia; depois do ROLLBACK dela, a 8 abre e
+    /// empilha, cai o segundo panico, e o COMMIT da 8 tem de recusar.
+    #[test]
+    fn o_segundo_panico_com_as_transacoes_na_mao_tambem_saneia() {
+        let dir = DirTemp::novo("trava-suja-duas-vezes");
+        let s = servidor(&dir);
+        pede(&s, 1, r#""op":"criar_database","database":"loja""#).unwrap();
+        pede(
+            &s,
+            1,
+            r#""op":"criar_tabela","database":"loja","tabela":"clientes",
+               "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true}],
+               "indices":[{"nome":"pk","colunas":["id"],"unico":true,"primario":true}]"#,
+        )
+        .unwrap();
+
+        pede(&s, 7, r#""op":"begin""#).unwrap();
+        s.transacoes.envenenar();
+        let e = pede(&s, 7, r#""op":"commit""#).expect_err("o primeiro panico nao saneou");
+        assert_eq!(e.nome(), "TRANSACAO_ABORTADA", "{e}");
+        pede(&s, 7, r#""op":"rollback""#).unwrap();
+
+        pede(&s, 8, r#""op":"begin""#).unwrap();
+        pede(&s, 8, &inserir("clientes", 1)).unwrap();
+        s.transacoes.envenenar();
+        let e = pede(&s, 8, r#""op":"commit""#)
+            .expect_err("o SEGUNDO panico passou sem saneamento: a 8 confirmou");
+        assert_eq!(e.nome(), "TRANSACAO_ABORTADA", "{e}");
+        pede(&s, 8, r#""op":"rollback""#).unwrap();
+        assert!(
+            ids(&s, "clientes").is_empty(),
+            "o id 1 da transacao do segundo panico foi gravado"
+        );
+    }
+
+    /// Onde ha disco atras a trava suja continua RECUSANDO -- recuperar as
+    /// cegas serviria estado que ninguem afirma --, mas agora diz QUAL: a
+    /// frase era a mesma em 85 pontos de 14 travas.
+    #[test]
+    fn a_trava_com_disco_atras_recusa_dizendo_qual() {
+        let dir = DirTemp::novo("trava-suja-visoes");
+        let s = servidor(&dir);
+        let morreu = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _na_mao = s.visoes.lock();
+            panic!("panico de proposito, com a trava das visoes na mao");
+        }));
+        assert!(morreu.is_err() && s.visoes.is_poisoned());
+        for _ in 0..2 {
+            let e = pede(&s, 1, r#""op":"visoes","database":"loja""#)
+                .expect_err("a trava suja com disco atras passou a servir as cegas");
+            let t = e.to_string();
+            assert!(t.starts_with("[SP000010]"), "{t}");
+            assert!(t.contains("\"visoes\""), "a recusa nao nomeia a trava: {t}");
+        }
     }
 }

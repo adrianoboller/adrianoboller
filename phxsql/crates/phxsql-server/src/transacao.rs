@@ -737,6 +737,46 @@ impl Transacoes {
         self.dentro.len()
     }
 
+    /// Depois de um panico com o registro na mao: toda transacao ATIVA vai
+    /// para `ABORT_ONLY` -- pedido 458.
+    ///
+    /// # Por que todas, e nao a que estava no meio
+    ///
+    /// O conjunto de escrita de uma delas pode ter ficado pela metade no meio
+    /// de um empilhamento (a cascata entra em varios passos), e o registro nao
+    /// sabe qual: o panico nao diz de que conexao era. Confirmar meia operacao
+    /// e o que a atomicidade proibe; pedir ROLLBACK a quem nada perdeu custa
+    /// uma repeticao. E o que os tres maduros fazem com o mesmo panico: o
+    /// PostgreSQL(R) reinicia TODOS os processos e toda transacao em voo se
+    /// desfaz; MySQL(R) e MariaDB caem inteiros. Aqui o servidor fica de pe e
+    /// a transacao NOVA funciona -- a diferenca e so que ninguem precisou
+    /// reiniciar para isso.
+    ///
+    /// As que ja estavam confirmando ou revertendo ficam como estao: sao de
+    /// quem as conduz, e a marca `.tx` no disco e quem decide o COMMIT que
+    /// comecou (a recuperacao do arranque).
+    ///
+    /// # Por que as travas ficam
+    ///
+    /// A abortada segura as travas ate o ROLLBACK, a queda ou o prazo -- a
+    /// escolha desta casa para todo `ABORT_ONLY`, e nao a do PostgreSQL(R),
+    /// que solta no abort. Solta-las aqui nao da: isto roda com `transacoes`
+    /// na mao, e tomar `travas` dali inverteria a ordem do
+    /// `barrado_por_travas` (`travas`, e dentro dela `transacoes`).
+    pub fn abortar_abertas(&mut self) {
+        for t in self.dentro.values_mut() {
+            if t.estado == Estado::Ativa {
+                t.estado = Estado::AbortOnly;
+                if t.motivo_do_aborto.is_empty() {
+                    t.motivo_do_aborto = "um panico em outra operacao sujou o registro das \
+                                          transacoes, e o conjunto de escrita desta nao pode \
+                                          ser afirmado inteiro"
+                        .into();
+                }
+            }
+        }
+    }
+
     /// A transacao de id `tx`, para o recado de uma trava barrada nomear quem
     /// segura. Sem isto, «tabela em transacao» manda a pessoa procurar sozinha.
     pub fn por_id(&self, tx: u64) -> Option<&Transacao> {
