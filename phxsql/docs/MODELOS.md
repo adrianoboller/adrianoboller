@@ -1251,6 +1251,10 @@ QA, com julgamento de pergunta, e a redação do H.
 | 372 — cifra do dblink.json com chave externa | forte | formato em disco e criptografia |
 | 450 etapa 1 — PhxZip, o 7-Zip em Rust | forte | formato de arquivo, AES e descompressor escritos aqui, para nove alvos |
 | 382/383/384/423 — inventários de QA | médio | documentação que exige medir e um crivo em Python; não compila |
+| C — parecer 451 e 448 | forte | garantias de dado sob pânico e atomicidade do COMMIT |
+| J — parecer 444 | médio | pesquisa de padrões de fábrica com fonte primária, verificável |
+| 439/442/453 — tetos e ecos | forte | memória pré-credencial e segurança |
+| Interface do PhxZip | forte | produto novo, marca, idiomas e segurança de arquivo no navegador |
 | SEC — revisão de 434 e 435 | forte | leitura adversária de criptografia |
 | QA — inventário do mesmo motor | médio | varredura com julgamento de pergunta, verificável |
 | H — cognições e MODELOS | médio | redação a partir de fatos dados; o leve arriscaria a nuance da terceira seção |
