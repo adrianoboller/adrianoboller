@@ -80,12 +80,17 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/phxjev.py" veredito <<'JSON'
  "itens": [
   {"id": "a1", "motivo": "uma linha",
    "perguntas": {
-     "real":          {"tipo": "noul",   "p": 0.92, "evid": "reg.rs:2026"},
+     "real":          {"tipo": "noul",   "p": 0.92, "evid": "reg.rs:2026",
+                       "pergunta": "o defeito descrito existe no codigo?"},
      "severidade":    {"tipo": "score",  "p": {"0":0.05,"1":0.15,"2":0.5,"3":0.3}, "evid": "reg.rs:17"},
      "causa":         {"tipo": "choice", "p": {"A":0.7,"B":0.25,"outra":0.05}, "evid": "reg.rs:819"}}}]}
 JSON
 ```
 
+- **`noul` exige `pergunta`**, e `p` e P(**sim**) daquela frase. Ao vivo o
+  juiz respondeu «nao reaproveita» e gravou 0,98 — para sim. Releia a linha
+  `«frase» P(sim)=` da saida: se contradiz a sua conclusao, o JSON esta
+  invertido.
 - **Nao escreva `conf`**: o script calcula (1 − entropia normalizada).
 - O script **recusa** p sem evidencia (fora de 0,5), choice que nao soma 1 e
   estado vazio. Recusou: corrija o JSON, nao o limiar.

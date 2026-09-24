@@ -84,6 +84,11 @@ def normalizar(item_id, nome, q):
     if tipo == "noul":
         p = q.get("p")
         conferir_p(rotulo, p)
+        # Sem o texto, «p» nao tem polaridade: ao vivo o juiz quis dizer
+        # «nao reaproveita» e gravou 0,98 para sim. Com a frase ao lado do
+        # P(sim), a contradicao fica escrita na propria saida.
+        if not (q.get("pergunta") or "").strip():
+            raise Invalido(f"{rotulo}: noul sem 'pergunta' -- p e P(sim) de QUAL frase?")
         # Sem evidencia, a unica resposta honesta e nao sei.
         if not evid and abs(p - 0.5) > 1e-9:
             raise Invalido(f"{rotulo}: p={p} sem evidencia; sem evidencia e 0.5")
@@ -165,9 +170,10 @@ def decidir(perguntas):
 
 def fmt(nome, q):
     if q["tipo"] == "noul":
+        texto = f" «{q['pergunta'][:60]}» P(sim)=" if q.get("pergunta") else " "
         if "valor_cru" in q:
-            return f"{nome} {q['valor_cru']:.2f}→{q['valor']:.2f}"
-        return f"{nome} {q['valor']:.2f}"
+            return f"{nome}{texto}{q['valor_cru']:.2f}→{q['valor']:.2f}"
+        return f"{nome}{texto}{q['valor']:.2f}"
     if q["tipo"] == "score":
         topo = max(float(k) for k in q["dist"])
         return f"{nome} {q['valor']:.2f}/{topo:g} (conf {q['conf']:.2f})"
@@ -193,7 +199,8 @@ def cmd_veredito(entrada, saida, registro=REGISTRO, juiz="claude"):
         pergs = {}
         for nome, q in (item.get("perguntas") or {}).items():
             tipo, dist, c, valor = normalizar(iid, nome, q)
-            pergs[nome] = {"tipo": tipo, "dist": dist, "conf": c, "valor": valor, "evid": q.get("evid", "")}
+            pergs[nome] = {"tipo": tipo, "dist": dist, "conf": c, "valor": valor, "evid": q.get("evid", ""),
+                           "pergunta": (q.get("pergunta") or "").strip()}
             a = ajuste(registro, juiz, nome) if tipo == "noul" else None
             if a:
                 # O limiar decide pela p corrigida; o registro guarda a crua,
@@ -209,7 +216,8 @@ def cmd_veredito(entrada, saida, registro=REGISTRO, juiz="claude"):
         escalar_tudo += [f"{iid}.{e}" for e in escalar]
         registros.append({
             "id": f"{carimbo}-{iid}", "preset": preset, "juiz": juiz, "item": iid, "veredito": veredito,
-            "perguntas": {k: {"tipo": v["tipo"], "dist": v["dist"], "conf": round(v["conf"], 4)} for k, v in pergs.items()},
+            "perguntas": {k: {"tipo": v["tipo"], "dist": v["dist"], "conf": round(v["conf"], 4),
+                              **({"pergunta": v["pergunta"]} if v.get("pergunta") else {})} for k, v in pergs.items()},
             "desfecho": {},
         })
     if not registros:
@@ -572,7 +580,7 @@ def cmd_local(modelo, entrada, saida, registro=REGISTRO, url=OLLAMA):
             tempos.append(ms)
             ev = f"logprob:{modelo} cobertura {cobertura:.2f}"
             if q["tipo"] == "noul":
-                pergs[nome] = {"tipo": "noul", "p": round(dist["sim"], 6), "evid": ev}
+                pergs[nome] = {"tipo": "noul", "p": round(dist["sim"], 6), "evid": ev, "pergunta": q["pergunta"]}
             else:
                 pergs[nome] = {"tipo": q["tipo"], "p": dist, "evid": ev}
         itens.append({"id": item["id"], "perguntas": pergs})

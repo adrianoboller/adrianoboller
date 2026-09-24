@@ -11,8 +11,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import phxjev as j  # noqa: E402
 
 
-def noul(p, evid="x.rs:1"):
-    return {"tipo": "noul", "p": p, "evid": evid}
+def noul(p, evid="x.rs:1", pergunta="isto e verdade?"):
+    return {"tipo": "noul", "p": p, "evid": evid, "pergunta": pergunta}
 
 
 def rodar(itens, registro, preset="revisar"):
@@ -74,6 +74,14 @@ class Recusas(unittest.TestCase):
     def test_choice_que_nao_soma_um_recusa(self):
         with self.assertRaises(j.Invalido):
             rodar([{"id": "a", "perguntas": {"c": {"tipo": "choice", "p": {"A": 0.7, "B": 0.7}, "evid": "x"}}}], self.reg)
+
+    def test_noul_sem_pergunta_recusa(self):
+        with self.assertRaises(j.Invalido):
+            rodar([{"id": "a", "perguntas": {"r": noul(0.98, pergunta="")}}], self.reg)
+
+    def test_a_frase_aparece_ao_lado_do_p_sim(self):
+        out = rodar([{"id": "a", "perguntas": {"r": noul(0.98, pergunta="o .reg reaproveita slot?")}}], self.reg)
+        self.assertIn("«o .reg reaproveita slot?» P(sim)=0.98", out)
 
     def test_estado_vazio_recusa(self):
         with self.assertRaises(j.Invalido):
@@ -252,7 +260,7 @@ class Autocalibracao(unittest.TestCase):
     def test_veredito_decide_pela_p_corrigida(self):
         self.povoar(60, 0.9, 0.3)   # o juiz diz 0,9 e acerta 30%
         out = rodar([{"id": "a", "perguntas": {"real": noul(0.9)}}], self.reg)
-        self.assertRegex(out, r"real 0\.90→0\.3[0-2]")
+        self.assertRegex(out, r"real «.*» P\(sim\)=0\.90→0\.3[0-2]")
         self.assertIn("DESCARTAR (real<0.50)", out)
 
     def test_juizes_nao_se_misturam(self):
