@@ -2068,6 +2068,23 @@ TRANSACOES: BEGIN, COMMIT, ROLLBACK E SAVEPOINT
     ponto de compromisso. No arranque, a recuperacao COMPLETA o commit -- ela
     anda para a frente, nunca para tras -- e imprime o bloco PHXSQL Recovery.
 
+    SE A PASSADA QUEBRAR DEPOIS DA MARCA E O PROCESSO NAO CAIR (erro de E/S
+    na escrita, por exemplo -- pedido 426), a transacao JA ESTA confirmada: a
+    marca foi ao disco antes da passada, entao desfazer nao e opcao (a ordem
+    de digitacao proibe devolver slot). O PROPRIO COMMIT completa a marca ali
+    mesmo, andando para a frente com a MESMA trava, e a resposta diz o que
+    ficou em vez de so avisar "gravadas":
+
+        "aviso"         sempre que a passada quebrou depois da marca --
+                         o texto nomeia o que ficou pendente
+        "completando"   true SO quando a conclusao nao pode ser afirmada
+                         ali (fica para a proxima recuperacao do servidor)
+
+    Sem "completando" na resposta, a marca foi lida e completada NA HORA:
+    a transacao inteira esta gravada, e nao ha o que repetir -- so os
+    gatilhos AFTER dela nao rodaram. Com "completando":true, NAO repita a
+    transacao: repetir duplicaria o que ja foi gravado.
+
     SE UMA OPERACAO ENTRAR EM PANICO COM A TRAVA DE DADOS NA MAO (defeito do
     servidor, e nao do pedido), o servidor NAO fica mais respondendo
     "[SP000010] ... deixou a trava suja" ate alguem reiniciar. A thread que

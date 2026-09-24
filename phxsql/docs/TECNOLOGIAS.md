@@ -36,17 +36,18 @@ foi estimado no lugar de uma medição que faltou.
 |---|---:|---:|---:|---:|---:|---:|
 | `phxsql-cli` | 1 | 815 | 104 | 113 | 78 | 1110 |
 | `phxsql-cmd` | 2 | 618 | 110 | 207 | 65 | 1000 |
-| `phxsql-core` | 35 | 11611 | 4973 | 3934 | 1594 | 22112 |
-| `phxsql-ffi` | 7 | 1408 | 1081 | 745 | 242 | 3476 |
-| `phxsql-odbc` | 7 | 2908 | 1089 | 1063 | 254 | 5314 |
-| `phxsql-server` | 60 | 47688 | 33451 | 25681 | 5576 | 112396 |
-| `phxsql-sql` | 10 | 7210 | 3844 | 2587 | 822 | 14463 |
-| `phxsql-store` | 26 | 14216 | 3831 | 6633 | 1655 | 26335 |
-| **total** | **148** | **86474** | **48483** | **40963** | **10286** | **186206** |
+| `phxsql-core` | 35 | 12189 | 5337 | 4274 | 1655 | 23455 |
+| `phxsql-ffi` | 7 | 1465 | 1373 | 839 | 267 | 3944 |
+| `phxsql-odbc` | 7 | 3060 | 1258 | 1069 | 269 | 5656 |
+| `phxsql-server` | 62 | 53875 | 40881 | 30441 | 6401 | 131598 |
+| `phxsql-sql` | 10 | 7288 | 4040 | 2777 | 833 | 14938 |
+| `phxsql-store` | 27 | 17971 | 3969 | 7661 | 1912 | 31513 |
+| `phxzip` | 9 | 3074 | 501 | 804 | 284 | 4663 |
+| **total** | **160** | **100355** | **57573** | **48185** | **11764** | **217877** |
 
-Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **48483/86474 = 0.56×**.
+Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **57573/100355 = 0.57×**.
 
-Alem do `src/`: **81** programas de medicao em `examples/` (20636 linhas — bancada em Rust, nao produto nem teste) e **71** arquivos em `tests/` de integracao fora de `src/` (26031 linhas).
+Alem do `src/`: **86** programas de medicao em `examples/` (21553 linhas — bancada em Rust, nao produto nem teste) e **93** arquivos em `tests/` de integracao fora de `src/` (34998 linhas).
 <!-- /GERADO -->
 
 A proporção teste/código sai medida no bloco acima, não digitada aqui. O
@@ -73,7 +74,7 @@ Lista extraida de `crates/phxsql-server/src/http.rs` (todo `include_str!`/`inclu
 
 | arquivo embutido | linhas | KiB |
 |---|---:|---:|
-| `ui/index.html` | 15682 | 888.9 |
+| `ui/index.html` | 15748 | 894.2 |
 | `ui/grid/phx-grid.css` | 168 | 12.3 |
 | `ui/grid/phx-grid.js` | 1860 | 90.1 |
 | `ui/diagrama-er.js` | 712 | 29.1 |
@@ -81,9 +82,9 @@ Lista extraida de `crates/phxsql-server/src/http.rs` (todo `include_str!`/`inclu
 | `ui/telemetria.js` | 1820 | 89.2 |
 | `ui/multitela.css` | 156 | 8.6 |
 | `ui/multitela.js` | 1588 | 69.0 |
-| `ui/claude.js` | 1493 | 74.8 |
+| `ui/claude.js` | 1508 | 75.8 |
 | `ui/grid/CHANGELOG-phx-grid.md` | 224 | 29.7 |
-| **total (10 arquivos)** | **24150** | **1311.6** |
+| **total (10 arquivos)** | **24231** | **1317.9** |
 
 Em `ui/` mas **fora** do `include_str!`/`include_bytes!` (4 arquivos, não embutidos no binário):
 - `crates/phxsql-server/ui/explorador.css`
@@ -107,11 +108,11 @@ mesmo motivo que o rodapé já errou uma vez.
 <!-- GERADO: bloco_outras_linguagens() -->
 | o que | onde | arquivos | linhas |
 |---|---|---:|---:|
-| JavaScript (prova ponta a ponta) | `testes-web/` | 55 | 11878 |
-| Python (bancada de medicao) | `bancada/` | 121 | 55467 |
-| Shell (empacotar, zelador, provas) | todo o repositorio | 19 | 2894 |
-| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 450 | 109948 |
-| Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | 36 | 16038 |
+| JavaScript (prova ponta a ponta) | `testes-web/` | 58 | 12991 |
+| Python (bancada de medicao) | `bancada/` | 138 | 64797 |
+| Shell (empacotar, zelador, provas) | todo o repositorio | 24 | 3744 |
+| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 561 | 127223 |
+| Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | 38 | 17869 |
 
 A linha «Markdown (documentacao tecnica)» acima **exclui o proprio `docs/TECNOLOGIAS.md`** da contagem — ele e a SAIDA deste extrator, e contar a saida como entrada faz cada gravacao mudar o numero que a gravacao seguinte vai ler (pedido 404: tres corridas seguidas sem edicao nenhuma publicaram 106.750 -> 106.752 -> 106.753 linhas, nunca um ponto fixo). Mesmo molde da §17 da setima pagina de status, que escreve «— (esta pagina)» em vez de medir a si mesma.
 <!-- /GERADO -->
@@ -129,7 +130,7 @@ A regra do projeto é **zero dependências externas** — só a `std`. Provado
 pelo arquivo, não pela lembrança:
 
 <!-- GERADO: bloco_dependencias() -->
-`Cargo.lock` lista **8** pacotes. Todos: `phxsql-cli, phxsql-cmd, phxsql-core, phxsql-ffi, phxsql-odbc, phxsql-server, phxsql-sql, phxsql-store`.
+`Cargo.lock` lista **9** pacotes. Todos: `phxsql-cli, phxsql-cmd, phxsql-core, phxsql-ffi, phxsql-odbc, phxsql-server, phxsql-sql, phxsql-store, phxzip`.
 
 Nenhuma linha `source = ` no arquivo (contadas: 0) -- todo pacote e `path`, isto e, um crate deste proprio workspace. Pacotes externos ao workspace: **0**.
 
@@ -142,9 +143,10 @@ Confirmando pelo `[dependencies]` de cada `Cargo.toml`:
 | `phxsql-core` | (nenhuma) |
 | `phxsql-ffi` | phxsql-core, phxsql-store |
 | `phxsql-odbc` | phxsql-core |
-| `phxsql-server` | phxsql-core.workspace, phxsql-store.workspace, phxsql-sql.workspace |
+| `phxsql-server` | phxsql-core.workspace, phxsql-store.workspace, phxsql-sql.workspace, phxzip.workspace |
 | `phxsql-sql` | phxsql-core.workspace |
 | `phxsql-store` | phxsql-core.workspace |
+| `phxzip` | (nenhuma) |
 <!-- /GERADO -->
 
 `phxsql-core` é a base e não depende de nada — nem de outro crate deste
@@ -201,7 +203,7 @@ confere cada um contra vetor publicado.
 |---|---|---|---|
 | `sha1.rs` | SHA-1, so para falar o protocolo do MySQL(R). | FIPS 180-4 | `vetores_do_fips_180_4` |
 | `sha512.rs` | SHA-512, conferido contra o FIPS 180-4. | FIPS 180-4, RFC 8032 | `vetores_oficiais` |
-| `hash.rs` | SHA-256, HMAC-SHA256 e PBKDF2-HMAC-SHA256, sem dependencias externas. | FIPS 180-4, RFC 2104, RFC 2898, RFC 4231 | `sha256_vetores_oficiais`, `hmac_vetores_rfc4231`, `pbkdf2_vetores_conhecidos` |
+| `hash.rs` | SHA-256, HMAC-SHA256 e PBKDF2-HMAC-SHA256, sem dependencias externas. | FIPS 180-4, RFC 2104, RFC 2898, RFC 4231, RFC 6070 | `sha256_vetores_oficiais`, `hmac_vetores_rfc4231`, `pbkdf2_vetores_conhecidos`, `pbkdf2_senha_maior_que_o_bloco_vetores_wycheproof` |
 | `ed25519.rs` | Ed25519: assinatura com chave publica e privada, conferida contra a RFC 8032. | RFC 8032 | `vetores_da_rfc_8032`, `o_vetor_de_1023_bytes` |
 | `x25519.rs` | X25519: a troca de chaves da RFC 7748, sem dependencias externas. | RFC 7748, RFC 8032 | `vetor_1_da_secao_5_2`, `vetor_2_da_secao_5_2` |
 | `hkdf.rs` | HKDF-SHA256, a derivacao de chave da RFC 5869, sobre o HMAC que ja existe. | RFC 5869 | `caso_1_do_anexo_a`, `caso_2_do_anexo_a`, `caso_3_do_anexo_a` |
@@ -209,7 +211,7 @@ confere cada um contra vetor publicado.
 | `base64.rs` | Base64 (RFC 4648), sem dependencias externas. | RFC 4648 | `vetores_rfc4648` |
 | `uuid.rs` | Identificadores: UUID de 128 bits (v4 e v7) e identificador de 256 bits. | FIPS 180-4, RFC 9562 | `v7_tem_o_layout_do_rfc_9562`, `v7_e_v4_daqui_tem_versao_e_variante_da_rfc`, `variante_antiga_e_da_microsoft_nao_sao_da_rfc` |
 | `crc.rs` | CRC-32 (IEEE 802.3, refletido, polinomio 0xEDB88320). | (nenhuma citada) | `vetores_conhecidos` |
-| `json.rs` | Leitor e escritor de JSON, sem dependencias externas. | (nenhuma citada) | (nenhum teste com esse padrao de nome) |
+| `json.rs` | Leitor e escritor de JSON, sem dependencias externas. | RFC 8259 | (nenhum teste com esse padrao de nome) |
 | `zip.rs` | Arquivo ZIP: escrita e leitura, com o DEFLATE escrito aqui. | RFC 1951 | (nenhum teste com esse padrao de nome) |
 | `pg/scram.rs` | SCRAM-SHA-256 (RFC 5802 + RFC 7677), do lado do CLIENTE. | RFC 5802, RFC 7677 | `troca_do_rfc_7677` |
 <!-- /GERADO -->
@@ -275,7 +277,7 @@ de modelo por frente — nunca o nome do modelo, só "projeto e risco" contra
 "mecânico e verificável" — fica registrada em `docs/MODELOS.md`:
 
 <!-- GERADO: bloco_modelos() -->
-`docs/MODELOS.md` registra **17** rodadas: Rodada de 1–2 de setembro de 2026 — NÃO CUMPRIDA; Frente «toda tabela é PhxGrid» — 2 de setembro de 2026; Rodada das sprints abertas — 4 de setembro de 2026; Rodada do comparativo — 7 de setembro de 2026; Rodada do batimento e dos geradores — 7 de setembro de 2026; Rodada da pergunta e do botão — 7 de setembro de 2026; Rodada do quórum — 7 de setembro de 2026; Rodada das 26 perguntas — 7 de setembro de 2026; Rodada das diretivas HFSQL e do fluxo do auto number — 7 de setembro de 2026; Rodada de 7 de setembro de 2026 (noite) — channel binding do login; Rodada de 8 de setembro de 2026 — onda dos gaps (4 frentes paralelas); Onda 2 da rodada dos gaps — 8 de setembro de 2026 (as 4 frentes cifradas); Rodada do acelerador de memoria (o `.tbm`) — 8 de setembro de 2026; Rodada da corrida de I/O — 8 de setembro de 2026; Rodada das dezoito do comparativo — 8 de setembro de 2026; Rodada dos limites nomeados — 9 de setembro de 2026; Rodada dos limites nomeados e dos gaps — 9 de setembro de 2026 (continuação)
+`docs/MODELOS.md` registra **18** rodadas: Rodada de 1–2 de setembro de 2026 — NÃO CUMPRIDA; Frente «toda tabela é PhxGrid» — 2 de setembro de 2026; Rodada das sprints abertas — 4 de setembro de 2026; Rodada do comparativo — 7 de setembro de 2026; Rodada do batimento e dos geradores — 7 de setembro de 2026; Rodada da pergunta e do botão — 7 de setembro de 2026; Rodada do quórum — 7 de setembro de 2026; Rodada das 26 perguntas — 7 de setembro de 2026; Rodada das diretivas HFSQL e do fluxo do auto number — 7 de setembro de 2026; Rodada de 7 de setembro de 2026 (noite) — channel binding do login; Rodada de 8 de setembro de 2026 — onda dos gaps (4 frentes paralelas); Onda 2 da rodada dos gaps — 8 de setembro de 2026 (as 4 frentes cifradas); Rodada do acelerador de memoria (o `.tbm`) — 8 de setembro de 2026; Rodada da corrida de I/O — 8 de setembro de 2026; Rodada das dezoito do comparativo — 8 de setembro de 2026; Rodada dos limites nomeados — 9 de setembro de 2026; Rodada dos limites nomeados e dos gaps — 9 de setembro de 2026 (continuação); Rodada da revisão SEC e dos gaps de 434/435 — 23/09/2026 (noite)
 <!-- /GERADO -->
 
 A contagem de rodadas sai do bloco acima, não daqui; o que elas ensinam, não.
@@ -289,7 +291,7 @@ com o motivo escrito**, que é o que a cláusula realmente cobra.
 ### 4.2 Como se mediu
 
 <!-- GERADO: bloco_bancadas() -->
-`bancada/` tem **56** frentes de medicao (__pycache__, acid, alfanumerica, alter, arm, bateria, carga, cifra, cifra-do-fio, cluster, cobertura-da-tela, colmeia, comparacao, comparativo, concorrencia, conexoes, dblink, diretivas, dns-cloudflare, docker, durabilidade, embutido, exclusao, fts, gaps-sql, gestao, guardas, jobs, manual, mvcc, odbc, pacote, particao-por-faixa, phxsql, pitr, profiler, proibidos, quorum, registro, replicacao, rest, rotinas, seguranca, sequencias, servermail, sql-exemplos, sqlite, telemetria, tomada, transacoes, uniao, usuarios, utilizacao-padrao, vagas-da-tela, vetorial, windows), das quais **41** documentam a propria metodologia em `LEIA-ME.md`.
+`bancada/` tem **61** frentes de medicao (__pycache__, acid, alfanumerica, alter, arm, bateria, carga, catastrofes, catracas, cifra, cifra-do-fio, cluster, cobertura-da-tela, colmeia, comparacao, comparativo, concorrencia, conexoes, dblink, diretivas, dns-cloudflare, docker, durabilidade, embutido, exclusao, fts, gaps-sql, gestao, guardas, jobs, lgpd, manual, mvcc, odbc, pacote, particao-por-faixa, phxsql, pitr, profiler, proibidos, quorum, referencias, registro, replicacao, rest, rotinas, seguranca, sequencias, servermail, sql-exemplos, sqlite, telemetria, tomada, transacoes, uniao, usuarios, utilizacao-padrao, vagas-da-tela, vetorial, windows, zelador), das quais **43** documentam a propria metodologia em `LEIA-ME.md`.
 <!-- /GERADO -->
 
 A carga do lado do motor é
@@ -305,16 +307,17 @@ leitura de 20.000 (5× a favor do PhxSql sem o motor ter feito nada por isso).
 ### 4.3 Como se provou
 
 <!-- GERADO: bloco_conferidores() + bloco_catracas() + bloco_guardas() -->
-Conferidores em `crates/phxsql-server/src/`: `conferidor.rs`, `conferidor_botoes.rs`, `conferidor_dependencias.rs`, `conferidor_grades.rs`, `conferidor_inventario.rs`, `conferidor_segredos.rs`, `conferidor_temporarios.rs`, `conferidor_texto_cru.rs`, `conferidor_vermelhas.rs`. Executaveis de prova em `crates/phxsql-server/examples/`: `botoes-sem-prova.rs`, `grades-fora-do-padrao.rs`, `prova-dblink.rs`, `prova-exportar.rs`, `textos-fora-da-fabrica.rs`.
+Conferidores em `crates/phxsql-server/src/`: `conferidor.rs`, `conferidor_botoes.rs`, `conferidor_canal.rs`, `conferidor_dependencias.rs`, `conferidor_grades.rs`, `conferidor_inventario.rs`, `conferidor_segredos.rs`, `conferidor_temporarios.rs`, `conferidor_texto_cru.rs`, `conferidor_vermelhas.rs`. Executaveis de prova em `crates/phxsql-server/examples/`: `botoes-sem-prova.rs`, `grades-fora-do-padrao.rs`, `prova-dblink.rs`, `prova-exportar.rs`, `textos-fora-da-fabrica.rs`.
 
 | constante | valor | arquivo |
 |---|---:|---|
 | `TETO_DE_COLUNAS` | 12 | `crates/phxsql-server/src/bidirecional.rs` |
-| `TETO_DO_VALOR` | 48 | `crates/phxsql-server/src/bidirecional.rs` |
+| `TETO_DO_VALOR` | phxsql_core::error::TETO_DA_CITACAO | `crates/phxsql-server/src/bidirecional.rs` |
 | `TETO_COLADO` | 0 | `crates/phxsql-server/src/conferidor.rs` |
 | `TETO_FRASE_REPETIDA` | 0 | `crates/phxsql-server/src/conferidor.rs` |
-| `TETO_ROTULOS_E_CRASE` | 904 | `crates/phxsql-server/src/conferidor.rs` |
+| `TETO_ROTULOS_E_CRASE` | 880 | `crates/phxsql-server/src/conferidor.rs` |
 | `TETO_BOTAO_SEM_PROVA` | 119 | `crates/phxsql-server/src/conferidor_botoes.rs` |
+| `TETO_LEITURA_FORA_DO_CANAL` | 0 | `crates/phxsql-server/src/conferidor_canal.rs` |
 | `TETO_TABELA_NA_MAO` | 0 | `crates/phxsql-server/src/conferidor_grades.rs` |
 | `TETO_INVENTARIO_DESCASADO` | 0 | `crates/phxsql-server/src/conferidor_inventario.rs` |
 | `TETO_DE_LEITURA` | 4096 | `crates/phxsql-server/src/conferidor_segredos.rs` |
@@ -322,6 +325,8 @@ Conferidores em `crates/phxsql-server/src/`: `conferidor.rs`, `conferidor_botoes
 | `TETO_TEMP_DIR_SOLTO` | 0 | `crates/phxsql-server/src/conferidor_temporarios.rs` |
 | `TETO_TXT_CRU_EM_HTML` | 1 | `crates/phxsql-server/src/conferidor_texto_cru.rs` |
 | `TETO_VERMELHA_SEM_PEDIDO` | 0 | `crates/phxsql-server/src/conferidor_vermelhas.rs` |
+| `TETO_DE_COLUNAS` | 4096 | `crates/phxsql-server/src/dblink/mod.rs` |
+| `TETO_DE_LINHAS_DE_CONTINUACAO` | 1000 | `crates/phxsql-server/src/email.rs` |
 | `TETO_DO_CAMPO` | 120 | `crates/phxsql-server/src/profiler.rs` |
 | `TETO_DO_ERRO` | 500 | `crates/phxsql-server/src/profiler.rs` |
 | `TETO_DO_CABECALHO` | 400 | `crates/phxsql-server/src/profiler.rs` |
@@ -334,9 +339,9 @@ Conferidores em `crates/phxsql-server/src/`: `conferidor.rs`, `conferidor_botoes
 | `TETO_COLETA_ROWIDS` | 1_000_000 | `crates/phxsql-server/src/servidor.rs` |
 | `TETO_ANINHAMENTO` | 8 | `crates/phxsql-server/src/servidor.rs` |
 
-**24** catracas (`TETO*`) encontradas em `crates/phxsql-server/src/`.
+**27** catracas (`TETO*`) encontradas em `crates/phxsql-server/src/`.
 
-`bancada/guardas/catalogo.py` cataloga **201** defeitos repostos, contados de `len(GUARDAS)` depois de importar o modulo (nao por regex no texto -- entradas com `trocas` tem mais de um `{` cada, e uma contagem de chaves as conta em dobro ou mais). Linhas do arquivo: 8160. Refazer a prova: `python3 bancada/guardas/provar-guardas.py`.
+`bancada/guardas/catalogo.py` cataloga **406** defeitos repostos, contados de `len(GUARDAS)` depois de importar o modulo (nao por regex no texto -- entradas com `trocas` tem mais de um `{` cada, e uma contagem de chaves as conta em dobro ou mais). Linhas do arquivo: 14844. Refazer a prova: `python3 bancada/guardas/provar-guardas.py`.
 <!-- /GERADO -->
 
 - **Ponta a ponta, pelo navegador**: os arquivos `.mjs` de `testes-web/` —
@@ -376,6 +381,22 @@ Conferidores em `crates/phxsql-server/src/`: `conferidor.rs`, `conferidor_botoes
   nenhuma guarda a mais, deu **180** — o padrão nunca teve relação estável com
   a contagem certa. Corrigido para importar o módulo e contar `len(GUARDAS)`,
   do mesmo jeito que `bancada/guardas/tabela-no-testes.py` já fazia ao lado.
+- **A mescla do catálogo de guardas por `id`, entre frentes paralelas.**
+  Nesta rodada, várias frentes mexeram em `bancada/guardas/catalogo.py` ao
+  mesmo tempo, cada uma no seu worktree — e um merge de texto por linha erra
+  exatamente onde a régua do papel G exige mais cuidado, porque duas frentes
+  que acrescentam guarda perto uma da outra colidem por proximidade, não por
+  conteúdo. O script resolvido nesta sessão (`mesclar-catalogo.py`, hoje em
+  `/tmp/.../scratchpad/mesclar-catalogo.py`, **candidato a**
+  `phxsql/bancada/guardas/mesclar-catalogo.py`) lê o catálogo pelo `git show`
+  em três pontas — HEAD, a base comum e a cópia da frente —, parseia cada
+  entrada pelo campo `"id"` (nunca por posição de linha) e decide por `id`:
+  entrada nova da frente entra no fim; entrada que só a frente mexeu entra
+  com a versão dela; entrada que **as duas** mexeram **para** e avisa, em vez
+  de escolher um lado calado. Confere com `ast.parse` que o resultado
+  continua Python válido antes de gravar. **Se valer para a próxima rodada
+  com frentes paralelas, o lugar é ao lado do `catalogo.py` que ele mescla —
+  é o papel I quem decide levá-lo, por ser quem versiona.**
 - **Executáveis de prova dedicados**, em `crates/phxsql-server/examples/` —
   achados por glob e nomeados no bloco acima, não listados de novo aqui, pelo
   mesmo motivo de sempre: lista digitada envelhece calado.
@@ -405,6 +426,50 @@ O terceiro entrou em 23/09/2026 e é **prova real nos dois sentidos**: VERDE
 (saída 0) com o conserto, VERMELHO (saída 1, no caso do meio) com o defeito
 reposto. Roda em segundos e **não chama `cargo`** — cabe em rodada com o disco
 apertado.
+
+#### A árvore exata, para os portões rodarem sobre o que vai ser comitado
+
+`./portoes.sh --raiz DIR` já existia para isso; o que faltava era o passo que
+enche `DIR` com o conteúdo **exato** da árvore viva de uma frente, sem o que
+não se compara (`.git`, `.claude/worktrees`, `phxsql/target`, `.phxjev`) e sem
+sobra de uma corrida anterior. `arvore-exata.py` (hoje em
+`/tmp/.../scratchpad/arvore-exata.py`, **candidato a**
+`phxsql/scripts/arvore-exata.py` — pasta nova, porque não é nem bancada de
+medição nem gerador de documento) apaga em `DIR` o que não existe na árvore
+viva, copia por `tar` (preserva permissão e link, ao contrário de uma cópia
+arquivo a arquivo), e confere com `diff -rq` que as duas árvores batem depois
+— a mesma disciplina de prova real que o resto da casa usa, aplicada à própria
+sincronização.
+
+#### O juiz PhxJev, antes da conta
+
+Entrou nesta rodada como o portão que decide **antes** de um achado de
+revisão virar pedido no `PENDENCIAS.md` — o mesmo lugar onde a decisão do
+dono de 24/09/2026 (escopo congelado) já mandava separar defeito ativo de
+achado que pode esperar. Vive em `plugins/phxjev/` (já versionado, não é
+proposta) e grava cada julgamento, com o texto original e o selo, em
+`.phxjev/registro.jsonl` (**também versionado**).
+
+O desenho é o que o próprio cabeçalho do script explica: o juiz (Claude, ou um
+modelo local por Ollama) só devolve **probabilidades** por pergunta — é
+`real?`, `alcançável?`, `já tratado?`, `defeito ativo?`, `severidade` —, em
+JSON; quem decide o veredito, calcula a confiança e registra é o script, em
+código, porque exercitado ao vivo o juiz **acertou a resposta e fugiu do
+formato** (escreveu `conf: alto` em vez da distribuição que a calibração
+precisa). Os limiares (`LIMIAR_REAL = 0.50`, `LIMIAR_SEVERIDADE = 2.0`…) são
+constantes no próprio `phxjev.py`, não em prompt — mudar o limiar é mudar uma
+linha, não reescrever a instrução e torcer para o juiz a obedecer igual da
+próxima vez.
+
+Usado nesta rodada em pelo menos **30 pedidos julgados** (preset `revisar`,
+`docs/MODELOS.md`), com a ressalva que o próprio `MODELOS.md` já registra: *"o
+veredito sai do limiar do script, mas a probabilidade por pergunta e o juízo
+sobre defeito ativo" continuam sendo do modelo* — o script não elimina o
+julgamento, só impede que ele saia do formato. Nos pedidos 529, 530, 533–537 e
+541–543 do `PENDENCIAS.md`, o veredito («fica» ou o estado ⏸/☐) está gravado
+com o **selo** do julgamento (ex.: `dd399fb11557`), que `phxjev.py mostrar
+<selo>` reproduz — a mesma disciplina de "número medido, não citado", aplicada
+a uma decisão de triagem em vez de a uma medição.
 
 ### 4.4 Como se compilou para outra arquitetura
 
@@ -439,6 +504,43 @@ empacotar:
   aplicativo; o **dado** é o que cresce, e ele ocupa **4,3× o do SQLite(R)**
   nas mesmas 200.000 linhas (`docs/MOBILE.md` §2). Num telefone, é a segunda
   conta que decide.
+
+---
+
+## 8. O pacote de demonstração termina em `config.phz` (pedido 478)
+
+A ordem do dono para o pedido 450 era que a instalação **nova** já nascesse
+empacotada, e até 24/09/2026 nenhum roteiro documentado chamava
+`--empacotar-config`: o `MANUAL.txt`, o `README.md` e o `COMECE-AQUI.txt` do
+pacote de demonstração terminavam todos com um `config.json` em claro — o
+contrário do pedido, porque a migração do 450 nasceu **pedida**, não imposta.
+
+O `demonstracao()` do `empacotar.sh` passa a empacotar o config que ele mesmo
+grava, com o MESMO comando que o administrador usa depois
+(`--empacotar-config`, o motor de `config_phz.rs` — nenhuma segunda receita de
+empacotar em bash) e a apagar a cópia em claro que a migração guarda por
+padrão (`config.json.migrado-para-phz`): é um artefato de **build**, não de
+migração em produção, e a senha `demo` já é pública no `COMECE-AQUI.txt` de
+qualquer forma. O `COMECE-AQUI.txt` ganhou a seção que ensina
+`--desempacotar-config` / editar / `--empacotar-config` para quem quer olhar o
+config por dentro, e o roteiro de "servidor de verdade" ganhou o passo de
+empacotar antes de subir. `MANUAL.txt` §7.3 e `README.md` fazem o mesmo.
+Nenhum dos três chama o `.phz` de cifra.
+
+`demonstracao` também virou subcomando do `empacotar.sh` —
+
+```bash
+./empacotar.sh demonstracao <diretorio> [rotulo] [sufixo]
+```
+
+— pelo mesmo motivo do `manifesto` (seção 2): para a bancada chamar a receita
+de verdade sem pagar os quatro `cargo build --release` cruzados de `monta()`.
+A prova é `bancada/pacote/provar-demonstracao-phz.py`, e vale nos **dois
+sentidos**: a receita de hoje fecha só com `config.phz` (0600, um 7z de
+verdade, servidor sobe dele), e a receita de ANTES do pedido 478 — reposta ali
+por valor, porque depois deste pedido integrado o `empacotar.sh` de `HEAD`
+deixa de ter essa versão — fecha com `config.json` em claro, a assinatura do
+defeito.
 <!-- /GERADO -->
 
 ### 4.5 Testes, medidos agora
@@ -514,7 +616,7 @@ proposta de voltar sem medição nova.
 ### 5.1 Pedidos recusados, do próprio `PENDENCIAS.md`
 
 <!-- GERADO: bloco_recusados() -->
-`docs/PENDENCIAS.md` tem **433** pedidos numerados; **70** trazem a palavra RECUSADO no proprio texto:
+`docs/PENDENCIAS.md` tem **551** pedidos numerados; **99** trazem a palavra RECUSADO no proprio texto:
 
 | # | pedido |
 |---:|---|
@@ -581,13 +683,42 @@ proposta de voltar sem medição nova.
 | 357 | **SEC MEDIO-ALTO — a trilha `.lgpd` redige por NOME de coluna e por analise de hash, nunca pela marca `DadoPessoal`: a §11.7 escreveu a condicao no futuro do preterito, e ela chegou** |
 | 358 | **SEC MEDIO — o rowid E o balde, e o balde e o primeiro caractere: a particao por letra vaza pelo PROTOCOLO, para quem tem a coluna negada** |
 | 366 | **ORDEM DO DONO, 18/09/2026 -- a comunicacao deve OBRIGATORIAMENTE ser cifrada** |
+| 372 | **SEC -- o `dblink.json` grava a senha do destino em texto puro, por padrao** |
 | 379 | **O assistente de replicacao da tela gera o bloco do `config.json` sem `cifra`** |
 | 381 | **Linha com `.memo` corrompido nao se consegue ALTERAR por cliente que omita a coluna de sistema -- nem para substituir o bloco ruim** |
 | 385 | **A guarda que falta: «cliente novo nasce pedindo o tunel» -- e a forma dela esta decidida, com a recusa medida ao lado** |
 | 367 | **PARECER DO DBA 18/09 -- a trilha `.lgpd` de coluna EXTERNA marcada MENTE, nos tres sentidos** |
+| 368 | **PARECER DO DBA 18/09 -- o `.lgpd` nao tem expurgo, e o PRAZO e' decisao do dono** |
 | 403 | **O guarda da republicacao cobra a LEITURA INTEGRAL da pagina publicada, e acima de ~450 KiB isso nao cabe numa janela** |
 | 404 | **O `extrair.py` do TECNOLOGIAS conta a SI MESMO, entao a rodada em que o bloco gerado muda de tamanho exige duas passagens — e o portao acusa VERMELHO na primeira** |
+| 419 | **O sub-pedido que parou EM `max_linhas` publica resultado parcial calado — a comparacao e `>` onde devia acusar o empate** |
 | 424 | **A recusa do ledger mora na DECLARACAO, e a replicacao nao declara: a combinacao proibida CRESCE por replica, para nos que nunca a tiveram** |
+| 426 | **ALTO — o `COMMIT` que esbarra numa migracao sai PELA METADE, manda REPETIR, e a recuperacao do caminho de erro e CODIGO MORTO** |
+| 431 | **A oitava pagina nasceu IMUTAVEL: 2.258.328 B contra um teto de republicacao de 460.800, e 90,5% dela e base64** |
+| 434 | **ALTO SEC A1 — o 312 pos teto na saida e a ENTRADA ANONIMA continuou sem: `read_line` cru na porta web, e 128 MiB na primeira linha da 5000** |
+| 435 | **ALTO SEC A2 — o erro do pulso publica o mapa de quais nos ainda NAO estao protegidos pelo 278** |
+| 436 | **Os cinco MEDIOS e os seis BAIXOS da revisao SEC da noite de 23/09** |
+| 441 | **ALTO SEC -- a RESPOSTA do pulso rebaixa o master sem prova: o caminho irmao do 278 nao herdou a pre-checagem do caminho do pedido** |
+| 444 | **Anonimo enche o disco pelo `acessos.log`: 266 B de log por 2 B recebidos, com rodizio desligado de fabrica** |
+| 448 | **A chave estrangeira da transacao so e conferida DEPOIS da marca -- filha sem mae no meio da lista para a passada com parte gravada** |
+| 450 | **DECISAO DO DONO, 24/09/2026 -- os JSON de configuracao passam a ser gravados ZIPADOS com senha fixa no binario, para evitar o acesso direto a eles** |
+| 455 | **PEDIDO DO DONO, 24/09/2026 -- o pacote so do PhxZip completo, a interface e o manual** |
+| 463 | **O cliente SMTP nao tem teto de QUANTAS linhas de continuacao (`250-...`) aceita, e o `timeout_s` mede o silencio, nao a conversa** |
+| 468 | **Trocar a chave mestra do DbLink nao tem caminho: recifrar com a velha e a nova, e o procedimento da chave perdida** |
+| 471 | **PhxZip abrindo arquivo HOSTIL: o teto de ciclos padrao e 24, as contagens do cabecalho alocam antes de validar, e o leitor aceita nome repetido** |
+| 480 | **O par `config.<ext>` ↔ `config.phz` nao e simetrico fora de `.json`: a edicao pelo 7-Zip e ignorada calada** |
+| 481 | **O CONFLITO do par vira negacao de servico em pasta com sticky bit, e a mensagem dele se chama «conflito de escrita»** |
+| 484 | **O quarto estado `⏸` («depois da versao»): visivel, e fora da conta do que falta** |
+| 497 | **O `acessos.log` grava o texto do erro sem redigir: um literal sem fechar vai inteiro para o log, com o dado pessoal dentro** |
+| 504 | **O SIGABRT da H5 pode deixar um core dump com a chave derivada do cofre** |
+| 508 | **O separador de volume no NOME do arquivo colide com nome de tabela: trocar o `_` por um caractere que nome de tabela nao aceita, antes de haver dado em producao** |
+| 509 | **`fsync` que falhou e repetido responde Ok, e o fecho apaga a marca: o dado some depois da remontagem** |
+| 514 | **A FK e conferida ANTES do DEFAULT e da coluna calculada: filha orfa gravada** |
+| 521 | **Senha longa multiplica o custo do PBKDF2: a chave maior que 64 B e reduzida por SHA-256 a CADA iteracao** |
+| 522 | **O `fechar` baixa o byte 52 SEM `fsync`: com a escrita de fundo recusada (ou a máquina caindo), o `.ndx` fica marcado LIMPO sobre página que não chegou ao disco** |
+| 523 | **A recusa do 509 na biblioteca é por GRAFIA do caminho: pelo symlink ou por `dir/../dir` o mesmo diretório sincroniza Ok depois de um `fsync` recusado** |
+| 525 | **A `Sequence` gasta numero na linha recusada (FK desde o 514, CHECK e unicidade desde sempre): reservar e consumir depois da ultima guarda, como o `rownum` do 291** |
+| 529 | **Com cadastro grande, o `por_login` linear diz pelo relógio quem existe no `desafio` e na prova** |
 <!-- /GERADO -->
 
 Os dois mais relevantes para este documento —
@@ -861,6 +992,44 @@ texto não sabe a diferença entre fazer e falar sobre fazer.*
 disparou 1/0/1 nos três embrulhos. O conserto e a prova nos dois sentidos estão
 em `docs/dossie/prova-do-botao-de-baixar.mjs`; a medição, em
 `docs/dossie/LEIA-ME.md` e na cognição de 23/09/2026.
+
+### 5.10 Três recusas de 24/09/2026, com o número
+
+- **`HashMap` por login, no pedido 529.** O `por_login` linear vazava pelo
+  relógio quem existe no cadastro — medido em release, **+410 ns** com 200
+  usuários e **+125,7 µs** com 20.000 (`examples/custo-do-por-login.rs`). Um
+  `HashMap` por login teria zerado essa diferença de um jeito mais direto,
+  e foi **recusado**: seria uma segunda estrutura a manter sincronizada em
+  toda gravação de usuário, contra uma varredura linear que passou a
+  percorrer o cadastro inteiro sempre (sem sair cedo) — a mesma garantia,
+  medida depois em **-1 ns / -357 ns** (dentro do ruído), sem estrutura
+  nova. O recuo não é de desempenho: é de manutenção — a régua de "código
+  que passou pela nossa cabeça" cobra a pergunta certa, e aqui a resposta
+  foi que o `HashMap` resolvia um problema que a varredura sem saída
+  antecipada já resolvia sozinha.
+- **A janela do `.ndx` aberta pelo passo inteiro da cascata, no pedido 490.**
+  A primeira receita do parecer do DBA para a cascata órfã por pânico
+  media a janela de escrita pelo **passo inteiro** da cascata (mãe + todas
+  as filhas), em vez de por linha. **Morreu medida**: reposta, ela passou a
+  **recusar toda cascata de três níveis** — a neta ficava trancada atrás da
+  janela aberta da mãe, e a segunda descida do `.ndx` não conseguia ler o
+  que a primeira ainda segurava (`docs/cognicao/cognicao_janela-do-passo-inteiro-quebra-a-neta_20260924_1655.md`).
+  A receita que ficou é mais estreita: a **cascata em voo** marca só o
+  trecho entre a mãe ir ao disco e o passo terminar, e o `Drop` que a
+  encontra ligada sobe o byte 52 em vez de recuar a garantia à queda comum.
+- **"Sincronizar a origem" antes de renomear/duplicar/copiar tabela, no B1
+  do pedido 522.** O atestado do `.ndx` não acompanhava o arquivo quando ele
+  mudava de caminho — `renomear_tabela`, `duplicar_tabela` e
+  `copiar_tabela_para` deixavam o destino com o byte 52 em 1 e sem atestado,
+  recusando tudo sem queda nenhuma (C1 do parecer: 9/9 vermelho no `HEAD`).
+  A correção óbvia — sincronizar a origem (mais um `fsync`) antes de mover —
+  foi **recusada** no próprio parecer, com o motivo escrito e sem número
+  novo a inventar aqui: seria **um `fsync` a mais sob a trava global**, na
+  classe de custo que o `DESEMPENHO.md` já mede em 83,5% do tempo de uma
+  inserção. A saída aceita não paga isso: `renomear` re-chaveia o atestado
+  (mesmo inode, mesmo CRC, sem tocar o disco), e `copiar`/`duplicar` só
+  atesta a cópia quando a ORIGEM já estava atestada — o CRC copiado viaja
+  junto do `.reg`, sob a mesma trava que já existia, sem `fsync` extra.
 
 ---
 

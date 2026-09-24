@@ -12,6 +12,889 @@ Os números são **medidos**, nunca estimados.
 
 ## Não lançado
 
+### 544 — o parser do DbLink entrava em pânico com o par
+
+**Corrigido**
+
+- MySQL: `fatia_lenenc` soma com `checked_add` e recusa o campo que passa
+  do fim do pacote (antes, cortado calado); PostgreSQL: `quantos_campos`
+  recusa contagem negativa ou acima do teto antes de reservar. O
+  `TETO_DE_COLUNAS` foi para `dblink/mod.rs` e serve aos dois dialetos. O
+  irmão no mesmo parser — `cadeia_ate_nulo` do aperto de mão MySQL — entrava
+  em pânico com saudação curta, ANTES de qualquer credencial. Vermelhos:
+  `attempt to add with overflow`, célula de 10 bytes num pacote de 4
+  voltando `"abc"`, `capacity overflow` com `-1`. Guardas
+  `dblink-mysql-lenenc-embrulha`, `dblink-pg-contagem-negativa`,
+  `dblink-mysql-cadeia-alem-do-fim`.
+
+### 530 — job que rodava `job_rodar` de si mesmo subia uma thread por nível, sem teto
+
+**Corrigido**
+
+- `op_job_rodar` recusa («job não dispara job») quando chamado de uma
+  thread da família `corrida`; pela conexão comum continua rodando. Antes
+  do conserto a prova medida tinha 45 corridas aninhadas abertas ao mesmo
+  tempo. Guarda `job-dispara-job`, `docs/JOBS.md`.
+
+### 523 — a recusa do `fsync` na biblioteca era por GRAFIA do caminho
+
+**Corrigido**
+
+- A recusa se grava pela chave léxica e pela resolvida no disco
+  (`canonicalize` do diretório, no instante da recusa), e a consulta só
+  resolve a grafia depois da primeira recusa. Antes, 5 de 6 pares cruzados
+  de grafia (`real/`, `link/`, `real/../real/`) sincronizavam Ok; depois, 0
+  de 6. Renomear o diretório depois da recusa ainda escapa, como antes.
+  Guarda `recusa-do-fsync-por-grafia`, `docs/FORMATO.md`.
+
+### 463 — o cliente SMTP não tinha teto de linhas de continuação nem prazo total
+
+**Corrigido**
+
+- Teto de 1.000 linhas de continuação, e prazo total da conversa =
+  `timeout_s` × passos da conversa, sem campo novo no `config.json`. O relé
+  que pingava a cada 50 ms segurava a conversa 6,03 s com prazo total de
+  4,5 s; depois, 4,506 s. Guardas `smtp-sem-teto-de-linhas-de-continuacao`
+  e `smtp-sem-prazo-total-da-conversa`.
+
+### 529 — o `por_login` linear vazava pelo relógio quem existe, em cadastro grande
+
+**Corrigido**
+
+- `Cadastro::por_login` parava no primeiro que casasse, e a diferença de
+  tempo denunciava quem existe no `desafio` e na prova. Medido em release
+  (`examples/custo-do-por-login.rs`): quem não existe custava **+410 ns**
+  com 200 usuários e **+125,7 µs** com 20.000. Passou a varrer o cadastro
+  inteiro sempre; depois, a diferença caiu a **-1 ns** e **-357 ns**, dentro
+  do ruído (contador `#[cfg(test)]`: 500 = 500 = 500 comparações para o
+  primeiro, o último e o inexistente). `HashMap` **recusado** — seria uma
+  segunda estrutura a manter em toda gravação de usuário. Julgado pelo
+  PhxJev antes de entrar na conta (selo `dd399fb11557`,
+  `.phxjev/registro.jsonl`). Guarda `por-login-para-no-primeiro-que-casa`,
+  `docs/SEGURANCA.md` §26.7.
+
+### 522 — o `.ndx` fechado marcava LIMPO sem `fsync`: página que não chegou ao disco ficava invisível ao arranque
+
+**Corrigido**
+
+- Provado contra o SO (ext4 sobre loop com provisionamento fino, 5.000
+  inserções, disco cheio, `syncfs` sem `fsync` do motor): remontado, o
+  `Drop` (que chama `fechar`) baixava o byte 52 a 0 com CRC inválido na
+  página 3, 3/3; só um processo morto sem `Drop` deixava o 1 correto. Agora
+  só o `sincronizar` — depois dos dois `fsync` — grava o 0; o `fechar` leva
+  as páginas ao núcleo, grava o 1 e ATESTA o arquivo num registro do
+  processo (caminho + CRC do cabeçalho); a abertura só confia no 1 atestado.
+  O arranque reconstrói a tabela marcada (necessário: sem isso, 4 testes de
+  restauração e PITR caíam). Preço: **1,65–1,88 s por milhão de linhas com
+  2 índices**, na primeira abertura depois de um processo que não
+  sincronizou (`docs/FORMATO.md`). Doze guardas novas. Sem leiaute novo nem
+  migração — só muda QUANDO o byte 52 sobe. Não medido: queda de energia
+  com página velha de CRC válido (o índice mentiria calado) — fica nos
+  pedidos 533–535.
+
+### 521 — senha longa multiplicava o custo do PBKDF2: negação de serviço pelo tamanho
+
+**Corrigido**
+
+- A chave do HMAC era reduzida por SHA-256 a CADA iteração quando maior que
+  64 B. Medido em debug: login de `root` **3,10 s** com senha de 8 B,
+  **6,38 s** com 256 B, **13,98 s** com 1 KiB; `CREATE USER` com senha de
+  1 MiB não respondia em 300 s. A chave passa a se preparar **uma vez** por
+  derivação (RFC 2104 §4), conferida contra os vetores RFC e Wycheproof
+  (65, 129, 257 B) e contra a versão ingênua (0–300 B, 1/4/64 KiB) —
+  resultado bit a bit igual. Login de 1 KiB caiu de **4,64×** para **0,98×**
+  o custo de 8 B. Teto de senha: **65.535 bytes**, pela média ponderada
+  (PG 65.535, MariaDB sem teto, MySQL 256), recusado ANTES do PBKDF2 em
+  todas as portas, sem ecoar a senha.
+
+### 520 — o login de usuário INEXISTENTE gastava 1.000 iterações do PBKDF2 contra 210.000 do existente
+
+**Corrigido**
+
+- `usuarios.rs` distinguia existe/inativo/inexistente pelo relógio: medido
+  em debug, `root` com senha errada 3,10 s, `nao_existe` 0,03 s. `autenticar`
+  passou a fazer UMA conta para os três casos — a fachada com
+  `ITERACOES_PADRAO`, montada uma vez —, e o caso inativo (que respondia em
+  0,2 ms) entrou junto. Medido pelo SEC com medianas intercaladas: **1.753 /
+  1.667 / 1.621 ms** para existe / inativo / não existe, iguais pela porta
+  de dados e pela web. A enumeração continua aberta por dois caminhos
+  anteriores, que viraram pedido próprio: o sal falso do `desafio` (528) e
+  a varredura linear do `por_login` (529, acima).
+
+### 516 — o elo implícito da cascata ignorava a trava de outra transação
+
+**Corrigido**
+
+- Uma transação com `leitura_repetivel` lia o valor antes e depois do elo de
+  outra transação (5, depois 6) — a garantia do nível declarado não valia
+  para a filha alcançada pela cascata. O `COMMIT` passa a travar a linha de
+  cada filha alcançada pelo elo implícito. A regressão de vivacidade que
+  isso abriu (dois `COMMIT` se travando) fecha pela regra: a transação MAIS
+  NOVA do ciclo cede com `TRANSACAO_ABORTADA`, `repetir:false`, e solta as
+  travas na hora — no molde do wait-die, escolha nossa. Medido: o ciclo de
+  duas transações fechava em **1.870 rodadas (11 s)**; agora fecha na
+  rodada 1. A aresta velha depois de um `SAVEPOINT` fechou no mesmo commit.
+
+### 515 — o elo planejado pelo `empilhar` sobrescrevia o que a própria lista já tinha escrito na filha
+
+**Corrigido**
+
+- O elo era planejado contra o DISCO, não contra a lista da transação em
+  curso. Medido, dado errado: `[filha id 10→11, mãe 5→6]` terminava com
+  id 10; `[filha troca de mãe 5→8, mãe 5→6]` terminava na 6; `[excluir
+  suave a filha, mãe 5→6]` RESSUSCITAVA a filha (mesmo gatilho do 492).
+  Agora o elo é planejado sobre o que a própria lista já escreveu. Medido
+  depois: `[filha id 10→11, mãe 5→6]` sai id 11 código 6; `[filha troca
+  para 8, mãe 5→6]` sai 8; a filha excluída suave não ressuscita mais. O
+  update perdido de OUTRA conexão sobre a filha ficou aberto (537).
+
+### 514 — a FK era conferida ANTES do DEFAULT e da coluna calculada: filha órfã gravada
+
+**Corrigido**
+
+- Um pedido com DEFAULT 7 sem a mãe 7 era gravado, fora e dentro de
+  transação; item com coluna calculada 9 e 8 sem mãe também — fere «só
+  existe filho se o pai existir». A FK passa a se conferir na linha FINAL
+  (`Table::linha_final`, preencher e só então conferir: DEFAULT, calculada,
+  `Sequence`, colunas de sistema); oito caminhos tinham o defeito, cada um
+  vermelho com ele reposto. Aceite automático: os três motores maduros
+  conferem a linha final. FK sobre coluna calculada com `ao_alterar` cascata
+  fechou pelos dois lados — recusada na declaração (como PG, MySQL 8.0 e
+  MariaDB) e, na tabela já existente, passada pela linha final antes da
+  primeira escrita. Preço declarado: a recusa por FK gasta um número da
+  `Sequence`, como nos quatro motores — o adiamento vira pedido 525.
+
+### 512 — disco cheio deixava o `.ndx` com CRC inválido e a marca de sujo em 0
+
+**Corrigido**
+
+- Provado nos dois sentidos: com o segundo fecho no mesmo punho, byte 52 = 0
+  e CRC inválido; só com o `Drop`, byte 52 = 1 e o recado certo. Causa: o
+  `tirar_sujas` esquecia a página que falhou de gravar. Virou `sujas()` +
+  `gravada(n)` — limpa só depois de o `write` voltar —, e a página que
+  o despejo do cache recusa volta suja. Contra o SO (tmpfs 512 KiB, 3/3):
+  byte 52 = 0 com CRC inválido virou byte 52 = 1 com «reparar índice».
+  Conferido no MEIO do lote (tmpfs cheio): na frente, **20.000 de 20.000**
+  chaves achadas; no `HEAD` velho, **0 de 20.000**, CRC inválido, 3/3 cada.
+
+### 510 — backup agendado que falhava não avisava ninguém
+
+**Corrigido**
+
+- A falha só ia a `stderr`; o dono só descobria no dia de restaurar. Passou
+  a avisar pelo carteiro que já cuida da saúde do disco, com silêncio
+  próprio (não pinta o painel do disco). Vermelho: destino dentro de um
+  arquivo comum (`ENOTDIR`), nenhum e-mail em 10 s; com o conserto, o
+  e-mail chega pelo relé falso.
+
+### 507 — nome de tabela com ponto (`a.b`) era aceito na raiz e não abria pelo nome qualificado
+
+**Corrigido**
+
+- `a.b` aparecia na árvore, mas o nome qualificado virava schema `a`,
+  tabela `b` — a tabela existia e ninguém a alcançava. A mesma função única
+  do pedido 368 (abaixo) passa a recusar na declaração qualquer nome que
+  `separar_qualificado` leria como schema e tabela, a mesma que
+  `abrir_qualificada` usa.
+
+### 506 — nome de tabela com sufixo de LETRA (`x_A`) era aceito, sumia da árvore, e o DROP de `x` apagava os arquivos dele
+
+**Corrigido**
+
+- `criar_tabela("x_A")` era aceito; `todas_as_tabelas` devolvia só `["x"]`
+  e `existe_tabela("x_A")` dava falso. Com `x_B` também criada,
+  `excluir_tabela("x")` apagava **16 arquivos**, 8 deles de `x_B` — DROP
+  apagando outra tabela. `exigir_nome_que_volta` (pedido 368) passa a
+  recusar na DECLARAÇÃO, sem perguntar ao disco, os **37 sufixos de letra**
+  da partição alfanumérica, como já fazia com dígitos. A pergunta virou
+  SINTÁTICA (`nome_termina_em_sufixo_de_volume`); `sufixo_e_de_volume`
+  virou fonte única, e o `pertence` do DROP perdeu a cópia. Tabela legada
+  `x_A` continua abrindo pelo nome exato; fecha de vez com o pedido 508.
+
+### 504 — o `SIGABRT` da recuperação por pânico podia deixar core dump com a chave do cofre
+
+**Corrigido**
+
+- Não medido no achado; medido no conserto: core de **14.585.856 bytes**
+  com a senha do cofre 3 vezes, contra **61.440 bytes e 0 vezes**. O `main`
+  escreve `0` em `/proc/self/coredump_filter` na PRIMEIRA linha, antes de
+  qualquer segredo ir à memória. `PR_SET_DUMPABLE` recusado com número
+  (quebraria o `/proc/self/io` da telemetria). `docs/SEGURANCA.md` §27.
+
+### 502 — job ou backup em pânico com a trava na mão derrubava o servidor A CADA ARRANQUE
+
+**Corrigido**
+
+- Job e backup rodam de novo logo na partida; um pânico com a trava na mão
+  derrubava o servidor, que voltava, rodava o job, caía de novo — até o
+  systemd desistir. A corrida passa a rodar numa thread filha, e o `join`
+  devolve o pânico como corrida FALHOU (a thread filha toma a trava, e o
+  reparo do pedido 451 roda nela). Uma LÁPIDE marca a corrida em curso
+  (`docs/FORMATO.md` §22), e o arranque seguinte a conta como a última —
+  convergência dos três motores maduros (pg_cron `MarkPendingRunsAsFailed`;
+  MySQL/MariaDB gravam `LAST_EXECUTED` antes de executar). Vermelho antes:
+  `SIGABRT` em todo arranque, laço de quedas, sem a lápide.
+
+### 501 — `comando_empilhado` não conferia o `;`: cinco pedidos legítimos bloqueavam 127.0.0.1 por 60 minutos
+
+**Corrigido**
+
+- Com `seguranca.contar_injecao_sql` ligado, `LIMIT 0, 2`, `RETURNING` e
+  `EXCEPT` — SQL legítimo de outro dialeto — contavam como comando
+  empilhado; no corpo legítimo do repositório (1.186 textos) acusava **17**,
+  11 deles um comando só. `comando_empilhado` passa a acusar só quando há
+  um `;` seguido de símbolo que não é `;` em QUALQUER lugar da sobra (o
+  léxico já tira `;` de literal e comentário). A primeira versão da
+  integração só olhava o `;` imediato e abria evasão (`... LIMIT 0, 2; DROP
+  TABLE t` deixava de ser acusado); prova com o binário novo:
+  `bloqueios: []`. Interruptor nasce desligado de fábrica.
+
+### 497 — o `acessos.log` gravava o texto do erro sem redigir: literal sem fechar ia inteiro para o log, com dado pessoal dentro
+
+**Corrigido**
+
+- O erro de expressão carregava o pedaço do pedido que gerou o erro
+  (`texto sem fechar na expressao: {texto:?}`), fora da petrea «texto cru
+  se redige ANALISANDO». O texto do erro passa a se redigir na ORIGEM. A
+  senha em qualquer forma — `CREATE USER`, `IDENTIFIED BY`, `ALTER ROLE`,
+  `SET PASSWORD FOR`, comentada, em `/*! */`, `MASTER_PASSWORD=`, literal de
+  conexão, `"PASSWORD"` — é reconhecida pelas letras (`usuario::
+  menciona_senha`, motor único para o Profiler, o job e os quatro ecos da
+  op `sql`); a redação ANALISA (comentário some, literal vira `'***'`) e os
+  `parametros` irmãos do `?` vão junto. Prova pelo soquete: **72 pedidos, 0
+  com a marca no log**; com os defeitos repostos, **20 vazamentos**. Preço
+  declarado: `password_hash` ou comentário com a palavra tapam os literais
+  daquele SQL no Profiler e impedem o job (`docs/SEGURANCA.md` §25).
+
+### 492 — dentro da transação, alterar linha excluída suave a RESSUSCITAVA
+
+**Corrigido**
+
+- `[excluir suave M, atualizar M.nome]` na mesma transação confirmava com M
+  viva; fora de transação, M continuava excluída — dado errado dependendo
+  de estar ou não numa transação. `atualizar` e o upsert dentro da
+  transação passam a ler a marca de exclusão da SOBREPOSIÇÃO, não do disco;
+  o upsert solto também deixou de ressuscitar. Vermelho antes, verde
+  depois, mesma sequência.
+
+### 490 — pânico no meio da cascata do `ao_alterar` deixava filhas na chave velha SEM recusa
+
+**Corrigido**
+
+- Um pânico entre duas linhas filhas, com a mãe já gravada na chave nova,
+  deixava as filhas seguintes apontando para a chave que a mãe já não tem —
+  sem recusa, pior que um `SIGKILL` no mesmo ponto (que deixaria o `.ndx`
+  marcado sujo). A filha fica com a CASCATA EM VOO desde que a mãe vai ao
+  disco até o passo terminar; o `Drop` que a encontra ligada SOBE o byte 52
+  — a tabela recusa até o `reindexar`, como depois de um `SIGKILL`. A
+  primeira receita do parecer (manter a janela aberta pelo passo inteiro)
+  **morreu medida**: recusava toda cascata de três níveis. Completar a
+  cascata solta (sem marca) fica aberto no pedido 540 (acima).
+
+### 485 — o `continuidade-da-replica` flocava: a espera pela réplica caía na primeira resposta «database não existe»
+
+**Corrigido**
+
+- Achado na primeira corrida do `portoes.sh` (pedido 421): 3.030 testes
+  verdes, 1 vermelho. Com o código do `HEAD` (sem o pedido 482) caía
+  **3 vezes em 8**; com o 482, **1 em 5**. A espera passava pelo `exigir`,
+  que entra em pânico em qualquer `ok:false` — e a réplica cria base e
+  tabela de forma assíncrona, então quem perdia a corrida caía na primeira
+  pergunta em vez de esperar. A espera passa a ler por
+  `eventos_de_clientes_se_ja_chegou`, que trata `NAO_ENCONTRADO` como
+  «ainda não chegou». Antes: **4 quedas em 13 corridas**; depois: **20 de
+  20 verdes** na mesma máquina carregada.
+
+### 484 — o quarto estado `⏸` («depois da versão»): visível, e fora da conta do que falta
+
+**Adicionado**
+
+- Decisão A do dono, 24/09/2026 (escopo congelado). O motor único
+  `docs/dossie/pagina-dos-pedidos.py` ganhou `ESTADOS["⏸"]`, a regex da
+  linha passou a sair dos próprios símbolos de `ESTADOS`, e
+  `percentual_falta()` tira o `⏸` do numerador E do denominador. Os três
+  leitores de fora (extrator de tecnologias, PMO e status) passaram a ler
+  do motor — o extrator tinha regex própria e perdia 2 de 483 na prova; os
+  dois `pagina-do-status-do-projeto.py` tinham dicionário fixo de três
+  classes, que daria `KeyError` só por o estado existir. Prova real: sem
+  nenhum `⏸`, contagem, painel e páginas saem **byte a byte iguais** ao de
+  antes (14/14).
+
+### 483 — o `phxsqld` ignorava flag desconhecida e subia como SERVIDOR
+
+**Corrigido**
+
+- Um binário velho, recebendo `--empacotar-config`, não reconhecia a flag
+  e subia o servidor inteiro (quatro threads, porta de dados em `accept()`)
+  usando o `--config` que sobrou — todo comando novo, dado a um binário
+  anterior, virava «subir em produção». O `main.rs` ganhou um registro
+  único de flags (`FLAGS`), fonte tanto da validação
+  (`conferir_argumentos`, primeira coisa do `main`) quanto do `--help`.
+  Argumento desconhecido ou sobrando sai com código != 0. Inventário
+  medido: as **18 flags** que o fonte aceitava continuam aceitas. Antes:
+  `--flag-que-nao-existe --config config.json` subia servidor e criava
+  `dados/`; depois: sai em **~6 ms** sem criar nada. Convergência: os três
+  motores maduros (`postgres`, `mysqld`, `mariadbd`) recusam opção
+  desconhecida na linha de comando.
+
+### 482 — o log dos jobs derivava o nome por `with_extension("log")`: cadastro chamado `*.log` virava seu próprio log
+
+**Corrigido**
+
+- Com `"jobs": "agenda.log"`, o log era o próprio cadastro. Mesmo desenho
+  do defeito já corrigido do temporário `with_extension("tmp")`. `
+  irmao_por_sufixo` (nome INTEIRO + sufixo) virou motor único: `jobs.json`
+  deriva `jobs.json.log`; `"jobs": "agenda.log"` deriva `agenda.log.log`,
+  nunca mais o próprio cadastro. Varredura dos 6 `with_extension(` do
+  workspace: 1 defeito (este). Prova real: com o defeito reposto,
+  `left: .../agenda.log, right: .../agenda.log`; com o conserto, os bytes
+  do cadastro ficam intactos.
+
+### 481 — o CONFLITO do par virava negação de serviço em pasta com sticky bit
+
+**Corrigido**
+
+- Em pasta comum, o CONFLITO não era pior que o comportamento velho; em
+  pasta com sticky bit, um terceiro criando o `.phz` fazia o servidor
+  deixar de subir — o `.phz` velho, com token revogado, era usado como se
+  válido. Bloqueado na primeira volta pela revisão SEC (o root era tratado
+  como terceiro; o sticky bit não era conferido). Regra final: os dois
+  presentes são recusados com `ConfigAmbiguo` (5002) SALVO em pasta com
+  sticky bit E gravável por outros, quando um nome é do uid efetivo ou do
+  root e o outro é de um terceiro; o root nunca é terceiro; «não sei»
+  recusa. Regra por convergência dos três maduros: «pasta que outros
+  gravam é insegura» (9 votos); ignorar com aviso contra recusar deu 5×4
+  (MariaDB contado pelo fonte). Provas pelo SO como uid 65534: o cenário
+  ALTO recusa; o `/tmp` sobe do `.json` e avisa. Segunda revisão SEC: 6
+  mutações derrubadas, **12 de 12 guardas PROVADAS**. Medido: nenhuma
+  instalação documentada põe o config em pasta com sticky bit.
+
+### 477 — a régua `debug-com-segredo.py` não enxergava o tipo `Segredo`
+
+**Corrigido**
+
+- Duas trocas de `Debug` que as guardas repunham passavam pela régua sem
+  mudar o número — `Segredo` não estava na lista de tipos portadores, e o
+  campo dele se chama `valor`. A régua passa a descobrir o tipo portador
+  pelo `impl Debug` a mão ALHEIO que redige um campo (nenhum nome cravado),
+  e lê os campos do próprio tipo portador. Prova conferida na árvore exata
+  do commit: limpa 0 (teto 0, autoteste 30/30); com cada defeito das duas
+  guardas reposto, a régua NOVA sobe a 1 e nomeia `config.rs:1683
+  Cifra.senha` e `config.rs:1288 Segredo.valor`; a régua VELHA fica em 0
+  nas mesmas cópias. `docs/SEGURANCA.md` §16.5.
+
+### 476 — as catracas em Python só rodavam dentro da bateria: um commit passava por suíte e clippy e subia uma catraca sem ninguém ver
+
+**Corrigido**
+
+- O commit `de4ca0a` subiu a `debug-com-segredo.py` de 0 para 1 e o
+  integrador não viu — essa catraca e as do mapa da trava e do mapa das
+  threads só eram chamadas pelo item 0 da bateria. `bancada/catracas/
+  todas.py` acha as réguas por varredura do próprio `--catraca` (**5**
+  hoje) e lista as **33** `TETO_*` do Rust com o teste que as confere. A
+  bateria e o `comunicacao.sh` chamam o comando único; nenhum tem lista
+  própria. Custo das cinco: **~7,6 s**. Prova: `derive(Debug)` reposto nas
+  `Opcoes` reprova nomeando `escritor.rs:61`; régua nova sem veredito
+  aparece `QUEBRADA`; limpa sai 0. Defeito achado na integração e
+  consertado antes do commit: a bateria lia a prosa, não o código de saída,
+  e uma régua caída com motivo longo saía com `falhas` vazio.
+
+### 475 — a bateria completa estava VERMELHA por roteiro velho, e ninguém via
+
+**Corrigido**
+
+- 21 partes passaram, 4 falharam; 3 das 4 não eram defeito do motor. (a)
+  `ponta-a-ponta` esperava 2 colunas de sistema, e são 4 desde o pedido 289
+  — a lista passa a sair da marca `"sistema": true` do esquema devolvido,
+  não de lista digitada; o item 0b vira PULADO nomeando os PIDs vistos,
+  sem ERRO e sem sumir. (b) `alter`: `"padrao": "ativo"` era lido como nome
+  de coluna, não string — o próprio exemplo do MANUAL (linha 532) tinha o
+  mesmo erro; corrigido para `'ativo'`, e a recusa ganhou a dica «texto vai
+  entre aspas simples». (c) `telemetria-cores`: fazia login sem o aperto de
+  mão `cifrar`, que o servidor exige por padrão. Achado extra, defeito do
+  motor: `acrescentar_coluna` lia o mesmo campo `padrao` duas vezes com
+  semânticas diferentes, e `"padrao":"'ativo'"` gravava a linha velha com
+  as aspas DENTRO do dado — agora a linha velha recebe o valor AVALIADO.
+  Buraco de processo: a última corrida registrada da `ponta-a-ponta` era de
+  16/09, antes do pedido 289 — mantê-la honesta pede rodar no fecho de
+  cada rodada.
+
+### 474 — no ARM64 estático, um punho já fechado era lido e virava falha de segmentação
+
+**Corrigido**
+
+- O diagnóstico inicial («o pânico da fronteira C não é capturado no
+  ARM64») **estava errado**: o pânico sempre foi capturado. Quem caía era
+  `phx_tabela_registros` sobre um punho já FECHADO — o `punho::com` lia a
+  etiqueta de dentro da memória liberada; no glibc a página fica mapeada e
+  a leitura «funciona», no musl o `free` devolve a página ao sistema
+  (`munmap`, `SEGV_MAPERR`), e o **musl x86-64 nativo caía igual** — não
+  era o emulador nem o ARM. Seis hipóteses escritas antes de medir; a
+  sexta (punho morto) confirmada com `lldb` no gdbstub do qemu. Conserto:
+  registro de punhos vivos consultado ANTES de tocar a memória, decisão
+  única (`decidir`) para `com`, `conferir` e `liberar`. Prova: com o
+  defeito reposto, musl x86 nativo `SIGSEGV` (rc 139); com o conserto,
+  **29/29** e `provar.sh` **40/40** nas três ligações. Custo medido:
+  `phx_tabela_colunas` de 3–4,5 ns para **18–19 ns** (mapa dividido em 64
+  partes; um mapa único dava 167–256 ns com 4 threads); `phx_ler` e
+  `phx_linha_liberar` dentro do ruído. Guarda
+  `ffi-punho-morto-lido-antes-de-conferir`.
+
+### 471 — PhxZip abrindo arquivo HOSTIL: teto de ciclos padrão em 24, alocação antes de validar, nome repetido aceito
+
+**Corrigido**
+
+- Três defeitos do `phxzip`: teto de ciclos padrão em **24** (~42 s de
+  derivação em debug por bloco), aceito já no `Arquivo::abrir` de um
+  cabeçalho cifrado; `ler_entradas` aloca ~24× o tamanho do cabeçalho antes
+  de validar a contagem (cabeçalho comprimido de poucos KB virava centenas
+  de MB); leitor aceitava nome repetido (a segunda entrada sobrescreveria a
+  primeira ao extrair). `Limites::default()` passa a ser o de entrada NÃO
+  confiável (ciclos 19, `entradas` 65.536, `cabecalho` 8 MiB);
+  `Limites::confiavel()` é ato escrito. Dano medido com o defeito reposto:
+  abrir levava **48,6 s** (com o conserto, **28 µs**); pico de
+  **29.259.867 bytes** para um arquivo de 171 bytes (com o conserto,
+  **275.168**); sob `wine`, `nul.txt` mandava bytes ao dispositivo nulo e
+  `A.txt` sobrescrevia `a.txt`. 5 guardas novas, **11/11** `phxzip-*`
+  PROVADAS.
+
+### 466 — cadastro do DbLink ilegível derrubava o MOTOR inteiro
+
+**Corrigido**
+
+- Arquivo torto, formato maior que o conhecido, ou material de cifra torto
+  subiam pelo `?` do arranque, e o `phxsqld` não subia — por causa de uma
+  ligação remota. `Registro::abrir_ou_trancar`: cadastro ilegível tranca o
+  DbLink (as ops `dblink*` recusam com «TRANCADO» e o caminho), o motor
+  sobe e o arquivo nunca é regravado. Vermelho pelo soquete antes: o
+  processo saía com código 1 sem abrir a porta. Irmão consertado junto:
+  `jobs.json` tranca do mesmo jeito.
+
+### 462 — a recusa da expressão ecoava o texto INTEIRO do `onde` vindo do fio
+
+**Corrigido**
+
+- Já estava resolvido no commit `aca137f` (pedido 497, acima), sem código
+  novo neste lote. `expressao.rs` cita posição e uma janela de dois
+  símbolos com o literal redigido (`JANELA_DO_ERRO`), provado em três
+  testes, incluindo `o_literal_do_pedido_nao_volta_no_erro` (nove
+  caminhos).
+
+### 457 — `NdxFile::sincronizar` não tinha a guarda que o irmão `fechar` tem
+
+**Corrigido**
+
+- Um `.ndx` aberto já sujo saía limpo, sem ter sido reconstruído, porque
+  `sincronizar` gravava `sujo = false` sem checar `precisa_reconstruir`
+  (que `fechar` já checava). Ganhou a mesma guarda `pode_baixar_a_marca`.
+  Prova: um descritor aberto sujo mais `sincronizar` de outro deixava o
+  byte 52 em 0; com a guarda, fica em 1 (guarda
+  `sincronizar-limpa-o-ndx-aberto-sujo`, PROVADA). Consertado junto do 456.
+
+### 456 — um pânico gravava o `.ndx` RASGADO como LIMPO: o pânico era pior que a queda, e o reinício não reparava
+
+**Corrigido**
+
+- O `Drop` do `NdxFile` descarregava as páginas sujas no estado em que o
+  pânico as deixou e gravava o byte 52 em 0. Num `SIGKILL` no mesmo ponto
+  o byte ficaria em 1 e a próxima abertura recusaria, mandando reconstruir;
+  no pânico, a árvore rasgada ficava marcada limpa e a tabela respondia
+  errado, calada — UNIQUE deixava de valer para a chave em voo, e filha
+  viva fora do índice deixava apagar a mãe (a regra primordial). O
+  `NdxFile` ganhou o estado de escrita em voo/interrompida e UMA guarda,
+  `pode_baixar_a_marca`, para `fechar`, `sincronizar` e `Drop` — decidida
+  pelo estado, nunca por `thread::panicking()` (que a fronteira FFI zera
+  mesmo com pânico capturado). O byte 52 sobe ANTES da primeira escrita do
+  `.reg` que o `.ndx` não acompanha. Prova nos dois sentidos: 9 testes em
+  `panico-no-meio-da-escrita.rs` e 1 pela ABI do FFI; com o `Drop` de
+  antes, caíam 6 de 9 nomeando a garantia. 7 guardas novas + 1 reancorada,
+  **8/8 PROVADAS**. Custo medido (`onde-doi`): mediana **6,2 µs** contra
+  **6,1 µs** por linha, faixas se cruzando — dentro do ruído.
+
+### 453 — o erro do `hex_para_bytes` ecoava o valor inteiro de volta ao cliente
+
+**Corrigido**
+
+- `format!("hexadecimal invalido: {hex:?}")` devolvia o texto recebido sem
+  teto de tamanho. Motor novo `error::citar` (`TETO_DA_CITACAO = 48`):
+  valor curto sai citado, longo sai só como tamanho. Medido: um `inserir`
+  com 1 MiB torto numa coluna `Bin` devolvia **1.048.766 bytes** e crescia
+  o `acessos.log` em **1.048.856**; agora **230** e **+320**. Sete irmãos
+  do core consertados pelo mesmo motor (decimal, data, inteiro, UUID,
+  identificador de 256 bits), mais o literal da expressão, 10 caminhos do
+  `json_para_valor` e a hora da agenda do `jobs`. Provador: **9 de 9**
+  PROVADAS.
+
+### 452 — a thread de pulso que morria por pânico não se desmarcava: o par nunca mais era pulsado
+
+**Corrigido**
+
+- Medido com o defeito do 446 reposto: **1 pulso em 4,5 s** com
+  `pulso_s=1`. A marca de vida do pulso sai no `Drop` da guarda; pânico
+  repetido sobe outra thread com recuo 1, 2, 4… **60 s**. Vermelho: sem o
+  `Drop`, **0 conexões em 5 s**; sem o recuo, **9 pânicos em 4,5 s** (3 com
+  ele). Irmãos consertados: `relogio_de_jobs` e `amostrador` diziam «no
+  ar» 3 s depois de morrer.
+
+### 451 — qualquer pânico DENTRO da trava global de dados a deixava envenenada para sempre
+
+**Corrigido**
+
+- Um pânico com a trava global de dados na mão deixava o servidor
+  respondendo `SP000010` (arquivo corrompido) até reiniciar — o `Bin` do
+  pedido 446 era um gatilho, não o único possível. O reparo passa a morar
+  no `Drop` da `TravaMedida` — completa só a marca EM VOO (registrada antes
+  de `gravar_marca`, O(1)) e só roda se a trava foi tomada fora de um
+  desenrolar. Thread de serviço aborta em vez de morrer calada; operação
+  impossível, marca parada e pânico duplo levam a abortar o processo (meio
+  do InnoDB). Convergência dos quatro motores no comportamento (10 de 10):
+  descartar o estado e passar pela recuperação antes do próximo uso — o
+  MEIO diverge (os quatro desfazem; a ordem de digitação proíbe aqui), e
+  se resolve para a frente, como no pedido 426. **Reprovadas**: recuperar a
+  trava sem reparo, e um `HashMap` em vez do disco. Doze guardas novas,
+  piso do catálogo em 309 na árvore combinada com o 481.
+
+### 448 — a chave estrangeira da transação só era conferida DEPOIS da marca
+
+**Corrigido**
+
+- Uma filha sem mãe no MEIO da lista de uma transação parava com as
+  escritas anteriores já gravadas — fere «a transação confirmada é inteira
+  ou não é». O `op_commit` passa a pré-conferir a lista INTEIRA entre
+  `preparar_a_marca` e `gravar_marca`, com visibilidade de PREFIXO (a
+  escrita i vê o disco e as escritas 0..i-1, nunca as de depois — mantém
+  «filho antes do pai» recusado sem `DEFERRABLE`), cobrindo FK nos dois
+  sentidos, a árvore do `ao_alterar` e a unicidade. Recusa com zero
+  aplicado, sem marca, `repetir: false`, nomeando posição, tabela e chave —
+  comportamento do PG (peso 4). Custo medido: alteração de chave com 8.000
+  filhas ia de 740 ms a 92,6 s na primeira entrega; com a sobreposição
+  dividida por `Arc`, **2,76–3,26 s**, linear, **3,6–3,9×** o de antes.
+  NULL não colide em índice único (aceite automático dos quatro motores).
+  Não há volta de versão com dois NULL num índice único.
+
+### 447 — `EstadoCluster::mapa()` engolia a trava envenenada e devolvia o mapa VAZIO
+
+**Corrigido**
+
+- Trava envenenada virava `HashMap` vazio, e `vivos()` passava a ver só o
+  próprio nó, enquanto `lista()` caía em `config.nos` — dois leitores da
+  mesma falha com respostas diferentes. Gravidade medida num cluster de
+  três: com o mapa envenenado, o nó via 1 de 3 e não se promovia, enquanto
+  a outra réplica, vendo 2 de 3, o elegia e esperava por ele — cluster sem
+  master e sem prazo. As SEIS travas do estado do cluster passaram a usar
+  a mesma `TravaDaGuarda` do pedido 436, que recupera e avisa uma vez. A
+  hipótese «mapa vazio promove alguém» **morreu medida**. Nenhum gatilho
+  conhecido envenena essas travas hoje: efeito alto, alcance medido zero.
+
+### 446 — `de_hex` entrava em PÂNICO com texto que corta um caractere UTF-8 no meio
+
+**Corrigido**
+
+- A função fatiava `&t[i..i+2]` por BYTE; um corte no meio de um caractere
+  de vários bytes derrubava a thread (`"a€"`, 4 bytes, par, causava
+  pânico). Conserto no MOTOR: `hash::digito_hex` é a regra única de
+  dígito, e `de_hex` lê byte a byte. Alcance medido pelo soquete: o pedido
+  do pulso derrubava só a conexão; a RESPOSTA do pulso matava a thread de
+  pulso (**1 pulso em 4,5 s** com `pulso_s=1`); a porta web caía com
+  `GET /idiomas?idioma=%€` **sem credencial**; e a cópia
+  `carga::hex_para_bytes` (todo `inserir` de valor `Bin`) entrava em
+  pânico DENTRO da trava global de dados — qualquer usuário com direito de
+  inserir parava a base de todos até reiniciar. As cinco cópias viraram
+  chamada ao motor (`hash`, `carga`, `json`, `uuid`, `http`). Provador:
+  **8/8 PROVADAS**. Achados que viraram pedido: 451, 452, 453 (acima).
+
+### 443 — o DbLink MySQL reservava `quantas` vindo do par, até 2^64, e lia quadro sem teto
+
+**Corrigido**
+
+- `dblink/mysql.rs` fazia `Vec::with_capacity(quantas)` com `quantas` vindo
+  do protocolo do par, sobre fio em claro — abortava o processo inteiro.
+  `TETO_DE_COLUNAS = 4096` (limite de fábrica do próprio MySQL) antes do
+  `with_capacity`, e teto sobre o ACUMULADO das continuações no
+  `ler_quadro`, reusando o `TETO_DO_REGISTRO` do motor. Provado por
+  soquete: sem o teto de colunas, o teste abortava em `capacity overflow`;
+  sem o do quadro, o servidor falso completava com `Ok`. Guardas
+  `dblink-mysql-sem-teto-de-colunas` e
+  `dblink-mysql-sem-teto-do-quadro-acumulado`.
+
+### 442 — o teto de tamanho de linha era decidido com a ficha VELHA do usuário
+
+**Corrigido**
+
+- `teto_da_linha` lia a sessão antes do bloqueio e nunca se refrescava — a
+  conexão de um usuário já **excluído** ainda mandava 1 MiB com `ok:true`.
+  Agravante medido: a linha anterior ficava residente depois da resposta
+  (VmRSS de 7.988 a **73.680 kB** ocioso após um ping de 64 MiB). O teto
+  passa a ser decidido quando a linha ultrapassa o `TETO_DO_APERTO`, com a
+  ficha refrescada nesse instante. Medido depois: usuário excluído com
+  conexão aberta mandando 1 MiB agora dá `LIMITE_EXCEDIDO` com teto de
+  65.536; VmRSS ocioso depois de um ping de 64 MiB caiu de
+  **13.640 → 80.252 kB** para **13.592 → 14.648 kB**. Hipótese que morreu,
+  medida: refrescar a ficha ANTES de armar a leitura não bastava — os
+  testes de soquete continuavam caindo, porque a espera inteira usava o
+  teto decidido antes dela.
+
+### 441 — a RESPOSTA do pulso rebaixava o master sem prova
+
+**Corrigido**
+
+- O laço que MANDA pulsos lia a resposta sem a pré-checagem que o caminho
+  do PEDIDO já tinha (id fora da lista, id deste próprio nó) — um nó
+  respondendo `{"id":"fantasma","papel":"master","epoca":1}` fazia o
+  master virar réplica, gravado em `cluster.estado.json` (medido por
+  soquete). O crivo saiu do chamador e entrou no MOTOR
+  (`conferir_identidade`), antes do ramo sem prova; o laço que manda
+  pulsos herdou o crivo sem uma linha própria. Vermelhos com o defeito
+  reposto: `a_resposta_de_um_no_fantasma_nao_rebaixa_o_master` e
+  `a_resposta_com_o_id_deste_no_nao_rebaixa_o_master`.
+
+### 439 — o cliente SMTP lia linha de soquete SEM teto de tamanho
+
+**Corrigido**
+
+- `email.rs` lia com `read_line` fora do `Canal`, com teto de TEMPO e
+  nenhum de TAMANHO — o sexto sítio fora do motor único, que o pedido 434
+  não tinha alcançado. Passou a ler pelo `Canal::ler_ate` com o
+  `TETO_DO_APERTO` (RFC 5321 limita a linha a 512 octetos). Medido com relé
+  falso: numa linha de 8 MiB o cliente tirava **8.388.610 bytes** do
+  soquete e o erro tinha **8.388.651**; agora tira **73.728** e o erro tem
+  **144**. Nasceu a catraca `TETO_LEITURA_FORA_DO_CANAL = 0`, no número
+  medido do dia (1), descida a 0 no mesmo conserto.
+
+### 438 — o `truncado` da composição existia no protocolo e nenhuma tela o mostrava
+
+**Corrigido**
+
+- O servidor dizia que o sub-pedido parou no teto (`"truncado": true`),
+  mas nem o console SQL nem o driver ODBC liam o campo — resultado parcial
+  com cara de inteiro. Medido: 7 sítios com `truncado` no servidor;
+  juntar/unir/exportar/dblink já o liam na tela. ODBC:
+  `SQL_SUCCESS_WITH_INFO`/`01000` em `SQLExecute`/`SQLExecDirect` — nunca
+  `01004`, reservado pelo padrão a truncamento de VALOR de coluna. Tela:
+  aviso «Resultado cortado:» como primeira linha da caixa, chave
+  `tela.ia_res_truncado` nos seis idiomas. Prova nos dois sentidos,
+  unitária (ODBC) e por Playwright contra `phxsqld` de verdade. `diferencas`
+  tem o mesmo campo sem tela que o leia — fora do escopo.
+
+### 426 — o `COMMIT` que esbarrava numa migração saía PELA METADE, mandava REPETIR, e o caminho de recuperação era CÓDIGO MORTO
+
+**Corrigido**
+
+- Medido nos três motores que rodam nesta máquina: no PG e no MySQL o DDL
+  ESPERA a transação (4,10 s e 4,03 s); o SQLite recusa com `database is
+  locked` — nenhum devolve «o COMMIT falhou» tendo aplicado parte. O
+  PhxSql era o único dos cinco em que a metade acontecia sem ninguém pedir
+  e era anunciada como falha. `transacao_na_vizinhanca` passa a olhar a
+  vizinhança inteira por chave estrangeira (a migração pedida na MÃE
+  também reproduzia o defeito, sem corrida nenhuma) — pré-checagem COM a
+  trava global na mão. Sem `repetir` com escrita aplicada, em duas
+  camadas: `empilhar` recusa `EM_MIGRACAO` na vizinha (zero aplicado,
+  transação continua `ACTIVE`); depois da marca, a resposta diz o que
+  ficou. Divergência declarada: completa com a MESMA trava (soltar e
+  retomar abriria fresta). Portões na árvore das duas frentes: clippy 0,
+  suíte **2.861/0/6**. Recusado: a migração que ESPERA — a catraca
+  `rede-ou-espera` está em 0. Lacunas viraram pedidos 448 e 449.
+
+### 423 — `docs/CATRACAS.md:885` trazia «24 \| 24» digitado à mão, e envelheceu na mesma hora em que o teto desceu para 23
+
+**Corrigido**
+
+- O defeito não era o número errado: era um número de catraca existir
+  digitado em prosa quando o gerador já o imprime. O «24 \| 24» virou
+  referência à fonte (a tupla `alcancam-fsync-2` em `mapa-da-trava.py`)
+  mais o número medido: **23**, igual ao `mapa-da-trava.py --numeros`. O
+  histórico 24 → 23 (pedido 421) ficou registrado na célula.
+
+### 421 — suíte verde não é o mesmo que portões verdes: as catracas em Python ficavam FORA do `cargo test --workspace`
+
+**Corrigido**
+
+- Um commit passou por `fmt`, `clippy` e **2.739 testes verdes** e foi
+  empurrado com uma catraca reprovada (`alcancam-fsync-2` 25, teto 24) —
+  os conferidores em Rust rodam dentro do `cargo test`, os guardas em
+  Python (mapa da trava, portão dos geradores, medidores) moravam fora.
+  `portoes.sh`, na raiz, roda `fmt --check`, `clippy -D warnings`,
+  `test --workspace` e `bancada/catracas/todas.py` (pedido 476), sempre os
+  quatro, com UM código de saída só. `--raiz DIR` roda na árvore exata.
+  Prova real: com a catraca reprovada, o portão único fica VERMELHO mesmo
+  com a suíte inteira verde. `docs/CATRACAS.md` §19.
+
+### 419 — o sub-pedido que parava EM `max_linhas` publicava resultado parcial calado
+
+**Corrigido**
+
+- Achado inicial (`>` onde devia acusar empate) revelou-se código morto:
+  nenhuma das cinco operações que devolvem linhas passa do teto, porque
+  todas recortam por `limite()`. O `>=` prescrito era RECUSA NOVA contra
+  quem cabe — medido e **recusado**: `LIMITE_EXCEDIDO` numa tabela de 2
+  linhas sob teto 2. O defeito real, maior: `linhas_do_sub_pedido`
+  descartava o aviso de corte em **seis** chamadores (`de`, `juntar[].de`,
+  `escalar[].de`, `existe[].de`, `em[].de`, o braço do `unir`), e o `unir`
+  publicava `truncado: false` com um braço cortado pela metade. `parou_no_
+  teto` traduz o dialeto que cada op já tinha numa função só. Prova real:
+  antes, **9 de 9 vermelhos**; com a propagação removida, **5 de 5**
+  vermelhos (os cinco sítios); depois, **11 de 11 verdes**. Portões:
+  clippy 0, **2.835 testes** (0 falhas). `docs/JUNCOES.md`, `MANUAL.txt`.
+
+### 389 — o `zelador.sh` nunca limpava o `target/` da árvore principal: ele se achava a si mesmo
+
+**Corrigido**
+
+- `em_uso()` varria `/proc/[0-9]*/cwd` sem excluir o próprio PID nem a
+  linhagem — o `cwd` do próprio zelador é a raiz do repositório, então a
+  checagem casava sempre e recusava tocar no target mesmo com a máquina
+  parada. Liberado na corrida anterior: **0 MiB**, de **7,1 G** de
+  `target/debug`. `em_uso` passa a medir a linhagem uma vez (ancestral não
+  conta, descendente conta), no molde do `esta-medindo.sh`. Prova nos dois
+  sentidos: `bancada/zelador/prova-do-zelador.sh`, caso 1 (árvore ociosa
+  libera) e caso 2 (vizinho vivo com `cwd` na árvore recusa); com a
+  linhagem apagada, o caso 1 reprova acusando o PID do próprio zelador. E o
+  que a medição desmentiu: o conserto sozinho não libera nada nesta
+  máquina — o `cwd` da raiz é sempre de alguém; quem libera é o corte do
+  pedido 317.
+
+### 383 — `CATRACAS.md` §15.2 dizia «todas PROVADAS» sem veredito para NOVE guardas
+
+**Corrigido**
+
+- `bancada/guardas/catalogo.py` tinha **199** entradas e
+  `ultima-corrida.json` carregava **154** vereditos — 46 nunca julgadas
+  pelo provador oficial, entre elas as nove que a §15.2 declarava
+  provadas. Nomeada e provada não são a mesma palavra. O documento passou
+  a dizer que as nove estão «sem veredito no registro da máquina», com o
+  comando para provar. Medido de novo: das nove, **0** tem veredito
+  (nenhuma quebrada — nunca julgadas). Provar as nove fica no pedido 263.
+
+### 382 — `docs/CIFRA-DO-FIO.md` listava TRÊS saídas quando o censo tinha QUATRO, e duas seções se contradiziam
+
+**Corrigido**
+
+- O DbLink não aparecia em nenhuma das três seções (§5, §10, §13); a
+  §13 listava três saídas do protocolo quando o censo media **7 sítios**
+  de `TcpStream::connect*`, **3 implementações** do aperto e **4 saídas**.
+  Divergência interna: §345 dizia que o `Remoto` não cifra; §10 e §13
+  diziam que ele nasce ligado. Censo refeito: §5 ganhou `Remoto` e o
+  DbLink para outro PhxSql (e deixou de dizer que o `Remoto` não cifra —
+  o código cifra, `servidor.rs:556`); §10 ganhou o DbLink; §13 ganhou a
+  tabela com arquivo:linha e o comando que refaz o censo.
+
+### 369 — `baldes[].registros` estava na CLASSE DE DIREITO errada
+
+**Corrigido**
+
+- `op_esquema` publicava `baldes[].registros` — agregado do DADO — dentro
+  da única classe isenta da peneira do direito por coluna
+  (`PorColuna::Estrutura`), vazando o histograma da coluna particionada.
+  `direito_coluna::peneirar_baldes` tira `registros` de cada balde quando
+  a coluna da partição está negada; `letra`, `arquivo` e `primeiro_rowid`
+  ficam, porque não são dado. Vermelho medido antes: `"registros":1`
+  vazando no balde «A» com `cidade` negada. `docs/SEGURANCA.md` §11.3.
+  Guarda `esquema-vaza-o-histograma-da-particao`.
+
+### 368 — o `.lgpd` não tinha expurgo
+
+**Adicionado**
+
+- A trilha crescia para sempre, com a chave primária em texto em cada
+  registro. Decisão do dono, 24/09/2026: expurgo por volume inteiro depois
+  de **5 anos** (prazo configurável) OU a pedido do administrador, a
+  qualquer momento — sem reescrever arquivo append-only, derrubando a
+  janela mais velha inteira (o mesmo corte que os diários já usam). O
+  relógio `retencao-trilha` (`lgpd.retencao_anos`, padrão 5, 0 desliga) e a
+  op `expurgar_trilha` (`Administrar`, do nó, roda em réplica e
+  somente-leitura); rastro no `.reason` tipo 4. Formato B: ativo `<t>.lgpd`,
+  fechados `<t>_NNN.lgpd` sem teto (acabou o teto de volumes da trilha);
+  fecha por `lgpd.volume_mib` 64, `lgpd.volume_dias` 30, ou a pedido. Duas
+  revisões do papel C endureceram: nome de tabela terminado em `_<dígitos>`
+  recusado nas quatro portas; ativo de nascimento interrompido abre como
+  ausente; expurgo faz nascer o ativo que falta antes de apagar.
+
+### 337 — o parecer externo corrigia o raciocínio do ACID e trazia argumento novo contra a razão da pétrea de zero dependências
+
+**Mudado**
+
+- O argumento antigo — «o que derruba *ACID compliant* é só o I, e só por
+  padrão, porque o isolamento sem pedir é `READ COMMITTED`» — **estava
+  errado**: o PostgreSQL se declara ACID com o mesmo padrão. Decisão do
+  dono, 24/09/2026: o parágrafo da marca no `CLAUDE.md` foi reescrito — o
+  teste certo é «garantias do nível declarado, com prova» e «invariantes
+  preservados, inclusive na réplica». A conclusão prática não mudou: não
+  se escreve *ACID compliant* sem prova de cada letra, e `SERIALIZABLE`
+  não se reivindica sem prova. A metade sobre a razão de zero dependências
+  já tinha sido corrigida em 23/09.
+
+### 332 — o `extrair.py` contava `docs/**.md`, e `docs/TECNOLOGIAS.md` é um deles: o gerador realimentava a si mesmo
+
+**Corrigido**
+
+- Duas corridas seguidas do `extrair.py` davam números diferentes —
+  **100.342** depois **100.343** linhas de Markdown — porque o próprio
+  arquivo que ele escreve mora em `docs/`, e a 1ª corrida já tinha lido a
+  versão final gravada por ela mesma. Duplicado do pedido 404, que já
+  consertou: `docs/tecnologias/extrair.py` exclui o próprio
+  `docs/TECNOLOGIAS.md` da contagem de Markdown.
+
+### 302 — `cluster.rs` tinha ZERO entradas no catálogo de guardas: um ARQUIVO inteiro nunca tinha entrado
+
+**Corrigido**
+
+- `grep '"arquivo": ".*cluster.rs"' bancada/guardas/catalogo.py` devolvia
+  **zero**, apesar de o arquivo ter a eleição (211), o escalonamento a
+  quente (217) e os quatro modos A–D (214), todos com testes reais. Hoje
+  `cluster.rs` tem **12 menções** no catálogo de guardas. A catraca por
+  arquivo que o QA sugeriu é endurecimento, não defeito, e fica fora da
+  versão.
+
+### 298 — a garantia otimista (`versao`) do `.log` da réplica não conferia o carimbo e a origem: unidirecional lavava os dois
+
+**Corrigido**
+
+- `aplicar_lote_da_replica` chamava `aplicar_evento` seco, e o evento local
+  nascia com `agora_ms()` e `origem = 0` — o PITR já fazia o contrário e
+  estava certo (`forcar_proximo_evento` antes de aplicar). Numa topologia
+  mista `A → B` unidirecional, `B ↔ C` bidirecional, o carimbo nascido em
+  A era lavado no salto para B, e o conflito em C passava a ser decidido
+  pela hora em que B sincronizou. `aplicar_lote_da_replica` passa a chamar
+  `tabela.forcar_proximo_evento(e.carimbo_ms, e.origem)` antes de aplicar,
+  a mesma regra do PITR. Conferido por `grep` em `HEAD` na triagem do
+  escopo (entrou no commit `49a3af7`, 17/09).
+
+### 296 — a `versao` viajava na imagem da réplica e o leitor não tinha o campo: nunca era conferida
+
+**Corrigido**
+
+- `versao` era enviada mas o leitor da réplica não tinha o campo — «por
+  construção, nunca conferida». O leitor ganhou o campo
+  (`replica.rs:373`/`:484`), e `diario_local_continua` compara
+  `m.versao == dele.versao` e acusa a divergência (entrou no commit
+  `49a3af7`, 17/09, «a réplica acusa a tabela recriada»). Conferido por
+  `grep` em `HEAD` na triagem do escopo.
+
+### 276 — o `catalogo.rs` declarava `token` onde a operação lê `token_remoto`
+
+**Corrigido**
+
+- `replicacao_testar` declarava `token` (`catalogo.rs:1499`, o portão 1),
+  enquanto o servidor lê `token_remoto` (`servidor.rs:21994`) —
+  `dblink_salvar` já declarava `senha_env`/`token_remoto_env` desde o
+  pedido 372. `replicacao_testar` passa a declarar `token_remoto` como o
+  campo que a `origem_da_sonda` lê primeiro, e `token` como apelido de
+  compatibilidade. Teste
+  `replicacao_testar_declara_o_campo_que_a_sonda_le_primeiro` lê o fonte
+  da sonda e reprova com `token_remoto` tirado do catálogo. Guarda
+  `catalogo-so-declara-token-nao-token-remoto`.
+
+### 239 — isolamento acima de READ COMMITTED e TLS no transporte: as duas metades fecharam
+
+**Mudado**
+
+- **Isolamento**: fechou em 16/09 pela via (b) do `docs/SOMBRA.md` §5b —
+  leitura repetível pela trava, pedida (`"leitura_repetivel": true`),
+  sem MVCC. `SERIALIZABLE` continua recusado e não se reivindica. **TLS**:
+  decisão do dono de 17/09/2026 — o PROXY que termina TLS é a resposta
+  oficial (`docs/SEGURANCA.md` §7.1); escrever TLS 1.3 aqui e abrir exceção
+  na pétrea de zero dependências ficam RECUSADOS, com o motivo escrito.
+
 ### 491 — excluir o chefe que tem subordinado na mesma tabela é recusado
 
 **Corrigido**
