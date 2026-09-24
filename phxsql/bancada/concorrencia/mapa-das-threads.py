@@ -85,6 +85,17 @@ JANELA_ANTES, JANELA_DEPOIS = 6, 4
 # vazio e sitio sem teto, e reprova a catraca. `agulha` e o texto que tem de
 # aparecer na janela em volta do spawn, no fonte ORIGINAL (com literais).
 CATALOGO = [
+    # ------------------------------------------------ PhxZip web (pedido 454)
+    {
+        "arquivo": "crates/phxzip-web/src/lib.rs",
+        "agulha": "std::thread::spawn(move || {",
+        "nome": "phxzip-web: uma por conexao",
+        "teto": "`Config::max_conexoes` (32) pelo `Semaforo vagas` do core: "
+                "`tentar()` no `accept`, 503 IMEDIATO sem subir thread; a "
+                "`Permissao` viaja para dentro da thread e morre no `Drop`, "
+                "inclusive em panico. Processo proprio (`phxzipweb`), fora do "
+                "`telemetria::subir` do servidor do PhxSql.",
+    },
     # ------------------------------------------------ o mecanismo, um so
     {
         "arquivo": "crates/phxsql-server/src/telemetria.rs",

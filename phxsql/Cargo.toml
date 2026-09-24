@@ -5,6 +5,7 @@ members = [
     "crates/phxsql-core",
     "crates/phxzip",
     "crates/phxzip-cmd",
+    "crates/phxzip-web",
     "crates/phxsql-store",
     "crates/phxsql-sql",
     "crates/phxsql-cli",

@@ -169,27 +169,75 @@ impl Pedido {
 /// muda e so QUANDO a recusa acontece -- antes de reservar a memoria, em vez
 /// de depois.
 pub fn ler_pedido(fluxo: &TcpStream) -> Option<Pedido> {
+    let b = ler_pedido_binario(fluxo, MAX_CORPO).ok()?;
+    Some(Pedido {
+        metodo: b.metodo,
+        caminho: b.caminho,
+        consulta: b.consulta,
+        cabecalhos: b.cabecalhos,
+        corpo: String::from_utf8_lossy(&b.corpo).into_owned(),
+    })
+}
+
+/// Um pedido com o corpo em BYTES -- para quem recebe arquivo (o PhxZip web
+/// recebe um `.7z`), onde o `from_utf8_lossy` do [`Pedido`] trocaria cada
+/// byte invalido por U+FFFD e estragaria o arquivo calado.
+#[derive(Debug)]
+pub struct PedidoBinario {
+    pub metodo: String,
+    pub caminho: String,
+    pub consulta: String,
+    pub cabecalhos: HashMap<String, String>,
+    pub corpo: Vec<u8>,
+}
+
+impl PedidoBinario {
+    pub fn cabecalho(&self, nome: &str) -> Option<&str> {
+        self.cabecalhos
+            .get(&nome.to_lowercase())
+            .map(String::as_str)
+    }
+}
+
+/// Por que um pedido nao foi lido.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FalhaDoPedido {
+    /// Conexao fechada, cabecalho torto ou acima de [`MAX_CABECALHO`].
+    Ilegivel,
+    /// `Content-Length` acima do teto de quem chamou -- recusado ANTES de
+    /// reservar a memoria, e por isso quem chama ainda pode responder 413.
+    Grande,
+}
+
+/// O leitor de pedido da casa, com o teto do corpo dado por quem chama. O
+/// [`ler_pedido`] e este mesmo leitor com o teto de 4 MiB da interface: um
+/// motor so, e o `take` do [`Canal`] protegendo as duas portas.
+pub fn ler_pedido_binario(
+    fluxo: &TcpStream,
+    max_corpo: usize,
+) -> Result<PedidoBinario, FalhaDoPedido> {
+    use FalhaDoPedido::{Grande, Ilegivel};
     let mut leitor = BufReader::new(fluxo);
     let mut canal = Canal::Claro;
 
     let linha = match canal.ler_ate(&mut leitor, MAX_CABECALHO as u64) {
         Ok(Recebido::Linha(l)) => l,
-        _ => return None,
+        _ => return Err(Ilegivel),
     };
     let mut partes = linha.split_whitespace();
-    let metodo = partes.next()?.to_string();
-    let caminho = partes.next()?.to_string();
+    let metodo = partes.next().ok_or(Ilegivel)?.to_string();
+    let caminho = partes.next().ok_or(Ilegivel)?.to_string();
 
     let mut cabecalhos = HashMap::new();
     let mut lidos = linha.len();
     loop {
         let l = match canal.ler_ate(&mut leitor, MAX_CABECALHO as u64) {
             Ok(Recebido::Linha(l)) => l,
-            _ => return None,
+            _ => return Err(Ilegivel),
         };
         lidos += l.len();
         if lidos > MAX_CABECALHO {
-            return None;
+            return Err(Ilegivel);
         }
         let t = l.trim_end();
         if t.is_empty() {
@@ -204,24 +252,24 @@ pub fn ler_pedido(fluxo: &TcpStream) -> Option<Pedido> {
         .get("content-length")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
-    if tamanho > MAX_CORPO {
-        return None;
+    if tamanho > max_corpo {
+        return Err(Grande);
     }
     let mut corpo = vec![0u8; tamanho];
     if tamanho > 0 && leitor.read_exact(&mut corpo).is_err() {
-        return None;
+        return Err(Ilegivel);
     }
 
     let (so_caminho, consulta) = match caminho.split_once('?') {
         Some((c, q)) => (c.to_string(), q.to_string()),
         None => (caminho.clone(), String::new()),
     };
-    Some(Pedido {
+    Ok(PedidoBinario {
         metodo,
         caminho: so_caminho,
         consulta,
         cabecalhos,
-        corpo: String::from_utf8_lossy(&corpo).into_owned(),
+        corpo,
     })
 }
 
@@ -288,14 +336,8 @@ pub fn responder_cheio(fluxo: &mut TcpStream, segundos: u64, corpo: &str) -> std
     Ok(())
 }
 
-fn montar_com_folga_e_extras(
-    codigo: u16,
-    tipo: &str,
-    corpo: &str,
-    externo: bool,
-    extras: &str,
-) -> String {
-    let motivo = match codigo {
+fn motivo_de(codigo: u16) -> &'static str {
+    match codigo {
         200 => "OK",
         // O MCP sobre HTTP responde 202 sem corpo a uma notificacao (mensagem
         // sem `id`): responder qualquer outra coisa quebra o cliente logo no
@@ -315,22 +357,46 @@ fn montar_com_folga_e_extras(
         499 => "Client Closed Request",
         503 => "Service Unavailable",
         _ => "Error",
-    };
-    // Cabecalhos de seguranca: a pagina nao vai para dentro de um quadro
-    // alheio, nao adivinha tipo de conteudo e so conversa com esta origem.
-    //
-    // A unica coisa que ela busca fora e a fonte da marca, e so no HTML --
-    // por isso a folga do `style-src`/`font-src` nao existe nas respostas de
-    // dados. Servidor sem internet: a fonte nao carrega, a pilha de reserva
-    // assume e a pagina continua inteira.
-    //
-    // O `connect-src` da PAGINA ganhou uma segunda origem pelo mesmo desenho:
-    // a integracao com a Claude chama `api.anthropic.com` do navegador, porque
-    // o servidor nao tem TLS para chamar no lugar dele. Sem esta linha a
-    // chamada morreria antes de sair, e sem erro visivel. A folga e de UMA
-    // origem, so no HTML e so para `connect-src`: as respostas de dados
-    // continuam com `connect-src 'self'`, e nenhum `script-src` novo entra --
-    // nenhum script de fora roda nesta pagina.
+    }
+}
+
+fn montar_com_folga_e_extras(
+    codigo: u16,
+    tipo: &str,
+    corpo: &str,
+    externo: bool,
+    extras: &str,
+) -> String {
+    let motivo = motivo_de(codigo);
+    format!(
+        "{}{corpo}",
+        cabecalho_de_resposta(
+            codigo,
+            motivo,
+            tipo,
+            corpo.len(),
+            estilo_e_conexao(externo),
+            extras
+        )
+    )
+}
+
+// Cabecalhos de seguranca: a pagina nao vai para dentro de um quadro
+// alheio, nao adivinha tipo de conteudo e so conversa com esta origem.
+//
+// A unica coisa que ela busca fora e a fonte da marca, e so no HTML --
+// por isso a folga do `style-src`/`font-src` nao existe nas respostas de
+// dados. Servidor sem internet: a fonte nao carrega, a pilha de reserva
+// assume e a pagina continua inteira.
+//
+// O `connect-src` da PAGINA ganhou uma segunda origem pelo mesmo desenho:
+// a integracao com a Claude chama `api.anthropic.com` do navegador, porque
+// o servidor nao tem TLS para chamar no lugar dele. Sem esta linha a
+// chamada morreria antes de sair, e sem erro visivel. A folga e de UMA
+// origem, so no HTML e so para `connect-src`: as respostas de dados
+// continuam com `connect-src 'self'`, e nenhum `script-src` novo entra --
+// nenhum script de fora roda nesta pagina.
+fn estilo_e_conexao(externo: bool) -> (&'static str, String) {
     let estilo = if externo {
         "style-src 'unsafe-inline' https://fonts.googleapis.com; \
          font-src https://fonts.gstatic.com; "
@@ -342,10 +408,23 @@ fn montar_com_folga_e_extras(
     } else {
         "connect-src 'self'; ".to_string()
     };
+    (estilo, conexao)
+}
+
+/// A linha de estado e os cabecalhos de seguranca -- UM lugar so, para a
+/// resposta de texto e a de bytes nunca divergirem num cabecalho.
+fn cabecalho_de_resposta(
+    codigo: u16,
+    motivo: &str,
+    tipo: &str,
+    tamanho: usize,
+    (estilo, conexao): (&str, String),
+    extras: &str,
+) -> String {
     format!(
         "HTTP/1.1 {codigo} {motivo}\r\n\
          Content-Type: {tipo}\r\n\
-         Content-Length: {}\r\n\
+         Content-Length: {tamanho}\r\n\
          Cache-Control: no-store\r\n\
          X-Content-Type-Options: nosniff\r\n\
          X-Frame-Options: DENY\r\n\
@@ -356,9 +435,42 @@ fn montar_com_folga_e_extras(
          frame-ancestors 'none'; base-uri 'none'\r\n\
          {extras}\
          Connection: close\r\n\
-         \r\n{corpo}",
-        corpo.len()
+         \r\n"
     )
+}
+
+/// Resposta de BYTES (um arquivo que se baixa), com os mesmos cabecalhos de
+/// seguranca e a politica fechada. `extras` sao linhas `Nome: valor\r\n`.
+pub fn responder_bytes(
+    fluxo: &mut TcpStream,
+    codigo: u16,
+    tipo: &str,
+    corpo: &[u8],
+    extras: &str,
+) -> std::io::Result<()> {
+    let cab = cabecalho_de_resposta(
+        codigo,
+        motivo_de(codigo),
+        tipo,
+        corpo.len(),
+        estilo_e_conexao(false),
+        extras,
+    );
+    fluxo.write_all(cab.as_bytes())?;
+    fluxo.write_all(corpo)?;
+    fluxo.flush()
+}
+
+/// Texto com cabecalhos extras (um `Set-Cookie`, por exemplo), politica fechada.
+pub fn responder_com_extras(
+    fluxo: &mut TcpStream,
+    codigo: u16,
+    tipo: &str,
+    corpo: &str,
+    extras: &str,
+) -> std::io::Result<()> {
+    fluxo.write_all(montar_com_folga_e_extras(codigo, tipo, corpo, false, extras).as_bytes())?;
+    fluxo.flush()
 }
 
 /// Le e joga fora o que o cliente ainda estava mandando, antes de fechar.

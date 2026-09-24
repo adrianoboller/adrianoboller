@@ -1,0 +1,23 @@
+[package]
+name = "phxzip-web"
+description = "PhxZip web: o 7z no navegador, numa porta de socket (4000 por padrao)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+name = "phxzip_web"
+path = "src/lib.rs"
+
+[[bin]]
+name = "phxzipweb"
+path = "src/main.rs"
+
+[dependencies]
+phxzip.workspace = true
+phxsql-core.workspace = true
+# Pelo HTTP (`http::ler_pedido_binario`, `responder_*`) e pelas sessoes: o
+# mesmo motor da interface do PhxSql, e nao um segundo leitor de pedido
+# (pedido 454; lei «funcao e comando vem do mesmo motor»).
+phxsql-server.workspace = true

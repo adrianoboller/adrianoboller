@@ -1,7 +1,8 @@
 # PhxZip — o 7-Zip em Rust
 
 Pedidos 450 e 454. Crates: `crates/phxzip` (motor, `no_std`),
-`crates/phxzip-cmd` (o `phxzipcmd` de terminal) e `crates/phxhash` (CRC-32 e
+`crates/phxzip-cmd` (o `phxzipcmd` de terminal), `crates/phxzip-web` (o
+`phxzipweb`, porta 4000) e `crates/phxhash` (CRC-32 e
 SHA-256 que saíram do `phxsql-core` para o motor rodar sem sistema
 operacional; o core os reexporta, nenhum caminho de chamada mudou).
 
@@ -17,7 +18,7 @@ operacional; o core os reexporta, nenhum caminho de chamada mudou).
 | zip-slip no motor (`Entrada::caminho`, `caminho_seguro`) | feito | caminho absoluto gravado pelo 7-Zip (`-spf`) recusado |
 | tetos (`Limites`: pasta, entradas, cabeçalho; ciclos do 7zAES ≤ 24) | feito | teto da pasta recusa antes de alocar |
 | `phxzipcmd` a / x / l / t, `-p-` pela entrada padrão | feito | extração recusa ligação simbólica e ligação já existente no destino |
-| servidor web numa porta de socket | **não feito** | frente seguinte (pedido 454) |
+| servidor web numa porta de socket (`phxzipweb`, 4000, login opcional) | feito | 5 testes pelo soquete; vídeo `testes-web/video-phxzip.mjs` |
 | ligar ao `config.json` como `.phz` | **não feito** | etapa 2 do pedido 450, espera o 372 |
 
 ## 2. Alvos
@@ -76,7 +77,45 @@ profundidade que a árvore não paga.
 - **«Senha errada ou arquivo corrompido»**, nunca só «senha errada»: o
   AES-CBC do 7z não tem etiqueta, os dois casos não se distinguem.
 
-## 5. Como rodar a prova
+## 5. A porta web
+
+```bash
+cargo build --release -p phxzip-web
+target/release/phxzipweb                                   # http://localhost:4000, sem login
+PHXZIP_WEB_SENHA='...' target/release/phxzipweb --usuario adriano   # login exigido
+```
+
+- **Porta 4000** sai de uma constante só (`PORTA_PADRAO`); `--porta` troca.
+  Nasce presa a `127.0.0.1`; `--endereco` abre, e é escolha escrita.
+- **Login pedido, não imposto:** sem `--usuario`, ninguém digita senha. Com
+  ele, toda rota de arquivo exige sessão (cookie `HttpOnly`,
+  `SameSite=Strict`, 30 min). A senha do login vem de `PHXZIP_WEB_SENHA` ou
+  `--senha-` (entrada padrão), nunca da linha de comando; o servidor guarda
+  só o hash PBKDF2. Login errado custa 0,5 s.
+- **CSRF:** toda rota POST exige `X-PhxZip: 1`.
+- **Teto:** corpo acima de `--max-mib` (256) é 413 antes de reservar memória.
+- O HTTP é o do `phxsql-server::http` — ganhou `ler_pedido_binario` e
+  `responder_bytes`, e o `ler_pedido` de sempre passou a ser o mesmo leitor
+  com o teto de 4 MiB: um motor só.
+- **Não feito:** a tela tem PT e EN por chave, mas numa tabela própria — a
+  ligação com a fábrica de idiomas do PhxSql (`idiomas.rs`) fica pendente.
+
+### O vídeo
+
+`node testes-web/video-phxzip.mjs` grava 92 s contra o servidor de verdade:
+o 7-Zip grava com AES e nomes cifrados → o PhxZip abre, testa e extrai
+(sha256 igual); o PhxZip grava pela tela → o 7-Zip testa e extrai (`diff`
+vazio); BZip2 recusado pelo nome; e a mesma porta com login (senha errada
+recusada, certa entra, sair fecha). Os painéis de terminal mostram a saída
+real dos comandos, capturada durante a gravação.
+
+Filmar achou **três defeitos** que os testes não pegavam: o `setInputFiles`
+do Playwright por caminho descarta calado o arquivo de nome acentuado (o `.7z`
+saiu com 4 de 5 e só o `diff` do 7-Zip acusou — hoje os arquivos entram por
+buffer e a contagem se confere); «(NaN%)» na compactação (porcentagem sobre o
+número já formatado); e a recusa de método repetindo a frase duas vezes.
+
+## 6. Como rodar a prova
 
 ```bash
 cargo test -p phxzip                       # vetores, fixtures do 7-Zip, tetos

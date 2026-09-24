@@ -194,8 +194,8 @@ mod testes {
         let permitidos = nomes_do_workspace(&raiz).expect("workspace legivel");
         assert_eq!(
             permitidos.len(),
-            11,
-            "o workspace tem {} membro(s) declarado(s), nao 11 -- se um crate \
+            12,
+            "o workspace tem {} membro(s) declarado(s), nao 12 -- se um crate \
              novo entrou de proposito, o numero aqui e so uma conferencia \
              de sanidade e pode subir junto",
             permitidos.len()
