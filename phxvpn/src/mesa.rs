@@ -82,6 +82,8 @@ fn opcoes(pares: &[(&str, String)]) -> Opcoes {
 impl Mesa {
     pub fn nova(pasta: PathBuf) -> R<Mesa> {
         std::fs::create_dir_all(&pasta).map_err(|e| format!("{}: {e}", pasta.display()))?;
+        // A pasta guarda a chave P2P e as senhas lembradas: so do dono.
+        crate::acl::so_do_dono(&pasta)?;
         Ok(Mesa {
             pasta,
             ficha: para_hex(&bytes_aleatorios(32)),

@@ -43,6 +43,7 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [x] Arquivos que o OpenVPN relê (`crl.pem`, `ccd/`) gravados por troca atômica — nunca lidos pela metade
 - [x] P2P: `mac1`/cookie contra inundação de INICIO — lixo recusado em 1,85 µs em vez de 198 µs (107×); sob carga, só com cookie e 5/s por origem
 - [x] USB na janela do programa de mesa: compartilhar, ver o dos membros, usar e soltar — exercitado com duas janelas e o túnel P2P de verdade
+- [x] Segurança no Windows: arquivos com chave e pastas de dados só do dono (DACL protegida, uma entrada, posta ANTES do segredo) — provado no essencial sob o Wine; a prova estrita está no `prova-windows.ps1` (passo 3b)
 - [x] Segurança C2: sorteio falha fechado (descritor único; `BCryptGenRandom` no Windows) — nunca mais mistura previsível
 
 ### Falta
@@ -52,7 +53,6 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [ ] Serviço do sistema (systemd / serviço do Windows) e pacote
 - [ ] P2P: rol de membros ASSINADO (hoje a lista viaja cifrada entre membros, com confiança transitiva)
 - [ ] P2P: descoberta — convite, broadcast na LAN e «farol» (membro alcançável que perfura NAT e faz relé)
-- [ ] Segurança no Windows: ACL nos arquivos com chave (hoje herdam a do diretório; no Linux nascem 0600)
 - [ ] Segurança A4 (inteiro): TLS no próprio painel — choque com a pétrea de zero dependência; hoje, proxy com TLS na frente
 - [ ] P2P no Windows: **prova numa máquina real** com OpenVPN (driver TAP e `netsh` — o roteiro `prova-windows.ps1` está pronto)
 - [ ] USB: **prova com dispositivo real** (este contêiner não tem USB nem os módulos `usbip-host`/`vhci-hcd`)
@@ -419,6 +419,29 @@ lixo morre num HMAC.
   o regime de carga, "sob carga o X25519 tinha de parar".
 - **Formato**: o INICIO cresceu 32 bytes. Nó antigo e nó novo não fecham
   aperto entre si; sem dado em produção, a mudança de formato entra agora.
+
+## Windows: só o dono lê os segredos (24/09/2026)
+
+`acl.rs` é o equivalente do 0600/0700 do Linux. A DACL fica com **uma**
+entrada (acesso total ao usuário do processo), **protegida** para não herdar
+nada da pasta de cima, e é posta **antes** de o segredo entrar no arquivo.
+Onde vale:
+- `gravar_secreto`: chave P2P, arquivo da rede, senha lembrada;
+- `gravar` do painel: chave do servidor e `tls-crypt`;
+- pastas de dados do painel e da janela; nelas a entrada é herdável.
+
+**O que o Wine esconde, medido pelo rastro do servidor dele
+(`WINEDEBUG=+server`):**
+- **`SetNamedSecurityInfoW` lê a ACL e nunca a grava — e devolve sucesso.**
+  Trocado por `SetFileSecurityW`, que chega ao `set_security_object` nos dois
+  sistemas.
+- **O Wine guarda a ACL como modo Unix e a sintetiza na leitura**: SYSTEM +
+  dono, sem a marca de protegida. Então, sob o Wine, prova-se o essencial:
+  antes, `S-1-1-0` (Todos) lia; depois, só o dono. RED: sem a chamada, Todos
+  continua. A prova estrita (uma entrada, protegida) roda no Windows real,
+  no passo 3b do `prova-windows.ps1`.
+- **O Wine não implementa herança**: arquivo novo nasce do `umask`. Por isso
+  cada segredo recebe a própria ACL, sem depender da herança da pasta.
 
 ## USB pela rede (24/09/2026)
 

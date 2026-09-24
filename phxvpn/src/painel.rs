@@ -928,10 +928,10 @@ fn gravar(caminho: &Path, dados: &[u8], secreto: bool) -> R<()> {
     let mut f = o
         .open(&tmp)
         .map_err(|e| format!("gravar {}: {e}", caminho.display()))?;
-    // No Windows a permissao nao se restringe aqui: falta escrever a ACL
-    // (pendencia no PHXVPN.md). O arquivo herda a do diretorio.
-    #[cfg(not(unix))]
-    let _ = secreto;
+    // No Windows, so o dono -- antes de o segredo entrar no arquivo.
+    if secreto {
+        crate::acl::so_do_dono(&tmp)?;
+    }
     f.write_all(dados)
         .and_then(|_| f.sync_all())
         .map_err(|e| format!("gravar {}: {e}", caminho.display()))?;
@@ -972,7 +972,8 @@ fn criar_dir_privado(dir: &Path) -> R<()> {
         b.mode(0o700);
     }
     b.create(dir)
-        .map_err(|e| format!("criar {}: {e}", dir.display()))
+        .map_err(|e| format!("criar {}: {e}", dir.display()))?;
+    crate::acl::so_do_dono(dir)
 }
 
 /// Segunda metade do login: a conta cara, fora da trava. Usuario ausente e

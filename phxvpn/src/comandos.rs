@@ -236,6 +236,8 @@ pub fn gravar_secreto(caminho: &str, dados: &[u8], so_se_novo: bool) -> R<()> {
     let mut f = o
         .open(caminho)
         .map_err(|e| format!("gravar {caminho}: {e}"))?;
+    // No Windows, so o dono -- ANTES de o segredo entrar no arquivo.
+    crate::acl::so_do_dono(std::path::Path::new(caminho))?;
     f.write_all(dados)
         .map_err(|e| format!("gravar {caminho}: {e}"))
 }
