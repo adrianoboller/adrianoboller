@@ -4,11 +4,18 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PhxZip</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,__ICONE_B64__">
+<style>
+/*FONTES*/
+</style>
 <style>
   :root {
     --fundo: #010418; --painel: #0a1122; --borda: #1c2640; --texto: #DDE2EB;
     --fraco: #8a93a8; --ambar: #FFC43D; --laranja: #FF8A1C; --vermelhao: #FF4D10;
     --verde: #3ecf8e; --azul: #5aa9ff; --vermelho: #ff5c5c;
+    /* O acento do PhxZip na familia Phoenix e o ambar (marca/LEIA-ME.md):
+       o PhxSql e laranja, o PhxMail vermelhao, o Phxblockchain vermelho. */
+    --acento: var(--ambar);
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--fundo); color: var(--texto);
@@ -17,7 +24,10 @@
   header { display: flex; align-items: center; gap: 16px; padding: 16px 24px;
     border-bottom: 1px solid var(--borda); flex-wrap: wrap; }
   header h1 { margin: 0; font-size: 26px; font-weight: 600; letter-spacing: .02em; }
-  header h1 span { color: var(--laranja); }
+  header h1 span { color: var(--acento); }
+  header .simbolo { width: 44px; height: 44px; flex: none; }
+  .ic { width: 16px; height: 16px; vertical-align: -3px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .ic.pasta { color: var(--ambar); } .ic.cadeado { color: var(--laranja); } .ic.doc { color: var(--fraco); }
   header .sub { color: var(--fraco); font-size: 13px; }
   header .dir { margin-left: auto; display: flex; gap: 10px; align-items: center; }
   main { max-width: 1180px; margin: 0 auto; padding: 24px 16px; display: grid;
@@ -57,6 +67,7 @@
   .selo { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 99px;
     border: 1px solid var(--borda); color: var(--ambar); }
   .mini { padding: 3px 10px; font-size: 12px; }
+  .botao.icone { padding: 4px 7px; line-height: 0; }
   #login { max-width: 380px; margin: 60px auto; }
   .oculto { display: none !important; }
   footer { text-align: center; color: var(--fraco); font-size: 12px; padding: 24px 16px 32px; }
@@ -66,6 +77,7 @@
 </head>
 <body>
 <header>
+  <!--SIMBOLO-->
   <div>
     <h1 class="marca">Phx<span>Zip</span></h1>
     <div class="sub" data-txt="sub">7z · LZMA2 · AES-256 — escrito em Rust, sem dependências</div>
@@ -78,6 +90,15 @@
     </select>
   </div>
 </header>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <!-- Icones desenhados aqui, no traco da familia (2 px, currentColor): o
+       emoji muda de desenho por sistema e nao segue a cor da marca. -->
+  <symbol id="i-pasta" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="i-cadeado" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+  <symbol id="i-baixar" viewBox="0 0 24 24"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></symbol>
+  <symbol id="i-doc" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></symbol>
+</svg>
 
 <section id="login" class="cartao oculto">
   <h2 class="marca" data-txt="login_titulo">Entrar</h2>
@@ -311,14 +332,20 @@ function desenhar(j) {
   for (const e of j.entradas) {
     const tr = document.createElement('tr');
     const c = (txt, cls) => { const td = document.createElement('td'); if (cls) td.className = cls; td.textContent = txt; tr.appendChild(td); return td; };
-    c(e.pasta ? '📁' : (e.cifrada ? '🔒' : '📄'));
+    const tipo = e.pasta ? 'pasta' : (e.cifrada ? 'cadeado' : 'doc');
+    const ti = c('');
+    ti.innerHTML = `<svg class="ic ${tipo}" aria-hidden="true"><use href="#i-${tipo}"/></svg>`;
     c(e.nome, 'nome');
     c(e.pasta ? '' : fmt(e.tamanho), 'num');
     const m = c(''); if (e.metodos) { const s = document.createElement('span'); s.className = 'selo'; s.textContent = e.metodos; m.appendChild(s); }
-    c(e.mtime != null ? new Date(e.mtime * 1000).toLocaleString(idioma === 'pt' ? 'pt-BR' : 'en-US', { dateStyle: 'short', timeStyle: 'short' }) : '', 'data');
+    c(e.mtime != null ? new Date(e.mtime * 1000).toLocaleString(idioma === 'pt' ? 'pt-BR' : 'en-US', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '', 'data');
     const ac = c('');
     if (!e.pasta && e.seguro) {
-      const b = document.createElement('button'); b.className = 'botao consulta mini'; b.textContent = t('baixar');
+      // Icone e nao texto: com o texto «baixar» a coluna saia cortada a
+      // 1200 px (visto na captura). O rotulo continua, para leitor de tela.
+      const b = document.createElement('button'); b.className = 'botao consulta mini icone';
+      b.title = t('baixar'); b.setAttribute('aria-label', t('baixar') + ' ' + e.nome);
+      b.innerHTML = '<svg class="ic" aria-hidden="true"><use href="#i-baixar"/></svg>';
       b.onclick = () => extrair(e); ac.appendChild(b);
     }
     tb.appendChild(tr);

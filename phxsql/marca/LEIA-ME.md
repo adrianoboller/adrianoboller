@@ -67,6 +67,63 @@ desenho completo vira borrão; menos desenho é mais legível.
 #DDE2EB   prata        cor do texto no tema escuro
 ```
 
+### Onde cada cor pode ser TEXTO — medido, 24/09/2026
+
+Contraste WCAG sobre o fundo `#010418` e sobre papel branco:
+
+| Cor | sobre `#010418` | sobre branco | Como texto |
+|---|---|---|---|
+| `#FFC43D` âmbar | 12,8:1 | 1,6:1 | só no escuro |
+| `#FF8A1C` laranja | 8,6:1 | 2,4:1 | só no escuro |
+| `#FF4D10` vermelhão | 6,1:1 | 3,3:1 | no escuro; no claro vira `#C63C0A` |
+| `#D71A1A` vermelho | **3,9:1** | 5,2:1 | **nunca no escuro** — só preenchimento/borda, ou letra grande (≥ 24 px, onde o mínimo é 3:1) |
+| `#8B0D0D` vinho | **2,1:1** | 9,7:1 | **nunca no escuro** — só preenchimento/borda; no claro pode |
+| `#DDE2EB` prata | 15,7:1 | 1,3:1 | só no escuro |
+
+A regra das duas linhas em negrito é nova: o vermelho e o vinho entram na
+tela escura como FUNDO de alerta ou traço, nunca como a cor da letra.
+
+## A família Phoenix
+
+Um símbolo só (a fênix e o cilindro) para os quatro produtos, e um **acento**
+por produto, sempre da paleta — é ele que pinta o `x` da palavra e o traço de
+luz sob ela:
+
+| Produto | Acento |
+|---|---|
+| PhxSql | `#FF8A1C` laranja |
+| PhxZip | `#FFC43D` âmbar |
+| PhxMail | `#FF4D10` vermelhão |
+| Phxblockchain | `#D71A1A` vermelho (letra de 150 px: passa como texto grande) |
+
+## A marca em vetor — `vetor/`
+
+Até 24/09/2026 a marca só existia em PNG (1,3 a 2,3 MB, sem alfa), e cada
+tamanho novo era um recorte à mão. Agora:
+
+| Arquivo | O que é |
+|---|---|
+| `vetor/phx-simbolo.svg` | o símbolo, **desenhado à mão** a partir da folha — a única fonte vetorial |
+| `vetor/phx-icone.svg` | o mesmo, para 16–48 px: sem trilhas nem luzes, traço mais grosso, cilindro mais claro |
+| `vetor/phx-simbolo-mono.svg` | uma cor só (`currentColor`), para impressão e carimbo; `--vazio` troca o papel |
+| `vetor/<produto>-horizontal.svg` | símbolo + palavra em **curvas** (Exo 2 SemiBold) + assinatura, para os quatro produtos |
+| `derivados/vetor/` | PNG de 16 a 1200 px, Android 192/512, iOS 180 e o `phx.ico` (16/32/48/256) |
+
+Refazer: `python3 vetor/gerar.py Exo2[wght].ttf` (precisa de `fontTools`,
+ferramenta de trabalho, não do produto) e `node vetor/exportar.mjs`.
+
+**Estado: PROPOSTA a aprovar pelo dono.** O SVG é uma redesenho fiel à
+folha, não a folha: os PNG originais continuam sendo a marca oficial até o
+dono aprovar o vetor. O que já usa o vetor hoje: o PhxZip web (ícone da aba e
+símbolo do cabeçalho).
+
+## As fontes — `fontes/`
+
+Exo 2 (variável, 400–700) e IBM Plex Mono (400/500/600), subconjunto latino,
+**86.112 bytes** de woff2, licença SIL OFL 1.1 (os `OFL-*.txt` ao lado).
+Entram embutidas no binário pelo `phxsql_core::fontes`, para o PhxSql e o
+PhxZip — a marca aparece igual sem internet, e a tela não pede nada ao Google.
+
 ## Como a marca entra no dossiê
 
 O acento e a tipografia vêm daqui. Duas adaptações deliberadas, para o
@@ -84,23 +141,19 @@ precisam se distinguir **entre si e do acento**. Por isso o `.bin`, que era
 âmbar, virou ciano: âmbar ao lado do laranja da marca vira ruído. O `.log`
 ficou com o vermelho `#D71A1A` da paleta, que é onde ele encaixa sozinho.
 
-## Atenção: a folha de marca promete o que o motor ainda não faz por completo
+## A folha de marca: o original e o corrigido
 
-Um dos quatro pilares da folha **ainda não é totalmente verdade**:
+A folha original afirma *"Reliable storage — ACID compliant and durable."*
+Falso: o isolamento entregue por padrão é `READ COMMITTED` (`docs/ACID.md`,
+`docs/CONTRATO-1.0.md` §2.1), e «durable» sem ressalva também não — no regime
+padrão uma escrita comum responde OK sem `fsync` (`ACID.md` §5.1).
 
-- *"Reliable storage — ACID compliant"* — falso, mas a razão mudou. Há
-  transação desde o pedido 162 (`BEGIN`/`COMMIT`/`ROLLBACK`/`SAVEPOINT`, com
-  escopo, prazos e travas): a premissa «sem transação não há o A nem o I»
-  caducou. O que falta hoje é outra coisa — o isolamento entregue é
-  `READ COMMITTED`, sem leitura repetível (a Sombra que a compraria está
-  parada por decisão do dono, `docs/SOMBRA.md`), e o **C** continua parcial:
-  a cascata do `ao_alterar` escreve em tabela que a transação não declarou.
-  Ver `docs/ACID.md` §0 e `docs/PENDENCIAS.md` #189.
-- *"Built-in replication — high availability and failover ready"* — **virou
-  verdade**: a replicação está medida com quatro servidores, e o cluster faz
-  eleição e promoção automática (`docs/REPLICACAO.md`).
+`derivados/phxsql-manual-de-marca-corrigido.png` troca aquele bloco por
+**«TRANSACTIONAL STORAGE — Commit, rollback and savepoints.»**, que é verdade
+medida desde o pedido 162, com a Exo 2 embutida e a cor de fundo amostrada ao
+lado. Refazer: `node vetor/corrigir-folha.mjs`. **É o corrigido que vai para
+cliente**; o original fica como registro do que se recebeu.
 
-Isso é normal numa marca feita antes do produto ficar pronto, mas o primeiro
-ponto precisa virar verdade — ou a folha precisa de uma frase mais precisa —
-antes de ir para cliente. O dossiê e o `README.md` dizem o estado real; a
-folha de marca, não.
+*"Built-in replication — high availability and failover ready"* é verdade:
+a replicação está medida com quatro servidores, e o cluster faz eleição e
+promoção automática (`docs/REPLICACAO.md`).

@@ -43,6 +43,9 @@ pub const PORTA_PADRAO: u16 = 4000;
 /// O endereco padrao: so a propria maquina.
 pub const ENDERECO_PADRAO: &str = "127.0.0.1";
 const PAGINA: &str = include_str!("../ui/index.html");
+/// O icone da familia Phoenix, desenhado em `marca/vetor/` -- o mesmo SVG
+/// vira o icone da aba e o simbolo do cabecalho.
+const ICONE_SVG: &str = include_str!("../../../marca/vetor/phx-icone.svg");
 const COOKIE: &str = "phxzip_sessao";
 const SESSAO_MS: i64 = 30 * 60 * 1000;
 const MAX_ENVELOPE_JSON: usize = 1 << 20;
@@ -144,6 +147,23 @@ pub fn servir_em(ouvinte: TcpListener, config: Config) -> std::io::Result<()> {
     Ok(())
 }
 
+/// A pagina com as fontes da marca e o icone embutidos, montada uma vez.
+/// As fontes vem do `phxsql_core::fontes` -- o mesmo `@font-face` do PhxSql.
+fn pagina() -> &'static str {
+    static P: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    P.get_or_init(|| {
+        let icone = phxsql_core::base64::codificar(ICONE_SVG.as_bytes());
+        let simbolo = ICONE_SVG
+            .split_once("<svg ")
+            .map(|(_, r)| format!("<svg class=\"simbolo\" aria-hidden=\"true\" {r}"))
+            .unwrap_or_default();
+        PAGINA
+            .replace("/*FONTES*/", phxsql_core::fontes::css_das_fontes())
+            .replace("__ICONE_B64__", &icone)
+            .replace("<!--SIMBOLO-->", &simbolo)
+    })
+}
+
 fn json_ok(pares: Vec<(&str, Json)>) -> Json {
     let mut v = vec![("ok", Json::Bool(true))];
     v.extend(pares);
@@ -223,7 +243,7 @@ fn atender(mut fluxo: TcpStream, est: &Estado) {
     let rota = (p.metodo.as_str(), p.caminho.as_str());
     match rota {
         ("GET", "/") => {
-            let _ = http::responder_pagina(&mut fluxo, 200, PAGINA);
+            let _ = http::responder_pagina(&mut fluxo, 200, pagina());
             return;
         }
         ("GET", "/api/estado") => {
