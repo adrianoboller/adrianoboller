@@ -199,6 +199,71 @@ fn a_migracao_pelo_binario_sobe_do_phz_e_a_senha_nao_sai_do_processo() {
     }
 }
 
+/// **Pedido 478.** O roteiro que o MANUAL (secao 7.3) e o README ensinam --
+/// gerar um dos tres exemplos, editar, `--empacotar-config`, subir -- fecha
+/// com um `.phz` de verdade, e o servidor sobe dele.
+///
+/// Os outros testes deste arquivo empacotam `CONFIG_DE_PROVA`, sintetico e
+/// minusculo. Este usa os TRES `exemplos/Config_exemplo_0N.json` que o
+/// `--exemplo` imprime -- o que quem segue o manual copia de verdade -- para
+/// que um campo novo neles (uma lista grande, um caractere fora do comum)
+/// que travasse o `--empacotar-config` ou a leitura de volta caia aqui, e nao
+/// so no dia em que um administrador tentar.
+///
+/// Derruba: qualquer coisa que faca `--empacotar-config` falhar sobre um dos
+/// tres exemplos reais, que devolva um `.phz` que nao seja 0600, ou do qual o
+/// servidor nao suba.
+#[test]
+fn o_roteiro_documentado_empacota_o_exemplo_de_verdade_e_sobe_do_phz() {
+    use phxsql_core::json::Json;
+
+    for exemplo in ["1", "2", "3"] {
+        let d = DirTemp::novo(&format!("phz-roteiro-{exemplo}"));
+        let claro = d.join("config.json");
+        let bruto = phxsql_server::config_exemplo(exemplo)
+            .unwrap_or_else(|| panic!("exemplo {exemplo} sumiu de config_exemplo"));
+
+        // O bind fixo dos exemplos (para copiar e colar) colidiria entre as
+        // tres voltas deste laco e com outro teste rodando em paralelo; o
+        // `base` fixo do exemplo 3 e um caminho absoluto do sistema (nao do
+        // diretorio do teste). Os dois viram porta 0 e a pasta do teste --
+        // o mesmo texto_trocar que a tela usa para editar o config, entao a
+        // prova continua exercitando o caminho real, so com valores que nao
+        // colidem.
+        let texto = Json::texto_trocar(bruto, &["bind"], &Json::texto_de("127.0.0.1:0"))
+            .unwrap_or_else(|| panic!("exemplo {exemplo} nao tem \"bind\" de primeiro nivel"));
+        let texto = Json::texto_trocar(
+            &texto,
+            &["base"],
+            &Json::texto_de(d.join("dados").display().to_string()),
+        )
+        .unwrap_or_else(|| panic!("exemplo {exemplo} nao tem \"base\" de primeiro nivel"));
+        std::fs::write(&claro, &texto).unwrap();
+
+        let (ok, saida) = rodar(&["--empacotar-config"], &claro);
+        assert!(ok, "exemplo {exemplo}: --empacotar-config falhou: {saida}");
+        let phz = d.join("config.phz");
+        assert!(phz.exists(), "exemplo {exemplo}: nao nasceu config.phz");
+        assert!(
+            std::fs::read(&phz).unwrap().starts_with(ASSINATURA_7Z),
+            "exemplo {exemplo}: config.phz nao e um 7z"
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            let modo = std::fs::metadata(&phz).unwrap().permissions().mode() & 0o777;
+            assert_eq!(modo, 0o600, "exemplo {exemplo}: config.phz nasceu {modo:o}");
+        }
+
+        // O MESMO --config de antes do empacotar sobe do .phz -- e o que
+        // o manual promete: a unidade do systemd nao muda.
+        let erro_padrao = d.join("stderr.txt");
+        let filho = subir(&claro, &erro_padrao);
+        porta_aberta(&erro_padrao);
+        drop(filho);
+    }
+}
+
 /// **(c) pelo binario.** O `config.json` em claro de sempre sobe, o erro
 /// padrao diz que ele esta em claro e qual comando o empacota, e a gravacao
 /// pela tela o mantem em claro -- o comportamento que as bancadas usam.

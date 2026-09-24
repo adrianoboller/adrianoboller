@@ -315,6 +315,8 @@ cargo build --release
 ```bash
 ./target/release/phxsqld --exemplo 1 > config.json
 $EDITOR config.json          # troque o token e ligue "web"
+./target/release/phxsqld --empacotar-config   # grava como config.phz (barreira
+                                               # contra editor, NAO cifra -- pedido 450)
 ./target/release/phxsqld --config config.json
 ```
 

@@ -15,6 +15,11 @@
 #   ./empacotar.sh manifesto <dir>
 #                             grava o MANIFESTO.sha256 de um diretorio qualquer;
 #                             existe para a bancada chamar a receita de verdade
+#   ./empacotar.sh demonstracao <dir> [rotulo] [sufixo]
+#                             grava demonstracao/ e o COMECE-AQUI.txt em <dir>,
+#                             como monta() faz; existe para a bancada provar o
+#                             pacote de demonstracao (pedido 478) sem compilar
+#                             os quatro alvos cruzados
 #
 
 # O que cada pacote leva, o que ele NAO leva e como quem baixou confere esta
@@ -146,9 +151,16 @@ confere_versoes() {
 # fica em target/release. Num checkout limpo ele nao existia, e o empacotador
 # morria nesta linha; so nao morria na maquina de quem tinha rodado
 # `cargo build --release` antes. Pacote so se confia se nasce de arvore limpa.
+#
+# E conferir so que o arquivo EXISTE nao basta desde o pedido 478: a
+# demonstracao passou a chamar `--empacotar-config`, e um phxsqld de antes
+# dele nao erra com a flag que nao conhece -- ignora e sobe como SERVIDOR, e
+# o empacotador fica pendurado para sempre com o config em claro (medido pelo
+# integrador em 24/09/2026 com um binario velho simulado: preso ate o prazo,
+# `config.json` em claro). Quem decide se o binario esta velho e o cargo, que
+# nao recompila nada quando ele ja e da arvore atual.
 garante_host() {
-  [ -x target/release/phxsqld ] && return 0
-  echo "== phxsqld do hospedeiro (so para gerar o hash da senha de demonstracao)"
+  echo "== phxsqld do hospedeiro (o hash da senha e o .phz da demonstracao)"
   cargo build --release --offline -p phxsql-server --bin phxsqld
 }
 
@@ -318,7 +330,7 @@ demonstracao() {
   # tela ficava igual e ninguem via. Configuracao que nao e lida mente.
   cat > "$dir/demonstracao/config.json" <<JSON
 {
-  "_comentario": "AMBIENTE DE DEMONSTRACAO -- nao use em producao. Escuta so em 127.0.0.1; a senha esta no COMECE-AQUI.txt. Para um servidor de verdade, gere o seu com: phxsqld --exemplo 1 > config.json",
+  "_comentario": "AMBIENTE DE DEMONSTRACAO -- nao use em producao. Escuta so em 127.0.0.1; a senha esta no COMECE-AQUI.txt. Para um servidor de verdade, gere o seu com: phxsqld --exemplo 1 > config.json e depois phxsqld --empacotar-config",
 
   "bind": "127.0.0.1:5000",
   "base": "dados",
@@ -337,6 +349,28 @@ demonstracao() {
   ]
 }
 JSON
+
+  # Pedido 478: a instalacao que este pacote ensina nao pode nascer em claro
+  # quando a ordem do dono (pedido 450) e o contrario. A conversao usa o
+  # MESMO comando que o administrador usa depois -- --empacotar-config, o
+  # motor de config_phz.rs -- e nao uma segunda receita de empacotar aqui no
+  # bash. O .json que ele guarda por seguranca (config.json.migrado-para-phz)
+  # e um artefato de BUILD, nao de migracao em producao: a senha "demo" ja vai
+  # em claro no COMECE-AQUI de qualquer jeito, entao nao ha nada a perder
+  # apagando-o -- e ficar com os dois so confundiria quem abre o zip.
+  # Prazo e conferencia do RESULTADO, e nao do codigo de saida: o binario
+  # que nao conhece a flag nao sai -- vira servidor (ver garante_host).
+  if ! timeout 60 ./target/release/phxsqld --empacotar-config \
+      --config "$dir/demonstracao/config.json" >/dev/null; then
+    echo "ERRO: phxsqld --empacotar-config nao terminou em 60 s ou falhou --" \
+      "o binario do hospedeiro e de antes do pedido 450?" >&2
+    exit 1
+  fi
+  if [ ! -f "$dir/demonstracao/config.phz" ] || [ -e "$dir/demonstracao/config.json" ]; then
+    echo "ERRO: a demonstracao nao saiu em config.phz (pedido 478)" >&2
+    exit 1
+  fi
+  rm -f "$dir/demonstracao/config.json.migrado-para-phz"
 
   if [ "$rotulo" = "windows" ]; then
     cat > "$dir/COMECE-AQUI.txt" <<TXT
@@ -381,12 +415,29 @@ Windows tem um segundo caminho, pelo PowerShell:
 e compare com a linha do phxsqld.exe no MANIFESTO.sha256.
 
 --------------------------------------------------------------------------------
+O CONFIG DESTA DEMONSTRACAO ESTA EM config.phz, NAO EM config.json
+--------------------------------------------------------------------------------
+E BARREIRA CONTRA QUEM ABRE O ARQUIVO NUM EDITOR OU VISUALIZADOR -- NAO E
+CIFRA: a senha do .phz esta no fonte, publica (pedido 450). Para ver ou editar
+o config por dentro:
+
+       cd demonstracao
+       ..\\phxsqld.exe --desempacotar-config      volta a config.json (0600)
+       notepad config.json
+       ..\\phxsqld.exe --empacotar-config          grava de novo como .phz
+
+O config.json fica guardado ao lado (config.json.migrado-para-phz /
+config.phz.aberto-em-json, 0600) -- o servidor nao apaga arquivo seu; secao
+7.5 do MANUAL.txt tem os detalhes.
+
+--------------------------------------------------------------------------------
 ISTO E UMA DEMONSTRACAO, E NAO UM SERVIDOR DE PRODUCAO
 --------------------------------------------------------------------------------
 Ela escuta so em 127.0.0.1 -- so alcanca quem esta NESTE computador --, e a
 senha esta escrita aqui em cima. Para um servidor de verdade:
 
        phxsqld.exe --exemplo 1 > config.json      gera o modelo comentado
+       phxsqld.exe --empacotar-config              grava como config.phz
        phxsqld.exe --senha                        gera o hash de uma senha
 
 e leia a secao 7 do MANUAL.txt, que explica bind, token, usuarios e permissoes.
@@ -449,12 +500,29 @@ caminho, que nao depende de rodar nada deste pacote:
        sha256sum -c MANIFESTO.sha256
 
 --------------------------------------------------------------------------------
+O CONFIG DESTA DEMONSTRACAO ESTA EM config.phz, NAO EM config.json
+--------------------------------------------------------------------------------
+E BARREIRA CONTRA QUEM ABRE O ARQUIVO NUM EDITOR OU VISUALIZADOR -- NAO E
+CIFRA: a senha do .phz esta no fonte, publica (pedido 450). Para ver ou editar
+o config por dentro:
+
+       cd demonstracao
+       ../phxsqld --desempacotar-config      # volta a config.json (0600)
+       nano config.json                      # ou o editor de sua preferencia
+       ../phxsqld --empacotar-config         # grava de novo como .phz
+
+O config.json fica guardado ao lado (config.json.migrado-para-phz /
+config.phz.aberto-em-json, 0600) -- o servidor nao apaga arquivo seu; secao
+7.5 do MANUAL.txt tem os detalhes.
+
+--------------------------------------------------------------------------------
 ISTO E UMA DEMONSTRACAO, E NAO UM SERVIDOR DE PRODUCAO
 --------------------------------------------------------------------------------
 Ela escuta so em 127.0.0.1 -- so alcanca quem esta NESTA maquina --, e a senha
 esta escrita aqui em cima. Para um servidor de verdade:
 
        ./phxsqld --exemplo 1 > config.json      gera o modelo comentado
+       ./phxsqld --empacotar-config             grava como config.phz
        ./phxsqld --senha                        gera o hash de uma senha
 
 e leia a secao 7 do MANUAL.txt, que explica bind, token, usuarios e permissoes.
@@ -812,6 +880,13 @@ case "$QUAL" in
   # o `find` para dentro de um teste -- copia de receita foi o defeito que essa
   # prova existe para pegar.
   manifesto) manifesto "${2:?uso: $0 manifesto <diretorio>}"; exit 0 ;;
+  # Idem, para o pacote de demonstracao (pedido 478): a bancada prova que ele
+  # sai em .phz sem pagar os quatro `cargo build --release` de monta().
+  demonstracao)
+    demonstracao "${2:?uso: $0 demonstracao <diretorio> [rotulo] [sufixo]}" \
+      "${3:-linux}" "${4:-}"
+    exit 0
+    ;;
   linux)   confere_versoes; monta "$ALVO_LINUX" linux "" ;;
   windows) confere_versoes; monta "$ALVO_WINDOWS" windows .exe ;;
   arm64)   confere_versoes; monta "$ALVO_ARM64" arm64 "" sem_odbc ;;

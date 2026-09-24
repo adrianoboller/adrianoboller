@@ -202,7 +202,9 @@ Os pacotes de binário saem normalmente de um diretório extraído.
   downloads porque são três perguntas diferentes.
 - **`config.json` de produção, token ou senha de ninguém.** O único config que
   viaja é o de demonstração, que escuta em `127.0.0.1` e cuja senha está
-  escrita em letras grandes no `COMECE-AQUI.txt`.
+  escrita em letras grandes no `COMECE-AQUI.txt`. Desde o pedido 478 ele viaja
+  como `config.phz`, não em claro — barreira contra editor, não cifra (o
+  `COMECE-AQUI.txt` diz isso com essas palavras); ver a seção 8.
 - **DLLs do mingw.** Medido: o `phxsqld.exe` importa só
   `KERNEL32`, `msvcrt`, `ntdll`, `WS2_32`, `bcryptprimitives` e
   `api-ms-win-core-synch-l1-2-0` — tudo do Windows. Não há
@@ -213,7 +215,7 @@ Os pacotes de binário saem normalmente de um diretório extraído.
   ele não inventa um.
 
 E uma coisa que ele **não promete**: os zips não são reproduzíveis byte a
-byte entre duas rodadas. O `demonstracao/config.json` traz um hash PBKDF2 com
+byte entre duas rodadas. O `demonstracao/config.phz` traz um hash PBKDF2 com
 **sal novo a cada execução**, porque o hash sai do próprio `phxsqld --senha` e
 não de uma constante colada no script — não existe uma segunda implementação
 de senha neste projeto. Trocar isso por um hash fixo tornaria os zips
@@ -494,3 +496,40 @@ empacotar:
   aplicativo; o **dado** é o que cresce, e ele ocupa **4,3× o do SQLite(R)**
   nas mesmas 200.000 linhas (`docs/MOBILE.md` §2). Num telefone, é a segunda
   conta que decide.
+
+---
+
+## 8. O pacote de demonstração termina em `config.phz` (pedido 478)
+
+A ordem do dono para o pedido 450 era que a instalação **nova** já nascesse
+empacotada, e até 24/09/2026 nenhum roteiro documentado chamava
+`--empacotar-config`: o `MANUAL.txt`, o `README.md` e o `COMECE-AQUI.txt` do
+pacote de demonstração terminavam todos com um `config.json` em claro — o
+contrário do pedido, porque a migração do 450 nasceu **pedida**, não imposta.
+
+O `demonstracao()` do `empacotar.sh` passa a empacotar o config que ele mesmo
+grava, com o MESMO comando que o administrador usa depois
+(`--empacotar-config`, o motor de `config_phz.rs` — nenhuma segunda receita de
+empacotar em bash) e a apagar a cópia em claro que a migração guarda por
+padrão (`config.json.migrado-para-phz`): é um artefato de **build**, não de
+migração em produção, e a senha `demo` já é pública no `COMECE-AQUI.txt` de
+qualquer forma. O `COMECE-AQUI.txt` ganhou a seção que ensina
+`--desempacotar-config` / editar / `--empacotar-config` para quem quer olhar o
+config por dentro, e o roteiro de "servidor de verdade" ganhou o passo de
+empacotar antes de subir. `MANUAL.txt` §7.3 e `README.md` fazem o mesmo.
+Nenhum dos três chama o `.phz` de cifra.
+
+`demonstracao` também virou subcomando do `empacotar.sh` —
+
+```bash
+./empacotar.sh demonstracao <diretorio> [rotulo] [sufixo]
+```
+
+— pelo mesmo motivo do `manifesto` (seção 2): para a bancada chamar a receita
+de verdade sem pagar os quatro `cargo build --release` cruzados de `monta()`.
+A prova é `bancada/pacote/provar-demonstracao-phz.py`, e vale nos **dois
+sentidos**: a receita de hoje fecha só com `config.phz` (0600, um 7z de
+verdade, servidor sobe dele), e a receita de ANTES do pedido 478 — reposta ali
+por valor, porque depois deste pedido integrado o `empacotar.sh` de `HEAD`
+deixa de ter essa versão — fecha com `config.json` em claro, a assinatura do
+defeito.

@@ -1268,6 +1268,7 @@ QA, com julgamento de pergunta, e a redação do H.
 | 450 etapa 2 — o `.phz` ligado ao config | forte | seguranca e migracao de arquivo em disco; duas voltas, porque DBA e SEC bloquearam a primeira |
 | C — parecer da etapa 2 do 450 | forte | formato em disco e migracao; achou a dica que truncaria o config extraido |
 | SEC — revisao da etapa 2 do 450 | forte | leitura adversaria de arquivo com segredo; provou pelo binario a copia em claro 644 e a pasta esvaziada |
+| 478 — a instalacao nova termina em `.phz` | leve | roteiro, documentacao e uma prova em Python sobre um comando que ja existia; o integrador achou o empacotador pendurado com binario velho |
 
 **A integração achou o que nenhuma frente via, de novo por território de
 arquivo não bastar em worktree compartilhado**: `cargo fmt --all` de uma

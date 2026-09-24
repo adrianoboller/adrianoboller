@@ -295,10 +295,23 @@ Detalhes e o que a ligacao ensinou em docs/CONSOLE.md.
     nascem sempre no mesmo lugar. Caminho absoluto (comecando com / ou,
     no Windows, com a letra da unidade) fica exatamente como voce escreveu.
 
-7.3 Suba
+7.3 Empacote e suba
+
+    Antes do primeiro arranque, grave o config como config.phz -- pedido 450,
+    detalhes e o porque de NAO SER CIFRA na secao 7.5:
+
+        phxsqld --empacotar-config
+
+    O config.json editado na secao 7.2 sai do caminho GUARDADO (nunca
+    apagado, config.json.migrado-para-phz, 0600 -- secao 7.5). Quem prefere
+    continuar em claro -- os roteiros da bancada, por exemplo -- pula este
+    passo, e o servidor sobe de config.json do jeito de sempre.
 
     LINUX     ./phxsqld --config config.json
     WINDOWS   phxsqld.exe --config config.json
+
+    O --config NAO muda entre as duas formas: com so o config.phz ao lado, o
+    servidor sobe dele (secao 7.5).
 
     No arranque ele imprime:
         PhxSql 0.7.0 escutando em 0.0.0.0:5000 | base dados | papel isolado
@@ -345,7 +358,10 @@ Detalhes e o que a ligacao ensinou em docs/CONSOLE.md.
     e a PERMISSAO do arquivo -- o servidor grava o .json e o .phz em 0600,
     so o dono le e escreve. Nao afrouxe isso.
 
-    Empacotar (pedido; o servidor nunca faz sozinho):
+    Empacotar (o passo que a secao 7.3 ja ensina; o servidor nunca faz
+    sozinho -- guarda nova entra pedida, nao imposta). No primeiro arranque,
+    ANTES de existir servico ou processo, o comando da 7.3 basta. Num
+    servidor ja rodando como servico, pare antes:
 
         systemctl stop phxsql
         sudo -u phxsql phxsqld --empacotar-config \

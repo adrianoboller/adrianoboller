@@ -12,6 +12,27 @@ Os números são **medidos**, nunca estimados.
 
 ## Não lançado
 
+### 478 — o caminho de instalação documentado termina em `config.phz`
+
+Achado pelo integrador em 24/09/2026: a migração do pedido 450 nasceu PEDIDA,
+mas nenhum roteiro documentado chamava `--empacotar-config` — quem seguia o
+MANUAL, o README ou o `COMECE-AQUI.txt` do pacote de demonstração terminava
+sempre com um `config.json` em claro, o contrário da ordem do dono.
+
+**Mudado**
+
+- MANUAL.txt §7.3 e README.md passam a empacotar como `config.phz` como parte
+  do roteiro de instalação (`phxsqld --empacotar-config`, o mesmo comando de
+  sempre — nenhuma segunda receita de empacotar).
+- `empacotar.sh`: o pacote de demonstração sai em `config.phz` (0600), não em
+  `config.json`; o `COMECE-AQUI.txt` explica `--desempacotar-config` / editar /
+  `--empacotar-config` para quem quer olhar o config por dentro, e o roteiro
+  de "servidor de verdade" ganha o passo de empacotar. `demonstracao` também
+  virou subcomando (`./empacotar.sh demonstracao <dir>`), para a bancada
+  provar o pacote sem compilar os quatro alvos cruzados.
+- Nenhum documento chama o `.phz` de cifra (continua sendo barreira contra
+  editor, pedido 450).
+
 ### 372 — o `dblink.json` guarda a senha e o token CIFRADOS, com chave mestra externa
 
 Decisão do dono, 24/09/2026 (cifra com chave mestra externa), no desenho que o
