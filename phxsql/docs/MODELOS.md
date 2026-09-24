@@ -1319,6 +1319,8 @@ QA, com julgamento de pergunta, e a redação do H.
 | juiz PhxJev — propostas do SEC e do DBA sobre faceis C | forte | o veredito sai do limiar do script, mas a probabilidade por pergunta e juizo sobre defeito ativo |
 | DBA — revisao do lote integridade 2 | forte | concorrencia e garantia de dado: trava da filha no empilhar, marca da cascata solta |
 | faceis E — 560, 550, 557, 556, 547, 549 | forte | seguranca: pétrea da senha (redacao por analise num motor unico), teto do SCRAM e dado de outro usuario no recado |
+| 540-C1 — o punho sujo de quem chama na passada da marca | forte | formato em disco e concorrencia de descritores: o indice unico se corrompia pela sincronia |
+| juiz PhxJev — propostas do DBA sobre integridade 2 | forte | defeito ativo e empate de motores exigem juizo, o veredito sai do limiar |
 
 **Convocacao do dono em 24/09/2026, 18:40** («toda a equipe em alerta e revisao
 nessa rodada»). Convocados: A (integrador), B (quatro frentes), C (revisoes em
