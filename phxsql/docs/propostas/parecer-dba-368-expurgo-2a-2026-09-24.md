@@ -5,6 +5,11 @@
 Worktree revisado: `.claude/worktrees/agent-a88017bcd787ed40c`, diff contra `82a17ef`.
 Provas de leitura: programa externo em scratch (`dba-368b/prova`) que liga no `phxsql-store` do worktree. Build de depuração, Linux, ext4.
 
+**Testes da frente, rodados no worktree:**
+
+- no `phxsql-store`: filtro `trilha` da lib **32/32**, `--test cifra-dos-diarios` **16/16** e `--test trilha-lgpd` **22/22**, todos verdes;
+- os testes do servidor (`testes_expurgo_da_trilha`) **não rodaram** nesta revisão.
+
 ## A) O que foi conferido e se sustenta
 
 | item | onde | estado |
@@ -52,7 +57,7 @@ Provas de leitura: programa externo em scratch (`dba-368b/prova`) que liga no `p
 - `x` nasce no volume **2**: a listagem achou o `x_001.lgpd`.
 - A trilha de `x` lê **1** registro de `x_001`.
 - O expurgo de `x` derrubou `[1..12]`: o `x_001.lgpd` sumiu, e a trilha de `x_001` ficou com **0** registros.
-- Na passada diária com prazo, o caso vira o inverso. O volume de `x_001` com registro recente faz de `x` uma «fronteira» para sempre, e `x` retém dado vencido.
+- Na passada diária com prazo, o caso vira o inverso. O volume de `x_001` com registro recente faz de `x` uma «fronteira» para sempre, e `x` retém dado vencido. Isto saiu da leitura do código, **não foi medido**.
 
 **Por que é do 368:**
 
@@ -126,7 +131,7 @@ A medição acima desmente os dois.
   - Ocorre depois de uma queda entre o `rename` e o nascimento, seguida de expurgo antes do próximo evento.
   - Medido: os volumes 1 e 2 saíram, e o evento seguinte nasceu no **1**.
   - Pede SIGKILL na janela de dois syscalls, e o rastro se distingue pelas datas.
-  - O conserto é o mesmo do B2: nascer o ativo seguinte na hora em que se descobre que ele falta.
+  - Conserto provável: sem o ativo no disco, o motor faz nascer o N+1 **antes** do plano, e o número passa a morar num cabeçalho. Hoje o expurgo leva junto o último volume, que era o único que guardava o número.
 - **P4, custo da passada em tabela sem trilha:**
   - Uma listagem do diretório por tabela: **319 µs/tabela** com 800 arquivos, e **1.282 µs/tabela** com 3.200 arquivos (**513 ms** para 400 tabelas).
   - O custo cresce com N² por passada, mas é diário e é pago por fatias sob a trava.

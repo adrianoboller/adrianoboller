@@ -1,0 +1,3 @@
+# Saidas regeneraveis: extrair_legitimo.py e extrair_deteccao.py as refazem.
+*.jsonl
+detector/target/

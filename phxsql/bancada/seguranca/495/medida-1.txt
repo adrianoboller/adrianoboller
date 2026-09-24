@@ -1,0 +1,33 @@
+== LEGITIMO do repositorio: 1186 comandos distintos (fora os 20000 do comando.sql); 391 aceitos pelo analisador
+   ANALISAR: acusados 72 (forte 20) ; por classe [("aspa_aberta", 23), ("catalogo_do_sistema", 3), ("comentario_engole_aspa", 2), ("comentario_vazio_como_espaco", 1), ("constante_sob_or", 1), ("empilhado", 17), ("funcao_fora_do_motor", 28)]
+   RECORTAR: acusados 132 (forte 114) ; por classe [("catalogo_do_sistema", 18), ("comentario_engole_aspa", 26), ("constante_sob_or", 3), ("empilhado", 64), ("uniao_de_sondagem", 24)]
+== DADO ESCAPADO (36): ANALISAR acusa 0 ; RECORTAR acusa 30
+== DETECCAO (corpus do repositorio, 12 itens):
+   [ataque  ] aceito=true  forte=true  ["constante_sob_or"]  <- injecao.py ARSENAL «aspa solta / tautologia»
+   [ataque  ] aceito=false forte=true  ["empilhado"]  <- injecao.py ARSENAL «segundo comando: DROP»
+   [ataque  ] aceito=false forte=true  ["empilhado"]  <- injecao.py ARSENAL «segundo comando: DELETE»
+   [legitimo] aceito=true  forte=false []  <- injecao.py ARSENAL «UNION SELECT»
+   [legitimo] aceito=true  forte=false []  <- injecao.py ARSENAL «comentario /* */ no meio»
+   [legitimo] aceito=true  forte=false ["comentario_vazio_como_espaco"]  <- injecao.py ARSENAL «comentario como separador»
+   [ataque  ] aceito=false forte=true  ["empilhado", "funcao_fora_do_motor"]  <- injecao.py ARSENAL «'; EXEC»
+   [legitimo] aceito=true  forte=false []  <- injecao.py ARSENAL «comentario -- no fim»
+   [legitimo] aceito=false forte=false []  <- injecao.py ARSENAL «DROP direto»
+   [ataque  ] aceito=false forte=true  ["empilhado"]  <- injecao.py ARSENAL «empilhado com ponto-e-virgula solto»
+   [legitimo] aceito=false forte=false []  <- injecao.py ARSENAL «byte nulo no texto»
+   [legitimo] aceito=true  forte=false []  <- injecao.py ARSENAL «aspa escapada como DADO»
+== IMPRESSAO DIGITAL: legitimo 1083 textos lexicaveis -> 988 digitais ; comando.sql 20000 textos -> 1 digitais
+   aprende 50% / testa 50%: 532 de 564 (94.3%) do teste teriam digital NOVA (= recusa/alerta em modo protegendo)
+   [ataque] digital DIFERENTE de a do modelo
+   [ataque] digital DIFERENTE de a do modelo
+   [ataque] digital DIFERENTE de a do modelo
+   [ataque] digital DIFERENTE de a do modelo
+   [ataque] digital DIFERENTE de a do modelo
+== CUSTO por comando (ns, min/mediana/max de 41 voltas sobre 1186 comandos, 49 bytes medios)
+   analisar_comando (o que op_sql ja paga) : 2208 / 2289 / 5845
+   so o lexico                              : 896 / 922 / 983
+   detector relexando (+empilhado reanalisa): 4016 / 4077 / 4212
+   detector com os simbolos ja prontos      : 858 / 878 / 928
+     .. so classes dos simbolos             : 543 / 578 / 617
+     .. so varredura de comentario          : 212 / 224 / 260
+   impressao digital (normalizar + fnv1a)   : 710 / 746 / 816
+   DESLIGADO: leitura de um AtomicBool      : 0.35 / 0.36 / 0.39
