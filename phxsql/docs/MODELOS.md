@@ -1291,6 +1291,8 @@ QA, com julgamento de pergunta, e a redação do H.
 | 448 — FK e unicidade conferidas antes da marca, duas voltas | forte | integridade referencial e durabilidade do COMMIT; o DBA bloqueou a primeira (lista meio gravada, COMMIT quadratico, regressao do DEFAULT) |
 | 509+512 — fsync falho e `.ndx` sujo | forte | durabilidade provada contra o SO |
 | 506+507 — nome com letra e com ponto | medio | recusa na declaracao por uma funcao que ja existe |
+| SEC 497, terceira volta — portao da senha pelo lexico | forte | seguranca adversaria: evasao do portao e irmaos que gravam texto cru |
+| 514 — FK conferida na linha FINAL (depois do DEFAULT e da calculada) | forte | regra primordial da integridade, e o irmao em cada caminho que confere FK |
 
 **A integração achou o que nenhuma frente via, de novo por território de
 arquivo não bastar em worktree compartilhado**: `cargo fmt --all` de uma
