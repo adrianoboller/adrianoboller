@@ -1300,6 +1300,8 @@ QA, com julgamento de pergunta, e a redação do H.
 | juiz PhxJev — 30 pedidos julgados (preset revisar) | forte | o veredito sai do limiar do script, mas a probabilidade por pergunta e juizo sobre defeito ativo |
 | lote 491+492+515+516+490 — integridade na transacao | forte | regra primordial da integridade e concorrencia da transacao |
 | 249 — a sonda do disco a cada 5 minutos (ordem do dono) | leve | troca de um padrao e dos seus irmaos em texto, mecanica e verificavel por teste |
+| faceis A — 276, 369, 443, 462, 463, 529 | medio | itens locais de um arquivo, com teto ou texto; ordem do dono: os faceis primeiro |
+| faceis B — 345, 473, 524, 518 | medio | permissao de arquivo, mensagem, fsync do backup e NULL no diff: locais e provaveis por teste |
 
 **A integração achou o que nenhuma frente via, de novo por território de
 arquivo não bastar em worktree compartilhado**: `cargo fmt --all` de uma
