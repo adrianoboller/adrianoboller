@@ -747,9 +747,26 @@ mod tests {
     }
 
     fn zip_de(base: &Path, raiz: &Path, banco: &str) -> PathBuf {
-        crate::backup::executar_zip(raiz, &base.join("copias"), banco, "ana", 1_787_000_000_000)
-            .unwrap()
-            .0
+        let (alvo, _) = crate::backup::executar_zip(
+            raiz,
+            &base.join("copias"),
+            banco,
+            "ana",
+            1_787_000_000_000,
+        )
+        .unwrap();
+        crate::backup::finalizar_zip(&alvo).unwrap();
+        alvo
+    }
+
+    /// Os TRES passos de um backup de verdade (`executar`, `sincronizar`,
+    /// `finalizar_manifesto`) -- pedido 524, condicao C2: sem
+    /// `finalizar_manifesto` o destino nao tem `backup.json`, e nada aqui
+    /// consegue ler de volta.
+    fn copia_de(raiz: &Path, destino: &Path, quando_ms: i64) {
+        let (r, caminhos) = crate::backup::executar(raiz, destino, quando_ms).unwrap();
+        crate::backup::sincronizar_copias(&caminhos).unwrap();
+        crate::backup::finalizar_manifesto(destino, quando_ms, &r).unwrap();
     }
 
     #[test]
@@ -801,7 +818,7 @@ mod tests {
         std::fs::create_dir_all(&raiz).unwrap();
         dados_de_exemplo(&raiz);
         let copia = base.join("copia");
-        crate::backup::executar(&raiz, &copia, 1_787_000_000_000).unwrap();
+        copia_de(&raiz, &copia, 1_787_000_000_000);
 
         let c = conteudo(&copia).unwrap();
         assert!(!c.zip);
@@ -836,7 +853,7 @@ mod tests {
         std::fs::create_dir_all(&raiz).unwrap();
         dados_de_exemplo(&raiz);
         let copia = base.join("copia");
-        crate::backup::executar(&raiz, &copia, 1_787_000_000_000).unwrap();
+        copia_de(&raiz, &copia, 1_787_000_000_000);
 
         // MESMO TAMANHO, conteudo diferente: so o SHA-256 pega. Trocar o
         // tamanho junto deixaria a conferencia de bytes -- que e mais fraca --
@@ -864,7 +881,7 @@ mod tests {
         std::fs::create_dir_all(&raiz).unwrap();
         dados_de_exemplo(&raiz);
         let copia = base.join("copia");
-        crate::backup::executar(&raiz, &copia, 1_787_000_000_000).unwrap();
+        copia_de(&raiz, &copia, 1_787_000_000_000);
         std::fs::write(copia.join("Z/intruso.reg"), b"entrei depois").unwrap();
 
         let Err(e) = Preparada::preparar(&copia, &raiz, "Z") else {
@@ -882,7 +899,7 @@ mod tests {
         std::fs::create_dir_all(&raiz).unwrap();
         dados_de_exemplo(&raiz);
         let copia = base.join("copia");
-        crate::backup::executar(&raiz, &copia, 1_787_000_000_000).unwrap();
+        copia_de(&raiz, &copia, 1_787_000_000_000);
         std::fs::remove_file(copia.join("Z/clientes.ndx")).unwrap();
 
         assert!(Preparada::preparar(&copia, &raiz, "Z").is_err());
@@ -978,7 +995,7 @@ mod tests {
         std::fs::create_dir_all(&raiz).unwrap();
         dados_de_exemplo(&raiz);
         let copia = base.join("copia");
-        crate::backup::executar(&raiz, &copia, 1_767_236_400_000).unwrap();
+        copia_de(&raiz, &copia, 1_767_236_400_000);
 
         // Reescreve o manifesto SEM os campos novos, como a 0.18.0 gravava.
         let texto = std::fs::read_to_string(copia.join(MANIFESTO)).unwrap();

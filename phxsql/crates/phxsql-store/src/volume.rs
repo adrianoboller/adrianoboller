@@ -1387,7 +1387,16 @@ mod tests {
     /// `ndx.rs` (fora do `Volumes`, sincroniza por conta propria), `reg.rs`
     /// (`.novo` escrito, `sync_all`, `rename` -- o inode chega limpo),
     /// `pag.rs` (nao e' familia do `Volumes`, e sem `fsync` por decisao),
-    /// `restaurar.rs` e `backup.rs` (copias, com `sync_all` proprio),
+    /// `restaurar.rs` e `backup.rs` (copias, com `sync_all` proprio -- desde
+    /// o pedido 524/513 `backup.rs` escreve e sincroniza em DOIS passos
+    /// (`escrever_sem_sync`, chamado 3x, e `sincronizar_arquivo`, que REABRE
+    /// com `OpenOptions` porque o `fsync` roda depois de a trava de dados
+    /// ser solta -- ver a nota do modulo em `backup.rs`), e desde a condicao
+    /// C2 do parecer do DBA o ZIP tem nome PARCIAL ate o `fsync`, trocado
+    /// pelo final com `std::fs::rename` em `finalizar_zip`: o
+    /// `File::create(` conta 1, o `OpenOptions::new()` conta 1 e o
+    /// `fs::rename(` conta 1 -- tres, onde os tres `std::fs::write` antigos
+    /// contavam tres tambem, so que por um motivo diferente),
     /// `catalogo.rs` (a marca do database e as trocas de nome) e o proprio
     /// `volume.rs` -- tres desde o pedido 368: o terceiro e o `rename` de
     /// `fechar_ativo_da_trilha`, que troca o NOME de um volume ja escrito sem

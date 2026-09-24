@@ -89,7 +89,7 @@ use phxsql_core::value::Value;
 use phxsql_core::RowId;
 
 use crate::cofre::{self, Cabecalho};
-use crate::util::{agora_ms, por_u16, por_u32, por_u64, Campos};
+use crate::util::{agora_ms, apertar_permissao, por_u16, por_u32, por_u64, Campos};
 use crate::volume::Volumes;
 
 pub const MAGIC_TRILHA: &[u8; 8] = b"PHXLGP\0\0";
@@ -1667,29 +1667,6 @@ impl TrilhaFile {
             saiu.push(*v);
         }
         Ok(saiu)
-    }
-}
-
-/// Deixa o arquivo legivel so pelo dono.
-///
-/// O `.lgpd` guarda valor de dado pessoal em claro quando a cifra esta
-/// desligada -- que e o padrao. A permissao restrita e a unica protecao que
-/// existe nesse caso, e ela e a mesma que o `dblink` ja aplica ao cadastro de
-/// ligacoes, pelo mesmo motivo.
-///
-/// Silencioso de proposito: num sistema de arquivos que nao tem modo Unix (um
-/// volume FAT, um compartilhamento de rede), falhar aqui derrubaria a
-/// gravacao da trilha por causa de uma protecao que aquele disco nao sabe
-/// oferecer -- e ficar sem trilha e pior que ficar sem a permissao.
-fn apertar_permissao(caminho: &Path) {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(caminho, std::fs::Permissions::from_mode(0o600));
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = caminho;
     }
 }
 

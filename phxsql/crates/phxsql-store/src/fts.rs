@@ -45,6 +45,7 @@ use phxsql_core::types::ColumnType;
 use phxsql_core::RowId;
 
 use crate::ndx::NdxFile;
+use crate::util::apertar_permissao;
 
 /// Extensao do arquivo, ao lado do `.ndx`.
 pub const EXT_FTS: &str = "fts";
@@ -146,13 +147,21 @@ impl FtsFile {
         Ok(FtsFile::com(ndx, dobra))
     }
 
+    /// Cria a arvore do `.fts` no disco, e aperta a permissao no MESMO
+    /// caminho que a trilha ja usa (`util::apertar_permissao`) -- o `.fts`
+    /// carrega a mesma classe de dado pessoal em claro que motivou a
+    /// permissao do `.lgpd` (pedido 345), inclusive com o cofre ligado
+    /// (pedido 340): a chave do indice guarda o termo em claro dentro da
+    /// pagina, so a pagina no disco e que pode ser selada.
     fn arvore(caminho: &Path, quantos: usize, selar: bool) -> Result<NdxFile> {
         let esquema = esquema_do_indice(quantos);
-        if selar {
+        let ndx = if selar {
             NdxFile::criar_selado(caminho, &esquema)
         } else {
             NdxFile::criar(caminho, &esquema)
-        }
+        }?;
+        apertar_permissao(caminho);
+        Ok(ndx)
     }
 
     /// Recria o arquivo do zero, apagando o que estivesse la.
@@ -512,5 +521,39 @@ mod testes {
         let (f, caminho, _guarda) = novo("porcima");
         drop(f);
         assert!(FtsFile::criar(&caminho, vec![true], false).is_err());
+    }
+
+    /// Pedido 345: o `.fts` guarda a mesma classe de dado pessoal em claro
+    /// que motivou a permissao restrita do `.lgpd` -- e desde o pedido 340,
+    /// mesmo com o cofre LIGADO (a chave fica em claro DENTRO da pagina; so a
+    /// pagina no disco e selada). Prova contra o SO, nao suposicao.
+    #[test]
+    #[cfg(unix)]
+    fn nasce_com_permissao_restrita() {
+        use std::os::unix::fs::PermissionsExt;
+        let (f, caminho, _guarda) = novo("permissao-criar");
+        drop(f);
+        let modo = std::fs::metadata(&caminho).unwrap().permissions().mode() & 0o777;
+        assert_eq!(
+            modo, 0o600,
+            "o .fts nasceu {modo:o}: legivel por quem nao e o dono"
+        );
+    }
+
+    /// `recriar` e o caminho do `reindexar` (queda, panico, redeclaracao) --
+    /// caminho IRMAO de `criar`, e a permissao tem de valer nos dois.
+    #[test]
+    #[cfg(unix)]
+    fn recriar_tambem_nasce_com_permissao_restrita() {
+        use std::os::unix::fs::PermissionsExt;
+        let (f, caminho, _guarda) = novo("permissao-recriar");
+        drop(f);
+        let f2 = FtsFile::recriar(&caminho, vec![true], false).unwrap();
+        drop(f2);
+        let modo = std::fs::metadata(&caminho).unwrap().permissions().mode() & 0o777;
+        assert_eq!(
+            modo, 0o600,
+            "o .fts recriado ficou {modo:o}: legivel por quem nao e o dono"
+        );
     }
 }

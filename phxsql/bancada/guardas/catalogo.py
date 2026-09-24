@@ -3567,6 +3567,16 @@ pub fn limpar() {
             "contradizendo a segunda. Durou porque o comentario acima da linha "
             "JA dizia que o erro cru era ruim, com o `({e})` logo abaixo: "
             "envolver nao e substituir."
+            "\n\n"
+            "ATUALIZADO em 24/09/2026 (pedido 473): o conserto de entao trocou "
+            "o erro cru por uma AFIRMACAO -- \"esta sao: nao repare nada\" -- "
+            "que tambem estava errada, porque o mesmo byte marcado tambem "
+            "sobe numa queda ou panico no meio de uma escrita. O teste "
+            "renomeou (nao manda mais reparar VIROU nao afirma mais sao), e a "
+            "guarda continua provando o `troca` de origem: com o portao "
+            "desligado, o erro cru volta e o teste cai por perder a "
+            "explicacao \"confirme a mae antes da filha\", nao mais pela "
+            "palavra `reparar`."
         ),
         "arquivo": "crates/phxsql-store/src/table.rs",
         # ATUALIZADO em 16/09/2026 (pedido 263). Mesma mudanca que moveu o
@@ -3585,7 +3595,7 @@ pub fn limpar() {
         "pacote": "phxsql-store",
         "alvo": ["--test", "chave-estrangeira"],
         "caem": [
-            "a_mae_invisivel_nao_manda_reparar_indice_sao",
+            "a_mae_invisivel_nao_afirma_indice_sao",
             "a_mae_nao_gravada_recusa_dizendo_por_que",
         ],
         # O controle e a mae JA gravada: ela nao passa pelo portao novo, e
@@ -3605,6 +3615,11 @@ pub fn limpar() {
             "Os dois recusavam com o mesmo erro cru embrulhado, sob comentarios "
             "que os dois afirmavam que o erro cru era ruim. Terceira vez no "
             "mesmo dia em que um conserto entra num caminho e o irmao fica."
+            "\n\n"
+            "ATUALIZADO em 24/09/2026 (pedido 473), mesmo motivo do irmao "
+            "acima: o \"esta sao: nao repare nada\" tambem era falso aqui, e "
+            "o teste renomeou para provar a AUSENCIA da afirmacao, nao mais a "
+            "ausencia da palavra `reparar`."
         ),
         "arquivo": "crates/phxsql-store/src/table.rs",
         "trecho": """                let filha_com_indice_pendente = filha
@@ -3616,7 +3631,7 @@ pub fn limpar() {
         "pacote": "phxsql-store",
         "alvo": ["--test", "cascata-ao-alterar"],
         "caem": [
-            "a_procura_das_filhas_nao_manda_reparar_indice_sao",
+            "a_procura_das_filhas_nao_afirma_indice_sao",
         ],
         # Controles: a cascata normal e a que nao paga nada tem de seguir --
         # senao a troca quebrou o arquivo em vez de provar a guarda.
@@ -14839,6 +14854,254 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "seguem": [
             "email::testes::a_conversa_normal_continua_inteira",
             "email::testes::o_rele_lento_que_responde_cada_passo_inteiro_cabe",
+        ],
+    },
+    {
+        "id": "fts-nasce-com-permissao-aberta",
+        "titulo": "o `.fts` nasce `644` -- legivel por todo usuario da maquina",
+        "porque": (
+            "pedido 345 (achado SEC 339(b)): o `apertar_permissao` que o "
+            "`.lgpd` ja usa nao alcancava o `.fts`, que desde o pedido 340 "
+            "carrega a mesma classe de dado pessoal em claro -- inclusive com "
+            "o cofre LIGADO, porque a chave do indice fica em claro DENTRO da "
+            "pagina, e so a pagina no disco e selada. Conserto vindo do MESMO "
+            "motor que a trilha ja usa (`util::apertar_permissao`), nao uma "
+            "segunda copia."
+        ),
+        "arquivo": "crates/phxsql-store/src/fts.rs",
+        "trecho": """        apertar_permissao(caminho);
+""",
+        "troca": """        // DEFEITO REPOSTO (345): sem apertar a permissao, o .fts nasce
+        // 644.
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": [
+            "fts::testes::nasce_com_permissao_restrita",
+            "fts::testes::recriar_tambem_nasce_com_permissao_restrita",
+        ],
+        "seguem": [
+            "fts::testes::acha_a_palavra_que_indexou",
+        ],
+    },
+    {
+        "id": "conferir-fk-afirma-indice-sao-quando-marcado",
+        "titulo": "a conferencia contra a MAE afirma \"esta sao\" com o indice marcado",
+        "porque": (
+            "pedido 473, o irmao mais velho: o `recado-manda-reparar-arquivo-"
+            "sao` (pedido 176) tirou o erro cru, mas a AFIRMACAO que entrou no "
+            "lugar -- \"esta sao: nao repare nada\" -- tambem estava errada. "
+            "O byte marcado (52) e o MESMO que uma escrita pendente nesta "
+            "transacao levanta e que uma queda ou panico no meio de uma "
+            "escrita deixa em pe (pedido 456 tornou o segundo caso comum), e "
+            "o bit nao distingue um do outro. O recado certo nomeia os dois "
+            "em vez de afirmar um."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """                PhxError::Integridade(format!(
+                    "{}: nao deu para conferir contra {} agora -- o indice {} \\
+                     esta marcado e nao e confiavel: se {} tem escrita \\
+                     pendente nesta mesma transacao, confirme a mae antes da \\
+                     filha; se a marca ficou de uma queda ou panico anterior, \\
+                     sem ninguem mais escrevendo ali, rode `reparar indice`",
+                    fk.nome,
+                    fk.tabela_ref,
+                    ndx.display(),
+                    fk.tabela_ref
+                ))
+""",
+        "troca": """                // DEFEITO REPOSTO (473): a mensagem volta a AFIRMAR que o
+                // arquivo esta sao quando a marca nao prova isso.
+                PhxError::Integridade(format!(
+                    "{}: nao deu para conferir contra {} agora -- a guarda \\
+                     de visibilidade de {} recusou responder, e o arquivo \\
+                     esta SAO: nao repare nada. A conferencia le o que ja \\
+                     foi gravado; mae escrita nesta mesma transacao ainda \\
+                     nao esta visivel -- confirme a mae antes da filha",
+                    fk.nome,
+                    fk.tabela_ref,
+                    ndx.display()
+                ))
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "chave-estrangeira"],
+        "caem": [
+            "a_mae_invisivel_nao_afirma_indice_sao",
+            "a_mae_nao_gravada_recusa_dizendo_por_que",
+        ],
+        "seguem": [
+            "a_mae_aberta_e_ja_gravada_e_vista",
+            "sem_conferir_a_mae_aberta_nao_muda_nada",
+        ],
+    },
+    {
+        "id": "procura-das-filhas-afirma-indice-sao-quando-marcado",
+        "titulo": "a procura pelas filhas afirma \"esta sao\" com o indice marcado",
+        "porque": (
+            "o IRMAO do `conferir-fk-afirma-indice-sao-quando-marcado`: aquele "
+            "e o lado «existe esta mae?», este e o lado «quem aponta para "
+            "esta mae?». Os dois tinham a MESMA afirmacao falsa, e os dois "
+            "sao consertados pelo pedido 473 no mesmo commit -- irmao que "
+            "fica para tras e o padrao que ja custou tres vezes nesta casa."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """                    if let Some(ndx) = filha_com_indice_pendente {
+                        return PhxError::Integridade(format!(
+                            "{eu}: nao deu para procurar agora as filhas em {irma} pela \\
+                             chave {:?} -- o indice {} esta marcado e nao e confiavel: \\
+                             se {irma} tem escrita pendente nesta mesma transacao, \\
+                             confirme-a antes de alterar a mae; se a marca ficou de \\
+                             uma queda ou panico anterior, sem ninguem mais escrevendo \\
+                             ali, rode `reparar indice`",
+                            fk.nome,
+                            ndx.display()
+                        ));
+                    }
+""",
+        "troca": """                    if let Some(ndx) = filha_com_indice_pendente {
+                        // DEFEITO REPOSTO (473): a mensagem volta a AFIRMAR
+                        // que o arquivo esta sao quando a marca nao prova
+                        // isso.
+                        return PhxError::Integridade(format!(
+                            "{eu}: nao deu para procurar agora as filhas em {irma} pela \\
+                             chave {:?} -- a guarda de visibilidade de {} recusou responder, \\
+                             e o arquivo esta SAO: nao repare nada. A procura le o que ja \\
+                             foi gravado; filha escrita nesta mesma transacao ainda nao \\
+                             esta visivel -- confirme-a antes de alterar a mae",
+                            fk.nome,
+                            ndx.display()
+                        ));
+                    }
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "cascata-ao-alterar"],
+        "caem": [
+            "a_procura_das_filhas_nao_afirma_indice_sao",
+        ],
+        "seguem": [
+            "a_filha_acompanha_a_chave_que_a_mae_mudou",
+            "a_cascata_alcanca_a_neta",
+        ],
+    },
+    {
+        "id": "backup-sem-fsync",
+        "titulo": "o backup responde \"concluido\" sem `fsync` nenhum",
+        "porque": (
+            "pedido 524: `backup.rs` gravava cada copia e o manifesto por "
+            "`std::fs::write` puro, e o comentario de `volume.rs` dizia que "
+            "fazia `sync_all` proprio -- e nao fazia. Um backup que se diz "
+            "concluido sem estar no disco do destino e o pior momento para "
+            "mentir, porque e' justamente quando o operador apaga o backup "
+            "ANTERIOR contando com este."
+            "\n\n"
+            "ATUALIZADO no mesmo dia (pedido 513): o primeiro conserto "
+            "sincronizava dentro de `executar`/`executar_zip`, chamados "
+            "com `travar_dados()` na mao -- e isso subiu a catraca "
+            "`alcancam-fsync-2` de 23 para 25 (`fsync` sob a trava global "
+            "e o que ela proibe, so' desce). O desenho final separa "
+            "ESCREVER (ainda sob a trava, que so' protege a LEITURA de "
+            "`raiz`) de SINCRONIZAR (`sincronizar_arquivo`, chamado depois "
+            "de a trava ser solta): a guarda mede o `sync_all` que ficou, "
+            "so' que agora fora da trava."
+            "\n\n"
+            "ATUALIZADO de novo no mesmo dia (condicao C1): o corpo de "
+            "`sincronizar_arquivo` ganhou uma segunda linha (o `sync_all` "
+            "virou `sync_all_sem_abortar`), e o `trecho` tem de acompanhar "
+            "o texto de hoje -- ver a entrada IRMA `backup-fsync-derruba-o-"
+            "servidor`, que testa so essa segunda linha."
+        ),
+        "arquivo": "crates/phxsql-store/src/backup.rs",
+        "trecho": """fn sincronizar_arquivo(alvo: &Path) -> Result<()> {
+    let arquivo = OpenOptions::new().read(true).write(true).open(alvo)?;
+    // `sem_abortar`: o destino do backup nao e o disco do banco que o
+    // gancho do 509 protege -- pedido 524, condicao C1 do parecer do DBA.
+    crate::sincronia::sync_all_sem_abortar(&arquivo, alvo)
+}
+""",
+        "troca": """fn sincronizar_arquivo(alvo: &Path) -> Result<()> {
+    // DEFEITO REPOSTO (524): nao sincroniza -- "concluido" pode nao
+    // estar no disco do destino.
+    let _ = alvo;
+    Ok(())
+}
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": [
+            "backup::tests::fsync_recusado_na_copia_vira_erro",
+            "backup::tests::fsync_recusado_no_zip_vira_erro",
+        ],
+        "seguem": [
+            "backup::tests::copia_tudo_e_confere",
+            "backup::tests::o_zip_leva_tudo_e_o_manifesto_dentro",
+        ],
+    },
+    {
+        "id": "backup-fsync-derruba-o-servidor",
+        "titulo": "o `fsync` recusado no DESTINO DE UM BACKUP derruba o servidor inteiro",
+        "porque": (
+            "pedido 524, condicao C1 do parecer do DBA (24/09/2026): "
+            "`sincronia::sync_all` chama o gancho do processo na recusa, e no "
+            "servidor esse gancho e' `fsync_recusado_derruba_o_processo` -- "
+            "`std::process::abort()`. O gancho existe para o disco do BANCO "
+            "(pedido 509): um disco que mente sobre o que foi gravado nao "
+            "pode responder Ok de novo. O destino de um backup (USB, NFS, "
+            "provisionamento fino que o operador ainda nao ampliou) NAO e' "
+            "esse disco, e uma recusa ali vira producao inteira fora do ar "
+            "por um disco que nao e' nem o que o banco usa. "
+            "`sync_all_sem_abortar` faz a MESMA conta -- inclusive a marca "
+            "que impede uma repeticao de responder Ok sem o dado -- so' sem "
+            "chamar o gancho."
+        ),
+        "arquivo": "crates/phxsql-store/src/backup.rs",
+        "trecho": """    crate::sincronia::sync_all_sem_abortar(&arquivo, alvo)
+""",
+        "troca": """    // DEFEITO REPOSTO (524, C1): volta a chamar o gancho do processo --
+    // um disco de BACKUP que recusa agora derruba o servidor inteiro.
+    crate::sincronia::sync_all(&arquivo, alvo)
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_panico_sob_a_trava::fsync_no_destino_do_backup_nao_derruba_o_servidor",
+        ],
+        "seguem": [
+            "servidor::testes_do_panico_sob_a_trava::fsync_recusado_derruba_o_processo_e_a_marca_fica",
+        ],
+    },
+    {
+        "id": "diff-null-na-chave-apaga-linha-irma",
+        "titulo": "o `diff` com NULL repetido no indice some com linhas do relatorio",
+        "porque": (
+            "pedido 518 (achado do papel C na revisao do 448): `Value::Null` "
+            "vira texto canonico VAZIO (`juncao::pedaco_de_chave`), entao "
+            "duas linhas com a chave nula -- do MESMO lado ou de lados "
+            "diferentes -- caiam na mesma entrada do mapa de casamento, e a "
+            "segunda apagava a primeira: uma linha inteira sumia do "
+            "relatorio, sem aparecer em `so_em_a`, `so_em_b`, `diferentes` "
+            "NEM `iguais`. Nenhum dado gravado muda -- o defeito e' so' do "
+            "relatorio, que mentia por omissao. Conserto: NULL nao casa com "
+            "NULL como identidade, a mesma semantica que os tres motores "
+            "maduros usam para UNIQUE."
+        ),
+        "arquivo": "crates/phxsql-server/src/diferencas.rs",
+        "trecho": """    if chave.iter().any(Value::e_null) {
+        return None;
+    }
+""",
+        "troca": """    // DEFEITO REPOSTO (518): NULL na chave volta a casar com NULL --
+    // duas linhas com chave nula colidem no mapa de casamento e uma
+    // some do relatorio.
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "diferencas::testes::null_na_chave_nunca_apaga_a_linha_irma",
+            "diferencas::testes::null_de_a_nao_casa_com_null_de_b",
+        ],
+        "seguem": [
+            "diferencas::testes::as_tres_listas_e_a_coluna_que_mudou",
+            "diferencas::testes::a_chave_decimal_casa_por_valor",
         ],
     },
 ]

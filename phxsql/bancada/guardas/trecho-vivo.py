@@ -299,6 +299,13 @@ dia, nunca no desejado:
   aperto de mao alem do fim e a contagem negativa do PostgreSQL no DbLink,
   o job que dispara job e a conversa SMTP sem prazo total. A frente contou
   392 sobre a base dela; a conta do integrador, pelo `--catraca`.
+  **SUBIU para 413 em 24/09/2026** (faceis B: 345, 473, 518 e 524,
+  integrado sobre os faceis D): seis guardas -- o `.fts` que nascia com a
+  permissao aberta, as duas recusas que afirmavam indice sao quando ele
+  estava marcado, o backup sem `fsync`, o `fsync` do destino do backup que
+  derrubava o servidor e o NULL na chave do `diff` que apagava a linha
+  irma. A frente contou 358 sobre a base dela; a conta do integrador, pelo
+  `--catraca`.
   **SUBIU para 300 em 24/09/2026, contado NA ARVORE DA FRENTE do 497** (e nao
   na combinada, que a linha do 345 acima reconcilia) (pedido 497, o literal do pedido no texto
   do erro que o `acessos.log` grava): tres guardas novas, uma por motor que
@@ -423,7 +430,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 407
+PISO_DAS_ENTRADAS = 413
 
 # ------------------------------------------------------------- APOSENTADAS
 #

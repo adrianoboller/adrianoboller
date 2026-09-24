@@ -248,3 +248,150 @@ nada. Resolver no mesmo lugar, e não com um segundo prazo ao lado, é a lei
 **D1 é o mais sério da rodada.** Não é exposição de dado. É o servidor
 inteiro parado por um par de rede, e a regra do dono põe isso na conta
 (travamento).
+
+---
+
+## 6. Fáceis C (464 e 365, os itens de segurança)
+
+Lido no worktree `agent-a466115b9d5f16228`, com `git diff HEAD` (HEAD
+`8e5a545`). Os números de linha abaixo são desse worktree.
+
+| Item | Veredito |
+|---|---|
+| 464, `Column::recusa_de_valor` como motor único | **LIBERA**. O motor está certo; três irmãos pré-existentes viram pedido (C1 a C3) |
+| 365, o `sql` normalizado no `perfil.txt` | **LIBERA COM CONDIÇÃO**: `TRUE`/`FALSE` ainda saem crus |
+| A garantia do 497 depois das 16 expectativas trocadas | **Continua** |
+
+### 464: LIBERA
+
+**O motor redige analisando.**
+
+- A frase do conversor é jogada fora inteira. A nova sai só do esquema: o
+  nome da coluna, o tipo declarado (`Str(14)` é largura do esquema, e não do
+  valor) e o grau.
+- A variante é a mesma, então o código que o cliente trata não muda.
+- `Corrompido` e `Io` passam intactos, e é certo que passem: nenhum conversor
+  os usa com o valor. Conferi os três: `json_para_valor`, `valor_de_texto` e
+  `escrever_inline`.
+
+**A mensagem vaza tamanho ou formato que reidentifique? Não.**
+
+- Não traz o comprimento nem pedaço do valor.
+- Os três motivos (serve ao tipo, cabe no tipo, foi recusado) dão no máximo
+  1,5 bit sobre o valor, a quem o digitou.
+- O `Duplicado`, a FK e o CHECK não citam valor: conferi as seis mensagens de
+  unicidade e a da FK, e o CHECK cita a expressão do esquema.
+
+**Irmãos que ficaram fora.** Os três já existiam antes da frente. Nenhum passa
+pela lista do `SEGURANCA.md` §28.
+
+- **C1: o DbLink PUXAR** (`dblink/sincronia.rs:286`).
+  - `linha_remota_para_negocio` chama `valor_de_texto(t, ty)?` sem a porta.
+  - A célula remota que não serve à coluna local marcada sai citada:
+    `esperado Data, recebido "999.888.777-66"`, até 48 bytes.
+  - Vai à resposta do `dblink_sincronizar`, ao `acessos.log`, ao Profiler e
+    ao `jobs.log` quando roda por job.
+  - O dado é de um titular do OUTRO banco, que ninguém digitou aqui.
+  - O conserto é uma linha:
+    `.map_err(|e| esquema.colunas()[*pos].recusa_de_valor(e))`.
+- **C2: o DbLink EMPURRAR** (`sincronia.rs:362` → `dblink::literal` →
+  `nome_seguro`, `dblink/mod.rs:1829-1856`).
+  - Todo valor `Str`/`Memo` passa pela régua de IDENTIFICADOR.
+  - Uma aspa simples («D'Ávila», «Rua Sant'Ana»), aspa dupla, contrabarra ou
+    quebra de linha (qualquer `Memo` de várias linhas) recusa com
+    `nome com caractere que nao vale em identificador: {n:?}`.
+  - A recusa traz o valor INTEIRO.
+  - Acima de 128 bytes é `nome longo demais: {n:?}`, também inteiro: não
+    passa pelo `citar`, então um `Memo` de 1 MiB vai inteiro ao log. É irmão
+    do 464 e do 453 ao mesmo tempo.
+  - Para o DBA: o mesmo caminho faz `trim()` no valor antes de mandar, e
+    «Ana » chega lá como «Ana», calado.
+- **C3: a avaliação de expressão.**
+  - `expressao::Valor::descricao` (`expressao.rs:152-161`) tapa o texto
+    desde o 497, mas cita número e booleano: «o numero 12345678901».
+  - As recusas de avaliação saem pelo `?` antes do `coagir`, e ali a porta
+    não alcança: padrão, calculada, índice por expressão, CHECK
+    (`table.rs:4157/4346/4355/4366`), `consultar.expressao`.
+  - A porta olha só a coluna de DESTINO. Uma calculada NÃO marcada que parte
+    de uma coluna marcada tem o `coagir` citando o número derivado:
+    `faixa Int1 = renda / 1000` mostra «o numero 500».
+  - É o menor dos três: exige expressão que falha por tipo.
+  - O comentário em `table.rs:4356` («a conta pode partir de coluna
+    marcada») promete mais do que o código cobre.
+- **Informativo:** `servidor.rs:18264`, o `coagir` do padrão no
+  `acrescentar_coluna`, também fica sem a porta. É literal de DDL digitado
+  pelo administrador, e não dado de titular.
+
+### 365: LIBERA COM CONDIÇÃO
+
+O que o integrador perguntou, conferido no léxico (`lexico.rs`) e no
+`redigir` (`usuario.rs`):
+
+| Forma | Sai no `perfil.txt` |
+|---|---|
+| comentário `--`, `/* */`, `/*!...*/` | some: o léxico o descarta |
+| `#`, `@`, crase, `$` | `<comando invalido, N bytes>`: o léxico recusa o caractere |
+| identificador entre aspas duplas com dado | `"***"` (cai no `descrever`) |
+| `X'3939'` | `X ?` |
+| `0x3939`, `1e5` | `<comando invalido, N bytes>`: número colado recusa |
+| `DATE '2001-02-03'` | `DATE ?` |
+| `SET PASSWORD FOR c = 'x'`, `IDENTIFIED BY x` sem aspas | `SET PASSWORD ?`, `IDENTIFIED ?` (regra da senha) |
+| `parametros` irmãos | `"***"` |
+| erro do evento | o tamanho |
+| **`TRUE` / `FALSE` (e `NULL`)** | **CRU**. São `Token::Palavra { citado: false }` e caem no braço que copia a palavra (`usuario.rs:352-355`) |
+
+**Condição.**
+
+- **O cenário:** `INSERT INTO pacientes (id, hiv) VALUES (?, TRUE)` vai ao
+  arquivo como `VALUES ( ? , TRUE )`.
+- **Por que conta:** num booleano marcado, o dado é o próprio booleano, e a
+  categoria sensível da LGPD é exatamente essa. A linha vem com login, IP e
+  instante ao lado.
+- **Contra a promessa:** o §13.14 promete «todo literal».
+- **Contra a convergência:** o `pg_stat_statements` troca `true` e `NULL`
+  por `$n` (são `Const`). O digest do MySQL, o papel J confere.
+- **O conserto:** no modo `Literais`, `TRUE`/`FALSE` (sem caixa, não citados)
+  viram `?`. `NULL` também, de preferência. É o mesmo braço, sem léxico novo.
+- **O teste:** o `o_normalizado_troca_todo_literal_e_guarda_o_comando` ganha
+  `TRUE` na lista de literais que não podem ficar.
+
+**Os pontos que conferi e passam:**
+
+- **Quem decide é o `op`.** O `e_pedido_sql` casa `op` com `trim` e sem
+  caixa, e com qualquer `op` repetido (`any`). É mais largo que o despacho,
+  que lê a primeira chave exata: sobra redação, nunca falta.
+- **O `sql` aninhado.** Em job, lote ou transação ele é alcançado, porque o
+  `limpar_com` desce objeto e lista. O `pedido` do job é sempre objeto
+  (`jobs.rs:238-246`).
+- **As duas portas que capturam** (`servidor.rs:9930` web e `:10356` dados)
+  passam pelo mesmo `analisar_pedido`.
+- **As exclusões** (`criar_visao`, `dblink_consultar`) são coerentes com o
+  modelo do 356. O arquivo já leva o valor de tabela NÃO sigilosa por
+  desenho, e nenhuma das duas nomeia tabela local sigilosa.
+
+### A garantia do 497 continua
+
+- As 16 expectativas trocadas são a PROVA de redação (`novas.contains(prova)`).
+  A GARANTIA é a ausência de `SEGREDO123` em toda linha nova do
+  `perfil.txt`. Ela continua em todos os casos com `perfil: Some`, pelas duas
+  portas.
+- A prova nova é mais forte que o `'***'`. Em `PASSWORD SEGREDO123` e
+  `IDENTIFIED BY SEGREDO123` sem aspas não há literal: só a regra da senha
+  produz o `?`. Então a frase ainda prova que a regra da senha rodou dentro do
+  modo `Literais`.
+- O anel continua no modo `Senha`, sem mudança
+  (`o_sem_a_senha_continua_como_era`).
+
+**Recomendação, sem condição:** os casos `op:"sql"` com `perfil: None` desse
+arquivo (literal sem fechar, literal solto, `VALUES 'SEGREDO123'`) agora
+também saem limpos no arquivo. Passá-los a `Some(..)` trava o 365 na bateria
+do 497 (a catraca desce).
+
+### Pedidos propostos (fáceis C)
+
+| # | Estado proposto | Achado | Teste adverso |
+|---|---|---|---|
+| **C0** | condição do 365, no mesmo lote | `TRUE`/`FALSE` (e `NULL`) crus no `sql` normalizado | `normalizado("INSERT INTO p (id, hiv) VALUES (7, TRUE)")` não contém `TRUE` |
+| **C1** | ☐ baixa | O DbLink puxar cita a célula remota na recusa de coluna marcada | Par MySQL falso devolve `"999.888.777-66"` para uma coluna local `Date` marcada. O erro do `dblink_sincronizar` não contém `999` |
+| **C2** | ☐ média | O DbLink empurrar cita o valor local INTEIRO e sem teto (`{n:?}` do `nome_seguro`) | Linha local com `Memo` marcado de 200 KiB e uma quebra de linha, sentido empurrar. O erro não contém o texto, e tem menos de 1 KiB |
+| **C3** | ⏸ baixa | Recusa de avaliação de expressão cita número/booleano de coluna marcada de ORIGEM | Calculada não marcada `faixa Int1 = renda / 1000`, com `renda` marcada = 500000. O erro não contém `500` |

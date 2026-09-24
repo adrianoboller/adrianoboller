@@ -2075,34 +2075,38 @@ impl Table {
             ))
         })?;
         // Erro do `buscar` NAO e "nao achou" -- nao achar e `Ok(vazio)`.
-        // Erro aqui e a guarda do indice da mae recusando responder, e ela
-        // recusa quando a mae esta aberta em OUTRO lugar com escrita pendente.
-        // Com o handle emprestado da transacao (o conserto do P0) isso nao
-        // acontece -- o proprio escritor le o seu indice --, mas o segundo
-        // descritor do caminho de disco ainda pode cair aqui, e o recado
-        // continua o mesmo.
+        // Erro aqui e o UNICO portao de indice (`NdxFile::descritor`)
+        // recusando responder porque o arquivo esta MARCADO -- o mesmo byte
+        // 52 que uma escrita pendente NESTA transacao levanta (o limite
+        // medido no modulo deste teste: um segundo descritor sobre tabela com
+        // escrita pendente le um indice que ainda nao foi ao disco) e que uma
+        // escrita interrompida por queda ou panico tambem deixa em pe -- e so
+        // `reparar indice` baixa nesse segundo caso.
         //
-        // O erro cru manda "reconstrua o indice", o que faria o leitor reparar
-        // um arquivo sao. Quem separa os dois casos e a PERGUNTA A MAE, e nao o
-        // texto do erro: `indice_precisa_reconstruir()` distingue a marca de
-        // visibilidade de uma corrupcao de verdade -- e na corrupcao o
-        // "reconstrua o indice" e o conselho CERTO, entao ali o erro cru passa
-        // inteiro. Casar o texto do erro quebraria calado no dia em que alguem
-        // melhorasse a redacao dele.
+        // O bit NAO diz qual dos dois foi: nao ha, hoje, marca separada para
+        // "outro handle ainda escrevendo" e "ninguem mais vai terminar essa
+        // escrita". Pedido 473: a mensagem afirmava "esta SAO: nao repare
+        // nada" como se so o primeiro caso existisse -- e depois do pedido
+        // 456 (a marca agora fica de pe apos todo panico no meio de uma
+        // escrita) o segundo ficou comum demais para se supor. A correcao e
+        // NOMEAR os dois em vez de escolher um: quem le decide com o que sabe
+        // sobre a propria transacao, e o `reparar indice` so entra quando a
+        // pessoa tem certeza de que nada mais escreve ali.
         let pendente = mae
             .indice_precisa_reconstruir()
             .then(|| caminho(mae.diretorio(), mae.nome(), EXT_NDX));
         let achou = mae.buscar(&indice, chave).map_err(|e| {
             if let Some(ndx) = pendente {
                 PhxError::Integridade(format!(
-                    "{}: nao deu para conferir contra {} agora -- a guarda \
-                     de visibilidade de {} recusou responder, e o arquivo \
-                     esta SAO: nao repare nada. A conferencia le o que ja \
-                     foi gravado; mae escrita nesta mesma transacao ainda \
-                     nao esta visivel -- confirme a mae antes da filha",
+                    "{}: nao deu para conferir contra {} agora -- o indice {} \
+                     esta marcado e nao e confiavel: se {} tem escrita \
+                     pendente nesta mesma transacao, confirme a mae antes da \
+                     filha; se a marca ficou de uma queda ou panico anterior, \
+                     sem ninguem mais escrevendo ali, rode `reparar indice`",
                     fk.nome,
                     fk.tabela_ref,
-                    ndx.display()
+                    ndx.display(),
+                    fk.tabela_ref
                 ))
             } else {
                 PhxError::Integridade(format!(
@@ -2874,18 +2878,29 @@ impl Table {
                         colunas_da_filha.join(", ")
                     )));
                 };
-                // Erro aqui NAO e "nao achou" -- nao achar e `Ok(vazio)`. E a
-                // guarda do indice da filha recusando responder, e ela recusa
-                // quando a filha esta aberta em outro lugar com escrita
-                // pendente. Mesmo limite de VISIBILIDADE do `conferir_fks`.
+                // Erro aqui NAO e "nao achou" -- nao achar e `Ok(vazio)`. E o
+                // UNICO portao de indice (`NdxFile::descritor`) recusando
+                // responder porque o arquivo esta MARCADO -- o mesmo byte 52
+                // que uma escrita pendente NESTA transacao levanta (o limite
+                // medido no modulo `chave-estrangeira.rs`: um segundo
+                // descritor sobre tabela com escrita pendente le um indice
+                // que ainda nao foi ao disco) e que uma escrita interrompida
+                // por queda ou panico tambem deixa em pe -- e so `reparar
+                // indice` baixa nesse segundo caso. (Quem repara ANTES de
+                // responder e a RECUPERACAO, no
+                // `if self.reconstruir_indice_da_filha` acima; o caminho
+                // normal nunca repara sozinho.)
                 //
-                // **E este comentario tambem dizia «o erro cru manda
-                // reconstruir um indice que esta sao» com o `({e})` logo
-                // abaixo** -- o mesmo par que o `conferir_fks` pagou no pedido
-                // 176, no caminho IRMAO. Envolver nao e substituir. O conserto
-                // e o mesmo: a causa continua nomeada, montada do DADO e nao
-                // recortada do texto do erro, e sai so o imperativo.
-                // A RECUPERACAO pode reconstruir; o caminho normal, nunca.
+                // O bit NAO diz qual dos dois foi. **Este comentario tambem
+                // dizia «o erro cru manda reconstruir um indice que esta
+                // sao» com o `({e})` logo abaixo, e a MENSAGEM afirmava "esta
+                // SAO: nao repare nada" como se so o caso benigno
+                // existisse** -- o mesmo par que o `conferir_fks` pagou no
+                // pedido 176, e que voltou aqui pelo pedido 473: depois do
+                // 456 (a marca fica de pe apos todo panico no meio de uma
+                // escrita) o caso de queda ficou comum demais para se supor
+                // ausente. Envolver nao e substituir. O conserto NOMEIA os
+                // dois casos em vez de escolher um.
                 //
                 // Aqui esta o buraco do pedido 172, e ele era estrutural: o
                 // `completar()` reconstroi o `.ndx` de toda tabela NOMEADA NA
@@ -2910,10 +2925,11 @@ impl Table {
                     if let Some(ndx) = filha_com_indice_pendente {
                         return PhxError::Integridade(format!(
                             "{eu}: nao deu para procurar agora as filhas em {irma} pela \
-                             chave {:?} -- a guarda de visibilidade de {} recusou responder, \
-                             e o arquivo esta SAO: nao repare nada. A procura le o que ja \
-                             foi gravado; filha escrita nesta mesma transacao ainda nao \
-                             esta visivel -- confirme-a antes de alterar a mae",
+                             chave {:?} -- o indice {} esta marcado e nao e confiavel: \
+                             se {irma} tem escrita pendente nesta mesma transacao, \
+                             confirme-a antes de alterar a mae; se a marca ficou de \
+                             uma queda ou panico anterior, sem ninguem mais escrevendo \
+                             ali, rode `reparar indice`",
                             fk.nome,
                             ndx.display()
                         ));

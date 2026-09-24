@@ -85,7 +85,20 @@ pub struct LadoDaComparacao<'a> {
 /// dentro de UMA tabela, onde a escala e uma so. Aqui os dois lados sao
 /// tabelas diferentes, e foi exatamente essa diferenca que o defeito de
 /// escala mostrou.
-fn texto_da_chave(chave: &[Value], tipos: &[phxsql_core::types::ColumnType]) -> String {
+///
+/// `None` quando algum pedaco da chave e NULO -- pedido 518. **NULL nao casa
+/// com NULL como identidade**, a mesma semantica que os tres motores maduros
+/// usam para UNIQUE (`juncao::chave_de` ja fazia isto do lado da junção; esta
+/// funcao reimplementava a MESMA decisao sem o mesmo cuidado). Sem isto, duas
+/// linhas com a chave NULA em lados diferentes viravam o MESMO texto
+/// canonico (`Value::Null` -> string vazia), e a segunda sobrescrevia a
+/// primeira no mapa de casamento -- uma linha inteira sumia do relatorio, sem
+/// aparecer em `so_em_a`, `so_em_b`, `diferentes` NEM `iguais`. Nenhum dado
+/// gravado muda; so o relatorio mentia por omissao.
+fn texto_da_chave(chave: &[Value], tipos: &[phxsql_core::types::ColumnType]) -> Option<String> {
+    if chave.iter().any(Value::e_null) {
+        return None;
+    }
     let mut k = String::with_capacity(chave.len() * 12);
     for (i, v) in chave.iter().enumerate() {
         // O separador e o mesmo do `juncao::chave_de`: um byte que nao aparece
@@ -99,7 +112,7 @@ fn texto_da_chave(chave: &[Value], tipos: &[phxsql_core::types::ColumnType]) -> 
             None => k.push_str(&format!("{v:?}")),
         }
     }
-    k
+    Some(k)
 }
 
 /// Duas celulas da MESMA coluna, uma de cada lado, sao o mesmo valor?
@@ -131,10 +144,25 @@ pub fn comparar(a: LadoDaComparacao, b: LadoDaComparacao, max: usize) -> Resulta
     let mut r = Resultado::default();
     let mut de_b: HashMap<String, (Vec<Value>, Vec<Value>)> =
         HashMap::with_capacity(b.linhas.len());
-    for (chave, linha) in b.linhas {
-        de_b.insert(texto_da_chave(&chave, &b.tipos_da_chave), (chave, linha));
-    }
     let cabe = |n: usize| max == 0 || n < max;
+    for (chave, linha) in b.linhas {
+        match texto_da_chave(&chave, &b.tipos_da_chave) {
+            Some(k) => {
+                de_b.insert(k, (chave, linha));
+            }
+            // NULL nunca casa: sai direto para `so_em_b`, sem passar pelo
+            // mapa -- e por isso nao ha risco de um segundo NULL apagar este
+            // do casamento. A ordem final sai do `sort_by_cached_key` la
+            // embaixo, entao entrar aqui ou no laco de sobra nao importa.
+            None => {
+                if cabe(r.so_em_b.len()) {
+                    r.so_em_b.push(chave);
+                } else {
+                    r.truncado = true;
+                }
+            }
+        }
+    }
     let esquema = a.esquema;
     // O tipo da MESMA posição nos dois esquemas. A operação so chega aqui
     // depois de conferir que as duas tabelas tem as mesmas colunas na mesma
@@ -147,7 +175,10 @@ pub fn comparar(a: LadoDaComparacao, b: LadoDaComparacao, max: usize) -> Resulta
     };
 
     for (chave, linha) in a.linhas {
-        match de_b.remove(&texto_da_chave(&chave, &a.tipos_da_chave)) {
+        // `None` cobre os dois casos que terminam do mesmo jeito: a chave
+        // tem NULL (nunca casa, pedido 518) ou nao ha essa chave em B.
+        let achado = texto_da_chave(&chave, &a.tipos_da_chave).and_then(|k| de_b.remove(&k));
+        match achado {
             None => {
                 if cabe(r.so_em_a.len()) {
                     r.so_em_a.push(chave);
@@ -251,6 +282,20 @@ mod testes {
         .unwrap()
     }
 
+    /// A `id` NAO e' `.obrigatoria()`: um UNIQUE que aceita NULL, como os
+    /// tres motores maduros aceitam -- e o caso do pedido 518.
+    fn esquema_com_chave_nulavel() -> Schema {
+        Schema::new(
+            "eventos",
+            vec![
+                Column::new("id", ColumnType::Int8),
+                Column::new("nome", ColumnType::Str(20)),
+            ],
+            vec![IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico()],
+        )
+        .unwrap()
+    }
+
     fn linhas(l: &[(i64, &str)]) -> Vec<(Vec<Value>, Vec<Value>)> {
         l.iter()
             .map(|(id, nome)| {
@@ -286,6 +331,71 @@ mod testes {
         assert_eq!(r.diferentes.len(), 1);
         assert_eq!(r.diferentes[0].chave, vec![Value::Int(2)]);
         assert_eq!(r.diferentes[0].colunas, vec!["nome".to_string()]);
+        assert!(!r.truncado);
+    }
+
+    /// Pedido 518: NULL na chave nunca casa com outro NULL -- nem com o do
+    /// mesmo lado. `Value::Null` vira texto canonico VAZIO
+    /// (`juncao::pedaco_de_chave`), entao duas linhas com a chave nula do
+    /// MESMO lado tinham o mesmo texto e se sobrescreviam no mapa de
+    /// casamento -- a segunda apagava a primeira, e a primeira sumia do
+    /// relatorio inteiro: nao aparecia em `so_em_a`, `so_em_b`,
+    /// `diferentes` NEM `iguais`. Nenhum dado gravado muda -- o defeito e
+    /// so' do RELATORIO, que mentia por omissao.
+    #[test]
+    fn null_na_chave_nunca_apaga_a_linha_irma() {
+        let e = esquema_com_chave_nulavel();
+        let b = lado(
+            &e,
+            vec![
+                (
+                    vec![Value::Null],
+                    vec![Value::Null, Value::Str("linha-1".into())],
+                ),
+                (
+                    vec![Value::Null],
+                    vec![Value::Null, Value::Str("linha-2".into())],
+                ),
+            ],
+        );
+        let a = lado(&e, vec![]);
+        let r = comparar(a, b, 0);
+        assert_eq!(
+            r.so_em_b.len(),
+            2,
+            "as duas linhas com chave NULL tinham de aparecer as duas -- \
+             uma sumiu do relatorio (so_em_b tem {})",
+            r.so_em_b.len()
+        );
+        assert_eq!(r.iguais, 0, "nulo nao casa com nulo, nem por acidente");
+        assert!(!r.truncado);
+    }
+
+    /// O mesmo defeito, do lado A: NULL em A tambem nao pode casar com o
+    /// NULL que exista em B -- os dois tem de virar `so_em_a`/`so_em_b`
+    /// separados, nunca um par de `iguais` ou `diferentes`.
+    #[test]
+    fn null_de_a_nao_casa_com_null_de_b() {
+        let e = esquema_com_chave_nulavel();
+        let a = lado(
+            &e,
+            vec![(
+                vec![Value::Null],
+                vec![Value::Null, Value::Str("do lado A".into())],
+            )],
+        );
+        let b = lado(
+            &e,
+            vec![(
+                vec![Value::Null],
+                vec![Value::Null, Value::Str("do lado B".into())],
+            )],
+        );
+        let r = comparar(a, b, 0);
+        assert_eq!(r.so_em_a.len(), 1, "o NULL de A tinha de ficar so_em_a");
+        assert_eq!(r.so_em_b.len(), 1, "o NULL de B tinha de ficar so_em_b");
+        assert_eq!(r.iguais, 0);
+        assert!(r.diferentes.is_empty(), "NULL nao e' par de ninguem");
         assert!(!r.truncado);
     }
 

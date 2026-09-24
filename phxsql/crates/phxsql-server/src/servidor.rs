@@ -5911,7 +5911,13 @@ impl Servidor {
 
     fn rodar_backup_agendado(&self, quando: i64) -> Result<String> {
         let b = &self.config.backup;
-        let (onde, r) = {
+        // O `fsync` (e o manifesto/rename final) saem da trava (pedido
+        // 513/524): a trava so protege a LEITURA de `raiz`, e nem
+        // `sincronizar` nem `finalizar_manifesto`/`finalizar_zip` leem nada
+        // de la. Ver a nota "Escrever e sincronizar sao DOIS passos" em
+        // `backup.rs`. UM bloco de trava por chamada, como sempre -- so o
+        // que esta DENTRO dele mudou.
+        let (destino, r, a_sincronizar) = {
             let _trava = self.travar_dados()?;
             // So nos testes: o panico COM a trava de escrita na mao (pedido
             // 502) -- o que abortava o processo quando o backup rodava na
@@ -5926,15 +5932,23 @@ impl Servidor {
                     &b.admin,
                     quando,
                 )?;
-                (caminho.display().to_string(), r)
+                (caminho, r, None)
             } else {
                 let pasta = b.destino.join(
                     phxsql_core::datahora::instante_iso(quando).replace([' ', ':', ','], "-"),
                 );
-                let r = phxsql_store::backup::executar(&self.config.base, &pasta, quando)?;
-                (pasta.display().to_string(), r)
+                let (r, a_sincronizar) =
+                    phxsql_store::backup::executar(&self.config.base, &pasta, quando)?;
+                (pasta, r, Some(a_sincronizar))
             }
         };
+        if let Some(a_sincronizar) = a_sincronizar {
+            phxsql_store::backup::sincronizar_copias(&a_sincronizar)?;
+            phxsql_store::backup::finalizar_manifesto(&destino, quando, &r)?;
+        } else {
+            phxsql_store::backup::finalizar_zip(&destino)?;
+        }
+        let onde = destino.display().to_string();
 
         // O log de acessos guarda tambem o que o servidor faz sozinho: senao,
         // a unica prova de que o backup rodou seria o arquivo existir.
@@ -22217,9 +22231,14 @@ impl Servidor {
             sessao.login().to_string()
         };
 
-        // A trava fica presa a copia inteira. E o que "consistente" quer dizer
-        // sem transacao: nenhuma escrita acontece no meio.
-        let (arquivo, r) = {
+        // A trava fica presa a COPIA inteira -- e o que "consistente" quer
+        // dizer sem transacao: nenhuma escrita acontece no meio. O `fsync`
+        // (e o manifesto/rename final) NAO ficam: so tocam o destino, nunca
+        // leem `raiz`, e a catraca `alcancam-fsync-2` proibe alcancar
+        // `sync_all` com a trava na mao (pedido 513/524). UM bloco de trava
+        // so, como sempre -- ver a nota do modulo em `backup.rs`, condicoes
+        // C1 e C2.
+        let (caminho_zip, r, a_sincronizar) = {
             let _trava = self.travar_dados()?;
             if em_zip {
                 let (caminho, r) = phxsql_store::backup::executar_zip(
@@ -22229,18 +22248,23 @@ impl Servidor {
                     &quem,
                     quando,
                 )?;
-                (Some(caminho.display().to_string()), r)
+                (Some(caminho), r, None)
             } else {
-                (
-                    None,
-                    phxsql_store::backup::executar(
-                        &self.config.base,
-                        std::path::Path::new(&destino),
-                        quando,
-                    )?,
-                )
+                let (r, a_sincronizar) = phxsql_store::backup::executar(
+                    &self.config.base,
+                    std::path::Path::new(&destino),
+                    quando,
+                )?;
+                (None, r, Some(a_sincronizar))
             }
         };
+        if let Some(a_sincronizar) = a_sincronizar {
+            phxsql_store::backup::sincronizar_copias(&a_sincronizar)?;
+            phxsql_store::backup::finalizar_manifesto(std::path::Path::new(&destino), quando, &r)?;
+        } else if let Some(caminho) = &caminho_zip {
+            phxsql_store::backup::finalizar_zip(caminho)?;
+        }
+        let arquivo = caminho_zip.map(|c| c.display().to_string());
 
         let mut campos = vec![
             ("destino", Json::texto_de(&destino)),
@@ -59288,6 +59312,19 @@ mod testes_do_panico_sob_a_trava {
         std::fs::read_to_string(dir.join("filho.err")).unwrap_or_default()
     }
 
+    /// O destino de backup do cenario `fsync_backup` -- IRMAO de `dir`, nunca
+    /// FILHO dele. `dir` e' a raiz de dados (`config_base`), e `executar`
+    /// recusa um destino dentro da propria raiz (`backup.rs:391-395`) antes
+    /// de escrever byte nenhum: um destino aninhado faria o pedido de backup
+    /// falhar cedo demais para provar C1, e o teste passaria pelo motivo
+    /// errado.
+    fn destino_do_backup_c1(dir: &std::path::Path) -> std::path::PathBuf {
+        dir.with_file_name(format!(
+            "{}-backup-c1",
+            dir.file_name().unwrap().to_string_lossy()
+        ))
+    }
+
     /// Espera o filho terminar, ate o prazo. `None`: continua de pe.
     fn fim_do_filho(
         filho: &mut std::process::Child,
@@ -59475,6 +59512,74 @@ mod testes_do_panico_sob_a_trava {
         let porta = porta_de_dados_de_verdade(&s);
         assert!(marcas(&dir).is_empty(), "o arranque nao completou a marca");
         conferir_indice(porta, &[1, 2, 3, 4, 5, 10, 11, 12]);
+    }
+
+    /// **Pedido 524, condicao C1 do parecer do DBA: o `fsync` recusado no
+    /// DESTINO DE UM BACKUP nao pode derrubar o processo.**
+    ///
+    /// O irmao exato do teste de cima -- mesma arma, mesmo `abort()` -- mas
+    /// aqui a recusa e' num disco que NAO e o do banco (o destino do backup,
+    /// nunca lido pela porta de dados). `backup::sincronizar_arquivo` usa
+    /// `sync_all_sem_abortar`: o `Err` sobe ao cliente e o gancho do 509
+    /// nunca roda. Com o defeito reposto (`sync_all` puro, com gancho, no
+    /// lugar de `sync_all_sem_abortar`), este teste FALHA: o filho cai pelo
+    /// mesmo `SIGABRT` do teste de cima, e `caiu_pelo_abort` (que aqui so'
+    /// seria usado para provar o contrario) mostraria a porta fechada onde
+    /// o teste espera resposta.
+    #[cfg(unix)]
+    #[test]
+    fn fsync_no_destino_do_backup_nao_derruba_o_servidor() {
+        let dir = DirTemp::novo("fsync-backup-c1");
+        let (mut filho, porta) = subir_filho(&dir, "fsync_backup");
+        semear(porta);
+        std::fs::write(dir.join("armar"), "").unwrap();
+        let ate = Instant::now() + Duration::from_secs(20);
+        while !dir.join("armado").exists() {
+            assert!(
+                Instant::now() < ate,
+                "o filho nao armou a recusa: {}",
+                diagnostico(&dir)
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+
+        let destino = destino_do_backup_c1(&dir).display().to_string();
+        let resp = pedir(porta, &format!(r#""op":"backup","destino":"{destino}""#));
+
+        // A porta continua respondendo -- o oposto de `caiu_pelo_abort`.
+        let Some(resp) = resp else {
+            let _ = filho.kill();
+            let _ = filho.wait();
+            panic!(
+                "a conexao caiu sem resposta: o fsync do backup derrubou o \
+                 processo em vez de virar erro ao cliente\n{}",
+                diagnostico(&dir)
+            );
+        };
+        assert!(
+            filho.try_wait().unwrap().is_none(),
+            "o filho caiu depois do pedido de backup: {}",
+            diagnostico(&dir)
+        );
+        assert!(
+            !resp.booleano_ou("ok", true),
+            "o fsync recusado tinha de virar erro ao cliente, nao um backup \
+             \"concluido\": {}",
+            resp.escrever()
+        );
+
+        // O servidor continua DE PE, servindo o banco de verdade -- nao so
+        // a mesma conexao: outro pedido, novo, do zero.
+        assert!(
+            o_que_ele_serve(porta).is_some(),
+            "o servidor parou de responder depois da recusa no backup: {}",
+            diagnostico(&dir)
+        );
+
+        let _ = filho.kill();
+        let _ = filho.wait();
+        // Irmao de `dir`, entao o `Drop` do `DirTemp` nao o alcanca.
+        let _ = std::fs::remove_dir_all(destino_do_backup_c1(&dir));
     }
 
     /// **M3: a operacao IMPOSSIVEL depois do `completar` tambem derruba.**
@@ -60154,6 +60259,25 @@ mod testes_do_panico_sob_a_trava {
                     }
                     phxsql_store::sincronia::falha_de_teste::armar(
                         &dir,
+                        phxsql_store::sincronia::falha_de_teste::Onde::Fsync,
+                        1,
+                    );
+                    std::fs::write(dir.join("armado"), "").unwrap();
+                });
+            }
+            // Pedido 524, condicao C1: arma a recusa num destino de backup
+            // (um disco QUE NAO E o do banco), nao na raiz de dados inteira
+            // -- e' a distincao que este cenario prova, entao ele NAO pode
+            // reusar o `fsync_509` (que arma a raiz toda).
+            "fsync_backup" => {
+                let dir = dir.clone();
+                std::thread::spawn(move || {
+                    while !dir.join("armar").exists() {
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
+                    let destino = destino_do_backup_c1(&dir);
+                    phxsql_store::sincronia::falha_de_teste::armar(
+                        &destino,
                         phxsql_store::sincronia::falha_de_teste::Onde::Fsync,
                         1,
                     );

@@ -688,7 +688,7 @@ fn mudar_coluna_que_nao_e_a_referenciada_continua_passando() {
     assert_eq!(t.ler(sub).unwrap().unwrap()[1], Value::Null);
 }
 
-/// A procura pelas filhas nao pode mandar reparar um `.ndx` SAO.
+/// A procura pelas filhas nao pode AFIRMAR que um `.ndx` marcado esta SAO.
 ///
 /// # O irmao do pedido 176, e o padrao que ja apareceu tres vezes num dia
 ///
@@ -699,12 +699,23 @@ fn mudar_coluna_que_nao_e_a_referenciada_continua_passando() {
 /// substituir, e o comentario que se declara resolvido e o motivo de ninguem
 /// olhar de novo -- duas vezes, no mesmo arquivo.
 ///
+/// # O RECONSERTO (pedido 473, 24/09/2026)
+///
+/// O conserto de 176 trocou o texto cru por uma AFIRMACAO -- "esta sao: nao
+/// repare nada" -- que tambem estava errada: o byte marcado nao distingue
+/// "escrita pendente nesta transacao" (o caso deste teste) de "queda ou
+/// panico no meio de uma escrita" (comum desde o pedido 456), e dizer que o
+/// arquivo "esta sao" e uma certeza que a marca nao da nos dois casos. O
+/// recado certo nomeia os dois em vez de escolher um.
+///
 /// # Prova real
 ///
-/// Devolver o `({e})` a este recado faz o teste cair em `nao pode mandar
-/// reparar`: o texto cru volta, mandando reconstruir um indice intacto.
+/// Devolver o `({e})` a este recado faz o teste cair em `afirmou uma
+/// certeza`: o texto cru volta, mandando reconstruir sem explicar o limite.
+/// Devolver a AFIRMACAO velha ("esta sao: nao repare nada") tambem faz este
+/// teste cair, no mesmo assert.
 #[test]
-fn a_procura_das_filhas_nao_manda_reparar_indice_sao() {
+fn a_procura_das_filhas_nao_afirma_indice_sao() {
     let d = dir("filha-invisivel");
     let mut m = mae(&d);
     let r = m
@@ -727,9 +738,19 @@ fn a_procura_das_filhas_nao_manda_reparar_indice_sao() {
         .expect_err("a filha ainda nao esta visivel: tinha de recusar");
     let texto = erro.to_string();
 
+    // O defeito do pedido 473 NAO era mencionar `reparar indice` -- era
+    // AFIRMAR que o arquivo esta sao quando a marca nao prova isso.
     assert!(
-        !texto.contains("reconstrua") && !texto.contains("reparar indice"),
-        "nao pode mandar reparar: o arquivo esta sao, so nao esta sincronizado -- {texto}"
+        !texto.contains("esta sao") && !texto.contains("nao repare nada"),
+        "afirmou uma certeza que a marca nao da -- {texto}"
+    );
+    // Condicao C3(a) do parecer do DBA: os dentes do 176. Sem isto, um
+    // `({e})` colado de volta (o defeito que o 176 ja pagou) passava nos
+    // dois asserts de cima -- o cru nao afirma "esta sao", so manda reparar
+    // um indice que ELE ve como sujo.
+    assert!(
+        !texto.contains("ficou para tras") && !texto.contains("reconstrua"),
+        "o erro cru do ndx.rs voltou colado a mensagem: {texto}"
     );
     assert!(
         texto.contains("confirme-a antes de alterar a mae"),

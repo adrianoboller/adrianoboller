@@ -667,6 +667,11 @@ fn backup(args: &[String], base: &str, destino: &str) -> phxsql_core::error::Res
             &quem,
             agora,
         )?;
+        // O CLI nao segura trava nenhuma (e um processo a parte do
+        // servidor): sincroniza e renomeia logo em seguida, sem motivo para
+        // adiar. `finalizar_zip` faz os dois -- so depois disso o nome final
+        // existe (pedido 524, condicao C2).
+        phxsql_store::backup::finalizar_zip(&arquivo)?;
         let pct = if r.bytes > 0 {
             100 - (r.comprimido * 100 / r.bytes).min(100)
         } else {
@@ -685,7 +690,12 @@ fn backup(args: &[String], base: &str, destino: &str) -> phxsql_core::error::Res
         return Ok(());
     }
 
-    let r = phxsql_store::backup::executar(Path::new(base), Path::new(destino), agora)?;
+    let (r, a_sincronizar) =
+        phxsql_store::backup::executar(Path::new(base), Path::new(destino), agora)?;
+    phxsql_store::backup::sincronizar_copias(&a_sincronizar)?;
+    // O manifesto so' nasce depois de toda copia sincronizada (pedido 524,
+    // condicao C2): antes disto, o destino nem parece um backup pronto.
+    phxsql_store::backup::finalizar_manifesto(Path::new(destino), agora, &r)?;
     diga!("copiados {} arquivos, {} bytes", r.arquivos.len(), r.bytes);
     diga!(
         "manifesto em {}/{}",

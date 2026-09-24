@@ -80,6 +80,19 @@
 //! mudado. Ficam fora, no servidor, os tres que nao sao dado de tabela: a
 //! marca do `COMMIT` (a resposta dela e o pedido 503), o `config.json` (se
 //! reescreve inteiro) e a sonda da saude do disco (existe para VER a recusa).
+//!
+//! # O `abort` e do disco do BANCO, e o backup escreve num disco diferente
+//!
+//! Pedido 524, condicao C1 do parecer do DBA: o DESTINO de um backup (um
+//! disco USB, uma pasta de rede, um provisionamento fino que o operador ainda
+//! nao ampliou) nao e o disco que este arquivo protege -- o `.reg`, o `.ndx`,
+//! a trilha continuam la, intactos. Um `fsync` recusado no destino nao pode
+//! `abort()`ar um servidor que segue servindo o banco de verdade: viraria
+//! produção fora do ar por causa de um disco de backup cheio.
+//! [`sync_all_sem_abortar`] faz a MESMA conta de [`sync_all`] -- inclusive a
+//! marca em [`RECUSADOS`], que continua impedindo uma repeticao de responder
+//! Ok sem o dado -- e so' NAO chama o [`GANCHO`]. `phxsql_store::backup` e o
+//! unico chamador dela hoje.
 
 use std::fs::File;
 use std::io;
@@ -115,7 +128,32 @@ pub fn ao_recusar(gancho: fn(&Path, &io::Error)) {
 /// Recusa sem tocar no disco quando o diretorio ja teve um `fsync` recusado --
 /// repetir e exatamente o que responde Ok sem o dado. Na primeira recusa,
 /// marca o diretorio e chama o gancho do processo (o servidor cai ali mesmo).
+///
+/// So para dado do BANCO. Quem escreve num disco que nao e o do banco --
+/// hoje so o [`crate::backup`] -- usa [`sync_all_sem_abortar`].
 pub fn sync_all(arquivo: &File, caminho: &Path) -> Result<()> {
+    sync_all_interno(arquivo, caminho, true)
+}
+
+/// A MESMA conta de [`sync_all`] -- inclusive a marca em [`recusar`], que
+/// continua impedindo uma repeticao de responder Ok sem o dado --, so' sem
+/// chamar o [`GANCHO`] do processo na recusa.
+///
+/// Pedido 524, condicao C1: o destino de um backup nao e o disco que o
+/// gancho protege (ver a nota do modulo), e uma recusa ali tem de virar
+/// `Err` para quem chamou decidir, nao um `abort()` do servidor inteiro.
+/// Um motor so: a conferencia contra recusa anterior, a marca e o
+/// `falha_de_teste` de prova continuam os MESMOS de [`sync_all`] -- so o
+/// gancho fica de fora.
+///
+/// `pub(crate)`: quem decide gravar num disco que nao e o do banco e o
+/// proprio phxsql-store (hoje so o [`crate::backup`]) -- o servidor e o
+/// FFI nao tem por que escolher pular o gancho de protecao do 509.
+pub(crate) fn sync_all_sem_abortar(arquivo: &File, caminho: &Path) -> Result<()> {
+    sync_all_interno(arquivo, caminho, false)
+}
+
+fn sync_all_interno(arquivo: &File, caminho: &Path, com_gancho: bool) -> Result<()> {
     conferir(caminho)?;
     #[cfg(debug_assertions)]
     let feito = match falha_de_teste::disparar(caminho, falha_de_teste::Onde::Fsync) {
@@ -126,8 +164,10 @@ pub fn sync_all(arquivo: &File, caminho: &Path) -> Result<()> {
     let feito = arquivo.sync_all();
     if let Err(e) = feito {
         recusar(caminho, &e);
-        if let Some(gancho) = GANCHO.get() {
-            gancho(caminho, &e);
+        if com_gancho {
+            if let Some(gancho) = GANCHO.get() {
+                gancho(caminho, &e);
+            }
         }
         return Err(PhxError::Io(e));
     }

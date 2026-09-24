@@ -1,6 +1,7 @@
 //! Utilitarios comuns aos quatro arquivos.
 
 use std::io::{Read, Seek, SeekFrom, Write};
+use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use phxsql_core::error::{PhxError, Result};
@@ -72,4 +73,36 @@ pub fn conferir_magic(arquivo: &str, esperado: &'static [u8; 8], achado: &[u8]) 
         });
     }
     Ok(())
+}
+
+/// Deixa o arquivo legivel so pelo dono.
+///
+/// Existe porque um arquivo pode guardar valor de dado pessoal em claro
+/// quando a cifra esta desligada -- que e o padrao. A permissao restrita e a
+/// unica protecao que existe nesse caso. Motor UNICO para quem a chama: a
+/// decisao de "quem pode ler" nao se espalha entre `.lgpd` (`trilha.rs`) e
+/// `.fts` (`fts.rs`), e a que alguem esquecer aqui nao vira 600 por acidente.
+///
+/// **Mas nem todo arquivo com essa classe de dado chama esta funcao hoje** --
+/// achado do parecer do DBA de 24/09/2026 (pedido 345, condicao C3b):
+/// `.reg`, `.ndx`, `.log` e `.trash` carregam o mesmo dado pessoal em claro
+/// (a linha inteira, no `.reg`; a chave do indice, no `.ndx`) e nascem
+/// `0644`, sem passar por aqui. Alcance-los e a copia/ZIP/restauracao do
+/// backup que perdem o 0600 no destino e na volta (`.lgpd`, `.fts`) e' o
+/// pedido 542 (N1+N2 do parecer) -- ver `docs/PENDENCIAS.md`.
+///
+/// Silencioso de proposito: num sistema de arquivos que nao tem modo Unix (um
+/// volume FAT, um compartilhamento de rede), falhar aqui derrubaria a
+/// gravacao por causa de uma protecao que aquele disco nao sabe oferecer -- e
+/// ficar sem o arquivo e pior que ficar sem a permissao.
+pub fn apertar_permissao(caminho: &Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(caminho, std::fs::Permissions::from_mode(0o600));
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = caminho;
+    }
 }
