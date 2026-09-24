@@ -1317,6 +1317,8 @@ QA, com julgamento de pergunta, e a redação do H.
 | SEC — revisao da rodada (ABI nova, recusas novas) | forte | seguranca: ponteiro na ABI, oraculo em mensagem de recusa |
 | 533 + 542 — subida do byte 52 duravel e arquivos 0600 | forte | durabilidade contra queda (formato em disco) e permissao do dado em repouso |
 | juiz PhxJev — propostas do SEC e do DBA sobre faceis C | forte | o veredito sai do limiar do script, mas a probabilidade por pergunta e juizo sobre defeito ativo |
+| DBA — revisao do lote integridade 2 | forte | concorrencia e garantia de dado: trava da filha no empilhar, marca da cascata solta |
+| faceis E — 560, 550, 557, 556, 547, 549 | forte | seguranca: pétrea da senha (redacao por analise num motor unico), teto do SCRAM e dado de outro usuario no recado |
 
 **Convocacao do dono em 24/09/2026, 18:40** («toda a equipe em alerta e revisao
 nessa rodada»). Convocados: A (integrador), B (quatro frentes), C (revisoes em
