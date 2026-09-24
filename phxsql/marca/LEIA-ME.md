@@ -127,10 +127,11 @@ desenho.
 Refazer: `python3 vetor/gerar.py Exo2[wght].ttf` (precisa de `fontTools`,
 ferramenta de trabalho, não do produto) e `node vetor/exportar.mjs`.
 
-**Estado: PROPOSTA a aprovar pelo dono.** O SVG é uma redesenho fiel à
-folha, não a folha: os PNG originais continuam sendo a marca oficial até o
-dono aprovar o vetor. O que já usa o vetor hoje: o PhxZip web (ícone da aba e
-símbolo do cabeçalho).
+**Estado: OFICIAL — aprovado pelo dono em 24/09/2026.** O vetor é a marca;
+os PNG originais ficam como registro do que se recebeu. As quatro imagens
+embutidas no Centro de Controle (ícone da aba, barra, cartão de entrada e o
+símbolo que a impressão usa) saem do vetor pelo `vetor/embutir-na-tela.mjs`,
+no mesmo tamanho de caixa de antes — nenhum layout mudou.
 
 ## As fontes — `fontes/`
 
