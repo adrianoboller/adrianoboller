@@ -114,7 +114,7 @@ tamanho novo era um recorte à mão. Agora:
 Decisão do dono, 24/09/2026, depois de três desenhos (morsa, cadeado, fênix
 sobre «Zip») recusados: *«Deixa a palavra PHXZIP.»*, e em seguida o
 desenho da palavra: *«PHX / Z I P»*. O logo são duas linhas em Exo 2
-SemiBold: **PHX** em prata em cima, e **Z I P** no âmbar do PhxZip embaixo,
+SemiBold: **PHX** em prata em cima, e **Z I P** em **negrito e laranja** (`#FF8A1C`, Exo 2 Bold) embaixo,
 espaçado até a largura exata de PHX (Z na esquerda, P na direita, I no
 meio — a conta sai do gerador, não de um espaçamento chutado). Nenhum
 desenho.

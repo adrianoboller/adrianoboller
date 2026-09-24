@@ -23,6 +23,8 @@ from fontTools.varLib.instancer import instantiateVariableFont
 
 AQUI = Path(__file__).resolve().parent
 PRATA = "#DDE2EB"
+LARANJA = "#FF8A1C"
+FONTE_VARIAVEL = None  # o caminho do Exo2[wght].ttf, posto pelo main
 # Acento de cada produto -- so cores da paleta oficial (marca/LEIA-ME.md).
 # O PhxZip nao entra aqui: o logo dele e so a palavra (`phxzip_palavra`).
 FAMILIA = {
@@ -107,13 +109,15 @@ def horizontal(f, produto, acento, assinatura=True):
 
 
 def phxzip_palavra(f):
-    """Decisao do dono, 24/09/2026: «PHX / Z I P». O logo do PhxZip e a
-    palavra em duas linhas, sem desenho: PHX em prata em cima, e Z I P no
-    ambar do produto embaixo, espacado ate a largura exata de PHX -- as duas
-    linhas fecham o mesmo bloco."""
+    """Decisao do dono, 24/09/2026: «PHX / Z I P», e depois «as letras z i p
+    sao em negrito e laranja». O logo do PhxZip e a palavra em duas linhas,
+    sem desenho: PHX em prata (SemiBold) em cima, e Z I P em NEGRITO (Bold,
+    700 -- o teto da Exo 2 embutida na tela, para SVG e tela baterem) e
+    LARANJA embaixo, espacado ate a largura exata de PHX."""
     alt1, alt2 = 150, 96
     phx, larg1 = palavra(f, "PHX", alt1, lambda i, ch: PRATA)
-    letras = [palavra(f, ch, alt2, lambda i, c: "#FFC43D") for ch in "ZIP"]
+    negrito = fonte(FONTE_VARIAVEL, 700)
+    letras = [palavra(negrito, ch, alt2, lambda i, c: LARANJA) for ch in "ZIP"]
     # Z encosta na esquerda, P na direita, I no meio: o espaco sai da conta,
     # nao de um letter-spacing chutado.
     x_p = larg1 - letras[2][1]
@@ -195,6 +199,8 @@ def main():
     if len(sys.argv) != 2:
         print(__doc__)
         return 2
+    global FONTE_VARIAVEL
+    FONTE_VARIAVEL = sys.argv[1]
     f = fonte(sys.argv[1])
     (AQUI / "phx-simbolo-mono.svg").write_text(monocromatico(), encoding="utf-8")
     (AQUI / "phx-icone.svg").write_text(icone(), encoding="utf-8")
