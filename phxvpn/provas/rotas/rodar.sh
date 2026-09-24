@@ -19,8 +19,9 @@
 #       da empresa, e H ve o IP verdadeiro do membro
 #   9   sem iroute: FH nao alcanca H; com a filial atras da «filial»: FH <-> H
 #       (ping e TCP nos dois sentidos) e A -> FH
-#   fim remover as rotas: a tabela some, as regras voltam ao numero de antes e
-#       o ip_forward volta ao que era
+#   fim remover as rotas: o NAT e os accept somem, fica so a guarda entre as
+#       redes (a tabela so some sem rede nenhuma: guarda.sh), as regras voltam
+#       ao numero de antes e o ip_forward volta ao que era
 #
 # Uso (root):  MOTOR=nft ./rodar.sh       (padrao)
 #              MOTOR=iptables ./rodar.sh
@@ -280,10 +281,10 @@ ok = (r["item4"]["sem_rota_ping"] == "0/3" and r["item4"]["sem_rota_com_rota_man
   and r["item9"]["sem_iroute_fh_h_ping"] == "0/3" and r["item9"]["fh_h_ping"] == "3/3"
   and r["item9"]["h_fh_ping"] == "3/3" and r["item9"]["a_fh_ping"] == "3/3"
   and r["item9"]["h_fh_tcp_fh_viu"] == "192.168.10.5" and r["item9"]["filial_recebe_rota_da_propria_lan"] == 0
-  and r["regras_depois_de_remover"]["nossas"] == 0 and r["regras_depois_de_remover"]["ip_forward"] == 0
+  and r["regras_depois_de_remover"]["nossas"] == r["regras_antes"]["nossas"] and r["regras_depois_de_remover"]["ip_forward"] == 0
   and (r["regras_depois_de_remover"]["handles_no_ruleset"] == r["regras_antes"]["handles_no_ruleset"] if motor == "nft"
        else r["regras_depois_de_remover"]["regras_iptables_save"] == r["regras_antes"]["regras_iptables_save"])
-  and r["tabela_phxvpn_depois"] == 0
+  and r["tabela_phxvpn_depois"] == (1 if motor == "nft" else 0)
   and all(isinstance(v, dict) and "erro" in v for v in r["recusas_pela_api"].values())
   and isinstance(r["item9"]["tirar_membro_com_filial"], dict) and "erro" in r["item9"]["tirar_membro_com_filial"])
 r["passou"] = ok

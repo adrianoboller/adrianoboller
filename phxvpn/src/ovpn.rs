@@ -12,8 +12,9 @@
 //! Limite medido (`provas/rotas`): isso so vale com o host SEM encaminhar.
 //! Com `ip_forward=1` o kernel roteia de `tun0` para `tun1` (3/3 pings da
 //! rede B na rede A). Quem acende o encaminhamento para a LAN da empresa
-//! (`rotas.rs`) acende junto a tabela de guarda; host que ja encaminhava por
-//! outro motivo (Docker, roteador) e sem rota do phxvpn continua sem ela.
+//! (`rotas.rs`) acende junto a tabela de guarda -- e a guarda fica sempre
+//! que ha rede, para o host que ja encaminhava por outro motivo (Docker,
+//! roteador) nao abrir A para B.
 //!
 //! # Por que `ccd-exclusive`
 //!

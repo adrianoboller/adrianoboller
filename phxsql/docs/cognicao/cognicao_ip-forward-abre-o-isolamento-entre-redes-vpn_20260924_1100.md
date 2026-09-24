@@ -53,9 +53,11 @@ VPN — antes de escrever o `1` no `ip_forward`, e apagando os dois juntos.
 - `teste:nft_guarda_o_isolamento_entre_redes_e_so_mascara_o_nat` (reprova com
   os `drop` tirados — RED em `provas/rotas/resultados.json` →
   `red_das_guardas`).
-- **Buraco que fica:** host que JÁ encaminha, sem nenhuma rota do phxvpn, não
-  tem a tabela de guarda — a rede A alcança a rede B nele hoje. Pôr a guarda
-  sempre seria regra nova imposta a toda instalação: vai à mesa, não entrou.
+- O buraco do host que JÁ encaminha sem rota do phxvpn fechou no mesmo dia
+  (decisão do integrador): a guarda fica sempre que há rede, só o `drop`, sem
+  NAT e sem tocar o `ip_forward`. `phxvpn/provas/rotas/guarda.sh`: com
+  `ip_forward=1` por fora e nenhuma rota, 0/3 com a guarda e 3/3 no RED, nos
+  dois motores (`resultados.json` → `guarda_sem_rota_*`).
 
 ## Estado
 
