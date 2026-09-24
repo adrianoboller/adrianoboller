@@ -17031,12 +17031,36 @@ impl Servidor {
         let dados = self.travar_dados()?;
         let mut t = self.abrir_travada(&dados, p, sessao)?;
 
-        // O padrao chega no tipo da coluna, e nao como texto solto: e o mesmo
-        // caminho de conversao de um `inserir`, entao "abc" numa coluna Int8
-        // e recusado aqui e nao gravado em dez mil linhas.
-        let padrao = match p.campo("padrao").or_else(|| p.campo("default")) {
-            None | Some(Json::Nulo) => None,
-            Some(j) => Some(crate::valores::json_para_valor(j, &coluna.ty)?),
+        // O valor que a linha VELHA recebe.
+        //
+        // Ate o pedido 475 este campo relia o JSON cru de "padrao" pelo
+        // mesmo caminho de um `inserir` (`json_para_valor`) -- e por isso
+        // "abc" numa coluna Int8 e recusado aqui, e nao gravado em dez mil
+        // linhas. Mas `coluna.padrao`, alguns passos acima
+        // (`coluna_de_json`), JA leu o MESMO campo "padrao" como EXPRESSAO
+        // (MANUAL.txt:398): um texto vira DEFAULT so entre aspas simples
+        // (`'ativo'`), e reler o JSON cru aqui devolvia o texto com as
+        // aspas dentro -- a linha velha ganhava literalmente `'ativo'`, nao
+        // `ativo`. A linha velha tem de receber o MESMO valor que o padrao
+        // promete as linhas novas, entao avalia-se a expressao ja validada,
+        // e nao o JSON de novo. Sem resolvedor de coluna: um valor unico
+        // para todo o backfill nao pode variar linha a linha, entao um
+        // padrao que citasse outra coluna erraria aqui do mesmo jeito que
+        // errava antes (guardando texto cru sem sentido).
+        //
+        // `"default"` continua servindo de escape: quem manda SO ele (sem
+        // "padrao") pede um valor CRU, do jeito de sempre -- e e para isso
+        // que ele existe, ja que `coluna_de_json` nunca o le.
+        let padrao = if let Some(expr) = &coluna.padrao {
+            let v = expr
+                .avaliar(&|_| None)
+                .map_err(|e| PhxError::Esquema(format!("padrao de {}: {e}", coluna.nome)))?;
+            Some(phxsql_core::expressao::coagir(&v, &coluna.ty)?)
+        } else {
+            match p.campo("default") {
+                None | Some(Json::Nulo) => None,
+                Some(j) => Some(crate::valores::json_para_valor(j, &coluna.ty)?),
+            }
         };
 
         // Pedido 426: a transacao viva que alcanca esta tabela segura a
@@ -48670,6 +48694,86 @@ mod testes_regras_de_esquema {
         )
         .unwrap();
         assert!(r.campo("avisos").is_none(), "{}", r.escrever());
+    }
+
+    /// Pedido 475: a linha VELHA tem de receber o MESMO valor que o padrao
+    /// promete as linhas novas -- nao o JSON cru de "padrao" relido feito um
+    /// `inserir`. Antes do conserto, `"padrao":"'ativo'"` (a forma correta,
+    /// porque `padrao` e EXPRESSAO, MANUAL.txt:398) gravava a linha velha
+    /// com o texto `'ativo'`, aspas e tudo -- as aspas exigidas para o
+    /// EXPRESSAO passar entravam na LINHA, porque o backfill nao evaluava a
+    /// expressao: so recodificava o JSON.
+    #[test]
+    fn a_linha_velha_recebe_o_padrao_avaliado_e_nao_o_json_cru() {
+        let d = DirTemp::novo("regras-padrao-texto");
+        let s = servidor(&d.0);
+        roda(
+            &s,
+            "criar_tabela",
+            r#"{"database":"cmp","tabela":"t_pd",
+            "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true}],
+            "indices":[{"nome":"pk","colunas":["id"],"unico":true}]}"#,
+        )
+        .unwrap();
+        roda(
+            &s,
+            "inserir",
+            r#"{"database":"cmp","tabela":"t_pd","linha":{"id":1}}"#,
+        )
+        .unwrap();
+        // A forma que o F-NUCLEO exige para um texto: aspas simples.
+        roda(
+            &s,
+            "acrescentar_coluna",
+            r#"{"database":"cmp","tabela":"t_pd",
+                "nome":"situacao","tipo":"Str(12)","padrao":"'ativo'"}"#,
+        )
+        .unwrap();
+        // A linha VELHA ganha o texto "ativo" -- sem as aspas da expressao.
+        assert_eq!(linha(&s, "t_pd", 1).texto_ou("situacao", ""), "ativo");
+        // E quem insere uma linha NOVA sem citar a coluna ganha o mesmo
+        // padrao, pelo caminho de sempre (`aplicar_regras`, na tabela) --
+        // e o dois tem de bater, porque e o MESMO padrao.
+        roda(
+            &s,
+            "inserir",
+            r#"{"database":"cmp","tabela":"t_pd","linha":{"id":2}}"#,
+        )
+        .unwrap();
+        assert_eq!(linha(&s, "t_pd", 2).texto_ou("situacao", ""), "ativo");
+
+        // O escape continua vivo: SO "default" (sem "padrao") pede um valor
+        // CRU, sem passar pelo crivo de expressao -- e nao cria DEFAULT
+        // nenhum para linhas futuras.
+        roda(
+            &s,
+            "criar_tabela",
+            r#"{"database":"cmp","tabela":"t_pd2",
+            "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true}],
+            "indices":[{"nome":"pk","colunas":["id"],"unico":true}]}"#,
+        )
+        .unwrap();
+        roda(
+            &s,
+            "inserir",
+            r#"{"database":"cmp","tabela":"t_pd2","linha":{"id":1}}"#,
+        )
+        .unwrap();
+        roda(
+            &s,
+            "acrescentar_coluna",
+            r#"{"database":"cmp","tabela":"t_pd2",
+                "nome":"situacao","tipo":"Str(12)","default":"ativo"}"#,
+        )
+        .unwrap();
+        assert_eq!(linha(&s, "t_pd2", 1).texto_ou("situacao", ""), "ativo");
+        let e = roda(&s, "esquema", r#"{"database":"cmp","tabela":"t_pd2"}"#).unwrap();
+        let cols = e.campo("colunas").and_then(Json::lista).unwrap();
+        let v = cols
+            .iter()
+            .find(|c| c.texto_ou("nome", "") == "situacao")
+            .unwrap();
+        assert_eq!(v.texto_ou("padrao", ""), "");
     }
 }
 

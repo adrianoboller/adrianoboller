@@ -49,6 +49,7 @@ SENHAS = {"adm": "adm-1234", "pedro": "pedro-1234"}
 
 falhas = []
 notas = []
+pulados = []
 
 
 def confere(rotulo, visto, esperado):
@@ -70,6 +71,14 @@ def confere_contem(rotulo, texto, pedaco):
 def nota(texto):
     notas.append(texto)
     print(f"  nota  {texto}")
+
+
+def pulado(rotulo, motivo):
+    # PULADO nao e ERRO nem falha muda: e um veredito proprio, contado a
+    # parte, e que aparece no resumo do fim -- "sem sumir" e a metade da
+    # exigencia do pedido 475 tao importante quanto "sem ERRO".
+    pulados.append((rotulo, motivo))
+    print(f"  PULADO {rotulo}: {motivo}")
 
 
 def hash_da_senha(senha):
@@ -271,13 +280,25 @@ def item_1_e_2_banco_e_tabelas(c):
           "confirmar": "rascunho"})
 
     e = c.ok({"op": "esquema", "database": DB, "tabela": "alunos"})
-    # Cinco declaradas + as duas de sistema, e as de sistema no FIM.
-    confere("sete colunas (5 + as 2 de sistema)", len(e["colunas"]), 7)
-    confere("as de sistema sao as duas ULTIMAS",
-            [c_["nome"] for c_ in e["colunas"] if c_["sistema"]],
-            ["softdeleted", "rownum"])
-    confere("e sao mesmo as duas do fim",
-            [c_["nome"] for c_ in e["colunas"][-2:]], ["softdeleted", "rownum"])
+    # Pedido 475: a CONTAGEM e os NOMES das colunas de sistema nao se digitam
+    # aqui de novo -- a resposta do "esquema" ja marca cada coluna com
+    # "sistema": true/false, e essa marca e a fonte unica (o protocolo tem o
+    # que o pedido 475 pediu: nao ha necessidade de espelhar
+    # `e_coluna_de_sistema` do schema.rs num literal Python que envelhece a
+    # cada coluna nova -- foram 2 ate o pedido 289, viraram 4 com
+    # rowstamp/rowtime, e o teste antigo, preso em 2, foi quem ficou
+    # vermelho).
+    declaradas = [c_["nome"] for c_ in e["colunas"] if not c_["sistema"]]
+    sistema = [c_["nome"] for c_ in e["colunas"] if c_["sistema"]]
+    confere("as cinco colunas declaradas no criar_tabela, sem as de sistema",
+            declaradas, ["id", "turma_id", "nome", "cidade", "nota"])
+    confere(f"a tabela tem as 5 declaradas + {len(sistema)} de sistema "
+            "(marcadas pelo proprio protocolo)",
+            len(e["colunas"]), len(declaradas) + len(sistema))
+    confere("as de sistema sao as ULTIMAS da lista, nunca no meio das declaradas",
+            [c_["sistema"] for c_ in e["colunas"]],
+            [False] * len(declaradas) + [True] * len(sistema))
+    nota(f"colunas de sistema hoje: {sistema}")
     # O id de cada coluna do cadastro de campos e um v7, e eles CRESCEM na
     # ordem de declaracao: e a mesma promessa do item 3, um nivel abaixo.
     ids = [c_["id"] for c_ in e["colunas"]]
@@ -901,16 +922,42 @@ def item_0b_o_portao_nao_se_acha():
     medicao -- foi assim que esta mesma bateria, lancada de dentro de um
     `bash -c ... prova-bateria.py`, se viu a propria casca e deu ERRO aqui em
     16/09/2026.
+
+    Pedido 475: as DUAS conferencias de "maquina limpa" (no comeco e no fim)
+    dependem de uma premissa que esta bateria nao controla -- nenhuma OUTRA
+    frente compilando ou medindo ao lado. Quando a maquina nao esta limpa
+    (por exemplo, um `cargo build` de outra sessao), o portao ACERTA ao
+    dizer que ha medicao, e um ERRO aqui estaria culpando o portao por um
+    estado do ambiente. A conferencia entao vira PULADO, nomeando os
+    processos que o portao viu -- nunca ERRO, e nunca some do relatorio.
     """
     print("\n=== item 0b: o portao «esta medindo?» ===")
     portao = os.path.join(AQUI, "..", "esta-medindo.sh")
 
+    def maquina_limpa_ou_pulado(rotulo):
+        """Roda o portao e confere 1 (nada medindo) -- ou PULA, nomeando o
+        que o portao viu, quando a premissa "maquina limpa" nao vale."""
+        r = subprocess.run([portao], capture_output=True, text=True)
+        if r.returncode == 1:
+            confere(rotulo, r.returncode, 1)
+            return
+        vistos = []
+        for linha in r.stdout.splitlines():
+            if not linha.strip():
+                continue
+            partes = linha.split("\t")
+            pid = partes[0]
+            descricao = partes[1] if len(partes) > 1 else "?"
+            vistos.append(f"PID {pid} ({descricao})")
+        pulado(rotulo,
+               "a premissa \"maquina limpa\" nao vale: o portao ja via "
+               + ("; ".join(vistos) if vistos
+                  else "algo (sem detalhe na saida)"))
+
     # SENTIDO 1 -- com nada medindo, o portao cala e sai 1. Repare que o
     # proprio shell desta bateria carrega o caminho do portao, que e
     # exatamente o texto que derrubaria um crivo por linha de comando.
-    r = subprocess.run([portao], capture_output=True, text=True)
-    confere("com a maquina limpa, o portao diz que NAO ha medicao",
-            r.returncode, 1)
+    maquina_limpa_ou_pulado("com a maquina limpa, o portao diz que NAO ha medicao")
 
     # O DEFEITO REPOSTO: o mesmo julgamento pelo crivo de texto, agora.
     t = subprocess.run(["pgrep", "-cf", "bancada/"],
@@ -966,9 +1013,7 @@ def item_0b_o_portao_nao_se_acha():
         falso.wait()
 
     # e volta a calar, para que o sentido 1 nao tenha passado por acaso
-    r = subprocess.run([portao], capture_output=True, text=True)
-    confere("morta a bancada, o portao volta a dizer que nao ha medicao",
-            r.returncode, 1)
+    maquina_limpa_ou_pulado("morta a bancada, o portao volta a dizer que nao ha medicao")
 
     # CATRACA -- pedido 256: nenhuma bancada versionada mata com `pkill` sem
     # PID (o comando nem aceita PID -- mata por NOME na maquina inteira). A
@@ -1057,11 +1102,18 @@ def main():
         # de todas.
         resultados["aprovada"] = not falhas
         resultados["passos_falhados"] = list(falhas)
+        # PULADO nao e falha (nao derruba "aprovada"), mas tambem nao pode
+        # sumir do retrato -- e o "sem sumir" do pedido 475.
+        resultados["passos_pulados"] = [r for r, _m in pulados]
         with open(os.path.join(AQUI, "resultados.json"), "w") as f:
             json.dump(resultados, f, indent=2, ensure_ascii=False)
         print(f"\nnumeros gravados em {os.path.join(AQUI, 'resultados.json')}")
 
     print("\n" + "=" * 66)
+    if pulados:
+        print(f"{len(pulados)} PASSO(S) PULADO(S) (premissa nao valia, nao e falha):")
+        for rotulo, motivo in pulados:
+            print(f"  - {rotulo}: {motivo}")
     if falhas:
         print(f"{len(falhas)} PASSO(S) FALHARAM:")
         for f_ in falhas:

@@ -2216,7 +2216,24 @@ fn conferir_expressoes(colunas: &[Column], indices: &[IndexDef]) -> Result<()> {
     };
     for c in colunas {
         if let Some(e) = &c.padrao {
-            existe(e, format!("o padrao de {}", c.nome))?;
+            // O DEFAULT e uma EXPRESSAO (MANUAL.txt), entao um texto solto
+            // sem aspas (`"padrao":"ativo"`) e lido como NOME DE COLUNA, e
+            // a mensagem generica de `existe` (irma do check e do filtro de
+            // indice, dois passos abaixo, que ficam como estao) nao diz
+            // isso -- pedido 475. A dica entra so aqui, sobre o erro ja
+            // formado, sem mudar o texto do erro em si.
+            existe(e, format!("o padrao de {}", c.nome)).map_err(|erro| match erro {
+                PhxError::Esquema(msg) => {
+                    let ausente = e
+                        .colunas()
+                        .iter()
+                        .find(|nome| posicao_sem_caixa(colunas, nome).is_none())
+                        .map(String::as_str)
+                        .unwrap_or_default();
+                    PhxError::Esquema(format!("{msg}; texto vai entre aspas simples: '{ausente}'"))
+                }
+                outro => outro,
+            })?;
         }
         if let Some(e) = &c.check {
             existe(e, format!("o check de {}", c.nome))?;
@@ -3085,6 +3102,58 @@ mod testes_das_expressoes_de_esquema {
                 .unwrap()],
         )
         .unwrap();
+    }
+
+    /// Pedido 475: o DEFAULT e uma EXPRESSAO (MANUAL.txt:398), entao um
+    /// texto solto sem aspas e lido como NOME DE COLUNA -- e quem manda
+    /// `"padrao":"ativo"` esperando o texto "ativo" leva "coluna que a
+    /// tabela nao tem" sem entender por que. A recusa CONTINUA (e tem de
+    /// continuar: PostgreSQL, MySQL e MariaDB tambem recusam identificador
+    /// solto num DEFAULT), so que agora vem com a dica.
+    #[test]
+    fn padrao_com_identificador_solto_recusa_e_ensina_a_aspa() {
+        let e = Schema::new(
+            "t",
+            vec![
+                Column::new("id", ColumnType::Int8).obrigatoria(),
+                Column::new("situacao", ColumnType::Str(12))
+                    .com_padrao("ativo")
+                    .unwrap(),
+            ],
+            vec![],
+        )
+        .unwrap_err()
+        .to_string();
+        // O comportamento de sempre: continua recusando, com a mesma frase
+        // de antes da dica.
+        assert!(
+            e.contains("o padrao de situacao usa a coluna \"ativo\", que a tabela nao tem"),
+            "{e}"
+        );
+        // O que e novo: a dica de como escrever um texto no padrao.
+        assert!(e.contains("texto vai entre aspas simples: 'ativo'"), "{e}");
+    }
+
+    /// O irmao (check) fica como estava -- a dica e so do padrao, porque so
+    /// ali a confusao "texto vs nome de coluna" e comum (pedido 475). Se
+    /// este teste passar a falhar por causa de "aspas simples", a dica
+    /// vazou para o caminho irmao sem pedido para isso.
+    #[test]
+    fn check_com_identificador_inexistente_nao_ganha_a_dica() {
+        let e = Schema::new(
+            "t",
+            vec![
+                Column::new("id", ColumnType::Int8).obrigatoria(),
+                Column::new("v", ColumnType::Int8)
+                    .com_check("w > 0")
+                    .unwrap(),
+            ],
+            vec![],
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(e.contains("check de v") && e.contains("\"w\""), "{e}");
+        assert!(!e.contains("aspas simples"), "{e}");
     }
 }
 

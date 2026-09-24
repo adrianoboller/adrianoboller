@@ -206,8 +206,11 @@ def main():
     ok("a replica converge antes de alterar", conv)
 
     print("\n== 3. acrescentar a coluna no SOURCE ==")
+    # O padrao e EXPRESSAO (MANUAL.txt:398, desde o F-NUCLEO): sem aspas,
+    # `ativo` e lido como NOME DE COLUNA, e o motor recusa certo -- pedido
+    # 475. O texto entra como literal SQL, entre aspas simples.
     r = S({"op": "acrescentar_coluna", "database": "loja", "tabela": "clientes",
-           "nome": "situacao", "tipo": "Str(12)", "caption": "Situação", "padrao": "ativo"})
+           "nome": "situacao", "tipo": "Str(12)", "caption": "Situação", "padrao": "'ativo'"})
     ok("acrescentar_coluna responde ok", r.get("ok"), json.dumps(r)[:300])
     if r.get("ok"):
         res = r["resultado"]
@@ -320,7 +323,7 @@ def main():
     esperar_porta(PORTA_REPLICA)
     R = liga(PORTA_REPLICA)
     r = R({"op": "acrescentar_coluna", "database": "loja", "tabela": "clientes",
-           "nome": "situacao", "tipo": "Str(12)", "caption": "Situação", "padrao": "ativo"})
+           "nome": "situacao", "tipo": "Str(12)", "caption": "Situação", "padrao": "'ativo'"})
     ok("a replica aceita a mesma alteracao", r.get("ok"), json.dumps(r)[:300])
 
     convergiu = False

@@ -81,6 +81,12 @@ function montarConfig(dir) {
   writeFileSync(caminho, JSON.stringify({
     base,
     bind: `127.0.0.1:${PORTA_DADOS}`,
+    // bancada de teste, NAO cliente do produto -- fala em claro para
+    // exercitar o painel sem o aperto de mao no meio (servidor exige a
+    // cifra por padrao desde o pedido 370). Mesmo caminho do
+    // `provar-manual.py` e do `prova-bateria.py`: a config do servidor de
+    // teste desliga a exigencia, e nao um segundo aperto de mao no cliente.
+    cifra_fio: { exigir: false },
     token: TOKEN,
     max_linhas: 1000,
     web: { ligado: true, bind: `127.0.0.1:${PORTA_WEB}`, sessao_minutos: 60 },

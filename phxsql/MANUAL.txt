@@ -529,7 +529,7 @@ CHAVE ESTRANGEIRA DEPOIS DA CRIACAO: declarar_fk e excluir_fk
 ACRESCENTAR COLUNA NUMA TABELA QUE JA TEM DADO: acrescentar_coluna
 
     {"op":"acrescentar_coluna","database":"loja","tabela":"clientes",
-     "nome":"situacao","tipo":"Str(12)","padrao":"ativo"}
+     "nome":"situacao","tipo":"Str(12)","padrao":"'ativo'"}
 
     E a unica operacao que muda a ESTRUTURA de uma tabela com dado dentro. O
     slot e de largura fixa e o endereco de cada linha sai de uma conta sobre o
