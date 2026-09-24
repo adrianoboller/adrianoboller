@@ -1273,12 +1273,11 @@ de uma rota.
 **Limites.** **A conta é separada por canal** (M3, decisão do dono em 24/09/2026: travar só o painel): quem erra 6 vezes a senha do admin pelo painel tranca o **painel** por até 15 min, e a VPN de quem tem o certificado continua conectando; erro na VPN tranca só a VPN. O preço aceito: o orçamento de adivinhação dobra (painel + VPN), e na VPN ele ainda exige o certificado do membro. Travado por `falha_no_painel_nao_tranca_a_vpn` (reprova com a conta única). Continua valendo: um atacante com a porta do painel tranca o **painel** do admin de propósito, repetindo a cada bloqueio. `cn` e `ip` chegam no pedido ao soquete, preenchidos pelo
 `openvpn`: um `openvpn` tomado pode mentir neles — mas ele já é quem decide
 quem entra no túnel. **Achados 6 e 12: fechados em 24/09/2026** — mudança
-no usuário derruba as sessões do painel na hora e a conexão VPN em **≤ 0,06 s**
-(seção seguinte). O que continua: o `UPDATE` feito à mão no banco derruba a
-sessão do painel no pedido seguinte e o token da VPN na renegociação seguinte
-(até 1 h), mas **não** a conexão na hora — só rota do painel chama a gerência;
-no Windows não há gerência por soquete Unix, e lá a conexão cai só na
-renegociação. O QR foi lido de volta só pelo leitor do núcleo (não há leitor de
+no usuário derruba as sessões do painel na hora e a conexão VPN em **0,05 s**
+pela rota, ou em **1,23 s** quando a mudança é um `UPDATE` feito à mão no
+banco (a vigia do painel, a cada 2 s; seção seguinte). O que continua: no
+Windows não há gerência por soquete Unix, e lá a conexão cai só na
+renegociação (até 1 h); com o painel parado, nada reconcilia até ele subir. O QR foi lido de volta só pelo leitor do núcleo (não há leitor de
 terceiros neste contêiner); a renegociação de 1 h em si não foi medida (a
 reconexão pelo token foi); o verificador no Windows recusa tudo (sem soquete
 local lá); perder o `mfa.chave` desliga todo autenticador (vai no backup da
@@ -1312,6 +1311,41 @@ instância («client-instance exiting») e **o cliente não percebeu em 20 s**
 nas duas mudanças — sem `RESTART` ele só cai no `ping-restart`. Desativar também apaga o `ccd/` do usuário: sem isso, a rede
 que só pede certificado o aceitava de volta na reconexão (`ccd-exclusive`
 barra CN sem arquivo); reativar o devolve.
+
+**Revisão SEC (24/09/2026), o que ela mudou:**
+
+- **M1 — desativar não falha aberto.** Se o `ccd/` não sai (ou a gerência
+  responde erro), a rota responde **500** dizendo que a mudança foi gravada e
+  não se completou; o `acertar_ccd` percorre **todas** as redes e junta as
+  falhas (antes parava na primeira e a rota só logava).
+- **M2 — a vigia.** O gatilho sozinho não alcançava o `ccd/` nem a conexão
+  quando a mudança vinha de fora das rotas. Agora uma thread do painel
+  (`credencial::vigiar`, a cada **2 s**) compara `SELECT id, credencial` com o
+  último retrato e aplica o mesmo `credencial_mudou` a quem mudou — e refaz o
+  que falhou antes (só marca como visto o que se completou). Custo medido da
+  pergunta: **0,73 ms** (`\timing` do `psql`, na prova); `UPDATE ... SET
+  ativo = false` pelo `psql` derrubou a conexão em **1,23 s**. Hipóteses:
+  (a) conferir o `ativo` no `client-connect` também nas redes só-certificado
+  — morreu por custo: pede `script-security` e um processo por conexão em
+  toda rede, e não derruba quem já está conectado; (b) a vigia — ficou: pega
+  as redes todas e quem já está dentro.
+- **M3 — renovar só o esperado.** Toda mudança própria grava com
+  `RETURNING credencial`, e a sessão de quem mudou só fica se o valor for o
+  dela **+1** (ou o mesmo, quando nada mudou); outro valor quer dizer que
+  alguém mudou a conta no meio, e a sessão atual cai também. Antes ela relia
+  o banco e adotava a mudança do outro.
+- **B1 — revogar derruba.** Remover membro, sair e reemitir passam pelo mesmo
+  `Painel::revogar`, que agora enfileira o CN; o fim de cada pedido (e a
+  vigia) derruba a fila. E o token da VPN só renova se o CN ainda é vínculo
+  daquele usuário naquela rede.
+- **B2 — CID pelo cabeçalho.** O `Client ID` sai da coluna nomeada no
+  `HEADER,CLIENT_LIST` do `status 2`; sem cabeçalho, erro (nunca a posição).
+- **B3 — gerência só com as duas portas.** A pasta `gerencia/` é apertada
+  para 0700 sempre (mesmo se já existia frouxa) e tem de ser do dono do
+  painel; sem nome para o `management-client-user`, a gerência **não abre**
+  (o log diz, e a queda fica para a renegociação).
+- **B4 — prazo total.** Cada conversa com a gerência de uma rede tem no
+  máximo **2 s** no total; notificação `>INFO` não renova a espera.
 
 **Por que o token continua de 12 h** (hipóteses escritas antes de medir):
 (a) encurtar a vida do token; (b) `auth-gen-token` com renovação curta;
@@ -1349,11 +1383,12 @@ o código; o admin muda o usuário; o cliente anota quando o estado sai de
 
 | Caso | Queda (N) | Reconexão pelo token |
 |---|---|---|
-| admin zera o autenticador do caio | **0,06 s** (`server-pushed-connection-reset`) | recusada (`auth-failure (auth-token)`); pede senha e código |
+| admin zera o autenticador do caio | **0,05 s** (`server-pushed-connection-reset`) | recusada (`auth-failure (auth-token)`); pede senha e código |
 | admin desativa a dani | **0,05 s** | recusada |
 | **RED:** gerência fora do lugar, admin desativa o edu | **não caiu em 15 s** | — |
+| `UPDATE phx_usuario SET ativo = false` pelo `psql` (fabi), sem rota | **1,23 s** (vigia) | recusada |
 
-Log do painel: 2 conexões derrubadas, 2 reconexões pelo token recusadas
+Log do painel: 3 conexões derrubadas, 3 reconexões pelo token recusadas
 («token recusado: a conta mudou»). O RED mostra que a queda vem do painel e
 não de outra coisa.
 
@@ -1366,6 +1401,22 @@ senha, token da VPN `Initial`→`Authenticated`→recusado, e o `UPDATE` pelo
 banco). **RED:** `Sessoes::conferir` ignorando o contador reprova
 `sessao_cai_quando_a_credencial_muda` («unwrap_err on Ok») e o teste real na
 primeira asserção («a outra sessao da ana sobreviveu ao cadastro»).
+
+Da revisão SEC, `tests/postgres_real.rs::revogacao_revisao_sec` (PG real e
+uma gerência de mentira no soquete da rede) e mais quatro em
+`credencial::testes`, cada um com o defeito reposto:
+
+| Achado | Defeito reposto | Reprova em |
+|---|---|---|
+| M3 | `renovar` aceitando qualquer valor | «a sessao sobreviveu ao zerar no meio (M3)»; `renovar_so_com_o_esperado` |
+| M1 | a rota ignorando a falha | «desativar sem tirar o ccd deu ok (M1)» |
+| M1 | `acertar_ccd` parando na primeira rede | «parou na primeira rede (M1)» |
+| M2 | vigia sem aplicar a mudança | «a vigia nao refez a mudanca que falhou» |
+| B1 | sem derrubar os revogados no fim do pedido | reprova (a fila vaza para a vigia) |
+| B1 | token renovando sem conferir o vínculo | `unwrap_err` em `Ok("caio")` |
+| B2 | CID pela posição fixa | `cid_sai_do_status_2_pelo_cabecalho` (coluna nova no meio) |
+| B3 | sem apertar a pasta | `gerencia_aperta_a_pasta_e_exige_o_usuario` (pasta 0755 sai 0700) |
+| B4 | prazo só por leitura | `derrubar_respeita_o_prazo_total` (gerência que só manda `>INFO`) |
 
 ## Rede que só deixa TCP/443, ou só o proxy (24/09/2026)
 

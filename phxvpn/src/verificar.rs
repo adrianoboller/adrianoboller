@@ -261,6 +261,10 @@ pub fn conferir(e: &Estado, j: &Json) -> Result<String, String> {
         if u.login != login {
             return Err("token de outro usuário".into());
         }
+        // Membro removido desta rede nao renova, mesmo com a conta intacta.
+        if !e.painel().vinculo_vale(&rede, &cn, u.id)? {
+            return Err("token de certificado que já não é membro desta rede".into());
+        }
         return Ok(u.login);
     }
     // Vencido, invalido ou os casos do OpenVPN 3 com usuario vazio: a

@@ -114,6 +114,10 @@ R_SEM=$(tentar sem-codigo "senha-da-ana-longa" "")
 # e a reconexao pelo token e recusada (external-auth + credencial mudada).
 # RED: com o soquete da gerencia fora do lugar, a mesma mudanca NAO derruba
 # ninguem em 15 s -- a queda de cima vinha do painel, nao de outra coisa.
+psql_prova() { # COMANDOS... no PostgreSQL da prova, como o painel o ve
+  local a=(); for c in "$@"; do a+=(-c "$c"); done
+  S env PGPASSWORD=senha-pg-prova "$PGBIN/psql" -h 127.0.0.1 -p $PGPORTA -U postgres -d postgres -q "${a[@]}"
+}
 membro_com_mfa() { # LOGIN SENHA -> segredo; cadastra o autenticador e entra na rede
   api POST /api/usuarios "$TK_ADMIN" "{\"login\":\"$1\",\"senha\":\"$2\"}" >/dev/null
   local tk seg
@@ -132,7 +136,10 @@ derrubada() { # ROTULO LOGIN SENHA SEGREDO ROTA CORPO SEGUNDOS -> JSON com n_seg
   for _ in $(seq 150); do grep -q '"evento": "conectou"' "$saida" && break; sleep 0.1; done
   sleep 3
   t0=$(date +%s.%N)
-  api POST "$5" "$TK_ADMIN" "$6" >/dev/null
+  case "$5" in
+    sql) psql_prova "$6" >/dev/null ;;   # sem rota: so a vigia alcanca
+    *) api POST "$5" "$TK_ADMIN" "$6" >/dev/null ;;
+  esac
   wait "$pid" || true
   python3 - "$saida" "$t0" <<'PY'
 import json, sys
@@ -147,6 +154,7 @@ PY
 SEG_CAIO=$(membro_com_mfa caio senha-do-caio-longa)
 SEG_DANI=$(membro_com_mfa dani senha-da-dani-longa)
 SEG_EDU=$(membro_com_mfa edu senha-do-edu-longa)
+SEG_FABI=$(membro_com_mfa fabi senha-da-fabi-longa)
 GER="$T/dados/gerencia/$REDE_ID.sock"
 RV_ZERAR=$(derrubada zerar caio senha-do-caio-longa "$SEG_CAIO" /api/usuarios/mfa-zerar '{"login":"caio"}' 20)
 echo "== admin zera o autenticador do caio conectado: $RV_ZERAR"
@@ -156,6 +164,13 @@ mv "$GER" "$GER.fora"
 RV_RED=$(derrubada red-sem-gerencia edu senha-do-edu-longa "$SEG_EDU" /api/usuarios/ativo '{"login":"edu","ativo":false}' 15)
 mv "$GER.fora" "$GER"
 echo "== RED, gerencia fora do lugar, admin desativa o edu: $RV_RED"
+# M2 da revisao SEC: UPDATE direto no banco, sem rota -- a vigia do painel
+# (a cada credencial::VIGIA) tira o ccd e derruba. Mede N e o custo da
+# pergunta que a vigia faz.
+RV_SQL=$(derrubada sql-direto fabi senha-da-fabi-longa "$SEG_FABI" sql "UPDATE phx_usuario SET ativo = false WHERE login = 'fabi'" 20)
+echo "== UPDATE direto no banco desativa a fabi conectada: $RV_SQL"
+CUSTO_VIGIA=$(psql_prova '\timing on' "SELECT id, credencial FROM phx_usuario" | grep -o "Time: [0-9.]* ms" | tail -1)
+echo "== custo da pergunta da vigia: $CUSTO_VIGIA"
 TOKEN_RECUSADO=$(grep -c "token recusado: a conta mudou" "$T/painel.log" || true)
 DERRUBADAS=$(grep -c "derrubada (credencial mudou)" "$T/painel.log" || true)
 
@@ -250,9 +265,10 @@ RED_OK=0
 caiu() { python3 -c "import json,sys; r=json.loads(sys.argv[1]); print(int(r['conectou_antes'] and r['n_segundos'] is not None and r['n_segundos'] <= 10 and not r.get('voltou')))" "$1"; }
 [ "$(caiu "$RV_ZERAR")" = 1 ] || { echo "FALHOU: zerar o autenticador nao derrubou o caio em 10 s"; OK=0; }
 [ "$(caiu "$RV_DESATIVAR")" = 1 ] || { echo "FALHOU: desativar nao derrubou a dani em 10 s"; OK=0; }
+[ "$(caiu "$RV_SQL")" = 1 ] || { echo "FALHOU: UPDATE direto no banco nao derrubou a fabi em 10 s"; OK=0; }
 python3 -c "import json,sys; r=json.loads(sys.argv[1]); sys.exit(0 if r['conectou_antes'] and r['n_segundos'] is None else 1)" "$RV_RED" \
   || { echo "FALHOU: o RED caiu sem a gerencia -- a queda nao vinha do painel"; OK=0; }
-[ "$TOKEN_RECUSADO" -ge 2 ] || { echo "FALHOU: a reconexao pelo token nao foi recusada ($TOKEN_RECUSADO)"; OK=0; }
+[ "$TOKEN_RECUSADO" -ge 3 ] || { echo "FALHOU: a reconexao pelo token nao foi recusada ($TOKEN_RECUSADO)"; OK=0; }
 
 python3 - "$AQUI/resultados.json" <<PY
 import json, sys, datetime
@@ -276,6 +292,8 @@ json.dump({
     "zerar_autenticador_conectado": r('''$RV_ZERAR'''),
     "desativar_usuario_conectado": r('''$RV_DESATIVAR'''),
     "red_sem_gerencia_desativar": r('''$RV_RED'''),
+    "update_direto_no_banco_desativar": r('''$RV_SQL'''),
+    "custo_da_pergunta_da_vigia": "$CUSTO_VIGIA",
     "reconexoes_pelo_token_recusadas_no_log": $TOKEN_RECUSADO,
     "conexoes_derrubadas_no_log": $DERRUBADAS,
   },

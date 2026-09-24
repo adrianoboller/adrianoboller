@@ -152,6 +152,10 @@ pub struct Painel {
     /// dizer quem existe (achado A2).
     ficticio: Option<(u32, String)>,
     cofre: Option<Cofre>,
+    /// (rede, CN) revogados e ainda nao derrubados na gerencia: quem revoga
+    /// e o `revogar` (todos os caminhos passam por ele), quem derruba e o
+    /// `Estado::derrubar_revogados`, que tem a gerencia e fica fora da trava.
+    pub(crate) revogados: Vec<(String, String)>,
     dados: PathBuf,
     /// Custo do PBKDF2 (senha mestre e senhas de login). Os testes baixam.
     pub iteracoes: u32,
@@ -170,6 +174,7 @@ impl Painel {
             em_transacao: false,
             ficticio: None,
             cofre: None,
+            revogados: Vec::new(),
             dados: dados.to_path_buf(),
             iteracoes: ITERACOES,
         })
@@ -766,6 +771,7 @@ impl Painel {
             &[Some(serie), Some(rede_id), Some(motivo)],
         )?;
         let _ = fs::remove_file(self.dir_rede(rede_id).join("ccd").join(cn));
+        self.revogados.push((rede_id.to_string(), cn.to_string()));
         Ok(())
     }
 
@@ -944,7 +950,6 @@ impl Painel {
             },
             &dir.display().to_string(),
         );
-        criar_dir_privado(&self.dados.join("gerencia"))?;
         conf.push_str(&crate::credencial::conf(&self.dados, rede_id));
         if self.rede_exige_mfa(rede_id)? {
             self.mfa_pode_subir(rede_id)?;
@@ -1006,25 +1011,35 @@ impl Painel {
         let m = self.pg()?.executar(
             "SELECT m.rede_id, m.cn, m.host, r.octeto, u.ativo FROM phx_membro m \
              JOIN phx_rede r ON r.id = m.rede_id JOIN phx_usuario u ON u.id = m.usuario_id \
-             WHERE $1::int IS NULL OR m.usuario_id = $1::int",
+             WHERE $1::int IS NULL OR m.usuario_id = $1::int ORDER BY m.rede_id",
             &[id.as_deref()],
         )?;
+        // Todas as redes, mesmo com falha no meio: parar na primeira deixava
+        // o desativado entrando nas redes seguintes. As falhas voltam juntas.
+        let mut falhas = Vec::new();
         for i in 0..m.linhas.len() {
             let v = |c: &str| m.valor(i, c).unwrap_or_default().to_string();
             let caminho = self.dir_rede(&v("rede_id")).join("ccd").join(v("cn"));
             if v("ativo") != "t" {
                 match fs::remove_file(&caminho) {
                     Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
-                        return Err(format!("apagar {}: {e}", caminho.display()))
+                        falhas.push(format!("apagar {}: {e}", caminho.display()))
                     }
-                    _ => continue,
+                    _ => {}
                 }
+                continue;
             }
             let octeto: u8 = v("octeto").parse().unwrap_or(0);
             let host: u8 = v("host").parse().unwrap_or(0);
-            gravar(&caminho, ovpn::ccd_membro(octeto, host).as_bytes(), false)?;
+            if let Err(e) = gravar(&caminho, ovpn::ccd_membro(octeto, host).as_bytes(), false) {
+                falhas.push(e);
+            }
         }
-        Ok(())
+        if falhas.is_empty() {
+            Ok(())
+        } else {
+            Err(falhas.join("; "))
+        }
     }
 }
 

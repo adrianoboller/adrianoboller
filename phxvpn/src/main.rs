@@ -307,6 +307,8 @@ fn cmd_painel(args: &[String]) -> Result<(), String> {
         }
         phxvpn::verificar::servir(estado.clone())?;
     }
+    // Reconcilia banco, ccd/ e conexoes a cada `credencial::VIGIA`.
+    phxvpn::credencial::vigiar(estado.clone());
     if destrancado {
         http::materializar_e_subir(&estado)?;
     }

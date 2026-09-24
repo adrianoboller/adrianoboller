@@ -497,3 +497,313 @@ fn sessoes_caem_quando_a_credencial_muda() {
     drop(e);
     let _ = std::fs::remove_dir_all(&dados);
 }
+
+/// Gerencia do OpenVPN de mentira, no soquete de verdade da rede: responde
+/// `status 2` com quem esta em `conectados` (CN, CID) e tira da lista quem
+/// recebe `client-kill`. Devolve a lista e os comandos ouvidos.
+#[cfg(unix)]
+#[allow(clippy::type_complexity)]
+fn gerencia_falsa(
+    sock: &std::path::Path,
+) -> (
+    std::sync::Arc<std::sync::Mutex<Vec<(String, u32)>>>,
+    std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+) {
+    use std::io::{BufRead, BufReader, Write};
+    use std::sync::{Arc, Mutex};
+    let _ = std::fs::remove_file(sock);
+    let ouvinte = std::os::unix::net::UnixListener::bind(sock).unwrap();
+    let conectados: Arc<Mutex<Vec<(String, u32)>>> = Arc::default();
+    let comandos: Arc<Mutex<Vec<String>>> = Arc::default();
+    let (c2, k2) = (conectados.clone(), comandos.clone());
+    std::thread::spawn(move || {
+        for c in ouvinte.incoming().flatten() {
+            let mut c = c;
+            let _ = c.write_all(b">INFO:OpenVPN Management Interface Version 5\r\n");
+            let mut leitor = BufReader::new(c.try_clone().unwrap());
+            loop {
+                let mut l = String::new();
+                if leitor.read_line(&mut l).unwrap_or(0) == 0 {
+                    break;
+                }
+                let l = l.trim().to_string();
+                k2.lock().unwrap().push(l.clone());
+                let r = if l == "status 2" {
+                    let mut r = "HEADER,CLIENT_LIST,Common Name,Real Address,Virtual Address,Virtual IPv6 Address,Bytes Received,Bytes Sent,Connected Since,Connected Since (time_t),Username,Client ID,Peer ID,Data Channel Cipher\r\n".to_string();
+                    for (cn, cid) in c2.lock().unwrap().iter() {
+                        r += &format!(
+                            "CLIENT_LIST,{cn},192.0.2.1:1,10.77.1.9,,1,2,d,1,x,{cid},0,c\r\n"
+                        );
+                    }
+                    r + "END\r\n"
+                } else if let Some(cid) = l.strip_prefix("client-kill ") {
+                    c2.lock().unwrap().retain(|(_, x)| x.to_string() != cid);
+                    "SUCCESS: client-kill command succeeded\r\n".into()
+                } else {
+                    break;
+                };
+                let _ = c.write_all(r.as_bytes());
+            }
+        }
+    });
+    (conectados, comandos)
+}
+
+/// Revisao SEC da revogacao, contra o PG real e uma gerencia de mentira no
+/// soquete da rede. Cada bloco nomeia o achado e o RED que o reprova.
+#[cfg(unix)]
+#[test]
+fn revogacao_revisao_sec() {
+    use phxsql_core::base64::codificar as b64;
+    use phxsql_core::json::Json;
+    use phxvpn::credencial::Momento;
+    use phxvpn::http::{atender, Estado};
+    use phxvpn::totp;
+    use phxvpn::web::Pedido;
+    let Some(base) = config() else {
+        eprintln!("NAO RODOU: defina PHXVPN_PG_TESTE");
+        return;
+    };
+    let cfg = banco_novo(&base, "phxvpn_teste_revisao_sec");
+    let dados = std::env::temp_dir().join(format!("phxvpn-teste-sec-{}", std::process::id()));
+    let mut p = Painel::abrir(&cfg, &dados).unwrap();
+    p.iteracoes = 1_000;
+    p.instalar(&Instalacao {
+        empresa: "Empresa Teste".into(),
+        responsavel: "Fulano".into(),
+        email: "f@e.com".into(),
+        admin_usuario: "admin".into(),
+        admin_senha: "senha-admin-1".into(),
+        senha_mestre: "senha-mestre-longa".into(),
+        servidor_nome: "vpn1".into(),
+        servidor_ip: "203.0.113.10".into(),
+        ..Default::default()
+    })
+    .unwrap();
+    let admin = p.login("admin", "senha-admin-1").unwrap();
+    p.criar_rede(&admin, "Matriz", "rede-123", "", None)
+        .unwrap();
+    p.criar_rede(&admin, "Filial", "rede-456", "", None)
+        .unwrap();
+    for u in ["ana", "bia", "caio"] {
+        p.criar_usuario(u, &format!("senha-{u}-1"), "", false)
+            .unwrap();
+    }
+    let e = Estado::novo(p, None);
+    let (conectados, comandos) = gerencia_falsa(&dados.join("gerencia/1.sock"));
+    e.reconciliar(); // primeira volta: so o retrato
+
+    let pedir = |metodo: &str, caminho: &str, tk: Option<&str>, corpo: &str| -> (u16, Json) {
+        let r = atender(
+            &Pedido {
+                metodo: metodo.into(),
+                caminho: caminho.into(),
+                token: tk.map(str::to_string),
+                host: None,
+                tipo: Some("application/json".into()),
+                ip: "192.0.2.7".parse().unwrap(),
+                corpo: corpo.into(),
+            },
+            &e,
+        );
+        (r.status, Json::analisar(&r.corpo).unwrap())
+    };
+    let entrar = |login: &str| -> String {
+        let (s, j) = pedir(
+            "POST",
+            "/api/login",
+            None,
+            &format!(r#"{{"usuario":"{login}","senha":"senha-{login}-1"}}"#),
+        );
+        assert_eq!(s, 200, "login {login}: {}", j.escrever());
+        j.texto_ou("token", "").to_string()
+    };
+    let na_rede = |tk: &str, rede: &str, senha: &str| {
+        let (s, j) = pedir(
+            "POST",
+            "/api/redes/entrar",
+            Some(tk),
+            &format!(r#"{{"nome":"{rede}","senha":"{senha}"}}"#),
+        );
+        assert_eq!(s, 200, "{}", j.escrever());
+    };
+    let cn_de = |login: &str, rede: i64| -> String {
+        Pg::conectar(&cfg)
+            .unwrap()
+            .executar(
+                "SELECT m.cn FROM phx_membro m JOIN phx_usuario u ON u.id = m.usuario_id \
+             WHERE u.login = $1 AND m.rede_id = $2::int",
+                &[Some(login), Some(&rede.to_string())],
+            )
+            .unwrap()
+            .valor(0, "cn")
+            .unwrap()
+            .to_string()
+    };
+    let ccd = |rede: i64, cn: &str| dados.join(format!("redes/{rede}/ccd/{cn}"));
+    let vale = |tk: &str| pedir("GET", "/api/mfa", Some(tk), "").0;
+    let ta = entrar("admin");
+    let ativo = |login: &str, v: bool| {
+        pedir(
+            "POST",
+            "/api/usuarios/ativo",
+            Some(&ta),
+            &format!(r#"{{"login":"{login}","ativo":{v}}}"#),
+        )
+        .0
+    };
+    // M3: o admin zera o autenticador da ana ENTRE a gravacao do cadastro
+    // e a renovacao da sessao dela. A sessao nao pode adotar a mudanca do
+    // admin. RED: renovar relendo o banco (ou sem conferir o +1) deixa A1
+    // com 200.
+    let a1 = entrar("ana");
+    let (s, j) = pedir("POST", "/api/mfa/iniciar", Some(&a1), "{}");
+    assert_eq!(s, 200);
+    let segredo = totp::de_base32(j.texto_ou("segredo", "")).unwrap();
+    let agora = totp::agora();
+    let cod = |seg: &[u8], t: u64| totp::formatar(totp::totp(seg, t, 6), 6);
+    let adm = admin.clone();
+    e.gancho_de_teste(Momento::AntesDeRenovar, move |e| {
+        e.painel().mfa_zerar(&adm, "ana").unwrap();
+    });
+    let (s, _) = pedir(
+        "POST",
+        "/api/mfa/confirmar",
+        Some(&a1),
+        &format!(r#"{{"codigo":"{}"}}"#, cod(&segredo, agora)),
+    );
+    assert_eq!(s, 200);
+    assert_eq!(vale(&a1), 401, "a sessao adotou o zerar do admin (M3)");
+
+    // M3, a outra janela: o admin zera o autenticador da ana DEPOIS de
+    // conferida a sessao e ANTES de gravar a troca de senha dela. O
+    // `RETURNING` devolve +2: a sessao atual tem de cair. RED: renovar
+    // aceitando qualquer valor deixa A1b com 200.
+    let a1b = entrar("ana");
+    let (_, j) = pedir("POST", "/api/mfa/iniciar", Some(&a1b), "{}");
+    let seg2 = totp::de_base32(j.texto_ou("segredo", "")).unwrap();
+    let (s, _) = pedir(
+        "POST",
+        "/api/mfa/confirmar",
+        Some(&a1b),
+        &format!(r#"{{"codigo":"{}"}}"#, cod(&seg2, agora)),
+    );
+    assert_eq!(s, 200);
+    assert_eq!(vale(&a1b), 200);
+    let adm = admin.clone();
+    e.gancho_de_teste(Momento::AntesDeGravar, move |e| {
+        e.painel().mfa_zerar(&adm, "ana").unwrap();
+    });
+    let (s, j) = pedir(
+        "POST",
+        "/api/senha",
+        Some(&a1b),
+        &format!(
+            r#"{{"senha_atual":"senha-ana-1","senha_nova":"senha-ana-1","codigo":"{}"}}"#,
+            cod(&seg2, agora + 30)
+        ),
+    );
+    assert_eq!(s, 200, "{}", j.escrever());
+    assert_eq!(vale(&a1b), 401, "a sessao sobreviveu ao zerar no meio (M3)");
+
+    // M1: a ana em duas redes; o ccd dela na Matriz nao sai (virou pasta
+    // com arquivo). Desativar responde ERRO -- e a Filial e processada
+    // assim mesmo. Depois de desfeito o obstaculo, a vigia refaz; a volta
+    // seguinte nao faz nada. RED: so logar o erro (ou parar na primeira
+    // rede) da 200 / deixa o ccd da Filial.
+    let a2 = entrar("ana");
+    na_rede(&a2, "Matriz", "rede-123");
+    na_rede(&a2, "Filial", "rede-456");
+    let (cn_ana, cn_ana_2) = (cn_de("ana", 1), cn_de("ana", 2));
+    std::fs::remove_file(ccd(1, &cn_ana)).unwrap();
+    std::fs::create_dir_all(ccd(1, &cn_ana).join("trava")).unwrap();
+    assert_eq!(
+        ativo("ana", false),
+        500,
+        "desativar sem tirar o ccd deu ok (M1)"
+    );
+    assert!(!ccd(2, &cn_ana_2).exists(), "parou na primeira rede (M1)");
+    std::fs::remove_dir_all(ccd(1, &cn_ana)).unwrap();
+    let antes = comandos.lock().unwrap().len();
+    e.reconciliar();
+    assert!(
+        comandos.lock().unwrap().len() > antes,
+        "a vigia nao refez a mudanca que falhou"
+    );
+    let depois = comandos.lock().unwrap().len();
+    e.reconciliar();
+    assert_eq!(
+        comandos.lock().unwrap().len(),
+        depois,
+        "refez o que ja estava feito"
+    );
+
+    // M2: `UPDATE` direto no banco, sem rota. A vigia tira o ccd e derruba
+    // a conexao. RED: sem a vigia, o ccd fica e ninguem cai.
+    let b1 = entrar("bia");
+    na_rede(&b1, "Matriz", "rede-123");
+    let cn_bia = cn_de("bia", 1);
+    conectados.lock().unwrap().push((cn_bia.clone(), 31));
+    Pg::conectar(&cfg)
+        .unwrap()
+        .executar(
+            "UPDATE phx_usuario SET ativo = false WHERE login = 'bia'",
+            &[],
+        )
+        .unwrap();
+    e.reconciliar();
+    assert!(
+        !ccd(1, &cn_bia).exists(),
+        "UPDATE pelo psql deixou o ccd (M2)"
+    );
+    assert!(
+        comandos
+            .lock()
+            .unwrap()
+            .contains(&"client-kill 31".to_string()),
+        "UPDATE pelo psql nao derrubou a conexao (M2)"
+    );
+
+    // B1: remover membro derruba a conexao dele, e o token da VPN dele nao
+    // renova mais (o vinculo sumiu). RED: sem `derrubar_revogados` no fim
+    // do pedido, ninguem cai; sem conferir o vinculo, o token renova.
+    let c1 = entrar("caio");
+    let (_, j) = pedir("POST", "/api/mfa/iniciar", Some(&c1), "{}");
+    let seg_caio = totp::de_base32(j.texto_ou("segredo", "")).unwrap();
+    let (s, _) = pedir(
+        "POST",
+        "/api/mfa/confirmar",
+        Some(&c1),
+        &format!(r#"{{"codigo":"{}"}}"#, cod(&seg_caio, agora)),
+    );
+    assert_eq!(s, 200);
+    na_rede(&c1, "Matriz", "rede-123");
+    let cn_caio = cn_de("caio", 1);
+    let vpn = |senha: &str, codigo: &str, estado: &str| {
+        let scrv1 = format!("SCRV1:{}:{}", b64(senha.as_bytes()), b64(codigo.as_bytes()));
+        let j =
+            phxvpn::verificar::pedido("1", &cn_caio, "caio", &scrv1, "192.0.2.8", (estado, "S7"));
+        phxvpn::verificar::conferir(&e, &j)
+    };
+    vpn("senha-caio-1", &cod(&seg_caio, agora + 30), "Initial").unwrap();
+    vpn("", "", "Authenticated").unwrap();
+    conectados.lock().unwrap().push((cn_caio.clone(), 44));
+    let (s, _) = pedir(
+        "POST",
+        "/api/redes/remover",
+        Some(&ta),
+        r#"{"rede_id":1,"login":"caio"}"#,
+    );
+    assert_eq!(s, 200);
+    assert!(
+        comandos
+            .lock()
+            .unwrap()
+            .contains(&"client-kill 44".to_string()),
+        "remover membro nao derrubou a conexao (B1)"
+    );
+    let m = vpn("", "", "Authenticated").unwrap_err();
+    assert!(m.contains("membro"), "{m}");
+    drop(e);
+    let _ = std::fs::remove_dir_all(&dados);
+}

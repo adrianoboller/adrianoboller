@@ -179,7 +179,9 @@ impl Painel {
 
     /// Termina o cadastro com um codigo do aplicativo: prova que o telefone
     /// leu o segredo certo ANTES de a conta passar a exigi-lo.
-    pub fn mfa_confirmar(&mut self, u: &Usuario, codigo: &str) -> R<()> {
+    /// Devolve a credencial que o gatilho deixou (a sessao de quem
+    /// confirmou so se renova com ela).
+    pub fn mfa_confirmar(&mut self, u: &Usuario, codigo: &str) -> R<i64> {
         let id = u.id.to_string();
         let r = self.pg()?.executar(
             "SELECT totp_pendente FROM phx_usuario WHERE id = $1::int",
@@ -194,12 +196,12 @@ impl Painel {
         let passo = totp::conferir(&segredo, codigo, totp::agora(), 0)
             .ok_or("código do autenticador não confere")?;
         let selado = k.selar(&segredo, &aad(u.id, false));
-        self.pg()?.executar(
+        let r = self.pg()?.executar(
             "UPDATE phx_usuario SET totp_selado = $2, totp_pendente = NULL, totp_ultimo = $3::bigint \
-             WHERE id = $1::int",
+             WHERE id = $1::int RETURNING credencial",
             &[Some(&id), Some(&selado), Some(&passo.to_string())],
         )?;
-        Ok(())
+        crate::credencial::credencial_da_resposta(&r)
     }
 
     /// Confere o codigo de quem ja tem autenticador e grava o passo: o mesmo
@@ -235,7 +237,7 @@ impl Painel {
 
     /// O proprio usuario desliga o autenticador -- com um codigo, para uma
     /// sessao roubada nao conseguir tirar o segundo fator.
-    pub fn mfa_desativar(&mut self, u: &Usuario, codigo: &str) -> R<()> {
+    pub fn mfa_desativar(&mut self, u: &Usuario, codigo: &str) -> R<i64> {
         self.mfa_conferir(u.id, codigo)?;
         self.mfa_zerar_id(u.id)
     }
@@ -244,8 +246,9 @@ impl Painel {
     /// OUTRO. O proprio desliga pelo `mfa_desativar`, com codigo: zerar a si
     /// mesmo sem codigo deixava a sessao roubada tirar o segundo fator do
     /// admin e, em seguida, desligar a exigencia da rede (M1 da re-revisao).
-    /// Devolve o id do alvo: as sessoes dele caem (`credencial_mudou`).
-    pub fn mfa_zerar(&mut self, ator: &Usuario, login: &str) -> R<i64> {
+    /// Devolve (id, credencial) do alvo: as sessoes dele caem
+    /// (`credencial_mudou`).
+    pub fn mfa_zerar(&mut self, ator: &Usuario, login: &str) -> R<(i64, i64)> {
         if !ator.admin {
             return Err("só o administrador zera o autenticador de outro usuário".into());
         }
@@ -263,16 +266,16 @@ impl Painel {
             .valor(0, "id")
             .and_then(|v| v.parse().ok())
             .ok_or("usuário inexistente")?;
-        self.mfa_zerar_id(id)?;
-        Ok(id)
+        Ok((id, self.mfa_zerar_id(id)?))
     }
 
-    fn mfa_zerar_id(&mut self, id: i64) -> R<()> {
-        self.pg()?.executar(
-            "UPDATE phx_usuario SET totp_selado = NULL, totp_pendente = NULL WHERE id = $1::int",
+    fn mfa_zerar_id(&mut self, id: i64) -> R<i64> {
+        let r = self.pg()?.executar(
+            "UPDATE phx_usuario SET totp_selado = NULL, totp_pendente = NULL WHERE id = $1::int \
+             RETURNING credencial",
             &[Some(&id.to_string())],
         )?;
-        Ok(())
+        crate::credencial::credencial_da_resposta(&r)
     }
 
     pub fn rede_exige_mfa(&mut self, rede_id: &str) -> R<bool> {

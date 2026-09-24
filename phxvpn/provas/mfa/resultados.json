@@ -1,6 +1,6 @@
 {
   "prova": "phxvpn: usuario + senha + TOTP na conexao OpenVPN (auth-user-pass-verify via-file + static-challenge)",
-  "data": "2026-09-24T09:14:13+00:00",
+  "data": "2026-09-24T09:32:06+00:00",
   "openvpn": "2.6.19",
   "phxvpn_compilado_em": "release",
   "casos": {
@@ -11,9 +11,9 @@
     "codigo_certo": {
       "resultado": "conectou",
       "desafio": "1,Código do autenticador",
-      "segundos": 1.26,
+      "segundos": 1.22,
       "ping": [
-        "3 packets transmitted, 3 received, 0% packet loss, time 2035ms"
+        "3 packets transmitted, 3 received, 0% packet loss, time 2041ms"
       ]
     },
     "mesmo_codigo_de_novo": {
@@ -47,18 +47,18 @@
     "zerar_autenticador_conectado": {
       "resultado": "conectou",
       "desafio": "1,Código do autenticador",
-      "segundos": 1.15,
+      "segundos": 1.14,
       "motivo": "server-pushed-connection-reset",
       "tentou_reconectar": true,
       "reconexao_recusada": true,
       "pediu_senha_de_novo": true,
       "conectou_antes": true,
-      "n_segundos": 0.06
+      "n_segundos": 0.05
     },
     "desativar_usuario_conectado": {
       "resultado": "conectou",
       "desafio": "1,Código do autenticador",
-      "segundos": 1.18,
+      "segundos": 1.25,
       "motivo": "server-pushed-connection-reset",
       "tentou_reconectar": true,
       "reconexao_recusada": true,
@@ -69,20 +69,32 @@
     "red_sem_gerencia_desativar": {
       "resultado": "conectou",
       "desafio": "1,Código do autenticador",
-      "segundos": 1.13,
+      "segundos": 1.16,
       "conectou_antes": true,
       "n_segundos": null
     },
-    "reconexoes_pelo_token_recusadas_no_log": 2,
-    "conexoes_derrubadas_no_log": 2
+    "update_direto_no_banco_desativar": {
+      "resultado": "conectou",
+      "desafio": "1,Código do autenticador",
+      "segundos": 1.29,
+      "motivo": "server-pushed-connection-reset",
+      "tentou_reconectar": true,
+      "reconexao_recusada": true,
+      "pediu_senha_de_novo": true,
+      "conectou_antes": true,
+      "n_segundos": 1.23
+    },
+    "custo_da_pergunta_da_vigia": "Time: 0.733 ms",
+    "reconexoes_pelo_token_recusadas_no_log": 3,
+    "conexoes_derrubadas_no_log": 3
   },
   "red_conferencia_trocada_por_bin_true": {
     "senha_errada": {
       "resultado": "conectou",
       "desafio": "1,Código do autenticador",
-      "segundos": 0.15,
+      "segundos": 0.14,
       "ping": [
-        "3 packets transmitted, 3 received, 0% packet loss, time 2038ms"
+        "3 packets transmitted, 3 received, 0% packet loss, time 2050ms"
       ]
     },
     "codigo_errado": {
@@ -90,14 +102,14 @@
       "desafio": "1,Código do autenticador",
       "segundos": 0.15,
       "ping": [
-        "3 packets transmitted, 3 received, 0% packet loss, time 2054ms"
+        "3 packets transmitted, 3 received, 0% packet loss, time 2027ms"
       ]
     }
   },
   "servidor": {
-    "autenticacoes_adiadas": 10,
+    "autenticacoes_adiadas": 12,
     "uid_phxvpn_ovpn": true,
-    "recusas_no_log_do_painel": 6,
+    "recusas_no_log_do_painel": 7,
     "senha_ou_segredo_em_log": 0
   },
   "passou": true

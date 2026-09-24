@@ -42,12 +42,18 @@ const TELA: &str = include_str!("tela.html");
 const FRASE_LOGIN: &str = "usuário, senha ou código do autenticador não conferem";
 const TELA_JS: &str = include_str!("tela.js");
 
+type Gancho = (crate::credencial::Momento, Box<dyn FnOnce(&Estado) + Send>);
+
 pub struct Estado {
     painel: Mutex<Painel>,
     /// Sessoes do painel (token do navegador) e da VPN (`session_id` do
     /// `auth-gen-token`): as duas pelo mesmo motor (`credencial.rs`).
     pub(crate) sessoes: Sessoes,
     pub(crate) vpn: Sessoes,
+    /// Ultimo retrato `id -> credencial` da vigia (`None` ate a primeira
+    /// volta).
+    pub(crate) vistos: Mutex<Option<std::collections::HashMap<i64, i64>>>,
+    pub(crate) gancho_de_teste: Mutex<Option<Gancho>>,
     pub supervisor: Option<Supervisor>,
     pub(crate) tentativas: Limitador,
     pub(crate) conferencias: Semaforo,
@@ -63,6 +69,8 @@ impl Estado {
             painel: Mutex::new(painel),
             sessoes: Sessoes::nova(VIDA_SESSAO),
             vpn: Sessoes::nova(Duration::from_secs(u64::from(crate::verificar::VIDA_TOKEN))),
+            vistos: Mutex::new(None),
+            gancho_de_teste: Mutex::new(None),
             supervisor,
             tentativas: Limitador::default(),
             conferencias: Semaforo::novo(CONFERENCIAS),
@@ -120,10 +128,26 @@ pub fn atender(pedido: &Pedido, estado: &Estado) -> Resposta {
     if pedido.metodo == "GET" && caminho == "/simbolo.svg" {
         return Resposta::svg(crate::web::SIMBOLO);
     }
-    match rotear(pedido, estado) {
+    let r = match rotear(pedido, estado) {
         Ok(j) => Resposta::json(200, j.escrever()),
         Err((s, m)) => Resposta::json(s, erro_json(&m)),
-    }
+    };
+    // Certificado revogado neste pedido (remover membro, sair, reentrar):
+    // a conexao dele cai agora, e nao so na renegociacao.
+    estado.derrubar_revogados();
+    r
+}
+
+/// A mudanca foi gravada, mas o efeito dela (ccd/, queda da VPN) nao se
+/// completou: a rota diz ERRO, nunca «ok» -- e a vigia refaz.
+fn incompleta(m: String) -> (u16, String) {
+    (
+        500,
+        format!(
+            "a mudança foi gravada, mas não se completou ({m}); o painel tenta de novo a cada {} s",
+            crate::credencial::VIGIA.as_secs()
+        ),
+    )
 }
 
 fn erro_json(m: &str) -> String {
@@ -320,22 +344,24 @@ fn rotear(p: &Pedido, e: &Estado) -> Saida {
                 .reservar(&[&conta, &chave_ip])
                 .map_err(bloqueado)?;
             let codigo = t("codigo");
+            e.gancho(crate::credencial::Momento::AntesDeGravar);
             let r = if caminho.ends_with("confirmar") {
                 e.painel().mfa_confirmar(&u, &codigo)
             } else {
                 e.painel().mfa_desativar(&u, &codigo)
             };
-            r.map_err(ruim)?;
+            let novo = r.map_err(ruim)?;
             reserva.acertou(&[&conta]);
             // A propria mudanca: esta sessao fica, as outras dele caem.
-            e.credencial_mudou(u.id, p.token.as_deref());
+            e.credencial_mudou(u.id, novo, p.token.as_deref())
+                .map_err(incompleta)?;
             ok()
         }
         ("POST", "/api/usuarios/mfa-zerar") => {
             let u = usuario(p, e)?;
             exigir_admin(&u)?;
-            let alvo = e.painel().mfa_zerar(&u, &t("login")).map_err(ruim)?;
-            e.credencial_mudou(alvo, None);
+            let (alvo, novo) = e.painel().mfa_zerar(&u, &t("login")).map_err(ruim)?;
+            e.credencial_mudou(alvo, novo, None).map_err(incompleta)?;
             ok()
         }
         ("POST", "/api/usuarios/ativo") => {
@@ -345,11 +371,11 @@ fn rotear(p: &Pedido, e: &Estado) -> Saida {
                 .campo("ativo")
                 .and_then(Json::booleano)
                 .ok_or((400, "ativo: true ou false".to_string()))?;
-            let alvo = e
+            let (alvo, novo) = e
                 .painel()
                 .usuario_definir_ativo(&u, &t("login"), ativo)
                 .map_err(ruim)?;
-            e.credencial_mudou(alvo, None);
+            e.credencial_mudou(alvo, novo, None).map_err(incompleta)?;
             ok()
         }
         ("POST", "/api/senha") => {
@@ -395,8 +421,10 @@ fn rotear(p: &Pedido, e: &Estado) -> Saida {
                 let _vez = e.conferencias.adquirir();
                 phxsql_core::senha::cifrar_com(&nova, iteracoes)
             };
-            e.painel().gravar_senha(u.id, &novo).map_err(ruim)?;
-            e.credencial_mudou(u.id, p.token.as_deref());
+            e.gancho(crate::credencial::Momento::AntesDeGravar);
+            let credencial = e.painel().gravar_senha(u.id, &novo).map_err(ruim)?;
+            e.credencial_mudou(u.id, credencial, p.token.as_deref())
+                .map_err(incompleta)?;
             ok()
         }
         ("POST", "/api/redes/mfa") => {
