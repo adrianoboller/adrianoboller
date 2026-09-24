@@ -29,3 +29,6 @@ Arquivo vazio diz que o processo não terminou, não que morreu.
 ## Como está guardado hoje
 
 Só por esta cognição: não há guarda automática contra relançar processo vivo.
+E o custo da duplicata se perdeu: os dois processos escreveram no mesmo arquivo
+de saída, um por cima do outro — relançar com `>` no mesmo caminho apaga a
+medida do processo que ainda vive.
