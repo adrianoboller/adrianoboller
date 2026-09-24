@@ -101,14 +101,12 @@
 <header>
   <div>
     <h1 class="marca logo" aria-label="PhxZip"><span class="l1">PHX</span><span class="l2"><b>Z</b><b>I</b><b>P</b></span></h1>
-    <div class="sub" data-txt="sub">7z · LZMA2 · AES-256 — escrito em Rust, sem dependências</div>
+    <div class="sub" data-txt="zip.sub">7z · LZMA2 · AES-256 — escrito em Rust, sem dependências</div>
   </div>
   <div class="dir">
     <span id="quem" class="sub"></span>
-    <button id="sair" class="botao neutro mini oculto" data-txt="sair">Sair</button>
-    <select id="idioma" class="caixa" style="width:auto" aria-label="idioma">
-      <option value="pt">PT</option><option value="en">EN</option>
-    </select>
+    <button id="sair" class="botao neutro mini oculto" data-txt="zip.sair">Sair</button>
+    <select id="idioma" class="caixa" style="width:auto" aria-label="idioma"></select>
   </div>
 </header>
 
@@ -124,61 +122,61 @@
 </svg>
 
 <section id="login" class="cartao oculto">
-  <h2 class="marca" data-txt="login_titulo">Entrar</h2>
-  <label class="campo"><span data-txt="usuario">Usuário</span>
+  <h2 class="marca" data-txt="zip.login_titulo">Entrar</h2>
+  <label class="campo"><span data-txt="zip.usuario">Usuário</span>
     <input id="l_usuario" class="caixa" autocomplete="username"></label>
-  <label class="campo"><span data-txt="senha">Senha</span>
+  <label class="campo"><span data-txt="zip.senha">Senha</span>
     <input id="l_senha" class="caixa" type="password" autocomplete="current-password"></label>
-  <button id="entrar" class="botao consulta" data-txt="entrar">Entrar</button>
+  <button id="entrar" class="botao consulta" data-txt="zip.entrar">Entrar</button>
   <div id="l_res" class="resultado"></div>
 </section>
 
 <main id="principal" class="oculto">
   <section class="cartao">
-    <h2 class="marca" data-txt="compactar_titulo">Compactar</h2>
+    <h2 class="marca" data-txt="zip.compactar_titulo">Compactar</h2>
     <label id="c_zona" class="zona" tabindex="0">
       <input id="c_arquivos" type="file" multiple>
       <svg class="ic" aria-hidden="true"><use href="#i-soltar"/></svg>
-      <strong data-txt="soltar_titulo">Arraste arquivos ou pastas para cá</strong>
-      <span data-txt="soltar_ou">ou clique para escolher</span>
+      <strong data-txt="zip.soltar_titulo">Arraste arquivos ou pastas para cá</strong>
+      <span data-txt="zip.soltar_ou">ou clique para escolher</span>
     </label>
     <div id="c_fila" class="lista-fila oculto">
-      <table class="entradas"><thead><tr><th></th><th data-txt="col_nome">Nome</th><th data-txt="col_tamanho">Tamanho</th><th></th></tr></thead>
+      <table class="entradas"><thead><tr><th></th><th data-txt="zip.col_nome">Nome</th><th data-txt="zip.col_tamanho">Tamanho</th><th></th></tr></thead>
         <tbody></tbody></table>
       <div class="rodape-lista"><span id="c_total"></span>
-        <button id="c_limpar" class="botao neutro mini" data-txt="limpar">Limpar</button></div>
+        <button id="c_limpar" class="botao neutro mini" data-txt="zip.limpar">Limpar</button></div>
     </div>
     <div class="linha">
-      <label class="campo" style="flex:1;min-width:120px"><span data-txt="nivel">Nível</span>
+      <label class="campo" style="flex:1;min-width:120px"><span data-txt="zip.nivel">Nível</span>
         <select id="c_nivel" class="caixa">
-          <option value="0">0 — Copy</option><option value="1">1</option><option value="3">3</option>
-          <option value="5" selected>5</option><option value="7">7</option><option value="9">9 — máx.</option>
+          <option value="0" data-txt="zip.nivel_copy">0 — sem compressão</option><option value="1">1</option><option value="3">3</option>
+          <option value="5" selected>5</option><option value="7">7</option><option value="9" data-txt="zip.nivel_max">9 — máximo</option>
         </select></label>
-      <label class="campo" style="flex:2;min-width:160px"><span data-txt="senha_arquivo">Senha do arquivo (opcional)</span>
+      <label class="campo" style="flex:2;min-width:160px"><span data-txt="zip.senha_arquivo">Senha do arquivo (opcional)</span>
         <input id="c_senha" class="caixa" type="password" autocomplete="new-password"></label>
     </div>
-    <label class="campo"><span data-txt="nome_saida">Nome do arquivo</span>
+    <label class="campo"><span data-txt="zip.nome_saida">Nome do arquivo</span>
       <input id="c_nome" class="caixa" value="phxzip.7z"></label>
     <div class="linha" style="margin-bottom:12px">
-      <label class="marcar"><input id="c_visiveis" type="checkbox"><span data-txt="nomes_visiveis">nomes visíveis sem senha</span></label>
+      <label class="marcar"><input id="c_visiveis" type="checkbox"><span data-txt="zip.nomes_visiveis">nomes visíveis sem senha</span></label>
     </div>
-    <button id="compactar" class="botao inclui" data-txt="compactar">Compactar e baixar</button>
+    <button id="compactar" class="botao inclui" data-txt="zip.compactar">Compactar e baixar</button>
     <div id="c_res" class="resultado"></div>
   </section>
 
   <section class="cartao">
-    <h2 class="marca" data-txt="abrir_titulo">Abrir .7z</h2>
+    <h2 class="marca" data-txt="zip.abrir_titulo">Abrir .7z</h2>
     <label id="a_zona" class="zona menor" tabindex="0">
       <input id="a_arquivo" type="file" accept=".7z,.phz">
       <svg class="ic" aria-hidden="true"><use href="#i-cadeado"/></svg>
-      <strong id="a_escolhido" data-txt="soltar_7z">Arraste o .7z ou .phz para cá</strong>
-      <span data-txt="soltar_ou">ou clique para escolher</span>
+      <strong id="a_escolhido" data-txt="zip.soltar_7z">Arraste o .7z ou .phz para cá</strong>
+      <span data-txt="zip.soltar_ou">ou clique para escolher</span>
     </label>
-    <label class="campo"><span data-txt="senha_arquivo">Senha do arquivo (opcional)</span>
+    <label class="campo"><span data-txt="zip.senha_arquivo">Senha do arquivo (opcional)</span>
       <input id="a_senha" class="caixa" type="password" autocomplete="off"></label>
     <div class="linha">
-      <button id="abrir" class="botao consulta" data-txt="abrir">Abrir</button>
-      <button id="testar" class="botao consulta" data-txt="testar">Testar integridade</button>
+      <button id="abrir" class="botao consulta" data-txt="zip.abrir">Abrir</button>
+      <button id="testar" class="botao consulta" data-txt="zip.testar">Testar integridade</button>
     </div>
     <div id="a_res" class="resultado"></div>
     <div id="a_barra" class="linha oculto" style="margin-top:14px;justify-content:space-between">
@@ -186,8 +184,8 @@
       <span id="a_total" class="escolhidos"></span>
     </div>
     <div class="tabela-rolagem"><table id="a_tabela" class="entradas oculto">
-      <thead><tr><th></th><th data-txt="col_nome">Nome</th><th data-txt="col_tamanho">Tamanho</th>
-        <th data-txt="col_metodo">Método</th><th data-txt="col_data">Data</th><th></th></tr></thead>
+      <thead><tr><th></th><th data-txt="zip.col_nome">Nome</th><th data-txt="zip.col_tamanho">Tamanho</th>
+        <th data-txt="zip.col_metodo">Método</th><th data-txt="zip.col_data">Data</th><th></th></tr></thead>
       <tbody></tbody></table></div>
   </section>
 </main>
@@ -196,84 +194,50 @@
 
 <script>
 'use strict';
-// Texto de tela resolvido por CHAVE, nunca pela frase (a lei da fabrica de
-// idiomas do PhxSql). Dado -- nome de arquivo, numero -- nunca passa por aqui.
-const TXT = {
-  pt: {
-    sub: '7z · LZMA2 · AES-256 — escrito em Rust, sem dependências', sair: 'Sair',
-    login_titulo: 'Entrar', usuario: 'Usuário', senha: 'Senha', entrar: 'Entrar',
-    compactar_titulo: 'Compactar', arquivos: 'Arquivos', escolher: 'Escolher arquivos',
-    escolher_um: 'Escolher arquivo', nenhum: 'nenhum arquivo', nivel: 'Nível',
-    senha_arquivo: 'Senha do arquivo (opcional)', nome_saida: 'Nome do arquivo',
-    nomes_visiveis: 'nomes visíveis sem senha', compactar: 'Compactar e baixar',
-    abrir_titulo: 'Abrir .7z', arquivo_7z: 'Arquivo .7z ou .phz', abrir: 'Abrir',
-    testar: 'Testar integridade', col_nome: 'Nome', col_tamanho: 'Tamanho',
-    col_metodo: 'Método', col_data: 'Data', baixar: 'baixar', pasta: 'pasta',
-    arquivos_n: n => n + (n === 1 ? ' arquivo' : ' arquivos'),
-    feito_compactar: (n, a, b, ms) => `${n} → ${fmt(a)} bytes viraram ${fmt(b)} bytes (${pct(b, a)}) em ${ms} ms`,
-    feito_listar: (n, cif) => `${n} entradas` + (cif ? ' · nomes estavam cifrados' : ''),
-    feito_testar: (n, ms) => `Tudo certo: ${n} entradas, todos os CRC conferidos em ${ms} ms`,
-    escolha_antes: 'Escolha o arquivo primeiro.', logado_como: u => 'logado: ' + u,
-    senha_necessaria: 'Arquivo cifrado: informe a senha.',
-    senha_errada: 'Senha errada ou arquivo corrompido.',
-    recusado: m => `Método ${m || ''} recusado: o PhxZip lê só Copy, LZMA, LZMA2 e 7zAES.`,
-    corrompido: 'Arquivo corrompido.', teto: 'Acima do teto desta porta.',
-    caminho: 'Nome de entrada inseguro (sairia da pasta).', login: 'Entre com usuário e senha.',
-    login_errado: 'Usuário ou senha errados.', uso: 'Pedido inválido.', origem: 'Pedido recusado.',
-    rede: 'Sem resposta do servidor.',
-    soltar_titulo: 'Arraste arquivos ou pastas para cá', soltar_ou: 'ou clique para escolher',
-    soltar_7z: 'Arraste o .7z ou .phz para cá', limpar: 'Limpar', remover: 'remover',
-    total_fila: (n, b) => `${n} · ${fmt(b)} bytes`, filtrar: 'filtrar por nome…',
-    total_arquivo: (n, b, c) => `${n} · ${fmt(b)} bytes descompactados · ${fmt(c)} no .7z (${pct(c, b)})`
-  },
-  en: {
-    sub: '7z · LZMA2 · AES-256 — written in Rust, zero dependencies', sair: 'Sign out',
-    login_titulo: 'Sign in', usuario: 'User', senha: 'Password', entrar: 'Sign in',
-    compactar_titulo: 'Compress', arquivos: 'Files', escolher: 'Choose files',
-    escolher_um: 'Choose file', nenhum: 'no file', nivel: 'Level',
-    senha_arquivo: 'Archive password (optional)', nome_saida: 'Archive name',
-    nomes_visiveis: 'names visible without password', compactar: 'Compress and download',
-    abrir_titulo: 'Open .7z', arquivo_7z: '.7z or .phz archive', abrir: 'Open',
-    testar: 'Test integrity', col_nome: 'Name', col_tamanho: 'Size',
-    col_metodo: 'Method', col_data: 'Date', baixar: 'download', pasta: 'folder',
-    arquivos_n: n => n + (n === 1 ? ' file' : ' files'),
-    feito_compactar: (n, a, b, ms) => `${n} → ${fmt(a)} bytes became ${fmt(b)} bytes (${pct(b, a)}) in ${ms} ms`,
-    feito_listar: (n, cif) => `${n} entries` + (cif ? ' · names were encrypted' : ''),
-    feito_testar: (n, ms) => `All good: ${n} entries, every CRC checked in ${ms} ms`,
-    escolha_antes: 'Choose the file first.', logado_como: u => 'signed in: ' + u,
-    senha_necessaria: 'Encrypted archive: enter the password.',
-    senha_errada: 'Wrong password or corrupted archive.',
-    recusado: m => `Method ${m || ''} refused: PhxZip reads only Copy, LZMA, LZMA2 and 7zAES.`,
-    corrompido: 'Corrupted archive.', teto: 'Above this port\'s limit.',
-    caminho: 'Unsafe entry name (would leave the folder).', login: 'Sign in with user and password.',
-    login_errado: 'Wrong user or password.', uso: 'Invalid request.', origem: 'Request refused.',
-    rede: 'No answer from the server.',
-    soltar_titulo: 'Drag files or folders here', soltar_ou: 'or click to choose',
-    soltar_7z: 'Drag the .7z or .phz here', limpar: 'Clear', remover: 'remove',
-    total_fila: (n, b) => `${n} · ${fmt(b)} bytes`, filtrar: 'filter by name…',
-    total_arquivo: (n, b, c) => `${n} · ${fmt(b)} bytes uncompressed · ${fmt(c)} in the .7z (${pct(c, b)})`
-  }
-};
-let idioma = 'pt';
-try { idioma = localStorage.getItem('phxzip_idioma') || 'pt'; } catch (_) {}
-if (!TXT[idioma]) idioma = 'pt';
-const t = (k, ...a) => { const v = TXT[idioma][k] ?? TXT.pt[k] ?? k; return typeof v === 'function' ? v(...a) : v; };
-const pct = (b, a) => a ? (100 * b / a).toFixed(1).replace('.', idioma === 'pt' ? ',' : '.') + '%' : '—';
+// Texto de tela resolvido por CHAVE, nunca pela frase -- a lei da fabrica de
+// idiomas do PhxSql, e o MESMO motor: o servidor devolve os textos `zip.*` ja
+// resolvidos (`/api/textos`, `src/textos.rs`), nos seis idiomas da fabrica.
+// A pagina nao carrega traducao nenhuma: duas verdades, e a segunda envelhece.
+// Dado -- nome de arquivo, numero -- nunca passa por aqui.
+let TEXTOS = {};
+let IDIOMAS = ['Portugues'];
+let idioma = 'Portugues';
+try { idioma = localStorage.getItem('phxzip_idioma') || 'Portugues'; } catch (_) {}
+// A sigla do seletor e o formato de numero e data de cada coluna da fabrica.
+const SIGLA = { Portugues: 'PT', Frances: 'FR', Ingles: 'EN', Italiano: 'IT', Alemao: 'DE', Espanhol: 'ES' };
+const LOCAL = { Portugues: 'pt-BR', Frances: 'fr-FR', Ingles: 'en-US', Italiano: 'it-IT', Alemao: 'de-DE', Espanhol: 'es-ES' };
+const local = () => LOCAL[idioma] || 'pt-BR';
+// Marcadores `{nome}` recebem DADO ja formatado; chave ausente mostra a chave,
+// para o defeito aparecer em vez de sumir.
+const t = (k, dados) => (TEXTOS[k] ?? k).replace(/\{([a-z0-9_]+)\}/g, (m, n) => dados && n in dados ? dados[n] : m);
+const fmt = n => Number(n).toLocaleString(local());
+const pct = (b, a) => a ? (100 * b / a).toLocaleString(local(), { maximumFractionDigits: 1, minimumFractionDigits: 1 }) + '%' : '—';
+const nArquivos = n => n === 1 ? t('zip.arquivo_1') : t('zip.arquivos_n', { n: fmt(n) });
+async function carregarTextos() {
+  const r = await fetch('/api/textos?idioma=' + encodeURIComponent(idioma), { credentials: 'same-origin' });
+  const j = await r.json();
+  TEXTOS = j.textos || {}; IDIOMAS = j.idiomas || IDIOMAS; idioma = j.idioma || idioma;
+}
 const $ = id => document.getElementById(id);
-const fmt = n => n.toLocaleString(idioma === 'pt' ? 'pt-BR' : 'en-US');
 
 function traduzir() {
-  document.documentElement.lang = idioma === 'pt' ? 'pt-BR' : 'en';
+  document.documentElement.lang = local();
+  const sel = $('idioma');
+  if (sel.options.length !== IDIOMAS.length) {
+    sel.textContent = '';
+    for (const i of IDIOMAS) { const o = document.createElement('option'); o.value = i; o.textContent = SIGLA[i] || i; sel.appendChild(o); }
+  }
   document.querySelectorAll('[data-txt]').forEach(el => {
     if (el.dataset.dinamico) return;
     el.textContent = t(el.dataset.txt);
   });
   $('idioma').value = idioma;
-  $('a_filtro').placeholder = t('filtrar');
+  $('a_filtro').placeholder = t('zip.filtrar');
 }
-$('idioma').onchange = () => {
+$('idioma').onchange = async () => {
   idioma = $('idioma').value;
   try { localStorage.setItem('phxzip_idioma', idioma); } catch (_) {}
+  await carregarTextos();
   traduzir(); desenharFila(); rotularAberto(); if (ultimaLista) desenhar(ultimaLista);
 };
 
@@ -290,7 +254,13 @@ async function api(rota, corpo, binario) {
   }
   return binario ? r : r.json();
 }
-function textoDoErro(e) { return t(e.tipo, e.metodo); }
+const ERRO = {
+  senha_necessaria: 'zip.senha_necessaria', senha_errada: 'zip.senha_errada', recusado: 'zip.recusado',
+  corrompido: 'zip.corrompido', teto: 'zip.teto', caminho: 'zip.caminho', login: 'zip.login',
+  login_errado: 'zip.login_errado', uso: 'zip.uso', origem: 'zip.origem', rota: 'zip.rota',
+  interno: 'zip.interno', rede: 'zip.rede',
+};
+function textoDoErro(e) { return t(ERRO[e.tipo] || 'zip.rede', { metodo: e.metodo || '' }); }
 
 function envelope(meta, partes) { return new Blob([JSON.stringify(meta) + '\n', ...partes]); }
 
@@ -308,7 +278,7 @@ async function estado() {
   $('login').classList.toggle('oculto', !precisa);
   $('principal').classList.toggle('oculto', precisa);
   $('sair').classList.toggle('oculto', !j.logado);
-  $('quem').textContent = j.logado ? t('logado_como', j.usuario) : '';
+  $('quem').textContent = j.logado ? t('zip.logado_como', { usuario: j.usuario }) : '';
   if (precisa) $('l_usuario').focus();
 }
 
@@ -347,14 +317,14 @@ function desenharFila() {
     td(it.nome, 'nome');
     td(fmt(it.arquivo.size), 'num');
     const b = document.createElement('button');
-    b.className = 'botao remover'; b.title = t('remover'); b.setAttribute('aria-label', t('remover') + ' ' + it.nome);
+    b.className = 'botao remover'; b.title = t('zip.remover'); b.setAttribute('aria-label', t('zip.remover') + ' ' + it.nome);
     b.innerHTML = '<svg class="ic" aria-hidden="true"><use href="#i-fechar"/></svg>';
     b.onclick = ev => { ev.preventDefault(); fila.splice(i, 1); desenharFila(); };
     td('').appendChild(b);
     tb.appendChild(tr);
   });
   const tot = fila.reduce((s, x) => s + x.arquivo.size, 0);
-  $('c_total').textContent = t('total_fila', t('arquivos_n', fila.length), tot);
+  $('c_total').textContent = t('zip.total_fila', { arquivos: nArquivos(fila.length), bytes: fmt(tot) });
   $('c_fila').classList.toggle('oculto', !fila.length);
 }
 
@@ -408,7 +378,7 @@ $('c_limpar').onclick = ev => { ev.preventDefault(); fila = []; desenharFila(); 
 function rotularAberto() {
   const ea = $('a_escolhido');
   ea.dataset.dinamico = aberto ? '1' : '';
-  ea.textContent = aberto ? aberto.name + ' · ' + fmt(aberto.size) + ' bytes' : t('soltar_7z');
+  ea.textContent = aberto ? aberto.name + ' · ' + fmt(aberto.size) + ' bytes' : t('zip.soltar_7z');
 }
 function escolherAberto(f) {
   aberto = f || null;
@@ -422,7 +392,7 @@ armarZona('a_zona', dt => { const f = dt.files[0]; escolherAberto(f); if (f) abr
 $('compactar').onclick = async () => {
   const itens = fila.slice();
   limpar('c_res');
-  if (!itens.length) { mostrar('c_res', false, t('escolha_antes')); return; }
+  if (!itens.length) { mostrar('c_res', false, t('zip.escolha_antes')); return; }
   const meta = { nivel: +$('c_nivel').value, senha: $('c_senha').value, nomes_visiveis: $('c_visiveis').checked,
     arquivos: itens.map(x => ({ nome: x.nome, tamanho: x.arquivo.size, mtime: Math.floor(x.arquivo.lastModified / 1000) })) };
   $('compactar').disabled = true;
@@ -431,7 +401,7 @@ $('compactar').onclick = async () => {
     const blob = await r.blob();
     const tot = itens.reduce((s, x) => s + x.arquivo.size, 0);
     baixar(blob, $('c_nome').value || 'phxzip.7z');
-    mostrar('c_res', true, t('feito_compactar', t('arquivos_n', itens.length), tot, blob.size, r.headers.get('X-PhxZip-Ms') || '?'));
+    mostrar('c_res', true, t('zip.feito_compactar', { arquivos: nArquivos(itens.length), antes: fmt(tot), depois: fmt(blob.size), pct: pct(blob.size, tot), ms: r.headers.get('X-PhxZip-Ms') || '?' }));
   } catch (e) { mostrar('c_res', false, textoDoErro(e)); }
   $('compactar').disabled = false;
 };
@@ -439,12 +409,13 @@ $('compactar').onclick = async () => {
 async function abrir(testar) {
   const f = aberto;
   limpar('a_res');
-  if (!f) { mostrar('a_res', false, t('escolha_antes')); return; }
+  if (!f) { mostrar('a_res', false, t('zip.escolha_antes')); return; }
   $('abrir').disabled = $('testar').disabled = true;
   try {
     const j = await api(testar ? '/api/testar' : '/api/listar', envelope({ senha: $('a_senha').value }, [f]));
     ultimaLista = j; desenhar(j);
-    mostrar('a_res', true, testar ? t('feito_testar', j.entradas.length, j.ms) : t('feito_listar', j.entradas.length, j.cabecalho_cifrado));
+    mostrar('a_res', true, testar ? t('zip.feito_testar', { n: fmt(j.entradas.length), ms: j.ms })
+      : t(j.cabecalho_cifrado ? 'zip.feito_listar_cifrado' : 'zip.feito_listar', { n: fmt(j.entradas.length) }));
   } catch (e) { $('a_tabela').classList.add('oculto'); mostrar('a_res', false, textoDoErro(e)); }
   $('abrir').disabled = $('testar').disabled = false;
 }
@@ -458,7 +429,7 @@ function desenhar(j) {
   const filtro = $('a_filtro').value.trim().toLowerCase();
   const arqs = j.entradas.filter(e => !e.pasta);
   const bytes = arqs.reduce((s, e) => s + e.tamanho, 0);
-  $('a_total').textContent = t('total_arquivo', t('arquivos_n', arqs.length), bytes, j.tamanho_arquivo);
+  $('a_total').textContent = t('zip.total_arquivo', { arquivos: nArquivos(arqs.length), bytes: fmt(bytes), no7z: fmt(j.tamanho_arquivo), pct: pct(j.tamanho_arquivo, bytes) });
   $('a_barra').classList.remove('oculto');
   for (const e of j.entradas) {
     if (filtro && !e.nome.toLowerCase().includes(filtro)) continue;
@@ -470,13 +441,13 @@ function desenhar(j) {
     c(e.nome, 'nome');
     c(e.pasta ? '' : fmt(e.tamanho), 'num');
     const m = c(''); if (e.metodos) { const s = document.createElement('span'); s.className = 'selo'; s.textContent = e.metodos; m.appendChild(s); }
-    c(e.mtime != null ? new Date(e.mtime * 1000).toLocaleString(idioma === 'pt' ? 'pt-BR' : 'en-US', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '', 'data');
+    c(e.mtime != null ? new Date(e.mtime * 1000).toLocaleString(local(), { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '', 'data');
     const ac = c('');
     if (!e.pasta && e.seguro) {
       // Icone e nao texto: com o texto «baixar» a coluna saia cortada a
       // 1200 px (visto na captura). O rotulo continua, para leitor de tela.
       const b = document.createElement('button'); b.className = 'botao consulta mini icone';
-      b.title = t('baixar'); b.setAttribute('aria-label', t('baixar') + ' ' + e.nome);
+      b.title = t('zip.baixar'); b.setAttribute('aria-label', t('zip.baixar') + ' ' + e.nome);
       b.innerHTML = '<svg class="ic" aria-hidden="true"><use href="#i-baixar"/></svg>';
       b.onclick = () => extrair(e); ac.appendChild(b);
     }
@@ -493,8 +464,8 @@ async function extrair(e) {
   } catch (err) { mostrar('a_res', false, textoDoErro(err)); }
 }
 
-traduzir();
-estado().catch(() => mostrar('l_res', false, t('rede')));
+carregarTextos().catch(() => {}).then(() => { traduzir(); return estado(); })
+  .catch(() => mostrar('l_res', false, t('zip.rede')));
 </script>
 </body>
 </html>

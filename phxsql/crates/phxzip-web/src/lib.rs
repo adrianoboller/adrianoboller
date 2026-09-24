@@ -36,6 +36,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use phxsql_core::json::Json;
 use phxsql_core::semaforo::Semaforo;
 use phxsql_server::http::{self, FalhaDoPedido, PedidoBinario, Sessoes};
+pub mod textos;
+
 use phxzip::{filetime_de_unix, unix_de_filetime, Arquivo7z, Erro, Escritor, Limites, Opcoes};
 
 /// A porta padrao -- a constante UNICA de onde ela sai (pedido 454).
@@ -240,6 +242,13 @@ fn atender(mut fluxo: TcpStream, est: &Estado) {
     match rota {
         ("GET", "/") => {
             let _ = http::responder_pagina(&mut fluxo, 200, pagina());
+            return;
+        }
+        // Os textos da tela, resolvidos pela fabrica de idiomas do PhxSql.
+        // Publico como a pagina: o formulario de login tambem tem rotulo.
+        ("GET", "/api/textos") => {
+            let idioma = http::parametro(&p.consulta, "idioma");
+            let _ = http::responder_json(&mut fluxo, 200, &textos::para_a_pagina(&idioma));
             return;
         }
         ("GET", "/api/estado") => {
