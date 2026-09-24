@@ -62,9 +62,9 @@ def fmt(d):
     return re.sub(r"(\d+\.\d{2})\d+", r"\1", d)
 
 
-# O simbolo de cada produto. Todos sao a mesma fenix; o PhxZip a pousa na
-# morsa (pedido do dono, 24/09/2026 -- `gerar-phxzip.py`).
-SIMBOLO = {"PhxZip": "phxzip-simbolo-morsa.svg"}
+# O simbolo de cada produto. Todos sao a mesma fenix; no PhxZip ela carrega
+# o cadeado laranja (decisao do dono, 24/09/2026 -- `gerar-phxzip.py`).
+SIMBOLO = {"PhxZip": "phxzip-simbolo.svg"}
 
 
 def simbolo_interno(produto=None):

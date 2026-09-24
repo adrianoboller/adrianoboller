@@ -109,21 +109,19 @@ tamanho novo era um recorte à mão. Agora:
 | `vetor/<produto>-horizontal.svg` | símbolo + palavra em **curvas** (Exo 2 SemiBold) + assinatura, para os quatro produtos |
 | `derivados/vetor/` | PNG de 16 a 1200 px, Android 192/512, iOS 180 e o `phx.ico` (16/32/48/256) |
 
-### O símbolo do PhxZip — duas propostas, pedido do dono (24/09/2026)
+### O símbolo do PhxZip — a fênix carregando o cadeado laranja
 
-*«O logo deve ter uma morsa de aperto e a Phoenix pousada em cima. Pode ser
-um cadeado laranja com asas.»*
+Decisão do dono, 24/09/2026, depois de ver a morsa e o cadeado lado a lado:
+*«Só o cadeado laranja já ficou bom. Phoenix carregando um cadeado 🔒
+laranja.»* A morsa saiu do repositório — um símbolo por vez.
 
 | Arquivo | O que é |
 |---|---|
-| `vetor/phxzip-simbolo-morsa.svg` | a fênix pousada na morsa que aperta o arquivo — **em uso** no PhxZip web e no horizontal |
-| `vetor/phxzip-simbolo-cadeado.svg` | o cadeado laranja com asas — alternativa |
-| `vetor/phxzip-icone-{morsa,cadeado}.svg` | os dois, recortados para 16–48 px |
+| `vetor/phxzip-simbolo.svg` | a fênix de asas abertas, com as garras na argola, carregando o cadeado laranja com o zíper |
+| `vetor/phxzip-icone.svg` | o mesmo, recortado para 16–48 px (legível em 32 px, medido na captura) |
 
-A morsa entrou por ser o «deve»; o cadeado lê melhor em 16 px (medido nas
-capturas de 32 px) — a escolha final é do dono. As asas, o pescoço e a cabeça
-vêm do `phx-simbolo.svg` por leitura (`vetor/gerar-phxzip.py`): a família
-continua sendo um desenho só de fênix.
+As asas, o pescoço e a cabeça vêm do `phx-simbolo.svg` por leitura
+(`vetor/gerar-phxzip.py`): a família continua sendo um desenho só de fênix.
 
 Refazer: `python3 vetor/gerar-phxzip.py`, depois `python3 vetor/gerar.py Exo2[wght].ttf` (precisa de `fontTools`,
 ferramenta de trabalho, não do produto) e `node vetor/exportar.mjs`.

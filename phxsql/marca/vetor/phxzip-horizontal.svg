@@ -38,18 +38,14 @@
       <circle cx="90" cy="322" r="6" fill="#FFC43D" stroke="none"/>
       <circle cx="74" cy="356" r="6" fill="#FFC43D" stroke="none"/>
     </g>
-      <linearGradient id="aco" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#3a4668"/><stop offset=".5" stop-color="#1a2440"/><stop offset="1" stop-color="#0a1122"/>
-    </linearGradient>
-  </defs>
-  <circle cx="256" cy="250" r="190" fill="url(#brilho)" opacity=".28"/>
+    </defs>
+  <circle cx="256" cy="250" r="200" fill="url(#brilho)" opacity=".28"/>
 
-  <!-- a fenix, pousada: as asas, o pescoco e a cabeca do simbolo da familia -->
-  <g transform="translate(256 200) scale(.8) translate(-256 -250)">
+  <!-- a fenix: asas abertas, peito em chama, pescoco e cabeca da familia -->
+  <g transform="translate(256 164) scale(.74) translate(-256 -250)">
     <use href="#asa-esq"/>
     <use href="#asa-esq" transform="translate(512 0) scale(-1 1)"/>
-    <!-- o peito em chama, no lugar do cilindro do PhxSql -->
-    <path fill="url(#fogo)" d="M256 330 C214 322 196 290 204 256 C210 232 228 222 248 220 L284 224 C304 234 314 254 310 280 C304 308 286 324 256 330 Z"/>
+    <path fill="url(#fogo)" d="M256 336 C214 326 196 292 204 258 C210 234 228 222 248 220 L284 224 C304 234 314 256 310 282 C304 312 286 330 256 336 Z"/>
   <!-- a fenix: pescoco em S, cabeca com bico voltado para a direita e a
        crista em tres penas -- sobe do cilindro -->
   <path fill="url(#fogo)" d="M234 240 C222 206 228 172 250 148 C262 134 278 124 296 122 C310 121 322 126 330 134 L352 142 L330 150 C320 152 310 150 302 146 C290 150 282 160 278 174 C272 196 276 218 288 240 Z"/>
@@ -57,26 +53,23 @@
   <path fill="#FF8A1C" d="M330 134 L352 142 L330 150 C334 144 334 140 330 134 Z"/>
   <circle cx="314" cy="134" r="4" fill="#010418"/>
   </g>
-  <!-- as garras seguram a boca da morsa -->
+
+  <!-- a argola, presa nas garras -->
+  <g transform="translate(0 14)"><path d="M200 318 V262 C200 230 226 206 256 206 C286 206 312 230 312 262 V318" fill="none" stroke="#DDE2EB" stroke-width="22" stroke-linecap="round"/>
+  <path d="M200 318 V262 C200 230 226 206 256 206 C286 206 312 230 312 262 V318" fill="none" stroke="#FFC43D" stroke-width="5" stroke-linecap="round" opacity=".7"/>
   <g fill="none" stroke="#FFC43D" stroke-width="6" stroke-linecap="round">
-    <path d="M236 262 L228 280 M236 262 L238 282 M236 262 L248 280"/>
-    <path d="M276 262 L266 280 M276 262 L276 282 M276 262 L286 280"/>
+    <path d="M238 184 L232 208 M238 184 L244 210 M238 184 L224 204"/>
+    <path d="M274 184 L268 210 M274 184 L280 208 M274 184 L288 204"/>
   </g>
 
-  <!-- a morsa: base, corpo, as duas bocas, o fuso e a manivela -->
-  <rect x="92" y="410" width="328" height="26" rx="8" fill="url(#aco)" stroke="#FF8A1C" stroke-width="4"/>
-  <path d="M130 410 L150 346 H362 L382 410 Z" fill="url(#aco)" stroke="#FF8A1C" stroke-width="4" stroke-linejoin="round"/>
-  <rect x="130" y="280" width="104" height="70" rx="6" fill="url(#aco)" stroke="#FF8A1C" stroke-width="4"/>
-  <rect x="278" y="280" width="104" height="70" rx="6" fill="url(#aco)" stroke="#FF8A1C" stroke-width="4"/>
-  <g stroke="#FFC43D" stroke-width="3" opacity=".8">
-    <path d="M226 288 V342 M218 288 V342"/><path d="M286 288 V342 M294 288 V342"/>
+  <!-- o cadeado laranja, pendurado -->
+  <rect x="170" y="304" width="172" height="150" rx="28" fill="url(#fogo)" stroke="#FFC43D" stroke-width="5"/>
+  <rect x="186" y="320" width="140" height="11" rx="5.5" fill="#FFC43D" opacity=".55"/>
+  <!-- o buraco da chave, e o ziper que desce dele: um arquivo trancado -->
+  <circle cx="256" cy="368" r="20" fill="#010418"/>
+  <path d="M247 379 H265 L261 414 H251 Z" fill="#010418"/>
+  <path d="M256 422 V446" stroke="#010418" stroke-width="4" stroke-dasharray="5 4"/>
   </g>
-  <!-- o arquivo apertado entre as bocas: a compressao em si, com o ziper -->
-  <path d="M234 292 Q245 285 256 292 T278 292 V338 Q267 345 256 338 T234 338 Z" fill="url(#fogo)"/>
-  <path d="M256 294 V336" stroke="#010418" stroke-width="3" stroke-dasharray="4 4"/>
-  <rect x="382" y="354" width="66" height="14" rx="7" fill="#DDE2EB" opacity=".85"/>
-  <rect x="444" y="318" width="14" height="86" rx="7" fill="#FF8A1C"/>
-  <circle cx="451" cy="314" r="11" fill="#FFC43D"/><circle cx="451" cy="408" r="11" fill="#FFC43D"/>
 </svg>
 <line x1="536" y1="120" x2="536" y2="400" stroke="#DDE2EB" stroke-opacity=".25" stroke-width="3"/>
 <g transform="translate(560 170)">

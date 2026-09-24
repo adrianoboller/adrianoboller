@@ -43,10 +43,10 @@ pub const PORTA_PADRAO: u16 = 4000;
 /// O endereco padrao: so a propria maquina.
 pub const ENDERECO_PADRAO: &str = "127.0.0.1";
 const PAGINA: &str = include_str!("../ui/index.html");
-/// O icone do PhxZip -- a fenix pousada na morsa (pedido do dono,
-/// 24/09/2026; `marca/vetor/gerar-phxzip.py`). O mesmo SVG vira o icone da
-/// aba e o simbolo do cabecalho.
-const ICONE_SVG: &str = include_str!("../../../marca/vetor/phxzip-icone-morsa.svg");
+/// O icone do PhxZip -- a fenix carregando o cadeado laranja (decisao do
+/// dono, 24/09/2026; `marca/vetor/gerar-phxzip.py`). O mesmo SVG vira o
+/// icone da aba e o simbolo do cabecalho.
+const ICONE_SVG: &str = include_str!("../../../marca/vetor/phxzip-icone.svg");
 const COOKIE: &str = "phxzip_sessao";
 const SESSAO_MS: i64 = 30 * 60 * 1000;
 const MAX_ENVELOPE_JSON: usize = 1 << 20;
