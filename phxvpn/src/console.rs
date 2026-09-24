@@ -644,20 +644,21 @@ pub fn autoteste() -> String {
     s
 }
 
-/// Mede, nesta maquina, a cifra de um pacote de 1.420 B e o aperto IKpsk2.
+/// Mede, nesta maquina, a cifra de um pacote do tamanho da placa P2P
+/// ([`crate::p2p::MTU`]) e o aperto IKpsk2.
 pub fn bancada(duracao: Duration) -> String {
     use phxsql_core::cifra::selar;
     use phxsql_core::fio::nonce_do_contador;
     use phxsql_core::x25519;
     let chave = [7u8; 32];
-    let pacote = vec![0u8; 1420];
+    let pacote = vec![0u8; crate::p2p::MTU as usize];
     let (mut n, t) = (0u64, Instant::now());
     while t.elapsed() < duracao {
         let _ = selar(&chave, &nonce_do_contador(n), &[], &pacote);
         n += 1;
     }
     let seg = t.elapsed().as_secs_f64();
-    let mbit = (n as f64 * 1420.0 * 8.0) / seg / 1e6;
+    let mbit = (n as f64 * pacote.len() as f64 * 8.0) / seg / 1e6;
     let (a, b) = (x25519::gerar_privada(), x25519::gerar_privada());
     let pb = x25519::chave_publica(&b);
     let (mut apertos, t) = (0u64, Instant::now());
@@ -701,7 +702,7 @@ pub fn bancada(duracao: Duration) -> String {
         &["Medida", "Valor"],
         &[
             vec![
-                "Cifra (1 nucleo, pacote 1.420 B)".into(),
+                format!("Cifra (1 nucleo, pacote {} B)", pacote.len()),
                 format!("{mbit:.0} Mbit/s"),
             ],
             vec!["Pacotes cifrados".into(), format!("{n} em {seg:.1} s")],

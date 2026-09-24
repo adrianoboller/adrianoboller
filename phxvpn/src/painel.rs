@@ -170,6 +170,7 @@ impl Painel {
         pg.lote(crate::rotas::ESQUEMA)?;
         pg.lote(crate::saida::ESQUEMA)?;
         pg.lote(crate::alcance::ESQUEMA)?;
+        pg.lote(crate::historico::ESQUEMA)?;
         criar_dir_privado(dados)?;
         Ok(Painel {
             pg,
@@ -928,6 +929,12 @@ impl Painel {
         self.dados.join("redes").join(id)
     }
 
+    /// CNs conectados agora a uma rede (o mesmo `status.log` da lista de
+    /// membros).
+    pub(crate) fn conectados_na_rede(&self, rede_id: &str) -> Vec<String> {
+        conectados(&self.dir_rede(rede_id).join("status.log"))
+    }
+
     /// Escreve em disco o que o OpenVPN daquela rede le: conf, AC, certificado
     /// e chave do servidor, `tls-crypt` e o diretorio `ccd/`. Chave em claro no
     /// disco e o preco do OpenVPN ler sem perguntar senha; por isso 0600.
@@ -982,6 +989,8 @@ impl Painel {
             self.mfa_pode_subir(rede_id)?;
             conf.push_str(&crate::verificar::conf_servidor_mfa(&self.dados, rede_id));
         }
+        conf.push_str(&crate::historico::conf(&self.dados, rede_id));
+        conf.push_str(&crate::memoria::conf_openvpn());
         let ac_pem = self.ac_pem()?;
         let crl = self.crl_pem()?;
         gravar(&dir.join("crl.pem"), crl.as_bytes(), false)?;

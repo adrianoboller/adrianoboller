@@ -2,7 +2,7 @@
 
 # Evitar — falhas observadas, com causa e prevenção
 
-298 cognições: **13 frutíferas**, **5 infrutíferas**, **280 pendentes** (sem evidência validada — não entram aqui).
+301 cognições: **16 frutíferas**, **5 infrutíferas**, **280 pendentes** (sem evidência validada — não entram aqui).
 
 Antes de repetir um caminho, procure aqui se ele já falhou e o que o previne.
 

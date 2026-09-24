@@ -14,7 +14,7 @@ async function api(metodo, rota, corpo) {
 }
 function msg(id, texto, ok) { const m = $(id); m.textContent = texto || ""; m.className = "msg " + (ok ? "ok" : "erro"); }
 function dados(form) { return Object.fromEntries(new FormData(form).entries()); }
-function mostrar(tela) { for (const t of ["tela-instalar","tela-login","tela-redes","tela-admin","tela-mfa","tela-senha"]) $(t).hidden = t !== tela; $("barra").hidden = !sessao; }
+function mostrar(tela) { for (const t of ["tela-instalar","tela-login","tela-redes","tela-admin","tela-mfa","tela-senha","tela-historico"]) $(t).hidden = t !== tela; $("barra").hidden = !sessao; }
 
 // Confirmacao DENTRO da pagina -- nada de confirm() do navegador (acao
 // vermelha precisa de um passo a mais, nao de um dialogo do sistema que o
@@ -343,6 +343,54 @@ $("f-mfa").onsubmit = async (ev) => {
     const feito = mfaAtivo ? "autenticador desativado" : "autenticador ativo";
     await carregarMfa(); msg("m-mfa", feito, true);
   } catch (x) { msg("m-mfa", x.message); }
+};
+
+// Historico: o admin ve todos; o membro, so as proprias conexoes (o painel
+// filtra -- a tela so mostra o que veio).
+function bytesLegiveis(n) {
+  if (n === null || n === undefined) return "—";
+  const u = ["B", "KiB", "MiB", "GiB", "TiB"]; let i = 0; let v = n;
+  while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+  return (i ? v.toFixed(1) : String(v)) + " " + u[i];
+}
+function duracaoLegivel(s) {
+  if (s === null || s === undefined) return "—";
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
+  return h ? `${h} h ${m} min` : m ? `${m} min ${x} s` : `${x} s`;
+}
+function quando(iso) { return iso ? new Date(iso).toLocaleString() : "—"; }
+async function carregarHistorico() {
+  const tb = $("t-historico"); tb.textContent = ""; msg("m-historico", ""); msg("m-retencao", "");
+  let h;
+  try { h = await api("GET", "/api/historico"); } catch (x) { return msg("m-historico", x.message); }
+  $("h-escopo").textContent = (h.todos ? "Todas as conexões de todas as redes" : "Só as suas conexões")
+    + ` · guardadas por ${h.retencao_dias} dias · as ${h.teto} mais recentes`;
+  $("f-retencao").hidden = !h.todos;
+  $("f-retencao").elements.dias.value = h.retencao_dias;
+  if (!h.conexoes.length) { msg("m-historico", "Nenhuma conexão registrada ainda.", true); return; }
+  for (const c of h.conexoes) {
+    const tr = document.createElement("tr");
+    const saiu = c.estado === "saiu" ? quando(c.saiu_em) : c.estado;
+    // IPv6 entre colchetes (a porta no fim nao se confunde); quem caiu para o
+    // TCP entrou pela ponte, e o IP e o de fora que ela lembra.
+    const ip = (c.ip_real.includes(":") ? `[${c.ip_real}]` : c.ip_real) + `:${c.porta_real}` + (c.pela_ponte ? " · TCP" : "");
+    for (const v of [c.login, c.rede, ip, c.ip_vpn || "—", quando(c.entrou_em), saiu,
+                     duracaoLegivel(c.segundos), bytesLegiveis(c.bytes_do_membro), bytesLegiveis(c.bytes_ao_membro)]) {
+      const td = document.createElement("td"); td.textContent = v; tr.appendChild(td);
+    }
+    tb.appendChild(tr);
+  }
+}
+$("b-historico").onclick = () => { mostrar("tela-historico"); carregarHistorico(); };
+$("b-historico-voltar").onclick = iniciar;
+$("f-retencao").onsubmit = async (ev) => {
+  ev.preventDefault();
+  const d = dados(ev.target);
+  try {
+    const r = await api("POST", "/api/historico/retencao", { dias: Number(d.dias), codigo: d.codigo });
+    await carregarHistorico();
+    msg("m-retencao", `retenção de ${r.retencao_dias} dias` + (r.apagadas ? ` · ${r.apagadas} conexão(ões) mais antiga(s) apagada(s)` : ""), true);
+  } catch (x) { msg("m-retencao", x.message); }
 };
 
 async function carregarAdmin() {

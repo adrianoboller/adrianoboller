@@ -99,7 +99,7 @@ Da matriz em `docs/propostas/lacunas-openvpn-fonte-2026-09-24.md` (classe
 - [x] DNS empurrado + nomes dos membros (resolvedor embutido `membro.rede.phx`, só no modo servidor; o P2P não tem)
 - [ ] IPv6 dentro do túnel (`server-ipv6`; o P2P é só IPv4 por dentro)
 - [ ] **Transporte IPv6 por fora — P2P e repasse:** o código entrou (soquete IPv6 ao lado do IPv4, `src/soquete.rs`), com os testes da escolha do soquete e do endereço mapeado; **falta a prova em rede IPv6** — o kernel deste contêiner arranca com `ipv6.disable=1` e `socket(AF_INET6)` dá `EAFNOSUPPORT` até dentro de netns. Os dois testes de ida e volta por `::1` estão `#[ignore]` com o motivo; rodam com `cargo test -- --ignored` numa máquina com IPv6
-- [ ] MTU do P2P pelo repasse/farol (1.516 B > 1.500, calculado, não medido)
+- [x] MTU do P2P pelo repasse/farol: medido (fragmento descartado → TCP 0,0 Mbit/s pelo relé); placa em 1.384 → 641,7 Mbit/s e 0 fragmento (ver «Operação»)
 - [x] `explicit-exit-notify 1` no perfil do membro (só UDP) — o membro some da lista em **10,4 s** (antes **131,1 s**), ver «Ciclo do OpenVPN e IPv6 por fora»
 - [x] Reinício do servidor com aviso: SIGTERM + prazo + `explicit-exit-notify 1` no servidor (só UDP; **Linux** — no Windows segue o `TerminateProcess`, ver a seção)
 - [x] `remote` múltiplos / failover de servidor — principal morto → alternativo em **9,5 / 10,1 / 9,5 s** (ver «Modo servidor: alcance»)
@@ -107,7 +107,7 @@ Da matriz em `docs/propostas/lacunas-openvpn-fonte-2026-09-24.md` (classe
 - [x] `port-share` (TCP dividindo porta com HTTPS) — na ponte da queda e na rede TCP (esta, só fora do Windows)
 - [x] Log do OpenVPN com teto: o supervisor lê a saída por pipe e gira `openvpn.log` a 10 MB, guardando 3
 - [ ] `tls-groups` híbrido pós-quântico (depende do OpenSSL 3.5 nos dois lados)
-- [ ] `mlock` (chave fora do swap)
+- [x] `mlock` (chave fora do swap): `mlockall` com `MCL_ONFAULT` no painel, no nó e no repasse, e `mlock` no OpenVPN só quando ele consegue subir o limite (ver «Operação»). Windows: registrado, sem `VirtualLock`
 - [x] `http-proxy` com usuário e senha / `socks-proxy` — credencial em arquivo 0600 (linha de comando) ou perguntada ao conectar; SOCKS só em TCP (UDP pelo SOCKS não provado)
 - [ ] Certificado em cartão/repositório do Windows (`pkcs11-*`, `cryptoapicert`)
 - [ ] `multihome`
@@ -2332,11 +2332,198 @@ tirada do fonte, o teste dela reprova): **17/17**, `python3
 provas/servidor-alcance/red.py` → `resultados.json` → `red_das_guardas`.
 
 **Não medido / fica:** o membro que sai pela ponte continua na lista até o
-`ping-restart` do servidor (TCP fechado não vira `explicit-exit-notify`); o
-`client-connect` (histórico) vê o `127.x.y.z`, e a origem real está só no
-`openvpn.log`; SOCKS por UDP; `port-share` e a ponte num Windows real; queda
+`ping-restart` do servidor (TCP fechado não vira `explicit-exit-notify`);
+SOCKS por UDP; `port-share` e a ponte num Windows real; queda
 com IPv6 por fora (este kernel não tem IPv6 — a ponte tenta `[::]` e cai no
 `0.0.0.0`).
+
+## Operação: histórico de conexões, `force-cookie`, MTU do P2P e `mlock` (24/09/2026)
+
+Itens 10, 8 e 6 do top 10 de `docs/propostas/lacunas-openvpn-fonte-2026-09-24.md`
+e o `mlock` da lista «Falta». Código novo em `src/historico.rs` e
+`src/memoria.rs`; ganchos de uma linha no `verificar.rs` (despacho no mesmo
+soquete), `painel.rs` (esquema e conf), `main.rs`, `http.rs`, `ovpn.rs`
+(`Rede::cookie`), `p2p.rs` (`MTU`), `servico.rs` (`LimitMEMLOCK`) e `queda_tcp.rs` (`origem_real`). Provas em
+`provas/operacao/` — `openvpn.sh` (itens 10 e 8 e o `mlock` do painel, openvpn
+2.6.19 em netns, binário novo e o de antes), `mtu.sh` (netns P2P), `mlock.sh`
+(`/proc/<pid>/status`) e `tela.sh` (Chromium); números em
+`provas/operacao/resultados.json`, uma seção por prova, cada uma com a data. n=1.
+
+### Histórico de conexões
+
+Quem conectou, de onde (IP e porta reais), com qual IP da VPN, quando entrou e
+saiu, e os bytes nos dois sentidos — o que o `status.log` não guarda (ele só
+sabe o agora). Tabela `phx_conexao`, com `rede_id` e `usuario_id` em
+`ON DELETE RESTRICT` como o resto das `phx_*`; **não** aponta para
+`phx_membro`, senão ninguém sairia de uma rede em que já conectou.
+
+**Um motor só: o soquete do verificador.** O `client-connect` e o
+`client-disconnect` do OpenVPN chamam `phxvpn ovpn-historico SOQUETE REDE`,
+que fala com o painel pelo MESMO `verificar.sock` do autenticador — mesmas duas
+portas (arquivo 0660 do grupo `phxvpn-ovpn` e `SO_PEERCRED`), mesmo teto de
+perguntas, mesmo prazo. O pedido leva `"tipo": "entrou"|"saiu"` e o
+`verificar::atender` o despacha para o `historico.rs`; o resto continua sendo
+conferência de senha e código. Um segundo soquete seria uma segunda cópia da
+decisão «quem fala com o painel».
+
+**Nunca barra a VPN.** O código de saída do `client-connect` decide se o
+membro entra; histórico é auditoria, não portão: o gancho sai 0 sempre, e o
+envio vai por um filho (`ovpn-historico-enviar`, pela mesma
+`verificar::por_um_filho` do adiado da senha) para o laço do `openvpn` não
+esperar o painel. Painel fora do ar = um buraco no histórico, dito no
+`openvpn.log`, nunca uma rede parada.
+
+**A ordem não importa.** A sessão é `(rede, cn, ip, porta, entrou_em)`, com
+`entrou_em` = `time_unix` do OpenVPN — a mesma variável nos dois ganchos (o
+ambiente da instância persiste até a saída; `multi.c`,
+`multi_client_connect_setenv`). A saída é `INSERT … ON CONFLICT DO UPDATE` e a
+entrada `ON CONFLICT DO NOTHING`: numa conexão curta a saída chega antes, e a
+linha certa sai igual (teste `historico_pelo_soquete_escopo_retencao_e_integridade`).
+O instante da saída é o do OpenVPN (`time_unix + time_duration`), não o da
+chegada do pedido.
+
+**Quem caiu para o TCP fica com o IP de fora.** Pela ponte da queda
+(`queda_tcp.rs`), o `openvpn` vê o membro como `127.x.y.z:porta`. A chave da
+sessão fica no que o `openvpn` viu (`ip_visto`/`porta_vista`, o que os dois
+ganchos trazem), e o `ip_real` sai do **mapa da própria ponte**
+(`queda_tcp::origem_real`, no mesmo processo do painel) — não relendo o
+`openvpn.log`, que seria uma segunda fonte da mesma resposta e perderia o IP
+no giro do log. A ponte lembra a origem por 15 min depois que o TCP fecha,
+porque o `client-disconnect` de quem sai pela ponte só chega no
+`ping-restart` (medido: **123 s**). Na tela, a linha leva «· TCP».
+
+**Nada de senha.** O gancho lê só uma lista fechada de variáveis
+(`historico::CAMPOS`); com `via-env` o OpenVPN poria `password` no ambiente, e
+copiar o ambiente a levaria ao painel. Na prova: 0 ocorrência das cinco senhas
+no `pg_dump` da tabela, no log do painel e no `openvpn.log`.
+
+**Tela** (botão «Histórico»): o admin vê todas as conexões e muda a retenção
+(1 a 3.650 dias, padrão 90; encurtar apaga na hora e pede o código do
+autenticador de quem tem — o mesmo `exigir_codigo` das rotas e do túnel
+total); o membro vê só as dele. Conexão sem saída registrada só aparece como
+«conectado» se o CN está no `status.log` agora; senão, «sem registro de saída»
+(`openvpn` morto por SIGKILL nunca chama o `client-disconnect`). A poda roda no
+arranque e a cada hora (`historico::vigiar`). Capturas em
+`docs/previa/31-historico-*.png` (1280 e 390 px, 0 erro de console).
+
+| Medido (`openvpn.sh`) | Antes (RED) | Agora |
+|---|---|---|
+| `GET /api/historico` | 404 | 200 |
+| Linhas depois de admin e ana conectarem e a ana sair | — | **2** (uma por sessão) |
+| A linha da ana | — | IP real `192.168.93.12`, VPN `10.77.1.3`, **10 s**, 23.635 B do membro / 23.352 B ao membro |
+| O admin, ainda conectado | — | «conectado» |
+| O que a ana vê | — | **1** linha, só a dela |
+| O caio pela ponte TCP (UDP bloqueado, `force-cookie` ligado, cliente 2.6.19) | — | entra; a linha tem IP real `192.168.93.13` (o `openvpn` o viu como `127.x.y.z`), «· TCP», **uma** linha, saída registrada 123 s depois |
+| Senhas no banco e nos logs | 0 | **0** |
+
+**Limite:** no Windows não há o soquete local — o `servidor.conf` lá não leva
+os ganchos (o verificador também recusa tudo no Windows).
+
+### `tls-crypt-v2 … force-cookie`
+
+Com a opção, o servidor só guarda estado de quem devolve o cookie (aperto sem
+estado): datagrama forjado não faz o servidor desembrulhar chave nem gastar
+memória. O padrão do OpenVPN ainda é `allow-noncookie`
+(tls-options.rst:511-516). **Decisão pela evidência: ligado sempre nas redes
+v2 em UDP** (`Rede::cookie`); em TCP a linha fica sem o parâmetro, que só o
+`mudp.c:122` lê.
+
+- **Cliente 2.6 (e o OpenVPN GUI 2.6, que usa o mesmo núcleo):** manda o
+  cookie — medido, entra.
+- **OpenVPN Connect:** conferido no fonte do OpenVPN 3 core (clone de
+  22/09/2026, `2986b58`): o cliente numera o primeiro pacote com
+  `EARLY_NEG_START` (`proto.hpp`, `reset()`, caso `TLS_CRYPT_V2`) e reenvia a
+  WKc quando o servidor pede (`EARLY_NEG_FLAG_RESEND_WKC`, `CONTROL_WKC_V1`),
+  desde o commit `2ff291e7` de 16/11/2022 — primeira etiqueta: `release/3.8`.
+  O aplicativo Connect é fechado; o que se conferiu foi o núcleo dele. Connect
+  com núcleo anterior ao 3.8 fica de fora — **não medido**.
+- **Cliente 2.5 e anteriores:** ficam de fora — é o preço da opção.
+
+| Medido (`openvpn.sh`, rede v2 UDP) | Cliente 2.6.19 | Cliente 2.5.11 (compilado do fonte) |
+|---|---|---|
+| Sem `force-cookie` (binário de antes, RED) | entra | **entra** |
+| Com `force-cookie` (agora) | entra | **não entra** em 25 s |
+
+Hipótese que morreu: «deixar opção por rede, desligada por padrão» — só valia
+se o Connect não suportasse; suporta desde o núcleo 3.8.
+
+### MTU do P2P pelo repasse e pelo farol
+
+O calculado (1.420 + 16 + 16 + 36 + 28 = 1.516 B no fio pelo relé) foi
+**medido** em netns, com os fragmentos IP descartados no caminho (nft em
+`prerouting` com prioridade −450, antes do *defrag* do conntrack — depois
+dele o fragmento já virou pacote inteiro e a regra não o veria):
+
+| Medido (`mtu.sh`) | Antes: placa 1.420 | Agora: placa 1.384 |
+|---|---|---|
+| Fragmentos no fio, 5 pings cheios — repasse / farol | **80 / 120** | **0 / 0** |
+| Ping cheio com DF, fragmento descartado — repasse / farol | **0/5 / 0/5** | **5/5 / 5/5** |
+| Maior ping com DF que passa, fragmento descartado — repasse / farol | 1.376 / 1.376 | 1.356 / 1.356 (o cheio) |
+| TCP pelo relé com fragmento descartado — repasse / farol | **0,0 / 0,0 Mbit/s** | **641,7 / 46,4 Mbit/s** |
+| Direto: maior ping com DF | 1.392 (o cheio) | 1.356 (o cheio) |
+
+**Decisão: placa em 1.384 sempre** (`p2p::MTU`), o que cabe em 1.500 B pelo
+caminho mais longo — o relé sobre IPv6 (40 + 8 + 36 + 16 + 16 = 116).
+Hipóteses: (H1) MTU por caminho (a placa muda quando a via vira relé): morreu —
+a placa é uma para todos os pares, e um par direto e outro pelo relé ao mesmo
+tempo não cabem num MTU só; (H2) *clamp* de MSS: morreu — só conserta TCP, e
+jogo e descoberta são UDP; (H3) MTU fixo menor: venceu, porque o custo no
+direto **não se mede**: TCP pelo direto em três corridas de 3 amostras, placa
+1.420 **636,5–843,6** Mbit/s contra 1.384 **742,3–849,9** — as faixas se
+cruzam. O teste `pacote_cheio_pelo_rele_cabe_no_fio` sela um pacote cheio de
+verdade, embrulha para o relé e confere os 1.500 B (RED: com 1.420 dá 1.536).
+Numa corrida o cenário direto do binário novo ficou sem resposta (0/5 e sem
+iperf) com o contêiner compilando ao lado; repetido duas vezes sozinho,
+passou — anotado, não escondido.
+
+**Mistura de versões:** nó antigo (1.420) manda pacote grande para o novo; a
+difusão do novo recusa na entrada o pacote acima do MTU dele
+(`difusao::TETO_TAMANHO`). Atualize os nós juntos.
+
+### `mlock`: chave fora do swap
+
+`memoria::travar` no arranque do painel (antes de ler segredo nenhum), do nó
+P2P (`p2p ligar`) e do repasse: `mlockall(MCL_CURRENT|MCL_FUTURE|MCL_ONFAULT)`
+por FFI da libc, sem crate. E a diretiva `mlock` no `servidor.conf` do OpenVPN.
+
+**Só quando dá para travar sem quebrar** (`memoria::decidir`). Com
+`MCL_FUTURE` e um `RLIMIT_MEMLOCK` finito (8 MiB no systemd novo), a alocação
+que passar do limite **falha** — e o painel com 120 conexões contabiliza
+**2.291.256 KiB** travados (medido). Então: trava com `CAP_IPC_LOCK` ou limite
+infinito; sobe o limite macio quando o duro é infinito; fora disso **não trava
+e avisa** no log. O serviço instalado leva `LimitMEMLOCK=infinity`
+(`servico.rs`), que é o caminho sem capacidade a mais.
+
+**O `mlock` do OpenVPN tem a mesma armadilha, pior:** ele sobe o limite para
+100 MiB e sai com **erro FATAL** se não conseguir (platform.c:344-372). Medido
+aqui (root **sem** `CAP_SYS_RESOURCE`, limite duro 8 MiB):
+`openvpn --mlock` → `setrlimit() failed … Exiting due to fatal error`. A
+diretiva só vai quando o `openvpn` filho herda limite com que ele sobe
+(`memoria::openvpn_aguenta_mlock`) — neste contêiner ela não vai, e a rede
+sobe. **O `mlock` do OpenVPN ligado não foi medido aqui** (subir o limite
+duro pede a capacidade que este ambiente não tem); com o serviço instalado
+(`LimitMEMLOCK=infinity`) a condição é verdadeira.
+
+**`MCL_ONFAULT`, decidido pela medida** (`mlock.sh`, root com `CAP_IPC_LOCK`):
+
+| `VmRSS` (KiB) | sem mlock (antes) | `mlockall` sem `ONFAULT` | com `ONFAULT` (agora) |
+|---|---|---|---|
+| repasse parado | 3.676 | 7.456 | 3.580 |
+| painel parado | 4.012 | 11.864 | 4.060 |
+| painel com 120 conexões | 6.260 | **263.240** | **6.288** |
+
+Sem ele, cada pilha de thread (2 MiB reservados) entra inteira na memória
+travada no nascimento: 42× mais RAM no painel sob carga. Com ele a página
+trava quando é tocada — e chave é página tocada. `VmLck` conta o reservado
+(72.860 KiB no repasse, 208.088 no painel parado, nos dois modos), não o que
+está preso; a prova confere `VmLck > 0` para dizer que travou, e `VmRSS` para
+dizer quanto custou. Sem permissão (`nobody`, limite 8 MiB, sem capacidades):
+VmLck **0**, processo vivo e o aviso no log.
+
+**Windows:** não há `mlockall`, e `VirtualLock` trava **regiões** — as chaves
+daqui vivem em `Vec` do heap, que mudam de lugar ao crescer; travar a região
+seria travar o endereço errado depois do primeiro `push`. Registrado como
+limite, sem meia proteção que parece inteira.
 
 ## Limites que valem saber antes de usar
 

@@ -69,7 +69,7 @@ pub fn perfil_pede_codigo(perfil: &str) -> bool {
 pub const VIDA_TOKEN: u32 = 12 * 3600;
 
 /// Maior pedido aceito no soquete (usuario e senha sao curtos).
-const TETO_PEDIDO: u64 = 4096;
+pub(crate) const TETO_PEDIDO: u64 = 4096;
 
 pub fn socket(dados: &Path) -> PathBuf {
     dados.join("verificar.sock")
@@ -153,34 +153,50 @@ pub fn principal(args: &[String]) -> i32 {
     )
     .escrever();
     let controle = var("auth_control_file");
-    if !controle.is_empty() {
-        if let Ok(eu) = std::env::current_exe() {
-            // A senha vai pelo stdin do filho, nunca por argumento (`ps`).
-            let filho = std::process::Command::new(eu)
-                .args(["ovpn-mfa-adiado", sock, &controle])
-                .stdin(std::process::Stdio::piped())
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .spawn();
-            if let Ok(mut f) = filho {
-                let escreveu = f
-                    .stdin
-                    .take()
-                    .map(|mut e| e.write_all(p.as_bytes()).is_ok())
-                    .unwrap_or(false);
-                if escreveu {
-                    return 2;
-                }
-                let _ = f.kill();
-            }
-        }
-        // Sem conseguir adiar, confere aqui mesmo (mais lento, mas certo).
+    // Sem conseguir adiar, confere aqui mesmo (mais lento, mas certo).
+    if !controle.is_empty() && por_um_filho(&["ovpn-mfa-adiado", sock, &controle], &p, false) {
+        return 2;
     }
     if perguntar(Path::new(sock), &p) {
         0
     } else {
         1
     }
+}
+
+/// Entrega `pedido` a um filho `phxvpn ARGS...` pelo stdin e volta sem
+/// esperar por ele: o gancho roda dentro do laco do `openvpn`, e quem espera
+/// o painel ali para o trafego de todos. O pedido vai pelo stdin, nunca por
+/// argumento (`ps` mostraria). `false`: o filho nao nasceu ou nao leu --
+/// quem chama decide o que fazer sem ele. O adiado da senha (aqui) e o
+/// historico (`historico.rs`) passam por esta mesma porta.
+pub(crate) fn por_um_filho(args: &[&str], pedido: &str, erro_no_log: bool) -> bool {
+    let Ok(eu) = std::env::current_exe() else {
+        return false;
+    };
+    let erro = if erro_no_log {
+        std::process::Stdio::inherit()
+    } else {
+        std::process::Stdio::null()
+    };
+    let Ok(mut f) = std::process::Command::new(eu)
+        .args(args)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .stderr(erro)
+        .spawn()
+    else {
+        return false;
+    };
+    let escreveu = f
+        .stdin
+        .take()
+        .map(|mut e| e.write_all(pedido.as_bytes()).is_ok())
+        .unwrap_or(false);
+    if !escreveu {
+        let _ = f.kill();
+    }
+    escreveu
 }
 
 /// `phxvpn ovpn-mfa-adiado SOQUETE CONTROLE`, o filho do adiado: le o
@@ -200,7 +216,7 @@ pub fn adiado(args: &[String]) -> i32 {
 }
 
 #[cfg(unix)]
-fn perguntar(sock: &Path, pedido: &str) -> bool {
+pub(crate) fn perguntar(sock: &Path, pedido: &str) -> bool {
     use std::os::unix::net::UnixStream;
     let Ok(mut s) = UnixStream::connect(sock) else {
         return false;
@@ -219,7 +235,7 @@ fn perguntar(sock: &Path, pedido: &str) -> bool {
 }
 
 #[cfg(not(unix))]
-fn perguntar(_sock: &Path, _pedido: &str) -> bool {
+pub(crate) fn perguntar(_sock: &Path, _pedido: &str) -> bool {
     // Sem soquete local no Windows (ainda): recusa, nunca aceita.
     false
 }
@@ -460,14 +476,25 @@ fn atender(e: &Estado, mut s: std::os::unix::net::UnixStream) {
         match (lido, Json::analisar(linha.trim())) {
             (Ok(Ok(_)), Ok(j)) => {
                 let rede = para_log(j.texto_ou("rede", ""));
-                match conferir(e, &j) {
-                    Ok(login) => {
-                        eprintln!("phxvpn: VPN rede {rede}: «{login}» conferido (senha e código)");
-                        true
+                // O historico de conexoes chega pela MESMA porta (um motor
+                // so para «quem fala com o painel»); o resto e conferencia.
+                if let Some(r) = crate::historico::atender(e, &j) {
+                    if let Err(m) = &r {
+                        eprintln!("phxvpn: VPN rede {rede}: historico recusado -- {m}");
                     }
-                    Err(m) => {
-                        eprintln!("phxvpn: VPN rede {rede}: recusado -- {m}");
-                        false
+                    r.is_ok()
+                } else {
+                    match conferir(e, &j) {
+                        Ok(login) => {
+                            eprintln!(
+                                "phxvpn: VPN rede {rede}: «{login}» conferido (senha e código)"
+                            );
+                            true
+                        }
+                        Err(m) => {
+                            eprintln!("phxvpn: VPN rede {rede}: recusado -- {m}");
+                            false
+                        }
                     }
                 }
             }

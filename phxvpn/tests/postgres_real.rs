@@ -1030,3 +1030,287 @@ fn saida_tunel_total_dns_permissao_e_conf() {
     assert!(p.resolvedores(None).unwrap().is_empty());
     let _ = std::fs::remove_dir_all(&dados);
 }
+
+/// Historico de conexoes (item 10) contra o banco de verdade e pelo MESMO
+/// soquete do verificador: os dois ganchos em qualquer ordem, o escopo (admin
+/// ve tudo, membro ve o proprio), a retencao, a regra primordial (rede e
+/// usuario com historico nao morrem) e o que nunca entra na tabela.
+///
+/// RED: sem o `historico::atender` no `verificar::atender`, o soquete trata o
+/// pedido como conferencia de senha e recusa -- nenhuma linha nasce.
+#[cfg(unix)]
+#[test]
+fn historico_pelo_soquete_escopo_retencao_e_integridade() {
+    use phxsql_core::json::Json;
+    use phxvpn::http::{atender, Estado};
+    use phxvpn::web::Pedido;
+    use std::io::{BufRead, BufReader, Write};
+    use std::sync::Arc;
+    let Some(base) = config() else {
+        eprintln!("NAO RODOU: defina PHXVPN_PG_TESTE");
+        return;
+    };
+    let cfg = banco_novo(&base, "phxvpn_teste_historico");
+    let dados = std::env::temp_dir().join(format!("phxvpn-teste-hist-{}", std::process::id()));
+    let mut p = Painel::abrir(&cfg, &dados).unwrap();
+    p.iteracoes = 1_000;
+    p.instalar(&Instalacao {
+        empresa: "Empresa Teste".into(),
+        responsavel: "Fulano".into(),
+        email: "f@e.com".into(),
+        admin_usuario: "admin".into(),
+        admin_senha: "senha-admin".into(),
+        senha_mestre: "senha-mestre-longa".into(),
+        servidor_nome: "vpn1".into(),
+        servidor_ip: "203.0.113.10".into(),
+        ..Default::default()
+    })
+    .unwrap();
+    let admin = p.login("admin", "senha-admin").unwrap();
+    p.criar_rede(&admin, "Matriz", "rede-123", "", None)
+        .unwrap();
+    p.criar_rede(&admin, "Outra", "rede-456", "", None).unwrap();
+    for u in ["ana", "beto"] {
+        p.criar_usuario(u, &format!("senha-{u}-1"), "", false)
+            .unwrap();
+        let x = p.login(u, &format!("senha-{u}-1")).unwrap();
+        p.entrar_na_rede(&x, "Matriz", "rede-123").unwrap();
+    }
+    let conf = std::fs::read_to_string(dados.join("redes/1/servidor.conf")).unwrap();
+    assert!(conf.contains("client-connect \"") && conf.contains("client-disconnect \""));
+    let cn = |login: &str| -> String {
+        std::fs::read_dir(dados.join("redes/1/ccd"))
+            .unwrap()
+            .filter_map(|e| e.ok()?.file_name().into_string().ok())
+            .find(|n| n.starts_with(&format!("{login}.1.")))
+            .unwrap()
+    };
+    let (cn_ana, cn_beto) = (cn("ana"), cn("beto"));
+    let e = Arc::new(Estado::novo(p, None));
+    let sock = phxvpn::verificar::servir(e.clone()).unwrap();
+    let mandar = |campos: &[(&str, &str)]| -> bool {
+        let j = Json::objeto(
+            campos
+                .iter()
+                .map(|(k, v)| (*k, Json::texto_de(*v)))
+                .collect(),
+        );
+        let mut s = std::os::unix::net::UnixStream::connect(&sock).unwrap();
+        s.write_all(format!("{}\n", j.escrever()).as_bytes())
+            .unwrap();
+        let mut r = String::new();
+        BufReader::new(s).read_line(&mut r).unwrap();
+        Json::analisar(r.trim()).unwrap().booleano_ou("ok", false)
+    };
+    let agora = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let t0 = (agora - 300).to_string();
+    let entrou = |cn: &str, porta: &str, desde: &str| {
+        mandar(&[
+            ("tipo", "entrou"),
+            ("rede", "1"),
+            ("cn", cn),
+            ("ip", "198.51.100.7"),
+            ("porta", porta),
+            ("ip_vpn", "10.77.1.3"),
+            ("desde", desde),
+        ])
+    };
+    let saiu = |cn: &str, porta: &str, desde: &str| {
+        mandar(&[
+            ("tipo", "saiu"),
+            ("rede", "1"),
+            ("cn", cn),
+            ("ip", "198.51.100.7"),
+            ("porta", porta),
+            ("ip_vpn", "10.77.1.3"),
+            ("desde", desde),
+            ("duracao", "61"),
+            ("bytes_do_membro", "1000"),
+            ("bytes_ao_membro", "2000"),
+        ])
+    };
+    // A ana entra, repete a entrada (o openvpn nao repete, mas o filho
+    // pode) e ainda nao saiu; o beto SAI antes de a entrada chegar.
+    assert!(entrou(&cn_ana, "40001", &t0), "o soquete recusou a entrada");
+    assert!(entrou(&cn_ana, "40001", &t0));
+    assert!(saiu(&cn_beto, "40002", &t0));
+    assert!(entrou(&cn_beto, "40002", &t0));
+    // CN de outra rede pelo gancho desta: recusado, nenhuma linha.
+    let cn_falso = cn_ana.replacen(".1.", ".2.", 1);
+    assert!(!entrou(&cn_falso, "40003", &t0));
+
+    let pedir = |metodo: &str, caminho: &str, tk: Option<&str>, corpo: &str| -> (u16, Json) {
+        let r = atender(
+            &Pedido {
+                metodo: metodo.into(),
+                caminho: caminho.into(),
+                token: tk.map(str::to_string),
+                host: None,
+                tipo: Some("application/json".into()),
+                ip: "192.0.2.7".parse().unwrap(),
+                corpo: corpo.into(),
+            },
+            &e,
+        );
+        (r.status, Json::analisar(&r.corpo).unwrap())
+    };
+    let token = |login: &str, senha: &str| -> String {
+        let (s, j) = pedir(
+            "POST",
+            "/api/login",
+            None,
+            &format!(r#"{{"usuario":"{login}","senha":"{senha}"}}"#),
+        );
+        assert_eq!(s, 200, "{}", j.escrever());
+        j.texto_ou("token", "").to_string()
+    };
+    let (ta, tana) = (token("admin", "senha-admin"), token("ana", "senha-ana-1"));
+    let lista = |tk: &str| -> Vec<Json> {
+        let (s, j) = pedir("GET", "/api/historico", Some(tk), "");
+        assert_eq!(s, 200, "{}", j.escrever());
+        match j.campo("conexoes") {
+            Some(Json::Lista(l)) => l.clone(),
+            _ => panic!("{}", j.escrever()),
+        }
+    };
+    let todas = lista(&ta);
+    assert_eq!(todas.len(), 2, "duas sessoes, uma linha cada");
+    let beto = todas
+        .iter()
+        .find(|c| c.texto_ou("login", "") == "beto")
+        .unwrap();
+    assert_eq!(beto.texto_ou("estado", ""), "saiu");
+    assert_eq!(beto.inteiro_ou("segundos", 0), 61);
+    assert_eq!(beto.inteiro_ou("bytes_ao_membro", 0), 2000);
+    assert_eq!(beto.texto_ou("ip_real", ""), "198.51.100.7");
+    let ana = todas
+        .iter()
+        .find(|c| c.texto_ou("login", "") == "ana")
+        .unwrap();
+    // Sem status.log a conexao aberta nao se diz «conectado».
+    assert_eq!(ana.texto_ou("estado", ""), "sem registro de saída");
+    // A ana ve so a dela.
+    let dela = lista(&tana);
+    assert_eq!(dela.len(), 1);
+    assert_eq!(dela[0].texto_ou("login", ""), "ana");
+
+    // Retencao: so o admin muda; fora da faixa recusa; encurtar apaga.
+    let (s, _) = pedir(
+        "POST",
+        "/api/historico/retencao",
+        Some(&tana),
+        r#"{"dias":1}"#,
+    );
+    assert_eq!(s, 403);
+    for ruim in ["0", "3651"] {
+        let (s, j) = pedir(
+            "POST",
+            "/api/historico/retencao",
+            Some(&ta),
+            &format!(r#"{{"dias":{ruim}}}"#),
+        );
+        assert_eq!(s, 400, "{ruim}: {}", j.escrever());
+    }
+    let velho = (agora - 200 * 86_400).to_string();
+    assert!(saiu(&cn_ana, "39999", &velho));
+    assert_eq!(lista(&ta).len(), 3);
+    let (s, j) = pedir(
+        "POST",
+        "/api/historico/retencao",
+        Some(&ta),
+        r#"{"dias":90}"#,
+    );
+    assert_eq!(s, 200, "{}", j.escrever());
+    assert_eq!(
+        j.inteiro_ou("apagadas", -1),
+        1,
+        "a de 200 dias tinha de sair"
+    );
+    assert_eq!(lista(&ta).len(), 2);
+
+    // Quem caiu para o TCP entra pela ponte, e o openvpn o ve como
+    // 127.x.y.z: a linha leva o IP de fora, do mapa da ponte (no mesmo
+    // processo), e a sessao continua uma so entre a entrada e a saida.
+    let reg = phxvpn::supervisor::Registro::abrir(&dados.join("ponte.log"), 1 << 20, 1).unwrap();
+    let eco = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+    eco.set_read_timeout(Some(std::time::Duration::from_secs(5)))
+        .unwrap();
+    let ponte = phxvpn::queda_tcp::Ponte::abrir(
+        phxvpn::queda_tcp::Conf {
+            porta: 0,
+            udp: eco.local_addr().unwrap().port(),
+            port_share: None,
+        },
+        Arc::new(std::sync::Mutex::new(reg)),
+    )
+    .unwrap();
+    let mut tcp = std::net::TcpStream::connect(("127.0.0.1", ponte.porta())).unwrap();
+    let de_fora = tcp.local_addr().unwrap();
+    tcp.write_all(&[0, 3, 0x38, 1, 2]).unwrap();
+    let (_, vista) = eco.recv_from(&mut [0u8; 16]).unwrap();
+    assert_ne!(
+        vista.ip(),
+        de_fora.ip(),
+        "a ponte fala por um 127.x proprio"
+    );
+    let (vip, vporta) = (vista.ip().to_string(), vista.port().to_string());
+    assert!(mandar(&[
+        ("tipo", "entrou"),
+        ("rede", "1"),
+        ("cn", &cn_beto),
+        ("ip", &vip),
+        ("porta", &vporta),
+        ("desde", &t0),
+    ]));
+    drop(tcp);
+    assert!(mandar(&[
+        ("tipo", "saiu"),
+        ("rede", "1"),
+        ("cn", &cn_beto),
+        ("ip", &vip),
+        ("porta", &vporta),
+        ("desde", &t0),
+        ("duracao", "5"),
+    ]));
+    let todas = lista(&ta);
+    assert_eq!(todas.len(), 3, "entrada e saida pela ponte sao UMA sessao");
+    let pela = todas
+        .iter()
+        .find(|c| c.booleano_ou("pela_ponte", false))
+        .expect("a linha da ponte");
+    assert_eq!(pela.texto_ou("ip_real", ""), de_fora.ip().to_string());
+    assert_eq!(pela.inteiro_ou("porta_real", 0), i64::from(de_fora.port()));
+    assert_eq!(pela.texto_ou("estado", ""), "saiu");
+    drop(ponte);
+
+    // Regra primordial: rede e usuario com historico nao morrem; sair da
+    // rede continua podendo (o historico nao aponta para o vinculo).
+    let mut pg = Pg::conectar(&cfg).unwrap();
+    let Err(erro) = pg.executar("DELETE FROM phx_rede WHERE id = 1", &[]) else {
+        panic!("rede com historico nao pode sumir");
+    };
+    assert!(erro.contains("23503"), "{erro}");
+    let Err(erro) = pg.executar("DELETE FROM phx_usuario WHERE login = 'beto'", &[]) else {
+        panic!("usuario com historico nao pode sumir");
+    };
+    assert!(erro.contains("23503"), "{erro}");
+    let (s, j) = pedir("POST", "/api/redes/sair", Some(&tana), r#"{"rede_id":1}"#);
+    assert_eq!(s, 200, "{}", j.escrever());
+    // Nenhuma coluna guarda senha, codigo ou token.
+    let colunas = pg
+        .executar(
+            "SELECT string_agg(column_name, ',' ORDER BY column_name) AS c \
+             FROM information_schema.columns WHERE table_name = 'phx_conexao'",
+            &[],
+        )
+        .unwrap();
+    let c = colunas.valor(0, "c").unwrap().to_string();
+    for proibido in ["senha", "codigo", "token", "sess", "password"] {
+        assert!(!c.contains(proibido), "{proibido} em {c}");
+    }
+    drop(e);
+    let _ = std::fs::remove_dir_all(&dados);
+}

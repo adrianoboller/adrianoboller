@@ -50,9 +50,18 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-/// MTU da placa: 1500 da rede menos IPv4 (20) + UDP (8) + cabecalho (16) +
-/// etiqueta (16), com folga para IPv6 por fora -- o numero do WireGuard.
-pub const MTU: u32 = 1420;
+/// MTU da placa: o maior pacote que cabe em 1500 B no fio pelo caminho MAIS
+/// longo -- o rele (repasse ou farol) sobre IPv6: IPv6 (40) + UDP (8) +
+/// embrulho `PARA`/`DE` (36) + cabecalho (16) + etiqueta (16) = 116.
+///
+/// Era 1420 (o numero do WireGuard), que so cabe no direto: pelo rele davam
+/// 1.516 B no fio, o kernel fragmentava, e com fragmento descartado no
+/// caminho (CGNAT, firewall de operadora) o maior ping com DF caia de 1392
+/// para 1376 e o TCP parava -- 0,0 Mbit/s, medido em netns
+/// (`provas/operacao/mtu.sh`). Um MTU so, e nao um por caminho: a placa e
+/// uma para todos os pares, e a vazao do direto em 1384 ficou dentro do
+/// ruido da de 1420 (as faixas de tres corridas se cruzam).
+pub const MTU: u32 = 1384;
 const MANTER_VIVO: Duration = Duration::from_secs(25);
 const REPETIR_APERTO: Duration = Duration::from_secs(5);
 const FILA_MAX: usize = 64;
@@ -1566,6 +1575,35 @@ fn erro_passageiro(e: &std::io::Error) -> bool {
 #[cfg(test)]
 mod testes {
     use super::*;
+
+    /// Item 6 das lacunas: o pacote cheio da placa, selado de verdade e
+    /// embrulhado para o rele, cabe em 1500 B no fio mesmo sobre IPv6 (40 +
+    /// 8). RED: com o MTU de antes (1420) sao 1.536 B -- o kernel fragmenta,
+    /// e fragmento descartado no caminho parou o TCP pelo rele em netns.
+    #[test]
+    fn pacote_cheio_pelo_rele_cabe_no_fio() {
+        let (ka, kb) = (x25519::gerar_privada(), x25519::gerar_privada());
+        let psk = [3u8; 32];
+        let (ini, m1) =
+            noise::Iniciador::comecar(noise::PROLOGO, ka, &x25519::chave_publica(&kb), psk, b"")
+                .unwrap();
+        let (_, m2) = noise::ler_chamada(noise::PROLOGO, &kb, &m1)
+            .unwrap()
+            .responder(psk, b"")
+            .unwrap();
+        let (chaves, _) = ini.terminar(&m2).unwrap();
+        let mut s = Sessao::nova(chaves, 1, 2, true);
+        let dados = s.selar(&vec![0u8; MTU as usize]).unwrap();
+        let no_rele = repasse::embrulhar_para(&[7u8; 32], &dados);
+        const IPV6_UDP: usize = 40 + 8;
+        assert!(
+            no_rele.len() + IPV6_UDP <= 1500,
+            "pelo rele sobre IPv6 o fio leva {} B",
+            no_rele.len() + IPV6_UDP
+        );
+        // E o direto sobre IPv4 continua longe do limite (nao cortou demais).
+        assert!(dados.len() + 28 <= 1500 && dados.len() + 28 > 1400);
+    }
 
     /// Um pacote IPv4 minimo de `origem` para `destino`.
     fn ip(origem: [u8; 4], destino: [u8; 4], carga: &[u8]) -> Vec<u8> {

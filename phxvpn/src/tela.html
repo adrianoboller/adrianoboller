@@ -92,6 +92,9 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 table{width:100%;border-collapse:collapse;font-size:14px}
 td,th{text-align:left;padding:6px;border-bottom:1px solid var(--linha)}
 th{color:var(--fraco);font-weight:500;font-size:12px}
+/* Historico: uma linha por conexao; no celular a tabela rola de lado DENTRO
+   do cartao em vez de quebrar data e IP em tres linhas. */
+#t-historico td{white-space:nowrap}
 [hidden]{display:none!important}
 </style>
 </head>
@@ -107,6 +110,7 @@ th{color:var(--fraco);font-weight:500;font-size:12px}
     <button id="b-atualizar">Atualizar</button>
     <button id="b-mfa">Autenticador</button>
     <button id="b-senha">Trocar senha</button>
+    <button id="b-historico">Histórico</button>
     <button id="b-admin" hidden>Administração</button>
     <button class="exclui" id="b-logout">Sair</button>
   </div>
@@ -195,6 +199,20 @@ th{color:var(--fraco);font-weight:500;font-size:12px}
   <div class="linha-botoes"><button class="altera" type="submit">Trocar senha</button></div>
   <p class="msg" id="m-senha"></p></form>
   <div class="linha-botoes"><button id="b-senha-voltar">Voltar às redes</button></div>
+</section>
+
+<section class="cartao" id="tela-historico" hidden>
+  <h2>Histórico de conexões</h2>
+  <p class="msg" id="h-escopo"></p>
+  <div class="rolagem"><table><thead><tr><th>Usuário</th><th>Rede</th><th>De onde (IP real)</th><th>IP na VPN</th><th>Entrou</th><th>Saiu</th><th>Duração</th><th>Membro enviou</th><th>Membro recebeu</th></tr></thead><tbody id="t-historico"></tbody></table></div>
+  <p class="msg" id="m-historico"></p>
+  <form id="f-retencao" hidden><div class="grade" style="margin-top:10px">
+    <label class="campo"><span>Guardar por (dias, 1 a 3650)</span><input name="dias" type="number" min="1" max="3650" required></label>
+    <label class="campo"><span>Código do autenticador (se cadastrado)</span><input name="codigo" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code"></label>
+  </div>
+  <div class="linha-botoes"><button class="altera" type="submit">Alterar retenção</button></div>
+  <p class="msg" id="m-retencao"></p></form>
+  <div class="linha-botoes"><button id="b-historico-voltar">Voltar às redes</button></div>
 </section>
 
 <section class="cartao" id="tela-admin" hidden>

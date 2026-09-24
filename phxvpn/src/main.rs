@@ -221,6 +221,9 @@ fn despachar(args: &[String]) -> Result<(), String> {
         // Tambem do `openvpn` (auth-user-pass-verify): 0 aceita, 1 recusa, 2 adiado.
         Some("ovpn-mfa-verificar") => std::process::exit(phxvpn::verificar::principal(&args[1..])),
         Some("ovpn-mfa-adiado") => std::process::exit(phxvpn::verificar::adiado(&args[1..])),
+        // Tambem do `openvpn` (client-connect/-disconnect): sai 0 sempre.
+        Some("ovpn-historico") => std::process::exit(phxvpn::historico::principal(&args[1..])),
+        Some("ovpn-historico-enviar") => std::process::exit(phxvpn::historico::enviar(&args[1..])),
         Some("servico") => cmd_servico(&args[1..]),
         // Chamado pelo servico "cliente", nao por gente.
         Some("cliente-rodar") => cmd_cliente_rodar(&args[1..]),
@@ -267,6 +270,9 @@ fn opcao(args: &[String], nome: &str) -> Option<String> {
 }
 
 fn cmd_painel(args: &[String]) -> Result<(), String> {
+    // Antes de ler segredo nenhum: a senha mestre, a do PostgreSQL e o
+    // cofre destrancado nascem ja fora do swap.
+    phxvpn::memoria::travar("painel");
     let o = Opcoes::de_args(args, &["openvpn", "aceito-sem-tls"]);
     let escuta = o.um("escutar").unwrap_or("127.0.0.1:8470").to_string();
     let local = escuta.starts_with("127.")
@@ -328,6 +334,8 @@ fn cmd_painel(args: &[String]) -> Result<(), String> {
     }
     // Reconcilia banco, ccd/ e conexoes a cada `credencial::VIGIA`.
     phxvpn::credencial::vigiar(estado.clone());
+    // Apaga o historico de conexoes alem da retencao, agora e a cada hora.
+    phxvpn::historico::vigiar(estado.clone());
     if destrancado {
         http::materializar_e_subir(&estado)?;
     }
@@ -462,6 +470,8 @@ fn cmd_p2p(args: &[String]) -> Result<(), String> {
 
 #[cfg(any(target_os = "linux", windows))]
 fn p2p_ligar(o: &Opcoes) -> Result<(), String> {
+    // A chave do no e as de sessao nascem ja fora do swap.
+    phxvpn::memoria::travar("p2p");
     // Como servico: a PSK ja derivada, entregue cifrada pelo systemd.
     if let Some(psk) = phxvpn::servico::credencial("psk") {
         let psk: [u8; 32] = phxsql_core::hash::de_hex(&psk)
@@ -566,6 +576,8 @@ fn cmd_repasse(args: &[String]) -> Result<(), String> {
         println!("conta {usuario} gravada em {arquivo} (so a credencial derivada, nunca a senha)");
         return Ok(());
     }
+    // A chave do repasse (e os segredos das contas) fora do swap.
+    phxvpn::memoria::travar("repasse");
     let privada =
         comandos::identidade(&opcao(args, "--chave").unwrap_or_else(|| "repasse.chave".into()))?;
     let permitidas = match opcao(args, "--permitir") {

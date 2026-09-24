@@ -54,6 +54,26 @@ impl Rede<'_> {
         }
     }
 
+    /// ` force-cookie` na `tls-crypt-v2`, so em UDP: o servidor so guarda
+    /// estado de quem devolve o cookie (aperto de tres vias sem estado), e
+    /// um datagrama forjado nao faz o servidor desembrulhar chave nem gastar
+    /// memoria. O padrao do OpenVPN ainda e `allow-noncookie`
+    /// (tls-options.rst:511-516 da 2.6.19). Em TCP o aperto do proprio TCP
+    /// ja prova o endereco e so o `mudp.c:122` le a opcao.
+    ///
+    /// Quem fica de fora e so cliente antigo: o 2.5 (medido em netns, o
+    /// 2.5.11 nao entra em 25 s; o 2.6.19 entra, e sem a opcao o 2.5.11
+    /// tambem) e o OpenVPN 3 anterior ao core 3.8 -- o core manda o
+    /// `EARLY_NEG_START` e reenvia a WKc desde 2ff291e7 (16/11/2022). Ver
+    /// PHXVPN.md, «force-cookie».
+    fn cookie(&self) -> &'static str {
+        if self.tcp {
+            ""
+        } else {
+            " force-cookie"
+        }
+    }
+
     pub(crate) fn proto(&self, lado: &str) -> String {
         if self.tcp {
             format!("tcp-{lado}")
@@ -138,9 +158,10 @@ verb 3\n",
             // O comando roda a cada conexao, ANTES do TLS: membro removido
             // nao chega nem a gastar um aperto de mao do servidor.
             format!(
-                "tls-crypt-v2 {dir}/tls-crypt.key\n\
+                "tls-crypt-v2 {dir}/tls-crypt.key{}\n\
                  script-security 2\n\
                  tls-crypt-v2-verify \"{} ovpn-v2-verificar {dir}\"\n",
+                rede.cookie(),
                 exe_para_o_openvpn()
             )
         } else {
@@ -475,6 +496,36 @@ mod testes {
         assert!(p("-----BEGIN OpenVPN Static key V1-----\n").contains("<tls-crypt>"));
         let c = conf_servidor(&r, "/d");
         assert!(c.contains("tls-crypt-v2 /d/tls-crypt.key") && c.contains("ovpn-v2-verificar /d"));
+    }
+
+    /// Item 8: rede v2 em UDP exige o cookie (sem estado para datagrama
+    /// forjado); em TCP a linha fica sem o parametro, que o `mtcp` nao le.
+    /// RED: sem o `cookie()`, a linha sai `tls-crypt-v2 ARQ` e o servidor
+    /// aceita o cliente 2.5 que nao devolve cookie (provado em netns).
+    #[test]
+    fn v2_em_udp_exige_o_cookie() {
+        for tcp in [false, true] {
+            let r = Rede {
+                nome: "x",
+                porta: 1,
+                octeto: 1,
+                v2: true,
+                tcp,
+            };
+            let c = conf_servidor(&r, "/d");
+            let com = "tls-crypt-v2 /d/tls-crypt.key force-cookie\n";
+            assert_eq!(c.contains(com), !tcp, "tcp={tcp}: {c}");
+            assert!(c.contains("tls-crypt-v2 /d/tls-crypt.key"));
+        }
+        // A v1 nao tem cookie a pedir: a linha nao muda.
+        let v1 = Rede {
+            nome: "x",
+            porta: 1,
+            octeto: 1,
+            v2: false,
+            tcp: false,
+        };
+        assert!(conf_servidor(&v1, "/d").contains("tls-crypt /d/tls-crypt.key\n"));
     }
 
     #[test]

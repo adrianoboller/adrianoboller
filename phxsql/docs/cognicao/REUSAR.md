@@ -2,7 +2,7 @@
 
 # Reusar — sucessos comprovados
 
-298 cognições: **13 frutíferas**, **5 infrutíferas**, **280 pendentes** (sem evidência validada — não entram aqui).
+301 cognições: **16 frutíferas**, **5 infrutíferas**, **280 pendentes** (sem evidência validada — não entram aqui).
 
 Só entra o que tem evidência que o `classificar.py` conferiu. Antes de desenhar, procure aqui o que já se provou.
 
@@ -41,6 +41,13 @@ Em perfil com `<connection>`, os blocos são a ÚLTIMA coisa do arquivo; nada qu
 - Evidência: `phxvpn/provas/servidor-alcance/resultados.json`; `phxvpn/src/alcance.rs`; `phxvpn/provas/servidor-alcance/red.py`
 - Validado em: 24/09/2026
 
+## [`mlockall` com limite finito quebra o processo — e `VmLck` não é o que está preso](cognicao_mlockall-com-limite-finito-quebra-o-processo_20260924_1214.md)
+
+Trave a memória do processo só quando o limite não alcança (capacidade ou limite infinito), com `MCL_ONFAULT`; prove que travou pelo `VmLck` e quanto custou pelo `VmRSS` — nunca o custo pelo `VmLck`.
+
+- Evidência: `phxvpn/provas/operacao/resultados.json`; `phxvpn/provas/operacao/mlock.sh`; teste `com_limite_finito_nao_trava` (phxvpn/src/memoria.rs); teste `filho_trava_e_o_proc_confirma` (phxvpn/src/memoria.rs)
+- Validado em: 24/09/2026
+
 ## [A lista de pares já perfura NAT cone — o farol só é indispensável no simétrico](cognicao_lista-de-pares-ja-perfura-nat-cone_20260924_0845.md)
 
 Numa malha com um membro alcançável, conte a lista de pares como perfurador: controle negativo de NAT se faz com NAT **simétrico**, não com cone — com cone, o direto nasce da sincronia dos INICIOs, com ou sem mediador.
@@ -67,6 +74,20 @@ Opção empurrada que CONFIGURA a placa (endereço, não rota) é fatal no clien
 Para derrubar um cliente do OpenVPN pela gerência, use `client-kill` com o CID do `status 2`, nunca `kill CN` — e prove a queda **no cliente**, não pela resposta `SUCCESS` do servidor.
 
 - Evidência: `phxvpn/provas/mfa/resultados.json`; `phxvpn/src/credencial.rs`; `phxvpn/tests/postgres_real.rs`
+- Validado em: 24/09/2026
+
+## [Fragmento em netns passa — até a regra ficar antes do *defrag*](cognicao_fragmento-em-netns-passa-ate-o-defrag-deixar_20260924_1155.md)
+
+Para provar o que acontece quando o caminho descarta fragmento, descarte-o antes do *defrag* (nft prerouting −450) — senão a prova passa por engano.
+
+- Evidência: `phxvpn/provas/operacao/resultados.json`; `phxvpn/provas/operacao/mtu.sh`; teste `pacote_cheio_pelo_rele_cabe_no_fio` (phxvpn/src/p2p.rs)
+- Validado em: 24/09/2026
+
+## [`force-cookie` só se prova com um cliente que NÃO manda o cookie](cognicao_force-cookie-so-se-prova-com-cliente-que-nao-manda_20260924_1213.md)
+
+Guarda que só muda o comportamento para o cliente velho se prova com o cliente velho: compile-o do fonte se não houver pacote.
+
+- Evidência: `phxvpn/provas/operacao/resultados.json`; `phxvpn/provas/operacao/openvpn.sh`; teste `v2_em_udp_exige_o_cookie` (phxvpn/src/ovpn.rs)
 - Validado em: 24/09/2026
 
 ## [Trocar o fio não reenvia o que já saiu pelo fio velho](cognicao_fio-novo-nao-refaz-o-aperto-pendente_20260924_0412.md)

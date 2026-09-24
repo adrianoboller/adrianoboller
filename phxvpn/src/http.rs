@@ -606,6 +606,26 @@ fn rotear(p: &Pedido, e: &Estado) -> Saida {
             let (nome, dir, antiga) = e.painel().saida_definir(&u, id, &nova).map_err(ruim)?;
             crate::saida::depois_de_mudar(e, id, &antiga, &nova, &nome, &dir).map_err(ruim)
         }
+        ("GET", "/api/historico") => {
+            let u = usuario(p, e)?;
+            e.painel().historico(&u).map_err(ruim)
+        }
+        ("POST", "/api/historico/retencao") => {
+            let u = usuario(p, e)?;
+            // Encurtar a retencao APAGA auditoria: sessao roubada nao
+            // apaga o rastro sem o codigo de quem o tem.
+            exigir_admin(&u)?;
+            exigir_codigo(e, &u, &t("codigo"), &chave_ip)?;
+            let dias = corpo
+                .campo("dias")
+                .and_then(Json::inteiro)
+                .ok_or((400, "dias".to_string()))?;
+            let apagadas = e.painel().mudar_retencao(dias).map_err(ruim)?;
+            Ok(Json::objeto(vec![
+                ("retencao_dias", Json::de_i64(dias)),
+                ("apagadas", Json::de_i64(apagadas as i64)),
+            ]))
+        }
         ("GET", "/api/usuarios") => {
             exigir_admin(&usuario(p, e)?)?;
             e.painel().usuarios().map_err(ruim)

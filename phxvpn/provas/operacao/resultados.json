@@ -1,0 +1,275 @@
+{
+ "prova": "operacao do phxvpn: historico, force-cookie, MTU do P2P e mlock",
+ "openvpn": {
+  "prova": "openvpn 2.6.19 em netns: historico de conexoes, tls-crypt-v2 force-cookie e mlock",
+  "medido_em": "2026-09-24T13:06:24+00:00",
+  "kernel": "6.18.44-fc-v37",
+  "n": 1,
+  "openvpn_servidor_e_cliente": "2.6.19",
+  "openvpn_cliente_antigo": "2.5.11",
+  "ambiente": {
+   "rlimit_memlock_macio": "8192",
+   "rlimit_memlock_duro": "8192",
+   "cap_ipc_lock": true,
+   "cap_sys_resource": false,
+   "openvpn_mlock_direto": "2026-09-24 13:06:24 ERROR: setrlimit() failed: Operation not permitted (errno=1) 2026-09-24 13:06:24 Exiting due to fatal error",
+   "openvpn_mlock_sobe_aqui": false
+  },
+  "novo": {
+   "rodada": "novo",
+   "binario": "/home/user/adrianoboller/.claude/worktrees/agent-a24ef6fbb87136dba/phxvpn/target/debug/phxvpn",
+   "conf_force_cookie": true,
+   "conf_client_connect": true,
+   "conf_mlock": false,
+   "historico_http": "ok",
+   "linhas_no_banco": 2,
+   "linhas_vistas_pelo_admin": 2,
+   "linhas_vistas_pela_ana": 1,
+   "logins_vistos_pela_ana": [
+    "ana"
+   ],
+   "ana": {
+    "rede": "Matriz",
+    "login": "ana",
+    "ip_real": "192.168.93.12",
+    "porta_real": 45668,
+    "pela_ponte": false,
+    "ip_vpn": "10.77.1.3",
+    "entrou_em": "2026-09-24T13:01:38Z",
+    "saiu_em": "2026-09-24T13:01:57Z",
+    "segundos": 19,
+    "bytes_do_membro": 23675,
+    "bytes_ao_membro": 23392,
+    "estado": "saiu"
+   },
+   "admin_estado": "conectado",
+   "senhas_encontradas_em_banco_e_logs": 0,
+   "vmlck_painel_kib": 413464,
+   "vmlck_openvpn_kib": 0,
+   "cliente_26_entrou": true,
+   "cliente_25_entrou": false,
+   "ponte_cliente_26_tcp_entrou": true,
+   "ponte_linha_do_caio": {
+    "rede": "Matriz",
+    "login": "caio",
+    "ip_real": "192.168.93.13",
+    "porta_real": 59248,
+    "pela_ponte": true,
+    "ip_vpn": "10.77.1.4",
+    "entrou_em": "2026-09-24T13:02:47Z",
+    "saiu_em": "2026-09-24T13:04:50Z",
+    "segundos": 123,
+    "bytes_do_membro": 3038,
+    "bytes_ao_membro": 3218,
+    "estado": "saiu",
+    "linhas_do_caio": 1
+   }
+  },
+  "velho_red": {
+   "rodada": "velho",
+   "binario": "/tmp/phx-fontes/phxvpn-velho",
+   "conf_force_cookie": false,
+   "conf_client_connect": false,
+   "conf_mlock": false,
+   "historico_http": 404,
+   "linhas_no_banco": null,
+   "linhas_vistas_pelo_admin": null,
+   "linhas_vistas_pela_ana": null,
+   "logins_vistos_pela_ana": null,
+   "ana": null,
+   "admin_estado": null,
+   "senhas_encontradas_em_banco_e_logs": 0,
+   "vmlck_painel_kib": 0,
+   "vmlck_openvpn_kib": 0,
+   "cliente_26_entrou": true,
+   "cliente_25_entrou": true,
+   "ponte_cliente_26_tcp_entrou": null,
+   "ponte_linha_do_caio": null
+  },
+  "confere_verde": true,
+  "confere_red": true
+ },
+ "mtu-antes": {
+  "medido_em": "2026-09-24T12:30:25+00:00",
+  "binario": "/tmp/phx-fontes/phxvpn-velho-release",
+  "kernel": "6.18.44-fc-v37",
+  "n": 1,
+  "metodo": "ping -M do pela placa; busca binaria do maior -s com resposta; fragmentos IP descartados por nft prerouting -450 em todos os netns; iperf3 TCP 3 s",
+  "cenarios": [
+   {
+    "cenario": "direto",
+    "mtu_placa": 1420,
+    "ping_cheio": 1392,
+    "fragmentos_no_fio_com_5_pings_cheios": 0,
+    "pings_cheios_sem_descarte_de_fragmento": 5,
+    "pings_cheios_com_fragmento_descartado": 5,
+    "maior_ping_df_com_fragmento_descartado": 1392,
+    "tcp_mbit_com_fragmento_descartado": null,
+    "tcp_mbit_direto_3x_placa_1420": [
+     726.9,
+     636.5,
+     769.7
+    ],
+    "tcp_mbit_direto_3x_placa_1384": [
+     799.9,
+     806.7,
+     809.7
+    ]
+   },
+   {
+    "cenario": "repasse",
+    "mtu_placa": 1420,
+    "ping_cheio": 1392,
+    "fragmentos_no_fio_com_5_pings_cheios": 80,
+    "pings_cheios_sem_descarte_de_fragmento": 5,
+    "pings_cheios_com_fragmento_descartado": 0,
+    "maior_ping_df_com_fragmento_descartado": 1376,
+    "tcp_mbit_com_fragmento_descartado": 0.0
+   },
+   {
+    "cenario": "farol",
+    "mtu_placa": 1420,
+    "ping_cheio": 1392,
+    "fragmentos_no_fio_com_5_pings_cheios": 120,
+    "pings_cheios_sem_descarte_de_fragmento": 5,
+    "pings_cheios_com_fragmento_descartado": 0,
+    "maior_ping_df_com_fragmento_descartado": 1376,
+    "tcp_mbit_com_fragmento_descartado": 0.0
+   }
+  ]
+ },
+ "mtu-depois": {
+  "medido_em": "2026-09-24T12:46:21+00:00",
+  "binario": "/home/user/adrianoboller/.claude/worktrees/agent-a24ef6fbb87136dba/phxvpn/target/release/phxvpn",
+  "kernel": "6.18.44-fc-v37",
+  "n": 1,
+  "metodo": "ping -M do pela placa; busca binaria do maior -s com resposta; fragmentos IP descartados por nft prerouting -450 em todos os netns; iperf3 TCP 3 s",
+  "cenarios": [
+   {
+    "cenario": "direto",
+    "mtu_placa": 1384,
+    "ping_cheio": 1356,
+    "fragmentos_no_fio_com_5_pings_cheios": 0,
+    "pings_cheios_sem_descarte_de_fragmento": 5,
+    "pings_cheios_com_fragmento_descartado": 5,
+    "maior_ping_df_com_fragmento_descartado": 1356,
+    "tcp_mbit_com_fragmento_descartado": null,
+    "tcp_mbit_direto_3x_placa_1420": [
+     843.6,
+     754.8,
+     835.5
+    ],
+    "tcp_mbit_direto_3x_placa_1384": [
+     790.7,
+     762.7,
+     742.3
+    ]
+   },
+   {
+    "cenario": "repasse",
+    "mtu_placa": 1384,
+    "ping_cheio": 1356,
+    "fragmentos_no_fio_com_5_pings_cheios": 0,
+    "pings_cheios_sem_descarte_de_fragmento": 5,
+    "pings_cheios_com_fragmento_descartado": 5,
+    "maior_ping_df_com_fragmento_descartado": 1356,
+    "tcp_mbit_com_fragmento_descartado": 641.7
+   },
+   {
+    "cenario": "farol",
+    "mtu_placa": 1384,
+    "ping_cheio": 1356,
+    "fragmentos_no_fio_com_5_pings_cheios": 0,
+    "pings_cheios_sem_descarte_de_fragmento": 5,
+    "pings_cheios_com_fragmento_descartado": 5,
+    "maior_ping_df_com_fragmento_descartado": 1356,
+    "tcp_mbit_com_fragmento_descartado": 46.4
+   }
+  ]
+ },
+ "mlock": {
+  "prova": "mlockall no repasse e no painel, conferido no /proc/<pid>/status",
+  "medido_em": "2026-09-24T12:47:00+00:00",
+  "kernel": "6.18.44-fc-v37",
+  "n": 1,
+  "ambiente": {
+   "rlimit_memlock_macio": "8192",
+   "rlimit_memlock_duro": "8192",
+   "cap_ipc_lock": true,
+   "cap_sys_resource": false
+  },
+  "medidas": {
+   "velho": {
+    "repasse_root": {
+     "vmlck_kib": 0,
+     "vmrss_kib": 3676,
+     "threads": 1,
+     "vivo": true,
+     "aviso_no_log": false
+    },
+    "painel_root": {
+     "parado": {
+      "vmlck_kib": 0,
+      "vmrss_kib": 4012,
+      "threads": 3
+     },
+     "com_120_conexoes": {
+      "vmlck_kib": 0,
+      "vmrss_kib": 6260,
+      "threads": 123
+     }
+    }
+   },
+   "novo": {
+    "repasse_root": {
+     "vmlck_kib": 72860,
+     "vmrss_kib": 3580,
+     "threads": 1,
+     "vivo": true,
+     "aviso_no_log": false
+    },
+    "painel_root": {
+     "parado": {
+      "vmlck_kib": 208088,
+      "vmrss_kib": 4060,
+      "threads": 4
+     },
+     "com_120_conexoes": {
+      "vmlck_kib": 2291256,
+      "vmrss_kib": 6288,
+      "threads": 124
+     }
+    }
+   },
+   "sem-onfault": {
+    "repasse_root": {
+     "vmlck_kib": 72860,
+     "vmrss_kib": 7456,
+     "threads": 1,
+     "vivo": true,
+     "aviso_no_log": false
+    },
+    "painel_root": {
+     "parado": {
+      "vmlck_kib": 208084,
+      "vmrss_kib": 11864,
+      "threads": 4
+     },
+     "com_120_conexoes": {
+      "vmlck_kib": 2291252,
+      "vmrss_kib": 263240,
+      "threads": 124
+     }
+    }
+   },
+   "novo_nobody_limite_8mib": {
+    "vmlck_kib": 0,
+    "vmrss_kib": 3576,
+    "threads": 1,
+    "vivo": true,
+    "aviso_no_log": true
+   }
+  },
+  "confere": true
+ }
+}

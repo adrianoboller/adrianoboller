@@ -159,6 +159,61 @@ pub fn origem_local(ip: IpAddr) -> Ipv4Addr {
 
 type Vivas = Arc<Mutex<HashMap<u64, TcpStream>>>;
 
+/// Por quanto tempo a ponte lembra a origem de quem ja saiu: o
+/// `client-disconnect` de quem saiu pela ponte chega quando o `openvpn`
+/// percebe (o `ping-restart`, ate 120 s depois do TCP fechar).
+const LEMBRAR: Duration = Duration::from_secs(900);
+/// Teto do mapa: acima dele, as mais velhas das ja fechadas saem primeiro.
+const TETO_ORIGENS: usize = MAX_CONEXOES * 16;
+
+struct Origem {
+    real: SocketAddr,
+    fechou: Option<std::time::Instant>,
+}
+
+/// `127.x.y.z:porta` (como o `openvpn` ve quem veio pela ponte) -> o
+/// endereco de fora. De todas as pontes do processo: cada conexao tem o seu
+/// soquete UDP, entao o par visto nao se repete entre redes.
+fn origens() -> &'static Mutex<HashMap<SocketAddr, Origem>> {
+    static O: OnceLock<Mutex<HashMap<SocketAddr, Origem>>> = OnceLock::new();
+    O.get_or_init(Mutex::default)
+}
+
+fn lembrar_origem(vista: SocketAddr, real: SocketAddr) {
+    let mut m = origens().lock().unwrap_or_else(|e| e.into_inner());
+    m.retain(|_, o| o.fechou.map_or(true, |t| t.elapsed() < LEMBRAR));
+    while m.len() >= TETO_ORIGENS {
+        let Some(k) = m
+            .iter()
+            .filter_map(|(k, o)| o.fechou.map(|t| (t, *k)))
+            .min()
+            .map(|(_, k)| k)
+        else {
+            break;
+        };
+        m.remove(&k);
+    }
+    m.insert(vista, Origem { real, fechou: None });
+}
+
+fn esquecer_depois(vista: SocketAddr) {
+    let mut m = origens().lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(o) = m.get_mut(&vista) {
+        o.fechou = Some(std::time::Instant::now());
+    }
+}
+
+/// O endereco de fora de quem o `openvpn` ve como `vista` -- `None` quando
+/// nao veio pela ponte. E por aqui, e nao relendo o `openvpn.log`, que o
+/// historico de conexoes (`historico.rs`) grava o IP REAL: o mapa e o da
+/// propria ponte, no mesmo processo.
+pub fn origem_real(vista: SocketAddr) -> Option<SocketAddr> {
+    let m = origens().lock().unwrap_or_else(|e| e.into_inner());
+    m.get(&vista)
+        .filter(|o| o.fechou.map_or(true, |t| t.elapsed() < LEMBRAR))
+        .map(|o| o.real)
+}
+
 /// Uma ponte no ar. Sai do ar no `drop`: para de aceitar e derruba as
 /// conexoes vivas (o membro reconecta, como num reinicio do OpenVPN).
 pub struct Ponte {
@@ -322,6 +377,7 @@ fn transportar(
     let _ = u.set_read_timeout(Some(VOLTA_ACORDA));
     let vista = u.local_addr().map_err(|e| e.to_string())?;
     anotar(registro, &format!("{origem} entra como {vista}"));
+    lembrar_origem(vista, origem);
     let fechou = Arc::new(AtomicBool::new(false));
     let volta = {
         let (u, mut t, fechou) = (
@@ -392,6 +448,7 @@ fn transportar(
     let _ = c.shutdown(Shutdown::Both);
     let _ = volta.join();
     anotar(registro, &format!("{origem} saiu"));
+    esquecer_depois(vista);
     r
 }
 
@@ -533,6 +590,39 @@ mod testes {
         drop(ponte);
         let log = std::fs::read_to_string(d.join("openvpn.log")).unwrap();
         assert!(log.contains("phxvpn queda-tcp: 127.0.0.1:"), "{log}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// O historico pergunta a origem real de quem o `openvpn` ve como
+    /// `127.x.y.z:porta` -- e ela continua sabida depois que a conexao
+    /// fecha (o `client-disconnect` chega depois). RED: sem o
+    /// `lembrar_origem` no `transportar`, `origem_real` devolve `None` e o
+    /// historico grava o loopback.
+    #[test]
+    fn ponte_diz_a_origem_real_de_quem_o_openvpn_ve() {
+        let eco = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let udp = eco.local_addr().unwrap().port();
+        let (reg, d) = registro("origem");
+        let ponte = Ponte::abrir(
+            Conf {
+                porta: 0,
+                udp,
+                port_share: None,
+            },
+            reg,
+        )
+        .unwrap();
+        let mut c = TcpStream::connect(("127.0.0.1", ponte.porta())).unwrap();
+        let de_fora = c.local_addr().unwrap();
+        c.write_all(&[0, 3, 0x38, 1, 2]).unwrap();
+        eco.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        let mut b = [0u8; 16];
+        let (_, vista) = eco.recv_from(&mut b).unwrap();
+        assert_eq!(origem_real(vista), Some(de_fora));
+        drop(c);
+        drop(ponte);
+        assert_eq!(origem_real(vista), Some(de_fora), "esqueceu ao fechar");
+        assert_eq!(origem_real("127.0.0.1:9".parse().unwrap()), None);
         let _ = std::fs::remove_dir_all(&d);
     }
 

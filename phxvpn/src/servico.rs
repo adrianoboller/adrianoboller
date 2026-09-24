@@ -192,8 +192,13 @@ pub fn texto_da_unidade(
         .iter()
         .map(|c| format!("LoadCredentialEncrypted={c}:{PASTA_CRED}/{unidade}-{c}.cred\n"))
         .collect();
-    // Endurecimento comum; o que muda por tipo vem abaixo.
-    let comum = "NoNewPrivileges=yes\n\
+    // Endurecimento comum; o que muda por tipo vem abaixo. `LimitMEMLOCK`:
+    // sem ele o limite e 8 MiB e o processo NAO trava a memoria (travar com
+    // limite finito faria a alocacao seguinte falhar -- `memoria.rs`); com
+    // ele, painel, no e repasse tiram as chaves do swap sem capacidade a
+    // mais, e o `openvpn` filho herda o limite para o `mlock` dele.
+    let comum = "LimitMEMLOCK=infinity\n\
+                 NoNewPrivileges=yes\n\
                  ProtectSystem=strict\n\
                  ProtectHome=yes\n\
                  PrivateTmp=yes\n\
@@ -629,6 +634,9 @@ mod testes {
         );
         assert!(r.contains("DynamicUser=yes") && !r.contains("User=root"));
         assert!(r.contains("CapabilityBoundingSet=\n"));
+        // Chave fora do swap sem capacidade a mais (memoria.rs). RED: sem a
+        // linha, o limite de 8 MiB do systemd deixa o processo sem travar.
+        assert!(r.contains("\nLimitMEMLOCK=infinity\n"));
         let p = texto_da_unidade(
             Tipo::Painel,
             "phxvpn-painel",
