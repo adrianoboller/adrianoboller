@@ -23,6 +23,47 @@ cd "$(dirname "$0")" || exit 1
 RAIZ=$PWD
 REPO=$(cd .. && pwd)
 VER=${1:-}
+
+# O piso do corte do incremental e do vigia -- o porque esta no comentario do
+# corte, na arvore principal. Definido aqui em cima porque os dois o leem.
+PISO_INCREMENTAL_MIB=${PHX_PISO_INCREMENTAL_MIB:-4096}
+
+# O VIGIA: o papel D diz «por script e em horario, nao por lembranca», e nao
+# ha `cron` neste conteiner -- cada corrida ate 24/09/2026 foi alguem se
+# lembrando de chamar. De 5,1 GiB para 986 MiB levou vinte minutos em
+# 17/09/2026 (pedido 317), e lembranca nao tem essa cadencia. O vigia so chama
+# o zelador de sempre: toda decisao continua sendo a dele. E ele nao se acha
+# como «alguem trabalhando aqui», porque e ANCESTRAL de cada corrida (389).
+#
+# Duas cadencias, e a segunda e a que importa. A cada N minutos, a corrida
+# comum -- que o portao de baixo RECUSA quando ha medicao em curso, e o portao
+# conta `cargo` vivo como tal: medido ao ligar o vigia, a primeira corrida foi
+# recusada por um `cargo test` e duas frentes em python. Com cinco frentes
+# compilando, a corrida comum quase nunca passa. Por isso o disco se olha a
+# cada 2 minutos, e ABAIXO DO PISO o vigia chama `--mesmo-assim`, que e a
+# saida que o proprio zelador reserva para «o disco acabando de verdade, que e
+# mais caro que uma bateria perdida». No maximo uma vez a cada 5 minutos: se
+# nao ha o que liberar, repetir o `du` de gigabytes so gasta disco de quem
+# trabalha.
+if [ "$VER" = "--vigiar" ]; then
+  MIN=${2:-30}
+  ULTIMA=0
+  ULTIMA_PISO=0
+  while :; do
+    AGORA=$(date +%s)
+    LIVRE=$(( $(df -k "$REPO" | awk 'NR==2{print $4}') / 1024 ))
+    if [ "$LIVRE" -lt "$PISO_INCREMENTAL_MIB" ] && [ $((AGORA - ULTIMA_PISO)) -ge 300 ]; then
+      echo "== vigia $(date -u +%Y-%m-%dT%H:%MZ): $LIVRE MiB livres < piso de $PISO_INCREMENTAL_MIB, --mesmo-assim"
+      "$RAIZ/zelador.sh" --mesmo-assim
+      ULTIMA_PISO=$AGORA; ULTIMA=$AGORA
+    elif [ $((AGORA - ULTIMA)) -ge $((MIN * 60)) ]; then
+      echo "== vigia $(date -u +%Y-%m-%dT%H:%MZ): $LIVRE MiB livres"
+      "$RAIZ/zelador.sh"
+      ULTIMA=$AGORA
+    fi
+    sleep 120
+  done
+fi
 [ "$VER" = "--ver" ] && echo "== modo --ver: nada sera apagado =="
 
 # Segundo portao, e ele nao e sobre o que se apaga -- e sobre QUANDO. A regra
@@ -61,11 +102,29 @@ apagar() {
 # Devolve 0 se algum processo vivo tem `cwd` dentro de `dir`, e guarda em
 # QUEM_SEGURA o PID e o comando -- porque «esta em uso» sem dizer por quem
 # manda o leitor procurar um processo que ele nao sabe qual e.
+#
+# E o proprio zelador NAO conta, nem quem o chamou (pedido 389): o `cd` do
+# topo poe o `cwd` deste script na raiz, e sem esta exclusao o `em_uso "$RAIZ"`
+# casava o bash do proprio zelador e respondia «alguem trabalha aqui» SEMPRE,
+# com a maquina parada inclusive. A licao ja estava escrita no irmao que este
+# script chama como portao, o `bancada/esta-medindo.sh`: a exclusao do
+# observador e por LINHAGEM, nunca por texto -- ancestral nao conta,
+# descendente conta. A linhagem se mede UMA vez, aqui.
+PROPRIOS=" "
+p=$$
+while [ "${p:-0}" -gt 1 ]; do
+  PROPRIOS="$PROPRIOS$p "
+  [ -r "/proc/$p/stat" ] || break
+  # `comm` vem entre parenteses e pode ter espaco dentro; cortar ate o ultimo
+  # `)` e o unico jeito estavel de chegar no ppid
+  p=$(sed 's/.*) //' "/proc/$p/stat" 2>/dev/null | cut -d' ' -f2)
+done
 QUEM_SEGURA=""
 em_uso() {
   local dir=$1 p cw
   QUEM_SEGURA=""
   for p in /proc/[0-9]*; do
+    case "$PROPRIOS" in *" ${p##*/} "*) continue ;; esac
     cw=$(readlink "$p/cwd" 2>/dev/null) || continue
     case "$cw" in
       "$dir"|"$dir"/*)
@@ -90,7 +149,78 @@ for w in "$REPO"/.claude/worktrees/*/; do
   fi
 done
 
+# O CORTE CIRURGICO (pedido 317). A decisao da arvore principal era binaria --
+# ninguem trabalhando, sai o `target/debug` inteiro; alguem trabalhando, nao
+# sai nada -- e nesta maquina SEMPRE ha alguem: o shell de uma frente que
+# espera o proprio resultado ja basta. Medido em 24/09/2026: esse shell era um
+# `until ... sleep 10` de 17 minutos, e por ele o zelador guardava 9,0 GiB e
+# liberava 0 MiB.
+#
+# O meio-termo e o `incremental`: cache de velocidade do compilador e nada
+# mais. Apaga-lo nao derruba artefato de que alguem dependa -- os binarios de
+# teste e dos exemplos vivem em `deps` e `examples`, a bancada usa o
+# `target/release` -- e nao forca recompilar dependencia nenhuma: so os crates
+# da casa voltam a compilar inteiros, uma vez.
+#
+# A prova de que ninguem esta usando NAO e o `cwd` (que diz so que alguem
+# PODE compilar) -- e a trava do proprio cargo, `.cargo-lock` do perfil,
+# que ele segura do inicio ao fim de toda compilacao, `check` e `clippy`
+# inclusive. O zelador a SEGURA durante o `rm`: o cargo que chegar no meio
+# espera o corte acabar em vez de compilar dentro de um diretorio sumindo.
+# Trava que nao existe nao se cria para conferir -- o `flock` a criaria e
+# responderia «livre» sobre um caminho que ninguem usa (o erro que o 317 pagou
+# em /tmp) --, entao perfil sem trava fica.
+#
+# E QUANDO vale a pena e a mesma regra do cache do provador: apagar o que a
+# proxima compilacao refaz gasta tempo de quem trabalha. Sai quando esta FRIO
+# (sem compilar ha QUENTE_MIN) ou quando o disco passa abaixo do piso deste
+# corte. O piso e o DOBRO do alarme do `comunicacao.sh` de proposito: o 317(c)
+# mediu que o disco cai do conforto ao alarme em vinte minutos, e o corte tem
+# de acontecer antes do alarme, nao junto dele.
+cortar_incremental() {
+  local inc perfil trava ultimo m idade livre t
+  for inc in "$RAIZ"/target/debug/incremental "$RAIZ"/target/*/debug/incremental; do
+    [ -d "$inc" ] || continue
+    perfil=${inc%/incremental}
+    trava="$perfil/.cargo-lock"
+    t=$(kb "$inc"); t=${t:-0}
+    [ "$t" -lt 1024 ] && continue
+    if [ ! -e "$trava" ]; then
+      printf "  %-52s %6s MiB  sem trava do cargo para conferir, fica\n" "${inc#$REPO/}" "$((t/1024))"
+      continue
+    fi
+    ultimo=$(stat -c %Y "$inc" 2>/dev/null || echo 0)
+    for m in "$inc"/*/; do
+      m=$(stat -c %Y "$m" 2>/dev/null) || continue
+      [ "$m" -gt "$ultimo" ] && ultimo=$m
+    done
+    idade=$(( ($(date +%s) - ultimo) / 60 ))
+    livre=$(( $(df -k "$REPO" | awk 'NR==2{print $4}') / 1024 ))
+    if [ "$idade" -lt "$QUENTE_MIN" ] && [ "$livre" -ge "$PISO_INCREMENTAL_MIB" ] \
+       && [ "$VER" != "--mesmo-assim" ]; then
+      printf "  %-52s %6s MiB  incremental quente (compilou ha %d min), %d MiB livres >= %d: fica\n" \
+        "${inc#$REPO/}" "$((t/1024))" "$idade" "$livre" "$PISO_INCREMENTAL_MIB"
+      continue
+    fi
+    if ! flock -n "$trava" true 2>/dev/null; then
+      printf "  %-52s %6s MiB  compilando AGORA (trava do cargo tomada), nao toco\n" "${inc#$REPO/}" "$((t/1024))"
+      continue
+    fi
+    printf "  %-52s %6s MiB  incremental (%s), trava do cargo livre\n" "${inc#$REPO/}" "$((t/1024))" \
+      "$([ "$idade" -ge "$QUENTE_MIN" ] && echo "frio: sem compilar ha $((idade/60)) h" || echo "$livre MiB livres < piso de $PISO_INCREMENTAL_MIB")"
+    if [ "$VER" != "--ver" ]; then
+      # O `rm` roda DENTRO da trava; se ela foi tomada entre a conferencia de
+      # cima e aqui, o `-n` recusa e nada se apaga.
+      flock -n "$trava" rm -rf "$inc" || { echo "    trava tomada no meio, nao apagado"; continue; }
+    fi
+    LIBEROU=$((LIBEROU+t))
+  done
+}
+
 echo "-- arvore principal"
+# Uma so medida de «frio» para os dois caches de compilacao; a cadencia que a
+# justifica esta no comentario do cache do provador, abaixo.
+QUENTE_MIN=360
 if em_uso "$RAIZ"; then
   # Esta linha dizia «compilando aqui agora», e o que ela mede e outra coisa:
   # que ALGUEM tem `cwd` aqui -- o que inclui o shell de quem esta lendo este
@@ -102,7 +232,8 @@ if em_uso "$RAIZ"; then
   # secao apagava de hora em hora. Quem le o relatorio procurando disco
   # precisa ver onde ele esta, nao so o que saiu.
   t=$(kb "$RAIZ/target")
-  echo "  alguem trabalha aqui ($QUEM_SEGURA), nao toco no target ($((${t:-0}/1024)) MiB)"
+  echo "  alguem trabalha aqui ($QUEM_SEGURA), nao toco no target inteiro ($((${t:-0}/1024)) MiB)"
+  cortar_incremental
 else
   apagar "$RAIZ/target/debug" "reconstroi em minutos"
   # Alvo cruzado ja virou pacote: o zip esta em pacotes/, o objeto nao serve
@@ -113,6 +244,11 @@ else
     [ -d "$RAIZ/target/$alvo" ] && apagar "$RAIZ/target/$alvo" "ja empacotado"
   done
 fi
+
+# A prova do corte (`bancada/zelador/prova-do-zelador.sh`) roda numa arvore de
+# mentira, e as secoes de baixo varrem /tmp e o scratchpad DE VERDADE -- parar
+# aqui e o que a mantem hermetica. Sem a variavel, e o de sempre.
+[ -n "${PHX_ZELADOR_SO_ARVORE:-}" ] && exit 0
 
 echo "-- pacotes de versao antiga"
 ATUAL=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
@@ -301,7 +437,6 @@ FIM
 echo "-- copias derivadas fora do repositorio"
 CACHE_GUARDAS=${PHX_CACHE_GUARDAS:-/root/.cache/phx-guardas}
 PISO_MIB=${PHX_PISO_MIB:-2048}
-QUENTE_MIN=360
 if [ -d "$CACHE_GUARDAS" ]; then
   TRANCA="${CACHE_GUARDAS%/}.tranca"
   if em_uso "$CACHE_GUARDAS"; then

@@ -239,6 +239,26 @@ else
   echo "✅ disco: $((LIVRE_MB/1024)) GiB livres"
 fi
 
+# O vigia do zelador (pedido 317). O papel D e «por script e em horario», e
+# vigia parado e o papel sem cumprir -- entao aparece como problema, nao some.
+# O crivo e o ARGV, posicao por posicao, nunca o texto da linha de comando:
+# o shell que pergunta por `zelador.sh --vigiar` carrega essas palavras na
+# propria linha e se acharia (a armadilha que este arquivo ja pagou tres
+# vezes, contada no bloco «o que esta em curso»). Um involucro `bash -c ...`
+# tem `-c` no argv[1] e nao casa por construcao.
+VIGIA=""
+for d in /proc/[0-9]*; do
+  mapfile -d '' -t ARGV <"$d/cmdline" 2>/dev/null || continue
+  [ "${ARGV[2]:-}" = "--vigiar" ] || continue
+  case "${ARGV[1]:-}" in *zelador.sh) VIGIA="${d#/proc/} a cada ${ARGV[3]:-30} min" ;; esac
+done
+if [ -n "$VIGIA" ]; then
+  echo "✅ vigia do zelador vivo (PID $VIGIA)"
+else
+  echo "⚠️  vigia do zelador parado — (cd phxsql && ./zelador.sh --vigiar 30) em segundo plano"
+  PROBLEMAS=$((PROBLEMAS+1))
+fi
+
 # Binario velho contra a interface: a armadilha que ja custou uma rodada.
 BIN="$RAIZ/phxsql/target/release/phxsqld"
 UI="$RAIZ/phxsql/crates/phxsql-server/ui"

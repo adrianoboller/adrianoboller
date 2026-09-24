@@ -209,7 +209,7 @@ footer{
 <div class="envelope">
 <header>
   <div class="rotulo">PhxSql · o dossiê do que foi pedido — página 6 de 6</div>
-  <h1>Pedidos 411 em diante<br>de 464 ao todo</h1>
+  <h1>Pedidos 411 em diante<br>de 465 ao todo</h1>
   <p class="chamada">Uma linha por pedido seu, na ordem em que você pediu. O
   estado é <strong>medido contra o código</strong>, não contra a lembrança — foi
   assim que a chave estrangeira saiu de «pronto» para «parcial», e o Centro de
@@ -224,23 +224,23 @@ footer{
   <nav class="faixas" aria-label="As 6 páginas de pedidos, por faixa"><a href="https://claude.ai/artifact/4jSZ5yZFnjEnbGGbE3i5nz">1–190</a><a href="https://claude.ai/artifact/MAc3CcjfCPbjVm5sQZwYoC">191–260</a><a href="https://claude.ai/artifact/R4iGBeRQt7ao6yffQkmGCp">261–310</a><a href="https://claude.ai/artifact/S1oHX53g9q4oqHSn7Yv3vm">311–350</a><a href="pedidos-351-410.html">351–410</a><a href="pedidos-411-mais.html" class="ativa" aria-current="page">411 em diante</a></nav>
 
   <div class="placar">
-    <div class="c"><div class="v">464</div><div class="r">pedidos, ao todo</div></div>
-    <div class="c feito"><div class="v">330</div><div class="r">feitos</div></div>
-    <div class="c parcial"><div class="v">18</div><div class="r">parciais</div></div>
-    <div class="c planejado"><div class="v">116</div><div class="r">planejados</div></div>
+    <div class="c"><div class="v">465</div><div class="r">pedidos, ao todo</div></div>
+    <div class="c feito"><div class="v">331</div><div class="r">feitos</div></div>
+    <div class="c parcial"><div class="v">19</div><div class="r">parciais</div></div>
+    <div class="c planejado"><div class="v">115</div><div class="r">planejados</div></div>
   </div>
 
   <div class="faixa-info">
     <span class="rotulo-inline">Nesta página</span>
-    <strong>54</strong> pedidos (faixa 411 em diante) ·
+    <strong>55</strong> pedidos (faixa 411 em diante) ·
     <span class="feito">13 feitos</span> ·
     <span class="parcial">2 parciais</span> ·
-    <span class="planejado">39 planejados</span>
+    <span class="planejado">40 planejados</span>
   </div>
 </header>
 
 <h2>O que está aberto, nesta faixa</h2>
-<p class="sub">Os 41 que não fecharam nesta faixa (2 pela metade e 39 sem começar), com o motivo de cada um. O motivo importa mais que o estado: uns esperam trabalho, outros esperam uma decisão sua, e outros esperam coisa de fora deste repositório.</p>
+<p class="sub">Os 42 que não fecharam nesta faixa (2 pela metade e 40 sem começar), com o motivo de cada um. O motivo importa mais que o estado: uns esperam trabalho, outros esperam uma decisão sua, e outros esperam coisa de fora deste repositório.</p>
 <div class="rolo">
   <table>
     <thead><tr><th class="n">#</th><th class="st">estado</th><th>o que você pediu</th><th>onde está</th></tr></thead>
@@ -286,6 +286,7 @@ footer{
       <tr data-e="planejado"><td class="n mono">462</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>A recusa da expressao ecoa o texto INTEIRO do <code>onde</code> que veio do fio</strong></td><td class="e">Achado da frente dos tetos em 24/09/2026 (<code>expressao.rs</code> perto de :511). Nao se consertou com o <code>citar</code> porque ali e CODIGO e nao valor: expressao legitima passa de 48 bytes, e cortar escondia o erro de quem a escreveu. <strong>Conserto certo:</strong> citar a POSICAO do erro e uma janela curta em volta, com teto -- nunca o texto inteiro</td></tr>
       <tr data-e="planejado"><td class="n mono">463</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>O cliente SMTP nao tem teto de QUANTAS linhas de continuacao (<code>250-...</code>) aceita, e o <code>timeout_s</code> mede o silencio, nao a conversa</strong></td><td class="e">Achado da frente dos tetos em 24/09/2026, depois do 439: cada linha agora tem teto de tamanho, mas um rele que mande linhas de continuacao sem fim segura a thread de aviso indefinidamente -- nao gasta memoria, gasta tempo. <strong>Conserto proposto:</strong> prazo total da conversa, alem do prazo de silencio</td></tr>
       <tr data-e="planejado"><td class="n mono">464</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>Dado pessoal curto continua citado na recusa de conversao</strong></td><td class="e">Achado da frente dos tetos em 24/09/2026 (<code>docs/SEGURANCA.md</code> §22.3): o <code>citar</code> corta o valor longo, mas o curto (ate 48 bytes -- um CPF, um e-mail) sai inteiro na mensagem de erro, porque a conversao nao recebe a marca <code>DadoPessoal</code> da coluna. E a familia do 357 (a trilha que redige por nome e nao pela marca). <strong>Conserto:</strong> a conversao recebe a classe da coluna, e coluna marcada nunca cita o valor</td></tr>
+      <tr data-e="planejado"><td class="n mono">465</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>O maior consumidor de disco que sobra nao e cache: sao 27 binarios de teste de integracao de ~68 MiB, 1.906 MiB, um por arquivo de <code>tests/</code></strong></td><td class="e">Medido pelo papel A em 24/09/2026 03:0x UTC, ao procurar o que o zelador ainda nao alcanca: <code>target/debug/deps</code> com <strong>27</strong> executaveis acima de 60 MiB somando <strong>1.906 MiB</strong>, e <code>crates/phxsql-server/tests/</code> com <strong>35</strong> arquivos -- cada arquivo de <code>tests/</code> vira um binario que liga o servidor inteiro. Nao e lixo (a suite os usa) e o zelador nao deve apaga-los; e desenho. <strong>O que o pedido pede, medido antes de virar plano:</strong> juntar os testes de integracao do servidor num binario so (<code>tests/integracao/main.rs</code> com um <code>mod</code> por arquivo, e <code>autotests = false</code> ou <code>[[test]]</code> explicito), e MEDIR antes: o disco que sai, o tempo de ligacao que sai (hoje 35 ligacoes do servidor por suite) e o que se perde -- testes que dependem de estado global de processo (porta, <code>static</code>, variavel de ambiente) passam a dividir o processo e podem se pisar. Se algum depende de isolamento de processo, ele fica fora do binario unico, com o motivo escrito. Papel B com o F provando que a suite nao muda de veredito.</td></tr>
     </tbody>
   </table>
 </div>
@@ -299,7 +300,7 @@ footer{
   não tem opinião própria sobre nenhum item.
 </div>
 
-<h2 id="todos">Os 54 desta faixa (411 em diante), na ordem em que você pediu</h2>
+<h2 id="todos">Os 55 desta faixa (411 em diante), na ordem em que você pediu</h2>
 <p class="sub">A numeração é a sequência real dos seus pedidos — ela diz
 <em>quando</em> cada coisa foi pedida, e é por isso que vale mantê-la. As
 outras 5 faixas estão no menu acima.</p>
@@ -373,6 +374,7 @@ outras 5 faixas estão no menu acima.</p>
       <tr data-e="planejado"><td class="n mono">462</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>A recusa da expressao ecoa o texto INTEIRO do <code>onde</code> que veio do fio</strong></td><td class="e">Achado da frente dos tetos em 24/09/2026 (<code>expressao.rs</code> perto de :511). Nao se consertou com o <code>citar</code> porque ali e CODIGO e nao valor: expressao legitima passa de 48 bytes, e cortar escondia o erro de quem a escreveu. <strong>Conserto certo:</strong> citar a POSICAO do erro e uma janela curta em volta, com teto -- nunca o texto inteiro</td></tr>
       <tr data-e="planejado"><td class="n mono">463</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>O cliente SMTP nao tem teto de QUANTAS linhas de continuacao (<code>250-...</code>) aceita, e o <code>timeout_s</code> mede o silencio, nao a conversa</strong></td><td class="e">Achado da frente dos tetos em 24/09/2026, depois do 439: cada linha agora tem teto de tamanho, mas um rele que mande linhas de continuacao sem fim segura a thread de aviso indefinidamente -- nao gasta memoria, gasta tempo. <strong>Conserto proposto:</strong> prazo total da conversa, alem do prazo de silencio</td></tr>
       <tr data-e="planejado"><td class="n mono">464</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>Dado pessoal curto continua citado na recusa de conversao</strong></td><td class="e">Achado da frente dos tetos em 24/09/2026 (<code>docs/SEGURANCA.md</code> §22.3): o <code>citar</code> corta o valor longo, mas o curto (ate 48 bytes -- um CPF, um e-mail) sai inteiro na mensagem de erro, porque a conversao nao recebe a marca <code>DadoPessoal</code> da coluna. E a familia do 357 (a trilha que redige por nome e nao pela marca). <strong>Conserto:</strong> a conversao recebe a classe da coluna, e coluna marcada nunca cita o valor</td></tr>
+      <tr data-e="planejado"><td class="n mono">465</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>O maior consumidor de disco que sobra nao e cache: sao 27 binarios de teste de integracao de ~68 MiB, 1.906 MiB, um por arquivo de <code>tests/</code></strong></td><td class="e">Medido pelo papel A em 24/09/2026 03:0x UTC, ao procurar o que o zelador ainda nao alcanca: <code>target/debug/deps</code> com <strong>27</strong> executaveis acima de 60 MiB somando <strong>1.906 MiB</strong>, e <code>crates/phxsql-server/tests/</code> com <strong>35</strong> arquivos -- cada arquivo de <code>tests/</code> vira um binario que liga o servidor inteiro. Nao e lixo (a suite os usa) e o zelador nao deve apaga-los; e desenho. <strong>O que o pedido pede, medido antes de virar plano:</strong> juntar os testes de integracao do servidor num binario so (<code>tests/integracao/main.rs</code> com um <code>mod</code> por arquivo, e <code>autotests = false</code> ou <code>[[test]]</code> explicito), e MEDIR antes: o disco que sai, o tempo de ligacao que sai (hoje 35 ligacoes do servidor por suite) e o que se perde -- testes que dependem de estado global de processo (porta, <code>static</code>, variavel de ambiente) passam a dividir o processo e podem se pisar. Se algum depende de isolamento de processo, ele fica fora do binario unico, com o motivo escrito. Papel B com o F provando que a suite nao muda de veredito.</td></tr>
     </tbody>
   </table>
   <div class="vazio" id="vazio" hidden>Nenhum pedido bate com isso.</div>
