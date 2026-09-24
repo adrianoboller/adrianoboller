@@ -90,6 +90,10 @@ pub struct Rede {
     pub descoberta: bool,
     /// Nome deste computador no rol (opcional).
     pub apelido: Option<String>,
+    /// Este computador ACEITA servir de farol (ver `p2p/farol.rs`). So vale
+    /// com o rol do dono marcando-o: o consentimento e daqui, a autoridade e
+    /// dele.
+    pub farol: bool,
 }
 
 pub fn agora() -> u64 {
@@ -178,6 +182,7 @@ impl Rede {
             rol: None,
             descoberta: true,
             apelido: None,
+            farol: false,
         }
     }
 
@@ -267,6 +272,7 @@ impl Rede {
                     .unwrap_or(Json::Nulo),
             ),
             ("descoberta", Json::de_bool(self.descoberta)),
+            ("farol", Json::de_bool(self.farol)),
             (
                 "apelido",
                 self.apelido
@@ -349,6 +355,7 @@ impl Rede {
             },
             descoberta: j.booleano_ou("descoberta", true),
             apelido: j.campo("apelido").and_then(Json::texto).map(str::to_string),
+            farol: j.booleano_ou("farol", false),
         })
     }
 
@@ -563,6 +570,7 @@ pub fn rede_do_convidado(c: &Convite, porta: u16) -> Rede {
         rol: None,
         descoberta: true,
         apelido: None,
+        farol: false,
     }
 }
 

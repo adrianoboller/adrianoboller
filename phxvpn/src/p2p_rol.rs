@@ -313,6 +313,7 @@ mod testes {
             chave: x25519::chave_publica(k),
             ip: ip.parse().unwrap(),
             nome: None,
+            farol: None,
         }
     }
 

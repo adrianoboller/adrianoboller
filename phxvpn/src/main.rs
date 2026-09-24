@@ -54,6 +54,12 @@ const AJUDA: &str = "phxvpn -- redes virtuais no estilo Radmin, sobre OpenVPN
   phxvpn p2p remover --rede NOME --ip IP_VIRTUAL
       So quem criou a rede: assina um rol de membros novo, sem esse membro.
       Com a rede ligada, os outros o recebem pela malha e param de aceita-lo.
+  phxvpn p2p farol --rede NOME [--ip IP_VIRTUAL] [--endereco IP_PUBLICO:PORTA] [--tirar]
+      FAROL: um membro alcancavel faz o papel do servidor intermediario para
+      os outros (registro, perfuracao e rele cifrado), sem phxvpn repasse.
+      No dono: marca (ou tira) o farol daquele membro no rol assinado. No
+      proprio membro: aceita servir (ou deixa). Os dois sao necessarios; os
+      outros usam o farol no modo auto ou repasse, mesmo sem --repasse.
 
   phxvpn p2p ligar --rede NOME --ip 10.78.0.1/24 [--porta 51820] [--chave p2p.chave]
                    [--interface phx0] --par CHAVE@IP[@HOST:PORTA] [--par ...]
@@ -71,6 +77,8 @@ const AJUDA: &str = "phxvpn -- redes virtuais no estilo Radmin, sobre OpenVPN
       TCP na porta --repasse-tcp), udp, ou tcp (--tcp). --proxy passa pelo
       CONNECT de um proxy HTTP (implica tcp); a senha do proxy vem de
       PHXVPN_SENHA_PROXY ou do terminal. HTTPS_PROXY NAO e lido.
+      --farol [--farol-mbit 100]: aceita servir de farol nesta ligacao (so
+      vale se o dono o marcou no rol); teto de banda repassada em Mbit/s.
       Senha da rede por PHXVPN_SENHA_REDE ou no terminal.
 
   phxvpn repasse [--porta 51821] [--tcp 443] [--chave repasse.chave] [--permitir ARQUIVO]
@@ -382,7 +390,7 @@ fn cmd_cliente_rodar(args: &[String]) -> Result<(), String> {
 fn cmd_p2p(args: &[String]) -> Result<(), String> {
     let o = Opcoes::de_args(
         &args[args.len().min(1)..],
-        &["sem-perfuracao", "sem-descoberta", "tcp"],
+        &["sem-perfuracao", "sem-descoberta", "tcp", "farol", "tirar"],
     );
     let arquivo = o.um("chave").or(o.um("arquivo")).unwrap_or("p2p.chave");
     match args.first().map(String::as_str) {
@@ -406,6 +414,10 @@ fn cmd_p2p(args: &[String]) -> Result<(), String> {
         }
         Some("remover") => {
             println!("{}", comandos::p2p_remover(&o)?);
+            Ok(())
+        }
+        Some("farol") => {
+            println!("{}", comandos::p2p_farol(&o)?);
             Ok(())
         }
         Some("entrar") => {

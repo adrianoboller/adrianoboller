@@ -59,12 +59,13 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [x] P2P: o `auto` **volta** do TCP ao UDP quando o UDP volta (sonda autenticada, 3 ecos seguidos, recuo 30 s → 5 min, recuo dobrado se cair logo depois de voltar) — provado em netns com ping contínuo pela troca
 - [x] Modo servidor OpenVPN em TCP: rede com `proto tcp-server` (porta 443 escolhida pelo administrador) e perfil com `proto tcp-client` e `http-proxy` opcional — provado com o `openvpn` 2.6.19 real, UDP bloqueado e só o proxy alcançando o servidor
 - [x] Três recursos que só existiam por CLI/API foram para a tela (24/09/2026): programa de mesa com **Remover membro** (só o DONO vê o botão), campo de **proxy HTTP** ao ligar rede P2P, e painel web com escolha de **protocolo UDP/TCP** ao criar rede e **proxy HTTP** ao baixar o perfil — ver a seção dedicada abaixo
+- [x] P2P: **farol** — um membro alcançável, marcado no rol assinado pelo dono e com o consentimento dele, faz o papel do repasse (registro, apresentação 10/11, relé cifrado) sem nenhum `phxvpn repasse`; provado em `netns` com NAT simétrico (20/20 pelo relé, 0 byte em claro no `tcpdump` do farol, membro fora do rol 0/5, sem o farol 0/20) e com dois faróis (o que carrega cai; volta pelo outro em 15,0 s) — ver «P2P: farol»
 
 ### Falta
 
 - [ ] Programa de mesa: ver o ícone da bandeja num Windows real (no Wine ele é registrado, mas não aparece na área de trabalho virtual) e bandeja no Linux (pede D-Bus)
 - [ ] Usar o certificado digital da empresa (A1/RSA) como AC — hoje ele é guardado só como identificação
-- [ ] P2P: «farol» (membro alcançável que faz relé) — o convite, a perfuração mediada pelo repasse e a descoberta na LAN já entraram
+- [ ] P2P farol: fio TCP/proxy até o farol (hoje só UDP — o farol não abre porta TCP), endereço por nome (hoje IP literal, porque vai assinado), `--farol` na janela e no console (hoje só `p2p ligar`/arquivo), e troca de farol mais rápida que os 15 s do par surdo
 - [ ] P2P: delegar o rol a administradores (hoje só quem criou a rede inclui e remove; com ele fora do ar, ninguém entra nem sai — ver «Rol assinado»)
 - [ ] P2P: perfuração atrás de NAT Linux **sem** filtro na wan (a primeira sonda aceita vira dona da porta; ver a seção da perfuração) e de NAT simétrico — hoje ficam no repasse
 - [ ] Segurança A4 (inteiro): TLS no próprio painel — choque com a pétrea de zero dependência; hoje, proxy com TLS na frente
@@ -1661,6 +1662,117 @@ some para o próprio dono e aparece só para o outro membro (verificado
 chamando `desenharTudo()` direto na página com uma rede sintética, já que
 provar a admissão real no rol pede um aperto Noise completo — já provado em
 `provas/rol-descoberta`).
+
+## P2P: farol (24/09/2026)
+
+Código em `src/farol.rs` (filho de `p2p`, como a perfuração); ganchos de uma
+linha no `p2p.rs` (`da_rede`, `mandar`, `tique`, `situacao`), o intermediário
+por par no `perfuracao.rs`, e `trocar_permitidas`/`registrado` no
+`repasse.rs`. Prova: `provas/farol/` (`rodar.sh`, `resultados.json`).
+
+```text
+dono:    phxvpn p2p criar --rede R --ip 10.78.0.1/24 --modo auto
+dono:    phxvpn p2p farol --rede R [--ip 10.78.0.5] --endereco 203.0.113.10:51820 [--tirar]
+membro:  phxvpn p2p farol --rede R           (aceita servir; ou p2p ligar --farol [--farol-mbit 100])
+todos:   phxvpn p2p ligar --rede R           (auto/repasse usam o farol sem --repasse)
+```
+
+**Um motor só.** Quem serve roda o MESMO `repasse::Repasse` no soquete do nó
+(mesma conferência do REGISTRO, mesmo `PARA`/`DE`, mesma `Mesa` dos tipos
+10/11); quem usa roda o mesmo `FioRepasse` e o mesmo `perfuracao.rs`. O
+`farol.rs` só tem o que o repasse separado não tinha: quem pode ser farol,
+quem pode usá-lo, os tetos e a escolha entre vários.
+
+**Quem é farol — decidido: o rol do dono E o consentimento do membro.**
+Hipóteses: (H1) o membro se declara (`--farol`) e os outros acreditam;
+(H2) só o rol assinado; (H3) rol + consentimento. H1 morreu: quem se
+declarasse atrairia o tráfego dos outros — cifrado, mas desviado (vê quem
+fala com quem e quanto, e pode descartar). H2 faz o dono gastar a banda de
+alguém sem ele saber. Venceu H3: a autoridade é do dono (o endereço vai
+**assinado** no rol, então desviar o farol derruba a assinatura) e o
+consentimento é de quem serve (`"farol": true` no arquivo dele). O mesmo
+comando faz as duas metades conforme quem roda.
+
+**Formato — o rol ganhou o v2, entrando cedo.** Com algum farol, o rótulo
+vira `phxvpn-rol-v2` e cada membro leva, depois do nome, `u8 farol` e (se 1)
+`familia:1 ip:16 porta:2`. Sem farol nenhum sai o **v1 byte a byte**: rede
+que não usa farol continua legível por binário antigo. v2 sem farol é
+recusado (duas sequências para o mesmo conteúdo assinado). O arquivo
+`<rede>.p2p` ganhou `farol` (bool, padrão `false`).
+
+**Quem usa o farol: só o rol.** A lista de permitidas do `Repasse` é o rol
+aceito, relida a cada versão; a conferência vem **antes** do
+Diffie-Hellman. Quem sai do rol sai da tabela na hora (`trocar_permitidas`)
+— sem isso o `PARA` de um removido passaria até o registro vencer (60 s),
+porque o repasse só confere o destino.
+
+**O farol não lê o tráfego.** Ele carrega `PARA chave | pacote Noise` da
+sessão dos dois pares. Ter a PSK (é membro) não abre um DADOS de B para C:
+seria preciso a privada de B ou de C.
+
+**A chave do farol é a identidade do membro.** O `DH(nó, farol)` do
+REGISTRO sai da mesma X25519 do aperto: no Noise ele é *entrada* do HKDF
+(`ss`), aqui é *chave* de HMAC com rótulo próprio, e nenhum dos dois o
+revela. Poupa segredo novo em disco e campo no rol (o Tailscale autentica no
+DERP com a chave do nó do mesmo jeito).
+
+**Vários faróis.** O nó se registra em todos (80 B a cada 20 s cada). Dado
+vai pelo farol por onde o par foi ouvido por último, se ainda confirma;
+**aperto vai por todos os que confirmam** — é isso que troca de farol quando
+um some: o dado para, o par fica surdo (15 s), o aperto novo sai por todos,
+e o primeiro que responde vira o caminho. O `--repasse` externo entra na
+conta como mais um. Pacote para o **próprio** farol vai direto a ele (ele é
+alcançável por definição; embrulhado morreria nele mesmo).
+
+**Tetos.** Banda total `--farol-mbit` (padrão 100 Mbit/s) e metade por
+origem, em balde de fichas; REGISTRO no máximo 50/s e 5/s por IP, antes do
+DH; balde por origem só para endereço registrado (endereço forjado não cria
+entrada). Pacote acima do teto se perde, como no UDP: o farol não enfileira.
+
+**Prova** (`provas/farol/rodar.sh`, release, `netns`; A em IP público
+203.0.113.10, B e C atrás de NATs com o firewall de roteador doméstico,
+**nenhum `phxvpn repasse`**; ping de 20 × 1.000 B com padrão; contadores do
+`iptables` zerados 14 s depois do primeiro ping):
+
+| Cenário | 1º ping | Ping | Caminho | Dados no farol | Claro no pcap do farol |
+|---|---|---|---|---|---|
+| NAT de C simétrico, A farol | 10,1 s | 20/20 | relé do farol | 40 pacotes, 44.960 B | **0** |
+| o mesmo, **sem** marcar o farol | — | **0/20** | nenhum | 0 | 0 |
+| X fora do rol, com a senha, `--repasse` apontando A | — | **0/5** | — | A recusou 3 | — |
+| cone, direto bloqueado até a 1ª rodada falhar | 10,9 s | 20/20 | **direto perfurado pela apresentação do farol** (84,0 s, a 2ª rodada) | 0 | 0 |
+| cone, A farol | 1,0 s | 20/20 | direto (pela lista de pares) | 0 | 0 |
+| cone, **sem** farol | 1,0 s | 20/20 | direto (pela lista de pares) | 0 | 0 |
+| dois faróis, NAT simétrico; o que carrega cai | 10,0 s | 20/20 | relé; volta pelo outro em **15,0 s** (73 pings de 0,2 s perdidos) | 40 pacotes | 0 |
+
+Os ~10 s até o 1º ping pelo relé são as duas tentativas diretas do `auto`
+(5 s cada) ao endereço que a lista de pares ensinou — que no NAT simétrico
+não serve. «Claro no pcap»: ocorrências do padrão do ping e do par de IPs virtuais
+(10.78.0.x → 10.78.0.y) na captura inteira do `tcpdump` na wan do farol.
+
+**O que desmentiu a expectativa: no NAT cone o farol não é preciso.** O
+pedido esperava «sem o farol, B e C não se falam». Medido: com NAT cone,
+falam em 1,0 s **com ou sem farol** — o A ensina pela lista de pares o
+endereço público de cada um, os dois mandam INICIO um ao outro no mesmo
+segundo, e o INICIO de um entra pelo furo que o do outro acabou de abrir.
+É perfuração sem mediador, por acaso de sincronia. O farol é indispensável
+no **NAT simétrico** (0/20 sem ele, 20/20 com ele), e a perfuração
+apresentada por ele aparece quando a lista não furou (cenário «libera»).
+Ver `phxsql/docs/cognicao/cognicao_lista-de-pares-ja-perfura-nat-cone_20260924_0845.md`.
+
+**RED** (um guarda tirado por vez; 6 de 6 acusados): permitidas do rol
+(`fora_do_rol_nao_usa_o_farol`), consentimento
+(`sem_marca_ou_sem_consentimento_nao_serve`), teto de banda e teto de
+registro (`tetos_de_banda_e_de_registro`), aperto por todos os faróis
+(`dois_farois_aperto_pelos_dois_dado_por_um` — o dado não acha o outro farol
+depois da queda) e a limpeza da tabela ao sair do rol
+(`trocar_permitidas_tira_quem_saiu`). O rol v2 tem
+`farol_no_rol_e_assinado_e_volta_ao_v1_sem_ele` (porta do farol trocada
+derruba a assinatura; membro que se marca com outra chave é recusado).
+
+**Limites:** farol só em UDP (quem só tem TCP/443 precisa do `phxvpn
+repasse --tcp`); endereço do farol é IP literal; trocar de farol leva ~15 s
+com tráfego; o consentimento gravado com a rede ligada pode ser regravado
+pelo nó (religue); a janela e o console ainda não têm `--farol`.
 
 ## Limites que valem saber antes de usar
 

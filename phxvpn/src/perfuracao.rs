@@ -329,7 +329,7 @@ impl Furo {
 /// e `direto` nao tem apresentador.
 #[derive(Clone, Copy)]
 pub struct Perfurador {
-    segredo: [u8; 32],
+    pub(super) segredo: [u8; 32],
 }
 
 impl Perfurador {
@@ -343,11 +343,20 @@ impl No {
     /// sonda quem foi apresentado, desiste de quem nao respondeu. Devolve os
     /// datagramas a mandar (destino, pacote).
     pub(super) fn perfurar(&self, e: &mut super::Estado) -> Vec<(SocketAddr, Vec<u8>)> {
-        let (Some(pf), Some(r)) = (&self.perfurador, &self.repasse) else {
-            return Vec::new();
+        // O intermediario de cada par: o repasse externo ou o farol por onde
+        // ele foi ouvido (`farol.rs`) -- a mesma mesa, o mesmo pedido.
+        let externo = match (&self.perfurador, &self.repasse) {
+            (Some(pf), Some(r)) => Some((r.endereco, pf.segredo)),
+            _ => None,
         };
         let mut saida = Vec::new();
         for par in &mut e.pares {
+            let rele = match par.furo.fase {
+                Fase::Ocioso | Fase::Pedindo { .. } => {
+                    self.rele_para_perfurar(&par.publica, externo)
+                }
+                _ => None,
+            };
             let pronta = par
                 .atual
                 .as_ref()
@@ -355,20 +364,23 @@ impl No {
             let fase = par.furo.fase;
             match fase {
                 Fase::Ocioso if pronta && par.via == Some(Via::Repasse) => {
+                    let Some((endereco, segredo)) = rele else {
+                        continue;
+                    };
                     let carimbo = super::transporte::carimbo_agora();
                     par.furo.fase = Fase::Pedindo {
                         carimbo,
                         desde: Instant::now(),
                     };
-                    saida.push((r.endereco, apresentar(&pf.segredo, &par.publica, carimbo)));
+                    saida.push((endereco, apresentar(&segredo, &par.publica, carimbo)));
                 }
                 Fase::Pedindo { carimbo, desde } => {
                     if desde.elapsed() >= PRAZO_PEDIDO {
                         par.furo.fase = Fase::Esperando {
                             ate: Instant::now() + RETENTAR,
                         };
-                    } else {
-                        saida.push((r.endereco, apresentar(&pf.segredo, &par.publica, carimbo)));
+                    } else if let Some((endereco, segredo)) = rele {
+                        saida.push((endereco, apresentar(&segredo, &par.publica, carimbo)));
                     }
                 }
                 Fase::Sondando { alvo, enviadas } => {
@@ -418,11 +430,9 @@ impl No {
     /// Chegou uma APRESENTACAO do endereco do repasse. So vale a que abre
     /// com o segredo e casa com o pedido em aberto; entao sai a primeira
     /// sonda, ja.
-    pub(super) fn apresentado(&self, dado: &[u8]) {
-        let Some(pf) = &self.perfurador else {
-            return;
-        };
-        let Some((chave, alvo, carimbo)) = abrir_apresentacao(&pf.segredo, dado) else {
+    /// `segredo`: o do intermediario de onde ela veio (repasse ou farol).
+    pub(super) fn apresentado(&self, dado: &[u8], segredo: &[u8; 32]) {
+        let Some((chave, alvo, carimbo)) = abrir_apresentacao(segredo, dado) else {
             return;
         };
         let mut e = self.estado.lock().expect("estado");

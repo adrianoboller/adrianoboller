@@ -952,6 +952,7 @@ mod testes {
                     chave: chave_intrusa,
                     ip: "10.78.5.9".parse().unwrap(),
                     nome: None,
+                    farol: None,
                 },
                 &privada_a,
             )

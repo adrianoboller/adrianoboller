@@ -344,6 +344,7 @@ pub fn p2p_criar(o: &Opcoes) -> R<String> {
             chave: phxsql_core::x25519::chave_publica(&privada),
             ip: r.ip,
             nome: r.apelido.clone(),
+            farol: None,
         },
         &privada,
     )?);
@@ -471,6 +472,88 @@ pub fn p2p_remover(o: &Opcoes) -> R<String> {
         membro.ip,
         r.nome,
         r.rol.as_ref().map_or(0, |x| x.membros.len())
+    ))
+}
+
+/// `p2p farol --rede NOME --ip IP --endereco IP:PORTA [--tirar]`.
+///
+/// No DONO, assina um rol novo com o farol daquele membro marcado (ou
+/// desmarcado com `--tirar`) -- a autoridade. No proprio membro (dono ou
+/// nao), grava `"farol": true` no arquivo dele -- o consentimento. As duas
+/// metades sao o mesmo comando para ninguem precisar lembrar de duas.
+pub fn p2p_farol(o: &Opcoes) -> R<String> {
+    use crate::rede_p2p::Rede;
+    let caminho = arquivo_da_rede(o)?;
+    let mut r = Rede::ler(&caminho)?;
+    let privada = identidade(o.um("chave").unwrap_or("p2p.chave"))?;
+    let minha = phxsql_core::x25519::chave_publica(&privada);
+    if r.dono.is_none() {
+        return Err(
+            "rede sem rol assinado (criada antes dele): o farol mora no rol -- \
+             crie a rede de novo"
+                .into(),
+        );
+    }
+    let tirar = o.tem("tirar");
+    let rol = r.rol.clone().ok_or("rede sem rol no arquivo")?;
+    let alvo = o.um("ip").or(o.posicionais.first().map(String::as_str));
+    let membro = match alvo {
+        Some(a) => rol
+            .membros
+            .iter()
+            .find(|m| m.ip.to_string() == a || para_hex(&m.chave) == a.to_lowercase())
+            .ok_or("informe --ip IP_VIRTUAL (ou a chave publica) de um membro do rol")?
+            .clone(),
+        None => rol
+            .membro(&minha)
+            .ok_or("este computador nao esta no rol; informe --ip")?
+            .clone(),
+    };
+    let dono = crate::rol::publica_do_dono(&privada, &r.nome) == r.dono.unwrap_or_default();
+    let eu = membro.chave == minha;
+    if !dono && !eu {
+        return Err("so o dono marca o farol de outro membro (o rol e assinado por ele)".into());
+    }
+    let mut feito = Vec::new();
+    if dono {
+        let endereco = if tirar {
+            None
+        } else {
+            let e = o
+                .um("endereco")
+                .ok_or("informe --endereco IP_PUBLICO:PORTA (o que os outros alcancam)")?;
+            // IP literal: o endereco vai assinado no rol, e um nome
+            // resolvido depois poderia apontar para outro lugar.
+            Some(
+                e.parse::<std::net::SocketAddr>()
+                    .map_err(|_| "--endereco no formato IP:PORTA (sem nome de host)")?,
+            )
+        };
+        let novo = rol.com_farol(&membro.chave, endereco, &privada)?;
+        feito.push(format!("rol versao {}", novo.versao));
+        r.rol = Some(novo);
+    }
+    if eu {
+        r.farol = !tirar;
+        feito.push(if tirar {
+            "este computador nao serve mais".into()
+        } else {
+            "este computador aceita servir".to_string()
+        });
+    }
+    r.gravar(&caminho)?;
+    let aviso = if dono && !eu && !tirar {
+        " -- no computador dele: p2p farol --rede NOME (ou ligar com --farol)"
+    } else if !dono && !tirar {
+        " -- falta o dono marcar no rol (p2p farol no computador dele)"
+    } else {
+        ""
+    };
+    Ok(format!(
+        "farol de {} {}: {}{aviso}",
+        membro.ip,
+        if tirar { "tirado" } else { "marcado" },
+        feito.join("; ")
     ))
 }
 
@@ -746,9 +829,28 @@ pub fn p2p_montar(
         .map_err(|e| format!("porta UDP {porta}: {e}"))?;
     let tem_repasse = repasse.is_some();
     let descoberta = !o.tem("sem-descoberta") && rede.as_ref().map_or(true, |r| r.descoberta);
-    let mut no = p2p::No::novo(privada, psk, ip, udp, pares)
-        .com_repasse(modo, repasse)?
-        .com_descoberta(descoberta);
+    // Rede de rol assinado pode ter farol no rol (ou vir a ter): o `auto` e
+    // o `repasse` sem `--repasse` valem nela -- o intermediario e o farol.
+    // O convidado ainda nao tem o rol na primeira vez que liga, entao a
+    // conferencia e «rede assinada», nao «ha farol agora».
+    let so_farol = modo != p2p::Modo::Direto
+        && repasse.is_none()
+        && rede.as_ref().is_some_and(|r| r.dono.is_some());
+    let servir = o.tem("farol") || rede.as_ref().is_some_and(|r| r.farol);
+    let mbit = o
+        .um("farol-mbit")
+        .map(|t| t.parse::<u32>().ok().filter(|m| *m > 0))
+        .map(|m| m.ok_or("--farol-mbit: inteiro positivo (Mbit/s)"))
+        .transpose()?;
+    let mut no = p2p::No::novo(privada, psk, ip, udp, pares);
+    no = if so_farol {
+        no.com_repasse(p2p::Modo::Direto, None)?
+            .com_modo_so_farol(modo)
+    } else {
+        no.com_repasse(modo, repasse)?
+    }
+    .com_descoberta(descoberta)
+    .com_farol(servir, mbit);
     if o.tem("sem-perfuracao") {
         no = no.sem_perfuracao();
     }

@@ -349,6 +349,26 @@ impl Repasse {
         x25519::chave_publica(&self.privada)
     }
 
+    /// Troca a lista de permitidas (o farol a segue do rol) e tira da
+    /// tabela quem saiu dela: o `PARA` so confere o destino, entao sem essa
+    /// limpeza um membro removido do rol ainda repassaria ate o registro
+    /// dele vencer (60 s).
+    pub fn trocar_permitidas(&mut self, permitidas: HashSet<[u8; 32]>) {
+        self.nos.retain(|k, _| permitidas.contains(k));
+        let nos = &self.nos;
+        self.por_endereco.retain(|_, k| nos.contains_key(k));
+        self.permitidas = Some(permitidas);
+    }
+
+    /// `de` e o endereco de um no registrado e vivo? O farol pergunta antes
+    /// de gastar balde de banda com ele: endereco forjado nao cria entrada.
+    pub fn registrado(&self, de: Ponta) -> bool {
+        self.por_endereco
+            .get(&de)
+            .and_then(|k| self.vivo(k))
+            .is_some_and(|r| r.endereco == de)
+    }
+
     fn permitida(&self, k: &[u8; 32]) -> bool {
         self.permitidas.as_ref().map_or(true, |l| l.contains(k))
     }
@@ -718,6 +738,31 @@ mod testes {
             .unwrap()
             .contains("senha-do-repasse"));
         let _ = std::fs::remove_file(c);
+    }
+
+    /// Quem sai da lista (o membro removido do rol, no farol) para de
+    /// repassar NA HORA -- nao 60 s depois, quando o registro venceria.
+    #[test]
+    fn trocar_permitidas_tira_quem_saiu() {
+        let (a, b) = (x25519::gerar_privada(), x25519::gerar_privada());
+        let (pa, pb) = (x25519::chave_publica(&a), x25519::chave_publica(&b));
+        let mut r = Repasse::novo(
+            x25519::gerar_privada(),
+            Some([pa, pb].into_iter().collect()),
+        );
+        r.tratar(
+            &registro(&a, &r.publica(), carimbo(1), None).unwrap(),
+            end(1),
+        );
+        r.tratar(
+            &registro(&b, &r.publica(), carimbo(1), None).unwrap(),
+            end(2),
+        );
+        assert!(r.tratar(&embrulhar_para(&pb, b"x"), end(1)).is_some());
+        assert!(r.registrado(Ponta::Udp(end(1))));
+        r.trocar_permitidas([pb].into_iter().collect());
+        assert!(!r.registrado(Ponta::Udp(end(1))));
+        assert!(r.tratar(&embrulhar_para(&pb, b"x"), end(1)).is_none());
     }
 
     #[test]

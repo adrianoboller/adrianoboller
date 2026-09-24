@@ -15,14 +15,16 @@
 //! senha da rede (a PSK). Um INICIO de chave desconhecida morre sem resposta:
 //! nao se confirma a um estranho que ha alguem escutando.
 //!
-//! # O que ainda NAO esta aqui
+//! # Onde mora o resto
 //!
-//! O farol (membro alcancavel que faz rele). A perfuracao de NAT mediada
-//! pelo repasse mora em `perfuracao.rs`; o rol assinado em `rol.rs` e a
+//! O farol (membro alcancavel que faz rele) mora em `farol.rs`. A perfuracao
+//! de NAT mediada pelo repasse mora em `perfuracao.rs`; o rol assinado em `rol.rs` e a
 //! descoberta na LAN em `descoberta.rs` -- aqui ficam so os ganchos
 //! (`receber_rol`, `aplicar_rol`, `sincronizar_rol`, `receber_anuncio`,
 //! `anunciar`).
 
+#[path = "farol.rs"]
+pub mod farol;
 #[path = "p2p_rol.rs"]
 mod ganchos_do_rol;
 #[path = "perfuracao.rs"]
@@ -274,6 +276,8 @@ pub struct No {
     rol_lido: Mutex<Option<Instant>>,
     /// `None` = descoberta desligada (e o anuncio morre no primeiro byte).
     descoberta: Mutex<Option<descoberta::Descoberta>>,
+    /// O papel de farol: o que este no serve e os farois que ele usa.
+    farois: Mutex<farol::Farois>,
 }
 
 fn indice_novo(indices: &HashMap<u32, usize>) -> u32 {
@@ -362,6 +366,7 @@ impl No {
             rol_aplicado: std::sync::atomic::AtomicU64::new(0),
             rol_lido: Mutex::new(None),
             descoberta: Mutex::new(None),
+            farois: Mutex::new(farol::Farois::default()),
         }
     }
 
@@ -568,6 +573,7 @@ impl No {
     /// Desliga a perfuracao de NAT (o `auto` volta a ser «direto ou repasse»).
     pub fn sem_perfuracao(mut self) -> No {
         self.perfurador = None;
+        self.farois.get_mut().expect("farol").perfurar = false;
         self
     }
 
@@ -612,7 +618,7 @@ impl No {
     fn mandar(&self, via: Via, chave_dele: &[u8; 32], pacote: &[u8]) {
         match via {
             Via::Direta(a) => self.enviar(a, pacote),
-            Via::Repasse => self.ao_repasse(&repasse::embrulhar_para(chave_dele, pacote)),
+            Via::Repasse => self.ao_rele(chave_dele, &repasse::embrulhar_para(chave_dele, pacote)),
         }
     }
 
@@ -738,6 +744,9 @@ impl No {
                 return self.da_repasse(dado);
             }
         }
+        if let Some(ip) = self.farol_da_rede(dado, de) {
+            return ip;
+        }
         self.despachar(dado, Via::Direta(de), None)
     }
 
@@ -747,10 +756,13 @@ impl No {
             return None;
         }
         if dado.first() == Some(&perfuracao::TIPO_APRESENTACAO) {
-            self.apresentado(dado);
+            if let Some(pf) = self.perfurador {
+                self.apresentado(dado, &pf.segredo);
+            }
             return None;
         }
         let (origem, dentro) = repasse::desembrulhar_de(dado)?;
+        self.ouvido_pelo_externo(origem);
         self.despachar(dentro, Via::Repasse, Some(origem))
     }
 
@@ -865,6 +877,7 @@ impl No {
                                     chave: chamada.estatica_dele,
                                     ip,
                                     nome,
+                                    farol: None,
                                 },
                                 &self.privada,
                             )
@@ -1139,6 +1152,7 @@ impl No {
             f.vigiar(&self.udp);
         }
         self.registrar_no_repasse();
+        self.farol_tique();
         self.anunciar();
         // Fio novo ate o repasse: o aperto pendente foi pelo fio velho e se
         // perdeu; refaz agora (o REGISTRO acabou de sair antes, pelo mesmo
@@ -1354,8 +1368,9 @@ impl No {
             .map(|p| {
                 let via = match p.via {
                     Some(Via::Direta(a)) => format!("direto {a}"),
-                    Some(Via::Repasse) => match &self.fio {
-                        Some(f) if f.no_tcp() => format!("repasse ({})", f.descricao()),
+                    Some(Via::Repasse) => match (&self.fio, self.descrever_rele(&p.publica)) {
+                        (_, Some(farol)) => farol,
+                        (Some(f), None) if f.no_tcp() => format!("repasse ({})", f.descricao()),
                         _ => "repasse".into(),
                     },
                     None => "-".into(),

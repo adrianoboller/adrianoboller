@@ -35,14 +35,24 @@
 //!   n x ( chave X25519 32 | IPv4 4 | u8 len(nome) | nome ) | assinatura 64
 //! ```
 //!
+//! Com algum membro marcado FAROL (ver `farol.rs`), o rotulo vira
+//! `"phxvpn-rol-v2"` e cada membro ganha, depois do nome, `u8 farol` e --
+//! quando 1 -- o endereco publico dele (`familia:1 ip:16 porta:2`, o mesmo
+//! desenho da APRESENTACAO). Sem farol nenhum, sai o v1 byte a byte: rede
+//! que nao usa farol continua legivel por quem nao conhece o v2.
+//!
 //! Tudo big-endian. Binario e nao JSON de proposito: o que se assina tem de
 //! ter UMA forma so, e JSON tem muitas (espacos, ordem das chaves, escape).
 //! A mesma sequencia vai no tunel (controle `R`) e no arquivo (em hex).
 
 use phxsql_core::ed25519;
-use std::net::Ipv4Addr;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
 const ROTULO: &[u8] = b"phxvpn-rol-v1";
+/// O rol com farol: o rotulo muda para que um no que so conhece o v1 recuse
+/// o rol inteiro, em vez de ler o byte do farol como o comeco do proximo
+/// membro.
+const ROTULO_V2: &[u8] = b"phxvpn-rol-v2";
 /// O mesmo teto de pares aprendidos da malha.
 pub const TETO_MEMBROS: usize = 1024;
 /// Nome de membro e apelido, nao ficha cadastral.
@@ -56,6 +66,11 @@ pub struct Membro {
     /// se apresentar com o IP de outro e o roteamento pela chave cairia.
     pub ip: Ipv4Addr,
     pub nome: Option<String>,
+    /// Endereco publico em que este membro serve de FAROL para os outros
+    /// (ver `farol.rs`). Mora no rol, e nao no arquivo de cada um, porque
+    /// quem marca e o dono: membro que se autodeclarasse farol atrairia o
+    /// trafego (cifrado, mas desviado) dos outros.
+    pub farol: Option<SocketAddr>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -78,8 +93,37 @@ pub fn publica_do_dono(identidade: &[u8; 32], rede: &str) -> [u8; 32] {
     ed25519::chave_publica(&privada_do_dono(identidade, rede))
 }
 
+fn endereco_em_bytes(a: SocketAddr) -> [u8; 19] {
+    let mut b = [0u8; 19];
+    match a.ip() {
+        IpAddr::V4(v) => {
+            b[0] = 4;
+            b[1..5].copy_from_slice(&v.octets());
+        }
+        IpAddr::V6(v) => {
+            b[0] = 6;
+            b[1..17].copy_from_slice(&v.octets());
+        }
+    }
+    b[17..].copy_from_slice(&a.port().to_be_bytes());
+    b
+}
+
+/// O inverso; so a forma canonica (IPv4 com o resto zerado) passa, para
+/// que o mesmo rol nao tenha duas sequencias assinaveis.
+fn endereco_de_bytes(b: &[u8]) -> Option<SocketAddr> {
+    let porta = u16::from_be_bytes([b[17], b[18]]);
+    let ip = match b[0] {
+        4 if b[5..17].iter().all(|x| *x == 0) => IpAddr::V4(Ipv4Addr::new(b[1], b[2], b[3], b[4])),
+        6 => IpAddr::V6(Ipv6Addr::from(<[u8; 16]>::try_from(&b[1..17]).ok()?)),
+        _ => return None,
+    };
+    (porta != 0).then_some(SocketAddr::new(ip, porta))
+}
+
 fn corpo(rede: &str, versao: u64, membros: &[Membro]) -> Vec<u8> {
-    let mut b = ROTULO.to_vec();
+    let v2 = membros.iter().any(|m| m.farol.is_some());
+    let mut b = if v2 { ROTULO_V2 } else { ROTULO }.to_vec();
     b.extend_from_slice(&(rede.len() as u16).to_be_bytes());
     b.extend_from_slice(rede.as_bytes());
     b.extend_from_slice(&versao.to_be_bytes());
@@ -90,6 +134,15 @@ fn corpo(rede: &str, versao: u64, membros: &[Membro]) -> Vec<u8> {
         let nome = m.nome.as_deref().unwrap_or("");
         b.push(nome.len() as u8);
         b.extend_from_slice(nome.as_bytes());
+        if v2 {
+            match m.farol {
+                Some(a) => {
+                    b.push(1);
+                    b.extend_from_slice(&endereco_em_bytes(a));
+                }
+                None => b.push(0),
+            }
+        }
     }
     b
 }
@@ -177,6 +230,35 @@ impl Rol {
         )
     }
 
+    /// Rol novo com o farol do membro `chave` marcado em `endereco` (ou
+    /// desmarcado, com `None`). So o dono assina.
+    pub fn com_farol(
+        &self,
+        chave: &[u8; 32],
+        endereco: Option<SocketAddr>,
+        identidade: &[u8; 32],
+    ) -> Result<Rol, String> {
+        let mut membros = self.membros.clone();
+        let m = membros
+            .iter_mut()
+            .find(|m| m.chave == *chave)
+            .ok_or("essa chave nao esta no rol")?;
+        m.farol = endereco;
+        Rol::assinar(
+            &self.rede,
+            proxima_versao(self.versao),
+            membros,
+            &privada_do_dono(identidade, &self.rede),
+        )
+    }
+
+    /// Os farois do rol: (chave, endereco publico).
+    pub fn farois(&self) -> impl Iterator<Item = ([u8; 32], SocketAddr)> + '_ {
+        self.membros
+            .iter()
+            .filter_map(|m| m.farol.map(|a| (m.chave, a)))
+    }
+
     pub fn membro(&self, chave: &[u8; 32]) -> Option<&Membro> {
         self.membros.iter().find(|m| m.chave == *chave)
     }
@@ -190,7 +272,10 @@ impl Rol {
     /// So desmonta; quem decide se vale e `conferir` / `avaliar`. Nunca entra
     /// em panico: o dado vem da rede.
     pub fn de_bytes(b: &[u8]) -> Option<Rol> {
-        let mut p = b.strip_prefix(ROTULO)?;
+        let (mut p, v2) = match b.strip_prefix(ROTULO) {
+            Some(p) => (p, false),
+            None => (b.strip_prefix(ROTULO_V2)?, true),
+        };
         let mut tomar = |n: usize| -> Option<&[u8]> {
             let (a, r) = (p.get(..n)?, p.get(n..)?);
             p = r;
@@ -208,14 +293,29 @@ impl Rol {
             let chave: [u8; 32] = tomar(32)?.try_into().ok()?;
             let ip: [u8; 4] = tomar(4)?.try_into().ok()?;
             let n_nome = *tomar(1)?.first()? as usize;
-            let nome = std::str::from_utf8(tomar(n_nome)?).ok()?;
+            let nome = std::str::from_utf8(tomar(n_nome)?).ok()?.to_string();
+            let farol = if v2 {
+                match *tomar(1)?.first()? {
+                    0 => None,
+                    1 => Some(endereco_de_bytes(tomar(19)?)?),
+                    _ => return None,
+                }
+            } else {
+                None
+            };
             membros.push(Membro {
                 chave,
                 ip: Ipv4Addr::from(ip),
-                nome: (!nome.is_empty()).then(|| nome.to_string()),
+                nome: (!nome.is_empty()).then_some(nome),
+                farol,
             });
         }
         let assinatura: [u8; 64] = tomar(64)?.try_into().ok()?;
+        // v2 sem farol nenhum nao tem forma canonica (o mesmo rol sai v1):
+        // aceita-lo daria duas sequencias para o mesmo conteudo assinado.
+        if v2 && membros.iter().all(|m| m.farol.is_none()) {
+            return None;
+        }
         if !p.is_empty() || validar(&membros).is_err() {
             return None;
         }
@@ -276,6 +376,7 @@ mod testes {
             chave: [n; 32],
             ip: Ipv4Addr::new(10, 78, 0, n),
             nome: (n == 1).then(|| "matriz".to_string()),
+            farol: None,
         }
     }
 
@@ -375,6 +476,46 @@ mod testes {
         }
         let (_, _, r) = base();
         let b = r.para_bytes();
+        for corte in 0..b.len() {
+            assert!(Rol::de_bytes(&b[..corte]).is_none());
+        }
+    }
+
+    /// Farol marcado: v2 faz ida e volta, a assinatura cobre o endereco
+    /// (trocar a porta do farol derruba o rol), e tirar o farol volta ao v1.
+    #[test]
+    fn farol_no_rol_e_assinado_e_volta_ao_v1_sem_ele() {
+        let (identidade, dono, r) = base();
+        let a: SocketAddr = "203.0.113.10:51820".parse().unwrap();
+        let com = r.com_farol(&[1; 32], Some(a), &identidade).unwrap();
+        let b = com.para_bytes();
+        assert!(b.starts_with(ROTULO_V2));
+        assert_eq!(Rol::de_bytes(&b).unwrap(), com);
+        assert_eq!(com.farois().collect::<Vec<_>>(), vec![([1; 32], a)]);
+        assert!(matches!(
+            avaliar(&b, &dono, "R", r.versao),
+            Veredito::Novo(_)
+        ));
+        // A porta do farol esta no corpo assinado: desviar o farol nao passa.
+        let fim = b.len() - 64;
+        let pos = b[..fim]
+            .windows(2)
+            .rposition(|w| w == 51820u16.to_be_bytes())
+            .unwrap();
+        let mut desviado = b.clone();
+        desviado[pos + 1] ^= 1;
+        assert_eq!(avaliar(&desviado, &dono, "R", 0), Veredito::Invalido);
+        // Um membro qualquer nao se marca: a assinatura nao e do dono.
+        let mut m = com.membros.clone();
+        m[1].farol = Some(a);
+        let forjado = Rol::assinar("R", com.versao + 1, m, &[9; 32]).unwrap();
+        assert_eq!(
+            avaliar(&forjado.para_bytes(), &dono, "R", com.versao),
+            Veredito::Invalido
+        );
+        let sem = com.com_farol(&[1; 32], None, &identidade).unwrap();
+        assert!(sem.para_bytes().starts_with(ROTULO));
+        assert!(Rol::de_bytes(&sem.para_bytes()).is_some());
         for corte in 0..b.len() {
             assert!(Rol::de_bytes(&b[..corte]).is_none());
         }
