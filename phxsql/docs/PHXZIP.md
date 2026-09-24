@@ -105,6 +105,18 @@ Memória: a árvore custa 8 B por byte de janela (a cadeia custa 4 B). As
 cabeças da árvore custam 2 B por byte de janela, com teto de 16 MiB. As
 cabeças curtas ficam em no máximo 512 KiB.
 
+### 3c. Velocidade contra o 7-Zip, em gráfico
+
+O gráfico está na página de gráficos, na seção «PhxZip × 7-Zip». Ele sai de
+`bancada/phxzip/comparar-7z.json`, gerado pelo `bancada/phxzip/comparar-7z.py`.
+Não há número digitado aqui: o que o medidor achou em 24/09/2026 está no
+JSON, com a data. Em resumo:
+- **tamanho:** empate nos níveis 5 e 9, com razão de 1,000×;
+- **compactar:** o PhxZip é 1,3 a 1,5× mais lento nos níveis 5 e 9;
+- **descompactar:** o PhxZip é 1,1 a 1,5× mais lento.
+
+Esses são os dois próximos alvos de desempenho.
+
 ## 4. Decisões
 
 - **7z, e não ZIP; só o conjunto atual** — decisão do dono (450, 454). O

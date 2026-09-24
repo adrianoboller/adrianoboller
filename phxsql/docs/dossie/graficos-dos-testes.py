@@ -90,10 +90,14 @@ def cruzam(a, b):
 
 
 def barras(titulo, sub, series, unidade, casas=0, menor_e_melhor=False,
-           faixas=None, vencedor=True):
+           faixas=None, vencedor=True, pares=False):
     """Um grupo de barras horizontais.
 
     `series`: [(rotulo, valor), ...]. `faixas`: {rotulo: (min, max)} ou None.
+    `pares`: a serie vem em DUPLAS que se comparam entre si (nivel 1 do
+    PhxZip contra nivel 1 do 7-Zip, ...): a cor e a do lado da dupla, e o
+    vencedor se decide DENTRO de cada dupla -- declarar um campeao so entre
+    seis barras compararia o nivel 1 de um com o nivel 9 do outro.
     O SVG e' proporcional: `viewBox` fixo e largura 100%, entao ele acompanha
     a coluna em vez de estourar no celular.
     """
@@ -122,18 +126,35 @@ def barras(titulo, sub, series, unidade, casas=0, menor_e_melhor=False,
     esq = max(168, 10 + round(7.3 * max(len(r) for r, _ in series)))
 
     # Quem vence: o melhor valor cuja faixa nao cruza a de ninguem.
-    campeao = None
-    if vencedor and len(validos) > 1:
-        ordenados = sorted(validos, key=lambda x: x[1], reverse=not menor_e_melhor)
+    def vence(grupo):
+        grupo = [(r, v) for r, v in grupo if isinstance(v, (int, float))]
+        if len(grupo) < 2:
+            return None
+        ordenados = sorted(grupo, key=lambda x: x[1], reverse=not menor_e_melhor)
         primeiro, segundo = ordenados[0], ordenados[1]
+        if primeiro[1] == segundo[1]:
+            return None
         f = faixas or {}
         if not cruzam(f.get(primeiro[0]), f.get(segundo[0])):
-            campeao = primeiro[0]
+            return primeiro[0]
+        return None
+
+    campeoes = set()
+    if vencedor and pares:
+        for k in range(0, len(series) - 1, 2):
+            c = vence(series[k:k + 2])
+            if c:
+                campeoes.add(c)
+    elif vencedor:
+        c = vence(validos)
+        if c:
+            campeoes.add(c)
+    cor_de = (lambda i: CORES[i % 2]) if pares else (lambda i: CORES[i % len(CORES)])
 
     corpo = []
     for i, (rot, val) in enumerate(series):
         y = topo + i * (alt_l + gap)
-        cor = CORES[i % len(CORES)]
+        cor = cor_de(i)
         if not isinstance(val, (int, float)):
             corpo.append(
                 f'<text x="{esq - 10}" y="{y + 20}" text-anchor="end" '
@@ -141,7 +162,7 @@ def barras(titulo, sub, series, unidade, casas=0, menor_e_melhor=False,
                 f'<text x="{esq + 6}" y="{y + 20}" class="vazio">não medido</text>')
             continue
         w = max(2, (val / maior) * (larg - esq - margem))
-        marca = ' class="campeao"' if rot == campeao else ""
+        marca = ' class="campeao"' if rot in campeoes else ""
         # Onde o numero pode ser escrito: DEPOIS do que estiver mais a direita.
         # A barra e' a mediana e o traco vai ate o max, entao escrever em
         # `esq + w` poe o numero em cima da linha -- e um numero riscado no
@@ -179,13 +200,13 @@ def barras(titulo, sub, series, unidade, casas=0, menor_e_melhor=False,
     for i, (rot, val) in enumerate(series):
         y = e_topo + i * (e_rot + e_alt + e_gap)
         yb = y + e_rot
-        cor = CORES[i % len(CORES)]
+        cor = cor_de(i)
         estreito.append(f'<text x="0" y="{y + 11}" class="rot">{esc(rot)}</text>')
         if not isinstance(val, (int, float)):
             estreito.append(f'<text x="0" y="{yb + 15}" class="vazio">não medido</text>')
             continue
         w = max(2, (val / maior) * (e_larg - e_margem))
-        marca = ' class="campeao"' if rot == campeao else ""
+        marca = ' class="campeao"' if rot in campeoes else ""
         fim = w
         estreito.append(
             f'<rect x="0" y="{yb}" width="{w:.1f}" height="{e_alt}" rx="3" '
@@ -462,6 +483,73 @@ def g_registro():
     return out, (q, False)
 
 
+def g_phxzip():
+    """PhxZip contra o 7-Zip: tamanho e tempo, nivel a nivel.
+
+    Tudo sai do `bancada/phxzip/comparar-7z.json`. Trabalho igual: o 7-Zip
+    num fio e sem o filtro BCJ (`-mf=off -mmt=1`), os dois descompactando
+    para pasta; e o arquivo do PhxZip so conta depois de o 7-Zip abri-lo com
+    o conteudo igual (o medidor recusa se nao abrir).
+    """
+    d, p = ler("bancada/phxzip/comparar-7z.json")
+    if not d:
+        return ['<div class="ausente-bloco">PhxZip × 7-Zip — <b>não medido</b>. '
+                'Rode <code>python3 bancada/phxzip/comparar-7z.py</code>.</div>'], ("—", False)
+    q = quando(p, d)
+    out = []
+    nomes = {"texto": "Texto", "misto": "Texto + imagem + executável"}
+    for corpo, c in d.get("corpos", {}).items():
+        niveis = c.get("niveis", {})
+        arquivos = ", ".join(a["nome"] for a in c.get("arquivos", []))
+
+        def serie(chave):
+            s, f = [], {}
+            for n, m in niveis.items():
+                for quem, rot in (("phxzip", "PhxZip"), ("7zip", "7-Zip")):
+                    r = f"nível {n} · {rot}"
+                    v = m.get(quem, {}).get(chave)
+                    if isinstance(v, dict):
+                        s.append((r, v.get("mediana")))
+                        f[r] = (v.get("min"), v.get("max"))
+                    else:
+                        s.append((r, v))
+            return s, f
+
+        def razoes(chave, sub=None):
+            partes = []
+            for n, m in niveis.items():
+                a, b = m.get("phxzip", {}).get(chave), m.get("7zip", {}).get(chave)
+                if sub:
+                    a, b = (a or {}).get(sub), (b or {}).get(sub)
+                if isinstance(a, (int, float)) and isinstance(b, (int, float)) and b:
+                    partes.append(f"nível {n}: <b>{num(a / b, 3)}×</b>")
+            return " · ".join(partes)
+
+        titulo = f"{nomes.get(corpo, corpo)} — {num(c.get('bytes'))} bytes"
+        s, _ = serie("bytes")
+        out.append(barras(
+            f"{titulo}: tamanho do .7z", f"{esc(arquivos)}. PhxZip ÷ 7-Zip: "
+            f"{razoes('bytes')} (abaixo de 1 = o PhxZip gera menor).",
+            s, "bytes (menor é melhor)", 0, menor_e_melhor=True, pares=True))
+        s, f = serie("compactar_s")
+        out.append(barras(
+            f"{titulo}: tempo para compactar", f"PhxZip ÷ 7-Zip: "
+            f"{razoes('compactar_s', 'mediana')} (acima de 1 = o PhxZip é mais lento).",
+            s, "segundos (menor é melhor)", 3, menor_e_melhor=True, faixas=f,
+            pares=True))
+        s, f = serie("descompactar_s")
+        out.append(barras(
+            f"{titulo}: tempo para descompactar", f"PhxZip ÷ 7-Zip: "
+            f"{razoes('descompactar_s', 'mediana')}.",
+            s, "segundos (menor é melhor)", 3, menor_e_melhor=True, faixas=f,
+            pares=True))
+    out.append(f'<p class="sub">{esc(d.get("sete_zip", ""))} · '
+               f'<code>{esc(d.get("comando_7z", ""))}</code> contra '
+               f'<code>{esc(d.get("comando_phxzip", ""))}</code> · '
+               f'{esc(d.get("maquina", ""))} · {d.get("corridas")} corridas por medida.</p>')
+    return out, q
+
+
 BLOCOS = [
     ("Os quatro motores, a um milhão de linhas", g_tres_motores,
      "bancada/comparacao/"),
@@ -472,6 +560,7 @@ BLOCOS = [
      "bancada/utilizacao-padrao/"),
     ("Carga pela rede — uma a uma contra o lote", g_carga, "bancada/carga/"),
     ("Replicação — quatro servidores", g_replicacao, "bancada/replicacao/"),
+    ("PhxZip × 7-Zip — tamanho e velocidade", g_phxzip, "bancada/phxzip/"),
 ]
 
 

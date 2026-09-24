@@ -53,9 +53,29 @@ tirou o pulo antes de versionar: prova de portabilidade que pula o teste
 vermelho prova menos do que diz. Teste que falha sob emulação se confere no
 x86_64 nativo antes de culpar o alvo.
 
+## PhxZip × 7-Zip: tamanho e velocidade
+
+`comparar-7z.py` mede o mesmo corpus nos dois, com trabalho igual:
+- o 7-Zip roda com `-mf=off` e `-mmt=1`, ou seja, sem o filtro BCJ e num fio
+  só, como o PhxZip;
+- os dois descompactam para uma pasta.
+
+São cinco corridas por medida, e o resultado guarda mediana, mínimo e
+máximo. O arquivo do PhxZip só conta depois de o `7z t` e o `7z x` o abrirem
+com o conteúdo igual. O resultado vai para `comparar-7z.json`, e o gráfico sai
+dali, pelo `docs/dossie/graficos-dos-testes.py`.
+
+```bash
+cargo build --release -p phxzip-cmd
+python3 bancada/phxzip/comparar-7z.py      # 5 corridas; passe outro número se quiser
+python3 docs/dossie/graficos-dos-testes.py
+```
+
 ## Arquivos
 
 | arquivo | o que e |
 |---|---|
 | `plataformas.sh` | a medicao: builda, roda (qemu/wine/nativo) e grava `resultados.json` |
 | `resultados.json` | tudo que foi medido, cru, com data e comando de cada alvo |
+| `comparar-7z.py` | PhxZip × 7-Zip: tamanho, tempo de compactar e de descompactar |
+| `comparar-7z.json` | o que ele mediu, com mediana/min/max, sha256 do corpus e data |
