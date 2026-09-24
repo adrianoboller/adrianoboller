@@ -1,0 +1,46 @@
+// Filial Sul (netns B): entra pelo convite, conversa, usa o pendrive da Matriz.
+import { abrir, espera, marca, pausa, clicar, digitar, legenda, D } from './comum.mjs';
+import fs from 'fs';
+await espera('codigo-b');
+const j = await abrir('b'); const p = j.p;
+await p.waitForSelector('.vazio');
+await j.cena('b1', 'Filial Sul: colar o código do convite e digitar a senha da rede.');
+await pausa(1500);
+await clicar(p, '#b-entrar');
+await clicar(p, '#f-entrar [name=codigo]'); await p.fill('#f-entrar [name=codigo]', fs.readFileSync(`${D}/codigo-b`, 'utf8'));
+await digitar(p, '#f-entrar [name=senha]', 'senha-da-matriz');
+await clicar(p, '#f-entrar button.inclui');
+await p.waitForSelector('.rede .nome'); await pausa(1500);
+await legenda(p, 'Ligar com «Lembrar a senha»: fica selada pelo sistema (DPAPI no Windows).');
+await clicar(p, '.rede .acoes button:has-text("Ligar")');
+await digitar(p, '#f-ligar [name=senha]', 'senha-da-matriz');
+await clicar(p, '#f-ligar [name=lembrar]');
+await clicar(p, '#f-ligar button.inclui');
+await p.waitForSelector('.lampada.on', { timeout: 30000 });
+await p.waitForSelector('.membro .ponto.on', { timeout: 60000 }); await pausa(2200);
+j.fim(); marca('b-ligada');
+
+await espera('a-falou');
+await p.waitForSelector('.membro button.novo', { timeout: 30000 });
+await j.cena('b2', 'Na Filial a mensagem chega, e a resposta volta pelo mesmo túnel.');
+await pausa(1500);
+await clicar(p, '.membro button:has-text("Chat")');
+await digitar(p, '#f-chat [name=texto]', 'Tudo certo! Já vejo o servidor da Matriz.', 40);
+await clicar(p, '#f-chat button.inclui'); await pausa(1800);
+await clicar(p, '#d-chat [data-fechar]');
+j.fim(); marca('b-respondeu');
+
+await espera('kernel-bind');
+await j.cena('b3', 'A Filial vê o pendrive da Matriz e o usa como se estivesse espetado nela.');
+await clicar(p, '.rede .acoes button:has-text("USB")');
+await clicar(p, '#usb-membros button:has-text("Ver USB")');
+await p.waitForSelector('#usb-membros .usb-sub .usb-linha', { timeout: 20000 }); await pausa(2000);
+await clicar(p, '#usb-membros button:has-text("Usar")');
+await p.waitForFunction(() => /anexado/.test(document.querySelector('#rodape').textContent), null, { timeout: 20000 });
+marca('b-anexou'); await espera('kernel-attach');
+await clicar(p, '#d-usb [data-fechar]'); await clicar(p, '.rede .acoes button:has-text("USB")');
+await p.waitForSelector('#usb-portas button:has-text("Soltar")'); await pausa(3000);
+await clicar(p, '#d-usb [data-fechar]');
+j.fim(); marca('b-usou');
+await espera('fim-a', 300000);
+await j.fechar();

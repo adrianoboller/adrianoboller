@@ -14,8 +14,14 @@ header h1{font-size:18px;margin:0;letter-spacing:.5px}
 header h1 b{color:var(--acento)}
 header .sub{color:var(--fraco);font-size:13px}
 header .dir{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-main{max-width:980px;margin:0 auto;padding:16px}
-.cartao{background:var(--painel);border:1px solid var(--linha);border-radius:10px;padding:16px;margin-bottom:16px}
+main{max-width:1400px;margin:0 auto;padding:clamp(10px,2.5vw,24px);display:grid;gap:16px;grid-template-columns:minmax(0,1fr)}
+/* As redes em GRADE: uma coluna no celular, varias no monitor largo. */
+#lista-redes{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:10px;align-items:start}
+#lista-redes .vazio{grid-column:1/-1}
+/* Tabela larga no celular rola DENTRO de si, nunca a pagina inteira. */
+.rolagem{overflow-x:auto;-webkit-overflow-scrolling:touch}
+@media (max-width:560px){ header .dir{margin-left:0;width:100%} header .dir button{flex:1 1 auto} }
+.cartao{background:var(--painel);border:1px solid var(--linha);border-radius:10px;padding:16px;min-width:0}
 .cartao h2{margin:0 0 12px;font-size:16px}
 fieldset{border:1px solid var(--linha);border-radius:8px;margin:0 0 12px;padding:10px 12px}
 legend{color:var(--ambar);font-size:13px;padding:0 6px}
@@ -32,13 +38,13 @@ button.altera{border-color:var(--amarelo);color:var(--amarelo)}button.altera:hov
 button.exclui{border-color:var(--vermelho);color:var(--vermelho)}button.exclui:hover{background:var(--vermelho);color:var(--fundo)}
 .msg{min-height:20px;margin:8px 0 0;font-size:13px}
 .msg.erro{color:var(--vermelho)}.msg.ok{color:var(--verde)}
-.rede{border:1px solid var(--linha);border-radius:8px;margin-bottom:10px;overflow:hidden}
+.rede{border:1px solid var(--linha);border-radius:8px;overflow:hidden}
 .rede>.topo{display:flex;align-items:center;gap:10px;padding:10px 12px;background:#0d1630;flex-wrap:wrap}
 .rede .nome{font-weight:600}
 .rede .info{color:var(--fraco);font-size:12px}
 .rede .acoes{margin-left:auto;display:flex;gap:6px}
-.membro{display:flex;align-items:center;gap:10px;padding:6px 12px 6px 28px;border-top:1px solid var(--linha);font-size:14px}
-.membro .ip{margin-left:auto;font-family:ui-monospace,monospace;color:var(--ambar)}
+.membro{display:grid;grid-template-columns:10px minmax(0,1fr) auto;align-items:center;gap:10px;padding:6px 12px 6px 16px;border-top:1px solid var(--linha);font-size:14px}
+.membro .ip{font-family:ui-monospace,monospace;color:var(--ambar)}
 .ponto{width:9px;height:9px;border-radius:50%;border:1.5px solid var(--fraco)}
 .ponto.on{background:var(--verde);border-color:var(--verde)}
 .vazio{color:var(--fraco);padding:12px}
@@ -125,7 +131,7 @@ th{color:var(--fraco);font-weight:500;font-size:12px}
 
 <section class="cartao" id="tela-admin" hidden>
   <h2>Usuários</h2>
-  <table><thead><tr><th>Login</th><th>E-mail</th><th>Admin</th></tr></thead><tbody id="t-usuarios"></tbody></table>
+  <div class="rolagem"><table><thead><tr><th>Login</th><th>E-mail</th><th>Admin</th></tr></thead><tbody id="t-usuarios"></tbody></table></div>
   <form id="f-usuario"><div class="grade" style="margin-top:10px">
     <label class="campo"><span>Login</span><input name="login" required></label>
     <label class="campo"><span>Senha (mín. 8)</span><input name="senha" type="password" required minlength="8"></label>
@@ -133,7 +139,7 @@ th{color:var(--fraco);font-weight:500;font-size:12px}
   </div><div class="linha-botoes"><button class="inclui" type="submit">Incluir usuário</button></div>
   <p class="msg" id="m-usuario"></p></form>
   <h2 style="margin-top:18px">Servidores</h2>
-  <table><thead><tr><th>Nome</th><th>IP</th><th>DNS</th><th>Redes</th></tr></thead><tbody id="t-servidores"></tbody></table>
+  <div class="rolagem"><table><thead><tr><th>Nome</th><th>IP</th><th>DNS</th><th>Redes</th></tr></thead><tbody id="t-servidores"></tbody></table></div>
   <form id="f-servidor"><div class="grade" style="margin-top:10px">
     <label class="campo"><span>Nome</span><input name="nome" required></label>
     <label class="campo"><span>IP</span><input name="ip" required></label>

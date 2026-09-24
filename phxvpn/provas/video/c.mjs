@@ -1,0 +1,20 @@
+// Casa do diretor (netns C): entra e ja enxerga os dois -- a malha se forma sozinha.
+import { abrir, espera, marca, pausa, clicar, digitar, D } from './comum.mjs';
+import fs from 'fs';
+await espera('codigo-c');
+const j = await abrir('c'); const p = j.p;
+await p.waitForSelector('.vazio');
+await j.cena('c1', 'Casa do diretor: o mesmo gesto. E a malha se forma sozinha: ela já enxerga a Filial.');
+await clicar(p, '#b-entrar');
+await clicar(p, '#f-entrar [name=codigo]'); await p.fill('#f-entrar [name=codigo]', fs.readFileSync(`${D}/codigo-c`, 'utf8'));
+await digitar(p, '#f-entrar [name=senha]', 'senha-da-matriz');
+await clicar(p, '#f-entrar button.inclui'); await p.waitForSelector('.rede .nome');
+await clicar(p, '.rede .acoes button:has-text("Ligar")');
+await digitar(p, '#f-ligar [name=senha]', 'senha-da-matriz');
+await clicar(p, '#f-ligar button.inclui');
+await p.waitForSelector('.lampada.on', { timeout: 30000 });
+await p.waitForFunction(() => document.querySelectorAll('.membro .ponto.on').length >= 2, null, { timeout: 90000 });
+await pausa(3500);
+j.fim(); marca('c-ligada');
+await espera('fim-a', 300000);
+await j.fechar();

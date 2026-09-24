@@ -5,63 +5,100 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>phxvpn</title>
 <style>
-:root{--fundo:#010418;--painel:#0a1122;--linha:#1c2742;--texto:#DDE2EB;--fraco:#8a93a8;
---acento:#FF4D10;--ambar:#FFC43D;--verde:#3ecf8e;--vermelho:#ff5a5a;--azul:#5aa9ff}
+:root{--fundo:#010418;--painel:#0a1122;--painel2:#0d1630;--linha:#1c2742;--texto:#DDE2EB;--fraco:#8a93a8;
+--acento:#FF4D10;--ambar:#FFC43D;--verde:#3ecf8e;--vermelho:#ff5a5a;--azul:#5aa9ff;
+--raio:10px;--gutter:clamp(10px,2.5vw,24px)}
 *{box-sizing:border-box}
 html,body{height:100%}
-body{margin:0;background:var(--fundo);color:var(--texto);font:14px/1.4 "Exo 2",system-ui,-apple-system,"Segoe UI",sans-serif;display:flex;flex-direction:column}
-header{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--linha)}
-header h1{font-size:17px;margin:0}
+/* O esqueleto e uma GRADE de tres faixas: cabecalho, conteudo que rola, rodape. */
+body{margin:0;background:var(--fundo);color:var(--texto);font:14px/1.45 "Exo 2",system-ui,-apple-system,"Segoe UI",sans-serif;
+display:grid;grid-template-rows:auto 1fr auto;min-height:100vh;overflow-x:hidden}
+header{display:flex;align-items:center;gap:10px;padding:10px var(--gutter);border-bottom:1px solid var(--linha);flex-wrap:wrap}
+header h1{font-size:18px;margin:0;letter-spacing:.3px}
 header h1 b{color:var(--acento)}
-#minha-chave{margin-left:auto;font:11px ui-monospace,monospace;color:var(--fraco);cursor:pointer;border:1px solid var(--linha);border-radius:10px;padding:2px 8px}
-.barra{display:flex;gap:8px;padding:10px 14px;flex-wrap:wrap}
-button{font:inherit;cursor:pointer;background:transparent;border:1px solid var(--azul);color:var(--azul);border-radius:6px;padding:6px 11px}
+#minha-chave{margin-left:auto;font:11px ui-monospace,monospace;color:var(--fraco);cursor:pointer;border:1px solid var(--linha);border-radius:10px;padding:2px 8px;max-width:40vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+button{font:inherit;cursor:pointer;background:transparent;border:1px solid var(--azul);color:var(--azul);border-radius:6px;padding:6px 11px;white-space:nowrap}
 button:hover{background:var(--azul);color:var(--fundo)}
 button.inclui{border-color:var(--verde);color:var(--verde)}button.inclui:hover{background:var(--verde);color:var(--fundo)}
-button.exclui{border-color:var(--vermelho);color:var(--vermelho)}button.exclui:hover{background:var(--vermelho);color:var(--fundo)}
 button.altera{border-color:var(--ambar);color:var(--ambar)}button.altera:hover{background:var(--ambar);color:var(--fundo)}
+button.exclui{border-color:var(--vermelho);color:var(--vermelho)}button.exclui:hover{background:var(--vermelho);color:var(--fundo)}
 button:disabled{opacity:.5;cursor:wait}
-main{flex:1;overflow:auto;padding:0 14px 14px}
-.rede{border:1px solid var(--linha);border-radius:8px;margin-bottom:10px;background:var(--painel);overflow:hidden}
-.topo{display:flex;align-items:center;gap:8px;padding:8px 10px;flex-wrap:wrap}
-.lampada{width:10px;height:10px;border-radius:50%;border:1.5px solid var(--fraco);flex:none}
-.lampada.on{background:var(--verde);border-color:var(--verde)}
-.nome{font-weight:600}
-.info{color:var(--fraco);font-size:12px;width:100%;padding-left:18px}
-.acoes{margin-left:auto;display:flex;gap:6px}
+main{overflow:auto;padding:0 var(--gutter) var(--gutter);display:grid;grid-template-columns:minmax(0,1fr);align-content:start;gap:12px}
+/* Monitor largo: os indicadores viram coluna lateral e as redes ganham o resto. */
+@media (min-width:1100px){
+  main{grid-template-columns:240px minmax(0,1fr);grid-template-areas:"barra barra" "resumo lista";align-items:start}
+  .barra{grid-area:barra}.resumo{grid-area:resumo;grid-template-columns:1fr;position:sticky;top:12px}#lista{grid-area:lista}
+}
+.barra{display:flex;gap:8px;padding:12px 0 0;flex-wrap:wrap;align-items:center}
+/* Resumo: tantos indicadores quantos couberem, nunca espremidos abaixo de 140px. */
+.resumo{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
+.indicador{background:var(--painel);border:1px solid var(--linha);border-radius:var(--raio);padding:10px 12px;display:flex;flex-direction:column;gap:2px}
+.indicador b{font:600 22px/1.1 "Exo 2",system-ui,sans-serif}
+.indicador span{color:var(--fraco);font-size:12px}
+.indicador.on b{color:var(--verde)}
+/* As redes: uma coluna no celular, varias no monitor largo -- a largura extra
+   vira MAIS cartao, nunca linha mais comprida (licao do pedido 139). */
+#lista{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,400px),1fr));gap:12px;align-items:start}
+.rede{border:1px solid var(--linha);border-radius:var(--raio);background:var(--painel);overflow:hidden;container-type:inline-size;max-width:900px}
+.rede.ligada{border-color:color-mix(in srgb,var(--verde) 45%,var(--linha))}
+.topo{display:grid;grid-template-columns:auto minmax(0,1fr) auto;grid-template-areas:"lamp nome acoes" "info info info";gap:6px 8px;align-items:center;padding:10px 12px;background:var(--painel2)}
+.lampada{grid-area:lamp;width:10px;height:10px;border-radius:50%;border:1.5px solid var(--fraco)}
+.lampada.on{background:var(--verde);border-color:var(--verde);box-shadow:0 0 8px var(--verde)}
+.nome{grid-area:nome;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.acoes{grid-area:acoes;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
 .acoes button{padding:4px 9px;font-size:13px}
-.membro{display:flex;align-items:center;gap:8px;padding:5px 10px 5px 28px;border-top:1px solid var(--linha);font-size:13px}
-.membro .ip{font-family:ui-monospace,monospace;color:var(--ambar);cursor:pointer}
-.membro .caminho{color:var(--fraco);font-size:12px;margin-left:auto;text-align:right}
-.ponto{width:8px;height:8px;border-radius:50%;border:1.5px solid var(--fraco);flex:none}
+.info{grid-area:info;color:var(--fraco);font-size:12px}
+/* Cada membro e uma linha de GRADE; o cartao estreito empilha o caminho. */
+.membro{display:grid;grid-template-columns:10px minmax(0,auto) minmax(0,1fr) auto;grid-template-areas:"p ip chave botoes" ". cam cam cam";gap:2px 8px;align-items:center;padding:7px 12px;border-top:1px solid var(--linha);font-size:13px}
+.membro .ponto{grid-area:p}
+.membro .ip{grid-area:ip;font-family:ui-monospace,monospace;color:var(--ambar);cursor:pointer}
+.membro .chave{grid-area:chave;color:var(--fraco);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.membro .caminho{grid-area:cam;color:var(--fraco);font-size:12px}
+.membro .botoes{grid-area:botoes;display:flex;gap:6px}
+.membro .botoes button{padding:1px 8px;font-size:12px}
+@container (min-width:520px){
+  .membro{grid-template-columns:10px auto minmax(0,1fr) minmax(0,auto) auto;grid-template-areas:"p ip chave cam botoes"}
+  .membro .caminho{text-align:right}
+}
+@container (max-width:340px){
+  .topo{grid-template-areas:"lamp nome nome" "acoes acoes acoes" "info info info"}
+  .acoes{justify-content:flex-start}
+}
+.ponto{width:8px;height:8px;border-radius:50%;border:1.5px solid var(--fraco)}
 .ponto.on{background:var(--verde);border-color:var(--verde)}
-.membro button{padding:1px 7px;font-size:12px}
 .bolha{margin:4px 0;padding:5px 8px;border-radius:8px;max-width:85%;word-wrap:break-word;white-space:pre-wrap}
 .bolha.minha{margin-left:auto;border:1px solid var(--azul)}
 .bolha.dele{border:1px solid var(--linha)}
 .bolha small{display:block;color:var(--fraco);font-size:11px}
 .novo{color:var(--ambar);font-weight:600}
-.vazio{color:var(--fraco);padding:24px 6px;text-align:center}
-.rodape{padding:6px 14px;border-top:1px solid var(--linha);color:var(--fraco);font-size:12px;min-height:28px}
+.vazio{color:var(--fraco);padding:24px 6px;text-align:center;grid-column:1/-1}
+.rodape{padding:6px var(--gutter);border-top:1px solid var(--linha);color:var(--fraco);font-size:12px;min-height:28px}
 .rodape.erro{color:var(--vermelho)}.rodape.ok{color:var(--verde)}
-dialog{background:var(--painel);color:var(--texto);border:1px solid var(--linha);border-radius:10px;width:calc(100% - 32px);max-width:420px}
+dialog{background:var(--painel);color:var(--texto);border:1px solid var(--linha);border-radius:12px;width:calc(100% - 32px);max-width:440px;max-height:calc(100dvh - 32px);overflow:auto}
 dialog::backdrop{background:rgba(0,0,0,.6)}
 dialog h2{margin:0 0 10px;font-size:16px}
 dialog h3{margin:12px 0 4px;font-size:13px;color:var(--fraco);font-weight:600}
-#d-usb{max-width:600px}
-.usb-linha{display:flex;align-items:center;gap:8px;padding:5px 0;border-top:1px solid var(--linha);font-size:13px;flex-wrap:wrap}
-.usb-linha .desc{font-family:ui-monospace,monospace;font-size:12px;flex:1;min-width:0;word-break:break-word}
+#d-usb{max-width:640px}
+/* No celular o dialogo vira folha de tela cheia, com os botoes no pe. */
+@media (max-width:560px){
+  dialog{width:100%;max-width:none;height:100dvh;max-height:none;margin:0;border-radius:0;border:0}
+  dialog form{display:flex;flex-direction:column;min-height:100%}
+  dialog .linha-botoes{margin-top:auto;position:sticky;bottom:0;background:var(--painel);padding:10px 0}
+  #minha-chave{order:3;margin-left:0;max-width:100%}
+}
+.campo{display:flex;flex-direction:column;gap:3px;margin-bottom:8px}
+.campo span{font-size:12px;color:var(--fraco)}
+.campo input,.campo textarea,.campo select{width:100%;background:#050a1c;color:var(--texto);border:1px solid var(--linha);border-radius:6px;padding:8px;font:inherit}
+.campo textarea{min-height:90px;font:12px ui-monospace,monospace;word-break:break-all}
+.campo input:focus,.campo textarea:focus,.campo select:focus{outline:2px solid var(--acento);outline-offset:-1px}
+.linha-botoes{display:flex;gap:8px;justify-content:flex-end;margin-top:6px;flex-wrap:wrap}
+.msg{min-height:18px;font-size:12px;color:var(--vermelho)}
+.usb-linha{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:center;padding:6px 0;border-top:1px solid var(--linha);font-size:13px}
+.usb-linha .desc{font-family:ui-monospace,monospace;font-size:12px;overflow-wrap:anywhere}
 .usb-linha .marca{color:var(--ambar);font-size:11px}
 .usb-linha button{padding:2px 8px;font-size:12px}
 .usb-sub{padding-left:16px}
 .usb-vazio{color:var(--fraco);font-size:12px;padding:4px 0}
-.campo{display:flex;flex-direction:column;gap:3px;margin-bottom:8px}
-.campo span{font-size:12px;color:var(--fraco)}
-.campo input,.campo textarea,.campo select{width:100%;background:#050a1c;color:var(--texto);border:1px solid var(--linha);border-radius:6px;padding:7px;font:inherit}
-.campo textarea{min-height:90px;font:12px ui-monospace,monospace;word-break:break-all}
-.campo input:focus,.campo textarea:focus,.campo select:focus{outline:2px solid var(--acento);outline-offset:-1px}
-.linha-botoes{display:flex;gap:8px;justify-content:flex-end;margin-top:6px}
-.msg{min-height:18px;font-size:12px;color:var(--vermelho)}
 [hidden]{display:none!important}
 </style>
 </head>
@@ -71,11 +108,14 @@ dialog h3{margin:12px 0 4px;font-size:13px;color:var(--fraco);font-weight:600}
   <span id="minha-chave" title="Sua chave pública (clique para copiar)">…</span>
   <button id="b-config" title="Configuração" style="padding:3px 9px">Configuração</button>
 </header>
-<div class="barra">
-  <button class="inclui" id="b-criar">Criar rede</button>
-  <button id="b-entrar">Entrar na rede</button>
-</div>
-<main id="lista"></main>
+<main>
+  <div class="barra">
+    <button class="inclui" id="b-criar">Criar rede</button>
+    <button id="b-entrar">Entrar na rede</button>
+  </div>
+  <section class="resumo" id="resumo" aria-label="Resumo"></section>
+  <section id="lista"></section>
+</main>
 <div class="rodape" id="rodape"></div>
 
 <dialog id="d-criar"><form method="dialog" id="f-criar">

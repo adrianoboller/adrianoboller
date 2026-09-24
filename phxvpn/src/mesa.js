@@ -46,14 +46,33 @@ function desenhar(redes) {
   desenharTudo(redes);
 }
 
+// Resumo: os mesmos dados da lista, contados -- nada aqui e digitado.
+function desenharResumo(redes) {
+  const ligadas = redes.filter((r) => r.ligada);
+  const membros = redes.reduce((n, r) => n + r.membros.length, 0);
+  const conectados = ligadas.reduce((n, r) => n + r.membros.filter((m) => m.online).length, 0);
+  const caixa = $("resumo"); caixa.textContent = "";
+  for (const [valor, rotulo, on] of [
+    [redes.length, "redes neste computador", false],
+    [ligadas.length, "ligadas agora", ligadas.length > 0],
+    [membros, "membros conhecidos", false],
+    [conectados, "conectados agora", conectados > 0],
+  ]) {
+    const i = el("div", "indicador" + (on ? " on" : ""));
+    i.append(el("b", "", String(valor)), el("span", "", rotulo));
+    caixa.appendChild(i);
+  }
+}
+
 function desenharTudo(redes) {
+  desenharResumo(redes);
   const lista = $("lista"); lista.textContent = "";
   if (!redes.length) {
     lista.appendChild(el("div", "vazio", "Nenhuma rede ainda. Crie uma, ou entre numa com o código de convite."));
     return;
   }
   for (const r of redes) {
-    const bloco = el("div", "rede");
+    const bloco = el("div", "rede" + (r.ligada ? " ligada" : ""));
     const topo = el("div", "topo");
     const lamp = el("span", "lampada" + (r.ligada ? " on" : "")); lamp.title = r.ligada ? "ligada" : "desligada";
     const nome = el("span", "nome", r.rede); nome.style.cursor = "pointer";
@@ -79,7 +98,7 @@ function desenharTudo(redes) {
         const linha = el("div", "membro");
         const p = el("span", "ponto" + (m.online ? " on" : "")); p.title = m.online ? "conectado" : "sem sessão";
         const ip = el("span", "ip", m.ip); ip.title = "clique para copiar"; ip.onclick = () => copiar(m.ip, "IP " + m.ip);
-        const chave = el("span", "", m.chave); chave.style.color = "var(--fraco)"; chave.style.fontSize = "12px";
+        const chave = el("span", "chave", m.chave);
         const cam = el("span", "caminho", m.caminho === "-" ? m.sessao : `${m.caminho} · ${m.sessao}`);
         cam.dataset.k = r.rede + "|" + m.ip;
         linha.append(p, ip, chave, cam);
@@ -88,7 +107,8 @@ function desenharTudo(redes) {
           const bc = el("button", "", "Chat" + (naoLidas[r.rede + "|" + m.ip] ? ` (${naoLidas[r.rede + "|" + m.ip]})` : ""));
           if (naoLidas[r.rede + "|" + m.ip]) bc.classList.add("novo");
           bc.onclick = () => abrirChat(r.rede, m.ip);
-          linha.append(bp, bc);
+          const grupo = el("span", "botoes"); grupo.append(bp, bc);
+          linha.append(grupo);
         }
         bloco.appendChild(linha);
       }

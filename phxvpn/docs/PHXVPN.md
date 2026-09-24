@@ -47,6 +47,7 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [x] Serviço do sistema no Linux (`phxvpn servico instalar painel|repasse|p2p`), segredos como credencial CIFRADA do systemd, nunca texto puro
 - [x] Pacotes por roteiro (`empacotar.sh`): `.deb`, `.msi` e `.zip` — instalados e removidos de verdade (`dpkg`, `msiexec` do Wine)
 - [x] Serviço do Windows (SCM por FFI, reinício em 5 s, registro em arquivo), segredos em DPAPI da máquina num arquivo só de SYSTEM e Administradores
+- [x] Interface responsiva (CSS grid + flexbox + container queries) na janela e no painel — rolagem lateral zero medida em 390, 820, 1280, 1920 e 3440 px
 - [x] Segurança C2: sorteio falha fechado (descritor único; `BCryptGenRandom` no Windows) — nunca mais mistura previsível
 
 ### Falta
@@ -444,6 +445,44 @@ Onde vale:
   no passo 3b do `prova-windows.ps1`.
 - **O Wine não implementa herança**: arquivo novo nasce do `umask`. Por isso
   cada segredo recebe a própria ACL, sem depender da herança da pasta.
+
+## Interface responsiva e vídeo para investidor (24/09/2026)
+
+**Interface.** A janela e o painel foram refeitos em **CSS grid + flexbox**,
+com **container queries** dentro de cada cartão:
+- **o esqueleto** da janela é uma grade de três faixas: cabeçalho, conteúdo e
+  rodapé;
+- **as redes** ficam em grade `auto-fit`: uma coluna no celular, várias no
+  monitor, e cada cartão com teto de 900 px, para a largura extra virar mais
+  cartão e não linha mais comprida;
+- **um resumo** de indicadores em grade, contado dos mesmos dados da lista,
+  vira coluna lateral a partir de 1100 px;
+- **cada membro** é uma linha de grade, que empilha o caminho quando o
+  **cartão** (e não a janela) é estreito;
+- **no celular**, os diálogos viram folha de tela cheia;
+- **no painel**, as redes ficam em grade e a tabela larga rola por dentro,
+  sem empurrar a página.
+
+**Medido** (prévias 18 e 19): rolagem lateral **zero** em 390, 820, 1280,
+1920 e 3440 px, nas três telas do painel e na janela. Colunas da grade da
+janela: 1 → 1 → 2 → 3 → 7. Nenhum erro de página.
+
+**Vídeo** (`docs/video/phxvpn-investidor.mp4`, 3 min, 3,4 MB): refeito do
+zero por `sudo provas/video/gravar.sh`.
+- **O que se vê:** três computadores em `ip netns` (Matriz, Filial, Casa do
+  diretor), cada um com a sua janela e o túnel P2P **de verdade**. A Matriz
+  cria a rede e convida; a Filial entra e liga, lembrando a senha; os dois
+  fazem ping e chat; a Filial usa o pendrive da Matriz; a Casa entra e já
+  enxerga a Filial, porque a malha se forma sozinha.
+- **Como é montado:** cada janela é gravada contínua, com as cenas marcadas;
+  o `ffmpeg` corta as cenas e as intercala na ordem da história.
+- **Os cartões** (abertura, console, responsividade, números) leem cada
+  número de um arquivo medido — bancada, autoteste, este documento e o
+  `CIFRA-DO-FIO.md` do PhxSql. O percentual de estado sai da contagem das
+  caixas acima.
+- **Limite dito:** o USB do vídeo usa um sysfs de mentira, porque não há
+  pendrive no contêiner. O protocolo e o túnel são os de verdade; a troca de
+  driver que o kernel faria, o roteiro faz.
 
 ## Serviço do sistema e pacotes (24/09/2026)
 
