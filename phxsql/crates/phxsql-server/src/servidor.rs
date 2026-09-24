@@ -10100,10 +10100,6 @@ impl Servidor {
     /// tunel ainda nao existe: ali a unica linha que o servidor aceitaria e o
     /// proprio aperto de mao, e toda outra cai no `recusar_texto_claro` --
     /// reservar 128 MiB para recusar em seguida seria reservar por nada.
-    fn teto_da_linha(&self, sessao: &Sessao, cifrado: bool) -> u64 {
-        if sessao.usuario.is_some() {
-            return TETO_DO_REGISTRO;
-        }
     ///
     /// # QUANDO se pergunta -- pedido 442
     ///
@@ -10114,6 +10110,10 @@ impl Servidor {
     /// dele esperava continuava com os 128 MiB de quem ele era. Os dois
     /// lugares que fazem esta pergunta (`ainda_anonima`, aqui e no portao do
     /// login) passam a faze-la sobre a MESMA ficha: a do cadastro vivo.
+    fn teto_da_linha(&self, sessao: &Sessao, cifrado: bool) -> u64 {
+        if sessao.usuario.is_some() {
+            return TETO_DO_REGISTRO;
+        }
         if self.config.cifra_fio.exigir && !cifrado {
             return TETO_DO_APERTO;
         }
