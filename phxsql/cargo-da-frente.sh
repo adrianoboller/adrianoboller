@@ -18,9 +18,18 @@
 #   ./cargo-da-frente.sh test -p phxsql-server nome_do_teste
 #   ./cargo-da-frente.sh build -p phxsql-server --bin phxsqld
 export CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=2
-flock -n -E 99 /tmp/phx-cargo-vaga1.lock cargo "$@"
-rc=$?
-if [ "$rc" = 99 ]; then
-  exec flock /tmp/phx-cargo-vaga2.lock cargo "$@"
-fi
-exit "$rc"
+#
+# As duas vagas se tentam EM RODIZIO, e ninguem se enfileira numa so. A versao
+# de antes tentava a 1 e, ocupada, fazia fila bloqueante na 2 -- e ali ficava
+# mesmo quando a 1 soltava. Medido em 24/09/2026 13:33: a vaga 1 LIVRE e sete
+# cargo de cinco frentes presos na fila da 2, o mais velho ha 18 minutos.
+# Rodizio com espera curta nao tem fila justa (quem chega pode passar a
+# frente), e esse preco e menor que uma vaga parada com gente esperando.
+while :; do
+  for vaga in 1 2; do
+    flock -n -E 99 "/tmp/phx-cargo-vaga$vaga.lock" cargo "$@"
+    rc=$?
+    [ "$rc" = 99 ] || exit "$rc"
+  done
+  sleep 2
+done
