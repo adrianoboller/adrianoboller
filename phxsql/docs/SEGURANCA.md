@@ -4259,6 +4259,8 @@ A régua que sai daí, e que vale para o próximo oráculo: **antes de colapsar 
 frase, meça se o veredito já entrega o mesmo bit.** Se entrega, o colapso é
 zelo que cobra caro ao operador; se não entrega, é a guarda.
 
+> **CORREÇÃO, 24/09/2026 — a revisão SEC desmentiu esta seção** (`docs/propostas/revisao-sec-434-435-2026-09-23.md`, achado A2 ALTO). A §20.2 aplicou a régua «o veredito já entrega o bit?» ao ramo **com prova** — texto, campos, ordem, tamanho e `ms` iguais — e **não** ao ramo **sem prova**. Ali, um pulso sem prova é descartado sem mudar estado, mas a resposta de sucesso sai com **291 B** e os campos `prova`/`nonce`/`quando`/`para` quando o nó alegado tem pino, e com **137 B** sem eles quando não tem. **O mapa mudou de ramo; não sumiu.** A frase «fecha o mapa inteiro» é falsa, e o pedido 435 voltou a ◐. E a mesma revisão achou o A1 (pedido 441): a **resposta** do pulso passa sem a pré-checagem de lista que o pedido tem.
+
 ### 20.3 A metade que quase escapou: o mapa mudou de campo, não sumiu
 
 Com a frase já colapsada e o teste verde, o campo `ms` da resposta — o tempo
