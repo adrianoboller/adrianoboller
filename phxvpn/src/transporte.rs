@@ -208,16 +208,151 @@ pub fn receptor_de_dados(pacote: &[u8]) -> Option<u32> {
         .then(|| u32::from_le_bytes(pacote[4..8].try_into().expect("4 bytes")))
 }
 
-pub fn embrulhar_inicio(remetente: u32, m1: &[u8]) -> Vec<u8> {
+// ---------------------------------------------- mac1, mac2 e o cookie ----
+//
+// O molde e o do WireGuard (secao 5.4.4 do artigo): um INICIO custa ao
+// receptor pelo menos um X25519 antes de se saber se e lixo, e medido aqui
+// o aperto completo custa 1,19 ms. Por isso o INICIO carrega:
+//
+// * `mac1` -- HMAC com uma chave que sai da chave PUBLICA do receptor. Quem
+//   nao a conhece (varredura, lixo) morre num HMAC, sem X25519.
+// * `mac2` -- HMAC com o COOKIE que o receptor entregou a este endereco.
+//   So exigido sob carga: prova que quem manda recebe resposta naquele
+//   IP:porta, e dai o limite por endereco passa a valer (IP forjado nao
+//   recebe cookie).
+//
+// Onde diverge do WireGuard, e por que: HMAC-SHA256 truncado em 16 bytes em
+// vez de BLAKE2s (o nucleo ja tem SHA-256 conferido contra a FIPS; BLAKE2s
+// seria uma segunda funcao de hash so para isto); e so o INICIO leva os
+// macs -- a RESPOSTA ja morre na busca do indice pendente, antes de DH.
+
+pub const TIPO_COOKIE: u8 = 3;
+pub const MAC_LEN: usize = 16;
+const ROTULO_MAC1: &[u8] = b"phxvpn-mac1-v1";
+const ROTULO_COOKIE: &[u8] = b"phxvpn-cookie-v1";
+
+/// Chave do mac1 de quem RECEBE: todos que o conhecem a calculam.
+pub fn chave_mac1(publica_receptor: &[u8; 32]) -> [u8; 32] {
+    let mut m = ROTULO_MAC1.to_vec();
+    m.extend_from_slice(publica_receptor);
+    phxsql_core::hash::sha256(&m)
+}
+
+/// Chave que cifra a resposta de cookie (so quem sabe a publica do
+/// receptor, isto e, quem mandou um mac1 valido, a abre).
+pub fn chave_cookie(publica_receptor: &[u8; 32]) -> [u8; 32] {
+    let mut m = ROTULO_COOKIE.to_vec();
+    m.extend_from_slice(publica_receptor);
+    phxsql_core::hash::sha256(&m)
+}
+
+pub fn mac(chave: &[u8], dados: &[u8]) -> [u8; MAC_LEN] {
+    phxsql_core::hash::hmac_sha256(chave, dados)[..MAC_LEN]
+        .try_into()
+        .expect("16")
+}
+
+/// INICIO: `[1,0,0,0] remetente m1 mac1 mac2`. Sem cookie, mac2 e zero.
+pub fn embrulhar_inicio(
+    remetente: u32,
+    m1: &[u8],
+    publica_receptor: &[u8; 32],
+    cookie: Option<&[u8; MAC_LEN]>,
+) -> Vec<u8> {
     let mut p = vec![TIPO_INICIO, 0, 0, 0];
     p.extend_from_slice(&remetente.to_le_bytes());
     p.extend_from_slice(m1);
+    let m1c = mac(&chave_mac1(publica_receptor), &p);
+    p.extend_from_slice(&m1c);
+    let m2c = match cookie {
+        Some(c) => mac(c, &p),
+        None => [0; MAC_LEN],
+    };
+    p.extend_from_slice(&m2c);
     p
 }
 
-pub fn desembrulhar_inicio(p: &[u8]) -> Option<(u32, &[u8])> {
-    (p.len() > 8 && p[..4] == [TIPO_INICIO, 0, 0, 0])
-        .then(|| (u32::from_le_bytes(p[4..8].try_into().expect("4")), &p[8..]))
+/// O INICIO desmontado. `ate_mac1` e o que o mac1 cobre; `ate_mac2`, o que
+/// o mac2 cobre (inclui o mac1).
+pub struct Inicio<'a> {
+    pub remetente: u32,
+    pub m1: &'a [u8],
+    pub mac1: [u8; MAC_LEN],
+    pub mac2: [u8; MAC_LEN],
+    ate_mac1: &'a [u8],
+    ate_mac2: &'a [u8],
+}
+
+impl Inicio<'_> {
+    pub fn mac1_confere(&self, chave_mac1: &[u8; 32]) -> bool {
+        phxsql_core::hash::iguais_em_tempo_constante(&mac(chave_mac1, self.ate_mac1), &self.mac1)
+    }
+
+    pub fn mac2_confere(&self, cookie: &[u8; MAC_LEN]) -> bool {
+        phxsql_core::hash::iguais_em_tempo_constante(&mac(cookie, self.ate_mac2), &self.mac2)
+    }
+}
+
+pub fn desembrulhar_inicio(p: &[u8]) -> Option<Inicio<'_>> {
+    if p.len() <= 8 + 2 * MAC_LEN || p[..4] != [TIPO_INICIO, 0, 0, 0] {
+        return None;
+    }
+    let (fim1, fim2) = (p.len() - 2 * MAC_LEN, p.len() - MAC_LEN);
+    Some(Inicio {
+        remetente: u32::from_le_bytes(p[4..8].try_into().expect("4")),
+        m1: &p[8..fim1],
+        mac1: p[fim1..fim2].try_into().expect("16"),
+        mac2: p[fim2..].try_into().expect("16"),
+        ate_mac1: &p[..fim1],
+        ate_mac2: &p[..fim2],
+    })
+}
+
+/// Resposta de cookie: `[3,0,0,0] receptor nonce(24) cifra(cookie)+tag`.
+/// O aad e o mac1 do INICIO que a provocou: quem nao mandou aquele INICIO
+/// nao consegue plantar cookie em ninguem.
+pub fn embrulhar_cookie(
+    receptor: u32,
+    minha_publica: &[u8; 32],
+    mac1: &[u8; MAC_LEN],
+    cookie: &[u8; MAC_LEN],
+) -> Vec<u8> {
+    let nonce: [u8; 24] = phxsql_core::senha::bytes_aleatorios(24)
+        .try_into()
+        .expect("24");
+    let (c, tag) = phxsql_core::cifra::xselar(&chave_cookie(minha_publica), &nonce, mac1, cookie);
+    let mut p = vec![TIPO_COOKIE, 0, 0, 0];
+    p.extend_from_slice(&receptor.to_le_bytes());
+    p.extend_from_slice(&nonce);
+    p.extend_from_slice(&c);
+    p.extend_from_slice(&tag);
+    p
+}
+
+/// Receptor (o indice do INICIO que eu mandei) e o cookie, se abrir.
+pub fn receptor_do_cookie(p: &[u8]) -> Option<u32> {
+    (p.len() == 8 + 24 + MAC_LEN + 16 && p[..4] == [TIPO_COOKIE, 0, 0, 0])
+        .then(|| u32::from_le_bytes(p[4..8].try_into().expect("4")))
+}
+
+pub fn abrir_cookie(
+    p: &[u8],
+    publica_dele: &[u8; 32],
+    meu_mac1: &[u8; MAC_LEN],
+) -> Option<[u8; MAC_LEN]> {
+    receptor_do_cookie(p)?;
+    let nonce: [u8; 24] = p[8..32].try_into().ok()?;
+    let tag: [u8; 16] = p[48..64].try_into().ok()?;
+    phxsql_core::cifra::xabrir(
+        &chave_cookie(publica_dele),
+        &nonce,
+        meu_mac1,
+        &p[32..48],
+        &tag,
+    )
+    .ok()?
+    .try_into()
+    .ok()
 }
 
 pub fn embrulhar_resposta(remetente: u32, receptor: u32, m2: &[u8]) -> Vec<u8> {
@@ -315,8 +450,10 @@ mod testes {
 
     #[test]
     fn embrulhos_ida_e_volta() {
-        let i = embrulhar_inicio(77, &[9; 40]);
-        assert_eq!(desembrulhar_inicio(&i), Some((77, &[9u8; 40][..])));
+        let k = [5u8; 32];
+        let i = embrulhar_inicio(77, &[9; 40], &k, None);
+        let d = desembrulhar_inicio(&i).unwrap();
+        assert_eq!((d.remetente, d.m1), (77, &[9u8; 40][..]));
         let r = embrulhar_resposta(1, 2, &[8; 48]);
         assert_eq!(desembrulhar_resposta(&r), Some((1, 2, &[8u8; 48][..])));
         assert!(desembrulhar_inicio(&r).is_none());

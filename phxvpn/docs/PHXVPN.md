@@ -41,6 +41,7 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [x] **Túnel OpenVPN de verdade provado** (2.6.19, `prova-openvpn.sh`): PostgreSQL → painel → dois membros em netns, TLS 1.3/Ed25519, ping entre membros, removido barrado
 - [x] Segurança M3: OpenVPN troca para `nobody` depois de abrir a placa; `tls-crypt-v2` com uma chave por membro e a série dentro — removido barrado ANTES do TLS
 - [x] Arquivos que o OpenVPN relê (`crl.pem`, `ccd/`) gravados por troca atômica — nunca lidos pela metade
+- [x] P2P: `mac1`/cookie contra inundação de INICIO — lixo recusado em 1,85 µs em vez de 198 µs (107×); sob carga, só com cookie e 5/s por origem
 - [x] Segurança C2: sorteio falha fechado (descritor único; `BCryptGenRandom` no Windows) — nunca mais mistura previsível
 
 ### Falta
@@ -53,7 +54,6 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [ ] Segurança no Windows: ACL nos arquivos com chave (hoje herdam a do diretório; no Linux nascem 0600)
 - [ ] Segurança A4 (inteiro): TLS no próprio painel — choque com a pétrea de zero dependência; hoje, proxy com TLS na frente
 - [ ] P2P no Windows: **prova numa máquina real** com OpenVPN (driver TAP e `netsh` — o roteiro `prova-windows.ps1` está pronto)
-- [ ] P2P: `mac1`/cookie contra inundação de INICIO (o WireGuard tem; aqui ainda não)
 - [ ] USB: **prova com dispositivo real** (este contêiner não tem USB nem os módulos `usbip-host`/`vhci-hcd`); botões na janela do programa de mesa
 
 ## Portas e o controle de cada uma
@@ -372,6 +372,52 @@ truncando o próprio arquivo, e um `openvpn` que o lesse pela metade ficaria
 sem CRL. Agora o painel grava num temporário e renomeia; no Windows, que não
 renomeia por cima de arquivo aberto, tenta de novo por até 1 s e, se não
 der, dá erro. O teste falha com a gravação antiga (RED).
+
+## P2P: `mac1` e cookie contra inundação (24/09/2026)
+
+**Premissa medida antes de desenhar** (`BANCADA`, release, um núcleo):
+
+| | Custo |
+|---|---|
+| Aperto IKpsk2 completo | 1,17 ms |
+| INICIO de lixo recusado no X25519 (antes) | **198 µs** |
+| INICIO de lixo recusado no `mac1` (agora) | **1,85 µs** |
+
+Antes, cerca de 5.000 INICIOs de lixo por segundo (uns 6 Mbit/s) ocupavam um
+núcleo inteiro, e no **mesmo fio** que carrega o tráfego do túnel. Agora o
+lixo morre num HMAC.
+
+**O desenho segue o do WireGuard (§5.4.4):**
+- **`mac1`**: HMAC com chave derivada da **pública** do receptor. Quem não a
+  conhece não chega ao X25519.
+- **"Sob carga"**: acima de 20 INICIOs válidos por segundo, o receptor passa a
+  exigir o **`mac2`**, feito com um cookie amarrado ao IP:porta de quem manda.
+  O segredo do cookie gira a cada 120 s.
+- **Resposta de cookie**: custa um HMAC e uma XChaCha. Quem forjou o IP não a
+  recebe; quem a recebe prova o endereço.
+- **Limite por origem**: com o cookie provado, cada origem abre no máximo 5
+  INICIOs por segundo.
+
+**Onde diverge do WireGuard, e por quê:**
+- **HMAC-SHA256 truncado em 16 bytes, em vez de BLAKE2s**: o núcleo já tem o
+  SHA-256 conferido contra a FIPS.
+- **Só o INICIO leva os macs**: a RESPOSTA já morre na busca do índice
+  pendente, antes de qualquer X25519.
+- **Pelo repasse, o cookie se amarra à chave declarada**: ali o IP é sempre o
+  do repasse.
+
+**Provas:**
+- `lixo_sem_mac1_morre_antes_do_x25519`: o contador colocado antes do X25519
+  não anda.
+- `sob_carga_exige_cookie_e_o_par_legitimo_passa`:
+  - 40 INICIOs de um atacante: exatamente 20 chegam ao X25519, e o resto
+    recebe cookie;
+  - o par legítimo recebe o cookie, repete com o `mac2` e abre a sessão;
+  - o dado dele atravessa.
+- **RED dos dois**: sem a conferência do `mac1`, "lixo chegou ao X25519"; sem
+  o regime de carga, "sob carga o X25519 tinha de parar".
+- **Formato**: o INICIO cresceu 32 bytes. Nó antigo e nó novo não fecham
+  aperto entre si; sem dado em produção, a mudança de formato entra agora.
 
 ## USB pela rede (24/09/2026)
 

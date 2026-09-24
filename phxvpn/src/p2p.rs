@@ -150,6 +150,27 @@ const REENVIAR_PARES: Duration = Duration::from_secs(30);
 /// a memoria).
 const TETO_PARES: usize = 1024;
 
+/// Acima de tantos INICIOs com mac1 valido num segundo, o no entra «sob
+/// carga» (por 1 s) e passa a exigir o cookie (mac2). Um aperto custa
+/// 1,19 ms medido: 20 por segundo e ~2% de um nucleo, e uma rede de dezenas
+/// de pares refaz cada sessao a cada 120 s -- longe disso.
+const CARGA_INICIOS_POR_S: u32 = 20;
+/// Sob carga, e com o cookie provado, cada origem abre no maximo isto por
+/// segundo.
+const INICIOS_POR_ORIGEM_POR_S: u32 = 5;
+/// O segredo dos cookies gira; cookie velho para de valer (WireGuard: 120 s).
+const VIDA_COOKIE: Duration = Duration::from_secs(120);
+
+/// Defesa contra inundacao de INICIO (ver `transporte.rs`, mac1/mac2).
+struct Anti {
+    segredo: [u8; 32],
+    desde: Instant,
+    janela: Instant,
+    na_janela: u32,
+    sob_carga_ate: Option<Instant>,
+    por_origem: HashMap<Vec<u8>, (Instant, u32)>,
+}
+
 /// Tentativas diretas sem resposta antes de o modo `auto` ir ao repasse.
 const TENTATIVAS_DIRETAS: u8 = 2;
 
@@ -178,6 +199,10 @@ struct Par {
     sem_resposta_desde: Option<Instant>,
     /// Quando a lista de pares foi mandada a este par por ultimo.
     ultimo_rol: Option<Instant>,
+    /// Cookie que este par nos deu (vai no mac2 dos proximos INICIOs).
+    cookie: Option<([u8; transporte::MAC_LEN], Instant)>,
+    /// mac1 do ultimo INICIO mandado: e o aad da resposta de cookie.
+    ultimo_mac1: [u8; transporte::MAC_LEN],
 }
 
 struct Estado {
@@ -212,6 +237,12 @@ pub struct No {
     ecos: Mutex<HashMap<u64, (Instant, Option<Duration>)>>,
     caixa: Mutex<std::collections::VecDeque<Mensagem>>,
     numero_mensagem: std::sync::atomic::AtomicU64,
+    /// Chave do mac1 dos INICIOs que chegam (sai da MINHA publica).
+    chave_mac1: [u8; 32],
+    anti: Mutex<Anti>,
+    /// Quantos INICIOs chegaram ao X25519. Os testes o leem para provar que
+    /// o lixo morre ANTES.
+    apertos_tentados: std::sync::atomic::AtomicU64,
 }
 
 fn indice_novo(indices: &HashMap<u32, usize>) -> u32 {
@@ -259,6 +290,8 @@ impl No {
                 ultimo_envio: agora,
                 sem_resposta_desde: None,
                 ultimo_rol: None,
+                cookie: None,
+                ultimo_mac1: [0; transporte::MAC_LEN],
             })
             .collect();
         No {
@@ -280,6 +313,16 @@ impl No {
             ecos: Mutex::new(HashMap::new()),
             caixa: Mutex::new(std::collections::VecDeque::new()),
             numero_mensagem: std::sync::atomic::AtomicU64::new(1),
+            chave_mac1: transporte::chave_mac1(&x25519::chave_publica(&privada)),
+            anti: Mutex::new(Anti {
+                segredo: bytes_aleatorios(32).try_into().expect("32"),
+                desde: agora,
+                janela: agora,
+                na_janela: 0,
+                sob_carga_ate: None,
+                por_origem: HashMap::new(),
+            }),
+            apertos_tentados: std::sync::atomic::AtomicU64::new(0),
         }
     }
 
@@ -346,6 +389,8 @@ impl No {
             ultimo_envio: Instant::now(),
             sem_resposta_desde: None,
             ultimo_rol: None,
+            cookie: None,
+            ultimo_mac1: [0; transporte::MAC_LEN],
         }
     }
 
@@ -498,7 +543,16 @@ impl No {
         }
         e.indices.insert(indice, i);
         e.pares[i].pendente = Some((indice, ini, Instant::now()));
-        self.mandar(via, &publica, &transporte::embrulhar_inicio(indice, &m1));
+        let cookie = e.pares[i]
+            .cookie
+            .filter(|(_, quando)| quando.elapsed() < VIDA_COOKIE)
+            .map(|(c, _)| c);
+        let pacote = transporte::embrulhar_inicio(indice, &m1, &publica, cookie.as_ref());
+        let fim = pacote.len() - transporte::MAC_LEN;
+        e.pares[i].ultimo_mac1 = pacote[fim - transporte::MAC_LEN..fim]
+            .try_into()
+            .expect("16");
+        self.mandar(via, &publica, &pacote);
     }
 
     /// Um pacote que o sistema mandou para a placa: cifra para o par dono do
@@ -559,14 +613,47 @@ impl No {
                 None
             }
             transporte::TIPO_DADOS => self.receber_dados(dado, via, declarada),
+            transporte::TIPO_COOKIE => {
+                self.receber_cookie(dado);
+                None
+            }
             _ => None,
         }
     }
 
     fn receber_inicio(&self, dado: &[u8], via: Via, declarada: Option<[u8; 32]>) {
-        let Some((remetente, m1)) = transporte::desembrulhar_inicio(dado) else {
+        let Some(ini) = transporte::desembrulhar_inicio(dado) else {
             return;
         };
+        // Quem nao sabe a minha publica morre aqui, num HMAC -- sem X25519.
+        if !ini.mac1_confere(&self.chave_mac1) {
+            return;
+        }
+        let origem: Vec<u8> = match (via, declarada) {
+            (Via::Direta(a), _) => a.to_string().into_bytes(),
+            (Via::Repasse, Some(k)) => k.to_vec(),
+            (Via::Repasse, None) => return,
+        };
+        if let Some(cookie) = self.cookie_se_sob_carga(&origem) {
+            if !ini.mac2_confere(&cookie) {
+                // Resposta barata: um HMAC e uma XChaCha. Quem forjou o IP
+                // nao a recebe; quem a recebe prova o endereco.
+                let chave = declarada.unwrap_or([0; 32]);
+                let minha = x25519::chave_publica(&self.privada);
+                self.mandar(
+                    via,
+                    &chave,
+                    &transporte::embrulhar_cookie(ini.remetente, &minha, &ini.mac1, &cookie),
+                );
+                return;
+            }
+            if !self.origem_dentro_do_limite(&origem) {
+                return;
+            }
+        }
+        let (remetente, m1) = (ini.remetente, ini.m1);
+        self.apertos_tentados
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let Ok(chamada) = noise::ler_chamada(noise::PROLOGO, &self.privada, m1) else {
             return;
         };
@@ -641,6 +728,68 @@ impl No {
             &chave,
             &transporte::embrulhar_resposta(indice, remetente, &m2),
         );
+    }
+
+    /// Conta o INICIO (ja com mac1 valido) e, se o no esta sob carga,
+    /// devolve o cookie que esta origem teria de provar.
+    fn cookie_se_sob_carga(&self, origem: &[u8]) -> Option<[u8; transporte::MAC_LEN]> {
+        let mut a = self.anti.lock().expect("anti");
+        let agora = Instant::now();
+        if a.desde.elapsed() >= VIDA_COOKIE {
+            a.segredo = bytes_aleatorios(32).try_into().expect("32");
+            a.desde = agora;
+        }
+        if a.janela.elapsed() >= Duration::from_secs(1) {
+            a.janela = agora;
+            a.na_janela = 0;
+        }
+        a.na_janela += 1;
+        if a.na_janela > CARGA_INICIOS_POR_S {
+            a.sob_carga_ate = Some(agora + Duration::from_secs(1));
+        }
+        let sob_carga = a.sob_carga_ate.is_some_and(|t| agora < t);
+        sob_carga.then(|| transporte::mac(&a.segredo, origem))
+    }
+
+    fn origem_dentro_do_limite(&self, origem: &[u8]) -> bool {
+        let mut a = self.anti.lock().expect("anti");
+        if a.por_origem.len() > 4096 {
+            a.por_origem
+                .retain(|_, (t, _)| t.elapsed() < Duration::from_secs(1));
+        }
+        let (t, n) = a
+            .por_origem
+            .entry(origem.to_vec())
+            .or_insert((Instant::now(), 0));
+        if t.elapsed() >= Duration::from_secs(1) {
+            *t = Instant::now();
+            *n = 0;
+        }
+        *n += 1;
+        *n <= INICIOS_POR_ORIGEM_POR_S
+    }
+
+    /// Resposta de cookie a um INICIO nosso: so vale se o indice e de um
+    /// aperto pendente e se abre com o mac1 que mandamos.
+    fn receber_cookie(&self, dado: &[u8]) {
+        let Some(receptor) = transporte::receptor_do_cookie(dado) else {
+            return;
+        };
+        let mut e = self.estado.lock().expect("estado");
+        let Some(&i) = e.indices.get(&receptor) else {
+            return;
+        };
+        if !e.pares[i]
+            .pendente
+            .as_ref()
+            .is_some_and(|(ind, _, _)| *ind == receptor)
+        {
+            return;
+        }
+        let par = &mut e.pares[i];
+        if let Some(c) = transporte::abrir_cookie(dado, &par.publica, &par.ultimo_mac1) {
+            par.cookie = Some((c, Instant::now()));
+        }
     }
 
     fn trocar_sessao(&self, e: &mut Estado, i: usize, nova: Sessao) {
@@ -1136,6 +1285,88 @@ mod testes {
         let volta = ip([10, 78, 0, 2], [10, 78, 0, 1], b"pong");
         b.da_placa(&volta);
         assert_eq!(bombear_ate_ip(&a).unwrap(), volta);
+    }
+
+    fn tentados(no: &No) -> u64 {
+        no.apertos_tentados
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// INICIO de quem nao sabe a publica de B morre num HMAC: o contador
+    /// que fica ANTES do X25519 nao anda. Com o mac1 certo (e m1 lixo), anda
+    /// -- prova de que o contador esta no lugar.
+    #[test]
+    fn lixo_sem_mac1_morre_antes_do_x25519() {
+        let (_a, b, _, _) = dois_nos("senha-1");
+        let de: SocketAddr = "127.0.0.1:9".parse().unwrap();
+        let pub_b = x25519::chave_publica(&b.privada);
+        let lixo = [7u8; 120];
+        b.da_rede(&transporte::embrulhar_inicio(1, &lixo, &[3; 32], None), de);
+        let mut cru = vec![1, 0, 0, 0, 1, 0, 0, 0];
+        cru.extend_from_slice(&[7; 152]);
+        b.da_rede(&cru, de);
+        assert_eq!(tentados(&b), 0, "lixo chegou ao X25519");
+        b.da_rede(&transporte::embrulhar_inicio(1, &lixo, &pub_b, None), de);
+        assert_eq!(tentados(&b), 1);
+    }
+
+    /// Inundacao de INICIOs com mac1 valido (quem conhece a publica): depois
+    /// de 20 no segundo, B so responde cookie, e o X25519 para. O par
+    /// legitimo recebe o cookie, manda o mac2 e abre a sessao assim mesmo.
+    #[test]
+    fn sob_carga_exige_cookie_e_o_par_legitimo_passa() {
+        let (a, b, _, eb) = dois_nos("senha-1");
+        let pub_b = x25519::chave_publica(&b.privada);
+        let atacante = UdpSocket::bind("127.0.0.1:0").unwrap();
+        atacante
+            .set_read_timeout(Some(Duration::from_millis(500)))
+            .unwrap();
+        for n in 0..40u32 {
+            atacante
+                .send_to(
+                    &transporte::embrulhar_inicio(n, &[9; 120], &pub_b, None),
+                    eb,
+                )
+                .unwrap();
+            bombear(&b);
+        }
+        assert_eq!(
+            tentados(&b),
+            CARGA_INICIOS_POR_S as u64,
+            "sob carga o X25519 tinha de parar"
+        );
+        let mut buf = [0u8; 256];
+        let (n, _) = atacante.recv_from(&mut buf).unwrap();
+        assert_eq!(
+            buf[0],
+            transporte::TIPO_COOKIE,
+            "o atacante devia receber cookie"
+        );
+        assert_eq!(n, 64);
+
+        // A, legitimo, chega com B sob carga: recebe cookie, nao sessao.
+        let ida = ip([10, 78, 0, 1], [10, 78, 0, 2], b"ping");
+        a.da_placa(&ida);
+        bombear(&b);
+        assert_eq!(tentados(&b), CARGA_INICIOS_POR_S as u64);
+        bombear(&a);
+        assert!(
+            a.estado.lock().unwrap().pares[0].cookie.is_some(),
+            "A nao guardou o cookie"
+        );
+        // O relogio do reenvio (5 s) adiantado: A repete o INICIO, com mac2.
+        if let Some(p) = a.estado.lock().unwrap().pares[0].pendente.as_mut() {
+            p.2 -= REPETIR_APERTO;
+        }
+        a.da_placa(&ida);
+        assert!(bombear(&b).is_none()); // INICIO com mac2: aperto feito
+        assert_eq!(tentados(&b), CARGA_INICIOS_POR_S as u64 + 1);
+        assert!(bombear(&a).is_none()); // RESPOSTA
+        assert_eq!(
+            bombear_ate_ip(&b).unwrap()[20..],
+            ida[20..],
+            "o dado de A tinha de passar"
+        );
     }
 
     #[test]

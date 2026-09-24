@@ -663,6 +663,29 @@ pub fn bancada(duracao: Duration) -> String {
         }
     }
     let seg2 = t.elapsed().as_secs_f64();
+    // INICIO de lixo, do tamanho de um de verdade: quanto custa recusa-lo
+    // no X25519 (sem mac1) e no HMAC (com mac1).
+    let tam = crate::noise::Iniciador::comecar(crate::noise::PROLOGO, a, &pb, [1; 32], b"")
+        .map(|(_, m1)| m1.len())
+        .unwrap_or(96);
+    let lixo = phxsql_core::senha::bytes_aleatorios(tam);
+    let (mut sem_mac, t) = (0u64, Instant::now());
+    while t.elapsed() < duracao {
+        let _ = crate::noise::ler_chamada(crate::noise::PROLOGO, &b, &lixo);
+        sem_mac += 1;
+    }
+    let seg3 = t.elapsed().as_secs_f64();
+    let pacote_lixo = crate::transporte::embrulhar_inicio(1, &lixo, &[9; 32], None);
+    let chave_mac1 = crate::transporte::chave_mac1(&pb);
+    let (mut com_mac, t) = (0u64, Instant::now());
+    while t.elapsed() < duracao {
+        if let Some(i) = crate::transporte::desembrulhar_inicio(&pacote_lixo) {
+            let _ = i.mac1_confere(&chave_mac1);
+        }
+        com_mac += 1;
+    }
+    let seg4 = t.elapsed().as_secs_f64();
+    let us = |seg: f64, n: u64| seg * 1e6 / n.max(1) as f64;
     tabela(
         &["Medida", "Valor"],
         &[
@@ -674,6 +697,14 @@ pub fn bancada(duracao: Duration) -> String {
             vec![
                 "Aperto IKpsk2 completo (os dois lados)".into(),
                 format!("{:.2} ms cada", seg2 * 1000.0 / apertos.max(1) as f64),
+            ],
+            vec![
+                "INICIO de lixo recusado no X25519".into(),
+                format!("{:.1} us cada", us(seg3, sem_mac)),
+            ],
+            vec![
+                "INICIO de lixo recusado no mac1".into(),
+                format!("{:.2} us cada", us(seg4, com_mac)),
             ],
         ],
     ) + "So a cifra e o aperto: sem rede nem placa. Vazao real: ver PHXVPN.md.\n"
