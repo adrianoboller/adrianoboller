@@ -38,14 +38,16 @@ pub const TETO_CONEXOES: usize = 256;
 /// Conferencias de senha (PBKDF2, ~430 ms cada) ao mesmo tempo.
 const CONFERENCIAS: usize = 4;
 const TELA: &str = include_str!("tela.html");
+/// A frase de todo login recusado -- senha, usuario ou codigo.
+const FRASE_LOGIN: &str = "usuário, senha ou código do autenticador não conferem";
 const TELA_JS: &str = include_str!("tela.js");
 
 pub struct Estado {
     painel: Mutex<Painel>,
     sessoes: Mutex<HashMap<String, (Usuario, Instant)>>,
     pub supervisor: Option<Supervisor>,
-    tentativas: Limitador,
-    conferencias: Semaforo,
+    pub(crate) tentativas: Limitador,
+    pub(crate) conferencias: Semaforo,
     /// Valores aceitos no cabecalho `Host`, em minusculas.
     hosts: Vec<String>,
     /// Codigo de uso unico da instalacao; some depois de usado.
@@ -238,15 +240,27 @@ fn rotear(p: &Pedido, e: &Estado) -> Saida {
                 let _vez = e.conferencias.adquirir();
                 conferir_login(u, &hash, &t("senha"))
             };
+            // Segundo fator de quem cadastrou o autenticador. Senha errada e
+            // codigo errado dao a MESMA frase: a resposta nao diz que a
+            // senha estava certa.
+            let resultado = resultado.and_then(|u| {
+                let mut painel = e.painel();
+                match painel.mfa_ativo(u.id) {
+                    Ok(false) => Ok(u),
+                    Ok(true) => painel.mfa_conferir(u.id, &t("codigo")).map(|_| u),
+                    Err(x) => Err(x),
+                }
+            });
             let u = match resultado {
                 Ok(u) => {
                     e.tentativas.acertou(&chave_login);
                     u
                 }
-                Err(m) => {
+                Err(m) if m.starts_with("PostgreSQL ") => return Err(ruim(m)),
+                Err(_) => {
                     e.tentativas.falhou(&chave_login);
                     e.tentativas.falhou(&chave_ip);
-                    return Err((401, m));
+                    return Err((401, FRASE_LOGIN.into()));
                 }
             };
             let token = para_hex(&bytes_aleatorios(32));
@@ -277,6 +291,69 @@ fn rotear(p: &Pedido, e: &Estado) -> Saida {
             e.tentativas.acertou(&chave);
             materializar_e_subir(e).map_err(ruim)?;
             ok()
+        }
+        ("GET", "/api/mfa") => {
+            let u = usuario(p, e)?;
+            let ativo = e.painel().mfa_ativo(u.id).map_err(ruim)?;
+            Ok(Json::objeto(vec![("ativo", Json::de_bool(ativo))]))
+        }
+        ("POST", "/api/mfa/iniciar") => {
+            let u = usuario(p, e)?;
+            e.painel().mfa_iniciar(&u).map_err(ruim)
+        }
+        ("POST", "/api/mfa/confirmar") | ("POST", "/api/mfa/desativar") => {
+            let u = usuario(p, e)?;
+            let chave = format!("totp:{}", u.id);
+            e.tentativas
+                .antes_de_todas(&[&chave, &chave_ip])
+                .map_err(bloqueado)?;
+            let codigo = t("codigo");
+            let r = if caminho.ends_with("confirmar") {
+                e.painel().mfa_confirmar(&u, &codigo)
+            } else {
+                e.painel().mfa_desativar(&u, &codigo)
+            };
+            if let Err(m) = r {
+                e.tentativas.falhou(&chave);
+                e.tentativas.falhou(&chave_ip);
+                return Err(ruim(m));
+            }
+            e.tentativas.acertou(&chave);
+            ok()
+        }
+        ("POST", "/api/usuarios/mfa-zerar") => {
+            let u = usuario(p, e)?;
+            exigir_admin(&u)?;
+            e.painel().mfa_zerar(&u, &t("login")).map_err(ruim)?;
+            ok()
+        }
+        ("POST", "/api/redes/mfa") => {
+            let u = usuario(p, e)?;
+            let id = rede_id(&corpo)?;
+            let exige = corpo.booleano_ou("exige", false);
+            let (nome, dir) = e
+                .painel()
+                .rede_definir_mfa(&u, id, exige)
+                .map_err(|m| (403, m))?;
+            // O OpenVPN so le o servidor.conf ao subir.
+            let reiniciado = match &e.supervisor {
+                Some(s) => {
+                    s.reiniciar(&nome, &dir).map_err(ruim)?;
+                    true
+                }
+                None => false,
+            };
+            Ok(Json::objeto(vec![
+                ("ok", Json::de_bool(true)),
+                ("exige_mfa", Json::de_bool(exige)),
+                ("openvpn_reiniciado", Json::de_bool(reiniciado)),
+                (
+                    "aviso",
+                    Json::texto_de(
+                        "os membros precisam baixar o perfil de novo (entrar na rede outra vez)",
+                    ),
+                ),
+            ]))
         }
         ("GET", "/api/redes") => {
             let u = usuario(p, e)?;

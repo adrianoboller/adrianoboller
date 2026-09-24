@@ -173,6 +173,11 @@ pub fn login(painel: &str, usuario: &str, senha: &str) -> R<(String, bool)> {
         Some(&Json::objeto(vec![
             ("usuario", Json::texto_de(usuario)),
             ("senha", Json::texto_de(senha)),
+            // Quem cadastrou o autenticador manda o codigo pelo ambiente.
+            (
+                "codigo",
+                Json::texto_de(std::env::var("PHXVPN_CODIGO").unwrap_or_default()),
+            ),
         ])),
     )?;
     Ok((

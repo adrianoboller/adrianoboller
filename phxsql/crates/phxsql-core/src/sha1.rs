@@ -17,6 +17,15 @@
 //!
 //! Conferido contra os vetores do FIPS 180-4, como manda a regra do projeto
 //! para tudo que e criptografia.
+//!
+//! # O segundo motivo: TOTP
+//!
+//! O HMAC-SHA1 entra pelo mesmo caminho -- quem define e o outro lado. Os
+//! aplicativos autenticadores (RFC 6238) aceitam SHA-256 no papel, mas o
+//! Google Authenticator e parentes ignoram o `algorithm=` do URI e calculam
+//! SHA-1; um segredo cadastrado com outro algoritmo gera codigos que nunca
+//! batem. HMAC nao depende da resistencia a colisao, que e o que caiu no
+//! SHA-1: a RFC 6238 continua segura com ele. Conferido contra a RFC 2202.
 
 const ESTADO_INICIAL: [u32; 5] = [0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476, 0xc3d2e1f0];
 
@@ -141,6 +150,30 @@ pub fn sha1(dados: &[u8]) -> [u8; SHA1_LEN] {
     h.finalizar()
 }
 
+/// HMAC-SHA1 (RFC 2104), para o TOTP da RFC 6238.
+pub fn hmac_sha1(chave: &[u8], mensagem: &[u8]) -> [u8; SHA1_LEN] {
+    let mut chave_bloco = [0u8; BLOCO];
+    if chave.len() > BLOCO {
+        chave_bloco[..SHA1_LEN].copy_from_slice(&sha1(chave));
+    } else {
+        chave_bloco[..chave.len()].copy_from_slice(chave);
+    }
+    let mut interno = [0x36u8; BLOCO];
+    let mut externo = [0x5cu8; BLOCO];
+    for i in 0..BLOCO {
+        interno[i] ^= chave_bloco[i];
+        externo[i] ^= chave_bloco[i];
+    }
+    let mut h = Sha1::novo();
+    h.atualizar(&interno);
+    h.atualizar(mensagem);
+    let dentro = h.finalizar();
+    let mut h = Sha1::novo();
+    h.atualizar(&externo);
+    h.atualizar(&dentro);
+    h.finalizar()
+}
+
 #[cfg(test)]
 mod testes {
     use super::*;
@@ -189,5 +222,52 @@ mod testes {
             h.atualizar(&[*b]);
         }
         assert_eq!(h.finalizar(), inteiro);
+    }
+
+    /// Os sete casos da RFC 2202, secao 3 (HMAC-SHA-1). O 6 e o 7 usam chave
+    /// de 80 bytes -- maior que o bloco, o caminho do resumo da chave.
+    #[test]
+    fn vetores_da_rfc_2202() {
+        let casos: [(Vec<u8>, Vec<u8>, &str); 7] = [
+            (
+                vec![0x0b; 20],
+                b"Hi There".to_vec(),
+                "b617318655057264e28bc0b6fb378c8ef146be00",
+            ),
+            (
+                b"Jefe".to_vec(),
+                b"what do ya want for nothing?".to_vec(),
+                "effcdf6ae5eb2fa2d27416d5f184df9c259a7c79",
+            ),
+            (
+                vec![0xaa; 20],
+                vec![0xdd; 50],
+                "125d7342b9ac11cd91a39af48aa17b4f63f175d3",
+            ),
+            (
+                (1u8..=25).collect(),
+                vec![0xcd; 50],
+                "4c9007f4026250c6bc8414f9bf50c86c2d7235da",
+            ),
+            (
+                vec![0x0c; 20],
+                b"Test With Truncation".to_vec(),
+                "4c1a03424b55e07fe7f27be1d58bb9324a9a5a04",
+            ),
+            (
+                vec![0xaa; 80],
+                b"Test Using Larger Than Block-Size Key - Hash Key First".to_vec(),
+                "aa4ae5e15272d00e95705637ce8a3b55ed402112",
+            ),
+            (
+                vec![0xaa; 80],
+                b"Test Using Larger Than Block-Size Key and Larger Than One Block-Size Data"
+                    .to_vec(),
+                "e8e99d0f45237d786d6bbaa7965c7808bbff1a91",
+            ),
+        ];
+        for (i, (k, m, esperado)) in casos.iter().enumerate() {
+            assert_eq!(para_hex(&hmac_sha1(k, m)), *esperado, "caso {}", i + 1);
+        }
     }
 }

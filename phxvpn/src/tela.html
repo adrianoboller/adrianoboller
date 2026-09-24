@@ -71,6 +71,7 @@ th{color:var(--fraco);font-weight:500;font-size:12px}
     <button class="inclui" id="b-criar">Criar rede</button>
     <button id="b-entrar">Entrar na rede</button>
     <button id="b-atualizar">Atualizar</button>
+    <button id="b-mfa">Autenticador</button>
     <button id="b-admin" hidden>Administração</button>
     <button class="exclui" id="b-logout">Sair</button>
   </div>
@@ -116,6 +117,7 @@ th{color:var(--fraco);font-weight:500;font-size:12px}
   <form id="f-login"><div class="grade">
     <label class="campo"><span>Usuário</span><input name="usuario" required autocomplete="username"></label>
     <label class="campo"><span>Senha</span><input name="senha" type="password" required autocomplete="current-password"></label>
+    <label class="campo"><span>Código do autenticador (se cadastrado)</span><input name="codigo" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code"></label>
   </div>
   <div class="linha-botoes"><button type="submit">Entrar</button></div>
   <p class="msg" id="m-login"></p></form>
@@ -131,9 +133,25 @@ th{color:var(--fraco);font-weight:500;font-size:12px}
   <div class="cartao"><h2>Minhas redes</h2><div id="lista-redes"></div><p class="msg" id="m-redes"></p></div>
 </section>
 
+<section class="cartao" id="tela-mfa" hidden>
+  <h2>Autenticador (segundo fator)</h2>
+  <p class="msg" id="mfa-estado"></p>
+  <div id="mfa-novo" hidden>
+    <p class="msg">Leia o QR no aplicativo autenticador (Google Authenticator, Microsoft Authenticator, FreeOTP…) ou digite a chave. Ela aparece <b>só agora</b>.</p>
+    <div id="mfa-qr" role="img" aria-label="QR do autenticador" style="width:220px;height:220px;background:#fff;border-radius:6px"></div>
+    <p class="msg">Chave: <code id="mfa-segredo"></code></p>
+  </div>
+  <form id="f-mfa"><div class="grade">
+    <label class="campo"><span id="mfa-rotulo">Código do autenticador</span><input name="codigo" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required autocomplete="one-time-code"></label>
+  </div>
+  <div class="linha-botoes"><button type="button" class="inclui" id="b-mfa-iniciar">Cadastrar autenticador</button><button type="submit" id="b-mfa-ok">Confirmar</button></div>
+  <p class="msg" id="m-mfa"></p></form>
+  <div class="linha-botoes"><button id="b-mfa-voltar">Voltar às redes</button></div>
+</section>
+
 <section class="cartao" id="tela-admin" hidden>
   <h2>Usuários</h2>
-  <div class="rolagem"><table><thead><tr><th>Login</th><th>E-mail</th><th>Admin</th></tr></thead><tbody id="t-usuarios"></tbody></table></div>
+  <div class="rolagem"><table><thead><tr><th>Login</th><th>E-mail</th><th>Admin</th><th>Autenticador</th></tr></thead><tbody id="t-usuarios"></tbody></table></div>
   <form id="f-usuario"><div class="grade" style="margin-top:10px">
     <label class="campo"><span>Login</span><input name="login" required></label>
     <label class="campo"><span>Senha (mín. 8)</span><input name="senha" type="password" required minlength="8"></label>

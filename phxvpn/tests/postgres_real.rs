@@ -167,3 +167,95 @@ fn conferir_na_crl(dados: &std::path::Path, velho: &str, novo: &str) {
     );
     assert!(verificar("novo.pem").status.success(), "perfil novo caiu");
 }
+
+/// O segundo fator no banco: cadastro em duas etapas, conferencia sem
+/// reuso, rede que exige, e o segredo que nao volta em resposta nenhuma.
+#[test]
+fn autenticador_cadastro_reuso_e_rede_que_exige() {
+    use phxvpn::totp;
+    let Some(base) = config() else {
+        eprintln!("NAO RODOU: defina PHXVPN_PG_TESTE");
+        return;
+    };
+    let cfg = banco_novo(&base, "phxvpn_teste_mfa");
+    let dados = std::env::temp_dir().join(format!("phxvpn-teste-mfa-{}", std::process::id()));
+    let mut p = Painel::abrir(&cfg, &dados).unwrap();
+    p.iteracoes = 1_000;
+    p.instalar(&Instalacao {
+        empresa: "Empresa Teste".into(),
+        responsavel: "Fulano".into(),
+        email: "f@e.com".into(),
+        admin_usuario: "admin".into(),
+        admin_senha: "senha-admin".into(),
+        senha_mestre: "senha-mestre-longa".into(),
+        servidor_nome: "vpn1".into(),
+        servidor_ip: "203.0.113.10".into(),
+        ..Default::default()
+    })
+    .unwrap();
+    let admin = p.login("admin", "senha-admin").unwrap();
+    p.criar_rede(&admin, "Matriz", "rede-123", "", None)
+        .unwrap();
+    p.criar_usuario("ana", "senha-ana-1", "", false).unwrap();
+    let ana = p.login("ana", "senha-ana-1").unwrap();
+
+    // Rede exigindo: quem nao cadastrou e recusado no «entrar», com o motivo.
+    assert!(p.rede_definir_mfa(&ana, 1, true).is_err(), "so dono/admin");
+    p.rede_definir_mfa(&admin, 1, true).unwrap();
+    let e = p.entrar_na_rede(&ana, "Matriz", "rede-123").unwrap_err();
+    assert!(e.contains("exige o autenticador"), "{e}");
+    let conf = std::fs::read_to_string(dados.join("redes/1/servidor.conf")).unwrap();
+    assert!(conf.contains("auth-user-pass-verify") && conf.contains("via-file"));
+
+    // Cadastro: iniciar da o segredo UMA vez; codigo errado nao ativa.
+    assert!(!p.mfa_ativo(ana.id).unwrap());
+    let j = p.mfa_iniciar(&ana).unwrap();
+    let segredo = totp::de_base32(j.texto_ou("segredo", "")).unwrap();
+    assert_eq!(segredo.len(), totp::SEGREDO_LEN);
+    assert!(j.texto_ou("uri", "").starts_with("otpauth://totp/"));
+    let agora = totp::agora();
+    let cod = |t: u64| totp::formatar(totp::totp(&segredo, t, 6), 6);
+    let errado = if cod(agora) == "000000" {
+        "111111"
+    } else {
+        "000000"
+    };
+    assert!(p.mfa_confirmar(&ana, errado).is_err());
+    assert!(!p.mfa_ativo(ana.id).unwrap());
+    p.mfa_confirmar(&ana, &cod(agora)).unwrap();
+    assert!(p.mfa_ativo(ana.id).unwrap());
+    assert!(p.mfa_iniciar(&ana).is_err(), "trocar exige desativar antes");
+
+    // O codigo do cadastro nao vale de novo; o do passo seguinte vale uma vez.
+    assert!(p.mfa_conferir(ana.id, &cod(agora)).is_err(), "reuso");
+    p.mfa_conferir(ana.id, &cod(agora + 30)).unwrap();
+    assert!(p.mfa_conferir(ana.id, &cod(agora + 30)).is_err(), "reuso");
+
+    // O segredo nao esta em claro no banco nem na lista de usuarios.
+    let b32 = totp::base32_sem_preenchimento(&segredo);
+    let usuarios = p.usuarios().unwrap().escrever();
+    assert!(!usuarios.contains(&b32) && usuarios.contains("\"mfa\":true"));
+    let mut pg = Pg::conectar(&cfg).unwrap();
+    let r = pg
+        .executar(
+            "SELECT totp_selado FROM phx_usuario WHERE login = 'ana'",
+            &[],
+        )
+        .unwrap();
+    let selado = r.valor(0, "totp_selado").unwrap();
+    assert!(!selado.contains(&b32));
+    assert!(!selado.contains(&phxsql_core::hash::para_hex(&segredo)));
+
+    // Agora a ana entra, e o perfil pede usuario, senha e codigo.
+    let perfil = p.entrar_na_rede(&ana, "Matriz", "rede-123").unwrap();
+    assert!(perfil.contains("auth-user-pass\n"));
+    assert!(perfil.contains("static-challenge \"Código do autenticador\" 1\n"));
+
+    // Admin zera; o dono dispensa e o conf perde o verificador.
+    p.mfa_zerar(&admin, "ana").unwrap();
+    assert!(!p.mfa_ativo(ana.id).unwrap());
+    p.rede_definir_mfa(&admin, 1, false).unwrap();
+    let conf = std::fs::read_to_string(dados.join("redes/1/servidor.conf")).unwrap();
+    assert!(!conf.contains("auth-user-pass-verify"));
+    let _ = std::fs::remove_dir_all(&dados);
+}

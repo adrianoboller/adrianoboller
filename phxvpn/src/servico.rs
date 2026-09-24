@@ -422,6 +422,16 @@ pub fn planejar(tipo: Tipo, args: &[String], exe: &Path) -> R<Plano> {
                     "{perfil}: nao existe -- rode `phxvpn entrar --saida {perfil} ...` primeiro"
                 ));
             }
+            // Rede que exige o autenticador: antes do logon nao ha quem
+            // digite o codigo, e o servico ficaria recusado em laco.
+            if crate::verificar::perfil_pede_codigo(
+                &std::fs::read_to_string(&caminho).unwrap_or_default(),
+            ) {
+                return Err(format!(
+                    "{perfil}: a rede exige o código do autenticador a cada conexão -- \
+                     o serviço antes do logon não tem quem o digite; conecte pelo OpenVPN GUI ou Connect"
+                ));
+            }
             let caminho_absoluto = std::fs::canonicalize(&caminho)
                 .map_err(|e| format!("{perfil}: {e}"))?
                 .display()
@@ -670,6 +680,22 @@ mod testes {
             exe,
         );
         assert!(r.is_err());
+    }
+
+    /// RED: sem a conferencia, o servico se instalaria com um perfil que
+    /// pede codigo -- e o `openvpn` antes do logon falharia em laco.
+    #[test]
+    fn servico_cliente_recusa_perfil_que_pede_codigo() {
+        let d =
+            std::env::temp_dir().join(format!("phxvpn-servico-mfa-{}.ovpn", std::process::id()));
+        std::fs::write(&d, format!("client\n{}", crate::verificar::PERFIL_MFA)).unwrap();
+        let r = planejar(
+            Tipo::Cliente,
+            &["--perfil".to_string(), d.display().to_string()],
+            Path::new("/usr/bin/phxvpn"),
+        );
+        let _ = std::fs::remove_file(&d);
+        assert!(r.err().unwrap_or_default().contains("autenticador"));
     }
 
     #[test]

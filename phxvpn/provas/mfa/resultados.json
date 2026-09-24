@@ -1,0 +1,57 @@
+{
+  "prova": "phxvpn: usuario + senha + TOTP na conexao OpenVPN (auth-user-pass-verify via-file + static-challenge)",
+  "data": "2026-09-24T04:20:57+00:00",
+  "openvpn": "2.6.19",
+  "phxvpn_compilado_em": "release",
+  "casos": {
+    "senha_errada_com_codigo_valido": {
+      "resultado": "recusado",
+      "desafio": "1,Código do autenticador"
+    },
+    "codigo_certo": {
+      "resultado": "conectou",
+      "desafio": "1,Código do autenticador",
+      "segundos": 1.23,
+      "ping": [
+        "3 packets transmitted, 3 received, 0% packet loss, time 2054ms"
+      ]
+    },
+    "mesmo_codigo_de_novo": {
+      "resultado": "recusado",
+      "desafio": "1,Código do autenticador"
+    },
+    "codigo_errado": {
+      "resultado": "recusado",
+      "desafio": "1,Código do autenticador"
+    },
+    "sem_codigo": {
+      "resultado": "recusado",
+      "desafio": "1,Código do autenticador"
+    }
+  },
+  "red_conferencia_trocada_por_bin_true": {
+    "senha_errada": {
+      "resultado": "conectou",
+      "desafio": "1,Código do autenticador",
+      "segundos": 0.15,
+      "ping": [
+        "3 packets transmitted, 3 received, 0% packet loss, time 2040ms"
+      ]
+    },
+    "codigo_errado": {
+      "resultado": "conectou",
+      "desafio": "1,Código do autenticador",
+      "segundos": 0.14,
+      "ping": [
+        "3 packets transmitted, 3 received, 0% packet loss, time 2029ms"
+      ]
+    }
+  },
+  "servidor": {
+    "autenticacoes_adiadas": 5,
+    "uid_nobody": true,
+    "recusas_no_log_do_painel": 4,
+    "senha_ou_segredo_em_log": 0
+  },
+  "passou": true
+}

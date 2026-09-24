@@ -144,6 +144,7 @@ impl Painel {
     pub fn abrir(cfg: &Config, dados: &Path) -> R<Painel> {
         let mut pg = Pg::conectar(cfg)?;
         pg.lote(ESQUEMA)?;
+        pg.lote(crate::mfa::ESQUEMA)?;
         criar_dir_privado(dados)?;
         Ok(Painel {
             pg,
@@ -157,7 +158,7 @@ impl Painel {
     }
 
     /// A conexao, refeita se a anterior quebrou no meio de uma resposta.
-    fn pg(&mut self) -> R<&mut Pg> {
+    pub(crate) fn pg(&mut self) -> R<&mut Pg> {
         if self.pg.quebrado() {
             if self.em_transacao {
                 return Err("a conexao com o PostgreSQL caiu no meio da transacao".into());
@@ -198,6 +199,10 @@ impl Painel {
             .pg()?
             .executar("SELECT count(*) AS n FROM phx_empresa", &[])?;
         Ok(r.valor(0, "n") != Some("0"))
+    }
+
+    pub(crate) fn dados(&self) -> &Path {
+        &self.dados
     }
 
     pub fn destrancado(&self) -> bool {
@@ -332,10 +337,11 @@ impl Painel {
 
     pub fn usuarios(&mut self) -> R<Json> {
         let r = self.pg()?.executar(
-            "SELECT id, login, email, admin, ativo FROM phx_usuario ORDER BY login",
+            "SELECT id, login, email, admin, ativo, (totp_selado IS NOT NULL) AS mfa \
+             FROM phx_usuario ORDER BY login",
             &[],
         )?;
-        Ok(para_json(&r, &["admin", "ativo"], &["id"]))
+        Ok(para_json(&r, &["admin", "ativo", "mfa"], &["id"]))
     }
 
     pub fn servidores(&mut self) -> R<Json> {
@@ -600,13 +606,14 @@ impl Painel {
         } else {
             tc
         };
+        let mfa = self.mfa_da_rede(&rede_id, usuario)?;
         self.materializar_rede(&rede_id)?;
         gravar(
             &self.dir_rede(&rede_id).join("ccd").join(&cn),
             ovpn::ccd_membro(octeto, host).as_bytes(),
             false,
         )?;
-        Ok(ovpn::perfil_membro(&ovpn::Perfil {
+        let perfil = ovpn::perfil_membro(&ovpn::Perfil {
             rede: &rede,
             servidor: &ovpn::Servidor {
                 nome: &srv_nome,
@@ -616,7 +623,12 @@ impl Painel {
             cert_pem: &pki::cert_pem(&e.der),
             chave_pem: &pki::chave_pem(&e.privada),
             tls_crypt: &tc,
-        }))
+        });
+        Ok(if mfa {
+            perfil + crate::verificar::PERFIL_MFA
+        } else {
+            perfil
+        })
     }
 
     /// Sai da rede: apaga o vinculo e o arquivo `ccd/`, e com `ccd-exclusive`
@@ -687,7 +699,7 @@ impl Painel {
     /// nome e contagem -- o admin ve todas; o usuario comum ve as que integra.
     pub fn redes(&mut self, u: &Usuario) -> R<Json> {
         let r = self.pg()?.executar(
-            "SELECT r.id, r.nome, r.finalidade, r.porta, r.octeto, s.nome AS servidor, d.login AS dono, \
+            "SELECT r.id, r.nome, r.finalidade, r.porta, r.octeto, r.exige_mfa, s.nome AS servidor, d.login AS dono, \
                     (SELECT count(*) FROM phx_membro m WHERE m.rede_id = r.id) AS membros, \
                     (SELECT m.host FROM phx_membro m WHERE m.rede_id = r.id AND m.usuario_id = $1::int) AS meu_host \
              FROM phx_rede r JOIN phx_servidor s ON s.id = r.servidor_id JOIN phx_usuario d ON d.id = r.dono_id \
@@ -717,6 +729,7 @@ impl Painel {
                 ),
                 ("membros", Json::de_i64(v("membros").parse().unwrap_or(0))),
                 ("meu_ip", meu_ip),
+                ("exige_mfa", Json::de_bool(v("exige_mfa") == "t")),
             ]));
         }
         Ok(Json::Lista(lista))
@@ -847,7 +860,7 @@ impl Painel {
             .try_into()
             .map_err(|_| "chave do servidor torta")?;
         let tc = cofre.abrir_com(&v("tls_crypt_selada"), &format!("rede:{nome}"))?;
-        let conf = ovpn::conf_servidor(
+        let mut conf = ovpn::conf_servidor(
             &ovpn::Rede {
                 nome: &nome,
                 porta: v("porta").parse().map_err(|_| "porta invalida")?,
@@ -856,6 +869,9 @@ impl Painel {
             },
             &dir.display().to_string(),
         );
+        if self.rede_exige_mfa(rede_id)? {
+            conf.push_str(&crate::verificar::conf_servidor_mfa(&self.dados, rede_id));
+        }
         let ac_pem = self.ac_pem()?;
         let crl = self.crl_pem()?;
         gravar(&dir.join("crl.pem"), crl.as_bytes(), false)?;

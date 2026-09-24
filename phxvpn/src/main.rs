@@ -24,7 +24,8 @@ const AJUDA: &str = "phxvpn -- redes virtuais no estilo Radmin, sobre OpenVPN
   phxvpn criar-rede --painel http://host:8470 --usuario LOGIN --rede NOME [--finalidade TEXTO]
   phxvpn entrar     --painel http://host:8470 --usuario LOGIN --rede NOME [--saida ARQ.ovpn] [--conectar]
       Senhas por PHXVPN_SENHA e PHXVPN_SENHA_REDE, ou perguntadas no terminal --
-      nunca por argumento, que aparece na lista de processos.
+      nunca por argumento, que aparece na lista de processos. Quem cadastrou o
+      autenticador passa o codigo em PHXVPN_CODIGO.
       --conectar chama o openvpn com o perfil baixado.
 
   phxvpn p2p chave [--arquivo p2p.chave]
@@ -180,6 +181,9 @@ fn despachar(args: &[String]) -> Result<(), String> {
                 1
             })
         }
+        // Tambem do `openvpn` (auth-user-pass-verify): 0 aceita, 1 recusa, 2 adiado.
+        Some("ovpn-mfa-verificar") => std::process::exit(phxvpn::verificar::principal(&args[1..])),
+        Some("ovpn-mfa-adiado") => std::process::exit(phxvpn::verificar::adiado(&args[1..])),
         Some("servico") => cmd_servico(&args[1..]),
         // Chamado pelo servico "cliente", nao por gente.
         Some("cliente-rodar") => cmd_cliente_rodar(&args[1..]),
@@ -274,6 +278,9 @@ fn cmd_painel(args: &[String]) -> Result<(), String> {
     let (destrancado, instalado) = (p.destrancado(), p.instalado()?);
     let nomes: Vec<String> = o.todos("nome").iter().map(|n| n.to_lowercase()).collect();
     let estado = Arc::new(http::Estado::novo(p, supervisor).com_hosts(&escuta, &nomes));
+    // Antes de subir o OpenVPN: rede que exige o autenticador pergunta aqui.
+    #[cfg(unix)]
+    phxvpn::verificar::servir(estado.clone())?;
     if destrancado {
         http::materializar_e_subir(&estado)?;
     }

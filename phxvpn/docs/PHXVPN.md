@@ -51,6 +51,7 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [x] Segurança C2: sorteio falha fechado (descritor único; `BCryptGenRandom` no Windows) — nunca mais mistura previsível
 - [x] Auto-atualização: `phxvpn atualizar [--manifesto URL] [--verificar]` — manifesto JSON assinado Ed25519 (chave publica embutida, `CHAVE_PUBLICA_PADRAO`), SHA-256 do binário conferido, downgrade recusado, troca atômica (Linux: `rename` no mesmo binário em uso; Windows: renomeia o `.exe` em uso para `.old` e escreve o novo, limpo no próximo arranque). `phxvpn atualizar-assinar` e `atualizar-gerar-chave` para quem publica; `publicar-atualizacao.sh` monta os binários pelo `cargo build --release` (mesmo caminho do `empacotar.sh`) e assina. Checagem periódica opcional (`PHXVPN_ATUALIZAR_MANIFESTO` no ambiente) no `painel` e na `mesa` — só avisa, nunca aplica sozinha
 - [x] Serviço "cliente" (`phxvpn servico instalar cliente --perfil rede.ovpn`): o modo cliente do OpenVPN (entrar na rede de OUTRO servidor) agora sobe com a máquina, antes do login — o gap de "connect before logon" do OpenVPN Connect. Reaproveita a MESMA função que `phxvpn entrar --conectar` já usava (`rodar_openvpn_cliente`), não uma segunda cópia
+- [x] MFA (TOTP, RFC 6238) no login do painel e na conexão OpenVPN: usuário + senha + código por `auth-user-pass-verify` (adiado) e `static-challenge`, exigido por rede — **provado com o `openvpn` 2.6.19** (`provas/mfa/`)
 - [x] P2P: perfuração de NAT mediada pelo repasse (modo `auto`) — com dois NATs, o ping migra ao caminho direto em ~2 s e o repasse carrega **0** datagrama de dados; NAT simétrico ou sondas bloqueadas seguem pelo repasse
 
 ### Falta
@@ -65,7 +66,8 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [ ] USB: **prova com dispositivo real** (este contêiner não tem USB nem os módulos `usbip-host`/`vhci-hcd`)
 - [ ] macOS, Android e iOS (OpenVPN e WireGuard têm; achado da validação de 24/09)
 - [ ] Auditoria de segurança externa (OpenVPN teve em 2017, o WireGuard tem verificação formal; aqui só revisão interna)
-- [ ] MFA / RADIUS / Active Directory no painel — **decisão de produto do dono** (Access Server, Windows e strongSwan têm)
+- [ ] RADIUS / Active Directory no painel — **decisão de produto do dono** (Access Server, Windows e strongSwan têm; o MFA por TOTP já entrou)
+- [ ] MFA: serviço «cliente» antes do logon com rede que exige código (hoje recusado na instalação — não há quem digite); verificador no Windows (o soquete local é só Unix; lá o verificador recusa tudo); recuperar o `mfa.chave` perdido
 - [ ] Windows ARM64: **medido, falta só o linker.** `rustup target add aarch64-pc-windows-gnullvm` baixa o `rust-std` e `cargo check --target aarch64-pc-windows-gnullvm` passa limpo (o código não tem nada arquitetura-específico) — mas `cargo build` para o mesmo alvo para em `error: linker aarch64-w64-mingw32-clang not found`. O Ubuntu deste contêiner empacota `gcc-mingw-w64-*` só para `x86_64` e `i686` (`apt-cache search mingw`, zero resultado para `aarch64`); a cadeia que falta é o `llvm-mingw` (clang + `aarch64-w64-mingw32` runtime), que não vem por `apt` — só baixando um toolchain de fora, o que esta rodada não fez por ser rede+binário de terceiro fora do gerenciador de pacotes do sistema, não uma crate Rust. `aarch64-pc-windows-msvc` nem chega a esse ponto: pede o Windows SDK/MSVC, que não existe aqui de jeito nenhum sem instalador da Microsoft. Não entrou no `empacotar.sh` por não linkar
 - [ ] P2P no Windows / serviço "cliente": prova numa máquina Windows REAL continua faltando (mesmo limite já registrado para o P2P — o Wine não tem o driver TAP); o serviço "cliente" foi só testado no Linux (`cargo test`) e no `--mostrar` (unidade gerada, sem instalar de fato)
 
@@ -77,7 +79,8 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 | TCP 127.0.0.1:sorteada | `phxvpn mesa` | só a própria máquina + ficha da sessão (32 bytes por abertura) |
 | UDP 51820 | nó P2P | chave do membro (Noise IK) + senha da rede (PSK) + ficha de convite para entrar |
 | UDP 51821 | `phxvpn repasse` | **usuário + senha** com `--contas` (sem, fica aberto e avisa) |
-| UDP 1195+ | OpenVPN (modo servidor) | certificado da AC + CRL + `ccd-exclusive` + `tls-crypt` |
+| UDP 1195+ | OpenVPN (modo servidor) | certificado da AC + CRL + `ccd-exclusive` + `tls-crypt`; rede com MFA: + usuário, senha e código |
+| soquete `dados/verificar.sock` | `phxvpn painel` (Unix) | `SO_PEERCRED`: só root, o próprio painel e `nobody`; mesmo limitador de tentativas |
 
 ### Contas do servidor intermediário
 
@@ -790,7 +793,7 @@ aqui; os demais são documentação do fabricante.
 | Serviço / inicia com o sistema | systemd e SCM — medido | Sim | Sim | Embutido | Embutido |
 | Linux / Windows | Sim / Sim (Windows real a provar) | Não / Sim | Sim / Sim | — / Sim | Sim / WireGuard sim |
 | macOS, Android, iOS | **Não** | Não | Sim | — | WireGuard sim |
-| MFA / RADIUS / AD | **Não** | Não | Access Server / plugins | Sim | strongSwan sim |
+| MFA / RADIUS / AD | **MFA (TOTP) sim** — medido; RADIUS/AD não | Não | Access Server / plugins | Sim | strongSwan sim |
 | Auditoria externa | **Não** (revisão interna) | não documentada | Sim (2017) | Microsoft | WG: verificação formal |
 | Código | Aberto, zero crate | Fechado | Aberto (GPLv2) | Fechado | Aberto |
 
@@ -1004,6 +1007,86 @@ manda para A a tupla de volta já está ocupada — o NAT troca a porta
 `phxsql/docs/cognicao/cognicao_sonda-que-chega-cedo-envenena-o-nat_20260924_0405.md`.
 A saída conhecida (sondas com TTL curto) ficou de fora: o TTL é do soquete
 inteiro e o número de saltos não se conhece.
+
+## Segundo fator: TOTP no painel e na conexão (24/09/2026)
+
+O que o OpenVPN Access Server chama de MFA, com o que já existia aqui:
+**usuário + senha** do painel (PBKDF2) e o **código de 6 dígitos** do
+aplicativo autenticador (RFC 6238: HMAC-SHA1, 30 s, janela ±1 passo).
+
+```text
+membro:  Autenticador → Cadastrar → lê o QR (ou digita a chave) → Confirmar com um código
+dono:    na rede, «Exigir autenticador»  (admin ou dono da rede; o OpenVPN reinicia)
+membro:  entra de novo na rede → o perfil ganha  auth-user-pass + static-challenge "Código do autenticador" 1
+conecta: usuário, senha e código  →  SCRV1:base64(senha):base64(código)
+```
+
+| Peça | Onde | Por quê |
+|---|---|---|
+| HOTP/TOTP, base32, URI `otpauth://`, QR em SVG, SCRV1 | `src/totp.rs` | vetores do apêndice D da RFC 4226, apêndice B da RFC 6238 (SHA-1) e §10 da RFC 4648 |
+| HMAC-SHA1 | `phxsql-core/src/sha1.rs` | os 7 casos da RFC 2202; os aplicativos ignoram `algorithm=` e calculam SHA-1 |
+| Segredo selado, reuso, exigência por rede | `src/mfa.rs` | colunas novas por `ADD COLUMN IF NOT EXISTS` (banco instalado continua abrindo) |
+| Verificador do OpenVPN e soquete do painel | `src/verificar.rs` | o `openvpn` roda como `nobody` |
+
+**O caminho da conexão.** `auth-user-pass-verify "phxvpn ovpn-mfa-verificar
+<soquete> <rede>" via-file` roda como `nobody` — sem a senha do PostgreSQL e
+sem a chave do selo. Ele só **pergunta** ao painel por um soquete Unix
+(`dados/verificar.sock`), e o painel confere quem pergunta pelo `SO_PEERCRED`
+(root, o próprio painel, `nobody`). O painel exige que o usuário digitado seja
+o login do CN do certificado (`login.rede.série`) e a rede seja a do conf: o
+certificado da ana com a senha e o código do bruno não entra. A conferência é
+**adiada** (`auth_control_file`, código 2): o PBKDF2 não roda dentro do laço
+do `openvpn`. `auth-gen-token 43200`: a renegociação de hora em hora usa o
+token, e em 12 h pede código novo.
+
+**O segredo.** Vai ao banco selado (XChaCha20-Poly1305, id do usuário no dado
+associado) com a chave de `dados/mfa.chave` (0600) — **não** a senha mestre:
+o login do painel vem antes de destrancar o cofre, e o admin com MFA ficaria
+de fora (cognição `segredo-totp-nao-se-sela-pela-senha-mestre`). Sai numa
+resposta só, a do «Cadastrar»; depois de confirmado, nenhuma rota o devolve.
+
+**Reuso e tentativas.** `totp_ultimo` guarda o último passo aceito e a gravação
+é condicional (`totp_ultimo < passo`): o mesmo código não passa duas vezes —
+nem entre painel e VPN, nem depois de reiniciar, nem em duas conferências
+simultâneas. Erros contam no limitador do painel (`vpn:<login>`, `ip:`,
+`totp:<id>`). Senha errada e código errado dão a **mesma** frase no login.
+
+**Prova (24/09/2026, `provas/mfa/rodar.sh`, `openvpn` 2.6.19 em dois netns,
+binário release; `provas/mfa/resultados.json`).** Código calculado pelo
+`hmac` do Python, implementação independente:
+
+| Caso | Resultado |
+|---|---|
+| senha errada + código válido | recusado (e o código continuou valendo) |
+| senha + código certos | **conectou em 1,23 s**; ping 3/3 pelo túnel |
+| o mesmo código de novo | recusado |
+| código errado | recusado |
+| sem código (perfil respondido sem o desafio) | recusado |
+| **RED:** verificador trocado por `/bin/true` — senha errada; código errado | **conectou** / **conectou** (0,15 s): a prova reprova sem a conferência |
+
+Conferências adiadas no servidor: 5/5; `openvpn` como `nobody`; senha, senha
+errada ou segredo nos logs do painel e do OpenVPN: **0**. O desafio chegou ao
+cliente como `SC:1,Código do autenticador` (o perfil foi lido pelo próprio
+`openvpn`). Sem a conferência a conexão leva 0,15 s; com ela, 1,23 s — o
+PBKDF2 e a volta pelo soquete.
+
+**Tela** (`provas/mfa/tela.sh`, Chromium): QR desenhado (220 px), chave de 32
+caracteres, código errado recusado, confirmado; login sem código recusado com
+a frase única, com código entra; dono liga «Exigir autenticador»; admin vê
+«cadastrado» e zera. 0 erro de console. Defeito achado ao exercitar: o QR ia
+como `data:` numa `<img>` e a CSP do painel (`default-src 'self'`) o
+recusava — agora o SVG é analisado como XML e posto no DOM.
+![Autenticador](previa/20-painel-autenticador.png)
+
+RED dos testes: aceitar o passo igual ao último (`>=` no lugar de `>`) reprova
+`janela_de_um_passo_e_sem_reuso` e `autenticador_cadastro_reuso_e_rede_que_exige`
+(«reuso»); sem a recusa no serviço «cliente», reprova
+`servico_cliente_recusa_perfil_que_pede_codigo`.
+
+**Limites.** O QR foi lido de volta só pelo leitor do núcleo (não há leitor de
+terceiros neste contêiner); o `auth-gen-token` na renegociação de 1 h não foi
+medido; o verificador no Windows recusa tudo (sem soquete local lá); perder o
+`mfa.chave` desliga todo autenticador (vai no backup da pasta de dados).
 
 ## Limites que valem saber antes de usar
 

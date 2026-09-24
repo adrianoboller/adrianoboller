@@ -39,6 +39,16 @@ impl Cofre {
         }
     }
 
+    /// Cofre de uma chave ja pronta (sem senha): o do segredo TOTP, cuja
+    /// chave mora num arquivo do painel -- ver `mfa.rs`.
+    pub fn de_chave(chave: [u8; CHAVE_LEN]) -> Cofre {
+        Cofre {
+            chave,
+            sal: Vec::new(),
+            iteracoes: 0,
+        }
+    }
+
     /// Reabre o cofre a partir de um selo ja gravado: deriva com o sal e as
     /// iteracoes dele e prova a senha abrindo o selo.
     pub fn destrancar(senha_mestre: &str, selo_de_prova: &str) -> Result<Cofre, String> {

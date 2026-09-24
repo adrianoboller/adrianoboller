@@ -59,6 +59,18 @@ impl Supervisor {
     }
 }
 
+impl Supervisor {
+    /// Para e sobe de novo: a configuracao mudou (ligar/desligar o
+    /// autenticador da rede), e o OpenVPN so le o `servidor.conf` ao subir.
+    pub fn reiniciar(&self, nome: &str, dir: &Path) -> Result<(), String> {
+        if let Some(mut f) = self.filhos.lock().expect("filhos").remove(dir) {
+            let _ = f.kill();
+            let _ = f.wait();
+        }
+        self.garantir(nome, dir)
+    }
+}
+
 impl Drop for Supervisor {
     fn drop(&mut self) {
         if let Ok(mut f) = self.filhos.lock() {

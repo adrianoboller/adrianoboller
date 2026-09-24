@@ -15,6 +15,7 @@ pub mod http;
 pub mod iniciar;
 pub mod lembrar;
 pub mod mesa;
+pub mod mfa;
 pub mod noise;
 pub mod ovpn;
 pub mod p2p;
@@ -28,6 +29,7 @@ pub mod servico;
 pub mod servico_windows;
 pub mod supervisor;
 pub mod tap;
+pub mod totp;
 pub mod transporte;
 #[cfg(target_os = "linux")]
 pub mod tun;
@@ -35,4 +37,5 @@ pub mod tun;
 #[path = "tun_windows.rs"]
 pub mod tun;
 pub mod usb;
+pub mod verificar;
 pub mod web;
