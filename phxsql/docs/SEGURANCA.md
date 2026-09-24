@@ -1787,7 +1787,8 @@ Toda escolha aqui deixa algo em claro. Esconder isso seria pior que não cifrar.
 | o **hash do bloco** numa tabela modo ledger | `sha256` **sem sal** do conteúdo canônico, gravado na coluna `hash`, que não é marcada e por isso não é cifrada (`ledger.rs:199`, `:218`). Ao lado do valor selado fica um oráculo de confirmação exato e offline — pedido 355, nomeado em 18/09/2026 |
 | o **`perfil.txt`** de uma tabela cifrada pela MARCA e ausente de `cifra.tabelas` | o Profiler cega por `config.cifra.tabelas` (`profiler.rs:721`) e a cifra acontece por `DadoPessoal` (`reg.rs:275`): dois campos, uma garantia — pedido 356, nomeado em 18/09/2026 |
 | o `antes`/`depois` de coluna marcada no **`.lgpd`** | a trilha redige por NOME de coluna e por análise de hash (`trilha.rs:400`, `:358-370`), nunca pela marca. O corpo do `.lgpd` é cifrado pelo cofre no mesmo interruptor, e por isso isto é **concentração** e não vazamento em repouso — mas é exatamente a condição que a §11.7 escreveu no futuro do pretérito, e ela chegou: pedido 357 |
-| o **primeiro caractere** da coluna marcada, pelo `rowid` e pelo `esquema` | `rowid = (balde-1)*rpa + usados + 1` é conta pública (`reg.rs:1609`, `pag.rs:148`), e `op_esquema` devolve o histograma por letra a quem tem só `Ler`. Vale **inclusive para quem tem a coluna negada** — pedidos 346 e 358 |
+| o **primeiro caractere** da coluna marcada, pelo `rowid` | `rowid = (balde-1)*rpa + usados + 1` é conta pública (`reg.rs:1609`, `pag.rs:148`), e vale **inclusive para quem tem a coluna negada** — pedidos 346 e 358. O 358 **RECUSOU** esconder o rowid, com o número: um mapa `rowid -> endereço` consultado em toda leitura é a mesma família do catálogo reverso que esta casa já recusou para a FK, e pior, porque cobraria no `ler` (o laço), não no `excluir` (o raro) |
+| ~~o histograma do `esquema` (`paginacao.baldes[].registros`)~~ **FECHADO em 24/09/2026 (pedido 369)** | Era a segunda porta que o 358 nomeou e deixou para o papel B: `("esquema", PorColuna::Estrutura)` é a única classe isenta da peneira do direito por coluna — certo para nome, tipo e índice, errado para a CONTAGEM de linhas por balde, que é agregado do dado e não estrutura. Hoje `direito_coluna::peneirar_baldes` tira `registros` de cada balde quando a coluna que particiona a tabela está em `sem_ler`; `letra`, `arquivo`, `existe` e `primeiro_rowid` continuam, porque não são dado. Sem regra de coluna nenhuma, ou com regra numa coluna que não particiona, o histograma sai como sempre — teste `baldes_perdem_a_contagem_so_quando_a_coluna_da_particao_esta_negada` (`servidor.rs`) trava os dois sentidos |
 
 Isto está num teste, e não só aqui:
 `o_indice_sobre_a_coluna_marcada_continua_em_claro` **prova o vazamento** —
@@ -5480,10 +5481,11 @@ com a sonda do soquete: o absoluto é de debug, o que vale é a razão.
 
 **O alcance, dito antes de tudo: o 520 fecha o relógio do PBKDF2, e NÃO a
 enumeração de usuários.** Quem tem o token ainda separa quem existe por dois
-caminhos anteriores a esta frente, e os dois vão virar pedidos próprios: o **sal
-falso** do `desafio`, que ele recalcula (§26.6), e a **varredura linear** do
-`Cadastro::por_login`, que com cadastro grande põe centenas de microssegundos no
-`desafio` e na prova (§26.2). Revisado pelo SEC em
+caminhos anteriores a esta frente, e os dois viraram pedidos próprios: o **sal
+falso** do `desafio`, que ele recalcula (§26.6, continua aberto), e a
+**varredura linear** do `Cadastro::por_login`, que com cadastro grande põe
+centenas de microssegundos no `desafio` e na prova (§26.2, **fechada em
+24/09/2026 pelo pedido 529, ver §26.7**). Revisado pelo SEC em
 `docs/propostas/parecer-sec-520-521-2026-09-24.md`.
 
 ### 26.1 O que havia
@@ -5513,7 +5515,7 @@ o driver ODBC e o `phxsql-cmd` são clientes. Os caminhos que sobram:
 | senha, **inativo** (não estava no achado) | **0,2 ms** — o `ativo &&` pulava a conta | 1.372 ms | contador de iterações |
 | prova do desafio-resposta, não existe e inativo | 24–25 µs a menos que quem existe | ±1 µs | contador de provas |
 | o próprio `desafio`, não existe — cadastro de 3 usuários | +9 µs | 0,0 µs | só a sonda (sem guarda) |
-| `desafio` e prova com **cadastro grande** | a mesma varredura | **igual: NÃO consertado** — com 20.000 usuários, quem não existe custa **+363 µs** sobre o primeiro da lista (o último empata, +359 µs), medido pelo SEC | `sonda-varredura.py` do SEC; o `por_login` é um `find` que para no primeiro que casa |
+| `desafio` e prova com **cadastro grande** | a mesma varredura (com 20.000 usuários, quem não existe custava **+363 µs** sobre o primeiro da lista — debug, medido pelo SEC) | **FECHADO em 24/09/2026 (pedido 529, §26.7)** — em release, a diferença caiu de ~125,7 µs para −357 ns (ruído), com 20.000 usuários | contador de comparações (`comparacoes_de_login_nesta_thread`); o `por_login` varre o cadastro inteiro sempre, sem sair cedo |
 | o **conteúdo** do `desafio`: o sal falso | `HMAC(token, login)` — quem tem o token o recalcula | **igual: NÃO consertado** (§26.6) | sonda: 6 de 6 logins, um pedido cada |
 | amarração ao canal (`amarrar_canal`) | igual ao ramo da prova | igual | a recusa por política vem antes de olhar o login |
 | troca de senha (`usuario_alterar`, `ALTER USER`) | «não há usuário com o login» nomeado | igual | só administrador chama; não é oráculo |
@@ -5630,11 +5632,8 @@ teto» — e o teste ASCII de antes seguiu verde, que é o achado.
   (`scram_mock_salt`, com o `mock_auth_nonce` gravado no `pg_control` no
   `initdb`). Aqui isso pede um segredo persistente novo — arquivo ou campo de
   configuração —, que é decisão de formato e não do 520: vai como pedido novo.
-- **A varredura linear do `por_login` — achada pelo SEC, NÃO consertada.** O
-  `Cadastro::por_login` é um `find` que para no primeiro que casa; com 20.000
-  usuários, o `desafio` de quem não existe custa +363 µs sobre o do primeiro da
-  lista (debug, intercalado, n = 2.000). Anterior à frente, e vai como pedido
-  próprio, que mede em release e com cadastro realista antes de consertar.
+- **A varredura linear do `por_login` — achada pelo SEC, FECHADA em 24/09/2026
+  (pedido 529).** Ver §26.7.
 - **O irmão do `desafio` não tem guarda.** Só a sonda pelo soquete o mede; um
   contador para ele seria um observador novo no caminho de toda conexão.
 - **O hash carrega o próprio custo.** Usuário com hash feito à mão com outra
@@ -5649,6 +5648,77 @@ teto» — e o teste ASCII de antes seguiu verde, que é o achado.
   comentário foi corrigido; o valor não, porque mudar é decisão de custo por login
   e não do 521.
 - **Release não medido.** Os tempos são de debug; a razão é o que se afirma.
+
+### 26.7 A varredura linear do `por_login`, fechada (pedido 529)
+
+Achado pelo SEC (§26.6), fechado em 24/09/2026. `Cadastro::por_login` era um
+`Iterator::find`, que PARA no primeiro que casa: o primeiro da lista custa
+~O(1) e quem não existe custa ~O(N), porque precisa varrer o cadastro
+inteiro. O `desafio` e o ramo da prova do `op_login` chamam esta função bem
+antes de qualquer PBKDF2 esconder a diferença (§26.2/§26.6) — e por isso o
+relógio separava "existe" de "não existe" sem olhar senha nenhuma.
+
+**A premissa se mediu antes do conserto**, como o pedido exige: um cadastro
+REALISTA (200 usuários) e o pior caso do SEC (20.000), os dois em **release**
+(`cargo run --release -p phxsql-server --example custo-do-por-login`,
+mediana de 2.000–3.000 repetições intercaladas — primeiro, último,
+inexistente, primeiro, ... — pela mesma disciplina do §26.2):
+
+| cadastro | primeiro da lista | último | não existe | diferença (não existe − primeiro) |
+|---|---|---|---|---|
+| 200 (realista) | 24 ns | 440 ns | 434 ns | **+410 ns** |
+| 20.000 (pior caso do SEC) | 96 ns | 126.122 ns | 125.788 ns | **+125.692 ns** (~125,7 µs) |
+
+A diferença já era mensurável no cadastro realista, e não só no pior caso —
+o item ficou na conta.
+
+**O conserto:** o `find` que sai cedo virou uma varredura que **nunca sai
+cedo** — root, primeiro, último e ausente pagam o mesmo número de
+comparações, sempre o cadastro inteiro. Não é índice (`HashMap`): um índice
+exigiria manter uma segunda estrutura sincronizada com toda gravação,
+alteração e exclusão de usuário (vários sítios em `servidor.rs`), e a
+"busca que custa o mesmo para todos" fecha o oráculo com uma função só, sem
+nenhum estado novo para divergir do `Vec` de verdade.
+
+| cadastro | primeiro da lista | último | não existe | diferença (não existe − primeiro) |
+|---|---|---|---|---|
+| 200 (realista) | 433 ns | 495 ns | 432 ns | **−1 ns** (ruído) |
+| 20.000 (pior caso do SEC) | 126.049 ns | 126.359 ns | 125.692 ns | **−357 ns** (ruído) |
+
+**Um artefato de medição achado no caminho, e corrigido antes de confiar no
+número:** a primeira rodada do medidor, com `black_box` só no RESULTADO de
+`por_login`, media o "primeiro da lista" em 50 ns contra dezenas de milhares
+de ns dos outros dois — proporção impossível para uma função que varre o
+vetor inteiro. O LTO do release provava que a chamada era pura sobre uma
+entrada que não mudava entre repetições e a levantava para FORA do laço
+(loop-invariant code motion): a maior parte das 2.000 repetições cronometrava
+só um `Instant::now()` vazio. `black_box` na ENTRADA (o login, a cada
+iteração), e não só no resultado, fechou isso — é a mesma lição de sempre:
+número que não se mede volta errado, mesmo dentro do próprio medidor.
+
+**Um segundo artefato, da massa de teste e não do código:** com login de
+largura VARIÁVEL (`u0` .. `u19999`), `str ==` rejeita por TAMANHO antes de
+comparar byte a byte, e o "último" (`u19999`, 6 bytes) ficava ~2× mais caro
+que o "primeiro" (`u0`, 2 bytes) só porque é o único par de mesmo
+comprimento que precisa de comparação de verdade — nada a ver com posição no
+`Vec`. Login de largura FIXA (`u00000` .. `u19999`) tira esse efeito da
+conta, e é o que a tabela acima usa.
+
+**Prova por dentro, e não por relógio, no `cargo test`:**
+`Cadastro::por_login` ganhou uma contagem de comparações
+(`comparacoes_de_login_nesta_thread`, `#[cfg(test)]`, custa zero em produção)
+pela mesma razão do `hash::iteracoes_pagas_nesta_thread` do pedido 520 —
+relógio de teste floca.
+`por_login_faz_o_mesmo_numero_de_comparacoes_para_qualquer_login`
+prova que o primeiro, o último e quem não existe pagam
+exatamente as mesmas 500 comparações num cadastro de 500; o comportamento
+velho (`por_login_continua_achando_quem_existe_e_recusando_quem_nao_existe`)
+prova que root, usuário e ausente continuam respondendo o que respondiam
+antes — só o custo mudou.
+
+**O que fica de fora, nomeado:** o sal falso do `desafio` (§26.6, primeiro
+item) continua sendo um oráculo sem relógio — pedido 529 fecha só a
+varredura, não o sal.
 
 ## 27. O `core` do abort não leva a chave do cofre (pedido 504)
 

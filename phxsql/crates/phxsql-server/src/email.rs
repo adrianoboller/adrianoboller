@@ -52,6 +52,17 @@ use phxsql_core::fio::{Canal, Recebido, TETO_DO_APERTO};
 
 use crate::config::Email;
 
+/// Teto de linhas de CONTINUACAO (`250-...`) que uma resposta aceita --
+/// pedido 463.
+///
+/// Nao e teto de TEMPO: e teto de QUANTAS. Um rele que nunca manda a linha
+/// final (o espaco no lugar do hifen) prende a thread para sempre em silencio
+/// curto entre linhas, e o `timeout_s` so mede o silencio -- nunca a
+/// conversa inteira. A maior resposta legitima observada e o `EHLO` de um MTA
+/// cheio de extensoes, e nem essa passa de poucas dezenas de linhas; mil e
+/// folga suficiente para nunca recusar um rele de verdade.
+const TETO_DE_LINHAS_DE_CONTINUACAO: usize = 1000;
+
 /// Entrega uma mensagem pelo rele configurado.
 ///
 /// Devolve a ultima resposta do servidor quando dá certo -- ela costuma trazer
@@ -195,12 +206,19 @@ impl Sessao {
 /// inclusive. Sessenta e quatro KiB sao 128 vezes isso, e a folga e para o
 /// rele que nao segue a norma a letra.
 ///
-/// O laco das linhas de continuacao nao tem teto de QUANTAS: cada linha e
-/// solta antes da seguinte, entao ele nao guarda memoria -- gasta tempo, e
-/// tempo e outra pergunta, que o `timeout_s` responde so pela metade (ele
-/// mede o silencio, e nao a conversa inteira).
+/// # O laco das linhas de continuacao tinha teto de TAMANHO e nao de
+/// QUANTAS -- pedido 463
+///
+/// Cada linha e solta antes da seguinte, entao o laco nao guardava memoria:
+/// gastava TEMPO, e o `timeout_s` so responde por metade dessa pergunta,
+/// porque ele mede o SILENCIO entre bytes. Um rele que manda uma linha de
+/// continuacao (`250-...`) por vez, devagar mas sem nunca ficar quieto o
+/// bastante para estourar o silencio, prende esta thread de aviso para
+/// sempre sem nunca alocar mais que uma linha. `TETO_DE_LINHAS_DE_CONTINUACAO`
+/// fecha isso contando QUANTAS, e nao QUANTO TEMPO.
 fn ler_resposta<L: BufRead>(leitor: &mut L, esperados: &[u16]) -> Result<String> {
     let mut fio = Canal::Claro;
+    let mut continuacoes = 0usize;
     let ultima = loop {
         let linha = match fio.ler_ate(leitor, TETO_DO_APERTO) {
             Ok(Recebido::Linha(l)) => l,
@@ -222,6 +240,13 @@ fn ler_resposta<L: BufRead>(leitor: &mut L, esperados: &[u16]) -> Result<String>
         let limpa = linha.trim_end().to_string();
         if limpa.as_bytes().get(3) != Some(&b'-') {
             break limpa;
+        }
+        continuacoes += 1;
+        if continuacoes > TETO_DE_LINHAS_DE_CONTINUACAO {
+            return Err(PhxError::LimiteExcedido(format!(
+                "smtp: a resposta passou de {TETO_DE_LINHAS_DE_CONTINUACAO} linhas de \
+                 continuacao sem fechar"
+            )));
         }
     };
     let codigo: u16 = ultima
@@ -568,5 +593,59 @@ mod testes {
         let mut leitor = BufReader::new(&bruto[..]);
         assert_eq!(ler_resposta(&mut leitor, &[250]).unwrap(), "250 OK");
         assert_eq!(ler_resposta(&mut leitor, &[220]).unwrap(), "220 x");
+    }
+
+    // -------------------------------------------------- pedido 463, o teto
+
+    /// Um rele que nunca fecha a resposta: so manda `250-x` para sempre, cada
+    /// linha curta e bem formada -- nada que o teto de TAMANHO (pedido 439)
+    /// alcance. O que depende do sistema operacional se prova contra o
+    /// sistema operacional, e por isso e um soquete de verdade e nao um
+    /// `&[u8]` estatico: o ataque e sobre TEMPO de thread, nao sobre bytes
+    /// parados num buffer.
+    fn rele_que_nunca_fecha_a_resposta() -> u16 {
+        use std::io::Write as _;
+        let ouvinte = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let porta = ouvinte.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            let Ok((mut s, _)) = ouvinte.accept() else {
+                return;
+            };
+            // Bem mais que o teto: se o cliente nao parar sozinho, este laco
+            // segura a thread do teste, e nao so a do cliente.
+            for _ in 0..(TETO_DE_LINHAS_DE_CONTINUACAO * 2) {
+                if s.write_all(b"250-x\r\n").is_err() {
+                    return;
+                }
+            }
+        });
+        porta
+    }
+
+    /// **A resposta sem fim para no teto de QUANTAS -- pedido 463.**
+    ///
+    /// Antes do teto este teste travava: o laco de `ler_resposta` nunca
+    /// achava a linha final e a thread do teste ficava presa atras do
+    /// `read_timeout` de 20 s vezes `TETO_DE_LINHAS_DE_CONTINUACAO * 2`
+    /// linhas -- na pratica, sem fim nenhum para este teste. Com o teto, a
+    /// recusa chega bem antes de o rele falso acabar de mandar linha.
+    #[test]
+    fn a_resposta_sem_fim_para_no_teto_de_quantas() {
+        let porta = rele_que_nunca_fecha_a_resposta();
+        let fluxo = TcpStream::connect(("127.0.0.1", porta)).unwrap();
+        fluxo
+            .set_read_timeout(Some(Duration::from_secs(20)))
+            .unwrap();
+        let mut leitor = BufReader::new(fluxo);
+        match ler_resposta(&mut leitor, &[220]) {
+            Err(PhxError::LimiteExcedido(m)) => {
+                assert!(m.starts_with("smtp:"), "{m}");
+                assert!(
+                    m.contains(&TETO_DE_LINHAS_DE_CONTINUACAO.to_string()),
+                    "{m}"
+                );
+            }
+            outro => panic!("a resposta sem fim nao foi recusada pelo teto: {outro:?}"),
+        }
     }
 }

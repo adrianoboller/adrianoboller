@@ -1620,7 +1620,20 @@ pub const OPERACOES: &[Operacao] = &[
             ),
             opc("host", "string", "o endereço do outro servidor, para uma ligação nova"),
             opc("porta", "integer", "a porta dele; 5000 quando omitida"),
-            opc("token", "string", "o token da porta de dados dele"),
+            opc(
+                "token_remoto",
+                "string",
+                "o token da porta de dados do OUTRO servidor. Chama-se assim \
+                 e não `token` porque esse nome já é o portão 1 DESTE \
+                 servidor — mandar o do outro lado com o mesmo nome faria um \
+                 sobrescrever o outro dentro do mesmo pedido",
+            ),
+            opc(
+                "token",
+                "string",
+                "alias antigo de `token_remoto`, só lido quando `token_remoto` \
+                 vem vazio — mantido por compatibilidade com quem já o usava",
+            ),
             opc("usuario", "string", "o login de replicação"),
             opc(
                 "senha_hash",
@@ -2667,5 +2680,30 @@ mod testes {
         let a = por_nome("aplicar").unwrap();
         assert!(!a.ferramenta_mcp);
         assert!(!a.escreve(), "o OPS_ESCRITA mudou: reveja este teste");
+    }
+
+    /// Pedido 276: o catálogo declarava só `token` para `replicacao_testar`,
+    /// enquanto `origem_da_sonda` (`servidor.rs`) lê `token_remoto` primeiro
+    /// e só cai no `token` como alias de compatibilidade. Quem lia só o
+    /// catálogo nunca descobria o nome certo. Lê o FONTE para os dois nunca
+    /// divergirem de novo, no mesmo molde de `ops_do_despachar`.
+    #[test]
+    fn replicacao_testar_declara_o_campo_que_a_sonda_le_primeiro() {
+        let i = FONTE
+            .find("fn origem_da_sonda(")
+            .expect("origem_da_sonda sumiu do servidor.rs");
+        let fim = FONTE[i..].find("\n}\n").expect("origem_da_sonda nao fecha") + i;
+        assert!(
+            FONTE[i..fim].contains("\"token_remoto\""),
+            "origem_da_sonda deixou de ler \"token_remoto\": confira o \
+             catalogo de replicacao_testar contra o campo novo"
+        );
+
+        let op = por_nome("replicacao_testar").unwrap();
+        assert!(
+            op.parametros.iter().any(|p| p.nome == "token_remoto"),
+            "o catalogo de replicacao_testar nao declara `token_remoto`, que \
+             e o campo que a sonda le antes do alias `token`"
+        );
     }
 }

@@ -639,6 +639,86 @@ pub fn peneirar(resposta: Json, onde: Onde, negadas: &[String]) -> Json {
     }
 }
 
+/// Tira `registros` de cada balde da particao alfanumerica, quando a coluna
+/// particionada e' uma das `sem_ler` -- pedido 369.
+///
+/// `esquema` e classe [`PorColuna::Estrutura`] porque nome, tipo e indice de
+/// uma coluna nao sao dado. Mas `baldes[].registros` e' a CONTAGEM de linhas
+/// por classe do primeiro caractere da coluna -- agregado do dado, viajando
+/// na mesma resposta que a estrutura. So mexe quando a coluna que particiona
+/// a tabela e' negada a este usuario; sem regra de coluna nenhuma o chamador
+/// nem entra aqui (o `bool` da sessao decide antes de qualquer trabalho), e
+/// com regra numa coluna QUE NAO particiona a tabela a lista sai intacta --
+/// o comportamento velho continua valendo para quem nao tem o motivo.
+pub fn peneirar_baldes(resposta: Json, sem_ler: &[String]) -> Json {
+    if sem_ler.is_empty() {
+        return resposta;
+    }
+    let Json::Objeto(pares) = resposta else {
+        return resposta;
+    };
+    Json::Objeto(
+        pares
+            .into_iter()
+            .map(|(k, v)| {
+                if k == "paginacao" {
+                    (k, peneirar_baldes_da_paginacao(v, sem_ler))
+                } else {
+                    (k, v)
+                }
+            })
+            .collect(),
+    )
+}
+
+fn peneirar_baldes_da_paginacao(paginacao: Json, sem_ler: &[String]) -> Json {
+    let Json::Objeto(pares) = paginacao else {
+        return paginacao;
+    };
+    let particiona_coluna_negada = pares
+        .iter()
+        .find(|(k, _)| k == "coluna")
+        .and_then(|(_, v)| v.texto())
+        .is_some_and(|c| sem_ler.iter().any(|n| mesmo_nome(n, c)));
+    if !particiona_coluna_negada {
+        return Json::Objeto(pares);
+    }
+    Json::Objeto(
+        pares
+            .into_iter()
+            .map(|(k, v)| {
+                if k == "baldes" {
+                    (k, peneirar_registros_dos_baldes(v))
+                } else {
+                    (k, v)
+                }
+            })
+            .collect(),
+    )
+}
+
+fn peneirar_registros_dos_baldes(baldes: Json) -> Json {
+    let Json::Lista(itens) = baldes else {
+        return baldes;
+    };
+    Json::Lista(
+        itens
+            .into_iter()
+            .map(|b| {
+                let Json::Objeto(pares) = b else {
+                    return b;
+                };
+                Json::Objeto(
+                    pares
+                        .into_iter()
+                        .filter(|(k, _)| k != "registros")
+                        .collect(),
+                )
+            })
+            .collect(),
+    )
+}
+
 #[cfg(test)]
 mod testes {
     use super::*;

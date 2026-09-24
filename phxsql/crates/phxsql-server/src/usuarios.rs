@@ -1170,6 +1170,25 @@ fn extrair_hash(j: &Json, login: &str, avisos: &mut Vec<String>) -> Result<Strin
 /// o fornece (`servidor.rs`); as provas do cadastro passam um de mentira.
 pub type ResolvedorDeEsquema<'a> = &'a mut dyn FnMut(&str, &str) -> Result<Option<Vec<String>>>;
 
+#[cfg(test)]
+std::thread_local! {
+    static COMPARACOES_DE_LOGIN: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// Quantas comparacoes de login `Cadastro::por_login` fez nesta thread --
+/// so no teste, pedido 529.
+///
+/// Existe para provar por DENTRO que o custo nao depende de ONDE o login
+/// mora (nem de existir): com o defeito, o primeiro da lista para em 1
+/// comparacao e quem nao existe varre os N inteiros; com o conserto, os
+/// dois pagam exatamente N (mais 1 se ha root). Contador em vez de relogio
+/// pela mesma razao do `hash::iteracoes_pagas_nesta_thread`: relogio de
+/// teste floca, e a pergunta e "quanto trabalho", nao "quanto tempo".
+#[cfg(test)]
+pub fn comparacoes_de_login_nesta_thread() -> u64 {
+    COMPARACOES_DE_LOGIN.with(std::cell::Cell::get)
+}
+
 /// O cadastro inteiro: o root e os demais.
 #[derive(Debug, Clone, Default)]
 pub struct Cadastro {
@@ -1362,13 +1381,51 @@ impl Cadastro {
         self.root.is_none() && self.usuarios.is_empty()
     }
 
+    /// Acha o usuario pelo login.
+    ///
+    /// # Custo por TAMANHO do cadastro, e nao por POSICAO -- pedido 529
+    ///
+    /// O login e unico (`de_json` recusa duplicata na carga, root inclusive),
+    /// e por isso um `Iterator::find` que PARA no primeiro que casa devolve
+    /// `Some` bem mais rapido para o primeiro da lista do que para quem nao
+    /// existe, que precisa varrer os N inteiros. Com cadastro grande isso vira
+    /// um relogio que separa "existe" de "nao existe" sem olhar senha
+    /// nenhuma -- e o `desafio` e a prova do `op_login` chamam esta funcao
+    /// bem ANTES de qualquer PBKDF2 esconder a diferenca (`docs/SEGURANCA.md`
+    /// §26.2/§26.6). O SEC mediu em DEBUG, intercalado, n=2.000: com 20.000
+    /// usuarios, quem nao existe custava **+363 us** sobre o primeiro da
+    /// lista.
+    ///
+    /// O conserto varre SEMPRE o cadastro inteiro, sem sair cedo em nenhum
+    /// casamento -- root, primeiro, ultimo ou ausente pagam o MESMO numero de
+    /// comparacoes. Medido em RELEASE por esta frente, antes e depois do
+    /// conserto, com login de LARGURA FIXA (`cargo run --release -p
+    /// phxsql-server --example custo-do-por-login`, que documenta por que a
+    /// largura tem de ser fixa): com 200 usuarios (cadastro realista), a
+    /// diferenca entre "nao existe" e o primeiro da lista caiu de 410 ns para
+    /// -1 ns (ruido); com 20.000 (o pior caso do SEC), de ~125,7 us para
+    /// -357 ns. Numeros completos e a explicacao do artefato de medicao (LTO
+    /// levantava a chamada para fora do laco quando a entrada nao variava)
+    /// em `docs/SEGURANCA.md` §26.7.
     pub fn por_login(&self, login: &str) -> Option<&Usuario> {
+        let mut achado: Option<&Usuario> = None;
         if let Some(r) = &self.root {
             if r.login == login {
-                return Some(r);
+                achado = Some(r);
             }
         }
-        self.usuarios.iter().find(|u| u.login == login)
+        for u in &self.usuarios {
+            // So conta no teste -- pedido 529: contar em producao dobraria o
+            // custo de cada comparacao real por um `Cell::set`, e a prova
+            // por dentro so precisa existir onde se prova. Ver
+            // `comparacoes_de_login_nesta_thread`.
+            #[cfg(test)]
+            COMPARACOES_DE_LOGIN.with(|c| c.set(c.get() + 1));
+            if u.login == login {
+                achado = Some(u);
+            }
+        }
+        achado
     }
 
     /// Confere login e senha. Devolve o usuario so quando os dois batem e a
@@ -2475,5 +2532,77 @@ mod tests {
             .unwrap();
         assert_eq!(avisos.len(), 1, "{avisos:?}");
         assert!(avisos[0].contains("folha.reg truncado"), "{avisos:?}");
+    }
+
+    // -------------------------------------------------- pedido 529, o teto
+
+    /// Um cadastro com `n` usuarios, todos com o MESMO hash valido -- o
+    /// conteudo nao importa para o `por_login`, e gerar um hash de verdade
+    /// por usuario pagaria o PBKDF2 de `n` contas so para montar o cenario.
+    fn cadastro_com_n_usuarios(n: usize) -> Cadastro {
+        let mut usuarios = String::with_capacity(n * 56);
+        for i in 0..n {
+            if i > 0 {
+                usuarios.push(',');
+            }
+            usuarios.push_str(&format!(
+                r#"{{"login":"u{i}","id":{},"senha_hash":"pbkdf2-sha256$1000$00$00"}}"#,
+                i as u32 + 1
+            ));
+        }
+        cadastro(&format!(r#"{{"usuarios":[{usuarios}]}}"#))
+    }
+
+    /// **Prova por dentro: `por_login` custa o MESMO numero de comparacoes
+    /// para o primeiro da lista, o ultimo e quem nao existe -- pedido 529.**
+    ///
+    /// Com o defeito (o `find` que para cedo), o primeiro custaria 1
+    /// comparacao e "nao existe" custaria as 500 inteiras: um relogio que
+    /// separa quem existe de quem nao existe sem olhar senha nenhuma. Contador
+    /// em vez de relogio pela mesma razao do pedido 520: relogio de teste
+    /// floca.
+    #[test]
+    fn por_login_faz_o_mesmo_numero_de_comparacoes_para_qualquer_login() {
+        let c = cadastro_com_n_usuarios(500);
+
+        let antes = comparacoes_de_login_nesta_thread();
+        assert!(c.por_login("u0").is_some());
+        let do_primeiro = comparacoes_de_login_nesta_thread() - antes;
+
+        let antes = comparacoes_de_login_nesta_thread();
+        assert!(c.por_login("u499").is_some());
+        let do_ultimo = comparacoes_de_login_nesta_thread() - antes;
+
+        let antes = comparacoes_de_login_nesta_thread();
+        assert!(c.por_login("nao-existe-nenhum").is_none());
+        let de_quem_nao_existe = comparacoes_de_login_nesta_thread() - antes;
+
+        assert_eq!(
+            do_primeiro, 500,
+            "o primeiro da lista parou cedo em vez de varrer os 500"
+        );
+        assert_eq!(do_primeiro, do_ultimo, "primeiro e ultimo divergem");
+        assert_eq!(
+            do_primeiro, de_quem_nao_existe,
+            "quem nao existe custa um numero diferente de comparacoes: \
+             e exatamente o oraculo de tempo que o pedido 529 fecha"
+        );
+    }
+
+    /// **Comportamento VELHO: o resultado continua o mesmo**, so o CUSTO
+    /// mudou. Root, primeiro, ultimo e quem nao existe respondem exatamente
+    /// o que respondiam antes.
+    #[test]
+    fn por_login_continua_achando_quem_existe_e_recusando_quem_nao_existe() {
+        let txt = format!(
+            r#"{{"root":{{"login":"root","senha_hash":"{}"}},
+                 "usuarios":[{{"login":"ana","id":1,"senha_hash":"{}"}}]}}"#,
+            hash_rapido("r"),
+            hash_rapido("a")
+        );
+        let c = cadastro(&txt);
+        assert_eq!(c.por_login("root").unwrap().login, "root");
+        assert_eq!(c.por_login("ana").unwrap().login, "ana");
+        assert!(c.por_login("fulano").is_none());
     }
 }

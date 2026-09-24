@@ -7602,6 +7602,15 @@ impl Servidor {
                 let r = self.executar(op, pedido, sessao)?;
                 let sem_ler = u.colunas_negadas(&base, &tabela, Atividade::Ler);
                 let sem_alterar = u.colunas_negadas(&base, &tabela, Atividade::Alterar);
+                // O histograma da particao alfanumerica e' agregado do DADO,
+                // nao da estrutura -- sai quando a coluna que particiona a
+                // tabela esta em `sem_ler` (pedido 369, irma do 358 pelo
+                // outro lado: la o vazamento vinha pelo rowid, aqui pelo
+                // balde). Sai antes do atalho de baixo porque ele so olha o
+                // par (sem_ler, sem_alterar) vazio, e este e' vazio nos dois
+                // quando nao ha regra -- exatamente o caso em que
+                // `peneirar_baldes` tambem nao mexe em nada.
+                let r = dc::peneirar_baldes(r, &sem_ler);
                 if sem_ler.is_empty() && sem_alterar.is_empty() {
                     return Ok(r);
                 }
@@ -33402,6 +33411,111 @@ mod testes_direito_por_coluna {
         )
         .unwrap();
         assert!(c.campo("colunas_sem_leitura").is_none(), "{}", c.escrever());
+    }
+
+    /// Um servidor a parte, so para o teste dos baldes: a base do fixture
+    /// comum nao tem tabela particionada por letra, e criar uma aqui evita
+    /// mexer no que as outras baterias deste modulo ja dependem.
+    fn servidor_com_particao_por_letra(
+        dir: &std::path::Path,
+        cadastro: Cadastro,
+    ) -> (Arc<Servidor>, Sessao) {
+        let s = Servidor::novo(config_em(dir, cadastro.clone())).unwrap();
+        let dono = Sessao::default();
+        s.executar("criar_database", &pedido(r#"{"database":"b"}"#), &dono)
+            .unwrap();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"vip",
+                    "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true},
+                               {"nome":"cidade","tipo":"Str(20)","obrigatoria":true}],
+                    "indices":[{"nome":"porId","colunas":["id"],"unico":true,
+                                "primario":true}],
+                    "registros_por_arquivo":1000,
+                    "particao":"letra","particao_coluna":"cidade"}"#,
+            ),
+            &dono,
+        )
+        .unwrap();
+        for (id, cidade) in [(1, "amparo"), (2, "blumenau"), (3, "boituva")] {
+            s.executar(
+                "inserir",
+                &pedido(&format!(
+                    r#"{{"database":"b","tabela":"vip","linha":{{"id":{id},"cidade":"{cidade}"}}}}"#
+                )),
+                &dono,
+            )
+            .unwrap();
+        }
+        let sessao = Sessao {
+            usuario: cadastro.por_login("ana").cloned(),
+            ..Sessao::default()
+        };
+        (s, sessao)
+    }
+
+    /// Pedido 369: `baldes[].registros` e' agregado do DADO -- quantas linhas
+    /// caem em cada classe do primeiro caractere --, e nao da estrutura. Some
+    /// so' quando a coluna que particiona a tabela esta negada a este
+    /// usuario; quem nao tem regra na coluna da particao continua vendo o
+    /// histograma de sempre, que e' o comportamento velho que "guarda nova
+    /// entra pedida, nao imposta" exige preservar.
+    #[test]
+    fn baldes_perdem_a_contagem_so_quando_a_coluna_da_particao_esta_negada() {
+        let dir = dir_temp("baldes");
+        let cadastro_negando_cidade = cadastro(
+            r#"{"*":{"ler":true,"inserir":true,"alterar":true,"excluir":true,
+                 "criar":true,"reindexar":true,"diario":true,"verificar":true,
+                 "replicar":true,"administrar":true,
+                 "tabelas":{"vip":{"ler":true,"inserir":true,"alterar":true,
+                   "excluir":true,"criar":true,"diario":true,"administrar":true,
+                   "replicar":true,"verificar":true,"reindexar":true,
+                   "colunas":{"cidade":{"ler":false,"alterar":false}}}}}}"#,
+        );
+        let (s, ana) = servidor_com_particao_por_letra(&dir, cadastro_negando_cidade);
+
+        let e = pede(&s, &ana, r#""op":"esquema","database":"b","tabela":"vip""#).unwrap();
+        let baldes = e
+            .campo("paginacao")
+            .and_then(|p| p.campo("baldes"))
+            .and_then(Json::lista)
+            .unwrap();
+        assert!(!baldes.is_empty(), "os 37 baldes sumiram: {}", e.escrever());
+        assert!(
+            baldes.iter().all(|b| b.campo("registros").is_none()),
+            "a contagem por balde vazou com a coluna da particao negada: {}",
+            e.escrever()
+        );
+        // A ESTRUTURA continua inteira -- so o agregado do dado saiu.
+        assert!(
+            baldes.iter().all(|b| b.campo("letra").is_some()
+                && b.campo("arquivo").is_some()
+                && b.campo("primeiro_rowid").is_some()),
+            "a peneira levou junto o que nao e dado: {}",
+            e.escrever()
+        );
+
+        // CONTROLE (comportamento velho): sem regra de coluna nenhuma, o
+        // histograma de sempre continua vindo, contagem inclusive.
+        let dono = Sessao::default();
+        let e2 = s
+            .executar(
+                "esquema",
+                &pedido(r#"{"database":"b","tabela":"vip"}"#),
+                &dono,
+            )
+            .unwrap();
+        let baldes2 = e2
+            .campo("paginacao")
+            .and_then(|p| p.campo("baldes"))
+            .and_then(Json::lista)
+            .unwrap();
+        assert!(
+            baldes2.iter().any(|b| b.campo("registros").is_some()),
+            "o comportamento velho mudou para quem nao tem regra nenhuma: {}",
+            e2.escrever()
+        );
     }
 
     /// O `esquema` diz o material EM DISCO da tabela. Aqui o cofre esta

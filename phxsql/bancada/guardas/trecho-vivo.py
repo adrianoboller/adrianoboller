@@ -270,6 +270,13 @@ dia, nunca no desejado:
   o cadastro acessorio ilegivel, o core com a chave e a falha do backup sem
   aviso. A frente contou 334 a partir de 318; a conta do encontro e do
   integrador, pelo `--catraca`.
+  **SUBIU para 374 em 24/09/2026** (lote de faceis A: 276, 369, 443, 463,
+  529, integrado sobre o 502+452+...): seis guardas -- o catalogo que so
+  declara `token` e nao `token_remoto`, o histograma da particao no esquema,
+  os dois tetos do `dblink` MySQL, o teto das linhas de continuacao do SMTP e
+  o `por_login` que parava no primeiro que casava. Contado pelo `--catraca`
+  na arvore combinada; a frente tinha subido o piso sozinha, e o numero dela
+  (358) nao entrou.
   **SUBIU para 300 em 24/09/2026** (pedido 497, o literal do pedido no texto
   do erro que o `acessos.log` grava): tres guardas novas, uma por motor que
   monta a mensagem -- o `descrever` do SQL, o `mostrar` da expressao -- e a
@@ -393,7 +400,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 368
+PISO_DAS_ENTRADAS = 374
 
 # ------------------------------------------------------------- APOSENTADAS
 #

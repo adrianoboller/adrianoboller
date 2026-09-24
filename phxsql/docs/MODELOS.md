@@ -1302,6 +1302,9 @@ QA, com julgamento de pergunta, e a redação do H.
 | 249 — a sonda do disco a cada 5 minutos (ordem do dono) | leve | troca de um padrao e dos seus irmaos em texto, mecanica e verificavel por teste |
 | faceis A — 276, 369, 443, 462, 463, 529 | medio | itens locais de um arquivo, com teto ou texto; ordem do dono: os faceis primeiro |
 | faceis B — 345, 473, 524, 518 | medio | permissao de arquivo, mensagem, fsync do backup e NULL no diff: locais e provaveis por teste |
+| SEC — revisao do lote faceis A (369, 443, 529) | forte | seguranca: redacao por analise, parser de fio em claro e oraculo de tempo do login |
+| J — auto-laco medido nos quatro motores | medio | medicao roteirizada de um comportamento, com fonte primaria; o empate subiu ao dono |
+| DBA — re-checagem das condicoes do lote de integridade | forte | concorrencia (desempate do ciclo de COMMIT barrado) e garantia de dado |
 
 **A integração achou o que nenhuma frente via, de novo por território de
 arquivo não bastar em worktree compartilhado**: `cargo fmt --all` de uma

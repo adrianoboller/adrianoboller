@@ -967,9 +967,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `servidor-segue-de-pe-depois-do-fsync-recusado` | o servidor segue de pé depois de um `fsync` recusado, gravando num disco que já se sabe que mente | 1 | ✅ provada |
 | `completar-engole-a-tabela-que-nao-foi-ao-disco` | a recuperação engole o erro do `sincronizar` e apaga a marca de um commit cujo dado não foi ao disco | 1 | ✅ provada |
 
-**325 das 367 guardas do catálogo: 1 aposentada, 320 provadas, 4 redundantes** — 8922 s de mutação, medido em 2026-09-16 15:25.
+**325 das 373 guardas do catálogo: 1 aposentada, 320 provadas, 4 redundantes** — 8922 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 43 das 367 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 43 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 49 das 373 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 49 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
@@ -1014,6 +1014,12 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `dblink-que-nao-se-le-abre-vazio` — o dblink.json que existe e nao se le vira cadastro vazio
 - `jobs-ilegivel-derruba-o-motor` — o cadastro de jobs ilegivel derruba o motor inteiro
 - `core-leva-a-senha-do-cofre` — o core do abort leva a senha do cofre para o disco
+- `catalogo-so-declara-token-nao-token-remoto` — o catálogo de `replicacao_testar` não declara `token_remoto`, o campo que a sonda lê primeiro
+- `esquema-vaza-o-histograma-da-particao` — `op_esquema` publica `baldes[].registros` mesmo com a coluna da partição negada ao usuário
+- `dblink-mysql-sem-teto-de-colunas` — o DbLink MySQL(R) reserva `Vec::with_capacity` do número de colunas que o PAR manda, sem teto
+- `dblink-mysql-sem-teto-do-quadro-acumulado` — `ler_quadro` do DbLink MySQL(R) junta continuações de 16 MB sem teto sobre o total
+- `smtp-sem-teto-de-linhas-de-continuacao` — o cliente SMTP aceita QUALQUER número de linhas de continuação (`250-...`), sem teto
+- `por-login-para-no-primeiro-que-casa` — `Cadastro::por_login` é um `find`: quem não existe custa muito mais que o primeiro da lista
 
 As guardas que esta corrida ainda cita, hoje aposentadas:
 

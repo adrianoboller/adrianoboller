@@ -43,6 +43,7 @@ use std::net::TcpStream;
 use std::time::Duration;
 
 use phxsql_core::error::{PhxError, Result};
+use phxsql_core::fio::TETO_DO_REGISTRO;
 use phxsql_core::hash::sha256;
 use phxsql_core::sha1::sha1;
 
@@ -59,6 +60,22 @@ const PLUGIN_AUTH_LENENC: u32 = 0x0020_0000;
 const COM_QUERY: u8 = 0x03;
 const COM_PING: u8 = 0x0e;
 const COM_QUIT: u8 = 0x01;
+
+/// Teto de colunas de um resultado, ANTES de reservar capacidade nenhuma --
+/// pedido 443.
+///
+/// `quantas` (abaixo, em `consultar`) vem de um inteiro `lenenc` que o OUTRO
+/// lado escreveu no fio -- ate 2^64-1, sem teto proprio. Este dblink fala em
+/// claro (ver `# Limites` no topo do arquivo), entao "o outro lado" inclui
+/// quem esta no meio da conexao, e nao so o servidor MySQL(R) configurado. Um
+/// `Vec::with_capacity(quantas as usize)` com esse numero nao devolve erro
+/// para o chamador tratar: o alocador aborta o PROCESSO INTEIRO na alocacao
+/// gigante (ou o calculo de capacidade em bytes estoura antes disso) -- a
+/// mesma classe de defeito do pedido 434, agora do lado do dblink. O numero
+/// e o teto de fabrica do proprio MySQL(R) (MySQL Reference Manual, "Limits
+/// on Table Column Count": 4096 colunas por tabela), e nenhuma consulta
+/// legitima deste dblink devolve mais que isso.
+const TETO_DE_COLUNAS: u64 = 4096;
 
 /// Uma coluna do resultado, ja traduzida para nomes que a tela entende.
 #[derive(Debug, Clone)]
@@ -297,6 +314,11 @@ impl Conexao {
         let mut i = 0;
         let quantas = le_lenenc(&primeiro, &mut i)
             .ok_or_else(|| erro("nao entendi quantas colunas o resultado tem".into()))?;
+        if quantas > TETO_DE_COLUNAS {
+            return Err(PhxError::LimiteExcedido(format!(
+                "dblink mysql: o resultado diz {quantas} colunas, acima do teto de {TETO_DE_COLUNAS}"
+            )));
+        }
         let mut colunas = Vec::with_capacity(quantas as usize);
         for _ in 0..quantas {
             let q = self.ler_quadro()?;
@@ -371,8 +393,28 @@ impl Conexao {
             .map_err(|e| erro(format!("escrita falhou: {e}")))
     }
 
-    /// Le um quadro, juntando as continuacoes de 16 MB.
+    /// Le um quadro, juntando as continuacoes de 16 MB, sem passar de
+    /// [`TETO_DO_REGISTRO`].
     fn ler_quadro(&mut self) -> Result<Vec<u8>> {
+        self.ler_quadro_ate(TETO_DO_REGISTRO)
+    }
+
+    /// O mesmo, com o teto explicito -- existe so para o teste do pedido 443
+    /// exercitar a acumulacao sem precisar mandar 128 MiB pelo soquete. Quem
+    /// le de verdade usa sempre [`Conexao::ler_quadro`].
+    ///
+    /// # O teto e' sobre o ACUMULADO
+    ///
+    /// Cada quadro sozinho ja e' limitado a 16 MB pelo proprio formato (3
+    /// bytes de tamanho), mas a JUNCAO das continuacoes nao tinha teto
+    /// nenhum: um servidor -- ou quem esta no meio da conexao em claro -- que
+    /// so' manda quadros cheios (`n == 0x00FFFFFF`) faz este `Vec` crescer
+    /// sem fim, e quem decide quanta memoria este lado reserva vira o outro
+    /// lado do fio. Reusa [`TETO_DO_REGISTRO`], o mesmo teto que o `Canal`
+    /// aplica a toda leitura de um registro do motor: nao e' um numero novo
+    /// para o dblink, e' o mesmo "quanto este lado reserva de quem ainda nao
+    /// provou nada" resolvido no MESMO lugar.
+    fn ler_quadro_ate(&mut self, teto: u64) -> Result<Vec<u8>> {
         let mut carga = Vec::new();
         loop {
             let mut cabeca = [0u8; 4];
@@ -382,6 +424,13 @@ impl Conexao {
             let n = u32::from_le_bytes([cabeca[0], cabeca[1], cabeca[2], 0]) as usize;
             self.sequencia = cabeca[3].wrapping_add(1);
             let inicio = carga.len();
+            if (inicio + n) as u64 > teto {
+                return Err(PhxError::LimiteExcedido(format!(
+                    "dblink mysql: quadro (juntando continuacoes) passaria de {} bytes, \
+                     acima do teto de {teto}",
+                    inicio + n
+                )));
+            }
             carga.resize(inicio + n, 0);
             self.fluxo
                 .read_exact(&mut carga[inicio..])
@@ -724,5 +773,96 @@ mod testes {
         assert_eq!(v[0], Some("ab".to_string()));
         assert_eq!(v[1], None);
         assert_eq!(v[2], Some(String::new()));
+    }
+
+    // -------------------------------------------------- pedido 443, os tetos
+
+    /// Uma `Conexao` sobre um soquete de VERDADE, sem passar pelo aperto de
+    /// mao -- os dois testes daqui abaixo exercitam `ler_quadro_ate` e
+    /// `consultar`, que nao precisam de sessao autenticada para provar o
+    /// teto. O que depende do sistema operacional se prova contra o sistema
+    /// operacional, e nao por teste unitario.
+    fn conexao_crua(fluxo: TcpStream) -> Conexao {
+        let escrita = fluxo.try_clone().unwrap();
+        Conexao {
+            fluxo: BufReader::new(fluxo),
+            escrita,
+            sequencia: 0,
+            versao: String::new(),
+            conexao_id: 0,
+        }
+    }
+
+    /// Um quadro sozinho e LEGITIMO no proprio formato (bem abaixo dos 16 MB
+    /// que o campo de tamanho permite), e so maior que o teto pequeno que o
+    /// teste passa -- exatamente a mesma verificacao que protege contra a
+    /// ACUMULACAO de continuacoes de 16 MB em produção, so que sem gastar
+    /// 128 MiB de trafego para provar.
+    #[test]
+    fn quadro_maior_que_o_teto_e_recusado_antes_de_alocar() {
+        let ouvinte = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let porta = ouvinte.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            let Ok((mut s, _)) = ouvinte.accept() else {
+                return;
+            };
+            let payload = vec![b'x'; 2500];
+            let mut cabeca = [0u8; 4];
+            cabeca[..3].copy_from_slice(&(payload.len() as u32).to_le_bytes()[..3]);
+            let _ = s.write_all(&cabeca);
+            let _ = s.write_all(&payload);
+        });
+        let fluxo = TcpStream::connect(("127.0.0.1", porta)).unwrap();
+        fluxo
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let mut c = conexao_crua(fluxo);
+        let erro = c.ler_quadro_ate(2000).unwrap_err();
+        assert!(
+            matches!(erro, PhxError::LimiteExcedido(_)),
+            "devia recusar por LimiteExcedido: {erro}"
+        );
+        assert!(erro.to_string().contains("2500"), "{erro}");
+    }
+
+    /// Um rele malicioso -- ou quem esta no meio da conexao em claro -- diz
+    /// que o resultado tem `u64::MAX` colunas. Sem o teto, o
+    /// `Vec::with_capacity` de antes tentaria reservar aquilo e abortaria o
+    /// processo; com o teto, a recusa acontece ANTES de qualquer alocacao.
+    #[test]
+    fn quantidade_de_colunas_absurda_e_recusada_antes_de_reservar() {
+        let ouvinte = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let porta = ouvinte.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            let Ok((mut s, _)) = ouvinte.accept() else {
+                return;
+            };
+            // O COM_QUERY do cliente: le e descarta.
+            let mut cabeca = [0u8; 4];
+            if s.read_exact(&mut cabeca).is_err() {
+                return;
+            }
+            let n = u32::from_le_bytes([cabeca[0], cabeca[1], cabeca[2], 0]) as usize;
+            let mut descartado = vec![0u8; n];
+            let _ = s.read_exact(&mut descartado);
+            // A resposta: "este resultado tem u64::MAX colunas".
+            let mut payload = vec![0xFEu8];
+            payload.extend_from_slice(&u64::MAX.to_le_bytes());
+            let mut cab = [0u8; 4];
+            cab[..3].copy_from_slice(&(payload.len() as u32).to_le_bytes()[..3]);
+            let _ = s.write_all(&cab);
+            let _ = s.write_all(&payload);
+        });
+        let fluxo = TcpStream::connect(("127.0.0.1", porta)).unwrap();
+        fluxo
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let mut c = conexao_crua(fluxo);
+        let erro = c.consultar("SELECT 1", 100).unwrap_err();
+        assert!(
+            matches!(erro, PhxError::LimiteExcedido(_)),
+            "devia recusar por LimiteExcedido: {erro}"
+        );
+        assert!(erro.to_string().contains(&u64::MAX.to_string()), "{erro}");
     }
 }

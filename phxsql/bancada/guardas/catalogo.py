@@ -13715,4 +13715,212 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         ],
         "seguem": [],
     },
+    {
+        "id": "catalogo-so-declara-token-nao-token-remoto",
+        "titulo": "o catálogo de `replicacao_testar` não declara `token_remoto`, o campo que a sonda lê primeiro",
+        "porque": (
+            "pedido 276: `catalogo.rs` so documentava \"token\", enquanto "
+            "`origem_da_sonda` (servidor.rs) le \"token_remoto\" primeiro e cai "
+            "em \"token\" so como alias de compatibilidade. Quem lia so o "
+            "catalogo nunca descobria o nome certo."
+        ),
+        "arquivo": "crates/phxsql-server/src/catalogo.rs",
+        "trecho": r"""            opc(
+                "token_remoto",
+                "string",
+                "o token da porta de dados do OUTRO servidor. Chama-se assim \
+                 e não `token` porque esse nome já é o portão 1 DESTE \
+                 servidor — mandar o do outro lado com o mesmo nome faria um \
+                 sobrescrever o outro dentro do mesmo pedido",
+            ),
+            opc(
+                "token",
+                "string",
+                "alias antigo de `token_remoto`, só lido quando `token_remoto` \
+                 vem vazio — mantido por compatibilidade com quem já o usava",
+            ),
+""",
+        "troca": r"""            // DEFEITO REPOSTO (276): o catalogo so declara "token", e quem
+            // le a documentacao nunca descobre "token_remoto", que e o
+            // campo que a sonda le primeiro.
+            opc("token", "string", "o token da porta de dados dele"),
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "catalogo::testes::replicacao_testar_declara_o_campo_que_a_sonda_le_primeiro",
+        ],
+        "seguem": [
+            "catalogo::testes::o_catalogo_e_o_despachar_sao_a_mesma_lista",
+            "segredos::testes::todo_parametro_com_cara_de_segredo_esta_na_lista",
+        ],
+    },
+    {
+        "id": "esquema-vaza-o-histograma-da-particao",
+        "titulo": "`op_esquema` publica `baldes[].registros` mesmo com a coluna da partição negada ao usuário",
+        "porque": (
+            "pedido 369, a irma do 358 pelo outro lado: la o vazamento vinha "
+            "pelo rowid, aqui pelo histograma. `(\"esquema\", PorColuna::"
+            "Estrutura)` e a unica classe isenta da peneira do direito por "
+            "coluna -- certo para nome, tipo e indice, errado para a "
+            "CONTAGEM de linhas por balde, que e agregado do dado."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": r"""                let r = dc::peneirar_baldes(r, &sem_ler);
+""",
+        "troca": r"""                let r = r; // DEFEITO REPOSTO (369): sem peneirar_baldes
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_direito_por_coluna::baldes_perdem_a_contagem_so_quando_a_coluna_da_particao_esta_negada",
+        ],
+        "seguem": [
+            "servidor::testes_direito_por_coluna::o_esquema_continua_inteiro_e_diz_o_que_falta",
+            "servidor::testes_direito_por_coluna::sem_colunas_no_cadastro_nada_muda",
+        ],
+    },
+    {
+        "id": "dblink-mysql-sem-teto-de-colunas",
+        "titulo": "o DbLink MySQL(R) reserva `Vec::with_capacity` do número de colunas que o PAR manda, sem teto",
+        "porque": (
+            "pedido 443, achado M2 da revisao SEC 434/435: `quantas` vem de "
+            "um lenenc de ate 2^64-1 escrito pelo OUTRO lado, sobre fio em "
+            "claro. Sem o teto, `Vec::with_capacity(quantas as usize)` "
+            "aborta o processo (\"capacity overflow\") antes de qualquer "
+            "erro tratavel -- medido reposto por este guarda."
+        ),
+        "arquivo": "crates/phxsql-server/src/dblink/mysql.rs",
+        "trecho": r"""        if quantas > TETO_DE_COLUNAS {
+            return Err(PhxError::LimiteExcedido(format!(
+                "dblink mysql: o resultado diz {quantas} colunas, acima do teto de {TETO_DE_COLUNAS}"
+            )));
+        }
+""",
+        "troca": r"""        // DEFEITO REPOSTO (443): sem teto de colunas antes de reservar.
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "dblink::mysql::testes::quantidade_de_colunas_absurda_e_recusada_antes_de_reservar",
+        ],
+        "seguem": [
+            "dblink::mysql::testes::nulo_nao_vira_texto_vazio",
+        ],
+    },
+    {
+        "id": "dblink-mysql-sem-teto-do-quadro-acumulado",
+        "titulo": "`ler_quadro` do DbLink MySQL(R) junta continuações de 16 MB sem teto sobre o total",
+        "porque": (
+            "pedido 443: cada quadro sozinho ja e limitado a 16 MB pelo "
+            "proprio formato, mas a JUNCAO das continuacoes nao tinha teto "
+            "nenhum -- um servidor que so manda quadros cheios faz o `Vec` "
+            "crescer sem fim. Reusa o TETO_DO_REGISTRO do motor."
+        ),
+        "arquivo": "crates/phxsql-server/src/dblink/mysql.rs",
+        "trecho": r"""            if (inicio + n) as u64 > teto {
+                return Err(PhxError::LimiteExcedido(format!(
+                    "dblink mysql: quadro (juntando continuacoes) passaria de {} bytes, \
+                     acima do teto de {teto}",
+                    inicio + n
+                )));
+            }
+""",
+        "troca": r"""            // DEFEITO REPOSTO (443): sem teto sobre o acumulado do quadro.
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "dblink::mysql::testes::quadro_maior_que_o_teto_e_recusado_antes_de_alocar",
+        ],
+        "seguem": [
+            "dblink::mysql::testes::quantidade_de_colunas_absurda_e_recusada_antes_de_reservar",
+        ],
+    },
+    {
+        "id": "smtp-sem-teto-de-linhas-de-continuacao",
+        "titulo": "o cliente SMTP aceita QUALQUER número de linhas de continuação (`250-...`), sem teto",
+        "porque": (
+            "pedido 463, depois do 439: cada linha ja tem teto de TAMANHO, "
+            "mas um rele que mande linhas de continuacao sem fim prende a "
+            "thread de aviso para sempre -- nao gasta memoria, gasta TEMPO, "
+            "e o `timeout_s` so mede o silencio entre bytes."
+        ),
+        "arquivo": "crates/phxsql-server/src/email.rs",
+        "trecho": r"""        continuacoes += 1;
+        if continuacoes > TETO_DE_LINHAS_DE_CONTINUACAO {
+            return Err(PhxError::LimiteExcedido(format!(
+                "smtp: a resposta passou de {TETO_DE_LINHAS_DE_CONTINUACAO} linhas de \
+                 continuacao sem fechar"
+            )));
+        }
+    };
+""",
+        "troca": r"""    };
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "email::testes::a_resposta_sem_fim_para_no_teto_de_quantas",
+        ],
+        "seguem": [
+            "email::testes::a_resposta_de_varias_linhas_continua_inteira",
+        ],
+    },
+    {
+        "id": "por-login-para-no-primeiro-que-casa",
+        "titulo": "`Cadastro::por_login` é um `find`: quem não existe custa muito mais que o primeiro da lista",
+        "porque": (
+            "pedido 529, achado do SEC: com 20.000 usuarios, o `desafio` de "
+            "quem nao existe custava +363 us sobre o primeiro da lista "
+            "(debug, intercalado). O `desafio` e a prova do `op_login` "
+            "chamam `por_login` antes de qualquer PBKDF2 esconder a "
+            "diferenca -- um relogio que separa \"existe\" de \"nao existe\" "
+            "sem olhar senha nenhuma. Medido em release, `docs/SEGURANCA.md` "
+            "SS26.7."
+        ),
+        "arquivo": "crates/phxsql-server/src/usuarios.rs",
+        "trecho": r"""    pub fn por_login(&self, login: &str) -> Option<&Usuario> {
+        let mut achado: Option<&Usuario> = None;
+        if let Some(r) = &self.root {
+            if r.login == login {
+                achado = Some(r);
+            }
+        }
+        for u in &self.usuarios {
+            // So conta no teste -- pedido 529: contar em producao dobraria o
+            // custo de cada comparacao real por um `Cell::set`, e a prova
+            // por dentro so precisa existir onde se prova. Ver
+            // `comparacoes_de_login_nesta_thread`.
+            #[cfg(test)]
+            COMPARACOES_DE_LOGIN.with(|c| c.set(c.get() + 1));
+            if u.login == login {
+                achado = Some(u);
+            }
+        }
+        achado
+    }
+""",
+        "troca": r"""    pub fn por_login(&self, login: &str) -> Option<&Usuario> {
+        // DEFEITO REPOSTO (529): o `find` para no primeiro que casa -- o
+        // primeiro da lista custa ~O(1) e quem nao existe custa ~O(N).
+        if let Some(r) = &self.root {
+            if r.login == login {
+                return Some(r);
+            }
+        }
+        self.usuarios.iter().find(|u| u.login == login)
+    }
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "usuarios::tests::por_login_faz_o_mesmo_numero_de_comparacoes_para_qualquer_login",
+        ],
+        "seguem": [
+            "usuarios::tests::por_login_continua_achando_quem_existe_e_recusando_quem_nao_existe",
+            "usuarios::tests::le_o_cadastro_completo",
+            "usuarios::tests::autenticacao",
+        ],
+    },
 ]
