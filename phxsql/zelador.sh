@@ -135,6 +135,23 @@ em_uso() {
   return 1
 }
 
+# O `em_uso` olhado por DESCRITOR e por MAPA, alem do `cwd`: quem roda um
+# binario de dentro de um `target/` pode ter o `cwd` em qualquer lugar. Serve
+# ao artefato das copias sem git, que e o unico lugar onde isso decide.
+aberto_por_alguem() {
+  local dir=$1 p
+  em_uso "$dir" && return 0
+  for p in /proc/[0-9]*; do
+    case "$PROPRIOS" in *" ${p##*/} "*) continue ;; esac
+    if ls -l "$p/fd" 2>/dev/null | grep -qF -- "$dir/" \
+       || grep -qF -- "$dir/" "$p/maps" 2>/dev/null; then
+      QUEM_SEGURA="PID ${p##*/} ($(tr -d '\0' < "$p/comm" 2>/dev/null))"
+      return 0
+    fi
+  done
+  return 1
+}
+
 LIVRE_ANTES=$(df -k "$REPO" | awk 'NR==2{print $4}')
 echo "== antes: $(df -h "$REPO" | awk 'NR==2{print $4}') livres"
 
@@ -515,6 +532,25 @@ for SC in /tmp/claude-*/*/*/scratchpad; do
     # exatamente o «apagar por palpite» que o cabecalho deste arquivo proibe,
     # escrito por quem tinha acabado de citar a proibicao.
     if [ ! -d "$C/.git" ]; then
+      # O ARTEFATO de compilacao sai mesmo assim: o que nao se prova e a
+      # FONTE, e o `target/` nao e fonte -- e o que a regra do cabecalho
+      # manda apagar. Medido em 24/09/2026: uma copia sem git de 1,5 GB, 99%
+      # dela `target/`, ficou de pe enquanto o disco caia a 521 MB, e so saiu
+      # a mao. A prova de uso aqui e mais larga que o `em_uso`: um binario de
+      # teste roda de dentro do `target/` com o `cwd` em outro lugar, entao
+      # descritor e mapa contam tambem. E quem mexeu ha menos de 30 min fica.
+      for T in "$C/target" "$C/phxsql/target"; do
+        [ -d "$T" ] || continue
+        if aberto_por_alguem "$T"; then
+          echo "  $(basename "$C")/target aberto por $QUEM_SEGURA, fica"
+          continue
+        fi
+        if [ -n "$(find "$T" -mmin -30 -print -quit 2>/dev/null)" ]; then
+          echo "  $(basename "$C")/target mexido ha menos de 30 min, fica"
+          continue
+        fi
+        apagar "$T" "artefato de copia SEM git (a fonte fica): nenhum cwd, descritor ou mapa"
+      done
       t=$(du -sk "$C" 2>/dev/null | cut -f1)
       printf '  %-44s %5d MiB  copia SEM git: nao da para provar, fica\n' \
              "$(basename "$C")" "$((t/1024))"
