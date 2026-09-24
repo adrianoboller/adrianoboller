@@ -95,104 +95,16 @@ pub fn esquecer(pasta: &Path, rede: &str) -> R<()> {
 
 #[cfg(windows)]
 mod sistema {
-    use std::ffi::c_void;
-
-    #[repr(C)]
-    struct Blob {
-        tamanho: u32,
-        dados: *mut u8,
-    }
-
-    #[link(name = "crypt32")]
-    extern "system" {
-        fn CryptProtectData(
-            entrada: *const Blob,
-            descricao: *const u16,
-            entropia: *const Blob,
-            reservado: *mut c_void,
-            aviso: *mut c_void,
-            bandeiras: u32,
-            saida: *mut Blob,
-        ) -> i32;
-        fn CryptUnprotectData(
-            entrada: *const Blob,
-            descricao: *mut *mut u16,
-            entropia: *const Blob,
-            reservado: *mut c_void,
-            aviso: *mut c_void,
-            bandeiras: u32,
-            saida: *mut Blob,
-        ) -> i32;
-    }
-
-    #[link(name = "kernel32")]
-    extern "system" {
-        fn LocalFree(p: *mut c_void) -> *mut c_void;
-    }
-
-    /// Sem interface: nunca abre janela de aviso do Windows.
-    const CRYPTPROTECT_UI_FORBIDDEN: u32 = 0x1;
-
-    fn chamar(dados: &[u8], proteger: bool) -> Result<Vec<u8>, String> {
-        let entrada = Blob {
-            tamanho: dados.len() as u32,
-            dados: dados.as_ptr() as *mut u8,
-        };
-        // Entropia fixa do phxvpn: outro programa do mesmo usuario, chamando
-        // a DPAPI sem ela, nao abre o selo por engano.
-        let e = b"phxvpn-lembrar-v1";
-        let entropia = Blob {
-            tamanho: e.len() as u32,
-            dados: e.as_ptr() as *mut u8,
-        };
-        let mut saida = Blob {
-            tamanho: 0,
-            dados: std::ptr::null_mut(),
-        };
-        // SAFETY: blobs apontam para buffers vivos durante a chamada; a saida
-        // e alocada pelo Windows e liberada com LocalFree logo abaixo.
-        let ok = unsafe {
-            if proteger {
-                CryptProtectData(
-                    &entrada,
-                    std::ptr::null(),
-                    &entropia,
-                    std::ptr::null_mut(),
-                    std::ptr::null_mut(),
-                    CRYPTPROTECT_UI_FORBIDDEN,
-                    &mut saida,
-                )
-            } else {
-                CryptUnprotectData(
-                    &entrada,
-                    std::ptr::null_mut(),
-                    &entropia,
-                    std::ptr::null_mut(),
-                    std::ptr::null_mut(),
-                    CRYPTPROTECT_UI_FORBIDDEN,
-                    &mut saida,
-                )
-            }
-        };
-        if ok == 0 {
-            return Err(format!(
-                "DPAPI recusou: {}",
-                std::io::Error::last_os_error()
-            ));
-        }
-        // SAFETY: `saida` foi preenchida pela DPAPI com `tamanho` bytes.
-        let v = unsafe { std::slice::from_raw_parts(saida.dados, saida.tamanho as usize).to_vec() };
-        // SAFETY: memoria alocada pela DPAPI, liberada uma vez.
-        unsafe { LocalFree(saida.dados as *mut c_void) };
-        Ok(v)
-    }
+    /// Entropia fixa do phxvpn: outro programa do mesmo usuario, chamando
+    /// a DPAPI sem ela, nao abre o selo por engano.
+    const ENTROPIA: &[u8] = b"phxvpn-lembrar-v1";
 
     pub fn selar(_pasta: &std::path::Path, dados: &[u8]) -> Result<Vec<u8>, String> {
-        chamar(dados, true)
+        crate::dpapi::selar(dados, ENTROPIA, false)
     }
 
     pub fn abrir(_pasta: &std::path::Path, selo: &[u8]) -> Result<Vec<u8>, String> {
-        chamar(selo, false)
+        crate::dpapi::abrir(selo, ENTROPIA, false)
     }
 }
 

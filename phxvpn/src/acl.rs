@@ -28,6 +28,12 @@ pub fn so_do_dono(caminho: &Path) -> R<()> {
     sistema::so_do_dono(caminho)
 }
 
+/// SYSTEM e Administradores, e mais ninguem (os segredos dos servicos).
+#[cfg(windows)]
+pub fn so_do_sistema(caminho: &Path) -> R<()> {
+    sistema::so_do_sistema(caminho)
+}
+
 /// A DACL lida de volta: os SIDs com acesso (texto `S-1-...`), se ela e
 /// protegida, e o SID do usuario do processo. So para provar.
 #[cfg(windows)]
@@ -94,6 +100,12 @@ mod sistema {
             devolvido: *mut u32,
         ) -> i32;
         fn GetLengthSid(sid: *const c_void) -> u32;
+        fn CreateWellKnownSid(
+            tipo: i32,
+            dominio: *const c_void,
+            sid: *mut c_void,
+            tam: *mut u32,
+        ) -> i32;
         fn InitializeAcl(acl: *mut c_void, tam: u32, revisao: u32) -> i32;
         fn AddAccessAllowedAceEx(
             acl: *mut c_void,
@@ -178,28 +190,65 @@ mod sistema {
 
     pub fn so_do_dono(caminho: &Path) -> R<()> {
         let token = token_do_usuario()?;
-        let sid = sid_de(&token);
+        aplicar(caminho, &[sid_de(&token)])
+    }
+
+    /// SYSTEM e Administradores: o arquivo que guarda um selo DPAPI de
+    /// maquina (que qualquer processo desta maquina abriria, se lesse).
+    pub fn so_do_sistema(caminho: &Path) -> R<()> {
+        // WinLocalSystemSid = 22, WinBuiltinAdministratorsSid = 26.
+        let mut sids = Vec::new();
+        for tipo in [22, 26] {
+            let mut b = vec![0u64; 12]; // SECURITY_MAX_SID_SIZE = 68
+            let mut n = 96u32;
+            // SAFETY: `b` tem 96 bytes; o Windows escreve ate `n`.
+            if unsafe {
+                CreateWellKnownSid(
+                    tipo,
+                    std::ptr::null(),
+                    b.as_mut_ptr() as *mut c_void,
+                    &mut n,
+                )
+            } == 0
+            {
+                return Err(erro("CreateWellKnownSid"));
+            }
+            sids.push(b);
+        }
+        let ptrs: Vec<*const c_void> = sids.iter().map(|b| b.as_ptr() as *const c_void).collect();
+        aplicar(caminho, &ptrs)
+    }
+
+    fn aplicar(caminho: &Path, sids: &[*const c_void]) -> R<()> {
         let pasta = caminho.is_dir();
-        // SAFETY: `sid` aponta para dentro de `token`, vivo ate o fim.
-        let tam_sid = unsafe { GetLengthSid(sid) };
-        let tam = (std::mem::size_of::<AclCabecalho>() + 8 + tam_sid as usize + 8) as u32;
+        // SAFETY: cada `sid` aponta memoria viva de quem chamou.
+        let tam_sids: usize = sids
+            .iter()
+            .map(|s| unsafe { GetLengthSid(*s) } as usize)
+            .sum();
+        let tam = (std::mem::size_of::<AclCabecalho>() + sids.len() * 8 + tam_sids + 8) as u32;
         let mut acl = vec![0u32; (tam as usize).div_ceil(4)];
         let heranca = if pasta {
             OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE
         } else {
             0
         };
-        // SAFETY: `acl` tem `tam` bytes alinhados a 4; `sid` e valido.
-        let ok = unsafe {
-            InitializeAcl(acl.as_mut_ptr() as *mut c_void, tam, ACL_REVISION) != 0
-                && AddAccessAllowedAceEx(
-                    acl.as_mut_ptr() as *mut c_void,
-                    ACL_REVISION,
-                    heranca,
-                    FILE_ALL_ACCESS,
-                    sid,
-                ) != 0
-        };
+        // SAFETY: `acl` tem `tam` bytes alinhados a 4.
+        let mut ok =
+            unsafe { InitializeAcl(acl.as_mut_ptr() as *mut c_void, tam, ACL_REVISION) != 0 };
+        for sid in sids {
+            // SAFETY: `acl` inicializada; `sid` valido.
+            ok = ok
+                && unsafe {
+                    AddAccessAllowedAceEx(
+                        acl.as_mut_ptr() as *mut c_void,
+                        ACL_REVISION,
+                        heranca,
+                        FILE_ALL_ACCESS,
+                        *sid,
+                    ) != 0
+                };
+        }
         if !ok {
             return Err(erro("montar a ACL"));
         }
@@ -361,6 +410,18 @@ mod testes {
                 f.sids
             );
         }
+        let c = d.join("servico.cred");
+        std::fs::write(&c, b"z").unwrap();
+        so_do_sistema(&c).unwrap();
+        let l = conferir(&c).unwrap();
+        assert!(
+            l.sids
+                .iter()
+                .all(|s| s == SISTEMA || s == "S-1-5-32-544" || (sob_wine() && *s == l.eu)),
+            "credencial de servico aberta: {:?}",
+            l.sids
+        );
+        assert!(!l.sids.iter().any(|s| LARGOS.contains(&s.as_str())));
         eprintln!(
             "acl: {} -- antes {:?}, depois {:?}",
             if sob_wine() {

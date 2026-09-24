@@ -25,6 +25,31 @@ pub type R<T> = Result<T, String>;
 pub const PASTA_CRED: &str = "/etc/phxvpn";
 pub const PASTA_DADOS: &str = "/var/lib/phxvpn";
 
+/// Onde o servico guarda os dados: `/var/lib/phxvpn`, ou
+/// `%ProgramData%\phxvpn` no Windows.
+pub fn pasta_dados() -> PathBuf {
+    if cfg!(windows) {
+        PathBuf::from(std::env::var("ProgramData").unwrap_or_else(|_| r"C:\ProgramData".into()))
+            .join("phxvpn")
+    } else {
+        PathBuf::from(PASTA_DADOS)
+    }
+}
+
+/// Onde ficam as credenciais cifradas: `/etc/phxvpn` (systemd-creds), ou
+/// `%ProgramData%\phxvpn\cred` (DPAPI da maquina, so SYSTEM e
+/// Administradores leem).
+pub fn pasta_cred() -> PathBuf {
+    if cfg!(windows) {
+        pasta_dados().join("cred")
+    } else {
+        PathBuf::from(PASTA_CRED)
+    }
+}
+
+#[cfg(windows)]
+const ENTROPIA_WIN: &[u8] = b"phxvpn-servico-v1";
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Tipo {
     Painel,
@@ -86,6 +111,35 @@ fn arg_systemd(a: &str) -> String {
             .replace('"', "\\\"")
             .replace('%', "%%")
     )
+}
+
+/// Argumento na linha de comando do Windows (regras do
+/// `CommandLineToArgvW`): aspas quando ha espaco ou aspas; barras antes de
+/// aspas se dobram.
+fn arg_windows(a: &str) -> String {
+    if !a.is_empty() && !a.contains([' ', '\t', '"']) {
+        return a.to_string();
+    }
+    let mut s = String::from("\"");
+    let mut barras = 0;
+    for c in a.chars() {
+        match c {
+            '\\' => barras += 1,
+            '"' => {
+                s.push_str(&"\\".repeat(barras * 2 + 1));
+                s.push('"');
+                barras = 0;
+            }
+            _ => {
+                s.push_str(&"\\".repeat(barras));
+                s.push(c);
+                barras = 0;
+            }
+        }
+    }
+    s.push_str(&"\\".repeat(barras * 2));
+    s.push('"');
+    s
 }
 
 /// O texto da unidade. `credenciais`: os nomes que vão em
@@ -173,13 +227,22 @@ pub fn texto_da_unidade(
     )
 }
 
-/// Lê um segredo que o systemd entregou (`$CREDENTIALS_DIRECTORY/<nome>`),
-/// ou `None` fora de um serviço.
+/// Lê um segredo que o sistema entregou ao serviço, ou `None` fora de um:
+/// no Linux, o que o systemd decifrou em `$CREDENTIALS_DIRECTORY/<nome>`;
+/// no Windows, o selo DPAPI da máquina em `pasta_cred()`.
 pub fn credencial(nome: &str) -> Option<String> {
-    let d = std::env::var_os("CREDENTIALS_DIRECTORY")?;
-    std::fs::read_to_string(PathBuf::from(d).join(nome))
-        .ok()
-        .map(|t| t.trim_end_matches(['\n', '\r']).to_string())
+    #[cfg(not(windows))]
+    let t = {
+        let d = std::env::var_os("CREDENTIALS_DIRECTORY")?;
+        std::fs::read_to_string(PathBuf::from(d).join(nome)).ok()?
+    };
+    #[cfg(windows)]
+    let t = {
+        let u = std::env::var("PHXVPN_UNIDADE").ok()?;
+        let selo = std::fs::read(pasta_cred().join(format!("{u}-{nome}.cred"))).ok()?;
+        String::from_utf8(crate::dpapi::abrir(&selo, ENTROPIA_WIN, true).ok()?).ok()?
+    };
+    Some(t.trim_end_matches(['\n', '\r']).to_string())
 }
 
 /// O segredo de um serviço: a credencial do systemd, senão a variável de
@@ -257,14 +320,20 @@ pub fn planejar(tipo: Tipo, args: &[String], exe: &Path) -> R<Plano> {
             }
             let mut l = vec!["painel".to_string()];
             if valor("--dados").is_none() {
-                l.extend(["--dados".into(), format!("{PASTA_DADOS}/painel")]);
+                l.extend([
+                    "--dados".into(),
+                    pasta_dados().join("painel").display().to_string(),
+                ]);
             }
             (Tipo::Painel.unidade(None), l)
         }
         Tipo::Repasse => {
             let mut l = vec!["repasse".to_string()];
             if valor("--chave").is_none() {
-                l.extend(["--chave".into(), format!("{PASTA_DADOS}/repasse.chave")]);
+                l.extend([
+                    "--chave".into(),
+                    pasta_dados().join("repasse.chave").display().to_string(),
+                ]);
             }
             (Tipo::Repasse.unidade(None), l)
         }
@@ -274,10 +343,16 @@ pub fn planejar(tipo: Tipo, args: &[String], exe: &Path) -> R<Plano> {
             // foi digitado aqui, com outra caixa, daria um tunel que nunca
             // fecha, calado.
             let arquivo = valor("--arquivo").unwrap_or_else(|| {
-                format!("{PASTA_DADOS}/{}", crate::rede_p2p::Rede::caminho(&rede))
+                pasta_dados()
+                    .join(crate::rede_p2p::Rede::caminho(&rede))
+                    .display()
+                    .to_string()
             });
             let r = crate::rede_p2p::Rede::ler(&arquivo).map_err(|e| {
-                format!("{e} -- ponha o arquivo da rede em {PASTA_DADOS} (p2p criar/entrar ali)")
+                format!(
+                    "{e} -- ponha o arquivo da rede em {} (p2p criar/entrar ali)",
+                    pasta_dados().display()
+                )
             })?;
             let senha = std::env::var("PHXVPN_SENHA_REDE").map_err(|_| {
                 "informe a senha da rede por PHXVPN_SENHA_REDE: vira a PSK, cifrada"
@@ -289,24 +364,46 @@ pub fn planejar(tipo: Tipo, args: &[String], exe: &Path) -> R<Plano> {
                 l.extend(["--arquivo".into(), arquivo]);
             }
             if valor("--chave").is_none() {
-                l.extend(["--chave".into(), format!("{PASTA_DADOS}/p2p.chave")]);
+                l.extend([
+                    "--chave".into(),
+                    pasta_dados().join("p2p.chave").display().to_string(),
+                ]);
             }
             (Tipo::P2p.unidade(Some(&rede)), l)
         }
     };
     linha.extend(args.iter().cloned());
     let nomes: Vec<&str> = credenciais.iter().map(|(n, _)| n.as_str()).collect();
-    let texto = texto_da_unidade(tipo, &unidade, exe, &linha, &nomes);
+    // No Windows o «texto» e a linha que o SCM roda; no Linux, a unidade.
+    let texto = if cfg!(windows) {
+        let mut l = vec![
+            exe.display().to_string(),
+            "servico-rodar".into(),
+            unidade.clone(),
+        ];
+        l.extend(linha);
+        l.iter()
+            .map(|a| arg_windows(a))
+            .collect::<Vec<_>>()
+            .join(" ")
+    } else {
+        texto_da_unidade(tipo, &unidade, exe, &linha, &nomes)
+    };
     Ok(Plano {
-        arquivo: PathBuf::from(format!("/etc/systemd/system/{unidade}.service")),
+        arquivo: if cfg!(windows) {
+            PathBuf::from(format!("servico do Windows {unidade}"))
+        } else {
+            PathBuf::from(format!("/etc/systemd/system/{unidade}.service"))
+        },
         unidade,
         texto,
         credenciais,
     })
 }
 
-/// Grava a unidade e as credenciais cifradas, e (se `iniciar`) liga o
-/// serviço. Pede root.
+/// Grava as credenciais cifradas e a unidade (Linux) ou o servico
+/// (Windows), e (se `iniciar`) o liga. Pede root / administrador.
+#[cfg(not(windows))]
 pub fn instalar(plano: &Plano, iniciar: bool) -> R<String> {
     std::fs::create_dir_all(PASTA_CRED).map_err(|e| format!("{PASTA_CRED}: {e}"))?;
     #[cfg(unix)]
@@ -336,10 +433,60 @@ pub fn instalar(plano: &Plano, iniciar: bool) -> R<String> {
     }
 }
 
+#[cfg(windows)]
+pub fn instalar(plano: &Plano, iniciar: bool) -> R<String> {
+    let dados = pasta_dados();
+    let cred = pasta_cred();
+    std::fs::create_dir_all(&cred).map_err(|e| format!("{}: {e}", cred.display()))?;
+    crate::acl::so_do_sistema(&dados)?;
+    crate::acl::so_do_sistema(&cred)?;
+    for (nome, segredo) in &plano.credenciais {
+        let destino = cred.join(format!("{}-{nome}.cred", plano.unidade));
+        let selo = crate::dpapi::selar(segredo, ENTROPIA_WIN, true)?;
+        std::fs::write(&destino, &selo).map_err(|e| format!("{}: {e}", destino.display()))?;
+        crate::acl::so_do_sistema(&destino)?;
+    }
+    crate::servico_windows::instalar(
+        &plano.unidade,
+        &format!("phxvpn ({})", plano.unidade),
+        "Redes virtuais phxvpn",
+        &plano.texto,
+        iniciar,
+    )?;
+    Ok(if iniciar {
+        format!(
+            "{} instalado e ligado (sc query {})",
+            plano.unidade, plano.unidade
+        )
+    } else {
+        format!("{} instalado; sobe no próximo arranque", plano.unidade)
+    })
+}
+
+#[cfg(not(windows))]
 pub fn remover(unidade: &str) -> R<String> {
     let _ = rodar("systemctl", &["disable", "--now", unidade], None);
     let _ = std::fs::remove_file(format!("/etc/systemd/system/{unidade}.service"));
-    if let Ok(d) = std::fs::read_dir(PASTA_CRED) {
+    apagar_credenciais(unidade);
+    let _ = rodar("systemctl", &["daemon-reload"], None);
+    Ok(format!(
+        "{unidade} removido (os dados em {} ficam)",
+        pasta_dados().display()
+    ))
+}
+
+#[cfg(windows)]
+pub fn remover(unidade: &str) -> R<String> {
+    crate::servico_windows::remover(unidade)?;
+    apagar_credenciais(unidade);
+    Ok(format!(
+        "{unidade} removido (os dados em {} ficam)",
+        pasta_dados().display()
+    ))
+}
+
+fn apagar_credenciais(unidade: &str) {
+    if let Ok(d) = std::fs::read_dir(pasta_cred()) {
         for e in d.flatten() {
             if e.file_name()
                 .to_string_lossy()
@@ -349,15 +496,23 @@ pub fn remover(unidade: &str) -> R<String> {
             }
         }
     }
-    let _ = rodar("systemctl", &["daemon-reload"], None);
-    Ok(format!(
-        "{unidade} removido (os dados em {PASTA_DADOS} ficam)"
-    ))
 }
 
 #[cfg(test)]
 mod testes {
     use super::*;
+
+    #[test]
+    fn argumento_windows_segue_o_commandlinetoargvw() {
+        assert_eq!(arg_windows("--rede"), "--rede");
+        assert_eq!(
+            arg_windows(r"C:\Program Files\phxvpn\phxvpn.exe"),
+            "\"C:\\Program Files\\phxvpn\\phxvpn.exe\""
+        );
+        assert_eq!(arg_windows("a\"b"), "\"a\\\"b\"");
+        assert_eq!(arg_windows(r"C:\dir with\"), "\"C:\\dir with\\\\\"");
+        assert_eq!(arg_windows(""), "\"\"");
+    }
 
     #[test]
     fn argumento_com_espaco_e_aspas_vai_escapado() {

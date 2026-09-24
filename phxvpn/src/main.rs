@@ -96,7 +96,16 @@ const AJUDA: &str = "phxvpn -- redes virtuais no estilo Radmin, sobre OpenVPN
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let r = match args.first().map(String::as_str) {
+    if let Err(e) = despachar(&args) {
+        eprintln!("phxvpn: {e}");
+        std::process::exit(1);
+    }
+}
+
+/// Um comando do phxvpn. Separado do `main` para o servico do Windows rodar
+/// o MESMO caminho de dentro do gerenciador de servicos.
+fn despachar(args: &[String]) -> Result<(), String> {
+    match args.first().map(String::as_str) {
         Some("painel") => cmd_painel(&args[1..]),
         Some("criar-rede") => cmd_rede(&args[1..], true),
         Some("entrar") => cmd_rede(&args[1..], false),
@@ -119,6 +128,15 @@ fn main() {
             })
         }
         Some("servico") => cmd_servico(&args[1..]),
+        // Chamado pelo gerenciador de servicos do Windows, nao por gente.
+        #[cfg(windows)]
+        Some("servico-rodar") => {
+            let unidade = args.get(1).ok_or("falta a unidade")?.clone();
+            let resto: Vec<String> = args[2..].to_vec();
+            // E por ela que `servico::credencial` acha o selo da unidade.
+            std::env::set_var("PHXVPN_UNIDADE", &unidade);
+            phxvpn::servico_windows::rodar(&unidade, Box::new(move || despachar(&resto)))
+        }
         Some("usb") => comandos::usb(&Opcoes::de_args(&args[1..], &[])).map(|t| print!("{t}")),
         Some("mesa") => {
             let o = Opcoes::de_args(&args[1..], &["sem-janela"]);
@@ -138,10 +156,6 @@ fn main() {
             print!("{AJUDA}");
             Ok(())
         }
-    };
-    if let Err(e) = r {
-        eprintln!("phxvpn: {e}");
-        std::process::exit(1);
     }
 }
 

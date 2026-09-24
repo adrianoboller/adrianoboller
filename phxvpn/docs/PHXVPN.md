@@ -46,13 +46,13 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [x] Segurança no Windows: arquivos com chave e pastas de dados só do dono (DACL protegida, uma entrada, posta ANTES do segredo) — provado no essencial sob o Wine; a prova estrita está no `prova-windows.ps1` (passo 3b)
 - [x] Serviço do sistema no Linux (`phxvpn servico instalar painel|repasse|p2p`), segredos como credencial CIFRADA do systemd, nunca texto puro
 - [x] Pacotes por roteiro (`empacotar.sh`): `.deb`, `.msi` e `.zip` — instalados e removidos de verdade (`dpkg`, `msiexec` do Wine)
+- [x] Serviço do Windows (SCM por FFI, reinício em 5 s, registro em arquivo), segredos em DPAPI da máquina num arquivo só de SYSTEM e Administradores
 - [x] Segurança C2: sorteio falha fechado (descritor único; `BCryptGenRandom` no Windows) — nunca mais mistura previsível
 
 ### Falta
 
 - [ ] Programa de mesa: ver o ícone da bandeja num Windows real (no Wine ele é registrado, mas não aparece na área de trabalho virtual) e bandeja no Linux (pede D-Bus)
 - [ ] Usar o certificado digital da empresa (A1/RSA) como AC — hoje ele é guardado só como identificação
-- [ ] Serviço do Windows (hoje, no Windows: «abrir com o sistema» pela bandeja, que pede login)
 - [ ] P2P: rol de membros ASSINADO (hoje a lista viaja cifrada entre membros, com confiança transitiva)
 - [ ] P2P: descoberta — convite, broadcast na LAN e «farol» (membro alcançável que perfura NAT e faz relé)
 - [ ] Segurança A4 (inteiro): TLS no próprio painel — choque com a pétrea de zero dependência; hoje, proxy com TLS na frente
@@ -491,8 +491,30 @@ O MSI não põe o phxvpn no PATH: o `wixl` não conhece a tabela `Environment`.
 O `UpgradeCode` é fixo, e é por ele que o Windows reconhece a versão nova
 como atualização.
 
-**Falta:** o serviço do Windows. No Windows, hoje, o programa sobe na bandeja
-por "abrir com o sistema", o que exige login.
+**Windows.** O mesmo comando (`phxvpn servico instalar painel|repasse|p2p`)
+fala com o gerenciador de serviços por FFI (`advapi32`):
+- o serviço roda `phxvpn.exe servico-rodar <unidade> …` como SYSTEM;
+- se cair, religa em 5 s;
+- a saída vai para `%ProgramData%\phxvpn\<unidade>.log`, porque serviço não
+  tem console;
+- um pânico para o serviço **avisando** o gerenciador de serviços.
+
+O equivalente do `systemd-creds`:
+- o segredo vai selado pela **DPAPI da máquina**;
+- num arquivo que só SYSTEM e Administradores leem (`acl::so_do_sistema`);
+- a DPAPI saiu do `lembrar.rs` para `dpapi.rs`, um motor só para os dois
+  escopos.
+
+**Provado sob o Wine:**
+- **repasse**: `RUNNING`, escutando em 1 s, registro com a chave; remover
+  fecha a porta em 1 s;
+- **painel** (conexão do PostgreSQL **só** na credencial DPAPI): no ar em 8 s,
+  responde `/api/estado`; a senha não aparece no registro nem na credencial;
+  remover apaga a credencial.
+
+**O que o Wine faz e o Windows não:** quando o último processo de usuário
+sai, ele derruba os serviços. Na prova, um processo à toa segura o Wine,
+como uma máquina ligada seguraria o Windows.
 
 ## USB pela rede (24/09/2026)
 
