@@ -348,6 +348,11 @@ Detalhes e o que a ligacao ensinou em docs/CONSOLE.md.
     processo aborta de proposito (ver TRANSACOES, «se uma operacao entrar em
     panico»). O arranque seguinte repara antes de abrir a porta.
 
+    O abort nao leva a memoria do processo para o disco: o phxsqld tira do
+    core todas as regioes de memoria ao subir (0 em
+    /proc/self/coredump_filter, pedido 504), e com elas a senha do cofre.
+    Se o arranque AVISAR que nao conseguiu, ponha LimitCORE=0 no [Service].
+
     WINDOWS: crie um Servico do Windows apontando para phxsqld.exe. Ou uma
     Tarefa Agendada disparada no logon. O equivalente do Restart=on-failure
     e a recuperacao do servico -- na aba "Recuperacao", "Reiniciar o
@@ -2048,21 +2053,28 @@ TRANSACOES: BEGIN, COMMIT, ROLLBACK E SAVEPOINT
     vez de servir de estado incerto, com uma linha "o reparo da trava de
     dados FALHOU" no erro padrao. O mesmo acontece quando o panico e numa
     thread de SERVICO -- o relogio que fecha a janela de gravacao, a
-    replicacao, o backup agendado, os jobs --, com a linha "thread de SERVICO"
-    no erro padrao: o reparo curaria a trava, mas a thread morreria calada e
+    replicacao --, com a linha "thread de SERVICO" no erro padrao: o reparo curaria a trava, mas a thread morreria calada e
     o que ela fazia pararia sem ninguem saber. Quem sobe o processo de novo e
     o supervisor -- o Restart=on-failure da secao 7.4 --, e o arranque repara
     com a porta fechada. Sem supervisor, o servidor fica fora do ar ate alguem
     subi-lo. Isso vale para o panico com a trava de ESCRITA na mao; com a de
     leitura, ou fora de trava, a thread de servico continua morrendo calada.
 
-    UM JOB OU O BACKUP AGENDADO QUE ENTRA EM PANICO NAO CAI UMA VEZ SO. Os
-    dois rodam de novo logo que o servidor sobe -- o job "a cada N" sempre, o
-    de hora marcada quando a hora do dia ja passou --, entram em panico de
-    novo e derrubam o processo de novo. O systemd desiste depois de algumas
-    partidas seguidas (ou o servidor fica subindo e caindo), e a tela nao
-    ajuda, porque o servidor nao fica de pe. Para sair do laco, desligue o
-    culpado A MAO, com o servidor parado, e suba de novo:
+    UM JOB OU O BACKUP AGENDADO QUE ENTRA EM PANICO NAO DERRUBA O SERVIDOR
+    (pedido 502). A corrida roda numa thread propria, e o panico dela vira
+    corrida que FALHOU -- no historico dos jobs, no aviso por e-mail, e no
+    erro padrao ("a corrida entrou em PANICO"). A trava de dados e reparada
+    como na conexao que cai, e o servidor segue de pe.
+
+    Se o reparo dessa corrida FALHAR, o processo ainda aborta, como acima --
+    mas a corrida que o derrubou NAO roda de novo no arranque: ela conta como
+    a ultima, e o job volta na proxima hora da agenda dele (o backup, na
+    proxima hora dele). O arranque diz isso no erro padrao ("nunca terminou:
+    o servidor caiu no meio dela"). Antes do 502, o job e o backup rodavam de
+    novo logo na partida e derrubavam o processo de novo, em laco.
+
+    Se mesmo assim quiser tirar o culpado da agenda, desligue-o, com o
+    servidor parado, e suba de novo:
 
       - o job: "ligado": false na entrada dele no jobs.json;
       - o backup agendado: "agendado": false no bloco "backup" do
@@ -2073,9 +2085,16 @@ TRANSACOES: BEGIN, COMMIT, ROLLBACK E SAVEPOINT
         systemctl reset-failed phxsql
         systemctl start phxsql
 
-    O erro padrao da queda diz "thread de SERVICO" e o nome da thread
-    (relogio-jobs ou backup-agendado). No cluster, isso vale em todo no onde
-    o job estiver cadastrado, e nao so no master.
+    O erro padrao da queda diz "o reparo da trava de dados FALHOU". No
+    cluster, isso vale em todo no onde o job estiver cadastrado, e nao so no
+    master.
+
+    E O BACKUP AGENDADO QUE FALHA AVISA (pedido 510): com o e-mail ligado
+    (alertas.email), a falha sai pelo mesmo carteiro da saude do disco --
+    e-mail e SMS, assunto "o backup agendado FALHOU", com o destino e o erro
+    do sistema --, no maximo um aviso por alertas.disco.repetir_minutos
+    enquanto continuar falhando, e o primeiro backup que der certo zera o
+    silencio. Sem e-mail ligado, o aviso e so o erro padrao.
 
     SO PELA PORTA DE DADOS. HTTP nao tem conexao para a transacao morrer
     amarrada. Pela tela, mande as operacoes num pedido so.

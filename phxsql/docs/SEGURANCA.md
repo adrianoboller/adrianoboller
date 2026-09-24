@@ -5123,22 +5123,28 @@ quando um processo auxiliar morre, e o InnoDB aborta no `ut_a` de uma thread de
 fundo.
 
 **O preço, dito:** um pânico determinístico num laço de serviço vira laço de
-quedas do processo inteiro. Nos **jobs** e no **backup agendado** o laço não
-tem a cadência do job: tem a do **arranque**, porque os dois rodam de novo logo
-que o processo sobe — o `ultimos` dos jobs zera a cada arranque e o backup
-começa em `ultimo = 0`, e com zero o `hora_de_rodar` diz que venceu (no «a cada
-N» sempre; no de hora marcada, quando a hora do dia já passou, que é o caso de
-quem acabou de rodar). É pânico → abort → sobe → roda de novo → abort. Com a
-unidade do `MANUAL.txt` §7.4 (`Restart=on-failure`, sem `RestartSec` nem
-`StartLimit*`), o systemd desiste pelo limite padrão (5 partidas em 10 s), ou o
-servidor sobe e cai em laço; nos dois casos fica **fora do ar até alguém
-desligar à mão** — `"ligado": false` no `jobs.json`, ou `"agendado": false` no
-`backup` do `config.json` —, e a tela não alcança, porque o processo não fica
-de pé. Vale em todo nó do cluster onde o job estiver cadastrado: o relógio de
-jobs não olha o papel do nó. Não medido; é leitura do código, do segundo
-parecer do DBA (`docs/propostas/parecer-dba-451-2a-2026-09-24.md`, N1, que
-propõe a saída). Não é regressão: na H1 o mesmo gatilho envenenava a trava a
-cada arranque.
+quedas do processo inteiro. Nos **jobs** e no **backup agendado** esse laço
+tinha a cadência do **arranque** — os dois rodavam de novo logo que o processo
+subia —, e o servidor ficava fora do ar até alguém desligar o culpado à mão
+(N1 do segundo parecer do DBA, `docs/propostas/parecer-dba-451-2a-2026-09-24.md`).
+**Desde o pedido 502, não:**
+
+- a corrida roda numa thread **filha** (`Telemetria::rodar_em_filha`, família
+  `corrida`), e o relógio a espera pelo `join`. A morte dela é **vista**, então
+  ela repara em vez de abortar, como a conexão que cai; o `join` devolve o
+  pânico, e a corrida vira FALHOU no histórico, no e-mail e no `acessos.log`.
+  Medido pelo processo filho: com a corrida na thread de serviço, `SIGABRT` na
+  primeira volta; na filha, o processo fica de pé e a porta atende;
+- o que sobra do piso — o reparo que **falha** ainda aborta (H5) — não vira
+  laço: a corrida deixou uma **lápide** antes de começar (FORMATO.md §22), e o
+  arranque seguinte a conta como a última em vez de rodá-la na partida. É a
+  convergência dos três maduros: o `pg_cron` marca como `failed` («server
+  restarted») a corrida que estava em curso, e o MySQL e o MariaDB gravam o
+  `LAST_EXECUTED` do evento **antes** de executá-lo. Medido: sem a lápide,
+  `SIGABRT` também no segundo arranque; com ela, o segundo arranque fica de pé.
+
+O que continua valendo: os jobs rodam em todo nó do cluster onde estiverem
+cadastrados (o relógio não olha o papel do nó), não medido.
 
 E o alcance é o da trava de **ESCRITA**: uma thread de serviço que entra em
 pânico com a de **leitura** na mão, ou fora de trava, não envenena nada e
@@ -5643,3 +5649,67 @@ teto» — e o teste ASCII de antes seguiu verde, que é o achado.
   comentário foi corrigido; o valor não, porque mudar é decisão de custo por login
   e não do 521.
 - **Release não medido.** Os tempos são de debug; a razão é o que se afirma.
+
+## 27. O `core` do abort não leva a chave do cofre (pedido 504)
+
+Achado do DBA na segunda revisão do 451 (N3,
+`docs/propostas/parecer-dba-451-2a-2026-09-24.md`): a H5 aborta o processo de
+propósito, e um `SIGABRT` com o `core` ligado põe a memória do processo no
+disco — e nela a senha do cofre. A chave de cada volume é `PBKDF2(senha, sal)`,
+com o sal em claro no cabeçalho: quem tem a senha tem todas as chaves, e o
+modelo «disco levado» (§8) cai.
+
+### 25.1 O que se mediu, antes de consertar
+
+Neste contêiner, em 24/09/2026: `core_pattern` = `core` (arquivo no diretório
+de trabalho), limite `ulimit -c` mole 0 e duro `unlimited`,
+`/proc/self/coredump_filter` de fábrica `00000033`. O limite mole 0 é o que
+protege por acaso: basta quem depura abrir o limite. Com ele aberto, o
+`phxsqld` com o cofre ligado, depois de derivar a chave de um volume de
+verdade, recebeu `kill -ABRT`:
+
+| | `coredump_filter` | `core` | a senha do cofre no `core` |
+|---|---|---|---|
+| antes | `00000033` | 14.585.856 bytes | **3 vezes** |
+| depois | `00000000` | 61.440 bytes | **0** |
+
+### 25.2 O conserto, e o que se recusou
+
+O `main` escreve `0` em `/proc/self/coredump_filter` antes de tudo, inclusive
+da leitura do `config.json`. O `core` continua existindo — registradores e a
+lista de mapeamentos —, sem heap, pilha nem arquivo mapeado. Por padrão, e não
+só com o cofre: a memória leva também a estática do fio, as credenciais do
+DbLink e a linha em claro. É o padrão dos maduros: o `core-file` do MySQL e do
+MariaDB nasce desligado. Quem precisa de um `core` inteiro reescreve o filtro
+do processo vivo (`echo 33 > /proc/<pid>/coredump_filter`).
+
+- **`prctl(PR_SET_DUMPABLE, 0)`, recusado com número:** cala o `core`, mas dá
+  ao `root` os arquivos de `/proc/self`. Medido como uid 65534: antes do
+  `prctl` o `/proc/self/io` abre; depois, `EACCES` — e é ele que a telemetria
+  lê para os bytes de disco do processo.
+- **`RLIMIT_CORE` = 0, recusado:** não alcança o `core_pattern` de
+  `|programa` (systemd-coredump, apport). O filtro vale para os dois destinos.
+- **Falhar em escrever o filtro avisa e segue**, com o remédio
+  (`LimitCORE=0` na unidade): um `/proc` que recusa escrita é coisa do
+  contêiner, e derrubar o motor por isso seria o acessório mandando nele.
+
+### 25.3 A prova, nos dois sentidos
+
+`tests/core-sem-segredo.rs`: o `phxsqld` compilado sobe pelo `sh` com
+`ulimit -c unlimited`, cria uma tabela cifrada, grava uma linha e recebe
+`kill -ABRT`. Confere o filtro do processo vivo e conta a senha no `core`. Com
+o defeito reposto (o `main` sem a chamada), cai em «o phxsqld subiu com o
+filtro de core 00000033», e o relatório diz «a senha do cofre aparece 3
+vez(es)». Onde o `core_pattern` não é um arquivo, o teste diz que não mediu o
+`core` e confere só o filtro.
+
+### 25.4 O que ficou de fora
+
+- **Os registradores continuam no `core`**, inclusive os vetoriais de cada
+  thread. Uma thread no meio de um SHA-256 no instante do sinal pode deixar
+  pedaço de estado neles. Não medido; o custo de fechar é o `PR_SET_DUMPABLE`
+  recusado acima.
+- **Os outros binários** (`phxsql`, `phxsql-cmd`, o ODBC, a FFI) não mudaram:
+  o pedido é o do servidor, que é quem aborta de propósito.
+- **Windows:** o equivalente é o Relatório de Erros do Windows, e não foi
+  medido.

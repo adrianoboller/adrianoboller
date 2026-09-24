@@ -13324,4 +13324,395 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "servidor::testes_cadastro_de_usuarios::os_tres_comandos_sql_valem_e_o_texto_de_volta_nao_traz_a_senha",
         ],
     },
+    # -----------------------------------------------------------------------
+    # O lote «o servidor fica de pe» (24/09/2026): 452, 466, 502, 504 e 510.
+    # Cada vermelho abaixo foi MEDIDO repondo esta mesma troca, antes de a
+    # entrada existir.
+    # -----------------------------------------------------------------------
+    {
+        "id": "pulso-que-morre-fica-marcado",
+        "titulo": "a thread de pulso que morre em panico nao se desmarca do `pulsando`",
+        "porque": (
+            "pedido 452: a desmarcacao morava na saida normal do laco, o panico "
+            "a pulava, e o supervisor -- que so sobe thread para quem ele mesmo "
+            "marca -- nunca mais pulsava o par. Medido com a troca: 0 conexoes "
+            "em 5 s depois do panico."
+        ),
+        "arquivo": "crates/phxsql-server/src/cluster.rs",
+        "trecho": """impl Drop for GuardaDoPulso {
+    fn drop(&mut self) {
+        if std::thread::panicking() {
+""",
+        "troca": """impl Drop for GuardaDoPulso {
+    fn drop(&mut self) {
+        // DEFEITO REPOSTO (452): o panico pula a desmarcacao.
+        if std::thread::panicking() {
+            return;
+        }
+        if std::thread::panicking() {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_pulso_que_morre::pulso_que_morre_em_panico_volta_a_pulsar",
+        ],
+        "seguem": [],
+    },
+    {
+        "id": "pulso-em-panico-sem-recuo",
+        "titulo": "o pulso que entra em panico a cada volta vira laco de panico",
+        "porque": (
+            "pedido 452, a outra metade: desmarcar no `Drop` sem recuo faria o "
+            "supervisor subir outra thread a cada meio segundo. Medido com a "
+            "troca: 9 panicos em 4,5 s; com o recuo de 1-2-4 s, 3."
+        ),
+        "arquivo": "crates/phxsql-server/src/cluster.rs",
+        "trecho": """            if std::time::Instant::now() < r.voltar_em {
+                return false;
+            }
+""",
+        "troca": """            // DEFEITO REPOSTO (452): o recuo nunca segura.
+            if std::time::Instant::now() < r.voltar_em && r.seguidos == u32::MAX {
+                return false;
+            }
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_pulso_que_morre::panico_que_se_repete_no_pulso_recua_em_vez_de_virar_laco",
+        ],
+        "seguem": [
+            "servidor::testes_do_pulso_que_morre::pulso_que_morre_em_panico_volta_a_pulsar",
+        ],
+    },
+    {
+        "id": "relogio-de-jobs-morto-diz-que-esta-no-ar",
+        "titulo": "o relogio de jobs que morre continua marcado como no ar",
+        "porque": (
+            "irmao do pedido 452: a mesma marca de vida sem `Drop`. Com ela, o "
+            "vigia nunca via job parado e a tela dizia «agendado» para um job "
+            "que ninguem ia rodar. Medido com a troca: o `relogio_no_ar` seguiu "
+            "verdadeiro 3 s depois da morte da thread."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        self.0.relogio_de_jobs.store(false, Ordering::SeqCst);
+""",
+        "troca": """        // DEFEITO REPOSTO (irmao do 452): a marca nunca sai.
+        let _ = &self.0;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_relogio_e_do_backup::relogio_de_jobs_que_morre_nao_continua_dizendo_que_esta_no_ar",
+        ],
+        "seguem": [],
+    },
+    {
+        "id": "amostrador-morto-diz-que-esta-no-ar",
+        "titulo": "o amostrador que morre continua marcado como no ar no retrato",
+        "porque": (
+            "irmao do pedido 452: `marcar_amostrador` so subia a marca, e o "
+            "retrato da telemetria dizia `amostrador: true` de uma thread "
+            "morta. Medido com a troca: a marca seguiu verdadeira 3 s depois."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        self.0.desmarcar_amostrador();
+""",
+        "troca": """        // DEFEITO REPOSTO (irmao do 452): a marca nunca sai.
+        let _ = &self.0;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_relogio_e_do_backup::amostrador_que_morre_nao_continua_dizendo_que_esta_no_ar",
+        ],
+        "seguem": [],
+    },
+    {
+        "id": "job-corre-na-thread-de-servico",
+        "titulo": "o job em panico com a trava na mao derruba o servidor",
+        "porque": (
+            "pedido 502: a corrida na propria thread `relogio-jobs` (familia "
+            "`servico`) ia ao piso da H5 e abortava o processo -- que rodava o "
+            "job de novo no arranque. Medido com a troca: SIGABRT na primeira "
+            "volta do relogio."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        let resultado = self.executar_job_na_filha(&job, &op, inicio);
+""",
+        "troca": """        // DEFEITO REPOSTO (502): a corrida na thread de servico.
+        let resultado = self.executar_job(&job, &op);
+        let _ = Self::executar_job_na_filha;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_panico_sob_a_trava::job_em_panico_sob_a_trava_vira_corrida_que_falhou_e_o_servidor_fica",
+        ],
+        "seguem": [],
+    },
+    {
+        "id": "backup-corre-na-thread-de-servico",
+        "titulo": "o backup agendado em panico com a trava na mao derruba o servidor",
+        "porque": (
+            "pedido 502, o irmao do job: o backup na propria thread "
+            "`backup-agendado` ia ao piso e abortava. Medido com a troca: "
+            "SIGABRT na primeira volta."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        let corrida = self.telemetria.rodar_em_filha(
+            "backup-corrida",
+            "executa UMA corrida do backup agendado e morre: o panico dela volta \\
+             pelo `join` e vira backup que falhou, em vez de derrubar o processo \\
+             e rodar de novo no arranque (pedido 502)",
+            "corrida",
+            agora,
+            |fio| {
+                fio.fazendo("copiando e conferindo o SHA-256");
+                self.rodar_backup_agendado(agora)
+            },
+        );
+""",
+        "troca": """        // DEFEITO REPOSTO (502): o backup na thread de servico.
+        let corrida: std::result::Result<Result<String>, String> =
+            Ok(self.rodar_backup_agendado(agora));
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_panico_sob_a_trava::backup_em_panico_sob_a_trava_falha_e_o_servidor_fica",
+        ],
+        "seguem": [],
+    },
+    {
+        "id": "job-que-derrubou-roda-de-novo-no-arranque",
+        "titulo": "a corrida de job que derrubou o processo roda de novo no arranque",
+        "porque": (
+            "pedido 502, o laco: o reparo que falha ainda aborta (H5), e sem a "
+            "lapide o relogio roda o mesmo job logo na partida. Os tres maduros "
+            "nao: o pg_cron marca `failed`/`server restarted`, e o MySQL e o "
+            "MariaDB gravam o `LAST_EXECUTED` antes de executar. Medido com a "
+            "troca: LACO DE QUEDAS, SIGABRT no segundo arranque."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        let interrompidas = jobs.fechar_interrompidas(crate::agora_ms());
+""",
+        "troca": """        // DEFEITO REPOSTO (502): a lapide fica sem leitor.
+        let _ = &mut jobs;
+        let interrompidas: Vec<crate::jobs::Corrida> = Vec::new();
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_panico_sob_a_trava::corrida_de_job_que_derrubou_o_processo_nao_roda_de_novo_no_arranque",
+        ],
+        "seguem": [],
+    },
+    {
+        "id": "backup-que-derrubou-roda-de-novo-no-arranque",
+        "titulo": "o backup que derrubou o processo roda de novo no arranque",
+        "porque": (
+            "pedido 502, o laco do backup: sem ler a lapide do destino, o "
+            "backup comeca em `ultimo = 0` e vence na partida. Medido com a "
+            "troca: LACO DE QUEDAS, SIGABRT no segundo arranque."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """                let mut ultimo = servidor.lapide_do_backup_no_arranque();
+""",
+        "troca": """                // DEFEITO REPOSTO (502): o backup comeca do zero.
+                let mut ultimo = 0i64;
+                let _ = Servidor::lapide_do_backup_no_arranque;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_panico_sob_a_trava::corrida_de_backup_que_derrubou_o_processo_nao_roda_de_novo_no_arranque",
+        ],
+        "seguem": [],
+    },
+    {
+        "id": "lapide-do-futuro-empurra-o-job",
+        "titulo": "a lapide de job com hora no futuro vira a ultima corrida sem teto",
+        "porque": (
+            "C1 do parecer do DBA do lote (502): relogio que voltou depois da "
+            "queda deixava a lapide no futuro, e o job «a cada 1 min» so voltava "
+            "no ano seguinte (medido +1 ano). Medido com a troca: a ultima "
+            "corrida ficou em 1821536000000 contra agora 1790000000000."
+        ),
+        "arquivo": "crates/phxsql-server/src/jobs.rs",
+        "trecho": """                quando_ms: escrita.min(agora_ms),
+""",
+        "troca": """                // DEFEITO REPOSTO (C1 do 502): a hora da lapide sem teto.
+                quando_ms: escrita,
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "jobs::testes::lapide_do_futuro_nao_empurra_o_job_para_depois_dela",
+        ],
+        "seguem": [
+            "jobs::testes::corrida_aberta_sem_fecho_vira_falhou_e_nao_vence_na_partida",
+        ],
+    },
+    {
+        "id": "lapide-do-futuro-empurra-o-backup",
+        "titulo": "a lapide do backup com hora no futuro vira a ultima corrida sem teto",
+        "porque": (
+            "C1 do parecer do DBA do lote (502), o irmao do backup: medido pelo "
+            "DBA, 0 copias na partida e a proxima so depois da data da lapide. "
+            "Medido com a troca: o arranque devolve a hora de daqui a um ano."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        quando.min(agora)
+    }
+""",
+        "troca": """        // DEFEITO REPOSTO (C1 do 502): a hora da lapide sem teto.
+        quando
+    }
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_relogio_e_do_backup::lapide_do_backup_no_futuro_nao_vira_a_ultima_corrida",
+        ],
+        "seguem": [],
+    },
+    {
+        "id": "corrida-interrompida-nao-avisa",
+        "titulo": "a corrida de job fechada no arranque como FALHOU nao avisa por e-mail",
+        "porque": (
+            "C2 do parecer do DBA do lote (502): a interrompida era FALHOU so no "
+            "historico e no erro padrao -- 0 e-mails contra 1 da falha comum, e "
+            "vale para qualquer queda no meio de um job. Medido com a troca: "
+            "nenhum e-mail em 10 s."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        self.avisar_corridas_interrompidas();
+""",
+        "troca": """        // DEFEITO REPOSTO (C2 do 502): a interrompida fica calada.
+        let _ = Self::avisar_corridas_interrompidas;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_relogio_e_do_backup::corrida_de_job_interrompida_avisa_por_email",
+        ],
+        "seguem": [],
+    },
+    {
+        "id": "backup-agendado-falha-calado",
+        "titulo": "o backup agendado que falha so escreve no erro padrao",
+        "porque": (
+            "pedido 510: o dono so descobria que nao tinha backup no dia de "
+            "restaurar. Medido com a troca, e a falha e do sistema (ENOTDIR): "
+            "nenhum e-mail em 10 s."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """                self.avisar_backup_que_falhou(agora, &e.to_string());
+""",
+        "troca": """                // DEFEITO REPOSTO (510): so o erro padrao.
+                let _ = Self::avisar_backup_que_falhou;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_relogio_e_do_backup::backup_agendado_que_falha_avisa_pelo_carteiro",
+        ],
+        "seguem": [],
+    },
+    {
+        "id": "dblink-ilegivel-derruba-o-motor",
+        "titulo": "o cadastro do DbLink ilegivel derruba o motor inteiro",
+        "porque": (
+            "pedido 466: o `?` do `Servidor::novo` levava o erro do "
+            "`dblink.json` ao `main`, e o `phxsqld` saia sem abrir a porta -- "
+            "por causa de uma ligacao remota. Medido com a troca: SAIU (exit "
+            "1) nos quatro cadastros tortos."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        let dblink =
+            crate::dblink::Registro::abrir_ou_trancar(&config.dblink, &config.cifra_do_dblink);
+""",
+        "troca": """        // DEFEITO REPOSTO (466): o acessorio derruba o motor.
+        let dblink = crate::dblink::Registro::abrir_com(&config.dblink, &config.cifra_do_dblink)?;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "cadastro-acessorio-trancado"],
+        "caem": [
+            "cadastro_do_dblink_ilegivel_tranca_o_dblink_e_o_motor_sobe",
+        ],
+        "seguem": [
+            "sem_arquivo_o_dblink_continua_abrindo_vazio_e_gravando",
+            "cadastro_de_jobs_ilegivel_tranca_os_jobs_e_o_motor_sobe",
+        ],
+    },
+    {
+        "id": "dblink-que-nao-se-le-abre-vazio",
+        "titulo": "o dblink.json que existe e nao se le vira cadastro vazio",
+        "porque": (
+            "pedido 466, o quinto caso: `EACCES`, diretorio no lugar ou UTF-8 "
+            "torto viravam cadastro VAZIO, e a primeira ligacao salva regravava "
+            "o arquivo por cima das outras. Medido com a troca: o `dblink` "
+            "responde `ok` com a lista vazia."
+        ),
+        "arquivo": "crates/phxsql-server/src/dblink/mod.rs",
+        "trecho": """            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(r),
+""",
+        "troca": """            // DEFEITO REPOSTO (466): todo erro de leitura vira vazio.
+            Err(_) => return Ok(r),
+            #[allow(unreachable_patterns)]
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(r),
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "cadastro-acessorio-trancado"],
+        "caem": [
+            "cadastro_do_dblink_ilegivel_tranca_o_dblink_e_o_motor_sobe",
+        ],
+        "seguem": [
+            "sem_arquivo_o_dblink_continua_abrindo_vazio_e_gravando",
+        ],
+    },
+    {
+        "id": "jobs-ilegivel-derruba-o-motor",
+        "titulo": "o cadastro de jobs ilegivel derruba o motor inteiro",
+        "porque": (
+            "o irmao do pedido 466: o `jobs.json` era aberto logo depois do "
+            "`dblink.json`, pelo mesmo `?`. Medido com a troca: SAIU (exit 1)."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        let mut jobs = crate::jobs::Registro::abrir_ou_trancar(&config.jobs);
+""",
+        "troca": """        // DEFEITO REPOSTO (irmao do 466): o acessorio derruba o motor.
+        let mut jobs = crate::jobs::Registro::abrir(&config.jobs)?;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "cadastro-acessorio-trancado"],
+        "caem": [
+            "cadastro_de_jobs_ilegivel_tranca_os_jobs_e_o_motor_sobe",
+        ],
+        "seguem": [
+            "cadastro_do_dblink_ilegivel_tranca_o_dblink_e_o_motor_sobe",
+        ],
+    },
+    {
+        "id": "core-leva-a-senha-do-cofre",
+        "titulo": "o core do abort leva a senha do cofre para o disco",
+        "porque": (
+            "pedido 504, medido: com o `coredump_filter` de fabrica (00000033), "
+            "um SIGABRT deixava um core de 14,6 MB com a senha do cofre 3 vezes. "
+            "Com o filtro em 0: 61 KB e 0 vezes."
+        ),
+        "arquivo": "crates/phxsql-server/src/main.rs",
+        "trecho": """    tirar_a_memoria_do_core();
+""",
+        "troca": """    // DEFEITO REPOSTO (504): a memoria vai inteira para o core.
+    let _ = tirar_a_memoria_do_core;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "core-sem-segredo"],
+        "caem": [
+            "o_core_do_abort_nao_carrega_a_senha_do_cofre",
+        ],
+        "seguem": [],
+    },
 ]

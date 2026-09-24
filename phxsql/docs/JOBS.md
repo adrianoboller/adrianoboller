@@ -28,7 +28,8 @@ Três decisões que não são óbvias lendo a lista:
   arranque — é isso que deixa a tela dizer "falhou às 03:00" depois de um
   restart. Mas o `ultimos` do agendamento continua zerando de propósito: um
   "a cada 6 h" deve rodar logo depois do arranque, e semear o relógio do log
-  mudaria esse comportamento sem ninguém pedir.
+  mudaria esse comportamento sem ninguém pedir. **A exceção é a corrida que
+  derrubou o processo** (pedido 502, seção abaixo): essa conta como a última.
 - **`parado` é o vencido que ninguém vai rodar**: ligado, hora vencida, sem
   corrida em andamento e **sem relógio no ar** — o relógio só sobe no
   arranque, e só se já havia job ligado. O caso típico é real: o primeiro job
@@ -127,3 +128,40 @@ E uma armadilha operacional que quase virou acidente: o `$!` de um
 `kill` matou o embrulho e o servidor velho ficou segurando a porta. Antes de
 matar um `phxsqld`, conferir no `ps` que o `--config` dele é o seu; é a mesma
 regra da casa de nunca tocar num servidor que não é o da sua prova.
+
+## A corrida numa filha, e a lápide (pedido 502)
+
+Um job que entrava em pânico com a trava de ESCRITA na mão abortava o
+processo — a thread `relogio-jobs` é de serviço, e thread de serviço vai ao
+piso da H5 (pedido 451, A2) — e, como o relógio roda o vencido logo na
+partida, abortava de novo a cada arranque, até alguém desligar o job à mão.
+
+- **A corrida roda numa thread filha** (`Telemetria::rodar_em_filha`, família
+  `corrida`), e o relógio espera o `join`. A morte da filha é vista, então ela
+  repara a trava em vez de abortar, e o `join` devolve o pânico como corrida
+  que FALHOU («a corrida entrou em PANICO: …») — no histórico, no e-mail e no
+  `acessos.log`. O `jobs_rodando` sai sempre: antes, o pânico pulava a linha, e
+  o job ficava «rodando» para sempre.
+- **A lápide**: antes de executar, uma linha `"em_curso": true` no `.log`
+  (FORMATO.md §22). O reparo que falha ainda aborta; o arranque seguinte acha a
+  abertura sem fechamento, escreve a corrida como FALHOU («nunca terminou»),
+  e a conta como a última — o job volta na cadência dele. A hora conta no
+  máximo até o agora do arranque (lápide do futuro, C1 do parecer do DBA), e a
+  corrida fechada **avisa por e-mail** como a falha comum, no `subir_jobs`
+  (C2): vale para qualquer queda no meio de um job, não só para a H5. É a convergência dos
+  três maduros: `pg_cron` (`MarkPendingRunsAsFailed`, «server restarted») e o
+  event scheduler do MySQL e do MariaDB (`mark_last_executed` e
+  `update_timing_fields_for_event` **antes** de executar, em
+  `Event_queue::get_top_for_execution_if_time`), lidos no fonte em 24/09/2026.
+- **O relógio que morre desliga o «no ar»** (irmão do pedido 452): a marca
+  `relogio_de_jobs` sai no `Drop`, e o vigia volta a ver o job parado.
+- **Cadastro ilegível tranca** (irmão do pedido 466): `jobs.json` torto ou que
+  não se lê não derruba mais o motor; as operações de job recusam com o motivo
+  e o arquivo, e nada o regrava.
+
+Provas, pelo processo filho e pelo soquete, com o vermelho medido repondo cada
+troca: `servidor::testes_do_panico_sob_a_trava` (o job e o backup em pânico
+ficam de pé; a corrida que derrubou não roda de novo), `testes_do_relogio_e_do_backup`
+e `tests/cadastro-acessorio-trancado.rs`. As guardas estão no catálogo
+(`job-corre-na-thread-de-servico`, `job-que-derrubou-roda-de-novo-no-arranque`,
+`relogio-de-jobs-morto-diz-que-esta-no-ar`, `jobs-ilegivel-derruba-o-motor`).

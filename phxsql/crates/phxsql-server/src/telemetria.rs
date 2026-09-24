@@ -1268,6 +1268,76 @@ impl Telemetria {
         }
     }
 
+    /// Roda `corpo` numa thread FILHA registrada, e espera por ela -- pedido
+    /// 502. `Err` traz o texto do panico, quando a filha morre nele.
+    ///
+    /// # Por que uma filha, e para quem
+    ///
+    /// Para o trabalho que uma thread de SERVICO manda fazer -- a corrida de
+    /// um job, o backup agendado. Antes, o relogio executava ele mesmo, e um
+    /// panico com a trava de dados na mao abortava o processo (a thread de
+    /// servico vai direto ao piso, pedido 451, A2) -- e o job rodava de novo
+    /// no arranque, e abortava de novo. Na filha, a morte e VISTA: o `join`
+    /// devolve o panico, e quem espera o anota como corrida que falhou. E por
+    /// isso a familia da filha nao e `servico`: e a morte que ninguem ve que
+    /// justifica o abort, e esta alguem ve. O reparo da trava roda na filha,
+    /// no desenrolar, como numa conexao que cai. E o que os maduros fazem: o
+    /// `pg_cron` roda cada job num processo proprio, e o event scheduler do
+    /// MySQL e do MariaDB, numa thread de trabalho propria
+    /// (`Event_scheduler::execute_top`).
+    ///
+    /// # O teto, e onde ele NAO vale
+    ///
+    /// Quem chama ESPERA: a filha nasce e morre dentro desta chamada, e cada
+    /// chamador tem uma filha viva por vez. Isso NAO segura a recursao: se a
+    /// propria filha chamar de novo -- um job cujo pedido e `job_rodar` dele
+    /// mesmo, ou um ciclo de jobs --, cada nivel sobe outra filha, sem teto
+    /// (medido pelo DBA: 45 simultaneas; P1 do parecer do lote, pedido
+    /// proprio). O que vale e o que nao vale estao escritos em
+    /// `bancada/concorrencia/mapa-das-threads.py`.
+    pub fn rodar_em_filha<T, F>(
+        self: &Arc<Self>,
+        nome: impl Into<String>,
+        finalidade: &'static str,
+        familia: &'static str,
+        agora_ms: i64,
+        corpo: F,
+    ) -> std::result::Result<T, String>
+    where
+        F: FnOnce(Arc<Fio>) -> T + Send,
+        T: Send,
+    {
+        let ficha = self.registrar_fio(nome, finalidade, familia, agora_ms);
+        let nome_do_so: String = ficha.nome.chars().take(15).collect();
+        // `scope`, e nao `spawn`: a filha pode emprestar o que o chamador tem
+        // na mao (o servidor, o job), porque o escopo so fecha depois dela.
+        std::thread::scope(|escopo| {
+            let eu = Arc::clone(self);
+            let para_thread = Arc::clone(&ficha);
+            let filha =
+                std::thread::Builder::new()
+                    .name(nome_do_so)
+                    .spawn_scoped(escopo, move || {
+                        FAMILIA_DO_FIO.with(|f| f.set(Some(familia)));
+                        let _ficha = FichaViva {
+                            telemetria: eu,
+                            fio: Arc::clone(&para_thread),
+                        };
+                        corpo(para_thread)
+                    });
+            match filha {
+                // O `join` explicito e o que faz o panico voltar como valor:
+                // filha que o escopo juntasse sozinho levaria o panico para o
+                // chamador, que e a thread de servico que isto protege.
+                Ok(h) => h.join().map_err(|p| texto_do_panico(p.as_ref())),
+                Err(e) => {
+                    self.fio_morreu(&ficha);
+                    Err(format!("nao consegui subir a thread {}: {e}", ficha.nome))
+                }
+            }
+        })
+    }
+
     /// Quantas threads registradas estao vivas agora.
     pub fn fios_vivos(&self) -> usize {
         self.fios_vivos.load(Ordering::Relaxed)
@@ -1419,6 +1489,13 @@ impl Telemetria {
 
     pub fn marcar_amostrador(&self) -> bool {
         !self.amostrador.swap(true, Ordering::SeqCst)
+    }
+
+    /// A thread do amostrador saiu -- o irmao do pedido 452. Quem chama e o
+    /// `Drop` da guarda que o servidor move para dentro dela: sem isto, o
+    /// retrato continuava dizendo `amostrador: true` depois da morte dela.
+    pub fn desmarcar_amostrador(&self) {
+        self.amostrador.store(false, Ordering::SeqCst);
     }
 
     /// O servidor esta em stress agora? Devolve o flag e o MOTIVO.
@@ -1657,15 +1734,30 @@ thread_local! {
         const { std::cell::Cell::new(None) };
 }
 
-/// A familia da thread corrente, como `subir` a declarou -- `None` para quem
-/// nao nasceu por ele (a thread principal, as dos testes).
+/// O texto de um panico, para quem o anota: a mensagem quando ela e texto, e
+/// uma frase honesta quando nao e.
+pub fn texto_do_panico(p: &(dyn std::any::Any + Send)) -> String {
+    if let Some(t) = p.downcast_ref::<&str>() {
+        (*t).to_string()
+    } else if let Some(t) = p.downcast_ref::<String>() {
+        t.clone()
+    } else {
+        "(o panico nao trouxe texto)".to_string()
+    }
+}
+
+/// A familia da thread corrente, como `subir` (ou `rodar_em_filha`) a
+/// declarou -- `None` para quem nao nasceu por eles (a thread principal, as
+/// dos testes).
 ///
 /// Existe para o reparo da trava de dados (pedido 451, A2) separar a thread
 /// de SERVICO, cuja morte ninguem ve, da de atendimento, cuja morte leva a
-/// conexao e o cliente ve. A pergunta mora aqui porque `subir` e o unico
-/// `spawn` do servidor: a familia ja e declarada em cada chamada, e ler o que
-/// foi declarado dispensa uma segunda lista de nomes de thread -- lista que
-/// envelheceria no dia em que nascesse um laco novo.
+/// conexao e o cliente ve. A pergunta mora aqui porque `subir` e
+/// `rodar_em_filha` sao os unicos `spawn` do servidor: a familia ja e
+/// declarada em cada chamada, e ler o que foi declarado dispensa uma segunda
+/// lista de nomes de thread -- lista que envelheceria no dia em que nascesse
+/// um laco novo. A filha de `rodar_em_filha` (familia `corrida`, pedido 502)
+/// tem a morte VISTA pelo `join` de quem a espera, como a de atendimento.
 pub fn familia_desta_thread() -> Option<&'static str> {
     FAMILIA_DO_FIO.with(std::cell::Cell::get)
 }

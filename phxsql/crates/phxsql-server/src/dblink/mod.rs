@@ -1272,9 +1272,58 @@ pub struct Registro {
     /// A cifra do cadastro -- privada: quem grava passa por [`Registro::salvar`]
     /// e [`Registro::excluir`], que decidem selar.
     cifra: CifraDoCadastro,
+    /// O arquivo existe e NAO abriu -- pedido 466. O texto ja diz por que e
+    /// nomeia o arquivo; e ele que as operacoes devolvem. Ver
+    /// [`Registro::abrir_ou_trancar`].
+    ilegivel: Option<String>,
 }
 
 impl Registro {
+    /// O cadastro do ARRANQUE: o que [`Registro::abrir_com`] le, ou, se o
+    /// arquivo nao abre, um cadastro TRANCADO -- pedido 466.
+    ///
+    /// # Por que trancar, e nao recusar o arranque
+    ///
+    /// O DbLink e acessorio; o motor, nao. Arquivo torto, formato mais novo,
+    /// ligacao repetida ou material de cifra torto subiam pelo `?` do
+    /// `Servidor::novo`, e o `phxsqld` inteiro ficava fora do ar por causa de
+    /// uma ligacao remota. Trancado, o motor sobe, as tabelas respondem, e
+    /// TODA operacao do DbLink recusa dizendo o motivo e o arquivo.
+    ///
+    /// # Por que trancar, e nao abrir vazio
+    ///
+    /// Vazio e o que o arquivo ILEGIVEL virava antes (`EACCES`, diretorio no
+    /// lugar, UTF-8 torto), e a primeira ligacao salva regravava o arquivo
+    /// por cima das que ele guardava (`docs/FORMATO.md` §20). Trancado, nao
+    /// grava nada: o arquivo fica como esta ate alguem conserta-lo.
+    pub fn abrir_ou_trancar(caminho: &Path, cifra: &CifraDoDblink) -> Registro {
+        match Registro::abrir_com(caminho, cifra) {
+            Ok(r) => r,
+            Err(e) => Registro {
+                caminho: caminho.to_path_buf(),
+                ligacoes: Vec::new(),
+                cifra: CifraDoCadastro::de(cifra),
+                ilegivel: Some(format!(
+                    "o DbLink esta TRANCADO: o cadastro {} nao abriu no arranque ({e}). \
+                     Nenhuma ligacao e usada nem gravada ate o arquivo ser consertado e o \
+                     servidor reiniciado -- gravar agora regravaria o arquivo por cima das \
+                     ligacoes que ele ainda guarda. O resto do servidor esta de pe",
+                    caminho.display()
+                )),
+            },
+        }
+    }
+
+    /// Recusa, com o motivo e o arquivo, se o cadastro esta trancado. E a
+    /// porta de toda operacao que le ou grava ligacao -- ver
+    /// [`Registro::abrir_ou_trancar`].
+    pub fn exigir_legivel(&self) -> Result<()> {
+        match &self.ilegivel {
+            Some(motivo) => Err(PhxError::Corrompido(motivo.clone())),
+            None => Ok(()),
+        }
+    }
+
     /// Le o arquivo SEM chave mestra -- o cadastro de sempre. O cifrado abre
     /// com as ligacoes cifradas trancadas, dizendo que falta a chave.
     pub fn abrir(caminho: &Path) -> Result<Registro> {
@@ -1293,9 +1342,21 @@ impl Registro {
             caminho: caminho.to_path_buf(),
             ligacoes: Vec::new(),
             cifra: CifraDoCadastro::de(cifra),
+            ilegivel: None,
         };
-        let Ok(texto) = std::fs::read_to_string(caminho) else {
-            return Ok(r);
+        // So o arquivo que NAO EXISTE e cadastro vazio. O que existe e nao se
+        // le (`EACCES`, diretorio no lugar, UTF-8 torto) virava vazio tambem,
+        // e a primeira ligacao salva o regravava por cima das outras -- pedido
+        // 466, o irmao do arquivo torto.
+        let texto = match std::fs::read_to_string(caminho) {
+            Ok(t) => t,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(r),
+            Err(e) => {
+                return Err(PhxError::Corrompido(format!(
+                    "{}: o arquivo existe e nao se le ({e})",
+                    caminho.display()
+                )))
+            }
         };
         if texto.trim().is_empty() {
             return Ok(r);
@@ -1397,6 +1458,12 @@ impl Registro {
     /// Nunca a senha, nem pedaco, nem o tamanho: o aviso nomeia a ligacao e o
     /// CAMPO, que e o que diz onde mexer.
     pub fn avisos(&self) -> Vec<String> {
+        // Trancado, o aviso e UM, e e o motivo -- o mesmo texto que as
+        // operacoes devolvem, para o log do arranque e a tela nao mandarem
+        // procurar em dois lugares (pedido 466).
+        if let Some(motivo) = &self.ilegivel {
+            return vec![motivo.clone()];
+        }
         let mut avisos: Vec<String> = Vec::new();
         let mut em_claro: Vec<String> = Vec::new();
         let mut trancadas: Vec<String> = Vec::new();
@@ -1484,6 +1551,7 @@ impl Registro {
     }
 
     pub fn achar(&self, nome: &str) -> Result<&Definicao> {
+        self.exigir_legivel()?;
         self.ligacoes
             .iter()
             .find(|l| l.nome.eq_ignore_ascii_case(nome))
@@ -1509,6 +1577,9 @@ impl Registro {
     }
 
     pub fn excluir(&mut self, nome: &str) -> Result<Gravacao> {
+        // Antes do «nao existe»: trancado, a lista vazia e mentira, e a
+        // recusa tem de dizer o motivo de verdade.
+        self.exigir_legivel()?;
         let mut novas = self.ligacoes.clone();
         novas.retain(|l| !l.nome.eq_ignore_ascii_case(nome));
         if novas.len() == self.ligacoes.len() {
@@ -1550,6 +1621,10 @@ impl Registro {
     /// RECUSA, porque escrever em claro ali seria rebaixar o que o dono pediu
     /// cifrado.
     fn gravar_estas(&mut self, mut novas: Vec<Definicao>) -> Result<Gravacao> {
+        // A porta no UNICO escritor do arquivo: `salvar`, `excluir` e quem
+        // vier depois passam por aqui, e o cadastro trancado nao regrava o
+        // arquivo que nao abriu (pedido 466).
+        self.exigir_legivel()?;
         let a_selar = em_claro(&novas);
         let mut escrito = self.cifra.escrito;
         let mut selo = self.cifra.aberto;

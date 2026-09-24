@@ -3058,6 +3058,18 @@ redigitam pela tela, e a primeira gravação sela de novo com a chave declarada
 agora (sem chave nenhuma, o cadastro volta ao formato 1). Há teste que prova o
 procedimento (`a_chave_perdida_se_resolve_apagando_o_material_e_os_envelopes`).
 
+### Quando o ARQUIVO não abre (pedido 466)
+
+Arquivo torto, `formato` maior que o deste binário, ligação repetida,
+material de cifra torto, ou arquivo que existe e não se lê (`EACCES`,
+diretório no lugar, UTF-8 torto): o cadastro abre **TRANCADO**
+(`Registro::abrir_ou_trancar`). O motor sobe; toda operação do DbLink — a
+lista inclusive — recusa com o motivo e o caminho do arquivo; e **nada o
+regrava**, porque gravar seria escrever a lista vazia por cima das ligações
+que o arquivo ainda guarda. Só o arquivo que **não existe** é cadastro vazio.
+O binário anterior não subia com os quatro primeiros casos e lia o quinto como
+vazio. O `jobs.json` segue a mesma regra.
+
 ### A migração 1 → 2
 
 Acontece na **primeira gravação** com a chave disponível — pedida por quem
@@ -3292,13 +3304,16 @@ O `config.json` recusa alto quando não se lê: o binário anterior, diante de u
 `config.phz`, não sobe. Os outros cinco arquivos JSON que o servidor lê e
 grava fazem o contrário — **leem o arquivo ilegível como vazio ou como o
 padrão**, e seguem. Empacotar qualquer um deles faria o binário anterior (ou
-este, diante de um arquivo que não sabe abrir) apagar em vez de recusar:
+este, diante de um arquivo que não sabe abrir) apagar em vez de recusar. Desde
+o pedido 466, dois deles (`dblink.json` e `jobs.json`) **trancam** em vez de
+ler vazio neste binário — mas o anterior continua lendo vazio, e é ele que
+decide o que o `.phz` custaria:
 
 | arquivo | onde lê | o que um arquivo ilegível vira |
 |---|---|---|
-| `dblink.json` | `dblink/mod.rs:1297` | cadastro VAZIO; a primeira ligação salva regrava por cima das outras. E a senha e o token de fora já vão selados com chave **externa** (§19), cifra de verdade |
+| `dblink.json` | `dblink/mod.rs`, `Registro::abrir_ou_trancar` | desde o pedido 466, cadastro **TRANCADO**: o motor sobe, toda operação do DbLink recusa nomeando o arquivo, e nada o regrava. O binário anterior o lia VAZIO, e a primeira ligação salva regravava por cima das outras. E a senha e o token de fora já vão selados com chave **externa** (§19), cifra de verdade |
 | `blacklist.json` | `blacklist.rs:494-497` | nenhum bloqueio e nenhuma whitelist; a gravação seguinte perde os dois |
-| `jobs.json` | `jobs.rs:434` | nenhum job agendado |
+| `jobs.json` | `jobs.rs`, `Registro::abrir_ou_trancar` | desde o irmão do pedido 466, cadastro **TRANCADO**: o motor sobe sem relógio de jobs, as operações de job recusam nomeando o arquivo, e nada o regrava. O binário anterior não subia com o arquivo torto e lia VAZIO o que não se lia |
 | `replicacao-posicoes.json` | `bidirecional.rs:579-584` | posições do zero: custa releitura, não dado |
 | `cluster.estado.json` | `cluster.rs:321` | o papel volta ao do `config.json` — um master destronado volta **mandando** (o comentário de `cluster.rs:308-310` diz) |
 
@@ -3341,3 +3356,41 @@ Documentado aqui para não haver surpresa:
   catálogo também, e nunca entraram em rodada nenhuma.
 - **Ligar a cifra não cifra o que já existe.** Vale do volume seguinte em
   diante. Não há comando de recifragem.
+
+## 22. As lápides das corridas agendadas (pedido 502)
+
+Uma corrida de job ou de backup agendado que **derruba o processo** (o
+`abort` da H5 do pedido 451, quando o reparo da trava falha) não roda de novo
+no arranque: ela conta como a última, na hora em que começou. A marca de que
+ela começou mora em dois lugares, um por dono. **Nenhuma das duas passa por
+`fsync`**: o laço que elas quebram é o do processo morto com a máquina de pé,
+e a página continua no cache do núcleo; numa queda de energia a lápide pode se
+perder, e aí a corrida roda de novo, que é o comportamento anterior.
+
+**A hora da lápide nunca passa do agora do arranque** (C1 do parecer do DBA do
+lote): ela traz o relógio de quem a escreveu, e um relógio que voltou depois da
+queda (RTC, snapshot de VM, passo do NTP) a deixa no futuro. Sem o
+`min(quando, agora)`, medido com +1 ano, o job «a cada 1 min» só voltava no ano
+seguinte e o backup de 24 h também. O detalhe da corrida fechada diz a hora
+escrita e que ela estava no futuro.
+
+**Job — uma linha a mais no `.log` das corridas** (`jobs.json.log`, JSON por
+linha, append-only). Antes de executar, uma linha com os campos de sempre
+(`quando_ms`, `quando`, `job`, `op`, `usuario`, `ok: false`, `duracao_ms: 0`,
+`detalhe: ""`) e **`"em_curso": true`**. A linha que fecha a corrida é a de
+sempre, **sem** o campo — byte a byte o que o binário anterior escrevia. No
+arranque, para cada job, a linha mais nova da cauda (64 KiB) decide: se é uma
+abertura, a corrida nunca terminou, e o arranque acrescenta a linha que a fecha
+(`ok: false`, `detalhe` «… nunca terminou: o servidor caiu no meio dela …») e a
+conta como a última. A tela nunca mostra aberturas no histórico. O binário
+anterior lê a abertura como uma corrida que falhou, sem detalhe.
+
+**Backup — `.phxsql-backup-agendado.em-curso` no DESTINO** (`backup.destino`),
+um objeto JSON `{"quando_ms": N, "base": "<caminho da base>"}`. Nasce antes da
+corrida e sai depois dela, qualquer que seja o fim. No arranque, a lápide desta
+base (o `base` confere; a de outra base no mesmo destino não se toca) conta
+como a última corrida, sai do disco e vira aviso. Mora no destino, e não na
+base, porque o backup copia a base inteira: na base ela entraria no próprio
+backup, e um banco restaurado nasceria achando que caiu no meio de uma cópia.
+O nome começa com ponto e não tem a cara `Banco_Admin_Data_HoraMin.zip`, então
+a faxina do `manter` não o alcança.

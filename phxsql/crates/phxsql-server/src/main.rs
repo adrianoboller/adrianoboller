@@ -417,7 +417,51 @@ fn trocar_a_forma(pedido: &str, empacotar: bool) -> ExitCode {
     }
 }
 
+/// Tira a memoria do processo do `core` -- pedido 504.
+///
+/// # O que se mediu antes
+///
+/// Neste conteiner (`core_pattern` = `core`, limite duro `unlimited`), o
+/// `phxsqld` com o cofre ligado subia com `coredump_filter` = `00000033`, e um
+/// `SIGABRT` -- o sinal do `abort` da H5 do pedido 451 -- deixava um `core` de
+/// 14,6 MB com a senha do cofre tres vezes. A chave de cada volume e
+/// `PBKDF2(senha, sal)`, com o sal em claro no cabecalho: o `core` levava todas.
+///
+/// # Por que o filtro, e nao o `PR_SET_DUMPABLE`
+///
+/// O `prctl(PR_SET_DUMPABLE, 0)` tambem cala o `core`, mas faz o nucleo dar ao
+/// `root` os arquivos de `/proc/self` -- e o servidor que roda como usuario
+/// proprio perde o `/proc/self/io` (modo 0400) que a telemetria le. Medido
+/// aqui como uid 65534: antes do `prctl` o arquivo abre, depois responde
+/// `EACCES`. O limite
+/// `RLIMIT_CORE` nao alcanca o `core_pattern` de `|programa` (systemd-coredump,
+/// apport). O filtro vale para os dois destinos e so tira as REGIOES de
+/// memoria: o `core` continua existindo, com os registradores e a lista de
+/// mapeamentos, e sem heap, pilha nem arquivo mapeado.
+///
+/// Por padrao, e nao so com o cofre ligado: a memoria leva tambem a estatica
+/// do fio, as credenciais do DbLink e a linha em claro. E o padrao dos maduros
+/// -- o `core-file` do MySQL e do MariaDB nasce desligado. Quem precisa de um
+/// `core` inteiro para depurar reescreve o filtro do processo vivo
+/// (`echo 33 > /proc/<pid>/coredump_filter`), como quem liga o `core-file`.
+///
+/// Falhar aqui AVISA e segue: um `/proc` que recusa escrita e coisa do
+/// conteiner, e derrubar o motor por isso seria o acessorio mandando no motor.
+fn tirar_a_memoria_do_core() {
+    #[cfg(target_os = "linux")]
+    if let Err(e) = std::fs::write("/proc/self/coredump_filter", "0") {
+        eprintln!(
+            "AVISO: nao consegui escrever 0 em /proc/self/coredump_filter ({e}): um \
+             abort deste processo pode levar ao disco a memoria dele, e nela a chave \
+             do cofre. Ponha LimitCORE=0 na unidade do systemd (MANUAL.txt, 7.4)."
+        );
+    }
+}
+
 fn main() -> ExitCode {
+    // ANTES de tudo, inclusive da leitura do `config.json`: a senha do cofre
+    // entra na memoria no `Config::ler`, e o `--senha` le a do administrador.
+    tirar_a_memoria_do_core();
     let args: Vec<String> = std::env::args().skip(1).collect();
 
     // A recusa vem ANTES de tudo, inclusive antes do -V/--help -- que ja

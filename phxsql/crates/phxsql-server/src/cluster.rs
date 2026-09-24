@@ -38,6 +38,72 @@ use phxsql_core::json::Json;
 use crate::config::Cluster;
 use crate::pulso::TravaDaGuarda;
 
+/// O primeiro recuo depois de um panico na thread de pulso -- pedido 452.
+///
+/// Um segundo: o dobro do intervalo do supervisor. O recuo DOBRA a cada
+/// panico seguido ate [`RECUO_DO_PULSO_TETO_MS`], e e isso que impede o laco
+/// de panico sem deixar o no sem pulso para sempre.
+pub const RECUO_DO_PULSO_BASE_MS: u64 = 1_000;
+
+/// O maior recuo, e tambem a vida que zera a serie: uma thread que pulsou por
+/// mais de um minuto antes de morrer comeca de novo do recuo curto.
+///
+/// Um minuto e o teto porque um panico que se repete para sempre vira, no
+/// maximo, uma thread e uma linha de log por minuto por no -- e o no continua
+/// sendo tentado sozinho, sem ninguem reiniciar nada. O recuo so cala a
+/// direcao que ESTE no inicia: o outro continua pulsando para ca pela thread
+/// dele, e cada lado aprende o estado do outro na troca (`pulsar`).
+pub const RECUO_DO_PULSO_TETO_MS: u64 = 60_000;
+
+/// O recuo de um no cujo pulso morreu em panico.
+#[derive(Debug, Clone, Copy)]
+struct RecuoDoPulso {
+    seguidos: u32,
+    voltar_em: std::time::Instant,
+}
+
+/// Desmarca o pulso de um no quando sai de escopo -- pedido 452.
+///
+/// # Por que um `Drop`, e nao a linha antes do `return`
+///
+/// O `laco_do_pulso` desmarcava na saida NORMAL (o no saiu da lista). Um
+/// panico pulava a linha, o id ficava marcado para sempre, e o supervisor --
+/// que so sobe thread para quem ele mesmo marca -- nunca mais subia outra: o
+/// par deixava de ser pulsado calado. O `Drop` roda tambem no desenrolar, e
+/// tambem quando a thread nem chega a nascer (o `subir` que falha solta o
+/// corpo, e a guarda vai junto). Medido com o defeito reposto: zero pulsos em
+/// 4 s depois do panico.
+///
+/// No panico, anota o recuo ANTES de desmarcar: o supervisor nunca ve o id
+/// livre sem ver junto a hora de voltar.
+pub struct GuardaDoPulso {
+    estado: std::sync::Arc<EstadoCluster>,
+    id: String,
+    nasceu: std::time::Instant,
+}
+
+impl Drop for GuardaDoPulso {
+    fn drop(&mut self) {
+        if std::thread::panicking() {
+            let (espera_ms, seguidos) =
+                self.estado.pulso_em_panico(&self.id, self.nasceu.elapsed());
+            // `writeln!` e nao `eprintln!`: este `Drop` roda no desenrolar, e
+            // um segundo panico (o erro padrao fechado) abortaria o processo.
+            use std::io::Write;
+            let _ = writeln!(
+                std::io::stderr(),
+                "cluster: a thread de pulso do no {} morreu em PANICO ({seguidos} seguido(s)); \
+                 outra sobe em {} ms, e o recuo dobra a cada panico seguido ate {} s \
+                 (pedido 452)",
+                self.id,
+                espera_ms,
+                RECUO_DO_PULSO_TETO_MS / 1_000
+            );
+        }
+        self.estado.desmarcar_pulso(&self.id);
+    }
+}
+
 /// Papel VIVO deste no. Pode divergir do `config.json` depois de uma eleicao
 /// -- e e por isso que ele se persiste: um master destronado que reiniciasse
 /// pelo config voltaria achando que manda.
@@ -212,10 +278,15 @@ pub struct EstadoCluster {
     /// reiniciar os antigos -- o master ficava 0,367 s fora do ar.
     lista: TravaDaGuarda<Vec<crate::config::NoCluster>>,
     /// Os ids que JA tem thread de pulso. Quem sobe a thread marca aqui; a
-    /// propria thread desmarca ao morrer. Sem este registro, o supervisor
+    /// propria thread desmarca ao morrer, pelo `Drop` da [`GuardaDoPulso`] --
+    /// inclusive em panico (pedido 452). Sem este registro, o supervisor
     /// subiria uma segunda thread para um no removido e reposto antes de a
     /// primeira perceber -- e as duas ficariam pulsando para sempre.
     pulsando: TravaDaGuarda<std::collections::HashSet<String>>,
+    /// O recuo de quem morreu em PANICO, por no -- pedido 452. Enquanto o
+    /// instante nao chega, o `marcar_pulso` diz nao e o supervisor nao sobe
+    /// outra thread. Ver [`GuardaDoPulso`].
+    recuo_do_pulso: TravaDaGuarda<HashMap<String, RecuoDoPulso>>,
     /// Motivos pelos quais o cluster esta degradado AGORA, para a op
     /// `cluster_estado` e para o e-mail repetido.
     degradado: TravaDaGuarda<Vec<String>>,
@@ -357,6 +428,7 @@ impl EstadoCluster {
                 "das threads de pulso do cluster",
                 std::collections::HashSet::new(),
             ),
+            recuo_do_pulso: TravaDaGuarda::nova("do recuo do pulso em panico", HashMap::new()),
             degradado: TravaDaGuarda::nova("dos motivos de degradacao do cluster", Vec::new()),
             ultimo_email_ms: AtomicI64::new(0),
             promocao_a_avisar: TravaDaGuarda::nova("do aviso de promocao do cluster", None),
@@ -908,13 +980,57 @@ impl EstadoCluster {
 
     /// Marca que este no ja tem thread de pulso. `true` = fui EU quem marcou,
     /// entao e minha a obrigacao de subir a thread.
+    ///
+    /// `false` tambem enquanto o no esta de RECUO por panico (pedido 452): o
+    /// supervisor pergunta de meio em meio segundo, e subir de novo na hora
+    /// um pulso que entra em panico a cada volta seria um laco de panico.
     pub fn marcar_pulso(&self, id: &str) -> bool {
+        if let Some(r) = self.recuo_do_pulso.travar().get(id) {
+            if std::time::Instant::now() < r.voltar_em {
+                return false;
+            }
+        }
         self.pulsando.travar().insert(id.to_string())
     }
 
     /// A thread do pulso deste no morreu.
     pub fn desmarcar_pulso(&self, id: &str) {
         self.pulsando.travar().remove(id);
+    }
+
+    /// A guarda que DESMARCA o pulso deste no quando sai de escopo -- pedido
+    /// 452. Quem marca a cria na hora, e ela viaja para dentro da thread.
+    pub fn guarda_do_pulso(self: &std::sync::Arc<Self>, id: &str) -> GuardaDoPulso {
+        GuardaDoPulso {
+            estado: std::sync::Arc::clone(self),
+            id: id.to_string(),
+            nasceu: std::time::Instant::now(),
+        }
+    }
+
+    /// Anota o panico da thread de pulso de `id` e decide quando outra pode
+    /// subir. Devolve a espera e quantos panicos seguidos ja houve.
+    fn pulso_em_panico(&self, id: &str, viveu: std::time::Duration) -> (u64, u32) {
+        let mut recuos = self.recuo_do_pulso.travar();
+        let anterior = recuos.get(id).map_or(0, |r| r.seguidos);
+        // A thread que viveu mais que o teto nao e «o mesmo panico de novo»:
+        // e um panico novo, e comeca do recuo curto.
+        let seguidos = if viveu.as_millis() >= RECUO_DO_PULSO_TETO_MS as u128 {
+            1
+        } else {
+            anterior.saturating_add(1)
+        };
+        let espera_ms = RECUO_DO_PULSO_BASE_MS
+            .saturating_mul(1u64 << (seguidos - 1).min(16))
+            .min(RECUO_DO_PULSO_TETO_MS);
+        recuos.insert(
+            id.to_string(),
+            RecuoDoPulso {
+                seguidos,
+                voltar_em: std::time::Instant::now() + std::time::Duration::from_millis(espera_ms),
+            },
+        );
+        (espera_ms, seguidos)
     }
 
     /// Copia do mapa, para quem decide ou mostra.

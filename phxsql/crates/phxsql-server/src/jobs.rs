@@ -424,10 +424,26 @@ pub struct Corrida {
     /// Resumo da resposta, ou o texto do erro. Nunca o corpo inteiro: uma
     /// varredura de vinte mil linhas nao cabe -- e nao interessa -- no log.
     pub detalhe: String,
+    /// A linha que ABRE a corrida, antes de executar -- pedido 502. A que a
+    /// fecha vem depois, sem esta marca; a abertura sem fechamento e a
+    /// corrida que derrubou o processo. Ver [`Registro::fechar_interrompidas`].
+    pub em_curso: bool,
 }
 
 impl Corrida {
     pub fn para_json(&self) -> Json {
+        let mut j = self.para_json_sem_marca();
+        // So quando e abertura: a linha que fecha continua byte a byte a de
+        // sempre, e o leitor de antes desta marca a le igual.
+        if self.em_curso {
+            if let Json::Objeto(pares) = &mut j {
+                pares.push(("em_curso".to_string(), Json::Bool(true)));
+            }
+        }
+        j
+    }
+
+    fn para_json_sem_marca(&self) -> Json {
         Json::objeto(vec![
             ("quando_ms", Json::de_i64(self.quando_ms)),
             (
@@ -452,6 +468,7 @@ impl Corrida {
             ok: j.booleano_ou("ok", false),
             duracao_ms: j.inteiro_ou("duracao_ms", 0),
             detalhe: j.texto_ou("detalhe", "").to_string(),
+            em_curso: j.booleano_ou("em_curso", false),
         })
     }
 }
@@ -478,9 +495,54 @@ pub struct Registro {
     /// a um reinicio. So informa -- NAO alimenta o agendamento: `ultimos`
     /// continua zerando a cada arranque, pelo motivo escrito nele.
     corridas: Vec<(String, Corrida)>,
+    /// O arquivo existe e NAO abriu -- o irmao do pedido 466. O texto diz por
+    /// que e nomeia o arquivo. Ver [`Registro::abrir_ou_trancar`].
+    ilegivel: Option<String>,
 }
 
 impl Registro {
+    /// O cadastro do ARRANQUE: o que [`Registro::abrir`] le, ou um cadastro
+    /// TRANCADO quando o arquivo nao abre.
+    ///
+    /// E o irmao do DbLink no pedido 466, e pelo mesmo motivo: o `?` do
+    /// `Servidor::novo` chamava as duas aberturas uma depois da outra, e um
+    /// `jobs.json` torto derrubava o motor inteiro -- por causa de um
+    /// agendador. Trancado, o motor sobe sem relogio de jobs (nao ha job
+    /// nenhum ligado), e toda operacao de job recusa dizendo o motivo. E nao
+    /// grava: o arquivo que nao abriu fica como esta, em vez de ser regravado
+    /// so com o job novo.
+    pub fn abrir_ou_trancar(caminho: &Path) -> Registro {
+        match Registro::abrir(caminho) {
+            Ok(r) => r,
+            Err(e) => Registro {
+                caminho: caminho.to_path_buf(),
+                jobs: Vec::new(),
+                ultimos: Vec::new(),
+                corridas: Vec::new(),
+                ilegivel: Some(format!(
+                    "os jobs estao TRANCADOS: o cadastro {} nao abriu no arranque ({e}). \
+                     Nenhum job roda, e nenhum e gravado, ate o arquivo ser consertado e o \
+                     servidor reiniciado -- gravar agora regravaria o arquivo por cima dos \
+                     jobs que ele ainda guarda. O resto do servidor esta de pe",
+                    caminho.display()
+                )),
+            },
+        }
+    }
+
+    /// Recusa, com o motivo e o arquivo, se o cadastro esta trancado.
+    pub fn exigir_legivel(&self) -> Result<()> {
+        match &self.ilegivel {
+            Some(motivo) => Err(PhxError::Corrompido(motivo.clone())),
+            None => Ok(()),
+        }
+    }
+
+    /// O motivo do tranca, para o aviso do arranque.
+    pub fn trancado(&self) -> Option<&str> {
+        self.ilegivel.as_deref()
+    }
+
     /// Le o arquivo. Arquivo que nao existe e cadastro vazio, e nao erro.
     pub fn abrir(caminho: &Path) -> Result<Registro> {
         let mut r = Registro {
@@ -488,10 +550,23 @@ impl Registro {
             jobs: Vec::new(),
             ultimos: Vec::new(),
             corridas: Vec::new(),
+            ilegivel: None,
         };
-        let Ok(texto) = std::fs::read_to_string(caminho) else {
-            r.semear_corridas();
-            return Ok(r);
+        // So o arquivo que NAO EXISTE e cadastro vazio: o que existe e nao se
+        // le virava vazio tambem, e o primeiro `job_salvar` o regravava so com
+        // o job novo (o irmao do pedido 466).
+        let texto = match std::fs::read_to_string(caminho) {
+            Ok(t) => t,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                r.semear_corridas();
+                return Ok(r);
+            }
+            Err(e) => {
+                return Err(PhxError::Corrompido(format!(
+                    "{}: o arquivo existe e nao se le ({e})",
+                    caminho.display()
+                )))
+            }
         };
         if texto.trim().is_empty() {
             r.semear_corridas();
@@ -549,7 +624,9 @@ impl Registro {
     /// carregar meses de log no arranque.
     fn semear_corridas(&mut self) {
         // O historico vem da mais nova para a mais velha, entao a primeira
-        // ocorrencia de cada nome e a que fica.
+        // ocorrencia de cada nome e a que fica. As aberturas (pedido 502) nao
+        // sao resultado de corrida nenhuma: quem as le e o
+        // `fechar_interrompidas`.
         for c in self.historico(usize::MAX) {
             if !self
                 .corridas
@@ -575,6 +652,7 @@ impl Registro {
     }
 
     pub fn achar(&self, nome: &str) -> Result<&Job> {
+        self.exigir_legivel()?;
         self.jobs
             .iter()
             .find(|j| j.nome.eq_ignore_ascii_case(nome))
@@ -583,6 +661,10 @@ impl Registro {
 
     /// Grava ou substitui um job pelo nome.
     pub fn salvar(&mut self, j: Job) -> Result<()> {
+        // Antes de mexer na lista: o `gravar` recusaria o disco, mas a memoria
+        // ja teria o job, e um cadastro trancado passaria a ter um job que o
+        // arquivo nao tem.
+        self.exigir_legivel()?;
         match self
             .jobs
             .iter()
@@ -595,6 +677,8 @@ impl Registro {
     }
 
     pub fn excluir(&mut self, nome: &str) -> Result<()> {
+        // Antes do «nao existe»: trancado, a lista vazia e mentira.
+        self.exigir_legivel()?;
         let antes = self.jobs.len();
         self.jobs.retain(|j| !j.nome.eq_ignore_ascii_case(nome));
         if self.jobs.len() == antes {
@@ -608,6 +692,9 @@ impl Registro {
     }
 
     fn gravar(&self) -> Result<()> {
+        // A porta no UNICO escritor: o cadastro trancado nao regrava o arquivo
+        // que nao abriu.
+        self.exigir_legivel()?;
         let j = Json::objeto(vec![(
             "jobs",
             Json::Lista(self.jobs.iter().map(Job::para_disco).collect()),
@@ -685,6 +772,12 @@ impl Registro {
             Some(p) => p.1 = c.clone(),
             None => self.corridas.push((c.job.clone(), c.clone())),
         }
+        self.acrescentar_no_log(c);
+    }
+
+    /// Uma linha no fim do `.log`. Falhar aqui nao derruba ninguem, pelo
+    /// motivo do `registrar`.
+    fn acrescentar_no_log(&self, c: &Corrida) {
         let caminho = self.caminho_do_log();
         if let Some(pai) = caminho.parent() {
             if !pai.as_os_str().is_empty() {
@@ -700,8 +793,124 @@ impl Registro {
         }
     }
 
-    /// As ultimas corridas, da mais nova para a mais velha.
+    /// As ultimas corridas, da mais nova para a mais velha -- so as que
+    /// TERMINARAM: a linha de abertura (pedido 502) nao e resultado, e na tela
+    /// ela apareceria como uma falha que nao houve.
     pub fn historico(&self, quantas: usize) -> Vec<Corrida> {
+        let mut v: Vec<Corrida> = self
+            .cauda_do_log()
+            .into_iter()
+            .filter(|c| !c.em_curso)
+            .collect();
+        v.truncate(quantas);
+        v
+    }
+
+    /// Anota no `.log` que a corrida COMECOU -- pedido 502. E a lapide: se o
+    /// processo cair antes da linha que fecha, o arranque seguinte a acha
+    /// sozinha e sabe que esta corrida nao terminou.
+    ///
+    /// # Por que sem `fsync`
+    ///
+    /// O laco que ela quebra e o do `abort` (a H5 do pedido 451): processo
+    /// morto, maquina de pe, e a pagina do arquivo continua no cache do
+    /// nucleo -- o arranque seguinte a le. Numa queda de energia a lapide
+    /// pode se perder, e ai o job roda de novo no arranque, que e o
+    /// comportamento de antes, e nao um laco.
+    pub fn registrar_inicio(&mut self, job: &str, op: &str, usuario: &str, quando_ms: i64) {
+        self.acrescentar_no_log(&Corrida {
+            quando_ms,
+            job: job.to_string(),
+            op: op.to_string(),
+            usuario: usuario.to_string(),
+            ok: false,
+            duracao_ms: 0,
+            detalhe: String::new(),
+            em_curso: true,
+        });
+    }
+
+    /// As corridas que COMECARAM e nunca terminaram -- o processo caiu no
+    /// meio delas -- viram corrida que FALHOU, e nao rodam de novo neste
+    /// arranque. Devolve as que fechou. Pedido 502.
+    ///
+    /// # A decisao, e de onde ela vem
+    ///
+    /// Os tres maduros convergem: o `pg_cron` marca como `failed`, com
+    /// `server restarted`, toda corrida que estava `starting` ou `running`
+    /// quando o banco reiniciou (`MarkPendingRunsAsFailed`, chamado no
+    /// arranque do agendador), e nao a roda de novo; o MySQL e o MariaDB
+    /// gravam o `LAST_EXECUTED` do evento ANTES de executa-lo
+    /// (`Event_queue::get_top_for_execution_if_time`: `mark_last_executed` e
+    /// `update_timing_fields_for_event`), entao o evento que derrubou o
+    /// servidor conta como executado e so volta na proxima hora dele. Aqui a
+    /// corrida que nunca terminou conta como a ultima, na hora em que
+    /// comecou: o job volta na cadencia dele, e nao na do arranque.
+    ///
+    /// Quem chama e o arranque, e so ele: e escrita no `.log`, e o `abrir`
+    /// continua so lendo.
+    ///
+    /// # A hora da lapide nunca passa de `agora_ms`
+    ///
+    /// A lapide traz o relogio de quem a escreveu. Se ele voltou depois da
+    /// queda (RTC, snapshot de VM, passo do NTP), a hora dela fica no FUTURO, e
+    /// contada como a ultima corrida sem teto empurrava o job para depois dela
+    /// -- medido pelo DBA com +1 ano: um job «a cada 1 min» so voltava no ano
+    /// seguinte, e a tela dizia `parado: false`. Antes da lapide isso nao
+    /// acontecia, porque o `ultimos` zerava a cada arranque. O `min` guarda o
+    /// que a lapide quer dizer («rodou agora ha pouco») sem herdar o relogio
+    /// errado. O detalhe diz a hora escrita, que e o que se investiga.
+    pub fn fechar_interrompidas(&mut self, agora_ms: i64) -> Vec<Corrida> {
+        // Trancado, nao ha job nenhum para rodar -- e nada se escreve em nome
+        // de um cadastro que nao abriu.
+        if self.ilegivel.is_some() {
+            return Vec::new();
+        }
+        let mut vistos: Vec<String> = Vec::new();
+        let mut abertas: Vec<Corrida> = Vec::new();
+        // Da mais nova para a mais velha: a PRIMEIRA linha de cada job e a
+        // ultima coisa que aconteceu com ele.
+        for c in self.cauda_do_log() {
+            if vistos.iter().any(|n| n.eq_ignore_ascii_case(&c.job)) {
+                continue;
+            }
+            vistos.push(c.job.clone());
+            if c.em_curso {
+                abertas.push(c);
+            }
+        }
+        let mut fechadas = Vec::new();
+        for a in abertas {
+            let escrita = a.quando_ms;
+            let c = Corrida {
+                quando_ms: escrita.min(agora_ms),
+                ok: false,
+                em_curso: false,
+                duracao_ms: 0,
+                detalhe: format!(
+                    "a corrida comecou em {}{} e nunca terminou: o servidor caiu no meio \
+                     dela. Ela NAO roda de novo neste arranque; o job volta na proxima \
+                     hora da agenda dele, contada desta corrida (pedido 502)",
+                    phxsql_core::datahora::instante_iso(escrita),
+                    if escrita > agora_ms {
+                        " (no FUTURO: o relogio voltou depois da queda, e a conta vale \
+                         a partir de agora)"
+                    } else {
+                        ""
+                    }
+                ),
+                ..a
+            };
+            self.anotar_corrida(&c.job, c.quando_ms);
+            self.registrar(&c);
+            fechadas.push(c);
+        }
+        fechadas
+    }
+
+    /// Todas as linhas da cauda do `.log`, da mais nova para a mais velha,
+    /// aberturas inclusive.
+    fn cauda_do_log(&self) -> Vec<Corrida> {
         let caminho = self.caminho_do_log();
         let Ok(mut f) = std::fs::File::open(&caminho) else {
             return Vec::new();
@@ -725,7 +934,6 @@ impl Registro {
             .filter_map(|j| Corrida::de_json(&j))
             .collect();
         saida.reverse();
-        saida.truncate(quantas);
         saida
     }
 }
@@ -1039,6 +1247,7 @@ mod testes {
                 ok: i % 2 == 0,
                 duracao_ms: i,
                 detalhe: "ok".into(),
+                em_curso: false,
             });
         }
         let h = r.historico(3);
@@ -1145,6 +1354,7 @@ mod testes {
                     } else {
                         "disco cheio".into()
                     },
+                    em_curso: false,
                 });
             }
             let u = r.ultima_corrida_de("noturno").unwrap();
@@ -1173,6 +1383,7 @@ mod testes {
             ok: true,
             duracao_ms: 1,
             detalhe: "ok".into(),
+            em_curso: false,
         });
         r.excluir("x").unwrap();
         assert!(
@@ -1227,6 +1438,7 @@ mod testes {
             ok: true,
             duracao_ms: 1,
             detalhe: "ok".into(),
+            em_curso: false,
         });
 
         let log = r.caminho_do_log();
@@ -1250,5 +1462,129 @@ mod testes {
             texto_do_log.contains("\"noturno\""),
             "a corrida nao apareceu no log: {texto_do_log}"
         );
+    }
+
+    /// **Pedido 502, no registro:** a abertura sem fechamento e a corrida que
+    /// derrubou o processo. Ela vira FALHOU, conta como a ultima (o job nao
+    /// vence na partida) e some da tela como abertura; o job que fechou a dele
+    /// segue a regra de sempre, e roda na partida. E o segundo arranque nao
+    /// fecha de novo o que ja fechou.
+    #[test]
+    fn corrida_aberta_sem_fecho_vira_falhou_e_nao_vence_na_partida() {
+        let (_guarda, caminho) = tmp("interrompida");
+        let mut r = Registro::abrir(&caminho).unwrap();
+        for nome in ["noturno", "limpo"] {
+            r.salvar(
+                Job::de_json(&job_json(nome, ",\"ligado\":true,\"cada_minutos\":60")).unwrap(),
+            )
+            .unwrap();
+        }
+        r.registrar_inicio("noturno", "backup", "adm", 5_000);
+        r.registrar_inicio("limpo", "backup", "adm", 6_000);
+        r.registrar(&Corrida {
+            quando_ms: 6_000,
+            job: "limpo".into(),
+            op: "backup".into(),
+            usuario: "adm".into(),
+            ok: true,
+            duracao_ms: 3,
+            detalhe: "ok".into(),
+            em_curso: false,
+        });
+        drop(r);
+
+        let mut r = Registro::abrir(&caminho).unwrap();
+        assert!(
+            r.historico(10).iter().all(|c| !c.em_curso),
+            "a abertura apareceu no historico da tela como uma corrida"
+        );
+        let fechadas = r.fechar_interrompidas(5_000 + 1_000);
+        assert_eq!(fechadas.len(), 1, "{fechadas:?}");
+        assert_eq!(fechadas[0].job, "noturno");
+        assert_eq!(r.ultimo_de("noturno"), 5_000);
+        let agora = 5_000 + 59_000;
+        let v = r.vencidos(agora);
+        assert!(
+            !v.contains(&"noturno".to_string()),
+            "a corrida que derrubou o processo venceria de novo na partida: {v:?}"
+        );
+        assert!(
+            v.contains(&"limpo".to_string()),
+            "o job que terminou perdeu a regra de sempre (roda na partida): {v:?}"
+        );
+        let u = r.ultima_corrida_de("noturno").unwrap();
+        assert!(!u.ok && u.detalhe.contains("nunca terminou"), "{u:?}");
+        drop(r);
+
+        let mut r = Registro::abrir(&caminho).unwrap();
+        assert!(
+            r.fechar_interrompidas(5_000 + 2_000).is_empty(),
+            "o segundo arranque fechou de novo a mesma corrida"
+        );
+    }
+
+    /// **C1 do parecer do DBA (lote 502):** a lapide com hora no FUTURO -- o
+    /// relogio voltou depois da queda -- nao empurra o job para depois dela.
+    ///
+    /// Sem o `min`: com +1 ano, o job «a cada 1 min» nao vence nem um minuto
+    /// depois do arranque, e a ultima corrida fica no ano seguinte.
+    #[test]
+    fn lapide_do_futuro_nao_empurra_o_job_para_depois_dela() {
+        let (_guarda, caminho) = tmp("lapide-futuro");
+        let agora: i64 = 1_790_000_000_000;
+        let um_ano: i64 = 365 * 86_400_000;
+        let mut r = Registro::abrir(&caminho).unwrap();
+        r.salvar(Job::de_json(&job_json("eco", ",\"ligado\":true,\"cada_minutos\":1")).unwrap())
+            .unwrap();
+        r.registrar_inicio("eco", "ping", "adm", agora + um_ano);
+        drop(r);
+
+        let mut r = Registro::abrir(&caminho).unwrap();
+        let fechadas = r.fechar_interrompidas(agora);
+        assert_eq!(fechadas.len(), 1, "{fechadas:?}");
+        assert!(
+            r.ultimo_de("eco") <= agora,
+            "a lapide do futuro virou a ultima corrida: {} contra agora {agora}",
+            r.ultimo_de("eco")
+        );
+        let v = r.vencidos(agora + 60_000);
+        assert!(
+            v.contains(&"eco".to_string()),
+            "o job de 1 min nao vence 1 min depois do arranque -- a lapide do futuro o \
+             empurrou: {v:?}"
+        );
+        assert!(
+            fechadas[0].detalhe.contains("FUTURO"),
+            "o detalhe nao diz que a hora escrita estava no futuro: {}",
+            fechadas[0].detalhe
+        );
+    }
+
+    /// **O irmao do pedido 466, no registro:** o arquivo que existe e nao se
+    /// le NAO vira cadastro vazio -- o `salvar` seguinte o regravaria so com o
+    /// job novo. Trancado, recusa ler e gravar, e diz o arquivo.
+    #[test]
+    fn cadastro_de_jobs_que_nao_se_le_tranca_em_vez_de_abrir_vazio() {
+        let (guarda, caminho) = tmp("trancado");
+        std::fs::create_dir_all(&caminho).unwrap();
+        assert!(
+            Registro::abrir(&caminho).is_err(),
+            "o diretorio abriu como cadastro"
+        );
+        let mut r = Registro::abrir_ou_trancar(&caminho);
+        let e = r
+            .salvar(Job::de_json(&job_json("novo", "")).unwrap())
+            .unwrap_err()
+            .to_string();
+        assert!(
+            e.contains("TRANCADOS") && e.contains(&caminho.display().to_string()),
+            "{e}"
+        );
+        assert!(
+            r.jobs.is_empty(),
+            "a memoria ganhou um job que o disco nao tem"
+        );
+        assert!(caminho.is_dir(), "o cadastro trancado foi regravado");
+        drop(guarda);
     }
 }

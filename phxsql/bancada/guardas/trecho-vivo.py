@@ -264,6 +264,12 @@ dia, nunca no desejado:
   teto da senha no `conferir`, no `op_login` e no criar, a fachada de mil
   iteracoes, o inativo que pulava o PBKDF2 e a prova de quem nao existe que
   saia sem conferir. Contado pelo `--catraca` na arvore combinada.
+  **SUBIU para 368 em 24/09/2026** (lote 502+452+466+504+510, integrado
+  sobre o 520+521): dezesseis guardas do servidor que fica de pe -- o job e
+  o backup em panico, a lapide (inclusive a do futuro), o pulso sem `Drop`,
+  o cadastro acessorio ilegivel, o core com a chave e a falha do backup sem
+  aviso. A frente contou 334 a partir de 318; a conta do encontro e do
+  integrador, pelo `--catraca`.
   **SUBIU para 300 em 24/09/2026** (pedido 497, o literal do pedido no texto
   do erro que o `acessos.log` grava): tres guardas novas, uma por motor que
   monta a mensagem -- o `descrever` do SQL, o `mostrar` da expressao -- e a
@@ -387,7 +393,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 352
+PISO_DAS_ENTRADAS = 368
 
 # ------------------------------------------------------------- APOSENTADAS
 #

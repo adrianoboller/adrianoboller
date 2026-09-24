@@ -4717,16 +4717,14 @@ impl Config {
     /// PERGUNTA ao cadastro ([`crate::dblink::Registro::avisos`], onde a regra
     /// mora) e poe a resposta na lista de sempre.
     ///
-    /// Arquivo torto aqui e silencio, e nao erro: quem recusa o arranque por
-    /// ele continua sendo o `Servidor::novo`, com a mensagem dele. Duas
-    /// recusas do mesmo arquivo, com textos diferentes, mandariam procurar em
-    /// dois lugares.
+    /// Arquivo torto aqui e AVISO, e nao erro (pedido 466): o
+    /// `Servidor::novo` abre pela MESMA `abrir_ou_trancar` e sobe com o DbLink
+    /// trancado, e o texto do aviso e o mesmo que as operacoes devolvem --
+    /// dois textos do mesmo arquivo mandariam procurar em dois lugares.
     fn avisar_o_cadastro_do_dblink(&mut self) {
-        if let Ok(cadastro) =
-            crate::dblink::Registro::abrir_com(&self.dblink, &self.cifra_do_dblink)
-        {
-            self.avisos.extend(cadastro.avisos());
-        }
+        let cadastro =
+            crate::dblink::Registro::abrir_ou_trancar(&self.dblink, &self.cifra_do_dblink);
+        self.avisos.extend(cadastro.avisos());
     }
 
     /// O irmao do de cima para o `jobs.json` (pedido 497, R1 do parecer SEC):

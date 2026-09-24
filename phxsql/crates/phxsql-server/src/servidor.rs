@@ -1080,6 +1080,10 @@ pub struct Servidor {
     /// Trava propria, e nunca tomada com a de `jobs` na mao: quem precisa das
     /// duas tira a foto daqui ANTES de trancar o cadastro.
     jobs_rodando: Mutex<Vec<String>>,
+    /// As corridas que o arranque fechou como FALHOU (pedido 502), esperando
+    /// o `subir_jobs` para irem ao aviso por e-mail como qualquer falha --
+    /// C2 do parecer do DBA. Esvaziada uma vez.
+    interrompidas_a_avisar: Mutex<Vec<crate::jobs::Corrida>>,
     /// Quando cada aviso de job saiu por e-mail, por chave `falha:nome` /
     /// `parado:nome` -- o silencio entre avisos repetidos, como o do disco.
     avisos_de_jobs: Mutex<HashMap<String, i64>>,
@@ -1188,6 +1192,21 @@ pub struct Servidor {
     /// piso (H5) -- o processo tem de cair em vez de servir.
     #[cfg(test)]
     reparo_falha_de_teste: AtomicBool,
+    /// So nos testes: quantos panicos a thread de pulso ainda da, um por volta
+    /// do laco (`u32::MAX` = sempre) -- pedido 452.
+    #[cfg(test)]
+    panicos_no_pulso_de_teste: std::sync::atomic::AtomicU32,
+    /// So nos testes: quantas vezes o gancho do pulso ja entrou em panico.
+    #[cfg(test)]
+    panicos_no_pulso_dados: std::sync::atomic::AtomicU32,
+    /// So nos testes: o relogio de jobs entra em panico na proxima volta,
+    /// FORA da corrida (o irmao do pedido 452). Dispara uma vez.
+    #[cfg(test)]
+    panico_no_relogio_de_jobs_de_teste: AtomicBool,
+    /// So nos testes: o amostrador entra em panico na proxima volta (irmao do
+    /// pedido 452). Dispara uma vez.
+    #[cfg(test)]
+    panico_no_amostrador_de_teste: AtomicBool,
     /// So nos testes: o reparo da trava entra em panico -- o panico duplo, que
     /// o Rust transforma em `abort` (pedido 451, M3).
     #[cfg(test)]
@@ -1430,10 +1449,27 @@ impl Servidor {
         let lista_negra = Blacklist::abrir(&config.blacklist)?;
         // Com a chave mestra do cadastro (pedido 372). A chave que falta, ou
         // a errada, NAO recusa aqui: tranca so as ligacoes cifradas, e o aviso
-        // ja saiu pela lista do `Config::ler`. O `?` continua valendo para o
-        // arquivo torto e para o formato mais novo que este binario.
-        let dblink = crate::dblink::Registro::abrir_com(&config.dblink, &config.cifra_do_dblink)?;
-        let jobs = crate::jobs::Registro::abrir(&config.jobs)?;
+        // ja saiu pela lista do `Config::ler`. E o arquivo torto, o formato
+        // mais novo que este binario e o arquivo que nao se le tambem nao
+        // recusam mais (pedido 466): TRANCAM o DbLink inteiro, e o motor sobe
+        // -- o DbLink e acessorio. O aviso e o do mesmo `avisos()`.
+        let dblink =
+            crate::dblink::Registro::abrir_ou_trancar(&config.dblink, &config.cifra_do_dblink);
+        // O irmao do DbLink no pedido 466: a MESMA sequencia de aberturas, e o
+        // `jobs.json` torto derrubava o motor pelo mesmo `?`. Trancado, o
+        // motor sobe e as operacoes de job recusam dizendo o motivo.
+        let mut jobs = crate::jobs::Registro::abrir_ou_trancar(&config.jobs);
+        if let Some(motivo) = jobs.trancado() {
+            eprintln!("AVISO: {motivo}");
+        }
+        // A corrida que derrubou o processo anterior (pedido 502): vira
+        // FALHOU no historico e conta como a ultima, e o relogio nao a roda de
+        // novo logo na partida. O e-mail sai depois, no `subir_jobs`: aqui o
+        // servidor ainda nao existe para subir a thread do aviso.
+        let interrompidas = jobs.fechar_interrompidas(crate::agora_ms());
+        for c in &interrompidas {
+            eprintln!("AVISO: job {}: {}", c.job, c.detalhe);
+        }
         let cluster = config.cluster.clone().map(|c| {
             Arc::new(crate::cluster::EstadoCluster::novo(
                 c,
@@ -1499,6 +1535,7 @@ impl Servidor {
             jobs: Mutex::new(jobs),
             relogio_de_jobs: AtomicBool::new(false),
             jobs_rodando: Mutex::new(Vec::new()),
+            interrompidas_a_avisar: Mutex::new(interrompidas),
             avisos_de_jobs: Mutex::new(HashMap::new()),
             expurgo_da_trilha: Mutex::new(()),
             avisos_de_seguranca: Mutex::new(HashMap::new()),
@@ -1530,6 +1567,14 @@ impl Servidor {
             panico_de_teste_na_op: Mutex::new(None),
             #[cfg(test)]
             reparo_falha_de_teste: AtomicBool::new(false),
+            #[cfg(test)]
+            panicos_no_pulso_de_teste: std::sync::atomic::AtomicU32::new(0),
+            #[cfg(test)]
+            panicos_no_pulso_dados: std::sync::atomic::AtomicU32::new(0),
+            #[cfg(test)]
+            panico_no_relogio_de_jobs_de_teste: AtomicBool::new(false),
+            #[cfg(test)]
+            panico_no_amostrador_de_teste: AtomicBool::new(false),
             #[cfg(test)]
             reparo_panica_de_teste: AtomicBool::new(false),
             #[cfg(test)]
@@ -2786,6 +2831,9 @@ impl Servidor {
         if !self.telemetria.marcar_amostrador() {
             return;
         }
+        // O «no ar» do retrato sai junto com a thread -- o irmao do pedido
+        // 452, o mesmo desenho do `RelogioNoAr`.
+        let no_ar = AmostradorNoAr(Arc::clone(&self.telemetria));
         let servidor = Arc::clone(self);
         self.telemetria.subir(
             "amostrador",
@@ -2795,6 +2843,15 @@ impl Servidor {
             "servico",
             crate::agora_ms(),
             move |fio| loop {
+                // A guarda viaja capturada pelo `move` (ver `RelogioNoAr`).
+                let _no_ar = &no_ar;
+                #[cfg(test)]
+                if servidor
+                    .panico_no_amostrador_de_teste
+                    .swap(false, Ordering::SeqCst)
+                {
+                    panic!("panico de teste no amostrador (irmao do pedido 452)");
+                }
                 let comeco = Instant::now();
                 if servidor.telemetria.ligada() {
                     // A CPU da MAQUINA sai do mesmo monitor que o painel de
@@ -3892,10 +3949,15 @@ impl Servidor {
         loop {
             for no in estado.outros() {
                 // Quem MARCA sobe. A propria thread desmarca ao morrer, e por
-                // isso nao ha um segundo registro aqui para envelhecer.
+                // isso nao ha um segundo registro aqui para envelhecer. «Ao
+                // morrer» e o `Drop` da guarda, que nasce AQUI e viaja para
+                // dentro da thread: morte normal, panico, ou a thread que nem
+                // chegou a nascer -- pedido 452. Antes era uma linha antes do
+                // `return`, e o panico a pulava.
                 if !estado.marcar_pulso(&no.id) {
                     continue;
                 }
+                let guarda = estado.guarda_do_pulso(&no.id);
                 let servidor = Arc::clone(&self);
                 self.telemetria.subir(
                     format!("pulso-{}", no.id),
@@ -3905,7 +3967,7 @@ impl Servidor {
                     crate::agora_ms(),
                     move |fio| {
                         fio.fazendo("pulsando");
-                        servidor.laco_do_pulso(no);
+                        servidor.laco_do_pulso(no, guarda);
                     },
                 );
             }
@@ -3920,18 +3982,26 @@ impl Servidor {
     /// Erro aqui e rotina, nao noticia: no caido e exatamente o que o mapa
     /// registra envelhecendo, e quem fala sobre isso e o arbitro, uma vez --
     /// nao esta thread, a cada pulso perdido.
-    fn laco_do_pulso(self: Arc<Self>, no: crate::config::NoCluster) {
+    ///
+    /// A `_guarda` so existe para morrer junto: e o `Drop` dela que desmarca o
+    /// no, em qualquer saida desta funcao (pedido 452).
+    fn laco_do_pulso(
+        self: Arc<Self>,
+        no: crate::config::NoCluster,
+        _guarda: crate::cluster::GuardaDoPulso,
+    ) {
         let Some(estado) = self.cluster.clone() else {
             return;
         };
         let intervalo = Duration::from_secs(estado.config.pulso_s);
         loop {
+            #[cfg(test)]
+            self.panico_no_pulso_de_teste();
             // O no saiu da lista viva, ou mudou de endereco? A thread morre e
             // o supervisor sobe outra com o endereco novo. Continuar seria
             // pulsar um no que o cluster ja nao tem -- ou, pior, o endereco
-            // velho de um no que se mudou.
+            // velho de um no que se mudou. Quem desmarca e a guarda.
             if estado.no(&no.id).as_ref() != Some(&no) {
-                estado.desmarcar_pulso(&no.id);
                 return;
             }
             let _ = self.pulsar(&estado, &no);
@@ -5638,16 +5708,15 @@ impl Servidor {
             "servico",
             crate::agora_ms(),
             move |fio| {
-                let mut ultimo = 0i64;
+                // Zero, a nao ser que a corrida anterior tenha derrubado o
+                // processo -- ai ela conta como a ultima (pedido 502).
+                let mut ultimo = servidor.lapide_do_backup_no_arranque();
                 loop {
                     let agora = crate::agora_ms();
                     if servidor.config.backup.hora_de_rodar(agora, ultimo) {
                         ultimo = agora;
                         fio.fazendo("copiando e conferindo o SHA-256");
-                        match servidor.rodar_backup_agendado(agora) {
-                            Ok(onde) => eprintln!("backup agendado: {onde}"),
-                            Err(e) => eprintln!("backup agendado FALHOU: {e}"),
-                        }
+                        servidor.uma_corrida_do_backup_agendado(agora);
                     } else {
                         fio.fazendo("esperando a hora marcada");
                     }
@@ -5657,10 +5726,138 @@ impl Servidor {
         );
     }
 
+    /// Uma corrida do backup agendado: a lapide, a filha, e o aviso.
+    ///
+    /// # A filha (pedido 502)
+    ///
+    /// O backup segura a trava de ESCRITA por segundos, e na thread de servico
+    /// um panico ali abortava o processo -- e o backup rodava de novo no
+    /// arranque, e abortava de novo. Na filha (familia `corrida`), o panico
+    /// repara a trava e volta como falha. A lapide cobre o que sobra: o reparo
+    /// que falha ainda aborta (H5), e o arranque seguinte a acha e nao roda o
+    /// backup de novo na partida.
+    ///
+    /// # O aviso (pedido 510)
+    ///
+    /// Falha que so ia ao erro padrao era descoberta no dia de restaurar. Vai
+    /// ao carteiro da saude do disco -- e-mail e SMS, com silencio proprio --,
+    /// e o sucesso seguinte devolve o direito de avisar na hora.
+    fn uma_corrida_do_backup_agendado(&self, agora: i64) {
+        let lapide = self.gravar_lapide_do_backup(agora);
+        let corrida = self.telemetria.rodar_em_filha(
+            "backup-corrida",
+            "executa UMA corrida do backup agendado e morre: o panico dela volta \
+             pelo `join` e vira backup que falhou, em vez de derrubar o processo \
+             e rodar de novo no arranque (pedido 502)",
+            "corrida",
+            agora,
+            |fio| {
+                fio.fazendo("copiando e conferindo o SHA-256");
+                self.rodar_backup_agendado(agora)
+            },
+        );
+        let resultado = corrida.unwrap_or_else(|panico| Err(corrida_em_panico(&panico)));
+        if let Some(l) = lapide {
+            let _ = std::fs::remove_file(l);
+        }
+        match resultado {
+            Ok(onde) => {
+                eprintln!("backup agendado: {onde}");
+                self.saude.backup_voltou();
+            }
+            Err(e) => {
+                eprintln!("backup agendado FALHOU: {e}");
+                self.avisar_backup_que_falhou(agora, &e.to_string());
+            }
+        }
+    }
+
+    /// Entrega ao carteiro a falha do backup agendado, se o silencio deixar --
+    /// pedido 510. Sem rede aqui: quem fala com o rele e a thread da saude.
+    fn avisar_backup_que_falhou(&self, agora: i64, texto: &str) {
+        if let Some(evento) = self.saude.falha_do_backup(agora, texto) {
+            self.saude.entregar(evento);
+        }
+    }
+
+    /// Onde mora a lapide do backup agendado: no DESTINO, que e dele. Na base
+    /// ela iria para dentro do proprio backup (o `backup::listar` copia tudo
+    /// o que ha la), e um banco restaurado nasceria achando que caiu no meio
+    /// de um backup.
+    fn caminho_da_lapide_do_backup(&self) -> PathBuf {
+        self.config.backup.destino.join(LAPIDE_DO_BACKUP)
+    }
+
+    /// Anota que a corrida do backup COMECOU -- pedido 502. Sem `fsync`, pelo
+    /// motivo do `jobs::Registro::registrar_inicio`. `None` quando nao deu para
+    /// escrever: o backup roda do mesmo jeito, e a falha dele, se vier, e a
+    /// que avisa.
+    fn gravar_lapide_do_backup(&self, agora: i64) -> Option<PathBuf> {
+        let caminho = self.caminho_da_lapide_do_backup();
+        let texto = Json::objeto(vec![
+            ("quando_ms", Json::de_i64(agora)),
+            (
+                "base",
+                Json::texto_de(self.config.base.display().to_string()),
+            ),
+        ])
+        .escrever();
+        let _ = std::fs::create_dir_all(&self.config.backup.destino);
+        std::fs::write(&caminho, texto).ok().map(|_| caminho)
+    }
+
+    /// A corrida do backup que derrubou o processo anterior: se a lapide esta
+    /// la, e desta base, o backup NAO roda de novo na partida -- a corrida
+    /// morta conta como a ultima --, e o carteiro avisa. Pedido 502, com a
+    /// decisao escrita em `jobs::Registro::fechar_interrompidas`.
+    fn lapide_do_backup_no_arranque(&self) -> i64 {
+        let caminho = self.caminho_da_lapide_do_backup();
+        let Ok(texto) = std::fs::read_to_string(&caminho) else {
+            return 0;
+        };
+        let Ok(j) = Json::analisar(&texto) else {
+            let _ = std::fs::remove_file(&caminho);
+            return 0;
+        };
+        // Outra base no mesmo destino: a lapide e do vizinho, e nao se mexe.
+        if j.texto_ou("base", "") != self.config.base.display().to_string() {
+            return 0;
+        }
+        let quando = j.inteiro_ou("quando_ms", 0);
+        let _ = std::fs::remove_file(&caminho);
+        if quando <= 0 {
+            return 0;
+        }
+        let agora = crate::agora_ms();
+        let texto = format!(
+            "a corrida de {}{} nunca terminou: o servidor caiu no meio dela. Ela NAO \
+             roda de novo neste arranque; o backup volta na proxima hora da agenda, \
+             contada desta corrida (pedido 502)",
+            phxsql_core::datahora::instante_iso(quando),
+            if quando > agora {
+                " (no FUTURO: o relogio voltou depois da queda, e a conta vale a \
+                 partir de agora)"
+            } else {
+                ""
+            }
+        );
+        eprintln!("backup agendado FALHOU: {texto}");
+        self.avisar_backup_que_falhou(agora, &texto);
+        // Nunca depois de agora -- C1 do parecer do DBA, pelo motivo escrito
+        // no `jobs::Registro::fechar_interrompidas`: sem o `min`, uma lapide
+        // do futuro deixava o backup sem rodar ate aquela data.
+        quando.min(agora)
+    }
+
     fn rodar_backup_agendado(&self, quando: i64) -> Result<String> {
         let b = &self.config.backup;
         let (onde, r) = {
             let _trava = self.travar_dados()?;
+            // So nos testes: o panico COM a trava de escrita na mao (pedido
+            // 502) -- o que abortava o processo quando o backup rodava na
+            // thread de servico.
+            #[cfg(test)]
+            self.armar_panico_de_teste("backup_agendado");
             if b.zip {
                 let (caminho, r) = phxsql_store::backup::executar_zip(
                     &self.config.base,
@@ -6871,6 +7068,8 @@ impl Servidor {
             .map(|g| g.clone())
             .unwrap_or_default();
         let r = self.jobs.lock().map_err(|_| trava_envenenada())?;
+        // A lista vazia de um cadastro trancado seria mentira.
+        r.exigir_legivel()?;
         let agora = crate::agora_ms();
         let lista: Vec<Json> = r
             .jobs
@@ -7074,6 +7273,9 @@ impl Servidor {
     /// "chegou a hora?" e uma comparacao de inteiros, e uma linha de execucao
     /// por job custaria pilha para ficar dormindo.
     fn subir_jobs(self: &Arc<Self>) {
+        // ANTES do portao do relogio: a corrida que caiu pode ser de um job
+        // que ninguem mais liga, e a falha dela avisa do mesmo jeito.
+        self.avisar_corridas_interrompidas();
         let ligados: Vec<String> = match self.jobs.lock() {
             Ok(r) => r
                 .jobs
@@ -7090,6 +7292,10 @@ impl Servidor {
         }
         eprintln!("jobs de execucao: {}", ligados.join(" | "));
         self.relogio_de_jobs.store(true, Ordering::SeqCst);
+        // O «no ar» sai JUNTO com a thread, pelo `Drop` -- o irmao do pedido
+        // 452. Nasce aqui, e nao dentro da thread, para sair tambem quando a
+        // thread nem chega a nascer.
+        let no_ar = RelogioNoAr(Arc::clone(self));
         let servidor = Arc::clone(self);
         self.telemetria.subir(
             "relogio-jobs",
@@ -7098,6 +7304,16 @@ impl Servidor {
             "servico",
             crate::agora_ms(),
             move |fio| loop {
+                // A guarda viaja capturada pelo `move`, e o `Drop` dela roda
+                // quando este corpo sai -- inclusive no desenrolar.
+                let _no_ar = &no_ar;
+                #[cfg(test)]
+                if servidor
+                    .panico_no_relogio_de_jobs_de_teste
+                    .swap(false, Ordering::SeqCst)
+                {
+                    panic!("panico de teste no relogio de jobs (irmao do pedido 452)");
+                }
                 let agora = crate::agora_ms();
                 // A trava sai antes de executar: um job de backup segura a
                 // trava dos dados por segundos, e prender o cadastro junto
@@ -7122,6 +7338,31 @@ impl Servidor {
                 std::thread::sleep(Duration::from_secs(crate::jobs::PERIODO_DO_RELOGIO_S));
             },
         );
+    }
+
+    /// A corrida fechada no arranque (pedido 502) avisa como a falha comum --
+    /// C2 do parecer do DBA. Ela era FALHOU so no historico e no erro padrao,
+    /// e isso vale para qualquer queda no meio de um job (`systemctl
+    /// restart`, OOM, `SIGKILL`), nao so para a H5: o job fica sem rodar ate
+    /// a proxima hora dele, e o dono tem de saber. O irmao, o backup, ja avisa
+    /// pelo carteiro.
+    ///
+    /// Job que saiu do cadastro nao tem ficha para o aviso, e so fica no
+    /// historico.
+    fn avisar_corridas_interrompidas(&self) {
+        let fechadas: Vec<crate::jobs::Corrida> = match self.interrompidas_a_avisar.lock() {
+            Ok(mut v) => v.drain(..).collect(),
+            Err(_) => return,
+        };
+        for c in fechadas {
+            let job = match self.jobs.lock() {
+                Ok(r) => r.achar(&c.job).ok().cloned(),
+                Err(_) => None,
+            };
+            if let Some(job) = job {
+                self.avisar_sobre_a_corrida(&job, &c);
+            }
+        }
     }
 
     /// Roda um job agora: monta a sessao dele, passa pelos portoes e executa.
@@ -7151,11 +7392,19 @@ impl Servidor {
         };
         let op = job.op().to_string();
 
+        // A lapide ANTES de executar (pedido 502): se esta corrida derrubar o
+        // processo, o arranque seguinte a acha aberta e nao a roda de novo.
+        if let Ok(mut r) = self.jobs.lock() {
+            r.registrar_inicio(&job.nome, &op, &job.usuario, inicio);
+        }
         // O nome entra na lista dos que rodam agora ANTES de executar e sai
         // logo depois: e o que deixa a tela dizer "rodando" e impede o vigia
-        // de tratar um backup de dez minutos como job parado.
+        // de tratar um backup de dez minutos como job parado. A corrida roda
+        // numa filha, e por isso o `false` chega mesmo quando ela entra em
+        // panico -- antes, o panico pulava esta linha e o job ficava
+        // «rodando» para sempre.
         self.marcar_rodando(&job.nome, true);
-        let resultado = self.executar_job(&job, &op);
+        let resultado = self.executar_job_na_filha(&job, &op, inicio);
         self.marcar_rodando(&job.nome, false);
         let corrida = crate::jobs::Corrida {
             quando_ms: inicio,
@@ -7171,6 +7420,7 @@ impl Servidor {
                 Ok(j) => resumir_resposta(j),
                 Err(e) => e.to_string(),
             },
+            em_curso: false,
         };
         if let Ok(mut r) = self.jobs.lock() {
             r.registrar(&corrida);
@@ -8040,6 +8290,25 @@ impl Servidor {
             .collect())
     }
 
+    /// A corrida de um job numa thread FILHA -- pedido 502. O panico dela volta
+    /// como corrida que FALHOU, e o relogio (ou a conexao da tela) segue vivo.
+    /// Ver `Telemetria::rodar_em_filha`.
+    fn executar_job_na_filha(&self, job: &crate::jobs::Job, op: &str, inicio: i64) -> Result<Json> {
+        let corrida = self.telemetria.rodar_em_filha(
+            format!("job-{}", job.nome),
+            "executa UMA corrida de job e morre: o panico da corrida volta ao \
+             relogio pelo `join` e vira corrida que falhou, em vez de derrubar \
+             o processo e rodar de novo no arranque (pedido 502)",
+            "corrida",
+            inicio,
+            |fio| {
+                fio.fazendo(&format!("rodando o job {}", job.nome));
+                self.executar_job(job, op)
+            },
+        );
+        corrida.unwrap_or_else(|panico| Err(corrida_em_panico(&panico)))
+    }
+
     fn executar_job(&self, job: &crate::jobs::Job, op: &str) -> Result<Json> {
         // O job que voltou do `jobs.json` com credencial no pedido sobe com o
         // servidor e para AQUI -- a porta por onde passam a agenda e a tela
@@ -8048,6 +8317,10 @@ impl Servidor {
         if let Some(e) = job.recusa_de_credencial() {
             return Err(e);
         }
+        // So nos testes: o panico pedido para a operacao DESTE job, na thread
+        // que o executa (pedido 502).
+        #[cfg(test)]
+        self.armar_panico_de_teste(op);
         // A politica antes de saber sob qual usuario o job roda: um comando
         // proibido e proibido para todo mundo, e recusar por ele da a mensagem
         // certa a um job cujo dono tambem esta errado.
@@ -17388,8 +17661,14 @@ impl Servidor {
     /// laco foi a outra saida oferecida, e ficou de fora: seria a mesma
     /// decisao escrita em cada laco que toma a trava, e o laco de amanha que
     /// a esquecesse voltaria a morrer calado. A familia vem de quem subiu a
-    /// thread (`telemetria::subir`, o unico `spawn` do servidor), e nao de uma
-    /// lista de nomes.
+    /// thread (`telemetria::subir` e `rodar_em_filha`, os unicos `spawn` do
+    /// servidor), e nao de uma lista de nomes.
+    ///
+    /// O trabalho que uma thread de servico MANDA FAZER -- a corrida de um
+    /// job, o backup agendado -- roda numa filha de familia `corrida`
+    /// (pedido 502): a morte dela e vista pelo `join` do relogio, que a anota
+    /// como corrida que falhou. Por isso ela repara em vez de abortar: abortar
+    /// ali fazia o job rodar de novo no arranque, e abortar de novo.
     fn reparar_a_trava(&self, dados: &Instancia, marca_em_voo: Option<&MarcaEmVoo>) {
         let n = self.panicos_na_trava.fetch_add(1, Ordering::SeqCst) + 1;
         if crate::telemetria::familia_desta_thread() == Some("servico") {
@@ -17431,6 +17710,24 @@ impl Servidor {
         }
     }
 
+    /// So nos testes: o panico da thread de pulso, enquanto houver algum
+    /// pedido em `panicos_no_pulso_de_teste` -- pedido 452.
+    #[cfg(test)]
+    fn panico_no_pulso_de_teste(&self) {
+        let pedido = &self.panicos_no_pulso_de_teste;
+        let armado = pedido
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| match n {
+                0 => None,
+                u32::MAX => Some(u32::MAX),
+                n => Some(n - 1),
+            })
+            .is_ok();
+        if armado {
+            self.panicos_no_pulso_dados.fetch_add(1, Ordering::SeqCst);
+            panic!("panico de teste na thread de pulso (pedido 452)");
+        }
+    }
+
     /// So nos testes: o panico de teste pedido para ESTA operacao, na thread
     /// que a atende. Ver `panico_de_teste_na_op`.
     #[cfg(test)]
@@ -17451,6 +17748,9 @@ impl Servidor {
             }
             Some((_, PanicoDeTeste::ForaDaTrava)) => {
                 panic!("panico de teste FORA da trava, no despachar de {op}");
+            }
+            Some((_, PanicoDeTeste::Aqui)) => {
+                panic!("panico de teste em {op}");
             }
             None => {}
         }
@@ -24051,6 +24351,9 @@ impl Servidor {
     /// As ligacoes cadastradas. A senha nunca vem junto.
     fn op_dblink(&self) -> Result<Json> {
         let r = self.dblink.lock().map_err(|_| trava_envenenada())?;
+        // A lista vazia de um cadastro trancado seria mentira: a tela diria
+        // «nenhuma ligacao» com o arquivo cheio delas (pedido 466).
+        r.exigir_legivel()?;
         Ok(Json::objeto(vec![
             ("arquivo", Json::texto_de(r.caminho.display().to_string())),
             // Se o cadastro e cifrado e de onde a chave vem -- nunca a chave.
@@ -24801,14 +25104,20 @@ impl Servidor {
         fio: &crate::telemetria::Fio,
         evento: crate::saude_do_disco::Evento,
     ) {
-        eprintln!(
-            "SAUDE DO DISCO ({}): {} em {}{} -- {}",
-            evento.tipo.nome(),
-            Self::tipo_de_saude_legivel(evento.tipo),
-            evento.origem,
-            Self::alvo_do_evento(&evento),
-            evento.texto
-        );
+        // O backup agendado pega carona no carteiro (pedido 510), e o texto e
+        // dele: «detectou um problema no disco onde o banco grava» seria
+        // mentira sobre um destino sem permissao.
+        let backup = evento.tipo == crate::saude_do_disco::Tipo::Backup;
+        if !backup {
+            eprintln!(
+                "SAUDE DO DISCO ({}): {} em {}{} -- {}",
+                evento.tipo.nome(),
+                Self::tipo_de_saude_legivel(evento.tipo),
+                evento.origem,
+                Self::alvo_do_evento(&evento),
+                evento.texto
+            );
+        }
         // Lentidao e aviso de painel, nunca de canal.
         if !evento.tipo.e_erro() {
             return;
@@ -24819,25 +25128,43 @@ impl Servidor {
             return;
         }
         let sms = self.config.alertas.sms.clone();
-        let assunto = format!(
-            "PhxSql: saude do disco -- {} ({})",
-            Self::tipo_de_saude_legivel(evento.tipo),
-            evento.origem
-        );
-        let corpo = self.texto_do_aviso_de_saude(&evento);
+        let assunto = if backup {
+            "PhxSql: o backup agendado FALHOU".to_string()
+        } else {
+            format!(
+                "PhxSql: saude do disco -- {} ({})",
+                Self::tipo_de_saude_legivel(evento.tipo),
+                evento.origem
+            )
+        };
+        let corpo = if backup {
+            self.texto_do_aviso_de_backup(&evento)
+        } else {
+            self.texto_do_aviso_de_saude(&evento)
+        };
         let linha_sms = Self::texto_do_sms_de_saude(&evento);
+        // O painel conta os avisos DA SAUDE DO DISCO (a carta diz «o disco
+        // onde o banco grava»): o do backup sai pelo mesmo carteiro e fica
+        // fora da conta dela, com o log proprio.
+        let de_que = if backup {
+            "do backup agendado"
+        } else {
+            "de saude do disco"
+        };
         fio.fazendo("falando com o rele de e-mail");
         let r = crate::email::enviar(&email, &assunto, &corpo);
         match &r {
-            Ok(r) => eprintln!("aviso de saude do disco enviado: {r}"),
+            Ok(r) => eprintln!("aviso {de_que} enviado: {r}"),
             // Falhar em avisar tambem e noticia, como no disco cheio.
-            Err(e) => eprintln!("aviso de saude do disco NAO ENVIADO: {e}"),
+            Err(e) => eprintln!("aviso {de_que} NAO ENVIADO: {e}"),
         }
-        self.saude.anotar_aviso(
-            "email",
-            r.map(|_| ()).map_err(|e| e.to_string()),
-            crate::agora_ms(),
-        );
+        if !backup {
+            self.saude.anotar_aviso(
+                "email",
+                r.map(|_| ()).map_err(|e| e.to_string()),
+                crate::agora_ms(),
+            );
+        }
         if !sms.ligado {
             return;
         }
@@ -24848,14 +25175,16 @@ impl Servidor {
         por_sms.para = sms.enderecos();
         let r = crate::email::enviar(&por_sms, "PhxSql", &linha_sms);
         match &r {
-            Ok(r) => eprintln!("SMS de saude do disco enviado: {r}"),
-            Err(e) => eprintln!("SMS de saude do disco NAO ENVIADO: {e}"),
+            Ok(r) => eprintln!("SMS {de_que} enviado: {r}"),
+            Err(e) => eprintln!("SMS {de_que} NAO ENVIADO: {e}"),
         }
-        self.saude.anotar_aviso(
-            "sms",
-            r.map(|_| ()).map_err(|e| e.to_string()),
-            crate::agora_ms(),
-        );
+        if !backup {
+            self.saude.anotar_aviso(
+                "sms",
+                r.map(|_| ()).map_err(|e| e.to_string()),
+                crate::agora_ms(),
+            );
+        }
     }
 
     fn tipo_de_saude_legivel(tipo: crate::saude_do_disco::Tipo) -> &'static str {
@@ -24866,7 +25195,35 @@ impl Servidor {
             Tipo::EntradaSaida => "erro de E/S",
             Tipo::Conferencia => "o dado voltou diferente do escrito",
             Tipo::Lento => "disco lento",
+            Tipo::Backup => "o backup agendado falhou",
         }
+    }
+
+    /// O corpo do e-mail do backup agendado que falhou -- pedido 510. Leva o
+    /// destino e o erro, e o que acontece depois: sem isto, quem le nao sabe
+    /// se o servidor tenta de novo daqui a um minuto ou amanha.
+    fn texto_do_aviso_de_backup(&self, e: &crate::saude_do_disco::Evento) -> String {
+        let b = &self.config.backup;
+        format!(
+            "O backup agendado do PhxSql FALHOU -- a copia desta rodada NAO existe.\n\n\
+             \x20 servidor   {}\n  base       {}\n  destino    {}\n  quando     {}\n  \
+             erro       {}\n\n\
+             O proximo backup roda na proxima hora da agenda ({}). Enquanto ele \
+             continuar falhando, o proximo aviso sai em ate {} min; o primeiro que der \
+             certo zera o silencio.\n\
+             Servidor PhxSql {VERSAO}\n",
+            crate::email::nome_da_maquina(),
+            self.config.base.display(),
+            b.destino.display(),
+            phxsql_core::datahora::instante_iso(e.quando_ms),
+            e.texto,
+            if b.hora.is_empty() {
+                format!("a cada {} h", b.cada_horas)
+            } else {
+                format!("todo dia as {}", b.hora)
+            },
+            self.config.alertas.disco.repetir_minutos
+        )
     }
 
     /// ` (base/tabela)` quando o evento nomeia uma; vazio quando nao.
@@ -24925,13 +25282,20 @@ impl Servidor {
         let quando = phxsql_core::datahora::instante_iso(e.quando_ms);
         // `2026-09-16T05:40:12.123` -> `05:40 UTC`.
         let hora = quando.get(11..16).unwrap_or("").to_string();
-        let linha = format!(
-            "PhxSql {}: disco {} em {}{} {hora} UTC",
-            crate::email::nome_da_maquina(),
-            Self::tipo_de_saude_legivel(e.tipo),
-            e.origem,
-            Self::alvo_do_evento(e)
-        );
+        let linha = if e.tipo == crate::saude_do_disco::Tipo::Backup {
+            format!(
+                "PhxSql {}: o backup agendado FALHOU {hora} UTC",
+                crate::email::nome_da_maquina()
+            )
+        } else {
+            format!(
+                "PhxSql {}: disco {} em {}{} {hora} UTC",
+                crate::email::nome_da_maquina(),
+                Self::tipo_de_saude_legivel(e.tipo),
+                e.origem,
+                Self::alvo_do_evento(e)
+            )
+        };
         let uma_linha: String = linha
             .chars()
             .map(|c| if c == '\r' || c == '\n' { ' ' } else { c })
@@ -27259,6 +27623,53 @@ enum PanicoDeTeste {
     /// O panico ja no `despachar`, FORA da trava -- o que o `AoSair` da
     /// conexao desenrola tomando a trava de novo (M2).
     ForaDaTrava,
+    /// O panico no proprio gancho, onde quer que ele esteja -- no backup
+    /// agendado, com a trava de ESCRITA na mao (pedido 502).
+    Aqui,
+}
+
+/// Desliga o `relogio_de_jobs` quando a thread do relogio sai -- o irmao do
+/// pedido 452.
+///
+/// O relogio marcava «estou no ar» ao subir e nunca desmarcava: se ele morresse
+/// (um panico fora da corrida, que agora roda na filha), o `relogio_no_ar`
+/// continuava verdadeiro, o vigia nunca via job PARADO e a tela dizia
+/// «agendado» para um job que ninguem mais ia rodar. E a mesma forma do
+/// `pulsando` do cluster: marca de vida sem `Drop`. Medido com o defeito
+/// reposto: o `relogio_no_ar` seguiu verdadeiro 3 s depois da morte da thread.
+struct RelogioNoAr(Arc<Servidor>);
+
+impl Drop for RelogioNoAr {
+    fn drop(&mut self) {
+        self.0.relogio_de_jobs.store(false, Ordering::SeqCst);
+    }
+}
+
+/// Desliga o `amostrador_no_ar` quando a thread do amostrador sai -- o irmao do
+/// pedido 452, pelo mesmo motivo do [`RelogioNoAr`]: o retrato da telemetria
+/// dizia `amostrador: true` de uma thread morta.
+struct AmostradorNoAr(Arc<crate::telemetria::Telemetria>);
+
+impl Drop for AmostradorNoAr {
+    fn drop(&mut self) {
+        self.0.desmarcar_amostrador();
+    }
+}
+
+/// O nome da lapide do backup agendado, dentro do destino -- pedido 502.
+/// Comeca com ponto, e nao tem a cara de zip nenhum: a faxina do `manter` so
+/// apaga o que tem.
+const LAPIDE_DO_BACKUP: &str = ".phxsql-backup-agendado.em-curso";
+
+/// O erro da corrida (de job ou de backup) cuja filha morreu em panico --
+/// pedido 502. E um erro como outro qualquer para quem o anota: vai ao
+/// historico, ao e-mail e ao `acessos.log`.
+fn corrida_em_panico(panico: &str) -> PhxError {
+    PhxError::Corrompido(format!(
+        "a corrida entrou em PANICO: {panico}. Ela foi interrompida e o servidor \
+         segue de pe -- se ela segurava a trava de dados, a trava foi reparada \
+         (pedido 502)"
+    ))
 }
 
 /// A trava de DADOS envenenada sem o reparo ter terminado -- pedido 451.
@@ -58187,6 +58598,223 @@ mod testes_do_panico_sob_a_trava {
         c.recursos.lote_milissegundos = 150;
     }
 
+    // ------------------------------------ pedido 502: job e backup agendados
+
+    /// O job que a prova do 502 agenda: um `inserir` na `loja.carga`, a cada
+    /// minuto -- vencido no arranque, porque nunca rodou nesta vida.
+    ///
+    /// A `carga` nao tem indice de proposito: sem arvore, o `.ndx` nao fica
+    /// marcado para reindexar depois da queda, e o MESMO panico se repete no
+    /// arranque seguinte -- que e o laco que o pedido descreve. Com indice, o
+    /// segundo `inserir` seria recusado antes do ponto do panico, e o laco
+    /// nao apareceria na prova.
+    fn job_de_carga(dir: &std::path::Path) {
+        std::fs::write(
+            dir.join("jobs.json"),
+            r#"{"jobs":[{"nome":"carga","ligado":true,"cada_minutos":1,"usuario":"",
+                "pedido":{"op":"inserir","database":"loja","tabela":"carga",
+                          "valores":{"n":1}}}]}"#,
+        )
+        .unwrap();
+    }
+
+    /// A `loja.clientes` criada POR DENTRO do filho: o relogio roda o job na
+    /// primeira volta, antes de o pai ter porta para semear. `let _`: no
+    /// segundo arranque ela ja existe.
+    fn loja_por_dentro(s: &Servidor) {
+        let sessao = Sessao::default();
+        let _ = s.executar(
+            "criar_database",
+            &Json::analisar(r#"{"database":"loja"}"#).unwrap(),
+            &sessao,
+        );
+        let _ = s.executar(
+            "criar_tabela",
+            &Json::analisar(
+                r#"{"database":"loja","tabela":"clientes",
+                    "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                               {"nome":"nome","tipo":"Str(20)"}],
+                    "indices":[{"nome":"porId","colunas":["id"],"unico":true}]}"#,
+            )
+            .unwrap(),
+            &sessao,
+        );
+        let _ = s.executar(
+            "criar_tabela",
+            &Json::analisar(
+                r#"{"database":"loja","tabela":"carga","colunas":[{"nome":"n","tipo":"Int8"}]}"#,
+            )
+            .unwrap(),
+            &sessao,
+        );
+    }
+
+    /// O backup agendado «a cada 24 h»: vence no arranque, que e o que o 502
+    /// descreve.
+    fn backup_agendado(c: &mut Config, dir: &std::path::Path) {
+        c.backup.agendado = true;
+        c.backup.destino = dir.join("backups");
+        c.backup.hora = String::new();
+        c.backup.cada_horas = 24;
+    }
+
+    /// O `.log` das corridas dos jobs do filho.
+    fn corridas(dir: &std::path::Path) -> String {
+        std::fs::read_to_string(crate::config::irmao_do_log(&dir.join("jobs.json")))
+            .unwrap_or_default()
+    }
+
+    /// Espera o `texto` aparecer no que `ler` devolve, ate o prazo.
+    fn esperar_texto(prazo: Duration, texto: &str, ler: impl Fn() -> String) -> String {
+        let ate = Instant::now() + prazo;
+        loop {
+            let agora = ler();
+            if agora.contains(texto) || Instant::now() > ate {
+                return agora;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    /// O segundo arranque no MESMO diretorio: a porta do primeiro sai antes,
+    /// senao o pai leria o numero velho.
+    fn subir_de_novo(dir: &std::path::Path, cenario: &str) -> (std::process::Child, u16) {
+        let _ = std::fs::remove_file(dir.join("porta"));
+        subir_filho(dir, cenario)
+    }
+
+    /// **502 (a): o job em panico com a trava de ESCRITA na mao vira corrida
+    /// que FALHOU, e o servidor fica de pe.**
+    ///
+    /// Com o defeito (a corrida na propria thread `relogio-jobs`, familia
+    /// `servico`): o processo cai por `SIGABRT` na primeira volta do relogio.
+    /// Com o conserto: a filha repara a trava, o relogio anota a falha com o
+    /// texto do panico, e a porta continua atendendo.
+    #[cfg(unix)]
+    #[test]
+    fn job_em_panico_sob_a_trava_vira_corrida_que_falhou_e_o_servidor_fica() {
+        let dir = DirTemp::novo("panico-502-job");
+        let (mut filho, porta) = subir_filho(&dir, "job");
+        if let Some(st) = fim_do_filho(&mut filho, Duration::from_secs(3)) {
+            panic!(
+                "o job em panico DERRUBOU o servidor ({st:?}) -- e ele roda de novo \
+                 a cada arranque: {}",
+                diagnostico(&dir)
+            );
+        }
+        let log = esperar_texto(Duration::from_secs(5), "PANICO", || corridas(&dir));
+        let servindo = pedir(porta, r#""op":"ping""#);
+        let _ = filho.kill();
+        let _ = filho.wait();
+        assert!(
+            log.contains("\"ok\":false") && log.contains("PANICO"),
+            "a corrida em panico nao virou corrida que FALHOU no historico: {log}"
+        );
+        ok(servindo, "o servidor de pe depois do panico do job");
+    }
+
+    /// **502 (b): a corrida que derrubou o processo NAO roda de novo no
+    /// arranque -- o laco de quedas acaba.**
+    ///
+    /// O primeiro arranque cai de proposito: o reparo da trava falha (a H5,
+    /// que continua valendo, pedido 451), e o processo aborta NO MEIO da
+    /// corrida. O segundo arranque tem o mesmo job ligado e o mesmo panico
+    /// armado. Com o defeito (sem a lapide): o relogio roda o job logo na
+    /// partida, e o processo cai de novo -- o laco que so parava quando alguem
+    /// desligasse o job a mao. Com o conserto: a corrida aberta vira FALHOU no
+    /// historico, conta como a ultima, e o servidor fica de pe.
+    #[cfg(unix)]
+    #[test]
+    fn corrida_de_job_que_derrubou_o_processo_nao_roda_de_novo_no_arranque() {
+        let dir = DirTemp::novo("panico-502-lapide-job");
+        let (mut filho, porta) = subir_filho(&dir, "job_reparo_falha");
+        let st = fim_do_filho(&mut filho, Duration::from_secs(10))
+            .unwrap_or_else(|| panic!("o reparo que falha tinha de derrubar (H5)"));
+        caiu_pelo_abort(st, &dir, porta);
+
+        let (mut filho, porta) = subir_de_novo(&dir, "job_reparo_falha");
+        if let Some(st) = fim_do_filho(&mut filho, Duration::from_secs(3)) {
+            panic!(
+                "LACO DE QUEDAS: o job que derrubou o processo rodou DE NOVO no \
+                 arranque e derrubou outra vez ({st:?}): {}",
+                diagnostico(&dir)
+            );
+        }
+        let servindo = pedir(porta, r#""op":"ping""#);
+        let _ = filho.kill();
+        let _ = filho.wait();
+        ok(servindo, "o servidor de pe no segundo arranque");
+        let log = corridas(&dir);
+        assert_eq!(
+            log.matches("\"em_curso\":true").count(),
+            1,
+            "o job rodou DE NOVO no arranque (cada abertura e uma corrida): {log}"
+        );
+        assert!(
+            log.contains("nunca terminou"),
+            "a corrida interrompida nao virou FALHOU no historico: {log}"
+        );
+    }
+
+    /// **502 (c): o backup agendado em panico com a trava de ESCRITA na mao
+    /// vira backup que FALHOU, e o servidor fica de pe.**
+    ///
+    /// Com o defeito (o backup na propria thread `backup-agendado`): `SIGABRT`
+    /// na primeira volta. Com o conserto: a falha sai no erro padrao, com o
+    /// texto do panico, e a porta continua atendendo.
+    #[cfg(unix)]
+    #[test]
+    fn backup_em_panico_sob_a_trava_falha_e_o_servidor_fica() {
+        let dir = DirTemp::novo("panico-502-backup");
+        let (mut filho, porta) = subir_filho(&dir, "backup");
+        if let Some(st) = fim_do_filho(&mut filho, Duration::from_secs(3)) {
+            panic!(
+                "o backup em panico DERRUBOU o servidor ({st:?}) -- e ele roda de \
+                 novo a cada arranque: {}",
+                diagnostico(&dir)
+            );
+        }
+        let erro = esperar_texto(Duration::from_secs(5), "PANICO", || diagnostico(&dir));
+        let servindo = pedir(porta, r#""op":"ping""#);
+        let _ = filho.kill();
+        let _ = filho.wait();
+        assert!(
+            erro.contains("backup agendado FALHOU") && erro.contains("PANICO"),
+            "o panico do backup nao virou falha dita: {erro}"
+        );
+        ok(servindo, "o servidor de pe depois do panico do backup");
+    }
+
+    /// **502 (d): o backup que derrubou o processo NAO roda de novo no
+    /// arranque.** O irmao do (b), pela lapide no destino.
+    #[cfg(unix)]
+    #[test]
+    fn corrida_de_backup_que_derrubou_o_processo_nao_roda_de_novo_no_arranque() {
+        let dir = DirTemp::novo("panico-502-lapide-backup");
+        let (mut filho, porta) = subir_filho(&dir, "backup_reparo_falha");
+        let st = fim_do_filho(&mut filho, Duration::from_secs(10))
+            .unwrap_or_else(|| panic!("o reparo que falha tinha de derrubar (H5)"));
+        caiu_pelo_abort(st, &dir, porta);
+
+        let (mut filho, porta) = subir_de_novo(&dir, "backup_reparo_falha");
+        if let Some(st) = fim_do_filho(&mut filho, Duration::from_secs(3)) {
+            panic!(
+                "LACO DE QUEDAS: o backup que derrubou o processo rodou DE NOVO no \
+                 arranque e derrubou outra vez ({st:?}): {}",
+                diagnostico(&dir)
+            );
+        }
+        let servindo = pedir(porta, r#""op":"ping""#);
+        let _ = filho.kill();
+        let _ = filho.wait();
+        ok(servindo, "o servidor de pe no segundo arranque");
+        assert!(
+            diagnostico(&dir).contains("nunca terminou"),
+            "o arranque nao disse que a corrida anterior caiu: {}",
+            diagnostico(&dir)
+        );
+    }
+
     /// O FILHO das provas de processo -- so roda reexecutado por elas, que
     /// passam o diretorio pela variavel [`FILHO`] e o cenario pela
     /// [`CENARIO`]. Sozinho, volta sem fazer nada.
@@ -58206,8 +58834,36 @@ mod testes_do_panico_sob_a_trava {
         if cenario == "relogio" || cenario == "fsync_509" {
             relogio_curto(&mut c);
         }
+        // Pedido 502: o cadastro de jobs e lido no `Servidor::novo`, entao
+        // nasce antes; o backup agendado e configuracao.
+        if cenario.starts_with("job") {
+            job_de_carga(&dir);
+        }
+        if cenario.starts_with("backup") {
+            backup_agendado(&mut c, &dir);
+        }
         let s = Servidor::novo(c).unwrap();
         match cenario.as_str() {
+            "job" => {
+                loja_por_dentro(&s);
+                armar(&s, "inserir");
+            }
+            "job_reparo_falha" => {
+                loja_por_dentro(&s);
+                s.reparo_falha_de_teste.store(true, Ordering::SeqCst);
+                armar(&s, "inserir");
+            }
+            "backup" => {
+                loja_por_dentro(&s);
+                *s.panico_de_teste_na_op.lock().unwrap() =
+                    Some(("backup_agendado".into(), PanicoDeTeste::Aqui));
+            }
+            "backup_reparo_falha" => {
+                loja_por_dentro(&s);
+                s.reparo_falha_de_teste.store(true, Ordering::SeqCst);
+                *s.panico_de_teste_na_op.lock().unwrap() =
+                    Some(("backup_agendado".into(), PanicoDeTeste::Aqui));
+            }
             "reparo_falha" => {
                 s.reparo_falha_de_teste.store(true, Ordering::SeqCst);
                 armar(&s, "commit");
@@ -58270,6 +58926,15 @@ mod testes_do_panico_sob_a_trava {
         }
         let porta = porta_de_dados_de_verdade(&s);
         std::fs::write(dir.join("porta"), porta.to_string()).unwrap();
+        // As threads de servico do 502 sobem DEPOIS da porta publicada: a
+        // queda que a prova espera (ou recusa) acontece na primeira volta
+        // delas, e o pai precisa da porta para dizer o que o processo servia.
+        if cenario.starts_with("job") {
+            s.subir_jobs();
+        }
+        if cenario.starts_with("backup") {
+            s.subir_backup_agendado();
+        }
         std::thread::sleep(Duration::from_secs(60));
     }
 }
@@ -58310,5 +58975,401 @@ mod testes_do_valor_citado_com_teto {
             .unwrap_err()
             .to_string();
         assert!(e.contains("\"ontem\""), "{e}");
+    }
+}
+
+/// A thread de pulso que morre em PANICO -- pedido 452, provado pelo soquete.
+///
+/// O outro no e um `TcpListener` deste teste que conta as conexoes: cada
+/// tentativa de pulso e uma conexao de verdade, e «o par nunca mais e pulsado»
+/// e contar zero. O panico e o gancho `panicos_no_pulso_de_teste`, que so
+/// existe com `cfg(test)`.
+#[cfg(test)]
+mod testes_do_pulso_que_morre {
+    use super::*;
+    use crate::apoio_teste::DirTemp;
+    use std::sync::atomic::AtomicUsize;
+
+    /// Um servidor em cluster de dois nos, com o `no2` no ouvinte do teste, e
+    /// o contador de conexoes que chegam la.
+    fn cluster_com_ouvinte(nome: &str) -> (Arc<Servidor>, Arc<AtomicUsize>, DirTemp) {
+        let ouvinte = TcpListener::bind("127.0.0.1:0").unwrap();
+        let porta = ouvinte.local_addr().unwrap().port();
+        let chegaram = Arc::new(AtomicUsize::new(0));
+        let conta = Arc::clone(&chegaram);
+        std::thread::spawn(move || {
+            for c in ouvinte.incoming() {
+                if c.is_ok() {
+                    conta.fetch_add(1, Ordering::SeqCst);
+                }
+            }
+        });
+        let dir = DirTemp::novo(&format!("pulso-452-{nome}"));
+        let caminho = dir.join("config.json");
+        std::fs::write(
+            &caminho,
+            format!(
+                r#"{{
+  "token": "t",
+  "bind": "127.0.0.1:0",
+  "base": "{}",
+  "replicacao": {{"papel": "source", "id_servidor": "no1", "imagem_da_linha": true}},
+  "cluster": {{
+    "id": "no1",
+    "pulso_s": 1,
+    "janela_inatividade_s": 30,
+    "nos": [
+      {{"id": "no1", "endereco": "127.0.0.1", "porta": 1}},
+      {{"id": "no2", "endereco": "127.0.0.1", "porta": {porta}}}
+    ]
+  }}
+}}
+"#,
+                dir.join("dados").display()
+            ),
+        )
+        .unwrap();
+        let mut c = Config::ler(&caminho).unwrap();
+        c.log_acessos = dir.join("acessos.log");
+        c.blacklist = dir.join("blacklist.json");
+        c.dblink = dir.join("dblink.json");
+        c.jobs = dir.join("jobs.json");
+        (Servidor::novo(c).unwrap(), chegaram, dir)
+    }
+
+    /// Sobe SO o supervisor do pulso, pelo laco de producao.
+    fn supervisor(s: &Arc<Servidor>) {
+        let s = Arc::clone(s);
+        std::thread::spawn(move || s.laco_do_supervisor_do_pulso());
+    }
+
+    /// Tira o `no2` da lista viva no fim: a thread de pulso ve e sai, e o
+    /// supervisor passa a girar sobre lista vazia.
+    fn soltar(s: &Arc<Servidor>) {
+        if let Some(e) = s.cluster.clone() {
+            e.remover("no2");
+        }
+    }
+
+    /// **Um panico, e o par volta a ser pulsado.**
+    ///
+    /// Com o defeito (a desmarcacao so na saida normal): o id fica marcado, o
+    /// supervisor nunca mais sobe outra thread, e o ouvinte conta ZERO
+    /// conexoes em 5 s. Com o conserto: a guarda desmarca no desenrolar, e
+    /// depois do recuo de 1 s a thread nova conecta.
+    #[test]
+    fn pulso_que_morre_em_panico_volta_a_pulsar() {
+        let (s, chegaram, _dir) = cluster_com_ouvinte("volta");
+        s.panicos_no_pulso_de_teste.store(1, Ordering::SeqCst);
+        supervisor(&s);
+        let ate = Instant::now() + Duration::from_secs(5);
+        while chegaram.load(Ordering::SeqCst) == 0 && Instant::now() < ate {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        let n = chegaram.load(Ordering::SeqCst);
+        soltar(&s);
+        assert_eq!(
+            s.panicos_no_pulso_dados.load(Ordering::SeqCst),
+            1,
+            "o gancho nao entrou em panico -- a prova nao exercitou nada"
+        );
+        assert!(
+            n >= 1,
+            "a thread de pulso morreu em panico e o no2 NUNCA MAIS foi pulsado: \
+             {n} conexao(oes) em 5 s"
+        );
+    }
+
+    /// **O panico que se repete recua, e nao vira laco.**
+    ///
+    /// Com o recuo tirado: o supervisor sobe uma thread nova a cada meio
+    /// segundo, e cada uma entra em panico. Com o recuo de 1 s, 2 s e 4 s, no
+    /// maximo 4 em 4,5 s -- e pelo menos 2, porque o no continua sendo
+    /// tentado.
+    #[test]
+    fn panico_que_se_repete_no_pulso_recua_em_vez_de_virar_laco() {
+        let (s, _chegaram, _dir) = cluster_com_ouvinte("laco");
+        s.panicos_no_pulso_de_teste
+            .store(u32::MAX, Ordering::SeqCst);
+        supervisor(&s);
+        std::thread::sleep(Duration::from_millis(4_500));
+        let n = s.panicos_no_pulso_dados.load(Ordering::SeqCst);
+        s.panicos_no_pulso_de_teste.store(0, Ordering::SeqCst);
+        soltar(&s);
+        assert!(
+            n <= 4,
+            "o pulso que entra em panico a cada volta virou LACO de panico: {n} \
+             panicos em 4,5 s (o supervisor sobe outro a cada 0,5 s)"
+        );
+        assert!(
+            n >= 2,
+            "o recuo virou abandono: so {n} panico(s) em 4,5 s -- o no deixou de \
+             ser tentado"
+        );
+    }
+}
+
+/// O relogio de jobs que morre (irmao do pedido 452) e o backup agendado que
+/// falha calado (pedido 510) -- as duas threads de servico que ninguem via
+/// morrer ou errar.
+#[cfg(test)]
+mod testes_do_relogio_e_do_backup {
+    use super::*;
+    use crate::apoio_teste::{rele_falso, DirTemp};
+
+    fn config_base(dir: &std::path::Path) -> Config {
+        let mut c = Config {
+            base: dir.join("dados"),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            jobs: dir.join("jobs.json"),
+            token: "t".into(),
+            ..Config::default()
+        };
+        c.cifra_fio.exigir = false;
+        c
+    }
+
+    /// **O relogio que morre desliga o «no ar».**
+    ///
+    /// Com o defeito (a marca sem `Drop`): o relogio morre na primeira volta,
+    /// o `relogio_no_ar` segue verdadeiro, e o job vencido NUNCA aparece como
+    /// parado -- o vigia de e-mail nao tem o que avisar. Com o conserto: a
+    /// marca sai com a thread, e o job aparece parado.
+    #[test]
+    fn relogio_de_jobs_que_morre_nao_continua_dizendo_que_esta_no_ar() {
+        let dir = DirTemp::novo("relogio-452");
+        std::fs::write(
+            dir.join("jobs.json"),
+            r#"{"jobs":[{"nome":"eco","ligado":true,"cada_minutos":60,"usuario":"",
+                "pedido":{"op":"ping"}}]}"#,
+        )
+        .unwrap();
+        let s = Servidor::novo(config_base(&dir)).unwrap();
+        s.panico_no_relogio_de_jobs_de_teste
+            .store(true, Ordering::SeqCst);
+        s.subir_jobs();
+        let ate = Instant::now() + Duration::from_secs(3);
+        while s.relogio_de_jobs_no_ar() && Instant::now() < ate {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(
+            !s.relogio_de_jobs_no_ar(),
+            "o relogio de jobs MORREU e o servidor continua dizendo que ele esta \
+             no ar -- 3 s depois"
+        );
+        let r = s
+            .executar("jobs", &Json::objeto(vec![]), &Sessao::default())
+            .unwrap();
+        let job = r
+            .campo("jobs")
+            .and_then(Json::lista)
+            .and_then(|l| l.first())
+            .cloned()
+            .unwrap();
+        assert_eq!(
+            job.campo("parado").and_then(Json::booleano),
+            Some(true),
+            "o job vencido sem relogio tinha de aparecer PARADO: {}",
+            job.escrever()
+        );
+    }
+
+    /// **O amostrador que morre desliga o «no ar» do retrato** -- o mesmo
+    /// irmao do 452. Com o defeito: `amostrador: true` 3 s depois da morte.
+    #[test]
+    fn amostrador_que_morre_nao_continua_dizendo_que_esta_no_ar() {
+        let dir = DirTemp::novo("amostrador-452");
+        let s = Servidor::novo(config_base(&dir)).unwrap();
+        s.panico_no_amostrador_de_teste
+            .store(true, Ordering::SeqCst);
+        s.subir_amostrador();
+        let ate = Instant::now() + Duration::from_secs(3);
+        while s.telemetria.amostrador_no_ar() && Instant::now() < ate {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(
+            !s.telemetria.amostrador_no_ar(),
+            "o amostrador MORREU e o retrato continua dizendo que ele esta no ar"
+        );
+    }
+
+    /// **C1 do parecer do DBA, o irmao do backup:** a lapide com hora no
+    /// FUTURO nao vira a ultima corrida. Sem o `min`: o arranque devolve a
+    /// hora de daqui a um ano, e o backup de 24 h so voltaria depois dela.
+    #[test]
+    fn lapide_do_backup_no_futuro_nao_vira_a_ultima_corrida() {
+        let dir = DirTemp::novo("lapide-backup-futuro");
+        let mut c = config_base(&dir);
+        c.backup.agendado = true;
+        c.backup.destino = dir.join("backups");
+        c.backup.cada_horas = 24;
+        let s = Servidor::novo(c).unwrap();
+        let um_ano: i64 = 365 * 86_400_000;
+        let futuro = crate::agora_ms() + um_ano;
+        std::fs::create_dir_all(dir.join("backups")).unwrap();
+        std::fs::write(
+            dir.join("backups").join(LAPIDE_DO_BACKUP),
+            Json::objeto(vec![
+                ("quando_ms", Json::de_i64(futuro)),
+                ("base", Json::texto_de(s.config.base.display().to_string())),
+            ])
+            .escrever(),
+        )
+        .unwrap();
+        let ultimo = s.lapide_do_backup_no_arranque();
+        assert!(
+            ultimo > 0 && ultimo <= crate::agora_ms(),
+            "a lapide do futuro virou a ultima corrida do backup: {ultimo} (futuro {futuro})"
+        );
+    }
+
+    /// **C2 do parecer do DBA:** a corrida de job que o arranque fecha como
+    /// FALHOU avisa por e-mail, como a falha comum. Sem a chamada no
+    /// `subir_jobs`: nenhum e-mail em 10 s (medido pelo DBA: 0 contra 1).
+    #[test]
+    fn corrida_de_job_interrompida_avisa_por_email() {
+        let dir = DirTemp::novo("interrompida-avisa");
+        let (porta, caixa) = rele_falso();
+        let mut c = config_base(&dir);
+        c.alertas.email.ligado = true;
+        c.alertas.email.avisar_jobs = true;
+        c.alertas.email.servidor = "127.0.0.1".into();
+        c.alertas.email.porta = porta;
+        c.alertas.email.de = "phxsql@exemplo.com".into();
+        c.alertas.email.para = vec!["admin@exemplo.com".into()];
+        c.alertas.email.timeout_s = 5;
+        std::fs::write(
+            dir.join("jobs.json"),
+            r#"{"jobs":[{"nome":"noturno","ligado":true,"cada_minutos":60,"usuario":"",
+                "pedido":{"op":"ping"}}]}"#,
+        )
+        .unwrap();
+        {
+            let mut r = crate::jobs::Registro::abrir(&dir.join("jobs.json")).unwrap();
+            r.registrar_inicio("noturno", "ping", "", crate::agora_ms() - 10_000);
+        }
+        let s = Servidor::novo(c).unwrap();
+        s.subir_jobs();
+        let bruto = caixa
+            .recv_timeout(Duration::from_secs(10))
+            .expect("a corrida interrompida virou FALHOU e ninguem foi avisado em 10 s");
+        let (cabecalho, texto) = corpo(&bruto);
+        assert!(cabecalho.contains("job noturno falhou"), "{cabecalho}");
+        assert!(texto.contains("nunca terminou"), "{texto}");
+    }
+
+    /// O corpo de um e-mail do rele falso, decodificado.
+    fn corpo(bruto: &str) -> (String, String) {
+        let (cabecalho, corpo) = bruto.split_once("\r\n\r\n").unwrap();
+        let texto = phxsql_core::base64::decodificar_texto(&corpo.replace("\r\n", "")).unwrap();
+        (cabecalho.to_string(), texto)
+    }
+
+    /// Um servidor com o backup agendado em `destino`, o e-mail no rele
+    /// falso, a sonda ligada (o carteiro) e o backup no ar.
+    fn backup_para(
+        dir: &std::path::Path,
+        destino: std::path::PathBuf,
+    ) -> (Arc<Servidor>, std::sync::mpsc::Receiver<String>) {
+        let (porta, caixa) = rele_falso();
+        let mut c = config_base(dir);
+        c.backup.agendado = true;
+        c.backup.destino = destino;
+        c.backup.hora = String::new();
+        c.backup.cada_horas = 24;
+        c.alertas.email.ligado = true;
+        c.alertas.email.servidor = "127.0.0.1".into();
+        c.alertas.email.porta = porta;
+        c.alertas.email.de = "phxsql@exemplo.com".into();
+        c.alertas.email.para = vec!["admin@exemplo.com".into()];
+        c.alertas.email.timeout_s = 5;
+        let s = Servidor::novo(c).unwrap();
+        s.ligar_sonda_de_disco();
+        s.subir_backup_agendado();
+        (s, caixa)
+    }
+
+    /// **O pedido 510: o backup agendado que falha AVISA.**
+    ///
+    /// A falha e do sistema operacional, e nao fabricada: o destino fica
+    /// DENTRO de um arquivo comum, e o `mkdir` recusa com `ENOTDIR`. (Destino
+    /// sem permissao nao serve de prova aqui: o conteiner roda como root, e
+    /// root atravessa a permissao.) O aviso chega ao rele falso pelo soquete,
+    /// pelo carteiro da saude do disco.
+    ///
+    /// Com o defeito (so o erro padrao): nenhum e-mail em 10 s. Com o
+    /// conserto: um, que diz que o backup FALHOU, o destino e o erro do
+    /// sistema.
+    #[test]
+    fn backup_agendado_que_falha_avisa_pelo_carteiro() {
+        let dir = DirTemp::novo("backup-510");
+        std::fs::write(dir.join("arquivo-comum"), b"nao sou pasta").unwrap();
+        let destino = dir.join("arquivo-comum").join("backups");
+        let (_s, caixa) = backup_para(&dir, destino.clone());
+        let bruto = caixa
+            .recv_timeout(Duration::from_secs(10))
+            .expect("o backup agendado FALHOU e ninguem foi avisado em 10 s");
+        let (cabecalho, texto) = corpo(&bruto);
+        assert!(
+            cabecalho.contains("backup agendado FALHOU"),
+            "o assunto nao diz o que houve: {cabecalho}"
+        );
+        assert!(
+            texto.contains(&destino.display().to_string()) && texto.contains("os error 20"),
+            "o corpo nao diz o destino nem o erro do sistema: {texto}"
+        );
+        assert!(
+            !texto.contains("disco onde o banco grava"),
+            "o aviso do backup saiu com o texto da saude do disco: {texto}"
+        );
+    }
+
+    /// **O mesmo aviso com o disco CHEIO de verdade** -- um `tmpfs` de 64 KiB
+    /// montado para a prova, e uma base maior que ele. Precisa de `mount`, e
+    /// por isso nao roda na suite: roda-se a mao, como root, e o vermelho e o
+    /// verde dele estao no `docs/SAUDE-DO-DISCO.md` §4.4.
+    #[test]
+    #[ignore = "precisa montar um tmpfs (root); roda-se a mao -- pedido 510"]
+    fn backup_agendado_em_disco_cheio_avisa_pelo_carteiro() {
+        let dir = DirTemp::novo("backup-510-cheio");
+        let ponto = dir.join("cheio");
+        std::fs::create_dir_all(&ponto).unwrap();
+        let montou = std::process::Command::new("mount")
+            .args(["-t", "tmpfs", "-o", "size=64k", "tmpfs"])
+            .arg(&ponto)
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        assert!(
+            montou,
+            "NAO MEDIDO: o mount do tmpfs falhou (precisa de root)"
+        );
+        struct Desmonta(std::path::PathBuf);
+        impl Drop for Desmonta {
+            fn drop(&mut self) {
+                let _ = std::process::Command::new("umount").arg(&self.0).status();
+            }
+        }
+        let _desmonta = Desmonta(ponto.clone());
+        // Uma base maior que o tmpfs, em bytes que nao comprimem.
+        std::fs::create_dir_all(dir.join("dados")).unwrap();
+        let mut x: u64 = 0x9E37_79B9_7F4A_7C15;
+        let lastro: Vec<u8> = (0..256 * 1024)
+            .map(|_| {
+                x ^= x << 13;
+                x ^= x >> 7;
+                x ^= x << 17;
+                x as u8
+            })
+            .collect();
+        std::fs::write(dir.join("dados").join("lastro.bin"), lastro).unwrap();
+        let (_s, caixa) = backup_para(&dir, ponto.join("backups"));
+        let bruto = caixa
+            .recv_timeout(Duration::from_secs(10))
+            .expect("o backup agendado FALHOU em disco cheio e ninguem foi avisado");
+        let (_, texto) = corpo(&bruto);
+        assert!(texto.contains("os error 28"), "nao e o ENOSPC: {texto}");
     }
 }

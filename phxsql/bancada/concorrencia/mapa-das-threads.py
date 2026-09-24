@@ -27,8 +27,8 @@ achar e o spawn; o que segura o spawn, alguem tem de ler.
 O que ele conta, e o que NAO conta
 ----------------------------------
 CONTA: `thread::spawn(`, `thread::Builder::new(`, `thread::scope(` e
-`.subir(` (o registro da telemetria, que e o unico caminho de producao ate o
-`Builder`) em `crates/*/src`, fora do modulo de testes de cada arquivo
+`.subir(` (o registro da telemetria, que com o `rodar_em_filha` do pedido 502
+sao os unicos caminhos de producao ate o `Builder`) em `crates/*/src`, fora do modulo de testes de cada arquivo
 (`#[cfg(test)] mod ...` em diante) e fora dos arquivos que so existem em teste
 (`#[cfg(test)] mod x;` no `lib.rs`). Comentario e literal de texto viram
 espaco antes da varredura, com a mesma funcao do `mapa-da-trava.py`.
@@ -85,15 +85,32 @@ JANELA_ANTES, JANELA_DEPOIS = 6, 4
 # vazio e sitio sem teto, e reprova a catraca. `agulha` e o texto que tem de
 # aparecer na janela em volta do spawn, no fonte ORIGINAL (com literais).
 CATALOGO = [
-    # ------------------------------------------------ o mecanismo, um so
+    # ------------------------------------------------ os mecanismos: dois
     {
         "arquivo": "crates/phxsql-server/src/telemetria.rs",
         "agulha": "std::thread::Builder::new().name(nome_do_so)",
         "nome": "telemetria::subir",
-        "teto": "e o unico `spawn` de producao do servidor: toda thread passa "
-                "por aqui, e o teto de cada uma e o da chamada a `subir` que a "
-                "pediu (as entradas abaixo). A ficha morre no `Drop` "
-                "(`FichaViva`), inclusive em panico.",
+        "teto": "um dos dois `spawn` de producao do servidor (o outro e o "
+                "`rodar_em_filha`, logo abaixo): o teto de cada thread e o da "
+                "chamada a `subir` que a pediu (as entradas abaixo). A ficha "
+                "morre no `Drop` (`FichaViva`), inclusive em panico.",
+    },
+    {
+        "arquivo": "crates/phxsql-server/src/telemetria.rs",
+        # O comentario acima do `scope` cai na janela dos DOIS sitios (o
+        # `scope` e o `Builder`, que o rustfmt pos tres linhas abaixo).
+        "agulha": "`scope`, e nao `spawn`: a filha pode emprestar",
+        "nome": "telemetria::rodar_em_filha (a corrida de job e de backup)",
+        "teto": "UMA filha por chamada, e quem chama ESPERA o `join` antes de "
+                "voltar (`thread::scope`). Vale para o `backup-agendado` (1 "
+                "filha) e para o job comum: o `relogio-jobs` (1) e o "
+                "`job_rodar` da tela (contado pelo `Semaforo` da porta) tem uma "
+                "filha viva cada. NAO vale para o job cujo `pedido` e um "
+                "`job_rodar` -- dele mesmo, ou um ciclo A->B->A: a filha e ela "
+                "mesma chamadora, e cada nivel sobe outra filha, SEM teto. "
+                "Medido pelo DBA (parecer do lote, M2): 45 filhas simultaneas, "
+                "e so parou no limite de memoria imposto pela prova. O conserto "
+                "e pedido proprio (P1 do parecer). Pedido 502.",
     },
     # ------------------------------------------------ atendimento, com semaforo
     {

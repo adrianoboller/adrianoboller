@@ -89,6 +89,11 @@ pub enum Tipo {
     Conferencia,
     /// A sonda passou, mas acima de `lento_ms`. Nao e erro: e aviso.
     Lento,
+    /// O backup agendado FALHOU -- pedido 510. Nao e do disco do banco (o
+    /// destino e outro, e a falha pode nem ser de disco), e por isso nao
+    /// entra no `ultimo_evento` nem pinta o painel: so pega carona no
+    /// carteiro, com silencio proprio. Ver [`SaudeDoDisco::falha_do_backup`].
+    Backup,
 }
 
 impl Tipo {
@@ -99,6 +104,7 @@ impl Tipo {
             Tipo::EntradaSaida => "entrada_saida",
             Tipo::Conferencia => "conferencia",
             Tipo::Lento => "lento",
+            Tipo::Backup => "backup",
         }
     }
 
@@ -404,6 +410,45 @@ impl SaudeDoDisco {
             Some(evento)
         } else {
             None
+        }
+    }
+
+    /// O backup agendado falhou -- pedido 510. Devolve o evento para o
+    /// carteiro quando o silencio deixa.
+    ///
+    /// # Por que fora do `registrar`
+    ///
+    /// Porque o `registrar` guarda o evento como o ULTIMO do disco, e o
+    /// `estado` pinta o painel por ele: um backup que falhou por destino sem
+    /// espaco pintaria de vermelho o disco do banco, que esta bem -- e
+    /// esconderia o erro de E/S de verdade que viesse antes dele. Do
+    /// mecanismo, o backup so usa o que e dele: o silencio (chave propria,
+    /// `backup`) e a fila do carteiro.
+    pub fn falha_do_backup(&self, agora_ms: i64, texto: &str) -> Option<Evento> {
+        let Ok(mut silencio) = self.silencio.lock() else {
+            return None;
+        };
+        crate::jobs::pode_avisar(
+            &mut silencio,
+            Tipo::Backup.nome(),
+            agora_ms,
+            self.silencio_ms(),
+        )
+        .then(|| Evento {
+            quando_ms: agora_ms,
+            tipo: Tipo::Backup,
+            origem: "backup_agendado".into(),
+            database: String::new(),
+            tabela: String::new(),
+            texto: texto.to_string(),
+        })
+    }
+
+    /// O backup voltou a dar certo: a proxima falha e noticia nova, e avisa na
+    /// hora -- o mesmo desenho dos jobs.
+    pub fn backup_voltou(&self) {
+        if let Ok(mut s) = self.silencio.lock() {
+            s.remove(Tipo::Backup.nome());
         }
     }
 

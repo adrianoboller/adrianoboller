@@ -967,9 +967,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `servidor-segue-de-pe-depois-do-fsync-recusado` | o servidor segue de pé depois de um `fsync` recusado, gravando num disco que já se sabe que mente | 1 | ✅ provada |
 | `completar-engole-a-tabela-que-nao-foi-ao-disco` | a recuperação engole o erro do `sincronizar` e apaga a marca de um commit cujo dado não foi ao disco | 1 | ✅ provada |
 
-**325 das 351 guardas do catálogo: 1 aposentada, 320 provadas, 4 redundantes** — 8922 s de mutação, medido em 2026-09-16 15:25.
+**325 das 367 guardas do catálogo: 1 aposentada, 320 provadas, 4 redundantes** — 8922 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 27 das 351 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 27 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 43 das 367 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 43 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
@@ -998,6 +998,22 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `prova-de-quem-nao-existe-sai-sem-conferir` — o login por desafio-resposta de quem não existe, ou está inativo, sai sem conferir a prova
 - `login-sem-o-teto-da-senha` — o login recebe senha acima do teto e recusa como «credencial inválida»
 - `criar-usuario-sem-o-teto-da-senha` — `usuario_criar`, `usuario_alterar` e `CREATE USER` derivam o hash de senha acima do teto
+- `pulso-que-morre-fica-marcado` — a thread de pulso que morre em panico nao se desmarca do `pulsando`
+- `pulso-em-panico-sem-recuo` — o pulso que entra em panico a cada volta vira laco de panico
+- `relogio-de-jobs-morto-diz-que-esta-no-ar` — o relogio de jobs que morre continua marcado como no ar
+- `amostrador-morto-diz-que-esta-no-ar` — o amostrador que morre continua marcado como no ar no retrato
+- `job-corre-na-thread-de-servico` — o job em panico com a trava na mao derruba o servidor
+- `backup-corre-na-thread-de-servico` — o backup agendado em panico com a trava na mao derruba o servidor
+- `job-que-derrubou-roda-de-novo-no-arranque` — a corrida de job que derrubou o processo roda de novo no arranque
+- `backup-que-derrubou-roda-de-novo-no-arranque` — o backup que derrubou o processo roda de novo no arranque
+- `lapide-do-futuro-empurra-o-job` — a lapide de job com hora no futuro vira a ultima corrida sem teto
+- `lapide-do-futuro-empurra-o-backup` — a lapide do backup com hora no futuro vira a ultima corrida sem teto
+- `corrida-interrompida-nao-avisa` — a corrida de job fechada no arranque como FALHOU nao avisa por e-mail
+- `backup-agendado-falha-calado` — o backup agendado que falha so escreve no erro padrao
+- `dblink-ilegivel-derruba-o-motor` — o cadastro do DbLink ilegivel derruba o motor inteiro
+- `dblink-que-nao-se-le-abre-vazio` — o dblink.json que existe e nao se le vira cadastro vazio
+- `jobs-ilegivel-derruba-o-motor` — o cadastro de jobs ilegivel derruba o motor inteiro
+- `core-leva-a-senha-do-cofre` — o core do abort leva a senha do cofre para o disco
 
 As guardas que esta corrida ainda cita, hoje aposentadas:
 

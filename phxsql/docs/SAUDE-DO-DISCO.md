@@ -266,6 +266,36 @@ Cada campo tem leitor e teste (`alertas_disco_e_sms_sao_lidos_do_arquivo`,
 `alertas.disco`/`alertas.sms` entraram em `SECOES_CONHECIDAS` — o verificador
 de campo estranho não acusa um exemplo que está certo.
 
+### 4.4 O backup agendado que falha (pedido 510)
+
+O backup agendado que falhava só escrevia no erro padrão, e o dono descobria
+que não tinha cópia no dia de restaurar. Agora a falha **pega carona no
+carteiro**: `SaudeDoDisco::falha_do_backup` passa pelo silêncio (chave própria,
+`backup`, com o mesmo `repetir_minutos`) e entrega à fila; a thread
+`sonda-disco` manda o e-mail («o backup agendado FALHOU», com o destino, o erro
+do sistema e quando é a próxima tentativa) e o SMS. O primeiro backup que dá
+certo zera o silêncio, como nos jobs. A corrida que o processo não terminou
+(pedido 502) avisa pelo mesmo caminho, no arranque seguinte.
+
+Ele **não** entra no `ultimo_evento` nem pinta o painel, e os envios dele não
+contam em `avisos`: a carta é do disco onde o banco grava, e um destino sem
+espaço pintaria de vermelho um disco que está bem — e esconderia o erro de E/S
+de verdade que viesse antes dele. Sem `alertas.email.ligado`, o aviso continua
+sendo só o erro padrão.
+
+Medido pelo soquete, com o rele falso (`servidor::testes_do_relogio_e_do_backup`):
+
+| a falha, do sistema operacional | sem o aviso | com o aviso |
+|---|---|---|
+| destino dentro de um arquivo comum (`ENOTDIR`, os error 20) | nenhum e-mail em 10 s | um e-mail, com o destino e `os error 20` |
+| destino num `tmpfs` de 64 KiB, base de 256 KiB (`ENOSPC`, os error 28) — teste `#[ignore]`, precisa de `mount` | — | «backup agendado FALHOU: [SP000010] erro de E/S: No space left on device (os error 28)» e o e-mail entregue |
+
+«Destino sem permissão» não serve de prova neste contêiner: ele roda como
+root, e root atravessa a permissão.
+
+O que **não** mudou: o backup que falha só tenta de novo na próxima hora da
+agenda. Tentar antes é decisão de política que o pedido não pediu.
+
 ## 6. O que NÃO se detecta (dito)
 
 - **SMART** do dispositivo — não se chama `smartctl`; um disco com setores

@@ -89,6 +89,16 @@ aviso): a origem passa a ser o master **corrente**, descoberto pelo pulso.
   outro. Um pulso velho, de antes do 211, não traz o campo `incompleta` e volta
   `false`: o significado de sempre — posição completa —, então um par que não
   sabe avisar conta como antes.
+- **A thread de pulso que morre em pânico volta, com recuo** (pedido 452). O
+  supervisor sobe uma thread por nó e marca o id em `pulsando`; a desmarcação
+  morava só na saída normal, e um pânico deixava o id marcado para sempre —
+  o par nunca mais era pulsado por este nó (medido: 0 conexões em 5 s). Hoje
+  quem desmarca é o `Drop` da `GuardaDoPulso`, que nasce no supervisor e viaja
+  para dentro da thread (vale também para a thread que nem chega a nascer). E o
+  pânico que se repete não vira laço: o id fica de recuo por 1 s, 2 s, 4 s…
+  até 60 s, e a série zera quando a thread viveu mais de um minuto (medido: 9
+  pânicos em 4,5 s sem o recuo, 3 com ele). O recuo só cala a direção que este
+  nó inicia; o outro continua pulsando para cá.
 - **O pulso agora passa pelo portão das réplicas autorizadas, e a época/posição
   têm teto.** Achado da revisão SEC de 17/09/2026 (A1): `cluster_pulso` não
   estava em `OPS_DE_REPLICACAO`, então um nó (ou quem tivesse a credencial do

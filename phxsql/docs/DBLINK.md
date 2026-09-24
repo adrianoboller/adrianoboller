@@ -125,6 +125,16 @@ O arquivo é gravado com permissão só do dono (`0600`) e trocado de forma
 atômica — um corte de energia no meio deixa o arquivo antigo inteiro, e não um
 cadastro pela metade.
 
+**Arquivo que não abre tranca o DbLink, e o motor sobe** (pedido 466). JSON
+torto, `formato` maior que o deste binário, ligação repetida, material de cifra
+torto ou arquivo que existe e não se lê: antes, o `phxsqld` inteiro não subia
+(medido pelo soquete: saía com código 1 nos quatro primeiros casos), e o quinto
+virava cadastro vazio, que a primeira gravação regravava por cima das outras
+ligações. Hoje o arranque avisa («o DbLink esta TRANCADO: o cadastro … nao
+abriu no arranque (…)»), toda operação `dblink*` recusa com o mesmo texto — a
+tela mostra a recusa —, e nada regrava o arquivo até ele ser consertado e o
+servidor reiniciado. Ver `docs/FORMATO.md` §19.
+
 **A senha precisa ser apresentada ao outro banco**, então não dá para guardar
 só o hash, como se faz com a senha de usuário do PhxSql. Há dois jeitos de ela
 não ficar em texto puro no arquivo, e o segundo é o que o dono escolheu
