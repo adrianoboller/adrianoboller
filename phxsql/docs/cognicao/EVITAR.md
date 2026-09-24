@@ -2,7 +2,7 @@
 
 # Evitar — falhas observadas, com causa e prevenção
 
-301 cognições: **16 frutíferas**, **5 infrutíferas**, **280 pendentes** (sem evidência validada — não entram aqui).
+303 cognições: **17 frutíferas**, **6 infrutíferas**, **280 pendentes** (sem evidência validada — não entram aqui).
 
 Antes de repetir um caminho, procure aqui se ele já falhou e o que o previne.
 
@@ -29,6 +29,12 @@ Antes de repetir um caminho, procure aqui se ele já falhou e o que o previne.
 - **Causa:** o `tls-crypt-v2-verify` executa o `phxvpn` como o usuário sem privilégio do OpenVPN, e o binário do RED estava numa pasta 0700; e duas esperas em sequência mediam o segundo tempo do fim da primeira.
 - **Prevenção:** binário de RED numa pasta 0755 (`/tmp/phxvpn-velho-bin/`), conferir no log que o RED chegou ao ponto medido, e medir os tempos paralelos de um laço só a partir do mesmo instante.
 - Evidência: `phxvpn/provas/ciclo-openvpn/resultados.json`; `phxvpn/provas/ciclo-openvpn/rodar.sh`
+
+## [Um `port-share` para o loopback põe na internet o que só escutava no loopback](cognicao_port-share-para-loopback-expoe-o-painel_20260924_1320.md)
+
+- **Causa:** o alvo do `port-share` foi validado como sintaxe de perfil, não como destino de um repasse público; o loopback, que protegia o painel HTTP, virou alcançável pela 443.
+- **Prevenção:** repasse de porta pública valida o destino — IP literal, sem loopback nem link-local, sem a porta do painel —, e a prova tenta gravar o repasse apontado ao painel e confere a recusa.
+- Evidência: `phxvpn/provas/servidor-alcance/alcance.log`; `phxvpn/provas/servidor-alcance/resultados.json`; commit `b8e4b91`
 
 ## [`grep -c` sem casamento mata a prova — justamente no caso bom](cognicao_grep-c-sem-casamento-mata-a-prova-no-caso-bom_20260924_0406.md)
 

@@ -1,8 +1,12 @@
 alcance 1 ,"remotos":["192.168.92.1"] -> {"ok":true,"openvpn_reiniciado":true,"aviso":"os membros precisam baixar o perfil de novo (entrar na rede outra vez)"}
 alcance 1 ,"remotos":[] -> {"ok":true,"openvpn_reiniciado":true,"aviso":"os membros precisam baixar o perfil de novo (entrar na rede outra vez)"}
-alcance 1 ,"queda_tcp":443,"port_share":"127.0.0.1:9443" -> {"ok":true,"openvpn_reiniciado":true,"aviso":"os membros precisam baixar o perfil de novo (entrar na rede outra vez)"}
+alcance 1 ,"queda_tcp":443,"port_share":"127.0.0.1:8484" -> {"erro":"port-share: 127.0.0.1 e loopback, link-local ou sem destino -- o que so escuta ali nao e para a internet; aponte para o HTTPS em outra maquina ou no IP de LAN"}
+alcance 1 ,"queda_tcp":443,"port_share":"[::1]:8484" -> {"erro":"port-share: ::1 e loopback, link-local ou sem destino -- o que so escuta ali nao e para a internet; aponte para o HTTPS em outra maquina ou no IP de LAN"}
+alcance 1 ,"queda_tcp":443,"port_share":"192.168.92.1:8484" -> {"erro":"port-share: a porta 8484 e a do painel, que fala HTTP sem TLS e nao vai para a internet"}
+alcance 1 ,"queda_tcp":443,"port_share":"192.168.92.14:9443" -> {"ok":true,"openvpn_reiniciado":true,"aviso":"os membros precisam baixar o perfil de novo (entrar na rede outra vez)"}
 alcance 1 ,"queda_tcp":443 -> {"ok":true,"openvpn_reiniciado":true,"aviso":"os membros precisam baixar o perfil de novo (entrar na rede outra vez)"}
 alcance 1  -> {"ok":true,"openvpn_reiniciado":true,"aviso":"os membros precisam baixar o perfil de novo (entrar na rede outra vez)"}
-alcance 2 ,"port_share":"127.0.0.1:9443" -> {"ok":true,"openvpn_reiniciado":true,"aviso":"os membros precisam baixar o perfil de novo (entrar na rede outra vez)"}
+alcance 2 ,"port_share":"192.168.92.14:9443" -> {"ok":true,"openvpn_reiniciado":true,"aviso":"os membros precisam baixar o perfil de novo (entrar na rede outra vez)"}
 alcance 2  -> {"ok":true,"openvpn_reiniciado":true,"aviso":"os membros precisam baixar o perfil de novo (entrar na rede outra vez)"}
 alcance 1 ,"queda_tcp":443 -> {"ok":true,"openvpn_reiniciado":true,"aviso":"os membros precisam baixar o perfil de novo (entrar na rede outra vez)"}
+alcance 2 ,"proxy_sem_texto_claro":true -> {"ok":true,"openvpn_reiniciado":true,"aviso":"os membros precisam baixar o perfil de novo (entrar na rede outra vez)"}

@@ -643,8 +643,12 @@ mod testes {
         .unwrap();
         let mut c = std::net::TcpStream::connect(("127.0.0.1", ponte.porta())).unwrap();
         let de_fora = c.local_addr().unwrap();
-        c.write_all(&[0, 3, 0x38, 1, 2]).unwrap();
-        let (_, vista) = eco.recv_from(&mut [0u8; 16]).unwrap();
+        // Um primeiro quadro de cliente OpenVPN de verdade (tamanho 14..255 e
+        // opcode HARD_RESET_CLIENT_V2): a ponte fecha o que nao abre assim.
+        let mut q = vec![0, 20];
+        q.extend_from_slice(&[0x38; 20]);
+        c.write_all(&q).unwrap();
+        let (_, vista) = eco.recv_from(&mut [0u8; 64]).unwrap();
         let (ip, porta, pela_ponte) = origem(&vista.ip().to_string(), vista.port());
         assert!(pela_ponte, "{vista} nao foi achado na ponte");
         assert_eq!((ip, porta), (de_fora.ip().to_string(), de_fora.port()));

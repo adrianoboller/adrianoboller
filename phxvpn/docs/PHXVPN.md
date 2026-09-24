@@ -102,8 +102,8 @@ Da matriz em `docs/propostas/lacunas-openvpn-fonte-2026-09-24.md` (classe
 - [x] MTU do P2P pelo repasse/farol: medido (fragmento descartado → TCP 0,0 Mbit/s pelo relé); placa em 1.384 → 641,7 Mbit/s e 0 fragmento (ver «Operação»)
 - [x] `explicit-exit-notify 1` no perfil do membro (só UDP) — o membro some da lista em **10,4 s** (antes **131,1 s**), ver «Ciclo do OpenVPN e IPv6 por fora»
 - [x] Reinício do servidor com aviso: SIGTERM + prazo + `explicit-exit-notify 1` no servidor (só UDP; **Linux** — no Windows segue o `TerminateProcess`, ver a seção)
-- [x] `remote` múltiplos / failover de servidor — principal morto → alternativo em **9,5 / 10,1 / 9,5 s** (ver «Modo servidor: alcance»)
-- [x] Queda UDP→TCP no modo servidor — ponte TCP→UDP no supervisor em vez de dois processos (a 2.7 tem multi-soquete); UDP bloqueado → TCP em **10,3 / 10,1 / 9,7 s**, mesmo IP fixo
+- [x] `remote` múltiplos / failover de servidor — principal morto → alternativo em **11,0 / 11,2 / 10,6 s** (ver «Modo servidor: alcance»)
+- [x] Queda UDP→TCP no modo servidor — ponte TCP→UDP no supervisor em vez de dois processos (a 2.7 tem multi-soquete); UDP bloqueado → TCP em **9,9 / 10,2 / 10,8 s**, mesmo IP fixo
 - [x] `port-share` (TCP dividindo porta com HTTPS) — na ponte da queda e na rede TCP (esta, só fora do Windows)
 - [x] Log do OpenVPN com teto: o supervisor lê a saída por pipe e gira `openvpn.log` a 10 MB, guardando 3
 - [ ] `tls-groups` híbrido pós-quântico (depende do OpenSSL 3.5 nos dois lados)
@@ -719,6 +719,25 @@ DNS» (amarelo altera); diálogo de entrar, «Esta máquina».
 - **Os nomes saem do `ccd/`** (quem pode conectar, `ccd-exclusive`): um motor
   só — sair, ser removido ou desativado tira o nome no mesmo passo.
   `joao.silva` vira `joao-silva.matriz.phx`; acento some.
+- **Rótulo que colide não vira nome** (revisão SEC, 24/09/2026): o rótulo
+  não é injetivo — `joao.silva` e `joao-silva` dão os dois `joao-silva`, e a
+  resposta levava os DOIS IPs (o tráfego de um ia parar no outro). Rótulo de
+  dois logins sai da tabela, com aviso no log. E **login reservado não vira
+  nome** (`dns::RESERVADOS`): `wpad` (o sistema do membro pergunta sozinho e
+  usa a resposta como proxy de toda a navegação), `isatap`, `teredo`,
+  `localhost`, `local`, `msdcs`/`ldap`/`kerberos`/`gc` (controlador de
+  domínio do Windows), `autodiscover`. Teste: `colisao_e_nome_reservado_nao_viram_nome`.
+- **Apagar o DNS da empresa com os nomes ligados alarga** (revisão SEC): ali
+  ele é o DNS de CIMA do resolvedor, e sem ele as perguntas dos membros vão ao
+  DNS do sistema do host — que pode responder o que o da empresa filtrava. O
+  dono não-admin não faz; é do admin, com o código (`saida::amplia`, teste
+  `so_ligar_alarga`).
+- **Serviço de terceiros que libera pelo IP do servidor** passa a ver TODO
+  membro com túnel total como esse IP: o NAT de saída põe todos atrás do
+  endereço público do servidor. Liberação por IP (painel de banco, ERP na
+  nuvem, VPN de fornecedor) que confiava «no escritório» passa a confiar em
+  qualquer membro da rede com túnel total, de onde ele estiver. Ligar o
+  túnel total numa rede é decidir isso — confira as liberações por IP antes.
 - **Não é resolvedor aberto:** um soquete por rede em `10.77.N.1:53`, e só
   responde a origem `10.77.N.0/24`. O endereço `10.77.B.1` é LOCAL do host
   para o membro da rede A (entrega em INPUT, não em FORWARD): a guarda das
@@ -2257,8 +2276,11 @@ ganchos em `ovpn.rs` (`Perfil.conexao` no lugar de `http_proxy`),
 | Pelo membro, ao baixar o perfil | Linha no perfil |
 |---|---|
 | Proxy HTTP sem senha (o de antes) | `http-proxy h p` |
-| Proxy HTTP, «pedir ao conectar» | `http-proxy h p auto` — tenta sem, e só pergunta se vier 407 (terminal ou OpenVPN GUI, pela gerência) |
-| Proxy HTTP ou SOCKS, `--proxy-usuario U` (linha de comando) | `http-proxy h p "<perfil>.proxy" basic` / `socks-proxy h p "<perfil>.proxy"`; o arquivo nasce **0600** ao lado do perfil |
+| Proxy HTTP, «pedir ao conectar» (**recomendado**) | `http-proxy h p auto` — tenta sem, e só pergunta se vier 407 (terminal ou OpenVPN GUI, pela gerência) |
+| Proxy HTTP, `--proxy-usuario U` (linha de comando), rede TCP | `http-proxy h p auto` + `http-proxy-user-pass "<perfil>.proxy"` — o método sai do 407 |
+| O mesmo numa rede UDP com queda (a linha vai no bloco TCP) | `http-proxy h p "<perfil>.proxy" basic` — ver abaixo |
+| SOCKS, `--proxy-usuario U` | `socks-proxy h p "<perfil>.proxy"`; o arquivo nasce **0600** ao lado do perfil |
+| Rede com «recusar senha de proxy em texto claro» (admin) | `auto-nct`; SOCKS com senha e arquivo na queda são recusados ao baixar o perfil |
 
 **API:** `POST /api/redes/alcance {rede_id}`; `/api/redes/alcance/gravar
 {rede_id, remotos, aleatorio, queda_tcp, port_share, codigo}` (admin + código
@@ -2282,13 +2304,27 @@ usuário e senha ao conectar».
   cada quadro ao `openvpn` UDP da rede por `127.0.0.1`, um soquete por
   conexão — medido: sem aviso de incompatibilidade, **mesmo IP (10.77.1.3)**
   e **5/5** para o membro que ficou no UDP. Teto de **256** conexões por
-  ponte, 10 s para o primeiro byte, 180 s calado derruba.
+  ponte, 180 s calado derruba.
+- **Ponte antes da autenticação: tetos e prazos TOTAIS** (revisão SEC,
+  24/09/2026). Antes: 256 conexões por ponte, 10 s **por leitura** para os
+  primeiros bytes — um IP só gotejando um byte por conexão segurava as 256 e
+  ninguém mais entrava. Agora: **8 conexões por IP** (IPv6 por /64, pela
+  mesma `guarda::chave_de_ip` do limitador), **5 s no total** para os 3
+  primeiros bytes, **60 s no total** para o aperto (sem um `P_DATA` do
+  cliente até lá, cai — o `hand-window` padrão), e sem `port-share` o que não
+  abre como cliente OpenVPN (a regra do `ps.c`) fecha na hora, sem gastar
+  soquete UDP. `EMFILE` no `accept` recua (50 ms → 1 s) em vez de girar;
+  thread que não nasce derruba só aquela conexão.
 - **Origem pelo loopback:** para o OpenVPN todo cliente da ponte vem de
   `127.x`, e o limitador do autenticador (`verificar.rs`) conta por
   `untrusted_ip`. Com `127.0.0.1` para todos, um atacante pela 443 travaria
   o código de quem caiu no TCP. Cada IP de fora ganha o seu `127.x.y.z`
-  (SHA-256 com chave do processo); a linha `phxvpn queda-tcp: <ip de fora>
-  entra como 127.x.y.z:porta` no `openvpn.log` faz a ponte.
+  (SHA-256 com chave do processo) — IPv6 por **/64**, senão cada endereço
+  do /64 do atacante seria um balde novo; a linha `phxvpn queda-tcp: <ip de
+  fora> entra como 127.x.y.z:porta` no `openvpn.log` faz a ponte. **Limite:**
+  o sistema precisa entregar o /8 inteiro no loopback (Linux entrega;
+  macOS, não). Onde o `bind` no `127.x.y.z` falha, a ponte fala pela
+  `127.0.0.1` e diz no `openvpn.log`, uma vez, que todos dividem um balde.
 - **Blocos `<connection>` por último — medido, não escolhido:** opção de
   conexão escrita depois de um bloco não vale para ele (`Option … is ignored
   by previous <connection> blocks`, options.c:5617), e o `<tls-crypt>`
@@ -2302,6 +2338,35 @@ usuário e senha ao conectar».
   `<http-proxy-user-pass>` embutido existe e foi recusado por isso. Caminho do
   arquivo: absoluto, entre aspas, `\` vira `/` (o OpenVPN lê `\` como
   escape), sem aspas nem controle.
+- **Exceção registrada à pétrea «senha nunca em texto puro»: o
+  `<perfil>.proxy`.** O OpenVPN só lê a credencial do proxy de um arquivo com
+  usuário e senha em claro (proxy-options.rst: «a file containing a username
+  and password on 2 lines»), ou do terminal/gerência. Quem escolhe
+  `--proxy-usuario` aceita esse arquivo: ele nasce **0600** (no Windows, só o
+  dono), ao lado do perfil, na máquina do membro — nunca no painel nem no
+  perfil. O caminho **recomendado** é «pedir ao conectar», que não deixa a
+  senha em disco; a tela e a ajuda dizem isso.
+- **`auto` e não `basic` com o arquivo — onde o 2.6 deixa** (revisão SEC):
+  numa rede TCP o perfil sai com `http-proxy h p auto` + `http-proxy-user-pass
+  "<arquivo>"`, e o método sai do 407 (Basic, Digest, NTLM); com «recusar
+  texto claro», `auto-nct` recusa o Basic. **Na queda para TCP não dá**
+  (medido no 2.6.19): `http-proxy-user-pass` é recusado dentro de
+  `<connection>` («cannot be used in this context»), antes dos blocos ele
+  cria o proxy no bloco UDP também («--http-proxy MUST be used in TCP Client
+  mode»), e depois deles não vale. Lá o arquivo segue com `basic`, e a rede
+  que recusa texto claro recusa o arquivo na queda e manda usar «pedir ao
+  conectar» (`auto-nct`).
+- **`port-share` só para IP literal fora do loopback e do link-local, e nunca
+  a porta do painel** (revisão SEC, 24/09/2026 — BLOQUEAVA): `127.0.0.1:8470`
+  punha o painel, que só escuta em loopback por falar HTTP sem TLS (A4), na
+  internet pela 443. Recusados: `127/8`, `::1`, `0.0.0.0`, `169.254/16`,
+  `fe80::/10`, multicast, IPv4 mapeado nesses, e **nome** (resolve no uso, e
+  amanhã pode dar loopback). Alvo neste host (conferido por `bind`) não pode
+  ser a porta do painel nem a da própria rede/queda (laço). Valor gravado
+  antes desta guarda cai no arranque com aviso — a rede sobe sem ele. Cada
+  conexão repartida vai ao `openvpn.log` com o IP de fora (`queda-tcp: <ip>
+  -> port-share <alvo>`; na rede TCP, o OpenVPN escreve `<ip> Non-OpenVPN
+  client protocol detected`).
 - **`port-share` na rede TCP, só fora do Windows** (server-options.rst:438,
   «Not implemented on Windows»); na ponte vale nos dois. A ponte decide pela
   regra do próprio OpenVPN (`ps.c:975`): primeiro pacote com o opcode de
@@ -2318,22 +2383,28 @@ usuário e senha ao conectar».
 
 | Caso | Com | Sem (RED) |
 |---|---|---|
-| Endereço principal morto (descarta tudo) → alternativo | conecta em **9,5 / 10,1 / 9,5 s** | não conecta em 45 s |
-| UDP do membro bloqueado → queda TCP 443 | conecta em **10,3 / 10,1 / 9,7 s**; IP 10.77.1.3; ping ao admin no UDP **5/5**; o OpenVPN vê `127.65.233.200:43395` | rede sem queda: não conecta em 45 s; 443 sem ninguém |
-| `port-share` na ponte: `curl https://…:443/` com o membro no TCP | a página do HTTPS; o membro segue **2/2** | curl vazio |
-| `port-share` na rede TCP 8443 (o do OpenVPN) | a página; o membro conecta | curl vazio |
-| Só o proxy alcança o servidor, e ele pede senha (407) — arquivo pela CLI | conecta em **12,4 s**; arquivo **0600**; senha em 0 lugar do perfil e do painel | sem credencial: não conecta em 45 s (5 × `407`) |
-| O mesmo, «pedir ao conectar» (a gerência responde, como o OpenVPN GUI) | conecta em **12,6 s**, 1 pedido `Need 'HTTP Proxy'` | — |
-| SOCKS5 com usuário e senha, arquivo pela CLI | conecta em **9,7 s**; ping 3/3 | sem credencial: não conecta (4 × método recusado) |
+| Endereço principal morto (descarta tudo) → alternativo | conecta em **11,0 / 11,2 / 10,6 s** | não conecta em 45 s |
+| UDP do membro bloqueado → queda TCP 443 | conecta em **9,9 / 10,2 / 10,8 s**; IP 10.77.1.3; ping ao admin no UDP **5/5**; o OpenVPN vê `127.40.164.21:44319` | rede sem queda: não conecta em 45 s; 443 sem ninguém |
+| Um IP abre **256** conexões na 443 e goteja 1 byte a cada 2 s; a ana (outro IP) entra | conecta em **10,2 s** (o tempo normal da queda); do atacante, **0** conexões vivas ao fim de 25 s | — |
+| `port-share` para `127.0.0.1:8484`, `[::1]:8484` e o IP do servidor na porta do painel | os três **recusados** ao gravar, com o motivo | — |
+| `port-share` na ponte para o HTTPS em outra máquina (`192.168.92.14:9443`): `curl https://…:443/` com o membro no TCP | a página do HTTPS; o membro segue **2/2**; a conexão repartida no `openvpn.log` com o IP de fora | curl vazio |
+| `port-share` na rede TCP 8443 (o do OpenVPN) | a página; o membro conecta; `<ip> Non-OpenVPN client protocol detected` no log | curl vazio |
+| Só o proxy alcança o servidor, e ele pede senha (407) — arquivo pela CLI, na queda (`basic`) | conecta em **12,4 s**; arquivo **0600**; senha em 0 lugar do perfil e do painel | sem credencial: não conecta em 45 s (5 × `407`) |
+| O mesmo, «pedir ao conectar» (a gerência responde, como o OpenVPN GUI) | conecta em **13,0 s**, 1 pedido `Need 'HTTP Proxy'` | — |
+| Rede TCP, arquivo pela CLI (`auto` + `http-proxy-user-pass`) | conecta em **2,1 s** | — |
+| Rede que recusa texto claro: `auto-nct` diante do proxy Basic | — | não conecta em 30 s (recusa o Basic) |
+| SOCKS5 com usuário e senha, arquivo pela CLI | conecta em **10,6 s**; ping 3/3 | sem credencial: não conecta (4 × método recusado) |
 
 Os ~10 s de cada troca são o `server-poll-timeout` escolhido; com o proxy
 somam-se a tentativa UDP e a ida pelo proxy. **RED das guardas** (cada uma
-tirada do fonte, o teste dela reprova): **17/17**, `python3
+tirada do fonte, o teste dela reprova): **30/30**, `python3
 provas/servidor-alcance/red.py` → `resultados.json` → `red_das_guardas`.
 
 **Não medido / fica:** o membro que sai pela ponte continua na lista até o
 `ping-restart` do servidor (TCP fechado não vira `explicit-exit-notify`);
-SOCKS por UDP; `port-share` e a ponte num Windows real; queda
+SOCKS por UDP; `port-share` e a ponte num Windows real (e se o Windows
+entrega o `127/8` inteiro ao `bind` — sem prova aqui); o recuo do `accept`
+em `EMFILE` (não provocado na prova); queda
 com IPv6 por fora (este kernel não tem IPv6 — a ponte tenta `[::]` e cai no
 `0.0.0.0`).
 

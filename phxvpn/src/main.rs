@@ -33,7 +33,8 @@ const AJUDA: &str = "phxvpn -- redes virtuais no estilo Radmin, sobre OpenVPN
       --proxy-usuario U: usuario e senha (PHXVPN_SENHA_PROXY ou o terminal)
       vao para <perfil>.proxy, 0600, e o perfil aponta para ele -- a senha
       nunca vai ao painel nem ao perfil. --proxy-perguntar: o OpenVPN
-      pergunta ao conectar (so se o proxy pedir, no HTTP).
+      pergunta ao conectar (so se o proxy pedir, no HTTP) -- o RECOMENDADO:
+      a senha nao fica em arquivo nenhum.
       --dns-linux systemd-resolved|resolvconf: o perfil chama o script que
       aplica o DNS empurrado (so no Linux; script-security 2). --sem-ipv6:
       maquina com o IPv6 desligado ignora o ifconfig-ipv6 do tunel total.

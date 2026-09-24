@@ -4,7 +4,7 @@
   "kernel": "ipv6.disable=1 (sem IPv6: o block-ipv6 nao se prova em trafego aqui)",
   "n": 1,
   "nft": {
-    "data": "2026-09-24T12:09:30+00:00",
+    "data": "2026-09-24T14:08:35+00:00",
     "regras": {
       "antes": {
         "nossas": 1,
@@ -165,7 +165,7 @@
     "passou": true
   },
   "iptables": {
-    "data": "2026-09-24T12:12:28+00:00",
+    "data": "2026-09-24T14:10:04+00:00",
     "regras": {
       "antes": {
         "nossas": 1,

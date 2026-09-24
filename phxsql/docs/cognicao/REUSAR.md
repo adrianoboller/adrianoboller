@@ -2,7 +2,7 @@
 
 # Reusar — sucessos comprovados
 
-301 cognições: **16 frutíferas**, **5 infrutíferas**, **280 pendentes** (sem evidência validada — não entram aqui).
+303 cognições: **17 frutíferas**, **6 infrutíferas**, **280 pendentes** (sem evidência validada — não entram aqui).
 
 Só entra o que tem evidência que o `classificar.py` conferiu. Antes de desenhar, procure aqui o que já se provou.
 
@@ -67,6 +67,13 @@ Quem acende o encaminhamento do host acende JUNTO uma guarda que só deixa passa
 Opção empurrada que CONFIGURA a placa (endereço, não rota) é fatal no cliente que não a suporta — antes de empurrar uma receita do manual, prove-a num cliente sem o recurso; e dê ao cliente o jeito de recusar pelo próprio perfil (`pull-filter`), porque o servidor não tem `push` condicional.
 
 - Evidência: `phxvpn/provas/tunel-total/resultados.json`; `phxvpn/src/saida.rs`; `phxvpn/provas/tunel-total/rodar.sh`
+- Validado em: 24/09/2026
+
+## [`http-proxy-user-pass` não combina com blocos `<connection>` no 2.6](cognicao_http-proxy-user-pass-nao-entra-em-connection_20260924_1300.md)
+
+Numa rede UDP com queda, o arquivo de credencial só entra no bloco TCP com método fixo (`"arquivo" basic`). Onde o texto claro é recusado, a saída é «pedir ao conectar» (`auto-nct`, que funciona dentro do bloco).
+
+- Evidência: `phxvpn/provas/servidor-alcance/resultados.json`; `phxvpn/src/alcance.rs`; `phxvpn/provas/servidor-alcance/rodar.sh`
 - Validado em: 24/09/2026
 
 ## [A gerência do OpenVPN: `kill CN` não avisa o cliente; `client-kill` avisa](cognicao_gerencia-openvpn-kill-nao-avisa-o-cliente_20260924_0910.md)

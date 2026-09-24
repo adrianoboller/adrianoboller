@@ -154,6 +154,10 @@ pub fn amplia(antes: &Saida, depois: &Saida) -> bool {
     (depois.tunel_total && !antes.tunel_total)
         || (depois.dns_nomes && !antes.dns_nomes)
         || (!depois.dns_empresa.is_empty() && depois.dns_empresa != antes.dns_empresa)
+        // Com os nomes ligados o `dns_empresa` e o DNS de CIMA do resolvedor:
+        // apaga-lo manda as perguntas dos membros ao DNS do sistema do host,
+        // que pode responder o que o da empresa filtrava.
+        || (depois.dns_nomes && depois.dns_empresa != antes.dns_empresa)
 }
 
 /// O IP do servidor dentro do tunel da rede: onde o resolvedor escuta.
@@ -594,6 +598,13 @@ mod testes {
             &s(false, false, false, "8.8.8.8")
         ));
         assert!(!amplia(&s(true, true, true, "1.1.1.1"), &nada));
+        // Nomes ligados: apagar o DNS de cima troca para o do sistema.
+        assert!(amplia(
+            &s(false, false, true, "192.168.10.53"),
+            &s(false, false, true, "")
+        ));
+        // Desligar os nomes junto nao alarga.
+        assert!(!amplia(&s(false, false, true, "192.168.10.53"), &nada));
         assert!(!amplia(&s(true, false, true, ""), &s(true, true, true, "")));
     }
 

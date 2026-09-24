@@ -1,37 +1,48 @@
 admin_udp_conectou_s 0.2
 failover_perfil_tem_alternativo 1
-failover_s [9.5,10.1,9.5]
+failover_s [11.0,11.2,10.6]
 failover_tentou_o_morto 1
 red_failover_conectou_em_45s null
+port_share_recusou_1270018484 1
+port_share_recusou_18484 1
+port_share_recusou_1921689218484 1
 queda_perfil_blocos 2
 queda_proto_da_conexao TCPv4_CLIENT_link_remote
 queda_ip_da_ana 10.77.1.3/24
 queda_ping_ana_para_admin_no_udp 5/5
-queda_ana_vista_pelo_openvpn_como 127.65.233.200:43395
+queda_ana_vista_pelo_openvpn_como 127.40.164.21:44319
 queda_log_liga_o_ip_de_fora 1
 port_share_curl_pela_ponte phxvpn-prova-https
 port_share_ana_segue_conectada 2/2
-queda_s [10.3,10.1,9.7]
+port_share_log_da_repartida 1
+queda_s [9.9,10.2,10.8]
+gotejo_ana_conectou_s 10.2
+gotejo_conexoes_do_atacante_vivas 0
 red_port_share_curl_sem_port_share ""
 red_queda_conectou_em_45s null
 red_queda_porta_443_escuta 0
 port_share_conf_tcp 1
 port_share_tcp_ana_conectou_s 0.2
 port_share_curl_pelo_openvpn phxvpn-prova-https
+port_share_tcp_log_da_repartida 1
 red_port_share_tcp_curl ""
 proxy_arquivo_modo 600
 proxy_senha_no_perfil 0
 proxy_senha_no_painel 0
-proxy_linha "http-proxy 192.168.92.14 3128 "/tmp/phxvpn-prova-alcance.wiJb/px.ovpn.proxy" basic"
+proxy_linha "http-proxy 192.168.92.14 3128 "/tmp/phxvpn-prova-alcance.qH9b/px.ovpn.proxy" basic"
 proxy_arquivo_conectou_s 12.4
 proxy_perguntar_linha "http-proxy 192.168.92.14 3128 auto"
-proxy_perguntar_conectou_s 12.6
+proxy_perguntar_conectou_s 13.0
 proxy_perguntar_pedidos 1
 red_proxy_sem_credencial_conectou_em_45s null
 proxy_registro " 2 CONNECT vpn.prova.local:443 200; 5 CONNECT vpn.prova.local:443 407;"
-socks_linha "socks-proxy 192.168.92.14 1080 "/tmp/phxvpn-prova-alcance.wiJb/sk.ovpn.proxy""
-socks_arquivo_conectou_s 9.7
+socks_linha "socks-proxy 192.168.92.14 1080 "/tmp/phxvpn-prova-alcance.qH9b/sk.ovpn.proxy""
+socks_arquivo_conectou_s 10.6
 socks_ping_ana_para_admin 3/3
 red_socks_sem_credencial_conectou_em_45s null
+proxy_tcp_linhas "http-proxy 192.168.92.14 3128 auto|http-proxy-user-pass "/tmp/phxvpn-prova-alcance.qH9b/ht.ovpn.proxy"|"
+proxy_tcp_auto_arquivo_conectou_s 2.1
+proxy_nct_linha "http-proxy 192.168.92.14 3128 auto-nct"
+proxy_nct_com_basic_conectou_em_30s null
 socks_registro " 1 CONNECT vpn.prova.local:443 ok; 4 METODO recusado;"
 painel_erros 0

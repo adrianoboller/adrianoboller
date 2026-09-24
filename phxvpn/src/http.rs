@@ -59,6 +59,8 @@ pub struct Estado {
     pub(crate) conferencias: Semaforo,
     /// Valores aceitos no cabecalho `Host`, em minusculas.
     hosts: Vec<String>,
+    /// Onde o painel escuta: o `port-share` nao pode apontar para ca.
+    escuta: String,
     /// Codigo de uso unico da instalacao; some depois de usado.
     codigo_instalacao: Mutex<Option<String>>,
 }
@@ -75,6 +77,7 @@ impl Estado {
             tentativas: Limitador::default(),
             conferencias: Semaforo::novo(CONFERENCIAS),
             hosts: Vec::new(),
+            escuta: String::new(),
             codigo_instalacao: Mutex::new(None),
         }
     }
@@ -83,7 +86,15 @@ impl Estado {
     /// dele, o proprio endereco de escuta e os declarados em `--nome`.
     pub fn com_hosts(mut self, escuta: &str, nomes: &[String]) -> Estado {
         self.hosts = web::hosts_de(escuta, nomes);
+        self.escuta = escuta.to_string();
         self
+    }
+
+    /// A porta em que o painel escuta (`None` antes de `com_hosts`).
+    pub fn porta_do_painel(&self) -> Option<u16> {
+        self.escuta
+            .rsplit_once(':')
+            .and_then(|(_, p)| p.parse().ok())
     }
 
     /// Gera o codigo de instalacao (so quando ainda nao esta instalado) e o

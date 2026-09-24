@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """O HTTPS que ja usava a porta: responde uma frase fixa, com o certificado
-dado. Uso: https.py PORTA CERT CHAVE"""
+dado. Uso: https.py PORTA CERT CHAVE [ENDERECO=127.0.0.1]"""
 import http.server, ssl, sys
 
 
@@ -16,7 +16,8 @@ class H(http.server.BaseHTTPRequestHandler):
         pass
 
 
-s = http.server.ThreadingHTTPServer(("127.0.0.1", int(sys.argv[1])), H)
+onde = sys.argv[4] if len(sys.argv) > 4 else "127.0.0.1"
+s = http.server.ThreadingHTTPServer((onde, int(sys.argv[1])), H)
 ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
 ctx.load_cert_chain(sys.argv[2], sys.argv[3])
 s.socket = ctx.wrap_socket(s.socket, server_side=True)

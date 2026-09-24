@@ -69,10 +69,11 @@ done
 S iptables -A INPUT -d 192.168.92.2 -j DROP
 nome_aponta() { echo "$2 vpn.prova.local" > /etc/netns/$1/hosts; }
 
-# O HTTPS que ja usava a porta.
+# O HTTPS que ja usava a porta -- em OUTRA maquina (o netns do proxy, .14):
+# o port-share nao aceita alvo no loopback (seria o painel na internet).
 openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 2 -subj /CN=prova \
   -keyout "$T/web.key" -out "$T/web.crt" 2>/dev/null
-S python3 "$AQUI/https.py" 9443 "$T/web.crt" "$T/web.key" &
+ip netns exec $NS_P python3 "$AQUI/https.py" 9443 "$T/web.crt" "$T/web.key" 0.0.0.0 &
 
 mkdir -p "$T/pg" "$T/pgsock"; chown postgres "$T/pg" "$T/pgsock"
 echo "senha-pg-prova" > "$T/pgsenha"; chown postgres "$T/pgsenha"
@@ -167,7 +168,13 @@ para "$T/f0.log"
 nome_aponta $NS_B 192.168.92.1
 S iptables -A INPUT -s 192.168.92.12 -p udp -j DROP
 ca=$(grep -c "Initialization Sequence Completed" "$T/a.log")
-alcance $REDE ',"queda_tcp":443,"port_share":"127.0.0.1:9443"' >/dev/null
+# port-share apontado ao que so escuta no loopback, ou ao painel: recusado.
+for alvo in 127.0.0.1:8484 '[::1]:8484' 192.168.92.1:8484; do
+  r=$(alcance $REDE ",\"queda_tcp\":443,\"port_share\":\"$alvo\"" 2>&1)
+  case "$r" in *'"ok":true'*) anota "port_share_recusou_$(echo "$alvo" | tr -dc '0-9')" 0 ;;
+    *) anota "port_share_recusou_$(echo "$alvo" | tr -dc '0-9')" 1 ;; esac
+done
+alcance $REDE ',"queda_tcp":443,"port_share":"192.168.92.14:9443"' >/dev/null
 religa_admin "$ca"
 perfil_ana Matriz "" "$T/q.ovpn"
 anota queda_perfil_blocos "$(grep -c '^<connection>$' "$T/q.ovpn")"
@@ -184,10 +191,20 @@ for k in $(seq "$N"); do
     anota queda_log_liga_o_ip_de_fora "$(grep -c 'queda-tcp: 192.168.92.12:[0-9]* entra como 127\.' "$DIR/openvpn.log")"
     anota port_share_curl_pela_ponte "$(A curl -sk --max-time 5 https://192.168.92.1:443/ | tr -d '\n')"
     anota port_share_ana_segue_conectada "$(B ping -c 2 -W 2 -q 10.77.1.2 | grep -o '[0-9]* received' | awk '{print $1}')/2"
+    anota port_share_log_da_repartida "$(grep -c 'queda-tcp: 192.168.92.11:[0-9]* -> port-share 192.168.92.14:9443' "$DIR/openvpn.log")"
   fi
   para "$T/q$k.log"
 done
 anota queda_s "[$(lista "${tempos[@]}")]"
+# Gotejamento: o admin (um IP) abre 256 conexoes na 443 e pinga um byte a
+# cada 2 s; a ana (outro IP) tem de entrar assim mesmo.
+A python3 "$AQUI/goteja.py" 192.168.92.1 443 256 25 > "$T/goteja.txt" &
+sleep 3
+sobe $NS_B "$T/q.ovpn" "$T/qg.log"
+anota gotejo_ana_conectou_s "$(esperar 60 conectou "$T/qg.log")"
+para "$T/qg.log"
+wait $!
+anota gotejo_conexoes_do_atacante_vivas "$(cat "$T/goteja.txt")"
 ca=$(grep -c "Initialization Sequence Completed" "$T/a.log")
 alcance $REDE ',"queda_tcp":443' >/dev/null
 religa_admin "$ca"
@@ -204,12 +221,13 @@ anota red_queda_porta_443_escuta "$(S ss -Htln 'sport = :443' | wc -l)"
 # --------------------------------------------------- port-share, rede TCP
 api POST /api/redes "$TKA" '{"nome":"Hotel","senha":"senha-da-rede","protocolo":"tcp","porta":8443}' >/dev/null
 HOTEL=$(api GET /api/redes "$TKA" "" | python3 -c "import json,sys; print([r['id'] for r in json.load(sys.stdin) if r['nome']=='Hotel'][0])")
-alcance $HOTEL ',"port_share":"127.0.0.1:9443"' >/dev/null
-anota port_share_conf_tcp "$(grep -c '^port-share 127.0.0.1 9443$' "$T/dados/redes/$HOTEL/servidor.conf")"
+alcance $HOTEL ',"port_share":"192.168.92.14:9443"' >/dev/null
+anota port_share_conf_tcp "$(grep -c '^port-share 192.168.92.14 9443$' "$T/dados/redes/$HOTEL/servidor.conf")"
 perfil_ana Hotel "" "$T/h.ovpn"
 sobe $NS_B "$T/h.ovpn" "$T/h.log"
 anota port_share_tcp_ana_conectou_s "$(esperar 45 conectou "$T/h.log")"
 anota port_share_curl_pelo_openvpn "$(A curl -sk --max-time 5 https://192.168.92.1:8443/ | tr -d '\n')"
+anota port_share_tcp_log_da_repartida "$(grep -c '192.168.92.11:[0-9]* Non-OpenVPN client protocol detected' "$T/dados/redes/$HOTEL/openvpn.log")"
 para "$T/h.log"
 alcance $HOTEL '' >/dev/null
 sleep 2
@@ -262,6 +280,23 @@ perfil_ana Matriz ',"proxy":"192.168.92.14:1080","proxy_tipo":"socks"' "$T/sk0.o
 sobe $NS_B "$T/sk0.ovpn" "$T/sk0.log"
 anota red_socks_sem_credencial_conectou_em_45s "$(esperar 45 conectou "$T/sk0.log")"
 para "$T/sk0.log"
+# Rede TCP (sem blocos): o arquivo vai com `auto` + http-proxy-user-pass.
+S iptables -A INPUT -s 192.168.92.12 -p tcp --dport 8443 -j DROP
+B env PHXVPN_ACEITO_SEM_TLS=1 PHXVPN_SENHA=senha-da-ana-longa PHXVPN_SENHA_REDE=senha-da-rede PHXVPN_SENHA_PROXY=$SENHA_PROXY \
+  "$BIN" entrar --painel "http://$PAINEL" --usuario ana --rede Hotel --saida "$T/ht.ovpn" \
+  --http-proxy 192.168.92.14:3128 --proxy-usuario prova >/dev/null
+anota proxy_tcp_linhas "\"$(grep '^http-proxy' "$T/ht.ovpn" | tr '\n' '|')\""
+sobe $NS_B "$T/ht.ovpn" "$T/ht.log"
+anota proxy_tcp_auto_arquivo_conectou_s "$(esperar 45 conectou "$T/ht.log")"
+para "$T/ht.log"
+# Sem texto claro: auto-nct recusa o Basic do proxy -- nao conecta.
+alcance $HOTEL ',"proxy_sem_texto_claro":true' >/dev/null
+perfil_ana Hotel ',"proxy":"192.168.92.14:3128","proxy_credencial":"perguntar"' "$T/hn.ovpn"
+anota proxy_nct_linha "\"$(grep '^http-proxy' "$T/hn.ovpn")\""
+sobe $NS_B "$T/hn.ovpn" "$T/hn.log" --management 127.0.0.1 7506 --management-query-passwords
+B python3 "$AQUI/gerencia.py" 7506 prova "$T/senha-gui" "$T/gerencia-nct.log" &
+anota proxy_nct_com_basic_conectou_em_30s "$(esperar 30 conectou "$T/hn.log")"
+para "$T/hn.log"
 anota socks_registro "\"$(sort "$T/socks.log" | uniq -c | tr -s ' ' | tr '\n' ';')\""
 
 cp "$T/alcance.log" "$AQUI/alcance.log"
@@ -289,7 +324,12 @@ verde = {
     "port_share": m["port_share_curl_pela_ponte"] == "phxvpn-prova-https"
                   and m["port_share_ana_segue_conectada"] == "2/2"
                   and m["port_share_curl_pelo_openvpn"] == "phxvpn-prova-https"
-                  and num(m["port_share_tcp_ana_conectou_s"]),
+                  and num(m["port_share_tcp_ana_conectou_s"])
+                  and m["port_share_log_da_repartida"] >= 1 and m["port_share_tcp_log_da_repartida"] >= 1,
+    "port_share_recusa_loopback_e_painel": all(m[k] == 1 for k in (
+        "port_share_recusou_1270018484", "port_share_recusou_18484", "port_share_recusou_1921689218484")),
+    "gotejo": num(m["gotejo_ana_conectou_s"]) and int(m["gotejo_conexoes_do_atacante_vivas"]) <= 8,
+    "proxy_tcp_auto": num(m["proxy_tcp_auto_arquivo_conectou_s"]) and " auto|" in str(m["proxy_tcp_linhas"]),
     "proxy": num(m["proxy_arquivo_conectou_s"]) and num(m["proxy_perguntar_conectou_s"])
              and m["proxy_arquivo_modo"] == 600 and m["proxy_senha_no_perfil"] == 0
              and m["proxy_senha_no_painel"] == 0 and m["proxy_perguntar_pedidos"] >= 1,
@@ -302,6 +342,8 @@ red = {
     "port_share_tcp_sem_port_share": m["red_port_share_tcp_curl"] == "",
     "proxy_sem_credencial": m["red_proxy_sem_credencial_conectou_em_45s"] is None,
     "socks_sem_credencial": m["red_socks_sem_credencial_conectou_em_45s"] is None,
+    "sem_texto_claro_recusa_basic": m["proxy_nct_com_basic_conectou_em_30s"] is None
+                                    and "auto-nct" in str(m["proxy_nct_linha"]),
 }
 r = {
     "prova": "alcance do modo servidor: failover de remote, queda UDP->TCP pela ponte, port-share, proxy HTTP e SOCKS com credencial",

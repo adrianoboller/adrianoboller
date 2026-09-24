@@ -1249,8 +1249,11 @@ fn historico_pelo_soquete_escopo_retencao_e_integridade() {
     .unwrap();
     let mut tcp = std::net::TcpStream::connect(("127.0.0.1", ponte.porta())).unwrap();
     let de_fora = tcp.local_addr().unwrap();
-    tcp.write_all(&[0, 3, 0x38, 1, 2]).unwrap();
-    let (_, vista) = eco.recv_from(&mut [0u8; 16]).unwrap();
+    // Primeiro quadro de cliente OpenVPN de verdade: a ponte fecha o lixo.
+    let mut q = vec![0, 20];
+    q.extend_from_slice(&[0x38; 20]);
+    tcp.write_all(&q).unwrap();
+    let (_, vista) = eco.recv_from(&mut [0u8; 64]).unwrap();
     assert_ne!(
         vista.ip(),
         de_fora.ip(),

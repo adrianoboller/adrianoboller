@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS phx_rede_alcance (
     queda_tcp  int UNIQUE CHECK (queda_tcp BETWEEN 1 AND 65535),
     port_share text NOT NULL DEFAULT ''
 );
+ALTER TABLE phx_rede_alcance ADD COLUMN IF NOT EXISTS proxy_sem_texto_claro boolean NOT NULL DEFAULT false;
 ";
 
 /// Enderecos alternativos por rede. Cada um custa ate `POLL` segundos a quem
@@ -133,6 +134,54 @@ pub struct Alcance {
     pub aleatorio: bool,
     pub queda_tcp: Option<u16>,
     pub port_share: Option<(String, u16)>,
+    /// O admin recusa senha de proxy em texto claro (Basic, SOCKS5 com
+    /// usuario e senha): o perfil sai com `auto-nct`.
+    pub proxy_sem_texto_claro: bool,
+}
+
+/// Alvo do `port-share`: IP literal, fora do loopback e do link-local. A
+/// porta TCP da rede e publica; apontar o `port-share` para `127.0.0.1:8470`
+/// punha o painel -- que so escuta em loopback porque fala HTTP sem TLS (A4)
+/// -- na internet pela 443. Nome tambem nao: resolve no uso, e amanha pode
+/// resolver para o loopback.
+pub fn validar_port_share(t: &str) -> R<(String, u16)> {
+    let (h, p) = ovpn::validar_http_proxy(t).map_err(|e| e.replace("http-proxy", "port-share"))?;
+    let ip: std::net::IpAddr = h.parse().map_err(|_| {
+        format!("port-share: use o IP do servidor HTTPS (nao nome): «{h}» pode resolver para o loopback")
+    })?;
+    let ip = match ip {
+        std::net::IpAddr::V6(v) => v.to_ipv4_mapped().map(std::net::IpAddr::V4).unwrap_or(ip),
+        v4 => v4,
+    };
+    let proibido = match ip {
+        std::net::IpAddr::V4(v) => {
+            v.is_loopback()
+                || v.is_unspecified()
+                || v.is_link_local()
+                || v.is_multicast()
+                || v.is_broadcast()
+        }
+        std::net::IpAddr::V6(v) => {
+            v.is_loopback()
+                || v.is_unspecified()
+                || v.is_multicast()
+                || (v.segments()[0] & 0xffc0) == 0xfe80
+        }
+    };
+    if proibido {
+        return Err(format!(
+            "port-share: {ip} e loopback, link-local ou sem destino -- o que so escuta ali nao e para a internet; aponte para o HTTPS em outra maquina ou no IP de LAN"
+        ));
+    }
+    Ok((ip.to_string(), p))
+}
+
+/// O IP e deste host? Um `bind` nele so da certo se for: sem lista de
+/// placas para envelhecer, e o mesmo vale no Windows.
+fn e_deste_host(ip: &str) -> bool {
+    ip.parse::<std::net::IpAddr>()
+        .map(|ip| std::net::UdpSocket::bind((ip, 0)).is_ok())
+        .unwrap_or(false)
 }
 
 impl Alcance {
@@ -165,20 +214,21 @@ impl Alcance {
         };
         let port_share = match corpo.texto_ou("port_share", "").trim() {
             "" => None,
-            t => Some(
-                ovpn::validar_http_proxy(t).map_err(|e| e.replace("http-proxy", "port-share"))?,
-            ),
+            t => Some(validar_port_share(t)?),
         };
         Ok(Alcance {
             remotos,
             aleatorio: corpo.booleano_ou("aleatorio", false),
             queda_tcp,
             port_share,
+            proxy_sem_texto_claro: corpo.booleano_ou("proxy_sem_texto_claro", false),
         })
     }
 
-    /// As regras que nao dependem de outras redes.
-    pub fn validar(&self, tcp: bool) -> R<()> {
+    /// As regras que nao dependem de outras redes. `porta_rede`: a porta da
+    /// rede; `portas_do_painel`: onde o painel escuta -- o `port-share` nao
+    /// aponta para nenhuma delas (laco, ou o painel na internet).
+    pub fn validar(&self, tcp: bool, porta_rede: u16, portas_do_painel: &[u16]) -> R<()> {
         if self.remotos.len() > MAX_REMOTOS {
             return Err(format!("no maximo {MAX_REMOTOS} enderecos alternativos"));
         }
@@ -199,6 +249,20 @@ impl Alcance {
         }
         if self.port_share.is_some() && !tcp && self.queda_tcp.is_none() {
             return Err("port-share divide uma porta TCP: a rede e UDP sem queda para TCP".into());
+        }
+        // So vale para alvo NESTE host: o HTTPS da empresa em outra maquina
+        // na 443 e o caso comum, e nao volta para ca.
+        if let Some((h, p)) = self.port_share.as_ref().filter(|(h, _)| e_deste_host(h)) {
+            if portas_do_painel.contains(p) {
+                return Err(format!(
+                    "port-share: a porta {p} e a do painel, que fala HTTP sem TLS e nao vai para a internet"
+                ));
+            }
+            if *p == porta_rede || Some(*p) == self.queda_tcp {
+                return Err(format!(
+                    "port-share: {h}:{p} e a propria porta da rede -- a conexao voltaria para ela"
+                ));
+            }
         }
         if self.port_share.is_some() && tcp && cfg!(windows) {
             return Err(
@@ -241,6 +305,10 @@ impl Alcance {
                     .as_ref()
                     .map(|(h, p)| Json::texto_de(format!("{h}:{p}")))
                     .unwrap_or(Json::Nulo),
+            ),
+            (
+                "proxy_sem_texto_claro",
+                Json::de_bool(self.proxy_sem_texto_claro),
             ),
         ])
     }
@@ -314,16 +382,28 @@ impl ProxyMembro {
         Ok(Some(p))
     }
 
-    /// A linha do perfil. `auto` no HTTP: o OpenVPN tenta sem credencial e
-    /// so pergunta se o proxy responder 407, descobrindo o metodo (Basic,
-    /// Digest, NTLM -- proxy-options.rst:17-20).
-    pub fn linha(&self) -> String {
+    /// As linhas do perfil. HTTP com credencial vai com `auto` (ou
+    /// `auto-nct`): o OpenVPN tenta sem, e so manda a senha se o proxy
+    /// responder 407, descobrindo o metodo (Basic, Digest, NTLM --
+    /// proxy-options.rst:17-20).
+    ///
+    /// `em_bloco`: a linha vai dentro de um `<connection>` (queda para TCP).
+    /// Ali o arquivo so entra com metodo fixo: o `http-proxy-user-pass` nao
+    /// e aceito dentro do bloco, e fora dele cria o proxy no bloco UDP
+    /// tambem (`--http-proxy MUST be used in TCP Client mode`) -- medido no
+    /// 2.6.19. `conferir_proxy` recusa antes o caso sem saida (sem texto
+    /// claro + arquivo + queda).
+    pub fn linhas(&self, sem_texto_claro: bool, em_bloco: bool) -> String {
         let (h, p) = (&self.host, self.porta);
+        let auto = if sem_texto_claro { "auto-nct" } else { "auto" };
         match (self.tipo, &self.cred) {
             (TipoProxy::Http, CredProxy::Nenhuma) => format!("http-proxy {h} {p}\n"),
-            (TipoProxy::Http, CredProxy::Perguntar) => format!("http-proxy {h} {p} auto\n"),
-            (TipoProxy::Http, CredProxy::Arquivo(c)) => {
+            (TipoProxy::Http, CredProxy::Perguntar) => format!("http-proxy {h} {p} {auto}\n"),
+            (TipoProxy::Http, CredProxy::Arquivo(c)) if em_bloco => {
                 format!("http-proxy {h} {p} \"{c}\" basic\n")
+            }
+            (TipoProxy::Http, CredProxy::Arquivo(c)) => {
+                format!("http-proxy {h} {p} {auto}\nhttp-proxy-user-pass \"{c}\"\n")
             }
             (TipoProxy::Socks, CredProxy::Nenhuma) => format!("socks-proxy {h} {p}\n"),
             (TipoProxy::Socks, CredProxy::Perguntar) => format!("socks-proxy {h} {p} stdin\n"),
@@ -362,8 +442,23 @@ pub struct Conexao {
 /// provado aqui -- entra quando for). Rede UDP com queda: o proxy vai no
 /// bloco TCP.
 pub fn conferir_proxy(tcp: bool, c: &Conexao) -> R<()> {
-    if c.proxy.is_some() && !tcp && c.alcance.queda_tcp.is_none() {
+    let Some(p) = &c.proxy else { return Ok(()) };
+    if !tcp && c.alcance.queda_tcp.is_none() {
         return Err("proxy so leva TCP, e esta rede e UDP sem queda para TCP".into());
+    }
+    if c.alcance.proxy_sem_texto_claro && p.cred != CredProxy::Nenhuma {
+        if p.tipo == TipoProxy::Socks {
+            return Err(
+                "esta rede recusa senha de proxy em texto claro, e o SOCKS5 manda usuario e senha em claro (RFC 1929)"
+                    .into(),
+            );
+        }
+        if !tcp && matches!(p.cred, CredProxy::Arquivo(_)) {
+            return Err(
+                "esta rede recusa senha em texto claro, e com a queda para TCP o arquivo so vai com Basic: use «pedir ao conectar»"
+                    .into(),
+            );
+        }
     }
     Ok(())
 }
@@ -398,7 +493,11 @@ pub fn partes(rede: &Rede, endereco: &str, c: Option<&Conexao>) -> Partes {
     if a.aleatorio && lista.len() > 1 {
         topo.push_str("remote-random\n");
     }
-    let proxy = c.proxy.as_ref().map(ProxyMembro::linha).unwrap_or_default();
+    let proxy = c
+        .proxy
+        .as_ref()
+        .map(|p| p.linhas(a.proxy_sem_texto_claro, queda.is_some()))
+        .unwrap_or_default();
     let Some(t) = queda else {
         let mut p = format!("proto {}\n", rede.proto("client"));
         for e in &lista {
@@ -473,15 +572,24 @@ fn de_linha(r: &crate::pg::Resposta, i: usize) -> R<Alcance> {
         .filter(|l| !l.trim().is_empty())
         .map(Endereco::analisar)
         .collect::<R<Vec<_>>>()?;
+    // Gravado antes da guarda de hoje (loopback): cai o port-share, fica a
+    // rede -- falhar fechado no alvo, nao derrubar o arranque do painel.
     let port_share = match v("port_share").as_str() {
         "" => None,
-        t => Some(ovpn::validar_http_proxy(t)?),
+        t => match validar_port_share(t) {
+            Ok(x) => Some(x),
+            Err(e) => {
+                eprintln!("phxvpn: AVISO port-share gravado ignorado: {e}");
+                None
+            }
+        },
     };
     Ok(Alcance {
         remotos,
         aleatorio: v("aleatorio") == "t",
         queda_tcp: r.valor(i, "queda_tcp").and_then(|p| p.parse().ok()),
         port_share,
+        proxy_sem_texto_claro: v("proxy_sem_texto_claro") == "t",
     })
 }
 
@@ -489,7 +597,8 @@ impl Painel {
     /// O alcance gravado (o padrao, se a rede nunca teve um).
     pub(crate) fn alcance_da_rede(&mut self, rede_id: &str) -> R<Alcance> {
         let r = self.pg()?.executar(
-            "SELECT remotos, aleatorio, queda_tcp, port_share FROM phx_rede_alcance WHERE rede_id = $1::int",
+            "SELECT remotos, aleatorio, queda_tcp, port_share, proxy_sem_texto_claro \
+             FROM phx_rede_alcance WHERE rede_id = $1::int",
             &[Some(rede_id)],
         )?;
         if r.linhas.is_empty() {
@@ -549,17 +658,26 @@ impl Painel {
         u: &Usuario,
         rede_id: i64,
         novo: &Alcance,
+        portas_do_painel: &[u16],
     ) -> R<(String, PathBuf, Alcance)> {
         if !u.admin {
             return Err("so o administrador muda o alcance da rede".into());
         }
         let id = rede_id.to_string();
         let r = self.pg()?.executar(
-            "SELECT nome, protocolo FROM phx_rede WHERE id = $1::int",
+            "SELECT nome, protocolo, porta FROM phx_rede WHERE id = $1::int",
             &[Some(&id)],
         )?;
         let nome = r.valor(0, "nome").ok_or("rede inexistente")?.to_string();
-        novo.validar(r.valor(0, "protocolo") == Some("tcp"))?;
+        let porta_rede: u16 = r
+            .valor(0, "porta")
+            .and_then(|p| p.parse().ok())
+            .unwrap_or(0);
+        novo.validar(
+            r.valor(0, "protocolo") == Some("tcp"),
+            porta_rede,
+            portas_do_painel,
+        )?;
         if let Some(t) = novo.queda_tcp {
             self.porta_tcp_livre(t, Some(&id))?;
         }
@@ -592,16 +710,17 @@ impl Painel {
             .unwrap_or_default();
         self.pg()?
             .executar(
-                "INSERT INTO phx_rede_alcance (rede_id, remotos, aleatorio, queda_tcp, port_share) \
-                 VALUES ($1::int, $2, $3::boolean, $4::int, $5) \
+                "INSERT INTO phx_rede_alcance (rede_id, remotos, aleatorio, queda_tcp, port_share, proxy_sem_texto_claro) \
+                 VALUES ($1::int, $2, $3::boolean, $4::int, $5, $6::boolean) \
                  ON CONFLICT (rede_id) DO UPDATE SET remotos = $2, aleatorio = $3::boolean, \
-                 queda_tcp = $4::int, port_share = $5",
+                 queda_tcp = $4::int, port_share = $5, proxy_sem_texto_claro = $6::boolean",
                 &[
                     Some(id),
                     Some(&a.remotos_texto()),
                     Some(if a.aleatorio { "true" } else { "false" }),
                     queda.as_deref(),
                     Some(&ps),
+                    Some(if a.proxy_sem_texto_claro { "true" } else { "false" }),
                 ],
             )
             .map(|_| ())
@@ -631,7 +750,8 @@ pub fn gravar_e_aplicar(
     rede_id: i64,
     novo: &Alcance,
 ) -> R<Json> {
-    let (nome, dir, anterior) = e.painel().alcance_gravar(u, rede_id, novo)?;
+    let portas: Vec<u16> = e.porta_do_painel().into_iter().collect();
+    let (nome, dir, anterior) = e.painel().alcance_gravar(u, rede_id, novo, &portas)?;
     let reiniciado = match &e.supervisor {
         Some(s) => {
             if let Err(m) = s.reiniciar(&nome, &dir) {
@@ -872,35 +992,161 @@ mod testes {
 
     #[test]
     fn linhas_de_proxy_por_tipo_e_credencial() {
-        let p = |tipo, cred| {
+        let p = |tipo, cred, nct, bloco| {
             ProxyMembro {
                 tipo,
                 host: "px".into(),
                 porta: 1080,
                 cred,
             }
-            .linha()
+            .linhas(nct, bloco)
         };
         let arq = CredProxy::Arquivo("/home/ana/px.cred".into());
+        use TipoProxy::{Http, Socks};
         assert_eq!(
-            p(TipoProxy::Http, CredProxy::Nenhuma),
+            p(Http, CredProxy::Nenhuma, false, false),
             "http-proxy px 1080\n"
         );
         assert_eq!(
-            p(TipoProxy::Http, arq.clone()),
+            p(Http, CredProxy::Perguntar, false, true),
+            "http-proxy px 1080 auto\n"
+        );
+        assert_eq!(
+            p(Http, CredProxy::Perguntar, true, true),
+            "http-proxy px 1080 auto-nct\n"
+        );
+        // Fora de bloco: o metodo sai do 407 (auto), a senha do arquivo.
+        assert_eq!(
+            p(Http, arq.clone(), false, false),
+            "http-proxy px 1080 auto\nhttp-proxy-user-pass \"/home/ana/px.cred\"\n"
+        );
+        assert_eq!(
+            p(Http, arq.clone(), true, false),
+            "http-proxy px 1080 auto-nct\nhttp-proxy-user-pass \"/home/ana/px.cred\"\n"
+        );
+        // Dentro do bloco da queda o 2.6 so aceita metodo fixo.
+        assert_eq!(
+            p(Http, arq.clone(), false, true),
             "http-proxy px 1080 \"/home/ana/px.cred\" basic\n"
         );
         assert_eq!(
-            p(TipoProxy::Socks, CredProxy::Nenhuma),
+            p(Socks, CredProxy::Nenhuma, false, false),
             "socks-proxy px 1080\n"
         );
         assert_eq!(
-            p(TipoProxy::Socks, CredProxy::Perguntar),
+            p(Socks, CredProxy::Perguntar, false, false),
             "socks-proxy px 1080 stdin\n"
         );
         assert_eq!(
-            p(TipoProxy::Socks, arq),
+            p(Socks, arq, false, false),
             "socks-proxy px 1080 \"/home/ana/px.cred\"\n"
+        );
+    }
+
+    /// Sem texto claro pedido pelo admin: SOCKS com senha e arquivo na
+    /// queda (que so vai com Basic) sao recusados; o resto passa.
+    #[test]
+    fn sem_texto_claro_recusa_o_que_mandaria_a_senha_em_claro() {
+        let px = |tipo, cred| {
+            Some(ProxyMembro {
+                tipo,
+                host: "px".into(),
+                porta: 3128,
+                cred,
+            })
+        };
+        let arq = CredProxy::Arquivo("/c".into());
+        let mut c = alc(&[], Some(443));
+        c.alcance.proxy_sem_texto_claro = true;
+        c.proxy = px(TipoProxy::Http, arq.clone());
+        assert!(
+            conferir_proxy(false, &c).is_err(),
+            "arquivo na queda iria como Basic"
+        );
+        assert!(
+            conferir_proxy(true, &c).is_ok(),
+            "rede TCP: auto-nct com arquivo"
+        );
+        c.proxy = px(TipoProxy::Http, CredProxy::Perguntar);
+        assert!(conferir_proxy(false, &c).is_ok());
+        c.proxy = px(TipoProxy::Socks, CredProxy::Perguntar);
+        assert!(
+            conferir_proxy(true, &c).is_err(),
+            "SOCKS5 manda a senha em claro"
+        );
+        c.proxy = px(TipoProxy::Socks, CredProxy::Nenhuma);
+        assert!(conferir_proxy(true, &c).is_ok());
+        c.alcance.proxy_sem_texto_claro = false;
+        c.proxy = px(TipoProxy::Http, arq);
+        assert!(conferir_proxy(false, &c).is_ok());
+        assert!(perfil(&rede(false), Some(&c)).contains(" basic\n"));
+        c.alcance.proxy_sem_texto_claro = true;
+        c.proxy = px(TipoProxy::Http, CredProxy::Perguntar);
+        assert!(perfil(&rede(false), Some(&c)).contains("http-proxy px 3128 auto-nct\n"));
+    }
+
+    /// O port-share nao aponta para o que so escuta no loopback (o painel,
+    /// HTTP sem TLS) nem para a porta do painel ou a da propria rede.
+    #[test]
+    fn port_share_nao_expoe_o_loopback_nem_o_painel() {
+        let j = |t: &str| Json::analisar(t).unwrap();
+        for ruim in [
+            "127.0.0.1:8470",
+            "[::1]:8470",
+            "127.9.9.9:443",
+            "0.0.0.0:443",
+            "169.254.1.1:443",
+            "[fe80::1]:443",
+            "[::ffff:127.0.0.1]:8470",
+            "localhost:8443",
+            "web.empresa:443",
+        ] {
+            let pedido = j(&format!(r#"{{"queda_tcp":443,"port_share":"{ruim}"}}"#));
+            assert!(Alcance::do_pedido(&pedido).is_err(), "{ruim} passou");
+        }
+        let ok =
+            Alcance::do_pedido(&j(r#"{"queda_tcp":443,"port_share":"192.168.10.5:443"}"#)).unwrap();
+        assert!(ok.validar(false, 1195, &[8470]).is_ok());
+        // Outra maquina na porta do painel nao e o painel.
+        let fora = Alcance {
+            port_share: Some(("192.168.10.5".into(), 8470)),
+            ..ok.clone()
+        };
+        assert!(fora.validar(false, 1195, &[8470]).is_ok());
+        // Um IP DESTE host (o de saida), para a porta do painel e o laco.
+        let Some(local) = std::net::UdpSocket::bind("0.0.0.0:0")
+            .and_then(|u| u.connect("192.0.2.99:9").and_then(|_| u.local_addr()))
+            .ok()
+            .map(|a| a.ip().to_string())
+            .filter(|ip| ip != "0.0.0.0")
+        else {
+            eprintln!("sem IP de saida: parte local pulada");
+            return;
+        };
+        let painel = Alcance {
+            port_share: Some((local.clone(), 8470)),
+            ..ok.clone()
+        };
+        assert!(
+            painel.validar(false, 1195, &[8470]).is_err(),
+            "porta do painel"
+        );
+        let laco = Alcance {
+            port_share: Some((local.clone(), 443)),
+            ..ok.clone()
+        };
+        assert!(
+            laco.validar(false, 1195, &[8470]).is_err(),
+            "a propria queda"
+        );
+        let laco_tcp = Alcance {
+            queda_tcp: None,
+            port_share: Some((local.clone(), 8443)),
+            ..ok
+        };
+        assert!(
+            laco_tcp.validar(true, 8443, &[8470]).is_err(),
+            "a propria rede TCP"
         );
     }
 
@@ -959,23 +1205,26 @@ mod testes {
             aleatorio: true,
             ..Alcance::default()
         };
-        assert!(ok.validar(false).is_ok());
+        assert!(ok.validar(false, 1195, &[8470]).is_ok());
         let muitos = Alcance {
             remotos: vec![e("v"); MAX_REMOTOS + 1],
             ..Alcance::default()
         };
-        assert!(muitos.validar(false).is_err());
+        assert!(muitos.validar(false, 1195, &[8470]).is_err());
         let sorteio_sozinho = Alcance {
             aleatorio: true,
             ..Alcance::default()
         };
-        assert!(sorteio_sozinho.validar(false).is_err());
+        assert!(sorteio_sozinho.validar(false, 1195, &[8470]).is_err());
         let queda = Alcance {
             queda_tcp: Some(443),
             ..Alcance::default()
         };
-        assert!(queda.validar(false).is_ok());
-        assert!(queda.validar(true).is_err(), "queda em rede ja TCP");
+        assert!(queda.validar(false, 1195, &[8470]).is_ok());
+        assert!(
+            queda.validar(true, 1195, &[8470]).is_err(),
+            "queda em rede ja TCP"
+        );
         let sorteio_e_queda = Alcance {
             aleatorio: true,
             ..ok.clone()
@@ -984,20 +1233,23 @@ mod testes {
             queda_tcp: Some(443),
             ..sorteio_e_queda
         }
-        .validar(false)
+        .validar(false, 1195, &[8470])
         .is_err());
         let ps = Alcance {
-            port_share: Some(("127.0.0.1".into(), 8443)),
+            port_share: Some(("192.168.10.5".into(), 8443)),
             ..Alcance::default()
         };
-        assert!(ps.validar(false).is_err(), "port-share sem porta TCP");
+        assert!(
+            ps.validar(false, 1195, &[8470]).is_err(),
+            "port-share sem porta TCP"
+        );
         assert!(Alcance {
             queda_tcp: Some(443),
             ..ps.clone()
         }
-        .validar(false)
+        .validar(false, 1195, &[8470])
         .is_ok());
-        assert_eq!(ps.validar(true).is_ok(), !cfg!(windows));
+        assert_eq!(ps.validar(true, 1195, &[8470]).is_ok(), !cfg!(windows));
     }
 
     #[test]
@@ -1005,14 +1257,14 @@ mod testes {
         let d = std::env::temp_dir().join(format!("phxvpn-alcance-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
-        let ps = Some(("127.0.0.1".to_string(), 8443));
+        let ps = Some(("192.168.10.5".to_string(), 8443));
         let tcp = Alcance {
             port_share: ps.clone(),
             ..Alcance::default()
         };
         assert_eq!(
             aplicar_na_pasta(&d, &rede(true), &tcp).unwrap(),
-            "port-share 127.0.0.1 8443\n"
+            "port-share 192.168.10.5 8443\n"
         );
         assert!(!d.join(queda_tcp::ARQUIVO).exists());
         let udp = Alcance {
@@ -1023,7 +1275,7 @@ mod testes {
         assert_eq!(aplicar_na_pasta(&d, &rede(false), &udp).unwrap(), "");
         let c = queda_tcp::Conf::ler(&d).unwrap().unwrap();
         assert_eq!((c.porta, c.udp), (443, 1195));
-        assert_eq!(c.port_share, Some(("127.0.0.1".into(), 8443)));
+        assert_eq!(c.port_share, Some(("192.168.10.5".into(), 8443)));
         // Tirar a queda apaga o arquivo: o supervisor derruba a ponte.
         aplicar_na_pasta(&d, &rede(false), &Alcance::default()).unwrap();
         assert!(queda_tcp::Conf::ler(&d).unwrap().is_none());

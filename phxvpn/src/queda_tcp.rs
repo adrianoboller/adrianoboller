@@ -45,7 +45,7 @@ use std::net::{IpAddr, Ipv4Addr, Shutdown, SocketAddr, TcpListener, TcpStream, U
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Arquivo na pasta da rede que liga a ponte. Quem escreve e o painel
 /// (`alcance.rs`); quem le e o supervisor, a cada `garantir`.
@@ -54,8 +54,19 @@ pub const ARQUIVO: &str = "queda-tcp";
 /// Conexoes vivas por ponte. Cada uma custa duas threads: sem teto, quem
 /// abrisse conexoes sem mandar nada levaria o painel as threads do sistema.
 pub const MAX_CONEXOES: usize = 256;
-/// O cliente tem isto para mandar os primeiros bytes.
-const PRIMEIROS_BYTES: Duration = Duration::from_secs(10);
+/// Conexoes vivas por IP de fora (IPv6 por /64, `guarda::chave_de_ip`):
+/// sem isto um IP so enchia as 256 e ninguem mais entrava.
+pub const MAX_POR_IP: usize = 8;
+/// Prazo TOTAL para os 3 primeiros bytes -- nao por leitura: quem goteja um
+/// byte a cada 4 s nao segura a conexao para sempre.
+const PRIMEIROS_BYTES: Duration = Duration::from_secs(5);
+/// Prazo TOTAL para o aperto: sem um pacote de dados do cliente
+/// (`P_DATA_V1`/`V2`) ate aqui, a conexao cai. E o `hand-window` padrao do
+/// OpenVPN (60 s).
+#[cfg(not(test))]
+const PRAZO_APERTO: Duration = Duration::from_secs(60);
+#[cfg(test)]
+const PRAZO_APERTO: Duration = Duration::from_secs(2);
 /// Sem trafego por isto, a conexao cai. O servidor manda `ping` a cada 10 s
 /// (`keepalive 10 60`): 180 s calados e conexao morta, nao membro quieto.
 const OCIOSO: Duration = Duration::from_secs(180);
@@ -142,11 +153,10 @@ pub fn e_openvpn(cab: &[u8]) -> bool {
 pub fn origem_local(ip: IpAddr) -> Ipv4Addr {
     static CHAVE: OnceLock<Vec<u8>> = OnceLock::new();
     let chave = CHAVE.get_or_init(|| phxsql_core::senha::bytes_aleatorios(16));
+    // IPv6 por /64: quem tem um /64 troca de endereco a cada conexao, e
+    // cada endereco viraria um balde novo no limitador do autenticador.
     let mut m = chave.clone();
-    match ip {
-        IpAddr::V4(v) => m.extend_from_slice(&v.octets()),
-        IpAddr::V6(v) => m.extend_from_slice(&v.octets()),
-    }
+    m.extend_from_slice(crate::guarda::chave_de_ip("", &ip.to_string()).as_bytes());
     let h = phxsql_core::hash::sha256(&m);
     // .0 e .255 no ultimo octeto ficam de fora: tem sistema que os trata
     // como rede e difusao mesmo dentro do /8.
@@ -157,7 +167,41 @@ pub fn origem_local(ip: IpAddr) -> Ipv4Addr {
     Ipv4Addr::new(127, h[0], h[1], ultimo)
 }
 
-type Vivas = Arc<Mutex<HashMap<u64, TcpStream>>>;
+/// As conexoes vivas, por id e por IP de fora (a chave do limitador).
+#[derive(Default)]
+struct Tabela {
+    por_id: HashMap<u64, (TcpStream, String)>,
+    por_ip: HashMap<String, usize>,
+}
+
+impl Tabela {
+    /// Entra se cabe nos dois tetos; senao, diz qual estourou.
+    fn entrar(&mut self, id: u64, c: &TcpStream, ip: String) -> Result<(), &'static str> {
+        if self.por_id.len() >= MAX_CONEXOES {
+            return Err("teto da ponte");
+        }
+        if self.por_ip.get(&ip).copied().unwrap_or(0) >= MAX_POR_IP {
+            return Err("teto por IP");
+        }
+        let k = c.try_clone().map_err(|_| "clonar o soquete")?;
+        *self.por_ip.entry(ip.clone()).or_default() += 1;
+        self.por_id.insert(id, (k, ip));
+        Ok(())
+    }
+
+    fn sair(&mut self, id: u64) {
+        if let Some((_, ip)) = self.por_id.remove(&id) {
+            if let Some(n) = self.por_ip.get_mut(&ip) {
+                *n -= 1;
+                if *n == 0 {
+                    self.por_ip.remove(&ip);
+                }
+            }
+        }
+    }
+}
+
+type Vivas = Arc<Mutex<Tabela>>;
 
 /// Por quanto tempo a ponte lembra a origem de quem ja saiu: o
 /// `client-disconnect` de quem saiu pela ponte chega quando o `openvpn`
@@ -174,6 +218,9 @@ struct Origem {
 /// `127.x.y.z:porta` (como o `openvpn` ve quem veio pela ponte) -> o
 /// endereco de fora. De todas as pontes do processo: cada conexao tem o seu
 /// soquete UDP, entao o par visto nao se repete entre redes.
+// Dois IPs do mesmo /64 dividem o `127.x.y.z` (`origem_local`), mas cada
+// conexao tem o seu soquete UDP e portanto a sua porta: a chave `vista` nao
+// se repete, e a origem real de cada um continua separada.
 fn origens() -> &'static Mutex<HashMap<SocketAddr, Origem>> {
     static O: OnceLock<Mutex<HashMap<SocketAddr, Origem>>> = OnceLock::new();
     O.get_or_init(Mutex::default)
@@ -269,7 +316,7 @@ impl Drop for Ponte {
             let _ = f.join();
         }
         if let Ok(v) = self.vivas.lock() {
-            for s in v.values() {
+            for (s, _) in v.por_id.values() {
                 let _ = s.shutdown(Shutdown::Both);
             }
         }
@@ -290,44 +337,62 @@ fn aceitar(
     registro: Arc<Mutex<Registro>>,
 ) {
     static PROXIMO: AtomicU64 = AtomicU64::new(1);
-    let mut avisou_teto = false;
+    let mut avisou: Option<&'static str> = None;
+    let mut recuo = Duration::ZERO;
     for c in escuta.incoming() {
         if parar.load(Ordering::SeqCst) {
             break;
         }
-        let Ok(c) = c else { continue };
-        let id = PROXIMO.fetch_add(1, Ordering::Relaxed);
-        {
-            let mut v = vivas.lock().expect("vivas");
-            if v.len() >= MAX_CONEXOES {
-                if !avisou_teto {
-                    anotar(
-                        &registro,
-                        &format!("{MAX_CONEXOES} conexoes vivas: recusando"),
-                    );
-                    avisou_teto = true;
+        let c = match c {
+            Ok(c) => {
+                recuo = Duration::ZERO;
+                c
+            }
+            // EMFILE/ENFILE: sem descritor, o `accept` volta na hora com o
+            // mesmo erro -- sem recuo o laco gira a 100% de CPU.
+            Err(e) => {
+                if recuo.is_zero() {
+                    anotar(&registro, &format!("accept: {e} (recuando)"));
                 }
+                recuo = (recuo * 2).clamp(Duration::from_millis(50), Duration::from_secs(1));
+                std::thread::sleep(recuo);
                 continue;
             }
-            avisou_teto = false;
-            match c.try_clone() {
-                Ok(k) => v.insert(id, k),
-                Err(_) => continue,
-            };
+        };
+        let Ok(origem) = c.peer_addr() else { continue };
+        let chave = crate::guarda::chave_de_ip("ponte", &origem.ip().to_string());
+        let id = PROXIMO.fetch_add(1, Ordering::Relaxed);
+        if let Err(teto) = vivas.lock().expect("vivas").entrar(id, &c, chave) {
+            if avisou != Some(teto) {
+                anotar(&registro, &format!("{origem} recusado: {teto}"));
+                avisou = Some(teto);
+            }
+            continue;
         }
-        let (conf, vivas, registro) = (conf.clone(), Arc::clone(&vivas), Arc::clone(&registro));
-        std::thread::spawn(move || {
-            atender(c, &conf, &registro);
-            vivas.lock().expect("vivas").remove(&id);
+        avisou = None;
+        let (conf, v2, registro2) = (conf.clone(), Arc::clone(&vivas), Arc::clone(&registro));
+        // Thread que nao nasce (sem memoria, teto do sistema) nao derruba o
+        // laco: a conexao sai da tabela e fecha.
+        let nasceu = std::thread::Builder::new().spawn(move || {
+            atender(c, &conf, &registro2);
+            v2.lock().expect("vivas").sair(id);
         });
+        if nasceu.is_err() {
+            vivas.lock().expect("vivas").sair(id);
+            anotar(&registro, &format!("{origem}: sem thread para atender"));
+        }
     }
 }
 
-/// Le ate `n` bytes (menos so se o outro lado fechou ou calou no prazo).
-fn ler_ate(c: &mut TcpStream, n: usize) -> Vec<u8> {
+/// Le ate `n` bytes ate o instante `fim` -- prazo total, nao por leitura.
+fn ler_ate(c: &mut TcpStream, n: usize, fim: Instant) -> Vec<u8> {
     let mut b = vec![0u8; n];
     let mut lidos = 0;
     while lidos < n {
+        let falta = fim.saturating_duration_since(Instant::now());
+        if falta.is_zero() || c.set_read_timeout(Some(falta)).is_err() {
+            break;
+        }
         match c.read(&mut b[lidos..]) {
             Ok(0) | Err(_) => break,
             Ok(k) => lidos += k,
@@ -340,20 +405,21 @@ fn ler_ate(c: &mut TcpStream, n: usize) -> Vec<u8> {
 fn atender(mut c: TcpStream, conf: &Conf, registro: &Arc<Mutex<Registro>>) {
     let Ok(origem) = c.peer_addr() else { return };
     let _ = c.set_nodelay(true);
-    let _ = c.set_read_timeout(Some(PRIMEIROS_BYTES));
-    let cab = ler_ate(&mut c, 3);
+    let cab = ler_ate(&mut c, 3, Instant::now() + PRIMEIROS_BYTES);
     if cab.len() < 3 {
         return;
     }
-    if let Some((h, p)) = &conf.port_share {
-        if !e_openvpn(&cab) {
+    if !e_openvpn(&cab) {
+        // Sem port-share, o que nao abre como cliente OpenVPN e lixo: fecha
+        // ja, sem gastar soquete UDP nem thread de volta.
+        if let Some((h, p)) = &conf.port_share {
+            anotar(registro, &format!("{origem} -> port-share {h}:{p}"));
             if let Err(e) = repartir(c, &cab, h, *p) {
                 anotar(registro, &format!("{origem} -> port-share {h}:{p}: {e}"));
             }
-            return;
         }
+        return;
     }
-    let _ = c.set_read_timeout(Some(OCIOSO));
     if let Err(e) = transportar(c, cab, origem, conf.udp, registro) {
         anotar(registro, &format!("{origem}: {e}"));
     }
@@ -369,9 +435,21 @@ fn transportar(
     registro: &Arc<Mutex<Registro>>,
 ) -> Result<(), String> {
     let local = origem_local(origem.ip());
-    let u = UdpSocket::bind((local, 0))
-        .or_else(|_| UdpSocket::bind(("127.0.0.1", 0)))
-        .map_err(|e| format!("soquete UDP: {e}"))?;
+    let u = match UdpSocket::bind((local, 0)) {
+        Ok(u) => u,
+        // Sistema sem o /8 inteiro no loopback (macOS; Windows antigo): todo
+        // cliente da ponte vira 127.0.0.1 e divide o balde do limitador.
+        Err(e) => {
+            static AVISOU: AtomicBool = AtomicBool::new(false);
+            if !AVISOU.swap(true, Ordering::Relaxed) {
+                anotar(
+                    registro,
+                    &format!("sem {local} neste sistema ({e}): todos pela 127.0.0.1, um balde so no limitador do autenticador"),
+                );
+            }
+            UdpSocket::bind(("127.0.0.1", 0)).map_err(|e| format!("soquete UDP: {e}"))?
+        }
+    };
     u.connect(("127.0.0.1", udp))
         .map_err(|e| format!("ligar ao openvpn UDP {udp}: {e}"))?;
     let _ = u.set_read_timeout(Some(VOLTA_ACORDA));
@@ -385,7 +463,7 @@ fn transportar(
             c.try_clone().map_err(|e| e.to_string())?,
             Arc::clone(&fechou),
         );
-        std::thread::spawn(move || {
+        std::thread::Builder::new().spawn(move || {
             let mut b = vec![0u8; 65535];
             let mut calado = Duration::ZERO;
             while !fechou.load(Ordering::SeqCst) {
@@ -418,28 +496,58 @@ fn transportar(
             let _ = t.shutdown(Shutdown::Both);
         })
     };
+    let volta = volta.map_err(|e| format!("sem thread de volta: {e}"))?;
     // Os 3 bytes ja lidos: o tamanho do primeiro quadro e o 1o byte dele.
     let mut tam = u16::from_be_bytes([cab[0], cab[1]]) as usize;
     let mut quadro = vec![cab[2]];
+    let limite_aperto = Instant::now() + PRAZO_APERTO;
+    let mut apertou = false;
     let r = loop {
         // Quadro vazio o OpenVPN nao manda; e com ele o 3o byte ja lido
         // seria do quadro seguinte.
         if tam == 0 {
             break Err("quadro vazio: nao e OpenVPN".into());
         }
-        let resto = ler_ate(&mut c, tam - quadro.len());
+        // Antes do aperto o prazo e o total dele; depois, o de ocioso.
+        let fim = if apertou {
+            Instant::now() + OCIOSO
+        } else {
+            limite_aperto
+        };
+        let resto = ler_ate(&mut c, tam - quadro.len(), fim);
         quadro.extend_from_slice(&resto);
         if quadro.len() < tam {
-            break Ok(());
+            break if apertou {
+                Ok(())
+            } else {
+                Err(format!(
+                    "aperto nao completou em {} s",
+                    PRAZO_APERTO.as_secs()
+                ))
+            };
         }
+        // P_DATA_V1 (6) ou P_DATA_V2 (9): o canal de dados abriu.
+        apertou |= matches!(quadro[0] >> 3, 6 | 9);
         if let Err(e) = u.send(&quadro) {
             if e.kind() != std::io::ErrorKind::ConnectionRefused {
                 break Err(format!("enviar ao openvpn: {e}"));
             }
         }
-        let t = ler_ate(&mut c, 2);
+        let fim = if apertou {
+            Instant::now() + OCIOSO
+        } else {
+            limite_aperto
+        };
+        let t = ler_ate(&mut c, 2, fim);
         if t.len() < 2 {
-            break Ok(());
+            break if apertou || Instant::now() < limite_aperto {
+                Ok(())
+            } else {
+                Err(format!(
+                    "aperto nao completou em {} s",
+                    PRAZO_APERTO.as_secs()
+                ))
+            };
         }
         tam = u16::from_be_bytes([t[0], t[1]]) as usize;
         quadro.clear();
@@ -470,11 +578,13 @@ fn repartir(c: TcpStream, cab: &[u8], host: &str, porta: u16) -> Result<(), Stri
         c.try_clone().map_err(|e| e.to_string())?,
         s.try_clone().map_err(|e| e.to_string())?,
     );
-    let ida = std::thread::spawn(move || {
-        let mut c = c;
-        let _ = std::io::copy(&mut c, &mut s);
-        let _ = s.shutdown(Shutdown::Write);
-    });
+    let ida = std::thread::Builder::new()
+        .spawn(move || {
+            let mut c = c;
+            let _ = std::io::copy(&mut c, &mut s);
+            let _ = s.shutdown(Shutdown::Write);
+        })
+        .map_err(|e| format!("sem thread: {e}"))?;
     let _ = std::io::copy(&mut s2, &mut c2);
     let _ = c2.shutdown(Shutdown::Both);
     let _ = ida.join();
@@ -534,6 +644,10 @@ mod testes {
         assert!(a.is_loopback() && b.is_loopback());
         assert_ne!(a.octets()[3], 0);
         assert_ne!(a.octets()[3], 255);
+        // IPv6: o mesmo /64 e um balde so; outro /64, outro.
+        let v6 = |t: &str| origem_local(t.parse().unwrap());
+        assert_eq!(v6("2001:db8:1:2::1"), v6("2001:db8:1:2:ffff::9"));
+        assert_ne!(v6("2001:db8:1:2::1"), v6("2001:db8:1:3::1"));
     }
 
     /// Ponta a ponta sem OpenVPN: um «servidor UDP» de eco responde; o
@@ -566,7 +680,9 @@ mod testes {
         });
         let mut c = TcpStream::connect(("127.0.0.1", ponte.porta())).unwrap();
         c.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
-        for msg in [&b"\x38primeiro"[..], &[0x38; 1400][..]] {
+        let primeiro = [0x38u8; 60];
+        // Um quadro de controle e um de dados (P_DATA_V2): passa do aperto.
+        for msg in [&primeiro[..], &[0x48; 1400][..]] {
             let mut q = (msg.len() as u16).to_be_bytes().to_vec();
             q.extend_from_slice(msg);
             // Em dois pedacos: o quadro nao depende de chegar inteiro.
@@ -614,7 +730,10 @@ mod testes {
         .unwrap();
         let mut c = TcpStream::connect(("127.0.0.1", ponte.porta())).unwrap();
         let de_fora = c.local_addr().unwrap();
-        c.write_all(&[0, 3, 0x38, 1, 2]).unwrap();
+        // Primeiro quadro que a ponte aceita como cliente OpenVPN (ps.c).
+        let mut q = vec![0, 20];
+        q.extend_from_slice(&[0x38; 20]);
+        c.write_all(&q).unwrap();
         eco.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
         let mut b = [0u8; 16];
         let (_, vista) = eco.recv_from(&mut b).unwrap();
@@ -657,40 +776,163 @@ mod testes {
         assert_eq!(r, "HTTP/1.0 200 OK\r\n\r\nola");
         assert_eq!(atendeu.join().unwrap(), b"GET / HTTP/1.0\r\n\r\n");
         drop(ponte);
+        // Cada conexao repartida fica no registro, com o IP de fora.
+        let log = std::fs::read_to_string(d.join("openvpn.log")).unwrap();
+        assert!(
+            log.contains("phxvpn queda-tcp: 127.0.0.1:")
+                && log.contains(&format!("-> port-share 127.0.0.1:{wp}")),
+            "{log}"
+        );
         let _ = std::fs::remove_dir_all(&d);
     }
 
-    /// Passado o teto, a conexao seguinte e fechada sem atendimento.
-    #[test]
-    fn teto_de_conexoes_vivas() {
-        let (reg, d) = registro("teto");
-        let ponte = Ponte::abrir(
+    fn ponte(nome: &str, udp: u16) -> (Ponte, std::path::PathBuf) {
+        let (reg, d) = registro(nome);
+        let p = Ponte::abrir(
             Conf {
                 porta: 0,
-                udp: 9,
+                udp,
                 port_share: None,
             },
             reg,
         )
         .unwrap();
-        let mut abertas = Vec::new();
-        for _ in 0..MAX_CONEXOES {
-            abertas.push(TcpStream::connect(("127.0.0.1", ponte.porta())).unwrap());
+        (p, d)
+    }
+
+    /// Fechada pelo outro lado ate `prazo`? (`read` devolve 0 ou erro.)
+    fn fechou_em(c: &mut TcpStream, prazo: Duration) -> bool {
+        c.set_read_timeout(Some(prazo)).unwrap();
+        let mut b = [0u8; 64];
+        match c.read(&mut b) {
+            Ok(0) => true,
+            Ok(_) => false,
+            Err(e) => !matches!(
+                e.kind(),
+                std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+            ),
         }
-        let fim = std::time::Instant::now() + Duration::from_secs(10);
-        while ponte.vivas.lock().unwrap().len() < MAX_CONEXOES && std::time::Instant::now() < fim {
-            std::thread::sleep(Duration::from_millis(10));
+    }
+
+    /// Os dois tetos da tabela: por IP (IPv6 por /64) e o da ponte.
+    #[test]
+    fn tetos_por_ip_e_da_ponte() {
+        let l = TcpListener::bind("127.0.0.1:0").unwrap();
+        let s = TcpStream::connect(l.local_addr().unwrap()).unwrap();
+        let chave = |ip: &str| crate::guarda::chave_de_ip("ponte", ip);
+        let mut t = Tabela::default();
+        for i in 0..MAX_POR_IP as u64 {
+            t.entrar(i, &s, chave("203.0.113.9")).unwrap();
         }
-        let mut sobra = TcpStream::connect(("127.0.0.1", ponte.porta())).unwrap();
-        sobra
-            .set_read_timeout(Some(Duration::from_secs(5)))
-            .unwrap();
-        let mut b = [0u8; 1];
+        assert_eq!(t.entrar(99, &s, chave("203.0.113.9")), Err("teto por IP"));
         assert!(
-            matches!(sobra.read(&mut b), Ok(0)),
-            "a conexao alem do teto foi atendida"
+            t.entrar(100, &s, chave("203.0.113.10")).is_ok(),
+            "outro IP entra"
         );
+        // Outro endereco do MESMO /64 e o mesmo balde.
+        for i in 0..MAX_POR_IP as u64 {
+            t.entrar(200 + i, &s, chave(&format!("2001:db8:1:2::{}", i + 1)))
+                .unwrap();
+        }
+        assert_eq!(
+            t.entrar(300, &s, chave("2001:db8:1:2::ff")),
+            Err("teto por IP")
+        );
+        t.sair(0);
+        assert!(
+            t.entrar(0, &s, chave("203.0.113.9")).is_ok(),
+            "quem sai libera"
+        );
+        let mut t = Tabela::default();
+        for i in 0..MAX_CONEXOES as u64 {
+            t.entrar(i, &s, chave(&format!("10.0.{}.{}", i / 200, i % 200)))
+                .unwrap();
+        }
+        assert_eq!(t.entrar(999, &s, chave("10.9.9.9")), Err("teto da ponte"));
+    }
+
+    /// Pelo soquete: um IP abre mais que o teto dele; as de sobra fecham na
+    /// hora, as do teto ficam (esperando os primeiros bytes).
+    #[test]
+    fn um_ip_nao_passa_do_teto_dele() {
+        let (ponte, d) = ponte("teto-ip", 9);
+        let mut abertas: Vec<TcpStream> = (0..MAX_POR_IP + 4)
+            .map(|_| TcpStream::connect(("127.0.0.1", ponte.porta())).unwrap())
+            .collect();
+        std::thread::sleep(Duration::from_millis(300));
+        let fechadas = abertas
+            .iter_mut()
+            .map(|c| fechou_em(c, Duration::from_millis(300)))
+            .filter(|f| *f)
+            .count();
+        assert_eq!(fechadas, 4, "o teto por IP nao segurou");
         drop(abertas);
+        drop(ponte);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// O prazo dos primeiros bytes e TOTAL: gotejar um byte antes de cada
+    /// leitura vencer nao segura a conexao.
+    #[test]
+    fn gotejar_nao_segura_a_conexao() {
+        let (ponte, d) = ponte("goteja", 9);
+        let mut c = TcpStream::connect(("127.0.0.1", ponte.porta())).unwrap();
+        let t0 = Instant::now();
+        c.write_all(&[0]).unwrap();
+        std::thread::sleep(Duration::from_secs(3));
+        c.write_all(&[60]).unwrap();
+        assert!(fechou_em(&mut c, Duration::from_secs(6)));
+        let t = t0.elapsed();
+        assert!(t < PRIMEIROS_BYTES + Duration::from_secs(1), "{t:?}");
+        drop(ponte);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// Sem port-share, o que nao abre como cliente OpenVPN fecha na hora e
+    /// nada chega ao openvpn.
+    #[test]
+    fn lixo_sem_port_share_fecha_na_hora() {
+        let eco = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let (ponte, d) = ponte("lixo", eco.local_addr().unwrap().port());
+        let mut c = TcpStream::connect(("127.0.0.1", ponte.porta())).unwrap();
+        c.write_all(b"GET / HTTP/1.0\r\n\r\n").unwrap();
+        assert!(fechou_em(&mut c, Duration::from_secs(1)));
+        eco.set_read_timeout(Some(Duration::from_millis(300)))
+            .unwrap();
+        assert!(
+            eco.recv(&mut [0u8; 64]).is_err(),
+            "o lixo chegou ao openvpn"
+        );
+        drop(ponte);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// Aperto que nao chega a dados cai no prazo (2 s no teste, 60 s de
+    /// verdade); o que chega a dados fica.
+    #[test]
+    fn aperto_sem_dados_cai_no_prazo() {
+        let eco = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let (ponte, d) = ponte("aperto", eco.local_addr().unwrap().port());
+        let quadro = |op: u8| {
+            let mut q = 60u16.to_be_bytes().to_vec();
+            q.extend_from_slice(&[op; 60]);
+            q
+        };
+        let mut so_controle = TcpStream::connect(("127.0.0.1", ponte.porta())).unwrap();
+        so_controle.write_all(&quadro(7 << 3)).unwrap();
+        let mut com_dados = TcpStream::connect(("127.0.0.1", ponte.porta())).unwrap();
+        com_dados.write_all(&quadro(7 << 3)).unwrap();
+        com_dados.write_all(&quadro(9 << 3)).unwrap();
+        let t0 = Instant::now();
+        assert!(fechou_em(
+            &mut so_controle,
+            PRAZO_APERTO + Duration::from_secs(2)
+        ));
+        assert!(t0.elapsed() >= PRAZO_APERTO - Duration::from_millis(500));
+        assert!(
+            !fechou_em(&mut com_dados, Duration::from_millis(500)),
+            "com dados caiu"
+        );
         drop(ponte);
         let _ = std::fs::remove_dir_all(&d);
     }

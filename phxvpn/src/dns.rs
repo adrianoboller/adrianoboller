@@ -109,10 +109,36 @@ pub fn dns_do_sistema(resolv_conf: &str) -> Option<SocketAddr> {
     })
 }
 
+/// Rotulos que o sistema do membro pergunta sozinho, e cuja resposta
+/// muda o que ele faz: `wpad` entrega o proxy de toda a navegacao (o login
+/// «wpad» viraria o proxy de todos), `isatap` o tunel IPv6, `localhost` o
+/// proprio membro, `_msdcs` e `_ldap` o controlador de dominio do Windows.
+/// Login com estes nomes nao vira nome no DNS da VPN.
+pub const RESERVADOS: &[&str] = &[
+    "wpad",
+    "isatap",
+    "localhost",
+    "localdomain",
+    "local",
+    "broadcasthost",
+    "msdcs",
+    "ldap",
+    "kerberos",
+    "gc",
+    "autodiscover",
+    "teredo",
+];
+
 /// Os nomes do `ccd/`: rotulo do login -> IPs. Arquivo pela metade da
 /// gravacao (`.gravando`) nao conta.
+///
+/// O rotulo nao e injetivo (`joao.silva` e `joao-silva` dao `joao-silva`):
+/// rotulo de DOIS logins sai da tabela -- responder os dois IPs mandaria o
+/// trafego de um ao outro. E rotulo reservado (`RESERVADOS`) nunca entra.
 pub fn nomes_do_ccd(dir: &Path) -> HashMap<String, Vec<Ipv4Addr>> {
     let mut m: HashMap<String, Vec<Ipv4Addr>> = HashMap::new();
+    let mut donos: HashMap<String, String> = HashMap::new();
+    let mut colididos: Vec<String> = Vec::new();
     let Ok(ls) = std::fs::read_dir(dir) else {
         return m;
     };
@@ -129,6 +155,24 @@ pub fn nomes_do_ccd(dir: &Path) -> HashMap<String, Vec<Ipv4Addr>> {
             continue;
         };
         let Some(r) = rotulo(login) else { continue };
+        if RESERVADOS.contains(&r.as_str()) {
+            continue;
+        }
+        match donos.get(&r) {
+            Some(d) if d != login => {
+                if !colididos.contains(&r) {
+                    eprintln!(
+                        "phxvpn: AVISO dns: «{d}» e «{login}» dariam o mesmo nome «{r}»: nenhum dos dois o recebe"
+                    );
+                    colididos.push(r.clone());
+                }
+                continue;
+            }
+            Some(_) => {}
+            None => {
+                donos.insert(r.clone(), login.to_string());
+            }
+        }
         let Ok(texto) = std::fs::read_to_string(e.path()) else {
             continue;
         };
@@ -144,6 +188,9 @@ pub fn nomes_do_ccd(dir: &Path) -> HashMap<String, Vec<Ipv4Addr>> {
                 v.push(ip);
             }
         }
+    }
+    for r in &colididos {
+        m.remove(r);
     }
     m
 }
@@ -563,6 +610,35 @@ mod testes {
             Some(&vec![Ipv4Addr::new(10, 77, 1, 3)])
         );
         assert!(!m.contains_key("bia"), "arquivo pela metade entrou");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// Dois logins com o mesmo rotulo: o nome some (nao responde os dois
+    /// IPs); login reservado nunca vira nome.
+    #[test]
+    fn colisao_e_nome_reservado_nao_viram_nome() {
+        let d = std::env::temp_dir().join(format!("phxvpn-dns-colide-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        let ccd = |cn: &str, host: u8| {
+            std::fs::write(
+                d.join(cn),
+                format!("ifconfig-push 10.77.1.{host} 255.255.255.0\n"),
+            )
+            .unwrap()
+        };
+        ccd("joao.silva.1.0a1b2c3d", 3);
+        ccd("joao-silva.1.ffee0011", 4);
+        ccd("wpad.1.12345678", 5);
+        ccd("Localhost.1.12345679", 6);
+        ccd("_msdcs.1.1234567a", 7);
+        ccd("ana.1.1234567b", 2);
+        let m = nomes_do_ccd(&d);
+        assert!(!m.contains_key("joao-silva"), "{m:?}");
+        for r in ["wpad", "localhost", "msdcs"] {
+            assert!(!m.contains_key(r), "{r} virou nome");
+        }
+        assert_eq!(m.get("ana"), Some(&vec![Ipv4Addr::new(10, 77, 1, 2)]));
         let _ = std::fs::remove_dir_all(&d);
     }
 
