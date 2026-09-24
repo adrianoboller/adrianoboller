@@ -295,6 +295,29 @@ Detalhes e o que a ligacao ensinou em docs/CONSOLE.md.
     nascem sempre no mesmo lugar. Caminho absoluto (comecando com / ou,
     no Windows, com a letra da unidade) fica exatamente como voce escreveu.
 
+    .PHZ -- A CONFIGURACAO FECHADA. Os quatro JSON de configuracao
+    (config.json, blacklist.json, dblink.json, jobs.json) podem ser gravados
+    como .phz: um 7z com senha fixa no binario, que nao abre num editor.
+
+        ./phxsqld --zipar-config   --config config.json
+        ./phxsqld --deszipar-config --config config.json   (a volta)
+
+    A conversao e PEDIDA: nada vira .phz sozinho. Cada arquivo e gravado,
+    RELIDO e conferido antes de o claro ser apagado, e o comando diz o que
+    apagou. Depois disso continue chamando pelo nome de sempre
+    (--config config.json): o servidor abre o config.phz. A tela de
+    Configuracoes grava de volta no .phz, e um arquivo novo que o servidor
+    crie numa pasta que ja tem .phz nasce .phz.
+
+    O QUE ISTO NAO E: nao e cifra. A senha esta no binario e no fonte
+    publico, e e a mesma em toda instalacao -- e barreira contra quem abre o
+    arquivo, nao contra quem tem o binario. Segredo de verdade (token,
+    senhas de ligacao, chave do fio) vai por variavel de ambiente: os campos
+    *_env do config.
+
+    Para editar a mao: --deszipar-config, edite, --zipar-config. Ou abra com
+    o 7-Zip (a senha esta no fonte, crates/phxsql-core/src/phz.rs).
+
 7.3 Suba
 
     LINUX     ./phxsqld --config config.json

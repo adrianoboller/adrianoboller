@@ -759,7 +759,7 @@ impl Registro {
             caminho: caminho.to_path_buf(),
             ligacoes: Vec::new(),
         };
-        let Ok(texto) = std::fs::read_to_string(caminho) else {
+        let Ok(texto) = phxsql_core::phz::ler_texto(caminho) else {
             return Ok(r);
         };
         if texto.trim().is_empty() {

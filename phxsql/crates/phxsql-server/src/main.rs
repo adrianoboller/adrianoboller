@@ -12,6 +12,8 @@
 //! phxsqld --bloqueios              lista os IPs bloqueados
 //! phxsqld --desbloquear <ip>       tira um IP da lista
 //! phxsqld --mcp                    servidor MCP pela entrada/saida padrao
+//! phxsqld --zipar-config           grava os JSON de configuracao como .phz
+//! phxsqld --deszipar-config        a volta, de .phz para .json
 //! ```
 
 use std::process::ExitCode;
@@ -31,6 +33,8 @@ USO:
   phxsqld --gerar-chave             gera um par de chaves Ed25519 (2o fator)
   phxsqld --chave-do-fio            a chave publica do aperto de mao (o pino)
   phxsqld --pagina > centro.html    o Centro de Controle como arquivo unico
+  phxsqld --zipar-config [--config c]    grava os JSON de configuracao como .phz
+  phxsqld --deszipar-config [--config c]  a volta: de .phz para .json
   phxsqld --exemplo <1|2|3>         imprime um config.json de exemplo
                                     1 = isolado, 2 = source, 3 = replica
   phxsqld --mcp [--usuario u] [--escrita]   servidor MCP (JSON-RPC por linha,
@@ -275,6 +279,27 @@ fn main() -> ExitCode {
     // Valor reconhecido e ignorado grita pelo mesmo motivo do campo estranho:
     // um "idioma" escrito errado calaria em portugues para sempre.
     for aviso in &config.avisos {
+        eprintln!("AVISO: {aviso}");
+    }
+
+    // A conversao PEDIDA para `.phz` (pedido 450), e a volta.
+    for (flag, para_phz) in [("--zipar-config", true), ("--deszipar-config", false)] {
+        if args.iter().any(|a| a == flag) {
+            let relato = phxsql_server::config::converter_configs(&config, para_phz);
+            let falhou = relato
+                .iter()
+                .any(|l| l.contains("FALHOU") || l.contains("RECUSADO"));
+            for l in relato {
+                println!("{l}");
+            }
+            return if falhou {
+                ExitCode::FAILURE
+            } else {
+                ExitCode::SUCCESS
+            };
+        }
+    }
+    for aviso in phxsql_server::config::avisos_do_phz(&config) {
         eprintln!("AVISO: {aviso}");
     }
 

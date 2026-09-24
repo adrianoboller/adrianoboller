@@ -425,7 +425,7 @@ impl Registro {
             ultimos: Vec::new(),
             corridas: Vec::new(),
         };
-        let Ok(texto) = std::fs::read_to_string(caminho) else {
+        let Ok(texto) = phxsql_core::phz::ler_texto(caminho) else {
             r.semear_corridas();
             return Ok(r);
         };

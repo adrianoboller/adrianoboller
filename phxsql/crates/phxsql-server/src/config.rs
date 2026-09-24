@@ -2209,6 +2209,20 @@ fn gravar_chave(caminho: &Path, chave: &[u8; 32]) -> std::io::Result<()> {
 /// a permissao velha, porque `mode` so vale na criacao. Entao ele sai antes;
 /// so a ausencia dele e engolida, porque ausencia e o caso normal.
 pub(crate) fn gravar_privado(caminho: &Path, corpo: &[u8]) -> std::io::Result<()> {
+    // O `.phz` (pedido 450) entra AQUI, no escritor unico, e nao em cada um
+    // dos quatro arquivos: cada um mantem o formato em que ja esta no disco,
+    // e um novo nasce `.phz` quando o config principal e `.phz`.
+    let alvo = phxsql_core::phz::caminho_para_gravar(caminho);
+    if phxsql_core::phz::e_phz(&alvo) {
+        let bytes = phxsql_core::phz::empacotar(&phxsql_core::phz::nome_interno(&alvo), corpo)?;
+        gravar_no_disco(&alvo, &bytes)
+    } else {
+        gravar_no_disco(&alvo, corpo)
+    }
+}
+
+/// A gravacao atomica e 0600 em si, no arquivo EXATO que se pede.
+fn gravar_no_disco(caminho: &Path, corpo: &[u8]) -> std::io::Result<()> {
     use std::io::Write as _;
     let temporario = caminho.with_extension("tmp");
     match std::fs::remove_file(&temporario) {
@@ -2223,6 +2237,112 @@ pub(crate) fn gravar_privado(caminho: &Path, corpo: &[u8]) -> std::io::Result<()
     // Troca atomica: um corte de energia no meio deixa o arquivo antigo
     // inteiro, e nao um pela metade -- que derrubaria o proximo arranque.
     std::fs::rename(&temporario, caminho)
+}
+
+/// Converte os quatro JSON de configuracao (o proprio config e os irmaos
+/// `blacklist`, `dblink`, `jobs`) para `.phz` (`para_phz`) ou de volta.
+///
+/// E a conversao PEDIDA do pedido 450 -- nada vira `.phz` sozinho. Cada
+/// arquivo: grava o outro formato, RELE e confere que o texto voltou
+/// identico, e so entao apaga o original, dizendo que apagou. Uma conferencia
+/// que falha deixa o original onde estava e o novo e removido: o pior caso e
+/// nao converter, nunca perder a configuracao.
+pub fn converter_configs(config: &Config, para_phz: bool) -> Vec<String> {
+    let mut relato = Vec::new();
+    let mut lista: Vec<PathBuf> = Vec::new();
+    if let Some(c) = &config.caminho {
+        lista.push(c.clone());
+    }
+    lista.extend([
+        config.blacklist.clone(),
+        config.dblink.clone(),
+        config.jobs.clone(),
+    ]);
+    for pedido in lista {
+        let json = pedido.with_extension("json");
+        let phz = pedido.with_extension(phxsql_core::phz::EXTENSAO);
+        let (de, para) = if para_phz {
+            (&json, &phz)
+        } else {
+            (&phz, &json)
+        };
+        if !de.exists() {
+            let ja = if para.exists() {
+                "ja convertido"
+            } else {
+                "nao existe"
+            };
+            relato.push(format!("{}: {ja}", de.display()));
+            continue;
+        }
+        if para.exists() {
+            relato.push(format!(
+                "{}: RECUSADO -- {} ja existe; apague um dos dois antes",
+                de.display(),
+                para.display()
+            ));
+            continue;
+        }
+        let r = (|| -> std::io::Result<()> {
+            let texto = phxsql_core::phz::ler_texto(de)?;
+            let bytes = if para_phz {
+                phxsql_core::phz::empacotar(
+                    &phxsql_core::phz::nome_interno(para),
+                    texto.as_bytes(),
+                )?
+            } else {
+                texto.clone().into_bytes()
+            };
+            gravar_no_disco(para, &bytes)?;
+            if phxsql_core::phz::ler_texto(para)? != texto {
+                let _ = std::fs::remove_file(para);
+                return Err(std::io::Error::other(
+                    "a releitura nao bateu; nada foi apagado",
+                ));
+            }
+            std::fs::remove_file(de)
+        })();
+        match r {
+            Ok(()) => relato.push(format!(
+                "{} -> {} (conferido; {} apagado)",
+                de.display(),
+                para.display(),
+                de.display()
+            )),
+            Err(e) => relato.push(format!("{}: FALHOU -- {e}", de.display())),
+        }
+    }
+    relato
+}
+
+/// Os avisos de arranque do `.phz`: o config em claro (dito uma vez, com o
+/// comando que converte) e o `.json` que sobrou ao lado de um `.phz`.
+pub fn avisos_do_phz(config: &Config) -> Vec<String> {
+    let mut v = Vec::new();
+    let mut lista: Vec<PathBuf> = Vec::new();
+    if let Some(c) = &config.caminho {
+        if !phxsql_core::phz::e_phz(&phxsql_core::phz::resolver(c)) {
+            v.push(format!(
+                "{} esta em claro (legivel em qualquer editor); `phxsqld --zipar-config` o grava como .phz",
+                c.display()
+            ));
+        }
+        lista.push(c.clone());
+    }
+    lista.extend([
+        config.blacklist.clone(),
+        config.dblink.clone(),
+        config.jobs.clone(),
+    ]);
+    for p in lista {
+        if let Some(sobra) = phxsql_core::phz::sobras(&p) {
+            v.push(format!(
+                "{} sobrou em claro ao lado do .phz: vale o .phz, e o claro continua legivel -- apague-o",
+                sobra.display()
+            ));
+        }
+    }
+    v
 }
 
 /// Um servidor que a interface pode alcancar.
@@ -3776,7 +3896,7 @@ impl Config {
     /// Le o `config.json` do caminho informado.
     pub fn ler(caminho: impl AsRef<Path>) -> Result<Config> {
         let caminho = caminho.as_ref();
-        let texto = std::fs::read_to_string(caminho).map_err(|e| {
+        let texto = phxsql_core::phz::ler_texto(caminho).map_err(|e| {
             PhxError::NaoEncontrado(format!("nao consegui ler {}: {e}", caminho.display()))
         })?;
         let json = Json::analisar(&texto)?;
@@ -5003,7 +5123,7 @@ pub fn valor_em(j: &Json, campo: &str) -> Option<Json> {
 ///
 /// Com este mapa a tela mostra o que esta no arquivo e avisa o que ainda vale.
 pub fn divergencias_do_arquivo(caminho: &Path, vivo: &Json) -> Vec<(String, Json)> {
-    let Ok(texto) = std::fs::read_to_string(caminho) else {
+    let Ok(texto) = phxsql_core::phz::ler_texto(caminho) else {
         return Vec::new();
     };
     let Ok(arquivo) = Json::analisar(&texto) else {
@@ -5090,7 +5210,7 @@ impl Config {
     /// cinto que confere o texto contra a arvore). Entao ha UM escritor, e
     /// dois porteiros na frente dele.
     fn gravar_arvore(caminho: &Path, mudancas: &[(String, Json)]) -> Result<Config> {
-        let texto = std::fs::read_to_string(caminho).map_err(|e| {
+        let texto = phxsql_core::phz::ler_texto(caminho).map_err(|e| {
             PhxError::NaoEncontrado(format!("nao consegui ler {}: {e}", caminho.display()))
         })?;
         let mut arvore = Json::analisar(&texto)?;
@@ -5141,7 +5261,7 @@ impl Config {
         secao: &str,
         mexer: impl FnOnce(&mut Json) -> Result<()>,
     ) -> Result<Config> {
-        let texto = std::fs::read_to_string(caminho).map_err(|e| {
+        let texto = phxsql_core::phz::ler_texto(caminho).map_err(|e| {
             PhxError::NaoEncontrado(format!("nao consegui ler {}: {e}", caminho.display()))
         })?;
         let mut arvore = Json::analisar(&texto)?;
@@ -5213,7 +5333,7 @@ impl Config {
             ));
         }
 
-        let texto = std::fs::read_to_string(caminho).map_err(|e| {
+        let texto = phxsql_core::phz::ler_texto(caminho).map_err(|e| {
             PhxError::NaoEncontrado(format!("nao consegui ler {}: {e}", caminho.display()))
         })?;
         let mut arvore = Json::analisar(&texto)?;

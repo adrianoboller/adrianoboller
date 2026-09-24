@@ -4515,3 +4515,33 @@ espaço nas pontas inclusive), o pulso com prova de verdade, o `%C3%AA` da web.
   o supervisor não sobe outra para um id marcado. O gatilho conhecido fechou;
   a fragilidade é do laço, e o conserto (desmarcar no `Drop` ou `catch_unwind`
   no laço) muda o que acontece com um pânico que se repete a cada pulso.
+
+## 22. `.phz`: a configuração fechada, e o que ela NÃO protege (pedido 450)
+
+Decisão do dono, 24/09/2026: os JSON de configuração podem ser gravados como
+`.phz` — 7z (o PhxZip) com **senha fixa no binário** e nomes cifrados. O
+integrador apresentou o custo antes, e o dono confirmou «como pedido, senha no
+código»:
+
+- o repositório é público — a senha está no fonte e no histórico do git;
+- `strings` no binário a entrega, e ela é a mesma em toda instalação;
+- o AES do 7z é forte, mas a chave é conhecida — então **não é cifra**.
+
+**O que protege:** quem abre o arquivo num editor, num visualizador, num
+anexo de e-mail ou numa cópia de backup não lê token, hashes nem nomes de
+campo (há teste que confere que a palavra `token` não aparece nos bytes).
+**O que não protege:** quem tem o binário ou o fonte. Segredo de verdade
+continua indo por variável de ambiente (`*_env`, pedido 372).
+
+**Choque registrado com a pétrea** «senha nunca em texto puro, nem em
+arquivo»: a constante `SENHA_FIXA` em `phxsql-core/src/phz.rs` é a exceção
+que o dono decidiu, e o comentário ao lado cita este pedido para ninguém a
+copiar como precedente.
+
+Garantias do caminho: conversão só pedida (`--zipar-config`), com releitura
+conferida antes de apagar o claro; o escritor único (`config::gravar_privado`)
+mantém o formato de cada arquivo e continua atômico e 0600; o `blacklist.json`,
+que gravava por conta própria com `std::fs::write` na permissão do `umask`,
+passou a usar o mesmo escritor — o irmão que o conserto do achado A4 (0600)
+não tinha alcançado. Teto de 64 MiB descompactados por `.phz`.
+

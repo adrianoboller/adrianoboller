@@ -491,7 +491,7 @@ impl Blacklist {
         if let Some(dir) = caminho.parent().filter(|d| !d.as_os_str().is_empty()) {
             std::fs::create_dir_all(dir)?;
         }
-        let (bloqueios, whitelist) = match std::fs::read_to_string(&caminho) {
+        let (bloqueios, whitelist) = match phxsql_core::phz::ler_texto(&caminho) {
             Err(_) => (Vec::new(), Vec::new()),
             Ok(texto) => match Json::analisar(&texto) {
                 Err(_) => (Vec::new(), Vec::new()),
@@ -613,7 +613,11 @@ impl Blacklist {
                 Json::Lista(self.bloqueios.iter().map(Bloqueio::para_json).collect()),
             ),
         ]);
-        std::fs::write(&self.caminho, doc.escrever_identado())?;
+        // O escritor unico da configuracao: atomico, 0600 desde o primeiro
+        // byte e `.phz` quando for o caso (pedido 450). Era o unico dos quatro
+        // arquivos gravando com `std::fs::write` por conta propria -- o irmao
+        // que o conserto do achado A4 (0600) nao alcancou.
+        crate::config::gravar_privado(&self.caminho, doc.escrever_identado().as_bytes())?;
         Ok(())
     }
 
@@ -845,7 +849,11 @@ impl Blacklist {
 
 /// Carimbo de alteracao do arquivo, ou `None` se ele nao existe.
 fn mtime(caminho: &Path) -> Option<SystemTime> {
-    std::fs::metadata(caminho).ok()?.modified().ok()
+    // O carimbo e do arquivo que de fato existe -- o `.phz`, quando for ele.
+    std::fs::metadata(phxsql_core::phz::resolver(caminho))
+        .ok()?
+        .modified()
+        .ok()
 }
 
 #[cfg(test)]

@@ -36,6 +36,7 @@ pub mod json;
 pub mod keyenc;
 pub mod paginacao;
 pub mod paralelo;
+pub mod phz;
 pub mod pix;
 pub mod qr;
 pub mod schema;

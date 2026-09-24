@@ -8,3 +8,5 @@ license.workspace = true
 
 [dependencies]
 phxhash.workspace = true
+# O `.phz` dos JSON de configuracao (pedido 450): o PhxZip, sem copia.
+phxzip.workspace = true

@@ -2732,6 +2732,28 @@ consertar o servidor.
 O porquê de ser arquivo e não tabela do `phxsys` está em
 [`DIRETIVAS.md`](DIRETIVAS.md) §5.
 
+## 18b. `.phz` — os JSON de configuração fechados (pedido 450)
+
+Um `.phz` é um arquivo **7z** comum (assinatura `7z\xBC\xAF\x27\x1C`,
+versão 0.4), gravado pelo PhxZip (`crates/phxzip`), com:
+
+| | |
+|---|---|
+| conteúdo | UMA entrada, com o nome do `.json` que ele substitui (`config.json` dentro de `config.phz`) |
+| compressão | LZMA2, nível 5 |
+| cifra | 7zAES (AES-256-CBC, chave por SHA-256 iterado 2^19) com a senha fixa `phz::SENHA_FIXA` |
+| cabeçalho | cifrado: sem a senha não se vê nem o nome da entrada |
+| teto de leitura | 64 MiB descompactados, 16 entradas, 1 MiB de cabeçalho |
+
+**Quem lê escolhe pelo disco** (`phz::resolver`): pedido `x.json` com
+`x.phz` presente abre o `.phz`, mesmo que o `.json` também exista — o `.phz`
+só nasce pela conversão pedida, então é o estado mais novo, e o `.json` ao
+lado é sobra que o arranque avisa. **Quem grava mantém o formato**
+(`phz::caminho_para_gravar`); um arquivo novo nasce `.phz` se a pasta dele já
+tem um `.phz`.
+
+Abre em qualquer 7-Zip com a senha do fonte — há teste que o confere.
+
 ## 19. O que este formato ainda não faz
 
 Documentado aqui para não haver surpresa:

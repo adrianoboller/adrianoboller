@@ -33,3 +33,10 @@ phxsql-server = { path = "crates/phxsql-server" }
 [profile.release]
 opt-level = 3
 lto = "thin"
+
+# A derivacao do 7zAES faz 2^19 voltas de SHA-256 a cada .phz lido ou gravado:
+# sem otimizacao, cada uma custava segundos nos testes (a bateria do .phz
+# levou 49,9 s). So a crate do hash sai otimizada no perfil de teste; o resto
+# continua depuravel.
+[profile.dev.package.phxhash]
+opt-level = 3

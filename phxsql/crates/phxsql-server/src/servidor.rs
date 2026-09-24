@@ -5500,6 +5500,24 @@ impl Servidor {
         // vale no proximo arranque» -- mentindo sobre o que ela acabou de
         // fazer. Apareceu exercitando, e nao lendo.
         j.definir("telemetria", self.telemetria.pintura().para_json());
+        // Qual arquivo esta valendo, e em que formato (pedido 450): a tela diz
+        // «.phz» ou «em claro», e o arquivo que sobrou ao lado do .phz.
+        if let Some(c) = &self.config.caminho {
+            let lido = phxsql_core::phz::resolver(c);
+            j.definir(
+                "arquivo_config",
+                Json::objeto(vec![
+                    ("caminho", Json::texto_de(lido.display().to_string())),
+                    ("phz", Json::Bool(phxsql_core::phz::e_phz(&lido))),
+                    (
+                        "sobra",
+                        phxsql_core::phz::sobras(c)
+                            .map(|p| Json::texto_de(p.display().to_string()))
+                            .unwrap_or(Json::Nulo),
+                    ),
+                ]),
+            );
+        }
         // O aviso do pedido 214(b), estruturado e nao em prosa: a tela monta a
         // frase pela fabrica de idiomas. Campo AUSENTE quando a lista esta
         // preenchida -- assim quem le nao precisa distinguir `false` de
@@ -5640,7 +5658,7 @@ impl Servidor {
         // arranque para os campos que so valem no proximo. O diario tem de
         // dizer de que valor se saiu, e o arquivo e quem sabe.
         let antes: Vec<Json> = {
-            let arvore = std::fs::read_to_string(&caminho)
+            let arvore = phxsql_core::phz::ler_texto(&caminho)
                 .ok()
                 .and_then(|t| Json::analisar(&t).ok());
             mudancas

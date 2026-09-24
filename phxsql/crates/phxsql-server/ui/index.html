@@ -8196,6 +8196,21 @@ function ligarCoresDaTelemetria() {
   }
 }
 
+/* O arquivo de configuracao que esta valendo, e o formato dele (pedido 450).
+   O caminho e DADO (entra por esc, nunca traduzido); a frase vem da fabrica. */
+function arquivoDeConfig(c) {
+  const a = c.arquivo_config;
+  if (!a) return "";
+  const estado = a.phz
+    ? `<span class="pino ok">.phz</span> ${esc(txt("tela.cfg_phz", "gravado como .phz: não abre num editor (é barreira, não é cifra)"))}`
+    : `<span class="pino aviso">JSON</span> ${marcado(txt("tela.cfg_claro", "em claro: qualquer editor o lê — `phxsqld --zipar-config` o grava como .phz"))}`;
+  const sobra = a.sobra
+    ? `<p class="leg">${esc(txt("tela.cfg_sobra", "sobrou em claro ao lado do .phz (vale o .phz) — apague-o:"))} <code>${esc(a.sobra)}</code></p>`
+    : "";
+  return `<div class="nota"><p><b>${esc(txt("tela.cfg_arquivo", "Arquivo de configuração"))}</b>
+    · <code>${esc(a.caminho)}</code></p><p>${estado}</p>${sobra}</div>`;
+}
+
 async function verConfigServidor() {
   const [c, p] = await Promise.all([api("config"), api("ping")]);
   const seg = c.seguranca || {};
@@ -8231,7 +8246,8 @@ async function verConfigServidor() {
 
   folha(txt("tela.cfg_titulo", "Configurações gerais do servidor"),
     txt("tela.cfg_sub", "o que está valendo agora · edita e grava no config.json"),
-    `<div class="acoes idi-escolha">
+    `${arquivoDeConfig(c)}
+     <div class="acoes idi-escolha">
        <b>${esc(txt("tela.cfg_idioma", "Idioma desta interface"))}</b>
        <div class="idiomas idi-aqui" id="idiomasAqui" role="radiogroup"
             aria-label="${esc(txt("tela.cfg_idioma", "Idioma desta interface"))}"></div>
