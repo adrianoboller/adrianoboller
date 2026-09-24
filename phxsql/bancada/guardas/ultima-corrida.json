@@ -1235,9 +1235,105 @@
       "id": "pulso-fora-da-lista-e-recusado",
       "titulo": "`op_cluster_pulso` deixa de conferir o id contra a lista viva de nos",
       "veredito": "PROVADA",
-      "segundos": 34.46,
+      "segundos": 51.58,
       "notas": [],
-      "quando": "2026-09-17 04:57"
+      "quando": "2026-09-24 00:45"
+    },
+    {
+      "id": "pulso-sem-prova-de-identidade",
+      "titulo": "o pulso do cluster aceitando identidade auto-declarada",
+      "veredito": "PROVADA",
+      "segundos": 19.19,
+      "notas": [],
+      "quando": "2026-09-24 00:51"
+    },
+    {
+      "id": "erro-do-pulso-mapeia-quem-nao-tem-pino",
+      "titulo": "a recusa da prova do pulso dizendo quais nós ainda não têm pino",
+      "veredito": "PROVADA",
+      "segundos": 18.39,
+      "notas": [],
+      "quando": "2026-09-24 00:51"
+    },
+    {
+      "id": "pino-cego-sem-a-recusa-do-no-sem-pino",
+      "titulo": "a forja contra o pino cego entrando pelo nó sem pino",
+      "veredito": "PROVADA",
+      "segundos": 55.88,
+      "notas": [],
+      "quando": "2026-09-24 00:45"
+    },
+    {
+      "id": "nonce-do-pulso-sem-regua-de-bytes",
+      "titulo": "o nonce do pulso retido do tamanho que o remetente escolheu",
+      "veredito": "PROVADA",
+      "segundos": 61.6,
+      "notas": [],
+      "quando": "2026-09-24 00:45"
+    },
+    {
+      "id": "antirrepeticao-envenenada-vira-pulso-inedito",
+      "titulo": "a antirrepetição do pulso desligada, calada, por uma trava envenenada",
+      "veredito": "PROVADA",
+      "segundos": 64.96,
+      "notas": [],
+      "quando": "2026-09-24 00:45"
+    },
+    {
+      "id": "trava-da-guarda-recupera-calada",
+      "titulo": "a trava envenenada da guarda recuperada sem dizer nada",
+      "veredito": "PROVADA",
+      "segundos": 50.17,
+      "notas": [],
+      "quando": "2026-09-24 00:45"
+    },
+    {
+      "id": "tofu-envenenado-vira-nunca-provou",
+      "titulo": "o TOFU do pulso desligado, calado, por uma trava envenenada",
+      "veredito": "PROVADA",
+      "segundos": 49.14,
+      "notas": [],
+      "quando": "2026-09-24 00:45"
+    },
+    {
+      "id": "guarda-do-pulso-inerte-e-muda",
+      "titulo": "o pulso sem prova aceito sem deixar rastro no log",
+      "veredito": "PROVADA",
+      "segundos": 18.6,
+      "notas": [],
+      "quando": "2026-09-24 00:51"
+    },
+    {
+      "id": "guarda-do-pulso-inerte-aviso-por-pulso",
+      "titulo": "o aviso da guarda inerte repetido a cada pulso",
+      "veredito": "PROVADA",
+      "segundos": 18.6,
+      "notas": [],
+      "quando": "2026-09-24 00:51"
+    },
+    {
+      "id": "resposta-do-pulso-sem-crivo-da-lista",
+      "titulo": "a resposta do pulso com id fantasma rebaixando o master",
+      "veredito": "PROVADA",
+      "segundos": 16.22,
+      "notas": [],
+      "quando": "2026-09-24 00:51"
+    },
+    {
+      "id": "resposta-sem-prova-assinada-so-com-pino",
+      "titulo": "a resposta de sucesso a um pulso sem prova dizendo quais nós têm pino",
+      "veredito": "PROVADA",
+      "segundos": 18.57,
+      "notas": [],
+      "quando": "2026-09-24 00:51"
+    },
+    {
+      "id": "resposta-sem-prova-assina-e-esconde",
+      "titulo": "a resposta a um pulso sem prova igual na forma e diferente no relógio",
+      "veredito": "PROVADA",
+      "segundos": 18.74,
+      "notas": [],
+      "quando": "2026-09-24 00:51"
     },
     {
       "id": "cifra-do-fio-imposta",

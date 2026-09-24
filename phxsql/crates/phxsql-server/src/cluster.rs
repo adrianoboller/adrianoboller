@@ -219,13 +219,75 @@ pub struct EstadoCluster {
     /// prova naquele id vira rebaixamento e e recusada. E o TOFU do
     /// `known_hosts`, aplicado ao pulso -- e a mesma escolha ja registrada em
     /// `docs/CIFRA-DO-FIO.md` §1 para o pino.
-    provaram: Mutex<std::collections::HashSet<String>>,
+    provaram: crate::pulso::TravaDaGuarda<std::collections::HashSet<String>>,
+    /// Os pares ja ANUNCIADOS no log como aceitos sem prova -- pedido 436
+    /// (SEC M3). E o que faz o aviso da guarda inerte sair uma vez por par, e
+    /// nao a cada pulso.
+    ///
+    /// So id que esta na lista entra -- o crivo do pedido 441 vem antes, nos
+    /// dois caminhos --, e por isso ele nao cresce alem dela. Antes do 441 a
+    /// RESPOSTA do pulso chegava aqui com um `id` que ninguem conferia, e
+    /// guardar qualquer um seria a memoria de quem confere escolhida por quem
+    /// manda.
+    sem_prova_anunciados: crate::pulso::TravaDaGuarda<std::collections::HashSet<String>>,
     caminho_estado: PathBuf,
     /// Quando este estado nasceu. O arbitro da UMA janela de graca a partir
     /// daqui: no arranque o primeiro tique roda antes do primeiro pulso, e
     /// sem a graca um cluster perfeitamente sao nasceria "degradado" -- com
     /// e-mail e tudo.
     nascido_ms: i64,
+}
+
+/// O que a conferencia apurou de quem mandou o pulso -- e o que decide se a
+/// RESPOSTA leva prova (`EstadoCluster::campos_da_resposta`, o 435 reaberto).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Identidade {
+    /// A prova fechou: e o no que diz ser.
+    Provada,
+    /// Veio sem prova e passou pela janela de compatibilidade (padrao de
+    /// fabrica, par que nunca provou nesta vida do processo).
+    SemProva,
+}
+
+/// Por que um pulso -- ou a RESPOSTA dele -- nao foi aceito. Pedido 441.
+///
+/// A variante propria para «fora da lista» existe porque quem a APRESENTA e o
+/// chamador: a frase vai pela fabrica de idiomas (`erro.pulso_de_no_desconhecido`)
+/// e a recusa conta na politica (`contar_pulso_desconhecido`), e nenhum dos
+/// dois e deste arquivo. A DECISAO, essa, e daqui -- e e o que o 441 mudou.
+#[derive(Debug)]
+pub enum RecusaDoPulso {
+    /// O id nao e um dos OUTROS nos desta lista: desconhecido, ou o proprio
+    /// id deste no. Uma variante so para os dois, pela razao do A11: duas
+    /// frases fariam do pulso um oraculo de ids.
+    ForaDaLista {
+        /// O proprio id deste servidor: dois nos com o mesmo id no ar, ou
+        /// alguem respondendo por este no. Serve so ao log de quem opera.
+        e_este_no: bool,
+    },
+    /// Toda outra recusa: exigencia, TOFU, prova, janela, nonce.
+    Outra(PhxError),
+}
+
+impl From<PhxError> for RecusaDoPulso {
+    fn from(e: PhxError) -> RecusaDoPulso {
+        RecusaDoPulso::Outra(e)
+    }
+}
+
+impl std::fmt::Display for RecusaDoPulso {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RecusaDoPulso::ForaDaLista { e_este_no: true } => f.write_str(
+                "o id e o DESTE servidor -- dois nos com o mesmo id no ar, ou \
+                 alguem falando por este no",
+            ),
+            RecusaDoPulso::ForaDaLista { e_este_no: false } => {
+                f.write_str("o id nao e um dos OUTROS nos deste cluster")
+            }
+            RecusaDoPulso::Outra(e) => write!(f, "{e}"),
+        }
+    }
 }
 
 impl EstadoCluster {
@@ -282,7 +344,14 @@ impl EstadoCluster {
             ultimo_email_ms: AtomicI64::new(0),
             promocao_a_avisar: Mutex::new(None),
             antirrepeticao: crate::pulso::Antirrepeticao::default(),
-            provaram: Mutex::new(std::collections::HashSet::new()),
+            provaram: crate::pulso::TravaDaGuarda::nova(
+                "do TOFU do pulso",
+                std::collections::HashSet::new(),
+            ),
+            sem_prova_anunciados: crate::pulso::TravaDaGuarda::nova(
+                "dos avisos de pulso sem prova",
+                std::collections::HashSet::new(),
+            ),
             caminho_estado,
             nascido_ms: agora,
         }
@@ -446,17 +515,75 @@ impl EstadoCluster {
     }
 
     /// Este no ja provou a identidade dele alguma vez desde que subimos?
+    ///
+    /// A trava envenenada NAO responde «nunca provou» -- pedido 436 (SEC M2).
+    /// Era o `unwrap_or(false)` de antes, e com ele um panico qualquer
+    /// desligava o TOFU para o resto da vida do processo, calado: todo par
+    /// voltava a ser ouvido sem prova. O que se faz em vez disso, e por que
+    /// nao e recusar, esta em `pulso::TravaDaGuarda`.
     pub fn ja_provou(&self, id: &str) -> bool {
-        self.provaram
-            .lock()
-            .map(|p| p.contains(id))
-            .unwrap_or(false)
+        self.provaram.travar().contains(id)
     }
 
     fn marcar_provado(&self, id: &str) {
-        if let Ok(mut p) = self.provaram.lock() {
-            p.insert(id.to_string());
+        self.provaram.travar().insert(id.to_string());
+    }
+
+    /// Diz, UMA vez por par e por vida do processo, que a guarda do 278 esta
+    /// inerte para ele -- pedido 436 (SEC M3 de 23/09/2026).
+    ///
+    /// O caminho «sem prova, `exigir_prova_do_pulso` desligado, nunca provou»
+    /// era um `return Ok(())` mudo. Um cluster que atualizou, nunca preencheu
+    /// `chave_do_fio` e deixou o interruptor no padrao esta exatamente tao
+    /// exposto quanto antes do 278, e nada em execucao deixava quem opera
+    /// descobrir: o `docs/CLUSTER.md` diz o alcance, mas documento nao e
+    /// evidencia de instalacao.
+    ///
+    /// # Uma vez, e nao a cada pulso
+    ///
+    /// Com `pulso_s` de fabrica, um aviso por pulso seria uma linha por
+    /// segundo por par, para sempre -- o aviso perpetuo que o `config.rs` ja
+    /// recusa por escrito, porque gasta a confianca do aviso verdadeiro. Uma
+    /// vez por par e por arranque fala quando se olha o log, que e quando o
+    /// no sobe, e cala depois. O custo no pulso de todo dia e uma trava sem
+    /// disputa e uma consulta num conjunto do tamanho da lista.
+    ///
+    /// # Para quem vai, e o que continua nao indo
+    ///
+    /// Vai para o stderr deste processo, que e de quem OPERA, e por isso pode
+    /// dizer o estado do pino do par. O fio continua sem saber nada: a recusa
+    /// de publicar o estado por no (`Cluster::para_json`, e a frase unica do
+    /// 435) e sobre quem PERGUNTA, e este aviso nao responde pergunta nenhuma.
+    ///
+    /// O que ele ainda nao faz: calar para quem ESCREVEU a decisao, como o
+    /// `config.rs` cala. Um `"exigir_prova_do_pulso": false` escrito chega
+    /// aqui igual ao padrao herdado -- separar os dois e leitura do
+    /// `config.rs`, e nao desta funcao.
+    fn anunciar_que_passou_sem_prova(&self, no: &crate::config::NoCluster) {
+        let id = no.id.as_str();
+        let mut anunciados = self.sem_prova_anunciados.travar();
+        if anunciados.contains(id) {
+            return;
         }
+        anunciados.insert(id.to_string());
+        drop(anunciados);
+        let onde = match no.pino_do_fio() {
+            Ok(None) => format!("O cluster.nos[{id}].chave_do_fio esta vazio NESTE no"),
+            Ok(Some(_)) => format!(
+                "O pino de {id} esta aqui, entao e do lado de la que a prova nao \
+                 sai: falta o chave_do_fio DESTE no na lista de {id}, ou {id} e \
+                 de versao anterior a prova"
+            ),
+            Err(e) => format!("O cluster.nos[{id}].chave_do_fio deste no nao se le ({e})"),
+        };
+        eprintln!(
+            "cluster: pulso SEM prova de {id:?} aceito -- a guarda do pedido 278 \
+             esta INERTE para este par: ele nunca provou nesta vida do processo \
+             e cluster.exigir_prova_do_pulso esta desligado, entao quem tiver a \
+             credencial do cluster fala como {id:?}. {onde}. Com o pino dos dois \
+             lados em todos os pares, ligue exigir_prova_do_pulso. Este aviso \
+             sai uma vez por par e por arranque"
+        );
     }
 
     /// A UNICA recusa que o fio ve quando a prova de um pulso nao e aceita --
@@ -471,7 +598,10 @@ impl EstadoCluster {
     /// do conserto do 278 enumerava para o atacante onde o 278 nao pega.
     ///
     /// Este bit **nao** existe no veredito -- os dois casos recusam --, entao
-    /// o texto era o unico canal, e fecha-lo fecha o mapa inteiro. E o mesmo
+    /// no ramo COM prova o texto era o unico canal. «Fecha o mapa inteiro»,
+    /// que esta linha dizia, era falso: o mesmo bit saia pelo ramo SEM prova,
+    /// na resposta de SUCESSO (SEC A2, o 435 reaberto), e quem o fecha e
+    /// `campos_da_resposta`. E o mesmo
     /// desenho que o A11 usou uma camada acima (`op_cluster_pulso`) e que o
     /// `config.rs` usa ao recusar publicar `cifra_do_no` por no: o diagnostico
     /// e de quem OPERA, e sai no log deste processo; o fio, que e de quem
@@ -481,15 +611,37 @@ impl EstadoCluster {
     /// `"id"` que o proprio remetente mandou, e o texto agora e funcao so
     /// dele -- zero bit sobre o estado deste no. Tirar custaria ao operador
     /// legitimo saber de QUAL par e a recusa que o cliente dele mostrou.
-    fn recusa_da_prova(&self, id: &str, detalhe: &str) -> PhxError {
+    fn recusa_da_prova(&self, id: &str, detalhe: &str) -> RecusaDoPulso {
         eprintln!("cluster: a prova do pulso de {id:?} nao foi aceita -- {detalhe}");
-        PhxError::Autorizacao(format!(
+        RecusaDoPulso::Outra(PhxError::Autorizacao(format!(
             "a prova do pulso de {id:?} nao foi aceita por este no; o motivo \
              esta no log deste processo"
-        ))
+        )))
     }
 
-    /// Confere que quem mandou este pulso e mesmo o no que ele diz ser.
+    /// Confere que quem mandou este pulso e mesmo o no que ele diz ser -- e
+    /// que ele e um dos OUTROS nos desta lista.
+    ///
+    /// # Os DOIS chamadores, e por que o crivo da lista mora aqui
+    ///
+    /// Pedido 441 (SEC A1 de 23/09/2026). Quem chama e o `op_cluster_pulso`
+    /// (o PEDIDO de um par) e o laco do pulso (a RESPOSTA do par a quem este
+    /// no pulsou). O crivo «fora da lista, ou o id DESTE no» morava so no
+    /// primeiro, e o segundo -- o irmao que o 278 pos com comentario dizendo
+    /// que era o irmao -- nao o herdou: uma resposta `{"id":"fantasma",
+    /// "papel":"master","epoca":1}` sem prova voltava `Ok` pelo ramo sem
+    /// prova, entrava no `registrar` e rebaixava o master, gravado no
+    /// `cluster.estado.json`. Medido por soquete, 4,5 s. Com o crivo aqui, os
+    /// dois chamadores passam pela MESMA pergunta, e o terceiro tambem
+    /// passara; no chamador ficou so a apresentacao (a frase da fabrica de
+    /// idiomas, o IP no log, a contagem da politica), que o motor nao conhece.
+    ///
+    /// O bit que a recusa entrega -- «X esta na lista?» -- ja esta no
+    /// VEREDITO: no padrao de fabrica o pulso sem prova e aceito para quem
+    /// esta na lista e recusado para quem nao esta. Por isso ela nao entra no
+    /// colapso do 435, e fala em voz alta, como o A11 escolheu: e ela que faz
+    /// a configuracao torta aparecer no primeiro pulso, e nao numa eleicao com
+    /// eleitor fantasma.
     ///
     /// `estatica` e preguicosa de proposito: o caminho em que nao ha nada a
     /// conferir -- pulso sem prova, de um par que nunca provou, com o
@@ -506,47 +658,42 @@ impl EstadoCluster {
         pedido: &Json,
         canal: Option<&[u8]>,
         estatica: impl FnOnce() -> Result<[u8; 32]>,
-    ) -> Result<()> {
+    ) -> std::result::Result<Identidade, RecusaDoPulso> {
+        // O crivo da lista VEM ANTES de tudo, inclusive do ramo sem prova:
+        // era la, antes dele, que a resposta fantasma voltava `Ok` (441).
+        let no = match self.no(id) {
+            Some(no) if id != self.config.id => no,
+            _ => {
+                return Err(RecusaDoPulso::ForaDaLista {
+                    e_este_no: id == self.config.id,
+                })
+            }
+        };
         let prova = pedido.texto_ou("prova", "").trim();
         if prova.is_empty() {
             if self.config.exigir_prova_do_pulso {
-                return Err(PhxError::Autorizacao(format!(
+                return Err(RecusaDoPulso::Outra(PhxError::Autorizacao(format!(
                     "o pulso de {id:?} veio sem prova de identidade e este \
                      cluster exige prova (cluster.exigir_prova_do_pulso)"
-                )));
+                ))));
             }
             // O TOFU: quem ja provou uma vez nao volta a ser ouvido sem
             // prova. Sem isto, bastaria OMITIR o campo para desligar a guarda
             // -- que e o rebaixamento silencioso que a §2 do
             // `docs/CIFRA-DO-FIO.md` recusa em outro lugar.
             if self.ja_provou(id) {
-                return Err(PhxError::Autorizacao(format!(
+                return Err(RecusaDoPulso::Outra(PhxError::Autorizacao(format!(
                     "o pulso de {id:?} veio SEM prova, e este no ja provou a \
                      identidade dele antes: pulso sem prova de quem sabe \
                      provar e rebaixamento, e nao compatibilidade"
-                )));
+                ))));
             }
-            return Ok(());
+            // Aceito, e dito -- uma vez por par (pedido 436, M3). A guarda
+            // inerte que passa calada e a mesma exposicao de antes do 278 sem
+            // evidencia nenhuma de que existe.
+            self.anunciar_que_passou_sem_prova(&no);
+            return Ok(Identidade::SemProva);
         }
-        let Some(no) = self.no(id) else {
-            // O chamador ja recusou o id fora da lista; esta e a rede de
-            // baixo, para o dia em que houver um segundo chamador.
-            //
-            // Ela fica FORA do colapso do 435, medido: o bit que ela entrega
-            // -- «X esta na lista?» -- ja esta no VEREDITO, e nao no texto.
-            // Na configuracao de fabrica (`exigir_prova_do_pulso` desligado)
-            // um pulso SEM prova nenhuma e aceito para quem esta na lista e
-            // recusado para quem nao esta: o atacante enumera a lista sem ler
-            // frase alguma. Colapsar o texto compraria zero bit e custaria a
-            // recusa em voz alta que o A11 escolheu de proposito -- e e ela
-            // que faz a configuracao torta aparecer no primeiro pulso, e nao
-            // numa eleicao com eleitor fantasma. O que o 435 fecha e outro
-            // bit, «X tem pino aqui?», que o veredito NAO carrega: os dois
-            // lados recusam, e o texto era o unico canal.
-            return Err(PhxError::Autorizacao(format!(
-                "o pulso de {id:?} traz prova de um no que nao esta na lista"
-            )));
-        };
         // Daqui para baixo TODA falha sai pela mesma porta: quem conta o
         // porque e `recusa_da_prova`, no log, e nunca o fio. O pino torto
         // entra junto pelo mesmo motivo do pino ausente -- «`chave_do_fio` de
@@ -632,7 +779,51 @@ impl EstadoCluster {
         self.antirrepeticao
             .aceitar(id, nonce, quando, crate::agora_ms())?;
         self.marcar_provado(id);
-        Ok(())
+        Ok(Identidade::Provada)
+    }
+
+    /// Os campos de prova da RESPOSTA a um pulso: so quando o PEDIDO provou --
+    /// pedido 435 reaberto (SEC A2 de 23/09/2026).
+    ///
+    /// # O mapa que tinha mudado de ramo
+    ///
+    /// O 435 fechou o bit «X tem pino aqui?» no ramo de ERRO, e ele continuou
+    /// saindo pelo de SUCESSO: a resposta a um pulso SEM prova assinava sempre
+    /// que havia pino do remetente alegado, entao `prova`/`nonce`/`quando`/
+    /// `para` apareciam se e so se X tinha pino. Medido por soquete: 291 B
+    /// contra 137 B, com uma sonda de `"posicao":1e16` que o `registrar`
+    /// descarta -- zero efeito, zero violacao contada.
+    ///
+    /// # Por que calar a prova, e nao assinar as cegas
+    ///
+    /// Havia dois caminhos: (a) a resposta a pulso sem prova sai sem prova
+    /// para todos; (b) o pino cego do 435 tambem aqui, assinando contra o
+    /// ponto-base quem nao tem pino. Vale o (a), e o motivo e uma
+    /// equivalencia, nao um gosto: assinar o pedido e conferir a resposta pedem
+    /// EXATAMENTE o mesmo material -- a estatica de quem pulsa e o pino de quem
+    /// responde, e o mesmo Diffie-Hellman entre os dois. Quem mandou sem prova
+    /// e porque nao tinha esse material, e sem ele nao conferiria a prova da
+    /// resposta de jeito nenhum. A assinatura que o (a) cala nao protegia
+    /// ninguem; o (b) pagaria um X25519 por pulso para publicar uma prova que
+    /// qualquer membro forja (e a licao do pino cego) -- e continuaria sendo
+    /// um canal a medir.
+    ///
+    /// E o (a) conserta de passagem a rodada dos pinos: com o pino so de um
+    /// lado, quem NAO tem o pino do outro recebia uma resposta assinada que a
+    /// propria conferencia recusava (prova de no sem pino), e deixava de ver o
+    /// par vivo. Sem prova, a resposta passa pela mesma janela de
+    /// compatibilidade que o pedido dele passou.
+    pub fn campos_da_resposta(
+        &self,
+        pedido: Identidade,
+        estatica: &[u8; 32],
+        destino: &crate::config::NoCluster,
+        canal: Option<&[u8]>,
+    ) -> Option<Vec<(&'static str, Json)>> {
+        match pedido {
+            Identidade::SemProva => None,
+            Identidade::Provada => self.campos_da_prova(estatica, destino, canal),
+        }
     }
 
     /* ------------------------------------------------------ a lista VIVA
@@ -1220,6 +1411,11 @@ mod testes {
         let minha = [0x5au8; 32];
         let minha_publica = phxsql_core::x25519::chave_publica(&minha);
         let quando = crate::agora_ms();
+        // Nonce NO FORMATO, e de proposito (pedido 436): com um nonce torto a
+        // forja cairia no crivo do M1 dentro da antirrepeticao, e este teste
+        // passaria com a porta do no sem pino apagada -- verde pelo motivo
+        // errado.
+        let nonce = crate::pulso::nonce();
         let campos = crate::pulso::Assinado {
             de: "no1",
             para: "no2",
@@ -1229,7 +1425,7 @@ mod testes {
             incompleta: false,
             prioridade: 0,
             quando,
-            nonce: "forja-1",
+            nonce: &nonce,
         };
         // So a PUBLICA de quem confere -- o que o atacante tem.
         let forjada = crate::pulso::forjar_contra_o_pino_cego(&minha_publica, &campos, None);
@@ -1243,7 +1439,7 @@ mod testes {
         let pedido = Json::analisar(&format!(
             r#"{{"id":"no1","papel":"master","epoca":9,"posicao":0,
                 "incompleta":false,"prioridade":0,"para":"no2",
-                "quando":{quando},"nonce":"forja-1","prova":"{forjada}"}}"#
+                "quando":{quando},"nonce":"{nonce}","prova":"{forjada}"}}"#
         ))
         .unwrap();
         let r = e.conferir_identidade(
@@ -1260,6 +1456,160 @@ mod testes {
             "a prova FORJADA com a publica deste no entrou pelo no sem pino: \
              aceito={aceito}, marcado_provado={marcado}"
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// O `config_de_teste` com o `no1` PINADO: a chave publica dele esta na
+    /// lista deste no (`no2`), e so quem tem a privada fecha a prova.
+    fn config_com_pino_do_no1(publica: &[u8; 32]) -> Cluster {
+        use crate::config::Config;
+        let pino = phxsql_core::hash::para_hex(publica);
+        let txt = format!(
+            r#"{{"token":"t","replicacao":{{"papel":"replica"}},
+            "cluster":{{"id":"no2","prioridade":3,"janela_inatividade_s":4,
+              "nos":[{{"id":"no1","endereco":"127.0.0.1","porta":5310,"chave_do_fio":"{pino}"}},
+                     {{"id":"no2","endereco":"127.0.0.1","porta":5311}},
+                     {{"id":"no3","endereco":"127.0.0.1","porta":5312}}]}}}}"#
+        );
+        Config::de_json(&Json::analisar(&txt).unwrap())
+            .unwrap()
+            .cluster
+            .unwrap()
+    }
+
+    /// O pulso do `no1` para este no (`no2`), ASSINADO com a privada dele --
+    /// o insider do achado M1: tem a chave, e escolhe o nonce.
+    fn pedido_assinado(
+        privada_no1: &[u8; 32],
+        minha: &[u8; 32],
+        p: &PulsoDeNo,
+        nonce: &str,
+    ) -> Json {
+        let quando = crate::agora_ms();
+        let campos = crate::pulso::Assinado {
+            de: "no1",
+            para: "no2",
+            papel: p.papel.nome(),
+            epoca: p.epoca,
+            posicao: p.posicao,
+            incompleta: p.incompleta,
+            prioridade: p.prioridade,
+            quando,
+            nonce,
+        };
+        let publica_minha = phxsql_core::x25519::chave_publica(minha);
+        let prova = crate::pulso::assinar(privada_no1, &publica_minha, &campos, None).unwrap();
+        Json::objeto(vec![
+            ("para", Json::texto_de("no2")),
+            ("quando", Json::de_i64(quando)),
+            ("nonce", Json::texto_de(nonce)),
+            ("prova", Json::texto_de(prova)),
+        ])
+    }
+
+    /// **Pedido 436, M1, pelo caminho inteiro: o nonce gigante de um par que
+    /// TEM a chave nao fica guardado.**
+    ///
+    /// E o insider do achado -- o HMAC vem antes da fila, entao so quem fecha
+    /// a prova chega a ela, e o 278 nasceu do modelo «qualquer no legitimo
+    /// pode virar o atacante». O pedido entra por `conferir_identidade`, como
+    /// o `op_cluster_pulso` o entrega, e o que se mede e o DANO: os bytes que
+    /// a antirrepeticao retem depois. Com o crivo do M1 tirado, a fila vai de
+    /// 32 para 1.048.608 bytes e o teste cai dizendo isso.
+    #[test]
+    fn o_nonce_gigante_de_um_par_com_a_chave_nao_fica_guardado() {
+        let dir = DirTemp::novo("cluster-nonce-gigante");
+        let privada_no1 = [0x11u8; 32];
+        let minha = [0x22u8; 32];
+        let e = EstadoCluster::novo(
+            config_com_pino_do_no1(&phxsql_core::x25519::chave_publica(&privada_no1)),
+            &dir,
+            crate::config::Papel::Replica,
+        );
+        let p = pulso(PapelVivo::Replica, 0, 0);
+
+        // O comportamento velho primeiro: o pulso legitimo, com o nonce do
+        // emissor, entra e deixa na fila exatamente o tamanho dele.
+        let legitimo = crate::pulso::nonce();
+        e.conferir_identidade(
+            "no1",
+            &p,
+            &pedido_assinado(&privada_no1, &minha, &p, &legitimo),
+            None,
+            || Ok(minha),
+        )
+        .expect("o pulso legitimo do no1 foi recusado");
+        let antes = e.antirrepeticao.bytes_guardados();
+        assert_eq!(antes, crate::pulso::NONCE_HEX);
+
+        // O achado: a prova FECHA -- quem manda tem a chave --, e o nonce e
+        // de 1 MiB.
+        let gigante = "a".repeat(1 << 20);
+        let r = e.conferir_identidade(
+            "no1",
+            &p,
+            &pedido_assinado(&privada_no1, &minha, &p, &gigante),
+            None,
+            || Ok(minha),
+        );
+        let depois = e.antirrepeticao.bytes_guardados();
+        assert_eq!(
+            depois,
+            antes,
+            "o nonce de {} bytes de um par com a chave ficou guardado: a fila \
+             foi de {antes} para {depois} bytes",
+            gigante.len()
+        );
+        assert!(r.is_err(), "o pulso com nonce de 1 MiB foi aceito");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// **Pedido 436, M2, no TOFU: a trava envenenada nao vira «nunca
+    /// provou».**
+    ///
+    /// O DANO medido e o do achado: o `no1` ja provou, a trava envenena, e um
+    /// pulso SEM prova dizendo-se `no1` -- o rebaixamento que o TOFU existe
+    /// para recusar -- passa. E o outro lado da escolha, no mesmo teste: o
+    /// `no3`, que nunca provou, continua sendo ouvido sem prova, porque falhar
+    /// fechado aqui calaria todo par de versao anterior por um panico.
+    #[test]
+    fn o_tofu_com_a_trava_envenenada_continua_recusando() {
+        let dir = DirTemp::novo("cluster-tofu-veneno");
+        let e = EstadoCluster::novo(config_de_teste(), &dir, crate::config::Papel::Replica);
+        e.marcar_provado("no1");
+        e.provaram.envenenar();
+
+        let sem_prova = Json::objeto(Vec::new());
+        let nao_le = || -> Result<[u8; 32]> {
+            Err(PhxError::Autorizacao(
+                "o pulso sem prova nao devia ler a estatica".into(),
+            ))
+        };
+        let r = e.conferir_identidade(
+            "no1",
+            &pulso(PapelVivo::Master, 9, 0),
+            &sem_prova,
+            None,
+            nao_le,
+        );
+        assert!(
+            r.is_err(),
+            "o pulso SEM prova de quem ja provou passou depois do veneno: o \
+             TOFU desligou para o resto da vida do processo"
+        );
+        e.conferir_identidade(
+            "no3",
+            &pulso(PapelVivo::Replica, 0, 0),
+            &sem_prova,
+            None,
+            nao_le,
+        )
+        .unwrap_or_else(|er| {
+            panic!(
+                "o no que nunca provou foi recusado depois do veneno ({er}): \
+                 falhar fechado aqui calaria todo par de versao anterior"
+            )
+        });
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -4261,6 +4261,19 @@ zelo que cobra caro ao operador; se não entrega, é a guarda.
 
 > **CORREÇÃO, 24/09/2026 — a revisão SEC desmentiu esta seção** (`docs/propostas/revisao-sec-434-435-2026-09-23.md`, achado A2 ALTO). A §20.2 aplicou a régua «o veredito já entrega o bit?» ao ramo **com prova** — texto, campos, ordem, tamanho e `ms` iguais — e **não** ao ramo **sem prova**. Ali, um pulso sem prova é descartado sem mudar estado, mas a resposta de sucesso sai com **291 B** e os campos `prova`/`nonce`/`quando`/`para` quando o nó alegado tem pino, e com **137 B** sem eles quando não tem. **O mapa mudou de ramo; não sumiu.** A frase «fecha o mapa inteiro» é falsa, e o pedido 435 voltou a ◐. E a mesma revisão achou o A1 (pedido 441): a **resposta** do pulso passa sem a pré-checagem de lista que o pedido tem.
 
+> **FECHADO, 24/09/2026 — pela opção (a), e medido nos dois ramos.** Pulso
+> sem prova passou a receber resposta **sem** campos de prova, tenha o nó
+> alegado pino ou não; a resposta assinada só sai quando o pedido provou
+> (`cluster::campos_da_resposta`). Medido depois do conserto: campos iguais,
+> bytes iguais, e o `ms` separando os dois casos em 1, 0, 0 e 0 de 40
+> corridas (limite do teste: 10). A variante recusada — «assinar e esconder»
+> — foi reposta como guarda própria e separa em **40 de 40**. A opção (b),
+> pino cego na resposta, foi recusada: custaria um X25519 por pulso para
+> publicar uma prova que qualquer membro forja. O A1 da mesma revisão (pedido
+> 441) fechou junto: o crivo de lista saiu do chamador e entrou em
+> `conferir_identidade`, e a resposta de um nó fantasma deixou de rebaixar o
+> master.
+
 ### 20.3 A metade que quase escapou: o mapa mudou de campo, não sumiu
 
 Com a frase já colapsada e o teste verde, o campo `ms` da resposta — o tempo

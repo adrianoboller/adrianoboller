@@ -33,7 +33,7 @@ use comum::DirTemp;
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
-use std::sync::atomic::{AtomicU16, Ordering};
+use std::sync::atomic::{AtomicU16, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -85,6 +85,18 @@ fn publica(semente: &str) -> [u8; 32] {
 /// do `noB` na lista do `noA` (vazio = no sem pino, como um cluster que nunca
 /// configurou um).
 fn subir_no_a(base: &std::path::Path, porta: u16, exigir: bool, pino_b: &str) -> Arc<Servidor> {
+    subir_no_a_com_b_em(base, porta, exigir, pino_b, 7498)
+}
+
+/// O mesmo `noA`, com o `noB` num endereco escolhido -- o do par FALSO que
+/// o teste do pedido 441 poe para responder ao pulso.
+fn subir_no_a_com_b_em(
+    base: &std::path::Path,
+    porta: u16,
+    exigir: bool,
+    pino_b: &str,
+    porta_b: u16,
+) -> Arc<Servidor> {
     std::fs::create_dir_all(base.join("base")).unwrap();
     let caminho = base.join("config.json");
     let bar = |p: std::path::PathBuf| p.display().to_string().replace('\\', "/");
@@ -116,7 +128,7 @@ fn subir_no_a(base: &std::path::Path, porta: u16, exigir: bool, pino_b: &str) ->
                 "exigir_prova_do_pulso": {exigir},
                 "nos": [
                   {{ "id": "noA", "endereco": "127.0.0.1", "porta": {porta} }},
-                  {{ "id": "noB", "endereco": "127.0.0.1", "porta": 7498{campo_pino} }},
+                  {{ "id": "noB", "endereco": "127.0.0.1", "porta": {porta_b}{campo_pino} }},
                   {{ "id": "noC", "endereco": "127.0.0.1", "porta": 7499 }}
                 ]
               }}
@@ -154,6 +166,12 @@ fn no_ar(s: Arc<Servidor>, porta: u16) -> Arc<Servidor> {
 
 /// Manda UMA linha do protocolo, em claro, e devolve a resposta analisada.
 fn falar(porta: u16, pedido: &str) -> Json {
+    Json::analisar(&falar_cru(porta, pedido)).unwrap()
+}
+
+/// A resposta CRUA, como o fio a entrega -- o tamanho dela e um canal (435
+/// reaberto), e so a linha crua o mede.
+fn falar_cru(porta: u16, pedido: &str) -> String {
     let alvo: SocketAddr = format!("127.0.0.1:{porta}").parse().unwrap();
     let fluxo = TcpStream::connect_timeout(&alvo, Duration::from_secs(2)).unwrap();
     fluxo
@@ -165,7 +183,7 @@ fn falar(porta: u16, pedido: &str) -> Json {
     escrita.flush().unwrap();
     let mut resp = String::new();
     leitor.read_line(&mut resp).unwrap();
-    Json::analisar(&resp).unwrap()
+    resp.trim_end().to_string()
 }
 
 /// O papel VIVO que o no declara, e a epoca dele.
@@ -185,6 +203,11 @@ fn papel_e_epoca(porta: u16) -> (String, i64) {
 ///
 /// `assinante` e a privada de quem assina -- e e o parametro que separa o no
 /// legitimo do intruso: os dois montam o MESMO corpo, e so a chave difere.
+///
+/// `nonce` so viaja com a prova, e tem de ser do formato do emissor
+/// (`pulso::nonce()`) desde o pedido 436: um nonce torto e recusado pela
+/// antirrepeticao, e o teste que o usasse passaria a medir o crivo do M1 em
+/// vez do que diz medir.
 fn pulso_de_b(papel: &str, epoca: u64, assinante: Option<&str>, nonce: &str) -> String {
     pulso_de("noB", papel, epoca, assinante, nonce)
 }
@@ -263,7 +286,10 @@ fn um_pulso_forjado_nao_destrona_o_master() {
 
     // (2) com uma prova assinada por QUEM NAO E o noB -- o intruso tem a
     // credencial do cluster e esta no cluster, e ainda assim nao fecha.
-    let r = falar(porta, &pulso_de_b("master", 9, Some(PRIV_INTRUSO), "n2"));
+    let r = falar(
+        porta,
+        &pulso_de_b("master", 9, Some(PRIV_INTRUSO), &pulso::nonce()),
+    );
     assert!(
         !r.booleano_ou("ok", true),
         "o pulso com prova de outra chave passou: {}",
@@ -301,7 +327,10 @@ fn o_pulso_com_prova_valida_passa_e_conta() {
     let porta = porta_livre();
     let _a = subir_no_a(&base, porta, true, &para_hex(&publica(PRIV_B)));
 
-    let r = falar(porta, &pulso_de_b("replica", 0, Some(PRIV_B), "n1"));
+    let r = falar(
+        porta,
+        &pulso_de_b("replica", 0, Some(PRIV_B), &pulso::nonce()),
+    );
     assert!(
         r.booleano_ou("ok", false),
         "o pulso legitimo foi recusado: {}",
@@ -331,7 +360,7 @@ fn um_pulso_repetido_nao_conta_duas_vezes() {
     let porta = porta_livre();
     let _a = subir_no_a(&base, porta, true, &para_hex(&publica(PRIV_B)));
 
-    let gravado = pulso_de_b("replica", 0, Some(PRIV_B), "mesmo-nonce");
+    let gravado = pulso_de_b("replica", 0, Some(PRIV_B), &pulso::nonce());
     let primeiro = falar(porta, &gravado);
     assert!(primeiro.booleano_ou("ok", false), "{}", primeiro.escrever());
 
@@ -406,7 +435,10 @@ fn depois_que_o_no_provou_o_pulso_sem_prova_e_recusado() {
     assert!(r.booleano_ou("ok", false), "{}", r.escrever());
 
     // (2) o noB prova uma vez.
-    let r = falar(porta, &pulso_de_b("replica", 0, Some(PRIV_B), "n1"));
+    let r = falar(
+        porta,
+        &pulso_de_b("replica", 0, Some(PRIV_B), &pulso::nonce()),
+    );
     assert!(r.booleano_ou("ok", false), "{}", r.escrever());
 
     // (3) e dali em diante, pulso sem prova daquele id nao entra mais.
@@ -656,11 +688,11 @@ fn o_pulso_nao_diz_quais_nos_tem_pino() {
 
     let com_pino = falar(
         porta,
-        &pulso_de("noB", "master", 9, Some(PRIV_INTRUSO), "m1"),
+        &pulso_de("noB", "master", 9, Some(PRIV_INTRUSO), &pulso::nonce()),
     );
     let sem_pino = falar(
         porta,
-        &pulso_de("noC", "master", 9, Some(PRIV_INTRUSO), "m2"),
+        &pulso_de("noC", "master", 9, Some(PRIV_INTRUSO), &pulso::nonce()),
     );
     assert!(
         !com_pino.booleano_ou("ok", true) && !sem_pino.booleano_ou("ok", true),
@@ -681,14 +713,14 @@ fn o_pulso_nao_diz_quais_nos_tem_pino() {
     // da maquina. Afirma-se que a separacao SUMIU: com o defeito, 40/40
     // separavam; um classificador que ainda acerte 34 das 40 nao e ruido.
     let mut separadas = 0;
-    for i in 0..40 {
+    for _ in 0..40 {
         let b = falar(
             porta,
-            &pulso_de("noB", "master", 9, Some(PRIV_INTRUSO), &format!("b{i}")),
+            &pulso_de("noB", "master", 9, Some(PRIV_INTRUSO), &pulso::nonce()),
         );
         let c = falar(
             porta,
-            &pulso_de("noC", "master", 9, Some(PRIV_INTRUSO), &format!("c{i}")),
+            &pulso_de("noC", "master", 9, Some(PRIV_INTRUSO), &pulso::nonce()),
         );
         if b.inteiro_ou("ms", -1) != c.inteiro_ou("ms", -2) {
             separadas += 1;
@@ -709,5 +741,277 @@ fn o_pulso_nao_diz_quais_nos_tem_pino() {
         "o no sem pino passou a recusar pulso sem prova: reveja o porque desta \
          guarda antes de apaga-la\n  {}",
         sem_prova.escrever()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// A guarda inerte se anuncia -- pedido 436 (SEC M3)
+// ---------------------------------------------------------------------------
+
+/// A sonda do `aceitar_pulso_sem_prova_deixa_rastro`. So faz sentido como
+/// processo FILHO: o que se mede e o stderr do servidor, e dentro da bateria
+/// o `libtest` o captura.
+///
+/// Fabrica inteira -- `exigir_prova_do_pulso` desligado --, com o `noB` COM
+/// pino aqui (e o lado de la que nao assina) e o `noC` sem. Tres pulsos sem
+/// prova do `noB` e um do `noC`, todos ACEITOS: o comportamento velho e a
+/// metade desta prova que nao pode mudar.
+#[test]
+#[ignore = "sonda: roda so reexecutada por aceitar_pulso_sem_prova_deixa_rastro"]
+fn sonda_pulso_sem_prova() {
+    // Do alto da faixa: a sonda roda num processo FILHO, com o contador de
+    // portas zerado, ao mesmo tempo que a bateria do pai sobe nos de 7400 em
+    // diante. Comecar embaixo disputaria a mesma porta com um deles.
+    PROXIMA.store(7440, Ordering::SeqCst);
+    let base = DirTemp::novo("identidade-pulso-sonda-inerte");
+    let porta = porta_livre();
+    let _a = subir_no_a(&base, porta, false, &para_hex(&publica(PRIV_B)));
+    for id in ["noB", "noB", "noB", "noC"] {
+        let r = falar(porta, &pulso_de(id, "replica", 0, None, ""));
+        assert!(
+            r.booleano_ou("ok", false),
+            "o pulso sem prova de {id} foi recusado -- o comportamento velho \
+             mudou: {}",
+            r.escrever()
+        );
+    }
+}
+
+/// **Prova real do pedido 436, M3.** A guarda do 278 inerte para um par --
+/// pulso sem prova, interruptor no padrao, par que nunca provou -- deixa
+/// RASTRO no log do processo, e uma vez por par.
+///
+/// # Por que o stderr de um processo filho
+///
+/// O achado e de EVIDENCIA EM EXECUCAO: o `docs/CLUSTER.md` diz o alcance, e
+/// documento nao e evidencia de instalacao. O que quem opera tem na mao e o
+/// log do processo, entao e ele que se le -- e nao um contador que so o teste
+/// enxergaria. O proprio binario roda de novo filtrado na sonda.
+///
+/// # Os dois vermelhos
+///
+/// Zero linhas e o defeito do achado: o `return Ok(())` mudo. Tres linhas
+/// para o `noB` e o aviso por pulso -- o aviso perpetuo que ninguem le, e que
+/// gasta a confianca do aviso verdadeiro. O certo e uma por par.
+#[test]
+fn aceitar_pulso_sem_prova_deixa_rastro() {
+    let saida = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "sonda_pulso_sem_prova",
+            "--exact",
+            "--ignored",
+            "--nocapture",
+            "--test-threads=1",
+        ])
+        .output()
+        .expect("reexecutar o proprio binario de teste");
+    let erro = String::from_utf8_lossy(&saida.stderr);
+    assert!(
+        saida.status.success(),
+        "a sonda nao terminou limpa:\n{erro}"
+    );
+    let linhas_de = |id: &str| -> Vec<&str> {
+        let marca = format!("{id:?}");
+        erro.lines()
+            .filter(|l| l.contains("INERTE") && l.contains(&marca))
+            .collect()
+    };
+    let (b, c) = (linhas_de("noB"), linhas_de("noC"));
+    assert_eq!(
+        (b.len(), c.len()),
+        (1, 1),
+        "a guarda inerte foi anunciada {} vez(es) para o noB (3 pulsos) e {} \
+         para o noC (1 pulso) -- o certo e uma por par. stderr da sonda:\n{erro}",
+        b.len(),
+        c.len()
+    );
+    // E o diagnostico aponta o lado certo: o noB TEM pino aqui, o noC nao.
+    assert!(b[0].contains("do lado de la"), "noB: {}", b[0]);
+    assert!(c[0].contains("vazio NESTE no"), "noC: {}", c[0]);
+}
+
+// ---------------------------------------------------------------------------
+// A RESPOSTA do pulso passa pelo mesmo crivo -- pedido 441 (SEC A1)
+// ---------------------------------------------------------------------------
+
+/// Um par FALSO no endereco do `noB`: responde a toda linha com um pulso SEM
+/// prova, de papel `master` e epoca 1, dizendo-se `id_falso`. E o que um no
+/// comprometido -- ou quem esta no meio de um enlace sem pino -- faz.
+///
+/// Devolve a porta e quantos pulsos ele recebeu: o CANARIO de que o laco do
+/// `noA` chegou mesmo a ele. Sem o canario, um laco que nunca pulsasse deixaria
+/// o teste verde pelo motivo errado.
+fn par_que_responde_como(id_falso: &'static str) -> (u16, Arc<AtomicUsize>) {
+    let ouvinte = TcpListener::bind("127.0.0.1:0").unwrap();
+    let porta = ouvinte.local_addr().unwrap().port();
+    let vistos = Arc::new(AtomicUsize::new(0));
+    let contador = Arc::clone(&vistos);
+    std::thread::spawn(move || {
+        for conexao in ouvinte.incoming() {
+            let Ok(conexao) = conexao else { return };
+            let contador = Arc::clone(&contador);
+            std::thread::spawn(move || {
+                let Ok(mut escrita) = conexao.try_clone() else {
+                    return;
+                };
+                for linha in BufReader::new(conexao).lines() {
+                    if linha.is_err() {
+                        return;
+                    }
+                    contador.fetch_add(1, Ordering::SeqCst);
+                    let resposta = format!(
+                        r#"{{"ok":true,"op":"cluster_pulso","resultado":{{"id":"{id_falso}","papel":"master","epoca":1,"posicao":0,"incompleta":false,"prioridade":0}}}}"#
+                    );
+                    if writeln!(escrita, "{resposta}").is_err() {
+                        return;
+                    }
+                }
+            });
+        }
+    });
+    (porta, vistos)
+}
+
+/// O corpo dos dois testes do 441: o `noA` master pulsa um `noB` que e o par
+/// falso, e o master tem de continuar master, na epoca 0, no mapa E no disco.
+fn o_master_resiste_a_resposta_de(id_falso: &'static str, rotulo: &str) {
+    let base = DirTemp::novo(rotulo);
+    let porta = porta_livre();
+    let (porta_b, vistos) = par_que_responde_como(id_falso);
+    // Fabrica: sem exigencia, sem pino -- o `fantasma.py` da revisao.
+    let _a = subir_no_a_com_b_em(&base, porta, false, "", porta_b);
+    assert_eq!(papel_e_epoca(porta), ("master".into(), 0));
+
+    // Uma janela e meia: com o defeito, o rebaixamento veio em menos de
+    // 4,5 s na medida da revisao. Cai no PRIMEIRO sinal, dizendo quantos
+    // pulsos o par falso ja tinha respondido.
+    let ate = Instant::now() + Duration::from_millis(4_500);
+    while Instant::now() < ate {
+        let (papel, epoca) = papel_e_epoca(porta);
+        assert!(
+            papel == "master" && epoca == 0,
+            "a RESPOSTA do pulso com id {id_falso:?}, sem prova, rebaixou o \
+             master: papel={papel} epoca={epoca}, depois de {} pulso(s) \
+             respondido(s) pelo par falso",
+            vistos.load(Ordering::SeqCst)
+        );
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    let respondidos = vistos.load(Ordering::SeqCst);
+    assert!(
+        respondidos >= 2,
+        "o laco do noA respondeu so {respondidos} pulso(s) ao par falso: a \
+         medida nao mediu nada"
+    );
+    assert!(
+        !ve_vivo(porta, id_falso) || id_falso == "noA",
+        "o id {id_falso:?} entrou no mapa como vivo"
+    );
+    let estado = base.join("base").join("cluster.estado.json");
+    if estado.exists() {
+        let gravado = std::fs::read_to_string(&estado).unwrap();
+        assert!(
+            !gravado.contains("replica"),
+            "o rebaixamento foi parar no arquivo que ganha do config: {gravado}"
+        );
+    }
+}
+
+/// **Prova real do pedido 441 (SEC A1).** A resposta de um par com id que
+/// NAO esta na lista, sem prova, nao rebaixa o master.
+///
+/// O vermelho medido pela revisao, com o crivo so no `op_cluster_pulso`:
+/// `papel=replica epoca=1`, e `{"papel":"replica","epoca":1}` no
+/// `cluster.estado.json`.
+#[test]
+fn a_resposta_de_um_no_fantasma_nao_rebaixa_o_master() {
+    o_master_resiste_a_resposta_de("fantasma", "identidade-pulso-resposta-fantasma");
+}
+
+/// O irmao obrigatorio do 441: a resposta que diz ser ESTE no. O id esta na
+/// lista -- e o proprio `noA` --, entao so o «e este no» do crivo a pega.
+#[test]
+fn a_resposta_com_o_id_deste_no_nao_rebaixa_o_master() {
+    o_master_resiste_a_resposta_de("noA", "identidade-pulso-resposta-eu");
+}
+
+// ---------------------------------------------------------------------------
+// O ramo SEM prova nao diz quem tem pino -- pedido 435 reaberto (SEC A2)
+// ---------------------------------------------------------------------------
+
+/// Quantas de 40 sondas pares o `ms` pode separar no ramo sem prova antes de
+/// virar mapa. MEDIDO em 24/09/2026, no binario de teste: com o conserto,
+/// **1, 0, 0 e 0 de 40** em quatro corridas; com a resposta que assina e so
+/// esconde os campos (a variante que o `resposta-sem-prova-assina-e-esconde`
+/// do catalogo repoe), **40, 40 e 40**. Dez fica dez vezes acima do pior
+/// ruido visto e trinta abaixo do defeito -- e nao os 34 do teste do 435, que
+/// a revisao SEC chamou de frouxos (B3).
+const LIMITE_DO_RELOGIO_SEM_PROVA: usize = 10;
+
+/// A sonda do A2, como a revisao a mandou: pulso SEM prova com uma posicao
+/// que o `registrar` descarta (>= 2^53). O veredito e a resposta voltam
+/// inteiros, e o mapa do cluster nao muda.
+fn sonda_sem_prova(id: &str) -> String {
+    format!(
+        r#"{{"token":"{TOKEN}","op":"cluster_pulso","id":"{id}","papel":"replica","epoca":0,"posicao":1e16,"incompleta":false,"prioridade":0}}"#
+    )
+}
+
+/// **Prova real do 435 reaberto (SEC A2).** A resposta de SUCESSO a um pulso
+/// sem prova e a mesma para o no COM pino e para o SEM -- em campos, em
+/// tamanho e no relogio.
+///
+/// O vermelho medido pela revisao: 291 B com `prova`/`nonce`/`quando`/`para`
+/// para o `noB` (com pino), 137 B sem eles para o `noC`. O 435 tinha fechado
+/// esse bit so no ramo de ERRO.
+///
+/// O relogio entra pela regua do proprio 435 -- antes de fechar um canal,
+/// medir se o vizinho entrega o mesmo bit: assinar a resposta e um X25519 a
+/// mais so para quem tem pino.
+#[test]
+fn o_pulso_sem_prova_nao_diz_quais_nos_tem_pino() {
+    let base = DirTemp::novo("identidade-pulso-mapa-sem-prova");
+    let porta = porta_livre();
+    let _a = subir_no_a(&base, porta, false, &para_hex(&publica(PRIV_B)));
+
+    let com_pino = falar_cru(porta, &sonda_sem_prova("noB"));
+    let sem_pino = falar_cru(porta, &sonda_sem_prova("noC"));
+    let (jb, jc) = (
+        Json::analisar(&com_pino).unwrap(),
+        Json::analisar(&sem_pino).unwrap(),
+    );
+    assert!(
+        jb.booleano_ou("ok", false) && jc.booleano_ou("ok", false),
+        "a sonda sem prova foi recusada -- a medida perde o sentido:\n  {com_pino}\n  {sem_pino}"
+    );
+    // A resposta INTEIRA, trocado o id e tirado o relogio: um campo a mais,
+    // ou o mesmo campo com outro tamanho, e o mapa de novo.
+    let (b, c) = (
+        sem_o_relogio(&jb).replace("noB", "{id}"),
+        sem_o_relogio(&jc).replace("noC", "{id}"),
+    );
+    assert_eq!(
+        b,
+        c,
+        "a resposta de SUCESSO a um pulso sem prova difere entre o no com pino \
+         ({} B) e o sem ({} B): e o bit do 435 saindo pelo ramo sem prova",
+        com_pino.len(),
+        sem_pino.len()
+    );
+
+    // O RELOGIO. Com as respostas iguais em forma, o que sobraria e o custo de
+    // assinar uma e nao a outra.
+    let mut separadas = 0;
+    for _ in 0..40 {
+        let b = falar(porta, &sonda_sem_prova("noB"));
+        let c = falar(porta, &sonda_sem_prova("noC"));
+        if b.inteiro_ou("ms", -1) != c.inteiro_ou("ms", -2) {
+            separadas += 1;
+        }
+    }
+    assert!(
+        separadas <= LIMITE_DO_RELOGIO_SEM_PROVA,
+        "o `ms` da resposta sem prova separa o no com pino do sem pino em \
+         {separadas} de 40"
     );
 }

@@ -7812,8 +7812,23 @@ pub fn limpar() {
             "prova a outra ponta, que um no ACRESCENTADO a quente (`cluster_no_acrescentar`) "
             "passa a ser aceito no pulso seguinte SEM reiniciar nada."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
-        "trecho": """        if estado.no(&id).is_none() || id == estado.config.id {""",
+        "arquivo": "crates/phxsql-server/src/cluster.rs",
+        "trecho": """        let no = match self.no(id) {
+            Some(no) if id != self.config.id => no,
+            _ => {
+                return Err(RecusaDoPulso::ForaDaLista {
+                    e_este_no: id == self.config.id,
+                })
+            }
+        };
+""",
+        # REANCORADO em 24/09/2026 (pedido 441): o crivo da lista saiu do
+        # `op_cluster_pulso` e entrou no MOTOR (`conferir_identidade`), para
+        # valer tambem na RESPOSTA do pulso. O defeito e o mesmo -- a lista
+        # viva nao e consultada, o id proprio continua recusado --, escrito no
+        # lugar novo: sem a lista nao ha `no`, entao o pulso sem prova volta
+        # antes dela, que e exatamente o que o motor fazia antes do 441.
+        #
         # REANCORADO em 17/09/2026 (onda 3): a frente B2 fundiu, no MESMO dia,
         # as duas recusas do pulso («fora da lista» e «e' este servidor») numa
         # so condicao (revisao SEC, A11 -- duas frases distintas faziam do
@@ -7823,7 +7838,24 @@ pub fn limpar() {
         # id-duplicado que a linha tambem carrega.
         "troca": """        // DEFEITO REPOSTO: nao confere mais se o id esta na lista viva de
         // nos -- so continua recusando quando o id e' o proprio.
-        if id == estado.config.id {""",
+        if id == self.config.id {
+            return Err(RecusaDoPulso::ForaDaLista { e_este_no: true });
+        }
+        if pedido.texto_ou("prova", "").trim().is_empty()
+            && !self.config.exigir_prova_do_pulso
+            && !self.ja_provou(id)
+        {
+            return Ok(Identidade::SemProva);
+        }
+        let no = match self.no(id) {
+            Some(no) if id != self.config.id => no,
+            _ => {
+                return Err(RecusaDoPulso::ForaDaLista {
+                    e_este_no: id == self.config.id,
+                })
+            }
+        };
+""",
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
         "caem": [
@@ -8081,17 +8113,45 @@ pub fn limpar() {
             "repetido conta duas vezes e o TOFU para de morder."
         ),
         "arquivo": "crates/phxsql-server/src/servidor.rs",
-        "trecho": """        estado.conferir_identidade(
+        # REANCORADO em 24/09/2026 (pedido 441): a chamada virou um `match`
+        # sobre a recusa do motor, que agora traz o crivo da lista junto. O
+        # defeito continua o de origem -- o motor nao e chamado --, e o
+        # `Provada` fingido e o que o pulso de antes fazia: a resposta saia
+        # assinada para quem tivesse pino.
+        "trecho": """        let identidade = match estado.conferir_identidade(
             &id,
             &pulso,
             p,
             sessao.transcricao_do_fio.as_ref().map(|t| &t[..]),
             || self.estatica_do_fio(),
-        )?;
+        ) {
+            Ok(identidade) => identidade,
+            Err(crate::cluster::RecusaDoPulso::ForaDaLista { e_este_no }) => {
+                if e_este_no {
+                    eprintln!(
+                        "cluster: pulso com o id DESTE servidor ({id}) vindo de {:?} -- \\
+                         dois nos com o mesmo id no ar?",
+                        sessao.ip
+                    );
+                }
+                if self.config.politica.contar_pulso_desconhecido && !sessao.ip.is_empty() {
+                    self.violacao_leve(
+                        &sessao.ip,
+                        "cluster_pulso",
+                        "pulso com id que nao e um no deste cluster",
+                    );
+                }
+                return Err(PhxError::Autorizacao(
+                    self.msg("erro.pulso_de_no_desconhecido", &[("id", &id)]),
+                ));
+            }
+            Err(crate::cluster::RecusaDoPulso::Outra(e)) => return Err(e),
+        };
         estado.registrar(&id, pulso);
 """,
         "troca": """        // DEFEITO REPOSTO: o pulso entra sem provar quem o mandou, e o `id`
         // do corpo vale como identidade -- o A1 do pedido 278.
+        let identidade = crate::cluster::Identidade::Provada;
         estado.registrar(&id, pulso);
 """,
         "pacote": "phxsql-server",
@@ -8191,11 +8251,11 @@ pub fn limpar() {
         // HMAC, com a frase que nomeia o `chave_do_fio` vazio. Volta o mapa
         // pelo texto E pelo relogio, que e como o achado A2 o encontrou.
         let Some(publica) = pino else {
-            return Err(PhxError::Autorizacao(format!(
+            return Err(RecusaDoPulso::Outra(PhxError::Autorizacao(format!(
                 "o pulso de {id:?} traz prova, mas cluster.nos[{id}].chave_do_fio \
                  esta vazio neste no: sem a chave publica dele nao ha como \
                  conferir. Preencha o pino ou tire a prova do outro lado"
-            )));
+            ))));
         };
 """,
         "pacote": "phxsql-server",
@@ -8257,6 +8317,379 @@ pub fn limpar() {
         "seguem": [
             "pulso::testes::o_que_a_assina_b_confere",
             "pulso::testes::um_terceiro_no_nao_consegue_se_passar_por_a",
+        ],
+        "prazo": 300,
+    },
+    # 31. O nonce do pulso sem regua de BYTES -- pedido 436 (SEC M1)
+    # -----------------------------------------------------------------------
+    {
+        "id": "nonce-do-pulso-sem-regua-de-bytes",
+        "titulo": "o nonce do pulso retido do tamanho que o remetente escolheu",
+        "porque": (
+            "achado SEC M1 de 23/09/2026. `NONCES_POR_NO = 512` e teto de "
+            "CONTAGEM: o que a antirrepeticao guarda e o texto do fio, e o "
+            "tamanho de cada nonce continuava de quem manda, ate o teto da "
+            "linha -- a licao do 312 pela metade, dentro do proprio 278. E o "
+            "primeiro lugar da base em que um nonce do fio e RETIDO. A regua "
+            "nao e nova: e o `desafio::NONCE_LEN` em hexadecimal, o que o "
+            "`pulso::nonce()` sorteia. Os dois testes medem o DANO (bytes na "
+            "fila), e nao o veredito; o de `cluster` entra pelo "
+            "`conferir_identidade` com um pulso ASSINADO pelo par, que e o "
+            "insider do achado. Medido com o defeito reposto: a fila vai de "
+            "32 para 1.048.608 bytes."
+        ),
+        "arquivo": "crates/phxsql-server/src/pulso.rs",
+        "trecho": """        if !nonce_no_formato(nonce) {
+            return Err(PhxError::Autorizacao(format!(
+                "o pulso de {de:?} traz nonce fora do formato ({} bytes): o \\
+                 nonce do pulso tem {NONCE_HEX} caracteres hexadecimais \\
+                 minusculos, e sem ele a prova serviria duas vezes",
+                nonce.len()
+            )));
+        }
+""",
+        "troca": """        // DEFEITO REPOSTO (436, M1): so o vazio e recusado -- o tamanho do
+        // nonce volta a ser de quem manda.
+        if nonce.trim().is_empty() {
+            return Err(PhxError::Autorizacao(format!(
+                "o pulso de {de:?} veio sem nonce: sem ele a prova serve \\
+                 duas vezes"
+            )));
+        }
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "pulso::testes::o_nonce_fora_do_formato_nao_fica_guardado",
+            "cluster::testes::o_nonce_gigante_de_um_par_com_a_chave_nao_fica_guardado",
+        ],
+        # O emissor de verdade e a repeticao seguem: a regua recusa o torto,
+        # e nao o nonce que o proprio cluster manda.
+        "seguem": [
+            "pulso::testes::o_nonce_do_emissor_passa_no_crivo",
+            "pulso::testes::o_mesmo_nonce_nao_conta_duas_vezes",
+        ],
+        "prazo": 300,
+    },
+    # 32. A antirrepeticao envenenada virando «pulso inedito» -- 436 (SEC M2)
+    # -----------------------------------------------------------------------
+    {
+        "id": "antirrepeticao-envenenada-vira-pulso-inedito",
+        "titulo": "a antirrepetição do pulso desligada, calada, por uma trava envenenada",
+        "porque": (
+            "achado SEC M2 de 23/09/2026. `let Ok(mut v) = vistos.lock() else "
+            "{ return Ok(()) }`: trava envenenada = «pulso fresco e inedito». "
+            "Veneno de `Mutex` e permanente, entao um panico com a trava na mao "
+            "desligava a antirrepeticao para o resto da vida do processo, sem "
+            "uma linha de log. O teste do dano mede o que o achado descreve -- "
+            "o MESMO nonce aceito de novo depois do veneno --, e o do stderr "
+            "reexecuta o binario e conta a linha do aviso."
+        ),
+        "arquivo": "crates/phxsql-server/src/pulso.rs",
+        "trecho": """        let mut v = self.vistos.travar();
+""",
+        "troca": """        // DEFEITO REPOSTO (436, M2): trava envenenada = «pulso fresco e
+        // inedito», calado.
+        let Ok(mut v) = self.vistos.trava.lock() else {
+            return Ok(());
+        };
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "pulso::testes::trava_envenenada_nao_aceita_nonce_repetido",
+            "pulso::testes::trava_envenenada_nao_passa_calada",
+        ],
+        "seguem": [
+            "pulso::testes::o_mesmo_nonce_nao_conta_duas_vezes",
+        ],
+        "prazo": 300,
+    },
+    # 33. A trava da guarda recuperada CALADA -- 436 (SEC M2)
+    # -----------------------------------------------------------------------
+    {
+        "id": "trava-da-guarda-recupera-calada",
+        "titulo": "a trava envenenada da guarda recuperada sem dizer nada",
+        "porque": (
+            "a metade do M2 que o teste do dano NAO pega: recuperar o estado "
+            "pelo `into_inner` sem o aviso -- o precedente do `semaforo.rs`, "
+            "que ali e certo e aqui nao, porque esta e trava de SEGURANCA e "
+            "quem faz menos do que promete tem de dizer que fez menos. Com a "
+            "troca, os dois testes de dano seguem verdes (a guarda continua "
+            "valendo) e so o do stderr cai: e ele que carrega a outra metade."
+        ),
+        "arquivo": "crates/phxsql-server/src/pulso.rs",
+        "trecho": """        self.trava.lock().unwrap_or_else(|veneno| {
+            if !self.veneno_dito.swap(true, Ordering::Relaxed) {
+                eprintln!(
+                    "cluster: a trava {} estava ENVENENADA por um panico em \\
+                     outra thread -- estado recuperado, e a guarda segue \\
+                     valendo para o que ja estava anotado. O panico esta acima \\
+                     deste aviso no log; este aviso sai uma vez por trava, e \\
+                     nao a cada pulso",
+                    self.nome
+                );
+            }
+            veneno.into_inner()
+        })
+""",
+        "troca": """        // DEFEITO REPOSTO (436, M2): recupera, e cala.
+        self.trava.lock().unwrap_or_else(|veneno| veneno.into_inner())
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "pulso::testes::trava_envenenada_nao_passa_calada",
+        ],
+        "seguem": [
+            "pulso::testes::trava_envenenada_nao_aceita_nonce_repetido",
+            "cluster::testes::o_tofu_com_a_trava_envenenada_continua_recusando",
+        ],
+        "prazo": 300,
+    },
+    # 34. O TOFU envenenado virando «nunca provou» -- 436 (SEC M2)
+    # -----------------------------------------------------------------------
+    {
+        "id": "tofu-envenenado-vira-nunca-provou",
+        "titulo": "o TOFU do pulso desligado, calado, por uma trava envenenada",
+        "porque": (
+            "achado SEC M2 de 23/09/2026, a segunda trava: "
+            "`provaram.lock().map(|p| p.contains(id)).unwrap_or(false)` -- "
+            "trava envenenada = «este no nunca provou», e todo par volta a ser "
+            "ouvido sem prova. O tipo `TravaDaGuarda` fechou a porta (o `Mutex` "
+            "de dentro e privado de `pulso.rs`), entao repor o defeito pede "
+            "DUAS trocas: reabrir um `lock` que devolve `None` no veneno, e "
+            "usa-lo no `ja_provou` com o `unwrap_or(false)` de origem."
+        ),
+        "trocas": [
+            {
+                "arquivo": "crates/phxsql-server/src/pulso.rs",
+                "trecho": """    /// O `lock` que nao falha por veneno, e que nao cala quando acha um.
+""",
+                "troca": """    /// DEFEITO REPOSTO (436, M2): a porta que o tipo fechou, reaberta.
+    pub(crate) fn tentar(&self) -> Option<MutexGuard<'_, T>> {
+        self.trava.lock().ok()
+    }
+
+    /// O `lock` que nao falha por veneno, e que nao cala quando acha um.
+""",
+            },
+            {
+                "arquivo": "crates/phxsql-server/src/cluster.rs",
+                "trecho": """        self.provaram.travar().contains(id)
+""",
+                "troca": """        self.provaram.tentar().map(|p| p.contains(id)).unwrap_or(false)
+""",
+            },
+        ],
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "cluster::testes::o_tofu_com_a_trava_envenenada_continua_recusando",
+        ],
+        "seguem": [
+            "cluster::testes::forja_contra_o_pino_cego_nao_entra_nem_marca_provado",
+            "pulso::testes::trava_envenenada_nao_aceita_nonce_repetido",
+        ],
+        "prazo": 300,
+    },
+    # 35. A guarda do 278 inerte e MUDA -- pedido 436 (SEC M3)
+    # -----------------------------------------------------------------------
+    {
+        "id": "guarda-do-pulso-inerte-e-muda",
+        "titulo": "o pulso sem prova aceito sem deixar rastro no log",
+        "porque": (
+            "achado SEC M3 de 23/09/2026. O caminho «sem prova, "
+            "`exigir_prova_do_pulso` no padrao, par que nunca provou» era um "
+            "`return Ok(())` mudo: o cluster que nunca preencheu `chave_do_fio` "
+            "esta tao exposto quanto antes do 278, e nada em execucao deixava "
+            "quem opera descobrir. Documento nao e evidencia de instalacao. O "
+            "teste reexecuta o binario numa sonda que sobe um no e le o STDERR "
+            "dele -- que e o que o operador tem --, e nao um contador que so o "
+            "teste enxergaria."
+        ),
+        "arquivo": "crates/phxsql-server/src/cluster.rs",
+        "trecho": """            self.anunciar_que_passou_sem_prova(&no);
+            return Ok(Identidade::SemProva);
+""",
+        "troca": """            // DEFEITO REPOSTO (436, M3): o `return Ok(())` mudo.
+            return Ok(Identidade::SemProva);
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "identidade-do-pulso"],
+        "caem": [
+            "aceitar_pulso_sem_prova_deixa_rastro",
+        ],
+        # O comportamento velho: o pulso sem prova continua PASSANDO. O aviso
+        # diz que a guarda esta inerte; nao a liga.
+        "seguem": [
+            "sem_exigencia_o_no_de_versao_anterior_continua_pulsando",
+            "depois_que_o_no_provou_o_pulso_sem_prova_e_recusado",
+        ],
+        "prazo": 300,
+    },
+    # 36. O aviso da guarda inerte a cada pulso -- pedido 436 (SEC M3)
+    # -----------------------------------------------------------------------
+    {
+        "id": "guarda-do-pulso-inerte-aviso-por-pulso",
+        "titulo": "o aviso da guarda inerte repetido a cada pulso",
+        "porque": (
+            "o outro vermelho do M3: sem a memoria do que ja foi dito, o aviso "
+            "sai a cada pulso -- uma linha por segundo por par, para sempre, "
+            "que e o aviso perpetuo que o `config.rs` recusa por escrito porque "
+            "gasta a confianca do aviso verdadeiro. A sonda manda tres pulsos "
+            "do mesmo par; o certo e uma linha."
+        ),
+        "arquivo": "crates/phxsql-server/src/cluster.rs",
+        "trecho": """        if anunciados.contains(id) {
+            return;
+        }
+""",
+        "troca": """        // DEFEITO REPOSTO (436, M3): sem a memoria do que ja foi dito.
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "identidade-do-pulso"],
+        "caem": [
+            "aceitar_pulso_sem_prova_deixa_rastro",
+        ],
+        "seguem": [
+            "sem_exigencia_o_no_de_versao_anterior_continua_pulsando",
+        ],
+        "prazo": 300,
+    },
+    # 37. A RESPOSTA do pulso sem o crivo da lista -- pedido 441 (SEC A1)
+    # -----------------------------------------------------------------------
+    {
+        "id": "resposta-do-pulso-sem-crivo-da-lista",
+        "titulo": "a resposta do pulso com id fantasma rebaixando o master",
+        "porque": (
+            "achado SEC A1 de 23/09/2026. O crivo «fora da lista, ou o id DESTE "
+            "no» morava so no `op_cluster_pulso`; o laco do pulso le a RESPOSTA "
+            "do par e chama o mesmo `conferir_identidade`, que no ramo sem prova "
+            "voltava `Ok` ANTES de olhar a lista. Medido pela revisao por "
+            "soquete: um par que responde `{\"id\":\"fantasma\",\"papel\":"
+            "\"master\",\"epoca\":1}` poe o master em `replica`, epoca 1, "
+            "gravado no `cluster.estado.json` -- com todos os nos com pino, desde "
+            "que a exigencia esteja no padrao. Quarta vez de «o conserto entra no "
+            "caminho que o motivou, e o irmao fica». A troca repoe o motor que "
+            "responde `Ok` ao sem-prova antes do crivo."
+        ),
+        "arquivo": "crates/phxsql-server/src/cluster.rs",
+        "trecho": """        let no = match self.no(id) {
+            Some(no) if id != self.config.id => no,
+            _ => {
+                return Err(RecusaDoPulso::ForaDaLista {
+                    e_este_no: id == self.config.id,
+                })
+            }
+        };
+""",
+        "troca": """        // DEFEITO REPOSTO (441): sem prova, o id que nunca provou volta `Ok`
+        // ANTES de a lista ser olhada -- o motor de antes, que so o PEDIDO
+        // protegia porque o chamador dele conferia a lista.
+        if pedido.texto_ou("prova", "").trim().is_empty()
+            && !self.config.exigir_prova_do_pulso
+            && !self.ja_provou(id)
+        {
+            return Ok(Identidade::SemProva);
+        }
+        let no = match self.no(id) {
+            Some(no) if id != self.config.id => no,
+            _ => {
+                return Err(RecusaDoPulso::ForaDaLista {
+                    e_este_no: id == self.config.id,
+                })
+            }
+        };
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "identidade-do-pulso"],
+        "caem": [
+            "a_resposta_de_um_no_fantasma_nao_rebaixa_o_master",
+            "a_resposta_com_o_id_deste_no_nao_rebaixa_o_master",
+        ],
+        # O pedido forjado de um id DA lista nao depende do crivo -- quem o
+        # segura e a prova --, e o comportamento velho do sem-prova segue.
+        "seguem": [
+            "um_pulso_forjado_nao_destrona_o_master",
+            "sem_exigencia_o_no_de_versao_anterior_continua_pulsando",
+        ],
+        "prazo": 300,
+    },
+    # 38. A resposta ao pulso SEM prova assinada so para quem tem pino -- 435 (SEC A2)
+    # -----------------------------------------------------------------------
+    {
+        "id": "resposta-sem-prova-assinada-so-com-pino",
+        "titulo": "a resposta de sucesso a um pulso sem prova dizendo quais nós têm pino",
+        "porque": (
+            "achado SEC A2 de 23/09/2026: o 435 reaberto. O bit «X tem pino "
+            "aqui?» que o 435 fechou no ramo de ERRO continuava no de SUCESSO: "
+            "a resposta a um pulso SEM prova assinava sempre que havia pino do "
+            "remetente alegado, e `prova`/`nonce`/`quando`/`para` apareciam se "
+            "e so se X tinha pino -- 291 B contra 137 B, medido pela revisao "
+            "com uma sonda de `posicao` 1e16 que o `registrar` descarta. A troca "
+            "repoe a resposta que assina sem olhar se o pedido provou."
+        ),
+        "arquivo": "crates/phxsql-server/src/cluster.rs",
+        "trecho": """        match pedido {
+            Identidade::SemProva => None,
+            Identidade::Provada => self.campos_da_prova(estatica, destino, canal),
+        }
+""",
+        "troca": """        // DEFEITO REPOSTO (435 reaberto): assina a resposta sem olhar se o
+        // pedido provou.
+        let _ = pedido;
+        self.campos_da_prova(estatica, destino, canal)
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "identidade-do-pulso"],
+        "caem": [
+            "o_pulso_sem_prova_nao_diz_quais_nos_tem_pino",
+        ],
+        # A resposta ao pulso PROVADO continua assinada, e o ramo de erro do
+        # 435 nao depende desta linha.
+        "seguem": [
+            "o_pulso_com_prova_valida_passa_e_conta",
+            "o_pulso_nao_diz_quais_nos_tem_pino",
+        ],
+        "prazo": 300,
+    },
+    # 39. A resposta sem prova que assina e esconde -- 435 reaberto (SEC A2)
+    # -----------------------------------------------------------------------
+    {
+        "id": "resposta-sem-prova-assina-e-esconde",
+        "titulo": "a resposta a um pulso sem prova igual na forma e diferente no relógio",
+        "porque": (
+            "a regua do proprio 435: antes de fechar um canal, medir se o "
+            "vizinho entrega o mesmo bit. Calar os campos da resposta e metade: "
+            "se o servidor ainda ASSINA para quem tem pino e so joga fora, o "
+            "`ms` separa os dois -- medido no binario de teste em 24/09/2026, "
+            "40, 40 e 40 de 40 sondas pares, contra 1, 0, 0 e 0 com o conserto. "
+            "A troca repoe exatamente isso: forma igual, trabalho diferente."
+        ),
+        "arquivo": "crates/phxsql-server/src/cluster.rs",
+        "trecho": """        match pedido {
+            Identidade::SemProva => None,
+            Identidade::Provada => self.campos_da_prova(estatica, destino, canal),
+        }
+""",
+        "troca": """        // DEFEITO REPOSTO (435 reaberto, a variante do relogio): assina a
+        // resposta de TODO pulso e so esconde os campos do sem prova -- a
+        // forma fica igual, e o X25519 a mais so para quem tem pino fica.
+        let assinada = self.campos_da_prova(estatica, destino, canal);
+        match pedido {
+            Identidade::SemProva => None,
+            Identidade::Provada => assinada,
+        }
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "identidade-do-pulso"],
+        "caem": [
+            "o_pulso_sem_prova_nao_diz_quais_nos_tem_pino",
+        ],
+        "seguem": [
+            "o_pulso_com_prova_valida_passa_e_conta",
+            "o_pulso_nao_diz_quais_nos_tem_pino",
         ],
         "prazo": 300,
     },

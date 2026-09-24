@@ -148,6 +148,33 @@ aviso): a origem passa a ser o master **corrente**, descoberto pelo pulso.
     esta versão e os pinos preenchidos, confere-se que eles se enxergam, e só
     então se escreve `"exigir_prova_do_pulso": true` no bloco `cluster` de
     cada um.
+  - **O que a revisão SEC de 23–24/09 mudou (pedidos 435, 436 e 441).**
+    Cinco comportamentos que quem opera o cluster precisa conhecer:
+    - **O `nonce` tem formato.** São **32 caracteres hexadecimais
+      minúsculos** — `2 × desafio::NONCE_LEN`, a mesma régua do único emissor
+      (`pulso::nonce()`). Fora disso o pulso é recusado, e a recusa diz só o
+      tamanho, nunca o nonce. A fila de nonces de cada nó passou a ter teto de
+      **bytes** (512 × 32 B) em vez de só de contagem. Consequência: mudar o
+      `NONCE_LEN` passa a mudar o protocolo do pulso.
+    - **A guarda inerte avisa.** Pulso sem prova aceito — a configuração de
+      fábrica — deixa **uma linha no stderr por par e por arranque**, dizendo
+      qual lado não tem o pino. Antes era um `Ok(())` mudo, e documento não é
+      evidência de instalação.
+    - **A resposta só leva prova quando o pedido provou.** Pulso sem prova
+      recebe resposta sem `prova`/`nonce`/`quando`/`para`, com o pino do nó
+      alegado ou sem ele — antes, o tamanho da resposta (291 B contra 137 B)
+      dizia quais nós ainda não estavam protegidos. Nenhum par legítimo perde
+      nada: quem não assina o pedido também não teria como conferir a
+      resposta.
+    - **A resposta passa pelo mesmo crivo que o pedido.** Id fora da lista, ou
+      o id **deste** nó, é recusado dentro de `conferir_identidade`, o motor
+      que os dois caminhos chamam. Antes, só o caminho do pedido recusava, e
+      uma resposta `{"id":"fantasma","papel":"master"}` rebaixava o master.
+    - **Trava envenenada não desliga a guarda.** Se uma thread morrer segurando
+      a fila de nonces ou o registro do TOFU, a trava é recuperada e o fato vai
+      ao log **uma vez**. Falhar fechado custaria um failover do cluster
+      inteiro por um único pânico, porque o envenenamento de trava é
+      permanente.
 - **Papel vivo e época.** O papel do `config.json` é só o inicial. O vivo
   mora em `base/cluster.estado.json` junto com a **época** — um contador que
   cresce a cada eleição. O arquivo ganha do config no arranque: um master

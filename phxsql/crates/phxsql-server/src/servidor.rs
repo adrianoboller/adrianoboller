@@ -3730,7 +3730,7 @@ impl Servidor {
                     transcricao.as_ref().map(|t| &t[..]),
                     || self.estatica_do_fio(),
                 ) {
-                    Ok(()) => estado.registrar(&id, pulso),
+                    Ok(_) => estado.registrar(&id, pulso),
                     Err(e) => eprintln!("cluster: resposta do pulso de {id:?} recusada: {e}"),
                 }
             }
@@ -3745,6 +3745,10 @@ impl Servidor {
         let Some(estado) = self.cluster.clone() else {
             return;
         };
+                // Inclusive o crivo da lista: ate o pedido 441 ele morava so no
+                // `op_cluster_pulso`, e uma resposta com id fantasma, sem
+                // prova, rebaixava o master. Hoje ele e a primeira pergunta do
+                // proprio `conferir_identidade`.
         let mut ultima_conta = 0i64;
         let mut motivos_anteriores: Vec<String> = Vec::new();
         loop {
@@ -4157,49 +4161,50 @@ impl Servidor {
                 "informe \"id\" e \"papel\" (master ou replica)".into(),
             ));
         };
-        // No fora da lista e configuracao torta em algum lugar -- recusar em
-        // voz alta e o que faz o erro aparecer no primeiro pulso, e nao numa
-        // eleicao com um eleitor fantasma.
+        // Quem MANDOU este pulso e mesmo o no que ele diz ser, e e um dos
+        // OUTROS nos desta lista? Pedidos 278 e 441. A conferencia vem antes
+        // do `registrar` porque e o `registrar` que move a epoca, renova "vi o
+        // master agora" e decide a eleicao.
         //
-        // UMA resposta para «nao esta na lista» e «e ESTE servidor» (revisao
-        // SEC de 17/09/2026, A11): duas frases distintas faziam do pulso um
-        // oraculo de ids -- quem tem a credencial de replicacao enumerava a
-        // lista do cluster sem gastar tolerancia nenhuma, e e dessa lista que
-        // o pulso forjado do A1 precisa. O diagnostico do id duplicado nao se
-        // perde: vai para o log DESTE processo, que e de quem opera, e nao
-        // para o fio, que e de quem pergunta. A recusa so conta como tentativa
-        // leve com `seguranca.contar_pulso_desconhecido` ligado, porque o no
-        // que entra a quente pulsa os antigos antes de ser acrescentado --
-        // ver o comentario do campo em `blacklist::Politica`.
-        if estado.no(&id).is_none() || id == estado.config.id {
-            if id == estado.config.id {
-                eprintln!(
-                    "cluster: pulso com o id DESTE servidor ({id}) vindo de {:?} -- \
-                     dois nos com o mesmo id no ar?",
-                    sessao.ip
-                );
-            }
-            if self.config.politica.contar_pulso_desconhecido && !sessao.ip.is_empty() {
-                self.violacao_leve(
-                    &sessao.ip,
-                    "cluster_pulso",
-                    "pulso com id que nao e um no deste cluster",
-                );
-            }
-            return Err(PhxError::Autorizacao(
-                self.msg("erro.pulso_de_no_desconhecido", &[("id", &id)]),
-            ));
-        }
-        // Quem MANDOU este pulso e mesmo o no que ele diz ser? Pedido 278.
-        // A conferencia vem antes do `registrar` porque e o `registrar` que
-        // move a epoca, renova "vi o master agora" e decide a eleicao.
-        estado.conferir_identidade(
+        // O crivo da lista e do «e ESTE servidor» mora no MOTOR desde o 441:
+        // aqui ele so existia neste chamador, e o irmao (a RESPOSTA, no laco
+        // do pulso) nao o herdou. O que ficou aqui e a APRESENTACAO da recusa,
+        // que o motor nao conhece -- UMA frase para os dois casos, pela
+        // fabrica de idiomas (revisao SEC de 17/09/2026, A11: duas frases
+        // faziam do pulso um oraculo de ids); o id duplicado dito no log
+        // DESTE processo, com o IP, e nao no fio; e a tentativa leve so com
+        // `seguranca.contar_pulso_desconhecido` ligado, porque o no que entra
+        // a quente pulsa os antigos antes de ser acrescentado -- ver o
+        // comentario do campo em `blacklist::Politica`.
+        let identidade = match estado.conferir_identidade(
             &id,
             &pulso,
             p,
             sessao.transcricao_do_fio.as_ref().map(|t| &t[..]),
             || self.estatica_do_fio(),
-        )?;
+        ) {
+            Ok(identidade) => identidade,
+            Err(crate::cluster::RecusaDoPulso::ForaDaLista { e_este_no }) => {
+                if e_este_no {
+                    eprintln!(
+                        "cluster: pulso com o id DESTE servidor ({id}) vindo de {:?} -- \
+                         dois nos com o mesmo id no ar?",
+                        sessao.ip
+                    );
+                }
+                if self.config.politica.contar_pulso_desconhecido && !sessao.ip.is_empty() {
+                    self.violacao_leve(
+                        &sessao.ip,
+                        "cluster_pulso",
+                        "pulso com id que nao e um no deste cluster",
+                    );
+                }
+                return Err(PhxError::Autorizacao(
+                    self.msg("erro.pulso_de_no_desconhecido", &[("id", &id)]),
+                ));
+            }
+            Err(crate::cluster::RecusaDoPulso::Outra(e)) => return Err(e),
+        };
         estado.registrar(&id, pulso);
         let mut resposta = vec![
             ("id", Json::texto_de(&estado.config.id)),
@@ -4210,9 +4215,14 @@ impl Servidor {
             ("prioridade", Json::de_i64(estado.config.prioridade)),
         ];
         // A resposta tambem prova quem a manda, pelo mesmo motivo: ela entra
-        // no mapa do outro lado exatamente como o pedido entra neste.
+        // no mapa do outro lado exatamente como o pedido entra neste. Mas SO
+        // quando o pedido provou (435 reaberto, SEC A2): assinar a resposta a
+        // um pulso sem prova publicava «o remetente alegado tem pino aqui» --
+        // o porque, e por que isso nao tira nada de par legitimo nenhum, esta
+        // em `EstadoCluster::campos_da_resposta`.
         if let (Ok(estatica), Some(no)) = (self.estatica_do_fio(), estado.no(&id)) {
-            if let Some(extras) = estado.campos_da_prova(
+            if let Some(extras) = estado.campos_da_resposta(
+                identidade,
                 &estatica,
                 &no,
                 sessao.transcricao_do_fio.as_ref().map(|t| &t[..]),

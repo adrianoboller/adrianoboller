@@ -794,11 +794,23 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `spare-nao-atende-ninguem` | o papel Spare deixa de recusar toda operacao que nao esta em OPS_NO_SPARE | 1 | ✅ provada |
 | `read-replica-recusa-escrita` | `ReadReplica` deixa de recusar escrita e para de apontar o primario | 1 | ✅ provada |
 | `pulso-fora-da-lista-e-recusado` | `op_cluster_pulso` deixa de conferir o id contra a lista viva de nos | 1 | ✅ provada |
+| `pulso-sem-prova-de-identidade` | o pulso do cluster aceitando identidade auto-declarada | 3 | ✅ provada |
+| `erro-do-pulso-mapeia-quem-nao-tem-pino` | a recusa da prova do pulso dizendo quais nós ainda não têm pino | 1 | ✅ provada |
+| `pino-cego-sem-a-recusa-do-no-sem-pino` | a forja contra o pino cego entrando pelo nó sem pino | 1 | ✅ provada |
+| `nonce-do-pulso-sem-regua-de-bytes` | o nonce do pulso retido do tamanho que o remetente escolheu | 2 | ✅ provada |
+| `antirrepeticao-envenenada-vira-pulso-inedito` | a antirrepetição do pulso desligada, calada, por uma trava envenenada | 2 | ✅ provada |
+| `trava-da-guarda-recupera-calada` | a trava envenenada da guarda recuperada sem dizer nada | 1 | ✅ provada |
+| `tofu-envenenado-vira-nunca-provou` | o TOFU do pulso desligado, calado, por uma trava envenenada | 1 | ✅ provada |
+| `guarda-do-pulso-inerte-e-muda` | o pulso sem prova aceito sem deixar rastro no log | 1 | ✅ provada |
+| `guarda-do-pulso-inerte-aviso-por-pulso` | o aviso da guarda inerte repetido a cada pulso | 1 | ✅ provada |
+| `resposta-do-pulso-sem-crivo-da-lista` | a resposta do pulso com id fantasma rebaixando o master | 2 | ✅ provada |
+| `resposta-sem-prova-assinada-so-com-pino` | a resposta de sucesso a um pulso sem prova dizendo quais nós têm pino | 1 | ✅ provada |
+| `resposta-sem-prova-assina-e-esconde` | a resposta a um pulso sem prova igual na forma e diferente no relógio | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**154 das 203 guardas do catálogo: 1 aposentada, 148 provadas, 1 quebrada, 4 redundantes** — 3631 s de mutação, medido em 2026-09-16 15:25.
+**166 das 212 guardas do catálogo: 1 aposentada, 160 provadas, 1 quebrada, 4 redundantes** — 4058 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 50 das 203 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 50 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 47 das 212 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 47 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `teto-do-fio-sem-a-constante` — o `Canal::ler` de producao troca `TETO_DO_REGISTRO` por um teto quase infinito
 - `teto-do-fio-sem-a-constante-no-soquete` — a mesma troca da constante por um teto quase infinito, vista pela rede
@@ -846,10 +858,7 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `dado-pessoal-no-grito-do-conflito` — o grito do conflito de unicidade publica a coluna marcada como dado pessoal
 - `so-o-disco-vem-da-porta-e-nao-de-desligar-depois` — o empilhar volta a abrir pela porta de sempre e desligar a sobreposicao na linha seguinte
 - `slot-de-outro-reg` — o sal deixa de ser por arquivo: o slot cifrado de um `.reg` abre no outro
-- `pulso-sem-prova-de-identidade` — o pulso do cluster aceitando identidade auto-declarada
 - `aperto-de-mao-sem-teto` — a leitura do aperto de mao fora do `Canal`, sem teto nenhum
-- `erro-do-pulso-mapeia-quem-nao-tem-pino` — a recusa da prova do pulso dizendo quais nós ainda não têm pino
-- `pino-cego-sem-a-recusa-do-no-sem-pino` — a forja contra o pino cego entrando pelo nó sem pino
 
 As guardas que esta corrida ainda cita, hoje aposentadas:
 
