@@ -11,14 +11,32 @@ Uso:
   phxjev.py veredito  < julgamento.json
   phxjev.py desfecho  <id> <pergunta> <valor>   # 1/0 para noul, rotulo para choice, degrau para score
   phxjev.py calibrar
+  phxjev.py mostrar   <selo>                     # a saida original, para conferir se foi editada
 """
+import hashlib
 import json
 import math
 import os
+import subprocess
 import sys
 import time
 
-REGISTRO = os.environ.get("PHXJEV_REGISTRO", ".phxjev/registro.jsonl")
+def raiz():
+    """Raiz do git de onde se roda; sem git, o diretorio atual.
+
+    Nao ha variavel de ambiente de proposito: exercitado ao vivo, o juiz
+    apontou o registro para o proprio scratchpad, e os desfechos que a
+    calibracao precisa se perderiam com a sessao.
+    """
+    try:
+        r = subprocess.run(["git", "rev-parse", "--show-toplevel"],
+                           capture_output=True, text=True, check=True)
+        return r.stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return os.getcwd()
+
+
+REGISTRO = os.path.join(raiz(), ".phxjev", "registro.jsonl")
 MINIMO_PARA_CALIBRAR = 50
 
 # A tabela da secao 4 da skill. Mudou aqui, muda la no mesmo commit.
@@ -176,9 +194,16 @@ def cmd_veredito(entrada, saida, registro=REGISTRO):
         raise Invalido("nenhum item")
     linhas.append("─" * 60)
     linhas.append("escalar: " + ("; ".join(escalar_tudo) if escalar_tudo else "nada"))
-    gravar(registro, registros)
     linhas.append(f"registro: {len(registros)} em {registro} (desfecho pendente)")
-    saida.write("\n".join(linhas) + "\n")
+    # O juiz ja encurtou esta saida uma vez apresentando-a como intacta. O
+    # selo nao impede editar; torna a edicao conferivel por `mostrar`.
+    texto = "\n".join(linhas)
+    selo = hashlib.sha256(texto.encode("utf-8")).hexdigest()[:12]
+    for r in registros:
+        r["selo"] = selo
+    registros[0]["saida"] = texto
+    gravar(registro, registros)
+    saida.write(texto + f"\nselo: {selo} (phxjev.py mostrar {selo})\n")
 
 
 def ler(registro):
@@ -251,12 +276,24 @@ def cmd_calibrar(registro=REGISTRO):
     return "\n".join(out)
 
 
+def cmd_mostrar(selo, registro=REGISTRO):
+    for r in ler(registro):
+        if r.get("selo") == selo and "saida" in r:
+            texto = r["saida"]
+            if hashlib.sha256(texto.encode("utf-8")).hexdigest()[:12] != selo:
+                raise Invalido(f"selo {selo}: o registro foi alterado")
+            return texto
+    raise Invalido(f"selo {selo} nao esta no registro")
+
+
 def main(argv):
     try:
         if argv[1:2] == ["veredito"]:
             cmd_veredito(sys.stdin.read(), sys.stdout)
         elif argv[1:2] == ["desfecho"] and len(argv) == 5:
             print(cmd_desfecho(*argv[2:5]))
+        elif argv[1:2] == ["mostrar"] and len(argv) == 3:
+            print(cmd_mostrar(argv[2]))
         elif argv[1:2] == ["calibrar"]:
             print(cmd_calibrar())
         else:

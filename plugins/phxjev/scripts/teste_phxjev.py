@@ -93,5 +93,27 @@ class Calibracao(unittest.TestCase):
         self.assertIn("INSUFICIENTE", cal)
 
 
+class Selo(unittest.TestCase):
+    def test_saida_editada_se_detecta(self):
+        reg = os.path.join(tempfile.mkdtemp(), "r.jsonl")
+        out = rodar([{"id": "a", "perguntas": {"real": noul(0.8)}}], reg)
+        selo = out.strip().splitlines()[-1].split()[1]
+        original = j.cmd_mostrar(selo, reg)
+        self.assertEqual(out.split("\nselo:")[0], original)
+        # quem encurtar a saida (como o juiz fez com o caminho) nao reproduz o selo
+        editada = original.replace(reg, "...")
+        self.assertNotEqual(j.hashlib.sha256(editada.encode()).hexdigest()[:12], selo)
+
+    def test_registro_nao_obedece_variavel_de_ambiente(self):
+        os.environ["PHXJEV_REGISTRO"] = "/tmp/outro.jsonl"
+        try:
+            import importlib
+            importlib.reload(j)
+            self.assertTrue(j.REGISTRO.endswith(os.path.join(".phxjev", "registro.jsonl")))
+            self.assertNotEqual(j.REGISTRO, "/tmp/outro.jsonl")
+        finally:
+            del os.environ["PHXJEV_REGISTRO"]
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

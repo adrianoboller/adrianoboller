@@ -88,7 +88,9 @@ JSON
 - **Nao escreva `conf`**: o script calcula (1 − entropia normalizada).
 - O script **recusa** p sem evidencia (fora de 0,5), choice que nao soma 1 e
   estado vazio. Recusou: corrija o JSON, nao o limiar.
-- A resposta ao usuario e a **saida do script, copiada sem editar**.
+- A resposta ao usuario e a **saida do script, copiada sem editar** — nem
+  encurtar caminho. A ultima linha traz um `selo`; `phxjev.py mostrar <selo>`
+  reimprime o original, e quem editou fica visivel.
 - Sem `CLAUDE_PLUGIN_ROOT` no ambiente, o script mora em
   `plugins/phxjev/scripts/phxjev.py` do repositorio.
 
@@ -103,7 +105,8 @@ JSON
 
 ## 7. Calibracao: registro, desfecho, medida
 
-Cada veredito entra em `.phxjev/registro.jsonl` (ou `$PHXJEV_REGISTRO`) com o
+Cada veredito entra em `<raiz do git>/.phxjev/registro.jsonl` — **sem
+variavel de ambiente**, porque um juiz ja o mandou para o scratchpad dele — com o
 desfecho pendente. Quando o desfecho for conhecido — o achado virou conserto?
 o teste falhou com o defeito reposto? —:
 

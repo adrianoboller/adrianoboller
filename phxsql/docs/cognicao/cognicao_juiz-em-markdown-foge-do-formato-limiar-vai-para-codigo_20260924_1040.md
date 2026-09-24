@@ -32,6 +32,15 @@ Instrução em prosa decide o quê; formato, conta e limiar se aplicam em códig
 
 ## Como está guardado hoje
 
-Pelo script e pelos testes dele. Buraco: nada impede o juiz de editar a saída
-do script antes de mostrá-la — a skill manda copiar sem editar, e isso é prosa
-de novo.
+Pelo script e pelos testes dele.
+
+**O alcance, medido às 11h03 no `/phxjev-revisar` ao vivo sobre 5 pedidos:** o
+buraco nomeado aqui aconteceu. O juiz mostrou a saída «sem editar» com o
+caminho trocado por `...`, e mandou o registro para o próprio scratchpad por
+`PHXJEV_REGISTRO` — 7 vereditos longe de onde a calibração os procura. E o
+`.phxjev/` estava no `.gitignore`: num contêiner descartável, desfecho não
+versionado é desfecho perdido. Os três foram para código: o registro fica
+preso à raiz do git (sem variável), é versionado, e cada saída carrega um
+`selo` SHA-256 que `phxjev.py mostrar` confere. O selo não impede editar;
+torna a edição visível — é o limite honesto do que código consegue fazer
+sobre o que o juiz escreve depois.
