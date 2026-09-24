@@ -215,6 +215,25 @@ saiu com 4 de 5 e só o `diff` do 7-Zip acusou — hoje os arquivos entram por
 buffer e a contagem se confere); «(NaN%)» na compactação (porcentagem sobre o
 número já formatado); e a recusa de método repetindo a frase duas vezes.
 
+## 5b. Revisão completa (24/09/2026)
+
+Revisão dos 18 commits da frente (cerca de 10 mil linhas): 8 achados, todos
+consertados.
+
+| # | achado | conserto | prova |
+|---|---|---|---|
+| 1 | Índice de ligação ou de fluxo empacotado igual ao total passava, e `p.coders[k]` estourava: um 7z hostil derrubava a thread da web, o `phxzipcmd` e o arranque do `phxsqld` com um `.phz` hostil | o índice tem de ser menor que o total, senão `Corrompido` | teste novo, que falha com o código antigo |
+| 2 | `caminho_seguro` só recusava letra de unidade no 1º componente: `a/C:/x` passava, e no Windows o `PathBuf::push("C:")` troca o destino (zip-slip) | letra de unidade recusada em qualquer componente | casos no teste de recusa |
+| 3 | `--deszipar-config`: a releitura passava pelo resolvedor, que acha o `.phz` irmão, e conferia o `.phz` com ele mesmo antes de apagá-lo | relê o `.json` pelo caminho literal | sem teste: reproduzir escrita ruim não é simples |
+| 4 | `testar`/`extrair_tudo` custavam O(pastas × entradas) | faixa de entradas por pasta e deslocamentos calculados uma vez | 7z não sólido com 20.000 arquivos: `t` de 1,373 s para 0,028 s |
+| 5 | A chave do 7zAES (2^19 SHA-256) era derivada duas vezes por gravação e duas por leitura | uma vez por gravação, cache por leitura | suíte e interoperabilidade verdes |
+| 6 | Senha com o `acaso` do `Default` gravava IV zero, calado | `gravar` recusa senha sem acaso | o teste cai com a recusa desligada |
+| 7 | O «extrair tudo» mandava o nome cru (`./a.txt`), e o `getDirectoryHandle('.')` quebrava no meio | manda o caminho normalizado | — |
+| 8 | Comentário com acento | tirado | — |
+
+Portões depois da revisão: `fmt` ok, `clippy` com zero avisos, 2.936 testes
+verdes, e o `phxzip` compila para `thumbv7em-none-eabihf` (`no_std`).
+
 ## 6. Como rodar a prova
 
 ```bash

@@ -2294,7 +2294,16 @@ pub fn converter_configs(config: &Config, para_phz: bool) -> Vec<String> {
                 texto.clone().into_bytes()
             };
             gravar_no_disco(para, &bytes)?;
-            if phxsql_core::phz::ler_texto(para)? != texto {
+            // A releitura e do arquivo EXATO que se gravou. `ler_texto` no
+            // `.json` resolveria para o `.phz` irmao, que ainda existe na
+            // volta -- e a conferencia compararia o `.phz` com ele mesmo,
+            // aprovando qualquer `.json` antes de apagar o `.phz`.
+            let relido = if para_phz {
+                phxsql_core::phz::ler_texto(para)?
+            } else {
+                std::fs::read_to_string(para)?
+            };
+            if relido != texto {
                 let _ = std::fs::remove_file(para);
                 return Err(std::io::Error::other(
                     "a releitura nao bateu; nada foi apagado",

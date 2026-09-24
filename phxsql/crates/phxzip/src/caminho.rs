@@ -12,7 +12,7 @@ use crate::erro::{Erro, Resultado};
 
 /// Normaliza o nome gravado no 7z para um caminho relativo seguro, com `/`.
 ///
-/// Recusa: vazio, absoluto (`/x`, `\x`), letra de unidade (`C:`), qualquer
+/// Recusa: vazio, absoluto (`/x`, `\x`), letra de unidade (`C:`) em qualquer componente, qualquer
 /// componente `..`, NUL e caractere de controle. `\` conta como separador,
 /// porque um 7z gravado no Windows pode trazer, e porque tratar `a\..\..\x`
 /// como um nome so de arquivo abriria a porta no Windows, onde ele E caminho.
@@ -25,15 +25,20 @@ pub fn caminho_seguro(nome: &str) -> Resultado<String> {
     if n.starts_with('/') {
         return Err(Erro::CaminhoInseguro);
     }
-    let b = n.as_bytes();
-    if b.len() >= 2 && b[1] == b':' && b[0].is_ascii_alphabetic() {
-        return Err(Erro::CaminhoInseguro);
-    }
     let mut saida = String::with_capacity(n.len());
     for parte in n.split('/') {
         match parte {
             "" | "." => continue,
             ".." => return Err(Erro::CaminhoInseguro),
+            // Letra de unidade em QUALQUER componente, e nao so no primeiro:
+            // no Windows `PathBuf::push("C:")` troca o caminho inteiro, entao
+            // `a/C:/x` empurrado sobre a pasta de destino vira `C:x`, fora dela.
+            _ if parte.len() >= 2
+                && parte.as_bytes()[1] == b':'
+                && parte.as_bytes()[0].is_ascii_alphabetic() =>
+            {
+                return Err(Erro::CaminhoInseguro)
+            }
             _ => {
                 if !saida.is_empty() {
                     saida.push('/');
@@ -63,6 +68,8 @@ mod testes {
             "C:\\x",
             "c:x",
             "a\\..\\..\\x",
+            "a/C:/x",
+            "a\\d:x",
             "",
             "a\0b",
             "./..",

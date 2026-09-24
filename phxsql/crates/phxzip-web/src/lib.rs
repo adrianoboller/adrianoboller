@@ -461,23 +461,26 @@ fn extrair_tudo(fluxo: &mut TcpStream, meta: &Json, bytes: &[u8]) -> Result<(), 
     let mut arquivos = Vec::new();
     let mut pulados = Vec::new();
     let mut total: u64 = 0;
-    let vai = |e: &phxzip::Entrada| -> Result<(), &'static str> {
+    // O nome que vai para a tela e o caminho NORMALIZADO pelo motor, e nao o
+    // gravado: `./a.txt` e `a//b` passam no `caminho_seguro`, e a tela que
+    // montasse a arvore pelo nome cru pediria `getDirectoryHandle(".")`.
+    let vai = |e: &phxzip::Entrada| -> Result<String, &'static str> {
         if e.e_ligacao() {
             return Err("ligacao");
         }
-        e.caminho().map(|_| ()).map_err(|_| "caminho")
+        e.caminho().map_err(|_| "caminho")
     };
     for e in a.entradas() {
         if e.e_pasta {
             continue;
         }
         match vai(e) {
-            Ok(()) => {
+            Ok(caminho) => {
                 total = total
                     .checked_add(e.tamanho)
                     .ok_or(Erro::Teto("soma do extrair tudo"))?;
                 arquivos.push(Json::objeto(vec![
-                    ("nome", Json::texto_de(e.nome.as_str())),
+                    ("nome", Json::texto_de(caminho)),
                     ("tamanho", Json::de_u64(e.tamanho)),
                     (
                         "mtime",

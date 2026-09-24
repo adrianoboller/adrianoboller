@@ -6,7 +6,7 @@
 //! ([`Erro::MetodoRecusado`]) -- sem codigo morto de formato descontinuado.
 //!
 //! Tudo o que esta aqui foi escrito aqui: LZMA/LZMA2 nos dois sentidos, AES,
-//! o contêiner. O CRC-32 e o SHA-256 sao os do PhxSql, pela `phxhash`, e nao
+//! o conteiner. O CRC-32 e o SHA-256 sao os do PhxSql, pela `phxhash`, e nao
 //! uma segunda copia. Zero dependencia externa.
 //!
 //! # Onde roda

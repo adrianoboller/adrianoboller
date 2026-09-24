@@ -8,9 +8,11 @@
 use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
+use core::cell::RefCell;
 
 use phxhash::crc::crc32;
 
+use crate::aes::Aes256;
 use crate::caminho::caminho_seguro;
 use crate::chave::ParamAes;
 use crate::erro::{para_usize, Erro, Resultado};
@@ -89,6 +91,12 @@ struct Fluxos {
     subfluxos: Vec<usize>,
     tam_sub: Vec<u64>,
     crc_sub: Vec<Option<u32>>,
+    /// Indice do primeiro fluxo empacotado de cada pasta.
+    primeiro_emp: Vec<usize>,
+    /// Soma dos empacotados antes de cada um (`None` se transborda). Com os
+    /// dois prefixos, achar o inicio de uma pasta e O(1) -- somar a cada
+    /// pasta tornava `testar` quadratico no numero de pastas.
+    desl_emp: Vec<Option<u64>>,
 }
 
 /// Uma entrada do arquivo: arquivo ou pasta.
@@ -137,6 +145,15 @@ pub struct Arquivo7z<'a> {
     limites: Limites,
     fluxos: Fluxos,
     entradas: Vec<Entrada>,
+    /// Por pasta, o intervalo de `entradas` onde moram as dela. As entradas
+    /// se ligam as pastas em ordem, entao o intervalo e contiguo; sem ele,
+    /// conferir uma pasta varria todas as entradas, e `testar`/`extrair_tudo`
+    /// saiam quadraticos (pastas x entradas) num 7z nao solido ou hostil.
+    faixas: Vec<(usize, usize)>,
+    /// Chave derivada da ultima senha usada, com o sal e os ciclos dela: o
+    /// cabecalho cifrado e os dados usam os mesmos parametros, e cada
+    /// derivacao custa 2^19 voltas de SHA-256.
+    chave: RefCell<Option<(Vec<u8>, u8, Aes256)>>,
     cabecalho_cifrado: bool,
 }
 
@@ -176,6 +193,8 @@ impl<'a> Arquivo7z<'a> {
             limites,
             fluxos: Fluxos::default(),
             entradas: Vec::new(),
+            faixas: Vec::new(),
+            chave: RefCell::new(None),
             cabecalho_cifrado: false,
         };
         if bytes.len() < CABECALHO_INICIAL || bytes[..6] != ASSINATURA {
@@ -290,6 +309,16 @@ impl<'a> Arquivo7z<'a> {
         if t != K_FIM {
             return Err(Erro::Corrompido("cabecalho sem fim"));
         }
+        let mut faixas = vec![(0usize, 0usize); self.fluxos.pastas.len()];
+        for (k, e) in entradas.iter().enumerate() {
+            if let Some(p) = e.pasta {
+                if faixas[p].1 == 0 {
+                    faixas[p].0 = k;
+                }
+                faixas[p].1 = k + 1;
+            }
+        }
+        self.faixas = faixas;
         self.entradas = entradas;
         Ok(())
     }
@@ -432,7 +461,19 @@ impl<'a> Arquivo7z<'a> {
             .get(i)
             .ok_or(Erro::Corrompido("pasta inexistente"))?;
         let cifrada = p.cifrada();
-        match decodificar_pasta(self.bytes, f, i, self.senha.as_deref(), &self.limites) {
+        let cifra = |pa: &ParamAes| -> Resultado<Aes256> {
+            let senha = self.senha.as_deref().ok_or(Erro::SenhaNecessaria)?;
+            let mut c = self.chave.borrow_mut();
+            if let Some((sal, ciclos, aes)) = c.as_ref() {
+                if *sal == pa.sal && *ciclos == pa.ciclos {
+                    return Ok(aes.clone());
+                }
+            }
+            let aes = pa.cifra(senha)?;
+            *c = Some((pa.sal.clone(), pa.ciclos, aes.clone()));
+            Ok(aes)
+        };
+        match decodificar_pasta(self.bytes, f, i, &cifra, &self.limites) {
             Err(Erro::Corrompido(_)) | Err(Erro::CrcNaoBate(_)) if cifrada => {
                 Err(Erro::SenhaErradaOuCorrompido)
             }
@@ -444,7 +485,8 @@ impl<'a> Arquivo7z<'a> {
     fn pasta_conferida(&self, i: usize) -> Resultado<Vec<u8>> {
         let d = self.decodificar(&self.fluxos, i)?;
         let cifrada = self.fluxos.pastas[i].cifrada();
-        for e in self.entradas.iter().filter(|e| e.pasta == Some(i)) {
+        let (de, ate) = self.faixas.get(i).copied().unwrap_or((0, 0));
+        for e in self.entradas[de..ate].iter().filter(|e| e.pasta == Some(i)) {
             if let Some(c) = e.crc {
                 let a = para_usize(e.deslocamento)?;
                 let b = a + para_usize(e.tamanho)?;
@@ -585,9 +627,19 @@ fn ler_pasta(r: &mut Bytes) -> Resultado<Pasta> {
     if total_saidas == 0 {
         return Err(Erro::Corrompido("pasta sem saida"));
     }
+    // `quantos(teto)` aceita o proprio teto; indice de fluxo nao pode: um
+    // indice igual ao total apontaria um coder que nao existe, e a corrente
+    // de `decodificar_pasta` indexaria fora do vetor (panico, e nao erro).
+    let indice = |r: &mut Bytes, total: usize| -> Resultado<usize> {
+        let i = r.quantos(total)?;
+        if i >= total {
+            return Err(Erro::Corrompido("indice de fluxo fora da pasta"));
+        }
+        Ok(i)
+    };
     let mut ligacoes = Vec::new();
     for _ in 0..total_saidas - 1 {
-        ligacoes.push((r.quantos(total_entradas)?, r.quantos(total_saidas)?));
+        ligacoes.push((indice(r, total_entradas)?, indice(r, total_saidas)?));
     }
     let n_emp = total_entradas
         .checked_sub(ligacoes.len())
@@ -601,7 +653,7 @@ fn ler_pasta(r: &mut Bytes) -> Resultado<Pasta> {
     } else {
         let mut v = Vec::new();
         for _ in 0..n_emp {
-            v.push(r.quantos(total_entradas)?);
+            v.push(indice(r, total_entradas)?);
         }
         v
     };
@@ -760,6 +812,17 @@ fn ler_fluxos(r: &mut Bytes, lim: &Limites) -> Resultado<Fluxos> {
     if t != K_FIM {
         return Err(Erro::Corrompido("StreamsInfo sem fim"));
     }
+    let mut n = 0usize;
+    for p in &f.pastas {
+        f.primeiro_emp.push(n);
+        n = n.saturating_add(p.empacotados.len());
+    }
+    let mut soma = Some(0u64);
+    for t in &f.empacotados {
+        f.desl_emp.push(soma);
+        soma = soma.and_then(|s| s.checked_add(*t));
+    }
+    f.desl_emp.push(soma);
     Ok(f)
 }
 
@@ -781,7 +844,7 @@ fn decodificar_pasta(
     bytes: &[u8],
     f: &Fluxos,
     i: usize,
-    senha: Option<&str>,
+    cifra: &dyn Fn(&ParamAes) -> Resultado<Aes256>,
     lim: &Limites,
 ) -> Resultado<Vec<u8>> {
     let p = &f.pastas[i];
@@ -805,17 +868,21 @@ fn decodificar_pasta(
         }
     }
     // Onde comeca o fluxo empacotado desta pasta.
-    let antes: usize = f.pastas[..i].iter().map(|q| q.empacotados.len()).sum();
-    let mut ini = CABECALHO_INICIAL as u64 + f.pos_empacotado;
-    for t in f
-        .empacotados
-        .get(..antes)
+    let antes = *f
+        .primeiro_emp
+        .get(i)
+        .ok_or(Erro::Corrompido("fluxos empacotados"))?;
+    let ini = f
+        .desl_emp
+        .get(antes)
+        .copied()
         .ok_or(Erro::Corrompido("fluxos empacotados"))?
-    {
-        ini = ini
-            .checked_add(*t)
-            .ok_or(Erro::Corrompido("deslocamento empacotado"))?;
-    }
+        .and_then(|d| {
+            (CABECALHO_INICIAL as u64)
+                .checked_add(f.pos_empacotado)?
+                .checked_add(d)
+        })
+        .ok_or(Erro::Corrompido("deslocamento empacotado"))?;
     let tam = *f
         .empacotados
         .get(antes)
@@ -861,9 +928,8 @@ fn decodificar_pasta(
                 s
             }
             _ => {
-                let senha = senha.ok_or(Erro::SenhaNecessaria)?;
                 let pa = ParamAes::ler(&c.props)?;
-                let aes = pa.cifra(senha)?;
+                let aes = cifra(&pa)?;
                 if dado.len() < n {
                     return Err(Erro::Corrompido("7zAES menor que o declarado"));
                 }
@@ -883,4 +949,23 @@ fn decodificar_pasta(
             .ok_or(Erro::Corrompido("corrente de coders quebrada"))?;
     }
     Err(Erro::Corrompido("corrente de coders em ciclo"))
+}
+
+#[cfg(test)]
+mod testes {
+    use super::*;
+
+    #[test]
+    fn ligacao_que_aponta_coder_inexistente_e_recusada_sem_panico() {
+        // Dois coders Copy simples; a ligacao diz entrada 2 (so ha 0 e 1).
+        // Aceita, a corrente de `decodificar_pasta` indexava `coders[2]`.
+        let mut r = Bytes::novo(&[0x02, 0x00, 0x00, 0x02, 0x00]);
+        assert_eq!(
+            ler_pasta(&mut r).unwrap_err(),
+            Erro::Corrompido("indice de fluxo fora da pasta")
+        );
+        // A mesma pasta com a ligacao certa continua valendo.
+        let mut r = Bytes::novo(&[0x02, 0x00, 0x00, 0x01, 0x00]);
+        assert_eq!(ler_pasta(&mut r).unwrap().empacotados, vec![0]);
+    }
 }

@@ -14,9 +14,9 @@ use alloc::vec::Vec;
 
 use phxhash::crc::crc32;
 
-use crate::aes::BLOCO;
+use crate::aes::{Aes256, BLOCO};
 use crate::caminho::caminho_seguro;
-use crate::chave::{ParamAes, CICLOS_PADRAO};
+use crate::chave::{derivar, ParamAes, CICLOS_PADRAO};
 use crate::erro::{Erro, Resultado};
 use crate::formato::*;
 use crate::lzma::{codificar_lzma2, Nivel};
@@ -124,6 +124,14 @@ impl Escritor {
         if op.senha.as_deref() == Some("") {
             return Err(Erro::Uso("senha vazia"));
         }
+        // Com senha e o `acaso` do `Default` (zeros), o IV sairia o mesmo em
+        // todo arquivo da mesma senha -- e calado. O campo promete que isso
+        // nao nasce calado; a promessa so vale se a gravacao recusar.
+        if op.senha.is_some() && op.acaso == [0; 32] {
+            return Err(Erro::Uso(
+                "senha sem acaso: forneca 32 bytes imprevisiveis em Opcoes::acaso",
+            ));
+        }
         if self.itens.is_empty() {
             return Ok(assinatura(0, 0, 0));
         }
@@ -138,12 +146,18 @@ impl Escritor {
             }
         }
 
+        // A chave sai UMA vez: dados e cabecalho usam a mesma senha, o mesmo
+        // sal (vazio) e os mesmos ciclos, e cada derivacao custa 2^19 voltas
+        // de SHA-256 -- derivar duas vezes dobrava o preco de todo `.phz`.
+        let aes = match op.senha.as_deref() {
+            Some(s) => Some(Aes256::novo(&derivar(s, &[], CICLOS_PADRAO)?)),
+            None => None,
+        };
         let mut empacotado = Vec::new();
         let mut cab = Vec::new();
         gravar_numero(&mut cab, K_CABECALHO);
         if !solido.is_empty() {
-            let (dado, pasta) =
-                codificar(&solido, op.nivel, op.senha.as_deref(), iv(&op.acaso, 0))?;
+            let (dado, pasta) = codificar(&solido, op.nivel, aes.as_ref(), iv(&op.acaso, 0));
             gravar_numero(&mut cab, K_FLUXOS_PRINCIPAIS);
             gravar_fluxos(&mut cab, 0, dado.len() as u64, &pasta, None);
             // SubStreamsInfo: quantos, os tamanhos menos o ultimo, e os CRCs.
@@ -169,13 +183,9 @@ impl Escritor {
         gravar_numero(&mut cab, K_FIM);
 
         // O cabecalho vai sempre comprimido, e cifrado quando os nomes vao.
-        let senha_cab = if op.cifrar_nomes {
-            op.senha.as_deref()
-        } else {
-            None
-        };
+        let aes_cab = if op.cifrar_nomes { aes.as_ref() } else { None };
         let (dado_cab, pasta_cab) =
-            codificar(&cab, 5.max(op.nivel.min(9)), senha_cab, iv(&op.acaso, 1))?;
+            codificar(&cab, 5.max(op.nivel.min(9)), aes_cab, iv(&op.acaso, 1));
         let mut cod = Vec::new();
         gravar_numero(&mut cod, K_CABECALHO_CODIFICADO);
         gravar_fluxos(
@@ -307,9 +317,9 @@ struct PastaEscrita {
 fn codificar(
     dados: &[u8],
     nivel: u8,
-    senha: Option<&str>,
+    aes: Option<&Aes256>,
     iv: [u8; BLOCO],
-) -> Resultado<(Vec<u8>, PastaEscrita)> {
+) -> (Vec<u8>, PastaEscrita) {
     let (id, props, mut fluxo) = if nivel == 0 {
         (COPY, Vec::new(), dados.to_vec())
     } else {
@@ -320,21 +330,20 @@ fn codificar(
         coders: alloc::vec![(id, props)],
         tamanhos: alloc::vec![dados.len() as u64],
     };
-    if let Some(s) = senha {
+    if let Some(aes) = aes {
         let pa = ParamAes {
             ciclos: CICLOS_PADRAO,
             sal: Vec::new(),
             iv,
             iv_len: BLOCO,
         };
-        let aes = pa.cifra(s)?;
         let real = fluxo.len();
         fluxo.resize(real.div_ceil(BLOCO) * BLOCO, 0);
         aes.cifrar_cbc(&pa.iv, &mut fluxo);
         pasta.coders.push((AES, pa.gravar()));
         pasta.tamanhos.push(real as u64);
     }
-    Ok((fluxo, pasta))
+    (fluxo, pasta)
 }
 
 fn gravar_fluxos(cab: &mut Vec<u8>, pos: u64, tam: u64, pasta: &PastaEscrita, crc: Option<u32>) {
@@ -385,5 +394,25 @@ fn gravar_fluxos(cab: &mut Vec<u8>, pos: u64, tam: u64, pasta: &PastaEscrita, cr
     gravar_numero(cab, K_FIM);
     if crc.is_some() {
         gravar_numero(cab, K_FIM);
+    }
+}
+
+#[cfg(test)]
+mod testes {
+    use super::*;
+
+    /// Senha com o `acaso` do `Default` e recusa: o IV zero sairia igual em
+    /// todo arquivo da mesma senha. Sem senha, o acaso nao importa e grava.
+    #[test]
+    fn senha_sem_acaso_e_recusada_e_sem_senha_nao() {
+        let mut e = Escritor::novo(Opcoes {
+            senha: Some("s".into()),
+            ..Opcoes::default()
+        });
+        e.arquivo("a", b"x".to_vec(), None, None).unwrap();
+        assert!(matches!(e.gravar(), Err(Erro::Uso(m)) if m.contains("acaso")));
+        let mut e = Escritor::novo(Opcoes::default());
+        e.arquivo("a", b"x".to_vec(), None, None).unwrap();
+        assert!(e.gravar().is_ok());
     }
 }

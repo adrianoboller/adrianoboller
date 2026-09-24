@@ -277,6 +277,7 @@ mod testes {
         let p = d.0.join("config.phz");
         let mut e = Escritor::novo(Opcoes {
             senha: Some(SENHA_FIXA.into()),
+            acaso: [7; 32],
             ..Opcoes::default()
         });
         e.arquivo("a.json", b"{}".to_vec(), None, None).unwrap();
@@ -286,6 +287,7 @@ mod testes {
         assert!(m.contains("guarda 2"), "{m}");
         let mut e = Escritor::novo(Opcoes {
             senha: Some("outra".into()),
+            acaso: [8; 32],
             ..Opcoes::default()
         });
         e.arquivo("config.json", b"{}".to_vec(), None, None)
