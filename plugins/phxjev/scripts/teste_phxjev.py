@@ -170,6 +170,21 @@ class Melhorias(unittest.TestCase):
         self.assertEqual(pulados, 1)                      # o 10 ja estava fechado
         self.assertEqual(j.cmd_colher(pend, self.reg)[0], [])  # nao colhe duas vezes
 
+    def test_colher_com_caminho_relativo_nao_inventa_fechamento(self):
+        pend = os.path.join(self.dir, "PENDENCIAS.md")
+        self.git("init", "-q")
+        self.git("config", "user.email", "t@t"); self.git("config", "user.name", "t")
+        open(pend, "w").write("| ☑️ | 10 | ja fechado |\n")
+        self.git("add", "."); self.git("commit", "-qm", "a", data="2020-01-01T00:00:00")
+        rodar([{"id": "10-x", "perguntas": {"real": noul(0.9)}}], self.reg)
+        antes = os.getcwd()
+        os.chdir(os.path.dirname(self.dir))
+        try:
+            feitos, pulados = j.cmd_colher(os.path.join(os.path.basename(self.dir), "PENDENCIAS.md"), self.reg)
+        finally:
+            os.chdir(antes)
+        self.assertEqual((feitos, pulados), ([], 1))
+
 
 class Gancho(unittest.TestCase):
     def transcricao(self, saida, final, pedido="/phxjev-perguntar x"):

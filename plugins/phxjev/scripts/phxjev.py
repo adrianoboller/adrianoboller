@@ -270,12 +270,18 @@ def cmd_desfecho(rid, pergunta, valor, registro=REGISTRO, fonte="manual"):
 
 def fechamento_do_pedido(num, pendencias):
     """Unix time do commit que pos o pedido em ☑️, ou None se nao esta ☑️."""
+    # Absoluto: com caminho relativo o git roda no diretorio do arquivo, nao
+    # acha o pathspec, e o «nao comitado = agora» fazia TODO pedido ja ☑️
+    # parecer fechado depois do veredito -- desfecho falso, achado na revisao.
+    pendencias = os.path.abspath(pendencias)
     marca = f"| ☑️ | {num} |"
     with open(pendencias, encoding="utf-8") as f:
         if not any(l.startswith(marca) for l in f):
             return None
     r = subprocess.run(["git", "log", "--format=%ct %h", "-S", marca, "--", pendencias],
                        capture_output=True, text=True, cwd=os.path.dirname(pendencias) or ".")
+    if r.returncode != 0:
+        raise Invalido(f"git log falhou em {pendencias}: {r.stderr.strip()}")
     linhas = r.stdout.split()
     # O mais recente: pedido reaberto e fechado de novo conta pelo ultimo
     # fechamento. Data de COMMIT, nao de autor -- e quando entrou na branch.
@@ -392,7 +398,9 @@ def perguntar_local(modelo, estado, texto, opcoes, url=OLLAMA):
               f"Responda so com a letra.\nResposta:")
     corpo = json.dumps({"model": modelo, "prompt": prompt, "stream": False,
                         "logprobs": True, "top_logprobs": 20,
-                        "options": {"num_predict": 1, "temperature": 0}}).encode()
+                        "options": {"num_predict": 1, "temperature": 0,
+                                    # janela explicita: o Ollama corta calado o que passa do padrao
+                                    "num_ctx": 8192}}).encode()
     t0 = time.time()
     req = urllib.request.Request(url, corpo, {"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=300) as r:
