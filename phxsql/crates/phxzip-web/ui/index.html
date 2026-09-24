@@ -16,6 +16,16 @@
     /* O acento do PhxZip na familia Phoenix e o ambar (marca/LEIA-ME.md):
        o PhxSql e laranja, o PhxMail vermelhao, o Phxblockchain vermelho. */
     --acento: var(--ambar);
+    --linha-tabela: #141c30; --realce-soltar: rgba(255,196,61,.08);
+  }
+  /* Tema claro: os mesmos tons do PhxSql, e pela mesma regra da marca -- o
+     laranja e o vermelhao escurecem para #C63C0A, e as cores da acao
+     escurecem ate passar 4,5:1 sobre o papel (medido: tela-phxzip.mjs). */
+  :root[data-tema="claro"] {
+    --fundo: #f7f5f2; --painel: #ffffff; --borda: #ded7cf; --texto: #1a1210;
+    --fraco: #6b5e57; --ambar: #8a5c00; --laranja: #c63c0a; --vermelhao: #c63c0a;
+    --verde: #2f7a3e; --azul: #1f5c93; --vermelho: #b71414;
+    --linha-tabela: #ece7e1; --realce-soltar: rgba(160,106,0,.08);
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--fundo); color: var(--texto);
@@ -58,11 +68,12 @@
   .escolhidos { color: var(--fraco); font-size: 13px; overflow-wrap: anywhere; }
   /* A area de soltar: tracejado ambar em repouso, cheio quando ha algo em
      cima -- a mesma regra do botao (contorno, e preenchimento so com intencao). */
-  .zona { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  /* A zona encostava na legenda do campo seguinte (visto a 375 px). */
+  .zona { margin-bottom: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
     min-height: 118px; padding: 16px; border: 2px dashed var(--borda); border-radius: 12px; cursor: pointer;
     color: var(--fraco); text-align: center; transition: border-color .15s, background .15s; }
   .zona:hover, .zona:focus-visible { border-color: var(--acento); color: var(--texto); outline: none; }
-  .zona.em-cima { border-color: var(--acento); border-style: solid; background: rgba(255,196,61,.08); color: var(--texto); }
+  .zona.em-cima { border-color: var(--acento); border-style: solid; background: var(--realce-soltar); color: var(--texto); }
   .zona .ic { width: 30px; height: 30px; color: var(--acento); }
   .zona strong { color: var(--texto); font-weight: 600; }
   .zona input[type=file] { display: none; }
@@ -82,7 +93,7 @@
   table.entradas { width: 100%; border-collapse: collapse; font-size: 13px; }
   table.entradas th { text-align: left; color: var(--fraco); font-weight: 500; padding: 6px 8px;
     border-bottom: 1px solid var(--borda); white-space: nowrap; }
-  table.entradas td { padding: 6px 8px; border-bottom: 1px solid #141c30; vertical-align: middle; }
+  table.entradas td { padding: 6px 8px; border-bottom: 1px solid var(--linha-tabela); vertical-align: middle; }
   table.entradas td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
   table.entradas td.nome { overflow-wrap: break-word; min-width: 9em; }
   table.entradas td.data { white-space: nowrap; color: var(--fraco); }
@@ -101,6 +112,27 @@
   .com-olho .caixa { flex: 1; min-width: 0; }
   .botao.olho[aria-pressed=true] { color: var(--ambar); }
   #c_teto { margin-bottom: 12px; }
+  /* Progresso: a barra mede o que o navegador SABE medir (envio e
+     recebimento); o trabalho do servidor nao tem porcentagem, e a barra diz
+     isso andando sem numero em vez de inventar um. */
+  .progresso { display: flex; gap: 10px; align-items: center; margin-top: 14px; font-size: 13px; color: var(--fraco); }
+  .progresso .trilho { flex: 1; height: 6px; border-radius: 99px; background: var(--borda); overflow: hidden; position: relative; }
+  .progresso .barra { height: 100%; width: 0; background: var(--acento); transition: width .15s; }
+  .progresso.indeterminado .barra { width: 30%; position: absolute; animation: vaivem 1.1s ease-in-out infinite alternate; }
+  @keyframes vaivem { from { left: 0; } to { left: 70%; } }
+  @media (prefers-reduced-motion: reduce) { .progresso.indeterminado .barra { animation: none; width: 100%; opacity: .5; } }
+  .progresso .rotulo { min-width: 12em; font-variant-numeric: tabular-nums; }
+  /* Arvore: a pasta e uma linha que abre e fecha; a ordenacao mantem as
+     pastas antes dos arquivos em cada nivel, como o 7-Zip e o Explorer. */
+  .seta { background: none; border: 0; color: var(--fraco); cursor: pointer; padding: 0 4px 0 0; font: inherit; line-height: 1; width: 1.2em; }
+  .seta:hover { color: var(--texto); }
+  .seta .ic { transition: transform .12s; }
+  .seta[aria-expanded="false"] .ic { transform: rotate(-90deg); }
+  .recuo { display: inline-block; width: 1.2em; }
+  th button.ordenar { background: none; border: 0; color: inherit; font: inherit; cursor: pointer; padding: 0; }
+  th button.ordenar:hover { color: var(--texto); }
+  th[aria-sort="ascending"] button.ordenar::after { content: " ▲"; font-size: 9px; }
+  th[aria-sort="descending"] button.ordenar::after { content: " ▼"; font-size: 9px; }
   .resultado.aviso { display: block; border-color: var(--ambar); color: var(--ambar); }
   #login { max-width: 380px; margin: 60px auto; }
   .oculto { display: none !important; }
@@ -118,6 +150,7 @@
   <div class="dir">
     <span id="quem" class="sub"></span>
     <button id="sair" class="botao neutro mini oculto" data-txt="zip.sair">Sair</button>
+    <button id="tema" class="botao neutro mini icone" type="button"><svg class="ic" aria-hidden="true"><use href="#i-sol"/></svg></button>
     <select id="idioma" class="caixa" style="width:auto" aria-label="idioma"></select>
   </div>
 </header>
@@ -130,6 +163,9 @@
   <symbol id="i-baixar" viewBox="0 0 24 24"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></symbol>
   <symbol id="i-soltar" viewBox="0 0 24 24"><path d="M12 15V3"/><path d="M7 8l5-5 5 5"/><path d="M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></symbol>
   <symbol id="i-olho" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-sol" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+  <symbol id="i-lua" viewBox="0 0 24 24"><path d="M21 13A9 9 0 1 1 11 3a7 7 0 0 0 10 10z"/></symbol>
+  <symbol id="i-seta" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
   <symbol id="i-fechar" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
   <symbol id="i-doc" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></symbol>
 </svg>
@@ -182,6 +218,10 @@
       <label class="marcar"><input id="c_visiveis" type="checkbox"><span data-txt="zip.nomes_visiveis">nomes visíveis sem senha</span></label>
     </div>
     <button id="compactar" class="botao inclui" data-txt="zip.compactar">Compactar e baixar</button>
+    <div id="c_prog" class="progresso oculto" role="status" aria-live="polite">
+      <div class="trilho"><div class="barra"></div></div><span class="rotulo"></span>
+      <button type="button" class="botao neutro mini" data-txt="zip.cancelar">Cancelar</button>
+    </div>
     <div id="c_res" class="resultado"></div>
   </section>
 
@@ -198,6 +238,11 @@
     <div class="linha">
       <button id="abrir" class="botao consulta" data-txt="zip.abrir">Abrir</button>
       <button id="testar" class="botao consulta" data-txt="zip.testar">Testar integridade</button>
+      <button id="tudo" class="botao consulta" data-txt="zip.extrair_tudo">Extrair tudo</button>
+    </div>
+    <div id="a_prog" class="progresso oculto" role="status" aria-live="polite">
+      <div class="trilho"><div class="barra"></div></div><span class="rotulo"></span>
+      <button type="button" class="botao neutro mini" data-txt="zip.cancelar">Cancelar</button>
     </div>
     <div id="a_res" class="resultado"></div>
     <div id="a_barra" class="linha oculto" style="margin-top:14px;justify-content:space-between">
@@ -205,8 +250,10 @@
       <span id="a_total" class="escolhidos"></span>
     </div>
     <div class="tabela-rolagem"><table id="a_tabela" class="entradas oculto">
-      <thead><tr><th></th><th data-txt="zip.col_nome">Nome</th><th data-txt="zip.col_tamanho">Tamanho</th>
-        <th data-txt="zip.col_metodo">Método</th><th data-txt="zip.col_data">Data</th><th></th></tr></thead>
+      <thead><tr><th data-ordem="nome"><button class="ordenar" data-txt="zip.col_nome">Nome</button></th>
+        <th data-ordem="tamanho"><button class="ordenar" data-txt="zip.col_tamanho">Tamanho</button></th>
+        <th data-ordem="metodo"><button class="ordenar" data-txt="zip.col_metodo">Método</button></th>
+        <th data-ordem="data"><button class="ordenar" data-txt="zip.col_data">Data</button></th><th></th></tr></thead>
       <tbody></tbody></table></div>
   </section>
 </main>
@@ -259,27 +306,72 @@ $('idioma').onchange = async () => {
   idioma = $('idioma').value;
   try { localStorage.setItem('phxzip_idioma', idioma); } catch (_) {}
   await carregarTextos();
-  traduzir(); desenharFila(); rotularAberto(); rotularNivel(); rotularOlho(); if (ultimaLista) desenhar(ultimaLista);
+  traduzir(); desenharFila(); rotularAberto(); rotularNivel(); rotularOlho(); aplicarTema(document.documentElement.getAttribute('data-tema')); if (ultimaLista) desenhar(ultimaLista);
 };
 
 function mostrar(id, ok, texto) { const el = $(id); el.className = 'resultado ' + (ok ? 'ok' : 'erro'); el.textContent = texto; }
 function limpar(id) { $(id).className = 'resultado'; $(id).textContent = ''; }
 
-async function api(rota, corpo, binario) {
-  const r = await fetch(rota, { method: 'POST', body: corpo, credentials: 'same-origin',
-    headers: { 'X-PhxZip': '1' } });
-  if (!r.ok) {
-    let j = {}; try { j = await r.json(); } catch (_) {}
-    if (r.status === 401 && j.tipo === 'login') { await estado(); }
-    const e = new Error(j.erro || r.statusText); e.tipo = j.tipo || 'rede'; e.metodo = j.metodo; throw e;
-  }
-  return binario ? r : r.json();
+// UM caminho de pedido para a pagina inteira. XMLHttpRequest e nao fetch
+// porque so ele mede o ENVIO (upload.onprogress) e cancela no meio (abort):
+// com fetch, a barra so poderia andar no recebimento, e o que demora e mandar
+// centenas de MiB. `prog` e opcional -- o login e o sair nao tem barra.
+function api(rota, corpo, binario, prog) {
+  return new Promise((ok, falha) => {
+    const x = new XMLHttpRequest();
+    x.open('POST', rota);
+    x.setRequestHeader('X-PhxZip', '1');
+    x.responseType = binario ? 'blob' : 'text';
+    const erro = (tipo, texto, metodo) => { const e = new Error(texto || tipo); e.tipo = tipo; e.metodo = metodo; return e; };
+    if (prog) {
+      prog.abrir(x);
+      x.upload.onprogress = ev => prog.fase('zip.enviando', ev.loaded, ev.total);
+      x.upload.onload = () => prog.fase('zip.processando');
+      x.onprogress = ev => prog.fase('zip.recebendo', ev.loaded, ev.lengthComputable ? ev.total : 0);
+    }
+    const fim = () => { if (prog) prog.fechar(); };
+    x.onload = async () => {
+      fim();
+      if (x.status >= 200 && x.status < 300) {
+        ok(binario ? { blob: x.response, cabecalho: n => x.getResponseHeader(n) } : JSON.parse(x.response || '{}'));
+        return;
+      }
+      let j = {};
+      try { j = JSON.parse(binario ? await x.response.text() : x.response); } catch (_) {}
+      if (x.status === 401 && j.tipo === 'login') await estado();
+      falha(erro(j.tipo || 'rede', j.erro || x.statusText, j.metodo));
+    };
+    x.onerror = () => { fim(); falha(erro('rede')); };
+    x.onabort = () => { fim(); falha(erro('cancelado')); };
+    x.send(corpo);
+  });
 }
+
+// A barra de um cartao. O Cancelar aborta o pedido EM CURSO; o que o
+// servidor ja estava fazendo termina la e e jogado fora -- o que o cancelar
+// garante e que nada chega nem e baixado, e o texto diz isso.
+function progresso(id) {
+  const el = $(id), barra = el.querySelector('.barra'), rot = el.querySelector('.rotulo');
+  let x = null;
+  el.querySelector('button').onclick = ev => { ev.preventDefault(); if (x) x.abort(); };
+  return {
+    abrir(xhr) { x = xhr; el.classList.remove('oculto'); this.fase('zip.enviando', 0, 0); },
+    fase(chave, feito, total) {
+      const pct = total ? Math.min(100, Math.round(feito * 100 / total)) : null;
+      el.classList.toggle('indeterminado', pct === null);
+      barra.style.width = pct === null ? '' : pct + '%';
+      rot.textContent = t(chave, { pct: pct === null ? '' : pct + '%' });
+    },
+    fechar() { x = null; el.classList.add('oculto'); },
+  };
+}
+const progC = progresso('c_prog'), progA = progresso('a_prog');
+
 const ERRO = {
   senha_necessaria: 'zip.senha_necessaria', senha_errada: 'zip.senha_errada', recusado: 'zip.recusado',
   corrompido: 'zip.corrompido', teto: 'zip.teto', caminho: 'zip.caminho', login: 'zip.login',
   login_errado: 'zip.login_errado', uso: 'zip.uso', origem: 'zip.origem', rota: 'zip.rota',
-  interno: 'zip.interno', rede: 'zip.rede',
+  interno: 'zip.interno', rede: 'zip.rede', cancelado: 'zip.cancelado',
 };
 function textoDoErro(e) { return t(ERRO[e.tipo] || 'zip.rede', { metodo: e.metodo || '' }); }
 
@@ -465,10 +557,10 @@ $('compactar').onclick = async () => {
   }
   $('compactar').disabled = true;
   try {
-    const r = await api('/api/compactar', envelope(meta, itens.map(x => x.arquivo)), true);
-    const blob = await r.blob();
+    const r = await api('/api/compactar', envelope(meta, itens.map(x => x.arquivo)), true, progC);
+    const blob = r.blob;
     const tot = tamanhos.reduce((s, n) => s + n, 0);
-    const feito = t('zip.feito_compactar', { arquivos: nArquivos(itens.length), antes: fmt(tot), depois: fmt(blob.size), pct: pct(blob.size, tot), ms: r.headers.get('X-PhxZip-Ms') || '?' });
+    const feito = t('zip.feito_compactar', { arquivos: nArquivos(itens.length), antes: fmt(tot), depois: fmt(blob.size), pct: pct(blob.size, tot), ms: r.cabecalho('X-PhxZip-Ms') || '?' });
     // Conferir o que acabou de ser gravado, pelo mesmo testar da tela de
     // abrir: «gerado» diz que o servidor respondeu, «conferido» diz que o
     // arquivo abre e cada CRC bate. So entao se entrega o arquivo.
@@ -477,9 +569,12 @@ $('compactar').onclick = async () => {
     if (acimaDoTeto(metaT, [blob.size])) conferido = { ok: null, txt: t('zip.nao_conferido_teto') };
     else {
       try {
-        const j = await api('/api/testar', envelope(metaT, [blob]));
+        const j = await api('/api/testar', envelope(metaT, [blob]), false, progC);
         conferido = { ok: true, txt: t('zip.conferido', { n: fmt(j.entradas.length), ms: j.ms }) };
-      } catch (e) { conferido = { ok: false, txt: t('zip.conferir_falhou', { erro: textoDoErro(e) }) }; }
+      } catch (e) {
+        if (e.tipo === 'cancelado') throw e;
+        conferido = { ok: false, txt: t('zip.conferir_falhou', { erro: textoDoErro(e) }) };
+      }
     }
     if (conferido.ok === false) { mostrar('c_res', false, feito + ' — ' + conferido.txt); }
     else {
@@ -495,18 +590,86 @@ async function abrir(testar) {
   const f = aberto;
   limpar('a_res');
   if (!f) { mostrar('a_res', false, t('zip.escolha_antes')); return; }
-  $('abrir').disabled = $('testar').disabled = true;
+  botoesA(true);
   try {
-    const j = await api(testar ? '/api/testar' : '/api/listar', envelope({ senha: $('a_senha').value }, [f]));
-    ultimaLista = j; desenhar(j);
+    const j = await api(testar ? '/api/testar' : '/api/listar', envelope({ senha: $('a_senha').value }, [f]), false, progA);
+    ultimaLista = j; recolhidas = recolhidasIniciais(j); desenhar(j);
     mostrar('a_res', true, testar ? t('zip.feito_testar', { n: fmt(j.entradas.length), ms: j.ms })
       : t(j.cabecalho_cifrado ? 'zip.feito_listar_cifrado' : 'zip.feito_listar', { n: fmt(j.entradas.length) }));
   } catch (e) { $('a_tabela').classList.add('oculto'); mostrar('a_res', false, textoDoErro(e)); }
-  $('abrir').disabled = $('testar').disabled = false;
+  botoesA(false);
 }
 $('abrir').onclick = () => abrir(false);
 $('a_filtro').oninput = () => { if (ultimaLista) desenhar(ultimaLista); };
 $('testar').onclick = () => abrir(true);
+
+// A listagem em ARVORE. O 7z guarda caminhos planos («a/b/c.txt»), e pasta
+// nem sempre tem entrada propria -- entao a arvore nasce dos NOMES, e a pasta
+// que so existe no caminho vira no implicito (sem indice, sem baixar).
+let ordem = { col: 'nome', asc: true };
+let recolhidas = new Set();
+
+function montarArvore(entradas) {
+  const raiz = { filhos: new Map(), caminho: '' };
+  for (const e of entradas) {
+    const partes = e.nome.split(/[\\/]/).filter(Boolean);
+    let no = raiz;
+    partes.forEach((parte, i) => {
+      const ultimo = i === partes.length - 1;
+      const caminho = partes.slice(0, i + 1).join('/');
+      let f = no.filhos.get(parte);
+      if (!f) { f = { nome: parte, caminho, filhos: new Map(), pasta: !ultimo, e: null }; no.filhos.set(parte, f); }
+      if (ultimo) { f.e = e; f.pasta = f.pasta || e.pasta; }
+      no = f;
+    });
+  }
+  // Tamanho e data da pasta saem dos filhos: e o que se quer ordenar por
+  // tamanho -- a pasta pesada sobe junto com os arquivos pesados.
+  const somar = no => {
+    let tam = 0, data = null;
+    for (const f of no.filhos.values()) {
+      if (f.pasta) somar(f);
+      const tf = f.pasta ? f.tam : f.e.tamanho, df = f.pasta ? f.data : f.e.mtime;
+      tam += tf; if (df != null && (data == null || df > data)) data = df;
+    }
+    no.tam = tam; no.data = data;
+  };
+  somar(raiz);
+  return raiz;
+}
+
+function recolhidasIniciais(j) {
+  // Arquivo pequeno abre inteiro; arquivo grande abre so o primeiro nivel --
+  // dez mil linhas desenhadas de uma vez travam a tela e ninguem as le.
+  const s = new Set();
+  if (j.entradas.length > 200) {
+    for (const e of j.entradas) {
+      const partes = e.nome.split(/[\\/]/).filter(Boolean);
+      for (let i = 1; i < partes.length; i++) s.add(partes.slice(0, i).join('/'));
+    }
+  }
+  return s;
+}
+
+function comparar(a, b) {
+  if (a.pasta !== b.pasta) return a.pasta ? -1 : 1;
+  const chave = no => ({
+    nome: no.nome.toLowerCase(),
+    tamanho: no.pasta ? no.tam : no.e.tamanho,
+    data: (no.pasta ? no.data : no.e.mtime) ?? -Infinity,
+    metodo: no.e && no.e.metodos || '',
+  })[ordem.col];
+  const [x, y] = [chave(a), chave(b)];
+  const r = typeof x === 'string' ? x.localeCompare(y, local(), { numeric: true }) : x - y;
+  return (ordem.asc ? r : -r) || a.nome.localeCompare(b.nome, local(), { numeric: true });
+}
+
+function casa(no, filtro) {
+  if (!filtro) return true;
+  if (no.caminho.toLowerCase().includes(filtro)) return true;
+  for (const f of no.filhos.values()) if (casa(f, filtro)) return true;
+  return false;
+}
 
 function desenhar(j) {
   const tb = $('a_tabela').querySelector('tbody');
@@ -516,19 +679,40 @@ function desenhar(j) {
   const bytes = arqs.reduce((s, e) => s + e.tamanho, 0);
   $('a_total').textContent = t('zip.total_arquivo', { arquivos: nArquivos(arqs.length), bytes: fmt(bytes), no7z: fmt(j.tamanho_arquivo), pct: pct(j.tamanho_arquivo, bytes) });
   $('a_barra').classList.remove('oculto');
-  for (const e of j.entradas) {
-    if (filtro && !e.nome.toLowerCase().includes(filtro)) continue;
+  for (const th of $('a_tabela').querySelectorAll('th[data-ordem]')) {
+    th.setAttribute('aria-sort', th.dataset.ordem === ordem.col ? (ordem.asc ? 'ascending' : 'descending') : 'none');
+  }
+  const linha = (no, nivel) => {
     const tr = document.createElement('tr');
     const c = (txt, cls) => { const td = document.createElement('td'); if (cls) td.className = cls; td.textContent = txt; tr.appendChild(td); return td; };
-    const tipo = e.pasta ? 'pasta' : (e.cifrada ? 'cadeado' : 'doc');
-    const ti = c('');
-    ti.innerHTML = `<svg class="ic ${tipo}" aria-hidden="true"><use href="#i-${tipo}"/></svg>`;
-    c(e.nome, 'nome');
-    c(e.pasta ? '' : fmt(e.tamanho), 'num');
-    const m = c(''); if (e.metodos) { const s = document.createElement('span'); s.className = 'selo'; s.textContent = e.metodos; m.appendChild(s); }
-    c(e.mtime != null ? new Date(e.mtime * 1000).toLocaleString(local(), { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '', 'data');
+    const e = no.e;
+    const tipo = no.pasta ? 'pasta' : (e.cifrada ? 'cadeado' : 'doc');
+    const nome = c('', 'nome');
+    nome.style.paddingLeft = (4 + nivel * 18) + 'px';
+    if (no.pasta) {
+      // Com filtro, a pasta que tem o que casa fica aberta: esconder o
+      // resultado atras de um clique seria filtrar e nao mostrar.
+      const aberta = filtro ? true : !recolhidas.has(no.caminho);
+      const b = document.createElement('button');
+      b.className = 'seta'; b.setAttribute('aria-expanded', String(aberta));
+      b.setAttribute('aria-label', t(aberta ? 'zip.recolher' : 'zip.expandir') + ' ' + no.caminho);
+      b.innerHTML = '<svg class="ic" aria-hidden="true"><use href="#i-seta"/></svg>';
+      b.onclick = () => { if (recolhidas.has(no.caminho)) recolhidas.delete(no.caminho); else recolhidas.add(no.caminho); desenhar(ultimaLista); };
+      if (filtro) b.disabled = true;
+      nome.appendChild(b);
+    } else {
+      const r = document.createElement('span'); r.className = 'recuo'; nome.appendChild(r);
+    }
+    // O icone mora na celula do nome e recua junto: numa coluna propria ele
+    // ficava parado enquanto o nome andava, e a arvore nao se lia.
+    nome.insertAdjacentHTML('beforeend', `<svg class="ic ${tipo}" aria-hidden="true"><use href="#i-${tipo}"/></svg> `);
+    nome.appendChild(document.createTextNode(no.nome));
+    c(fmt(no.pasta ? no.tam : e.tamanho), 'num');
+    const m = c(''); if (e && e.metodos) { const s = document.createElement('span'); s.className = 'selo'; s.textContent = e.metodos; m.appendChild(s); }
+    const data = no.pasta ? no.data : e.mtime;
+    c(data != null ? new Date(data * 1000).toLocaleString(local(), { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '', 'data');
     const ac = c('');
-    if (!e.pasta && e.seguro) {
+    if (!no.pasta && e.seguro) {
       // Icone e nao texto: com o texto «baixar» a coluna saia cortada a
       // 1200 px (visto na captura). O rotulo continua, para leitor de tela.
       const b = document.createElement('button'); b.className = 'botao consulta mini icone';
@@ -537,19 +721,109 @@ function desenhar(j) {
       b.onclick = () => extrair(e); ac.appendChild(b);
     }
     tb.appendChild(tr);
-  }
+    if (no.pasta && (filtro || !recolhidas.has(no.caminho))) filhos(no, nivel + 1);
+  };
+  const filhos = (no, nivel) => {
+    for (const f of [...no.filhos.values()].filter(f => casa(f, filtro)).sort(comparar)) linha(f, nivel);
+  };
+  filhos(montarArvore(j.entradas), 0);
   $('a_tabela').classList.remove('oculto');
+}
+for (const th of document.querySelectorAll('#a_tabela th[data-ordem]')) {
+  th.querySelector('button').onclick = () => {
+    const col = th.dataset.ordem;
+    ordem = { col, asc: ordem.col === col ? !ordem.asc : col === 'nome' };
+    if (ultimaLista) desenhar(ultimaLista);
+  };
 }
 
 async function extrair(e) {
   const f = aberto;
   try {
-    const r = await api('/api/extrair', envelope({ senha: $('a_senha').value, indice: e.indice }, [f]), true);
-    baixar(await r.blob(), e.nome.split(/[\\/]/).pop());
+    const r = await api('/api/extrair', envelope({ senha: $('a_senha').value, indice: e.indice }, [f]), true, progA);
+    baixar(r.blob, e.nome.split(/[\\/]/).pop());
   } catch (err) { mostrar('a_res', false, textoDoErro(err)); }
 }
 
-carregarTextos().catch(() => {}).then(() => { traduzir(); rotularNivel(); rotularOlho(); return estado(); })
+function botoesA(ocupado) { $('abrir').disabled = $('testar').disabled = $('tudo').disabled = ocupado; }
+
+// «Extrair tudo»: UM envio do .7z, e a resposta traz a lista e os bytes
+// emendados (o mesmo envelope do pedido, ao contrario). Onde o navegador
+// grava pasta (File System Access), a arvore sai inteira na pasta escolhida;
+// onde nao grava, cada arquivo baixa por si -- e a tela diz qual dos dois
+// aconteceu, porque «extraido para a pasta» e «baixado um a um» nao sao a
+// mesma promessa.
+$('tudo').onclick = async () => {
+  const f = aberto;
+  limpar('a_res');
+  if (!f) { mostrar('a_res', false, t('zip.escolha_antes')); return; }
+  // A pasta se pede ANTES do envio: o navegador so abre o seletor dentro do
+  // gesto do clique, e depois de um envio longo o gesto ja expirou.
+  let pasta = null;
+  if (window.showDirectoryPicker) {
+    try { pasta = await window.showDirectoryPicker({ mode: 'readwrite' }); }
+    catch (e) { if (e.name === 'AbortError') { mostrar('a_res', false, t('zip.cancelado')); return; } pasta = null; }
+  }
+  botoesA(true);
+  try {
+    const r = await api('/api/extrair_tudo', envelope({ senha: $('a_senha').value }, [f]), true, progA);
+    const buf = new Uint8Array(await r.blob.arrayBuffer());
+    const q = buf.indexOf(10);
+    const cab = JSON.parse(new TextDecoder().decode(buf.subarray(0, q)));
+    const soma = cab.arquivos.reduce((s, a) => s + a.tamanho, 0);
+    // O servidor manda o tamanho antes de descompactar; se um CRC quebrar no
+    // meio, a resposta chega CURTA. Conta que nao fecha e recusa inteira.
+    if (buf.length - (q + 1) !== soma) { const e = new Error('curta'); e.tipo = 'corrompido'; throw e; }
+    let pos = q + 1;
+    const pedacos = cab.arquivos.map(a => { const d = buf.subarray(pos, pos + a.tamanho); pos += a.tamanho; return [a, d]; });
+    if (pasta) {
+      for (const [a, d] of pedacos) {
+        const partes = a.nome.split(/[\\/]/).filter(Boolean);
+        let dir = pasta;
+        for (const p of partes.slice(0, -1)) dir = await dir.getDirectoryHandle(p, { create: true });
+        const w = await (await dir.getFileHandle(partes[partes.length - 1], { create: true })).createWritable();
+        await w.write(d); await w.close();
+      }
+    } else {
+      // Sem pasta, o nome perde a arvore; quando dois arquivos de pastas
+      // diferentes tem o mesmo nome, o caminho entra no nome para um nao
+      // sobrescrever o outro na pasta de downloads.
+      const base = a => a.nome.split(/[\\/]/).pop();
+      const conta = new Map();
+      for (const [a] of pedacos) conta.set(base(a), (conta.get(base(a)) || 0) + 1);
+      for (const [a, d] of pedacos) {
+        baixar(new Blob([d]), conta.get(base(a)) > 1 ? a.nome.replace(/[\\/]/g, '_') : base(a));
+        await new Promise(ok => setTimeout(ok, 120));
+      }
+    }
+    let txt = t(pasta ? 'zip.feito_extrair_pasta' : 'zip.feito_extrair_um_a_um',
+      { arquivos: nArquivos(cab.arquivos.length), bytes: fmt(soma), pasta: pasta ? pasta.name : '' });
+    if (cab.pulados.length) txt += ' ' + t('zip.pulados', { n: fmt(cab.pulados.length), nomes: cab.pulados.map(p => p.nome).join(', ') });
+    mostrar('a_res', true, txt);
+  } catch (e) { mostrar('a_res', false, textoDoErro(e)); }
+  botoesA(false);
+};
+
+// Tema: o escolhido fica lembrado; sem escolha, segue o sistema. O icone
+// mostra PARA ONDE o clique leva (a mesma convencao do PhxSql).
+function lembrado(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }
+function lembrar(k, v) { try { localStorage.setItem(k, v); } catch (_) {} }
+function aplicarTema(qual) {
+  document.documentElement.setAttribute('data-tema', qual);
+  const b = $('tema'), claro = qual === 'claro';
+  b.querySelector('use').setAttribute('href', claro ? '#i-lua' : '#i-sol');
+  b.title = t(claro ? 'zip.tema_escuro' : 'zip.tema_claro');
+  b.setAttribute('aria-label', b.title);
+}
+$('tema').onclick = () => {
+  const novo = document.documentElement.getAttribute('data-tema') === 'claro' ? 'escuro' : 'claro';
+  lembrar('phxzip-tema', novo); aplicarTema(novo);
+};
+const temaInicial = () => lembrado('phxzip-tema') ||
+  (window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches ? 'claro' : 'escuro');
+aplicarTema(temaInicial());
+
+carregarTextos().catch(() => {}).then(() => { traduzir(); rotularNivel(); rotularOlho(); aplicarTema(temaInicial()); return estado(); })
   .catch(() => mostrar('l_res', false, t('zip.rede')));
 </script>
 </body>

@@ -228,3 +228,53 @@ fn nome_que_sai_da_pasta_nao_entra_no_arquivo() {
     assert_eq!(r.codigo, 400);
     assert!(r.texto().contains("\"tipo\":\"caminho\""), "{}", r.texto());
 }
+
+/// O «extrair tudo»: um envio do `.7z`, uma resposta com a lista e os bytes
+/// emendados na ordem dela. A soma da lista fecha com o corpo -- e e essa
+/// conta que a tela usa para recusar uma resposta que chegou curta.
+#[test]
+fn extrair_tudo_devolve_a_lista_e_os_bytes_na_ordem() {
+    let p = subir(false, 1 << 20);
+    let arq = um_7z(Some("abc"));
+    let r = api(
+        p,
+        "/api/extrair_tudo",
+        None,
+        &envelope(r#"{"senha":"abc"}"#, &arq),
+    );
+    assert_eq!(r.codigo, 200, "{}", r.texto());
+    let quebra = r.corpo.iter().position(|b| *b == b'\n').unwrap();
+    let cab = phxsql_core::json::Json::analisar(std::str::from_utf8(&r.corpo[..quebra]).unwrap())
+        .unwrap();
+    let lista = cab.campo("arquivos").and_then(|l| l.lista()).unwrap();
+    let nomes: Vec<&str> = lista.iter().map(|e| e.texto_ou("nome", "")).collect();
+    assert_eq!(nomes, ["docs/leia.txt", "b.bin"]);
+    let corpo = &r.corpo[quebra + 1..];
+    let soma: i64 = lista.iter().map(|e| e.inteiro_ou("tamanho", -1)).sum();
+    assert_eq!(soma as usize, corpo.len());
+    let leia = b"PhxZip na porta 4000\n".repeat(50);
+    assert_eq!(&corpo[..leia.len()], &leia[..]);
+    assert_eq!(&corpo[leia.len()..], &(0..=255u8).collect::<Vec<_>>()[..]);
+
+    // Senha errada sai como ERRO, com codigo, antes do cabecalho de 200 --
+    // e nao como uma resposta curta que a tela teria de adivinhar. Com os
+    // nomes VISIVEIS, porque com nomes cifrados o proprio `abrir` ja recusa e
+    // a prova nao alcancaria o `testar` que vem antes do cabecalho.
+    let mut e = Escritor::novo(Opcoes {
+        senha: Some("abc".into()),
+        cifrar_nomes: false,
+        acaso: [5; 32],
+        ..Opcoes::default()
+    });
+    e.arquivo("a.txt", b"segredo\n".repeat(20), None, None)
+        .unwrap();
+    let visiveis = e.gravar().unwrap();
+    let r = api(
+        p,
+        "/api/extrair_tudo",
+        None,
+        &envelope(r#"{"senha":"errada"}"#, &visiveis),
+    );
+    assert_eq!(r.codigo, 400);
+    assert!(r.texto().contains("senha_errada"), "{}", r.texto());
+}

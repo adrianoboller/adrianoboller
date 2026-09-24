@@ -162,9 +162,43 @@ PHXZIP_WEB_SENHA='...' target/release/phxzipweb --usuario adriano   # login exig
 - **Cada nível diz o que custa**, numa linha abaixo da escolha. São 15 chaves
   novas nos seis idiomas.
 
-O exercício que prova isso no navegador é `testes-web/tela-phxzip.mjs`: 12
-verificações a 1200 px e 12 a 375 px, todas OK. Ele achou o aviso do teto
-cortado dentro da lista, que tem altura fixa, e o aviso passou para fora dela.
+- **Progresso e Cancelar.** Todo pedido da tela sai por um caminho só
+  (`api()`), sobre `XMLHttpRequest`: é ele que mede o envio e aborta no meio.
+  A barra mostra a porcentagem do envio e do recebimento. O trabalho do
+  servidor não tem porcentagem, e a barra anda sem número em vez de inventar
+  um. O Cancelar garante que nada chega nem é baixado; o que o servidor já
+  fazia termina lá e é descartado.
+- **Extrair tudo** (`/api/extrair_tudo`) exige um envio só do `.7z`. A
+  resposta tem o formato do pedido ao contrário: uma linha JSON com a lista e
+  os bytes emendados. O corpo sai em partes, sem juntar tudo num `Vec`, porque
+  o 7z guarda os tamanhos e o `Content-Length` se conhece antes de
+  descompactar. O cabeçalho sai pelo mesmo motor do `http.rs`
+  (`abrir_resposta_de_bytes`, que o `responder_bytes` passou a usar). O
+  `testar` roda antes do cabeçalho, para senha errada sair como erro com
+  código; o teste pelo soquete cai sem ele. Na tela, onde o navegador grava
+  pasta (File System Access), a árvore sai inteira na pasta escolhida. Onde
+  não grava, os arquivos baixam um a um, e a mensagem diz qual dos dois
+  aconteceu. Ligação simbólica e caminho inseguro ficam de fora, e a tela os
+  nomeia.
+- **Tema claro:** segue o sistema, o botão troca e a escolha fica lembrada.
+  Usa os tons do PhxSql e a regra da marca (laranja em `#C63C0A`). O contraste
+  foi medido na página, nos dois temas, e o pior caso ficou em 5,28:1.
+- **Árvore com ordenação.** A árvore nasce dos nomes, e a pasta que só existe
+  no caminho vira nó sem baixar. As pastas vêm antes em cada nível, e cada
+  pasta soma o tamanho e a data dos filhos. As colunas ordenam com
+  `aria-sort`. Com filtro, o caminho do que casa fica aberto. Arquivos com mais
+  de 200 entradas abrem só o primeiro nível.
+
+O exercício que prova isso no navegador é `testes-web/tela-phxzip.mjs`: **55
+verificações, todas OK**, a 1200 e a 375 px, nos dois temas e em alemão.
+Achados do exercício:
+- o aviso do teto aparecia cortado dentro da lista;
+- o ícone da pasta ficava parado numa coluna própria enquanto o nome recuava,
+  e a árvore não se lia;
+- a zona de soltar encostava na legenda do campo seguinte.
+
+O roteiro também errou duas vezes antes da página: esperava `leia.txt` antes
+da pasta `sub`, e o Chromium sem janela anuncia sistema claro.
 
 ### O vídeo
 

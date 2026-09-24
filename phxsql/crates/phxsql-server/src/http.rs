@@ -445,17 +445,32 @@ pub fn responder_bytes(
     corpo: &[u8],
     extras: &str,
 ) -> std::io::Result<()> {
+    abrir_resposta_de_bytes(fluxo, codigo, tipo, corpo.len(), extras)?;
+    fluxo.write_all(corpo)?;
+    fluxo.flush()
+}
+
+/// So o cabecalho de uma resposta de bytes de `tamanho` conhecido: o corpo
+/// vem depois, em partes, escrito por quem chamou. Existe para quem entrega
+/// muitos pedacos (o «extrair tudo» do PhxZip) nao ter de junta-los num
+/// `Vec` so para caber em [`responder_bytes`] -- e o mesmo cabecalho, pelo
+/// mesmo `cabecalho_de_resposta`, sem segunda politica de seguranca.
+pub fn abrir_resposta_de_bytes(
+    fluxo: &mut TcpStream,
+    codigo: u16,
+    tipo: &str,
+    tamanho: usize,
+    extras: &str,
+) -> std::io::Result<()> {
     let cab = cabecalho_de_resposta(
         codigo,
         motivo_de(codigo),
         tipo,
-        corpo.len(),
+        tamanho,
         estilo_e_conexao(false),
         extras,
     );
-    fluxo.write_all(cab.as_bytes())?;
-    fluxo.write_all(corpo)?;
-    fluxo.flush()
+    fluxo.write_all(cab.as_bytes())
 }
 
 /// Texto com cabecalhos extras (um `Set-Cookie`, por exemplo), politica fechada.

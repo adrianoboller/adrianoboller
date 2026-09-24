@@ -624,6 +624,123 @@ pub const FABRICA_ZIP: &[TextoDeFabrica] = &[
         "das kleinste Archiv, am langsamsten",
         "el archivo más pequeño, el más lento"
     ),
+    texto!(
+        "zip.enviando",
+        "Enviando… {pct}",
+        "Envoi… {pct}",
+        "Uploading… {pct}",
+        "Invio… {pct}",
+        "Senden… {pct}",
+        "Enviando… {pct}"
+    ),
+    texto!(
+        "zip.processando",
+        "Processando no servidor…",
+        "Traitement sur le serveur…",
+        "Processing on the server…",
+        "Elaborazione sul server…",
+        "Verarbeitung auf dem Server…",
+        "Procesando en el servidor…"
+    ),
+    texto!(
+        "zip.recebendo",
+        "Recebendo… {pct}",
+        "Réception… {pct}",
+        "Downloading… {pct}",
+        "Ricezione… {pct}",
+        "Empfangen… {pct}",
+        "Recibiendo… {pct}"
+    ),
+    texto!(
+        "zip.cancelar",
+        "Cancelar",
+        "Annuler",
+        "Cancel",
+        "Annulla",
+        "Abbrechen",
+        "Cancelar"
+    ),
+    texto!(
+        "zip.cancelado",
+        "Cancelado. Nada foi baixado nem gravado.",
+        "Annulé. Rien n’a été téléchargé ni enregistré.",
+        "Cancelled. Nothing was downloaded or saved.",
+        "Annullato. Nulla è stato scaricato né salvato.",
+        "Abgebrochen. Nichts wurde heruntergeladen oder gespeichert.",
+        "Cancelado. No se descargó ni guardó nada."
+    ),
+    texto!(
+        "zip.extrair_tudo",
+        "Extrair tudo",
+        "Tout extraire",
+        "Extract all",
+        "Estrai tutto",
+        "Alles extrahieren",
+        "Extraer todo"
+    ),
+    texto!(
+        "zip.feito_extrair_pasta",
+        "{arquivos} extraídos para a pasta «{pasta}» ({bytes} bytes), com as subpastas.",
+        "{arquivos} extraits dans le dossier « {pasta} » ({bytes} octets), avec les sous-dossiers.",
+        "{arquivos} extracted to the folder “{pasta}” ({bytes} bytes), with subfolders.",
+        "{arquivos} estratti nella cartella «{pasta}» ({bytes} byte), con le sottocartelle.",
+        "{arquivos} in den Ordner „{pasta}“ extrahiert ({bytes} Bytes), mit Unterordnern.",
+        "{arquivos} extraídos en la carpeta «{pasta}» ({bytes} bytes), con las subcarpetas."
+    ),
+    texto!(
+        "zip.feito_extrair_um_a_um",
+        "{arquivos} baixados um a um ({bytes} bytes). Este navegador não grava pastas, então as subpastas não foram recriadas.",
+        "{arquivos} téléchargés un par un ({bytes} octets). Ce navigateur n’écrit pas de dossiers : les sous-dossiers n’ont pas été recréés.",
+        "{arquivos} downloaded one by one ({bytes} bytes). This browser cannot write folders, so subfolders were not recreated.",
+        "{arquivos} scaricati uno per uno ({bytes} byte). Questo browser non scrive cartelle: le sottocartelle non sono state ricreate.",
+        "{arquivos} einzeln heruntergeladen ({bytes} Bytes). Dieser Browser schreibt keine Ordner, Unterordner wurden nicht nachgebildet.",
+        "{arquivos} descargados uno a uno ({bytes} bytes). Este navegador no escribe carpetas, así que no se recrearon las subcarpetas."
+    ),
+    texto!(
+        "zip.pulados",
+        "{n} entradas ficaram de fora por segurança (ligação simbólica ou caminho inseguro): {nomes}",
+        "{n} entrées exclues par sécurité (lien symbolique ou chemin non sûr) : {nomes}",
+        "{n} entries left out for safety (symbolic link or unsafe path): {nomes}",
+        "{n} voci escluse per sicurezza (collegamento simbolico o percorso non sicuro): {nomes}",
+        "{n} Einträge aus Sicherheitsgründen ausgelassen (symbolischer Link oder unsicherer Pfad): {nomes}",
+        "{n} entradas quedaron fuera por seguridad (enlace simbólico o ruta insegura): {nomes}"
+    ),
+    texto!(
+        "zip.expandir",
+        "Abrir a pasta",
+        "Ouvrir le dossier",
+        "Expand folder",
+        "Espandi la cartella",
+        "Ordner aufklappen",
+        "Abrir la carpeta"
+    ),
+    texto!(
+        "zip.recolher",
+        "Fechar a pasta",
+        "Fermer le dossier",
+        "Collapse folder",
+        "Comprimi la cartella",
+        "Ordner zuklappen",
+        "Cerrar la carpeta"
+    ),
+    texto!(
+        "zip.tema_claro",
+        "Mudar para o tema claro",
+        "Passer au thème clair",
+        "Switch to light theme",
+        "Passa al tema chiaro",
+        "Zum hellen Design wechseln",
+        "Cambiar al tema claro"
+    ),
+    texto!(
+        "zip.tema_escuro",
+        "Mudar para o tema escuro",
+        "Passer au thème sombre",
+        "Switch to dark theme",
+        "Passa al tema scuro",
+        "Zum dunklen Design wechseln",
+        "Cambiar al tema oscuro"
+    ),
 ];
 
 /// Os textos resolvidos no idioma pedido (nome da coluna da fabrica:

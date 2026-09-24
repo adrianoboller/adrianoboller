@@ -168,17 +168,36 @@ fn eventos_de_clientes(porta: u16) -> i64 {
         .unwrap_or(-1)
 }
 
+/// Como `eventos_de_clientes`, mas sem derrubar o teste enquanto a replica
+/// ainda nao recebeu o database: logo depois de subir, antes da primeira
+/// puxada, o `posicao` dela responde «database loja nao existe» -- e isso
+/// e o «ainda nao chegou» que a espera existe para esperar. Com `exigir`, o
+/// teste caia na primeira pergunta quando a maquina estava carregada (visto
+/// em 2 de 7 corridas da suite inteira, 24/09/2026). A espera continua com
+/// o mesmo prazo e a mesma exigencia de chegar ao numero.
+fn eventos_se_ja_houver(porta: u16) -> i64 {
+    let r = pedir(porta, r#""op":"posicao","database":"loja""#);
+    if !r.booleano_ou("ok", false) {
+        return -1;
+    }
+    r.campo("resultado")
+        .and_then(|x| x.campo("tabelas"))
+        .and_then(|t| t.campo("clientes"))
+        .map(|c| c.inteiro_ou("eventos", -1))
+        .unwrap_or(-1)
+}
+
 fn esperar_eventos(porta: u16, quantos: i64) {
     let ate = Instant::now() + Duration::from_secs(20);
     while Instant::now() < ate {
-        if eventos_de_clientes(porta) == quantos {
+        if eventos_se_ja_houver(porta) == quantos {
             return;
         }
         std::thread::sleep(Duration::from_millis(100));
     }
     panic!(
         "a replica nao chegou a {quantos} evento(s) em 20 s (esta em {})",
-        eventos_de_clientes(porta)
+        eventos_se_ja_houver(porta)
     );
 }
 

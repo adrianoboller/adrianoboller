@@ -29,6 +29,7 @@
 //! as opcoes (senha do arquivo, nivel, nomes), e o resto e o arquivo. Senha no
 //! corpo, e nao na URL nem em cabecalho: URL vai para historico e log.
 
+use std::io::Write;
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -312,6 +313,7 @@ fn atender(mut fluxo: TcpStream, est: &Estado) {
         "/api/listar" => listar(&mut fluxo, &meta, bytes, false),
         "/api/testar" => listar(&mut fluxo, &meta, bytes, true),
         "/api/extrair" => extrair(&mut fluxo, &meta, bytes),
+        "/api/extrair_tudo" => extrair_tudo(&mut fluxo, &meta, bytes),
         "/api/compactar" => compactar(&mut fluxo, &meta, bytes),
         _ => {
             responder_erro(&mut fluxo, 404, "rota", "rota inexistente");
@@ -438,6 +440,84 @@ fn extrair(fluxo: &mut TcpStream, meta: &Json, bytes: &[u8]) -> Result<(), Erro>
     }
     let d = a.extrair(i)?;
     let _ = http::responder_bytes(fluxo, 200, "application/octet-stream", &d, "");
+    Ok(())
+}
+
+/// Todas as entradas numa resposta so, no mesmo formato do pedido: uma linha
+/// JSON (`arquivos`: nome, tamanho, mtime; `pulados`: nome e motivo) e os
+/// bytes emendados na ordem da lista. Um envio do `.7z`, e nao um por
+/// arquivo -- baixar cinquenta arquivos pedia cinquenta envios do arquivo
+/// inteiro.
+///
+/// O corpo sai em partes, pasta solida por pasta solida, sem juntar tudo
+/// num `Vec`: os tamanhos estao no cabecalho do 7z, entao o
+/// `Content-Length` se conhece antes de descompactar. O preco dessa escolha
+/// e dito: se um CRC falhar no meio, o cabecalho ja saiu e a resposta chega
+/// CURTA -- a tela confere o total recebido contra a soma da lista e recusa.
+/// Pulado, com motivo, o que a extracao para disco tambem recusaria: pasta
+/// (a arvore sai dos nomes), ligacao simbolica e nome inseguro.
+fn extrair_tudo(fluxo: &mut TcpStream, meta: &Json, bytes: &[u8]) -> Result<(), Erro> {
+    let a = Arquivo7z::abrir(bytes, senha_do(meta), Limites::default())?;
+    let mut arquivos = Vec::new();
+    let mut pulados = Vec::new();
+    let mut total: u64 = 0;
+    let vai = |e: &phxzip::Entrada| -> Result<(), &'static str> {
+        if e.e_ligacao() {
+            return Err("ligacao");
+        }
+        e.caminho().map(|_| ()).map_err(|_| "caminho")
+    };
+    for e in a.entradas() {
+        if e.e_pasta {
+            continue;
+        }
+        match vai(e) {
+            Ok(()) => {
+                total = total
+                    .checked_add(e.tamanho)
+                    .ok_or(Erro::Teto("soma do extrair tudo"))?;
+                arquivos.push(Json::objeto(vec![
+                    ("nome", Json::texto_de(e.nome.as_str())),
+                    ("tamanho", Json::de_u64(e.tamanho)),
+                    (
+                        "mtime",
+                        e.mtime
+                            .map(|t| Json::de_i64(unix_de_filetime(t)))
+                            .unwrap_or(Json::Nulo),
+                    ),
+                ]));
+            }
+            Err(motivo) => pulados.push(Json::objeto(vec![
+                ("nome", Json::texto_de(e.nome.as_str())),
+                ("motivo", Json::texto_de(motivo)),
+            ])),
+        }
+    }
+    let mut linha = json_ok(vec![
+        ("arquivos", Json::Lista(arquivos)),
+        ("pulados", Json::Lista(pulados)),
+    ])
+    .escrever();
+    linha.push('\n');
+    let tamanho = usize::try_from(total)
+        .ok()
+        .and_then(|t| t.checked_add(linha.len()))
+        .ok_or(Erro::Teto("soma do extrair tudo"))?;
+    // O `testar` roda ANTES do cabecalho: senha errada e CRC quebrado saem
+    // como erro de verdade, com codigo, e nao como resposta curta. Custa
+    // descompactar duas vezes; o que se compra e o caso comum dizer o motivo.
+    a.testar()?;
+    let io = |_| Erro::Uso("conexao caiu no meio do extrair tudo");
+    http::abrir_resposta_de_bytes(fluxo, 200, "application/octet-stream", tamanho, "")
+        .map_err(io)?;
+    fluxo.write_all(linha.as_bytes()).map_err(io)?;
+    a.extrair_tudo(|e, d| {
+        if !e.e_pasta && vai(e).is_ok() {
+            fluxo.write_all(d).map_err(io)?;
+        }
+        Ok(())
+    })?;
+    let _ = fluxo.flush();
     Ok(())
 }
 
