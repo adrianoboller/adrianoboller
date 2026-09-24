@@ -1091,8 +1091,10 @@ impl Alertas {
 ///
 /// O vigia de espaco manda e-mail, e por isso nasce desligado -- aviso que
 /// ninguem pediu e caixa de entrada cheia. A sonda so MEDE: escreve, sincroniza,
-/// rele e apaga um arquivo de 64 bytes no `base`, uma vez por minuto, e mostra
-/// o resultado no painel. Sem ela o cartao diria «nao medido» para todo mundo
+/// rele e apaga um arquivo de 64 bytes no `base`, a cada 5 minutos (DECISAO DO
+/// DONO, pedido 249, 17/09/2026 05:35: disco so-leitura ou cheio nao e evento
+/// de segundo, e 288 escritas por dia no diretorio do banco em vez de 1.440),
+/// e mostra o resultado no painel. Sem ela o cartao diria «nao medido» para todo mundo
 /// que nunca abriu o config.json, e um monitor que nasce cego nao monitora
 /// nada. O aviso por e-mail e SMS continua dependendo de `alertas.email` e
 /// `alertas.sms` estarem ligados -- a sonda ligada sem rele so pinta o painel.
@@ -1119,7 +1121,7 @@ impl Default for Disco {
     fn default() -> Self {
         Disco {
             ligado: true,
-            checar_segundos: 60,
+            checar_segundos: 300,
             repetir_minutos: 30,
             lento_ms: 1_000,
         }
@@ -9055,13 +9057,26 @@ mod testes_recursos {
         assert!(SECOES_CONHECIDAS.iter().any(|(s, _)| *s == "alertas.sms"));
     }
 
-    /// Sem o bloco, a sonda nasce LIGADA a cada 60 s -- e sem SMS. E o
-    /// comportamento de quem nunca abriu o config.json: o painel mede.
+    /// DECISAO DO DONO, pedido 249, 17/09/2026 05:35: a sonda de saude do
+    /// disco nasce LIGADA (so medindo) e o intervalo e 5 minutos, nao 60 s --
+    /// disco so-leitura ou cheio nao e evento de segundo, e 288 escritas por
+    /// dia no diretorio do banco em vez de 1.440. Reponha `checar_segundos:
+    /// 60` no `Default` e este teste cai no primeiro `assert_eq`.
+    #[test]
+    fn o_padrao_da_sonda_e_ligada_e_cinco_minutos() {
+        let d = Disco::default();
+        assert_eq!(d.checar_segundos, 300);
+        assert!(d.ligado);
+    }
+
+    /// Sem o bloco, a sonda nasce LIGADA a cada 300 s (5 min, DECISAO DO
+    /// DONO, pedido 249, 17/09/2026 05:35) -- e sem SMS. E o comportamento de
+    /// quem nunca abriu o config.json: o painel mede.
     #[test]
     fn sem_o_bloco_a_sonda_nasce_ligada_e_o_sms_desligado() {
         let c = Config::de_json(&Json::analisar(r#"{"token":"t"}"#).unwrap()).unwrap();
         assert!(c.alertas.disco.ligado);
-        assert_eq!(c.alertas.disco.checar_segundos, 60);
+        assert_eq!(c.alertas.disco.checar_segundos, 300);
         assert_eq!(c.alertas.disco.repetir_minutos, 30);
         assert_eq!(c.alertas.disco.lento_ms, 1_000);
         assert!(!c.alertas.sms.ligado);

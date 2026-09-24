@@ -172,7 +172,7 @@
     },
     "disco": {
       "ligado": true,
-      "checar_segundos": 60,
+      "checar_segundos": 300,
       "repetir_minutos": 30,
       "lento_ms": 1000
     },

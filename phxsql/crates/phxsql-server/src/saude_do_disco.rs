@@ -340,7 +340,7 @@ impl SaudeDoDisco {
                 self.ultima_boa_ms.store(agora_ms as u64, Ordering::Relaxed);
                 // Passou: o que a sonda prova volta a poder avisar na hora.
                 // Lento fica de fora da limpeza quando ESTA passada foi lenta,
-                // senao a proxima lenta avisaria de novo a cada minuto.
+                // senao a proxima lenta avisaria de novo a cada sondagem.
                 if let Ok(mut s) = self.silencio.lock() {
                     for t in Tipo::provados_pela_sonda() {
                         if !(lenta && t == Tipo::Lento) {

@@ -9,7 +9,8 @@
  * poe um DIRETORIO com esse nome. O `open` seguinte falha com EISDIR (errno
  * 21), a sonda vira `erro`, e ao tirar o diretorio a proxima passada volta a
  * `ok`. A bateria sobe o servidor com `alertas.disco.checar_segundos: 2`
- * (`servidor.mjs`), senao cada espera aqui seria de um minuto.
+ * (`servidor.mjs`), senao cada espera aqui seria de 5 minutos (padrao do
+ * pedido 249).
  *
  * O que se le e o `data-estado` do pino -- nunca a frase, que muda de idioma
  * e de redacao. */

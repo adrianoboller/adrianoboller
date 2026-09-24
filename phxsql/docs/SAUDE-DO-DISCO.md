@@ -31,7 +31,8 @@ A última linha decide o meio do SMS (§4).
 Uma thread própria (`sonda-disco`, pelo `telemetria.subir`, com finalidade
 declarada e teto 1 no `mapa-das-threads.py`; sobe com a sonda ligada **ou**
 com o e-mail ligado, porque é também o carteiro dos avisos — §2.3) roda a
-cada `alertas.disco.checar_segundos` (padrão **60**):
+cada `alertas.disco.checar_segundos` (padrão **300**, 5 min --
+DECISÃO DO DONO, 17/09/2026 05:35, §8.2):
 
 1. abre `<base>/.saude-do-disco` para escrita (cria/trunca);
 2. escreve 64 bytes com PID, instante e o número da passada — **conteúdo
@@ -235,7 +236,7 @@ vem no arranque, não na primeira falha de disco.
 "alertas": {
   "email": { "ligado": true, "servidor": "127.0.0.1", "porta": 25,
              "de": "phxsql@empresa.com.br", "para": ["dba@empresa.com.br"] },
-  "disco": { "ligado": true, "checar_segundos": 60, "repetir_minutos": 30, "lento_ms": 1000 },
+  "disco": { "ligado": true, "checar_segundos": 300, "repetir_minutos": 30, "lento_ms": 1000 },
   "sms":   { "ligado": true, "numeros": ["+5541999990000"], "gateway_email": "sms.operadora.com.br" }
 }
 ```
@@ -243,7 +244,7 @@ vem no arranque, não na primeira falha de disco.
 | campo | padrão | leitor | o que faz |
 |---|---|---|---|
 | `disco.ligado` | **true** | `Disco::de_json` → `ligar_sonda_de_disco` | sobe (ou não) a thread da sonda |
-| `disco.checar_segundos` | 60 (mínimo 1) | `SaudeDoDisco::checar_segundos` | intervalo da sonda |
+| `disco.checar_segundos` | 300 (mínimo 1) | `SaudeDoDisco::checar_segundos` | intervalo da sonda |
 | `disco.repetir_minutos` | 30 | `SaudeDoDisco::silencio_ms` | silêncio entre avisos do mesmo tipo |
 | `disco.lento_ms` | 1000 (0 desliga) | `sondar`/`estado` | acima disto, `aviso` no painel |
 | `sms.ligado` | false | `avisar_saude_do_disco` | manda o SMS junto do e-mail |
@@ -252,7 +253,7 @@ vem no arranque, não na primeira falha de disco.
 
 **Por que a sonda nasce ligada, ao contrário do vigia de espaço.** O vigia
 manda e-mail, e por isso nasce desligado — aviso que ninguém pediu é caixa
-de entrada cheia. A sonda só **mede** (64 bytes por minuto) e pinta o painel;
+de entrada cheia. A sonda só **mede** (64 bytes a cada 5 min) e pinta o painel;
 o aviso continua dependendo de `email.ligado`. Sem ela ligada, o cartão diria
 «não medido» para todo mundo que nunca abriu o `config.json`, e um monitor
 que nasce cego não monitora nada. É a mesma decisão da telemetria, que nasce
@@ -348,12 +349,16 @@ relatório da frente e em `ultima-corrida.json`:
    segurança); (b) um gateway **HTTPS** — pede TLS, TLS pede crate, e a
    pétrea diz que isso é pergunta, não decisão de frente. Qual dos dois, ou
    nenhum?
-2. **O intervalo da sonda: 60 s.** Um `fsync` de 64 bytes por minuto. Em
-   disco giratório ocioso é um despertar por minuto; em SSD é nada. Está bom,
-   ou prefere 5 min?
-3. **A sonda nasce ligada.** Justificado em §5; se a regra «guarda nova entra
-   pedida» tiver de valer também para medição, basta trocar o padrão de
-   `Disco::ligado` para `false` — um lugar, com teste.
+2. **O intervalo da sonda: 60 s ou 5 min? RESOLVIDO, DECISÃO DO DONO,
+   17/09/2026 05:35** (`docs/PENDENCIAS.md` #249): **5 minutos**. Disco
+   somente-leitura ou cheio não é evento de segundo, e 288 escritas por dia
+   no diretório do banco em vez de 1.440. `Disco::default().checar_segundos
+   == 300` (`config.rs`).
+3. **A sonda nasce ligada? RESOLVIDO, DECISÃO DO DONO, 17/09/2026 05:35**
+   (`docs/PENDENCIAS.md` #249): **sim, só medindo** — o aviso continua
+   dependendo do e-mail já configurado, então ligada não incomoda quem não
+   pediu, e guarda que nasce desligada é guarda que ninguém lembra de ligar
+   no dia em que precisa. `Disco::default().ligado == true` (`config.rs`).
 4. **O SMS vale só para a saúde do disco.** Disco apertado, job que falhou e
    IP bloqueado continuam só por e-mail. Estender é um `if sms.ligado` em
    cada um dos três avisos — quer?

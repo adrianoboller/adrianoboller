@@ -3310,7 +3310,7 @@ AGENDADO
     pergunta «o disco ainda aceita escrita?» -- e nao espera relogio nenhum
     para avisar. Tres pecas:
 
-      - A SONDA: a cada alertas.disco.checar_segundos (60) uma thread propria
+      - A SONDA: a cada alertas.disco.checar_segundos (300, 5 min) uma thread propria
         escreve <base>/.saude-do-disco, sincroniza (fsync), rele, confere e
         apaga, medindo a duracao. Recusa do sistema vira estado "erro" no
         painel: EROFS (montagem virou so-leitura), ENOSPC (sem espaco), EIO
@@ -3328,7 +3328,7 @@ AGENDADO
         "alertas": {
           "email": { "ligado": true, "servidor": "127.0.0.1", "porta": 25,
                      "de": "phxsql@empresa.com.br", "para": ["dba@empresa.com.br"] },
-          "disco": { "ligado": true, "checar_segundos": 60,
+          "disco": { "ligado": true, "checar_segundos": 300,
                      "repetir_minutos": 30, "lento_ms": 1000 },
           "sms":   { "ligado": true, "numeros": ["+5541999990000"],
                      "gateway_email": "sms.operadora.com.br" }

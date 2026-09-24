@@ -51,9 +51,9 @@ function config(base, hash, portaDados, portaWeb) {
     // oferece. Tirar esta linha volta a matar a bateria inteira.
     cifra_fio: { exigir: false },
     recursos: { durabilidade: 'sistema', cache_paginas: 512 },
-    // A sonda de saude do disco a cada 2 s, e nao a cada 60: o caso
-    // `saude-do-disco` espera o EVENTO da proxima passada, e um minuto por
-    // espera faria o caso levar tres.
+    // A sonda de saude do disco a cada 2 s, e nao a cada 300 (5 min, padrao
+    // do pedido 249): o caso `saude-do-disco` espera o EVENTO da proxima
+    // passada, e 5 minutos por espera faria o caso levar quinze.
     alertas: { disco: { checar_segundos: 2 } },
     usuarios: [{
       id: 10, nome: 'Adriano Boller', login: USUARIO, senha_hash: hash,

@@ -24764,8 +24764,8 @@ impl Servidor {
             move |fio| {
                 let intervalo = Duration::from_secs(servidor.saude.checar_segundos());
                 let sonda_ligada = servidor.saude.ligada();
-                // A primeira sonda e ja: o painel nao pode esperar um minuto
-                // para dizer alguma coisa.
+                // A primeira sonda e ja: o painel nao pode esperar o
+                // intervalo inteiro para dizer alguma coisa.
                 let mut proxima = Instant::now();
                 loop {
                     if sonda_ligada && Instant::now() >= proxima {
