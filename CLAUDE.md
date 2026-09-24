@@ -344,21 +344,37 @@ escurece para `#C63C0A` no tema claro, por contraste.
 Atenção: a folha de marca afirma *ACID compliant* e *built-in replication*.
 O segundo **virou verdade** — a replicação funciona, está medida com quatro
 servidores, e o cluster faz eleição e promoção automática. O primeiro
-**continua falso, mas a razão mudou de novo**: há transação desde o pedido 162
-(`BEGIN`/`COMMIT`/`ROLLBACK`/`SAVEPOINT`, com escopo, prazos e travas) — a
-premissa «sem transação não há o A nem o I» caducou. E o **C parcial também
-caducou**: desde o ACID-C (15/09) a cascata do `ao_alterar` entra INTEIRA no
-conjunto de escrita da transação (super-journal, marca v3), então dentro da
-transação o `ROLLBACK` a alcança, o `COMMIT` a conta e o read-your-own-writes a
-mostra. O que ainda derruba *ACID compliant* seco é **só o I, e só por
-padrão**: o isolamento entregue sem pedir é `READ COMMITTED`. A **leitura
-repetível existe desde 16/09/2026, pela trava e pedida** — `"leitura_repetivel":
-true` no `begin`, `BEGIN ISOLATION LEVEL REPEATABLE READ` no SQL: é a via (b)
-do `docs/SOMBRA.md` §5b, que o dono reabriu e escolheu; a Sombra/MVCC continua
-parada. Quem pede segura a compartilhada (S) em cada tabela que lê, até o fim;
-quem não pede continua em leitura confirmada; e `SERIALIZABLE` não se reivindica
-sem prova. Ver `docs/ACID.md` §2.4/§3.3/§4.4 e `docs/PENDENCIAS.md` #189 e
-#246. Não repita *ACID compliant* em documento técnico.
+**continua sem se afirmar**, e o motivo foi corrigido por decisão do dono em
+24/09/2026 (pedido 337, parecer técnico externo de 17/09). O argumento antigo
+dizia que o que derrubava *ACID compliant* era «só o I, e só por padrão»,
+porque o isolamento entregue sem pedir é `READ COMMITTED`. **Esse argumento
+estava errado:** o PostgreSQL se declara ACID e o padrão dele também é
+`READ COMMITTED`. O isolamento por omissão não desqualifica ninguém. O teste
+certo tem duas partes:
+
+- **as garantias do nível declarado valem, com prova**;
+- **os invariantes se preservam**, inclusive na réplica, onde não reconferir a
+  FK não prova sozinho que falta consistência. O que importa é se a origem, a
+  ordem e a atomicidade da aplicação preservam as restrições.
+
+O que existe hoje:
+
+- transação desde o pedido 162 (`BEGIN`/`COMMIT`/`ROLLBACK`/`SAVEPOINT`, com
+  escopo, prazos e travas);
+- a cascata do `ao_alterar` inteira no conjunto de escrita desde o ACID-C
+  (15/09): o `ROLLBACK` a alcança, o `COMMIT` a conta e o read-your-own-writes
+  a mostra;
+- a **leitura repetível pela trava, pedida**, desde 16/09
+  (`"leitura_repetivel": true` no `begin`, `BEGIN ISOLATION LEVEL REPEATABLE
+  READ` no SQL, a via (b) do `docs/SOMBRA.md` §5b; a Sombra/MVCC continua
+  parada).
+
+E o que ainda não fecha: a atomicidade de um commit entre tabelas **não
+atravessa o fio da réplica** (preço declarado, pedido 299). A conclusão
+prática não mudou: **não se escreve *ACID compliant* em documento técnico
+enquanto a prova de cada letra, no nível declarado, não existir**, e
+`SERIALIZABLE` não se reivindica sem prova. Ver `docs/ACID.md`
+§2.4/§3.3/§4.4 e `docs/PENDENCIAS.md` #189, #246 e #337.
 
 ## Regras que não se quebram
 
