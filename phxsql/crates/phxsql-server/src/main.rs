@@ -14,38 +14,142 @@
 //! phxsqld --mcp                    servidor MCP pela entrada/saida padrao
 //! phxsqld --empacotar-config       grava o config.json como config.phz
 //! phxsqld --desempacotar-config    o config.phz volta a config.json
+//! phxsqld --flag-desconhecida      recusa: codigo != 0, nomeia o que aceita
 //! ```
 
 use std::process::ExitCode;
 
 use phxsql_server::{Config, LogAcessos, Servidor};
 
-const USO: &str = "\
-phxsqld -- servidor do PhxSql (porta 5000 por padrao)
+/// Uma flag que o `phxsqld` reconhece na linha de comando.
+///
+/// UM array so (pedido 483, lei «funcao e comando vem do mesmo motor»): o
+/// parser confere `nome` contra ele em [`conferir_argumentos`], e o
+/// `--help` monta o `USO:` lendo `uso` do MESMO lugar em [`montar_uso`].
+/// Lista de flag digitada duas vezes e a lista que diverge de si mesma no
+/// dia em que so um dos dois lados for atualizado.
+struct Flag {
+    /// O texto exato que aparece na linha de comando, com o(s) traco(s).
+    nome: &'static str,
+    /// Se o proximo argumento (quando ele NAO comeca com `-`) e o VALOR
+    /// desta flag -- e por isso nao deve ser conferido como flag por si.
+    toma_valor: bool,
+    /// A linha (ou linhas) que descrevem a flag no `--help`. Vazio para as
+    /// que nao ganham bullet propria -- `--usuario` e `--escrita` so fazem
+    /// sentido junto de `--mcp`, e continuam descritas na prosa abaixo dele.
+    uso: &'static str,
+}
 
-USO:
-  phxsqld [--config <caminho>]      sobe o servidor
-  phxsqld --acessos [--config <c>]  mostra quem acessou, por IP
-  phxsqld --usuarios [--config <c>] lista o cadastro e o poder de cada um
-  phxsqld --bloqueios [--config <c>]      lista os IPs bloqueados
-  phxsqld --desbloquear <ip> [--config c] tira um IP da lista de bloqueio
-  phxsqld --senha [senha]           gera a linha senha_hash para o config.json
-  phxsqld --gerar-chave             gera um par de chaves Ed25519 (2o fator)
-  phxsqld --chave-do-fio            a chave publica do aperto de mao (o pino)
-  phxsqld --pagina > centro.html    o Centro de Controle como arquivo unico
-  phxsqld --exemplo <1|2|3>         imprime um config.json de exemplo
-                                    1 = isolado, 2 = source, 3 = replica
-  phxsqld --mcp [--usuario u] [--escrita]   servidor MCP (JSON-RPC por linha,
-                                    pela entrada e pela saida padrao)
-  phxsqld --empacotar-config [--config <c>]
-                                    grava o config.json como config.phz (um 7z
-                                    com senha fixa: barreira contra editor, NAO
-                                    e cifra -- pedido 450). O .json sai do
-                                    caminho RENOMEADO, nunca apagado
-  phxsqld --desempacotar-config [--config <c>]
-                                    o config.phz volta a config.json, para
-                                    editar o que a tela nao grava
+const FLAGS: &[Flag] = &[
+    Flag {
+        nome: "-V",
+        toma_valor: false,
+        uso: "",
+    },
+    Flag {
+        nome: "--version",
+        toma_valor: false,
+        uso: "",
+    },
+    Flag {
+        nome: "-h",
+        toma_valor: false,
+        uso: "",
+    },
+    Flag {
+        nome: "--help",
+        toma_valor: false,
+        uso: "",
+    },
+    Flag {
+        nome: "--config",
+        toma_valor: true,
+        uso: "  phxsqld [--config <caminho>]      sobe o servidor\n",
+    },
+    Flag {
+        nome: "--acessos",
+        toma_valor: false,
+        uso: "  phxsqld --acessos [--config <c>]  mostra quem acessou, por IP\n",
+    },
+    Flag {
+        nome: "--usuarios",
+        toma_valor: false,
+        uso: "  phxsqld --usuarios [--config <c>] lista o cadastro e o poder de cada um\n",
+    },
+    Flag {
+        nome: "--bloqueios",
+        toma_valor: false,
+        uso: "  phxsqld --bloqueios [--config <c>]      lista os IPs bloqueados\n",
+    },
+    Flag {
+        nome: "--desbloquear",
+        toma_valor: true,
+        uso: "  phxsqld --desbloquear <ip> [--config c] tira um IP da lista de bloqueio\n",
+    },
+    Flag {
+        nome: "--senha",
+        toma_valor: true,
+        uso: "  phxsqld --senha [senha]           gera a linha senha_hash para o config.json\n",
+    },
+    Flag {
+        nome: "--gerar-chave",
+        toma_valor: false,
+        uso: "  phxsqld --gerar-chave             gera um par de chaves Ed25519 (2o fator)\n",
+    },
+    Flag {
+        nome: "--chave-do-fio",
+        toma_valor: false,
+        uso: "  phxsqld --chave-do-fio            a chave publica do aperto de mao (o pino)\n",
+    },
+    Flag {
+        nome: "--pagina",
+        toma_valor: false,
+        uso: "  phxsqld --pagina > centro.html    o Centro de Controle como arquivo unico\n",
+    },
+    Flag {
+        nome: "--exemplo",
+        toma_valor: true,
+        uso: "  phxsqld --exemplo <1|2|3>         imprime um config.json de exemplo\n                                    1 = isolado, 2 = source, 3 = replica\n",
+    },
+    Flag {
+        nome: "--mcp",
+        toma_valor: false,
+        uso: "  phxsqld --mcp [--usuario u] [--escrita]   servidor MCP (JSON-RPC por linha,\n                                    pela entrada e pela saida padrao)\n",
+    },
+    Flag {
+        nome: "--usuario",
+        toma_valor: true,
+        uso: "",
+    },
+    Flag {
+        nome: "--escrita",
+        toma_valor: false,
+        uso: "",
+    },
+    Flag {
+        nome: "--empacotar-config",
+        toma_valor: false,
+        uso: "  phxsqld --empacotar-config [--config <c>]\n                                    grava o config.json como config.phz (um 7z\n                                    com senha fixa: barreira contra editor, NAO\n                                    e cifra -- pedido 450). O .json sai do\n                                    caminho RENOMEADO, nunca apagado\n",
+    },
+    Flag {
+        nome: "--desempacotar-config",
+        toma_valor: false,
+        uso: "  phxsqld --desempacotar-config [--config <c>]\n                                    o config.phz volta a config.json, para\n                                    editar o que a tela nao grava\n",
+    },
+];
 
+/// Monta o texto do `--help`: cabecalho e prosa fixos, e a lista `USO:`
+/// lida de [`FLAGS`] -- a MESMA lista que [`conferir_argumentos`] confere.
+fn montar_uso() -> String {
+    let mut s = String::from("phxsqld -- servidor do PhxSql (porta 5000 por padrao)\n\nUSO:\n");
+    for f in FLAGS {
+        s.push_str(f.uso);
+    }
+    s.push_str(AJUDA_RODAPE);
+    s
+}
+
+const AJUDA_RODAPE: &str = "
 O --mcp nasce SOMENTE LEITURA: do outro lado ha um modelo de linguagem, e nao
 uma pessoa. --escrita libera phx_inserir e phx_atualizar. A senha do --usuario
 vem de PHXSQL_SENHA, porque a entrada padrao esta ocupada pelo protocolo:
@@ -57,6 +161,55 @@ A senha NUNCA vai em texto puro no config.json. Gere o hash assim:
   phxsqld --senha                   pergunta a senha (ela aparece na tela)
   echo -n 'minha senha' | phxsqld --senha    nao aparece, nem no historico
 ";
+
+/// A mensagem de erro nomeia o argumento e aponta a lista -- que sai do
+/// MESMO array que validou, nunca de uma segunda lista digitada a mao.
+///
+/// `motivo` distingue a flag que nao existe (`--flag-boba`) do argumento que
+/// sobrou sem nenhuma flag pedindo ele (`lixo` sozinho): o primeiro pode ter
+/// vindo de um binario mais novo, o segundo e so um erro de digitacao.
+fn erro_argumento(a: &str, motivo: &str) -> String {
+    let conhecidas: Vec<&str> = FLAGS.iter().map(|f| f.nome).collect();
+    format!(
+        "{motivo}: {a}\n\
+         use --help para o detalhe de cada uma, ou a lista curta:\n  {}",
+        conhecidas.join(", ")
+    )
+}
+
+/// Confere que a linha de comando so tem flags que o `phxsqld` conhece.
+///
+/// Os tres motores maduros (`postgres`, `mysqld`, `mariadbd`) recusam opcao
+/// desconhecida saindo com erro; este binario so reagia as flags que
+/// reconhecia e IGNORAVA o resto -- um binario velho recebendo uma flag nova
+/// (`--empacotar-config`, no incidente que abriu o pedido 483) caiu direto no
+/// arranque do servidor, usando o `--config` que sobrou. Roda ANTES de
+/// qualquer leitura de config, chave ou porta: o erro tem de custar zero I/O.
+fn conferir_argumentos(args: &[String]) -> Result<(), String> {
+    let mut i = 0;
+    while i < args.len() {
+        let a = args[i].as_str();
+        if !a.starts_with('-') {
+            // So chega aqui um argumento que NAO foi consumido como valor de
+            // uma flag anterior -- sobrou, e nenhuma flag pediu ele.
+            return Err(erro_argumento(a, "argumento inesperado"));
+        }
+        match FLAGS.iter().find(|f| f.nome == a) {
+            None => return Err(erro_argumento(a, "argumento desconhecido")),
+            Some(f) => {
+                // O valor so e consumido se NAO parecer outra flag -- o
+                // mesmo criterio que `--senha`, `--usuario` e `--desbloquear`
+                // ja usam mais abaixo para saber se ganharam um valor.
+                i += if f.toma_valor && args.get(i + 1).is_some_and(|v| !v.starts_with('-')) {
+                    2
+                } else {
+                    1
+                };
+            }
+        }
+    }
+    Ok(())
+}
 
 /// Gera a linha `senha_hash` para colar no `config.json`.
 ///
@@ -260,6 +413,17 @@ fn trocar_a_forma(pedido: &str, empacotar: bool) -> ExitCode {
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
+
+    // A recusa vem ANTES de tudo, inclusive antes do -V/--help -- que ja
+    // estao em FLAGS e por isso passam batido por aqui. Sem isto, um
+    // binario velho que ganhasse uma flag nova a ignorava e caia direto no
+    // arranque do servidor, sem porta aberta nem arquivo criado ainda
+    // (pedido 483).
+    if let Err(e) = conferir_argumentos(&args) {
+        eprintln!("{e}");
+        return ExitCode::FAILURE;
+    }
+
     // `--version` responde ANTES de tudo: sem ler `config.json`, sem conectar
     // em servidor nenhum. Uma auditoria externa achou os tres binarios
     // respondendo coisas diferentes -- «comando desconhecido», erro de
@@ -270,7 +434,7 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
     if args.iter().any(|a| a == "-h" || a == "--help") {
-        print!("{USO}");
+        print!("{}", montar_uso());
         return ExitCode::SUCCESS;
     }
 

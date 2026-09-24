@@ -1269,6 +1269,7 @@ QA, com julgamento de pergunta, e a redação do H.
 | C — parecer da etapa 2 do 450 | forte | formato em disco e migracao; achou a dica que truncaria o config extraido |
 | SEC — revisao da etapa 2 do 450 | forte | leitura adversaria de arquivo com segredo; provou pelo binario a copia em claro 644 e a pasta esvaziada |
 | 478 — a instalacao nova termina em `.phz` | leve | roteiro, documentacao e uma prova em Python sobre um comando que ja existia; o integrador achou o empacotador pendurado com binario velho |
+| 483 — o `phxsqld` recusa flag desconhecida | leve | parser pequeno com inventario medido dos chamadores e prova pelo binario |
 
 **A integração achou o que nenhuma frente via, de novo por território de
 arquivo não bastar em worktree compartilhado**: `cargo fmt --all` de uma

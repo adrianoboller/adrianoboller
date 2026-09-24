@@ -254,6 +254,11 @@ Detalhes e o que a ligacao ensinou em docs/CONSOLE.md.
     phxsqld --exemplo 2 > config.json      source
     phxsqld --exemplo 3 > config.json      replica
 
+    OPCAO DESCONHECIDA E RECUSADA (pedido 483): um `phxsqld` que recebe uma
+    flag que nao conhece nao a ignora nem sobe como servidor com o que sobrou
+    -- ele sai com erro nomeando a flag e o que aceita (ou rode com --help).
+    E o mesmo comportamento do postgres, do mysqld e do mariadbd.
+
 7.2 Edite o config.json
 
     bind              endereco e porta de escuta. Padrao 0.0.0.0:5000
