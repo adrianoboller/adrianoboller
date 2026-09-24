@@ -23,11 +23,15 @@
   .marca { font-family: "Exo 2", system-ui, sans-serif; }
   header { display: flex; align-items: center; gap: 16px; padding: 16px 24px;
     border-bottom: 1px solid var(--borda); flex-wrap: wrap; }
-  header h1 { margin: 0; font-size: 34px; font-weight: 600; letter-spacing: .02em; }
-  header h1 span { color: var(--acento); }
+    header h1.logo { display: inline-flex; flex-direction: column; line-height: 1; margin: 0; font-weight: 600; }
+  /* «PHX / Z I P» (decisao do dono): Z I P espacado ate a largura de PHX,
+     pelo flex -- a mesma conta do SVG da marca, sem letter-spacing chutado. */
+  header h1.logo .l1 { font-size: 34px; letter-spacing: .01em; color: var(--texto); }
+  header h1.logo .l2 { display: flex; justify-content: space-between; font-size: 21px; margin-top: 5px; color: var(--acento); }
+  header h1.logo b { font-weight: 600; }
     .ic { width: 16px; height: 16px; vertical-align: -3px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
   .ic.pasta { color: var(--ambar); } .ic.cadeado { color: var(--laranja); } .ic.doc { color: var(--fraco); }
-  header .sub { color: var(--fraco); font-size: 13px; }
+  header .sub { color: var(--fraco); font-size: 13px; margin-top: 9px; }
   header .dir { margin-left: auto; display: flex; gap: 10px; align-items: center; }
   main { max-width: 1180px; margin: 0 auto; padding: 24px 16px; display: grid;
     grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 20px; }
@@ -95,7 +99,7 @@
 <body>
 <header>
   <div>
-    <h1 class="marca">Ph<span>x</span>Zip</h1>
+    <h1 class="marca logo" aria-label="PhxZip"><span class="l1">PHX</span><span class="l2"><b>Z</b><b>I</b><b>P</b></span></h1>
     <div class="sub" data-txt="sub">7z · LZMA2 · AES-256 — escrito em Rust, sem dependências</div>
   </div>
   <div class="dir">

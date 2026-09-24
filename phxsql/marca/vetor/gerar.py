@@ -107,22 +107,35 @@ def horizontal(f, produto, acento, assinatura=True):
 
 
 def phxzip_palavra(f):
-    """Decisao do dono, 24/09/2026: «Deixa a palavra PHXZIP.» O logo do
-    PhxZip e so a palavra, em curvas Exo 2 SemiBold, no padrao da folha do
-    PhxSql: prata, com o `x` no acento do produto. Sem desenho."""
-    alt = 150
-    caminhos, larg = palavra(f, "PhxZip", alt, lambda i, ch: "#FFC43D" if i == 2 else PRATA)
-    # Margem igual em cima e embaixo: o «h» sobe acima das maiusculas e o «p»
-    # desce abaixo da linha de base (o primeiro corte encostava as duas).
-    L, H = int(larg + 60), int(alt * 1.78)
+    """Decisao do dono, 24/09/2026: «PHX / Z I P». O logo do PhxZip e a
+    palavra em duas linhas, sem desenho: PHX em prata em cima, e Z I P no
+    ambar do produto embaixo, espacado ate a largura exata de PHX -- as duas
+    linhas fecham o mesmo bloco."""
+    alt1, alt2 = 150, 96
+    phx, larg1 = palavra(f, "PHX", alt1, lambda i, ch: PRATA)
+    letras = [palavra(f, ch, alt2, lambda i, c: "#FFC43D") for ch in "ZIP"]
+    # Z encosta na esquerda, P na direita, I no meio: o espaco sai da conta,
+    # nao de um letter-spacing chutado.
+    x_p = larg1 - letras[2][1]
+    x_i = (letras[0][1] + x_p) / 2 - letras[1][1] / 2
+    xs = [0.0, x_i, x_p]
+    margem, vao = 30, 40
+    L = int(larg1 + 2 * margem)
+    H = int(margem + alt1 + vao + alt2 + margem)
     partes = [
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {L} {H}" role="img" aria-label="PhxZip">',
-        "<title>PhxZip</title>",
-        f'<g transform="translate(30 {int(alt * 0.28)})">',
+        "<title>PHX ZIP</title>",
+        f'<g transform="translate({margem} {margem})">',
     ]
-    for d, cor in caminhos:
+    for d, cor in phx:
         partes.append(f'<path fill="{cor}" d="{fmt(d)}"/>')
-    partes.append("</g></svg>\n")
+    partes.append("</g>")
+    for (caminhos, _), x in zip(letras, xs):
+        partes.append(f'<g transform="translate({margem + x:.1f} {margem + alt1 + vao})">')
+        for d, cor in caminhos:
+            partes.append(f'<path fill="{cor}" d="{fmt(d)}"/>')
+        partes.append("</g>")
+    partes.append("</svg>\n")
     (AQUI / "phxzip-palavra.svg").write_text("\n".join(partes), encoding="utf-8")
 
 

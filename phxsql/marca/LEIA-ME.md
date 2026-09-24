@@ -112,13 +112,16 @@ tamanho novo era um recorte à mão. Agora:
 ### O logo do PhxZip — só a palavra
 
 Decisão do dono, 24/09/2026, depois de três desenhos (morsa, cadeado, fênix
-sobre «Zip») recusados: *«Deixa a palavra PHXZIP.»* O logo é a palavra
-**PhxZip** em Exo 2 SemiBold, no padrão da folha do PhxSql — prata, com o
-`x` no âmbar do PhxZip. Nenhum desenho.
+sobre «Zip») recusados: *«Deixa a palavra PHXZIP.»*, e em seguida o
+desenho da palavra: *«PHX / Z I P»*. O logo são duas linhas em Exo 2
+SemiBold: **PHX** em prata em cima, e **Z I P** no âmbar do PhxZip embaixo,
+espaçado até a largura exata de PHX (Z na esquerda, P na direita, I no
+meio — a conta sai do gerador, não de um espaçamento chutado). Nenhum
+desenho.
 
 | Arquivo | O que é |
 |---|---|
-| `vetor/phxzip-palavra.svg` | a palavra em curvas (não depende de a Exo 2 estar instalada) |
+| `vetor/phxzip-palavra.svg` | PHX / Z I P em curvas (não depende de a Exo 2 estar instalada) |
 | `vetor/phxzip-icone.svg` | ícone de aba: a letra **Z** em âmbar sobre `#010418` |
 
 Refazer: `python3 vetor/gerar.py Exo2[wght].ttf` (precisa de `fontTools`,
