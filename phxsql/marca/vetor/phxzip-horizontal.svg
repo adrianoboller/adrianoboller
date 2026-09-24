@@ -38,39 +38,45 @@
       <circle cx="90" cy="322" r="6" fill="#FFC43D" stroke="none"/>
       <circle cx="74" cy="356" r="6" fill="#FFC43D" stroke="none"/>
     </g>
+      <linearGradient id="aco" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3a4668"/><stop offset=".5" stop-color="#1a2440"/><stop offset="1" stop-color="#0a1122"/>
+    </linearGradient>
   </defs>
+  <circle cx="256" cy="250" r="190" fill="url(#brilho)" opacity=".28"/>
 
-  <circle cx="256" cy="300" r="150" fill="url(#brilho)" opacity=".35"/>
-  <use href="#trilhas-esq"/>
-  <use href="#trilhas-esq" transform="translate(512 0) scale(-1 1)"/>
-  <use href="#asa-esq"/>
-  <use href="#asa-esq" transform="translate(512 0) scale(-1 1)"/>
-
-  <!-- cauda: tres labaredas que descem do cilindro -->
-  <path fill="url(#fogo)" d="M256 470 C236 440 222 414 226 384 L286 384 C290 414 276 440 256 470 Z"/>
-  <path fill="url(#fogo)" opacity=".85" d="M216 452 C200 428 196 404 206 380 L236 384 C230 410 228 432 216 452 Z"/>
-  <path fill="url(#fogo)" opacity=".85" d="M296 452 C312 428 316 404 306 380 L276 384 C282 410 284 432 296 452 Z"/>
-
-  <!-- o cilindro: o banco de dados no peito da fenix -->
-  <path fill="url(#corpo)" stroke="#FF8A1C" stroke-width="5" d="M186 250 V372 C186 388 218 400 256 400 C294 400 326 388 326 372 V250"/>
-  <ellipse cx="256" cy="250" rx="70" ry="20" fill="#0a1122" stroke="#FFC43D" stroke-width="5"/>
-  <g fill="none" stroke="#FF8A1C" stroke-width="4">
-    <path d="M186 290 C186 306 218 318 256 318 C294 318 326 306 326 290"/>
-    <path d="M186 331 C186 347 218 359 256 359 C294 359 326 347 326 331"/>
-  </g>
-  <g fill="#FFC43D">
-    <circle cx="208" cy="305" r="4.5"/><circle cx="222" cy="309" r="4.5"/>
-    <circle cx="208" cy="346" r="4.5"/><circle cx="222" cy="350" r="4.5"/>
-    <circle cx="208" cy="382" r="4.5"/><circle cx="222" cy="386" r="4.5"/>
-  </g>
-  <path fill="#FFC43D" d="M256 238 l4 8 8 4 -8 4 -4 8 -4 -8 -8 -4 8 -4 z"/>
-
+  <!-- a fenix, pousada: as asas, o pescoco e a cabeca do simbolo da familia -->
+  <g transform="translate(256 200) scale(.8) translate(-256 -250)">
+    <use href="#asa-esq"/>
+    <use href="#asa-esq" transform="translate(512 0) scale(-1 1)"/>
+    <!-- o peito em chama, no lugar do cilindro do PhxSql -->
+    <path fill="url(#fogo)" d="M256 330 C214 322 196 290 204 256 C210 232 228 222 248 220 L284 224 C304 234 314 254 310 280 C304 308 286 324 256 330 Z"/>
   <!-- a fenix: pescoco em S, cabeca com bico voltado para a direita e a
        crista em tres penas -- sobe do cilindro -->
   <path fill="url(#fogo)" d="M234 240 C222 206 228 172 250 148 C262 134 278 124 296 122 C310 121 322 126 330 134 L352 142 L330 150 C320 152 310 150 302 146 C290 150 282 160 278 174 C272 196 276 218 288 240 Z"/>
   <path fill="#FFC43D" d="M300 124 C288 108 282 90 284 70 C292 88 302 98 314 104 C308 88 308 72 314 56 C320 76 330 90 344 98 C342 84 346 72 354 62 C356 84 352 104 340 120 C332 122 318 122 300 124 Z"/>
   <path fill="#FF8A1C" d="M330 134 L352 142 L330 150 C334 144 334 140 330 134 Z"/>
   <circle cx="314" cy="134" r="4" fill="#010418"/>
+  </g>
+  <!-- as garras seguram a boca da morsa -->
+  <g fill="none" stroke="#FFC43D" stroke-width="6" stroke-linecap="round">
+    <path d="M236 262 L228 280 M236 262 L238 282 M236 262 L248 280"/>
+    <path d="M276 262 L266 280 M276 262 L276 282 M276 262 L286 280"/>
+  </g>
+
+  <!-- a morsa: base, corpo, as duas bocas, o fuso e a manivela -->
+  <rect x="92" y="410" width="328" height="26" rx="8" fill="url(#aco)" stroke="#FF8A1C" stroke-width="4"/>
+  <path d="M130 410 L150 346 H362 L382 410 Z" fill="url(#aco)" stroke="#FF8A1C" stroke-width="4" stroke-linejoin="round"/>
+  <rect x="130" y="280" width="104" height="70" rx="6" fill="url(#aco)" stroke="#FF8A1C" stroke-width="4"/>
+  <rect x="278" y="280" width="104" height="70" rx="6" fill="url(#aco)" stroke="#FF8A1C" stroke-width="4"/>
+  <g stroke="#FFC43D" stroke-width="3" opacity=".8">
+    <path d="M226 288 V342 M218 288 V342"/><path d="M286 288 V342 M294 288 V342"/>
+  </g>
+  <!-- o arquivo apertado entre as bocas: a compressao em si, com o ziper -->
+  <path d="M234 292 Q245 285 256 292 T278 292 V338 Q267 345 256 338 T234 338 Z" fill="url(#fogo)"/>
+  <path d="M256 294 V336" stroke="#010418" stroke-width="3" stroke-dasharray="4 4"/>
+  <rect x="382" y="354" width="66" height="14" rx="7" fill="#DDE2EB" opacity=".85"/>
+  <rect x="444" y="318" width="14" height="86" rx="7" fill="#FF8A1C"/>
+  <circle cx="451" cy="314" r="11" fill="#FFC43D"/><circle cx="451" cy="408" r="11" fill="#FFC43D"/>
 </svg>
 <line x1="536" y1="120" x2="536" y2="400" stroke="#DDE2EB" stroke-opacity=".25" stroke-width="3"/>
 <g transform="translate(560 170)">

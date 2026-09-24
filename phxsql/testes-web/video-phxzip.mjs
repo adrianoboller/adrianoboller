@@ -110,6 +110,24 @@ async function terminal(page, titulo, blocos, pausa = 3800) {
   await respirar(page, 400);
 }
 
+/** Solta arquivos na zona com um DataTransfer de verdade: a tela ve o mesmo
+ * evento `drop` de quem arrasta do gerenciador de arquivos, e a zona acende
+ * antes, como acende para a mao. */
+async function soltarNaZona(page, zona, arquivos) {
+  const dados = arquivos.map(f => [f.split('/').pop(), [...readFileSync(f)]]);
+  await page.evaluate(([zona, dados]) => {
+    window.__dt = new DataTransfer();
+    for (const [nome, bytes] of dados) window.__dt.items.add(new File([new Uint8Array(bytes)], nome));
+    document.querySelector(zona).dispatchEvent(new DragEvent('dragover', { dataTransfer: window.__dt, bubbles: true, cancelable: true }));
+  }, [zona, dados]);
+  await respirar(page, 1100);
+  await page.evaluate(zona => document.querySelector(zona).dispatchEvent(
+    new DragEvent('drop', { dataTransfer: window.__dt, bubbles: true, cancelable: true })), zona);
+  await respirar(page, 900);
+  const n = await page.evaluate(() => fila.length);
+  if (n !== arquivos.length) throw new Error(`a fila recebeu ${n} de ${arquivos.length} arquivos`);
+}
+
 /** Um destaque que aponta o elemento que a cena esta usando. */
 async function apontar(page, seletor) {
   await page.evaluate(sel => {
@@ -167,7 +185,9 @@ async function escolherArquivo(page, seletor, arquivos) {
   await page.setInputFiles(seletor, lista.map(f => ({
     name: f.split('/').pop(), mimeType: 'application/octet-stream', buffer: readFileSync(f),
   })));
-  const n = await page.evaluate(sel => document.querySelector(sel).files.length, seletor);
+  // O input se esvazia depois de entregar (a fila e o arquivo aberto moram
+  // no script da pagina): a contagem se confere la.
+  const n = await page.evaluate(sel => sel === '#c_arquivos' ? fila.length : (aberto ? 1 : 0), seletor);
   if (n !== lista.length) throw new Error(`o navegador recebeu ${n} de ${lista.length} arquivos`);
   await respirar(page, 700);
 }
@@ -218,10 +238,9 @@ async function principal() {
       [`7z a -mx=9 -mhe=on -p******** feito-pelo-7zip.7z amostra/*`, essencial(saida1)],
       [`7z l -pchute-errado feito-pelo-7zip.7z   # sem a senha certa`, essencial(lista1).filter(l => !/^Listing/.test(l)).slice(0, 6)],
     ]);
-    await apontar(page, '#a_arquivo + span');
+    await apontar(page, '#a_zona');
     await escolherArquivo(page, '#a_arquivo', de7z);
-    await apontar(page, '#abrir');
-    await page.click('#abrir');
+    // abrir e automatico ao escolher: sem a senha, o PhxZip pede a senha
     await page.waitForSelector('#a_res.erro');
     await respirar(page, 1800);
     await apontar(page, '#a_senha');
@@ -246,9 +265,9 @@ async function principal() {
     ]);
 
     // 2. PhxZip grava, 7-Zip abre
-    await cartaz(page, 'CENA 2', 'O PhxZip grava — o 7-Zip abre', 'compactado pela tela: LZMA2 nível 9, AES-256, nomes cifrados');
-    await apontar(page, '#c_arquivos + span');
-    await escolherArquivo(page, '#c_arquivos', arquivos);
+    await cartaz(page, 'CENA 2', 'O PhxZip grava — o 7-Zip abre', 'os arquivos soltos na área de arrastar; LZMA2 nível 9, AES-256, nomes cifrados');
+    await apontar(page, '#c_zona');
+    await soltarNaZona(page, '#c_zona', arquivos);
     await page.selectOption('#c_nivel', '9');
     await respirar(page, 500);
     await page.type('#c_senha', SENHA_ARQ, { delay: 70 });
@@ -280,6 +299,7 @@ async function principal() {
     await terminal(page, '7-Zip', [[`7z a -m0=bzip2 antigo-bzip2.7z amostra/config.json`, essencial(saida3)]], 1500);
     await page.fill('#a_senha', '');
     await escolherArquivo(page, '#a_arquivo', bz);
+    await page.waitForSelector('#a_tabela:not(.oculto)');
     await page.click('#testar');
     await page.waitForSelector('#a_res.erro');
     await apontar(page, '#a_res');

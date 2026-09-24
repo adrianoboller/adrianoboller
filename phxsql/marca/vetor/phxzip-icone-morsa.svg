@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="60 40 412 412" role="img" aria-label="PhxZip">
+  <title>PhxZip — a fênix pousada na morsa que aperta o arquivo</title>
+  <defs>
+    <linearGradient id="fogo" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFC43D"/>
+      <stop offset=".45" stop-color="#FF8A1C"/>
+      <stop offset=".8" stop-color="#FF4D10"/>
+      <stop offset="1" stop-color="#D71A1A"/>
+    </linearGradient>
+    <linearGradient id="asa" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFC43D"/>
+      <stop offset=".5" stop-color="#FF8A1C"/>
+      <stop offset="1" stop-color="#FF4D10"/>
+    </linearGradient>
+    <linearGradient id="corpo" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#05081a"/>
+      <stop offset=".5" stop-color="#1a2440"/>
+      <stop offset="1" stop-color="#05081a"/>
+    </linearGradient>
+    <radialGradient id="brilho" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="#FFC43D" stop-opacity=".9"/>
+      <stop offset="1" stop-color="#FF4D10" stop-opacity="0"/>
+    </radialGradient>
+    <g id="asa-esq">
+      <!-- a asa e um crescente: borda externa larga, ponta enrolada para
+           dentro no alto, como a chama da folha de marca -->
+      <path fill="url(#asa)" d="M214 292 C140 292 78 250 70 176 C66 134 86 92 124 66 C112 92 110 116 116 138 C122 110 138 86 162 70 C150 104 150 136 162 164 C168 136 182 114 202 100 C190 142 196 186 222 226 C232 242 240 254 244 262 Z"/>
+      <path fill="#D71A1A" opacity=".55" d="M214 292 C168 290 126 272 102 238 C134 254 168 258 200 252 C176 244 156 230 142 210 C170 222 200 228 230 226 Z"/>
+      <path fill="#FFC43D" opacity=".85" d="M116 138 C112 170 124 200 150 222 C132 196 126 168 130 140 C126 122 126 108 132 94 C122 108 116 122 116 138 Z"/>
+    </g>
+    <g id="trilhas-esq" fill="none" stroke="#FF8A1C" stroke-width="4" stroke-linecap="round">
+      <path d="M180 300 H112 L100 288 H70"/>
+      <path d="M182 322 H96"/>
+      <path d="M186 344 H120 L108 356 H80"/>
+      <circle cx="64" cy="288" r="6" fill="#FFC43D" stroke="none"/>
+      <circle cx="90" cy="322" r="6" fill="#FFC43D" stroke="none"/>
+      <circle cx="74" cy="356" r="6" fill="#FFC43D" stroke="none"/>
+    </g>
+      <linearGradient id="aco" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3a4668"/><stop offset=".5" stop-color="#1a2440"/><stop offset="1" stop-color="#0a1122"/>
+    </linearGradient>
+  </defs>
+  
+
+  <!-- a fenix, pousada: as asas, o pescoco e a cabeca do simbolo da familia -->
+  <g transform="translate(256 200) scale(.8) translate(-256 -250)">
+    <use href="#asa-esq"/>
+    <use href="#asa-esq" transform="translate(512 0) scale(-1 1)"/>
+    <!-- o peito em chama, no lugar do cilindro do PhxSql -->
+    <path fill="url(#fogo)" d="M256 330 C214 322 196 290 204 256 C210 232 228 222 248 220 L284 224 C304 234 314 254 310 280 C304 308 286 324 256 330 Z"/>
+  <!-- a fenix: pescoco em S, cabeca com bico voltado para a direita e a
+       crista em tres penas -- sobe do cilindro -->
+  <path fill="url(#fogo)" d="M234 240 C222 206 228 172 250 148 C262 134 278 124 296 122 C310 121 322 126 330 134 L352 142 L330 150 C320 152 310 150 302 146 C290 150 282 160 278 174 C272 196 276 218 288 240 Z"/>
+  <path fill="#FFC43D" d="M300 124 C288 108 282 90 284 70 C292 88 302 98 314 104 C308 88 308 72 314 56 C320 76 330 90 344 98 C342 84 346 72 354 62 C356 84 352 104 340 120 C332 122 318 122 300 124 Z"/>
+  <path fill="#FF8A1C" d="M330 134 L352 142 L330 150 C334 144 334 140 330 134 Z"/>
+  <circle cx="314" cy="134" r="4" fill="#010418"/>
+  </g>
+  <!-- as garras seguram a boca da morsa -->
+  <g fill="none" stroke="#FFC43D" stroke-width="6" stroke-linecap="round">
+    <path d="M236 262 L228 280 M236 262 L238 282 M236 262 L248 280"/>
+    <path d="M276 262 L266 280 M276 262 L276 282 M276 262 L286 280"/>
+  </g>
+
+  <!-- a morsa: base, corpo, as duas bocas, o fuso e a manivela -->
+  <rect x="92" y="410" width="328" height="26" rx="8" fill="url(#aco)" stroke="#FF8A1C" stroke-width="4"/>
+  <path d="M130 410 L150 346 H362 L382 410 Z" fill="url(#aco)" stroke="#FF8A1C" stroke-width="4" stroke-linejoin="round"/>
+  <rect x="130" y="280" width="104" height="70" rx="6" fill="url(#aco)" stroke="#FF8A1C" stroke-width="4"/>
+  <rect x="278" y="280" width="104" height="70" rx="6" fill="url(#aco)" stroke="#FF8A1C" stroke-width="4"/>
+  <g stroke="#FFC43D" stroke-width="3" opacity=".8">
+    <path d="M226 288 V342 M218 288 V342"/><path d="M286 288 V342 M294 288 V342"/>
+  </g>
+  <!-- o arquivo apertado entre as bocas: a compressao em si, com o ziper -->
+  <path d="M234 292 Q245 285 256 292 T278 292 V338 Q267 345 256 338 T234 338 Z" fill="url(#fogo)"/>
+  <path d="M256 294 V336" stroke="#010418" stroke-width="3" stroke-dasharray="4 4"/>
+  <rect x="382" y="354" width="66" height="14" rx="7" fill="#DDE2EB" opacity=".85"/>
+  <rect x="444" y="318" width="14" height="86" rx="7" fill="#FF8A1C"/>
+  <circle cx="451" cy="314" r="11" fill="#FFC43D"/><circle cx="451" cy="408" r="11" fill="#FFC43D"/>
+</svg>

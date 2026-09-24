@@ -25,7 +25,7 @@
     border-bottom: 1px solid var(--borda); flex-wrap: wrap; }
   header h1 { margin: 0; font-size: 26px; font-weight: 600; letter-spacing: .02em; }
   header h1 span { color: var(--acento); }
-  header .simbolo { width: 44px; height: 44px; flex: none; }
+  header .simbolo { width: 58px; height: 58px; flex: none; }
   .ic { width: 16px; height: 16px; vertical-align: -3px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
   .ic.pasta { color: var(--ambar); } .ic.cadeado { color: var(--laranja); } .ic.doc { color: var(--fraco); }
   header .sub { color: var(--fraco); font-size: 13px; }
@@ -52,6 +52,24 @@
   .arquivo-escolha { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
   .arquivo-escolha input[type=file] { display: none; }
   .escolhidos { color: var(--fraco); font-size: 13px; overflow-wrap: anywhere; }
+  /* A area de soltar: tracejado ambar em repouso, cheio quando ha algo em
+     cima -- a mesma regra do botao (contorno, e preenchimento so com intencao). */
+  .zona { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+    min-height: 118px; padding: 16px; border: 2px dashed var(--borda); border-radius: 12px; cursor: pointer;
+    color: var(--fraco); text-align: center; transition: border-color .15s, background .15s; }
+  .zona:hover, .zona:focus-visible { border-color: var(--acento); color: var(--texto); outline: none; }
+  .zona.em-cima { border-color: var(--acento); border-style: solid; background: rgba(255,196,61,.08); color: var(--texto); }
+  .zona .ic { width: 30px; height: 30px; color: var(--acento); }
+  .zona strong { color: var(--texto); font-weight: 600; }
+  .zona input[type=file] { display: none; }
+  .zona.menor { min-height: 84px; }
+  .lista-fila { max-height: 240px; overflow: auto; margin: 10px 0 12px; border: 1px solid var(--borda); border-radius: 8px; }
+  .lista-fila table { margin-top: 0; }
+  .rodape-lista { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 6px 8px;
+    font-size: 13px; color: var(--fraco); border-top: 1px solid var(--borda); background: var(--fundo); position: sticky; bottom: 0; }
+  .filtro { max-width: 260px; padding: 6px 10px; font-size: 13px; }
+  .botao.remover { color: var(--fraco); padding: 2px 6px; line-height: 0; border-color: transparent; }
+  .botao.remover:hover { color: var(--vermelho); border-color: var(--vermelho); background: transparent; }
   .resultado { margin-top: 14px; padding: 10px 12px; border-radius: 8px; font-size: 14px;
     border: 1px solid var(--borda); display: none; overflow-wrap: anywhere; }
   .resultado.ok { display: block; border-color: var(--verde); color: var(--verde); }
@@ -97,6 +115,8 @@
   <symbol id="i-pasta" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
   <symbol id="i-cadeado" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
   <symbol id="i-baixar" viewBox="0 0 24 24"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></symbol>
+  <symbol id="i-soltar" viewBox="0 0 24 24"><path d="M12 15V3"/><path d="M7 8l5-5 5 5"/><path d="M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></symbol>
+  <symbol id="i-fechar" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
   <symbol id="i-doc" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></symbol>
 </svg>
 
@@ -113,11 +133,17 @@
 <main id="principal" class="oculto">
   <section class="cartao">
     <h2 class="marca" data-txt="compactar_titulo">Compactar</h2>
-    <div class="campo"><span data-txt="arquivos">Arquivos</span>
-      <div class="arquivo-escolha">
-        <label class="botao neutro mini"><input id="c_arquivos" type="file" multiple><span data-txt="escolher">Escolher arquivos</span></label>
-        <span id="c_escolhidos" class="escolhidos" data-txt="nenhum">nenhum arquivo</span>
-      </div>
+    <label id="c_zona" class="zona" tabindex="0">
+      <input id="c_arquivos" type="file" multiple>
+      <svg class="ic" aria-hidden="true"><use href="#i-soltar"/></svg>
+      <strong data-txt="soltar_titulo">Arraste arquivos ou pastas para cá</strong>
+      <span data-txt="soltar_ou">ou clique para escolher</span>
+    </label>
+    <div id="c_fila" class="lista-fila oculto">
+      <table class="entradas"><thead><tr><th></th><th data-txt="col_nome">Nome</th><th data-txt="col_tamanho">Tamanho</th><th></th></tr></thead>
+        <tbody></tbody></table>
+      <div class="rodape-lista"><span id="c_total"></span>
+        <button id="c_limpar" class="botao neutro mini" data-txt="limpar">Limpar</button></div>
     </div>
     <div class="linha">
       <label class="campo" style="flex:1;min-width:120px"><span data-txt="nivel">Nível</span>
@@ -139,12 +165,12 @@
 
   <section class="cartao">
     <h2 class="marca" data-txt="abrir_titulo">Abrir .7z</h2>
-    <div class="campo"><span data-txt="arquivo_7z">Arquivo .7z ou .phz</span>
-      <div class="arquivo-escolha">
-        <label class="botao neutro mini"><input id="a_arquivo" type="file" accept=".7z,.phz"><span data-txt="escolher_um">Escolher arquivo</span></label>
-        <span id="a_escolhido" class="escolhidos" data-txt="nenhum">nenhum arquivo</span>
-      </div>
-    </div>
+    <label id="a_zona" class="zona menor" tabindex="0">
+      <input id="a_arquivo" type="file" accept=".7z,.phz">
+      <svg class="ic" aria-hidden="true"><use href="#i-cadeado"/></svg>
+      <strong id="a_escolhido" data-txt="soltar_7z">Arraste o .7z ou .phz para cá</strong>
+      <span data-txt="soltar_ou">ou clique para escolher</span>
+    </label>
     <label class="campo"><span data-txt="senha_arquivo">Senha do arquivo (opcional)</span>
       <input id="a_senha" class="caixa" type="password" autocomplete="off"></label>
     <div class="linha">
@@ -152,6 +178,10 @@
       <button id="testar" class="botao consulta" data-txt="testar">Testar integridade</button>
     </div>
     <div id="a_res" class="resultado"></div>
+    <div id="a_barra" class="linha oculto" style="margin-top:14px;justify-content:space-between">
+      <input id="a_filtro" class="caixa filtro" type="search" autocomplete="off">
+      <span id="a_total" class="escolhidos"></span>
+    </div>
     <div class="tabela-rolagem"><table id="a_tabela" class="entradas oculto">
       <thead><tr><th></th><th data-txt="col_nome">Nome</th><th data-txt="col_tamanho">Tamanho</th>
         <th data-txt="col_metodo">Método</th><th data-txt="col_data">Data</th><th></th></tr></thead>
@@ -187,7 +217,11 @@ const TXT = {
     corrompido: 'Arquivo corrompido.', teto: 'Acima do teto desta porta.',
     caminho: 'Nome de entrada inseguro (sairia da pasta).', login: 'Entre com usuário e senha.',
     login_errado: 'Usuário ou senha errados.', uso: 'Pedido inválido.', origem: 'Pedido recusado.',
-    rede: 'Sem resposta do servidor.'
+    rede: 'Sem resposta do servidor.',
+    soltar_titulo: 'Arraste arquivos ou pastas para cá', soltar_ou: 'ou clique para escolher',
+    soltar_7z: 'Arraste o .7z ou .phz para cá', limpar: 'Limpar', remover: 'remover',
+    total_fila: (n, b) => `${n} · ${fmt(b)} bytes`, filtrar: 'filtrar por nome…',
+    total_arquivo: (n, b, c) => `${n} · ${fmt(b)} bytes descompactados · ${fmt(c)} no .7z (${pct(c, b)})`
   },
   en: {
     sub: '7z · LZMA2 · AES-256 — written in Rust, zero dependencies', sair: 'Sign out',
@@ -210,7 +244,11 @@ const TXT = {
     corrompido: 'Corrupted archive.', teto: 'Above this port\'s limit.',
     caminho: 'Unsafe entry name (would leave the folder).', login: 'Sign in with user and password.',
     login_errado: 'Wrong user or password.', uso: 'Invalid request.', origem: 'Request refused.',
-    rede: 'No answer from the server.'
+    rede: 'No answer from the server.',
+    soltar_titulo: 'Drag files or folders here', soltar_ou: 'or click to choose',
+    soltar_7z: 'Drag the .7z or .phz here', limpar: 'Clear', remover: 'remove',
+    total_fila: (n, b) => `${n} · ${fmt(b)} bytes`, filtrar: 'filter by name…',
+    total_arquivo: (n, b, c) => `${n} · ${fmt(b)} bytes uncompressed · ${fmt(c)} in the .7z (${pct(c, b)})`
   }
 };
 let idioma = 'pt';
@@ -228,11 +266,12 @@ function traduzir() {
     el.textContent = t(el.dataset.txt);
   });
   $('idioma').value = idioma;
+  $('a_filtro').placeholder = t('filtrar');
 }
 $('idioma').onchange = () => {
   idioma = $('idioma').value;
   try { localStorage.setItem('phxzip_idioma', idioma); } catch (_) {}
-  traduzir(); atualizarEscolhidos();
+  traduzir(); desenharFila(); rotularAberto(); if (ultimaLista) desenhar(ultimaLista);
 };
 
 function mostrar(id, ok, texto) { const el = $(id); el.className = 'resultado ' + (ok ? 'ok' : 'erro'); el.textContent = texto; }
@@ -280,39 +319,122 @@ $('entrar').onclick = async () => {
 $('l_senha').onkeydown = ev => { if (ev.key === 'Enter') $('entrar').click(); };
 $('sair').onclick = async () => { try { await api('/api/sair', ''); } catch (_) {} await estado(); };
 
-function atualizarEscolhidos() {
-  const fs = [...$('c_arquivos').files];
-  const tot = fs.reduce((s, f) => s + f.size, 0);
-  const el = $('c_escolhidos');
-  el.dataset.dinamico = fs.length ? '1' : '';
-  el.textContent = fs.length ? t('arquivos_n', fs.length) + ' · ' + fmt(tot) + ' bytes' : t('nenhum');
-  const a = $('a_arquivo').files[0], ea = $('a_escolhido');
-  ea.dataset.dinamico = a ? '1' : '';
-  ea.textContent = a ? a.name + ' · ' + fmt(a.size) + ' bytes' : t('nenhum');
+// A fila do que vai ser compactado: {nome (caminho relativo), arquivo}.
+// Mesmo nome duas vezes SUBSTITUI -- o 7z nao aceita nome repetido, e soltar
+// a mesma pasta de novo quer dizer «a versao nova».
+let fila = [];
+let aberto = null;
+let ultimaLista = null;
+
+function adicionar(itens) {
+  for (const it of itens) {
+    const i = fila.findIndex(x => x.nome === it.nome);
+    if (i >= 0) fila[i] = it; else fila.push(it);
+  }
+  desenharFila();
 }
-$('c_arquivos').onchange = atualizarEscolhidos;
-$('a_arquivo').onchange = () => { atualizarEscolhidos(); $('a_tabela').classList.add('oculto'); limpar('a_res'); };
+
+function desenharFila() {
+  const tb = $('c_fila').querySelector('tbody');
+  tb.textContent = '';
+  fila.forEach((it, i) => {
+    const tr = document.createElement('tr');
+    const td = (txt, cls) => { const c = document.createElement('td'); if (cls) c.className = cls; c.textContent = txt; tr.appendChild(c); return c; };
+    td('').innerHTML = '<svg class="ic doc" aria-hidden="true"><use href="#i-doc"/></svg>';
+    td(it.nome, 'nome');
+    td(fmt(it.arquivo.size), 'num');
+    const b = document.createElement('button');
+    b.className = 'botao remover'; b.title = t('remover'); b.setAttribute('aria-label', t('remover') + ' ' + it.nome);
+    b.innerHTML = '<svg class="ic" aria-hidden="true"><use href="#i-fechar"/></svg>';
+    b.onclick = ev => { ev.preventDefault(); fila.splice(i, 1); desenharFila(); };
+    td('').appendChild(b);
+    tb.appendChild(tr);
+  });
+  const tot = fila.reduce((s, x) => s + x.arquivo.size, 0);
+  $('c_total').textContent = t('total_fila', t('arquivos_n', fila.length), tot);
+  $('c_fila').classList.toggle('oculto', !fila.length);
+}
+
+// Pasta solta: o navegador entrega uma ENTRADA de diretorio, e a arvore se
+// le aqui, recursiva, guardando o caminho relativo -- «pasta/sub/a.txt» vira
+// o nome dentro do 7z. `readEntries` devolve em lotes: le ate vir vazio.
+function lerEntrada(entrada, prefixo) {
+  return new Promise(ok => {
+    if (entrada.isFile) {
+      entrada.file(f => ok([{ nome: prefixo + f.name, arquivo: f }]), () => ok([]));
+    } else if (entrada.isDirectory) {
+      const leitor = entrada.createReader();
+      const todos = [];
+      const lote = () => leitor.readEntries(async es => {
+        if (!es.length) {
+          const partes = await Promise.all(todos.map(e => lerEntrada(e, prefixo + entrada.name + '/')));
+          ok(partes.flat());
+        } else { todos.push(...es); lote(); }
+      }, () => ok([]));
+      lote();
+    } else ok([]);
+  });
+}
+
+async function itensDoSoltar(dt) {
+  const entradas = [...(dt.items || [])].map(i => i.webkitGetAsEntry && i.webkitGetAsEntry()).filter(Boolean);
+  // Sem a API de entradas (ou num evento sintetico), cai nos arquivos soltos.
+  if (!entradas.length) return [...dt.files].map(f => ({ nome: f.name, arquivo: f }));
+  return (await Promise.all(entradas.map(e => lerEntrada(e, '')))).flat();
+}
+
+function armarZona(id, aoSoltar) {
+  const z = $(id);
+  z.addEventListener('dragover', ev => { ev.preventDefault(); z.classList.add('em-cima'); });
+  z.addEventListener('dragleave', ev => { if (!z.contains(ev.relatedTarget)) z.classList.remove('em-cima'); });
+  z.addEventListener('drop', async ev => { ev.preventDefault(); z.classList.remove('em-cima'); aoSoltar(ev.dataTransfer); });
+  z.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); z.querySelector('input').click(); } });
+}
+// Arquivo solto FORA das zonas nao pode fazer o navegador sair da pagina e
+// abrir o arquivo no lugar dela -- perderia a fila inteira.
+window.addEventListener('dragover', ev => ev.preventDefault());
+window.addEventListener('drop', ev => ev.preventDefault());
+
+armarZona('c_zona', async dt => adicionar(await itensDoSoltar(dt)));
+$('c_arquivos').onchange = () => {
+  adicionar([...$('c_arquivos').files].map(f => ({ nome: f.webkitRelativePath || f.name, arquivo: f })));
+  $('c_arquivos').value = '';
+};
+$('c_limpar').onclick = ev => { ev.preventDefault(); fila = []; desenharFila(); limpar('c_res'); };
+
+function rotularAberto() {
+  const ea = $('a_escolhido');
+  ea.dataset.dinamico = aberto ? '1' : '';
+  ea.textContent = aberto ? aberto.name + ' · ' + fmt(aberto.size) + ' bytes' : t('soltar_7z');
+}
+function escolherAberto(f) {
+  aberto = f || null;
+  ultimaLista = null;
+  rotularAberto();
+  $('a_tabela').classList.add('oculto'); $('a_barra').classList.add('oculto'); limpar('a_res');
+}
+$('a_arquivo').onchange = () => { escolherAberto($('a_arquivo').files[0]); $('a_arquivo').value = ''; if (aberto) abrir(false); };
+armarZona('a_zona', dt => { const f = dt.files[0]; escolherAberto(f); if (f) abrir(false); });
 
 $('compactar').onclick = async () => {
-  const fs = [...$('c_arquivos').files];
+  const itens = fila.slice();
   limpar('c_res');
-  if (!fs.length) { mostrar('c_res', false, t('escolha_antes')); return; }
+  if (!itens.length) { mostrar('c_res', false, t('escolha_antes')); return; }
   const meta = { nivel: +$('c_nivel').value, senha: $('c_senha').value, nomes_visiveis: $('c_visiveis').checked,
-    arquivos: fs.map(f => ({ nome: f.webkitRelativePath || f.name, tamanho: f.size, mtime: Math.floor(f.lastModified / 1000) })) };
+    arquivos: itens.map(x => ({ nome: x.nome, tamanho: x.arquivo.size, mtime: Math.floor(x.arquivo.lastModified / 1000) })) };
   $('compactar').disabled = true;
   try {
-    const r = await api('/api/compactar', envelope(meta, fs), true);
+    const r = await api('/api/compactar', envelope(meta, itens.map(x => x.arquivo)), true);
     const blob = await r.blob();
-    const tot = fs.reduce((s, f) => s + f.size, 0);
+    const tot = itens.reduce((s, x) => s + x.arquivo.size, 0);
     baixar(blob, $('c_nome').value || 'phxzip.7z');
-    mostrar('c_res', true, t('feito_compactar', t('arquivos_n', fs.length), tot, blob.size, r.headers.get('X-PhxZip-Ms') || '?'));
+    mostrar('c_res', true, t('feito_compactar', t('arquivos_n', itens.length), tot, blob.size, r.headers.get('X-PhxZip-Ms') || '?'));
   } catch (e) { mostrar('c_res', false, textoDoErro(e)); }
   $('compactar').disabled = false;
 };
 
-let ultimaLista = null;
 async function abrir(testar) {
-  const f = $('a_arquivo').files[0];
+  const f = aberto;
   limpar('a_res');
   if (!f) { mostrar('a_res', false, t('escolha_antes')); return; }
   $('abrir').disabled = $('testar').disabled = true;
@@ -324,12 +446,19 @@ async function abrir(testar) {
   $('abrir').disabled = $('testar').disabled = false;
 }
 $('abrir').onclick = () => abrir(false);
+$('a_filtro').oninput = () => { if (ultimaLista) desenhar(ultimaLista); };
 $('testar').onclick = () => abrir(true);
 
 function desenhar(j) {
   const tb = $('a_tabela').querySelector('tbody');
   tb.textContent = '';
+  const filtro = $('a_filtro').value.trim().toLowerCase();
+  const arqs = j.entradas.filter(e => !e.pasta);
+  const bytes = arqs.reduce((s, e) => s + e.tamanho, 0);
+  $('a_total').textContent = t('total_arquivo', t('arquivos_n', arqs.length), bytes, j.tamanho_arquivo);
+  $('a_barra').classList.remove('oculto');
   for (const e of j.entradas) {
+    if (filtro && !e.nome.toLowerCase().includes(filtro)) continue;
     const tr = document.createElement('tr');
     const c = (txt, cls) => { const td = document.createElement('td'); if (cls) td.className = cls; td.textContent = txt; tr.appendChild(td); return td; };
     const tipo = e.pasta ? 'pasta' : (e.cifrada ? 'cadeado' : 'doc');
@@ -354,7 +483,7 @@ function desenhar(j) {
 }
 
 async function extrair(e) {
-  const f = $('a_arquivo').files[0];
+  const f = aberto;
   try {
     const r = await api('/api/extrair', envelope({ senha: $('a_senha').value, indice: e.indice }, [f]), true);
     baixar(await r.blob(), e.nome.split(/[\\/]/).pop());

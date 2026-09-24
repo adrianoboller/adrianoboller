@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="PhxZip">
+  <title>PhxZip — o cadeado laranja com asas</title>
+  <defs>
+    <linearGradient id="fogo" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFC43D"/>
+      <stop offset=".45" stop-color="#FF8A1C"/>
+      <stop offset=".8" stop-color="#FF4D10"/>
+      <stop offset="1" stop-color="#D71A1A"/>
+    </linearGradient>
+    <linearGradient id="asa" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFC43D"/>
+      <stop offset=".5" stop-color="#FF8A1C"/>
+      <stop offset="1" stop-color="#FF4D10"/>
+    </linearGradient>
+    <linearGradient id="corpo" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#05081a"/>
+      <stop offset=".5" stop-color="#1a2440"/>
+      <stop offset="1" stop-color="#05081a"/>
+    </linearGradient>
+    <radialGradient id="brilho" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="#FFC43D" stop-opacity=".9"/>
+      <stop offset="1" stop-color="#FF4D10" stop-opacity="0"/>
+    </radialGradient>
+    <g id="asa-esq">
+      <!-- a asa e um crescente: borda externa larga, ponta enrolada para
+           dentro no alto, como a chama da folha de marca -->
+      <path fill="url(#asa)" d="M214 292 C140 292 78 250 70 176 C66 134 86 92 124 66 C112 92 110 116 116 138 C122 110 138 86 162 70 C150 104 150 136 162 164 C168 136 182 114 202 100 C190 142 196 186 222 226 C232 242 240 254 244 262 Z"/>
+      <path fill="#D71A1A" opacity=".55" d="M214 292 C168 290 126 272 102 238 C134 254 168 258 200 252 C176 244 156 230 142 210 C170 222 200 228 230 226 Z"/>
+      <path fill="#FFC43D" opacity=".85" d="M116 138 C112 170 124 200 150 222 C132 196 126 168 130 140 C126 122 126 108 132 94 C122 108 116 122 116 138 Z"/>
+    </g>
+    <g id="trilhas-esq" fill="none" stroke="#FF8A1C" stroke-width="4" stroke-linecap="round">
+      <path d="M180 300 H112 L100 288 H70"/>
+      <path d="M182 322 H96"/>
+      <path d="M186 344 H120 L108 356 H80"/>
+      <circle cx="64" cy="288" r="6" fill="#FFC43D" stroke="none"/>
+      <circle cx="90" cy="322" r="6" fill="#FFC43D" stroke="none"/>
+      <circle cx="74" cy="356" r="6" fill="#FFC43D" stroke="none"/>
+    </g>
+    </defs>
+  <circle cx="256" cy="290" r="180" fill="url(#brilho)" opacity=".3"/>
+  <g transform="translate(0 30)">
+    <use href="#asa-esq"/>
+    <use href="#asa-esq" transform="translate(512 0) scale(-1 1)"/>
+  </g>
+  <!-- a argola -->
+  <path d="M190 262 V200 C190 160 220 132 256 132 C292 132 322 160 322 200 V262" fill="none" stroke="#DDE2EB" stroke-width="26" stroke-linecap="round"/>
+  <path d="M190 262 V200 C190 160 220 132 256 132 C292 132 322 160 322 200 V262" fill="none" stroke="#FFC43D" stroke-width="6" stroke-linecap="round" opacity=".7"/>
+  <!-- o corpo laranja -->
+  <rect x="158" y="248" width="196" height="170" rx="30" fill="url(#fogo)" stroke="#FFC43D" stroke-width="5"/>
+  <rect x="176" y="266" width="160" height="12" rx="6" fill="#FFC43D" opacity=".55"/>
+  <!-- o buraco da chave, e o ziper que desce dele: um arquivo trancado -->
+  <circle cx="256" cy="320" r="22" fill="#010418"/>
+  <path d="M246 332 H266 L262 372 H250 Z" fill="#010418"/>
+  <path d="M256 380 V408" stroke="#010418" stroke-width="4" stroke-dasharray="5 4"/>
+</svg>

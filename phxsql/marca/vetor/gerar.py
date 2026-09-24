@@ -62,8 +62,13 @@ def fmt(d):
     return re.sub(r"(\d+\.\d{2})\d+", r"\1", d)
 
 
-def simbolo_interno():
-    s = (AQUI / "phx-simbolo.svg").read_text(encoding="utf-8")
+# O simbolo de cada produto. Todos sao a mesma fenix; o PhxZip a pousa na
+# morsa (pedido do dono, 24/09/2026 -- `gerar-phxzip.py`).
+SIMBOLO = {"PhxZip": "phxzip-simbolo-morsa.svg"}
+
+
+def simbolo_interno(produto=None):
+    s = (AQUI / SIMBOLO.get(produto, "phx-simbolo.svg")).read_text(encoding="utf-8")
     corpo = s[s.index(">", s.index("<svg")) + 1 : s.rindex("</svg>")]
     corpo = re.sub(r"<title>.*?</title>", "", corpo, flags=re.S)
     return corpo
@@ -80,7 +85,7 @@ def horizontal(f, produto, acento, assinatura=True):
     partes = [
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {L} {H}" role="img" aria-label="{produto}">',
         f"<title>{produto} — logotipo horizontal</title>",
-        f'<svg x="0" y="0" width="512" height="512" viewBox="0 0 512 512">{simbolo_interno()}</svg>',
+        f'<svg x="0" y="0" width="512" height="512" viewBox="0 0 512 512">{simbolo_interno(produto)}</svg>',
         f'<line x1="536" y1="120" x2="536" y2="400" stroke="{PRATA}" stroke-opacity=".25" stroke-width="3"/>',
         f'<g transform="translate({x0} {y0})">',
     ]
