@@ -236,7 +236,8 @@ fn atestados() -> std::sync::MutexGuard<'static, std::collections::BTreeMap<Path
 }
 
 /// A chave do atestado: o caminho ABSOLUTO lexico, a mesma chave das
-/// familias do `Volumes` e das recusas do `sincronia`. O caminho que ja e
+/// familias do `Volumes`. As recusas do `sincronia` guardam esta E a resolvida
+/// no disco (pedido 523); o atestado fica so na lexica de proposito. O caminho que ja e
 /// absoluto -- o do servidor, que o `Table::abrir` resolve -- nao aloca nada.
 fn com_a_chave<T>(caminho: &Path, f: impl FnOnce(&Path) -> T) -> T {
     match crate::volume::absoluto_lexico(caminho) {

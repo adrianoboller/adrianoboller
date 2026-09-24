@@ -58,6 +58,8 @@ use std::time::Duration;
 
 use phxsql_core::error::{PhxError, Result};
 
+use crate::dblink::TETO_DE_COLUNAS;
+
 /// Versao 3.0 do protocolo, a mesma desde o PostgreSQL(R) 7.4.
 const PROTOCOLO_3: i32 = 196_608;
 
@@ -378,9 +380,33 @@ impl Conexao {
 
 // ------------------------------------------------------------------- leitura
 
+/// Quantos campos a mensagem diz ter, conferido ANTES de reservar -- pedido
+/// 544.
+///
+/// O numero e um `int16` COM SINAL escrito pelo outro lado do fio. O
+/// `l.i16()? as usize` de antes estendia o sinal: `-1` virava `usize::MAX`, e o
+/// `Vec::with_capacity` entrava em panico de `capacity overflow` -- no meio do
+/// `dblink_sincronizar`, com a trava de dados na mao. Um lugar so para a
+/// `RowDescription` e a `DataRow`, que fazem a mesma pergunta, e o mesmo teto
+/// do dialeto do MySQL(R).
+fn quantos_campos(l: &mut Leitor<'_>) -> Result<usize> {
+    let n = l.i16()?;
+    if n < 0 {
+        return Err(erro(format!(
+            "mensagem do PostgreSQL malformada: {n} campos"
+        )));
+    }
+    if n as u64 > TETO_DE_COLUNAS {
+        return Err(PhxError::LimiteExcedido(format!(
+            "dblink postgres: a mensagem diz {n} campos, acima do teto de {TETO_DE_COLUNAS}"
+        )));
+    }
+    Ok(n as usize)
+}
+
 fn ler_descricao(corpo: &[u8]) -> Result<Vec<Coluna>> {
     let mut l = Leitor::novo(corpo);
-    let n = l.i16()? as usize;
+    let n = quantos_campos(&mut l)?;
     let mut colunas = Vec::with_capacity(n);
     for _ in 0..n {
         let nome = l.cadeia()?;
@@ -403,7 +429,7 @@ fn ler_descricao(corpo: &[u8]) -> Result<Vec<Coluna>> {
 
 fn ler_linha(corpo: &[u8]) -> Result<Vec<Option<String>>> {
     let mut l = Leitor::novo(corpo);
-    let n = l.i16()? as usize;
+    let n = quantos_campos(&mut l)?;
     let mut linha = Vec::with_capacity(n);
     for _ in 0..n {
         let tam = l.i32()?;
@@ -717,5 +743,119 @@ mod testes {
         let m = cadeias_nulas(&c[4..]);
         assert_eq!(m, vec!["SCRAM-SHA-256-PLUS", "SCRAM-SHA-256"]);
         assert!(m.iter().any(|x| x == "SCRAM-SHA-256"));
+    }
+
+    // ------------------------------------ pedido 544, o panico do parser
+
+    /// Um servidor PostgreSQL(R) falso: le e descarta a consulta (`Q`) e
+    /// responde as `mensagens`, cada uma com o tipo e o tamanho dela.
+    fn servidor_falso(mensagens: Vec<(u8, Vec<u8>)>) -> u16 {
+        let ouvinte = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let porta = ouvinte.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            let Ok((mut s, _)) = ouvinte.accept() else {
+                return;
+            };
+            let mut cabeca = [0u8; 5];
+            if s.read_exact(&mut cabeca).is_err() {
+                return;
+            }
+            let n = i32::from_be_bytes([cabeca[1], cabeca[2], cabeca[3], cabeca[4]]);
+            let mut descartado = vec![0u8; (n.max(4) - 4) as usize];
+            if s.read_exact(&mut descartado).is_err() {
+                return;
+            }
+            for (tipo, corpo) in mensagens {
+                let mut m = vec![tipo];
+                m.extend_from_slice(&((corpo.len() + 4) as i32).to_be_bytes());
+                m.extend_from_slice(&corpo);
+                if s.write_all(&m).is_err() {
+                    return;
+                }
+            }
+        });
+        porta
+    }
+
+    /// Uma `Conexao` sobre o soquete de verdade, sem o aperto de mao: o que
+    /// se prova aqui e a leitura do resultado.
+    fn conexao_com(porta: u16) -> Conexao {
+        let fluxo = TcpStream::connect(("127.0.0.1", porta)).unwrap();
+        fluxo
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let escrita = fluxo.try_clone().unwrap();
+        Conexao {
+            fluxo: BufReader::new(fluxo),
+            escrita,
+            versao: String::new(),
+            conexao_id: 0,
+        }
+    }
+
+    /// A `RowDescription` de uma coluna `nome` VARCHAR.
+    fn descricao_de_uma() -> Vec<u8> {
+        let mut c = Vec::new();
+        c.extend_from_slice(&1i16.to_be_bytes());
+        cadeia_nula(&mut c, "nome");
+        c.extend_from_slice(&0i32.to_be_bytes());
+        c.extend_from_slice(&0i16.to_be_bytes());
+        c.extend_from_slice(&1043i32.to_be_bytes());
+        c.extend_from_slice(&(-1i16).to_be_bytes());
+        c.extend_from_slice(&(-1i32).to_be_bytes());
+        c.extend_from_slice(&0i16.to_be_bytes());
+        c
+    }
+
+    /// **544: a contagem de campos NEGATIVA ou acima do teto e recusa, e nao
+    /// panico.** O `-1` virava `usize::MAX` e o `Vec::with_capacity` caia em
+    /// `capacity overflow` -- na `RowDescription` e na `DataRow`, que fazem a
+    /// mesma pergunta. O teto e o do dialeto do MySQL(R): 4097 campos num
+    /// `int16` que vai ate 32.767 recusa antes de reservar.
+    #[test]
+    fn contagem_de_campos_negativa_ou_absurda_e_recusada_sem_panico() {
+        let mut casos = Vec::new();
+        for n in [-1i16, i16::MIN, 4097] {
+            casos.push(vec![(b'T', n.to_be_bytes().to_vec())]);
+            casos.push(vec![
+                (b'T', descricao_de_uma()),
+                (b'D', n.to_be_bytes().to_vec()),
+            ]);
+        }
+        for mensagens in casos {
+            let rotulo = format!("{mensagens:?}");
+            let porta = servidor_falso(mensagens);
+            let erro = conexao_com(porta)
+                .consultar("SELECT 1", 100)
+                .err()
+                .unwrap_or_else(|| panic!("{rotulo}: devia recusar"));
+            assert!(
+                erro.to_string().contains("malformada") || erro.to_string().contains("teto"),
+                "{rotulo}: {erro}"
+            );
+        }
+    }
+
+    /// O que ja funcionava continua: descricao, duas linhas (texto e NULL), o
+    /// rotulo e o `Z`.
+    #[test]
+    fn resultado_bem_formado_do_postgres_continua_inteiro() {
+        let mut oi = 1i16.to_be_bytes().to_vec();
+        oi.extend_from_slice(&2i32.to_be_bytes());
+        oi.extend_from_slice(b"oi");
+        let mut nulo = 1i16.to_be_bytes().to_vec();
+        nulo.extend_from_slice(&(-1i32).to_be_bytes());
+        let porta = servidor_falso(vec![
+            (b'T', descricao_de_uma()),
+            (b'D', oi),
+            (b'D', nulo),
+            (b'C', b"SELECT 2\0".to_vec()),
+            (b'Z', vec![b'I']),
+        ]);
+        let r = conexao_com(porta).consultar("SELECT 1", 100).unwrap();
+        assert_eq!(r.colunas.len(), 1);
+        assert_eq!(r.colunas[0].nome, "nome");
+        assert_eq!(r.linhas, vec![vec![Some("oi".to_string())], vec![None]]);
+        assert_eq!(r.afetadas, 2);
     }
 }

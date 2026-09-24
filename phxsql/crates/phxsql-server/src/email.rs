@@ -42,9 +42,9 @@
 //! mais, por exemplo. Toda linha que entra na mensagem passa por
 //! [`uma_linha_so`].
 
-use std::io::{BufRead, BufReader, Write};
+use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use phxsql_core::base64;
 use phxsql_core::error::{PhxError, Result};
@@ -56,11 +56,12 @@ use crate::config::Email;
 /// pedido 463.
 ///
 /// Nao e teto de TEMPO: e teto de QUANTAS. Um rele que nunca manda a linha
-/// final (o espaco no lugar do hifen) prende a thread para sempre em silencio
-/// curto entre linhas, e o `timeout_s` so mede o silencio -- nunca a
-/// conversa inteira. A maior resposta legitima observada e o `EHLO` de um MTA
-/// cheio de extensoes, e nem essa passa de poucas dezenas de linhas; mil e
-/// folga suficiente para nunca recusar um rele de verdade.
+/// final (o espaco no lugar do hifen) prendia a thread para sempre em
+/// silencio curto entre linhas, porque o `timeout_s` so mede o silencio. O
+/// TEMPO da conversa inteira e a outra metade do mesmo pedido, e tem prazo
+/// proprio -- ver [`enviar_com`]. A maior resposta legitima observada e o
+/// `EHLO` de um MTA cheio de extensoes, e nem essa passa de poucas dezenas de
+/// linhas; mil e folga suficiente para nunca recusar um rele de verdade.
 const TETO_DE_LINHAS_DE_CONTINUACAO: usize = 1000;
 
 /// Entrega uma mensagem pelo rele configurado.
@@ -68,6 +69,40 @@ const TETO_DE_LINHAS_DE_CONTINUACAO: usize = 1000;
 /// Devolve a ultima resposta do servidor quando dá certo -- ela costuma trazer
 /// o identificador da fila, que e o que se procura no log do rele depois.
 pub fn enviar(cfg: &Email, assunto: &str, corpo: &str) -> Result<String> {
+    enviar_com(cfg, assunto, corpo, Duration::from_secs(cfg.timeout_s))
+}
+
+/// Quantas idas e voltas a conversa de [`enviar`] tem, no MAXIMO -- pedido
+/// 463.
+///
+/// A saudacao, o `EHLO` e o `HELO` que o substitui quando recusado, as tres
+/// do `AUTH LOGIN` quando ha login, o `MAIL`, um `RCPT` por destino, o
+/// `DATA`, o corpo com o ponto, e o `QUIT`. Sai da forma da conversa, e nao
+/// de um numero escolhido: e o que faz o prazo total nunca cortar um rele que
+/// passaria no prazo de silencio de antes.
+fn passos_da_conversa(cfg: &Email) -> u32 {
+    let login = if cfg.usuario.is_empty() { 0 } else { 3 };
+    let passos = 1 + 2 + login + 1 + cfg.para.len() + 1 + 1 + 1;
+    u32::try_from(passos).unwrap_or(u32::MAX)
+}
+
+/// O `enviar`, com o prazo de silencio na mao -- a prova do 463 precisa de
+/// um prazo abaixo do segundo que o `timeout_s` nao sabe dizer.
+///
+/// # O prazo TOTAL da conversa (pedido 463)
+///
+/// O `timeout_s` mede o SILENCIO: vale para cada leitura e cada escrita do
+/// soquete, e recomeca a cada byte. Um rele que pingue uma linha de
+/// continuacao a um passo do prazo segurava a thread de aviso por ate mil
+/// prazos (o teto de linhas), e uma linha pingada byte a byte, por ate 64 KiB
+/// deles (o teto de tamanho). Agora a conversa inteira tem prazo:
+/// `timeout_s` vezes os [`passos_da_conversa`]. O multiplo e o numero de idas
+/// e voltas porque o rele mais lento que o prazo de silencio deixava passar
+/// -- um que responde cada passo de uma vez, perto do limite -- continua
+/// cabendo inteiro; so o que PINGA e cortado. Sem campo novo no
+/// `config.json`: um segundo numero ao lado do `timeout_s` so seria mais um
+/// para ninguem ajustar.
+fn enviar_com(cfg: &Email, assunto: &str, corpo: &str, silencio: Duration) -> Result<String> {
     if !cfg.ligado {
         return Err(PhxError::Esquema("alertas.email.ligado esta falso".into()));
     }
@@ -84,20 +119,19 @@ pub fn enviar(cfg: &Email, assunto: &str, corpo: &str) -> Result<String> {
         cfg.senha()?
     };
     let alvo = format!("{}:{}", cfg.servidor, cfg.porta);
-    let espera = Duration::from_secs(cfg.timeout_s);
-    let fluxo = conectar(&alvo, espera)?;
-    fluxo
-        .set_read_timeout(Some(espera))
-        .and_then(|_| fluxo.set_write_timeout(Some(espera)))
-        .map_err(|e| PhxError::Esquema(format!("smtp: nao consegui armar o timeout: {e}")))?;
-
+    let fluxo = conectar(&alvo, silencio)?;
+    // O relogio da conversa comeca depois do `connect`, que ja tem prazo
+    // proprio por endereco.
+    let prazo = Prazo::novo(silencio, passos_da_conversa(cfg));
+    let duplicado = fluxo
+        .try_clone()
+        .map_err(|e| PhxError::Esquema(format!("smtp: nao consegui duplicar: {e}")))?;
     let mut sessao = Sessao {
-        leitor: BufReader::new(
-            fluxo
-                .try_clone()
-                .map_err(|e| PhxError::Esquema(format!("smtp: nao consegui duplicar: {e}")))?,
-        ),
-        escrita: fluxo,
+        leitor: BufReader::new(ComPrazo {
+            fluxo: duplicado,
+            prazo,
+        }),
+        escrita: ComPrazo { fluxo, prazo },
     };
 
     sessao.esperar(&[220])?;
@@ -153,9 +187,119 @@ fn conectar(alvo: &str, espera: Duration) -> Result<TcpStream> {
     )))
 }
 
+/// Os dois prazos da conversa: o de SILENCIO, por leitura e por escrita, e o
+/// TOTAL -- pedido 463. Ver [`enviar_com`].
+#[derive(Clone, Copy)]
+struct Prazo {
+    silencio: Duration,
+    total: Duration,
+    /// `None` so quando o `timeout_s` e tao grande que o instante nao se
+    /// representa: ai o silencio e o unico prazo, como antes.
+    ate: Option<Instant>,
+}
+
+impl Prazo {
+    fn novo(silencio: Duration, passos: u32) -> Prazo {
+        let total = silencio.saturating_mul(passos);
+        Prazo {
+            silencio,
+            total,
+            ate: Instant::now().checked_add(total),
+        }
+    }
+
+    /// Quanto ESTA leitura ou escrita pode esperar: o silencio, ou o que
+    /// sobra da conversa, o que for menor. E por syscall, e nao por linha: uma
+    /// linha pingada byte a byte tambem para no total.
+    fn espera(&self) -> io::Result<Duration> {
+        let Some(ate) = self.ate else {
+            return Ok(self.silencio);
+        };
+        let resta = ate.saturating_duration_since(Instant::now());
+        if resta.is_zero() {
+            return Err(self.esgotado());
+        }
+        Ok(resta.min(self.silencio))
+    }
+
+    /// O erro do soquete, trocado pelo do prazo total quando foi ELE que
+    /// acabou -- e nao o silencio de sempre, que continua dizendo o que diz.
+    fn explicar(&self, e: io::Error) -> io::Error {
+        let esgotou = self.ate.is_some_and(|ate| Instant::now() >= ate);
+        if esgotou
+            && matches!(
+                e.kind(),
+                io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+            )
+        {
+            self.esgotado()
+        } else {
+            e
+        }
+    }
+
+    fn esgotado(&self) -> io::Error {
+        io::Error::new(io::ErrorKind::TimedOut, PrazoEsgotado(self.total))
+    }
+}
+
+/// O prazo total da conversa acabou. Tipo proprio, e nao texto, para o erro
+/// do SMTP o reconhecer sem comparar frase.
+#[derive(Debug)]
+struct PrazoEsgotado(Duration);
+
+impl std::fmt::Display for PrazoEsgotado {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "smtp: a conversa com o rele passou do prazo total de {:.1} s -- o \
+             timeout_s vezes as idas e voltas da conversa (pedido 463)",
+            self.0.as_secs_f64()
+        )
+    }
+}
+
+impl std::error::Error for PrazoEsgotado {}
+
+/// O erro de E/S do SMTP: o do prazo total vira `LimiteExcedido`, que e o que
+/// ele e; o resto continua como era.
+fn erro_de_io(o_que: &str, e: io::Error) -> PhxError {
+    match e.get_ref().and_then(|x| x.downcast_ref::<PrazoEsgotado>()) {
+        Some(p) => PhxError::LimiteExcedido(p.to_string()),
+        None => PhxError::Esquema(format!("smtp: {o_que}: {e}")),
+    }
+}
+
+/// O soquete com o [`Prazo`] por cima: cada `read` e cada `write` armam o
+/// tempo que ainda cabe antes de ir ao nucleo.
+struct ComPrazo {
+    fluxo: TcpStream,
+    prazo: Prazo,
+}
+
+impl Read for ComPrazo {
+    fn read(&mut self, b: &mut [u8]) -> io::Result<usize> {
+        let espera = self.prazo.espera()?;
+        self.fluxo.set_read_timeout(Some(espera))?;
+        self.fluxo.read(b).map_err(|e| self.prazo.explicar(e))
+    }
+}
+
+impl Write for ComPrazo {
+    fn write(&mut self, b: &[u8]) -> io::Result<usize> {
+        let espera = self.prazo.espera()?;
+        self.fluxo.set_write_timeout(Some(espera))?;
+        self.fluxo.write(b).map_err(|e| self.prazo.explicar(e))
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.fluxo.flush()
+    }
+}
+
 struct Sessao {
-    leitor: BufReader<TcpStream>,
-    escrita: TcpStream,
+    leitor: BufReader<ComPrazo>,
+    escrita: ComPrazo,
 }
 
 impl Sessao {
@@ -163,7 +307,7 @@ impl Sessao {
         self.escrita
             .write_all(texto.as_bytes())
             .and_then(|_| self.escrita.flush())
-            .map_err(|e| PhxError::Esquema(format!("smtp: escrita falhou: {e}")))
+            .map_err(|e| erro_de_io("escrita falhou", e))
     }
 
     fn comando(&mut self, linha: &str, esperados: &[u16]) -> Result<String> {
@@ -215,7 +359,10 @@ impl Sessao {
 /// continuacao (`250-...`) por vez, devagar mas sem nunca ficar quieto o
 /// bastante para estourar o silencio, prende esta thread de aviso para
 /// sempre sem nunca alocar mais que uma linha. `TETO_DE_LINHAS_DE_CONTINUACAO`
-/// fecha isso contando QUANTAS, e nao QUANTO TEMPO.
+/// fecha isso contando QUANTAS, e nao QUANTO TEMPO: mil linhas a um passo do
+/// silencio ainda eram mil prazos. O QUANTO TEMPO e o prazo total que o
+/// leitor de [`enviar_com`] traz por baixo -- aqui ele chega como erro de
+/// leitura, e sai como `LimiteExcedido`.
 fn ler_resposta<L: BufRead>(leitor: &mut L, esperados: &[u16]) -> Result<String> {
     let mut fio = Canal::Claro;
     let mut continuacoes = 0usize;
@@ -232,9 +379,7 @@ fn ler_resposta<L: BufRead>(leitor: &mut L, esperados: &[u16]) -> Result<String>
             Err(PhxError::LimiteExcedido(m)) => {
                 return Err(PhxError::LimiteExcedido(format!("smtp: {m}")))
             }
-            Err(PhxError::Io(e)) => {
-                return Err(PhxError::Esquema(format!("smtp: leitura falhou: {e}")))
-            }
+            Err(PhxError::Io(e)) => return Err(erro_de_io("leitura falhou", e)),
             Err(outro) => return Err(outro),
         };
         let limpa = linha.trim_end().to_string();
@@ -647,5 +792,141 @@ mod testes {
             }
             outro => panic!("a resposta sem fim nao foi recusada pelo teto: {outro:?}"),
         }
+    }
+
+    // ------------------------------- pedido 463, a metade do TEMPO
+
+    /// Uma linha do cliente, sem o fim de linha. O rele falso tambem le pelo
+    /// motor: a catraca do 439 conta todo `read_line` fora do `Canal`, e a de
+    /// um teste nao e excecao.
+    fn linha_do_cliente<L: BufRead>(leitor: &mut L) -> Option<String> {
+        match Canal::Claro.ler_ate(leitor, TETO_DO_APERTO) {
+            Ok(Recebido::Linha(l)) => Some(l.trim_end().to_string()),
+            _ => None,
+        }
+    }
+
+    /// Um rele que da a saudacao, le o `EHLO` e responde com `250-x` a cada
+    /// `intervalo` -- bem abaixo do prazo de silencio --, `linhas` vezes, e
+    /// fecha. Nada que o teto de tamanho (439) ou o de quantas (463, primeira
+    /// metade) alcance: so TEMPO.
+    fn rele_que_pinga(intervalo: Duration, linhas: usize) -> u16 {
+        use std::io::Write as _;
+        let ouvinte = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let porta = ouvinte.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            let Ok((mut s, _)) = ouvinte.accept() else {
+                return;
+            };
+            let mut leitor = BufReader::new(s.try_clone().unwrap());
+            if s.write_all(b"220 rele\r\n").is_err() || linha_do_cliente(&mut leitor).is_none() {
+                return;
+            }
+            for _ in 0..linhas {
+                std::thread::sleep(intervalo);
+                if s.write_all(b"250-x\r\n").is_err() {
+                    return;
+                }
+            }
+        });
+        porta
+    }
+
+    /// Um rele que conversa direito, com `atraso` antes de cada resposta.
+    fn rele_bem_educado(atraso: Duration) -> u16 {
+        use std::io::Write as _;
+        let ouvinte = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let porta = ouvinte.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            let Ok((mut s, _)) = ouvinte.accept() else {
+                return;
+            };
+            let mut leitor = BufReader::new(s.try_clone().unwrap());
+            let mut responder = |texto: &str| {
+                std::thread::sleep(atraso);
+                s.write_all(texto.as_bytes()).is_ok()
+            };
+            if !responder("220 rele\r\n") {
+                return;
+            }
+            let mut no_corpo = false;
+            loop {
+                let Some(linha) = linha_do_cliente(&mut leitor) else {
+                    return;
+                };
+                let resposta = if no_corpo {
+                    if linha != "." {
+                        continue;
+                    }
+                    no_corpo = false;
+                    "250 2.0.0 na fila como X463\r\n"
+                } else if linha.starts_with("EHLO") {
+                    "250-rele\r\n250-SIZE 1000000\r\n250 OK\r\n"
+                } else if linha.starts_with("DATA") {
+                    no_corpo = true;
+                    "354 manda\r\n"
+                } else if linha.starts_with("QUIT") {
+                    let _ = responder("221 tchau\r\n");
+                    return;
+                } else {
+                    "250 ok\r\n"
+                };
+                if !responder(resposta) {
+                    return;
+                }
+            }
+        });
+        porta
+    }
+
+    /// **463: o rele que pinga abaixo do prazo de silencio e cortado no
+    /// prazo TOTAL da conversa.**
+    ///
+    /// Silencio de 500 ms e dois destinos: 9 idas e voltas, prazo total de
+    /// 4,5 s. O rele pinga a cada 50 ms por 6 s. Com o defeito (so o
+    /// silencio), a conversa durava o que o rele quisesse -- aqui, ate ele
+    /// fechar, e o erro era o do fecho.
+    #[test]
+    fn o_rele_que_pinga_e_cortado_no_prazo_total() {
+        let mut c = cfg();
+        c.porta = rele_que_pinga(Duration::from_millis(50), 120);
+        let silencio = Duration::from_millis(500);
+        let prazo = silencio * passos_da_conversa(&c);
+        assert_eq!(prazo, Duration::from_millis(4_500), "premissa: 9 passos");
+        let comeco = Instant::now();
+        let r = enviar_com(&c, "x", "y", silencio);
+        let durou = comeco.elapsed();
+        eprintln!("a conversa com o rele que pinga durou {durou:?} (prazo {prazo:?})");
+        match r {
+            Err(PhxError::LimiteExcedido(m)) => assert!(m.contains("prazo total"), "{m}"),
+            outro => panic!("em {durou:?} a conversa nao parou no prazo total: {outro:?}"),
+        }
+        assert!(
+            durou >= prazo - Duration::from_millis(100) && durou < Duration::from_secs(6),
+            "a conversa parou em {durou:?}, e o prazo total era {prazo:?}"
+        );
+    }
+
+    /// O rele de verdade continua: a conversa inteira, resposta de varias
+    /// linhas no `EHLO`, e o recibo do `.` volta.
+    #[test]
+    fn a_conversa_normal_continua_inteira() {
+        let mut c = cfg();
+        c.porta = rele_bem_educado(Duration::ZERO);
+        let recibo = enviar_com(&c, "assunto", "corpo", Duration::from_millis(500)).unwrap();
+        assert_eq!(recibo, "250 2.0.0 na fila como X463");
+    }
+
+    /// **O multiplo nao corta o rele LENTO de verdade**: o que responde cada
+    /// passo de uma vez, perto do prazo de silencio, cabe inteiro -- e por
+    /// isso o total e o silencio vezes as idas e voltas, e nao um numero
+    /// escolhido. 200 ms por resposta contra 300 ms de silencio: 1,8 s de
+    /// conversa num prazo de 2,7 s.
+    #[test]
+    fn o_rele_lento_que_responde_cada_passo_inteiro_cabe() {
+        let mut c = cfg();
+        c.porta = rele_bem_educado(Duration::from_millis(200));
+        let recibo = enviar_com(&c, "assunto", "corpo", Duration::from_millis(300)).unwrap();
+        assert_eq!(recibo, "250 2.0.0 na fila como X463");
     }
 }

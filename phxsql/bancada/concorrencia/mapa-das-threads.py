@@ -105,12 +105,14 @@ CATALOGO = [
                 "voltar (`thread::scope`). Vale para o `backup-agendado` (1 "
                 "filha) e para o job comum: o `relogio-jobs` (1) e o "
                 "`job_rodar` da tela (contado pelo `Semaforo` da porta) tem uma "
-                "filha viva cada. NAO vale para o job cujo `pedido` e um "
-                "`job_rodar` -- dele mesmo, ou um ciclo A->B->A: a filha e ela "
-                "mesma chamadora, e cada nivel sobe outra filha, SEM teto. "
-                "Medido pelo DBA (parecer do lote, M2): 45 filhas simultaneas, "
-                "e so parou no limite de memoria imposto pela prova. O conserto "
-                "e pedido proprio (P1 do parecer). Pedido 502.",
+                "filha viva cada. E vale para o job cujo `pedido` e um "
+                "`job_rodar` desde o pedido 530: o `op_job_rodar` recusa quando "
+                "a thread e da familia `corrida` («job nao dispara job»), e o "
+                "job de si mesmo, ou o ciclo A->B->A, para no primeiro nivel. "
+                "Antes, a filha era ela mesma chamadora e cada nivel subia "
+                "outra, SEM teto -- medido pelo DBA (parecer do lote, M2): 45 "
+                "filhas simultaneas, e so parou no limite de memoria imposto "
+                "pela prova. Pedidos 502 e 530.",
     },
     # ------------------------------------------------ atendimento, com semaforo
     {

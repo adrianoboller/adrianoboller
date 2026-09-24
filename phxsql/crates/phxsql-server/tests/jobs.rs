@@ -531,3 +531,88 @@ fn o_jobs_json_de_antes_da_guarda_sobe_e_o_job_recusa_ao_rodar() {
     let log = std::fs::read_to_string(base.join("acessos.log")).unwrap_or_default();
     assert!(!log.contains("SEGREDO-497-R1"), "{log}");
 }
+
+// ------------------------------------------- pedido 530, job nao dispara job
+
+/// Quantas corridas de `nome` o historico guarda.
+fn corridas_de(c: &mut Ligacao, nome: &str) -> usize {
+    let r = c.pedir(r#""op":"jobs""#);
+    res(&r)
+        .campo("historico")
+        .and_then(Json::lista)
+        .unwrap_or(&[])
+        .iter()
+        .filter(|h| h.texto_ou("job", "") == nome)
+        .count()
+}
+
+/// **530: o job cujo pedido e `job_rodar` recebe a recusa, e o job de dentro
+/// nao roda.**
+///
+/// O `primeiro` roda o `segundo`, que e um `ping`: o caso limitado, que da
+/// para medir com o defeito de pe -- ali o `segundo` rodava numa segunda
+/// filha, aninhada, e o `primeiro` respondia Ok. O de si mesmo (abaixo) nao
+/// tem fundo sem o conserto, e por isso NAO se roda com o defeito reposto:
+/// o papel C o mediu com teto de enderecamento, 45 niveis vivos.
+#[test]
+fn job_que_roda_job_recebe_a_recusa() {
+    let base = pasta("job-roda-job");
+    let (_s, porta) = subir(&base, false);
+    let mut c = Ligacao::nova(porta);
+    for job in [
+        r#"{"nome":"segundo","cada_minutos":60,"pedido":{"op":"ping"}}"#,
+        r#"{"nome":"primeiro","cada_minutos":60,
+            "pedido":{"op":"job_rodar","nome":"segundo"}}"#,
+    ] {
+        let r = c.pedir(&format!(r#""op":"job_salvar","job":{job}"#));
+        assert!(r.booleano_ou("ok", false), "{}", erro(&r));
+    }
+
+    let r = c.pedir(r#""op":"job_rodar","nome":"primeiro""#);
+    assert!(r.booleano_ou("ok", false), "{}", erro(&r));
+    let d = res(&r);
+    assert!(
+        !d.booleano_ou("ok", true),
+        "o job que roda job rodou -- cada nivel e uma thread a mais: {}",
+        r.escrever()
+    );
+    assert!(
+        d.texto_ou("detalhe", "").contains("job nao dispara job"),
+        "a recusa tem de dizer por que: {}",
+        r.escrever()
+    );
+    assert_eq!(
+        corridas_de(&mut c, "segundo"),
+        0,
+        "o segundo rodou de dentro do primeiro"
+    );
+
+    // E o sentido contrario: pela conexao comum o `job_rodar` continua.
+    let r = c.pedir(r#""op":"job_rodar","nome":"segundo""#);
+    assert!(res(&r).booleano_ou("ok", false), "{}", r.escrever());
+    assert_eq!(corridas_de(&mut c, "segundo"), 1);
+}
+
+/// **530, o caso do parecer: o job que roda a si mesmo para no primeiro
+/// nivel.** Uma corrida so no historico -- a da tela --, recusada.
+#[test]
+fn job_que_roda_a_si_mesmo_para_no_primeiro_nivel() {
+    let base = pasta("job-de-si-mesmo");
+    let (_s, porta) = subir(&base, false);
+    let mut c = Ligacao::nova(porta);
+    let r = c.pedir(
+        r#""op":"job_salvar","job":{"nome":"eco","cada_minutos":60,
+            "pedido":{"op":"job_rodar","nome":"eco"}}"#,
+    );
+    assert!(r.booleano_ou("ok", false), "{}", erro(&r));
+
+    let r = c.pedir(r#""op":"job_rodar","nome":"eco""#);
+    let d = res(&r);
+    assert!(!d.booleano_ou("ok", true), "{}", r.escrever());
+    assert!(
+        d.texto_ou("detalhe", "").contains("job nao dispara job"),
+        "{}",
+        r.escrever()
+    );
+    assert_eq!(corridas_de(&mut c, "eco"), 1, "mais de um nivel rodou");
+}

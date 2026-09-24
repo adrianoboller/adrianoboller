@@ -967,9 +967,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `servidor-segue-de-pe-depois-do-fsync-recusado` | o servidor segue de pé depois de um `fsync` recusado, gravando num disco que já se sabe que mente | 1 | ✅ provada |
 | `completar-engole-a-tabela-que-nao-foi-ao-disco` | a recuperação engole o erro do `sincronizar` e apaga a marca de um commit cujo dado não foi ao disco | 1 | ✅ provada |
 
-**325 das 400 guardas do catálogo: 1 aposentada, 320 provadas, 4 redundantes** — 8922 s de mutação, medido em 2026-09-16 15:25.
+**325 das 406 guardas do catálogo: 1 aposentada, 320 provadas, 4 redundantes** — 8922 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 76 das 400 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 76 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 82 das 406 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 82 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
@@ -1047,6 +1047,12 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `corrente-do-ciclo-atravessa-quem-nao-confirma` — a corrente do ciclo atravessa transação em ABORT_ONLY, e a outra cede por quem nunca mais vai confirmar
 - `cascata-em-voo-ignorada-no-drop` — pânico entre duas filhas da cascata solta deixa as seguintes na chave velha, e a tabela delas não recusa
 - `cascata-em-voo-so-no-aplicar` — pânico depois de a mãe ir ao disco e antes da primeira filha deixa as filhas na chave velha, calado
+- `recusa-do-fsync-por-grafia` — a recusa do `fsync` casa pela GRAFIA do caminho: pelo symlink ou por `dir/../dir` o mesmo diretório sincroniza Ok e baixa o byte 52
+- `dblink-mysql-lenenc-embrulha` — o DbLink MySQL(R) entra em pânico com `0xFE` + `u64::MAX` num campo `lenenc` do par, e corta calado o campo maior que o pacote
+- `dblink-pg-contagem-negativa` — o DbLink PostgreSQL(R) reserva `Vec::with_capacity` da contagem de campos `int16` do par: `-1` vira `usize::MAX` e pânico de `capacity overflow`
+- `dblink-mysql-cadeia-alem-do-fim` — o aperto de mão do DbLink MySQL(R) entra em pânico com saudação curta ou troca de plugin sem NUL, antes da credencial
+- `job-dispara-job` — um job cujo pedido é `job_rodar` sobe uma corrida aninhada por nível, sem teto: o job de si mesmo empilha threads até o processo cair
+- `smtp-sem-prazo-total-da-conversa` — o `timeout_s` do cliente SMTP mede o silêncio e não a conversa: um relé que pingue abaixo do prazo segura a thread de aviso pelo tempo que quiser
 
 As guardas que esta corrida ainda cita, hoje aposentadas:
 

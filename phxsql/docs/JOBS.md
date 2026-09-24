@@ -165,3 +165,31 @@ ficam de pé; a corrida que derrubou não roda de novo), `testes_do_relogio_e_do
 e `tests/cadastro-acessorio-trancado.rs`. As guardas estão no catálogo
 (`job-corre-na-thread-de-servico`, `job-que-derrubou-roda-de-novo-no-arranque`,
 `relogio-de-jobs-morto-diz-que-esta-no-ar`, `jobs-ilegivel-derruba-o-motor`).
+
+## Job não dispara job (pedido 530)
+
+A filha do 502 trouxe um preço que o papel C mediu na revisão do lote do
+servidor de pé (parecer, P1): um job cujo `pedido` é `job_rodar` **dele
+mesmo**, ou um ciclo A→B→A, sobe uma corrida aninhada por nível — a filha é ela
+mesma chamadora, e cada `job_rodar` de dentro dela sobe outra filha e espera
+por ela. **45 filhas vivas ao mesmo tempo**, e só parou no teto de
+endereçamento de 1,5 GB que a própria prova impôs. Antes do 502, a mesma
+recursão ia na pilha do relógio.
+
+O conserto: o `op_job_rodar` **recusa quando quem pede é uma thread da família
+`corrida`** — «job nao dispara job», `LimiteExcedido`, com o motivo e a saída
+(agendar os dois). A pergunta é pela família da thread, e não pelo pedido:
+vale para o `job_rodar` que chega aninhado em qualquer outra operação, pelo
+relógio ou pela tela. Nenhum dos maduros deixa um evento ou job disparar outro
+de forma síncrona, e o encadeamento que sobra — «B depois de A» — é agenda, não
+chamada. O `job_rodar` pela conexão comum não muda.
+
+A prova, pelo soquete (`tests/jobs.rs`): o job `primeiro`, cujo pedido roda o
+`segundo` (um `ping`), recebe a recusa e o `segundo` fica com **0** corridas; o
+`job_rodar` do `segundo` pela conexão roda. **Reposto** (sem a recusa), o
+`primeiro` respondeu `ok:true` com o `segundo` rodado dentro dele. O job de si
+mesmo (`job_que_roda_a_si_mesmo_para_no_primeiro_nivel`) prova o verde — **uma**
+corrida no histórico — e **não se roda com o defeito reposto**: não tem fundo, e
+o vermelho dele continua sendo o número do papel C. Por isso a guarda
+`job-dispara-job` filtra o binário com `--exact`: o provador roda o `alvo`
+inteiro, e sem o filtro levaria o teste sem fundo para dentro de toda rodada.

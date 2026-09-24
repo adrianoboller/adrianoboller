@@ -293,6 +293,12 @@ dia, nunca no desejado:
   elo implicito sem trava, o ciclo de COMMITs barrados sem desempate e as
   tres arestas dele, e a cascata em voo que o Drop ignorava. A frente
   contou 360 sobre a base dela; a conta do integrador, pelo `--catraca`.
+  **SUBIU para 407 em 24/09/2026** (faceis D: 523, 544, 530 e o resto do
+  463, integrado sobre o lote de integridade): seis guardas -- a recusa do
+  fsync por outra grafia do caminho, o lenenc que embrulha, a cadeia do
+  aperto de mao alem do fim e a contagem negativa do PostgreSQL no DbLink,
+  o job que dispara job e a conversa SMTP sem prazo total. A frente contou
+  392 sobre a base dela; a conta do integrador, pelo `--catraca`.
   **SUBIU para 300 em 24/09/2026** (pedido 497, o literal do pedido no texto
   do erro que o `acessos.log` grava): tres guardas novas, uma por motor que
   monta a mensagem -- o `descrever` do SQL, o `mostrar` da expressao -- e a
@@ -416,7 +422,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 401
+PISO_DAS_ENTRADAS = 407
 
 # ------------------------------------------------------------- APOSENTADAS
 #

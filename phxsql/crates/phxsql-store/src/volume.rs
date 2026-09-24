@@ -298,6 +298,49 @@ pub(crate) fn absoluto_lexico(diretorio: &Path) -> Option<PathBuf> {
     std::env::current_dir().ok().map(|c| c.join(diretorio))
 }
 
+/// As chaves de `caminho` para quem nao pode ERRAR por grafia: a absoluta
+/// lexica de sempre e, quando o diretorio se resolve no disco e da outra
+/// coisa, a REAL -- symlink e `..` resolvidos, com o nome do arquivo por cima.
+///
+/// # Por que existe, ao lado da lexica
+///
+/// A lexica erra para os dois lados conforme quem pergunta. Para o atestado
+/// do `.ndx` (pedido 522), errar e perder um atestado -- a abertura
+/// reconstroi, o lado seguro -- ou deixar um atestado orfao que so o CRC do
+/// cabecalho separa (lido pelo papel C, nao medido); e ela e o que cabe no
+/// caminho de todo pedido. As familias do `Volumes` NAO estao nesse lado: la,
+/// errar a grafia parte a familia, e familia partida perde dado (item 15 do
+/// cabecalho deste arquivo; pedido proprio aberto). Para a recusa do `fsync` (pedido 509), errar e o OPOSTO: o
+/// mesmo diretorio por `link/` ou por `dir/../dir` nao casava com a recusa
+/// gravada por `dir/`, e sincronizava Ok o que o nucleo pode ter descartado
+/// (pedido 523, medido pelo papel C). Quem pergunta la so pergunta com uma
+/// recusa de pe, e ai as syscalls do `canonicalize` nao custam nada que
+/// importe.
+///
+/// # Por que o DIRETORIO, e nao o arquivo
+///
+/// A recusa e por diretorio, e o arquivo pode ainda nao existir. E um `.ndx`
+/// que fosse ele mesmo um symlink para outro lugar continuaria sendo daquela
+/// tabela, naquele diretorio -- resolver o arquivo o mudaria de endereco.
+///
+/// A lexica vai SEMPRE junto, e nao so quando o disco nao responde: um
+/// diretorio apagado depois da recusa nao se resolve mais, e a chave gravada
+/// com ele continua casando pela grafia de entao.
+pub(crate) fn chaves_reais(caminho: &Path) -> Vec<PathBuf> {
+    let lexica = absoluto_lexico(caminho).unwrap_or_else(|| caminho.to_path_buf());
+    let real = lexica.parent().and_then(|dir| {
+        let dir = std::fs::canonicalize(dir).ok()?;
+        Some(match lexica.file_name() {
+            Some(nome) => dir.join(nome),
+            None => dir,
+        })
+    });
+    match real {
+        Some(r) if r != lexica => vec![lexica, r],
+        _ => vec![lexica],
+    }
+}
+
 /// O conjunto pendente desta familia, criado na primeira vez que alguem pede.
 ///
 /// Resolvido UMA vez, na construcao do `Volumes`, e guardado num `Arc`: o

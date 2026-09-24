@@ -1054,7 +1054,15 @@ gravava o byte 52 em 0 sobre uma página de zeros (medido num tmpfs de 512 KiB,
 3/3). Hoje ela continua suja, no `descarregar` e no despejo. E depois de um
 `fsync` recusado em **qualquer** arquivo do diretório o byte 52 não desce mais
 neste processo (`phxsql-store/src/sincronia.rs`): o núcleo pode ter perdido
-páginas que nenhum erro nomeou.
+páginas que nenhum erro nomeou. E «o diretório» é o do **disco no instante da
+recusa**, e não o texto do caminho (pedido 523): a recusa se grava pela grafia
+léxica **e** pela resolvida (`canonicalize` do **diretório**, não do arquivo), e
+a consulta só resolve a grafia quando já houve recusa. Renomear o diretório
+depois da recusa escapa dela, como escapava antes. Antes, com a recusa forjada, 5 dos 6 pares cruzados de grafia
+(`real/`, `link/` → `real`, `real/../real/`) sincronizavam Ok, e a tabela
+aberta pelo symlink fechava com o byte 52 em 0; hoje, 0 de 6 e byte 52 em 1
+(`tests/recusa-por-outra-grafia.rs`). Só a biblioteca: o servidor cai na
+primeira recusa.
 
 **O `fechar` não baixa mais a marca** (pedido 522, 24/09/2026; **o leiaute não
 muda, e não há migração** — muda *quando* o 0 se grava). Até aqui o `fechar`

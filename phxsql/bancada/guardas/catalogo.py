@@ -14662,4 +14662,183 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "a_cascata_alcanca_a_neta",
         ],
     },
+    {
+        "id": "recusa-do-fsync-por-grafia",
+        "titulo": "a recusa do `fsync` casa pela GRAFIA do caminho: pelo symlink ou por `dir/../dir` o mesmo diretório sincroniza Ok e baixa o byte 52",
+        "porque": (
+            "pedido 523, P2 do parecer do papel C sobre o 509+512: a chave da "
+            "recusa era a absoluta lexica. Medido com o defeito reposto: 5 dos "
+            "6 pares cruzados de grafia (real/, link/, real/../real/) "
+            "sincronizaram Ok depois da recusa, e a tabela aberta pelo symlink "
+            "fechou Ok com o byte 52 em 0. So a biblioteca: o servidor cai."
+        ),
+        "arquivo": "crates/phxsql-store/src/volume.rs",
+        "trecho": """        Some(r) if r != lexica => vec![lexica, r],
+""",
+        "troca": """        // DEFEITO REPOSTO (523): so a grafia lexica.
+        Some(r) if r != lexica && false => vec![lexica, r],
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "recusa-por-outra-grafia"],
+        "caem": [
+            "a_recusa_alcanca_o_mesmo_diretorio_por_toda_grafia",
+            "a_tabela_pelo_symlink_nao_baixa_a_marca",
+        ],
+        "seguem": ["relativo_e_absoluto_continuam_casando"],
+    },
+    {
+        "id": "dblink-mysql-lenenc-embrulha",
+        "titulo": "o DbLink MySQL(R) entra em pânico com `0xFE` + `u64::MAX` num campo `lenenc` do par, e corta calado o campo maior que o pacote",
+        "porque": (
+            "pedido 544, residual do 443 replicado pelo SEC e pelo juiz: "
+            "`*i + n` embrulhava em release e o `&p[i..fim]` com `fim < i` "
+            "entrava em panico no meio do `dblink_sincronizar`, com a trava "
+            "de dados na mao. Medido reposto: 3 de 3 testes de soquete caem "
+            "(2 por `attempt to add with overflow`, 1 porque o campo de 10 "
+            "bytes num pacote de 4 voltou Ok como \"abc\")."
+        ),
+        "arquivo": "crates/phxsql-server/src/dblink/mysql.rs",
+        "trecho": r"""    let fim = usize::try_from(n)
+        .ok()
+        .and_then(|n| i.checked_add(n))
+        .filter(|fim| *fim <= p.len())
+        .ok_or_else(|| {
+            erro(format!(
+                "pacote malformado: um campo diz {n} bytes e so restam {} no pacote",
+                p.len().saturating_sub(*i)
+            ))
+        })?;
+""",
+        "troca": r"""    let fim = (*i + n as usize).min(p.len()); // DEFEITO REPOSTO (544)
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "dblink::mysql::testes::lenenc_absurdo_no_nome_da_coluna_e_recusado_sem_panico",
+            "dblink::mysql::testes::lenenc_absurdo_numa_celula_e_recusado_sem_panico",
+            "dblink::mysql::testes::celula_maior_que_o_pacote_e_recusada_e_nao_cortada",
+        ],
+        "seguem": [
+            "dblink::mysql::testes::resultado_bem_formado_continua_inteiro",
+            "dblink::mysql::testes::nulo_nao_vira_texto_vazio",
+        ],
+    },
+    {
+        "id": "dblink-pg-contagem-negativa",
+        "titulo": "o DbLink PostgreSQL(R) reserva `Vec::with_capacity` da contagem de campos `int16` do par: `-1` vira `usize::MAX` e pânico de `capacity overflow`",
+        "porque": (
+            "pedido 544: `ler_descricao` e `ler_linha` faziam "
+            "`l.i16()? as usize`, que estende o sinal. Medido reposto: o "
+            "teste de soquete cai em `capacity overflow`. O teto e o mesmo "
+            "`TETO_DE_COLUNAS` do dialeto do MySQL, movido para `dblink` em "
+            "vez de duplicado."
+        ),
+        "arquivo": "crates/phxsql-server/src/pg/mod.rs",
+        "trecho": r"""fn quantos_campos(l: &mut Leitor<'_>) -> Result<usize> {
+    let n = l.i16()?;
+""",
+        "troca": r"""fn quantos_campos(l: &mut Leitor<'_>) -> Result<usize> {
+    if true {
+        return Ok(l.i16()? as usize); // DEFEITO REPOSTO (544)
+    }
+    let n = l.i16()?;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": ["pg::testes::contagem_de_campos_negativa_ou_absurda_e_recusada_sem_panico"],
+        "seguem": [
+            "pg::testes::resultado_bem_formado_do_postgres_continua_inteiro",
+            "pg::testes::linha_truncada_nao_estoura",
+        ],
+    },
+    {
+        "id": "dblink-mysql-cadeia-alem-do-fim",
+        "titulo": "o aperto de mão do DbLink MySQL(R) entra em pânico com saudação curta ou troca de plugin sem NUL, antes da credencial",
+        "porque": (
+            "pedido 544, o irmao do lenenc no mesmo parser e pela mesma "
+            "pergunta: `cadeia_ate_nulo` lia de ALEM do fim (`&p[39..39]` "
+            "numa saudacao de 20 bytes) e deixava o indice um alem do fim "
+            "(`r[3..]` num pacote de 2). Medido antes do conserto: os dois "
+            "testes de soquete em panico. Basta quem responde na porta."
+        ),
+        "arquivo": "crates/phxsql-server/src/dblink/mysql.rs",
+        "trecho": r"""fn cadeia_ate_nulo(p: &[u8], i: &mut usize) -> String {
+    let inicio = (*i).min(p.len());
+    let fim = p[inicio..]
+        .iter()
+        .position(|b| *b == 0)
+        .map_or(p.len(), |n| inicio + n);
+    *i = (fim + 1).min(p.len());
+    String::from_utf8_lossy(&p[inicio..fim]).into_owned()
+}
+""",
+        "troca": r"""fn cadeia_ate_nulo(p: &[u8], i: &mut usize) -> String {
+    // DEFEITO REPOSTO (544): o indice sai e entra alem do fim.
+    let inicio = *i;
+    while *i < p.len() && p[*i] != 0 {
+        *i += 1;
+    }
+    let s = String::from_utf8_lossy(&p[inicio..*i]).to_string();
+    *i += 1;
+    s
+}
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "dblink::mysql::testes::troca_de_plugin_sem_nulo_e_recusada_sem_panico",
+            "dblink::mysql::testes::saudacao_curta_nao_entra_em_panico",
+        ],
+        "seguem": ["dblink::mysql::testes::aperto_de_mao_bem_formado_continua"],
+    },
+    {
+        "id": "job-dispara-job",
+        "titulo": "um job cujo pedido é `job_rodar` sobe uma corrida aninhada por nível, sem teto: o job de si mesmo empilha threads até o processo cair",
+        "porque": (
+            "pedido 530, P1 do parecer do papel C sobre o lote do servidor de "
+            "pe: 45 corridas aninhadas vivas ate o teto de enderecamento de "
+            "1,5 GB da prova. Medido reposto no caso LIMITADO (A roda B, B e "
+            "um ping): o A responde Ok com o B rodado dentro dele. O filtro "
+            "`--exact` e de proposito: o teste do job de si mesmo nao tem "
+            "fundo com o defeito de pe, e rodar o binario inteiro reposto "
+            "empilharia threads ate o limite da maquina."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        if crate::telemetria::familia_desta_thread() == Some("corrida") {
+            return Err(PhxError::LimiteExcedido(
+""",
+        "troca": """        if false && crate::telemetria::familia_desta_thread() == Some("corrida") {
+            return Err(PhxError::LimiteExcedido(
+""",
+        "pacote": "phxsql-server",
+        "alvo": [
+            "--test", "jobs", "--", "--exact",
+            "job_que_roda_job_recebe_a_recusa", "sem_cadastro_nada_muda",
+        ],
+        "caem": ["job_que_roda_job_recebe_a_recusa"],
+        "seguem": ["sem_cadastro_nada_muda"],
+    },
+    {
+        "id": "smtp-sem-prazo-total-da-conversa",
+        "titulo": "o `timeout_s` do cliente SMTP mede o silêncio e não a conversa: um relé que pingue abaixo do prazo segura a thread de aviso pelo tempo que quiser",
+        "porque": (
+            "pedido 463, a metade do TEMPO (a das linhas e a guarda "
+            "`smtp-sem-teto-de-linhas-de-continuacao`). Medido reposto: com "
+            "silencio de 500 ms e prazo total de 4,5 s, o rele que pinga a "
+            "cada 50 ms segurou a conversa 6,03 s -- ate ele mesmo fechar --; "
+            "com o conserto, 4,506 s."
+        ),
+        "arquivo": "crates/phxsql-server/src/email.rs",
+        "trecho": """            ate: Instant::now().checked_add(total),
+""",
+        "troca": """            ate: None, // DEFEITO REPOSTO (463)
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": ["email::testes::o_rele_que_pinga_e_cortado_no_prazo_total"],
+        "seguem": [
+            "email::testes::a_conversa_normal_continua_inteira",
+            "email::testes::o_rele_lento_que_responde_cada_passo_inteiro_cabe",
+        ],
+    },
 ]

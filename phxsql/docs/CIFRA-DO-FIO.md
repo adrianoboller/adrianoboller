@@ -364,8 +364,8 @@ não se entrega.
   esses motores é **erro na declaração**
   (`conferir_cifra_do_motor`, `crates/phxsql-server/src/dblink/mod.rs`), não
   um interruptor que fica sem efeito. Os sítios de rede desses dois motores —
-  `crates/phxsql-server/src/pg/mod.rs:578` e
-  `crates/phxsql-server/src/dblink/mysql.rs:415` — não implementam aperto
+  `crates/phxsql-server/src/pg/mod.rs:604` e
+  `crates/phxsql-server/src/dblink/mysql.rs:452` — não implementam aperto
   nenhum. Ver `docs/DBLINK.md` §"O limite honesto: não há TLS".
 * **Nada disto é TLS.** Não há certificado, não há cadeia, não há autoridade,
   não há revogação. A confiança é o pino, e o pino é responsabilidade de quem
@@ -1041,9 +1041,9 @@ excluídos à mão:
 | `crates/phxsql-odbc/src/conexao.rs:332` | driver ODBC → phxsqld | próprio, inline (`Iniciador::comecar`, `conexao.rs:460`) |
 | `crates/phxsql-server/src/replica.rs:112` | réplica → source; cluster (pulso e replicação, mesmo `replica::ligar`); DbLink → outro PhxSql (`dblink/phx.rs:91` reusa este cliente) | `replica::Cliente::cifrar` |
 | `crates/phxsql-server/src/servidor.rs:533` | `Remoto` (interface → outro PhxSql) | `servidor::Remoto::cifrar` (`servidor.rs:556`) |
-| `crates/phxsql-server/src/pg/mod.rs:578` | DbLink → PostgreSQL(R) | nenhum — protocolo alheio, recusado na declaração |
-| `crates/phxsql-server/src/dblink/mysql.rs:415` | DbLink → MySQL(R) | nenhum — protocolo alheio, idem |
-| `crates/phxsql-server/src/email.rs:134` | alerta por e-mail (SMTP) | nenhum — protocolo alheio, fora do escopo deste documento |
+| `crates/phxsql-server/src/pg/mod.rs:604` | DbLink → PostgreSQL(R) | nenhum — protocolo alheio, recusado na declaração |
+| `crates/phxsql-server/src/dblink/mysql.rs:452` | DbLink → MySQL(R) | nenhum — protocolo alheio, idem |
+| `crates/phxsql-server/src/email.rs:180` | alerta por e-mail (SMTP) | nenhum — protocolo alheio, fora do escopo deste documento |
 | `crates/phxsql-server/src/servidor.rs:6584` | `acordar_o_accept` — auto-conexão de loopback para destravar o `accept` | nenhum — fecha antes de trocar um byte, não fala protocolo algum |
 
 **Três** implementações do aperto (o inline do ODBC, `replica::Cliente::cifrar`

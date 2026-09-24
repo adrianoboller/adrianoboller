@@ -4577,10 +4577,11 @@ constante nova.
 | bytes tirados do soquete numa linha só | **8.388.610** | **73.728** (teto + 1 + o resto do buffer do `BufReader`) |
 | tamanho do erro devolvido pelo `enviar` | **8.388.651** | **144** |
 
-O laço das linhas de continuação (`250-…`) continua sem teto de QUANTAS: cada
-linha é solta antes da seguinte, então ele não guarda memória — gasta tempo, e
-tempo o `timeout_s` responde só pela metade (mede o silêncio, não a conversa).
-Anotado, não consertado: é outra pergunta.
+O laço das linhas de continuação (`250-…`) ficou, neste pedido, sem teto de
+QUANTAS: cada linha é solta antes da seguinte, então ele não guarda memória —
+gasta tempo, e tempo o `timeout_s` responde só pela metade (mede o silêncio,
+não a conversa). Virou o pedido 463: o teto de quantas (1.000 linhas) entrou
+primeiro, e o prazo total da conversa depois — ver §28.2.
 
 **A catraca que o pedido mandava entrar junto**: `conferidor_canal.rs`,
 `TETO_LEITURA_FORA_DO_CANAL = 0`. Conta todo `read_line`/`read_until` em
@@ -5787,3 +5788,87 @@ vez(es)». Onde o `core_pattern` não é um arquivo, o teste diz que não mediu 
   o pedido é o do servidor, que é quem aborta de propósito.
 - **Windows:** o equivalente é o Relatório de Erros do Windows, e não foi
   medido.
+
+## 28. O par que derruba este lado pela forma do pacote, e o relé que segura pelo tempo (pedidos 544 e 463)
+
+Duas perguntas da família do 434, depois dos tetos de tamanho: **o outro lado
+consegue derrubar este processo com um número do fio**, e **consegue segurar
+uma thread daqui pelo tempo que quiser**.
+
+### 28.1 O parser do DbLink entrava em pânico com o par (544)
+
+Residual do 443, replicado pelo SEC e pelo juiz. Três sítios, a mesma
+pergunta:
+
+- **MySQL(R), o `lenenc`** (`dblink/mysql.rs`): `texto_lenenc` somava
+  `*i + n` com o `n` do fio. Com `0xFE` + `u64::MAX` a soma embrulhava em
+  release, o `fim` caía antes do `*i` e o `&p[*i..fim]` entrava em pânico —
+  no meio do `dblink_sincronizar`, com a trava de dados na mão. E o campo que
+  dizia mais bytes do que o pacote trazia era **cortado calado**: meio valor
+  com cara de inteiro. Agora um lugar só (`fatia_lenenc`) faz a soma com
+  `checked_add` e **recusa** as duas coisas: o pacote já chega inteiro (o
+  `ler_quadro` junta as continuações), então campo que passa do fim é pacote
+  malformado.
+- **PostgreSQL(R), a contagem de campos** (`pg/mod.rs`): `ler_descricao` e
+  `ler_linha` faziam `Vec::with_capacity(l.i16()? as usize)`. O `as usize`
+  estende o sinal: `-1` vira `usize::MAX` e `capacity overflow`. Um lugar só
+  (`quantos_campos`) recusa a contagem negativa e a acima do teto **antes** de
+  reservar. O teto é o `TETO_DE_COLUNAS` que o 443 criou para o MySQL,
+  **movido** para `dblink` em vez de duplicado — a pergunta «quantas colunas
+  este lado reserva do outro» é uma só para os dois dialetos. 4.096 é o teto de
+  fábrica do MySQL(R); o do PostgreSQL(R) é menor (1.664 numa lista de saída).
+- **O irmão, no aperto de mão do MySQL(R)** — achado procurando pela
+  pergunta, e não pelo nome: o `cadeia_ate_nulo` lia o nome do plugin de ALÉM
+  do fim numa saudação curta (`&p[39..39]` num pacote de 20) e deixava o
+  índice um além do fim na troca de plugin sem NUL (`r[3..]` num pacote de 2).
+  **Antes da credencial**: basta quem responde na porta. O índice agora nunca
+  sai do pacote; fora dele, a cadeia é vazia.
+
+| com o defeito reposto, servidor falso por soquete | resultado |
+|---|---|
+| `0xFE` + `u64::MAX` no nome da coluna | pânico, `attempt to add with overflow` |
+| o mesmo numa célula (linha de 9 bytes, que não é EOF) | pânico, idem |
+| célula que diz 10 bytes num pacote de 4 | `Ok`, com `"abc"` — corte calado |
+| PostgreSQL, contagem `-1` na `T` (o primeiro caso do teste; `i16::MIN` é o mesmo) | pânico, `capacity overflow` |
+| saudação de 20 bytes; troca de plugin `[0xFE, 'x']` | pânico, `range start index 39` / `3 out of range` |
+
+Com o conserto, nenhuma entra em pânico: «pacote malformado», «mensagem do
+PostgreSQL malformada» ou «acima do teto» (4.097 campos, na `T` e na `D`,
+recusados antes de reservar), a saudação curta vale como
+`mysql_native_password` — o que o código já dizia para o plugin vazio —, e a
+troca para o plugin `x` recusa com «nao suportado». Os resultados bem formados continuam inteiros, com NULL
+separado de texto vazio (`resultado_bem_formado_continua_inteiro`,
+`resultado_bem_formado_do_postgres_continua_inteiro`,
+`aperto_de_mao_bem_formado_continua`). Um servidor falso só por dialeto, com
+roteiro — o do teste do 443 passou a usá-lo em vez de ter o seu. Guardas
+`dblink-mysql-lenenc-embrulha`, `dblink-pg-contagem-negativa` e
+`dblink-mysql-cadeia-alem-do-fim`.
+
+### 28.2 O `timeout_s` do SMTP media o silêncio, e não a conversa (463)
+
+A primeira metade do 463 pôs teto de QUANTAS linhas de continuação (1.000).
+Ficava o TEMPO: o `timeout_s` vale por leitura e recomeça a cada byte, então um
+relé que pingue uma linha a um passo do prazo segurava a thread de aviso por
+até mil prazos — e uma linha pingada byte a byte, por até 64 KiB deles.
+
+Agora a conversa inteira tem prazo: **`timeout_s` vezes as idas e voltas da
+conversa** (`passos_da_conversa`: saudação, `EHLO` e o `HELO` que o substitui,
+três do `AUTH` quando há login, `MAIL`, um `RCPT` por destino, `DATA`, o corpo
+com o ponto, `QUIT`). O múltiplo sai da forma da conversa, e não de um número
+escolhido, porque é o que garante que o relé mais lento que o prazo de silêncio
+já deixava passar — o que responde cada passo de uma vez, perto do limite —
+continua cabendo; só o que PINGA é cortado. **Sem campo novo no
+`config.json`.** O prazo vale **por syscall**: cada `read` e cada `write` do
+soquete armam o menor entre o silêncio e o que sobra da conversa (`ComPrazo`),
+e o erro sai como `LimiteExcedido` dizendo o prazo total.
+
+| silêncio de 500 ms, dois destinos (9 passos, prazo 4,5 s), relé pingando `250-x` a cada 50 ms por 6 s | antes | depois |
+|---|---|---|
+| quanto a conversa durou | **6,03 s** — até o próprio relé fechar | **4,506 s** |
+| o erro | «o servidor fechou a conexao no meio da resposta» | «passou do prazo total de 4.5 s» |
+
+E o comportamento velho: a conversa normal chega ao recibo
+(`a_conversa_normal_continua_inteira`), e o relé que responde cada passo em
+200 ms contra 300 ms de silêncio — 1,8 s de conversa num prazo de 2,7 s —
+também (`o_rele_lento_que_responde_cada_passo_inteiro_cabe`). Guarda
+`smtp-sem-prazo-total-da-conversa`.

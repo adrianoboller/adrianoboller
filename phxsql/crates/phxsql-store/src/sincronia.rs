@@ -49,6 +49,18 @@
 //! [`crate::volume::familias_devendo_em`]. No servidor a pergunta nem se poe:
 //! ele cai.
 //!
+//! # E o diretorio e o do DISCO no instante da recusa, e nao o texto do caminho (pedido 523)
+//!
+//! A chave era a absoluta LEXICA: a relativa e a absoluta casavam, o symlink e
+//! o `dir/../dir` nao. Com a recusa forjada, 5 dos 6 pares cruzados de grafia
+//! (`real/`, `link/`, `real/../real/`) sincronizavam Ok, e a tabela aberta pelo
+//! symlink fechava baixando o byte 52 no proprio processo da recusa. A recusa
+//! agora se grava pelas duas chaves de `volume::chaves_reais` -- a
+//! lexica e a resolvida no disco -- e a consulta so resolve a grafia DEPOIS do
+//! `HA_RECUSADO`: o caminho de sempre continua sem syscall nenhuma. O que se
+//! resolve e o DIRETORIO, e no instante da recusa: renomear o diretorio depois
+//! escapa dela, como escapava antes do 523.
+//!
 //! # O que isto NAO compra, dito
 //!
 //! Sem diario de refazer, parar compra menos que no PostgreSQL: o que o nucleo
@@ -142,30 +154,41 @@ pub fn conferir(caminho: &Path) -> Result<()> {
 }
 
 /// A primeira recusa que alcanca `caminho`, se houve.
+///
+/// A grafia se resolve contra o disco -- symlink e `..` (pedido 523) -- so
+/// DEPOIS do atomico: o `Drop` de todo `.ndx` pergunta, e o caminho de sempre
+/// nao paga syscall nenhuma.
 pub fn recusado_em(caminho: &Path) -> Option<String> {
     if !HA_RECUSADO.load(Ordering::Acquire) {
         return None;
     }
-    let alvo = absoluto(caminho);
+    let alvos = crate::volume::chaves_reais(caminho);
     trava(&RECUSADOS)
         .iter()
-        .find(|(d, _)| alvo.starts_with(d))
+        .find(|(d, _)| alvos.iter().any(|a| a.starts_with(d)))
         .map(|(_, primeira)| primeira.clone())
 }
 
+/// Grava o diretorio por TODAS as grafias que ele tem agora -- a lexica e a
+/// real. So a lexica, e a recusa gravada por `dir/` nao alcancava o mesmo
+/// diretorio aberto por `link/` nem por `dir/../dir` (pedido 523).
 fn recusar(caminho: &Path, e: &io::Error) {
-    let alvo = absoluto(caminho);
-    let dir = alvo.parent().map(Path::to_path_buf).unwrap_or(alvo);
+    let primeira = format!("{}: {e}", caminho.display());
+    let chaves = crate::volume::chaves_reais(caminho);
     let mut r = trava(&RECUSADOS);
-    if !r.iter().any(|(d, _)| dir.starts_with(d)) {
-        r.push((dir, format!("{}: {e}", caminho.display())));
+    for chave in chaves {
+        let dir = chave.parent().map(Path::to_path_buf).unwrap_or(chave);
+        if !r.iter().any(|(d, _)| dir.starts_with(d)) {
+            r.push((dir, primeira.clone()));
+        }
     }
     HA_RECUSADO.store(true, Ordering::Release);
 }
 
-/// A mesma chave lexica das familias do `Volumes`: a relativa e a absoluta do
-/// mesmo diretorio tem de cair no mesmo lugar, senao a recusa de um lado nao
-/// alcancaria o outro.
+/// A chave lexica das familias do `Volumes`, e so para a ARMA de teste: a
+/// recusa de verdade usa `volume::chaves_reais`, que resolve symlink
+/// e `..` (pedido 523). A arma continua lexica porque o que ela forja e
+/// prefixo de TEXTO por desenho -- ver `falha_de_teste`.
 fn absoluto(caminho: &Path) -> PathBuf {
     crate::volume::absoluto_lexico(caminho).unwrap_or_else(|| caminho.to_path_buf())
 }

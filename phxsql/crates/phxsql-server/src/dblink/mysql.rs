@@ -61,21 +61,9 @@ const COM_QUERY: u8 = 0x03;
 const COM_PING: u8 = 0x0e;
 const COM_QUIT: u8 = 0x01;
 
-/// Teto de colunas de um resultado, ANTES de reservar capacidade nenhuma --
-/// pedido 443.
-///
-/// `quantas` (abaixo, em `consultar`) vem de um inteiro `lenenc` que o OUTRO
-/// lado escreveu no fio -- ate 2^64-1, sem teto proprio. Este dblink fala em
-/// claro (ver `# Limites` no topo do arquivo), entao "o outro lado" inclui
-/// quem esta no meio da conexao, e nao so o servidor MySQL(R) configurado. Um
-/// `Vec::with_capacity(quantas as usize)` com esse numero nao devolve erro
-/// para o chamador tratar: o alocador aborta o PROCESSO INTEIRO na alocacao
-/// gigante (ou o calculo de capacidade em bytes estoura antes disso) -- a
-/// mesma classe de defeito do pedido 434, agora do lado do dblink. O numero
-/// e o teto de fabrica do proprio MySQL(R) (MySQL Reference Manual, "Limits
-/// on Table Column Count": 4096 colunas por tabela), e nenhuma consulta
-/// legitima deste dblink devolve mais que isso.
-const TETO_DE_COLUNAS: u64 = 4096;
+// O teto de colunas e o mesmo dos dois dialetos (pedido 443, e o 544 o levou
+// para o PostgreSQL): mora em `dblink`, e nao aqui.
+use super::TETO_DE_COLUNAS;
 
 /// Uma coluna do resultado, ja traduzida para nomes que a tela entende.
 #[derive(Debug, Clone)]
@@ -348,7 +336,7 @@ impl Conexao {
                 truncado = true;
                 continue;
             }
-            linhas.push(ler_linha(&q, colunas.len()));
+            linhas.push(ler_linha(&q, colunas.len())?);
         }
         Ok(Resultado {
             colunas,
@@ -513,12 +501,12 @@ fn eh_eof(p: &[u8]) -> bool {
 
 fn ler_coluna(p: &[u8]) -> Result<Coluna> {
     let mut i = 0;
-    pular_lenenc(p, &mut i); // catalogo
-    pular_lenenc(p, &mut i); // schema
-    let tabela = texto_lenenc(p, &mut i);
-    pular_lenenc(p, &mut i); // tabela de origem
-    let nome = texto_lenenc(p, &mut i);
-    pular_lenenc(p, &mut i); // nome de origem
+    pular_lenenc(p, &mut i)?; // catalogo
+    pular_lenenc(p, &mut i)?; // schema
+    let tabela = texto_lenenc(p, &mut i)?;
+    pular_lenenc(p, &mut i)?; // tabela de origem
+    let nome = texto_lenenc(p, &mut i)?;
+    pular_lenenc(p, &mut i)?; // nome de origem
     le_lenenc(p, &mut i); // comprimento do bloco fixo
     i += 2; // conjunto de caracteres
     let tamanho = le_u32(p, i).unwrap_or(0);
@@ -541,7 +529,7 @@ fn ler_coluna(p: &[u8]) -> Result<Coluna> {
     })
 }
 
-fn ler_linha(p: &[u8], quantas: usize) -> Vec<Option<String>> {
+fn ler_linha(p: &[u8], quantas: usize) -> Result<Vec<Option<String>>> {
     let mut i = 0;
     let mut v = Vec::with_capacity(quantas);
     for _ in 0..quantas {
@@ -552,11 +540,11 @@ fn ler_linha(p: &[u8], quantas: usize) -> Vec<Option<String>> {
                 i += 1;
                 v.push(None);
             }
-            Some(_) => v.push(Some(texto_lenenc(p, &mut i))),
+            Some(_) => v.push(Some(texto_lenenc(p, &mut i)?)),
             None => v.push(None),
         }
     }
-    v
+    Ok(v)
 }
 
 fn nome_do_tipo(codigo: u8, bandeiras: u16) -> &'static str {
@@ -619,14 +607,23 @@ fn cadeia_nula(destino: &mut Vec<u8>, texto: &str) {
     destino.push(0);
 }
 
+/// A cadeia terminada em NUL que comeca em `*i`, e o `*i` depois do NUL.
+///
+/// O `*i` nunca sai daqui alem do fim do pacote, e chega aqui alem dele sem
+/// panico -- pedido 544, o irmao do `lenenc` no aperto de mao. A saudacao
+/// pula os campos fixos sem conferir o tamanho, e o nome do plugin era lido
+/// de ALEM do fim (`&p[39..39]` num pacote de 20); a troca de plugin sem o
+/// NUL deixava o `*i` um alem do fim, e o `r[i..]` seguinte caia. Os dois
+/// antes da credencial: basta quem responde na porta. Fora do pacote e cadeia
+/// vazia.
 fn cadeia_ate_nulo(p: &[u8], i: &mut usize) -> String {
-    let inicio = *i;
-    while *i < p.len() && p[*i] != 0 {
-        *i += 1;
-    }
-    let s = String::from_utf8_lossy(&p[inicio..*i]).to_string();
-    *i += 1;
-    s
+    let inicio = (*i).min(p.len());
+    let fim = p[inicio..]
+        .iter()
+        .position(|b| *b == 0)
+        .map_or(p.len(), |n| inicio + n);
+    *i = (fim + 1).min(p.len());
+    String::from_utf8_lossy(&p[inicio..fim]).into_owned()
 }
 
 /// Inteiro de tamanho variavel: o primeiro byte diz quantos vem depois.
@@ -655,17 +652,39 @@ fn le_lenenc(p: &[u8], i: &mut usize) -> Option<u64> {
     })
 }
 
-fn texto_lenenc(p: &[u8], i: &mut usize) -> String {
-    let n = le_lenenc(p, i).unwrap_or(0) as usize;
-    let fim = (*i + n).min(p.len());
-    let s = String::from_utf8_lossy(&p[*i..fim]).to_string();
+/// Os bytes de um campo `lenenc`: o tamanho, e o que ele diz -- pedido 544.
+///
+/// O tamanho vem do outro lado do fio, ate 2^64-1. A soma de antes
+/// (`*i + n`) embrulhava em release com `0xFE` + `u64::MAX`, o `fim` caia
+/// ANTES do `*i` e o `&p[*i..fim]` entrava em panico -- no meio do
+/// `dblink_sincronizar`, com a trava de dados na mao. E o campo que dizia mais
+/// bytes do que o pacote tinha era CORTADO calado: um valor pela metade com
+/// cara de inteiro. As duas coisas viram recusa. O pacote ja chega inteiro --
+/// o `ler_quadro` junta as continuacoes --, entao campo que passa do fim e
+/// pacote malformado, e nao resto que ainda vem.
+fn fatia_lenenc<'a>(p: &'a [u8], i: &mut usize) -> Result<&'a [u8]> {
+    let n = le_lenenc(p, i).unwrap_or(0);
+    let fim = usize::try_from(n)
+        .ok()
+        .and_then(|n| i.checked_add(n))
+        .filter(|fim| *fim <= p.len())
+        .ok_or_else(|| {
+            erro(format!(
+                "pacote malformado: um campo diz {n} bytes e so restam {} no pacote",
+                p.len().saturating_sub(*i)
+            ))
+        })?;
+    let s = &p[*i..fim];
     *i = fim;
-    s
+    Ok(s)
 }
 
-fn pular_lenenc(p: &[u8], i: &mut usize) {
-    let n = le_lenenc(p, i).unwrap_or(0) as usize;
-    *i = (*i + n).min(p.len());
+fn texto_lenenc(p: &[u8], i: &mut usize) -> Result<String> {
+    fatia_lenenc(p, i).map(|b| String::from_utf8_lossy(b).into_owned())
+}
+
+fn pular_lenenc(p: &[u8], i: &mut usize) -> Result<()> {
+    fatia_lenenc(p, i).map(|_| ())
 }
 
 fn le_u16(p: &[u8], i: usize) -> Option<u16> {
@@ -769,7 +788,7 @@ mod testes {
     fn nulo_nao_vira_texto_vazio() {
         // Uma linha com tres campos: "ab", NULL, "".
         let linha = vec![2, b'a', b'b', 0xFB, 0];
-        let v = ler_linha(&linha, 3);
+        let v = ler_linha(&linha, 3).unwrap();
         assert_eq!(v[0], Some("ab".to_string()));
         assert_eq!(v[1], None);
         assert_eq!(v[2], Some(String::new()));
@@ -831,38 +850,228 @@ mod testes {
     /// processo; com o teto, a recusa acontece ANTES de qualquer alocacao.
     #[test]
     fn quantidade_de_colunas_absurda_e_recusada_antes_de_reservar() {
-        let ouvinte = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let porta = ouvinte.local_addr().unwrap().port();
-        std::thread::spawn(move || {
-            let Ok((mut s, _)) = ouvinte.accept() else {
-                return;
-            };
-            // O COM_QUERY do cliente: le e descarta.
-            let mut cabeca = [0u8; 4];
-            if s.read_exact(&mut cabeca).is_err() {
-                return;
-            }
-            let n = u32::from_le_bytes([cabeca[0], cabeca[1], cabeca[2], 0]) as usize;
-            let mut descartado = vec![0u8; n];
-            let _ = s.read_exact(&mut descartado);
-            // A resposta: "este resultado tem u64::MAX colunas".
-            let mut payload = vec![0xFEu8];
-            payload.extend_from_slice(&u64::MAX.to_le_bytes());
-            let mut cab = [0u8; 4];
-            cab[..3].copy_from_slice(&(payload.len() as u32).to_le_bytes()[..3]);
-            let _ = s.write_all(&cab);
-            let _ = s.write_all(&payload);
-        });
-        let fluxo = TcpStream::connect(("127.0.0.1", porta)).unwrap();
-        fluxo
-            .set_read_timeout(Some(Duration::from_secs(5)))
-            .unwrap();
-        let mut c = conexao_crua(fluxo);
+        // A resposta: "este resultado tem u64::MAX colunas".
+        let porta = servidor_falso(vec![Passo::Ler, Passo::Mandar(lenenc_absurdo())]);
+        let mut c = conexao_com(porta);
         let erro = c.consultar("SELECT 1", 100).unwrap_err();
         assert!(
             matches!(erro, PhxError::LimiteExcedido(_)),
             "devia recusar por LimiteExcedido: {erro}"
         );
         assert!(erro.to_string().contains(&u64::MAX.to_string()), "{erro}");
+    }
+
+    // ------------------------------------ pedido 544, o panico do parser
+
+    /// Um passo do servidor falso: ler um quadro do cliente e descartar, ou
+    /// mandar um quadro com o cabecalho dele.
+    enum Passo {
+        Ler,
+        Mandar(Vec<u8>),
+    }
+
+    /// UM servidor MySQL(R) falso para os testes de soquete daqui: o roteiro
+    /// diz o que ele le e o que ele manda, na ordem. Devolve a porta.
+    fn servidor_falso(roteiro: Vec<Passo>) -> u16 {
+        let ouvinte = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let porta = ouvinte.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            let Ok((mut s, _)) = ouvinte.accept() else {
+                return;
+            };
+            let mut seq = 0u8;
+            for passo in roteiro {
+                match passo {
+                    Passo::Ler => {
+                        let mut cabeca = [0u8; 4];
+                        if s.read_exact(&mut cabeca).is_err() {
+                            return;
+                        }
+                        seq = cabeca[3].wrapping_add(1);
+                        let n = u32::from_le_bytes([cabeca[0], cabeca[1], cabeca[2], 0]);
+                        let mut descartado = vec![0u8; n as usize];
+                        if s.read_exact(&mut descartado).is_err() {
+                            return;
+                        }
+                    }
+                    Passo::Mandar(q) => {
+                        let mut cab = [0u8; 4];
+                        cab[..3].copy_from_slice(&(q.len() as u32).to_le_bytes()[..3]);
+                        cab[3] = seq;
+                        seq = seq.wrapping_add(1);
+                        if s.write_all(&cab).and_then(|_| s.write_all(&q)).is_err() {
+                            return;
+                        }
+                    }
+                }
+            }
+        });
+        porta
+    }
+
+    fn conexao_com(porta: u16) -> Conexao {
+        let fluxo = TcpStream::connect(("127.0.0.1", porta)).unwrap();
+        fluxo
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        conexao_crua(fluxo)
+    }
+
+    /// `0xFE` + `u64::MAX`: o maior numero que um `lenenc` sabe dizer.
+    fn lenenc_absurdo() -> Vec<u8> {
+        let mut p = vec![0xFEu8];
+        p.extend_from_slice(&u64::MAX.to_le_bytes());
+        p
+    }
+
+    /// A definicao de uma coluna VARCHAR com o `nome` ja em `lenenc`.
+    fn definicao_de_coluna(nome: &[u8]) -> Vec<u8> {
+        let mut p = Vec::new();
+        // catalogo, esquema, tabela, tabela de origem.
+        for campo in [&b"def"[..], b"", b"t", b"t"] {
+            p.push(campo.len() as u8);
+            p.extend_from_slice(campo);
+        }
+        p.extend_from_slice(nome);
+        p.push(0); // nome de origem
+        p.push(0x0c); // bloco fixo
+        p.extend_from_slice(&[45, 0]); // conjunto de caracteres
+        p.extend_from_slice(&60u32.to_le_bytes());
+        p.push(0xfd); // VARCHAR
+        p.extend_from_slice(&[0, 0, 0, 0, 0]); // bandeiras, decimais, enchimento
+        p
+    }
+
+    const EOF: [u8; 5] = [0xFE, 0, 0, 2, 0];
+
+    /// O resultado de uma coluna, com as `linhas` entre a definicao e o fim.
+    fn resultado_com(nome: &[u8], linhas: Vec<Vec<u8>>) -> Vec<Passo> {
+        let mut r = vec![
+            Passo::Ler,
+            Passo::Mandar(vec![1]),
+            Passo::Mandar(definicao_de_coluna(nome)),
+            Passo::Mandar(EOF.to_vec()),
+        ];
+        r.extend(linhas.into_iter().map(Passo::Mandar));
+        r.push(Passo::Mandar(EOF.to_vec()));
+        r
+    }
+
+    /// **544: `0xFE` + `u64::MAX` no NOME da coluna e recusa, e nao panico.**
+    ///
+    /// Com o defeito, a soma do fim do campo estourava (panico de overflow
+    /// em debug; em release embrulhava, e a fatia `&p[i..fim]` com `fim < i`
+    /// entrava em panico). O panico acontece na thread de quem consulta --
+    /// aqui, a do teste --, e e isso que o teste sente.
+    #[test]
+    fn lenenc_absurdo_no_nome_da_coluna_e_recusado_sem_panico() {
+        let porta = servidor_falso(resultado_com(&lenenc_absurdo(), vec![]));
+        let erro = conexao_com(porta).consultar("SELECT 1", 100).unwrap_err();
+        assert!(erro.to_string().contains("malformado"), "{erro}");
+    }
+
+    /// **544: o mesmo numero numa CELULA.** A linha de 9 bytes nao e EOF (o
+    /// `eh_eof` so aceita menos de 9), e cai inteira no `ler_linha`.
+    #[test]
+    fn lenenc_absurdo_numa_celula_e_recusado_sem_panico() {
+        let porta = servidor_falso(resultado_com(b"\x04nome", vec![lenenc_absurdo()]));
+        let erro = conexao_com(porta).consultar("SELECT 1", 100).unwrap_err();
+        assert!(erro.to_string().contains("malformado"), "{erro}");
+    }
+
+    /// **544: o campo que diz mais bytes do que o pacote tem e recusado, e
+    /// nao cortado calado.** Cortar entregava meio valor com cara de inteiro.
+    #[test]
+    fn celula_maior_que_o_pacote_e_recusada_e_nao_cortada() {
+        let porta = servidor_falso(resultado_com(b"\x04nome", vec![b"\x0Aabc".to_vec()]));
+        let erro = conexao_com(porta).consultar("SELECT 1", 100).unwrap_err();
+        assert!(erro.to_string().contains("10 bytes"), "{erro}");
+    }
+
+    /// O que ja funcionava continua: um resultado bem formado chega inteiro,
+    /// com NULL separado de texto vazio.
+    #[test]
+    fn resultado_bem_formado_continua_inteiro() {
+        let porta = servidor_falso(resultado_com(
+            b"\x04nome",
+            vec![b"\x02oi".to_vec(), vec![0xFB], vec![0]],
+        ));
+        let r = conexao_com(porta).consultar("SELECT 1", 100).unwrap();
+        assert_eq!(r.colunas.len(), 1);
+        assert_eq!(r.colunas[0].nome, "nome");
+        assert_eq!(r.colunas[0].tabela, "t");
+        assert_eq!(
+            r.linhas,
+            vec![
+                vec![Some("oi".to_string())],
+                vec![None],
+                vec![Some(String::new())]
+            ]
+        );
+    }
+
+    /// A saudacao completa de um MySQL(R) 8 com `mysql_native_password`.
+    fn saudacao() -> Vec<u8> {
+        let mut p = vec![10];
+        p.extend_from_slice(b"8.0.36\0");
+        p.extend_from_slice(&7u32.to_le_bytes()); // conexao
+        p.extend_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8]); // sal, parte 1
+        p.push(0); // enchimento
+        p.extend_from_slice(&[0xff, 0xf7, 45, 2, 0, 0xff, 0x81]); // capacidades, charset, estado
+        p.push(21); // tamanho do sal
+        p.extend_from_slice(&[0; 10]); // reservados
+        p.extend_from_slice(&[9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 0]); // sal, parte 2
+        p.extend_from_slice(b"mysql_native_password\0");
+        p
+    }
+
+    fn abrir_em(porta: u16) -> Result<Conexao> {
+        Conexao::abrir("127.0.0.1", porta, "u", "s", "", Duration::from_secs(5))
+    }
+
+    /// **544, o irmao no aperto de mao: a troca de plugin sem o NUL.**
+    ///
+    /// Mesmo parser, mesma pergunta -- «o outro lado derruba este lado com a
+    /// forma do pacote?» -- e antes da credencial: basta quem responde na
+    /// porta. O `cadeia_ate_nulo` deixava o indice um alem do fim, e o
+    /// `r[i..]` seguinte entrava em panico.
+    #[test]
+    fn troca_de_plugin_sem_nulo_e_recusada_sem_panico() {
+        let porta = servidor_falso(vec![
+            Passo::Mandar(saudacao()),
+            Passo::Ler,
+            Passo::Mandar(vec![0xFE, b'x']),
+        ]);
+        let erro = abrir_em(porta).err().expect("o plugin «x» nao existe");
+        assert!(erro.to_string().contains("nao suportado"), "{erro}");
+    }
+
+    /// **544, o irmao na saudacao curta:** os campos fixos se pulam sem
+    /// conferir o tamanho, e o nome do plugin era lido de ALEM do fim.
+    /// Curta e sem plugin, a saudacao vale como `mysql_native_password`, que
+    /// e o que o codigo ja dizia para o nome vazio.
+    #[test]
+    fn saudacao_curta_nao_entra_em_panico() {
+        // Ate o fim da primeira parte do sal: versao, conexao e os 8 bytes.
+        let curta = saudacao()[..20].to_vec();
+        let porta = servidor_falso(vec![
+            Passo::Mandar(curta),
+            Passo::Ler,
+            Passo::Mandar(vec![0, 0, 0, 2, 0, 0, 0]),
+        ]);
+        let c = abrir_em(porta).expect("a saudacao curta vale como nativa");
+        assert_eq!(c.versao, "8.0.36");
+    }
+
+    /// O aperto de mao bem formado continua: saudacao, resposta, OK.
+    #[test]
+    fn aperto_de_mao_bem_formado_continua() {
+        let porta = servidor_falso(vec![
+            Passo::Mandar(saudacao()),
+            Passo::Ler,
+            Passo::Mandar(vec![0, 0, 0, 2, 0, 0, 0]),
+        ]);
+        let c = abrir_em(porta).unwrap();
+        assert_eq!((c.versao.as_str(), c.conexao_id), ("8.0.36", 7));
     }
 }

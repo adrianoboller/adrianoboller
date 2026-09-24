@@ -102,6 +102,24 @@ pub const ITERACOES_MAXIMAS_DO_CADASTRO: u32 = 10 * phxsql_store::cofre::ITERACO
 /// caracteres hexadecimais, num arquivo lido uma vez por arranque.
 const DEGRAU_DO_ENVELOPE: usize = 128;
 
+/// Teto de colunas de um resultado vindo do OUTRO banco, conferido ANTES de
+/// reservar capacidade nenhuma -- pedidos 443 (MySQL) e 544 (PostgreSQL).
+///
+/// A contagem vem do fio, escrita pelo outro lado: um `lenenc` de ate 2^64-1
+/// no MySQL(R), um `int16` com sinal no PostgreSQL(R). Os dois clientes falam
+/// em claro, entao «o outro lado» inclui quem esta no meio da conexao. Um
+/// `Vec::with_capacity` com esse numero nao devolve erro para o chamador
+/// tratar: o calculo da capacidade estoura (`-1i16 as usize` e `usize::MAX`)
+/// ou o alocador aborta o processo -- a familia do pedido 434.
+///
+/// Mora aqui, e nao em cada dialeto, porque a pergunta e UMA -- «quantas
+/// colunas este lado aceita reservar do outro» -- e dois numeros para ela
+/// divergiriam no primeiro ajuste. 4096 e o teto de fabrica do MySQL(R)
+/// ("Limits on Table Column Count"); o do PostgreSQL(R) e menor (1664 numa
+/// lista de saida, `MaxTupleAttributeNumber`), entao nenhuma resposta
+/// legitima de nenhum dos dois passa dele.
+pub const TETO_DE_COLUNAS: u64 = 4096;
+
 /// Qual banco esta do outro lado.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Motor {

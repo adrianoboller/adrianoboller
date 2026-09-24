@@ -7295,7 +7295,28 @@ impl Servidor {
     /// nao com quem clicou -- senao rodar agora seria um jeito de emprestar o
     /// proprio poder para o job. Quem clica precisa de `administrar`, que e o
     /// que o portao ja exigiu para chegar ate aqui.
+    ///
+    /// # Job nao dispara job (pedido 530)
+    ///
+    /// Recusa quando quem pede e a propria corrida de um job (a filha de
+    /// familia `corrida`, pedido 502). Cada `job_rodar` de dentro de uma
+    /// corrida sobe OUTRA filha e espera por ela: um job que rode a si mesmo,
+    /// ou um ciclo A->B->A, empilha uma thread por nivel sem teto nenhum --
+    /// medido pelo papel C, 45 corridas aninhadas vivas ate o teto de
+    /// enderecamento de 1,5 GB que a propria prova impos. Nenhum dos maduros
+    /// deixa um evento ou job disparar outro de forma sincrona, e o
+    /// encadeamento que sobra -- «B depois de A» -- e agenda, nao chamada. A
+    /// pergunta e pela familia da thread, e nao pelo pedido: assim vale para
+    /// o `job_rodar` que chega aninhado em qualquer outra operacao.
     fn op_job_rodar(&self, p: &Json) -> Result<Json> {
+        if crate::telemetria::familia_desta_thread() == Some("corrida") {
+            return Err(PhxError::LimiteExcedido(
+                "job nao dispara job: este job_rodar veio de dentro da corrida de \
+                 outro job, e cada nivel subiria uma thread a mais sem teto \
+                 (pedido 530). Para rodar um job depois do outro, agende os dois"
+                    .into(),
+            ));
+        }
         let nome = p.texto_ou("nome", "").trim().to_string();
         let inicio = crate::agora_ms();
         let r = self.rodar_job(&nome, "tela");
