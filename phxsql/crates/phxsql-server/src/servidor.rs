@@ -157,6 +157,13 @@ pub(crate) const OPS_ESCRITA: &[&str] = &[
     // poder fazer num servidor somente-leitura antes de decidir.
     "restaurar_backup",
     "esvaziar_lixeira",
+    // `expurgar_trilha` NAO entra, e a ausencia e decisao do papel C (pedido
+    // 368, condicao C2): a trilha `.lgpd` e arquivo LOCAL do no -- a replica
+    // escreve a dela (o registro de ACESSO nasce de leitura) e nao a recebe
+    // do source. Expurga-la e manutencao do arquivo deste servidor, como o
+    // relogio da retencao, que roda em todo no. Na lista, a replica de
+    // leitura redirecionaria para o primario, e o somente-leitura recusaria:
+    // o administrador nunca alcancaria a trilha da propria replica.
     // As tres que gravam na tabela de textos da tela. Num servidor somente
     // leitura semear nao pode gravar, e as outras duas apagam trabalho.
     "idiomas_carga",
@@ -998,6 +1005,14 @@ pub struct Servidor {
     /// Quando cada aviso de job saiu por e-mail, por chave `falha:nome` /
     /// `parado:nome` -- o silencio entre avisos repetidos, como o do disco.
     avisos_de_jobs: Mutex<HashMap<String, i64>>,
+    /// Um expurgo da trilha por vez no processo (pedido 368).
+    ///
+    /// O motor do expurgo solta a trava global entre planejar e apagar, para o
+    /// `fsync` do rastro nao segurar o servidor inteiro. Sem esta trava, o
+    /// relogio da retencao e o administrador poderiam planejar o MESMO volume
+    /// ao mesmo tempo -- e o rastro sairia duas vezes para um apagamento so.
+    /// Nunca e tomada com a trava de dados na mao: o motor a pega ANTES.
+    expurgo_da_trilha: Mutex<()>,
     /// Quando o aviso de VIOLACAO GRAVE de cada IP saiu por e-mail, por chave
     /// `grave:<ip>` -- o mesmo silencio dos jobs e do disco.
     avisos_de_seguranca: Mutex<HashMap<String, i64>>,
@@ -1361,6 +1376,7 @@ impl Servidor {
             relogio_de_jobs: AtomicBool::new(false),
             jobs_rodando: Mutex::new(Vec::new()),
             avisos_de_jobs: Mutex::new(HashMap::new()),
+            expurgo_da_trilha: Mutex::new(()),
             avisos_de_seguranca: Mutex::new(HashMap::new()),
             porta_no_ar: AtomicBool::new(false),
             parar_de_aceitar: AtomicBool::new(false),
@@ -1914,6 +1930,7 @@ impl Servidor {
         self.subir_cluster();
         self.subir_backup_agendado();
         self.subir_jobs();
+        self.subir_retencao_da_trilha();
         self.ligar_relogio_de_gravacao();
         self.ligar_vigia_de_disco();
         self.ligar_sonda_de_disco();
@@ -11076,6 +11093,7 @@ impl Servidor {
             "trilha" | "trilha_lgpd" => self.op_trilha(p, sessao),
             "marcar_lgpd" | "marcar_dado_pessoal" => self.op_marcar_lgpd(p, sessao),
             "esvaziar_lixeira" => self.op_esvaziar_lixeira(p, sessao),
+            "expurgar_trilha" => self.op_expurgar_trilha(p, sessao),
             "diario" => self.op_diario(p, sessao),
             "profiler_ligar" => self.op_profiler_ligar(p, sessao),
             "profiler_desligar" => self.op_profiler_desligar(sessao),
@@ -20189,6 +20207,10 @@ impl Servidor {
                     ("tipo", Json::texto_de(m.tipo.nome())),
                     ("motivo", Json::texto_de(&m.motivo)),
                     ("identidade", Json::texto_de(&m.identidade)),
+                    // Pela CHAVE, e nao pelo texto da identidade: o tipo
+                    // `expurgo` tem dois donos, e quem os separa e o bit do
+                    // registro (pedido 368, condicao C1).
+                    ("expurgo_da_trilha", Json::Bool(m.expurgo_da_trilha())),
                     ("usuario", Json::de_u64(m.usuario as u64)),
                     (
                         "usuario_nome",
@@ -20398,6 +20420,308 @@ impl Servidor {
             ("tabela", Json::texto_de(p.texto_ou("tabela", ""))),
             ("apagadas", Json::de_u64(apagadas)),
         ]))
+    }
+
+    /// `expurgar_trilha`: derruba os volumes do `.lgpd` cujo registro MAIS
+    /// NOVO e anterior a `ate`. **So administrador.** Pedido 368.
+    ///
+    /// Decisao do dono, 24/09/2026: «Sim, apos 5 anos pode limpar ou pelo
+    /// admin». Esta e a metade «pelo admin»; a outra e o relogio da retencao
+    /// ([`Servidor::expurgar_trilhas_vencidas`]). As duas chamam o MESMO motor
+    /// ([`Servidor::expurgar_trilha_da_tabela`]) -- dois caminhos para a mesma
+    /// decisao seriam o comeco de duas regras.
+    ///
+    /// # `ate` e obrigatorio, e nao aceita o futuro
+    ///
+    /// Sem `ate` nao ha limite, e um expurgo sem limite apagaria todo volume
+    /// fechado -- ausencia de campo nao pode ser a ordem mais destrutiva que a
+    /// operacao sabe dar. E o futuro e recusado, alem da folga de deriva de
+    /// relogio que a casa ja admite (`FOLGA_DO_CARIMBO_MS`): nenhum registro
+    /// tem carimbo do futuro, entao um `ate` de 2062 compraria o mesmo que o de
+    /// agora -- e quem digita 2062 queria 2026. Para derrubar todo volume
+    /// fechado, manda-se o instante de agora, escrito.
+    fn op_expurgar_trilha(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        let motivo = p.texto_ou("motivo", "").trim().to_string();
+        if motivo.is_empty() {
+            return Err(PhxError::Esquema(
+                "informe \"motivo\": expurgar a trilha nao tem volta, e sem o \
+                 registro do por que nao sobra rastro nenhum"
+                    .into(),
+            ));
+        }
+        let Some(limite) = Self::instante_pedido(p, "ate", "ate_ms")? else {
+            return Err(PhxError::Esquema(
+                "informe \"ate\": sai o volume cujo registro mais novo e anterior \
+                 a este instante (2021-09-24, ou 2021-09-24T15:00:00Z; tudo em \
+                 UTC). Sem ele nao ha limite -- e sem limite nada se apaga"
+                    .into(),
+            ));
+        };
+        let agora = crate::agora_ms();
+        if limite > agora + crate::bidirecional::FOLGA_DO_CARIMBO_MS {
+            return Err(PhxError::Esquema(format!(
+                "\"ate\" esta no futuro ({}): nenhum registro da trilha e de depois \
+                 de agora, entao o expurgo so derruba o que ja passou. Para \
+                 derrubar todo volume fechado, mande o instante de agora",
+                phxsql_core::datahora::instante_iso(limite)
+            )));
+        }
+        let ExpurgoDaTabela {
+            expurgo: e,
+            restam,
+            fechou,
+        } = self.expurgar_trilha_da_tabela(
+            p,
+            sessao,
+            limite,
+            &motivo,
+            agora,
+            p.booleano_ou("fechar_ativo", false),
+        )?;
+        Ok(Json::objeto(vec![
+            ("database", Json::texto_de(p.texto_ou("database", ""))),
+            ("tabela", Json::texto_de(p.texto_ou("tabela", ""))),
+            (
+                "limite",
+                Json::texto_de(phxsql_core::datahora::instante_iso(e.limite)),
+            ),
+            ("limite_ms", Json::de_i64(e.limite)),
+            (
+                "volumes",
+                Json::Lista(
+                    e.volumes
+                        .iter()
+                        .map(|v| {
+                            Json::objeto(vec![
+                                ("volume", Json::de_u64(v.volume as u64)),
+                                ("registros", Json::de_u64(v.registros)),
+                                (
+                                    "mais_novo",
+                                    v.mais_novo
+                                        .map(|c| {
+                                            Json::texto_de(phxsql_core::datahora::instante_iso(c))
+                                        })
+                                        .unwrap_or(Json::Nulo),
+                                ),
+                                ("bytes", Json::de_u64(v.bytes)),
+                            ])
+                        })
+                        .collect(),
+                ),
+            ),
+            ("registros", Json::de_u64(e.registros())),
+            // Por que parou, pela CHAVE: quem le decide por ela, nunca pela
+            // frase. `volume_ativo` ou `fronteira` com `retido_vencido_desde`
+            // preenchido quer dizer que ha dado vencido que ESTE expurgo nao
+            // alcanca -- ele sai quando o volume fechar -- e isso tem de
+            // aparecer, e nao sumir da resposta.
+            ("parada", Json::texto_de(e.parada.nome())),
+            ("parou_no_volume", Json::de_u64(e.parou_no_volume as u64)),
+            (
+                "retido_vencido_desde",
+                e.retido_vencido_desde
+                    .map(|c| Json::texto_de(phxsql_core::datahora::instante_iso(c)))
+                    .unwrap_or(Json::Nulo),
+            ),
+            ("restam", Json::de_u64(restam)),
+            // O volume que fechou ANTES do plano -- por idade, ou pelo
+            // `fechar_ativo` do pedido. Nulo quando nenhum fechou.
+            (
+                "fechou",
+                fechou.map(|v| Json::de_u64(v as u64)).unwrap_or(Json::Nulo),
+            ),
+        ]))
+    }
+
+    /// O motor UNICO do expurgo da trilha: a op do administrador e o relogio
+    /// da retencao chamam isto, e nada mais. Devolve o que saiu e quantos
+    /// registros a trilha tem depois.
+    ///
+    /// # Tres fases, e a do meio sem a trava global
+    ///
+    /// A ordem e a do `esvaziar_lixeira`: o rastro vai ao `.reason` e ao disco
+    /// ANTES do primeiro volume sair -- o motivo tem de sobreviver ao dado.
+    /// Aqui o `fsync` do rastro acontece FORA da trava global: ele nao precisa
+    /// dela (e um arquivo que so esta funcao ainda vai tocar, levado ao disco
+    /// por um descritor proprio, sem mexer no registro de escritas de
+    /// ninguem), e segura-la durante um `fsync` e o que a catraca
+    /// `alcancam-fsync-2` do mapa da trava existe para impedir.
+    ///
+    /// O que isso custa: entre as fases o servidor atende outros pedidos. A
+    /// fase 3 confere de novo que nenhum volume planejado virou o ativo e que
+    /// cada um e o mesmo que foi planejado (`TrilhaFile::apagar_expurgados`),
+    /// e um expurgo por vez no processo (`expurgo_da_trilha`) impede o relogio
+    /// e o administrador de planejarem o mesmo volume duas vezes.
+    #[allow(clippy::too_many_arguments)]
+    fn expurgar_trilha_da_tabela(
+        &self,
+        p: &Json,
+        sessao: &Sessao,
+        limite: i64,
+        motivo: &str,
+        agora: i64,
+        fechar_ativo: bool,
+    ) -> Result<ExpurgoDaTabela> {
+        let _um_por_vez = self
+            .expurgo_da_trilha
+            .lock()
+            .map_err(|_| trava_envenenada())?;
+        // Fase 1, COM a trava: fecha o ativo que passou da idade (ou que o
+        // administrador mandou fechar) -- o expurgo nunca derruba o ativo, e
+        // e fechando-o que a tabela de pouco movimento chega a ter o que
+        // expurgar --, decide o que sai e grava o rastro.
+        let (fechou, preparado) = {
+            let dados = self.travar_dados()?;
+            let mut t = self.abrir_travada(&dados, p, sessao)?;
+            let fechou = t.fechar_volume_da_trilha(fechar_ativo, agora)?;
+            let e = t.preparar_expurgo_da_trilha(limite, motivo)?;
+            if e.volumes.is_empty() {
+                let restam = t.total_da_trilha()?;
+                return Ok(ExpurgoDaTabela {
+                    expurgo: e,
+                    restam,
+                    fechou,
+                });
+            }
+            (fechou, e)
+        };
+        // Fase 2, SEM a trava: o rastro vai ao disco.
+        let selado = preparado.selar()?;
+        // Fase 3, com a trava de novo: os volumes saem.
+        let restam = {
+            let dados = self.travar_dados()?;
+            let mut t = self.abrir_travada(&dados, p, sessao)?;
+            t.concluir_expurgo_da_trilha(&selado)?;
+            t.total_da_trilha()?
+        };
+        Ok(ExpurgoDaTabela {
+            expurgo: selado.em_expurgo(),
+            restam,
+            fechou,
+        })
+    }
+
+    /// O relogio da retencao, uma passada: expurga, tabela por tabela, os
+    /// volumes da trilha que o prazo de `lgpd.retencao_anos` venceu. `agora`
+    /// vem de fora para o teste poder viver seis anos num segundo.
+    ///
+    /// # Uma tomada da trava por tabela
+    ///
+    /// A lista de tabelas sai numa tomada so, e cada tabela e o motor de
+    /// sempre ([`Servidor::expurgar_trilha_da_tabela`]), com as tomadas dele.
+    /// Segurar a trava pela passada inteira pararia o servidor pelo tempo de
+    /// varrer todas as trilhas de todos os bancos.
+    ///
+    /// # O relatorio diz o que NAO fez
+    ///
+    /// Tabela com registro vencido que ficou -- porque mora no volume ativo,
+    /// ou num de fronteira -- entra pelo nome em `retidas`. Um relogio que so
+    /// contasse o que apagou esconderia exatamente o dado que ainda nao pode
+    /// sair.
+    ///
+    /// # O ativo velho fecha ANTES do plano
+    ///
+    /// O motor fecha, em cada tabela, o ativo cujo primeiro registro passou de
+    /// `lgpd.volume_dias` (formato B). «O ativo nunca sai» continua literal: o
+    /// que sai e o volume que ACABOU de fechar, na mesma passada, se o registro
+    /// mais novo dele ja passou do prazo.
+    fn expurgar_trilhas_vencidas(&self, agora: i64) -> Result<RetencaoDaTrilha> {
+        let anos = self.config.lgpd.retencao_anos;
+        let mut r = RetencaoDaTrilha::default();
+        if anos == 0 {
+            return Ok(r);
+        }
+        let limite = phxsql_core::datahora::recuar_anos(agora, anos);
+        r.limite = limite;
+        let motivo = format!("expurgo automatico: retencao de {anos} ano(s) (lgpd.retencao_anos)");
+        let tabelas: Vec<(String, String)> = {
+            let dados = self.travar_dados()?;
+            let mut v = Vec::new();
+            for db in dados.databases()? {
+                match dados.abrir_database(&db).and_then(|b| b.todas_as_tabelas()) {
+                    Ok(lista) => v.extend(lista.into_iter().map(|t| (db.clone(), t))),
+                    Err(e) => r.falhas.push(format!("{db}: {e}")),
+                }
+            }
+            v
+        };
+        // Sem login e sem IP, e e a verdade: quem pede e o proprio servidor.
+        // O `.reason` grava usuario 0, que e o que ja quer dizer «servico».
+        let sessao = Sessao::default();
+        for (db, tab) in tabelas {
+            let p = Json::objeto(vec![
+                ("database", Json::texto_de(&db)),
+                ("tabela", Json::texto_de(&tab)),
+            ]);
+            match self.expurgar_trilha_da_tabela(&p, &sessao, limite, &motivo, agora, false) {
+                Ok(ExpurgoDaTabela {
+                    expurgo: e, fechou, ..
+                }) => {
+                    r.fechados += u64::from(fechou.is_some());
+                    if e.parada != phxsql_store::trilha::Parada::SemTrilha {
+                        r.com_trilha += 1;
+                    }
+                    r.volumes += e.volumes.len() as u64;
+                    r.registros += e.registros();
+                    if e.retido_vencido_desde.is_some() {
+                        r.retidas.push(format!("{db}.{tab} ({})", e.parada.nome()));
+                    }
+                }
+                Err(e) => r.falhas.push(format!("{db}.{tab}: {e}")),
+            }
+        }
+        Ok(r)
+    }
+
+    /// Sobe o relogio da retencao da trilha, se `lgpd.retencao_anos` pedir.
+    ///
+    /// O portao vem ANTES do trabalho: com o prazo em zero nao ha thread, nem
+    /// uma que acorde para descobrir que nao tem o que fazer.
+    ///
+    /// Uma passada por dia, e a primeira um minuto depois do arranque -- nao
+    /// no arranque, que e quando a recuperacao das transacoes e a primeira
+    /// leva de clientes disputam a trava. Acorda de minuto em minuto e
+    /// compara o relogio, pelo mesmo motivo do backup agendado: dormir um dia
+    /// inteiro seria fragil, porque a maquina suspende e o relogio anda.
+    fn subir_retencao_da_trilha(self: &Arc<Self>) {
+        let anos = self.config.lgpd.retencao_anos;
+        if anos == 0 {
+            return;
+        }
+        eprintln!(
+            "retencao da trilha LGPD: uma vez por dia saem os volumes do .lgpd \
+             cujo registro mais novo passou de {anos} ano(s); o volume ativo nunca"
+        );
+        let servidor = Arc::clone(self);
+        self.telemetria.subir(
+            "retencao-trilha",
+            "uma vez por dia, fecha o ativo do .lgpd que passou de \
+             lgpd.volume_dias e derruba os volumes fechados cujo registro mais \
+             novo passou do prazo de lgpd.retencao_anos -- volume inteiro, nunca \
+             o ativo, com o rastro no .reason antes",
+            "servico",
+            crate::agora_ms(),
+            move |fio| {
+                // O INTERVALO sai do relogio monotonico, e so o LIMITE do
+                // prazo sai do relogio de parede (achado A6 do parecer do
+                // DBA). Um ajuste de hora para tras de um dia nao pode calar
+                // a passada, nem um para a frente fazer duas no mesmo dia.
+                let mut ultima: Option<Instant> = None;
+                loop {
+                    std::thread::sleep(Duration::from_secs(60));
+                    if ultima.is_some_and(|u| u.elapsed() < UM_DIA) {
+                        fio.fazendo("esperando a passada do dia");
+                        continue;
+                    }
+                    ultima = Some(Instant::now());
+                    fio.fazendo("varrendo as trilhas vencidas");
+                    match servidor.expurgar_trilhas_vencidas(crate::agora_ms()) {
+                        Ok(r) => eprintln!("{}", r.resumo()),
+                        Err(e) => eprintln!("retencao da trilha FALHOU: {e}"),
+                    }
+                }
+            },
+        );
     }
 
     /// Copia de seguranca, com a trava de dados segurada do inicio ao fim.
@@ -25962,6 +26286,71 @@ fn u8_para_papel(v: u8) -> Papel {
         4 => Papel::Spare,
         5 => Papel::Multi,
         _ => Papel::Isolado,
+    }
+}
+
+/// De quanto em quanto o relogio da retencao da trilha faz uma passada.
+///
+/// Um dia, e nao menos: o prazo e contado em ANOS, e o volume que venceu
+/// hoje as 10h e o mesmo que vence amanha as 10h a menos de um dia de
+/// diferenca num prazo de cinco anos. Mais passadas so pagariam mais
+/// varreduras do volume de fronteira pelo mesmo resultado.
+const UM_DIA: Duration = Duration::from_secs(24 * 60 * 60);
+
+/// O que o motor do expurgo da trilha fez numa tabela.
+struct ExpurgoDaTabela {
+    expurgo: phxsql_store::trilha::Expurgo,
+    /// Registros que a trilha tem depois.
+    restam: u64,
+    /// O volume ativo que fechou antes do plano, se algum.
+    fechou: Option<u32>,
+}
+
+/// O relatorio de uma passada do relogio da retencao.
+#[derive(Debug, Default)]
+struct RetencaoDaTrilha {
+    /// O limite desta passada: saiu o volume cujo registro mais novo e
+    /// anterior a ele.
+    limite: i64,
+    /// Tabelas que tem `.lgpd`.
+    com_trilha: u64,
+    /// Volumes ativos que fecharam por idade nesta passada.
+    fechados: u64,
+    volumes: u64,
+    registros: u64,
+    /// Tabelas com registro VENCIDO que ficou, com a causa pela chave.
+    retidas: Vec<String>,
+    falhas: Vec<String>,
+}
+
+impl RetencaoDaTrilha {
+    /// Uma linha para o log do servidor -- e ela diz o que NAO fez tambem.
+    fn resumo(&self) -> String {
+        let mut s = format!(
+            "retencao da trilha: {} volume(s) e {} registro(s) expurgados em {} \
+             tabela(s) com trilha, {} ativo(s) fechado(s) por idade (limite {})",
+            self.volumes,
+            self.registros,
+            self.com_trilha,
+            self.fechados,
+            phxsql_core::datahora::instante_iso(self.limite)
+        );
+        if !self.retidas.is_empty() {
+            s.push_str(&format!(
+                "; {} tabela(s) guardam registro VENCIDO que nao sai sem cortar volume ao \
+                 meio: {}",
+                self.retidas.len(),
+                self.retidas.join(", ")
+            ));
+        }
+        if !self.falhas.is_empty() {
+            s.push_str(&format!(
+                "; {} falha(s): {}",
+                self.falhas.len(),
+                self.falhas.join(" | ")
+            ));
+        }
+        s
     }
 }
 
@@ -53698,5 +54087,387 @@ mod testes_corte_da_composicao {
             !r.booleano_ou("truncado", true),
             "disse que cortou sem cortar: {r:?}"
         );
+    }
+}
+
+/// O expurgo da trilha `.lgpd` pelo servidor (pedido 368): a op do
+/// administrador e o relogio da retencao, que chamam o MESMO motor.
+#[cfg(test)]
+mod testes_expurgo_da_trilha {
+    use super::*;
+
+    fn servidor_com(
+        dir: &std::path::Path,
+        retencao_anos: u32,
+        somente_leitura: bool,
+    ) -> Arc<Servidor> {
+        let mut c = Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            token: "t".into(),
+            somente_leitura,
+            ..Config::default()
+        };
+        c.lgpd.retencao_anos = retencao_anos;
+        Servidor::novo(c).unwrap()
+    }
+
+    fn servidor(dir: &std::path::Path, retencao_anos: u32) -> Arc<Servidor> {
+        servidor_com(dir, retencao_anos, false)
+    }
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    /// Banco `b` e a tabela `c` como o PROTOCOLO a cria -- sem
+    /// `registros_por_arquivo`, a tabela padrao --, com o `cpf` marcado e
+    /// `alteracoes` alteracoes gravadas na trilha.
+    fn tabela_padrao(s: &Arc<Servidor>, alteracoes: u32) {
+        let dono = Sessao::default();
+        s.executar("criar_database", &pedido(r#"{"database":"b"}"#), &dono)
+            .unwrap();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"c",
+                    "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                               {"nome":"cpf","tipo":"Str(14)"}],
+                    "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true}]}"#,
+            ),
+            &dono,
+        )
+        .unwrap();
+        s.executar(
+            "marcar_lgpd",
+            &pedido(r#"{"database":"b","tabela":"c","colunas":{"cpf":"pessoal"}}"#),
+            &dono,
+        )
+        .unwrap();
+        s.executar(
+            "inserir",
+            &pedido(r#"{"database":"b","tabela":"c","linha":{"id":1,"cpf":"01234567890"}}"#),
+            &dono,
+        )
+        .unwrap();
+        alterar(s, 1, alteracoes);
+    }
+
+    fn alterar(s: &Arc<Servidor>, de: u32, quantas: u32) {
+        for i in de..de + quantas {
+            s.executar(
+                "atualizar",
+                &pedido(&format!(
+                    r#"{{"database":"b","tabela":"c","rowid":1,"valores":{{"id":1,"cpf":"{i:011}"}}}}"#
+                )),
+                &Sessao::default(),
+            )
+            .unwrap();
+        }
+    }
+
+    /// Os volumes do `.lgpd` pelo SISTEMA DE ARQUIVOS.
+    fn no_disco(dir: &std::path::Path) -> Vec<String> {
+        let mut v: Vec<String> = std::fs::read_dir(dir.join("b"))
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.ends_with(".lgpd"))
+            .collect();
+        v.sort();
+        v
+    }
+
+    fn expurgos_no_reason(s: &Arc<Servidor>) -> Vec<Json> {
+        let m = s
+            .executar(
+                "motivos",
+                &pedido(r#"{"database":"b","tabela":"c"}"#),
+                &Sessao::default(),
+            )
+            .unwrap();
+        m.campo("motivos")
+            .and_then(Json::lista)
+            .unwrap()
+            .iter()
+            .filter(|r| r.texto_ou("tipo", "") == "expurgo")
+            .cloned()
+            .collect()
+    }
+
+    fn expurgar(s: &Arc<Servidor>, extra: &str) -> Result<Json> {
+        s.executar(
+            "expurgar_trilha",
+            &pedido(&format!(r#"{{"database":"b","tabela":"c"{extra}}}"#)),
+            &Sessao::default(),
+        )
+    }
+
+    /// **A op do administrador, de ponta a ponta, na tabela padrao.** As tres
+    /// recusas (sem motivo, sem limite, limite no futuro) nao tocam em nada.
+    /// Tres pedidos com `fechar_ativo` e um limite de 2000 fecham tres volumes
+    /// sem apagar nenhum (nada e de antes de 2000). O pedido com o limite de
+    /// agora derruba os tres e deixa o ativo -- conferido no DIRETORIO --,
+    /// grava o rastro no `.reason` com o bit do expurgo da trilha e sem a
+    /// chave de linha, e a op `trilha` continua lendo o que sobrou.
+    #[test]
+    fn o_administrador_expurga_so_volume_fechado_e_o_rastro_fica() {
+        let dir = DirTemp::novo("expurgo-op");
+        let s = servidor(&dir, 5);
+        tabela_padrao(&s, 10);
+        assert_eq!(no_disco(&dir), vec!["c.lgpd"]);
+
+        for (extra, deve_citar) in [
+            (r#","ate":"2099-01-01""#, "motivo"),
+            (r#","motivo":"prazo""#, "\"ate\""),
+            (r#","motivo":"prazo","ate":"2099-01-01""#, "futuro"),
+        ] {
+            let e = expurgar(&s, extra).unwrap_err().to_string();
+            assert!(e.contains(deve_citar), "{extra}: {e}");
+        }
+        assert_eq!(no_disco(&dir), vec!["c.lgpd"], "uma recusa mexeu na trilha");
+        assert!(expurgos_no_reason(&s).is_empty(), "recusa deixou rastro");
+
+        for (n, esperado) in [(1u32, 1u64), (2, 2), (3, 3)] {
+            let r = expurgar(
+                &s,
+                r#","motivo":"fechar","ate":"2000-01-01","fechar_ativo":true"#,
+            )
+            .unwrap();
+            assert_eq!(
+                r.inteiro_ou("fechou", -1),
+                esperado as i64,
+                "{}",
+                r.escrever()
+            );
+            assert_eq!(
+                r.campo("volumes").and_then(Json::lista).map(|l| l.len()),
+                Some(0)
+            );
+            alterar(&s, 100 * n, 10);
+        }
+        assert_eq!(
+            no_disco(&dir),
+            vec!["c.lgpd", "c_001.lgpd", "c_002.lgpd", "c_003.lgpd"]
+        );
+
+        // +1: o ultimo registro pode ser do MESMO milissegundo, e o limite
+        // derruba so o que e ANTERIOR a ele.
+        let agora = crate::agora_ms() + 1;
+        let r = expurgar(
+            &s,
+            &format!(r#","motivo":"prazo de guarda","ate_ms":{agora}"#),
+        )
+        .unwrap();
+        let saidos = r.campo("volumes").and_then(Json::lista).unwrap();
+        assert_eq!(saidos.len(), 3, "{}", r.escrever());
+        assert_eq!(r.texto_ou("parada", ""), "volume_ativo");
+        assert_eq!(r.inteiro_ou("parou_no_volume", -1), 4);
+        assert!(
+            matches!(r.campo("fechou"), Some(Json::Nulo)),
+            "{}",
+            r.escrever()
+        );
+        assert_eq!(
+            no_disco(&dir),
+            vec!["c.lgpd"],
+            "o diretorio nao e o que a resposta diz"
+        );
+
+        let rastro = expurgos_no_reason(&s);
+        assert_eq!(rastro.len(), 1, "{rastro:?}");
+        assert!(
+            rastro[0].booleano_ou("expurgo_da_trilha", false),
+            "{:?}",
+            rastro[0]
+        );
+        let identidade = rastro[0].texto_ou("identidade", "");
+        assert!(identidade.starts_with(".lgpd volumes 1-3 "), "{identidade}");
+        assert!(
+            !identidade.contains("01234567890"),
+            "o rastro guardou a chave que o expurgo apagou: {identidade}"
+        );
+
+        let t = s
+            .executar(
+                "trilha",
+                &pedido(r#"{"database":"b","tabela":"c","limite":0}"#),
+                &Sessao::default(),
+            )
+            .unwrap();
+        assert_eq!(t.inteiro_ou("total", -1), r.inteiro_ou("restam", -2));
+        assert_eq!(t.inteiro_ou("total", -1), 10);
+    }
+
+    /// Tabela sem trilha: nada acontece, e a resposta diz `sem_trilha` -- sem
+    /// criar arquivo nem deixar rastro.
+    #[test]
+    fn tabela_sem_trilha_responde_sem_trilha() {
+        let dir = DirTemp::novo("expurgo-sem-trilha");
+        let s = servidor(&dir, 5);
+        let dono = Sessao::default();
+        s.executar("criar_database", &pedido(r#"{"database":"b"}"#), &dono)
+            .unwrap();
+        s.executar(
+            "criar_tabela",
+            &pedido(r#"{"database":"b","tabela":"c","colunas":[{"nome":"n","tipo":"Int8"}]}"#),
+            &dono,
+        )
+        .unwrap();
+        let agora = crate::agora_ms();
+        let r = expurgar(
+            &s,
+            &format!(r#","motivo":"x","ate_ms":{agora},"fechar_ativo":true"#),
+        )
+        .unwrap();
+        assert_eq!(r.texto_ou("parada", ""), "sem_trilha");
+        assert!(no_disco(&dir).is_empty());
+        assert!(expurgos_no_reason(&s).is_empty());
+    }
+
+    /// **C2: a trilha e do NO.** So administrador, e FORA do `OPS_ESCRITA`:
+    /// num servidor somente-leitura -- o que uma replica e -- o administrador
+    /// expurga a trilha dele. O controle no mesmo servidor: o
+    /// `esvaziar_lixeira`, que continua na lista, e recusado.
+    ///
+    /// **Defeito reposto** (`expurgar_trilha` de volta no `OPS_ESCRITA`): a
+    /// replica recusa, e o `unwrap` do expurgo cai.
+    #[test]
+    fn o_expurgo_pede_administrar_e_roda_no_servidor_somente_leitura() {
+        assert_eq!(
+            Atividade::da_operacao("expurgar_trilha"),
+            Some(Atividade::Administrar)
+        );
+
+        let dir = DirTemp::novo("expurgo-replica");
+        {
+            let s = servidor(&dir, 5);
+            tabela_padrao(&s, 5);
+        }
+        // Pelo `despachar`, que e a porta com os portoes -- o `executar` dos
+        // outros testes pula o do somente-leitura.
+        let s = servidor_com(&dir, 5, true);
+        let mut sessao = Sessao::default();
+        let (_, _, lixeira) = s.despachar(
+            r#"{"token":"t","op":"esvaziar_lixeira","database":"b","tabela":"c","motivo":"x"}"#,
+            &mut sessao,
+            "127.0.0.1",
+        );
+        let lixeira = lixeira.unwrap_err();
+        assert!(matches!(lixeira, PhxError::Autorizacao(_)), "{lixeira}");
+        // +1: o ultimo registro pode ser do MESMO milissegundo, e o limite
+        // derruba so o que e ANTERIOR a ele.
+        let agora = crate::agora_ms() + 1;
+        let (_, _, r) = s.despachar(
+            &format!(
+                r#"{{"token":"t","op":"expurgar_trilha","database":"b","tabela":"c",
+                    "motivo":"na replica","ate_ms":{agora},"fechar_ativo":true}}"#
+            ),
+            &mut sessao,
+            "127.0.0.1",
+        );
+        let r = r.unwrap();
+        assert_eq!(r.inteiro_ou("fechou", -1), 1);
+        assert_eq!(
+            r.campo("volumes").and_then(Json::lista).map(|l| l.len()),
+            Some(1)
+        );
+        assert_eq!(no_disco(&dir), vec!["c.lgpd"]);
+        // Por ULTIMO, para o defeito reposto cair no comportamento (a replica
+        // recusando) e nao nesta linha, que so repete a lista.
+        assert!(!OPS_ESCRITA.contains(&"expurgar_trilha"));
+    }
+
+    /// **O relogio da retencao, na tabela PADRAO.** Com o prazo de 5 anos e a
+    /// trilha de agora: a passada de hoje nao fecha nem apaga nada; a de daqui
+    /// a dois anos FECHA o ativo por idade (o primeiro registro passou de 30
+    /// dias) e nao apaga -- o volume fechado ainda esta no prazo --; a de
+    /// daqui a seis anos derruba o volume fechado e nada fica retido. Rastro
+    /// assinado pelo servidor (usuario 0) com o prazo no motivo.
+    ///
+    /// **Defeito reposto** (o limite sai de `agora` em vez de
+    /// `recuar_anos(agora, anos)`): a passada de daqui a dois anos ja apaga, e
+    /// a asserção dela cai.
+    #[test]
+    fn o_relogio_da_retencao_fecha_por_idade_e_so_derruba_o_que_passou_do_prazo() {
+        let dir = DirTemp::novo("expurgo-relogio");
+        let s = servidor(&dir, 5);
+        tabela_padrao(&s, 20);
+        let agora = crate::agora_ms();
+
+        let hoje = s.expurgar_trilhas_vencidas(agora).unwrap();
+        assert_eq!((hoje.fechados, hoje.volumes), (0, 0), "{}", hoje.resumo());
+        assert_eq!(no_disco(&dir), vec!["c.lgpd"]);
+
+        let dois_anos = s
+            .expurgar_trilhas_vencidas(agora + 2 * 366 * 86_400_000)
+            .unwrap();
+        assert_eq!(
+            (dois_anos.fechados, dois_anos.volumes),
+            (1, 0),
+            "{}",
+            dois_anos.resumo()
+        );
+        assert_eq!(no_disco(&dir), vec!["c.lgpd", "c_001.lgpd"]);
+        assert!(expurgos_no_reason(&s).is_empty());
+
+        let seis_anos = s
+            .expurgar_trilhas_vencidas(agora + 6 * 366 * 86_400_000)
+            .unwrap();
+        assert_eq!(seis_anos.volumes, 1, "{}", seis_anos.resumo());
+        assert_eq!(seis_anos.registros, 20);
+        assert_eq!(seis_anos.com_trilha, 1);
+        assert!(seis_anos.retidas.is_empty(), "{:?}", seis_anos.retidas);
+        assert!(seis_anos.falhas.is_empty(), "{:?}", seis_anos.falhas);
+        assert_eq!(no_disco(&dir), vec!["c.lgpd"]);
+
+        let rastro = expurgos_no_reason(&s);
+        assert_eq!(rastro.len(), 1);
+        assert_eq!(rastro[0].inteiro_ou("usuario", -1), 0);
+        assert!(rastro[0].booleano_ou("expurgo_da_trilha", false));
+        assert!(
+            rastro[0]
+                .texto_ou("motivo", "")
+                .contains("lgpd.retencao_anos"),
+            "{:?}",
+            rastro[0]
+        );
+    }
+
+    /// **Prazo zero desliga o relogio -- antes do trabalho.** Nem a passada
+    /// apaga, nem a thread sobe. E o controle do outro lado: com prazo, a
+    /// thread aparece com o nome que o teste procura, senao a primeira metade
+    /// passaria com qualquer nome.
+    ///
+    /// **Defeito reposto** (tirar o `if anos == 0 { return; }` do
+    /// `subir_retencao_da_trilha`): a thread sobe com o prazo zero e a
+    /// asserção do meio cai.
+    #[test]
+    fn prazo_zero_desliga_o_relogio_antes_do_trabalho() {
+        let dir = DirTemp::novo("expurgo-zero");
+        let s = servidor(&dir, 0);
+        tabela_padrao(&s, 5);
+        let antes = no_disco(&dir);
+        let r = s
+            .expurgar_trilhas_vencidas(crate::agora_ms() + 100 * 366 * 86_400_000)
+            .unwrap();
+        assert_eq!((r.volumes, r.com_trilha, r.fechados), (0, 0, 0));
+        assert_eq!(no_disco(&dir), antes);
+
+        let tem_relogio = |s: &Arc<Servidor>| {
+            s.telemetria
+                .fios()
+                .iter()
+                .any(|f| f.nome == "retencao-trilha")
+        };
+        s.subir_retencao_da_trilha();
+        assert!(!tem_relogio(&s), "o prazo zero subiu o relogio");
+
+        let dir2 = DirTemp::novo("expurgo-cinco");
+        let s2 = servidor(&dir2, 5);
+        s2.subir_retencao_da_trilha();
+        assert!(tem_relogio(&s2), "com prazo, o relogio devia ter subido");
     }
 }

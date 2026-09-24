@@ -197,6 +197,14 @@ CATALOGO = [
     },
     {
         "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "agulha": '"retencao-trilha"',
+        "nome": "retencao-trilha",
+        "teto": "1 (sobe uma vez no arranque, so com `lgpd.retencao_anos` > 0; "
+                "o portao e o `if anos == 0 { return; }` antes do `subir`). "
+                "Pedido 368.",
+    },
+    {
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
         "agulha": '"relogio-jobs"',
         "nome": "relogio-jobs",
         "teto": "1 (sobe uma vez; `relogio_de_jobs` e' um `AtomicBool` que "

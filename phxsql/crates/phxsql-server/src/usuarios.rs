@@ -296,6 +296,10 @@ impl Atividade {
             // Esvaziar a lixeira e a unica operacao do motor que apaga dado
             // sem rede nenhuma embaixo.
             "esvaziar_lixeira" => Atividade::Administrar,
+            // Expurgar a trilha apaga a PROVA de quem mexeu e quem viu o dado
+            // pessoal -- e quem a le ja precisa administrar (`trilha`, acima).
+            // Pedir menos para apagar do que para ler seria a porta dos fundos.
+            "expurgar_trilha" => Atividade::Administrar,
             "criar_database" | "criar_schema" | "criar_tabela" | "duplicar_tabela"
             | "copiar_tabela" => Atividade::Criar,
             // Declarar e desdeclarar chave estrangeira e desenhar o MODELO, e

@@ -748,6 +748,7 @@ O nome também vai para o sistema operacional (`thread::Builder::name`), então
 | `vigia-jobs` | avisa o job **parado** — ligado, hora vencida e sem relógio que o rode | `alertas.email.avisar_jobs` |
 | `aviso-job` | entrega **um** e-mail de job que falhou e sai | por falha |
 | `backup-agendado` | confere de minuto em minuto se chegou a hora do backup | `backup.agendado` |
+| `retencao-trilha` | uma vez por dia (intervalo pelo relógio monotônico), fecha o ativo do `.lgpd` que passou de `lgpd.volume_dias` e derruba os volumes fechados cujo registro mais novo passou do prazo — volume inteiro, nunca o ativo (pedido 368) | `lgpd.retencao_anos` > 0 (o padrão, 5) |
 | `replica-<origem>` | puxa os eventos do diário de **uma** origem e os aplica aqui | papel réplica, uma por origem |
 | `pulso-<nó>` | manda o pulso para **um** nó do cluster e escuta o dele | com bloco `cluster` |
 | `arbitro-cluster` | conta os pulsos, apura a maioria e promove quando o master para de responder | com bloco `cluster` |

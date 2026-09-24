@@ -225,9 +225,78 @@ pub fn ms_de_instante_iso(texto: &str) -> Option<i64> {
     Some(ms)
 }
 
+/// O mesmo instante do calendario `anos` anos antes -- a conta de um prazo de
+/// retencao dito em ANOS.
+///
+/// # Por que calendario, e nao `anos x 365,25 dias`
+///
+/// Porque prazo em anos e prazo de calendario: «cinco anos depois de 24 de
+/// setembro de 2021» e 24 de setembro de 2026, e nao 1.826,25 dias depois. A
+/// conta pela media erra para os DOIS lados conforme quantos 29 de fevereiro
+/// cairam no meio -- e errar para o lado curto e apagar antes do prazo, que e o
+/// unico erro que um expurgo nao pode cometer.
+///
+/// # O 29 de fevereiro
+///
+/// Recuar de 29/02 para um ano comum cai em **28/02**, e nao em 01/03: o dia
+/// mais cedo dos dois. Um limite mais cedo derruba MENOS, nunca mais -- e
+/// entre guardar um dia a mais e apagar um dia antes, esta funcao escolhe
+/// guardar. A hora do dia fica a mesma.
+pub fn recuar_anos(milissegundos: i64, anos: u32) -> i64 {
+    let dias = milissegundos.div_euclid(86_400_000);
+    let resto = milissegundos.rem_euclid(86_400_000);
+    let (ano, mes, dia) = civil_de_dias(dias as i32);
+    let alvo = ano - anos as i32;
+    // O dia que o ano de chegada nao tem (29/02 num ano comum) volta um dia:
+    // `dias_de_civil` aceitaria o 29 e devolveria 01/03 calado.
+    let dia = if mes == 2 && dia == 29 && civil_de_dias(dias_de_civil(alvo, 2, 29)) != (alvo, 2, 29)
+    {
+        28
+    } else {
+        dia
+    };
+    dias_de_civil(alvo, mes, dia) as i64 * 86_400_000 + resto
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// O prazo e de CALENDARIO: cinco anos antes de 24/09/2026 as 10h e
+    /// 24/09/2021 as 10h, com dois 29 de fevereiro no meio (2024) ou um -- a
+    /// media de 365,25 dias erraria por horas para um lado ou para o outro.
+    #[test]
+    fn recuar_anos_e_conta_de_calendario() {
+        let agora = ms_de_instante_iso("2026-09-24T10:00:00Z").unwrap();
+        assert_eq!(
+            instante_iso(recuar_anos(agora, 5)),
+            "2021-09-24 10:00:00,000"
+        );
+        assert_eq!(recuar_anos(agora, 0), agora);
+        // Antes da epoca continua valendo: o calendario de Hinnant e
+        // proleptico.
+        assert_eq!(
+            instante_iso(recuar_anos(ms_de_instante_iso("1971-03-01").unwrap(), 5)),
+            "1966-03-01 00:00:00,000"
+        );
+    }
+
+    /// 29/02 recua para 28/02 -- o dia mais CEDO --, nunca para 01/03: um
+    /// limite mais cedo apaga menos, e e so esse o lado em que um expurgo pode
+    /// errar.
+    #[test]
+    fn recuar_de_29_de_fevereiro_cai_no_dia_mais_cedo() {
+        let bissexto = ms_de_instante_iso("2028-02-29T23:59:59Z").unwrap();
+        assert_eq!(
+            instante_iso(recuar_anos(bissexto, 5)),
+            "2023-02-28 23:59:59,000"
+        );
+        // Para outro bissexto o 29 existe e fica.
+        assert_eq!(
+            instante_iso(recuar_anos(bissexto, 4)),
+            "2024-02-29 23:59:59,000"
+        );
+    }
 
     #[test]
     fn epoca_unix() {

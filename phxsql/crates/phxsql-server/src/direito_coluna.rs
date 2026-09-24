@@ -206,6 +206,9 @@ pub const CLASSES: &[(&str, PorColuna)] = &[
     ("marcar_lgpd", PorColuna::Nenhum),
     ("marcar_dado_pessoal", PorColuna::Nenhum),
     ("esvaziar_lixeira", PorColuna::Nenhum),
+    // A resposta diz quais VOLUMES sairam, quantos registros e os instantes --
+    // nenhum valor de coluna, nenhuma identidade de linha.
+    ("expurgar_trilha", PorColuna::Nenhum),
     ("bulkinsert", PorColuna::Nenhum),
     ("cargas", PorColuna::Nenhum),
     // ------------------------------------------------------------ transacao

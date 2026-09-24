@@ -1,0 +1,12 @@
+{
+  "gerado_por": "PhxSql 0.19.0",
+  "aviso": "descritor gerado; a verdade esta no bloco de esquema do .reg e nos cabecalhos dos volumes. O motor nao le este arquivo.",
+  "tabela": "clientes",
+  "modo": "quantidade",
+  "particionada": true,
+  "coluna_referencia": "",
+  "registros_por_arquivo": 10,
+  "max_arquivos": 999,
+  "endereco": "volume = (rowid - 1) / registros_por_arquivo + 1; slot = (rowid - 1) % registros_por_arquivo + 1",
+  "volumes": [1]
+}

@@ -24,10 +24,32 @@ use phxsql_core::paginacao::Paginacao;
 /// Quantos volumes ficam abertos ao mesmo tempo.
 pub const LIMITE_ABERTOS_PADRAO: usize = 64;
 
+/// Como o numero do volume vira nome de arquivo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Nomes {
+    /// `nome` + o sufixo da paginacao (`_001`, `_A`, ou nada). Todos os
+    /// conjuntos, menos a trilha.
+    DaPaginacao,
+    /// A trilha `.lgpd` (pedido 368, formato B): o volume `ativo` mora em
+    /// `nome.ext`, sem sufixo, e os fechados em `nome_NNN.ext`, com NNN de no
+    /// minimo 3 digitos e sem teto -- o numero do nome e o `volume` do
+    /// cabecalho, e nunca se reusa.
+    ///
+    /// `legado` = `(largura, ultimo)`: os volumes ate `ultimo` nasceram antes
+    /// deste formato, numa tabela cujo sufixo tinha `largura` digitos (4, por
+    /// exemplo), e continuam no nome em que nasceram.
+    DaTrilha {
+        ativo: u32,
+        legado: Option<(u8, u32)>,
+    },
+}
+
 pub struct Volumes {
     diretorio: PathBuf,
     nome: String,
     ext: &'static str,
+    /// Como o numero do volume vira nome de arquivo. Ver [`Nomes`].
+    nomes: Nomes,
     paginacao: Paginacao,
     abertos: HashMap<u32, File>,
     ordem: VecDeque<u32>,
@@ -362,7 +384,102 @@ impl Volumes {
             selo: 0,
             pendentes,
             sincronizados: 0,
+            nomes: Nomes::DaPaginacao,
         }
+    }
+
+    /// Um conjunto nomeado como a trilha `.lgpd` (pedido 368, formato B): o
+    /// volume `ativo` mora em `nome.ext`, sem sufixo, e os outros em
+    /// `nome_NNN.ext`. Ver [`Nomes::DaTrilha`].
+    pub fn novo_da_trilha(
+        diretorio: impl AsRef<Path>,
+        nome: impl Into<String>,
+        ext: &'static str,
+        ativo: u32,
+    ) -> Volumes {
+        let mut v = Volumes::novo(diretorio, nome, ext, Paginacao::DESLIGADA);
+        v.nomes = Nomes::DaTrilha {
+            ativo,
+            legado: None,
+        };
+        v
+    }
+
+    /// Diz qual numero mora no nome sem sufixo. So muda o NOME que se monta:
+    /// descritor ja aberto continua apontando para o mesmo inode.
+    pub fn definir_ativo_da_trilha(&mut self, novo: u32) {
+        if let Nomes::DaTrilha { ativo, .. } = &mut self.nomes {
+            *ativo = novo;
+        }
+    }
+
+    /// Diz que os volumes ate `ultimo` foram gravados ANTES do formato B, numa
+    /// tabela de sufixo com `largura` digitos diferente de 3. Eles continuam
+    /// no nome em que nasceram: a migracao nao renomeia nem reescreve nada.
+    pub fn definir_legado_da_trilha(&mut self, largura: u8, ultimo: u32) {
+        if let Nomes::DaTrilha { legado, .. } = &mut self.nomes {
+            *legado = Some((largura, ultimo));
+        }
+    }
+
+    /// O nome canonico de um volume FECHADO da trilha: `nome_NNN.ext`, com NNN
+    /// de no minimo 3 digitos e sem teto.
+    pub fn caminho_fechado_da_trilha(&self, volume: u32) -> PathBuf {
+        self.diretorio
+            .join(format!("{}_{:03}.{}", self.nome, volume, self.ext))
+    }
+
+    /// O nome de um volume da trilha gravado ANTES do formato B, com o sufixo
+    /// de `largura` digitos que a tabela usava.
+    pub fn caminho_legado_da_trilha(&self, volume: u32, largura: u8) -> PathBuf {
+        self.diretorio.join(format!(
+            "{}_{:0largura$}.{}",
+            self.nome,
+            volume,
+            self.ext,
+            largura = largura as usize
+        ))
+    }
+
+    /// Fecha o volume ativo da trilha: o arquivo de nome fixo passa a se
+    /// chamar `nome_NNN.ext`, e o numero seguinte passa a ser o ativo -- ainda
+    /// sem arquivo; quem chama o faz nascer. Devolve o numero que fechou.
+    ///
+    /// # Por que o descritor sai antes do `rename`
+    ///
+    /// No Linux renomear arquivo aberto funciona, e o descritor segue o inode.
+    /// No Windows depende do modo de compartilhamento de quem abriu. Soltar
+    /// antes faz os dois se comportarem igual -- e o descritor volta sozinho,
+    /// pelo nome novo, na proxima leitura.
+    ///
+    /// A marca de escrita do volume (o registro da familia) NAO sai: ela e por
+    /// numero, o numero nao muda, e o `sincronizar` seguinte acha o arquivo
+    /// pelo nome novo. Sem `fsync` do diretorio depois: nenhum `rename` desta
+    /// casa o faz (pedido 467).
+    ///
+    /// Recusa se o nome de destino ja existe: fechar nunca sobrescreve um
+    /// volume fechado.
+    pub fn fechar_ativo_da_trilha(&mut self) -> Result<u32> {
+        let Nomes::DaTrilha { ativo, .. } = self.nomes else {
+            return Err(PhxError::Esquema(
+                "fechar o volume ativo so existe num conjunto da trilha".into(),
+            ));
+        };
+        let de = self.caminho(ativo);
+        let para = self.caminho_fechado_da_trilha(ativo);
+        if para.exists() {
+            return Err(PhxError::Corrompido(format!(
+                "{} ja existe: o volume {ativo} da trilha nao pode fechar por cima de outro",
+                para.display()
+            )));
+        }
+        self.abertos.remove(&ativo);
+        if let Some(pos) = self.ordem.iter().position(|v| *v == ativo) {
+            self.ordem.remove(pos);
+        }
+        std::fs::rename(&de, &para)?;
+        self.definir_ativo_da_trilha(ativo + 1);
+        Ok(ativo)
     }
 
     /// Liga o espelho: um conjunto irmao com outra extensao.
@@ -444,12 +561,21 @@ impl Volumes {
 
     /// Caminho de um volume. Sem paginacao o sufixo e vazio.
     pub fn caminho(&self, volume: u32) -> PathBuf {
-        self.diretorio.join(format!(
-            "{}{}.{}",
-            self.nome,
-            self.paginacao.sufixo(volume),
-            self.ext
-        ))
+        match self.nomes {
+            Nomes::DaPaginacao => self.diretorio.join(format!(
+                "{}{}.{}",
+                self.nome,
+                self.paginacao.sufixo(volume),
+                self.ext
+            )),
+            Nomes::DaTrilha { ativo, legado } => match legado {
+                _ if volume == ativo => self.diretorio.join(format!("{}.{}", self.nome, self.ext)),
+                Some((largura, ultimo)) if volume <= ultimo => {
+                    self.caminho_legado_da_trilha(volume, largura)
+                }
+                _ => self.caminho_fechado_da_trilha(volume),
+            },
+        }
     }
 
     pub fn existe(&self, volume: u32) -> bool {
@@ -470,6 +596,25 @@ impl Volumes {
 
     /// Volumes que existem em disco, em ordem crescente.
     pub fn existentes(&self) -> Vec<u32> {
+        // A trilha anda do ativo para BAIXO ate faltar: o que o expurgo tira e
+        // sempre o comeco, entao os fechados sao contiguos logo abaixo do
+        // ativo, e nao ha teto de numero para varrer de 1 ate ele.
+        if let Nomes::DaTrilha { ativo, .. } = self.nomes {
+            let mut v = Vec::new();
+            if self.existe(ativo) {
+                v.push(ativo);
+            }
+            let mut n = ativo;
+            while n > 1 {
+                n -= 1;
+                if !self.existe(n) {
+                    break;
+                }
+                v.push(n);
+            }
+            v.reverse();
+            return v;
+        }
         if !self.paginacao.ligada() {
             return if self.existe(1) { vec![1] } else { vec![] };
         }
@@ -816,6 +961,70 @@ impl Volumes {
         }
     }
 
+    /// Apaga UM volume do conjunto, e so ele. Usado pelo expurgo da trilha,
+    /// que derruba a janela mais velha inteira e deixa o resto como esta.
+    ///
+    /// # O descritor sai ANTES do arquivo
+    ///
+    /// No Linux o espaco de um arquivo apagado so volta ao disco quando o
+    /// ultimo descritor do inode fecha. Apagar o nome com o descritor ainda no
+    /// cache deixaria o volume «apagado» ocupando o disco ate o LRU o despejar
+    /// -- e quem lista o diretorio veria o volume sumido e o `df` o veria la.
+    ///
+    /// # E o registro da familia esquece o volume
+    ///
+    /// Pelo mesmo motivo de `apagar_tudo`: nao ha pagina suja a levar para um
+    /// inode que deixou de existir, e o batismo nao passa para um inode que
+    /// venha a nascer com o mesmo numero -- que numa trilha nao nasce, porque
+    /// o numero do volume so anda para a frente.
+    ///
+    /// Sem `fsync` do diretorio depois, e de proposito: nenhum `unlink` nem
+    /// `rename` desta casa o faz (pedido 467), e um ajudante unico para os dois
+    /// e o conserto certo -- um `fsync` de diretorio so aqui seria a regra
+    /// escrita duas vezes, e a que alguem esquecesse divergiria calada.
+    pub fn apagar_volume(&mut self, volume: u32) -> Result<()> {
+        self.abertos.remove(&volume);
+        if let Some(pos) = self.ordem.iter().position(|v| *v == volume) {
+            self.ordem.remove(pos);
+        }
+        std::fs::remove_file(self.caminho(volume))?;
+        {
+            let mut r = trava(&self.pendentes);
+            r.escritos.remove(&volume);
+            r.batizados.remove(&volume);
+        }
+        if let Some(e) = &mut self.espelho {
+            if e.existe(volume) {
+                e.apagar_volume(volume)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Leva UM volume ao disco, por um descritor desta instancia, SEM tocar no
+    /// registro da familia.
+    ///
+    /// # Por que ele nao e o `sincronizar`
+    ///
+    /// O `sincronizar` TIRA as marcas de escrita do registro do processo e so
+    /// as devolve se falhar. Isso so e correto com a trava global na mao:
+    /// fora dela, outra instancia pode marcar o volume, escrever depois do
+    /// nosso `fsync`, e ter a marca levada por nos -- e a escrita dela ficaria
+    /// sem ninguem que a leve ao disco. Este aqui nao le nem apaga marca
+    /// nenhuma: a marca continua la, e a janela de durabilidade paga um
+    /// `fsync` a mais no mesmo arquivo. Custa um `fsync`; o outro custaria o
+    /// dado de outra pessoa.
+    ///
+    /// Existe para o expurgo da trilha levar o RASTRO ao disco fora da trava
+    /// global -- ver `Table::preparar_expurgo_da_trilha`.
+    pub fn sincronizar_volume(&mut self, volume: u32) -> Result<()> {
+        let f = self.arquivo(volume, false)?;
+        f.flush()?;
+        f.sync_all()?;
+        self.sincronizados += 1;
+        Ok(())
+    }
+
     /// Apaga todos os volumes do conjunto. Usado pelo reindex, que recria o
     /// `.ndx` do zero.
     pub fn apagar_tudo(&mut self) -> Result<()> {
@@ -1127,7 +1336,10 @@ mod tests {
     /// `pag.rs` (nao e' familia do `Volumes`, e sem `fsync` por decisao),
     /// `restaurar.rs` e `backup.rs` (copias, com `sync_all` proprio),
     /// `catalogo.rs` (a marca do database e as trocas de nome) e o proprio
-    /// `volume.rs`.
+    /// `volume.rs` -- tres desde o pedido 368: o terceiro e o `rename` de
+    /// `fechar_ativo_da_trilha`, que troca o NOME de um volume ja escrito sem
+    /// escrever byte nenhum; a marca de escrita dele e por numero, o numero
+    /// nao muda, e o `sincronizar` acha o arquivo pelo nome novo.
     ///
     /// Conta so' ate' o primeiro `#[cfg(test)]` de cada arquivo: teste que
     /// escreve arquivo nao e' caminho de escrita do motor. E' igualdade, nao
@@ -1141,7 +1353,7 @@ mod tests {
             ("pag.rs", 2),
             ("reg.rs", 5),
             ("restaurar.rs", 2),
-            ("volume.rs", 2),
+            ("volume.rs", 3),
         ];
         const ABRIDORES: [&str; 4] = [
             "OpenOptions::new()",

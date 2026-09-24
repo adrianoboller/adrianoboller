@@ -23,6 +23,7 @@
 # base fica se a corrida morrer no meio, e ela se refaz com
 # `python3 bancada/exclusao/prova-da-queda.py`.
 /bancada/exclusao/.base-da-prova/
+/bancada/lgpd/.base-da-prova/
 
 # A mesma coisa, para a prova do fecho de janela: a base fica se a corrida
 # morrer no meio e o script a refaz. Base de teste versionada e dado de

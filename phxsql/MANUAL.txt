@@ -1038,6 +1038,97 @@ O RODIZIO DO ACESSOS.LOG E DO DIRETIVAS.LOG
     armadilha do "cache_paginas" antes de existir cache. Hoje os dois tem
     leitor, e ha teste que falha se o leitor sair.
 
+A TRILHA LGPD: PRAZO DE GUARDA E EXPURGO
+
+    A trilha .lgpd (quem alterou e quem leu coluna marcada como dado pessoal)
+    cresce a cada evento, e cada registro leva a chave primaria da linha em
+    texto. A secao "lgpd" do config.json diz por quanto tempo ela fica e de
+    quanto em quanto ela fecha volume:
+
+    "lgpd": {
+      "alteracoes": true,
+      "acessos": true,
+      "retencao_anos": 5,
+      "volume_mib": 64,
+      "volume_dias": 30
+    }
+
+    "retencao_anos" e o prazo de guarda em ANOS DE CALENDARIO. Padrao 5, por
+    decisao do dono. Zero desliga o expurgo automatico -- o do administrador
+    continua existindo. Um valor torto (negativo, texto, fracao, acima de
+    10000) RECUSA o config.json em vez de cair calado no padrao: e o unico
+    campo da secao que apaga dado.
+
+    OS VOLUMES DA TRILHA. O arquivo que recebe escrita e sempre
+    <tabela>.lgpd (o ATIVO); os fechados sao <tabela>_001.lgpd,
+    <tabela>_002.lgpd e assim por diante, sem teto e sem numero reusado. A
+    trilha NAO segue a paginacao da tabela (nem "registros_por_arquivo", nem
+    "max_arquivos", nem "recursos.diario_volume_mib"). O ativo fecha:
+
+        - quando passaria de "volume_mib" MiB (padrao 64);
+        - quando o primeiro registro dele tem mais de "volume_dias" dias
+          (padrao 30) -- conferido na passada diaria e no expurgo do
+          administrador, nunca na gravacao;
+        - quando o administrador pede ("fechar_ativo", abaixo).
+
+    "volume_mib" e "volume_dias" aceitam um inteiro a partir de 1; zero,
+    negativo, texto ou fracao RECUSAM o config.json. Os tres valem no
+    arranque. Trilha gravada por versao anterior abre como esta, sem
+    reescrita (docs/FORMATO.md, secao 7).
+
+    Com prazo, uma vez por dia (a primeira um minuto depois do arranque) o
+    servidor passa por todas as tabelas: fecha o ativo que passou de
+    "volume_dias" e apaga da trilha os volumes FECHADOS cujo registro MAIS
+    NOVO passou do prazo. Um registro fica, no maximo, o prazo mais
+    "volume_dias" mais cerca de dois dias (duas passadas diarias: a que fecha
+    e a que apaga) -- 5 anos e ~32 dias no padrao, com o servidor no ar -- e
+    nunca sai antes do prazo. O
+    administrador faz o mesmo quando quiser, com o limite que escolher:
+
+        {"op":"expurgar_trilha","database":"loja","tabela":"clientes",
+         "ate":"2021-09-24","motivo":"prazo de guarda vencido"}
+
+    "ate" (ou "ate_ms") e "motivo" sao obrigatorios. "ate" no futuro e
+    recusado: para apagar todo volume fechado, mande o instante de agora.
+    "fechar_ativo": true fecha o ativo ANTES de decidir, para que ele possa
+    sair no mesmo expurgo.
+
+    A OP E DO NO. A trilha e um arquivo local de cada servidor; o expurgo
+    apaga a daquele servidor e so a dele. Por isso "expurgar_trilha" roda
+    tambem em servidor somente-leitura e em replica -- nao e recusada nem
+    redirecionada ao primario --, e cada no com "retencao_anos" faz a sua
+    propria passada. Para limpar a trilha de todos os nos, mande a op a cada
+    um. Pede o direito "administrar".
+
+    O QUE SAI, e o que nunca sai:
+
+        - sai o volume INTEIRO -- nunca um registro, nunca meio volume;
+        - o volume ativo nunca sai;
+        - um volume com qualquer registro do limite em diante fica, e com ele
+          todos os seguintes: a trilha que sobra nao tem buraco no meio.
+
+    Antes de o primeiro volume sair, o expurgo grava no .reason da tabela, e
+    leva ao disco, quem pediu (usuario 0 = o proprio servidor), quando, o
+    motivo, e quais volumes e quantos registros -- nunca a chave de linha. A
+    op "motivos" mostra esse rastro como tipo "expurgo" com
+    "expurgo_da_trilha": true. O rastro e a INTENCAO selada: se o apagar
+    falhar no meio, o erro diz quais volumes ja tinham saido, e o que saiu de
+    verdade e o que o diretorio mostra.
+
+    A RESPOSTA DIZ O QUE NAO FEZ. O campo "parada" diz por que o expurgo
+    parou: "volume_ativo", "fronteira" ou "sem_trilha"; e
+    "retido_vencido_desde" aparece quando ficou registro vencido num volume
+    que ainda nao pode sair inteiro -- ele sai quando o volume fechar.
+    "fechou" traz o numero do volume que fechou nesta chamada, por idade ou a
+    pedido. Copias de backup ja feitas continuam com os volumes apagados.
+
+    QUEDA NO MEIO DO FECHAMENTO. Fechar e renomear o ativo e fazer nascer o
+    seguinte, e o arquivo novo nao vai ao disco na hora. Se a energia cair
+    antes, <tabela>.lgpd pode voltar vazio ou mais curto que o cabecalho: a
+    tabela abre assim mesmo, le a trilha inteira dos fechados, e o proximo
+    evento faz o ativo nascer de novo com o numero certo.
+    Detalhe e numeros em docs/LGPD.md, secao 10.
+
 CORES DO PAINEL DE TELEMETRIA
 
     A secao "telemetria" do config.json escolhe a cor das quatro bolhas do
@@ -1708,6 +1799,17 @@ PARTICAO ALFANUMERICA
     Clientes_B.log se leria como "o diario do balde B", e o diario e da
     tabela inteira.
 
+    POR ISSO O NOME DE TABELA NAO TERMINA EM SUFIXO DE VOLUME. "pedidos_2025"
+    e "x_001" se escrevem igual ao volume 2025 de "pedidos" e ao volume 1 de
+    "x": a tabela sumiria da arvore, o excluir_tabela de "x" levaria os
+    arquivos dela, e o expurgo da trilha .lgpd de "x" apagaria a trilha dela.
+    criar_tabela, duplicar_tabela, copiar_tabela e renomear_tabela recusam o
+    nome que termina em "_" seguido so de digitos, dizendo por que.
+    "x_historico" passa. Tabela criada assim antes desta recusa continua
+    abrindo, com a colisao. ATENCAO: o sufixo de LETRA ainda nao e recusado
+    sozinho -- "x_A" nasce e some da arvore; evite nome que termine em "_" e
+    uma letra so.
+
 OPERACOES
 
     ping                                     versao, papel, conexoes
@@ -1773,6 +1875,10 @@ OPERACOES
     lixeira         database, tabela, [uuid], [limite], [com_anexos]
     motivos         database, tabela, [rowid], [limite]
     esvaziar_lixeira database, tabela, motivo          nao tem volta
+    expurgar_trilha database, tabela, ate|ate_ms, motivo, [fechar_ativo]
+                                    apaga da trilha .lgpd os volumes FECHADOS
+                                    INTEIROS cujo registro mais novo e anterior
+                                    a ate; roda tambem em replica
     diario          database, tabela, [rowid], [max]
     verificar       database, tabela
     reindexar       database, tabela

@@ -1043,6 +1043,39 @@ pub const OPERACOES: &[Operacao] = &[
         ferramenta_mcp: false,
     },
     Operacao {
+        nome: "expurgar_trilha",
+        apelidos: &[],
+        resumo: "Apaga da trilha `.lgpd` os volumes INTEIROS cujo registro mais novo é \
+                 anterior a `ate`. Nunca o volume ativo, nunca um volume pela metade; \
+                 o rastro vai ao `.reason` antes.",
+        parametros: &[
+            DB,
+            TAB,
+            obr(
+                "ate",
+                "string",
+                "instante em UTC (`2021-09-24`, `2021-09-24T15:00:00Z`); o futuro é recusado",
+            ),
+            opc(
+                "ate_ms",
+                "integer",
+                "o mesmo limite em milissegundos desde 1970, no lugar de `ate`",
+            ),
+            obr(
+                "motivo",
+                "string",
+                "por que está expurgando; fica no `.reason`",
+            ),
+            opc(
+                "fechar_ativo",
+                "boolean",
+                "fecha o volume ativo antes do plano, para ele poder sair também",
+            ),
+        ],
+        exemplo: r#"{"op":"expurgar_trilha","database":"loja","tabela":"clientes","ate":"2021-09-24","motivo":"prazo de guarda vencido"}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
         nome: "bulkinsert",
         apelidos: &[],
         resumo: "Reserva a tabela para uma carga exclusiva desta conexão, ou solta a reserva.",

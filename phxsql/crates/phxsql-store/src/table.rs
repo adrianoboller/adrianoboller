@@ -5781,6 +5781,73 @@ impl Table {
         self.lixeira.esvaziar()
     }
 
+    /// Fase 1 do expurgo da trilha (pedido 368): decide o que sai e grava o
+    /// rastro no `.reason` -- **nao apaga nada**.
+    ///
+    /// # Por volume INTEIRO, nunca por registro
+    ///
+    /// O `.lgpd` e append-only, e o UUID v7 de cada evento ordena por tempo.
+    /// Derrubar a janela mais velha inteira apaga o que venceu sem reescrever
+    /// arquivo nenhum; cortar um volume ao meio seria reescreve-lo, e com a
+    /// cifra ligada seria re-selar cada registro num offset novo. A regra de
+    /// quem sai esta em [`TrilhaFile::planejar_expurgo`].
+    ///
+    /// # O rastro, e onde ele mora
+    ///
+    /// No `.reason`, como o do `esvaziar_lixeira`: tipo `expurgo` com o bit
+    /// `FLAG_EXPURGO_DA_TRILHA` no byte 9 (o que o separa do da lixeira), rowid
+    /// 0, o usuario desta tabela (`definir_usuario`), o `motivo` de quem pediu
+    /// e, na `identidade`, quais volumes, quantos registros e o limite -- ver
+    /// [`trilha::Expurgo::rastro`]. Nenhuma chave de linha vai junto.
+    ///
+    /// Sem volume a derrubar nao grava rastro: nada aconteceu, e um registro
+    /// por dia dizendo isso afogaria os que provam alguma coisa. Quem pediu
+    /// fica no `acessos.log` do servidor de qualquer jeito.
+    ///
+    /// O `fsync` do rastro NAO acontece aqui: e a fase 2
+    /// ([`trilha::Expurgo::selar`]), para o servidor poder faze-la fora da
+    /// trava global. Quem nao tem trava a poupar usa [`Table::expurgar_trilha`].
+    pub fn preparar_expurgo_da_trilha(
+        &mut self,
+        limite: i64,
+        motivo: &str,
+    ) -> Result<trilha::Expurgo> {
+        let motivo = motivo.trim();
+        if motivo.is_empty() {
+            return Err(PhxError::Esquema(
+                "informe o motivo do expurgo da trilha: apagar a trilha nao tem volta, \
+                 e sem o registro do por que nao sobra rastro nenhum"
+                    .into(),
+            ));
+        }
+        let mut e = self.trilha.planejar_expurgo(limite)?;
+        if e.volumes.is_empty() {
+            return Ok(e);
+        }
+        self.motivos
+            .registrar_expurgo_da_trilha(motivo, &e.rastro())?;
+        e.rastro = Some(self.motivos.volume_do_ultimo());
+        Ok(e)
+    }
+
+    /// Fase 3 do expurgo da trilha: derruba os volumes que a fase 1 decidiu.
+    /// So aceita um expurgo SELADO -- o rastro ja no disco. Devolve os volumes
+    /// que sairam. Ver [`TrilhaFile::apagar_expurgados`].
+    pub fn concluir_expurgo_da_trilha(
+        &mut self,
+        selado: &trilha::ExpurgoSelado,
+    ) -> Result<Vec<u32>> {
+        self.trilha.apagar_expurgados(selado)
+    }
+
+    /// As tres fases do expurgo da trilha de uma vez, para quem nao tem trava
+    /// global a poupar -- a tabela aberta direto, um teste, a FFI.
+    pub fn expurgar_trilha(&mut self, limite: i64, motivo: &str) -> Result<trilha::ExpurgoSelado> {
+        let selado = self.preparar_expurgo_da_trilha(limite, motivo)?.selar()?;
+        self.concluir_expurgo_da_trilha(&selado)?;
+        Ok(selado)
+    }
+
     /// Os motivos registrados, em ordem cronologica.
     pub fn motivos(&mut self, pular: u64, limite: u64) -> Result<Vec<Motivo>> {
         self.motivos.ler(pular, limite)
@@ -6168,6 +6235,29 @@ impl Table {
     /// O `.lgpd` desta tabela existe no disco?
     pub fn tem_trilha(&self) -> bool {
         self.trilha.existe()
+    }
+
+    /// Os volumes do `.lgpd` que existem no disco, do mais velho ao ativo.
+    /// Depois de um expurgo a lista comeca num numero maior que 1 -- e e so
+    /// isso que muda: o numero do volume nunca volta.
+    pub fn volumes_da_trilha(&mut self) -> Result<Vec<u32>> {
+        self.trilha.volumes_existentes()
+    }
+
+    /// Fecha o volume ativo da trilha -- por pedido (`forcar`), ou se o
+    /// primeiro registro dele passou do corte por idade (`lgpd.volume_dias`)
+    /// contado de `agora`. Devolve o numero que fechou; `None` se nada fechou.
+    ///
+    /// Fechar e renomear o ativo para `_NNN` e fazer nascer o seguinte: nenhum
+    /// byte de registro muda. E o passo que deixa o volume elegivel para o
+    /// expurgo, que nunca derruba o ativo -- e por isso a passada da retencao
+    /// e a op do administrador o chamam ANTES de planejar.
+    pub fn fechar_volume_da_trilha(&mut self, forcar: bool, agora: i64) -> Result<Option<u32>> {
+        if forcar {
+            self.trilha.fechar_ativo()
+        } else {
+            self.trilha.fechar_se_velho(agora)
+        }
     }
 
     /// Ocupacao dos arquivos externos: `(.bin, .memo)`.

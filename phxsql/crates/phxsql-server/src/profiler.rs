@@ -197,6 +197,7 @@ const ESCRITAS: &[&str] = &[
     "excluir",
     "restaurar",
     "esvaziar_lixeira",
+    "expurgar_trilha",
     "aplicar",
     "criar_tabela",
     "excluir_tabela",

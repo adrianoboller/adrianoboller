@@ -3558,6 +3558,62 @@ pub struct Lgpd {
     pub alteracoes: bool,
     /// Registrar quem LEU coluna marcada, um registro por operacao.
     pub acessos: bool,
+    /// O prazo de guarda da trilha, em ANOS de calendario. Zero = o expurgo
+    /// automatico nao roda (o do administrador continua existindo).
+    ///
+    /// # Nasce em 5, e por que isso nao quebra «guarda nova entra pedida»
+    ///
+    /// Decisao do dono, 24/09/2026 (pedido 368): «Sim, apos 5 anos pode limpar
+    /// ou pelo admin». A regra da casa protege o DADO que ja esta la contra uma
+    /// guarda nova que quebre quem nao pediu -- e aqui o dado e a propria
+    /// trilha, que existe para provar o que a lei manda poder APAGAR. Guardar
+    /// para sempre era o defeito, e nao o comportamento a proteger. O que
+    /// protege quem precisa de mais tempo e o campo: `0` desliga, e qualquer
+    /// numero maior guarda mais.
+    ///
+    /// Vale no ARRANQUE: e o relogio da retencao que o le, e ele sobe uma vez.
+    pub retencao_anos: u32,
+    /// Onde o volume ativo da trilha fecha por TAMANHO, em MiB (padrao 64).
+    ///
+    /// Decisao do papel C (pedido 368, formato B): a trilha deixou de seguir
+    /// a paginacao da tabela, e o volume dela e a unidade do expurgo. Vale
+    /// para a trilha aberta daqui para a frente -- a quente, como o
+    /// `diario_volume_mib`.
+    pub volume_mib: u32,
+    /// Idade do primeiro registro, em dias, a partir da qual o volume ativo
+    /// fecha na passada da retencao e na op do administrador (padrao 30). E o
+    /// que faz a tabela de pouco movimento fechar volume -- e so volume
+    /// fechado se expurga. Retencao maxima de um registro: o prazo mais este
+    /// numero mais um dia.
+    pub volume_dias: u32,
+}
+
+/// Teto do prazo de guarda, em anos.
+///
+/// Nao e politica -- nenhuma lei pede dez mil anos --, e a conta: o prazo
+/// recua o ANO do calendario (`datahora::recuar_anos`), e o ano e um `i32`.
+/// Recusar aqui um numero que a conta nao faria e melhor que um expurgo que
+/// estoura no primeiro dia.
+pub const RETENCAO_ANOS_MAX: i64 = 10_000;
+
+/// Um corte da trilha (`lgpd.volume_mib`, `lgpd.volume_dias`): inteiro de 1
+/// ate o teto do `u32`.
+///
+/// Zero RECUSA, e nao cai no padrao: `volume_dias: 0` desligaria o fechamento
+/// por idade, e a tabela de pouco movimento voltaria a nunca fechar volume --
+/// o buraco que o pedido 368 fechou. O teto e o do tipo, e nao politica: o
+/// produto em bytes e em milissegundos cabe folgado no `u64`/`i64`.
+fn corte_da_trilha(secao: &Json, campo: &str, padrao: u32) -> Result<u32> {
+    match secao.campo(campo) {
+        None => Ok(padrao),
+        Some(v) => match v.inteiro() {
+            Some(n) if (1..=u32::MAX as i64).contains(&n) => Ok(n as u32),
+            _ => Err(PhxError::Esquema(format!(
+                "lgpd.{campo} invalido: {} (um inteiro a partir de 1)",
+                v.escrever()
+            ))),
+        },
+    }
 }
 
 impl Default for Lgpd {
@@ -3565,34 +3621,60 @@ impl Default for Lgpd {
         Lgpd {
             alteracoes: true,
             acessos: true,
+            retencao_anos: 5,
+            volume_mib: (phxsql_store::trilha::CORTE_PADRAO_BYTES / (1024 * 1024)) as u32,
+            volume_dias: phxsql_store::trilha::CORTE_PADRAO_DIAS,
         }
     }
 }
 
 impl Lgpd {
-    fn de_json(j: &Json) -> Lgpd {
+    fn de_json(j: &Json) -> Result<Lgpd> {
         let padrao = Lgpd::default();
         // Bloco ausente = os padroes, que sao ligados. Um `config.json`
         // escrito antes desta versao continua valendo, e o que ele descreve
         // nao muda: tabela sem coluna marcada nao tem trilha de qualquer jeito.
         let Some(c) = j.campo("lgpd") else {
-            return padrao;
+            return Ok(padrao);
         };
-        Lgpd {
+        // O prazo e o unico campo daqui que APAGA dado, entao ele nao cai
+        // calado no padrao quando vem torto: `"cinco"` ou `-1` virando 5 em
+        // silencio faria o servidor apagar com um prazo que ninguem escreveu.
+        let retencao_anos = match c.campo("retencao_anos") {
+            None => padrao.retencao_anos,
+            Some(v) => match v.inteiro() {
+                Some(n) if (0..=RETENCAO_ANOS_MAX).contains(&n) => n as u32,
+                _ => {
+                    return Err(PhxError::Esquema(format!(
+                        "lgpd.retencao_anos invalido: {} (um inteiro de 0 a \
+                         {RETENCAO_ANOS_MAX}, em anos; 0 desliga o expurgo automatico)",
+                        v.escrever()
+                    )))
+                }
+            },
+        };
+        Ok(Lgpd {
             alteracoes: c.booleano_ou("alteracoes", padrao.alteracoes),
             acessos: c.booleano_ou("acessos", padrao.acessos),
-        }
+            retencao_anos,
+            volume_mib: corte_da_trilha(c, "volume_mib", padrao.volume_mib)?,
+            volume_dias: corte_da_trilha(c, "volume_dias", padrao.volume_dias)?,
+        })
     }
 
     /// Leva a decisao ao processo.
     pub fn aplicar(&self) {
         phxsql_store::trilha::definir(self.alteracoes, self.acessos);
+        phxsql_store::trilha::definir_corte(self.volume_mib as u64 * 1024 * 1024, self.volume_dias);
     }
 
     pub fn para_json(&self) -> Json {
         Json::objeto(vec![
             ("alteracoes", Json::Bool(self.alteracoes)),
             ("acessos", Json::Bool(self.acessos)),
+            ("retencao_anos", Json::de_u64(self.retencao_anos as u64)),
+            ("volume_mib", Json::de_u64(self.volume_mib as u64)),
+            ("volume_dias", Json::de_u64(self.volume_dias as u64)),
         ])
     }
 }
@@ -4268,7 +4350,16 @@ const SECOES_CONHECIDAS: [(&str, &[&str]); 16] = [
             "chave_mestra",
         ],
     ),
-    ("lgpd", &["alteracoes", "acessos"]),
+    (
+        "lgpd",
+        &[
+            "alteracoes",
+            "acessos",
+            "retencao_anos",
+            "volume_mib",
+            "volume_dias",
+        ],
+    ),
     (
         "telemetria",
         &[
@@ -4554,7 +4645,7 @@ impl Config {
             jobs: PathBuf::from(j.texto_ou("jobs", "jobs.json")),
             cifra: Cifra::de_json(j),
             cifra_fio: CifraFio::de_json(j),
-            lgpd: Lgpd::de_json(j),
+            lgpd: Lgpd::de_json(j)?,
             telemetria: Painel::de_json(j, &mut avisos),
             profiler: PerfilEmDisco::de_json(j),
             acessos: PerfilEmDisco::de_secao(j, "acessos", PerfilEmDisco::sem_rodizio()),
@@ -7109,6 +7200,71 @@ mod tests {
             let j = Json::analisar(texto).unwrap();
             let c = Config::de_json(&j).unwrap();
             assert!(c.estranhas.is_empty(), "exemplo {n}: {:?}", c.estranhas);
+        }
+    }
+
+    /// `lgpd.retencao_anos` (pedido 368): ausente vale 5, zero desliga, e o
+    /// que vem torto RECUSA em vez de cair calado no padrao -- e o unico campo
+    /// da secao que APAGA dado, e um `-1` virando 5 em silencio faria o
+    /// servidor apagar com um prazo que ninguem escreveu.
+    ///
+    /// **Defeito reposto** (ler com `inteiro_ou("retencao_anos", 5)`): os
+    /// cinco valores tortos passam calados, e o laco do fim cai.
+    #[test]
+    fn a_retencao_da_trilha_nasce_em_cinco_e_recusa_o_torto() {
+        let ler = |t: &str| Config::de_json(&Json::analisar(t).unwrap());
+        assert_eq!(ler(r#"{"token":"t"}"#).unwrap().lgpd.retencao_anos, 5);
+        assert_eq!(
+            ler(r#"{"token":"t","lgpd":{"acessos":false}}"#)
+                .unwrap()
+                .lgpd
+                .retencao_anos,
+            5,
+            "a secao sem o campo mudou o prazo"
+        );
+        let c = ler(r#"{"token":"t","lgpd":{"retencao_anos":0}}"#).unwrap();
+        assert_eq!(c.lgpd.retencao_anos, 0);
+        assert!(c.estranhas.is_empty(), "{:?}", c.estranhas);
+        assert!(
+            c.lgpd
+                .para_json()
+                .escrever()
+                .contains(r#""retencao_anos":0"#),
+            "{}",
+            c.lgpd.para_json().escrever()
+        );
+        for torto in ["-1", r#""cinco""#, "2.5", "10001", "true"] {
+            let r = ler(&format!(
+                r#"{{"token":"t","lgpd":{{"retencao_anos":{torto}}}}}"#
+            ));
+            assert!(r.is_err(), "{torto} passou calado");
+        }
+    }
+
+    /// `lgpd.volume_mib` e `lgpd.volume_dias` (pedido 368, formato B): 64 e
+    /// 30 de fabrica, e o torto -- inclusive o ZERO, que desligaria o
+    /// fechamento por idade -- recusa o config.
+    ///
+    /// **Defeito reposto** (aceitar o zero): `volume_dias: 0` passa, e o laco
+    /// do fim cai.
+    #[test]
+    fn o_corte_da_trilha_nasce_em_64_e_30_e_recusa_o_torto() {
+        let ler = |t: &str| Config::de_json(&Json::analisar(t).unwrap());
+        let c = ler(r#"{"token":"t"}"#).unwrap();
+        assert_eq!((c.lgpd.volume_mib, c.lgpd.volume_dias), (64, 30));
+        let c = ler(r#"{"token":"t","lgpd":{"volume_mib":1,"volume_dias":7}}"#).unwrap();
+        assert_eq!((c.lgpd.volume_mib, c.lgpd.volume_dias), (1, 7));
+        assert!(c.estranhas.is_empty(), "{:?}", c.estranhas);
+        let j = c.lgpd.para_json().escrever();
+        assert!(
+            j.contains(r#""volume_mib":1"#) && j.contains(r#""volume_dias":7"#),
+            "{j}"
+        );
+        for campo in ["volume_mib", "volume_dias"] {
+            for torto in ["0", "-3", r#""sete""#, "1.5", "4294967296"] {
+                let r = ler(&format!(r#"{{"token":"t","lgpd":{{"{campo}":{torto}}}}}"#));
+                assert!(r.is_err(), "{campo}={torto} passou calado");
+            }
         }
     }
 

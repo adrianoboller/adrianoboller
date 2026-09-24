@@ -134,6 +134,51 @@ pub fn validar_nome(rotulo: &str, nome: &str) -> Result<()> {
     Ok(())
 }
 
+/// Recusa o nome de tabela que o catalogo NAO leria de volta como ele mesmo.
+///
+/// E a pergunta das QUATRO portas que dao nome a uma tabela -- `criar_tabela`,
+/// `duplicar_tabela`, `copiar_tabela_para` e `renomear_tabela` --, e mora
+/// numa funcao so porque a lei manda que funcao e comando venham do mesmo
+/// motor: a porta que ficasse com uma copia da regra seria a que diverge.
+///
+/// # O que o nome ambiguo quebra
+///
+/// `pedidos_2025.reg` se escreve igual ao volume 2025 de uma tabela
+/// `pedidos`: a tabela nasce e some da arvore, e o `excluir_tabela` de
+/// `pedidos` leva os arquivos dela junto. Desde o formato B da trilha
+/// (pedido 368) o estrago sai da operacao rara e vai para a rotineira:
+/// `x_001.lgpd` -- o ATIVO da trilha de `x_001` -- tem o nome de um volume
+/// FECHADO da trilha de `x`, e o expurgo de `x` o apagava (medido pelo papel
+/// C, P2a). Recusar na DECLARACAO custa um erro lido enquanto se cria a
+/// tabela; recusar tarde custa a trilha de dado pessoal de outra tabela.
+///
+/// # Por que PERGUNTA em vez de reimplementar
+///
+/// Quem sabe a regra do sufixo de volume e o [`nome_da_tabela`]; uma segunda
+/// copia dela divergiria calada. A tabela `_NNN` que ja existe continua
+/// abrindo -- a recusa e so para o nome novo.
+///
+/// # O que ela NAO recusa, medido
+///
+/// Hoje a recusa vale para o sufixo de DIGITOS. O de LETRA da particao so
+/// recusa quando o `_A.reg` do mesmo prefixo ja existe -- e e assim que o
+/// `nome_da_tabela` separa `dados_X` do balde X --, entao `x_A` sozinho e
+/// ACEITO e, nascido, some da arvore (papel C, terceira revisao do 368). O
+/// sufixo de letra e o pedido 506; o separador `_` de volume, que colide com
+/// qualquer nome que o use, e o 508.
+fn exigir_nome_que_volta(dir: &Path, nome: &str) -> Result<()> {
+    if nome_da_tabela(&dir.join(format!("{nome}.{EXT_REG}"))).as_deref() == Some(nome) {
+        return Ok(());
+    }
+    Err(PhxError::Esquema(format!(
+        "{nome} nao serve como nome de tabela: o catalogo o leria como um \
+         VOLUME de outra tabela (o sufixo `_` seguido so de digitos, ou de letra \
+         da particao, e reservado para isso) -- a tabela sumiria da arvore, e a \
+         trilha .lgpd dela se confundiria com a da outra. Escolha um nome que \
+         nao termine assim"
+    )))
+}
+
 /// Extrai o nome da tabela de um arquivo `.reg`, tirando o sufixo de volume.
 ///
 /// `cadastroClientes.reg` e `cadastroClientes_007.reg` devolvem os dois
@@ -603,6 +648,7 @@ impl Database {
             None => self.caminho.clone(),
             Some(s) => self.garantir_schema(s)?,
         };
+        exigir_nome_que_volta(&dir, esquema.nome())?;
         Table::criar(dir, esquema)
     }
 
@@ -857,23 +903,10 @@ impl Database {
         let dir_o = self.diretorio(schema_o)?;
         let dir_d = self.diretorio(schema_d)?;
         // Nome que o catalogo NAO leria de volta como ele mesmo faz a tabela
-        // sumir. `pedidos_2025.reg` e indistinguivel do volume 2025 de uma
-        // tabela `pedidos` -- o renomear funcionaria, moveria tudo, e a tabela
-        // nao apareceria mais na arvore. Achado pela propria prova deste
-        // renomear, que escolheu `pedidos_2025` sem pensar.
-        //
-        // A conferencia PERGUNTA em vez de reimplementar: quem sabe a regra do
-        // sufixo de volume e o `nome_da_tabela`, e uma segunda copia da regra
-        // divergiria dele calada.
-        if nome_da_tabela(&dir_d.join(format!("{nome_d}.{EXT_REG}"))).as_deref() != Some(nome_d) {
-            return Err(PhxError::Esquema(format!(
-                "{destino} nao serve como nome de tabela: o catalogo o leria \
-                 como um VOLUME de outra tabela (o sufixo `_` seguido so de \
-                 digitos, ou de letra da particao, e reservado para isso), e a \
-                 tabela renomeada sumiria da arvore. Escolha um nome que nao \
-                 termine assim"
-            )));
-        }
+        // sumir -- achado pela propria prova deste renomear, que escolheu
+        // `pedidos_2025` sem pensar. A pergunta e a mesma das outras tres
+        // portas, e por isso mora numa funcao so.
+        exigir_nome_que_volta(&dir_d, nome_d)?;
         if let Some(filha) = self.quem_aponta_para(&dir_o, nome_o)? {
             return Err(PhxError::Integridade(format!(
                 "a tabela {origem} nao pode ser renomeada: {filha} declara uma \
@@ -959,6 +992,7 @@ impl Database {
         }
         let dir_o = self.diretorio(schema_o)?;
         let dir_d = self.diretorio(schema_d)?;
+        exigir_nome_que_volta(&dir_d, nome_d)?;
         let mut copiados = 0usize;
         for ext in Self::EXTENSOES {
             for arq in std::fs::read_dir(&dir_o)?.flatten() {
@@ -1022,6 +1056,7 @@ impl Database {
                 "origem e destino sao a mesma tabela".into(),
             ));
         }
+        exigir_nome_que_volta(&dir_d, nome_d)?;
 
         let mut copiados = 0usize;
         for ext in Self::EXTENSOES {
@@ -2093,6 +2128,79 @@ mod testes_copia_entre_bancos {
         assert!(db.renomear_tabela("pedidos", "pedidos_de_janeiro").is_ok());
     }
 
+    /// Os arquivos do diretorio cujo nome comeca por `prefixo` -- pelo sistema
+    /// de arquivos, e nao pelo catalogo, que e quem esta sendo provado.
+    fn arquivos_com(dir: &Path, prefixo: &str) -> Vec<String> {
+        let mut v: Vec<String> = std::fs::read_dir(dir)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.starts_with(prefixo))
+            .collect();
+        v.sort();
+        v
+    }
+
+    /// **A mesma pergunta na porta da CRIACAO** (pedido 368, B1 do papel C).
+    /// `x_001` e o nome do volume 1 de `x` -- e, desde o formato B da trilha,
+    /// `x_001.lgpd` (o ATIVO da trilha de `x_001`) e o nome do volume fechado
+    /// 1 da trilha de `x`: o expurgo de `x` o apagava (P2a). A recusa vem
+    /// antes de qualquer arquivo nascer; `x_historico`, que nao e ambiguo,
+    /// nasce.
+    ///
+    /// **Defeito reposto** (tirar a chamada do `criar_tabela`): `x_001` nasce
+    /// e o `unwrap_err` cai.
+    #[test]
+    fn criar_recusa_nome_que_o_catalogo_leria_como_volume() {
+        let base = crate::apoio_teste::DirTemp::novo("phx-criar-vol");
+        let cat = Instancia::nova(&base).unwrap();
+        let db = cat.criar_database("loja").unwrap();
+
+        let Err(e) = db.criar_tabela(None, esquema("x_001")) else {
+            panic!("x_001 nasceu: o catalogo a leria como o volume 1 de x");
+        };
+        assert!(e.to_string().contains("VOLUME"), "{e}");
+        assert!(
+            arquivos_com(db.caminho(), "x_001").is_empty(),
+            "a recusa tem de vir antes do primeiro arquivo"
+        );
+
+        db.criar_tabela(None, esquema("x_historico")).unwrap();
+        assert!(db.existe_tabela(None, "x_historico").unwrap());
+        // Num schema, a mesma pergunta.
+        assert!(db.criar_tabela(Some("arq"), esquema("x_2025")).is_err());
+    }
+
+    /// **As portas que COPIAM fazem a mesma pergunta.** `duplicar_tabela`
+    /// (dentro do database) e `copiar_tabela_para` (o «colar» entre
+    /// databases, irmao dele) recusam `x_002`/`x_003` sem copiar arquivo
+    /// nenhum, e aceitam o nome que nao e ambiguo.
+    ///
+    /// **Defeito reposto** (tirar a chamada de uma das duas): a copia nasce
+    /// com nome de volume e o `unwrap_err` daquela porta cai.
+    #[test]
+    fn duplicar_e_copiar_recusam_nome_que_o_catalogo_leria_como_volume() {
+        let base = crate::apoio_teste::DirTemp::novo("phx-copia-vol");
+        let cat = Instancia::nova(&base).unwrap();
+        let db = cat.criar_database("loja").unwrap();
+        let outro = cat.criar_database("arquivo").unwrap();
+        db.criar_tabela(None, esquema("x_historico")).unwrap();
+
+        let e = db.duplicar_tabela("x_historico", "x_002").unwrap_err();
+        assert!(e.to_string().contains("VOLUME"), "{e}");
+        assert!(arquivos_com(db.caminho(), "x_002").is_empty());
+        assert!(db.duplicar_tabela("x_historico", "x_copia").is_ok());
+
+        let e = db
+            .copiar_tabela_para("x_historico", &outro, "x_003")
+            .unwrap_err();
+        assert!(e.to_string().contains("VOLUME"), "{e}");
+        assert!(arquivos_com(outro.caminho(), "x_003").is_empty());
+        assert!(db
+            .copiar_tabela_para("x_historico", &outro, "x_arquivado")
+            .is_ok());
+    }
+
     /// Destino ocupado recusa, e a origem fica intata.
     #[test]
     fn renomear_recusa_destino_que_ja_existe() {
@@ -2126,12 +2234,17 @@ mod testes_copia_entre_bancos {
         t.excluir(2).unwrap();
         t.sincronizar().unwrap();
 
+        // O destino era `pedidos_2026` -- o nome do volume 2026 de uma tabela
+        // `pedidos`: a copia nascia e a arvore do destino nao a mostrava. A
+        // recusa que o pedido 368 estendeu a esta porta o pegou (B1 do papel
+        // C); o nome agora e um que o catalogo le de volta.
         let copiados = origem
-            .copiar_tabela_para("pedidos", &destino, "pedidos_2026")
+            .copiar_tabela_para("pedidos", &destino, "pedidos_arquivados")
             .unwrap();
         assert_eq!(copiados, 5, "os cinco arquivos");
+        assert!(destino.existe_tabela(None, "pedidos_arquivados").unwrap());
 
-        let mut c = destino.abrir_qualificada("pedidos_2026").unwrap();
+        let mut c = destino.abrir_qualificada("pedidos_arquivados").unwrap();
         assert_eq!(c.slots(), 3, "o slot excluido continua ocupando lugar");
         assert!(c.ler(2).unwrap().is_none(), "o excluido continua excluido");
         for (rowid, txt) in [(1u64, "um"), (3, "tres")] {

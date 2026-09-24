@@ -726,3 +726,72 @@ fn o_cache_de_derivadas_nao_responde_a_quem_nao_deu_a_senha() {
     );
     cofre::desligar();
 }
+
+/// **O expurgo da trilha com a cifra ligada** (pedido 368). O plano anda pelos
+/// cabecalhos, que sao claros, e confere o CRC do corpo COMO ELE ESTA NO
+/// DISCO -- cifrado --, entao decide sem abrir registro nenhum. Aqui a prova de
+/// que o tamanho ocupado com a etiqueta (`cab.ocupa`) e o mesmo que a leitura
+/// usa: se a varredura errasse o passo num volume cifrado, o segundo registro
+/// cairia no meio do primeiro e o CRC recusaria o expurgo inteiro.
+///
+/// E a trilha que sobra continua DECIFRANDO: saiu volume inteiro, nenhum
+/// registro foi re-selado num offset novo.
+#[test]
+fn o_expurgo_da_trilha_cifrada_decide_sem_abrir_o_corpo() {
+    let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
+    cofre::desligar();
+    cofre::definir(SENHA, RAPIDO).unwrap();
+    let d = dir("expurgo-lgpd");
+
+    let esquema = Schema::new(
+        "clientes",
+        vec![
+            Column::new("id", ColumnType::Int8).obrigatoria(),
+            Column::new("cpf", ColumnType::Str(14))
+                .com_dado_pessoal(phxsql_core::types::DadoPessoal::Pessoal),
+        ],
+        vec![IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico()],
+    )
+    .unwrap();
+    let mut t = Table::criar(&d, esquema).unwrap();
+    t.inserir(&[Value::Int(1), Value::Str("00000000000".into())])
+        .unwrap();
+    // Cinquenta alteracoes por volume, fechado a pedido: quatro fechados e o
+    // ativo. O fechar e um `rename`, e o volume cifrado continua decifrando
+    // pelo nome novo -- o nonce e do offset e o sal e do cabecalho.
+    for i in 1..=200 {
+        t.atualizar(1, &[Value::Int(1), Value::Str(format!("{i:011}"))])
+            .unwrap();
+        if i % 50 == 0 && i < 200 {
+            t.fechar_volume_da_trilha(true, 0).unwrap();
+        }
+    }
+    let volumes = t.volumes_da_trilha().unwrap();
+    assert_eq!(volumes, vec![1, 2, 3, 4]);
+    // Os fechados continuam DECIFRANDO pelo nome novo.
+    let todos = t.trilha(0, 0).unwrap();
+    assert_eq!(todos.len(), 200);
+    assert_eq!(todos[199].depois, "00000000200");
+    let ativo = *volumes.last().unwrap();
+    // O corpo esta mesmo cifrado: sem isto, o teste passaria com a cifra
+    // desligada e nao provaria nada sobre o passo com etiqueta.
+    let bruto = std::fs::read(d.join("clientes_001.lgpd")).unwrap();
+    assert!(
+        !bruto.windows(11).any(|w| w == b"00000000001"),
+        "o volume da trilha esta em claro"
+    );
+
+    let limite = phxsql_core::datahora::ms_de_instante_iso("2099-01-01").unwrap();
+    let selado = t.expurgar_trilha(limite, "retencao").unwrap();
+    assert_eq!(selado.expurgo().volumes.len(), volumes.len() - 1);
+    assert_eq!(t.volumes_da_trilha().unwrap(), vec![ativo]);
+    assert!(!d.join("clientes_001.lgpd").exists());
+    assert!(d.join("clientes.lgpd").exists());
+
+    let resto = t.trilha(0, 0).unwrap();
+    assert_eq!(resto.len(), 50);
+    assert_eq!(resto.len() as u64, t.total_da_trilha().unwrap());
+    assert_eq!(resto[49].depois, "00000000200");
+
+    cofre::desligar();
+}

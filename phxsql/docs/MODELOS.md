@@ -1283,6 +1283,10 @@ QA, com julgamento de pergunta, e a redação do H.
 | J — hipoteses do 495, e C — catalogo de catastrofes do 496 | forte | desenho de seguranca e previsao de falha de dado: arquitetura e risco |
 | 497 — erro cru no `acessos.log` | forte | redacao de dado pessoal: petrea do texto cru e busca dos irmaos |
 | 501 — o `;` do comando empilhado | medio | conserto delimitado numa funcao pura; o integrador devolveu uma vez (a primeira versao abria evasao) e validou o vermelho dos dois lados antes de promover a cognicao |
+| 368 — expurgo da trilha, tres voltas | forte | formato em disco e queda no meio; o DBA bloqueou duas vezes (durabilidade e formato B, depois nome `_NNN` e ativo curto) |
+| C — segunda e terceira revisoes do 368, segunda do 451, segunda do 448 | forte | formato em disco, durabilidade e concorrencia: sao os pareceres que decidem se entra |
+| C — catalogo de catastrofes do 496 | forte | prova contra o SO em montagem privada; achou cinco defeitos ativos |
+| SEC — conferencia do 497 | forte | leitura adversaria da redacao de erro |
 
 **A integração achou o que nenhuma frente via, de novo por território de
 arquivo não bastar em worktree compartilhado**: `cargo fmt --all` de uma

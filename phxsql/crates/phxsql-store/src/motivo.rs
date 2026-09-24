@@ -45,7 +45,7 @@
 //! `crate::cofre`.
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use phxsql_core::crc::crc32;
 use phxsql_core::error::{PhxError, Result};
@@ -68,6 +68,20 @@ pub const REGISTRO_CAB: usize = 48;
 pub const MOTIVO_MAX: usize = 2000;
 /// Teto da identidade. Chave composta grande cabe; despejo de linha, nao.
 pub const IDENTIDADE_MAX: usize = 512;
+
+/// Bit 0 das `flags` (byte 9) de um registro de tipo `expurgo`: o que saiu
+/// foram volumes da trilha `.lgpd`, e nao a lixeira.
+///
+/// # Por que um bit, e nao um tipo 5 nem o texto
+///
+/// Decisao do papel C (pedido 368, condicao C1). Um tipo 5 e um byte novo num
+/// campo que o binario anterior LE e recusa inteiro («tipo de exclusao
+/// desconhecido»): o `.reason` da tabela ficaria ilegivel para ele por causa
+/// de um registro. Separar pelo prefixo `.lgpd` da identidade seria decidir
+/// pela frase. O byte 9 estava sempre em 0, e coberto pelo CRC e pelo dado
+/// associado da etiqueta, e o leitor de antes nao o le: ele ve um «expurgo»,
+/// que e verdade.
+pub const FLAG_EXPURGO_DA_TRILHA: u8 = 1;
 
 /// O que aconteceu com a linha.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -131,9 +145,17 @@ pub struct Motivo {
     pub motivo: String,
     /// Como a linha se identificava. Vazio quando a tabela nao tem chave.
     pub identidade: String,
+    /// O byte 9 do registro. Ver [`FLAG_EXPURGO_DA_TRILHA`].
+    pub flags: u8,
 }
 
 impl Motivo {
+    /// Este registro e o rastro de um expurgo da TRILHA `.lgpd` -- e nao o da
+    /// lixeira? Decide pelo bit, nunca pela identidade.
+    pub fn expurgo_da_trilha(&self) -> bool {
+        self.tipo == Tipo::Expurgo && self.flags & FLAG_EXPURGO_DA_TRILHA != 0
+    }
+
     /// Data e hora em ISO (`AAAA-MM-DD HH:MM:SS,mmm`).
     pub fn instante_iso(&self) -> String {
         phxsql_core::datahora::instante_iso(self.carimbo)
@@ -148,6 +170,7 @@ impl Motivo {
         let mut buf = vec![0u8; REGISTRO_CAB];
         por_i64(&mut buf, 0, self.carimbo);
         buf[8] = self.tipo.tag();
+        buf[9] = self.flags;
         // Os dois tamanhos sao os do TEXTO CLARO, e nao os do que vai ao
         // disco: e por eles que os dois textos se separam depois de decifrar.
         buf[10..12].copy_from_slice(&(self.motivo.len() as u16).to_le_bytes());
@@ -217,6 +240,7 @@ impl Motivo {
             usuario: c.u32(20),
             motivo: texto(0, n_motivo)?,
             identidade: texto(n_motivo, n_motivo + n_ident)?,
+            flags: src[9],
         })
     }
 }
@@ -239,6 +263,41 @@ fn associado(cab: &[u8]) -> [u8; REGISTRO_CAB] {
 /// registro que entra por cima de um rabo estragado por uma queda.
 fn tempero(uuid: &[u8; 16]) -> [u8; 4] {
     [uuid[12], uuid[13], uuid[14], uuid[15]]
+}
+
+/// O volume do `.reason` onde o ultimo registro foi parar -- o bastante para
+/// leva-lo ao disco sem a tabela aberta.
+///
+/// Existe para o expurgo da trilha: o rastro dele tem de estar no disco ANTES
+/// de o primeiro volume do `.lgpd` sair, e o servidor faz esse `fsync` fora da
+/// trava global, onde a tabela ja foi fechada. Ver
+/// `Table::preparar_expurgo_da_trilha`.
+#[derive(Debug, Clone)]
+pub struct VolumeDoRegistro {
+    diretorio: PathBuf,
+    nome: String,
+    paginacao: Paginacao,
+    volume: u32,
+}
+
+impl VolumeDoRegistro {
+    /// Leva o volume ao disco por um descritor proprio, sem tocar no registro
+    /// de escritas da familia. Ver `Volumes::sincronizar_volume`.
+    ///
+    /// Devolve quantos `fsync` o disco CONFIRMOU -- o contador do conjunto,
+    /// que so anda depois do `sync_all` voltar bem --, e nao um `1` escrito a
+    /// mao: um numero que quem chama pudesse fixar provaria a intencao, e nao
+    /// o fato.
+    pub fn sincronizar(&self) -> Result<u64> {
+        let mut v = Volumes::novo(
+            &self.diretorio,
+            self.nome.clone(),
+            EXT_REASON,
+            self.paginacao,
+        );
+        v.sincronizar_volume(self.volume)?;
+        Ok(v.sincronizados())
+    }
 }
 
 pub struct MotivoFile {
@@ -336,6 +395,28 @@ impl MotivoFile {
         motivo: &str,
         identidade: &str,
     ) -> Result<Motivo> {
+        self.registrar_com_flags(tipo, rowid, motivo, identidade, 0)
+    }
+
+    /// Registra o rastro de um expurgo da trilha `.lgpd`: tipo `expurgo`,
+    /// rowid 0 e o bit [`FLAG_EXPURGO_DA_TRILHA`]. A `identidade` diz quais
+    /// volumes e quantos registros -- nunca uma chave de linha.
+    pub fn registrar_expurgo_da_trilha(
+        &mut self,
+        motivo: &str,
+        identidade: &str,
+    ) -> Result<Motivo> {
+        self.registrar_com_flags(Tipo::Expurgo, 0, motivo, identidade, FLAG_EXPURGO_DA_TRILHA)
+    }
+
+    fn registrar_com_flags(
+        &mut self,
+        tipo: Tipo,
+        rowid: RowId,
+        motivo: &str,
+        identidade: &str,
+        flags: u8,
+    ) -> Result<Motivo> {
         let m = Motivo {
             uuid: Uuid::v7(),
             carimbo: agora_ms(),
@@ -344,6 +425,7 @@ impl MotivoFile {
             usuario: self.usuario,
             motivo: cortar(motivo, MOTIVO_MAX),
             identidade: cortar(identidade, IDENTIDADE_MAX),
+            flags,
         };
         self.anexar(&m)?;
         Ok(m)
@@ -454,6 +536,20 @@ impl MotivoFile {
 
     pub fn sincronizar(&mut self) -> Result<()> {
         self.volumes.sincronizar()
+    }
+
+    /// Onde o ultimo registro gravado mora. Ver [`VolumeDoRegistro`].
+    ///
+    /// A paginacao ja vai CORTADA (a do conjunto, e nao a do esquema): quem
+    /// reabrir por ela tem de achar o mesmo nome de arquivo que este conjunto
+    /// escreveu, e o corte do diario e um global que pode mudar no meio.
+    pub fn volume_do_ultimo(&self) -> VolumeDoRegistro {
+        VolumeDoRegistro {
+            diretorio: self.volumes.diretorio().to_path_buf(),
+            nome: self.volumes.nome().to_string(),
+            paginacao: self.volumes.paginacao(),
+            volume: self.volume_atual,
+        }
     }
 
     /// Quantos arquivos o `.reason` ja mandou ao disco de verdade. Ver
@@ -567,6 +663,7 @@ mod testes {
             usuario: 1,
             motivo: "fraude".into(),
             identidade: "id=1".into(),
+            flags: 0,
         };
         // Cabecalho em claro: o que este teste prova e o CRC, e ele vale nos
         // dois modos -- a cifra so muda o que esta dentro do corpo.

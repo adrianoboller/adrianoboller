@@ -23,7 +23,7 @@ informação. Ver §7.
 | `.log` | Diário de inclusões, alterações e exclusões | `PHXLOG\0\0` | sim | quem tem `diario` |
 | `.trash` | Linhas que saíram do `.reg`, inteiras | `PHXTRH\0\0` | sim | **só `administrar`** |
 | `.reason` | Por que cada linha foi excluída, e por quem | `PHXRSN\0\0` | sim | **só `administrar`** |
-| `.lgpd` | Quem alterou e quem leu as colunas de dado pessoal | `PHXLGP\0\0` | sim | **só `administrar`** |
+| `.lgpd` | Quem alterou e quem leu as colunas de dado pessoal | `PHXLGP\0\0` | **própria** — ativo `.lgpd`, fechados `_NNN` (§7) | **só `administrar`** |
 | `.pag` | Descritor de partição, em JSON | — (texto) | não | quem lê a tabela |
 | `.fts` | Índice de texto (termo → linhas), só se a tabela declara um | `PHXNDX\0\0` — é um `.ndx` por dentro | **não** | quem tem `ler` |
 
@@ -1470,7 +1470,7 @@ próprio registro mais o offset dele no volume, como na `.trash`.
 |---:|---:|---|
 | 0 | 8 | carimbo em milissegundos |
 | 8 | 1 | tipo: `1` suave, `2` física, `3` restauração, `4` expurgo |
-| 9 | 1 | *flags* (reservado) |
+| 9 | 1 | *flags*: bit 0 = o expurgo foi da **trilha** `.lgpd` (só com tipo `4`); os outros bits, reservados e em 0 |
 | 10 | 2 | tamanho do texto do motivo |
 | 12 | 8 | rowid |
 | 20 | 4 | usuário (0 = não informado) |
@@ -1496,6 +1496,20 @@ poder acontecer.
 
 Tetos: **2000 bytes** de motivo e **512** de identidade, cortados no limite de
 caractere para nunca gravar UTF-8 inválido.
+
+**O tipo `4` tem dois donos, e quem os separa é o bit 0 do byte 9** (pedido
+368, condição C1 do papel C): rowid `0` e o bit **apagado** é o
+`esvaziar_lixeira`; rowid `0` e o bit **aceso** (`FLAG_EXPURGO_DA_TRILHA`) é o
+expurgo da trilha, e ali a identidade não é chave de linha nenhuma — diz, para
+quem lê, quais volumes saíram, quantos registros e o limite (`.lgpd volumes 1-3
+(3 volume(s), 1234 registro(s)); mais novo …; limite …`). Quem decide é o bit,
+nunca o texto.
+
+Por que o bit e não um tipo `5`: o binário anterior **lê** o tipo, não conhece o
+`5` e recusa o `.reason` inteiro («tipo de exclusao desconhecido»). O byte 9
+estava sempre em `0`, é coberto pelo CRC e pelo dado associado da etiqueta, e o
+leitor de antes **não o lê**: ele vê um «expurgo», que é verdade. Nenhum outro
+byte do `.reason` mudou.
 
 ### O motivo obrigatório
 
@@ -1685,6 +1699,80 @@ Ele concentra, em claro, exatamente o que a lei manda proteger. Por isso:
   com a prova pelo contrário no volume em claro;
 - **só administrador lê** pela operação `trilha`.
 
+### Nomes e volumes — formato B (pedido 368)
+
+A trilha tem numeração **própria**, e não segue a paginação do `.reg`: não
+obedece `registros_por_arquivo`, `max_arquivos` nem `recursos.diario_volume_mib`.
+
+| arquivo | o que é |
+|---|---|
+| `<tabela>.lgpd` | o volume **ativo** — o único que recebe escrita. Nome **fixo** |
+| `<tabela>_NNN.lgpd` | um volume **fechado**. `NNN` é o `volume` do cabeçalho: no mínimo 3 dígitos, **sem teto** (`_999`, `_1000`), nunca reusado |
+
+- **Fechar** é *renomear* o ativo para `_NNN` e fazer nascer o ativo `NNN+1`.
+  Nenhum byte de registro nem de cabeçalho muda: o nonce da cifra sai do offset
+  e do UUID do registro, e a chave, do sal do cabeçalho — nada disso depende do
+  nome.
+- O ativo fecha por três motivos: **tamanho** (`lgpd.volume_mib`, padrão 64
+  MiB), verificado no append; **idade** do primeiro registro acima de
+  `lgpd.volume_dias` (padrão 30), verificada na passada diária da retenção e na
+  op `expurgar_trilha`, nunca no laço quente; ou **pedido** do administrador
+  (`fechar_ativo`). O ativo vazio não fecha.
+- **O número do ativo** sai do cabeçalho de `<tabela>.lgpd` — abrir custa um
+  `stat` e a leitura desse cabeçalho. Sem ele no disco, o ativo nasce com o
+  **maior fechado + 1**, por **uma** listagem do diretório, uma vez na vida
+  daquele ativo. Uma queda entre o `rename` e o nascimento do seguinte cai
+  nessa mesma regra.
+- **Nascimento interrompido:** o ativo **mais curto que o cabeçalho** que ele
+  teria — menos de 64 bytes, ou de 64 a 127 com versão 3 nos bytes 8..10 (o
+  cifrado cortado) — é a queda entre o `create_new` e o cabeçalho no disco.
+  Por construção não tem registro: conta como **ausente** (mesma regra acima)
+  e o próximo nascimento o substitui. O ativo novo não vai ao disco quando
+  nasce; sem esta regra, a queda antes do *writeback* deixava um arquivo de 0
+  byte e a tabela inteira não abria (papel C, B2).
+- **O expurgo faz nascer o ativo que falta** antes de apagar qualquer volume,
+  e o leva ao disco junto do rastro: sem ativo, o número dele só existe na
+  listagem dos fechados, e depois do expurgo o próximo evento nasceria de novo
+  no 1 (papel C, P3).
+- **Ler, contar e expurgar** andam do ativo para **baixo** até faltar um
+  número. O expurgo tira sempre o **começo** (um prefixo), então os fechados
+  são contíguos logo abaixo do ativo, e o conjunto pode começar num número
+  maior que 1. O ativo nunca sai; a passada da retenção fecha o ativo velho
+  **antes** de planejar.
+- **O cabeçalho confere o nome:** volume fechado cujo cabeçalho diz outro
+  número é recusado como corrompido. Isso **não** protege a trilha de uma
+  tabela cujo nome termina em `_NNN`: o ativo de `x_001` é `x_001.lgpd`,
+  volume 1 — o mesmo nome e o mesmo número do fechado 1 de `x` —, e o papel C
+  mediu o expurgo de `x` apagando-o (P2a). Quem protege é a **declaração**:
+  `criar_tabela`, `duplicar_tabela`, `copiar_tabela_para` e `renomear_tabela`
+  recusam, pela mesma função, o nome que o catálogo leria como volume de
+  outra tabela — **hoje só o sufixo de dígitos** (`_` seguido só de
+  dígitos). O de **letra** da partição só recusa quando o `_A.reg` do mesmo
+  prefixo já existe: `x_A` sozinho é **aceito** e some da árvore, medido pelo
+  papel C (pedido **506**); e o separador `_` de volume, que colide com
+  qualquer nome que o use, é o pedido **508**. A tabela `_NNN` criada antes
+  dessa recusa continua abrindo, com a colisão.
+
+**Migração, sem reescrita** — a trilha gravada antes do formato B abre como
+está:
+
+- tabela sem paginação: `<tabela>.lgpd`, volume 1, **já é** o ativo;
+- tabela paginada, `_001` a `_K` sem `<tabela>.lgpd`: os K viram **fechados** e
+  o ativo nasce `K+1` no primeiro evento;
+- tabela paginada com sufixo de largura diferente de 3 (`_0001`): os volumes de
+  antes continuam no nome em que nasceram, e são achados por ele; os que
+  fecharem depois ganham o nome canônico (`_004`).
+
+**Downgrade:** o binário anterior não segue a trilha de uma tabela **paginada**
+depois do formato B — ele procura o ativo em `_NNN` e não o acha no nome fixo.
+Por isso o formato B entrou na mesma versão do expurgo (decisão do papel C). A
+tabela sem paginação lê igual nos dois sentidos enquanto nenhum volume fechar;
+depois do primeiro fechamento, o binário anterior enxerga **só o ativo** — os
+fechados `_NNN` ficam no disco e fora da leitura dele.
+
+A regra de quem sai, o rastro no `.reason` e os custos medidos estão em
+`docs/LGPD.md` §10.
+
 ---
 
 ## 8. Paginação de tabelas grandes
@@ -1696,7 +1784,7 @@ Definida no `CREATE TABLE` e gravada no esquema:
 | `registros_por_arquivo` | quantos registros cabem em cada volume do `.reg` |
 | `max_arquivos` | quantos volumes a tabela pode ter |
 | `digitos` | largura do sufixo, padrão 3 (`_001`) |
-| `bytes_por_arquivo` | tamanho de cada volume dos arquivos externos |
+| `bytes_por_arquivo` | tamanho de cada volume dos arquivos externos (menos o `.lgpd`, que tem corte próprio — §7) |
 | `modo` | **o que faz o volume cortar**: a contagem ou o calendário |
 
 Capacidade da tabela = `registros_por_arquivo × max_arquivos`. Passar disso
@@ -1828,6 +1916,10 @@ balde certo com outro rowid.
 O `.bin`, o `.memo`, o `.log`, o `.trash` e o `.reason` rolam por **tamanho**, e
 continuam com o sufixo numérico: um `Clientes_B.log` se leria como «o diário do
 balde B», e o diário é da tabela inteira.
+
+O `.lgpd` **não** está nesta lista desde o formato B (pedido 368): ele não
+segue a paginação da tabela nenhuma — nem a letra, nem o número, nem o corte.
+Ver §7, «Nomes e volumes».
 
 ### Na partição por período, o endereço sai de uma busca binária
 

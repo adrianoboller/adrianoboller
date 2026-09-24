@@ -665,3 +665,380 @@ fn memo_marcado_ilegivel_sai_como_indisponivel_e_nao_como_vazio() {
     assert_eq!(laudo.depois, "LAUDO_NOVO: carcinoma");
     assert_eq!(ev.len(), 1, "so o laudo mudou");
 }
+
+// ------------------------------------------------------ expurgo (pedido 368)
+
+/// `clientes` com o `email` marcado, SEM paginacao -- a tabela padrao do
+/// protocolo, a que o formato B passou a expurgar.
+fn esquema_padrao() -> Schema {
+    Schema::new(
+        "clientes",
+        vec![
+            Column::new("id", ColumnType::Int8).obrigatoria(),
+            Column::new("email", ColumnType::Str(80)).com_dado_pessoal(DadoPessoal::Pessoal),
+        ],
+        vec![IndexDef::new("porId", vec![IndexColumn::asc(0)])
+            .unico()
+            .primaria()],
+    )
+    .unwrap()
+}
+
+fn alterar_email(t: &mut Table, i: u32) {
+    t.atualizar(1, &[Value::Int(1), Value::Str(format!("a{i}@x.com"))])
+        .unwrap();
+}
+
+/// **O expurgo pela tabela padrao, de ponta a ponta.** Vinte alteracoes por
+/// volume, fechados a pedido: tres volumes fechados (`clientes_001` a `_003`)
+/// e o ativo 4 em `clientes.lgpd`. O expurgo com um limite depois de tudo
+/// derruba os fechados e deixa o ativo, grava o rastro no `.reason` com o bit
+/// do expurgo da trilha e sem a chave de linha, e a trilha que sobra continua
+/// lendo, contando e crescendo -- nunca de volta ao volume 1.
+///
+/// O disco e conferido pelo SISTEMA DE ARQUIVOS (`exists` de cada nome), e
+/// nao pelo que a tabela diz de si mesma.
+#[test]
+fn o_expurgo_pela_tabela_padrao_grava_o_rastro_e_so_derruba_volume_fechado() {
+    let d = temp("expurgo");
+    let mut t = abrir(&d, esquema_padrao());
+    t.inserir(&[Value::Int(1), Value::Str("a0@x.com".into())])
+        .unwrap();
+    let mut n = 0;
+    for _ in 0..3 {
+        for _ in 0..20 {
+            n += 1;
+            alterar_email(&mut t, n);
+        }
+        assert!(t.fechar_volume_da_trilha(true, 0).unwrap().is_some());
+    }
+    for _ in 0..5 {
+        n += 1;
+        alterar_email(&mut t, n);
+    }
+    assert_eq!(t.volumes_da_trilha().unwrap(), vec![1, 2, 3, 4]);
+    for nome in [
+        "clientes.lgpd",
+        "clientes_001.lgpd",
+        "clientes_002.lgpd",
+        "clientes_003.lgpd",
+    ] {
+        assert!(d.join(nome).exists(), "{nome} nao existe");
+    }
+    let total_antes = t.total_da_trilha().unwrap();
+    assert_eq!(total_antes, 65);
+
+    // Sem motivo, recusa -- e nada sai.
+    assert!(t.expurgar_trilha(i64::MAX, "   ").is_err());
+    assert_eq!(t.volumes_da_trilha().unwrap(), vec![1, 2, 3, 4]);
+
+    let limite = phxsql_core::datahora::ms_de_instante_iso("2099-01-01").unwrap();
+    let selado = t
+        .expurgar_trilha(limite, "prazo de guarda vencido")
+        .unwrap();
+    let e = selado.expurgo();
+    assert_eq!(e.volumes.len(), 3);
+    assert_eq!(e.registros(), 60);
+    assert_eq!(t.volumes_da_trilha().unwrap(), vec![4]);
+    for (nome, fica) in [
+        ("clientes.lgpd", true),
+        ("clientes_001.lgpd", false),
+        ("clientes_002.lgpd", false),
+        ("clientes_003.lgpd", false),
+    ] {
+        assert_eq!(
+            d.join(nome).exists(),
+            fica,
+            "{nome}: o disco nao e o que o expurgo disse"
+        );
+    }
+
+    // O rastro: quem, o motivo, o que saiu, o BIT -- e nenhuma chave de linha.
+    let rastro: Vec<_> = t
+        .motivos(0, 0)
+        .unwrap()
+        .into_iter()
+        .filter(|m| m.tipo == phxsql_store::motivo::Tipo::Expurgo)
+        .collect();
+    assert_eq!(rastro.len(), 1, "{rastro:?}");
+    assert!(rastro[0].expurgo_da_trilha(), "o rastro saiu sem o bit C1");
+    assert_eq!(rastro[0].usuario, 7, "quem pediu nao ficou no rastro");
+    assert_eq!(rastro[0].motivo, "prazo de guarda vencido");
+    assert_eq!(rastro[0].rowid, 0);
+    assert!(
+        rastro[0].identidade.starts_with(".lgpd volumes 1-3 "),
+        "{}",
+        rastro[0].identidade
+    );
+
+    // A trilha que sobra.
+    let resto = t.trilha(0, 0).unwrap();
+    assert_eq!(resto.len() as u64, t.total_da_trilha().unwrap());
+    assert_eq!(resto.len() as u64, total_antes - e.registros());
+
+    // Reaberta, continua -- e o proximo volume e o 5.
+    drop(t);
+    let mut t = Table::abrir(&d, "clientes").unwrap();
+    t.definir_usuario(7);
+    n += 1;
+    alterar_email(&mut t, n);
+    assert_eq!(t.fechar_volume_da_trilha(true, 0).unwrap(), Some(4));
+    assert_eq!(t.volumes_da_trilha().unwrap(), vec![4, 5]);
+    assert_eq!(
+        t.trilha(0, 0).unwrap().len() as u64,
+        t.total_da_trilha().unwrap()
+    );
+}
+
+/// O rastro do esvaziar da LIXEIRA continua sem o bit: o tipo 4 tem dois
+/// donos, e quem os separa e o byte 9, nunca o texto.
+///
+/// **Defeito reposto** (o `registrar_expurgo_da_trilha` sem a flag): o
+/// rastro da trilha sai com o byte 9 em 0 e a primeira asserção cai.
+#[test]
+fn o_bit_do_expurgo_separa_a_trilha_da_lixeira_no_disco() {
+    let d = temp("bit-c1");
+    let mut t = abrir(&d, esquema_padrao());
+    t.inserir(&[Value::Int(1), Value::Str("a0@x.com".into())])
+        .unwrap();
+    alterar_email(&mut t, 1);
+    t.fechar_volume_da_trilha(true, 0).unwrap();
+    let limite = phxsql_core::datahora::ms_de_instante_iso("2099-01-01").unwrap();
+    t.expurgar_trilha(limite, "retencao").unwrap();
+    t.esvaziar_lixeira("limpeza").unwrap();
+    t.sincronizar().unwrap();
+    let m = t.motivos(0, 0).unwrap();
+    let flags: Vec<(bool, u8)> = m
+        .iter()
+        .filter(|m| m.tipo == phxsql_store::motivo::Tipo::Expurgo)
+        .map(|m| (m.expurgo_da_trilha(), m.flags))
+        .collect();
+    assert_eq!(flags, vec![(true, 1), (false, 0)]);
+    // E no DISCO: o byte 9 do registro do rastro, lido cru do `.reason`.
+    let bruto = std::fs::read(d.join("clientes.reason")).unwrap();
+    let pos = bruto
+        .windows(13)
+        .position(|w| w == b".lgpd volumes")
+        .expect("o rastro em claro no .reason");
+    let inicio = pos - 48 - "retencao".len();
+    assert_eq!(bruto[inicio + 8], 4, "tipo");
+    assert_eq!(bruto[inicio + 9], 1, "o bit C1 nao foi ao disco");
+}
+
+/// **O P1 do papel C, pela `Table`.** O fechamento faz nascer o ativo novo e
+/// nao o leva ao disco (o `sincronizar` depois dele ainda deve a trilha); a
+/// queda de energia antes do writeback deixa `clientes.lgpd` com 0 byte. A
+/// tabela tem de ABRIR -- leitura e escrita --, com a trilha inteira do
+/// volume fechado, e o proximo evento nasce o ativo 2 por cima do arquivo
+/// vazio.
+///
+/// **Defeito reposto** (sem a regra do nascimento interrompido no
+/// `TrilhaFile::abrir`): `Table::abrir` cai com «failed to fill whole
+/// buffer», o medido pelo papel C.
+#[test]
+fn a_tabela_abre_com_o_ativo_da_trilha_de_zero_byte() {
+    let d = temp("ativo-zero");
+    let mut t = abrir(&d, esquema_padrao());
+    t.inserir(&[Value::Int(1), Value::Str("a0@x.com".into())])
+        .unwrap();
+    alterar_email(&mut t, 1);
+    assert_eq!(t.fechar_volume_da_trilha(true, 0).unwrap(), Some(1));
+    drop(t);
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(d.join("clientes.lgpd"))
+        .unwrap()
+        .set_len(0)
+        .unwrap();
+
+    let mut t = match Table::abrir(&d, "clientes") {
+        Ok(t) => t,
+        Err(e) => panic!("a tabela trancou pelo ativo de 0 byte: {e}"),
+    };
+    t.definir_usuario(7);
+    assert_eq!(t.trilha(0, 0).unwrap().len(), 1);
+    alterar_email(&mut t, 2);
+    let ev = t.trilha(0, 0).unwrap();
+    assert_eq!(ev.len(), 2);
+    assert_eq!(ev.last().unwrap().depois, "a2@x.com");
+    assert_eq!(
+        lgpd_no_disco(&d),
+        vec!["clientes.lgpd", "clientes_001.lgpd"]
+    );
+}
+
+/// A trilha gravada ANTES do formato B pelo codigo de antes
+/// (`tests/fixtures/trilha-antes-do-b/`, commit `82a17ef`), copiada para um
+/// diretorio temporario e aberta pela tabela: le tudo, conta tudo, e o
+/// proximo evento segue a regra nova.
+fn migrar(caso: &str) -> (comum::DirTemp, Table) {
+    let origem = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/trilha-antes-do-b")
+        .join(caso);
+    let d = temp(&format!("migra-{caso}"));
+    for e in std::fs::read_dir(&origem).unwrap().flatten() {
+        std::fs::copy(e.path(), d.join(e.file_name())).unwrap();
+    }
+    let mut t = Table::abrir(&d, "clientes").unwrap();
+    t.definir_usuario(7);
+    (d, t)
+}
+
+fn lgpd_no_disco(d: &std::path::Path) -> Vec<String> {
+    let mut v: Vec<String> = std::fs::read_dir(d)
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.ends_with(".lgpd"))
+        .collect();
+    v.sort();
+    v
+}
+
+/// **Migracao 1: a trilha de arquivo unico** (tabela sem paginacao). O
+/// `clientes.lgpd` de antes ja e o ativo, volume 1: le os 5, e o proximo
+/// evento entra NELE, sem arquivo novo. Fechado a pedido, vira
+/// `clientes_001.lgpd` e se expurga.
+#[test]
+fn a_trilha_de_arquivo_unico_de_antes_vira_o_ativo() {
+    let (d, mut t) = migrar("unico");
+    assert_eq!(t.volumes_da_trilha().unwrap(), vec![1]);
+    assert_eq!(t.total_da_trilha().unwrap(), 5);
+    let ev = t.trilha(0, 0).unwrap();
+    assert_eq!(ev.last().unwrap().depois, "a5@x.com");
+    alterar_email(&mut t, 6);
+    assert_eq!(lgpd_no_disco(&d), vec!["clientes.lgpd"]);
+    assert_eq!(t.total_da_trilha().unwrap(), 6);
+    assert_eq!(t.fechar_volume_da_trilha(true, 0).unwrap(), Some(1));
+    let limite = phxsql_core::datahora::ms_de_instante_iso("2099-01-01").unwrap();
+    t.expurgar_trilha(limite, "migracao").unwrap();
+    assert_eq!(lgpd_no_disco(&d), vec!["clientes.lgpd"]);
+    assert_eq!(t.volumes_da_trilha().unwrap(), vec![2]);
+}
+
+/// **Migracao 2: a trilha paginada** `_001` a `_003`, sem `clientes.lgpd`.
+/// Os tres viram fechados, o ativo nasce 4 no primeiro evento, e o expurgo
+/// derruba os tres de antes.
+///
+/// **Defeito reposto** (sem o ativo, a resolucao supoe o volume 1 em vez de
+/// listar o diretorio): a trilha migrada aparece vazia, e a primeira
+/// asserção cai.
+#[test]
+fn a_trilha_paginada_de_antes_vira_fechados_e_o_ativo_nasce_depois() {
+    let (d, mut t) = migrar("paginada");
+    assert_eq!(t.volumes_da_trilha().unwrap(), vec![1, 2, 3]);
+    assert_eq!(t.total_da_trilha().unwrap(), 60);
+    assert_eq!(t.trilha(0, 0).unwrap()[59].depois, "a60@x.com");
+    alterar_email(&mut t, 61);
+    assert_eq!(
+        lgpd_no_disco(&d),
+        vec![
+            "clientes.lgpd",
+            "clientes_001.lgpd",
+            "clientes_002.lgpd",
+            "clientes_003.lgpd"
+        ]
+    );
+    assert_eq!(t.volumes_da_trilha().unwrap(), vec![1, 2, 3, 4]);
+    let limite = phxsql_core::datahora::ms_de_instante_iso("2099-01-01").unwrap();
+    let s = t.expurgar_trilha(limite, "migracao").unwrap();
+    assert_eq!(s.expurgo().registros(), 60);
+    assert_eq!(lgpd_no_disco(&d), vec!["clientes.lgpd"]);
+    assert_eq!(t.total_da_trilha().unwrap(), 1);
+}
+
+/// **Migracao 3: a trilha paginada de sufixo com QUATRO digitos**
+/// (`_0001` a `_0003`). Os nomes antigos ficam como estao -- nada se renomeia
+/// nem se reescreve --, sao lidos pelo nome em que nasceram, o ativo nasce 4,
+/// o volume 4 fecha no nome canonico `_004`, e o expurgo leva os quatro.
+///
+/// **Defeito reposto** (sem procurar o nome legado): a trilha migrada aparece
+/// vazia, e a primeira asserção cai.
+#[test]
+fn a_trilha_de_sufixo_de_quatro_digitos_de_antes_continua_legivel() {
+    let (d, mut t) = migrar("paginada-4-digitos");
+    assert_eq!(t.volumes_da_trilha().unwrap(), vec![1, 2, 3]);
+    assert_eq!(t.total_da_trilha().unwrap(), 60);
+    alterar_email(&mut t, 61);
+    assert_eq!(t.fechar_volume_da_trilha(true, 0).unwrap(), Some(4));
+    assert_eq!(
+        lgpd_no_disco(&d),
+        vec![
+            "clientes.lgpd",
+            "clientes_0001.lgpd",
+            "clientes_0002.lgpd",
+            "clientes_0003.lgpd",
+            "clientes_004.lgpd"
+        ]
+    );
+    drop(t);
+    let mut t = Table::abrir(&d, "clientes").unwrap();
+    assert_eq!(t.volumes_da_trilha().unwrap(), vec![1, 2, 3, 4, 5]);
+    assert_eq!(t.total_da_trilha().unwrap(), 61);
+    let limite = phxsql_core::datahora::ms_de_instante_iso("2099-01-01").unwrap();
+    let s = t.expurgar_trilha(limite, "migracao").unwrap();
+    assert_eq!(s.expurgo().registros(), 61);
+    assert_eq!(lgpd_no_disco(&d), vec!["clientes.lgpd"]);
+}
+
+// --------------------------------------- o teto que o formato B tirou (A1)
+
+/// `clientes` com o `email` marcado e a paginacao do `.reg` com teto de TRES
+/// volumes e 2 KiB por volume de diario -- o cenario do achado A1 do parecer
+/// do DBA (pedido 368).
+fn esquema_com_teto(max_arquivos: u32) -> Schema {
+    Schema::new(
+        "clientes",
+        vec![
+            Column::new("id", ColumnType::Int8).obrigatoria(),
+            Column::new("email", ColumnType::Str(80)).com_dado_pessoal(DadoPessoal::Pessoal),
+        ],
+        vec![IndexDef::new("porId", vec![IndexColumn::asc(0)])
+            .unico()
+            .primaria()],
+    )
+    .unwrap()
+    .com_paginacao(
+        phxsql_core::paginacao::Paginacao::nova(1_000, max_arquivos)
+            .unwrap()
+            .com_bytes_por_arquivo(2_048)
+            .unwrap(),
+    )
+    .unwrap()
+}
+
+/// **O teto de volumes da trilha nao existe mais** -- a metade «teto» do
+/// achado A1 do DBA deixa de reproduzir.
+///
+/// Antes do formato B a trilha seguia a paginacao do `.reg`: o teto dela era o
+/// `max_arquivos` da TABELA, e no teto o `atualizar` gravava a linha e o
+/// `.log` e so entao falhava na trilha -- linha alterada, sem trilha, e erro
+/// para o cliente. Medido pelo DBA: com `max_arquivos 3`, a 71a alteracao
+/// falhava. Agora a trilha tem numeracao propria, sem teto: as 100 passam, a
+/// linha fica com o ultimo valor e a trilha com o ultimo registro.
+///
+/// **Com o codigo de antes** (`git archive 82a17ef`) este teste cai na
+/// alteracao 64 (o DBA mediu 71 com registro menor: sem IP), com
+/// `LimiteExcedido` da trilha.
+///
+/// Por que 100 e nao 200: neste esquema o `.log` -- que continua seguindo a
+/// paginacao da tabela, e nao e deste pedido -- bate no MESMO teto de 3
+/// volumes na alteracao 135. E o outro lado do achado A1 (o diario tambem tem
+/// teto de volumes), fica registrado e nao e desta frente.
+#[test]
+fn o_teto_de_volumes_da_trilha_nao_existe_mais() {
+    let d = temp("sem-teto");
+    let mut t = abrir(&d, esquema_com_teto(3));
+    t.inserir(&[Value::Int(1), Value::Str("a0@x.com".into())])
+        .unwrap();
+    for i in 1..=100 {
+        if let Err(e) = t.atualizar(1, &[Value::Int(1), Value::Str(format!("a{i}@x.com"))]) {
+            panic!("a alteracao {i} falhou: {e}");
+        }
+    }
+    let linha = t.ler(1).unwrap().unwrap();
+    assert_eq!(linha[1], Value::Str("a100@x.com".into()));
+    let ev = t.trilha(0, 0).unwrap();
+    assert_eq!(ev.len(), 100, "a trilha perdeu registro");
+    assert_eq!(ev.last().unwrap().depois, "a100@x.com");
+}
