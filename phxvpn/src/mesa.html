@@ -71,6 +71,7 @@ dialog h2{margin:0 0 10px;font-size:16px}
     <option value="auto">Auto (direto; se nao der, servidor intermediario)</option>
     <option value="repasse">Sempre pelo servidor intermediario</option></select></label>
   <label class="campo"><span>Servidor intermediario (CHAVE@HOST:PORTA, para auto e repasse)</span><input name="repasse"></label>
+  <label class="campo"><span>Meu usuario no servidor intermediario</span><input name="repasse_usuario" autocomplete="username"></label>
   <p class="msg"></p>
   <div class="linha-botoes"><button type="button" data-fechar>Cancelar</button><button class="inclui">Criar</button></div>
 </form></dialog>
@@ -96,6 +97,11 @@ dialog h2{margin:0 0 10px;font-size:16px}
 <dialog id="d-ligar"><form method="dialog" id="f-ligar">
   <h2>Ligar <span data-rede></span></h2>
   <label class="campo"><span>Senha da rede</span><input name="senha" type="password" required autocomplete="off"></label>
+  <fieldset id="repasse-conta" hidden style="border:1px solid var(--linha);border-radius:8px;margin:4px 0 8px;padding:8px">
+    <legend style="color:var(--ambar);font-size:12px;padding:0 6px">Servidor intermediario</legend>
+    <label class="campo"><span>Usuario</span><input name="repasse_usuario" autocomplete="username"></label>
+    <label class="campo"><span>Senha</span><input name="repasse_senha" type="password" autocomplete="current-password"></label>
+  </fieldset>
   <p class="msg"></p>
   <div class="linha-botoes"><button type="button" data-fechar>Cancelar</button><button class="inclui">Ligar</button></div>
 </form></dialog>

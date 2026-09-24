@@ -42,7 +42,7 @@ function desenhar(redes) {
     const acoes = el("span", "acoes");
     const conv = el("button", "", "Convidar"); conv.onclick = () => abrirConvidar(r.rede);
     const liga = el("button", r.ligada ? "exclui" : "inclui", r.ligada ? "Desligar" : "Ligar");
-    liga.onclick = () => r.ligada ? desligar(r.rede, liga) : abrirLigar(r.rede);
+    liga.onclick = () => r.ligada ? desligar(r.rede, liga) : abrirLigar(r);
     acoes.append(conv, liga);
     const online = r.membros.filter((m) => m.online).length;
     const info = el("span", "info", `meu IP ${r.ip} · ${r.membros.length} membro(s)` + (r.ligada ? `, ${online} conectado(s)` : "") + ` · modo ${r.modo}`);
@@ -54,7 +54,7 @@ function desenhar(redes) {
         const p = el("span", "ponto" + (m.online ? " on" : "")); p.title = m.online ? "conectado" : "sem sessao";
         const ip = el("span", "ip", m.ip); ip.title = "clique para copiar"; ip.onclick = () => copiar(m.ip, "IP " + m.ip);
         const chave = el("span", "", m.chave); chave.style.color = "var(--fraco)"; chave.style.fontSize = "12px";
-        const cam = el("span", "caminho", `${m.caminho} · ${m.sessao}`);
+        const cam = el("span", "caminho", m.caminho === "-" ? m.sessao : `${m.caminho} · ${m.sessao}`);
         linha.append(p, ip, chave, cam);
         bloco.appendChild(linha);
       }
@@ -109,11 +109,17 @@ function abrirConvidar(rede) {
     }); };
 }
 
-function abrirLigar(rede) {
+function abrirLigar(r) {
+  const rede = r.rede;
   const f = dialogo("d-ligar");
   $("d-ligar").querySelector("[data-rede]").textContent = rede;
-  f.onsubmit = (ev) => { ev.preventDefault();
-    enviar(f, "/api/ligar", { rede, senha: new FormData(f).get("senha") }, (r) => { $("d-ligar").close(); aviso(r.ok, true); atualizar(); }); };
+  // Usuario e senha do servidor intermediario so quando a rede passa por ele.
+  const usa = r.modo !== "direto";
+  $("repasse-conta").hidden = !usa;
+  f.querySelector("[name=repasse_usuario]").value = r.repasse_usuario || "";
+  f.onsubmit = (ev) => { ev.preventDefault(); const d = Object.fromEntries(new FormData(f)); d.rede = rede;
+    if (!usa) { delete d.repasse_usuario; delete d.repasse_senha; }
+    enviar(f, "/api/ligar", d, (x) => { $("d-ligar").close(); aviso(x.ok, true); atualizar(); }); };
 }
 
 async function desligar(rede, botao) {

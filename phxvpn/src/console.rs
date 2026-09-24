@@ -499,7 +499,14 @@ impl<'a> Console<'a> {
                     );
                 }
                 let senha = (self.perguntar)("senha da rede", "PHXVPN_SENHA_REDE");
-                let (no, tun, resumo) = comandos::p2p_preparar(o, &senha)?;
+                let senha_repasse = comandos::usuario_do_repasse(o).map(|u| {
+                    (self.perguntar)(
+                        &format!("senha de {u} no servidor intermediario"),
+                        "PHXVPN_SENHA_REPASSE",
+                    )
+                });
+                let (no, tun, resumo) =
+                    comandos::p2p_preparar(o, &senha, senha_repasse.as_deref())?;
                 let n2 = std::sync::Arc::clone(&no);
                 std::thread::spawn(move || {
                     if let Err(e) = crate::p2p::rodar(n2, tun) {

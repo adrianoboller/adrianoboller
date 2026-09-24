@@ -148,6 +148,10 @@ impl Mesa {
                     ("rede", Json::texto_de(nome)),
                     ("ip", Json::texto_de(format!("{}/{}", r.ip, r.prefixo))),
                     ("modo", Json::texto_de(r.modo.clone())),
+                    (
+                        "repasse_usuario",
+                        Json::texto_de(r.repasse_usuario.clone().unwrap_or_default()),
+                    ),
                     ("ligada", Json::de_bool(ligada.is_some())),
                     ("membros", Json::Lista(membros)),
                 ])
@@ -159,7 +163,14 @@ impl Mesa {
     /// As frases de volta sao da JANELA, nao da linha de comando: «convide
     /// com p2p convidar» e o caminho do arquivo no rodape eram texto de
     /// terminal numa tela (achado ao exercitar a janela).
-    pub fn criar(&self, rede: &str, ip: &str, modo: &str, repasse: &str) -> R<String> {
+    pub fn criar(
+        &self,
+        rede: &str,
+        ip: &str,
+        modo: &str,
+        repasse: &str,
+        repasse_usuario: &str,
+    ) -> R<String> {
         comandos::p2p_criar(&opcoes(&[
             ("rede", rede.into()),
             (
@@ -179,6 +190,7 @@ impl Mesa {
                 },
             ),
             ("repasse", repasse.into()),
+            ("repasse-usuario", repasse_usuario.into()),
             ("arquivo", self.arquivo_da_rede(rede)),
             ("chave", self.chave()),
         ]))
@@ -212,7 +224,13 @@ impl Mesa {
     }
 
     #[cfg(any(target_os = "linux", windows))]
-    pub fn ligar(&self, rede: &str, senha: &str) -> R<String> {
+    pub fn ligar(
+        &self,
+        rede: &str,
+        senha: &str,
+        repasse_usuario: &str,
+        repasse_senha: &str,
+    ) -> R<String> {
         let mut ligadas = self.ligadas.lock().unwrap_or_else(|e| e.into_inner());
         ligadas.retain(|_, l| !l.fio.is_finished());
         if ligadas.contains_key(rede) {
@@ -224,6 +242,7 @@ impl Mesa {
             ("rede", rede.into()),
             ("arquivo", self.arquivo_da_rede(rede)),
             ("chave", self.chave()),
+            ("repasse-usuario", repasse_usuario.into()),
             (
                 "interface",
                 if cfg!(windows) {
@@ -233,7 +252,8 @@ impl Mesa {
                 },
             ),
         ]);
-        let (no, tun, _) = comandos::p2p_preparar(&o, senha)?;
+        let senha_repasse = (!repasse_senha.is_empty()).then_some(repasse_senha);
+        let (no, tun, _) = comandos::p2p_preparar(&o, senha, senha_repasse)?;
         let resumo = format!("Rede {rede} ligada: seu IP e {}.", no.ip());
         let n2 = Arc::clone(&no);
         let fio = std::thread::spawn(move || crate::p2p::rodar(n2, tun));
@@ -242,7 +262,7 @@ impl Mesa {
     }
 
     #[cfg(not(any(target_os = "linux", windows)))]
-    pub fn ligar(&self, _rede: &str, _senha: &str) -> R<String> {
+    pub fn ligar(&self, _rede: &str, _senha: &str, _u: &str, _s: &str) -> R<String> {
         Err("o P2P roda no Linux e no Windows".into())
     }
 
@@ -307,14 +327,23 @@ impl Mesa {
                 Err(e) => Resposta::erro(500, &e),
             },
             ("GET", "/api/chave") => texto(self.minha_chave()),
-            ("POST", "/api/criar") => {
-                texto(self.criar(&t("rede"), &t("ip"), &t("modo"), &t("repasse")))
-            }
+            ("POST", "/api/criar") => texto(self.criar(
+                &t("rede"),
+                &t("ip"),
+                &t("modo"),
+                &t("repasse"),
+                &t("repasse_usuario"),
+            )),
             ("POST", "/api/entrar") => texto(self.entrar(&t("codigo"), &t("senha"))),
             ("POST", "/api/convidar") => {
                 texto(self.convidar(&t("rede"), &t("senha"), &t("endereco"), &t("validade")))
             }
-            ("POST", "/api/ligar") => texto(self.ligar(&t("rede"), &t("senha"))),
+            ("POST", "/api/ligar") => texto(self.ligar(
+                &t("rede"),
+                &t("senha"),
+                &t("repasse_usuario"),
+                &t("repasse_senha"),
+            )),
             ("POST", "/api/desligar") => texto(self.desligar(&t("rede"))),
             _ => Resposta::erro(404, "rota desconhecida"),
         }

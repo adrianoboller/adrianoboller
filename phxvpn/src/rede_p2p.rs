@@ -63,6 +63,9 @@ pub struct Rede {
     pub modo: String,
     /// `CHAVE@HOST:PORTA` do servidor intermediario, se houver.
     pub repasse: Option<String>,
+    /// Usuario deste computador no servidor intermediario (a senha nunca
+    /// fica aqui: e pedida ao ligar).
+    pub repasse_usuario: Option<String>,
     pub pares: Vec<Par>,
     pub convites: Vec<ConviteAberto>,
     /// Ficha que ESTE no apresenta ao entrar (veio do convite); some quando
@@ -143,6 +146,7 @@ impl Rede {
             porta,
             modo: "direto".into(),
             repasse: None,
+            repasse_usuario: None,
             pares: Vec::new(),
             convites: Vec::new(),
             ficha_de_entrada: None,
@@ -175,6 +179,13 @@ impl Rede {
             (
                 "repasse",
                 self.repasse
+                    .clone()
+                    .map(Json::texto_de)
+                    .unwrap_or(Json::Nulo),
+            ),
+            (
+                "repasse_usuario",
+                self.repasse_usuario
                     .clone()
                     .map(Json::texto_de)
                     .unwrap_or(Json::Nulo),
@@ -229,6 +240,10 @@ impl Rede {
             porta: j.inteiro_ou("porta", 51820) as u16,
             modo: j.texto_ou("modo", "direto").to_string(),
             repasse: j.campo("repasse").and_then(Json::texto).map(str::to_string),
+            repasse_usuario: j
+                .campo("repasse_usuario")
+                .and_then(Json::texto)
+                .map(str::to_string),
             pares: j
                 .campo("pares")
                 .and_then(Json::lista)
@@ -420,6 +435,7 @@ pub fn rede_do_convidado(c: &Convite, porta: u16) -> Rede {
         porta,
         modo: c.modo.clone(),
         repasse: c.repasse.clone(),
+        repasse_usuario: None,
         pares: vec![c.anfitriao.clone()],
         convites: Vec::new(),
         ficha_de_entrada: Some(c.ficha),

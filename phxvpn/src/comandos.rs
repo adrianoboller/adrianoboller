@@ -295,6 +295,10 @@ pub fn p2p_criar(o: &Opcoes) -> R<String> {
     r.modo = o.um("modo").unwrap_or("direto").to_string();
     p2p::Modo::de_texto(&r.modo)?;
     r.repasse = o.um("repasse").map(str::to_string);
+    if let Some(u) = o.um("repasse-usuario") {
+        crate::repasse::validar_usuario(u)?;
+        r.repasse_usuario = Some(u.to_string());
+    }
     let caminho = arquivo_da_rede(o)?;
     if std::path::Path::new(&caminho).exists() {
         return Err(format!(
@@ -370,8 +374,9 @@ pub fn p2p_entrar(codigo: &str, senha_rede: &str, o: &Opcoes) -> R<String> {
 pub fn p2p_preparar(
     o: &Opcoes,
     senha_rede: &str,
+    senha_repasse: Option<&str>,
 ) -> R<(std::sync::Arc<p2p::No>, crate::tun::Tun, String)> {
-    let (no, ip, prefixo, porta, modo) = p2p_montar(o, senha_rede)?;
+    let (no, ip, prefixo, porta, modo) = p2p_montar(o, senha_rede, senha_repasse)?;
     // No Windows e o nome do adaptador TAP criado pelo `p2p placa`.
     let padrao = if cfg!(windows) { "phxvpn" } else { "phx0" };
     let interface = o.um("interface").unwrap_or(padrao);
@@ -386,7 +391,18 @@ pub fn p2p_preparar(
 type Montado = (p2p::No, std::net::Ipv4Addr, u8, u16, p2p::Modo);
 
 /// A parte do preparo que nao depende de placa (e roda em qualquer sistema).
-pub fn p2p_montar(o: &Opcoes, senha_rede: &str) -> R<Montado> {
+/// O usuario do servidor intermediario desta rede (opcao ou arquivo), para
+/// quem chama saber se precisa pedir a senha dele.
+pub fn usuario_do_repasse(o: &Opcoes) -> Option<String> {
+    o.um("repasse-usuario").map(str::to_string).or_else(|| {
+        arquivo_da_rede(o)
+            .ok()
+            .and_then(|c| crate::rede_p2p::Rede::ler(&c).ok())
+            .and_then(|r| r.repasse_usuario)
+    })
+}
+
+pub fn p2p_montar(o: &Opcoes, senha_rede: &str, senha_repasse: Option<&str>) -> R<Montado> {
     use crate::rede_p2p::Rede;
     let privada = identidade(o.um("chave").unwrap_or("p2p.chave"))?;
     let caminho = arquivo_da_rede(o)
@@ -457,9 +473,22 @@ pub fn p2p_montar(o: &Opcoes, senha_rede: &str) -> R<Montado> {
                 .split_once('@')
                 .ok_or("repasse no formato CHAVE@HOST:PORTA")?;
             let par = p2p::ler_par(&format!("{chave}@0.0.0.0@{end}"))?;
+            let conta = match (usuario_do_repasse(o), senha_repasse) {
+                (Some(u), Some(s)) => Some(crate::repasse::Conta {
+                    credencial: crate::repasse::credencial(&u, s, crate::repasse::ITERACOES_CONTA),
+                    usuario: u,
+                }),
+                (Some(u), None) => {
+                    return Err(format!(
+                        "falta a senha do usuario {u} no servidor intermediario"
+                    ))
+                }
+                (None, _) => None,
+            };
             Some(p2p::RepasseCfg {
                 endereco: par.endereco.ok_or("repasse sem endereco")?,
                 publica: par.publica,
+                conta,
             })
         }
         None => None,

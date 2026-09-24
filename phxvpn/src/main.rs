@@ -54,8 +54,14 @@ const AJUDA: &str = "phxvpn -- redes virtuais no estilo Radmin, sobre OpenVPN
       Senha da rede por PHXVPN_SENHA_REDE ou no terminal.
 
   phxvpn repasse [--porta 51821] [--chave repasse.chave] [--permitir ARQUIVO]
+                 [--contas repasse-contas.txt]
       Servidor intermediario do P2P. Mostra a chave publica para o --repasse.
       --permitir: arquivo com uma chave publica por linha (repasse fechado).
+      --contas: so registra quem prova usuario e senha (recomendado).
+  phxvpn repasse conta --usuario U [--contas repasse-contas.txt]
+      Inclui ou troca a senha de um usuario do repasse (PHXVPN_SENHA_REPASSE
+      ou pergunta). O arquivo guarda so a credencial derivada.
+      No no: p2p criar/ligar com --repasse-usuario U (senha pedida ao ligar).
 
   phxvpn cmd  (ou phxvpncmd) [/MODO:painel|p2p|ferramentas] [/PAINEL:http://..]
              [/COMANDO:\"linha\"] [/ENTRADA:script.txt]
@@ -255,7 +261,15 @@ fn p2p_ligar(o: &Opcoes) -> Result<(), String> {
     let senha_rede = senha("PHXVPN_SENHA_REDE", "senha da rede")?;
     // A senha sai do ambiente assim que foi lida: nao fica em /proc/<pid>/environ.
     std::env::remove_var("PHXVPN_SENHA_REDE");
-    let (no, tun, resumo) = comandos::p2p_preparar(o, &senha_rede)?;
+    let senha_repasse = match comandos::usuario_do_repasse(o) {
+        Some(u) => Some(senha(
+            "PHXVPN_SENHA_REPASSE",
+            &format!("senha de {u} no servidor intermediario"),
+        )?),
+        None => None,
+    };
+    std::env::remove_var("PHXVPN_SENHA_REPASSE");
+    let (no, tun, resumo) = comandos::p2p_preparar(o, &senha_rede, senha_repasse.as_deref())?;
     eprintln!("phxvpn: {resumo}");
     phxvpn::p2p::rodar(no, tun)
 }
@@ -268,6 +282,14 @@ fn p2p_ligar(_o: &Opcoes) -> Result<(), String> {
 fn cmd_repasse(args: &[String]) -> Result<(), String> {
     use phxsql_core::hash::{de_hex, para_hex};
     use phxvpn::repasse::Repasse;
+    if args.first().map(String::as_str) == Some("conta") {
+        let arquivo = opcao(args, "--contas").unwrap_or_else(|| "repasse-contas.txt".into());
+        let usuario = opcao(args, "--usuario").ok_or("informe --usuario")?;
+        let s = senha("PHXVPN_SENHA_REPASSE", &format!("senha nova de {usuario}"))?;
+        phxvpn::repasse::gravar_conta(&arquivo, &usuario, &s)?;
+        println!("conta {usuario} gravada em {arquivo} (so a credencial derivada, nunca a senha)");
+        return Ok(());
+    }
     let privada =
         comandos::identidade(&opcao(args, "--chave").unwrap_or_else(|| "repasse.chave".into()))?;
     let permitidas = match opcao(args, "--permitir") {
@@ -292,6 +314,20 @@ fn cmd_repasse(args: &[String]) -> Result<(), String> {
     let udp = std::net::UdpSocket::bind(format!("0.0.0.0:{porta}"))
         .map_err(|e| format!("porta UDP {porta}: {e}"))?;
     let mut r = Repasse::novo(privada, permitidas);
+    match opcao(args, "--contas") {
+        Some(arq) => {
+            let contas = phxvpn::repasse::ler_contas(&arq)?;
+            eprintln!(
+                "phxvpn: repasse com CONTAS -- {} usuario(s) de {arq}",
+                contas.len()
+            );
+            r = r.com_contas(contas);
+        }
+        None => eprintln!(
+            "phxvpn: AVISO -- repasse ABERTO: qualquer chave o usa. Para exigir usuario e senha: \
+             phxvpn repasse conta --usuario U, e depois --contas repasse-contas.txt"
+        ),
+    }
     eprintln!(
         "phxvpn: repasse no ar -- UDP {porta}, chave {}",
         para_hex(&r.publica())

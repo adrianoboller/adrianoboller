@@ -135,6 +135,8 @@ const TENTATIVAS_DIRETAS: u8 = 2;
 pub struct RepasseCfg {
     pub endereco: SocketAddr,
     pub publica: [u8; 32],
+    /// Conta no repasse (usuario + credencial), quando ele exige.
+    pub conta: Option<repasse::Conta>,
 }
 
 struct Par {
@@ -786,7 +788,12 @@ impl No {
         if ultimo.is_some_and(|t| t.elapsed() < repasse::RENOVAR_REGISTRO) {
             return;
         }
-        if let Ok(p) = repasse::registro(&self.privada, &r.publica, transporte::carimbo_agora()) {
+        if let Ok(p) = repasse::registro(
+            &self.privada,
+            &r.publica,
+            transporte::carimbo_agora(),
+            r.conta.as_ref(),
+        ) {
             self.enviar(r.endereco, &p);
             *ultimo = Some(Instant::now());
         }
@@ -1053,6 +1060,7 @@ mod testes {
                 Some(RepasseCfg {
                     endereco: er,
                     publica: x25519::chave_publica(&r_priv),
+                    conta: None,
                 }),
             )
             .unwrap()

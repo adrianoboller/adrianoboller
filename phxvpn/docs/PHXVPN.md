@@ -27,6 +27,7 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [x] P2P: `p2p criar` / `p2p convidar` / `p2p entrar` — convite cifrado com a senha da rede, ficha de uso único, malha que se aprende pela lista de pares dentro do túnel
 - [x] P2P no Windows: placa TAP-Windows6 em modo TUN só com APIs do sistema; `p2p placa` cria o adaptador pelo `tapctl.exe` do OpenVPN
 - [x] Programa de mesa (`phxvpn mesa`, `phxvpnw.exe` sem console): janela no estilo Radmin — criar, entrar por convite, convidar, ligar/desligar, membros com estado
+- [x] Servidor intermediário com contas de usuário e senha (`phxvpn repasse conta`, `--contas`)
 - [x] Console `phxvpncmd` (ou `phxvpn cmd`), estilo prompt do MS-DOS: modos Painel, P2P e Ferramentas; lote por arquivo (`/entrada:`) e linha única (`/comando:`)
 - [x] Segurança A1: revogação real — série no CN, reentrada revoga o perfil anterior, CRL Ed25519 no `crl-verify`, admin/dono remove membro
 - [x] Segurança A2/A3: tentativas limitadas (login, IP, usuário+rede); PBKDF2 fora da trava com semáforo; hash fictício contra enumeração
@@ -52,6 +53,37 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [ ] P2P: a tela web do modo P2P (hoje: linha de comando e console)
 - [ ] P2P no Windows: **prova numa máquina real** com OpenVPN (driver TAP e `netsh` — o roteiro `prova-windows.ps1` está pronto)
 - [ ] P2P: `mac1`/cookie contra inundação de INICIO (o WireGuard tem; aqui ainda não)
+
+## Portas e o controle de cada uma
+
+| Porta | Quem abre | Controle |
+|---|---|---|
+| TCP 8470 | `phxvpn painel` | usuário + senha (PBKDF2), tentativas limitadas, `Host`/JSON/código de instalação |
+| TCP 127.0.0.1:sorteada | `phxvpn mesa` | só a própria máquina + ficha da sessão (32 bytes por abertura) |
+| UDP 51820 | nó P2P | chave do membro (Noise IK) + senha da rede (PSK) + ficha de convite para entrar |
+| UDP 51821 | `phxvpn repasse` | **usuário + senha** com `--contas` (sem, fica aberto e avisa) |
+| UDP 1195+ | OpenVPN (modo servidor) | certificado da AC + CRL + `ccd-exclusive` + `tls-crypt` |
+
+### Contas do servidor intermediário
+
+```text
+servidor:  phxvpn repasse conta --usuario filial-a --contas contas.txt   (pede a senha)
+           phxvpn repasse --contas contas.txt
+nó:        phxvpn p2p criar ... --modo auto --repasse CHAVE@HOST:51821 --repasse-usuario filial-a
+           phxvpn p2p ligar --rede ...        (pede a senha da rede e a do intermediário)
+janela:    Ligar → «Servidor intermediário: usuário / senha» (só quando a rede o usa)
+```
+
+A senha nunca viaja nem fica no servidor: o nó deriva a credencial
+`PBKDF2(senha, "phxvpn-repasse:"+usuário)` uma vez e prova por HMAC em cada
+REGISTRO; o arquivo de contas guarda só a credencial (0600). A conferência
+por HMAC vem **antes** do Diffie-Hellman — quem não tem conta não custa DH —
+e os erros contam no mesmo limitador do painel, por usuário e por IP.
+
+**Prova (24/09/2026, topologia de CGNAT, A e B só se alcançam pelo
+intermediário):** sem conta 0/3; senha errada 0/3; senha certa **3/3**;
+senha em claro no arquivo de contas: 0 ocorrências. RED: sem a conferência,
+`contas_exigem_usuario_e_senha` reprova («sem conta registrou»).
 
 ## Segurança: a revisão de 23/09/2026 e o que fechou
 
@@ -198,7 +230,8 @@ em fatias de 0,5 s. `phxvpnw.exe`: `Subsystem 2 (Windows GUI)`.
 Defeito achado ao exercitar: o rodapé mostrava texto de terminal («convide
 com p2p convidar» e o caminho do arquivo). A janela agora fala a língua dela.
 
-![Janela conectada](mesa-conectado.png) ![Convite](mesa-convite.png)
+Prévias de todas as telas em `docs/previa/` (janela: redes, criar, ligar com
+conta, entrar, conectado, convite; painel: instalação e redes; console).
 
 ## Console `phxvpncmd`
 
