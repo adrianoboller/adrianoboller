@@ -17,8 +17,11 @@
 //!
 //! # O que ainda NAO esta aqui
 //!
-//! Rol assinado, descoberta (convite, LAN, farol) e o repasse para CGNAT sao
-//! as proximas pecas; hoje a lista de pares vem da linha de comando.
+//! Rol assinado e descoberta na LAN (broadcast, farol) sao as proximas
+//! pecas. A perfuracao de NAT mediada pelo repasse mora em `perfuracao.rs`.
+
+#[path = "perfuracao.rs"]
+pub mod perfuracao;
 
 use crate::noise;
 use crate::rede_p2p::{self, Rede};
@@ -203,6 +206,8 @@ struct Par {
     cookie: Option<([u8; transporte::MAC_LEN], Instant)>,
     /// mac1 do ultimo INICIO mandado: e o aad da resposta de cookie.
     ultimo_mac1: [u8; transporte::MAC_LEN],
+    /// Perfuracao de NAT com este par (ver `perfuracao.rs`).
+    furo: perfuracao::Furo,
 }
 
 struct Estado {
@@ -219,6 +224,8 @@ pub struct No {
     udp: UdpSocket,
     modo: Modo,
     repasse: Option<RepasseCfg>,
+    /// So no modo `auto`: o segredo com o repasse para pedir apresentacao.
+    perfurador: Option<perfuracao::Perfurador>,
     ultimo_registro: Mutex<Option<Instant>>,
     /// O arquivo da rede (convites abertos, pares) e onde grava-lo. Sem ele
     /// (pares so pela linha de comando), nao ha admissao nem persistencia.
@@ -292,6 +299,7 @@ impl No {
                 ultimo_rol: None,
                 cookie: None,
                 ultimo_mac1: [0; transporte::MAC_LEN],
+                furo: perfuracao::Furo::default(),
             })
             .collect();
         No {
@@ -305,6 +313,7 @@ impl No {
             udp,
             modo: Modo::Direto,
             repasse: None,
+            perfurador: None,
             ultimo_registro: Mutex::new(None),
             rede: Mutex::new(None),
             ficha_de_entrada: Mutex::new(None),
@@ -391,6 +400,7 @@ impl No {
             ultimo_rol: None,
             cookie: None,
             ultimo_mac1: [0; transporte::MAC_LEN],
+            furo: perfuracao::Furo::default(),
         }
     }
 
@@ -476,8 +486,18 @@ impl No {
             return Err("os modos repasse e auto precisam de --repasse CHAVE@HOST:PORTA".into());
         }
         self.modo = modo;
+        self.perfurador = match (&repasse, modo) {
+            (Some(r), Modo::Auto) => perfuracao::Perfurador::novo(&self.privada, &r.publica),
+            _ => None,
+        };
         self.repasse = repasse;
         Ok(self)
+    }
+
+    /// Desliga a perfuracao de NAT (o `auto` volta a ser «direto ou repasse»).
+    pub fn sem_perfuracao(mut self) -> No {
+        self.perfurador = None;
+        self
     }
 
     pub fn publica(&self) -> [u8; 32] {
@@ -501,10 +521,21 @@ impl No {
     }
 
     /// Pacote autenticado chegou por `via`: e por ali que se responde.
-    fn aprender(par: &mut Par, via: Via) {
+    /// `aperto`: INICIO ou RESPOSTA (ver `Furo::chegou`).
+    fn aprender(par: &mut Par, via: Via, aperto: bool) {
+        if !par.furo.chegou(via, aperto) {
+            return;
+        }
+        if par.via != Some(via) && par.furo.perfurado() {
+            eprintln!("phxvpn: {} -- caminho direto (perfurado) {via:?}", par.ip);
+        }
         par.via = Some(via);
         if let Via::Direta(a) = via {
-            par.endereco = Some(a);
+            // Endereco perfurado e mapeamento do NAT so para este par: nao se
+            // grava nem se espalha (ver `perfuracao.rs`).
+            if !par.furo.perfurado() {
+                par.endereco = Some(a);
+            }
             par.tentativas_diretas = 0;
         }
     }
@@ -516,8 +547,15 @@ impl No {
                 return;
             }
         }
+        let repetindo = e.pares[i].pendente.is_some();
         let par = &mut e.pares[i];
         let via = match (self.modo, par.endereco) {
+            // Direto perfurado e vivo: o aperto novo vai por ele; se nao
+            // responder, a repeticao cai no repasse (5 s, nao 10).
+            (Modo::Auto, _) if !repetindo && par.furo.direto_vivo() => match par.via {
+                Some(v @ Via::Direta(_)) => v,
+                _ => Via::Repasse,
+            },
             (Modo::Direto, Some(a)) => Via::Direta(a),
             (Modo::Direto, None) => return,
             (Modo::Repasse, _) => Via::Repasse,
@@ -593,6 +631,10 @@ impl No {
         // Do repasse so se aceita `DE`, e so do endereco do repasse.
         if let Some(r) = &self.repasse {
             if de == r.endereco {
+                if dado.first() == Some(&perfuracao::TIPO_APRESENTACAO) {
+                    self.apresentado(dado);
+                    return None;
+                }
                 let (origem, dentro) = repasse::desembrulhar_de(dado)?;
                 return self.despachar(dentro, Via::Repasse, Some(origem));
             }
@@ -720,7 +762,7 @@ impl No {
         e.indices.insert(indice, i);
         let nova = Sessao::nova(chaves, indice, remetente, false);
         self.trocar_sessao(&mut e, i, nova);
-        No::aprender(&mut e.pares[i], via);
+        No::aprender(&mut e.pares[i], via, true);
         let chave = e.pares[i].publica;
         drop(e);
         self.mandar(
@@ -820,7 +862,7 @@ impl No {
         };
         let nova = Sessao::nova(chaves, receptor, remetente, true);
         self.trocar_sessao(&mut e, i, nova);
-        No::aprender(&mut e.pares[i], via);
+        No::aprender(&mut e.pares[i], via, true);
         e.pares[i].sem_resposta_desde = None;
         // Esvazia a fila; sem nada na fila, um «manter vivo» confirma a
         // sessao do outro lado, que so fala depois de ouvir.
@@ -865,7 +907,7 @@ impl No {
         let claro = sessao.abrir(dado).ok()?;
         // Pacote autenticado: o par pode ter mudado de endereco (NAT, rede
         // movel). Segue-se o ultimo endereco que PROVOU ter a chave.
-        No::aprender(par, via);
+        No::aprender(par, via, false);
         par.sem_resposta_desde = None;
         // Quem respondeu acaba de ser confirmado: solta a fila.
         let mut saidas = Vec::new();
@@ -935,6 +977,7 @@ impl No {
     pub fn tique(&self) {
         self.registrar_no_repasse();
         let mut e = self.estado.lock().expect("estado");
+        let furos = self.perfurar(&mut e);
         let mut vivos = Vec::new();
         for i in 0..e.pares.len() {
             let surdo = e.pares[i]
@@ -976,6 +1019,9 @@ impl No {
         drop(e);
         for (v, k, p) in vivos {
             self.mandar(v, &k, &p);
+        }
+        for (destino, p) in furos {
+            self.enviar(destino, &p);
         }
     }
 

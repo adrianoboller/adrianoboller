@@ -51,13 +51,15 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [x] Segurança C2: sorteio falha fechado (descritor único; `BCryptGenRandom` no Windows) — nunca mais mistura previsível
 - [x] Auto-atualização: `phxvpn atualizar [--manifesto URL] [--verificar]` — manifesto JSON assinado Ed25519 (chave publica embutida, `CHAVE_PUBLICA_PADRAO`), SHA-256 do binário conferido, downgrade recusado, troca atômica (Linux: `rename` no mesmo binário em uso; Windows: renomeia o `.exe` em uso para `.old` e escreve o novo, limpo no próximo arranque). `phxvpn atualizar-assinar` e `atualizar-gerar-chave` para quem publica; `publicar-atualizacao.sh` monta os binários pelo `cargo build --release` (mesmo caminho do `empacotar.sh`) e assina. Checagem periódica opcional (`PHXVPN_ATUALIZAR_MANIFESTO` no ambiente) no `painel` e na `mesa` — só avisa, nunca aplica sozinha
 - [x] Serviço "cliente" (`phxvpn servico instalar cliente --perfil rede.ovpn`): o modo cliente do OpenVPN (entrar na rede de OUTRO servidor) agora sobe com a máquina, antes do login — o gap de "connect before logon" do OpenVPN Connect. Reaproveita a MESMA função que `phxvpn entrar --conectar` já usava (`rodar_openvpn_cliente`), não uma segunda cópia
+- [x] P2P: perfuração de NAT mediada pelo repasse (modo `auto`) — com dois NATs, o ping migra ao caminho direto em ~2 s e o repasse carrega **0** datagrama de dados; NAT simétrico ou sondas bloqueadas seguem pelo repasse
 
 ### Falta
 
 - [ ] Programa de mesa: ver o ícone da bandeja num Windows real (no Wine ele é registrado, mas não aparece na área de trabalho virtual) e bandeja no Linux (pede D-Bus)
 - [ ] Usar o certificado digital da empresa (A1/RSA) como AC — hoje ele é guardado só como identificação
 - [ ] P2P: rol de membros ASSINADO (hoje a lista viaja cifrada entre membros, com confiança transitiva)
-- [ ] P2P: descoberta — convite, broadcast na LAN e «farol» (membro alcançável que perfura NAT e faz relé)
+- [ ] P2P: descoberta na LAN (broadcast) e «farol» (membro alcançável que faz relé) — o convite e a perfuração mediada pelo repasse já entraram
+- [ ] P2P: perfuração atrás de NAT Linux **sem** filtro na wan (a primeira sonda aceita vira dona da porta; ver a seção da perfuração) e de NAT simétrico — hoje ficam no repasse
 - [ ] Segurança A4 (inteiro): TLS no próprio painel — choque com a pétrea de zero dependência; hoje, proxy com TLS na frente
 - [ ] P2P no Windows: **prova numa máquina real** com OpenVPN (driver TAP e `netsh` — o roteiro `prova-windows.ps1` está pronto)
 - [ ] USB: **prova com dispositivo real** (este contêiner não tem USB nem os módulos `usbip-host`/`vhci-hcd`)
@@ -134,7 +136,7 @@ ainda é HTTP (A4 inteiro).
 | **Servidor** | `phxvpn painel` + OpenVPN | Empresa com servidor próprio; cadastro no PostgreSQL; tudo passa pelo servidor |
 | **P2P direto** | `phxvpn p2p ligar --modo direto` | Sem servidor nenhum: LAN, IP público, IPv6 ou NAT benigno |
 | **P2P repasse** | `--modo repasse --repasse CHAVE@HOST:PORTA` | CGNAT dos dois lados: passa pelo nosso servidor intermediário, que só carrega pacote cifrado |
-| **P2P auto** | `--modo auto --repasse …` | Tenta direto; sem resposta em 2 tentativas (~10 s), vai pelo intermediário |
+| **P2P auto** | `--modo auto --repasse …` | Tenta direto; sem resposta em 2 tentativas (~10 s), vai pelo intermediário — e, já por ele, perfura o NAT e migra ao direto quando der (`--sem-perfuracao` desliga) |
 
 Prova (24/09/2026, três `ip netns`; A e B só alcançam o intermediário, sem
 rota entre si): direto 0/4 (esperado); repasse 4/4, 0,64 ms, 0 ocorrência do
@@ -779,7 +781,7 @@ aqui; os demais são documentação do fabricante.
 | Criar/entrar com nome + senha | **Sim** (P2P e painel) — medido | Sim | Não: arquivo por cliente | Não: perfil por conexão | Não: chave/arquivo por par |
 | Sem servidor nenhum | **Sim** (modo direto) — medido | Não: servidores do fabricante | Não (ponto a ponto é 1 par por processo) | Não | WireGuard sim, por par configurado à mão |
 | CGNAT dos dois lados | Relé **próprio**, cifrado ponta a ponta — medido | Relé **do fabricante** | Pelo servidor | Pelo servidor | Pelo servidor; strongSwan tem mediação IKEv2 |
-| Perfuração de NAT (hole punching) | **Ainda não** (usa o relé) | Sim, e cai para relé | Não | Não | Não no WireGuard |
+| Perfuração de NAT (hole punching) | **Sim**, mediada pelo relé próprio, e cai para ele — medido | Sim, e cai para relé | Não | Não | Não no WireGuard; strongSwan com a mediação IKEv2 |
 | Cifra documentada | Noise IKpsk2 + ChaCha20-Poly1305, vetor oficial — medido | só «AES 256-bit» | TLS + AES-GCM/ChaCha | IKEv2/SSTP/L2TP | Noise IK (WG) / IKEv2 (strongSwan) |
 | Barreira antes do aperto | PSK da rede + mac1/cookie — medido | não documentado | `tls-crypt`/`tls-crypt-v2` (chave de grupo) | cookies do IKEv2 | cookies (WG) / IKEv2 |
 | Revogar um membro | CRL + barreira pré-TLS (v2) — medido | não documentado | CRL | certificado/AD | remover a chave |
@@ -915,7 +917,101 @@ perfil e some; baixar de novo emite par novo e mantém o IP.
 Rodar o teste real: `PHXVPN_PG_TESTE="host=… port=… user=… password=… dbname=postgres" cargo test`.
 Sem a variável, os três dizem «NAO RODOU» em vez de passar calados.
 
+## P2P: perfuração de NAT mediada pelo repasse (24/09/2026)
+
+Código em `src/perfuracao.rs` (submódulo do `p2p`, para os ganchos no
+`p2p.rs` e no `repasse.rs` ficarem pequenos). Só no modo `auto`: `repasse` é
+escolha explícita de passar tudo pelo servidor, e `direto` não tem apresentador.
+
+**Desenho.** O túnel sobe pelo repasse, como antes. Com a sessão confirmada
+(o que prova, pelo Noise com a PSK, que os dois são da mesma rede), cada nó
+manda ao repasse `APRESENTAR(chave do par)` a cada segundo, por até 10 s. O
+repasse só responde quando o pedido é **mútuo** — A pediu B e B pediu A — e
+responde a quem pediu, no endereço registrado, com o IP:porta público do outro
+(`APRESENTACAO`). Os dois mandam sondas (um DADOS vazio da sessão que já
+existe, 32 bytes) ao endereço do outro, uma por segundo, até 10. A primeira
+que entra autenticada vira o caminho; quem furou manda um «manter vivo» de
+volta pelo direto, e o outro lado migra também. Sem resposta, a rodada
+desiste, o túnel fica no repasse, e outra rodada vem 60 s depois — em segundo
+plano, sem derrubar nada.
+
+```text
+APRESENTAR   [10,0,0,0] chave_do_par:32 carimbo:12 mac:32            (80 B)
+APRESENTACAO [11,0,0,0] chave_do_par:32 familia:1 ip:16 porta:2 carimbo:12 mac:32   (99 B)
+mac = HMAC-SHA256(DH(no, repasse), rotulo || campos)
+```
+
+**Anti-abuso.** O repasse guarda o `DH(no, repasse)` desde o REGISTRO, então
+conferir um APRESENTAR custa um HMAC e **nenhum** Diffie-Hellman. Não é
+refletor: só responde a registrado, no endereço registrado, e nunca manda a
+um alvo que o pedido escolha. Não é delator: quem sabe só a chave pública de
+alguém não descobre o IP dele sem que ele também peça. O nó só sonda o
+endereço de uma APRESENTACAO autenticada, com o carimbo do pedido em aberto,
+de um par que ele mesmo pediu — no máximo 10 sondas de 32 bytes por rodada,
+uma rodada a cada ~80 s por par, mesmo com um repasse mentiroso.
+
+**Onde diverge das referências, e por quê.**
+
+- *Mediação IKEv2 (strongSwan)*: lá o mediador troca listas de candidatos
+  (locais, refletidos, repassados) e os pares checam pares de candidatos, como
+  o ICE. Aqui o candidato é **um**, o refletido que o repasse já observa: o
+  caso que faltava é o de NATs diferentes (a mesma LAN já se resolve pelo
+  endereço do convite), e menos candidato é menos endereço revelado.
+- *Tailscale (disco)*: as sondas de lá são mensagens próprias. Aqui a sonda é
+  o «manter vivo» da sessão que já existe — nem cifra nem formato novo; a
+  migração é o *roaming* de endereço que o `receber_dados` já fazia (WireGuard,
+  §2.1).
+- *WireGuard*: só segue o último endereço autenticado. Aqui, com uma trava a
+  mais: pacote que chega pelo repasse **não** desfaz um direto ouvido há menos
+  de 40 s — senão, na transição, o caminho pularia a cada pacote atrasado.
+  Aperto (INICIO/RESPOSTA) pelo repasse desfaz, porque quem refez o aperto por
+  um caminho escolheu esse caminho.
+- O endereço perfurado **não** vai para o arquivo da rede nem para a lista de
+  pares: é um mapeamento do NAT que só vale para este par e só agora. Gravado,
+  o `auto` gastaria ~10 s tentando o direto velho a cada religar.
+- O aperto de 120 s vai pelo direto perfurado; se não responder, a repetição
+  (5 s) cai no repasse.
+
+**Prova** (`provas/perfuracao/rodar.sh`, `resultados.json`; dois NATs
+`MASQUERADE` com o firewall de roteador doméstico na wan, repasse numa
+«internet» 203.0.113.0/24, A e B sem rota entre si; ping de 20 × 1.000 bytes,
+contadores do `iptables` zerados depois de 2 pings de aquecimento; o roteiro
+sai com erro se um cenário não der o esperado):
+
+| Cenário | Migrou | Ping | Dados no repasse | Direto NA→NB |
+|---|---|---|---|---|
+| NAT cone, perfuração ligada | **sim, 2,0 s** depois de os dois estarem no ar | 20/20 | **0** pacote | 20 pacotes, 21.760 B |
+| o mesmo, `--sem-perfuracao` (o outro sentido) | não | 20/20 | 40 pacotes, 44.960 B | 0 |
+| NAT de B simétrico (`--random`) | não, desistiu após 10 sondas | 20/20 | 40 pacotes | 0 |
+| sondas bloqueadas no NAT de A | não | 20/20 | 40 pacotes | 0 |
+| bloqueio cai depois da 1ª rodada | **sim, 73,9 s** (a 2ª rodada, 60 s depois) | 20/20 | **0** | 20 pacotes |
+| NAT cone **sem** o firewall na wan | não | 20/20 | 40 pacotes | 0 |
+
+RED no código: sem a resposta mútua do repasse, `perfurados_os_dados_nao_passam_pelo_repasse`
+reprova; sem conferir o carimbo do pedido, `apresentacao_forjada_nao_manda_sonda`
+reprova («sonda saiu sem pedido»).
+
+**Defeito achado no próprio teste:** o primeiro que furava parava de pedir e
+ficava calado — só mandaria «manter vivo» 25 s depois —, e o outro lado
+desistia com 10 sondas sem resposta. Por isso quem fura responde logo pelo
+direto (`Furo::confirmar`).
+
+**O cenário sem firewall reprovou, e o motivo foi medido** (conntrack gravado
+pelo roteiro): a sonda de A chega ao NAT de B antes de B furar; sem `DROP`,
+ela é aceita no `INPUT` do roteador e confirmada no conntrack, e quando B
+manda para A a tupla de volta já está ocupada — o NAT troca a porta
+(51820 → 3537) e vira simétrico para aquele destino. Ver
+`phxsql/docs/cognicao/cognicao_sonda-que-chega-cedo-envenena-o-nat_20260924_0405.md`.
+A saída conhecida (sondas com TTL curto) ficou de fora: o TTL é do soquete
+inteiro e o número de saltos não se conhece.
+
 ## Limites que valem saber antes de usar
+
+- **Perfuração de NAT não passa por NAT simétrico** (nem por NAT Linux sem
+  filtro de entrada na wan, ver acima): nesses casos o tráfego segue pelo
+  repasse. E quando um direto perfurado cai no meio, a volta ao repasse leva
+  até ~20 s com tráfego (par surdo em 15 s + uma repetição do aperto) ou até
+  40 s ocioso.
 
 - **Painel em HTTP.** Senha de login e perfil (com a chave privada) passam em
   claro. Deixe em `127.0.0.1` (padrão), atrás de proxy com TLS, ou acesse pela

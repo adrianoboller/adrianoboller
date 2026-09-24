@@ -39,8 +39,16 @@
 //! A origem sai do ENDERECO que registrou, nao do pacote: um no nao consegue
 //! mandar em nome de outro. E o no que recebe ainda confere que a chave de
 //! origem bate com a do aperto -- o repasse mentiroso nao engana o Noise.
+//!
+//! # Apresentador da perfuracao de NAT
+//!
+//! O repasse tambem responde APRESENTAR (ver `p2p/perfuracao.rs`): conta a
+//! cada lado de um pedido MUTUO o endereco publico do outro, para os dois
+//! tentarem o caminho direto. O segredo do registro fica guardado para que
+//! essa conferencia custe um HMAC, nunca um Diffie-Hellman.
 
 use crate::guarda::Limitador;
+use crate::p2p::perfuracao;
 use phxsql_core::hash::{de_hex, hmac_sha256, iguais_em_tempo_constante, para_hex, pbkdf2_sha256};
 use phxsql_core::x25519;
 use std::collections::{HashMap, HashSet};
@@ -192,6 +200,8 @@ struct Registro {
     endereco: SocketAddr,
     carimbo: [u8; 12],
     visto: Instant,
+    /// `DH(no, repasse)`, ja pago no registro: prova o APRESENTAR por HMAC.
+    segredo: [u8; 32],
 }
 
 pub struct Repasse {
@@ -203,6 +213,8 @@ pub struct Repasse {
     /// Com contas, so registra quem prova usuario e senha.
     contas: Option<HashMap<String, [u8; 32]>>,
     tentativas: Limitador,
+    /// Pedidos de apresentacao (perfuracao de NAT).
+    pub mesa: perfuracao::Mesa,
 }
 
 impl Repasse {
@@ -214,6 +226,7 @@ impl Repasse {
             permitidas,
             contas: None,
             tentativas: Limitador::default(),
+            mesa: perfuracao::Mesa::default(),
         }
     }
 
@@ -259,6 +272,19 @@ impl Repasse {
                 saida.extend_from_slice(&origem);
                 saida.extend_from_slice(&dado[36..]);
                 Some((alvo, saida))
+            }
+            perfuracao::TIPO_APRESENTAR => {
+                // Mesma atribuicao do PARA: a origem sai do endereco que
+                // registrou, e a resposta so volta para ele.
+                let origem = *self.por_endereco.get(&de)?;
+                let segredo = self.vivo(&origem).filter(|r| r.endereco == de)?.segredo;
+                let par = perfuracao::par_do_pedido(dado)?;
+                if !self.permitida(&par) {
+                    return None;
+                }
+                let alvo = self.vivo(&par)?.endereco;
+                let resposta = self.mesa.pedir(dado, origem, &segredo, alvo)?;
+                Some((de, resposta))
             }
             _ => None,
         }
@@ -336,6 +362,7 @@ impl Repasse {
                 endereco: de,
                 carimbo,
                 visto: Instant::now(),
+                segredo,
             },
         );
     }

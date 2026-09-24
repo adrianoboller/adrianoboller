@@ -1,0 +1,14 @@
+{
+  "prova": "perfuracao de NAT mediada pelo repasse",
+  "medido_em": "2026-09-24T04:11:24+00:00",
+  "kernel": "6.18.44-fc-v37",
+  "ping": "20 x 1000 bytes, intervalo 0,2 s, contadores zerados depois de 2 pings de aquecimento",
+  "cenarios": [
+    {"cenario":"cone","migrou_para_direto":true,"segundos_ate_migrar":2.001834298,"ping_enviados":20,"ping_recebidos":20,"rtt_medio_ms":1.045,"repasse_pacotes_de_dados":0,"repasse_bytes_de_dados":0,"repasse_pacotes_total":0,"repasse_bytes_total":0,"direto_pacotes_A_para_NB":20,"direto_bytes_A_para_NB":21760,"desistiu_da_perfuracao":false,"criterio_dados_fora_do_repasse":true,"esperado":true,"confere":true},
+    {"cenario":"desligada","migrou_para_direto":false,"segundos_ate_migrar":null,"ping_enviados":20,"ping_recebidos":20,"rtt_medio_ms":1.114,"repasse_pacotes_de_dados":40,"repasse_bytes_de_dados":44960,"repasse_pacotes_total":42,"repasse_bytes_total":45378,"direto_pacotes_A_para_NB":0,"direto_bytes_A_para_NB":0,"desistiu_da_perfuracao":false,"criterio_dados_fora_do_repasse":false,"esperado":false,"confere":true},
+    {"cenario":"simetrico","migrou_para_direto":false,"segundos_ate_migrar":null,"ping_enviados":20,"ping_recebidos":20,"rtt_medio_ms":0.741,"repasse_pacotes_de_dados":40,"repasse_bytes_de_dados":44960,"repasse_pacotes_total":42,"repasse_bytes_total":45378,"direto_pacotes_A_para_NB":0,"direto_bytes_A_para_NB":0,"desistiu_da_perfuracao":true,"criterio_dados_fora_do_repasse":false,"esperado":false,"confere":true},
+    {"cenario":"bloqueado","migrou_para_direto":false,"segundos_ate_migrar":null,"ping_enviados":20,"ping_recebidos":20,"rtt_medio_ms":1.183,"repasse_pacotes_de_dados":40,"repasse_bytes_de_dados":44960,"repasse_pacotes_total":42,"repasse_bytes_total":45378,"direto_pacotes_A_para_NB":0,"direto_bytes_A_para_NB":0,"desistiu_da_perfuracao":true,"criterio_dados_fora_do_repasse":false,"esperado":false,"confere":true},
+    {"cenario":"desbloqueia","migrou_para_direto":true,"segundos_ate_migrar":73.928664277,"ping_enviados":20,"ping_recebidos":20,"rtt_medio_ms":0.980,"repasse_pacotes_de_dados":0,"repasse_bytes_de_dados":0,"repasse_pacotes_total":0,"repasse_bytes_total":0,"direto_pacotes_A_para_NB":20,"direto_bytes_A_para_NB":21760,"desistiu_da_perfuracao":true,"criterio_dados_fora_do_repasse":true,"esperado":true,"confere":true},
+    {"cenario":"sem-firewall","migrou_para_direto":false,"segundos_ate_migrar":null,"ping_enviados":20,"ping_recebidos":20,"rtt_medio_ms":1.281,"repasse_pacotes_de_dados":40,"repasse_bytes_de_dados":44960,"repasse_pacotes_total":42,"repasse_bytes_total":45378,"direto_pacotes_A_para_NB":0,"direto_bytes_A_para_NB":0,"desistiu_da_perfuracao":true,"criterio_dados_fora_do_repasse":false,"esperado":false,"confere":true}
+  ]
+}

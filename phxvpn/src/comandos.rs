@@ -543,6 +543,9 @@ pub fn p2p_montar(
     let udp = std::net::UdpSocket::bind(format!("0.0.0.0:{porta}"))
         .map_err(|e| format!("porta UDP {porta}: {e}"))?;
     let mut no = p2p::No::novo(privada, psk, ip, udp, pares).com_repasse(modo, repasse)?;
+    if o.tem("sem-perfuracao") {
+        no = no.sem_perfuracao();
+    }
     if let (Some(r), Some(c)) = (rede, caminho) {
         no = no.com_rede(r, c);
     }

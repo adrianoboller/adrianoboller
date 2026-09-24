@@ -49,7 +49,9 @@ const AJUDA: &str = "phxvpn -- redes virtuais no estilo Radmin, sobre OpenVPN
       Modo P2P: liga a placa virtual e fala com os pares (Linux, como root).
       direto  -- so caminho direto, sem servidor nenhum (padrao);
       repasse -- tudo pelo servidor intermediario (CGNAT dos dois lados);
-      auto    -- tenta direto e, sem resposta, vai pelo intermediario.
+      auto    -- tenta direto e, sem resposta, vai pelo intermediario; ja pelo
+                 intermediario, pede a ele o endereco publico do par e perfura
+                 o NAT para migrar ao caminho direto (--sem-perfuracao desliga).
       O intermediario so carrega pacote cifrado de ponta a ponta.
       Senha da rede por PHXVPN_SENHA_REDE ou no terminal.
 
@@ -351,7 +353,7 @@ fn cmd_cliente_rodar(args: &[String]) -> Result<(), String> {
 }
 
 fn cmd_p2p(args: &[String]) -> Result<(), String> {
-    let o = Opcoes::de_args(&args[args.len().min(1)..], &[]);
+    let o = Opcoes::de_args(&args[args.len().min(1)..], &["sem-perfuracao"]);
     let arquivo = o.um("chave").or(o.um("arquivo")).unwrap_or("p2p.chave");
     match args.first().map(String::as_str) {
         Some("chave") => {
