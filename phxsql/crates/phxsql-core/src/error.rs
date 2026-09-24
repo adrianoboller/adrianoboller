@@ -293,6 +293,25 @@ impl PhxError {
         format!("[{}] ", self.sprint())
     }
 
+    /// Adianta repetir o pedido que recebeu ESTE erro?
+    ///
+    /// # E propriedade do TIPO -- e so diz a verdade antes de qualquer byte
+    ///
+    /// A resposta sai do erro, e nao do momento em que ele aconteceu. Isso so
+    /// e verdade enquanto o erro vem ANTES de o pedido aplicar qualquer coisa:
+    /// «repita» dito sobre trabalho meio aplicado manda o cliente duplicar o
+    /// que ja gravou. Os quatro motores maduros convergem nisso -- «repita» so
+    /// se diz sobre o que aplicou ZERO, e na instrucao
+    /// (`docs/propostas/commit-contra-ddl-4-motores.md`, D3).
+    ///
+    /// Por isso o MOMENTO fica com quem chama, porque aqui ele nao cabe. O
+    /// `COMMIT` e o caso que obrigou a escrever isto (pedido 426: um
+    /// `EmMigracao` no meio da passada saia com `repetir: true` e metade da
+    /// transacao gravada). Depois da marca ele so devolve erro quando a marca
+    /// SAI do disco -- com nada aplicado, e ai o `repetir` do tipo volta a
+    /// dizer a verdade; ou com parte aplicada por erro do DADO, cujo `repetir`
+    /// ja e falso e cuja mensagem diz o que ficou. Qualquer outra quebra
+    /// responde `COMMITTED`, e nao erro. Ver `Servidor::depois_da_marca`.
     pub fn adianta_repetir(&self) -> bool {
         matches!(
             self,

@@ -1453,30 +1453,162 @@ pub fn recuperar(dados: &Instancia) -> Relatorio {
         // que foram criadas, que e a ordem do id no nome.
         marcas.sort();
         for caminho in marcas {
-            r.achadas += 1;
-            match ler_marca(&caminho) {
-                Ok(Leitura::Aberta(marca)) => {
-                    completar(&db, &marca, &mut r);
-                    r.completadas += 1;
-                }
-                // A terceira resposta: cifrada, e esta chave nao a abre.
-                // **Nao se apaga.** Apagar aqui trocaria confidencialidade por
-                // durabilidade -- uma transacao confirmada sumiria por falta de
-                // uma senha, e o selo existe para proteger o dado, nao para
-                // custar o dado.
-                Ok(Leitura::SemChave(motivo)) => {
-                    r.paradas.push(format!("{}: {motivo}", caminho.display()));
-                    continue;
-                }
-                // Marca que nao confere, ou que nem da para abrir: commit que
-                // nunca comecou.
-                _ => r.descartadas += 1,
+            if tratar_marca(&db, &caminho, &mut r, NoArranque::Sim) {
+                let _ = std::fs::remove_file(&caminho);
             }
-            let _ = std::fs::remove_file(&caminho);
         }
     }
     r.ms = comeco.elapsed().as_millis() as u64;
     r
+}
+
+/// Onde a marca esta sendo tratada -- e e isso que decide se a operacao
+/// IMPOSSIVEL apaga a marca.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum NoArranque {
+    /// No arranque nada esta congelado nem reservado (os dois registros sao
+    /// do PROCESSO), entao a operacao que nao entra agora nao entra nunca: a
+    /// marca sai, e o relatorio a conta em `operacoes IMPOSSIVEIS`. E o
+    /// comportamento de sempre.
+    Sim,
+    /// Com o servidor de pe, a operacao impossivel pode ser PASSAGEIRA -- a
+    /// tabela esta congelada por uma reescrita, e volta a atender quando ela
+    /// acabar. Apagar a marca aqui trocaria «completa no proximo arranque»
+    /// por «perdida para sempre», numa transacao que JA esta confirmada.
+    Nao,
+}
+
+/// Trata UMA marca achada: completa, descarta ou deixa parada. Devolve se ela
+/// pode sair do disco.
+///
+/// E o corpo do laco do [`recuperar`] e tambem o de [`completar_marca`] -- um
+/// lugar so, porque um segundo caminho para «completar um commit» seria um
+/// segundo lugar para errar. O que muda entre os dois e so o [`NoArranque`].
+fn tratar_marca(
+    db: &phxsql_store::catalogo::Database,
+    caminho: &Path,
+    r: &mut Relatorio,
+    arranque: NoArranque,
+) -> bool {
+    r.achadas += 1;
+    match ler_marca(caminho) {
+        Ok(Leitura::Aberta(marca)) => {
+            let antes = r.impossiveis.len();
+            completar(db, &marca, r);
+            r.completadas += 1;
+            arranque == NoArranque::Sim || r.impossiveis.len() == antes
+        }
+        // A terceira resposta: cifrada, e esta chave nao a abre. **Nao se
+        // apaga.** Apagar aqui trocaria confidencialidade por durabilidade --
+        // uma transacao confirmada sumiria por falta de uma senha, e o selo
+        // existe para proteger o dado, nao para custar o dado.
+        Ok(Leitura::SemChave(motivo)) => {
+            r.paradas.push(format!("{}: {motivo}", caminho.display()));
+            false
+        }
+        // Marca que nao confere, ou que nem da para abrir: commit que nunca
+        // comecou.
+        _ => {
+            r.descartadas += 1;
+            true
+        }
+    }
+}
+
+/// Completa UMA marca com o servidor de pe e a trava de dados JA na mao de
+/// quem chama -- a do `COMMIT` cuja passada acabou de quebrar depois da marca.
+///
+/// # Por que com a trava de quem chama, e nao tomando outra
+///
+/// Porque soltar e tomar de novo abre uma fresta em que outra escrita entra
+/// no meio da transacao confirmada. E porque tomar de novo SEM soltar era o
+/// defeito do pedido 426: a trava nao e reentrante, a segunda tomada devolvia
+/// erro, e esta recuperacao nunca rodava.
+///
+/// # Por que so a marca DESTE commit
+///
+/// Porque as outras marcas da base sao de commits que ja aplicaram e esperam o
+/// fecho da janela de durabilidade (`marcas_pendentes`): nao ha o que
+/// completar nelas, e quem as apaga e quem sincroniza.
+pub fn completar_marca(dados: &Instancia, database: &str, caminho: &Path) -> Relatorio {
+    let comeco = std::time::Instant::now();
+    let mut r = Relatorio::default();
+    match dados.abrir_database(database) {
+        Ok(db) => {
+            if tratar_marca(&db, caminho, &mut r, NoArranque::Nao) {
+                let _ = std::fs::remove_file(caminho);
+            }
+        }
+        Err(e) => r.impossiveis.push(format!(
+            "o database {database} nao abriu para completar {} ({e})",
+            caminho.display()
+        )),
+    }
+    r.ms = comeco.elapsed().as_millis() as u64;
+    r
+}
+
+/// As tabelas de `diretorio` ligadas a `iniciais` por chave estrangeira -- em
+/// QUALQUER direcao e em QUALQUER profundidade --, `iniciais` inclusive.
+///
+/// # Por que o componente inteiro, e nao so a tabela
+///
+/// Porque e o que um `COMMIT` pode abrir para GRAVAR por causa delas: a mae,
+/// na conferencia da chave do `inserir` e do `atualizar`; a filha, na
+/// conferencia do `excluir`; a neta, na cascata do `ao_alterar` -- e a cascata
+/// pode alcancar linha que so nasceu depois do `empilhar`. Todas passam pelo
+/// portao do congelamento, e a que estiver congelada derruba a passada no
+/// meio. Pedido 426.
+///
+/// Medir um raio so (a tabela e as vizinhas) erra justamente na cascata que
+/// desce mais de um nivel; o componente e o que cobre as tres portas sem
+/// perguntar qual delas a passada vai usar.
+///
+/// # A tabela que nao se le sem escrever
+///
+/// Troca de volume interrompida: o esquema dela nao se le sem cura-la, e
+/// curar e escrever. Ela entra LIGADA A TODAS -- o lado seguro, porque uma
+/// chave que nao se ve e uma porta que ninguem confere. E rara (so depois de
+/// uma queda no meio de uma troca), e a proxima abertura que grava a cura.
+pub fn componente_de_chave(diretorio: &Path, todas: &[String], iniciais: &[String]) -> Vec<String> {
+    let chave = |n: &str| n.to_ascii_lowercase();
+    let mut vizinhas: HashMap<String, Vec<String>> = HashMap::new();
+    let mut coringas: Vec<String> = Vec::new();
+    for nome in todas {
+        match phxsql_store::RegFile::abrir_sem_escrever(diretorio, nome) {
+            Ok(Some(reg)) => {
+                for fk in reg.esquema().chaves_estrangeiras() {
+                    // `vendas.clientes` mora no mesmo diretorio que `clientes`:
+                    // a qualificacao e do NOME declarado, e o arquivo e o mesmo.
+                    let (_, mae) = phxsql_store::catalogo::separar_qualificado(&fk.tabela_ref);
+                    vizinhas.entry(chave(nome)).or_default().push(chave(&mae));
+                    vizinhas.entry(chave(&mae)).or_default().push(chave(nome));
+                }
+            }
+            _ => coringas.push(chave(nome)),
+        }
+    }
+    let mut dentro: HashSet<String> = HashSet::new();
+    let mut fila: Vec<String> = iniciais.iter().map(|n| chave(n)).collect();
+    while let Some(n) = fila.pop() {
+        if !dentro.insert(n.clone()) {
+            continue;
+        }
+        if let Some(v) = vizinhas.get(&n) {
+            fila.extend(v.iter().cloned());
+        }
+        // O coringa liga a todas -- e todas ligam ao coringa.
+        if coringas.contains(&n) {
+            fila.extend(todas.iter().map(|t| chave(t)));
+        } else {
+            fila.extend(coringas.iter().cloned());
+        }
+    }
+    todas
+        .iter()
+        .filter(|t| dentro.contains(&chave(t)))
+        .cloned()
+        .collect()
 }
 
 /// Reaplica o que falta de UMA marca.

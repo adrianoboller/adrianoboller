@@ -416,7 +416,7 @@ que falta.*
 | `CREATE FUNCTION` | devolveria valor dentro de expressão SQL, e a camada `SELECT` não avalia expressão |
 | `CALL` aninhado | nesta versão não |
 | cadeia de `AFTER` sem fundo | tem teto de **8 níveis**. Sem ele, um `AFTER INSERT ON t` que grava em `t` **abortava o processo** com *stack overflow* — ver a seção 9.1 |
-| `BEGIN`/`COMMIT` no corpo | **não há transação no PhxSql** |
+| `BEGIN`/`COMMIT` no corpo | o corpo roda dentro da escrita que o disparou; abrir ou fechar transação **de dentro** de um gatilho não existe. Transação no PhxSql existe desde o pedido 162 (`docs/TRANSACOES.md`) — esta linha dizia que não, e estava errada desde então |
 | `DEFINER` | gatilho roda com o poder de quem dispara; `CALL`, de quem chama |
 | `FOLLOWS`/`PRECEDES` | disparam na ordem de criação |
 | variável de sessão (`@x`) | não há sessão de variáveis; use `DECLARE` |
@@ -432,9 +432,17 @@ escritas, porque quem vem do MySQL(R) espera o contrário:
   comportamento escreve `UPPER(…) = UPPER(…)`, que é explícito e não depende de
   configuração invisível.
 
-E o limite que vale repetir: **não há transação**. Um corpo que falha no meio
+E o limite que vale repetir, **fora de transação**: um corpo que falha no meio
 deixa gravado o que já gravou, e um `AFTER` que falha não desfaz a escrita que o
-disparou.
+disparou. Esta frase dizia «**não há transação**» — falso desde o pedido 162.
+
+**Dentro de uma transação, o `AFTER` roda no `COMMIT`**, depois da marca, e o
+que ele grava ainda **não** é gravado: até o pedido 262 a escrita sumia
+calada (`gravadas: 1`, auditoria vazia, nenhum aviso); desde a etapa 1 do 262
+ela é recusada com nome e o motivo chega em `gatilhos_avisos` — o `COMMIT`
+continua `COMMITTED` e o `gravadas` não muda. Gravar de verdade, na mesma
+passada, é a etapa 2
+(`docs/propostas/parecer-j-262-gatilho-after-no-commit-2026-09-23.md` §7.2).
 
 ---
 

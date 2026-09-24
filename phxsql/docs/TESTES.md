@@ -806,11 +806,20 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `resposta-do-pulso-sem-crivo-da-lista` | a resposta do pulso com id fantasma rebaixando o master | 2 | ✅ provada |
 | `resposta-sem-prova-assinada-so-com-pino` | a resposta de sucesso a um pulso sem prova dizendo quais nós têm pino | 1 | ✅ provada |
 | `resposta-sem-prova-assina-e-esconde` | a resposta a um pulso sem prova igual na forma e diferente no relógio | 1 | ✅ provada |
+| `reescrita-sem-portao-na-trava` | a migração congela a tabela que o COMMIT de uma transação aberta vai abrir | 1 | ✅ provada |
+| `acrescentar-coluna-sem-portao` | o acrescentar_coluna congela a tabela que o COMMIT de uma transação aberta vai abrir | 1 | ✅ provada |
+| `commit-sem-rede-antes-da-marca` | o COMMIT grava a marca com uma tabela do alcance congelada | 1 | ✅ provada |
+| `instrucao-na-vizinha-da-congelada` | a escrita ligada pela chave a uma tabela congelada entra na lista da transação | 1 | ✅ provada |
+| `braco-de-erro-retrava` | a passada do COMMIT quebra depois da marca e a recuperação da hora não roda | 2 | ✅ provada |
+| `completar-apaga-a-marca-impossivel` | a recuperação do COMMIT apaga a marca de uma operação que só estava congelada | 1 | ✅ provada |
+| `after-no-commit-some-calado` | o AFTER disparado no COMMIT grava numa lista já descartada e some sem aviso | 1 | ✅ provada |
+| `commit-zero-aplicado-vira-committed` | a passada que quebra antes de qualquer byte da lista responde COMMITTED | 1 | ✅ provada |
+| `commit-meio-sem-dizer-o-que-ficou` | a chave que falha no meio da passada vira COMMITTED sem a escrita que falhou | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**166 das 212 guardas do catálogo: 1 aposentada, 160 provadas, 1 quebrada, 4 redundantes** — 4058 s de mutação, medido em 2026-09-16 15:25.
+**175 das 221 guardas do catálogo: 1 aposentada, 169 provadas, 1 quebrada, 4 redundantes** — 4400 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 47 das 212 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 47 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 47 das 221 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 47 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `teto-do-fio-sem-a-constante` — o `Canal::ler` de producao troca `TETO_DO_REGISTRO` por um teto quase infinito
 - `teto-do-fio-sem-a-constante-no-soquete` — a mesma troca da constante por um teto quase infinito, vista pela rede

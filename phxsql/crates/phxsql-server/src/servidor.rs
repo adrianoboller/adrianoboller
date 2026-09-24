@@ -1051,6 +1051,22 @@ pub struct Servidor {
     aceitas_de_teste: AtomicUsize,
     #[cfg(test)]
     sem_vaga_de_teste: AtomicUsize,
+    /// So nos testes: a passada de commit QUEBRA antes da escrita de numero N
+    /// (1 = a primeira), com o erro que o congelamento da. Zero desliga.
+    ///
+    /// Existe porque o conserto do pedido 426 fecha por fora o caminho natural
+    /// ate o braco de erro DEPOIS da marca -- a reescrita cede a transacao, e o
+    /// commit recusa antes da marca --, e o braco continua existindo para a
+    /// quebra que ninguem previu (E/S, disco cheio). Sem uma quebra de
+    /// verdade ali dentro, o braco que completa a transacao nao teria prova.
+    #[cfg(test)]
+    passada_quebra_na_escrita: AtomicUsize,
+    /// Com a quebra acima: a tabela da escrita quebrada fica CONGELADA ate o
+    /// teste soltar -- a quebra que a recuperacao da hora tambem nao vence.
+    #[cfg(test)]
+    passada_quebra_congelando: Mutex<Option<phxsql_store::congelamento::Congelada>>,
+    #[cfg(test)]
+    passada_quebra_congela: std::sync::atomic::AtomicBool,
     /// O estado vivo do cluster -- `None` quando o `config.json` nao traz o
     /// bloco `cluster`, e ai NADA disto existe: nenhuma thread, nenhum portao.
     cluster: Option<Arc<crate::cluster::EstadoCluster>>,
@@ -1344,6 +1360,12 @@ impl Servidor {
             aceitas_de_teste: AtomicUsize::new(0),
             #[cfg(test)]
             sem_vaga_de_teste: AtomicUsize::new(0),
+            #[cfg(test)]
+            passada_quebra_na_escrita: AtomicUsize::new(0),
+            #[cfg(test)]
+            passada_quebra_congelando: Mutex::new(None),
+            #[cfg(test)]
+            passada_quebra_congela: std::sync::atomic::AtomicBool::new(false),
             cargas: Mutex::new(crate::carga::Cargas::default()),
             marcas_pendentes: Mutex::new(Vec::new()),
             travas: Mutex::new(crate::travas::Travas::default()),
@@ -3723,6 +3745,10 @@ impl Servidor {
                 // O IRMAO da conferencia do `op_cluster_pulso`: a RESPOSTA
                 // tambem entra no mapa, e um `registrar` sem guarda deste lado
                 // deixaria a porta aberta por onde o pedido nao passa mais.
+                // Inclusive o crivo da lista: ate o pedido 441 ele morava so no
+                // `op_cluster_pulso`, e uma resposta com id fantasma, sem
+                // prova, rebaixava o master. Hoje ele e a primeira pergunta do
+                // proprio `conferir_identidade`.
                 match estado.conferir_identidade(
                     &id,
                     &pulso,
@@ -3745,10 +3771,6 @@ impl Servidor {
         let Some(estado) = self.cluster.clone() else {
             return;
         };
-                // Inclusive o crivo da lista: ate o pedido 441 ele morava so no
-                // `op_cluster_pulso`, e uma resposta com id fantasma, sem
-                // prova, rebaixava o master. Hoje ele e a primeira pergunta do
-                // proprio `conferir_identidade`.
         let mut ultima_conta = 0i64;
         let mut motivos_anteriores: Vec<String> = Vec::new();
         loop {
@@ -13999,6 +14021,31 @@ impl Servidor {
             return None;
         }
 
+        // PEDIDO 262, etapa 1: escrita com a transacao em `COMMITTING` so vem
+        // de um gatilho AFTER disparado no COMMIT -- e a mesma sessao, e nao
+        // ha outra porta. Ela caia no `empilhar` de uma lista que o COMMIT ja
+        // tinha tirado, depois de a marca selada, e ia ao chao com o descarte
+        // da transacao: calada no sucesso, barulhenta so no erro.
+        //
+        // Trocar o estado para `Ativa` mediria ZERO (parecer do 262, §2): a
+        // escrita cairia na mesma lista vazia e sumiria do mesmo jeito. Gravar
+        // de verdade exige rodar o AFTER antes da marca (a etapa 2). Ate la, a
+        // recusa NOMEADA sobe pelo canal que ja existe para o gatilho que
+        // falha -- `gatilhos_avisos` na resposta do COMMIT --, que continua
+        // `COMMITTED` e com o mesmo `gravadas`: nada que hoje funciona passa a
+        // falhar. Vem antes do prazo de proposito: a transacao que esta sendo
+        // confirmada nao se estoura pelo corpo do proprio gatilho.
+        if estado == crate::transacao::Estado::Confirmando
+            && (OPS_EMPILHAVEIS.contains(&op) || OPS_ESCRITA.contains(&op))
+        {
+            return Some(Err(PhxError::Esquema(format!(
+                "este {op} em {} veio de um gatilho AFTER disparado no COMMIT: a \
+                 transacao ja esta confirmando e nao aceita escrita nova -- a linha \
+                 do gatilho NAO foi gravada (pedido 262)",
+                p.texto_ou("tabela", "?")
+            ))));
+        }
+
         // O PRAZO DA TRANSACAO, conferido na hora de usar. Estourado, quem
         // encerra e o gestor: `ABORT_ONLY`, travas soltas, lista jogada fora,
         // e a proxima operacao recebe o erro com o numero do prazo. Nenhuma
@@ -14294,12 +14341,21 @@ impl Servidor {
     /// medindo, nao de passagem. O lugar continua sendo este e o
     /// `escopo_por_gatilho` ao lado.
     ///
-    /// # O GATILHO entra, e alcanca de verdade
+    /// # O GATILHO entra -- e, dentro da transacao, ainda NAO grava
     ///
-    /// O corpo de um gatilho grava noutra tabela com `INSERT INTO`, e isso
-    /// acontece de verdade -- o `rodar_gatilhos_depois` executa. Entao o alvo
-    /// de cada `INSERT` do corpo entra no escopo efetivo, e o fecho e
-    /// transitivo: o gatilho de `auditoria` pode ter gatilho.
+    /// O corpo de um gatilho grava noutra tabela com `INSERT INTO`. FORA de
+    /// transacao isso acontece de verdade: o `rodar_gatilhos_depois` executa
+    /// depois da escrita. DENTRO de uma, o AFTER roda no `COMMIT`, depois da
+    /// marca, e a escrita dele nao tem mais lista onde entrar: ate o pedido
+    /// 262 ela ia para a lista ja esvaziada e sumia calada; desde a etapa 1
+    /// ela e RECUSADA com nome e chega ao cliente em `gatilhos_avisos`. Gravar
+    /// de verdade e a etapa 2 (o AFTER antes da marca, que depende da
+    /// numeracao no `INSERT` do `docs/AUTONUMBER.md` §B.4). Este texto dizia
+    /// «acontece de verdade» sem a ressalva, e era falso dentro da transacao.
+    ///
+    /// O alvo de cada `INSERT` do corpo entra no escopo efetivo mesmo assim --
+    /// a trava e tomada para a escrita que a etapa 2 vai fazer --, e o fecho
+    /// e transitivo: o gatilho de `auditoria` pode ter gatilho.
     fn escopo_efetivo(
         &self,
         database: &str,
@@ -14707,6 +14763,23 @@ impl Servidor {
         // abrir pela de sempre e desligar depois montava o mapa da transacao
         // sob a trava para apaga-lo na linha seguinte.
         let mut t = self.abrir_travada_sem_sobrepor(&trava, p, sessao)?;
+
+        // Pedido 426, D3: a tabela LIGADA por chave a uma que esta sendo
+        // reescrita recusa AQUI, na instrucao, com zero aplicado -- e nao no
+        // COMMIT, depois da marca, quando a conferencia da chave abrisse a
+        // congelada. A propria tabela congelada ja recusou uma linha acima,
+        // no `abrir`.
+        if let Some(recado) = self.congelada_no_alcance(
+            &trava,
+            &database,
+            phxsql_store::catalogo::separar_qualificado(&tabela)
+                .0
+                .as_deref(),
+            t.diretorio(),
+            &[t.nome().to_string()],
+        )? {
+            return Err(PhxError::EmMigracao(recado));
+        }
 
         // A particao alfanumerica fica de fora, e o motivo e o rowid.
         //
@@ -15599,6 +15672,143 @@ impl Servidor {
         None
     }
 
+    /// Uma REESCRITA (`migrar_esquema`, `acrescentar_coluna`) vai congelar `t`:
+    /// alguma transacao viva alcanca esta tabela? Devolve o recado de quem
+    /// segura, ou `None` para a reescrita seguir.
+    ///
+    /// # Por que aqui dentro, com a trava global na mao, e nao no portao
+    ///
+    /// Pedido 426. O portao das travas de transacao (`barrado_por_travas`)
+    /// roda FORA da trava global, entre o pedido chegar e a operacao comecar.
+    /// Uma transacao que empilhasse na fresta entre os dois ficava por baixo
+    /// do congelamento, e o `COMMIT` dela batia nele DEPOIS da marca -- uma
+    /// tabela gravada e a outra nao. Com a trava global na mao nenhuma
+    /// transacao toma trava nova entre esta pergunta e o `congelar`: toda
+    /// escrita empilhada toma a trava da tabela ANTES da trava global
+    /// (`empilhar`), e a que vier depois do congelamento esbarra nele na
+    /// propria instrucao.
+    ///
+    /// # Por que o COMPONENTE da chave, e nao so a tabela
+    ///
+    /// Porque o portao velho olhava so o campo `tabela` do pedido, e o
+    /// `COMMIT` abre para gravar tambem a mae (conferencia da chave), a filha
+    /// (conferencia do `excluir`) e a neta (cascata). Medido pelo soquete no
+    /// HEAD: transacao escrevendo na FILHA, `migrar_esquema` na MAE -- sem
+    /// corrida nenhuma, a migracao congelava a mae e o COMMIT saia pela metade.
+    /// Ver [`crate::transacao::componente_de_chave`].
+    ///
+    /// # Quem cede e a reescrita -- e ela cede na hora
+    ///
+    /// Os quatro motores convergem em que quem paga e o DDL, nunca a
+    /// transacao (`docs/propostas/commit-contra-ddl-4-motores.md`, D5). A
+    /// reescrita recusa com `EM_TRANSACAO` e nada reescrito, em vez de esperar:
+    /// e a regra desta casa para a escrita sem `BEGIN` (`barrado_por_travas`),
+    /// que nao declarou `LOCK TIMEOUT` nenhum, e uma espera aqui seria dormir
+    /// com a trava global na mao ou soltar e tomar de volta num laco.
+    ///
+    /// O primeiro `if` e um `load` atomico: sem transacao aberta em lugar
+    /// nenhum -- o servidor de sempre -- nada aqui custa.
+    fn transacao_na_vizinhanca(
+        &self,
+        dados: &Instancia,
+        database: &str,
+        tabela: &str,
+        t: &Table,
+    ) -> Result<Option<String>> {
+        if self.transacoes_abertas.load(Ordering::Relaxed) == 0 {
+            return Ok(None);
+        }
+        let (schema, _) = phxsql_store::catalogo::separar_qualificado(tabela);
+        let db = dados.abrir_database(database)?;
+        let todas = db.tabelas(schema.as_deref())?;
+        let alcance =
+            crate::transacao::componente_de_chave(t.diretorio(), &todas, &[t.nome().to_string()]);
+        // A chave da trava e o nome como a ESCRITA o mandou: qualificado no
+        // pedido do cliente, simples no elo da cascata. As duas formas entram.
+        let mut chaves = Vec::with_capacity(alcance.len() * 2);
+        for nome in &alcance {
+            chaves.push((
+                nome.clone(),
+                crate::carga::chave(
+                    database,
+                    &phxsql_store::catalogo::qualificar(schema.as_deref(), nome),
+                ),
+            ));
+            if schema.is_some() {
+                chaves.push((nome.clone(), crate::carga::chave(database, nome)));
+            }
+        }
+        let barrada = {
+            let travas = self.travas.lock().map_err(|_| trava_envenenada())?;
+            chaves.iter().find_map(|(nome, chave)| {
+                travas
+                    .conflito_de_tabela(chave, 0, crate::travas::Trava::Exclusiva)
+                    .map(|b| (nome.clone(), b))
+            })
+        };
+        let Some((nome, b)) = barrada else {
+            return Ok(None);
+        };
+        let recado = {
+            let reg = self.transacoes.lock().map_err(|_| trava_envenenada())?;
+            reg.recado_da_barrada(&b, crate::agora_ms())
+        };
+        let ligacao = if nome.eq_ignore_ascii_case(t.nome()) {
+            String::new()
+        } else {
+            format!(
+                " -- {nome} e ligada a {} por chave estrangeira, e o COMMIT dela abre as duas",
+                t.nome()
+            )
+        };
+        Ok(Some(format!(
+            "{} nao sera reescrita agora: {recado}{ligacao}. Quem cede e a \
+             reescrita, nunca a transacao -- nada foi reescrito; repita depois \
+             do COMMIT ou do ROLLBACK dela",
+            t.nome()
+        )))
+    }
+
+    /// Alguma tabela que o `COMMIT` destas pode abrir para gravar esta
+    /// CONGELADA agora? Devolve o recado do congelamento, ou `None`.
+    ///
+    /// `diretorio` e o de uma tabela ja ABERTA (`Table::diretorio`), e nao o
+    /// do catalogo: o congelamento guarda o caminho resolvido, e comparar com
+    /// o cru erraria calado com a base relativa no `config.json`.
+    ///
+    /// Os dois que chamam, e por que sao dois:
+    ///
+    /// * o `empilhar`, na INSTRUCAO -- «repita» so se diz sobre o que aplicou
+    ///   zero, e sempre na instrucao (`commit-contra-ddl-4-motores.md`, D3). E
+    ///   o 1412 `ER_TABLE_DEF_CHANGED` do MySQL, no mesmo lugar;
+    /// * o `op_commit`, ANTES da marca -- a rede que sobra para o congelamento
+    ///   que nasceu depois da instrucao por um caminho que ninguem previu. Ali
+    ///   a recusa devolve a lista a transacao, que continua ativa.
+    ///
+    /// O portao vem antes do trabalho: com nada congelado -- sempre, menos
+    /// durante uma reescrita -- e um `load` atomico e volta.
+    fn congelada_no_alcance(
+        &self,
+        dados: &Instancia,
+        database: &str,
+        schema: Option<&str>,
+        diretorio: &Path,
+        nomes: &[String],
+    ) -> Result<Option<String>> {
+        if phxsql_store::congelamento::quantas() == 0 {
+            return Ok(None);
+        }
+        let todas = dados.abrir_database(database)?.tabelas(schema)?;
+        for nome in crate::transacao::componente_de_chave(diretorio, &todas, nomes) {
+            match phxsql_store::congelamento::conferir(diretorio, &nome) {
+                Ok(()) => {}
+                Err(PhxError::EmMigracao(m)) => return Ok(Some(m)),
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(None)
+    }
+
     /// `rollback`: joga a lista fora. **Zero bytes de trabalho.**
     fn op_rollback(&self, sessao: &Sessao) -> Result<Json> {
         self.exigir_transacao(sessao)?;
@@ -15700,6 +15910,16 @@ impl Servidor {
     /// O `fsync` da marca e o **ponto de compromisso**: antes dele a transacao
     /// nao aconteceu; depois dele ela aconteceu, mesmo que o arquivo de dado
     /// ainda nao saiba.
+    ///
+    /// # A resposta ao cliente segue o MESMO ponto -- pedido 426
+    ///
+    /// Antes da marca, a recusa e erro, e o `repetir` do tipo do erro diz a
+    /// verdade: nada foi aplicado. Depois da marca a transacao ACONTECEU, e
+    /// quem quebrar a passada no meio recebe `COMMITTED`, com o aviso do que
+    /// houve -- a nao ser que a marca SAIA do disco, e os dois casos em que
+    /// ela sai estao na tabela de [`Servidor::depois_da_marca`]. Um `4006`
+    /// com `repetir: true` depois de meia passada mandava o cliente duplicar
+    /// o que ja estava gravado; nenhuma linha daquela tabela faz isso.
     fn op_commit(&self, sessao: &Sessao) -> Result<Json> {
         self.exigir_transacao(sessao)?;
         let inicio = Instant::now();
@@ -15751,7 +15971,21 @@ impl Servidor {
             ]));
         }
 
-        let dir = trava.abrir_database(&database)?.caminho().to_path_buf();
+        // ANTES da marca: toda recusa daqui DEVOLVE a lista e o estado. Nada
+        // foi aplicado, a transacao continua `ACTIVE`, e o cliente pode mandar
+        // `COMMIT` de novo -- e o `SQLITE_BUSY` no `COMMIT`, o unico dos quatro
+        // motores em que o `COMMIT` pode falhar, e la a transacao tambem fica
+        // ativa (`commit-contra-ddl-4-motores.md` §2). Antes, o `?` do
+        // `abrir_database` deixava a transacao presa em `COMMITTING` com a
+        // lista jogada fora.
+        let dir = match self.preparar_a_marca(&trava, &database, &escritas) {
+            Ok(d) => d,
+            Err(e) => {
+                drop(trava);
+                self.devolver_a_lista(sessao.ligacao, escritas);
+                return Err(e);
+            }
+        };
         let carimbo = crate::agora_ms();
         // A marca vai ao disco e e SINCRONIZADA antes de a passada tocar em
         // qualquer arquivo de dado. A ordem inversa tem uma janela em que o
@@ -15768,42 +16002,242 @@ impl Servidor {
                 return Err(e);
             }
         };
+        self.depois_da_marca(trava, sessao, id, &database, escritas, &marca, inicio)
+    }
 
-        let resultado = self.aplicar_conjunto(&trava, &database, &escritas, sessao);
+    /// O que o `COMMIT` confere com a trava na mao e ANTES da marca: o
+    /// diretorio dela, e se alguma tabela que a passada vai abrir esta
+    /// congelada (a rede do pedido 426 -- ver `congelada_no_alcance`).
+    fn preparar_a_marca(
+        &self,
+        trava: &Instancia,
+        database: &str,
+        escritas: &[crate::transacao::Escrita],
+    ) -> Result<PathBuf> {
+        let dir = trava.abrir_database(database)?.caminho().to_path_buf();
+        if phxsql_store::congelamento::quantas() == 0 {
+            return Ok(dir);
+        }
+        // Por schema, porque a chave estrangeira nao atravessa diretorio: o
+        // componente de uma tabela mora no diretorio dela.
+        let mut por_schema: std::collections::BTreeMap<Option<String>, Vec<String>> =
+            std::collections::BTreeMap::new();
+        for e in escritas {
+            let (schema, nome) = phxsql_store::catalogo::separar_qualificado(&e.tabela);
+            let nomes = por_schema.entry(schema).or_default();
+            if !nomes.contains(&nome) {
+                nomes.push(nome);
+            }
+        }
+        let recusa = |recado: String| {
+            PhxError::EmMigracao(format!(
+                "{recado} -- e o COMMIT abriria essa tabela. NADA foi gravado e a \
+                 transacao continua ativa: mande COMMIT de novo quando a reescrita \
+                 terminar, ou ROLLBACK"
+            ))
+        };
+        let db = trava.abrir_database(database)?;
+        for (schema, nomes) in por_schema {
+            // O diretorio RESOLVIDO sai de uma tabela aberta -- a primeira da
+            // lista, que a passada abre de qualquer jeito. Congelada, ela
+            // recusa ja aqui, e com a MESMA frase das vizinhas.
+            let qualificada = phxsql_store::catalogo::qualificar(schema.as_deref(), &nomes[0]);
+            let t = match db.abrir_qualificada(&qualificada) {
+                Ok(t) => t,
+                Err(PhxError::EmMigracao(m)) => return Err(recusa(m)),
+                Err(e) => return Err(e),
+            };
+            if let Some(recado) = self.congelada_no_alcance(
+                trava,
+                database,
+                schema.as_deref(),
+                t.diretorio(),
+                &nomes,
+            )? {
+                return Err(recusa(recado));
+            }
+        }
+        Ok(dir)
+    }
+
+    /// Devolve a lista a transacao e a tira de `COMMITTING`: o `COMMIT` foi
+    /// recusado ANTES da marca, e nada aconteceu.
+    fn devolver_a_lista(&self, ligacao: u64, escritas: Vec<crate::transacao::Escrita>) {
+        if let Ok(mut reg) = self.transacoes.lock() {
+            if let Some(tx) = reg.de_mut(ligacao) {
+                tx.escritas = escritas;
+                tx.estado = crate::transacao::Estado::Ativa;
+            }
+        }
+    }
+
+    /// Tudo o que vem DEPOIS da marca.
+    ///
+    /// # Os tres desfechos de uma passada que quebra, e o `repetir` de cada um
+    ///
+    /// A marca e o ponto de compromisso -- mas so para a lista que PODE ser
+    /// aplicada. A pergunta que decide e a CLASSE do erro
+    /// ([`crate::transacao::ClasseDoErro`], a mesma regra que a instrucao ja
+    /// usa) e quantas escritas terminaram antes dele:
+    ///
+    /// | quebra | aplicadas | desfecho |
+    /// |---|---|---|
+    /// | de ACESSO (4xxx: congelada, reservada) | zero | a marca SAI; a transacao volta a `ACTIVE` com a lista, e o erro vai com o `repetir` dele -- nada foi aplicado, repetir o COMMIT e verdade |
+    /// | do DADO (2xxx/3xxx: chave, tipo) | zero | a marca SAI; a transacao sai como sempre saiu, com o erro -- a lista nao se aplica como foi escrita |
+    /// | do DADO | alguma | a marca SAI e a resposta DIZ quantas ficaram: a ordem de digitacao proibe desfazer, e completar o resto aplicaria uma transacao invalida. `repetir` e falso |
+    /// | qualquer outra | qualquer | `COMMITTED`: a transacao aconteceu, e o que falta se completa para a FRENTE, na hora e com a mesma trava |
+    ///
+    /// Nenhuma linha manda repetir com escrita aplicada -- a assertiva do §5
+    /// item 9 do parecer do 426. A terceira linha e a lacuna que sobra: a
+    /// chave estrangeira so e conferida na passada, depois da marca, e por
+    /// isso uma filha sem mae no meio da lista para a passada com parte ja
+    /// gravada. Dizer isso na resposta e o que o motor consegue sem conferir
+    /// a chave antes da marca -- que e outro pedido.
+    #[allow(clippy::too_many_arguments)]
+    fn depois_da_marca(
+        &self,
+        trava: TravaMedida<'_>,
+        sessao: &Sessao,
+        id: u64,
+        database: &str,
+        escritas: Vec<crate::transacao::Escrita>,
+        marca: &Path,
+        inicio: Instant,
+    ) -> Result<Json> {
+        let quantas = escritas.len();
         let mut avisos = Vec::new();
-        match resultado {
+        let mut aviso_da_passada: Option<(String, bool)> = None;
+        let mut aplicadas = 0usize;
+        match self.aplicar_conjunto(&trava, database, &escritas, sessao, &mut aplicadas) {
             Ok(depois_de_rodar) => {
                 // A marca so sai depois de a tabela estar sincronizada. A
                 // janela fechou na passada? Entao sai agora. Ainda aberta? A
                 // marca fica pendurada, e quem a apaga e o `descarregar_sujas`
                 // -- **depois** de o `fsync` acontecer, nunca antes.
-                if self.tabelas_ainda_sujas(&database, &escritas) {
+                if self.tabelas_ainda_sujas(database, &escritas) {
                     if let Ok(mut m) = self.marcas_pendentes.lock() {
-                        m.push(marca.clone());
+                        m.push(marca.to_path_buf());
                     }
                 } else {
-                    let _ = std::fs::remove_file(&marca);
+                    let _ = std::fs::remove_file(marca);
                 }
                 drop(trava);
+                // Os AFTER rodam depois da trava, como em toda escrita deste
+                // servidor. Um gatilho que nem se deixa LER vira aviso como o
+                // que falha rodando: o `?` que havia aqui devolvia erro de um
+                // COMMIT ja gravado, e ainda deixava a transacao no registro,
+                // presa em `COMMITTING` com as travas na mao.
                 for (ped, evento, nova, velha) in depois_de_rodar {
-                    let (_, depois) = self.gatilhos_para(&ped, evento)?;
-                    avisos.extend(self.rodar_gatilhos_depois(&depois, nova, velha, &ped, sessao));
+                    match self.gatilhos_para(&ped, evento) {
+                        Ok((_, depois)) => avisos
+                            .extend(self.rodar_gatilhos_depois(&depois, nova, velha, &ped, sessao)),
+                        Err(e) => avisos.push(Json::texto_de(format!(
+                            "os gatilhos AFTER de {} nao rodaram: {e}",
+                            ped.texto_ou("tabela", "")
+                        ))),
+                    }
                 }
             }
             Err(e) => {
+                let do_pedido = crate::transacao::ClasseDoErro::do_erro(&e)
+                    == crate::transacao::ClasseDoErro::Instrucao;
+                let de_acesso = e.codigo() / 1000 == 4;
+                // As duas primeiras linhas da tabela: nada da lista chegou ao
+                // disco, e o erro e do pedido ou do acesso -- entao a marca
+                // pode sair, e a transacao deixa de ter acontecido. Se a marca
+                // NAO sai (o `unlink` falhou), ela vai ser completada no
+                // arranque, e dizer «nada aconteceu» seria mentir: cai no
+                // caminho da frente, la embaixo.
+                if do_pedido && aplicadas == 0 && std::fs::remove_file(marca).is_ok() {
+                    drop(trava);
+                    if de_acesso {
+                        self.devolver_a_lista(sessao.ligacao, escritas);
+                    } else {
+                        self.descartar_transacao(sessao.ligacao);
+                    }
+                    return Err(e);
+                }
+                // A terceira linha: erro do DADO com parte ja gravada.
+                if do_pedido && !de_acesso {
+                    let _ = std::fs::remove_file(marca);
+                    drop(trava);
+                    self.descartar_transacao(sessao.ligacao);
+                    let feitas: Vec<String> = escritas[..aplicadas]
+                        .iter()
+                        .map(|w| format!("{} {} rowid {}", w.acao.nome(), w.tabela, w.rowid))
+                        .collect();
+                    return Err(com_nota(
+                        e,
+                        &format!(
+                            "o COMMIT parou na escrita {} de {quantas}, e as {aplicadas} \
+                             anteriores JA ESTAO gravadas e nao se desfazem -- a ordem \
+                             de digitacao proibe desfazer ({}). Nada mais desta \
+                             transacao sera aplicado; NAO a repita inteira",
+                            aplicadas + 1,
+                            feitas.join(", ")
+                        ),
+                    ));
+                }
                 // A passada quebrou no meio, e a marca ESTA no disco -- entao
                 // a transacao ja foi confirmada, e o unico caminho e
-                // completa-la. A tentativa acontece aqui com o MESMO codigo
-                // que a recuperacao do arranque usa: um segundo caminho para
-                // "completar um commit" seria um segundo lugar para errar.
-                if let Ok(t) = self.travar_dados() {
-                    let r = crate::transacao::recuperar(&t);
-                    if r.houve() {
-                        eprintln!("{}", r.texto(&self.config.base));
-                    }
+                // completa-la, andando para a FRENTE (desfazer devolveria
+                // slot, e o `.reg` nunca reaproveita slot).
+                //
+                // Com a MESMA trava, e e isso o conserto da camada (c) do
+                // pedido 426: este braco pedia `travar_dados()` de novo com a
+                // do topo ainda viva, a trava nao e reentrante, a recusa caia
+                // num `if let Ok` que a engolia, e a recuperacao NUNCA rodava
+                // -- enquanto este comentario dizia que rodava. Soltar e tomar
+                // de novo tambem nao serve: abre a fresta em que outra escrita
+                // entra no meio da transacao confirmada.
+                //
+                // O codigo e o da recuperacao do arranque, para uma marca so;
+                // a diferenca de politica (a marca da operacao impossivel
+                // FICA) esta em `transacao::completar_marca`.
+                let r = crate::transacao::completar_marca(&trava, database, marca);
+                drop(trava);
+                if r.houve() {
+                    eprintln!("{}", r.texto(&self.config.base));
                 }
-                self.descartar_transacao(sessao.ligacao);
-                return Err(e);
+                // A copia residente nao sabe o que a recuperacao gravou por
+                // baixo dela: sai da memoria, e a leitura volta ao disco --
+                // mostrar a copia velha seria mentir sobre o dado.
+                let soltas = self.soltar_residentes_de(database, &escritas);
+                // «Completou» so com a marca LIDA e completada sem nenhuma
+                // operacao impossivel. Qualquer outra coisa -- inclusive a
+                // marca que nem se leu -- e dita como pendente: a resposta nao
+                // afirma o que nao conferiu.
+                let pendente =
+                    !(r.completadas == 1 && r.impossiveis.is_empty() && r.paradas.is_empty());
+                let mut texto = if pendente {
+                    format!(
+                        "a passada de COMMIT quebrou depois da marca ({e}), e a \
+                         transacao ESTA confirmada: a aplicacao ficou pendente \
+                         ({}) e se completa na proxima recuperacao do servidor. \
+                         NAO repita a transacao -- repetir duplicaria o que ja \
+                         foi gravado",
+                        r.impossiveis
+                            .iter()
+                            .chain(r.paradas.iter())
+                            .cloned()
+                            .collect::<Vec<_>>()
+                            .join("; ")
+                    )
+                } else {
+                    format!(
+                        "a passada de COMMIT quebrou depois da marca ({e}), e a \
+                         recuperacao a completou na hora: a transacao inteira esta \
+                         gravada, e nao ha o que repetir. Os gatilhos AFTER dela \
+                         nao rodaram"
+                    )
+                };
+                if !soltas.is_empty() {
+                    texto.push_str(&format!(
+                        ". A copia residente de {} saiu da memoria",
+                        soltas.join(", ")
+                    ));
+                }
+                aviso_da_passada = Some((texto, pendente));
             }
         }
         self.descartar_transacao(sessao.ligacao);
@@ -15816,6 +16250,13 @@ impl Servidor {
             ("gravadas", Json::de_u64(quantas as u64)),
             ("ms", Json::de_u64(inicio.elapsed().as_millis() as u64)),
         ];
+        // So quando houve: a resposta de sempre nao ganha campo vazio.
+        if let Some((texto, pendente)) = aviso_da_passada {
+            resposta.push(("aviso", Json::texto_de(texto)));
+            if pendente {
+                resposta.push(("completando", Json::Bool(true)));
+            }
+        }
         avisos.truncate(50);
         if !avisos.is_empty() {
             resposta.push(("gatilhos_avisos", Json::Lista(avisos)));
@@ -15823,10 +16264,33 @@ impl Servidor {
         Ok(Json::objeto(resposta))
     }
 
+    /// Tira da memoria a copia residente das tabelas destas escritas. Devolve
+    /// quais sairam.
+    fn soltar_residentes_de(
+        &self,
+        database: &str,
+        escritas: &[crate::transacao::Escrita],
+    ) -> Vec<String> {
+        let mut soltas = Vec::new();
+        if let Ok(mut r) = self.residentes.lock() {
+            for e in escritas {
+                let chave = Self::chave_residente(&pedido_da_tabela(database, &e.tabela));
+                if r.remove(&chave).is_some() {
+                    soltas.push(e.tabela.clone());
+                }
+            }
+        }
+        soltas
+    }
+
     /// A passada: aplica o conjunto de escrita, na ordem, com a trava na mao.
     ///
     /// Devolve o que os AFTER precisam saber, para eles rodarem DEPOIS de a
     /// trava sair -- que e onde eles ja rodam em toda escrita deste servidor.
+    ///
+    /// `aplicadas` conta as escritas que TERMINARAM -- e o que o braco de
+    /// erro do `COMMIT` precisa para saber se a quebra veio antes de qualquer
+    /// byte da lista (pedido 426).
     #[allow(clippy::type_complexity)]
     fn aplicar_conjunto(
         &self,
@@ -15834,6 +16298,7 @@ impl Servidor {
         database: &str,
         escritas: &[crate::transacao::Escrita],
         sessao: &Sessao,
+        aplicadas: &mut usize,
     ) -> Result<Vec<(Json, phxsql_sql::rotina::Evento, Option<Json>, Option<Json>)>> {
         use crate::transacao::Acao;
         let mut abertas: HashMap<String, Table> = HashMap::new();
@@ -15841,6 +16306,25 @@ impl Servidor {
         let ha_gatilhos = self.ha_gatilhos.load(Ordering::Relaxed);
         for e in escritas {
             let ped = pedido_da_tabela(database, &e.tabela);
+            #[cfg(test)]
+            if self.passada_quebra_na_escrita.load(Ordering::SeqCst) == *aplicadas + 1 {
+                if self.passada_quebra_congela.load(Ordering::SeqCst) {
+                    let t = self.abrir_travada(trava, &ped, sessao)?;
+                    let c = phxsql_store::congelamento::congelar(
+                        t.diretorio(),
+                        t.nome(),
+                        "quebra de teste da passada",
+                    )?;
+                    if let Ok(mut g) = self.passada_quebra_congelando.lock() {
+                        *g = Some(c);
+                    }
+                }
+                return Err(PhxError::EmMigracao(format!(
+                    "quebra de teste antes da escrita {} ({})",
+                    *aplicadas + 1,
+                    e.tabela
+                )));
+            }
             // Abre a tabela UMA vez e a guarda no mapa. A seguir ela e RETIRADA
             // do mapa enquanto grava, para que a conferencia de FK possa
             // emprestar as MAES (as outras entradas) -- o conserto do P0. Ela
@@ -15924,6 +16408,7 @@ impl Servidor {
             // A filha volta ao mapa: o group commit no fim do laco sincroniza
             // todas as tabelas abertas, e ela precisa estar la.
             abertas.insert(e.tabela.clone(), t);
+            *aplicadas += 1;
         }
         // **O GROUP COMMIT, e ele e a janela de durabilidade que ja existia.**
         //
@@ -16522,6 +17007,18 @@ impl Servidor {
             Some(j) => Some(crate::valores::json_para_valor(j, &coluna.ty)?),
         };
 
+        // Pedido 426: a transacao viva que alcanca esta tabela segura a
+        // reescrita -- a pergunta e feita AQUI, com a trava global na mao, e
+        // nao so no portao de fora. Ver `transacao_na_vizinhanca`.
+        if let Some(recado) = self.transacao_na_vizinhanca(
+            &dados,
+            p.texto_ou("database", ""),
+            p.texto_ou("tabela", ""),
+            &t,
+        )? {
+            return Err(PhxError::EmTransacao(recado));
+        }
+
         let inicio = std::time::Instant::now();
         // O CONGELAMENTO entra com a trava na mao, e e isso que faz o retrato
         // da FASE A ser tirado num ponto QUIETO: so se abre tabela gravavel
@@ -16718,6 +17215,13 @@ impl Servidor {
                 "para migrar, repita o nome da tabela no campo \"confirmar\": \
                  esperado {tabela:?}"
             )));
+        }
+
+        // Pedido 426, o IRMAO do `op_acrescentar_coluna`: mesmas funcoes na
+        // mesma ordem (`travar_dados` -> `abrir_travada` -> `congelar` -> solta
+        // a trava), entao a mesma pergunta, no mesmo ponto.
+        if let Some(recado) = self.transacao_na_vizinhanca(&dados, &database, &tabela, &t)? {
+            return Err(PhxError::EmTransacao(recado));
         }
 
         let inicio = std::time::Instant::now();
@@ -25488,6 +25992,27 @@ fn pedido_da_tabela(database: &str, tabela: &str) -> Json {
         ("database", Json::texto_de(database)),
         ("tabela", Json::texto_de(tabela)),
     ])
+}
+
+/// O MESMO erro -- mesmo codigo, mesmo nome, mesmo `repetir` -- com o que
+/// quem recebe precisa saber a mais.
+///
+/// So as familias do PEDIDO e do DADO, que sao as que o `COMMIT` devolve
+/// depois de parte gravada (pedido 426): o cliente trata pelo codigo, e o
+/// codigo nao pode mudar so porque a frase ganhou um contexto. As outras
+/// passam intactas.
+fn com_nota(e: PhxError, nota: &str) -> PhxError {
+    let junta = |m: String| format!("{m}; {nota}");
+    match e {
+        PhxError::Esquema(m) => PhxError::Esquema(junta(m)),
+        PhxError::Tipo(m) => PhxError::Tipo(junta(m)),
+        PhxError::NaoEncontrado(m) => PhxError::NaoEncontrado(junta(m)),
+        PhxError::Duplicado(m) => PhxError::Duplicado(junta(m)),
+        PhxError::Integridade(m) => PhxError::Integridade(junta(m)),
+        PhxError::LimiteExcedido(m) => PhxError::LimiteExcedido(junta(m)),
+        PhxError::Conflito(m) => PhxError::Conflito(junta(m)),
+        outro => outro,
+    }
 }
 
 /// Os valores de um indice, na ordem das colunas dele.
@@ -41787,6 +42312,323 @@ mod testes_transacoes {
         let s = servidor(&dir);
         assert_eq!(quantas(&s, &ses, "clientes"), 0);
         assert!(!caminho.exists(), "a marca ruim tem de sair do disco");
+    }
+
+    // ------------------------------------- pedido 426: DEPOIS da marca
+
+    /// As marcas `.tx` que sobraram no diretorio do database.
+    fn marcas_em(dir: &std::path::Path) -> usize {
+        std::fs::read_dir(dir)
+            .map(|it| {
+                it.filter_map(|e| e.ok())
+                    .filter(|e| {
+                        let n = e.file_name().to_string_lossy().to_string();
+                        n.starts_with(crate::transacao::PREFIXO)
+                            && n.ends_with(crate::transacao::EXTENSAO)
+                    })
+                    .count()
+            })
+            .unwrap_or(0)
+    }
+
+    /// BEGIN, uma linha em `clientes` e uma em `pedidos`, e o COMMIT com a
+    /// passada quebrando antes da SEGUNDA escrita -- ja DEPOIS da marca, com
+    /// `clientes` gravada. Devolve a resposta como o cliente a le: o corpo do
+    /// `Ok`, ou a resposta de erro montada pelo mesmo `resposta_erro` do
+    /// protocolo (e ela que carrega o `repetir`).
+    fn commit_que_quebra(s: &Arc<Servidor>, ses: &Sessao, congelando: bool) -> Json {
+        base(s, ses);
+        pede(s, ses, r#""op":"begin","database":"loja""#).unwrap();
+        pede(
+            s,
+            ses,
+            r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":1,"nome":"Ana"}"#,
+        )
+        .unwrap();
+        pede(
+            s,
+            ses,
+            r#""op":"inserir","database":"loja","tabela":"pedidos","linha":{"id":1,"nome":"p"}"#,
+        )
+        .unwrap();
+        s.passada_quebra_congela.store(congelando, Ordering::SeqCst);
+        s.passada_quebra_na_escrita.store(2, Ordering::SeqCst);
+        let r = pede(s, ses, r#""op":"commit""#);
+        s.passada_quebra_na_escrita.store(0, Ordering::SeqCst);
+        match r {
+            Ok(j) => j,
+            Err(e) => s.resposta_erro("commit", &e, 0),
+        }
+    }
+
+    /// **426 (a)** -- a passada que quebra DEPOIS da marca nao deixa uma
+    /// tabela com a linha e a outra sem. A marca e o ponto de compromisso: o
+    /// que falta se completa para a FRENTE, na hora, com o mesmo codigo da
+    /// recuperacao do arranque.
+    #[test]
+    fn a_passada_que_quebra_depois_da_marca_nao_deixa_meia_transacao() {
+        let dir = dir_temp("426-a");
+        let s = servidor(&dir);
+        let ses = sessao(4261);
+        let r = commit_que_quebra(&s, &ses, false);
+        let (c, p) = (quantas(&s, &ses, "clientes"), quantas(&s, &ses, "pedidos"));
+        assert_eq!(
+            (c, p),
+            (1, 1),
+            "(a) ATOMICIDADE: clientes com {c} linha(s), pedidos com {p} -- a \
+             transacao confirmada ficou pela metade. COMMIT: {}",
+            r.escrever()
+        );
+    }
+
+    /// **426 (b)** -- nenhuma resposta de `COMMIT` manda repetir tendo gravado.
+    /// E a assertiva que faltava na prova (`commit-contra-ddl-4-motores.md`
+    /// §5 item 9), medida contra o DISCO e nao contra o campo `gravadas`: a
+    /// resposta de erro nem traz `gravadas`, e o estrago estava justamente
+    /// ali.
+    #[test]
+    fn o_commit_que_quebra_depois_da_marca_nao_manda_repetir() {
+        let dir = dir_temp("426-b");
+        let s = servidor(&dir);
+        let ses = sessao(4262);
+        let r = commit_que_quebra(&s, &ses, false);
+        let aplicadas = quantas(&s, &ses, "clientes") + quantas(&s, &ses, "pedidos");
+        assert!(
+            !(r.booleano_ou("repetir", false) && aplicadas > 0),
+            "(b) o COMMIT mandou REPETIR com {aplicadas} linha(s) da transacao ja \
+             gravada(s) -- quem obedece duplica: {}",
+            r.escrever()
+        );
+        assert_eq!(
+            r.texto_ou("transaction_state", ""),
+            "COMMITTED",
+            "(b) depois da marca a transacao esta confirmada, e a resposta tem de \
+             dizer isso: {}",
+            r.escrever()
+        );
+    }
+
+    /// **426 (c)** -- a recuperacao do braco de erro RODA: a marca sai do disco
+    /// na hora, sem esperar o proximo arranque. Com o defeito, o `travar_dados`
+    /// do braco de erro batia na propria trava ainda viva, o `if let Ok` engolia
+    /// a recusa, e a transacao que o cliente viu falhar so aparecia aplicada
+    /// depois de reiniciar.
+    #[test]
+    fn a_recuperacao_do_braco_de_erro_roda_de_verdade() {
+        let dir = dir_temp("426-c");
+        let s = servidor(&dir);
+        let ses = sessao(4263);
+        let r = commit_que_quebra(&s, &ses, false);
+        let sobraram = marcas_em(&dir.join("loja"));
+        assert_eq!(
+            sobraram,
+            0,
+            "(c) {sobraram} marca(s) .tx sobrando depois da resposta: a \
+             recuperacao do braco de erro nao rodou. COMMIT: {}",
+            r.escrever()
+        );
+        assert!(
+            r.campo("completando").is_none(),
+            "a recuperacao completou na hora e a resposta diz que ainda falta: {}",
+            r.escrever()
+        );
+        assert!(
+            r.texto_ou("aviso", "").contains("completou na hora"),
+            "a passada quebrou e a resposta nao diz: {}",
+            r.escrever()
+        );
+    }
+
+    /// **426, a quebra de ACESSO antes de qualquer byte da lista** (a
+    /// primeira escrita bate no congelamento): a marca SAI, nada foi
+    /// aplicado, a transacao volta a `ACTIVE` com a lista -- e ai, e so ai, o
+    /// `repetir: true` do `EM_MIGRACAO` diz a verdade. O segundo COMMIT grava
+    /// as duas.
+    #[test]
+    fn a_quebra_de_acesso_antes_de_qualquer_byte_devolve_a_transacao() {
+        let dir = dir_temp("426-zero");
+        let s = servidor(&dir);
+        let ses = sessao(4265);
+        base(&s, &ses);
+        pede(&s, &ses, r#""op":"begin","database":"loja""#).unwrap();
+        pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":1,"nome":"Ana"}"#,
+        )
+        .unwrap();
+        pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"pedidos","linha":{"id":1,"nome":"p"}"#,
+        )
+        .unwrap();
+        s.passada_quebra_na_escrita.store(1, Ordering::SeqCst);
+        let e = pede(&s, &ses, r#""op":"commit""#);
+        s.passada_quebra_na_escrita.store(0, Ordering::SeqCst);
+        let e = e.expect_err("a primeira escrita quebrou: o COMMIT nao aconteceu");
+        // Contado por OUTRA conexao: a desta transacao enxerga as proprias
+        // escritas pendentes, e mediria a lista em vez do disco.
+        let fora = sessao(4275);
+        let aplicadas = quantas(&s, &fora, "clientes") + quantas(&s, &fora, "pedidos");
+        assert_eq!(aplicadas, 0, "a quebra veio antes de qualquer byte: {e}");
+        assert!(
+            e.adianta_repetir(),
+            "nada aplicado e ACESSO: repetir e verdade -- {e}"
+        );
+        assert_eq!(
+            marcas_em(&dir.join("loja")),
+            0,
+            "a marca de quem nao aconteceu ficou"
+        );
+        let r = pede(&s, &ses, r#""op":"commit""#)
+            .expect("a transacao tinha de voltar a ACTIVE com a lista");
+        assert_eq!(r.campo("gravadas").and_then(Json::inteiro), Some(2));
+        assert_eq!(
+            quantas(&s, &ses, "clientes") + quantas(&s, &ses, "pedidos"),
+            2
+        );
+    }
+
+    /// **426, a chave que so se confere na passada: filha ANTES do pai.** A
+    /// recusa ja existia (`p0_filha_antes_do_pai_no_commit_ainda_recusa`), e
+    /// conferia so o VEREDITO -- a marca ficava no disco, e o arranque
+    /// seguinte reaplicava: a filha continuava impossivel, o pai entrava.
+    /// Uma transacao que o cliente viu RECUSADA aparecia pela metade depois
+    /// de reiniciar. Com nada aplicado e erro do DADO, a marca sai.
+    #[test]
+    fn a_filha_antes_do_pai_nao_deixa_marca_para_o_arranque() {
+        let dir = dir_temp("426-p0-marca");
+        let s = servidor(&dir);
+        let ses = sessao(4266);
+        base_com_fk(&s, &ses);
+        pede(&s, &ses, r#""op":"begin""#).unwrap();
+        pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"pedidos","linha":{"id":1,"cliente_id":1}"#,
+        )
+        .unwrap();
+        pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":1,"nome":"Ana"}"#,
+        )
+        .unwrap();
+        let e = pede(&s, &ses, r#""op":"commit""#).unwrap_err();
+        assert_eq!(e.nome(), "INTEGRIDADE", "{e}");
+        let sobraram = marcas_em(&dir.join("loja"));
+        drop(s);
+        let s = servidor(&dir);
+        let depois = (quantas(&s, &ses, "clientes"), quantas(&s, &ses, "pedidos"));
+        assert_eq!(
+            (sobraram, depois),
+            (0, (0, 0)),
+            "(marcas sobrando, (clientes, pedidos) depois do arranque): a transacao \
+             RECUSADA apareceu depois de reiniciar"
+        );
+    }
+
+    /// **426, a lacuna que sobra, escrita em vez de escondida:** erro do DADO
+    /// no MEIO da lista (a chave estrangeira so e conferida na passada). A
+    /// parte anterior ja esta gravada e nao se desfaz. O que o conserto
+    /// garante: a resposta DIZ quantas ficaram e manda nao repetir, `repetir`
+    /// e falso, e o arranque nao muda o passado -- a marca sai, e o pai que
+    /// vinha DEPOIS da filha orfa nao aparece sozinho ao reiniciar.
+    #[test]
+    fn o_erro_do_dado_no_meio_da_lista_diz_o_que_ficou_e_o_arranque_nao_muda() {
+        let dir = dir_temp("426-meio");
+        let s = servidor(&dir);
+        let ses = sessao(4267);
+        base_com_fk(&s, &ses);
+        pede(&s, &ses, r#""op":"begin""#).unwrap();
+        pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":1,"nome":"Ana"}"#,
+        )
+        .unwrap();
+        pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"pedidos","linha":{"id":1,"cliente_id":2}"#,
+        )
+        .unwrap();
+        pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":2,"nome":"Bia"}"#,
+        )
+        .unwrap();
+        let e = pede(&s, &ses, r#""op":"commit""#).unwrap_err();
+        let texto = e.to_string();
+        assert_eq!(e.nome(), "INTEGRIDADE", "{texto}");
+        assert!(
+            !e.adianta_repetir(),
+            "parte gravada e mandando repetir: {texto}"
+        );
+        assert!(
+            texto.contains("JA ESTAO gravadas") && texto.contains("clientes rowid 1"),
+            "a resposta tinha de dizer o que ficou gravado: {texto}"
+        );
+        let antes = (quantas(&s, &ses, "clientes"), quantas(&s, &ses, "pedidos"));
+        let sobraram = marcas_em(&dir.join("loja"));
+        drop(s);
+        let s = servidor(&dir);
+        let depois = (quantas(&s, &ses, "clientes"), quantas(&s, &ses, "pedidos"));
+        assert_eq!(
+            (sobraram, antes, depois),
+            (0, (1, 0), (1, 0)),
+            "(marcas, antes, depois do arranque): o arranque mudou o passado"
+        );
+    }
+
+    /// **426, o lado que a recuperacao da HORA nao vence** -- a tabela continua
+    /// congelada. A marca FICA no disco (apaga-la trocaria «completa no proximo
+    /// arranque» por «perdida para sempre»), a resposta diz `COMMITTED` com
+    /// `completando: true`, e o arranque completa.
+    #[test]
+    fn a_quebra_que_a_recuperacao_nao_vence_fica_na_marca_ate_o_arranque() {
+        let dir = dir_temp("426-pendente");
+        let s = servidor(&dir);
+        let ses = sessao(4264);
+        let r = commit_que_quebra(&s, &ses, true);
+        let sobraram = marcas_em(&dir.join("loja"));
+        // Solta o congelamento ANTES de qualquer outra coisa: o `Servidor` pode
+        // ter threads de fundo segurando um `Arc`, e o `drop(s)` sozinho nao
+        // garantiria que ele saisse.
+        let posse = s.passada_quebra_congelando.lock().unwrap().take();
+        assert!(posse.is_some(), "a quebra de teste nao congelou nada");
+        drop(posse);
+        assert_eq!(
+            r.texto_ou("transaction_state", ""),
+            "COMMITTED",
+            "a marca esta no disco: a transacao esta confirmada. COMMIT: {}",
+            r.escrever()
+        );
+        assert!(
+            r.booleano_ou("completando", false),
+            "a resposta tinha de dizer que a aplicacao ficou pendente: {}",
+            r.escrever()
+        );
+        assert!(
+            !r.booleano_ou("repetir", false),
+            "confirmada e mandando repetir: {}",
+            r.escrever()
+        );
+        assert_eq!(
+            sobraram, 1,
+            "a marca de uma transacao confirmada e pendente saiu do disco -- o \
+             arranque nao tem mais como completa-la"
+        );
+        drop(s);
+        let s = servidor(&dir);
+        assert_eq!(
+            (quantas(&s, &ses, "clientes"), quantas(&s, &ses, "pedidos")),
+            (1, 1),
+            "o arranque tinha de completar a transacao que ficou na marca"
+        );
+        assert_eq!(marcas_em(&dir.join("loja")), 0);
     }
 }
 

@@ -497,9 +497,9 @@
       "id": "marca-antes-do-fsync",
       "titulo": "a marca `.tx` é apagada antes de a tabela sincronizar",
       "veredito": "PROVADA",
-      "segundos": 38.31,
+      "segundos": 49.34,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-09-24 01:13"
     },
     {
       "id": "insert-sem-travar-o-fim",
@@ -1083,17 +1083,17 @@
       "id": "recuperacao-deixa-a-marca-orfa",
       "titulo": "a recuperação completa (ou descarta) a marca `.tx` e a deixa no disco",
       "veredito": "PROVADA",
-      "segundos": 33.09,
+      "segundos": 49.87,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-09-24 01:13"
     },
     {
       "id": "recuperacao-nao-completa-o-commit",
       "titulo": "a recuperação conta e apaga a marca válida sem completar o commit",
       "veredito": "PROVADA",
-      "segundos": 34.49,
+      "segundos": 48.43,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-09-24 01:13"
     },
     {
       "id": "ndx-queda-com-cabecalho-limpo",
@@ -1203,9 +1203,9 @@
       "id": "eleicao-prefere-completa",
       "titulo": "`cluster::vencedor` volta a comparar so a posicao numerica, ignorando `incompleta`",
       "veredito": "PROVADA",
-      "segundos": 29.32,
+      "segundos": 49.14,
       "notas": [],
-      "quando": "2026-09-17 04:53"
+      "quando": "2026-09-24 00:45"
     },
     {
       "id": "replica-nao-atende-escrita",
@@ -1334,6 +1334,78 @@
       "segundos": 18.74,
       "notas": [],
       "quando": "2026-09-24 00:51"
+    },
+    {
+      "id": "reescrita-sem-portao-na-trava",
+      "titulo": "a migração congela a tabela que o COMMIT de uma transação aberta vai abrir",
+      "veredito": "PROVADA",
+      "segundos": 16.71,
+      "notas": [],
+      "quando": "2026-09-24 01:13"
+    },
+    {
+      "id": "acrescentar-coluna-sem-portao",
+      "titulo": "o acrescentar_coluna congela a tabela que o COMMIT de uma transação aberta vai abrir",
+      "veredito": "PROVADA",
+      "segundos": 16.8,
+      "notas": [],
+      "quando": "2026-09-24 01:13"
+    },
+    {
+      "id": "commit-sem-rede-antes-da-marca",
+      "titulo": "o COMMIT grava a marca com uma tabela do alcance congelada",
+      "veredito": "PROVADA",
+      "segundos": 16.47,
+      "notas": [],
+      "quando": "2026-09-24 01:13"
+    },
+    {
+      "id": "instrucao-na-vizinha-da-congelada",
+      "titulo": "a escrita ligada pela chave a uma tabela congelada entra na lista da transação",
+      "veredito": "PROVADA",
+      "segundos": 16.35,
+      "notas": [],
+      "quando": "2026-09-24 01:13"
+    },
+    {
+      "id": "braco-de-erro-retrava",
+      "titulo": "a passada do COMMIT quebra depois da marca e a recuperação da hora não roda",
+      "veredito": "PROVADA",
+      "segundos": 48.84,
+      "notas": [],
+      "quando": "2026-09-24 01:13"
+    },
+    {
+      "id": "completar-apaga-a-marca-impossivel",
+      "titulo": "a recuperação do COMMIT apaga a marca de uma operação que só estava congelada",
+      "veredito": "PROVADA",
+      "segundos": 48.93,
+      "notas": [],
+      "quando": "2026-09-24 01:13"
+    },
+    {
+      "id": "after-no-commit-some-calado",
+      "titulo": "o AFTER disparado no COMMIT grava numa lista já descartada e some sem aviso",
+      "veredito": "PROVADA",
+      "segundos": 16.88,
+      "notas": [],
+      "quando": "2026-09-24 01:13"
+    },
+    {
+      "id": "commit-zero-aplicado-vira-committed",
+      "titulo": "a passada que quebra antes de qualquer byte da lista responde COMMITTED",
+      "veredito": "PROVADA",
+      "segundos": 49.15,
+      "notas": [],
+      "quando": "2026-09-24 01:13"
+    },
+    {
+      "id": "commit-meio-sem-dizer-o-que-ficou",
+      "titulo": "a chave que falha no meio da passada vira COMMITTED sem a escrita que falhou",
+      "veredito": "PROVADA",
+      "segundos": 49.94,
+      "notas": [],
+      "quando": "2026-09-24 01:13"
     },
     {
       "id": "cifra-do-fio-imposta",

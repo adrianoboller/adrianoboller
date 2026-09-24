@@ -2653,16 +2653,18 @@ pub fn limpar() {
             "janela sem conserto da lixeira, pelo outro lado."
         ),
         "arquivo": "crates/phxsql-server/src/servidor.rs",
-        "trecho": """                if self.tabelas_ainda_sujas(&database, &escritas) {
+        # Trecho movido em 24/09/2026 pelo pedido 426: o que vem depois da
+        # marca passou a morar em `depois_da_marca`. O defeito e o mesmo.
+        "trecho": """                if self.tabelas_ainda_sujas(database, &escritas) {
                     if let Ok(mut m) = self.marcas_pendentes.lock() {
-                        m.push(marca.clone());
+                        m.push(marca.to_path_buf());
                     }
                 } else {
-                    let _ = std::fs::remove_file(&marca);
+                    let _ = std::fs::remove_file(marca);
                 }
 """,
         "troca": """                // DEFEITO REPOSTO: a marca sai sempre, sem esperar o fsync.
-                let _ = std::fs::remove_file(&marca);
+                let _ = std::fs::remove_file(marca);
 """,
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
@@ -5188,16 +5190,15 @@ pub fn limpar() {
             "pega e o que olha o DISCO, `!caminho.exists()`."
         ),
         "arquivo": "crates/phxsql-server/src/transacao.rs",
-        "trecho": """            let _ = std::fs::remove_file(&caminho);
-        }
-    }
-    r.ms = comeco.elapsed().as_millis() as u64;
+        # Trecho movido em 24/09/2026 pelo pedido 426: o corpo do laco virou
+        # `tratar_marca`, que o arranque e a recuperacao do COMMIT dividem.
+        "trecho": """            if tratar_marca(&db, &caminho, &mut r, NoArranque::Sim) {
+                let _ = std::fs::remove_file(&caminho);
+            }
 """,
         "troca": """            // DEFEITO REPOSTO: a marca fica no disco depois de completada ou
             // descartada -- orfa para sempre, reaplicada a cada arranque.
-        }
-    }
-    r.ms = comeco.elapsed().as_millis() as u64;
+            let _ = tratar_marca(&db, &caminho, &mut r, NoArranque::Sim);
 """,
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
@@ -5223,16 +5224,18 @@ pub fn limpar() {
             "linhas."
         ),
         "arquivo": "crates/phxsql-server/src/transacao.rs",
-        "trecho": """                Ok(Leitura::Aberta(marca)) => {
-                    completar(&db, &marca, &mut r);
-                    r.completadas += 1;
-                }
+        # Trecho movido em 24/09/2026 pelo pedido 426: `tratar_marca`, o
+        # corpo que o arranque e a recuperacao do COMMIT dividem.
+        "trecho": """        Ok(Leitura::Aberta(marca)) => {
+            let antes = r.impossiveis.len();
+            completar(db, &marca, r);
+            r.completadas += 1;
 """,
-        "troca": """                // DEFEITO REPOSTO: a marca valida e contada e apagada, mas o
-                // commit que ela descreve nunca e completado.
-                Ok(Leitura::Aberta(_marca)) => {
-                    r.completadas += 1;
-                }
+        "troca": """        // DEFEITO REPOSTO: a marca valida e contada e apagada, mas o
+        // commit que ela descreve nunca e completado.
+        Ok(Leitura::Aberta(_marca)) => {
+            let antes = r.impossiveis.len();
+            r.completadas += 1;
 """,
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
@@ -8692,5 +8695,298 @@ pub fn limpar() {
             "o_pulso_nao_diz_quais_nos_tem_pino",
         ],
         "prazo": 300,
+    },
+    # 37. A reescrita que congela a mae com a transacao viva na filha -- 426
+    # -----------------------------------------------------------------------
+    {
+        "id": "reescrita-sem-portao-na-trava",
+        "titulo": "a migração congela a tabela que o COMMIT de uma transação aberta vai abrir",
+        "porque": (
+            "pedido 426. O portao das travas de transacao rodava FORA da trava "
+            "global e lia so o campo `tabela` do pedido; a transacao que "
+            "escrevia na FILHA nao travava a MAE, a migracao congelava a mae, "
+            "e o COMMIT abria a mae na conferencia da chave depois da marca: "
+            "uma tabela gravada e a outra nao, 4006 com `repetir: true`, e a "
+            "marca aplicando o resto no arranque. Medido pelo soquete, sem "
+            "corrida nenhuma. Quem cede e a reescrita (D5 dos quatro motores)."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        if let Some(recado) = self.transacao_na_vizinhanca(&dados, &database, &tabela, &t)? {
+            return Err(PhxError::EmTransacao(recado));
+        }
+""",
+        "troca": """        // DEFEITO REPOSTO (426): a migracao nao pergunta, com a trava na mao,
+        // quem a transacao viva alcanca.
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "commit-pelo-soquete"],
+        "caem": [
+            "a_migracao_cede_a_transacao_que_a_alcanca_pela_chave",
+        ],
+        # O comportamento velho (tabela sem ligacao nao segura nada) e o irmao
+        # continuam de pe: o defeito e so desta porta.
+        "seguem": [
+            "transacao_em_tabela_sem_ligacao_nao_segura_a_reescrita",
+            "o_acrescentar_coluna_tambem_cede_a_transacao",
+        ],
+        "prazo": 420,
+    },
+    # 38. O irmao: acrescentar_coluna, mesmas funcoes na mesma ordem -- 426
+    # -----------------------------------------------------------------------
+    {
+        "id": "acrescentar-coluna-sem-portao",
+        "titulo": "o acrescentar_coluna congela a tabela que o COMMIT de uma transação aberta vai abrir",
+        "porque": (
+            "o IRMAO do `reescrita-sem-portao-na-trava`: `op_acrescentar_coluna` "
+            "chama `travar_dados` -> `abrir_travada` -> `congelar` -> solta a "
+            "trava, na mesma ordem do `op_migrar_esquema`. Conserto que "
+            "entrasse so na migracao deixaria este com o defeito inteiro."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        if let Some(recado) = self.transacao_na_vizinhanca(
+            &dados,
+            p.texto_ou("database", ""),
+            p.texto_ou("tabela", ""),
+            &t,
+        )? {
+            return Err(PhxError::EmTransacao(recado));
+        }
+""",
+        "troca": """        // DEFEITO REPOSTO (426): o irmao sem a pergunta.
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "commit-pelo-soquete"],
+        "caem": [
+            "o_acrescentar_coluna_tambem_cede_a_transacao",
+        ],
+        "seguem": [
+            "a_migracao_cede_a_transacao_que_a_alcanca_pela_chave",
+        ],
+        "prazo": 420,
+    },
+    # 39. O COMMIT sem a rede antes da marca -- 426
+    # -----------------------------------------------------------------------
+    {
+        "id": "commit-sem-rede-antes-da-marca",
+        "titulo": "o COMMIT grava a marca com uma tabela do alcance congelada",
+        "porque": (
+            "a rede do 426 para o congelamento que nasce por um caminho que "
+            "ninguem previu: sem ela, a passada bate na tabela congelada "
+            "DEPOIS da marca -- 1 de 2 linhas no disco, e o arranque aplicando "
+            "a outra. Com ela, a recusa vem antes da marca e a transacao "
+            "continua ativa (o `SQLITE_BUSY` no COMMIT)."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        let dir = trava.abrir_database(database)?.caminho().to_path_buf();
+        if phxsql_store::congelamento::quantas() == 0 {
+            return Ok(dir);
+        }
+""",
+        "troca": """        let dir = trava.abrir_database(database)?.caminho().to_path_buf();
+        // DEFEITO REPOSTO (426): sem a rede antes da marca.
+        if phxsql_store::congelamento::quantas() < usize::MAX {
+            return Ok(dir);
+        }
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "commit-pelo-soquete"],
+        "caem": [
+            "o_commit_contra_a_tabela_congelada_nao_sai_pela_metade",
+        ],
+        "seguem": [
+            "a_escrita_na_vizinha_da_congelada_recusa_na_instrucao",
+        ],
+        "prazo": 420,
+    },
+    # 40. A escrita na vizinha da congelada entrando na lista -- 426 (D3)
+    # -----------------------------------------------------------------------
+    {
+        "id": "instrucao-na-vizinha-da-congelada",
+        "titulo": "a escrita ligada pela chave a uma tabela congelada entra na lista da transação",
+        "porque": (
+            "D3 dos quatro motores: «repita» se diz na INSTRUCAO, com zero "
+            "aplicado -- o lugar do 1412 `ER_TABLE_DEF_CHANGED` do MySQL. O "
+            "`empilhar` nao confere chave estrangeira, entao a filha de uma "
+            "mae congelada entrava na lista e o problema so aparecia no COMMIT."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        if let Some(recado) = self.congelada_no_alcance(
+            &trava,
+            &database,
+            phxsql_store::catalogo::separar_qualificado(&tabela)
+                .0
+                .as_deref(),
+            t.diretorio(),
+            &[t.nome().to_string()],
+        )? {
+            return Err(PhxError::EmMigracao(recado));
+        }
+""",
+        "troca": """        // DEFEITO REPOSTO (426): sem a recusa na instrucao.
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "commit-pelo-soquete"],
+        "caem": [
+            "a_escrita_na_vizinha_da_congelada_recusa_na_instrucao",
+        ],
+        "seguem": [
+            "o_commit_contra_a_tabela_congelada_nao_sai_pela_metade",
+        ],
+        "prazo": 420,
+    },
+    # 41. A recuperacao do braco de erro que nunca rodava -- 426 (c)
+    # -----------------------------------------------------------------------
+    {
+        "id": "braco-de-erro-retrava",
+        "titulo": "a passada do COMMIT quebra depois da marca e a recuperação da hora não roda",
+        "porque": (
+            "camada (c) do 426: o braco de erro pedia `travar_dados()` com a "
+            "trava do topo ainda viva, a trava nao e reentrante, o `if let Ok` "
+            "engolia a recusa e a recuperacao NUNCA rodava -- enquanto o "
+            "comentario acima dizia que rodava. Envolver nao e substituir. O "
+            "conserto completa com a MESMA trava."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """                let r = crate::transacao::completar_marca(&trava, database, marca);
+                drop(trava);
+""",
+        "troca": """                // DEFEITO REPOSTO (426 c): toma a trava de novo com a do topo viva.
+                let r = match self.travar_dados() {
+                    Ok(t) => crate::transacao::completar_marca(&t, database, marca),
+                    Err(_) => crate::transacao::Relatorio::default(),
+                };
+                drop(trava);
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_transacoes::a_passada_que_quebra_depois_da_marca_nao_deixa_meia_transacao",
+            "servidor::testes_transacoes::a_recuperacao_do_braco_de_erro_roda_de_verdade",
+        ],
+        "seguem": [
+            "servidor::testes_transacoes::a_quebra_de_acesso_antes_de_qualquer_byte_devolve_a_transacao",
+            "servidor::testes_transacoes::o_commit_que_quebra_depois_da_marca_nao_manda_repetir",
+        ],
+    },
+    # 42. A recuperacao da hora apagando a marca do impossivel passageiro -- 426
+    # -----------------------------------------------------------------------
+    {
+        "id": "completar-apaga-a-marca-impossivel",
+        "titulo": "a recuperação do COMMIT apaga a marca de uma operação que só estava congelada",
+        "porque": (
+            "achado ao consertar o (c) do 426: o `recuperar` do arranque apaga "
+            "a marca mesmo com operacao impossivel -- la o impossivel e "
+            "permanente. Com o servidor de pe ele pode ser passageiro (a tabela "
+            "congelada), e consertar so o (c) trocaria «completa no proximo "
+            "arranque» por «perdida para sempre»."
+        ),
+        "arquivo": "crates/phxsql-server/src/transacao.rs",
+        "trecho": """            arranque == NoArranque::Sim || r.impossiveis.len() == antes
+""",
+        "troca": """            // DEFEITO REPOSTO (426): apaga a marca do impossivel passageiro.
+            {
+                let _ = (arranque, antes);
+                true
+            }
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_transacoes::a_quebra_que_a_recuperacao_nao_vence_fica_na_marca_ate_o_arranque",
+        ],
+        "seguem": [
+            "servidor::testes_transacoes::a_recuperacao_do_braco_de_erro_roda_de_verdade",
+            "servidor::testes_transacoes::marca_que_nao_confere_e_commit_que_nunca_comecou",
+        ],
+    },
+    # 43. O AFTER que grava no COMMIT sumindo calado -- 262, etapa 1
+    # -----------------------------------------------------------------------
+    {
+        "id": "after-no-commit-some-calado",
+        "titulo": "o AFTER disparado no COMMIT grava numa lista já descartada e some sem aviso",
+        "porque": (
+            "pedido 262: com a sessao em `COMMITTING`, a escrita do gatilho "
+            "caia no `empilhar` de uma lista que o COMMIT ja tinha tirado, "
+            "depois da marca selada, e ia ao chao no descarte -- `gravadas: 1`, "
+            "auditoria vazia, nenhum `gatilhos_avisos`. Calado no sucesso, "
+            "barulhento so no erro. Trocar o estado para `Ativa` mediria zero."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        if estado == crate::transacao::Estado::Confirmando
+            && (OPS_EMPILHAVEIS.contains(&op) || OPS_ESCRITA.contains(&op))
+""",
+        "troca": """        // DEFEITO REPOSTO (262): `COMMITTING` passa direto para o `empilhar`.
+        if false
+            && estado == crate::transacao::Estado::Confirmando
+            && (OPS_EMPILHAVEIS.contains(&op) || OPS_ESCRITA.contains(&op))
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "commit-pelo-soquete"],
+        "caem": [
+            "o_after_que_grava_no_commit_nao_some_calado",
+        ],
+        # C2 e o comportamento VELHO -- o mais importante dos cinco.
+        "seguem": [
+            "o_commit_sem_gatilho_nao_muda_nada",
+            "o_after_do_commit_nao_roda_no_rollback",
+            "o_rowid_da_auditoria_nao_ganha_buraco",
+        ],
+        "prazo": 420,
+    },
+    # 44. A quebra de acesso antes de qualquer byte, e a marca que fica -- 426
+    # -----------------------------------------------------------------------
+    {
+        "id": "commit-zero-aplicado-vira-committed",
+        "titulo": "a passada que quebra antes de qualquer byte da lista responde COMMITTED",
+        "porque": (
+            "426: sem nada aplicado e com erro de ACESSO, a marca pode sair e "
+            "a transacao volta a ACTIVE -- repetir o COMMIT e verdade. Sem o "
+            "ramo, a recuperacao completaria por baixo e o cliente ouviria "
+            "COMMITTED de uma transacao cuja escrita bateu numa tabela fechada."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """                if do_pedido && aplicadas == 0 && std::fs::remove_file(marca).is_ok() {
+""",
+        "troca": """                // DEFEITO REPOSTO (426): sem o ramo do zero aplicado.
+                if false && do_pedido && aplicadas == 0 && std::fs::remove_file(marca).is_ok() {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_transacoes::a_quebra_de_acesso_antes_de_qualquer_byte_devolve_a_transacao",
+        ],
+        "seguem": [
+            "servidor::testes_transacoes::p0_filha_antes_do_pai_no_commit_ainda_recusa",
+            "servidor::testes_transacoes::a_filha_antes_do_pai_nao_deixa_marca_para_o_arranque",
+        ],
+    },
+    # 45. O erro do dado no meio da lista, calado sobre o que ficou -- 426
+    # -----------------------------------------------------------------------
+    {
+        "id": "commit-meio-sem-dizer-o-que-ficou",
+        "titulo": "a chave que falha no meio da passada vira COMMITTED sem a escrita que falhou",
+        "porque": (
+            "a lacuna que sobra do 426: a chave estrangeira so e conferida na "
+            "passada, depois da marca. Sem o ramo do erro do DADO, a recuperacao "
+            "completaria o resto e responderia COMMITTED de uma transacao "
+            "invalida; com ele, a marca sai, a resposta diz quantas ficaram e "
+            "o arranque nao muda o passado."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """                if do_pedido && !de_acesso {
+                    let _ = std::fs::remove_file(marca);
+""",
+        "troca": """                // DEFEITO REPOSTO (426): sem o ramo do erro do dado no meio.
+                if false && do_pedido && !de_acesso {
+                    let _ = std::fs::remove_file(marca);
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_transacoes::o_erro_do_dado_no_meio_da_lista_diz_o_que_ficou_e_o_arranque_nao_muda",
+        ],
+        "seguem": [
+            "servidor::testes_transacoes::a_filha_antes_do_pai_nao_deixa_marca_para_o_arranque",
+        ],
     },
 ]

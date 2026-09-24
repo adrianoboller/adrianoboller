@@ -1246,6 +1246,7 @@ QA, com julgamento de pergunta, e a redação do H.
 | 419 — corte calado da composição | forte | o diagnóstico do pedido estava errado e a premissa tinha de ser medida antes |
 | 372 — senha do DbLink, a camada sem dono | forte | pétrea da senha |
 | 436 M1–M3 — guardas do pulso | forte | segurança de cluster |
+| 426 + 262 etapa 1 — o caminho do COMMIT | forte | concorrência e atomicidade da transação, com a trava global na mão |
 | SEC — revisão de 434 e 435 | forte | leitura adversária de criptografia |
 | QA — inventário do mesmo motor | médio | varredura com julgamento de pergunta, verificável |
 | H — cognições e MODELOS | médio | redação a partir de fatos dados; o leve arriscaria a nuance da terceira seção |

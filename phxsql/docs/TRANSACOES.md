@@ -412,8 +412,20 @@ Ele é calculado na abertura e aparece **separado** do declarado na ficha —
 listas numa só esconderia exatamente a informação pela qual a separação existe:
 quais tabelas entraram sem ninguém pedir, e por onde.
 
-**O gatilho entra, e alcança de verdade.** O corpo de um gatilho grava noutra
-tabela com `INSERT INTO`, e o `rodar_gatilhos_depois` executa isso. Os alvos
+**O gatilho entra — e, dentro da transação, ainda não grava.** O corpo de um
+gatilho grava noutra tabela com `INSERT INTO`. **Fora** de transação o
+`rodar_gatilhos_depois` executa isso de verdade. **Dentro** de uma, o `AFTER`
+roda no `COMMIT`, depois da marca, e a escrita dele não tem mais lista onde
+entrar: até o pedido 262 ela caía na lista já esvaziada e sumia **calada**
+(`gravadas: 1`, auditoria vazia, nenhum aviso); desde a etapa 1 do 262 ela é
+**recusada com nome** e chega ao cliente em `gatilhos_avisos`, com o `COMMIT`
+continuando `COMMITTED` e o mesmo `gravadas`. Gravar de verdade é a etapa 2 (o
+`AFTER` antes da marca), que depende da numeração no `INSERT` do
+`docs/AUTONUMBER.md` §B.4. Este parágrafo dizia «alcança de verdade» sem a
+ressalva, e dentro da transação era falso — medido no parecer do 262
+(`docs/propostas/parecer-j-262-gatilho-after-no-commit-2026-09-23.md` §3). O
+alvo continua entrando no escopo, e a trava é tomada para a escrita que a etapa
+2 vai fazer. Os alvos
 saem da **árvore já compilada** do corpo, e não do texto: procurar `INSERT
 INTO` por comparação de texto quebra calado no dia em que alguém escrever o
 mesmo comando com outro espaçamento — a mesma armadilha de resolver texto de
@@ -574,6 +586,11 @@ bloco dizendo zero em toda subida treina quem opera a não ler o relatório.
 **O `fsync` da marca é o ponto de compromisso.** Antes dele a transação não
 aconteceu; depois dele ela aconteceu, mesmo que o arquivo de dado ainda não
 saiba.
+
+**E a resposta ao cliente segue o mesmo ponto** (pedido 426, §5.5.5): recusa
+antes da marca é erro, e o `repetir` dele diz a verdade porque nada foi
+aplicado; quebra depois da marca não é «falhou, repita» — é `COMMITTED`, com o
+aviso do que houve.
 
 ### 5.5 O que continua sem cobertura, dito
 
@@ -830,6 +847,87 @@ são conhecimento em si:
 `crates/phxsql-store/tests/cascata-ao-alterar.rs`, guarda
 `recascata-sem-conferir-a-arvore`.
 
+### 5.5.5 O `COMMIT` que esbarrava numa reescrita — e saía pela metade (pedido 426)
+
+**O defeito, medido pelo soquete no HEAD de 23/09/2026.** B abre transação e
+empilha escrita em `outra` e em `filha` (que aponta para `mae` por chave
+conferida); A pede `migrar_esquema` na `mae`. O portão das travas de transação
+só olhava o campo `tabela` do pedido — a `mae`, que ninguém travava — e rodava
+**fora** da trava global. A migração congelou a `mae` e soltou a trava para a
+FASE A; o `COMMIT` de B gravou a marca, aplicou `outra`, abriu a `mae` na
+conferência da chave da `filha`, bateu no congelamento, e a passada abortou.
+Três camadas, as três medidas no mesmo teste
+(`tests/commit-pelo-soquete.rs`), **sem corrida nenhuma**:
+
+* **(a)** 1 de 2 linhas da transação no disco;
+* **(b)** a resposta: `4006 EM_MIGRACAO` com `repetir: true` — quem obedece
+  duplica a linha que já estava gravada;
+* **(c)** o braço de erro pedia `travar_dados()` com a trava do topo viva, a
+  trava não é reentrante, o `if let Ok` engolia a recusa, e a recuperação
+  **nunca rodava** — enquanto o comentário acima dela dizia que rodava. A marca
+  ficava, e o arranque seguinte aplicava a `filha`: a transação que o cliente
+  viu **falhar** aparecia aplicada.
+
+O mesmo com `acrescentar_coluna`, que chama as mesmas funções na mesma ordem
+(o irmão), e com a tabela congelada sendo **uma das duas** da transação.
+
+**O contrato saiu medido nos quatro motores**
+(`docs/propostas/commit-contra-ddl-4-motores.md` §5): quem cede é o DDL, nunca
+a transação (D5, 9 × 1); «repita» só se diz sobre o que aplicou zero, e na
+instrução (D3); nenhum motor devolve «o COMMIT falhou» tendo aplicado parte
+(D2). O conserto, em quatro camadas — e cada uma tem a sua prova com o defeito
+reposto:
+
+| camada | onde | o que faz |
+|---|---|---|
+| a reescrita cede | `transacao_na_vizinhanca`, em `op_migrar_esquema` e `op_acrescentar_coluna`, **com a trava global na mão**, antes de `congelar` | transação viva com trava em qualquer tabela do **componente de chave** da que vai ser reescrita → `EM_TRANSACAO`, nada reescrito, nomeando quem segura e a ligação pela chave |
+| a instrução recusa | `congelada_no_alcance`, no `empilhar` | escrita numa tabela cujo componente tem uma congelada → `EM_MIGRACAO` na instrução, zero aplicado, transação `ACTIVE` (é o lugar do `1412 ER_TABLE_DEF_CHANGED` do MySQL) |
+| a rede antes da marca | a mesma pergunta, no `op_commit`, antes de `gravar_marca` | congelada no alcance → `EM_MIGRACAO`, a lista **volta** à transação, que continua `ACTIVE` — o `SQLITE_BUSY` no `COMMIT`, o único dos quatro em que o `COMMIT` pode falhar, e lá a transação também fica ativa |
+| depois da marca | `depois_da_marca` | a tabela abaixo |
+
+O **componente de chave** (`transacao::componente_de_chave`) é o conjunto das
+tabelas ligadas por chave estrangeira em qualquer direção e profundidade: é o
+que o `COMMIT` pode abrir para gravar — a mãe na conferência da chave, a filha
+na do `excluir`, a neta na cascata (que pode alcançar linha nascida depois do
+`empilhar`). Tabela sem ligação nenhuma não segura a reescrita — e há teste do
+comportamento velho para isso.
+
+**Depois da marca**, a classe do erro (a mesma `ClasseDoErro` da instrução, §9)
+e o número de escritas que terminaram decidem:
+
+| quebra | aplicadas | desfecho |
+|---|---|---|
+| de acesso (4xxx) | zero | a marca **sai**, a lista volta, `ACTIVE`; o erro com o `repetir` dele — nada aplicado, repetir o `COMMIT` é verdade |
+| do dado (2xxx/3xxx) | zero | a marca **sai**; a transação sai como sempre saiu, com o erro |
+| do dado | alguma | a marca **sai**, e a resposta **diz** quantas ficaram e quais, e manda não repetir; `repetir: false` |
+| qualquer outra | qualquer | **`COMMITTED`**: a recuperação completa **na hora**, com a mesma trava (`transacao::completar_marca`); se não conseguir, `completando: true` e a marca **fica** para o arranque |
+
+Duas decisões desta tabela que não são óbvias:
+
+* **A recuperação da hora usa a trava que já está na mão.** Soltar e tomar de
+  novo abriria a fresta em que outra escrita entra no meio de uma transação
+  confirmada. O «tirar o `drop(trava)` dos dois braços» do parecer foi lido
+  como o fim a atingir — a recuperação rodar —, e o meio mais estreito é não
+  soltar.
+* **Com o servidor de pé, a operação impossível NÃO apaga a marca.** O
+  `recuperar` do arranque apaga (lá nada está congelado, e o impossível é
+  permanente); aqui o impossível pode ser passageiro. Consertar só a camada (c)
+  sem isto trocaria «completa no próximo arranque» por **«perdida para
+  sempre»**: a recuperação rodaria com a tabela ainda congelada, contaria a
+  operação como impossível e apagaria a marca de uma transação confirmada.
+
+**A lacuna que sobra, escrita em vez de escondida.** A chave estrangeira só é
+conferida na passada — depois da marca. Uma filha sem mãe **no meio** da lista
+para a passada com parte já gravada, e a ordem de digitação proíbe desfazer. O
+que o conserto garante é a verdade na resposta (quantas ficaram, quais, e «não
+repita») e que o arranque **não muda o passado**. Fechá-la de vez é conferir a
+chave do conjunto de escrita **antes** da marca, e isso é outro pedido. A
+recusa «filha antes do pai» (`p0_filha_antes_do_pai_no_commit_ainda_recusa`)
+tinha a mesma marca esquecida: o teste conferia só o veredito, e o arranque
+seguinte aplicava o pai — a transação **recusada** aparecia pela metade depois
+de reiniciar. `a_filha_antes_do_pai_nao_deixa_marca_para_o_arranque` mede o
+disco.
+
 ### 5.6 A lição que o próprio teste do `SIGKILL` deu
 
 A primeira versão da prova por soquete exigia **sempre** as 3.000 linhas depois
@@ -1084,8 +1182,12 @@ outra em cada caso:
 | classe | exemplos | o que acontece |
 |---|---|---|
 | **instrução** | chave duplicada, tipo errado, rowid inexistente, `SIGNAL` de gatilho, acesso negado | a instrução é cancelada, a transação **continua `ACTIVE`**, corrigir e repetir funciona |
-| **transação** | teto de linhas estourado, E/S no meio da passada, prazo estourado, formato corrompido | vai para **`ABORT_ONLY`**; só o `ROLLBACK` passa |
+| **transação** | teto de linhas estourado, E/S numa instrução, prazo estourado, formato corrompido | vai para **`ABORT_ONLY`**; só o `ROLLBACK` passa |
 | **queda da conexão** | o soquete caiu | desfeita sozinha, sem ninguém para avisar |
+
+A linha dizia «E/S no meio da **passada**», e nunca foi assim: a passada é
+depois da marca, e o que ela faz com uma quebra está na §5.5.5 — a transação
+já aconteceu, e a resposta é `COMMITTED` com o aviso, não `ABORT_ONLY`.
 
 A classe **sai da faixa do código de erro**, e não de uma lista escrita à mão:
 esquema (2xxx), dado (3xxx) e acesso (4xxx) cancelam a instrução; formato
