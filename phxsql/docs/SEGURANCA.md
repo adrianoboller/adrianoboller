@@ -5463,3 +5463,183 @@ depois de achar um backup de verdade. Guardas no catálogo, provadas à mão:
 | `jobs-json-antigo-derruba-o-arranque` | a recusa no arranque (`de_json` na leitura) | 1 de 1 |
 | `job-recusado-roda-mesmo-assim` | sem a recusa no `executar_job` | 1 de 1 |
 | `ficha-do-job-devolve-a-senha-do-disco` | a ficha sem a redação do Profiler | 1 de 1 |
+## 26. O relógio que dizia quem existe, e a senha que multiplicava o PBKDF2 (pedidos 520 e 521)
+
+Achados do SEC na terceira revisão do 497
+(`docs/propostas/parecer-sec-497-3a-2026-09-24.md`, «Fora do 497», N1 e N2),
+consertados em 24/09/2026. O que se errou no caminho está em
+`docs/cognicao/cognicao_oraculo-de-tempo-tem-irmao-que-curto-circuita_20260924_1550.md`.
+Todos os tempos abaixo são do binário **debug**, pela porta de dados ou pela web,
+com a sonda do soquete: o absoluto é de debug, o que vale é a razão.
+
+**O alcance, dito antes de tudo: o 520 fecha o relógio do PBKDF2, e NÃO a
+enumeração de usuários.** Quem tem o token ainda separa quem existe por dois
+caminhos anteriores a esta frente, e os dois vão virar pedidos próprios: o **sal
+falso** do `desafio`, que ele recalcula (§26.6), e a **varredura linear** do
+`Cadastro::por_login`, que com cadastro grande põe centenas de microssegundos no
+`desafio` e na prova (§26.2). Revisado pelo SEC em
+`docs/propostas/parecer-sec-520-521-2026-09-24.md`.
+
+### 26.1 O que havia
+
+- **520.** O login de quem não existe conferia a senha contra um
+  `cifrar_com("nao-existe", 1_000)` — 1.000 iterações para fabricar o hash e mais
+  1.000 para conferir, contra as 210.000 de quem existe. O comentário logo acima
+  afirmava que os dois «não se distinguem pelo relógio». Exige o token de serviço.
+- **521.** O `hmac_sha256` normalizava a chave a cada chamada, e o PBKDF2 o chamava
+  210.000 vezes com a mesma senha: senha maior que o bloco (64 B) era resumida por
+  SHA-256 **em cada iteração**. Quem escolhia o custo era quem mandava a senha. A
+  linha anônima da porta de dados para em 64 KiB, mas o corpo da porta **web**
+  aceita 4 MiB antes da credencial, e o `CREATE USER` depois dela não tinha teto.
+
+### 26.2 Os irmãos, um por um
+
+Irmão aqui é todo caminho que chega à mesma recusa («credencial inválida») ou que
+responde sobre a existência de um login. Todas as portas — TCP, web `/api`, REST
+`/v1/login`, MCP (`ExecutorLocal::entrar`) e os clientes de réplica e cluster, que
+entram no outro nó pelo `login` dele — passam pelo `despachar` e pelo `op_login`;
+o driver ODBC e o `phxsql-cmd` são clientes. Os caminhos que sobram:
+
+| caminho | antes | depois | como se prova |
+|---|---|---|---|
+| senha errada de quem existe | 2.671 ms | 1.368 ms | referência |
+| senha, quem **não existe** (o do SEC) | 25,7 ms | 1.369 ms | contador de iterações |
+| senha, **inativo** (não estava no achado) | **0,2 ms** — o `ativo &&` pulava a conta | 1.372 ms | contador de iterações |
+| prova do desafio-resposta, não existe e inativo | 24–25 µs a menos que quem existe | ±1 µs | contador de provas |
+| o próprio `desafio`, não existe — cadastro de 3 usuários | +9 µs | 0,0 µs | só a sonda (sem guarda) |
+| `desafio` e prova com **cadastro grande** | a mesma varredura | **igual: NÃO consertado** — com 20.000 usuários, quem não existe custa **+363 µs** sobre o primeiro da lista (o último empata, +359 µs), medido pelo SEC | `sonda-varredura.py` do SEC; o `por_login` é um `find` que para no primeiro que casa |
+| o **conteúdo** do `desafio`: o sal falso | `HMAC(token, login)` — quem tem o token o recalcula | **igual: NÃO consertado** (§26.6) | sonda: 6 de 6 logins, um pedido cada |
+| amarração ao canal (`amarrar_canal`) | igual ao ramo da prova | igual | a recusa por política vem antes de olhar o login |
+| troca de senha (`usuario_alterar`, `ALTER USER`) | «não há usuário com o login» nomeado | igual | só administrador chama; não é oráculo |
+
+Os tempos da prova e do desafio foram medidos **intercalados na mesma conexão**, com
+n = 1.000 (prova) e n = 2.000 (desafio) em duas rodadas, e o desafio com logins do
+**mesmo tamanho**: com `nao_existe` × `ana` sobravam 2 µs, que eram o tamanho do
+login e não o cadastro. E o «0,0 µs» e o «±1 µs» valem **só para cadastro
+pequeno**: esta sonda tinha três usuários, e a varredura linear do `por_login`
+cresce com o cadastro. No login por senha o PBKDF2 afoga essa diferença; no
+`desafio` e na prova não há PBKDF2 para afogá-la.
+
+### 26.3 O desenho
+
+- **Uma conferência só.** `Cadastro::autenticar` tem **uma** chamada a
+  `senha::conferir`, para os três casos: quem não existe confere contra o
+  `senha::hash_de_fachada` — o mesmo usuário de mentira que o `desafio` já
+  apresentava, com as `ITERACOES_PADRAO` de todo usuário novo —, e o `ativo` só é
+  olhado **depois** da conta. O ramo da prova do `op_login` faz o mesmo:
+  `derivado_do_hash` e `conferir_prova` para os três, e o `op_desafio` paga o HMAC
+  do sal falso e destrincha um hash nos dois caminhos.
+- **A chave preparada uma vez** (`hash::ChaveHmac`). O SHA-256 fica parado depois
+  de absorver `K ^ ipad` e `K ^ opad`, e cada mensagem recomeça de uma cópia — o
+  desenho da própria RFC 2104 (seção 4) e o que o OpenSSL faz no PBKDF2 dele
+  (`HMAC_Init_ex` uma vez, `HMAC_CTX_copy` por iteração). A saída é bit a bit a
+  mesma; a iteração passa de quatro compressões para duas, e a senha longa paga o
+  resumo dela **uma** vez. Efeito lateral medido: o login inteiro ficou 1,95× mais
+  rápido para o servidor — e o custo de quem ataca não mudou, porque ele sempre
+  pôde fazer a conta assim.
+- **O teto** (`senha::TETO_DA_SENHA`, 65.535 bytes), conferido por
+  `senha::caber_no_teto` **antes** do PBKDF2 em todas as portas que recebem senha:
+  o `op_login` (campos `senha` e `senha_b64`, antes de olhar o login, então a
+  recusa não depende de quem existe), o `objeto_do_usuario` (por onde passam
+  `usuario_criar`, `usuario_alterar`, `CREATE USER` e `ALTER USER`) e o
+  `phxsqld --senha`. O próprio `senha::conferir` devolve `false` sem conta acima
+  do teto, para quem chamar e esquecer. A recusa é nomeada e diz o tamanho, nunca
+  o conteúdo: `[SP000018] limite excedido: a senha tem 70000 bytes e o teto e
+  65535; nenhuma conta foi feita com ela`.
+
+### 26.4 O número do teto, pela régua
+
+Pergunta: acima de que tamanho o servidor recusa a senha em claro que recebe?
+Lido no fonte de cada um em 24/09/2026:
+
+| motor (peso) | teto | onde |
+|---|---|---|
+| PostgreSQL (4) | 65.535 B no pacote da senha | `PG_MAX_AUTH_TOKEN_LENGTH` (`src/include/libpq/auth.h`), lido em `recv_password_packet` (`auth.c`). O teto de 1.024 do SASLprep existia até a 13 e saiu na 14 |
+| MariaDB (3) | nenhum próprio | `parsec` (PBKDF2 pelo OpenSSL) e `ed25519` recebem o tamanho que vier; só o pacote limita |
+| MySQL (2) | 256 B | `MAX_PLAINTEXT_LENGTH` (`include/crypt_genhash_impl.h`), recusado no `caching_sha2_password` e no `sha256_password`, ao criar e ao entrar |
+| SQLite (1) | não vota | não tem usuário |
+
+Não há convergência; a média ponderada decide degrau a degrau: «teto até 256 B?»
+perde de 2 a 7; «teto até 65.535 B?» ganha de 6 (PG + MySQL) a 3. **65.535 é
+consenso pela régua, e não escolha** — é o número do PostgreSQL. A hipótese «sem
+teto próprio» (MariaDB) morreu por 3 a 6. Com a chave preparada uma vez, uma senha
+no teto paga 1.025 compressões a mais sobre as 420.002 de um login: 0,24%.
+
+Medido pela sonda depois do conserto: login de 1 KiB 0,98× o de 8 B (era 4,64×),
+60.000 B 1,05×; web com 70.000 B recusada em 20 ms e com 1 MB em 279 ms (quase
+tudo é ler e analisar o corpo); `CREATE USER` com 65.535 B aceito em 1.432 ms, com
+65.536 B recusado em 20 ms e com 1 MiB em 311 ms. Nenhum byte das senhas no
+`acessos.log`, no erro padrão nem no `config.json`.
+
+### 26.5 As provas, e o vermelho de cada uma
+
+Nenhum destes defeitos muda o que o login **responde** — só quanto ele demora —,
+então nenhum teste de comportamento os pega. As provas contam o trabalho por
+dentro: `hash::iteracoes_pagas_nesta_thread` e
+`desafio::provas_conferidas_nesta_thread` (uma soma por derivação e por login,
+fora do laço das iterações) e, só no binário de teste do core, as compressões do
+SHA-256. Relógio num teste separaria 64 de 210.000 iterações flocando.
+
+Os vetores: além da RFC 4231 e dos usuais de PBKDF2, que param em 25 bytes de
+senha, entram os do **Wycheproof** (`C2SP/wycheproof`,
+`testvectors_v1/pbkdf2_hmacsha256_test.json`, tcId 52, 53, 54 e 60: senhas de 65,
+129 e 257 bytes e a de 65 zeros, 4.096 iterações), conferidos também contra o
+`hashlib.pbkdf2_hmac` do Python; e a versão preparada se confere **bit a bit**
+contra a ingênua de antes, reescrita no teste direto do SHA-256, em todo tamanho
+de 0 a 300 bytes e em 1 KiB, 4 KiB e 64 KiB.
+
+Sete guardas no catálogo, cada uma reposta **na árvore desta frente** (o
+`provar-guardas.py` copia a árvore e compila num `alvo/` de ~2,5 GiB, e o disco
+estava em 4 GiB), com o `seguem` de cada uma verde com o defeito de pé:
+
+| guarda | o defeito reposto | o que caiu, e o vermelho |
+|---|---|---|
+| `pbkdf2-normaliza-a-chave-a-cada-iteracao` | `u = hmac_sha256(senha, &u)` no laço | `pbkdf2_prepara_a_chave_uma_vez_so`: 0 B com 10 iterações, 40 compressões contra 22. Os três testes de vetor e o bit a bit ficaram **verdes** |
+| `conferir-sem-o-teto-da-senha` | o `conferir` sem o teto | `a_senha_acima_do_teto_nao_chega_ao_pbkdf2`: a senha **certa** acima do teto entrou |
+| `fachada-do-login-com-mil-iteracoes` | a fachada de antes | `quem_nao_existe_paga_o_pbkdf2_de_um_usuario_novo`: 2.000 iterações contra 210.000 |
+| `inativo-pula-o-pbkdf2` | o `ativo &&` antes da conta | `quem_esta_inativo_paga_o_pbkdf2_do_proprio_hash`: 0 contra 64 |
+| `prova-de-quem-nao-existe-sai-sem-conferir` | só quem existe e está ativo confere a prova | `a_prova_de_quem_nao_existe_ou_esta_inativo_confere_como_a_de_quem_existe`: o inativo conferiu 0 provas contra 1 |
+| `login-sem-o-teto-da-senha` | o `op_login` sem o teto | `a_senha_acima_do_teto_e_recusada_no_login_antes_do_pbkdf2`: a recusa saiu como `[SP000025] acesso negado`, sem nomear o teto |
+| `criar-usuario-sem-o-teto-da-senha` | o `objeto_do_usuario` sem o teto | `criar_e_trocar_senha_acima_do_teto_recusa_e_nao_grava`: o `usuario_criar` gravou |
+
+A entrada vizinha `pbkdf2-sem-o-xor-acumulado` teve o trecho reancorado (a linha
+do laço mudou) e continua derrubando os dois testes de vetor.
+
+E uma mutação que a bateria acima **não** pegava, achada pelo SEC (M5): trocar o
+`len()` do `caber_no_teto` por `chars().count()` passava em todo teste do teto,
+porque todos eram ASCII — e deixaria entrar 65.535 caracteres de 4 bytes. O teste
+`senha::tests::o_teto_conta_bytes_e_nao_caracteres` põe a borda exata com
+caracteres de 2 bytes (`é`) e de 3 (`€`): 65.535 B aceitos, 65.536 B recusados.
+Vermelho medido com a M5 reposta: «65536 B em 32768 caracteres de 2 bytes cabia no
+teto» — e o teste ASCII de antes seguiu verde, que é o achado.
+
+### 26.6 O que ficou de fora, e por quê
+
+- **O sal falso do `desafio` é um oráculo sem relógio — achado nesta frente, NÃO
+  consertado.** Ele é `HMAC(token, login)[..16]`, e o 520 só alcança quem tem o
+  token: esse mesmo alguém calcula o sal falso e compara. Medido pela sonda,
+  depois do conserto: 6 de 6 logins classificados certo (`ana`, `ze`, `root`
+  existem; `zzz`, `nao_existe`, `fulano` não), **um pedido cada**. O PostgreSQL
+  deriva o sal de mentira de um segredo do servidor que o cliente não tem
+  (`scram_mock_salt`, com o `mock_auth_nonce` gravado no `pg_control` no
+  `initdb`). Aqui isso pede um segredo persistente novo — arquivo ou campo de
+  configuração —, que é decisão de formato e não do 520: vai como pedido novo.
+- **A varredura linear do `por_login` — achada pelo SEC, NÃO consertada.** O
+  `Cadastro::por_login` é um `find` que para no primeiro que casa; com 20.000
+  usuários, o `desafio` de quem não existe custa +363 µs sobre o do primeiro da
+  lista (debug, intercalado, n = 2.000). Anterior à frente, e vai como pedido
+  próprio, que mede em release e com cadastro realista antes de consertar.
+- **O irmão do `desafio` não tem guarda.** Só a sonda pelo soquete o mede; um
+  contador para ele seria um observador novo no caminho de toda conexão.
+- **O hash carrega o próprio custo.** Usuário com hash feito à mão com outra
+  contagem de iterações continua distinguível pelo relógio — e o `desafio` já
+  publica a contagem dele. É do formato (`o_custo_viaja_junto_com_o_hash`).
+- **A senha em texto puro do `config.json`** (o formato legado que avisa alto) não
+  passa pelo teto: é arquivo local de quem administra, e recusá-la impediria o
+  servidor de subir. Acima do teto ela só entra pelo desafio-resposta.
+- **O número da OWASP.** O comentário do `ITERACOES_PADRAO` dizia que 210.000 é a
+  recomendação dela para PBKDF2-HMAC-SHA256; a folha dela, lida em 24/09/2026,
+  pede **600.000** para SHA-256 (210.000 foi o de SHA-512, hoje 220.000). O
+  comentário foi corrigido; o valor não, porque mudar é decisão de custo por login
+  e não do 521.
+- **Release não medido.** Os tempos são de debug; a razão é o que se afirma.

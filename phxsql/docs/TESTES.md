@@ -967,9 +967,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `servidor-segue-de-pe-depois-do-fsync-recusado` | o servidor segue de pé depois de um `fsync` recusado, gravando num disco que já se sabe que mente | 1 | ✅ provada |
 | `completar-engole-a-tabela-que-nao-foi-ao-disco` | a recuperação engole o erro do `sincronizar` e apaga a marca de um commit cujo dado não foi ao disco | 1 | ✅ provada |
 
-**325 das 344 guardas do catálogo: 1 aposentada, 320 provadas, 4 redundantes** — 8922 s de mutação, medido em 2026-09-16 15:25.
+**325 das 351 guardas do catálogo: 1 aposentada, 320 provadas, 4 redundantes** — 8922 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 20 das 344 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 20 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 27 das 351 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 27 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
@@ -991,6 +991,13 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `jobs-json-antigo-derruba-o-arranque` — a guarda de credencial roda tambem ao LER o `jobs.json`, e o job legitimo salvo antes dela derruba o arranque
 - `job-recusado-roda-mesmo-assim` — o job que voltou do disco com credencial sobe e RODA -- pela agenda, pela tela, ou religado
 - `ficha-do-job-devolve-a-senha-do-disco` — o job aceito no arranque com a senha no pedido a devolve na ficha da op `jobs`
+- `pbkdf2-normaliza-a-chave-a-cada-iteracao` — PBKDF2 resume a senha longa a cada iteração: o custo do login cresce com o tamanho dela
+- `conferir-sem-o-teto-da-senha` — o `conferir` roda o PBKDF2 com senha acima do teto
+- `fachada-do-login-com-mil-iteracoes` — o login de quem não existe paga 2.000 iterações contra as 210.000 de quem existe
+- `inativo-pula-o-pbkdf2` — o login de quem está inativo responde sem PBKDF2 nenhum
+- `prova-de-quem-nao-existe-sai-sem-conferir` — o login por desafio-resposta de quem não existe, ou está inativo, sai sem conferir a prova
+- `login-sem-o-teto-da-senha` — o login recebe senha acima do teto e recusa como «credencial inválida»
+- `criar-usuario-sem-o-teto-da-senha` — `usuario_criar`, `usuario_alterar` e `CREATE USER` derivam o hash de senha acima do teto
 
 As guardas que esta corrida ainda cita, hoje aposentadas:
 

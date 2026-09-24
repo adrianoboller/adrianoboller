@@ -10887,8 +10887,9 @@ impl Servidor {
     /// Abre um desafio: devolve sal, iteracoes e um nonce de uso unico.
     ///
     /// Usuario que nao existe recebe um desafio de aparencia normal, com sal
-    /// derivado do proprio login -- assim quem sonda nao descobre quem existe
-    /// pela resposta.
+    /// derivado do proprio login e as iteracoes de um usuario novo. Quem NAO
+    /// tem o token nao distingue; quem tem, distingue pelo sal -- ver o
+    /// comentario do sal falso abaixo, que diz por que e o que falta.
     fn op_desafio(&self, p: &Json, sessao: &mut Sessao) -> Result<Json> {
         let login = p
             .texto_ou("usuario", p.texto_ou("login", ""))
@@ -10897,21 +10898,33 @@ impl Servidor {
         if login.is_empty() {
             return Err(PhxError::Esquema("informe \"usuario\"".into()));
         }
-        let (sal_hex, iteracoes) = match self.cadastro().por_login(&login) {
-            Some(u) => {
-                let (sal, it) = phxsql_core::senha::sal_e_iteracoes(&u.senha_hash)?;
-                (phxsql_core::hash::para_hex(&sal), it)
-            }
-            None => {
-                // Sal falso, estavel por login e indistinguivel de um real.
-                let falso =
-                    phxsql_core::hash::hmac_sha256(self.config.token.as_bytes(), login.as_bytes());
-                (
-                    phxsql_core::hash::para_hex(&falso[..16]),
-                    phxsql_core::senha::ITERACOES_PADRAO,
-                )
-            }
-        };
+        // Os dois caminhos fazem as MESMAS contas, na mesma ordem -- o irmao
+        // do pedido 520 que mora aqui. Antes, so quem nao existe pagava o
+        // HMAC do sal falso, e so quem existe destrinchava um hash: medido em
+        // debug pela porta de dados, n = 2.000 intercalados em duas rodadas e
+        // login do mesmo tamanho, +9 us na mediana para quem nao existe, ~8%
+        // do pedido; depois, 0,0-0,2 us -- com TRES usuarios. Com cadastro
+        // grande o relogio volta pela varredura linear do `por_login` (+363 us
+        // com 20.000, medido pelo SEC; `docs/SEGURANCA.md` §26.2), que este
+        // conserto nao alcanca. Agora os dois pagam o HMAC e os dois
+        // destrincham um hash -- o de verdade ou o `senha::hash_de_fachada`,
+        // que e o mesmo usuario de mentira do login e ja carrega as
+        // `ITERACOES_PADRAO`.
+        let cadastro = self.cadastro();
+        let achado = cadastro.por_login(&login);
+        // Sal falso, estavel por login. ATENCAO: ele NAO e indistinguivel de
+        // um real para quem tem o token -- que e quem chega aqui --, porque a
+        // chave do HMAC e o proprio token: quem o tem recalcula e compara, e
+        // sabe quem nao existe num pedido so (medido na frente do 520: 6 de
+        // 6, `docs/SEGURANCA.md` §26.6). Fechar isso pede um segredo do
+        // servidor que o token nao abra; fica para pedido proprio.
+        let falso = phxsql_core::hash::hmac_sha256(self.config.token.as_bytes(), login.as_bytes());
+        let guardado = achado.map_or(phxsql_core::senha::hash_de_fachada(), |u| {
+            u.senha_hash.as_str()
+        });
+        let (sal, iteracoes) = phxsql_core::senha::sal_e_iteracoes(guardado)?;
+        let sal: &[u8] = if achado.is_some() { &sal } else { &falso[..16] };
+        let sal_hex = phxsql_core::hash::para_hex(sal);
 
         let nonce = phxsql_core::desafio::nonce();
         sessao.desafio = Some((
@@ -11016,28 +11029,40 @@ impl Servidor {
             }
             let nonce_cliente = p.texto_ou("nonce_cliente", "");
             nonces = Some((nonce.clone(), nonce_cliente.to_string()));
+            // O irmao do pedido 520 neste ramo: quem nao existe e o inativo
+            // saiam sem conferir prova nenhuma, e quem existe conferia. Aqui
+            // nao ha PBKDF2 (o cliente ja derivou), e a diferenca era de
+            // microssegundos -- 24 us em debug, ~15% do pedido --, mas era a
+            // mesma pergunta respondida pelo relogio. Os tres agora fazem as
+            // mesmas contas, na mesma ordem, pelo mesmo usuario de mentira do
+            // `Cadastro::autenticar`.
             let cadastro = self.cadastro();
-            match cadastro.por_login(&login) {
-                Some(u) if u.ativo => {
-                    let dk = phxsql_core::senha::derivado_do_hash(&u.senha_hash)?;
-                    phxsql_core::desafio::conferir_prova(
-                        &dk,
-                        &nonce,
-                        nonce_cliente,
-                        &login,
-                        canal_ref,
-                        prova,
-                    )
-                    .then(|| u.clone())
-                }
-                _ => None,
-            }
+            let achado = cadastro.por_login(&login);
+            let guardado = achado.map_or(phxsql_core::senha::hash_de_fachada(), |u| {
+                u.senha_hash.as_str()
+            });
+            let dk = phxsql_core::senha::derivado_do_hash(guardado)?;
+            let confere = phxsql_core::desafio::conferir_prova(
+                &dk,
+                &nonce,
+                nonce_cliente,
+                &login,
+                canal_ref,
+                prova,
+            );
+            achado.filter(|u| confere && u.ativo).cloned()
         } else {
             // (2) Base64 ou (3) texto puro
             let clara = match p.campo("senha_b64").and_then(Json::texto) {
                 Some(b) => phxsql_core::base64::decodificar_texto(b)?,
                 None => p.texto_ou("senha", "").to_string(),
             };
+            // O teto ANTES do cadastro e do PBKDF2 (pedido 521). Antes de
+            // olhar o login, para a recusa nao depender de quem existe; e
+            // nomeada, porque o teto e publico e nao ha o que esconder nele.
+            // A porta web aceita 4 MiB de corpo antes da credencial: sem isto,
+            // era ali que uma senha grande virava horas de conta.
+            phxsql_core::senha::caber_no_teto(&clara)?;
             let cadastro = self.cadastro();
             cadastro.autenticar(&login, &clara).cloned()
         };
@@ -38304,6 +38329,183 @@ mod testes_cadastro_de_usuarios {
             .to_string();
         assert!(e.contains("--config"), "{e}");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    // ------------------------------------------------ pedidos 520 e 521
+
+    /// A ana (supervisora) e o ze inativo, os dois com hash de 64 iteracoes.
+    fn servidor_com_inativo(nome: &str) -> (Arc<Servidor>, DirTemp) {
+        let dir = DirTemp::novo(&format!("cad-520-{nome}"));
+        let caminho = dir.join("config.json");
+        std::fs::write(
+            &caminho,
+            format!(
+                r#"{{"token":"t","bind":"127.0.0.1:5397","base":"{}",
+                    "usuarios":[{{"login":"ana","senha_hash":"{}","supervisor":true}},
+                                {{"login":"ze","senha_hash":"{}","ativo":false}}]}}"#,
+                dir.join("dados").display(),
+                phxsql_core::senha::cifrar_com(SENHA_DA_ANA, 64),
+                phxsql_core::senha::cifrar_com("senha-do-ze", 64),
+            ),
+        )
+        .unwrap();
+        let mut c = Config::ler(&caminho).unwrap();
+        c.log_acessos = dir.join("acessos.log");
+        c.blacklist = dir.join("blacklist.json");
+        c.dblink = dir.join("dblink.json");
+        c.jobs = dir.join("jobs.json");
+        (Servidor::novo(c).unwrap(), dir)
+    }
+
+    /// **O irmao do 520 no desafio-resposta.** Quem existe conferia a prova;
+    /// quem nao existe e o inativo saiam sem conferir nada. Aqui nao ha
+    /// PBKDF2 e a diferenca era de microssegundos -- medido pela porta de
+    /// dados em debug, intercalado, n = 1.000 em duas rodadas: prova errada de
+    /// quem existe 162-166 us, de quem nao existe e do inativo 24-25 us a
+    /// menos; depois do conserto, +-1 us --, e microssegundo nao se prova por
+    /// relogio num teste: o contador de provas conferidas prova por dentro
+    /// que os tres fazem a mesma conta.
+    ///
+    /// Vermelho medido com o `match` de antes reposto: o inativo e o que nao
+    /// existe conferem 0 provas, contra 1 de quem existe.
+    #[test]
+    fn a_prova_de_quem_nao_existe_ou_esta_inativo_confere_como_a_de_quem_existe() {
+        let (s, _g) = servidor_com_inativo("prova");
+        for login in ["ana", "ze", "nao_existe"] {
+            let mut sessao = Sessao::default();
+            s.op_desafio(&pedido(&format!(r#"{{"usuario":"{login}"}}"#)), &mut sessao)
+                .unwrap();
+            let antes = phxsql_core::desafio::provas_conferidas_nesta_thread();
+            let corpo = format!(
+                r#"{{"usuario":"{login}","prova":"{}","nonce_cliente":"abc"}}"#,
+                "00".repeat(32)
+            );
+            let e = s.op_login(&pedido(&corpo), &mut sessao).unwrap_err();
+            assert!(matches!(e, PhxError::Autorizacao(_)), "{login}: {e}");
+            assert_eq!(
+                phxsql_core::desafio::provas_conferidas_nesta_thread() - antes,
+                1,
+                "{login} nao conferiu a prova: o relogio separa quem existe"
+            );
+        }
+        // E a prova certa do inativo continua sem entrar.
+        let mut sessao = Sessao::default();
+        let d = s
+            .op_desafio(&pedido(r#"{"usuario":"ze"}"#), &mut sessao)
+            .unwrap();
+        let dk =
+            phxsql_core::senha::derivado_do_hash(&s.cadastro().por_login("ze").unwrap().senha_hash)
+                .unwrap();
+        let prova =
+            phxsql_core::desafio::calcular_prova(&dk, d.texto_ou("nonce", ""), "abc", "ze", None);
+        let corpo = format!(r#"{{"usuario":"ze","prova":"{prova}","nonce_cliente":"abc"}}"#);
+        assert!(s.op_login(&pedido(&corpo), &mut sessao).is_err());
+    }
+
+    /// **Pedido 521, a porta do login.** A senha acima do teto e recusada
+    /// com a recusa NOMEADA e antes do PBKDF2 -- para quem existe e para quem
+    /// nao existe, pelos dois campos (`senha` e `senha_b64`) -- e a recusa
+    /// nao carrega a senha. No teto, a conta roda como sempre.
+    ///
+    /// Vermelho medido sem a linha do teto no `op_login`: a recusa volta como
+    /// «credencial invalida» (`Autorizacao`), sem dizer por que -- a conta nao
+    /// roda, porque o `conferir` tem o teto dele, mas quem mandou nao sabe o
+    /// que corrigir.
+    #[test]
+    fn a_senha_acima_do_teto_e_recusada_no_login_antes_do_pbkdf2() {
+        let (s, _g) = servidor_com_inativo("teto-login");
+        let teto = phxsql_core::senha::TETO_DA_SENHA;
+        let longa = "s".repeat(teto + 1);
+        let b64 = phxsql_core::base64::codificar(longa.as_bytes());
+        for (login, campo, valor) in [
+            ("ana", "senha", longa.as_str()),
+            ("nao_existe", "senha", longa.as_str()),
+            ("ana", "senha_b64", b64.as_str()),
+        ] {
+            let antes = phxsql_core::hash::iteracoes_pagas_nesta_thread();
+            let corpo = Json::objeto(vec![
+                ("usuario", Json::texto_de(login)),
+                (campo, Json::texto_de(valor)),
+            ]);
+            let e = s.op_login(&corpo, &mut Sessao::default()).unwrap_err();
+            assert!(
+                matches!(e, PhxError::LimiteExcedido(_)),
+                "{login}/{campo}: a recusa nao nomeou o teto: {e}"
+            );
+            let texto = e.to_string();
+            assert!(texto.contains(&teto.to_string()), "{texto}");
+            assert!(!texto.contains("sss"), "a recusa carregou a senha");
+            assert_eq!(
+                phxsql_core::hash::iteracoes_pagas_nesta_thread(),
+                antes,
+                "{login}/{campo}: o PBKDF2 rodou com a senha acima do teto"
+            );
+        }
+        // No teto exato a conta roda: 64 iteracoes do hash da ana.
+        let antes = phxsql_core::hash::iteracoes_pagas_nesta_thread();
+        let corpo = Json::objeto(vec![
+            ("usuario", Json::texto_de("ana")),
+            ("senha", Json::texto_de("s".repeat(teto))),
+        ]);
+        let e = s.op_login(&corpo, &mut Sessao::default()).unwrap_err();
+        assert!(matches!(e, PhxError::Autorizacao(_)), "{e}");
+        assert_eq!(
+            phxsql_core::hash::iteracoes_pagas_nesta_thread() - antes,
+            64
+        );
+    }
+
+    /// **Pedido 521, as portas que criam e trocam senha**: `usuario_criar`,
+    /// `usuario_alterar` e o `CREATE USER` do SQL recusam a senha acima do
+    /// teto antes do PBKDF2, e nada vai ao disco nem ao cadastro vivo.
+    ///
+    /// Vermelho medido sem a linha do teto no `objeto_do_usuario`: o
+    /// `usuario_criar` grava, e paga as 210.000 iteracoes com a chave de
+    /// 64 KiB -- 1.025 compressoes a mais por derivacao, uma so vez.
+    #[test]
+    fn criar_e_trocar_senha_acima_do_teto_recusa_e_nao_grava() {
+        let (s, caminho, _g) = servidor_com_cadastro("teto-criar");
+        let sessao = como_ana(&s);
+        let longa = "s".repeat(phxsql_core::senha::TETO_DA_SENHA + 1);
+        let arquivo_antes = std::fs::read_to_string(&caminho).unwrap();
+        let hash_da_ana = s.cadastro().por_login("ana").unwrap().senha_hash.clone();
+
+        let criar = Json::objeto(vec![
+            ("login", Json::texto_de("carlos")),
+            ("senha", Json::texto_de(&longa)),
+        ]);
+        let trocar = Json::objeto(vec![
+            ("login", Json::texto_de("ana")),
+            ("senha", Json::texto_de(&longa)),
+        ]);
+        let sql = Json::objeto(vec![(
+            "texto",
+            Json::texto_de(format!("CREATE USER carlos PASSWORD '{longa}'")),
+        )]);
+        for (op, corpo) in [
+            ("usuario_criar", &criar),
+            ("usuario_alterar", &trocar),
+            ("sql", &sql),
+        ] {
+            let antes = phxsql_core::hash::iteracoes_pagas_nesta_thread();
+            let e = s.executar(op, corpo, &sessao).unwrap_err();
+            assert!(matches!(e, PhxError::LimiteExcedido(_)), "{op}: {e}");
+            assert!(
+                !e.to_string().contains("sss"),
+                "{op}: a recusa carregou a senha"
+            );
+            assert_eq!(
+                phxsql_core::hash::iteracoes_pagas_nesta_thread(),
+                antes,
+                "{op}: o PBKDF2 rodou com a senha acima do teto"
+            );
+        }
+        assert_eq!(std::fs::read_to_string(&caminho).unwrap(), arquivo_antes);
+        assert!(s.cadastro().por_login("carlos").is_none());
+        assert_eq!(
+            s.cadastro().por_login("ana").unwrap().senha_hash,
+            hash_da_ana
+        );
     }
 }
 

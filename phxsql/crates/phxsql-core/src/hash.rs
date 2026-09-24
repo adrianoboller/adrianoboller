@@ -29,6 +29,10 @@ pub const SHA256_LEN: usize = 32;
 pub const SHA256_BLOCO: usize = 64;
 
 /// Estado de um SHA-256 em andamento.
+///
+/// `Clone` porque o HMAC guarda o estado DEPOIS de absorver o bloco da chave e
+/// recomeca dele a cada mensagem -- ver [`ChaveHmac`].
+#[derive(Clone)]
 pub struct Sha256 {
     estado: [u32; 8],
     buffer: [u8; SHA256_BLOCO],
@@ -111,6 +115,10 @@ impl Sha256 {
     }
 
     fn comprimir(&mut self, bloco: &[u8; SHA256_BLOCO]) {
+        // So no binario de teste: e o que deixa a prova do 521 contar o custo
+        // por dentro, em vez de medir relogio.
+        #[cfg(test)]
+        COMPRESSOES.with(|c| c.set(c.get() + 1));
         let mut w = [0u32; 64];
         for i in 0..16 {
             w[i] = u32::from_be_bytes([
@@ -168,52 +176,122 @@ pub fn sha256(dados: &[u8]) -> [u8; SHA256_LEN] {
     h.finalizar()
 }
 
-/// HMAC-SHA256 (RFC 2104).
-pub fn hmac_sha256(chave: &[u8], mensagem: &[u8]) -> [u8; SHA256_LEN] {
+/// A chave do HMAC no tamanho do bloco: curta completa com zeros, longa vira
+/// o SHA-256 dela (RFC 2104, secao 2).
+fn bloco_da_chave(chave: &[u8]) -> [u8; SHA256_BLOCO] {
     let mut chave_bloco = [0u8; SHA256_BLOCO];
     if chave.len() > SHA256_BLOCO {
         chave_bloco[..SHA256_LEN].copy_from_slice(&sha256(chave));
     } else {
         chave_bloco[..chave.len()].copy_from_slice(chave);
     }
+    chave_bloco
+}
 
-    let mut interno = [0x36u8; SHA256_BLOCO];
-    let mut externo = [0x5cu8; SHA256_BLOCO];
-    for i in 0..SHA256_BLOCO {
-        interno[i] ^= chave_bloco[i];
-        externo[i] ^= chave_bloco[i];
+/// Uma chave de HMAC-SHA256 ja preparada: o SHA-256 parado depois de absorver
+/// o bloco `K ^ ipad`, e outro depois de `K ^ opad`.
+///
+/// # Por que existe -- pedido 521
+///
+/// O PBKDF2 chama o HMAC com a MESMA chave (a senha) 210.000 vezes. O
+/// `hmac_sha256` de antes normalizava a chave a cada chamada: senha maior que
+/// o bloco era resumida por SHA-256 de novo em toda iteracao, e o custo de um
+/// login crescia com o tamanho da senha -- medido em debug, 3,10 s com 8 B,
+/// 13,98 s com 1 KiB, e um `CREATE USER` com 1 MiB passou de 300 s. Quem
+/// escolhia o tamanho era quem mandava a senha, antes da credencial.
+///
+/// Preparar a chave uma vez e recomecar dos dois estados e o desenho que a
+/// propria RFC 2104 descreve (secao 4, «precompute the intermediate results
+/// ... on the blocks K XOR ipad and K XOR opad»), e e o que o OpenSSL faz no
+/// PBKDF2 dele (um `HMAC_Init_ex` so, e `HMAC_CTX_copy` por iteracao). A
+/// saida e bit a bit a mesma; muda so o custo: a senha longa paga o resumo
+/// dela UMA vez, e a iteracao passa de quatro compressoes para duas.
+#[derive(Clone)]
+pub struct ChaveHmac {
+    interno: Sha256,
+    externo: Sha256,
+}
+
+impl ChaveHmac {
+    pub fn nova(chave: &[u8]) -> ChaveHmac {
+        let chave_bloco = bloco_da_chave(chave);
+        let mut ipad = [0x36u8; SHA256_BLOCO];
+        let mut opad = [0x5cu8; SHA256_BLOCO];
+        for i in 0..SHA256_BLOCO {
+            ipad[i] ^= chave_bloco[i];
+            opad[i] ^= chave_bloco[i];
+        }
+        let mut interno = Sha256::novo();
+        interno.atualizar(&ipad);
+        let mut externo = Sha256::novo();
+        externo.atualizar(&opad);
+        ChaveHmac { interno, externo }
     }
 
-    let mut h = Sha256::novo();
-    h.atualizar(&interno);
-    h.atualizar(mensagem);
-    let dentro = h.finalizar();
+    /// O HMAC desta chave sobre `mensagem`.
+    pub fn calcular(&self, mensagem: &[u8]) -> [u8; SHA256_LEN] {
+        let mut h = self.interno.clone();
+        h.atualizar(mensagem);
+        let dentro = h.finalizar();
 
-    let mut h = Sha256::novo();
-    h.atualizar(&externo);
-    h.atualizar(&dentro);
-    h.finalizar()
+        let mut h = self.externo.clone();
+        h.atualizar(&dentro);
+        h.finalizar()
+    }
+}
+
+/// HMAC-SHA256 (RFC 2104).
+///
+/// Para a mesma chave usada muitas vezes, prepare uma [`ChaveHmac`] e chame
+/// `calcular`: esta funcao prepara a chave de novo a cada chamada.
+pub fn hmac_sha256(chave: &[u8], mensagem: &[u8]) -> [u8; SHA256_LEN] {
+    ChaveHmac::nova(chave).calcular(mensagem)
+}
+
+std::thread_local! {
+    static ITERACOES_PAGAS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+std::thread_local! {
+    static COMPRESSOES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// Quantas iteracoes de PBKDF2 esta thread ja pagou, desde que nasceu.
+///
+/// Existe para a prova do pedido 520 contar POR DENTRO se o login de quem nao
+/// existe paga o mesmo PBKDF2 de quem existe, em vez de medir relogio -- que
+/// floca, e que no caso de antes teria de separar 1.000 de 210.000 iteracoes
+/// pelo tempo. Custa uma soma por bloco de saida (nao por iteracao), numa
+/// operacao de dezenas de milissegundos: abaixo de qualquer ruido de medida.
+pub fn iteracoes_pagas_nesta_thread() -> u64 {
+    ITERACOES_PAGAS.with(std::cell::Cell::get)
 }
 
 /// PBKDF2-HMAC-SHA256 (RFC 2898).
 ///
 /// `iteracoes` e o custo: quanto maior, mais caro para quem tenta adivinhar a
 /// senha -- e para quem confere. Ver [`crate::senha`] para o valor adotado.
+///
+/// A chave (a senha) e preparada UMA vez, fora do laco -- ver [`ChaveHmac`]
+/// para o motivo e o numero (pedido 521).
 pub fn pbkdf2_sha256(senha: &[u8], sal: &[u8], iteracoes: u32, saida: &mut [u8]) {
     let iteracoes = iteracoes.max(1);
+    let chave = ChaveHmac::nova(senha);
     let mut bloco = 1u32;
     let mut pos = 0usize;
 
     while pos < saida.len() {
+        ITERACOES_PAGAS.with(|c| c.set(c.get() + u64::from(iteracoes)));
         // U1 = HMAC(senha, sal || INT_BE(bloco))
         let mut entrada = Vec::with_capacity(sal.len() + 4);
         entrada.extend_from_slice(sal);
         entrada.extend_from_slice(&bloco.to_be_bytes());
-        let mut u = hmac_sha256(senha, &entrada);
+        let mut u = chave.calcular(&entrada);
         let mut acumulado = u;
 
         for _ in 1..iteracoes {
-            u = hmac_sha256(senha, &u);
+            u = chave.calcular(&u);
             for (a, b) in acumulado.iter_mut().zip(u.iter()) {
                 *a ^= b;
             }
@@ -424,6 +502,188 @@ mod tests {
             a, b,
             "o sal e o que impede duas senhas iguais darem o mesmo hash"
         );
+    }
+
+    // ------------------------------------ PBKDF2 com senha longa (pedido 521)
+
+    /// **Vetor publicado com senha maior que o bloco.** A RFC 6070 e os
+    /// vetores usuais de PBKDF2-HMAC-SHA256 param em 25 bytes -- nenhum passa
+    /// dos 64 do bloco, que e exatamente onde o 521 mexeu. Estes sao do
+    /// Wycheproof (C2SP/wycheproof, `testvectors_v1/pbkdf2_hmacsha256_test.json`,
+    /// tcId 52, 53, 54 e 60), conferidos tambem contra o `hashlib.pbkdf2_hmac`
+    /// do Python, que roda no OpenSSL: senhas de 65, 129 e 257 bytes, e a de
+    /// 65 zeros -- o caso em que a chave longa resumida tem de dar diferente
+    /// da mesma chave cortada.
+    #[test]
+    fn pbkdf2_senha_maior_que_o_bloco_vetores_wycheproof() {
+        let casos: [(&[u8], &str, usize, &str); 4] = [
+            (
+                b"R2IXDgYzZBq69pfzJqNtKwaTZEDIFvvkjbSAqgVnEjkEkEEWPNi86Sbjn7krWd9Mg",
+                "d26b99043c8ba3a4",
+                32,
+                "c8595fa30dc95fb839bebfcc230f06844b2f75a393570b22d6c14d647837b87a",
+            ),
+            (
+                b"crzFm9d0yTcEjdhTWXi8wgNQoTNmHnahoiV1pqa13eTqGy3Iu15KORQc9ILSdgVRzERNkDcr5egjbXJxBerSjtrkkgCAajc5bC5D4pnft86f7TbfcfcpYZ0vsTEMI0RAx",
+                "9266da5b8c102b27",
+                32,
+                "24a86f12235e0232bc80a84635a43934b2d37ae1120b4aa1728a3ead93868980",
+            ),
+            (
+                b"2dzVinoEwDdelebWypX1MoOhYuXZF1rQKz2SZl0uxWcwyo5aAnoBRNzPDv0rQ6bi7B4Z42OPiRXSLhYhDAd2btodv3tMTBD0tKF1nKeYBeeeTzpA1ECAPq9BhzJLUZgsv6uNKfDP35XAMhJHlsjoZykgq0bMPbeUiAymo2CqXkdRGRc8vTAvhNZX8SoVM3pNtYJJrXviu3uGX23sj58Gr0aaJKEv7eyl72Hcnagq4tvnS77bmcvglySm4sppzeg8i",
+                "6a06903b78dae6de",
+                32,
+                "a50be9c16f6bf68808436aa3bc6eec36d3c5653c9c7510c1a4a641755b8325fb",
+            ),
+            (
+                &[0u8; 65],
+                "9de9b71eeb9d9a34",
+                16,
+                "5869f35bb108f1c45605ca8109e6661d",
+            ),
+        ];
+        for (senha, sal, n, esperado) in casos {
+            let mut saida = vec![0u8; n];
+            pbkdf2_sha256(senha, &de_hex(sal).unwrap(), 4096, &mut saida);
+            assert_eq!(para_hex(&saida), esperado, "senha de {} B", senha.len());
+        }
+    }
+
+    /// O HMAC como ele era ANTES do 521, escrito de novo aqui direto do
+    /// SHA-256 de uma vez: a chave normalizada a cada chamada, sem estado
+    /// guardado. E a referencia contra a qual a versao preparada se confere
+    /// bit a bit -- e nao depende de `ChaveHmac` nem do `Clone` do estado.
+    fn hmac_ingenuo(chave: &[u8], mensagem: &[u8]) -> [u8; SHA256_LEN] {
+        let mut k = [0u8; SHA256_BLOCO];
+        if chave.len() > SHA256_BLOCO {
+            k[..SHA256_LEN].copy_from_slice(&sha256(chave));
+        } else {
+            k[..chave.len()].copy_from_slice(chave);
+        }
+        let mut dentro: Vec<u8> = k.iter().map(|b| b ^ 0x36).collect();
+        dentro.extend_from_slice(mensagem);
+        let mut fora: Vec<u8> = k.iter().map(|b| b ^ 0x5c).collect();
+        fora.extend_from_slice(&sha256(&dentro));
+        sha256(&fora)
+    }
+
+    fn pbkdf2_ingenuo(senha: &[u8], sal: &[u8], iteracoes: u32, saida: &mut [u8]) {
+        for (i, pedaco) in saida.chunks_mut(SHA256_LEN).enumerate() {
+            let mut entrada = sal.to_vec();
+            entrada.extend_from_slice(&(i as u32 + 1).to_be_bytes());
+            let mut u = hmac_ingenuo(senha, &entrada);
+            let mut acumulado = u;
+            for _ in 1..iteracoes.max(1) {
+                u = hmac_ingenuo(senha, &u);
+                for (a, b) in acumulado.iter_mut().zip(u.iter()) {
+                    *a ^= b;
+                }
+            }
+            pedaco.copy_from_slice(&acumulado[..pedaco.len()]);
+        }
+    }
+
+    /// **A saida nao mudou.** Nao ha vetor publicado para cada tamanho de
+    /// senha, entao a versao preparada se confere contra a ingenua em TODO
+    /// tamanho de 0 a 300 bytes (atravessa 64, 65, 128, 129, 256, 257), com
+    /// uma, duas e tres iteracoes e saida de dois blocos, e nos tamanhos
+    /// grandes que o teto do 521 deixa passar.
+    #[test]
+    fn pbkdf2_confere_bit_a_bit_com_a_versao_ingenua() {
+        let sal = b"sal-do-521";
+        for tamanho in 0..=300usize {
+            let senha: Vec<u8> = (0..tamanho).map(|i| (i * 7 + tamanho) as u8).collect();
+            for it in 1..=3u32 {
+                let mut a = [0u8; 40];
+                let mut b = [0u8; 40];
+                pbkdf2_sha256(&senha, sal, it, &mut a);
+                pbkdf2_ingenuo(&senha, sal, it, &mut b);
+                assert_eq!(a, b, "senha de {tamanho} B, {it} iteracao(oes)");
+            }
+            assert_eq!(
+                hmac_sha256(&senha, b"mensagem"),
+                hmac_ingenuo(&senha, b"mensagem"),
+                "HMAC com chave de {tamanho} B"
+            );
+        }
+        for tamanho in [1024usize, 4096, 65_535] {
+            let senha = vec![0xa5u8; tamanho];
+            let mut a = [0u8; 32];
+            let mut b = [0u8; 32];
+            pbkdf2_sha256(&senha, sal, 2, &mut a);
+            pbkdf2_ingenuo(&senha, sal, 2, &mut b);
+            assert_eq!(a, b, "senha de {tamanho} B");
+        }
+    }
+
+    fn compressoes() -> u64 {
+        COMPRESSOES.with(std::cell::Cell::get)
+    }
+
+    /// **O custo da senha longa e pago UMA vez (pedido 521).** Conta as
+    /// compressoes do SHA-256 por dentro, em vez de medir relogio: preparar a
+    /// chave custa 2 (os blocos `ipad` e `opad`) mais o resumo da senha quando
+    /// ela passa do bloco, e cada iteracao custa 2 -- qualquer que seja o
+    /// tamanho da senha.
+    ///
+    /// Vermelho medido com o laco de antes reposto (`u = hmac_sha256(senha,
+    /// &u)`, que prepara a chave a cada volta): a primeira conta que cai e a
+    /// senha de 0 B com 10 iteracoes, 40 compressoes contra 22 -- quatro por
+    /// iteracao em vez de duas, e mais o resumo da senha longa em CADA volta.
+    /// Pela porta de dados, em debug, o login de 1 KiB custava 4,64x o de
+    /// 8 B (12.271 ms contra 2.643 ms); depois do conserto, 0,98x.
+    #[test]
+    fn pbkdf2_prepara_a_chave_uma_vez_so() {
+        for tamanho in [0usize, 8, 64, 65, 256, 1024, 65_535] {
+            let senha = vec![b'x'; tamanho];
+            let resumo_da_chave = if tamanho > SHA256_BLOCO {
+                (tamanho as u64 + 9).div_ceil(SHA256_BLOCO as u64)
+            } else {
+                0
+            };
+            for it in [1u32, 10, 1_000] {
+                let antes = compressoes();
+                pbkdf2_sha256(&senha, b"salt", it, &mut [0u8; 32]);
+                let gastas = compressoes() - antes;
+                assert_eq!(
+                    gastas,
+                    resumo_da_chave + 2 + 2 * u64::from(it),
+                    "senha de {tamanho} B com {it} iteracao(oes)"
+                );
+            }
+        }
+    }
+
+    /// A chave preparada e reusavel: duas mensagens pela mesma `ChaveHmac` dao
+    /// o mesmo que o HMAC de uma vez -- inclusive o caso 6 da RFC 4231, o de
+    /// chave maior que o bloco. Se o `calcular` gastasse o estado guardado em
+    /// vez de clona-lo, a segunda chamada sairia errada e so ela acusaria.
+    #[test]
+    fn chave_hmac_preparada_serve_a_muitas_mensagens() {
+        let chave = ChaveHmac::nova(&[0xaa; 131]);
+        let m = b"Test Using Larger Than Block-Size Key - Hash Key First";
+        for _ in 0..3 {
+            assert_eq!(
+                para_hex(&chave.calcular(m)),
+                "60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54"
+            );
+        }
+        let curta = ChaveHmac::nova(b"Jefe");
+        assert_eq!(
+            curta.calcular(b"what do ya want for nothing?"),
+            hmac_sha256(b"Jefe", b"what do ya want for nothing?")
+        );
+        assert_eq!(curta.calcular(b"outra"), hmac_ingenuo(b"Jefe", b"outra"));
+    }
+
+    /// O contador que a prova do 520 le: soma as iteracoes pedidas, uma vez
+    /// por bloco de saida.
+    #[test]
+    fn o_contador_de_iteracoes_soma_o_que_foi_pago() {
+        let antes = iteracoes_pagas_nesta_thread();
+        pbkdf2_sha256(b"x", b"y", 17, &mut [0u8; 32]);
+        pbkdf2_sha256(b"x", b"y", 5, &mut [0u8; 40]);
+        assert_eq!(iteracoes_pagas_nesta_thread() - antes, 17 + 2 * 5);
     }
 
     // ------------------------------------------------------ utilidades

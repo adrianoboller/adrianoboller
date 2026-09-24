@@ -1,0 +1,22 @@
+== antes: ./phxsqld-antes
+senha  existe, senha errada   mediana   2671.111 ms  min   2652.799  max   2675.719  n=3  [SP000025] acesso negado: usuario ou senha invalidos
+senha  existe, ativo=false    mediana      0.218 ms  min      0.207  max      0.460  n=3  [SP000025] acesso negado: usuario ou senha invalidos
+senha  nao existe             mediana     25.652 ms  min     25.456  max     25.733  n=3  [SP000025] acesso negado: usuario ou senha invalidos
+prova  existe                 mediana      0.161 ms  min      0.155  max      0.273  n=200  [SP000025] acesso negado: usuario ou senha invalidos
+prova  existe, ativo=false    mediana      0.134 ms  min      0.127  max      0.362  n=200  [SP000025] acesso negado: usuario ou senha invalidos
+prova  nao existe             mediana      0.167 ms  min      0.133  max      0.322  n=200  [SP000025] acesso negado: usuario ou senha invalidos
+desafio existe                mediana      0.114 ms  min      0.011  max      0.397  n=200  iteracoes=210000
+desafio nao existe            mediana      0.121 ms  min      0.109  max      0.375  n=200  iteracoes=210000
+tamanho root             8 B        2642.8 ms  [SP000025] acesso negado: usuario ou senha invalidos
+tamanho root          1024 B       12271.3 ms  [SP000025] acesso negado: usuario ou senha invalidos
+tamanho nao_existe    1024 B          72.1 ms  [SP000025] acesso negado: usuario ou senha invalidos
+web     root             8 B        2765.3 ms  [SP000025] acesso negado: usuario ou senha invalidos
+web     root          1024 B       12539.5 ms  [SP000025] acesso negado: usuario ou senha invalidos
+web     root         70000 B  (nao medido no antes: 1 MiB x 210.000 iteracoes nao termina)
+web     root       1000000 B  (nao medido no antes: 1 MiB x 210.000 iteracoes nao termina)
+root entrou: True em 2681.1 ms
+criar         16 B        2750.2 ms  {"sql": "CREATE USER u16 PASSWORD '***'", "op": "usuario_criar", "resultado": {"gravado": 
+criar      65535 B  (nao medido no antes: o SEC mediu >300 s com 1 MiB)
+criar      65536 B  (nao medido no antes: o SEC mediu >300 s com 1 MiB)
+criar    1048576 B  (nao medido no antes: o SEC mediu >300 s com 1 MiB)
+stderr do servidor: 1576 bytes; senha no log: nao

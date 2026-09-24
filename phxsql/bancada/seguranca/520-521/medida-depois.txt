@@ -1,0 +1,23 @@
+== depois: ./phxsqld-depois
+senha  existe, senha errada   mediana   1367.766 ms  min   1367.529  max   1371.264  n=3  [SP000025] acesso negado: usuario ou senha invalidos
+senha  existe, ativo=false    mediana   1372.242 ms  min   1367.821  max   1374.912  n=3  [SP000025] acesso negado: usuario ou senha invalidos
+senha  nao existe             mediana   1368.777 ms  min   1364.084  max   1372.231  n=3  [SP000025] acesso negado: usuario ou senha invalidos
+prova  existe                 mediana      0.170 ms  min      0.008  max      0.992  n=200  [SP000025] acesso negado: usuario ou senha invalidos
+prova  existe, ativo=false    mediana      0.167 ms  min      0.151  max      0.425  n=200  [SP000025] acesso negado: usuario ou senha invalidos
+prova  nao existe             mediana      0.175 ms  min      0.008  max      1.653  n=200  [SP000025] acesso negado: usuario ou senha invalidos
+desafio existe                mediana      0.111 ms  min      0.007  max      0.333  n=200  iteracoes=210000
+desafio nao existe            mediana      0.123 ms  min      0.008  max      0.284  n=200  iteracoes=210000
+tamanho root             8 B        1407.4 ms  [SP000025] acesso negado: usuario ou senha invalidos
+tamanho root          1024 B        1383.6 ms  [SP000025] acesso negado: usuario ou senha invalidos
+tamanho nao_existe    1024 B        1373.3 ms  [SP000025] acesso negado: usuario ou senha invalidos
+tamanho root         60000 B        1477.7 ms  [SP000025] acesso negado: usuario ou senha invalidos
+web     root             8 B        1377.2 ms  [SP000025] acesso negado: usuario ou senha invalidos
+web     root          1024 B        1373.5 ms  [SP000025] acesso negado: usuario ou senha invalidos
+web     root         70000 B          20.2 ms  [SP000018] limite excedido: a senha tem 70000 bytes e o teto e 65535; nenhuma conta foi fe
+web     root       1000000 B         278.7 ms  [SP000018] limite excedido: a senha tem 1000000 bytes e o teto e 65535; nenhuma conta foi 
+root entrou: True em 1374.6 ms
+criar         16 B        1403.4 ms  {"sql": "CREATE USER u16 PASSWORD '***'", "op": "usuario_criar", "resultado": {"gravado": 
+criar      65535 B        1432.1 ms  {"sql": "CREATE USER u65535 PASSWORD '***'", "op": "usuario_criar", "resultado": {"gravado
+criar      65536 B          19.6 ms  [SP000018] limite excedido: a senha tem 65536 bytes e o teto e 65535; nenhuma conta foi fe
+criar    1048576 B         310.7 ms  [SP000018] limite excedido: a senha tem 1048576 bytes e o teto e 65535; nenhuma conta foi 
+stderr do servidor: 1751 bytes; senha no log: nao

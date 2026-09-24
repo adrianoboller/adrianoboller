@@ -808,11 +808,6 @@ impl std::fmt::Debug for Usuario {
 }
 
 impl Usuario {
-    /// A senha confere?
-    pub fn senha_confere(&self, oferecida: &str) -> bool {
-        self.ativo && senha::conferir(oferecida, &self.senha_hash)
-    }
-
     /// Permissoes efetivas numa base.
     /// O poder deste usuario nesta base.
     ///
@@ -1379,17 +1374,29 @@ impl Cadastro {
     /// Confere login e senha. Devolve o usuario so quando os dois batem e a
     /// conta esta ativa.
     ///
-    /// Quando o login nao existe, ainda assim gasta o tempo de um PBKDF2, para
-    /// que "usuario inexistente" e "senha errada" nao se distingam pelo relogio.
+    /// # Um PBKDF2 so, do mesmo tamanho para os tres -- pedido 520
+    ///
+    /// «Nao existe», «inativo» e «senha errada» devolvem a mesma recusa, e
+    /// tem de custar o mesmo: senao o relogio responde o que a mensagem
+    /// esconde. Por isso ha UMA chamada a `senha::conferir`, e os tres passam
+    /// por ela. Quem nao existe confere contra o `senha::hash_de_fachada`, que
+    /// tem as `ITERACOES_PADRAO` de todo usuario novo; e o `ativo` so e olhado
+    /// DEPOIS da conta.
+    ///
+    /// O comentario que morava aqui afirmava que os dois primeiros «nao se
+    /// distinguem pelo relogio», e o codigo abaixo dele dizia o contrario.
+    /// Medido em debug, pela porta de dados: senha errada 2.671 ms; quem nao
+    /// existe 25,7 ms (uma fachada de 1.000 iteracoes, fabricada e conferida a
+    /// cada login); inativo 0,2 ms (o `ativo &&` pulava o PBKDF2 inteiro).
+    ///
+    /// O que sobra, e e do desenho: o hash carrega o proprio custo, entao um
+    /// hash feito a mao com outra contagem de iteracoes custa outro tempo --
+    /// e o `desafio` ja publica essa contagem.
     pub fn autenticar(&self, login: &str, oferecida: &str) -> Option<&Usuario> {
-        match self.por_login(login) {
-            Some(u) if u.senha_confere(oferecida) => Some(u),
-            Some(_) => None,
-            None => {
-                let _ = senha::conferir(oferecida, &senha::cifrar_com("nao-existe", 1_000));
-                None
-            }
-        }
+        let achado = self.por_login(login);
+        let guardado = achado.map_or(senha::hash_de_fachada(), |u| u.senha_hash.as_str());
+        let confere = senha::conferir(oferecida, guardado);
+        achado.filter(|u| confere && u.ativo)
     }
 
     /// Ha alguem ATIVO que possa mexer no cadastro?
@@ -1671,6 +1678,9 @@ fn objeto_do_usuario(login: &str, p: &Json, anterior: Option<&Json>) -> Result<J
     }
     match p.campo("senha").and_then(Json::texto) {
         Some(clara) if !clara.is_empty() => {
+            // O teto ANTES do PBKDF2 (pedido 521): senha que o login recusaria
+            // nao nasce, e o `CREATE USER` de 1 MiB deixa de ser uma conta.
+            senha::caber_no_teto(clara)?;
             por("senha_hash", Json::texto_de(senha::cifrar(clara)));
             // A senha em texto puro que o formato ainda aceita sai JUNTO: um
             // usuario que a tinha e trocou de senha nao pode continuar com a
@@ -1838,6 +1848,77 @@ mod tests {
         assert!(c.autenticar("ana", "senha certa").is_none());
         assert!(c.autenticar("ana", "").is_none());
         assert!(c.autenticar("inexistente", "Senha Certa").is_none());
+    }
+
+    // ------------------------------------------------------- pedido 520
+    //
+    // O relogio nao pode dizer quem existe. As tres provas contam por DENTRO
+    // quantas iteracoes de PBKDF2 o `autenticar` pagou, em vez de medir
+    // tempo: separar 64 de 210.000 pelo relogio flocaria, e o contador nao.
+
+    /// A ana ativa e o ze inativo, os dois com o hash de 64 iteracoes.
+    fn cadastro_do_520() -> Cadastro {
+        cadastro(&format!(
+            r#"{{"usuarios":[{{"login":"ana","senha_hash":"{}"}},
+                            {{"login":"ze","senha_hash":"{}","ativo":false}}]}}"#,
+            hash_rapido("senha-da-ana"),
+            hash_rapido("senha-do-ze")
+        ))
+    }
+
+    /// Entrou? E quantas iteracoes de PBKDF2 esta thread pagou para decidir.
+    fn iteracoes_do_login(c: &Cadastro, login: &str, oferecida: &str) -> (bool, u64) {
+        let antes = phxsql_core::hash::iteracoes_pagas_nesta_thread();
+        let entrou = c.autenticar(login, oferecida).is_some();
+        (
+            entrou,
+            phxsql_core::hash::iteracoes_pagas_nesta_thread() - antes,
+        )
+    }
+
+    /// **O defeito do 520.** Quem nao existe paga as `ITERACOES_PADRAO` com
+    /// que todo usuario novo nasce -- as 210.000 de quem existe.
+    ///
+    /// Vermelho medido com a fachada de antes (`cifrar_com("nao-existe",
+    /// 1_000)` e o `conferir` contra ela): 2.000 iteracoes pagas, contra as
+    /// 210.000 esperadas.
+    #[test]
+    fn quem_nao_existe_paga_o_pbkdf2_de_um_usuario_novo() {
+        let c = cadastro_do_520();
+        let (entrou, pagas) = iteracoes_do_login(&c, "nao_existe", "qualquer-senha");
+        assert!(!entrou);
+        assert_eq!(
+            pagas,
+            u64::from(senha::ITERACOES_PADRAO),
+            "o login de quem nao existe pagou outro PBKDF2: o relogio diz quem existe"
+        );
+    }
+
+    /// **O irmao do 520 que o SEC nao listou: o inativo.** O `ativo &&` de
+    /// antes curto-circuitava a conta, e o inativo respondia sem PBKDF2
+    /// nenhum -- medido em debug, 0,2 ms contra 2.671 ms da senha errada.
+    /// Consertar so a fachada teria deixado o inativo como o UNICO caminho
+    /// rapido, e o relogio passaria a dizer «existe, e esta desligado».
+    ///
+    /// Vermelho medido com o curto-circuito reposto: 0 iteracoes pagas,
+    /// contra as 64 do hash dele.
+    #[test]
+    fn quem_esta_inativo_paga_o_pbkdf2_do_proprio_hash() {
+        let c = cadastro_do_520();
+        for oferecida in ["senha-do-ze", "senha-errada"] {
+            let (entrou, pagas) = iteracoes_do_login(&c, "ze", oferecida);
+            assert!(!entrou, "inativo entrou com {oferecida:?}");
+            assert_eq!(pagas, 64, "o inativo pulou a conta com {oferecida:?}");
+        }
+    }
+
+    /// O caminho de referencia: quem existe paga o hash dele, errando ou
+    /// acertando, e so a senha certa entra.
+    #[test]
+    fn quem_existe_paga_o_pbkdf2_do_proprio_hash() {
+        let c = cadastro_do_520();
+        assert_eq!(iteracoes_do_login(&c, "ana", "senha-errada"), (false, 64));
+        assert_eq!(iteracoes_do_login(&c, "ana", "senha-da-ana"), (true, 64));
     }
 
     #[test]

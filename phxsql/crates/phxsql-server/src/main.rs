@@ -256,6 +256,12 @@ fn gerar_senha(args: &[String]) -> ExitCode {
         eprintln!("senha vazia; nada a gerar");
         return ExitCode::FAILURE;
     }
+    // O mesmo teto do login (pedido 521): gerar o hash de uma senha que o
+    // login recusaria entregaria uma linha de config.json que nunca entra.
+    if let Err(e) = phxsql_core::senha::caber_no_teto(&clara) {
+        eprintln!("{e}");
+        return ExitCode::FAILURE;
+    }
     let hash = phxsql_core::senha::cifrar(&clara);
     println!("\"senha_hash\": \"{hash}\"");
     ExitCode::SUCCESS

@@ -317,6 +317,12 @@ Os três lugares onde ela vazaria calada, e o que fecha cada um:
 Mandar `senha_hash` pronto é **recusado**: hash pronto escolheria o próprio
 custo, e «PBKDF2 com uma volta» tem a mesma cara de «PBKDF2 com 210.000».
 
+A senha tem **teto de 65.535 bytes** (`senha::TETO_DA_SENHA`, pedido 521), o
+mesmo no criar, no alterar, no `CREATE USER`/`ALTER USER`, no login e no
+`phxsqld --senha`. Acima dele a recusa vem **antes** de qualquer conta, nomeada
+(`[SP000018] limite excedido: a senha tem N bytes e o teto e 65535`) e sem a
+senha dentro. O número saiu da régua dos motores — ver `SEGURANCA.md` §26.4.
+
 ### Aplicação a quente
 
 O cadastro vivo é trocado e uma **geração** anda. O próximo `login` já aceita

@@ -115,6 +115,20 @@ pub fn calcular_prova(
     ))
 }
 
+std::thread_local! {
+    static PROVAS_CONFERIDAS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// Quantas provas esta thread ja conferiu, desde que nasceu.
+///
+/// Existe para a prova do irmao do pedido 520 contar por dentro que o login
+/// por desafio-resposta de quem nao existe, ou esta inativo, confere uma
+/// prova como o de quem existe -- a diferenca de antes era de microssegundos,
+/// e microssegundo nao se prova por relogio num teste. Uma soma por login.
+pub fn provas_conferidas_nesta_thread() -> u64 {
+    PROVAS_CONFERIDAS.with(std::cell::Cell::get)
+}
+
 /// Confere a prova recebida. Comparacao em tempo constante.
 ///
 /// `canal` tem de ser a transcricao DESTE lado do tunel, nunca uma que venha
@@ -128,6 +142,7 @@ pub fn conferir_prova(
     canal: Option<&[u8]>,
     prova: &str,
 ) -> bool {
+    PROVAS_CONFERIDAS.with(|c| c.set(c.get() + 1));
     let Some(recebida) = de_hex(prova) else {
         return false;
     };

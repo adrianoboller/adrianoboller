@@ -259,6 +259,11 @@ dia, nunca no desejado:
   e do `jobs.json` antigo que volta a subir. A frente contou 313 a partir de
   286; a conta do encontro e do integrador, pelo `--catraca`: 344 vivas + 1
   aposentada.
+  **SUBIU para 352 em 24/09/2026** (pedidos 520 e 521, integrados sobre o
+  497): sete guardas do login -- a chave do HMAC preparada a cada iteracao, o
+  teto da senha no `conferir`, no `op_login` e no criar, a fachada de mil
+  iteracoes, o inativo que pulava o PBKDF2 e a prova de quem nao existe que
+  saia sem conferir. Contado pelo `--catraca` na arvore combinada.
   **SUBIU para 300 em 24/09/2026** (pedido 497, o literal do pedido no texto
   do erro que o `acessos.log` grava): tres guardas novas, uma por motor que
   monta a mensagem -- o `descrever` do SQL, o `mostrar` da expressao -- e a
@@ -382,7 +387,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 345
+PISO_DAS_ENTRADAS = 352
 
 # ------------------------------------------------------------- APOSENTADAS
 #

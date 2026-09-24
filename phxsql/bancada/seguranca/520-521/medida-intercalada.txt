@@ -1,0 +1,31 @@
+24/09/2026, binarios DEBUG (CARGO_PROFILE_DEV_DEBUG=0), porta de dados, maquina de 4 nucleos
+com outras frentes compilando. antes = HEAD 7768343; depois = a arvore do 520/521.
+
+sonda-prova.py (n=1000 por caminho, os tres intercalados, prova errada):
+antes   rodada 0: mediana existe 165.5 us, nao existe 140.9 us (-24.6), inativo 140.2 us (-25.3)  (n=1000)
+antes   rodada 1: mediana existe 161.8 us, nao existe 137.4 us (-24.4), inativo 137.3 us (-24.6)  (n=1000)
+depois  rodada 0: mediana existe 164.9 us, nao existe 165.5 us (+0.6), inativo 165.2 us (+0.3)  (n=1000)
+depois  rodada 1: mediana existe 168.0 us, nao existe 167.6 us (-0.4), inativo 169.0 us (+1.0)  (n=1000)
+
+sonda-desafio.py, login falso `nao_existe` (tamanho diferente de `ana`), n=2000:
+antes   rodada 0: mediana existe 112.2 us, nao existe 123.7 us, diferenca +11.5 us
+antes   rodada 1: mediana existe 114.4 us, nao existe 125.6 us, diferenca +11.2 us
+depois  rodada 0: mediana existe 130.6 us, nao existe 133.0 us, diferenca +2.4 us
+depois  rodada 1: mediana existe 131.7 us, nao existe 133.7 us, diferenca +2.0 us
+
+sonda-desafio.py, login falso `zzz` (mesmo tamanho de `ana`), n=2000:
+antes   rodada 0: mediana existe 115.6 us, nao existe 124.9 us, diferenca +9.3 us
+antes   rodada 1: mediana existe 114.5 us, nao existe 123.7 us, diferenca +9.2 us
+depois  rodada 0: mediana existe 131.6 us, nao existe 131.5 us, diferenca -0.2 us
+depois  rodada 1: mediana existe 130.9 us, nao existe 130.9 us, diferenca -0.0 us
+
+sonda-sal.py (depois; o sal falso nao mudou nesta frente):
+ana          sal 66656463626139383736353433323130  == HMAC(token, login)[:16]? nao -> existe
+ze           sal 61316232633364346535663630373138  == HMAC(token, login)[:16]? nao -> existe
+root         sal 30313233343536373839616263646566  == HMAC(token, login)[:16]? nao -> existe
+zzz          sal 62e8239476080a2ad7696a78305f98e0  == HMAC(token, login)[:16]? SIM -> nao existe
+nao_existe   sal 7f35a2a4aad5945e4a2f346e2feb5aee  == HMAC(token, login)[:16]? SIM -> nao existe
+fulano       sal 9819356197c414392c807ac1b093694a  == HMAC(token, login)[:16]? SIM -> nao existe
+
+Nota: a linha «desafio» do medida-depois.txt e de um binario ANTERIOR ao conserto do
+op_desafio (e por isso ainda mostra os +12 us); a medida certa do desafio e a daqui.

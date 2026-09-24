@@ -23,15 +23,89 @@ use crate::hash::{de_hex, iguais_em_tempo_constante, para_hex, pbkdf2_sha256, sh
 
 /// Iteracoes adotadas para senhas novas.
 ///
-/// E a recomendacao da OWASP para PBKDF2-HMAC-SHA256. Conferir uma senha custa
-/// da ordem de 100 ms -- irrelevante uma vez por conexao, caro para quem tenta
-/// adivinhar em massa. E por isso que a autenticacao acontece uma vez por
-/// conexao, e nao a cada pedido.
+/// ATENCAO, conferido em 24/09/2026 (pedido 521): esta linha dizia que 210.000
+/// e «a recomendacao da OWASP para PBKDF2-HMAC-SHA256», e a folha da OWASP
+/// (Password Storage Cheat Sheet) pede 600.000 para SHA-256; 210.000 foi o
+/// numero dela para SHA-512 e hoje e 220.000. O valor nao mudou aqui -- mudar
+/// e decisao de custo por login, e nao do 521. Conferir uma senha custa da
+/// ordem de 100 ms (numero antigo, nao remedido depois de a chave do HMAC
+/// passar a ser preparada uma vez, que dividiu o custo por ~2 em debug) --
+/// irrelevante uma vez por conexao, caro para quem tenta adivinhar em massa.
+/// E por isso que a autenticacao acontece uma vez por conexao, e nao a cada
+/// pedido.
 pub const ITERACOES_PADRAO: u32 = 210_000;
 
 const SAL_LEN: usize = 16;
 const HASH_LEN: usize = 32;
 const ALGORITMO: &str = "pbkdf2-sha256";
+
+/// O maior tamanho de senha, em BYTES, que entra numa conta -- pedido 521.
+///
+/// # Por que 65.535
+///
+/// Decidido pela regua dos motores, e nao escolhido. Pergunta: acima de que
+/// tamanho o servidor recusa a senha em claro que recebe? No fonte de cada um:
+///
+/// | motor (peso) | teto da senha em claro |
+/// |---|---|
+/// | PostgreSQL (4) | 65.535 B no login (`PG_MAX_AUTH_TOKEN_LENGTH`, `libpq/auth.h`, lido em `recv_password_packet`); o de 1.024 do SASLprep saiu na 14 |
+/// | MariaDB (3) | nenhum proprio (`parsec`, `ed25519` e nativo recebem o tamanho que vier); so o pacote limita |
+/// | MySQL (2) | 256 B (`MAX_PLAINTEXT_LENGTH`, recusado no `caching_sha2_password` e no `sha256_password`, ao criar e ao entrar) |
+/// | SQLite (1) | nao tem usuario; nao vota |
+///
+/// Nao ha convergencia, e a regua ponderada decide degrau a degrau: «teto
+/// ate 256?» perde de 2 a 7; «teto ate 65.535?» ganha de 6 (PG + MySQL) a 3.
+/// O numero que sobra e o do PostgreSQL. A hipotese «sem teto proprio»
+/// (MariaDB) perdeu do mesmo jeito, 3 a 6.
+///
+/// E o numero conversa com o resto da casa: a linha anonima da porta de dados
+/// ja nao passa de 64 KiB (`fio::TETO_DO_APERTO`), entao ali ele quase nao
+/// morde -- quem morde e a porta web, cujo corpo aceita 4 MiB antes da
+/// credencial, e o `CREATE USER` depois dela. Com a chave preparada uma vez
+/// (`hash::ChaveHmac`), uma senha no teto paga 1.025 compressoes de SHA-256
+/// a mais que uma de 8 B, sobre 420.002 das 210.000 iteracoes: 0,24%.
+pub const TETO_DA_SENHA: usize = 65_535;
+
+/// A senha cabe no teto? Recusa ANTES de qualquer PBKDF2.
+///
+/// A mensagem diz o tamanho e nunca o conteudo: e a mesma regra do resto da
+/// casa para o que nao se pode mostrar -- vira o tamanho em bytes.
+pub fn caber_no_teto(senha: &str) -> Result<()> {
+    if senha.len() > TETO_DA_SENHA {
+        return Err(PhxError::LimiteExcedido(format!(
+            "a senha tem {} bytes e o teto e {TETO_DA_SENHA}; nenhuma conta foi feita com ela",
+            senha.len()
+        )));
+    }
+    Ok(())
+}
+
+/// O hash do usuario que NAO existe -- pedido 520.
+///
+/// O login de quem nao existe confere a senha contra ESTE hash, pela mesma
+/// [`conferir`] de quem existe e com as [`ITERACOES_PADRAO`] com que todo
+/// usuario novo nasce: e o que faz «nao existe» e «senha errada» custarem o
+/// mesmo. A fachada de antes era um `cifrar_com("nao-existe", 1_000)` -- 1.000
+/// iteracoes para fabricar o hash e mais 1.000 para conferir, contra 210.000
+/// de quem existe: medido em debug, 25,7 ms contra 2.671 ms. O relogio dizia
+/// quem existe.
+///
+/// E o mesmo usuario de mentira que o `desafio` apresenta a quem nao existe
+/// (sal falso, `ITERACOES_PADRAO`). O `derivado` e um resumo fixo: ninguem
+/// precisa acertar esta senha, e acertar nao adiantaria -- nao ha usuario
+/// para devolver.
+pub fn hash_de_fachada() -> &'static str {
+    static FACHADA: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    FACHADA.get_or_init(|| {
+        let sal = sha256(b"phxsql: sal do usuario que nao existe");
+        let derivado = sha256(b"phxsql: derivado do usuario que nao existe");
+        format!(
+            "{ALGORITMO}${ITERACOES_PADRAO}${}${}",
+            para_hex(&sal[..SAL_LEN]),
+            para_hex(&derivado[..HASH_LEN])
+        )
+    })
+}
 
 /// Gera o hash de uma senha, com sal novo.
 pub fn cifrar(senha: &str) -> String {
@@ -53,7 +127,13 @@ pub fn cifrar_com(senha: &str, iteracoes: u32) -> String {
 ///
 /// Devolve `false` para hash malformado, em vez de erro: um `config.json`
 /// estragado nao pode virar porta de entrada.
+///
+/// E `false` tambem para senha acima do [`TETO_DA_SENHA`], sem conta nenhuma:
+/// quem chama e esquece o teto nao reabre o 521 por aqui.
 pub fn conferir(senha: &str, guardado: &str) -> bool {
+    if caber_no_teto(senha).is_err() {
+        return false;
+    }
     let Ok((iteracoes, sal, esperado)) = destrinchar(guardado) else {
         return false;
     };
@@ -282,5 +362,85 @@ mod tests {
         for _ in 0..200 {
             assert!(vistos.insert(sal_por_mistura()), "sal repetiu na mistura");
         }
+    }
+
+    // ------------------------------------------------ pedidos 520 e 521
+
+    /// **O teto recusa antes da conta, e a recusa nao carrega a senha.** No
+    /// teto a senha confere; um byte acima, nem a senha certa entra -- e o
+    /// contador de iteracoes prova que o PBKDF2 nao rodou.
+    #[test]
+    fn a_senha_acima_do_teto_nao_chega_ao_pbkdf2() {
+        let no_teto = "s".repeat(TETO_DA_SENHA);
+        let acima = "s".repeat(TETO_DA_SENHA + 1);
+        assert!(caber_no_teto(&no_teto).is_ok());
+        let erro = caber_no_teto(&acima).unwrap_err().to_string();
+        assert!(erro.contains(&(TETO_DA_SENHA + 1).to_string()), "{erro}");
+        assert!(!erro.contains("sss"), "a recusa carregou a senha: {erro}");
+
+        let h_no_teto = cifrar_com(&no_teto, RAPIDO);
+        assert!(conferir(&no_teto, &h_no_teto));
+        // Um hash feito para a senha longa demais -- o `cifrar` nao recusa, e
+        // quem recusa e a porta; aqui ele serve para mostrar que nem a senha
+        // CERTA faz o `conferir` gastar uma iteracao.
+        let h_acima = cifrar_com(&acima, RAPIDO);
+        let antes = crate::hash::iteracoes_pagas_nesta_thread();
+        assert!(!conferir(&acima, &h_acima));
+        assert_eq!(crate::hash::iteracoes_pagas_nesta_thread(), antes);
+    }
+
+    /// **O teto conta BYTES, e nao caracteres**, na borda exata e com
+    /// caracteres de 2 e de 3 bytes (condicao C2 do parecer do SEC,
+    /// `docs/propostas/parecer-sec-520-521-2026-09-24.md`). O teste de cima e
+    /// todo ASCII, onde byte e caractere coincidem: trocar o `len()` do
+    /// `caber_no_teto` por `chars().count()` passava nele -- e deixaria entrar
+    /// 65.535 caracteres de 4 bytes, 262.140 B.
+    ///
+    /// Vermelho medido com essa troca reposta: «65536 B em 32768 caracteres
+    /// de 2 bytes cabia no teto» -- a primeira acima da borda passa.
+    #[test]
+    fn o_teto_conta_bytes_e_nao_caracteres() {
+        let casos = [
+            // (senha, bytes, cabe?)
+            (format!("{}a", "é".repeat(32_767)), 65_535, true),
+            ("é".repeat(32_768), 65_536, false),
+            ("€".repeat(21_845), 65_535, true),
+            (format!("{}a", "€".repeat(21_845)), 65_536, false),
+        ];
+        for (senha, bytes, cabe) in &casos {
+            assert_eq!(senha.len(), *bytes, "o caso foi montado errado");
+            let largura = senha.chars().next().unwrap().len_utf8();
+            let caracteres = senha.chars().count();
+            assert_eq!(
+                caber_no_teto(senha).is_ok(),
+                *cabe,
+                "{bytes} B em {caracteres} caracteres de {largura} bytes {} no teto",
+                if *cabe { "nao cabia" } else { "cabia" }
+            );
+        }
+        // E o `conferir` segue o mesmo teto: a acima, nem certa, e sem conta;
+        // a da borda confere.
+        let (acima, borda) = (&casos[1].0, &casos[2].0);
+        let h_acima = cifrar_com(acima, RAPIDO);
+        let antes = crate::hash::iteracoes_pagas_nesta_thread();
+        assert!(!conferir(acima, &h_acima));
+        assert_eq!(crate::hash::iteracoes_pagas_nesta_thread(), antes);
+        assert!(conferir(borda, &cifrar_com(borda, RAPIDO)));
+    }
+
+    /// **A fachada do 520 e um usuario novo de mentira**: o mesmo formato, o
+    /// mesmo custo de quem nasce pelo `cifrar`, e estavel entre chamadas.
+    #[test]
+    fn a_fachada_tem_o_custo_de_um_usuario_novo() {
+        let fachada = hash_de_fachada();
+        assert!(e_hash(fachada));
+        let (sal, it) = sal_e_iteracoes(fachada).unwrap();
+        assert_eq!(
+            it, ITERACOES_PADRAO,
+            "a fachada custa menos que um usuario de verdade"
+        );
+        assert_eq!(sal.len(), SAL_LEN);
+        assert_eq!(derivado_do_hash(fachada).unwrap().len(), HASH_LEN);
+        assert!(std::ptr::eq(fachada, hash_de_fachada()));
     }
 }

@@ -6438,15 +6438,18 @@ pub fn limpar() {
             "do que ficou VERDE com o defeito de pe."
         ),
         "arquivo": "crates/phxsql-core/src/hash.rs",
+        # O `u = chave.calcular(&u)` e do pedido 521 (a chave preparada uma vez
+        # so); antes era `hmac_sha256(senha, &u)`. O defeito desta entrada e o
+        # mesmo -- o XOR --, e so o trecho acompanhou a linha que mudou.
         "trecho": """        for _ in 1..iteracoes {
-            u = hmac_sha256(senha, &u);
+            u = chave.calcular(&u);
             for (a, b) in acumulado.iter_mut().zip(u.iter()) {
                 *a ^= b;
             }
         }
 """,
         "troca": """        for _ in 1..iteracoes {
-            u = hmac_sha256(senha, &u);
+            u = chave.calcular(&u);
             // DEFEITO REPOSTO: o XOR acumulado vira ATRIBUICAO. So a ultima
             // volta sobra, e o PBKDF2 vira "HMAC aplicado N vezes" -- que
             // custa o mesmo, confere senha do mesmo jeito e nao e PBKDF2.
@@ -13095,6 +13098,230 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         ],
         "seguem": [
             "sem_cadastro_nada_muda",
+        ],
+    },
+    # -----------------------------------------------------------------------
+    # PEDIDOS 520 E 521: o relogio do login e a senha longa
+    #
+    # Achados do SEC na terceira revisao do 497 (`docs/propostas/
+    # parecer-sec-497-3a-2026-09-24.md`, «Fora do 497»). Nenhum destes
+    # defeitos muda o que o login RESPONDE -- so quanto ele demora --, e por
+    # isso nenhum teste de comportamento os pega: as provas contam por dentro
+    # (iteracoes de PBKDF2, provas conferidas, compressoes de SHA-256), e o
+    # `seguem` de cada entrada e o inventario do que fica verde com o defeito
+    # de pe. O irmao do `desafio` (+9 us para quem nao existe) nao tem guarda
+    # aqui: foi medido pelo soquete, e nao ha contador que o separe sem um
+    # observador novo no caminho quente.
+    # -----------------------------------------------------------------------
+    {
+        "id": "pbkdf2-normaliza-a-chave-a-cada-iteracao",
+        "titulo": "PBKDF2 resume a senha longa a cada iteração: o custo do login cresce com o tamanho dela",
+        "porque": (
+            "pedido 521: o `hmac_sha256` normalizava a chave a cada chamada, e "
+            "o PBKDF2 o chamava 210.000 vezes com a mesma senha. Medido em "
+            "debug pela porta de dados: 8 B 2.643 ms, 1 KiB 12.271 ms; o SEC "
+            "viu um `CREATE USER` de 1 MiB passar de 300 s. A saida e a mesma "
+            "com e sem o defeito -- os vetores (RFC, Wycheproof, a versao "
+            "ingenua bit a bit) ficam TODOS verdes, e e por isso que a prova "
+            "conta compressoes em vez de conferir bytes."
+        ),
+        "arquivo": "crates/phxsql-core/src/hash.rs",
+        "trecho": """            u = chave.calcular(&u);
+""",
+        "troca": """            // DEFEITO REPOSTO (521): a chave volta a ser preparada a cada volta.
+            u = hmac_sha256(senha, &u);
+""",
+        "pacote": "phxsql-core",
+        "alvo": ["--lib"],
+        "caem": [
+            "hash::tests::pbkdf2_prepara_a_chave_uma_vez_so",
+        ],
+        "seguem": [
+            "hash::tests::pbkdf2_vetores_conhecidos",
+            "hash::tests::pbkdf2_senha_maior_que_o_bloco_vetores_wycheproof",
+            "hash::tests::pbkdf2_confere_bit_a_bit_com_a_versao_ingenua",
+            "hash::tests::pbkdf2_saida_longa_atravessa_varios_blocos",
+            "hash::tests::o_contador_de_iteracoes_soma_o_que_foi_pago",
+        ],
+    },
+    {
+        "id": "conferir-sem-o-teto-da-senha",
+        "titulo": "o `conferir` roda o PBKDF2 com senha acima do teto",
+        "porque": (
+            "pedido 521, a defesa de fundo: quem chama `senha::conferir` e "
+            "esquece o teto nao pode reabrir a senha gigante por ali. A prova "
+            "usa a senha CERTA acima do teto -- e so ela acusa, porque com a "
+            "senha errada o `false` sai igual com e sem a guarda."
+        ),
+        "arquivo": "crates/phxsql-core/src/senha.rs",
+        "trecho": """    if caber_no_teto(senha).is_err() {
+        return false;
+    }
+""",
+        "troca": """    // DEFEITO REPOSTO (521): o conferir nao olha o teto.
+""",
+        "pacote": "phxsql-core",
+        "alvo": ["--lib"],
+        "caem": [
+            "senha::tests::a_senha_acima_do_teto_nao_chega_ao_pbkdf2",
+        ],
+        "seguem": [
+            "senha::tests::cifra_e_confere",
+            "senha::tests::hash_estragado_nunca_deixa_entrar",
+        ],
+    },
+    {
+        "id": "fachada-do-login-com-mil-iteracoes",
+        "titulo": "o login de quem não existe paga 2.000 iterações contra as 210.000 de quem existe",
+        "porque": (
+            "pedido 520: a fachada era `cifrar_com(\"nao-existe\", 1_000)` -- "
+            "1.000 para fabricar o hash e 1.000 para conferir. Medido em debug "
+            "pela porta de dados: senha errada de quem existe 2.671 ms, de "
+            "quem nao existe 25,7 ms, e o comentario logo acima afirmava que os "
+            "dois «nao se distinguem pelo relogio». A resposta e a mesma nos "
+            "dois casos, entao so o contador de iteracoes acusa."
+        ),
+        "arquivo": "crates/phxsql-server/src/usuarios.rs",
+        "trecho": """        let guardado = achado.map_or(senha::hash_de_fachada(), |u| u.senha_hash.as_str());
+""",
+        "troca": """        // DEFEITO REPOSTO (520): quem nao existe paga uma fachada de 1.000
+        // iteracoes, fabricada a cada login.
+        let fachada;
+        let guardado = match achado {
+            Some(u) => u.senha_hash.as_str(),
+            None => {
+                fachada = senha::cifrar_com("nao-existe", 1_000);
+                fachada.as_str()
+            }
+        };
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "usuarios::tests::quem_nao_existe_paga_o_pbkdf2_de_um_usuario_novo",
+        ],
+        "seguem": [
+            "usuarios::tests::autenticacao",
+            "usuarios::tests::quem_existe_paga_o_pbkdf2_do_proprio_hash",
+            "usuarios::tests::quem_esta_inativo_paga_o_pbkdf2_do_proprio_hash",
+        ],
+    },
+    {
+        "id": "inativo-pula-o-pbkdf2",
+        "titulo": "o login de quem está inativo responde sem PBKDF2 nenhum",
+        "porque": (
+            "o irmao do 520 que o SEC nao listou: o `self.ativo && "
+            "senha::conferir(...)` curto-circuitava a conta. Medido em debug: "
+            "inativo 0,2 ms contra 2.671 ms da senha errada. Consertar so a "
+            "fachada deixaria o inativo como o UNICO caminho rapido -- o "
+            "relogio passaria a dizer «existe, e esta desligado»."
+        ),
+        "arquivo": "crates/phxsql-server/src/usuarios.rs",
+        "trecho": """        let confere = senha::conferir(oferecida, guardado);
+""",
+        "troca": """        // DEFEITO REPOSTO (520, irmao): o inativo sai antes da conta.
+        let confere = achado.map_or(true, |u| u.ativo) && senha::conferir(oferecida, guardado);
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "usuarios::tests::quem_esta_inativo_paga_o_pbkdf2_do_proprio_hash",
+        ],
+        "seguem": [
+            "usuarios::tests::usuario_inativo_nao_entra_nem_faz_nada",
+            "usuarios::tests::quem_existe_paga_o_pbkdf2_do_proprio_hash",
+            "usuarios::tests::autenticacao",
+        ],
+    },
+    {
+        "id": "prova-de-quem-nao-existe-sai-sem-conferir",
+        "titulo": "o login por desafio-resposta de quem não existe, ou está inativo, sai sem conferir a prova",
+        "porque": (
+            "o irmao do 520 no ramo da prova: sem PBKDF2 ali, mas a mesma "
+            "pergunta respondida pelo relogio. Medido em debug pela porta de "
+            "dados, intercalado, n = 1.000 em duas rodadas: prova errada de "
+            "quem existe 162-166 us, de quem nao existe e do inativo 24-25 us "
+            "a menos. O teste de channel binding segue verde com o defeito: "
+            "ele so pergunta a quem existe."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """            let confere = phxsql_core::desafio::conferir_prova(
+                &dk,
+                &nonce,
+                nonce_cliente,
+                &login,
+                canal_ref,
+                prova,
+            );
+            achado.filter(|u| confere && u.ativo).cloned()
+""",
+        "troca": """            // DEFEITO REPOSTO (520, irmao da prova): so quem existe e esta
+            // ativo confere a prova.
+            let confere = achado.is_some_and(|u| u.ativo)
+                && phxsql_core::desafio::conferir_prova(
+                    &dk,
+                    &nonce,
+                    nonce_cliente,
+                    &login,
+                    canal_ref,
+                    prova,
+                );
+            achado.filter(|u| confere && u.ativo).cloned()
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_cadastro_de_usuarios::a_prova_de_quem_nao_existe_ou_esta_inativo_confere_como_a_de_quem_existe",
+        ],
+        "seguem": [
+            "servidor::testes_cadastro_de_usuarios::login_amarrado_ao_canal_confere_contra_a_transcricao_da_sessao",
+        ],
+    },
+    {
+        "id": "login-sem-o-teto-da-senha",
+        "titulo": "o login recebe senha acima do teto e recusa como «credencial inválida»",
+        "porque": (
+            "pedido 521, a porta do login: a porta web aceita 4 MiB de corpo "
+            "antes da credencial. Sem a linha, a conta nao roda (o `conferir` "
+            "tem o teto dele), mas a recusa sai como credencial invalida e "
+            "quem mandou nao sabe o que corrigir. Medido pela porta web depois "
+            "do conserto: 1 MB recusado em 279 ms, 70 KB em 20 ms."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """            phxsql_core::senha::caber_no_teto(&clara)?;
+""",
+        "troca": """            // DEFEITO REPOSTO (521): o login nao confere o teto.
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_cadastro_de_usuarios::a_senha_acima_do_teto_e_recusada_no_login_antes_do_pbkdf2",
+        ],
+        "seguem": [
+            "servidor::testes_cadastro_de_usuarios::cria_grava_no_arquivo_e_o_login_novo_ja_entra",
+        ],
+    },
+    {
+        "id": "criar-usuario-sem-o-teto-da-senha",
+        "titulo": "`usuario_criar`, `usuario_alterar` e `CREATE USER` derivam o hash de senha acima do teto",
+        "porque": (
+            "pedido 521, as portas que criam e trocam senha: o SEC mediu um "
+            "`CREATE USER` de 1 MiB passar de 300 s sem resposta e sem linha no "
+            "log. As tres portas passam pelo `objeto_do_usuario`, e e la que o "
+            "teto mora -- uma linha so para as tres."
+        ),
+        "arquivo": "crates/phxsql-server/src/usuarios.rs",
+        "trecho": """            senha::caber_no_teto(clara)?;
+""",
+        "troca": """            // DEFEITO REPOSTO (521): a senha nova nao confere o teto.
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_cadastro_de_usuarios::criar_e_trocar_senha_acima_do_teto_recusa_e_nao_grava",
+        ],
+        "seguem": [
+            "servidor::testes_cadastro_de_usuarios::os_tres_comandos_sql_valem_e_o_texto_de_volta_nao_traz_a_senha",
         ],
     },
 ]
