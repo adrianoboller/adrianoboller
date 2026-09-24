@@ -19,7 +19,7 @@ use std::time::{Duration, Instant};
 
 use phxsql_core::json::Json;
 use phxsql_core::paginacao::Paginacao;
-use phxsql_server::config::Config;
+use phxsql_server::config::{Config, Segredo};
 use phxsql_server::servidor::Servidor;
 use phxsql_store::cofre;
 use phxsql_store::log::{LogFile, Operacao};
@@ -133,10 +133,63 @@ fn a_resposta_do_protocolo_nao_leva_a_senha() {
     )
     .unwrap();
     let c = Config::de_json(&j).unwrap();
+    // A senha esta mesmo la -- senao a prova passaria por nao haver segredo
+    // nenhum para vazar.
+    assert_eq!(c.cifra.senha().unwrap(), "segredo do cofre");
     let texto = c.para_json().escrever();
     assert!(!texto.contains("segredo do cofre"), "{texto}");
     // E nem no `Debug`, que e por onde um diagnostico apressado vazaria.
-    assert!(!format!("{:?}", c.cifra).contains("segredo do cofre"));
+    // CONTA, e nao so pergunta: o vermelho diz quantas vezes a senha saiu e
+    // mostra onde, que e o dano -- e nao so que algo deu errado.
+    let depurado = format!("{:?}", c.cifra);
+    let vazou = depurado.matches("segredo do cofre").count();
+    assert_eq!(
+        vazou, 0,
+        "a senha da cifra saiu {vazou} vez(es) no Debug: {depurado}"
+    );
+}
+
+/// O `Debug` do proprio [`Segredo`] nunca mostra o valor.
+///
+/// # Por que um teste do TIPO, ao lado do da `Cifra`
+///
+/// Desde o pedido 372 a senha da cifra e um `Segredo`, e a protecao do
+/// `Debug` mora em DOIS lugares: no rotulo que o `impl Debug for Cifra`
+/// escreve a mao, e no `impl Debug for Segredo`. O teste de cima so alcanca o
+/// primeiro -- o `Debug` da `Cifra` nao chama o do `Segredo`, e nenhum dos
+/// cinco donos o chama hoje. Medido em 24/09/2026, repondo o `Debug` do tipo
+/// imprimindo o valor: nenhum teste do `--lib` nem deste arquivo caia.
+///
+/// E e ELE que torna inocente o `.field("senha", &self.senha)`: com o tipo
+/// intacto aquela troca imprime `(oculto)`, e com o tipo derivado ela imprime
+/// `Segredo { valor: "..." }`. Camada que ninguem prova e camada que alguem
+/// «simplifica» -- o comentario do proprio `impl` diz que nenhum dono o chama.
+///
+/// Os dois estados que CARREGAM valor em memoria: o do arquivo e o que veio
+/// selado e abriu. As duas formas (`{:?}` e `{:#?}`) pelo mesmo motivo das
+/// irmas do `config.rs`: `impl` escrito a mao pode tratar uma e esquecer a
+/// outra.
+#[test]
+fn o_debug_do_segredo_nunca_mostra_o_valor() {
+    const VALOR: &str = "valor-cru-do-segredo";
+    let j = Json::analisar(&format!(r#"{{"senha":"{VALOR}"}}"#)).unwrap();
+    let (do_arquivo, _) = Segredo::ler(&j, "senha", "o teste do Debug");
+    let aberto = Segredo::aberto_do_envelope(VALOR.to_string());
+    for (estado, s) in [("do arquivo", &do_arquivo), ("aberto do envelope", &aberto)] {
+        // O valor esta mesmo dentro -- senao a prova passaria por vazio.
+        assert_eq!(
+            s.valor().unwrap(),
+            VALOR,
+            "o segredo {estado} nao guardou o valor"
+        );
+        for depurado in [format!("{s:?}"), format!("{s:#?}")] {
+            let vazou = depurado.matches(VALOR).count();
+            assert_eq!(
+                vazou, 0,
+                "o segredo {estado} saiu {vazou} vez(es) no Debug: {depurado}"
+            );
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

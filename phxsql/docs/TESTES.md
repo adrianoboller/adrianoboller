@@ -871,7 +871,7 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `comando-invalido-vira-texto-cru` | o SQL que o léxico recusa volta inteiro para o log, com a senha dentro | 1 | ✅ provada |
 | `config-json-escreve-aberto-e-herda` | o `config.json` volta a nascer na permissão do `umask` e a herdar o `0644` do original | 1 | ✅ provada |
 | `dado-pessoal-no-grito-do-conflito` | o grito do conflito de unicidade publica a coluna marcada como dado pessoal | 1 | ✅ provada |
-| `debug-da-cifra-mostra-a-senha` | o `Debug` da cifra imprime a senha: um `dbg!` apressado a joga no log | 1 | ❌ **não pegou** |
+| `debug-da-cifra-mostra-a-senha` | o `Debug` da cifra imprime a senha: um `dbg!` apressado a joga no log | 1 | ✅ provada |
 | `derivado-sem-portao` | o portão some do irmão `executar_derivado`: o SQL inteiro vira a porta dos fundos | 8 | ✅ provada |
 | `diario-das-diretivas-guarda-o-segredo-anterior` | o diário das diretivas grava o valor ANTERIOR do campo sigiloso em claro | 1 | ✅ provada |
 | `diferencas-sem-portao` | `diferencas` sem conferência própria: a tabela negada entra em `a` ou em `b` | 1 | ✅ provada |
@@ -902,7 +902,7 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `so-o-disco-vem-da-porta-e-nao-de-desligar-depois` | o empilhar volta a abrir pela porta de sempre e desligar a sobreposicao na linha seguinte | 1 | ✅ provada |
 | `teto-de-64-bits-satura` | número cru fora da faixa do `Int8` é GRAVADO saturado, e `1e21`, `1e30` e `1e300` viram todos o mesmo número | 2 | ✅ provada |
 | `teto-do-fio-sem-a-constante` | o `Canal::ler` de producao troca `TETO_DO_REGISTRO` por um teto quase infinito | 1 | ✅ provada |
-| `teto-do-fio-sem-a-constante-no-soquete` | a mesma troca da constante por um teto quase infinito, vista pela rede | 2 | ❌ **não pegou** |
+| `teto-do-fio-sem-a-constante-no-soquete` | a mesma troca da constante por um teto quase infinito, vista pela rede | 1 | ✅ provada |
 | `token-do-rest-entra-pela-tela` | o token da porta REST passa a se gravar pela tela de configuração | 1 | ✅ provada |
 | `token-remoto-fora-da-lista-de-segredos` | o `token_remoto` sai da lista de segredos: o token do OUTRO servidor vai em claro para o `perfil.txt` e para a op `profiler` | 4 | ✅ provada |
 | `trilha-sem-o-nome-de-segredo` | a trilha LGPD deixa de olhar o NOME da coluna e só analisa o valor | 1 | ✅ provada |
@@ -912,8 +912,10 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `varredura-sem-o-elo` | a varredura barata do diretorio perde a tabela alcancada por elo | 1 | ✅ provada |
 | `debug-da-ligacao-mostra-a-senha` | o `Debug` da ligação de DbLink imprime a senha e o token do outro banco | 1 | ✅ provada |
 | `ffi-punho-morto-lido-antes-de-conferir` | a fronteira volta a ler a etiqueta de DENTRO do punho antes de saber se ele ainda existe | 1 | ✅ provada |
+| `debug-do-segredo-mostra-o-valor` | o `Debug` do tipo `Segredo` imprime o valor: todo dono que o chamar vaza | 1 | ✅ provada |
+| `teto-da-linha-sem-a-constante-no-soquete` | o `teto_da_linha` do servidor troca `TETO_DO_REGISTRO` por um teto quase infinito, visto pela rede | 1 | ✅ provada |
 
-**271 guardas: 1 aposentada, 2 não pegaram, 264 provadas, 4 redundantes** — 6376 s de mutação, medido em 2026-09-16 15:25.
+**273 guardas: 1 aposentada, 268 provadas, 4 redundantes** — 6390 s de mutação, medido em 2026-09-16 15:25.
 
 As guardas que esta corrida ainda cita, hoje aposentadas:
 
@@ -927,8 +929,6 @@ As notas que a rodada deixou:
 - `ffi-panico-atravessa` — o binario abortou, que e como esta guarda pega
 - `rest-fecha-sem-escoar` — confirmado: nenhum teste de unidade sente isto, e nao poderia -- o RST e do sistema operacional, e so aparece com um soquete de verdade. Quem pega e o passo 13 de `bancada/rest/provar.py`, e esta entrada existe para dizer, com o numero da rodada, que a cobertura mora la e nao aqui
 - `recuperar-sem-reindexar` — confirmado: nenhum teste de unidade pega este defeito. O indice so fica para tras quando o PROCESSO morre no meio da passada, e isso so acontece de verdade em `bancada/transacoes/provar.py` -- que e por isso que a prova por soquete existe.
-- `debug-da-cifra-mostra-a-senha` — PASSOU COM O DEFEITO REPOSTO: a_resposta_do_protocolo_nao_leva_a_senha
-- `teto-do-fio-sem-a-constante-no-soquete` — PASSOU COM O DEFEITO REPOSTO: o_pedido_acima_do_teto_recebe_a_recusa_e_entra_no_log_com_o_tamanho
 <!-- guardas:fim -->
 
 ### As duas metades, e a terceira que ninguém pede

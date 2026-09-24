@@ -1856,12 +1856,10 @@
     {
       "id": "debug-da-cifra-mostra-a-senha",
       "titulo": "o `Debug` da cifra imprime a senha: um `dbg!` apressado a joga no log",
-      "veredito": "NAO PEGOU",
-      "segundos": 5.04,
-      "notas": [
-        "PASSOU COM O DEFEITO REPOSTO: a_resposta_do_protocolo_nao_leva_a_senha"
-      ],
-      "quando": "2026-09-24 04:34"
+      "veredito": "PROVADA",
+      "segundos": 7.63,
+      "notas": [],
+      "quando": "2026-09-24 04:58"
     },
     {
       "id": "derivado-sem-portao",
@@ -2106,12 +2104,10 @@
     {
       "id": "teto-do-fio-sem-a-constante-no-soquete",
       "titulo": "a mesma troca da constante por um teto quase infinito, vista pela rede",
-      "veredito": "NAO PEGOU",
-      "segundos": 4.3,
-      "notas": [
-        "PASSOU COM O DEFEITO REPOSTO: o_pedido_acima_do_teto_recebe_a_recusa_e_entra_no_log_com_o_tamanho"
-      ],
-      "quando": "2026-09-24 04:34"
+      "veredito": "PROVADA",
+      "segundos": 4.11,
+      "notas": [],
+      "quando": "2026-09-24 04:58"
     },
     {
       "id": "token-do-rest-entra-pela-tela",
@@ -2184,6 +2180,22 @@
       "segundos": 1.44,
       "notas": [],
       "quando": "2026-09-24 04:37"
+    },
+    {
+      "id": "debug-do-segredo-mostra-o-valor",
+      "titulo": "o `Debug` do tipo `Segredo` imprime o valor: todo dono que o chamar vaza",
+      "veredito": "PROVADA",
+      "segundos": 4.94,
+      "notas": [],
+      "quando": "2026-09-24 04:58"
+    },
+    {
+      "id": "teto-da-linha-sem-a-constante-no-soquete",
+      "titulo": "o `teto_da_linha` do servidor troca `TETO_DO_REGISTRO` por um teto quase infinito, visto pela rede",
+      "veredito": "PROVADA",
+      "segundos": 6.58,
+      "notas": [],
+      "quando": "2026-09-24 04:58"
     }
   ]
 }

@@ -1845,6 +1845,20 @@ GUARDAS = [
             "de `docs/REPLICACAO.md` §18) e o laco de conexao do servidor. Entra "
             "SEPARADA da `fio-sem-teto-de-registro`, e com outro defeito reposto: "
             "ver o aviso naquela entrada."
+            "\n\nCORRIGIDA em 24/09/2026 (papel F): a metade do SERVIDOR "
+            "envelheceu com os pedidos 434/442. O laco da porta de dados deixou "
+            "de chamar `Canal::ler` -- le por `ler_decidindo(TETO_DO_APERTO, "
+            "...)`, e a constante chega a ele pelo `teto_da_linha`. Com esta "
+            "troca a prova do servidor ficava VERDE (NAO PEGOU, 1/2, na "
+            "`3dc0b2a` e na arvore de hoje), e ficava verde afirmando `teto "
+            "134217728` na resposta e no `acessos.log`. A hipotese «outro teto "
+            "segurou antes» morreu medida: se fosse o `TETO_DO_APERTO`, a prova "
+            "cairia pelo numero (65536). Nenhum teto segurou antes; a constante "
+            "e que nao passa mais por aqui. A prova do servidor foi para o "
+            "`seguem` -- verde, ela mostra que este defeito e local ao "
+            "`Canal::ler`, que a replica ainda usa -- e ganhou entrada propria "
+            "com a troca onde o servidor le: "
+            "`teto-da-linha-sem-a-constante-no-soquete`."
         ),
         "arquivo": "crates/phxsql-core/src/fio.rs",
         "trecho": """    pub fn ler<L: BufRead>(&mut self, leitor: &mut L) -> Result<Recebido> {
@@ -1861,11 +1875,14 @@ GUARDAS = [
         "alvo": ["--test", "teto-da-resposta"],
         "caem": [
             "a_resposta_acima_do_teto_e_recusada_por_limite_e_a_rodada_seguinte_abre_outra",
-            "o_pedido_acima_do_teto_recebe_a_recusa_e_entra_no_log_com_o_tamanho",
         ],
         "seguem": [
             "a_resposta_grande_que_cabe_no_teto_atravessa_como_sempre",
             "o_pedido_de_sempre_continua_sendo_atendido",
+            # Desde 434/442 o servidor nao le pelo `Canal::ler` (ver o
+            # `porque`): esta prova verde e a medida de que o defeito daqui nao
+            # o alcanca. Quem a derruba e a `teto-da-linha-sem-a-constante-no-soquete`.
+            "o_pedido_acima_do_teto_recebe_a_recusa_e_entra_no_log_com_o_tamanho",
         ],
         # Medido em 17/09/2026: 0,55 s de execucao dos quatro testes com o
         # defeito reposto (17,25 s reais, com a compilacao do zero), contra os
@@ -1876,6 +1893,74 @@ GUARDAS = [
         # uma maquina carregada pode bater nesse teto mais de uma vez antes de
         # qualquer assercao rodar. 120 s da ~7x de folga sobre o medido sem
         # esconder uma pendura de verdade.
+        "prazo": 120,
+    },
+    {
+        "id": "teto-da-linha-sem-a-constante-no-soquete",
+        "titulo": "o `teto_da_linha` do servidor troca `TETO_DO_REGISTRO` por um teto quase infinito, visto pela rede",
+        "porque": (
+            "pedido 303, a metade do SERVIDOR da "
+            "`teto-do-fio-sem-a-constante-no-soquete`, separada em 24/09/2026 "
+            "quando aquela envelheceu: desde os pedidos 434/442 o laco da porta "
+            "de dados nao chama `Canal::ler` -- le por `ler_decidindo`, e o teto "
+            "da linha que passa do pequeno vem do `teto_da_linha`. E ali que a "
+            "constante entra no servidor, e e ali que o defeito tem de ser "
+            "reposto para a prova de soquete do servidor ter o que pegar. "
+            "Medido na copia: repondo la, o servidor le a linha inteira "
+            "(135.266.305 bytes) como pedido comum e responde "
+            "`ESQUEMA_INVALIDO` -- «JSON invalido na posicao 0» -- no lugar do "
+            "`LIMITE_EXCEDIDO`; a prova cai em 0,33 s. O nome que veio no lugar "
+            "E o dano: so chega ao analisador de JSON a linha que ja foi lida "
+            "inteira para a memoria. A replica fica no `seguem`: ela le pelo "
+            "`Canal::ler`, e verde aqui prova que o defeito e local ao servidor. "
+            "A troca tira a constante dos DOIS escapes do teto pequeno (sessao "
+            "identificada e servidor sem cadastro), porque e a mesma constante "
+            "dita duas vezes na mesma funcao; o servidor da prova e o sem "
+            "cadastro."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """    fn teto_da_linha(&self, sessao: &Sessao, cifrado: bool) -> u64 {
+        if sessao.usuario.is_some() {
+            return TETO_DO_REGISTRO;
+        }
+        if self.config.cifra_fio.exigir && !cifrado {
+            return TETO_DO_APERTO;
+        }
+        if self.ainda_anonima(sessao) {
+            return TETO_DO_APERTO;
+        }
+        TETO_DO_REGISTRO
+    }
+""",
+        "troca": """    fn teto_da_linha(&self, sessao: &Sessao, cifrado: bool) -> u64 {
+        // DEFEITO REPOSTO: os dois escapes do teto pequeno trocam a constante
+        // por um teto praticamente infinito -- quem ja se identificou, e todo
+        // mundo num servidor sem cadastro, manda a linha do tamanho que quiser.
+        if sessao.usuario.is_some() {
+            return u64::MAX - 1;
+        }
+        if self.config.cifra_fio.exigir && !cifrado {
+            return TETO_DO_APERTO;
+        }
+        if self.ainda_anonima(sessao) {
+            return TETO_DO_APERTO;
+        }
+        u64::MAX - 1
+    }
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "teto-da-resposta"],
+        "caem": [
+            "o_pedido_acima_do_teto_recebe_a_recusa_e_entra_no_log_com_o_tamanho",
+        ],
+        "seguem": [
+            "a_resposta_acima_do_teto_e_recusada_por_limite_e_a_rodada_seguinte_abre_outra",
+            "a_resposta_grande_que_cabe_no_teto_atravessa_como_sempre",
+            "o_pedido_de_sempre_continua_sendo_atendido",
+        ],
+        # O mesmo prazo da irma, pelo mesmo motivo: soquete tem variancia que
+        # unitario nao tem. Medido em 24/09/2026: 4,8 s reais com o defeito
+        # reposto e a compilacao incremental.
         "prazo": 120,
     },
     # 24b. A cifra do CLUSTER: o pulso da eleicao saindo em claro
@@ -6816,6 +6901,20 @@ pub fn limpar() {
             "correu o binario inteiro e nenhum veredito mudou. Quem cai e UM teste "
             "de integracao, dos 5 do `cifra-pelo-config`. Mil e cem provas e um "
             "ponto cego."
+            "\n\nREAPONTADA em 24/09/2026 (papel F): a troca de 16/09 -- "
+            "`.field(\"senha\", &self.senha)` -- ENVELHECEU com o pedido 372, "
+            "que fez da senha um `Segredo` com `Debug` proprio que redige. "
+            "Medido na copia: com aquela troca o `Debug` da `Cifra` saiu "
+            "`senha: (oculto)` -- o rotulo do TIPO, e nao o `(oculta)` deste "
+            "`impl` --, com 0 ocorrencias da senha; o provador deu NAO PEGOU, "
+            "0/1, na `3dc0b2a` e de novo na arvore de hoje. A protecao mudou de "
+            "lugar e a guarda ficou mirando o antigo. O vazamento que sobra "
+            "neste `impl` e o que quem depura escreve HOJE para ver a senha, "
+            "porque o `&self.senha` so mostra o rotulo: `self.senha.valor()` "
+            "-- 1 ocorrencia no `Debug`, e o teste cai contando. RAIO da troca "
+            "nova, medido no mesmo dia: 0 dos 1.391 do `--lib`. A outra camada, "
+            "o `Debug` do tipo, ganhou entrada propria: "
+            "`debug-do-segredo-mostra-o-valor`."
         ),
         "arquivo": "crates/phxsql-server/src/config.rs",
         "trecho": """            .field("ligada", &self.ligada)
@@ -6823,12 +6922,73 @@ pub fn limpar() {
 """,
         "troca": """            .field("ligada", &self.ligada)
             // DEFEITO REPOSTO: a senha aparece no `Debug`. Quem depurou «por
-            // que o cofre nao abre» trocou esta linha e nao desfez.
-            .field("senha", &self.senha)
+            // que o cofre nao abre» trocou esta linha e nao desfez -- e pediu
+            // o VALOR, porque o `&self.senha` so mostrava `(oculto)`.
+            .field("senha", &self.senha.valor().unwrap_or(""))
 """,
         "pacote": "phxsql-server",
         "alvo": ["--test", "cifra-pelo-config"],
         "caem": [
+            "a_resposta_do_protocolo_nao_leva_a_senha",
+        ],
+        # O `Debug` do tipo continua de pe: esta troca contorna o rotulo do
+        # `Segredo` pelo `valor()`, e nao o quebra. E o que separa esta entrada
+        # da irma de baixo.
+        "seguem": [
+            "o_debug_do_segredo_nunca_mostra_o_valor",
+        ],
+    },
+    {
+        "id": "debug-do-segredo-mostra-o-valor",
+        "titulo": "o `Debug` do tipo `Segredo` imprime o valor: todo dono que o chamar vaza",
+        "porque": (
+            "petrea do CLAUDE.md: «senha nunca em texto puro. ... nem em log». "
+            "Irma da `debug-da-cifra-mostra-a-senha`, nascida em 24/09/2026 "
+            "quando aquela envelheceu: desde o pedido 372 os segredos do "
+            "`config.rs` e do DbLink sao `Segredo`, e a protecao do `Debug` "
+            "mora em DUAS camadas -- o rotulo que cada dono escreve a mao e o "
+            "`impl Debug for Segredo`. E a segunda que torna inocente o "
+            "`.field(\"senha\", &self.senha)`: medido na copia, com o tipo "
+            "intacto aquela linha imprime `(oculto)`; com o tipo imprimindo o "
+            "valor, `Segredo { valor: \"segredo do cofre\" }` -- 1 ocorrencia. "
+            "O defeito plausivel e trocar o `impl` a mao pelo derivado: o "
+            "proprio comentario dele diz que «nenhum dono o chama hoje», e o que "
+            "ninguem chama parece enfeite."
+            "\n\nRAIO MEDIDO (24/09/2026): com o `Debug` do tipo imprimindo o "
+            "valor, **0 dos 1.391** testes do `--lib` e 0 dos 5 do "
+            "`cifra-pelo-config` caiam -- camada que nenhum teste alcancava. O "
+            "teste que cai nasceu nesta rodada, "
+            "`o_debug_do_segredo_nunca_mostra_o_valor`, e CONTA as ocorrencias "
+            "do valor no `{:?}` e no `{:#?}` dos dois estados que o carregam em "
+            "memoria (do arquivo e aberto do envelope). A regua "
+            "`debug-com-segredo.py` tambem nao ve este caminho nem o da irma: "
+            "medida na copia com cada troca, ficou no mesmo numero -- o campo "
+            "do tipo se chama `valor`, e `Segredo` nao e tipo portador para ela."
+        ),
+        "arquivo": "crates/phxsql-server/src/config.rs",
+        "trecho": """impl std::fmt::Debug for Segredo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.rotulo("(vazio)", "(oculto)", "(do ambiente)"))
+    }
+}
+""",
+        "troca": """impl std::fmt::Debug for Segredo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // DEFEITO REPOSTO: o `Debug` do tipo imprime o valor, como o derivado
+        // faria -- «nenhum dono o chama hoje», entao pareceu enfeite.
+        f.debug_struct("Segredo").field("valor", &self.valor).finish()
+    }
+}
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "cifra-pelo-config"],
+        "caem": [
+            "o_debug_do_segredo_nunca_mostra_o_valor",
+        ],
+        # O rotulo escrito a mao na `Cifra` e camada INDEPENDENTE: com o tipo
+        # quebrado ele continua segurando. E o que prova que sao duas guardas,
+        # e nao a mesma contada duas vezes.
+        "seguem": [
             "a_resposta_do_protocolo_nao_leva_a_senha",
         ],
     },
