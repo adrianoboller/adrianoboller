@@ -579,13 +579,19 @@ convergência não revoga pétrea):
   enxerga o pai empilhado). Mas o caminho contrário — **filho antes do pai**,
   resolvido no commit — **não entra**, mesmo o PostgreSQL peso-4 tendo
   `DEFERRABLE`: não há trio (só o PG adia entre os maduros) e a pétrea proíbe.
-- **Impossível o filho ter a MESMA data do pai.** Decisão do dono, 11/09/2026:
-  nasce uma **coluna de data/hora de sistema por linha** (mudança de formato,
-  PSCH novo — entra cedo, é do DBA), e no commit o pai é carimbado com instante
-  **estritamente anterior** ao do filho. Commitar pai e filho juntos nunca lhes
-  dá o mesmo instante: o pai veio primeiro, e isso passa a ser provável no dado,
-  não só no diário. *Implementação pendente* — formato se decide com o dono
-  antes de gravar.
+- **O pai veio antes do filho — e isso é provável no dado, não só no diário.**
+  Decisão do dono, 11/09/2026, **refinada por ele em 17/09/2026** (pedido 289),
+  depois da régua dos motores: **duas colunas de sistema por linha**, 16 bytes.
+  O **`rowstamp`** é um contador por nó — a ordem de criação, que **nunca empata
+  e nunca recua** — e é ele que prova que o pai veio primeiro. O **`rowtime`** é
+  o relógio de parede, para leitura humana, e **pode empatar**: os três motores
+  maduros deixam o relógio empatar de propósito dentro da mesma unidade de
+  trabalho e põem a ordem num contador (`xmin` no PostgreSQL, `DB_TRX_ID` no
+  InnoDB). A frase original — «impossível o filho ter a mesma data do pai» —
+  vale para o `rowstamp`; o `rowtime` pode coincidir sem mentir. **Implementado**
+  (`docs/FORMATO.md`, `phxsql-core/src/schema.rs`), e medido em 23/09/2026: em
+  100 pares mãe/filha gravados num commit, o `rowtime` empatou em 98 e o
+  `rowstamp` ordenou os 100.
 
 **Lógica que passou pela nossa cabeça e saiu DIFERENTE não é cópia — e a prova
 de que passou é a divergência.** Ordem do dono, 04/09/2026: *«uma lógica uma vez
