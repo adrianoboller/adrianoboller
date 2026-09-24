@@ -254,6 +254,16 @@ os quatro dialetos é **uma** função, `parou_no_teto`, encostada na lista
 `OPS_QUE_DEVOLVEM_LINHAS`; operação nova cai no ramo `_` dela e conta como
 **cortada** até alguém dizer como ela avisa.
 
+**Pedido 438 — quem VÊ o `truncado`.** O campo atravessa sem crivo o envelope
+da op `sql` (`resposta_do_sql`), então qualquer SQL que rode pelo console
+(`ui/claude.js`) ou pelo driver ODBC já o recebia — até esta rodada, nenhum
+dos dois lia. Hoje os dois leem: o console mostra o aviso na mesma caixa
+`.aviso` (âmbar) das `notas`, pela fábrica de idiomas (`tela.ia_res_truncado`);
+o driver ODBC responde `SQL_SUCCESS_WITH_INFO`/`01000` em `SQLExecute`/
+`SQLExecDirect` — nunca `01004`, que é o SQLSTATE de truncamento de **valor**
+de coluna, não de conjunto de linhas (`docs/ODBC.md` §2,
+`docs/cognicao/cognicao_sqlstate-do-truncado-em-composicao_20260924_1308.md`).
+
 ## As operações
 
 | Operação | O que faz |

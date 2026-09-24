@@ -930,6 +930,11 @@ pub const FABRICA_TELA: &[TextoDeFabrica] = &[
     texto!("tela.ia_res_op", "operação `{op}` · {n} linha(s)", "opération `{op}` · {n} ligne(s)", "operation `{op}` · {n} row(s)", "operazione `{op}` · {n} riga/he", "Operation `{op}` · {n} Zeile(n)", "operación `{op}` · {n} fila(s)"),
     texto!("tela.ia_res_contagem", "contagem {n}", "comptage {n}", "count {n}", "conteggio {n}", "Anzahl {n}", "recuento {n}"),
     texto!("tela.ia_sem_linhas", "sem linhas", "aucune ligne", "no rows", "nessuna riga", "keine Zeilen", "sin filas"),
+    // O corte pelo teto do servidor (pedido 419/438): o `"truncado"` que a op
+    // `sql` herda do `consultar`/`unir` passa pelo `resposta_do_sql` sem
+    // crivo, e ate aqui nenhuma tela o lia -- quem via o resultado achava que
+    // tinha visto a tabela inteira.
+    texto!("tela.ia_res_truncado", "**Resultado cortado:** o teto de linhas do servidor (`recursos.max_linhas`) parou este sub-pedido antes do fim — pode haver mais dados do que os que vieram", "**Résultat tronqué :** le plafond de lignes du serveur (`recursos.max_linhas`) a arrêté cette sous-requête avant la fin — il peut y avoir plus de données que celles reçues", "**Result cut short:** the server's row ceiling (`recursos.max_linhas`) stopped this sub-request before the end — there may be more data than what came back", "**Risultato troncato:** il tetto di righe del server (`recursos.max_linhas`) ha fermato questa sotto-richiesta prima della fine — potrebbero esserci più dati di quelli arrivati", "**Ergebnis abgeschnitten:** die Zeilenobergrenze des Servers (`recursos.max_linhas`) hat diese Teilanfrage vor dem Ende gestoppt — es könnte mehr Daten geben, als zurückgekommen sind", "**Resultado cortado:** el techo de filas del servidor (`recursos.max_linhas`) detuvo esta subconsulta antes del final — puede haber más datos de los que llegaron"),
 
     // O que a API recusa, dito com o que fazer a seguir.
     texto!("tela.ia_e_disse", "A API disse: «{msg}»", "L'API a dit : « {msg} »", "The API said: «{msg}»", "L'API ha detto: «{msg}»", "Die API sagte: «{msg}»", "La API dijo: «{msg}»"),

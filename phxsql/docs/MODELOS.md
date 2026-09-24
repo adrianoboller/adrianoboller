@@ -1277,6 +1277,11 @@ QA, com julgamento de pergunta, e a redação do H.
 | 481 — primeira volta | medio | frente de codigo delimitada; a SEC bloqueou (root tratado como terceiro) |
 | 481 — correcao do bloqueio da SEC | forte | seguranca de arranque: regua refeita, prova pelo SO com o servico como usuario comum |
 | SEC — revisao do 481, duas voltas | forte | leitura adversaria de arranque e permissao; provou o ALTO pelo binario e confirmou o conserto por mutacao |
+| 438 — o `truncado` na tela e no ODBC | medio | tela + driver com contrato pronto; o integrador devolveu uma vez (servidor falso duplicado subia o `ISENTOS`, aviso enterrado na terceira linha) |
+| C — segunda revisao do 368 | forte | formato em disco e queda no meio: mediu a colisao `x`/`x_001` e o ativo de 0 byte que tranca a tabela |
+| SEC — modelo de ameaca do 495 | forte | leitura adversaria das portas de injecao; achou o erro cru no `acessos.log` (497) |
+| J — hipoteses do 495, e C — catalogo de catastrofes do 496 | forte | desenho de seguranca e previsao de falha de dado: arquitetura e risco |
+| 497 — erro cru no `acessos.log` | forte | redacao de dado pessoal: petrea do texto cru e busca dos irmaos |
 
 **A integração achou o que nenhuma frente via, de novo por território de
 arquivo não bastar em worktree compartilhado**: `cargo fmt --all` de uma

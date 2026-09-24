@@ -682,6 +682,16 @@ fn executar_sql(id: usize, sql: String) -> SqlReturn {
         match conversa {
             Ok((resposta, fichas)) => {
                 let sem_tipos = fichas.is_empty() && resposta.campo("contagem").is_none();
+                // O `"truncado"` da resposta (pedido 419/438): algum sub-pedido da
+                // composicao -- ou a propria consulta -- parou no teto de
+                // `recursos.max_linhas` do servidor, e quem so olha o `SQL_SUCCESS`
+                // acha que recebeu a tabela inteira. NAO e `01004`: aquele SQLSTATE
+                // ja tem dono neste driver (o valor de uma CELULA cortado pelo
+                // buffer curto, linha 462 e 1179) e o padrao ISO/PostgreSQL o define
+                // como `string_data_right_truncation` -- truncamento de VALOR, nao
+                // de LINHAS. Corte de resultado sem codigo mais especifico e o `01000`
+                // generico, a mesma familia do "esquema indisponivel" logo abaixo.
+                let cortado = resposta.booleano_ou("truncado", false);
                 let pronto = montar(&resposta, &fichas);
                 let guardou = registro::com(id, |p| {
                     if let Punho::Comando(c) = p {
@@ -734,16 +744,44 @@ fn executar_sql(id: usize, sql: String) -> SqlReturn {
                         return SQL_SUCCESS_WITH_INFO;
                     }
                     // Um CALL com OUT nao e "esquema indisponivel": o resultado
-                    // dele sao os OUT escritos, nao uma tabela sem tipos.
+                    // dele sao os OUT escritos, nao uma tabela sem tipos. Mas se o
+                    // proprio CALL tambem devolveu linhas cortadas, o aplicativo
+                    // ainda precisa saber -- os dois avisos nao se excluem.
+                    if cortado {
+                        anotar(
+                            id,
+                            "01000",
+                            "o resultado foi cortado pelo teto de linhas do servidor \
+                             (recursos.max_linhas); ha sub-pedido que nao veio inteiro",
+                        );
+                        return SQL_SUCCESS_WITH_INFO;
+                    }
                     return SQL_SUCCESS;
                 }
 
+                // Os dois avisos sao independentes e SOMAM diagnosticos -- a mesma
+                // forma que o SQLFetch ja usa para colunas amarradas: cada `anotar`
+                // vira um registro proprio, e SQL_SUCCESS_WITH_INFO sai se qualquer
+                // um disparou.
+                let mut houve_aviso = false;
                 if sem_tipos {
                     anotar(
                         id,
                         "01000",
                         "esquema indisponivel para esta consulta; colunas declaradas como texto",
                     );
+                    houve_aviso = true;
+                }
+                if cortado {
+                    anotar(
+                        id,
+                        "01000",
+                        "o resultado foi cortado pelo teto de linhas do servidor \
+                         (recursos.max_linhas); ha sub-pedido que nao veio inteiro",
+                    );
+                    houve_aviso = true;
+                }
+                if houve_aviso {
                     return SQL_SUCCESS_WITH_INFO;
                 }
                 SQL_SUCCESS
@@ -1871,6 +1909,25 @@ mod testes {
     // recebeu -- e e sobre esse texto, o que realmente saiu, que as
     // conferencias sao feitas.
     fn servidor_de_eco() -> (u16, std::sync::mpsc::Receiver<String>) {
+        // `contagem` na resposta poupa o pedido de `esquema` que o driver
+        // faria em seguida: o assunto deste servidor e o pedido de ida.
+        servidor_falso(|_linha| r#"{"ok":true,"resultado":{"contagem":1}}"#)
+    }
+
+    /// O servidor de mentira em processo, UM so -- quem quiser um dialeto
+    /// novo passa a FUNCAO que decide a resposta, em vez de copiar o
+    /// accept/read_line/writeln para um servidor irmao. A lei desta casa e
+    /// que funcao e comando nao se duplicam: o `servidor_com_esquema` do
+    /// pedido 438 nasceu como copia deste com so a resposta trocada, e o
+    /// `ISENTOS` do `conferidor_canal.rs` teria de crescer para cada copia
+    /// nova -- o sintoma era o teto subindo, a doenca era esta funcao
+    /// repetida. `responder` recebe a linha CRUA (o pedido) e devolve a
+    /// linha de resposta; sem estado capturado, todo teste vira uma `fn`
+    /// aninhada com `const` ao lado -- e uma `fn` sem captura e o que o
+    /// compilador aceita aqui, no tipo pedido.
+    fn servidor_falso(
+        responder: fn(&str) -> &'static str,
+    ) -> (u16, std::sync::mpsc::Receiver<String>) {
         use std::io::{BufRead, BufReader, Write};
         let escuta = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
         let porta = escuta.local_addr().unwrap().port();
@@ -1887,12 +1944,10 @@ mod testes {
                 if leitor.read_line(&mut linha).unwrap_or(0) == 0 {
                     return;
                 }
+                let r = responder(&linha);
                 if manda.send(linha).is_err() {
                     return;
                 }
-                // `contagem` na resposta poupa o pedido de `esquema` que o
-                // driver faria em seguida: o assunto aqui e o pedido de ida.
-                let r = r#"{"ok":true,"resultado":{"contagem":1}}"#;
                 if writeln!(escrita, "{r}").is_err() || escrita.flush().is_err() {
                     return;
                 }
@@ -2433,6 +2488,197 @@ mod testes {
             );
             assert_eq!(codigo, SQL_ERROR);
             assert_eq!(diag.unwrap().0, "22018");
+        }
+    }
+
+    // --- Pedido 438: o `truncado` da op `sql` vira aviso 01000 ---
+
+    /// A resposta de `esquema` que os dois testes do 438 usam -- a MESMA nos
+    /// dois, porque o assunto deles e o `sql`, nao o esquema. Ficar num `const`
+    /// so evita repetir o JSON dentro de cada `responder` aninhado.
+    const ESQUEMA_DO_438: &str = r#"{"ok":true,"resultado":{"colunas":[{"nome":"nome","tipo":"Str(40)","tamanho":40,"nullable":true}]}}"#;
+
+    /// Le o registro N de diagnostico do handle: `(SQLSTATE, mensagem)`.
+    unsafe fn diag_n(h: SqlHandle, n: SqlSmallint) -> (String, String) {
+        let mut estado = [0u8; 6];
+        let mut nativo: SqlInteger = 0;
+        let mut msg = [0u8; 512];
+        let mut tam: SqlSmallint = 0;
+        let codigo = SQLGetDiagRec(
+            SQL_HANDLE_STMT,
+            h,
+            n,
+            estado.as_mut_ptr(),
+            &mut nativo,
+            msg.as_mut_ptr(),
+            512,
+            &mut tam,
+        );
+        assert!(
+            codigo == SQL_SUCCESS || codigo == SQL_SUCCESS_WITH_INFO,
+            "o diagnostico {n} devia existir"
+        );
+        (
+            String::from_utf8_lossy(&estado[..5]).into_owned(),
+            String::from_utf8_lossy(&msg[..tam.max(0) as usize]).into_owned(),
+        )
+    }
+
+    /// O `"truncado":true` que a op `sql` herda do `consultar`/`unir` (pedido
+    /// 419) tem de virar SQL_SUCCESS_WITH_INFO com 01000 -- nao 01004, que
+    /// este driver ja usa para o valor de uma CELULA cortado pelo buffer
+    /// curto (linha 462 e 1179), um sentido diferente.
+    #[test]
+    fn sql_truncado_pelo_teto_avisa_01000() {
+        fn responder(linha: &str) -> &'static str {
+            if linha.contains("\"op\":\"esquema\"") {
+                ESQUEMA_DO_438
+            } else {
+                r#"{"ok":true,"resultado":{"colunas":["nome"],"linhas":[{"nome":"Ana"}],"truncado":true}}"#
+            }
+        }
+        let (porta, recebe) = servidor_falso(responder);
+        unsafe {
+            let mut env: SqlHandle = std::ptr::null_mut();
+            assert_eq!(
+                SQLAllocHandle(SQL_HANDLE_ENV, std::ptr::null_mut(), &mut env),
+                SQL_SUCCESS
+            );
+            let mut dbc: SqlHandle = std::ptr::null_mut();
+            assert_eq!(SQLAllocHandle(SQL_HANDLE_DBC, env, &mut dbc), SQL_SUCCESS);
+            let receita = receita_do_eco(porta);
+            assert_eq!(
+                SQLDriverConnect(
+                    dbc,
+                    std::ptr::null_mut(),
+                    receita.as_ptr(),
+                    SQL_NTS as SqlSmallint,
+                    std::ptr::null_mut(),
+                    0,
+                    std::ptr::null_mut(),
+                    0
+                ),
+                SQL_SUCCESS
+            );
+            let mut stmt: SqlHandle = std::ptr::null_mut();
+            assert_eq!(SQLAllocHandle(SQL_HANDLE_STMT, dbc, &mut stmt), SQL_SUCCESS);
+
+            let sql = "SELECT nome FROM clientes\0";
+            assert_eq!(
+                SQLExecDirect(stmt, sql.as_ptr(), SQL_NTS),
+                SQL_SUCCESS_WITH_INFO,
+                "{}",
+                estado_do_diag(stmt)
+            );
+            let pedido_sql = recebe
+                .recv_timeout(ESPERA)
+                .expect("o pedido sql devia chegar");
+            assert!(pedido_sql.contains("\"op\":\"sql\""), "{pedido_sql}");
+            recebe
+                .recv_timeout(ESPERA)
+                .expect("o pedido de esquema devia chegar");
+
+            let (estado, msg) = diag_n(stmt, 1);
+            assert_eq!(estado, "01000");
+            assert!(msg.contains("max_linhas"), "{msg}");
+
+            // So UM diagnostico: o esquema chegou (fichas nao vazias), entao
+            // o `sem_tipos` nao dispara junto e nao mistura os dois avisos.
+            let mut estado2 = [0u8; 6];
+            let mut nativo2: SqlInteger = 0;
+            let mut msg2 = [0u8; 8];
+            let mut tam2: SqlSmallint = 0;
+            assert_eq!(
+                SQLGetDiagRec(
+                    SQL_HANDLE_STMT,
+                    stmt,
+                    2,
+                    estado2.as_mut_ptr(),
+                    &mut nativo2,
+                    msg2.as_mut_ptr(),
+                    8,
+                    &mut tam2
+                ),
+                SQL_NO_DATA
+            );
+
+            SQLFreeHandle(SQL_HANDLE_STMT, stmt);
+            SQLDisconnect(dbc);
+            SQLFreeHandle(SQL_HANDLE_DBC, dbc);
+            SQLFreeHandle(SQL_HANDLE_ENV, env);
+        }
+    }
+
+    /// O COMPORTAMENTO VELHO, par do teste de cima: resposta sem o campo
+    /// `truncado` (todo servidor de antes do pedido 419) continua saindo
+    /// SQL_SUCCESS puro, sem diagnostico nenhum. Guarda nova entra pedida,
+    /// nao imposta.
+    #[test]
+    fn sql_sem_truncado_continua_sql_success_puro() {
+        fn responder(linha: &str) -> &'static str {
+            if linha.contains("\"op\":\"esquema\"") {
+                ESQUEMA_DO_438
+            } else {
+                r#"{"ok":true,"resultado":{"colunas":["nome"],"linhas":[{"nome":"Ana"}]}}"#
+            }
+        }
+        let (porta, recebe) = servidor_falso(responder);
+        unsafe {
+            let mut env: SqlHandle = std::ptr::null_mut();
+            assert_eq!(
+                SQLAllocHandle(SQL_HANDLE_ENV, std::ptr::null_mut(), &mut env),
+                SQL_SUCCESS
+            );
+            let mut dbc: SqlHandle = std::ptr::null_mut();
+            assert_eq!(SQLAllocHandle(SQL_HANDLE_DBC, env, &mut dbc), SQL_SUCCESS);
+            let receita = receita_do_eco(porta);
+            assert_eq!(
+                SQLDriverConnect(
+                    dbc,
+                    std::ptr::null_mut(),
+                    receita.as_ptr(),
+                    SQL_NTS as SqlSmallint,
+                    std::ptr::null_mut(),
+                    0,
+                    std::ptr::null_mut(),
+                    0
+                ),
+                SQL_SUCCESS
+            );
+            let mut stmt: SqlHandle = std::ptr::null_mut();
+            assert_eq!(SQLAllocHandle(SQL_HANDLE_STMT, dbc, &mut stmt), SQL_SUCCESS);
+
+            let sql = "SELECT nome FROM clientes\0";
+            assert_eq!(SQLExecDirect(stmt, sql.as_ptr(), SQL_NTS), SQL_SUCCESS);
+            recebe
+                .recv_timeout(ESPERA)
+                .expect("o pedido sql devia chegar");
+            recebe
+                .recv_timeout(ESPERA)
+                .expect("o pedido de esquema devia chegar");
+
+            let mut estado = [0u8; 6];
+            let mut nativo: SqlInteger = 0;
+            let mut msg = [0u8; 8];
+            let mut tam: SqlSmallint = 0;
+            assert_eq!(
+                SQLGetDiagRec(
+                    SQL_HANDLE_STMT,
+                    stmt,
+                    1,
+                    estado.as_mut_ptr(),
+                    &mut nativo,
+                    msg.as_mut_ptr(),
+                    8,
+                    &mut tam
+                ),
+                SQL_NO_DATA
+            );
+
+            SQLFreeHandle(SQL_HANDLE_STMT, stmt);
+            SQLDisconnect(dbc);
+            SQLFreeHandle(SQL_HANDLE_DBC, dbc);
+            SQLFreeHandle(SQL_HANDLE_ENV, env);
         }
     }
 }

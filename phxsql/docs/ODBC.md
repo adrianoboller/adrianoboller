@@ -135,6 +135,15 @@ SQLGetDiagRec    SQLGetInfo       SQLSetConnectAttr SQLSetStmtAttr
   existem desde a rodada das dezoito** e tem secao propria (2.1).
 * O conjunto de resultados chega INTEIRO na resposta (o servidor corta em
   `max_linhas`, 1000 por padrao). Consulta grande pede `LIMIT`/`OFFSET`.
+  **Pedido 438:** quando um SELECT composto (JOIN, subconsulta, `UNION`…)
+  para no teto DENTRO de um sub-pedido -- e nao no `LIMIT` que o proprio texto
+  pediu --, o servidor devolve `"truncado": true` (herdado do `consultar`/
+  `unir` desde o pedido 419) e `SQLExecute`/`SQLExecDirect` avisam com `01000`
+  (`SQL_SUCCESS_WITH_INFO`), nao `01004`: aquele SQLSTATE e' reservado, pelo
+  proprio padrao ISO/IEC 9075 (`string_data_right_truncation`), para o valor
+  de uma CELULA cortado por buffer curto -- ver a linha de cima --, e um
+  conjunto de linhas cortado e' outro fenomeno. Cognicao:
+  `docs/cognicao/cognicao_sqlstate-do-truncado-em-composicao_20260924_1308.md`.
 * O fetch entrega texto (`SQL_C_CHAR` ou, desde o pedido 238, `SQL_C_WCHAR`
   — secao 2.1.1), inteiros (`SQL_C_SLONG` e parentes, com conferencia de
   faixa — estourar da `22003`) e ponto flutuante (`SQL_C_DOUBLE`/`FLOAT`).

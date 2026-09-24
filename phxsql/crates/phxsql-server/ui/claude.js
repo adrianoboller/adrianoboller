@@ -1455,13 +1455,28 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
       const linhas = r.linhas || [];
       const cols = r.colunas && r.colunas.length
         ? r.colunas : (linhas.length ? Object.keys(linhas[0]) : []);
+      // O `"truncado"` viaja na resposta do `sql` desde o pedido 419 (herdado
+      // do `consultar`/`unir` por `resposta_do_sql`), e junta-se as `notas`
+      // no MESMO aviso -- rotulo, nunca alterando as linhas que vieram.
+      // Guarda nova entra pedida: campo ausente (servidor de antes do 419)
+      // nao acrescenta nada aqui.
+      //
+      // PRIMEIRO, e nao no fim: um parágrafo de notas informativas tem o
+      // mesmo peso visual em toda linha, e quem lê para na primeira. O corte
+      // é o que a tela existe para ninguém deixar passar batido -- por isso
+      // `unshift`, e não `push`, e o rótulo vem em negrito (`**...**`) na
+      // própria fábrica; o dado (`recursos.max_linhas`) continua só marcado
+      // como código, nunca estilizado feito rótulo.
+      const avisos = (r.notas || []).map(E);
+      if (r.truncado) avisos.unshift(marcado(txt("tela.ia_res_truncado",
+        "**Resultado cortado:** o teto de linhas do servidor (`recursos.max_linhas`) parou este sub-pedido antes do fim — pode haver mais dados do que os que vieram")));
       alvo.innerHTML =
         `<p class="leg">${marcado(txt("tela.ia_res_op", "operação `{op}` · {n} linha(s)"),
           { op: r.op || "?", n: r.devolvidas ?? r.afetadas ?? linhas.length })}${
           r.contagem !== undefined ? " · " + E(preencher(txt("tela.ia_res_contagem",
             "contagem {n}"), { n: r.contagem })) : ""}</p>`
-        + ((r.notas || []).length
-            ? `<div class="aviso">${(r.notas || []).map(E).join("<br>")}</div>` : "")
+        + (avisos.length
+            ? `<div class="aviso">${avisos.join("<br>")}</div>` : "")
         + (linhas.length
             ? `<div id="iaGradeSql"></div>`
             : `<div class="vazio">${E(txt("tela.ia_sem_linhas", "sem linhas"))}</div>`);
