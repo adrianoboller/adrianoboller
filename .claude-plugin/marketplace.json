@@ -1,0 +1,16 @@
+{
+  "name": "phoenix",
+  "owner": {
+    "name": "Adriano Boller"
+  },
+  "metadata": {
+    "description": "Plugins do projeto Phoenix."
+  },
+  "plugins": [
+    {
+      "name": "phxjev",
+      "source": "./plugins/phxjev",
+      "description": "Juiz tipado em markdown (molde Jev): noul/choice/score com probabilidade e limiar fixo."
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "name": "phxjev",
+  "version": "0.1.0",
+  "description": "Juiz tipado em markdown, no molde do Jev: perguntas noul/choice/score, probabilidade por opcao, limiar fixo decide o veredito. Sem API externa.",
+  "author": { "name": "Adriano Boller" },
+  "license": "MIT OR Apache-2.0",
+  "keywords": ["julgamento", "probabilidade", "revisao", "hipoteses", "phoenix"]
+}
