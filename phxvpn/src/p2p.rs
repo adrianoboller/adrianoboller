@@ -123,6 +123,27 @@ impl Modo {
 /// de pares que quem manda conhece.
 const CONTROLE: u8 = 0x00;
 const CONTROLE_PARES: u8 = b'P';
+/// Eco (o «ping» do phxvpn): pedido e resposta, com um numero de 8 bytes.
+/// Mede o tempo de ida e volta PELO TUNEL, sem socket bruto de ICMP.
+const CONTROLE_ECO: u8 = b'E';
+const CONTROLE_ECO_VOLTA: u8 = b'e';
+/// Chat: texto UTF-8 entre membros, dentro do tunel cifrado.
+const CONTROLE_CHAT: u8 = b'C';
+/// Teto de uma mensagem de chat e da caixa de entrada (membro falante nao
+/// enche a memoria).
+pub const TETO_CHAT: usize = 1000;
+const TETO_CAIXA: usize = 200;
+
+/// Uma mensagem de chat, enviada ou recebida.
+#[derive(Clone, Debug)]
+pub struct Mensagem {
+    pub numero: u64,
+    /// IP virtual do outro lado.
+    pub ip: Ipv4Addr,
+    pub minha: bool,
+    pub texto: String,
+    pub quando: u64,
+}
 /// A lista de pares se reenvia a cada tanto (e logo que a sessao abre).
 const REENVIAR_PARES: Duration = Duration::from_secs(30);
 /// Teto de pares aprendidos pela malha (lista de membro malicioso nao enche
@@ -187,6 +208,10 @@ pub struct No {
     /// Desligar a rede: as tres threads do `rodar` olham isto e saem; a placa
     /// fecha junto e o sistema a apaga.
     parar: std::sync::atomic::AtomicBool,
+    /// Ecos em voo: numero -> (quando saiu, tempo de volta quando voltar).
+    ecos: Mutex<HashMap<u64, (Instant, Option<Duration>)>>,
+    caixa: Mutex<std::collections::VecDeque<Mensagem>>,
+    numero_mensagem: std::sync::atomic::AtomicU64,
 }
 
 fn indice_novo(indices: &HashMap<u32, usize>) -> u32 {
@@ -252,6 +277,9 @@ impl No {
             ficha_de_entrada: Mutex::new(None),
             fichas_usadas: Mutex::new(Vec::new()),
             parar: std::sync::atomic::AtomicBool::new(false),
+            ecos: Mutex::new(HashMap::new()),
+            caixa: Mutex::new(std::collections::VecDeque::new()),
+            numero_mensagem: std::sync::atomic::AtomicU64::new(1),
         }
     }
 
@@ -709,9 +737,32 @@ impl No {
             }
         }
         if claro.first() == Some(&CONTROLE) {
-            if claro.get(1) == Some(&CONTROLE_PARES) && self.aprender_rol(&mut e, &claro[2..]) {
-                No::avisar_malha(&mut e);
-                self.persistir(&e);
+            match claro.get(1) {
+                Some(&CONTROLE_PARES) => {
+                    if self.aprender_rol(&mut e, &claro[2..]) {
+                        No::avisar_malha(&mut e);
+                        self.persistir(&e);
+                    }
+                }
+                Some(&CONTROLE_ECO) if claro.len() == 10 => {
+                    let mut volta = vec![CONTROLE, CONTROLE_ECO_VOLTA];
+                    volta.extend_from_slice(&claro[2..10]);
+                    if let Some(s) = e.pares[i].atual.as_mut() {
+                        saidas.extend(s.selar(&volta).ok());
+                    }
+                }
+                Some(&CONTROLE_ECO_VOLTA) if claro.len() == 10 => {
+                    let n = u64::from_le_bytes(claro[2..10].try_into().expect("8"));
+                    if let Some((saiu, t)) = self.ecos.lock().expect("ecos").get_mut(&n) {
+                        *t = Some(saiu.elapsed());
+                    }
+                }
+                Some(&CONTROLE_CHAT) if claro.len() - 2 <= TETO_CHAT => {
+                    if let Ok(texto) = std::str::from_utf8(&claro[2..]) {
+                        self.guardar_mensagem(ip_do_par, false, texto.to_string());
+                    }
+                }
+                _ => {}
             }
             drop(e);
             for p in saidas {
@@ -801,6 +852,112 @@ impl No {
 
     pub fn ip(&self) -> Ipv4Addr {
         self.ip
+    }
+
+    /// Manda uma mensagem de controle ao par dono de `ip`, pela sessao que ja
+    /// existe. Sem sessao, erro -- controle nao abre aperto sozinho.
+    fn mandar_controle(&self, ip: Ipv4Addr, corpo: &[u8]) -> Result<(), String> {
+        let mut e = self.estado.lock().expect("estado");
+        let i = e
+            .pares
+            .iter()
+            .position(|p| p.ip == ip)
+            .ok_or_else(|| format!("{ip} nao e membro desta rede"))?;
+        let (via, chave) = (e.pares[i].via, e.pares[i].publica);
+        let s = e.pares[i]
+            .atual
+            .as_mut()
+            .filter(|s| s.confirmada && !s.expirada())
+            .ok_or_else(|| format!("sem conexao com {ip} agora"))?;
+        let p = s.selar(corpo)?;
+        e.pares[i].ultimo_envio = Instant::now();
+        drop(e);
+        self.mandar(via.ok_or("sem caminho para o par")?, &chave, &p);
+        Ok(())
+    }
+
+    /// Comeca um eco ate `ip`; devolve o numero para `eco_resultado`.
+    pub fn eco_comecar(&self, ip: Ipv4Addr) -> Result<u64, String> {
+        let n = phxsql_core::cifra::sortear_u64();
+        let mut m = vec![CONTROLE, CONTROLE_ECO];
+        m.extend_from_slice(&n.to_le_bytes());
+        self.ecos
+            .lock()
+            .expect("ecos")
+            .insert(n, (Instant::now(), None));
+        if let Err(x) = self.mandar_controle(ip, &m) {
+            self.ecos.lock().expect("ecos").remove(&n);
+            return Err(x);
+        }
+        Ok(n)
+    }
+
+    /// O tempo de volta do eco `n`, se ja voltou (e o esquece).
+    pub fn eco_resultado(&self, n: u64) -> Option<Duration> {
+        let mut ecos = self.ecos.lock().expect("ecos");
+        let r = ecos.get(&n).and_then(|(_, t)| *t);
+        if r.is_some() {
+            ecos.remove(&n);
+        }
+        // Eco que nunca voltou nao fica para sempre.
+        ecos.retain(|_, (saiu, _)| saiu.elapsed() < Duration::from_secs(30));
+        r
+    }
+
+    /// Ping pelo tunel: espera a volta ate `prazo`.
+    pub fn pingar(&self, ip: Ipv4Addr, prazo: Duration) -> Result<Duration, String> {
+        let n = self.eco_comecar(ip)?;
+        let fim = Instant::now() + prazo;
+        while Instant::now() < fim {
+            if let Some(t) = self.eco_resultado(n) {
+                return Ok(t);
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        Err(format!("{ip} nao respondeu em {} s", prazo.as_secs()))
+    }
+
+    fn guardar_mensagem(&self, ip: Ipv4Addr, minha: bool, texto: String) {
+        let mut c = self.caixa.lock().expect("caixa");
+        if c.len() >= TETO_CAIXA {
+            c.pop_front();
+        }
+        c.push_back(Mensagem {
+            numero: self
+                .numero_mensagem
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            ip,
+            minha,
+            texto,
+            quando: rede_p2p::agora(),
+        });
+    }
+
+    /// Chat: manda `texto` ao membro `ip`.
+    pub fn conversar(&self, ip: Ipv4Addr, texto: &str) -> Result<(), String> {
+        let texto = texto.trim();
+        if texto.is_empty() {
+            return Err("mensagem vazia".into());
+        }
+        if texto.len() > TETO_CHAT {
+            return Err(format!("mensagem acima de {TETO_CHAT} bytes"));
+        }
+        let mut m = vec![CONTROLE, CONTROLE_CHAT];
+        m.extend_from_slice(texto.as_bytes());
+        self.mandar_controle(ip, &m)?;
+        self.guardar_mensagem(ip, true, texto.to_string());
+        Ok(())
+    }
+
+    /// Mensagens depois do numero `desde` (0 = todas as guardadas).
+    pub fn mensagens(&self, desde: u64) -> Vec<Mensagem> {
+        self.caixa
+            .lock()
+            .expect("caixa")
+            .iter()
+            .filter(|m| m.numero > desde)
+            .cloned()
+            .collect()
     }
 
     /// Pede para o `rodar` sair (em ate ~1 s).
@@ -1171,6 +1328,56 @@ mod testes {
             "a ficha usada ressuscitou"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Ping e chat pelo tunel, por UDP real: o eco volta com o tempo, o texto
+    /// chega do lado de la marcado com o IP de quem mandou.
+    #[test]
+    fn ping_e_chat_pelo_tunel() {
+        let (a, b, _, _) = dois_nos("senha-1");
+        for u in [&a.udp, &b.udp] {
+            u.set_read_timeout(Some(Duration::from_millis(50))).unwrap();
+        }
+        // Bombeia os dois lados ate `feito` valer (a lista de pares e os
+        // mantem-vivo cruzam no meio, em ordem que o teste nao controla).
+        let ate = |feito: &dyn Fn() -> bool| {
+            for _ in 0..60 {
+                if feito() {
+                    return true;
+                }
+                bombear(&a);
+                bombear(&b);
+            }
+            feito()
+        };
+        a.da_placa(&ip([10, 78, 0, 1], [10, 78, 0, 2], b"x"));
+        let ipb: Ipv4Addr = "10.78.0.2".parse().unwrap();
+        assert!(ate(&|| b.estado.lock().unwrap().pares[0]
+            .atual
+            .as_ref()
+            .is_some_and(|s| s.confirmada)));
+        let n = a.eco_comecar(ipb).unwrap();
+        let volta = std::cell::Cell::new(None);
+        assert!(
+            ate(&|| {
+                if volta.get().is_none() {
+                    volta.set(a.eco_resultado(n));
+                }
+                volta.get().is_some()
+            }),
+            "o eco nao voltou"
+        );
+        a.conversar(ipb, "Bom dia, filial!").unwrap();
+        assert!(ate(&|| !b.mensagens(0).is_empty()));
+        let m = b.mensagens(0);
+        assert_eq!(m[0].texto, "Bom dia, filial!");
+        assert_eq!(m[0].ip, "10.78.0.1".parse::<Ipv4Addr>().unwrap());
+        assert!(!m[0].minha && a.mensagens(0)[0].minha);
+        assert!(a.conversar(ipb, &"x".repeat(TETO_CHAT + 1)).is_err());
+        assert!(
+            a.conversar("10.78.0.9".parse().unwrap(), "oi").is_err(),
+            "nao-membro"
+        );
     }
 
     #[test]

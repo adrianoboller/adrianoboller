@@ -27,6 +27,7 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [x] P2P: `p2p criar` / `p2p convidar` / `p2p entrar` — convite cifrado com a senha da rede, ficha de uso único, malha que se aprende pela lista de pares dentro do túnel
 - [x] P2P no Windows: placa TAP-Windows6 em modo TUN só com APIs do sistema; `p2p placa` cria o adaptador pelo `tapctl.exe` do OpenVPN
 - [x] Programa de mesa (`phxvpn mesa`, `phxvpnw.exe` sem console): janela no estilo Radmin — criar, entrar por convite, convidar, ligar/desligar, membros com estado
+- [x] Programa de mesa: ping e chat por membro (dentro do túnel) e «lembrar a senha» (DPAPI no Windows)
 - [x] Servidor intermediário com contas de usuário e senha (`phxvpn repasse conta`, `--contas`)
 - [x] Console `phxvpncmd` (ou `phxvpn cmd`), estilo prompt do MS-DOS: modos Painel, P2P e Ferramentas; lote por arquivo (`/entrada:`) e linha única (`/comando:`)
 - [x] Segurança A1: revogação real — série no CN, reentrada revoga o perfil anterior, CRL Ed25519 no `crl-verify`, admin/dono remove membro
@@ -41,7 +42,7 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 
 - [ ] Prova com o **túnel OpenVPN de verdade** — o binário `openvpn` não existe neste contêiner; o TLS foi provado com OpenSSL, o túnel não
 - [ ] TLS no próprio painel (hoje HTTP; escuta 127.0.0.1 por padrão) — esbarra na pétrea de zero dependência
-- [ ] Programa de mesa: ícone na bandeja do Windows, abrir com o sistema, lembrar a senha da rede (selada), ping e chat por membro
+- [ ] Programa de mesa: ícone na bandeja do Windows e abrir com o sistema
 - [ ] Revogação por CRL (hoje: sair da rede apaga o `ccd/` e o `ccd-exclusive` barra)
 - [ ] Usar o certificado digital da empresa (A1/RSA) como AC — hoje ele é guardado só como identificação
 - [ ] Serviço do sistema (systemd / serviço do Windows) e pacote
@@ -229,6 +230,34 @@ em fatias de 0,5 s. `phxvpnw.exe`: `Subsystem 2 (Windows GUI)`.
 
 Defeito achado ao exercitar: o rodapé mostrava texto de terminal («convide
 com p2p convidar» e o caminho do arquivo). A janela agora fala a língua dela.
+
+### Ping, chat e senha lembrada
+
+**Ping** e **Chat** aparecem em cada membro conectado. Os dois são mensagens de
+controle **dentro do túnel cifrado**: o ping mede a ida e volta pelo próprio
+túnel, sem socket bruto de ICMP; o chat é texto UTF-8 de até 1.000 bytes, com
+uma caixa de 200 mensagens por rede e aviso de «não lida» no botão.
+
+**Lembrar a senha** guarda o segredo **derivado** (a PSK da rede e a
+credencial do intermediário), nunca a senha. No Windows vai pela DPAPI
+(`CryptProtectData`): só o mesmo usuário do Windows abre. No Linux, XChaCha
+com uma chave local 0600, e o limite fica dito: protege contra copiarem só o
+arquivo, não contra quem entra na conta do usuário. «Esquecer senha» apaga.
+
+**Prova (24/09/2026, duas janelas em `ip netns`, Chromium):** ping de B em A
+**0,3 ms**; chat nos dois sentidos, com «Chat (1)» de não lida; A liga com
+«lembrar», desliga e **religa sem diálogo de senha**; «Esquecer» apaga o
+arquivo; 0 erro de console. O teste do `lembrar` compilado para Windows rodou
+sob o Wine: a DPAPI executou.
+
+Dois defeitos achados nessa prova:
+1. O `desligar` tirava a rede da lista antes de o nó parar: a janela dizia
+   «desligada» com a porta UDP presa, e religar dava «Address already in use».
+   Com par conectado, parar leva 989 ms. Agora a rede fica como «desligando»
+   até o fim.
+2. A lista era redesenhada inteira a cada 2 s, o que pode engolir um clique.
+   Agora só redesenha quando algo muda. Esse era o primeiro palpite para o
+   defeito 1, e estava errado: está registrado na cognição.
 
 Prévias de todas as telas em `docs/previa/` (janela: redes, criar, ligar com
 conta, entrar, conectado, convite; painel: instalação e redes; console).

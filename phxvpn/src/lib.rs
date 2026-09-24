@@ -6,6 +6,7 @@ pub mod comandos;
 pub mod console;
 pub mod guarda;
 pub mod http;
+pub mod lembrar;
 pub mod mesa;
 pub mod noise;
 pub mod ovpn;

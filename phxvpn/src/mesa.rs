@@ -51,6 +51,16 @@ struct Ligada {
     fio: std::thread::JoinHandle<Result<(), String>>,
 }
 
+trait Terminou {
+    fn is_none_or_terminou(&self) -> bool;
+}
+
+impl Terminou for Option<&Ligada> {
+    fn is_none_or_terminou(&self) -> bool {
+        self.map_or(true, |l| l.fio.is_finished())
+    }
+}
+
 pub struct Mesa {
     pasta: PathBuf,
     ficha: String,
@@ -145,7 +155,7 @@ impl Mesa {
                         .collect(),
                 };
                 Json::objeto(vec![
-                    ("rede", Json::texto_de(nome)),
+                    ("rede", Json::texto_de(nome.clone())),
                     ("ip", Json::texto_de(format!("{}/{}", r.ip, r.prefixo))),
                     ("modo", Json::texto_de(r.modo.clone())),
                     (
@@ -153,6 +163,14 @@ impl Mesa {
                         Json::texto_de(r.repasse_usuario.clone().unwrap_or_default()),
                     ),
                     ("ligada", Json::de_bool(ligada.is_some())),
+                    (
+                        "desligando",
+                        Json::de_bool(ligada.is_some_and(|l| l.no.desligado())),
+                    ),
+                    (
+                        "lembrada",
+                        Json::de_bool(crate::lembrar::existe(&self.pasta, &nome)),
+                    ),
                     ("membros", Json::Lista(membros)),
                 ])
             })
@@ -223,6 +241,8 @@ impl Mesa {
         )
     }
 
+    /// Liga a rede. Senha vazia com segredo lembrado usa o lembrado; com
+    /// `lembrar`, guarda o segredo DERIVADO (nunca a senha) depois de ligar.
     #[cfg(any(target_os = "linux", windows))]
     pub fn ligar(
         &self,
@@ -230,19 +250,57 @@ impl Mesa {
         senha: &str,
         repasse_usuario: &str,
         repasse_senha: &str,
+        lembrar: bool,
     ) -> R<String> {
+        use crate::comandos::{Segredo, SegredoRepasse};
+        use crate::lembrar::{self, Lembrado};
         let mut ligadas = self.ligadas.lock().unwrap_or_else(|e| e.into_inner());
         ligadas.retain(|_, l| !l.fio.is_finished());
-        if ligadas.contains_key(rede) {
-            return Err(format!("a rede {rede} ja esta ligada"));
+        if let Some(l) = ligadas.get(rede) {
+            return Err(if l.no.desligado() {
+                format!("a rede {rede} ainda esta desligando; tente em um instante")
+            } else {
+                format!("a rede {rede} ja esta ligada")
+            });
         }
+        let arquivo = self.arquivo_da_rede(rede);
+        let r = Rede::ler(&arquivo)?;
+        let guardado = lembrar::ler(&self.pasta, rede);
+        let usuario = if repasse_usuario.is_empty() {
+            guardado
+                .as_ref()
+                .and_then(|g| g.repasse.as_ref().map(|(u, _)| u.clone()))
+                .or(r.repasse_usuario.clone())
+                .unwrap_or_default()
+        } else {
+            repasse_usuario.to_string()
+        };
+        let psk = match (senha.is_empty(), &guardado) {
+            (false, _) => crate::p2p::psk_da_rede(&r.nome, senha, crate::p2p::ITERACOES_PSK),
+            (true, Some(g)) => g.psk,
+            (true, None) => return Err("informe a senha da rede".into()),
+        };
+        let credencial = match (repasse_senha.is_empty(), &guardado, usuario.is_empty()) {
+            (_, _, true) => None,
+            (false, _, false) => Some(crate::repasse::credencial(
+                &usuario,
+                repasse_senha,
+                crate::repasse::ITERACOES_CONTA,
+            )),
+            (true, Some(g), false) => g
+                .repasse
+                .as_ref()
+                .filter(|(u, _)| *u == usuario)
+                .map(|(_, c)| *c),
+            (true, None, false) => None,
+        };
         // Cada rede ligada ao mesmo tempo precisa de porta e placa proprias.
         let n = ligadas.len();
         let o = opcoes(&[
             ("rede", rede.into()),
-            ("arquivo", self.arquivo_da_rede(rede)),
+            ("arquivo", arquivo),
             ("chave", self.chave()),
-            ("repasse-usuario", repasse_usuario.into()),
+            ("repasse-usuario", usuario.clone()),
             (
                 "interface",
                 if cfg!(windows) {
@@ -252,9 +310,22 @@ impl Mesa {
                 },
             ),
         ]);
-        let senha_repasse = (!repasse_senha.is_empty()).then_some(repasse_senha);
-        let (no, tun, _) = comandos::p2p_preparar(&o, senha, senha_repasse)?;
+        let (no, tun, _) = comandos::p2p_preparar(
+            &o,
+            Segredo::Psk(psk),
+            credencial.map(SegredoRepasse::Credencial),
+        )?;
         let resumo = format!("Rede {rede} ligada: seu IP e {}.", no.ip());
+        if lembrar {
+            lembrar::guardar(
+                &self.pasta,
+                rede,
+                &Lembrado {
+                    psk,
+                    repasse: credencial.map(|c| (usuario, c)),
+                },
+            )?;
+        }
         let n2 = Arc::clone(&no);
         let fio = std::thread::spawn(move || crate::p2p::rodar(n2, tun));
         ligadas.insert(rede.to_string(), Ligada { no, fio });
@@ -262,22 +333,106 @@ impl Mesa {
     }
 
     #[cfg(not(any(target_os = "linux", windows)))]
-    pub fn ligar(&self, _rede: &str, _senha: &str, _u: &str, _s: &str) -> R<String> {
+    pub fn ligar(&self, _rede: &str, _senha: &str, _u: &str, _s: &str, _l: bool) -> R<String> {
         Err("o P2P roda no Linux e no Windows".into())
     }
 
-    /// Desliga e ESPERA a placa fechar (ate ~1 s): ligar de novo logo em
-    /// seguida nao pode achar a porta UDP ainda presa.
+    /// Desliga e ESPERA o no terminar. A rede so sai da lista DEPOIS: antes,
+    /// ela sumia na hora e a janela mostrava «desligada» com a porta UDP ainda
+    /// presa -- religar dava «Address already in use» (achado ao exercitar
+    /// com um par conectado; sem par o no para rapido e a corrida nao
+    /// aparecia). Enquanto isso, a rede aparece como «desligando».
     pub fn desligar(&self, rede: &str) -> R<String> {
-        let l = self
+        let no = self
+            .ligadas
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(rede)
+            .map(|l| Arc::clone(&l.no))
+            .ok_or_else(|| format!("a rede {rede} nao esta ligada"))?;
+        no.desligar();
+        drop(no);
+        let inicio = std::time::Instant::now();
+        loop {
+            let terminou = self
+                .ligadas
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .get(rede)
+                .is_none_or_terminou();
+            if terminou {
+                break;
+            }
+            if inicio.elapsed() > std::time::Duration::from_secs(10) {
+                return Err(format!("a rede {rede} nao terminou de desligar em 10 s"));
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        if let Some(l) = self
             .ligadas
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .remove(rede)
-            .ok_or_else(|| format!("a rede {rede} nao esta ligada"))?;
-        l.no.desligar();
-        let _ = l.fio.join();
-        Ok(format!("rede {rede} desligada"))
+        {
+            let _ = l.fio.join();
+        }
+        Ok(format!(
+            "rede {rede} desligada ({} ms)",
+            inicio.elapsed().as_millis()
+        ))
+    }
+
+    fn no_ligado(&self, rede: &str) -> R<Arc<No>> {
+        self.ligadas
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(rede)
+            .map(|l| Arc::clone(&l.no))
+            .ok_or_else(|| format!("a rede {rede} nao esta ligada"))
+    }
+
+    /// Ping PELO TUNEL ate o membro (eco de controle, sem ICMP).
+    pub fn pingar(&self, rede: &str, ip: &str) -> R<String> {
+        let ip = ip.parse().map_err(|_| "IP invalido")?;
+        let t = self
+            .no_ligado(rede)?
+            .pingar(ip, std::time::Duration::from_secs(3))?;
+        Ok(format!(
+            "{ip} respondeu em {:.1} ms",
+            t.as_secs_f64() * 1000.0
+        ))
+    }
+
+    pub fn conversar(&self, rede: &str, ip: &str, texto: &str) -> R<String> {
+        let ip = ip.parse().map_err(|_| "IP invalido")?;
+        self.no_ligado(rede)?.conversar(ip, texto)?;
+        Ok("enviada".into())
+    }
+
+    pub fn mensagens(&self, rede: &str, desde: u64) -> R<Json> {
+        let no = match self.no_ligado(rede) {
+            Ok(n) => n,
+            Err(_) => return Ok(Json::Lista(vec![])),
+        };
+        Ok(Json::Lista(
+            no.mensagens(desde)
+                .into_iter()
+                .map(|m| {
+                    Json::objeto(vec![
+                        ("numero", Json::de_u64(m.numero)),
+                        ("ip", Json::texto_de(m.ip.to_string())),
+                        ("minha", Json::de_bool(m.minha)),
+                        ("texto", Json::texto_de(m.texto)),
+                        ("quando", Json::de_u64(m.quando)),
+                    ])
+                })
+                .collect(),
+        ))
+    }
+
+    pub fn esquecer(&self, rede: &str) -> R<String> {
+        crate::lembrar::esquecer(&self.pasta, rede)?;
+        Ok(format!("Senha da rede {rede} esquecida neste computador."))
     }
 
     pub fn minha_chave(&self) -> R<String> {
@@ -343,7 +498,17 @@ impl Mesa {
                 &t("senha"),
                 &t("repasse_usuario"),
                 &t("repasse_senha"),
+                corpo.booleano_ou("lembrar", false),
             )),
+            ("POST", "/api/ping") => texto(self.pingar(&t("rede"), &t("ip"))),
+            ("POST", "/api/chat") => texto(self.conversar(&t("rede"), &t("ip"), &t("texto"))),
+            ("POST", "/api/mensagens") => {
+                match self.mensagens(&t("rede"), corpo.inteiro_ou("desde", 0) as u64) {
+                    Ok(j) => Resposta::json(200, j.escrever()),
+                    Err(e) => Resposta::erro(400, &e),
+                }
+            }
+            ("POST", "/api/esquecer") => texto(self.esquecer(&t("rede"))),
             ("POST", "/api/desligar") => texto(self.desligar(&t("rede"))),
             _ => Resposta::erro(404, "rota desconhecida"),
         }

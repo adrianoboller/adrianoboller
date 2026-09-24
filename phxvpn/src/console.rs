@@ -505,8 +505,13 @@ impl<'a> Console<'a> {
                         "PHXVPN_SENHA_REPASSE",
                     )
                 });
-                let (no, tun, resumo) =
-                    comandos::p2p_preparar(o, &senha, senha_repasse.as_deref())?;
+                let (no, tun, resumo) = comandos::p2p_preparar(
+                    o,
+                    comandos::Segredo::Senha(&senha),
+                    senha_repasse
+                        .as_deref()
+                        .map(comandos::SegredoRepasse::Senha),
+                )?;
                 let n2 = std::sync::Arc::clone(&no);
                 std::thread::spawn(move || {
                     if let Err(e) = crate::p2p::rodar(n2, tun) {

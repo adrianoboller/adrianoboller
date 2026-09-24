@@ -269,7 +269,13 @@ fn p2p_ligar(o: &Opcoes) -> Result<(), String> {
         None => None,
     };
     std::env::remove_var("PHXVPN_SENHA_REPASSE");
-    let (no, tun, resumo) = comandos::p2p_preparar(o, &senha_rede, senha_repasse.as_deref())?;
+    let (no, tun, resumo) = comandos::p2p_preparar(
+        o,
+        comandos::Segredo::Senha(&senha_rede),
+        senha_repasse
+            .as_deref()
+            .map(comandos::SegredoRepasse::Senha),
+    )?;
     eprintln!("phxvpn: {resumo}");
     phxvpn::p2p::rodar(no, tun)
 }

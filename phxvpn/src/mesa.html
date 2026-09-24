@@ -34,6 +34,12 @@ main{flex:1;overflow:auto;padding:0 14px 14px}
 .membro .caminho{color:var(--fraco);font-size:12px;margin-left:auto;text-align:right}
 .ponto{width:8px;height:8px;border-radius:50%;border:1.5px solid var(--fraco);flex:none}
 .ponto.on{background:var(--verde);border-color:var(--verde)}
+.membro button{padding:1px 7px;font-size:12px}
+.bolha{margin:4px 0;padding:5px 8px;border-radius:8px;max-width:85%;word-wrap:break-word;white-space:pre-wrap}
+.bolha.minha{margin-left:auto;border:1px solid var(--azul)}
+.bolha.dele{border:1px solid var(--linha)}
+.bolha small{display:block;color:var(--fraco);font-size:11px}
+.novo{color:var(--ambar);font-weight:600}
 .vazio{color:var(--fraco);padding:24px 6px;text-align:center}
 .rodape{padding:6px 14px;border-top:1px solid var(--linha);color:var(--fraco);font-size:12px;min-height:28px}
 .rodape.erro{color:var(--vermelho)}.rodape.ok{color:var(--verde)}
@@ -102,8 +108,17 @@ dialog h2{margin:0 0 10px;font-size:16px}
     <label class="campo"><span>Usuario</span><input name="repasse_usuario" autocomplete="username"></label>
     <label class="campo"><span>Senha</span><input name="repasse_senha" type="password" autocomplete="current-password"></label>
   </fieldset>
+  <label style="display:flex;gap:8px;align-items:center;font-size:13px;margin:4px 0 6px"><input type="checkbox" name="lembrar" value="1" style="width:auto"> Lembrar a senha neste computador</label>
   <p class="msg"></p>
   <div class="linha-botoes"><button type="button" data-fechar>Cancelar</button><button class="inclui">Ligar</button></div>
+</form></dialog>
+
+<dialog id="d-chat"><form method="dialog" id="f-chat">
+  <h2>Chat com <span data-ip></span></h2>
+  <div id="conversa" style="height:260px;overflow:auto;border:1px solid var(--linha);border-radius:6px;padding:8px;margin-bottom:8px;background:#050a1c"></div>
+  <label class="campo"><input name="texto" maxlength="1000" autocomplete="off" placeholder="Mensagem (Enter envia)"></label>
+  <p class="msg"></p>
+  <div class="linha-botoes"><button type="button" data-fechar>Fechar</button><button class="inclui">Enviar</button></div>
 </form></dialog>
 
 <script src="/mesa.js"></script>

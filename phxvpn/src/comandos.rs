@@ -373,10 +373,10 @@ pub fn p2p_entrar(codigo: &str, senha_rede: &str, o: &Opcoes) -> R<String> {
 #[cfg(any(target_os = "linux", windows))]
 pub fn p2p_preparar(
     o: &Opcoes,
-    senha_rede: &str,
-    senha_repasse: Option<&str>,
+    rede: Segredo,
+    repasse: Option<SegredoRepasse>,
 ) -> R<(std::sync::Arc<p2p::No>, crate::tun::Tun, String)> {
-    let (no, ip, prefixo, porta, modo) = p2p_montar(o, senha_rede, senha_repasse)?;
+    let (no, ip, prefixo, porta, modo) = p2p_montar(o, rede, repasse)?;
     // No Windows e o nome do adaptador TAP criado pelo `p2p placa`.
     let padrao = if cfg!(windows) { "phxvpn" } else { "phx0" };
     let interface = o.um("interface").unwrap_or(padrao);
@@ -391,6 +391,22 @@ pub fn p2p_preparar(
 type Montado = (p2p::No, std::net::Ipv4Addr, u8, u16, p2p::Modo);
 
 /// A parte do preparo que nao depende de placa (e roda em qualquer sistema).
+/// O segredo da rede: a senha (deriva a PSK aqui) ou a PSK ja derivada
+/// (lembrada pelo programa de mesa).
+#[derive(Clone, Copy)]
+pub enum Segredo<'a> {
+    Senha(&'a str),
+    Psk([u8; 32]),
+}
+
+/// O segredo da conta no servidor intermediario: a senha, ou a credencial
+/// ja derivada.
+#[derive(Clone, Copy)]
+pub enum SegredoRepasse<'a> {
+    Senha(&'a str),
+    Credencial([u8; 32]),
+}
+
 /// O usuario do servidor intermediario desta rede (opcao ou arquivo), para
 /// quem chama saber se precisa pedir a senha dele.
 pub fn usuario_do_repasse(o: &Opcoes) -> Option<String> {
@@ -402,7 +418,11 @@ pub fn usuario_do_repasse(o: &Opcoes) -> Option<String> {
     })
 }
 
-pub fn p2p_montar(o: &Opcoes, senha_rede: &str, senha_repasse: Option<&str>) -> R<Montado> {
+pub fn p2p_montar(
+    o: &Opcoes,
+    segredo: Segredo,
+    segredo_repasse: Option<SegredoRepasse>,
+) -> R<Montado> {
     use crate::rede_p2p::Rede;
     let privada = identidade(o.um("chave").unwrap_or("p2p.chave"))?;
     let caminho = arquivo_da_rede(o)
@@ -473,9 +493,14 @@ pub fn p2p_montar(o: &Opcoes, senha_rede: &str, senha_repasse: Option<&str>) -> 
                 .split_once('@')
                 .ok_or("repasse no formato CHAVE@HOST:PORTA")?;
             let par = p2p::ler_par(&format!("{chave}@0.0.0.0@{end}"))?;
-            let conta = match (usuario_do_repasse(o), senha_repasse) {
+            let conta = match (usuario_do_repasse(o), segredo_repasse) {
                 (Some(u), Some(s)) => Some(crate::repasse::Conta {
-                    credencial: crate::repasse::credencial(&u, s, crate::repasse::ITERACOES_CONTA),
+                    credencial: match s {
+                        SegredoRepasse::Senha(s) => {
+                            crate::repasse::credencial(&u, s, crate::repasse::ITERACOES_CONTA)
+                        }
+                        SegredoRepasse::Credencial(c) => c,
+                    },
                     usuario: u,
                 }),
                 (Some(u), None) => {
@@ -493,7 +518,10 @@ pub fn p2p_montar(o: &Opcoes, senha_rede: &str, senha_repasse: Option<&str>) -> 
         }
         None => None,
     };
-    let psk = p2p::psk_da_rede(&nome, senha_rede, p2p::ITERACOES_PSK);
+    let psk = match segredo {
+        Segredo::Senha(s) => p2p::psk_da_rede(&nome, s, p2p::ITERACOES_PSK),
+        Segredo::Psk(k) => k,
+    };
     let udp = std::net::UdpSocket::bind(format!("0.0.0.0:{porta}"))
         .map_err(|e| format!("porta UDP {porta}: {e}"))?;
     let mut no = p2p::No::novo(privada, psk, ip, udp, pares).com_repasse(modo, repasse)?;

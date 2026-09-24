@@ -26,8 +26,27 @@ async function copiar(texto, rotulo) {
 }
 
 let abertos = new Set();   // redes com os membros expandidos
+let desenhoAnterior = "";
 
+// So redesenha quando algo mudou de verdade. Redesenhar a lista inteira a
+// cada 2 s trocava os botoes por baixo do mouse, e um clique que caisse no
+// meio da troca se perdia (achado ao exercitar: «Ligar» com a senha lembrada
+// nao fazia nada). O que muda todo segundo -- a idade da sessao -- se
+// atualiza no proprio lugar.
 function desenhar(redes) {
+  const chave = JSON.stringify([redes.map((r) => ({ ...r, membros: r.membros.map((m) => ({ ...m, sessao: m.online })) })), [...abertos], naoLidas]);
+  if (chave === desenhoAnterior) {
+    for (const r of redes) for (const m of r.membros) {
+      const c = document.querySelector(`.caminho[data-k="${CSS.escape(r.rede + "|" + m.ip)}"]`);
+      if (c) c.textContent = m.caminho === "-" ? m.sessao : `${m.caminho} · ${m.sessao}`;
+    }
+    return;
+  }
+  desenhoAnterior = chave;
+  desenharTudo(redes);
+}
+
+function desenharTudo(redes) {
   const lista = $("lista"); lista.textContent = "";
   if (!redes.length) {
     lista.appendChild(el("div", "vazio", "Nenhuma rede ainda. Crie uma, ou entre numa com o codigo de convite."));
@@ -41,9 +60,15 @@ function desenhar(redes) {
     nome.onclick = () => { abertos.has(r.rede) ? abertos.delete(r.rede) : abertos.add(r.rede); atualizar(); };
     const acoes = el("span", "acoes");
     const conv = el("button", "", "Convidar"); conv.onclick = () => abrirConvidar(r.rede);
-    const liga = el("button", r.ligada ? "exclui" : "inclui", r.ligada ? "Desligar" : "Ligar");
-    liga.onclick = () => r.ligada ? desligar(r.rede, liga) : abrirLigar(r);
+    const liga = el("button", r.ligada ? "exclui" : "inclui", r.desligando ? "Desligando…" : (r.ligada ? "Desligar" : "Ligar"));
+    liga.disabled = !!r.desligando;
+    liga.onclick = () => r.ligada ? desligar(r.rede, liga) : (r.lembrada ? ligarLembrada(r.rede, liga) : abrirLigar(r));
     acoes.append(conv, liga);
+    if (r.lembrada && !r.ligada) {
+      const esq = el("button", "", "Esquecer senha"); esq.title = "apaga a senha lembrada neste computador";
+      esq.onclick = async () => { try { aviso((await api("POST", "/api/esquecer", { rede: r.rede })).ok, true); } catch (e) { aviso(e.message); } atualizar(); };
+      acoes.insertBefore(esq, conv);
+    }
     const online = r.membros.filter((m) => m.online).length;
     const info = el("span", "info", `meu IP ${r.ip} · ${r.membros.length} membro(s)` + (r.ligada ? `, ${online} conectado(s)` : "") + ` · modo ${r.modo}`);
     topo.append(lamp, nome, acoes, info);
@@ -55,7 +80,15 @@ function desenhar(redes) {
         const ip = el("span", "ip", m.ip); ip.title = "clique para copiar"; ip.onclick = () => copiar(m.ip, "IP " + m.ip);
         const chave = el("span", "", m.chave); chave.style.color = "var(--fraco)"; chave.style.fontSize = "12px";
         const cam = el("span", "caminho", m.caminho === "-" ? m.sessao : `${m.caminho} · ${m.sessao}`);
+        cam.dataset.k = r.rede + "|" + m.ip;
         linha.append(p, ip, chave, cam);
+        if (r.ligada && m.online) {
+          const bp = el("button", "", "Ping"); bp.onclick = () => pingar(r.rede, m.ip, bp);
+          const bc = el("button", "", "Chat" + (naoLidas[r.rede + "|" + m.ip] ? ` (${naoLidas[r.rede + "|" + m.ip]})` : ""));
+          if (naoLidas[r.rede + "|" + m.ip]) bc.classList.add("novo");
+          bc.onclick = () => abrirChat(r.rede, m.ip);
+          linha.append(bp, bc);
+        }
         bloco.appendChild(linha);
       }
       if (!r.membros.length) bloco.appendChild(el("div", "membro", "sem membros ainda — use Convidar"));
@@ -64,9 +97,62 @@ function desenhar(redes) {
   }
 }
 
+// Mensagens de chat: o ultimo numero visto e as nao lidas, por rede e IP.
+const vistas = {};         // rede -> ultimo numero recebido
+const conversas = {};      // "rede|ip" -> [mensagens]
+const naoLidas = {};       // "rede|ip" -> quantas
+let chatAberto = null;     // "rede|ip" da janela de chat aberta
+
+async function buscarMensagens(redes) {
+  for (const r of redes.filter((x) => x.ligada)) {
+    const novas = await api("POST", "/api/mensagens", { rede: r.rede, desde: vistas[r.rede] || 0 }).catch(() => []);
+    for (const m of novas) {
+      vistas[r.rede] = Math.max(vistas[r.rede] || 0, m.numero);
+      const k = r.rede + "|" + m.ip;
+      (conversas[k] = conversas[k] || []).push(m);
+      if (!m.minha && k !== chatAberto) { naoLidas[k] = (naoLidas[k] || 0) + 1; aviso(`mensagem nova de ${m.ip} em ${r.rede}`, true); }
+    }
+  }
+  if (chatAberto) desenharConversa();
+}
+
 async function atualizar() {
-  try { desenhar(await api("GET", "/api/redes")); }
+  try { const redes = await api("GET", "/api/redes"); await buscarMensagens(redes); desenhar(redes); }
   catch (e) { aviso(e.message); }
+}
+
+async function pingar(rede, ip, botao) {
+  botao.disabled = true; aviso(`ping em ${ip}…`, true);
+  try { aviso((await api("POST", "/api/ping", { rede, ip })).ok, true); } catch (e) { aviso(e.message); }
+  botao.disabled = false;
+}
+
+function desenharConversa() {
+  const caixa = $("conversa"); caixa.textContent = "";
+  for (const m of conversas[chatAberto] || []) {
+    const b = el("div", "bolha " + (m.minha ? "minha" : "dele"), m.texto);
+    b.appendChild(el("small", "", new Date(m.quando * 1000).toLocaleTimeString()));
+    caixa.appendChild(b);
+  }
+  caixa.scrollTop = caixa.scrollHeight;
+}
+
+function abrirChat(rede, ip) {
+  const f = dialogo("d-chat");
+  chatAberto = rede + "|" + ip; delete naoLidas[chatAberto];
+  $("d-chat").querySelector("[data-ip]").textContent = ip;
+  $("d-chat").onclose = () => { chatAberto = null; atualizar(); };
+  desenharConversa();
+  f.onsubmit = (ev) => { ev.preventDefault(); const texto = f.querySelector("[name=texto]").value;
+    if (!texto.trim()) return;
+    enviar(f, "/api/chat", { rede, ip, texto }, () => { f.querySelector("[name=texto]").value = ""; atualizar(); }); };
+  f.querySelector("[name=texto]").focus();
+}
+
+async function ligarLembrada(rede, botao) {
+  botao.disabled = true; aviso(`ligando ${rede} com a senha lembrada…`, true);
+  try { aviso((await api("POST", "/api/ligar", { rede })).ok, true); } catch (e) { aviso(e.message); }
+  atualizar();
 }
 
 function dialogo(id) {
@@ -118,6 +204,7 @@ function abrirLigar(r) {
   $("repasse-conta").hidden = !usa;
   f.querySelector("[name=repasse_usuario]").value = r.repasse_usuario || "";
   f.onsubmit = (ev) => { ev.preventDefault(); const d = Object.fromEntries(new FormData(f)); d.rede = rede;
+    d.lembrar = d.lembrar === "1";
     if (!usa) { delete d.repasse_usuario; delete d.repasse_senha; }
     enviar(f, "/api/ligar", d, (x) => { $("d-ligar").close(); aviso(x.ok, true); atualizar(); }); };
 }
