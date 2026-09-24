@@ -243,6 +243,17 @@ pub(crate) fn forjar_contra_o_pino_cego(
 /// Um tipo so para as tres travas (fila de nonces, TOFU e os avisos do M3):
 /// a decisao «recuperar e dizer» escrita uma vez, e nao repetida em cada
 /// `lock` -- a que alguem esquecesse voltaria a ser o `return Ok(())`.
+///
+/// # E todas as travas do estado do cluster -- pedido 447
+///
+/// O `EstadoCluster` tinha seis `Mutex` lidos cada um com a sua resposta
+/// inventada para o veneno (`unwrap_or_default`, `.ok()?`, `if let Ok`), e o
+/// `mapa()` vazio sozinho travava a eleicao: medido, a replica envenenada via
+/// 1 de 3 e nao se promovia enquanto a outra, vendo 2 de 3, esperava por ela.
+/// A pergunta e a mesma das guardas -- o que fazer com a trava de um estado
+/// que o desenrolar nao entorta --, entao a resposta vem deste motor, e nao
+/// de uma segunda copia dele no `cluster.rs`. O que muda de trava para trava
+/// e so o nome no aviso.
 pub(crate) struct TravaDaGuarda<T> {
     trava: Mutex<T>,
     /// Como a trava aparece no aviso: «a trava {nome} estava envenenada».
@@ -265,10 +276,10 @@ impl<T> TravaDaGuarda<T> {
             if !self.veneno_dito.swap(true, Ordering::Relaxed) {
                 eprintln!(
                     "cluster: a trava {} estava ENVENENADA por um panico em \
-                     outra thread -- estado recuperado, e a guarda segue \
-                     valendo para o que ja estava anotado. O panico esta acima \
-                     deste aviso no log; este aviso sai uma vez por trava, e \
-                     nao a cada pulso",
+                     outra thread -- estado recuperado, e segue valendo o que \
+                     ja estava anotado nela. O panico esta acima deste aviso \
+                     no log; este aviso sai uma vez por trava, e nao a cada \
+                     pulso",
                     self.nome
                 );
             }

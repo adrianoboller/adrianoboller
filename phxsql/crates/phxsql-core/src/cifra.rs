@@ -660,11 +660,12 @@ pub fn sortear_u64() -> u64 {
 mod testes {
     use super::*;
 
+    /// Os vetores das RFCs vem quebrados em linhas e com espacos; tirado o
+    /// que nao e digito, quem decodifica e o motor (pedido 446), e nao uma
+    /// copia dele.
     fn de_hex(s: &str) -> Vec<u8> {
         let limpo: String = s.chars().filter(|c| c.is_ascii_hexdigit()).collect();
-        (0..limpo.len() / 2)
-            .map(|i| u8::from_str_radix(&limpo[i * 2..i * 2 + 2], 16).unwrap())
-            .collect()
+        crate::hash::de_hex(&limpo).expect("vetor com quantidade impar de digitos")
     }
 
     fn chave_sequencial(base: u8) -> [u8; 32] {

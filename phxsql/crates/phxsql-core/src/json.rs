@@ -706,14 +706,19 @@ impl Analisador<'_> {
         }
     }
 
+    /// Os quatro digitos de um `\uXXXX`, pelo digito do motor -- pedido 446.
+    /// O `u32::from_str_radix` de antes aceitava um `+` na frente (`\u+041`
+    /// era `A`), que a RFC 8259 nao conhece.
     fn hex4(&mut self) -> Result<u32> {
         if self.pos + 4 > self.bytes.len() {
             return Err(self.erro("escape \\u truncado"));
         }
-        let t = std::str::from_utf8(&self.bytes[self.pos..self.pos + 4])
-            .map_err(|_| self.erro("escape \\u invalido"))?;
-        let v =
-            u32::from_str_radix(t, 16).map_err(|_| self.erro("escape \\u nao e hexadecimal"))?;
+        let mut v = 0u32;
+        for &c in &self.bytes[self.pos..self.pos + 4] {
+            let d = crate::hash::digito_hex(c)
+                .ok_or_else(|| self.erro("escape \\u nao e hexadecimal"))?;
+            v = (v << 4) | u32::from(d);
+        }
         self.pos += 4;
         Ok(v)
     }
@@ -767,6 +772,26 @@ impl Analisador<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **Pedido 446, o irmao do JSON.** O `\uXXXX` se lia pelo
+    /// `u32::from_str_radix`, que aceita um `+` na frente: `"\u+041"` virava
+    /// `"A"`. A RFC 8259 (secao 7) pede quatro HEXDIG, e um analisador que
+    /// aceita mais do que a norma le o mesmo texto de um jeito diferente de
+    /// quem o conferiu antes dele. Os quatro digitos agora saem do digito do
+    /// motor, `hash::digito_hex`.
+    #[test]
+    fn escape_u_so_aceita_quatro_digitos_hexadecimais() {
+        assert_eq!(
+            Json::analisar(r#""\u0041\u00E9""#).unwrap(),
+            Json::Texto("Aé".into())
+        );
+        for torto in [r#""\u+041""#, r#""\u+0041""#, r#""\u00g1""#, r#""\u 041""#] {
+            assert!(
+                Json::analisar(torto).is_err(),
+                "{torto} passou como escape: o sinal (ou o espaco) virou digito hexadecimal"
+            );
+        }
+    }
 
     #[test]
     fn tipos_basicos() {

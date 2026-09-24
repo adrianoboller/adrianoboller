@@ -175,6 +175,15 @@ aviso): a origem passa a ser o master **corrente**, descoberto pelo pulso.
       ao log **uma vez**. Falhar fechado custaria um failover do cluster
       inteiro por um único pânico, porque o envenenamento de trava é
       permanente.
+    - **E nenhuma trava do estado do cluster responde «vazio» ao veneno**
+      (pedido 447). O mapa de pulsos, a lista viva, o master corrente, as
+      threads de pulso, os motivos de degradação e o aviso de promoção usam a
+      mesma trava que recupera e avisa uma vez. Antes cada leitor inventava
+      a sua resposta, e o mapa vazio travava a eleição — medido num cluster
+      de três: o nó envenenado via 1 de 3 e não se promovia, enquanto a outra
+      réplica, vendo 2 de 3, o elegia e esperava por ele; no master, a mesma
+      conta recusava toda escrita. O que envenenaria essas travas hoje:
+      **nada conhecido** — elas só guardam `insert`, `remove` e `clone`.
 - **Papel vivo e época.** O papel do `config.json` é só o inicial. O vivo
   mora em `base/cluster.estado.json` junto com a **época** — um contador que
   cresce a cada eleição. O arquivo ganha do config no arranque: um master

@@ -1247,6 +1247,9 @@ QA, com julgamento de pergunta, e a redação do H.
 | 372 — senha do DbLink, a camada sem dono | forte | pétrea da senha |
 | 436 M1–M3 — guardas do pulso | forte | segurança de cluster |
 | 426 + 262 etapa 1 — o caminho do COMMIT | forte | concorrência e atomicidade da transação, com a trava global na mão |
+| 446 + 447 — hexadecimal do fio e trava envenenada | forte | pânico alcançável pela rede e estado do cluster na eleição |
+| 372 — cifra do dblink.json com chave externa | forte | formato em disco e criptografia |
+| 450 etapa 1 — PhxZip, o 7-Zip em Rust | forte | formato de arquivo, AES e descompressor escritos aqui, para nove alvos |
 | SEC — revisão de 434 e 435 | forte | leitura adversária de criptografia |
 | QA — inventário do mesmo motor | médio | varredura com julgamento de pergunta, verificável |
 | H — cognições e MODELOS | médio | redação a partir de fatos dados; o leve arriscaria a nuance da terceira seção |

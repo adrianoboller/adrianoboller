@@ -8426,10 +8426,10 @@ pub fn limpar() {
             if !self.veneno_dito.swap(true, Ordering::Relaxed) {
                 eprintln!(
                     "cluster: a trava {} estava ENVENENADA por um panico em \\
-                     outra thread -- estado recuperado, e a guarda segue \\
-                     valendo para o que ja estava anotado. O panico esta acima \\
-                     deste aviso no log; este aviso sai uma vez por trava, e \\
-                     nao a cada pulso",
+                     outra thread -- estado recuperado, e segue valendo o que \\
+                     ja estava anotado nela. O panico esta acima deste aviso \\
+                     no log; este aviso sai uma vez por trava, e nao a cada \\
+                     pulso",
                     self.nome
                 );
             }
@@ -8988,5 +8988,277 @@ pub fn limpar() {
         "seguem": [
             "servidor::testes_transacoes::a_filha_antes_do_pai_nao_deixa_marca_para_o_arranque",
         ],
+    },
+    # 46. O `de_hex` que fatia TEXTO por byte -- pedido 446, o motor
+    # -----------------------------------------------------------------------
+    {
+        "id": "de-hex-fatia-texto-por-byte",
+        "titulo": "o de_hex em pânico com hexadecimal que corta um caractere de vários bytes",
+        "porque": (
+            "achado da frente 436 em 24/09/2026, medido pelo integrador: "
+            "`&t[i..i + 2]` com a paridade conferida por `len() % 2`, que conta "
+            "BYTES. `\"a€\"` tem quatro bytes, passa, e o corte cai no meio do "
+            "`€` -- panico, e nao `None`. O `from_str_radix` de dentro e o "
+            "segundo furo da mesma linha: aceita `+`, e `\"+f+f\"` virava "
+            "`[15, 15]`. Esta entrada prova o MOTOR; o dano pelo soquete esta "
+            "nas duas seguintes."
+        ),
+        "arquivo": "crates/phxsql-core/src/hash.rs",
+        "trecho": """    let mut saida = Vec::with_capacity(t.len() / 2);
+    for par in t.chunks_exact(2) {
+        saida.push((digito_hex(par[0])? << 4) | digito_hex(par[1])?);
+    }
+    Some(saida)
+""",
+        "troca": """    // DEFEITO REPOSTO (446): fatia o TEXTO por byte, pelo from_str_radix.
+    let t = std::str::from_utf8(t).unwrap();
+    (0..t.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&t[i..i + 2], 16).ok())
+        .collect()
+""",
+        "pacote": "phxsql-core",
+        "alvo": ["--lib"],
+        "caem": [
+            "hash::tests::de_hex_com_caractere_de_varios_bytes_recusa_sem_panico",
+            "hash::tests::de_hex_recusa_o_sinal_que_o_from_str_radix_aceita",
+        ],
+        "seguem": [
+            "hash::tests::hex_vai_e_volta",
+            "ed25519::tests::hexadecimal_recusa_tamanho_errado",
+        ],
+        "prazo": 300,
+    },
+    # 47. O mesmo `de_hex`, visto pelo SOQUETE -- pedido 446
+    # -----------------------------------------------------------------------
+    {
+        "id": "prova-do-pulso-derruba-a-conexao",
+        "titulo": "a prova do pulso que corta um caractere derruba a conexão e mata o laço do pulso",
+        "porque": (
+            "o alcance do 446, medido pelo soquete com o servidor de pe. O "
+            "PEDIDO `cluster_pulso` (credencial do cluster, id da lista, chave "
+            "estatica neste no) com `prova` = `\"a€\"` x16: a conexao cai sem "
+            "resposta; o no segue atendendo e nenhuma trava envenena. A "
+            "RESPOSTA do pulso passa pelo mesmo `de_hex`, e ali o dano e maior: "
+            "a thread de pulso para aquele par morre e nunca mais sobe, porque "
+            "so se desmarca do `pulsando` pelo caminho normal -- o par recebe "
+            "1 pulso e mais nada. E o `hex_para_bytes` passou a chamar o motor, "
+            "entao o `Bin` do `inserir` cai junto: a trava de dados envenena."
+        ),
+        "arquivo": "crates/phxsql-core/src/hash.rs",
+        "trecho": """    let mut saida = Vec::with_capacity(t.len() / 2);
+    for par in t.chunks_exact(2) {
+        saida.push((digito_hex(par[0])? << 4) | digito_hex(par[1])?);
+    }
+    Some(saida)
+""",
+        "troca": """    // DEFEITO REPOSTO (446): fatia o TEXTO por byte, pelo from_str_radix.
+    let t = std::str::from_utf8(t).unwrap();
+    (0..t.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&t[i..i + 2], 16).ok())
+        .collect()
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "hexadecimal-do-fio"],
+        "caem": [
+            "a_prova_do_pulso_que_corta_um_caractere_e_recusada_com_resposta",
+            "a_prova_torta_na_resposta_nao_mata_o_laco_do_pulso",
+            "binario_que_corta_um_caractere_nao_envenena_a_trava_de_dados",
+        ],
+        # A web nao passa pelo `de_hex`: le o digito do motor byte a byte.
+        "seguem": [
+            "percent_seguido_de_multibyte_no_idiomas_responde",
+        ],
+        "prazo": 300,
+    },
+    # 48. A COPIA do `de_hex` que lia o `Bin` do `inserir` -- pedido 446
+    # -----------------------------------------------------------------------
+    {
+        "id": "copia-do-de-hex-envenena-a-trava-de-dados",
+        "titulo": "o binário que corta um caractere envenena a trava global de dados",
+        "porque": (
+            "o irmao mais caro do 446, achado na varredura: "
+            "`carga::hex_para_bytes` era copia do `de_hex`, com o mesmo corte, "
+            "e e ela que o `json_para_valor` chama para a coluna `Bin` -- "
+            "DEPOIS de o `op_inserir` tomar a trava global de dados. Medido "
+            "pelo soquete: a conexao do `inserir` cai, e o `inserir` seguinte, "
+            "por OUTRA conexao, recebe «uma operacao anterior entrou em panico "
+            "e deixou a trava suja». Veneno de `RwLock` e permanente: qualquer "
+            "usuario com direito de inserir numa tabela com coluna binaria "
+            "parava a base de todos ate o reinicio. A copia virou chamada ao "
+            "motor (a petrea «funcao e comando vem do mesmo motor»)."
+        ),
+        "arquivo": "crates/phxsql-core/src/carga.rs",
+        "trecho": """    crate::hash::de_hex(t).ok_or_else(|| PhxError::Tipo(format!("hexadecimal invalido: {hex:?}")))
+""",
+        "troca": """    // DEFEITO REPOSTO (446): a copia do de_hex, com o corte por byte.
+    (0..t.len())
+        .step_by(2)
+        .map(|i| {
+            u8::from_str_radix(&t[i..i + 2], 16)
+                .map_err(|_| PhxError::Tipo(format!("hexadecimal invalido: {hex:?}")))
+        })
+        .collect()
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "hexadecimal-do-fio"],
+        "caem": [
+            "binario_que_corta_um_caractere_nao_envenena_a_trava_de_dados",
+        ],
+        "seguem": [
+            "a_prova_do_pulso_que_corta_um_caractere_e_recusada_com_resposta",
+            "percent_seguido_de_multibyte_no_idiomas_responde",
+        ],
+        "prazo": 300,
+    },
+    # 49. O `%XX` da porta web fatiado por byte, antes do login -- pedido 446
+    # -----------------------------------------------------------------------
+    {
+        "id": "percent-da-web-fatia-texto-por-byte",
+        "titulo": "o %XX da porta web em pânico com caractere de vários bytes, sem login",
+        "porque": (
+            "o irmao do 446 na porta HTTP, achado na varredura das fatias "
+            "`[i..i + 2]`: o `desescapar` fatiava `bruto[i + 1..i + 3]`, e o "
+            "`GET /idiomas` e servido SEM credencial (a tela de entrada precisa "
+            "dos rotulos). Medido pelo soquete: `/idiomas?idioma=%€` fecha a "
+            "conexao sem uma linha de resposta. A vaga da web volta (a "
+            "`Permissao` morre no desenrolar, pedido 248) e a porta segue "
+            "atendendo: o dano e a thread, e o que custa e zero credencial."
+        ),
+        "arquivo": "crates/phxsql-server/src/http.rs",
+        "trecho": """            b'%' if i + 2 < bytes.len() => {
+                match (digito_hex(bytes[i + 1]), digito_hex(bytes[i + 2])) {
+                    (Some(alto), Some(baixo)) => {
+                        saida.push((alto << 4) | baixo);
+                        i += 3;
+                    }
+                    _ => {
+                        saida.push(b'%');
+                        i += 1;
+                    }
+                }
+            }
+""",
+        "troca": """            // DEFEITO REPOSTO (446): a fatia do texto por byte.
+            b'%' if i + 2 < bytes.len() => match u8::from_str_radix(&bruto[i + 1..i + 3], 16) {
+                Ok(b) => {
+                    saida.push(b);
+                    i += 3;
+                }
+                Err(_) => {
+                    saida.push(b'%');
+                    i += 1;
+                }
+            },
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "hexadecimal-do-fio"],
+        "caem": [
+            "percent_seguido_de_multibyte_no_idiomas_responde",
+        ],
+        "seguem": [
+            "a_prova_do_pulso_que_corta_um_caractere_e_recusada_com_resposta",
+            "binario_que_corta_um_caractere_nao_envenena_a_trava_de_dados",
+        ],
+        "prazo": 300,
+    },
+    # 50. O mapa do cluster envenenado virando «ninguem vivo» -- pedido 447
+    # -----------------------------------------------------------------------
+    {
+        "id": "mapa-do-cluster-envenenado-vira-vazio",
+        "titulo": "o mapa de pulsos envenenado devolvido vazio: a eleição trava",
+        "porque": (
+            "achado da frente 436, lido pelo integrador: "
+            "`self.nos.lock().map(|m| m.clone()).unwrap_or_default()`. Medido "
+            "com a trava envenenada num cluster de tres: `vivos()` via 1 de 3, "
+            "o master perdia a maioria e recusava toda escrita, e a replica "
+            "envenenada que a outra elegia (2 de 3, vencedora ela) nao se "
+            "promovia (1 de 3, nenhum vencedor) -- cluster sem master, sem "
+            "prazo; o `registrar` seguinte sumia calado. O `Mutex` virou "
+            "`TravaDaGuarda` (o motor do 436), entao repor o defeito pede as "
+            "DUAS trocas da entrada 34: reabrir um `lock` que devolve `None` "
+            "no veneno, e usa-lo no `mapa()` com o `unwrap_or_default` de origem."
+        ),
+        "trocas": [
+            {
+                "arquivo": "crates/phxsql-server/src/pulso.rs",
+                "trecho": """    /// O `lock` que nao falha por veneno, e que nao cala quando acha um.
+""",
+                "troca": """    /// DEFEITO REPOSTO (447): a porta que o tipo fechou, reaberta.
+    pub(crate) fn tentar(&self) -> Option<MutexGuard<'_, T>> {
+        self.trava.lock().ok()
+    }
+
+    /// O `lock` que nao falha por veneno, e que nao cala quando acha um.
+""",
+            },
+            {
+                "arquivo": "crates/phxsql-server/src/cluster.rs",
+                "trecho": """        self.nos.travar().clone()
+""",
+                "troca": """        self.nos.tentar().map(|m| m.clone()).unwrap_or_default()
+""",
+            },
+        ],
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "cluster::testes::o_mapa_com_a_trava_envenenada_continua_vendo_os_vivos",
+        ],
+        "seguem": [
+            "cluster::testes::master_de_epoca_velha_nao_conta",
+            "cluster::testes::a_familia_das_travas_do_cluster_recupera_o_veneno",
+        ],
+        "prazo": 300,
+    },
+    # 51. A lista viva envenenada voltando ao config do arranque -- pedido 447
+    # -----------------------------------------------------------------------
+    {
+        "id": "lista-do-cluster-envenenada-volta-ao-arranque",
+        "titulo": "a lista viva de nós envenenada respondida pelo config.json do arranque",
+        "porque": (
+            "o irmao do `mapa()` que o proprio pedido 447 nomeia: a `lista()` "
+            "caia no `config.nos` quando a trava envenenava -- a MESMA falha "
+            "com outra resposta. Medido: o no acrescentado a quente deixava de "
+            "existir para quem le a lista, `acrescentar` e `remover` diziam "
+            "`false` e o denominador da maioria voltava ao do arranque. O teste "
+            "da familia cobre as seis travas; esta entrada repoe a que o pedido "
+            "descreve, pelas mesmas duas trocas da anterior."
+        ),
+        "trocas": [
+            {
+                "arquivo": "crates/phxsql-server/src/pulso.rs",
+                "trecho": """    /// O `lock` que nao falha por veneno, e que nao cala quando acha um.
+""",
+                "troca": """    /// DEFEITO REPOSTO (447): a porta que o tipo fechou, reaberta.
+    pub(crate) fn tentar(&self) -> Option<MutexGuard<'_, T>> {
+        self.trava.lock().ok()
+    }
+
+    /// O `lock` que nao falha por veneno, e que nao cala quando acha um.
+""",
+            },
+            {
+                "arquivo": "crates/phxsql-server/src/cluster.rs",
+                "trecho": """        self.lista.travar().clone()
+""",
+                "troca": """        self.lista
+            .tentar()
+            .map(|l| l.clone())
+            .unwrap_or_else(|| self.config.nos.clone())
+""",
+            },
+        ],
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "cluster::testes::a_familia_das_travas_do_cluster_recupera_o_veneno",
+        ],
+        "seguem": [
+            "cluster::testes::o_mapa_com_a_trava_envenenada_continua_vendo_os_vivos",
+            "cluster::testes::replica_redireciona_para_o_master",
+        ],
+        "prazo": 300,
     },
 ]

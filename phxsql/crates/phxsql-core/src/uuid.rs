@@ -356,13 +356,10 @@ fn hex_para(s: &str, dst: &mut [u8]) -> std::result::Result<(), String> {
     Ok(())
 }
 
+/// O digito vem do motor (`hash::digito_hex`, pedido 446): aqui morava uma
+/// segunda copia da mesma tabela, e o que fica e so a frase de erro.
 fn digito(c: u8) -> std::result::Result<u8, String> {
-    match c {
-        b'0'..=b'9' => Ok(c - b'0'),
-        b'a'..=b'f' => Ok(c - b'a' + 10),
-        b'A'..=b'F' => Ok(c - b'A' + 10),
-        outro => Err(format!("caractere {:?} nao e hexadecimal", outro as char)),
-    }
+    crate::hash::digito_hex(c).ok_or_else(|| format!("caractere {:?} nao e hexadecimal", c as char))
 }
 
 fn escrever_hex(bytes: &[u8], f: &mut fmt::Formatter<'_>) -> fmt::Result {

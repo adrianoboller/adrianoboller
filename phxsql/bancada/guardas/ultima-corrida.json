@@ -1299,17 +1299,17 @@
       "id": "trava-da-guarda-recupera-calada",
       "titulo": "a trava envenenada da guarda recuperada sem dizer nada",
       "veredito": "PROVADA",
-      "segundos": 50.17,
+      "segundos": 33.25,
       "notas": [],
-      "quando": "2026-09-24 00:45"
+      "quando": "2026-09-24 01:49"
     },
     {
       "id": "tofu-envenenado-vira-nunca-provou",
       "titulo": "o TOFU do pulso desligado, calado, por uma trava envenenada",
       "veredito": "PROVADA",
-      "segundos": 49.14,
+      "segundos": 47.44,
       "notas": [],
-      "quando": "2026-09-24 00:45"
+      "quando": "2026-09-24 01:49"
     },
     {
       "id": "guarda-do-pulso-inerte-e-muda",
@@ -1422,6 +1422,54 @@
       "segundos": 49.94,
       "notas": [],
       "quando": "2026-09-24 01:13"
+    },
+    {
+      "id": "de-hex-fatia-texto-por-byte",
+      "titulo": "o de_hex em pânico com hexadecimal que corta um caractere de vários bytes",
+      "veredito": "PROVADA",
+      "segundos": 4.03,
+      "notas": [],
+      "quando": "2026-09-24 01:49"
+    },
+    {
+      "id": "prova-do-pulso-derruba-a-conexao",
+      "titulo": "a prova do pulso que corta um caractere derruba a conexão e mata o laço do pulso",
+      "veredito": "PROVADA",
+      "segundos": 12.99,
+      "notas": [],
+      "quando": "2026-09-24 01:49"
+    },
+    {
+      "id": "copia-do-de-hex-envenena-a-trava-de-dados",
+      "titulo": "o binário que corta um caractere envenena a trava global de dados",
+      "veredito": "PROVADA",
+      "segundos": 15.02,
+      "notas": [],
+      "quando": "2026-09-24 01:49"
+    },
+    {
+      "id": "percent-da-web-fatia-texto-por-byte",
+      "titulo": "o %XX da porta web em pânico com caractere de vários bytes, sem login",
+      "veredito": "PROVADA",
+      "segundos": 10.52,
+      "notas": [],
+      "quando": "2026-09-24 01:49"
+    },
+    {
+      "id": "mapa-do-cluster-envenenado-vira-vazio",
+      "titulo": "o mapa de pulsos envenenado devolvido vazio: a eleição trava",
+      "veredito": "PROVADA",
+      "segundos": 42.73,
+      "notas": [],
+      "quando": "2026-09-24 01:49"
+    },
+    {
+      "id": "lista-do-cluster-envenenada-volta-ao-arranque",
+      "titulo": "a lista viva de nós envenenada respondida pelo config.json do arranque",
+      "veredito": "PROVADA",
+      "segundos": 36.38,
+      "notas": [],
+      "quando": "2026-09-24 01:49"
     },
     {
       "id": "cifra-do-fio-imposta",

@@ -31,12 +31,12 @@ use crate::apoio_teste::DirTemp;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, AtomicU8, Ordering};
-use std::sync::Mutex;
 
 use phxsql_core::error::{PhxError, Result};
 use phxsql_core::json::Json;
 
 use crate::config::Cluster;
+use crate::pulso::TravaDaGuarda;
 
 /// Papel VIVO deste no. Pode divergir do `config.json` depois de uma eleicao
 /// -- e e por isso que ele se persiste: um master destronado que reiniciasse
@@ -187,8 +187,22 @@ pub struct EstadoCluster {
     /// Ultima vez que um master LEGITIMO (epoca >= a nossa) deu sinal.
     master_visto_ms: AtomicI64,
     /// Id do master corrente, na visao deste no.
-    master_id: Mutex<Option<String>>,
-    nos: Mutex<HashMap<String, PulsoDeNo>>,
+    ///
+    /// Esta e as outras travas do estado sao [`TravaDaGuarda`] -- pedido 447.
+    /// Eram `Mutex` lidos com `.ok()`/`unwrap_or_default()`, e cada leitor
+    /// inventava uma resposta propria para a trava envenenada: o `mapa()`
+    /// devolvia o mapa VAZIO, a `lista()` caia no `config.nos` do arranque, o
+    /// `master_atual()` dizia «sem master», o `degradacao()` dizia «saudavel».
+    /// Medido com o `mapa` envenenado num cluster de tres: `vivos()` via 1 de
+    /// 3, o master perdia a maioria e recusava toda escrita, e a replica
+    /// envenenada que a outra elegia (2 de 3, vencedor ela) nao se promovia
+    /// (1 de 3, nenhum vencedor) -- o cluster ficava sem master, sem prazo.
+    /// Recuperar o estado e dizer que recuperou e a decisao do 436 para as
+    /// guardas do pulso, e pelo mesmo motivo: falhar fechado aqui e o failover
+    /// que nao acontece. Um motor so para as duas familias -- o `lock` que
+    /// alguem escrevesse a mao de novo voltaria a ser o `unwrap_or_default`.
+    master_id: TravaDaGuarda<Option<String>>,
+    nos: TravaDaGuarda<HashMap<String, PulsoDeNo>>,
     /// A lista VIVA dos nos -- pedido 217.
     ///
     /// Nasce copia de `config.nos` e muda A QUENTE. Ela e o denominador da
@@ -196,18 +210,18 @@ pub struct EstadoCluster {
     /// o `Cluster` e o retrato do arquivo no arranque, e um retrato nao
     /// muda. Enquanto os dois eram a mesma coisa, acrescentar um no exigia
     /// reiniciar os antigos -- o master ficava 0,367 s fora do ar.
-    lista: Mutex<Vec<crate::config::NoCluster>>,
+    lista: TravaDaGuarda<Vec<crate::config::NoCluster>>,
     /// Os ids que JA tem thread de pulso. Quem sobe a thread marca aqui; a
     /// propria thread desmarca ao morrer. Sem este registro, o supervisor
     /// subiria uma segunda thread para um no removido e reposto antes de a
     /// primeira perceber -- e as duas ficariam pulsando para sempre.
-    pulsando: Mutex<std::collections::HashSet<String>>,
+    pulsando: TravaDaGuarda<std::collections::HashSet<String>>,
     /// Motivos pelos quais o cluster esta degradado AGORA, para a op
     /// `cluster_estado` e para o e-mail repetido.
-    degradado: Mutex<Vec<String>>,
+    degradado: TravaDaGuarda<Vec<String>>,
     ultimo_email_ms: AtomicI64,
     /// Aviso de promocao pendente -- sai UMA vez, e por isso e um `take`.
-    promocao_a_avisar: Mutex<Option<String>>,
+    promocao_a_avisar: TravaDaGuarda<Option<String>>,
     /// Os nonces ja vistos por no, para um pulso legitimo gravado nao contar
     /// duas vezes -- pedido 278.
     antirrepeticao: crate::pulso::Antirrepeticao,
@@ -219,7 +233,7 @@ pub struct EstadoCluster {
     /// prova naquele id vira rebaixamento e e recusada. E o TOFU do
     /// `known_hosts`, aplicado ao pulso -- e a mesma escolha ja registrada em
     /// `docs/CIFRA-DO-FIO.md` §1 para o pino.
-    provaram: crate::pulso::TravaDaGuarda<std::collections::HashSet<String>>,
+    provaram: TravaDaGuarda<std::collections::HashSet<String>>,
     /// Os pares ja ANUNCIADOS no log como aceitos sem prova -- pedido 436
     /// (SEC M3). E o que faz o aviso da guarda inerte sair uma vez por par, e
     /// nao a cada pulso.
@@ -229,7 +243,7 @@ pub struct EstadoCluster {
     /// RESPOSTA do pulso chegava aqui com um `id` que ninguem conferia, e
     /// guardar qualquer um seria a memoria de quem confere escolhida por quem
     /// manda.
-    sem_prova_anunciados: crate::pulso::TravaDaGuarda<std::collections::HashSet<String>>,
+    sem_prova_anunciados: TravaDaGuarda<std::collections::HashSet<String>>,
     caminho_estado: PathBuf,
     /// Quando este estado nasceu. O arbitro da UMA janela de graca a partir
     /// daqui: no arranque o primeiro tique roda antes do primeiro pulso, e
@@ -336,19 +350,19 @@ impl EstadoCluster {
             // O arranque vale como "acabei de ver o master": da ao cluster a
             // janela inteira para se apresentar antes de alguem abrir eleicao.
             master_visto_ms: AtomicI64::new(agora),
-            master_id: Mutex::new(None),
-            nos: Mutex::new(HashMap::new()),
-            lista: Mutex::new(config_nos),
-            pulsando: Mutex::new(std::collections::HashSet::new()),
-            degradado: Mutex::new(Vec::new()),
-            ultimo_email_ms: AtomicI64::new(0),
-            promocao_a_avisar: Mutex::new(None),
-            antirrepeticao: crate::pulso::Antirrepeticao::default(),
-            provaram: crate::pulso::TravaDaGuarda::nova(
-                "do TOFU do pulso",
+            master_id: TravaDaGuarda::nova("do master corrente do cluster", None),
+            nos: TravaDaGuarda::nova("do mapa de pulsos do cluster", HashMap::new()),
+            lista: TravaDaGuarda::nova("da lista viva de nos do cluster", config_nos),
+            pulsando: TravaDaGuarda::nova(
+                "das threads de pulso do cluster",
                 std::collections::HashSet::new(),
             ),
-            sem_prova_anunciados: crate::pulso::TravaDaGuarda::nova(
+            degradado: TravaDaGuarda::nova("dos motivos de degradacao do cluster", Vec::new()),
+            ultimo_email_ms: AtomicI64::new(0),
+            promocao_a_avisar: TravaDaGuarda::nova("do aviso de promocao do cluster", None),
+            antirrepeticao: crate::pulso::Antirrepeticao::default(),
+            provaram: TravaDaGuarda::nova("do TOFU do pulso", std::collections::HashSet::new()),
+            sem_prova_anunciados: TravaDaGuarda::nova(
                 "dos avisos de pulso sem prova",
                 std::collections::HashSet::new(),
             ),
@@ -409,7 +423,7 @@ impl EstadoCluster {
         if self.papel() == PapelVivo::Master {
             return Some((self.config.id.clone(), self.epoca()));
         }
-        let id = self.master_id.lock().ok()?.clone()?;
+        let id = self.master_id.travar().clone()?;
         Some((id, self.epoca()))
     }
 
@@ -459,13 +473,9 @@ impl EstadoCluster {
                 self.epoca.store(pulso.epoca, Ordering::SeqCst);
                 let _ = self.persistir();
             }
-            if let Ok(mut m) = self.master_id.lock() {
-                *m = Some(id.to_string());
-            }
+            *self.master_id.travar() = Some(id.to_string());
         }
-        if let Ok(mut nos) = self.nos.lock() {
-            nos.insert(id.to_string(), pulso);
-        }
+        self.nos.travar().insert(id.to_string(), pulso);
     }
 
     /* ------------------------------ a identidade de quem pulsa (pedido 278)
@@ -834,18 +844,12 @@ impl EstadoCluster {
 
     /// Os nos do cluster AGORA, este incluido.
     pub fn lista(&self) -> Vec<crate::config::NoCluster> {
-        self.lista
-            .lock()
-            .map(|l| l.clone())
-            .unwrap_or_else(|_| self.config.nos.clone())
+        self.lista.travar().clone()
     }
 
     /// Quantos nos o cluster tem AGORA -- o denominador da maioria.
     pub fn total(&self) -> usize {
-        self.lista
-            .lock()
-            .map(|l| l.len())
-            .unwrap_or(self.config.nos.len())
+        self.lista.travar().len()
     }
 
     /// O no com este id, na lista viva.
@@ -873,9 +877,7 @@ impl EstadoCluster {
     /// la": o no mudou de lugar, e a lista tem de acompanhar -- senao o pulso
     /// continuaria indo para o endereco velho.
     pub fn acrescentar(&self, no: crate::config::NoCluster) -> bool {
-        let Ok(mut l) = self.lista.lock() else {
-            return false;
-        };
+        let mut l = self.lista.travar();
         match l.iter_mut().find(|n| n.id == no.id) {
             Some(velho) if *velho == no => false,
             Some(velho) => {
@@ -891,17 +893,13 @@ impl EstadoCluster {
 
     /// Tira um no da lista. `false` = nao estava la.
     pub fn remover(&self, id: &str) -> bool {
-        let Ok(mut l) = self.lista.lock() else {
-            return false;
-        };
+        let mut l = self.lista.travar();
         let antes = l.len();
         l.retain(|n| n.id != id);
         if l.len() != antes {
             // O pulso dele tambem sai do mapa: um no removido que continuasse
             // "vivo" ali entraria na conta da maioria por mais uma janela.
-            if let Ok(mut m) = self.nos.lock() {
-                m.remove(id);
-            }
+            self.nos.travar().remove(id);
             true
         } else {
             false
@@ -911,22 +909,17 @@ impl EstadoCluster {
     /// Marca que este no ja tem thread de pulso. `true` = fui EU quem marcou,
     /// entao e minha a obrigacao de subir a thread.
     pub fn marcar_pulso(&self, id: &str) -> bool {
-        self.pulsando
-            .lock()
-            .map(|mut p| p.insert(id.to_string()))
-            .unwrap_or(false)
+        self.pulsando.travar().insert(id.to_string())
     }
 
     /// A thread do pulso deste no morreu.
     pub fn desmarcar_pulso(&self, id: &str) {
-        if let Ok(mut p) = self.pulsando.lock() {
-            p.remove(id);
-        }
+        self.pulsando.travar().remove(id);
     }
 
     /// Copia do mapa, para quem decide ou mostra.
     pub fn mapa(&self) -> HashMap<String, PulsoDeNo> {
-        self.nos.lock().map(|m| m.clone()).unwrap_or_default()
+        self.nos.travar().clone()
     }
 
     /// Os nos com pulso dentro da janela, ESTE incluido, prontos para a
@@ -969,9 +962,7 @@ impl EstadoCluster {
         self.epoca.store(epoca_nova, Ordering::SeqCst);
         self.papel.store(PAPEL_MASTER, Ordering::SeqCst);
         self.escrita_liberada.store(true, Ordering::SeqCst);
-        if let Ok(mut m) = self.master_id.lock() {
-            *m = Some(self.config.id.clone());
-        }
+        *self.master_id.travar() = Some(self.config.id.clone());
         self.master_visto_ms
             .store(crate::agora_ms(), Ordering::SeqCst);
         self.persistir()?;
@@ -1002,25 +993,21 @@ impl EstadoCluster {
 
     /// Troca a lista de motivos de degradacao pela atual.
     pub fn definir_degradacao(&self, motivos: Vec<String>) {
-        if let Ok(mut d) = self.degradado.lock() {
-            *d = motivos;
-        }
+        *self.degradado.travar() = motivos;
     }
 
     pub fn degradacao(&self) -> Vec<String> {
-        self.degradado.lock().map(|d| d.clone()).unwrap_or_default()
+        self.degradado.travar().clone()
     }
 
     /// Agenda o aviso unico de promocao.
     pub fn anotar_promocao(&self, texto: String) {
-        if let Ok(mut p) = self.promocao_a_avisar.lock() {
-            *p = Some(texto);
-        }
+        *self.promocao_a_avisar.travar() = Some(texto);
     }
 
     /// Retira o aviso de promocao, se houver -- quem retira, envia.
     pub fn tomar_aviso_de_promocao(&self) -> Option<String> {
-        self.promocao_a_avisar.lock().ok()?.take()
+        self.promocao_a_avisar.travar().take()
     }
 
     /// Passou o silencio entre dois e-mails de degradacao? Marcar so quando
@@ -1610,6 +1597,126 @@ mod testes {
                  falhar fechado aqui calaria todo par de versao anterior"
             )
         });
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// **Pedido 447, o dano que decidiu a gravidade.** Um cluster de tres,
+    /// visto do `no2` (replica, prioridade 3, diario na posicao 10): o master
+    /// `no1` calou, o `no3` continua pulsando. A trava do mapa envenena.
+    ///
+    /// O vermelho medido com o `mapa()` de antes
+    /// (`lock().map(clone).unwrap_or_default()`): `vivos()` via **1 de 3** (so
+    /// ele mesmo) e `vencedor` = nenhum, enquanto o `no3` saudavel, vendo 2 de
+    /// 3, elege o `no2` -- e fica esperando ele assumir. Cluster sem master,
+    /// sem prazo. No master, a mesma conta do arbitro dava 1 de 3: sem
+    /// maioria, escrita recusada a cada tique. E o `registrar` seguinte sumia
+    /// calado (mapa com 0 nos).
+    #[test]
+    fn o_mapa_com_a_trava_envenenada_continua_vendo_os_vivos() {
+        let dir = DirTemp::novo("cluster-mapa-veneno");
+        let e = EstadoCluster::novo(config_de_teste(), &dir, crate::config::Papel::Replica);
+        e.definir_posicao(10, false);
+        let mut calado = pulso(PapelVivo::Master, 2, 10);
+        calado.quando_ms -= 60_000;
+        e.registrar("no1", calado);
+        e.registrar("no3", pulso(PapelVivo::Replica, 2, 10));
+        e.nos.envenenar();
+
+        let agora = crate::agora_ms();
+        let vivos = e.vivos(agora);
+        let mut ids: Vec<&str> = vivos.iter().map(|v| v.id.as_str()).collect();
+        ids.sort_unstable();
+        assert_eq!(
+            ids,
+            ["no2", "no3"],
+            "vivos() viu {} de 3 com a trava do mapa envenenada: a replica que \
+             conta assim nao se elege, e o master que conta assim perde a \
+             maioria e recusa toda escrita",
+            vivos.len()
+        );
+        // A MESMA conta que o `no3` faz do lado de la -- ele ve o `no2` vivo,
+        // de prioridade 3, e o elege. Se o `no2` nao chegar a ela, cada um
+        // espera o outro.
+        assert_eq!(
+            vencedor(&vivos, e.total()).map(|v| v.id.as_str()),
+            Some("no2"),
+            "o no envenenado nao chega a eleicao que o resto do cluster faz"
+        );
+        // E o pulso que chega DEPOIS do veneno continua contando.
+        e.registrar("no3", pulso(PapelVivo::Replica, 2, 77));
+        assert_eq!(
+            e.mapa().get("no3").map(|p| p.posicao),
+            Some(77),
+            "o pulso depois do veneno sumiu calado no registrar"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// **Pedido 447, a familia inteira.** Cada trava do estado envenenada, e o
+    /// leitor dela respondendo o que responderia sem o veneno.
+    ///
+    /// Medido com os `lock()` de antes, um por um: `master_atual()` = `None` e
+    /// a replica deixava de redirecionar («ainda nao ha master conhecido»);
+    /// `degradacao()` = `[]` com o cluster degradado; `marcar_pulso` = `false`
+    /// para um no novo (thread de pulso nenhuma); `acrescentar` = `false`,
+    /// `remover` = `false` e a `lista()` de volta ao `config.nos` do arranque;
+    /// o aviso de promocao = `None` (e-mail perdido).
+    #[test]
+    fn a_familia_das_travas_do_cluster_recupera_o_veneno() {
+        let dir = DirTemp::novo("cluster-familia-veneno");
+        let e = EstadoCluster::novo(config_de_teste(), &dir, crate::config::Papel::Replica);
+        e.registrar("no1", pulso(PapelVivo::Master, 2, 10));
+
+        e.master_id.envenenar();
+        assert_eq!(
+            e.master_atual().map(|(id, _)| id),
+            Some("no1".to_string()),
+            "a replica esqueceu o master com a trava envenenada"
+        );
+        assert!(
+            matches!(e.recusa_de_escrita(), Some(PhxError::Redireciona(_))),
+            "a replica parou de redirecionar: {:?}",
+            e.recusa_de_escrita()
+        );
+
+        e.definir_degradacao(vec!["no3 sem pulso ha 9s".into()]);
+        e.degradado.envenenar();
+        assert_eq!(
+            e.degradacao(),
+            vec!["no3 sem pulso ha 9s".to_string()],
+            "o cluster degradado se disse saudavel com a trava envenenada"
+        );
+
+        e.pulsando.envenenar();
+        assert!(e.marcar_pulso("no3"), "o no novo ficou sem thread de pulso");
+        assert!(!e.marcar_pulso("no3"), "a marca nao ficou");
+        e.desmarcar_pulso("no3");
+        assert!(
+            e.marcar_pulso("no3"),
+            "a thread que morreu nao se desmarcou"
+        );
+
+        let no4 = crate::config::NoCluster {
+            id: "no4".into(),
+            ..e.lista()[0].clone()
+        };
+        e.lista.envenenar();
+        assert!(e.acrescentar(no4), "o no acrescentado a quente sumiu");
+        assert_eq!(e.total(), 4, "o denominador da maioria voltou ao arranque");
+        assert!(
+            e.no("no4").is_some(),
+            "a lista voltou ao config.nos do arranque: o no acrescentado a \
+             quente deixou de existir para quem le a lista"
+        );
+        assert!(e.remover("no4"), "o no removido a quente ficou");
+
+        e.anotar_promocao("assumi".into());
+        e.promocao_a_avisar.envenenar();
+        assert_eq!(
+            e.tomar_aviso_de_promocao().as_deref(),
+            Some("assumi"),
+            "o aviso de promocao se perdeu"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

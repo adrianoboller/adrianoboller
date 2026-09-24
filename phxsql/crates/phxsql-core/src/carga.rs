@@ -619,6 +619,14 @@ pub fn data_de_texto(t: &str) -> Result<i32> {
 }
 
 /// Bytes a partir de hexadecimal.
+///
+/// A decodificacao e a do MOTOR, [`crate::hash::de_hex`] -- pedido 446. Aqui
+/// morava uma copia dela, com o mesmo corte `&t[i..i + 2]` por byte, e a
+/// copia e que lia o valor `Bin` de todo `inserir`: dentro da trava global de
+/// dados, onde o panico no meio de um caractere de varios bytes deixava a
+/// trava envenenada para toda conexao seguinte. O que fica aqui e so o que o
+/// motor nao sabe: as duas frases de erro do tipo, que quem carrega uma
+/// planilha le.
 pub fn hex_para_bytes(hex: &str) -> Result<Vec<u8>> {
     let t = hex.trim();
     if t.len() % 2 != 0 {
@@ -626,13 +634,7 @@ pub fn hex_para_bytes(hex: &str) -> Result<Vec<u8>> {
             "hexadecimal precisa ter quantidade par de digitos".into(),
         ));
     }
-    (0..t.len())
-        .step_by(2)
-        .map(|i| {
-            u8::from_str_radix(&t[i..i + 2], 16)
-                .map_err(|_| PhxError::Tipo(format!("hexadecimal invalido: {hex:?}")))
-        })
-        .collect()
+    crate::hash::de_hex(t).ok_or_else(|| PhxError::Tipo(format!("hexadecimal invalido: {hex:?}")))
 }
 
 /// Normaliza numero escrito a brasileira para a forma que o analisador come.
@@ -1169,6 +1171,32 @@ mod testes_texto_para_valor {
         let carga = ler("id;sobra\n1;x\n", Formato::Csv).unwrap();
         let err = linha_de_texto(&carga, 0, &e).unwrap_err();
         assert!(format!("{err}").contains("sobra"), "{err}");
+    }
+
+    /// **Pedido 446, o irmao que custava a base inteira.** Esta funcao era
+    /// copia do `hash::de_hex`, com o mesmo corte `&t[i..i + 2]` por byte, e e
+    /// ela que le o valor `Bin` do `inserir` -- dentro da trava global de
+    /// dados. O vermelho medido com a copia: «byte index 2 is not a char
+    /// boundary», e pelo soquete a trava envenenada para toda conexao seguinte
+    /// (`tests/hexadecimal-do-fio.rs`). O `+` e o outro furo da mesma copia:
+    /// `u8::from_str_radix` le `"+f"` como 15.
+    #[test]
+    fn hex_para_bytes_recusa_sem_panico_o_que_nao_e_hexadecimal() {
+        for torto in ["a€", "éé", "a€".repeat(16).as_str(), "+f+f"] {
+            match std::panic::catch_unwind(|| hex_para_bytes(torto)) {
+                Ok(r) => assert!(r.is_err(), "{torto:?} virou bytes: {r:?}"),
+                Err(e) => panic!(
+                    "hex_para_bytes({torto:?}) derrubou a thread: {}",
+                    e.downcast_ref::<String>().cloned().unwrap_or_default()
+                ),
+            }
+        }
+        // As duas frases de sempre continuam: a do tamanho e a do conteudo.
+        let impar = format!("{}", hex_para_bytes("abc").unwrap_err());
+        assert!(impar.contains("par"), "{impar}");
+        let torto = format!("{}", hex_para_bytes("zz").unwrap_err());
+        assert!(torto.contains("hexadecimal invalido"), "{torto}");
+        assert_eq!(hex_para_bytes(" 00FF ").unwrap(), vec![0, 255]);
     }
 
     #[test]

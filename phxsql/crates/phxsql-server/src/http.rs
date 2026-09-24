@@ -36,6 +36,7 @@ use std::io::{BufReader, Read, Write};
 use std::net::TcpStream;
 
 use phxsql_core::fio::{Canal, Recebido};
+use phxsql_core::hash::digito_hex;
 use phxsql_core::json::Json;
 
 /// A interface, embutida no binario em tempo de compilacao.
@@ -465,16 +466,22 @@ fn desescapar(bruto: &str) -> String {
                 saida.push(b' ');
                 i += 1;
             }
-            b'%' if i + 2 < bytes.len() => match u8::from_str_radix(&bruto[i + 1..i + 3], 16) {
-                Ok(b) => {
-                    saida.push(b);
-                    i += 3;
+            // Os dois digitos se leem por BYTE, pelo digito do motor -- pedido
+            // 446. A fatia `bruto[i + 1..i + 3]` de antes entrava em panico
+            // quando o `%` vinha seguido de caractere de varios bytes, e este
+            // caminho e servido antes de qualquer credencial (`/idiomas`).
+            b'%' if i + 2 < bytes.len() => {
+                match (digito_hex(bytes[i + 1]), digito_hex(bytes[i + 2])) {
+                    (Some(alto), Some(baixo)) => {
+                        saida.push((alto << 4) | baixo);
+                        i += 3;
+                    }
+                    _ => {
+                        saida.push(b'%');
+                        i += 1;
+                    }
                 }
-                Err(_) => {
-                    saida.push(b'%');
-                    i += 1;
-                }
-            },
+            }
             b => {
                 saida.push(b);
                 i += 1;
@@ -931,6 +938,33 @@ mod tests {
         assert_eq!(parametro("idiomas=todos&idioma=Ingles", "idioma"), "Ingles");
         // `%` solto nao come o resto.
         assert_eq!(parametro("a=100%", "a"), "100%");
+    }
+
+    /// **Pedido 446, o irmao da porta web.** `%` seguido de caractere de
+    /// varios bytes nao derruba a thread -- e o `/idiomas` e servido SEM
+    /// credencial. O vermelho medido com o `desescapar` de antes, que fatiava
+    /// `bruto[i + 1..i + 3]`: «byte index 3 is not a char boundary; it is
+    /// inside '€' (bytes 1..4) of `%€`». E o `+` que o `from_str_radix`
+    /// aceitava: `%+1` virava o byte 1; agora o `%` fica como veio e o `+` e
+    /// o espaco de sempre do formulario.
+    #[test]
+    fn percent_seguido_de_multibyte_fica_como_veio_sem_panico() {
+        for (cru, esperado) in [
+            ("a=%€", "%€"),
+            ("a=%a€", "%a€"),
+            ("a=%€€", "%€€"),
+            ("a=x%é", "x%é"),
+            ("a=%+1", "% 1"),
+            ("a=%41%€", "A%€"),
+        ] {
+            match std::panic::catch_unwind(|| parametro(cru, "a")) {
+                Ok(v) => assert_eq!(v, esperado, "{cru:?}"),
+                Err(e) => panic!(
+                    "parametro({cru:?}) derrubou a thread da web: {}",
+                    e.downcast_ref::<String>().cloned().unwrap_or_default()
+                ),
+            }
+        }
     }
 
     #[test]

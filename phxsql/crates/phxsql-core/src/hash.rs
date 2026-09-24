@@ -246,15 +246,47 @@ pub fn para_hex(bytes: &[u8]) -> String {
     s
 }
 
+/// Um digito hexadecimal, de qualquer caixa: o valor, ou `None`.
+///
+/// E o motor dos decodificadores de hexadecimal da casa -- o [`de_hex`], o
+/// `%XX` da porta web, o identificador do `uuid`, o `\uXXXX` do JSON. Existe
+/// porque o atalho `u8::from_str_radix` nao responde a mesma pergunta: ele
+/// aceita um `+` na frente, e so recebe `&str`, o que obriga a FATIAR o texto
+/// -- e fatia de `str` por byte entra em panico no meio de um caractere de
+/// varios bytes (pedido 446).
+pub fn digito_hex(c: u8) -> Option<u8> {
+    match c {
+        b'0'..=b'9' => Some(c - b'0'),
+        b'a'..=b'f' => Some(c - b'a' + 10),
+        b'A'..=b'F' => Some(c - b'A' + 10),
+        _ => None,
+    }
+}
+
+/// Bytes a partir de hexadecimal, ou `None` se o texto nao e so hexadecimal
+/// de tamanho par (espaco nas pontas nao conta).
+///
+/// # Por BYTE, e nao por fatia de texto -- pedido 446
+///
+/// A versao de antes fatiava `&t[i..i + 2]` e conferia a paridade com
+/// `len() % 2`, que conta BYTES. `"a€"` tem quatro bytes, passava na
+/// paridade, e o corte do segundo par caia no meio do `€`: panico, e nao
+/// `None`. O `de_hex` le texto que vem do fio (a `prova` do pulso do
+/// cluster), e a copia dele no `carga::hex_para_bytes` lia o valor `Bin` de
+/// todo `inserir` -- DENTRO da trava global de dados, que o panico deixava
+/// envenenada para toda conexao seguinte. Lendo os bytes um a um nao ha corte
+/// possivel: byte de caractere de varios bytes nunca e digito, e a resposta e
+/// `None`.
 pub fn de_hex(hex: &str) -> Option<Vec<u8>> {
-    let t = hex.trim();
+    let t = hex.trim().as_bytes();
     if t.len() % 2 != 0 {
         return None;
     }
-    (0..t.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(&t[i..i + 2], 16).ok())
-        .collect()
+    let mut saida = Vec::with_capacity(t.len() / 2);
+    for par in t.chunks_exact(2) {
+        saida.push((digito_hex(par[0])? << 4) | digito_hex(par[1])?);
+    }
+    Some(saida)
 }
 
 #[cfg(test)]
@@ -411,5 +443,64 @@ mod tests {
         assert_eq!(de_hex("000f10ff").unwrap(), b);
         assert!(de_hex("0f1").is_none());
         assert!(de_hex("zz").is_none());
+        // Maiuscula e espaco nas pontas continuam valendo: e o que os
+        // chamadores de sempre mandam (pino colado de um terminal, vetor de
+        // RFC em maiusculas).
+        assert_eq!(de_hex("  00FF\n").unwrap(), vec![0, 255]);
+    }
+
+    /// **Pedido 446.** Texto que vem do fio, par em BYTES e com um caractere de
+    /// varios bytes, nao derruba a thread: e recusado.
+    ///
+    /// O vermelho medido com o `de_hex` de antes, que fatiava `&t[i..i + 2]`:
+    /// `"a€"` tem quatro bytes, passa no `len() % 2`, e o corte `t[2..4]` cai
+    /// no meio do `€` -- panico «byte index 2 is not a char boundary». O
+    /// `catch_unwind` e para o vermelho dizer o DANO (a thread morreu) em vez
+    /// de so abortar o teste.
+    #[test]
+    fn de_hex_com_caractere_de_varios_bytes_recusa_sem_panico() {
+        for torto in ["a€", "a€a€", "€a", "éé", "0é", "a€".repeat(16).as_str()] {
+            let r = std::panic::catch_unwind(|| de_hex(torto));
+            match r {
+                Ok(v) => assert!(v.is_none(), "{torto:?} virou bytes: {v:?}"),
+                Err(e) => {
+                    let msg = e
+                        .downcast_ref::<String>()
+                        .cloned()
+                        .or_else(|| e.downcast_ref::<&str>().map(|s| s.to_string()))
+                        .unwrap_or_default();
+                    panic!("de_hex({torto:?}) derrubou a thread: {msg}");
+                }
+            }
+        }
+    }
+
+    /// **O irmao do 446 dentro da mesma linha.** O `u8::from_str_radix` aceita
+    /// um `+` na frente -- `"+f"` e 15 --, entao o `de_hex` de antes lia
+    /// `"+f+f"` como `[15, 15]`: dois textos diferentes viravam os mesmos
+    /// bytes, e o que devia ser «so hexadecimal» aceitava um sinal.
+    #[test]
+    fn de_hex_recusa_o_sinal_que_o_from_str_radix_aceita() {
+        for torto in ["+f+f", "+0", "0+", "+a+b+c+d"] {
+            assert_eq!(
+                de_hex(torto),
+                None,
+                "de_hex aceitou {torto:?}: o sinal passou por digito hexadecimal"
+            );
+        }
+    }
+
+    /// O digito do motor, que o `desescapar` da web e o `uuid` passaram a usar
+    /// em vez de copias.
+    #[test]
+    fn digito_hex_so_aceita_os_dezesseis_de_cada_caixa() {
+        let mut aceitos = 0;
+        for c in 0u8..=255 {
+            if let Some(v) = digito_hex(c) {
+                aceitos += 1;
+                assert_eq!(u32::from(v), char::from(c).to_digit(16).unwrap());
+            }
+        }
+        assert_eq!(aceitos, 22, "0-9, a-f e A-F");
     }
 }

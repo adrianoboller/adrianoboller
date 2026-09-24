@@ -4384,3 +4384,134 @@ Guarda `pino-cego-sem-a-recusa-do-no-sem-pino`, **PROVADA** pelo
   **diagnóstico local**, vai ao `eprintln!` deste processo e não ao fio. O
   doc-comment do `conferir` carrega a obrigação escrita, para o dia em que
   aparecer um segundo chamador.
+
+## 21. Hexadecimal do fio fatiado por byte, e a trava que o pânico levava junto (pedidos 446 e 447)
+
+Achados da frente 436 em 24/09/2026. O processo, e o que se errou antes de
+medir, está em
+`docs/cognicao/cognicao_o-alcance-do-panico-e-a-trava-que-o-chamador-segura_20260924_0115.md`.
+
+### 21.1 O defeito, e por que o conserto mora no motor
+
+`phxsql_core::hash::de_hex` fatiava `&t[i..i + 2]` e conferia a paridade com
+`len() % 2`, que conta **bytes**. `"a€"` tem quatro bytes, passa, e o corte do
+segundo par cai no meio do `€`: pânico, e não `None`. O `u8::from_str_radix` de
+dentro era o segundo furo da mesma linha — aceita `+`, e `"+f+f"` virava
+`[15, 15]`.
+
+O conserto lê **byte a byte** por um dígito do motor, `hash::digito_hex`: byte
+de caractere de vários bytes nunca é dígito, e a resposta é `None`. Todo
+chamador do `de_hex` herda — e as cópias viraram chamadas (§21.3).
+
+### 21.2 O alcance, medido pelo soquete
+
+`crates/phxsql-server/tests/hexadecimal-do-fio.rs`, com o servidor de pé:
+
+| caminho | credencial | trava na mão no pânico | dano medido com o defeito |
+|---|---|---|---|
+| `cluster_pulso`, o pedido | a do cluster + id da lista + chave estática | nenhuma | a conexão cai sem resposta; o nó segue atendendo |
+| `cluster_pulso`, a resposta | o par da lista | nenhuma | a thread de pulso daquele par morre e não sobe mais |
+| `inserir` numa coluna `Bin` | direito de inserir | **escrita global de dados** | **toda conexão seguinte recebe «a trava suja», até reiniciar** |
+| `GET /idiomas?idioma=%€` | **nenhuma** | nenhuma | a conexão fecha sem resposta; a vaga volta (pedido 248) |
+
+O mais caro não era o chamador que o pedido nomeava: era a **cópia** do
+`de_hex` no `carga::hex_para_bytes`, que o `json_para_valor` chama depois de o
+`op_inserir` tomar a trava global — ela precisa do esquema. O vermelho:
+
+```text
+a trava de dados ficou ENVENENADA: o inserir seguinte, por OUTRA conexao,
+recebeu {"ok":false,"op":"inserir","erro":"[SP000010] arquivo corrompido:
+uma operacao anterior entrou em panico e deixou a trava suja", ...}
+```
+
+### 21.3 Os irmãos, e o que cada um virou
+
+A varredura foi `[i..i + 2]`, `from_str_radix(` e as tabelas de dígito
+escritas à mão:
+
+| onde | o que era | o que virou |
+|---|---|---|
+| `carga::hex_para_bytes` | cópia do `de_hex`, mesmo corte | chama o motor; ficam só as duas frases de erro |
+| `http::desescapar` | `bruto[i + 1..i + 3]` pelo `from_str_radix` | dois bytes pelo `digito_hex`; `%+1` deixou de virar o byte 1 |
+| `json::hex4` (`\uXXXX`) | `from_str_radix` sobre 4 bytes — sem pânico, mas `\u+041` era `A` | quatro dígitos pelo `digito_hex`; a RFC 8259 pede HEXDIG |
+| `uuid::digito` | segunda tabela de dígito, estrita | chama o `digito_hex`; fica a frase de erro |
+| `cifra.rs`, auxiliar de teste | cópia com `from_str_radix` | chama o `de_hex` |
+
+Olhados e deixados, com o motivo: `pix.rs:213` (teste, lê o payload que o
+próprio módulo gera, só ASCII); os truncamentos `[..n.min(…)]` do
+`frogcript.rs` (teste), do `lib.rs` (hash de commit, ASCII), do `phxsql-cli`
+(`Uuid256` em hexadecimal, ASCII) e do `dblink/mysql.rs` (fatia de bytes, não
+de texto).
+
+### 21.4 O 447: o estado do cluster com a trava envenenada
+
+O `EstadoCluster` tinha seis `Mutex` lidos cada um com a sua resposta para o
+veneno. Medido, uma trava por vez, num cluster de três:
+
+| trava envenenada | o leitor respondia |
+|---|---|
+| o mapa de pulsos | `vivos()` = **1 de 3** (era 3 de 3), nenhum vencedor, e o `registrar` seguinte sumia calado |
+| o master corrente | `master_atual()` = `None`: a réplica parava de redirecionar |
+| os motivos de degradação | `[]` com o cluster degradado |
+| as threads de pulso | `marcar_pulso` = `false`: nó novo sem pulso |
+| a lista viva | `acrescentar`/`remover` = `false`, e a `lista()` voltava ao `config.nos` do arranque |
+| o aviso de promoção | `None`: o e-mail se perdia |
+
+O mapa vazio **não** promove ninguém — 1 de 3 nunca é maioria —, e é por isso
+que o dano é paralisia: o master perde a maioria e recusa toda escrita; a
+réplica envenenada que a outra elege (2 de 3, vencedora ela) não se promove, e
+o cluster fica sem master, sem prazo. As seis passaram a ser `TravaDaGuarda`,
+o motor do 436 — recupera o estado e avisa uma vez por trava —, e não uma
+segunda cópia dele. **Gatilho conhecido para envenenar qualquer uma: nenhum**;
+o que elas guardam é `insert`, `remove` e `clone` de contêiner do `std`.
+
+### 21.5 A prova, nos dois sentidos
+
+Seis guardas no catálogo, **PROVADAS** pelo `provar-guardas.py` em 24/09/2026
+(8 de 8 na corrida, com as duas do 436 que dividem o motor):
+
+| guarda | o que repõe | caíram |
+|---|---|---|
+| `de-hex-fatia-texto-por-byte` | o `de_hex` de antes (unidade) | 2/2 |
+| `prova-do-pulso-derruba-a-conexao` | o mesmo, pelo soquete | 3/3 |
+| `copia-do-de-hex-envenena-a-trava-de-dados` | a cópia no `hex_para_bytes` | 1/1 |
+| `percent-da-web-fatia-texto-por-byte` | a fatia do `desescapar` | 1/1 |
+| `mapa-do-cluster-envenenado-vira-vazio` | o `unwrap_or_default` do `mapa()` | 1/1 |
+| `lista-do-cluster-envenenada-volta-ao-arranque` | o `config.nos` da `lista()` | 1/1 |
+
+Os vermelhos, com o defeito reposto:
+
+```text
+a conexao do cluster_pulso caiu SEM resposta: a thread de atendimento morreu no
+de_hex da prova ("a€" x16, 64 bytes). O no seguiu atendendo e nenhuma trava
+envenenou -- o dano e a conexao
+
+o noA pulsou o noB 1 vez(es) em 4,5 s com pulso_s = 1: a thread de pulso morreu
+no de_hex da RESPOSTA e o supervisor nao sobe outra para um id que continua
+marcado
+
+volta 0: o GET /idiomas?idioma=%€ fechou SEM resposta -- a thread da web morreu
+no desescapar, antes de qualquer login: ""
+
+vivos() viu 1 de 3 com a trava do mapa envenenada: ...
+  left: ["no2"]
+ right: ["no2", "no3"]
+
+a lista voltou ao config.nos do arranque: o no acrescentado a quente deixou de
+existir para quem le a lista
+```
+
+O do `Bin` está na §21.2. O comportamento de sempre continua coberto pelos
+testes que seguem verdes em cada guarda: o hexadecimal válido (maiúscula e
+espaço nas pontas inclusive), o pulso com prova de verdade, o `%C3%AA` da web.
+
+### 21.6 O que ficou de fora, e por quê
+
+- **A trava global de dados continua falhando fechado para sempre** diante de
+  qualquer pânico dentro dela. O `Bin` era um gatilho, não o único possível. Ao
+  contrário do cluster, ali o desenrolar pode deixar uma escrita pela metade,
+  então recuperar é decisão do DBA, e não desta frente.
+- **A thread de pulso que morre por pânico não se desmarca do `pulsando`** —
+  o supervisor não sobe outra para um id marcado. O gatilho conhecido fechou;
+  a fragilidade é do laço, e o conserto (desmarcar no `Drop` ou `catch_unwind`
+  no laço) muda o que acontece com um pânico que se repete a cada pulso.

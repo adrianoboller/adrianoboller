@@ -817,11 +817,17 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `after-no-commit-some-calado` | o AFTER disparado no COMMIT grava numa lista já descartada e some sem aviso | 1 | ✅ provada |
 | `commit-zero-aplicado-vira-committed` | a passada que quebra antes de qualquer byte da lista responde COMMITTED | 1 | ✅ provada |
 | `commit-meio-sem-dizer-o-que-ficou` | a chave que falha no meio da passada vira COMMITTED sem a escrita que falhou | 1 | ✅ provada |
+| `de-hex-fatia-texto-por-byte` | o de_hex em pânico com hexadecimal que corta um caractere de vários bytes | 2 | ✅ provada |
+| `prova-do-pulso-derruba-a-conexao` | a prova do pulso que corta um caractere derruba a conexão e mata o laço do pulso | 3 | ✅ provada |
+| `copia-do-de-hex-envenena-a-trava-de-dados` | o binário que corta um caractere envenena a trava global de dados | 1 | ✅ provada |
+| `percent-da-web-fatia-texto-por-byte` | o %XX da porta web em pânico com caractere de vários bytes, sem login | 1 | ✅ provada |
+| `mapa-do-cluster-envenenado-vira-vazio` | o mapa de pulsos envenenado devolvido vazio: a eleição trava | 1 | ✅ provada |
+| `lista-do-cluster-envenenada-volta-ao-arranque` | a lista viva de nós envenenada respondida pelo config.json do arranque | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**177 das 221 guardas do catálogo: 1 aposentada, 171 provadas, 1 quebrada, 4 redundantes** — 4497 s de mutação, medido em 2026-09-16 15:25.
+**183 das 227 guardas do catálogo: 1 aposentada, 177 provadas, 1 quebrada, 4 redundantes** — 4600 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 45 das 221 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 45 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 45 das 227 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 45 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `teto-do-fio-sem-a-constante` — o `Canal::ler` de producao troca `TETO_DO_REGISTRO` por um teto quase infinito
 - `teto-do-fio-sem-a-constante-no-soquete` — a mesma troca da constante por um teto quase infinito, vista pela rede
