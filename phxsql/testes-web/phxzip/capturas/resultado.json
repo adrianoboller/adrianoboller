@@ -1,0 +1,220 @@
+{
+ "quando": "2026-09-24T03:16:10.542Z",
+ "casos": 35,
+ "falhas": 0,
+ "achados": [
+  "413 sem ler o corpo — COM dreno: HTTP 413 GRANDE_DEMAIS; SEM dreno: falha de rede (TypeError: Failed to fetch)"
+ ],
+ "resultados": [
+  {
+   "nome": "laco-das-chaves",
+   "ok": true,
+   "nota": "173 chaves pedidas = 173 no dicionario, 6 idiomas cheios",
+   "ms": 4
+  },
+  {
+   "nome": "abre-com-marca-e-fonte",
+   "ok": true,
+   "nota": "Exo 2 carregada da propria porta (1 face)",
+   "ms": 93
+  },
+  {
+   "nome": "compactar-arquivos-e-pasta",
+   "ok": true,
+   "nota": "7 itens, pastas derivadas dos caminhos",
+   "ms": 167
+  },
+  {
+   "nome": "soltar-na-janela",
+   "ok": true,
+   "nota": "solto.txt entrou; Blumenau.txt repetido foi avisado e ficou de fora",
+   "ms": 81
+  },
+  {
+   "nome": "phz-diz-por-que-nao-anda",
+   "ok": true,
+   "nota": "2 motivos escritos ao lado do botao desligado",
+   "ms": 205
+  },
+  {
+   "nome": "senhas-que-nao-conferem",
+   "ok": true,
+   "nota": "",
+   "ms": 28
+  },
+  {
+   "nome": "enter-compacta-e-nao-vaza-senha",
+   "ok": true,
+   "nota": "baixado relatorio-2026.7z (1131 bytes)",
+   "ms": 177
+  },
+  {
+   "nome": "limpar-leva-a-senha-junto",
+   "ok": true,
+   "nota": "",
+   "ms": 29
+  },
+  {
+   "nome": "progresso-e-cancelar",
+   "ok": true,
+   "nota": "11.9 MiB: enviando -> processando -> download; cancelar vira CANCELADO",
+   "ms": 5695
+  },
+  {
+   "nome": "teto-de-envio-na-tela",
+   "ok": true,
+   "nota": "teto lido do /api/estado, conferido antes de enviar",
+   "ms": 2900
+  },
+  {
+   "nome": "abrir-o-que-compactou-pede-senha",
+   "ok": true,
+   "nota": "8 entradas voltaram com os mesmos nomes",
+   "ms": 414
+  },
+  {
+   "nome": "baixar-uma-entrada-byte-a-byte",
+   "ok": true,
+   "nota": "relatorio.txt: 11000 bytes iguais",
+   "ms": 56
+  },
+  {
+   "nome": "baixar-todas-em-tar",
+   "ok": true,
+   "nota": "8 entradas no tar, as mesmas da tela (conferido pelo tar do sistema)",
+   "ms": 72
+  },
+  {
+   "nome": "testar-integridade",
+   "ok": true,
+   "nota": "",
+   "ms": 217
+  },
+  {
+   "nome": "espiar-json-valido-e-invalido",
+   "ok": true,
+   "nota": "selo «JSON inválido na linha 7, coluna 24»; a linha marcada contem o «,,»",
+   "ms": 802
+  },
+  {
+   "nome": "espiar-cortado-binario-e-solido",
+   "ok": true,
+   "nota": "3 linhas «solido» (compactado do bloco nao se divide)",
+   "ms": 871
+  },
+  {
+   "nome": "estado-corrompido",
+   "ok": true,
+   "nota": "Pacote corrompido: um CRC não confere",
+   "ms": 117
+  },
+  {
+   "nome": "estado-legado",
+   "ok": true,
+   "nota": "Não suportado pelo PhxZip: BZip2",
+   "ms": 117
+  },
+  {
+   "nome": "estado-zipslip",
+   "ok": true,
+   "nota": "Nome de entrada perigoso, recusado: ../../etc/cron.d/phx",
+   "ms": 118
+  },
+  {
+   "nome": "estado-grande",
+   "ok": true,
+   "nota": "Grande demais: bloco de 8,0 GiB, acima do teto de 256 MiB",
+   "ms": 116
+  },
+  {
+   "nome": "estado-estrutura",
+   "ok": true,
+   "nota": "A estrutura do pacote não fecha",
+   "ms": 120
+  },
+  {
+   "nome": "estado-desconhecido",
+   "ok": true,
+   "nota": "Resposta que esta página não conhece: ERRO_QUE_A_TELA_NAO_CONHECE",
+   "ms": 116
+  },
+  {
+   "nome": "estado-nao-e-7z",
+   "ok": true,
+   "nota": "",
+   "ms": 63
+  },
+  {
+   "nome": "estado-senha-errada-ou-corrompido",
+   "ok": true,
+   "nota": "",
+   "ms": 204
+  },
+  {
+   "nome": "nomes-hostis-e-invisiveis",
+   "ok": true,
+   "nota": "marcacao escrita, U+202E mostrado como marca, «Blumenau» intacto",
+   "ms": 210
+  },
+  {
+   "nome": "servidor-413-com-e-sem-dreno",
+   "ok": true,
+   "nota": "com dreno: HTTP 413 GRANDE_DEMAIS; sem: falha de rede (TypeError: Failed to fetch)",
+   "ms": 3336
+  },
+  {
+   "nome": "senha-so-no-corpo",
+   "ok": true,
+   "nota": "34 pedidos no log, nenhuma das 5 senhas fora do corpo",
+   "ms": 33
+  },
+  {
+   "nome": "fechar-limpa-a-senha",
+   "ok": true,
+   "nota": "",
+   "ms": 170
+  },
+  {
+   "nome": "controles-no-tamanho-certo",
+   "ok": true,
+   "nota": "ckMostrar 16x16, ckCifrarNomes 16x16",
+   "ms": 62
+  },
+  {
+   "nome": "cores-escuro",
+   "ok": true,
+   "nota": "escuro (com erro na tela): 2 acoes e 3 textos, menor contraste 6.10:1 | escuro (com lista): 14 acoes e 7 textos, menor contraste 5.30:1",
+   "ms": 172
+  },
+  {
+   "nome": "tema-claro",
+   "ok": true,
+   "nota": "claro (com erro na tela): 2 acoes e 3 textos, menor contraste 5.74:1 | claro (com lista): 14 acoes e 7 textos, menor contraste 5.45:1",
+   "ms": 665
+  },
+  {
+   "nome": "troca-de-idioma-repinta-tudo",
+   "ok": true,
+   "nota": "Portugues:pt-BR Frances:fr Ingles:en Italiano:it Alemao:de Espanhol:es",
+   "ms": 781
+  },
+  {
+   "nome": "pseudoidioma-sem-texto-cravado",
+   "ok": true,
+   "nota": "nenhum texto visivel fora de ⟦ ⟧ em sete estados",
+   "ms": 906
+  },
+  {
+   "nome": "celular-360",
+   "ok": true,
+   "nota": "compactar, lista-hostil, erro-zipslip, alemao + espiar, sem rolagem lateral",
+   "ms": 1027
+  },
+  {
+   "nome": "sem-erro-no-console-nem-csp",
+   "ok": true,
+   "nota": "23 mensagens de console, todas explicadas (4xx provocados pelos cenarios)",
+   "ms": 0
+  }
+ ]
+}

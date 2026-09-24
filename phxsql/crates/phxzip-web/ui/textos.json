@@ -1,0 +1,1389 @@
+{
+ "sobre": "Textos da tela do PhxZip (crates/phxzip-web/ui). Chaveados pelo NOME da coluna do IDIOMAS do motor, nunca pela posicao. Nao e servido cru: o servidor o resolve e devolve so o idioma pedido (docs/PHXZIP-WEB.md, secao 5). Celula vazia cai na coluna Portugues.",
+ "textos": {
+  "zip.aba_abrir": {
+   "Portugues": "Abrir e testar",
+   "Frances": "Ouvrir et tester",
+   "Ingles": "Open and test",
+   "Italiano": "Apri e verifica",
+   "Alemao": "Öffnen und prüfen",
+   "Espanhol": "Abrir y probar"
+  },
+  "zip.aba_compactar": {
+   "Portugues": "Compactar",
+   "Frances": "Compresser",
+   "Ingles": "Compress",
+   "Italiano": "Comprimi",
+   "Alemao": "Komprimieren",
+   "Espanhol": "Comprimir"
+  },
+  "zip.abas": {
+   "Portugues": "O que fazer",
+   "Frances": "Que faire",
+   "Ingles": "What to do",
+   "Italiano": "Cosa fare",
+   "Alemao": "Was tun",
+   "Espanhol": "Qué hacer"
+  },
+  "zip.abrir": {
+   "Portugues": "Abrir",
+   "Frances": "Ouvrir",
+   "Ingles": "Open",
+   "Italiano": "Apri",
+   "Alemao": "Öffnen",
+   "Espanhol": "Abrir"
+  },
+  "zip.acima_do_teto": {
+   "Portugues": "{usado}: acima do teto de {teto} que o servidor aceita",
+   "Frances": "{usado} : au-delà du plafond de {teto} accepté par le serveur",
+   "Ingles": "{usado}: above the {teto} limit the server accepts",
+   "Italiano": "{usado}: oltre il limite di {teto} accettato dal server",
+   "Alemao": "{usado}: über der Grenze von {teto}, die der Server annimmt",
+   "Espanhol": "{usado}: por encima del límite de {teto} que acepta el servidor"
+  },
+  "zip.anuncio_listado": {
+   "Portugues": "Pacote listado.",
+   "Frances": "Archive listée.",
+   "Ingles": "Archive listed.",
+   "Italiano": "Archivio elencato.",
+   "Alemao": "Archiv aufgelistet.",
+   "Espanhol": "Paquete listado."
+  },
+  "zip.anuncio_pronto": {
+   "Portugues": "Pacote pronto, download iniciado.",
+   "Frances": "Archive prête, téléchargement lancé.",
+   "Ingles": "Archive ready, download started.",
+   "Italiano": "Archivio pronto, download avviato.",
+   "Alemao": "Archiv fertig, Download gestartet.",
+   "Espanhol": "Paquete listo, descarga iniciada."
+  },
+  "zip.arquivos_um": {
+   "Portugues": "{n} arquivo",
+   "Frances": "{n} fichier",
+   "Ingles": "{n} file",
+   "Italiano": "{n} file",
+   "Alemao": "{n} Datei",
+   "Espanhol": "{n} archivo"
+  },
+  "zip.arquivos_varios": {
+   "Portugues": "{n} arquivos",
+   "Frances": "{n} fichiers",
+   "Ingles": "{n} files",
+   "Italiano": "{n} file",
+   "Alemao": "{n} Dateien",
+   "Espanhol": "{n} archivos"
+  },
+  "zip.arquivos_zero": {
+   "Portugues": "nenhum arquivo",
+   "Frances": "aucun fichier",
+   "Ingles": "no files",
+   "Italiano": "nessun file",
+   "Alemao": "keine Dateien",
+   "Espanhol": "ningún archivo"
+  },
+  "zip.baixar": {
+   "Portugues": "Baixar",
+   "Frances": "Télécharger",
+   "Ingles": "Download",
+   "Italiano": "Scarica",
+   "Alemao": "Herunterladen",
+   "Espanhol": "Descargar"
+  },
+  "zip.baixar_de_novo": {
+   "Portugues": "Baixar de novo",
+   "Frances": "Télécharger à nouveau",
+   "Ingles": "Download again",
+   "Italiano": "Scarica di nuovo",
+   "Alemao": "Erneut herunterladen",
+   "Espanhol": "Descargar de nuevo"
+  },
+  "zip.baixar_item": {
+   "Portugues": "Baixar {nome}",
+   "Frances": "Télécharger {nome}",
+   "Ingles": "Download {nome}",
+   "Italiano": "Scarica {nome}",
+   "Alemao": "{nome} herunterladen",
+   "Espanhol": "Descargar {nome}"
+  },
+  "zip.baixar_todas": {
+   "Portugues": "Baixar tudo (.tar)",
+   "Frances": "Tout télécharger (.tar)",
+   "Ingles": "Download all (.tar)",
+   "Italiano": "Scarica tutto (.tar)",
+   "Alemao": "Alles herunterladen (.tar)",
+   "Espanhol": "Descargar todo (.tar)"
+  },
+  "zip.bytes_exatos": {
+   "Portugues": "{n} bytes",
+   "Frances": "{n} octets",
+   "Ingles": "{n} bytes",
+   "Italiano": "{n} byte",
+   "Alemao": "{n} Byte",
+   "Espanhol": "{n} bytes"
+  },
+  "zip.cancelar": {
+   "Portugues": "Cancelar",
+   "Frances": "Annuler",
+   "Ingles": "Cancel",
+   "Italiano": "Annulla",
+   "Alemao": "Abbrechen",
+   "Espanhol": "Cancelar"
+  },
+  "zip.caractere_invisivel": {
+   "Portugues": "Caractere invisível {codigo}, gravado no nome — mostrado como marca para não disfarçar o nome.",
+   "Frances": "Caractère invisible {codigo}, enregistré dans le nom — affiché comme repère pour ne pas déguiser le nom.",
+   "Ingles": "Invisible character {codigo} stored in the name — shown as a marker so it cannot disguise the name.",
+   "Italiano": "Carattere invisibile {codigo}, registrato nel nome — mostrato come segno per non camuffare il nome.",
+   "Alemao": "Unsichtbares Zeichen {codigo} im Namen gespeichert — als Markierung angezeigt, damit es den Namen nicht verschleiert.",
+   "Espanhol": "Carácter invisible {codigo} guardado en el nombre — se muestra como marca para que no disfrace el nombre."
+  },
+  "zip.cifra_dica": {
+   "Portugues": "Com senha, o conteúdo é cifrado em AES-256. Senha perdida não se recupera: nem o PhxZip nem o 7-Zip abrem o pacote sem ela.",
+   "Frances": "Avec un mot de passe, le contenu est chiffré en AES-256. Un mot de passe perdu ne se récupère pas : ni PhxZip ni 7-Zip n'ouvrent l'archive sans lui.",
+   "Ingles": "With a password, the content is encrypted with AES-256. A lost password cannot be recovered: neither PhxZip nor 7-Zip can open the archive without it.",
+   "Italiano": "Con la password il contenuto è cifrato con AES-256. Una password persa non si recupera: né PhxZip né 7-Zip aprono l'archivio senza.",
+   "Alemao": "Mit Kennwort wird der Inhalt mit AES-256 verschlüsselt. Ein verlorenes Kennwort lässt sich nicht wiederherstellen: Weder PhxZip noch 7-Zip öffnen das Archiv ohne es.",
+   "Espanhol": "Con contraseña, el contenido se cifra con AES-256. Una contraseña perdida no se recupera: ni PhxZip ni 7-Zip abren el paquete sin ella."
+  },
+  "zip.cifrar_nomes": {
+   "Portugues": "Cifrar também os nomes",
+   "Frances": "Chiffrer aussi les noms",
+   "Ingles": "Encrypt file names too",
+   "Italiano": "Cifra anche i nomi",
+   "Alemao": "Auch die Namen verschlüsseln",
+   "Espanhol": "Cifrar también los nombres"
+  },
+  "zip.col_acoes": {
+   "Portugues": "Ações",
+   "Frances": "Actions",
+   "Ingles": "Actions",
+   "Italiano": "Azioni",
+   "Alemao": "Aktionen",
+   "Espanhol": "Acciones"
+  },
+  "zip.col_compactado": {
+   "Portugues": "Compactado",
+   "Frances": "Compressé",
+   "Ingles": "Packed",
+   "Italiano": "Compresso",
+   "Alemao": "Gepackt",
+   "Espanhol": "Comprimido"
+  },
+  "zip.col_modificado": {
+   "Portugues": "Modificado",
+   "Frances": "Modifié",
+   "Ingles": "Modified",
+   "Italiano": "Modificato",
+   "Alemao": "Geändert",
+   "Espanhol": "Modificado"
+  },
+  "zip.col_nome": {
+   "Portugues": "Nome",
+   "Frances": "Nom",
+   "Ingles": "Name",
+   "Italiano": "Nome",
+   "Alemao": "Name",
+   "Espanhol": "Nombre"
+  },
+  "zip.col_tamanho": {
+   "Portugues": "Tamanho",
+   "Frances": "Taille",
+   "Ingles": "Size",
+   "Italiano": "Dimensione",
+   "Alemao": "Größe",
+   "Espanhol": "Tamaño"
+  },
+  "zip.col_tipo": {
+   "Portugues": "Tipo",
+   "Frances": "Type",
+   "Ingles": "Type",
+   "Italiano": "Tipo",
+   "Alemao": "Typ",
+   "Espanhol": "Tipo"
+  },
+  "zip.compactar_e_baixar": {
+   "Portugues": "Compactar e baixar",
+   "Frances": "Compresser et télécharger",
+   "Ingles": "Compress and download",
+   "Italiano": "Comprimi e scarica",
+   "Alemao": "Komprimieren und herunterladen",
+   "Espanhol": "Comprimir y descargar"
+  },
+  "zip.confirmar_senha": {
+   "Portugues": "Confirmar a senha",
+   "Frances": "Confirmer le mot de passe",
+   "Ingles": "Confirm password",
+   "Italiano": "Conferma la password",
+   "Alemao": "Kennwort bestätigen",
+   "Espanhol": "Confirmar la contraseña"
+  },
+  "zip.conteudo_do_pacote": {
+   "Portugues": "Conteúdo do pacote",
+   "Frances": "Contenu de l'archive",
+   "Ingles": "Archive contents",
+   "Italiano": "Contenuto dell'archivio",
+   "Alemao": "Archivinhalt",
+   "Espanhol": "Contenido del paquete"
+  },
+  "zip.copiado": {
+   "Portugues": "Copiado para a área de transferência.",
+   "Frances": "Copié dans le presse-papiers.",
+   "Ingles": "Copied to the clipboard.",
+   "Italiano": "Copiato negli appunti.",
+   "Alemao": "In die Zwischenablage kopiert.",
+   "Espanhol": "Copiado al portapapeles."
+  },
+  "zip.copiar": {
+   "Portugues": "Copiar o texto",
+   "Frances": "Copier le texte",
+   "Ingles": "Copy text",
+   "Italiano": "Copia il testo",
+   "Alemao": "Text kopieren",
+   "Espanhol": "Copiar el texto"
+  },
+  "zip.copiar_falhou": {
+   "Portugues": "O navegador não deixou copiar.",
+   "Frances": "Le navigateur n'a pas autorisé la copie.",
+   "Ingles": "The browser did not allow copying.",
+   "Italiano": "Il browser non ha consentito la copia.",
+   "Alemao": "Der Browser hat das Kopieren nicht erlaubt.",
+   "Espanhol": "El navegador no permitió copiar."
+  },
+  "zip.dentro_do_teto": {
+   "Portugues": "{usado} de {teto} que o servidor aceita",
+   "Frances": "{usado} sur {teto} acceptés par le serveur",
+   "Ingles": "{usado} of the {teto} the server accepts",
+   "Italiano": "{usado} dei {teto} accettati dal server",
+   "Alemao": "{usado} von {teto}, die der Server annimmt",
+   "Espanhol": "{usado} de los {teto} que acepta el servidor"
+  },
+  "zip.detalhe_tecnico": {
+   "Portugues": "Detalhe técnico (do motor, sem tradução)",
+   "Frances": "Détail technique (du moteur, non traduit)",
+   "Ingles": "Technical detail (from the engine, untranslated)",
+   "Italiano": "Dettaglio tecnico (dal motore, non tradotto)",
+   "Alemao": "Technisches Detail (von der Engine, unübersetzt)",
+   "Espanhol": "Detalle técnico (del motor, sin traducir)"
+  },
+  "zip.dica_senha_conteudo": {
+   "Portugues": "O conteúdo é cifrado: a senha é pedida para espiar, baixar e testar.",
+   "Frances": "Le contenu est chiffré : le mot de passe est demandé pour regarder, télécharger et tester.",
+   "Ingles": "The content is encrypted: the password is needed to peek, download and test.",
+   "Italiano": "Il contenuto è cifrato: la password serve per sbirciare, scaricare e verificare.",
+   "Alemao": "Der Inhalt ist verschlüsselt: Das Kennwort wird zum Hineinschauen, Herunterladen und Prüfen benötigt.",
+   "Espanhol": "El contenido está cifrado: la contraseña se pide para echar un vistazo, descargar y probar."
+  },
+  "zip.dica_senha_nomes": {
+   "Portugues": "Este pacote esconde até os nomes: sem a senha não há o que listar.",
+   "Frances": "Cette archive cache même les noms : sans le mot de passe, rien à lister.",
+   "Ingles": "This archive hides even the names: without the password there is nothing to list.",
+   "Italiano": "Questo archivio nasconde perfino i nomi: senza password non c'è nulla da elencare.",
+   "Alemao": "Dieses Archiv verbirgt sogar die Namen: Ohne Kennwort gibt es nichts aufzulisten.",
+   "Espanhol": "Este paquete oculta hasta los nombres: sin la contraseña no hay nada que listar."
+  },
+  "zip.endereco_dica": {
+   "Portugues": "Servidor local: só esta máquina alcança esta porta",
+   "Frances": "Serveur local : seule cette machine atteint ce port",
+   "Ingles": "Local server: only this machine can reach this port",
+   "Italiano": "Server locale: solo questa macchina raggiunge questa porta",
+   "Alemao": "Lokaler Server: nur dieser Rechner erreicht diesen Port",
+   "Espanhol": "Servidor local: solo esta máquina alcanza este puerto"
+  },
+  "zip.entrada_cifrada": {
+   "Portugues": "Conteúdo cifrado",
+   "Frances": "Contenu chiffré",
+   "Ingles": "Encrypted content",
+   "Italiano": "Contenuto cifrato",
+   "Alemao": "Verschlüsselter Inhalt",
+   "Espanhol": "Contenido cifrado"
+  },
+  "zip.erro_avise_quem_mantem": {
+   "Portugues": "Isso é defeito da página ou do servidor, não do seu arquivo. Recarregue a página; se voltar, avise quem mantém o PhxZip citando o código.",
+   "Frances": "C'est un défaut de la page ou du serveur, pas de votre fichier. Rechargez la page ; si cela revient, prévenez les responsables de PhxZip en citant le code.",
+   "Ingles": "This is a fault in the page or the server, not in your file. Reload the page; if it happens again, tell whoever maintains PhxZip and quote the code.",
+   "Italiano": "È un difetto della pagina o del server, non del tuo file. Ricarica la pagina; se si ripete, avvisa chi mantiene PhxZip citando il codice.",
+   "Alemao": "Das ist ein Fehler der Seite oder des Servers, nicht Ihrer Datei. Laden Sie die Seite neu; tritt er wieder auf, melden Sie ihn den PhxZip-Verantwortlichen mit dem Code.",
+   "Espanhol": "Es un fallo de la página o del servidor, no de tu archivo. Recarga la página; si vuelve a pasar, avisa a quien mantiene PhxZip citando el código."
+  },
+  "zip.erro_cancelado": {
+   "Portugues": "Operação cancelada",
+   "Frances": "Opération annulée",
+   "Ingles": "Operation cancelled",
+   "Italiano": "Operazione annullata",
+   "Alemao": "Vorgang abgebrochen",
+   "Espanhol": "Operación cancelada"
+  },
+  "zip.erro_cancelado_faca": {
+   "Portugues": "Nada foi baixado.",
+   "Frances": "Rien n'a été téléchargé.",
+   "Ingles": "Nothing was downloaded.",
+   "Italiano": "Nulla è stato scaricato.",
+   "Alemao": "Nichts wurde heruntergeladen.",
+   "Espanhol": "No se descargó nada."
+  },
+  "zip.erro_ciclos_demais": {
+   "Portugues": "A derivação da senha pede {pedidos} rodadas, acima do teto de {teto}",
+   "Frances": "La dérivation du mot de passe demande {pedidos} tours, au-delà du plafond de {teto}",
+   "Ingles": "The password derivation asks for {pedidos} rounds, above the {teto} limit",
+   "Italiano": "La derivazione della password richiede {pedidos} cicli, oltre il limite di {teto}",
+   "Alemao": "Die Kennwortableitung verlangt {pedidos} Runden, über der Grenze von {teto}",
+   "Espanhol": "La derivación de la contraseña pide {pedidos} rondas, por encima del límite de {teto}"
+  },
+  "zip.erro_ciclos_demais_faca": {
+   "Portugues": "Um pacote assim prende o processador por muito tempo. Regrave-o com o padrão do 7-Zip.",
+   "Frances": "Une telle archive bloque le processeur longtemps. Réenregistrez-la avec les réglages par défaut de 7-Zip.",
+   "Ingles": "An archive like this ties up the processor for a long time. Re-create it with 7-Zip's defaults.",
+   "Italiano": "Un archivio così blocca il processore a lungo. Ricrealo con le impostazioni predefinite di 7-Zip.",
+   "Alemao": "Ein solches Archiv blockiert den Prozessor lange. Erstellen Sie es mit den Standardwerten von 7-Zip neu.",
+   "Espanhol": "Un paquete así ocupa el procesador mucho tiempo. Vuelve a crearlo con los valores por defecto de 7-Zip."
+  },
+  "zip.erro_corrompido": {
+   "Portugues": "Pacote corrompido: um CRC não confere",
+   "Frances": "Archive corrompue : un CRC ne correspond pas",
+   "Ingles": "Corrupted archive: a CRC does not match",
+   "Italiano": "Archivio danneggiato: un CRC non corrisponde",
+   "Alemao": "Beschädigtes Archiv: Eine CRC stimmt nicht",
+   "Espanhol": "Paquete dañado: un CRC no coincide"
+  },
+  "zip.erro_corrompido_faca": {
+   "Portugues": "O arquivo mudou depois de gravado. Use uma cópia de backup; nada foi extraído.",
+   "Frances": "Le fichier a changé après l'écriture. Utilisez une copie de sauvegarde ; rien n'a été extrait.",
+   "Ingles": "The file changed after it was written. Use a backup copy; nothing was extracted.",
+   "Italiano": "Il file è cambiato dopo la scrittura. Usa una copia di backup; nulla è stato estratto.",
+   "Alemao": "Die Datei hat sich nach dem Schreiben verändert. Verwenden Sie eine Sicherungskopie; nichts wurde entpackt.",
+   "Espanhol": "El archivo cambió después de grabarse. Usa una copia de seguridad; no se extrajo nada."
+  },
+  "zip.erro_desconhecido": {
+   "Portugues": "Resposta que esta página não conhece: {codigo}",
+   "Frances": "Réponse inconnue de cette page : {codigo}",
+   "Ingles": "A response this page does not know: {codigo}",
+   "Italiano": "Risposta che questa pagina non conosce: {codigo}",
+   "Alemao": "Antwort, die diese Seite nicht kennt: {codigo}",
+   "Espanhol": "Respuesta que esta página no conoce: {codigo}"
+  },
+  "zip.erro_entrada_e_pasta": {
+   "Portugues": "A única entrada do .phz é uma pasta: {nome}",
+   "Frances": "L'unique entrée du .phz est un dossier : {nome}",
+   "Ingles": "The only entry of the .phz is a folder: {nome}",
+   "Italiano": "L'unica voce del .phz è una cartella: {nome}",
+   "Alemao": "Der einzige Eintrag des .phz ist ein Ordner: {nome}",
+   "Espanhol": "La única entrada del .phz es una carpeta: {nome}"
+  },
+  "zip.erro_entrada_inexistente": {
+   "Portugues": "A entrada {indice} não existe neste pacote",
+   "Frances": "L'entrée {indice} n'existe pas dans cette archive",
+   "Ingles": "Entry {indice} does not exist in this archive",
+   "Italiano": "La voce {indice} non esiste in questo archivio",
+   "Alemao": "Eintrag {indice} existiert in diesem Archiv nicht",
+   "Espanhol": "La entrada {indice} no existe en este paquete"
+  },
+  "zip.erro_estrutura": {
+   "Portugues": "A estrutura do pacote não fecha",
+   "Frances": "La structure de l'archive est incohérente",
+   "Ingles": "The archive structure is inconsistent",
+   "Italiano": "La struttura dell'archivio non è coerente",
+   "Alemao": "Die Archivstruktur ist inkonsistent",
+   "Espanhol": "La estructura del paquete no cuadra"
+  },
+  "zip.erro_grande_demais": {
+   "Portugues": "Grande demais: {oque} de {declarado}, acima do teto de {teto}",
+   "Frances": "Trop volumineux : {oque} de {declarado}, au-delà du plafond de {teto}",
+   "Ingles": "Too large: {oque} of {declarado}, above the {teto} limit",
+   "Italiano": "Troppo grande: {oque} di {declarado}, oltre il limite di {teto}",
+   "Alemao": "Zu groß: {oque} mit {declarado}, über der Grenze von {teto}",
+   "Espanhol": "Demasiado grande: {oque} de {declarado}, por encima del límite de {teto}"
+  },
+  "zip.erro_grande_demais_faca": {
+   "Portugues": "Divida em pacotes menores. O teto protege a memória do servidor; nada foi lido além dele.",
+   "Frances": "Divisez en archives plus petites. Le plafond protège la mémoire du serveur ; rien n'a été lu au-delà.",
+   "Ingles": "Split it into smaller archives. The limit protects the server's memory; nothing beyond it was read.",
+   "Italiano": "Dividi in archivi più piccoli. Il limite protegge la memoria del server; nulla oltre è stato letto.",
+   "Alemao": "Teilen Sie es in kleinere Archive auf. Die Grenze schützt den Speicher des Servers; darüber hinaus wurde nichts gelesen.",
+   "Espanhol": "Divídelo en paquetes más pequeños. El límite protege la memoria del servidor; no se leyó nada más allá."
+  },
+  "zip.erro_interno": {
+   "Portugues": "Falha interna do servidor ({codigo})",
+   "Frances": "Erreur interne du serveur ({codigo})",
+   "Ingles": "Internal server error ({codigo})",
+   "Italiano": "Errore interno del server ({codigo})",
+   "Alemao": "Interner Serverfehler ({codigo})",
+   "Espanhol": "Fallo interno del servidor ({codigo})"
+  },
+  "zip.erro_listar_de_novo": {
+   "Portugues": "Feche e abra o pacote de novo.",
+   "Frances": "Fermez puis rouvrez l'archive.",
+   "Ingles": "Close and reopen the archive.",
+   "Italiano": "Chiudi e riapri l'archivio.",
+   "Alemao": "Schließen und öffnen Sie das Archiv erneut.",
+   "Espanhol": "Cierra y vuelve a abrir el paquete."
+  },
+  "zip.erro_mais_de_uma": {
+   "Portugues": "Um .phz guarda uma entrada só, e este tem {quantas}",
+   "Frances": "Un .phz contient une seule entrée, celui-ci en a {quantas}",
+   "Ingles": "A .phz holds a single entry, and this one has {quantas}",
+   "Italiano": "Un .phz contiene una sola voce, questo ne ha {quantas}",
+   "Alemao": "Ein .phz enthält nur einen Eintrag, dieses hat {quantas}",
+   "Espanhol": "Un .phz guarda una sola entrada, y este tiene {quantas}"
+  },
+  "zip.erro_metodo_desconhecido": {
+   "Portugues": "Método desconhecido: {metodo}",
+   "Frances": "Méthode inconnue : {metodo}",
+   "Ingles": "Unknown method: {metodo}",
+   "Italiano": "Metodo sconosciuto: {metodo}",
+   "Alemao": "Unbekannte Methode: {metodo}",
+   "Espanhol": "Método desconocido: {metodo}"
+  },
+  "zip.erro_metodo_faca": {
+   "Portugues": "O PhxZip lê só o conjunto atual do 7z: Copy, LZMA, LZMA2 e AES-256. Regrave o pacote com LZMA2 no 7-Zip.",
+   "Frances": "PhxZip ne lit que l'ensemble actuel du 7z : Copy, LZMA, LZMA2 et AES-256. Réenregistrez l'archive en LZMA2 avec 7-Zip.",
+   "Ingles": "PhxZip reads only the current 7z set: Copy, LZMA, LZMA2 and AES-256. Re-create the archive with LZMA2 in 7-Zip.",
+   "Italiano": "PhxZip legge solo l'insieme attuale del 7z: Copy, LZMA, LZMA2 e AES-256. Ricrea l'archivio con LZMA2 in 7-Zip.",
+   "Alemao": "PhxZip liest nur den aktuellen 7z-Umfang: Copy, LZMA, LZMA2 und AES-256. Erstellen Sie das Archiv in 7-Zip mit LZMA2 neu.",
+   "Espanhol": "PhxZip lee solo el conjunto actual del 7z: Copy, LZMA, LZMA2 y AES-256. Vuelve a crear el paquete con LZMA2 en 7-Zip."
+  },
+  "zip.erro_metodo_legado": {
+   "Portugues": "Não suportado pelo PhxZip: {metodo}",
+   "Frances": "Non pris en charge par PhxZip : {metodo}",
+   "Ingles": "Not supported by PhxZip: {metodo}",
+   "Italiano": "Non supportato da PhxZip: {metodo}",
+   "Alemao": "Von PhxZip nicht unterstützt: {metodo}",
+   "Espanhol": "No compatible con PhxZip: {metodo}"
+  },
+  "zip.erro_nao_cabe": {
+   "Portugues": "Não cabe nesta plataforma: {oque} de {valor}",
+   "Frances": "Ne tient pas sur cette plateforme : {oque} de {valor}",
+   "Ingles": "Does not fit this platform: {oque} of {valor}",
+   "Italiano": "Non entra in questa piattaforma: {oque} di {valor}",
+   "Alemao": "Passt nicht auf diese Plattform: {oque} mit {valor}",
+   "Espanhol": "No cabe en esta plataforma: {oque} de {valor}"
+  },
+  "zip.erro_nao_cabe_faca": {
+   "Portugues": "Abra este pacote numa máquina de 64 bits.",
+   "Frances": "Ouvrez cette archive sur une machine 64 bits.",
+   "Ingles": "Open this archive on a 64-bit machine.",
+   "Italiano": "Apri questo archivio su una macchina a 64 bit.",
+   "Alemao": "Öffnen Sie dieses Archiv auf einem 64-Bit-Rechner.",
+   "Espanhol": "Abre este paquete en una máquina de 64 bits."
+  },
+  "zip.erro_nao_e_7z": {
+   "Portugues": "Este arquivo não é um pacote 7z",
+   "Frances": "Ce fichier n'est pas une archive 7z",
+   "Ingles": "This file is not a 7z archive",
+   "Italiano": "Questo file non è un archivio 7z",
+   "Alemao": "Diese Datei ist kein 7z-Archiv",
+   "Espanhol": "Este archivo no es un paquete 7z"
+  },
+  "zip.erro_nao_e_7z_faca": {
+   "Portugues": "A assinatura do 7z não está no começo do arquivo. Escolha um .7z ou .phz.",
+   "Frances": "La signature 7z n'est pas au début du fichier. Choisissez un .7z ou un .phz.",
+   "Ingles": "The 7z signature is not at the start of the file. Choose a .7z or .phz.",
+   "Italiano": "La firma 7z non è all'inizio del file. Scegli un .7z o un .phz.",
+   "Alemao": "Die 7z-Signatur steht nicht am Dateianfang. Wählen Sie eine .7z- oder .phz-Datei.",
+   "Espanhol": "La firma de 7z no está al principio del archivo. Elige un .7z o un .phz."
+  },
+  "zip.erro_nome_perigoso": {
+   "Portugues": "Nome de entrada perigoso, recusado: {nome}",
+   "Frances": "Nom d'entrée dangereux, refusé : {nome}",
+   "Ingles": "Dangerous entry name, refused: {nome}",
+   "Italiano": "Nome di voce pericoloso, rifiutato: {nome}",
+   "Alemao": "Gefährlicher Eintragsname, abgelehnt: {nome}",
+   "Espanhol": "Nombre de entrada peligroso, rechazado: {nome}"
+  },
+  "zip.erro_nome_perigoso_faca": {
+   "Portugues": "Extraído, este nome escreveria fora da pasta de destino (zip-slip). Nada foi extraído nem gravado. Não abra este pacote com outra ferramenta.",
+   "Frances": "Extrait, ce nom écrirait hors du dossier de destination (zip-slip). Rien n'a été extrait ni écrit. N'ouvrez pas cette archive avec un autre outil.",
+   "Ingles": "Extracted, this name would write outside the destination folder (zip-slip). Nothing was extracted or written. Do not open this archive with another tool.",
+   "Italiano": "Estratto, questo nome scriverebbe fuori dalla cartella di destinazione (zip-slip). Nulla è stato estratto né scritto. Non aprire questo archivio con un altro strumento.",
+   "Alemao": "Beim Entpacken würde dieser Name außerhalb des Zielordners schreiben (Zip-Slip). Nichts wurde entpackt oder geschrieben. Öffnen Sie dieses Archiv nicht mit einem anderen Werkzeug.",
+   "Espanhol": "Extraído, este nombre escribiría fuera de la carpeta de destino (zip-slip). No se extrajo ni se grabó nada. No abras este paquete con otra herramienta."
+  },
+  "zip.erro_nome_repetido": {
+   "Portugues": "O mesmo nome duas vezes: {nome}",
+   "Frances": "Le même nom deux fois : {nome}",
+   "Ingles": "The same name twice: {nome}",
+   "Italiano": "Lo stesso nome due volte: {nome}",
+   "Alemao": "Derselbe Name zweimal: {nome}",
+   "Espanhol": "El mismo nombre dos veces: {nome}"
+  },
+  "zip.erro_nome_repetido_faca": {
+   "Portugues": "Tire um dos dois da lista e compacte de novo.",
+   "Frances": "Retirez l'un des deux de la liste et compressez à nouveau.",
+   "Ingles": "Remove one of them from the list and compress again.",
+   "Italiano": "Rimuovi uno dei due dall'elenco e comprimi di nuovo.",
+   "Alemao": "Entfernen Sie einen der beiden aus der Liste und komprimieren Sie erneut.",
+   "Espanhol": "Quita uno de los dos de la lista y vuelve a comprimir."
+  },
+  "zip.erro_ocupado": {
+   "Portugues": "O servidor está ocupado com outras operações",
+   "Frances": "Le serveur est occupé par d'autres opérations",
+   "Ingles": "The server is busy with other operations",
+   "Italiano": "Il server è occupato con altre operazioni",
+   "Alemao": "Der Server ist mit anderen Vorgängen beschäftigt",
+   "Espanhol": "El servidor está ocupado con otras operaciones"
+  },
+  "zip.erro_ocupado_faca": {
+   "Portugues": "Espere a outra operação terminar e tente de novo.",
+   "Frances": "Attendez la fin de l'autre opération et réessayez.",
+   "Ingles": "Wait for the other operation to finish and try again.",
+   "Italiano": "Attendi che l'altra operazione finisca e riprova.",
+   "Alemao": "Warten Sie, bis der andere Vorgang fertig ist, und versuchen Sie es erneut.",
+   "Espanhol": "Espera a que termine la otra operación y vuelve a intentarlo."
+  },
+  "zip.erro_origem": {
+   "Portugues": "O servidor recusou a origem desta página ({codigo})",
+   "Frances": "Le serveur a refusé l'origine de cette page ({codigo})",
+   "Ingles": "The server refused this page's origin ({codigo})",
+   "Italiano": "Il server ha rifiutato l'origine di questa pagina ({codigo})",
+   "Alemao": "Der Server hat die Herkunft dieser Seite abgelehnt ({codigo})",
+   "Espanhol": "El servidor rechazó el origen de esta página ({codigo})"
+  },
+  "zip.erro_origem_faca": {
+   "Portugues": "Abra o PhxZip pelo endereço que o servidor mostrou ao subir (127.0.0.1 ou localhost), e não por outro nome.",
+   "Frances": "Ouvrez PhxZip à l'adresse affichée par le serveur au démarrage (127.0.0.1 ou localhost), et non par un autre nom.",
+   "Ingles": "Open PhxZip at the address the server printed when it started (127.0.0.1 or localhost), not under another name.",
+   "Italiano": "Apri PhxZip dall'indirizzo mostrato dal server all'avvio (127.0.0.1 o localhost), non con un altro nome.",
+   "Alemao": "Öffnen Sie PhxZip unter der Adresse, die der Server beim Start angezeigt hat (127.0.0.1 oder localhost), nicht unter einem anderen Namen.",
+   "Espanhol": "Abre PhxZip en la dirección que mostró el servidor al arrancar (127.0.0.1 o localhost), no con otro nombre."
+  },
+  "zip.erro_pedido_malformado": {
+   "Portugues": "O servidor recusou o pedido desta página ({codigo})",
+   "Frances": "Le serveur a refusé la requête de cette page ({codigo})",
+   "Ingles": "The server refused this page's request ({codigo})",
+   "Italiano": "Il server ha rifiutato la richiesta di questa pagina ({codigo})",
+   "Alemao": "Der Server hat die Anfrage dieser Seite abgelehnt ({codigo})",
+   "Espanhol": "El servidor rechazó la petición de esta página ({codigo})"
+  },
+  "zip.erro_rede": {
+   "Portugues": "A conexão com o servidor local caiu",
+   "Frances": "La connexion au serveur local a été coupée",
+   "Ingles": "The connection to the local server dropped",
+   "Italiano": "La connessione al server locale è caduta",
+   "Alemao": "Die Verbindung zum lokalen Server ist abgebrochen",
+   "Espanhol": "Se cayó la conexión con el servidor local"
+  },
+  "zip.erro_rede_faca": {
+   "Portugues": "Confira se o servidor do PhxZip continua rodando e tente de novo.",
+   "Frances": "Vérifiez que le serveur PhxZip tourne toujours et réessayez.",
+   "Ingles": "Check that the PhxZip server is still running and try again.",
+   "Italiano": "Controlla che il server di PhxZip sia ancora in esecuzione e riprova.",
+   "Alemao": "Prüfen Sie, ob der PhxZip-Server noch läuft, und versuchen Sie es erneut.",
+   "Espanhol": "Comprueba que el servidor de PhxZip sigue funcionando y vuelve a intentarlo."
+  },
+  "zip.erro_regra_phz": {
+   "Portugues": "Um .phz é um 7z com um arquivo só, sempre com senha. Para gravar um, use Compactar com o formato .phz.",
+   "Frances": "Un .phz est un 7z avec un seul fichier, toujours avec mot de passe. Pour en créer un, utilisez Compresser avec le format .phz.",
+   "Ingles": "A .phz is a 7z with a single file, always password-protected. To create one, use Compress with the .phz format.",
+   "Italiano": "Un .phz è un 7z con un solo file, sempre con password. Per crearne uno, usa Comprimi con il formato .phz.",
+   "Alemao": "Ein .phz ist ein 7z mit nur einer Datei, immer mit Kennwort. Zum Erstellen nutzen Sie Komprimieren mit dem Format .phz.",
+   "Espanhol": "Un .phz es un 7z con un solo archivo, siempre con contraseña. Para crear uno, usa Comprimir con el formato .phz."
+  },
+  "zip.erro_sem_cifra": {
+   "Portugues": "É 7z, mas não é um .phz: nada está cifrado",
+   "Frances": "C'est du 7z, mais pas un .phz : rien n'est chiffré",
+   "Ingles": "It is 7z, but not a .phz: nothing is encrypted",
+   "Italiano": "È 7z, ma non è un .phz: nulla è cifrato",
+   "Alemao": "Es ist 7z, aber kein .phz: nichts ist verschlüsselt",
+   "Espanhol": "Es 7z, pero no es un .phz: nada está cifrado"
+  },
+  "zip.erro_sem_entrada": {
+   "Portugues": "O .phz não tem nenhuma entrada",
+   "Frances": "Le .phz ne contient aucune entrée",
+   "Ingles": "The .phz has no entry",
+   "Italiano": "Il .phz non ha voci",
+   "Alemao": "Das .phz hat keinen Eintrag",
+   "Espanhol": "El .phz no tiene ninguna entrada"
+  },
+  "zip.erro_senha_ausente": {
+   "Portugues": "Este pacote é cifrado e pede senha",
+   "Frances": "Cette archive est chiffrée et demande un mot de passe",
+   "Ingles": "This archive is encrypted and needs a password",
+   "Italiano": "Questo archivio è cifrato e richiede una password",
+   "Alemao": "Dieses Archiv ist verschlüsselt und braucht ein Kennwort",
+   "Espanhol": "Este paquete está cifrado y pide contraseña"
+  },
+  "zip.erro_senha_ausente_faca": {
+   "Portugues": "Digite a senha no campo acima.",
+   "Frances": "Saisissez le mot de passe dans le champ ci-dessus.",
+   "Ingles": "Type the password in the field above.",
+   "Italiano": "Digita la password nel campo qui sopra.",
+   "Alemao": "Geben Sie das Kennwort im Feld oben ein.",
+   "Espanhol": "Escribe la contraseña en el campo de arriba."
+  },
+  "zip.erro_senha_errada": {
+   "Portugues": "Senha errada",
+   "Frances": "Mot de passe incorrect",
+   "Ingles": "Wrong password",
+   "Italiano": "Password errata",
+   "Alemao": "Falsches Kennwort",
+   "Espanhol": "Contraseña incorrecta"
+  },
+  "zip.erro_senha_errada_faca": {
+   "Portugues": "O pacote chegou intacto — o CRC do dado cifrado confere —, então o que não fecha é a senha. Confira maiúsculas e o teclado.",
+   "Frances": "L'archive est intacte — le CRC des données chiffrées concorde —, c'est donc le mot de passe qui ne va pas. Vérifiez les majuscules et le clavier.",
+   "Ingles": "The archive is intact — the CRC of the encrypted data matches — so it is the password that is wrong. Check capitals and the keyboard layout.",
+   "Italiano": "L'archivio è integro — il CRC dei dati cifrati corrisponde —, quindi a non tornare è la password. Controlla maiuscole e tastiera.",
+   "Alemao": "Das Archiv ist intakt — die CRC der verschlüsselten Daten stimmt —, also ist das Kennwort falsch. Prüfen Sie Groß- und Kleinschreibung und die Tastaturbelegung.",
+   "Espanhol": "El paquete llegó intacto — el CRC de los datos cifrados coincide —, así que lo que falla es la contraseña. Revisa mayúsculas y el teclado."
+  },
+  "zip.erro_senha_ou_corrompido": {
+   "Portugues": "Senha errada ou pacote corrompido",
+   "Frances": "Mot de passe incorrect ou archive corrompue",
+   "Ingles": "Wrong password or corrupted archive",
+   "Italiano": "Password errata o archivio danneggiato",
+   "Alemao": "Falsches Kennwort oder beschädigtes Archiv",
+   "Espanhol": "Contraseña incorrecta o paquete dañado"
+  },
+  "zip.erro_senha_ou_corrompido_faca": {
+   "Portugues": "Este pacote não guarda o CRC do dado cifrado (o 7-Zip não grava), e sem ele não há como separar os dois. Confira a senha; se estiver certa, use o backup.",
+   "Frances": "Cette archive ne conserve pas le CRC des données chiffrées (7-Zip ne l'écrit pas) et, sans lui, impossible de distinguer les deux. Vérifiez le mot de passe ; s'il est correct, utilisez la sauvegarde.",
+   "Ingles": "This archive does not store the CRC of the encrypted data (7-Zip doesn't write it), and without it the two cannot be told apart. Check the password; if it is right, use the backup.",
+   "Italiano": "Questo archivio non conserva il CRC dei dati cifrati (7-Zip non lo scrive) e senza di esso non si possono distinguere i due casi. Controlla la password; se è giusta, usa il backup.",
+   "Alemao": "Dieses Archiv speichert die CRC der verschlüsselten Daten nicht (7-Zip schreibt sie nicht), und ohne sie lassen sich beide Fälle nicht unterscheiden. Prüfen Sie das Kennwort; stimmt es, nehmen Sie die Sicherung.",
+   "Espanhol": "Este paquete no guarda el CRC de los datos cifrados (7-Zip no lo graba) y sin él no hay forma de distinguir los dos casos. Revisa la contraseña; si es correcta, usa la copia de seguridad."
+  },
+  "zip.erro_versao": {
+   "Portugues": "Versão {versao} do formato 7z, que o PhxZip não lê",
+   "Frances": "Version {versao} du format 7z, que PhxZip ne lit pas",
+   "Ingles": "Version {versao} of the 7z format, which PhxZip does not read",
+   "Italiano": "Versione {versao} del formato 7z, che PhxZip non legge",
+   "Alemao": "Version {versao} des 7z-Formats, die PhxZip nicht liest",
+   "Espanhol": "Versión {versao} del formato 7z, que PhxZip no lee"
+  },
+  "zip.erro_versao_faca": {
+   "Portugues": "Regrave o pacote com o 7-Zip atual.",
+   "Frances": "Réenregistrez l'archive avec le 7-Zip actuel.",
+   "Ingles": "Re-create the archive with the current 7-Zip.",
+   "Italiano": "Ricrea l'archivio con il 7-Zip attuale.",
+   "Alemao": "Erstellen Sie das Archiv mit dem aktuellen 7-Zip neu.",
+   "Espanhol": "Vuelve a crear el paquete con el 7-Zip actual."
+  },
+  "zip.escolher_arquivos": {
+   "Portugues": "Escolher arquivos",
+   "Frances": "Choisir des fichiers",
+   "Ingles": "Choose files",
+   "Italiano": "Scegli file",
+   "Alemao": "Dateien wählen",
+   "Espanhol": "Elegir archivos"
+  },
+  "zip.escolher_pacote": {
+   "Portugues": "Escolher pacote",
+   "Frances": "Choisir une archive",
+   "Ingles": "Choose archive",
+   "Italiano": "Scegli archivio",
+   "Alemao": "Archiv wählen",
+   "Espanhol": "Elegir paquete"
+  },
+  "zip.escolher_pasta": {
+   "Portugues": "Escolher pasta",
+   "Frances": "Choisir un dossier",
+   "Ingles": "Choose folder",
+   "Italiano": "Scegli cartella",
+   "Alemao": "Ordner wählen",
+   "Espanhol": "Elegir carpeta"
+  },
+  "zip.espiar": {
+   "Portugues": "Espiar",
+   "Frances": "Aperçu",
+   "Ingles": "Peek",
+   "Italiano": "Sbircia",
+   "Alemao": "Hineinschauen",
+   "Espanhol": "Echar un vistazo"
+  },
+  "zip.espiar_binario": {
+   "Portugues": "Binário (hexadecimal)",
+   "Frances": "Binaire (hexadécimal)",
+   "Ingles": "Binary (hexadecimal)",
+   "Italiano": "Binario (esadecimale)",
+   "Alemao": "Binär (hexadezimal)",
+   "Espanhol": "Binario (hexadecimal)"
+  },
+  "zip.espiar_conteudo": {
+   "Portugues": "Conteúdo da entrada",
+   "Frances": "Contenu de l'entrée",
+   "Ingles": "Entry content",
+   "Italiano": "Contenuto della voce",
+   "Alemao": "Inhalt des Eintrags",
+   "Espanhol": "Contenido de la entrada"
+  },
+  "zip.espiar_cortado": {
+   "Portugues": "Mostrando os primeiros {n} de {total}",
+   "Frances": "Affichage des premiers {n} sur {total}",
+   "Ingles": "Showing the first {n} of {total}",
+   "Italiano": "Mostrati i primi {n} di {total}",
+   "Alemao": "Die ersten {n} von {total} werden angezeigt",
+   "Espanhol": "Mostrando los primeros {n} de {total}"
+  },
+  "zip.espiar_inteiro": {
+   "Portugues": "Inteiro: {total}",
+   "Frances": "Complet : {total}",
+   "Ingles": "Complete: {total}",
+   "Italiano": "Completo: {total}",
+   "Alemao": "Vollständig: {total}",
+   "Espanhol": "Completo: {total}"
+  },
+  "zip.espiar_item": {
+   "Portugues": "Espiar {nome} sem extrair",
+   "Frances": "Aperçu de {nome} sans extraire",
+   "Ingles": "Peek at {nome} without extracting",
+   "Italiano": "Sbircia {nome} senza estrarre",
+   "Alemao": "In {nome} schauen, ohne zu entpacken",
+   "Espanhol": "Ver {nome} sin extraer"
+  },
+  "zip.espiar_nada_no_disco": {
+   "Portugues": "Nada foi gravado no disco: o conteúdo está só na memória desta página.",
+   "Frances": "Rien n'a été écrit sur le disque : le contenu est seulement dans la mémoire de cette page.",
+   "Ingles": "Nothing was written to disk: the content lives only in this page's memory.",
+   "Italiano": "Nulla è stato scritto sul disco: il contenuto è solo nella memoria di questa pagina.",
+   "Alemao": "Nichts wurde auf die Festplatte geschrieben: Der Inhalt liegt nur im Speicher dieser Seite.",
+   "Espanhol": "No se escribió nada en el disco: el contenido está solo en la memoria de esta página."
+  },
+  "zip.espiar_texto": {
+   "Portugues": "Texto UTF-8",
+   "Frances": "Texte UTF-8",
+   "Ingles": "UTF-8 text",
+   "Italiano": "Testo UTF-8",
+   "Alemao": "UTF-8-Text",
+   "Espanhol": "Texto UTF-8"
+  },
+  "zip.espiar_titulo": {
+   "Portugues": "Espiando, sem extrair",
+   "Frances": "Aperçu, sans extraire",
+   "Ingles": "Peeking, without extracting",
+   "Italiano": "Anteprima, senza estrarre",
+   "Alemao": "Vorschau, ohne Entpacken",
+   "Espanhol": "Vista previa, sin extraer"
+  },
+  "zip.fase_enviando": {
+   "Portugues": "Enviando ao servidor local…",
+   "Frances": "Envoi au serveur local…",
+   "Ingles": "Sending to the local server…",
+   "Italiano": "Invio al server locale…",
+   "Alemao": "Senden an den lokalen Server…",
+   "Espanhol": "Enviando al servidor local…"
+  },
+  "zip.fase_processando": {
+   "Portugues": "O servidor está trabalhando…",
+   "Frances": "Le serveur travaille…",
+   "Ingles": "The server is working…",
+   "Italiano": "Il server sta lavorando…",
+   "Alemao": "Der Server arbeitet…",
+   "Espanhol": "El servidor está trabajando…"
+  },
+  "zip.fase_recebendo": {
+   "Portugues": "Recebendo o resultado…",
+   "Frances": "Réception du résultat…",
+   "Ingles": "Receiving the result…",
+   "Italiano": "Ricezione del risultato…",
+   "Alemao": "Ergebnis wird empfangen…",
+   "Espanhol": "Recibiendo el resultado…"
+  },
+  "zip.fechar": {
+   "Portugues": "Fechar",
+   "Frances": "Fermer",
+   "Ingles": "Close",
+   "Italiano": "Chiudi",
+   "Alemao": "Schließen",
+   "Espanhol": "Cerrar"
+  },
+  "zip.fechar_pacote": {
+   "Portugues": "Fechar",
+   "Frances": "Fermer",
+   "Ingles": "Close",
+   "Italiano": "Chiudi",
+   "Alemao": "Schließen",
+   "Espanhol": "Cerrar"
+  },
+  "zip.filtrar": {
+   "Portugues": "Filtrar pelo nome",
+   "Frances": "Filtrer par nom",
+   "Ingles": "Filter by name",
+   "Italiano": "Filtra per nome",
+   "Alemao": "Nach Namen filtern",
+   "Espanhol": "Filtrar por nombre"
+  },
+  "zip.filtro_vazio": {
+   "Portugues": "Nenhuma entrada tem esse trecho no nome.",
+   "Frances": "Aucune entrée ne contient ce texte dans son nom.",
+   "Ingles": "No entry has that text in its name.",
+   "Italiano": "Nessuna voce contiene questo testo nel nome.",
+   "Alemao": "Kein Eintrag enthält diesen Text im Namen.",
+   "Espanhol": "Ninguna entrada tiene ese texto en el nombre."
+  },
+  "zip.formato": {
+   "Portugues": "Formato",
+   "Frances": "Format",
+   "Ingles": "Format",
+   "Italiano": "Formato",
+   "Alemao": "Format",
+   "Espanhol": "Formato"
+  },
+  "zip.formato_7z_dica": {
+   "Portugues": "O formato do 7-Zip: vários arquivos e pastas, senha opcional. Abre no 7-Zip.",
+   "Frances": "Le format de 7-Zip : plusieurs fichiers et dossiers, mot de passe facultatif. S'ouvre dans 7-Zip.",
+   "Ingles": "The 7-Zip format: several files and folders, optional password. Opens in 7-Zip.",
+   "Italiano": "Il formato di 7-Zip: più file e cartelle, password facoltativa. Si apre in 7-Zip.",
+   "Alemao": "Das 7-Zip-Format: mehrere Dateien und Ordner, Kennwort optional. Lässt sich in 7-Zip öffnen.",
+   "Espanhol": "El formato de 7-Zip: varios archivos y carpetas, contraseña opcional. Se abre en 7-Zip."
+  },
+  "zip.formato_phz_dica": {
+   "Portugues": "O formato dos arquivos de configuração do PhxSql: um 7z com UM arquivo só, sempre com senha e com os nomes cifrados.",
+   "Frances": "Le format des fichiers de configuration de PhxSql : un 7z avec UN seul fichier, toujours avec mot de passe et noms chiffrés.",
+   "Ingles": "PhxSql's configuration-file format: a 7z with ONE file only, always password-protected, with encrypted names.",
+   "Italiano": "Il formato dei file di configurazione di PhxSql: un 7z con UN solo file, sempre con password e nomi cifrati.",
+   "Alemao": "Das Format der Konfigurationsdateien von PhxSql: ein 7z mit nur EINER Datei, immer mit Kennwort und verschlüsselten Namen.",
+   "Espanhol": "El formato de los archivos de configuración de PhxSql: un 7z con UN solo archivo, siempre con contraseña y nombres cifrados."
+  },
+  "zip.garantia_disco": {
+   "Portugues": "O servidor não lê nem grava nada no seu disco: tudo entra pelo navegador e sai como download.",
+   "Frances": "Le serveur ne lit ni n'écrit rien sur votre disque : tout entre par le navigateur et sort en téléchargement.",
+   "Ingles": "The server reads and writes nothing on your disk: everything comes in through the browser and leaves as a download.",
+   "Italiano": "Il server non legge né scrive nulla sul tuo disco: tutto entra dal browser ed esce come download.",
+   "Alemao": "Der Server liest und schreibt nichts auf Ihrer Festplatte: Alles kommt über den Browser herein und geht als Download hinaus.",
+   "Espanhol": "El servidor no lee ni escribe nada en tu disco: todo entra por el navegador y sale como descarga."
+  },
+  "zip.hex_primeiros": {
+   "Portugues": "Mostrando os primeiros {n} bytes.",
+   "Frances": "Affichage des {n} premiers octets.",
+   "Ingles": "Showing the first {n} bytes.",
+   "Italiano": "Mostrati i primi {n} byte.",
+   "Alemao": "Die ersten {n} Bytes werden angezeigt.",
+   "Espanhol": "Mostrando los primeros {n} bytes."
+  },
+  "zip.idioma_da_interface": {
+   "Portugues": "Idioma da interface",
+   "Frances": "Langue de l'interface",
+   "Ingles": "Interface language",
+   "Italiano": "Lingua dell'interfaccia",
+   "Alemao": "Sprache der Oberfläche",
+   "Espanhol": "Idioma de la interfaz"
+  },
+  "zip.json_invalido": {
+   "Portugues": "JSON inválido",
+   "Frances": "JSON invalide",
+   "Ingles": "Invalid JSON",
+   "Italiano": "JSON non valido",
+   "Alemao": "Ungültiges JSON",
+   "Espanhol": "JSON no válido"
+  },
+  "zip.json_invalido_em": {
+   "Portugues": "JSON inválido na linha {linha}, coluna {coluna}",
+   "Frances": "JSON invalide à la ligne {linha}, colonne {coluna}",
+   "Ingles": "Invalid JSON at line {linha}, column {coluna}",
+   "Italiano": "JSON non valido alla riga {linha}, colonna {coluna}",
+   "Alemao": "Ungültiges JSON in Zeile {linha}, Spalte {coluna}",
+   "Espanhol": "JSON no válido en la línea {linha}, columna {coluna}"
+  },
+  "zip.json_invalido_posicao": {
+   "Portugues": "JSON inválido no byte {posicao}, além do trecho mostrado",
+   "Frances": "JSON invalide à l'octet {posicao}, au-delà de l'extrait affiché",
+   "Ingles": "Invalid JSON at byte {posicao}, beyond the part shown",
+   "Italiano": "JSON non valido al byte {posicao}, oltre la parte mostrata",
+   "Alemao": "Ungültiges JSON bei Byte {posicao}, jenseits des angezeigten Teils",
+   "Espanhol": "JSON no válido en el byte {posicao}, más allá del fragmento mostrado"
+  },
+  "zip.json_nao_avaliado": {
+   "Portugues": "JSON não avaliado: a entrada passa de {teto}",
+   "Frances": "JSON non évalué : l'entrée dépasse {teto}",
+   "Ingles": "JSON not checked: the entry exceeds {teto}",
+   "Italiano": "JSON non valutato: la voce supera {teto}",
+   "Alemao": "JSON nicht geprüft: Der Eintrag überschreitet {teto}",
+   "Espanhol": "JSON no evaluado: la entrada supera {teto}"
+  },
+  "zip.json_valido": {
+   "Portugues": "JSON válido, conferido pelo motor",
+   "Frances": "JSON valide, vérifié par le moteur",
+   "Ingles": "Valid JSON, checked by the engine",
+   "Italiano": "JSON valido, verificato dal motore",
+   "Alemao": "Gültiges JSON, von der Engine geprüft",
+   "Espanhol": "JSON válido, comprobado por el motor"
+  },
+  "zip.limpar_lista": {
+   "Portugues": "Limpar a lista",
+   "Frances": "Vider la liste",
+   "Ingles": "Clear list",
+   "Italiano": "Svuota l'elenco",
+   "Alemao": "Liste leeren",
+   "Espanhol": "Vaciar la lista"
+  },
+  "zip.mostrar_senha": {
+   "Portugues": "Mostrar a senha",
+   "Frances": "Afficher le mot de passe",
+   "Ingles": "Show password",
+   "Italiano": "Mostra la password",
+   "Alemao": "Kennwort anzeigen",
+   "Espanhol": "Mostrar la contraseña"
+  },
+  "zip.nivel": {
+   "Portugues": "Compressão",
+   "Frances": "Compression",
+   "Ingles": "Compression",
+   "Italiano": "Compressione",
+   "Alemao": "Kompression",
+   "Espanhol": "Compresión"
+  },
+  "zip.nivel_armazenar": {
+   "Portugues": "Armazenar",
+   "Frances": "Stocker",
+   "Ingles": "Store",
+   "Italiano": "Archivia",
+   "Alemao": "Speichern",
+   "Espanhol": "Almacenar"
+  },
+  "zip.nivel_armazenar_dica": {
+   "Portugues": "Sem compressão: o pacote fica do tamanho dos arquivos. Serve para o que já vem comprimido (JPEG, MP4, outro 7z).",
+   "Frances": "Sans compression : l'archive fait la taille des fichiers. Pour ce qui est déjà compressé (JPEG, MP4, un autre 7z).",
+   "Ingles": "No compression: the archive is as large as the files. For content that is already compressed (JPEG, MP4, another 7z).",
+   "Italiano": "Senza compressione: l'archivio è grande quanto i file. Per ciò che è già compresso (JPEG, MP4, un altro 7z).",
+   "Alemao": "Ohne Kompression: Das Archiv ist so groß wie die Dateien. Für bereits Komprimiertes (JPEG, MP4, ein anderes 7z).",
+   "Espanhol": "Sin compresión: el paquete ocupa lo mismo que los archivos. Para lo que ya viene comprimido (JPEG, MP4, otro 7z)."
+  },
+  "zip.nivel_fixo_no_phz": {
+   "Portugues": "No .phz a compressão é sempre LZMA2.",
+   "Frances": "Dans un .phz, la compression est toujours LZMA2.",
+   "Ingles": "In a .phz the compression is always LZMA2.",
+   "Italiano": "Nel .phz la compressione è sempre LZMA2.",
+   "Alemao": "Im .phz ist die Kompression immer LZMA2.",
+   "Espanhol": "En el .phz la compresión es siempre LZMA2."
+  },
+  "zip.nivel_lzma2": {
+   "Portugues": "LZMA2",
+   "Frances": "LZMA2",
+   "Ingles": "LZMA2",
+   "Italiano": "LZMA2",
+   "Alemao": "LZMA2",
+   "Espanhol": "LZMA2"
+  },
+  "zip.nivel_lzma2_dica": {
+   "Portugues": "O método do 7-Zip atual. O PhxZip tem hoje um esforço de compressão só; rápido e máximo aparecem aqui quando o motor os tiver.",
+   "Frances": "La méthode du 7-Zip actuel. PhxZip n'a aujourd'hui qu'un seul niveau d'effort ; rapide et maximal apparaîtront ici quand le moteur les aura.",
+   "Ingles": "The current 7-Zip method. PhxZip has a single compression effort today; fast and maximum will appear here once the engine has them.",
+   "Italiano": "Il metodo del 7-Zip attuale. Oggi PhxZip ha un solo livello di sforzo; veloce e massimo compariranno qui quando il motore li avrà.",
+   "Alemao": "Die Methode des aktuellen 7-Zip. PhxZip hat heute nur eine Kompressionsstufe; schnell und maximal erscheinen hier, sobald die Engine sie hat.",
+   "Espanhol": "El método del 7-Zip actual. PhxZip tiene hoy un solo nivel de esfuerzo; rápido y máximo aparecerán aquí cuando el motor los tenga."
+  },
+  "zip.nome_do_pacote": {
+   "Portugues": "Nome do pacote",
+   "Frances": "Nom de l'archive",
+   "Ingles": "Archive name",
+   "Italiano": "Nome dell'archivio",
+   "Alemao": "Archivname",
+   "Espanhol": "Nombre del paquete"
+  },
+  "zip.nome_padrao": {
+   "Portugues": "pacote",
+   "Frances": "archive",
+   "Ingles": "archive",
+   "Italiano": "archivio",
+   "Alemao": "archiv",
+   "Espanhol": "paquete"
+  },
+  "zip.o_que_vai_no_pacote": {
+   "Portugues": "O que vai no pacote",
+   "Frances": "Ce qui va dans l'archive",
+   "Ingles": "What goes into the archive",
+   "Italiano": "Cosa va nell'archivio",
+   "Alemao": "Was ins Archiv kommt",
+   "Espanhol": "Lo que va en el paquete"
+  },
+  "zip.oque_bloco": {
+   "Portugues": "bloco",
+   "Frances": "bloc",
+   "Ingles": "block",
+   "Italiano": "blocco",
+   "Alemao": "Block",
+   "Espanhol": "bloque"
+  },
+  "zip.oque_cabeca": {
+   "Portugues": "cabeça do pedido",
+   "Frances": "en-tête de la requête",
+   "Ingles": "request header",
+   "Italiano": "intestazione della richiesta",
+   "Alemao": "Anfragekopf",
+   "Espanhol": "cabecera de la petición"
+  },
+  "zip.oque_cabecalho": {
+   "Portugues": "cabeçalho",
+   "Frances": "en-tête",
+   "Ingles": "header",
+   "Italiano": "intestazione",
+   "Alemao": "Kopfdaten",
+   "Espanhol": "cabecera"
+  },
+  "zip.oque_entrada": {
+   "Portugues": "entrada",
+   "Frances": "entrée",
+   "Ingles": "entry",
+   "Italiano": "voce",
+   "Alemao": "Eintrag",
+   "Espanhol": "entrada"
+  },
+  "zip.oque_envio": {
+   "Portugues": "envio",
+   "Frances": "envoi",
+   "Ingles": "upload",
+   "Italiano": "invio",
+   "Alemao": "Upload",
+   "Espanhol": "envío"
+  },
+  "zip.pacote_vazio": {
+   "Portugues": "O pacote não tem nenhuma entrada.",
+   "Frances": "L'archive ne contient aucune entrée.",
+   "Ingles": "The archive has no entries.",
+   "Italiano": "L'archivio non ha voci.",
+   "Alemao": "Das Archiv hat keine Einträge.",
+   "Espanhol": "El paquete no tiene ninguna entrada."
+  },
+  "zip.pastas_um": {
+   "Portugues": "{n} pasta",
+   "Frances": "{n} dossier",
+   "Ingles": "{n} folder",
+   "Italiano": "{n} cartella",
+   "Alemao": "{n} Ordner",
+   "Espanhol": "{n} carpeta"
+  },
+  "zip.pastas_varios": {
+   "Portugues": "{n} pastas",
+   "Frances": "{n} dossiers",
+   "Ingles": "{n} folders",
+   "Italiano": "{n} cartelle",
+   "Alemao": "{n} Ordner",
+   "Espanhol": "{n} carpetas"
+  },
+  "zip.pastas_zero": {
+   "Portugues": "nenhuma pasta",
+   "Frances": "aucun dossier",
+   "Ingles": "no folders",
+   "Italiano": "nessuna cartella",
+   "Alemao": "keine Ordner",
+   "Espanhol": "ninguna carpeta"
+  },
+  "zip.porque_phz_senha": {
+   "Portugues": "O .phz exige senha.",
+   "Frances": "Le .phz exige un mot de passe.",
+   "Ingles": "A .phz requires a password.",
+   "Italiano": "Il .phz richiede una password.",
+   "Alemao": "Ein .phz erfordert ein Kennwort.",
+   "Espanhol": "El .phz exige contraseña."
+  },
+  "zip.porque_phz_um_arquivo": {
+   "Portugues": "O .phz guarda exatamente um arquivo, sem pasta.",
+   "Frances": "Un .phz contient exactement un fichier, sans dossier.",
+   "Ingles": "A .phz holds exactly one file, with no folder.",
+   "Italiano": "Il .phz contiene esattamente un file, senza cartelle.",
+   "Alemao": "Ein .phz enthält genau eine Datei, ohne Ordner.",
+   "Espanhol": "El .phz guarda exactamente un archivo, sin carpeta."
+  },
+  "zip.porque_senhas_diferentes": {
+   "Portugues": "As duas senhas não conferem.",
+   "Frances": "Les deux mots de passe ne correspondent pas.",
+   "Ingles": "The two passwords do not match.",
+   "Italiano": "Le due password non coincidono.",
+   "Alemao": "Die beiden Kennwörter stimmen nicht überein.",
+   "Espanhol": "Las dos contraseñas no coinciden."
+  },
+  "zip.porque_teto": {
+   "Portugues": "O envio passa do teto de {teto} do servidor.",
+   "Frances": "L'envoi dépasse le plafond de {teto} du serveur.",
+   "Ingles": "The upload exceeds the server's {teto} limit.",
+   "Italiano": "L'invio supera il limite di {teto} del server.",
+   "Alemao": "Der Upload überschreitet die Servergrenze von {teto}.",
+   "Espanhol": "El envío supera el límite de {teto} del servidor."
+  },
+  "zip.porque_vazio": {
+   "Portugues": "A lista está vazia.",
+   "Frances": "La liste est vide.",
+   "Ingles": "The list is empty.",
+   "Italiano": "L'elenco è vuoto.",
+   "Alemao": "Die Liste ist leer.",
+   "Espanhol": "La lista está vacía."
+  },
+  "zip.progresso_bytes": {
+   "Portugues": "{feito} de {total} ({pct})",
+   "Frances": "{feito} sur {total} ({pct})",
+   "Ingles": "{feito} of {total} ({pct})",
+   "Italiano": "{feito} di {total} ({pct})",
+   "Alemao": "{feito} von {total} ({pct})",
+   "Espanhol": "{feito} de {total} ({pct})"
+  },
+  "zip.pronto": {
+   "Portugues": "Pacote pronto: {nome}",
+   "Frances": "Archive prête : {nome}",
+   "Ingles": "Archive ready: {nome}",
+   "Italiano": "Archivio pronto: {nome}",
+   "Alemao": "Archiv fertig: {nome}",
+   "Espanhol": "Paquete listo: {nome}"
+  },
+  "zip.pronto_detalhe": {
+   "Portugues": "{tamanho} a partir de {original} — {razao} do original. O download começou.",
+   "Frances": "{tamanho} à partir de {original} — {razao} de l'original. Le téléchargement a commencé.",
+   "Ingles": "{tamanho} from {original} — {razao} of the original. The download has started.",
+   "Italiano": "{tamanho} a partire da {original} — {razao} dell'originale. Il download è iniziato.",
+   "Alemao": "{tamanho} aus {original} — {razao} des Originals. Der Download hat begonnen.",
+   "Espanhol": "{tamanho} a partir de {original} — {razao} del original. La descarga ha comenzado."
+  },
+  "zip.pronto_detalhe_sem_razao": {
+   "Portugues": "{tamanho}. O download começou.",
+   "Frances": "{tamanho}. Le téléchargement a commencé.",
+   "Ingles": "{tamanho}. The download has started.",
+   "Italiano": "{tamanho}. Il download è iniziato.",
+   "Alemao": "{tamanho}. Der Download hat begonnen.",
+   "Espanhol": "{tamanho}. La descarga ha comenzado."
+  },
+  "zip.pular_para_o_conteudo": {
+   "Portugues": "Pular para o conteúdo",
+   "Frances": "Aller au contenu",
+   "Ingles": "Skip to content",
+   "Italiano": "Vai al contenuto",
+   "Alemao": "Zum Inhalt springen",
+   "Espanhol": "Saltar al contenido"
+  },
+  "zip.recado_repetidos_um": {
+   "Portugues": "{n} arquivo já estava na lista com o mesmo caminho e não entrou de novo.",
+   "Frances": "{n} fichier figurait déjà dans la liste avec le même chemin et n'a pas été ajouté à nouveau.",
+   "Ingles": "{n} file was already on the list with the same path and was not added again.",
+   "Italiano": "{n} file era già nell'elenco con lo stesso percorso e non è stato aggiunto di nuovo.",
+   "Alemao": "{n} Datei stand bereits mit demselben Pfad in der Liste und wurde nicht erneut hinzugefügt.",
+   "Espanhol": "{n} archivo ya estaba en la lista con la misma ruta y no se añadió de nuevo."
+  },
+  "zip.recado_repetidos_varios": {
+   "Portugues": "{n} arquivos já estavam na lista com o mesmo caminho e não entraram de novo.",
+   "Frances": "{n} fichiers figuraient déjà dans la liste avec le même chemin et n'ont pas été ajoutés à nouveau.",
+   "Ingles": "{n} files were already on the list with the same path and were not added again.",
+   "Italiano": "{n} file erano già nell'elenco con lo stesso percorso e non sono stati aggiunti di nuovo.",
+   "Alemao": "{n} Dateien standen bereits mit demselben Pfad in der Liste und wurden nicht erneut hinzugefügt.",
+   "Espanhol": "{n} archivos ya estaban en la lista con la misma ruta y no se añadieron de nuevo."
+  },
+  "zip.recado_um_pacote": {
+   "Portugues": "Só um pacote por vez: abri o primeiro.",
+   "Frances": "Une seule archive à la fois : la première a été ouverte.",
+   "Ingles": "One archive at a time: the first one was opened.",
+   "Italiano": "Un archivio alla volta: è stato aperto il primo.",
+   "Alemao": "Nur ein Archiv auf einmal: das erste wurde geöffnet.",
+   "Espanhol": "Un paquete a la vez: se abrió el primero."
+  },
+  "zip.remover": {
+   "Portugues": "Remover",
+   "Frances": "Retirer",
+   "Ingles": "Remove",
+   "Italiano": "Rimuovi",
+   "Alemao": "Entfernen",
+   "Espanhol": "Quitar"
+  },
+  "zip.remover_item": {
+   "Portugues": "Remover {nome} da lista",
+   "Frances": "Retirer {nome} de la liste",
+   "Ingles": "Remove {nome} from the list",
+   "Italiano": "Rimuovi {nome} dall'elenco",
+   "Alemao": "{nome} aus der Liste entfernen",
+   "Espanhol": "Quitar {nome} de la lista"
+  },
+  "zip.resumo_itens": {
+   "Portugues": "{arquivos}, {pastas} · {total}",
+   "Frances": "{arquivos}, {pastas} · {total}",
+   "Ingles": "{arquivos}, {pastas} · {total}",
+   "Italiano": "{arquivos}, {pastas} · {total}",
+   "Alemao": "{arquivos}, {pastas} · {total}",
+   "Espanhol": "{arquivos}, {pastas} · {total}"
+  },
+  "zip.resumo_pacote": {
+   "Portugues": "{arquivos}, {pastas} · {original} guardados em {pacote} ({razao})",
+   "Frances": "{arquivos}, {pastas} · {original} stockés dans {pacote} ({razao})",
+   "Ingles": "{arquivos}, {pastas} · {original} stored in {pacote} ({razao})",
+   "Italiano": "{arquivos}, {pastas} · {original} archiviati in {pacote} ({razao})",
+   "Alemao": "{arquivos}, {pastas} · {original} gespeichert in {pacote} ({razao})",
+   "Espanhol": "{arquivos}, {pastas} · {original} guardados en {pacote} ({razao})"
+  },
+  "zip.resumo_pacote_sem_razao": {
+   "Portugues": "{arquivos}, {pastas} · pacote de {pacote}",
+   "Frances": "{arquivos}, {pastas} · archive de {pacote}",
+   "Ingles": "{arquivos}, {pastas} · {pacote} archive",
+   "Italiano": "{arquivos}, {pastas} · archivio di {pacote}",
+   "Alemao": "{arquivos}, {pastas} · Archiv mit {pacote}",
+   "Espanhol": "{arquivos}, {pastas} · paquete de {pacote}"
+  },
+  "zip.selo_blocos_solidos_um": {
+   "Portugues": "{n} bloco sólido",
+   "Frances": "{n} bloc solide",
+   "Ingles": "{n} solid block",
+   "Italiano": "{n} blocco solido",
+   "Alemao": "{n} solider Block",
+   "Espanhol": "{n} bloque sólido"
+  },
+  "zip.selo_blocos_solidos_varios": {
+   "Portugues": "{n} blocos sólidos",
+   "Frances": "{n} blocs solides",
+   "Ingles": "{n} solid blocks",
+   "Italiano": "{n} blocchi solidi",
+   "Alemao": "{n} solide Blöcke",
+   "Espanhol": "{n} bloques sólidos"
+  },
+  "zip.selo_conteudo_cifrado": {
+   "Portugues": "Conteúdo cifrado (AES-256)",
+   "Frances": "Contenu chiffré (AES-256)",
+   "Ingles": "Content encrypted (AES-256)",
+   "Italiano": "Contenuto cifrato (AES-256)",
+   "Alemao": "Inhalt verschlüsselt (AES-256)",
+   "Espanhol": "Contenido cifrado (AES-256)"
+  },
+  "zip.selo_nomes_cifrados": {
+   "Portugues": "Nomes cifrados",
+   "Frances": "Noms chiffrés",
+   "Ingles": "Names encrypted",
+   "Italiano": "Nomi cifrati",
+   "Alemao": "Namen verschlüsselt",
+   "Espanhol": "Nombres cifrados"
+  },
+  "zip.senha": {
+   "Portugues": "Senha",
+   "Frances": "Mot de passe",
+   "Ingles": "Password",
+   "Italiano": "Password",
+   "Alemao": "Kennwort",
+   "Espanhol": "Contraseña"
+  },
+  "zip.senha_do_pacote": {
+   "Portugues": "Senha do pacote",
+   "Frances": "Mot de passe de l'archive",
+   "Ingles": "Archive password",
+   "Italiano": "Password dell'archivio",
+   "Alemao": "Archivkennwort",
+   "Espanhol": "Contraseña del paquete"
+  },
+  "zip.senha_obrigatoria": {
+   "Portugues": "Senha (obrigatória no .phz)",
+   "Frances": "Mot de passe (obligatoire pour .phz)",
+   "Ingles": "Password (required for .phz)",
+   "Italiano": "Password (obbligatoria nel .phz)",
+   "Alemao": "Kennwort (Pflicht bei .phz)",
+   "Espanhol": "Contraseña (obligatoria en .phz)"
+  },
+  "zip.senha_opcional": {
+   "Portugues": "Senha (opcional)",
+   "Frances": "Mot de passe (facultatif)",
+   "Ingles": "Password (optional)",
+   "Italiano": "Password (facoltativa)",
+   "Alemao": "Kennwort (optional)",
+   "Espanhol": "Contraseña (opcional)"
+  },
+  "zip.solido": {
+   "Portugues": "sólido",
+   "Frances": "solide",
+   "Ingles": "solid",
+   "Italiano": "solido",
+   "Alemao": "solide",
+   "Espanhol": "sólido"
+  },
+  "zip.solido_dica": {
+   "Portugues": "Comprimido no bloco {bloco} junto com {n} entradas: o tamanho compactado existe para o bloco, não para cada entrada.",
+   "Frances": "Compressé dans le bloc {bloco} avec {n} entrées : la taille compressée existe pour le bloc, pas pour chaque entrée.",
+   "Ingles": "Compressed in block {bloco} together with {n} entries: the packed size exists for the block, not for each entry.",
+   "Italiano": "Compresso nel blocco {bloco} insieme a {n} voci: la dimensione compressa esiste per il blocco, non per ogni voce.",
+   "Alemao": "Im Block {bloco} zusammen mit {n} Einträgen komprimiert: Die gepackte Größe gibt es für den Block, nicht für jeden Eintrag.",
+   "Espanhol": "Comprimido en el bloque {bloco} junto con {n} entradas: el tamaño comprimido existe para el bloque, no para cada entrada."
+  },
+  "zip.soltar_para_abrir": {
+   "Portugues": "Solte para abrir o pacote",
+   "Frances": "Déposez pour ouvrir l'archive",
+   "Ingles": "Drop to open the archive",
+   "Italiano": "Rilascia per aprire l'archivio",
+   "Alemao": "Ablegen, um das Archiv zu öffnen",
+   "Espanhol": "Suelta para abrir el paquete"
+  },
+  "zip.soltar_para_compactar": {
+   "Portugues": "Solte para pôr no pacote",
+   "Frances": "Déposez pour ajouter à l'archive",
+   "Ingles": "Drop to add to the archive",
+   "Italiano": "Rilascia per aggiungere all'archivio",
+   "Alemao": "Ablegen, um zum Archiv hinzuzufügen",
+   "Espanhol": "Suelta para añadir al paquete"
+  },
+  "zip.solte_arquivos": {
+   "Portugues": "Solte arquivos e pastas aqui",
+   "Frances": "Déposez des fichiers et des dossiers ici",
+   "Ingles": "Drop files and folders here",
+   "Italiano": "Trascina qui file e cartelle",
+   "Alemao": "Dateien und Ordner hier ablegen",
+   "Espanhol": "Suelta archivos y carpetas aquí"
+  },
+  "zip.solte_arquivos_dica": {
+   "Portugues": "Eles vão da sua máquina para o servidor local, são compactados em memória e voltam como download. O servidor não grava nada no disco.",
+   "Frances": "Ils vont de votre machine au serveur local, sont compressés en mémoire et reviennent en téléchargement. Le serveur n'écrit rien sur le disque.",
+   "Ingles": "They go from your machine to the local server, are compressed in memory and come back as a download. The server writes nothing to disk.",
+   "Italiano": "Vanno dalla tua macchina al server locale, vengono compressi in memoria e tornano come download. Il server non scrive nulla sul disco.",
+   "Alemao": "Sie gehen von Ihrem Rechner an den lokalen Server, werden im Speicher komprimiert und kommen als Download zurück. Der Server schreibt nichts auf die Festplatte.",
+   "Espanhol": "Van de tu máquina al servidor local, se comprimen en memoria y vuelven como descarga. El servidor no escribe nada en el disco."
+  },
+  "zip.solte_pacote": {
+   "Portugues": "Solte um pacote .7z ou .phz aqui",
+   "Frances": "Déposez une archive .7z ou .phz ici",
+   "Ingles": "Drop a .7z or .phz archive here",
+   "Italiano": "Trascina qui un archivio .7z o .phz",
+   "Alemao": "Ein .7z- oder .phz-Archiv hier ablegen",
+   "Espanhol": "Suelta un paquete .7z o .phz aquí"
+  },
+  "zip.solte_pacote_dica": {
+   "Portugues": "Liste, teste a integridade, espie um arquivo sem extraí-lo e baixe o que precisar.",
+   "Frances": "Listez, testez l'intégrité, jetez un œil à un fichier sans l'extraire et téléchargez ce qu'il vous faut.",
+   "Ingles": "List it, test its integrity, peek at a file without extracting it, and download what you need.",
+   "Italiano": "Elenca, verifica l'integrità, sbircia un file senza estrarlo e scarica ciò che ti serve.",
+   "Alemao": "Auflisten, Integrität prüfen, in eine Datei schauen, ohne sie zu entpacken, und herunterladen, was Sie brauchen.",
+   "Espanhol": "Lista, prueba la integridad, echa un vistazo a un archivo sin extraerlo y descarga lo que necesites."
+  },
+  "zip.subtitulo": {
+   "Portugues": "Compactador 7z",
+   "Frances": "Compresseur 7z",
+   "Ingles": "7z archiver",
+   "Italiano": "Compressore 7z",
+   "Alemao": "7z-Packer",
+   "Espanhol": "Compresor 7z"
+  },
+  "zip.tema_para_claro": {
+   "Portugues": "Mudar para o tema claro",
+   "Frances": "Passer au thème clair",
+   "Ingles": "Switch to light theme",
+   "Italiano": "Passa al tema chiaro",
+   "Alemao": "Zum hellen Design wechseln",
+   "Espanhol": "Cambiar al tema claro"
+  },
+  "zip.tema_para_escuro": {
+   "Portugues": "Mudar para o tema escuro",
+   "Frances": "Passer au thème sombre",
+   "Ingles": "Switch to dark theme",
+   "Italiano": "Passa al tema scuro",
+   "Alemao": "Zum dunklen Design wechseln",
+   "Espanhol": "Cambiar al tema oscuro"
+  },
+  "zip.testar": {
+   "Portugues": "Testar integridade",
+   "Frances": "Tester l'intégrité",
+   "Ingles": "Test integrity",
+   "Italiano": "Verifica integrità",
+   "Alemao": "Integrität prüfen",
+   "Espanhol": "Probar integridad"
+  },
+  "zip.teste_ok": {
+   "Portugues": "Conferência completa: {entradas}, {bytes} ao todo. Nada foi extraído.",
+   "Frances": "Vérification complète : {entradas}, {bytes} au total. Rien n'a été extrait.",
+   "Ingles": "Full check: {entradas}, {bytes} in total. Nothing was extracted.",
+   "Italiano": "Verifica completa: {entradas}, {bytes} in totale. Nulla è stato estratto.",
+   "Alemao": "Vollständig geprüft: {entradas}, insgesamt {bytes}. Nichts wurde entpackt.",
+   "Espanhol": "Comprobación completa: {entradas}, {bytes} en total. No se extrajo nada."
+  },
+  "zip.teste_ok_titulo": {
+   "Portugues": "Íntegro: todos os CRCs conferem",
+   "Frances": "Intègre : tous les CRC concordent",
+   "Ingles": "Intact: every CRC matches",
+   "Italiano": "Integro: tutti i CRC corrispondono",
+   "Alemao": "Intakt: alle CRCs stimmen",
+   "Espanhol": "Íntegro: todos los CRC coinciden"
+  },
+  "zip.titulo_pagina": {
+   "Portugues": "PhxZip — compactador 7z",
+   "Frances": "PhxZip — compresseur 7z",
+   "Ingles": "PhxZip — 7z archiver",
+   "Italiano": "PhxZip — compressore 7z",
+   "Alemao": "PhxZip — 7z-Packer",
+   "Espanhol": "PhxZip — compresor 7z"
+  }
+ }
+}

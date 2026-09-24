@@ -1,0 +1,225 @@
+<!doctype html>
+<!-- PhxZip -- a tela. O contrato que ela consome: docs/PHXZIP-WEB.md.
+     Nenhum rotulo esta escrito aqui: cada elemento traz a CHAVE (data-txt,
+     data-txt-ph, data-txt-tt, data-txt-al) e o servidor devolve o texto no
+     idioma escolhido. So a marca e a assinatura ficam escritas, pela mesma
+     isencao da tela do PhxSql: nome proprio nao se traduz. -->
+<html lang="pt-BR" data-tema="escuro">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<meta name="referrer" content="no-referrer">
+<title data-txt="zip.titulo_pagina">PhxZip</title>
+<link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAiCAMAAAAau2s5AAABIFBMVEX/ZAD/owP91g7/lwf/nQr/aAD/ogL/FAD/1iL/EAD/zyBEnf//LQAjo/+Q/6r/cQv2/Jj/XgBc7vT/xhf/n00AM///AP//oYj04lb/2lIi1/9VVf+cqv////IA/wD/AID/U5YzZv+qVf+M6eX/tP8A/4BVAP9V/6q5/wD/Kir/bUn/Zsz/vlcAZv8AAP8AgP8AAAAAVf//AAAAQP//VQD/NQD/RwD/hAD/BAD/NgD/WAL/BAD/RwD/SAD/ZgL/iQD/mAD/dwD/tgL/KAD/agL/pQH/GgH/JgD/NwD/VwD/ZwD/xQr/AgD/FQD/JwD/OAD/dQP/dQD/qAL/CAD/KgD/OQD/NgD/WAD/uAH//wAAqP+D//ut////FQD/JwD/RADIXQuSAAAAYHRSTlObHh5ammrPpOnVXQNqCgMmGtMGqwcFAQMtVQYDCAIBAgQFAwUDBAMGCwYHBV4FAgMAAwwEKxP2EC4uEU4VLzD29vX5FRP4Ek7w/fX5a20xUhRNNZD6qs5LbwUEBAMxzkq5EUlEAAAEBElEQVR42k2Uh3LjOAyGqS7LdlzS2yZbrp9Biurdvffe/f5vcbST21nOUOIAHwFQIn603WKMt1cEtgbGpVLpPEvYMIzzm5ngSteZDSOMdV3fE167uyCf43OdBU0ju0sABhr6FdHUG/iIlWUPXWeTrXH2mVM1kt8yF9IZB2v1X1I0cIlFh5cPkmViix3h1TXLjjHSGcf1VKqzupgzz5Pn/e579hKVFQlf1B4He52B+AsR1WvCambgnggaABDy9Flsmlyra+bEqAg8L5/B3M09TsNUkK817TEPu+JPUOR5UkQ7IvJyT/YhHE8gbfiimPR6KjvC5XAY+Kp6zV8zEPiyL/aqU9BDE9K3zkQsN6qi1lMfyZNe+g7CGZQtQDBtSOtqQ4b7m28Yp/+ZICRXe9VElnkope84uapq6yrHQK4h1xuNxpo81N91wwAiVqvJghKfB3wPLL68aZQ5gmAjN8RpOSlr4MTj+i0rJal2a1AEwD9gXS6Xp2JDJhzKhUI5kYSkkghgmu/3f4uFMovwrZTN/oCLWUzKAj9FMSKoUkFSpVsRiB++xZJckXtTeGUfW+p2KxKqJIiIOeR3EUXdToHNjuTrv0lJgnpVmQNsoQ4zF7oMECv0HA9FK2S3l7Ztm4dlp5BZy3JSkayobdvLto1WUaEiAaIUdexFJnO07YJHB5motuE4zvFGw7ch27vMZBZ2B9EbhF9pZjlPKcwYQdOM4ymfzz9wk2h4A17bVpR5u53hYkDpu1Gr2RrM2u0FgSgK/3jKPjy+FHc33hCTRbs9G7RqJ8n/He2fa8pxEATHeWvUPJ2sq202n89mi/VWywpb82MwUI4LCq+IXSoYpFJKKnXI1KzTaiJoj4+asBqtzMPgcHEMwABAuXoddOIGs1QQ0PeV5HP8wwPvOCQf0yBIzQKXAh47HJJi028edHeW6lNKXc88X1s2LS+ktK/0D3AK62ZOQM44NE3PJVZfcZ3asDWaCKIoSKPAjIAqfYsOvVWccxzk1E3f94d0nHP7r9YqNsdTQeDqG8jHb4HL89QLQz9mICG+GXlWk0pjWmu6Q5NcBq1F9RrlBRqFpmeSDaCJFEWUeE0aiU8QepmWdEndck2T8MhnG4gVm2iCOGdz58SWVQNRrIcn0/S5c2pC8mOuIBHLsnLO3W58jwwjDTmpFg6btIvA7Y/4c+aNw0mog85nt1DMeukWsWbGAKwHtuDZI3BnygIJf25ibjFXyIsOcMuuOhMYdFYqnMalr8YevKXiNIPZvFOYUJcqB3g+y0z20uAM/Clxe7AG7E9kRsrczrgB/GX8om9Mzc6Nrn/Igg5NlwbHUz8199ymfgH1/0HjQ0Av4+uLXkpDcPzSTykkh3/xlP4DLAPwBRpxba0AAAAASUVORK5CYII=">
+<!-- A Exo 2 vem DESTA porta, e nao de uma CDN: a tela abre sem rede, o CSP
+     fica em 'self', e ninguem fora da maquina fica sabendo que ela abriu. -->
+<link rel="preload" href="/fonte/exo2-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/phxzip.css">
+<script src="/phxzip.js" defer></script>
+</head>
+<body class="carregando">
+<a class="pular" href="#principal" data-txt="zip.pular_para_o_conteudo"></a>
+
+<header class="barra">
+  <div class="marca">
+    <img src="data:image/png;base64,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" width="46" height="40" alt="">
+    <div class="marca-texto">
+      <span class="palavra">Ph<span class="x">x</span>Zip</span>
+      <span class="sub" data-txt="zip.subtitulo"></span>
+    </div>
+  </div>
+  <span class="espaco"></span>
+  <span class="endereco" data-txt-tt="zip.endereco_dica"><span class="ponto" aria-hidden="true"></span><span class="dado" id="endereco"></span></span>
+  <div class="idioma">
+    <button type="button" class="botao-barra" id="btIdioma" aria-haspopup="listbox" aria-expanded="false"
+            data-txt-al="zip.idioma_da_interface" data-txt-tt="zip.idioma_da_interface">
+      <span class="bandeira" id="bandeiraAtual"></span><span class="endonimo" id="nomeIdioma"></span>
+    </button>
+    <ul class="menu-idiomas" id="menuIdiomas" role="listbox" hidden data-txt-al="zip.idioma_da_interface"></ul>
+  </div>
+  <button type="button" class="botao-barra" id="btTema"></button>
+</header>
+
+<nav class="abas" role="tablist" data-txt-al="zip.abas">
+  <button type="button" role="tab" id="abaCompactar" aria-controls="painelCompactar" aria-selected="true" data-icone="compactar"><span data-txt="zip.aba_compactar"></span></button>
+  <button type="button" role="tab" id="abaAbrir" aria-controls="painelAbrir" aria-selected="false" tabindex="-1" data-icone="abrir"><span data-txt="zip.aba_abrir"></span></button>
+</nav>
+
+<main id="principal">
+
+<!-- ============================================================ COMPACTAR -->
+<section class="painel" id="painelCompactar" role="tabpanel" aria-labelledby="abaCompactar">
+  <div class="zona" id="zonaCompactar">
+    <span class="zona-icone" data-icone="soltar"></span>
+    <p class="zona-titulo" data-txt="zip.solte_arquivos"></p>
+    <p class="zona-dica" data-txt="zip.solte_arquivos_dica"></p>
+    <div class="zona-botoes">
+      <button type="button" class="acao incluir" id="btEscolherArquivos" data-trava data-icone="arquivo"><span data-txt="zip.escolher_arquivos"></span></button>
+      <button type="button" class="acao incluir" id="btEscolherPasta" data-trava data-icone="pasta"><span data-txt="zip.escolher_pasta"></span></button>
+    </div>
+    <input type="file" id="inArquivos" multiple hidden>
+    <input type="file" id="inPasta" webkitdirectory hidden>
+  </div>
+  <p class="recado" id="recadoCompactar" role="status" hidden></p>
+
+  <div class="bloco lista" id="listaCompactar" hidden>
+    <div class="lista-topo">
+      <h2 data-txt="zip.o_que_vai_no_pacote"></h2>
+      <button type="button" class="acao excluir pequena" id="btLimpar" data-trava data-icone="lixeira"><span data-txt="zip.limpar_lista"></span></button>
+    </div>
+    <div class="rolagem">
+      <table class="grade" id="gradeCompactar">
+        <thead><tr>
+          <th class="c-tipo"><span class="sr" data-txt="zip.col_tipo"></span></th>
+          <th class="c-nome" data-txt="zip.col_nome"></th>
+          <th class="num" data-txt="zip.col_tamanho"></th>
+          <th class="c-data" data-txt="zip.col_modificado"></th>
+          <th class="c-acoes"><span class="sr" data-txt="zip.col_acoes"></span></th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="teto" id="tetoCompactar">
+      <p class="teto-texto"><span id="resumoItens"></span><span class="teto-uso" id="resumoTeto"></span></p>
+      <div class="medidor"><div class="medidor-barra" id="medidorEnvio"></div></div>
+    </div>
+  </div>
+
+  <div class="bloco opcoes" id="opcoesCompactar" hidden>
+    <fieldset class="grupo">
+      <legend data-txt="zip.formato"></legend>
+      <div class="segmentos" id="segFormato"></div>
+      <p class="dica" id="dicaFormato"></p>
+    </fieldset>
+    <fieldset class="grupo" id="grupoNivel">
+      <legend data-txt="zip.nivel"></legend>
+      <div class="segmentos" id="segNivel"></div>
+      <p class="dica" id="dicaNivel"></p>
+    </fieldset>
+    <fieldset class="grupo">
+      <legend><label for="inNomePacote" data-txt="zip.nome_do_pacote"></label></legend>
+      <div class="campo-nome">
+        <input id="inNomePacote" class="campo dado" type="text" spellcheck="false" autocomplete="off">
+        <span class="sufixo dado" id="sufixo"></span>
+      </div>
+    </fieldset>
+    <fieldset class="grupo senhas">
+      <legend id="legendaSenha"></legend>
+      <div class="campo-rotulado">
+        <label class="rotulo" for="inSenha" data-txt="zip.senha"></label>
+        <input id="inSenha" class="campo" type="password" autocomplete="new-password" spellcheck="false">
+      </div>
+      <div class="campo-rotulado" id="campoSenha2">
+        <label class="rotulo" for="inSenha2" data-txt="zip.confirmar_senha"></label>
+        <input id="inSenha2" class="campo" type="password" autocomplete="new-password" spellcheck="false">
+      </div>
+      <label class="marcar"><input type="checkbox" id="ckMostrar"><span data-txt="zip.mostrar_senha"></span></label>
+      <label class="marcar" id="rotuloCifrarNomes"><input type="checkbox" id="ckCifrarNomes" checked><span data-txt="zip.cifrar_nomes"></span></label>
+      <p class="dica" data-txt="zip.cifra_dica"></p>
+    </fieldset>
+    <div class="executar">
+      <button type="button" class="acao incluir grande" id="btCompactar" aria-describedby="porquesCompactar" data-icone="compactar"><span data-txt="zip.compactar_e_baixar"></span></button>
+      <ul class="porques" id="porquesCompactar"></ul>
+    </div>
+  </div>
+
+  <div class="bloco progresso" id="progressoCompactar" hidden></div>
+  <div id="resultadoCompactar" hidden></div>
+</section>
+
+<!-- ============================================================ ABRIR -->
+<section class="painel" id="painelAbrir" role="tabpanel" aria-labelledby="abaAbrir" hidden>
+  <div class="zona" id="zonaAbrir">
+    <span class="zona-icone" data-icone="abrir"></span>
+    <p class="zona-titulo" data-txt="zip.solte_pacote"></p>
+    <p class="zona-dica" data-txt="zip.solte_pacote_dica"></p>
+    <div class="zona-botoes">
+      <button type="button" class="acao consultar" id="btEscolherPacote" data-trava data-icone="abrir"><span data-txt="zip.escolher_pacote"></span></button>
+    </div>
+    <input type="file" id="inPacote" accept=".7z,.phz" hidden>
+  </div>
+  <p class="recado" id="recadoAbrir" role="status" hidden></p>
+
+  <div class="bloco pacote" id="cartaoPacote" hidden>
+    <div class="pacote-topo">
+      <span class="pacote-icone" data-icone="compactar"></span>
+      <div class="pacote-id">
+        <h2 class="pacote-nome" id="pacoteNome"></h2>
+        <span class="pacote-tam dado" id="pacoteTam"></span>
+      </div>
+      <div class="pacote-acoes">
+        <button type="button" class="acao consultar" id="btTestar" data-trava data-icone="testar"><span data-txt="zip.testar"></span></button>
+        <button type="button" class="acao consultar" id="btBaixarTodas" data-trava data-icone="baixar"><span data-txt="zip.baixar_todas"></span></button>
+        <button type="button" class="acao neutra" id="btFechar" data-icone="fechar"><span data-txt="zip.fechar_pacote"></span></button>
+      </div>
+    </div>
+
+    <div class="senha-pacote" id="senhaPacote" hidden>
+      <label class="rotulo" for="inSenhaPacote" data-txt="zip.senha_do_pacote"></label>
+      <div class="linha-senha">
+        <input id="inSenhaPacote" class="campo" type="password" autocomplete="off" spellcheck="false" aria-describedby="dicaSenhaPacote">
+        <button type="button" class="acao consultar" id="btAbrirComSenha" data-trava data-icone="cadeado"><span data-txt="zip.abrir"></span></button>
+      </div>
+      <p class="dica" id="dicaSenhaPacote"></p>
+    </div>
+
+    <div id="avisoAbrir"></div>
+    <div id="resultadoTeste" hidden></div>
+    <div class="resumo" id="resumoPacote" hidden></div>
+
+    <div class="lista" id="listaPacote" hidden>
+      <div class="lista-topo">
+        <h3 data-txt="zip.conteudo_do_pacote"></h3>
+        <input id="inFiltro" class="campo filtro" type="search" autocomplete="off" spellcheck="false" data-txt-ph="zip.filtrar" data-txt-al="zip.filtrar">
+      </div>
+      <div class="rolagem">
+        <table class="grade" id="gradePacote">
+          <thead><tr>
+            <th class="c-tipo"><span class="sr" data-txt="zip.col_tipo"></span></th>
+            <th class="c-nome" data-txt="zip.col_nome"></th>
+            <th class="num" data-txt="zip.col_tamanho"></th>
+            <th class="num" data-txt="zip.col_compactado"></th>
+            <th class="c-data" data-txt="zip.col_modificado"></th>
+            <th class="c-acoes"><span class="sr" data-txt="zip.col_acoes"></span></th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="vazio" id="filtroVazio" data-txt="zip.filtro_vazio" hidden></p>
+      <p class="vazio" id="listaVazia" data-txt="zip.pacote_vazio" hidden></p>
+    </div>
+  </div>
+  <div class="bloco progresso" id="progressoAbrir" hidden></div>
+</section>
+</main>
+
+<!-- ============================================================ ESPIAR -->
+<dialog id="espiar" aria-labelledby="espiarTitulo">
+  <div class="espiar-topo">
+    <div class="espiar-id">
+      <p class="espiar-rotulo" data-txt="zip.espiar_titulo"></p>
+      <h2 id="espiarTitulo"></h2>
+    </div>
+    <button type="button" class="botao-barra" id="btFecharEspiar" data-txt-al="zip.fechar" data-txt-tt="zip.fechar" data-icone="fechar"></button>
+  </div>
+  <div class="selos" id="espiarSelos"></div>
+  <p class="espiar-disco" data-icone="cadeado"><span data-txt="zip.espiar_nada_no_disco"></span></p>
+  <div class="espiar-corpo" id="espiarCorpo" tabindex="0" data-txt-al="zip.espiar_conteudo"></div>
+  <div class="espiar-acoes">
+    <p class="recado" id="recadoEspiar" role="status" hidden></p>
+    <button type="button" class="acao consultar" id="btCopiar" data-icone="copiar"><span data-txt="zip.copiar"></span></button>
+    <button type="button" class="acao consultar" id="btBaixarEspiado" data-icone="baixar"><span data-txt="zip.baixar"></span></button>
+  </div>
+</dialog>
+
+<div class="soltar" id="soltar" hidden><p id="soltarTexto"></p></div>
+<p class="sr" id="anuncio" aria-live="polite"></p>
+
+<footer class="rodape">
+  <p class="lema">Built to store. Engineered to scale.</p>
+  <p class="garantia" data-icone="cadeado"><span data-txt="zip.garantia_disco"></span></p>
+  <p class="versao dado" id="versao"></p>
+</footer>
+</body>
+</html>

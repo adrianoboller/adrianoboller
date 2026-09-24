@@ -77,3 +77,9 @@
 chave-do-fio.hex
 *.chave
 *.key
+
+# As telas da prova do PhxZip: 35 PNG, 3,4 MB, reescritas a cada corrida de
+# `testes-web/phxzip/exercitar.mjs`. Versiona-se o veredito com a data
+# (`resultado.json`, `prova-das-guardas.json`), nao a imagem -- como as
+# capturas das outras telas.
+/testes-web/phxzip/capturas/*.png

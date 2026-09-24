@@ -1,0 +1,91 @@
+{
+ "quando": "2026-09-24T03:16:41.095Z",
+ "guardas": 12,
+ "ruins": 0,
+ "linhas": [
+  {
+   "mutacao": "find no lugar de filter (a licao do rownum)",
+   "guarda": "enter-compacta",
+   "passaSem": true,
+   "falhaCom": true,
+   "nota": "em vez do download, o erro PEDIDO_MALFORMADO"
+  },
+  {
+   "mutacao": "dado em caixa alta (o «Blumenau» que virou «BLUMENAU»)",
+   "guarda": "compactar-arquivos-e-pasta",
+   "passaSem": true,
+   "falhaCom": true,
+   "nota": "dado desenhado diferente do gravado: relatorio.txt -> RELATORIO.TXT; 10,7 KiB -> 10,7 KIB; dados.json -> DADOS.JSON; Blumenau.txt -> BLUMENAU.TXT; projeto -> PROJETO; projeto/leia-me.md -> PROJETO/LEIA-ME.MD; projeto/src -> PROJETO/SRC; projeto/src/main.rs -> PROJETO/SRC/MAIN.RS"
+  },
+  {
+   "mutacao": "texto solto em flex (o «, die der Server» com espaco antes da virgula)",
+   "guarda": "compactar-arquivos-e-pasta",
+   "passaSem": true,
+   "falhaCom": true,
+   "nota": "texto solto em flex/grid: #resumoTeto: «de | que o servidor aceita»"
+  },
+  {
+   "mutacao": "nome de entrada por innerHTML",
+   "guarda": "nomes-hostis",
+   "passaSem": true,
+   "falhaCom": true,
+   "nota": "o nome com marcacao nao apareceu escrito"
+  },
+  {
+   "mutacao": "senha na URL",
+   "guarda": "senha-so-no-corpo",
+   "passaSem": true,
+   "falhaCom": true,
+   "nota": "senha no log do servidor (URL ou cabecalho): s3nh@-Blumenau-2026"
+  },
+  {
+   "mutacao": "texto cravado no JS",
+   "guarda": "pseudoidioma",
+   "passaSem": true,
+   "falhaCom": true,
+   "nota": "texto fora da fabrica: lista: <span> Métodos: | teste: <span> Métodos: | espiar: <span> Métodos:"
+  },
+  {
+   "mutacao": "chave morta no dicionario",
+   "guarda": "laco-das-chaves",
+   "passaSem": true,
+   "falhaCom": true,
+   "nota": "chave morta (ninguem pede): zip.chave_que_ninguem_pede"
+  },
+  {
+   "mutacao": "chave pedida e ausente",
+   "guarda": "laco-das-chaves",
+   "passaSem": true,
+   "falhaCom": true,
+   "nota": "chave pedida e ausente: zip.chave_que_nao_existe"
+  },
+  {
+   "mutacao": "acao com fundo cheio em repouso",
+   "guarda": "cores-escuro",
+   "passaSem": true,
+   "falhaCom": true,
+   "nota": "escuro (com erro na tela): acao com fundo cheio em repouso: btEscolherPacote, btFechar"
+  },
+  {
+   "mutacao": "cor do tema escuro sobre o papel",
+   "guarda": "tema-claro",
+   "passaSem": true,
+   "falhaCom": true,
+   "nota": "claro (com erro na tela): contraste abaixo de 4,5:1: btEscolherPacote 2.38"
+  },
+  {
+   "mutacao": "[hidden] vencido por display",
+   "guarda": "limpar-leva",
+   "passaSem": true,
+   "falhaCom": true,
+   "nota": "as opcoes ficaram com a lista vazia"
+  },
+  {
+   "mutacao": "limpar a lista esquece a senha no campo escondido",
+   "guarda": "limpar-leva",
+   "passaSem": true,
+   "falhaCom": true,
+   "nota": "a senha ficou escondida no campo e cifraria a proxima lista sem ninguem ver"
+  }
+ ]
+}
