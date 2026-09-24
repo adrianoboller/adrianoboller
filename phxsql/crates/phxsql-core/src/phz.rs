@@ -143,6 +143,7 @@ pub fn ler_texto(caminho: &Path) -> io::Result<String> {
             max_pasta: TETO,
             max_entradas: 16,
             max_cabecalho: 1 << 20,
+            fios: 1,
         },
     )
     .map_err(|e| erro(format!("{}: {e}", alvo.display())))?;

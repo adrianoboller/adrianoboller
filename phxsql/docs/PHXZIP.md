@@ -164,6 +164,38 @@ mais rápido e sem custo de tamanho. É o próximo alvo, junto com a
 descompactação, que é num fio só.
 
 
+### 3e. Descompactação com vários fios (24/09/2026)
+
+Um fluxo LZMA2 gravado em blocos tem trechos que recomeçam o dicionário, e
+cada trecho se decodifica sem o anterior. `cortes_lzma2` varre **só os
+cabeçalhos** dos pedaços, sem decodificar nada, e acha os trechos:
+- deslocamento no fluxo;
+- deslocamento na saída;
+- as propriedades em vigor antes, porque um trecho que abre cru as herda.
+
+`decodificar_lzma2_em_fios` decodifica os trechos em paralelo. Cada fio escreve
+na sua fatia da saída, então o pico de memória é a saída mais um trecho por
+fio, e não o dobro. Um trecho com erro faz o todo recusar, sem deixar a saída
+com meio conteúdo, e isso tem prova real: o teste cai sem o `truncate`.
+
+O ganho vale também para o que o 7-Zip grava em blocos (`-m0=lzma2:c=`), com
+teste de interoperabilidade que confere que o arquivo dele tem mesmo vários
+trechos. Um fluxo de trecho único não se divide, e é o limite do próprio LZMA:
+o 7-Zip com vários fios abaixo de 64 MiB grava um trecho só, e ele mesmo o
+descompacta num fio.
+
+**Onde se usa:** `Limites::fios`. O `phxzipcmd` usa `x`/`t`/`l` com `-mmt=N` (o
+mesmo número da compactação), e a porta web usa o `Config::fios` nas quatro
+rotas de leitura.
+
+**Medido** (`comparar-7z`, 4 fios):
+- grande de 13 MB, nível 5: descompactar caiu de 0,297 s para 0,134 s (2,2×),
+  e o 7-Zip leva 0,210 s no arquivo dele;
+- misto, nível 5: 0,139 s para 0,081 s;
+- **nível 1:** o 7-Zip com vários fios continua descompactando mais rápido.
+
+Os números vivos estão no gráfico e no JSON.
+
 ## 4. Decisões
 
 - **7z, e não ZIP; só o conjunto atual** — decisão do dono (450, 454). O

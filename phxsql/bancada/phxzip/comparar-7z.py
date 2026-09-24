@@ -152,7 +152,7 @@ def medir(corridas):
                         out = os.path.join(tmp, f"x-{lado}-{n}")
                         shutil.rmtree(out, ignore_errors=True)
                         if quem == "phxzip":
-                            cmd_x = [PHX, "x", arq, f"-o{out}", "-y"]
+                            cmd_x = [PHX, "x", arq, f"-o{out}", f"-mmt={fios}", "-y"]
                         else:
                             cmd_x = ["7z", "x", f"-mmt={fios}", f"-o{out}", "-y", arq]
                         desc.append(rodar(cmd_x))

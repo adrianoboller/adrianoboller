@@ -315,10 +315,10 @@ fn atender(mut fluxo: TcpStream, est: &Estado) {
         }
     };
     let r = match p.caminho.as_str() {
-        "/api/listar" => listar(&mut fluxo, &meta, bytes, false),
-        "/api/testar" => listar(&mut fluxo, &meta, bytes, true),
-        "/api/extrair" => extrair(&mut fluxo, &meta, bytes),
-        "/api/extrair_tudo" => extrair_tudo(&mut fluxo, &meta, bytes),
+        "/api/listar" => listar(&mut fluxo, &meta, bytes, false, est.config.fios),
+        "/api/testar" => listar(&mut fluxo, &meta, bytes, true, est.config.fios),
+        "/api/extrair" => extrair(&mut fluxo, &meta, bytes, est.config.fios),
+        "/api/extrair_tudo" => extrair_tudo(&mut fluxo, &meta, bytes, est.config.fios),
         "/api/compactar" => compactar(&mut fluxo, &meta, bytes, est.config.fios),
         _ => {
             responder_erro(&mut fluxo, 404, "rota", "rota inexistente");
@@ -389,8 +389,23 @@ fn senha_do(meta: &Json) -> Option<&str> {
         .filter(|s| !s.is_empty())
 }
 
-fn listar(fluxo: &mut TcpStream, meta: &Json, bytes: &[u8], testar: bool) -> Result<(), Erro> {
-    let a = Arquivo7z::abrir(bytes, senha_do(meta), Limites::default())?;
+/// Os tetos de sempre, com os fios da porta: um lugar so para as quatro
+/// rotas que leem um `.7z`.
+fn limites(fios: usize) -> Limites {
+    Limites {
+        fios,
+        ..Limites::default()
+    }
+}
+
+fn listar(
+    fluxo: &mut TcpStream,
+    meta: &Json,
+    bytes: &[u8],
+    testar: bool,
+    fios: usize,
+) -> Result<(), Erro> {
+    let a = Arquivo7z::abrir(bytes, senha_do(meta), limites(fios))?;
     let inicio = std::time::Instant::now();
     if testar {
         a.testar()?;
@@ -429,8 +444,8 @@ fn listar(fluxo: &mut TcpStream, meta: &Json, bytes: &[u8], testar: bool) -> Res
     Ok(())
 }
 
-fn extrair(fluxo: &mut TcpStream, meta: &Json, bytes: &[u8]) -> Result<(), Erro> {
-    let a = Arquivo7z::abrir(bytes, senha_do(meta), Limites::default())?;
+fn extrair(fluxo: &mut TcpStream, meta: &Json, bytes: &[u8], fios: usize) -> Result<(), Erro> {
+    let a = Arquivo7z::abrir(bytes, senha_do(meta), limites(fios))?;
     let i = meta.inteiro_ou("indice", -1);
     let i = usize::try_from(i).map_err(|_| Erro::Uso("indice ausente"))?;
     let e = a
@@ -461,8 +476,8 @@ fn extrair(fluxo: &mut TcpStream, meta: &Json, bytes: &[u8]) -> Result<(), Erro>
 /// CURTA -- a tela confere o total recebido contra a soma da lista e recusa.
 /// Pulado, com motivo, o que a extracao para disco tambem recusaria: pasta
 /// (a arvore sai dos nomes), ligacao simbolica e nome inseguro.
-fn extrair_tudo(fluxo: &mut TcpStream, meta: &Json, bytes: &[u8]) -> Result<(), Erro> {
-    let a = Arquivo7z::abrir(bytes, senha_do(meta), Limites::default())?;
+fn extrair_tudo(fluxo: &mut TcpStream, meta: &Json, bytes: &[u8], fios: usize) -> Result<(), Erro> {
+    let a = Arquivo7z::abrir(bytes, senha_do(meta), limites(fios))?;
     let mut arquivos = Vec::new();
     let mut pulados = Vec::new();
     let mut total: u64 = 0;

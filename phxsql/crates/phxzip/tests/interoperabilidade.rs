@@ -364,3 +364,45 @@ fn o_7zip_abre_o_que_foi_compactado_em_blocos() {
     assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stdout));
     assert_eq!(std::fs::read(destino.join("blocos.txt")).unwrap(), dados);
 }
+
+/// O 7-Zip tambem grava LZMA2 em blocos (`-m0=lzma2:c=`): o nosso leitor
+/// acha os cortes e descompacta em paralelo o que ELE gravou, com o mesmo
+/// conteudo de um fio so.
+#[test]
+fn descompacta_em_fios_o_lzma2_em_blocos_do_7zip() {
+    let Some(sete) = sete_z() else {
+        eprintln!("NAO MEDIDO: 7z ausente; descompactacao em fios nao conferida");
+        return;
+    };
+    let guarda = DirTemp::novo("fios-7z");
+    let mut dados = Vec::new();
+    let mut x = 11u32;
+    while dados.len() < 600_000 {
+        x = x.wrapping_mul(1_103_515_245).wrapping_add(12345);
+        dados.extend_from_slice(format!("linha {} gravada pelo 7-Zip\n", x >> 19).as_bytes());
+    }
+    std::fs::write(guarda.0.join("d.txt"), &dados).unwrap();
+    let arq = guarda.0.join("d.7z");
+    let o = Command::new(&sete)
+        .current_dir(&guarda.0)
+        .args(["a", "-t7z", "-m0=lzma2:c=64k", "-mmt=4", "-mf=off"])
+        .arg(&arq)
+        .arg("d.txt")
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stdout));
+    let b = std::fs::read(&arq).unwrap();
+    // Sem cifra e com uma pasta so, o fluxo LZMA2 comeca logo depois dos 32
+    // bytes do cabecalho inicial: se o 7-Zip nao tiver cortado em blocos, o
+    // teste passaria sem ter exercitado o paralelo -- e tem de dizer.
+    let (cortes, _) = phxzip::lzma::cortes_lzma2(&b[32..]).unwrap();
+    assert!(cortes.len() > 1, "o 7-Zip gravou um trecho so: nada a paralelizar");
+    for fios in [1, 4] {
+        let lim = Limites {
+            fios,
+            ..Limites::default()
+        };
+        let a = Arquivo7z::abrir(&b, None, lim).unwrap();
+        assert_eq!(a.extrair(0).unwrap(), dados, "{fios} fios");
+    }
+}

@@ -19,7 +19,9 @@ pub use dec::DecodificadorLzma;
 #[cfg(feature = "std")]
 pub use enc::codificar_bloco_lzma2_em_fio;
 pub use enc::{blocos_lzma2, codificar_bloco_lzma2, codificar_lzma2, juntar_blocos_lzma2, Nivel};
-pub use lzma2::decodificar_lzma2;
+pub use lzma2::{
+    cortes_lzma2, decodificar_lzma2, decodificar_lzma2_em_fios, decodificar_trecho, Corte,
+};
 
 /// Propriedades lc/lp/pb do LZMA.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

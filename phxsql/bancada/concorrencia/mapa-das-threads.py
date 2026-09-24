@@ -118,6 +118,15 @@ CATALOGO = [
                 "a codificacao solta o cano ao terminar e a busca para no "
                 "`send` que falha.",
     },
+    {
+        "arquivo": "crates/phxzip/src/lzma/lzma2.rs",
+        "agulha": "let n = fios.min(cortes.len());",
+        "nome": "phxzip: descompactacao dos trechos LZMA2 em paralelo",
+        "teto": "`fios.min(cortes.len())`: nunca mais fios que `Limites::fios` "
+                "nem que trechos independentes. `thread::scope` junta antes de "
+                "voltar. Na porta web e o `Config::fios` (ate 4 por pedido); no "
+                "`phxzipcmd` e o `-mmt=`.",
+    },
     # ------------------------------------------------ o mecanismo, um so
     {
         "arquivo": "crates/phxsql-server/src/telemetria.rs",

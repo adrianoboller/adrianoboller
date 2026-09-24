@@ -18,7 +18,7 @@ use crate::chave::ParamAes;
 use crate::erro::{para_usize, Erro, Resultado};
 use crate::formato::*;
 use crate::lzma::dec::decodificar_lzma;
-use crate::lzma::decodificar_lzma2;
+use crate::lzma::decodificar_lzma2_em_fios;
 
 /// Tetos da leitura: o que um arquivo hostil pode pedir de memoria e de laco.
 #[derive(Clone, Copy, Debug)]
@@ -29,6 +29,10 @@ pub struct Limites {
     pub max_entradas: usize,
     /// Tamanho do cabecalho, cru ou descompactado.
     pub max_cabecalho: u64,
+    /// Fios da descompactacao: um fluxo LZMA2 gravado em blocos se decodifica
+    /// com ate este tanto de fios (so com o recurso `std`). 1, o padrao, e
+    /// um fio; o resultado e o mesmo em qualquer numero.
+    pub fios: usize,
 }
 
 impl Default for Limites {
@@ -38,6 +42,7 @@ impl Default for Limites {
             max_pasta: 1 << 30,
             max_entradas: 1_000_000,
             max_cabecalho: 64 << 20,
+            fios: 1,
         }
     }
 }
@@ -924,7 +929,7 @@ fn decodificar_pasta(
                 let mut s = Vec::new();
                 s.try_reserve_exact(n)
                     .map_err(|_| Erro::Teto("memoria para descompactar"))?;
-                decodificar_lzma2(pr, &dado, n, &mut s)?;
+                decodificar_lzma2_em_fios(pr, &dado, n, &mut s, lim.fios)?;
                 s
             }
             _ => {

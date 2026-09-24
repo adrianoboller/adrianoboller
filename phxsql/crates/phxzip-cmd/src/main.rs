@@ -6,7 +6,7 @@
 //!
 //! ```text
 //! phxzipcmd a <arquivo.7z> <caminho>... [-p<senha>|-p-] [-mx=N] [-mmt=N|-mmt=off] [--nomes-visiveis] [-y]
-//! phxzipcmd x <arquivo.7z> [-o<pasta>] [-p<senha>|-p-] [-y]
+//! phxzipcmd x <arquivo.7z> [-o<pasta>] [-p<senha>|-p-] [-mmt=N] [-y]
 //! phxzipcmd l <arquivo.7z> [-p<senha>|-p-]
 //! phxzipcmd t <arquivo.7z> [-p<senha>|-p-]
 //! ```
@@ -43,7 +43,7 @@ fn uso() -> ExitCode {
     eprintln!(
         "PhxZipCmd {} -- 7z (LZMA2 + AES-256)\n\n\
          uso:\n  phxzipcmd a <arquivo.7z> <caminho>... [-p<senha>|-p-] [-mx=0..9] [-mmt=N|-mmt=off] [--nomes-visiveis] [-y]\n  \
-         phxzipcmd x <arquivo.7z> [-o<pasta>] [-p<senha>|-p-] [-y]\n  \
+         phxzipcmd x <arquivo.7z> [-o<pasta>] [-p<senha>|-p-] [-mmt=N] [-y]\n  \
          phxzipcmd l <arquivo.7z> [-p<senha>|-p-]\n  \
          phxzipcmd t <arquivo.7z> [-p<senha>|-p-]",
         env!("CARGO_PKG_VERSION")
@@ -255,13 +255,22 @@ fn criar(a: &Args) -> Result<(), Falha> {
     Ok(())
 }
 
+/// Os tetos de sempre, com os fios do `-mmt=`: um lugar so para `l`, `t` e
+/// `x` lerem com o mesmo numero de fios.
+fn limites(a: &Args) -> Limites {
+    Limites {
+        fios: a.fios,
+        ..Limites::default()
+    }
+}
+
 fn abrir(a: &Args) -> Result<Vec<u8>, Falha> {
     disco(fs::read(&a.arquivo), &a.arquivo)
 }
 
 fn listar(a: &Args) -> Result<(), Falha> {
     let bytes = abrir(a)?;
-    let z = Arquivo7z::abrir(&bytes, a.senha.as_deref(), Limites::default())?;
+    let z = Arquivo7z::abrir(&bytes, a.senha.as_deref(), limites(a))?;
     let mut total = 0u64;
     let mut out = io::stdout().lock();
     for (i, e) in z.entradas().iter().enumerate() {
@@ -284,7 +293,7 @@ fn listar(a: &Args) -> Result<(), Falha> {
 
 fn testar(a: &Args) -> Result<(), Falha> {
     let bytes = abrir(a)?;
-    let z = Arquivo7z::abrir(&bytes, a.senha.as_deref(), Limites::default())?;
+    let z = Arquivo7z::abrir(&bytes, a.senha.as_deref(), limites(a))?;
     z.testar()?;
     println!("tudo certo: {} entradas", z.entradas().len());
     Ok(())
@@ -307,7 +316,7 @@ fn sem_ligacao_no_caminho(base: &Path, rel: &str) -> Result<PathBuf, Falha> {
 
 fn extrair(a: &Args) -> Result<(), Falha> {
     let bytes = abrir(a)?;
-    let z = Arquivo7z::abrir(&bytes, a.senha.as_deref(), Limites::default())?;
+    let z = Arquivo7z::abrir(&bytes, a.senha.as_deref(), limites(a))?;
     // Todos os nomes se conferem ANTES de escrever o primeiro byte: arquivo
     // com uma entrada hostil nao deixa meia extracao no disco.
     for e in z.entradas() {

@@ -561,8 +561,12 @@ def g_phxzip():
         s, f = serie("descompactar_s")
         out.append(barras(
             f"{titulo}: tempo para descompactar", f"PhxZip ÷ 7-Zip: "
-            f"{razoes('descompactar_s', 'mediana')}. A descompactação do PhxZip "
-            f"é num fio só nos dois lados dele.",
+            f"{razoes('descompactar_s', 'mediana')}."
+            + (f" Com {mt} fios: "
+               f"{razoes('descompactar_s', 'mediana', 'phxzip_mt', '7zip_mt')}. "
+               "Os fios só descompactam em paralelo o arquivo gravado em "
+               "blocos; o 7-Zip grava um bloco só abaixo de 64 MiB."
+               if g == 4 else ""),
             s, "segundos (menor é melhor)", 3, menor_e_melhor=True, faixas=f,
             grupo=g))
     out.append(f'<p class="sub">{esc(d.get("sete_zip", ""))} · '
