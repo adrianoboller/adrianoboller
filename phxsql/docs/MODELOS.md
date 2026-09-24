@@ -1295,6 +1295,8 @@ QA, com julgamento de pergunta, e a redação do H.
 | 514 — FK conferida na linha FINAL (depois do DEFAULT e da calculada) | forte | regra primordial da integridade, e o irmao em cada caminho que confere FK |
 | DBA 509+512 e DBA 514 — revisoes | forte | durabilidade contra o SO e integridade referencial: e o papel que diz nao |
 | 520+521 — relogio do login e PBKDF2 de senha longa | forte | criptografia conferida contra vetor, e oraculo de tempo |
+| lote 502+452+466+504+510 — o servidor fica de pe | forte | panico sob trava, threads de fundo e arranque: concorrencia e disponibilidade |
+| 522 — o `fechar` baixa o byte 52 sem fsync | forte | formato em disco e durabilidade contra o SO |
 
 **A integração achou o que nenhuma frente via, de novo por território de
 arquivo não bastar em worktree compartilhado**: `cargo fmt --all` de uma
