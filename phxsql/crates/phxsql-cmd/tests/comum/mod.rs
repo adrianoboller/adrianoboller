@@ -59,3 +59,25 @@ impl AsRef<Path> for DirTemp {
         &self.0
     }
 }
+
+/// Espera a porta REAL que um servidor ligou -- pedido 401.
+///
+/// Copia deliberada de `phxsql-server/tests/comum::porta_real` (o comentario
+/// inteiro esta la): crates diferentes, e so este arquivo usa a funcao neste
+/// lado. Exportar um helper de teste de um crate para o outro exigiria uma
+/// dependencia de dev so para isto -- a mesma decisao ja tomada para
+/// `DirTemp`.
+#[allow(dead_code)]
+pub fn porta_real(mut obter: impl FnMut() -> Option<u16>) -> u16 {
+    let ate = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        if let Some(p) = obter() {
+            return p;
+        }
+        assert!(
+            std::time::Instant::now() < ate,
+            "a porta nao ficou disponivel em 10 s"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+}

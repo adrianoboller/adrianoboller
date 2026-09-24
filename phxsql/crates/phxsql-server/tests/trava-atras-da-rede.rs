@@ -45,14 +45,6 @@ const PRAZO_DA_SONDA: Duration = Duration::from_secs(8);
 
 const TOKEN: &str = "trava-atras-da-rede";
 
-fn porta_livre() -> u16 {
-    TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
-}
-
 fn pasta(nome: &str) -> DirTemp {
     DirTemp::novo(&format!("trava-rede-{nome}"))
 }
@@ -152,9 +144,10 @@ fn campo(linha: &str, nome: &str) -> String {
     }
 }
 
-fn subir_replica(base: &std::path::Path, porta: u16, fonte: &FonteFalsa) -> Arc<Servidor> {
+/// Pede a porta 0 e devolve a REAL, lida do proprio servidor -- pedido 401.
+fn subir_replica(base: &std::path::Path, fonte: &FonteFalsa) -> (Arc<Servidor>, u16) {
     let mut c = Config {
-        bind: format!("127.0.0.1:{porta}"),
+        bind: "127.0.0.1:0".into(),
         base: base.to_path_buf(),
         log_acessos: base.join("acessos.log"),
         blacklist: base.join("blacklist.json"),
@@ -196,8 +189,9 @@ fn subir_replica(base: &std::path::Path, porta: u16, fonte: &FonteFalsa) -> Arc<
     std::thread::spawn(move || {
         let _ = copia.escutar();
     });
+    let porta = comum::porta_real(|| s.porta_dos_dados());
     esperar_porta(porta);
-    s
+    (s, porta)
 }
 
 fn esperar_porta(porta: u16) {
@@ -293,8 +287,7 @@ fn esperar_o_laco(fonte: &FonteFalsa) {
 fn source_mudo_nao_prende_a_trava_de_dados() {
     let fonte = FonteFalsa::subir(100_000, true);
     let base = pasta("mudo");
-    let porta = porta_livre();
-    let _replica = subir_replica(&base, porta, &fonte);
+    let (_replica, porta) = subir_replica(&base, &fonte);
     criar_tabela(porta);
     esperar_o_laco(&fonte);
     // O laco esta pendurado na leitura do soquete AGORA. Um instante para a
@@ -339,8 +332,7 @@ fn source_mudo_nao_prende_a_trava_de_dados() {
 fn com_a_rede_sa_a_replica_conversa_e_o_servidor_atende() {
     let fonte = FonteFalsa::subir(100_000, false);
     let base = pasta("sadia");
-    let porta = porta_livre();
-    let _replica = subir_replica(&base, porta, &fonte);
+    let (_replica, porta) = subir_replica(&base, &fonte);
     criar_tabela(porta);
     esperar_o_laco(&fonte);
     assert!(

@@ -84,19 +84,23 @@ fn publica(semente: &str) -> [u8; 32] {
 /// `exigir` liga `cluster.exigir_prova_do_pulso`; `pino_b` e o `chave_do_fio`
 /// do `noB` na lista do `noA` (vazio = no sem pino, como um cluster que nunca
 /// configurou um).
-fn subir_no_a(base: &std::path::Path, porta: u16, exigir: bool, pino_b: &str) -> Arc<Servidor> {
-    subir_no_a_com_b_em(base, porta, exigir, pino_b, 7498)
+fn subir_no_a(base: &std::path::Path, exigir: bool, pino_b: &str) -> (Arc<Servidor>, u16) {
+    subir_no_a_com_b_em(base, exigir, pino_b, 7498)
 }
 
 /// O mesmo `noA`, com o `noB` num endereco escolhido -- o do par FALSO que
 /// o teste do pedido 441 poe para responder ao pulso.
+///
+/// Pede porta 0 para o proprio `noA` e devolve a REAL, lida dele depois do
+/// `bind` -- pedido 401. A entrada de `noA` na propria lista `cluster.nos`
+/// nao presta para nada (ninguem conecta em si mesmo), entao continua com o
+/// texto "0" sem afetar a prova.
 fn subir_no_a_com_b_em(
     base: &std::path::Path,
-    porta: u16,
     exigir: bool,
     pino_b: &str,
     porta_b: u16,
-) -> Arc<Servidor> {
+) -> (Arc<Servidor>, u16) {
     std::fs::create_dir_all(base.join("base")).unwrap();
     let caminho = base.join("config.json");
     let bar = |p: std::path::PathBuf| p.display().to_string().replace('\\', "/");
@@ -109,7 +113,7 @@ fn subir_no_a_com_b_em(
         &caminho,
         format!(
             r#"{{
-              "bind": "127.0.0.1:{porta}",
+              "bind": "127.0.0.1:0",
               "base": "{base_dir}",
               "token": "{TOKEN}",
               "log_acessos": "{log}",
@@ -127,7 +131,7 @@ fn subir_no_a_com_b_em(
                 "cifra": false,
                 "exigir_prova_do_pulso": {exigir},
                 "nos": [
-                  {{ "id": "noA", "endereco": "127.0.0.1", "porta": {porta} }},
+                  {{ "id": "noA", "endereco": "127.0.0.1", "porta": 0 }},
                   {{ "id": "noB", "endereco": "127.0.0.1", "porta": {porta_b}{campo_pino} }},
                   {{ "id": "noC", "endereco": "127.0.0.1", "porta": 7499 }}
                 ]
@@ -142,22 +146,21 @@ fn subir_no_a_com_b_em(
         ),
     )
     .unwrap();
-    no_ar(
-        Servidor::novo(Config::ler(&caminho).unwrap()).unwrap(),
-        porta,
-    )
+    no_ar(Servidor::novo(Config::ler(&caminho).unwrap()).unwrap())
 }
 
-fn no_ar(s: Arc<Servidor>, porta: u16) -> Arc<Servidor> {
+/// A porta e a REAL, lida do proprio servidor depois do `bind` -- pedido 401.
+fn no_ar(s: Arc<Servidor>) -> (Arc<Servidor>, u16) {
     let copia = Arc::clone(&s);
     std::thread::spawn(move || {
         let _ = copia.escutar();
     });
+    let porta = comum::porta_real(|| s.porta_dos_dados());
     let alvo: SocketAddr = format!("127.0.0.1:{porta}").parse().unwrap();
     let ate = Instant::now() + Duration::from_secs(5);
     while Instant::now() < ate {
         if TcpStream::connect_timeout(&alvo, Duration::from_millis(200)).is_ok() {
-            return s;
+            return (s, porta);
         }
         std::thread::sleep(Duration::from_millis(20));
     }
@@ -270,8 +273,7 @@ fn ve_vivo(porta: u16, alvo: &str) -> bool {
 #[test]
 fn um_pulso_forjado_nao_destrona_o_master() {
     let base = DirTemp::novo("identidade-pulso-forjado");
-    let porta = porta_livre();
-    let _a = subir_no_a(&base, porta, true, &para_hex(&publica(PRIV_B)));
+    let (_a, porta) = subir_no_a(&base, true, &para_hex(&publica(PRIV_B)));
 
     assert_eq!(papel_e_epoca(porta), ("master".into(), 0));
 
@@ -324,8 +326,7 @@ fn um_pulso_forjado_nao_destrona_o_master() {
 #[test]
 fn o_pulso_com_prova_valida_passa_e_conta() {
     let base = DirTemp::novo("identidade-pulso-legitimo");
-    let porta = porta_livre();
-    let _a = subir_no_a(&base, porta, true, &para_hex(&publica(PRIV_B)));
+    let (_a, porta) = subir_no_a(&base, true, &para_hex(&publica(PRIV_B)));
 
     let r = falar(
         porta,
@@ -357,8 +358,7 @@ fn o_pulso_com_prova_valida_passa_e_conta() {
 #[test]
 fn um_pulso_repetido_nao_conta_duas_vezes() {
     let base = DirTemp::novo("identidade-pulso-repetido");
-    let porta = porta_livre();
-    let _a = subir_no_a(&base, porta, true, &para_hex(&publica(PRIV_B)));
+    let (_a, porta) = subir_no_a(&base, true, &para_hex(&publica(PRIV_B)));
 
     let gravado = pulso_de_b("replica", 0, Some(PRIV_B), &pulso::nonce());
     let primeiro = falar(porta, &gravado);
@@ -386,9 +386,8 @@ fn um_pulso_repetido_nao_conta_duas_vezes() {
 #[test]
 fn sem_exigencia_o_no_de_versao_anterior_continua_pulsando() {
     let base = DirTemp::novo("identidade-pulso-velho");
-    let porta = porta_livre();
     // Sem pino do noB e sem exigencia: o cluster de ontem, inteiro.
-    let _a = subir_no_a(&base, porta, false, "");
+    let (_a, porta) = subir_no_a(&base, false, "");
 
     let r = falar(porta, &pulso_de_b("master", 9, None, "n1"));
     assert!(
@@ -425,9 +424,8 @@ fn sem_exigencia_o_no_de_versao_anterior_continua_pulsando() {
 #[test]
 fn depois_que_o_no_provou_o_pulso_sem_prova_e_recusado() {
     let base = DirTemp::novo("identidade-pulso-tofu");
-    let porta = porta_livre();
     // Interruptor DESLIGADO de propósito: o que morde aqui e so o TOFU.
-    let _a = subir_no_a(&base, porta, false, &para_hex(&publica(PRIV_B)));
+    let (_a, porta) = subir_no_a(&base, false, &para_hex(&publica(PRIV_B)));
 
     // (1) antes de qualquer prova, o pulso sem prova passa -- comportamento
     // velho intacto.
@@ -508,10 +506,14 @@ fn subir_par(
         ),
     )
     .unwrap();
-    no_ar(
-        Servidor::novo(Config::ler(&caminho).unwrap()).unwrap(),
-        porta_este,
-    )
+    // Excecao nomeada do pedido 401: os DOIS nos precisam saber a porta um
+    // do OUTRO antes de qualquer um deles ligar (`cluster.nos` e simetrico),
+    // entao nenhum dos dois pode nascer com porta 0 -- nao ha como ler de
+    // volta uma porta que o par ainda nao escolheu. `no_ar` devolve a porta
+    // REAL so para conferencia; aqui ela e sempre igual a `porta_este`,
+    // porque so ela foi escrita no `bind`.
+    let (s, _) = no_ar(Servidor::novo(Config::ler(&caminho).unwrap()).unwrap());
+    s
 }
 
 /// **A prova que impede o conserto de virar estrago.** Dois nos de verdade,
@@ -681,10 +683,9 @@ fn sem_o_relogio(j: &Json) -> String {
 #[test]
 fn o_pulso_nao_diz_quais_nos_tem_pino() {
     let base = DirTemp::novo("identidade-pulso-mapa-do-pino");
-    let porta = porta_livre();
     // Fabrica: `exigir_prova_do_pulso` desligado. E a configuracao em que o
     // mapa vale ouro, porque e nela que o no sem pino ainda passa sem prova.
-    let _a = subir_no_a(&base, porta, false, &para_hex(&publica(PRIV_B)));
+    let (_a, porta) = subir_no_a(&base, false, &para_hex(&publica(PRIV_B)));
 
     let com_pino = falar(
         porta,
@@ -764,8 +765,7 @@ fn sonda_pulso_sem_prova() {
     // diante. Comecar embaixo disputaria a mesma porta com um deles.
     PROXIMA.store(7440, Ordering::SeqCst);
     let base = DirTemp::novo("identidade-pulso-sonda-inerte");
-    let porta = porta_livre();
-    let _a = subir_no_a(&base, porta, false, &para_hex(&publica(PRIV_B)));
+    let (_a, porta) = subir_no_a(&base, false, &para_hex(&publica(PRIV_B)));
     for id in ["noB", "noB", "noB", "noC"] {
         let r = falar(porta, &pulso_de(id, "replica", 0, None, ""));
         assert!(
@@ -876,10 +876,9 @@ fn par_que_responde_como(id_falso: &'static str) -> (u16, Arc<AtomicUsize>) {
 /// falso, e o master tem de continuar master, na epoca 0, no mapa E no disco.
 fn o_master_resiste_a_resposta_de(id_falso: &'static str, rotulo: &str) {
     let base = DirTemp::novo(rotulo);
-    let porta = porta_livre();
     let (porta_b, vistos) = par_que_responde_como(id_falso);
     // Fabrica: sem exigencia, sem pino -- o `fantasma.py` da revisao.
-    let _a = subir_no_a_com_b_em(&base, porta, false, "", porta_b);
+    let (_a, porta) = subir_no_a_com_b_em(&base, false, "", porta_b);
     assert_eq!(papel_e_epoca(porta), ("master".into(), 0));
 
     // Uma janela e meia: com o defeito, o rebaixamento veio em menos de
@@ -971,8 +970,7 @@ fn sonda_sem_prova(id: &str) -> String {
 #[test]
 fn o_pulso_sem_prova_nao_diz_quais_nos_tem_pino() {
     let base = DirTemp::novo("identidade-pulso-mapa-sem-prova");
-    let porta = porta_livre();
-    let _a = subir_no_a(&base, porta, false, &para_hex(&publica(PRIV_B)));
+    let (_a, porta) = subir_no_a(&base, false, &para_hex(&publica(PRIV_B)));
 
     let com_pino = falar_cru(porta, &sonda_sem_prova("noB"));
     let sem_pino = falar_cru(porta, &sonda_sem_prova("noC"));

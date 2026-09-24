@@ -22,33 +22,13 @@ mod comum;
 use comum::DirTemp;
 
 use std::io::{Read, Write};
-use std::net::{IpAddr, SocketAddr, TcpListener, TcpStream, UdpSocket};
+use std::net::{IpAddr, SocketAddr, TcpStream, UdpSocket};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use phxsql_server::{Config, Servidor};
 
 const TOKEN: &str = "o token de servico deste teste";
-
-/// Uma porta livre nesta maquina, reservada e solta em seguida.
-///
-/// O `bind` de prova acontece em `0.0.0.0` -- e nao em `127.0.0.1` -- de
-/// proposito: a segunda metade do teste tenta conectar no IP externo, e uma
-/// porta ocupada por outro processo NAQUELA placa faria a prova dizer "alguem
-/// atendeu" sobre um servidor que nao e o nosso. Reservar em toda placa por um
-/// instante e o mais perto de "esta porta nao e de mais ninguem" que da para
-/// chegar sem entregar ao servidor um descritor ja aberto.
-fn porta_livre() -> u16 {
-    for _ in 0..64 {
-        let Ok(l) = TcpListener::bind("0.0.0.0:0") else {
-            continue;
-        };
-        let p = l.local_addr().unwrap().port();
-        drop(l);
-        return p;
-    }
-    panic!("nao consegui reservar uma porta livre em 64 tentativas");
-}
 
 /// O IP desta maquina na rede, ou `None` quando ela so tem laco local.
 ///
@@ -167,8 +147,9 @@ fn pasta(nome: &str) -> DirTemp {
 #[test]
 fn a_porta_web_sem_endereco_declarado_nao_atende_de_fora() {
     let base = pasta("padrao");
-    let dados = porta_livre();
-    let mut c = config_que_nao_declara_a_web(&base, dados);
+    // Nada conecta na porta de DADOS deste teste -- o que se prova e a web --
+    // entao ela pede 0 e nunca precisa de leitura de volta.
+    let mut c = config_que_nao_declara_a_web(&base, 0);
 
     let host = c.web.endereco().unwrap().ip();
     assert!(
@@ -180,13 +161,16 @@ fn a_porta_web_sem_endereco_declarado_nao_atende_de_fora() {
     // nao pode ganhar aviso: aviso falso gasta a confianca do verdadeiro.
     assert!(c.avisos.is_empty(), "{:?}", c.avisos);
 
-    let web = porta_livre();
-    c.web.bind = format!("{host}:{web}");
+    c.web.bind = format!("{host}:0");
     let s = Servidor::novo(c).unwrap();
     let copia = Arc::clone(&s);
     std::thread::spawn(move || {
         let _ = copia.escutar();
     });
+    // A REAL, lida do proprio servidor -- pedido 401: escolher um numero por
+    // fora e solta-lo antes do `bind` de verdade deixava uma janela para
+    // outro teste em paralelo tomar o mesmo numero.
+    let web = comum::porta_real(|| s.porta_web());
 
     let de_dentro = SocketAddr::new(host, web);
     let r = esperar_web(de_dentro);
@@ -236,16 +220,15 @@ fn endereco_declarado_para_fora_e_atendido_e_o_arranque_avisa() {
         return;
     };
     let base = pasta("aberta");
-    let dados = porta_livre();
-    let mut c = config_que_nao_declara_a_web(&base, dados);
-    let web = porta_livre();
-    c.web.bind = format!("0.0.0.0:{web}");
+    let mut c = config_que_nao_declara_a_web(&base, 0);
+    c.web.bind = "0.0.0.0:0".into();
 
     let s = Servidor::novo(c).unwrap();
     let copia = Arc::clone(&s);
     std::thread::spawn(move || {
         let _ = copia.escutar();
     });
+    let web = comum::porta_real(|| s.porta_web());
 
     let de_fora = SocketAddr::new(ip, web);
     let r = esperar_web(de_fora);
@@ -268,22 +251,20 @@ fn abrir_a_porta_web_no_arquivo_avisa_a_falta_do_proxy() {
         &caminho,
         format!(
             r#"{{
-              "bind": "127.0.0.1:{}",
+              "bind": "127.0.0.1:0",
               "base": "{}",
               "token": "{TOKEN}",
               "log_acessos": "{}",
               "seguranca": {{ "blacklist": "{}" }},
               "dblink": "{}",
               "jobs": "{}",
-              "web": {{ "ligado": true, "bind": "0.0.0.0:{}" }}
+              "web": {{ "ligado": true, "bind": "0.0.0.0:0" }}
             }}"#,
-            porta_livre(),
             bar(base.join("base")),
             bar(base.join("acessos.log")),
             bar(base.join("blacklist.json")),
             bar(base.join("dblink.json")),
             bar(base.join("jobs.json")),
-            porta_livre(),
         ),
     )
     .unwrap();

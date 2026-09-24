@@ -43,10 +43,24 @@ use phxsql_server::{Config, Servidor};
 
 const TOKEN: &str = "o token do cluster cifrado deste teste";
 
-/// Faixa PROPRIA (7250-7299): a `cifra-do-fio` mora em 7200-7249, e dois
-/// binarios de teste rodando juntos nao podem disputar a mesma porta.
+/// Faixa PROPRIA (7250-7299), so para nao repetir numero DENTRO deste
+/// arquivo entre corridas -- ver o porque de `porta_livre()` continuar aqui,
+/// logo abaixo.
 static PROXIMA: AtomicU16 = AtomicU16::new(7250);
 
+/// **Excecao nomeada do pedido 401.** Os outros ~26 arquivos de teste que
+/// escolhiam porta assim foram trocados por porta 0 lida de volta do proprio
+/// servidor (`Servidor::porta_dos_dados()`), fechando a corrida por
+/// construcao. Este arquivo NAO pode, e a razao e estrutural: os DOIS nos do
+/// cluster precisam saber a porta um do OUTRO dentro de `cluster.nos` ANTES
+/// de qualquer um dos dois ligar -- nao ha ordem de arranque em que um nasce
+/// primeiro e o outro le a porta real dele depois, porque os dois se
+/// referenciam mutuamente no mesmo config. Ler-de-volta so funciona quando
+/// alguem JA esta ligado; aqui nenhum dos dois esta, no momento em que os
+/// dois configs precisam do numero do outro. Fechar isso por construcao
+/// pediria o servidor aceitar um `TcpListener` ja aberto por fora (ou uma
+/// forma de registrar peer DEPOIS do arranque) -- producao nova que o
+/// produto nao usa, fora do escopo deste pedido.
 fn porta_livre() -> u16 {
     loop {
         let porta = PROXIMA.fetch_add(1, Ordering::SeqCst);

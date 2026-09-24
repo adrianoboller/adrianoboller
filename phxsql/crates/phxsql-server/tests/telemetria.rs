@@ -21,7 +21,7 @@ mod comum;
 use comum::DirTemp;
 
 use std::io::{BufRead, BufReader, Write};
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::net::{SocketAddr, TcpStream};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -36,29 +36,21 @@ const TOKEN: &str = "teste-da-telemetria";
 /// na primeira dezena de milhares de linhas.
 const LINHAS: usize = 200_000;
 
-fn porta_livre() -> u16 {
-    TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
-}
-
 fn pasta(nome: &str) -> DirTemp {
     DirTemp::novo(&format!("telemetria-{nome}"))
 }
 
-fn subir_servidor(base: &std::path::Path, porta: u16) -> Arc<Servidor> {
-    subir_com(base, porta, Default::default())
+fn subir_servidor(base: &std::path::Path) -> (Arc<Servidor>, u16) {
+    subir_com(base, Default::default())
 }
 
+/// Pede a porta 0 e devolve a REAL, lida do proprio servidor -- pedido 401.
 fn subir_com(
     base: &std::path::Path,
-    porta: u16,
     painel: phxsql_server::config::Painel,
-) -> Arc<Servidor> {
+) -> (Arc<Servidor>, u16) {
     let mut c = Config {
-        bind: format!("127.0.0.1:{porta}"),
+        bind: "127.0.0.1:0".into(),
         base: base.to_path_buf(),
         log_acessos: base.join("acessos.log"),
         blacklist: base.join("blacklist.json"),
@@ -81,11 +73,12 @@ fn subir_com(
     std::thread::spawn(move || {
         let _ = copia.escutar();
     });
+    let porta = comum::porta_real(|| s.porta_dos_dados());
     let alvo: SocketAddr = format!("127.0.0.1:{porta}").parse().unwrap();
     let ate = Instant::now() + Duration::from_secs(5);
     while Instant::now() < ate {
         if TcpStream::connect_timeout(&alvo, Duration::from_millis(200)).is_ok() {
-            return s;
+            return (s, porta);
         }
         std::thread::sleep(Duration::from_millis(20));
     }
@@ -188,8 +181,7 @@ fn achar_atividade(porta: u16, op: &str) -> Option<String> {
 #[test]
 fn a_soma_longa_e_encerrada_e_a_tabela_continua_integra() {
     let base = pasta("encerrar");
-    let porta = porta_livre();
-    let _s = subir_servidor(&base, porta);
+    let (_s, porta) = subir_servidor(&base);
     encher(porta);
 
     // A soma de referencia, com a tabela em paz. E o numero que a conferencia
@@ -274,8 +266,7 @@ fn a_soma_longa_e_encerrada_e_a_tabela_continua_integra() {
 #[test]
 fn encerrar_atividade_ociosa_diz_que_nao_havia_nada() {
     let base = pasta("ociosa");
-    let porta = porta_livre();
-    let _s = subir_servidor(&base, porta);
+    let (_s, porta) = subir_servidor(&base);
 
     // Uma conexao que fez UM pedido e ficou quieta.
     let mut quieta = Conexao::abrir(porta);
@@ -307,8 +298,7 @@ fn encerrar_atividade_ociosa_diz_que_nao_havia_nada() {
 #[test]
 fn ninguem_encerra_a_si_mesmo() {
     let base = pasta("eu-mesmo");
-    let porta = porta_livre();
-    let _s = subir_servidor(&base, porta);
+    let (_s, porta) = subir_servidor(&base);
 
     let mut c = Conexao::abrir(porta);
     let t = c.pedir("\"op\":\"telemetria\",\"amostras\":1");
@@ -324,8 +314,7 @@ fn ninguem_encerra_a_si_mesmo() {
 #[test]
 fn desligada_nao_ve_nada_e_ligar_de_volta_recupera_quem_ja_estava_conectado() {
     let base = pasta("interruptor");
-    let porta = porta_livre();
-    let _s = subir_servidor(&base, porta);
+    let (_s, porta) = subir_servidor(&base);
 
     let mut velha = Conexao::abrir(porta);
     assert!(velha.pedir("\"op\":\"ping\"").contains("\"ok\":true"));
@@ -359,8 +348,7 @@ fn desligada_nao_ve_nada_e_ligar_de_volta_recupera_quem_ja_estava_conectado() {
 #[test]
 fn nenhuma_thread_fica_sem_finalidade_escrita() {
     let base = pasta("threads");
-    let porta = porta_livre();
-    let _s = subir_servidor(&base, porta);
+    let (_s, porta) = subir_servidor(&base);
 
     let mut c = Conexao::abrir(porta);
     let r = c.pedir("\"op\":\"telemetria\",\"amostras\":1");
@@ -394,8 +382,7 @@ fn nenhuma_thread_fica_sem_finalidade_escrita() {
 #[test]
 fn sem_cor_configurada_nada_muda() {
     let base = pasta("cor-de-fabrica");
-    let porta = porta_livre();
-    let _s = subir_servidor(&base, porta);
+    let (_s, porta) = subir_servidor(&base);
 
     let mut c = Conexao::abrir(porta);
     let r = c.pedir("\"op\":\"telemetria\",\"amostras\":1");
@@ -420,10 +407,8 @@ fn sem_cor_configurada_nada_muda() {
 #[test]
 fn a_cor_e_o_limiar_do_config_chegam_pelo_soquete() {
     let base = pasta("cor-configurada");
-    let porta = porta_livre();
-    let _s = subir_com(
+    let (_s, porta) = subir_com(
         &base,
-        porta,
         phxsql_server::config::Painel {
             cor_alto: "#00c2a8".into(),
             cor_stress: "#7b2ff7".into(),

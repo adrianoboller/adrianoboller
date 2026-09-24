@@ -42,7 +42,7 @@ mod comum;
 use comum::DirTemp;
 
 use std::io::{BufRead, BufReader, Write};
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::net::{SocketAddr, TcpStream};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -61,14 +61,6 @@ const SENHA: &str = "segredo-de-teste";
 /// todo mundo roda.
 const ENCHIMENTO: usize = 1024 * 1024;
 
-fn porta_livre() -> u16 {
-    TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
-}
-
 fn pasta(nome: &str) -> DirTemp {
     let d = DirTemp::novo(&format!("teto-anonimo-{nome}"));
     std::fs::create_dir_all(d.join("base")).unwrap();
@@ -80,7 +72,6 @@ fn pasta(nome: &str) -> DirTemp {
 /// `com_cadastro` falso e o servidor sem usuario nenhum -- o caso VELHO, que
 /// nao pode mudar de comportamento por causa de uma regra nova.
 fn subir(base: &std::path::Path, com_cadastro: bool) -> (Arc<Servidor>, u16) {
-    let porta = porta_livre();
     // Uma iteracao so: a senha real nao interessa a esta bateria, e 210.000
     // iteracoes por login fariam a corrida levar segundos por nada.
     let h = phxsql_core::senha::cifrar_com(SENHA, 1);
@@ -98,7 +89,7 @@ fn subir(base: &std::path::Path, com_cadastro: bool) -> (Arc<Servidor>, u16) {
     // esperando a quebra de linha, e um prazo curto o faria desistir sozinho
     // -- a prova passaria por um motivo que nao e o dela.
     let texto = format!(
-        r#"{{ "bind": "127.0.0.1:{porta}", "base": {base:?}, "token": "{TOKEN}",
+        r#"{{ "bind": "127.0.0.1:0", "base": {base:?}, "token": "{TOKEN}",
               "log_acessos": {log:?}, "blacklist": {bl:?}, "dblink": {dbl:?},
               "jobs": {jobs:?}, {usuarios}
               "timeout_s": 60,
@@ -116,6 +107,7 @@ fn subir(base: &std::path::Path, com_cadastro: bool) -> (Arc<Servidor>, u16) {
     std::thread::spawn(move || {
         let _ = copia.escutar();
     });
+    let porta = comum::porta_real(|| s.porta_dos_dados());
     let alvo: SocketAddr = format!("127.0.0.1:{porta}").parse().unwrap();
     let ate = Instant::now() + Duration::from_secs(5);
     while Instant::now() < ate {
@@ -327,10 +319,9 @@ const SENHA_DA_ANA: &str = "segredo-da-ana";
 /// `usuario_excluir` gravam o cadastro no `config.json`, e sem arquivo eles
 /// recusam antes de a prova comecar.
 fn subir_de_arquivo(base: &std::path::Path, usuarios: &str) -> (Arc<Servidor>, u16) {
-    let porta = porta_livre();
     let caminho = base.join("config.json");
     let texto = format!(
-        r#"{{ "bind": "127.0.0.1:{porta}", "base": {b:?}, "token": "{TOKEN}",
+        r#"{{ "bind": "127.0.0.1:0", "base": {b:?}, "token": "{TOKEN}",
               "log_acessos": {log:?}, "blacklist": {bl:?}, "dblink": {dbl:?},
               "jobs": {jobs:?}, "usuarios": [{usuarios}],
               "timeout_s": 60,
@@ -348,6 +339,7 @@ fn subir_de_arquivo(base: &std::path::Path, usuarios: &str) -> (Arc<Servidor>, u
     std::thread::spawn(move || {
         let _ = copia.escutar();
     });
+    let porta = comum::porta_real(|| s.porta_dos_dados());
     let alvo: SocketAddr = format!("127.0.0.1:{porta}").parse().unwrap();
     let ate = Instant::now() + Duration::from_secs(5);
     while Instant::now() < ate {

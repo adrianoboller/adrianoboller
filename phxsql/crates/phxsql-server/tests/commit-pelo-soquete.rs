@@ -38,7 +38,7 @@ mod comum;
 use comum::DirTemp;
 
 use std::io::{BufRead, BufReader, Write};
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::net::{SocketAddr, TcpStream};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -53,21 +53,16 @@ use phxsql_store::Table;
 
 const TOKEN: &str = "commit-pelo-soquete";
 
-fn porta_livre() -> u16 {
-    TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
-}
-
 /// Sobe o servidor sem cadastro. `sistema` na durabilidade pelo mesmo motivo
 /// da prova da trava do `porta-do-psch-v10.rs`: com `por_lote` cada gravacao
 /// paga `fsync`, e a prova mediria o disco em vez da janela.
+///
+/// Pede a porta 0 e le a REAL de volta pelo proprio servidor -- pedido 401:
+/// escolher um numero por fora, solta-lo e so depois ligar deixava uma janela
+/// para outro teste em paralelo tomar o mesmo numero.
 fn subir(base: &Path) -> (Arc<Servidor>, u16) {
-    let porta = porta_livre();
     let texto = format!(
-        r#"{{ "bind": "127.0.0.1:{porta}", "base": {base:?}, "token": "{TOKEN}",
+        r#"{{ "bind": "127.0.0.1:0", "base": {base:?}, "token": "{TOKEN}",
               "log_acessos": {log:?}, "blacklist": {bl:?}, "dblink": {dbl:?},
               "cifra_fio": {{ "exigir": false }},
               "recursos": {{ "durabilidade": "sistema" }},
@@ -83,6 +78,7 @@ fn subir(base: &Path) -> (Arc<Servidor>, u16) {
     std::thread::spawn(move || {
         let _ = copia.escutar();
     });
+    let porta = comum::porta_real(|| s.porta_dos_dados());
     let alvo: SocketAddr = format!("127.0.0.1:{porta}").parse().unwrap();
     let ate = Instant::now() + Duration::from_secs(5);
     while Instant::now() < ate {

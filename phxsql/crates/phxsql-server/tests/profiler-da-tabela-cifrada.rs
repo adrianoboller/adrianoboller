@@ -31,7 +31,7 @@ mod comum;
 use comum::DirTemp;
 
 use std::io::{BufRead, BufReader, Write};
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::net::{SocketAddr, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -49,14 +49,6 @@ const CPF: &str = "111.222.333-44";
 /// sessao de observacao. Ele TEM de aparecer: e o controle que prova que o
 /// instrumento nao ficou cego por acidente.
 const CIDADE: &str = "Blumenau";
-
-fn porta_livre() -> u16 {
-    TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
-}
 
 fn esperar_porta(porta: u16) {
     let alvo: SocketAddr = format!("127.0.0.1:{porta}").parse().unwrap();
@@ -89,14 +81,13 @@ fn pedir(porta: u16, corpo: &str) -> String {
 /// Sobe um servidor com a cifra LIGADA e `cifra.tabelas` VAZIO -- o padrao de
 /// todo `config.json` de hoje, e a condicao exata do furo.
 fn servidor_com_cofre(d: &DirTemp) -> u16 {
-    let porta = porta_livre();
     let caminho = d.join("config.json");
     std::fs::write(
         &caminho,
         format!(
             r#"{{
               "token": "t",
-              "bind": "127.0.0.1:{porta}",
+              "bind": "127.0.0.1:0",
               "base": "{}",
               "cifra": {{ "ligada": true, "senha": "a chave do cofre", "iteracoes": 10000 }}
             }}"#,
@@ -127,6 +118,7 @@ fn servidor_com_cofre(d: &DirTemp) -> u16 {
     std::thread::spawn(move || {
         let _ = copia.escutar();
     });
+    let porta = comum::porta_real(|| s.porta_dos_dados());
     esperar_porta(porta);
     porta
 }

@@ -52,14 +52,6 @@ fn hex_que_corta_um_caractere() -> String {
     "a€".repeat(16)
 }
 
-fn porta_livre() -> u16 {
-    TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
-}
-
 fn privada(semente: &str) -> [u8; 32] {
     let bytes = phxsql_core::hash::de_hex(&semente.repeat(32)).unwrap();
     let mut k = [0u8; 32];
@@ -68,16 +60,19 @@ fn privada(semente: &str) -> [u8; 32] {
 }
 
 /// Sobe o servidor e espera a porta de dados atender.
-fn no_ar(s: Arc<Servidor>, porta: u16) -> Arc<Servidor> {
+///
+/// A porta e a REAL, lida do proprio servidor depois do `bind` -- pedido 401.
+fn no_ar(s: Arc<Servidor>) -> (Arc<Servidor>, u16) {
     let copia = Arc::clone(&s);
     std::thread::spawn(move || {
         let _ = copia.escutar();
     });
+    let porta = comum::porta_real(|| s.porta_dos_dados());
     let alvo: SocketAddr = format!("127.0.0.1:{porta}").parse().unwrap();
     let ate = Instant::now() + Duration::from_secs(5);
     while Instant::now() < ate {
         if TcpStream::connect_timeout(&alvo, Duration::from_millis(200)).is_ok() {
-            return s;
+            return (s, porta);
         }
         std::thread::sleep(Duration::from_millis(20));
     }
@@ -128,7 +123,14 @@ fn ok(resposta: Option<String>, o_que: &str) -> Json {
 /// O `noA`, master de um cluster de tres, com chave estatica -- sem ela o
 /// `conferir_identidade` recusa antes de chegar ao `de_hex`, e a prova
 /// mediria outra porta.
-fn subir_no_a(base: &std::path::Path, porta: u16, porta_b: u16) -> Arc<Servidor> {
+///
+/// `porta_b` e o endereco DECLARADO do `noB` -- em quase todos os testes
+/// deste arquivo, uma porta onde ninguem escuta de proposito
+/// (`comum::porta_fechada`, que so serve essa unica finalidade desde o
+/// pedido 401: nenhum `porta_livre()` sobrevive neste arquivo). A entrada de
+/// `noA` na propria lista de `nos` nao presta para nada -- ninguem conecta em
+/// si mesmo -- entao ela pode continuar com o texto "0" sem afetar a prova.
+fn subir_no_a(base: &std::path::Path, porta_b: u16) -> (Arc<Servidor>, u16) {
     std::fs::create_dir_all(base.join("base")).unwrap();
     let caminho = base.join("config.json");
     let pino_b = para_hex(&x25519::chave_publica(&privada("bb")));
@@ -136,7 +138,7 @@ fn subir_no_a(base: &std::path::Path, porta: u16, porta_b: u16) -> Arc<Servidor>
         &caminho,
         format!(
             r#"{{
-              "bind": "127.0.0.1:{porta}", "token": "{TOKEN}", {caminhos},
+              "bind": "127.0.0.1:0", "token": "{TOKEN}", {caminhos},
               "web": {{ "ligado": false }},
               "cifra_fio": {{ "ligada": true, "exigir": false, "chave_privada": "{priv_a}" }},
               "replicacao": {{ "papel": "source", "id_servidor": "noA", "imagem_da_linha": true }},
@@ -144,7 +146,7 @@ fn subir_no_a(base: &std::path::Path, porta: u16, porta_b: u16) -> Arc<Servidor>
                 "id": "noA", "token": "{TOKEN}", "janela_inatividade_s": 3, "pulso_s": 1,
                 "cifra": false,
                 "nos": [
-                  {{ "id": "noA", "endereco": "127.0.0.1", "porta": {porta} }},
+                  {{ "id": "noA", "endereco": "127.0.0.1", "porta": 0 }},
                   {{ "id": "noB", "endereco": "127.0.0.1", "porta": {porta_b}, "chave_do_fio": "{pino_b}" }},
                   {{ "id": "noC", "endereco": "127.0.0.1", "porta": 7497 }}
                 ]
@@ -155,10 +157,8 @@ fn subir_no_a(base: &std::path::Path, porta: u16, porta_b: u16) -> Arc<Servidor>
         ),
     )
     .unwrap();
-    no_ar(
-        Servidor::novo(Config::ler(&caminho).unwrap()).unwrap(),
-        porta,
-    )
+    let s = Servidor::novo(Config::ler(&caminho).unwrap()).unwrap();
+    no_ar(s)
 }
 
 /// O pulso do `noB` com a `prova` escolhida pelo teste. O resto do corpo e o
@@ -182,10 +182,9 @@ fn pulso_com_prova(prova: &str) -> String {
 #[test]
 fn a_prova_do_pulso_que_corta_um_caractere_e_recusada_com_resposta() {
     let base = DirTemp::novo("hex-pulso");
-    let porta = porta_livre();
     // O noB fica numa porta onde ninguem escuta: o laco de pulso do noA so
     // falha a conexao, e a prova mede so o PEDIDO.
-    let _a = subir_no_a(&base, porta, porta_livre());
+    let (_a, porta) = subir_no_a(&base, comum::porta_fechada());
 
     let resposta = falar(porta, &pulso_com_prova(&hex_que_corta_um_caractere()));
 
@@ -275,9 +274,8 @@ fn par_que_responde_prova_torta() -> (u16, Arc<AtomicUsize>) {
 #[test]
 fn a_prova_torta_na_resposta_nao_mata_o_laco_do_pulso() {
     let base = DirTemp::novo("hex-pulso-resposta");
-    let porta = porta_livre();
     let (porta_b, vistos) = par_que_responde_prova_torta();
-    let _a = subir_no_a(&base, porta, porta_b);
+    let (_a, _porta) = subir_no_a(&base, porta_b);
 
     // pulso_s = 1: em 4,5 s o laco vivo pulsa quatro vezes ou mais.
     std::thread::sleep(Duration::from_millis(4_500));
@@ -292,22 +290,19 @@ fn a_prova_torta_na_resposta_nao_mata_o_laco_do_pulso() {
 
 /* ---------------------------------------------- 2. o valor Bin do inserir */
 
-fn subir_simples(base: &std::path::Path, porta: u16) -> Arc<Servidor> {
+fn subir_simples(base: &std::path::Path) -> (Arc<Servidor>, u16) {
     std::fs::create_dir_all(base.join("base")).unwrap();
     let caminho = base.join("config.json");
     std::fs::write(
         &caminho,
         format!(
-            r#"{{ "bind": "127.0.0.1:{porta}", "token": "{TOKEN}", {caminhos},
+            r#"{{ "bind": "127.0.0.1:0", "token": "{TOKEN}", {caminhos},
                   "web": {{ "ligado": false }}, "cifra_fio": {{ "exigir": false }} }}"#,
             caminhos = caminhos(base),
         ),
     )
     .unwrap();
-    no_ar(
-        Servidor::novo(Config::ler(&caminho).unwrap()).unwrap(),
-        porta,
-    )
+    no_ar(Servidor::novo(Config::ler(&caminho).unwrap()).unwrap())
 }
 
 /// O protocolo e uma linha por pedido: o corpo escrito em varias linhas no
@@ -329,8 +324,7 @@ fn pedido(corpo: &str) -> String {
 #[test]
 fn binario_que_corta_um_caractere_nao_envenena_a_trava_de_dados() {
     let base = DirTemp::novo("hex-bin");
-    let porta = porta_livre();
-    let _s = subir_simples(&base, porta);
+    let (_s, porta) = subir_simples(&base);
 
     ok(
         falar(porta, &pedido(r#""op":"criar_database","database":"loja""#)),
@@ -418,8 +412,7 @@ fn binario_que_corta_um_caractere_nao_envenena_a_trava_de_dados() {
 #[test]
 fn o_valor_torto_grande_nao_volta_inteiro_nem_vai_ao_log() {
     let base = DirTemp::novo("hex-eco");
-    let porta = porta_livre();
-    let _s = subir_simples(&base, porta);
+    let (_s, porta) = subir_simples(&base);
     ok(
         falar(porta, &pedido(r#""op":"criar_database","database":"loja""#)),
         "criar_database",
@@ -490,26 +483,27 @@ fn o_valor_torto_grande_nao_volta_inteiro_nem_vai_ao_log() {
 
 fn subir_web(base: &std::path::Path) -> SocketAddr {
     std::fs::create_dir_all(base.join("base")).unwrap();
-    let dados = porta_livre();
-    let web = porta_livre();
     let caminho = base.join("config.json");
     // Duas vagas na web: se o panico vazasse a vaga, a terceira volta do
     // laco abaixo ja nao seria atendida.
     std::fs::write(
         &caminho,
         format!(
-            r#"{{ "bind": "127.0.0.1:{dados}", "token": "{TOKEN}", {caminhos},
+            r#"{{ "bind": "127.0.0.1:0", "token": "{TOKEN}", {caminhos},
                   "cifra_fio": {{ "exigir": false }},
                   "recursos": {{ "conexoes_web_max": 2 }},
-                  "web": {{ "ligado": true, "bind": "127.0.0.1:{web}" }} }}"#,
+                  "web": {{ "ligado": true, "bind": "127.0.0.1:0" }} }}"#,
             caminhos = caminhos(base),
         ),
     )
     .unwrap();
     let s = Servidor::novo(Config::ler(&caminho).unwrap()).unwrap();
+    let copia = Arc::clone(&s);
     std::thread::spawn(move || {
-        let _ = s.escutar();
+        let _ = copia.escutar();
     });
+    // A REAL, lida do proprio servidor -- pedido 401.
+    let web = comum::porta_real(|| s.porta_web());
     let alvo: SocketAddr = format!("127.0.0.1:{web}").parse().unwrap();
     let ate = Instant::now() + Duration::from_secs(10);
     while Instant::now() < ate {

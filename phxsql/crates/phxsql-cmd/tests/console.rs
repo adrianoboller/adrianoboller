@@ -12,7 +12,6 @@ mod comum;
 use comum::DirTemp;
 
 use std::io::{BufRead, BufReader, Write};
-use std::net::TcpListener;
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::time::Duration;
@@ -24,14 +23,6 @@ use phxsql_server::{Cadastro, Config};
 
 const TOKEN: &str = "token-do-console";
 
-fn porta_livre() -> u16 {
-    TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
-}
-
 fn pasta(nome: &str) -> DirTemp {
     DirTemp::novo(&format!("cmd-{nome}"))
 }
@@ -40,9 +31,14 @@ fn pasta(nome: &str) -> DirTemp {
 ///
 /// `cadastro` vazio quer dizer servidor sem usuarios -- o token de servico
 /// entra e pode tudo, que e o modo em que a maioria dos testes roda.
-fn subir(dir: &std::path::Path, porta: u16, cadastro: Cadastro) -> Arc<Servidor> {
+///
+/// Pede a porta 0 e devolve a REAL, lida do proprio servidor depois do
+/// `bind` -- pedido 401. O padrao velho escolhia um numero por fora
+/// (`porta_livre()`), soltava e so entao subia o servidor ali: a janela entre
+/// soltar e ligar deixava outro teste em paralelo tomar o mesmo numero.
+fn subir(dir: &std::path::Path, cadastro: Cadastro) -> (Arc<Servidor>, u16) {
     let mut c = Config {
-        bind: format!("127.0.0.1:{porta}"),
+        bind: "127.0.0.1:0".into(),
         base: dir.to_path_buf(),
         log_acessos: dir.join("acessos.log"),
         blacklist: dir.join("blacklist.json"),
@@ -66,8 +62,9 @@ fn subir(dir: &std::path::Path, porta: u16, cadastro: Cadastro) -> Arc<Servidor>
     std::thread::spawn(move || {
         let _ = copia.escutar();
     });
+    let porta = comum::porta_real(|| s.porta_dos_dados());
     esperar(porta);
-    s
+    (s, porta)
 }
 
 /// As tabelas nascem pela PORTA, e nao pela API: assim o teste tambem exercita
@@ -128,8 +125,7 @@ fn console(porta: u16) -> Console {
 #[test]
 fn a_linha_vira_pedido_e_a_resposta_vira_tabela() {
     let dir = pasta("tabela");
-    let porta = porta_livre();
-    let _s = subir(&dir, porta, Cadastro::default());
+    let (_s, porta) = subir(&dir, Cadastro::default());
     povoar(porta);
 
     let mut c = console(porta);
@@ -154,8 +150,7 @@ fn a_linha_vira_pedido_e_a_resposta_vira_tabela() {
 #[test]
 fn o_use_preenche_o_banco_e_o_digitado_vence() {
     let dir = pasta("use");
-    let porta = porta_livre();
-    let _s = subir(&dir, porta, Cadastro::default());
+    let (_s, porta) = subir(&dir, Cadastro::default());
     povoar(porta);
 
     let mut c = console(porta);
@@ -179,8 +174,7 @@ fn o_use_preenche_o_banco_e_o_digitado_vence() {
 #[test]
 fn o_help_vem_do_catalogo_pela_rede() {
     let dir = pasta("help");
-    let porta = porta_livre();
-    let _s = subir(&dir, porta, Cadastro::default());
+    let (_s, porta) = subir(&dir, Cadastro::default());
 
     let mut c = console(porta);
     let lista = c.executar_linha("/help").texto().to_string();
@@ -211,8 +205,7 @@ fn o_help_vem_do_catalogo_pela_rede() {
 #[test]
 fn select_digitado_direto_vira_a_op_sql() {
     let dir = pasta("select");
-    let porta = porta_livre();
-    let _s = subir(&dir, porta, Cadastro::default());
+    let (_s, porta) = subir(&dir, Cadastro::default());
     povoar(porta);
 
     let mut c = console(porta);
@@ -237,8 +230,7 @@ fn select_digitado_direto_vira_a_op_sql() {
 #[test]
 fn o_cru_alterna_entre_tabela_e_json() {
     let dir = pasta("cru");
-    let porta = porta_livre();
-    let _s = subir(&dir, porta, Cadastro::default());
+    let (_s, porta) = subir(&dir, Cadastro::default());
 
     let mut c = console(porta);
     assert!(c.executar_linha("/cru").texto().contains("JSON"));
@@ -252,8 +244,7 @@ fn o_cru_alterna_entre_tabela_e_json() {
 #[test]
 fn argumento_sem_igual_recusa_com_o_recado_certo() {
     let dir = pasta("argumento");
-    let porta = porta_livre();
-    let _s = subir(&dir, porta, Cadastro::default());
+    let (_s, porta) = subir(&dir, Cadastro::default());
 
     let mut c = console(porta);
     let e = c.executar_linha("tabelas loja").texto().to_string();
@@ -270,7 +261,6 @@ fn argumento_sem_igual_recusa_com_o_recado_certo() {
 #[test]
 fn entra_pelo_desafio_e_a_permissao_continua_valendo() {
     let dir = pasta("login");
-    let porta = porta_livre();
 
     // A ana le a base inteira, menos a folha -- mas PODE cria-la, senao nem
     // haveria folha para ela nao ler. E a regra por tabela substituindo a da
@@ -285,7 +275,7 @@ fn entra_pelo_desafio_e_a_permissao_continua_valendo() {
         .unwrap(),
     )
     .unwrap();
-    let _s = subir(&dir, porta, cadastro);
+    let (_s, porta) = subir(&dir, cadastro);
     povoar_como(porta, Some(("ana", "segredo-da-ana")));
 
     let mut c = console(porta);
@@ -328,8 +318,7 @@ fn entra_pelo_desafio_e_a_permissao_continua_valendo() {
 #[test]
 fn o_binario_le_da_entrada_padrao_e_imprime() {
     let dir = pasta("processo");
-    let porta = porta_livre();
-    let _s = subir(&dir, porta, Cadastro::default());
+    let (_s, porta) = subir(&dir, Cadastro::default());
     povoar(porta);
 
     let mut filho = Command::new(env!("CARGO_BIN_EXE_phxsqlcmd"))
@@ -382,8 +371,7 @@ fn o_binario_le_da_entrada_padrao_e_imprime() {
 #[test]
 fn o_comando_unico_devolve_o_codigo_de_saida_certo() {
     let dir = pasta("comando");
-    let porta = porta_livre();
-    let _s = subir(&dir, porta, Cadastro::default());
+    let (_s, porta) = subir(&dir, Cadastro::default());
     povoar(porta);
 
     let rodar = |linha: &str| -> (bool, String) {
@@ -439,8 +427,7 @@ fn o_console_atravessa_um_servidor_que_exige_a_cifra() {
          sem o console ter cifrado nada"
     );
     let dir = pasta("cifra");
-    let porta = porta_livre();
-    let _s = subir(&dir, porta, Cadastro::default());
+    let (_s, porta) = subir(&dir, Cadastro::default());
     let mut c = console(porta);
     let r = c.executar_linha("bancos");
     assert!(!r.texto().starts_with("erro"), "{}", r.texto());
@@ -455,9 +442,8 @@ fn o_console_atravessa_um_servidor_que_exige_a_cifra() {
 #[test]
 fn com_o_servidor_sem_cifra_o_console_recusa_e_diz_a_saida() {
     let dir = pasta("sem-cifra");
-    let porta = porta_livre();
     let mut c = Config {
-        bind: format!("127.0.0.1:{porta}"),
+        bind: "127.0.0.1:0".into(),
         base: dir.to_path_buf(),
         log_acessos: dir.join("acessos.log"),
         blacklist: dir.join("blacklist.json"),
@@ -475,6 +461,7 @@ fn com_o_servidor_sem_cifra_o_console_recusa_e_diz_a_saida() {
     std::thread::spawn(move || {
         let _ = copia.escutar();
     });
+    let porta = comum::porta_real(|| s.porta_dos_dados());
     esperar(porta);
 
     let Err(erro) = Console::ligar("127.0.0.1", porta, TOKEN, Duration::from_secs(5)) else {

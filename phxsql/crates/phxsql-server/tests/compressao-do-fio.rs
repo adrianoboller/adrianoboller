@@ -30,8 +30,7 @@ mod comum;
 use comum::DirTemp;
 
 use std::io::{BufRead, BufReader, Write};
-use std::net::{SocketAddr, TcpListener, TcpStream};
-use std::sync::atomic::{AtomicU16, Ordering};
+use std::net::{SocketAddr, TcpStream};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -45,21 +44,6 @@ const TOKEN: &str = "o token de servico deste teste";
 /// do limiar de 256 bytes que faz o servidor sequer tentar comprimir.
 const LINHAS: usize = 5000;
 
-static PROXIMA: AtomicU16 = AtomicU16::new(7300);
-
-/// Uma porta livre na faixa reservada a esta bancada -- faixa fixa, e nao
-/// efemera, para nunca esbarrar num servidor de outra prova na mesma maquina.
-fn porta_livre() -> u16 {
-    loop {
-        let porta = PROXIMA.fetch_add(1, Ordering::SeqCst);
-        assert!(porta < 7350, "acabaram as portas entre 7300 e 7349");
-        if let Ok(l) = TcpListener::bind(("127.0.0.1", porta)) {
-            drop(l);
-            return porta;
-        }
-    }
-}
-
 fn pasta(nome: &str) -> DirTemp {
     let d = DirTemp::novo(&format!("comp-{nome}"));
     std::fs::create_dir_all(d.join("base")).unwrap();
@@ -69,9 +53,9 @@ fn pasta(nome: &str) -> DirTemp {
 /// Sobe um servidor com `max_linhas` alto o bastante para o `varrer` de
 /// [`LINHAS`] linhas nao vir cortado -- o padrao (1.000) bastaria aqui, mas
 /// o numero fica explicito para nao depender de um padrao que pode mudar.
-fn subir(base: &std::path::Path, porta: u16) -> Arc<Servidor> {
+fn subir(base: &std::path::Path) -> (Arc<Servidor>, u16) {
     let mut c = Config {
-        bind: format!("127.0.0.1:{porta}"),
+        bind: "127.0.0.1:0".into(),
         base: base.to_path_buf(),
         log_acessos: base.join("acessos.log"),
         blacklist: base.join("blacklist.json"),
@@ -89,19 +73,22 @@ fn subir(base: &std::path::Path, porta: u16) -> Arc<Servidor> {
     // o portao errado.
     c.cifra_fio.exigir = false;
     c.web.ligado = false;
-    no_ar(Servidor::novo(c).unwrap(), porta)
+    no_ar(Servidor::novo(c).unwrap())
 }
 
-fn no_ar(s: Arc<Servidor>, porta: u16) -> Arc<Servidor> {
+/// Le a porta REAL do proprio servidor -- pedido 401: o `bind` pede porta 0,
+/// e so depois do `escutar()` chegar la existe um numero para ler.
+fn no_ar(s: Arc<Servidor>) -> (Arc<Servidor>, u16) {
     let copia = Arc::clone(&s);
     std::thread::spawn(move || {
         let _ = copia.escutar();
     });
+    let porta = comum::porta_real(|| s.porta_dos_dados());
     let alvo: SocketAddr = format!("127.0.0.1:{porta}").parse().unwrap();
     let ate = Instant::now() + Duration::from_secs(5);
     while Instant::now() < ate {
         if TcpStream::connect_timeout(&alvo, Duration::from_millis(200)).is_ok() {
-            return s;
+            return (s, porta);
         }
         std::thread::sleep(Duration::from_millis(20));
     }
@@ -231,8 +218,7 @@ fn descomprimir(envelope: &str) -> String {
 #[test]
 fn cliente_que_nao_pede_continua_sem_compressao() {
     let base = pasta("velho");
-    let porta = porta_livre();
-    let _s = subir(&base, porta);
+    let (_s, porta) = subir(&base);
 
     let mut c = Conexao::abrir(porta);
     semear(&mut c, "fio_velho");
@@ -262,8 +248,7 @@ fn cliente_que_nao_pede_continua_sem_compressao() {
 #[test]
 fn cliente_que_pede_recebe_comprimido_e_reconstroi_o_mesmo_conteudo() {
     let base = pasta("pede");
-    let porta = porta_livre();
-    let _s = subir(&base, porta);
+    let (_s, porta) = subir(&base);
 
     let mut c = Conexao::abrir(porta);
     semear(&mut c, "fio_pede");
@@ -320,8 +305,7 @@ fn cliente_que_pede_recebe_comprimido_e_reconstroi_o_mesmo_conteudo() {
 #[test]
 fn medir_o_ganho_do_deflate_desta_casa() {
     let base = pasta("medida");
-    let porta = porta_livre();
-    let _s = subir(&base, porta);
+    let (_s, porta) = subir(&base);
 
     let mut c = Conexao::abrir(porta);
     semear(&mut c, "fio_medida");
@@ -365,8 +349,7 @@ fn medir_o_ganho_do_deflate_desta_casa() {
 #[test]
 fn a_mesma_conexao_alterna_por_pedido() {
     let base = pasta("alterna");
-    let porta = porta_livre();
-    let _s = subir(&base, porta);
+    let (_s, porta) = subir(&base);
 
     let mut c = Conexao::abrir(porta);
     semear(&mut c, "fio_alterna");
@@ -402,8 +385,7 @@ fn a_mesma_conexao_alterna_por_pedido() {
 #[test]
 fn resposta_pequena_nao_comprime_mesmo_pedindo() {
     let base = pasta("pequena");
-    let porta = porta_livre();
-    let _s = subir(&base, porta);
+    let (_s, porta) = subir(&base);
 
     let mut c = Conexao::abrir(porta);
     let r = c.pedir(&format!(
@@ -431,8 +413,7 @@ fn resposta_pequena_nao_comprime_mesmo_pedindo() {
 #[test]
 fn dentro_do_tunel_o_pedido_de_compressao_e_ignorado() {
     let base = pasta("tunel");
-    let porta = porta_livre();
-    let _s = subir(&base, porta);
+    let (_s, porta) = subir(&base);
 
     let mut c = Conexao::abrir(porta);
     c.cifrar();

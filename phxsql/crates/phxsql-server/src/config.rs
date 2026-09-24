@@ -4331,6 +4331,20 @@ impl Default for Config {
     }
 }
 
+/// Duas portas colidem de verdade, ou uma delas e' "0" (o sistema escolhe)?
+///
+/// Pedido 401: quando o `bind` pede porta 0, o texto de DOIS campos pode ser
+/// identico (`"127.0.0.1:0"` em `bind` e em `web.bind`, por exemplo) sem que
+/// haja colisao nenhuma -- cada `TcpListener::bind` com porta 0 recebe um
+/// numero DIFERENTE do sistema operacional, sempre; nunca o mesmo dois vezes
+/// na mesma maquina. A guarda de endereco repetido existe para pegar o erro
+/// de digitacao (duas portas fixas iguais), e comparar dois "0" por igualdade
+/// literal recusaria exatamente o padrao que fecha a corrida do pedido 401
+/// (pedir porta 0 em todo campo e ler a REAL de volta depois do `bind`).
+fn enderecos_colidem(a: SocketAddr, b: SocketAddr) -> bool {
+    a.port() != 0 && b.port() != 0 && a == b
+}
+
 impl Config {
     /// Le o `config.json` do caminho informado -- ou o `config.phz` ao lado
     /// dele (pedido 450).
@@ -4951,7 +4965,7 @@ impl Config {
         self.endereco()?;
         if self.web.ligado {
             let web = self.web.endereco()?;
-            if web == self.endereco()? {
+            if enderecos_colidem(web, self.endereco()?) {
                 return Err(PhxError::Esquema(format!(
                     "web.bind e bind apontam para o mesmo endereco ({web}): a interface precisa de uma porta so dela"
                 )));
@@ -4979,7 +4993,7 @@ impl Config {
                 continue;
             }
             let alvo = alvo?;
-            if let Some((quem, _)) = ocupadas.iter().find(|(_, e)| *e == alvo) {
+            if let Some((quem, _)) = ocupadas.iter().find(|(_, e)| enderecos_colidem(*e, alvo)) {
                 return Err(PhxError::Esquema(format!(
                     "{rotulo} e {quem} apontam para o mesmo endereco ({alvo})"
                 )));
@@ -4988,7 +5002,7 @@ impl Config {
         }
         for (rotulo, texto) in self.replicacao.portas() {
             let alvo = Replicacao::resolver(rotulo, texto)?;
-            if let Some((quem, _)) = ocupadas.iter().find(|(_, e)| *e == alvo) {
+            if let Some((quem, _)) = ocupadas.iter().find(|(_, e)| enderecos_colidem(*e, alvo)) {
                 return Err(PhxError::Esquema(format!(
                     "replicacao.{rotulo} e {quem} apontam para o mesmo endereco ({alvo})"
                 )));

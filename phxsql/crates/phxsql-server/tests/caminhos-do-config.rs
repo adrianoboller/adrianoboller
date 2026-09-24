@@ -14,28 +14,31 @@ mod comum;
 use comum::DirTemp;
 
 use std::io::{BufRead, BufReader, Write};
-use std::net::{SocketAddr, TcpListener, TcpStream};
-use std::process::{Child, Command};
+use std::net::{SocketAddr, TcpStream};
+use std::path::Path;
+use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
-fn porta_livre() -> u16 {
-    TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
-}
-
-fn esperar_porta_aberta(porta: u16) {
-    let alvo: SocketAddr = format!("127.0.0.1:{porta}").parse().unwrap();
-    let ate = Instant::now() + Duration::from_secs(5);
+/// A porta que o PROPRIO `phxsqld` abriu, lida do erro padrao dele -- pedido
+/// 401, mesmo molde do `config-phz.rs` (pedido 450): o `config` pede a porta
+/// 0, o sistema escolhe, e escolher um numero por fora do processo (a
+/// `porta_livre()` velha deste arquivo) deixava uma janela entre soltar e o
+/// `phxsqld` ligar de verdade, onde outro processo podia tomar o mesmo numero.
+fn porta_aberta(erro_padrao: &Path) -> u16 {
+    const LINHA: &str = "porta de dados escutando em ";
+    let ate = Instant::now() + Duration::from_secs(10);
     while Instant::now() < ate {
-        if TcpStream::connect_timeout(&alvo, Duration::from_millis(100)).is_ok() {
-            return;
+        let texto = std::fs::read_to_string(erro_padrao).unwrap_or_default();
+        if let Some(resto) = texto.lines().find_map(|l| l.strip_prefix(LINHA)) {
+            let alvo: SocketAddr = resto.trim().parse().unwrap();
+            return alvo.port();
         }
         std::thread::sleep(Duration::from_millis(20));
     }
-    panic!("o phxsqld nao subiu na porta {porta} em 5 s");
+    panic!(
+        "o phxsqld nao abriu a porta de dados em 10 s: {}",
+        std::fs::read_to_string(erro_padrao).unwrap_or_default()
+    );
 }
 
 /// Guarda que mata o processo no `Drop` -- inclusive quando o teste falha no
@@ -81,23 +84,24 @@ fn servidor_de_outro_diretorio_escreve_ao_lado_do_config() {
     std::fs::create_dir_all(&cfg_dir).unwrap();
     std::fs::create_dir_all(&outro_dir).unwrap();
 
-    let porta = porta_livre();
     // O ESCAPE ESCRITO: desde 18/09/2026 a cifra do fio nasce exigida
     // (pedido 370, ordem do dono), e este teste fala com a porta de dados em
     // claro porque o que ele mede e ONDE os arquivos nascem. Sem esta linha a
     // recusa lida aqui seria a da cifra, e a prova passaria a medir o portao
     // errado.
-    let config_json = format!(
-        r#"{{
-            "bind": "127.0.0.1:{porta}",
+    //
+    // "bind": porta 0 -- pedido 401: a REAL sai do erro padrao do processo,
+    // depois do `spawn`, nunca de um numero escolhido por este teste.
+    let config_json = r#"{
+            "bind": "127.0.0.1:0",
             "token": "t",
-            "cifra_fio": {{ "exigir": false }},
-            "web": {{ "ligado": false }}
-        }}"#
-    );
+            "cifra_fio": { "exigir": false },
+            "web": { "ligado": false }
+        }"#;
     let config_path = cfg_dir.join("config.json");
     std::fs::write(&config_path, config_json).unwrap();
 
+    let erro_padrao = raiz.join("stderr.txt");
     let filho = Filho(
         Command::new(env!("CARGO_BIN_EXE_phxsqld"))
             .arg("--config")
@@ -105,12 +109,12 @@ fn servidor_de_outro_diretorio_escreve_ao_lado_do_config() {
             // O CORACAO do teste: o processo sobe de OUTRO diretorio, que nao
             // tem nenhuma relacao com onde o config.json mora.
             .current_dir(&outro_dir)
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::from(std::fs::File::create(&erro_padrao).unwrap()))
             .spawn()
             .expect("nao consegui iniciar o phxsqld"),
     );
-    esperar_porta_aberta(porta);
+    let porta = porta_aberta(&erro_padrao);
 
     // `base` ("dados") e `log_acessos` ("acessos.log") nascem no ARRANQUE,
     // sem pedido nenhum -- `Raiz::nova` cria o diretorio da base, e

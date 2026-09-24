@@ -36,7 +36,7 @@ mod comum;
 use comum::DirTemp;
 
 use std::io::{Read, Write};
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::net::{SocketAddr, TcpStream};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -58,14 +58,6 @@ const SEM_FIM: usize = 256 * 1024;
 /// separa «desistiu no teto» de «ficou esperando a quebra de linha».
 const PRAZO: Duration = Duration::from_secs(3);
 
-fn porta_livre() -> u16 {
-    TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
-}
-
 fn pasta(nome: &str) -> DirTemp {
     let d = DirTemp::novo(&format!("teto-http-{nome}"));
     std::fs::create_dir_all(d.join("base")).unwrap();
@@ -73,20 +65,21 @@ fn pasta(nome: &str) -> DirTemp {
 }
 
 /// Sobe um servidor com a porta web ligada e devolve o endereco dela.
+///
+/// Pede porta 0 nas duas e devolve a REAL da web, lida do proprio servidor
+/// depois do `bind` -- pedido 401.
 fn subir(base: &std::path::Path) -> (Arc<Servidor>, SocketAddr) {
-    let dados = porta_livre();
-    let web = porta_livre();
     // O `cifra_fio.exigir` falso e o ESCAPE ESCRITO: com ele ligado o
     // `portao_de_rede_http` recusa antes de `ler_pedido` existir, e a prova
     // mediria o portao errado. O `timeout_s` alto e o que da a separacao de
     // tempo explicada no cabecalho.
     let texto = format!(
-        r#"{{ "bind": "127.0.0.1:{dados}", "base": {base:?}, "token": "{TOKEN}",
+        r#"{{ "bind": "127.0.0.1:0", "base": {base:?}, "token": "{TOKEN}",
               "log_acessos": {log:?}, "blacklist": {bl:?}, "dblink": {dbl:?},
               "jobs": {jobs:?},
               "timeout_s": 60,
               "cifra_fio": {{ "exigir": false }},
-              "web": {{ "ligado": true, "bind": "127.0.0.1:{web}" }} }}"#,
+              "web": {{ "ligado": true, "bind": "127.0.0.1:0" }} }}"#,
         base = base.display().to_string(),
         log = base.join("acessos.log").display().to_string(),
         bl = base.join("blacklist.json").display().to_string(),
@@ -99,6 +92,7 @@ fn subir(base: &std::path::Path) -> (Arc<Servidor>, SocketAddr) {
     std::thread::spawn(move || {
         let _ = copia.escutar();
     });
+    let web = comum::porta_real(|| s.porta_web());
     let alvo: SocketAddr = format!("127.0.0.1:{web}").parse().unwrap();
     let ate = Instant::now() + Duration::from_secs(10);
     while Instant::now() < ate {

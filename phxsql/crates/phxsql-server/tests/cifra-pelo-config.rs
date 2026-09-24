@@ -12,8 +12,7 @@ mod comum;
 use comum::DirTemp;
 
 use std::io::{BufRead, BufReader, Write};
-use std::net::{SocketAddr, TcpListener, TcpStream};
-use std::sync::atomic::{AtomicU16, Ordering};
+use std::net::{SocketAddr, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -196,21 +195,6 @@ fn o_debug_do_segredo_nunca_mostra_o_valor() {
 // O material POR TABELA, pelo soquete -- a outra metade do `cifra.ligada`
 // ---------------------------------------------------------------------------
 
-/// Uma porta que ninguem mais esta usando, na faixa deste arquivo. Os outros
-/// binarios de teste tem as suas (7200, 7250, 7300); faixas separadas porque
-/// `cargo test` roda os binarios em paralelo.
-fn porta_livre() -> u16 {
-    static PROXIMA: AtomicU16 = AtomicU16::new(7350);
-    loop {
-        let porta = PROXIMA.fetch_add(1, Ordering::SeqCst);
-        assert!(porta < 7399, "acabaram as portas entre 7350 e 7398");
-        if let Ok(l) = TcpListener::bind(("127.0.0.1", porta)) {
-            drop(l);
-            return porta;
-        }
-    }
-}
-
 fn esperar_porta(porta: u16) {
     let alvo: SocketAddr = format!("127.0.0.1:{porta}").parse().unwrap();
     let ate = Instant::now() + Duration::from_secs(5);
@@ -257,14 +241,13 @@ fn o_esquema_diz_o_material_de_cada_tabela_com_a_cifra_ligada() {
     let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
     cofre::desligar();
     let d = dir("material");
-    let porta = porta_livre();
     let caminho = d.join("config.json");
     std::fs::write(
         &caminho,
         format!(
             r#"{{
               "token": "t",
-              "bind": "127.0.0.1:{porta}",
+              "bind": "127.0.0.1:0",
               "base": "{}",
               "cifra": {{ "ligada": true, "senha": "a chave do cofre", "iteracoes": 10000 }}
             }}"#,
@@ -290,6 +273,7 @@ fn o_esquema_diz_o_material_de_cada_tabela_com_a_cifra_ligada() {
     std::thread::spawn(move || {
         let _ = copia.escutar();
     });
+    let porta = comum::porta_real(|| s.porta_dos_dados());
     esperar_porta(porta);
 
     pedir(porta, r#""op":"criar_database","database":"loja""#);

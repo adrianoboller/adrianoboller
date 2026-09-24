@@ -31,7 +31,7 @@ mod comum;
 use comum::DirTemp;
 
 use std::io::{BufReader, Read, Write};
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::net::{SocketAddr, TcpStream};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -43,18 +43,6 @@ const LOGIN: &str = "ana";
 /// A senha VIAJA em claro no `POST /api` -- e justamente o que esta frente
 /// existe para impedir quando a cifra e exigida.
 const SENHA: &str = "segredo123";
-
-fn porta_livre() -> u16 {
-    for _ in 0..64 {
-        let Ok(l) = TcpListener::bind("127.0.0.1:0") else {
-            continue;
-        };
-        let p = l.local_addr().unwrap().port();
-        drop(l);
-        return p;
-    }
-    panic!("nao consegui reservar uma porta livre em 64 tentativas");
-}
 
 fn pasta(nome: &str) -> DirTemp {
     let d = DirTemp::novo(&format!("portas-http-{nome}"));
@@ -81,12 +69,6 @@ struct Portas {
 /// arquivo, e 210.000 iteracoes por login fariam a bateria levar segundos por
 /// nada.
 fn subir(base: &std::path::Path, cifra_fio: &str, atras_de_proxy: bool) -> (Arc<Servidor>, Portas) {
-    let dados = porta_livre();
-    let portas = Portas {
-        web: porta_livre(),
-        rest: porta_livre(),
-        swagger: porta_livre(),
-    };
     let proxy = if atras_de_proxy {
         r#", "atras_de_proxy": true"#
     } else {
@@ -99,7 +81,7 @@ fn subir(base: &std::path::Path, cifra_fio: &str, atras_de_proxy: bool) -> (Arc<
         &caminho,
         format!(
             r#"{{
-              "bind": "127.0.0.1:{dados}",
+              "bind": "127.0.0.1:0",
               "base": "{}",
               "token": "{TOKEN}",
               "log_acessos": "{}",
@@ -109,19 +91,16 @@ fn subir(base: &std::path::Path, cifra_fio: &str, atras_de_proxy: bool) -> (Arc<
               "usuarios": [
                 {{ "id": 2, "login": "{LOGIN}", "nome": "Ana", "senha_hash": "{h}",
                    "ativo": true, "supervisor": true }} ],
-              "web":  {{ "ligado": true, "bind": "127.0.0.1:{}"{proxy} }},
-              "rest": {{ "ligado": true, "bind": "127.0.0.1:{}",
+              "web":  {{ "ligado": true, "bind": "127.0.0.1:0"{proxy} }},
+              "rest": {{ "ligado": true, "bind": "127.0.0.1:0",
                          "swagger_ligado": true,
-                         "swagger_bind": "127.0.0.1:{}"{proxy} }}{cifra_fio}
+                         "swagger_bind": "127.0.0.1:0"{proxy} }}{cifra_fio}
             }}"#,
             bar(base.join("base")),
             bar(base.join("acessos.log")),
             bar(base.join("blacklist.json")),
             bar(base.join("dblink.json")),
             bar(base.join("jobs.json")),
-            portas.web,
-            portas.rest,
-            portas.swagger,
         ),
     )
     .unwrap();
@@ -132,6 +111,15 @@ fn subir(base: &std::path::Path, cifra_fio: &str, atras_de_proxy: bool) -> (Arc<
     std::thread::spawn(move || {
         let _ = copia.escutar();
     });
+    // As quatro portas REAIS, lidas do proprio servidor -- pedido 401. O
+    // `config.json` pediu "0" nas quatro; escolher um numero por fora e
+    // solta-lo antes do `bind` de verdade era exatamente a janela que os dois
+    // vermelhos deste arquivo (registrados no pedido 401) suspeitavam.
+    let portas = Portas {
+        web: comum::porta_real(|| s.porta_web()),
+        rest: comum::porta_real(|| s.porta_rest()),
+        swagger: comum::porta_real(|| s.porta_swagger()),
+    };
     // Por CONDICAO, nunca por tempo fixo: dormir passa nesta maquina e falha
     // na proxima. As tres portas, porque as tres sao provadas.
     for porta in [portas.web, portas.rest, portas.swagger] {

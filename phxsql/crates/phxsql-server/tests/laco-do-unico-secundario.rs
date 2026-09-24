@@ -47,6 +47,18 @@ const TOKEN: &str = "unico-secundario";
 /// outros testes de replicacao desta pasta.
 const ESPERA: Duration = Duration::from_secs(20);
 
+/// **Excecao nomeada do pedido 401.** A generalidade dos arquivos de teste
+/// deste crate trocou isto por porta 0 lida de volta do proprio servidor
+/// (`Servidor::porta_dos_dados()`), fechando a corrida por construcao. Aqui
+/// nao da: `terreno_com` PRECISA escrever a porta do `parceiro` (`porta_b`)
+/// no `Origem` de `alfa` ANTES de `beta` sequer existir -- e de proposito,
+/// porque o cenario que este arquivo mede e o que acontece EM QUANTO o
+/// parceiro esta fechado (ver o comentario de `terreno_com`). Inverter a
+/// ordem (subir `beta` primeiro, ler a porta real, so entao subir `alfa`)
+/// mudaria o cenario: `alfa` nasceria com o parceiro JA respondendo, e o
+/// teste deixaria de medir "dado local nasce sem corrida com o parceiro
+/// fechado". Fechar isso por construcao pediria uma forma de anunciar a
+/// origem DEPOIS do arranque -- producao nova que o produto nao usa hoje.
 fn porta_livre() -> u16 {
     TcpListener::bind("127.0.0.1:0")
         .unwrap()

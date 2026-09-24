@@ -1017,6 +1017,19 @@ pub struct Servidor {
     proximo_ouvinte: Mutex<Option<TcpListener>>,
     /// Onde a porta de dados escuta agora, que nem sempre e o `bind`.
     endereco_dos_dados: Mutex<Option<SocketAddr>>,
+    /// Onde as tres portas HTTP REALMENTE ligaram -- pedido 401.
+    ///
+    /// Sem isto, um teste que pede `bind: "127.0.0.1:0"` (a porta que o
+    /// sistema escolher) nao tinha como saber QUAL porta o sistema deu: a
+    /// unica saida era ESCOLHER um numero antes (reservar, soltar, escrever
+    /// no config) e torcer para ninguem mais pegar o mesmo numero entre o
+    /// soltar e o `bind` de verdade -- a corrida que o pedido 401 fecha. As
+    /// tres nascem uma vez so, no arranque (`subir_web`/`subir_rest`/
+    /// `subir_swagger`), e nunca trocam depois -- ao contrario da porta de
+    /// dados, que tem `servico_subir` para religar noutro endereco.
+    endereco_web: Mutex<Option<SocketAddr>>,
+    endereco_rest: Mutex<Option<SocketAddr>>,
+    endereco_swagger: Mutex<Option<SocketAddr>>,
     /// As vagas da porta de dados: uma [`Permissao`] por conexao viva, teto
     /// `conexoes_max`. Era um `AtomicUsize` com `fetch_add` ao aceitar e
     /// `fetch_sub` no fim do fecho da thread -- e um panico dentro do
@@ -1353,6 +1366,9 @@ impl Servidor {
             parar_de_aceitar: AtomicBool::new(false),
             proximo_ouvinte: Mutex::new(None),
             endereco_dos_dados: Mutex::new(None),
+            endereco_web: Mutex::new(None),
+            endereco_rest: Mutex::new(None),
+            endereco_swagger: Mutex::new(None),
             avisados: Mutex::new(HashMap::new()),
             saude,
             permissoes_de_dados,
@@ -1792,6 +1808,48 @@ impl Servidor {
     /// O registro da telemetria, para quem precisa anotar alguma coisa nele.
     pub fn telemetria(&self) -> &Arc<crate::telemetria::Telemetria> {
         &self.telemetria
+    }
+
+    /// A porta de dados que este processo REALMENTE abriu -- pedido 401.
+    ///
+    /// `None` antes do `bind` (a thread do `escutar` ainda nao chegou la) ou
+    /// com a porta parada por `servico_parar`. Quem pede `bind: "…:0"` no
+    /// `config.json` e precisa saber que numero o sistema deu usa isto, em
+    /// vez de reservar um numero por fora e torcer para ninguem mais pega-lo
+    /// antes do `bind` de verdade.
+    pub fn porta_dos_dados(&self) -> Option<u16> {
+        self.endereco_dos_dados
+            .lock()
+            .ok()
+            .and_then(|e| *e)
+            .map(|e| e.port())
+    }
+
+    /// A porta da interface web REALMENTE aberta -- mesmo motivo da de cima.
+    pub fn porta_web(&self) -> Option<u16> {
+        self.endereco_web
+            .lock()
+            .ok()
+            .and_then(|e| *e)
+            .map(|e| e.port())
+    }
+
+    /// A porta do webservice REST REALMENTE aberta -- mesmo motivo.
+    pub fn porta_rest(&self) -> Option<u16> {
+        self.endereco_rest
+            .lock()
+            .ok()
+            .and_then(|e| *e)
+            .map(|e| e.port())
+    }
+
+    /// A porta do explorador da API REALMENTE aberta -- mesmo motivo.
+    pub fn porta_swagger(&self) -> Option<u16> {
+        self.endereco_swagger
+            .lock()
+            .ok()
+            .and_then(|e| *e)
+            .map(|e| e.port())
     }
 
     /// Sobe o servidor e atende ate o processo ser encerrado.
@@ -8108,6 +8166,14 @@ impl Servidor {
                 return;
             }
         };
+        // O REAL, lido do ouvinte -- nao o `endereco` de cima, que e o do
+        // config e continua "…:0" quando o `bind` pede porta 0. E' isto que
+        // `porta_web()` devolve para quem subiu com porta 0 (pedido 401).
+        if let Ok(e) = ouvinte.local_addr() {
+            if let Ok(mut atual) = self.endereco_web.lock() {
+                *atual = Some(e);
+            }
+        }
         eprintln!(
             "interface web em http://{endereco} | sessao de {} min",
             self.config.web.sessao_minutos
@@ -8309,6 +8375,13 @@ impl Servidor {
                 return;
             }
         };
+        // Mesmo motivo do `subir_web`: o REAL, lido do ouvinte, para
+        // `porta_rest()` responder a quem subiu com porta 0.
+        if let Ok(e) = ouvinte.local_addr() {
+            if let Ok(mut atual) = self.endereco_rest.lock() {
+                *atual = Some(e);
+            }
+        }
         eprintln!(
             "webservice REST em http://{endereco}{} | especificacao em \
              http://{endereco}/openapi.json",
@@ -8340,6 +8413,13 @@ impl Servidor {
                 return;
             }
         };
+        // Mesmo motivo do `subir_web`: o REAL, lido do ouvinte, para
+        // `porta_swagger()` responder a quem subiu com porta 0.
+        if let Ok(e) = ouvinte.local_addr() {
+            if let Ok(mut atual) = self.endereco_swagger.lock() {
+                *atual = Some(e);
+            }
+        }
         eprintln!("explorador da API REST em http://{endereco}");
         self.aceitar_http(ouvinte, "swagger", |s, fluxo, par| {
             s.atender_swagger(fluxo, par)

@@ -17,23 +17,16 @@ mod comum;
 use comum::DirTemp;
 
 use std::io::{BufRead, BufReader, Write};
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::net::{SocketAddr, TcpStream};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use phxsql_server::{Config, Servidor};
 
-fn porta_livre() -> u16 {
-    TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
-}
-
-fn subir_servidor(base: &std::path::Path, porta: u16, token: &str) -> Arc<Servidor> {
+/// Pede a porta 0 e devolve a REAL, lida do proprio servidor -- pedido 401.
+fn subir_servidor(base: &std::path::Path, token: &str) -> (Arc<Servidor>, u16) {
     let mut c = Config {
-        bind: format!("127.0.0.1:{porta}"),
+        bind: "127.0.0.1:0".into(),
         base: base.to_path_buf(),
         log_acessos: base.join("acessos.log"),
         blacklist: base.join("blacklist.json"),
@@ -62,8 +55,9 @@ fn subir_servidor(base: &std::path::Path, porta: u16, token: &str) -> Arc<Servid
     std::thread::spawn(move || {
         let _ = copia.escutar();
     });
+    let porta = comum::porta_real(|| s.porta_dos_dados());
     esperar_porta(porta).expect("o servidor nao subiu");
-    s
+    (s, porta)
 }
 
 fn esperar_porta(porta: u16) -> Result<(), String> {
@@ -103,10 +97,8 @@ fn pasta(nome: &str) -> DirTemp {
 fn a_sonda_le_o_outro_servidor_pelo_soquete() {
     let base_a = pasta("outro");
     let base_b = pasta("daqui");
-    let porta_a = porta_livre();
-    let porta_b = porta_livre();
-    let _a = subir_servidor(&base_a, porta_a, "token-do-outro");
-    let _b = subir_servidor(&base_b, porta_b, "token-daqui");
+    let (_a, porta_a) = subir_servidor(&base_a, "token-do-outro");
+    let (_b, porta_b) = subir_servidor(&base_b, "token-daqui");
 
     // O "outro lado" ganha um banco com duas linhas: e a posicao que a sonda
     // tem de enxergar de fora.

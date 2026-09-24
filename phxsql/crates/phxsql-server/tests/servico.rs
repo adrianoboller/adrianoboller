@@ -19,47 +19,22 @@ use phxsql_server::{Config, Servidor};
 
 const TOKEN: &str = "teste-do-servico";
 
-/// Uma porta livre, tomada e solta na hora -- e NUNCA uma que este binario ja
-/// entregou.
+/// Pede a porta 0 e devolve a REAL, lida do proprio servidor -- pedido 401.
 ///
-/// # O que o comentario antigo afirmava, e a CI desmentiu
+/// # O que este arquivo ja pagou por escolher um numero por fora
 ///
-/// Ele dizia ser «o jeito de nao brigar com outro teste rodando em paralelo».
-/// Nao era: entre soltar a porta e o servidor toma-la corre a construcao do
-/// `Config` inteiro, e um `bind(:0)` de outra thread do MESMO binario podia
-/// receber a porta recem-solta. Os testes de um arquivo rodam em threads de um
-/// processo so, entao a briga era interna.
-///
-/// A CI pegou em 03/09/2026, e pegou do jeito pior: o servidor avisou
-/// «interface web NAO subiu: Address already in use», o `esperar_porta` viu a
-/// porta ABERTA -- era quem a tinha tomado --, o teste conversou com um soquete
-/// alheio e morreu num `WouldBlock` que nao dizia nada sobre a causa.
-///
-/// O conserto e um conjunto das portas ja entregues neste processo, que e
-/// exatamente o caso observado. **Colisao com processo de FORA continua
-/// possivel** e isso fica escrito em vez de prometido: fecha-la exigiria o
-/// servidor aceitar um descritor ja aberto, que e outra mudanca.
-fn porta_livre() -> u16 {
-    use std::collections::HashSet;
-    use std::sync::{Mutex, OnceLock};
-    static ENTREGUES: OnceLock<Mutex<HashSet<u16>>> = OnceLock::new();
-    let entregues = ENTREGUES.get_or_init(|| Mutex::new(HashSet::new()));
-    for _ in 0..64 {
-        let p = TcpListener::bind("127.0.0.1:0")
-            .unwrap()
-            .local_addr()
-            .unwrap()
-            .port();
-        if entregues.lock().unwrap().insert(p) {
-            return p;
-        }
-    }
-    panic!("64 tentativas e toda porta ja tinha sido entregue neste binario");
-}
-
-fn subir_servidor(base: &std::path::Path, porta: u16) -> Arc<Servidor> {
+/// Ate o pedido 401 a porta nascia de um `porta_livre()` que reservava,
+/// soltava e guardava um conjunto dos numeros ja entregues NESTE processo --
+/// um remendo, nao um conserto: a CI pegou em 03/09/2026 a mesma familia de
+/// corrida, so que entre threads do MESMO binario, um `bind(:0)` de uma
+/// thread recebendo a porta que a outra tinha acabado de soltar. O servidor
+/// avisou «Address already in use», o `esperar_porta` viu a porta ABERTA --
+/// era quem a tinha tomado --, e o teste conversou com um soquete alheio.
+/// Pedir porta 0 e ler a REAL de volta fecha a janela por construcao: nao ha
+/// mais numero nenhum escolhido por fora para outra thread disputar.
+fn subir_servidor(base: &std::path::Path) -> (Arc<Servidor>, u16) {
     let mut c = Config {
-        bind: format!("127.0.0.1:{porta}"),
+        bind: "127.0.0.1:0".into(),
         base: base.to_path_buf(),
         log_acessos: base.join("acessos.log"),
         blacklist: base.join("blacklist.json"),
@@ -82,8 +57,9 @@ fn subir_servidor(base: &std::path::Path, porta: u16) -> Arc<Servidor> {
     std::thread::spawn(move || {
         let _ = copia.escutar();
     });
+    let porta = comum::porta_real(|| s.porta_dos_dados());
     esperar_porta(porta, true).expect("o servidor nao subiu");
-    s
+    (s, porta)
 }
 
 /// Espera a porta ficar como se quer, ate dois segundos.
@@ -140,8 +116,7 @@ fn pasta(nome: &str) -> DirTemp {
 #[test]
 fn parar_solta_a_porta_e_subir_a_devolve() {
     let base = pasta("parar-subir");
-    let porta = porta_livre();
-    let _s = subir_servidor(&base, porta);
+    let (_s, porta) = subir_servidor(&base);
 
     // No ar.
     let r = pedir(
@@ -171,19 +146,21 @@ fn parar_solta_a_porta_e_subir_a_devolve() {
 #[test]
 fn trocar_de_porta_pela_tela() {
     let base = pasta("trocar");
-    let velha = porta_livre();
-    let s = subir_servidor(&base, velha);
-    let nova = porta_livre();
+    let (s, velha) = subir_servidor(&base);
 
+    // O pedido TAMBEM manda porta 0: quem troca pela tela nao precisa
+    // adivinhar um numero livre, e o teste nao teria como saber um numero
+    // real sem antes ligar nele -- exatamente a corrida do pedido 401, agora
+    // do lado do `servico_subir`. A resposta confirma a troca; o numero novo
+    // sai de `porta_dos_dados()` depois dela.
     let r = pedir(
         velha,
-        &format!(
-            "{{\"token\":\"{TOKEN}\",\"op\":\"servico_subir\",\"bind\":\"127.0.0.1:{nova}\"}}"
-        ),
+        &format!("{{\"token\":\"{TOKEN}\",\"op\":\"servico_subir\",\"bind\":\"127.0.0.1:0\"}}"),
     );
     assert!(r.contains("\"ok\":true"), "{r}");
     assert!(r.contains("\"trocou_de_porta\":true"), "{r}");
 
+    let nova = comum::porta_trocou_para(|| s.porta_dos_dados(), velha);
     esperar_porta(nova, true).unwrap();
     esperar_porta(velha, false).unwrap();
 
@@ -192,10 +169,13 @@ fn trocar_de_porta_pela_tela() {
         &format!("{{\"token\":\"{TOKEN}\",\"op\":\"servico\"}}"),
     );
     assert!(r.contains(&format!(":{nova}")), "{r}");
-    // O arquivo NAO foi reescrito, e a tela tem de conseguir dizer isso.
+    // O arquivo NAO foi reescrito, e a tela tem de conseguir dizer isso: o
+    // `bind` configurado continua o texto "0" que este teste escreveu -- e
+    // nunca vira um numero de porta, porque a resolucao de porta 0 acontece
+    // so no `bind`, nunca na leitura do campo bruto do config.
     assert!(r.contains("\"difere_do_arquivo\":true"), "{r}");
     assert!(
-        r.contains(&format!("127.0.0.1:{velha}")),
+        r.contains("\"bind_configurado\":\"127.0.0.1:0\""),
         "o bind do arquivo: {r}"
     );
     drop(s);
@@ -209,11 +189,13 @@ fn trocar_de_porta_pela_tela() {
 #[test]
 fn porta_ocupada_nao_derruba_o_que_estava_no_ar() {
     let base = pasta("ocupada");
-    let porta = porta_livre();
-    let _s = subir_servidor(&base, porta);
+    let (_s, porta) = subir_servidor(&base);
 
-    let ocupada = porta_livre();
-    let _dono = TcpListener::bind(("127.0.0.1", ocupada)).unwrap();
+    // O dono nasce e FICA: nunca solta o que reservou, entao nao ha janela
+    // nenhuma para outro processo tomar o numero antes do `servico_subir`
+    // tentar -- e e exatamente essa janela que o pedido 401 fecha.
+    let _dono = TcpListener::bind("127.0.0.1:0").unwrap();
+    let ocupada = _dono.local_addr().unwrap().port();
 
     let r = pedir(
         porta,
@@ -236,8 +218,7 @@ fn porta_ocupada_nao_derruba_o_que_estava_no_ar() {
 #[test]
 fn endereco_escrito_errado_e_recusado_antes_de_qualquer_coisa() {
     let base = pasta("errado");
-    let porta = porta_livre();
-    let _s = subir_servidor(&base, porta);
+    let (_s, porta) = subir_servidor(&base);
 
     for bind in ["nao-e-endereco", "127.0.0.1:99999", ""] {
         let r = pedir(
@@ -265,11 +246,9 @@ fn endereco_escrito_errado_e_recusado_antes_de_qualquer_coisa() {
 #[test]
 fn a_web_levanta_a_porta_de_dados_depois_de_parada() {
     let base = pasta("volta");
-    let porta = porta_livre();
-    let porta_web = porta_livre();
 
     let mut c = Config {
-        bind: format!("127.0.0.1:{porta}"),
+        bind: "127.0.0.1:0".into(),
         base: base.to_path_buf(),
         log_acessos: base.join("acessos.log"),
         blacklist: base.join("blacklist.json"),
@@ -285,12 +264,14 @@ fn a_web_levanta_a_porta_de_dados_depois_de_parada() {
     // passaria a medir o portao errado.
     c.cifra_fio.exigir = false;
     c.web.ligado = true;
-    c.web.bind = format!("127.0.0.1:{porta_web}");
+    c.web.bind = "127.0.0.1:0".into();
     let s = Servidor::novo(c).unwrap();
     let copia = Arc::clone(&s);
     std::thread::spawn(move || {
         let _ = copia.escutar();
     });
+    let porta = comum::porta_real(|| s.porta_dos_dados());
+    let porta_web = comum::porta_real(|| s.porta_web());
     esperar_porta(porta, true).unwrap();
     esperar_porta(porta_web, true).unwrap();
 
@@ -348,9 +329,11 @@ fn pela_web(porta: u16, corpo: &str) -> String {
 
 /// Sobe um servidor com a politica de comandos proibidos -- o firewall do
 /// proprio servidor, provado pelo soquete como manda a licao do BULKINSERT.
-fn subir_com_politica(base: &std::path::Path, porta: u16, ajustar: impl FnOnce(&mut Config)) {
+///
+/// Pede a porta 0 e devolve a REAL, lida do proprio servidor -- pedido 401.
+fn subir_com_politica(base: &std::path::Path, ajustar: impl FnOnce(&mut Config)) -> u16 {
     let mut c = Config {
-        bind: format!("127.0.0.1:{porta}"),
+        bind: "127.0.0.1:0".into(),
         base: base.to_path_buf(),
         log_acessos: base.join("acessos.log"),
         blacklist: base.join("blacklist.json"),
@@ -368,10 +351,13 @@ fn subir_com_politica(base: &std::path::Path, porta: u16, ajustar: impl FnOnce(&
     c.web.ligado = false;
     ajustar(&mut c);
     let s = Servidor::novo(c).unwrap();
+    let copia = Arc::clone(&s);
     std::thread::spawn(move || {
-        let _ = s.escutar();
+        let _ = copia.escutar();
     });
+    let porta = comum::porta_real(|| s.porta_dos_dados());
     esperar_porta(porta, true).expect("o servidor nao subiu");
+    porta
 }
 
 /// O que o teste unitario NAO prova: que a PROXIMA CONEXAO do IP bloqueado e
@@ -380,8 +366,7 @@ fn subir_com_politica(base: &std::path::Path, porta: u16, ajustar: impl FnOnce(&
 #[test]
 fn ip_bloqueado_tem_a_proxima_conexao_recusada_e_soltar_devolve() {
     let base = pasta("firewall");
-    let porta = porta_livre();
-    subir_com_politica(&base, porta, |c| {
+    let porta = subir_com_politica(&base, |c| {
         c.politica.comandos_proibidos = vec!["excluir_tabela".into()];
         c.politica.tentativas_para_bloqueio = 3;
         c.politica.bloqueio_minutos = 60;
@@ -427,8 +412,7 @@ fn ip_bloqueado_tem_a_proxima_conexao_recusada_e_soltar_devolve() {
 #[test]
 fn whitelist_no_soquete_recusa_sem_nunca_bloquear() {
     let base = pasta("whitelist");
-    let porta = porta_livre();
-    subir_com_politica(&base, porta, |c| {
+    let porta = subir_com_politica(&base, |c| {
         c.politica.comandos_proibidos = vec!["excluir_tabela".into()];
         c.politica.whitelist = vec!["127.0.0.1".into()];
     });

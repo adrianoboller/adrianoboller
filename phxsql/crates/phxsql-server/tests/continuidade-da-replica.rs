@@ -17,7 +17,7 @@ mod comum;
 use comum::DirTemp;
 
 use std::io::{BufRead, BufReader, Write};
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::net::{SocketAddr, TcpStream};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -26,21 +26,13 @@ use phxsql_server::{Config, Origem, Papel, Servidor};
 
 const TOKEN: &str = "continuidade";
 
-fn porta_livre() -> u16 {
-    TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
-}
-
 fn pasta(nome: &str) -> DirTemp {
     DirTemp::novo(&format!("continuidade-{nome}"))
 }
 
-fn config_base(base: &std::path::Path, porta: u16) -> Config {
+fn config_base(base: &std::path::Path) -> Config {
     let mut c = Config {
-        bind: format!("127.0.0.1:{porta}"),
+        bind: "127.0.0.1:0".into(),
         base: base.to_path_buf(),
         log_acessos: base.join("acessos.log"),
         blacklist: base.join("blacklist.json"),
@@ -59,26 +51,31 @@ fn config_base(base: &std::path::Path, porta: u16) -> Config {
     c
 }
 
-fn subir(c: Config, porta: u16) -> Arc<Servidor> {
+/// Pede a porta 0 e devolve a REAL, lida do proprio servidor -- pedido 401.
+fn subir(c: Config) -> (Arc<Servidor>, u16) {
     let s = Servidor::novo(c).unwrap();
     let copia = Arc::clone(&s);
     std::thread::spawn(move || {
         let _ = copia.escutar();
     });
+    let porta = comum::porta_real(|| s.porta_dos_dados());
     esperar_porta(porta);
-    s
+    (s, porta)
 }
 
-fn subir_source(base: &std::path::Path, porta: u16) -> Arc<Servidor> {
-    let mut c = config_base(base, porta);
+fn subir_source(base: &std::path::Path) -> (Arc<Servidor>, u16) {
+    let mut c = config_base(base);
     c.replicacao.papel = Papel::Source;
     c.replicacao.id_servidor = "source-do-teste".into();
     c.replicacao.imagem_da_linha = true;
-    subir(c, porta)
+    subir(c)
 }
 
-fn subir_replica(base: &std::path::Path, porta: u16, porta_do_source: u16) -> Arc<Servidor> {
-    let mut c = config_base(base, porta);
+/// `porta_do_source` e' a porta REAL do source, ja no ar -- ele sobe primeiro
+/// (`subir_source`), e so entao a replica e' configurada apontando para o
+/// numero que ele realmente abriu. Nenhum numero e' escolhido por fora aqui.
+fn subir_replica(base: &std::path::Path, porta_do_source: u16) -> (Arc<Servidor>, u16) {
+    let mut c = config_base(base);
     c.replicacao.papel = Papel::Replica;
     c.replicacao.id_servidor = "replica-do-teste".into();
     c.replicacao.origens = vec![Origem {
@@ -96,7 +93,7 @@ fn subir_replica(base: &std::path::Path, porta: u16, porta_do_source: u16) -> Ar
         cifra: false,
         chave_do_fio: String::new(),
     }];
-    subir(c, porta)
+    subir(c)
 }
 
 fn esperar_porta(porta: u16) {
@@ -215,13 +212,11 @@ fn ids_na_replica(porta: u16) -> Vec<i64> {
 fn tabela_apagada_e_recriada_no_source_e_acusada_e_nao_aplicada() {
     let base_s = pasta("source-recria");
     let base_r = pasta("replica-recria");
-    let porta_s = porta_livre();
-    let porta_r = porta_livre();
-    let _source = subir_source(&base_s, porta_s);
+    let (_source, porta_s) = subir_source(&base_s);
     exigir(porta_s, r#""op":"criar_database","database":"loja""#);
     criar_clientes(porta_s);
     inserir(porta_s, 1..=3);
-    let _replica = subir_replica(&base_r, porta_r, porta_s);
+    let (_replica, porta_r) = subir_replica(&base_r, porta_s);
     esperar_eventos(porta_r, 3);
     assert_eq!(ids_na_replica(porta_r), vec![1, 2, 3]);
     assert_eq!(
@@ -272,13 +267,11 @@ fn tabela_apagada_e_recriada_no_source_e_acusada_e_nao_aplicada() {
 fn com_o_source_continuo_a_replica_segue_sem_recusa() {
     let base_s = pasta("source-segue");
     let base_r = pasta("replica-segue");
-    let porta_s = porta_livre();
-    let porta_r = porta_livre();
-    let _source = subir_source(&base_s, porta_s);
+    let (_source, porta_s) = subir_source(&base_s);
     exigir(porta_s, r#""op":"criar_database","database":"loja""#);
     criar_clientes(porta_s);
     inserir(porta_s, 1..=3);
-    let _replica = subir_replica(&base_r, porta_r, porta_s);
+    let (_replica, porta_r) = subir_replica(&base_r, porta_s);
     esperar_eventos(porta_r, 3);
     // Ociosa por duas rodadas: a conferencia pela rede roda e confirma.
     std::thread::sleep(Duration::from_millis(2500));

@@ -9,7 +9,7 @@ mod comum;
 use comum::DirTemp;
 
 use std::io::{BufRead, BufReader, Write};
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::net::{SocketAddr, TcpStream};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -18,14 +18,6 @@ use phxsql_server::{Config, Servidor};
 
 const TOKEN: &str = "teste-dos-jobs";
 const SENHA: &str = "segredo-de-teste";
-
-fn porta_livre() -> u16 {
-    TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
-}
 
 fn pasta(nome: &str) -> DirTemp {
     DirTemp::novo(&format!("jobs-{nome}"))
@@ -36,7 +28,6 @@ fn pasta(nome: &str) -> DirTemp {
 /// `com_cadastro` falso e o servidor sem usuario nenhum -- o caso VELHO, que
 /// nao pode mudar de comportamento por causa de uma regra nova.
 fn subir(base: &std::path::Path, com_cadastro: bool) -> (Arc<Servidor>, u16) {
-    let porta = porta_livre();
     // Uma iteracao so: a senha real nao interessa a este teste, e 210.000
     // iteracoes por login fariam a bateria levar segundos por nada.
     let h = phxsql_core::senha::cifrar_com(SENHA, 1);
@@ -57,8 +48,12 @@ fn subir(base: &std::path::Path, com_cadastro: bool) -> (Arc<Servidor>, u16) {
     // porque o que ela mede e o portao de PERMISSAO dos jobs. Sem esta linha a
     // recusa lida aqui seria a da cifra, e a prova passaria a medir o portao
     // errado -- justamente numa bateria cujo assunto e um portao.
+    // Porta 0: o sistema escolhe, e a porta REAL sai de `porta_dos_dados()`
+    // depois do `bind` -- pedido 401. Escolher um numero aqui e solta-lo
+    // antes do servidor existir deixava uma janela para outro teste em
+    // paralelo tomar o mesmo numero.
     let texto = format!(
-        r#"{{ "bind": "127.0.0.1:{porta}", "base": {base:?}, "token": "{TOKEN}",
+        r#"{{ "bind": "127.0.0.1:0", "base": {base:?}, "token": "{TOKEN}",
               "log_acessos": {log:?}, "blacklist": {bl:?}, "dblink": {dbl:?},
               "jobs": {jobs:?}, {usuarios}
               "cifra_fio": {{ "exigir": false }},
@@ -75,6 +70,7 @@ fn subir(base: &std::path::Path, com_cadastro: bool) -> (Arc<Servidor>, u16) {
     std::thread::spawn(move || {
         let _ = copia.escutar();
     });
+    let porta = comum::porta_real(|| s.porta_dos_dados());
     let alvo: SocketAddr = format!("127.0.0.1:{porta}").parse().unwrap();
     let ate = Instant::now() + Duration::from_secs(3);
     while Instant::now() < ate {

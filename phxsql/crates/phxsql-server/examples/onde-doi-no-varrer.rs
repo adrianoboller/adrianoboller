@@ -109,15 +109,6 @@ fn mediana(v: &mut [u128]) -> u128 {
     v[v.len() / 2]
 }
 
-/// Uma porta que esta livre agora. Ha corrida entre soltar e prender, e ela e
-/// aceitavel num medidor: se der ocupada, o proprio `escutar` reclama.
-fn porta_livre() -> u16 {
-    let o = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let p = o.local_addr().unwrap().port();
-    drop(o);
-    p
-}
-
 fn main() {
     let a: Vec<String> = std::env::args().collect();
     let n: i64 = a.get(1).map(|s| s.parse().unwrap()).unwrap_or(100_000);
@@ -147,10 +138,13 @@ fn main() {
 
     // O servidor, com tudo o que nao e a porta de dados DESLIGADO -- a web e o
     // REST prenderiam portas que este medidor nao usa.
-    let porta = porta_livre();
+    //
+    // Porta 0: o sistema escolhe, e a REAL sai de `porta_dos_dados()` depois
+    // do `bind` -- pedido 401. Fecha por construcao a corrida que a versao
+    // anterior deste medidor documentava e apenas aceitava.
     let mut c = Config {
         base: base.clone(),
-        bind: format!("127.0.0.1:{porta}"),
+        bind: "127.0.0.1:0".into(),
         log_acessos: base.join("acessos.log"),
         blacklist: base.join("blacklist.json"),
         dblink: base.join("dblink.json"),
@@ -168,6 +162,16 @@ fn main() {
             let _ = s.escutar();
         });
     }
+    let porta = {
+        let ate = Instant::now() + Duration::from_secs(10);
+        loop {
+            if let Some(p) = servidor.porta_dos_dados() {
+                break p;
+            }
+            assert!(Instant::now() < ate, "a porta nao ficou disponivel em 10 s");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    };
 
     // Espera a porta abrir em vez de dormir um tempo escolhido no olho.
     let alvo = format!("127.0.0.1:{porta}");

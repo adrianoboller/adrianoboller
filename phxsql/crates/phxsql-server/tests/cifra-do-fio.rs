@@ -17,8 +17,7 @@ mod comum;
 use comum::DirTemp;
 
 use std::io::{BufRead, BufReader, Write};
-use std::net::{SocketAddr, TcpListener, TcpStream};
-use std::sync::atomic::{AtomicU16, Ordering};
+use std::net::{SocketAddr, TcpStream};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -28,25 +27,6 @@ use phxsql_core::json::Json;
 use phxsql_server::{Config, Servidor};
 
 const TOKEN: &str = "o token de servico deste teste";
-
-/// Um contador proprio, para dois testes em paralelo nunca pedirem a MESMA
-/// porta -- o `bind` de prova sozinho tem corrida entre o `drop` e o uso.
-static PROXIMA: AtomicU16 = AtomicU16::new(7200);
-
-/// Uma porta livre na faixa reservada a estas provas.
-///
-/// Faixa fixa, e nao efemera: e o combinado desta bancada, para nunca esbarrar
-/// num servidor de outra prova rodando na mesma maquina.
-fn porta_livre() -> u16 {
-    loop {
-        let porta = PROXIMA.fetch_add(1, Ordering::SeqCst);
-        assert!(porta < 7250, "acabaram as portas entre 7200 e 7249");
-        if let Ok(l) = TcpListener::bind(("127.0.0.1", porta)) {
-            drop(l);
-            return porta;
-        }
-    }
-}
 
 /// Uma pasta so deste teste.
 ///
@@ -67,14 +47,14 @@ fn pasta(nome: &str) -> DirTemp {
 ///
 /// Existe porque montar o `Config` na mao ESCREVE os campos, e um teste que
 /// escreve o campo nao pode provar o padrao dele.
-fn subir_do_arquivo(base: &std::path::Path, porta: u16, secao: &str) -> Arc<Servidor> {
+fn subir_do_arquivo(base: &std::path::Path, secao: &str) -> (Arc<Servidor>, u16) {
     let caminho = base.join("config.json");
     let bar = |p: std::path::PathBuf| p.display().to_string().replace('\\', "/");
     std::fs::write(
         &caminho,
         format!(
             r#"{{
-              "bind": "127.0.0.1:{porta}",
+              "bind": "127.0.0.1:0",
               "base": "{}",
               "token": "{TOKEN}",
               "log_acessos": "{}",
@@ -91,15 +71,12 @@ fn subir_do_arquivo(base: &std::path::Path, porta: u16, secao: &str) -> Arc<Serv
         ),
     )
     .unwrap();
-    no_ar(
-        Servidor::novo(Config::ler(&caminho).unwrap()).unwrap(),
-        porta,
-    )
+    no_ar(Servidor::novo(Config::ler(&caminho).unwrap()).unwrap())
 }
 
-fn subir(base: &std::path::Path, porta: u16, exigir: bool, ligada: bool) -> Arc<Servidor> {
+fn subir(base: &std::path::Path, exigir: bool, ligada: bool) -> (Arc<Servidor>, u16) {
     let mut c = Config {
-        bind: format!("127.0.0.1:{porta}"),
+        bind: "127.0.0.1:0".into(),
         base: base.to_path_buf(),
         log_acessos: base.join("acessos.log"),
         blacklist: base.join("blacklist.json"),
@@ -114,21 +91,26 @@ fn subir(base: &std::path::Path, porta: u16, exigir: bool, ligada: bool) -> Arc<
     c.web.ligado = false;
     c.cifra_fio.exigir = exigir;
     c.cifra_fio.ligada = ligada;
-    no_ar(Servidor::novo(c).unwrap(), porta)
+    no_ar(Servidor::novo(c).unwrap())
 }
 
 /// Poe o servidor no ar e espera a porta atender -- por CONDICAO, e nao por
 /// tempo fixo: dormir um tempo passa nesta maquina e falha na proxima.
-fn no_ar(s: Arc<Servidor>, porta: u16) -> Arc<Servidor> {
+///
+/// Le a porta REAL do proprio servidor -- pedido 401: o `bind` do `config`
+/// pede porta 0, e so depois do `escutar()` chegar la existe um numero para
+/// ler. Nao ha janela de "escolher e torcer" porque nao se escolhe nada.
+fn no_ar(s: Arc<Servidor>) -> (Arc<Servidor>, u16) {
     let copia = Arc::clone(&s);
     std::thread::spawn(move || {
         let _ = copia.escutar();
     });
+    let porta = comum::porta_real(|| s.porta_dos_dados());
     let alvo: SocketAddr = format!("127.0.0.1:{porta}").parse().unwrap();
     let ate = Instant::now() + Duration::from_secs(5);
     while Instant::now() < ate {
         if TcpStream::connect_timeout(&alvo, Duration::from_millis(200)).is_ok() {
-            return s;
+            return (s, porta);
         }
         std::thread::sleep(Duration::from_millis(20));
     }
@@ -263,8 +245,7 @@ fn exercitar(c: &mut Conexao, marca: &str) {
 #[test]
 fn o_cliente_velho_sem_o_escape_escrito_e_recusado_com_o_motivo() {
     let base = pasta("velho");
-    let porta = porta_livre();
-    let _s = subir_do_arquivo(&base, porta, "");
+    let (_s, porta) = subir_do_arquivo(&base, "");
 
     // A leitura do padrao DE VERDADE, e nao de um campo que este teste
     // escreveu: o arquivo nao fala de `cifra_fio` em lugar nenhum.
@@ -328,8 +309,7 @@ fn o_cliente_velho_sem_o_escape_escrito_e_recusado_com_o_motivo() {
 #[test]
 fn o_escape_escrito_deixa_o_cliente_em_claro_entrar() {
     let base = pasta("escape");
-    let porta = porta_livre();
-    let _s = subir_do_arquivo(&base, porta, r#","cifra_fio": { "exigir": false }"#);
+    let (_s, porta) = subir_do_arquivo(&base, r#","cifra_fio": { "exigir": false }"#);
 
     let lido = Config::ler(base.join("config.json")).unwrap();
     assert!(
@@ -357,8 +337,7 @@ fn o_escape_escrito_deixa_o_cliente_em_claro_entrar() {
 #[test]
 fn exigir_escrito_no_arquivo_recusa_o_texto_claro() {
     let base = pasta("escrito-true");
-    let porta = porta_livre();
-    let _s = subir_do_arquivo(&base, porta, r#","cifra_fio": { "exigir": true }"#);
+    let (_s, porta) = subir_do_arquivo(&base, r#","cifra_fio": { "exigir": true }"#);
 
     let lido = Config::ler(base.join("config.json")).unwrap();
     assert!(lido.cifra_fio.exigir);
@@ -382,8 +361,7 @@ fn exigir_escrito_no_arquivo_recusa_o_texto_claro() {
 #[test]
 fn com_o_aperto_o_mesmo_trabalho_acontece_cifrado() {
     let base = pasta("tunel");
-    let porta = porta_livre();
-    let _s = subir(&base, porta, false, true);
+    let (_s, porta) = subir(&base, false, true);
 
     let mut c = Conexao::abrir(porta);
     let apresentada = c.cifrar(None).expect("o aperto tinha de fechar");
@@ -420,8 +398,7 @@ fn com_o_aperto_o_mesmo_trabalho_acontece_cifrado() {
 #[test]
 fn servidor_com_a_cifra_desligada_recusa_o_aperto() {
     let base = pasta("desligada");
-    let porta = porta_livre();
-    let _s = subir(&base, porta, false, false);
+    let (_s, porta) = subir(&base, false, false);
 
     let mut c = Conexao::abrir(porta);
     let erro = c
@@ -444,8 +421,7 @@ fn servidor_com_a_cifra_desligada_recusa_o_aperto() {
 #[test]
 fn exigir_recusa_texto_claro_e_deixa_o_tunel_passar() {
     let base = pasta("exigir");
-    let porta = porta_livre();
-    let _s = subir(&base, porta, true, true);
+    let (_s, porta) = subir(&base, true, true);
 
     let mut c = Conexao::abrir(porta);
     c.mandar_cru(&format!(r#"{{"token":"{TOKEN}","op":"ping"}}"#));
@@ -483,8 +459,7 @@ fn exigir_recusa_texto_claro_e_deixa_o_tunel_passar() {
 #[test]
 fn dentro_do_tunel_a_diretiva_confirma_a_cifra_desta_conexao() {
     let base = pasta("diretiva-do-tunel");
-    let porta = porta_livre();
-    let _s = subir(&base, porta, true, true);
+    let (_s, porta) = subir(&base, true, true);
 
     let mut c = Conexao::abrir(porta);
     c.cifrar(None).expect("o aperto tinha de fechar");
@@ -517,8 +492,7 @@ fn dentro_do_tunel_a_diretiva_confirma_a_cifra_desta_conexao() {
 #[test]
 fn registro_repetido_derruba_a_conexao() {
     let base = pasta("repetido");
-    let porta = porta_livre();
-    let _s = subir(&base, porta, false, true);
+    let (_s, porta) = subir(&base, false, true);
 
     let mut c = Conexao::abrir(porta);
     c.cifrar(None).unwrap();
@@ -547,8 +521,7 @@ fn registro_repetido_derruba_a_conexao() {
 #[test]
 fn registro_mexido_derruba_a_conexao() {
     let base = pasta("mexido");
-    let porta = porta_livre();
-    let _s = subir(&base, porta, false, true);
+    let (_s, porta) = subir(&base, false, true);
 
     let mut c = Conexao::abrir(porta);
     c.cifrar(None).unwrap();
@@ -577,8 +550,7 @@ fn registro_mexido_derruba_a_conexao() {
 #[test]
 fn fio_cortado_vira_erro_e_despedida_nao() {
     let base = pasta("corte");
-    let porta = porta_livre();
-    let _s = subir(&base, porta, false, true);
+    let (_s, porta) = subir(&base, false, true);
 
     // (a) o corte: um pedido, e o soquete morre sem despedida.
     {
@@ -639,8 +611,7 @@ fn fio_cortado_vira_erro_e_despedida_nao() {
 #[test]
 fn o_token_nao_aparece_nos_bytes_do_fio() {
     let base = pasta("escuta");
-    let porta = porta_livre();
-    let _s = subir(&base, porta, false, true);
+    let (_s, porta) = subir(&base, false, true);
 
     let mut c = Conexao::abrir(porta);
     c.cifrar(None).unwrap();

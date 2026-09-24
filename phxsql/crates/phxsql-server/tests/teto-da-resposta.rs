@@ -76,14 +76,6 @@ const GRANDE_MAS_CABE: usize = 1024 * 1024;
 /// perto disto.
 const PRAZO: Duration = Duration::from_secs(15);
 
-fn porta_livre() -> u16 {
-    TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
-}
-
 fn pasta(nome: &str) -> DirTemp {
     let d = DirTemp::novo(&format!("teto-resposta-{nome}"));
     std::fs::create_dir_all(d.join("base")).unwrap();
@@ -251,9 +243,10 @@ fn a_resposta_grande_que_cabe_no_teto_atravessa_como_sempre() {
 // Lado SERVIDOR: o cliente manda um pedido maior que o teto
 // ---------------------------------------------------------------------------
 
-fn subir_servidor(base: &std::path::Path, porta: u16) -> Arc<Servidor> {
+/// Pede a porta 0 e devolve a REAL, lida do proprio servidor -- pedido 401.
+fn subir_servidor(base: &std::path::Path) -> (Arc<Servidor>, u16) {
     let mut c = Config {
-        bind: format!("127.0.0.1:{porta}"),
+        bind: "127.0.0.1:0".into(),
         base: base.join("base"),
         log_acessos: base.join("acessos.log"),
         blacklist: base.join("blacklist.json"),
@@ -274,11 +267,12 @@ fn subir_servidor(base: &std::path::Path, porta: u16) -> Arc<Servidor> {
     std::thread::spawn(move || {
         let _ = copia.escutar();
     });
+    let porta = comum::porta_real(|| s.porta_dos_dados());
     let alvo: SocketAddr = format!("127.0.0.1:{porta}").parse().unwrap();
     let ate = Instant::now() + Duration::from_secs(5);
     while Instant::now() < ate {
         if TcpStream::connect_timeout(&alvo, Duration::from_millis(200)).is_ok() {
-            return s;
+            return (s, porta);
         }
         std::thread::sleep(Duration::from_millis(20));
     }
@@ -306,8 +300,7 @@ fn abrir(porta: u16) -> (TcpStream, BufReader<TcpStream>) {
 #[test]
 fn o_pedido_acima_do_teto_recebe_a_recusa_e_entra_no_log_com_o_tamanho() {
     let d = pasta("servidor");
-    let porta = porta_livre();
-    let _s = subir_servidor(&d, porta);
+    let (_s, porta) = subir_servidor(&d);
     let (mut escrita, mut leitor) = abrir(porta);
 
     // A linha nao e JSON valido, pela mesma razao do lado da replica: com o
@@ -373,8 +366,7 @@ fn o_pedido_acima_do_teto_recebe_a_recusa_e_entra_no_log_com_o_tamanho() {
 #[test]
 fn o_pedido_de_sempre_continua_sendo_atendido() {
     let d = pasta("velho");
-    let porta = porta_livre();
-    let _s = subir_servidor(&d, porta);
+    let (_s, porta) = subir_servidor(&d);
     let (mut escrita, mut leitor) = abrir(porta);
     writeln!(escrita, r#"{{"op":"ping","token":"{TOKEN}"}}"#).unwrap();
     escrita.flush().unwrap();

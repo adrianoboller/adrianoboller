@@ -23,7 +23,7 @@ mod comum;
 use comum::DirTemp;
 
 use std::io::{BufRead, BufReader, Read, Write};
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::net::{SocketAddr, TcpStream};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -37,22 +37,17 @@ const TOKEN: &str = "tok-protocolo-mcp";
 /// proposito: se fossem iguais, o teste do 401 nao provaria nada.
 const BEARER: &str = "bearer-do-rest";
 
-fn porta_livre() -> u16 {
-    TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
-}
-
 fn pasta(nome: &str) -> DirTemp {
     DirTemp::novo(&format!("mcp-http-{nome}"))
 }
 
 /// Sobe um servidor com a porta de dados E a porta REST ligadas.
-fn subir(base: &std::path::Path, dados: u16, rest: u16) -> Arc<Servidor> {
+///
+/// Pede porta 0 nas duas e devolve as REAIS, lidas do proprio servidor
+/// depois do `bind` -- pedido 401.
+fn subir(base: &std::path::Path) -> (Arc<Servidor>, u16, u16) {
     let mut c = Config {
-        bind: format!("127.0.0.1:{dados}"),
+        bind: "127.0.0.1:0".into(),
         base: base.to_path_buf(),
         log_acessos: base.join("acessos.log"),
         blacklist: base.join("blacklist.json"),
@@ -69,16 +64,18 @@ fn subir(base: &std::path::Path, dados: u16, rest: u16) -> Arc<Servidor> {
     c.cifra_fio.exigir = false;
     c.web.ligado = false;
     c.rest.ligado = true;
-    c.rest.bind = format!("127.0.0.1:{rest}");
+    c.rest.bind = "127.0.0.1:0".into();
     c.rest.token = BEARER.into();
     let s = Servidor::novo(c).unwrap();
     let copia = Arc::clone(&s);
     std::thread::spawn(move || {
         let _ = copia.escutar();
     });
+    let dados = comum::porta_real(|| s.porta_dos_dados());
+    let rest = comum::porta_real(|| s.porta_rest());
     esperar_porta(dados).expect("a porta de dados nao subiu");
     esperar_porta(rest).expect("a porta REST nao subiu");
-    s
+    (s, dados, rest)
 }
 
 fn esperar_porta(porta: u16) -> Result<(), String> {
@@ -189,8 +186,7 @@ fn semear(dados_porta: u16) {
 #[test]
 fn o_aperto_de_mao_e_a_leitura_atravessam_o_http() {
     let base = pasta("aperto");
-    let (d, r) = (porta_livre(), porta_livre());
-    let _s = subir(&base, d, r);
+    let (_s, d, r) = subir(&base);
     semear(d);
 
     // initialize.
@@ -266,8 +262,7 @@ fn o_aperto_de_mao_e_a_leitura_atravessam_o_http() {
 #[test]
 fn escrita_pelo_mcp_http_e_recusada() {
     let base = pasta("recusa");
-    let (d, r) = (porta_livre(), porta_livre());
-    let _s = subir(&base, d, r);
+    let (_s, d, r) = subir(&base);
     semear(d);
 
     let (codigo, corpo) = mcp(
@@ -314,8 +309,7 @@ fn escrita_pelo_mcp_http_e_recusada() {
 #[test]
 fn bearer_errado_e_recusado_no_mcp_e_no_rest() {
     let base = pasta("bearer");
-    let (d, r) = (porta_livre(), porta_livre());
-    let _s = subir(&base, d, r);
+    let (_s, _d, r) = subir(&base);
 
     // MCP com o Bearer errado.
     let (codigo, _) = http(
@@ -352,8 +346,7 @@ fn bearer_errado_e_recusado_no_mcp_e_no_rest() {
 #[test]
 fn get_no_mcp_responde_405_sem_sse() {
     let base = pasta("get");
-    let (d, r) = (porta_livre(), porta_livre());
-    let _s = subir(&base, d, r);
+    let (_s, _d, r) = subir(&base);
     let (codigo, _) = http(r, "GET", "/mcp", Some(BEARER), "");
     assert_eq!(codigo, 405, "GET /mcp tinha de ser 405 (sem SSE)");
 }
@@ -366,8 +359,7 @@ fn get_no_mcp_responde_405_sem_sse() {
 #[test]
 fn um_lote_jsonrpc_pelo_http_recebe_erro_e_nao_silencio() {
     let base = pasta("lote");
-    let (d, r) = (porta_livre(), porta_livre());
-    let _s = subir(&base, d, r);
+    let (_s, _d, r) = subir(&base);
     let (codigo, corpo) = mcp(
         r,
         r#"[{"jsonrpc":"2.0","id":1,"method":"ping"},{"jsonrpc":"2.0","id":2,"method":"ping"}]"#,
