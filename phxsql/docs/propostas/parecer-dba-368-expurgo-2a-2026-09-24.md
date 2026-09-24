@@ -85,7 +85,8 @@ A medição acima desmente os dois.
 
 - Depois de `sincronizar()`, `familias_devendo_em` = **0**.
 - Depois de `fechar_volume_da_trilha(true)`, `familias_devendo_em` = **1**.
-- Com o `clientes.lgpd` de 0 byte (queda de energia antes do writeback, o caso clássico do delalloc do ext4), `Table::abrir` falha com **`[SP000010] erro de E/S: failed to fill whole buffer`**.
+- Com o `clientes.lgpd` de 0 byte, `Table::abrir` falha com **`[SP000010] erro de E/S: failed to fill whole buffer`**.
+- O arquivo de 0 byte foi **simulado com `set_len(0)`**. A queda de energia que o produz é o caso conhecido do delalloc do ext4, e **não foi reproduzida contra o sistema operacional** nesta revisão. O que está medido é o efeito, e não a probabilidade.
 - É a tabela inteira que não abre, leitura inclusive, até alguém apagar o arquivo à mão.
 
 **Onde:**
