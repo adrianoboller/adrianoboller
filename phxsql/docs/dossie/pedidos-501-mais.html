@@ -223,7 +223,7 @@ footer{
 <div class="envelope">
 <header>
   <div class="rotulo">PhxSql · o dossiê do que foi pedido — página 7 de 7</div>
-  <h1>Pedidos 501 em diante<br>de 564 ao todo</h1>
+  <h1>Pedidos 501 em diante<br>de 566 ao todo</h1>
   <p class="chamada">Uma linha por pedido seu, na ordem em que você pediu. O
   estado é <strong>medido contra o código</strong>, não contra a lembrança — foi
   assim que a chave estrangeira saiu de «pronto» para «parcial», e o Centro de
@@ -238,25 +238,25 @@ footer{
   <nav class="faixas" aria-label="As 7 páginas de pedidos, por faixa"><a href="https://claude.ai/artifact/4jSZ5yZFnjEnbGGbE3i5nz">1–190</a><a href="https://claude.ai/artifact/MAc3CcjfCPbjVm5sQZwYoC">191–260</a><a href="https://claude.ai/artifact/R4iGBeRQt7ao6yffQkmGCp">261–310</a><a href="https://claude.ai/artifact/S1oHX53g9q4oqHSn7Yv3vm">311–350</a><a href="pedidos-351-410.html">351–410</a><a href="pedidos-411-500.html">411–500</a><a href="pedidos-501-mais.html" class="ativa" aria-current="page">501 em diante</a></nav>
 
   <div class="placar">
-    <div class="c"><div class="v">564</div><div class="r">pedidos, ao todo</div></div>
+    <div class="c"><div class="v">566</div><div class="r">pedidos, ao todo</div></div>
     <div class="c feito"><div class="v">395</div><div class="r">feitos</div></div>
     <div class="c parcial"><div class="v">19</div><div class="r">parciais</div></div>
     <div class="c planejado"><div class="v">74</div><div class="r">planejados</div></div>
-    <div class="c depois"><div class="v">76</div><div class="r">depois da versão</div></div>
+    <div class="c depois"><div class="v">78</div><div class="r">depois da versão</div></div>
   </div>
 
   <div class="faixa-info">
     <span class="rotulo-inline">Nesta página</span>
-    <strong>64</strong> pedidos (faixa 501 em diante) ·
+    <strong>66</strong> pedidos (faixa 501 em diante) ·
     <span class="feito">22 feitos</span> ·
     <span class="parcial">2 parciais</span> ·
     <span class="planejado">30 planejados</span> ·
-    <span class="depois">10 depois da versão</span>
+    <span class="depois">12 depois da versão</span>
   </div>
 </header>
 
 <h2>O que está aberto, nesta faixa</h2>
-<p class="sub">Os 32 que não fecharam nesta faixa (2 pela metade e 30 sem começar), com o motivo de cada um. O motivo importa mais que o estado: uns esperam trabalho, outros esperam uma decisão sua, e outros esperam coisa de fora deste repositório. (10 ficaram para depois desta versão — veja a lista completa abaixo.)</p>
+<p class="sub">Os 32 que não fecharam nesta faixa (2 pela metade e 30 sem começar), com o motivo de cada um. O motivo importa mais que o estado: uns esperam trabalho, outros esperam uma decisão sua, e outros esperam coisa de fora deste repositório. (12 ficaram para depois desta versão — veja a lista completa abaixo.)</p>
 <div class="rolo">
   <table>
     <thead><tr><th class="n">#</th><th class="st">estado</th><th>o que você pediu</th><th>onde está</th></tr></thead>
@@ -306,7 +306,7 @@ footer{
   não tem opinião própria sobre nenhum item.
 </div>
 
-<h2 id="todos">Os 64 desta faixa (501 em diante), na ordem em que você pediu</h2>
+<h2 id="todos">Os 66 desta faixa (501 em diante), na ordem em que você pediu</h2>
 <p class="sub">A numeração é a sequência real dos seus pedidos — ela diz
 <em>quando</em> cada coisa foi pedida, e é por isso que vale mantê-la. As
 outras 6 faixas estão no menu acima.</p>
@@ -391,6 +391,8 @@ outras 6 faixas estão no menu acima.</p>
       <tr data-e="planejado"><td class="n mono">562</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>A mesma cascata dispara o AFTER da filha dentro da transação e não fora dela</strong></td><td class="e">Papel C, mesmo parecer (P2), <strong>medido</strong>: solta, a auditoria fica com <code>mae:1</code>; na transação, o AFTER do elo dispara no COMMIT e cai no aviso do 262. A <code>INTEGRIDADE.md</code> §7.3 já decidiu «não dispara». Os motores empatam 5×5 (PG 16 e SQLite disparam, medidos; MySQL 8.0 não, medido; MariaDB não, pela KB) — por isso o conserto <strong>alinha o código à §7.3</strong>, e não sobe ao dono; só subiria se alguém propusesse mudar a §7.3. Conserto: a passada não junta o AFTER de elo, decisão num lugar só. <strong>Julgado pelo PhxJev antes de entrar na conta</strong> (preset <code>revisar</code>, 24/09/2026, selo <code>9bc66ada153a</code>): ☐, severidade 0,75, defeito ativo 0,20 (fica na conta pela dúvida).</td></tr>
       <tr data-e="planejado"><td class="n mono">563</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>O <code>Table::atualizar</code> do store embutido (FFI <code>phx_atualizar</code>, CLI) cascateia sem marca: queda no meio deixa a filha na chave velha, e o arranque do 522 a cala</strong></td><td class="e">Papel C, mesmo parecer (P3), que propunha ⏸ por ser produto; o juiz o manda para a conta: é o mesmo defeito que o 540 fechou só pelo servidor, e a órfã calada <strong>fere a regra primordial da integridade</strong> («só existe filho se o pai existir») — então é defeito a consertar, não pergunta ao dono sobre prometer atomicidade no embutido. O preço está declarado no <code>CONTRATO-1.0.md:95</code> (o 490 recusa até o <code>reindexar</code>), mas a filha continua na chave velha sem aviso. Conserto: levar a marca da cascata ao store, ou recusar a cascata no embutido dizendo por quê — frente própria, de projeto. <strong>Julgado pelo PhxJev antes de entrar na conta</strong> (preset <code>revisar</code>, 24/09/2026, selo <code>9bc66ada153a</code>): ☐ bloqueia?, severidade 2,35 (incerta), defeito ativo 0,45, fere pétrea 0,50.</td></tr>
       <tr data-e="planejado"><td class="n mono">564</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>A recuperação grava o diário sem imagem: num source replicado, a réplica recusa o evento completado e para no lote</strong></td><td class="e">Papel C, mesmo parecer (P4), <strong>lido, não medido — medir antes de consertar</strong> (source com <code>imagem_da_linha</code>, réplica, pânico na passada): o <code>transacao::completar</code> abre por <code>abrir_qualificada</code> e nunca chama <code>ligar_imagem_no_diario</code>, e a réplica recusa «veio sem imagem». Vale para todo COMMIT recuperado; o 540 amplia o alcance. É o irmão do conserto de <code>table.rs</code> (a filha herda a imagem), que ficou só no caminho que o motivou. Conserto provável: o <code>completar</code> liga a imagem pelo config, como o <code>abrir_travada</code>. <strong>Julgado pelo PhxJev antes de entrar na conta</strong> (preset <code>revisar</code>, 24/09/2026, selo <code>9bc66ada153a</code>): ☐ bloqueia?, severidade 2,30 (incerta), defeito ativo 0,75.</td></tr>
+      <tr data-e="depois"><td class="n mono">565</td><td class="st"><span class="pino depois">Depois da versão</span></td><td class="p"><strong>O <code>--example fsync-por-operacao</code> traça só <code>fsync</code> e não vê a subida do byte 52: publica 4 e 6 onde hoje são 4+1 e 6+1</strong></td><td class="e">Papel C, revisão do 533 (<code>docs/propostas/parecer-dba-533-2026-09-24.md</code>, P2), <strong>medido</strong>: o <code>strace</code> do exemplo (<code>fsync-por-operacao.rs:130</code>) traça <code>fsync,write,pwrite64</code> e não <code>fdatasync</code>, que é o que a subida usa (<code>sincronia::sync_data</code>). Só envelhece um número do <code>DESEMPENHO.md</code>. Conserto: pôr <code>fdatasync</code> no traço e regenerar as duas linhas. <strong>Julgado pelo PhxJev antes de entrar na conta</strong> (preset <code>revisar</code>, 24/09/2026, selo <code>e6df3eb19e01</code>): ⏸ (não é defeito ativo: 0,08), severidade 1,20.</td></tr>
+      <tr data-e="depois"><td class="n mono">566</td><td class="st"><span class="pino depois">Depois da versão</span></td><td class="p"><strong>Um <code>sincronizar</code> com o byte 52 já em 0 e nada sujo ainda paga 2 <code>fsync</code> no <code>.ndx</code></strong></td><td class="e">Papel C, mesmo parecer (P3), <strong>medido e anterior ao 533</strong>: 2.002 <code>fsync</code> em 1.000 atualizações sem troca de chave; o <code>pode_baixar_a_marca</code> (<code>ndx.rs</code>, perto de :1557) não confere o <code>sujo</code>. O pedido 258 deixou o <code>.ndx</code> fora do fsync seletivo de propósito — reabrir com o DBA antes de mexer. Desempenho, nenhuma garantia quebra. <strong>Julgado pelo PhxJev antes de entrar na conta</strong> (preset <code>revisar</code>, 24/09/2026, selo <code>e6df3eb19e01</code>): ⏸ (defeito ativo 0,08), severidade 1,17.</td></tr>
     </tbody>
   </table>
   <div class="vazio" id="vazio" hidden>Nenhum pedido bate com isso.</div>
