@@ -178,7 +178,7 @@ done
 # mediu que o disco cai do conforto ao alarme em vinte minutos, e o corte tem
 # de acontecer antes do alarme, nao junto dele.
 cortar_incremental() {
-  local inc perfil trava ultimo m idade livre t
+  local inc perfil trava ultimo m idade livre t motivo
   for inc in "$RAIZ"/target/debug/incremental "$RAIZ"/target/*/debug/incremental; do
     [ -d "$inc" ] || continue
     perfil=${inc%/incremental}
@@ -206,8 +206,14 @@ cortar_incremental() {
       printf "  %-52s %6s MiB  compilando AGORA (trava do cargo tomada), nao toco\n" "${inc#$REPO/}" "$((t/1024))"
       continue
     fi
-    printf "  %-52s %6s MiB  incremental (%s), trava do cargo livre\n" "${inc#$REPO/}" "$((t/1024))" \
-      "$([ "$idade" -ge "$QUENTE_MIN" ] && echo "frio: sem compilar ha $((idade/60)) h" || echo "$livre MiB livres < piso de $PISO_INCREMENTAL_MIB")"
+    # O motivo diz o que DE FATO decidiu. Com `--mesmo-assim` o disco pode ja
+    # estar acima do piso quando este perfil chega -- os cortes de cima o
+    # subiram --, e a frase «5640 MiB livres < piso de 4096» saiu assim no
+    # primeiro disparo do vigia, em 24/09/2026.
+    if [ "$idade" -ge "$QUENTE_MIN" ]; then motivo="frio: sem compilar ha $((idade/60)) h"
+    elif [ "$livre" -lt "$PISO_INCREMENTAL_MIB" ]; then motivo="$livre MiB livres < piso de $PISO_INCREMENTAL_MIB"
+    else motivo="quente, cortado por --mesmo-assim"; fi
+    printf "  %-52s %6s MiB  incremental (%s), trava do cargo livre\n" "${inc#$REPO/}" "$((t/1024))" "$motivo"
     if [ "$VER" != "--ver" ]; then
       # O `rm` roda DENTRO da trava; se ela foi tomada entre a conferencia de
       # cima e aqui, o `-n` recusa e nada se apaga.
