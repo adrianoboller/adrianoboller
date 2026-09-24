@@ -385,7 +385,23 @@ pub fn p2p_preparar(
         "P2P no ar -- {interface} {ip}/{prefixo}, UDP {porta}, modo {modo:?}, chave {}",
         para_hex(&no.publica())
     );
-    Ok((std::sync::Arc::new(no), tun, resumo))
+    let no = std::sync::Arc::new(no);
+    // O USB da rede sobe junto, preso a esta placa: compartilhar depois, com
+    // a rede ja ligada, vale na hora (o servidor rele o arquivo). Porta 3240
+    // ocupada (um usbipd rodando) nao impede a rede de ligar.
+    #[cfg(target_os = "linux")]
+    if let Ok(caminho) = arquivo_da_rede(o) {
+        let n = std::sync::Arc::clone(&no);
+        if let Err(e) = crate::usb::servir_rede(
+            caminho,
+            Some(interface.to_string()),
+            move || n.desligado(),
+            |m| eprintln!("phxvpn usb: {m}"),
+        ) {
+            eprintln!("phxvpn usb: sem compartilhamento de USB nesta rede -- {e}");
+        }
+    }
+    Ok((no, tun, resumo))
 }
 
 type Montado = (p2p::No, std::net::Ipv4Addr, u8, u16, p2p::Modo);
@@ -529,6 +545,175 @@ pub fn p2p_montar(
         no = no.com_rede(r, c);
     }
     Ok((no, ip, prefixo, porta, modo))
+}
+
+/// `usb ...` -- a mesma funcao para `phxvpn usb` e para o `USB` do console.
+/// `o.posicionais[0]` e a acao; `--sysfs` so existe para as provas.
+pub fn usb(o: &Opcoes) -> R<String> {
+    use crate::rede_p2p::Rede;
+    use crate::usb::{self, Sysfs};
+    let sysfs = match o.um("sysfs") {
+        Some(r) => Sysfs::em(std::path::Path::new(r)),
+        None => Sysfs::sistema(),
+    };
+    let arg = |i: usize, oque: &str| -> R<&str> {
+        o.posicionais
+            .get(i)
+            .map(String::as_str)
+            .ok_or_else(|| format!("falta {oque}"))
+    };
+    let ip = |t: &str| -> R<std::net::Ipv4Addr> {
+        t.parse().map_err(|_| format!("IP virtual invalido: {t}"))
+    };
+    match o.posicionais.first().map(|a| a.to_lowercase()).as_deref() {
+        Some("listar") | None => {
+            let v = sysfs.locais()?;
+            if v.is_empty() {
+                return Ok("nenhum dispositivo USB neste computador\n".into());
+            }
+            Ok(v.iter()
+                .map(|d| {
+                    let marca = if sysfs.driver(&d.busid).as_deref() == Some("usbip-host") {
+                        "  [compartilhado]"
+                    } else {
+                        ""
+                    };
+                    format!("{}{marca}\n", d.resumo())
+                })
+                .collect())
+        }
+        Some("compartilhar") => {
+            let busid = arg(1, "o busid (veja: usb listar)")?;
+            let caminho = arquivo_da_rede_sem_posicional(o)?;
+            let mut rede = Rede::ler(&caminho)?;
+            sysfs.compartilhar(busid)?;
+            if !rede.usb.iter().any(|u| u == busid) {
+                rede.usb.push(busid.to_string());
+                rede.gravar(&caminho)?;
+            }
+            Ok(format!(
+                "{busid} compartilhado na rede {} -- este computador deixa de ve-lo ate «usb parar»\n",
+                rede.nome
+            ))
+        }
+        Some("parar") => {
+            let busid = arg(1, "o busid")?;
+            let caminho = arquivo_da_rede_sem_posicional(o)?;
+            let mut rede = Rede::ler(&caminho)?;
+            rede.usb.retain(|u| u != busid);
+            rede.gravar(&caminho)?;
+            sysfs.parar(busid)?;
+            Ok(format!("{busid} voltou para este computador\n"))
+        }
+        Some("remotos") => {
+            let de = ip(arg(1, "o IP virtual do membro")?)?;
+            let v = usb::remotos(de)?;
+            if v.is_empty() {
+                return Ok(format!("{de} nao compartilha nada nesta rede\n"));
+            }
+            Ok(v.iter().map(|d| format!("{}\n", d.resumo())).collect())
+        }
+        Some("usar") => {
+            let de = ip(arg(1, "o IP virtual do membro")?)?;
+            let busid = arg(2, "o busid (veja: usb remotos IP)")?;
+            Ok(format!("{}\n", usb::usar(&sysfs, de, busid)?))
+        }
+        Some("soltar") => {
+            let porta = arg(1, "a porta (veja: usb portas)")?
+                .parse()
+                .map_err(|_| "porta invalida")?;
+            Ok(format!("{}\n", usb::soltar(&sysfs, porta)?))
+        }
+        Some("portas") => {
+            let v = usb::em_uso(&sysfs)?;
+            if v.is_empty() {
+                return Ok("nenhum USB remoto em uso aqui\n".into());
+            }
+            Ok(v.iter().map(|l| format!("{l}\n")).collect())
+        }
+        Some("servir") => usb_servir(o, sysfs),
+        Some(outro) => Err(format!(
+            "usb {outro}? use listar | compartilhar | parar | remotos | usar | soltar | portas | servir"
+        )),
+    }
+}
+
+/// `usb servir`: o servidor em primeiro plano. Com `--rede`, igual ao que
+/// sobe junto do `p2p ligar`. Sem ela (modo servidor, OpenVPN), a rede e
+/// dita a mao: `--ip` virtual, `--interface`, `--permitir CIDR` e `--busid`
+/// (repetiveis) -- e a interface e OBRIGATORIA, pela mesma razao da trava.
+fn usb_servir(o: &Opcoes, sysfs: crate::usb::Sysfs) -> R<String> {
+    use std::sync::Arc;
+    let log = |m: &str| eprintln!("phxvpn usb: {m}");
+    if o.um("rede").is_some() || o.um("arquivo").is_some() {
+        let h = crate::usb::servir_rede(
+            arquivo_da_rede_sem_posicional(o)?,
+            o.um("interface").map(str::to_string),
+            || false,
+            log,
+        )?;
+        let _ = h.join();
+        return Ok(String::new());
+    }
+    let ip: std::net::Ipv4Addr = o
+        .um("ip")
+        .ok_or("informe --rede, ou --ip --interface --permitir --busid")?
+        .parse()
+        .map_err(|_| "--ip invalido")?;
+    let interface = o
+        .um("interface")
+        .ok_or("--interface e obrigatoria: sem ela a LAN alcancaria o USB")?;
+    let redes = o
+        .todos("permitir")
+        .iter()
+        .map(|c| cidr(c))
+        .collect::<R<Vec<_>>>()?;
+    if redes.is_empty() {
+        return Err("--permitir CIDR (ex.: 10.8.0.0/24) e obrigatorio".into());
+    }
+    let busids: Vec<String> = o.todos("busid").iter().map(|b| b.to_string()).collect();
+    for b in &busids {
+        crate::usb::validar_busid(b)?;
+    }
+    let ouvinte = crate::usb::escutar(ip, Some(interface))?;
+    let srv = crate::usb::Servidor {
+        sysfs,
+        permitido: Arc::new(move |de| {
+            de != ip && redes.iter().any(|(r, m)| u32::from(de) & m == *r)
+        }),
+        compartilhado: Arc::new(move |b| busids.iter().any(|x| x == b)),
+    };
+    log(&format!(
+        "escutando {ip}:{} em {interface}",
+        crate::usb::PORTA
+    ));
+    srv.servir(ouvinte, || false, log);
+    Ok(String::new())
+}
+
+/// `10.8.0.0/24` -> (rede, mascara).
+fn cidr(t: &str) -> R<(u32, u32)> {
+    let (ip, p) = t
+        .split_once('/')
+        .ok_or_else(|| format!("CIDR invalido: {t}"))?;
+    let ip: std::net::Ipv4Addr = ip.parse().map_err(|_| format!("CIDR invalido: {t}"))?;
+    let p: u32 = p
+        .parse()
+        .ok()
+        .filter(|p| *p <= 32)
+        .ok_or_else(|| format!("CIDR invalido: {t}"))?;
+    let m = if p == 0 { 0 } else { u32::MAX << (32 - p) };
+    Ok((u32::from(ip) & m, m))
+}
+
+/// Como `arquivo_da_rede`, mas a rede NAO vem do posicional (que no `usb`
+/// e a acao e o busid).
+fn arquivo_da_rede_sem_posicional(o: &Opcoes) -> R<String> {
+    match (o.um("arquivo"), o.um("rede")) {
+        (Some(a), _) => Ok(a.to_string()),
+        (None, Some(r)) => Ok(crate::rede_p2p::Rede::caminho(r)),
+        _ => Err("informe a rede (--rede NOME)".into()),
+    }
 }
 
 #[cfg(test)]

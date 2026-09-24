@@ -27,4 +27,5 @@ pub mod tun;
 #[cfg(windows)]
 #[path = "tun_windows.rs"]
 pub mod tun;
+pub mod usb;
 pub mod web;

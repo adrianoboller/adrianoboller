@@ -63,6 +63,17 @@ const AJUDA: &str = "phxvpn -- redes virtuais no estilo Radmin, sobre OpenVPN
       ou pergunta). O arquivo guarda so a credencial derivada.
       No no: p2p criar/ligar com --repasse-usuario U (senha pedida ao ligar).
 
+  phxvpn usb listar
+  phxvpn usb compartilhar <busid> --rede NOME   (Linux, root)
+  phxvpn usb parar <busid> --rede NOME
+      Oferece um dispositivo USB aos membros da rede (USB/IP, porta 3240,
+      so no IP virtual e so para os pares). Sobe junto com o p2p ligar.
+  phxvpn usb remotos <IP virtual>
+  phxvpn usb usar <IP virtual> <busid>          (Linux: root + vhci-hcd;
+  phxvpn usb soltar <porta>                      Windows: usbip-win2)
+  phxvpn usb portas
+      Usa aqui o dispositivo de um membro, como se estivesse espetado.
+
   phxvpn cmd  (ou phxvpncmd) [/MODO:painel|p2p|ferramentas] [/PAINEL:http://..]
              [/COMANDO:\"linha\"] [/ENTRADA:script.txt]
       Console no estilo do prompt do MS-DOS, com tres modos. AJUDA dentro dele.
@@ -84,6 +95,7 @@ fn main() {
         Some("p2p") => cmd_p2p(&args[1..]),
         Some("repasse") => cmd_repasse(&args[1..]),
         Some("cmd") => phxvpn::console::principal(&args[1..]),
+        Some("usb") => comandos::usb(&Opcoes::de_args(&args[1..], &[])).map(|t| print!("{t}")),
         Some("mesa") => {
             let o = Opcoes::de_args(&args[1..], &["sem-janela"]);
             phxvpn::mesa::principal(

@@ -71,6 +71,8 @@ pub struct Rede {
     /// Ficha que ESTE no apresenta ao entrar (veio do convite); some quando
     /// o primeiro aperto fecha.
     pub ficha_de_entrada: Option<[u8; 16]>,
+    /// Dispositivos USB (busid) que ESTE computador oferece nesta rede.
+    pub usb: Vec<String>,
 }
 
 pub fn agora() -> u64 {
@@ -150,6 +152,7 @@ impl Rede {
             pares: Vec::new(),
             convites: Vec::new(),
             ficha_de_entrada: None,
+            usb: Vec::new(),
         }
     }
 
@@ -212,6 +215,10 @@ impl Rede {
                     .map(|f| Json::texto_de(para_hex(&f)))
                     .unwrap_or(Json::Nulo),
             ),
+            (
+                "usb",
+                Json::Lista(self.usb.iter().map(Json::texto_de).collect()),
+            ),
         ])
     }
 
@@ -256,6 +263,14 @@ impl Rede {
                 Some(f) => Some(ficha16(f)?),
                 None => None,
             },
+            usb: j
+                .campo("usb")
+                .and_then(Json::lista)
+                .unwrap_or_default()
+                .iter()
+                .filter_map(|u| u.texto().map(str::to_string))
+                .filter(|u| crate::usb::validar_busid(u).is_ok())
+                .collect(),
         })
     }
 
@@ -439,6 +454,7 @@ pub fn rede_do_convidado(c: &Convite, porta: u16) -> Rede {
         pares: vec![c.anfitriao.clone()],
         convites: Vec::new(),
         ficha_de_entrada: Some(c.ficha),
+        usb: Vec::new(),
     }
 }
 

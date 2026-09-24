@@ -36,4 +36,12 @@ A instalação pede: nome da empresa, finalidade, responsável, e-mail, telefone
 usuário e senha admin, **senha mestre criptográfica**, nome/IP/DNS do servidor
 e, opcional, o certificado digital da empresa (PEM).
 
+Um pendrive, token ou impressora de um membro pode ser usado pelos outros
+(USB/IP, só dentro da rede):
+
+```bash
+phxvpn usb compartilhar 1-1.2 --rede Matriz   # Linux, quem tem o dispositivo
+phxvpn usb usar 10.78.0.1 1-1.2               # Linux, ou Windows com usbip-win2
+```
+
 Desenho, provas, limites e o que falta: [`docs/PHXVPN.md`](docs/PHXVPN.md).

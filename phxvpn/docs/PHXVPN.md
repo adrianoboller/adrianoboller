@@ -37,6 +37,7 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [x] Segurança A5: `Host` conferido (DNS rebinding), POST só com JSON (CSRF), código de instalação de uso único
 - [x] Segurança A6: cliente PG recusa senha em claro, exige o SCRAM provado antes do «autenticado», teto de iterações
 - [x] Segurança M1, M2, M4, M5, M6, M7: teto de conexões e prazo total por pedido; segredo nasce 0600 e diretório 0700; senhas saem do ambiente; login só `[a-z0-9._-]`; cota de 3 redes por usuário; conexão do PG refeita e trava envenenada não derruba
+- [x] USB pela rede (USB/IP, porta 3240): compartilhar e usar no Linux só com `std` + sysfs; usar no Windows pelo usbip-win2; interopera com o `usbip` de referência
 - [x] Segurança C2: sorteio falha fechado (descritor único; `BCryptGenRandom` no Windows) — nunca mais mistura previsível
 
 ### Falta
@@ -55,6 +56,7 @@ Contagem das caixas abaixo (`grep -c '^- \[x\]'` / `'^- \[ \]'`).
 - [ ] P2P: a tela web do modo P2P (hoje: linha de comando e console)
 - [ ] P2P no Windows: **prova numa máquina real** com OpenVPN (driver TAP e `netsh` — o roteiro `prova-windows.ps1` está pronto)
 - [ ] P2P: `mac1`/cookie contra inundação de INICIO (o WireGuard tem; aqui ainda não)
+- [ ] USB: **prova com dispositivo real** (este contêiner não tem USB nem os módulos `usbip-host`/`vhci-hcd`); botões na janela do programa de mesa
 
 ## Portas e o controle de cada uma
 
@@ -328,6 +330,74 @@ parou na linha 2 com código 1; `LIGAR` + `PARES` pelo console em topologia
 de CGNAT pelo repasse, com ping 3/3. `BANCADA` nesta máquina: cifra a 2.582
 Mbit/s num núcleo e aperto completo em 1,14 ms. Compila para Windows
 (`cargo check --target x86_64-pc-windows-gnu`, 0 aviso); não rodado lá.
+
+## USB pela rede (24/09/2026)
+
+Pedido do dono: «as USB podem ser compartilhadas?». Decisão dele no mesmo dia:
+o Windows **pode quebrar a pétrea** de zero dependências para isso.
+
+**Hipóteses (papel J), antes de medir:**
+
+| | Hipótese | Resultado |
+|---|---|---|
+| H1 | USB/IP do kernel Linux; parte de usuário escrita aqui; Windows pelo usbip-win2 | **venceu** |
+| H2 | Encaminhar URBs em espaço de usuário (libusb) | morreu: biblioteca de fora nos dois lados E, do lado de quem usa, ainda precisaria de driver para o sistema ver o dispositivo |
+| H3 | Produto pronto (VirtualHere e similares) | morreu: licença paga por servidor e binário fechado |
+
+O que H1 comprou: **no Linux, nenhuma dependência nova.** A parte de usuário do
+USB/IP é pequena (duas mensagens de combinado) e o resto é o kernel; falamos
+com ele pelo sysfs, como o `usbip`/`usbipd` de referência. A exceção autorizada
+ficou só no Windows, e só do lado de quem **usa**: o usbip-win2 não tem o lado
+servidor.
+
+| | Linux | Windows |
+|---|---|---|
+| Compartilhar um dispositivo | sim (root, `modprobe usbip-host`) | não (o usbip-win2 não serve) |
+| Usar o de um membro | sim (root, `modprobe vhci-hcd`) | sim, com o [usbip-win2](https://github.com/vadimgrn/usbip-win2/releases) instalado |
+| Ver o que um membro oferece | sim | sim (código nosso, sem o usbip-win2) |
+
+```text
+phxvpn usb listar
+phxvpn usb compartilhar 1-1.2 --rede Matriz     # sai deste computador
+phxvpn usb remotos 10.78.0.1                    # no outro membro
+phxvpn usb usar 10.78.0.1 1-1.2                 # aparece como espetado aqui
+phxvpn usb portas / soltar N / parar 1-1.2 --rede Matriz
+```
+
+O servidor sobe sozinho com o `p2p ligar` (e com o «Ligar» da janela). Sem
+rede P2P (modo OpenVPN), roda avulso: `usb servir --ip IP --interface tun0
+--permitir 10.8.0.0/24 --busid 1-1`.
+
+**Segurança.** O USB/IP não tem senha nem cifra; quem alcança a porta lê o
+pendrive. Três travas, cada uma provada:
+
+1. **Presa à placa da rede** (`SO_BINDTODEVICE`). Escutar só no IP virtual
+   **não basta**, e isso está medido: em netns, um servidor sem a trava no
+   `10.99.0.1:3240` foi alcançado **pela LAN** (modelo de host fraco do Linux).
+   Com a trava, a LAN recebe `Connection refused` e a placa da rede é
+   atendida. Sem `--interface`, o `usb servir` recusa subir.
+2. **Só membro**: o IP de quem conecta tem de ser de um par da rede (relido a
+   cada conexão). Estranho não recebe nem um byte. No P2P, a origem dentro do
+   túnel já foi conferida contra a chave de quem mandou.
+3. **Só o compartilhado nesta rede**: preso ao `usbip-host` não basta; o busid
+   tem de estar no `usb` do arquivo da rede. E o busid que vem da rede é
+   validado antes de virar caminho no sysfs (`../1-1` é recusado).
+
+**Provas (24/09/2026):**
+
+- 8 testes contra um sysfs de mentira: 312 bytes nos deslocamentos da norma,
+  lista sem hub, só o compartilhado, estranho sem resposta, soquete entregue
+  ao `usbip-host`, recusa de em uso/torto, `bind`/`unbind` com as mesmas
+  escritas do `usbip`, porta livre do hub certo (`hs`/`ss`) no `vhci_hcd`.
+- **Interoperação**: o `usbip list -r` de referência (usbip-utils 2.0) lê o
+  nosso servidor e mostra fabricante, produto e a interface «Mass Storage /
+  SCSI / Bulk-Only» (`PHXVPN_USBIP=… cargo test o_usbip_de_referencia`).
+- **RED**: tirar o byte de preenchimento da interface derruba o teste de
+  interoperação; abrir a admissão derruba o do estranho.
+- `phxvpn.exe usb remotos` (Windows, sob o Wine) lê o servidor Linux.
+- **Não provado**: anexar um dispositivo real. Este contêiner não tem USB nem
+  os módulos do kernel; o `usar`/`compartilhar` com hardware fica para uma
+  máquina de verdade.
 
 ## Comparativo
 

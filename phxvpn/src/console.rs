@@ -122,6 +122,12 @@ Modo P2P (este computador):
         [/PORTA:51820] [/INTERFACE:phx0] [/CHAVE:p2p.chave]
                                         liga o tunel (Linux, root) e volta ao prompt
   PARES                                 situacao de cada par: caminho e sessao
+  USB LISTAR                            dispositivos USB deste computador
+  USB COMPARTILHAR <busid> /REDE:x      oferece aos membros (Linux, root)
+  USB PARAR <busid> /REDE:x             devolve a este computador
+  USB REMOTOS <ip>                      o que um membro compartilha
+  USB USAR <ip> <busid>                 usa aqui (Windows: usbip-win2)
+  USB SOLTAR <porta> | USB PORTAS       solta / lista os que estao em uso
 ";
 
 const AJUDA_FERRAMENTAS: &str = "\
@@ -534,6 +540,7 @@ impl<'a> Console<'a> {
                     &linhas,
                 ))
             }
+            "usb" => comandos::usb(o),
             #[cfg(not(any(target_os = "linux", windows)))]
             "ligar" | "pares" => Err("o P2P ainda so roda no Linux".into()),
             outro => Err(format!(
