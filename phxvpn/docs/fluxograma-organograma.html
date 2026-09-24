@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>phxvpn — fluxo e equipe</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@500;700&display=swap" rel="stylesheet">
+<style>
+:root{--fundo:#f6f7fb;--painel:#ffffff;--linha:#d5dae6;--texto:#0d1426;--fraco:#5a6378;
+--acento:#C63C0A;--verde:#157a4c;--ambar:#8a6100;--vermelho:#b3261e;--azul:#1f5fb8}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--fundo:#010418;--painel:#0a1122;
+--linha:#1c2742;--texto:#DDE2EB;--fraco:#8a93a8;--acento:#FF4D10;--verde:#3ecf8e;--ambar:#FFC43D;--vermelho:#ff5a5a;--azul:#5aa9ff}}
+:root[data-theme="dark"]{--fundo:#010418;--painel:#0a1122;--linha:#1c2742;--texto:#DDE2EB;--fraco:#8a93a8;
+--acento:#FF4D10;--verde:#3ecf8e;--ambar:#FFC43D;--vermelho:#ff5a5a;--azul:#5aa9ff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--fundo);color:var(--texto);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+header,main{max-width:1180px;margin:0 auto;padding:0 16px}
+header{padding-top:24px}
+h1,h2,h3{font-family:"Exo 2",system-ui,sans-serif;margin:0}
+h1{font-size:26px}h1 b{color:var(--acento)}
+h2{font-size:20px;margin:28px 0 6px}
+h3{font-size:16px;margin:18px 0 6px}
+.sub{color:var(--fraco);margin:4px 0 12px}
+nav{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 4px}
+nav button{font:inherit;cursor:pointer;background:transparent;border:1px solid var(--azul);color:var(--azul);border-radius:6px;padding:6px 12px}
+nav button[aria-selected="true"]{border-color:var(--acento);color:var(--acento);font-weight:600}
+.cartao{background:var(--painel);border:1px solid var(--linha);border-radius:10px;padding:14px;margin:10px 0;overflow-x:auto}
+.cartao p{margin:0 0 8px}
+.mermaid{margin:0;min-width:640px}
+.mermaid:not([data-processed]){color:transparent;min-height:120px}
+.legenda{display:flex;flex-wrap:wrap;gap:12px;font-size:13px;color:var(--fraco)}
+.legenda span{display:inline-flex;align-items:center;gap:6px}
+.legenda i{width:14px;height:14px;border-radius:3px;border:2px solid;display:inline-block}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{border-bottom:1px solid var(--linha);padding:6px 8px;text-align:left;vertical-align:top}
+th{color:var(--fraco);font-weight:600}
+code{font:13px ui-monospace,monospace}
+.aba[hidden]{display:none}
+footer{max-width:1180px;margin:24px auto;padding:0 16px 24px;color:var(--fraco);font-size:13px}
+</style>
+</head>
+<body>
+<header>
+  <h1><b>phx</b>vpn — fluxograma e organograma</h1>
+  <p class="sub">Redes virtuais no estilo Radmin: modo servidor (OpenVPN + PostgreSQL) e modo P2P (Noise, sem servidor). Estado: 29 itens feitos, 14 faltando (67% feito), contados no <code>docs/PHXVPN.md</code> em 24/09/2026.</p>
+  <nav role="tablist">
+    <button role="tab" data-aba="fluxo" aria-selected="true">Fluxograma</button>
+    <button role="tab" data-aba="org" aria-selected="false">Organograma</button>
+  </nav>
+</header>
+<main>
+<section class="aba" id="fluxo">
+  <div class="legenda">
+    <span><i style="border-color:var(--verde)"></i>inclui / cria</span>
+    <span><i style="border-color:var(--azul)"></i>consulta / confere</span>
+    <span><i style="border-color:var(--ambar)"></i>decisão</span>
+    <span><i style="border-color:var(--vermelho)"></i>recusa / exclui</span>
+  </div>
+
+  <h2>1. Escolha do modo</h2>
+  <div class="cartao"><pre class="mermaid">
+flowchart LR
+  U([Usuário abre o phxvpn]):::cria --> Q{Há servidor da empresa?}:::dec
+  Q -- sim --> S[Modo servidor<br/>painel web + OpenVPN]:::cons
+  Q -- não --> P[Modo P2P<br/>sem servidor]:::cria
+  P --> N{Os dois lados alcançam<br/>um ao outro?}:::dec
+  N -- sim --> D[direto]:::cria
+  N -- não sei --> A[auto: tenta direto,<br/>cai no intermediário]:::dec
+  N -- não, CGNAT --> R[repasse: servidor<br/>intermediário com conta]:::cons
+  S & D & A & R --> I([Interfaces: janela phxvpnw ·<br/>console phxvpncmd · linha phxvpn]):::cons
+  classDef cria stroke:#3ecf8e,stroke-width:2px
+  classDef cons stroke:#5aa9ff,stroke-width:2px
+  classDef dec stroke:#FFC43D,stroke-width:2px
+  classDef rec stroke:#ff5a5a,stroke-width:2px
+  </pre></div>
+
+  <h2>2. Modo servidor — do primeiro acesso ao desligamento</h2>
+  <div class="cartao"><pre class="mermaid">
+flowchart TD
+  I0([Instalar o servidor]):::cria --> I1[phxvpn gera código de instalação<br/>de uso único no terminal]:::cria
+  I1 --> I2[Primeiro acesso ao painel:<br/>empresa, finalidade, responsável, e-mail,<br/>telefone, admin, senha admin, senha mestre]:::cria
+  I2 --> I3[Cofre: PBKDF2 310 mil it. →<br/>XChaCha20-Poly1305 com AAD por uso]:::cria
+  I3 --> I4[AC Ed25519 própria + chave tls-crypt<br/>seladas no cofre; esquema phx_* no PostgreSQL]:::cria
+  I4 --> L{Login}:::dec
+  L -->|Host errado| X1[421 — DNS rebinding]:::rec
+  L -->|POST sem JSON| X2[415 — CSRF]:::rec
+  L -->|senha errada| X3[limitador: 5 livres,<br/>depois dobra até 15 min]:::rec
+  X3 --> L
+  L -->|ok, SCRAM no PG| M{Ação}:::dec
+  M -->|Criar rede| C1[nome, finalidade, servidor:<br/>nome · IP · DNS · porta]:::cria
+  C1 --> C2[uma instância OpenVPN por rede:<br/>TLS 1.3 · tls-crypt · crl-verify · ccd-exclusive]:::cria
+  M -->|Entrar na rede| E1{senha da rede confere?}:::dec
+  E1 -->|não| X4[recusa sem dizer se a rede existe]:::rec
+  E1 -->|sim| E2[certificado X.509 clientAuth<br/>CN = login.rede.série]:::cria
+  E2 --> E3[perfil .ovpn: CA + cert + chave + tls-crypt]:::cria
+  E3 --> E4([cliente OpenVPN conecta<br/>IP fixo pelo ccd]):::cons
+  M -->|Remover membro| R1[série vai para phx_revogado]:::rec
+  R1 --> R2[CRL v2 assinada, número sobe]:::rec
+  R2 --> R3([OpenVPN recusa o certificado<br/>na próxima conexão]):::rec
+  classDef cria stroke:#3ecf8e,stroke-width:2px
+  classDef cons stroke:#5aa9ff,stroke-width:2px
+  classDef dec stroke:#FFC43D,stroke-width:2px
+  classDef rec stroke:#ff5a5a,stroke-width:2px
+  </pre></div>
+
+  <h2>3. Modo P2P — criar, convidar, entrar, ligar</h2>
+  <div class="cartao"><pre class="mermaid">
+flowchart TD
+  A1([Criar rede]):::cria --> A2[nome, IP virtual, modo<br/>direto · auto · repasse]:::cria
+  A2 --> A3[chave X25519 do nó + senha da rede<br/>→ PSK por PBKDF2]:::cria
+  A3 --> A4[Convidar: código phxvpn1.rede.selo<br/>cifrado com HKDF da PSK + ficha de uso único]:::cria
+  A4 -. canal seguro .-> B1([Convidado: Entrar na rede]):::cria
+  B1 --> B2{senha abre o selo?}:::dec
+  B2 -->|não| BX[recusa: código ou senha errados]:::rec
+  B2 -->|sim| B3[recebe IP, pares, porta, modo]:::cria
+  B3 --> L1([Ligar]):::cons
+  A4 --> L1
+  L1 --> L2{Lembrar a senha?}:::dec
+  L2 -->|sim| L3[DPAPI no Windows ·<br/>XChaCha + lembrar.chave no Linux]:::cria
+  L2 -->|não| L4
+  L3 --> L4[abre a placa: TUN no Linux ·<br/>TAP-Windows6 em modo TUN]:::cria
+  L4 --> H1[aperto Noise_IKpsk2_25519_ChaChaPoly_SHA256]:::cons
+  H1 --> H2{par conhecido<br/>ou ficha válida e não usada?}:::dec
+  H2 -->|não| HX[descarta calado]:::rec
+  H2 -->|carimbo repetido| HX
+  H2 -->|sim| H3{modo}:::dec
+  H3 -->|direto| T1[UDP direto]:::cons
+  H3 -->|auto| T2[tenta direto; sem resposta<br/>em ~10 s vai pelo repasse]:::dec
+  H3 -->|repasse| T3[REGISTRO com HMAC + conta<br/>usuário/senha do intermediário]:::cons
+  T2 --> T3
+  T1 & T3 --> K[túnel no ar]:::cria
+  K --> K1[malha: controle 'P' espalha a lista de pares]:::cons
+  K --> K2[ping 'E'/'e' e chat 'C' pela janela]:::cons
+  K --> K3[refaz as chaves aos 120 s · rejeita aos 180 s ·<br/>par que reiniciou volta em ~15 s]:::cons
+  K --> Z([Desligar: espera o nó parar<br/>antes de liberar a porta]):::rec
+  classDef cria stroke:#3ecf8e,stroke-width:2px
+  classDef cons stroke:#5aa9ff,stroke-width:2px
+  classDef dec stroke:#FFC43D,stroke-width:2px
+  classDef rec stroke:#ff5a5a,stroke-width:2px
+  </pre></div>
+
+  <h2>4. Caminho de um pacote no P2P</h2>
+  <div class="cartao"><pre class="mermaid">
+flowchart LR
+  subgraph Envio
+    P1[TUN entrega<br/>pacote IP]:::cons --> P2{IP destino<br/>é de um par?}:::dec
+    P2 -->|não| PX[descarta]:::rec
+    P2 -->|sim| P3{sessão<br/>confirmada?}:::dec
+    P3 -->|não| P4[inicia aperto<br/>e segura]:::dec
+    P3 -->|sim| P5[ChaCha20-Poly1305<br/>contador de 64 bits]:::cria
+    P5 --> P6[UDP direto<br/>ou via repasse]:::cons
+  end
+  subgraph Recebimento
+    Q1[UDP chega]:::cons --> Q2{tag confere?}:::dec
+    Q2 -->|não| QX[descarta]:::rec
+    Q2 -->|sim| Q3{contador na janela<br/>de 2.048?}:::dec
+    Q3 -->|repetido| QX
+    Q3 -->|sim| Q4{IP de origem =<br/>IP deste par?}:::dec
+    Q4 -->|não| QX
+    Q4 -->|sim| Q5[escreve na TUN]:::cria
+  end
+  P6 --> Q1
+  classDef cria stroke:#3ecf8e,stroke-width:2px
+  classDef cons stroke:#5aa9ff,stroke-width:2px
+  classDef dec stroke:#FFC43D,stroke-width:2px
+  classDef rec stroke:#ff5a5a,stroke-width:2px
+  </pre></div>
+</section>
+
+<section class="aba" id="org" hidden>
+  <h2>1. Equipe — os dez papéis e quem exerceu cada um no phxvpn</h2>
+  <p class="sub">Contorno cheio: papel exercido por subagente próprio. Tracejado: exercido pelo orquestrador (registrado, não dispensado em silêncio).</p>
+  <div class="cartao"><pre class="mermaid">
+flowchart TD
+  DONO([Dono — Adriano<br/>decide produto, pétrea e empate]):::dono
+  DONO --> A[A · Orquestrador<br/>divide, escolhe o nível do modelo, integra]:::sub
+  A --> B[B · Engenheiro<br/>código, fmt, clippy, suíte]:::orq
+  A --> C[C · DBA<br/>esquema phx_*, FK RESTRICT]:::orq
+  A --> D[D · Zelador<br/>espaço e processos]:::orq
+  A --> E[E · Designer<br/>janela, painel, prévias]:::orq
+  A --> F[F · Prova real<br/>netns, tcpdump, Wine, Chromium]:::orq
+  A --> G[G · QA<br/>catracas e guardas]:::orq
+  A --> H[H · Documentação<br/>PHXVPN.md, README, cognição]:::orq
+  A --> I[I · Versionador<br/>branch claude/phoenix-vpn]:::orq
+  A --> J[J · Pesquisador<br/>decide com a matriz dos maduros]:::orq
+  A --> SEC[SEC · Segurança<br/>revisão adversária]:::sub
+  J --> J1[pesquisa-rede #1<br/>desenho do P2P, NAT, Noise]:::sub
+  J --> J2[pesquisa-rede #2<br/>driver do Windows: TAP-Windows6]:::sub
+  J --> J3[pesquisa-motor<br/>normas e cripto]:::orq
+  classDef dono stroke:#FF4D10,stroke-width:3px
+  classDef sub stroke:#3ecf8e,stroke-width:2px
+  classDef orq stroke:#5aa9ff,stroke-width:2px,stroke-dasharray:5 4
+  </pre></div>
+
+  <h2>2. Componentes — binários, módulos e o que está fora</h2>
+  <div class="cartao"><pre class="mermaid">
+flowchart TD
+  subgraph Binarios[Binários]
+    B1[phxvpn<br/>linha de comando e servidor]
+    B2[phxvpnw<br/>programa de mesa + bandeja]
+    B3[phxvpncmd<br/>console com modos, estilo DOS]
+  end
+  subgraph Interface
+    MESA[mesa.rs + mesa.html/js<br/>janela em 127.0.0.1]
+    CON[console.rs]
+    CMD[comandos.rs]
+    BAN[bandeja.rs · iniciar.rs · lembrar.rs]
+  end
+  subgraph Servidor[Modo servidor]
+    HTTP[http.rs · web.rs · guarda.rs]
+    PAI[painel.rs]
+    PKI[pki.rs · cofre.rs]
+    PG[pg.rs — PostgreSQL v3 + SCRAM]
+    OVPN[ovpn.rs · supervisor.rs]
+  end
+  subgraph P2P[Modo P2P]
+    NO[p2p.rs — o nó]
+    REDE[rede_p2p.rs — convites e fichas]
+    NOISE[noise.rs · transporte.rs]
+    REP[repasse.rs — intermediário com contas]
+    TUN[tun.rs · tun_windows.rs · tap.rs]
+  end
+  CORE[[phxsql-core<br/>JSON, SHA-256, HMAC, PBKDF2,<br/>ChaCha20/XChaCha, X25519, Ed25519, fio]]
+  EXT1[(PostgreSQL)]
+  EXT2[/OpenVPN 2.6+/]
+  EXT3[/driver TAP-Windows6/]
+  B1 --> CMD & HTTP & NO & REP
+  B2 --> MESA & BAN
+  B3 --> CON --> CMD
+  MESA --> CMD --> NO
+  HTTP --> PAI --> PKI & PG & OVPN
+  NO --> REDE & NOISE & TUN
+  NO -. conta usuário/senha .-> REP
+  PG --> EXT1
+  OVPN --> EXT2
+  TUN --> EXT3
+  PKI & NOISE & REDE & HTTP --> CORE
+  </pre></div>
+
+  <h3>Linhas por módulo (medidas com <code>wc -l</code>, 24/09/2026)</h3>
+  <div class="cartao">
+  <table>
+    <tr><th>Módulo</th><th>Linhas</th><th>Papel</th></tr>
+    <tr><td><code>p2p.rs</code></td><td>1.397</td><td>o nó: aperto, admissão, malha, ping, chat</td></tr>
+    <tr><td><code>painel.rs</code></td><td>1.175</td><td>regras do modo servidor, CRL</td></tr>
+    <tr><td><code>console.rs</code></td><td>819</td><td>phxvpncmd</td></tr>
+    <tr><td><code>mesa.rs</code></td><td>728</td><td>programa de mesa</td></tr>
+    <tr><td><code>comandos.rs</code></td><td>577</td><td>ações comuns às três interfaces</td></tr>
+    <tr><td><code>repasse.rs</code></td><td>565</td><td>servidor intermediário</td></tr>
+    <tr><td><code>pg.rs</code></td><td>564</td><td>cliente PostgreSQL</td></tr>
+    <tr><td><code>tun_windows.rs</code></td><td>536</td><td>placa no Windows</td></tr>
+    <tr><td>Total Rust</td><td>10.750</td><td>+ 649 de HTML/JS = 11.399</td></tr>
+  </table>
+  </div>
+</section>
+</main>
+<footer>phxvpn · Built to store. Engineered to scale. · diagramas em Mermaid, fonte em <code>phxvpn/docs/fluxograma-organograma.html</code></footer>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>
+(function(){
+  var escuro = document.documentElement.dataset.theme === 'dark' ||
+    (document.documentElement.dataset.theme !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+  mermaid.initialize({startOnLoad:false, securityLevel:'strict',
+    theme: escuro ? 'dark' : 'default',
+    themeVariables: escuro ? {background:'#0a1122', primaryColor:'#0a1122', primaryTextColor:'#DDE2EB',
+      lineColor:'#8a93a8', clusterBkg:'#050a1c', clusterBorder:'#1c2742'} : {},
+    flowchart:{htmlLabels:true, curve:'basis'}});
+  function desenhar(sel){ mermaid.run({querySelector: sel + ' .mermaid:not([data-processed])'}); }
+  desenhar('#fluxo');
+  document.querySelectorAll('nav button').forEach(function(b){
+    b.addEventListener('click', function(){
+      document.querySelectorAll('nav button').forEach(function(x){ x.setAttribute('aria-selected', x===b); });
+      document.querySelectorAll('.aba').forEach(function(s){ s.hidden = s.id !== b.dataset.aba; });
+      desenhar('#' + b.dataset.aba);
+    });
+  });
+})();
+</script>
+</body>
+</html>
