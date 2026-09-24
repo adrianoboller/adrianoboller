@@ -120,3 +120,61 @@ Não mata pai com filho no sentido que a pétrea protege. A única filha é a pr
 ## Ao dono
 
 **Nada hoje.** Sobe só se o J medir o MariaDB recusando o auto-laço (Q4, empate 5×5).
+
+## Re-checagem das condições — 24/09/2026, mesmo worktree, sem commit
+
+**Veredito: LIBERA.** C1, C2 e C3 estão cumpridas e medidas. Sobraram três achados pequenos, e nenhum é de dado: um ⏸ e dois ajustes de texto que cabem no mesmo commit.
+
+- **Sonda:** a de antes (`scratchpad/dba-integridade/sonda`), com três modos novos: `c1`, `c1misto` e `c2`. Os mesmos rodaram contra a base (`sonda-base`). As saídas estão em `ciclo-C1.txt`, `c1-bordas-depois.txt`, `c1-bordas-base.txt`, `c1-misto-depois.txt` e `c2-depois.txt`.
+- **Testes da frente**, no target do worktree:
+  - `dois_commits_que_se_barram_cedem_pela_mais_nova`, `o_ciclo_de_commits_barrados_cede_pela_mais_nova` e os quatro do 491: **verdes**, 6/6.
+  - O filtro de prazo, com `o_prazo_estourado_reverte_e_solta_as_travas` dentro: **17/17**.
+
+### C1 — cumprida
+
+| Prova | Antes do C1 | Agora |
+|---|---|---|
+| `sonda ciclo 3000` (o cenário da Q2) | 1.870 rodadas em 11 s, e ninguém sai | Na rodada 1, a mais nova (T2) recebe `TRANSACAO_ABORTADA repetir=false`. Na seguinte, T1 fica `COMMITTED`, com 3 gravadas |
+| C1-A: a que cede solta as travas na hora? | — | Sim. Uma escrita solta na linha que ela travava passa em **0 ms**, antes do ROLLBACK dela. O COMMIT e a instrução seguintes dela dão `TRANSACAO_ABORTADA`, e o ROLLBACK sai |
+| C1-B: ciclo de três | — | Só a mais nova cede (T3, na rodada 1). T1 e T2 confirmam na rodada 2 |
+| C1-C: o prazo da outra estoura no meio, e a varredura a mata | — | O `estourar_prazo` passa pelo `abortar_soltando`, que limpa a aresta e solta as travas. T1 confirma, e a morta responde com o prazo |
+| C1-E: prazo fora de ciclo, base × depois | — | **Idênticos**: a mensagem, a escrita alheia imediata, o COMMIT recusado e o ROLLBACK. O `abortar_soltando` não mudou o prazo velho |
+| O dado, nos cinco | — | A FK fica íntegra. A filha só leva a cascata de quem confirmou. `rowstamp` e `rownum` ficam iguais aos de antes, e nenhum slot é reaproveitado |
+
+Lido no código:
+
+- **A cessão acontece antes da marca.** A volta do `op_commit` (`servidor.rs:16526–16535`) roda antes de `marca_em_voo` e de `gravar_marca`. Não há marca nem diário a reconciliar, e a lista já tinha saído pelo `take`.
+- **Não há ciclo que escape.** Uma corrente que chega a uma transação já terminada volta `None` no `por_id`, e o id não se reusa (`proximo += 1`). Cada transação tem uma aresta só, então há no máximo um ciclo por corrente, e só a de id maior cede.
+
+### C2 — cumprida
+
+| Auto-referência (`sonda c2`) | Excluir a folha de vez | Excluir a folha suave | Excluir o auto-laço | Dentro da transação |
+|---|---|---|---|---|
+| Conferida, **sem** índice em `chefe` | recusa | recusa | recusa | recusa no COMMIT |
+| `verificar:false` | sai | sai | sai | sai |
+| Com índice | sai | sai | sai | sai. O chefe com subordinado recusa |
+
+- A recusa nomeia a chave (`fk_chefe`), a coluna (`chefe`) e os dois consertos. É o que dizem o `MANUAL`, o `INTEGRIDADE.md` §7.4 e o `CHANGELOG`.
+- O texto não diz que, dentro da transação, a recusa só chega no COMMIT e leva a transação inteira. Não viro isso em condição: é o regime do 448 para toda FK, e não do 491.
+
+### C3 — cumprida, conferida contra o código do 522
+
+- **O HEAD andou.** Era `41c06a5`, e agora é `8a9814c`. O 522 já está nele, como `b5fc11c`.
+- **O arranque confere com o texto.** O `reconstruir_os_marcados` roda **depois** das marcas e imprime `indices reconstruidos ......... N`. Por isso vale a primeira frase da linha G do `CONTRATO-1.0` (a recuperação recusa e denuncia), e vale o texto novo: o pânico faz a filha recusar enquanto o processo vive, o reinício reconstrói e deixa só a contagem, e as filhas continuam na chave velha. O `MANUAL`, o `ACID.md` §2.4, o `FORMATO.md` e o `SEGURANCA.md` §24.3/§24.5 dizem o mesmo.
+- **As frases do P1 e do P2 estão corrigidas.** O `ACID.md` agora tem o update perdido medido e o OLD −4 × −2.
+- **Para o integrador:** o texto só é verdade em cima de `b5fc11c`, e o worktree está sobre `96fa9b0`, sem o 522. Integre sobre o HEAD vivo. Na árvore unida, rode `panico_no_meio_da_cascata_fora_da_transacao_deixa_a_filha_recusando` e `fechar-nao-baixa-a-marca`: a convergência mecânica da Q3 é só de leitura.
+
+### Achados da re-checagem
+
+| # | Estado | Achado | Medido | Conserto |
+|---|---|---|---|---|
+| R1 | ⏸ | **Aresta velha: a mais nova cede sem haver ciclo** | C1-D: T1 é barrada por T2, volta ao SAVEPOINT e passa a escrever só `cb`. O COMMIT de T2 recebe `TRANSACAO_ABORTADA`, «ciclo com T1», e T1 confirma logo depois sem precisar de nada de T2. Não há dado errado: nada é gravado e as travas saem. Da mesma família, só por leitura: uma transação em ABORT_ONLY pelo teto segura as travas até o ROLLBACK e guarda a aresta | O `op_rollback_para` limpa `commit_barrado_por`, e a corrente não atravessa transação fora de `Ativa`. O teste é o próprio C1-D. Cabe no mesmo commit; se não couber, vira pedido ⏸ |
+| R2 | texto | «desempate por idade dos motores com detecção de impasse», no `ACID.md` e no comentário de `Transacoes::commit_barrado`, **é falso sobre os motores**. O PG aborta uma das transações, sem ordem garantida («should not be relied upon»), e o InnoDB aborta a mais leve (linhas alteradas) | lido na documentação dos dois | A idade é escolha nossa, determinística e que garante progresso, no molde do wait-die: a frase tem de dizer isso |
+| R3 | texto | O `MANUAL` não diz que o COMMIT pode voltar `EM_TRANSACAO` (516) nem `TRANSACAO_ABORTADA` por ciclo (C1). A lista «transacao: teto, E/S, prazo» ficou incompleta | leitura do `MANUAL.txt:2005–2027` | uma linha |
+
+**O que sobra não é do C1** (`sonda c1misto`): o ciclo misto não entra no grafo. Nele o COMMIT de T1 é barrado por T2, e a instrução de T2 espera uma linha de T1.
+
+- Cada tentativa de T2 cai no LOCK TIMEOUT, de 500 ms.
+- O ciclo só termina no TIMEOUT da transação de T2: 2.000 ms na prova, e T1 confirmou aos 2.008 ms.
+- É o mesmo regime que a base já tinha entre duas instruções. Com o TIMEOUT padrão, o teto é 5 min.
+- O P3 continua ☐.

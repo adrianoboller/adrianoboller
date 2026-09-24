@@ -1305,6 +1305,9 @@ QA, com julgamento de pergunta, e a redação do H.
 | SEC — revisao do lote faceis A (369, 443, 529) | forte | seguranca: redacao por analise, parser de fio em claro e oraculo de tempo do login |
 | J — auto-laco medido nos quatro motores | medio | medicao roteirizada de um comportamento, com fonte primaria; o empate subiu ao dono |
 | DBA — re-checagem das condicoes do lote de integridade | forte | concorrencia (desempate do ciclo de COMMIT barrado) e garantia de dado |
+| faceis C — 464, 365, 458, 499 | forte | redacao de dado pessoal por analise, trava envenenada e portao de escrita da replica |
+| faceis D — 523, 544, 530, 463 (resto) | forte | durabilidade por caminho canonico, parser do fio, threads sem teto e prazo da conversa |
+| DBA — revisao do lote faceis B | forte | durabilidade do backup e disponibilidade: o fsync no destino que derrubava o servidor |
 
 **A integração achou o que nenhuma frente via, de novo por território de
 arquivo não bastar em worktree compartilhado**: `cargo fmt --all` de uma
