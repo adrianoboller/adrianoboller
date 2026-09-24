@@ -5361,13 +5361,14 @@ pub fn limpar() {
         # corpo que o arranque e a recuperacao do COMMIT dividem.
         "trecho": """        Ok(Leitura::Aberta(marca)) => {
             let antes = r.impossiveis.len();
-            completar(db, &marca, r);
+            let no_disco = completar(db, &marca, r);
             r.completadas += 1;
 """,
         "troca": """        // DEFEITO REPOSTO: a marca valida e contada e apagada, mas o
         // commit que ela descreve nunca e completado.
         Ok(Leitura::Aberta(_marca)) => {
             let antes = r.impossiveis.len();
+            let no_disco = true;
             r.completadas += 1;
 """,
         "pacote": "phxsql-server",
@@ -9795,10 +9796,10 @@ pub fn limpar() {
             "arranque» por «perdida para sempre»."
         ),
         "arquivo": "crates/phxsql-server/src/transacao.rs",
-        "trecho": """            arranque == NoArranque::Sim || r.impossiveis.len() == antes
+        "trecho": """            no_disco && (arranque == NoArranque::Sim || r.impossiveis.len() == antes)
 """,
         "troca": """            // DEFEITO REPOSTO (426): apaga a marca do impossivel passageiro.
-            {
+            no_disco && {
                 let _ = (arranque, antes);
                 true
             }
@@ -10712,10 +10713,13 @@ pub fn limpar() {
             "(`CRC invalido na pagina 2`, a vizinha da divisao em branco)."
         ),
         "arquivo": "crates/phxsql-store/src/ndx.rs",
-        "trecho": """        !self.precisa_reconstruir && self.escritas_em_voo == 0 && !self.escrita_interrompida
+        "trecho": """        !self.precisa_reconstruir
+            && self.escritas_em_voo == 0
+            && !self.escrita_interrompida
+            && crate::sincronia::recusado_em(&self.caminho).is_none()
 """,
         "troca": """        // DEFEITO REPOSTO (456): so a marca da abertura segura o fechamento.
-        !self.precisa_reconstruir
+        !self.precisa_reconstruir && crate::sincronia::recusado_em(&self.caminho).is_none()
 """,
         "pacote": "phxsql-store",
         "alvo": ["--test", "panico-no-meio-da-escrita"],
@@ -10784,10 +10788,13 @@ pub fn limpar() {
         "trocas": [
             {
                 "arquivo": "crates/phxsql-store/src/ndx.rs",
-                "trecho": """        !self.precisa_reconstruir && self.escritas_em_voo == 0 && !self.escrita_interrompida
+                "trecho": """        !self.precisa_reconstruir
+            && self.escritas_em_voo == 0
+            && !self.escrita_interrompida
+            && crate::sincronia::recusado_em(&self.caminho).is_none()
 """,
                 "troca": """        // DEFEITO REPOSTO (456): o estado em voo nao existe...
-        !self.precisa_reconstruir
+        !self.precisa_reconstruir && crate::sincronia::recusado_em(&self.caminho).is_none()
 """,
             },
             {
@@ -10828,10 +10835,13 @@ pub fn limpar() {
         "trocas": [
             {
                 "arquivo": "crates/phxsql-store/src/ndx.rs",
-                "trecho": """        !self.precisa_reconstruir && self.escritas_em_voo == 0 && !self.escrita_interrompida
+                "trecho": """        !self.precisa_reconstruir
+            && self.escritas_em_voo == 0
+            && !self.escrita_interrompida
+            && crate::sincronia::recusado_em(&self.caminho).is_none()
 """,
                 "troca": """        // DEFEITO REPOSTO (456): o estado em voo nao existe...
-        !self.precisa_reconstruir
+        !self.precisa_reconstruir && crate::sincronia::recusado_em(&self.caminho).is_none()
 """,
             },
             {
@@ -12339,5 +12349,183 @@ pub const ITERACOES_MINIMAS_DO_CADASTRO: u32 = phxsql_store::cofre::ITERACOES_MI
         "seguem": [
             "servidor::testes_transacoes::pre_conferencia_448::a_chave_unica_tomada_no_prefixo_recusa_antes_da_marca",
         ],
+    },
+    # O disco que RECUSA -- pedidos 509 e 512 (catalogo de catastrofes do papel
+    # C, C1 e C2b). As recusas das provas sao forjadas pelo
+    # `sincronia::falha_de_teste`; a prova contra o sistema operacional e a
+    # `bancada/catastrofes/prova.sh`.
+    {
+        "id": "fsync-recusado-repete-no-diario",
+        "titulo": "o `fsync` recusado de um volume é repetido e responde Ok: o `Volumes` devolvia a lista ao registro «para o fecho tentar de novo»",
+        "porque": (
+            "pedido 509, C1 do papel C: depois de um fsync recusado o nucleo "
+            "pode ter descartado as paginas, e o proximo responde Ok sem elas "
+            "(medido no 6.18, ext4 sobre loop com provisionamento fino: fecho 1 "
+            "ENOSPC, fecho 2 Ok, `.log` com 0 de 5.000 eventos depois de "
+            "remontar). Os quatro motores nunca repetem (10 x 0). O defeito "
+            "reposto e o `sync_all` do motor sem a conferencia da recusa."
+        ),
+        "arquivo": "crates/phxsql-store/src/sincronia.rs",
+        "trecho": """    conferir(caminho)?;
+    #[cfg(debug_assertions)]
+""",
+        "troca": """    // DEFEITO REPOSTO (509): repete o fsync recusado.
+    #[cfg(debug_assertions)]
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "disco-que-recusa"],
+        "caem": ["o_diario_sozinho_tambem_nao_repete"],
+        "seguem": ["pagina_que_o_disco_recusou_continua_suja"],
+    },
+    {
+        "id": "fsync-recusado-repete-no-indice",
+        "titulo": "o `.ndx` cujo `fsync` foi recusado responde Ok no fecho seguinte, pela porta da árvore que não presta",
+        "porque": (
+            "pedido 509: a porta «arvore que nao presta nao sincroniza» do "
+            "`NdxFile::sincronizar` devolvia Ok sem tocar no disco, e o fsync "
+            "recusado e justamente o que faz a arvore nao prestar. Numa tabela o "
+            "`.reg` segura o fecho (fica devendo depois do `.ndx`); o `.ndx` "
+            "sozinho -- o `.fts`, o `NdxFile` publico -- nao tem vizinho."
+        ),
+        "arquivo": "crates/phxsql-store/src/ndx.rs",
+        "trecho": """        crate::sincronia::conferir(&self.caminho)?;
+""",
+        "troca": """        // DEFEITO REPOSTO (509): a porta de baixo responde Ok por cima da recusa.
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "disco-que-recusa"],
+        "caem": ["indice_sozinho_que_o_fsync_recusou_nao_repete"],
+        "seguem": ["o_diario_sozinho_tambem_nao_repete"],
+    },
+    {
+        "id": "drop-baixa-o-byte-52-depois-do-fsync-recusado",
+        "titulo": "depois de um `fsync` recusado no diretório, o `Drop` do `.ndx` grava o cabeçalho limpo por cima das páginas que o núcleo pode ter perdido",
+        "porque": (
+            "pedido 509: na prova do papel C quem recusou foi o `.log`, e o "
+            "`.ndx` da mesma tabela, que nunca viu erro nenhum, baixou o byte 52 "
+            "no `Drop`. A recusa e do diretorio, e a porta que baixa a marca "
+            "(`pode_baixar_a_marca`) passou a perguntar por ela."
+        ),
+        "arquivo": "crates/phxsql-store/src/ndx.rs",
+        "trecho": """            && !self.escrita_interrompida
+            && crate::sincronia::recusado_em(&self.caminho).is_none()
+""",
+        "troca": """            && !self.escrita_interrompida
+            // DEFEITO REPOSTO (509): o Drop nao pergunta pela recusa.
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "disco-que-recusa"],
+        "caem": [
+            "fsync_recusado_nao_se_repete_como_sucesso",
+            "indice_sozinho_que_o_fsync_recusou_nao_repete",
+        ],
+        "seguem": ["o_diario_sozinho_tambem_nao_repete"],
+    },
+    {
+        "id": "pagina-que-o-disco-recusou-sai-das-sujas",
+        "titulo": "a página do `.ndx` que o disco cheio recusou sai da lista de sujas antes de ser gravada, e o segundo fecho baixa o byte 52 sobre ela",
+        "porque": (
+            "pedido 512, C2b do papel C, medido num tmpfs de 512 KiB: com o "
+            "segundo fecho no mesmo punho (o caminho do `gravar_de_verdade`), "
+            "byte 52 = 0 e `CRC invalido na pagina 3`; so com o `Drop`, byte 52 "
+            "= 1 e o recado certo. O `tirar_sujas` baixava a flag de todas antes "
+            "de gravar a primeira, e o `descarregar` para no primeiro erro."
+        ),
+        "arquivo": "crates/phxsql-store/src/ndx.rs",
+        "trecho": """        for (n, mut bytes) in self.cache.sujas() {
+            self.escrever_pagina(n, &mut bytes)?;
+            self.cache.gravada(n);
+        }
+""",
+        "troca": """        // DEFEITO REPOSTO (512): todas limpas antes de gravar a primeira.
+        let todas = self.cache.sujas();
+        for (n, _) in &todas {
+            self.cache.gravada(*n);
+        }
+        for (n, mut bytes) in todas {
+            self.escrever_pagina(n, &mut bytes)?;
+        }
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "disco-que-recusa"],
+        "caem": [
+            "pagina_que_o_disco_recusou_continua_suja",
+            "disco_ainda_cheio_deixa_a_marca_e_o_recado_certo",
+        ],
+        "seguem": ["pagina_despejada_que_o_disco_recusou_volta_suja"],
+    },
+    {
+        "id": "pagina-despejada-que-o-disco-recusou-some",
+        "titulo": "a página suja despejada do cache que o disco recusou some: nem no arquivo, nem na RAM",
+        "porque": (
+            "pedido 512, o irmao no despejo: o `por` do cache tira a pagina "
+            "antes de quem chama grava-la, na mesma ordem do `tirar_sujas`. "
+            "Despejada por uma LEITURA nenhuma escrita fica interrompida, e o "
+            "fecho seguinte gravava o resto e baixava o byte 52 sem ela."
+        ),
+        "arquivo": "crates/phxsql-store/src/ndx.rs",
+        "trecho": """                self.cache.devolver(velha, bytes);
+""",
+        "troca": """                // DEFEITO REPOSTO (512): a despejada que falhou se perde.
+                drop(bytes);
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "disco-que-recusa"],
+        "caem": ["pagina_despejada_que_o_disco_recusou_volta_suja"],
+        "seguem": ["pagina_que_o_disco_recusou_continua_suja"],
+    },
+    {
+        "id": "servidor-segue-de-pe-depois-do-fsync-recusado",
+        "titulo": "o servidor segue de pé depois de um `fsync` recusado, gravando num disco que já se sabe que mente",
+        "porque": (
+            "pedido 509: PostgreSQL PANIC, MariaDB e MySQL `ib::fatal` -- 9 x 1 "
+            "contra o erro que fica do SQLite, que e biblioteca. O servidor "
+            "registra o `abort` no `sincronia::ao_recusar` antes da recuperacao "
+            "do arranque. Medido com o defeito: o filho segue de pe e o "
+            "`inserir` na tabela vizinha responde com a recusa depois de gravar."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        phxsql_store::sincronia::ao_recusar(fsync_recusado_derruba_o_processo);
+""",
+        "troca": """        // DEFEITO REPOSTO (509): o processo nao cai na recusa.
+        let _ = fsync_recusado_derruba_o_processo;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_panico_sob_a_trava::fsync_recusado_derruba_o_processo_e_a_marca_fica",
+        ],
+        "seguem": [
+            "servidor::testes_do_panico_sob_a_trava::reparo_que_falha_derruba_o_processo_em_vez_de_servir",
+        ],
+        "prazo": 600,
+    },
+    {
+        "id": "completar-engole-a-tabela-que-nao-foi-ao-disco",
+        "titulo": "a recuperação engole o erro do `sincronizar` e apaga a marca de um commit cujo dado não foi ao disco",
+        "porque": (
+            "pedido 503, item 2 -- o irmao do 509: `let _ = t.sincronizar()` no "
+            "`completar`, na mesma ordem do fecho da janela (sincronizar, apagar "
+            "o bilhete). A falha da prova vem do sistema operacional: o `.pag` "
+            "vira diretorio."
+        ),
+        "arquivo": "crates/phxsql-server/src/transacao.rs",
+        "trecho": """        if let Err(e) = t.sincronizar() {
+            no_disco = false;
+""",
+        "troca": """        // DEFEITO REPOSTO (503, item 2): o erro do sincronizar some.
+        let _ = t.sincronizar();
+        if let Err::<(), PhxError>(e) = Ok(()) {
+            no_disco = false;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "transacao::testes::tabela_que_nao_foi_ao_disco_segura_a_marca_no_arranque",
+        ],
+        "seguem": [
+            "servidor::testes_janela_e_cadeia::fsync_que_falha_no_fio_tambem_segura_as_marcas",
+        ],
+        "prazo": 600,
     },
 ]

@@ -2526,7 +2526,7 @@ fn reescrever_volume(
             resta -= n as u64;
         }
     }
-    para.sync_all()?;
+    crate::sincronia::sync_all(&para, &tmp)?;
     drop(para);
     std::fs::rename(&tmp, caminho)?;
     Ok(())
@@ -2770,7 +2770,7 @@ fn escrever_volume_alargado(
     // Sincronizado AQUI, e nao depois do `rename`: a fase B so pode trocar
     // arquivos que ja estao no disco inteiros, senao a troca "atomica"
     // publicaria um arquivo cujo miolo ainda esta no cache.
-    para.sync_all()?;
+    crate::sincronia::sync_all(&para, &tmp)?;
     drop(para);
     Ok(quantos)
 }

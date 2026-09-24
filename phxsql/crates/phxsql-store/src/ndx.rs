@@ -297,18 +297,53 @@ impl CachePaginas {
         despejada
     }
 
-    /// Todas as sujas, ja marcadas como limpas. Quem chama grava e nao volta.
-    fn tirar_sujas(&mut self) -> Vec<(u64, Vec<u8>)> {
-        let mut fora = Vec::new();
-        for (n, e) in self.paginas.iter_mut() {
-            if e.suja {
-                e.suja = false;
-                fora.push((*n, e.bytes.clone()));
-            }
-        }
+    /// Uma copia das sujas, em ordem de pagina, SEM limpar nenhuma.
+    ///
+    /// # Por que a flag so desce em [`CachePaginas::gravada`] (pedido 512)
+    ///
+    /// Isto se chamava `tirar_sujas` e baixava a flag de TODAS antes de quem
+    /// chama gravar a primeira. O `descarregar` para no primeiro erro, entao a
+    /// pagina que o disco cheio recusou -- e todas as seguintes -- saia da
+    /// lista do que falta gravar sem ter ido a lugar nenhum. O segundo fecho
+    /// achava nada sujo, e o `.ndx` ia ao disco com o byte 52 em 0 sobre uma
+    /// pagina de zeros: `CRC invalido` em toda busca, e a abertura sem saber
+    /// que tinha de reconstruir (medido pelo papel C num tmpfs de 512 KiB). E
+    /// o `fsync` que mente, dentro do nosso proprio cache.
+    fn sujas(&self) -> Vec<(u64, Vec<u8>)> {
+        let mut fora: Vec<(u64, Vec<u8>)> = self
+            .paginas
+            .iter()
+            .filter(|(_, e)| e.suja)
+            .map(|(n, e)| (*n, e.bytes.clone()))
+            .collect();
         // Em ordem de pagina: escrever para frente no arquivo em vez de saltar.
         fora.sort_unstable_by_key(|(n, _)| *n);
         fora
+    }
+
+    /// A pagina `n` chegou ao arquivo: so agora ela sai do que falta gravar.
+    fn gravada(&mut self, n: u64) {
+        if let Some(e) = self.paginas.get_mut(&n) {
+            e.suja = false;
+        }
+    }
+
+    /// A pagina despejada que NAO chegou ao arquivo volta, suja.
+    ///
+    /// E o irmao do `sujas` no despejo (pedido 512): o `por` a tira do cache
+    /// antes de quem chama grava-la, e o erro a deixava sem lugar nenhum --
+    /// nem no arquivo, nem na RAM. O cache passa do teto por uma pagina ate o
+    /// proximo despejo, e e o preco certo: o outro era a pagina.
+    fn devolver(&mut self, n: u64, bytes: Vec<u8>) {
+        self.paginas.insert(
+            n,
+            Entrada {
+                bytes,
+                usada: true,
+                suja: true,
+            },
+        );
+        self.fila.push_back(n);
     }
 
     /// Tira a pagina do cache. A pagina que volta da lista de livres vai ser
@@ -960,7 +995,10 @@ impl NdxFile {
     /// CRC invalido. A suite inteira passou; quem pegou foi a medicao.
     fn guardar_no_cache(&mut self, n: u64, p: &[u8], suja: bool) -> Result<()> {
         if let Some((velha, mut bytes)) = self.cache.por(n, p, suja) {
-            self.escrever_pagina(velha, &mut bytes)?;
+            if let Err(e) = self.escrever_pagina(velha, &mut bytes) {
+                self.cache.devolver(velha, bytes);
+                return Err(e);
+            }
         }
         Ok(())
     }
@@ -1015,6 +1053,13 @@ impl NdxFile {
 
     /// Sela e escreve de verdade. So o despejo e o `sincronizar` chamam.
     fn escrever_pagina(&mut self, n: u64, p: &mut [u8]) -> Result<()> {
+        #[cfg(debug_assertions)]
+        if let Some(e) = crate::sincronia::falha_de_teste::disparar(
+            &self.caminho,
+            crate::sincronia::falha_de_teste::Onde::PaginaDoIndice,
+        ) {
+            return Err(PhxError::Io(e));
+        }
         let corpo = self.corpo();
         pag_selar(p, corpo);
         if self.material.cifrado() {
@@ -1042,10 +1087,12 @@ impl NdxFile {
         Ok(())
     }
 
-    /// Leva todas as paginas sujas ao arquivo.
+    /// Leva todas as paginas sujas ao arquivo. A que falhar -- e as que vem
+    /// depois dela -- continua suja: ver [`CachePaginas::sujas`].
     fn descarregar(&mut self) -> Result<()> {
-        for (n, mut bytes) in self.cache.tirar_sujas() {
+        for (n, mut bytes) in self.cache.sujas() {
             self.escrever_pagina(n, &mut bytes)?;
+            self.cache.gravada(n);
         }
         Ok(())
     }
@@ -1129,6 +1176,11 @@ impl NdxFile {
     /// Sao dois `fsync` por `sincronizar` -- que acontece uma vez por carga, e
     /// nao por linha.
     pub fn sincronizar(&mut self) -> Result<()> {
+        // Antes da porta de baixo, e nao dentro dela (pedido 509): a porta
+        // responde Ok sem tocar no disco, e depois de um `fsync` recusado
+        // neste diretorio seria exatamente por ali que o fecho repetido
+        // voltaria a dizer «sincronizado».
+        crate::sincronia::conferir(&self.caminho)?;
         // A mesma porta do `fechar`, e ela faltava aqui (pedido 457): um
         // arquivo aberto ja sujo passava por este caminho e saia com o byte 52
         // em 0 sem ter sido reconstruido -- bastava um `atualizar` que nao
@@ -1138,12 +1190,12 @@ impl NdxFile {
         }
         self.descarregar()?;
         self.arquivo.flush()?;
-        self.arquivo.sync_all()?;
+        crate::sincronia::sync_all(&self.arquivo, &self.caminho)?;
 
         self.sujo = false;
         self.gravar_cabecalho()?;
         self.arquivo.flush()?;
-        self.arquivo.sync_all()?;
+        crate::sincronia::sync_all(&self.arquivo, &self.caminho)?;
         Ok(())
     }
 
@@ -1181,11 +1233,21 @@ impl NdxFile {
     /// meio). Nos tres NADA desce: nem as paginas, que gravariam o estado do
     /// meio como se fosse o fim, nem a marca, que diria que ele presta.
     ///
+    /// E o quarto, que e do DISCO e nao da arvore (pedido 509): um `fsync`
+    /// recusado neste diretorio. Na prova do papel C quem recusou foi o
+    /// `.log`, e este `Drop` gravou o cabecalho limpo por cima das paginas
+    /// que o nucleo ja tinha perdido -- o byte 52 em 0 e `CRC invalido` depois
+    /// de remontar. A arvore em RAM esta inteira; o que nao presta mais e a
+    /// palavra do disco sobre ela.
+    ///
     /// E um lugar so para `fechar`, `sincronizar` e o `Drop` -- os tres que
     /// baixam a marca. Foi a porta escrita em um e esquecida no irmao que
     /// abriu o pedido 457.
     fn pode_baixar_a_marca(&self) -> bool {
-        !self.precisa_reconstruir && self.escritas_em_voo == 0 && !self.escrita_interrompida
+        !self.precisa_reconstruir
+            && self.escritas_em_voo == 0
+            && !self.escrita_interrompida
+            && crate::sincronia::recusado_em(&self.caminho).is_none()
     }
 
     /// Abre uma escrita que vai por o `.reg` a frente desta arvore.

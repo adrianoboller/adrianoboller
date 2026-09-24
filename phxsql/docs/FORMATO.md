@@ -1031,6 +1031,22 @@ troca chave, antes de regravá-lo — e não desce, nem por `fechar`, nem por
 `sincronizar`, nem pelo `Drop` que roda no desenrolar de um pânico, enquanto
 houver escrita em voo ou interrompida no meio, nem num arquivo aberto sujo.
 
+**E com o disco que recusa** (pedidos 509 e 512, 24/09/2026; o formato não
+muda): a regra 2 só vale se a página que o disco recusou **continuar suja** — o
+cache baixava a flag de todas antes de gravar a primeira, e o segundo fecho
+gravava o byte 52 em 0 sobre uma página de zeros (medido num tmpfs de 512 KiB,
+3/3). Hoje ela continua suja, no `descarregar` e no despejo. E depois de um
+`fsync` recusado em **qualquer** arquivo do diretório o byte 52 não desce mais
+neste processo (`phxsql-store/src/sincronia.rs`): o núcleo pode ter perdido
+páginas que nenhum erro nomeou.
+
+O que ela **não** cobre, medido: o `fechar` baixa o byte 52 **sem** `fsync`, por
+desenho — queda do processo não perde nada. Com a escrita de fundo recusada,
+porém, o núcleo pode perder as páginas e guardar o cabeçalho: ext4 sobre loop
+com provisionamento fino (`bancada/catastrofes/prova.sh`), byte 52 já em 0
+**antes** de qualquer fecho, e `CRC inválido na página 3` depois de remontar,
+3/3 com e sem o conserto acima.
+
 **Não há migração.** Arquivo escrito antes da 0.18.0 tem zero no byte 52, e zero
 quer dizer «limpo» — que é a verdade para quem só escrevia através.
 

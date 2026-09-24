@@ -1,0 +1,142 @@
+{
+ "medido_em": "2026-09-24T15:17:06+00:00",
+ "nucleo": "6.18.44-fc-v37",
+ "binario": "disco-que-recusa",
+ "rodadas": 3,
+ "cenarios": {
+  "512-mesmo-punho": {
+   "1": [
+    "insercoes ok=1445 erros=40",
+    "fecho1=ERRO [SP000010] erro de E/S: No space left on device (os error 28)",
+    "byte52=1",
+    "vivas=1445 inclusoes_no_log=1445 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar"
+   ],
+   "2": [
+    "insercoes ok=1445 erros=40",
+    "fecho1=ERRO [SP000010] erro de E/S: No space left on device (os error 28)",
+    "byte52=1",
+    "vivas=1445 inclusoes_no_log=1445 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar"
+   ],
+   "3": [
+    "insercoes ok=1445 erros=40",
+    "fecho1=ERRO [SP000010] erro de E/S: No space left on device (os error 28)",
+    "byte52=1",
+    "vivas=1445 inclusoes_no_log=1445 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar"
+   ]
+  },
+  "512-so-o-drop": {
+   "1": [
+    "insercoes ok=1445 erros=40",
+    "byte52=1",
+    "vivas=1445 inclusoes_no_log=1445 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar"
+   ],
+   "2": [
+    "insercoes ok=1445 erros=40",
+    "byte52=1",
+    "vivas=1445 inclusoes_no_log=1445 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar"
+   ],
+   "3": [
+    "insercoes ok=1445 erros=40",
+    "byte52=1",
+    "vivas=1445 inclusoes_no_log=1445 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar"
+   ]
+  },
+  "509-biblioteca": {
+   "1": [
+    "inserir ok=5000 de 5000, sem fsync",
+    "antes byte52=0",
+    "fecho1=ERRO [SP000010] erro de E/S: No space left on device (os error 28)",
+    "fecho2=ERRO [SP000010] erro de E/S: um fsync anterior foi recusado (ext/db/pedidos.ndx: No space left on device (os error 28)), e depois disso o nucleo pode ter descartado o que nao foi ao disco: um fsync novo responderia Ok sem o dado estar la. Nada neste diretorio se confirma mais ate o processo reiniciar (pedido 509)",
+    "saida=0",
+    "cache byte52=0",
+    "cache vivas=5000 inclusoes_no_log=5000 precisa_reconstruir=false",
+    "cache buscar=OK [5]",
+    "remontado byte52=0",
+    "remontado vivas=5000 inclusoes_no_log=0 precisa_reconstruir=false",
+    "remontado buscar=ERRO [SP000010] arquivo corrompido: CRC invalido na pagina 3 de ext/db/pedidos.ndx",
+    "remontado verificar=ERRO [SP000010] arquivo corrompido: CRC invalido na pagina 3 de ext/db/pedidos.ndx"
+   ],
+   "2": [
+    "inserir ok=5000 de 5000, sem fsync",
+    "antes byte52=0",
+    "fecho1=ERRO [SP000010] erro de E/S: No space left on device (os error 28)",
+    "fecho2=ERRO [SP000010] erro de E/S: um fsync anterior foi recusado (ext/db/pedidos.ndx: No space left on device (os error 28)), e depois disso o nucleo pode ter descartado o que nao foi ao disco: um fsync novo responderia Ok sem o dado estar la. Nada neste diretorio se confirma mais ate o processo reiniciar (pedido 509)",
+    "saida=0",
+    "cache byte52=0",
+    "cache vivas=5000 inclusoes_no_log=5000 precisa_reconstruir=false",
+    "cache buscar=OK [5]",
+    "remontado byte52=0",
+    "remontado vivas=5000 inclusoes_no_log=0 precisa_reconstruir=false",
+    "remontado buscar=ERRO [SP000010] arquivo corrompido: CRC invalido na pagina 3 de ext/db/pedidos.ndx",
+    "remontado verificar=ERRO [SP000010] arquivo corrompido: CRC invalido na pagina 3 de ext/db/pedidos.ndx"
+   ],
+   "3": [
+    "inserir ok=5000 de 5000, sem fsync",
+    "antes byte52=0",
+    "fecho1=ERRO [SP000010] erro de E/S: No space left on device (os error 28)",
+    "fecho2=ERRO [SP000010] erro de E/S: um fsync anterior foi recusado (ext/db/pedidos.ndx: No space left on device (os error 28)), e depois disso o nucleo pode ter descartado o que nao foi ao disco: um fsync novo responderia Ok sem o dado estar la. Nada neste diretorio se confirma mais ate o processo reiniciar (pedido 509)",
+    "saida=0",
+    "cache byte52=0",
+    "cache vivas=5000 inclusoes_no_log=5000 precisa_reconstruir=false",
+    "cache buscar=OK [5]",
+    "remontado byte52=0",
+    "remontado vivas=5000 inclusoes_no_log=0 precisa_reconstruir=false",
+    "remontado buscar=ERRO [SP000010] arquivo corrompido: CRC invalido na pagina 3 de ext/db/pedidos.ndx",
+    "remontado verificar=ERRO [SP000010] arquivo corrompido: CRC invalido na pagina 3 de ext/db/pedidos.ndx"
+   ]
+  },
+  "509-servidor": {
+   "1": [
+    "inserir ok=5000 de 5000, sem fsync",
+    "antes byte52=0",
+    "gancho=ABORTA ext/db/pedidos.ndx (No space left on device (os error 28))",
+    "saida=134",
+    "cache byte52=0",
+    "cache vivas=5000 inclusoes_no_log=5000 precisa_reconstruir=false",
+    "cache buscar=OK [5]",
+    "remontado byte52=0",
+    "remontado vivas=5000 inclusoes_no_log=0 precisa_reconstruir=false",
+    "remontado buscar=ERRO [SP000010] arquivo corrompido: CRC invalido na pagina 3 de ext/db/pedidos.ndx",
+    "remontado verificar=ERRO [SP000010] arquivo corrompido: CRC invalido na pagina 3 de ext/db/pedidos.ndx"
+   ],
+   "2": [
+    "inserir ok=5000 de 5000, sem fsync",
+    "antes byte52=0",
+    "gancho=ABORTA ext/db/pedidos.ndx (No space left on device (os error 28))",
+    "saida=134",
+    "cache byte52=0",
+    "cache vivas=5000 inclusoes_no_log=5000 precisa_reconstruir=false",
+    "cache buscar=OK [5]",
+    "remontado byte52=0",
+    "remontado vivas=5000 inclusoes_no_log=0 precisa_reconstruir=false",
+    "remontado buscar=ERRO [SP000010] arquivo corrompido: CRC invalido na pagina 3 de ext/db/pedidos.ndx",
+    "remontado verificar=ERRO [SP000010] arquivo corrompido: CRC invalido na pagina 3 de ext/db/pedidos.ndx"
+   ],
+   "3": [
+    "inserir ok=5000 de 5000, sem fsync",
+    "antes byte52=0",
+    "gancho=ABORTA ext/db/pedidos.ndx (No space left on device (os error 28))",
+    "saida=134",
+    "cache byte52=0",
+    "cache vivas=5000 inclusoes_no_log=5000 precisa_reconstruir=false",
+    "cache buscar=OK [5]",
+    "remontado byte52=0",
+    "remontado vivas=5000 inclusoes_no_log=0 precisa_reconstruir=false",
+    "remontado buscar=ERRO [SP000010] arquivo corrompido: CRC invalido na pagina 3 de ext/db/pedidos.ndx",
+    "remontado verificar=ERRO [SP000010] arquivo corrompido: CRC invalido na pagina 3 de ext/db/pedidos.ndx"
+   ]
+  }
+ }
+}

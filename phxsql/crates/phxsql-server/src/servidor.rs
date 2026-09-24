@@ -1373,6 +1373,9 @@ fn colunas_em_disco(dados: &Instancia, base: &str, tabela: &str) -> Result<Optio
 
 impl Servidor {
     pub fn novo(config: Config) -> Result<Arc<Servidor>> {
+        // Antes de tudo, e antes da recuperacao abaixo -- que tambem
+        // sincroniza: o `fsync` recusado derruba o processo (pedido 509).
+        phxsql_store::sincronia::ao_recusar(fsync_recusado_derruba_o_processo);
         // `recursos.cache_paginas` estava no config.json e na documentacao
         // desde a 0.13.0 -- e nao era lido por ninguem, porque o cache nao
         // existia. Agora existe, e o campo passa a valer. Tem de ser aqui,
@@ -17084,8 +17087,12 @@ impl Servidor {
     /// O mesmo, com a trava de dados JA na mao.
     ///
     /// Reabre cada tabela suja so para sincronizar. Custa um `open` por tabela,
-    /// uma vez por janela -- nao por gravacao. Erro aqui nao derruba nada: a
-    /// tabela continua na lista e a proxima passada tenta de novo.
+    /// uma vez por janela -- nao por gravacao. Erro de ANTES do disco aqui nao
+    /// derruba nada -- a tabela que nao abriu, o `.pag` que nao se grava --: a
+    /// tabela continua na lista e a proxima passada tenta de novo. O `fsync`
+    /// RECUSADO nao volta para ca: ele derruba o processo no instante da
+    /// recusa (pedido 509), porque tentar de novo e justamente o que responde
+    /// Ok sem o dado. Ver [`fsync_recusado_derruba_o_processo`].
     ///
     /// # O `fsync` das K tabelas acontece JUNTO, e a ordem continua inteira
     ///
@@ -17119,6 +17126,11 @@ impl Servidor {
     /// nunca passa por `anotar` -- a chave voltava para as sujas e ninguem
     /// ficava sabendo. E o caso mais grave da saude do disco, porque e o
     /// disco recusando justamente o passo que torna o commit duravel.
+    ///
+    /// Desde o pedido 509 o que chega aqui e o erro de ANTES do `fsync` -- a
+    /// pagina do `.ndx` que o disco cheio recusou, o volume que nao abriu. O
+    /// `fsync` recusado derruba o processo antes de voltar (ver
+    /// [`fsync_recusado_derruba_o_processo`]).
     fn fecho_recusado(&self, chave: &str, e: &PhxError) {
         let PhxError::Io(io) = e else {
             return;
@@ -27133,6 +27145,47 @@ impl RetencaoDaTrilha {
 
 fn trava_envenenada() -> PhxError {
     PhxError::Corrompido("uma operacao anterior entrou em panico e deixou a trava suja".into())
+}
+
+/// O `fsync` recusado DERRUBA o processo -- pedido 509.
+///
+/// # Por que cair, e nao ficar de pe recusando
+///
+/// Depois de um `fsync` recusado o nucleo pode ter descartado as paginas, e o
+/// proximo responde Ok sem elas (medido pelo papel C: o fecho 2 deu Ok e o
+/// `.log` perdeu 5.000 de 5.000 eventos). Os quatro motores nunca tratam a
+/// repeticao como sucesso (10 x 0); no MEIO, os tres servidores caem --
+/// PostgreSQL PANIC, MariaDB e MySQL `ib::fatal`, 4 + 3 + 2 = 9 -- e so a
+/// biblioteca (SQLite, 1) fica recusando. Este e o caso dos tres. E ficar de
+/// pe custaria mais aqui que la: a janela de durabilidade responde Ok a cada
+/// gravacao ANTES do `fsync`, entao o servidor continuaria confirmando
+/// escrita sobre um disco que ja se sabe que mente. E a H5 do pedido 451 pelo
+/// outro gatilho: estado que nao se pode afirmar vira queda.
+///
+/// # Por que no INSTANTE da recusa
+///
+/// O gancho roda dentro do `sync_all` do motor, com a trava de dados na mao de
+/// quem sincroniza. Cair na volta -- no `descarregar_sujas_com`, digamos --
+/// deixaria o `Drop` da tabela reaberta gravar o cabecalho do `.ndx` limpo por
+/// cima das paginas perdidas, que e a outra metade do que o papel C mediu. O
+/// `abort` nao roda `Drop` nenhum, e nao drena marca nenhuma: as marcas dos
+/// `COMMIT` que esperavam o fecho ficam no disco. Isso NAO basta para o dado
+/// voltar: medido pelo papel C (parecer 509+512, P1, 3/3), o arranque no MESMO
+/// boot le do cache do nucleo o que o disco perdeu, o `sincronizar` responde
+/// Ok e a marca sairia -- o 509 continua aberto nessa metade. O que parar
+/// compra e nao confirmar mais nada sobre este disco neste processo.
+fn fsync_recusado_derruba_o_processo(caminho: &Path, e: &std::io::Error) {
+    dizer_no_diagnostico(&format!(
+        "PHXSQL: o fsync de {} foi RECUSADO ({e}). Depois disso o nucleo pode ter \
+         descartado o que nao foi ao disco, e o proximo fsync responderia Ok sem \
+         o dado estar la. O processo vai ABORTAR em vez de confirmar mais nada \
+         sobre este disco, como o PostgreSQL (PANIC) e o InnoDB (ib::fatal). \
+         Antes de subir de novo, remonte o volume ou reinicie a maquina: no mesmo \
+         boot o cache do nucleo devolve o que o disco perdeu, e o arranque nao \
+         tem como ver a diferenca (pedido 509).",
+        caminho.display()
+    ));
+    std::process::abort();
 }
 
 /// Uma linha no erro padrao que NUNCA entra em panico.
@@ -57156,6 +57209,93 @@ mod testes_do_panico_sob_a_trava {
         conferir_indice(porta, &[1, 2, 3, 4, 5, 10, 11, 12]);
     }
 
+    /// **Pedido 509: o `fsync` recusado DERRUBA o processo, e a marca fica.**
+    ///
+    /// O relogio fecha a janela a cada 150 ms. Depois de a semeadura ir ao
+    /// disco, o filho arma UM `fsync` recusado (EIO forjado) em toda a base, e
+    /// o `COMMIT` seguinte deixa a marca pendente esperando justamente o fecho
+    /// que vai encontrar a recusa -- no proprio `COMMIT` ou no relogio.
+    ///
+    /// Com o defeito (o servidor que nao registra o gancho): o fecho recusa, o
+    /// seguinte recusa pelo diretorio envenenado, e o processo segue DE PE
+    /// gravando num disco que ja se sabe que mente -- medido: a `clientes`
+    /// recusa pelo byte 52 que ficou em 1, e o `inserir` na vizinha `outra`
+    /// responde com a recusa do 509, que o fecho da janela so da DEPOIS de a
+    /// linha ir ao `.reg` (o erro que grava, do 498). Sem o envenenamento
+    /// tambem, o fecho seguinte responde Ok e drena a marca: o 509 inteiro. Com
+    /// o conserto o filho cai pelo `abort` na recusa e a marca continua no
+    /// disco. Isto prova o FLUXO com recusa forjada, sem pagina perdida: se o
+    /// arranque no mesmo boot completa o que o disco perdeu, nao prova -- e o
+    /// papel C mediu que nao completa (o 509 segue aberto nessa metade).
+    #[cfg(unix)]
+    #[test]
+    fn fsync_recusado_derruba_o_processo_e_a_marca_fica() {
+        let dir = DirTemp::novo("fsync-509");
+        let (mut filho, porta) = subir_filho(&dir, "fsync_509");
+        semear(porta);
+        std::fs::write(dir.join("armar"), "").unwrap();
+        let ate = Instant::now() + Duration::from_secs(20);
+        while !dir.join("armado").exists() {
+            assert!(
+                Instant::now() < ate,
+                "o filho nao armou a recusa: {}",
+                diagnostico(&dir)
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        let mut tx = Ligacao::nova(porta);
+        ok(falar(&mut tx, r#""op":"begin","database":"loja""#), "begin");
+        for id in [10, 11, 12] {
+            ok(
+                falar(
+                    &mut tx,
+                    &format!(
+                        r#""op":"inserir","database":"loja","tabela":"clientes",
+                           "valores":{{"id":{id},"nome":"T{id}"}}"#
+                    ),
+                ),
+                "inserir na transacao",
+            );
+        }
+        // O `COMMIT` pode responder (a janela adiou o fecho para o relogio)
+        // ou cair (o fecho foi dele): nos dois a recusa vem depois da marca.
+        let _ = falar(&mut tx, r#""op":"commit""#);
+        drop(tx);
+
+        let Some(st) = fim_do_filho(&mut filho, Duration::from_secs(10)) else {
+            let depois = pedir(
+                porta,
+                r#""op":"inserir","database":"loja","tabela":"outra","valores":{"id":99}"#,
+            )
+            .map(|j| j.escrever());
+            let sobrou = marcas(&dir);
+            let _ = filho.kill();
+            let _ = filho.wait();
+            panic!(
+                "o fsync foi recusado e o processo seguiu DE PE: o inserir numa \
+                 tabela vizinha, depois da recusa, respondeu {depois:?}, e as \
+                 marcas no disco sao {sobrou:?}\n{}",
+                diagnostico(&dir)
+            );
+        };
+        caiu_pelo_abort(st, &dir, porta);
+        assert!(
+            diagnostico(&dir).contains("pedido 509"),
+            "o filho caiu sem dizer por que: {}",
+            diagnostico(&dir)
+        );
+        assert_eq!(
+            marcas(&dir).len(),
+            1,
+            "a marca do COMMIT tinha de ficar no disco: a queda nao drena nada"
+        );
+        // O arranque completa a transacao que a marca confirmou.
+        let s = Servidor::novo(config_base(&dir)).unwrap();
+        let porta = porta_de_dados_de_verdade(&s);
+        assert!(marcas(&dir).is_empty(), "o arranque nao completou a marca");
+        conferir_indice(porta, &[1, 2, 3, 4, 5, 10, 11, 12]);
+    }
+
     /// **M3: a operacao IMPOSSIVEL depois do `completar` tambem derruba.**
     ///
     /// O gatilho e o pedido 448 (a FK da transacao so e conferida depois da
@@ -57531,7 +57671,7 @@ mod testes_do_panico_sob_a_trava {
         let dir = PathBuf::from(dir);
         let cenario = std::env::var(CENARIO).unwrap_or_default();
         let mut c = config_base(&dir);
-        if cenario == "relogio" {
+        if cenario == "relogio" || cenario == "fsync_509" {
             relogio_curto(&mut c);
         }
         let s = Servidor::novo(c).unwrap();
@@ -57569,6 +57709,30 @@ mod testes_do_panico_sob_a_trava {
                 s.reparo_falha_de_teste.store(true, Ordering::SeqCst);
                 *s.panico_de_teste_na_op.lock().unwrap() =
                     Some(("ping".into(), PanicoDeTeste::ForaDaTrava));
+            }
+            // Pedido 509: o pai cria `armar`, e o filho arma UM `fsync`
+            // recusado em toda a base -- mas so depois de o relogio levar ao
+            // disco o que a semeadura sujou, para a recusa cair no fecho que a
+            // marca do COMMIT espera, e nao no da semeadura.
+            "fsync_509" => {
+                s.ligar_relogio_de_gravacao();
+                let (s, dir) = (Arc::clone(&s), dir.clone());
+                std::thread::spawn(move || {
+                    while !dir.join("armar").exists() {
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
+                    while s.janela.pendente() > 0
+                        || !s.sujas.lock().map(|x| x.is_empty()).unwrap_or(false)
+                    {
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
+                    phxsql_store::sincronia::falha_de_teste::armar(
+                        &dir,
+                        phxsql_store::sincronia::falha_de_teste::Onde::Fsync,
+                        1,
+                    );
+                    std::fs::write(dir.join("armado"), "").unwrap();
+                });
             }
             outro => panic!("cenario desconhecido: {outro:?}"),
         }

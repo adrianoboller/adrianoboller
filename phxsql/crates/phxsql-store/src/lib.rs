@@ -36,6 +36,7 @@ pub mod no;
 pub mod pag;
 pub mod reg;
 pub mod restaurar;
+pub mod sincronia;
 pub mod table;
 pub mod trilha;
 mod util;

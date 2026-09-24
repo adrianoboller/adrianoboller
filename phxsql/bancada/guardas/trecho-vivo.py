@@ -238,6 +238,16 @@ dia, nunca no desejado:
   (A3), o NULL que colide no indice unico (A4) e os buracos da `Sobreposicao`.
   A frente contou 295 a partir de 286; a conta certa, de novo, so existe no
   encontro das frentes, e foi feita pelo integrador com o `--catraca`: 318.
+  **SUBIU para 316 em 24/09/2026** (pedidos 509 e 512, o disco que recusa):
+  sete guardas novas -- o `fsync` recusado repetido no volume e no `.ndx`, o
+  `Drop` que baixa o byte 52 depois da recusa, a pagina que o disco cheio
+  recusou saindo das sujas (e a irma no despejo), o servidor de pe depois da
+  recusa e o `let _ = t.sincronizar()` da recuperacao (503, item 2). Contado
+  pelo `--catraca` nesta arvore: 315 entradas vivas + 1 aposentada. Numa
+  arvore combinada com outra frente, a conta e do integrador.
+  **SUBIU para 325 em 24/09/2026** (509+512 integrado sobre o 448): a
+  conta do encontro, pelo `--catraca` na arvore combinada -- as 318 do 448
+  e as sete do disco que recusa: 324 entradas vivas + 1 aposentada.
   impedir. Ele e a unica coisa nesta regua que reprova o APAGAMENTO; tudo o
   mais aqui reprova o envelhecimento.
 
@@ -346,7 +356,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 318
+PISO_DAS_ENTRADAS = 325
 
 # ------------------------------------------------------------- APOSENTADAS
 #

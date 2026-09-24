@@ -837,10 +837,18 @@ impl Volumes {
     ///    sincroniza-la, e o do volume despejado do LRU. Ver
     ///    [`ESCRITAS_PENDENTES`].
     ///
-    /// A marca so' sai depois que o disco confirmou: se qualquer `fsync`
-    /// falhar, a lista inteira volta ao registro. Uma sincronizacao repetida
-    /// custa tempo; uma marca perdida custaria o dado, e o `descarregar_sujas`
-    /// do servidor conta justamente com poder tentar de novo.
+    /// A marca so' sai depois que o disco confirmou: se qualquer passo
+    /// falhar, a lista inteira volta ao registro -- o volume continua devendo,
+    /// e dizer que nao deve seria o pior dos dois erros.
+    ///
+    /// **Voltar a lista NAO e poder repetir o `fsync`** (pedido 509). Isto
+    /// dizia que o `descarregar_sujas` do servidor «conta justamente com poder
+    /// tentar de novo», e era a premissa do defeito: depois de um `fsync`
+    /// recusado o nucleo pode ter descartado as paginas, e o proximo responde
+    /// Ok sem elas. Repetir continua valendo para o que falha ANTES do disco
+    /// (abrir o volume, `EMFILE`); o `fsync` recusado passa por
+    /// [`crate::sincronia::sync_all`], que derruba o servidor ou deixa o
+    /// diretorio recusando -- e a repeticao nunca chega a responder Ok.
     ///
     /// # O que se PULA, e por que so' isso (pedido 258, 16/09/2026)
     ///
@@ -915,9 +923,10 @@ impl Volumes {
             // Quem ja esta em `abertos` volta pelo mesmo descritor, inclusive
             // se o arquivo tiver sido apagado debaixo dele: `arquivo` so' pede
             // o disco quando o volume nao esta no cache.
+            let caminho = self.caminho(volume);
             let f = self.arquivo(volume, false)?;
             f.flush()?;
-            f.sync_all()?;
+            crate::sincronia::sync_all(f, &caminho)?;
             self.sincronizados += 1;
             trava(&self.pendentes).batizados.insert(volume);
         }
@@ -1018,9 +1027,10 @@ impl Volumes {
     /// Existe para o expurgo da trilha levar o RASTRO ao disco fora da trava
     /// global -- ver `Table::preparar_expurgo_da_trilha`.
     pub fn sincronizar_volume(&mut self, volume: u32) -> Result<()> {
+        let caminho = self.caminho(volume);
         let f = self.arquivo(volume, false)?;
         f.flush()?;
-        f.sync_all()?;
+        crate::sincronia::sync_all(f, &caminho)?;
         self.sincronizados += 1;
         Ok(())
     }

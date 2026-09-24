@@ -564,7 +564,7 @@ impl Preparada {
                 w.write_all(&dados)?;
                 w.flush()?;
             }
-            arquivo.sync_all()?;
+            crate::sincronia::sync_all(&arquivo, &alvo)?;
             escrita += dados.len() as u64;
         }
 

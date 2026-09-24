@@ -1145,9 +1145,9 @@
       "id": "recuperacao-nao-completa-o-commit",
       "titulo": "a recuperação conta e apaga a marca válida sem completar o commit",
       "veredito": "PROVADA",
-      "segundos": 48.43,
+      "segundos": 57.72,
       "notas": [],
-      "quando": "2026-09-24 01:13"
+      "quando": "2026-09-24 15:15"
     },
     {
       "id": "ndx-queda-com-cabecalho-limpo",
@@ -1969,9 +1969,9 @@
       "id": "completar-apaga-a-marca-impossivel",
       "titulo": "a recuperação do COMMIT apaga a marca de uma operação que só estava congelada",
       "veredito": "PROVADA",
-      "segundos": 48.93,
+      "segundos": 58.18,
       "notas": [],
-      "quando": "2026-09-24 01:13"
+      "quando": "2026-09-24 15:15"
     },
     {
       "id": "after-no-commit-some-calado",
@@ -2161,9 +2161,9 @@
       "id": "drop-grava-o-ndx-rasgado",
       "titulo": "o `Drop` do `.ndx` grava a árvore rasgada por um pânico no meio da escrita e baixa o byte 52: a tabela volta limpa e errada",
       "veredito": "PROVADA",
-      "segundos": 1.58,
+      "segundos": 4.99,
       "notas": [],
-      "quando": "2026-09-24 03:58"
+      "quando": "2026-09-24 15:15"
     },
     {
       "id": "marca-do-ndx-sobe-depois-do-reg",
@@ -2177,17 +2177,17 @@
       "id": "drop-do-ndx-decide-por-panicking",
       "titulo": "o `Drop` do `.ndx` decide por `thread::panicking()`: o pânico capturado e o `Drop` depois gravam a árvore rasgada como limpa",
       "veredito": "PROVADA",
-      "segundos": 1.59,
+      "segundos": 5.38,
       "notas": [],
-      "quando": "2026-09-24 03:58"
+      "quando": "2026-09-24 15:15"
     },
     {
       "id": "drop-do-ndx-decide-por-panicking-pela-abi",
       "titulo": "pela ABI de C, o punho envenenado por um pânico no meio da escrita, ao ser fechado, grava o índice rasgado como limpo",
       "veredito": "PROVADA",
-      "segundos": 1.26,
+      "segundos": 5.31,
       "notas": [],
-      "quando": "2026-09-24 03:58"
+      "quando": "2026-09-24 15:15"
     },
     {
       "id": "sincronizar-limpa-o-ndx-aberto-sujo",
@@ -2556,6 +2556,62 @@
       "segundos": 53.45,
       "notas": [],
       "quando": "2026-09-24 13:44"
+    },
+    {
+      "id": "fsync-recusado-repete-no-diario",
+      "titulo": "o `fsync` recusado de um volume é repetido e responde Ok: o `Volumes` devolvia a lista ao registro «para o fecho tentar de novo»",
+      "veredito": "PROVADA",
+      "segundos": 4.76,
+      "notas": [],
+      "quando": "2026-09-24 15:15"
+    },
+    {
+      "id": "fsync-recusado-repete-no-indice",
+      "titulo": "o `.ndx` cujo `fsync` foi recusado responde Ok no fecho seguinte, pela porta da árvore que não presta",
+      "veredito": "PROVADA",
+      "segundos": 4.89,
+      "notas": [],
+      "quando": "2026-09-24 15:15"
+    },
+    {
+      "id": "drop-baixa-o-byte-52-depois-do-fsync-recusado",
+      "titulo": "depois de um `fsync` recusado no diretório, o `Drop` do `.ndx` grava o cabeçalho limpo por cima das páginas que o núcleo pode ter perdido",
+      "veredito": "PROVADA",
+      "segundos": 4.87,
+      "notas": [],
+      "quando": "2026-09-24 15:15"
+    },
+    {
+      "id": "pagina-que-o-disco-recusou-sai-das-sujas",
+      "titulo": "a página do `.ndx` que o disco cheio recusou sai da lista de sujas antes de ser gravada, e o segundo fecho baixa o byte 52 sobre ela",
+      "veredito": "PROVADA",
+      "segundos": 4.81,
+      "notas": [],
+      "quando": "2026-09-24 15:15"
+    },
+    {
+      "id": "pagina-despejada-que-o-disco-recusou-some",
+      "titulo": "a página suja despejada do cache que o disco recusou some: nem no arquivo, nem na RAM",
+      "veredito": "PROVADA",
+      "segundos": 4.84,
+      "notas": [],
+      "quando": "2026-09-24 15:15"
+    },
+    {
+      "id": "servidor-segue-de-pe-depois-do-fsync-recusado",
+      "titulo": "o servidor segue de pé depois de um `fsync` recusado, gravando num disco que já se sabe que mente",
+      "veredito": "PROVADA",
+      "segundos": 63.13,
+      "notas": [],
+      "quando": "2026-09-24 15:15"
+    },
+    {
+      "id": "completar-engole-a-tabela-que-nao-foi-ao-disco",
+      "titulo": "a recuperação engole o erro do `sincronizar` e apaga a marca de um commit cujo dado não foi ao disco",
+      "veredito": "PROVADA",
+      "segundos": 69.56,
+      "notas": [],
+      "quando": "2026-09-24 15:15"
     }
   ]
 }

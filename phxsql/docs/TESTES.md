@@ -959,8 +959,15 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `sobreposicao-guarda-a-linha-crua` | a sobreposicao guarda a linha crua do empilhar, e nao a que o store vai gravar | 4 | ✅ provada |
 | `nulo-colide-no-unico` | o segundo NULL num indice unico cai em DUPLICADO | 1 | ✅ provada |
 | `nulo-colide-no-unico-do-commit` | o COMMIT com o segundo NULL num indice unico sai pela metade | 1 | ✅ provada |
+| `fsync-recusado-repete-no-diario` | o `fsync` recusado de um volume é repetido e responde Ok: o `Volumes` devolvia a lista ao registro «para o fecho tentar de novo» | 1 | ✅ provada |
+| `fsync-recusado-repete-no-indice` | o `.ndx` cujo `fsync` foi recusado responde Ok no fecho seguinte, pela porta da árvore que não presta | 1 | ✅ provada |
+| `drop-baixa-o-byte-52-depois-do-fsync-recusado` | depois de um `fsync` recusado no diretório, o `Drop` do `.ndx` grava o cabeçalho limpo por cima das páginas que o núcleo pode ter perdido | 2 | ✅ provada |
+| `pagina-que-o-disco-recusou-sai-das-sujas` | a página do `.ndx` que o disco cheio recusou sai da lista de sujas antes de ser gravada, e o segundo fecho baixa o byte 52 sobre ela | 2 | ✅ provada |
+| `pagina-despejada-que-o-disco-recusou-some` | a página suja despejada do cache que o disco recusou some: nem no arquivo, nem na RAM | 1 | ✅ provada |
+| `servidor-segue-de-pe-depois-do-fsync-recusado` | o servidor segue de pé depois de um `fsync` recusado, gravando num disco que já se sabe que mente | 1 | ✅ provada |
+| `completar-engole-a-tabela-que-nao-foi-ao-disco` | a recuperação engole o erro do `sincronizar` e apaga a marca de um commit cujo dado não foi ao disco | 1 | ✅ provada |
 
-**318 guardas: 1 aposentada, 313 provadas, 4 redundantes** — 8735 s de mutação, medido em 2026-09-16 15:25.
+**325 guardas: 1 aposentada, 320 provadas, 4 redundantes** — 8922 s de mutação, medido em 2026-09-16 15:25.
 
 As guardas que esta corrida ainda cita, hoje aposentadas:
 

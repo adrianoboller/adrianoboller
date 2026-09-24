@@ -1,0 +1,324 @@
+//! O disco que RECUSA, e o que o motor faz depois -- pedidos 509 e 512.
+//!
+//! Os dois sairam do catalogo de catastrofes do papel C
+//! (`docs/propostas/parecer-dba-496-catastrofes-2026-09-24.md`, C1 e C2b), e
+//! os dois sao a mesma doenca em lugares diferentes: **o que falhou de ir ao
+//! disco saia da lista do que falta ir ao disco.**
+//!
+//! * **509** -- no nucleo: depois de um `fsync` recusado, o proximo responde
+//!   Ok sem o dado estar la, e o motor contava com repetir;
+//! * **512** -- no nosso cache: a pagina do `.ndx` que o disco cheio recusou
+//!   perdia a flag de suja antes de ser gravada, e o segundo fecho baixava o
+//!   byte 52 sobre ela.
+//!
+//! # As recusas aqui sao forjadas, e a prova contra o SO mora ao lado
+//!
+//! `phxsql_store::sincronia::falha_de_teste` devolve o mesmo retorno que o
+//! nucleo devolveria -- EIO no `fsync`, ENOSPC no `write` da pagina --, porque
+//! montar o disco que recusa exige `CAP_SYS_ADMIN`. O que estes testes provam
+//! e a CONDUTA de depois, que e decisao do motor. A recusa de verdade (tmpfs
+//! cheio, ext4 sobre loop com provisionamento fino) e a
+//! `bancada/catastrofes/`.
+//!
+//! So com `debug_assertions`: em `release` o gancho nao existe, e sem ele
+//! nao ha recusa a provocar.
+#![cfg(debug_assertions)]
+
+mod comum;
+use comum::DirTemp;
+
+use phxsql_core::{Column, ColumnType, IndexColumn, IndexDef, Schema, Value};
+use phxsql_store::sincronia::falha_de_teste::{self, Onde};
+use phxsql_store::table::Table;
+use std::path::Path;
+
+/// `pedidos(id Int8 unico, nome, cidade)`: o esquema das provas do papel C.
+fn esquema() -> Schema {
+    Schema::new(
+        "pedidos",
+        vec![
+            Column::new("id", ColumnType::Int8).obrigatoria(),
+            Column::new("nome", ColumnType::Str(60)).obrigatoria(),
+            Column::new("cidade", ColumnType::Str(40)),
+        ],
+        vec![IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico()],
+    )
+    .unwrap()
+}
+
+fn linha(id: i64) -> Vec<Value> {
+    vec![
+        Value::Int(id),
+        Value::Str(format!("cliente numero {id:08}")),
+        Value::Str("Blumenau".into()),
+    ]
+}
+
+/// A marca de sujo do `.ndx`, lida do ARQUIVO -- e o que a proxima abertura
+/// vai ler, e nao o que a RAM acha.
+fn byte_52(d: &Path) -> u8 {
+    std::fs::read(d.join("pedidos.ndx")).unwrap()[52]
+}
+
+/// A tabela de `n` linhas, com o `.ndx` cheio de paginas sujas em RAM.
+fn tabela_com(d: &Path, n: i64) -> Table {
+    let mut t = Table::criar(d, esquema()).unwrap();
+    t.sincronizar().unwrap();
+    for id in 1..=n {
+        t.inserir(&linha(id)).unwrap();
+    }
+    t
+}
+
+/// Cada id de `ids` e achado pela chave, e o rowid dele e o proprio id (as
+/// linhas entram em ordem numa tabela nova).
+fn todos_achados(t: &mut Table, ids: impl Iterator<Item = i64>) {
+    for id in ids {
+        let r = t
+            .buscar("porId", &[Value::Int(id)])
+            .map_err(|e| e.to_string());
+        assert_eq!(r, Ok(vec![id as u64]), "o id {id} pela chave");
+    }
+}
+
+/// **509: o `fsync` recusado nao se repete como sucesso.**
+///
+/// Os passos do servidor, no molde do `p3b.sh` do papel C: o fecho 1 recusa;
+/// o operador libera espaco (a arma ja disparou); o fecho 2 no mesmo punho e o
+/// fecho 3 numa tabela REABERTA -- o `descarregar_sujas_com` reabre para
+/// sincronizar. Com o defeito, o 2 e o 3 respondiam Ok, e o servidor drenava
+/// as marcas dos commits. E quem recusou foi o `.log`, e nao o `.ndx`: o
+/// `Drop` da tabela gravava o cabecalho do `.ndx` limpo por cima das paginas
+/// que o nucleo pode ter perdido -- a outra metade do que o papel C mediu.
+#[test]
+fn fsync_recusado_nao_se_repete_como_sucesso() {
+    let d = DirTemp::novo("509-repetido");
+    let mut t = tabela_com(&d, 500);
+    falha_de_teste::armar(&d, Onde::Fsync, 1);
+    assert!(
+        t.sincronizar().is_err(),
+        "premissa: o fecho 1 tinha de encontrar a recusa forjada"
+    );
+
+    let fecho2 = t.sincronizar().map_err(|e| e.to_string());
+    assert!(
+        fecho2.is_err(),
+        "o fsync recusado foi repetido no mesmo punho e respondeu Ok: e a \
+         resposta que o nucleo da sem o dado estar no disco"
+    );
+    drop(t);
+    if let Ok(mut t) = Table::abrir(&d, "pedidos") {
+        assert!(
+            t.sincronizar().is_err(),
+            "a tabela REABERTA sincronizou Ok depois de um fsync recusado no \
+             mesmo diretorio -- e o caminho do fecho da janela no servidor"
+        );
+    }
+    assert_eq!(
+        byte_52(&d),
+        1,
+        "o Drop baixou a marca de sujo do .ndx depois de um fsync recusado: a \
+         proxima abertura nao saberia que tem de reconstruir"
+    );
+    assert!(
+        fecho2.unwrap_err().contains("pedido 509"),
+        "a recusa tinha de dizer por que nao repete"
+    );
+}
+
+/// **512: a pagina que o disco recusou continua suja -- e o segundo fecho a
+/// grava quando o espaco volta.**
+///
+/// E o caminho do `gravar_de_verdade`: o segundo fecho no MESMO punho. Com o
+/// defeito, o `tirar_sujas` ja tinha baixado a flag de todas antes de gravar
+/// a primeira: o segundo fecho achava nada sujo, gravava o byte 52 em 0, e a
+/// pagina ficava de zeros no arquivo -- `CRC invalido` na reabertura.
+#[test]
+fn pagina_que_o_disco_recusou_continua_suja() {
+    let d = DirTemp::novo("512-liberado");
+    let mut t = tabela_com(&d, 2_000);
+    falha_de_teste::armar(&d, Onde::PaginaDoIndice, 1);
+    assert!(
+        t.sincronizar().is_err(),
+        "premissa: o fecho 1 tinha de encontrar o disco cheio"
+    );
+    assert_eq!(
+        byte_52(&d),
+        1,
+        "a marca de sujo baixou com pagina fora do disco"
+    );
+
+    t.sincronizar()
+        .expect("com o espaco de volta, o segundo fecho grava a pagina que ficou");
+    drop(t);
+    let mut t = Table::abrir(&d, "pedidos").unwrap();
+    assert!(!t.indice_precisa_reconstruir());
+    t.verificar().unwrap_or_else(|e| {
+        panic!(
+            "o segundo fecho respondeu Ok e o .ndx no disco nao presta ({e}): a \
+             pagina que o disco recusou saiu da lista de sujas sem ter sido gravada"
+        )
+    });
+    todos_achados(&mut t, 1..=2_000);
+}
+
+/// **512, o outro lado: com o disco AINDA cheio, nada baixa a marca.**
+///
+/// O segundo fecho recusa de novo (a pagina continua suja e continua sem
+/// lugar), o `Drop` tambem, e a abertura seguinte le o byte 52 em 1 e da o
+/// recado certo -- «reparar indice» --, e nao «CRC invalido», que manda
+/// procurar disco ruim.
+#[test]
+fn disco_ainda_cheio_deixa_a_marca_e_o_recado_certo() {
+    let d = DirTemp::novo("512-cheio");
+    let mut t = tabela_com(&d, 2_000);
+    falha_de_teste::armar(&d, Onde::PaginaDoIndice, 1_000_000);
+    assert!(t.sincronizar().is_err(), "premissa: o disco cheio");
+    assert!(
+        t.sincronizar().is_err(),
+        "o segundo fecho respondeu Ok com a pagina fora do disco"
+    );
+    drop(t);
+    falha_de_teste::desarmar(&d);
+    assert_eq!(
+        byte_52(&d),
+        1,
+        "o .ndx foi ao disco marcado LIMPO sobre uma pagina que nao se gravou"
+    );
+
+    let mut t = Table::abrir(&d, "pedidos").unwrap();
+    assert!(t.indice_precisa_reconstruir());
+    let recado = t
+        .buscar("porId", &[Value::Int(1)])
+        .map_err(|e| e.to_string())
+        .unwrap_err();
+    assert!(
+        recado.contains("reparar indice"),
+        "o recado tinha de mandar reconstruir, e disse: {recado}"
+    );
+    t.reindexar().unwrap();
+    todos_achados(&mut t, 1..=2_000);
+}
+
+/// **512, o IRMAO no despejo: a pagina suja que sai do cache para abrir lugar
+/// e nao se grava volta, suja.**
+///
+/// Irmao pela ordem, e nao pelo nome: tirar da lista do que falta gravar,
+/// gravar, e o erro deixar a pagina sem lugar nenhum. Aqui quem despeja e uma
+/// LEITURA -- o `buscar` que traz do arquivo uma pagina que nao esta no cache
+/// --, e por isso nenhuma escrita fica interrompida para mandar reconstruir:
+/// com o defeito, o fecho seguinte gravava o resto, baixava o byte 52, e a
+/// pagina despejada ficava de fora sem ninguem saber.
+///
+/// O cache vai a 4 paginas para o despejo acontecer com poucas linhas. O teto
+/// e do PROCESSO (`definir_cache_paginas`), entao os vizinhos deste binario
+/// correm com o cache pequeno tambem -- o que so muda o custo deles, nunca a
+/// resposta, que e justamente o que um cache tem de garantir.
+#[test]
+fn pagina_despejada_que_o_disco_recusou_volta_suja() {
+    phxsql_store::ndx::definir_cache_paginas(4);
+    let d = DirTemp::novo("512-despejo");
+    let mut t = tabela_com(&d, 3_000);
+    falha_de_teste::armar(&d, Onde::PaginaDoIndice, 1);
+    let recusou = (1..=3_000)
+        .step_by(37)
+        .any(|id| t.buscar("porId", &[Value::Int(id)]).is_err());
+    assert!(
+        recusou,
+        "premissa: nenhuma leitura despejou pagina suja com o disco cheio"
+    );
+    falha_de_teste::desarmar(&d);
+
+    t.sincronizar()
+        .expect("com o espaco de volta, o fecho grava tudo o que ficou sujo");
+    drop(t);
+    let mut t = Table::abrir(&d, "pedidos").unwrap();
+    t.verificar().unwrap_or_else(|e| {
+        panic!(
+            "a pagina despejada que o disco recusou sumiu: o fecho gravou o resto, \
+             baixou a marca, e o .ndx no disco nao presta ({e})"
+        )
+    });
+    todos_achados(&mut t, 1..=3_000);
+}
+
+/// **509, o `.ndx` sozinho: a porta da arvore que nao presta nao responde Ok
+/// por cima da recusa.**
+///
+/// Numa tabela, o `.reg` e sincronizado DEPOIS do `.ndx` e fica devendo quando
+/// o `.ndx` recusa -- entao o fecho repetido da tabela ja recusa pelo `.reg`.
+/// O `.ndx` sozinho (o `.fts` e um; o `NdxFile` e publico) nao tem esse
+/// vizinho: as paginas ja foram entregues ao nucleo e estao limpas em RAM, e
+/// a porta «arvore que nao presta nao sincroniza» -- que o `fsync` recusado
+/// fecha, porque ele a faz nao prestar -- respondia Ok sem tocar no disco. E
+/// a conferencia no topo do `NdxFile::sincronizar` que segura isso.
+#[test]
+fn indice_sozinho_que_o_fsync_recusou_nao_repete() {
+    use phxsql_core::keyenc::{escrever_componente, largura_componente};
+    use phxsql_store::ndx::NdxFile;
+
+    let d = DirTemp::novo("509-indice");
+    let caminho = d.join("t.ndx");
+    let esquema = Schema::new(
+        "t",
+        vec![Column::new("k", ColumnType::Int8)],
+        vec![IndexDef::new("porChave", vec![IndexColumn::asc(0)]).unico()],
+    )
+    .unwrap();
+    let mut n = NdxFile::criar(&caminho, &esquema).unwrap();
+    n.sincronizar().unwrap();
+    let mut chave = vec![0u8; largura_componente(&ColumnType::Int8).unwrap()];
+    for v in 1..=2_000i64 {
+        escrever_componente(&Value::Int(v), &ColumnType::Int8, false, false, &mut chave).unwrap();
+        n.inserir(0, &chave, v as u64).unwrap();
+    }
+    falha_de_teste::armar(&d, Onde::Fsync, 1);
+    assert!(n.sincronizar().is_err(), "premissa: a recusa forjada");
+    assert!(
+        n.sincronizar().is_err(),
+        "o fecho repetido do .ndx respondeu Ok: a porta da arvore que nao \
+         presta respondeu sem conferir a recusa"
+    );
+    drop(n);
+    assert_eq!(
+        std::fs::read(&caminho).unwrap()[52],
+        1,
+        "o Drop baixou a marca do .ndx cujo fsync foi recusado"
+    );
+}
+
+/// **509, sem o `.ndx` para segurar: o diario sozinho tambem nao repete.**
+///
+/// Numa tabela, o `NdxFile::sincronizar` confere a recusa antes da porta que
+/// responde Ok sem disco -- e isso bastaria para o `Table::sincronizar`
+/// recusar mesmo que o `sync_all` do motor repetisse. Quem sincroniza um
+/// arquivo de `Volumes` SEM `.ndx` ao lado (o diario aberto sozinho, a
+/// lixeira, a copia do `.reg` na migracao) so tem a conferencia do proprio
+/// `sync_all`, e e ela que este teste segura: sem ela, o segundo `fsync` do
+/// mesmo `.log` responde Ok.
+#[test]
+fn o_diario_sozinho_tambem_nao_repete() {
+    use phxsql_core::paginacao::Paginacao;
+    use phxsql_store::log::{LogFile, Operacao};
+
+    let d = DirTemp::novo("509-diario");
+    let mut l = LogFile::criar(&*d, "t", Paginacao::DESLIGADA).unwrap();
+    l.sincronizar().unwrap();
+    for rowid in 1..=50 {
+        l.registrar(Operacao::Inclusao, rowid, 1).unwrap();
+    }
+    falha_de_teste::armar(&d, Onde::Fsync, 1);
+    assert!(l.sincronizar().is_err(), "premissa: a recusa forjada");
+    assert!(
+        l.sincronizar().is_err(),
+        "o fsync recusado do diario foi repetido e respondeu Ok"
+    );
+    drop(l);
+    let mut l = LogFile::abrir(&*d, "t", Paginacao::DESLIGADA).unwrap();
+    l.registrar(Operacao::Inclusao, 51, 1).unwrap();
+    assert!(
+        l.sincronizar().is_err(),
+        "o diario REABERTO sincronizou Ok depois de um fsync recusado no mesmo \
+         diretorio"
+    );
+}

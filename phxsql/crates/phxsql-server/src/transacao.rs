@@ -1485,7 +1485,9 @@ enum NoArranque {
     /// No arranque nada esta congelado nem reservado (os dois registros sao
     /// do PROCESSO), entao a operacao que nao entra agora nao entra nunca: a
     /// marca sai, e o relatorio a conta em `operacoes IMPOSSIVEIS`. E o
-    /// comportamento de sempre.
+    /// comportamento de sempre -- MENOS quando a tabela nao foi ao disco
+    /// (pedido 503, item 2): isso nao e operacao que nao entra, e dado que
+    /// ainda nao esta duravel, e a marca e o que o traz de volta.
     Sim,
     /// Com o servidor de pe, a operacao impossivel pode ser PASSAGEIRA -- a
     /// tabela esta congelada por uma reescrita, e volta a atender quando ela
@@ -1518,9 +1520,9 @@ fn tratar_marca(
     match ler_marca(caminho) {
         Ok(Leitura::Aberta(marca)) => {
             let antes = r.impossiveis.len();
-            completar(db, &marca, r);
+            let no_disco = completar(db, &marca, r);
             r.completadas += 1;
-            arranque == NoArranque::Sim || r.impossiveis.len() == antes
+            no_disco && (arranque == NoArranque::Sim || r.impossiveis.len() == antes)
         }
         // A terceira resposta: cifrada, e esta chave nao a abre. **Nao se
         // apaga.** Apagar aqui trocaria confidencialidade por durabilidade --
@@ -1682,8 +1684,9 @@ pub fn componente_de_chave(diretorio: &Path, todas: &[String], iniciais: &[Strin
         .collect()
 }
 
-/// Reaplica o que falta de UMA marca.
-fn completar(db: &phxsql_store::catalogo::Database, marca: &Marca, r: &mut Relatorio) {
+/// Reaplica o que falta de UMA marca. Devolve se as tabelas dela foram ao
+/// disco -- e so entao a marca pode sair, em qualquer [`NoArranque`].
+fn completar(db: &phxsql_store::catalogo::Database, marca: &Marca, r: &mut Relatorio) -> bool {
     let mut tabelas: HashMap<String, phxsql_store::table::Table> = HashMap::new();
     for op in &marca.operacoes {
         // Garante o handle no mapa, aberto e preparado UMA vez.
@@ -1773,13 +1776,30 @@ fn completar(db: &phxsql_store::catalogo::Database, marca: &Marca, r: &mut Relat
         }
         tabelas.insert(op.tabela.clone(), t);
     }
-    for (_, mut t) in tabelas {
+    let mut no_disco = true;
+    for (nome, mut t) in tabelas {
         // O relatorio CONTA o que a cascata reconstruiu, junto do que a marca
         // reconstruiu: reparar em silencio seria trocar um recado ruim por
         // nenhum recado.
         r.indices_reconstruidos += t.indices_da_cascata_reconstruidos();
-        let _ = t.sincronizar();
+        // Era `let _ =` (pedido 503, item 2): o erro sumia e quem chama
+        // apagava a marca -- o bilhete de um commit cujo dado nao foi ao
+        // disco, na mesma ordem do fecho da janela (sincronizar, apagar a
+        // marca) que o pedido 509 consertou no servidor. E o irmao dele. O
+        // `fsync` recusado nem volta aqui no servidor (o processo cai na
+        // recusa); o que volta e o erro de antes do disco -- o `.pag` que nao
+        // se grava, o volume que nao abre, a pagina do `.ndx` no disco cheio
+        // --, e com ele a marca FICA.
+        if let Err(e) = t.sincronizar() {
+            no_disco = false;
+            r.impossiveis.push(format!(
+                "transacao {}: {nome} nao foi ao disco ({e}); a marca fica para a \
+                 proxima recuperacao",
+                marca.id
+            ));
+        }
     }
+    no_disco
 }
 
 /// Aplica uma operacao da marca. `Ok(false)` = ja estava aplicada.
@@ -2169,5 +2189,88 @@ mod testes {
         assert_eq!(e, vec!["loja/auditoria", "loja/pedidos"]);
         assert_eq!(f.texto_ou("lock_mode", ""), "AUTO");
         assert_eq!(f.texto_ou("scope_mode", ""), "DYNAMIC");
+    }
+
+    /// **Pedido 503, item 2 -- o irmao do 509: a tabela que nao foi ao disco
+    /// segura a marca, inclusive no arranque.**
+    ///
+    /// O `completar` fazia `let _ = t.sincronizar()`, e o `recuperar` apagava
+    /// a marca assim mesmo: a mesma ordem do fecho da janela (sincronizar,
+    /// apagar o bilhete), com o erro engolido. A falha vem do sistema
+    /// operacional, e nao de um sinalizador: o `.pag` da tabela vira
+    /// DIRETORIO, e o `sincronizar` termina gravando o descritor -- o gatilho
+    /// do `fsync_que_falha_no_fio_tambem_segura_as_marcas`. Nao e o `fsync`
+    /// forjado do `phxsql_store::sincronia`, de proposito: este binario de
+    /// testes sobe servidores, e o servidor registra o `abort` na recusa.
+    ///
+    /// Com o defeito: a marca sai do disco e o relatorio nao diz nada. Com o
+    /// conserto: a marca fica, o relatorio diz por que, e quando o `.pag`
+    /// volta a se gravar a recuperacao seguinte a completa e a apaga -- sem
+    /// duplicar a linha, porque a reaplicacao e idempotente pelo rowid.
+    #[test]
+    fn tabela_que_nao_foi_ao_disco_segura_a_marca_no_arranque() {
+        use phxsql_core::schema::{Column, IndexColumn, IndexDef, Schema};
+        use phxsql_core::types::ColumnType;
+
+        let d = dir("nao-foi-ao-disco");
+        let inst = Instancia::nova(&d).unwrap();
+        let db = inst.criar_database("loja").unwrap();
+        let esquema = Schema::new(
+            "clientes",
+            vec![
+                Column::new("id", ColumnType::Int4).obrigatoria(),
+                Column::new("nome", ColumnType::Str(40)),
+            ],
+            vec![IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico()],
+        )
+        .unwrap();
+        let mut t = db.criar_tabela(None, esquema).unwrap();
+        t.sincronizar().unwrap();
+        drop(t);
+        let marca = gravar_marca(
+            db.caminho(),
+            7,
+            0,
+            &[Escrita {
+                database: "loja".into(),
+                tabela: "clientes".into(),
+                acao: Acao::Inserir,
+                rowid: 1,
+                linha: vec![Value::Int(1), Value::Str("Ana".into())],
+                linha_antiga: Vec::new(),
+                motivo: String::new(),
+                cascata_na_lista: false,
+            }],
+        )
+        .unwrap();
+        let pag = db.caminho().join("clientes.pag");
+        let _ = std::fs::remove_file(&pag);
+        std::fs::create_dir(&pag).unwrap();
+
+        let r = recuperar(&inst);
+        assert!(
+            marca.exists(),
+            "a tabela nao foi ao disco e a marca do commit saiu assim mesmo: o \
+             bilhete que a traria de volta se perdeu ({:?})",
+            r.impossiveis
+        );
+        assert!(
+            r.impossiveis.iter().any(|i| i.contains("nao foi ao disco")),
+            "a marca ficou, e o relatorio tinha de dizer por que: {:?}",
+            r.impossiveis
+        );
+
+        std::fs::remove_dir(&pag).unwrap();
+        let r = recuperar(&inst);
+        assert!(
+            r.impossiveis.is_empty() && !marca.exists(),
+            "com o disco de volta a marca tinha de se completar e sair: {:?}",
+            r.impossiveis
+        );
+        assert_eq!(
+            db.abrir_qualificada("clientes").unwrap().registros(),
+            1,
+            "a segunda recuperacao duplicou a linha"
+        );
     }
 }
