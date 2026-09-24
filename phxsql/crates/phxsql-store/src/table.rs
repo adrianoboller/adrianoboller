@@ -1806,6 +1806,11 @@ impl Table {
         // «chave completa ja existe no indice» --, e a marca de «ficou para
         // tras numa queda» nunca desce, porque so a recriacao a tira.
         let dobra: Vec<bool> = self.indices_de_texto.iter().map(|(_, d)| *d).collect();
+        // O punho velho nao pode levar nada ao arquivo que o `recriar` trunca
+        // -- o `Drop` dele roda DEPOIS da atribuicao. Ver `NdxFile::abandonar`.
+        if let Some(f) = self.fts.as_mut() {
+            f.abandonar();
+        }
         // E aqui que um `.fts` nascido em claro vira selado: o `reindexar`
         // passa por este caminho, e com o cofre ligado o arquivo novo nasce
         // com a pagina fechada. E a saida escrita para quem ligou a cifra
@@ -7004,6 +7009,21 @@ impl Table {
         })
     }
 
+    /// A tabela so abre sem mandar reconstruir NESTE processo? -- pedido 522.
+    ///
+    /// Verdade quando o `.ndx` (ou o `.fts`) tem o byte 52 em 1 que so o
+    /// atestado deste processo sustenta: um processo novo mandaria
+    /// reconstruir. Quem fecha a tabela para outro processo abrir -- o
+    /// embutido -- sincroniza quando isto diz sim; quem fica (o servidor, que
+    /// abre e fecha a cada pedido) deixa para o fecho da janela.
+    pub fn marca_so_neste_processo(&self) -> bool {
+        self.ndx.marca_so_neste_processo()
+            || self
+                .fts
+                .as_ref()
+                .is_some_and(|f| f.marca_so_neste_processo())
+    }
+
     /// O indice desta tabela ficou para tras numa queda?
     ///
     /// Enquanto a resposta for `true`, TODA operacao de indice recusa -- o
@@ -7028,7 +7048,11 @@ impl Table {
     /// rowids inseridos em ordem crescente dentro de cada chave.
     pub fn reindexar(&mut self) -> Result<Vec<(String, u64)>> {
         // `NdxFile::criar` trunca o arquivo: a arvore antiga vai embora
-        // inteira, em vez de ser remendada.
+        // inteira, em vez de ser remendada. E o punho velho sai ANTES, e
+        // calado: a atribuicao cria o arquivo novo primeiro e so depois roda
+        // o `Drop` do velho, que levava paginas e cabecalho da arvore antiga
+        // para dentro do arquivo novo -- e, desde o pedido 522, atestava.
+        self.ndx.abandonar();
         self.ndx = NdxFile::criar(caminho(&self.diretorio, &self.nome, EXT_NDX), &self.esquema)?;
         // Da criacao ate a ultima arvore montada o `.ndx` esta ATRAS do `.reg`
         // -- vazio, no comeco. Um panico na varredura deixava o `Drop` gravar
@@ -7295,6 +7319,19 @@ impl Table {
     ///
     /// O `.reg` vai por ultimo pelo mesmo motivo, e ele fecha a lista.
     pub fn sincronizar(&mut self) -> Result<()> {
+        // O `.fts` e um `.ndx` por dentro, e ficava FORA do fecho: nenhum
+        // `fsync` o alcancava, e o byte 52 dele so descia pelo `fechar` --
+        // sem `fsync`, o defeito do pedido 522 inteiro, e sem remedio nenhum
+        // na queda da maquina. Desde o 522 o `fechar` nao baixa mais a marca,
+        // e sem esta linha o indice de texto de toda tabela escrita abriria
+        // marcado no processo seguinte. Tabela sem indice de texto nao paga
+        // nada: o portao e o `None`. Vai PRIMEIRO, e nao ao lado do `.ndx`:
+        // ele e derivado e a marca dele se protege sozinha, e o que a ordem
+        // de baixo guarda -- o `.trash` antes do `.reg`, o `.reg` por ultimo
+        // -- nao se mexe.
+        if let Some(f) = self.fts.as_mut() {
+            f.sincronizar()?;
+        }
         self.lixeira.sincronizar()?;
         self.bin.sincronizar()?;
         self.memo.sincronizar()?;

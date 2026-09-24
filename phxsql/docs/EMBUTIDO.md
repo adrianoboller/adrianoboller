@@ -356,10 +356,11 @@ esquema serve para criar a mesma tabela em vários databases.
 |---|---|
 | `phx_tabela_criar` | cria a partir de um `PhxEsquema` |
 | `phx_tabela_abrir` | abre pelo nome (aceita `schema.tabela`) |
-| `phx_tabela_fechar` | libera |
+| `phx_tabela_fechar` | libera — e garante que o **próximo processo** abre a tabela: se ela foi escrita e não sincronizada, sincroniza antes de soltar (pedido 522); falhando, libera assim mesmo e devolve o erro |
 | `phx_tabela_registros` | quantas linhas ativas |
 | `phx_tabela_colunas` / `phx_tabela_coluna_nome` / `phx_tabela_coluna_tipo` | o esquema de volta |
-| `phx_sincronizar` | descarga dos arquivos em disco |
+| `phx_sincronizar` | descarga dos arquivos em disco — a durabilidade contra queda de energia **antes** do fechar |
+| `phx_reindexar` | reconstrói os índices (`.ndx` e `.fts`) do `.reg`: o conserto do índice que uma queda deixou marcado |
 | `phx_verificar` | confere integridade e devolve os contadores |
 
 ### 4.5 Dado

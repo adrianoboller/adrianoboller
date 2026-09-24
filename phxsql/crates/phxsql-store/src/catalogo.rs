@@ -599,6 +599,21 @@ pub struct Database {
 }
 
 impl Database {
+    /// O database num diretorio que NAO mora debaixo de uma raiz de dados: o
+    /// palco da restauracao, cujo nome comeca por ponto e nao passaria no
+    /// `validar_nome`. So o crate usa, e so para o que a restauracao faz no
+    /// palco antes de ele virar database.
+    pub(crate) fn no_diretorio(caminho: &Path) -> Database {
+        Database {
+            nome: caminho
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            caminho: caminho.to_path_buf(),
+            tipo: ler_marca(caminho),
+        }
+    }
+
     pub fn nome(&self) -> &str {
         &self.nome
     }
@@ -695,6 +710,74 @@ impl Database {
         }
         saida.sort();
         Ok(saida)
+    }
+
+    /// Reconstroi o `.ndx` -- e o `.fts` -- de toda tabela deste database que
+    /// abre marcada, e sincroniza o que reconstruiu. Pedido 522.
+    ///
+    /// Devolve quantas reconstruiu e, por tabela, o que NAO reconstruiu -- e a
+    /// linha de cada uma diz qual e por que: tabela que continua recusando nao
+    /// pode sumir de relatorio nenhum.
+    ///
+    /// # Quem chama, e por que o mesmo motor serve aos dois
+    ///
+    /// O arranque do servidor, para as tabelas que o processo anterior deixou
+    /// com o byte 52 em 1 (o `fechar` nao baixa mais a marca -- so o
+    /// `sincronizar`, com `fsync`); e a restauracao, porque o backup copia o
+    /// `.ndx` como o nucleo o tinha, e o de toda tabela escrita desde o ultimo
+    /// fecho da janela sai marcado. A pergunta e a mesma -- «esta arvore abre
+    /// marcada?» -- e a resposta mora aqui uma vez so.
+    ///
+    /// # Por que o cabecalho antes da tabela
+    ///
+    /// Abrir a tabela sao dez arquivos, e quase toda tabela esta limpa:
+    /// [`crate::ndx::marcado_no_arquivo`] le 128 bytes. O cabecalho que nem se
+    /// le conta como marcado, e a abertura da tabela diz o motivo.
+    ///
+    /// # Por que `sincronizar` depois do `reindexar`
+    ///
+    /// Reconstruido e so atestado neste processo, o indice abriria marcado de
+    /// novo na queda seguinte antes do primeiro fecho da janela.
+    pub fn reconstruir_indices_marcados(&self) -> (usize, Vec<String>) {
+        let mut feitas = 0usize;
+        let mut pendentes = Vec::new();
+        if self.tipo != TipoDatabase::Padrao {
+            return (feitas, pendentes);
+        }
+        let tabelas = match self.todas_as_tabelas() {
+            Ok(t) => t,
+            Err(e) => {
+                pendentes.push(format!("{}: nao listou as tabelas ({e})", self.nome));
+                return (feitas, pendentes);
+            }
+        };
+        for qualificada in tabelas {
+            let (schema, tabela) = separar_qualificado(&qualificada);
+            let Ok(dir) = self.diretorio(schema.as_deref()) else {
+                continue;
+            };
+            let marcado = |ext: &str| {
+                let c = dir.join(format!("{tabela}.{ext}"));
+                c.exists() && crate::ndx::marcado_no_arquivo(&c).unwrap_or(true)
+            };
+            if !marcado("ndx") && !marcado(EXT_FTS) {
+                continue;
+            }
+            let feito = self.abrir_qualificada(&qualificada).and_then(|mut t| {
+                if !t.indice_precisa_reconstruir() {
+                    return Ok(false);
+                }
+                t.reindexar()?;
+                t.sincronizar()?;
+                Ok(true)
+            });
+            match feito {
+                Ok(true) => feitas += 1,
+                Ok(false) => {}
+                Err(e) => pendentes.push(format!("{}/{qualificada}: {e}", self.nome)),
+            }
+        }
+        (feitas, pendentes)
     }
 
     pub fn criar_tabela(&self, schema: Option<&str>, esquema: Schema) -> Result<Table> {
@@ -1000,6 +1083,12 @@ impl Database {
             }
             feitos.push((de.clone(), para.clone()));
         }
+        // O atestado do pedido 522 vai junto: e o mesmo inode, no caminho
+        // novo. Sem isto, a tabela escrita desde o ultimo fecho da janela
+        // abria no nome novo recusando tudo. Ver `ndx::levar_atestado`.
+        for (de, para) in &feitos {
+            crate::ndx::levar_atestado(de, para, true);
+        }
         Ok(feitos.len())
     }
 
@@ -1059,6 +1148,9 @@ impl Database {
                     // `copia_002.reg`, nao `copia.reg`.
                     let novo = format!("{nome_d}{}", &f[nome_o.len()..]);
                     std::fs::copy(arq.path(), dir_d.join(&novo))?;
+                    // O atestado do pedido 522 vale para a copia: ela saiu do
+                    // nucleo junto do `.reg` dela. Ver `ndx::levar_atestado`.
+                    crate::ndx::levar_atestado(&arq.path(), &dir_d.join(&novo), false);
                     copiados += 1;
                 }
             }
@@ -1122,6 +1214,8 @@ impl Database {
                 if pertence(&f, nome_o, ext) {
                     let novo = format!("{nome_d}{}", &f[nome_o.len()..]);
                     std::fs::copy(arq.path(), dir_d.join(&novo))?;
+                    // O mesmo do `duplicar_tabela`: o atestado vai junto.
+                    crate::ndx::levar_atestado(&arq.path(), &dir_d.join(&novo), false);
                     copiados += 1;
                 }
             }

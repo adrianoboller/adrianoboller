@@ -1,7 +1,7 @@
 {
- "medido_em": "2026-09-24T15:17:06+00:00",
+ "medido_em": "2026-09-24T16:26:05+00:00",
  "nucleo": "6.18.44-fc-v37",
- "binario": "disco-que-recusa",
+ "binario": "disco-depois",
  "rodadas": 3,
  "cenarios": {
   "512-mesmo-punho": {
@@ -56,86 +56,138 @@
   "509-biblioteca": {
    "1": [
     "inserir ok=5000 de 5000, sem fsync",
-    "antes byte52=0",
+    "antes byte52=1",
     "fecho1=ERRO [SP000010] erro de E/S: No space left on device (os error 28)",
-    "fecho2=ERRO [SP000010] erro de E/S: um fsync anterior foi recusado (ext/db/pedidos.ndx: No space left on device (os error 28)), e depois disso o nucleo pode ter descartado o que nao foi ao disco: um fsync novo responderia Ok sem o dado estar la. Nada neste diretorio se confirma mais ate o processo reiniciar (pedido 509)",
+    "fecho2=ERRO [SP000010] erro de E/S: um fsync anterior foi recusado (ext/db/pedidos.reg: No space left on device (os error 28)), e depois disso o nucleo pode ter descartado o que nao foi ao disco: um fsync novo responderia Ok sem o dado estar la. Nada neste diretorio se confirma mais ate o processo reiniciar (pedido 509)",
     "saida=0",
-    "cache byte52=0",
-    "cache vivas=5000 inclusoes_no_log=5000 precisa_reconstruir=false",
-    "cache buscar=OK [5]",
-    "remontado byte52=0",
-    "remontado vivas=5000 inclusoes_no_log=0 precisa_reconstruir=false",
-    "remontado buscar=ERRO [SP000010] arquivo corrompido: CRC invalido na pagina 3 de ext/db/pedidos.ndx",
-    "remontado verificar=ERRO [SP000010] arquivo corrompido: CRC invalido na pagina 3 de ext/db/pedidos.ndx"
+    "cache byte52=1",
+    "cache vivas=5000 inclusoes_no_log=5000 precisa_reconstruir=true",
+    "cache buscar=ERRO [SP000010] arquivo corrompido: o indice de ext/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "remontado byte52=1",
+    "remontado vivas=5000 inclusoes_no_log=0 precisa_reconstruir=true",
+    "remontado buscar=ERRO [SP000010] arquivo corrompido: o indice de ext/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "remontado verificar=ERRO [SP000010] arquivo corrompido: CRC nao confere do registro 20 em ext/db/pedidos.reg -- sem espelho para tentar; ligue \"espelho\" no config.json"
    ],
    "2": [
     "inserir ok=5000 de 5000, sem fsync",
-    "antes byte52=0",
+    "antes byte52=1",
     "fecho1=ERRO [SP000010] erro de E/S: No space left on device (os error 28)",
-    "fecho2=ERRO [SP000010] erro de E/S: um fsync anterior foi recusado (ext/db/pedidos.ndx: No space left on device (os error 28)), e depois disso o nucleo pode ter descartado o que nao foi ao disco: um fsync novo responderia Ok sem o dado estar la. Nada neste diretorio se confirma mais ate o processo reiniciar (pedido 509)",
+    "fecho2=ERRO [SP000010] erro de E/S: um fsync anterior foi recusado (ext/db/pedidos.reg: No space left on device (os error 28)), e depois disso o nucleo pode ter descartado o que nao foi ao disco: um fsync novo responderia Ok sem o dado estar la. Nada neste diretorio se confirma mais ate o processo reiniciar (pedido 509)",
     "saida=0",
-    "cache byte52=0",
-    "cache vivas=5000 inclusoes_no_log=5000 precisa_reconstruir=false",
-    "cache buscar=OK [5]",
-    "remontado byte52=0",
-    "remontado vivas=5000 inclusoes_no_log=0 precisa_reconstruir=false",
-    "remontado buscar=ERRO [SP000010] arquivo corrompido: CRC invalido na pagina 3 de ext/db/pedidos.ndx",
-    "remontado verificar=ERRO [SP000010] arquivo corrompido: CRC invalido na pagina 3 de ext/db/pedidos.ndx"
+    "cache byte52=1",
+    "cache vivas=5000 inclusoes_no_log=5000 precisa_reconstruir=true",
+    "cache buscar=ERRO [SP000010] arquivo corrompido: o indice de ext/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "remontado byte52=1",
+    "remontado vivas=5000 inclusoes_no_log=0 precisa_reconstruir=true",
+    "remontado buscar=ERRO [SP000010] arquivo corrompido: o indice de ext/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "remontado verificar=ERRO [SP000010] arquivo corrompido: CRC nao confere do registro 20 em ext/db/pedidos.reg -- sem espelho para tentar; ligue \"espelho\" no config.json"
    ],
    "3": [
     "inserir ok=5000 de 5000, sem fsync",
-    "antes byte52=0",
+    "antes byte52=1",
     "fecho1=ERRO [SP000010] erro de E/S: No space left on device (os error 28)",
-    "fecho2=ERRO [SP000010] erro de E/S: um fsync anterior foi recusado (ext/db/pedidos.ndx: No space left on device (os error 28)), e depois disso o nucleo pode ter descartado o que nao foi ao disco: um fsync novo responderia Ok sem o dado estar la. Nada neste diretorio se confirma mais ate o processo reiniciar (pedido 509)",
+    "fecho2=ERRO [SP000010] erro de E/S: um fsync anterior foi recusado (ext/db/pedidos.reg: No space left on device (os error 28)), e depois disso o nucleo pode ter descartado o que nao foi ao disco: um fsync novo responderia Ok sem o dado estar la. Nada neste diretorio se confirma mais ate o processo reiniciar (pedido 509)",
     "saida=0",
-    "cache byte52=0",
-    "cache vivas=5000 inclusoes_no_log=5000 precisa_reconstruir=false",
-    "cache buscar=OK [5]",
-    "remontado byte52=0",
-    "remontado vivas=5000 inclusoes_no_log=0 precisa_reconstruir=false",
-    "remontado buscar=ERRO [SP000010] arquivo corrompido: CRC invalido na pagina 3 de ext/db/pedidos.ndx",
-    "remontado verificar=ERRO [SP000010] arquivo corrompido: CRC invalido na pagina 3 de ext/db/pedidos.ndx"
+    "cache byte52=1",
+    "cache vivas=5000 inclusoes_no_log=5000 precisa_reconstruir=true",
+    "cache buscar=ERRO [SP000010] arquivo corrompido: o indice de ext/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "remontado byte52=1",
+    "remontado vivas=5000 inclusoes_no_log=0 precisa_reconstruir=true",
+    "remontado buscar=ERRO [SP000010] arquivo corrompido: o indice de ext/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "remontado verificar=ERRO [SP000010] arquivo corrompido: CRC nao confere do registro 20 em ext/db/pedidos.reg -- sem espelho para tentar; ligue \"espelho\" no config.json"
    ]
   },
   "509-servidor": {
    "1": [
     "inserir ok=5000 de 5000, sem fsync",
-    "antes byte52=0",
-    "gancho=ABORTA ext/db/pedidos.ndx (No space left on device (os error 28))",
+    "antes byte52=1",
+    "gancho=ABORTA ext/db/pedidos.reg (No space left on device (os error 28))",
     "saida=134",
-    "cache byte52=0",
-    "cache vivas=5000 inclusoes_no_log=5000 precisa_reconstruir=false",
-    "cache buscar=OK [5]",
-    "remontado byte52=0",
-    "remontado vivas=5000 inclusoes_no_log=0 precisa_reconstruir=false",
-    "remontado buscar=ERRO [SP000010] arquivo corrompido: CRC invalido na pagina 3 de ext/db/pedidos.ndx",
-    "remontado verificar=ERRO [SP000010] arquivo corrompido: CRC invalido na pagina 3 de ext/db/pedidos.ndx"
+    "cache byte52=1",
+    "cache vivas=5000 inclusoes_no_log=5000 precisa_reconstruir=true",
+    "cache buscar=ERRO [SP000010] arquivo corrompido: o indice de ext/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "remontado byte52=1",
+    "remontado vivas=5000 inclusoes_no_log=0 precisa_reconstruir=true",
+    "remontado buscar=ERRO [SP000010] arquivo corrompido: o indice de ext/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "remontado verificar=ERRO [SP000010] arquivo corrompido: CRC nao confere do registro 20 em ext/db/pedidos.reg -- sem espelho para tentar; ligue \"espelho\" no config.json"
    ],
    "2": [
     "inserir ok=5000 de 5000, sem fsync",
-    "antes byte52=0",
-    "gancho=ABORTA ext/db/pedidos.ndx (No space left on device (os error 28))",
+    "antes byte52=1",
+    "gancho=ABORTA ext/db/pedidos.reg (No space left on device (os error 28))",
     "saida=134",
-    "cache byte52=0",
-    "cache vivas=5000 inclusoes_no_log=5000 precisa_reconstruir=false",
-    "cache buscar=OK [5]",
-    "remontado byte52=0",
-    "remontado vivas=5000 inclusoes_no_log=0 precisa_reconstruir=false",
-    "remontado buscar=ERRO [SP000010] arquivo corrompido: CRC invalido na pagina 3 de ext/db/pedidos.ndx",
-    "remontado verificar=ERRO [SP000010] arquivo corrompido: CRC invalido na pagina 3 de ext/db/pedidos.ndx"
+    "cache byte52=1",
+    "cache vivas=5000 inclusoes_no_log=5000 precisa_reconstruir=true",
+    "cache buscar=ERRO [SP000010] arquivo corrompido: o indice de ext/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "remontado byte52=1",
+    "remontado vivas=5000 inclusoes_no_log=0 precisa_reconstruir=true",
+    "remontado buscar=ERRO [SP000010] arquivo corrompido: o indice de ext/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "remontado verificar=ERRO [SP000010] arquivo corrompido: CRC nao confere do registro 20 em ext/db/pedidos.reg -- sem espelho para tentar; ligue \"espelho\" no config.json"
    ],
    "3": [
     "inserir ok=5000 de 5000, sem fsync",
-    "antes byte52=0",
-    "gancho=ABORTA ext/db/pedidos.ndx (No space left on device (os error 28))",
+    "antes byte52=1",
+    "gancho=ABORTA ext/db/pedidos.reg (No space left on device (os error 28))",
     "saida=134",
-    "cache byte52=0",
-    "cache vivas=5000 inclusoes_no_log=5000 precisa_reconstruir=false",
-    "cache buscar=OK [5]",
-    "remontado byte52=0",
-    "remontado vivas=5000 inclusoes_no_log=0 precisa_reconstruir=false",
-    "remontado buscar=ERRO [SP000010] arquivo corrompido: CRC invalido na pagina 3 de ext/db/pedidos.ndx",
-    "remontado verificar=ERRO [SP000010] arquivo corrompido: CRC invalido na pagina 3 de ext/db/pedidos.ndx"
+    "cache byte52=1",
+    "cache vivas=5000 inclusoes_no_log=5000 precisa_reconstruir=true",
+    "cache buscar=ERRO [SP000010] arquivo corrompido: o indice de ext/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "remontado byte52=1",
+    "remontado vivas=5000 inclusoes_no_log=0 precisa_reconstruir=true",
+    "remontado buscar=ERRO [SP000010] arquivo corrompido: o indice de ext/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "remontado verificar=ERRO [SP000010] arquivo corrompido: CRC nao confere do registro 20 em ext/db/pedidos.reg -- sem espelho para tentar; ligue \"espelho\" no config.json"
+   ]
+  },
+  "522-fechar": {
+   "1": [
+    "inserir ok=5000 de 5000, sem fsync",
+    "antes byte52=1",
+    "syncfs=1",
+    "remontado byte52=1",
+    "remontado vivas=5000 inclusoes_no_log=0 precisa_reconstruir=true",
+    "remontado buscar=ERRO [SP000010] arquivo corrompido: o indice de ext/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar"
+   ],
+   "2": [
+    "inserir ok=5000 de 5000, sem fsync",
+    "antes byte52=1",
+    "syncfs=1",
+    "remontado byte52=1",
+    "remontado vivas=5000 inclusoes_no_log=0 precisa_reconstruir=true",
+    "remontado buscar=ERRO [SP000010] arquivo corrompido: o indice de ext/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar"
+   ],
+   "3": [
+    "inserir ok=5000 de 5000, sem fsync",
+    "antes byte52=1",
+    "syncfs=1",
+    "remontado byte52=1",
+    "remontado vivas=5000 inclusoes_no_log=0 precisa_reconstruir=true",
+    "remontado buscar=ERRO [SP000010] arquivo corrompido: o indice de ext/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar"
+   ]
+  },
+  "522-cai": {
+   "1": [
+    "inserir ok=5000 de 5000, e cai sem Drop",
+    "antes byte52=1",
+    "syncfs=1",
+    "remontado byte52=1",
+    "remontado vivas=5000 inclusoes_no_log=0 precisa_reconstruir=true",
+    "remontado buscar=ERRO [SP000010] arquivo corrompido: o indice de ext/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar"
+   ],
+   "2": [
+    "inserir ok=5000 de 5000, e cai sem Drop",
+    "antes byte52=1",
+    "syncfs=1",
+    "remontado byte52=1",
+    "remontado vivas=5000 inclusoes_no_log=0 precisa_reconstruir=true",
+    "remontado buscar=ERRO [SP000010] arquivo corrompido: o indice de ext/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar"
+   ],
+   "3": [
+    "inserir ok=5000 de 5000, e cai sem Drop",
+    "antes byte52=1",
+    "syncfs=1",
+    "remontado byte52=1",
+    "remontado vivas=5000 inclusoes_no_log=0 precisa_reconstruir=true",
+    "remontado buscar=ERRO [SP000010] arquivo corrompido: o indice de ext/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar"
    ]
   }
  }

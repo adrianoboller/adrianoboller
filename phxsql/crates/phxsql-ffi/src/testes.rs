@@ -393,6 +393,183 @@ fn panico_na_escrita_e_o_fechar_do_punho_nao_gravam_o_indice_rasgado() {
     }
 }
 
+/// **Pedido 522, B2: o comportamento VELHO -- gravar, fechar SEM
+/// `phx_sincronizar`, e o proximo processo abre.**
+///
+/// Desde o 522 o fechamento do motor deixa o byte 52 do `.ndx` em 1, e so o
+/// processo que fechou sabe que ele e coerente. Pela ABI isso quebrava o
+/// contrato que o `EMBUTIDO.md` ensina: o processo seguinte recusava toda
+/// operacao, e a ABI nem tinha como reconstruir (medido pelo papel C, 3/3).
+/// O segundo processo e DE VERDADE -- este binario, reexecutado so na sonda
+/// abaixo --, porque o atestado e memoria do processo, e esquecer dentro do
+/// mesmo processo provaria so o que a biblioteca acha.
+#[test]
+fn fechar_sem_sincronizar_e_o_proximo_processo_abre() {
+    unsafe {
+        let area = Area::nova("522-proximo-processo");
+        let (base, tab) = montar(&area, "clientes");
+        for i in 1..=300 {
+            inserir(tab, i, "C");
+        }
+        // Sem phx_sincronizar: e o que o cliente de antes do 522 fazia.
+        assert_eq!(phx_tabela_fechar(tab), PHX_OK, "{}", erro_agora());
+        assert_eq!(phx_base_fechar(base), PHX_OK);
+
+        let saida = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "testes::sonda_522_abre_no_processo_seguinte",
+                "--ignored",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env("PHX_SONDA_522", &area.0)
+            .output()
+            .unwrap();
+        let texto = format!(
+            "{}{}",
+            String::from_utf8_lossy(&saida.stdout),
+            String::from_utf8_lossy(&saida.stderr)
+        );
+        assert!(
+            saida.status.success() && texto.contains("1 passed"),
+            "o processo seguinte nao abriu a tabela que este fechou sem \
+             sincronizar:\n{texto}"
+        );
+    }
+}
+
+/// O processo seguinte da prova de cima: abre pela ABI, acha pela chave e
+/// grava. Sem a variavel, nao ha o que provar e ela passa calada.
+#[test]
+#[ignore = "sonda: roda so reexecutada por fechar_sem_sincronizar_e_o_proximo_processo_abre"]
+fn sonda_522_abre_no_processo_seguinte() {
+    let Some(dir) = std::env::var_os("PHX_SONDA_522") else {
+        return;
+    };
+    unsafe {
+        let caminho = dir.to_string_lossy().to_string();
+        let mut base: *mut Punho<BaseFFI> = std::ptr::null_mut();
+        let (p, t) = par(&caminho);
+        let (n, nt) = par("app");
+        assert_eq!(phx_base_abrir(p, t, n, nt, 0, &mut base), PHX_OK);
+        let mut tab: *mut Punho<TabelaFFI> = std::ptr::null_mut();
+        let (p, t) = par("clientes");
+        assert_eq!(phx_tabela_abrir(base, p, t, &mut tab), PHX_OK);
+        let chave = [v_int(150)];
+        let (i, it) = par("porId");
+        let mut rowids = [0u64; 4];
+        let mut achados = 0usize;
+        let r = phx_buscar(
+            tab,
+            i,
+            it,
+            chave.as_ptr(),
+            chave.len(),
+            rowids.as_mut_ptr(),
+            rowids.len(),
+            &mut achados,
+        );
+        assert_eq!(r, PHX_OK, "buscar pela chave: {}", erro_agora());
+        assert_eq!((achados, rowids[0]), (1, 150));
+        inserir(tab, 301, "depois");
+        assert_eq!(phx_tabela_fechar(tab), PHX_OK, "{}", erro_agora());
+        assert_eq!(phx_base_fechar(base), PHX_OK);
+    }
+}
+
+/// **`phx_reindexar` conserta, pela ABI, o indice que uma queda deixou
+/// marcado** -- pedido 522, a saida que faltava ao embutido.
+///
+/// A marca e de verdade: o panico no meio de uma escrita (depois do contador
+/// do `.reg`, antes da primeira chave), pelo gancho que so os testes armam --
+/// o mesmo estado de uma queda no mesmo ponto. Reaberta, a tabela recusa a
+/// busca pela chave; depois do `phx_reindexar`, acha -- inclusive a linha que
+/// o panico deixou viva no `.reg` --, e `qtd` diz quantos indices montou (o
+/// esquema do `montar` tem um, o `porId`).
+#[cfg(debug_assertions)]
+#[test]
+fn phx_reindexar_conserta_o_indice_marcado_pela_abi() {
+    use phxsql_store::ndx::panico_de_teste::{self, Ponto};
+    let buscar = |tab: *mut Punho<TabelaFFI>, id: i64| unsafe {
+        let chave = [v_int(id)];
+        let (i, it) = par("porId");
+        let mut rowids = [0u64; 4];
+        let mut achados = 0usize;
+        let r = phx_buscar(
+            tab,
+            i,
+            it,
+            chave.as_ptr(),
+            chave.len(),
+            rowids.as_mut_ptr(),
+            rowids.len(),
+            &mut achados,
+        );
+        (r, achados)
+    };
+    unsafe {
+        let area = Area::nova("522-reindexar");
+        let (base, tab) = montar(&area, "clientes");
+        for i in 1..=50 {
+            inserir(tab, i, "C");
+        }
+        assert_eq!(phx_sincronizar(tab), PHX_OK);
+        panico_de_teste::armar(Ponto::InserirDepoisDoContador);
+        let linha = [v_int(51), v_bytes(PHX_TEXTO, b"C51"), v_nulo()];
+        let mut rowid = 0u64;
+        let r = phx_inserir(tab, linha.as_ptr(), linha.len(), &mut rowid);
+        panico_de_teste::desarmar();
+        assert_eq!(r, erro::PHX_ERRO_PANICO, "o gancho nao disparou");
+        assert_eq!(phx_tabela_fechar(tab), PHX_OK);
+
+        let mut tab: *mut Punho<TabelaFFI> = std::ptr::null_mut();
+        let (p, t) = par("clientes");
+        assert_eq!(phx_tabela_abrir(base, p, t, &mut tab), PHX_OK);
+        assert_ne!(
+            buscar(tab, 7).0,
+            PHX_OK,
+            "premissa: a tabela reaberta tinha de recusar pela marca"
+        );
+
+        let mut qtd = usize::MAX;
+        assert_eq!(phx_reindexar(tab, &mut qtd), PHX_OK, "{}", erro_agora());
+        assert_eq!(qtd, 1, "o esquema tem um indice, o porId");
+        assert_eq!(buscar(tab, 7), (PHX_OK, 1), "{}", erro_agora());
+        assert_eq!(
+            buscar(tab, 51),
+            (PHX_OK, 1),
+            "a linha que o panico deixou viva no .reg tinha de entrar no indice"
+        );
+        // `qtd` nulo e aceito: quem nao quer a contagem nao a pede.
+        assert_eq!(phx_reindexar(tab, std::ptr::null_mut()), PHX_OK);
+        assert_eq!(phx_tabela_fechar(tab), PHX_OK);
+        assert_eq!(phx_base_fechar(base), PHX_OK);
+    }
+}
+
+/// O punho errado no `phx_reindexar` devolve codigo, e nenhum panico atravessa
+/// a fronteira: nulo, e um punho vivo de OUTRO tipo.
+#[test]
+fn phx_reindexar_com_punho_errado_devolve_codigo() {
+    unsafe {
+        let mut qtd = 7usize;
+        assert_eq!(
+            phx_reindexar(std::ptr::null_mut(), &mut qtd),
+            erro::PHX_ERRO_PONTEIRO
+        );
+        assert_eq!(qtd, 7, "o erro nao pode escrever na saida");
+        let area = Area::nova("522-reindexar-punho");
+        let (base, tab) = montar(&area, "clientes");
+        let outro = base as *mut Punho<TabelaFFI>;
+        let r = phx_reindexar(outro, &mut qtd);
+        assert_eq!(r, erro::PHX_ERRO_PONTEIRO, "{}", erro_agora());
+        assert!(!erro_agora().is_empty(), "o erro tinha de dizer o motivo");
+        assert_eq!(phx_tabela_fechar(tab), PHX_OK);
+        assert_eq!(phx_base_fechar(base), PHX_OK);
+    }
+}
+
 /// Nenhuma funcao exportada pode escapar da blindagem.
 ///
 /// Ler o codigo nao pega isto: a funcao nova compila, passa nos testes dela e
@@ -420,10 +597,15 @@ fn toda_funcao_exportada_e_blindada() {
         }
         // O corpo vai ate a proxima funcao exportada.
         let corpo = pedaco;
+        // `liberar_depois_de` e o `liberar` com trabalho antes de soltar (o
+        // `phx_tabela_fechar` do pedido 522): o mesmo caminho, e o `antes`
+        // roda dentro do `blindado_cru`. Nomeado aqui, e nao achado por
+        // acaso: «liberar_depois_de(» nao contem «liberar(».
         let blindada = corpo.contains("blindado(")
             || corpo.contains("blindado_cru(")
             || corpo.contains("com(")
-            || corpo.contains("liberar(");
+            || corpo.contains("liberar(")
+            || corpo.contains("liberar_depois_de(");
         if !blindada {
             faltando.push(nome.clone());
         }

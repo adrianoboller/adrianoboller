@@ -187,6 +187,177 @@ pub fn contadores_de_cache() -> (u64, u64, u64) {
     )
 }
 
+/// Os `.ndx` cujo byte 52 em 1 ESTE processo sabe coerente no nucleo -- pedido
+/// 522 -- com o CRC do cabecalho que o `fechar` deixou.
+///
+/// # Por que existe
+///
+/// O `fechar` levava as paginas ao nucleo e gravava o byte 52 em 0 sem
+/// `fsync`. Para a queda do PROCESSO isso bastava; para a da MAQUINA, nao: o
+/// cabecalho e a pagina 0, e nada o ordena depois das outras. Medido pelo
+/// papel C contra o SO (ext4 sobre loop com provisionamento fino, 3/3): com a
+/// escrita de fundo recusada, o nucleo guardou o cabecalho limpo e perdeu as
+/// paginas -- byte 52 = 0 e `CRC invalido na pagina 3` depois de remontar.
+///
+/// Agora so o `sincronizar`, depois dos dois `fsync`, baixa o byte. O
+/// `fechar` deixa o 1 e ATESTA aqui que ele e coerente no nucleo; a proxima
+/// abertura NESTE processo -- o servidor abre e fecha a tabela a cada pedido
+/// -- confia nele. Um processo novo nao tem o atestado, le o 1 e manda
+/// reconstruir, que e o preco: depois de uma queda, `reindexar` das tabelas
+/// tocadas desde o ultimo fecho da janela.
+///
+/// # Por que com o CRC do cabecalho, e nao so o caminho
+///
+/// O atestado vale para o CONTEUDO que o `fechar` deixou, e nao para quem
+/// morar no mesmo caminho depois: uma restauracao por cima ou uma copia de
+/// outro instante poem ali outro `.ndx`, talvez marcado de verdade. O
+/// cabecalho carrega a raiz, os contadores, o numero de paginas e o instante
+/// da gravacao; outro arquivo nao repete o CRC dele, e o atestado deixa de
+/// valer sozinho -- sem ninguem precisar lembrar de apaga-lo.
+///
+/// O caminho, esse, o atestado NAO protege sozinho: renomear e o mesmo
+/// inode, com o mesmo CRC, e a chave e que muda. Quem move ou copia um
+/// `.ndx` leva o atestado junto por [`levar_atestado`] -- o B1 do parecer do
+/// papel C sobre o 522.
+///
+/// # Por que do processo, e nao do punho
+///
+/// E o mesmo corte do [`crate::volume::familias_devendo_em`]: quem fecha e
+/// quem reabre sao punhos diferentes do mesmo processo. Os testes rodam em
+/// threads do mesmo processo, e a chave por caminho absoluto separa os
+/// diretorios de cada um.
+static ATESTADOS: std::sync::Mutex<std::collections::BTreeMap<PathBuf, u32>> =
+    std::sync::Mutex::new(std::collections::BTreeMap::new());
+
+/// Envenenamento aqui nao engana ninguem: a pior perda e um atestado, e sem
+/// ele a abertura manda reconstruir -- o lado seguro.
+fn atestados() -> std::sync::MutexGuard<'static, std::collections::BTreeMap<PathBuf, u32>> {
+    ATESTADOS.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// A chave do atestado: o caminho ABSOLUTO lexico, a mesma chave das
+/// familias do `Volumes` e das recusas do `sincronia`. O caminho que ja e
+/// absoluto -- o do servidor, que o `Table::abrir` resolve -- nao aloca nada.
+fn com_a_chave<T>(caminho: &Path, f: impl FnOnce(&Path) -> T) -> T {
+    match crate::volume::absoluto_lexico(caminho) {
+        Some(a) => f(&a),
+        None => f(caminho),
+    }
+}
+
+fn atestar(caminho: &Path, crc: u32) {
+    com_a_chave(caminho, |c| {
+        atestados().insert(c.to_path_buf(), crc);
+    });
+}
+
+fn retirar_atestado(caminho: &Path) {
+    com_a_chave(caminho, |c| {
+        atestados().remove(c);
+    });
+}
+
+/// Troca o CRC atestado, e SO se o atestado ainda for o de `de`: quem o tirou
+/// no meio -- um punho que comecou a escrever -- ganha.
+fn trocar_atestado(caminho: &Path, de: u32, para: u32) {
+    com_a_chave(caminho, |c| {
+        if let Some(atual) = atestados().get_mut(c) {
+            if *atual == de {
+                *atual = para;
+            }
+        }
+    });
+}
+
+fn atestado(caminho: &Path, crc: u32) -> bool {
+    com_a_chave(caminho, |c| atestados().get(c) == Some(&crc))
+}
+
+/// O atestado ACOMPANHA o arquivo que muda de caminho -- pedido 522, B1 do
+/// parecer do papel C.
+///
+/// # O defeito que isto fecha
+///
+/// O atestado e guardado pelo caminho, e `renomear_tabela`,
+/// `duplicar_tabela` e `copiar_tabela_para` poem o `.ndx` num caminho novo
+/// sem `fsync` nenhum. Sem isto, a tabela escrita desde o ultimo fecho da
+/// janela chegava ao destino com o 1 e sem atestado, e recusava TODA
+/// operacao dizendo «arquivo corrompido» -- sem queda nenhuma (medido pelo
+/// papel C: 9 recusas em 9, e 0 em 3 antes do 522).
+///
+/// # Por que levar o atestado, e nao sincronizar a origem antes
+///
+/// Sincronizar seria `fsync` novo com a trava global na mao -- as tres
+/// operacoes rodam sob ela no servidor --, e a catraca `alcancam-fsync-2`
+/// existe para isso nao entrar sem decisao. E levar e o que a verdade pede:
+/// renomear e o MESMO inode, e a copia saiu do nucleo junto do `.reg` dela,
+/// sob a mesma trava -- o que o atestado dizia da origem vale para o
+/// destino, e so ate o processo cair, como na origem.
+///
+/// # Quando ele NAO vai junto
+///
+/// Quando a origem nao estava atestada (nada a levar), e quando o cabecalho
+/// que chegou ao destino nao e o atestado -- alguem escreveu na origem entre
+/// o fecho e a copia. O destino, entao, abre mandando reconstruir, que e o
+/// lado seguro. Um atestado velho que morasse no caminho de destino sai
+/// sempre: o arquivo que esta la agora nao e o dele.
+///
+/// `mover` tira o atestado da origem (o renomear); a copia o deixa la.
+pub(crate) fn levar_atestado(de: &Path, para: &Path, mover: bool) {
+    retirar_atestado(para);
+    let crc = com_a_chave(de, |c| {
+        let mut a = atestados();
+        if mover {
+            a.remove(c)
+        } else {
+            a.get(c).copied()
+        }
+    });
+    let Some(crc) = crc else {
+        return;
+    };
+    if crc_do_cabecalho_no_arquivo(para) == Some(crc) {
+        atestar(para, crc);
+    }
+}
+
+/// O CRC que o cabecalho de `caminho` traz no arquivo, se ele se le.
+fn crc_do_cabecalho_no_arquivo(caminho: &Path) -> Option<u32> {
+    let mut arquivo = File::open(caminho).ok()?;
+    let mut cab = [0u8; CAB_LEN];
+    ler_exato(&mut arquivo, 0, &mut cab).ok()?;
+    Some(Campos(&cab).u32(124))
+}
+
+/// Esquece os atestados debaixo de `diretorio`: o que um processo NOVO veria.
+/// **So para teste** -- e a unica forma de provar, dentro de um processo, o
+/// que a abertura depois de uma queda le.
+#[doc(hidden)]
+pub fn esquecer_atestados_para_teste(diretorio: &Path) {
+    com_a_chave(diretorio, |d| atestados().retain(|c, _| !c.starts_with(d)));
+}
+
+/// O byte 52 deste `.ndx` esta em 1 no arquivo? Le so o cabecalho.
+///
+/// Existe para o arranque achar, sem abrir tabela nenhuma, o indice que a
+/// queda deixou marcado (pedido 522): abrir a `Table` inteira de cada tabela
+/// da base so para perguntar isto custaria dez arquivos por tabela.
+/// Cabecalho que nao confere e `Err`, e quem pergunta o trata como marcado.
+pub fn marcado_no_arquivo(caminho: impl AsRef<Path>) -> Result<bool> {
+    let caminho = caminho.as_ref();
+    let mut arquivo = File::open(caminho)?;
+    let mut cab = [0u8; CAB_LEN];
+    ler_exato(&mut arquivo, 0, &mut cab)?;
+    conferir_magic(&caminho.display().to_string(), MAGIC_NDX, &cab[0..8])?;
+    if crc32(&cab[..124]) != Campos(&cab).u32(124) {
+        return Err(PhxError::Corrompido(format!(
+            "cabecalho de {} com CRC invalido",
+            caminho.display()
+        )));
+    }
+    Ok(cab[52] != 0)
+}
+
 /// As paginas do `.ndx` que ficam em RAM.
 ///
 /// # De onde vem o ganho
@@ -399,9 +570,27 @@ pub struct NdxFile {
     /// E o mesmo desenho do Aria, que compra a garantia de volta com tres
     /// bytes de "nao fechei direito" (`ma_locking.c:460`) mais reparo na
     /// abertura, em vez do redo log do InnoDB.
+    ///
+    /// Desde o pedido 522 «ir ao disco» quer dizer `fsync`: so o
+    /// `sincronizar` baixa a marca. O `fechar` deixa o 1 e atesta, para este
+    /// processo, que ele e coerente no nucleo -- ver [`ATESTADOS`].
     sujo: bool,
-    /// O arquivo foi aberto com a marca de sujo: a arvore nao e confiavel.
+    /// O arquivo foi aberto com a marca de sujo e SEM atestado deste processo:
+    /// a arvore nao e confiavel.
     precisa_reconstruir: bool,
+    /// Este punho ja mudou a arvore (ou pos o `.reg` a frente dela) desde que
+    /// abriu, ou desde o ultimo `fechar`/`sincronizar` -- pedido 522.
+    ///
+    /// Existe para o atestado sair ANTES da primeira mudanca e voltar so no
+    /// fechamento limpo: um panico no meio deixa o arquivo sem atestado, e a
+    /// reabertura neste mesmo processo manda reconstruir -- o que ela faria
+    /// depois de uma queda no mesmo ponto. E e um `bool` do punho, e nao uma
+    /// pergunta ao registro, porque [`NdxFile::levantar_marca`] roda a cada
+    /// pagina suja: o registro so e tocado na primeira.
+    mudou_desde_o_fecho: bool,
+    /// O CRC-32 do cabecalho que esta no arquivo, como este punho o leu ou o
+    /// gravou por ultimo. E a identidade que o atestado carrega.
+    crc_do_cabecalho: u32,
     /// Quantas escritas estao abertas e ainda nao terminaram (pedido 456).
     ///
     /// # Por que o `Drop` precisa disto, e nao de `thread::panicking()`
@@ -645,6 +834,9 @@ impl NdxFile {
             )));
         }
         let caminho = caminho.as_ref().to_path_buf();
+        // O arquivo vai ser truncado: o atestado do que morava aqui nao vale
+        // para o que vai nascer (pedido 522).
+        retirar_atestado(&caminho);
         let arquivo = OpenOptions::new()
             .read(true)
             .write(true)
@@ -665,6 +857,8 @@ impl NdxFile {
             estrutura_mudou: false,
             sujo: false,
             precisa_reconstruir: false,
+            mudou_desde_o_fecho: false,
+            crc_do_cabecalho: 0,
             escritas_em_voo: 0,
             escrita_interrompida: false,
             mudancas_na_arvore: 0,
@@ -724,6 +918,15 @@ impl NdxFile {
         // ali, e zero e "limpo" -- que e a verdade para quem so escrevia
         // atraves. Nao ha migracao a fazer.
         let sujo = cab[52] != 0;
+        // O 1 que um `fechar` DESTE processo deixou nao e queda: as paginas
+        // estao no nucleo, e o cabecalho e o mesmo que ele gravou (pedido
+        // 522). Depois de um `fsync` recusado no diretorio o nucleo deixa de
+        // ser testemunha -- pode ter descartado o que nao foi ao disco --, e o
+        // atestado nao vale mais.
+        let crc_do_cabecalho = c.u32(124);
+        let coerente_no_nucleo = sujo
+            && atestado(&caminho, crc_do_cabecalho)
+            && crate::sincronia::recusado_em(&caminho).is_none();
 
         // A chave sai daqui, e a prova dentro do material recusa a senha
         // errada AGORA -- e nao na primeira descida da arvore, que num indice
@@ -803,7 +1006,9 @@ impl NdxFile {
             gravacoes: 0,
             estrutura_mudou: false,
             sujo,
-            precisa_reconstruir: sujo,
+            precisa_reconstruir: sujo && !coerente_no_nucleo,
+            mudou_desde_o_fecho: false,
+            crc_do_cabecalho,
             escritas_em_voo: 0,
             escrita_interrompida: false,
             mudancas_na_arvore: 0,
@@ -916,6 +1121,7 @@ impl NdxFile {
         buf[CAB_LEN..CAB_LEN + dir.len()].copy_from_slice(&dir);
         escrever_em(&mut self.arquivo, 0, &buf)?;
         self.estrutura_mudou = false;
+        self.crc_do_cabecalho = crc;
         Ok(())
     }
 
@@ -1039,7 +1245,17 @@ impl NdxFile {
     /// escrever» nao divergir de si mesma. Se o cabecalho nao for ao disco, a
     /// marca em RAM volta a 0: marca em RAM que o disco nao tem faria a
     /// proxima pagina suja pular a subida, e a queda seguinte sairia calada.
+    ///
+    /// E tira o atestado do processo antes da primeira mudanca (pedido 522):
+    /// daqui ate o `fechar`, o 1 do arquivo volta a querer dizer «pode estar
+    /// para tras». Mesmo com o byte ja em 1 -- aberto atestado, o arquivo nao
+    /// muda, mas a verdade sobre ele muda, e um panico no meio tem de deixar a
+    /// reabertura mandando reconstruir.
     fn levantar_marca(&mut self) -> Result<()> {
+        if !self.mudou_desde_o_fecho {
+            retirar_atestado(&self.caminho);
+            self.mudou_desde_o_fecho = true;
+        }
         if self.sujo {
             return Ok(());
         }
@@ -1174,7 +1390,8 @@ impl NdxFile {
     /// por cima de uma arvore incompleta.
     ///
     /// Sao dois `fsync` por `sincronizar` -- que acontece uma vez por carga, e
-    /// nao por linha.
+    /// nao por linha. E e o UNICO caminho que grava o byte 52 em 0 (pedido
+    /// 522): o `fechar` o deixa em 1.
     pub fn sincronizar(&mut self) -> Result<()> {
         // Antes da porta de baixo, e nao dentro dela (pedido 509): a porta
         // responde Ok sem tocar no disco, e depois de um `fsync` recusado
@@ -1196,42 +1413,96 @@ impl NdxFile {
         self.gravar_cabecalho()?;
         self.arquivo.flush()?;
         crate::sincronia::sync_all(&self.arquivo, &self.caminho)?;
+        // O disco ja diz 0: o atestado nao tem mais o que atestar. Sai para o
+        // registro do processo nao crescer com toda tabela que um dia fechou.
+        retirar_atestado(&self.caminho);
+        self.mudou_desde_o_fecho = false;
         Ok(())
     }
 
-    /// Leva as paginas sujas ao arquivo e baixa a marca, SEM `fsync`.
+    /// Leva as paginas sujas ao nucleo e ATESTA o 1, SEM `fsync` -- e sem
+    /// baixar a marca (pedido 522).
     ///
-    /// E o fechamento limpo: o `write` ja entregou tudo ao nucleo, entao uma
-    /// queda do PROCESSO nao perde nada -- que era a garantia de antes do
-    /// write-back, e ela volta inteira aqui. Quem quer resistir a queda da
-    /// MAQUINA chama `sincronizar`, que acrescenta os dois `fsync`.
+    /// # O que mudou, e por que
     ///
-    /// E o mesmo momento em que o Aria baixa a marca dele: ao destravar a
-    /// tabela (`ma_locking.c:301`), e nao a cada linha.
+    /// Ate o pedido 522 este era o fechamento limpo: descarregava e gravava o
+    /// byte 52 em 0, sem `fsync`, com o argumento de que o `write` ja tinha
+    /// entregue tudo ao nucleo. Vale para a queda do PROCESSO; nao vale para a
+    /// da MAQUINA nem para a escrita de fundo que o disco recusa: o nucleo
+    /// grava as paginas na ordem dele, e o cabecalho e a pagina 0. Medido pelo
+    /// papel C contra o SO (parecer 509+512, P4, 3/3): o nucleo guardou o
+    /// cabecalho limpo e perdeu as paginas, e a abertura seguinte leu byte 52
+    /// = 0 com `CRC invalido na pagina 3` e `precisa_reconstruir` falso.
+    ///
+    /// Agora o 0 so se grava depois dos dois `fsync` do `sincronizar`. Aqui as
+    /// paginas vao ao nucleo, o cabecalho vai com a marca AINDA em 1 e os
+    /// contadores em dia, e o processo guarda o atestado de que esse 1 e
+    /// coerente no nucleo -- a proxima abertura AQUI confia nele. Um processo
+    /// novo le o 1 sem atestado e manda reconstruir: e o preco, e ele e o
+    /// certo, porque o processo novo nao sabe se a maquina caiu no meio.
+    ///
+    /// # O que nao mudou
+    ///
+    /// Queda do processo continua nao perdendo nada que ja passou por aqui --
+    /// o `write` entregou ao nucleo. O que mudou foi o que o arquivo PROMETE
+    /// depois disso.
     pub fn fechar(&mut self) -> Result<()> {
         // Um arquivo aberto JA sujo nao se limpa fechando: nada foi
         // reconstruido, e a arvore continua sem as chaves que faltam. So o
         // `reindexar`, que recria o arquivo, tira a marca -- senao bastaria
         // alguem abrir e fechar para o defeito virar invisivel. E a escrita
-        // que nao terminou tambem nao se limpa fechando (pedido 456).
+        // que nao terminou tambem nao se atesta fechando (pedido 456).
         if !self.pode_baixar_a_marca() {
             return Ok(());
         }
         self.descarregar()?;
-        if self.sujo || self.estrutura_mudou {
-            self.sujo = false;
+        // O cabecalho vai quando algo mudou: a estrutura, ou os contadores
+        // que toda escrita mexe. A marca vai como esta -- em 1 se alguma
+        // escrita a levantou, e nunca de 1 para 0.
+        let crc_antes = self.crc_do_cabecalho;
+        if self.mudou_desde_o_fecho || self.estrutura_mudou {
             self.gravar_cabecalho()?;
+        }
+        if self.mudou_desde_o_fecho {
+            // So agora, com a ultima pagina e o cabecalho no nucleo: antes
+            // disto uma reabertura aqui leria arvore que ainda estava so em
+            // RAM neste punho.
+            if self.sujo {
+                atestar(&self.caminho, self.crc_do_cabecalho);
+            }
+            self.mudou_desde_o_fecho = false;
+        } else if self.sujo && self.crc_do_cabecalho != crc_antes {
+            // Aberto atestado, e so o cabecalho mudou -- o `verificar` que
+            // acerta um contador. O atestado acompanha o cabecalho novo, senao
+            // a proxima abertura aqui o acharia diferente e mandaria
+            // reconstruir uma arvore que ninguem tocou.
+            trocar_atestado(&self.caminho, crc_antes, self.crc_do_cabecalho);
         }
         Ok(())
     }
 
-    /// A arvore em RAM pode ir ao disco marcada LIMPA?
+    /// O punho vai ser trocado por um arquivo RECRIADO no mesmo caminho: daqui
+    /// em diante ele nao leva nada ao arquivo, nem atesta nada.
+    ///
+    /// Existe por causa da ordem de uma atribuicao: `self.ndx =
+    /// NdxFile::criar(..)` cria (e trunca) o arquivo novo ANTES de o velho
+    /// sair, e o `Drop` do velho rodava o `fechar` por cima do arquivo novo --
+    /// paginas e cabecalho de uma arvore que nao existe mais, e, desde o
+    /// pedido 522, um atestado para ela. E o irmao do `reindexar`: quem
+    /// chama as mesmas pecas na mesma ordem.
+    pub fn abandonar(&mut self) {
+        self.precisa_reconstruir = true;
+    }
+
+    /// A arvore em RAM pode ir ao disco marcada LIMPA -- ou, pelo `fechar`,
+    /// ao nucleo com o atestado deste processo?
     ///
     /// Tres «nao», todos pelo mesmo motivo -- a arvore pode estar atras do
     /// `.reg` ou rasgada, e so o `reindexar` a conserta: aberta ja suja,
     /// escrita em voo (um panico no meio) e escrita interrompida (um erro no
     /// meio). Nos tres NADA desce: nem as paginas, que gravariam o estado do
-    /// meio como se fosse o fim, nem a marca, que diria que ele presta.
+    /// meio como se fosse o fim, nem a marca, que diria que ele presta, nem o
+    /// atestado, que diria o mesmo a quem reabrir aqui.
     ///
     /// E o quarto, que e do DISCO e nao da arvore (pedido 509): um `fsync`
     /// recusado neste diretorio. Na prova do papel C quem recusou foi o
@@ -1313,6 +1584,17 @@ impl NdxFile {
     ///
     /// A arvore pode ter chave faltando; reconstrua com `reindexar` antes de
     /// confiar em qualquer resposta dela.
+    /// O byte 52 esta em 1 no arquivo e so ESTE processo sabe que a arvore
+    /// presta -- o atestado do `fechar`, ou a escrita deste punho. Um
+    /// processo novo leria o mesmo arquivo e mandaria reconstruir.
+    ///
+    /// Existe para quem fecha e nao volta -- o `phx_tabela_fechar` do
+    /// embutido (pedido 522, B2) -- saber se o `sincronizar` e o que deixa a
+    /// tabela abrindo no proximo processo.
+    pub fn marca_so_neste_processo(&self) -> bool {
+        self.sujo && !self.precisa_reconstruir
+    }
+
     pub fn precisa_reconstruir(&self) -> bool {
         self.precisa_reconstruir
     }

@@ -1011,8 +1011,13 @@ queda do **processo** não podia atrasar o `.ndx` em relação ao `.reg`, porque
 
 A marca é o que torna isso aceitável, e a **ordem** é a garantia:
 
-1. antes da primeira página suja existir, o byte 52 vai a 1 **no arquivo**;
-2. ela só volta a 0 depois de **todas** as páginas sujas terem ido ao disco.
+1. antes da primeira página suja existir, o byte 52 vai a 1 **no arquivo** —
+   no núcleo, **sem `fsync`**: a subida segura a queda do processo, e **não**
+   a da máquina (ver «o que ainda não fecha», no pedido 522, abaixo);
+2. ela só volta a 0 depois de **todas** as páginas sujas terem ido ao disco —
+   e «ir ao disco» quer dizer **`fsync`**: só o `sincronizar` grava o 0, e
+   só depois dos dois `fsync` dele (as páginas, depois o cabeçalho). O
+   `fechar` **não** baixa a marca (pedido 522, abaixo).
 
 Quem abre um `.ndx` com o byte 52 em 1 sabe que a árvore pode ter chave
 faltando, e **toda operação recusa** com a mensagem que manda reconstruir. Um
@@ -1040,12 +1045,139 @@ gravava o byte 52 em 0 sobre uma página de zeros (medido num tmpfs de 512 KiB,
 neste processo (`phxsql-store/src/sincronia.rs`): o núcleo pode ter perdido
 páginas que nenhum erro nomeou.
 
-O que ela **não** cobre, medido: o `fechar` baixa o byte 52 **sem** `fsync`, por
-desenho — queda do processo não perde nada. Com a escrita de fundo recusada,
-porém, o núcleo pode perder as páginas e guardar o cabeçalho: ext4 sobre loop
-com provisionamento fino (`bancada/catastrofes/prova.sh`), byte 52 já em 0
-**antes** de qualquer fecho, e `CRC inválido na página 3` depois de remontar,
-3/3 com e sem o conserto acima.
+**O `fechar` não baixa mais a marca** (pedido 522, 24/09/2026; **o leiaute não
+muda, e não há migração** — muda *quando* o 0 se grava). Até aqui o `fechar`
+levava as páginas ao núcleo e gravava o byte 52 em 0 **sem `fsync`**, com o
+argumento de que a queda do processo não perde nada. Vale para o processo; não
+vale para a máquina nem para a escrita de fundo que o disco recusa: o núcleo
+grava na ordem dele, e o cabeçalho é a página 0. Provado contra o SO
+(`bancada/catastrofes/prova.sh`, cenário `522`: ext4 sobre loop com
+provisionamento fino, 5.000 inserções, `syncfs` com o disco cheio e nenhum
+`fsync` do motor, remontado), 3 rodadas cada:
+
+| | antes (`resultados-522-antes.json`) | depois (`resultados.json`) |
+|---|---|---|
+| fecha pelo `Drop` | byte 52 = **0**, `CRC inválido na página 3`, `precisa_reconstruir` falso | byte 52 = **1**, `precisa_reconstruir`, «reparar índice» |
+| controle: cai sem `Drop` | byte 52 = 1, «reparar índice» | byte 52 = 1, «reparar índice» |
+
+O que entra no lugar:
+
+- **o `fechar` leva as páginas ao núcleo, grava o cabeçalho com a marca ainda
+  em 1 e os contadores em dia, e ATESTA** — num registro do processo
+  (`ndx.rs`, `ATESTADOS`), pelo caminho absoluto e pelo **CRC do cabeçalho**
+  que acabou de gravar — que esse 1 é coerente no núcleo. A abertura seguinte
+  **neste processo** (o servidor abre e fecha a tabela a cada pedido) confia
+  nele: `precisa_reconstruir` só liga quando o byte está em 1 **e** não há
+  atestado com aquele CRC;
+- **o atestado sai antes da primeira mudança**, junto da subida da marca
+  (`levantar_marca`): um pânico ou um erro no meio deixa o arquivo sem
+  atestado, e a reabertura aqui manda reconstruir, como faria depois de uma
+  queda no mesmo ponto;
+- **o CRC amarra o atestado ao CONTEÚDO que o `fechar` deixou**: outro `.ndx`
+  posto no mesmo caminho — uma restauração por cima, uma cópia de outro
+  instante — traz outro cabeçalho, e o atestado não vale para ele. O `criar`
+  (que trunca) e o `sincronizar` (que grava o 0) retiram o atestado; um
+  `fsync` recusado no diretório (pedido 509) faz a abertura não o aceitar mais;
+- **e o atestado ACOMPANHA o arquivo que muda de caminho** (B1 do parecer do
+  papel C sobre o 522): renomear **não** muda o CRC — é o mesmo inode, e o
+  que mudava era o caminho, e com ele a chave do atestado. `renomear_tabela`,
+  `duplicar_tabela` e `copiar_tabela_para` levam o atestado ao destino por um
+  lugar só (`ndx::levar_atestado`) — só se a origem estava atestada e o
+  cabeçalho que chegou é o atestado. Sem isso a tabela escrita desde o último
+  fecho da janela chegava ao destino recusando tudo, sem queda nenhuma
+  (medido pelo papel C: 9 recusas em 9, contra 0 em 3 antes do 522). A cópia
+  continua **sem `fsync`**: um processo novo manda reconstruir o destino,
+  como mandaria a origem;
+- **o `.fts` é o irmão**, e ele nem ia ao fecho: é um `.ndx` por dentro, e o
+  `Table::sincronizar` não o alcançava — o byte 52 dele só descia pelo
+  `fechar`, sem `fsync` nenhum. Hoje o `Table::sincronizar` o sincroniza
+  **primeiro**, antes do `.trash`, do `.ndx` e do `.reg` — ele é derivado, a
+  marca dele se protege sozinha, e a ordem que os outros guardam não se mexe;
+  tabela sem índice de texto não paga nada.
+
+**O preço**, e ele é o que o pedido nomeou: um processo novo lê o 1 sem atestado
+e manda reconstruir. Toda tabela escrita desde o último fecho da janela sai
+marcada de uma queda do processo — e o `phxsqld` não tem outro jeito de parar:
+sai por sinal. Por isso o arranque as reconstrói antes de abrir a porta
+(`Database::reconstruir_indices_marcados`, chamado pela recuperação; lê 128
+bytes de cabeçalho por tabela e só abre a marcada), conta no relatório
+(«índices reconstruídos») e diz alto a que não reconstruiu. A restauração de
+backup chama o mesmo motor no palco, porque o backup copia o `.ndx` como o
+núcleo o tinha. Medido com o `phxsqld` de release, janela de fábrica (200
+operações ou 200 ms), `SIGKILL` sob carga em rodízio
+(`bancada/catastrofes/preco-do-522.py`, 3 rodadas cada):
+
+| banco de exemplo | marcadas depois da queda | recuperação (relatório) | arranque até a porta |
+|---|---|---|---|
+| 8 tabelas × 20.000 linhas, 2 índices (`preco-do-522.json`) | 8, 8, 8 | 506, 291, 265 ms | 0,555 / 0,306 / 0,302 s |
+| 200 tabelas × 1.000 linhas (`preco-do-522-200-tabelas.json`) | 10, 91, 160 | 38, 2.357, 1.622 ms | 0,051 / 2,386 / 1,627 s |
+
+O controle das mesmas rodadas — `SIGKILL` com o servidor ocioso, depois de o
+relógio fechar a janela — marcou **0** tabelas e não reconstruiu nada; o
+arranque com as 200 tabelas limpas, só a varredura dos cabeçalhos, levou
+0,051–0,055 s até a porta.
+
+**A unidade certa do preço é o TAMANHO de cada tabela tocada, e não a
+quantidade delas.** Uma linha basta para marcar a tabela inteira, e reconstruir
+é ler o `.reg` todo e montar cada índice. Medido pelo papel C (parecer do 522,
+C3): **1,65–1,88 s por milhão de linhas com 2 índices**, uma linha tocada, 7
+corridas — o mesmo número do `reindexar` a 1 M medido no pedido 324
+(1,627–1,661 s). Uma tabela quente de 10 M linhas custaria ~17 s de porta
+fechada por queda sob carga (projeção linear, não medida). **Antes do 522** a
+porta abria na hora, e só a tabela que a queda pegou NO MEIO de uma escrita
+subia marcada — recusando até alguém mandar `reparar índice`. O arranque
+reconstrói com a porta fechada (`recuperar` roda em `Servidor::novo`, antes de
+escutar), e nenhum SLA escrito promete o contrário; abrir a porta antes de
+reconstruir é decisão de produto, e sobe ao dono se alguém a propuser.
+
+**O binário antigo não reconstrói no arranque.** Ele lê o 1 que o `fechar` novo
+deixou como queda, e a tabela tocada na última janela recusa até alguém mandar
+`reparar índice` à mão — é o comportamento que ele sempre teve para o índice
+marcado, agora alcançando mais tabelas.
+
+**O que o conserto custa no laço quente — nada que se veja no relógio, e um
+cabeçalho a menos por pedido.** Contado pelo núcleo (`strace` sobre o
+`--example custo-do-byte-52`, 2.000 pedidos no ciclo do servidor: abrir,
+inserir uma linha, `Drop`; janela a cada 200): **4.075 → 2.085** gravações do
+cabeçalho do `.ndx` (≈2 → ≈1 por pedido — o `fechar` não o regrava com o 0 e
+a abertura seguinte não o regrava com o 1), **4.160** páginas nos dois, e os
+mesmos **22** `fsync` do `.ndx`. No relógio (20.000 linhas, 5 corridas cada,
+mediana e faixa), com as faixas se cruzando em todas as linhas e a máquina
+com carga ~4 de outras frentes: pedido 85,2 [81,9–107,2] → 81,0 [79,6–98,5]
+e 92,5 [84,4–95,6] → 102,1 [83,7–108,1] µs; fecho da janela no ciclo do
+servidor 8,1 [2,5–14,9] → 1,9 [1,8–14,9] ms; inserção em lote 5,65 → 5,10
+µs/linha. **Nenhum vencedor**: está dentro do ruído, e é isso que se afirma. O
+fecho da janela continua em **8 `fsync` por tabela** (`TETO_FSYNC_POR_FECHO_V2`);
+a tabela com índice de texto passa a pagar mais os dois do `.fts`, que antes
+não iam ao disco nunca.
+
+**Binário antigo e novo no mesmo arquivo**, medido com os dois
+(`disco-que-recusa inserir` de um, `conferir` do outro, 3.000 linhas): o antigo
+lê o 1 que o `fechar` novo deixou como queda — `precisa_reconstruir`,
+«reparar índice» — e custa um `reindexar`, nunca um dado; o novo lê o 0 que o
+`fechar` antigo deixou como limpo — `buscar` e `verificar` OK —, que é o que
+ele sempre leu. O byte
+continua querendo dizer a mesma coisa; o que mudou é quem pode escrever o 0.
+
+**O que ainda não fecha — os dois anteriores ao 522, e fora dele:**
+
+- **a subida** da marca é gravada sem `fsync` — o 1 vai ao núcleo antes da
+  primeira página suja, mas nada o ordena no disco antes delas. **Medido por
+  emulação no arquivo** pelo papel C (parecer do 522, C4 — o estado que núcleo
+  e disco produzem sem `fsync`: as páginas novas chegam, a página 0 não): com
+  30.000 filhas de um cliente sincronizadas e 5.000 de outro só fechadas, o
+  índice relido por processo novo tem byte 52 = 0, `precisa_reconstruir`
+  falso, **nenhuma** filha do segundo cliente, e o `excluir` do pai com 5.000
+  filhas passa — a regra primordial quebrada, calada (3/3; igual antes do
+  522). Em outras formas de árvore sai ruidoso («página fora do arquivo»).
+  Fechá-lo custa um `fsync` por tabela por janela no caminho do pedido, com a
+  trava global — o que a `alcancam-fsync-2` não aceita sem decisão —, ou uma
+  geração por página conferida na leitura, que é formato;
+- **o 0 fica durável antes do `.reg`**: o fecho da janela sincroniza o `.ndx`
+  (páginas, depois o cabeçalho com o 0) antes do `fsync` do `.reg`. Uma queda
+  da máquina entre os dois deixa o índice **à frente** do dado, marcado limpo
+  — medido por emulação (C5): `buscar` devolve rowid que o `.reg` não tem, e
+  `verificar` acusa; ruidoso, não calado (3/3; igual antes do 522).
 
 **Não há migração.** Arquivo escrito antes da 0.18.0 tem zero no byte 52, e zero
 quer dizer «limpo» — que é a verdade para quem só escrevia através.

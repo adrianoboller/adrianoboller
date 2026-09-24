@@ -1,0 +1,60 @@
+{
+ "medido_em": "2026-09-24T16:25:32+00:00",
+ "nucleo": "6.18.44-fc-v37",
+ "binario": "disco-antes",
+ "rodadas": 3,
+ "cenarios": {
+  "522-fechar": {
+   "1": [
+    "inserir ok=5000 de 5000, sem fsync",
+    "antes byte52=0",
+    "syncfs=1",
+    "remontado byte52=0",
+    "remontado vivas=5000 inclusoes_no_log=0 precisa_reconstruir=false",
+    "remontado buscar=ERRO [SP000010] arquivo corrompido: CRC invalido na pagina 3 de ext/db/pedidos.ndx"
+   ],
+   "2": [
+    "inserir ok=5000 de 5000, sem fsync",
+    "antes byte52=0",
+    "syncfs=1",
+    "remontado byte52=0",
+    "remontado vivas=5000 inclusoes_no_log=0 precisa_reconstruir=false",
+    "remontado buscar=ERRO [SP000010] arquivo corrompido: CRC invalido na pagina 3 de ext/db/pedidos.ndx"
+   ],
+   "3": [
+    "inserir ok=5000 de 5000, sem fsync",
+    "antes byte52=0",
+    "syncfs=1",
+    "remontado byte52=0",
+    "remontado vivas=5000 inclusoes_no_log=0 precisa_reconstruir=false",
+    "remontado buscar=ERRO [SP000010] arquivo corrompido: CRC invalido na pagina 3 de ext/db/pedidos.ndx"
+   ]
+  },
+  "522-cai": {
+   "1": [
+    "inserir ok=5000 de 5000, e cai sem Drop",
+    "antes byte52=1",
+    "syncfs=1",
+    "remontado byte52=1",
+    "remontado vivas=5000 inclusoes_no_log=0 precisa_reconstruir=true",
+    "remontado buscar=ERRO [SP000010] arquivo corrompido: o indice de ext/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar"
+   ],
+   "2": [
+    "inserir ok=5000 de 5000, e cai sem Drop",
+    "antes byte52=1",
+    "syncfs=1",
+    "remontado byte52=1",
+    "remontado vivas=5000 inclusoes_no_log=0 precisa_reconstruir=true",
+    "remontado buscar=ERRO [SP000010] arquivo corrompido: o indice de ext/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar"
+   ],
+   "3": [
+    "inserir ok=5000 de 5000, e cai sem Drop",
+    "antes byte52=1",
+    "syncfs=1",
+    "remontado byte52=1",
+    "remontado vivas=5000 inclusoes_no_log=0 precisa_reconstruir=true",
+    "remontado buscar=ERRO [SP000010] arquivo corrompido: o indice de ext/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar"
+   ]
+  }
+ }
+}

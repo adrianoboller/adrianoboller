@@ -967,9 +967,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `servidor-segue-de-pe-depois-do-fsync-recusado` | o servidor segue de pé depois de um `fsync` recusado, gravando num disco que já se sabe que mente | 1 | ✅ provada |
 | `completar-engole-a-tabela-que-nao-foi-ao-disco` | a recuperação engole o erro do `sincronizar` e apaga a marca de um commit cujo dado não foi ao disco | 1 | ✅ provada |
 
-**325 das 373 guardas do catálogo: 1 aposentada, 320 provadas, 4 redundantes** — 8922 s de mutação, medido em 2026-09-16 15:25.
+**325 das 385 guardas do catálogo: 1 aposentada, 320 provadas, 4 redundantes** — 8922 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 49 das 373 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 49 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 61 das 385 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 61 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
@@ -1020,6 +1020,18 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `dblink-mysql-sem-teto-do-quadro-acumulado` — `ler_quadro` do DbLink MySQL(R) junta continuações de 16 MB sem teto sobre o total
 - `smtp-sem-teto-de-linhas-de-continuacao` — o cliente SMTP aceita QUALQUER número de linhas de continuação (`250-...`), sem teto
 - `por-login-para-no-primeiro-que-casa` — `Cadastro::por_login` é um `find`: quem não existe custa muito mais que o primeiro da lista
+- `fechar-baixa-o-byte-52-sem-fsync` — o `fechar` grava o byte 52 em 0 sem `fsync`: o núcleo guarda o cabeçalho limpo e perde as páginas
+- `atestado-sobrevive-a-escrita` — o atestado do processo sobrevive à escrita que não terminou: a reabertura confia na árvore de antes dela
+- `atestado-pelo-caminho-e-nao-pelo-arquivo` — o atestado do processo vale para o caminho, e não para o arquivo: outro `.ndx` no mesmo lugar abre confiado
+- `atestado-de-antes-da-recusa-vale-depois` — o atestado que o `fechar` deu ANTES de um `fsync` recusado no diretório continua valendo depois dele
+- `fts-fora-do-fecho-da-janela` — o `.fts` fica fora do fecho da janela: nenhum `fsync` o alcança, e o byte 52 dele só desce sem `fsync`
+- `reindexar-deixa-o-punho-velho-gravar` — o `reindexar` deixa o punho velho gravar páginas e cabeçalho por cima do `.ndx` recém-truncado
+- `restauracao-nao-reconstroi-o-marcado` — a restauração de backup devolve a tabela com o `.ndx` marcado, e ela recusa toda escrita até alguém mandar `reindexar`
+- `arranque-nao-reconstroi-o-marcado` — o arranque não reconstrói o `.ndx` que o processo anterior só fechou: a tabela sobe recusando até alguém mandar `reindexar`
+- `atestado-fica-no-caminho-velho` — renomear, duplicar ou colar uma tabela escrita desde o último fecho deixa o destino recusando tudo, sem queda nenhuma
+- `renomear-esquece-o-atestado` — o renomear move os arquivos e deixa o atestado no nome velho: a tabela renomeada recusa tudo
+- `fechar-do-embutido-nao-sincroniza` — o embutido que fecha a tabela sem `phx_sincronizar` não a abre no processo seguinte, e a ABI não tem como reconstruí-la
+- `phx-reindexar-nao-reindexa` — o `phx_reindexar` responde Ok sem reconstruir: o índice que a queda marcou continua recusando pela ABI
 
 As guardas que esta corrida ainda cita, hoje aposentadas:
 

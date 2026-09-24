@@ -5256,7 +5256,8 @@ As vizinhas, reprovadas contra o código novo e todas PROVADAS:
 - **A cascata solta (pedido 490).** Um pânico entre duas filhas de uma cascata
   do `ao_alterar` fora de transação é **pior que a queda**: a janela do `.ndx`
   da filha abre e fecha a cada linha, o `Drop` acha a escrita em voo em zero e
-  baixa o byte 52, e as filhas seguintes ficam na chave velha sem recusa. O
+  baixa o byte 52 (desde o pedido 522, atesta o `.ndx` neste processo — o
+  efeito aqui dentro é o mesmo), e as filhas seguintes ficam na chave velha sem recusa. O
   reparo não o alcança; o `MANUAL.txt` e o `docs/ACID.md` dizem isso.
 - **O `Mutex` de `transacoes` (pedido 458)** não muda: o pânico que o
   envenena dentro do `COMMIT` também envenena a de dados (a de dados é tomada

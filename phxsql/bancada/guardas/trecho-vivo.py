@@ -277,6 +277,14 @@ dia, nunca no desejado:
   o `por_login` que parava no primeiro que casava. Contado pelo `--catraca`
   na arvore combinada; a frente tinha subido o piso sozinha, e o numero dela
   (358) nao entrou.
+  **SUBIU para 386 em 24/09/2026** (pedido 522, integrado sobre os faceis
+  A): doze guardas do byte 52 -- o `fechar` que o baixava sem `fsync`, o
+  atestado que sobrevive a escrita, que mora no caminho e nao no arquivo, que
+  vale de antes da recusa, que fica no caminho velho ou que o renomear
+  esquece, o `.fts` fora do fecho, o punho velho que grava depois do
+  `reindexar`, a restauracao e o arranque que nao reconstroem a tabela
+  marcada, o `fechar` do embutido e o `phx_reindexar`. A frente contou 337;
+  a conta do integrador, pelo `--catraca` na arvore combinada.
   **SUBIU para 300 em 24/09/2026** (pedido 497, o literal do pedido no texto
   do erro que o `acessos.log` grava): tres guardas novas, uma por motor que
   monta a mensagem -- o `descrever` do SQL, o `mostrar` da expressao -- e a
@@ -400,7 +408,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 374
+PISO_DAS_ENTRADAS = 386
 
 # ------------------------------------------------------------- APOSENTADAS
 #

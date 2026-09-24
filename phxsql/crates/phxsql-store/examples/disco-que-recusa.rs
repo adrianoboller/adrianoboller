@@ -1,4 +1,4 @@
-//! O disco que recusa, contra o SISTEMA OPERACIONAL -- pedidos 509 e 512.
+//! O disco que recusa, contra o SISTEMA OPERACIONAL -- pedidos 509, 512 e 522.
 //!
 //! O executor da `bancada/catastrofes/`, que o chama dentro de um `unshare -m`
 //! com tmpfs pequeno ou ext4 sobre loop com provisionamento fino. Sozinho ele
@@ -15,7 +15,9 @@
 //! disco-que-recusa enospc   DIR MAX     insere ate o disco encher, e fecha
 //!                                       no mesmo punho (SEM_SYNC=1: so o Drop)
 //! disco-que-recusa criar    DIR
-//! disco-que-recusa inserir  DIR N
+//! disco-que-recusa inserir  DIR N         insere e fecha pelo `Drop` (o `fechar`)
+//! disco-que-recusa inserir-e-cai DIR N   insere e cai SEM `Drop` (`abort`): o
+//!                                       controle do pedido 522
 //! disco-que-recusa fecho2x  DIR SINAL   fecho 1; espera SINAL existir; fecho 2
 //!                                       numa tabela reaberta. ABORTA=1 poe o
 //!                                       gancho do servidor (o abort na recusa)
@@ -148,6 +150,18 @@ fn main() {
             let mut t = Table::abrir(dir, "pedidos").unwrap();
             let ok = (1..=n).filter(|&id| t.inserir(&linha(id)).is_ok()).count();
             println!("inserir ok={ok} de {n}, sem fsync");
+        }
+        // O controle do pedido 522: a mesma carga, e o processo cai antes de
+        // qualquer `Drop` -- o `fechar` nao roda, e o byte 52 fica no que a
+        // primeira escrita deixou.
+        "inserir-e-cai" => {
+            let n: i64 = a[3].parse().unwrap();
+            let mut t = Table::abrir(dir, "pedidos").unwrap();
+            let ok = (1..=n).filter(|&id| t.inserir(&linha(id)).is_ok()).count();
+            println!("inserir ok={ok} de {n}, e cai sem Drop");
+            use std::io::Write;
+            let _ = std::io::stdout().flush();
+            std::process::abort();
         }
         "fecho2x" => {
             let sinal = Path::new(&a[3]);

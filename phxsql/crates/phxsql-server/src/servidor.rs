@@ -17640,9 +17640,11 @@ impl Servidor {
     /// 456) e recusa, nomeando o indice, ate o `reindexar` -- o que ele ja faz
     /// depois de um `SIGKILL` no mesmo ponto. **Na cascata do `ao_alterar`
     /// solto, NAO:** a janela do `.ndx` da filha abre e fecha a cada linha, o
-    /// panico entre duas filhas acha `escritas_em_voo` em zero, o `Drop` baixa
-    /// o byte 52, e as filhas seguintes ficam na chave velha sem recusa
-    /// nenhuma. Ali o panico e PIOR que a queda, e o conserto e o pedido 490.
+    /// panico entre duas filhas acha `escritas_em_voo` em zero, o `Drop` atesta
+    /// o `.ndx` neste processo (ate o pedido 522 baixava o byte 52; o efeito
+    /// aqui dentro e o mesmo), e as filhas seguintes ficam na chave velha sem
+    /// recusa nenhuma. Ali o panico e PIOR que a queda, e o conserto e o
+    /// pedido 490.
     ///
     /// # Por que TODOS os residentes, e nao os da tabela tocada
     ///
@@ -22341,6 +22343,21 @@ impl Servidor {
             ("substituiu", Json::Bool(r.substituiu)),
             ("ms", Json::de_u64(inicio.elapsed().as_millis() as u64)),
         ];
+        // So quando houve (pedido 522): o indice que chegou marcado na copia
+        // e foi reconstruido, e o que nao reconstruiu -- este, alto, porque a
+        // tabela restaurada recusa ate alguem mandar `reindexar`.
+        if r.indices_reconstruidos > 0 {
+            campos.push((
+                "indices_reconstruidos",
+                Json::de_u64(r.indices_reconstruidos as u64),
+            ));
+        }
+        if !r.indices_pendentes.is_empty() {
+            campos.push((
+                "indices_pendentes",
+                Json::Lista(r.indices_pendentes.iter().map(Json::texto_de).collect()),
+            ));
+        }
         if let Some(pitr) = pitr {
             campos.push(("pitr", pitr));
         }

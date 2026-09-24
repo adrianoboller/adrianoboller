@@ -332,6 +332,17 @@ impl FtsFile {
         self.ndx.fechar()
     }
 
+    /// Ver [`NdxFile::marca_so_neste_processo`].
+    pub fn marca_so_neste_processo(&self) -> bool {
+        self.ndx.marca_so_neste_processo()
+    }
+
+    /// O punho vai ser trocado por um `.fts` recriado: ver
+    /// [`NdxFile::abandonar`].
+    pub fn abandonar(&mut self) {
+        self.ndx.abandonar()
+    }
+
     /// Quantas chaves um indice guarda. Serve a bancada e ao `verificar`.
     pub fn qtd_chaves(&self, idx: usize) -> u64 {
         self.ndx.indices()[idx].qtd_chaves

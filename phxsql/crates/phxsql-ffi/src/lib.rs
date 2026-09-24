@@ -54,8 +54,8 @@ use phxsql_store::Table;
 use erro::{anotar, do_motor, PHX_ERRO_PONTEIRO, PHX_ERRO_USO, PHX_NAO_HA, PHX_OK};
 use linha::LinhaFFI;
 use punho::{
-    blindado, blindado_cru, com, conferir, liberar, Punho, ETIQ_BASE, ETIQ_CURSOR, ETIQ_ESQUEMA,
-    ETIQ_IMAGEM, ETIQ_LINHA, ETIQ_TABELA,
+    blindado, blindado_cru, com, conferir, liberar, liberar_depois_de, Punho, ETIQ_BASE,
+    ETIQ_CURSOR, ETIQ_ESQUEMA, ETIQ_IMAGEM, ETIQ_LINHA, ETIQ_TABELA,
 };
 use valor::PhxValor;
 
@@ -682,12 +682,32 @@ pub unsafe extern "C" fn phx_tabela_abrir(
 /// Fecha a tabela. Cursores abertos sobre ela param de funcionar, e dizem
 /// isso com `PHX_ERRO_USO` em vez de tocar em memoria morta.
 ///
+/// # O que o fechar garante (pedido 522)
+///
+/// Que o PROXIMO PROCESSO abre a tabela -- o contrato de antes do 522, que o
+/// `EMBUTIDO.md` ensina sem `phx_sincronizar`. Desde o 522 o fechamento do
+/// motor nao grava mais o byte 52 do `.ndx` em 0 sem `fsync`, e o 1 que ele
+/// deixa so este processo sabe coerente: sem isto, a tabela escrita e fechada
+/// recusava toda operacao no processo seguinte, e a ABI nao tinha como
+/// reconstrui-la (medido pelo papel C, 3/3). Entao, quando a marca so se
+/// sustenta NESTE processo, o fechar sincroniza antes de soltar -- e so
+/// entao: tabela so lida, ou ja sincronizada, fecha sem `fsync` nenhum.
+///
+/// Se esse `sincronizar` falhar, a tabela e fechada assim mesmo (o punho nao
+/// vaza) e o codigo do erro volta, com a mensagem em `phx_ultimo_erro`: o
+/// proximo processo vai achar o indice marcado e precisar de `phx_reindexar`.
+///
 /// # Safety
 ///
 /// `p` e nulo ou um punho de tabela ainda nao liberado.
 #[no_mangle]
 pub unsafe extern "C" fn phx_tabela_fechar(p: *mut Punho<TabelaFFI>) -> i32 {
-    liberar(p, ETIQ_TABELA)
+    liberar_depois_de(p, ETIQ_TABELA, |x| {
+        if !x.t.marca_so_neste_processo() {
+            return PHX_OK;
+        }
+        resultado(x.t.sincronizar(), |_| PHX_OK)
+    })
 }
 
 /// Quantas linhas a VISAO enxerga.
@@ -780,6 +800,27 @@ pub unsafe extern "C" fn phx_tabela_coluna_tipo(
 #[no_mangle]
 pub unsafe extern "C" fn phx_sincronizar(p: *mut Punho<TabelaFFI>) -> i32 {
     com(p, ETIQ_TABELA, |x| resultado(x.t.sincronizar(), |_| PHX_OK))
+}
+
+/// Reconstroi os indices da tabela a partir do `.reg` -- o `.ndx` e o
+/// `.fts`.
+///
+/// E a saida que faltava a ABI (pedido 522, B2 do papel C): o indice que uma
+/// queda deixou marcado recusa toda operacao ate ser reconstruido, e so o
+/// servidor e a linha de comando sabiam reconstruir. `qtd` recebe quantos
+/// indices foram montados.
+///
+/// # Safety
+///
+/// `p` e um punho de tabela valido; `qtd` nulo ou gravavel.
+#[no_mangle]
+pub unsafe extern "C" fn phx_reindexar(p: *mut Punho<TabelaFFI>, qtd: *mut usize) -> i32 {
+    com(p, ETIQ_TABELA, |x| {
+        resultado(x.t.reindexar(), |indices| {
+            saida(qtd, indices.len());
+            PHX_OK
+        })
+    })
 }
 
 /// Confere a integridade da tabela e devolve os contadores.

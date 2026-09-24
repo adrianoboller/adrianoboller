@@ -108,6 +108,15 @@ fn fsync_recusado_nao_se_repete_como_sucesso() {
     );
     drop(t);
     if let Ok(mut t) = Table::abrir(&d, "pedidos") {
+        // Desde o pedido 522 o `Drop` nao grava mais o 0 -- o byte abaixo
+        // fica em 1 de qualquer jeito --, e a mesma garantia passou a morar
+        // no atestado do processo: a reabertura AQUI nao pode confiar no
+        // `.ndx` que o nucleo pode ter perdido.
+        assert!(
+            t.indice_precisa_reconstruir(),
+            "a reabertura neste processo confiou no .ndx depois de um fsync \
+             recusado no diretorio: o Drop o atestou por cima da recusa"
+        );
         assert!(
             t.sincronizar().is_err(),
             "a tabela REABERTA sincronizou Ok depois de um fsync recusado no \
@@ -123,6 +132,45 @@ fn fsync_recusado_nao_se_repete_como_sucesso() {
     assert!(
         fecho2.unwrap_err().contains("pedido 509"),
         "a recusa tinha de dizer por que nao repete"
+    );
+}
+
+/// **509 com o 522: o atestado de ANTES da recusa nao vale depois dela.**
+///
+/// A tabela fechou limpa -- o `fechar` atestou o 1 dela para este processo
+/// -- e so DEPOIS um `fsync` de outro arquivo do diretorio foi recusado. O
+/// nucleo pode ter descartado as paginas que aquele fecho entregou, e a
+/// reabertura aqui nao pode mais tomar o nucleo por testemunha. Quem segura
+/// isso e a abertura, e nao o `Drop`: quando a recusa chegou, o `Drop` ja
+/// tinha passado.
+#[test]
+fn o_atestado_de_antes_da_recusa_nao_vale_depois() {
+    let d = DirTemp::novo("522-atestado-e-recusa");
+    drop(tabela_com(&d, 500));
+    let t = Table::abrir(&d, "pedidos").unwrap();
+    assert!(!t.indice_precisa_reconstruir(), "premissa: atestada");
+    drop(t);
+
+    // A recusa, noutro arquivo do mesmo diretorio.
+    let mut vizinha = Table::criar(
+        &d,
+        Schema::new(
+            "vizinha",
+            vec![Column::new("id", ColumnType::Int8)],
+            vec![IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico()],
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    falha_de_teste::armar(&d.join("vizinha."), Onde::Fsync, 1);
+    assert!(vizinha.sincronizar().is_err(), "premissa: a recusa forjada");
+    drop(vizinha);
+
+    let t = Table::abrir(&d, "pedidos").unwrap();
+    assert!(
+        t.indice_precisa_reconstruir(),
+        "o atestado de antes da recusa valeu depois dela: a reabertura tomou \
+         o nucleo por testemunha de paginas que ele pode ter descartado"
     );
 }
 

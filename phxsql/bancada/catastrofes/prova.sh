@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# O disco que RECUSA, contra o sistema operacional -- pedidos 509 e 512.
+# O disco que RECUSA, contra o sistema operacional -- pedidos 509, 512 e 522.
 #
 #   sudo bancada/catastrofes/prova.sh            constroi o executor e roda
 #   P=/caminho/do/binario bancada/catastrofes/prova.sh   usa um binario pronto
@@ -19,6 +19,15 @@
 #              a escrita de fundo falha, o 1o fsync recusa. Os dois fechos no
 #              MESMO processo, como o servidor faz; e com ABORTA=1, o gancho do
 #              servidor (o abort na recusa). Depois remonta e confere.
+#   522 (P4)   o mesmo provisionamento fino, e NENHUM fsync do motor: insere,
+#              fecha pelo `Drop` (o `fechar`) ou cai sem ele (o controle),
+#              `syncfs` com o disco cheio, libera, remonta e confere. O que se
+#              mede e o byte 52 que o disco guardou -- o `fechar` baixava o
+#              byte sem `fsync`, e o nucleo guardava o cabecalho limpo sobre
+#              paginas perdidas.
+#   CENARIOS="522" roda so o 522: e o que compara o binario de antes com o de
+#              depois, porque os modos do 509 exigem o gancho que so existe
+#              desde o 509.
 #
 # Precisa de root e `unshare -m`: toda montagem nasce e morre num espaco de
 # montagem privado, e nada toca o disco da maquina. Sem privilegio o roteiro
@@ -128,14 +137,65 @@ c1() {
   done
 }
 
+# ------------------------------------------------------------------ 522 (P4)
+# O provisionamento fino do c1, e nenhum `fsync` do motor: quem manda ao disco
+# e o `syncfs` do roteiro, com o disco cheio. O modo diz como o processo que
+# inseriu termina: `inserir` fecha pelo `Drop`; `inserir-e-cai` cai sem ele.
+c522() {
+  local rotulo="$1" modo="$2" r img="$S/back/disco.img" livre
+  for r in $(seq 1 "$RODADAS"); do
+    mount -t tmpfs -o size=80m tmpfs "$S/back"
+    truncate -s 64M "$img"
+    mkfs.ext4 -q -F -N 64 -J size=4 "$img"
+    fallocate -l 64M "$img"
+    LOOP="$(losetup -f --show "$img")"
+    mount -t ext4 "$LOOP" "$S/ext"
+    "$P" criar "$S/ext/db"
+    sync
+    umount "$S/ext"
+    for faixa in $(dumpe2fs "$img" 2>/dev/null | sed -n 's/^ *Free blocks: //p' | tr ',' '\n' | tr -d ' '); do
+      [ -z "$faixa" ] && continue
+      local a="${faixa%-*}" b="${faixa#*-}"
+      fallocate -p -o $((a * 4096)) -l $(((b - a + 1) * 4096)) "$img"
+    done
+    livre="$(df -k --output=avail "$S/back" | tail -1)"
+    dd if=/dev/zero of="$S/back/enchimento" bs=1k count=$((livre - 64)) 2>/dev/null
+    mount -t ext4 "$LOOP" "$S/ext"
+    while IFS= read -r l; do anotar "$rotulo#$r" "$l"; done < <("$P" "$modo" "$S/ext/db" 5000 2>&1)
+    while IFS= read -r l; do anotar "$rotulo#$r" "antes $l"; done < <(SO_LER=1 "$P" conferir "$S/ext/db" 2>&1 | grep '^byte52=')
+    # A escrita de fundo, com o disco cheio: o que tem bloco novo nao chega.
+    sync -f "$S/ext/db/pedidos.ndx" 2>/dev/null
+    anotar "$rotulo#$r" "syncfs=$?"
+    rm -f "$S/back/enchimento"
+    umount "$S/ext"
+    mount -t ext4 "$LOOP" "$S/ext"
+    while IFS= read -r l; do anotar "$rotulo#$r" "remontado $l"; done < <(SO_LER=1 "$P" conferir "$S/ext/db" 2>&1)
+    umount "$S/ext"
+    losetup -d "$LOOP"
+    LOOP=""
+    umount "$S/back"
+  done
+}
+
+CENARIOS="${CENARIOS:-512 509 522}"
+if [[ " $CENARIOS " == *" 512 "* ]]; then
 echo "== 512 (C2b): tmpfs de 512 KiB, segundo fecho no mesmo punho"
 c2b "512-mesmo-punho" ""
 echo "== 512 (C2b): tmpfs de 512 KiB, so o Drop"
 c2b "512-so-o-drop" 1
+fi
+if [[ " $CENARIOS " == *" 509 "* ]]; then
 echo "== 509 (C1): provisionamento fino, dois fechos no mesmo processo (biblioteca)"
 c1 "509-biblioteca" ""
 echo "== 509 (C1): provisionamento fino, o gancho do servidor (abort na recusa)"
 c1 "509-servidor" 1
+fi
+if [[ " $CENARIOS " == *" 522 "* ]]; then
+echo "== 522 (P4): provisionamento fino, syncfs com o disco cheio, fechar pelo Drop"
+c522 "522-fechar" inserir
+echo "== 522 (P4): o controle -- o processo cai sem Drop"
+c522 "522-cai" inserir-e-cai
+fi
 
 python3 - "$REG" "$SAIDA" "$P" "$RODADAS" <<'PY'
 import datetime, json, os, platform, sys

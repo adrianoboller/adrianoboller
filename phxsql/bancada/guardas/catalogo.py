@@ -12392,25 +12392,49 @@ pub const ITERACOES_MINIMAS_DO_CADASTRO: u32 = phxsql_store::cofre::ITERACOES_MI
     },
     {
         "id": "drop-baixa-o-byte-52-depois-do-fsync-recusado",
-        "titulo": "depois de um `fsync` recusado no diretório, o `Drop` do `.ndx` grava o cabeçalho limpo por cima das páginas que o núcleo pode ter perdido",
+        "titulo": "depois de um `fsync` recusado no diretório, o `.ndx` sai do `Drop` dizendo que presta — até o 522 gravando o 0, desde o 522 atestando para a reabertura",
         "porque": (
             "pedido 509: na prova do papel C quem recusou foi o `.log`, e o "
             "`.ndx` da mesma tabela, que nunca viu erro nenhum, baixou o byte 52 "
             "no `Drop`. A recusa e do diretorio, e a porta que baixa a marca "
-            "(`pode_baixar_a_marca`) passou a perguntar por ela."
+            "(`pode_baixar_a_marca`) passou a perguntar por ela. ENVELHECEU COM "
+            "O 522, E O PONTO ANDOU: o `fechar` nao grava mais o 0 -- atesta o 1 "
+            "para o processo --, e a garantia passou a morar em DOIS lugares, a "
+            "porta do `Drop` (nao atesta depois da recusa) e a abertura (nao "
+            "aceita atestado depois da recusa). Medido em 24/09/2026: tirar so "
+            "a porta do `Drop` NAO e sentido (os 7 de `disco-que-recusa` "
+            "passam: a abertura cobre); tirar so a abertura e -- ver "
+            "`atestado-de-antes-da-recusa-vale-depois`. Os dois juntos repoem o "
+            "defeito de origem, e o vermelho e a reabertura confiando no `.ndx` "
+            "(`fsync_recusado_nao_se_repete_como_sucesso`). O "
+            "`indice_sozinho_que_o_fsync_recusou_nao_repete` saiu do `caem`: o "
+            "byte que ele confere nao desce mais por construcao."
         ),
-        "arquivo": "crates/phxsql-store/src/ndx.rs",
-        "trecho": """            && !self.escrita_interrompida
+        "trocas": [
+            {
+                "arquivo": "crates/phxsql-store/src/ndx.rs",
+                "trecho": """            && !self.escrita_interrompida
             && crate::sincronia::recusado_em(&self.caminho).is_none()
 """,
-        "troca": """            && !self.escrita_interrompida
+                "troca": """            && !self.escrita_interrompida
             // DEFEITO REPOSTO (509): o Drop nao pergunta pela recusa.
 """,
+            },
+            {
+                "arquivo": "crates/phxsql-store/src/ndx.rs",
+                "trecho": """            && atestado(&caminho, crc_do_cabecalho)
+            && crate::sincronia::recusado_em(&caminho).is_none();
+""",
+                "troca": """            && atestado(&caminho, crc_do_cabecalho);
+        // DEFEITO REPOSTO (509): a abertura nao pergunta pela recusa.
+""",
+            },
+        ],
         "pacote": "phxsql-store",
         "alvo": ["--test", "disco-que-recusa"],
         "caem": [
             "fsync_recusado_nao_se_repete_como_sucesso",
-            "indice_sozinho_que_o_fsync_recusou_nao_repete",
+            "o_atestado_de_antes_da_recusa_nao_vale_depois",
         ],
         "seguem": ["o_diario_sozinho_tambem_nao_repete"],
     },
@@ -13922,5 +13946,278 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "usuarios::tests::le_o_cadastro_completo",
             "usuarios::tests::autenticacao",
         ],
+    },
+    {
+        "id": "fechar-baixa-o-byte-52-sem-fsync",
+        "titulo": "o `fechar` grava o byte 52 em 0 sem `fsync`: o núcleo guarda o cabeçalho limpo e perde as páginas",
+        "porque": (
+            "pedido 522, P4 do papel C, 3/3 contra o SO (ext4 sobre loop com "
+            "provisionamento fino, `syncfs` com o disco cheio): byte 52 = 0, "
+            "`CRC invalido na pagina 3`, `precisa_reconstruir` falso. A regra 2 "
+            "do FORMATO valia para a queda do processo e nao para a da maquina: "
+            "o cabecalho e a pagina 0, e nada o ordena depois das outras."
+        ),
+        "arquivo": "crates/phxsql-store/src/ndx.rs",
+        "trecho": """        if self.mudou_desde_o_fecho || self.estrutura_mudou {
+            self.gravar_cabecalho()?;
+        }
+        if self.mudou_desde_o_fecho {
+""",
+        "troca": """        if self.mudou_desde_o_fecho || self.estrutura_mudou || self.sujo {
+            // DEFEITO REPOSTO (522): o fechar baixa a marca sem fsync.
+            self.sujo = false;
+            self.gravar_cabecalho()?;
+        }
+        if self.mudou_desde_o_fecho {
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "fechar-nao-baixa-a-marca"],
+        "caem": [
+            "o_fechar_deixa_o_1_e_so_o_sincronizar_grava_o_0",
+            "o_processo_novo_manda_reconstruir_o_que_so_foi_fechado",
+        ],
+        "seguem": ["a_escrita_que_nao_terminou_tira_o_atestado"],
+    },
+    {
+        "id": "atestado-sobrevive-a-escrita",
+        "titulo": "o atestado do processo sobrevive à escrita que não terminou: a reabertura confia na árvore de antes dela",
+        "porque": (
+            "pedido 522: o atestado diz que o 1 do arquivo e coerente no nucleo, "
+            "e so vale enquanto ninguem mexe. Tirado so no `fechar`, um punho "
+            "que abriu atestado, escreveu e caiu sem `Drop` deixava a "
+            "reabertura neste processo confiando no cabecalho de antes -- o "
+            "CRC dele nao muda quando o byte ja esta em 1."
+        ),
+        "arquivo": "crates/phxsql-store/src/ndx.rs",
+        "trecho": """        if !self.mudou_desde_o_fecho {
+            retirar_atestado(&self.caminho);
+            self.mudou_desde_o_fecho = true;
+        }
+""",
+        "troca": """        if !self.mudou_desde_o_fecho {
+            // DEFEITO REPOSTO (522): o atestado sobrevive a mudanca.
+            self.mudou_desde_o_fecho = true;
+        }
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "fechar-nao-baixa-a-marca"],
+        "caem": ["a_escrita_que_nao_terminou_tira_o_atestado"],
+        "seguem": ["o_fechar_deixa_o_1_e_so_o_sincronizar_grava_o_0"],
+    },
+    {
+        "id": "atestado-pelo-caminho-e-nao-pelo-arquivo",
+        "titulo": "o atestado do processo vale para o caminho, e não para o arquivo: outro `.ndx` no mesmo lugar abre confiado",
+        "porque": (
+            "pedido 522: restaurar por cima, renomear ou copiar outro `.ndx` "
+            "para o mesmo caminho poe ali um arquivo que o `fechar` nunca "
+            "atestou. O CRC do cabecalho e o que amarra o atestado ao arquivo; "
+            "sem ele, uma copia antiga marcada abre como coerente."
+        ),
+        "arquivo": "crates/phxsql-store/src/ndx.rs",
+        "trecho": """    com_a_chave(caminho, |c| atestados().get(c) == Some(&crc))
+""",
+        "troca": """    // DEFEITO REPOSTO (522): so o caminho, sem o CRC.
+    com_a_chave(caminho, |c| atestados().get(c).is_some() || crc == u32::MAX)
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "fechar-nao-baixa-a-marca"],
+        "caem": ["o_atestado_nao_vale_para_outro_arquivo_no_mesmo_caminho"],
+        "seguem": ["o_fechar_deixa_o_1_e_so_o_sincronizar_grava_o_0"],
+    },
+    {
+        "id": "atestado-de-antes-da-recusa-vale-depois",
+        "titulo": "o atestado que o `fechar` deu ANTES de um `fsync` recusado no diretório continua valendo depois dele",
+        "porque": (
+            "pedido 522 com o 509: a recusa diz que o nucleo pode ter "
+            "descartado paginas que nenhum erro nomeou, inclusive as que um "
+            "fecho anterior entregou. A porta do `Drop` nao alcanca esse caso "
+            "-- quando a recusa chega, o `Drop` ja passou --; quem o segura e "
+            "a abertura, que deixa de aceitar atestado no diretorio recusado."
+        ),
+        "arquivo": "crates/phxsql-store/src/ndx.rs",
+        "trecho": """            && atestado(&caminho, crc_do_cabecalho)
+            && crate::sincronia::recusado_em(&caminho).is_none();
+""",
+        "troca": """            && atestado(&caminho, crc_do_cabecalho);
+        // DEFEITO REPOSTO (522): a abertura nao pergunta pela recusa.
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "disco-que-recusa"],
+        "caem": ["o_atestado_de_antes_da_recusa_nao_vale_depois"],
+        "seguem": ["fsync_recusado_nao_se_repete_como_sucesso"],
+    },
+    {
+        "id": "fts-fora-do-fecho-da-janela",
+        "titulo": "o `.fts` fica fora do fecho da janela: nenhum `fsync` o alcança, e o byte 52 dele só desce sem `fsync`",
+        "porque": (
+            "pedido 522, o irmao: o `.fts` e um `.ndx` por dentro e o "
+            "`Table::sincronizar` nao o chamava. Antes do 522 o byte dele descia "
+            "pelo `fechar` sem `fsync` nenhum; depois do 522, sem esta linha, o "
+            "indice de texto de toda tabela escrita abriria marcado no processo "
+            "seguinte."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        if let Some(f) = self.fts.as_mut() {
+            f.sincronizar()?;
+        }
+""",
+        "troca": """        // DEFEITO REPOSTO (522): o .fts fora do fecho.
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "fechar-nao-baixa-a-marca"],
+        "caem": ["o_indice_de_texto_vai_ao_fecho_da_janela"],
+        "seguem": ["o_fechar_deixa_o_1_e_so_o_sincronizar_grava_o_0"],
+    },
+    {
+        "id": "reindexar-deixa-o-punho-velho-gravar",
+        "titulo": "o `reindexar` deixa o punho velho gravar páginas e cabeçalho por cima do `.ndx` recém-truncado",
+        "porque": (
+            "pedido 522, achado ao procurar o irmao: `self.ndx = "
+            "NdxFile::criar(..)` cria o arquivo novo ANTES de o velho sair, e o "
+            "`Drop` do velho rodava o `fechar` por cima dele -- paginas sujas de "
+            "uma arvore cujas paginas limpas o truncamento apagou, e um "
+            "atestado para esse cabecalho. Um panico no meio da montagem "
+            "deixava a reabertura confiando numa arvore com buracos."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        self.ndx.abandonar();
+""",
+        "troca": """        // DEFEITO REPOSTO (522): o punho velho grava por cima do novo.
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "panico-no-meio-da-escrita"],
+        "caem": ["panico_no_meio_do_reindexar_depois_de_escrever_no_mesmo_punho"],
+        "seguem": ["panico_no_meio_do_reindexar_nao_grava_o_indice_vazio"],
+    },
+    {
+        "id": "restauracao-nao-reconstroi-o-marcado",
+        "titulo": "a restauração de backup devolve a tabela com o `.ndx` marcado, e ela recusa toda escrita até alguém mandar `reindexar`",
+        "porque": (
+            "pedido 522: o backup copia o `.ndx` como o nucleo o tinha, e o de "
+            "toda tabela escrita desde o ultimo fecho da janela sai com o byte 52 "
+            "em 1. Medido na suite do servidor ao entrar o 522: "
+            "`restaurar_com_outro_nome_cria_o_banco_integro` e tres do PITR "
+            "caiam por isso. O palco reconstroi com o motor do arranque."
+        ),
+        "arquivo": "crates/phxsql-store/src/restaurar.rs",
+        "trecho": """            crate::catalogo::Database::no_diretorio(&palco).reconstruir_indices_marcados();
+""",
+        "troca": """            (0usize, Vec::<String>::new()); // DEFEITO REPOSTO (522)
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": ["restaurar::tests::a_copia_marcada_restaura_reconstruida"],
+        "seguem": ["restaurar::tests::restaura_um_banco_do_zip_com_outro_nome"],
+    },
+    {
+        "id": "arranque-nao-reconstroi-o-marcado",
+        "titulo": "o arranque não reconstrói o `.ndx` que o processo anterior só fechou: a tabela sobe recusando até alguém mandar `reindexar`",
+        "porque": (
+            "pedido 522: o `fechar` deixa o 1, e o `phxsqld` so para por sinal. "
+            "Medido contra o servidor de release (`preco-do-522.py`): 8 de 8 "
+            "tabelas marcadas depois de um SIGKILL sob carga. Sem o passe da "
+            "recuperacao, as oito subiam recusando."
+        ),
+        "arquivo": "crates/phxsql-server/src/transacao.rs",
+        "trecho": """    reconstruir_os_marcados(dados, &mut r);
+""",
+        "troca": """    // DEFEITO REPOSTO (522): o arranque nao reconstroi o marcado.
+    let _ = reconstruir_os_marcados;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": ["transacao::testes::o_arranque_reconstroi_o_indice_que_so_foi_fechado"],
+        "seguem": ["transacao::testes::tabela_que_nao_foi_ao_disco_segura_a_marca_no_arranque"],
+        "prazo": 600,
+    },
+    {
+        "id": "atestado-fica-no-caminho-velho",
+        "titulo": "renomear, duplicar ou colar uma tabela escrita desde o último fecho deixa o destino recusando tudo, sem queda nenhuma",
+        "porque": (
+            "pedido 522, B1 do papel C: o atestado do processo e guardado pelo "
+            "caminho, e as tres operacoes poem o `.ndx` num caminho novo sem "
+            "`fsync`. Medido: 9 recusas em 9 («arquivo corrompido: o indice "
+            "ficou para tras numa queda»), contra 0 em 3 antes do 522. O "
+            "atestado acompanha o arquivo por um lugar so, `levar_atestado`."
+        ),
+        "arquivo": "crates/phxsql-store/src/ndx.rs",
+        "trecho": """    if crc_do_cabecalho_no_arquivo(para) == Some(crc) {
+        atestar(para, crc);
+    }
+""",
+        "troca": """    // DEFEITO REPOSTO (522, B1): o atestado nao vai junto.
+    let _ = (crc, crc_do_cabecalho_no_arquivo(para));
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "fechar-nao-baixa-a-marca"],
+        "caem": ["renomear_duplicar_e_colar_tabela_recem_escrita_abrem_sem_recusa"],
+        "seguem": ["o_fechar_deixa_o_1_e_so_o_sincronizar_grava_o_0"],
+    },
+    {
+        "id": "renomear-esquece-o-atestado",
+        "titulo": "o renomear move os arquivos e deixa o atestado no nome velho: a tabela renomeada recusa tudo",
+        "porque": (
+            "pedido 522, B1, a porta do renomear -- o caso do «carrega `t_nova` "
+            "e renomeia para `t`». O motor e um so (`levar_atestado`); esta "
+            "entrada prova que o CHAMADO no renomear e sentido, e nao so o "
+            "motor."
+        ),
+        "arquivo": "crates/phxsql-store/src/catalogo.rs",
+        "trecho": """        for (de, para) in &feitos {
+            crate::ndx::levar_atestado(de, para, true);
+        }
+""",
+        "troca": """        // DEFEITO REPOSTO (522, B1): o renomear nao leva o atestado.
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "fechar-nao-baixa-a-marca"],
+        "caem": ["renomear_duplicar_e_colar_tabela_recem_escrita_abrem_sem_recusa"],
+        "seguem": ["o_processo_novo_manda_reconstruir_o_que_so_foi_fechado"],
+    },
+    {
+        "id": "fechar-do-embutido-nao-sincroniza",
+        "titulo": "o embutido que fecha a tabela sem `phx_sincronizar` não a abre no processo seguinte, e a ABI não tem como reconstruí-la",
+        "porque": (
+            "pedido 522, B2 do papel C: o `phx_tabela_fechar` era so o `Drop`, "
+            "e o `Drop` deixa o byte 52 em 1 que so o processo que fechou sabe "
+            "coerente. O processo seguinte recusava toda operacao (3/3; antes "
+            "do 522 abria). E guarda nova imposta a cliente antigo: o "
+            "`EMBUTIDO.md` ensina o `phx_sincronizar` como descarga opcional."
+        ),
+        "arquivo": "crates/phxsql-ffi/src/lib.rs",
+        "trecho": """        if !x.t.marca_so_neste_processo() {
+            return PHX_OK;
+        }
+        resultado(x.t.sincronizar(), |_| PHX_OK)
+""",
+        "troca": """        // DEFEITO REPOSTO (522, B2): o fechar do embutido e so o Drop.
+        let _ = &x.t;
+        PHX_OK
+""",
+        "pacote": "phxsql-ffi",
+        "alvo": ["--lib"],
+        "caem": ["testes::fechar_sem_sincronizar_e_o_proximo_processo_abre"],
+        "seguem": ["testes::toda_funcao_exportada_e_blindada"],
+    },
+    {
+        "id": "phx-reindexar-nao-reindexa",
+        "titulo": "o `phx_reindexar` responde Ok sem reconstruir: o índice que a queda marcou continua recusando pela ABI",
+        "porque": (
+            "pedido 522, re-checagem do papel C: `phx_reindexar` e a unica "
+            "saida da ABI para o indice que uma queda deixou marcado, e so "
+            "aparecia no `phxsql.h`, sem teste. O defeito reposto e o retorno "
+            "cedo, com a contagem que o cliente espera e nada montado."
+        ),
+        "arquivo": "crates/phxsql-ffi/src/lib.rs",
+        "trecho": """        resultado(x.t.reindexar(), |indices| {
+""",
+        "troca": """        // DEFEITO REPOSTO (522): responde Ok sem reconstruir.
+        let _ = &x.t;
+        resultado(Ok::<Vec<(String, u64)>, phxsql_core::error::PhxError>(vec![(String::new(), 0)]), |indices| {
+""",
+        "pacote": "phxsql-ffi",
+        "alvo": ["--lib"],
+        "caem": ["testes::phx_reindexar_conserta_o_indice_marcado_pela_abi"],
+        "seguem": ["testes::phx_reindexar_com_punho_errado_devolve_codigo"],
     },
 ]

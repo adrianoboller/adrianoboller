@@ -1003,6 +1003,24 @@ O RODIZIO DO ACESSOS.LOG E DO DIRETIVAS.LOG
     atrasado se refaz; indice atrasado em silencio, nao. Detalhe completo em
     docs/FORMATO.md, secao ".ndx", "A marca de sujo (byte 52)".
 
+    "IR AO DISCO" QUER DIZER FSYNC (pedido 522). So o fecho da janela de
+    durabilidade tira a marca; fechar a tabela nao tira -- o nucleo grava as
+    paginas na ordem dele, e o cabecalho limpo podia chegar ao disco sem
+    elas. Dentro do mesmo processo o servidor sabe que o indice fechado esta
+    em dia; depois de uma queda do processo, as tabelas escritas desde o
+    ultimo fecho da janela sobem MARCADAS, e o arranque as reconstroi antes
+    de abrir a porta e conta no relatorio de recuperacao ("indices
+    reconstruidos"). O mesmo vale para o banco que sai de uma restauracao de
+    backup. O PRECO cresce com o TAMANHO de cada tabela tocada, e nao com
+    quantas: uma linha marca a tabela inteira, e reconstruir custa ~1,7 s
+    por milhao de linhas com 2 indices (medido: 1,65-1,88 s). Antes, a porta
+    abria na hora e so a tabela pega no meio de uma escrita recusava. Um
+    binario ANTERIOR a este nao reconstroi no arranque: a tabela tocada na
+    ultima janela recusa ate "reparar indice" a mao. No embutido (C, FFI), o
+    phx_tabela_fechar sincroniza sozinho a tabela escrita e nao sincronizada,
+    e o proximo processo a abre; o que caiu no meio se conserta com
+    phx_reindexar.
+
     VOLUME DO DIARIO. O "diario_volume_mib" diz onde o volume do .log, da
     .trash e do .reason corta. ZERO NAO MEXE, e esse e o padrao: vale o
     bytes_por_arquivo do esquema, que e 1 GiB. Existe porque 1 GiB e razoavel

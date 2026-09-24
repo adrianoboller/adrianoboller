@@ -238,6 +238,28 @@ pub unsafe fn com<T>(p: *mut Punho<T>, etiqueta: u64, f: impl FnOnce(&mut T) -> 
 ///
 /// Mesmo contrato do [`aberto`].
 pub unsafe fn liberar<T>(p: *mut Punho<T>, etiqueta: u64) -> i32 {
+    liberar_depois_de(p, etiqueta, |_| crate::erro::PHX_OK)
+}
+
+/// Libera -- e, antes de soltar a memoria, roda `antes` no que o punho
+/// guarda. Um caminho so com o [`liberar`], que e este com `antes` vazio.
+///
+/// Existe para o fechar que tem o que fazer no fim (o `phx_tabela_fechar` do
+/// pedido 522 sincroniza a tabela cuja marca so este processo sustenta). O
+/// punho SAI do registro antes de `antes` rodar, entao nenhuma outra thread o
+/// usa no meio; e ele e liberado mesmo quando `antes` falha ou entra em
+/// panico -- o codigo de `antes` e o que volta, e a memoria nao vaza. Punho
+/// envenenado nao roda `antes`: ele ja nao aceita trabalho, e o `Drop` do que
+/// ele guarda e quem decide o que vai ao disco.
+///
+/// # Safety
+///
+/// Mesmo contrato do [`aberto`].
+pub unsafe fn liberar_depois_de<T>(
+    p: *mut Punho<T>,
+    etiqueta: u64,
+    antes: impl FnOnce(&mut T) -> i32,
+) -> i32 {
     limpar();
     if p.is_null() {
         // Liberar nulo e o que `free(NULL)` faz: nada, sem reclamar.
@@ -256,11 +278,17 @@ pub unsafe fn liberar<T>(p: *mut Punho<T>, etiqueta: u64) -> i32 {
         }
         vivos.remove(&(p as usize));
     }
+    let mut caixa = Box::from_raw(p);
+    let codigo = if caixa.envenenado {
+        crate::erro::PHX_OK
+    } else {
+        blindado_cru(|| antes(&mut caixa.dentro))
+    };
     // Zerar ja nao e o que recusa a segunda liberacao -- e o registro. Fica
     // para o despejo de memoria nao mostrar um punho morto com cara de vivo.
-    (*p).etiqueta = 0;
-    drop(Box::from_raw(p));
-    crate::erro::PHX_OK
+    caixa.etiqueta = 0;
+    drop(caixa);
+    codigo
 }
 
 /// O texto de um panico, quando ele e um dos dois formatos usuais.

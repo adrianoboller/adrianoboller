@@ -1353,6 +1353,9 @@ pub struct Relatorio {
     pub ja_aplicadas: u64,
     /// Indices que a queda deixou para tras e que a recuperacao reconstruiu.
     pub indices_reconstruidos: usize,
+    /// Indices marcados que o arranque NAO conseguiu reconstruir (pedido
+    /// 522): a tabela continua recusando, e cada linha diz qual e por que.
+    pub indices_pendentes: Vec<String>,
     pub impossiveis: Vec<String>,
     /// Marcas CIFRADAS que este servidor nao conseguiu abrir. **Ficaram no
     /// disco**, e cada linha diz qual e por que -- ver [`Leitura::SemChave`].
@@ -1362,7 +1365,7 @@ pub struct Relatorio {
 
 impl Relatorio {
     pub fn houve(&self) -> bool {
-        self.achadas > 0
+        self.achadas > 0 || self.indices_reconstruidos > 0 || !self.indices_pendentes.is_empty()
     }
 
     /// O bloco que o arranque imprime.
@@ -1388,6 +1391,15 @@ impl Relatorio {
                 "\x20 indices reconstruidos ......... {}\n",
                 self.indices_reconstruidos
             ));
+        }
+        if !self.indices_pendentes.is_empty() {
+            s.push_str(&format!(
+                "\x20 indices MARCADOS sem conserto .. {}   (a tabela recusa ate o `reindexar`)\n",
+                self.indices_pendentes.len()
+            ));
+            for i in &self.indices_pendentes {
+                s.push_str(&format!("     ! {i}\n"));
+            }
         }
         if !self.impossiveis.is_empty() {
             s.push_str(&format!(
@@ -1474,8 +1486,52 @@ pub fn recuperar(dados: &Instancia) -> Relatorio {
             }
         }
     }
+    // DEPOIS das marcas: a tabela nomeada numa marca -- e a filha da cascata
+    // dela -- ja se reconstroi no `completar`, e o que sobra aqui e o resto.
+    reconstruir_os_marcados(dados, &mut r);
     r.ms = comeco.elapsed().as_millis() as u64;
     r
+}
+
+/// Reconstroi o `.ndx` -- e o `.fts` -- que o processo anterior deixou com o
+/// byte 52 em 1. Pedido 522.
+///
+/// # Por que isto passou a existir
+///
+/// Ate o 522 o `fechar` baixava a marca sem `fsync`, e o arranque so via
+/// marcado o indice da tabela que a queda pegou NO MEIO de uma escrita --
+/// uma, no maximo, e ela recusava ate alguem mandar `reindexar`. O `fechar`
+/// deixou de baixar: so o fecho da janela, depois dos `fsync`, grava o 0. Um
+/// processo que cai -- e o servidor nao tem outro jeito de parar, sai por
+/// sinal -- deixa marcada TODA tabela escrita desde o ultimo fecho da janela,
+/// e o processo novo nao sabe se a maquina caiu junto. Deixa-las recusando
+/// ate o operador descobrir faria de toda parada sob carga uma indisponibilidade
+/// das tabelas mais quentes; reconstruir aqui, com a porta ainda fechada, e o
+/// preco dito no `FORMATO.md` (§ a marca de sujo), medido e contado no
+/// relatorio.
+///
+/// O motor e o [`phxsql_store::catalogo::Database::reconstruir_indices_marcados`],
+/// o mesmo que a restauracao chama: a pergunta «esta arvore abre marcada?»
+/// tem uma resposta so.
+///
+/// # O que isto NAO resolve
+///
+/// Reconstroi do `.reg` que o nucleo devolve. No mesmo boot depois do `abort`
+/// do pedido 509 o nucleo pode devolver o que o disco perdeu, e o indice novo
+/// sai coerente com um `.reg` que nao esta no disco -- e a metade do 509 que
+/// continua aberta, e a sentinela dela tem de decidir ANTES deste passe.
+fn reconstruir_os_marcados(dados: &Instancia, r: &mut Relatorio) {
+    let Ok(bases) = dados.databases() else {
+        return;
+    };
+    for nome in bases {
+        let Ok(db) = dados.abrir_database(&nome) else {
+            continue;
+        };
+        let (feitas, pendentes) = db.reconstruir_indices_marcados();
+        r.indices_reconstruidos += feitas;
+        r.indices_pendentes.extend(pendentes);
+    }
 }
 
 /// Onde a marca esta sendo tratada -- e e isso que decide se a operacao
@@ -2272,5 +2328,73 @@ mod testes {
             1,
             "a segunda recuperacao duplicou a linha"
         );
+    }
+
+    /// **Pedido 522: o arranque reconstroi o indice que o processo anterior
+    /// so FECHOU.**
+    ///
+    /// O `fechar` deixa o byte 52 em 1 -- so o fecho da janela grava o 0 --,
+    /// e o processo novo nao tem o atestado do velho. Sem este passe, toda
+    /// tabela escrita desde o ultimo fecho da janela subia recusando ate
+    /// alguem mandar `reindexar`; com ele, sobe reconstruida, sincronizada e
+    /// contada. O controle vai junto: a tabela sincronizada nao se reconstroi.
+    #[test]
+    fn o_arranque_reconstroi_o_indice_que_so_foi_fechado() {
+        use phxsql_core::schema::{Column, IndexColumn, IndexDef, Schema};
+        use phxsql_core::types::ColumnType;
+
+        let d = dir("522-arranque");
+        let inst = Instancia::nova(&d).unwrap();
+        let db = inst.criar_database("loja").unwrap();
+        let esquema = |nome: &str| {
+            Schema::new(
+                nome,
+                vec![
+                    Column::new("id", ColumnType::Int4).obrigatoria(),
+                    Column::new("nome", ColumnType::Str(40)),
+                ],
+                vec![IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico()],
+            )
+            .unwrap()
+        };
+        for (nome, sincroniza) in [("fechada", false), ("sincronizada", true)] {
+            let mut t = db.criar_tabela(None, esquema(nome)).unwrap();
+            for i in 1..=300 {
+                t.inserir(&[Value::Int(i), Value::Str(format!("c{i}"))])
+                    .unwrap();
+            }
+            if sincroniza {
+                t.sincronizar().unwrap();
+            }
+        }
+        // O processo novo: o atestado do velho nao atravessa o `exec`.
+        phxsql_store::ndx::esquecer_atestados_para_teste(&d);
+        assert!(
+            db.abrir_qualificada("fechada")
+                .unwrap()
+                .indice_precisa_reconstruir(),
+            "premissa: sem atestado, o 1 do fechar manda reconstruir"
+        );
+
+        let r = recuperar(&inst);
+        assert!(r.indices_pendentes.is_empty(), "{:?}", r.indices_pendentes);
+        assert_eq!(
+            r.indices_reconstruidos, 1,
+            "o arranque tinha de reconstruir a tabela so fechada, e so ela"
+        );
+        assert!(
+            r.houve(),
+            "reconstruir e nao contar no relatorio e reparar calado"
+        );
+        phxsql_store::ndx::esquecer_atestados_para_teste(&d);
+        let mut t = db.abrir_qualificada("fechada").unwrap();
+        assert!(
+            !t.indice_precisa_reconstruir(),
+            "a reconstrucao do arranque ficou so no nucleo: a proxima queda \
+             antes do primeiro fecho a marcaria de novo"
+        );
+        for i in [1, 150, 300] {
+            assert_eq!(t.buscar("porId", &[Value::Int(i)]).unwrap().len(), 1);
+        }
     }
 }

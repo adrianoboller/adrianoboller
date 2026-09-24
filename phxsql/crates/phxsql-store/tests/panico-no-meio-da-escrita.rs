@@ -356,6 +356,38 @@ fn panico_no_meio_do_reindexar_nao_grava_o_indice_vazio() {
     assert_eq!(t.varrer_indice("porId").unwrap().len(), 5);
 }
 
+/// O mesmo panico, com o PUNHO que chamou o `reindexar` ja tendo escrito --
+/// pedido 522, o irmao que a atribuicao escondia.
+///
+/// `self.ndx = NdxFile::criar(..)` cria (e trunca) o arquivo novo ANTES de o
+/// punho velho sair, e o `Drop` do velho rodava o `fechar` por cima do arquivo
+/// novo: as paginas sujas e o cabecalho de uma arvore cujas paginas limpas o
+/// truncamento acabou de apagar -- e, desde o 522, um atestado para esse
+/// cabecalho. O panico no meio da montagem deixava a reabertura aqui
+/// confiando numa arvore com buracos.
+#[test]
+fn panico_no_meio_do_reindexar_depois_de_escrever_no_mesmo_punho() {
+    let d = dir("reindexar-sujo");
+    semear(&d, 3_000);
+
+    esperar_panico(Ponto::NoMeioDoReindexar, || {
+        let mut t = Table::abrir(&d, "clientes").unwrap();
+        for i in 3_001..=3_010 {
+            t.inserir(&cliente(i, "x")).unwrap();
+        }
+        t.reindexar().unwrap();
+    });
+
+    let mut t = Table::abrir(&d, "clientes").unwrap();
+    if !t.indice_precisa_reconstruir() {
+        conferir_linhas_no_indice(&mut t, "porId");
+    }
+    drop(t);
+    let mut t = conferir_marcada(&d, "clientes");
+    conferir_reindexada(&mut t, &["porId"]);
+    assert_eq!(t.varrer_indice("porId").unwrap().len(), 3_010);
+}
+
 // ================================================= o caminho do FFI, aqui
 
 /// O panico capturado, e o `Drop` DEPOIS, fora do desenrolar -- e o que o
@@ -433,8 +465,13 @@ fn sincronizar_nao_limpa_o_indice_que_abriu_sujo() {
 
 // ================================================ o comportamento de antes
 
-/// A escrita que termina continua descendo a marca ao fechar: a camada 0 nao
-/// pode virar «toda tabela escrita abre marcada».
+/// A escrita que termina continua ABRINDO confiavel depois do fechar: a
+/// camada 0 nao pode virar «toda tabela escrita abre marcada».
+///
+/// Desde o pedido 522 o byte 52 no ARQUIVO fica em 1 depois do `fechar` --
+/// so o `sincronizar`, com `fsync`, grava o 0 --, e o que segura a promessa
+/// deste teste e o atestado do processo: a reabertura aqui confia. Por isso
+/// ele confere as duas coisas, e o 0 depois do `sincronizar`.
 #[test]
 fn sem_panico_a_marca_desce_ao_fechar_como_antes() {
     let d = dir("sem-panico");
@@ -445,10 +482,13 @@ fn sem_panico_a_marca_desce_ao_fechar_como_antes() {
         t.atualizar(rowids[1], &cliente(20, "C2")).unwrap();
         t.excluir_de_vez(rowids[3], "teste").unwrap();
     }
-    assert_eq!(byte_52(&d, "clientes"), 0);
+    assert_eq!(byte_52(&d, "clientes"), 1, "pedido 522: o fechar deixa o 1");
     let mut t = Table::abrir(&d, "clientes").unwrap();
     assert!(!t.indice_precisa_reconstruir());
     conferir_linhas_no_indice(&mut t, "porId");
+    t.sincronizar().unwrap();
+    drop(t);
+    assert_eq!(byte_52(&d, "clientes"), 0);
 }
 
 /// «Tabela cheia» recusa ANTES de gravar: o indice continua em dia, a tabela
@@ -471,7 +511,9 @@ fn tabela_cheia_nao_deixa_o_indice_marcado() {
         t.verificar()
             .expect("a recusa nao pode deixar o indice recusando");
     }
-    assert_eq!(byte_52(&d, "clientes"), 0);
+    // Pedido 522: o 1 no arquivo e o do `fechar`, e a reabertura aqui confia
+    // nele. O que este teste guarda e a reabertura, e nao o byte.
+    assert_eq!(byte_52(&d, "clientes"), 1);
     let mut t = Table::abrir(&d, "clientes").unwrap();
     assert!(!t.indice_precisa_reconstruir());
     conferir_linhas_no_indice(&mut t, "porId");

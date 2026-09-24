@@ -1,0 +1,46 @@
+{
+ "medido_em": "2026-09-24T16:38:06+00:00",
+ "nucleo": "6.18.44-fc-v37",
+ "binario": "target/release/phxsqld",
+ "rodadas": [
+  {
+   "tabelas": 8,
+   "linhas_por_tabela": 20000,
+   "pedidos_na_carga": 9976,
+   "marcadas_depois_da_queda": 8,
+   "reconstruidas_no_arranque": 8,
+   "tempo_da_recuperacao_ms": 506,
+   "arranque_ate_a_porta_s": 0.555,
+   "respondem_depois": 8,
+   "controle_marcadas_ocioso": 0,
+   "controle_reconstruidas": 0,
+   "controle_tempo_ms": null
+  },
+  {
+   "tabelas": 8,
+   "linhas_por_tabela": 20000,
+   "pedidos_na_carga": 7792,
+   "marcadas_depois_da_queda": 8,
+   "reconstruidas_no_arranque": 8,
+   "tempo_da_recuperacao_ms": 291,
+   "arranque_ate_a_porta_s": 0.306,
+   "respondem_depois": 8,
+   "controle_marcadas_ocioso": 0,
+   "controle_reconstruidas": 0,
+   "controle_tempo_ms": null
+  },
+  {
+   "tabelas": 8,
+   "linhas_por_tabela": 20000,
+   "pedidos_na_carga": 9936,
+   "marcadas_depois_da_queda": 8,
+   "reconstruidas_no_arranque": 8,
+   "tempo_da_recuperacao_ms": 265,
+   "arranque_ate_a_porta_s": 0.302,
+   "respondem_depois": 8,
+   "controle_marcadas_ocioso": 0,
+   "controle_reconstruidas": 0,
+   "controle_tempo_ms": null
+  }
+ ]
+}

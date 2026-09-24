@@ -220,10 +220,21 @@ fn montar(base: &Path, k: usize, semear: i64) -> (Instancia, Vec<String>) {
     (inst, nomes)
 }
 
-/// O corpo tracado pelo `--contar`: so' o fecho, nada antes e nada depois.
+/// O corpo tracado pelo `--contar`: a janela suja, o MARCO, e o fecho. So' o
+/// que vem depois do marco se conta.
+///
+/// A janela se suja AQUI, no processo tracado, e nao na montagem: no servidor
+/// quem escreve e quem fecha sao o mesmo processo, e desde o pedido 522 o 1
+/// que o `fechar` deixa no byte 52 so e coerente para quem o deixou. Sujada
+/// noutro processo, o `.ndx` de cada tabela abre marcado, nao vai ao disco, e
+/// a conta cai de 8 para 6 por tabela sem o fecho ter mudado -- ver o mesmo
+/// motivo no `fsync-por-fecho`.
 fn sonda(dir: &str, k: usize, paralelo: bool) {
     let inst = Instancia::nova(Path::new(dir)).unwrap();
     let nomes: Vec<String> = (0..k).map(|i| format!("tab{i:02}")).collect();
+    sujar(&inst.abrir_database("bancada").unwrap(), &nomes, 999_999);
+    #[cfg(unix)]
+    let _ = std::os::unix::process::parent_id();
     if paralelo {
         fechar_em_paralelo(&inst, &nomes);
     } else {
@@ -244,7 +255,7 @@ fn contar(dir: &Path, k: usize, paralelo: bool, log: &Path) -> Option<usize> {
         .ok()?;
     let eu = std::env::current_exe().ok()?;
     let saida = std::process::Command::new("strace")
-        .args(["-f", "-y", "-e", "trace=fsync", "-o"])
+        .args(["-f", "-y", "-e", "trace=fsync,getppid", "-o"])
         .arg(log)
         .arg(&eu)
         .arg("--sonda")
@@ -258,7 +269,19 @@ fn contar(dir: &Path, k: usize, paralelo: bool, log: &Path) -> Option<usize> {
         return None;
     }
     let texto = std::fs::read_to_string(log).ok()?;
-    Some(texto.lines().filter(|l| l.contains("fsync(")).count())
+    // So' depois do marco -- ver [`sonda`]. Sem marco, a conta nao sabe onde
+    // o fecho comeca e diz isso em vez de contar tudo.
+    if !texto.contains("getppid(") {
+        eprintln!("o traco nao tem o marco getppid: a conta nao sabe onde o fecho comeca");
+        return None;
+    }
+    Some(
+        texto
+            .lines()
+            .skip_while(|l| !l.contains("getppid("))
+            .filter(|l| l.contains("fsync("))
+            .count(),
+    )
 }
 
 fn main() {
@@ -283,14 +306,8 @@ fn main() {
         let log = base.with_extension("strace");
         let mut respostas = Vec::new();
         for paralelo in [false, true] {
+            // As K sincronizadas; a sonda as suja e fecha, no processo tracado.
             let (_i, _n) = montar(&base, k, 200);
-            // deixa as K sujas, como o fecho as encontra
-            {
-                let inst = Instancia::nova(&base).unwrap();
-                let db = inst.abrir_database("bancada").unwrap();
-                let nomes: Vec<String> = (0..k).map(|i| format!("tab{i:02}")).collect();
-                sujar(&db, &nomes, 999_999);
-            }
             match contar(&base, k, paralelo, &log) {
                 Some(n) => respostas.push((paralelo, n)),
                 None => {

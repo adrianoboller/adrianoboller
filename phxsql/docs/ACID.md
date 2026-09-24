@@ -297,7 +297,8 @@ conferida, e que uma queda no meio dela é **denunciada** no relatório do
 arranque ou **consertada** por ele (pedido 172), nunca silenciosa. **O pânico
 no mesmo ponto não tem essa garantia** (pedido 490, achado do DBA na revisão do
 451): a janela do `.ndx` da filha abre e fecha a cada linha, o `Drop` do pânico
-entre duas filhas acha a escrita em voo em zero e baixa o byte 52, e as filhas
+entre duas filhas acha a escrita em voo em zero e baixa o byte 52 (desde o
+pedido 522, atesta o `.ndx` neste processo, com o mesmo efeito), e as filhas
 seguintes ficam na chave velha sem recusa nenhuma — ali o pânico é pior que a
 queda, que deixa o byte em 1 e faz a tabela recusar. O canto
 que esta seção deixava aberto — uma filha que **outra conexão** põe sob a chave

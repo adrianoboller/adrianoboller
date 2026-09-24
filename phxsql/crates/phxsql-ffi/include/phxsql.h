@@ -269,6 +269,13 @@ int32_t phx_tabela_criar(PhxBase *base, const uint8_t *schema, size_t schema_tam
                          PhxEsquema *esq, PhxTabela **saida);
 int32_t phx_tabela_abrir(PhxBase *base, const uint8_t *nome, size_t nome_tam,
                          PhxTabela **saida);
+/* Fecha a tabela, e o PROXIMO processo a abre. Quando a marca de sujo do
+ * indice so se sustenta neste processo (a tabela foi escrita e nao
+ * sincronizada), o fechar sincroniza antes de soltar; tabela so lida ou ja
+ * sincronizada fecha sem fsync. Se esse sincronizar falhar, o punho e
+ * liberado assim mesmo e o erro volta: o proximo processo precisara de
+ * phx_reindexar. Durabilidade contra queda de energia ANTES do fechar
+ * continua sendo o phx_sincronizar. Pedido 522. */
 int32_t phx_tabela_fechar(PhxTabela *tab);
 
 /* Quantas linhas a VISAO enxerga. A visao e parametro porque, com exclusao
@@ -281,6 +288,10 @@ int32_t phx_tabela_coluna_nome(PhxTabela *tab, size_t i,
 int32_t phx_tabela_coluna_tipo(PhxTabela *tab, size_t i, int32_t *tipo);
 
 int32_t phx_sincronizar(PhxTabela *tab);
+/* Reconstroi os indices (.ndx e .fts) do .reg. E o conserto do indice que
+ * uma queda deixou marcado -- toda operacao de indice recusa ate isto.
+ * `qtd` recebe quantos indices foram montados; pode ser NULL. */
+int32_t phx_reindexar(PhxTabela *tab, size_t *qtd);
 int32_t phx_verificar(PhxTabela *tab, PhxRelatorio *rel);
 
 /* ----------------------------------------------------------------- dado */

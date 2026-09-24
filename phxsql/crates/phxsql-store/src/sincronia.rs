@@ -29,13 +29,15 @@
 //!
 //! * o **servidor** cai. Ele registra [`ao_recusar`] com um `abort` antes da
 //!   recuperacao do arranque, e o gancho roda AQUI, no instante da recusa --
-//!   antes de qualquer `Drop` baixar o byte 52 de um `.ndx`, e antes de
-//!   qualquer laco repetir o `fsync`;
+//!   antes de qualquer `Drop` atestar um `.ndx` para este processo, e antes
+//!   de qualquer laco repetir o `fsync`. (Baixar o byte 52 o `Drop` nao baixa
+//!   mais desde o pedido 522: so o `sincronizar`, depois dos `fsync`.);
 //! * a **biblioteca** embutida (FFI, exemplos, ferramentas) nao derruba o
 //!   processo de quem a embute -- o caso do SQLite, e a resposta dele: o
 //!   diretorio passa a recusar TODO `fsync` com o erro de [`conferir`] ate o
-//!   processo reiniciar, e o `.ndx` dali nao baixa mais a marca de sujo. A
-//!   proxima abertura manda reconstruir.
+//!   processo reiniciar, e o `.ndx` dali nao baixa mais a marca de sujo nem
+//!   se atesta. A proxima abertura -- ate neste processo -- manda
+//!   reconstruir.
 //!
 //! # Por que POR DIRETORIO, e nao por arquivo nem pelo processo
 //!
@@ -79,7 +81,8 @@ use phxsql_core::error::{PhxError, Result};
 static RECUSADOS: Mutex<Vec<(PathBuf, String)>> = Mutex::new(Vec::new());
 
 /// Ha algum? E o que poupa a trava no caminho de sempre: o `Drop` de todo
-/// `.ndx` pergunta, e quase nunca ha nada a achar.
+/// `.ndx` pergunta, a abertura do `.ndx` marcado tambem (pedido 522), e quase
+/// nunca ha nada a achar.
 static HA_RECUSADO: AtomicBool = AtomicBool::new(false);
 
 /// O que o processo faz no instante da recusa. Ver [`ao_recusar`].

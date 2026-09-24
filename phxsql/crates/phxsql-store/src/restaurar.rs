@@ -120,6 +120,12 @@ pub struct Restaurado {
     pub substituiu: bool,
     /// Onde o anterior foi parar, quando havia um.
     pub anterior_em: Option<String>,
+    /// Indices que chegaram MARCADOS na copia e foram reconstruidos no palco
+    /// (pedido 522): o backup copia o `.ndx` como o nucleo o tinha.
+    pub indices_reconstruidos: usize,
+    /// Os que chegaram marcados e nao reconstruiram -- a tabela restaurada
+    /// recusa ate o `reindexar`, e cada linha diz qual e por que.
+    pub indices_pendentes: Vec<String>,
 }
 
 // ------------------------------------------------------------------- a fonte
@@ -430,6 +436,8 @@ pub struct Preparada {
     arquivos: usize,
     bytes: u64,
     tabelas: Vec<String>,
+    indices_reconstruidos: usize,
+    indices_pendentes: Vec<String>,
 }
 
 impl Drop for Preparada {
@@ -568,6 +576,17 @@ impl Preparada {
             escrita += dados.len() as u64;
         }
 
+        // O `.ndx` da copia e o que o nucleo tinha no instante do backup, e
+        // desde o pedido 522 o de toda tabela escrita depois do ultimo fecho
+        // da janela sai com o byte 52 em 1: o `fechar` nao baixa mais a
+        // marca, so o `sincronizar`. Restaurada assim, a tabela recusaria ate
+        // alguem mandar `reindexar`. A reconstrucao acontece AQUI, no palco,
+        // fora da trava e antes de o database entrar na raiz -- e com o mesmo
+        // motor do arranque. O PITR, que reaplica o diario no palco depois
+        // disto, ja encontra a arvore em dia.
+        let (indices_reconstruidos, indices_pendentes) =
+            crate::catalogo::Database::no_diretorio(&palco).reconstruir_indices_marcados();
+
         Ok(Preparada {
             tabelas: tabelas_dos_caminhos(
                 &meus
@@ -579,6 +598,8 @@ impl Preparada {
             de,
             arquivos: meus.len(),
             bytes: escrita,
+            indices_reconstruidos,
+            indices_pendentes,
         })
     }
 
@@ -628,6 +649,8 @@ impl Preparada {
             tabelas: std::mem::take(&mut self.tabelas),
             substituiu: existia,
             anterior_em,
+            indices_reconstruidos: self.indices_reconstruidos,
+            indices_pendentes: std::mem::take(&mut self.indices_pendentes),
         })
     }
 }
@@ -1102,6 +1125,60 @@ mod tests {
         // Com caminho absoluto, o vizinho e o pai mesmo.
         let v = vizinho_da_base(Path::new("/srv/phxsql/dados"), "x").unwrap();
         assert_eq!(v.parent().unwrap(), Path::new("/srv/phxsql"));
+    }
+
+    /// **Pedido 522: a copia de uma tabela so FECHADA restaura reconstruida.**
+    ///
+    /// O `fechar` deixa o byte 52 em 1, e o backup copia o `.ndx` como o
+    /// nucleo o tinha: sem a reconstrucao no palco, a tabela restaurada
+    /// recusava toda escrita ate alguem mandar `reindexar` -- medido na suite
+    /// do servidor, `restaurar_com_outro_nome_cria_o_banco_integro` e tres do
+    /// PITR caiam assim.
+    #[test]
+    fn a_copia_marcada_restaura_reconstruida() {
+        use crate::table::Table;
+        use phxsql_core::schema::{Column, IndexColumn, IndexDef, Schema};
+        use phxsql_core::types::ColumnType;
+        use phxsql_core::value::Value;
+
+        let base = temp("marcada");
+        let raiz = base.join("dados");
+        let db = crate::catalogo::Instancia::nova(&raiz)
+            .unwrap()
+            .criar_database("Z")
+            .unwrap();
+        let esquema = Schema::new(
+            "clientes",
+            vec![Column::new("id", ColumnType::Int4).obrigatoria()],
+            vec![IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico()],
+        )
+        .unwrap();
+        {
+            let mut t = db.criar_tabela(None, esquema).unwrap();
+            for i in 1..=50 {
+                t.inserir(&[Value::Int(i)]).unwrap();
+            }
+        }
+        assert_eq!(
+            std::fs::read(raiz.join("Z/clientes.ndx")).unwrap()[52],
+            1,
+            "premissa: a tabela so foi fechada"
+        );
+        let zip = zip_de(&base, &raiz, "Z");
+
+        let r = Preparada::preparar(&zip, &raiz, "Z")
+            .unwrap()
+            .confirmar(&raiz, "Z2", false)
+            .unwrap();
+        assert!(r.indices_pendentes.is_empty(), "{:?}", r.indices_pendentes);
+        assert_eq!(r.indices_reconstruidos, 1);
+        // Um processo novo le o restaurado: sem atestado, so o 0 vale.
+        crate::ndx::esquecer_atestados_para_teste(&raiz);
+        let mut t = Table::abrir(raiz.join("Z2"), "clientes").unwrap();
+        assert!(!t.indice_precisa_reconstruir());
+        assert_eq!(t.buscar("porId", &[Value::Int(50)]).unwrap().len(), 1);
+        t.inserir(&[Value::Int(51)])
+            .expect("a tabela restaurada tem de aceitar escrita");
     }
 
     #[test]
