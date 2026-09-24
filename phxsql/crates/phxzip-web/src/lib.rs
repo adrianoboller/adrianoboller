@@ -258,6 +258,9 @@ fn atender(mut fluxo: TcpStream, est: &Estado) {
                 ("logado", Json::Bool(logado.is_some())),
                 ("usuario", logado.map(Json::texto_de).unwrap_or(Json::Nulo)),
                 ("versao", Json::texto_de(env!("CARGO_PKG_VERSION"))),
+                // O teto vai para a tela para ela recusar ANTES de enviar: o
+                // 413 do servidor so chega depois do corpo inteiro no fio.
+                ("max_corpo", Json::de_u64(est.config.max_corpo as u64)),
             ]);
             let _ = http::responder_json(&mut fluxo, 200, &j);
             return;

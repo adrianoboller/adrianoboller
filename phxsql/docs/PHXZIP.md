@@ -144,6 +144,28 @@ PHXZIP_WEB_SENHA='...' target/release/phxzipweb --usuario adriano   # login exig
 - **Não feito:** a tela tem PT e EN por chave, mas numa tabela própria — a
   ligação com a fábrica de idiomas do PhxSql (`idiomas.rs`) fica pendente.
 
+### A tela: o que protege quem compacta (24/09/2026)
+
+- **A senha se digita duas vezes.** Com uma letra errada, o arquivo fica trancado
+  para sempre, e nem o 7-Zip o abre. O campo de repetição só aparece quando há
+  senha. Há também um botão de olho que mostra os dois campos.
+- **O teto é recusado antes de enviar.** O `/api/estado` passa a publicar o
+  `max_corpo` da porta. A fila avisa quando passa dele, e o botão Compactar não
+  envia nada. O 413 do servidor só chegaria depois do corpo inteiro. O teste
+  pelo soquete cai quando o campo sai.
+- **Conferido, não só gerado.** O `.7z` recém-gravado passa pelo mesmo
+  `/api/testar` da tela de abrir, com a mesma senha, antes de ser entregue. Se a
+  conferência falha, o arquivo não é baixado. Se ele passa do teto, a tela diz
+  «não conferido».
+- **Celular:** Nível e senha ficam alinhados pelo topo e, abaixo de 520 px, um
+  embaixo do outro. Antes, a legenda da senha quebrava e desalinhava os campos.
+- **Cada nível diz o que custa**, numa linha abaixo da escolha. São 15 chaves
+  novas nos seis idiomas.
+
+O exercício que prova isso no navegador é `testes-web/tela-phxzip.mjs`: 12
+verificações a 1200 px e 12 a 375 px, todas OK. Ele achou o aviso do teto
+cortado dentro da lista, que tem altura fixa, e o aviso passou para fora dela.
+
 ### O vídeo
 
 `node testes-web/video-phxzip.mjs` grava 92 s contra o servidor de verdade:

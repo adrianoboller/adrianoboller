@@ -90,6 +90,18 @@
     border: 1px solid var(--borda); color: var(--ambar); }
   .mini { padding: 3px 10px; font-size: 12px; }
   .botao.icone { padding: 4px 7px; line-height: 0; }
+  /* Nivel e senha lado a lado; a legenda longa da senha quebrava em duas
+     linhas e desalinhava do Nivel (visto a 375 px) -- alinhados pelo TOPO, e
+     um embaixo do outro quando a tela nao comporta os dois. */
+  .lado-a-lado { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(160px, 2fr);
+    gap: 12px; align-items: start; }
+  @media (max-width: 520px) { .lado-a-lado { grid-template-columns: 1fr; gap: 0; } }
+  .dica { font-size: 12px; color: var(--fraco); min-height: 1.3em; }
+  .com-olho { display: flex; gap: 6px; align-items: stretch; }
+  .com-olho .caixa { flex: 1; min-width: 0; }
+  .botao.olho[aria-pressed=true] { color: var(--ambar); }
+  #c_teto { margin-bottom: 12px; }
+  .resultado.aviso { display: block; border-color: var(--ambar); color: var(--ambar); }
   #login { max-width: 380px; margin: 60px auto; }
   .oculto { display: none !important; }
   footer { text-align: center; color: var(--fraco); font-size: 12px; padding: 24px 16px 32px; }
@@ -117,6 +129,7 @@
   <symbol id="i-cadeado" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
   <symbol id="i-baixar" viewBox="0 0 24 24"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></symbol>
   <symbol id="i-soltar" viewBox="0 0 24 24"><path d="M12 15V3"/><path d="M7 8l5-5 5 5"/><path d="M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></symbol>
+  <symbol id="i-olho" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
   <symbol id="i-fechar" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
   <symbol id="i-doc" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></symbol>
 </svg>
@@ -146,15 +159,23 @@
       <div class="rodape-lista"><span id="c_total"></span>
         <button id="c_limpar" class="botao neutro mini" data-txt="zip.limpar">Limpar</button></div>
     </div>
-    <div class="linha">
-      <label class="campo" style="flex:1;min-width:120px"><span data-txt="zip.nivel">Nível</span>
-        <select id="c_nivel" class="caixa">
+    <div id="c_teto" class="resultado aviso oculto" role="status"></div>
+    <div class="linha lado-a-lado">
+      <label class="campo estreito"><span data-txt="zip.nivel">Nível</span>
+        <select id="c_nivel" class="caixa" aria-describedby="c_dica">
           <option value="0" data-txt="zip.nivel_copy">0 — sem compressão</option><option value="1">1</option><option value="3">3</option>
           <option value="5" selected>5</option><option value="7">7</option><option value="9" data-txt="zip.nivel_max">9 — máximo</option>
-        </select></label>
-      <label class="campo" style="flex:2;min-width:160px"><span data-txt="zip.senha_arquivo">Senha do arquivo (opcional)</span>
-        <input id="c_senha" class="caixa" type="password" autocomplete="new-password"></label>
+        </select>
+        <small id="c_dica" class="dica"></small></label>
+      <label class="campo largo"><span data-txt="zip.senha_arquivo">Senha do arquivo (opcional)</span>
+        <span class="com-olho">
+          <input id="c_senha" class="caixa" type="password" autocomplete="new-password">
+          <button id="c_olho" type="button" class="botao neutro mini icone olho" aria-pressed="false">
+            <svg class="ic" aria-hidden="true"><use href="#i-olho"/></svg></button>
+        </span></label>
     </div>
+    <label id="c_conf" class="campo oculto"><span data-txt="zip.confirmar_senha">Repita a senha</span>
+      <input id="c_senha2" class="caixa" type="password" autocomplete="new-password"></label>
     <label class="campo"><span data-txt="zip.nome_saida">Nome do arquivo</span>
       <input id="c_nome" class="caixa" value="phxzip.7z"></label>
     <div class="linha" style="margin-bottom:12px">
@@ -238,7 +259,7 @@ $('idioma').onchange = async () => {
   idioma = $('idioma').value;
   try { localStorage.setItem('phxzip_idioma', idioma); } catch (_) {}
   await carregarTextos();
-  traduzir(); desenharFila(); rotularAberto(); if (ultimaLista) desenhar(ultimaLista);
+  traduzir(); desenharFila(); rotularAberto(); rotularNivel(); rotularOlho(); if (ultimaLista) desenhar(ultimaLista);
 };
 
 function mostrar(id, ok, texto) { const el = $(id); el.className = 'resultado ' + (ok ? 'ok' : 'erro'); el.textContent = texto; }
@@ -274,6 +295,8 @@ async function estado() {
   const r = await fetch('/api/estado', { credentials: 'same-origin' });
   const j = await r.json();
   $('versao').textContent = j.versao;
+  maxCorpo = j.max_corpo || 0;
+  desenharFila();
   const precisa = j.exige_login && !j.logado;
   $('login').classList.toggle('oculto', !precisa);
   $('principal').classList.toggle('oculto', precisa);
@@ -296,6 +319,7 @@ $('sair').onclick = async () => { try { await api('/api/sair', ''); } catch (_) 
 // Mesmo nome duas vezes SUBSTITUI -- o 7z nao aceita nome repetido, e soltar
 // a mesma pasta de novo quer dizer «a versao nova».
 let fila = [];
+let maxCorpo = 0;
 let aberto = null;
 let ultimaLista = null;
 
@@ -325,6 +349,11 @@ function desenharFila() {
   });
   const tot = fila.reduce((s, x) => s + x.arquivo.size, 0);
   $('c_total').textContent = t('zip.total_fila', { arquivos: nArquivos(fila.length), bytes: fmt(tot) });
+  // O aviso do teto aparece na FILA, antes do clique: esperar o Compactar
+  // seria enviar centenas de MiB para ouvir o 413 no fim.
+  const passa = fila.length > 0 && maxCorpo > 0 && tot > maxCorpo;
+  $('c_teto').classList.toggle('oculto', !passa);
+  if (passa) $('c_teto').textContent = t('zip.teto_fila', { teto: fmt(maxCorpo) });
   $('c_fila').classList.toggle('oculto', !fila.length);
 }
 
@@ -389,19 +418,75 @@ function escolherAberto(f) {
 $('a_arquivo').onchange = () => { escolherAberto($('a_arquivo').files[0]); $('a_arquivo').value = ''; if (aberto) abrir(false); };
 armarZona('a_zona', dt => { const f = dt.files[0]; escolherAberto(f); if (f) abrir(false); });
 
+// Senha errada ao compactar tranca o arquivo para sempre -- nem o 7-Zip abre.
+// Por isso a senha nova se digita DUAS vezes, e a repeticao so aparece quando
+// ha senha (quem compacta sem senha nao ganha campo inutil).
+function ajustarConfirmacao() {
+  const tem = $('c_senha').value !== '';
+  $('c_conf').classList.toggle('oculto', !tem);
+  if (!tem) $('c_senha2').value = '';
+}
+$('c_senha').oninput = ajustarConfirmacao;
+function rotularOlho() {
+  const b = $('c_olho'), vis = b.getAttribute('aria-pressed') === 'true';
+  b.title = t(vis ? 'zip.ocultar_senha' : 'zip.mostrar_senha');
+  b.setAttribute('aria-label', b.title);
+}
+$('c_olho').onclick = () => {
+  const vis = $('c_olho').getAttribute('aria-pressed') !== 'true';
+  $('c_olho').setAttribute('aria-pressed', String(vis));
+  $('c_senha').type = $('c_senha2').type = vis ? 'text' : 'password';
+  rotularOlho();
+};
+
+const DICA_NIVEL = { 0: 'zip.dica_0', 1: 'zip.dica_1', 3: 'zip.dica_3', 5: 'zip.dica_5', 7: 'zip.dica_7', 9: 'zip.dica_9' };
+function rotularNivel() { $('c_dica').textContent = t(DICA_NIVEL[$('c_nivel').value] || 'zip.dica_5'); }
+$('c_nivel').onchange = rotularNivel;
+
+// O corpo que vai no fio: a linha de metadados mais os bytes. E a mesma conta
+// do envelope(), sem montar o Blob, para recusar ANTES de enviar.
+function tamanhoDoEnvelope(meta, tamanhos) {
+  return new TextEncoder().encode(JSON.stringify(meta) + '\n').length + tamanhos.reduce((s, n) => s + n, 0);
+}
+function acimaDoTeto(meta, tamanhos) { return maxCorpo > 0 && tamanhoDoEnvelope(meta, tamanhos) > maxCorpo; }
+
 $('compactar').onclick = async () => {
   const itens = fila.slice();
   limpar('c_res');
   if (!itens.length) { mostrar('c_res', false, t('zip.escolha_antes')); return; }
-  const meta = { nivel: +$('c_nivel').value, senha: $('c_senha').value, nomes_visiveis: $('c_visiveis').checked,
+  const senha = $('c_senha').value;
+  if (senha !== $('c_senha2').value) { mostrar('c_res', false, t('zip.senha_difere')); $('c_senha2').focus(); return; }
+  const meta = { nivel: +$('c_nivel').value, senha, nomes_visiveis: $('c_visiveis').checked,
     arquivos: itens.map(x => ({ nome: x.nome, tamanho: x.arquivo.size, mtime: Math.floor(x.arquivo.lastModified / 1000) })) };
+  const tamanhos = itens.map(x => x.arquivo.size);
+  if (acimaDoTeto(meta, tamanhos)) {
+    mostrar('c_res', false, t('zip.teto_antes', { bytes: fmt(tamanhoDoEnvelope(meta, tamanhos)), teto: fmt(maxCorpo) }));
+    return;
+  }
   $('compactar').disabled = true;
   try {
     const r = await api('/api/compactar', envelope(meta, itens.map(x => x.arquivo)), true);
     const blob = await r.blob();
-    const tot = itens.reduce((s, x) => s + x.arquivo.size, 0);
-    baixar(blob, $('c_nome').value || 'phxzip.7z');
-    mostrar('c_res', true, t('zip.feito_compactar', { arquivos: nArquivos(itens.length), antes: fmt(tot), depois: fmt(blob.size), pct: pct(blob.size, tot), ms: r.headers.get('X-PhxZip-Ms') || '?' }));
+    const tot = tamanhos.reduce((s, n) => s + n, 0);
+    const feito = t('zip.feito_compactar', { arquivos: nArquivos(itens.length), antes: fmt(tot), depois: fmt(blob.size), pct: pct(blob.size, tot), ms: r.headers.get('X-PhxZip-Ms') || '?' });
+    // Conferir o que acabou de ser gravado, pelo mesmo testar da tela de
+    // abrir: «gerado» diz que o servidor respondeu, «conferido» diz que o
+    // arquivo abre e cada CRC bate. So entao se entrega o arquivo.
+    const metaT = { senha };
+    let conferido;
+    if (acimaDoTeto(metaT, [blob.size])) conferido = { ok: null, txt: t('zip.nao_conferido_teto') };
+    else {
+      try {
+        const j = await api('/api/testar', envelope(metaT, [blob]));
+        conferido = { ok: true, txt: t('zip.conferido', { n: fmt(j.entradas.length), ms: j.ms }) };
+      } catch (e) { conferido = { ok: false, txt: t('zip.conferir_falhou', { erro: textoDoErro(e) }) }; }
+    }
+    if (conferido.ok === false) { mostrar('c_res', false, feito + ' — ' + conferido.txt); }
+    else {
+      baixar(blob, $('c_nome').value || 'phxzip.7z');
+      mostrar('c_res', true, feito + ' — ' + conferido.txt);
+      if (conferido.ok === null) $('c_res').className = 'resultado aviso';
+    }
   } catch (e) { mostrar('c_res', false, textoDoErro(e)); }
   $('compactar').disabled = false;
 };
@@ -464,7 +549,7 @@ async function extrair(e) {
   } catch (err) { mostrar('a_res', false, textoDoErro(err)); }
 }
 
-carregarTextos().catch(() => {}).then(() => { traduzir(); return estado(); })
+carregarTextos().catch(() => {}).then(() => { traduzir(); rotularNivel(); rotularOlho(); return estado(); })
   .catch(() => mostrar('l_res', false, t('zip.rede')));
 </script>
 </body>

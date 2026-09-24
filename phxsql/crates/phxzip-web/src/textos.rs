@@ -489,6 +489,141 @@ pub const FABRICA_ZIP: &[TextoDeFabrica] = &[
         "Keine Antwort vom Server.",
         "Sin respuesta del servidor."
     ),
+    texto!(
+        "zip.confirmar_senha",
+        "Repita a senha",
+        "Répétez le mot de passe",
+        "Repeat the password",
+        "Ripeti la password",
+        "Passwort wiederholen",
+        "Repita la contraseña"
+    ),
+    texto!(
+        "zip.mostrar_senha",
+        "Mostrar a senha",
+        "Afficher le mot de passe",
+        "Show password",
+        "Mostra la password",
+        "Passwort anzeigen",
+        "Mostrar la contraseña"
+    ),
+    texto!(
+        "zip.ocultar_senha",
+        "Ocultar a senha",
+        "Masquer le mot de passe",
+        "Hide password",
+        "Nascondi la password",
+        "Passwort verbergen",
+        "Ocultar la contraseña"
+    ),
+    texto!(
+        "zip.senha_difere",
+        "As duas senhas não conferem. Uma senha digitada errado tranca o arquivo para sempre — nem o 7-Zip o abre.",
+        "Les deux mots de passe ne correspondent pas. Un mot de passe mal saisi verrouille l’archive pour toujours — même 7-Zip ne l’ouvre pas.",
+        "The two passwords do not match. A mistyped password locks the archive forever — not even 7-Zip can open it.",
+        "Le due password non coincidono. Una password digitata male blocca l’archivio per sempre — nemmeno 7-Zip lo apre.",
+        "Die beiden Passwörter stimmen nicht überein. Ein vertipptes Passwort sperrt das Archiv für immer — nicht einmal 7-Zip öffnet es.",
+        "Las dos contraseñas no coinciden. Una contraseña mal escrita bloquea el archivo para siempre — ni 7-Zip lo abre."
+    ),
+    texto!(
+        "zip.teto_antes",
+        "Nada foi enviado: {bytes} bytes passam do teto desta porta ({teto} bytes). Divida em partes menores.",
+        "Rien n’a été envoyé : {bytes} octets dépassent la limite de ce port ({teto} octets). Divisez en parties plus petites.",
+        "Nothing was sent: {bytes} bytes exceed this port's limit ({teto} bytes). Split it into smaller parts.",
+        "Nulla è stato inviato: {bytes} byte superano il limite di questa porta ({teto} byte). Dividi in parti più piccole.",
+        "Nichts wurde gesendet: {bytes} Bytes überschreiten das Limit dieses Ports ({teto} Bytes). In kleinere Teile aufteilen.",
+        "No se envió nada: {bytes} bytes superan el límite de este puerto ({teto} bytes). Divídalo en partes más pequeñas."
+    ),
+    texto!(
+        "zip.teto_fila",
+        "A fila passa do teto desta porta ({teto} bytes): o servidor recusaria. Remova arquivos antes de compactar.",
+        "La file dépasse la limite de ce port ({teto} octets) : le serveur refuserait. Retirez des fichiers avant de compresser.",
+        "The queue exceeds this port's limit ({teto} bytes): the server would refuse it. Remove files before compressing.",
+        "La coda supera il limite di questa porta ({teto} byte): il server la rifiuterebbe. Rimuovi file prima di comprimere.",
+        "Die Warteschlange überschreitet das Limit dieses Ports ({teto} Bytes): der Server würde ablehnen. Dateien vor dem Komprimieren entfernen.",
+        "La cola supera el límite de este puerto ({teto} bytes): el servidor la rechazaría. Quite archivos antes de comprimir."
+    ),
+    texto!(
+        "zip.conferido",
+        "conferido: {n} entradas abertas e CRC certo em {ms} ms",
+        "vérifié : {n} entrées ouvertes, CRC correct en {ms} ms",
+        "verified: {n} entries opened, CRC correct in {ms} ms",
+        "verificato: {n} voci aperte, CRC corretto in {ms} ms",
+        "geprüft: {n} Einträge geöffnet, CRC korrekt in {ms} ms",
+        "verificado: {n} entradas abiertas, CRC correcto en {ms} ms"
+    ),
+    texto!(
+        "zip.conferir_falhou",
+        "a conferência FALHOU e o arquivo não foi entregue: {erro}",
+        "la vérification a ÉCHOUÉ et l’archive n’a pas été livrée : {erro}",
+        "verification FAILED and the archive was not delivered: {erro}",
+        "la verifica è FALLITA e l’archivio non è stato consegnato: {erro}",
+        "die Prüfung ist FEHLGESCHLAGEN, das Archiv wurde nicht ausgeliefert: {erro}",
+        "la verificación FALLÓ y el archivo no se entregó: {erro}"
+    ),
+    texto!(
+        "zip.nao_conferido_teto",
+        "não conferido: o arquivo gerado passa do teto desta porta",
+        "non vérifié : l’archive produite dépasse la limite de ce port",
+        "not verified: the generated archive exceeds this port's limit",
+        "non verificato: l’archivio generato supera il limite di questa porta",
+        "nicht geprüft: das erzeugte Archiv überschreitet das Limit dieses Ports",
+        "no verificado: el archivo generado supera el límite de este puerto"
+    ),
+    texto!(
+        "zip.dica_0",
+        "só guarda, sem comprimir — o mais rápido",
+        "stocke seulement, sans compresser — le plus rapide",
+        "store only, no compression — the fastest",
+        "solo archiviazione, senza compressione — il più veloce",
+        "nur speichern, ohne Kompression — am schnellsten",
+        "solo guarda, sin comprimir — el más rápido"
+    ),
+    texto!(
+        "zip.dica_1",
+        "rápido, arquivo maior",
+        "rapide, archive plus grande",
+        "fast, larger archive",
+        "veloce, archivio più grande",
+        "schnell, größeres Archiv",
+        "rápido, archivo más grande"
+    ),
+    texto!(
+        "zip.dica_3",
+        "rápido, com um pouco mais de compressão",
+        "rapide, avec un peu plus de compression",
+        "fast, with a bit more compression",
+        "veloce, con un po’ più di compressione",
+        "schnell, mit etwas mehr Kompression",
+        "rápido, con algo más de compresión"
+    ),
+    texto!(
+        "zip.dica_5",
+        "equilíbrio entre tamanho e tempo — o padrão",
+        "équilibre entre taille et temps — par défaut",
+        "balance of size and time — the default",
+        "equilibrio tra dimensione e tempo — predefinito",
+        "Gleichgewicht zwischen Größe und Zeit — Standard",
+        "equilibrio entre tamaño y tiempo — el predeterminado"
+    ),
+    texto!(
+        "zip.dica_7",
+        "arquivo menor, mais lento",
+        "archive plus petite, plus lent",
+        "smaller archive, slower",
+        "archivio più piccolo, più lento",
+        "kleineres Archiv, langsamer",
+        "archivo más pequeño, más lento"
+    ),
+    texto!(
+        "zip.dica_9",
+        "o menor arquivo, o mais lento",
+        "l’archive la plus petite, le plus lent",
+        "the smallest archive, the slowest",
+        "l’archivio più piccolo, il più lento",
+        "das kleinste Archiv, am langsamsten",
+        "el archivo más pequeño, el más lento"
+    ),
 ];
 
 /// Os textos resolvidos no idioma pedido (nome da coluna da fabrica:

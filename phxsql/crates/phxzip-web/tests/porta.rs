@@ -116,6 +116,13 @@ fn sem_login_compacta_lista_testa_e_extrai() {
     let p = subir(false, 1 << 20);
     let r = pedir(p, "GET", "/api/estado", &[], b"");
     assert!(r.texto().contains("\"exige_login\":false"), "{}", r.texto());
+    // A tela recusa acima do teto ANTES de enviar; para isso ela precisa do
+    // teto verdadeiro desta porta, e nao de um numero copiado no JavaScript.
+    assert!(
+        r.texto().contains(&format!("\"max_corpo\":{}", 1 << 20)),
+        "{}",
+        r.texto()
+    );
     let pagina = pedir(p, "GET", "/", &[], b"");
     assert_eq!(pagina.codigo, 200);
     assert!(pagina.texto().contains("PhxZip"));
