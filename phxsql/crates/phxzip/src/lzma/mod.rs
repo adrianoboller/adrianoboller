@@ -13,6 +13,7 @@ pub mod enc;
 mod faixa;
 pub mod lzma2;
 mod modelo;
+mod otimo;
 
 pub use dec::DecodificadorLzma;
 pub use enc::{codificar_lzma2, Nivel};

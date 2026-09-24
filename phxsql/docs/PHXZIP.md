@@ -11,7 +11,7 @@ operacional; o core os reexporta, nenhum caminho de chamada mudou).
 |---|---|---|
 | leitor 7z (cabeçalho cru e codificado, sólido e não sólido, subfluxos, datas, atributos) | feito | abre 6 arquivos gravados pelo 7-Zip 23.01 (`tests/dados/`) |
 | LZMA e LZMA2 — decodificador | feito | idem, e ida e volta |
-| LZMA2 — codificador (cadeia de dispersão + preguiçoso de um passo) | feito, **sem análise ótima** | o `7z` abre o que ele grava; ver §3 |
+| LZMA2 — codificador (dispersão de 4 bytes; nível 1–4 guloso, 5–9 análise ótima por preço) | feito | o `7z` abre o que ele grava; ver §3 |
 | 7zAES (AES-256-CBC, chave por SHA-256 iterado 2^19) | feito, nos dois sentidos | FIPS-197 C.3, SP 800-38A F.2.5/F.2.6; o `7z` abre o nosso e nós o dele, com nomes cifrados |
 | recusa nomeada: Deflate, Deflate64, BZip2, PPMd, BCJ/BCJ2 e filtros, ZipCrypto, Zstd | feito | arquivos BZip2, PPMd e Deflate do 7-Zip recusados pelo nome |
 | zip-slip no motor (`Entrada::caminho`, `caminho_seguro`) | feito | caminho absoluto gravado pelo 7-Zip (`-spf`) recusado |
@@ -37,17 +37,28 @@ mesmo trabalho, um fio (`-mmt=1`). 24/09/2026, x86_64, release.
 
 | nível | PhxZip | 7-Zip 23.01 | diferença | tempo PhxZip | tempo 7-Zip |
 |---|---|---|---|---|---|
-| 1 | 687.728 | 608.455 | +13,0% | 0,06 s | 0,09 s |
-| 5 | 622.350 | 553.740 | +12,4% | 0,20 s | 0,47 s |
-| 9 | 593.287 | 553.221 | +7,2% | 2,11 s | 0,49 s |
+| 1 | 659.837 | 608.455 | +8,4% | 0,08 s | 0,12 s |
+| 5 | 573.581 | 553.740 | +3,6% | 0,63 s | 0,54 s |
+| 9 | 564.018 | 553.221 | +2,0% | 1,52 s | 0,50 s |
 
 Descomprimir o mesmo arquivo: 0,04 s nos dois.
 
-**A diferença tem causa conhecida:** o codificador escolhe cada símbolo pelo
-maior casamento, e o 7-Zip escolhe o caminho pelo **preço em bits**
-(`GetOptimum` em `LzmaEnc.c`). E o nível 9 daqui é lento porque a
-profundidade de cadeia 1024 paga sem o preço para guiá-la. Próxima frente do
-codificador: análise ótima por preço.
+**Como se chegou aqui, hipótese por hipótese** (nível 5, mesma entrada):
+
+| hipótese | resultado | veredito |
+|---|---|---|
+| guloso + preguiçoso, dispersão de 3 bytes (primeira versão) | 622.350 (+12,4%) | ponto de partida |
+| análise ótima por preço (`otimo.rs`, o `GetOptimum` reescrito) | 586.061 (+5,8%), mesma velocidade do 7-Zip | **entrou** |
+| refazer os preços a cada 256 bytes em vez de 2.048 | 585.626 (−0,07%), 38% mais lento | morreu |
+| janela do plano de 4.096 nós em vez de 2.048 | 586.031 (−0,005%) | morreu |
+| onde está o resto? texto sozinho +8,9%, binário sozinho +2,1% | a busca perde no texto repetitivo | diagnóstico |
+| profundidade 128 no nível 5 | 569.262, 2× mais lento | caro demais |
+| dispersão de 4 bytes (menos candidatos inúteis na cadeia) | 573.581 (+3,6%) e mais rápido em todo nível | **entrou** |
+
+O que ainda falta para empatar, **não medido**: a árvore binária de busca
+(`bt4` do 7-Zip) e os casamentos de 2 bytes por dispersão própria. O nível 9
+é 3× mais lento que o do 7-Zip pelo mesmo motivo — a cadeia paga
+profundidade que a árvore não paga.
 
 ## 4. Decisões
 

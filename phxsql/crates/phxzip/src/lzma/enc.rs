@@ -1,17 +1,15 @@
 //! Codificador LZMA2 -- o que faz o PhxZip comprimir, e nao so empacotar.
 //!
-//! # O que ele faz, e o que ainda nao faz
+//! # O que ele faz
 //!
-//! Busca por cadeia de dispersao (3 bytes), as quatro distancias repetidas
-//! conferidas a cada posicao, e analise preguicosa de um passo: antes de
-//! emitir um casamento, olha se a posicao seguinte casa mais longe.
+//! Busca por cadeia de dispersao de 4 bytes e as quatro distancias repetidas
+//! conferidas a cada posicao. Do nivel 5 em diante a escolha e por PRECO em
+//! bits, caminho minimo sobre os simbolos possiveis (`otimo.rs`); do 1 ao 4,
+//! gulosa com um passo de preguica.
 //!
-//! **Nao** faz a analise otima por preco do 7-Zip (`LzmaEnc.c`, o
-//! `GetOptimum`), que escolhe entre caminhos somando o custo em bits de cada
-//! simbolo. Ela compra alguns por cento a mais de compressao ao preco de uma
-//! tabela de precos e de um laco de programacao dinamica. A diferenca medida
-//! contra o `7z -mx` vai no documento da crate, com o numero -- e e a proxima
-//! frente do codificador, nao um defeito escondido.
+//! Medido contra o `7z -mf=off` (`docs/PHXZIP.md` §3): +3,6% de tamanho no
+//! nivel 5 e +2,0% no 9. O que falta para empatar e a arvore binaria de
+//! busca (`bt4`) e os casamentos de 2 bytes por dispersao -- nao medidos.
 //!
 //! # Os pedacos do LZMA2
 //!
@@ -20,6 +18,7 @@
 //! comprimiu vira pedaco CRU, e o pedaco LZMA seguinte reinicia o estado --
 //! e o mesmo que o `xz` faz, e e o que impede dado ja comprimido de crescer.
 
+use alloc::collections::VecDeque;
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -27,6 +26,7 @@ use super::faixa::Codificador;
 use super::modelo::{
     estado_de_compr, Comprimentos, Modelo, COMPR_MAX, COMPR_MIN, FIM_DO_MODELO_DE_POS,
 };
+use super::otimo::Otimo;
 use super::{byte_lzma2, Props};
 
 const PEDACO_DESC_MAX: usize = 1 << 21;
@@ -47,33 +47,38 @@ pub struct Nivel {
     pub bom: usize,
     /// Analise preguicosa de um passo.
     pub preguicoso: bool,
+    /// Analise otima por preco (o `GetOptimum` do 7-Zip, reescrito aqui).
+    pub otimo: bool,
 }
 
 impl Nivel {
     /// Nivel de 1 (rapido) a 9 (maximo), na escala do `7z -mx`. Fora da faixa
     /// satura.
     pub fn de(n: u8) -> Nivel {
-        let (log_dic, profundidade, bom, preguicoso) = match n {
-            0 | 1 => (16, 4, 16, false),
-            2 => (18, 8, 24, false),
-            3 => (20, 12, 32, true),
-            4 => (22, 16, 48, true),
-            5 => (24, 32, 64, true),
-            6 => (24, 64, 96, true),
-            7 => (25, 128, 128, true),
-            8 => (26, 256, 192, true),
-            _ => (26, 1024, COMPR_MAX, true),
+        // Do 5 em diante a escolha e por preco em bits, e o «bom» e a
+        // profundidade seguem o 7-Zip (fb e mc): o preco faz a busca render.
+        let (log_dic, profundidade, bom, preguicoso, otimo) = match n {
+            0 | 1 => (16, 4, 16, false, false),
+            2 => (18, 8, 24, false, false),
+            3 => (20, 12, 32, true, false),
+            4 => (22, 16, 48, true, false),
+            5 => (24, 32, 32, true, true),
+            6 => (24, 48, 64, true, true),
+            7 => (25, 64, 64, true, true),
+            8 => (26, 96, 128, true, true),
+            _ => (26, 128, COMPR_MAX, true, true),
         };
         Nivel {
             dicionario: 1 << log_dic,
             profundidade,
             bom,
             preguicoso,
+            otimo,
         }
     }
 }
 
-struct Buscador<'a> {
+pub(super) struct Buscador<'a> {
     dados: &'a [u8],
     cabeca: Vec<u32>,
     anterior: Vec<u32>,
@@ -82,6 +87,11 @@ struct Buscador<'a> {
     janela: usize,
     profundidade: u32,
     bom: usize,
+    /// Proxima posicao a entrar na cadeia. A insercao e monotona: cada
+    /// posicao entra uma vez, na ordem -- quem pula um trecho (um casamento)
+    /// nao precisa lembrar de inserir o que pulou, e quem volta atras (o
+    /// planejador que descartou um plano) nao insere duas vezes.
+    proximo: usize,
 }
 
 impl<'a> Buscador<'a> {
@@ -96,71 +106,87 @@ impl<'a> Buscador<'a> {
             janela,
             profundidade: nivel.profundidade,
             bom: nivel.bom,
+            proximo: 0,
         }
     }
 
     #[inline]
     fn dispersao(&self, p: usize) -> usize {
         let d = self.dados;
-        let v = (d[p] as u32) | ((d[p + 1] as u32) << 8) | ((d[p + 2] as u32) << 16);
+        let v = u32::from_le_bytes([d[p], d[p + 1], d[p + 2], d[p + 3]]);
         (v.wrapping_mul(0x9E37_79B1) >> (32 - self.bits)) as usize
     }
 
-    /// Insere `p` na cadeia e devolve o candidato anterior (mais 1; 0 = nada).
-    #[inline]
-    fn inserir(&mut self, p: usize) -> u32 {
-        if p + 3 > self.dados.len() {
-            return 0;
+    fn inserir_proximo(&mut self) {
+        let p = self.proximo;
+        self.proximo += 1;
+        if p + 4 > self.dados.len() {
+            return;
         }
         let h = self.dispersao(p);
-        let c = self.cabeca[h];
+        self.anterior[p & self.mascara] = self.cabeca[h];
         self.cabeca[h] = p as u32 + 1;
-        self.anterior[p & self.mascara] = c;
-        c
     }
 
-    /// Maior casamento em `p` (comprimento, distancia), inserindo `p`.
-    fn buscar(&mut self, p: usize) -> (usize, usize) {
-        let mut cand = self.inserir(p);
-        let d = self.dados;
-        let max = (d.len() - p).min(COMPR_MAX);
-        let mut melhor = (0usize, 0usize);
-        if max < 3 {
-            return melhor;
+    /// Todos os casamentos em `p` que melhoram o comprimento, do mais curto
+    /// (e mais perto) ao mais longo: para cada comprimento, a primeira
+    /// entrada que o alcanca tem a menor distancia -- e o que o preco quer.
+    pub(super) fn todos(&mut self, p: usize, saida: &mut Vec<(usize, usize)>) {
+        saida.clear();
+        while self.proximo < p {
+            self.inserir_proximo();
         }
+        let d = self.dados;
+        if p + 4 > d.len() {
+            if self.proximo == p {
+                self.proximo += 1;
+            }
+            return;
+        }
+        let h = self.dispersao(p);
+        let mut cand = self.cabeca[h];
+        if self.proximo == p {
+            self.inserir_proximo();
+        }
+        let max = (d.len() - p).min(COMPR_MAX);
+        let mut melhor = 0usize;
         let mut resta = self.profundidade;
         while cand != 0 && resta > 0 {
             let c = cand as usize - 1;
-            let dist = p - c;
-            if dist > self.janela {
-                break;
-            }
-            if d[c + melhor.0.min(max - 1)] == d[p + melhor.0.min(max - 1)] {
-                let mut n = 0;
-                while n < max && d[c + n] == d[p + n] {
-                    n += 1;
+            let prox = self.anterior[c & self.mascara];
+            // Posicao ja inserida adiante de `p` (plano descartado): pula.
+            if c < p {
+                let dist = p - c;
+                if dist > self.janela {
+                    break;
                 }
-                if n > melhor.0 {
-                    melhor = (n, dist);
-                    if n >= self.bom || n == max {
-                        break;
+                let k = melhor.min(max - 1);
+                if d[c + k] == d[p + k] {
+                    let mut n = 0;
+                    while n < max && d[c + n] == d[p + n] {
+                        n += 1;
+                    }
+                    if n > melhor {
+                        melhor = n;
+                        saida.push((n, dist));
+                        if n >= self.bom || n == max {
+                            break;
+                        }
                     }
                 }
+                resta -= 1;
             }
-            let prox = self.anterior[c & self.mascara];
             // A janela circular sobrescreve: candidato que nao e mais antigo
             // que o atual e posicao nova no mesmo slot, e a cadeia acabou.
-            if prox as usize >= cand as usize {
+            if prox >= cand {
                 break;
             }
             cand = prox;
-            resta -= 1;
         }
-        melhor
     }
 }
 
-fn compr_comum(d: &[u8], p: usize, dist: usize, max: usize) -> usize {
+pub(super) fn compr_comum(d: &[u8], p: usize, dist: usize, max: usize) -> usize {
     let mut n = 0;
     while n < max && d[p + n] == d[p + n - dist] {
         n += 1;
@@ -184,9 +210,9 @@ fn gravar_compr(rc: &mut Codificador, c: &mut Comprimentos, pe: usize, compr: us
     }
 }
 
-struct Escrita<'a> {
-    d: &'a [u8],
-    m: Modelo,
+pub(super) struct Escrita<'a> {
+    pub d: &'a [u8],
+    pub m: Modelo,
 }
 
 impl Escrita<'_> {
@@ -303,6 +329,88 @@ impl Escrita<'_> {
     }
 }
 
+/// Um simbolo decidido, antes de ir para o codificador de faixa.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Decisao {
+    /// Um byte cru.
+    Literal,
+    /// Um byte repetido da distancia `reps[0]`.
+    RepCurto,
+    /// Repeticao de uma das quatro distancias guardadas (indice, comprimento).
+    Rep(u8, u16),
+    /// Casamento novo (distancia, comprimento).
+    Casa(u32, u16),
+}
+
+impl Decisao {
+    pub(super) fn compr(self) -> usize {
+        match self {
+            Decisao::Literal | Decisao::RepCurto => 1,
+            Decisao::Rep(_, l) | Decisao::Casa(_, l) => l as usize,
+        }
+    }
+}
+
+impl Escrita<'_> {
+    fn emitir(&mut self, rc: &mut Codificador, p: usize, d: Decisao) {
+        match d {
+            Decisao::Literal => self.literal(rc, p),
+            Decisao::RepCurto => self.rep_curto(rc, p),
+            Decisao::Rep(i, l) => self.rep(rc, p, i as usize, l as usize),
+            Decisao::Casa(dist, l) => self.casamento(rc, p, l as usize, dist as usize),
+        }
+    }
+}
+
+/// A escolha gulosa (niveis 1 a 4): o maior casamento, repeticao quando ela
+/// empata, e um passo de preguica.
+fn planejar_guloso(
+    e: &Escrita,
+    busca: &mut Buscador,
+    lista: &mut Vec<(usize, usize)>,
+    adiantado: &mut Option<(usize, usize, usize)>,
+    p: usize,
+    nivel: &Nivel,
+    fila: &mut VecDeque<Decisao>,
+) {
+    let dados = e.d;
+    let n = dados.len();
+    let max = (n - p).min(COMPR_MAX);
+    let (mc, md) = match adiantado.take() {
+        Some((q, c, d)) if q == p => (c, d),
+        _ => {
+            busca.todos(p, lista);
+            lista.last().copied().unwrap_or((0, 0))
+        }
+    };
+    let (rc_len, rc_idx) = e.melhor_rep(p, max);
+    // Casamento cuja distancia ja esta nas repetidas sai como repeticao.
+    if rc_len >= COMPR_MIN && (rc_len + 1 >= mc || rc_len >= nivel.bom) {
+        fila.push_back(Decisao::Rep(rc_idx as u8, rc_len as u16));
+        return;
+    }
+    // Casamento de 3 muito longe custa mais que tres literais.
+    if mc >= 4 || (mc == 3 && md <= 1 << 12) {
+        if nivel.preguicoso && mc < nivel.bom && p + 1 < n {
+            busca.todos(p + 1, lista);
+            let (nc, nd) = lista.last().copied().unwrap_or((0, 0));
+            if nc > mc + usize::from(nd > md.saturating_mul(8)) {
+                fila.push_back(Decisao::Literal);
+                *adiantado = Some((p + 1, nc, nd));
+                return;
+            }
+        }
+        fila.push_back(Decisao::Casa(md as u32, mc as u16));
+        return;
+    }
+    let d0 = e.m.reps[0] as usize + 1;
+    if d0 <= p && dados[p] == dados[p - d0] && e.m.estado >= 7 {
+        fila.push_back(Decisao::RepCurto);
+    } else {
+        fila.push_back(Decisao::Literal);
+    }
+}
+
 /// Comprime `dados` em LZMA2. Devolve o byte de propriedade (dicionario) e o
 /// fluxo, pronto para o coder `21` do 7z.
 pub fn codificar_lzma2(dados: &[u8], nivel: Nivel) -> (u8, Vec<u8>) {
@@ -321,7 +429,10 @@ pub fn codificar_lzma2(dados: &[u8], nivel: Nivel) -> (u8, Vec<u8>) {
     };
     let (mut quer_dict, mut quer_props, mut quer_estado) = (true, true, true);
     let mut p = 0usize;
-    let mut adiantado: Option<(usize, usize, usize)> = None;
+    let mut fila: VecDeque<Decisao> = VecDeque::new();
+    let mut lista = Vec::new();
+    let mut adiantado = None;
+    let mut otimo = Otimo::novo();
 
     while p < n {
         let inicio = p;
@@ -330,51 +441,24 @@ pub fn codificar_lzma2(dados: &[u8], nivel: Nivel) -> (u8, Vec<u8>) {
             && p - inicio + COMPR_MAX <= PEDACO_DESC_MAX
             && rc.tamanho_ao_terminar() + FOLGA <= PEDACO_COMP_MAX
         {
-            let max = (n - p).min(COMPR_MAX);
-            let (mc, md) = match adiantado.take() {
-                Some((q, c, d)) if q == p => (c, d),
-                _ => busca.buscar(p),
-            };
-            let (rc_len, rc_idx) = e.melhor_rep(p, max);
-            // Casamento cuja distancia ja esta nas repetidas sai como repeticao.
-            if rc_len >= COMPR_MIN && (rc_len + 1 >= mc || rc_len >= nivel.bom) {
-                e.rep(&mut rc, p, rc_idx, rc_len);
-                for q in p + 1..p + rc_len {
-                    busca.inserir(q);
-                }
-                p += rc_len;
-                continue;
-            }
-            // Casamento de 3 muito longe custa mais que tres literais.
-            let vale = mc >= 4 || (mc == 3 && md <= 1 << 12);
-            if vale {
-                if nivel.preguicoso && mc < nivel.bom && p + 1 < n {
-                    let (nc, nd) = busca.buscar(p + 1);
-                    if nc > mc + usize::from(nd > md.saturating_mul(8)) {
-                        e.literal(&mut rc, p);
-                        adiantado = Some((p + 1, nc, nd));
-                        p += 1;
-                        continue;
-                    }
-                    for q in p + 2..p + mc {
-                        busca.inserir(q);
-                    }
+            if fila.is_empty() {
+                if nivel.otimo {
+                    otimo.planejar(&e.m, dados, &mut busca, p, nivel.bom, &mut fila);
                 } else {
-                    for q in p + 1..p + mc {
-                        busca.inserir(q);
-                    }
+                    planejar_guloso(
+                        &e,
+                        &mut busca,
+                        &mut lista,
+                        &mut adiantado,
+                        p,
+                        &nivel,
+                        &mut fila,
+                    );
                 }
-                e.casamento(&mut rc, p, mc, md);
-                p += mc;
-                continue;
             }
-            let d0 = e.m.reps[0] as usize + 1;
-            if d0 <= p && dados[p] == dados[p - d0] && e.m.estado >= 7 {
-                e.rep_curto(&mut rc, p);
-            } else {
-                e.literal(&mut rc, p);
-            }
-            p += 1;
+            let Some(d) = fila.pop_front() else { break };
+            e.emitir(&mut rc, p, d);
+            p += d.compr();
         }
         let comp = rc.terminar();
         let desc = p - inicio;
@@ -386,8 +470,12 @@ pub fn codificar_lzma2(dados: &[u8], nivel: Nivel) -> (u8, Vec<u8>) {
                 saida.extend_from_slice(fatia);
             }
             // O decodificador nao viu os simbolos deste pedaco: o proximo
-            // pedaco LZMA recomeca do estado inicial, dos dois lados.
+            // pedaco LZMA recomeca do estado inicial, dos dois lados. E o
+            // plano pendente morre junto -- uma repeticao planejada com as
+            // distancias de antes apontaria para outro lugar depois do reinicio.
             e.m.reiniciar(props);
+            fila.clear();
+            adiantado = None;
             quer_estado = true;
         } else {
             let modo: u8 = if quer_dict {
@@ -471,6 +559,38 @@ mod testes {
         for nivel in [1, 5, 9] {
             ida_e_volta(&d, nivel);
         }
+    }
+
+    /// A analise por preco tem de valer o que custa: no mesmo nivel, com a
+    /// mesma busca, o caminho otimo sai menor que o guloso. Se o planejador
+    /// deixasse de ser chamado, este teste cai.
+    #[test]
+    fn o_preco_ganha_do_guloso_em_texto() {
+        let mut t = Vec::new();
+        for i in 0..4000u32 {
+            let linha = alloc::format!(
+                "| {} | pedido {} do dono | estado {} | medido em {} |\n",
+                i % 97,
+                i * 7 % 450,
+                ["aberto", "feito", "parcial"][(i % 3) as usize],
+                i % 31
+            );
+            t.extend_from_slice(linha.as_bytes());
+        }
+        let otimo = Nivel::de(5);
+        let guloso = Nivel {
+            otimo: false,
+            ..otimo
+        };
+        let (_, co) = codificar_lzma2(&t, otimo);
+        let (_, cg) = codificar_lzma2(&t, guloso);
+        assert!(
+            co.len() * 100 <= cg.len() * 98,
+            "otimo {} guloso {}",
+            co.len(),
+            cg.len()
+        );
+        ida_e_volta(&t, 5);
     }
 
     #[test]
