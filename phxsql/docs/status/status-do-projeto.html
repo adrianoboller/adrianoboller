@@ -291,11 +291,11 @@ footer code{font-size:.9em}
 <div class="kpi"><b>232.988</b><span>linhas de Rust</span><span class="q">2026-09-23 20:48:05</span></div>
 <div class="kpi"><b>8</b><span>crates</span><span class="q">2026-09-23 20:48:05</span></div>
 <div class="kpi feito"><b>0</b><span>dependências externas</span><span class="q">2026-09-23 20:48:05</span></div>
-<div class="kpi"><b>490</b><span>pedidos do dono</span><span class="q">2026-09-24</span></div>
+<div class="kpi"><b>494</b><span>pedidos do dono</span><span class="q">2026-09-24</span></div>
 <div class="kpi feito"><b>353</b><span>pedidos feitos</span><span class="q">2026-09-24</span></div>
 <div class="kpi parcial"><b>16</b><span>pedidos parciais</span><span class="q">2026-09-24</span></div>
-<div class="kpi planejado"><b>68</b><span>pedidos planejados</span><span class="q">2026-09-24</span></div>
-<div class="kpi depois"><b>53</b><span>pedidos depois da versão</span><span class="q">2026-09-24</span></div>
+<div class="kpi planejado"><b>70</b><span>pedidos planejados</span><span class="q">2026-09-24</span></div>
+<div class="kpi depois"><b>55</b><span>pedidos depois da versão</span><span class="q">2026-09-24</span></div>
 <div class="kpi"><b>296</b><span>guardas no catálogo</span><span class="q">2026-09-24</span></div>
 <div class="kpi"><b>29</b><span>catracas no fonte</span><span class="q">2026-09-24</span></div>
 <div class="kpi"><b class="curto">18/18</b><span>bancadas com resultado</span><span class="q">2026-09-24</span></div>
@@ -555,14 +555,16 @@ própria.</figcaption>
 <h2 id="s7"><span class="n">07 ·</span>Os pedidos do dono</h2>
 <p class="sub">Um por linha do <code>docs/PENDENCIAS.md</code>, lido pelo mesmo <code>ler()</code> da página dos pedidos — duas contagens divergiriam na primeira mudança de legenda. O denominador das barras é <b>feito + parcial + planejado</b> — um pedido «depois da versão» não pesa a favor nem contra o que falta agora.</p>
 <div class="barras">
-<div class="barra-linha"><span class="l">Feito</span><span class="t"><i class="b-feito" style="width:80.78%"></i></span><span class="n">353 · 80,8%</span></div>
-<div class="barra-linha"><span class="l">Parcial</span><span class="t"><i class="b-parcial" style="width:3.66%"></i></span><span class="n">16 · 3,7%</span></div>
-<div class="barra-linha"><span class="l">Planejado</span><span class="t"><i class="b-planejado" style="width:15.56%"></i></span><span class="n">68 · 15,6%</span></div>
-<div class="barra-linha"><span class="l">Depois da versão</span><span class="t"><i class="b-depois" style="width:100.00%"></i></span><span class="n">53</span></div>
+<div class="barra-linha"><span class="l">Feito</span><span class="t"><i class="b-feito" style="width:80.41%"></i></span><span class="n">353 · 80,4%</span></div>
+<div class="barra-linha"><span class="l">Parcial</span><span class="t"><i class="b-parcial" style="width:3.64%"></i></span><span class="n">16 · 3,6%</span></div>
+<div class="barra-linha"><span class="l">Planejado</span><span class="t"><i class="b-planejado" style="width:15.95%"></i></span><span class="n">70 · 15,9%</span></div>
+<div class="barra-linha"><span class="l">Depois da versão</span><span class="t"><i class="b-depois" style="width:100.00%"></i></span><span class="n">55</span></div>
 </div>
 <div class="legenda"><span class="feito"><i></i>feito</span><span class="parcial"><i></i>parcial</span><span class="planejado"><i></i>planejado</span><span class="depois"><i></i>depois da versão</span></div>
 <h3>Os dez pedidos abertos mais recentes</h3>
 <div class="rolo"><table><thead><tr><th class="num">#</th><th>estado</th><th>o que você pediu</th></tr></thead><tbody>
+<tr><td class="num">492</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>Dentro da transacao, alterar uma linha excluida suave a RESSUSCITA: o <code>atualizar</code> copia a marca de exclusao do DISCO, e nao a da sobreposicao</strong></td></tr>
+<tr><td class="num">491</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>FK para a propria tabela: excluir de vez o chefe que tem subordinado deixa o subordinado orfao -- o <code>conferir_filhas_com</code> pula a propria tabela</strong></td></tr>
 <tr><td class="num">490</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>Panico no meio da cascata do <code>ao_alterar</code>, entre duas linhas filhas, deixa filhas na chave velha SEM recusa -- pior que um SIGKILL no mesmo ponto</strong></td></tr>
 <tr><td class="num">487</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>A exportacao da trilha pagina por <code>pular</code>: um expurgo entre duas paginas faz o auditor pular registros sem aviso</strong></td></tr>
 <tr><td class="num">486</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>A cascata do <code>ao_alterar</code> depende da trilha: quando o <code>.lgpd</code> falha depois de gravar a linha, a linha fica sem trilha e a filha fica orfa</strong></td></tr>
@@ -571,8 +573,6 @@ própria.</figcaption>
 <tr><td class="num">470</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>Trocar o host de uma ligacao do DbLink sem mandar a senha HERDA a senha: sessao de administrador roubada leva a credencial para fora</strong></td></tr>
 <tr><td class="num">468</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>Trocar a chave mestra do DbLink nao tem caminho: recifrar com a velha e a nova, e o procedimento da chave perdida</strong></td></tr>
 <tr><td class="num">467</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>Nenhum <code>rename</code> da casa faz <code>fsync</code> do DIRETORIO depois: a troca atomica nao e duravel</strong></td></tr>
-<tr><td class="num">466</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>Cadastro do DbLink ilegivel derruba o MOTOR inteiro: o DbLink e acessorio, o motor nao</strong></td></tr>
-<tr><td class="num">464</td><td><span class="etiqueta e-plan">Planejado</span></td><td><strong>Dado pessoal curto continua citado na recusa de conversao</strong></td></tr>
 </tbody></table></div>
 <p class="fonte"><b>De onde sai:</b> <code>docs/PENDENCIAS.md</code>, pelo <code>ler()</code> de <code>docs/dossie/pagina-dos-pedidos.py</code>. A lista inteira, com o estado de cada um, está em <code>docs/dossie/pedidos-*.html</code> — páginas por faixa de número, cortadas pelo <b>tamanho medido</b> a cada corrida (pedido 403; a página antiga, única, tinha passado de 1,3 MB). O número de páginas não é fixo. Pedido com estado fora da legenda <b>para</b> o leitor com o número da linha — o 150 passou meses invisível por causa disso.</p>
 
@@ -875,7 +875,7 @@ calado nem se ignora calado.</div>
 <p class="sub">Esta seção <b>nasceu</b> porque o gerador existe: a lista dos documentos contados sai do código, não de uma cópia aqui.</p>
 <div class="kpis">
 <div class="kpi"><b>100</b><span>documentos contados</span><span class="q">2026-09-24</span></div>
-<div class="kpi"><b>75.971</b><span>linhas de documentação</span><span class="q">2026-09-24</span></div>
+<div class="kpi"><b>75.975</b><span>linhas de documentação</span><span class="q">2026-09-24</span></div>
 <div class="kpi"><b>308</b><span>arquivos de cognição</span><span class="q">2026-09-24</span></div>
 <div class="kpi"><b>14</b><span>páginas geradas e publicadas</span><span class="q">2026-09-24</span></div>
 <div class="kpi"><b>29</b><span>geradores no portão</span><span class="q">2026-09-24</span></div>
@@ -891,7 +891,7 @@ calado nem se ignora calado.</div>
 <tr><td class="mono">docs/dossie/pedidos-261-310.html</td><td class="num">245</td><td class="mono">docs/dossie/pagina-dos-pedidos.py</td></tr>
 <tr><td class="mono">docs/dossie/pedidos-311-350.html</td><td class="num">243</td><td class="mono">docs/dossie/pagina-dos-pedidos.py</td></tr>
 <tr><td class="mono">docs/dossie/pedidos-351-410.html</td><td class="num">259</td><td class="mono">docs/dossie/pagina-dos-pedidos.py</td></tr>
-<tr><td class="mono">docs/dossie/pedidos-411-mais.html</td><td class="num">246</td><td class="mono">docs/dossie/pagina-dos-pedidos.py</td></tr>
+<tr><td class="mono">docs/dossie/pedidos-411-mais.html</td><td class="num">251</td><td class="mono">docs/dossie/pagina-dos-pedidos.py</td></tr>
 <tr><td class="mono">docs/pmo/status-do-projeto.html</td><td class="num">56</td><td class="mono">docs/pmo/pagina-do-status-do-projeto.py</td></tr>
 <tr><td class="mono">docs/status/status-do-projeto.html</td><td class="num"><span class="mtime">— (esta página)</span></td><td class="mono">docs/status/riscos.py</td></tr>
 <tr><td class="mono">docs/dossie/status.html</td><td class="num">33</td><td class="mono">docs/dossie/pagina-de-status.py</td></tr>
@@ -942,6 +942,7 @@ calado nem se ignora calado.</div>
 <h2 id="s23"><span class="n">23 ·</span>As últimas frentes</h2>
 <p class="sub">Do próprio <code>git log</code>, só leitura. O commit conta a decisão e o motivo, não a lista de arquivos.</p>
 <div class="rolo"><table><thead><tr><th>commit</th><th>quando</th><th>o que decidiu</th></tr></thead><tbody>
+<tr><td class="mono">41c92cc</td><td class="q">2026-09-24 12:42</td><td>O DBA bloqueou o 451 e abriu o 490: panico na cascata e pior que queda</td></tr>
 <tr><td class="mono">f5c7799</td><td class="q">2026-09-24 12:24</td><td>O par config.json/config.phz: recusa sempre, e so ignora o terceiro em pasta com sticky bit (481)</td></tr>
 <tr><td class="mono">b4da309</td><td class="q">2026-09-24 11:41</td><td>Dois pareceres, e o que eles abrem: o 481 bloqueado, o 368 com formato novo da trilha e tres pedidos</td></tr>
 <tr><td class="mono">851f92d</td><td class="q">2026-09-24 11:09</td><td>A prova do portao se achava como catraca e se rodava dentro de si mesma (conserto do 6fd7d5f)</td></tr>
@@ -951,7 +952,6 @@ calado nem se ignora calado.</div>
 <tr><td class="mono">257f854</td><td class="q">2026-09-24 09:22</td><td>Os testes deixam de disputar porta: o servidor liga na porta 0 e o teste le a porta real (401)</td></tr>
 <tr><td class="mono">bc610ea</td><td class="q">2026-09-24 09:14</td><td>O MariaDB de referencia sobe em conteiner, e os quatro motores da regua rodam aqui</td></tr>
 <tr><td class="mono">cb6e221</td><td class="q">2026-09-24 09:10</td><td>O argumento do ACID no CLAUDE.md estava errado, e sai por decisao do dono (337)</td></tr>
-<tr><td class="mono">bc5b11a</td><td class="q">2026-09-24 09:05</td><td>Proposta do escopo congelado da 0.19: 84 ficam, 51 vao para depois da versao, 6 parecem fechados</td></tr>
 </tbody></table></div>
 <p class="fonte"><b>De onde sai:</b> <code>git log --no-merges -n 10</code> na raiz do repositório. Commit novo muda esta seção — e aí ela estava velha mesmo, que é o que o portão dos geradores existe para pegar.</p>
 
@@ -994,7 +994,7 @@ calado nem se ignora calado.</div>
 <div class="nota g"><b>As quatro que faltavam nasceram em 16/09/2026, e nenhuma nasceu pelo atalho.</b> Riscos e Dívida técnica (pedido 264) exigiram um <code>docs/RISCOS.md</code> tabelado e uma marca <code>// DIVIDA:</code> no fonte; Telemetria e logs (265) exigiu que a bancada passasse a gravar <code>resultados.json</code>, porque sem ele não havia a data em que o número foi medido; Antes × Depois (266) exigiu uma série versionada, porque o <code>CAPABILITIES.json</code> é sobrescrito e só guarda o agora. Nos quatro casos <b>a fonte veio antes do gerador</b> — é isso que a lei cobra, e é por isso que ela demora mais que digitar o número.</div>
 <div class="nota v"><b>Por que isto é a seção mais importante da página.</b> O exemplo trazia <b>677 números no texto visível, todos digitados à mão</b>. Adotá-lo como veio criaria 677 lugares onde um número envelhece calado — e esta casa já pagou isso quatro vezes: o selo da capa parado numa versão por quatro lançamentos, 198 pedidos onde eram 203, 428 testes onde eram 451, 780 KiB de interface onde eram 1.032. A quarta ensina o alcance da lei: <b>gerador certo chamado pela metade entrega número velho anunciando sucesso.</b></div>
 <footer>
-  Gerado por <code>docs/status/pagina-do-status-do-projeto.py</code> em 24/09/2026 12:42 UTC,
+  Gerado por <code>docs/status/pagina-do-status-do-projeto.py</code> em 24/09/2026 12:51 UTC,
   pelo comando <code>./status-html.sh</code>. <b>Nenhum número desta página foi
   digitado</b>: cada um sai de um gerador, e cada seção diz de qual. Onde o
   gerador não existe, a seção <b>não nasceu</b> — está nomeada na §25, com o
