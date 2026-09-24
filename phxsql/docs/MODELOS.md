@@ -1321,6 +1321,9 @@ QA, com julgamento de pergunta, e a redação do H.
 | faceis E — 560, 550, 557, 556, 547, 549 | forte | seguranca: pétrea da senha (redacao por analise num motor unico), teto do SCRAM e dado de outro usuario no recado |
 | 540-C1 — o punho sujo de quem chama na passada da marca | forte | formato em disco e concorrencia de descritores: o indice unico se corrompia pela sincronia |
 | juiz PhxJev — propostas do DBA sobre integridade 2 | forte | defeito ativo e empate de motores exigem juizo, o veredito sai do limiar |
+| DBA — revisao do 533 | forte | formato em disco e ordem de escrita contra queda de energia |
+| SEC — revisao do 542 | forte | permissao do dado em repouso, symlink e TOCTOU |
+| juiz PhxJev — P2, P3 e o acrescimo ao 472 do DBA sobre o 533 | medio | duas propostas de adiar e um acrescimo lido; o veredito sai do limiar do script |
 
 **Convocacao do dono em 24/09/2026, 18:40** («toda a equipe em alerta e revisao
 nessa rodada»). Convocados: A (integrador), B (quatro frentes), C (revisoes em

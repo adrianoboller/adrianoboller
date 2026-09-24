@@ -324,6 +324,10 @@ dia, nunca no desejado:
   a base dela; a conta do integrador, pelo `--catraca`. A guarda do 559 (b)
   teve o trecho reposto a mao: a integracao trocou a tomada da trava pelo
   `travar()` dos faceis C, e o recuo mudou.
+  **SUBIU para 441 em 24/09/2026** (conserto C1 do 540, pela revisao do
+  DBA): uma guarda -- a cascata solta que abria a passada com o punho de
+  quem chama ainda sujo, e o `Drop` dele regravava o indice velho por cima
+  do reconstruido. A conta do integrador, pelo `--catraca`.
   **SUBIU para 300 em 24/09/2026, contado NA ARVORE DA FRENTE do 497** (e nao
   na combinada, que a linha do 345 acima reconcilia) (pedido 497, o literal do pedido no texto
   do erro que o `acessos.log` grava): tres guardas novas, uma por motor que
@@ -448,7 +452,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 440
+PISO_DAS_ENTRADAS = 441
 
 # ------------------------------------------------------------- APOSENTADAS
 #

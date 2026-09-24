@@ -7466,6 +7466,34 @@ impl Table {
         self.ndx.indices()
     }
 
+    /// Leva ao nucleo, SEM `fsync`, o que so este punho guarda em RAM -- as
+    /// paginas sujas da arvore do `.ndx` (e do `.fts`) e o cabecalho, com o
+    /// atestado do processo --, e continua aberto.
+    ///
+    /// # Para que existe
+    ///
+    /// Para um SEGUNDO punho no mesmo arquivo, aberto enquanto este vive,
+    /// enxergar o que este escreveu (pedido 540, C1 do parecer do papel C). O
+    /// `.reg`, o `.log` e os outros ja chegam ao nucleo a cada escrita; so a
+    /// arvore espera o `fechar`, e o `fechar` so roda no `Drop`. Sem isto o
+    /// punho novo acha o byte 52 em 1 sem atestado e recusa, a recuperacao
+    /// reconstroi o indice pelo `.reg`, e o `Drop` DESTE punho, que vem depois,
+    /// grava a arvore velha por cima da reconstruida -- o mesmo inode.
+    ///
+    /// # Por que sem `fsync`
+    ///
+    /// Porque e o `Drop` adiantado, e nao um fecho de janela: quem abre o
+    /// segundo punho e este processo, que confia no atestado -- o `fechar` diz
+    /// o mesmo. Depois disto o `Drop` nao tem o que gravar, e nao grava. E o
+    /// punho que nao escreveu nada nao paga escrita nenhuma: o `fechar` so
+    /// leva a pagina suja e o cabecalho que mudou.
+    pub fn descer_ao_nucleo(&mut self) -> Result<()> {
+        if let Some(f) = self.fts.as_mut() {
+            f.fechar()?;
+        }
+        self.ndx.fechar()
+    }
+
     /// Manda para o disco tudo que esta escrito e ainda nao chegou la.
     ///
     /// # A ordem importa, e o `.trash` vem primeiro

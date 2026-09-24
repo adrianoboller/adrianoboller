@@ -38,7 +38,7 @@ porta pergunta antes de gravar.
 | `Table::excluir` | `table.rs:2940` | **sim** | é o `excluir_de_vez` sem motivo escrito |
 | cascata do `ao_alterar` | `table.rs:1191` e `:1365` | **sim** | planeja, confere a **árvore inteira** (`:1157`) e só então grava |
 | `Table::recascatear` | `table.rs:1107` | **sim** | refaz só a cascata, pela linha antiga; idempotente |
-| alteração **solta** que cascateia, pelo servidor (`atualizar`, upsert, sincronia do DbLink) | `servidor.rs`, `alterar_solto` | **sim** | desde o pedido 540 é uma transação de uma instrução: o plano (a mesma árvore conferida) sai antes da primeira escrita, a mãe e as filhas vão achatadas para a marca `.tx`, e a passada do `COMMIT` as aplica — queda, `SIGKILL` ou pânico no meio são completados. Medido com o conserto desligado: `[5, 5]` depois do pânico, `[6, 5]` depois do `SIGKILL`; com ele, `[6, 6]` nos dois |
+| alteração **solta** que cascateia, pelo servidor (`atualizar`, upsert, sincronia do DbLink) | `servidor.rs`, `alterar_solto` | **sim** | desde o pedido 540 é uma transação de uma instrução: o plano (a mesma árvore conferida) sai antes da primeira escrita, a mãe e as filhas vão achatadas para a marca `.tx`, e a passada do `COMMIT` as aplica — queda, `SIGKILL` ou pânico no meio são completados. Antes da marca, o punho de quem chama desce ao núcleo o que só ele tem em RAM (C1 do papel C): a sincronia chega a ele já com linha inserida, e sem a descida o índice da mãe saía com a árvore velha — `buscar` pela chave nova dava 0, 5 de 5. Medido com o conserto desligado: `[5, 5]` depois do pânico, `[6, 5]` depois do `SIGKILL`; com ele, `[6, 6]` nos dois |
 | reaplicação da recuperação | `transacao.rs:1219` | **sim** | usa o `inserir`/`atualizar`/`excluir_*` de sempre, e **recascateia** |
 
 ### As portas que aplicam o que outro servidor já julgou
@@ -293,11 +293,16 @@ corrompida esconder as órfãs das outras.
   `renomear_tabela` (§2.2). O verificador tem o mesmo alcance: ele varre um
   diretório.
 * **A cascata SOLTA de uma mãe não pergunta pela trava de transação da
-  filha** (achado da frente do 537, 24/09/2026, lido no código): o portão das
-  escritas soltas olha só a tabela do pedido. O `COMMIT` da transação que
-  segura a filha refaz o elo dela sobre a linha atual (537), então não há
-  update perdido; a leitura repetível de outra transação sobre a filha pode
-  reler outro valor por esse caminho. Não medido — vai ao papel C.
+  filha** (achado da frente do 537, 24/09/2026): o portão das escritas soltas
+  olha só a tabela do pedido. O `COMMIT` da transação que segura a filha refaz
+  **só o elo** dela sobre a linha atual (537) — e isso **não** fecha o update
+  perdido, medido pelo papel C (P1 do parecer de 24/09/2026): quando a própria
+  transação escreveu a filha, a escrita dela regrava a linha inteira e desfaz a
+  cascata solta, e o `COMMIT` recusa pela FK ou, se a chave velha renasceu no
+  meio, confirma com a filha na mãe errada. O upsert solto sobre a linha
+  travada responde OK e o `COMMIT` o apaga, e a leitura repetível relê a filha.
+  O mesmo vale para a linha que o upsert solto altera e as da sincronia do
+  DbLink; o conserto é outro pedido.
 * **A exigência de índice dos dois lados é imposta na gravação, não na
   declaração.** Dá para declarar uma chave conferida sem os índices e só
   descobrir no primeiro `excluir`. O verificador relata; a recusa na declaração

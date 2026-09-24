@@ -22,6 +22,16 @@ Os números são **medidos**, nunca estimados.
   arranque. Agora ela é uma transação de uma instrução — o `atualizar`, o upsert
   e a sincronia do DbLink gravam a marca antes e aplicam pela passada do
   `COMMIT` —, e o reparo ou o arranque a completam: `[6, 6]`.
+- **540, C1 do papel C** — pela sincronia do DbLink, que insere pelo mesmo
+  punho antes de alterar a mãe, a passada da cascata abria o punho dela com o
+  de quem chama ainda sujo: o índice da mãe era recusado, reconstruído pelo
+  `.reg` e sobrescrito pela árvore velha no `Drop` do punho antigo — `buscar`
+  pela chave nova dava 0, o código único entrava repetido e a órfã passava (5
+  de 5). Agora o punho de quem chama desce as páginas ao núcleo, sem `fsync`,
+  antes da marca: `buscar` dá 1, a duplicata e a órfã são recusadas. Na
+  `op_atualizar` o custo não aparece: `por_lote` com duas filhas, mediana
+  1,08–1,17 ms antes e 1,13–1,18 ms depois, faixas que se cruzam, e 18.332
+  chamadas `write` na corrida inteira da sonda, antes e depois.
 - **537** — o elo da cascata planejado no `empilhar` não travava a linha da
   filha, e o `COMMIT` regravava a filha inteira que tinha visto: a gravação de
   outra conexão na filha (`x = 1`) voltava a `x = 0`. Agora a linha é travada, e
@@ -50,10 +60,15 @@ Os números são **medidos**, nunca estimados.
 
 - Quem usa o `phxsql-store` embutido e chama `Table::atualizar` direto continua
   sem marca na cascata: ali vale o pedido 490.
-- A cascata solta de outra mãe da mesma filha não pergunta pela trava de
-  transação da filha; o `COMMIT` refaz o elo e não há update perdido, mas a
-  leitura repetível de outra transação pode reler a filha (lido no código, não
-  medido).
+- A escrita solta não pergunta pela trava de LINHA das linhas que grava sem
+  nomear: a filha da cascata solta, a linha que o upsert solto altera e as da
+  sincronia do DbLink. O `COMMIT` refaz **só o elo** planejado no `empilhar`;
+  quando a própria transação escreveu a filha, a escrita dela regrava a linha
+  inteira e desfaz a cascata solta — o `COMMIT` recusa pela FK, ou, se a chave
+  velha renasceu no meio, confirma com a filha na mãe errada. O upsert solto
+  sobre uma linha travada responde OK e o `COMMIT` o apaga, e a leitura
+  repetível relê a filha. Medido pelo papel C (P1 do parecer de 24/09/2026);
+  o conserto é outro pedido.
 
 ### 544 — o parser do DbLink entrava em pânico com o par
 

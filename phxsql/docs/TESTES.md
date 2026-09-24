@@ -967,9 +967,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `servidor-segue-de-pe-depois-do-fsync-recusado` | o servidor segue de pé depois de um `fsync` recusado, gravando num disco que já se sabe que mente | 1 | ✅ provada |
 | `completar-engole-a-tabela-que-nao-foi-ao-disco` | a recuperação engole o erro do `sincronizar` e apaga a marca de um commit cujo dado não foi ao disco | 1 | ✅ provada |
 
-**325 das 439 guardas do catálogo: 1 aposentada, 320 provadas, 4 redundantes** — 8922 s de mutação, medido em 2026-09-16 15:25.
+**325 das 440 guardas do catálogo: 1 aposentada, 320 provadas, 4 redundantes** — 8922 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 115 das 439 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 115 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 116 das 440 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 116 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
@@ -1084,6 +1084,7 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `elo-do-empilhar-regrava-a-linha-inteira` — o COMMIT regrava a filha inteira que o empilhar viu, e desfaz a cascata solta de outra mãe dela
 - `cascata-solta-sem-marca` — a alteração solta que cascateia grava sem marca, e a queda no meio deixa filha na chave velha
 - `upsert-solto-cascateia-sem-marca` — o upsert solto que vira alteração com cascata grava pelo `atualizar` de dentro dele, sem marca
+- `cascata-solta-com-o-punho-de-quem-chama-sujo` — a cascata solta abre o punho da passada com o `t` de quem chama ainda sujo, e o `Drop` dele desfaz o índice da mãe
 - `varredura-encerra-quem-confirma` — a varredura do prazo encerra a transação que está no COMMIT e solta as travas de quem ainda grava
 - `devolver-desfaz-o-abort-only` — a lista devolvida ao fim de um COMMIT recusado desfaz o ABORT_ONLY que chegou no meio
 

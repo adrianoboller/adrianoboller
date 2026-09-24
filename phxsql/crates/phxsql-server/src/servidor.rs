@@ -224,6 +224,12 @@ struct NomeDaPassada {
     unidade: &'static str,
     /// «... ESTA confirmada»
     feita: &'static str,
+    /// O que foi conferido antes da marca, na frase do `ParouNoMeio`. O
+    /// COMMIT tem a pre-conferencia da lista inteira; a cascata solta, so a
+    /// arvore do plano -- e dizer «a conferencia tinha aprovado esta lista»
+    /// para ela seria afirmar uma conferencia que nao aconteceu (C2 do papel
+    /// C, pedido 540).
+    conferida: &'static str,
 }
 
 impl NomeDaPassada {
@@ -232,12 +238,18 @@ impl NomeDaPassada {
         passada: "a passada de COMMIT",
         unidade: "transacao",
         feita: "confirmada",
+        conferida: "A conferencia de antes da marca tinha aprovado esta lista: isto e \
+                    DEFEITO DO MOTOR, e vale reportar",
     };
     const DA_CASCATA_SOLTA: NomeDaPassada = NomeDaPassada {
         quem: "a alteracao com cascata",
         passada: "a cascata da alteracao",
         unidade: "alteracao",
         feita: "gravada",
+        conferida: "Antes da marca so a arvore da cascata foi conferida (restringir, \
+                    coluna calculada, profundidade), e nao a unicidade nem a FK de \
+                    cada linha: as filhas que faltam ficaram na chave velha, e isto \
+                    vale reportar",
     };
 }
 
@@ -17742,13 +17754,12 @@ impl Servidor {
                             "{} parou na escrita {} de {quantas}, e as {aplicadas} \
                              anteriores JA ESTAO gravadas e nao se desfazem -- a ordem \
                              de digitacao proibe desfazer ({}). Nada mais desta \
-                             {} sera aplicado; NAO a repita inteira. A \
-                             conferencia de antes da marca tinha aprovado esta lista: \
-                             isto e DEFEITO DO MOTOR, e vale reportar",
+                             {} sera aplicado; NAO a repita inteira. {}",
                             nome.quem,
                             aplicadas + 1,
                             feitas.join(", "),
-                            nome.unidade
+                            nome.unidade,
+                            nome.conferida
                         ),
                     ));
                 }
@@ -21852,8 +21863,16 @@ impl Servidor {
     /// Sem filha para levar, grava por `t`, como sempre, e quem chama fecha a
     /// janela. Com filha, e uma transacao de uma instrucao
     /// (`atualizar_com_a_marca`): a passada grava pelos punhos DELA, e `t` e
-    /// trocado por um punho novo, que ve o que ela gravou -- o velho nao
-    /// escreveu nada, e sai sem levar nada ao disco.
+    /// trocado por um punho novo, que ve o que ela gravou.
+    ///
+    /// # O `t` de quem chama pode ter escrito (C1 do papel C)
+    ///
+    /// Pela `op_atualizar` e pelo upsert ele chega limpo; pela sincronia do
+    /// DbLink, nao -- ela insere pelo mesmo punho as linhas novas da rodada, e
+    /// so depois altera a mae. Por isso, antes da marca, `t` desce ao nucleo
+    /// o que so ele tem em RAM ([`Table::descer_ao_nucleo`]): o punho da
+    /// passada abre a mae enxergando o que `t` escreveu, e o `Drop` do `t`
+    /// velho, na troca, nao tem mais o que gravar por cima da passada.
     fn alterar_solto(
         &self,
         trava: &mut TravaMedida<'_>,
@@ -21873,6 +21892,15 @@ impl Servidor {
                 aviso: None,
             });
         }
+        // Antes da marca, e nao depois da passada: com a pagina suja ainda em
+        // `t`, o punho da passada acharia o byte 52 em 1 sem atestado e
+        // recusaria, a recuperacao reconstruiria a mae pelo `.reg`, e o `Drop`
+        // deste `t`, na troca la embaixo, gravaria a arvore VELHA por cima --
+        // `buscar` pela chave nova dando 0, medido 5 de 5 pela sincronia.
+        // Passar o `t` para a passada nao bastaria: o `completar_marca` do
+        // braco que quebra no meio abre o punho DELE na mesma mae. Sem
+        // `fsync`, e o `t` limpo da `op_atualizar` nao grava nada aqui.
+        t.descer_ao_nucleo()?;
         let aviso = self.atualizar_com_a_marca(
             trava,
             sessao,
@@ -47850,6 +47878,115 @@ mod testes_transacoes {
                 visto,
                 vec![(11, 6, false), (20, 8, false), (30, 26, true)],
                 "(id, cod_cliente, excluida) de cada filha"
+            );
+        }
+
+        // ---------------------------------------------------------- 540, C1
+
+        /// **Pedido 540, C1 do papel C: o terceiro irmao, a sincronia do
+        /// DbLink.** Ela grava pelo punho `t` -- a linha nova da rodada entra
+        /// ANTES -- e, no MESMO punho, altera a mae que tem filha. Pela
+        /// `op_atualizar` e pelo upsert o `t` chega limpo ao `alterar_solto`;
+        /// por aqui ele chega com pagina suja.
+        ///
+        /// O laco e o da sincronia, sem o motor de la: `aplicar_para_ca`, uma
+        /// closure igual a do `op_dblink_sincronizar` (o `alterar_solto` e o
+        /// aviso guardado) e o `t.sincronizar()` do fim. O fio nao entra: ele
+        /// so traz as linhas, e nao toca no punho.
+        ///
+        /// # Prova real
+        ///
+        /// Sem a descida antes da marca, o punho da passada acha o byte 52 em
+        /// 1 sem atestado, a recuperacao reindexa a mae pelo `.reg` e o `Drop`
+        /// do `t` velho grava a arvore VELHA por cima: `buscar por_codigo 6`
+        /// da 0 -- o vermelho medido, 5 de 5 aqui (com «indices reconstruidos
+        /// 1» no bloco da recuperacao) e 5 de 5 na sonda do papel C, que viu
+        /// tambem o codigo 6 repetido e a orfa no 5 entrarem.
+        #[test]
+        fn a_cascata_solta_depois_de_escrever_no_mesmo_punho_nao_perde_o_indice_da_mae() {
+            let dir = dir_temp("540-c1");
+            let s = servidor(&dir);
+            let ses = sessao(5401);
+            base_codigo(&s, &ses);
+            escreve(&s, &ses, &cliente(1, 5));
+            for id in [10, 11] {
+                escreve(&s, &ses, &pedido(id, 5));
+            }
+
+            let avisos = {
+                let mut trava = s.travar_dados().unwrap();
+                let ped = pedido_da_tabela("loja", "clientes");
+                let mut t = s.abrir_travada(&trava, &ped, &ses).unwrap();
+                let mut avisos: Vec<String> = Vec::new();
+                let mut alterar = |t: &mut Table, rowid: u64, nova: &[Value]| {
+                    let feita = s.alterar_solto(&mut trava, t, &ped, &ses, rowid, nova)?;
+                    avisos.extend(feita.aviso);
+                    Ok(())
+                };
+                // A linha nova primeiro (suja o `t`), e depois a mae 5 -> 6.
+                let linhas = vec![
+                    vec![Value::Int(2), Value::Int(7), Value::Str("c2".into())],
+                    vec![Value::Int(1), Value::Int(6), Value::Str("c1".into())],
+                ];
+                let (inseridas, alteradas) = crate::dblink::sincronia::aplicar_para_ca(
+                    &mut t,
+                    "pk",
+                    0,
+                    &linhas,
+                    &mut alterar,
+                )
+                .unwrap();
+                assert_eq!((inseridas, alteradas), (1, 1));
+                t.sincronizar().unwrap();
+                avisos
+            };
+
+            // O DANO primeiro: o indice unico da mae, e o que ele deixa entrar.
+            let achados = |tabela: &str, indice: &str, chave: i64| {
+                escreve(
+                    &s,
+                    &ses,
+                    &format!(
+                        r#""op":"buscar","database":"loja","tabela":"{tabela}",
+                           "indice":"{indice}","chave":[{chave}]"#
+                    ),
+                )
+                .inteiro_ou("encontrados", -1)
+            };
+            for (codigo, esperados) in [(6, 1), (5, 0), (7, 1)] {
+                assert_eq!(
+                    achados("clientes", "por_codigo", codigo),
+                    esperados,
+                    "o indice da mae pela chave {codigo} depois da sincronia"
+                );
+            }
+            let repetido = pede(&s, &ses, &cliente(3, 6));
+            assert_eq!(
+                repetido.as_ref().err().map(PhxError::nome),
+                Some("DUPLICADO"),
+                "o codigo 6 e unico e ja e do cliente 1, e o servidor aceitou outro: {:?}",
+                repetido.map(|j| j.escrever())
+            );
+            let orfa = pede(&s, &ses, &pedido(12, 5));
+            assert_eq!(
+                orfa.as_ref().err().map(PhxError::nome),
+                Some("INTEGRIDADE"),
+                "o cliente 5 virou 6, e o pedido no 5 entrou orfao: {:?}",
+                orfa.map(|j| j.escrever())
+            );
+            // A cascata inteira, pelo indice da filha.
+            for (codigo, esperados) in [(5, 0), (6, 2)] {
+                assert_eq!(
+                    achados("pedidos", "por_cliente", codigo),
+                    esperados,
+                    "o indice da filha pela chave {codigo} depois da sincronia"
+                );
+            }
+            // E o mecanismo por ultimo: a passada nao quebrou, entao nao ha
+            // aviso de recuperacao nenhum.
+            assert!(
+                avisos.is_empty(),
+                "a cascata da sincronia passou pela recuperacao: {avisos:?}"
             );
         }
 

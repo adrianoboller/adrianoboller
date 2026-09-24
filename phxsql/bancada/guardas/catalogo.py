@@ -15828,6 +15828,36 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         ],
     },
     {
+        "id": "cascata-solta-com-o-punho-de-quem-chama-sujo",
+        "titulo": "a cascata solta abre o punho da passada com o `t` de quem chama ainda sujo, e o `Drop` dele desfaz o índice da mãe",
+        "porque": (
+            "pedido 540, C1 do parecer do papel C (24/09/2026): pela sincronia "
+            "do DbLink o `t` ja inseriu antes de alterar a mae. O punho da "
+            "passada achava o byte 52 em 1 sem atestado e recusava, o "
+            "`completar_marca` reconstruia a mae pelo `.reg`, e o `Drop` do `t` "
+            "velho, na troca, gravava a arvore VELHA por cima: `buscar` pela "
+            "chave nova dava 0, o codigo unico entrava repetido e a orfa "
+            "passava -- 5 de 5 na sonda do DBA e 5 de 5 no teste. O `t` desce "
+            "ao nucleo, sem `fsync`, antes da marca."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        t.descer_ao_nucleo()?;
+        let aviso = self.atualizar_com_a_marca(
+""",
+        "troca": """        // DEFEITO REPOSTO (540, C1): o `t` de quem chama segue sujo para a passada.
+        let aviso = self.atualizar_com_a_marca(
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_transacoes::integridade_na_transacao::a_cascata_solta_depois_de_escrever_no_mesmo_punho_nao_perde_o_indice_da_mae",
+        ],
+        "seguem": [
+            "servidor::testes_do_panico_sob_a_trava::a_cascata_solta_sem_queda_grava_inteira_e_a_marca_espera_o_fsync",
+            "servidor::testes_do_panico_sob_a_trava::panico_no_meio_da_cascata_do_upsert_solto_sai_com_a_cascata_inteira",
+        ],
+    },
+    {
         "id": "varredura-encerra-quem-confirma",
         "titulo": "a varredura do prazo encerra a transação que está no COMMIT e solta as travas de quem ainda grava",
         "porque": (

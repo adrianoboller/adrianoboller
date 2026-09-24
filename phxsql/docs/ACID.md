@@ -337,6 +337,25 @@ muda** (é a v3 de sempre, com a mãe e os elos com `cascata_na_lista`).
   filho parado no meio da cascata, morto por `SIGKILL` (sinal 9), e o arranque
   seguinte acha `[6, 6]`, o índice da filha sem a chave velha e nenhuma marca
   sobrando. Os quatro ficam vermelhos com o conserto desligado.
+- **O terceiro chamador (C1 do papel C, 24/09/2026).** A porta dizia «o velho
+  não escreveu nada», e isso valia para a `op_atualizar` e o upsert. A
+  sincronia do DbLink insere pelo mesmo punho **antes** de alterar a mãe: a
+  passada abria um segundo punho da mãe com o primeiro sujo e recusava o
+  índice (byte 52 em 1 sem atestado), a recuperação o reconstruía pelo `.reg`,
+  e o `Drop` do punho velho gravava a árvore velha por cima — `buscar` pela
+  chave nova dava 0, o código único entrava repetido e a órfã passava (5 de 5
+  na sonda do papel C). Agora o `alterar_solto` faz o punho de quem chama
+  descer ao núcleo antes da marca (`Table::descer_ao_nucleo`: o `fechar` do
+  `.ndx` e do `.fts`, sem `fsync`). A outra forma — a passada receber o punho
+  — foi recusada pelo braço que quebra no meio: o `completar_marca` abre o
+  punho dele na mesma mãe, então a descida seria precisa de qualquer jeito, e
+  o que a outra forma pouparia é uma abertura da mãe (`Table::abrir`, mediana
+  40 µs, medida). Custo na `op_atualizar`, pela mesma sonda `custo` (três
+  rodadas intercaladas): em `por_lote` com duas filhas, mediana 1.084–1.174 µs
+  antes e 1.125–1.177 depois, faixas que se cruzam; na corrida inteira, 18.332
+  chamadas `write` antes e 18.332 depois (`strace -c`). Prova:
+  `a_cascata_solta_depois_de_escrever_no_mesmo_punho_nao_perde_o_indice_da_mae`,
+  vermelha 5 de 5 com a descida tirada.
 - **O que fica:** quem usa o `phxsql-store` embutido e chama `Table::atualizar`
   direto continua sem marca — ali vale o 490, a filha recusa até o
   `reindexar`. Os gatilhos AFTER das filhas continuam não rodando na cascata
@@ -942,10 +961,18 @@ de prazo).
 
 **O que ficou, e é achado novo desta frente:** a cascata SOLTA de outra mãe da
 mesma filha **não pergunta pela trava de transação da filha** — o portão das
-escritas soltas (`barrado_por_travas`) só olha a tabela do pedido. O refazer
-do `COMMIT` impede que isso vire update perdido, mas a leitura repetível de
-outra transação sobre a filha pode reler outro valor por esse caminho (lido no
-código, não medido: vai ao papel C como achado).
+escritas soltas (`barrado_por_travas`) só olha a tabela do pedido. **O refazer
+do `COMMIT` NÃO impede update perdido**, ao contrário do que esta seção dizia:
+medido pelo papel C (P1 do `docs/propostas/parecer-dba-integridade-2-2026-09-24.md`),
+ele cobre **só o elo** planejado no `empilhar`. Quando a própria T1 escreveu a
+filha (`x = 1`), a escrita dela regrava a linha inteira com a chave que ela viu,
+e desfaz a cascata solta que passou no meio: o `COMMIT` recusa pela `fk_vend`
+e T1 perde o trabalho (P1 a), ou — se o vendedor 3 renasce antes do `COMMIT` —
+**confirma com a filha no vendedor NOVO 3**, a mãe errada (P1 b). O upsert
+solto passa pela trava X de T1 e responde OK, e o `COMMIT` de T1 o apaga (P1 d);
+a leitura repetível relê a filha (P1 c). O alcance é o da escrita solta que
+grava linha sem nomeá-la — a filha da cascata solta, a linha do upsert solto e
+as da sincronia do DbLink —, e o conserto é outro pedido.
 
 **Custo e limite.** Custo zero para quem não pede — o gancho devolve antes de
 qualquer trava. A recusa por LOCK TIMEOUT é do **leitor** que pediu (o escritor
