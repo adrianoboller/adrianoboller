@@ -638,19 +638,21 @@
   .pp__title-row { display: flex; flex-wrap: wrap; align-items: center; column-gap: .75rem; row-gap: .3rem; }
   .pp__estrelas { flex: 0 0 auto; margin: 0; }
   .pp__estrelas:empty { display: none; }
-  .pp__estrelas .jdgm-prev-badge { display: inline-flex; align-items: center; gap: .35rem; cursor: pointer; }
+  .pp__estrelas .jdgm-prev-badge { cursor: pointer; }
   /* duas classes no mesmo elemento: o app pinta com .jdgm-preview-badge
      .jdgm-star (mesma especificidade de uma classe + estrela) e carrega
      depois, entao uma classe so perde — medido no navegador */
   .pp__estrelas.jdgm-preview-badge .jdgm-star { color: #111; }
-  .pp__estrelas .jdgm-prev-badge__text { font-size: .85rem; color: #4a4a4f; text-decoration: underline; }
+  /* o espaco vai no texto: o app forca .jdgm-prev-badge { display: block
+     !important }, entao flex e gap no selo nunca valem */
+  .pp__estrelas .jdgm-prev-badge__text { margin-left: .4rem; font-size: .85rem; color: #4a4a4f; text-decoration: underline; }
   /* celular: "(2)" no lugar de "2 avaliacoes", para caber ao lado de nome
      curto; nome longo continua descendo para a linha de baixo */
   @media screen and (max-width: 480px) {
     .pp__estrelas .jdgm-prev-badge__text { display: none; }
     .pp__estrelas .jdgm-prev-badge[data-number-of-reviews]::after {
       content: "(" attr(data-number-of-reviews) ")";
-      font-size: .85rem; color: #4a4a4f;
+      margin-left: .3rem; font-size: .85rem; color: #4a4a4f;
     }
   }
 
