@@ -143,6 +143,11 @@
      que gira para sempre (.jdgm-spinner:empty) nao dizem nada que o placar
      ja nao diga; fica so o botao de avaliar a loja */
   .wxav .jdgm-all-reviews-widget:has(.jdgm-all-reviews__header[data-number-of-reviews='0']) :is(.jdgm-histogram, .jdgm-row-actions, .jdgm-spinner) { display: none !important; }
+  /* e o botao que sobra deixa de ficar centrado ao lado de um fio que
+     separava o histograma (border-left de 1px): alinha com o placar */
+  .wxav .jdgm-all-reviews-widget:has(.jdgm-all-reviews__header[data-number-of-reviews='0']) .jdgm-row-stars { justify-content: flex-start; }
+  .wxav .jdgm-all-reviews-widget:has(.jdgm-all-reviews__header[data-number-of-reviews='0']) .jdgm-widget-actions-wrapper { border-left: 0; width: auto; justify-content: flex-start; }
+  .wxav .jdgm-all-reviews-widget:has(.jdgm-all-reviews__header[data-number-of-reviews='0']) .jdgm-write-rev-link { margin-left: 0; }
 
   @media screen and (min-width: 1700px) { .wxav__wrap { max-width: 1560px; } }
   @media screen and (min-width: 2200px) { .wxav__wrap { max-width: 1800px; } }

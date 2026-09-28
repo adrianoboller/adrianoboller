@@ -217,6 +217,9 @@ for (const [w, h] of LARGURAS) {
         estrela: (() => { const el = document.querySelector('.wxav .jdgm-histogram .jdgm-star'); return el ? getComputedStyle(el).color : null; })(),
         zerada: !!document.querySelector(".wxav .jdgm-all-reviews__header[data-number-of-reviews='0']"),
         girando: vis('.wxav .jdgm-spinner'),
+        botaoX: (() => { const el = document.querySelector('.wxav .jdgm-write-rev-link'); return el ? Math.round(el.getBoundingClientRect().x) : null; })(),
+        placarX: Math.round(document.querySelector('.wxav__placar').getBoundingClientRect().x),
+        fio: (() => { const el = document.querySelector('.wxav .jdgm-widget-actions-wrapper'); return el ? getComputedStyle(el).borderLeftWidth : null; })(),
         larg: s ? Math.round(s.scrollWidth) : 0,
         docLarg: document.documentElement.scrollWidth,
       };
@@ -227,6 +230,7 @@ for (const [w, h] of LARGURAS) {
     confere(p.botao === 'rgb(10, 10, 10)', `${w}px pagina da loja: botao de avaliar na cor da loja (${p.botao})`);
     if (p.estrela) confere(p.estrela === 'rgb(17, 17, 17)', `${w}px pagina da loja: estrela do app na cor da loja (${p.estrela})`);
     if (p.zerada) confere(!p.girando, `${w}px pagina da loja sem avaliacao: nenhum carregador girando a toa`);
+    if (p.zerada) confere(p.botaoX === p.placarX && p.fio === '0px', `${w}px pagina da loja sem avaliacao: botao alinhado ao placar e sem fio solto (x ${p.botaoX} vs ${p.placarX}, fio ${p.fio})`);
     await page.screenshot({ path: `${saida}/pagina-loja-${w}.png`, fullPage: false });
     confereErrosNovos(`${w}px pagina da loja`, erros, baseLoja);
     await ctx.close();
