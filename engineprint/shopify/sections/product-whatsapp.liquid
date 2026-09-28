@@ -639,8 +639,20 @@
   .pp__estrelas { flex: 0 0 auto; margin: 0; }
   .pp__estrelas:empty { display: none; }
   .pp__estrelas .jdgm-prev-badge { display: inline-flex; align-items: center; gap: .35rem; cursor: pointer; }
-  .pp__estrelas .jdgm-star { color: #111; }
+  /* duas classes no mesmo elemento: o app pinta com .jdgm-preview-badge
+     .jdgm-star (mesma especificidade de uma classe + estrela) e carrega
+     depois, entao uma classe so perde — medido no navegador */
+  .pp__estrelas.jdgm-preview-badge .jdgm-star { color: #111; }
   .pp__estrelas .jdgm-prev-badge__text { font-size: .85rem; color: #4a4a4f; text-decoration: underline; }
+  /* celular: "(2)" no lugar de "2 avaliacoes", para caber ao lado de nome
+     curto; nome longo continua descendo para a linha de baixo */
+  @media screen and (max-width: 480px) {
+    .pp__estrelas .jdgm-prev-badge__text { display: none; }
+    .pp__estrelas .jdgm-prev-badge[data-number-of-reviews]::after {
+      content: "(" attr(data-number-of-reviews) ")";
+      font-size: .85rem; color: #4a4a4f;
+    }
+  }
 
   /* avaliacoes: mesma largura e margem lateral do grid de cima */
   .pp__avaliacoes {
