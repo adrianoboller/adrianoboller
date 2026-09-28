@@ -193,7 +193,19 @@
           {%- if product.vendor != blank and product.vendor != shop.name -%}
             <p class="pp__eyebrow">{{ product.vendor }}</p>
           {%- endif -%}
-          <h1 class="pp__title">{{ product.title }}</h1>
+          {%- comment -%}
+            Estrelas do Judge.me ao lado do nome. Sem data-template de
+            proposito: a configuracao da loja esconde todo selo com
+            data-template="product" (preview_badge_product_page_install_preference
+            = false), e este e posto a mao. Produto sem avaliacao nao mostra
+            nada — o proprio Judge.me esconde (hide_badge_preview_if_no_reviews).
+          {%- endcomment -%}
+          <div class="pp__title-row">
+            <h1 class="pp__title">{{ product.title }}</h1>
+            <div class="jdgm-widget jdgm-preview-badge pp__estrelas" data-id="{{ product.id }}" data-auto-install="false">
+              {{- product.metafields.judgeme.badge -}}
+            </div>
+          </div>
           <div class="pp__pricebox" data-pp-pix-pct="{{ pp_pix_pct }}">
             <div class="pp__price-pix" data-pp-pix><strong>{{ pp_pix | money }}</strong> no Pix <span class="pp__pix-tag">{{ pp_pix_pct }}% de desconto</span></div>
             <div class="pp__price-card" data-pp-card>ou <strong>2x de {{ pp_2x | money }}</strong> sem juros no cartão <span class="pp__price-base">({{ product_var.price | money }})</span></div>
@@ -419,6 +431,51 @@
   </div>
 
   {%- comment -%}
+    Widget de avaliacoes do Judge.me: o trecho oficial para modelo em Liquid
+    (o product.whatsapp e .liquid, e bloco de app so entra em modelo JSON).
+    O widget novo desta loja (review_widget_revamp_enabled) nao busca nada
+    sozinho: le jdgm.data.reviewWidget, que so o script abaixo preenche. Um
+    div sem ele mostraria "seja o primeiro" com avaliacao publicada.
+    window.jdgm em vez de jdgm cru: se a embed do app sair do head, o
+    script nao derruba a pagina com ReferenceError.
+  {%- endcomment -%}
+  <div class="pp__avaliacoes" id="avaliacoes">
+    {%- assign pp_jdgm_legado = false -%}
+    {%- if product.metafields.judgeme.widget.size > 20 -%}
+      {%- assign pp_jdgm_legado = true -%}
+    {%- endif -%}
+    <div
+      id="judgeme_product_reviews"
+      class="jdgm-widget jdgm-review-widget"
+      data-product-title="{{ product.title | escape }}"
+      data-id="{{ product.id }}"
+      data-product-id="{{ product.id }}"
+      data-widget="review"
+      data-auto-install="false"
+      data-shop-reviews-count="{{ shop.metafields.judgeme.shop_reviews_count | default: 0 | escape }}"
+      data-shop-reviews="true"
+      data-entry-point="review_widget.js"
+      data-entry-key="review-widget/main.js"
+    >
+      {%- if pp_jdgm_legado -%}
+        <div class="jdgm-legacy-widget-content" style="display: none;">{{ product.metafields.judgeme.widget }}</div>
+      {%- endif -%}
+    </div>
+    {%- if product.metafields.judgeme.review_widget_data -%}
+      <script>
+        window.jdgm = window.jdgm || {};
+        jdgm.data = jdgm.data || {};
+        jdgm.data.reviewWidget = jdgm.data.reviewWidget || {};
+        jdgm.data.reviewWidget[{{ product.id }}] = {{ product.metafields.judgeme.review_widget_data }};
+      </script>
+    {%- endif -%}
+    {%- comment -%} Link some sozinho se a pagina da loja for apagada, em vez de levar a um 404. {%- endcomment -%}
+    {%- if pages.avaliacoes != empty and pages.avaliacoes.url != blank -%}
+      <a class="pp__avaliacoes-loja" href="{{ pages.avaliacoes.url }}">Ver a avaliação geral da loja</a>
+    {%- endif -%}
+  </div>
+
+  {%- comment -%}
     Barra fixa de compra (celular): aparece quando o botao principal sai
     da tela. Nao e um segundo form — ela aciona o form principal.
   {%- endcomment -%}
@@ -576,6 +633,24 @@
   .pp__price-base { color: #4a4a4f; font-weight: 500; }
   .pp__price-more { color: #4a4a4f; font-size: .85rem; font-weight: 500; margin-top: 2px; }
   .pp__title { font-size: clamp(1.6rem, 1.2rem + 1.6vw, 2.3rem); line-height: 1.1; margin: 0; font-weight: 600; letter-spacing: -0.01em; }
+  /* nome e estrelas na mesma linha; nome longo empurra as estrelas para a
+     linha de baixo em vez de espremer o titulo */
+  .pp__title-row { display: flex; flex-wrap: wrap; align-items: center; column-gap: .75rem; row-gap: .3rem; }
+  .pp__estrelas { flex: 0 0 auto; margin: 0; }
+  .pp__estrelas:empty { display: none; }
+  .pp__estrelas .jdgm-prev-badge { display: inline-flex; align-items: center; gap: .35rem; cursor: pointer; }
+  .pp__estrelas .jdgm-star { color: #111; }
+  .pp__estrelas .jdgm-prev-badge__text { font-size: .85rem; color: #4a4a4f; text-decoration: underline; }
+
+  /* avaliacoes: mesma largura e margem lateral do grid de cima */
+  .pp__avaliacoes {
+    max-width: var(--page-width, 1300px);
+    margin: clamp(2.5rem, 6vw, 4.5rem) auto 0;
+    padding-inline: clamp(1rem, 4vw, 2.5rem);
+    scroll-margin-top: 1.5rem;
+  }
+  .pp__avaliacoes-loja { display: inline-block; margin-top: 1.25rem; font-size: .9rem; color: #0a0a0a; text-decoration: underline; }
+  .pp__avaliacoes-loja:hover { color: #c2410c; }
   .pp__price { font-size: clamp(1.4rem, 1.1rem + 1vw, 1.9rem); font-weight: 600; white-space: nowrap; }
   .pp__subtitle { margin: .75rem 0 0; font-size: 1rem; line-height: 1.5; opacity: .82; max-width: 42ch; }
 
@@ -734,12 +809,14 @@
      em vez de esticar a linha de texto ate ficar ilegivel */
   @media screen and (min-width: 1700px) {
     .pp__wrap { max-width: 1560px; gap: 4rem; }
+    .pp__avaliacoes { max-width: 1560px; }
     .pp__gallery { grid-template-columns: 76px minmax(0, 1fr); }
   }
 
   /* TV: vista de longe, tudo precisa de mais corpo */
   @media screen and (min-width: 2200px) {
     .pp__wrap { max-width: 1800px; }
+    .pp__avaliacoes { max-width: 1800px; }
     .pp__gallery { grid-template-columns: 92px minmax(0, 1fr); }
     .pp__subtitle, .pp__disc-body { font-size: 1.1rem; }
     .pp__disc-sum { font-size: 1.2rem; }

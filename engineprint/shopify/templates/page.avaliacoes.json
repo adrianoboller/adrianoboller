@@ -1,0 +1,14 @@
+{
+  "sections": {
+    "avaliacoes": {
+      "type": "wx-avaliacoes",
+      "settings": {
+        "olho": "Avaliação geral da loja",
+        "texto_vazio": "Ainda não há avaliações publicadas."
+      }
+    }
+  },
+  "order": [
+    "avaliacoes"
+  ]
+}

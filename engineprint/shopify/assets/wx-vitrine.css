@@ -160,3 +160,11 @@ main[data-template^="collection"] .wx-hero__media picture {
     position: relative !important;
   }
 }
+
+/* Estrelas do Judge.me no cartao (blocks/_product-card.liquid). Pretas como
+   as da pagina do produto: o verde-azulado padrao do app (#108474) nao existe
+   em lugar nenhum da paleta da loja. */
+.wx-card-estrelas { margin: 0; line-height: 1; }
+.wx-card-estrelas .jdgm-prev-badge { display: inline-flex; align-items: center; gap: .3rem; }
+.wx-card-estrelas .jdgm-star { color: #111; font-size: .8rem; }
+.wx-card-estrelas .jdgm-prev-badge__text { font-size: .75rem; color: #4a4a4f; }

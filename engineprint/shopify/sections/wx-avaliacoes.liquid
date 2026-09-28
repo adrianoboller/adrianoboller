@@ -1,0 +1,145 @@
+{%- comment -%}
+  sections/wx-avaliacoes.liquid — pagina da avaliacao geral da loja
+  (modelo templates/page.avaliacoes.json, pagina /pages/avaliacoes).
+
+  O placar de cima e nosso, montado no servidor com os numeros que o
+  Judge.me grava na loja (judgeme.all_reviews_rating e all_reviews_count).
+  Motivo: o cabecalho que o app grava pronto sai em ingles ("Be the first to
+  write a review") porque a conta dele esta com locale "en", e o widget novo
+  de todas as avaliacoes (all_reviews_widget_v2025) esta desligado. Placar
+  no servidor tambem nao depende de script para aparecer.
+
+  A lista embaixo e o trecho oficial do Judge.me para pagina em tema com
+  modelo em Liquid, com o resumo em ingles escondido (o placar ja diz isso).
+{%- endcomment -%}
+
+{%- liquid
+  assign av_media = shop.metafields.judgeme.all_reviews_rating | default: '0' | plus: 0
+  assign av_total = shop.metafields.judgeme.all_reviews_count | default: '0' | plus: 0
+  assign av_pct = av_media | times: 20
+  assign av_media_txt = av_media | round: 1 | append: '' | replace: '.', ','
+-%}
+
+<section class="wxav">
+  <div class="wxav__wrap">
+    <header class="wxav__topo">
+      <p class="wxav__olho">{{ section.settings.olho }}</p>
+      <h1 class="wxav__titulo">{{ page.title }}</h1>
+      {%- if page.content != blank -%}
+        <div class="wxav__texto rte">{{ page.content }}</div>
+      {%- endif -%}
+    </header>
+
+    <div class="wxav__placar">
+      {%- if av_total > 0 -%}
+        <strong class="wxav__nota">{{ av_media_txt }}</strong>
+        <div class="wxav__detalhe">
+          <span class="wxav__estrelas" role="img" aria-label="Nota {{ av_media_txt }} de 5">
+            <span class="wxav__estrelas-fundo" aria-hidden="true">★★★★★</span>
+            <span class="wxav__estrelas-cheias" aria-hidden="true" style="width: {{ av_pct }}%;">★★★★★</span>
+          </span>
+          <p class="wxav__base">
+            de 5, com base em {{ av_total }}
+            {% if av_total == 1 %}avaliação{% else %}avaliações{% endif %}
+          </p>
+        </div>
+      {%- else -%}
+        <p class="wxav__vazio">{{ section.settings.texto_vazio }}</p>
+      {%- endif -%}
+    </div>
+
+    <div class="wxav__lista">
+      {%- assign av_legado = false -%}
+      {%- if shop.metafields.judgeme.all_reviews_header.size > 20 -%}
+        {%- assign av_legado = true -%}
+      {%- endif -%}
+      <div
+        class="jdgm-widget jdgm-all-reviews-widget-v2025"
+        data-widget="all-reviews-v2025"
+        data-auto-install="false"
+        data-entry-point="all_reviews_widget_v2025.js"
+        data-entry-key="all-reviews-widget-v2025/main.js"
+      >
+        {%- if av_legado -%}
+          <div class="jdgm-legacy-widget-content" style="display: none;">
+            <article class="jdgm-widget jdgm-all-reviews-widget">
+              <style class="jdgm-temp-hiding-style">.jdgm-all-reviews-widget{ display: none }</style>
+              {{ shop.metafields.judgeme.all_reviews_header }}
+              <div class="jdgm-all-reviews__body">
+                {%- comment -%}
+                  O app grava a lista em pedacos all_reviews_0, _1, ... e o
+                  laco para no primeiro que faltar.
+                {%- endcomment -%}
+                {%- for av_n in (0..65535) -%}
+                  {%- assign av_chave = 'all_reviews_' | append: av_n -%}
+                  {%- assign av_parte = shop.metafields.judgeme[av_chave] -%}
+                  {%- unless av_parte -%}{%- break -%}{%- endunless -%}
+                  {{ av_parte }}
+                {%- endfor -%}
+              </div>
+            </article>
+          </div>
+        {%- endif -%}
+      </div>
+      {%- if shop.metafields.judgeme.all_reviews_widget_v2025_data -%}
+        <script>
+          window.jdgm = window.jdgm || {};
+          jdgm.data = jdgm.data || {};
+          jdgm.data.allReviewsWidgetV2025 = {{ shop.metafields.judgeme.all_reviews_widget_v2025_data }};
+        </script>
+      {%- endif -%}
+    </div>
+  </div>
+</section>
+
+{% stylesheet %}
+  .wxav { padding: clamp(1.5rem, 4vw, 3rem) 0 clamp(3rem, 7vw, 5rem); }
+  .wxav__wrap {
+    max-width: var(--page-width, 1300px);
+    margin-inline: auto;
+    padding-inline: clamp(1rem, 4vw, 2.5rem);
+  }
+  .wxav__olho { margin: 0; font-size: .82rem; font-weight: 700; letter-spacing: .04em; color: #6e6e73; }
+  .wxav__titulo { margin: .35rem 0 0; font-size: clamp(1.8rem, 1.3rem + 2vw, 2.8rem); line-height: 1.1; font-weight: 600; letter-spacing: -0.01em; color: #0a0a0a; }
+  .wxav__texto { margin-top: .9rem; max-width: 60ch; font-size: 1rem; line-height: 1.55; color: #4a4a4f; }
+
+  /* o placar e um cartao branco como o de compra da pagina do produto */
+  .wxav__placar {
+    margin-top: clamp(1.5rem, 4vw, 2.5rem);
+    display: flex; align-items: center; gap: 1.25rem;
+    max-width: 560px;
+    background: #fff; border-radius: 22px;
+    padding: clamp(1.4rem, 3vw, 2rem);
+    box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 18px 44px rgba(0,0,0,.07);
+  }
+  .wxav__nota { font-size: clamp(3rem, 2.2rem + 3vw, 4.5rem); line-height: 1; font-weight: 700; color: #0a0a0a; font-variant-numeric: tabular-nums; }
+  .wxav__detalhe { min-width: 0; }
+
+  /* estrela parcial: a camada cheia e recortada na largura da nota
+     (nota x 20%), por cima da camada vazia */
+  .wxav__estrelas { position: relative; display: inline-block; font-size: 1.5rem; line-height: 1; letter-spacing: .08em; white-space: nowrap; }
+  .wxav__estrelas-fundo { color: #d4d4d8; }
+  .wxav__estrelas-cheias { position: absolute; inset: 0 auto 0 0; overflow: hidden; color: #111; }
+  .wxav__base { margin: .4rem 0 0; font-size: .95rem; color: #4a4a4f; }
+  .wxav__vazio { margin: 0; font-size: 1rem; line-height: 1.5; color: #4a4a4f; }
+
+  .wxav__lista { margin-top: clamp(2rem, 5vw, 3rem); }
+  /* resumo pronto do app sai em ingles; o placar acima ja diz a nota */
+  .wxav .jdgm-all-reviews__summary { display: none !important; }
+
+  @media screen and (min-width: 1700px) { .wxav__wrap { max-width: 1560px; } }
+  @media screen and (min-width: 2200px) { .wxav__wrap { max-width: 1800px; } }
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "Avaliações da loja",
+  "tag": "div",
+  "class": "section-wrapper",
+  "enabled_on": { "templates": ["page"] },
+  "settings": [
+    { "type": "text", "id": "olho", "label": "Texto acima do título", "default": "Avaliação geral da loja" },
+    { "type": "textarea", "id": "texto_vazio", "label": "Texto enquanto não há avaliação", "default": "Ainda não há avaliações publicadas." }
+  ]
+}
+{% endschema %}
