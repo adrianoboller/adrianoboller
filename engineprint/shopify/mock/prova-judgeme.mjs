@@ -4,9 +4,10 @@
  * Duas passadas por largura:
  *   real      — a loja como esta (hoje sem avaliacao): o widget tem de
  *               montar e o selo tem de sumir (hide_badge_preview_if_no_reviews).
- *   simulada  — o HTML do produto chega com um selo de 2 avaliacoes, nota
- *               4,5, no formato do molde do proprio app (shopify_v2/badge),
- *               para medir estrela ao lado do nome sem gravar avaliacao falsa.
+ *   simulada  — o selo do produto recebe 2 avaliacoes, nota 4,5, no formato
+ *               do molde do proprio app (shopify_v2/badge), antes do app
+ *               arruma-lo — mede estrela ao lado do nome sem gravar
+ *               avaliacao falsa na loja.
  *
  * Erro de console so reprova se for NOVO: a mesma pagina e aberta no tema
  * de base (o publicado) e o que ja acontece la nao e deste tema. Requisicao
@@ -65,15 +66,19 @@ async function abre(w, h, simular, temaId = tema) {
   page.on('requestfailed', (r) => erros.push(`falhou ${r.url().slice(0, 110)} (${r.failure() && r.failure().errorText})`));
   page.on('response', (r) => { if (r.status() >= 400) erros.push(`${r.status()} ${r.url().slice(0, 110)}`); });
   if (simular) {
-    // so o HTML do produto e trocado; o resto a pagina busca sozinha
-    await page.route(`${LOJA}/products/${handle}`, async (route) => {
-      const resp = await route.fetch();
-      let html = await resp.text();
-      const antes = html.length;
-      html = html.replace(/(<div class="jdgm-widget jdgm-preview-badge pp__estrelas"[^>]*>)\s*(<\/div>)/, `$1${SELO_SIMULADO}$2`);
-      if (html.length === antes) falhas.push('simulacao: nao achei o selo vazio no HTML para preencher');
-      await route.fulfill({ response: resp, body: html });
-    });
+    /* O selo e preenchido no proprio navegador, enquanto o HTML e lido e
+       antes do docReady em que o app arruma os selos. A primeira versao
+       buscava o HTML pelo Node (route.fetch) e o entregava trocado: era um
+       segundo cliente na mesma sessao, e o Shopify respondeu 503 ao pedido
+       de secao do cabecalho em 2 de 3 corridas a 1280 px — contra 0 em 6
+       cargas normais em cada tema. O erro era do metodo, nao do tema. */
+    await ctx.addInitScript((selo) => {
+      const obs = new MutationObserver(() => {
+        const el = document.querySelector('.pp__estrelas');
+        if (el && !el.dataset.simulado) { el.innerHTML = selo; el.dataset.simulado = '1'; obs.disconnect(); }
+      });
+      obs.observe(document, { childList: true, subtree: true });
+    }, SELO_SIMULADO);
   }
   // o cookie de preview sai desta visita; sem ele a loja serve o tema publicado
   try {
@@ -158,6 +163,7 @@ for (const [w, h] of LARGURAS) {
   if (roda('simulado')) {
     const { ctx, page, erros } = await abre(w, h, true);
     await page.goto(`${LOJA}/products/${handle}`, { waitUntil: 'load' });
+    if (!(await page.evaluate(() => !!document.querySelector('.pp__estrelas[data-simulado]')))) falhas.push('simulacao: o selo nao foi preenchido');
     const pronto = await page.waitForFunction(() => {
       const el = document.querySelector('.pp__estrelas');
       const txt = el && el.querySelector('.jdgm-prev-badge__text');

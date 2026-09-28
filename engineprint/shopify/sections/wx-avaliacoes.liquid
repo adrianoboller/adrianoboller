@@ -13,11 +13,18 @@
   modelo em Liquid, com o resumo em ingles escondido (o placar ja diz isso).
 {%- endcomment -%}
 
+{%- comment -%}
+  Nota com uma casa por aritmetica inteira (decimos): round: 1 escreve "5"
+  ou "5.0" conforme o motor, e o placar tem de dizer "5,0" sempre.
+{%- endcomment -%}
 {%- liquid
   assign av_media = shop.metafields.judgeme.all_reviews_rating | default: '0' | plus: 0
   assign av_total = shop.metafields.judgeme.all_reviews_count | default: '0' | plus: 0
   assign av_pct = av_media | times: 20
-  assign av_media_txt = av_media | round: 1 | append: '' | replace: '.', ','
+  assign av_decimos = av_media | times: 10 | round
+  assign av_casa = av_decimos | modulo: 10
+  assign av_inteiro = av_decimos | minus: av_casa | divided_by: 10
+  assign av_media_txt = av_inteiro | append: ',' | append: av_casa
 -%}
 
 <section class="wxav">
