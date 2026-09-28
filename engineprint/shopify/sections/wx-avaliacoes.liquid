@@ -127,6 +127,23 @@
   /* resumo pronto do app sai em ingles; o placar acima ja diz a nota */
   .wxav .jdgm-all-reviews__summary { display: none !important; }
 
+  /* cores da loja no lugar do verde-azulado do app (#108474), so nesta
+     pagina: o botao le as variaveis do app; estrela e seletor tem a cor
+     cravada no CSS dele (.jdgm-histogram .jdgm-star), dai quatro classes */
+  .wxav {
+    --jdgm-primary-color: #0a0a0a;
+    --jdgm-write-review-bg-color: #0a0a0a;
+    --jdgm-write-review-text-color: #fff;
+    --jdgm-paginate-color: #0a0a0a;
+  }
+  .wxav .jdgm-widget.jdgm-all-reviews-widget .jdgm-star { color: #111; }
+  .wxav .jdgm-widget.jdgm-all-reviews-widget :is(.jdgm-sort-dropdown, .jdgm-sort-dropdown-arrow) { color: #0a0a0a; }
+  .wxav .jdgm-widget.jdgm-all-reviews-widget .jdgm-write-rev-link { border-radius: 14px; }
+  /* sem avaliacao nenhuma: histograma de zeros, ordenacao e o carregador
+     que gira para sempre (.jdgm-spinner:empty) nao dizem nada que o placar
+     ja nao diga; fica so o botao de avaliar a loja */
+  .wxav .jdgm-all-reviews-widget:has(.jdgm-all-reviews__header[data-number-of-reviews='0']) :is(.jdgm-histogram, .jdgm-row-actions, .jdgm-spinner) { display: none !important; }
+
   @media screen and (min-width: 1700px) { .wxav__wrap { max-width: 1560px; } }
   @media screen and (min-width: 2200px) { .wxav__wrap { max-width: 1800px; } }
 {% endstylesheet %}

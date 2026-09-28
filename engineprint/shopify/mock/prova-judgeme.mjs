@@ -14,6 +14,7 @@
  * coisa em voo, e muda de corrida para corrida.
  *
  * Uso:  node mock/prova-judgeme.mjs <id-do-tema> <id-do-tema-base> [handle] [pasta-de-capturas]
+ *       SO=produto|simulado|loja limita a uma parte (a base e medida inteira mesmo assim)
  * Sai com codigo 1 se alguma verificacao falhar.
  */
 import { chromium } from '/opt/node22/lib/node_modules/playwright/index.mjs';
@@ -38,7 +39,16 @@ const SELO_SIMULADO =
 // tira o que muda a cada carga (parametros, ids de rastreio) para comparar
 // erro com erro entre os dois temas
 const assinatura = (s) => s.replace(/\?[^\s)|]*/g, '').replace(/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, '<id>').slice(0, 150);
-const relevantes = (lista) => new Set(lista.filter((e) => !/ERR_ABORTED/.test(e)).map(assinatura));
+/* Telemetria do proprio Shopify (otlp/monorail em shopifysvc.com, e o
+   event_observer_reporter que posta nela) falha as vezes por CORS ou
+   "Failed to fetch" sem relacao com o tema: numa corrida longa ela reprovou
+   o candidato, e depois, medido, deu 0 em 4 cargas no tema publicado e 0 em
+   4 no candidato (28/09/2026). Nao e codigo do tema; fica fora da conta. */
+const TELEMETRIA = /shopifysvc\.com|event_observer_reporter/;
+const relevantes = (lista) => new Set(lista.filter((e) => !/ERR_ABORTED/.test(e) && !TELEMETRIA.test(e)).map(assinatura));
+
+const SO = process.env.SO || '';
+const roda = (parte) => !SO || SO === parte;
 
 const falhas = [];
 const confere = (ok, msg) => { console.log((ok ? 'ok    ' : 'FALHA ') + msg); if (!ok) falhas.push(msg); };
@@ -117,7 +127,7 @@ const baseProduto = daBase, baseLoja = daBase;
 for (const [w, h] of LARGURAS) {
 
   // ---------- produto, real ----------
-  {
+  if (roda('produto')) {
     const { ctx, page, erros } = await abre(w, h, false);
     await page.goto(`${LOJA}/products/${handle}`, { waitUntil: 'load' });
     confere((await temaServido(page)) === tema, `${w}px produto: servido pelo tema ${tema}`);
@@ -145,7 +155,7 @@ for (const [w, h] of LARGURAS) {
   }
 
   // ---------- produto, simulado (2 avaliacoes, 4,5) ----------
-  {
+  if (roda('simulado')) {
     const { ctx, page, erros } = await abre(w, h, true);
     await page.goto(`${LOJA}/products/${handle}`, { waitUntil: 'load' });
     const pronto = await page.waitForFunction(() => {
@@ -191,7 +201,7 @@ for (const [w, h] of LARGURAS) {
   }
 
   // ---------- pagina da loja ----------
-  {
+  if (roda('loja')) {
     const { ctx, page, erros } = await abre(w, h, false);
     await page.goto(`${LOJA}/pages/avaliacoes`, { waitUntil: 'load' });
     confere((await temaServido(page)) === tema, `${w}px pagina da loja: servida pelo tema ${tema}`);
@@ -203,6 +213,10 @@ for (const [w, h] of LARGURAS) {
         texto: s ? s.innerText.replace(/\s+/g, ' ').trim() : '',
         placar: vis('.wxav__placar'),
         resumoIngles: vis('.jdgm-all-reviews__summary'),
+        botao: (() => { const el = document.querySelector('.wxav .jdgm-write-rev-link'); return el ? getComputedStyle(el).backgroundColor : null; })(),
+        estrela: (() => { const el = document.querySelector('.wxav .jdgm-histogram .jdgm-star'); return el ? getComputedStyle(el).color : null; })(),
+        zerada: !!document.querySelector(".wxav .jdgm-all-reviews__header[data-number-of-reviews='0']"),
+        girando: vis('.wxav .jdgm-spinner'),
         larg: s ? Math.round(s.scrollWidth) : 0,
         docLarg: document.documentElement.scrollWidth,
       };
@@ -210,6 +224,9 @@ for (const [w, h] of LARGURAS) {
     confere(p.placar === true, `${w}px pagina da loja: placar visivel ("${p.texto.slice(0, 120)}")`);
     confere(!/\b(Be the first|Write a review|reviews?\b)/.test(p.texto), `${w}px pagina da loja: nenhum texto em ingles visivel`);
     confere(p.docLarg <= w, `${w}px pagina da loja: sem rolagem lateral (${p.docLarg} <= ${w})`);
+    confere(p.botao === 'rgb(10, 10, 10)', `${w}px pagina da loja: botao de avaliar na cor da loja (${p.botao})`);
+    if (p.estrela) confere(p.estrela === 'rgb(17, 17, 17)', `${w}px pagina da loja: estrela do app na cor da loja (${p.estrela})`);
+    if (p.zerada) confere(!p.girando, `${w}px pagina da loja sem avaliacao: nenhum carregador girando a toa`);
     await page.screenshot({ path: `${saida}/pagina-loja-${w}.png`, fullPage: false });
     confereErrosNovos(`${w}px pagina da loja`, erros, baseLoja);
     await ctx.close();
