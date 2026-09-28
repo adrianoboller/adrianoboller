@@ -86,7 +86,7 @@ async function abre(w, h, simular, temaId = tema) {
   } catch (e) {
     if (/ERR_CERT_AUTHORITY_INVALID/.test(e.message)) {
       console.error('O Chromium nao confia no CA do proxy: ~/.pki/nssdb esta sem ele (medido vazio em 28/09/2026).\n' +
-        'Importe os CAs da Anthropic de /root/.ccr/ca-bundle.crt com certutil -A -t "C,," — receita em\n' +
+        'Rode  bash mock/confia-ca-do-proxy.sh  e tente de novo — o porque esta em\n' +
         'cognicao/cognicao_navegador_sem_ca_do_proxy_20260928_2000.md. Nao desligue a verificacao TLS.');
       process.exit(2);
     }

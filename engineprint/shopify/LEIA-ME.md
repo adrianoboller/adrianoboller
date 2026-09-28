@@ -40,3 +40,28 @@ Quem usa o canvas único precisa de fotos com o mesmo fundo. `imagens/`
 traz o baixador da galeria oficial, a folha de contato para escolher
 **olhando**, a comparação com a foto atual, e o normalizador (`#FFF → #F7F7F7`
 por flood-fill a partir das bordas, e enquadramento 1:1).
+
+## Avaliações (Judge.me) — revisão de 28/09/2026
+
+O modelo de produto desta loja é `.liquid`, e bloco de app só entra em modelo
+JSON; por isso o Judge.me entra pelo **trecho oficial para modelo em Liquid**,
+não pelo editor de tema. Onde está cada peça:
+
+| peça | arquivo |
+|---|---|
+| estrelas ao lado do nome | `sections/product-whatsapp.liquid` (`.pp__title-row`) |
+| widget de avaliações no fim do produto | `sections/product-whatsapp.liquid` (`#avaliacoes`) |
+| estrelas no cartão das coleções (só produto já avaliado) | `blocks/_product-card.liquid` + `assets/wx-vitrine.css` |
+| página `/pages/avaliacoes` (nota geral da loja) | `sections/wx-avaliacoes.liquid` + `templates/page.avaliacoes.json` |
+
+Produto sem avaliação não mostra estrela nenhuma — é configuração do próprio
+app (`hide_badge_preview_if_no_reviews`). As armadilhas (widget novo que não
+busca dados sozinho, selo escondido por `data-template`, `display:block
+!important`, cor com a mesma especificidade) estão em
+`cognicao/cognicao_judgeme_widget_novo_precisa_dos_dados_20260928_1930.md`.
+
+Provar, no preview do tema (a loja de verdade, não HTML salvo):
+
+    bash mock/confia-ca-do-proxy.sh      # uma vez por contêiner: o Chromium vem sem o CA do proxy
+    node mock/prova-judgeme.mjs <id-do-tema> <id-do-tema-publicado>   # 37 verificações, 390 e 1280 px
+    node mock/placar-avaliacoes.mjs      # o placar COM avaliação, que a loja ainda não mostra (liquidjs)
