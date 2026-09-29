@@ -6200,10 +6200,13 @@ pub fn limpar() {
         # ATUALIZADO em 24/09/2026 (pedido 492): a leitura da `velha` ganhou o
         # `herda_marca`, e a mescla um braco que herda SO a marca de excluida
         # -- a coluna do usuario continua indo inteira, que e o contrato.
+        # ATUALIZADO em 29/09/2026 (pedido 381): a condicao virou `inteira ||
+        # herda_marca`, porque so a marca herdada le sem as externas. O
+        # defeito reposto e o mesmo: ler sempre, para mesclar.
         "trocas": [
             {
                 "arquivo": "crates/phxsql-server/src/upsert.rs",
-                "trecho": "                let velha = if atualizar.is_some() || antes_de_atualizar.is_some() || herda_marca {\n",
+                "trecho": "                let velha = if inteira || herda_marca {\n",
                 "troca": (
                     "                // DEFEITO REPOSTO (pedido 245, O3): le sempre, para mesclar.\n"
                     "                let velha = if true {\n"

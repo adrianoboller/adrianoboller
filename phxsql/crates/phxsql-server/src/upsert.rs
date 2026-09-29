@@ -356,8 +356,17 @@ pub fn aplicar(
                 // SET mescla por cima dela, o gancho a recebe como OLD, e a
                 // linha sem SET herda dela a marca de excluida. O upsert sem
                 // nenhum dos tres continua sem pagar a leitura.
-                let velha = if atualizar.is_some() || antes_de_atualizar.is_some() || herda_marca {
-                    Some(t.ler(rowid)?.ok_or_else(|| {
+                // So a marca herdada nao precisa das externas (pedido 381): um
+                // `.memo` estragado nao pode recusar quem vem substitui-lo. O
+                // SET e o OLD do gancho continuam lendo a linha inteira.
+                let inteira = atualizar.is_some() || antes_de_atualizar.is_some();
+                let velha = if inteira || herda_marca {
+                    let lida = if inteira {
+                        t.ler(rowid)?
+                    } else {
+                        t.ler_sem_externos_na_visao(rowid)?
+                    };
+                    Some(lida.ok_or_else(|| {
                         PhxError::Corrompido(format!(
                             "o indice {indice} apontou para o rowid {rowid}, que nao \
                              se le"

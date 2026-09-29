@@ -20,7 +20,7 @@ O que a regua DEIXA DE FORA, de proposito: higiene de gerador, contagem de
 catraca, cosmetico de tela, pesquisa, e tudo o que so o time enxerga. Sao
 legitimos e continuam registrados -- so nao seguram a versao.
 
-## A lista: 14 pedidos -- **5 FECHADOS, 1 parado no dono, 8 abertos** (23/09/2026, 20:40 UTC)
+## A lista: 14 pedidos -- **9 FECHADOS, 2 parados no dono, 3 parciais** (29/09/2026, lidos da marca do `PENDENCIAS.md`)
 
 O 355 saiu porque ja estava fechado; o 426 entrou pela excecao. Fechado aqui
 quer dizer **em codigo, com portoes verdes e no `origin`** -- nao "pronto para
@@ -28,9 +28,9 @@ revisar".
 
 | estado | pedidos |
 |---|---|
-| FECHADO | 392 `8f63d7a` · 278 `8f63d7a` · 312 `8f63d7a` · 275 `3add5a9` · 327 `af4a5a5` |
-| parado no DONO | 326 -- refazer o compartilhamento da pagina; nao e consertavel daqui |
-| ABERTO | 262 · 419 · 255 · 381 · 372 · 339 · 422 (tres irmas) · 426 |
+| FECHADO | 392 `8f63d7a` · 278 `8f63d7a` · 312 `8f63d7a` · 275 `3add5a9` · 327 `af4a5a5` · 419 · 372 · 426 · 381 (29/09) |
+| parado no DONO | 326 -- refazer o compartilhamento da pagina; nao e consertavel daqui · 255 -- reconstruir sozinho no arranque muda o tempo de subida |
+| PARCIAL | 262 (etapa 2: o `AFTER` antes da marca) · 339 · 422 (tres irmas) |
 
 ### A. Corrompe ou perde dado (5)
 
@@ -40,7 +40,7 @@ revisar".
 | 262 | Gatilho AFTER que grava pela mesma sessao dentro do COMMIT **nao chega a gravar**. Escrita que o cliente julga feita. |
 | 419 | Sub-pedido que parou EM `max_linhas` publica parcial **calado**: `COUNT(*)` de um milhao responde mil. |
 | 255 | Tomada no meio de BULKINSERT ou de `reindexar` deixa a tabela **recusando** ate um `reindexar` manual. |
-| 381 | Linha com `.memo` corrompido **nao se consegue ALTERAR** por cliente que omita a coluna de sistema. |
+| 381 | **FECHADO** 29/09/2026. Linha com `.memo` corrompido **nao se consegue ALTERAR** por cliente que omita a coluna de sistema. |
 
 ### B. Vaza segredo (3, era 4)
 

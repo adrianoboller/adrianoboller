@@ -3795,8 +3795,14 @@ impl Table {
     /// `None` quer dizer «nao existe para quem le»: slot livre, ou excluida de
     /// vez pela propria transacao.
     fn resolver(&mut self, rowid: RowId) -> Result<Option<Linha>> {
+        self.resolver_com(rowid, true)
+    }
+
+    /// O [`Table::resolver`] com a escolha de carregar ou nao as colunas
+    /// externas -- a sobreposicao vale igual nos dois.
+    fn resolver_com(&mut self, rowid: RowId, externos: bool) -> Result<Option<Linha>> {
         match self.troca_de(rowid) {
-            None => self.ler_do_disco(rowid),
+            None => self.ler_do_disco_com_externos(rowid, externos),
             Some(Troca::Sumida) => Ok(None),
             Some(Troca::Linha(l)) => Ok(Some(l)),
             Some(Troca::Marca(v)) => {
@@ -3807,7 +3813,7 @@ impl Table {
                 if self.nasceu_aqui(rowid) {
                     return Ok(None);
                 }
-                let Some(mut l) = self.ler_do_disco(rowid)? else {
+                let Some(mut l) = self.ler_do_disco_com_externos(rowid, externos)? else {
                     return Ok(None);
                 };
                 if let Some(i) = self.esquema.coluna_softdeleted() {
@@ -3873,10 +3879,10 @@ impl Table {
     ///
     /// Existe separada porque `resolver` precisa dela para o `Troca::Marca`:
     /// chamar `ler` ali daria recursao infinita.
-    fn ler_do_disco(&mut self, rowid: RowId) -> Result<Option<Linha>> {
+    fn ler_do_disco_com_externos(&mut self, rowid: RowId, externos: bool) -> Result<Option<Linha>> {
         match self.reg.ler(rowid)? {
             None => Ok(None),
-            Some(payload) => Ok(Some(self.decodificar(&payload, true)?)),
+            Some(payload) => Ok(Some(self.decodificar(&payload, externos)?)),
         }
     }
 
@@ -4975,6 +4981,20 @@ impl Table {
             Some(payload) => Ok(Some(self.decodificar(&payload, false)?)),
             None => Ok(None),
         }
+    }
+
+    /// A linha `rowid` para quem so quer dela as colunas do `.reg` -- a marca
+    /// de excluida, tipicamente --, com a sobreposicao da transacao aplicada
+    /// e SEM carregar as externas, que voltam nulas (pedido 381).
+    ///
+    /// Existe porque o [`Table::ler`] decodifica a linha inteira, e inteira
+    /// inclui o `.memo`: um bloco externo estragado fazia o `atualizar` que so
+    /// precisava copiar um booleano recusar a gravacao toda -- inclusive a que
+    /// vinha justamente substituir o bloco ruim. PostgreSQL (TOAST) e InnoDB
+    /// (paginas externas) liberam o valor velho sem decodifica-lo; aqui, o
+    /// `atualizar` ja gravava assim, e so a pergunta de antes recusava.
+    pub fn ler_sem_externos_na_visao(&mut self, rowid: RowId) -> Result<Option<Linha>> {
+        self.resolver_com(rowid, false)
     }
 
     /// A versao do registro: 1 quando nasce, +1 a cada regravacao.
