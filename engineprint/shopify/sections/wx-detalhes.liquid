@@ -389,9 +389,17 @@
     <article class="wx-det__panel" id="d-{{ product.handle }}" aria-label="Detalhes de {{ product.title | escape }}">
       <a class="wx-det__back" href="#wx-det-topo">&larr; Todas as impressoras</a>
 
-      <div class="wx-det__hero{% if banner == '' %} wx-det__hero--contain{% endif %}">
-        {%- if banner != '' -%}
-          <img src="{{ banner | file_img_url: '2400x' }}" alt="{{ product.title | escape }}" loading="lazy">
+      {%- comment -%}
+        images[] e nao file_img_url: o filtro antigo so entende jpg, png e gif,
+        e a arte da U1 e .webp — saia o "no-image" cinza do Shopify no lugar
+        da foto, embora o arquivo exista. Arquivo que sumir dos Arquivos cai
+        na foto do produto, em vez de virar a mesma imagem cinza.
+      {%- endcomment -%}
+      {%- assign banner_img = blank -%}
+      {%- if banner != '' -%}{%- assign banner_img = images[banner] -%}{%- endif -%}
+      <div class="wx-det__hero{% if banner_img == blank %} wx-det__hero--contain{% endif %}">
+        {%- if banner_img != blank -%}
+          <img src="{{ banner_img | image_url: width: 2400 }}" alt="{{ product.title | escape }}" loading="lazy">
         {%- elsif product.featured_image -%}
           <img src="{{ product.featured_image | image_url: width: 1600 }}" alt="{{ product.featured_image.alt | escape }}" loading="lazy">
         {%- endif -%}
