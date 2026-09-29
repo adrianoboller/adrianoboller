@@ -1,0 +1,450 @@
+{% comment %}
+  WX Detalhes — a pessoa escolhe a impressora e abre o dossiê dela.
+
+  Como funciona (sem depender de JavaScript):
+  - cada card da pergunta e um link para #d-{handle}
+  - o painel certo abre via CSS :target
+  - com um painel aberto, a pergunta some via :has()
+  - "voltar" aponta para "#" e limpa o :target
+  O JS que existe so suaviza a rolagem.
+
+  Fonte de conteudo: a colecao "impressoras". Titulo, descricao completa,
+  imagem e preco vem do proprio produto — nada duplicado para manter.
+{% endcomment %}
+
+{%- assign col = collections['impressoras'] -%}
+{%- assign st = section.settings -%}
+
+<style>
+  #shopify-section-{{ section.id }} .wx-det {
+    max-width: 1220px;
+    margin-inline: auto;
+    padding: {{ st.pad_top }}px 20px {{ st.pad_bottom }}px;
+    box-sizing: border-box;
+  }
+
+  /* ============ A PERGUNTA ============ */
+  #shopify-section-{{ section.id }} .wx-det__ask { text-align: center; }
+
+  #shopify-section-{{ section.id }} .wx-det__eyebrow {
+    margin: 0 0 10px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: #86868b;
+  }
+
+  #shopify-section-{{ section.id }} .wx-det__title {
+    margin: 0;
+    font-size: clamp(30px, 5vw, 52px);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+    color: #1d1d1f;
+  }
+
+  #shopify-section-{{ section.id }} .wx-det__sub {
+    margin: 14px auto 0;
+    max-width: 560px;
+    font-size: 16px;
+    line-height: 1.6;
+    color: #6e6e73;
+  }
+
+  #shopify-section-{{ section.id }} .wx-det__grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+    margin-top: 44px;
+    text-align: left;
+  }
+  @media (max-width: 989px) {
+    #shopify-section-{{ section.id }} .wx-det__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 599px) {
+    #shopify-section-{{ section.id }} .wx-det__grid { gap: 10px; }
+  }
+
+  #shopify-section-{{ section.id }} .wx-det__card {
+    display: block;
+    text-decoration: none;
+    background: #ffffff;
+    border: 1px solid #e6e6e6;
+    border-radius: 24px;
+    overflow: hidden;
+    -webkit-tap-highlight-color: transparent;
+    transition: border-color .25s ease, box-shadow .25s ease, transform .25s ease;
+  }
+  #shopify-section-{{ section.id }} .wx-det__card:hover {
+    border-color: #cfcfcf;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.07);
+    transform: translateY(-2px);
+  }
+  #shopify-section-{{ section.id }} .wx-det__card:active { transform: translateY(0); }
+
+  /* A imagem senta numa moldura branca dentro do card, como nos cards
+     da loja: card branco, respiro de 10px, area cinza com linha fina.
+     Raio interno = raio externo (24) - moldura (10) = 14. */
+  #shopify-section-{{ section.id }} .wx-det__thumb {
+    display: block;
+    position: relative;
+    aspect-ratio: 4 / 3;
+    margin: 10px 10px 0;
+    background: #f3f3f3;
+    border: 1px solid rgba(0, 0, 0, 0.09);
+    border-radius: 14px;
+    overflow: hidden;
+    box-sizing: border-box;
+  }
+  /* absoluta: altura em % dentro de grade com linha automatica e circular,
+     e a foto sairia no tamanho natural, estourando a moldura */
+  #shopify-section-{{ section.id }} .wx-det__thumb img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    padding: 18px;
+    box-sizing: border-box;
+    display: block;
+  }
+
+  /* os filhos do card sao <span>: sem display block eles embolam inline */
+  #shopify-section-{{ section.id }} .wx-det__card-body {
+    display: block;
+    padding: 16px 18px 20px;
+    text-align: center;
+  }
+  #shopify-section-{{ section.id }} .wx-det__card-name {
+    display: block;
+    margin: 0;
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: #1d1d1f;
+  }
+  #shopify-section-{{ section.id }} .wx-det__card-tag {
+    display: block;
+    margin: 4px 0 0;
+    font-size: 13px;
+    line-height: 1.5;
+    color: #6e6e73;
+  }
+  #shopify-section-{{ section.id }} .wx-det__card-cta {
+    display: inline-block;
+    margin-top: 10px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #c2410c;
+  }
+
+  /* Entrada suave dos cards.
+     "backwards" (e nao "forwards"): durante o atraso o card fica no estado
+     inicial escondido, anima ate o estado natural e SOLTA — se congelasse o
+     transform final, o levantar do hover morreria. */
+  @media (prefers-reduced-motion: no-preference) {
+    #shopify-section-{{ section.id }} .wx-det__card {
+      animation: wx-det-in .6s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+    }
+    {%- for i in (1..12) %}
+    #shopify-section-{{ section.id }} .wx-det__card:nth-child({{ i }}) { animation-delay: {{ i | times: 0.05 | plus: 0.05 }}s; }
+    {%- endfor %}
+  }
+  @keyframes wx-det-in {
+    from { opacity: 0; transform: translateY(14px); }
+  }
+
+  /* ============ O DOSSIE ============ */
+  #shopify-section-{{ section.id }} .wx-det__panel { display: none; }
+  #shopify-section-{{ section.id }} .wx-det__panel:target { display: block; }
+  #shopify-section-{{ section.id }} .wx-det:has(.wx-det__panel:target) .wx-det__ask { display: none; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    #shopify-section-{{ section.id }} .wx-det__panel:target {
+      animation: wx-det-in .5s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+  }
+
+  #shopify-section-{{ section.id }} .wx-det__back {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #6e6e73;
+    text-decoration: none;
+    margin-bottom: 22px;
+  }
+  #shopify-section-{{ section.id }} .wx-det__back:hover { color: #1d1d1f; }
+
+  #shopify-section-{{ section.id }} .wx-det__hero {
+    border-radius: 24px;
+    overflow: hidden;
+    background: #f3f3f3;
+    border: 1px solid #e6e6e6;
+  }
+  #shopify-section-{{ section.id }} .wx-det__hero img {
+    width: 100%;
+    max-height: 560px;
+    object-fit: cover;
+    display: block;
+  }
+  #shopify-section-{{ section.id }} .wx-det__hero--contain img {
+    object-fit: contain;
+    padding: 40px;
+    box-sizing: border-box;
+  }
+
+  #shopify-section-{{ section.id }} .wx-det__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 18px;
+    margin-top: 34px;
+  }
+  #shopify-section-{{ section.id }} .wx-det__name {
+    margin: 0;
+    font-size: clamp(28px, 4vw, 44px);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+    color: #1d1d1f;
+  }
+  #shopify-section-{{ section.id }} .wx-det__price-parc {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 700;
+    color: #c2410c;
+  }
+  #shopify-section-{{ section.id }} .wx-det__price-vista {
+    margin: 2px 0 0;
+    font-size: 14px;
+    color: #6e6e73;
+  }
+
+  #shopify-section-{{ section.id }} .wx-det__cta {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 15px 32px;
+    border-radius: 100px;
+    background: #1b1b1a;
+    color: #ffffff;
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+    letter-spacing: .01em;
+    transition: background .25s ease, transform .25s ease, box-shadow .25s ease;
+  }
+  #shopify-section-{{ section.id }} .wx-det__cta:hover {
+    background: #333;
+    transform: translateY(-1px);
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.16);
+  }
+
+  /* a descricao rica do produto, bem tipografada */
+  #shopify-section-{{ section.id }} .wx-det__body {
+    max-width: 760px;
+    margin-top: 34px;
+    font-size: 16px;
+    line-height: 1.75;
+    color: #3a3a3c;
+  }
+  #shopify-section-{{ section.id }} .wx-det__body h3 {
+    margin: 34px 0 10px;
+    font-size: 19px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: #1d1d1f;
+  }
+  #shopify-section-{{ section.id }} .wx-det__body p { margin: 0 0 14px; }
+  #shopify-section-{{ section.id }} .wx-det__body ul {
+    margin: 0 0 14px;
+    padding-left: 20px;
+  }
+  #shopify-section-{{ section.id }} .wx-det__body li { margin-bottom: 6px; }
+  #shopify-section-{{ section.id }} .wx-det__body strong { color: #1d1d1f; }
+  #shopify-section-{{ section.id }} .wx-det__body em { color: #86868b; font-size: 14px; }
+  #shopify-section-{{ section.id }} .wx-det__body table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0 0 14px;
+    font-size: 14px;
+  }
+  #shopify-section-{{ section.id }} .wx-det__body td {
+    border: 1px solid #e6e6e6;
+    padding: 8px 12px;
+  }
+
+  #shopify-section-{{ section.id }} .wx-det__foot {
+    margin-top: 40px;
+    padding-top: 26px;
+    border-top: 1px solid #e6e6e6;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  #shopify-section-{{ section.id }} .wx-det__foot .wx-det__back { margin: 0; align-self: center; }
+</style>
+
+<div class="wx-det" id="wx-det-topo">
+
+  {%- comment -%} ---------- a pergunta ---------- {%- endcomment -%}
+  <div class="wx-det__ask">
+    <p class="wx-det__eyebrow">{{ st.eyebrow }}</p>
+    <h1 class="wx-det__title">{{ st.pergunta }}</h1>
+    <p class="wx-det__sub">{{ st.subtitulo }}</p>
+
+    <div class="wx-det__grid">
+      {%- for product in col.products -%}
+        {%- liquid
+          assign tag = ''
+          case product.handle
+            when 'bambu-lab-a1-mini'
+              assign tag = 'A porta de entrada: se calibra sozinha e cabe em qualquer bancada.'
+            when 'bambu-lab-a1'
+              assign tag = 'A mesma facilidade, com quase o triplo do volume.'
+            when 'bambu-lab-p1s'
+              assign tag = 'Camara fechada para ABS, ASA e nylon. A mais vendida.'
+            when 'bambu-lab-p2s'
+              assign tag = 'A sucessora da P1S: 600 mm/s e ate 20 cores.'
+            when 'bambu-lab-x1c'
+              assign tag = 'Micro lidar que inspeciona a primeira camada sozinho.'
+            when 'bambu-lab-x2d'
+              assign tag = 'Dois bicos independentes e camara aquecida a 65 graus.'
+            when 'bambu-lab-h2s'
+              assign tag = 'O maior volume da linha: 340 x 320 x 340 mm.'
+            when 'bambu-lab-h2d'
+              assign tag = 'Impressora, laser, lamina e plotter no mesmo chassi.'
+            when 'bambu-lab-h2c'
+              assign tag = 'Ate 6 hotends com troca automatica, sem purga.'
+            when 'snapmaker-u1'
+              assign tag = 'Quatro cabecotes: troca de cor em 5 segundos.'
+          endcase
+        -%}
+        <a class="wx-det__card" href="#d-{{ product.handle }}">
+          <span class="wx-det__thumb">
+            {%- if product.featured_image -%}
+              <img
+                src="{{ product.featured_image | image_url: width: 800 }}"
+                alt="{{ product.featured_image.alt | escape }}"
+                loading="lazy"
+                width="800"
+                height="600">
+            {%- endif -%}
+          </span>
+          <span class="wx-det__card-body">
+            <span class="wx-det__card-name">{{ product.title }}</span>
+            {%- if tag != blank -%}<span class="wx-det__card-tag">{{ tag }}</span>{%- endif -%}
+            <span class="wx-det__card-cta">Ver detalhes &rarr;</span>
+          </span>
+        </a>
+      {%- endfor -%}
+    </div>
+  </div>
+
+  {%- comment -%} ---------- os dossies ---------- {%- endcomment -%}
+  {%- for product in col.products -%}
+    {%- liquid
+      assign v = product.selected_or_first_available_variant
+      if v == blank
+        assign v = product.variants.first
+      endif
+      assign total = 0
+      if v.compare_at_price > v.price
+        assign total = v.compare_at_price
+      elsif v.price > 0
+        assign total = v.price | times: 1.0 | divided_by: 0.9 | round
+      endif
+      assign parc = total | times: 1.0 | divided_by: 12.0 | round
+
+      comment
+        Foto de abertura: as artes oficiais que ja estao no Files, por modelo.
+        Modelo sem arte boa cai na propria foto do produto (contain).
+      endcomment
+      assign banner = ''
+      case product.handle
+        when 'bambu-lab-a1-mini'
+          assign banner = 'a1mini-mo.jpg'
+        when 'bambu-lab-a1'
+          assign banner = 'mo-A1.jpg'
+        when 'bambu-lab-p1s'
+          assign banner = 'mo-P1S.jpg'
+        when 'bambu-lab-p2s'
+          assign banner = 'P2S-EN-MO-qw75b7il1t.jpg'
+        when 'bambu-lab-x2d'
+          assign banner = 'x2d-1h7focijmcj-sm.jpg'
+        when 'bambu-lab-h2s'
+          assign banner = 'h2s-sm-9d8bw6uwyb7.jpg'
+        when 'bambu-lab-h2d'
+          assign banner = 'H2D-mo-139c8d33e2ed.jpg'
+        when 'bambu-lab-h2c'
+          assign banner = 'h2c-h2e4s63566c-sm.jpg'
+        when 'snapmaker-u1'
+          assign banner = 'Snapmaker-U1-Review_0002_Layer-4.webp'
+      endcase
+    -%}
+    <article class="wx-det__panel" id="d-{{ product.handle }}" aria-label="Detalhes de {{ product.title | escape }}">
+      <a class="wx-det__back" href="#wx-det-topo">&larr; Todas as impressoras</a>
+
+      <div class="wx-det__hero{% if banner == '' %} wx-det__hero--contain{% endif %}">
+        {%- if banner != '' -%}
+          <img src="{{ banner | file_img_url: '2400x' }}" alt="{{ product.title | escape }}" loading="lazy">
+        {%- elsif product.featured_image -%}
+          <img src="{{ product.featured_image | image_url: width: 1600 }}" alt="{{ product.featured_image.alt | escape }}" loading="lazy">
+        {%- endif -%}
+      </div>
+
+      <div class="wx-det__head">
+        <div>
+          <h2 class="wx-det__name">{{ product.title }}</h2>
+          {%- if parc > 0 -%}
+            <p class="wx-det__price-parc">12x de {{ parc | money }}</p>
+            <p class="wx-det__price-vista">ou {{ v.price | money }} &agrave; vista</p>
+          {%- endif -%}
+        </div>
+        <a class="wx-det__cta" href="{{ product.url }}">Ver pre&ccedil;o e comprar</a>
+      </div>
+
+      <div class="wx-det__body">
+        {{ product.description }}
+      </div>
+
+      <div class="wx-det__foot">
+        <a class="wx-det__cta" href="{{ product.url }}">Ver pre&ccedil;o e comprar</a>
+        <a class="wx-det__back" href="#wx-det-topo">&larr; Todas as impressoras</a>
+      </div>
+    </article>
+  {%- endfor -%}
+</div>
+
+<script>
+  (function () {
+    'use strict';
+    // so conforto: ao abrir ou fechar um dossie, volta ao topo da secao com suavidade
+    var raiz = document.getElementById('wx-det-topo');
+    if (!raiz) return;
+    var suave = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+    window.addEventListener('hashchange', function () {
+      raiz.scrollIntoView({ behavior: suave, block: 'start' });
+    });
+  })();
+</script>
+
+{% schema %}
+{
+  "name": "WX Detalhes",
+  "settings": [
+    { "type": "text", "id": "eyebrow", "label": "Linha pequena", "default": "Guia Engine Print" },
+    { "type": "text", "id": "pergunta", "label": "Pergunta", "default": "Qual impressora você quer conhecer a fundo?" },
+    { "type": "text", "id": "subtitulo", "label": "Subtítulo", "default": "Escolha um modelo para ver o dossiê completo: o que ela faz bem, a ficha técnica e para quem ela é." },
+    { "type": "range", "id": "pad_top", "label": "Padding topo (px)", "min": 0, "max": 120, "step": 4, "default": 48 },
+    { "type": "range", "id": "pad_bottom", "label": "Padding base (px)", "min": 0, "max": 120, "step": 4, "default": 72 }
+  ],
+  "presets": [
+    { "name": "WX Detalhes" }
+  ]
+}
+{% endschema %}
