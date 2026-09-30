@@ -194,6 +194,9 @@ pub struct ToolContext {
     pub task_id: String,
     /// Diretorio de trabalho da tarefa; ferramentas nunca escrevem fora dele.
     pub workdir: std::path::PathBuf,
+    /// Prazo da chamada. A ferramenta que lanca processo o repassa ao processo: o motor
+    /// cortar so o futuro deixava o filho rodando (medido: `sleep 5` sobreviveu ao corte).
+    pub timeout: std::time::Duration,
 }
 
 pub trait Tool: Send + Sync {
@@ -201,8 +204,11 @@ pub trait Tool: Send + Sync {
     /// Capacidade que a politica tem de conceder para a ferramenta rodar
     /// (ex.: "web.browse", "web.search", "shell.exec", "fs.write", "doc.write").
     fn capability(&self) -> &'static str;
-    fn run<'a>(&'a self, args: Value, ctx: &'a ToolContext)
-    -> BoxFut<'a, Result<ToolOutput, ToolError>>;
+    fn run<'a>(
+        &'a self,
+        args: Value,
+        ctx: &'a ToolContext,
+    ) -> BoxFut<'a, Result<ToolOutput, ToolError>>;
 }
 
 /// Trunca texto para devolver ao modelo sem estourar o contexto, cortando em fronteira
@@ -212,7 +218,10 @@ pub fn truncate_for_model(text: &str, max_chars: usize) -> String {
         return text.to_owned();
     }
     let cut: String = text.chars().take(max_chars).collect();
-    format!("{cut}\n[... truncado: {} caracteres no total]", text.chars().count())
+    format!(
+        "{cut}\n[... truncado: {} caracteres no total]",
+        text.chars().count()
+    )
 }
 
 #[cfg(test)]

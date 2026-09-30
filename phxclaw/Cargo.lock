@@ -3702,6 +3702,19 @@ dependencies = [
 [[package]]
 name = "phxclaw-agent"
 version = "0.70.0"
+dependencies = [
+ "chrono",
+ "futures-util",
+ "phxclaw-agent-core",
+ "phxclaw-evidence-ledger",
+ "phxclaw-rustclaw-native",
+ "phxclaw-sandbox",
+ "phxclaw-types",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tokio",
+]
 
 [[package]]
 name = "phxclaw-agent-catalog"

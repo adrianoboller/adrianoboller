@@ -311,6 +311,83 @@ pub fn validate_schedule(schedule: &ScheduleSpec) -> Result<(), RustClawNativeEr
     }
 }
 
+/// Proxima execucao de um agendamento depois de `after` (UTC). Antes disto o modelo so
+/// VALIDAVA a expressao: nenhum agendamento chegava a disparar.
+///
+/// Cron de 5 campos (minuto hora dia mes dia-da-semana) com `*`, listas, faixas e passos
+/// (`*/15`, `1-5`, `0,30`). Dia-da-semana 0 ou 7 = domingo. Quando dia e dia-da-semana
+/// estao restritos os dois, basta um casar (regra do cron classico). Busca de minuto em
+/// minuto por ate 366 dias: expressao que nunca casa devolve None em vez de girar para sempre.
+pub fn next_fire(schedule: &ScheduleSpec, after: DateTime<Utc>) -> Option<DateTime<Utc>> {
+    use chrono::{Datelike, Duration, Timelike};
+    match schedule {
+        ScheduleSpec::EverySeconds(s) => Some(after + Duration::seconds(*s as i64)),
+        ScheduleSpec::CronExpression(expr) => {
+            let f: Vec<&str> = expr.split_whitespace().collect();
+            if f.len() != 5 {
+                return None;
+            }
+            let minutos = cron_field(f[0], 0, 59)?;
+            let horas = cron_field(f[1], 0, 23)?;
+            let dias = cron_field(f[2], 1, 31)?;
+            let meses = cron_field(f[3], 1, 12)?;
+            let mut semana = cron_field(f[4], 0, 7)?;
+            if semana[7] {
+                semana[0] = true;
+            }
+            let dia_restrito = f[2] != "*";
+            let semana_restrita = f[4] != "*";
+            let mut t = after.with_second(0)?.with_nanosecond(0)? + Duration::minutes(1);
+            for _ in 0..(366 * 24 * 60) {
+                let dia_ok = dias[t.day() as usize];
+                let sem_ok = semana[t.weekday().num_days_from_sunday() as usize];
+                let data_ok = match (dia_restrito, semana_restrita) {
+                    (true, true) => dia_ok || sem_ok,
+                    (true, false) => dia_ok,
+                    (false, true) => sem_ok,
+                    (false, false) => true,
+                };
+                if data_ok
+                    && meses[t.month() as usize]
+                    && horas[t.hour() as usize]
+                    && minutos[t.minute() as usize]
+                {
+                    return Some(t);
+                }
+                t += Duration::minutes(1);
+            }
+            None
+        }
+    }
+}
+
+fn cron_field(campo: &str, min: u32, max: u32) -> Option<Vec<bool>> {
+    let mut v = vec![false; max as usize + 1];
+    for parte in campo.split(',') {
+        let (faixa, passo) = match parte.split_once('/') {
+            Some((f, p)) => (f, p.parse::<u32>().ok().filter(|p| *p > 0)?),
+            None => (parte, 1),
+        };
+        let (a, b) = if faixa == "*" {
+            (min, max)
+        } else if let Some((a, b)) = faixa.split_once('-') {
+            (a.parse().ok()?, b.parse().ok()?)
+        } else {
+            let n: u32 = faixa.parse().ok()?;
+            (n, if parte.contains('/') { max } else { n })
+        };
+        if a < min || b > max || a > b {
+            return None;
+        }
+        let mut x = a;
+        while x <= b {
+            v[x as usize] = true;
+            x += passo;
+        }
+    }
+    Some(v)
+}
+
 // ── MCP compatibility ───────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -453,5 +530,37 @@ mod tests {
             rustclaw_legacy_tool_name("server.one", "weather tool"),
             "mcp_server_one_weather_tool"
         );
+    }
+
+    fn t(s: &str) -> DateTime<Utc> {
+        s.parse().unwrap()
+    }
+
+    #[test]
+    fn cron_calcula_a_proxima_execucao() {
+        let c = |e: &str| ScheduleSpec::CronExpression(e.into());
+        // a cada 15 min
+        assert_eq!(
+            next_fire(&c("*/15 * * * *"), t("2026-09-30T10:07:30Z")),
+            Some(t("2026-09-30T10:15:00Z"))
+        );
+        // dias uteis as 08:45 -- 2026-10-03 e sabado, pula para segunda 05/10
+        assert_eq!(
+            next_fire(&c("45 8 * * 1-5"), t("2026-10-02T09:00:00Z")),
+            Some(t("2026-10-05T08:45:00Z"))
+        );
+        // domingo como 7
+        assert_eq!(
+            next_fire(&c("0 12 * * 7"), t("2026-09-30T00:00:00Z")),
+            Some(t("2026-10-04T12:00:00Z"))
+        );
+        // estritamente depois: no proprio minuto nao dispara de novo
+        assert_eq!(
+            next_fire(&c("0 9 * * *"), t("2026-09-30T09:00:00Z")),
+            Some(t("2026-10-01T09:00:00Z"))
+        );
+        // 31 de fevereiro nunca existe: None, sem laco infinito
+        assert_eq!(next_fire(&c("0 0 31 2 *"), t("2026-01-01T00:00:00Z")), None);
+        assert_eq!(next_fire(&c("61 * * * *"), t("2026-01-01T00:00:00Z")), None);
     }
 }

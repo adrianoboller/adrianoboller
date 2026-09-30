@@ -200,6 +200,136 @@ impl SandboxBackend for BwrapSandbox {
     }
 }
 
+/// Comando avulso do agente dentro do bwrap, numa pasta de trabalho da tarefa que persiste
+/// entre chamadas (o equivalente do "computador" do agente). Mesmo isolamento dos plugins:
+/// sistema so leitura, sem rede por padrao, ambiente limpo, tudo fora de /work invisivel.
+#[derive(Debug, Clone)]
+pub struct WorkdirCommand {
+    pub workdir: PathBuf,
+    /// Linha de shell executada por /bin/sh -c dentro do sandbox.
+    pub script: String,
+    pub timeout: Duration,
+    /// Rede so quando a politica da tarefa conceder; o padrao e desligada.
+    pub network: bool,
+    /// Teto de bytes guardados de stdout e de stderr, cada um.
+    pub max_output_bytes: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkdirOutput {
+    pub exit_code: Option<i32>,
+    pub stdout: String,
+    pub stderr: String,
+    pub truncated: bool,
+}
+
+pub fn run_in_workdir(bwrap: &Path, cmd: &WorkdirCommand) -> Result<WorkdirOutput, SandboxError> {
+    use std::io::Read;
+    use std::process::Stdio;
+    fs::create_dir_all(&cmd.workdir)?;
+    let workdir = fs::canonicalize(&cmd.workdir)?;
+    let mut args: Vec<String> = vec![
+        "--die-with-parent".into(),
+        "--new-session".into(),
+        "--unshare-all".into(),
+    ];
+    if cmd.network {
+        args.push("--share-net".into());
+        // resolvedor de nomes: sem isto a rede concedida nao resolve nada
+        for f in [
+            "/etc/resolv.conf",
+            "/etc/hosts",
+            "/etc/ssl",
+            "/etc/ca-certificates",
+        ] {
+            if Path::new(f).exists() {
+                args.extend(["--ro-bind".into(), f.into(), f.into()]);
+            }
+        }
+    }
+    for system_path in [
+        "/usr",
+        "/bin",
+        "/lib",
+        "/lib64",
+        "/sbin",
+        "/etc/alternatives",
+    ] {
+        if Path::new(system_path).exists() {
+            args.extend(["--ro-bind".into(), system_path.into(), system_path.into()]);
+        }
+    }
+    args.extend([
+        "--proc".into(),
+        "/proc".into(),
+        "--dev".into(),
+        "/dev".into(),
+        "--tmpfs".into(),
+        "/tmp".into(),
+        "--bind".into(),
+        workdir.display().to_string(),
+        "/work".into(),
+        "--chdir".into(),
+        "/work".into(),
+        "--".into(),
+        "/bin/sh".into(),
+        "-c".into(),
+        cmd.script.clone(),
+    ]);
+    // Ambiente limpo e fixo: nada do processo pai (tokens, chaves) entra no sandbox.
+    let mut child = Command::new(bwrap)
+        .args(&args)
+        .env_clear()
+        .env("PATH", "/usr/local/bin:/usr/bin:/bin")
+        .env("HOME", "/work")
+        .env("LANG", "C.UTF-8")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    // stdout e stderr lidos em threads enquanto o processo roda: ler so no fim trava o
+    // filho quando ele enche o pipe (64 KiB) e vira timeout falso.
+    let limite = cmd.max_output_bytes;
+    let leitor = |mut r: Box<dyn Read + Send>| {
+        thread::spawn(move || {
+            let mut guardado = Vec::new();
+            let mut buf = [0u8; 8192];
+            let mut total = 0usize;
+            while let Ok(n) = r.read(&mut buf) {
+                if n == 0 {
+                    break;
+                }
+                total += n;
+                let cabe = limite.saturating_sub(guardado.len()).min(n);
+                guardado.extend_from_slice(&buf[..cabe]);
+            }
+            (guardado, total > limite)
+        })
+    };
+    let out = leitor(Box::new(child.stdout.take().expect("stdout piped")));
+    let err = leitor(Box::new(child.stderr.take().expect("stderr piped")));
+    let started = Instant::now();
+    let status = loop {
+        if let Some(status) = child.try_wait()? {
+            break status;
+        }
+        if started.elapsed() >= cmd.timeout {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(SandboxError::Timeout(cmd.timeout));
+        }
+        thread::sleep(Duration::from_millis(10));
+    };
+    let (o, ot) = out.join().unwrap_or_default();
+    let (e, et) = err.join().unwrap_or_default();
+    Ok(WorkdirOutput {
+        exit_code: status.code(),
+        stdout: String::from_utf8_lossy(&o).into_owned(),
+        stderr: String::from_utf8_lossy(&e).into_owned(),
+        truncated: ot || et,
+    })
+}
+
 fn find_in_path(program: &str) -> Option<PathBuf> {
     if program.contains(std::path::MAIN_SEPARATOR) {
         let path = PathBuf::from(program);
@@ -244,5 +374,81 @@ mod tests {
             "valor de variavel permitida apareceu no argv"
         );
         assert_eq!(plan.env, vec![("PATH".to_string(), valor)]);
+    }
+
+    fn cmd(dir: &Path, script: &str) -> WorkdirCommand {
+        WorkdirCommand {
+            workdir: dir.to_path_buf(),
+            script: script.into(),
+            timeout: Duration::from_secs(10),
+            network: false,
+            max_output_bytes: 1024,
+        }
+    }
+
+    fn bwrap() -> Option<PathBuf> {
+        find_in_path("bwrap")
+    }
+
+    #[test]
+    fn workdir_persiste_entre_chamadas_e_nada_fora_dele_aparece() {
+        let Some(b) = bwrap() else {
+            eprintln!("bwrap ausente: teste pulado");
+            return;
+        };
+        let dir = env::temp_dir().join(format!("phx-wd-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let r = run_in_workdir(&b, &cmd(&dir, "echo 42 > dado.txt && pwd")).unwrap();
+        assert_eq!(r.exit_code, Some(0), "{r:?}");
+        assert_eq!(r.stdout.trim(), "/work");
+        let r = run_in_workdir(&b, &cmd(&dir, "cat dado.txt; ls /home 2>&1 | head -1")).unwrap();
+        assert!(r.stdout.starts_with("42"), "{r:?}");
+        assert!(!r.stdout.contains("user"), "home do host visivel: {r:?}");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn sem_rede_e_sem_segredo_do_pai() {
+        let Some(b) = bwrap() else { return };
+        let dir = env::temp_dir().join(format!("phx-wd2-{}", std::process::id()));
+        // SAFETY de teste: variavel so deste processo de teste.
+        let r = run_in_workdir(&b, &cmd(&dir, "env; cat /proc/net/dev | wc -l")).unwrap();
+        assert!(
+            !r.stdout.contains("CARGO"),
+            "ambiente do pai vazou: {}",
+            r.stdout
+        );
+        // so a interface lo existe (2 linhas de cabecalho + lo)
+        assert!(r.stdout.trim().ends_with('3'), "rede visivel: {}", r.stdout);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn saida_grande_nao_trava_e_e_truncada() {
+        let Some(b) = bwrap() else { return };
+        let dir = env::temp_dir().join(format!("phx-wd3-{}", std::process::id()));
+        // 200 KiB em stderr: com leitura so no fim o filho travaria no pipe
+        let r = run_in_workdir(
+            &b,
+            &cmd(&dir, "head -c 204800 /dev/zero | tr '\\0' x >&2; echo fim"),
+        )
+        .unwrap();
+        assert_eq!(r.stdout.trim(), "fim");
+        assert!(r.truncated);
+        assert_eq!(r.stderr.len(), 1024);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn timeout_mata_o_processo() {
+        let Some(b) = bwrap() else { return };
+        let dir = env::temp_dir().join(format!("phx-wd4-{}", std::process::id()));
+        let mut c = cmd(&dir, "sleep 30");
+        c.timeout = Duration::from_millis(300);
+        assert!(matches!(
+            run_in_workdir(&b, &c),
+            Err(SandboxError::Timeout(_))
+        ));
+        let _ = fs::remove_dir_all(dir);
     }
 }
