@@ -230,7 +230,7 @@ pub fn plan_fanout(
             idempotency_key:format!("{}:{}",plan.idempotency_seed,id), risk:plan.risk.clone(), approval:resolved_approval.clone(),
             submitted_at:now, not_before:now, expires_at:plan.expires_at, fencing_token:inv.session_fencing_token,
         };
-        authorize_command(node,&cmd,&CommandPolicy{protected_capabilities:policy.protected_capabilities.clone(),max_ttl:plan.expires_at-plan.created_at})
+        authorize_command(node,&cmd,&CommandPolicy{protected_capabilities:policy.protected_capabilities.clone(),max_ttl:plan.expires_at-plan.created_at},now)
             .map_err(|_|ControlError::DeviceCommandDenied)?;
         out.push(cmd);
     }

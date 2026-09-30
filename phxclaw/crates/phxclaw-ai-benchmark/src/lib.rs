@@ -176,7 +176,7 @@ pub fn aggregate_profile(
         tool_accuracy_basis_points:if tools.is_empty(){None}else{Some(weighted_mean(&tools))}, structured_validity_basis_points:if structured.is_empty(){None}else{Some(weighted_mean(&structured))},
         p95_latency_ms:percentile95(latency), median_cost_micro_usd:median(costs), evidence_coverage_basis_points:coverage, profile_sha256:String::new(), observed_at_unix:now_unix, ttl_seconds,
     };
-    let canonical = serde_json::to_vec(&(&p.tenant_uuid,&p.provider_uuid,&p.model_id,&p.suite_uuid,p.task_family,p.complexity,p.evidence_class,&p.dataset_sha256,&p.scorer_sha256,&p.environment_sha256,p.sample_count,p.success_basis_points,p.quality_basis_points,p.tool_accuracy_basis_points,p.structured_validity_basis_points,p.p95_latency_ms,p.median_cost_micro_usd,p.evidence_coverage_basis_points,p.observed_at_unix,p.ttl_seconds)).expect("profile serialization");
+    let canonical = serde_json::to_vec(&((&p.tenant_uuid,&p.provider_uuid,&p.model_id,&p.suite_uuid,p.task_family,p.complexity,p.evidence_class,&p.dataset_sha256,&p.scorer_sha256,&p.environment_sha256),(p.sample_count,p.success_basis_points,p.quality_basis_points,p.tool_accuracy_basis_points,p.structured_validity_basis_points,p.p95_latency_ms,p.median_cost_micro_usd,p.evidence_coverage_basis_points,p.observed_at_unix,p.ttl_seconds))).expect("profile serialization");
     p.profile_sha256=sha256_hex(&canonical); Ok(p)
 }
 

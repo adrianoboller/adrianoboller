@@ -12,6 +12,7 @@ phxclaw-plugin-sdk = { path = "../phxclaw-plugin-sdk" }
 phxclaw-process-protocol = { path = "../phxclaw-process-protocol" }
 phxclaw-sandbox = { path = "../phxclaw-sandbox" }
 phxclaw-types = { path = "../phxclaw-types" }
+chrono.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true

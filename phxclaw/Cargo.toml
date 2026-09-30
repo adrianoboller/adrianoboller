@@ -140,7 +140,7 @@ ed25519-dalek = "2"
 enigo = "0.6.1"
 postgres = { version = "0.19", features = ["with-serde_json-1", "with-uuid-1", "with-chrono-0_4"] }
 quick-xml = { version = "0.38", features = ["serialize"] }
-reqwest = { version = "0.13", features = ["json", "multipart", "cookies", "blocking", "stream"] }
+reqwest = { version = "0.13", features = ["json", "multipart", "cookies", "blocking", "stream", "query", "form"] }
 semver = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

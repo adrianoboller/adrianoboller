@@ -274,7 +274,7 @@ impl ResearchPipeline {
         if !agent_instance.manifest.can_use_source(&task.source_name) {
             return Err(ResearchPipelineError::AgentSourceDenied {
                 agent: route.agent_name.clone(),
-                source: task.source_name.clone(),
+                source_id: task.source_name.clone(),
             });
         }
 
@@ -553,8 +553,8 @@ pub enum ResearchPipelineError {
     LiveBus(#[from] LiveBusError),
     #[error("logical agent disappeared after routing: {0}")]
     MissingAgent(Uuid),
-    #[error("agent {agent} is not allowed to use source {source}")]
-    AgentSourceDenied { agent: String, source: String },
+    #[error("agent {agent} is not allowed to use source {source_id}")]
+    AgentSourceDenied { agent: String, source_id: String },
 }
 
 #[cfg(test)]

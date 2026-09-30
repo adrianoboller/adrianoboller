@@ -136,7 +136,7 @@ impl SourceRegistry {
             .ok_or_else(|| SourceRegistryError::Unknown(name.into()))?;
         if !source.can_read(agent_name, capabilities) {
             return Err(SourceRegistryError::Denied {
-                source: name.into(),
+                source_id: name.into(),
                 agent: agent_name.into(),
             });
         }
@@ -192,7 +192,7 @@ impl SourceRegistry {
             .ok_or_else(|| SourceRegistryError::Unknown(name.into()))?;
         if !source.can_read(agent_name, capabilities) {
             return Err(SourceRegistryError::Denied {
-                source: name.into(),
+                source_id: name.into(),
                 agent: agent_name.into(),
             });
         }
@@ -410,8 +410,8 @@ pub enum SourceRegistryError {
     Unknown(String),
     #[error("duplicate knowledge source {0}")]
     Duplicate(String),
-    #[error("knowledge source {source} denied for agent {agent}")]
-    Denied { source: String, agent: String },
+    #[error("knowledge source {source_id} denied for agent {agent}")]
+    Denied { source_id: String, agent: String },
     #[error("offline copy unavailable for {0}")]
     OfflineUnavailable(String),
     #[error("knowledge source {0} has no endpoint")]

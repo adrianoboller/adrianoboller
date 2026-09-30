@@ -99,7 +99,8 @@ pub fn import_bpmn_xml(xml: &str) -> Result<BpmProcess, BpmError> {
     loop {
         match reader.read_event() {
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
-                let local = local_name(e.name().as_ref());
+                let qname = e.name();
+                let local = local_name(qname.as_ref());
                 if local == b"process" {
                     process.external_id = attr(&e, b"id")?;
                 } else if let Some(kind) = node_kind(local) {

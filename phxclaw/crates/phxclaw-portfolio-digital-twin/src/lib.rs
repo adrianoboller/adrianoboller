@@ -240,7 +240,7 @@ pub fn simulate(twin:&PortfolioTwin,s:&ScenarioSpec)->Result<PortfolioSimulation
         }
         let mut starts:BTreeMap<Uuid,f64>=BTreeMap::new(); let mut finishes:BTreeMap<Uuid,f64>=BTreeMap::new();
         for id in &order {
-            let d=*sampled_duration.get(id).unwrap(); let mut st=0.0;
+            let d=*sampled_duration.get(id).unwrap(); let mut st=0.0_f64;
             if let Some(deps)=incoming.get(id){ for dep in deps { let fs=*starts.get(&dep.from_project_uuid).unwrap(); let ff=*finishes.get(&dep.from_project_uuid).unwrap(); let candidate=match dep.dependency_type{DependencyType::FS=>ff+dep.lag_days,DependencyType::SS=>fs+dep.lag_days,DependencyType::FF=>ff+dep.lag_days-d,DependencyType::SF=>fs+dep.lag_days-d}; st=st.max(candidate.max(0.0)); } }
             starts.insert(*id,st); finishes.insert(*id,st+d);
         }

@@ -11,10 +11,10 @@ pub enum Severity { Low, Medium, High, Critical }
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all="snake_case")]
 pub enum IncidentState { Detected, Declared, Triaged, Mitigating, Recovering, Verifying, Resolved, Postmortem }
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all="snake_case")]
 pub enum Environment { Sandbox, Test, Staging, Production }
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all="snake_case")]
 pub enum FaultKind { ProviderUnavailable, AddedLatency, RateLimitPressure, QueueSaturation, ModelError, DatabaseReadOnly, NetworkPartitionSimulated }
 

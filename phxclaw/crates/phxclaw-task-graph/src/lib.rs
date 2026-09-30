@@ -281,7 +281,10 @@ impl TaskScheduler {
                         task_uuid: task.uuid,
                         status: TaskStatus::Pending,
                         attempts: 0,
-                        next_eligible_at: now,
+                        // Tarefa que nunca rodou nao tem backoff: nasce elegivel. Usar o relogio
+                        // interno aqui deixava Pending quem chamasse claim_ready com um `now`
+                        // tirado antes do new() -- o unico ponto que nao recebe o tempo injetado.
+                        next_eligible_at: DateTime::<Utc>::MIN_UTC,
                         approval: None,
                         active_run_uuid: None,
                         last_error: None,

@@ -133,7 +133,7 @@ pub struct DispatchLease {
     pub lease_sha256: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct DispatchInput<'a> {
     pub project: &'a ActiveProject,
     pub task: &'a ProjectTask,

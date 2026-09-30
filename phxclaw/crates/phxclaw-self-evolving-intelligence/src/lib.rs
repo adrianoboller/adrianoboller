@@ -239,7 +239,7 @@ mod tests {
     #[test]
     fn governed_unfruitful_blocks_exact_context() {
         let p=KnowledgePattern{pattern_uuid:Uuid::now_v7(),tenant_uuid:Uuid::now_v7(),project_uuid:Uuid::now_v7(),pattern_key:"x".into(),context_fingerprint_sha256:"ctx".into(),
-          promotion_state:PromotionState::Governed,evidence_class:EvidenceClass::Production,evidence_count:2,success_count:0,failure_count:3,reuse_count:0,confidence:.9,
+          promotion_state:PromotionState::Governed,evidence_class:EvidenceClass::Production,evidence_count:2,success_count:0,failure_count:3,reuse_count:0,confidence:0.9,
           root_cause:Some("bad context".into()),remediation:Some("retrieve more context".into()),safe_retry_conditions:Some("context complete".into()),fresh_until_epoch_s:100,
           source_state_sha256:"s".into(),evidence_sha256:"e".into()};
         assert!(unfruitful_guard_blocks(&p,"ctx",10));

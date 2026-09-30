@@ -561,7 +561,11 @@ mod tests {
             "../../../config/trust/plugin-signers.json"
         ))
         .unwrap();
-        PluginRegistry::new("0.3.0", root(), trust_store)
+        // A versao sai da constituicao: cravada aqui, envelheceu em 0.3.0 enquanto os manifestos pediam 0.5.
+        let constitution: serde_json::Value =
+            serde_json::from_str(include_str!("../../../config/constitution.json")).unwrap();
+        let api = constitution["plugin_api_version"].as_str().unwrap().to_owned();
+        PluginRegistry::new(api, root(), trust_store)
     }
 
     #[test]

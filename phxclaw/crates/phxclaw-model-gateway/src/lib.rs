@@ -319,6 +319,7 @@ mod tests {
             entrypoint: PluginEntrypoint { kind: "process".into(), value: "test".into() },
             dependencies: vec![],
             capabilities: vec!["model.chat".into()],
+            extension_points: vec![],
             permissions: vec![],
             lifecycle: PluginLifecycle {
                 install: "install".into(), enable: "enable".into(), disable: "disable".into(),
