@@ -113,8 +113,30 @@ def linhas_de_rust() -> int:
     return total
 
 
+def nomes_dos_crates() -> set:
+    """Os crates daqui: pasta de `crates/` COM `Cargo.toml`, pelo nome que ele
+    declara.
+
+    Pasta nao e crate. Contar pastas publicou «10 crates» e «-1 dependencias»
+    no dia em que `crates/phxzip-web/` entrou so com a tela (`ui/`), sem
+    `Cargo.toml` -- 30/09/2026. E a subtracao cega «pacotes do lock menos
+    pastas» vira negativa sem dizer nada.
+    """
+    nomes = set()
+    for d in (RAIZ / "crates").iterdir():
+        toml = d / "Cargo.toml"
+        if not toml.is_file():
+            continue
+        for linha in toml.read_text(encoding="utf-8").splitlines():
+            linha = linha.strip()
+            if linha.startswith("name") and "=" in linha:
+                nomes.add(linha.split("=", 1)[1].strip().strip('"'))
+                break
+    return nomes
+
+
 def quantos_crates() -> int:
-    return sum(1 for d in (RAIZ / "crates").iterdir() if d.is_dir())
+    return len(nomes_dos_crates())
 
 
 # A receita do LEIA-ME, na letra. Documento novo entra nos DOIS lugares.
@@ -185,7 +207,15 @@ def dependencias_externas() -> int:
     dizer isso em vez de continuar publicando o zero por habito.
     """
     lock = (RAIZ / "Cargo.lock").read_text(encoding="utf-8")
-    return lock.count("[[package]]") - quantos_crates()
+    daqui = nomes_dos_crates()
+    nomes = [
+        l.split("=", 1)[1].strip().strip('"')
+        for l in lock.splitlines()
+        if l.startswith("name = ")
+    ]
+    if len(nomes) != lock.count("[[package]]"):
+        raise SystemExit("Cargo.lock: um [[package]] sem `name = ` -- o leitor nao entende o arquivo")
+    return sum(1 for n in nomes if n not in daqui)
 
 
 def kib_da_interface() -> int:

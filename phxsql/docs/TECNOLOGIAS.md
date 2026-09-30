@@ -34,20 +34,20 @@ foi estimado no lugar de uma medição que faltou.
 <!-- GERADO: bloco_linguagens_rust() -->
 | crate | arquivos .rs | codigo | teste | comentario | vazias | total |
 |---|---:|---:|---:|---:|---:|---:|
-| `phxsql-cli` | 1 | 815 | 104 | 113 | 78 | 1110 |
+| `phxsql-cli` | 1 | 819 | 104 | 119 | 78 | 1120 |
 | `phxsql-cmd` | 2 | 618 | 110 | 207 | 65 | 1000 |
-| `phxsql-core` | 35 | 12189 | 5337 | 4274 | 1655 | 23455 |
+| `phxsql-core` | 35 | 12242 | 5374 | 4280 | 1659 | 23555 |
 | `phxsql-ffi` | 7 | 1465 | 1373 | 839 | 267 | 3944 |
 | `phxsql-odbc` | 7 | 3060 | 1258 | 1069 | 269 | 5656 |
-| `phxsql-server` | 62 | 53875 | 40881 | 30441 | 6401 | 131598 |
-| `phxsql-sql` | 10 | 7288 | 4040 | 2777 | 833 | 14938 |
-| `phxsql-store` | 27 | 17971 | 3969 | 7661 | 1912 | 31513 |
+| `phxsql-server` | 62 | 54492 | 42496 | 31177 | 6531 | 134696 |
+| `phxsql-sql` | 10 | 7329 | 4111 | 2839 | 841 | 15120 |
+| `phxsql-store` | 27 | 18353 | 4174 | 8136 | 1958 | 32621 |
 | `phxzip` | 9 | 3074 | 501 | 804 | 284 | 4663 |
-| **total** | **160** | **100355** | **57573** | **48185** | **11764** | **217877** |
+| **total** | **160** | **101452** | **59501** | **49470** | **11952** | **222375** |
 
-Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **57573/100355 = 0.57×**.
+Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **59501/101452 = 0.59×**.
 
-Alem do `src/`: **86** programas de medicao em `examples/` (21553 linhas — bancada em Rust, nao produto nem teste) e **93** arquivos em `tests/` de integracao fora de `src/` (34998 linhas).
+Alem do `src/`: **88** programas de medicao em `examples/` (22014 linhas — bancada em Rust, nao produto nem teste) e **98** arquivos em `tests/` de integracao fora de `src/` (36611 linhas).
 <!-- /GERADO -->
 
 A proporção teste/código sai medida no bloco acima, não digitada aqui. O
@@ -109,10 +109,10 @@ mesmo motivo que o rodapé já errou uma vez.
 | o que | onde | arquivos | linhas |
 |---|---|---:|---:|
 | JavaScript (prova ponta a ponta) | `testes-web/` | 58 | 12991 |
-| Python (bancada de medicao) | `bancada/` | 138 | 64797 |
-| Shell (empacotar, zelador, provas) | todo o repositorio | 24 | 3744 |
-| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 561 | 127223 |
-| Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | 38 | 17869 |
+| Python (bancada de medicao) | `bancada/` | 139 | 66437 |
+| Shell (empacotar, zelador, provas) | todo o repositorio | 24 | 3786 |
+| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 575 | 130198 |
+| Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | 38 | 17899 |
 
 A linha «Markdown (documentacao tecnica)» acima **exclui o proprio `docs/TECNOLOGIAS.md`** da contagem — ele e a SAIDA deste extrator, e contar a saida como entrada faz cada gravacao mudar o numero que a gravacao seguinte vai ler (pedido 404: tres corridas seguidas sem edicao nenhuma publicaram 106.750 -> 106.752 -> 106.753 linhas, nunca um ponto fixo). Mesmo molde da §17 da setima pagina de status, que escreve «— (esta pagina)» em vez de medir a si mesma.
 <!-- /GERADO -->
@@ -291,7 +291,7 @@ com o motivo escrito**, que é o que a cláusula realmente cobra.
 ### 4.2 Como se mediu
 
 <!-- GERADO: bloco_bancadas() -->
-`bancada/` tem **61** frentes de medicao (__pycache__, acid, alfanumerica, alter, arm, bateria, carga, catastrofes, catracas, cifra, cifra-do-fio, cluster, cobertura-da-tela, colmeia, comparacao, comparativo, concorrencia, conexoes, dblink, diretivas, dns-cloudflare, docker, durabilidade, embutido, exclusao, fts, gaps-sql, gestao, guardas, jobs, lgpd, manual, mvcc, odbc, pacote, particao-por-faixa, phxsql, pitr, profiler, proibidos, quorum, referencias, registro, replicacao, rest, rotinas, seguranca, sequencias, servermail, sql-exemplos, sqlite, telemetria, tomada, transacoes, uniao, usuarios, utilizacao-padrao, vagas-da-tela, vetorial, windows, zelador), das quais **43** documentam a propria metodologia em `LEIA-ME.md`.
+`bancada/` tem **59** frentes de medicao (acid, alfanumerica, alter, arm, bateria, carga, catastrofes, catracas, cifra, cifra-do-fio, cluster, cobertura-da-tela, colmeia, comparacao, comparativo, concorrencia, conexoes, dblink, diretivas, dns-cloudflare, docker, durabilidade, embutido, exclusao, fts, gaps-sql, gestao, guardas, jobs, lgpd, manual, mvcc, odbc, pacote, particao-por-faixa, pitr, profiler, proibidos, quorum, referencias, registro, replicacao, rest, rotinas, seguranca, sequencias, servermail, sql-exemplos, sqlite, telemetria, tomada, transacoes, uniao, usuarios, utilizacao-padrao, vagas-da-tela, vetorial, windows, zelador), das quais **43** documentam a propria metodologia em `LEIA-ME.md`.
 <!-- /GERADO -->
 
 A carga do lado do motor é
@@ -341,7 +341,7 @@ Conferidores em `crates/phxsql-server/src/`: `conferidor.rs`, `conferidor_botoes
 
 **27** catracas (`TETO*`) encontradas em `crates/phxsql-server/src/`.
 
-`bancada/guardas/catalogo.py` cataloga **406** defeitos repostos, contados de `len(GUARDAS)` depois de importar o modulo (nao por regex no texto -- entradas com `trocas` tem mais de um `{` cada, e uma contagem de chaves as conta em dobro ou mais). Linhas do arquivo: 14844. Refazer a prova: `python3 bancada/guardas/provar-guardas.py`.
+`bancada/guardas/catalogo.py` cataloga **453** defeitos repostos, contados de `len(GUARDAS)` depois de importar o modulo (nao por regex no texto -- entradas com `trocas` tem mais de um `{` cada, e uma contagem de chaves as conta em dobro ou mais). Linhas do arquivo: 16333. Refazer a prova: `python3 bancada/guardas/provar-guardas.py`.
 <!-- /GERADO -->
 
 - **Ponta a ponta, pelo navegador**: os arquivos `.mjs` de `testes-web/` —
@@ -546,7 +546,7 @@ defeito.
 ### 4.5 Testes, medidos agora
 
 <!-- GERADO: bloco_testes() -->
-`cargo test --workspace`: **2800** testes passaram, **0** falharam (medido em 2026-09-23 20:48:05, commit `f3abf54f`, do `CAPABILITIES.json`).
+`cargo test --workspace`: **3312** testes passaram, **0** falharam (medido em 2026-09-30 00:39:07, commit `0587c319`, do `CAPABILITIES.json`).
 <!-- /GERADO -->
 
 Esta é a única linha deste documento que muda legitimamente a cada rodada, e
@@ -616,7 +616,7 @@ proposta de voltar sem medição nova.
 ### 5.1 Pedidos recusados, do próprio `PENDENCIAS.md`
 
 <!-- GERADO: bloco_recusados() -->
-`docs/PENDENCIAS.md` tem **551** pedidos numerados; **99** trazem a palavra RECUSADO no proprio texto:
+`docs/PENDENCIAS.md` tem **570** pedidos numerados; **102** trazem a palavra RECUSADO no proprio texto:
 
 | # | pedido |
 |---:|---|
@@ -719,6 +719,9 @@ proposta de voltar sem medição nova.
 | 523 | **A recusa do 509 na biblioteca é por GRAFIA do caminho: pelo symlink ou por `dir/../dir` o mesmo diretório sincroniza Ok depois de um `fsync` recusado** |
 | 525 | **A `Sequence` gasta numero na linha recusada (FK desde o 514, CHECK e unicidade desde sempre): reservar e consumir depois da ultima guarda, como o `rownum` do 291** |
 | 529 | **Com cadastro grande, o `por_login` linear diz pelo relógio quem existe no `desafio` e na prova** |
+| 559 | **O prazo da transacao varre tambem a que esta em COMMIT: solta as travas de um COMMIT em curso, e o `devolver_a_lista` a devolve ATIVA, desfazendo o ABORT_ONLY** |
+| 560 | **A diretiva `ALTER … SET <campo sigiloso> = <palavra sem aspas>` sai crua no perfil e no anel — e o irmão pelo JSON (`diretiva_gravar` «valor», `config_gravar` «campos» com `alertas.email.senha`) também** |
+| 570 | **Trocar o nome por um link para FIFO entre o `lstat` e o `open` para o backup com a trava de dados na mão — e o `fsync` da cópia reabre pelo NOME, fora da trava** |
 <!-- /GERADO -->
 
 Os dois mais relevantes para este documento —

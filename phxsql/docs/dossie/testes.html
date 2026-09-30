@@ -102,10 +102,10 @@ footer{margin-top:52px;padding-top:20px;border-top:1px solid var(--linha);
   retrato que nunca existiu.</p>
 
   <div class="placar">
-    <div class="c"><div class="v">2.800</div><div class="r">testes</div></div>
-    <div class="c"><div class="v">272</div><div class="r">guardas</div></div>
+    <div class="c"><div class="v">3.312</div><div class="r">testes</div></div>
+    <div class="c"><div class="v">453</div><div class="r">guardas</div></div>
     <div class="c"><div class="v">33</div><div class="r">casos de tela</div></div>
-    <div class="c"><div class="v">29</div><div class="r">catracas</div></div>
+    <div class="c"><div class="v">33</div><div class="r">catracas</div></div>
     <div class="c"><div class="v">0</div><div class="r">dependências</div></div>
   </div>
 </header>
@@ -116,9 +116,9 @@ footer{margin-top:52px;padding-top:20px;border-top:1px solid var(--linha);
 <p class="sub"><code>cargo test --workspace</code>. É a camada mais barata e a
 mais rasa: ela prova que a função faz o que o autor dela achou que faz.</p>
 <div class="nota">
-  <b>2.800 testes</b> em 232.988 linhas de Rust, versão
-  <code>0.19.0</code>, commit <code>f3abf54</code>, 141 operações no
-  protocolo. Medido em 2026-09-23 20:48:05, por
+  <b>3.312 testes</b> em 281.115 linhas de Rust, versão
+  <code>0.19.0</code>, commit <code>0587c31</code>, 142 operações no
+  protocolo. Medido em 2026-09-30 00:39:07, por
   <code>docs/dossie/numeros-do-projeto.py</code>, que <b>aborta se o
   <code>cargo test</code> falhar</b>.
 </div>
@@ -129,7 +129,7 @@ mais rasa: ela prova que a função faz o que o autor dela achou que faz.</p>
 periodicamente. Teste que passa por engano é pior que teste que falta, e esta
 camada existe por causa disso.</p>
 <div class="nota">
-  <b>272 guardas</b> no catálogo (<code>bancada/guardas/catalogo.py</code>),
+  <b>453 guardas</b> no catálogo (<code>bancada/guardas/catalogo.py</code>),
   cada uma com o defeito reposto, o arquivo, o trecho e quais testes têm de cair.
   Roda por <code>python3 bancada/guardas/provar-guardas.py</code>.
 </div>
@@ -143,12 +143,12 @@ camada existe por causa disso.</p>
   <code>bancada/guardas/ultima-corrida.json</code>.
 </div>
 <div class="placar">
-  <div class="c"><div class="v">268</div><div class="r">provada</div></div>
+  <div class="c"><div class="v">320</div><div class="r">provada</div></div>
   <div class="c"><div class="v">4</div><div class="r">redundante</div></div>
   <div class="c"><div class="v">0</div><div class="r">quebrada</div></div>
-  <div class="c"><div class="v">0</div><div class="r">sem prova registrada</div></div>
+  <div class="c"><div class="v">129</div><div class="r">sem prova registrada</div></div>
 </div>
-<p class="sub">Datas da última prova: 2026-09-16 — 131 · 2026-09-17 — 11 · 2026-09-18 — 3 · 2026-09-24 — 127. <b>1 guarda(s) aposentada(s)</b> — no arquivo, fora do catálogo, não contam como provada: <code>cifra-do-fio-imposta</code>.</p>
+<p class="sub">Datas da última prova: 2026-09-16 — 123 · 2026-09-17 — 11 · 2026-09-18 — 3 · 2026-09-24 — 187. <b>1 guarda(s) aposentada(s)</b> — no arquivo, fora do catálogo, não contam como provada: <code>cifra-do-fio-imposta</code>.</p>
 <p class="sub">Toda guarda que <b>não</b> é PROVADA — o que ainda não se pode
 afirmar:</p>
 <div class="rolo">
@@ -159,6 +159,135 @@ afirmar:</p>
       <tr><td class="mono">nonce-sem-endereco</td><td><span class="veredito v-neutro"><span class="ic">≈</span>REDUNDANTE</span></td><td class="q mono">2026-09-16 15:25</td><td class="v">confirmado: tirar so o endereco do nonce tambem passa despercebido, porque o AAD carrega o ROWID. Medido em 03/09/2026: tirando o endereco d…</td></tr>
       <tr><td class="mono">rest-fecha-sem-escoar</td><td><span class="veredito v-neutro"><span class="ic">≈</span>REDUNDANTE</span></td><td class="q mono">2026-09-16 15:25</td><td class="v">confirmado: nenhum teste de unidade sente isto, e nao poderia -- o RST e do sistema operacional, e so aparece com um soquete de verdade. Que…</td></tr>
       <tr><td class="mono">recuperar-sem-reindexar</td><td><span class="veredito v-neutro"><span class="ic">≈</span>REDUNDANTE</span></td><td class="q mono">2026-09-16 15:25</td><td class="v">confirmado: nenhum teste de unidade pega este defeito. O indice so fica para tras quando o PROCESSO morre no meio da passada, e isso so acon…</td></tr>
+      <tr><td class="mono">fk-antes-do-default</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">fk-antes-do-default-pelo-servidor</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">cascata-sobre-calculada-na-declaracao</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">cascata-confere-a-filha-crua</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">literal-no-erro-do-sql</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">literal-no-erro-da-expressao</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">texto-sem-fechar-no-acessos-log</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">senha-sobra-no-erro-do-cadastro</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">senha-fora-de-aspas-simples-no-perfil</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">aspas-duplas-no-erro-de-sintaxe</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">duracao-citada-sem-teto</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">portao-da-senha-por-espaco</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">senha-depois-de-identified</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">parametros-irmaos-da-senha</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">portao-da-senha-pelos-simbolos</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">palavra-que-contem-a-senha</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">eco-do-sql-com-a-senha</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">jobs-json-antigo-derruba-o-arranque</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">job-recusado-roda-mesmo-assim</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">ficha-do-job-devolve-a-senha-do-disco</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">pbkdf2-normaliza-a-chave-a-cada-iteracao</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">conferir-sem-o-teto-da-senha</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">fachada-do-login-com-mil-iteracoes</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">inativo-pula-o-pbkdf2</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">prova-de-quem-nao-existe-sai-sem-conferir</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">login-sem-o-teto-da-senha</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">criar-usuario-sem-o-teto-da-senha</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">pulso-que-morre-fica-marcado</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">pulso-em-panico-sem-recuo</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">relogio-de-jobs-morto-diz-que-esta-no-ar</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">amostrador-morto-diz-que-esta-no-ar</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">job-corre-na-thread-de-servico</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">backup-corre-na-thread-de-servico</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">job-que-derrubou-roda-de-novo-no-arranque</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">backup-que-derrubou-roda-de-novo-no-arranque</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">lapide-do-futuro-empurra-o-job</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">lapide-do-futuro-empurra-o-backup</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">corrida-interrompida-nao-avisa</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">backup-agendado-falha-calado</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">dblink-ilegivel-derruba-o-motor</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">dblink-que-nao-se-le-abre-vazio</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">jobs-ilegivel-derruba-o-motor</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">core-leva-a-senha-do-cofre</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">catalogo-so-declara-token-nao-token-remoto</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">esquema-vaza-o-histograma-da-particao</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">dblink-mysql-sem-teto-de-colunas</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">dblink-mysql-sem-teto-do-quadro-acumulado</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">smtp-sem-teto-de-linhas-de-continuacao</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">por-login-para-no-primeiro-que-casa</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">fechar-baixa-o-byte-52-sem-fsync</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">atestado-sobrevive-a-escrita</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">atestado-pelo-caminho-e-nao-pelo-arquivo</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">atestado-de-antes-da-recusa-vale-depois</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">fts-fora-do-fecho-da-janela</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">reindexar-deixa-o-punho-velho-gravar</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">restauracao-nao-reconstroi-o-marcado</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">arranque-nao-reconstroi-o-marcado</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">atestado-fica-no-caminho-velho</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">renomear-esquece-o-atestado</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">fechar-do-embutido-nao-sincroniza</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">phx-reindexar-nao-reindexa</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">auto-referencia-pulada-no-excluir</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">auto-referencia-pulada-no-excluir-pelo-servidor</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">auto-laco-conta-como-filha</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">renomear-pula-a-auto-referencia</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">marca-do-disco-no-empilhar</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">upsert-solto-ressuscita-a-excluida</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">mescla-do-upsert-sobre-o-disco</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">elo-do-empilhar-pelo-disco</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">elo-implicito-sem-trava</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">ciclo-de-commits-sem-desempate</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">quem-cede-no-ciclo-segura-as-travas</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">aresta-velha-depois-do-savepoint</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">corrente-do-ciclo-atravessa-quem-nao-confirma</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">cascata-em-voo-ignorada-no-drop</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">cascata-em-voo-so-no-aplicar</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">recusa-do-fsync-por-grafia</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">dblink-mysql-lenenc-embrulha</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">dblink-pg-contagem-negativa</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">dblink-mysql-cadeia-alem-do-fim</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">job-dispara-job</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">smtp-sem-prazo-total-da-conversa</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">fts-nasce-com-permissao-aberta</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">conferir-fk-afirma-indice-sao-quando-marcado</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">procura-das-filhas-afirma-indice-sao-quando-marcado</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">backup-sem-fsync</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">backup-fsync-derruba-o-servidor</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">diff-null-na-chave-apaga-linha-irma</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">recusa-de-coluna-marcada-cita-o-valor</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">faixa-do-slot-cita-coluna-marcada</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">carga-colada-converte-sem-a-coluna</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">upsert-converte-sem-a-coluna</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">sql-vai-ao-perfil-com-o-literal</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">sql-vai-ao-perfil-com-o-literal-pelo-soquete</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">erro-do-sql-normalizado-vai-ao-arquivo</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">normaliza-o-que-nao-e-sql</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">transacoes-recuperadas-sem-sanear</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">transacoes-envenenadas-recusam-toda-conexao</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">trava-suja-sem-nome</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">esvaziar-lixeira-fora-do-ops-do-no</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">ops-do-no-fora-do-ops-escrita</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">normalizado-deixa-o-booleano-cru</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">sql-vai-ao-perfil-com-o-literal-na-bateria-do-497</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">expurgar-trilha-fora-do-ops-do-no</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">veneno-dito-uma-vez-por-trava</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">commit-ignora-o-prazo</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">old-do-before-update-pelo-disco</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">old-do-upsert-pelo-disco</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">old-do-before-delete-pelo-disco</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">elo-do-empilhar-sem-trava-de-linha</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">elo-do-empilhar-regrava-a-linha-inteira</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">cascata-solta-sem-marca</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">upsert-solto-cascateia-sem-marca</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">cascata-solta-com-o-punho-de-quem-chama-sujo</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">descida-do-punho-sem-o-fts</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">varredura-encerra-quem-confirma</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">devolver-desfaz-o-abort-only</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">subida-do-byte-52-sem-fsync</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">subida-do-byte-52-sincroniza-a-cada-pagina</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">arquivo-do-banco-nasce-aberto</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">diretorio-do-banco-nasce-aberto</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">arquivo-refeito-herda-o-modo-velho</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">copia-do-backup-nasce-aberta</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">base-antiga-sem-alerta</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">arranque-nao-alerta-a-base-antiga</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">backup-atravessa-link-plantado</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">base-por-link-cala-o-alerta</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">arranque-cala-o-alerta-da-base-por-link</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
+      <tr><td class="mono">ndx-novo-sobe-com-o-diretorio-vazio</td><td><span class="veredito v-falta"><span class="ic">—</span>SEM PROVA REGISTRADA</span></td><td class="q mono">—</td><td class="v">nao aparece na ultima corrida</td></tr>
     </tbody>
   </table>
 </div>
@@ -179,9 +308,12 @@ uma lista digitada aqui.</p>
       <tr><td class="mono">TETO_DA_CASCATA</td><td class="n mono">16</td><td class="mono peq">crates/phxsql-store/src/table.rs</td></tr>
       <tr><td class="mono">TETO_DA_CITACAO</td><td class="n mono">48</td><td class="mono peq">crates/phxsql-core/src/error.rs</td></tr>
       <tr><td class="mono">TETO_DA_FILA</td><td class="n mono">32</td><td class="mono peq">crates/phxsql-server/src/saude_do_disco.rs</td></tr>
+      <tr><td class="mono">TETO_DA_SENHA</td><td class="n mono">65.535</td><td class="mono peq">crates/phxsql-core/src/senha.rs</td></tr>
       <tr><td class="mono">TETO_DE_COLUNAS</td><td class="n mono">12</td><td class="mono peq">crates/phxsql-server/src/bidirecional.rs</td></tr>
+      <tr><td class="mono">TETO_DE_COLUNAS</td><td class="n mono">4.096</td><td class="mono peq">crates/phxsql-server/src/dblink/mod.rs</td></tr>
       <tr><td class="mono">TETO_DE_EVENTOS_POR_LOTE</td><td class="n mono">5.000</td><td class="mono peq">crates/phxsql-server/src/servidor.rs</td></tr>
       <tr><td class="mono">TETO_DE_LEITURA</td><td class="n mono">4.096</td><td class="mono peq">crates/phxsql-server/src/conferidor_segredos.rs</td></tr>
+      <tr><td class="mono">TETO_DE_LINHAS_DE_CONTINUACAO</td><td class="n mono">1.000</td><td class="mono peq">crates/phxsql-server/src/email.rs</td></tr>
       <tr><td class="mono">TETO_DO_APERTO</td><td class="n mono">64</td><td class="mono peq">crates/phxsql-core/src/fio.rs</td></tr>
       <tr><td class="mono">TETO_DO_CABECALHO</td><td class="n mono">400</td><td class="mono peq">crates/phxsql-server/src/profiler.rs</td></tr>
       <tr><td class="mono">TETO_DO_CAMPO</td><td class="n mono">120</td><td class="mono peq">crates/phxsql-server/src/profiler.rs</td></tr>
@@ -189,6 +321,7 @@ uma lista digitada aqui.</p>
       <tr><td class="mono">TETO_DO_LOTE_SERVIDO</td><td class="n mono">16</td><td class="mono peq">crates/phxsql-server/src/servidor.rs</td></tr>
       <tr><td class="mono">TETO_DO_REGISTRO</td><td class="n mono">128</td><td class="mono peq">crates/phxsql-core/src/fio.rs</td></tr>
       <tr><td class="mono">TETO_FRASE_REPETIDA</td><td class="n mono">0</td><td class="mono peq">crates/phxsql-server/src/conferidor.rs</td></tr>
+      <tr><td class="mono">TETO_FSYNC_DA_SUBIDA</td><td class="n mono">1</td><td class="mono peq">crates/phxsql-store/src/conferidor_fsync.rs</td></tr>
       <tr><td class="mono">TETO_FSYNC_POR_FECHO_V2</td><td class="n mono">8</td><td class="mono peq">crates/phxsql-store/src/conferidor_fsync.rs</td></tr>
       <tr><td class="mono">TETO_INVENTARIO_DESCASADO</td><td class="n mono">0</td><td class="mono peq">crates/phxsql-server/src/conferidor_inventario.rs</td></tr>
       <tr><td class="mono">TETO_JUNCAO</td><td class="n mono">500.000</td><td class="mono peq">crates/phxsql-server/src/servidor.rs</td></tr>
@@ -216,15 +349,15 @@ medida</b> em vez de sumir da tabela.</p>
     <tbody>
       <tr><td class="nome">Comparativo — o que falta aqui, contra quem tem<div class="prova">a mesma pergunta em quatro motores vivos, com um controle positivo que TODOS têm de recusar — e sonda de efeito, nunca «aceitou»</div></td><td class="q mono">2026-09-17T19:41:13</td><td class="v"><b>capacidades perguntadas</b> 19 · <b>faltam ou pela metade aqui</b> 1</td></tr>
       <tr><td class="nome">Cobertura da tela sobre o protocolo<div class="prova">as duas listas saem do código — as operações do array OPERACOES e os arquivos da tela dos include_str! do http.rs</div></td><td class="q mono">2026-09-09T06:26:06</td><td class="v"><b>operações no catálogo</b> 136 · <b>alcançadas pela tela</b> 109</td></tr>
-      <tr><td class="nome">Cluster — eleição e promoção<div class="prova">três nós de verdade, um SMTP falso, e a promoção acontecendo quando o master cai</div></td><td class="q mono">2026-09-24 04:55 <span class="mtime" title="a data saiu do mtime do arquivo, e nao do proprio resultado">(mtime)</span></td><td class="v"><b>promoção em</b> 4,3 s · <b>escrita aceita em</b> 4,3 s · <b>época do nó isolado</b> 1 · <b>linhas no fim</b> 3.801</td></tr>
+      <tr><td class="nome">Cluster — eleição e promoção<div class="prova">três nós de verdade, um SMTP falso, e a promoção acontecendo quando o master cai</div></td><td class="q mono">2026-09-23 22:32 <span class="mtime" title="a data saiu do mtime do arquivo, e nao do proprio resultado">(mtime)</span></td><td class="v"><b>promoção em</b> 4,3 s · <b>escrita aceita em</b> 4,3 s · <b>época do nó isolado</b> 1 · <b>linhas no fim</b> 3.801</td></tr>
       <tr><td class="nome">Replicação — quatro servidores<div class="prova">master e três espelhos no ar, com retrato SHA-256 de cada linha nos quatro</div></td><td class="q mono">2026-09-17</td><td class="v"><b>master</b> 45.117 linhas/s · <b>réplica aplica</b> 43.606 eventos/s · <b>alcance</b> 2,3 s · <b>os quatro iguais no fim</b> sim</td></tr>
       <tr><td class="nome">Replicação — credencial recusada não bloqueia o IP<div class="prova">um master e uma réplica com o hash errado, pelo soquete: a réplica tenta UMA vez e estaciona, o blacklist.json fica vazio e o operador do mesmo IP entra — com dois controles na mesma corrida: cinco logins errados da própria bancada continuam bloqueando o master, e a origem fora do ar continua sendo procurada com recuo crescente</div></td><td class="q mono">2026-09-17 02:36:30</td><td class="v"><b>tentativas da réplica</b> 1 · <b>bloqueou o IP</b> NÃO · <b>operador derrubado</b> NÃO · <b>recuo de rede</b> [1.0, 2.0, 4.0, 8.0] s</td></tr>
       <tr><td class="nome">Telemetria — quanto custa ligar a instrumentação<div class="prova">um servidor só, com o interruptor virado em tempo de execução a cada par curto e a ordem alternada — o custo sai do PISO de cada lado (o efeito é aditivo; a média mede o vizinho) e só é declarado quando o teste de sinal passa a 3 sigma. Carga que não resolve aparece como «dentro do ruído», com a contagem dos pares ao lado</div></td><td class="q mono">2026-09-16T20:48:33</td><td class="v"><b>carga da máquina na corrida</b> 6,5 · <b>linhas no pior caso</b> 200.000</td></tr>
       <tr><td class="nome">Transações — atomicidade pelo soquete<div class="prova">SIGKILL no meio de um COMMIT de 3.000 linhas, e o banco reaberto depois — a exigência não é «as 3.000 estão lá», é NUNCA METADE, com o relatório dizendo qual dos dois. E o portão se prova apagando a marca .tx: sem ela o banco volta pela metade, que é o preço da garantia aparecendo</div></td><td class="q mono">2026-09-07 09:06</td><td class="v"><b>conferências pelo soquete</b> 36 · <b>falhas</b> 0 · <b>linhas depois da queda</b> 3.001 · <b>ficou pela metade</b> NÃO</td></tr>
       <tr><td class="nome">PITR — restaurar a um instante, pelo soquete<div class="prova">a linha 3 é gravada DEPOIS do corte e tem de NÃO aparecer no restaurado — e o mesmo backup restaurado sem ate volta com uma linha só, que é o controle positivo na mesma corrida. Sem ele, uma restauração que devolvesse duas linhas por acaso passaria</div></td><td class="q mono">2026-09-18 11:30</td><td class="v"><b>conferências pelo soquete</b> 22 · <b>falhas</b> 0 · <b>eventos reaplicados</b> 2 · <b>pulados depois do corte</b> 1</td></tr>
       <tr><td class="nome">Quórum — o que custaria esperar as réplicas<div class="prova">esta não prova recurso: mede o PREÇO de uma decisão que ainda não foi tomada. Separa o que a bancada de replicação somava num número só — os 826 ms publicados lá são 99,9% sono do laço, e o transporte custa 0,475 ms. Tudo em localhost: é o PISO, e a rede real custa mais</div></td><td class="q mono">2026-09-17 02:40</td><td class="v"><b>gravar no master</b> 0,152 ms · <b>levar a uma réplica</b> 0,349 ms · <b>commit esperando 2 de 3</b> 3,04 × · <b>commit esperando 3 de 3</b> 3,56 ×</td></tr>
-      <tr><td class="nome">ACID — as quatro letras<div class="prova">cada afirmação com o controle da mesma corrida; o nível de isolamento sai medido, não citado</div></td><td class="q mono">2026-09-24 04:55 <span class="mtime" title="a data saiu do mtime do arquivo, e nao do proprio resultado">(mtime)</span></td><td class="v"><b>versao</b> phxsqld 0.18.0 (41e82efa97c8) x86_64-unknown-linux-gnu · <b>rapido</b> NÃO</td></tr>
-      <tr><td class="nome">Durabilidade — o fecho da janela<div class="prova">os `fsync` contados por `strace` contra o `phxsqld` de pé</div></td><td class="q mono">2026-09-24 04:55 <span class="mtime" title="a data saiu do mtime do arquivo, e nao do proprio resultado">(mtime)</span></td><td class="v"><b>defeito_confirmado_a</b> NÃO</td></tr>
+      <tr><td class="nome">ACID — as quatro letras<div class="prova">cada afirmação com o controle da mesma corrida; o nível de isolamento sai medido, não citado</div></td><td class="q mono">2026-09-23 22:32 <span class="mtime" title="a data saiu do mtime do arquivo, e nao do proprio resultado">(mtime)</span></td><td class="v"><b>versao</b> phxsqld 0.18.0 (41e82efa97c8) x86_64-unknown-linux-gnu · <b>rapido</b> NÃO</td></tr>
+      <tr><td class="nome">Durabilidade — o fecho da janela<div class="prova">os `fsync` contados por `strace` contra o `phxsqld` de pé</div></td><td class="q mono">2026-09-23 22:32 <span class="mtime" title="a data saiu do mtime do arquivo, e nao do proprio resultado">(mtime)</span></td><td class="v"><b>defeito_confirmado_a</b> NÃO</td></tr>
       <tr><td class="nome">Carga — uma a uma contra o lote<div class="prova">o custo da viagem de rede, separado do custo de gravar</div></td><td class="q mono">2026-08-29</td><td class="v"><b>quando</b> 2026-08-29 · <b>versao</b> 0.17.0 · <b>linhas</b> 20.000 · <b>por_lote</b> 5.000</td></tr>
       <tr><td class="nome">Os três motores a um milhão<div class="prova">PhxSql, MySQL® e SQLite® intercalados na MESMA rodada, porque medidas de dias diferentes carregam o ambiente junto</div></td><td class="q mono">2026-09-08 02:49:47</td><td class="v"><b>linhas</b> 1.000.000 · <b>operacoes_por_fase_pontual</b> 20.000 · <b>rodadas</b> 3 · <b>medido_em</b> 2026-09-08 02:49:47</td></tr>
       <tr><td class="nome">Índice de texto — o `.fts` contra a varredura<div class="prova">as duas faixas respondem a MESMA pergunta e devolvem o MESMO conjunto de rowids -- o medidor aborta se não baterem, e aborta se nenhuma busca achar linha</div></td><td class="q mono">2026-09-07T01:09:13</td><td class="v"><b>índice sobre varredura</b> 31399,1 (21164,6–33443,8) × · <b>busca pelo índice</b> 137,73 (129,06–212,67) µs · <b>preço na escrita</b> 5,67 (5,38–6,06) × · <b>linhas achadas (conjuntos idênticos)</b> 9.339</td></tr>
@@ -244,7 +377,7 @@ e o pior deles quebrava todo salvar e todo incluir pela tela.</p>
   <b>33 casos</b> em <code>testes-web/casos/</code>, quase todos nos dois
   temas, contra um <code>phxsqld</code> de verdade num navegador de verdade — sem
   maquete e sem mockup. E <b>186 botões</b> com clique gravado
-  (<code>testes-web/botoes-exercitados.txt</code>, 2026-09-24 04:55 (mtime)):
+  (<code>testes-web/botoes-exercitados.txt</code>, 2026-09-23 22:32 (mtime)):
   a evidência é escrita pela própria corrida, e só em corrida <b>inteira e
   verde</b>, porque uma corrida que cai no meio grava menos do que provou.
 </div>
@@ -324,7 +457,7 @@ diz onde não confiar.</p>
 </div>
 
 <footer>
-  Gerado por <code>docs/dossie/pagina-dos-testes.py</code> em 24/09/2026 04:58. Nenhum
+  Gerado por <code>docs/dossie/pagina-dos-testes.py</code> em 30/09/2026 01:01. Nenhum
   número desta página foi digitado: eles saem do <code>CAPABILITIES.json</code>,
   do catálogo de guardas cruzado com <code>ultima-corrida.json</code>, dos
   <code>resultados.json</code> das bancadas, de <code>ultima-bateria.json</code>
