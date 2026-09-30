@@ -15755,13 +15755,13 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "trecho": """        if !self.dado_pessoal.e_pessoal() {
             return e;
         }
-        let redigida = |motivo: &str| {
+        self.redigir(e, None)
 """,
         "troca": """        // DEFEITO REPOSTO (464): a recusa sai como o conversor a escreveu.
         if true {
             return e;
         }
-        let redigida = |motivo: &str| {
+        self.redigir(e, None)
 """,
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
@@ -15773,6 +15773,85 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         ],
         "seguem": [
             "servidor::testes_recusa_sem_dado_pessoal::a_coluna_sem_marca_continua_citando_o_valor",
+        ],
+    },
+    {
+        "id": "dblink-empurra-valor-pela-regua-de-nome",
+        "titulo": "O DbLink empurra valor de texto pela régua de NOME de objeto",
+        "porque": (
+            "pedido 556: o `valor_para_sql` citava `Str`/`Memo` pelo `literal` do "
+            "catalogo, que passa pelo `nome_seguro`. «D'Avila», todo Memo com "
+            "quebra de linha e todo texto acima de 128 bytes recusavam o "
+            "empurrao citando o valor INTEIRO (ao `acessos.log`, sem teto), e "
+            "«Ana » subia como «Ana». O valor sai agora pelo `Motor::texto`, "
+            "numa forma que nao depende do modo do servidor de la."
+        ),
+        "arquivo": "crates/phxsql-server/src/dblink/sincronia.rs",
+        "trecho": """        Value::Str(t) | Value::Memo(t) => motor.texto(t)?,
+""",
+        "troca": """        // DEFEITO REPOSTO (556): valor pela regua de nome.
+        Value::Str(t) | Value::Memo(t) => super::literal(t)?,
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_dblink_valor_no_fio::o_empurrao_leva_o_valor_byte_a_byte_sem_regua_de_nome",
+            "dblink::sincronia::testes::texto_de_valor_sobe_inteiro_no_dialeto_de_cada_um",
+        ],
+        "seguem": [
+            "servidor::testes_dblink_valor_no_fio::a_celula_remota_recusada_nao_sai_citada",
+            "dblink::sincronia::testes::decimal_negativo_menor_que_um_leva_o_sinal_emprestado",
+        ],
+    },
+    {
+        "id": "dblink-puxar-cita-a-celula-remota",
+        "titulo": "O DbLink, ao puxar, cita na recusa a célula do outro banco",
+        "porque": (
+            "pedido 557: `linha_remota_para_negocio` chamava o `valor_de_texto` "
+            "sem a porta do 464, e a celula que nao servia ao tipo local saia "
+            "citada -- `data invalida: \"999.888.777-66\"` --, dado de um "
+            "titular de la que ninguem digitou aqui. Agora passa pelo "
+            "`Column::recusa_sem_valor`, que redige sempre e da o tamanho."
+        ),
+        "arquivo": "crates/phxsql-server/src/dblink/sincronia.rs",
+        "trecho": """            (Some(t), ty) => valor_de_texto(t, ty).map_err(|e| col.recusa_sem_valor(e, t.len()))?,
+""",
+        "troca": """            // DEFEITO REPOSTO (557): a recusa sai como o conversor a escreveu.
+            (Some(t), ty) => valor_de_texto(t, ty)?,
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_dblink_valor_no_fio::a_celula_remota_recusada_nao_sai_citada",
+            "dblink::sincronia::testes::a_celula_puxada_recusa_sem_valor_e_o_texto_chega_inteiro",
+        ],
+        "seguem": [
+            "servidor::testes_dblink_valor_no_fio::o_empurrao_leva_o_valor_byte_a_byte_sem_regua_de_nome",
+        ],
+    },
+    {
+        "id": "dblink-puxar-apara-o-texto",
+        "titulo": "O DbLink, ao puxar, apara o texto e troca o vazio por nulo",
+        "porque": (
+            "pedido 556, o lado do DBA: a celula de texto passava pelo "
+            "`valor_de_texto` da carga colada, que faz `trim` e le o vazio como "
+            "nulo. «Ana » chegava «Ana», e com o empurrao levando «Ana » inteira "
+            "a rodada seguinte veria conflito na mesma linha para sempre."
+        ),
+        "arquivo": "crates/phxsql-server/src/dblink/sincronia.rs",
+        "trecho": """            (Some(t), ColumnType::Str(_)) => Value::Str(t.clone()),
+            (Some(t), ColumnType::Memo) => Value::Memo(t.clone()),
+""",
+        "troca": """            // DEFEITO REPOSTO (556): texto pela carga colada, aparado.
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "dblink::sincronia::testes::a_celula_puxada_recusa_sem_valor_e_o_texto_chega_inteiro",
+        ],
+        "seguem": [
+            "servidor::testes_dblink_valor_no_fio::a_celula_remota_recusada_nao_sai_citada",
+            "servidor::testes_dblink_valor_no_fio::o_empurrao_leva_o_valor_byte_a_byte_sem_regua_de_nome",
         ],
     },
     {

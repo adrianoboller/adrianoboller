@@ -32,7 +32,7 @@ use phxsql_core::value::Value;
 use phxsql_store::table::Table;
 
 use super::conexao::Coluna;
-use super::{entre_crases, literal};
+use super::{entre_crases, Motor};
 
 /// Para onde o dado anda.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -280,10 +280,20 @@ pub fn linha_remota_para_negocio(
                 esquema.colunas()[*pos].nome
             )));
         };
-        let ty = &esquema.colunas()[*pos].ty;
-        linha.push(match &remota[de] {
-            None => Value::Null,
-            Some(t) => valor_de_texto(t, ty)?,
+        let col = &esquema.colunas()[*pos];
+        linha.push(match (&remota[de], &col.ty) {
+            (None, _) => Value::Null,
+            // Texto chega como veio, sem o `trim` nem o «vazio vira nulo» da
+            // carga colada (pedido 556): aqui o fio ja distingue NULL de '', e
+            // aparar faria o puxar gravar «Ana» onde la esta «Ana » -- e, com
+            // o empurrao levando «Ana » inteira, a rodada seguinte veria
+            // conflito na mesma linha para sempre.
+            (Some(t), ColumnType::Str(_)) => Value::Str(t.clone()),
+            (Some(t), ColumnType::Memo) => Value::Memo(t.clone()),
+            // A recusa passa pela porta do 464, e SEMPRE redigida (pedido
+            // 557): a celula e de um titular do outro banco, que ninguem
+            // digitou aqui, e o erro vai ao `acessos.log` e ao `jobs.log`.
+            (Some(t), ty) => valor_de_texto(t, ty).map_err(|e| col.recusa_sem_valor(e, t.len()))?,
         });
     }
     Ok(linha)
@@ -315,8 +325,13 @@ pub fn mapa_de_colunas(esquema: &Schema, remotas: &[Coluna]) -> Result<Vec<(usiz
     Ok(mapa)
 }
 
-/// O texto SQL de um `Value`, para o INSERT do empurrao.
-pub fn valor_para_sql(v: &Value, ty: &ColumnType) -> Result<String> {
+/// O texto SQL de um `Value`, para o INSERT do empurrao, no dialeto de la.
+///
+/// Texto e identificador canonico saem pelo `Motor::texto`, a funcao unica de
+/// citar VALOR (pedido 556). Ate aqui eles passavam pelo `literal` do
+/// catalogo, que e regua de NOME: recusava «D'Avila» e todo Memo de varias
+/// linhas citando o valor inteiro na recusa, e aparava «Ana » calado.
+pub fn valor_para_sql(v: &Value, ty: &ColumnType, motor: Motor) -> Result<String> {
     Ok(match v {
         Value::Null => "NULL".into(),
         Value::Bool(b) => if *b { "1" } else { "0" }.into(),
@@ -359,11 +374,11 @@ pub fn valor_para_sql(v: &Value, ty: &ColumnType) -> Result<String> {
             format!("'{:02}:{:02}:{:02}'", s / 3600, (s / 60) % 60, s % 60)
         }
         Value::DateTime(ms) => format!("'{}'", instante_iso(*ms).replace(',', ".")),
-        Value::Str(t) | Value::Memo(t) => literal(t)?,
+        Value::Str(t) | Value::Memo(t) => motor.texto(t)?,
         // Os identificadores viajam como o texto canonico deles: o outro lado
         // nao tem tipo UUID garantido, e qualquer VARCHAR os recebe.
-        Value::Uuid(u) => literal(&u.to_string())?,
-        Value::Uuid256(u) => literal(&u.to_string())?,
+        Value::Uuid(u) => motor.texto(&u.to_string())?,
+        Value::Uuid256(u) => motor.texto(&u.to_string())?,
         Value::Bin(b) => {
             let mut s = String::with_capacity(2 + b.len() * 2);
             s.push_str("0x");
@@ -501,6 +516,7 @@ pub fn aplicar_para_ca(
 /// O ON DUPLICATE e o que torna a rodada REENTRAVEL: cair no meio e recomecar
 /// grava a mesma linha de novo e nada dobra.
 pub fn sql_do_empurrao(
+    motor: Motor,
     tabela_remota: &str,
     colunas: &[(String, ColumnType)],
     linhas: &[Vec<Value>],
@@ -517,8 +533,16 @@ pub fn sql_do_empurrao(
         let mut valores = Vec::with_capacity(lote.len());
         for l in lote {
             let mut celulas = Vec::with_capacity(colunas.len());
-            for (i, (_, ty)) in colunas.iter().enumerate() {
-                celulas.push(valor_para_sql(&l[i], ty)?);
+            for (i, (nome, ty)) in colunas.iter().enumerate() {
+                // A recusa do literal nao cita o valor; aqui ganha a coluna,
+                // que e o que diz a quem le onde procurar.
+                celulas.push(valor_para_sql(&l[i], ty, motor).map_err(|e| match e {
+                    PhxError::Tipo(d) => PhxError::Tipo(format!(
+                        "coluna {nome:?} nao sobe para {}: {d}",
+                        motor.nome()
+                    )),
+                    outro => outro,
+                })?);
             }
             valores.push(format!("({})", celulas.join(",")));
         }
@@ -735,27 +759,97 @@ mod testes {
             precisao: 10,
             escala: 2,
         };
-        assert_eq!(valor_para_sql(&Value::Decimal(-50), &ty).unwrap(), "-0.50");
         assert_eq!(
-            valor_para_sql(&Value::Decimal(-1250), &ty).unwrap(),
+            valor_para_sql(&Value::Decimal(-50), &ty, Motor::MySql).unwrap(),
+            "-0.50"
+        );
+        assert_eq!(
+            valor_para_sql(&Value::Decimal(-1250), &ty, Motor::MySql).unwrap(),
             "-12.50"
         );
-        assert_eq!(valor_para_sql(&Value::Decimal(1250), &ty).unwrap(), "12.50");
-        assert_eq!(valor_para_sql(&Value::Decimal(305), &ty).unwrap(), "3.05");
+        assert_eq!(
+            valor_para_sql(&Value::Decimal(1250), &ty, Motor::MySql).unwrap(),
+            "12.50"
+        );
+        assert_eq!(
+            valor_para_sql(&Value::Decimal(305), &ty, Motor::MySql).unwrap(),
+            "3.05"
+        );
     }
 
+    /// Pedido 556: valor e dado, nao nome. Com a regua de nome de volta, a
+    /// aspa, a contrabarra, a quebra de linha e o NUL recusam citando o
+    /// valor, e «Ana » perde o espaco.
     #[test]
-    fn texto_com_aspa_recusa_em_vez_de_escapar() {
-        // A mesma decisao do modulo: escapar depende do modo do outro
-        // servidor (NO_BACKSLASH_ESCAPES), entao texto que emendaria SQL e
-        // recusado com erro claro -- nunca emendado. O limite esta no
-        // DBLINK.md; se um dia cair, e por decisao, nao por acidente.
-        let ty = ColumnType::Str(60);
-        assert!(valor_para_sql(&Value::Str("Sant'Ana".into()), &ty).is_err());
-        assert_eq!(
-            valor_para_sql(&Value::Str("Blumenau".into()), &ty).unwrap(),
-            "'Blumenau'"
+    fn texto_de_valor_sobe_inteiro_no_dialeto_de_cada_um() {
+        let ty = ColumnType::Memo;
+        let dificil = "D'Avila \\' \n\r\0 fim ";
+        // MySQL(R): hexadecimal, que se desfaz nos mesmos bytes.
+        let m = valor_para_sql(&Value::Memo(dificil.into()), &ty, Motor::MySql).unwrap();
+        let hex = m
+            .strip_prefix("_utf8mb4 X'")
+            .and_then(|r| r.strip_suffix('\''))
+            .unwrap_or_else(|| panic!("forma errada: {m}"));
+        let bytes: Vec<u8> = (0..hex.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap())
+            .collect();
+        assert_eq!(bytes, dificil.as_bytes());
+        // PhxSql: o lexico daqui le de volta o mesmo texto.
+        let p = valor_para_sql(&Value::Str(dificil.into()), &ty, Motor::Phx).unwrap();
+        let s = phxsql_sql::lexico::analisar(&p).unwrap();
+        assert!(
+            matches!(&s[0].token, phxsql_sql::lexico::Token::Texto(t) if t == dificil),
+            "{p} -> {:?}",
+            s[0].token
         );
+        // PostgreSQL(R): forma E, e o NUL recusa sem citar o valor.
+        let sem_nul = "D'Avila \\' \n fim ";
+        assert_eq!(
+            valor_para_sql(&Value::Str(sem_nul.into()), &ty, Motor::Postgres).unwrap(),
+            "E'D''Avila \\\\'' \n fim '"
+        );
+        let e = valor_para_sql(&Value::Str(dificil.into()), &ty, Motor::Postgres)
+            .unwrap_err()
+            .to_string();
+        assert!(!e.contains("Avila") && e.contains("bytes"), "{e}");
+        // Vazio e vazio, nao recusa de «nome vazio».
+        assert_eq!(
+            valor_para_sql(&Value::Str(String::new()), &ty, Motor::MySql).unwrap(),
+            "''"
+        );
+    }
+
+    /// Pedido 557: a celula remota que nao serve ao tipo local recusa sem
+    /// citar o valor, mesmo em coluna sem marca; e o texto chega sem aparar.
+    #[test]
+    fn a_celula_puxada_recusa_sem_valor_e_o_texto_chega_inteiro() {
+        let colunas = vec![
+            col("id", "INT", 11, 0, true),
+            col("nasc", "DATE", 10, 0, false),
+            col("nome", "VARCHAR", 240, 0, false),
+        ];
+        let (esq, _) = esquema_local_de("c", &colunas).unwrap();
+        let negocio = posicoes_de_negocio(&esq);
+        let mapa = mapa_de_colunas(&esq, &colunas).unwrap();
+        let e = linha_remota_para_negocio(
+            &esq,
+            &negocio,
+            &mapa,
+            &[Some("1".into()), Some("999.888.777-66".into()), None],
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(!e.contains("999"), "citou a celula remota: {e}");
+        assert!(e.contains("\"nasc\"") && e.contains("14 bytes"), "{e}");
+        let l = linha_remota_para_negocio(
+            &esq,
+            &negocio,
+            &mapa,
+            &[Some("1".into()), None, Some(" Ana ".into())],
+        )
+        .unwrap();
+        assert_eq!(l[2], Value::Str(" Ana ".into()));
     }
 
     #[test]
@@ -765,7 +859,7 @@ mod testes {
             ("nome".to_string(), ColumnType::Str(60)),
         ];
         let linhas = vec![linha(1, "a"), linha(2, "b"), linha(3, "c")];
-        let sqls = sql_do_empurrao("clientes", &colunas, &linhas, 2).unwrap();
+        let sqls = sql_do_empurrao(Motor::MySql, "clientes", &colunas, &linhas, 2).unwrap();
         assert_eq!(sqls.len(), 2, "3 linhas em lotes de 2 sao 2 comandos");
         for sql in &sqls {
             // E o ON DUPLICATE que deixa a rodada cair no meio e recomecar.
@@ -775,7 +869,11 @@ mod testes {
                 "{sql}"
             );
         }
-        assert!(sqls[0].contains("(1,'a'),(2,'b')"));
-        assert!(sqls[1].contains("(3,'c')"));
+        assert!(
+            sqls[0].contains("(1,_utf8mb4 X'61'),(2,_utf8mb4 X'62')"),
+            "{}",
+            sqls[0]
+        );
+        assert!(sqls[1].contains("(3,_utf8mb4 X'63')"), "{}", sqls[1]);
     }
 }

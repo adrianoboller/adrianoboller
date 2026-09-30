@@ -977,9 +977,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `carga-adiada-orfa-sem-reconstruir` | a carga adiada que sai sem o `bulkinsert(false)` (conexão caída, reserva vencida) deixa o índice suspenso até o próximo arranque | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**332 das 501 guardas do catálogo: 1 aposentada, 327 provadas, 4 redundantes** — 9057 s de mutação, medido em 2026-09-16 15:25.
+**332 das 504 guardas do catálogo: 1 aposentada, 327 provadas, 4 redundantes** — 9057 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 170 das 501 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 170 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 173 das 504 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 173 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
@@ -1091,6 +1091,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `backup-fsync-derruba-o-servidor` — o `fsync` recusado no DESTINO DE UM BACKUP derruba o servidor inteiro
 - `diff-null-na-chave-apaga-linha-irma` — o `diff` com NULL repetido no indice some com linhas do relatorio
 - `recusa-de-coluna-marcada-cita-o-valor` — A recusa de conversão cita o valor curto de coluna marcada como dado pessoal
+- `dblink-empurra-valor-pela-regua-de-nome` — O DbLink empurra valor de texto pela régua de NOME de objeto
+- `dblink-puxar-cita-a-celula-remota` — O DbLink, ao puxar, cita na recusa a célula do outro banco
+- `dblink-puxar-apara-o-texto` — O DbLink, ao puxar, apara o texto e troca o vazio por nulo
 - `faixa-do-slot-cita-coluna-marcada` — A faixa do tipo, conferida no slot, cita o número de coluna marcada
 - `carga-colada-converte-sem-a-coluna` — A carga colada converte a célula sem a marca da coluna
 - `upsert-converte-sem-a-coluna` — O `atualizar` do upsert converte o valor sem a marca da coluna
