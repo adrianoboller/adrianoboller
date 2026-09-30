@@ -1581,3 +1581,262 @@ fn as_constantes_do_cabecalho_batem_com_as_do_rust() {
     }
     assert!(conferidas > 50, "so conferi {conferidas} constantes");
 }
+
+// ============================================================ pedido 563
+
+/// O aviso que a sonda do 563 escreve no erro padrao quando PARA no meio da
+/// cascata -- e o «pronto» que o pai espera antes do `SIGKILL`.
+#[cfg(debug_assertions)]
+const AVISO_563: &str = "PHXSQL pausa de teste no meio da cascata do embutido (pedido 563)";
+
+/// A mae `clientes` (id 5) e a filha `pedidos` com DUAS linhas apontando
+/// para ela, montadas pelo motor: a ABI nao declara chave estrangeira. Devolve
+/// o diretorio do database e os rowids das duas filhas.
+#[cfg(debug_assertions)]
+fn montar_mae_e_filhas_563(area: &Area) -> (PathBuf, u64, u64) {
+    use phxsql_core::schema::{AcaoRi, Column, ForeignKey, IndexColumn, IndexDef, Schema};
+    use phxsql_core::types::ColumnType;
+    let inst = Instancia::nova(&area.0).unwrap();
+    let db = inst.garantir_database("app").unwrap();
+    let mae = Schema::new(
+        "clientes",
+        vec![
+            Column::new("id", ColumnType::Int4).obrigatoria(),
+            Column::new("nome", ColumnType::Str(40)),
+        ],
+        vec![IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico()],
+    )
+    .unwrap();
+    let mut m = db.criar_tabela(None, mae).unwrap();
+    let r = m
+        .inserir(&[Value::Int(5), Value::Str("Ana".into())])
+        .unwrap();
+    assert_eq!(r, 1, "a sonda troca a chave do rowid 1");
+    m.sincronizar().unwrap();
+    drop(m);
+    let filha = Schema::new(
+        "pedidos",
+        vec![
+            Column::new("id", ColumnType::Int4).obrigatoria(),
+            Column::new("cliente_id", ColumnType::Int4),
+        ],
+        vec![
+            IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico(),
+            IndexDef::new("porCliente", vec![IndexColumn::asc(1)]),
+        ],
+    )
+    .unwrap()
+    .com_chaves_estrangeiras(vec![ForeignKey::new(
+        "fk_cliente",
+        vec![1],
+        "clientes",
+        vec!["id".into()],
+    )
+    .ao_alterar(AcaoRi::Cascata)
+    .conferindo(true)])
+    .unwrap();
+    let mut f = db.criar_tabela(None, filha).unwrap();
+    let p1 = f.inserir(&[Value::Int(10), Value::Int(5)]).unwrap();
+    let p2 = f.inserir(&[Value::Int(11), Value::Int(5)]).unwrap();
+    f.sincronizar().unwrap();
+    (db.caminho().to_path_buf(), p1, p2)
+}
+
+/// Para onde as duas filhas apontam, e quantas o indice acha em 5 e em 6 --
+/// relidos do disco por um punho novo do motor, com a base fechada.
+#[cfg(debug_assertions)]
+fn filhas_563(dir: &std::path::Path, p1: u64, p2: u64) -> (Vec<Value>, usize, usize) {
+    let mut f = Table::abrir(dir, "pedidos").unwrap();
+    let aponta = [p1, p2]
+        .iter()
+        .map(|&r| f.ler(r).unwrap().unwrap()[1].clone())
+        .collect();
+    let em = |f: &mut Table, v: i64| {
+        f.buscar("porCliente", &[Value::Int(v)])
+            .map(|x| x.len())
+            .unwrap_or(usize::MAX)
+    };
+    let (cinco, seis) = (em(&mut f, 5), em(&mut f, 6));
+    (aponta, cinco, seis)
+}
+
+/// Abre a base pela porta do embutido -- e ela que completa a marca -- e
+/// fecha em seguida.
+#[cfg(debug_assertions)]
+unsafe fn abrir_e_fechar_a_base(area: &Area) -> i32 {
+    let caminho = area.txt();
+    let mut base: *mut Punho<BaseFFI> = std::ptr::null_mut();
+    let (p, t) = par(&caminho);
+    let (n, nt) = par("app");
+    let r = phx_base_abrir(p, t, n, nt, 0, &mut base);
+    if r == PHX_OK {
+        assert_eq!(phx_base_fechar(base), PHX_OK);
+    }
+    r
+}
+
+/// **Pedido 563, contra o SO: `SIGKILL` no meio da cascata do embutido.**
+///
+/// A sonda -- este binario, reexecutado -- abre a base pela ABI e manda o
+/// `phx_atualizar` trocar a chave da mae de 5 para 6. A cascata PARA depois
+/// da primeira filha (`Ponto::CascataEntreFilhas`), diz o aviso e dorme; o
+/// pai da `Child::kill()`, que e `SIGKILL` de verdade: nenhum `Drop`, nenhum
+/// desenrolar. O disco fica com a mae em 6, a filha 1 em 6 e a filha 2 em 5.
+///
+/// O pai reabre pela porta do embutido e confere as filhas: `[6, 6]`, e o
+/// indice acha as duas em 6 e nenhuma em 5.
+///
+/// # Prova real
+///
+/// Sem a marca (o `gravar_a_marca_da_cascata` sem o `gravar_marca`), a
+/// abertura nao tem o que completar, o passe do indice marcado (522)
+/// reconstroi o `.ndx` da filha com a orfa dentro, e sai `[6, 5]` -- com o
+/// indice achando uma em 5, apontando para a mae que ja nao existe. E o
+/// defeito do 563, medido.
+#[cfg(all(unix, debug_assertions))]
+#[test]
+fn sigkill_no_meio_da_cascata_e_completado_pela_abertura_da_base() {
+    use std::io::BufRead as _;
+    let area = Area::nova("563-sigkill");
+    let (dir, p1, p2) = montar_mae_e_filhas_563(&area);
+    let mut filho = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "testes::sonda_563_para_no_meio_da_cascata",
+            "--ignored",
+            "--nocapture",
+            "--test-threads=1",
+        ])
+        .env("PHX_SONDA_563", &area.0)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    // O erro padrao do filho e lido numa thread: a pausa nao fecha o cano, e
+    // ler aqui mesmo penduraria o teste se o aviso nunca viesse.
+    let erro = filho.stderr.take().unwrap();
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        for linha in std::io::BufReader::new(erro).lines().map_while(|l| l.ok()) {
+            let _ = tx.send(linha);
+        }
+    });
+    let prazo = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    let mut visto = String::new();
+    let parou = loop {
+        let falta = prazo.saturating_duration_since(std::time::Instant::now());
+        match rx.recv_timeout(falta) {
+            Ok(l) if l.contains(AVISO_563) => break true,
+            Ok(l) => {
+                visto.push_str(&l);
+                visto.push('\n');
+            }
+            Err(_) => break false,
+        }
+    };
+    filho.kill().unwrap();
+    let _ = filho.wait();
+    assert!(parou, "a sonda nao parou no meio da cascata:\n{visto}");
+
+    let r = unsafe { abrir_e_fechar_a_base(&area) };
+    assert_eq!(r, PHX_OK, "a base nao reabriu: {}", erro_agora());
+    let (aponta, em_cinco, em_seis) = filhas_563(&dir, p1, p2);
+    eprintln!("563 sigkill: filhas = {aponta:?}, no indice: 5 -> {em_cinco}, 6 -> {em_seis}");
+    assert_eq!(
+        aponta,
+        vec![Value::Int(6), Value::Int(6)],
+        "a abertura nao completou a cascata interrompida: filha na chave velha"
+    );
+    assert_eq!(
+        (em_cinco, em_seis),
+        (0, 2),
+        "o indice da filha nao acompanha a linha"
+    );
+    let sobrou = phxsql_store::marca::marcas_em(&dir);
+    assert!(sobrou.is_empty(), "a marca completada ficou: {sobrou:?}");
+}
+
+/// A sonda da prova de cima: abre pela ABI e troca a chave da mae, com a
+/// PAUSA armada entre as duas filhas. Nao volta -- o pai a mata.
+#[cfg(debug_assertions)]
+#[test]
+#[ignore = "sonda: roda so reexecutada por sigkill_no_meio_da_cascata_e_completado_pela_abertura_da_base"]
+fn sonda_563_para_no_meio_da_cascata() {
+    use phxsql_store::ndx::panico_de_teste::{armar_pausa, Ponto};
+    let Some(dir) = std::env::var_os("PHX_SONDA_563") else {
+        return;
+    };
+    unsafe {
+        let caminho = dir.to_string_lossy().to_string();
+        let mut base: *mut Punho<BaseFFI> = std::ptr::null_mut();
+        let (p, t) = par(&caminho);
+        let (n, nt) = par("app");
+        assert_eq!(phx_base_abrir(p, t, n, nt, 0, &mut base), PHX_OK);
+        let mut tab: *mut Punho<TabelaFFI> = std::ptr::null_mut();
+        let (p, t) = par("clientes");
+        assert_eq!(phx_tabela_abrir(base, p, t, &mut tab), PHX_OK);
+        armar_pausa(Ponto::CascataEntreFilhas, 1, AVISO_563);
+        let linha = [v_int(6), v_bytes(PHX_TEXTO, b"Ana")];
+        let r = phx_atualizar(tab, 1, linha.as_ptr(), linha.len());
+        panic!(
+            "a pausa nao disparou: phx_atualizar voltou {r} ({})",
+            erro_agora()
+        );
+    }
+}
+
+/// **Pedido 563, pelo panico: o processo SEGUE, com o punho envenenado vivo.**
+///
+/// E o caso que decide ONDE a completude roda. O panico entre as duas filhas
+/// e pego pelo `com`; o punho da mae fica envenenado, mas vivo, e a marca
+/// fica no disco. Enquanto ele vive, reabrir a base NAO completa -- escrever
+/// por baixo de punho vivo, com paginas em RAM, seria o `Drop` dele gravando
+/// a arvore velha por cima -- e a filha continua RECUSANDO pelo indice (490),
+/// que e barulho e nao orfa calada. Fechado o punho, a abertura seguinte
+/// completa: `[6, 6]`.
+///
+/// # Prova real
+///
+/// Sem a marca, a segunda abertura reconstroi a filha com a orfa dentro, e
+/// sai `[6, 5]` -- o mesmo vermelho do `SIGKILL`.
+#[cfg(debug_assertions)]
+#[test]
+fn panico_no_meio_da_cascata_completa_na_abertura_sem_punho_vivo() {
+    use phxsql_store::ndx::panico_de_teste::{armar, desarmar, Ponto};
+    let area = Area::nova("563-panico");
+    let (dir, p1, p2) = montar_mae_e_filhas_563(&area);
+    unsafe {
+        let caminho = area.txt();
+        let mut base: *mut Punho<BaseFFI> = std::ptr::null_mut();
+        let (p, t) = par(&caminho);
+        let (n, nt) = par("app");
+        assert_eq!(phx_base_abrir(p, t, n, nt, 0, &mut base), PHX_OK);
+        let mut tab: *mut Punho<TabelaFFI> = std::ptr::null_mut();
+        let (p, t) = par("clientes");
+        assert_eq!(phx_tabela_abrir(base, p, t, &mut tab), PHX_OK);
+        armar(Ponto::CascataEntreFilhas);
+        let linha = [v_int(6), v_bytes(PHX_TEXTO, b"Ana")];
+        let r = phx_atualizar(tab, 1, linha.as_ptr(), linha.len());
+        desarmar();
+        assert_eq!(r, erro::PHX_ERRO_PANICO, "o gancho nao disparou");
+
+        // Com o punho envenenado VIVO, a abertura nao completa, e a filha
+        // recusa pelo indice em vez de responder com a orfa.
+        assert_eq!(abrir_e_fechar_a_base(&area), PHX_OK, "{}", erro_agora());
+        let mut filha = Table::abrir(&dir, "pedidos").unwrap();
+        assert!(
+            filha.buscar("porCliente", &[Value::Int(5)]).is_err(),
+            "com a cascata pela metade, a filha tinha de recusar pelo indice"
+        );
+        drop(filha);
+
+        assert_eq!(phx_tabela_fechar(tab), PHX_OK);
+        assert_eq!(phx_base_fechar(base), PHX_OK);
+        assert_eq!(abrir_e_fechar_a_base(&area), PHX_OK, "{}", erro_agora());
+    }
+    let (aponta, em_cinco, em_seis) = filhas_563(&dir, p1, p2);
+    eprintln!("563 panico: filhas = {aponta:?}, no indice: 5 -> {em_cinco}, 6 -> {em_seis}");
+    assert_eq!(aponta, vec![Value::Int(6), Value::Int(6)]);
+    assert_eq!((em_cinco, em_seis), (0, 2));
+    assert!(phxsql_store::marca::marcas_em(&dir).is_empty());
+}

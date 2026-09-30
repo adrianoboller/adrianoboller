@@ -2893,7 +2893,11 @@ pub fn limpar() {
         # vinte e poucas linhas abaixo deste bloco no MESMO `completar()`:
         # `2fe8658` (12/09) desaninhou o laco `for op in &marca.operacoes` e
         # o bloco inteiro subiu quatro espacos. A logica nao mudou.
-        "arquivo": "crates/phxsql-server/src/transacao.rs",
+        # MOVIDO em 30/09/2026 (pedido 563): a marca e a recuperacao mudaram
+        # do `transacao.rs` do servidor para o `marca.rs` do store, para o
+        # embutido completar a cascata pelo MESMO motor. O trecho e o mesmo; a
+        # prova continua nos testes do servidor, que chamam o motor movido.
+        "arquivo": "crates/phxsql-store/src/marca.rs",
         "trecho": """                    if t.indice_precisa_reconstruir() {
                         match t.reindexar() {
                             Ok(_) => r.indices_reconstruidos += 1,
@@ -2906,18 +2910,20 @@ pub fn limpar() {
 """,
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
-        # Nenhum teste unitario cai, e a entrada AFIRMA isso: quem pega este
-        # defeito e o `bancada/transacoes/provar.py`, que mata o processo de
-        # verdade. Deixa-lo aqui trava a afirmacao -- no dia em que um teste
-        # de unidade passar a pegar, o executor avisa que a afirmacao morreu.
-        "espera": "nada muda",
-        "nota_da_redundancia": (
-            "confirmado: nenhum teste de unidade pega este defeito. O indice "
-            "so fica para tras quando o PROCESSO morre no meio da passada, e "
-            "isso so acontece de verdade em `bancada/transacoes/provar.py` -- "
-            "que e por isso que a prova por soquete existe."
-        ),
-        "caem": [],
+        # A AFIRMACAO MORREU, e o executor avisou como prometia -- so que
+        # como ESTRAGOU, e nao como «um teste passou a pegar». Medido em
+        # 30/09/2026 (integracao do 563), e igual no HEAD de antes: desde o
+        # pedido 451 o reparo da trava completa a marca EM VOO pelo mesmo
+        # `completar`, e sem o `reindexar` ele nao completa -- e o reparo que
+        # nao completa ABORTA o processo, por desenho (451, H5). O binario de
+        # teste inteiro cai junto, e esse e o jeito de esta guarda pegar. A
+        # prova por soquete (`bancada/transacoes/provar.py`) continua valendo
+        # para a queda de verdade.
+        "espera": "aborta",
+        "prazo": 900,
+        "caem": [
+            "servidor::testes_do_panico_sob_a_trava::panico_na_passada_do_commit_sai_com_a_transacao_inteira_na_hora",
+        ],
         "seguem": [
             "servidor::testes_transacoes::a_recuperacao_completa_o_commit_e_nao_duplica",
             "servidor::testes_transacoes::marca_que_nao_confere_e_commit_que_nunca_comecou",
@@ -3164,10 +3170,12 @@ pub fn limpar() {
             "quem ligou."
         ),
         "arquivo": "crates/phxsql-store/src/table.rs",
-        "trecho": """                filha.ligar_imagem_no_diario(self.imagem_no_diario);
-                filha.ligar_imagem_na_exclusao(self.imagem_na_exclusao);
+        # ATUALIZADO em 30/09/2026 (pedido 563): as duas linhas viraram a
+        # porta unica `abrir_filha`, que o plano e a marca do embutido chamam.
+        "trecho": """        filha.ligar_imagem_no_diario(self.imagem_no_diario);
+        filha.ligar_imagem_na_exclusao(self.imagem_na_exclusao);
 """,
-        "troca": """                // DEFEITO REPOSTO: a filha da cascata nao herda mais a imagem.
+        "troca": """        // DEFEITO REPOSTO: a filha da cascata nao herda mais a imagem.
 """,
         "pacote": "phxsql-store",
         "alvo": ["--test", "replicacao-integridade"],
@@ -3694,7 +3702,11 @@ pub fn limpar() {
         # a conferencia de FK poder emprestar as maes que a mesma marca ja
         # reaplicou. A linha do interruptor e a mesma; o que mudou foi um
         # nivel de indentacao (vinte e quatro espacos viraram vinte).
-        "arquivo": "crates/phxsql-server/src/transacao.rs",
+        # MOVIDO em 30/09/2026 (pedido 563): a marca e a recuperacao mudaram
+        # do `transacao.rs` do servidor para o `marca.rs` do store, para o
+        # embutido completar a cascata pelo MESMO motor. O trecho e o mesmo; a
+        # prova continua nos testes do servidor, que chamam o motor movido.
+        "arquivo": "crates/phxsql-store/src/marca.rs",
         "trecho": """                    t.ligar_reconstrucao_do_indice_da_filha(true);""",
         "troca": """                    // DEFEITO REPOSTO: a recuperacao volta a recusar
                     // cascatear para a filha com indice sujo.
@@ -5403,16 +5415,22 @@ pub fn limpar() {
             "acabou. E o teste que conta linhas passa com o defeito -- quem "
             "pega e o que olha o DISCO, `!caminho.exists()`."
         ),
-        "arquivo": "crates/phxsql-server/src/transacao.rs",
+        # MOVIDO em 30/09/2026 (pedido 563): a marca e a recuperacao mudaram
+        # do `transacao.rs` do servidor para o `marca.rs` do store, para o
+        # embutido completar a cascata pelo MESMO motor. O trecho e o mesmo; a
+        # prova continua nos testes do servidor, que chamam o motor movido.
+        # E o laco virou `completar_as_marcas_de`, o corpo unico do arranque
+        # do servidor e da abertura do embutido.
+        "arquivo": "crates/phxsql-store/src/marca.rs",
         # Trecho movido em 24/09/2026 pelo pedido 426: o corpo do laco virou
         # `tratar_marca`, que o arranque e a recuperacao do COMMIT dividem.
-        "trecho": """            if tratar_marca(&db, &caminho, &mut r, NoArranque::Sim) {
-                let _ = std::fs::remove_file(&caminho);
-            }
+        "trecho": """        if tratar_marca(db, &caminho, r, NoArranque::Sim) {
+            let _ = std::fs::remove_file(&caminho);
+        }
 """,
-        "troca": """            // DEFEITO REPOSTO: a marca fica no disco depois de completada ou
-            // descartada -- orfa para sempre, reaplicada a cada arranque.
-            let _ = tratar_marca(&db, &caminho, &mut r, NoArranque::Sim);
+        "troca": """        // DEFEITO REPOSTO: a marca fica no disco depois de completada ou
+        // descartada -- orfa para sempre, reaplicada a cada arranque.
+        let _ = tratar_marca(db, &caminho, r, NoArranque::Sim);
 """,
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
@@ -5437,7 +5455,11 @@ pub fn limpar() {
             "reaplicar deixa o relatorio dizendo «1 completada» sobre zero "
             "linhas."
         ),
-        "arquivo": "crates/phxsql-server/src/transacao.rs",
+        # MOVIDO em 30/09/2026 (pedido 563): a marca e a recuperacao mudaram
+        # do `transacao.rs` do servidor para o `marca.rs` do store, para o
+        # embutido completar a cascata pelo MESMO motor. O trecho e o mesmo; a
+        # prova continua nos testes do servidor, que chamam o motor movido.
+        "arquivo": "crates/phxsql-store/src/marca.rs",
         # Trecho movido em 24/09/2026 pelo pedido 426: `tratar_marca`, o
         # corpo que o arranque e a recuperacao do COMMIT dividem.
         "trecho": """        Ok(Leitura::Aberta(marca)) => {
@@ -9890,7 +9912,11 @@ pub fn limpar() {
             "congelada), e consertar so o (c) trocaria «completa no proximo "
             "arranque» por «perdida para sempre»."
         ),
-        "arquivo": "crates/phxsql-server/src/transacao.rs",
+        # MOVIDO em 30/09/2026 (pedido 563): a marca e a recuperacao mudaram
+        # do `transacao.rs` do servidor para o `marca.rs` do store, para o
+        # embutido completar a cascata pelo MESMO motor. O trecho e o mesmo; a
+        # prova continua nos testes do servidor, que chamam o motor movido.
+        "arquivo": "crates/phxsql-store/src/marca.rs",
         "trecho": """            no_disco && (arranque == NoArranque::Sim || r.impossiveis.len() == antes)
 """,
         "troca": """            // DEFEITO REPOSTO (426): apaga a marca do impossivel passageiro.
@@ -12370,7 +12396,9 @@ pub const ITERACOES_MINIMAS_DO_CADASTRO: u32 = phxsql_store::cofre::ITERACOES_MI
             "O(n^2) no COMMIT sob a trava global -- 715 ms para 99,6 s com "
             "n = 8.000 na sonda do DBA. A prova conta as copias, e nao o tempo."
         ),
-        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        # MOVIDO em 30/09/2026 (pedido 563): o `MaesAbertas` mudou para o
+        # `marca.rs` do store junto da recuperacao que o usa.
+        "arquivo": "crates/phxsql-store/src/marca.rs",
         "trecho": """            .and_then(|(_, t)| t.sobreposicao().cloned())
 """,
         "troca": """            // DEFEITO REPOSTO (448-A2): cada plano ganha uma copia inteira.
@@ -12660,7 +12688,11 @@ pub const ITERACOES_MINIMAS_DO_CADASTRO: u32 = phxsql_store::cofre::ITERACOES_MI
             "o bilhete). A falha da prova vem do sistema operacional: o `.pag` "
             "vira diretorio."
         ),
-        "arquivo": "crates/phxsql-server/src/transacao.rs",
+        # MOVIDO em 30/09/2026 (pedido 563): a marca e a recuperacao mudaram
+        # do `transacao.rs` do servidor para o `marca.rs` do store, para o
+        # embutido completar a cascata pelo MESMO motor. O trecho e o mesmo; a
+        # prova continua nos testes do servidor, que chamam o motor movido.
+        "arquivo": "crates/phxsql-store/src/marca.rs",
         "trecho": """        if let Err(e) = t.sincronizar() {
             no_disco = false;
 """,
@@ -14252,11 +14284,17 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "tabelas marcadas depois de um SIGKILL sob carga. Sem o passe da "
             "recuperacao, as oito subiam recusando."
         ),
-        "arquivo": "crates/phxsql-server/src/transacao.rs",
-        "trecho": """    reconstruir_os_marcados(dados, &mut r);
+        # MOVIDO em 30/09/2026 (pedido 563): a marca e a recuperacao mudaram
+        # do `transacao.rs` do servidor para o `marca.rs` do store, para o
+        # embutido completar a cascata pelo MESMO motor. O trecho e o mesmo; a
+        # prova continua nos testes do servidor, que chamam o motor movido.
+        # O passe do 522 virou a segunda metade da `Database::recuperar_marcas`,
+        # DEPOIS das marcas -- a ordem que impede o passe de calar a orfa.
+        "arquivo": "crates/phxsql-store/src/marca.rs",
+        "trecho": """        let (feitas, pendentes) = self.reconstruir_indices_marcados();
 """,
-        "troca": """    // DEFEITO REPOSTO (522): o arranque nao reconstroi o marcado.
-    let _ = reconstruir_os_marcados;
+        "troca": """        // DEFEITO REPOSTO (522): o arranque nao reconstroi o marcado.
+        let (feitas, pendentes) = (0usize, Vec::<String>::new());
 """,
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
@@ -14900,7 +14938,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "pacote": "phxsql-store",
         "alvo": ["--test", "cascata-ao-alterar"],
         "caem": [
-            "panico_entre_duas_filhas_deixa_a_filha_recusando_como_um_sigkill",
+            "panico_entre_duas_filhas_deixa_a_filha_recusando_ate_a_marca_completar",
             "panico_depois_da_mae_e_antes_da_primeira_filha_tambem_recusa",
         ],
         "seguem": [
@@ -14918,20 +14956,62 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "janela."
         ),
         "arquivo": "crates/phxsql-store/src/table.rs",
+        # ATUALIZADO em 30/09/2026 (pedido 563): o `Table::atualizar` publico
+        # cascateia pela marca, e as filhas dela entram em voo no MESMO lugar,
+        # logo abaixo do laco de sempre. A troca tira os dois.
         "trecho": """        for passo in &mut cascata {
             passo.filha.ndx.comecar_cascata();
         }
+        if let Some(abertas) = filhas_da_marca.as_mut() {
+            for filha in abertas.values_mut() {
+                filha.ndx.comecar_cascata();
+            }
+        }
 """,
         "troca": """        // DEFEITO REPOSTO (490, irmao): a marca so entra no aplicar_ao_alterar.
+        let _ = filhas_da_marca.as_mut();
 """,
         "pacote": "phxsql-store",
         "alvo": ["--test", "cascata-ao-alterar"],
+        # Desde o 563 as duas provas de panico passam pelo MESMO laco, e a do
+        # meio da cascata cobra a recusa ANTES da recuperacao: ela cai junto,
+        # e com razao -- sem a cascata em voo, a filha aberta sem recuperacao
+        # responde com a orfa.
         "caem": [
             "panico_depois_da_mae_e_antes_da_primeira_filha_tambem_recusa",
+            "panico_entre_duas_filhas_deixa_a_filha_recusando_ate_a_marca_completar",
         ],
         "seguem": [
-            "panico_entre_duas_filhas_deixa_a_filha_recusando_como_um_sigkill",
             "a_cascata_alcanca_a_neta",
+        ],
+    },
+    {
+        "id": "cascata-do-embutido-sem-marca",
+        "titulo": "a cascata do `ao_alterar` do embutido volta a rodar sem marca: a queda no meio deixa a filha na chave velha, e a abertura a cala",
+        "porque": (
+            "pedido 563: o `Table::atualizar` (FFI `phx_atualizar`, CLI) "
+            "cascateava sem marca `.tx`. SIGKILL entre as duas filhas: a mae "
+            "em 6, as filhas em [6, 5], e o passe do indice marcado (522) "
+            "reconstruia o `.ndx` da filha com a orfa dentro -- o indice "
+            "achando uma filha em 5, mae que ja nao existe. Medido com o "
+            "defeito reposto pelo SIGKILL real (`Child::kill`) e pelo panico "
+            "pego na fronteira: [6, 5] nos dois; com a marca, [6, 6]."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        let marca =
+            crate::marca::gravar_marca(&self.diretorio, id, crate::util::agora_ms(), &escritas)?;
+""",
+        "troca": """        // DEFEITO REPOSTO (563): a cascata do embutido sem marca.
+        let marca = crate::marca::caminho_da_marca(&self.diretorio, id);
+""",
+        "pacote": "phxsql-ffi",
+        "alvo": ["--lib"],
+        "caem": [
+            "testes::sigkill_no_meio_da_cascata_e_completado_pela_abertura_da_base",
+            "testes::panico_no_meio_da_cascata_completa_na_abertura_sem_punho_vivo",
+        ],
+        "seguem": [
+            "testes::fechar_sem_sincronizar_e_o_proximo_processo_abre",
         ],
     },
     {

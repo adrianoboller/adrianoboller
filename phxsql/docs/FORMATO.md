@@ -2814,6 +2814,36 @@ completam do mesmo jeito. O que o COMMIT passou a fazer com o elo planejado no
 `empilhar` (pedido 537, refazê-lo sobre a linha atual) também não toca o
 formato: a marca recebe a linha já refeita.
 
+**E o embutido também grava** (pedido 563, 30/09/2026; **o leiaute não muda**,
+mesmos bytes v3/v4): o `Table::atualizar` do `phxsql-store` — a porta do
+`phx_atualizar` do FFI e do CLI — que muda a chave de uma mãe com filhas
+cascateando grava a mesma marca, com a mesma lista (a mãe com a linha como
+veio do chamador, depois cada elo, todos com `cascata_na_lista` em 1), antes da
+primeira escrita da mãe. Três diferenças, nenhuma de formato:
+
+- **Onde:** no diretório da **mãe** — a raiz do database ou o do schema dela —,
+  com o nome **simples** das tabelas. A chave estrangeira não atravessa
+  diretório, então a mãe e as filhas moram ali; a do servidor continua na raiz,
+  com o nome qualificado.
+- **O `id`:** o maior entre o relógio em ms e «a maior marca do diretório + 1».
+  O embutido não tem o contador das transações; o `create_new` recusa a
+  colisão que sobra (dois processos no mesmo diretório no mesmo ms) sem gravar
+  por cima de nada.
+- **Quem apaga:** o próprio `atualizar`, depois do `sincronizar` da mãe e de
+  cada filha — não há janela de durabilidade no embutido.
+
+**Quem completa** uma marca achada: o arranque do servidor, database por
+database, e a abertura do embutido — as duas pelo mesmo
+`Database::recuperar_marcas` (`phxsql-store/src/marca.rs`), que varre a raiz
+**e** cada schema, completa as marcas e só **depois** reconstrói o índice
+marcado (522), para o passe do índice não calar a órfã. No embutido quem chama
+é o `phx_base_abrir`, e só quando **nenhum punho de tabela** daquele database
+está vivo no processo (punho vivo guarda páginas em RAM que a escrita de fora
+não atualiza; com ele vivo a filha continua recusando pelo `.ndx`, pedido 490,
+até a abertura seguinte); e o `reindex` do CLI, antes de reconstruir. **Não** o
+`Instancia::abrir_database` genérico: o servidor o chama em serviço, com marca
+de commit já aplicado esperando o fecho da janela.
+
 ### O leiaute
 
 ```text

@@ -29,6 +29,7 @@ pub mod ledger;
 pub mod leitura;
 pub mod lixeira;
 pub mod log;
+pub mod marca;
 pub mod memoria;
 pub mod motivo;
 pub mod ndx;

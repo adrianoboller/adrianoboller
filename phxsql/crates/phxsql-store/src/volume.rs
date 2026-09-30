@@ -1538,9 +1538,15 @@ mod tests {
         // atomicidade. O `catalogo.rs` e o `restaurar.rs` seguem
         // com o `rename` proprio porque decidem o que fazer quando ele falha
         // (desfazer; copiar), e so o `fsync` dos diretorios vem do motor.
+        // Pedido 563: `marca.rs` entra com 1 -- o `criar_privado` da marca
+        // `.tx`, que MUDOU de casa (morava no `transacao.rs` do servidor, fora
+        // desta conta) para o embutido completar a cascata pelo mesmo motor.
+        // Nao e familia do `Volumes`: nasce com `create_new`, e o
+        // `gravar_marca` a sincroniza (`sync_all`) antes de devolver.
         const HOJE: &[(&str, usize)] = &[
             ("backup.rs", 2),
             ("catalogo.rs", 5),
+            ("marca.rs", 1),
             ("ndx.rs", 2),
             ("pag.rs", 2),
             ("reg.rs", 2),

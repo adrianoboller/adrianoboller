@@ -121,6 +121,63 @@ pub struct TabelaFFI {
     serie: u64,
 }
 
+/// Os diretorios com tabela ABERTA por um punho desta biblioteca, e quantas
+/// em cada um -- pedido 563.
+///
+/// # Por que a abertura da base precisa saber
+///
+/// O `phx_base_abrir` completa a marca `.tx` que uma queda deixou (a cascata
+/// do `ao_alterar`), e completar e ESCREVER nas tabelas da marca por punhos
+/// novos. Punho vivo sobre a mesma tabela guarda paginas em RAM que a escrita
+/// de fora nao atualiza, e o `Drop` dele gravaria a arvore velha por cima.
+/// E ha punho vivo depois de um panico: o `com` envenena o punho, mas ele
+/// continua vivo ate o `phx_tabela_fechar`, e o processo segue.
+///
+/// Entao a completude so roda sem punho vivo DAQUELE database -- que e o que
+/// o SQLite faz com o hot journal, completado na abertura antes de qualquer
+/// leitura. Com punho vivo ela nao roda, e nao e silencio: a filha da
+/// cascata interrompida continua com o `.ndx` marcado (pedido 490) e recusa
+/// ate a abertura seguinte, sem punho, completar.
+///
+/// Por diretorio, e nao um contador do processo, porque dois databases no
+/// mesmo processo nao se tocam -- e um contador global faria a base B
+/// esperar pelos punhos da base A.
+static DIRETORIOS_ABERTOS: std::sync::Mutex<Vec<(std::path::PathBuf, usize)>> =
+    std::sync::Mutex::new(Vec::new());
+
+fn anotar_diretorio(dir: &std::path::Path, delta: isize) {
+    let mut v = DIRETORIOS_ABERTOS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    match v.iter().position(|(d, _)| d == dir) {
+        Some(i) => {
+            let n = (v[i].1 as isize + delta).max(0) as usize;
+            if n == 0 {
+                v.swap_remove(i);
+            } else {
+                v[i].1 = n;
+            }
+        }
+        None if delta > 0 => v.push((dir.to_path_buf(), delta as usize)),
+        None => {}
+    }
+}
+
+/// Ha punho de tabela vivo debaixo de `raiz` (o database ou um schema dele)?
+fn ha_punho_vivo_em(raiz: &std::path::Path) -> bool {
+    DIRETORIOS_ABERTOS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .iter()
+        .any(|(d, _)| d.starts_with(raiz))
+}
+
+impl Drop for TabelaFFI {
+    fn drop(&mut self) {
+        anotar_diretorio(self.t.diretorio(), -1);
+    }
+}
+
 pub struct CursorFFI {
     serie: u64,
     visao: Visao,
@@ -305,6 +362,16 @@ pub extern "C" fn phx_erro_nome(codigo: i32) -> *const u8 {
 /// Com `PHX_CRIAR` o database nasce se faltar -- que e o caso do primeiro
 /// arranque do aplicativo no aparelho.
 ///
+/// # A recuperacao de abertura (pedido 563)
+///
+/// Antes de devolver a base, completa a marca `.tx` que uma queda deixou no
+/// meio de uma cascata do `ao_alterar` e reconstroi o indice que ficou
+/// marcado -- o mesmo `Database::recuperar_marcas` do arranque do servidor.
+/// So quando nenhum punho de tabela daquele database esta vivo neste
+/// processo (ver `DIRETORIOS_ABERTOS`); com punho vivo, a base abre sem
+/// completar, e a filha da cascata interrompida continua recusando pelo
+/// indice ate a abertura seguinte. A marca que nem se le recusa a abertura.
+///
 /// # Safety
 ///
 /// Os pares `(ponteiro, tamanho)` tem de descrever memoria legivel; `saida`
@@ -340,6 +407,23 @@ pub unsafe extern "C" fn phx_base_abrir(
         } else {
             inst.abrir_database(nome)
         };
+        // Pedido 563: a marca que uma queda deixou e completada AQUI, antes
+        // de existir punho de tabela deste database -- ver `DIRETORIOS_ABERTOS`.
+        // A marca que nem se le recusa a abertura, como recusa a subida do
+        // servidor (503, 1a): ela pode ser uma cascata ja comecada, e abrir
+        // por cima e o jeito de perde-la.
+        let db = db.and_then(|db| {
+            if ha_punho_vivo_em(db.caminho()) {
+                return Ok(db);
+            }
+            let r = db.recuperar_marcas();
+            if r.impede_subir() {
+                return Err(phxsql_core::error::PhxError::Io(std::io::Error::other(
+                    r.texto(db.caminho()),
+                )));
+            }
+            Ok(db)
+        });
         resultado(db, |db| {
             saida(
                 saida_base,
@@ -583,6 +667,7 @@ pub unsafe extern "C" fn phx_esquema_liberar(p: *mut Punho<EsquemaFFI>) -> i32 {
 
 fn embrulhar_tabela(t: Table, saida_tab: *mut *mut Punho<TabelaFFI>) -> i32 {
     let serie = SERIE.fetch_add(1, Ordering::Relaxed);
+    anotar_diretorio(t.diretorio(), 1);
     // SAFETY: `saida_tab` foi conferido pelo chamador.
     unsafe { saida(saida_tab, Punho::novo(ETIQ_TABELA, TabelaFFI { t, serie })) };
     PHX_OK

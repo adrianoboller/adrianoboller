@@ -162,6 +162,56 @@ pub struct EscritaDaCascata {
     pub nivel: usize,
 }
 
+/// O que a primeira metade do `atualizar` deixa na mao da segunda -- ver
+/// [`Table::planejar_a_alteracao`].
+///
+/// Quem cascateia PELA MARCA e so o `Table::atualizar` publico, o do embutido
+/// (pedido 563). Os outros caminhos chamam as duas metades sem ela: o
+/// `atualizar_com_maes` (a recuperacao da marca v1/v2, que ja ESTA dentro de
+/// uma marca) e a filha dentro do `aplicar_ao_alterar` cascateiam em linha,
+/// como sempre; quem ja planejou por fora (o servidor, pedido 540) ou aplica a
+/// lista ja achatada (a passada e a recuperacao v3/v4) nao cascateia. Marca
+/// dentro de marca seria a segunda intencao para o mesmo commit.
+struct AlteracaoPlanejada {
+    antigo: Vec<u8>,
+    valores_antigos: Linha,
+    completos: Linha,
+    rownum_reservado: Option<u64>,
+    chaves_antigas: Vec<Option<Vec<u8>>>,
+    chaves_novas: Vec<Option<Vec<u8>>>,
+    cascata: Vec<PassoAoAlterar>,
+}
+
+/// O primeiro erro dos observadores, ou `Ok` -- a resposta do `atualizar`
+/// depois de a mae estar no disco e a cascata ter corrido.
+fn primeiro_erro(erros: Vec<PhxError>) -> Result<()> {
+    match erros.into_iter().next() {
+        Some(e) => Err(e),
+        None => Ok(()),
+    }
+}
+
+/// A marca da cascata do embutido enquanto a MAE ainda nao escreveu: se a
+/// alteracao desistir -- erro ou panico -- antes da primeira escrita, a marca
+/// sai do disco, porque ela descreveria um commit que nunca comecou. Quem
+/// solta a guarda e a mae, logo antes de ir ao `.reg`; dali em diante a marca
+/// e a unica coisa que sabe completar a cascata, e fica.
+struct MarcaAntesDaMae(Option<PathBuf>);
+
+impl MarcaAntesDaMae {
+    fn soltar(&mut self) -> Option<PathBuf> {
+        self.0.take()
+    }
+}
+
+impl Drop for MarcaAntesDaMae {
+    fn drop(&mut self) {
+        if let Some(c) = self.0.take() {
+            let _ = std::fs::remove_file(c);
+        }
+    }
+}
+
 /// Ate onde a conferencia da cascata desce antes de recusar.
 ///
 /// # Por que um TETO e nao um detector de ciclo
@@ -2978,27 +3028,11 @@ impl Table {
                 if colunas_da_filha.len() != fk.colunas.len() {
                     continue;
                 }
-                // A filha HERDA a imagem no diario da mae, e isso e a correcao
-                // de uma divergencia medida, nao um detalhe de estilo.
-                //
-                // A cascata grava na filha por um handle proprio, aberto aqui.
-                // Nascendo com o padrao (`imagem_no_diario: false`), o evento
-                // de alteracao da filha ia para o diario SEM a imagem da linha
-                // -- e a replica, que precisa da imagem para saber para QUE o
-                // valor mudou, recusava o evento com «veio sem imagem» e
-                // ficava com a filha na chave antiga para sempre.
-                //
-                // O source dizia `pedidos: 2 eventos` e a replica so conseguia
-                // aplicar 1, nas TRES ordens (`--example sonda-replica-fk`).
-                // Quem replica liga a imagem na tabela que abre; a tabela que
-                // o motor abre por baixo tem de sair igual, senao a garantia
-                // vale so para a escrita que passou pela mao de quem ligou.
-                let mut filha = Table::abrir(&self.diretorio, &irma)?;
+                // A filha herda a imagem no diario da mae: ver `abrir_filha`.
+                let mut filha = self.abrir_filha(&irma)?;
                 if let Some(s) = prefixos.and_then(|m| m.prefixo(&irma)) {
                     filha.sobrepor_compartilhada(s);
                 }
-                filha.ligar_imagem_no_diario(self.imagem_no_diario);
-                filha.ligar_imagem_na_exclusao(self.imagem_na_exclusao);
                 // A mesma exigencia dos DOIS lados que a chave conferida ja
                 // tem: sem indice na filha, achar quem aponta para esta linha
                 // seria uma varredura da tabela inteira escondida dentro de um
@@ -3183,7 +3217,9 @@ impl Table {
                 // e ele que mantem os indices dela, o diario, a trilha e a
                 // cascata da NETA. Um atalho por baixo economizaria pouco e
                 // deixaria a filha com indice mentindo.
-                if let Err(e) = passo.filha.atualizar(r, &linha) {
+                // `EmLinha`, e nao o `atualizar` publico: este caminho e o da
+                // recuperacao da marca v1/v2, que JA esta dentro de uma marca.
+                if let Err(e) = passo.filha.atualizar_com_maes_opt(r, &linha, None, true) {
                     let erro = PhxError::Integridade(format!(
                         "{}: a linha mae mudou, e a alteracao NAO chegou a linha {r} de {} \
                          pela chave {:?} ({e}). Nao ha transacao aqui: a mae ja esta \
@@ -3201,6 +3237,163 @@ impl Table {
             passo.filha.ndx.terminar_cascata();
             passo.filha.sincronizar()?;
         }
+        Ok(())
+    }
+
+    /// Abre uma irma que a cascata do `ao_alterar` vai GRAVAR -- no plano e na
+    /// marca do embutido, pela mesma porta.
+    ///
+    /// A filha HERDA a imagem no diario da mae, e isso e a correcao de uma
+    /// divergencia medida, nao um detalhe de estilo.
+    ///
+    /// A cascata grava na filha por um handle proprio, aberto aqui. Nascendo
+    /// com o padrao (`imagem_no_diario: false`), o evento de alteracao da
+    /// filha ia para o diario SEM a imagem da linha -- e a replica, que
+    /// precisa da imagem para saber para QUE o valor mudou, recusava o evento
+    /// com «veio sem imagem» e ficava com a filha na chave antiga para sempre.
+    ///
+    /// O source dizia `pedidos: 2 eventos` e a replica so conseguia aplicar 1,
+    /// nas TRES ordens (`--example sonda-replica-fk`). Quem replica liga a
+    /// imagem na tabela que abre; a tabela que o motor abre por baixo tem de
+    /// sair igual, senao a garantia vale so para a escrita que passou pela mao
+    /// de quem ligou. Uma porta so desde o 563: a marca do embutido abre as
+    /// mesmas filhas, e uma segunda copia destas duas linhas seria a que
+    /// alguem esquece.
+    fn abrir_filha(&self, nome: &str) -> Result<Table> {
+        let mut filha = Table::abrir(&self.diretorio, nome)?;
+        filha.ligar_imagem_no_diario(self.imagem_no_diario);
+        filha.ligar_imagem_na_exclusao(self.imagem_na_exclusao);
+        Ok(filha)
+    }
+
+    /// Pedido 563: abre as filhas da lista e grava a marca `.tx` -- a mae e
+    /// cada elo, achatados --, sincronizada, ANTES de a mae escrever.
+    ///
+    /// As filhas abrem AQUI, antes da marca, e nao depois: a filha que nao
+    /// abre recusa com nada no disco, nem a marca. E abrem uma vez so por
+    /// tabela, pelo MESMO [`Table::abrir_filha`] do plano.
+    ///
+    /// A marca mora no diretorio da mae, com o nome SIMPLES: a chave
+    /// estrangeira nao atravessa diretorio, e e ali que a
+    /// [`crate::catalogo::Database::recuperar_marcas`] a procura.
+    #[allow(clippy::type_complexity)]
+    fn gravar_a_marca_da_cascata(
+        &mut self,
+        rowid: RowId,
+        crua: &[Value],
+        antes: &[Value],
+        lista: Vec<EscritaDaCascata>,
+    ) -> Result<(PathBuf, Vec<crate::marca::Escrita>, HashMap<String, Table>)> {
+        use crate::marca::{Acao, Escrita};
+        let mut abertas: HashMap<String, Table> = HashMap::new();
+        for elo in &lista {
+            // O ciclo com linha dentro nao se popula (ver `TETO_DA_CASCATA`),
+            // e a auto-referencia ja recusou no plano; se um elo voltasse a
+            // esta tabela mesmo assim, ele seria gravado por um segundo
+            // descritor sobre a mae em escrita. Recusa com nada gravado.
+            if elo.tabela.eq_ignore_ascii_case(&self.nome) {
+                return Err(PhxError::Integridade(format!(
+                    "{}: a cascata do ao_alterar volta a propria tabela pela linha {} -- \
+                     altere essas linhas a mao antes de mudar a chave. Nada foi gravado",
+                    self.nome, elo.rowid
+                )));
+            }
+            if !abertas.contains_key(&elo.tabela) {
+                abertas.insert(elo.tabela.clone(), self.abrir_filha(&elo.tabela)?);
+            }
+        }
+        let mut escritas = Vec::with_capacity(1 + lista.len());
+        escritas.push(Escrita {
+            database: String::new(),
+            tabela: self.nome.clone(),
+            acao: Acao::Atualizar,
+            rowid,
+            linha: crua.to_vec(),
+            linha_antiga: antes.to_vec(),
+            motivo: String::new(),
+            cascata_na_lista: true,
+            elo_do_empilhar: false,
+        });
+        for elo in lista {
+            escritas.push(Escrita {
+                database: String::new(),
+                tabela: elo.tabela,
+                acao: Acao::Atualizar,
+                rowid: elo.rowid,
+                linha: elo.linha,
+                linha_antiga: elo.linha_antiga,
+                motivo: String::new(),
+                cascata_na_lista: true,
+                elo_do_empilhar: false,
+            });
+        }
+        let id = crate::marca::proximo_id_no_diretorio(&self.diretorio);
+        let marca =
+            crate::marca::gravar_marca(&self.diretorio, id, crate::util::agora_ms(), &escritas)?;
+        Ok((marca, escritas, abertas))
+    }
+
+    /// Pedido 563: aplica os ELOS da marca -- a mae ja escreveu, por `self` --
+    /// pelo MESMO [`crate::marca::aplicar_uma`] da recuperacao, sincroniza
+    /// cada tabela e so entao apaga a marca.
+    ///
+    /// A lista aplicada e a lista gravada, operacao por operacao: o que a
+    /// recuperacao faria depois de uma queda e exatamente o que roda aqui sem
+    /// queda nenhuma, e as duas nao tem como divergir.
+    ///
+    /// # O que fica quando algo para no meio
+    ///
+    /// A marca, sempre. Erro de um elo volta dizendo que ela ficou, e as
+    /// filhas saem com a cascata EM VOO (pedido 490): o `.ndx` delas recusa ate
+    /// a proxima abertura da base, que completa a marca antes de qualquer
+    /// punho. Panico, o mesmo, pelo desenrolar. Recusar alto e completar na
+    /// abertura e o contrario do defeito do 563, em que a orfa ficava calada.
+    fn aplicar_a_cascata_da_marca(
+        &mut self,
+        marca: &Path,
+        escritas: &[crate::marca::Escrita],
+        mut abertas: HashMap<String, Table>,
+    ) -> Result<()> {
+        use crate::marca::{aplicar_uma, ComAMae, MaesAbertas};
+        for e in escritas.iter().skip(1) {
+            let op = e.como_operacao();
+            let Some(mut filha) = abertas.remove(&op.tabela) else {
+                continue;
+            };
+            let feito = {
+                let mut maes = ComAMae {
+                    mae: &mut *self,
+                    resto: MaesAbertas {
+                        abertas: &mut abertas,
+                    },
+                };
+                aplicar_uma(&mut filha, &op, &mut maes)
+            };
+            abertas.insert(op.tabela.clone(), filha);
+            if let Err(erro) = feito {
+                return Err(PhxError::Integridade(format!(
+                    "{}: a linha mae mudou, e a alteracao NAO chegou a linha {} de {} \
+                     ({erro}). A marca {} fica no disco, e a proxima abertura da base \
+                     completa a cascata; ate la {} recusa",
+                    self.nome,
+                    op.rowid,
+                    op.tabela,
+                    marca.display(),
+                    op.tabela
+                )));
+            }
+            panico_de_teste::passar(panico_de_teste::Ponto::CascataEntreFilhas);
+        }
+        for filha in abertas.values_mut() {
+            filha.ndx.terminar_cascata();
+        }
+        // Todas no disco ANTES de a marca sair: a marca e o que completa a
+        // tabela que nao chegou, e apaga-la antes seria a janela do 509.
+        self.sincronizar()?;
+        for filha in abertas.values_mut() {
+            filha.sincronizar()?;
+        }
+        let _ = std::fs::remove_file(marca);
         Ok(())
     }
 
@@ -5218,8 +5411,50 @@ impl Table {
 
     /// Regrava a linha inteira mantendo o mesmo rowid e a mesma posicao
     /// fisica no `.reg`.
+    ///
+    /// # A cascata do `ao_alterar`, e por que ela grava marca (pedido 563)
+    ///
+    /// E a porta do embutido -- o `phx_atualizar` do FFI e o CLI -- e ali nao
+    /// ha servidor para por a cascata numa transacao. Ate o 563 ela rodava
+    /// por dentro sem marca nenhuma: uma queda entre a mae e a ultima filha
+    /// deixava filha na chave velha, e o passe do indice marcado (522) a
+    /// reconstruia com a orfa dentro, calado. Agora, com filha na chave que
+    /// muda, a lista inteira vai para a marca `.tx` antes da primeira escrita
+    /// -- o mesmo formato e o mesmo aplicador da recuperacao do servidor -- e
+    /// a queda e completada na abertura seguinte
+    /// ([`crate::catalogo::Database::recuperar_marcas`]).
+    ///
+    /// Sem filha, nada disto: o plano sai vazio no portao da coluna indexada,
+    /// e a alteracao custa o que sempre custou.
     pub fn atualizar(&mut self, rowid: RowId, valores: &[Value]) -> Result<()> {
-        self.atualizar_com_maes_opt(rowid, valores, None, true)
+        let mut plano = self.planejar_a_alteracao(rowid, valores, None, true, false)?;
+        if plano.cascata.is_empty() {
+            let erros = self.gravar_a_alteracao(rowid, plano, None, &mut MarcaAntesDaMae(None))?;
+            return primeiro_erro(erros);
+        }
+        // A arvore ja conferida vira a lista achatada -- a MESMA travessia do
+        // `planejar_cascata_com`, que o servidor usa (planejar, conferir,
+        // coletar) -- e a lista vai ao disco antes da mae. O plano sai da fase
+        // do `atualizar`, e nao de uma chamada antes dele, porque ali a linha
+        // antiga ja esta decodificada e a final ja esta completa: planejar por
+        // fora custaria uma segunda leitura do slot em TODA alteracao, com
+        // filha ou sem. Depois disto `plano.cascata` fica vazia, e o
+        // `aplicar_ao_alterar` nao roda: dois planos para a mesma cascata
+        // seriam a copia que diverge.
+        let mut lista = Vec::new();
+        Self::coletar_a_arvore(&mut plano.cascata, &mut lista, None, 1)?;
+        plano.cascata.clear();
+        let (marca, escritas, mut abertas) =
+            self.gravar_a_marca_da_cascata(rowid, valores, &plano.valores_antigos, lista)?;
+        let mut guarda = MarcaAntesDaMae(Some(marca.clone()));
+        let mut erros = self.gravar_a_alteracao(rowid, plano, Some(&mut abertas), &mut guarda)?;
+        // A mae esta no disco: daqui nenhum erro dela pula a cascata (486). O
+        // erro da cascata vem PRIMEIRO na resposta: e o unico que diz que ha
+        // marca esperando a abertura seguinte.
+        if let Err(e) = self.aplicar_a_cascata_da_marca(&marca, &escritas, abertas) {
+            erros.insert(0, e);
+        }
+        primeiro_erro(erros)
     }
 
     /// [`Table::atualizar`] enxergando as MAES que a transacao ja abriu -- o
@@ -5302,6 +5537,32 @@ impl Table {
         cascatear: bool,
         conferir_identidade: bool,
     ) -> Result<()> {
+        let plano =
+            self.planejar_a_alteracao(rowid, valores, maes, cascatear, conferir_identidade)?;
+        let erros = self.gravar_a_alteracao(rowid, plano, None, &mut MarcaAntesDaMae(None))?;
+        primeiro_erro(erros)
+    }
+
+    /// A primeira metade do `atualizar`: tudo o que ainda pode RECUSAR, e
+    /// nada gravado -- a leitura, a linha final, a unicidade, o balde e o
+    /// plano da cascata com a arvore conferida.
+    ///
+    /// # Por que o `atualizar` e duas metades (pedido 563)
+    ///
+    /// Porque a marca da cascata do embutido tem de ir ao disco ENTRE as duas:
+    /// depois de o plano saber que ha filha, antes de a mae escrever. Com as
+    /// duas metades, quem costura a marca e so o `Table::atualizar`, e os
+    /// outros caminhos -- a passada do servidor, a recuperacao, a replicacao
+    /// -- chamam as mesmas metades sem passar perto dela: nao ha marca dentro
+    /// de marca, nem uma segunda copia do corpo.
+    fn planejar_a_alteracao(
+        &mut self,
+        rowid: RowId,
+        valores: &[Value],
+        maes: Option<&mut dyn MaesEmProgresso>,
+        cascatear: bool,
+        conferir_identidade: bool,
+    ) -> Result<AlteracaoPlanejada> {
         self.conferir_aridade(valores)?;
         let antigo = self
             .reg
@@ -5388,7 +5649,45 @@ impl Table {
         if !cascata.is_empty() {
             Self::conferir_a_arvore(&mut cascata, 1, None)?;
         }
+        Ok(AlteracaoPlanejada {
+            antigo,
+            valores_antigos,
+            completos,
+            rownum_reservado,
+            chaves_antigas,
+            chaves_novas,
+            cascata,
+        })
+    }
 
+    /// A segunda metade do `atualizar`: grava a mae e o que a acompanha. Ver
+    /// [`Table::planejar_a_alteracao`].
+    ///
+    /// `Err` quer dizer que a mae nao escreveu -- ou que a gravacao dela
+    /// quebrou no meio, e ai a `guarda` ja foi solta e a marca, quando ha,
+    /// fica para completar. `Ok` traz os erros dos observadores (texto,
+    /// diario, trilha), que nao desfazem nada: a mae ja esta no disco, e quem
+    /// chama ainda leva a cascata antes de responder o primeiro deles.
+    ///
+    /// `filhas_da_marca` sao as filhas que a marca do embutido abriu: entram
+    /// em voo junto das do plano em linha, pelo mesmo motivo (490).
+    fn gravar_a_alteracao(
+        &mut self,
+        rowid: RowId,
+        plano: AlteracaoPlanejada,
+        mut filhas_da_marca: Option<&mut HashMap<String, Table>>,
+        guarda: &mut MarcaAntesDaMae,
+    ) -> Result<Vec<PhxError>> {
+        let AlteracaoPlanejada {
+            antigo,
+            valores_antigos,
+            completos,
+            rownum_reservado,
+            chaves_antigas,
+            chaves_novas,
+            mut cascata,
+        } = plano;
+        let valores = &completos[..];
         let ponteiros_antigos = self.ponteiros(&antigo)?;
         let payload = self.montar_payload(valores)?;
         // Pedido 498: o diario confere que cabe ANTES da primeira escrita.
@@ -5409,6 +5708,10 @@ impl Table {
         // recusar depois do consumo gastaria um numero sem linha.
         let janela = self.abrir_janela_das_chaves(&chaves_antigas, &chaves_novas)?;
         self.consumir_rownum(rownum_reservado);
+        // Daqui a mae pode ter escrito, mesmo que a chamada abaixo volte `Err`
+        // ou o panico caia no meio dela: a marca fica, e a recuperacao anda
+        // para a frente -- a mae e cada filha na chave nova.
+        let _marca_fica = guarda.soltar();
         let versao = self.regravar_com_chaves(
             janela,
             rowid,
@@ -5422,10 +5725,20 @@ impl Table {
         // nao so no `aplicar_ao_alterar`, porque o texto, o diario e a trilha
         // la embaixo tambem podem parar -- e parar ali deixava as filhas na
         // chave velha sem nada no disco dizendo.
+        //
+        // Pela marca (563) o mesmo, nas filhas que a marca abriu: a marca
+        // completa a cascata na abertura seguinte, e ate la quem abrir a filha
+        // SEM a recuperacao -- um `Table::abrir` cru -- ve a tabela recusar,
+        // e nao a orfa respondendo.
         for passo in &mut cascata {
             passo.filha.ndx.comecar_cascata();
         }
-        if !cascata.is_empty() {
+        if let Some(abertas) = filhas_da_marca.as_mut() {
+            for filha in abertas.values_mut() {
+                filha.ndx.comecar_cascata();
+            }
+        }
+        if !cascata.is_empty() || filhas_da_marca.is_some() {
             panico_de_teste::passar(panico_de_teste::Ponto::CascataDepoisDaMae);
         }
         // O texto sai e entra, nesta ordem. A saida usa o payload ANTIGO --
@@ -5464,7 +5777,7 @@ impl Table {
         // e o portao: alteracao sem cascata nao paga nem a chamada. E vem
         // ANTES da trilha: a cascata nao depende do observador (486).
         if !cascata.is_empty() {
-            if let Err(e) = self.aplicar_ao_alterar(cascata) {
+            if let Err(e) = self.aplicar_ao_alterar(std::mem::take(&mut cascata)) {
                 erros.push(e);
             }
         }
@@ -5477,10 +5790,7 @@ impl Table {
         {
             erros.push(e);
         }
-        match erros.into_iter().next() {
-            Some(e) => Err(e),
-            None => Ok(()),
-        }
+        Ok(erros)
     }
 
     /// Grava na trilha as colunas marcadas que mudaram de valor.

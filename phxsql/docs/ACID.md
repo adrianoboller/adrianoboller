@@ -373,7 +373,7 @@ pelo passo inteiro —, **morreu medida**: com ela o `sincronizar` da filha não
 desce nada, a neta confere a chave dela num segundo descritor e bate na guarda,
 e `a_cascata_alcanca_a_neta` passou a recusar toda cascata de três níveis com a
 avó já gravada. A marca em voo só muda o `Drop`; o caminho que termina não vê
-diferença nenhuma. Prova: `panico_entre_duas_filhas_deixa_a_filha_recusando_como_um_sigkill`
+diferença nenhuma. Prova: `panico_entre_duas_filhas_deixa_a_filha_recusando_ate_a_marca_completar`
 (store); pelo soquete, desde o 540, a cascata solta nem chega a recusar — ela
 se completa. O canto
 que esta seção deixava aberto — uma filha que **outra conexão** põe sob a chave
