@@ -68,6 +68,11 @@ fn raiz() -> PathBuf {
 /// listadas, nao para as que alguem acrescentar amanha.
 pub const ISENTOS: &[(&str, usize, &str)] = &[
     (
+        "crates/phxsql-core/src/p256.rs",
+        1,
+        "o guarda local do teste de interoperabilidade com o OpenSSL -- o core nao tem apoio_teste, e ele apaga no Drop",
+    ),
+    (
         "crates/phxsql-store/src/apoio_teste.rs",
         1,
         "e o proprio guarda: e ele quem chama o temp_dir e apaga no Drop",

@@ -31,6 +31,7 @@ pub mod hash;
 pub mod hkdf;
 pub mod json;
 pub mod keyenc;
+pub mod p256;
 pub mod paginacao;
 pub mod paralelo;
 pub mod pix;
