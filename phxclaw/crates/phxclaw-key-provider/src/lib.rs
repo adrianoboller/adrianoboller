@@ -121,13 +121,27 @@ impl OsKeyringProvider {
 }
 
 #[cfg(feature = "os-keyring")]
+impl OsKeyringProvider {
+    /// O chaveiro desta plataforma guarda a chave entre execucoes? Falso quando o crate
+    /// caiu no armazenamento simulado (plataforma sem backend compilado).
+    pub fn persistente() -> bool {
+        !matches!(
+            keyring::default::default_credential_builder().persistence(),
+            keyring::credential::CredentialPersistence::ProcessOnly
+                | keyring::credential::CredentialPersistence::EntryOnly
+        )
+    }
+}
+
+#[cfg(feature = "os-keyring")]
 impl KeyProvider for OsKeyringProvider {
     fn provider_id(&self) -> &str {
         "os_keyring"
     }
 
+    /// Seguro para producao so se a chave sobrevive ao processo.
     fn is_release_safe(&self) -> bool {
-        true
+        Self::persistente()
     }
 
     fn load(&self, key_id: &str) -> Result<KeyMaterial, KeyProviderError> {
@@ -153,6 +167,81 @@ impl KeyProvider for OsKeyringProvider {
                 keyring::Error::NoEntry => KeyProviderError::NotFound,
                 other => KeyProviderError::Provider(other.to_string()),
             })
+    }
+}
+
+/// Cofre em arquivo, para maquina sem chaveiro do sistema (Linux sem sessao grafica,
+/// Raspberry Pi, servidor). E o que OpenSSH, WireGuard e Tailscale fazem com a identidade
+/// da maquina: arquivo so do dono (0600) em pasta so do dono (0700). Entra PEDIDO pelo
+/// operador, nunca como queda silenciosa do chaveiro.
+#[cfg(feature = "arquivo")]
+#[derive(Clone, Debug)]
+pub struct ArquivoKeyProvider {
+    pasta: std::path::PathBuf,
+}
+
+#[cfg(feature = "arquivo")]
+impl ArquivoKeyProvider {
+    pub fn new(pasta: impl Into<std::path::PathBuf>) -> Result<Self, KeyProviderError> {
+        let pasta = pasta.into();
+        std::fs::create_dir_all(&pasta).map_err(|e| KeyProviderError::Provider(e.to_string()))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&pasta, std::fs::Permissions::from_mode(0o700))
+                .map_err(|e| KeyProviderError::Provider(e.to_string()))?;
+        }
+        Ok(Self { pasta })
+    }
+
+    fn caminho(&self, key_id: &str) -> Result<std::path::PathBuf, KeyProviderError> {
+        validate_key_id(key_id)?;
+        // "/" e ":" viram "_": o id nunca vira subpasta nem caminho fora do cofre
+        Ok(self.pasta.join(key_id.replace(['/', ':'], "_") + ".key"))
+    }
+}
+
+#[cfg(feature = "arquivo")]
+impl KeyProvider for ArquivoKeyProvider {
+    fn provider_id(&self) -> &str {
+        "arquivo_0600"
+    }
+
+    fn is_release_safe(&self) -> bool {
+        cfg!(unix)
+    }
+
+    fn load(&self, key_id: &str) -> Result<KeyMaterial, KeyProviderError> {
+        let c = self.caminho(key_id)?;
+        let t = std::fs::read_to_string(&c).map_err(|e| match e.kind() {
+            std::io::ErrorKind::NotFound => KeyProviderError::NotFound,
+            _ => KeyProviderError::Provider(e.to_string()),
+        })?;
+        let bytes = B64.decode(t.trim()).map_err(|_| KeyProviderError::Decode)?;
+        KeyMaterial::new(bytes)
+    }
+
+    fn store(&self, key_id: &str, material: &KeyMaterial) -> Result<(), KeyProviderError> {
+        let c = self.caminho(key_id)?;
+        let mut o = std::fs::OpenOptions::new();
+        o.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            // nasce 0600: criar e depois apertar deixaria uma janela legivel
+            o.mode(0o600);
+        }
+        use std::io::Write;
+        o.open(&c)
+            .and_then(|mut f| f.write_all(B64.encode(material.expose()).as_bytes()))
+            .map_err(|e| KeyProviderError::Provider(e.to_string()))
+    }
+
+    fn delete(&self, key_id: &str) -> Result<(), KeyProviderError> {
+        std::fs::remove_file(self.caminho(key_id)?).map_err(|e| match e.kind() {
+            std::io::ErrorKind::NotFound => KeyProviderError::NotFound,
+            _ => KeyProviderError::Provider(e.to_string()),
+        })
     }
 }
 
@@ -227,6 +316,61 @@ mod tests {
         fn delete(&self, _key_id: &str) -> Result<(), KeyProviderError> {
             Ok(())
         }
+    }
+
+    #[cfg(all(feature = "arquivo", unix))]
+    #[test]
+    fn cofre_em_arquivo_sobrevive_nasce_0600_e_nao_sai_da_pasta() {
+        use std::os::unix::fs::PermissionsExt;
+        let d = std::env::temp_dir().join(format!("phx-cofre-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        let a = ArquivoKeyProvider::new(&d).unwrap();
+        a.store(
+            "device/abc/ed25519",
+            &KeyMaterial::new(vec![7; 32]).unwrap(),
+        )
+        .unwrap();
+        // outra instancia (como outro processo) acha a chave
+        let b = ArquivoKeyProvider::new(&d).unwrap();
+        assert_eq!(b.load("device/abc/ed25519").unwrap().expose(), &[7; 32]);
+        let modo = std::fs::metadata(d.join("device_abc_ed25519.key"))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(modo & 0o777, 0o600);
+        assert_eq!(
+            std::fs::metadata(&d).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        // id com ".." e "/" grava DENTRO do cofre: a barra vira "_" e nao ha subpasta
+        b.store("../../fora", &KeyMaterial::new(vec![1; 32]).unwrap())
+            .unwrap();
+        assert!(d.join(".._.._fora.key").is_file());
+        assert!(!d
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("fora.key")
+            .exists());
+        b.delete("device/abc/ed25519").unwrap();
+        assert!(matches!(
+            b.load("device/abc/ed25519"),
+            Err(KeyProviderError::NotFound)
+        ));
+    }
+
+    #[cfg(feature = "os-keyring")]
+    #[test]
+    fn chaveiro_simulado_nao_se_declara_seguro() {
+        // o que o provedor diz tem de bater com o backend que o crate escolheu
+        let p = OsKeyringProvider::new("PhxClaw-teste", "t");
+        assert_eq!(p.is_release_safe(), OsKeyringProvider::persistente());
+        #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+        assert!(
+            OsKeyringProvider::persistente(),
+            "backend de plataforma nao compilado: o chaveiro seria o simulado"
+        );
     }
 
     #[test]

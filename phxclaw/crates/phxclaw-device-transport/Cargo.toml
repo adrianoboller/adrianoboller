@@ -19,8 +19,14 @@ sha2.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-tungstenite.workspace = true
+rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std", "tls12"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["aws_lc_rs", "tls12"] }
+rustls-pki-types = { version = "1", features = ["std"] }
 url.workspace = true
 uuid.workspace = true
+
+[dev-dependencies]
+base64.workspace = true
 
 [lints.rust]
 unsafe_code = "forbid"

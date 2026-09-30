@@ -14,6 +14,8 @@ use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async, tungsten
 use url::Url;
 use uuid::Uuid;
 
+pub mod servidor;
+
 const PROTOCOL_VERSION: u16 = 1;
 
 #[derive(Debug, Error)]
@@ -136,6 +138,20 @@ impl NodeIdentity {
         })
     }
 
+    /// Identidade que nao vai para o chaveiro: a do servidor, que assina as respostas
+    /// para a trilha de auditoria (quem autentica o servidor para o no e o TLS).
+    pub fn efemera(node_uuid: Uuid) -> Result<Self, DeviceTransportError> {
+        let mut seed = [0u8; 32];
+        getrandom::fill(&mut seed).map_err(|e| DeviceTransportError::Random(e.to_string()))?;
+        let signing_key = SigningKey::from_bytes(&seed);
+        seed.fill(0);
+        Ok(Self {
+            node_uuid,
+            public_key_ed25519_b64: B64.encode(signing_key.verifying_key().as_bytes()),
+            signing_key,
+        })
+    }
+
     pub fn load(provider: &dyn KeyProvider, node_uuid: Uuid) -> Result<Self, DeviceTransportError> {
         let material = provider.load(&key_id(node_uuid))?;
         let bytes: [u8; 32] = material
@@ -200,6 +216,45 @@ impl WssDeviceClient {
             .map_err(|e| DeviceTransportError::WebSocket(e.to_string()))?;
         Ok(Self { socket })
     }
+    /// Conecta confiando SO na autoridade dada (PEM): servidor de dispositivos em rede
+    /// local tem certificado proprio, e aceitar as raizes publicas ali abriria a porta
+    /// para qualquer certificado valido na internet responder no lugar dele.
+    pub async fn connect_with_ca(
+        endpoint: &str,
+        ca_pem: &[u8],
+    ) -> Result<Self, DeviceTransportError> {
+        use rustls_pki_types::pem::PemObject;
+        let url = Url::parse(endpoint).map_err(|_| DeviceTransportError::InvalidUrl)?;
+        if url.scheme() != "wss" {
+            return Err(DeviceTransportError::InsecureTransport);
+        }
+        let mut raizes = rustls::RootCertStore::empty();
+        for c in rustls_pki_types::CertificateDer::pem_slice_iter(ca_pem) {
+            let c = c.map_err(|e| DeviceTransportError::WebSocket(format!("CA: {e}")))?;
+            raizes
+                .add(c)
+                .map_err(|e| DeviceTransportError::WebSocket(format!("CA: {e}")))?;
+        }
+        let config = rustls::ClientConfig::builder_with_provider(std::sync::Arc::new(
+            rustls::crypto::aws_lc_rs::default_provider(),
+        ))
+        .with_safe_default_protocol_versions()
+        .map_err(|e| DeviceTransportError::WebSocket(e.to_string()))?
+        .with_root_certificates(raizes)
+        .with_no_client_auth();
+        let (socket, _) = tokio_tungstenite::connect_async_tls_with_config(
+            endpoint,
+            None,
+            false,
+            Some(tokio_tungstenite::Connector::Rustls(std::sync::Arc::new(
+                config,
+            ))),
+        )
+        .await
+        .map_err(|e| DeviceTransportError::WebSocket(e.to_string()))?;
+        Ok(Self { socket })
+    }
+
     pub async fn send(&mut self, envelope: &DeviceEnvelope) -> Result<(), DeviceTransportError> {
         let text = serde_json::to_string(envelope)
             .map_err(|e| DeviceTransportError::Serialization(e.to_string()))?;

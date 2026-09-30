@@ -7,7 +7,17 @@ publish = false
 
 [features]
 default = []
-os-keyring = ["dep:keyring"]
+# Backends reais por plataforma: sem eles o crate keyring cai no armazenamento SIMULADO,
+# em memoria, e a chave "guardada" morre com o processo (medido em 30/09: o no de
+# dispositivo pareava e, reiniciado, nao achava a propria chave).
+os-keyring = [
+    "dep:keyring",
+    "keyring/apple-native",
+    "keyring/windows-native",
+    "keyring/linux-native-sync-persistent",
+    "keyring/crypto-rust",
+]
+arquivo = []
 dev-env = []
 
 [dependencies]

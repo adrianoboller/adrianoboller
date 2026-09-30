@@ -29,6 +29,7 @@ fn main() -> Result<()> {
         "db" => db_command(&args[1..])?,
         "agente" | "agent" => runtime()?.block_on(agente(&args[1..]))?,
         "servir" | "serve" => runtime()?.block_on(servir(&args[1..]))?,
+        "dispositivos" | "devices" => runtime()?.block_on(dispositivos(&args[1..]))?,
         other => bail!("unknown command: {other}. Run `{PRODUCT_CLI} --help`."),
     }
     Ok(())
@@ -206,6 +207,50 @@ async fn servir(args: &[String]) -> Result<()> {
     Ok(())
 }
 
+/// Servidor WSS de dispositivos. Os tokens de pareamento vem de um arquivo (uma linha
+/// "tenant_uuid token" por token); o registro dos nos fica em memoria enquanto o
+/// processo vive -- a verdade duravel e o PostgreSQL, ligado por outro adaptador.
+async fn dispositivos(args: &[String]) -> Result<()> {
+    use phxclaw_device_transport::servidor::{RegistroMemoria, ServidorDispositivos, tls_de_pem};
+    let porta: u16 = opcao(args, "--porta")
+        .map(|p| p.parse())
+        .transpose()?
+        .unwrap_or(8788);
+    let cert = std::fs::read(opcao(args, "--cert").context("falta --cert (PEM)")?)?;
+    let chave = std::fs::read(opcao(args, "--chave").context("falta --chave (PEM)")?)?;
+    let tokens = std::fs::read_to_string(
+        opcao(args, "--tokens").context("falta --tokens (arquivo: tenant_uuid token)")?,
+    )?;
+    let reg = RegistroMemoria::default();
+    let mut n = 0;
+    for l in tokens
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+    {
+        let (t, tok) = l
+            .split_once(char::is_whitespace)
+            .context("linha de token sem espaco")?;
+        if tok.trim().len() < 24 {
+            bail!("token com menos de 24 caracteres");
+        }
+        reg.emitir_token(t.parse()?, tok.trim());
+        n += 1;
+    }
+    let srv = Arc::new(
+        ServidorDispositivos::novo(Arc::new(Mutex::new(reg))).map_err(anyhow::Error::msg)?,
+    );
+    let tls = tls_de_pem(&cert, &chave).map_err(anyhow::Error::msg)?;
+    let host = env::var("PHXCLAW_DEVICE_HOST").unwrap_or_else(|_| "127.0.0.1".into());
+    let l = tokio::net::TcpListener::bind((host.as_str(), porta)).await?;
+    println!(
+        "dispositivos em wss://{} ({n} token(s) de pareamento)",
+        l.local_addr()?
+    );
+    srv.servir(l, tls).await;
+    Ok(())
+}
+
 fn core_command(args: &[String]) -> Result<()> {
     let sub = args.first().map(String::as_str).unwrap_or("status");
     let mut runtime = PhoenixCoreRuntime::new(VERSION, "Master Orchestrator");
@@ -305,6 +350,8 @@ COMMANDS:
                      Run the autonomous agent now, showing each step
   servir [--porta 8787] [--pasta DIR]
                      Task API (create, follow, plan approval, cancel, artifacts, schedules)
+  dispositivos --cert C --chave K --tokens F [--porta 8788]
+                     Device WSS server (TLS, one-time pairing tokens, signed envelopes)
   core status        Probed runtime state (sandbox, browser, model server)
   db plan [platform] Show PostgreSQL managed-install plan
   version            Show version

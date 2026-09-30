@@ -30,8 +30,9 @@ RLS_URL = f"host={PGHOST} port={PGPORT} user=phx_rls dbname={DB}"
 BLOQUEIOS = {
     "desktop_os_automation_e2e": "exige desktop FISICO (teclado, mouse, captura reais); aqui so ha Xvfb",
     "device_pairing_wss_keyring_multiplatform_e2e": (
-        "exige hardware multiplataforma; e o servidor WSS de dispositivos NAO existe no fonte "
-        "(DeviceEnvelope sem consumidor fora do device-transport)"),
+        "exige hardware multiplataforma (Windows, macOS, Android, iOS). O servidor WSS existe "
+        "desde 30/09 e o pareamento esta provado em Linux entre processos, com TLS, token de "
+        "uso unico, reconexao pela chave guardada e cerca crescente; falta o resto das plataformas"),
     "channel_provider_credentialed_e2e": "exige credenciais reais de Telegram/Discord/Slack/WhatsApp/Teams (decisao do dono)",
     "real_stt_model_e2e": "PHXCLAW_E2E_WHISPER_* nao definidos (whisper.cpp + modelo com SHA-256 de fonte externa)",
 }

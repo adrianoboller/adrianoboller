@@ -7,7 +7,7 @@ publish = false
 
 [dependencies]
 phxclaw-device-transport = { path = "../../crates/phxclaw-device-transport" }
-phxclaw-key-provider = { path = "../../crates/phxclaw-key-provider", features = ["os-keyring"] }
+phxclaw-key-provider = { path = "../../crates/phxclaw-key-provider", features = ["os-keyring", "arquivo"] }
 serde_json.workspace = true
 tokio.workspace = true
 uuid.workspace = true

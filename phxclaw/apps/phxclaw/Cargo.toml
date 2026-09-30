@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+phxclaw-device-transport = { path = "../../crates/phxclaw-device-transport" }
 anyhow.workspace = true
 axum.workspace = true
 serde_json.workspace = true
