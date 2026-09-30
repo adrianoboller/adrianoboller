@@ -1,4 +1,6 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+pub mod assinatura;
+
 use chrono::{DateTime, Utc};
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use phxclaw_types::{PluginManifest, PluginState, SandboxNetworkMode, is_uuid_v7};
@@ -635,6 +637,43 @@ mod tests {
         assert!(report.accepted >= 3);
         assert_eq!(report.quarantined, 0);
         registry.resolve_dependencies().unwrap();
+    }
+
+    #[test]
+    fn reassinar_com_a_chave_do_signatario_e_aceito_e_com_outra_e_recusado() {
+        use crate::assinatura::{chave_do_signatario, reassinar};
+        use base64::Engine as _;
+        let semente = [42u8; 32];
+        let publica = base64::engine::general_purpose::STANDARD.encode(
+            ed25519_dalek::SigningKey::from_bytes(&semente)
+                .verifying_key()
+                .as_bytes(),
+        );
+        let trust = TrustStore::from_json(&format!(
+            r#"{{"version":"1","signers":[{{"id":"teste","algorithm":"ed25519","public_key_base64":"{publica}","status":"active","allowed_name_prefixes":["com.phxclaw."]}}]}}"#
+        ))
+        .unwrap();
+        let b64 = base64::engine::general_purpose::STANDARD.encode(semente);
+        // chave de outro signatario: recusada antes de assinar
+        let outra = base64::engine::general_purpose::STANDARD.encode([7u8; 32]);
+        assert!(chave_do_signatario(&outra, "teste", &trust).is_err());
+        let chave = chave_do_signatario(&b64, "teste", &trust).unwrap();
+        let mut v: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../plugins/builtin/manifests/office-document.tool.plugin.json"
+        ))
+        .unwrap();
+        v["integrity"]["signer"] = "teste".into();
+        let novo = reassinar(&v.to_string(), &root(), &chave).unwrap();
+        let constitution: serde_json::Value =
+            serde_json::from_str(include_str!("../../../config/constitution.json")).unwrap();
+        let api = constitution["plugin_api_version"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let mut reg = PluginRegistry::new(api, root(), trust);
+        let m: PluginManifest = serde_json::from_str(&novo).unwrap();
+        reg.register(m, Path::new("reassinado.plugin.json"))
+            .unwrap();
     }
 
     #[test]
