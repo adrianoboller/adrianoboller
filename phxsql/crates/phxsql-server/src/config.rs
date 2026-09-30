@@ -1476,6 +1476,21 @@ impl Segredo {
             OrigemDoSegredo::Ambiente => do_ambiente,
         }
     }
+
+    /// Ha credencial aqui que uma heranca LEVARIA adiante?
+    ///
+    /// Nao e `valor().is_ok_and(!vazio)`: o envelope trancado e a variavel
+    /// ausente tambem guardam credencial -- a chave volta, a variavel e
+    /// exportada, e a senha segue para onde a ligacao aponta. Contar so o
+    /// valor aberto deixaria passar a heranca justamente na ligacao que ja
+    /// tem um problema, que e a hora em que alguem mexe nela.
+    pub fn guarda_algo(&self) -> bool {
+        !self.valor.is_empty()
+            || matches!(
+                self.origem,
+                OrigemDoSegredo::Ausente(_) | OrigemDoSegredo::Trancado { .. }
+            )
+    }
 }
 
 /// Para onde o alerta vai, e com que credencial.

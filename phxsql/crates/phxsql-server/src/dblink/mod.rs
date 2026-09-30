@@ -779,10 +779,72 @@ impl Definicao {
     /// Existe para a tela de edicao: ela nunca RECEBE a senha (o `para_json`
     /// nao a manda), entao nao teria como devolve-la, e sem isto mudar a porta
     /// apagaria a credencial.
-    pub fn com_a_senha_de(mut self, outra: &Definicao) -> Definicao {
+    ///
+    /// E RECUSA quando o destino mudou (pedido 470): a senha guardada foi dada
+    /// para AQUELE host, porta, motor, usuario e pino, e nao para qualquer um.
+    /// Sem a recusa, uma sessao de administrador roubada apontava a ligacao
+    /// para um ouvinte dela e recebia a resposta do `mysql_native_password`
+    /// (quebravel offline, porque o ouvinte escolhe o sal) -- o unico caminho
+    /// pelo qual a credencial saia do cadastro cifrado. A recusa mora AQUI, e
+    /// nao no chamador, para que todo caminho que herda passe por ela: quem
+    /// herda sem conferir o destino e o irmao que esquece.
+    ///
+    /// Recusar, e nao apagar calado: apagar deixaria a ligacao gravada sem
+    /// credencial, e o erro so apareceria no primeiro teste, longe da mao que
+    /// trocou o host.
+    pub fn com_a_senha_de(mut self, outra: &Definicao) -> Result<Definicao> {
+        if outra.senha.guarda_algo() || !outra.senha_env.trim().is_empty() {
+            self.conferir_destino_para_herdar(outra, "senha")?;
+        }
         self.senha = outra.senha.clone();
         self.senha_env = outra.senha_env.clone();
-        self
+        Ok(self)
+    }
+
+    /// Em que o destino desta definicao difere do da `outra` -- o campo, ou
+    /// `None` quando e o mesmo destino.
+    ///
+    /// Destino e tudo o que decide A QUEM a credencial e apresentada: host,
+    /// porta, motor, usuario e pino. O `database` e o resto nao entram: trocar
+    /// a base no mesmo servidor, com o mesmo usuario, nao manda a senha a
+    /// ninguem novo. O host compara sem caixa porque nome de maquina nao tem
+    /// caixa -- exigir a senha por «ERP» virar «erp» seria atrito sem ganho.
+    ///
+    /// Pressupoe o pino JA herdado: pino ausente no pedido nao e pino trocado.
+    pub fn destino_diferente_de(&self, outra: &Definicao) -> Option<&'static str> {
+        if !self.host.trim().eq_ignore_ascii_case(outra.host.trim()) {
+            Some("host")
+        } else if self.porta != outra.porta {
+            Some("porta")
+        } else if self.motor != outra.motor {
+            Some("motor")
+        } else if self.usuario != outra.usuario {
+            Some("usuario")
+        } else if !self
+            .chave_do_fio
+            .trim()
+            .eq_ignore_ascii_case(outra.chave_do_fio.trim())
+        {
+            Some("chave_do_fio")
+        } else {
+            None
+        }
+    }
+
+    /// A recusa comum as duas herancas de credencial -- uma mensagem so, para
+    /// que a da senha e a do token nao divirjam na primeira revisao.
+    fn conferir_destino_para_herdar(&self, outra: &Definicao, credencial: &str) -> Result<()> {
+        match self.destino_diferente_de(outra) {
+            None => Ok(()),
+            Some(campo) => Err(PhxError::Esquema(format!(
+                "a ligacao {:?} troca o destino ({campo}) sem mandar a credencial: \
+                 mande a {credencial} junto ao trocar o host (ou a porta, o motor, \
+                 o usuario, o pino) -- a guardada foi dada ao destino antigo e nao \
+                 segue para um novo. Mande \"{credencial}\" ou \"{credencial}_env\" \
+                 no mesmo pedido",
+                self.nome
+            ))),
+        }
     }
 
     /// Esta definicao, com o token de outra.
@@ -792,10 +854,21 @@ impl Definicao {
     /// a senha nao pode perder o token. Juntar as duas numa funcao so faria a
     /// condicao de UMA decidir pelas DUAS -- e o campo esquecido seria apagado
     /// em silencio, que e exatamente o estrago que estas funcoes impedem.
-    pub fn com_o_token_de(mut self, outra: &Definicao) -> Definicao {
+    ///
+    /// Recusa pelo mesmo motivo da senha (pedido 470): o token e o portao 1 do
+    /// outro PhxSql, e numa ligacao sem pino um ouvinte no host novo o recebe
+    /// inteiro. So vale quando o motor NOVO e o que apresenta o token -- num
+    /// `mysql` ele fica gravado sem leitor e nao sai para ninguem, e recusar
+    /// ali obrigaria a tela a mandar um campo que ela nem mostra.
+    pub fn com_o_token_de(mut self, outra: &Definicao) -> Result<Definicao> {
+        if self.motor == Motor::Phx
+            && (outra.token.guarda_algo() || !outra.token_env.trim().is_empty())
+        {
+            self.conferir_destino_para_herdar(outra, "token_remoto")?;
+        }
         self.token = outra.token.clone();
         self.token_env = outra.token_env.clone();
-        self
+        Ok(self)
     }
 
     /// Herda as tabelas ligadas de uma definicao anterior.

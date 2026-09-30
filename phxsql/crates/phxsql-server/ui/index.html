@@ -10979,8 +10979,9 @@ async function editarDbLink(nome) {
     const env = $("#fSenhaEnv").value.trim();
     if (env) p.senha_env = env;
     // Só manda `senha` quando foi digitada: sem o campo, o servidor mantém a
-    // que já está guardada — e é isso que faz editar a porta não apagar a
-    // credencial.
+    // que já está guardada — e é isso que faz editar o timeout não apagar a
+    // credencial. Trocar host, porta, motor ou usuário sem ela o servidor
+    // RECUSA (pedido 470): a guardada não segue para um destino novo.
     else if ($("#fSenha").value) p.senha = $("#fSenha").value;
     // O token com a MESMA regra da senha, e a condicao dele e dele: sem o
     // campo, o servidor mantem o que ja esta guardado. So vai no motor que o

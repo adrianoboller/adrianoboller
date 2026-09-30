@@ -17265,4 +17265,37 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "servidor::testes_gatilhos::after_insert_audita_noutra_tabela",
         ],
     },
+    {
+        "id": "dblink-troca-o-host-e-herda-a-senha",
+        "titulo": "trocar o host de uma ligação do DbLink sem mandar a senha herda a guardada, e ela sai para o destino novo",
+        "porque": (
+            "pedido 470 (SEC B6): `dblink_salvar` com host, porta, motor, "
+            "usuario ou pino novos e sem a credencial herdava a senha e o "
+            "token gravados. Uma sessao de administrador roubada apontava a "
+            "ligacao para um ouvinte dela e recebia o `mysql_native_password` "
+            "(quebravel offline, porque o ouvinte escolhe o sal) ou o token "
+            "de uma ligacao phxsql -- o unico caminho pelo qual a credencial "
+            "saia do cadastro cifrado. A recusa mora nas funcoes de heranca "
+            "(`com_a_senha_de`, `com_o_token_de`), e nao no chamador, para "
+            "valer em todo caminho que herda."
+        ),
+        "arquivo": "crates/phxsql-server/src/dblink/mod.rs",
+        "trecho": """        match self.destino_diferente_de(outra) {
+            None => Ok(()),
+""",
+        "troca": """        // DEFEITO REPOSTO (470): destino trocado nao conta, e a heranca passa.
+        match None::<&str> {
+            None => Ok(()),
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_dblink_cifra::trocar_o_host_sem_a_senha_recusa_em_vez_de_herdar",
+            "servidor::testes_dblink_cifra::trocar_o_host_ou_o_pino_sem_o_token_recusa_em_vez_de_herdar",
+        ],
+        "seguem": [
+            "servidor::testes_dblink_cifra::salvar_sem_trocar_o_destino_continua_herdando_a_senha",
+            "servidor::testes_dblink_cifra::salvar_pela_tela_nao_apaga_o_pino_nem_a_decisao_da_cifra",
+        ],
+    },
 ]
