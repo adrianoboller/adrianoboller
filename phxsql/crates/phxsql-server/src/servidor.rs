@@ -26141,10 +26141,16 @@ impl Servidor {
 
         let (mut d, mut c) = self.ligar(p)?;
         d.exigir_catalogo_em_sql("dblink_ligar")?;
-        let dados = self.travar_dados()?;
-        let mut ligadas = Vec::new();
+        // Pedido 545: a REDE inteira primeiro, SEM a trava de dados. Antes a
+        // trava global era tomada aqui em cima e o `LIMIT 0` de cada tabela
+        // ia ao fio com ela na mao: um par que gotejasse um byte abaixo do
+        // prazo por leitura prendia todo pedido de todo cliente do banco. Os
+        // metadados remotos nao dependem de nada local, entao busca-los antes
+        // nao muda o que se decide depois -- e, se uma tabela da lista falhar
+        // no fio, nenhuma chega a ser criada, em vez de metade.
+        let mut buscadas = Vec::with_capacity(pedidos.len());
         for t in pedidos {
-            let mut sinc = sincronia::Sincronia::de_json(t)?;
+            let sinc = sincronia::Sincronia::de_json(t)?;
             crate::dblink::nome_seguro(&sinc.remota)?;
             if sinc.local_database.trim().is_empty() {
                 return Err(PhxError::Esquema(format!(
@@ -26171,6 +26177,15 @@ impl Servidor {
                 1,
             )?;
             let (esquema, chave) = sincronia::esquema_local_de(&sinc.local_tabela, &r.colunas)?;
+            buscadas.push((sinc, esquema, chave));
+        }
+        c.encerrar();
+
+        // So agora a trava, e so para o que e local: criar a tabela que falta.
+        // Nenhuma ida ao fio acontece daqui ate solta-la.
+        let dados = self.travar_dados()?;
+        let mut ligadas = Vec::new();
+        for (mut sinc, esquema, chave) in buscadas {
             let db = dados.garantir_database(&sinc.local_database)?;
             let criada = match db.abrir_qualificada(&sinc.local_tabela) {
                 Ok(existente) => {
@@ -26201,7 +26216,6 @@ impl Servidor {
             ]));
             d.sincronias.push(sinc);
         }
-        c.encerrar();
         drop(dados);
         let mut r = self.dblink.tomar("dblink")?;
         let gravacao = r.salvar(d)?;
@@ -26230,7 +26244,6 @@ impl Servidor {
             )));
         }
 
-        let mut dados = self.travar_dados()?;
         let mut relatorio = Vec::new();
         for sinc in &d.sincronias {
             if !so.is_empty()
@@ -26265,20 +26278,18 @@ impl Servidor {
                 )));
             }
 
-            let db = dados.abrir_database(&sinc.local_database)?;
-            let mut t = db.abrir_qualificada(&sinc.local_tabela).map_err(|_| {
-                PhxError::NaoEncontrado(format!(
-                    "a tabela local {}.{} nao existe: rode o assistente do DbLink",
-                    sinc.local_database, sinc.local_tabela
-                ))
-            })?;
-            t.definir_usuario(sessao.id());
-            t.ligar_imagem_no_diario(self.config.replicacao.imagem_da_linha);
-            let esquema = t.esquema().clone();
-
             // O lado de la, inteiro -- com uma linha de sobra para saber se o
             // teto cortou. Sincronizar metade e fingir que acabou seria pior
             // que recusar.
+            //
+            // E vem ANTES da trava de dados (pedido 545). Com a trava na mao,
+            // um par que gotejasse abaixo do prazo por leitura prendia todo
+            // pedido de todo cliente. Ler antes e seguro porque a trava nunca
+            // cobriu o lado de la: o remoto podia mudar entre esta leitura e a
+            // gravacao local tambem quando ela era feita sob a trava. Do lado
+            // de ca nada e decidido aqui -- esquema, mapa, chave, indice, linhas
+            // locais e o plano saem todos sob a trava, do mesmo retrato em que
+            // a gravacao acontece.
             let teto = d.max_linhas;
             let r = c.consultar(
                 &format!(
@@ -26294,6 +26305,20 @@ impl Servidor {
                     sinc.remota, teto
                 )));
             }
+
+            // A trava por SINCRONIA, e so para o trecho local: cada tabela
+            // ligada solta o banco antes de voltar ao fio pela seguinte.
+            let mut dados = self.travar_dados()?;
+            let db = dados.abrir_database(&sinc.local_database)?;
+            let mut t = db.abrir_qualificada(&sinc.local_tabela).map_err(|_| {
+                PhxError::NaoEncontrado(format!(
+                    "a tabela local {}.{} nao existe: rode o assistente do DbLink",
+                    sinc.local_database, sinc.local_tabela
+                ))
+            })?;
+            t.definir_usuario(sessao.id());
+            t.ligar_imagem_no_diario(self.config.replicacao.imagem_da_linha);
+            let esquema = t.esquema().clone();
 
             let negocio = sincronia::posicoes_de_negocio(&esquema);
             let mapa = sincronia::mapa_de_colunas(&esquema, &r.colunas)?;
@@ -26359,9 +26384,23 @@ impl Servidor {
                 .iter()
                 .map(|p| (esquema.colunas()[*p].nome.clone(), esquema.colunas()[*p].ty))
                 .collect();
+            let empurrao =
+                sincronia::sql_do_empurrao(&sinc.remota, &colunas_sql, &plano.para_la, 500)?;
+            // O punho ANTES da trava: o `Drop` do `Table` ainda grava no disco,
+            // e gravar depois de soltar seria escrever sem a trava.
+            drop(t);
+            drop(dados);
+
+            // O empurrao volta ao fio SEM a trava (pedido 545). As linhas dele
+            // sao o retrato local lido sob a trava acima; se alguem alterar a
+            // linha aqui depois de soltarmos, o `plano` -- que so compara
+            // valores, sem memoria da rodada anterior -- ve a diferenca na
+            // proxima rodada e a empurra de novo. E o mesmo que acontecia com
+            // uma escrita que chegasse um instante depois do fim da rodada
+            // antiga: soltar antes nao cria caso novo, so tira o banco inteiro
+            // da fila de um par lento.
             let mut empurradas = 0u64;
-            for sql in sincronia::sql_do_empurrao(&sinc.remota, &colunas_sql, &plano.para_la, 500)?
-            {
+            for sql in empurrao {
                 let r = c.consultar(&sql, 1)?;
                 empurradas += r.afetadas;
             }
@@ -65322,5 +65361,275 @@ mod testes_painel_508 {
             assert!(disco > 0);
             assert_eq!(bytes(t), disco as i64, "{t}: o painel nao mede o disco");
         }
+    }
+}
+
+/// Pedido 545: o DbLink fala com a rede SEM a trava de dados.
+///
+/// `dblink_ligar` e `dblink_sincronizar` iam ao fio com a trava global na mao,
+/// e o unico prazo era o de cada leitura: um par que gotejasse um byte abaixo
+/// dele prendia todo pedido de todo cliente pelo tempo que quisesse. A prova
+/// e pelo soquete, contra um MySQL(R) falso que goteja cada resposta, e o que
+/// ela mede e o que o defeito fazia: quanto tempo um `inserir` qualquer, em
+/// outra tabela, espera enquanto o par goteja.
+#[cfg(test)]
+mod testes_dblink_fora_da_trava {
+    use super::*;
+    use std::io::{Read, Write};
+    use std::net::{TcpListener, TcpStream};
+    use std::sync::mpsc;
+
+    /// Quanto cada resposta do par leva para chegar inteira. Cada byte chega
+    /// bem abaixo do prazo por leitura da ligacao (1 s), que e o caso do
+    /// defeito: o prazo por leitura nunca vence.
+    const GOTEJO: Duration = Duration::from_millis(1_200);
+
+    /// O limite do que o `inserir` vizinho pode esperar. Com a trava na mao do
+    /// DbLink ele espera o gotejo inteiro; sem ela, o tempo de um `inserir`.
+    const LIMIAR: Duration = Duration::from_millis(600);
+
+    fn quadro(seq: u8, carga: &[u8]) -> Vec<u8> {
+        let mut q = (carga.len() as u32).to_le_bytes()[..3].to_vec();
+        q.push(seq);
+        q.extend_from_slice(carga);
+        q
+    }
+
+    fn lenenc(saida: &mut Vec<u8>, b: &[u8]) {
+        saida.push(b.len() as u8);
+        saida.extend_from_slice(b);
+    }
+
+    /// A definicao de uma coluna de `clientes`, no formato do protocolo 41.
+    fn coluna(nome: &str, codigo: u8, bandeiras: u16, tamanho: u32) -> Vec<u8> {
+        let mut p = Vec::new();
+        for campo in [&b"def"[..], b"erp", b"clientes", b"clientes"] {
+            lenenc(&mut p, campo);
+        }
+        lenenc(&mut p, nome.as_bytes());
+        lenenc(&mut p, nome.as_bytes());
+        p.push(0x0c);
+        p.extend_from_slice(&[45, 0]);
+        p.extend_from_slice(&tamanho.to_le_bytes());
+        p.push(codigo);
+        p.extend_from_slice(&bandeiras.to_le_bytes());
+        p.extend_from_slice(&[0, 0, 0]);
+        p
+    }
+
+    const EOF: [u8; 5] = [0xFE, 0, 0, 2, 0];
+
+    /// A resposta do par a uma instrucao: o esquema de `clientes` (id INT
+    /// chave, nome VARCHAR(40)) com a linha remota `1, remoto` quando e o
+    /// `SELECT` inteiro, e um OK de uma linha para o que nao e `SELECT`.
+    fn resposta(sql: &str) -> Vec<Vec<u8>> {
+        if !sql.starts_with("SELECT") {
+            return vec![vec![0x00, 0x01, 0x00, 0x02, 0x00, 0x00, 0x00]];
+        }
+        let mut r = vec![
+            vec![2],
+            coluna("id", 0x03, 0x0003, 11),
+            coluna("nome", 0xfd, 0, 160),
+            EOF.to_vec(),
+        ];
+        if !sql.contains("LIMIT 0") {
+            let mut linha = Vec::new();
+            lenenc(&mut linha, b"1");
+            lenenc(&mut linha, b"remoto");
+            r.push(linha);
+        }
+        r.push(EOF.to_vec());
+        r
+    }
+
+    fn ler_pacote(s: &mut TcpStream) -> Option<Vec<u8>> {
+        let mut cabeca = [0u8; 4];
+        s.read_exact(&mut cabeca).ok()?;
+        let n = u32::from_le_bytes([cabeca[0], cabeca[1], cabeca[2], 0]) as usize;
+        let mut carga = vec![0u8; n];
+        s.read_exact(&mut carga).ok()?;
+        Some(carga)
+    }
+
+    /// Uma conexao do par: saudacao e OK na hora, e cada resposta a uma
+    /// instrucao GOTEJADA ao longo do `GOTEJO`. A instrucao vai pelo canal no
+    /// instante em que chega -- e o sinal de que o DbLink esta no fio.
+    fn atender(mut s: TcpStream, avisar: mpsc::Sender<String>) {
+        let mut saudacao = vec![10u8];
+        saudacao.extend_from_slice(b"8.0.0-falso\0");
+        saudacao.extend_from_slice(&7u32.to_le_bytes());
+        saudacao.extend_from_slice(b"abcdefgh\0");
+        saudacao.extend_from_slice(&[0xFF, 0xFF, 45, 2, 0, 0xFF, 0x0F, 21]);
+        saudacao.extend_from_slice(&[0u8; 10]);
+        saudacao.extend_from_slice(b"ijklmnopqrst\0mysql_native_password\0");
+        if s.write_all(&quadro(0, &saudacao)).is_err() || ler_pacote(&mut s).is_none() {
+            return;
+        }
+        let ok = [0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00];
+        if s.write_all(&quadro(2, &ok)).is_err() {
+            return;
+        }
+        while let Some(pacote) = ler_pacote(&mut s) {
+            // 0x03 e COM_QUERY; o resto (COM_QUIT) encerra.
+            if pacote.first() != Some(&0x03) {
+                return;
+            }
+            let sql = String::from_utf8_lossy(&pacote[1..]).into_owned();
+            let _ = avisar.send(sql.clone());
+            let mut bytes = Vec::new();
+            for (i, carga) in resposta(&sql).iter().enumerate() {
+                bytes.extend(quadro(i as u8 + 1, carga));
+            }
+            let passo = GOTEJO / bytes.len() as u32;
+            for b in bytes {
+                std::thread::sleep(passo);
+                if s.write_all(&[b]).is_err() {
+                    return;
+                }
+            }
+        }
+    }
+
+    fn par_que_goteja() -> (u16, mpsc::Receiver<String>) {
+        let ouvinte = TcpListener::bind("127.0.0.1:0").unwrap();
+        let porta = ouvinte.local_addr().unwrap().port();
+        let (avisar, avisos) = mpsc::channel();
+        std::thread::spawn(move || {
+            for s in ouvinte.incoming() {
+                let Ok(s) = s else { return };
+                let avisar = avisar.clone();
+                std::thread::spawn(move || atender(s, avisar));
+            }
+        });
+        (porta, avisos)
+    }
+
+    fn servidor(dir: &std::path::Path) -> Arc<Servidor> {
+        let c = Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            jobs: dir.join("jobs.json"),
+            token: "t".into(),
+            ..Config::default()
+        };
+        Servidor::novo(c).unwrap()
+    }
+
+    fn pede(s: &Arc<Servidor>, corpo: &str) -> Result<Json> {
+        let mut ses = Sessao {
+            ip: "127.0.0.1".into(),
+            ..Sessao::default()
+        };
+        let (_, _, r) = s.despachar(
+            &format!(r#"{{"token":"t",{corpo}}}"#),
+            &mut ses,
+            "127.0.0.1",
+        );
+        r
+    }
+
+    /// Espera o par receber uma instrucao que comece por `inicio` e mede
+    /// quanto um `inserir` em OUTRA tabela espera nesse instante.
+    fn espera_do_vizinho(
+        s: &Arc<Servidor>,
+        avisos: &mpsc::Receiver<String>,
+        inicio: &str,
+        id: u64,
+    ) -> Duration {
+        let sql = avisos
+            .recv_timeout(Duration::from_secs(10))
+            .expect("o par nao recebeu instrucao nenhuma");
+        assert!(sql.starts_with(inicio), "esperava {inicio:?}, veio {sql:?}");
+        let relogio = Instant::now();
+        pede(
+            s,
+            &format!(r#""op":"inserir","database":"loja","tabela":"outra","linha":{{"id":{id}}}"#),
+        )
+        .unwrap();
+        relogio.elapsed()
+    }
+
+    /// **545: enquanto o par goteja, o resto do banco anda.** Tres idas ao
+    /// fio, as tres que iam com a trava na mao: o `LIMIT 0` do
+    /// `dblink_ligar`, e o `SELECT` e o empurrao do `dblink_sincronizar`.
+    ///
+    /// # Prova real
+    ///
+    /// Com a trava tomada antes do fio (o codigo de antes), o `inserir` em
+    /// `loja.outra` espera o gotejo inteiro nas tres medidas -- ~1,2 s cada,
+    /// acima do `LIMIAR`. Com o conserto, espera so o proprio trabalho.
+    #[test]
+    fn o_par_que_goteja_nao_prende_o_banco() {
+        let dir = DirTemp::novo("545-dblink-trava");
+        let s = servidor(&dir);
+        let (porta, avisos) = par_que_goteja();
+        pede(&s, r#""op":"criar_database","database":"loja""#).unwrap();
+        pede(
+            &s,
+            r#""op":"criar_tabela","database":"loja","tabela":"outra",
+               "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true}],
+               "indices":[{"nome":"pk","colunas":["id"],"unico":true,"primario":true}]"#,
+        )
+        .unwrap();
+        pede(
+            &s,
+            &format!(
+                r#""op":"dblink_salvar","nome":"erp","motor":"mysql","host":"127.0.0.1",
+                   "porta":{porta},"usuario":"u","database":"erp","timeout_s":1,
+                   "somente_leitura":false,"cifra":false"#
+            ),
+        )
+        .unwrap();
+
+        let s2 = Arc::clone(&s);
+        let ligar = std::thread::spawn(move || {
+            pede(
+                &s2,
+                r#""op":"dblink_ligar","dblink":"erp","tabelas":[{"remota":"clientes",
+                   "local_database":"loja","sentido":"dois","dono":"aqui"}]"#,
+            )
+        });
+        let no_ligar = espera_do_vizinho(&s, &avisos, "SELECT * FROM `clientes` LIMIT 0", 1);
+        let r = ligar.join().unwrap().unwrap();
+        assert!(
+            r.escrever().contains("\"tabela_criada\":true"),
+            "{}",
+            r.escrever()
+        );
+
+        // Uma linha so daqui, para a rodada ter o que empurrar.
+        pede(
+            &s,
+            r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":2,"nome":"local"}"#,
+        )
+        .unwrap();
+        let s2 = Arc::clone(&s);
+        let sincronizar =
+            std::thread::spawn(move || pede(&s2, r#""op":"dblink_sincronizar","dblink":"erp""#));
+        let no_select = espera_do_vizinho(&s, &avisos, "SELECT * FROM `clientes`", 2);
+        let no_empurrao = espera_do_vizinho(&s, &avisos, "INSERT", 3);
+        let r = sincronizar.join().unwrap().unwrap().escrever();
+
+        // A rodada continua certa: puxou a remota e empurrou a local.
+        assert!(r.contains("\"puxadas_novas\":1"), "{r}");
+        assert!(r.contains("\"empurradas\":1"), "{r}");
+        // As tres de uma vez na mensagem: o vermelho diz QUAIS idas ao fio
+        // prendiam o banco, e nao so a primeira.
+        let presas: Vec<String> = [
+            ("LIMIT 0 do dblink_ligar", no_ligar),
+            ("SELECT do dblink_sincronizar", no_select),
+            ("empurrao do dblink_sincronizar", no_empurrao),
+        ]
+        .iter()
+        .filter(|(_, esperou)| *esperou >= LIMIAR)
+        .map(|(onde, esperou)| format!("{onde}: {esperou:?}"))
+        .collect();
+        assert!(
+            presas.is_empty(),
+            "um inserir em outra tabela esperou o par gotejar (limiar {LIMIAR:?}) -- o \
+             DbLink estava no fio com a trava de dados na mao: {presas:?}"
+        );
     }
 }

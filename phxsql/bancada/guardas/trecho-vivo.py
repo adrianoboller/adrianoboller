@@ -367,6 +367,9 @@ dia, nunca no desejado:
   que nao completa, o servidor que segue de pe, o disco cheio que grava a
   sentinela do 509, a exclusao de vez que nao confere o teto antes, e os dois
   observadores (o `.reason` e o `.fts`) cujo `?` pulava o diario.
+  **SUBIU para 493 em 30/09/2026** (pedido 545): uma guarda -- o DbLink que
+  ia ao fio com a trava de dados global na mao
+  (`dblink-no-fio-com-a-trava-de-dados`). Contado pelo `--catraca`: 492 + 1; no merge com o 576 (que tambem subiu de 492 para 493), 494.
   impedir. Ele e a unica coisa nesta regua que reprova o APAGAMENTO; tudo o
   mais aqui reprova o envelhecimento.
 
@@ -475,7 +478,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 493
+PISO_DAS_ENTRADAS = 494
 
 # ------------------------------------------------------------- APOSENTADAS
 #

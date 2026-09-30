@@ -1142,6 +1142,7 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `backup-em-pasta-que-falha-deixa-as-copias` — o backup em PASTA cujo manifesto recusa deixa as cópias na pasta sem `backup.json` para sempre
 - `cascata-dispara-after-do-elo-so-no-commit` — a mesma cascata do `ao_alterar` dispara o AFTER da filha no COMMIT e não na alteração solta
 - `dblink-troca-o-host-e-herda-a-senha` — trocar o host de uma ligação do DbLink sem mandar a senha herda a guardada, e ela sai para o destino novo
+- `dblink-no-fio-com-a-trava-de-dados` — `dblink_ligar` e `dblink_sincronizar` vão ao fio com a trava de dados global na mão: um par que goteja abaixo do prazo por leitura prende todo pedido de todo cliente
 
 As guardas que esta corrida ainda cita, hoje aposentadas:
 
