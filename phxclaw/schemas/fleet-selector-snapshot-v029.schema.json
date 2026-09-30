@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "phxclaw://schemas/fleet-selector-snapshot-v029",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "snapshot_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tenant_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "selector": {
+      "$ref": "phxclaw://schemas/fleet-selector-v029"
+    },
+    "selector_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "membership_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "member_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "snapshot_uuid",
+    "tenant_uuid",
+    "selector",
+    "selector_sha256",
+    "membership_sha256",
+    "member_count",
+    "created_at"
+  ]
+}

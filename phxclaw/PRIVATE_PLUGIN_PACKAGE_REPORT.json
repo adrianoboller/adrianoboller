@@ -1,0 +1,20 @@
+{
+  "packages": [
+    {
+      "path": "/mnt/data/PhxClaw_Plugin_Phoenix_Dashboards_v0.1.phxplugin",
+      "sha256": "37507f8c98b58c160dffb9defda3f8b677bb7d3a088d83cd20ec837aeb2290ae",
+      "name": "com.phxclaw.private.dashboards",
+      "uuid": "01a0e629-e979-7329-93cf-11aeb8a8e698",
+      "files": 107
+    },
+    {
+      "path": "/mnt/data/PhxClaw_Plugin_Web_Absorber_FXSDK_v0.1.phxplugin",
+      "sha256": "8d63cf580bfc9f5a3dfa250f11d3574d49d78e2ce9227dd786b913b165ed3511",
+      "name": "com.phxclaw.private.web-fxsdk",
+      "uuid": "01a0e629-e979-78ff-9c71-e4cd170cf52b",
+      "files": 58
+    }
+  ],
+  "private_signer_public_key": "k1LnqTp9roZCsi83SPkIxpMiYCBdPYDTMXdc6AgVnyI=",
+  "private_key_included": false
+}

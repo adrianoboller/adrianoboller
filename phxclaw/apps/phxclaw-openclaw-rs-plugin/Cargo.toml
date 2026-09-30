@@ -1,0 +1,13 @@
+[package]
+name = "phxclaw-openclaw-rs-plugin"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+chrono.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+phxclaw-openclaw-rs-bridge = { path = "../../crates/phxclaw-openclaw-rs-bridge" }
+phxclaw-process-protocol = { path = "../../crates/phxclaw-process-protocol" }
+phxclaw-types = { path = "../../crates/phxclaw-types" }

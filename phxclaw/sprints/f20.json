@@ -1,0 +1,52 @@
+{
+  "uuid": "01a0e5ed-9673-7f54-95fe-f2bd602c4349",
+  "code": "F20",
+  "title": "Team Runtime",
+  "goal": "Executar equipes multiagente concorrentes com leases, fencing, heartbeat, cancelamento, recovery e orçamento.",
+  "status": "review",
+  "tasks": [
+    {
+      "uuid": "01a0e5ed-9673-74a8-af8f-9176158f8450",
+      "title": "Team session model",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e5ed-9673-71e1-ab79-9c3a59d604fd",
+      "title": "Worker leases/fencing",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e5ed-9673-7640-bbd6-56e762f4314b",
+      "title": "Heartbeat/cancel",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e5ed-9673-72af-9c26-a502c44badf7",
+      "title": "Parallel task dispatch",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e5ed-9673-7d32-ae17-2e62b07a1c76",
+      "title": "Recovery/E2E",
+      "status": "review"
+    }
+  ],
+  "definition_of_done": [
+    "Contratos e schemas versionados",
+    "Implementação integrada ao Event Bus e Evidence Ledger",
+    "Testes unitários e integração sem mocks para os caminhos obrigatórios",
+    "Documentação, observabilidade, segurança e rollback definidos",
+    "Gate E2E obrigatório antes de marcar done"
+  ],
+  "notes": [
+    "Rust Team Runtime source added with leases, fencing tokens, heartbeat, cancellation, dependency gating and expired-lease recovery.",
+    "Operational Python bootstrap executes the concurrency semantics in this environment.",
+    "Mission Runtime gained TeamExecutor injection and TeamDispatch action; Rust cargo gates remain pending because cargo/rustc are unavailable."
+  ],
+  "state": "review",
+  "canonical_project_version": "0.67.0",
+  "canonical_state_ref": "config/project-state-canonical.v067.json",
+  "implementation_state": "source_ready",
+  "verification_state": "static_verified",
+  "open_gaps": []
+}

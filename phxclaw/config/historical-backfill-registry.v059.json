@@ -1,0 +1,2354 @@
+{
+  "version": "0.59.0",
+  "registry_count": 95,
+  "sources": [
+    {
+      "priority": 10,
+      "source_version": "0.42.0",
+      "source_table": "pm_cost_snapshots",
+      "domain": "project_management",
+      "node_kind": "evidence",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [],
+      "link_ref_columns": [],
+      "title_columns": [],
+      "source_state_columns": [],
+      "evidence_columns": [],
+      "timestamp_columns": [],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.42.0",
+      "source_table": "pm_events",
+      "domain": "project_management",
+      "node_kind": "evidence",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [],
+      "link_ref_columns": [],
+      "title_columns": [
+        "event_type"
+      ],
+      "source_state_columns": [],
+      "evidence_columns": [
+        "evidence_sha256"
+      ],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.42.0",
+      "source_table": "pm_pdca_cycles",
+      "domain": "project_management",
+      "node_kind": "workflow",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [
+        "cycle_uuid"
+      ],
+      "link_ref_columns": [
+        "cycle_uuid"
+      ],
+      "title_columns": [
+        "phase"
+      ],
+      "source_state_columns": [],
+      "evidence_columns": [
+        "evidence_sha256"
+      ],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.42.0",
+      "source_table": "pm_projects",
+      "domain": "project_management",
+      "node_kind": "project",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [],
+      "link_ref_columns": [],
+      "title_columns": [
+        "name",
+        "status"
+      ],
+      "source_state_columns": [],
+      "evidence_columns": [],
+      "timestamp_columns": [
+        "created_at",
+        "updated_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.42.0",
+      "source_table": "pm_risks",
+      "domain": "project_management",
+      "node_kind": "artifact",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [],
+      "link_ref_columns": [],
+      "title_columns": [
+        "title",
+        "status"
+      ],
+      "source_state_columns": [],
+      "evidence_columns": [],
+      "timestamp_columns": [],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.42.0",
+      "source_table": "pm_sprints",
+      "domain": "project_management",
+      "node_kind": "sprint",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [],
+      "link_ref_columns": [],
+      "title_columns": [
+        "name",
+        "status"
+      ],
+      "source_state_columns": [],
+      "evidence_columns": [],
+      "timestamp_columns": [],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.42.0",
+      "source_table": "pm_stakeholders",
+      "domain": "project_management",
+      "node_kind": "artifact",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [],
+      "link_ref_columns": [],
+      "title_columns": [],
+      "source_state_columns": [],
+      "evidence_columns": [],
+      "timestamp_columns": [],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.42.0",
+      "source_table": "pm_work_items",
+      "domain": "project_management",
+      "node_kind": "task",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [],
+      "link_ref_columns": [],
+      "title_columns": [
+        "title",
+        "state"
+      ],
+      "source_state_columns": [],
+      "evidence_columns": [],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.43.0",
+      "source_table": "phx_project_activity_bindings",
+      "domain": "project_workspace",
+      "node_kind": "artifact",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [],
+      "link_ref_columns": [
+        "agent_uuid"
+      ],
+      "title_columns": [],
+      "source_state_columns": [],
+      "evidence_columns": [],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.43.0",
+      "source_table": "phx_project_backups",
+      "domain": "project_workspace",
+      "node_kind": "backup",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [],
+      "link_ref_columns": [],
+      "title_columns": [],
+      "source_state_columns": [
+        "source_state_sha256",
+        "manifest_sha256"
+      ],
+      "evidence_columns": [],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.43.0",
+      "source_table": "phx_project_events",
+      "domain": "project_workspace",
+      "node_kind": "evidence",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [],
+      "link_ref_columns": [],
+      "title_columns": [
+        "event_type"
+      ],
+      "source_state_columns": [
+        "payload_sha256"
+      ],
+      "evidence_columns": [
+        "payload_sha256"
+      ],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.43.0",
+      "source_table": "phx_project_log_events",
+      "domain": "project_workspace",
+      "node_kind": "log",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [],
+      "link_ref_columns": [],
+      "title_columns": [],
+      "source_state_columns": [],
+      "evidence_columns": [
+        "evidence_sha256"
+      ],
+      "timestamp_columns": [],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.43.0",
+      "source_table": "phx_project_versions",
+      "domain": "project_workspace",
+      "node_kind": "version",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [],
+      "link_ref_columns": [],
+      "title_columns": [],
+      "source_state_columns": [
+        "source_state_sha256"
+      ],
+      "evidence_columns": [],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.43.0",
+      "source_table": "phx_projects",
+      "domain": "historical",
+      "node_kind": "project",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [],
+      "link_ref_columns": [],
+      "title_columns": [
+        "name",
+        "slug"
+      ],
+      "source_state_columns": [
+        "manifest_sha256"
+      ],
+      "evidence_columns": [],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.44.0",
+      "source_table": "phx_agent_cost_ledger",
+      "domain": "agent_control",
+      "node_kind": "artifact",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [
+        "task_uuid"
+      ],
+      "link_ref_columns": [
+        "agent_uuid",
+        "model_profile_uuid",
+        "task_uuid"
+      ],
+      "title_columns": [
+        "provider"
+      ],
+      "source_state_columns": [],
+      "evidence_columns": [],
+      "timestamp_columns": [
+        "created_at",
+        "settled_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.44.0",
+      "source_table": "phx_agent_runtime_profiles",
+      "domain": "agent_control",
+      "node_kind": "run",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [],
+      "link_ref_columns": [
+        "agent_uuid"
+      ],
+      "title_columns": [
+        "name",
+        "capability"
+      ],
+      "source_state_columns": [
+        "registry_sha256"
+      ],
+      "evidence_columns": [],
+      "timestamp_columns": [
+        "created_at",
+        "updated_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.44.0",
+      "source_table": "phx_agent_task_assignments",
+      "domain": "agent_control",
+      "node_kind": "task",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [
+        "task_uuid",
+        "assignment_uuid"
+      ],
+      "link_ref_columns": [
+        "agent_uuid",
+        "model_profile_uuid",
+        "task_uuid"
+      ],
+      "title_columns": [
+        "capability",
+        "state"
+      ],
+      "source_state_columns": [
+        "source_state_sha256"
+      ],
+      "evidence_columns": [],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.44.0",
+      "source_table": "phx_knowledge_fruitful",
+      "domain": "knowledge_learning",
+      "node_kind": "knowledge_fruitful",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [
+        "knowledge_uuid"
+      ],
+      "link_ref_columns": [
+        "agent_uuid",
+        "model_profile_uuid",
+        "knowledge_uuid"
+      ],
+      "title_columns": [
+        "task_class"
+      ],
+      "source_state_columns": [
+        "source_state_sha256"
+      ],
+      "evidence_columns": [],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.44.0",
+      "source_table": "phx_knowledge_reuse_events",
+      "domain": "knowledge_learning",
+      "node_kind": "evidence",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [
+        "task_uuid",
+        "knowledge_uuid"
+      ],
+      "link_ref_columns": [
+        "task_uuid",
+        "knowledge_uuid"
+      ],
+      "title_columns": [],
+      "source_state_columns": [],
+      "evidence_columns": [
+        "evidence_sha256"
+      ],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.44.0",
+      "source_table": "phx_knowledge_unfruitful",
+      "domain": "knowledge_learning",
+      "node_kind": "knowledge_unfruitful",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [
+        "knowledge_uuid"
+      ],
+      "link_ref_columns": [
+        "agent_uuid",
+        "model_profile_uuid",
+        "knowledge_uuid"
+      ],
+      "title_columns": [
+        "task_class",
+        "failure_signature"
+      ],
+      "source_state_columns": [
+        "source_state_sha256"
+      ],
+      "evidence_columns": [],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.44.0",
+      "source_table": "phx_model_routing_decisions",
+      "domain": "agent_control",
+      "node_kind": "model",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [
+        "task_uuid"
+      ],
+      "link_ref_columns": [
+        "agent_uuid",
+        "model_profile_uuid",
+        "task_uuid"
+      ],
+      "title_columns": [
+        "model",
+        "provider"
+      ],
+      "source_state_columns": [
+        "decision_sha256"
+      ],
+      "evidence_columns": [],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.44.0",
+      "source_table": "phx_pdca_cycles",
+      "domain": "pdca_learning",
+      "node_kind": "workflow",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [
+        "task_uuid",
+        "cycle_uuid"
+      ],
+      "link_ref_columns": [
+        "task_uuid",
+        "cycle_uuid"
+      ],
+      "title_columns": [
+        "phase"
+      ],
+      "source_state_columns": [
+        "source_state_sha256"
+      ],
+      "evidence_columns": [],
+      "timestamp_columns": [
+        "created_at",
+        "updated_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.44.0",
+      "source_table": "phx_pdca_events",
+      "domain": "pdca_learning",
+      "node_kind": "workflow",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [
+        "cycle_uuid"
+      ],
+      "link_ref_columns": [
+        "cycle_uuid"
+      ],
+      "title_columns": [
+        "event_type",
+        "phase"
+      ],
+      "source_state_columns": [],
+      "evidence_columns": [
+        "evidence_sha256"
+      ],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.45.0",
+      "source_table": "phx_active_project_runtime",
+      "domain": "execution_runtime",
+      "node_kind": "run",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [
+        "runtime_uuid"
+      ],
+      "link_ref_columns": [],
+      "title_columns": [
+        "state"
+      ],
+      "source_state_columns": [
+        "source_state_sha256"
+      ],
+      "evidence_columns": [],
+      "timestamp_columns": [
+        "created_at",
+        "updated_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.45.0",
+      "source_table": "phx_agent_execution_leases",
+      "domain": "agent_control",
+      "node_kind": "run",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [
+        "task_uuid",
+        "run_uuid"
+      ],
+      "link_ref_columns": [
+        "agent_uuid",
+        "model_profile_uuid",
+        "task_uuid",
+        "run_uuid"
+      ],
+      "title_columns": [
+        "state"
+      ],
+      "source_state_columns": [
+        "decision_sha256"
+      ],
+      "evidence_columns": [],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.45.0",
+      "source_table": "phx_execution_runtime_events",
+      "domain": "execution_runtime",
+      "node_kind": "run",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [
+        "task_uuid",
+        "run_uuid"
+      ],
+      "link_ref_columns": [
+        "agent_uuid",
+        "task_uuid",
+        "run_uuid"
+      ],
+      "title_columns": [
+        "event_type"
+      ],
+      "source_state_columns": [],
+      "evidence_columns": [
+        "evidence_sha256"
+      ],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.45.0",
+      "source_table": "phx_project_budget_reservations",
+      "domain": "project_workspace",
+      "node_kind": "artifact",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [
+        "task_uuid",
+        "run_uuid"
+      ],
+      "link_ref_columns": [
+        "task_uuid",
+        "run_uuid"
+      ],
+      "title_columns": [
+        "state"
+      ],
+      "source_state_columns": [],
+      "evidence_columns": [],
+      "timestamp_columns": [
+        "created_at",
+        "settled_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.45.0",
+      "source_table": "phx_project_task_queue",
+      "domain": "project_workspace",
+      "node_kind": "task",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [
+        "task_uuid"
+      ],
+      "link_ref_columns": [
+        "task_uuid"
+      ],
+      "title_columns": [
+        "task_class",
+        "capability",
+        "state"
+      ],
+      "source_state_columns": [
+        "source_state_sha256"
+      ],
+      "evidence_columns": [],
+      "timestamp_columns": [
+        "created_at",
+        "updated_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.46.0",
+      "source_table": "phx_forecast_feedback",
+      "domain": "predictive_intelligence",
+      "node_kind": "evidence",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [
+        "run_uuid",
+        "forecast_uuid"
+      ],
+      "link_ref_columns": [
+        "run_uuid",
+        "forecast_uuid"
+      ],
+      "title_columns": [],
+      "source_state_columns": [],
+      "evidence_columns": [
+        "evidence_sha256"
+      ],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.46.0",
+      "source_table": "phx_predictive_events",
+      "domain": "predictive_intelligence",
+      "node_kind": "evidence",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [],
+      "link_ref_columns": [],
+      "title_columns": [
+        "event_type"
+      ],
+      "source_state_columns": [],
+      "evidence_columns": [
+        "evidence_sha256"
+      ],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.46.0",
+      "source_table": "phx_predictive_recommendations",
+      "domain": "predictive_intelligence",
+      "node_kind": "decision",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [
+        "task_uuid",
+        "forecast_uuid",
+        "recommendation_uuid"
+      ],
+      "link_ref_columns": [
+        "agent_uuid",
+        "model_profile_uuid",
+        "task_uuid",
+        "forecast_uuid",
+        "recommendation_uuid"
+      ],
+      "title_columns": [
+        "provider"
+      ],
+      "source_state_columns": [
+        "recommendation_sha256"
+      ],
+      "evidence_columns": [],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.46.0",
+      "source_table": "phx_predictive_route_forecasts",
+      "domain": "predictive_intelligence",
+      "node_kind": "evidence",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [
+        "forecast_uuid"
+      ],
+      "link_ref_columns": [
+        "agent_uuid",
+        "model_profile_uuid",
+        "forecast_uuid"
+      ],
+      "title_columns": [
+        "task_class",
+        "provider"
+      ],
+      "source_state_columns": [
+        "forecast_sha256"
+      ],
+      "evidence_columns": [
+        "evidence_sha256"
+      ],
+      "timestamp_columns": [
+        "generated_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.46.0",
+      "source_table": "phx_project_predictive_forecasts",
+      "domain": "project_workspace",
+      "node_kind": "evidence",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [
+        "forecast_uuid"
+      ],
+      "link_ref_columns": [
+        "forecast_uuid"
+      ],
+      "title_columns": [],
+      "source_state_columns": [
+        "source_state_sha256",
+        "forecast_sha256"
+      ],
+      "evidence_columns": [],
+      "timestamp_columns": [
+        "generated_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.47.0",
+      "source_table": "phx_project_supervisor_actions",
+      "domain": "project_workspace",
+      "node_kind": "decision",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [
+        "plan_uuid"
+      ],
+      "link_ref_columns": [
+        "plan_uuid"
+      ],
+      "title_columns": [
+        "kind",
+        "status"
+      ],
+      "source_state_columns": [],
+      "evidence_columns": [
+        "evidence_sha256"
+      ],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.47.0",
+      "source_table": "phx_project_supervisor_cycles",
+      "domain": "project_workspace",
+      "node_kind": "artifact",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [
+        "cycle_uuid"
+      ],
+      "link_ref_columns": [
+        "cycle_uuid"
+      ],
+      "title_columns": [
+        "phase"
+      ],
+      "source_state_columns": [
+        "source_state_sha256"
+      ],
+      "evidence_columns": [],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.47.0",
+      "source_table": "phx_project_supervisor_events",
+      "domain": "project_workspace",
+      "node_kind": "evidence",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [],
+      "link_ref_columns": [],
+      "title_columns": [
+        "event_type"
+      ],
+      "source_state_columns": [],
+      "evidence_columns": [
+        "evidence_sha256"
+      ],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.47.0",
+      "source_table": "phx_project_supervisor_health",
+      "domain": "project_workspace",
+      "node_kind": "artifact",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [],
+      "link_ref_columns": [],
+      "title_columns": [],
+      "source_state_columns": [
+        "source_state_sha256",
+        "snapshot_sha256"
+      ],
+      "evidence_columns": [
+        "evidence_sha256"
+      ],
+      "timestamp_columns": [
+        "generated_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.47.0",
+      "source_table": "phx_project_supervisor_plans",
+      "domain": "project_workspace",
+      "node_kind": "decision",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [
+        "plan_uuid"
+      ],
+      "link_ref_columns": [
+        "plan_uuid"
+      ],
+      "title_columns": [],
+      "source_state_columns": [
+        "source_state_sha256",
+        "plan_sha256"
+      ],
+      "evidence_columns": [],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.48.0",
+      "source_table": "phx_executive_alerts",
+      "domain": "executive_control_tower",
+      "node_kind": "artifact",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [],
+      "link_ref_columns": [],
+      "title_columns": [
+        "title",
+        "kind"
+      ],
+      "source_state_columns": [],
+      "evidence_columns": [
+        "evidence_sha256"
+      ],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.48.0",
+      "source_table": "phx_executive_decision_requests",
+      "domain": "executive_decision",
+      "node_kind": "decision",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [
+        "supervisor_plan_uuid"
+      ],
+      "link_ref_columns": [
+        "supervisor_plan_uuid"
+      ],
+      "title_columns": [
+        "action_kind",
+        "status"
+      ],
+      "source_state_columns": [],
+      "evidence_columns": [
+        "evidence_sha256"
+      ],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.48.0",
+      "source_table": "phx_executive_events",
+      "domain": "executive_control_tower",
+      "node_kind": "evidence",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [],
+      "link_ref_columns": [],
+      "title_columns": [
+        "event_type"
+      ],
+      "source_state_columns": [],
+      "evidence_columns": [
+        "evidence_sha256"
+      ],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.48.0",
+      "source_table": "phx_executive_project_snapshots",
+      "domain": "executive_control_tower",
+      "node_kind": "evidence",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [
+        "portfolio_snapshot_uuid"
+      ],
+      "link_ref_columns": [],
+      "title_columns": [],
+      "source_state_columns": [
+        "source_state_sha256"
+      ],
+      "evidence_columns": [
+        "evidence_sha256"
+      ],
+      "timestamp_columns": [],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.49.0",
+      "source_table": "phx_executive_decision_approvals",
+      "domain": "executive_decision",
+      "node_kind": "decision",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [
+        "case_uuid",
+        "scenario_uuid"
+      ],
+      "link_ref_columns": [
+        "case_uuid",
+        "scenario_uuid"
+      ],
+      "title_columns": [],
+      "source_state_columns": [],
+      "evidence_columns": [
+        "approval_sha256"
+      ],
+      "timestamp_columns": [
+        "created_at",
+        "issued_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.49.0",
+      "source_table": "phx_executive_decision_cases",
+      "domain": "executive_decision",
+      "node_kind": "decision",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [
+        "case_uuid"
+      ],
+      "link_ref_columns": [
+        "case_uuid"
+      ],
+      "title_columns": [
+        "trigger_kind"
+      ],
+      "source_state_columns": [
+        "source_state_sha256"
+      ],
+      "evidence_columns": [
+        "trigger_evidence_sha256"
+      ],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.49.0",
+      "source_table": "phx_executive_decision_evaluations",
+      "domain": "executive_decision",
+      "node_kind": "decision",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [
+        "case_uuid",
+        "scenario_uuid"
+      ],
+      "link_ref_columns": [
+        "case_uuid",
+        "scenario_uuid"
+      ],
+      "title_columns": [],
+      "source_state_columns": [],
+      "evidence_columns": [],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.49.0",
+      "source_table": "phx_executive_decision_events",
+      "domain": "executive_decision",
+      "node_kind": "decision",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [
+        "case_uuid"
+      ],
+      "link_ref_columns": [
+        "case_uuid"
+      ],
+      "title_columns": [
+        "event_type"
+      ],
+      "source_state_columns": [],
+      "evidence_columns": [
+        "evidence_sha256"
+      ],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.49.0",
+      "source_table": "phx_executive_decision_executions",
+      "domain": "executive_decision",
+      "node_kind": "decision",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [
+        "case_uuid",
+        "scenario_uuid",
+        "supervisor_plan_uuid"
+      ],
+      "link_ref_columns": [
+        "case_uuid",
+        "scenario_uuid",
+        "supervisor_plan_uuid"
+      ],
+      "title_columns": [],
+      "source_state_columns": [
+        "source_state_sha256",
+        "scenario_sha256"
+      ],
+      "evidence_columns": [
+        "evidence_sha256",
+        "approval_sha256"
+      ],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.49.0",
+      "source_table": "phx_executive_decision_scenarios",
+      "domain": "executive_decision",
+      "node_kind": "decision",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [
+        "case_uuid",
+        "scenario_uuid"
+      ],
+      "link_ref_columns": [
+        "case_uuid",
+        "scenario_uuid"
+      ],
+      "title_columns": [
+        "kind"
+      ],
+      "source_state_columns": [
+        "source_state_sha256",
+        "scenario_sha256"
+      ],
+      "evidence_columns": [
+        "model_evidence_sha256"
+      ],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.52.0",
+      "source_table": "phx_portfolio_plan_items",
+      "domain": "portfolio_planner",
+      "node_kind": "decision",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [
+        "plan_uuid"
+      ],
+      "link_ref_columns": [
+        "plan_uuid"
+      ],
+      "title_columns": [],
+      "source_state_columns": [],
+      "evidence_columns": [],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.52.0",
+      "source_table": "phx_portfolio_resource_reservations",
+      "domain": "portfolio_planner",
+      "node_kind": "portfolio",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [
+        "plan_uuid"
+      ],
+      "link_ref_columns": [
+        "plan_uuid"
+      ],
+      "title_columns": [],
+      "source_state_columns": [],
+      "evidence_columns": [
+        "evidence_sha256"
+      ],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.53.0",
+      "source_table": "phx_portfolio_drift_events",
+      "domain": "portfolio_digital_twin",
+      "node_kind": "portfolio",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [
+        "controller_uuid"
+      ],
+      "link_ref_columns": [
+        "controller_uuid"
+      ],
+      "title_columns": [],
+      "source_state_columns": [],
+      "evidence_columns": [
+        "evidence_sha256"
+      ],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.53.0",
+      "source_table": "phx_portfolio_execution_observations",
+      "domain": "portfolio_execution",
+      "node_kind": "portfolio",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [
+        "controller_uuid"
+      ],
+      "link_ref_columns": [
+        "controller_uuid"
+      ],
+      "title_columns": [],
+      "source_state_columns": [
+        "source_state_sha256"
+      ],
+      "evidence_columns": [
+        "evidence_sha256"
+      ],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.54.0",
+      "source_table": "phx_agent_model_affinity_v054",
+      "domain": "agent_control",
+      "node_kind": "model",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [],
+      "link_ref_columns": [
+        "agent_uuid",
+        "model_profile_uuid"
+      ],
+      "title_columns": [
+        "task_class"
+      ],
+      "source_state_columns": [
+        "source_state_sha256"
+      ],
+      "evidence_columns": [],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.54.0",
+      "source_table": "phx_context_budget_decisions_v054",
+      "domain": "performance_ai",
+      "node_kind": "decision",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [
+        "task_uuid"
+      ],
+      "link_ref_columns": [
+        "task_uuid"
+      ],
+      "title_columns": [],
+      "source_state_columns": [
+        "source_state_sha256",
+        "decision_sha256"
+      ],
+      "evidence_columns": [],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.54.0",
+      "source_table": "phx_model_outcomes_v054",
+      "domain": "performance_ai",
+      "node_kind": "model",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [
+        "task_uuid"
+      ],
+      "link_ref_columns": [
+        "agent_uuid",
+        "model_profile_uuid",
+        "task_uuid"
+      ],
+      "title_columns": [
+        "task_class",
+        "failure_signature"
+      ],
+      "source_state_columns": [
+        "source_state_sha256"
+      ],
+      "evidence_columns": [
+        "evidence_sha256"
+      ],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.54.0",
+      "source_table": "phx_ollama_runtime_samples_v054",
+      "domain": "performance_ai",
+      "node_kind": "run",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [],
+      "link_ref_columns": [],
+      "title_columns": [
+        "model"
+      ],
+      "source_state_columns": [],
+      "evidence_columns": [
+        "evidence_sha256"
+      ],
+      "timestamp_columns": [
+        "sampled_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.54.0",
+      "source_table": "phx_performance_events_v054",
+      "domain": "performance_ai",
+      "node_kind": "evidence",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [],
+      "link_ref_columns": [],
+      "title_columns": [],
+      "source_state_columns": [
+        "source_state_sha256"
+      ],
+      "evidence_columns": [
+        "evidence_sha256"
+      ],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.54.0",
+      "source_table": "phx_prompt_plans_v054",
+      "domain": "performance_ai",
+      "node_kind": "prompt",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [
+        "task_uuid"
+      ],
+      "link_ref_columns": [
+        "model_profile_uuid",
+        "task_uuid"
+      ],
+      "title_columns": [
+        "provider"
+      ],
+      "source_state_columns": [
+        "source_state_sha256"
+      ],
+      "evidence_columns": [],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.54.0",
+      "source_table": "phx_semantic_cache_entries_v054",
+      "domain": "performance_ai",
+      "node_kind": "artifact",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [],
+      "link_ref_columns": [
+        "model_profile_uuid"
+      ],
+      "title_columns": [],
+      "source_state_columns": [
+        "source_state_sha256",
+        "payload_sha256"
+      ],
+      "evidence_columns": [
+        "payload_sha256"
+      ],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.54.0",
+      "source_table": "phx_semantic_cache_events_v054",
+      "domain": "performance_ai",
+      "node_kind": "evidence",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [],
+      "link_ref_columns": [],
+      "title_columns": [],
+      "source_state_columns": [],
+      "evidence_columns": [
+        "evidence_sha256"
+      ],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.55.0",
+      "source_table": "phx_execution_ledger_facts",
+      "domain": "reconciliation",
+      "node_kind": "artifact",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [],
+      "link_ref_columns": [],
+      "title_columns": [],
+      "source_state_columns": [
+        "source_state_sha256",
+        "payload_sha256"
+      ],
+      "evidence_columns": [
+        "evidence_sha256",
+        "payload_sha256"
+      ],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.55.0",
+      "source_table": "phx_reconciliation_causal_links",
+      "domain": "reconciliation",
+      "node_kind": "artifact",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [],
+      "link_ref_columns": [],
+      "title_columns": [],
+      "source_state_columns": [],
+      "evidence_columns": [
+        "evidence_sha256"
+      ],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.55.0",
+      "source_table": "phx_reconciliation_plan_snapshots",
+      "domain": "reconciliation",
+      "node_kind": "decision",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [],
+      "link_ref_columns": [],
+      "title_columns": [],
+      "source_state_columns": [
+        "source_state_sha256",
+        "plan_sha256"
+      ],
+      "evidence_columns": [],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.55.0",
+      "source_table": "phx_reconciliation_variances",
+      "domain": "reconciliation",
+      "node_kind": "artifact",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [],
+      "link_ref_columns": [],
+      "title_columns": [],
+      "source_state_columns": [
+        "source_state_sha256"
+      ],
+      "evidence_columns": [],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.57.0",
+      "source_table": "phx_context_fingerprints",
+      "domain": "self_evolving",
+      "node_kind": "context_fingerprint",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [],
+      "link_ref_columns": [],
+      "title_columns": [],
+      "source_state_columns": [
+        "source_state_sha256"
+      ],
+      "evidence_columns": [],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.57.0",
+      "source_table": "phx_evolution_candidates",
+      "domain": "self_evolving",
+      "node_kind": "artifact",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [
+        "candidate_uuid"
+      ],
+      "link_ref_columns": [
+        "candidate_uuid"
+      ],
+      "title_columns": [
+        "state"
+      ],
+      "source_state_columns": [
+        "source_state_sha256"
+      ],
+      "evidence_columns": [],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.57.0",
+      "source_table": "phx_evolution_experiments",
+      "domain": "self_evolving",
+      "node_kind": "experiment",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [
+        "candidate_uuid"
+      ],
+      "link_ref_columns": [
+        "candidate_uuid"
+      ],
+      "title_columns": [
+        "status"
+      ],
+      "source_state_columns": [
+        "source_state_sha256"
+      ],
+      "evidence_columns": [],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.57.0",
+      "source_table": "phx_evolution_promotion_decisions",
+      "domain": "self_evolving",
+      "node_kind": "promotion",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [
+        "candidate_uuid"
+      ],
+      "link_ref_columns": [
+        "candidate_uuid"
+      ],
+      "title_columns": [],
+      "source_state_columns": [
+        "source_state_sha256"
+      ],
+      "evidence_columns": [
+        "evidence_sha256"
+      ],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.57.0",
+      "source_table": "phx_experience_episodes",
+      "domain": "self_evolving",
+      "node_kind": "artifact",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [
+        "task_uuid"
+      ],
+      "link_ref_columns": [
+        "agent_uuid",
+        "model_profile_uuid",
+        "task_uuid"
+      ],
+      "title_columns": [
+        "task_class"
+      ],
+      "source_state_columns": [
+        "source_state_sha256"
+      ],
+      "evidence_columns": [
+        "evidence_sha256"
+      ],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.57.0",
+      "source_table": "phx_knowledge_patterns",
+      "domain": "knowledge_learning",
+      "node_kind": "artifact",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [],
+      "link_ref_columns": [],
+      "title_columns": [
+        "pattern_key"
+      ],
+      "source_state_columns": [
+        "source_state_sha256"
+      ],
+      "evidence_columns": [
+        "evidence_sha256"
+      ],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.57.0",
+      "source_table": "phx_learning_contradiction_resolutions",
+      "domain": "self_evolving",
+      "node_kind": "contradiction",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [
+        "contradiction_uuid"
+      ],
+      "link_ref_columns": [
+        "contradiction_uuid"
+      ],
+      "title_columns": [],
+      "source_state_columns": [],
+      "evidence_columns": [
+        "evidence_sha256"
+      ],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.57.0",
+      "source_table": "phx_learning_contradictions",
+      "domain": "self_evolving",
+      "node_kind": "contradiction",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [
+        "contradiction_uuid"
+      ],
+      "link_ref_columns": [
+        "contradiction_uuid"
+      ],
+      "title_columns": [
+        "state"
+      ],
+      "source_state_columns": [],
+      "evidence_columns": [
+        "evidence_sha256"
+      ],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.57.0",
+      "source_table": "phx_learning_events",
+      "domain": "self_evolving",
+      "node_kind": "evidence",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [],
+      "link_ref_columns": [],
+      "title_columns": [
+        "event_type"
+      ],
+      "source_state_columns": [
+        "source_state_sha256"
+      ],
+      "evidence_columns": [
+        "evidence_sha256"
+      ],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 10,
+      "source_version": "0.57.0",
+      "source_table": "phx_self_improvement_changes",
+      "domain": "self_evolving",
+      "node_kind": "self_improvement",
+      "scope_policy": "direct_project",
+      "parent_ref_columns": [
+        "candidate_uuid"
+      ],
+      "link_ref_columns": [
+        "candidate_uuid"
+      ],
+      "title_columns": [
+        "status"
+      ],
+      "source_state_columns": [
+        "source_state_sha256"
+      ],
+      "evidence_columns": [],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 30,
+      "source_version": "0.48.0",
+      "source_table": "phx_executive_portfolio_snapshots",
+      "domain": "executive_control_tower",
+      "node_kind": "evidence",
+      "scope_policy": "portfolio_scope",
+      "parent_ref_columns": [],
+      "link_ref_columns": [],
+      "title_columns": [],
+      "source_state_columns": [
+        "snapshot_sha256"
+      ],
+      "evidence_columns": [
+        "evidence_sha256"
+      ],
+      "timestamp_columns": [
+        "generated_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 30,
+      "source_version": "0.50.0",
+      "source_table": "phx_portfolio_calibration_evidence",
+      "domain": "portfolio_digital_twin",
+      "node_kind": "evidence",
+      "scope_policy": "portfolio_scope",
+      "parent_ref_columns": [],
+      "link_ref_columns": [],
+      "title_columns": [],
+      "source_state_columns": [
+        "source_state_sha256"
+      ],
+      "evidence_columns": [
+        "evidence_sha256"
+      ],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 30,
+      "source_version": "0.50.0",
+      "source_table": "phx_portfolio_decision_delegations",
+      "domain": "portfolio_digital_twin",
+      "node_kind": "decision",
+      "scope_policy": "portfolio_scope",
+      "parent_ref_columns": [
+        "scenario_uuid"
+      ],
+      "link_ref_columns": [
+        "scenario_uuid"
+      ],
+      "title_columns": [],
+      "source_state_columns": [],
+      "evidence_columns": [
+        "simulation_evidence_sha256"
+      ],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 30,
+      "source_version": "0.50.0",
+      "source_table": "phx_portfolio_events",
+      "domain": "portfolio_digital_twin",
+      "node_kind": "portfolio",
+      "scope_policy": "portfolio_scope",
+      "parent_ref_columns": [],
+      "link_ref_columns": [],
+      "title_columns": [
+        "event_type"
+      ],
+      "source_state_columns": [
+        "source_state_sha256"
+      ],
+      "evidence_columns": [
+        "event_sha256"
+      ],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 30,
+      "source_version": "0.50.0",
+      "source_table": "phx_portfolio_scenarios",
+      "domain": "portfolio_digital_twin",
+      "node_kind": "portfolio",
+      "scope_policy": "portfolio_scope",
+      "parent_ref_columns": [
+        "scenario_uuid",
+        "twin_uuid"
+      ],
+      "link_ref_columns": [
+        "scenario_uuid",
+        "twin_uuid"
+      ],
+      "title_columns": [],
+      "source_state_columns": [
+        "source_state_sha256",
+        "scenario_sha256"
+      ],
+      "evidence_columns": [],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 30,
+      "source_version": "0.50.0",
+      "source_table": "phx_portfolio_simulation_runs",
+      "domain": "portfolio_digital_twin",
+      "node_kind": "run",
+      "scope_policy": "portfolio_scope",
+      "parent_ref_columns": [
+        "run_uuid",
+        "scenario_uuid"
+      ],
+      "link_ref_columns": [
+        "run_uuid",
+        "scenario_uuid"
+      ],
+      "title_columns": [],
+      "source_state_columns": [
+        "source_state_sha256"
+      ],
+      "evidence_columns": [
+        "evidence_sha256"
+      ],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 30,
+      "source_version": "0.50.0",
+      "source_table": "phx_portfolio_twins",
+      "domain": "portfolio_digital_twin",
+      "node_kind": "portfolio",
+      "scope_policy": "portfolio_scope",
+      "parent_ref_columns": [
+        "twin_uuid"
+      ],
+      "link_ref_columns": [
+        "twin_uuid"
+      ],
+      "title_columns": [],
+      "source_state_columns": [
+        "source_state_sha256"
+      ],
+      "evidence_columns": [],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 30,
+      "source_version": "0.51.0",
+      "source_table": "phx_portfolio_optimization_candidates",
+      "domain": "portfolio_optimizer",
+      "node_kind": "portfolio",
+      "scope_policy": "portfolio_scope",
+      "parent_ref_columns": [
+        "search_uuid",
+        "candidate_uuid"
+      ],
+      "link_ref_columns": [
+        "search_uuid",
+        "candidate_uuid"
+      ],
+      "title_columns": [],
+      "source_state_columns": [],
+      "evidence_columns": [
+        "simulation_evidence_sha256"
+      ],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 30,
+      "source_version": "0.51.0",
+      "source_table": "phx_portfolio_optimization_events",
+      "domain": "portfolio_optimizer",
+      "node_kind": "portfolio",
+      "scope_policy": "portfolio_scope",
+      "parent_ref_columns": [
+        "search_uuid"
+      ],
+      "link_ref_columns": [
+        "search_uuid"
+      ],
+      "title_columns": [
+        "event_type"
+      ],
+      "source_state_columns": [],
+      "evidence_columns": [
+        "evidence_sha256"
+      ],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 30,
+      "source_version": "0.51.0",
+      "source_table": "phx_portfolio_optimization_frontier",
+      "domain": "portfolio_optimizer",
+      "node_kind": "portfolio",
+      "scope_policy": "portfolio_scope",
+      "parent_ref_columns": [
+        "search_uuid",
+        "candidate_uuid"
+      ],
+      "link_ref_columns": [
+        "search_uuid",
+        "candidate_uuid"
+      ],
+      "title_columns": [],
+      "source_state_columns": [],
+      "evidence_columns": [],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 30,
+      "source_version": "0.51.0",
+      "source_table": "phx_portfolio_optimization_recommendations",
+      "domain": "portfolio_optimizer",
+      "node_kind": "decision",
+      "scope_policy": "portfolio_scope",
+      "parent_ref_columns": [
+        "search_uuid",
+        "candidate_uuid",
+        "recommendation_uuid"
+      ],
+      "link_ref_columns": [
+        "search_uuid",
+        "candidate_uuid",
+        "recommendation_uuid"
+      ],
+      "title_columns": [],
+      "source_state_columns": [
+        "recommendation_sha256"
+      ],
+      "evidence_columns": [],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 30,
+      "source_version": "0.51.0",
+      "source_table": "phx_portfolio_optimization_searches",
+      "domain": "portfolio_optimizer",
+      "node_kind": "portfolio",
+      "scope_policy": "portfolio_scope",
+      "parent_ref_columns": [
+        "search_uuid",
+        "twin_uuid"
+      ],
+      "link_ref_columns": [
+        "search_uuid",
+        "twin_uuid"
+      ],
+      "title_columns": [],
+      "source_state_columns": [
+        "source_state_sha256",
+        "plan_sha256"
+      ],
+      "evidence_columns": [],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 30,
+      "source_version": "0.52.0",
+      "source_table": "phx_portfolio_plan_delegations",
+      "domain": "portfolio_planner",
+      "node_kind": "decision",
+      "scope_policy": "portfolio_scope",
+      "parent_ref_columns": [
+        "plan_uuid"
+      ],
+      "link_ref_columns": [
+        "plan_uuid"
+      ],
+      "title_columns": [],
+      "source_state_columns": [
+        "plan_sha256"
+      ],
+      "evidence_columns": [
+        "evidence_sha256"
+      ],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 30,
+      "source_version": "0.52.0",
+      "source_table": "phx_portfolio_planner_events",
+      "domain": "portfolio_planner",
+      "node_kind": "decision",
+      "scope_policy": "portfolio_scope",
+      "parent_ref_columns": [
+        "plan_uuid"
+      ],
+      "link_ref_columns": [
+        "plan_uuid"
+      ],
+      "title_columns": [
+        "event_type"
+      ],
+      "source_state_columns": [],
+      "evidence_columns": [
+        "evidence_sha256"
+      ],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 30,
+      "source_version": "0.52.0",
+      "source_table": "phx_portfolio_plans",
+      "domain": "portfolio_digital_twin",
+      "node_kind": "decision",
+      "scope_policy": "portfolio_scope",
+      "parent_ref_columns": [
+        "plan_uuid"
+      ],
+      "link_ref_columns": [
+        "plan_uuid"
+      ],
+      "title_columns": [],
+      "source_state_columns": [
+        "source_state_sha256",
+        "plan_sha256"
+      ],
+      "evidence_columns": [],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 30,
+      "source_version": "0.53.0",
+      "source_table": "phx_portfolio_execution_controllers",
+      "domain": "portfolio_execution",
+      "node_kind": "portfolio",
+      "scope_policy": "portfolio_scope",
+      "parent_ref_columns": [
+        "controller_uuid"
+      ],
+      "link_ref_columns": [
+        "controller_uuid"
+      ],
+      "title_columns": [],
+      "source_state_columns": [
+        "source_state_sha256"
+      ],
+      "evidence_columns": [],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 30,
+      "source_version": "0.53.0",
+      "source_table": "phx_portfolio_execution_events",
+      "domain": "portfolio_execution",
+      "node_kind": "portfolio",
+      "scope_policy": "portfolio_scope",
+      "parent_ref_columns": [
+        "controller_uuid"
+      ],
+      "link_ref_columns": [
+        "controller_uuid"
+      ],
+      "title_columns": [
+        "event_type"
+      ],
+      "source_state_columns": [
+        "source_state_sha256"
+      ],
+      "evidence_columns": [
+        "evidence_sha256"
+      ],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 30,
+      "source_version": "0.53.0",
+      "source_table": "phx_portfolio_plan_revision_proposals",
+      "domain": "portfolio_planner",
+      "node_kind": "decision",
+      "scope_policy": "portfolio_scope",
+      "parent_ref_columns": [],
+      "link_ref_columns": [],
+      "title_columns": [],
+      "source_state_columns": [
+        "source_state_sha256"
+      ],
+      "evidence_columns": [],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 30,
+      "source_version": "0.53.0",
+      "source_table": "phx_portfolio_replan_requests",
+      "domain": "portfolio_digital_twin",
+      "node_kind": "decision",
+      "scope_policy": "portfolio_scope",
+      "parent_ref_columns": [
+        "controller_uuid"
+      ],
+      "link_ref_columns": [
+        "controller_uuid"
+      ],
+      "title_columns": [],
+      "source_state_columns": [
+        "source_state_sha256"
+      ],
+      "evidence_columns": [],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 30,
+      "source_version": "0.55.0",
+      "source_table": "phx_sprint_gate_evidence",
+      "domain": "qualification",
+      "node_kind": "evidence",
+      "scope_policy": "tenant_scope",
+      "parent_ref_columns": [],
+      "link_ref_columns": [],
+      "title_columns": [],
+      "source_state_columns": [
+        "source_state_sha256"
+      ],
+      "evidence_columns": [
+        "evidence_sha256"
+      ],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    },
+    {
+      "priority": 30,
+      "source_version": "0.55.0",
+      "source_table": "phx_sprint_gate_status_snapshots",
+      "domain": "qualification",
+      "node_kind": "evidence",
+      "scope_policy": "tenant_scope",
+      "parent_ref_columns": [],
+      "link_ref_columns": [],
+      "title_columns": [],
+      "source_state_columns": [
+        "source_state_sha256"
+      ],
+      "evidence_columns": [
+        "evidence_sha256"
+      ],
+      "timestamp_columns": [
+        "created_at"
+      ],
+      "capture_postgresql_row_source": true,
+      "enabled": true
+    }
+  ]
+}

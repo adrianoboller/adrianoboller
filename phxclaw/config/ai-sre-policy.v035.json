@@ -1,0 +1,60 @@
+{
+  "version": "0.35.0",
+  "store_raw_prompts": false,
+  "store_raw_outputs": false,
+  "signed_policy_required": true,
+  "signed_rate_limit_evidence_required": true,
+  "authority": {
+    "eligibility": "v0.31",
+    "profile_promotion": "v0.32",
+    "arena_drift": "v0.33",
+    "portfolio_membership": "v0.34",
+    "production_mutation_fencing": "v0.30"
+  },
+  "slo": {
+    "min_success_basis_points": 9950,
+    "max_p95_latency_ms": 5000,
+    "max_p95_queue_wait_ms": 2000,
+    "fast_burn_limit_milli": 14000,
+    "slow_burn_limit_milli": 6000
+  },
+  "forecast": {
+    "min_samples": 4,
+    "horizon_seconds": 900,
+    "headroom_basis_points": 2000,
+    "max_sample_age_seconds": 3600
+  },
+  "queue": {
+    "max_depth": 1000,
+    "hard_reject_depth": 2000,
+    "max_wait_ms": 10000,
+    "class_weights": {
+      "critical": 100,
+      "interactive": 50,
+      "batch": 10,
+      "background": 1
+    }
+  },
+  "budget": {
+    "soft_limit_basis_points": 8000,
+    "hard_limit_basis_points": 9500,
+    "require_known_cost": true
+  },
+  "autopilot": {
+    "max_concurrency_increase_basis_points": 2000,
+    "max_concurrency_decrease_basis_points": 5000,
+    "max_share_move_basis_points": 1000,
+    "max_auto_projected_cost_increase_basis_points": 500,
+    "allow_auto_capacity_purchase": false,
+    "cooldown_seconds": 60
+  },
+  "production_rules": [
+    "never_promote_models",
+    "never_widen_signed_portfolio",
+    "never_relax_privacy",
+    "never_bypass_budget",
+    "automatic_actions_must_be_reversible",
+    "production_mutations_require_v030_leader_fence",
+    "unknown_rate_limit_or_cost_fails_closed_when_required"
+  ]
+}

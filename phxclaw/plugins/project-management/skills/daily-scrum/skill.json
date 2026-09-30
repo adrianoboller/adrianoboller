@@ -1,0 +1,39 @@
+{
+  "uuid": "01a0eab2-5c29-726a-9041-6ec2fe798f29",
+  "id": "daily-scrum",
+  "name": "Daily Scrum",
+  "category": "scrum",
+  "function": "Gera acompanhamento diário",
+  "capability": "project.skill.daily-scrum",
+  "agent_role": "scrum",
+  "permissions": [
+    "project.read",
+    "agile.write",
+    "project.mutate"
+  ],
+  "risk": "medium",
+  "approval_required": false,
+  "evidence_required": true,
+  "lifecycle_hooks": [
+    "before_invoke",
+    "after_invoke",
+    "on_failure"
+  ],
+  "rollback": "checkpoint",
+  "version": "0.42.0",
+  "semver": "0.42.0",
+  "manifest_uuid": "01a0eab2-5c2d-7fe3-b6f6-e77ce77f0f3b",
+  "dependencies": [
+    "phxclaw-skill-runtime>=0.15",
+    "phxclaw-evidence-ledger>=0.9"
+  ],
+  "compatibility": {
+    "phxclaw": ">=0.41,<0.43"
+  },
+  "sandbox": "deny-by-default",
+  "signature_policy": "release-signing-required",
+  "provenance": {
+    "origin": "user-defined-project-management-suite",
+    "license": "PhxClaw project source policy"
+  }
+}

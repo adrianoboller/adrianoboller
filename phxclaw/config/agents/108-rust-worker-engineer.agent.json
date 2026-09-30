@@ -1,0 +1,216 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f66c-74ab-b32c-240f0bfd2eaa",
+  "agent_id": 108,
+  "name": "Rust Worker Engineer",
+  "macroarea": "Engenharia & Arquitetura",
+  "nucleus": "Rust",
+  "role_type": "Subagente Rust",
+  "mission": "Implementa concorrência, filas, scheduler, reconciliação e jobs em Rust.",
+  "responsibilities": "Projeta workers idempotentes, retries, leases, backpressure, cancellation e observability.",
+  "resources": "Async runtime, PostgreSQL queues, scheduler, tracing.",
+  "authorized_actions": "Implementar worker/job e testes de concorrência.",
+  "trigger": "Background processing/task runtime.",
+  "declared_dependencies": "Contracts + SLOs.",
+  "resolved_agent_dependencies": [],
+  "deliverables": "Worker implementation + concurrency tests.",
+  "limits": "Não cria job não idempotente sem política explícita.",
+  "next_gate": "Performance/QA2.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "codex"
+  ],
+  "criticality": "Alta",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F16 Scheduler + Background Jobs",
+    "F18 MCP + LSP Runtime",
+    "F19 Repo Intelligence / Tree-sitter",
+    "F22 Device Nodes"
+  ],
+  "capabilities": [
+    "claw.doctor",
+    "claw.health",
+    "claw.prompt",
+    "claw.status",
+    "context.compile",
+    "job.read",
+    "job.worker.implement",
+    "lsp.read",
+    "mcp.invoke",
+    "mcp.lifecycle.validate",
+    "mcp.protocol.negotiate",
+    "mcp.transport.stdio",
+    "memory.read",
+    "node.observe",
+    "repo.read",
+    "skill.read",
+    "tree_sitter.analyze",
+    "workspace.command.run",
+    "workspace.diff",
+    "workspace.file.write",
+    "workspace.git.read",
+    "workspace.snapshot",
+    "workspace.worktree.create"
+  ],
+  "permissions": [
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "job.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "job.worker.implement",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "lsp.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "mcp.invoke",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "repo.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "tree_sitter.analyze",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "workspace.command.run",
+      "scopes": [
+        "*"
+      ]
+    },
+    {
+      "name": "workspace.diff",
+      "scopes": [
+        "*"
+      ]
+    },
+    {
+      "name": "workspace.file.write",
+      "scopes": [
+        "*"
+      ]
+    },
+    {
+      "name": "workspace.git.read",
+      "scopes": [
+        "*"
+      ]
+    },
+    {
+      "name": "workspace.snapshot",
+      "scopes": [
+        "*"
+      ]
+    },
+    {
+      "name": "workspace.worktree.create",
+      "scopes": [
+        "*"
+      ]
+    },
+    {
+      "name": "claw.health",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "claw.doctor",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "claw.status",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "claw.prompt",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "mcp.protocol.negotiate",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "mcp.lifecycle.validate",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "mcp.transport.stdio",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Job UUIDv7 + lease/heartbeat/resume em PostgreSQL; Node/session state efêmero e pareado",
+  "event_topics": "agent.rust.worker.engineer.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; writes policy-gated; evidência obrigatória; sem autoaprovação. Device input/screen exige autorização de sessão e logging.",
+  "references": "Architect (MIT) — AST/Tree-sitter/Repo Intelligence | oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 109
+  }
+}

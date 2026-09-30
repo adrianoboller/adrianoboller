@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "phxclaw://schemas/fleet-inventory-node-v029",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "tenant_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "node_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "fleet_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "region": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "groups": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string"
+      }
+    },
+    "tags": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string"
+      }
+    },
+    "control_state": {
+      "enum": [
+        "online",
+        "stale",
+        "offline",
+        "recovering",
+        "maintenance",
+        "quarantined",
+        "revoked"
+      ]
+    },
+    "current_version": {
+      "type": "string"
+    },
+    "current_sequence": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "session_fencing_token": {
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "required": [
+    "tenant_uuid",
+    "node_uuid",
+    "fleet_uuid",
+    "region",
+    "groups",
+    "tags",
+    "control_state",
+    "current_version",
+    "current_sequence",
+    "session_fencing_token"
+  ]
+}

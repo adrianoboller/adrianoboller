@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phxclaw.local/schemas/release-gate-proof.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "gate",
+    "status",
+    "source_state_sha256_hex",
+    "tool_name",
+    "verified_at"
+  ],
+  "properties": {
+    "gate": {
+      "type": "string",
+      "enum": [
+        "workspace_static",
+        "json_schema_static",
+        "migration_static",
+        "license_sbom",
+        "supply_chain",
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "postgres_migration",
+        "rls_cross_tenant",
+        "skill_knowledge_lineage",
+        "mission_e2e",
+        "tauri_native_e2e",
+        "provider_model_e2e"
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "verified",
+        "failed",
+        "unavailable"
+      ]
+    },
+    "source_state_sha256_hex": {
+      "type": "string",
+      "pattern": "^[A-Fa-f0-9]{64}$"
+    },
+    "evidence_sha256_hex": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[A-Fa-f0-9]{64}$"
+    },
+    "tool_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "tool_version": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "evidence_ref": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "verified_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

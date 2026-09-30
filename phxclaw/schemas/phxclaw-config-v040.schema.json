@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phxclaw.local/schemas/phxclaw-config-v040.schema.json",
+  "title": "PhxClaw Unified Configuration v0.40",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "config_uuid",
+    "revision",
+    "product",
+    "core",
+    "runtime",
+    "database",
+    "security",
+    "secret_broker",
+    "models",
+    "ai_fabric",
+    "skills",
+    "engineering_workflow",
+    "swarm",
+    "merge_intelligence",
+    "fleet",
+    "distributed_control_plane",
+    "release",
+    "observability",
+    "sre",
+    "ui",
+    "integrations",
+    "software_factory",
+    "compatibility",
+    "config_management",
+    "plugins",
+    "policies",
+    "feature_flags"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "0.40.0"
+    },
+    "config_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "product": {
+      "type": "object"
+    },
+    "core": {
+      "type": "object"
+    },
+    "runtime": {
+      "type": "object"
+    },
+    "database": {
+      "type": "object"
+    },
+    "security": {
+      "type": "object"
+    },
+    "secret_broker": {
+      "type": "object"
+    },
+    "models": {
+      "type": "object"
+    },
+    "ai_fabric": {
+      "type": "object"
+    },
+    "skills": {
+      "type": "object"
+    },
+    "engineering_workflow": {
+      "type": "object"
+    },
+    "swarm": {
+      "type": "object"
+    },
+    "merge_intelligence": {
+      "type": "object"
+    },
+    "fleet": {
+      "type": "object"
+    },
+    "distributed_control_plane": {
+      "type": "object"
+    },
+    "release": {
+      "type": "object"
+    },
+    "observability": {
+      "type": "object"
+    },
+    "sre": {
+      "type": "object"
+    },
+    "ui": {
+      "type": "object"
+    },
+    "integrations": {
+      "type": "object"
+    },
+    "software_factory": {
+      "type": "object"
+    },
+    "compatibility": {
+      "type": "object"
+    },
+    "config_management": {
+      "type": "object"
+    },
+    "plugins": {
+      "type": "object"
+    },
+    "policies": {
+      "type": "object"
+    },
+    "feature_flags": {
+      "type": "object"
+    }
+  },
+  "allOf": [
+    {
+      "properties": {
+        "security": {
+          "properties": {
+            "secrets_plaintext_forbidden": {
+              "const": true
+            },
+            "deny_by_default": {
+              "const": true
+            }
+          },
+          "required": [
+            "secrets_plaintext_forbidden",
+            "deny_by_default"
+          ]
+        }
+      }
+    },
+    {
+      "properties": {
+        "compatibility": {
+          "properties": {
+            "legacy_policy_files_authoritative": {
+              "const": false
+            }
+          },
+          "required": [
+            "legacy_policy_files_authoritative"
+          ]
+        }
+      }
+    }
+  ]
+}

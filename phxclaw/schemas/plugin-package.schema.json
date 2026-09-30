@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phxclaw.local/schemas/plugin-package.schema.json",
+  "title": "PhxClaw Plugin Package Descriptor",
+  "type": "object",
+  "required": [
+    "format",
+    "manifest",
+    "manifest_sha256",
+    "license",
+    "readme",
+    "sbom",
+    "files",
+    "files_digest",
+    "signature_algorithm",
+    "signature",
+    "signer"
+  ],
+  "properties": {
+    "format": {
+      "const": "phxclaw-plugin-package-v1"
+    },
+    "manifest": {
+      "type": "string",
+      "minLength": 1
+    },
+    "license": {
+      "type": "string",
+      "minLength": 1
+    },
+    "readme": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sbom": {
+      "type": "string",
+      "minLength": 1
+    },
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "path",
+          "sha256"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{64}$"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{64}$"
+    },
+    "files_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{64}$"
+    },
+    "signature_algorithm": {
+      "const": "ed25519"
+    },
+    "signature": {
+      "type": "string",
+      "minLength": 1
+    },
+    "signer": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "additionalProperties": false
+}

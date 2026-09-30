@@ -1,0 +1,1601 @@
+{
+  "schema_version": "0.40.0",
+  "config_uuid": "01995f91-cd00-7000-8000-000000000040",
+  "revision": 1,
+  "product": {
+    "name": "PhxClaw",
+    "version": "0.42.0",
+    "environment": "development",
+    "repository_visibility": "private_only"
+  },
+  "core": {
+    "microkernel": true,
+    "uuid_strategy": "uuidv7",
+    "fail_closed": true,
+    "mock_fallback_in_release": false,
+    "default_locale": "pt-BR"
+  },
+  "runtime": {
+    "mission_max_parallelism": 6,
+    "default_timeout_seconds": 900,
+    "checkpoint_before_mutation": true,
+    "rollback_on_failure": true,
+    "process_protocol": "jsonl-v1"
+  },
+  "database": {
+    "provider": "postgresql",
+    "minimum_major": 16,
+    "preferred_major": 18,
+    "host": "127.0.0.1",
+    "port": 55432,
+    "database": "phxclaw",
+    "ssl_mode": "prefer",
+    "application_role": "phxclaw_app",
+    "password_secret_uuid": null,
+    "force_rls": true
+  },
+  "security": {
+    "deny_by_default": true,
+    "require_signed_plugins": true,
+    "require_trusted_signers": true,
+    "allow_arbitrary_shell": false,
+    "secrets_plaintext_forbidden": true,
+    "approval_for_high_risk": true
+  },
+  "secret_broker": {
+    "provider": "os_keyring",
+    "allow_env_provider_in_production": false,
+    "lease_ttl_seconds": 900,
+    "rotation_required": true
+  },
+  "models": {
+    "routing_policy": "governed-adaptive",
+    "local_first": true,
+    "providers": {
+      "ollama": {
+        "enabled": true,
+        "endpoint": "http://127.0.0.1:11434",
+        "remote_allowed": false
+      },
+      "openai": {
+        "enabled": false,
+        "api_key_secret_uuid": null
+      },
+      "anthropic": {
+        "enabled": false,
+        "api_key_secret_uuid": null
+      },
+      "gemini": {
+        "enabled": false,
+        "api_key_secret_uuid": null
+      }
+    }
+  },
+  "ai_fabric": {
+    "restricted_data_local_only": true,
+    "catalog_ttl_seconds": 3600,
+    "health_ttl_seconds": 120,
+    "budget_enforcement": true,
+    "fallback_requires_same_policy": true
+  },
+  "skills": {
+    "router_enabled": true,
+    "promotion_gate_required": true,
+    "external_skills_default": "adapter_only",
+    "catalog": [
+      "agent-reach",
+      "last-30-days",
+      "deep-research",
+      "user-research",
+      "qmd-search",
+      "graphify",
+      "ponytail",
+      "napkin",
+      "tech-debt-audit",
+      "understand-anything",
+      "ui-ux-pro-max",
+      "frontend-slides",
+      "scroll-world",
+      "visual-explainer",
+      "fireworks-tech-graph",
+      "claude-seo",
+      "humanizer",
+      "auto-research-in-sleep",
+      "video-shotcraft",
+      "ffmpeg-skill",
+      "project-manager-orchestrator",
+      "project-charter",
+      "scope-management",
+      "stakeholder-management",
+      "project-governance",
+      "project-health-check",
+      "scrum-manager",
+      "product-backlog-manager",
+      "sprint-planning",
+      "sprint-backlog-manager",
+      "daily-scrum",
+      "sprint-review",
+      "sprint-retrospective",
+      "story-generator",
+      "acceptance-criteria",
+      "story-points-estimator",
+      "velocity-analyzer",
+      "burndown-analyzer",
+      "definition-of-done",
+      "kanban-manager",
+      "kanban-board",
+      "wip-limit-manager",
+      "flow-analyzer",
+      "bottleneck-detector",
+      "cycle-time-analyzer",
+      "lead-time-analyzer",
+      "cumulative-flow",
+      "kanban-prioritizer",
+      "ms-project-manager",
+      "gantt-generator",
+      "wbs-generator",
+      "critical-path-manager",
+      "dependency-manager",
+      "milestone-manager",
+      "resource-manager",
+      "resource-leveling",
+      "calendar-manager",
+      "baseline-manager",
+      "schedule-variance",
+      "earned-value-manager",
+      "project-import-export",
+      "pdca-orchestrator",
+      "pdca-plan",
+      "pdca-do",
+      "pdca-check",
+      "pdca-act",
+      "root-cause-analysis",
+      "five-whys",
+      "ishikawa-analysis",
+      "corrective-action-manager",
+      "continuous-improvement",
+      "risk-manager",
+      "risk-matrix",
+      "issue-manager",
+      "dependency-risk-analyzer",
+      "deadline-risk-predictor",
+      "mitigation-planner",
+      "project-cost-manager",
+      "budget-tracker",
+      "cost-forecast",
+      "cashflow-manager",
+      "roi-analyzer",
+      "earned-value-analyzer",
+      "project-ai-copilot",
+      "project-researcher",
+      "project-hypothesis-manager",
+      "project-planner-ai",
+      "task-decomposer",
+      "task-prioritizer",
+      "delay-predictor",
+      "resource-optimizer",
+      "next-best-action",
+      "meeting-to-tasks",
+      "automatic-status-report",
+      "lessons-learned-ai",
+      "hybrid-project-management",
+      "project-management-orchestrator",
+      "google-calendar-project-sync",
+      "google-drive-project-docs"
+    ]
+  },
+  "engineering_workflow": {
+    "enabled": true,
+    "stages": [
+      "research",
+      "map",
+      "hypothesis",
+      "plan",
+      "checkpoint",
+      "implement",
+      "test",
+      "review",
+      "explain",
+      "deliver"
+    ],
+    "require_independent_review_for_critical": true,
+    "publish_requires_approval": true
+  },
+  "swarm": {
+    "enabled": true,
+    "teams": [
+      "research",
+      "architecture",
+      "coding",
+      "qa",
+      "security",
+      "documentation"
+    ],
+    "isolated_worktrees": true,
+    "merge_gate_required": true,
+    "majority_cannot_override_evidence": true
+  },
+  "merge_intelligence": {
+    "semantic_conflicts": true,
+    "contract_aware": true,
+    "integration_replay": true,
+    "mutation_gate": true,
+    "minimum_mutation_score": 0.8
+  },
+  "fleet": {
+    "enabled": true,
+    "channels": [
+      "canary",
+      "beta",
+      "stable"
+    ],
+    "anti_rollback": true,
+    "signed_health_evidence": true,
+    "automatic_pause": true
+  },
+  "distributed_control_plane": {
+    "enabled": true,
+    "minimum_controllers": 3,
+    "leader_lease_seconds": 15,
+    "self_fence_on_partition": true,
+    "postgres_clock_authoritative": true
+  },
+  "release": {
+    "require_locked_build": true,
+    "require_sbom": true,
+    "require_provenance": true,
+    "require_signed_attestation": true,
+    "public_release": false
+  },
+  "observability": {
+    "otel_enabled": true,
+    "evidence_ledger": true,
+    "audit_append_only": true,
+    "raw_prompt_storage": false,
+    "raw_output_storage": false
+  },
+  "sre": {
+    "enabled": true,
+    "automatic_external_capacity_purchase": false,
+    "backpressure": true,
+    "incident_commander": true,
+    "chaos_in_production": false
+  },
+  "ui": {
+    "theme": "system",
+    "accent": "phoenix",
+    "config_editor": "ui/config.html",
+    "allow_raw_json_editor": true
+  },
+  "integrations": {
+    "obsidian": {
+      "enabled": false,
+      "vault_path": null,
+      "json_canvas": true
+    },
+    "hermes": {
+      "enabled": false,
+      "endpoint": null,
+      "secret_uuid": null
+    },
+    "github": {
+      "enabled": false,
+      "write_requires_approval": true,
+      "token_secret_uuid": null
+    }
+  },
+  "software_factory": {
+    "enabled": true,
+    "intake_requires_requirement_id": true,
+    "stages": [
+      "intake",
+      "decompose",
+      "research",
+      "architecture",
+      "implement",
+      "integrate",
+      "qa",
+      "security",
+      "documentation",
+      "release_candidate",
+      "approval",
+      "delivery"
+    ],
+    "autonomous_until": "approval",
+    "release_requires_green_gates": true
+  },
+  "compatibility": {
+    "legacy_policy_files_are_generated_views": true,
+    "legacy_policy_files_authoritative": false
+  },
+  "config_management": {
+    "canonical_path": "config/phxclaw.config.json",
+    "schema_path": "schemas/phxclaw-config-v040.schema.json",
+    "ui_path": "ui/config.html",
+    "optimistic_concurrency": true,
+    "atomic_write": true,
+    "history_enabled": true,
+    "max_history": 50,
+    "hot_reload_sections": [
+      "ui",
+      "observability",
+      "skills",
+      "models",
+      "ai_fabric"
+    ],
+    "restart_required_sections": [
+      "database",
+      "security",
+      "distributed_control_plane"
+    ]
+  },
+  "plugins": {
+    "configuration_mode": "inline",
+    "instances": {},
+    "unknown_plugin_config": "reject"
+  },
+  "policies": {
+    "approval": {
+      "high_risk_requires_human": true,
+      "critical_requires_human": true
+    },
+    "sandbox": {
+      "deny_network_by_default": true,
+      "read_only_filesystem_by_default": true
+    },
+    "release": {
+      "production_no_mocks": true,
+      "skipped_required_gates_forbidden": true
+    },
+    "data": {
+      "restricted_cloud_allowed": false,
+      "raw_prompt_storage": false
+    },
+    "chaos": {
+      "production_enabled": false,
+      "blast_radius_requires_limit": true
+    }
+  },
+  "feature_flags": {
+    "mode": "deny_unknown",
+    "flags": {}
+  },
+  "project_management": {
+    "enabled": true,
+    "mode": "hybrid",
+    "orchestrator": "project-management-orchestrator",
+    "hybrid_skill": "hybrid-project-management",
+    "methods": {
+      "scrum": true,
+      "kanban": true,
+      "classical_schedule": true,
+      "pdca": true
+    },
+    "defaults": {
+      "currency": "BRL",
+      "timezone": "America/Sao_Paulo",
+      "working_days": [
+        "MO",
+        "TU",
+        "WE",
+        "TH",
+        "FR"
+      ],
+      "hours_per_day": 8,
+      "wip_policy": "enforced",
+      "story_point_scale": [
+        1,
+        2,
+        3,
+        5,
+        8,
+        13,
+        21
+      ]
+    },
+    "governance": {
+      "change_control": true,
+      "baseline_required": true,
+      "high_risk_requires_approval": true,
+      "evidence_ledger": true,
+      "audit_append_only": true
+    },
+    "health": {
+      "enabled": true,
+      "dimensions": [
+        "scope",
+        "schedule",
+        "cost",
+        "quality",
+        "risk",
+        "resources",
+        "flow",
+        "stakeholders"
+      ],
+      "thresholds": {
+        "green": 0.85,
+        "yellow": 0.65
+      }
+    },
+    "integrations": {
+      "microsoft_project": {
+        "enabled": true,
+        "mode": "logical_adapter",
+        "import_export": [
+          "xml",
+          "csv",
+          "json"
+        ],
+        "write_requires_approval": true
+      },
+      "google_calendar": {
+        "enabled": false,
+        "plugin_ref": "google-calendar",
+        "write_requires_approval": true
+      },
+      "google_drive": {
+        "enabled": false,
+        "plugin_ref": "google-drive",
+        "write_requires_approval": true
+      }
+    },
+    "ui": {
+      "dashboard": "ui/project-management.html",
+      "default_view": "portfolio"
+    },
+    "skills": {
+      "count": 79,
+      "catalog": "config/project-management-skill-catalog.v042.json"
+    }
+  },
+  "project_workspace": {
+    "enabled": true,
+    "workspace_root": "${PHXCLAW_HOME}/workspace",
+    "projects_root": "${PHXCLAW_HOME}/workspace/projects",
+    "backups_root": "${PHXCLAW_HOME}/workspace/backups",
+    "recent_registry": "${PHXCLAW_HOME}/workspace/.phx/recent-projects.json",
+    "default_layout": {
+      "source": "src",
+      "docs": "docs",
+      "tests": "tests",
+      "assets": "assets",
+      "logs": "logs",
+      "build": "build",
+      "artifacts": "artifacts",
+      "reports": "reports",
+      "runtime": ".phx/runtime",
+      "evidence": ".phx/evidence",
+      "versions": ".phx/versions"
+    },
+    "version_control": {
+      "provider": "git",
+      "auto_init": true,
+      "worktrees_for_historical": true,
+      "require_clean_tree_for_restore": true
+    },
+    "backups": {
+      "enabled": true,
+      "before_restore": true,
+      "before_destructive_change": true,
+      "verify_sha256": true,
+      "retention": {
+        "daily": 7,
+        "weekly": 4,
+        "monthly": 12
+      }
+    },
+    "logs": {
+      "enabled": true,
+      "redact_secrets": true,
+      "max_ingest_bytes": 104857600,
+      "levels": [
+        "TRACE",
+        "DEBUG",
+        "INFO",
+        "WARN",
+        "ERROR",
+        "FATAL"
+      ]
+    },
+    "ai_activity_binding": {
+      "enabled": true,
+      "inherit_global_skill_router": true,
+      "require_project_manifest": true
+    }
+  },
+  "agent_management": {
+    "enabled": true,
+    "registry_source": "config/agents/team110.json",
+    "scope": "active_project",
+    "task_assignment": {
+      "lease_required": true,
+      "fencing_required": true,
+      "idempotency_required": true,
+      "record_model_decision": true,
+      "record_estimated_and_actual_cost": true
+    },
+    "model_routing": {
+      "local_first": true,
+      "ollama_preferred_when_eligible": true,
+      "suggested_model_is_hint_only": true,
+      "use_promoted_profiles_only": true,
+      "require_fresh_benchmark": true,
+      "minimize_cost_after_hard_gates": true,
+      "restricted_data_local_only": true,
+      "extreme_requires_independent_review": true,
+      "unknown_cloud_cost_fail_closed": true
+    },
+    "pdca": {
+      "required_for_governed_tasks": true,
+      "phases": [
+        "plan",
+        "do",
+        "check",
+        "act"
+      ],
+      "evidence_required_at_check": true,
+      "act_must_classify_learning": true
+    },
+    "learning": {
+      "pre_task_retrieval": true,
+      "fruitful_store": "knowledge.fruitful",
+      "unfruitful_store": "knowledge.unfruitful",
+      "promotion_via_f24_f25_only": true,
+      "raw_prompts_persisted": false,
+      "raw_outputs_persisted": false,
+      "context_fingerprint_required": true,
+      "failure_avoidance_enabled": true,
+      "candidate_records_do_not_block": true
+    },
+    "routing_policy": {
+      "version": "0.44.0",
+      "policy": "local-first-after-hard-gates",
+      "complexity": {
+        "low": {
+          "preferred": [
+            "deterministic",
+            "ollama"
+          ],
+          "cloud": "explicit_need_only"
+        },
+        "medium": {
+          "preferred": [
+            "ollama"
+          ],
+          "cloud": "fallback_if_quality_or_capability_missing"
+        },
+        "high": {
+          "preferred": [
+            "ollama_if_promoted_and_sufficient",
+            "approved_cloud_balanced"
+          ],
+          "cloud": "allowed_with_budget_and_evidence"
+        },
+        "extreme": {
+          "preferred": [
+            "strongest_approved_eligible"
+          ],
+          "independent_review": true,
+          "cloud": "allowed_with_policy_and_budget"
+        }
+      },
+      "selection_order": [
+        "active_project",
+        "privacy",
+        "capability",
+        "complexity",
+        "promoted_profile",
+        "freshness",
+        "health",
+        "quality_floor",
+        "latency_slo",
+        "budget",
+        "local_preference",
+        "lowest_cost",
+        "deterministic_tie_break"
+      ]
+    },
+    "pdca_learning_policy": {
+      "version": "0.44.0",
+      "pdca": {
+        "plan": "retrieve fruitful patterns and unfruitful anti-patterns before execution",
+        "do": "execute assigned agent/model/skills under lease, fencing and budget",
+        "check": "evaluate acceptance, QA, security, cost and quality evidence",
+        "act": "create candidate fruitful or unfruitful knowledge and route through F24/F25 promotion"
+      },
+      "fruitful": {
+        "purpose": "reuse proven context-compatible execution patterns",
+        "promotion_required": true,
+        "fields": [
+          "task_class",
+          "context_fingerprint",
+          "source_state_sha256",
+          "agent_uuid",
+          "model_profile_uuid",
+          "skill_versions",
+          "quality_score",
+          "actual_cost_usd",
+          "evidence_refs",
+          "confidence",
+          "freshness"
+        ]
+      },
+      "unfruitful": {
+        "purpose": "avoid repeating context-equivalent failed attempts",
+        "promotion_required": true,
+        "fields": [
+          "task_class",
+          "context_fingerprint",
+          "source_state_sha256",
+          "failure_signature",
+          "root_cause",
+          "remediation",
+          "avoidance_rule",
+          "agent_uuid",
+          "model_profile_uuid",
+          "evidence_refs",
+          "occurrence_count"
+        ]
+      },
+      "guardrails": {
+        "candidate_failure_never_blocks": true,
+        "context_must_match_before_block": true,
+        "knowledge_can_expire_or_be_superseded": true,
+        "memory_is_not_truth": true,
+        "raw_prompts_and_secrets_forbidden": true
+      }
+    }
+  },
+  "active_project_runtime": {
+    "enabled": true,
+    "active_project_required": true,
+    "queue": {
+      "max_ready": 500,
+      "default_priority": 50,
+      "priority_aging": true,
+      "dependency_gate": true
+    },
+    "scheduler": {
+      "lease_required": true,
+      "fencing_required": true,
+      "heartbeat_required": true,
+      "max_attempts": 3,
+      "retry_requires_new_decision": true,
+      "avoid_exact_failed_route_when_promoted_antipattern_matches": true,
+      "concurrency_per_agent": 1,
+      "concurrency_per_project": 12
+    },
+    "cost_optimization": {
+      "local_first": true,
+      "ollama_first_when_quality_floor_met": true,
+      "reserve_before_dispatch": true,
+      "settle_actual_cost": true,
+      "escalate_only_with_evidence": true,
+      "unknown_cloud_cost_fail_closed": true
+    },
+    "pdca": {
+      "required": true,
+      "plan_consults_knowledge": true,
+      "check_requires_evidence": true,
+      "act_classifies_learning": true,
+      "close_requires_cost_settlement": true
+    },
+    "knowledge_feedback": {
+      "fruitful": "knowledge.fruitful",
+      "unfruitful": "knowledge.unfruitful",
+      "context_fingerprint_required": true,
+      "candidate_does_not_block": true,
+      "promotion_via_f24_f25_only": true
+    },
+    "ui": {
+      "path": "ui/active-project-control.html"
+    }
+  },
+  "predictive_project_intelligence": {
+    "enabled": true,
+    "mode": "advisory",
+    "min_governed_samples": 3,
+    "history_window_days": 180,
+    "forecast_ttl_seconds": 3600,
+    "confidence_floor": 0.65,
+    "max_context_distance": 0.0,
+    "raw_prompt_storage": false,
+    "raw_output_storage": false,
+    "local_first": {
+      "provider_hint": "Ollama",
+      "prefer_when_quality_gates_pass": true,
+      "cloud_escalation_requires_evidence": true
+    },
+    "optimization": {
+      "objective_order": [
+        "privacy",
+        "quality",
+        "success_probability",
+        "effective_cost",
+        "latency"
+      ],
+      "max_predicted_rework_risk": 0.35,
+      "max_predicted_deadline_risk": 0.4
+    },
+    "backtesting": {
+      "enabled": true,
+      "min_samples": 10,
+      "record_absolute_error": true,
+      "record_percentage_error": true
+    },
+    "learning": {
+      "fruitful_source": "governed_only",
+      "unfruitful_source": "governed_only",
+      "candidate_records_warn_only": true,
+      "promotion_authority": "F24/F25"
+    },
+    "fallback": {
+      "insufficient_history": "use_v045_governed_router",
+      "stale_forecast": "recompute_or_v045_router",
+      "unknown_cost": "fail_closed_when_budget_enforced"
+    }
+  },
+  "autonomous_project_supervisor": {
+    "enabled": true,
+    "mode": "autonomous_low_risk",
+    "active_project_required": true,
+    "health_interval_seconds": 300,
+    "source_state_required": true,
+    "predictive_source": "v0.46",
+    "scheduler_source": "v0.45",
+    "project_management_source": "v0.42",
+    "agent_control_source": "v0.44",
+    "thresholds": {
+      "deadline_risk_warn": 0.35,
+      "deadline_risk_intervene": 0.55,
+      "budget_overrun_warn": 0.3,
+      "budget_overrun_intervene": 0.5,
+      "rework_risk_warn": 0.3,
+      "rework_risk_intervene": 0.45,
+      "quality_floor": 0.8,
+      "wip_saturation": 0.9
+    },
+    "authority": {
+      "auto_allowed": [
+        "reprioritize",
+        "reassign_within_approved_pool",
+        "wip_reduce",
+        "cloud_throttle",
+        "open_corrective_action"
+      ],
+      "approval_required": [
+        "scope_change",
+        "baseline_change",
+        "deadline_change",
+        "budget_increase",
+        "production_change",
+        "destructive_change"
+      ],
+      "never_override": [
+        "security_gate",
+        "privacy_gate",
+        "release_gate",
+        "knowledge_promotion_gate",
+        "fencing",
+        "budget_hard_limit"
+      ]
+    },
+    "pdca": {
+      "required": true,
+      "max_actions_per_cycle": 12,
+      "close_requires_check": true,
+      "learning_feedback": true
+    },
+    "cost": {
+      "ollama_local_first_when_eligible": true,
+      "cloud_escalation_requires_evidence": true,
+      "prefer_lower_expected_total_cost": true
+    },
+    "ui": {
+      "path": "ui/autonomous-project-supervisor.html"
+    }
+  },
+  "executive_control_tower": {
+    "enabled": true,
+    "mode": "read_only_default",
+    "active_tenant_required": true,
+    "refresh_seconds": 60,
+    "sources": {
+      "project_management": "v0.42",
+      "workspace_lifecycle": "v0.43",
+      "agent_control": "v0.44",
+      "active_runtime": "v0.45",
+      "predictive_intelligence": "v0.46",
+      "autonomous_supervisor": "v0.47",
+      "knowledge_graph": "f25",
+      "model_fabric": "v0.31-v0.35"
+    },
+    "health": {
+      "weights": {
+        "deadline_risk": 0.22,
+        "budget_risk": 0.18,
+        "rework_risk": 0.16,
+        "quality_gap": 0.14,
+        "wip": 0.1,
+        "blocked_work": 0.08,
+        "agent_saturation": 0.06,
+        "model_risk": 0.06
+      },
+      "bands": {
+        "green_min": 0.8,
+        "yellow_min": 0.6,
+        "red_below": 0.6
+      },
+      "freshness_seconds": 300
+    },
+    "attention": {
+      "top_projects": 12,
+      "top_alerts": 20,
+      "severity_order": [
+        "critical",
+        "high",
+        "medium",
+        "low"
+      ]
+    },
+    "authority": {
+      "dashboard_mutations": "view_preferences_only",
+      "operational_actions_delegate_to": "autonomous_project_supervisor",
+      "approval_required": [
+        "scope_change",
+        "baseline_change",
+        "deadline_change",
+        "budget_increase",
+        "production_change",
+        "destructive_change"
+      ],
+      "never_override": [
+        "security_gate",
+        "privacy_gate",
+        "release_gate",
+        "knowledge_promotion_gate",
+        "fencing",
+        "budget_hard_limit"
+      ]
+    },
+    "cost": {
+      "show_estimated_vs_actual": true,
+      "show_ollama_share": true,
+      "show_cloud_share": true,
+      "show_cost_per_agent": true,
+      "show_cost_per_project": true
+    },
+    "ui": {
+      "path": "ui/executive-project-control-tower.html",
+      "default_view": "portfolio"
+    }
+  },
+  "executive_decision_center": {
+    "enabled": true,
+    "mode": "simulate_compare_approve_delegate",
+    "sources": {
+      "control_tower": "v0.48",
+      "predictive_intelligence": "v0.46",
+      "autonomous_supervisor": "v0.47",
+      "project_management": "v0.42",
+      "knowledge_graph": "f25"
+    },
+    "what_if": {
+      "enabled": true,
+      "freshness_seconds": 300,
+      "max_scenarios_per_case": 12,
+      "dimensions": [
+        "deadline",
+        "cost",
+        "risk",
+        "quality",
+        "capacity"
+      ]
+    },
+    "objective_weights": {
+      "deadline": 0.24,
+      "cost": 0.22,
+      "risk": 0.22,
+      "quality": 0.2,
+      "capacity": 0.12
+    },
+    "constraints": {
+      "max_budget_increase_usd": 0.0,
+      "max_deadline_slip_days": 0.0,
+      "max_risk_increase": 0.0,
+      "min_quality_delta": -0.02
+    },
+    "approval_required": [
+      "scope_change",
+      "baseline_change",
+      "deadline_change",
+      "budget_increase",
+      "production_change",
+      "destructive_change"
+    ],
+    "never_override": [
+      "security_gate",
+      "privacy_gate",
+      "release_gate",
+      "knowledge_promotion_gate",
+      "fencing",
+      "budget_hard_limit"
+    ],
+    "execution": {
+      "direct_mutation": false,
+      "delegate_to": "autonomous_project_supervisor",
+      "require_controller_epoch": true,
+      "require_fencing_token": true
+    },
+    "ui": {
+      "path": "ui/executive-decision-center.html",
+      "default_view": "decision_queue"
+    }
+  },
+  "portfolio_digital_twin": {
+    "enabled": true,
+    "mode": "simulate_compare_delegate",
+    "direct_mutation": false,
+    "delegate_decisions_to": "executive_decision_center",
+    "delegate_execution_to": "autonomous_project_supervisor",
+    "simulation": {
+      "default_iterations": 10000,
+      "max_iterations": 100000,
+      "deterministic_seed_from_scenario_hash": true,
+      "store_raw_samples": false,
+      "store_aggregates_only": true,
+      "percentiles": [
+        50,
+        80,
+        90,
+        95
+      ],
+      "require_source_state_hash": true,
+      "require_fresh_calibration": true,
+      "max_calibration_age_hours": 720,
+      "dependency_types": [
+        "FS",
+        "SS",
+        "FF",
+        "SF"
+      ],
+      "contention_uses_overlap_intervals": true
+    },
+    "distributions": {
+      "allowed": [
+        "triangular",
+        "pert",
+        "empirical"
+      ],
+      "default": "pert",
+      "reject_invalid_bounds": true,
+      "empirical_min_samples": 12,
+      "fallback_without_evidence": "require_human_assumption"
+    },
+    "portfolio_constraints": {
+      "enforce_shared_agents": true,
+      "enforce_shared_resources": true,
+      "enforce_model_quotas": true,
+      "enforce_project_budgets": true,
+      "enforce_hard_budget_limit": true,
+      "enforce_cross_project_dependencies": true,
+      "calendar_aware": true
+    },
+    "knowledge": {
+      "use_fruitful_promoted_only": true,
+      "use_unfruitful_promoted_only_for_blocking": true,
+      "candidate_knowledge_is_advisory_only": true,
+      "calibration_sources": [
+        "actual_duration",
+        "actual_cost",
+        "rework",
+        "quality",
+        "agent_capacity",
+        "model_cost"
+      ]
+    },
+    "privacy": {
+      "store_raw_prompts": false,
+      "store_raw_outputs": false,
+      "sensitive_fields": "hash_or_aggregate"
+    },
+    "never_override": [
+      "security_gate",
+      "privacy_gate",
+      "release_gate",
+      "knowledge_promotion_gate",
+      "fencing",
+      "budget_hard_limit"
+    ],
+    "approvals": {
+      "required_for": [
+        "scope_change",
+        "baseline_change",
+        "deadline_change",
+        "budget_increase",
+        "production_change",
+        "destructive_action",
+        "cross_project_resource_reallocation"
+      ],
+      "what_if_is_read_only": true
+    }
+  },
+  "portfolio_optimizer": {
+    "enabled": true,
+    "mode": "search_compare_recommend_delegate",
+    "direct_mutation": false,
+    "delegate_recommendations_to": "executive_decision_center",
+    "source_twin": "portfolio_digital_twin",
+    "search": {
+      "algorithm": "deterministic_coarse_to_fine",
+      "max_candidates": 25000,
+      "coarse_iterations": 500,
+      "refine_top_k": 50,
+      "refine_iterations": 3000,
+      "final_top_k": 10,
+      "final_iterations": 10000,
+      "deterministic_seed": true,
+      "candidate_deduplication": true,
+      "parallelism_cap": 8,
+      "max_wall_clock_seconds": 1800
+    },
+    "objectives": {
+      "use_pareto_frontier": true,
+      "require_explicit_weights_for_single_winner": true,
+      "default_weights": null,
+      "supported": [
+        "cost_p90",
+        "deadline_probability",
+        "budget_overrun_probability",
+        "contention_probability",
+        "cloud_share"
+      ]
+    },
+    "hard_constraints": {
+      "min_all_deadlines_probability": 0.8,
+      "max_budget_overrun_probability": 0.2,
+      "max_contention_probability": 0.2,
+      "max_cloud_share": 1.0,
+      "allow_budget_increase_without_approval": false,
+      "allow_scope_change": false,
+      "allow_baseline_change": false,
+      "allow_production_change": false
+    },
+    "search_space": {
+      "agent_capacity_multiplier": {
+        "min": 0.75,
+        "max": 1.5,
+        "step": 0.05
+      },
+      "model_quota_multiplier": {
+        "min": 0.75,
+        "max": 2.0,
+        "step": 0.05
+      },
+      "duration_assumption_multiplier": {
+        "min": 0.9,
+        "max": 1.1,
+        "step": 0.025
+      },
+      "cost_assumption_multiplier": {
+        "min": 0.9,
+        "max": 1.1,
+        "step": 0.025
+      },
+      "strategies": [
+        "PreservePlan",
+        "MinimizeCost",
+        "ProtectDeadline",
+        "ReduceContention",
+        "OllamaFirst",
+        "Balanced"
+      ]
+    },
+    "knowledge": {
+      "fruitful_promoted_as_warm_start": true,
+      "unfruitful_promoted_as_exclusion": true,
+      "candidate_knowledge_advisory_only": true,
+      "require_fresh_evidence": true
+    },
+    "recommendation": {
+      "require_high_fidelity_validation": true,
+      "require_robustness_check": true,
+      "min_rank_stability": 0.75,
+      "min_confidence": 0.7,
+      "never_auto_execute": true
+    },
+    "never_override": [
+      "security_gate",
+      "privacy_gate",
+      "release_gate",
+      "knowledge_promotion_gate",
+      "fencing",
+      "budget_hard_limit"
+    ]
+  },
+  "autonomous_portfolio_planner": {
+    "enabled": true,
+    "mode": "plan_compare_delegate",
+    "direct_mutation": false,
+    "source_optimizer": "portfolio_optimizer",
+    "source_twin": "portfolio_digital_twin",
+    "delegate_to": "executive_decision_center",
+    "require_explicit_selected_pareto_candidate": true,
+    "allow_optimizer_weighted_winner_if_preapproved": true,
+    "roadmap": {
+      "planning_horizon_days": 365,
+      "bucket_days": 1,
+      "respect_locked_projects": true,
+      "respect_mandatory_dates": true,
+      "allow_pause_recommendations": true,
+      "allow_start_recommendations": true,
+      "minimum_service_share": 0.05,
+      "starvation_guard_days": 14
+    },
+    "resources": {
+      "reserve_agents": true,
+      "reserve_shared_resources": true,
+      "reserve_model_quota": true,
+      "ollama_local_first_when_eligible": true,
+      "cloud_share_cap_from_selected_scenario": true
+    },
+    "budget": {
+      "hard_limit_enforced": true,
+      "allow_increase_without_approval": false,
+      "reserve_before_start": true
+    },
+    "authority": {
+      "auto_execute": false,
+      "scope_change": false,
+      "baseline_change": false,
+      "production_change": false,
+      "pause_active_project_without_approval": false,
+      "increase_budget_without_approval": false
+    },
+    "never_override": [
+      "security_gate",
+      "privacy_gate",
+      "release_gate",
+      "knowledge_promotion_gate",
+      "fencing",
+      "budget_hard_limit"
+    ]
+  },
+  "adaptive_portfolio_execution_controller": {
+    "enabled": true,
+    "mode": "observe_confirm_shadow_replan_delegate",
+    "direct_mutation": false,
+    "source_planner": "autonomous_portfolio_planner",
+    "source_optimizer": "portfolio_optimizer",
+    "source_twin": "portfolio_digital_twin",
+    "source_runtime": "active_project_scheduler",
+    "source_predictive": "predictive_project_intelligence",
+    "delegate_to": "executive_decision_center",
+    "monitoring": {
+      "telemetry_ttl_seconds": 120,
+      "confirmation_window_seconds": 900,
+      "critical_confirmation_window_seconds": 0,
+      "cooldown_seconds": 1800,
+      "max_replans_per_hour": 2,
+      "require_same_source_state": true
+    },
+    "thresholds": {
+      "schedule_drift_days": 2.0,
+      "cost_variance_ratio": 0.08,
+      "capacity_utilization_ratio": 0.9,
+      "dependency_slip_days": 1.0,
+      "quality_drop_ratio": 0.05,
+      "budget_remaining_ratio_warning": 0.1
+    },
+    "replan": {
+      "shadow_first": true,
+      "compare_current_vs_candidate": true,
+      "require_plan_revision_hash": true,
+      "invoke_digital_twin": true,
+      "invoke_optimizer": true,
+      "invoke_planner": true,
+      "allow_stale_candidate": false
+    },
+    "models": {
+      "ollama_local_first_when_eligible": true,
+      "cloud_escalation_only_if_evidence_justifies": true,
+      "never_relax_privacy_or_capability": true
+    },
+    "learning": {
+      "pdca_required": true,
+      "fruitful_candidate_on_verified_improvement": true,
+      "unfruitful_candidate_on_verified_failure": true,
+      "promotion_authority": "F24/F25"
+    },
+    "authority": {
+      "auto_execute_reversible_preapproved": false,
+      "change_scope": false,
+      "change_baseline": false,
+      "increase_budget": false,
+      "production_change": false,
+      "pause_project": false
+    },
+    "never_override": [
+      "security_gate",
+      "privacy_gate",
+      "release_gate",
+      "knowledge_promotion_gate",
+      "fencing",
+      "budget_hard_limit"
+    ]
+  },
+  "consolidation_performance": {
+    "enabled": true,
+    "canonical_checkout": {
+      "required": true,
+      "manifest": "config/consolidation-manifest.v054.json",
+      "legacy_brand_forbidden_in_live_source": true
+    },
+    "release_focus": {
+      "freeze_net_new_feature_expansion": true,
+      "target_green_sprints": 10,
+      "current_green_sprints": 0,
+      "current_yellow_sprints": 26
+    },
+    "ollama": {
+      "enabled": true,
+      "endpoint": "http://127.0.0.1:11434",
+      "remote_allowed": false,
+      "local_first_when_eligible": true,
+      "fast_lane": {
+        "enabled": true,
+        "interactive_queue_priority": 100,
+        "background_queue_priority": 20,
+        "structured_outputs_required": true
+      },
+      "warm_pool": {
+        "enabled": true,
+        "default_keep_alive": "5m",
+        "adaptive_keep_alive": true,
+        "max_keep_alive": "60m",
+        "evict_on_memory_pressure": true
+      },
+      "capacity_controller": {
+        "enabled": true,
+        "observe": [
+          "loaded_models",
+          "size_vram",
+          "queue_depth",
+          "latency_ms",
+          "tokens_per_second"
+        ],
+        "managed_env": [
+          "OLLAMA_NUM_PARALLEL",
+          "OLLAMA_MAX_LOADED_MODELS",
+          "OLLAMA_MAX_QUEUE",
+          "OLLAMA_KEEP_ALIVE",
+          "OLLAMA_CONTEXT_LENGTH"
+        ]
+      },
+      "roles": {
+        "classifier": {
+          "model_ref": null,
+          "requires_promoted_profile": true
+        },
+        "coder": {
+          "model_ref": null,
+          "requires_promoted_profile": true
+        },
+        "reviewer": {
+          "model_ref": null,
+          "requires_promoted_profile": true
+        },
+        "log_analyzer": {
+          "model_ref": null,
+          "requires_promoted_profile": true
+        },
+        "rag": {
+          "model_ref": null,
+          "requires_promoted_profile": true
+        },
+        "planner": {
+          "model_ref": null,
+          "requires_promoted_profile": true
+        },
+        "docs": {
+          "model_ref": null,
+          "requires_promoted_profile": true
+        },
+        "embeddings": {
+          "model_ref": null,
+          "requires_promoted_profile": true
+        }
+      }
+    },
+    "routing": {
+      "execution_ladder": [
+        "deterministic",
+        "ollama_fast",
+        "ollama_specialized",
+        "cloud_economic",
+        "cloud_premium",
+        "independent_review"
+      ],
+      "never_relax": [
+        "privacy",
+        "capability",
+        "quality_floor",
+        "budget",
+        "promotion",
+        "fencing"
+      ],
+      "cloud_only_when_local_insufficient": true
+    },
+    "context_budget": {
+      "enabled": true,
+      "by_complexity_tokens": {
+        "low": 4096,
+        "medium": 8192,
+        "high": 16384,
+        "extreme": 32768
+      },
+      "cap_to_model_context": true,
+      "retrieve_before_expand": true,
+      "compress_locally_first": true
+    },
+    "prompt_compiler": {
+      "enabled": true,
+      "structured_output_required": true,
+      "temperature_default": 0.0,
+      "provider_specific_rendering": true,
+      "hash_every_plan": true
+    },
+    "semantic_cache": {
+      "enabled": true,
+      "scope": [
+        "tenant_uuid",
+        "project_uuid",
+        "source_state_sha256",
+        "policy_sha256",
+        "task_fingerprint",
+        "model_profile_uuid"
+      ],
+      "ttl_seconds": 3600,
+      "never_cross_source_state": true
+    },
+    "task_deduplication": {
+      "enabled": true,
+      "same_source_state_only": true,
+      "reuse_verified_success_only": true
+    },
+    "agent_model_affinity": {
+      "enabled": true,
+      "min_samples": 3,
+      "requires_fresh_promoted_profile": true,
+      "prefer_verified_local_success": true
+    },
+    "outcome_memory": {
+      "enabled": true,
+      "record_success_and_failure": true,
+      "separate_model_failure_from_prompt_tool_context_failure": true,
+      "feed_f24_f25": true
+    },
+    "native_qualification": {
+      "require_cargo_lock": true,
+      "cargo": [
+        "fmt --check",
+        "check --workspace --locked",
+        "test --workspace --locked",
+        "clippy --workspace --all-targets --locked -- -D warnings"
+      ],
+      "postgresql_real": true,
+      "rls_non_superuser": true,
+      "ollama_real": true,
+      "mission_e2e": true
+    }
+  },
+  "reconciliation_execution_ledger": {
+    "authoritative_events_append_only": true,
+    "causality": {
+      "require_evidence_sha256": true,
+      "require_explicit_reason": true,
+      "unknown_reason_policy": "record_as_unproven_never_infer"
+    },
+    "direct_mutation": false,
+    "enabled": true,
+    "ledger": {
+      "checkpoint_every_events": 500,
+      "fencing_required": true,
+      "idempotency": true,
+      "monotonic_sequence": true,
+      "replay_enabled": true
+    },
+    "native_qualification_source": "v0.54",
+    "plan_vs_actual": {
+      "agent": true,
+      "budget": true,
+      "cost": true,
+      "dependencies": true,
+      "model": true,
+      "quality": true,
+      "schedule": true,
+      "skills": true
+    },
+    "portfolio_execution_controller_source": "v0.53",
+    "sprint_gate_reconciler": {
+      "enabled": true,
+      "green_requires_all_required_gates_pass": true,
+      "same_source_state_required": true,
+      "unavailable_is_pass": false
+    }
+  },
+  "continuous_learning": {
+    "enabled": true,
+    "version": "0.57.0",
+    "autonomy": {
+      "default_level": 2,
+      "levels": {
+        "0": "observe",
+        "1": "recommend",
+        "2": "auto_tune",
+        "3": "auto_evolve_skills",
+        "4": "self_improve_sandbox",
+        "5": "core_governance_human_only"
+      },
+      "never_autonomous": [
+        "microkernel",
+        "constitution",
+        "security_policy",
+        "secret_broker",
+        "promotion_gate",
+        "release_policy"
+      ],
+      "core_auto_merge": false,
+      "require_human_approval_for_core": true
+    },
+    "experience_ledger": {
+      "enabled": true,
+      "append_only": true,
+      "capture_success": true,
+      "capture_failure": true,
+      "capture_partial": true,
+      "bind_source_state": true,
+      "bind_evidence": true,
+      "redact_raw_prompts_by_default": true,
+      "redact_raw_outputs_by_default": true
+    },
+    "context_fingerprint": {
+      "enabled": true,
+      "dimensions": [
+        "language",
+        "framework",
+        "module",
+        "project_type",
+        "task_class",
+        "risk",
+        "environment",
+        "dependency_fingerprint",
+        "source_state_sha256"
+      ],
+      "exact_or_compatible_required_for_strong_action": true,
+      "never_block_on_weak_similarity": true
+    },
+    "fruitful_knowledge": {
+      "enabled": true,
+      "promotion_states": [
+        "candidate",
+        "accepted",
+        "governed",
+        "stale",
+        "revoked"
+      ],
+      "reuse_governed_only_for_strong_preference": true,
+      "min_evidence_count": 2,
+      "freshness_required": true
+    },
+    "unfruitful_knowledge": {
+      "enabled": true,
+      "block_only_when_governed_fresh_and_context_compatible": true,
+      "record_root_cause": true,
+      "record_remediation": true,
+      "record_safe_retry_conditions": true
+    },
+    "pattern_mining": {
+      "enabled": true,
+      "min_occurrences": 3,
+      "min_distinct_runs": 2,
+      "create_candidate_only": true
+    },
+    "hypothesis_core": {
+      "enabled": true,
+      "require_testable_criteria": true,
+      "require_disproof_condition": true
+    },
+    "experiment_lab": {
+      "enabled": true,
+      "sandbox_required": true,
+      "checkpoint_required": true,
+      "rollback_required": true,
+      "production_side_effects_forbidden": true,
+      "fixture_cannot_promote_production": true
+    },
+    "model_learning": {
+      "enabled": true,
+      "exploration_percent": 5,
+      "use_promoted_profiles_only_for_production": true,
+      "local_challenger_preferred": true,
+      "optimize_quality_cost_latency": true
+    },
+    "prompt_evolution": {
+      "enabled": true,
+      "arena_required": true,
+      "automatic_promotion": {
+        "enabled": true,
+        "max_risk": "low",
+        "reversible_only": true,
+        "production_evidence_only": true,
+        "min_independent_evaluators": 2
+      },
+      "rollback_required": true
+    },
+    "skill_evolution": {
+      "enabled": true,
+      "automatic_promotion": false,
+      "use_f24_promotion_gate": true
+    },
+    "workflow_evolution": {
+      "enabled": true,
+      "automatic_promotion": false,
+      "require_simulation_and_replay": true
+    },
+    "freshness_decay": {
+      "enabled": true,
+      "default_fresh_days": 30,
+      "stale_cannot_drive_strong_action": true,
+      "revalidation_on_dependency_change": true
+    },
+    "contradictions": {
+      "enabled": true,
+      "append_only": true,
+      "unresolved_blocks_promotion": true,
+      "never_overwrite_history": true
+    },
+    "self_improvement": {
+      "enabled": true,
+      "worktree_only": true,
+      "branch_prefix": "agent/self-improve/",
+      "sandbox_only": true,
+      "required_gates": [
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "benchmark",
+        "security",
+        "regression",
+        "digital_twin"
+      ],
+      "core_auto_merge": false,
+      "human_approval_required": true
+    },
+    "qualification_integration": {
+      "consume_v056_evidence": true,
+      "may_mark_sprint_green": false,
+      "sprint_gate_reconciler_remains_authoritative": true,
+      "unavailable_is_pass": false
+    }
+  },
+  "provenance_firewall": {
+    "version": "0.60.0",
+    "mode": "deny_by_default",
+    "policy": "config/source-ingestion-policy.v060.json",
+    "inventory": "inventory/source_inventory_2026-09-29.json",
+    "gated_boundaries": [
+      "plugin_install_update",
+      "source_vendor_import",
+      "research_code_harvesting",
+      "skill_agent_import",
+      "dependency_promotion"
+    ],
+    "decisions": [
+      "allow",
+      "quarantine",
+      "deny"
+    ]
+  }
+}

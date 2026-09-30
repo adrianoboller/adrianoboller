@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PhxClaw Fleet State v0.28",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "rollout_uuid",
+    "generation",
+    "fencing_token",
+    "state",
+    "stage_index",
+    "updated_at",
+    "reason",
+    "signer_key_id",
+    "signature_algorithm",
+    "signature_b64"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "0.28.0"
+    },
+    "rollout_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "fencing_token": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "state": {
+      "enum": [
+        "draft",
+        "active",
+        "paused",
+        "rollback_required",
+        "rolling_back",
+        "completed",
+        "aborted"
+      ]
+    },
+    "stage_index": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "signer_key_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "signature_algorithm": {
+      "const": "ed25519"
+    },
+    "signature_b64": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

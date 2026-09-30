@@ -1,0 +1,67 @@
+{
+  "suite": "PhxClaw v0.39 local/application",
+  "pass": 12,
+  "fail": 0,
+  "checks": [
+    {
+      "name": "deterministic_order",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "cycle_blocks",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "majority_override_disabled",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "critical_survivor_blocks",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "replacement_hash",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "affected_fixture_hash",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "apply_first",
+      "pass": true,
+      "detail": "PhxClaw v0.39 overlay applied: 19 files\nv0.38 RLS repair applied with hash guard\nv0.39 crate present exactly once\n"
+    },
+    {
+      "name": "apply_idempotent",
+      "pass": true,
+      "detail": "PhxClaw v0.39 overlay already applied\nv0.38 RLS repair already applied\nv0.39 crate present exactly once\n"
+    },
+    {
+      "name": "crate_once",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "v038_repaired",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "installed_verifier",
+      "pass": true,
+      "detail": "{\"pass\": 53, \"fail\": 0}\n"
+    },
+    {
+      "name": "unknown_v038_repair_fail_closed",
+      "pass": true,
+      "detail": "v0.38 migration differs from known affected snapshot; refusing repair\n"
+    }
+  ]
+}

@@ -1,0 +1,101 @@
+{
+  "version": "0.14.0",
+  "generated_at": "2026-09-28T04:03:42.852412+00:00",
+  "pass": 17,
+  "fail": 0,
+  "skip": 0,
+  "results": [
+    {
+      "name": "agents.count",
+      "status": "PASS",
+      "detail": 110
+    },
+    {
+      "name": "agents.index_count",
+      "status": "PASS",
+      "detail": 110
+    },
+    {
+      "name": "agents.uuidv7",
+      "status": "PASS",
+      "detail": []
+    },
+    {
+      "name": "agents.uuid_unique",
+      "status": "PASS",
+      "detail": 110
+    },
+    {
+      "name": "agents.name_unique",
+      "status": "PASS",
+      "detail": 110
+    },
+    {
+      "name": "agents.source_rows",
+      "status": "PASS",
+      "detail": []
+    },
+    {
+      "name": "rust_source.authoritative",
+      "status": "PASS",
+      "detail": true
+    },
+    {
+      "name": "rust_source.mode_hybrid",
+      "status": "PASS",
+      "detail": "hybrid"
+    },
+    {
+      "name": "rust_source.required_capability",
+      "status": "PASS",
+      "detail": [
+        "knowledge.rust.read"
+      ]
+    },
+    {
+      "name": "rust_source.allowed_agents",
+      "status": "PASS",
+      "detail": [
+        "Documentador",
+        "Perséfone",
+        "Research Agent",
+        "Research Lead / Pesquisador PDCA"
+      ]
+    },
+    {
+      "name": "rust_source.verified_version",
+      "status": "PASS",
+      "detail": "1.98.1"
+    },
+    {
+      "name": "rust_source.agent_access",
+      "status": "PASS",
+      "detail": []
+    },
+    {
+      "name": "offline.sync_rust_offline_docs.sh",
+      "status": "PASS",
+      "detail": "scripts/sync_rust_offline_docs.sh"
+    },
+    {
+      "name": "offline.sync_rust_offline_docs.ps1",
+      "status": "PASS",
+      "detail": "scripts/sync_rust_offline_docs.ps1"
+    },
+    {
+      "name": "offline.index_offline_docs.py",
+      "status": "PASS",
+      "detail": "scripts/index_offline_docs.py"
+    },
+    {
+      "name": "capability.f15_f16",
+      "status": "PASS",
+      "detail": []
+    },
+    {
+      "name": "capability.count",
+      "status": "PASS",
+      "detail": 141
+    }
+  ]
+}

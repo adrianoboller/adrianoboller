@@ -1,0 +1,77 @@
+{
+  "suite": "v0.36 local behavior/application",
+  "pass": 14,
+  "fail": 0,
+  "checks": [
+    {
+      "name": "four_phase_chain",
+      "pass": true,
+      "detail": "['deep_research', 'graphify', 'visual_explainer', 'humanizer']"
+    },
+    {
+      "name": "qmd_local_no_network",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "agent_reach_network_denied",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "humanizer_zero_permission",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "unverified_license_blocked",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "prod_disabled_default",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "prod_approval_required",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "blast_radius_bound",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "arbitrary_shell_forbidden",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "catalog_digest_64",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "apply_pass",
+      "pass": true,
+      "detail": "PhxClaw v0.36 overlay applied: 26 files\nv0.36 crates present exactly once\nmarker=/tmp/tmptlmpxhx5/config/overlays/v0.36.applied.json\n"
+    },
+    {
+      "name": "installed_verify_pass",
+      "pass": true,
+      "detail": "{\n  \"pass\": 113,\n  \"fail\": 0\n}\n"
+    },
+    {
+      "name": "idempotent_pass",
+      "pass": true,
+      "detail": "PhxClaw v0.36 overlay already applied\nv0.36 crates present exactly once\nmarker=/tmp/tmptlmpxhx5/config/overlays/v0.36.applied.json\n"
+    },
+    {
+      "name": "conflict_fail_closed",
+      "pass": true,
+      "detail": "conflict: /tmp/tmptlmpxhx5/config/skill-catalog.v036.json; v0.36 never force-overwrites unknown content\n"
+    }
+  ]
+}

@@ -1,0 +1,105 @@
+{
+  "manifest_version": "1.3.0",
+  "uuid": "01a0e592-a79f-7747-8128-6e3826fd8502",
+  "name": "com.wxsolutions.octopus.bridge",
+  "version": "0.1.0",
+  "kind": "integration",
+  "description": "Bridge isolada para reutilizar recursos do Phoenix Octopus como provedor externo, sem copiar código proprietário para o core Apache-2.0.",
+  "core_api": ">=0.9.0, <1.0.0",
+  "entrypoint": {
+    "type": "process",
+    "value": "plugins/community/octopus-bridge/phxclaw-octopus-plugin"
+  },
+  "dependencies": [],
+  "capabilities": [
+    "octopus.repo.map",
+    "octopus.repo.grep_ast",
+    "octopus.code.analyze",
+    "octopus.quality.evaluate",
+    "octopus.security.scan",
+    "octopus.migration.plan",
+    "octopus.contract.verify",
+    "octopus.shadow.check",
+    "octopus.dependency.map",
+    "octopus.knowledge.search",
+    "octopus.toolchain.status"
+  ],
+  "extension_points": [
+    {
+      "point": "capability.provider",
+      "contract_version": "^1.0.0"
+    }
+  ],
+  "permissions": [
+    {
+      "name": "filesystem.read",
+      "scopes": [
+        "workspace/*"
+      ]
+    },
+    {
+      "name": "filesystem.write",
+      "scopes": [
+        "workspace/logs/*"
+      ]
+    },
+    {
+      "name": "process.execute",
+      "scopes": [
+        "octopus-console"
+      ]
+    }
+  ],
+  "lifecycle": {
+    "install": "octopus.bridge.install",
+    "enable": "octopus.bridge.enable",
+    "disable": "octopus.bridge.disable",
+    "uninstall": "octopus.bridge.uninstall",
+    "health": "octopus.bridge.health"
+  },
+  "contracts": {
+    "input_schema": "schemas/extension-invocation.schema.json",
+    "output_schema": "schemas/process-reply.schema.json"
+  },
+  "sandbox": {
+    "network": "deny",
+    "network_allowlist": [],
+    "read_only_paths": [
+      "workspace"
+    ],
+    "write_paths": [
+      "workspace/logs"
+    ],
+    "environment_allowlist": [
+      "PHXCLAW_OCTOPUS_BIN",
+      "PHXCLAW_OCTOPUS_WORKSPACE"
+    ],
+    "timeout_ms": 120000,
+    "memory_mb": 512,
+    "cpu_quota_percent": 50
+  },
+  "integrity": {
+    "artifact": "plugins/community/octopus-bridge/phxclaw-octopus-plugin",
+    "hash_algorithm": "sha256",
+    "digest": "<generated-by-phxclaw-plugin-pack>",
+    "signature_algorithm": "ed25519",
+    "signature": "<generated-by-phxclaw-plugin-sign>",
+    "signer": "<publisher-signer-id>",
+    "provenance": "Build from apps/phxclaw-octopus-plugin; Octopus remains a separately licensed external dependency."
+  },
+  "tests": [
+    {
+      "name": "bridge-health",
+      "command": "phxclaw-octopus-plugin --health",
+      "required": true
+    }
+  ],
+  "rollback": {
+    "strategy": "disable_and_restore_previous",
+    "steps": [
+      "disable plugin",
+      "restore previous signed package",
+      "re-run integrity, health and capability gates"
+    ]
+  }
+}

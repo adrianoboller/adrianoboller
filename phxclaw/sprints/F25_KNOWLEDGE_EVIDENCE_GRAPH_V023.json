@@ -1,0 +1,35 @@
+{
+  "sprint_uuid": "01a0e809-1406-70cd-8774-daeea4bee874",
+  "sprint_id": "F25",
+  "title": "Knowledge / Evidence Graph",
+  "version": "0.23.0",
+  "state": "review",
+  "color": "yellow",
+  "depends_on": ["F01","F02","F09","F15","F17","F19","F20","F24"],
+  "deliverables": [
+    "Rust crate phxclaw-knowledge-evidence-graph",
+    "typed knowledge/evidence node and edge contracts",
+    "explicit epistemic boundary raw -> unverified -> accepted -> governed",
+    "same-source-state evidence binding",
+    "support/refute promotion gates",
+    "contradiction detection and explicit resolution records",
+    "learning authority guardrails",
+    "bounded graph traversal",
+    "deterministic graph snapshot root SHA-256",
+    "PostgreSQL RLS graph persistence",
+    "append-only raw-source/evidence DB guard",
+    "14 Phoenix capabilities"
+  ],
+  "release_gates_required": [
+    "cargo fmt --check",
+    "cargo check --workspace",
+    "cargo test --workspace",
+    "cargo clippy --workspace --all-targets -- -D warnings",
+    "PostgreSQL real E2E",
+    "cross-tenant denial E2E",
+    "contradiction resolution E2E",
+    "F24 promotion lineage E2E",
+    "Evidence Ledger integration E2E"
+  ],
+  "done": false
+}

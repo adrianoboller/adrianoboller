@@ -1,0 +1,16 @@
+{
+  "version": "0.25.0",
+  "base_total": 258,
+  "delta_count": 8,
+  "projected_total": 266,
+  "capabilities": [
+    "release.source_state.hash",
+    "release.qualification.run",
+    "release.gate.execute",
+    "release.evidence.capture",
+    "release.attestation.build",
+    "release.attestation.verify",
+    "release.ci.plan",
+    "release.bundle.verify"
+  ]
+}

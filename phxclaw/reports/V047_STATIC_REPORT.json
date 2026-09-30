@@ -1,0 +1,137 @@
+{
+  "suite": "v0.47 static",
+  "pass": 26,
+  "fail": 0,
+  "checks": [
+    {
+      "name": "json_config/capabilities-v047.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/project-health-snapshot.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/supervisor-intervention-plan.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/phxclaw.config.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "capability_count",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "uuidv7_caps",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_ProjectHealthSnapshot",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_InterventionPlan",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_PdcaPhase",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_propose_interventions",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_can_execute",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_HardGate",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_ApprovalRequired",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_Ollama local-first",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "never_override_security_gate",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "never_override_privacy_gate",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "never_override_release_gate",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "never_override_knowledge_promotion_gate",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "never_override_fencing",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "never_override_budget_hard_limit",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_force_rls",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_rls_exact",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_append_only",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_fk_snapshot",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "ui_exists",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_legacy_brand",
+      "pass": true,
+      "detail": ""
+    }
+  ]
+}

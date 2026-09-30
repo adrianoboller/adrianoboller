@@ -1,0 +1,13 @@
+{
+  "version": "0.61.0",
+  "feature": "Safe Source Harvester",
+  "added": [
+    "crates/phxclaw-safe-source-harvester",
+    "migrations/0061_safe_source_harvester.sql",
+    "config/source-harvest-policy.v061.json",
+    "schemas/source-harvest-receipt-v061.schema.json"
+  ],
+  "security_model": "fail_closed",
+  "native_build": false,
+  "postgres_e2e": false
+}

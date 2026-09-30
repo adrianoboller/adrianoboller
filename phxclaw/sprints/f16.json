@@ -1,0 +1,87 @@
+{
+  "uuid": "01a0e4e2-9c90-70f8-8bbb-bad72f079c07",
+  "code": "F16",
+  "title": "Declarative Agent Registry + Official Knowledge Sources",
+  "goal": "Usar a planilha oficial de 110 papéis como fonte declarativa e controlar fontes oficiais online/offline por capability.",
+  "status": "review",
+  "tasks": [
+    {
+      "uuid": "01a0e4e2-9c90-7baf-a76c-4cc287c8d7e5",
+      "title": "Gerar 110 manifests JSON a partir da planilha",
+      "status": "done"
+    },
+    {
+      "uuid": "01a0e4e2-9c90-71d9-a31e-71dce7660516",
+      "title": "Schema Agent Manifest",
+      "status": "done"
+    },
+    {
+      "uuid": "01a0e4e2-9c90-71e5-948e-e1a792e2aedf",
+      "title": "Rust importer XLSX via calamine",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e4e2-9c90-7c0a-84f0-135ce7f4c55f",
+      "title": "Source Registry com ACL por agente/capability",
+      "status": "done"
+    },
+    {
+      "uuid": "01a0e4e2-9c90-7b07-b929-7e7dd6802b26",
+      "title": "Rust official online/offline source manifest",
+      "status": "done"
+    },
+    {
+      "uuid": "01a0e4e2-9c90-719e-8272-55d55379582a",
+      "title": "Sync rust-docs + índice offline",
+      "status": "done"
+    },
+    {
+      "uuid": "01a0e4e2-9c90-7c2c-9b12-34d701ff7e12",
+      "title": "Research/Documentador recebem knowledge.rust.read",
+      "status": "done"
+    },
+    {
+      "uuid": "01a0e4e2-9c90-73d2-9cb0-b78903220f90",
+      "title": "Baixar snapshot rust-docs no host conectado",
+      "status": "blocked"
+    },
+    {
+      "uuid": "01a0e4f0-5c42-72db-9e7d-55960f432f58",
+      "title": "Agent Catalog Rust carrega e valida os 110 manifests JSON",
+      "status": "done"
+    },
+    {
+      "uuid": "01a0e4f0-5c42-7ba8-ae16-fa6585464321",
+      "title": "Logical Agent Runtime roteia agentes declarativos por capability/permission",
+      "status": "done"
+    },
+    {
+      "uuid": "01a0e4f0-5c42-79a4-9af2-b9918d0bf694",
+      "title": "Busca determinística no índice rust-docs offline",
+      "status": "done"
+    },
+    {
+      "uuid": "01a0e4f0-5c42-7e32-a342-25f4a7009ecd",
+      "title": "Fallback para endpoint oficial quando offline não estiver disponível ou frescor exigir",
+      "status": "done"
+    }
+  ],
+  "definition_of_done": [
+    "110 manifests JSON correspondem às 110 linhas da planilha",
+    "UUIDs permanecem os UUIDv7 da planilha",
+    "Research Agent, Research Lead, Documentador e Perséfone acessam rust-official",
+    "resolução prefere offline para conteúdo estável e online quando frescor importa",
+    "sync registra versão e cria índice local",
+    "snapshot rust-docs real baixado em host com rustup/rede"
+  ],
+  "notes": [
+    "O ambiente de montagem atual não possui rustup nem acesso de rede no container, então o conteúdo completo rust-docs não foi baixado aqui; scripts reproduzíveis foram adicionados.",
+    "v0.8 fecha a integração declarativa do catálogo de agentes com o pipeline de pesquisa; snapshot rust-docs completo continua dependente de host conectado com rustup."
+  ],
+  "state": "review",
+  "canonical_project_version": "0.67.0",
+  "canonical_state_ref": "config/project-state-canonical.v067.json",
+  "implementation_state": "source_ready",
+  "verification_state": "static_verified",
+  "open_gaps": []
+}

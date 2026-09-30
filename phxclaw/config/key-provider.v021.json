@@ -1,0 +1,14 @@
+{
+  "version": "0.21.0",
+  "provider_uuid": "01a0e7b3-b661-780a-a42f-c61d2bd4105a",
+  "kind": "os_keyring",
+  "production_safe": true,
+  "key_id": "phxclaw/master/v1",
+  "service": "PhxClaw",
+  "namespace": "private-core",
+  "minimum_key_bytes": 32,
+  "release": {
+    "allow_dev_env": false,
+    "require_release_safe": true
+  }
+}

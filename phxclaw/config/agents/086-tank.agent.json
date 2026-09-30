@@ -1,0 +1,109 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f656-743b-926b-6f8ac00e7132",
+  "agent_id": 86,
+  "name": "Tank",
+  "macroarea": "Operações & Infraestrutura",
+  "nucleus": "Build",
+  "role_type": "Agente operador de build",
+  "mission": "Transforma código aprovado em artifacts nativos/WASM reproduzíveis.",
+  "responsibilities": "Executa Cargo/rustc, linking, cross compile, build profiles, cache e artifact metadata.",
+  "resources": "Cargo, rustc, wasm-tools, linkers, cache, CI runners.",
+  "authorized_actions": "Buildar, assinar/hashear e registrar artifact.",
+  "trigger": "Build solicitado por CI/release.",
+  "declared_dependencies": "Source + toolchain manifest.",
+  "resolved_agent_dependencies": [
+    {
+      "uuid": "01a0e473-f643-7271-9c16-dbafea8c5249",
+      "name": "Artifact Manager"
+    }
+  ],
+  "deliverables": "Build artifact + logs + hashes.",
+  "limits": "Não promove release sozinho.",
+  "next_gate": "Reproducible Build/Artifact Manager.",
+  "execution": "Permanente",
+  "models_allowed": [
+    "determinístico",
+    "ollama"
+  ],
+  "criticality": "Alta",
+  "modules": [
+    "F17 Checkpoint + Rollback",
+    "F18 MCP + LSP Runtime",
+    "F22 Device Nodes",
+    "F25 Knowledge / Evidence Graph"
+  ],
+  "capabilities": [
+    "build.execute",
+    "checkpoint.read",
+    "evidence.read",
+    "knowledge.read",
+    "lsp.read",
+    "mcp.invoke",
+    "node.observe"
+  ],
+  "permissions": [
+    {
+      "name": "build.execute",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "checkpoint.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "evidence.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "knowledge.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "lsp.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "mcp.invoke",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Checkpoint manifest + hashes + rollback evidence; Node/session state efêmero e pareado; Knowledge/Evidence Graph com proveniência; Estado operacional persistente em PostgreSQL",
+  "event_topics": "agent.tank.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; writes policy-gated; evidência obrigatória; sem autoaprovação. Device input/screen exige autorização de sessão e logging.",
+  "references": "Hermes — patterns; validar licença por versão | OpenClaw — gateway/nodes/channels; validar licença por versão | ZeroClaw — benchmark Rust/providers/tools",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 87
+  }
+}

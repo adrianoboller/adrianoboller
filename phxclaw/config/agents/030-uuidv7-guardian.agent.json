@@ -1,0 +1,74 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f61e-7a08-af45-723fadfdbd38",
+  "agent_id": 30,
+  "name": "UUIDv7 Guardian",
+  "macroarea": "Segurança & Compliance",
+  "nucleus": "Identidade",
+  "role_type": "Guardião de identidade",
+  "mission": "Garante UUIDv7 único e imutável para entidades persistentes.",
+  "responsibilities": "Valida geração, versão, unicidade, referência, clone/remap, índices e preservação de identidade entre versões.",
+  "resources": "UUID registry, PostgreSQL constraints, validators.",
+  "authorized_actions": "Bloquear UUID inválido/duplicado, auditar referências quebradas.",
+  "trigger": "Persistência, migration, clone ou import.",
+  "declared_dependencies": "Objeto/graph state.",
+  "resolved_agent_dependencies": [],
+  "deliverables": "Identity report e gate.",
+  "limits": "Nunca permite IDs legíveis substituírem identidade persistente.",
+  "next_gate": "PHX JSON/Template/Migration QA.",
+  "execution": "Permanente",
+  "models_allowed": [
+    "determinístico",
+    "ollama"
+  ],
+  "criticality": "Crítica",
+  "modules": [
+    "F22 Device Nodes",
+    "F23 Secret & Credential Broker"
+  ],
+  "capabilities": [
+    "identity.uuidv7.guard",
+    "node.observe",
+    "secret.lease.request"
+  ],
+  "permissions": [
+    {
+      "name": "identity.uuidv7.guard",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "secret.lease.request",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Node/session state efêmero e pareado; Somente metadados de segredo; valores nunca em prompt/log; Estado operacional persistente em PostgreSQL",
+  "event_topics": "agent.uuidv7.guardian.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; write sensível, gasto, publicação, privilégio ou ação destrutiva exigem gate explícito. Device input/screen exige autorização de sessão e logging. Credenciais via broker/leases; nunca em prompt.",
+  "references": "Hermes — patterns; validar licença por versão | OpenClaw — gateway/nodes/channels; validar licença por versão | ZeroClaw — benchmark Rust/providers/tools",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 31
+  }
+}

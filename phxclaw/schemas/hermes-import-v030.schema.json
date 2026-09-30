@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "kind",
+    "source",
+    "target_state"
+  ],
+  "properties": {
+    "kind": {
+      "enum": [
+        "skill",
+        "memory",
+        "context",
+        "mcp"
+      ]
+    },
+    "source": {
+      "type": "string"
+    },
+    "target_state": {
+      "enum": [
+        "f24_candidate",
+        "unverified_context",
+        "external_tool_reference"
+      ]
+    }
+  },
+  "additionalProperties": false
+}

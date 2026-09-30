@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phxclaw.local/schemas/research-hypothesis-persistence-v066.schema.json",
+  "type": "object",
+  "required": [
+    "research",
+    "hypothesis"
+  ],
+  "properties": {
+    "research": {
+      "type": "object"
+    },
+    "hypothesis": {
+      "type": "object"
+    }
+  }
+}

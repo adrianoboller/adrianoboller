@@ -1,0 +1,127 @@
+{
+  "suite": "PhxClaw v0.38 package/security",
+  "pass": 24,
+  "fail": 0,
+  "checks": [
+    {
+      "name": "parse_json_PACKAGE.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "parse_json_reports/V038_NATIVE_PREFLIGHT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "parse_json_reports/V038_LOCAL_TEST_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "parse_json_reports/V038_GATE_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "parse_json_reports/V038_STATIC_VERIFY_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "parse_json_overlay/config/engineering-swarm-policy.v038.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "parse_json_overlay/config/engineering-swarm-team-map.v038.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "parse_json_overlay/schemas/engineering-swarm-v038.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "parse_json_overlay/schemas/swarm-merge-candidate-v038.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "parse_json_overlay/schemas/swarm-conflict-v038.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "parse_json_overlay/schemas/swarm-team-evidence-v038.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "parse_json_overlay/reports/V038_NATIVE_PREFLIGHT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "parse_json_overlay/reports/V038_LOCAL_TEST_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "parse_json_overlay/reports/V038_GATE_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "parse_json_overlay/reports/V038_STATIC_VERIFY_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "parse_json_overlay/capabilities/V038_CAPABILITIES_DELTA.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "parse_toml_overlay/crates/phxclaw-engineering-swarm/Cargo.toml",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_secret_sk-ant-",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_secret_sk-proj-",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_secret_BEGIN PRIVATE KEY",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_secret_ghp_",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_vendor_source",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "native_separate_rls_url",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_direct_main_push",
+      "pass": true,
+      "detail": ""
+    }
+  ]
+}

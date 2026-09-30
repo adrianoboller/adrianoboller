@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="theme-color" content="#07111c" />
+  <title>PhxClaw • Command Center</title>
+  <link rel="stylesheet" href="./assets/app.css" />
+</head>
+<body>
+  <div class="noise"></div>
+  <section id="splash" class="splash" aria-label="PhxClaw splash screen">
+    <div class="splash-orbit orbit-a"></div>
+    <div class="splash-orbit orbit-b"></div>
+    <div class="splash-glow"></div>
+    <div class="splash-center">
+      <div class="mark-wrap">
+        <img src="./assets/phoenix-mark.svg" class="brand-mark" alt="PhxClaw" />
+        <span class="mark-ring"></span>
+      </div>
+      <div class="wordmark"><span>PHOENIX</span><b>CLAW</b></div>
+      <div class="strap">BUILDING A BETTER SOFTWARE TOMORROW</div>
+      <div class="splash-rule"></div>
+      <div class="boot-row">
+        <span id="bootLabel">Inicializando microkernel</span>
+        <span id="bootPct">0%</span>
+      </div>
+      <div class="progress"><span id="progressBar"></span></div>
+      <div class="boot-modules" id="bootModules"></div>
+      <button id="enterButton" class="enter-button">ENTRAR NO COMMAND CENTER <span>↗</span></button>
+      <div class="splash-foot">AGENTES&nbsp;&nbsp;•&nbsp;&nbsp;IA&nbsp;&nbsp;•&nbsp;&nbsp;PESSOAS&nbsp;&nbsp;•&nbsp;&nbsp;TECNOLOGIA</div>
+    </div>
+  </section>
+
+  <div id="app" class="app-shell" aria-hidden="true">
+    <header class="topbar">
+      <div class="brand-mini">
+        <img src="./assets/phoenix-mark.svg" alt="" />
+        <div><strong>PHOENIX<span>CLAW</span></strong><small>COMMAND CENTER • v0.11.0</small></div>
+      </div>
+      <div class="top-status">
+        <span class="pulse-dot"></span>
+        <span>CORE ONLINE</span>
+        <i></i>
+        <span id="nativeBridgeStatus">WEB PREVIEW</span>
+        <i></i>
+        <span id="liveEventStatus">EVENT BUS WAIT</span>
+      </div>
+      <div class="top-actions">
+        <button>⌕</button><button>⌘</button>
+        <div class="avatar">PO</div>
+      </div>
+    </header>
+
+    <aside class="sidebar">
+      <nav>
+        <button class="nav active"><span>◫</span><em>Visão geral</em></button>
+        <button class="nav"><span>⌁</span><em>Task Graph</em><b>3</b></button>
+        <button class="nav"><span>◉</span><em>Agentes</em><b>3</b></button>
+        <button class="nav"><span>◇</span><em>Model Gateway</em></button>
+        <button class="nav"><span>⬡</span><em>Plugins</em><b>7</b></button>
+        <button class="nav"><span>▤</span><em>Evidências</em></button>
+        <button class="nav"><span>⌘</span><em>Operações</em></button>
+        <button class="nav"><span>◈</span><em>Capabilities</em><b>89</b></button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="security-card"><span>◈</span><div><b>ZERO TRUST</b><small>Deny-by-default</small></div></div>
+        <button class="nav"><span>⚙</span><em>Configurações</em></button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <section class="hero-row">
+        <div>
+          <div class="eyebrow">PHXCLAW / PROJECT PHOENIX OCTOPUS IA</div>
+          <h1>Do objetivo ao resultado.</h1>
+          <p>Microkernel determinístico, agentes plugáveis, evidências rastreáveis e inteligência desacoplada.</p>
+        </div>
+        <div class="hero-actions"><button class="ghost">VER ARQUITETURA</button><button class="primary">+ NOVA MISSÃO</button></div>
+      </section>
+
+      <section class="metric-grid">
+        <article class="metric gold"><header><span>KERNEL</span><i>●</i></header><strong>v0.11.0</strong><small>UUIDv7 • Rust • 38 crates/apps</small><div class="spark"><b></b><b></b><b></b><b></b><b></b><b></b></div></article>
+        <article class="metric cyan"><header><span>CONNECTIVITY</span><i>F10</i></header><strong>HTTP <em>+ PG</em></strong><small>HTTPRequest • HTTPGetResult • Ollama</small><div class="mini-line"><span></span><span></span><span></span></div></article>
+        <article class="metric violet"><header><span>DESKTOP HOST</span><i>F14</i></header><strong>LIVE <em>+ OS</em></strong><small>Tauri • SSE/WS • WebView • teclado/mouse</small><div class="budget"><span style="width:78%"></span></div></article>
+        <article class="metric green"><header><span>MEDIA & DOCS</span><i>F12</i></header><strong>8 <em>formatos</em></strong><small>OCR • TTS/STT • PDF/XLSX/DOCX</small><div class="chips"><span>OCR</span><span>VOICE</span><span>DOC I/O</span></div></article>
+      </section>
+
+      <section class="dashboard-grid">
+        <article class="panel pipeline-panel">
+          <header class="panel-head"><div><span class="eyebrow">FLUXO ATIVO</span><h2>Mission Pipeline</h2></div><button>DETALHES →</button></header>
+          <div class="pipeline">
+            <div class="phase done"><span class="num">01</span><b>ANÁLISE</b><small>Analista • PMO</small><i>✓</i></div>
+            <div class="connector on"><span></span></div>
+            <div class="phase running"><span class="num">02</span><b>PESQUISA</b><small>Research • Hypothesis</small><i></i></div>
+            <div class="connector on"><span></span></div>
+            <div class="phase queued"><span class="num">03</span><b>ARQUITETURA</b><small>Architect • Oracle</small><i></i></div>
+            <div class="connector"><span></span></div>
+            <div class="phase"><span class="num">04</span><b>IMPLEMENTAÇÃO</b><small>Johnson • Smith</small><i></i></div>
+            <div class="connector"><span></span></div>
+            <div class="phase"><span class="num">05</span><b>QUALIDADE</b><small>Jones • QA1/2/3</small><i></i></div>
+            <div class="connector"><span></span></div>
+            <div class="phase"><span class="num">06</span><b>RELEASE</b><small>Approval Gate</small><i></i></div>
+          </div>
+          <div class="pipeline-foot"><span><i class="dot cyan-dot"></i> execução determinística</span><span><i class="dot gold-dot"></i> approval humano</span><span><i class="dot violet-dot"></i> inteligência via gateway</span></div>
+        </article>
+
+        <article class="panel task-panel">
+          <header class="panel-head"><div><span class="eyebrow">F06</span><h2>Task Graph</h2></div><span class="live">LIVE</span></header>
+          <div class="task-list">
+            <div class="task success"><i>✓</i><div><b>Pesquisar evidências</b><small>research.execute</small></div><span>DONE</span></div>
+            <div class="task active"><i>●</i><div><b>Decisão técnica</b><small>decision.technical</small></div><span>RUN</span></div>
+            <div class="task wait"><i>◆</i><div><b>Publicar release</b><small>release.publish</small></div><span>APPROVAL</span></div>
+          </div>
+          <div class="task-legend"><span>Retries: 3×</span><span>Backoff: exp.</span><span>Idempotência: ON</span></div>
+        </article>
+
+        <article class="panel agents-panel">
+          <header class="panel-head"><div><span class="eyebrow">F05</span><h2>Agentes essenciais</h2></div><button>VER TODOS →</button></header>
+          <div class="agent-grid">
+            <div class="agent"><div class="agent-face morpheus">M</div><div><b>Morpheus</b><small>Estratégia & riscos</small></div><span class="online"></span></div>
+            <div class="agent"><div class="agent-face oracle">O</div><div><b>Oráculo</b><small>Decisão técnica</small></div><span class="online"></span></div>
+            <div class="agent"><div class="agent-face master">∞</div><div><b>Master Orchestrator</b><small>Coordenação geral</small></div><span class="online"></span></div>
+            <div class="agent"><div class="agent-face research">R</div><div><b>Research Core</b><small>Evidências</small></div><span class="native">CORE</span></div>
+            <div class="agent"><div class="agent-face hypothesis">H</div><div><b>Hypothesis Core</b><small>Prova & experimento</small></div><span class="native">CORE</span></div>
+            <div class="agent"><div class="agent-face installer">I</div><div><b>Installer Core</b><small>Rollback & repair</small></div><span class="native">CORE</span></div>
+          </div>
+        </article>
+
+        <article class="panel model-panel capability-panel">
+          <header class="panel-head"><div><span class="eyebrow">F09 → F13</span><h2>Capability Fabric</h2></div><span class="policy">DENY BY DEFAULT</span></header>
+          <div class="cap-list">
+            <div><b>↗</b><span>HTTP / Egress Broker</span><em>READY</em></div>
+            <div><b>◉</b><span>PostgreSQL / Ollama</span><em>ADAPTER</em></div>
+            <div><b>⌘</b><span>Shell / Keyboard / Mouse</span><em>GATED</em></div>
+            <div><b>▣</b><span>Screen PNG • JPG • MP4</span><em>DESKTOP</em></div>
+            <div><b>Aa</b><span>OCR • TTS • STT</span><em>LOCAL</em></div>
+            <div><b>◇</b><span>BPMN + Mindset</span><em>ACTIVE</em></div>
+          </div>
+          <div class="model-row"><span>Ed25519 signed process tools</span><b>7 TRUSTED</b></div>
+        </article>
+      </section>
+
+      <section class="live-runtime-grid">
+        <article class="panel live-runtime-panel">
+          <header class="panel-head"><div><span class="eyebrow">F14 • REAL TIME</span><h2>Desktop Host / Event Stream</h2></div><span id="apiEndpoint" class="policy">BROWSER MODE</span></header>
+          <div class="runtime-status-row">
+            <div><small>SESSION UUIDv7</small><b id="hostSession">—</b></div>
+            <div><small>LIVE RECEIVERS</small><b id="liveReceivers">0</b></div>
+            <div><small>EVIDENCE CHAIN</small><b id="evidenceState">WAIT</b></div>
+            <div><small>HOST POLICY</small><b id="hostPolicy">DENY</b></div>
+          </div>
+          <div class="event-console" id="eventConsole" aria-live="polite">
+            <div class="event-empty">Aguardando Desktop Host Tauri…</div>
+          </div>
+        </article>
+      </section>
+
+      <footer class="footerbar"><span>DISCIPLINA</span><i>•</i><span>SEGURANÇA</span><i>•</i><span>QUALIDADE</span><i>•</i><span>EVOLUÇÃO</span><i>•</i><span>LIBERDADE</span><b>“Juntos somos infinitos.”</b></footer>
+    </main>
+  </div>
+  <script src="./assets/app.js"></script>
+</body>
+</html>

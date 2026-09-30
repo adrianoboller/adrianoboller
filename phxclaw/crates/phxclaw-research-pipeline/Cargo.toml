@@ -1,0 +1,21 @@
+[package]
+name = "phxclaw-research-pipeline"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+chrono.workspace = true
+phxclaw-agent-runtime = { path = "../phxclaw-agent-runtime" }
+phxclaw-evidence-ledger = { path = "../phxclaw-evidence-ledger" }
+phxclaw-live-bus = { path = "../phxclaw-live-bus" }
+phxclaw-memory-context = { path = "../phxclaw-memory-context" }
+phxclaw-research = { path = "../phxclaw-research" }
+phxclaw-skill-runtime = { path = "../phxclaw-skill-runtime" }
+phxclaw-source-registry = { path = "../phxclaw-source-registry" }
+phxclaw-types = { path = "../phxclaw-types" }
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+uuid.workspace = true

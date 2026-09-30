@@ -1,0 +1,79 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f661-77bb-ac3d-0d27237afbf6",
+  "agent_id": 97,
+  "name": "Van Gogh",
+  "macroarea": "Creative Studio & UX",
+  "nucleus": "Creative Studio",
+  "role_type": "Especialista em Cor, Emoção e Identidade",
+  "mission": "Cria paletas, temas, atmosfera e identidade visual memorável.",
+  "responsibilities": "Define color tokens, themes, contrast intent, lighting/atmosphere e estados emocionais sem sacrificar legibilidade.",
+  "resources": "Color systems, themes, prototypes, accessibility contrast tools.",
+  "authorized_actions": "Criar theme variants e identidade.",
+  "trigger": "Nova identidade/theme ou revisão visual.",
+  "declared_dependencies": "Brand/product intent.",
+  "resolved_agent_dependencies": [],
+  "deliverables": "Theme/identity system.",
+  "limits": "Accessibility pode bloquear decisões de cor.",
+  "next_gate": "Raphaël/Splinter/Accessibility.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "multimodal"
+  ],
+  "criticality": "Média",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine"
+  ],
+  "capabilities": [
+    "context.compile",
+    "design.theme.color",
+    "memory.read",
+    "skill.read"
+  ],
+  "permissions": [
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "design.theme.color",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo",
+  "event_topics": "agent.van.gogh.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Sandbox por padrão; capabilities escopadas; sem secrets diretos.",
+  "references": "oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 98
+  }
+}

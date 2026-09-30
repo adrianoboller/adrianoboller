@@ -1,0 +1,129 @@
+{
+  "suite": "Mission Runtime + Code Workspace v0.13 static/host smoke",
+  "pass": 24,
+  "fail": 0,
+  "cargo_available": false,
+  "note": "Host smoke validates Git/worktree/direct-command primitives. Rust compilation remains a separate gate.",
+  "checks": [
+    {
+      "name": "workspace includes code workspace",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "workspace includes mission runtime",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "workspace includes mission cli",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "mission uses UUIDv7",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "mission emits live events",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "mission writes evidence",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "model path is fail closed",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "extension path is fail closed",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "agent permission gate exists",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "workspace rejects parent escape",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "workspace uses direct execution",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "workspace has no shell command composition",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "capability count exact",
+      "status": "PASS",
+      "detail": "202"
+    },
+    {
+      "name": "capability mission.run",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "capability workspace.snapshot",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "capability workspace.diff",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "capability workspace.file.write",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "capability workspace.gate.run",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "capability workspace.worktree.create",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "host smoke clean start",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "host smoke worktree created",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "host smoke direct gate",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "host smoke diff produced",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "host smoke worktree removed",
+      "status": "PASS",
+      "detail": ""
+    }
+  ]
+}

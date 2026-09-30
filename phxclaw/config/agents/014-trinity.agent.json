@@ -1,0 +1,138 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f60e-7349-8ef7-425daf15e0ed",
+  "agent_id": 14,
+  "name": "Trinity",
+  "macroarea": "Engenharia & Arquitetura",
+  "nucleus": "Integração",
+  "role_type": "Agente de integração crítica",
+  "mission": "Garante que módulos isoladamente corretos funcionem juntos ponta a ponta.",
+  "responsibilities": "Integra Studio, Runtime, IR, WASM, dados, plugins e infraestrutura; resolve incompatibilidades de boundary e coordena mudanças cross-module.",
+  "resources": "Multi-worktree, integration environments, APIs, runtime, CI.",
+  "authorized_actions": "Integrar, reproduzir fluxos completos, coordenar patches cross-stack.",
+  "trigger": "Integração crítica ou missão de alto risco.",
+  "declared_dependencies": "Artefatos de vários módulos e contratos.",
+  "resolved_agent_dependencies": [
+    {
+      "uuid": "01a0e473-f60b-796a-a1ff-a164537cd755",
+      "name": "Jones"
+    }
+  ],
+  "deliverables": "Integration Proof e patch de integração.",
+  "limits": "Não substitui QA/OPA e não autoaprova.",
+  "next_gate": "Jones/QA2/OPA.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "claude",
+    "codex"
+  ],
+  "criticality": "Crítica",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F18 MCP + LSP Runtime",
+    "F19 Repo Intelligence / Tree-sitter",
+    "F22 Device Nodes",
+    "F25 Knowledge / Evidence Graph"
+  ],
+  "capabilities": [
+    "context.compile",
+    "evidence.read",
+    "integration.critical",
+    "knowledge.read",
+    "lsp.read",
+    "mcp.invoke",
+    "memory.read",
+    "node.observe",
+    "repo.read",
+    "skill.read",
+    "tree_sitter.analyze"
+  ],
+  "permissions": [
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "evidence.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "integration.critical",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "knowledge.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "lsp.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "mcp.invoke",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "repo.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "tree_sitter.analyze",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Node/session state efêmero e pareado; Knowledge/Evidence Graph com proveniência",
+  "event_topics": "agent.trinity.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; write sensível, gasto, publicação, privilégio ou ação destrutiva exigem gate explícito. Device input/screen exige autorização de sessão e logging.",
+  "references": "Architect (MIT) — AST/Tree-sitter/Repo Intelligence | oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 15
+  }
+}

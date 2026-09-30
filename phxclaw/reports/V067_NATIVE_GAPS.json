@@ -1,0 +1,9 @@
+{
+  "version": "0.67.0",
+  "gaps": [
+    "cargo fmt/check/test/clippy",
+    "npm install/stage + browser editor E2E",
+    "PostgreSQL token lease/fencing crash recovery E2E",
+    "multi-worker replay/concurrency E2E"
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phxclaw.local/schemas/task.schema.json",
+  "title": "PhxClaw Task Spec",
+  "type": "object",
+  "required": ["uuid", "name", "capability", "payload", "dependencies", "requested_permissions", "retry", "approval", "idempotency_key", "priority"],
+  "properties": {
+    "uuid": {"type": "string", "format": "uuid"},
+    "name": {"type": "string", "minLength": 1},
+    "capability": {"type": "string", "minLength": 1},
+    "payload": {},
+    "dependencies": {"type": "array", "uniqueItems": true, "items": {"type": "string", "format": "uuid"}},
+    "requested_permissions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "scope"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "scope": {"type": "string", "minLength": 1}
+        },
+        "additionalProperties": false
+      }
+    },
+    "retry": {
+      "type": "object",
+      "required": ["max_attempts", "base_delay_ms", "max_delay_ms"],
+      "properties": {
+        "max_attempts": {"type": "integer", "minimum": 1, "maximum": 65535},
+        "base_delay_ms": {"type": "integer", "minimum": 1},
+        "max_delay_ms": {"type": "integer", "minimum": 1}
+      },
+      "additionalProperties": false
+    },
+    "approval": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "required": ["required", "role", "reason"],
+          "properties": {
+            "required": {"type": "boolean"},
+            "role": {"type": "string", "minLength": 1},
+            "reason": {"type": "string", "minLength": 1}
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "idempotency_key": {"type": "string", "minLength": 1},
+    "priority": {"type": "integer", "minimum": 0, "maximum": 65535}
+  },
+  "additionalProperties": false
+}

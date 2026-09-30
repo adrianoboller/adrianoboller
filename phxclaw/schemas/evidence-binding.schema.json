@@ -1,0 +1,20 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://phxclaw.local/schemas/evidence-binding.schema.json",
+  "title":"PhxClaw Evidence Binding",
+  "type":"object",
+  "additionalProperties":false,
+  "required":["binding_uuid","tenant_uuid","claim_node_uuid","evidence_node_uuid","relation","evidence_sha256_hex","source_state_sha256_hex","mechanism","collected_at"],
+  "properties":{
+    "binding_uuid":{"type":"string","format":"uuid"},
+    "tenant_uuid":{"type":"string","format":"uuid"},
+    "claim_node_uuid":{"type":"string","format":"uuid"},
+    "evidence_node_uuid":{"type":"string","format":"uuid"},
+    "relation":{"enum":["supports","refutes"]},
+    "evidence_sha256_hex":{"type":"string","pattern":"^[0-9a-fA-F]{64}$"},
+    "source_state_sha256_hex":{"type":"string","pattern":"^[0-9a-fA-F]{64}$"},
+    "mechanism":{"type":"string","minLength":1,"maxLength":160},
+    "collected_at":{"type":"string","format":"date-time"},
+    "valid_until":{"type":["string","null"],"format":"date-time"}
+  }
+}

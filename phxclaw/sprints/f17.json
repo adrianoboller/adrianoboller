@@ -1,0 +1,51 @@
+{
+  "uuid": "01a0e5ed-9672-7d00-a2d5-d5aed1f0a685",
+  "code": "F17",
+  "title": "Checkpoint + Rollback",
+  "goal": "Criar snapshots consistentes de workspace, Git, banco e estado antes de mudanças críticas e restaurar com prova.",
+  "status": "review",
+  "tasks": [
+    {
+      "uuid": "01a0e5ed-9672-7cdb-a812-0371399ddcc8",
+      "title": "Checkpoint manifest com UUIDv7/hash",
+      "status": "planned"
+    },
+    {
+      "uuid": "01a0e5ed-9672-7cd8-9f63-c5157974736a",
+      "title": "Git worktree snapshot/restore",
+      "status": "planned"
+    },
+    {
+      "uuid": "01a0e5ed-9672-705a-b1d3-bfb0d8db4b30",
+      "title": "DB checkpoint contract",
+      "status": "planned"
+    },
+    {
+      "uuid": "01a0e5ed-9672-711a-8bb3-98d138942e40",
+      "title": "Rollback gate + evidence",
+      "status": "planned"
+    },
+    {
+      "uuid": "01a0e5ed-9672-7aae-9c03-33f65018345c",
+      "title": "E2E de falha e restauração",
+      "status": "planned"
+    }
+  ],
+  "definition_of_done": [
+    "Contratos e schemas versionados",
+    "Implementação integrada ao Event Bus e Evidence Ledger",
+    "Testes unitários e integração sem mocks para os caminhos obrigatórios",
+    "Documentação, observabilidade, segurança e rollback definidos",
+    "Gate E2E obrigatório antes de marcar done"
+  ],
+  "notes": [
+    "Planejado para a sequência pós-F16; não considerar implementado até os gates reais passarem.",
+    "Checkpoint manager source implemented; native cargo gate pending."
+  ],
+  "state": "review",
+  "canonical_project_version": "0.67.0",
+  "canonical_state_ref": "config/project-state-canonical.v067.json",
+  "implementation_state": "source_ready",
+  "verification_state": "static_verified",
+  "open_gaps": []
+}

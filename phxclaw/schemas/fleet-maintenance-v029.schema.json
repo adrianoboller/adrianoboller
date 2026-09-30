@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "phxclaw://schemas/fleet-maintenance-v029",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "maintenance_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tenant_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "snapshot_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "starts_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "ends_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000
+    },
+    "approval_uuid": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid"
+    }
+  },
+  "required": [
+    "maintenance_uuid",
+    "tenant_uuid",
+    "snapshot_uuid",
+    "starts_at",
+    "ends_at",
+    "reason"
+  ]
+}

@@ -1,0 +1,150 @@
+{
+  "project": "PhxClaw",
+  "version": "0.63.0",
+  "checkout": "/mnt/data/PhxClaw_v0.63_CONSOLIDATED",
+  "file_count": 1959,
+  "bytes": 13087496,
+  "workspace_members": 111,
+  "rust_files": 280,
+  "sql_migration_files": 58,
+  "json_schemas": 175,
+  "extension_counts": {
+    ".json": 872,
+    ".rs": 280,
+    ".md": 237,
+    ".py": 144,
+    ".toml": 130,
+    ".sql": 67,
+    ".html": 65,
+    "<none>": 35,
+    ".js": 27,
+    ".sh": 23,
+    ".ps1": 21,
+    ".vue": 15,
+    ".yml": 11,
+    ".txt": 10,
+    ".ts": 8,
+    ".css": 3,
+    ".svg": 3,
+    ".lock": 2,
+    ".png": 2,
+    ".cmd": 1,
+    ".jsonl": 1,
+    ".mit": 1,
+    ".xlsx": 1
+  },
+  "checks": [
+    {
+      "name": "root_cargo_toml",
+      "pass": true,
+      "detail": "111 members"
+    },
+    {
+      "name": "workspace_members_exist",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "workspace_members_unique",
+      "pass": true,
+      "detail": "111 total"
+    },
+    {
+      "name": "workspace_member_toml_valid",
+      "pass": true,
+      "detail": "[]"
+    },
+    {
+      "name": "workspace_package_names_unique",
+      "pass": true,
+      "detail": "111 packages"
+    },
+    {
+      "name": "workspace_package_sources_present",
+      "pass": true,
+      "detail": "[]"
+    },
+    {
+      "name": "no_legacy_workspace_package_names",
+      "pass": true,
+      "detail": "[]"
+    },
+    {
+      "name": "all_toml_parse",
+      "pass": true,
+      "detail": "130 TOML; bad=[]"
+    },
+    {
+      "name": "all_strict_json_parse_except_declared_jsonc",
+      "pass": true,
+      "detail": "872 JSON/JSONC; bad=[]; jsonc_excluded=['private/vendor/openclaw-rs/upstream/crates/openclaw-ui/tsconfig.app.json', 'private/vendor/openclaw-rs/upstream/crates/openclaw-ui/tsconfig.node.json']"
+    },
+    {
+      "name": "all_schema_json_parse",
+      "pass": true,
+      "detail": "175 schemas; bad=[]"
+    },
+    {
+      "name": "no_legacy_brand_in_project_rust",
+      "pass": true,
+      "detail": "[]"
+    },
+    {
+      "name": "migration_file_set",
+      "pass": true,
+      "detail": "58 SQL files; missing=[]; extra=[]"
+    },
+    {
+      "name": "v034_reconstruction_marker",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "v060_provenance_core",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "v061_safe_source_harvester",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "v062_knowledge_promotion",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "v063_repo_intelligence",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "denied_claude_code_not_vendored",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "final_tree_compatible_verifiers",
+      "pass": true,
+      "detail": "[{\"version\": 42, \"rc\": 0, \"stdout_tail\": \"28/28 PASS\", \"stderr_tail\": \"\"}, {\"version\": 45, \"rc\": 0, \"stdout_tail\": \"rst\\\",\\n      \\\"pass\\\": true,\\n      \\\"detail\\\": \\\"\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"cfg_pdca\\\",\\n      \\\"pass\\\": true,\\n      \\\"detail\\\": \\\"\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"cfg_promotion\\\",\\n      \\\"pass\\\": true,\\n      \\\"detail\\\": \\\"\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"cargo_member\\\",\\n      \\\"pass\\\": true,\\n      \\\"detail\\\": \\\"\\\"\\n    }\\n  ]\\n}\", \"stderr_tail\": \"\"}, {\"version\": 47, \"rc\": 0, \"stdout_tail\": \"{\\n  \\\"pass\\\": 26,\\n  \\\"fail\\\": 0\\n}\", \"stderr_tail\": \"\"}, {\"version\": 49, \"rc\": 0, \"stdout_tail\": \"{\\n  \\\"pass\\\": 39,\\n  \\\"fail\\\": 0\\n}\", \"stderr_tail\": \"\"}, {\"version\": 50, \"rc\": 0, \"stdout_tail\": \"{\\n  \\\"pass\\\": 35,\\n  \\\"fail\\\": 0\\n}\", \"stderr_tail\": \"\"}, {\"version\": 51, \"rc\": 0, \"stdout_tail\": \"{\\n  \\\"pass\\\": 41,\\n  \\\"fail\\\": 0\\n}\", \"stderr_tail\": \"\"}, {\"version\": 52, \"rc\": 0, \"stdout_tail\": \"{\\n  \\\"pass\\\": 39,\\n  \\\"fail\\\": 0\\n}\", \"stderr_tail\": \"\"}, {\"version\": 53, \"rc\": 0, \"stdout_tail\": \"{\\n  \\\"pass\\\": 45,\\n  \\\"fail\\\": 0\\n}\", \"stderr_tail\": \"\"}, {\"version\": 54, \"rc\": 0, \"stdout_tail\": \"il\\\": \\\"\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"tool_ollama_probe_v054.py\\\",\\n      \\\"pass\\\": true,\\n      \\\"detail\\\": \\\"\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"tool_native_qualify_v054.py\\\",\\n      \\\"pass\\\": true,\\n      \\\"detail\\\": \\\"\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"tool_apply_v054.py\\\",\\n      \\\"pass\\\": true,\\n      \\\"detail\\\": \\\"\\\"\\n    }\\n  ]\\n}\", \"stderr_tail\": \"\"}, {\"version\": 55, \"rc\": 0, \"stdout_tail\": \"ence.schema.json\\\",\\n      \\\"pass\\\": true,\\n      \\\"detail\\\": \\\"\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"schema_autopilot-execution-v035.schema.json\\\",\\n      \\\"pass\\\": true,\\n      \\\"detail\\\": \\\"\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"schema_swarm-semantic-conflict-v039.schema.json\\\",\\n      \\\"pass\\\": true,\\n      \\\"detail\\\": \\\"\\\"\\n    }\\n  ]\\n}\", \"stderr_tail\": \"\"}, {\"version\": 56, \"rc\": 0, \"stdout_tail\": \"},\\n    {\\n      \\\"name\\\": \\\"tool_source_state_v056.py\\\",\\n      \\\"pass\\\": true,\\n      \\\"detail\\\": \\\"\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"tool_sprint_gate_reconcile_v056.py\\\",\\n      \\\"pass\\\": true,\\n      \\\"detail\\\": \\\"\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"tool_apply_v056.py\\\",\\n      \\\"pass\\\": true,\\n      \\\"detail\\\": \\\"\\\"\\n    }\\n  ]\\n}\", \"stderr_tail\": \"\"}, {\"version\": 57, \"rc\": 0, \"stdout_tail\": \"\\\"name\\\": \\\"schema_promotion-decision-v057.schema.json\\\",\\n      \\\"pass\\\": true,\\n      \\\"detail\\\": \\\"\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"schema_self-improvement-change-v057.schema.json\\\",\\n      \\\"pass\\\": true,\\n      \\\"detail\\\": \\\"\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"ui\\\",\\n      \\\"pass\\\": true,\\n      \\\"detail\\\": \\\"\\\"\\n    }\\n  ]\\n}\", \"stderr_tail\": \"\"}, {\"version\": 58, \"rc\": 0, \"stdout_tail\": \"secret_guard_rust\\\",\\n      \\\"pass\\\": true\\n    },\\n    {\\n      \\\"name\\\": \\\"source_hash_validation\\\",\\n      \\\"pass\\\": true\\n    },\\n    {\\n      \\\"name\\\": \\\"max_depth_64\\\",\\n      \\\"pass\\\": true\\n    },\\n    {\\n      \\\"name\\\": \\\"v057_bindings\\\",\\n      \\\"pass\\\": true\\n    },\\n    {\\n      \\\"name\\\": \\\"ui\\\",\\n      \\\"pass\\\": true\\n    }\\n  ]\\n}\", \"stderr_tail\": \"\"}, {\"version\": 59, \"rc\": 0, \"stdout_tail\": \"e\\\": \\\"project_resolution\\\",\\n      \\\"pass\\\": true\\n    },\\n    {\\n      \\\"name\\\": \\\"parent_resolution\\\",\\n      \\\"pass\\\": true\\n    },\\n    {\\n      \\\"name\\\": \\\"cross_links\\\",\\n      \\\"pass\\\": true\\n    },\\n    {\\n      \\\"name\\\": \\\"rust_contract\\\",\\n      \\\"pass\\\": true\\n    },\\n    {\\n      \\\"name\\\": \\\"ui\\\",\\n      \\\"pass\\\": true\\n    }\\n  ]\\n}\", \"stderr_tail\": \"\"}, {\"version\": 61, \"rc\": 0, \"stdout_tail\": \"PASS 26 / FAIL 0\", \"stderr_tail\": \"\"}, {\"version\": 63, \"rc\": 0, \"stdout_tail\": \"ly\\\",\\n      \\\"ok\\\": true,\\n      \\\"detail\\\": \\\"\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"F19 source ready\\\",\\n      \\\"ok\\\": true,\\n      \\\"detail\\\": \\\"\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"canonical 0.63\\\",\\n      \\\"ok\\\": true,\\n      \\\"detail\\\": \\\"\\\"\\n    },\\n    {\\n      \\\"name\\\": \\\"schema valid\\\",\\n      \\\"ok\\\": true,\\n      \\\"detail\\\": \\\"\\\"\\n    }\\n  ]\\n}\", \"stderr_tail\": \"\"}]"
+    },
+    {
+      "name": "v060_exact_overlay_verifier_42_42",
+      "pass": true,
+      "detail": "-code-main.zip \nPASS uuidv7:claude-code-main.zip 01a0efd8-8896-74be-8045-cb8d666b10a3\nPASS sha256:claude-code-main.zip \nPASS deny-has-hard-reason:claude-code-main.zip \nPASS uuidv7:src.zip 01a0efd8-8896-7916-8b8b-265bbb1de32a\nPASS sha256:src.zip \nPASS uuidv7:phoenix s5272 phx cobol absorber.zip 01a0efd8-8896-7dd8-94fe-555f45b46007\nPASS sha256:phoenix s5272 phx cobol absorber.zip \nPASS decision-counts {'ALLOW': 2, 'QUARANTINE': 3, 'DENY': 1}\nPASS no-proprietary-source-import \nPASS no-unsafe-rust \n"
+    }
+  ],
+  "pass": 20,
+  "fail": 0,
+  "warnings": [
+    "v0.46 verifier flags preserved historical/audit documents containing the pre-v0.41 PhoenixClaw name; project Rust/package names are clean.",
+    "v0.48 verifier expects the original single-quoted dynamic RLS SQL; the final migration uses safer dollar-quoted dynamic SQL and therefore the obsolete string check fails.",
+    "v0.28/v0.29/v0.36/v0.37 strict JSON sweeps treat two upstream TypeScript tsconfig JSONC files as invalid JSON; they are third-party JSONC, not PhxClaw schemas.",
+    "Native cargo check/test/clippy were not run because cargo/rustc are not installed on this host."
+  ],
+  "native_rust_compilation": false,
+  "native_postgresql_e2e": false,
+  "v034_original_sha256": "5f6aa52a0d6d1d5fa6c7521743f76160271d12ac4a843edd953bb9c8526e5b76",
+  "v034_reconstruction_byte_identical": false
+}

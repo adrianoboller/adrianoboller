@@ -1,0 +1,24 @@
+#!/usr/bin/env python3
+import json,sys
+CAPS={
+"image.generate":"Create Image",
+"research.deep":"Deep Research",
+"web.search":"Search",
+"template.create":"Template Creator",
+"pdf.manage":"PDF",
+"spreadsheet.manage":"Spreadsheets",
+"visualize.render":"Visualize",
+"openai.platform.manage":"OpenAI Platform"}
+def emit(x): print(json.dumps(x,ensure_ascii=False))
+if "--health" in sys.argv:
+ emit({"status":"healthy","mode":"external_bridge","configured":False,"capabilities":sorted(CAPS)})
+ raise SystemExit(0)
+for line in sys.stdin:
+ try:
+  env=json.loads(line)
+  cap=(env.get("payload") or {}).get("capability")
+  if cap not in CAPS:
+   emit({"status":"error","error":{"code":"UNKNOWN_CAPABILITY","message":cap}}); continue
+  emit({"status":"error","error":{"code":"EXTERNAL_CONNECTOR_REQUIRED","message":f"{CAPS[cap]} bridge is declared but not connected in this standalone runtime."},"capability":cap})
+ except Exception as e:
+  emit({"status":"error","error":{"code":"INVALID_REQUEST","message":str(e)}})

@@ -1,0 +1,199 @@
+{
+  "version": "0.65.0",
+  "checks": [
+    {
+      "name": "workspace_version_065",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "workspace_members_exist",
+      "pass": true,
+      "detail": "111"
+    },
+    {
+      "name": "workspace_member_unique",
+      "pass": true,
+      "detail": "111"
+    },
+    {
+      "name": "all_toml_parse",
+      "pass": true,
+      "detail": "[]"
+    },
+    {
+      "name": "all_project_json_parse",
+      "pass": true,
+      "detail": "parsed=887 bad=[]"
+    },
+    {
+      "name": "installer_struct_BackupRepository",
+      "pass": true,
+      "detail": "struct BackupRepository"
+    },
+    {
+      "name": "installer_create_backup",
+      "pass": true,
+      "detail": "create_backup"
+    },
+    {
+      "name": "installer_verify_backup",
+      "pass": true,
+      "detail": "verify_backup"
+    },
+    {
+      "name": "installer_restore_backup",
+      "pass": true,
+      "detail": "restore_backup"
+    },
+    {
+      "name": "installer_execute_transactional_upgrade",
+      "pass": true,
+      "detail": "execute_transactional_upgrade"
+    },
+    {
+      "name": "installer_pg_dump_custom",
+      "pass": true,
+      "detail": "pg_dump_custom"
+    },
+    {
+      "name": "installer_pg_restore_custom",
+      "pass": true,
+      "detail": "pg_restore_custom"
+    },
+    {
+      "name": "installer_PGPASSFILE",
+      "pass": true,
+      "detail": "PGPASSFILE"
+    },
+    {
+      "name": "installer_env_clear_",
+      "pass": true,
+      "detail": "env_clear()"
+    },
+    {
+      "name": "installer_SymlinkRejected",
+      "pass": true,
+      "detail": "SymlinkRejected"
+    },
+    {
+      "name": "installer_blob_path",
+      "pass": true,
+      "detail": "blob_path"
+    },
+    {
+      "name": "installer_no_shell_command",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_backup_sets",
+      "pass": true,
+      "detail": "backup_sets"
+    },
+    {
+      "name": "sql_backup_objects",
+      "pass": true,
+      "detail": "backup_objects"
+    },
+    {
+      "name": "sql_restore_runs",
+      "pass": true,
+      "detail": "restore_runs"
+    },
+    {
+      "name": "sql_upgrade_runs",
+      "pass": true,
+      "detail": "upgrade_runs"
+    },
+    {
+      "name": "sql_disaster_recovery_drills",
+      "pass": true,
+      "detail": "disaster_recovery_drills"
+    },
+    {
+      "name": "sql_FORCE_ROW_LEVEL_SECURITY",
+      "pass": true,
+      "detail": "FORCE ROW LEVEL SECURITY"
+    },
+    {
+      "name": "sql_tenant_isolation_v065",
+      "pass": true,
+      "detail": "tenant_isolation_v065"
+    },
+    {
+      "name": "sql_reject_backup_evidence_delete",
+      "pass": true,
+      "detail": "reject_backup_evidence_delete"
+    },
+    {
+      "name": "canonical_version",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sprint_count_26",
+      "pass": true,
+      "detail": "26"
+    },
+    {
+      "name": "f03_source_ready",
+      "pass": true,
+      "detail": "{'id': 'F03', 'title': 'Installer Core', 'implementation_state': 'source_ready', 'verification_state': 'static_verified', 'gaps': []}"
+    },
+    {
+      "name": "f03_static_verified",
+      "pass": true,
+      "detail": "{'id': 'F03', 'title': 'Installer Core', 'implementation_state': 'source_ready', 'verification_state': 'static_verified', 'gaps': []}"
+    },
+    {
+      "name": "f03_gaps_empty",
+      "pass": true,
+      "detail": "[]"
+    },
+    {
+      "name": "all_sprint_refs_v065",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "filesystem_smoke_9_9",
+      "pass": true,
+      "detail": "{'version': '0.65.0', 'scope': 'host_filesystem_backup_restore_fixture', 'checks': [{'name': 'backup_manifest_created', 'pass': True}, {'name': 'backup_verifies', 'pass': True}, {'name': 'restore_content_a', 'pass': True}, {'name': 'restore_content_b', 'pass': True}, {'name': 'content_addressed_dedup', 'pass': True}, {'name': 'second_backup_verifies', 'pass': True}, {'name': 'rollback_copy_preserved', 'pass': True}, {'name': 'corruption_detected', 'pass': True}, {'name': 'symlink_rejected', 'pass': True}], 'pass': 9, 'fail': 0, 'postgresql_native': False}"
+    },
+    {
+      "name": "exists_config_installer-recovery_v065_json",
+      "pass": true,
+      "detail": "config/installer-recovery.v065.json"
+    },
+    {
+      "name": "exists_schemas_installer-recovery-v065_schema_json",
+      "pass": true,
+      "detail": "schemas/installer-recovery-v065.schema.json"
+    },
+    {
+      "name": "exists_docs_ADR-0065-installer-backup-restore-disaster-recovery_md",
+      "pass": true,
+      "detail": "docs/ADR-0065-installer-backup-restore-disaster-recovery.md"
+    },
+    {
+      "name": "exists_docs_INSTALLER_RECOVERY_V065_md",
+      "pass": true,
+      "detail": "docs/INSTALLER_RECOVERY_V065.md"
+    },
+    {
+      "name": "exists_tests_postgres_v065_installer_recovery_e2e_sql",
+      "pass": true,
+      "detail": "tests/postgres/v065_installer_recovery_e2e.sql"
+    },
+    {
+      "name": "exists_reports_V065_NATIVE_GAPS_json",
+      "pass": true,
+      "detail": "reports/V065_NATIVE_GAPS.json"
+    }
+  ],
+  "pass": 38,
+  "fail": 0,
+  "native_rust": false,
+  "native_postgresql": false
+}

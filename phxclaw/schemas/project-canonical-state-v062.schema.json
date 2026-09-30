@@ -1,0 +1,15 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://phxclaw.local/schemas/project-canonical-state-v062.schema.json",
+  "type":"object","additionalProperties":false,
+  "required":["project","version","generated_at","verification_ceiling","sprints","release_blockers"],
+  "properties":{
+    "project":{"const":"PhxClaw"},"version":{"type":"string","pattern":"^0\\.62\\.0$"},"generated_at":{"type":"string","format":"date-time"},
+    "verification_ceiling":{"enum":["source_ready","static_verified","runtime_verified","e2e_verified","release_ready"]},
+    "sprints":{"type":"array","minItems":26,"maxItems":26,"items":{"type":"object","additionalProperties":false,"required":["id","title","implementation_state","verification_state","gaps"],"properties":{
+      "id":{"type":"string","pattern":"^F(?:0[0-9]|1[0-9]|2[0-5])$"},"title":{"type":"string"},
+      "implementation_state":{"enum":["source_ready","partial"]},"verification_state":{"enum":["static_verified","source_ready"]},"gaps":{"type":"array","items":{"type":"string"}}
+    }}},
+    "release_blockers":{"type":"array","items":{"type":"string"}}
+  }
+}

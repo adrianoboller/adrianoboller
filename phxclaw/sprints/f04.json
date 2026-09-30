@@ -1,0 +1,64 @@
+{
+  "uuid": "0199a5f1-0019-7019-8abc-000000000019",
+  "code": "F04",
+  "title": "Plugin Registry",
+  "goal": "Descobrir, validar, resolver dependências e governar plugins JSON sem alterar o core.",
+  "status": "review",
+  "tasks": [
+    {
+      "uuid": "0199a5f1-001a-701a-8abc-00000000001a",
+      "title": "Schema do plugin manifest",
+      "status": "done"
+    },
+    {
+      "uuid": "0199a5f1-001b-701b-8abc-00000000001b",
+      "title": "Loader determinístico",
+      "status": "done"
+    },
+    {
+      "uuid": "0199a5f1-001c-701c-8abc-00000000001c",
+      "title": "Validação UUIDv7/semver/Core API",
+      "status": "done"
+    },
+    {
+      "uuid": "0199a5f1-001d-701d-8abc-00000000001d",
+      "title": "Resolução de dependências",
+      "status": "done"
+    },
+    {
+      "uuid": "0199a5f1-001e-701e-8abc-00000000001e",
+      "title": "Persistência PostgreSQL",
+      "status": "done"
+    },
+    {
+      "uuid": "0199a5f1-001f-701f-8abc-00000000001f",
+      "title": "Verificação Ed25519 real",
+      "status": "done"
+    },
+    {
+      "uuid": "0199a5f1-0020-7020-8abc-000000000020",
+      "title": "Sandbox/quarentena",
+      "status": "done"
+    }
+  ],
+  "definition_of_done": [
+    "manifesto JSON validado",
+    "dependências resolvidas",
+    "fail-closed/quarentena",
+    "assinatura verificada",
+    "persistência PostgreSQL",
+    "testes Rust verdes"
+  ],
+  "notes": [
+    "Persistência PostgreSQL implementada via upsert transacional; execução contra instância PostgreSQL real ainda não foi realizada neste ambiente.",
+    "Ed25519 real implementado com trust store e assinatura dos artefatos de desenvolvimento; chave privada não é distribuída.",
+    "Quarentena fail-closed implementada para manifesto, integridade e dependências inválidas.",
+    "Sprint permanece em review até cargo check/test e migrations serem executados em ambiente Rust/PostgreSQL real."
+  ],
+  "state": "review",
+  "canonical_project_version": "0.67.0",
+  "canonical_state_ref": "config/project-state-canonical.v067.json",
+  "implementation_state": "source_ready",
+  "verification_state": "static_verified",
+  "open_gaps": []
+}

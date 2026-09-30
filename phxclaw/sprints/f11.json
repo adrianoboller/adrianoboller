@@ -1,0 +1,55 @@
+{
+  "uuid": "01a0e48f-3d0e-7a8b-bc2a-e80077a12688",
+  "code": "F11",
+  "title": "Desktop + WebView + System Automation",
+  "goal": "Dar ao PhxClaw controle governado do browser, HTML/CSS/JS, comandos do SO, teclado, mouse e captura.",
+  "status": "review",
+  "tasks": [
+    {
+      "uuid": "01a0e48f-3d0e-7ea5-aab0-6b4b541c5e6d",
+      "title": "WebView command contract",
+      "status": "done"
+    },
+    {
+      "uuid": "01a0e48f-3d0e-7134-8529-dafcce45856c",
+      "title": "HTML/CSS/JS DOM bridge",
+      "status": "done"
+    },
+    {
+      "uuid": "01a0e48f-3d0e-7bb4-a729-5b563171adba",
+      "title": "Executor CMD/PowerShell/sh/bash",
+      "status": "done"
+    },
+    {
+      "uuid": "01a0e48f-3d0e-7613-9c31-0d51ead7c910",
+      "title": "Provider teclado/mouse Enigo",
+      "status": "done"
+    },
+    {
+      "uuid": "01a0e48f-3d0e-7095-9522-532c6351e6b9",
+      "title": "Captura XCap/FFmpeg",
+      "status": "done"
+    },
+    {
+      "uuid": "01a0e48f-3d0e-7c5b-adca-2a3585a8c614",
+      "title": "Teste em desktop Windows/Linux/macOS",
+      "status": "blocked"
+    }
+  ],
+  "definition_of_done": [
+    "HTML/CSS/JS control\u00e1vel por permiss\u00e3o",
+    "shell cross-platform com timeout",
+    "teclado/mouse com provider nativo",
+    "PNG/JPG/MP4 e SVG de DOM"
+  ],
+  "notes": [
+    "Tauri/WRY foi selecionado para shell/WebView; Enigo para input; XCap+FFmpeg para captura. O host atual \u00e9 headless, ent\u00e3o GUI real permanece sem gate.",
+    "Source implementation is closed in v0.70; blocked native E2E is tracked in the release qualification matrix."
+  ],
+  "state": "review",
+  "canonical_project_version": "0.70.0",
+  "canonical_state_ref": "config/project-state-canonical.v070.json",
+  "implementation_state": "source_ready",
+  "verification_state": "static_verified",
+  "open_gaps": []
+}

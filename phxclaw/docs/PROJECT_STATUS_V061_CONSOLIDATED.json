@@ -1,0 +1,16 @@
+{
+  "project": "PhxClaw",
+  "version": "0.61.0",
+  "feature": "Safe Source Harvester",
+  "state": "source_ready_static_validation_pending",
+  "native_rust_build": false,
+  "postgres_e2e": false,
+  "invariants": [
+    "no_external_code_execution",
+    "deny_no_copy",
+    "quarantine_zero_reusable_candidates",
+    "allow_still_scanned",
+    "append_only_receipts",
+    "governed_promotion_not_automatic"
+  ]
+}

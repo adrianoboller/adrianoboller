@@ -1,0 +1,9 @@
+{
+  "version": "0.31.0",
+  "provider": "openai",
+  "origin": "https://api.openai.com",
+  "primary_path": "/v1/responses",
+  "credential_source": "phxclaw_secret_broker_handle",
+  "allow_custom_origin": false,
+  "custom_origin_allowlist": []
+}

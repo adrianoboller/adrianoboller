@@ -1,0 +1,82 @@
+{
+  "uuid": "01a0e4e2-9c90-75f3-8a31-12be3a98e2f7",
+  "code": "F15",
+  "title": "Skill Runtime + Memory/Context Engine",
+  "goal": "Separar skills de memória, carregar procedimentos sob demanda, compilar Context Packs mínimos e promover skills somente após prova.",
+  "status": "review",
+  "tasks": [
+    {
+      "uuid": "01a0e4e2-9c90-78e6-a25d-7d61bb44581c",
+      "title": "Skill Registry versionado com semver e SHA-256",
+      "status": "done"
+    },
+    {
+      "uuid": "01a0e4e2-9c90-7b3f-8102-d65f1adc19e6",
+      "title": "Estados candidate/validated/promoted/disabled/rejected",
+      "status": "done"
+    },
+    {
+      "uuid": "01a0e4e2-9c90-7a4f-ad87-368bb364725c",
+      "title": "Promotion proof com Objective Proof + evidência QA",
+      "status": "done"
+    },
+    {
+      "uuid": "01a0e4e2-9c90-7aa9-bbee-d333d5aa38be",
+      "title": "Memory scopes + classificação de dados",
+      "status": "done"
+    },
+    {
+      "uuid": "01a0e4e2-9c90-788e-a341-c511a228aacd",
+      "title": "Context Compiler com limites de itens/bytes/classificação",
+      "status": "done"
+    },
+    {
+      "uuid": "01a0e4e2-9c90-7bd3-878d-d77166411866",
+      "title": "Persistência PostgreSQL skills/memory/context",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e4e2-9c90-7fd3-aaa4-d80f0aaecbee",
+      "title": "Integração Event Bus/evidence ponta a ponta",
+      "status": "done"
+    },
+    {
+      "uuid": "01a0e4e2-9c90-7c30-a25d-f661b0c7a61f",
+      "title": "cargo test em host Rust real",
+      "status": "blocked"
+    },
+    {
+      "uuid": "01a0e4f0-5c42-77a3-aac9-a354566a2f5b",
+      "title": "Lazy Skill Resolver por índice JSON com carregamento sob demanda",
+      "status": "done"
+    },
+    {
+      "uuid": "01a0e4f0-5c42-74fc-95f9-af40cc23a07c",
+      "title": "Context Compiler orientado por query + materialização limitada",
+      "status": "done"
+    },
+    {
+      "uuid": "01a0e4f0-5c42-7e25-a294-9af8dc1a716f",
+      "title": "Research Context Pipeline conectado ao Live Event Bus e Evidence Ledger",
+      "status": "done"
+    }
+  ],
+  "definition_of_done": [
+    "skills e memory são entidades separadas",
+    "skill só vira promoted com prova objetiva + QA evidence",
+    "Context Pack é determinístico e respeita classificação/limites",
+    "todo objeto usa UUIDv7 e hash/evidência quando aplicável",
+    "PostgreSQL possui migrations para skills, memory e context packs",
+    "build/test nativo executado em host Rust"
+  ],
+  "notes": [
+    "F15 consolida Skill Runtime + Memory/Context Engine; F14 permanece Desktop Host.",
+    "v0.8 conecta Agent Runtime + Lazy Skill Resolver + Source Registry + Context Compiler + Live Event Bus + Evidence Ledger."
+  ],
+  "state": "review",
+  "canonical_project_version": "0.67.0",
+  "canonical_state_ref": "config/project-state-canonical.v067.json",
+  "implementation_state": "source_ready",
+  "verification_state": "static_verified",
+  "open_gaps": []
+}

@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PhxClaw Controller Member v0.30",
+  "type": "object",
+  "required": [
+    "tenant_uuid",
+    "controller_uuid",
+    "region",
+    "state",
+    "build_sha256",
+    "last_heartbeat_at"
+  ],
+  "properties": {
+    "tenant_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "controller_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "region": {
+      "type": "string",
+      "minLength": 1
+    },
+    "state": {
+      "enum": [
+        "joining",
+        "follower",
+        "leader",
+        "self_fenced",
+        "draining",
+        "offline"
+      ]
+    },
+    "build_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "last_heartbeat_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "additionalProperties": false
+}

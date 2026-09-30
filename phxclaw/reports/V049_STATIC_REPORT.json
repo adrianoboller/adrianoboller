@@ -1,0 +1,202 @@
+{
+  "suite": "v0.49 static",
+  "pass": 39,
+  "fail": 0,
+  "checks": [
+    {
+      "name": "json_config/capabilities-v049.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/executive-decision-case.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/what-if-scenario.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/decision-approval.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/decision-execution-envelope.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "capability_count",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "uuidv7_caps",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_DecisionCase",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_WhatIfScenario",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_ImpactVector",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_DecisionConstraints",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_ScenarioEvaluation",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_SignedApproval",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_VerifiedApproval",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_DecisionExecutionEnvelope",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_scenario_hash",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_evaluate",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_compare",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_sensitivity",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_verify_approval",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_build_execution_envelope",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_DelegateRequired",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "invariant_does not mutate pr",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "invariant_delegated to v0.47",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "invariant_never override sec",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "mode",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "direct_mutation_false",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "delegate_v047",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "never_security_gate",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "never_privacy_gate",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "never_release_gate",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "never_knowledge_promotion_gate",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "never_fencing",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "never_budget_hard_limit",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_force_rls",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_rls_exact",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_append_only",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "ui_exists",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_legacy_brand",
+      "pass": true,
+      "detail": ""
+    }
+  ]
+}

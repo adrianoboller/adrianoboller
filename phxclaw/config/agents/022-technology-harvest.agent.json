@@ -1,0 +1,124 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f616-784f-9b36-65d7a686fd41",
+  "agent_id": 22,
+  "name": "Technology Harvest",
+  "macroarea": "Pesquisa & Inovação",
+  "nucleus": "Inovação",
+  "role_type": "Agente de colheita tecnológica",
+  "mission": "Analisa tecnologias externas e extrai conceitos úteis ao Phoenix sem criar dependência arquitetural.",
+  "responsibilities": "Mapeia features, licenças, padrões, riscos, maturidade e classifica ADOTAR/ADAPTAR/REIMPLEMENTAR/DESCARTAR.",
+  "resources": "Research, Licensor, repos, docs, benchmarks.",
+  "authorized_actions": "Produzir Harvest Matrix, recomendar experimento/RFC.",
+  "trigger": "Nova tecnologia relevante ou revisão de stack.",
+  "declared_dependencies": "Research Packs e critérios Phoenix.",
+  "resolved_agent_dependencies": [
+    {
+      "uuid": "01a0e473-f604-77d8-a13d-7ee652e67964",
+      "name": "Arquiteto"
+    }
+  ],
+  "deliverables": "Technology Harvest Report.",
+  "limits": "Não copia código incompatível nem força adoção.",
+  "next_gate": "Hypothesis / Arquiteto / Licensor.",
+  "execution": "Permanente",
+  "models_allowed": [
+    "claude",
+    "ollama"
+  ],
+  "criticality": "Alta",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F19 Repo Intelligence / Tree-sitter",
+    "F22 Device Nodes",
+    "F23 Secret & Credential Broker",
+    "F24 Auto-learning + Skill Evolution"
+  ],
+  "capabilities": [
+    "context.compile",
+    "memory.read",
+    "node.observe",
+    "repo.read",
+    "secret.lease.request",
+    "skill.candidate.propose",
+    "skill.read",
+    "technology.harvest",
+    "tree_sitter.analyze"
+  ],
+  "permissions": [
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "repo.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "secret.lease.request",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.candidate.propose",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "technology.harvest",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "tree_sitter.analyze",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Node/session state efêmero e pareado; Somente metadados de segredo; valores nunca em prompt/log",
+  "event_topics": "agent.technology.harvest.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; writes policy-gated; evidência obrigatória; sem autoaprovação. Device input/screen exige autorização de sessão e logging. Credenciais via broker/leases; nunca em prompt.",
+  "references": "Architect (MIT) — AST/Tree-sitter/Repo Intelligence | oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 23
+  }
+}

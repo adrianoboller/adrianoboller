@@ -1,0 +1,123 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f605-74d9-812b-8ec827796405",
+  "agent_id": 5,
+  "name": "Morpheus",
+  "macroarea": "Governança & Estratégia",
+  "nucleus": "Estratégia",
+  "role_type": "Agente mentor",
+  "mission": "Mantém a visão de longo prazo e decide o nível correto de escalonamento técnico.",
+  "responsibilities": "Questiona premissas estratégicas, conecta roadmap à arquitetura, prepara missões complexas e escolhe quando acionar Neo/Trinity ou manter o fluxo normal.",
+  "resources": "Roadmap, ADRs, Goal Drift, riscos, relatórios de Oráculo e QA.",
+  "authorized_actions": "Orientar, escalonar, reenquadrar objetivo e solicitar revisão estratégica.",
+  "trigger": "Problema de alta incerteza, conflito de visão ou bloqueio prolongado.",
+  "declared_dependencies": "Estado real do projeto e recomendações de agentes seniores.",
+  "resolved_agent_dependencies": [
+    {
+      "uuid": "01a0e473-f604-77d8-a13d-7ee652e67964",
+      "name": "Arquiteto"
+    },
+    {
+      "uuid": "01a0e473-f606-78cd-86b5-d4192e95853c",
+      "name": "Oráculo"
+    },
+    {
+      "uuid": "01a0e473-f60e-7349-8ef7-425daf15e0ed",
+      "name": "Trinity"
+    }
+  ],
+  "deliverables": "Direção de missão e decisão de escalonamento.",
+  "limits": "Não substitui PO, Arquiteto ou QA.",
+  "next_gate": "Oráculo / Arquiteto / Neo-Trinity.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "claude"
+  ],
+  "criticality": "Crítica",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F19 Repo Intelligence / Tree-sitter",
+    "F20 Team Runtime",
+    "F22 Device Nodes"
+  ],
+  "capabilities": [
+    "context.compile",
+    "memory.read",
+    "node.observe",
+    "repo.read",
+    "skill.read",
+    "strategy.escalate",
+    "team.message",
+    "tree_sitter.analyze"
+  ],
+  "permissions": [
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "repo.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "strategy.escalate",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "team.message",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "tree_sitter.analyze",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Node/session state efêmero e pareado",
+  "event_topics": "agent.morpheus.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; write sensível, gasto, publicação, privilégio ou ação destrutiva exigem gate explícito. Device input/screen exige autorização de sessão e logging.",
+  "references": "Architect (MIT) — AST/Tree-sitter/Repo Intelligence | oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 6
+  }
+}

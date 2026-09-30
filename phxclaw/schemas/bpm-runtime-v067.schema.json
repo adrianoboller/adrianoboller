@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phxclaw.local/schemas/bpm-runtime-v067.schema.json",
+  "type": "object",
+  "required": [
+    "editor",
+    "runtime"
+  ],
+  "properties": {
+    "editor": {
+      "type": "object"
+    },
+    "runtime": {
+      "type": "object"
+    }
+  }
+}

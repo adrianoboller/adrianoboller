@@ -1,0 +1,89 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f651-73ac-85cf-08512eae46c4",
+  "agent_id": 81,
+  "name": "FinOps Agent",
+  "macroarea": "Gestão & Financeiro",
+  "nucleus": "Finanças",
+  "role_type": "Agente de custo total",
+  "mission": "Otimiza custo total de IA, cloud, energia, storage, builds e infraestrutura.",
+  "responsibilities": "Calcula TCO, custo por feature, por teste verde e por artifact; sugere rightsizing e políticas.",
+  "resources": "Metrics, invoices/configs, power estimates, model costs.",
+  "authorized_actions": "Analisar e propor redução de custo sem degradar SLO/qualidade.",
+  "trigger": "Fechamento mensal ou aumento de custo.",
+  "declared_dependencies": "Usage/cost data.",
+  "resolved_agent_dependencies": [],
+  "deliverables": "FinOps/TCO Report.",
+  "limits": "Não reduz gates de qualidade só por custo.",
+  "next_gate": "PO/Budget/SRE.",
+  "execution": "Permanente",
+  "models_allowed": [
+    "ollama"
+  ],
+  "criticality": "Média",
+  "modules": [
+    "F16 Scheduler + Background Jobs",
+    "F17 Checkpoint + Rollback",
+    "F20 Team Runtime",
+    "F22 Device Nodes"
+  ],
+  "capabilities": [
+    "checkpoint.read",
+    "cost.finops.optimize",
+    "job.read",
+    "node.observe",
+    "team.message"
+  ],
+  "permissions": [
+    {
+      "name": "checkpoint.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "cost.finops.optimize",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "job.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "team.message",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Job UUIDv7 + lease/heartbeat/resume em PostgreSQL; Checkpoint manifest + hashes + rollback evidence; Node/session state efêmero e pareado",
+  "event_topics": "agent.finops.agent.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Sandbox por padrão; capabilities escopadas; sem secrets diretos. Device input/screen exige autorização de sessão e logging.",
+  "references": "oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão | OpenClaw — gateway/nodes/channels; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 82
+  }
+}

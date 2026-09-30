@@ -1,0 +1,102 @@
+#!/usr/bin/python3
+import datetime as _dt
+import json
+import secrets
+import sys
+import time
+
+AGENT = 'Morpheus'
+ROLE = 'Estratégia, missão e riscos'
+MODE = 'strategy'
+PROTOCOL = "phxclaw-process-v1"
+
+
+def uuid7():
+    ms = int(time.time() * 1000) & ((1 << 48) - 1)
+    rand_a = secrets.randbits(12)
+    rand_b = secrets.randbits(62)
+    value = (ms << 80) | (0x7 << 76) | (rand_a << 64) | (0b10 << 62) | rand_b
+    h = f"{value:032x}"
+    return f"{h[:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:]}"
+
+
+def now():
+    return _dt.datetime.now(_dt.timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def reply(correlation, status="ok", payload=None, error=None):
+    return {
+        "protocol": PROTOCOL,
+        "message_uuid": uuid7(),
+        "correlation_uuid": correlation,
+        "status": status,
+        "emitted_at": now(),
+        "payload": payload if payload is not None else {},
+        "error": error,
+    }
+
+
+def execute(payload):
+    capability = payload.get("capability", "unknown") if isinstance(payload, dict) else "unknown"
+    body = payload.get("payload", {}) if isinstance(payload, dict) else {}
+    return {
+        "agent": AGENT,
+        "role": ROLE,
+        "mode": MODE,
+        "capability": capability,
+        "accepted": True,
+        "deterministic_stub": True,
+        "input": body,
+        "next": "connect Model Gateway for semantic execution"
+    }
+
+
+def handle(message):
+    if message.get("protocol") != PROTOCOL:
+        return reply(message.get("message_uuid", uuid7()), "rejected", {}, {
+            "code": "unsupported_protocol",
+            "message": "expected phxclaw-process-v1",
+            "retryable": False,
+        })
+    correlation = message.get("message_uuid", uuid7())
+    kind = message.get("kind")
+    if kind == "health":
+        return reply(correlation, payload={
+            "agent": AGENT,
+            "role": ROLE,
+            "status": "healthy",
+            "protocol": PROTOCOL,
+        })
+    if kind == "execute":
+        return reply(correlation, payload=execute(message.get("payload", {})))
+    if kind in ("cancel", "shutdown"):
+        return reply(correlation, payload={"agent": AGENT, "ack": kind})
+    return reply(correlation, "rejected", {}, {
+        "code": "unsupported_message_kind",
+        "message": str(kind),
+        "retryable": False,
+    })
+
+
+def main():
+    if "--health" in sys.argv:
+        print(json.dumps({"agent": AGENT, "status": "healthy", "protocol": PROTOCOL}, separators=(",", ":")))
+        return 0
+    line = sys.stdin.readline()
+    if not line:
+        return 2
+    try:
+        message = json.loads(line)
+        output = handle(message)
+    except Exception as exc:
+        output = reply(uuid7(), "error", {}, {
+            "code": "unhandled_exception",
+            "message": str(exc),
+            "retryable": False,
+        })
+    print(json.dumps(output, separators=(",", ":"), ensure_ascii=False))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

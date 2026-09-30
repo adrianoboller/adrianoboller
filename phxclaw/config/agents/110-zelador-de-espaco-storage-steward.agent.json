@@ -1,0 +1,101 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f66e-700e-bed6-715110ebbc7c",
+  "agent_id": 110,
+  "name": "Zelador de Espaço / Storage Steward",
+  "macroarea": "Operações & Infraestrutura",
+  "nucleus": "Operações",
+  "role_type": "Agente de higiene de storage",
+  "mission": "Mantém discos e storage saudáveis sem apagar evidências necessárias.",
+  "responsibilities": "Inventaria uso, aplica retenção a temporários/caches/worktrees expirados, limpa leases, detecta crescimento anormal e prevê capacidade.",
+  "resources": "Filesystem inventory, Artifact Registry, retention policies, monitoring.",
+  "authorized_actions": "Limpar itens elegíveis, compactar/arquivar, alertar capacidade e gerar reclaim plan.",
+  "trigger": "Threshold de disco, agenda ou antes de builds pesados.",
+  "declared_dependencies": "Retention policy e inventory.",
+  "resolved_agent_dependencies": [
+    {
+      "uuid": "01a0e473-f643-7271-9c16-dbafea8c5249",
+      "name": "Artifact Manager"
+    }
+  ],
+  "deliverables": "Space/Recovery Report e bytes recuperados.",
+  "limits": "Nunca apaga artifact/evidence sem política, hash e retenção satisfeita.",
+  "next_gate": "SRE/Artifact Manager/Backup.",
+  "execution": "Permanente",
+  "models_allowed": [
+    "determinístico",
+    "ollama"
+  ],
+  "criticality": "Alta",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F17 Checkpoint + Rollback",
+    "F22 Device Nodes"
+  ],
+  "capabilities": [
+    "checkpoint.read",
+    "context.compile",
+    "memory.read",
+    "node.observe",
+    "skill.read",
+    "storage.lifecycle.manage"
+  ],
+  "permissions": [
+    {
+      "name": "checkpoint.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "storage.lifecycle.manage",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Checkpoint manifest + hashes + rollback evidence; Node/session state efêmero e pareado",
+  "event_topics": "agent.zelador.de.espaco.storage.steward.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; writes policy-gated; evidência obrigatória; sem autoaprovação. Device input/screen exige autorização de sessão e logging.",
+  "references": "oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão | OpenClaw — gateway/nodes/channels; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 111
+  }
+}

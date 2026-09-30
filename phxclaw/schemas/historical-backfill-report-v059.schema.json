@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PhxClaw v0.59 Backfill Report",
+  "type": "object",
+  "required": [
+    "run_uuid",
+    "tenant_uuid",
+    "registry_sha256",
+    "tables",
+    "summary"
+  ],
+  "properties": {
+    "run_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tenant_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "registry_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "tables": {
+      "type": "array"
+    },
+    "summary": {
+      "type": "object"
+    }
+  }
+}

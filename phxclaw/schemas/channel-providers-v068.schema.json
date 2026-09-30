@@ -1,0 +1,1 @@
+{"$schema":"https://json-schema.org/draft/2020-12/schema","title":"PhxClaw Channel Providers v0.68","type":"object","required":["version","providers","security"],"properties":{"version":{"const":"0.68.0"},"providers":{"type":"object","required":["telegram","discord","slack","whatsapp","teams"]},"security":{"type":"object"}},"additionalProperties":false}

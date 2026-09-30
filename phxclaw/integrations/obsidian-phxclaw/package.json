@@ -1,0 +1,10 @@
+{
+  "name": "phxclaw-obsidian-bridge",
+  "version": "0.30.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "obsidian": "1.13.2",
+    "typescript": "^5.9.0"
+  }
+}

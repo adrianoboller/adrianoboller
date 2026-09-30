@@ -1,0 +1,13 @@
+{
+  "schema_version": "phxclaw.ollama-provider.v1",
+  "base_url": "http://127.0.0.1:11434",
+  "allow_loopback_http": true,
+  "allow_remote_http": false,
+  "allow_remote_https": false,
+  "remote_requires_explicit_origin_allowlist": true,
+  "cloud_api_key_secret_handle": null,
+  "pull_requires_approval": true,
+  "create_requires_approval": true,
+  "default_api": "native",
+  "request_timeout_ms": 120000
+}

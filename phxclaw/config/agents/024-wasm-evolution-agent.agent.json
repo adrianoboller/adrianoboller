@@ -1,0 +1,108 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f618-7e89-ae35-cbefc100260c",
+  "agent_id": 24,
+  "name": "WASM Evolution Agent",
+  "macroarea": "Pesquisa & Inovação",
+  "nucleus": "WASM",
+  "role_type": "Agente de evolução WASM",
+  "mission": "Monitora a evolução estável de WebAssembly e compatibilidade de browsers/targets.",
+  "responsibilities": "Acompanha WASM specs, wasm32 targets, interface types/component model quando estáveis, browser support e impacto em runtime.",
+  "resources": "Specs oficiais, browser matrices, wasm-tools, CI.",
+  "authorized_actions": "Executar compatibility lab e criar RFC de adoção.",
+  "trigger": "Nova capacidade WASM estável ou regressão.",
+  "declared_dependencies": "Backend atual e suites Web.",
+  "resolved_agent_dependencies": [
+    {
+      "uuid": "01a0e473-f637-7194-be89-ecefe3390927",
+      "name": "Versionador"
+    }
+  ],
+  "deliverables": "WASM Impact/Compatibility Report.",
+  "limits": "Não introduz feature experimental em produção sem gate.",
+  "next_gate": "Compiler/WASM tests/Versionador.",
+  "execution": "Permanente",
+  "models_allowed": [
+    "codex",
+    "ollama"
+  ],
+  "criticality": "Alta",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F19 Repo Intelligence / Tree-sitter",
+    "F22 Device Nodes"
+  ],
+  "capabilities": [
+    "context.compile",
+    "memory.read",
+    "node.observe",
+    "repo.read",
+    "skill.read",
+    "technology.wasm.evaluate",
+    "tree_sitter.analyze"
+  ],
+  "permissions": [
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "repo.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "technology.wasm.evaluate",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "tree_sitter.analyze",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Node/session state efêmero e pareado; Estado operacional persistente em PostgreSQL",
+  "event_topics": "agent.wasm.evolution.agent.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; writes policy-gated; evidência obrigatória; sem autoaprovação. Device input/screen exige autorização de sessão e logging.",
+  "references": "Architect (MIT) — AST/Tree-sitter/Repo Intelligence | oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 25
+  }
+}

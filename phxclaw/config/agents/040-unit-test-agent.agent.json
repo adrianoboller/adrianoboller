@@ -1,0 +1,121 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f628-7932-8302-5aec809de110",
+  "agent_id": 40,
+  "name": "Unit Test Agent",
+  "macroarea": "Qualidade & Provas",
+  "nucleus": "Qualidade",
+  "role_type": "Subagente de teste",
+  "mission": "Valida funções e unidades isoladas com rapidez e determinismo.",
+  "responsibilities": "Cria casos normais, bordas, erros, property tests simples e cobertura de invariantes locais.",
+  "resources": "cargo test, fixtures, mocks mínimos.",
+  "authorized_actions": "Escrever/rodar unit tests e registrar resultados.",
+  "trigger": "Nova função/módulo ou bug local.",
+  "declared_dependencies": "Acceptance Criteria e API.",
+  "resolved_agent_dependencies": [
+    {
+      "uuid": "01a0e473-f60b-796a-a1ff-a164537cd755",
+      "name": "Jones"
+    }
+  ],
+  "deliverables": "Unit test report.",
+  "limits": "Não substitui integração/E2E.",
+  "next_gate": "Jones / QA1.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "codex",
+    "ollama"
+  ],
+  "criticality": "Média",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F18 MCP + LSP Runtime"
+  ],
+  "capabilities": [
+    "context.compile",
+    "lsp.read",
+    "mcp.invoke",
+    "memory.read",
+    "quality.unit.test",
+    "skill.read",
+    "workspace.command.run",
+    "workspace.gate.run",
+    "workspace.snapshot"
+  ],
+  "permissions": [
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "lsp.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "mcp.invoke",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "quality.unit.test",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "workspace.command.run",
+      "scopes": [
+        "*"
+      ]
+    },
+    {
+      "name": "workspace.gate.run",
+      "scopes": [
+        "*"
+      ]
+    },
+    {
+      "name": "workspace.snapshot",
+      "scopes": [
+        "*"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo",
+  "event_topics": "agent.unit.test.agent.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Sandbox por padrão; capabilities escopadas; sem secrets diretos.",
+  "references": "oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão | ZeroClaw — benchmark Rust/providers/tools",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 41
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "version": "0.8.0",
+  "cores": [
+    {
+      "name": "research",
+      "native": true,
+      "required": true
+    },
+    {
+      "name": "hypothesis",
+      "native": true,
+      "required": true
+    },
+    {
+      "name": "installer",
+      "native": true,
+      "required": true
+    }
+  ]
+}

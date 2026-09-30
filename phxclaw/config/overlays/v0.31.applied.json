@@ -1,0 +1,160 @@
+{
+  "version": "0.31.0",
+  "base": "0.30.0",
+  "copied": [
+    {
+      "path": "config/anthropic-provider.v031.json",
+      "sha256": "c629c3e0e451cc80c1c31da0683e2e6e117f24c8850b8243d26bc574c2987315"
+    },
+    {
+      "path": "config/ai-fabric-policy.v031.json",
+      "sha256": "f60d00b06587b21535c4e7a2f8c33c77258df6319d7c260d1d93ad03b053067d"
+    },
+    {
+      "path": "config/gemini-provider.v031.json",
+      "sha256": "a3f9a10215c5aa1a5677b33d1b28c3c257c7c7bda3f23b04a5d82af4ccc7c1de"
+    },
+    {
+      "path": "config/openai-provider.v031.json",
+      "sha256": "8b2ff187cec270248c1572f61f6aa29ccfaab5637c9805068b497f14e033e1d0"
+    },
+    {
+      "path": "capabilities/V031_CAPABILITIES_DELTA.json",
+      "sha256": "72373e0fc6b9f4f2398c0303d5564b50d91d239decd34379f0675249a66fc6a0"
+    },
+    {
+      "path": "schemas/ai-budget-reservation-v031.schema.json",
+      "sha256": "b666984f91cf43a0527293782eb38c61b7d94ad1ea83a1de9c4345ddf34ae747"
+    },
+    {
+      "path": "schemas/ai-provider-http-plan-v031.schema.json",
+      "sha256": "aa7a02d1e8af79f5778ee2f9eb9b6247d3d2389a11c61ce382a6447792123c19"
+    },
+    {
+      "path": "schemas/ai-provider-health-v031.schema.json",
+      "sha256": "5b8f1c6b228d32e613b9e4ec7e415b98b64dad43daa71466fca495cdb5ee767a"
+    },
+    {
+      "path": "schemas/ai-route-request-v031.schema.json",
+      "sha256": "7c4badec58a86cd50064644e3d5c6b70c390faeb5719210cc0614e507eacf9fc"
+    },
+    {
+      "path": "schemas/ai-route-decision-v031.schema.json",
+      "sha256": "7c145596baaceb161cd76619507c2a8bbefdb12801e3146c3ab963d7fa3c6cd7"
+    },
+    {
+      "path": "schemas/ai-model-record-v031.schema.json",
+      "sha256": "f549c37b1745d1f19b137298af5ed0b97372ecd6f5aaf0dc0be2398228f41781"
+    },
+    {
+      "path": "tools/verify_v031.py",
+      "sha256": "4c9181b35c1225be0a5c0c9189cc0f5f7eca9c5cc1bba84f2663af62cbf1f646"
+    },
+    {
+      "path": "tools/test_v031_local.py",
+      "sha256": "cf6b7e9c35d9d36049557323557dba23321ee579a0cbc6dcb70e1952a8363512"
+    },
+    {
+      "path": "reports/V031_STATIC_VERIFY_REPORT.json",
+      "sha256": "e94cd9283d97629a838d41ecc37d25d79940f81d1b5f0398f55e5f616c5a87b3"
+    },
+    {
+      "path": "reports/V031_LOCAL_TEST_REPORT.json",
+      "sha256": "fa580d788da43f43647ddbe22ebdeead61c23fd64aa74d434592cd034461e0a7"
+    },
+    {
+      "path": "migrations/0031_unified_ai_fabric.sql",
+      "sha256": "681eb4411f88375dcd151c158cf33b90c34e23e772c87e929ecc2eb32d65774e"
+    },
+    {
+      "path": "docs/PROVIDER_PROTOCOL_AUDIT_V031.md",
+      "sha256": "debcad5a4111df62b0d717061ecb1559fb8f929b21c19579e2b12689fd31be23"
+    },
+    {
+      "path": "docs/THIRD_PARTY_NOTICES_V031.md",
+      "sha256": "339459b46844de3294a2a38ecc77646d529935f86f07c13e7284d8c2520f2586"
+    },
+    {
+      "path": "docs/UNIFIED_AI_FABRIC_V031.md",
+      "sha256": "1f74f67c13b6437959a5879beaa447ba05752d11cc99a5e4efcbb18d9b6dae6f"
+    },
+    {
+      "path": "ci/run-v031-native.sh",
+      "sha256": "9a14ae6a53bb31443186dea6465d23f2a0ea870a8c743c8bbcc12b41ad91f46a"
+    },
+    {
+      "path": "ci/run-v031-native.ps1",
+      "sha256": "5f3490d174c2a82fca39a24a20d345e3b5e8a3a35ad52579bf2fea732651868c"
+    },
+    {
+      "path": "crates/phxclaw-anthropic-provider/Cargo.toml",
+      "sha256": "b330e5375633ee0e2d2c82656ee9883275407e5bfb6052ba58259573fcec4045"
+    },
+    {
+      "path": "crates/phxclaw-gemini-provider/Cargo.toml",
+      "sha256": "012b2a40f9ba72edd1b9c39698c356acec94d301ea04c682cb8c7b418303035d"
+    },
+    {
+      "path": "crates/phxclaw-ai-fabric/Cargo.toml",
+      "sha256": "afcd26c2bdf52153070856edbfd4417f827a09fd3f5f12f8cad45bc6fadced09"
+    },
+    {
+      "path": "crates/phxclaw-openai-provider/Cargo.toml",
+      "sha256": "2dd645d01817a856a9ad8945b4b66c2e8d500bbca5dc8b83aacb070cdc43b072"
+    },
+    {
+      "path": "crates/phxclaw-openai-provider/src/lib.rs",
+      "sha256": "8eee9c899491d8adeec1ce6404d7806b73cd85108d75e86dbc3f52a290dd7ca2"
+    },
+    {
+      "path": "crates/phxclaw-ai-fabric/src/lib.rs",
+      "sha256": "253e6c284f71d4316f6a38c0f5057d34bfb08945ce1cf0cd04ecf6a43c8bab28"
+    },
+    {
+      "path": "crates/phxclaw-gemini-provider/src/lib.rs",
+      "sha256": "0e5bd4c8ed414949762ff0331c0f38bfaae6478c51a4a0b060d07077c8576645"
+    },
+    {
+      "path": "crates/phxclaw-anthropic-provider/src/lib.rs",
+      "sha256": "6154be6b369c50ffc4015965cbdbd95ac7a3a6b86a4f457e2f7abd07bb45f919"
+    },
+    {
+      "path": "tools/__pycache__/verify_v031.cpython-313.pyc",
+      "sha256": "6a71dffaf86619ec7da3714c786c698abcebc786dba57b9a97aeb7397a54ee06"
+    },
+    {
+      "path": "tools/__pycache__/test_v031_local.cpython-313.pyc",
+      "sha256": "45b0f96ccf62aa2fc0ef270dff579152f542d0d8b3fe89d148963c2f6ecd2a83"
+    },
+    {
+      "path": ".github/workflows/phxclaw-v031-ai-fabric.yml",
+      "sha256": "306f9b682601283a60d2b24d2680fb224465e7dd23a4df2dc7369b9b57db1487"
+    },
+    {
+      "path": "plugins/gemini-provider/phxclaw.plugin.json",
+      "sha256": "c89a8a0e509c193d83fa6c04d28bf9bda19ae333030fbeb13ed5fb2078c15736"
+    },
+    {
+      "path": "plugins/gemini-provider/SOURCE_INTEGRITY.json",
+      "sha256": "aec2da1e3f31e598cbbd8dcfff1806c08a9a2fd88c954169c577ec01f14918bc"
+    },
+    {
+      "path": "plugins/anthropic-provider/phxclaw.plugin.json",
+      "sha256": "0c64b473ed6dd1fc51388fe6d4da990d47b47ada28a51efdcacedaad3f4a4255"
+    },
+    {
+      "path": "plugins/anthropic-provider/SOURCE_INTEGRITY.json",
+      "sha256": "5df0e166180b4aae3bc6fc7cc40db96fcdf63a1e3f4bc91bac1d11a5eea47a4c"
+    },
+    {
+      "path": "plugins/openai-provider/phxclaw.plugin.json",
+      "sha256": "bf62bc7e2a1c24361dc44d44936b4e79ebf9f02b84c071e334cd3a196ed3198d"
+    },
+    {
+      "path": "plugins/openai-provider/SOURCE_INTEGRITY.json",
+      "sha256": "7e9916eebc2b82f5bbd401404f8af31f3be27d274493bbd3b80ad9027fd8fd14"
+    }
+  ],
+  "workspace": "v0.31 crates present exactly once",
+  "cargo_lock_requires_refresh": false
+}

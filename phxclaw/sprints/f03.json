@@ -1,0 +1,46 @@
+{
+  "uuid": "0199a5f1-0013-7013-8abc-000000000013",
+  "code": "F03",
+  "title": "Installer Core",
+  "goal": "Criar install/update/verify/repair/migrate/rollback/backup/restore.",
+  "status": "active",
+  "tasks": [
+    {
+      "uuid": "0199a5f1-0014-7014-8abc-000000000014",
+      "title": "Modelar InstallPlan",
+      "status": "done"
+    },
+    {
+      "uuid": "0199a5f1-0015-7015-8abc-000000000015",
+      "title": "Criar preflight",
+      "status": "done"
+    },
+    {
+      "uuid": "0199a5f1-0016-7016-8abc-000000000016",
+      "title": "Criar rollback",
+      "status": "done"
+    },
+    {
+      "uuid": "0199a5f1-0017-7017-8abc-000000000017",
+      "title": "Backup/restore real",
+      "status": "done"
+    },
+    {
+      "uuid": "0199a5f1-0018-7018-8abc-000000000018",
+      "title": "Executores transacionais",
+      "status": "done"
+    }
+  ],
+  "definition_of_done": [
+    "rollback obrigatório",
+    "preflight determinístico",
+    "operações transacionais",
+    "testes Rust verdes"
+  ],
+  "state": "review",
+  "canonical_project_version": "0.67.0",
+  "canonical_state_ref": "config/project-state-canonical.v067.json",
+  "implementation_state": "source_ready",
+  "verification_state": "static_verified",
+  "open_gaps": []
+}

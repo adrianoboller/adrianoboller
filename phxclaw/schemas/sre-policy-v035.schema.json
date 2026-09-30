@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SRE Policy v0.35",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["tenant_uuid","policy_uuid","service_name","portfolio_document_sha256","starts_at_unix","expires_at_unix","slo","forecast","queue","cost","autopilot"],
+  "properties": {
+    "tenant_uuid": {"type":"string","format":"uuid"},
+    "policy_uuid": {"type":"string","format":"uuid"},
+    "service_name": {"type":"string","minLength":1},
+    "portfolio_document_sha256": {"type":"string","pattern":"^[0-9a-f]{64}$"},
+    "starts_at_unix": {"type":"integer"},
+    "expires_at_unix": {"type":"integer"},
+    "slo": {
+      "type":"object","additionalProperties":false,
+      "required":["min_success_basis_points","max_p95_latency_ms","max_p95_queue_wait_ms","fast_burn_limit_milli","slow_burn_limit_milli"],
+      "properties": {
+        "min_success_basis_points":{"type":"integer","minimum":0,"maximum":10000},
+        "max_p95_latency_ms":{"type":"integer","minimum":1},
+        "max_p95_queue_wait_ms":{"type":"integer","minimum":1},
+        "fast_burn_limit_milli":{"type":"integer","minimum":1},
+        "slow_burn_limit_milli":{"type":"integer","minimum":1}
+      }
+    },
+    "forecast": {
+      "type":"object","additionalProperties":false,
+      "required":["min_samples","horizon_seconds","headroom_basis_points","max_sample_age_seconds"],
+      "properties": {
+        "min_samples":{"type":"integer","minimum":2,"maximum":65535},
+        "horizon_seconds":{"type":"integer","minimum":1},
+        "headroom_basis_points":{"type":"integer","minimum":0,"maximum":10000},
+        "max_sample_age_seconds":{"type":"integer","minimum":1}
+      }
+    },
+    "queue": {
+      "type":"object","additionalProperties":false,
+      "required":["max_depth","hard_reject_depth","max_wait_ms","class_weights"],
+      "properties": {
+        "max_depth":{"type":"integer","minimum":1},
+        "hard_reject_depth":{"type":"integer","minimum":1},
+        "max_wait_ms":{"type":"integer","minimum":1},
+        "class_weights": {
+          "type":"object","additionalProperties":false,
+          "required":["critical","interactive","batch","background"],
+          "properties": {
+            "critical":{"type":"integer","minimum":1,"maximum":65535},
+            "interactive":{"type":"integer","minimum":1,"maximum":65535},
+            "batch":{"type":"integer","minimum":1,"maximum":65535},
+            "background":{"type":"integer","minimum":1,"maximum":65535}
+          }
+        }
+      }
+    },
+    "cost": {
+      "type":"object","additionalProperties":false,
+      "required":["budget_account_uuid","soft_limit_basis_points","hard_limit_basis_points","require_known_cost"],
+      "properties": {
+        "budget_account_uuid":{"type":"string","format":"uuid"},
+        "soft_limit_basis_points":{"type":"integer","minimum":0,"maximum":10000},
+        "hard_limit_basis_points":{"type":"integer","minimum":0,"maximum":10000},
+        "require_known_cost":{"type":"boolean"}
+      }
+    },
+    "autopilot": {
+      "type":"object","additionalProperties":false,
+      "required":["max_concurrency_increase_basis_points","max_concurrency_decrease_basis_points","max_share_move_basis_points","max_auto_projected_cost_increase_basis_points","allow_auto_capacity_purchase","cooldown_seconds"],
+      "properties": {
+        "max_concurrency_increase_basis_points":{"type":"integer","minimum":0,"maximum":10000},
+        "max_concurrency_decrease_basis_points":{"type":"integer","minimum":0,"maximum":10000},
+        "max_share_move_basis_points":{"type":"integer","minimum":0,"maximum":10000},
+        "max_auto_projected_cost_increase_basis_points":{"type":"integer","minimum":0,"maximum":10000},
+        "allow_auto_capacity_purchase":{"type":"boolean"},
+        "cooldown_seconds":{"type":"integer","minimum":1}
+      }
+    }
+  }
+}

@@ -1,0 +1,367 @@
+{
+  "suite": "PhxClaw v0.32 static verifier",
+  "pass": 72,
+  "fail": 0,
+  "checks": [
+    {
+      "name": "cap_delta",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "cap_total",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "cap_unique",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "crate_phxclaw-ai-benchmark",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "toml_phxclaw-ai-benchmark",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "version_phxclaw-ai-benchmark",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "unsafe_forbid_phxclaw-ai-benchmark",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "crate_phxclaw-adaptive-model-intelligence",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "toml_phxclaw-adaptive-model-intelligence",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "version_phxclaw-adaptive-model-intelligence",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "unsafe_forbid_phxclaw-adaptive-model-intelligence",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "benchmark_task_family",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "benchmark_complexity",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "benchmark_dataset_hash",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "benchmark_scorer_hash",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "benchmark_environment_hash",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "benchmark_duplicate_guard",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "benchmark_aggregate",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "benchmark_promotion",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "benchmark_coverage",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "benchmark_regression_quality",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "benchmark_regression_success",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "benchmark_evidence_class",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "benchmark_fixture_promotion_block",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "benchmark_promotion_freshness",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "benchmark_no_raw_prompt",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "benchmark_no_raw_output",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "adaptive_base_router",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "adaptive_profile_required",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "adaptive_freshness",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "adaptive_samples",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "adaptive_coverage",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "adaptive_task_family",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "adaptive_complexity",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "adaptive_deterministic_candidates",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "adaptive_decision_hash",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "adaptive_base_eligible_only",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "adaptive_promoted_profile_only",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "adaptive_promotion_policy_hash",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "policy_no_raw_prompts",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "policy_no_raw_outputs",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "fixtures_never_promote",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "stale_profiles_never_route",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_force_rls",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_tenant_setting",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_suite_table",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_observation_table",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_profile_table",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_evidence_class_sql",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_promotion_table",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_adaptive_evidence",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_composite_fk",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_unique_run_case",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_append_observation",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_append_profile",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_append_promotion",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_append_adaptive",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_no_raw_prompt_column",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_no_raw_output_column",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "v031_repair_present",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "v031_bad_policy_removed",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "schema_ai-adaptive-route-v032.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "schema_ai-benchmark-observation-v032.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "schema_ai-benchmark-suite-v032.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "schema_ai-profile-promotion-v032.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "schema_ai-performance-profile-v032.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "doc_no_global_rank",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "doc_v031_authority",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "doc_fixture_boundary",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "ci_locked",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "ci_clippy",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "ci_tests",
+      "pass": true,
+      "detail": ""
+    }
+  ]
+}

@@ -1,0 +1,51 @@
+{
+  "uuid": "01a0e64f-1626-76c6-8e7e-18407e942451",
+  "name": "openclaw-rs-user-source",
+  "ecosystem": "openclaw-rs",
+  "mode": "hybrid",
+  "authoritative": true,
+  "license_note": "MIT source snapshot supplied by user; original LICENSE preserved.",
+  "local_root": "private/vendor/openclaw-rs/upstream",
+  "sync_strategy": "user_archive_snapshot",
+  "verified_version": "0.1.0",
+  "allowed_agents": [
+    "Research Agent",
+    "Documentador",
+    "Master Orchestrator",
+    "Rust Worker Engineer"
+  ],
+  "required_capabilities": [
+    "knowledge.openclaw_rs.read"
+  ],
+  "endpoints": [
+    {
+      "name": "openclaw-rs repository",
+      "url": "https://github.com/neul-labs/openclaw-rs",
+      "authority": "upstream-declared",
+      "purpose": "source repository",
+      "offline_relative_path": "README.md"
+    },
+    {
+      "name": "openclaw-rs channels",
+      "url": "https://github.com/neul-labs/openclaw-rs/tree/main/crates/openclaw-channels",
+      "authority": "upstream-declared",
+      "purpose": "channel traits/registry/routing",
+      "offline_relative_path": "crates/openclaw-channels"
+    },
+    {
+      "name": "openclaw-rs providers",
+      "url": "https://github.com/neul-labs/openclaw-rs/tree/main/crates/openclaw-providers",
+      "authority": "upstream-declared",
+      "purpose": "provider traits/adapters",
+      "offline_relative_path": "crates/openclaw-providers"
+    },
+    {
+      "name": "openclaw-rs plugins",
+      "url": "https://github.com/neul-labs/openclaw-rs/tree/main/crates/openclaw-plugins",
+      "authority": "upstream-declared",
+      "purpose": "plugin API/native/WASM",
+      "offline_relative_path": "crates/openclaw-plugins"
+    }
+  ],
+  "last_synced_at": null
+}

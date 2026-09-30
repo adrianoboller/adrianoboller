@@ -1,0 +1,116 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f658-7333-bb3a-af3afe577499",
+  "agent_id": 88,
+  "name": "Mouse",
+  "macroarea": "Pesquisa & Inovação",
+  "nucleus": "Experimentação",
+  "role_type": "Agente prototipador",
+  "mission": "Constrói protótipos descartáveis para testar hipóteses rapidamente.",
+  "responsibilities": "Implementa spike mínimo em sandbox, mede resultado e descarta/arquiva sem contaminar produção.",
+  "resources": "Sandbox, benchmark tools, minimal repo.",
+  "authorized_actions": "Criar spike, executar experimento e coletar evidence.",
+  "trigger": "Hypothesis com experimento técnico.",
+  "declared_dependencies": "Hypothesis plan.",
+  "resolved_agent_dependencies": [
+    {
+      "uuid": "01a0e473-f606-78cd-86b5-d4192e95853c",
+      "name": "Oráculo"
+    }
+  ],
+  "deliverables": "Prototype Evidence.",
+  "limits": "Sem merge/release e sem virar produção por atalho.",
+  "next_gate": "Hypothesis/Oráculo.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "codex",
+    "ollama"
+  ],
+  "criticality": "Média",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F17 Checkpoint + Rollback",
+    "F18 MCP + LSP Runtime",
+    "F22 Device Nodes"
+  ],
+  "capabilities": [
+    "checkpoint.read",
+    "context.compile",
+    "lsp.read",
+    "mcp.invoke",
+    "memory.read",
+    "node.observe",
+    "prototype.experiment",
+    "skill.read"
+  ],
+  "permissions": [
+    {
+      "name": "checkpoint.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "lsp.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "mcp.invoke",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "prototype.experiment",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Checkpoint manifest + hashes + rollback evidence; Node/session state efêmero e pareado",
+  "event_topics": "agent.mouse.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Sandbox por padrão; capabilities escopadas; sem secrets diretos. Device input/screen exige autorização de sessão e logging.",
+  "references": "oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão | OpenClaw — gateway/nodes/channels; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 89
+  }
+}

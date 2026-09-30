@@ -1,0 +1,212 @@
+{
+  "suite": "v0.51 static",
+  "pass": 41,
+  "fail": 0,
+  "checks": [
+    {
+      "name": "json_config/capabilities-v051.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/portfolio-optimization-search.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/portfolio-optimization-candidate.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/portfolio-optimization-result.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/portfolio-optimization-delegation.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "capability_count",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "uuidv7_caps",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_SearchSpace",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_HardConstraints",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_ObjectiveWeights",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_CandidateSpec",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_EvaluatedCandidate",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_SearchPlan",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_SearchResult",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_generate_candidates",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_pareto_frontier",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_dominates",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_utility",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_rank_stability",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_weight_rank_stability",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_optimize_coarse_to_fine",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_delegate_recommendation",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_assert_no_direct_mutation",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "authority_DIRECT_MUTATION_AL",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "authority_executive_decision",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "authority_MAX_CANDIDATES_HAR",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "authority_WeightsRequired",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "authority_InsufficientConfid",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "direct_mutation_false",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "pareto_enabled",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "weights_required",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "never_auto_execute",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "unfruitful_promoted_only",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "search_budget",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_force_rls",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_rls_exact",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_append_only",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_direct_mutation_false",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_fk_search",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "ui_exists",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_legacy_brand",
+      "pass": true,
+      "detail": ""
+    }
+  ]
+}

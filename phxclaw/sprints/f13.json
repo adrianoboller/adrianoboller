@@ -1,0 +1,60 @@
+{
+  "uuid": "01a0e48f-3d0e-702b-925b-6ba79f5cea78",
+  "code": "F13",
+  "title": "Mindset + BPM",
+  "goal": "Codificar princípios operacionais e execução BPMN determinística, persistente e auditável.",
+  "status": "active",
+  "tasks": [
+    {
+      "uuid": "01a0e48f-3d0e-76e3-8fe7-3c7aa1ac6939",
+      "title": "MindsetProfile Phoenix",
+      "status": "done"
+    },
+    {
+      "uuid": "01a0e48f-3d0e-7482-8d2b-7ec053a365f4",
+      "title": "Importador BPMN XML",
+      "status": "done"
+    },
+    {
+      "uuid": "01a0e48f-3d0e-70fa-bbed-07f5716ce342",
+      "title": "Validador e ordem DAG",
+      "status": "done"
+    },
+    {
+      "uuid": "01a0e48f-3d0e-7455-bdb6-5ce5328fe365",
+      "title": "Token runtime",
+      "status": "done"
+    },
+    {
+      "uuid": "01a0e48f-3d0e-749d-8581-30e56aa0a458",
+      "title": "Persistência BPM PostgreSQL",
+      "status": "done"
+    },
+    {
+      "uuid": "01a0e48f-3d0e-717d-bc42-77a3f5332cc6",
+      "title": "Editor visual bpmn-js",
+      "status": "done"
+    },
+    {
+      "uuid": "01a0e48f-3d0e-7871-91ed-f3230eef8397",
+      "title": "Replay crash-safe completo",
+      "status": "done"
+    }
+  ],
+  "definition_of_done": [
+    "princípios versionados",
+    "BPMN importável",
+    "tokens persistentes",
+    "histórico auditável",
+    "editor visual desacoplado"
+  ],
+  "notes": [
+    "bpmn-engine e bpmn-js foram usados como referências arquiteturais; PhxClaw mantém contratos próprios para evitar acoplamento do core."
+  ],
+  "state": "review",
+  "canonical_project_version": "0.67.0",
+  "canonical_state_ref": "config/project-state-canonical.v067.json",
+  "implementation_state": "source_ready",
+  "verification_state": "static_verified",
+  "open_gaps": []
+}

@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Autopilot Execution v0.35",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "execution_uuid",
+    "plan_sha256",
+    "controller_uuid",
+    "leader_epoch",
+    "source_state_sha256",
+    "result_state_sha256",
+    "executed_at_unix",
+    "execution_sha256"
+  ],
+  "properties": {
+    "execution_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "plan_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "controller_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "leader_epoch": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "source_state_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "result_state_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "executed_at_unix": {
+      "type": "integer"
+    },
+    "execution_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

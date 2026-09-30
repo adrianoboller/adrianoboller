@@ -1,0 +1,135 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f604-77d8-a13d-7ee652e67964",
+  "agent_id": 4,
+  "name": "Arquiteto",
+  "macroarea": "Engenharia & Arquitetura",
+  "nucleus": "Arquitetura",
+  "role_type": "Agente de arquitetura",
+  "mission": "Desenha módulos, limites e trade-offs antes da implementação.",
+  "responsibilities": "Define boundaries, contratos entre módulos, dependências permitidas, padrões, ADRs, estratégia de dados, concorrência, extensibilidade por plugins e impactos futuros.",
+  "resources": "Repo, Constitution, ADRs, Dependency Graph, requisitos e benchmarks.",
+  "authorized_actions": "Propor arquitetura, escrever ADR, bloquear acoplamento indevido, solicitar RFC.",
+  "trigger": "Feature estrutural, novo módulo, breaking change ou mudança de fundação.",
+  "declared_dependencies": "Escopo do Analista, Research, Oráculo e restrições do Phoenix.",
+  "resolved_agent_dependencies": [
+    {
+      "uuid": "01a0e473-f603-72b3-946d-c6b9621006f8",
+      "name": "Analista"
+    },
+    {
+      "uuid": "01a0e473-f606-78cd-86b5-d4192e95853c",
+      "name": "Oráculo"
+    },
+    {
+      "uuid": "01a0e473-f607-777c-b4f3-12b3cc967d29",
+      "name": "Chaveiro"
+    },
+    {
+      "uuid": "01a0e473-f635-7fb8-a692-79562cbd4ff6",
+      "name": "Guardian"
+    }
+  ],
+  "deliverables": "ADR, diagrama lógico, contratos e trade-offs.",
+  "limits": "Não implementa e não aprova sozinho sua própria arquitetura.",
+  "next_gate": "Chaveiro / Guardian.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "claude",
+    "codex"
+  ],
+  "criticality": "Crítica",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F19 Repo Intelligence / Tree-sitter",
+    "F22 Device Nodes",
+    "F25 Knowledge / Evidence Graph"
+  ],
+  "capabilities": [
+    "architecture.design",
+    "context.compile",
+    "evidence.read",
+    "knowledge.read",
+    "memory.read",
+    "node.observe",
+    "repo.read",
+    "skill.read",
+    "tree_sitter.analyze"
+  ],
+  "permissions": [
+    {
+      "name": "architecture.design",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "evidence.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "knowledge.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "repo.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "tree_sitter.analyze",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Node/session state efêmero e pareado; Knowledge/Evidence Graph com proveniência",
+  "event_topics": "agent.arquiteto.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; write sensível, gasto, publicação, privilégio ou ação destrutiva exigem gate explícito. Device input/screen exige autorização de sessão e logging.",
+  "references": "Architect (MIT) — AST/Tree-sitter/Repo Intelligence | oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 5
+  }
+}

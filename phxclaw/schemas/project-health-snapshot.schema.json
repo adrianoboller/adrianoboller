@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PhxClaw Project Health Snapshot",
+  "type": "object",
+  "required": [
+    "snapshot_uuid",
+    "project_uuid",
+    "source_state_sha256",
+    "deadline_risk",
+    "budget_overrun_risk",
+    "rework_risk",
+    "predicted_quality",
+    "evidence_sha256"
+  ],
+  "properties": {
+    "snapshot_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "project_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "source_state_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "deadline_risk": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "budget_overrun_risk": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "rework_risk": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "predicted_quality": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "evidence_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,158 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f613-790f-be14-88850e521c18",
+  "agent_id": 19,
+  "name": "Research Lead / Pesquisador PDCA",
+  "macroarea": "Pesquisa & Inovação",
+  "nucleus": "Pesquisa",
+  "role_type": "Agente líder de pesquisa",
+  "mission": "Coordena pesquisas, fontes e ciclo PDCA de descoberta técnica.",
+  "responsibilities": "Decompõe perguntas, delega pesquisas, compara fontes, identifica lacunas, atualiza radar tecnológico e fecha ciclo Plan-Do-Check-Act.",
+  "resources": "Web, papers, repos oficiais, Source Registry, Evidence Graph. | Rust Official Source Registry: rust-lang.org; doc.rust-lang.org; play.rust-lang.org; github.com/rust-lang; rustup.rs; crates.io; Rust Book; std; Rust By Example; Rustonomicon; Rust Reference. Snapshot local via rustup/rust-docs em knowledge/offline/rust.",
+  "authorized_actions": "Abrir research tasks, consolidar evidências, pedir hipótese ou RFC. | Consultar help Rust offline/local, validar exemplos/API contra versão pinada e escalar para fonte online oficial quando necessário.",
+  "trigger": "Nova tecnologia, dúvida arquitetural ou radar periódico.",
+  "declared_dependencies": "Questão de pesquisa e contexto do Phoenix. | Source Registry rust-official + índice offline local",
+  "resolved_agent_dependencies": [
+    {
+      "uuid": "01a0e473-f606-78cd-86b5-d4192e95853c",
+      "name": "Oráculo"
+    },
+    {
+      "uuid": "01a0e473-f616-784f-9b36-65d7a686fd41",
+      "name": "Technology Harvest"
+    }
+  ],
+  "deliverables": "Evidence Matrix e recomendação de investigação.",
+  "limits": "Não transforma novidade diretamente em feature.",
+  "next_gate": "Hypothesis / Technology Harvest / Oráculo.",
+  "execution": "Permanente",
+  "models_allowed": [
+    "claude",
+    "ollama"
+  ],
+  "criticality": "Alta",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F19 Repo Intelligence / Tree-sitter",
+    "F22 Device Nodes",
+    "F24 Auto-learning + Skill Evolution",
+    "F25 Knowledge / Evidence Graph"
+  ],
+  "capabilities": [
+    "context.compile",
+    "evidence.read",
+    "knowledge.read",
+    "knowledge.rust.read",
+    "knowledge.source_registry.read",
+    "memory.read",
+    "node.observe",
+    "repo.read",
+    "research.orchestrate",
+    "research.source.read",
+    "skill.candidate.propose",
+    "skill.read",
+    "tree_sitter.analyze"
+  ],
+  "permissions": [
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "evidence.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "knowledge.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "knowledge.rust.read",
+      "scopes": [
+        "rust-official"
+      ]
+    },
+    {
+      "name": "knowledge.source_registry.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "repo.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "research.orchestrate",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "research.source.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.candidate.propose",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "tree_sitter.analyze",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Node/session state efêmero e pareado; Candidate Skill → Hypothesis → OPA/QA → Registry | Rust docs snapshot versionado em knowledge/offline/rust; Context Pack registra versão/source hash",
+  "event_topics": "agent.research.lead.pesquisador.pdca.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; writes policy-gated; evidência obrigatória; sem autoaprovação. Device input/screen exige autorização de sessão e logging. Acesso permitido a rust-official com capability knowledge.rust.read; prioridade local-first para conhecimento estável, online oficial quando frescor/release atual for necessário; toda consulta registra UUIDv7, fonte, versão/data e Evidence Ledger.",
+  "references": "Architect (MIT) — AST/Tree-sitter/Repo Intelligence | oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão | Rust oficial: https://www.rust-lang.org/ | https://doc.rust-lang.org/ | https://github.com/rust-lang | https://rustup.rs/ | https://crates.io/",
+  "knowledge_sources": [
+    "rust-official"
+  ],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 20
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "version": "0.9.0",
+  "generated_at": "2026-09-28T01:30:52.179902+00:00",
+  "verification_level": "static_verified",
+  "counts": {
+    "workspace_members": 38,
+    "rust_files": 40,
+    "rust_lines": 10254,
+    "all_files": 369,
+    "migrations": 13,
+    "schemas": 23,
+    "agents": 110,
+    "plugins": 7,
+    "extension_points": 14,
+    "capabilities": 85
+  },
+  "reports": {
+    "PLUGIN_ECOSYSTEM_TEST_REPORT.json": {
+      "pass": 54,
+      "fail": 0,
+      "skip": 0,
+      "version": null
+    },
+    "DESKTOP_HOST_TEST_REPORT.json": {
+      "pass": 26,
+      "fail": 0,
+      "skip": 0,
+      "version": "0.9.0"
+    },
+    "F15_F16_TEST_REPORT.json": {
+      "pass": 17,
+      "fail": 0,
+      "skip": 0,
+      "version": "0.9.0"
+    },
+    "RESEARCH_PIPELINE_TEST_REPORT.json": {
+      "pass": 34,
+      "fail": 0,
+      "skip": 0,
+      "version": "0.9.0"
+    },
+    "V09_SMOKE_TEST_REPORT.json": {
+      "pass": 9,
+      "fail": 0,
+      "skip": 0,
+      "version": "0.9.0"
+    }
+  },
+  "runtime_gates": {
+    "cargo_check": "SKIP:cargo unavailable",
+    "cargo_test": "SKIP:cargo unavailable",
+    "postgres_e2e": "PENDING",
+    "bubblewrap_e2e": "PENDING",
+    "tauri_native_e2e": "PENDING",
+    "real_model_provider_e2e": "PENDING",
+    "octopus_bridge_e2e": "PENDING:octopus-console not built/provided in this host",
+    "mission_end_to_end": "PENDING"
+  }
+}

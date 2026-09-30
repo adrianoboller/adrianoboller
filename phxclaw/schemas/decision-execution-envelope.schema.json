@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Decision Execution Envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "execution_uuid",
+    "tenant_uuid",
+    "project_uuid",
+    "case_uuid",
+    "scenario_uuid",
+    "supervisor_plan_uuid",
+    "source_state_sha256",
+    "scenario_sha256",
+    "controller_epoch",
+    "fencing_token",
+    "evidence_sha256"
+  ],
+  "properties": {
+    "execution_uuid": {
+      "type": "string"
+    },
+    "tenant_uuid": {
+      "type": "string"
+    },
+    "project_uuid": {
+      "type": "string"
+    },
+    "case_uuid": {
+      "type": "string"
+    },
+    "scenario_uuid": {
+      "type": "string"
+    },
+    "supervisor_plan_uuid": {
+      "type": "string"
+    },
+    "source_state_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "scenario_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "controller_epoch": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "fencing_token": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "evidence_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

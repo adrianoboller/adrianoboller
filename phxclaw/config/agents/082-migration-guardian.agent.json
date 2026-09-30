@@ -1,0 +1,104 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f652-73bf-95cc-e0fe919f7d54",
+  "agent_id": 82,
+  "name": "Migration Guardian",
+  "macroarea": "Qualidade & Provas",
+  "nucleus": "Migração",
+  "role_type": "Guardião de migrations",
+  "mission": "Garante migrations seguras de DB, IR, JSON, templates e formatos.",
+  "responsibilities": "Valida forward/backward plan, data preservation, dry-run, rollback e compatibilidade.",
+  "resources": "Migration scripts, snapshots, compatibility tests.",
+  "authorized_actions": "Bloquear migration destrutiva, exigir backup/dry-run.",
+  "trigger": "Qualquer migration persistente.",
+  "declared_dependencies": "Schema diff e migration plan.",
+  "resolved_agent_dependencies": [],
+  "deliverables": "Migration Gate + rollback proof.",
+  "limits": "Não permite migration irreversível sem decisão explícita.",
+  "next_gate": "Backup/Compatibility/QA3.",
+  "execution": "Permanente",
+  "models_allowed": [
+    "claude",
+    "ollama"
+  ],
+  "criticality": "Crítica",
+  "modules": [
+    "F17 Checkpoint + Rollback",
+    "F19 Repo Intelligence / Tree-sitter",
+    "F23 Secret & Credential Broker",
+    "F25 Knowledge / Evidence Graph"
+  ],
+  "capabilities": [
+    "checkpoint.read",
+    "evidence.read",
+    "governance.constitution.enforce",
+    "knowledge.read",
+    "repo.read",
+    "secret.lease.request",
+    "tree_sitter.analyze"
+  ],
+  "permissions": [
+    {
+      "name": "checkpoint.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "evidence.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "governance.constitution.enforce",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "knowledge.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "repo.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "secret.lease.request",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "tree_sitter.analyze",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Checkpoint manifest + hashes + rollback evidence; Somente metadados de segredo; valores nunca em prompt/log; Knowledge/Evidence Graph com proveniência; Estado operacional persistente em PostgreSQL",
+  "event_topics": "agent.migration.guardian.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; write sensível, gasto, publicação, privilégio ou ação destrutiva exigem gate explícito. Credenciais via broker/leases; nunca em prompt.",
+  "references": "Architect (MIT) — AST/Tree-sitter/Repo Intelligence | Hermes — patterns; validar licença por versão | OpenClaw — gateway/nodes/channels; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 83
+  }
+}

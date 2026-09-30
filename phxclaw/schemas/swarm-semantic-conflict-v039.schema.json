@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Swarm Semantic Conflict",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "conflict_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "swarm_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tenant_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "class": {
+      "enum": [
+        "symbol_collision",
+        "contract_violation",
+        "dependency_order",
+        "schema_migration_conflict",
+        "behavioral_divergence",
+        "security_policy_conflict",
+        "test_expectation_conflict",
+        "evidence_conflict"
+      ]
+    },
+    "severity": {
+      "enum": [
+        "info",
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ]
+    },
+    "intent_uuids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "minItems": 2,
+      "uniqueItems": true
+    },
+    "subject": {
+      "type": "string"
+    },
+    "evidence_sha256": {
+      "type": "string",
+      "pattern": "^[0-9A-Fa-f]{64}$"
+    },
+    "blocking": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "conflict_uuid",
+    "swarm_uuid",
+    "tenant_uuid",
+    "class",
+    "severity",
+    "intent_uuids",
+    "subject",
+    "evidence_sha256",
+    "blocking"
+  ]
+}

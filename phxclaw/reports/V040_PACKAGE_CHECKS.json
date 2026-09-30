@@ -1,0 +1,71 @@
+{
+  "pass": 13,
+  "fail": 0,
+  "checks": [
+    {
+      "name": "json_parse_all",
+      "pass": true,
+      "detail": "5 files"
+    },
+    {
+      "name": "config_html_js_syntax",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "configctl_validate",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "configctl_atomic_set",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "configctl_revision_increment",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "configctl_history",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "configctl_revision_conflict",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "configctl_plaintext_secret_block",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "force_rls",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rls_exact",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "append_only_history",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_obvious_real_keys",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_symlinks",
+      "pass": true,
+      "detail": ""
+    }
+  ]
+}

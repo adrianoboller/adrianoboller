@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "tenant_uuid",
+    "project_uuid",
+    "request_uuid"
+  ],
+  "properties": {
+    "tenant_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "project_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "request_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "payload": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": false
+}

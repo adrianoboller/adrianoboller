@@ -1,0 +1,96 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f665-76d0-b8c6-35d37d1a3a0f",
+  "agent_id": 101,
+  "name": "SOC Agent",
+  "macroarea": "Produto & Growth",
+  "nucleus": "Produto/Marketing",
+  "role_type": "Agente social",
+  "mission": "Integra publicação e leitura operacional de redes sociais quando o produto exigir.",
+  "responsibilities": "Normaliza formatos, schedules, uploads, metadata, status e métricas através de connectors isolados.",
+  "resources": "Connector Platform, social APIs, media tools.",
+  "authorized_actions": "Publicar/consultar via contratos aprovados e registrar resposta.",
+  "trigger": "Módulo social habilitado.",
+  "declared_dependencies": "Approved connector + content package.",
+  "resolved_agent_dependencies": [],
+  "deliverables": "Social integration evidence.",
+  "limits": "Não contorna políticas/plataformas; credenciais via Secrets Manager.",
+  "next_gate": "Data Attribution/QA.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "codex",
+    "ollama"
+  ],
+  "criticality": "Média",
+  "modules": [
+    "F18 MCP + LSP Runtime",
+    "F21 Channel Gateway",
+    "F25 Knowledge / Evidence Graph"
+  ],
+  "capabilities": [
+    "channel.read",
+    "channel.social.operate",
+    "evidence.read",
+    "knowledge.read",
+    "lsp.read",
+    "mcp.invoke"
+  ],
+  "permissions": [
+    {
+      "name": "channel.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "channel.social.operate",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "evidence.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "knowledge.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "lsp.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "mcp.invoke",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Session/channel state sem credencial no contexto; Knowledge/Evidence Graph com proveniência",
+  "event_topics": "agent.soc.agent.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Sandbox por padrão; capabilities escopadas; sem secrets diretos.",
+  "references": "OpenClaw — gateway/nodes/channels; validar licença por versão | ZeroClaw — benchmark Rust/providers/tools | Claw Code Rust — referência técnica/clean-room",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 102
+  }
+}

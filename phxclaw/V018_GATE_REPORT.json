@@ -1,0 +1,834 @@
+{
+  "version": "0.18.0",
+  "verification_state": {
+    "source_ready": true,
+    "static_verified": true,
+    "host_secret_smoke": true,
+    "rust_compiled": false,
+    "provider_real_e2e": false,
+    "release_ready": false
+  },
+  "verifier_output": [
+    "OK TOML: 58",
+    "OK JSON: 261",
+    "OK JSON Schema: 29 schemas",
+    "OK UUIDv7: 502",
+    "OK constitution",
+    "OK plugin integrity: 7",
+    "OK process protocol: 7",
+    "OK UI JavaScript syntax",
+    "OK UI shell + previews",
+    "OK Desktop Host scaffold + deny-by-default config",
+    "OK Research pipeline + lazy skills + agent catalog",
+    "OK Mission Runtime + Code Workspace static gates",
+    "OK Community Plugin Ecosystem report: 71 PASS / 0 FAIL",
+    "OK olmOCR adapter report: 5 PASS / 0 FAIL",
+    "OK real process smoke report: 9 PASS / 0 FAIL",
+    "OK Mission Runtime host smoke report: 24 PASS / 0 FAIL",
+    "WARN cargo not installed; Rust gates skipped"
+  ],
+  "reports": {
+    "V018_SECRET_CHANNEL_TEST_REPORT.json": {
+      "suite": "PhxClaw v0.18 F23 Secret Broker + F21 providers",
+      "pass": 33,
+      "fail": 0,
+      "checks": [
+        {
+          "name": "cmd_secrets_init",
+          "ok": true,
+          "detail": "rc=0"
+        },
+        {
+          "name": "secret_master_key_created",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "cmd_secrets_store",
+          "ok": true,
+          "detail": "rc=0"
+        },
+        {
+          "name": "secret_not_in_store_stdout",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "secret_uuidv7",
+          "ok": true,
+          "detail": "01a0e662-8012-7c78-b6fe-3a9574c9d191"
+        },
+        {
+          "name": "encrypted_file_exists",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "plaintext_absent_at_rest",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "cmd_secrets_show",
+          "ok": true,
+          "detail": "rc=0"
+        },
+        {
+          "name": "show_metadata_only",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "cmd_secrets_doctor",
+          "ok": true,
+          "detail": "rc=0"
+        },
+        {
+          "name": "doctor_redacted",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "cmd_secrets_lease",
+          "ok": true,
+          "detail": "rc=0"
+        },
+        {
+          "name": "lease_uuidv7",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "scope_denied",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "cmd_secrets_rotate",
+          "ok": true,
+          "detail": "rc=0"
+        },
+        {
+          "name": "rotate_redacted",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "rotated_plaintext_absent",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "cmd_secrets_revoke",
+          "ok": true,
+          "detail": "rc=0"
+        },
+        {
+          "name": "revoked_secret_denies_new_lease",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "rust_aes256_gcm",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "rust_secret_redacted_debug",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "rust_lease_expiry",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "rust_rotation_revocation",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "telegram_secret_lease",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "discord_secret_lease",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "provider_origin_allowlist",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "telegram_api_shape",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "discord_api_shape",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "gateway_provider_v2",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "provider_config_no_tokens",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "capability_catalog_f23_f21",
+          "ok": true,
+          "detail": "set()"
+        },
+        {
+          "name": "f23_review",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "migration_0018",
+          "ok": true,
+          "detail": ""
+        }
+      ]
+    },
+    "V015_CHANNEL_GATEWAY_TEST_REPORT.json": {
+      "suite": "PhxClaw v0.15 F21 Channel Gateway",
+      "pass": 20,
+      "fail": 0,
+      "details": [
+        {
+          "name": "exists.crates/phxclaw-channel-gateway/src/lib.rs",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "exists.schemas/channel-message.schema.json",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "exists.schemas/channel-binding.schema.json",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "exists.migrations/0017_channel_gateway.sql",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "source.IdentityBinding",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "source.ChannelSession",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "source.DuplicateMessage",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "source.IdentityBlocked",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "source.ChannelProvider",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "source.channel.inbound",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "source.channel.outbound",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "source.EvidenceDraft",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "channel.demo",
+          "pass": true,
+          "detail": "{\n  \"suite\": \"F21 Channel Gateway operational bootstrap\",\n  \"pass\": 8,\n  \"fail\": 0,\n  \"checks\": [\n    {\n      \"name\": \"identity_bind\",\n      \"pass\": true\n    },\n    {\n      \"name\": \"inbound_accept\",\n      \"pass\": true\n    },\n    {\n      \"name\": \"session_reuse\",\n      \"pass\": true\n    },\n    {\n      \"name\": \"dedup\",\n      \"pass\": true\n    },\n    {\n      \"name\": \"outbound_prepare\",\n      \"pass\": true\n    },\n    {\n      \"name\": \"pending_reject\",\n      \"pass\": true\n    },\n    {\n      \"name\": \"blocked_outbound\",\n      \"pass\": true\n    },\n    {\n      \"name\": \"events_recorded\",\n      \"pass\": true\n    }\n  ],\n  \"session_uuid\": \"01a0e662-bc2d-7bdc-93c1-7ecb0f33abdc\"\n}\n"
+        },
+        {
+          "name": "sprint.review",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "capability.channel.identity.bind",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "capability.channel.inbound.accept",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "capability.channel.session.resolve",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "capability.channel.outbound.prepare",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "capability.channel.outbound.send",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "capability.channel.provider.invoke",
+          "pass": true,
+          "detail": ""
+        }
+      ]
+    },
+    "MISSION_RUNTIME_TEST_REPORT.json": {
+      "suite": "Mission Runtime + Code Workspace v0.13 static/host smoke",
+      "pass": 24,
+      "fail": 0,
+      "cargo_available": false,
+      "note": "Host smoke validates Git/worktree/direct-command primitives. Rust compilation remains a separate gate.",
+      "checks": [
+        {
+          "name": "workspace includes code workspace",
+          "status": "PASS",
+          "detail": ""
+        },
+        {
+          "name": "workspace includes mission runtime",
+          "status": "PASS",
+          "detail": ""
+        },
+        {
+          "name": "workspace includes mission cli",
+          "status": "PASS",
+          "detail": ""
+        },
+        {
+          "name": "mission uses UUIDv7",
+          "status": "PASS",
+          "detail": ""
+        },
+        {
+          "name": "mission emits live events",
+          "status": "PASS",
+          "detail": ""
+        },
+        {
+          "name": "mission writes evidence",
+          "status": "PASS",
+          "detail": ""
+        },
+        {
+          "name": "model path is fail closed",
+          "status": "PASS",
+          "detail": ""
+        },
+        {
+          "name": "extension path is fail closed",
+          "status": "PASS",
+          "detail": ""
+        },
+        {
+          "name": "agent permission gate exists",
+          "status": "PASS",
+          "detail": ""
+        },
+        {
+          "name": "workspace rejects parent escape",
+          "status": "PASS",
+          "detail": ""
+        },
+        {
+          "name": "workspace uses direct execution",
+          "status": "PASS",
+          "detail": ""
+        },
+        {
+          "name": "workspace has no shell command composition",
+          "status": "PASS",
+          "detail": ""
+        },
+        {
+          "name": "capability count exact",
+          "status": "PASS",
+          "detail": "194"
+        },
+        {
+          "name": "capability mission.run",
+          "status": "PASS",
+          "detail": ""
+        },
+        {
+          "name": "capability workspace.snapshot",
+          "status": "PASS",
+          "detail": ""
+        },
+        {
+          "name": "capability workspace.diff",
+          "status": "PASS",
+          "detail": ""
+        },
+        {
+          "name": "capability workspace.file.write",
+          "status": "PASS",
+          "detail": ""
+        },
+        {
+          "name": "capability workspace.gate.run",
+          "status": "PASS",
+          "detail": ""
+        },
+        {
+          "name": "capability workspace.worktree.create",
+          "status": "PASS",
+          "detail": ""
+        },
+        {
+          "name": "host smoke clean start",
+          "status": "PASS",
+          "detail": ""
+        },
+        {
+          "name": "host smoke worktree created",
+          "status": "PASS",
+          "detail": ""
+        },
+        {
+          "name": "host smoke direct gate",
+          "status": "PASS",
+          "detail": ""
+        },
+        {
+          "name": "host smoke diff produced",
+          "status": "PASS",
+          "detail": ""
+        },
+        {
+          "name": "host smoke worktree removed",
+          "status": "PASS",
+          "detail": ""
+        }
+      ]
+    },
+    "V017_UPLOADED_SOURCES_TEST_REPORT.json": {
+      "suite": "PhxClaw v0.17 uploaded Rust source integration",
+      "pass": 73,
+      "fail": 0,
+      "openclaw_rs_vendored": true,
+      "rustclaw_quarantined": true,
+      "details": [
+        {
+          "name": "openclaw_vendor_present",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "openclaw_license_present",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "openclaw_license_mit",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "openclaw_workspace_version",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "openclaw_component_crates_openclaw-channels_src_traits.rs",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "openclaw_component_crates_openclaw-channels_src_allowlist.rs",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "openclaw_component_crates_openclaw-providers_src_traits.rs",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "openclaw_component_crates_openclaw-plugins_src_api.rs",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "openclaw_component_crates_openclaw-core_src_secrets_mod.rs",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "openclaw_component_crates_openclaw-core_src_events_mod.rs",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "openclaw_component_crates_openclaw-ipc_src_transport.rs",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "openclaw_lock_license",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "openclaw_lock_hash",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "rustclaw_quarantine_present",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "rustclaw_license_missing",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "rustclaw_quarantine_state",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "rustclaw_not_linked",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "rustclaw_readme_claims_mit",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "openclaw_bridge_workspace",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "rustclaw_bridge_workspace",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "rustclaw_source_not_workspace_member",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "openclaw_source_not_workspace_member",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "openclaw_cap_openclaw_rs.health",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "openclaw_cap_openclaw_rs.doctor",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "openclaw_cap_openclaw_rs.status",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "openclaw_cap_openclaw_rs.gateway.status",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "openclaw_cap_openclaw_rs.channels.list",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "openclaw_cap_openclaw_rs.channels.probe",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "openclaw_cap_openclaw_rs.config.show",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "openclaw_cap_openclaw_rs.config.validate",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "openclaw_workspace_confinement",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "rustclaw_cap_rustclaw.health",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "rustclaw_cap_rustclaw.status",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "rustclaw_cap_rustclaw.github.scan",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "rustclaw_cap_rustclaw.agent.prompt",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "rustclaw_prompt_argv_fail_closed",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "rustclaw_args_redacted",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "channel_ChannelCapabilities",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "channel_ChannelProbe",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "channel_ChannelAllowlist",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "channel_ChannelAllowlistEntry",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "channel_ChannelRouteRule",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "channel_ChannelAgentRouter",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "channel_ChannelProviderV2",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "sdk_ExtensionRuntimeKind",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "sdk_ExtensionHook",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "sdk_BeforeMessage",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "sdk_AfterMessage",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "sdk_BeforeToolCall",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "sdk_AfterToolCall",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "sdk_SessionStart",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "sdk_SessionEnd",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "sdk_AgentResponse",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "sdk_HookInvocation",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "sdk_version_current",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "catalog_count_matches",
+          "pass": true,
+          "detail": "194 vs 194"
+        },
+        {
+          "name": "catalog_required_caps",
+          "pass": true,
+          "detail": "[]"
+        },
+        {
+          "name": "openclaw_source_authoritative",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "rustclaw_source_non_authoritative",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "research_openclaw_source",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "research_rustclaw_source",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "documenter_openclaw_source",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "documenter_rustclaw_source",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "exists_scripts_vendor_openclaw_rs.sh",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "exists_scripts_vendor_openclaw_rs.ps1",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "exists_scripts_vendor_rustclaw.sh",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "exists_scripts_vendor_rustclaw.ps1",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "exists_docs_UPLOADED_RUST_SOURCES_AUDIT_V017.md",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "cli_smoke_1",
+          "pass": true,
+          "detail": "PhxClaw 0.18.0\n"
+        },
+        {
+          "name": "cli_smoke_2",
+          "pass": true,
+          "detail": "\",\n    \"archive_name\": \"openclaw-rs-main.zip\",\n    \"archive_sha256\": \"4e64bc995552203912deb599208f41d6df0e4a745fe9bf6f3669056e4b84a721\",\n    \"upstream_repository\": \"https://github.com/neul-labs/openclaw-rs\",\n    \"workspace_version\": \"0.1.0\",\n    \"rust_version\": \"1.85\",\n    \"license\": \"MIT\",\n    \"license_file_present\": true,\n    \"vendored_path\": \"private/vendor/openclaw-rs/upstream\",\n    \"commit\": null,\n    \"note\": \"User-supplied source snapshot; exact git commit unavailable from archive.\"\n  }\n}\n"
+        },
+        {
+          "name": "cli_smoke_3",
+          "pass": true,
+          "detail": "56cdac5f88e234f5a\",\n    \"upstream_repository_claimed_by_readme\": \"https://github.com/Adaimade/RustClaw\",\n    \"workspace_version\": \"0.5.0\",\n    \"readme_claims_license\": \"MIT\",\n    \"license_file_present_in_archive\": false,\n    \"reuse_state\": \"quarantined_reference_only\",\n    \"compiled_or_linked_into_phxclaw\": false,\n    \"vendored_path\": \"private/vendor-quarantine/rustclaw/upstream\",\n    \"note\": \"Do not copy/link source into PhxClaw core until license text is verified and preserved.\"\n  }\n}\n"
+        },
+        {
+          "name": "cli_smoke_4",
+          "pass": true,
+          "detail": "claw-rs-bridge\nopenclaw_rs.config.validate            source_ready               phxclaw-openclaw-rs-bridge\nopenclaw_rs.doctor                     source_ready               phxclaw-openclaw-rs-bridge\nopenclaw_rs.gateway.status             source_ready               phxclaw-openclaw-rs-bridge\nopenclaw_rs.health                     source_ready               phxclaw-openclaw-rs-bridge\nopenclaw_rs.status                     source_ready               phxclaw-openclaw-rs-bridge\n"
+        },
+        {
+          "name": "cli_smoke_5",
+          "pass": true,
+          "detail": "knowledge.rustclaw.read                source_ready               phxclaw-source-registry\nrustclaw.agent.prompt                  source_ready               phxclaw-rustclaw-bridge\nrustclaw.github.scan                   source_ready               phxclaw-rustclaw-bridge\nrustclaw.health                        source_ready               phxclaw-rustclaw-bridge\nrustclaw.status                        source_ready               phxclaw-rustclaw-bridge\n"
+        }
+      ]
+    }
+  },
+  "inventory": {
+    "workspace_members": 55,
+    "rust_files": 111,
+    "rust_lines": 31578,
+    "agents": 110,
+    "capabilities": 194,
+    "sprints": 26,
+    "json_schemas": 29,
+    "migrations": 18
+  },
+  "pending_release_gates": [
+    "cargo.check.workspace",
+    "cargo.test.workspace",
+    "cargo.clippy.workspace",
+    "secret_broker.production_key_provider.e2e",
+    "channel.telegram.real_provider.e2e",
+    "channel.discord.real_provider.e2e",
+    "postgres.migrations.e2e",
+    "mission.end_to_end"
+  ]
+}

@@ -1,0 +1,107 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f669-7a16-8a21-a9f42684083a",
+  "agent_id": 105,
+  "name": "AI Evaluation Agent",
+  "macroarea": "IA & Conhecimento",
+  "nucleus": "IA",
+  "role_type": "Agente de avaliação de IA",
+  "mission": "Avalia qualidade, custo e comportamento de outputs/modelos em tarefas do produto.",
+  "responsibilities": "Cria eval datasets, rubrics, pairwise/grounded checks, regression tests e mede custo/latência.",
+  "resources": "Eval harness, datasets, Model Gateway, QA outcomes.",
+  "authorized_actions": "Rodar evals e bloquear regressão significativa.",
+  "trigger": "Nova feature/modelo/prompt relevante.",
+  "declared_dependencies": "Reference set e metrics.",
+  "resolved_agent_dependencies": [
+    {
+      "uuid": "01a0e473-f646-708d-8a03-c285edd8d91e",
+      "name": "Model Evaluator"
+    }
+  ],
+  "deliverables": "AI Evaluation Scorecard.",
+  "limits": "Não usa somente autoavaliação do mesmo modelo.",
+  "next_gate": "Model Evaluator/QA.",
+  "execution": "Permanente",
+  "models_allowed": [
+    "híbrido"
+  ],
+  "criticality": "Alta",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F24 Auto-learning + Skill Evolution",
+    "F25 Knowledge / Evidence Graph"
+  ],
+  "capabilities": [
+    "ai.eval.run",
+    "context.compile",
+    "evidence.read",
+    "knowledge.read",
+    "memory.read",
+    "skill.candidate.propose",
+    "skill.read"
+  ],
+  "permissions": [
+    {
+      "name": "ai.eval.run",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "evidence.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "knowledge.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.candidate.propose",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Candidate Skill → Hypothesis → OPA/QA → Registry; Knowledge/Evidence Graph com proveniência",
+  "event_topics": "agent.ai.evaluation.agent.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; writes policy-gated; evidência obrigatória; sem autoaprovação.",
+  "references": "oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 106
+  }
+}

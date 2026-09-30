@@ -1,0 +1,268 @@
+{
+  "version": "0.40.0",
+  "previous_projected": 750,
+  "new_capabilities": 52,
+  "projected_total": 802,
+  "capabilities": [
+    {
+      "capability": "config.read",
+      "version": "1.0.0",
+      "risk": "medium"
+    },
+    {
+      "capability": "config.validate",
+      "version": "1.0.0",
+      "risk": "medium"
+    },
+    {
+      "capability": "config.update",
+      "version": "1.0.0",
+      "risk": "high"
+    },
+    {
+      "capability": "config.diff",
+      "version": "1.0.0",
+      "risk": "medium"
+    },
+    {
+      "capability": "config.history.list",
+      "version": "1.0.0",
+      "risk": "medium"
+    },
+    {
+      "capability": "config.history.get",
+      "version": "1.0.0",
+      "risk": "medium"
+    },
+    {
+      "capability": "config.rollback.plan",
+      "version": "1.0.0",
+      "risk": "medium"
+    },
+    {
+      "capability": "config.export",
+      "version": "1.0.0",
+      "risk": "medium"
+    },
+    {
+      "capability": "config.import",
+      "version": "1.0.0",
+      "risk": "high"
+    },
+    {
+      "capability": "config.schema.get",
+      "version": "1.0.0",
+      "risk": "medium"
+    },
+    {
+      "capability": "config.hash",
+      "version": "1.0.0",
+      "risk": "medium"
+    },
+    {
+      "capability": "config.watch",
+      "version": "1.0.0",
+      "risk": "medium"
+    },
+    {
+      "capability": "config.hot_reload.plan",
+      "version": "1.0.0",
+      "risk": "medium"
+    },
+    {
+      "capability": "config.restart.plan",
+      "version": "1.0.0",
+      "risk": "medium"
+    },
+    {
+      "capability": "config.legacy_projection.generate",
+      "version": "1.0.0",
+      "risk": "medium"
+    },
+    {
+      "capability": "config.secret_ref.validate",
+      "version": "1.0.0",
+      "risk": "medium"
+    },
+    {
+      "capability": "config.ui.open",
+      "version": "1.0.0",
+      "risk": "medium"
+    },
+    {
+      "capability": "config.audit.record",
+      "version": "1.0.0",
+      "risk": "medium"
+    },
+    {
+      "capability": "factory.intake",
+      "version": "1.0.0",
+      "risk": "medium"
+    },
+    {
+      "capability": "factory.decompose",
+      "version": "1.0.0",
+      "risk": "medium"
+    },
+    {
+      "capability": "factory.research",
+      "version": "1.0.0",
+      "risk": "medium"
+    },
+    {
+      "capability": "factory.architecture",
+      "version": "1.0.0",
+      "risk": "medium"
+    },
+    {
+      "capability": "factory.implement",
+      "version": "1.0.0",
+      "risk": "medium"
+    },
+    {
+      "capability": "factory.integrate",
+      "version": "1.0.0",
+      "risk": "medium"
+    },
+    {
+      "capability": "factory.qa",
+      "version": "1.0.0",
+      "risk": "medium"
+    },
+    {
+      "capability": "factory.security",
+      "version": "1.0.0",
+      "risk": "medium"
+    },
+    {
+      "capability": "factory.documentation",
+      "version": "1.0.0",
+      "risk": "medium"
+    },
+    {
+      "capability": "factory.rc.generate",
+      "version": "1.0.0",
+      "risk": "medium"
+    },
+    {
+      "capability": "factory.approval.request",
+      "version": "1.0.0",
+      "risk": "medium"
+    },
+    {
+      "capability": "factory.delivery",
+      "version": "1.0.0",
+      "risk": "high"
+    },
+    {
+      "capability": "factory.checkpoint.create",
+      "version": "1.0.0",
+      "risk": "medium"
+    },
+    {
+      "capability": "factory.rollback",
+      "version": "1.0.0",
+      "risk": "medium"
+    },
+    {
+      "capability": "factory.status",
+      "version": "1.0.0",
+      "risk": "medium"
+    },
+    {
+      "capability": "factory.evidence.collect",
+      "version": "1.0.0",
+      "risk": "medium"
+    },
+    {
+      "capability": "factory.gate.evaluate",
+      "version": "1.0.0",
+      "risk": "medium"
+    },
+    {
+      "capability": "factory.requirement.trace",
+      "version": "1.0.0",
+      "risk": "medium"
+    },
+    {
+      "capability": "factory.swarm.dispatch",
+      "version": "1.0.0",
+      "risk": "medium"
+    },
+    {
+      "capability": "factory.merge.execute",
+      "version": "1.0.0",
+      "risk": "high"
+    },
+    {
+      "capability": "factory.release.qualify",
+      "version": "1.0.0",
+      "risk": "medium"
+    },
+    {
+      "capability": "factory.publish.plan",
+      "version": "1.0.0",
+      "risk": "high"
+    },
+    {
+      "capability": "factory.artifact.package",
+      "version": "1.0.0",
+      "risk": "medium"
+    },
+    {
+      "capability": "factory.provenance.generate",
+      "version": "1.0.0",
+      "risk": "medium"
+    },
+    {
+      "capability": "factory.sbom.generate",
+      "version": "1.0.0",
+      "risk": "medium"
+    },
+    {
+      "capability": "factory.attestation.sign",
+      "version": "1.0.0",
+      "risk": "medium"
+    },
+    {
+      "capability": "factory.delivery.verify",
+      "version": "1.0.0",
+      "risk": "medium"
+    },
+    {
+      "capability": "factory.cancel",
+      "version": "1.0.0",
+      "risk": "medium"
+    },
+    {
+      "capability": "factory.resume",
+      "version": "1.0.0",
+      "risk": "medium"
+    },
+    {
+      "capability": "factory.retry",
+      "version": "1.0.0",
+      "risk": "medium"
+    },
+    {
+      "capability": "factory.report",
+      "version": "1.0.0",
+      "risk": "medium"
+    },
+    {
+      "capability": "config.backup.create",
+      "version": "1.0.0",
+      "risk": "medium"
+    },
+    {
+      "capability": "config.restore.plan",
+      "version": "1.0.0",
+      "risk": "medium"
+    },
+    {
+      "capability": "factory.policy.snapshot",
+      "version": "1.0.0",
+      "risk": "medium"
+    }
+  ]
+}

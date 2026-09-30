@@ -1,0 +1,157 @@
+{
+  "suite": "v0.46 static",
+  "pass": 29,
+  "fail": 1,
+  "checks": [
+    {
+      "name": "crate_exists",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "forecast_route",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "recommend_route",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "forecast_project",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "backtest",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "governed_only",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "exact_context",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "ollama_local_first",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "v045_boundary",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "confidence",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "raw_prompt_false",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "raw_output_false",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "cloud_evidence",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "promotion_f24f25",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "capability_count",
+      "pass": true,
+      "detail": "47"
+    },
+    {
+      "name": "capability_unique",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "table_phx_predictive_route_forecasts",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "table_phx_predictive_recommendations",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "table_phx_project_predictive_forecasts",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "table_phx_forecast_feedback",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "table_phx_predictive_events",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "force_rls",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "tenant_setting",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "append_only",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "project_fk",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "schema_route-forecast.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "schema_project-forecast.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "schema_predictive-recommendation.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "ui",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_legacy_brand",
+      "pass": false,
+      "detail": "/mnt/data/phxclaw_consolidation_work/base/PhoenixClaw_Core_Bootstrap_v0.20/config/consolidation-manifest.v054.json;/mnt/data/phxclaw_consolidation_work/base/PhoenixClaw_Core_Bootstrap_v0.20/reports/V046_STATIC_REPORT.json;/mnt/data/phxclaw_consolidation_work/base/PhoenixClaw_Core_Bootstrap_v0.20/reports/BRAND_RENAME_V041.json;/mnt/data/phxclaw_consolidation_work/base/PhoenixClaw_Core_Bootstrap_v0.20/reports/V037_STATIC_VERIFY_REPORT.json;/mnt/data/phxclaw_consolidation_work/base/PhoenixClaw_Core_Bootstrap_v0.20/reports/V036_STATIC_VERIFY_REPORT.json;/mnt/data/phxclaw_consolidation_work/base/PhoenixClaw_Core_Bootstrap_v0.20/reports/V038_STATIC_VERIFY_REPORT.json;/mnt/data/phxclaw_consolidation_work/base/PhoenixClaw_Core_Bootstrap_v0.20/reports/V028_STATIC_VERIFY_REPORT.json;/mnt/data/phxclaw_consolidation_work/base/PhoenixClaw_Core_Bootstrap_v0.20/reports/V029_STATIC_VERIFY_REPORT.json;/mnt/data/phxclaw_consolidation_work/base/PhoenixClaw_Core_Bootstrap_v0.20/docs/THIRD_PARTY_NOTICES_V030.md;/mnt/data/phxclaw_consolidation_work/base/PhoenixClaw_Core_Bootstrap_v0.20/community/examples/olmocr/THIRD_PARTY_NOTICES.md;/mnt/data/phxclaw_consolidation_work/base/PhoenixClaw_Core_Bootstrap_v0.20/private/plugins-src/claw-code-bridge/README.md;/mnt/data/phxclaw_consolidation_work/base/PhoenixClaw_Core_Bootstrap_v0.20/private/plugins-src/claw-code-bridge/phoenixclaw.plugin.template.json;/mnt/data/phxclaw_consolidation_work/base/PhoenixClaw_Core_Bootstrap_v0.20/private/plugins-src/claw-code-bridge/output.schema.json;/mnt/data/phxclaw_consolidation_work/base/PhoenixClaw_Core_Bootstrap_v0.20/private/plugins-src/claw-code-bridge/input.schema.json;/mnt/data/phxclaw_consolidation_work/base/PhoenixClaw_Core_Bootstrap_v0.20/private/plugins-src/phoenix-dashboards/README.md;/mnt/data/phxclaw_consolidation_work/base/PhoenixClaw_Core_Bootstrap_v0.20/private/plugins-src/phoenix-dashboards/phoenixclaw.plugin.json;/mnt/data/phxclaw_consolidation_work/base/PhoenixClaw_Core_Bootstrap_v0.20/private/plugins-src/phoenix-dashboards/PACKAGE.json;/mnt/data/phxclaw_consolidation_work/base/PhoenixClaw_Core_Bootstrap_v0.20/private/plugins-src/phoenix-dashboards/SBOM.spdx.json;/mnt/data/phxclaw_consolidation_work/base/PhoenixClaw_Core_Bootstrap_v0.20/private/plugins-src/phoenix-web-fxsdk/README.md;/mnt/data/phxclaw_consolidation_work/base/PhoenixClaw_Core_Bootstrap_v0.20/private/plugins-src/phoenix-web-fxsdk/phoenixclaw.plugin.json;/mnt/data/phxclaw_consolidation_work/base/PhoenixClaw_Core_Bootstrap_v0.20/private/plugins-src/phoenix-web-fxsdk/PACKAGE.json;/mnt/data/phxclaw_consolidation_work/base/PhoenixClaw_Core_Bootstrap_v0.20/private/plugins-src/phoenix-web-fxsdk/SBOM.spdx.json;/mnt/data/phxclaw_consolidation_work/base/PhoenixClaw_Core_Bootstrap_v0.20/private/vendor/claw-code/README.md;/mnt/data/phxclaw_consolidation_work/base/PhoenixClaw_Core_Bootstrap_v0.20/private/vendor/rustclaw/LICENSE_STATUS.json;/mnt/data/phxclaw_consolidation_work/base/PhoenixClaw_Core_Bootstrap_v0.20/private/vendor/rustclaw/PROVENANCE.json"
+    }
+  ]
+}

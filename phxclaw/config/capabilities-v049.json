@@ -1,0 +1,321 @@
+{
+  "version": "0.49.0",
+  "count": 63,
+  "capabilities": [
+    {
+      "uuid": "01a0ed88-8187-7000-96be-3ccbd67637b8",
+      "name": "decision.case.create",
+      "risk": "medium"
+    },
+    {
+      "uuid": "01a0ed88-8187-7001-a637-cdc03f58b6d8",
+      "name": "decision.case.read",
+      "risk": "medium"
+    },
+    {
+      "uuid": "01a0ed88-8187-7002-a183-d12c0240cef0",
+      "name": "decision.case.list",
+      "risk": "medium"
+    },
+    {
+      "uuid": "01a0ed88-8187-7003-bf00-2729a5d4beb7",
+      "name": "decision.case.expire",
+      "risk": "medium"
+    },
+    {
+      "uuid": "01a0ed88-8187-7004-84f9-61b0439821f9",
+      "name": "decision.case.evidence.link",
+      "risk": "medium"
+    },
+    {
+      "uuid": "01a0ed88-8187-7005-84f1-aa86c6f7eefc",
+      "name": "decision.scenario.create",
+      "risk": "medium"
+    },
+    {
+      "uuid": "01a0ed88-8187-7006-97fa-994c6a1c1ccc",
+      "name": "decision.scenario.read",
+      "risk": "medium"
+    },
+    {
+      "uuid": "01a0ed88-8187-7007-89fb-34c02b58f973",
+      "name": "decision.scenario.list",
+      "risk": "medium"
+    },
+    {
+      "uuid": "01a0ed88-8187-7008-b1ce-10a1cda09b54",
+      "name": "decision.scenario.hash",
+      "risk": "medium"
+    },
+    {
+      "uuid": "01a0ed88-8187-7009-bc07-6c09d6423e68",
+      "name": "decision.scenario.validate",
+      "risk": "medium"
+    },
+    {
+      "uuid": "01a0ed88-8187-700a-b844-52dea03acabb",
+      "name": "decision.scenario.compare",
+      "risk": "medium"
+    },
+    {
+      "uuid": "01a0ed88-8187-700b-a21c-5acb32d519e3",
+      "name": "decision.scenario.sensitivity",
+      "risk": "medium"
+    },
+    {
+      "uuid": "01a0ed88-8187-700c-a5c8-2a6756df172d",
+      "name": "decision.whatif.deadline",
+      "risk": "high"
+    },
+    {
+      "uuid": "01a0ed88-8187-700d-830c-057268078823",
+      "name": "decision.whatif.cost",
+      "risk": "medium"
+    },
+    {
+      "uuid": "01a0ed88-8187-700e-a2d2-ad0a5fabdd53",
+      "name": "decision.whatif.risk",
+      "risk": "medium"
+    },
+    {
+      "uuid": "01a0ed88-8187-700f-bee8-cf115f98ef22",
+      "name": "decision.whatif.quality",
+      "risk": "medium"
+    },
+    {
+      "uuid": "01a0ed88-8187-7010-8707-ca1bd04a090c",
+      "name": "decision.whatif.capacity",
+      "risk": "medium"
+    },
+    {
+      "uuid": "01a0ed88-8187-7011-8454-74f4fbd725f3",
+      "name": "decision.whatif.resource",
+      "risk": "medium"
+    },
+    {
+      "uuid": "01a0ed88-8187-7012-a644-baea567c38f3",
+      "name": "decision.whatif.wip",
+      "risk": "medium"
+    },
+    {
+      "uuid": "01a0ed88-8187-7013-b2ec-e8817a00af54",
+      "name": "decision.whatif.resequence",
+      "risk": "medium"
+    },
+    {
+      "uuid": "01a0ed88-8187-7014-8780-bfd93e271b3d",
+      "name": "decision.whatif.model_route",
+      "risk": "medium"
+    },
+    {
+      "uuid": "01a0ed88-8187-7015-8f9a-b762c6962d0c",
+      "name": "decision.whatif.scope",
+      "risk": "high"
+    },
+    {
+      "uuid": "01a0ed88-8187-7016-a41d-3395ae2526d7",
+      "name": "decision.impact.schedule",
+      "risk": "medium"
+    },
+    {
+      "uuid": "01a0ed88-8187-7017-8d71-33b77b337aa4",
+      "name": "decision.impact.cost",
+      "risk": "medium"
+    },
+    {
+      "uuid": "01a0ed88-8187-7018-ab27-068376bd2020",
+      "name": "decision.impact.risk",
+      "risk": "medium"
+    },
+    {
+      "uuid": "01a0ed88-8187-7019-a7de-fb2efec005a2",
+      "name": "decision.impact.quality",
+      "risk": "medium"
+    },
+    {
+      "uuid": "01a0ed88-8187-701a-adfb-37825b214119",
+      "name": "decision.impact.capacity",
+      "risk": "medium"
+    },
+    {
+      "uuid": "01a0ed88-8187-701b-bf6f-67b35b463cd4",
+      "name": "decision.impact.rework",
+      "risk": "medium"
+    },
+    {
+      "uuid": "01a0ed88-8187-701c-9658-93acf5649e3f",
+      "name": "decision.impact.confidence",
+      "risk": "medium"
+    },
+    {
+      "uuid": "01a0ed88-8187-701d-9914-260edfa9901d",
+      "name": "decision.constraint.evaluate",
+      "risk": "medium"
+    },
+    {
+      "uuid": "01a0ed88-8187-701e-b8be-7adde91ef123",
+      "name": "decision.constraint.security",
+      "risk": "medium"
+    },
+    {
+      "uuid": "01a0ed88-8187-701f-9c4f-c14fd99ca405",
+      "name": "decision.constraint.privacy",
+      "risk": "medium"
+    },
+    {
+      "uuid": "01a0ed88-8187-7020-a014-703f6084cb91",
+      "name": "decision.constraint.release",
+      "risk": "medium"
+    },
+    {
+      "uuid": "01a0ed88-8187-7021-a161-e4e20cd893ea",
+      "name": "decision.constraint.knowledge",
+      "risk": "medium"
+    },
+    {
+      "uuid": "01a0ed88-8187-7022-b9e3-ecd38da4092c",
+      "name": "decision.constraint.budget",
+      "risk": "high"
+    },
+    {
+      "uuid": "01a0ed88-8187-7023-89ea-d43ba3de9656",
+      "name": "decision.constraint.fencing",
+      "risk": "medium"
+    },
+    {
+      "uuid": "01a0ed88-8187-7024-8541-7c691c7191ff",
+      "name": "decision.option.propose",
+      "risk": "medium"
+    },
+    {
+      "uuid": "01a0ed88-8187-7025-a9f5-e06b3cb264fc",
+      "name": "decision.option.rank",
+      "risk": "medium"
+    },
+    {
+      "uuid": "01a0ed88-8187-7026-8172-d3544b08c46e",
+      "name": "decision.option.compare",
+      "risk": "medium"
+    },
+    {
+      "uuid": "01a0ed88-8187-7027-b110-fba25a17bfcb",
+      "name": "decision.option.explain",
+      "risk": "medium"
+    },
+    {
+      "uuid": "01a0ed88-8187-7028-9b0e-3f9d8ecfc90b",
+      "name": "decision.option.reversibility",
+      "risk": "medium"
+    },
+    {
+      "uuid": "01a0ed88-8187-7029-a9ea-bb6d681b3b74",
+      "name": "decision.option.recommend",
+      "risk": "medium"
+    },
+    {
+      "uuid": "01a0ed88-8187-702a-a9c0-ad50d9ca8c75",
+      "name": "decision.approval.request",
+      "risk": "high"
+    },
+    {
+      "uuid": "01a0ed88-8187-702b-897d-73f3cabd14f9",
+      "name": "decision.approval.verify",
+      "risk": "high"
+    },
+    {
+      "uuid": "01a0ed88-8187-702c-8b52-207fd5d474bd",
+      "name": "decision.approval.expire",
+      "risk": "high"
+    },
+    {
+      "uuid": "01a0ed88-8187-702d-8208-828d7c73bf49",
+      "name": "decision.approval.revoke",
+      "risk": "high"
+    },
+    {
+      "uuid": "01a0ed88-8187-702e-a19a-3be73cd88fee",
+      "name": "decision.approval.audit",
+      "risk": "high"
+    },
+    {
+      "uuid": "01a0ed88-8187-702f-8020-2100ca97106c",
+      "name": "decision.execution.plan",
+      "risk": "high"
+    },
+    {
+      "uuid": "01a0ed88-8187-7030-b23f-e60a222f9dc6",
+      "name": "decision.execution.envelope",
+      "risk": "high"
+    },
+    {
+      "uuid": "01a0ed88-8187-7031-a78f-e05e31531fe3",
+      "name": "decision.execution.delegate",
+      "risk": "high"
+    },
+    {
+      "uuid": "01a0ed88-8187-7032-8a21-be3bbba6830d",
+      "name": "decision.execution.status",
+      "risk": "high"
+    },
+    {
+      "uuid": "01a0ed88-8187-7033-b0cc-80af83a2ffde",
+      "name": "decision.execution.evidence",
+      "risk": "high"
+    },
+    {
+      "uuid": "01a0ed88-8187-7034-96f7-39d696c8e894",
+      "name": "decision.execution.rollback_ref",
+      "risk": "high"
+    },
+    {
+      "uuid": "01a0ed88-8187-7035-b4ec-7201069d4ab9",
+      "name": "decision.audit.event",
+      "risk": "medium"
+    },
+    {
+      "uuid": "01a0ed88-8187-7036-9816-800b915f35a1",
+      "name": "decision.audit.timeline",
+      "risk": "medium"
+    },
+    {
+      "uuid": "01a0ed88-8187-7037-9908-24b7f9081b2f",
+      "name": "decision.audit.rationale",
+      "risk": "medium"
+    },
+    {
+      "uuid": "01a0ed88-8187-7038-a120-568f4357a12b",
+      "name": "decision.audit.export",
+      "risk": "medium"
+    },
+    {
+      "uuid": "01a0ed88-8187-7039-b5ab-da6e679c45cb",
+      "name": "decision.ui.queue",
+      "risk": "medium"
+    },
+    {
+      "uuid": "01a0ed88-8187-703a-92be-caa5c8a6186b",
+      "name": "decision.ui.case",
+      "risk": "medium"
+    },
+    {
+      "uuid": "01a0ed88-8187-703b-8a53-a78844bde749",
+      "name": "decision.ui.scenario",
+      "risk": "medium"
+    },
+    {
+      "uuid": "01a0ed88-8187-703c-84a0-f73dfff4a1bb",
+      "name": "decision.ui.compare",
+      "risk": "medium"
+    },
+    {
+      "uuid": "01a0ed88-8187-703d-8010-b47ebe5a7ac7",
+      "name": "decision.ui.approval",
+      "risk": "high"
+    },
+    {
+      "uuid": "01a0ed88-8187-703e-94c4-1bbac388fdc7",
+      "name": "decision.ui.execution",
+      "risk": "high"
+    }
+  ]
+}

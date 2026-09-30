@@ -1,0 +1,38 @@
+{
+  "uuid": "01a0eab2-5c2a-7a1e-b963-ab1b8efda8f9",
+  "id": "roi-analyzer",
+  "name": "Roi Analyzer",
+  "category": "cost",
+  "function": "ROI",
+  "capability": "project.skill.roi-analyzer",
+  "agent_role": "cost",
+  "permissions": [
+    "project.read",
+    "finance.project.write"
+  ],
+  "risk": "low",
+  "approval_required": false,
+  "evidence_required": true,
+  "lifecycle_hooks": [
+    "before_invoke",
+    "after_invoke",
+    "on_failure"
+  ],
+  "rollback": "not_applicable",
+  "version": "0.42.0",
+  "semver": "0.42.0",
+  "manifest_uuid": "01a0eab2-5c3c-7dbf-9afd-c3330f241508",
+  "dependencies": [
+    "phxclaw-skill-runtime>=0.15",
+    "phxclaw-evidence-ledger>=0.9"
+  ],
+  "compatibility": {
+    "phxclaw": ">=0.41,<0.43"
+  },
+  "sandbox": "deny-by-default",
+  "signature_policy": "release-signing-required",
+  "provenance": {
+    "origin": "user-defined-project-management-suite",
+    "license": "PhxClaw project source policy"
+  }
+}

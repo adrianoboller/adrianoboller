@@ -1,0 +1,63 @@
+{
+  "version": "0.14.0",
+  "default_state": "disabled",
+  "private_distribution_only": true,
+  "bridges": [
+    {
+      "display_name": "Create Image",
+      "slug": "create-image",
+      "capability": "image.generate",
+      "state": "declared_not_connected",
+      "manifest": "community/bridges/chatgpt-capabilities/create-image.phxclaw.plugin.template.json"
+    },
+    {
+      "display_name": "Deep Research",
+      "slug": "deep-research",
+      "capability": "research.deep",
+      "state": "declared_not_connected",
+      "manifest": "community/bridges/chatgpt-capabilities/deep-research.phxclaw.plugin.template.json"
+    },
+    {
+      "display_name": "Search",
+      "slug": "search",
+      "capability": "web.search",
+      "state": "declared_not_connected",
+      "manifest": "community/bridges/chatgpt-capabilities/search.phxclaw.plugin.template.json"
+    },
+    {
+      "display_name": "Template Creator",
+      "slug": "template-creator",
+      "capability": "template.create",
+      "state": "declared_not_connected",
+      "manifest": "community/bridges/chatgpt-capabilities/template-creator.phxclaw.plugin.template.json"
+    },
+    {
+      "display_name": "PDF",
+      "slug": "pdf",
+      "capability": "pdf.manage",
+      "state": "declared_not_connected",
+      "manifest": "community/bridges/chatgpt-capabilities/pdf.phxclaw.plugin.template.json"
+    },
+    {
+      "display_name": "Spreadsheets",
+      "slug": "spreadsheets",
+      "capability": "spreadsheet.manage",
+      "state": "declared_not_connected",
+      "manifest": "community/bridges/chatgpt-capabilities/spreadsheets.phxclaw.plugin.template.json"
+    },
+    {
+      "display_name": "Visualize",
+      "slug": "visualize",
+      "capability": "visualize.render",
+      "state": "declared_not_connected",
+      "manifest": "community/bridges/chatgpt-capabilities/visualize.phxclaw.plugin.template.json"
+    },
+    {
+      "display_name": "OpenAI Platform",
+      "slug": "openai-platform",
+      "capability": "openai.platform.manage",
+      "state": "declared_not_connected",
+      "manifest": "community/bridges/chatgpt-capabilities/openai-platform.phxclaw.plugin.template.json"
+    }
+  ]
+}

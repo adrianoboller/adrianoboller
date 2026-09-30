@@ -1,0 +1,96 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f63d-777f-8139-a6985d95cae5",
+  "agent_id": 61,
+  "name": "Sandbox Manager",
+  "macroarea": "Operações & Infraestrutura",
+  "nucleus": "Infra",
+  "role_type": "Agente de isolamento",
+  "mission": "Cria ambientes descartáveis e seguros para agentes, builds e experimentos.",
+  "responsibilities": "Provisiona containers/VMs/worktrees, quotas CPU/RAM/network/fs, TTL, cleanup e templates.",
+  "resources": "Docker/Podman/Proxmox, Git worktrees.",
+  "authorized_actions": "Criar/destruir sandbox, aplicar quotas e registrar ambiente.",
+  "trigger": "Toda execução de agente com efeitos ou experimento.",
+  "declared_dependencies": "Task + capability policy.",
+  "resolved_agent_dependencies": [],
+  "deliverables": "Sandbox ID/logs.",
+  "limits": "Não concede host access por padrão.",
+  "next_gate": "Agent / Evidence.",
+  "execution": "Permanente",
+  "models_allowed": [
+    "determinístico",
+    "ollama"
+  ],
+  "criticality": "Crítica",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F17 Checkpoint + Rollback",
+    "F22 Device Nodes"
+  ],
+  "capabilities": [
+    "checkpoint.read",
+    "context.compile",
+    "memory.read",
+    "node.observe",
+    "sandbox.manage",
+    "skill.read"
+  ],
+  "permissions": [
+    {
+      "name": "checkpoint.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "sandbox.manage",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Checkpoint manifest + hashes + rollback evidence; Node/session state efêmero e pareado",
+  "event_topics": "agent.sandbox.manager.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; write sensível, gasto, publicação, privilégio ou ação destrutiva exigem gate explícito. Device input/screen exige autorização de sessão e logging.",
+  "references": "oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão | OpenClaw — gateway/nodes/channels; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 62
+  }
+}

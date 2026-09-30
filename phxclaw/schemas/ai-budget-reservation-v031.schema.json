@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phxclaw.local/schemas/ai-budget-reservation-v031.schema.json",
+  "title": "ai-budget-reservation-v031",
+  "additionalProperties": true,
+  "type": "object",
+  "required": [
+    "tenant_uuid",
+    "request_uuid",
+    "reserved_micro_usd"
+  ],
+  "properties": {
+    "tenant_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "request_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "reserved_micro_usd": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "settled_micro_usd": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    }
+  }
+}

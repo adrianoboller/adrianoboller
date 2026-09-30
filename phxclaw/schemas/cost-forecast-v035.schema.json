@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Cost Forecast v0.35",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "account_uuid",
+    "budget_limit_micro_usd",
+    "current_committed_micro_usd",
+    "projected_total_micro_usd",
+    "projected_budget_basis_points",
+    "state",
+    "source_evidence_hashes",
+    "forecast_sha256"
+  ],
+  "properties": {
+    "account_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "current_committed_micro_usd": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "projected_total_micro_usd": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "projected_budget_basis_points": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 10000
+    },
+    "state": {
+      "enum": [
+        "healthy",
+        "soft_limit",
+        "hard_limit"
+      ]
+    },
+    "source_evidence_hashes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      }
+    },
+    "forecast_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "budget_limit_micro_usd": {
+      "type": "integer",
+      "minimum": 0
+    }
+  }
+}

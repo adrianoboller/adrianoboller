@@ -1,0 +1,50 @@
+{
+  "uuid": "01a0e5ed-9673-799c-ac9b-104aaa729c36",
+  "code": "F25",
+  "title": "Knowledge / Evidence Graph",
+  "goal": "Unificar memória, skills, fontes, claims, código, testes e evidências em grafo consultável e versionado.",
+  "status": "planned",
+  "tasks": [
+    {
+      "uuid": "01a0e5ed-9673-78de-a270-16dbd3718831",
+      "title": "Graph node/edge contracts",
+      "status": "planned"
+    },
+    {
+      "uuid": "01a0e5ed-9673-74df-86cd-c9e1dd11d4e9",
+      "title": "Claims + provenance",
+      "status": "planned"
+    },
+    {
+      "uuid": "01a0e5ed-9673-7b0b-b557-eead66f3368b",
+      "title": "Contradiction engine",
+      "status": "planned"
+    },
+    {
+      "uuid": "01a0e5ed-9673-7a8d-a157-dee457b6f96c",
+      "title": "Knowledge diff",
+      "status": "planned"
+    },
+    {
+      "uuid": "01a0e5ed-9673-7761-953b-060b897487e9",
+      "title": "Query/visualization APIs",
+      "status": "planned"
+    }
+  ],
+  "definition_of_done": [
+    "Contratos e schemas versionados",
+    "Implementação integrada ao Event Bus e Evidence Ledger",
+    "Testes unitários e integração sem mocks para os caminhos obrigatórios",
+    "Documentação, observabilidade, segurança e rollback definidos",
+    "Gate E2E obrigatório antes de marcar done"
+  ],
+  "notes": [
+    "Planejado para a sequência pós-F16; não considerar implementado até os gates reais passarem."
+  ],
+  "state": "review",
+  "canonical_project_version": "0.67.0",
+  "canonical_state_ref": "config/project-state-canonical.v067.json",
+  "implementation_state": "source_ready",
+  "verification_state": "static_verified",
+  "open_gaps": []
+}

@@ -1,0 +1,40 @@
+{
+  "version": "0.31.0",
+  "catalog_ttl_seconds": 900,
+  "health_ttl_seconds": 120,
+  "privacy": {
+    "restricted_local_only": true,
+    "confidential_cloud_requires_explicit_allow": true,
+    "default_allow_cloud": false,
+    "store_prompt_content_in_evidence": false
+  },
+  "routing": {
+    "prefer_local_default": true,
+    "max_fallbacks": 3,
+    "require_fresh_catalog": true,
+    "require_fresh_health": true,
+    "deterministic_tiebreak": [
+      "location",
+      "projected_cost",
+      "p95_latency_ms",
+      "health_penalty",
+      "provider_priority",
+      "provider_uuid",
+      "model_id"
+    ]
+  },
+  "budget": {
+    "fail_closed_when_cost_unknown": true,
+    "reservation_required_for_cloud": true
+  },
+  "circuit_breaker": {
+    "failure_threshold": 3,
+    "cooldown_seconds": 30,
+    "half_open_max_probes": 1
+  },
+  "cloud_origins": [
+    "https://api.openai.com",
+    "https://api.anthropic.com",
+    "https://generativelanguage.googleapis.com"
+  ]
+}

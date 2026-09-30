@@ -1,0 +1,110 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f624-7dc6-a802-a5b8d35664a9",
+  "agent_id": 36,
+  "name": "Data Agent",
+  "macroarea": "Dados & Integrações",
+  "nucleus": "Dados",
+  "role_type": "Agente de dados",
+  "mission": "Mantém modelos, queries, repositories, transactions e abstrações de persistência.",
+  "responsibilities": "Define DataProvider contracts, query model, unit of work, cache/sync boundaries e integração com bindings.",
+  "resources": "Phoenix Data IR, PostgreSQL provider, tests.",
+  "authorized_actions": "Criar APIs de dados e providers.",
+  "trigger": "Feature que persiste/consulta dados.",
+  "declared_dependencies": "Model/schema requirements.",
+  "resolved_agent_dependencies": [],
+  "deliverables": "Data layer + contract tests.",
+  "limits": "Não acopla API pública a SQLx/PostgreSQL.",
+  "next_gate": "PostgreSQL/Integration.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "codex"
+  ],
+  "criticality": "Alta",
+  "modules": [
+    "F18 MCP + LSP Runtime",
+    "F19 Repo Intelligence / Tree-sitter",
+    "F21 Channel Gateway",
+    "F25 Knowledge / Evidence Graph"
+  ],
+  "capabilities": [
+    "channel.read",
+    "data.model.manage",
+    "evidence.read",
+    "knowledge.read",
+    "lsp.read",
+    "mcp.invoke",
+    "repo.read",
+    "tree_sitter.analyze"
+  ],
+  "permissions": [
+    {
+      "name": "channel.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "data.model.manage",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "evidence.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "knowledge.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "lsp.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "mcp.invoke",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "repo.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "tree_sitter.analyze",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Session/channel state sem credencial no contexto; Knowledge/Evidence Graph com proveniência",
+  "event_topics": "agent.data.agent.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; writes policy-gated; evidência obrigatória; sem autoaprovação.",
+  "references": "Architect (MIT) — AST/Tree-sitter/Repo Intelligence | OpenClaw — gateway/nodes/channels; validar licença por versão | ZeroClaw — benchmark Rust/providers/tools",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 37
+  }
+}

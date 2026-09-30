@@ -1,0 +1,11 @@
+[package]
+name = "phxclaw-egress-broker"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+phxclaw-http-client = { path = "../phxclaw-http-client" }
+serde.workspace = true
+thiserror.workspace = true
+url.workspace = true

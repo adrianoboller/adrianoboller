@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "candidate_uuid",
+    "swarm_uuid",
+    "tenant_uuid",
+    "base_source_sha256",
+    "integration_tree_sha256",
+    "team_evidence",
+    "unresolved_conflicts"
+  ],
+  "properties": {
+    "candidate_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "base_source_sha256": {
+      "type": "string",
+      "pattern": "^[0-9A-Fa-f]{64}$"
+    },
+    "integration_tree_sha256": {
+      "type": "string",
+      "pattern": "^[0-9A-Fa-f]{64}$"
+    },
+    "team_evidence": {
+      "type": "object"
+    },
+    "unresolved_conflicts": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "format": "uuid"
+      }
+    }
+  },
+  "additionalProperties": true
+}

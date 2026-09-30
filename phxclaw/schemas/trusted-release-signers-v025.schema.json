@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phxclaw.local/schemas/trusted-release-signers-v025.schema.json",
+  "title": "PhxClaw Trusted Release Signers v0.25",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "algorithm",
+    "signers"
+  ],
+  "properties": {
+    "version": {
+      "const": "0.25.0"
+    },
+    "algorithm": {
+      "const": "ed25519"
+    },
+    "signers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "key_id",
+          "public_key_b64"
+        ],
+        "properties": {
+          "key_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "public_key_b64": {
+            "type": "string",
+            "minLength": 40,
+            "maxLength": 100
+          }
+        }
+      }
+    }
+  }
+}

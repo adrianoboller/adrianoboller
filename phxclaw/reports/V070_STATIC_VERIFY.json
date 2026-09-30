@@ -1,0 +1,112 @@
+{
+  "version": "0.70.0",
+  "pass": 21,
+  "fail": 0,
+  "checks": [
+    {
+      "name": "toml:Cargo.toml",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "toml:crates/phxclaw-media-intelligence/Cargo.toml",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "json:config/project-state-canonical.v070.json",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "json:config/media-whisper.v070.json",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "json:sprints/f11.json",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "json:sprints/f12.json",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "json:sprints/f14.json",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "whisper:pub struct WhisperCppProvider",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "whisper:model_sha256",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "whisper:Sha256::digest",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "whisper:timed out",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "whisper:-otxt",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "whisper:-of",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "desktop:EnigoInputProvider",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "desktop:capture_primary_monitor",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "desktop:start_api",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "desktop:desktop.action",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "desktop:WebviewWindowBuilder",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "desktop:EvidenceLedger",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "all_26_source_ready",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "native_matrix",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

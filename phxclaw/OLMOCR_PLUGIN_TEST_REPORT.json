@@ -1,0 +1,44 @@
+{
+  "version": "0.10.0",
+  "component": "olmocr-community-plugin",
+  "generated_at": "2026-09-28T04:03:56.759588+00:00",
+  "pass": 5,
+  "fail": 0,
+  "skip": 0,
+  "results": [
+    {
+      "name": "health.cli",
+      "status": "PASS",
+      "elapsed_ms": 0,
+      "detail": "healthy"
+    },
+    {
+      "name": "health.protocol",
+      "status": "PASS",
+      "elapsed_ms": 0,
+      "detail": "ok"
+    },
+    {
+      "name": "capability.fail_closed",
+      "status": "PASS",
+      "elapsed_ms": 0,
+      "detail": "capability_not_supported"
+    },
+    {
+      "name": "path.traversal.denied",
+      "status": "PASS",
+      "elapsed_ms": 0,
+      "detail": "invalid_request"
+    },
+    {
+      "name": "adapter.subprocess.contract",
+      "status": "PASS",
+      "elapsed_ms": 0,
+      "detail": {
+        "job_uuid": "01a0e62e-ff97-7da6-80d8-d33e8fdaad32",
+        "output_sha256": "9cc49fa168a120e3a4b85e79af2fb702dae7e775a520296924f1e5652d6a853b"
+      }
+    }
+  ],
+  "note": "The subprocess test uses a deterministic test double for the upstream CLI. It validates the adapter contract, not real olmOCR model inference."
+}

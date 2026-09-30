@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PhxClaw Learning Observation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "observation_uuid",
+    "tenant_uuid",
+    "source_kind",
+    "source_ref",
+    "payload_sha256_hex",
+    "state",
+    "observed_at"
+  ],
+  "properties": {
+    "observation_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tenant_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "source_kind": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "source_ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000
+    },
+    "payload_sha256_hex": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{64}$"
+    },
+    "state": {
+      "enum": [
+        "raw_observation",
+        "unverified_context",
+        "accepted_evidence",
+        "rejected",
+        "quarantined"
+      ]
+    },
+    "observed_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

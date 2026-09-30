@@ -1,0 +1,21 @@
+{
+  "version": "0.27.0",
+  "base_total": 276,
+  "added": [
+    "release.platform.run",
+    "release.platform.evidence.sign",
+    "release.platform.aggregate",
+    "release.codesign.verify",
+    "release.notarization.verify",
+    "release.compatibility.n_n1.verify",
+    "release.ga.build",
+    "release.ga.verify",
+    "release.update_manifest.build",
+    "release.update_manifest.verify",
+    "release.rollback_authorization.issue",
+    "release.rollback_authorization.verify",
+    "release.platform.artifact.verify",
+    "release.source_state.cross_platform.verify"
+  ],
+  "projected_total": 290
+}

@@ -1,0 +1,9 @@
+{
+  "version": "0.65.0",
+  "gaps": [
+    "cargo fmt/check/test/clippy on Rust installer",
+    "PostgreSQL pg_dump/pg_restore native E2E",
+    "fresh install -> upgrade -> rollback -> restore on disposable host",
+    "PostgreSQL RLS E2E for installer evidence"
+  ]
+}

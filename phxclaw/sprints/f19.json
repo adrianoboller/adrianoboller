@@ -1,0 +1,51 @@
+{
+  "uuid": "01a0e5ed-9672-7a38-92a0-b1233ba26f8b",
+  "code": "F19",
+  "title": "Repo Intelligence / Tree-sitter",
+  "goal": "Mapear AST, símbolos, imports, chamadas, dependências, hotspots e histórico Git para contexto e refatoração.",
+  "status": "review",
+  "tasks": [
+    {
+      "uuid": "01a0e5ed-9672-71a3-864d-5ac358dad641",
+      "title": "Tree-sitter adapters",
+      "status": "planned"
+    },
+    {
+      "uuid": "01a0e5ed-9672-76a7-b49f-ac302f446058",
+      "title": "Symbol/call graph",
+      "status": "planned"
+    },
+    {
+      "uuid": "01a0e5ed-9672-75f3-a32b-42a6259d88ef",
+      "title": "Dependency graph",
+      "status": "planned"
+    },
+    {
+      "uuid": "01a0e5ed-9672-72fb-b0a2-2a687f023344",
+      "title": "Hotspot/PageRank",
+      "status": "planned"
+    },
+    {
+      "uuid": "01a0e5ed-9672-7fe6-b3ed-fe9b1825813a",
+      "title": "Context Compiler integration",
+      "status": "planned"
+    }
+  ],
+  "definition_of_done": [
+    "Contratos e schemas versionados",
+    "Implementação integrada ao Event Bus e Evidence Ledger",
+    "Testes unitários e integração sem mocks para os caminhos obrigatórios",
+    "Documentação, observabilidade, segurança e rollback definidos",
+    "Gate E2E obrigatório antes de marcar done"
+  ],
+  "notes": [
+    "Planejado para a sequência pós-F16; não considerar implementado até os gates reais passarem.",
+    "Deterministic repo inventory/ranking source implemented; Tree-sitter integration pending."
+  ],
+  "state": "review",
+  "canonical_project_version": "0.67.0",
+  "canonical_state_ref": "config/project-state-canonical.v067.json",
+  "implementation_state": "source_ready",
+  "verification_state": "static_verified",
+  "open_gaps": []
+}

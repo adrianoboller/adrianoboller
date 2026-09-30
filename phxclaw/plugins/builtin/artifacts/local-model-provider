@@ -1,0 +1,64 @@
+#!/usr/bin/python3
+import datetime as dt
+import json
+import secrets
+import sys
+import time
+
+PROTOCOL = "phxclaw-process-v1"
+PROVIDER = "PhxClaw Local Deterministic Provider"
+
+def uuid7():
+    ms = int(time.time() * 1000) & ((1 << 48) - 1)
+    a = secrets.randbits(12)
+    b = secrets.randbits(62)
+    value = (ms << 80) | (0x7 << 76) | (a << 64) | (0b10 << 62) | b
+    h = f"{value:032x}"
+    return f"{h[:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:]}"
+
+def now():
+    return dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z")
+
+def emit(correlation, payload, status="ok", error=None):
+    print(json.dumps({
+        "protocol": PROTOCOL,
+        "message_uuid": uuid7(),
+        "correlation_uuid": correlation,
+        "status": status,
+        "emitted_at": now(),
+        "payload": payload,
+        "error": error,
+    }, separators=(",", ":"), ensure_ascii=False))
+
+def main():
+    if "--health" in sys.argv:
+        print(json.dumps({"provider": PROVIDER, "status": "healthy", "protocol": PROTOCOL}, separators=(",", ":")))
+        return 0
+    raw = sys.stdin.readline()
+    if not raw:
+        return 2
+    msg = json.loads(raw)
+    correlation = msg.get("message_uuid", uuid7())
+    if msg.get("protocol") != PROTOCOL:
+        emit(correlation, {}, "rejected", {"code":"unsupported_protocol","message":"protocol mismatch","retryable":False})
+        return 0
+    if msg.get("kind") == "health":
+        emit(correlation, {"provider": PROVIDER, "status":"healthy", "models":["phoenix-local-stub-v1"]})
+        return 0
+    payload = msg.get("payload", {})
+    model_id = payload.get("model_id", "phoenix-local-stub-v1")
+    user_input = payload.get("input", {})
+    emit(correlation, {
+        "provider": PROVIDER,
+        "model_id": model_id,
+        "deterministic_stub": True,
+        "output": {
+            "message": "Local provider contract operational; attach Ollama/llama.cpp/model runtime in provider plugin.",
+            "echo": user_input
+        },
+        "usage": {"input_tokens":0,"output_tokens":0,"cost_microunits":0}
+    })
+    return 0
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phxclaw.local/schemas/research-task.schema.json",
+  "title": "PhxClaw Research Task",
+  "type": "object",
+  "required": [
+    "uuid", "correlation_uuid", "query", "project", "preferred_agent",
+    "source_name", "skill_name", "skill_version_requirement", "freshness",
+    "max_source_hits", "context_policy", "scope_filter"
+  ],
+  "properties": {
+    "uuid": {"type": "string", "format": "uuid"},
+    "correlation_uuid": {"type": "string", "format": "uuid"},
+    "query": {"type": "string", "minLength": 1},
+    "project": {"type": "string", "minLength": 1},
+    "preferred_agent": {"type": "string", "minLength": 1},
+    "source_name": {"type": "string", "minLength": 1},
+    "skill_name": {"type": "string", "minLength": 1},
+    "skill_version_requirement": {"type": "string", "minLength": 1},
+    "freshness": {"enum": ["stable", "current", "latest"]},
+    "max_source_hits": {"type": "integer", "minimum": 1, "maximum": 64},
+    "context_policy": {
+      "type": "object",
+      "required": ["max_items", "max_bytes", "max_classification", "include_namespaces"],
+      "properties": {
+        "max_items": {"type": "integer", "minimum": 0},
+        "max_bytes": {"type": "integer", "minimum": 0},
+        "max_classification": {"enum": ["public", "internal", "confidential", "restricted"]},
+        "include_namespaces": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": false
+    },
+    "scope_filter": {
+      "type": "object",
+      "properties": {
+        "session_uuid": {"type": ["string", "null"], "format": "uuid"},
+        "agent_uuid": {"type": ["string", "null"], "format": "uuid"},
+        "project": {"type": ["string", "null"]},
+        "organization": {"type": ["string", "null"]}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

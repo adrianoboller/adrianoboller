@@ -1,0 +1,147 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f607-777c-b4f3-12b3cc967d29",
+  "agent_id": 7,
+  "name": "Chaveiro",
+  "macroarea": "Engenharia & Arquitetura",
+  "nucleus": "Contratos",
+  "role_type": "Agente de contratos",
+  "mission": "Cria as portas do sistema: rotas, interfaces, schemas, auth e contratos.",
+  "responsibilities": "Define APIs, traits, schemas JSON, eventos, comandos, autenticação/autorização, versionamento de contrato e erros interoperáveis.",
+  "resources": "PHX JSON, Phoenix IR, API specs, auth model, schema registry.",
+  "authorized_actions": "Criar/congelar contratos, gerar schemas e testes de contrato.",
+  "trigger": "Após arquitetura aprovada ou ao integrar sistemas.",
+  "declared_dependencies": "ADR, domínio, requisitos e compatibilidade.",
+  "resolved_agent_dependencies": [
+    {
+      "uuid": "01a0e473-f608-7dd4-af8f-1c71de446420",
+      "name": "Johnson"
+    }
+  ],
+  "deliverables": "Contratos versionados e testáveis.",
+  "limits": "Não implementa regra de negócio principal.",
+  "next_gate": "Johnson / Integration Test.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "claude",
+    "codex"
+  ],
+  "criticality": "Alta",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F16 Scheduler + Background Jobs",
+    "F17 Checkpoint + Rollback",
+    "F18 MCP + LSP Runtime",
+    "F19 Repo Intelligence / Tree-sitter",
+    "F22 Device Nodes",
+    "F23 Secret & Credential Broker"
+  ],
+  "capabilities": [
+    "checkpoint.read",
+    "context.compile",
+    "contract.schema.define",
+    "job.read",
+    "lsp.read",
+    "mcp.invoke",
+    "memory.read",
+    "node.observe",
+    "repo.read",
+    "secret.lease.request",
+    "skill.read",
+    "tree_sitter.analyze"
+  ],
+  "permissions": [
+    {
+      "name": "checkpoint.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "contract.schema.define",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "job.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "lsp.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "mcp.invoke",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "repo.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "secret.lease.request",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "tree_sitter.analyze",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Job UUIDv7 + lease/heartbeat/resume em PostgreSQL; Checkpoint manifest + hashes + rollback evidence",
+  "event_topics": "agent.chaveiro.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; writes policy-gated; evidência obrigatória; sem autoaprovação. Device input/screen exige autorização de sessão e logging. Credenciais via broker/leases; nunca em prompt.",
+  "references": "Architect (MIT) — AST/Tree-sitter/Repo Intelligence | oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 8
+  }
+}

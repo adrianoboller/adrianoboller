@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phxclaw.local/schemas/research-context-envelope.schema.json",
+  "title": "PhxClaw Prepared Research Context",
+  "type": "object",
+  "required": [
+    "task_uuid", "correlation_uuid", "agent", "skill", "source", "source_hits",
+    "context", "research_record", "evidence", "model_context", "prepared_at"
+  ],
+  "properties": {
+    "task_uuid": {"type": "string", "format": "uuid"},
+    "correlation_uuid": {"type": "string", "format": "uuid"},
+    "agent": {"type": "object"},
+    "skill": {"type": "object"},
+    "source": {"type": "object"},
+    "source_hits": {"type": "array"},
+    "context": {"type": "object"},
+    "research_record": {"type": "object"},
+    "evidence": {"type": "array"},
+    "model_context": {},
+    "prepared_at": {"type": "string", "format": "date-time"}
+  },
+  "additionalProperties": false
+}

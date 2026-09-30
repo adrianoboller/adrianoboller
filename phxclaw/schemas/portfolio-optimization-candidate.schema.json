@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PhxClaw Portfolio Optimization Candidate",
+  "type": "object",
+  "required": [
+    "candidate_uuid",
+    "strategy",
+    "agent_capacity_multiplier",
+    "model_quota_multiplier",
+    "duration_assumption_multiplier",
+    "cost_assumption_multiplier",
+    "source_state_sha256"
+  ],
+  "properties": {
+    "candidate_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "strategy": {
+      "type": "string"
+    },
+    "agent_capacity_multiplier": {
+      "type": "number"
+    },
+    "model_quota_multiplier": {
+      "type": "number"
+    },
+    "duration_assumption_multiplier": {
+      "type": "number"
+    },
+    "cost_assumption_multiplier": {
+      "type": "number"
+    },
+    "source_state_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

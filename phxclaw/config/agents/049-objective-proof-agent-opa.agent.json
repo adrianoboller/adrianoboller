@@ -1,0 +1,116 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f631-7976-acb2-61b914cf23ae",
+  "agent_id": 49,
+  "name": "Objective Proof Agent – OPA",
+  "macroarea": "Qualidade & Provas",
+  "nucleus": "Prova",
+  "role_type": "Agente avaliador de objetivo",
+  "mission": "Comprova com prova real que a entrega cumpre o objetivo para o qual foi criada.",
+  "responsibilities": "Lê objetivo original/acceptance criteria, cria cenário real, executa sistema, mede resultado e liga evidências.",
+  "resources": "E2E, DB, browser, artifacts, Evidence Graph.",
+  "authorized_actions": "Executar Objective Proof e classificar PROVEN/FAILED.",
+  "trigger": "Após QA2 e antes de QA3.",
+  "declared_dependencies": "Requirement original e build candidato.",
+  "resolved_agent_dependencies": [],
+  "deliverables": "Objective Proof Report reproduzível.",
+  "limits": "Não aceita somente unit tests como prova de objetivo.",
+  "next_gate": "QA3.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "claude",
+    "codex"
+  ],
+  "criticality": "Crítica",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F25 Knowledge / Evidence Graph"
+  ],
+  "capabilities": [
+    "context.compile",
+    "evidence.read",
+    "knowledge.read",
+    "memory.read",
+    "objective.prove",
+    "skill.read",
+    "workspace.diff",
+    "workspace.git.read",
+    "workspace.snapshot"
+  ],
+  "permissions": [
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "evidence.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "knowledge.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "objective.prove",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "workspace.diff",
+      "scopes": [
+        "*"
+      ]
+    },
+    {
+      "name": "workspace.git.read",
+      "scopes": [
+        "*"
+      ]
+    },
+    {
+      "name": "workspace.snapshot",
+      "scopes": [
+        "*"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Knowledge/Evidence Graph com proveniência",
+  "event_topics": "agent.objective.proof.agent.opa.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; write sensível, gasto, publicação, privilégio ou ação destrutiva exigem gate explícito.",
+  "references": "oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 50
+  }
+}

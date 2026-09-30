@@ -1,0 +1,73 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+import datetime as dt, json, os, secrets, shutil, subprocess, sys, tempfile, time
+from pathlib import Path
+PROTOCOL='phxclaw-process-v1'; TOOL='Media Intelligence Tool'
+def uuid7():
+    ms=int(time.time()*1000)&((1<<48)-1); a=secrets.randbits(12); b=secrets.randbits(62); v=(ms<<80)|(7<<76)|(a<<64)|(2<<62)|b; h=f'{v:032x}'; return f'{h[:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:]}'
+def now(): return dt.datetime.now(dt.timezone.utc).isoformat().replace('+00:00','Z')
+def reply(c,s='ok',p=None,e=None): return {'protocol':PROTOCOL,'message_uuid':uuid7(),'correlation_uuid':c,'status':s,'emitted_at':now(),'payload':p or {},'error':e}
+def roots():
+    raw=os.getenv('PHXCLAW_MEDIA_ROOTS','').strip(); return [Path(p).resolve() for p in raw.split(os.pathsep) if p] if raw else [Path.cwd().resolve()]
+def safe(raw,write=False):
+    p=Path(raw).expanduser(); p=(Path.cwd()/p if not p.is_absolute() else p).resolve(strict=False)
+    if not any(p==r or r in p.parents for r in roots()): raise PermissionError(f'path outside allowed roots: {p}')
+    if write: p.parent.mkdir(parents=True,exist_ok=True)
+    return p
+def run(args,timeout=180):
+    x=subprocess.run(args,capture_output=True,text=True,timeout=timeout)
+    if x.returncode: raise RuntimeError((x.stderr or x.stdout).strip() or f'exit {x.returncode}')
+    return x
+def ocr(p):
+    inp=safe(p['input']); out=safe(p['output_txt'],True) if p.get('output_txt') else None
+    lang=p.get('languages') or ['eng']; psm=str(p.get('psm',3)); texts=[]
+    if inp.suffix.lower()=='.pdf':
+        if not shutil.which('pdftoppm'): raise RuntimeError('pdftoppm not installed')
+        with tempfile.TemporaryDirectory() as td:
+            pref=str(Path(td)/'page'); run(['pdftoppm','-png','-r',str(p.get('dpi',200)),str(inp),pref])
+            for img in sorted(Path(td).glob('page-*.png')):
+                x=run(['tesseract',str(img),'stdout','-l','+'.join(lang),'--psm',psm]); texts.append(x.stdout)
+    else:
+        x=run(['tesseract',str(inp),'stdout','-l','+'.join(lang),'--psm',psm]); texts.append(x.stdout)
+    text='\n\n'.join(texts)
+    if out: out.write_text(text,encoding='utf-8')
+    return {'text':text,'output_txt':str(out) if out else None,'pages':len(texts)}
+def tts(p):
+    text=str(p.get('text','')); out=safe(p.get('output_audio','var/tts.wav'),True); lang=str(p.get('language','pt-br')); voice=str(p.get('voice',lang)); rate=str(p.get('rate',165)); pitch=str(p.get('pitch',50))
+    exe=shutil.which('espeak-ng') or shutil.which('espeak')
+    if not exe: raise RuntimeError('eSpeak backend not installed')
+    run([exe,'-v',voice,'-s',rate,'-p',pitch,'-w',str(out),text]); return {'output_audio':str(out),'bytes':out.stat().st_size,'backend':Path(exe).name}
+def stt(p):
+    inp=safe(p['input_audio']); out=safe(p.get('output_txt','var/stt.txt'),True)
+    exe=os.getenv('PHXCLAW_WHISPER_BIN') or shutil.which('whisper-cli') or shutil.which('whisper')
+    model=os.getenv('PHXCLAW_WHISPER_MODEL') or p.get('model')
+    if not exe or not model: raise RuntimeError('Whisper backend/model not configured (PHXCLAW_WHISPER_BIN + PHXCLAW_WHISPER_MODEL)')
+    # whisper.cpp compatible defaults; adapter may override with extra_args.
+    args=[exe,'-m',str(model),'-f',str(inp),'-otxt','-of',str(out.with_suffix(''))]
+    if p.get('language'): args += ['-l',str(p['language'])]
+    args += [str(x) for x in p.get('extra_args',[])]
+    run(args,timeout=int(p.get('timeout_s',600))); produced=out if out.exists() else out.with_suffix('.txt')
+    return {'text':produced.read_text(encoding='utf-8'),'output_txt':str(produced),'backend':Path(exe).name}
+def execute(ep):
+    cap=ep.get('capability',''); p=ep.get('payload') or {}
+    if cap=='ocr.read': return {'capability':cap,**ocr(p)}
+    if cap=='speech.tts': return {'capability':cap,**tts(p)}
+    if cap=='speech.stt': return {'capability':cap,**stt(p)}
+    raise ValueError('unsupported capability: '+cap)
+def health(): return {'tool':TOOL,'status':'healthy','protocol':PROTOCOL,'ocr':bool(shutil.which('tesseract')),'pdf_ocr':bool(shutil.which('pdftoppm')),'tts':bool(shutil.which('espeak') or shutil.which('espeak-ng')),'stt_configured':bool((os.getenv('PHXCLAW_WHISPER_BIN') or shutil.which('whisper-cli') or shutil.which('whisper')) and os.getenv('PHXCLAW_WHISPER_MODEL'))}
+def handle(m):
+    c=m.get('message_uuid',uuid7()); k=m.get('kind')
+    if m.get('protocol')!=PROTOCOL:return reply(c,'rejected',e={'code':'unsupported_protocol','message':'expected '+PROTOCOL,'retryable':False})
+    if k=='health':return reply(c,p=health())
+    if k=='execute':
+        try:return reply(c,p=execute(m.get('payload') or {}))
+        except PermissionError as e:return reply(c,'rejected',e={'code':'permission_denied','message':str(e),'retryable':False})
+        except Exception as e:return reply(c,'error',e={'code':'media_error','message':str(e),'retryable':False})
+    if k in ('cancel','shutdown'):return reply(c,p={'ack':k})
+    return reply(c,'rejected',e={'code':'unsupported_kind','message':str(k),'retryable':False})
+def main():
+    if '--health' in sys.argv:print(json.dumps(health(),separators=(',',':')));return 0
+    line=sys.stdin.readline();
+    if not line:return 2
+    print(json.dumps(handle(json.loads(line)),separators=(',',':'),ensure_ascii=False));return 0
+if __name__=='__main__':raise SystemExit(main())

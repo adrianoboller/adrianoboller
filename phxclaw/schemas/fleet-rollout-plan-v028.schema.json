@@ -1,0 +1,188 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PhxClaw Fleet Rollout Plan v0.28",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "rollout_uuid",
+    "tenant_uuid",
+    "channel",
+    "version",
+    "sequence",
+    "source_state_sha256",
+    "update_manifest_sha256",
+    "stages",
+    "policy_sha256",
+    "health_thresholds",
+    "critical_thresholds",
+    "health_evidence_max_age_seconds",
+    "created_at",
+    "expires_at",
+    "signer_key_id",
+    "signature_algorithm",
+    "signature_b64"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "0.28.0"
+    },
+    "rollout_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tenant_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "channel": {
+      "enum": [
+        "canary",
+        "beta",
+        "stable"
+      ]
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "source_state_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{64}$"
+    },
+    "update_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{64}$"
+    },
+    "stages": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "index",
+          "percent",
+          "min_samples",
+          "soak_seconds"
+        ],
+        "properties": {
+          "index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "percent": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "min_samples": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "soak_seconds": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "signer_key_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "signature_algorithm": {
+      "const": "ed25519"
+    },
+    "signature_b64": {
+      "type": "string",
+      "minLength": 1
+    },
+    "policy_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{64}$"
+    },
+    "health_thresholds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "min_success_rate",
+        "max_crash_rate",
+        "max_rollback_rate",
+        "max_stale_heartbeat_rate",
+        "max_install_error_rate"
+      ],
+      "properties": {
+        "min_success_rate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "max_crash_rate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "max_rollback_rate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "max_stale_heartbeat_rate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "max_install_error_rate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "critical_thresholds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "crash_rate_gte",
+        "install_error_rate_gte",
+        "rollback_rate_gte"
+      ],
+      "properties": {
+        "crash_rate_gte": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "install_error_rate_gte": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "rollback_rate_gte": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "health_evidence_max_age_seconds": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 86400
+    }
+  }
+}

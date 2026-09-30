@@ -1,0 +1,71 @@
+{
+  "version": "0.26.0",
+  "base": "0.25.0",
+  "copied": [
+    {
+      "path": "requirements-release-candidate.txt",
+      "sha256": "b7499520a951c0d57e517ae0df28970bf09a7b5cde5c7ca87612756fc0be4207"
+    },
+    {
+      "path": "config/release-candidate.v026.json",
+      "sha256": "0cf12916c69a73a370297abe67817c0cb398de53f712fa282e0eab09c64a8f3d"
+    },
+    {
+      "path": "config/sprint-gate-map.v026.json",
+      "sha256": "30fce1d93191c5f22a14b6288a547c29ecb346e93f56a94ea7eb51fdd4492060"
+    },
+    {
+      "path": "capabilities/V026_CAPABILITIES_DELTA.json",
+      "sha256": "cb679e3c198e7fe624907c59f7a374a69c1a283b401a70373a125653d749461d"
+    },
+    {
+      "path": "schemas/release-candidate-v026.schema.json",
+      "sha256": "6c3b939cd0fb8bca5e63e821ce1d97b3f603bbb2db570aecf3e557b8c2402b0c"
+    },
+    {
+      "path": "schemas/sprint-promotion-plan-v026.schema.json",
+      "sha256": "5eb6a4e6b95b80983ec167ce283b158c07c4de5a899a6c59db97ea90991e2b80"
+    },
+    {
+      "path": "tools/verify_v026.py",
+      "sha256": "2def56eccef5a7c70a050114df9c4af40483192ae89c99e5534a720d75a55fe7"
+    },
+    {
+      "path": "tools/build_release_candidate.py",
+      "sha256": "e7340f50fa6f79b332a662480c876cc0e239b3989fe1983ffc8dcf5004c1df95"
+    },
+    {
+      "path": "tools/verify_release_candidate.py",
+      "sha256": "4feb2fbc732b7f4e5eba50fc68b907c0125e292b56eabe126dffbb31f3447aef"
+    },
+    {
+      "path": "docs/PROJECT_STATUS_V026.json",
+      "sha256": "2f202944d41f4d3e0f261cfbc8edc3094ec0d7d57c6f27f75a8f155b77d4f862"
+    },
+    {
+      "path": "docs/RELEASE_CANDIDATE_FACTORY_V026.md",
+      "sha256": "1ad58fb09fc428be779091772c24bcd50a67f6939faba74c3a4bd1131711736a"
+    },
+    {
+      "path": "ci/run-release-candidate.ps1",
+      "sha256": "7c11aae5f5dfdce02f13d7c720a32a3b5e2350136f8bef528c7344b68404680d"
+    },
+    {
+      "path": "ci/run-release-candidate.sh",
+      "sha256": "5107ebf46ad86101089e49c9570bf76dac0d0e3f00f8a0e986efa0735839cf19"
+    },
+    {
+      "path": "crates/phxclaw-rc-factory/Cargo.toml",
+      "sha256": "da7b3025b7aa2a74b67628a1a407379b89fab58fcc9a7aed74f4b841f76438f0"
+    },
+    {
+      "path": "crates/phxclaw-rc-factory/src/lib.rs",
+      "sha256": "bf97838e8dc6f33a728a3b346ba8a8d1597b4ca5e213089634c3ef0a98448496"
+    },
+    {
+      "path": ".github/workflows/phxclaw-release-candidate.yml",
+      "sha256": "ab64f4f91e8dd2e320510fb63f253eff081d03432f6a6e48158e31da02636b4f"
+    }
+  ],
+  "workspace": "rc-factory crate present exactly once"
+}

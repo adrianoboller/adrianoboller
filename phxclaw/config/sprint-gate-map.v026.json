@@ -1,0 +1,383 @@
+{
+  "version": "0.26.0",
+  "rule": "green iff every required gate is verified for the attested source-state",
+  "sprints": {
+    "F00": {
+      "required_gates": [
+        "workspace_static",
+        "json_schema_static",
+        "migration_static",
+        "license_sbom",
+        "supply_chain",
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy"
+      ]
+    },
+    "F01": {
+      "required_gates": [
+        "workspace_static",
+        "json_schema_static",
+        "migration_static",
+        "license_sbom",
+        "supply_chain",
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "mission_e2e"
+      ]
+    },
+    "F02": {
+      "required_gates": [
+        "workspace_static",
+        "json_schema_static",
+        "migration_static",
+        "license_sbom",
+        "supply_chain",
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "mission_e2e"
+      ]
+    },
+    "F03": {
+      "required_gates": [
+        "workspace_static",
+        "json_schema_static",
+        "migration_static",
+        "license_sbom",
+        "supply_chain",
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "postgres_migration"
+      ]
+    },
+    "F04": {
+      "required_gates": [
+        "workspace_static",
+        "json_schema_static",
+        "migration_static",
+        "license_sbom",
+        "supply_chain",
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "mission_e2e"
+      ]
+    },
+    "F05": {
+      "required_gates": [
+        "workspace_static",
+        "json_schema_static",
+        "migration_static",
+        "license_sbom",
+        "supply_chain",
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "mission_e2e"
+      ]
+    },
+    "F06": {
+      "required_gates": [
+        "workspace_static",
+        "json_schema_static",
+        "migration_static",
+        "license_sbom",
+        "supply_chain",
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "mission_e2e"
+      ]
+    },
+    "F07": {
+      "required_gates": [
+        "workspace_static",
+        "json_schema_static",
+        "migration_static",
+        "license_sbom",
+        "supply_chain",
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "provider_model_e2e"
+      ]
+    },
+    "F08": {
+      "required_gates": [
+        "workspace_static",
+        "json_schema_static",
+        "migration_static",
+        "license_sbom",
+        "supply_chain",
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "tauri_native_e2e"
+      ]
+    },
+    "F09": {
+      "required_gates": [
+        "workspace_static",
+        "json_schema_static",
+        "migration_static",
+        "license_sbom",
+        "supply_chain",
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "postgres_migration",
+        "mission_e2e"
+      ]
+    },
+    "F10": {
+      "required_gates": [
+        "workspace_static",
+        "json_schema_static",
+        "migration_static",
+        "license_sbom",
+        "supply_chain",
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "mission_e2e"
+      ]
+    },
+    "F11": {
+      "required_gates": [
+        "workspace_static",
+        "json_schema_static",
+        "migration_static",
+        "license_sbom",
+        "supply_chain",
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "tauri_native_e2e"
+      ]
+    },
+    "F12": {
+      "required_gates": [
+        "workspace_static",
+        "json_schema_static",
+        "migration_static",
+        "license_sbom",
+        "supply_chain",
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "mission_e2e"
+      ]
+    },
+    "F13": {
+      "required_gates": [
+        "workspace_static",
+        "json_schema_static",
+        "migration_static",
+        "license_sbom",
+        "supply_chain",
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "mission_e2e"
+      ]
+    },
+    "F14": {
+      "required_gates": [
+        "workspace_static",
+        "json_schema_static",
+        "migration_static",
+        "license_sbom",
+        "supply_chain",
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "tauri_native_e2e",
+        "mission_e2e"
+      ]
+    },
+    "F15": {
+      "required_gates": [
+        "workspace_static",
+        "json_schema_static",
+        "migration_static",
+        "license_sbom",
+        "supply_chain",
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "postgres_migration",
+        "mission_e2e"
+      ]
+    },
+    "F16": {
+      "required_gates": [
+        "workspace_static",
+        "json_schema_static",
+        "migration_static",
+        "license_sbom",
+        "supply_chain",
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "mission_e2e"
+      ]
+    },
+    "F17": {
+      "required_gates": [
+        "workspace_static",
+        "json_schema_static",
+        "migration_static",
+        "license_sbom",
+        "supply_chain",
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "postgres_migration",
+        "mission_e2e"
+      ]
+    },
+    "F18": {
+      "required_gates": [
+        "workspace_static",
+        "json_schema_static",
+        "migration_static",
+        "license_sbom",
+        "supply_chain",
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "mission_e2e"
+      ]
+    },
+    "F19": {
+      "required_gates": [
+        "workspace_static",
+        "json_schema_static",
+        "migration_static",
+        "license_sbom",
+        "supply_chain",
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "mission_e2e"
+      ]
+    },
+    "F20": {
+      "required_gates": [
+        "workspace_static",
+        "json_schema_static",
+        "migration_static",
+        "license_sbom",
+        "supply_chain",
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "postgres_migration",
+        "mission_e2e"
+      ]
+    },
+    "F21": {
+      "required_gates": [
+        "workspace_static",
+        "json_schema_static",
+        "migration_static",
+        "license_sbom",
+        "supply_chain",
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "postgres_migration",
+        "mission_e2e"
+      ]
+    },
+    "F22": {
+      "required_gates": [
+        "workspace_static",
+        "json_schema_static",
+        "migration_static",
+        "license_sbom",
+        "supply_chain",
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "postgres_migration",
+        "rls_cross_tenant",
+        "mission_e2e"
+      ]
+    },
+    "F23": {
+      "required_gates": [
+        "workspace_static",
+        "json_schema_static",
+        "migration_static",
+        "license_sbom",
+        "supply_chain",
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "postgres_migration",
+        "provider_model_e2e"
+      ]
+    },
+    "F24": {
+      "required_gates": [
+        "workspace_static",
+        "json_schema_static",
+        "migration_static",
+        "license_sbom",
+        "supply_chain",
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "postgres_migration",
+        "skill_knowledge_lineage",
+        "mission_e2e"
+      ]
+    },
+    "F25": {
+      "required_gates": [
+        "workspace_static",
+        "json_schema_static",
+        "migration_static",
+        "license_sbom",
+        "supply_chain",
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "postgres_migration",
+        "rls_cross_tenant",
+        "skill_knowledge_lineage",
+        "mission_e2e"
+      ]
+    }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "status",
+    "evidence_refs"
+  ],
+  "properties": {
+    "status": {
+      "enum": [
+        "ok",
+        "blocked",
+        "needs_approval",
+        "failed"
+      ]
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "result": {}
+  },
+  "additionalProperties": false
+}

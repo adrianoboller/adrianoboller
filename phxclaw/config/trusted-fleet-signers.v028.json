@@ -1,0 +1,5 @@
+{
+  "version": "0.28.0",
+  "signers": [],
+  "note": "Provision fleet keys out-of-band. Release signing authority is not fleet authority."
+}

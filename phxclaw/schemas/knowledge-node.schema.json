@@ -1,0 +1,21 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://phxclaw.local/schemas/knowledge-node.schema.json",
+  "title":"PhxClaw Knowledge Node",
+  "type":"object",
+  "additionalProperties":false,
+  "required":["node_uuid","tenant_uuid","kind","state","content_sha256_hex","source_state_sha256_hex","confidence_ppm","created_at"],
+  "properties":{
+    "node_uuid":{"type":"string","format":"uuid"},
+    "tenant_uuid":{"type":"string","format":"uuid"},
+    "kind":{"enum":["raw_source","artifact","claim","evidence","hypothesis","decision","requirement","task","agent","skill","release","test","policy","constraint","external_fact"]},
+    "state":{"enum":["raw_observation","unverified","accepted","governed","rejected","quarantined"]},
+    "content_sha256_hex":{"type":"string","pattern":"^[0-9a-fA-F]{64}$"},
+    "source_state_sha256_hex":{"type":"string","pattern":"^[0-9a-fA-F]{64}$"},
+    "subject_key":{"type":["string","null"],"maxLength":500},
+    "predicate_key":{"type":["string","null"],"maxLength":300},
+    "value_sha256_hex":{"type":["string","null"],"pattern":"^[0-9a-fA-F]{64}$"},
+    "confidence_ppm":{"type":"integer","minimum":0,"maximum":1000000},
+    "created_at":{"type":"string","format":"date-time"}
+  }
+}

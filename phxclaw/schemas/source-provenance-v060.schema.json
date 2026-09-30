@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "phxclaw://schemas/source-provenance-v1",
+  "title": "PhxClaw Source Provenance Record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "record_uuid",
+    "source_name",
+    "sha256",
+    "origin",
+    "license",
+    "decision",
+    "evidence"
+  ],
+  "properties": {
+    "record_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "source_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "origin": {
+      "type": "object",
+      "required": [
+        "kind",
+        "known"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "user_supplied",
+            "upstream_public",
+            "first_party",
+            "unknown"
+          ]
+        },
+        "known": {
+          "type": "boolean"
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "license": {
+      "type": "object",
+      "required": [
+        "class",
+        "spdx",
+        "local_evidence"
+      ],
+      "properties": {
+        "class": {
+          "enum": [
+            "permissive",
+            "copyleft",
+            "proprietary",
+            "unknown"
+          ]
+        },
+        "spdx": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "local_evidence": {
+          "type": "boolean"
+        },
+        "evidence_sha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "decision": {
+      "enum": [
+        "ALLOW",
+        "QUARANTINE",
+        "DENY"
+      ]
+    },
+    "reasons": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      },
+      "minItems": 1
+    }
+  }
+}

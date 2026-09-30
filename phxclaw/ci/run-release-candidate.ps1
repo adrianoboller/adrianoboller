@@ -1,0 +1,3 @@
+param([string]$Root='.',[Parameter(Mandatory=$true)][string]$Version,[string]$QualificationDir='reports/release-qualification/release',[string]$Artifact='target/release/phxclaw.exe',[switch]$FirstRelease,[string]$PreviousRelease='')
+$extra=@(); if($FirstRelease){$extra+='--first-release'} elseif($PreviousRelease){$extra+=@('--previous-release',$PreviousRelease)} else { throw 'FirstRelease or PreviousRelease is required' }
+python "$Root/tools/build_release_candidate.py" "$Root" --qualification-dir "$QualificationDir" --candidate-version "$Version" --artifact "$Artifact" --output "$Root/dist/rc/$Version" --public-rc @extra

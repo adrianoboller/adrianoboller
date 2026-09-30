@@ -1,0 +1,104 @@
+{
+  "version": "0.21.0",
+  "base_capability_count": 208,
+  "delta_count": 12,
+  "expected_after_merge": 220,
+  "capabilities": [
+    {
+      "capability_uuid": "01a0e7b3-b661-70ed-87e3-61a2124c61a3",
+      "name": "device.node.enrollment.issue",
+      "version": "1.0.0",
+      "extension_point": "device.node",
+      "default_permission": "deny",
+      "audited": true
+    },
+    {
+      "capability_uuid": "01a0e7b3-b661-7392-b00e-1c194510a287",
+      "name": "device.node.enrollment.consume",
+      "version": "1.0.0",
+      "extension_point": "device.node",
+      "default_permission": "deny",
+      "audited": true
+    },
+    {
+      "capability_uuid": "01a0e7b3-b661-7f81-bf9f-ed2731421c40",
+      "name": "device.node.register",
+      "version": "1.0.0",
+      "extension_point": "device.node",
+      "default_permission": "deny",
+      "audited": true
+    },
+    {
+      "capability_uuid": "01a0e7b3-b661-7dce-9acf-2d4dc9b93ebc",
+      "name": "device.node.heartbeat",
+      "version": "1.0.0",
+      "extension_point": "device.node",
+      "default_permission": "deny",
+      "audited": true
+    },
+    {
+      "capability_uuid": "01a0e7b3-b661-72cd-b8b1-eaaf910aa8eb",
+      "name": "device.node.telemetry.ingest",
+      "version": "1.0.0",
+      "extension_point": "device.node",
+      "default_permission": "deny",
+      "audited": true
+    },
+    {
+      "capability_uuid": "01a0e7b3-b661-7473-b9da-cbfa040aa87d",
+      "name": "device.node.command.submit",
+      "version": "1.0.0",
+      "extension_point": "device.node",
+      "default_permission": "deny",
+      "audited": true
+    },
+    {
+      "capability_uuid": "01a0e7b3-b661-7f46-8199-09a3d0fc1b01",
+      "name": "device.node.command.claim",
+      "version": "1.0.0",
+      "extension_point": "device.node",
+      "default_permission": "deny",
+      "audited": true
+    },
+    {
+      "capability_uuid": "01a0e7b3-b661-7a0d-b5f0-1c643d0d8990",
+      "name": "device.node.command.ack",
+      "version": "1.0.0",
+      "extension_point": "device.node",
+      "default_permission": "deny",
+      "audited": true
+    },
+    {
+      "capability_uuid": "01a0e7b3-b661-7da3-9e2f-84df9b016631",
+      "name": "device.node.command.cancel",
+      "version": "1.0.0",
+      "extension_point": "device.node",
+      "default_permission": "deny",
+      "audited": true
+    },
+    {
+      "capability_uuid": "01a0e7b3-b661-7b63-9086-a66a6449f5c1",
+      "name": "device.node.quarantine",
+      "version": "1.0.0",
+      "extension_point": "device.node",
+      "default_permission": "deny",
+      "audited": true
+    },
+    {
+      "capability_uuid": "01a0e7b3-b661-7609-a313-38313c9b5d07",
+      "name": "device.node.revoke",
+      "version": "1.0.0",
+      "extension_point": "device.node",
+      "default_permission": "deny",
+      "audited": true
+    },
+    {
+      "capability_uuid": "01a0e7b3-b661-783e-883d-0e4d52f1014e",
+      "name": "key.provider.health",
+      "version": "1.0.0",
+      "extension_point": "secret.provider",
+      "default_permission": "deny",
+      "audited": true
+    }
+  ]
+}

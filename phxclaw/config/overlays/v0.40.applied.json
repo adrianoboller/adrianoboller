@@ -1,0 +1,93 @@
+{
+  "version": "0.40.0",
+  "base": "0.39.0",
+  "copied": [
+    {
+      "path": "config/phxclaw.config.json",
+      "sha256": "0a4660f7e543ddfc1142d1239748d132783d500e9c3af82b80b2c5ca4aa8782c"
+    },
+    {
+      "path": "capabilities/V040_CAPABILITIES_DELTA.json",
+      "sha256": "2985b53adc2e5775d62e8286c99329103f07d770b5fee68a08c522bff03b3f12"
+    },
+    {
+      "path": "schemas/phxclaw-config-v040.schema.json",
+      "sha256": "9643cc97c9eb4337243556547c667a96e573e2dbcd71fb55f34df8f9e51e4919"
+    },
+    {
+      "path": "schemas/config-api-v040.schema.json",
+      "sha256": "61fa50377ce977a0654885a71a57e8e27bc89b28f77678d5344e0d24e961f36e"
+    },
+    {
+      "path": "tools/configctl.py",
+      "sha256": "cfb4484c9a1b8912100b1b83256e231c89e488cc8f43ac9600580676851e9cff"
+    },
+    {
+      "path": "tools/apply_overlay.py",
+      "sha256": "5f9ac804423e1f297eaaea0db040d537c651ff9982cef3d4654e2cd878794041"
+    },
+    {
+      "path": "tools/test_v040_local.py",
+      "sha256": "7c8fdfe3aa13e8e7da417c5ae43cad208485a101c2ae5198fab1ec51487cb42d"
+    },
+    {
+      "path": "tools/verify_v040.py",
+      "sha256": "0d0757eb4c61eb063c09e4fee036337c54d2a0f9a1815e648ff7024843ee816d"
+    },
+    {
+      "path": "ui/config.html",
+      "sha256": "56a29a21c799e313547cb2899922a063d9fed1f97b709683a99c2b931bdc620a"
+    },
+    {
+      "path": "reports/V040_NATIVE_PREFLIGHT.json",
+      "sha256": "4d37bf27b6165d3439ea430b43390cb6f0208cedc767532c6fc53b7b09870db2"
+    },
+    {
+      "path": "reports/BUILD_REPORT_V040.md",
+      "sha256": "d129378af01a979c4d44266a9da1cce3698ab6de7135eb683aaf370067d0b269"
+    },
+    {
+      "path": "reports/V040_GATE_REPORT.json",
+      "sha256": "6a715b475789790cd1fb36c72d216c4c58f902d5827f6ad1ea2b70d0a76d7780"
+    },
+    {
+      "path": "reports/V040_STATIC_VERIFY_REPORT.json",
+      "sha256": "17b0bc448b3017a373e29a7d48623c0af306edae58ced32c6461875c025ac7c8"
+    },
+    {
+      "path": "reports/V040_LOCAL_TEST_REPORT.json",
+      "sha256": "0c7372d3e325bd51af0f94f532a60b743339bb7a987be3a5d478d601c34fd5cb"
+    },
+    {
+      "path": "reports/V040_PACKAGE_CHECKS.json",
+      "sha256": "557ed5b2b96130264666d4a7e2c15720dca297df2c48828786c959bfceba424d"
+    },
+    {
+      "path": "migrations/0040_unified_configuration_and_factory.sql",
+      "sha256": "591569af912d323a6e78fcae3847d3b6709a61f7b1c82970b62378e47a5bdf15"
+    },
+    {
+      "path": "docs/UNIFIED_CONFIGURATION_V040.md",
+      "sha256": "95e1597a76dc6a732065fa44c4ba931dd5c6d606675e676194cc864bc1279b91"
+    },
+    {
+      "path": "crates/phxclaw-software-factory/Cargo.toml",
+      "sha256": "7012036ee2ab36e8a43b7e1cab1586e8f417ea7dacdff0e35a0df8204a335471"
+    },
+    {
+      "path": "crates/phxclaw-config-runtime/Cargo.toml",
+      "sha256": "4763097edb3a9d3cdab99a4bae142c710768ea639e47c576f59c01366534cb55"
+    },
+    {
+      "path": "crates/phxclaw-config-runtime/src/lib.rs",
+      "sha256": "f69ec7f2731405ddec9bbe5ed08d045e869c6dac3af56e73b2689c308cf4c540"
+    },
+    {
+      "path": "crates/phxclaw-software-factory/src/lib.rs",
+      "sha256": "cd7c501035d96371a9b9eea2dff4cc9c24064aee87957946a115d13d0dd382e8"
+    }
+  ],
+  "workspace": "v0.40 crates present exactly once",
+  "canonical_config": "config/phxclaw.config.json",
+  "cargo_lock_requires_refresh": false
+}

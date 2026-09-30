@@ -1,0 +1,13 @@
+{
+  "version": "0.34.0",
+  "selection": "deterministic_weighted",
+  "failover": "signed_portfolio_only",
+  "provider_loss": "renormalize_remaining_weights",
+  "concentration_limit_basis_points": 7000,
+  "diversity": {
+    "high_min_providers": 2,
+    "extreme_min_providers": 3
+  },
+  "capacity_evidence": "signed_fresh_required",
+  "mutation_authority": "v0.30 leader lease + fencing epoch"
+}

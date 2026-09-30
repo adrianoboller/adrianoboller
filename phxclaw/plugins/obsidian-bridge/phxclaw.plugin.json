@@ -1,0 +1,53 @@
+{
+  "schema_version": "phxclaw.plugin.source.v1",
+  "plugin_uuid": "01a0e8cd-5b43-7b28-bc9d-d995b4285f16",
+  "name": "phxclaw-obsidian-bridge",
+  "version": "0.30.0",
+  "core_api": ">=0.30.0 <0.31.0",
+  "extension_points": [
+    "knowledge.source"
+  ],
+  "capabilities": [
+    "obsidian.vault.export",
+    "obsidian.vault.import",
+    "obsidian.markdown.render",
+    "obsidian.canvas.export",
+    "obsidian.canvas.import",
+    "obsidian.backlinks.project",
+    "obsidian.exchange.ingest"
+  ],
+  "permissions": [
+    "filesystem.vault.exchange"
+  ],
+  "network_origins": [],
+  "lifecycle_hooks": [
+    "validate",
+    "start",
+    "health",
+    "stop"
+  ],
+  "dependencies": [],
+  "compatibility": {
+    "platforms": [
+      "linux",
+      "windows",
+      "macos"
+    ],
+    "process_protocol": "v1"
+  },
+  "provenance": {
+    "upstream_reference": "https://github.com/obsidianmd/obsidian-api",
+    "reuse_mode": "interoperability_contract_only",
+    "source_tree_vendored": false
+  },
+  "rollback": {
+    "strategy": "disable_plugin",
+    "preserve_data": true
+  },
+  "release_requirements": [
+    "production publisher signature",
+    "artifact sha256",
+    "SBOM",
+    "native/e2e gates"
+  ]
+}

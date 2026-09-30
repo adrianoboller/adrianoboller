@@ -1,0 +1,115 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f65b-7843-bd00-6ec15746660c",
+  "agent_id": 91,
+  "name": "Potentials / Aprendizes do Oráculo",
+  "macroarea": "Pesquisa & Inovação",
+  "nucleus": "Exploração",
+  "role_type": "Grupo de subagentes experimentais",
+  "mission": "Exploram ideias, edge cases e abordagens alternativas sob supervisão.",
+  "responsibilities": "Vários agentes júnior recebem o mesmo problema, geram protótipos/fuzzing criativo e relatam descobertas.",
+  "resources": "Ollama local, sandboxes, limited tools.",
+  "authorized_actions": "Pesquisar/prototipar/experimentar sem permissão de merge.",
+  "trigger": "Problema exploratório ou hipótese ampla.",
+  "declared_dependencies": "Brief do Oráculo/Hypothesis.",
+  "resolved_agent_dependencies": [
+    {
+      "uuid": "01a0e473-f606-78cd-86b5-d4192e95853c",
+      "name": "Oráculo"
+    }
+  ],
+  "deliverables": "Experimental findings.",
+  "limits": "Sem merge, release, secrets ou mudança de ADR.",
+  "next_gate": "Oráculo/Research/Hypothesis.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "ollama"
+  ],
+  "criticality": "Baixa",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F22 Device Nodes",
+    "F24 Auto-learning + Skill Evolution",
+    "F25 Knowledge / Evidence Graph"
+  ],
+  "capabilities": [
+    "context.compile",
+    "decision.evidence.resolve",
+    "evidence.read",
+    "knowledge.read",
+    "memory.read",
+    "node.observe",
+    "skill.candidate.propose",
+    "skill.read"
+  ],
+  "permissions": [
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "decision.evidence.resolve",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "evidence.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "knowledge.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.candidate.propose",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Node/session state efêmero e pareado; Candidate Skill → Hypothesis → OPA/QA → Registry",
+  "event_topics": "agent.potentials.aprendizes.do.oraculo.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Sandbox restrito; sem merge/release/secrets; somente escopo experimental. Device input/screen exige autorização de sessão e logging.",
+  "references": "oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão | OpenClaw — gateway/nodes/channels; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 92
+  }
+}

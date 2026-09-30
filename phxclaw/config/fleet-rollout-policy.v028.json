@@ -1,0 +1,96 @@
+{
+  "version": "0.28.0",
+  "mode": "fail_closed",
+  "allowed_channels": [
+    "canary",
+    "beta",
+    "stable"
+  ],
+  "channel_stages": {
+    "canary": [
+      {
+        "percent": 1,
+        "min_samples": 5,
+        "soak_seconds": 300
+      },
+      {
+        "percent": 5,
+        "min_samples": 20,
+        "soak_seconds": 900
+      },
+      {
+        "percent": 10,
+        "min_samples": 50,
+        "soak_seconds": 1800
+      }
+    ],
+    "beta": [
+      {
+        "percent": 5,
+        "min_samples": 20,
+        "soak_seconds": 900
+      },
+      {
+        "percent": 25,
+        "min_samples": 100,
+        "soak_seconds": 1800
+      },
+      {
+        "percent": 50,
+        "min_samples": 250,
+        "soak_seconds": 3600
+      }
+    ],
+    "stable": [
+      {
+        "percent": 1,
+        "min_samples": 20,
+        "soak_seconds": 900
+      },
+      {
+        "percent": 5,
+        "min_samples": 100,
+        "soak_seconds": 1800
+      },
+      {
+        "percent": 25,
+        "min_samples": 500,
+        "soak_seconds": 3600
+      },
+      {
+        "percent": 50,
+        "min_samples": 1000,
+        "soak_seconds": 7200
+      },
+      {
+        "percent": 100,
+        "min_samples": 2000,
+        "soak_seconds": 14400
+      }
+    ]
+  },
+  "health_thresholds": {
+    "min_success_rate": 0.995,
+    "max_crash_rate": 0.002,
+    "max_rollback_rate": 0.005,
+    "max_stale_heartbeat_rate": 0.01,
+    "max_install_error_rate": 0.003
+  },
+  "auto_pause_on_health_failure": true,
+  "auto_rollback_on_critical_failure": true,
+  "critical_failure": {
+    "crash_rate_gte": 0.02,
+    "install_error_rate_gte": 0.03,
+    "rollback_rate_gte": 0.05
+  },
+  "require_signed_rollout_plan": true,
+  "require_signed_health_evidence": true,
+  "require_signed_state_transitions": true,
+  "release_trust_separate_from_fleet_trust": true,
+  "anti_rollback_sequence": true,
+  "database_contract_requires_100_percent_compatible": true,
+  "database_contract_requires_manual_approval": true,
+  "max_clock_skew_seconds": 300,
+  "health_evidence_max_age_seconds": 1800,
+  "max_nodes_per_batch": 10000
+}

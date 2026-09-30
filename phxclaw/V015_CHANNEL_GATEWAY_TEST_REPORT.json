@@ -1,0 +1,107 @@
+{
+  "suite": "PhxClaw v0.15 F21 Channel Gateway",
+  "pass": 20,
+  "fail": 0,
+  "details": [
+    {
+      "name": "exists.crates/phxclaw-channel-gateway/src/lib.rs",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "exists.schemas/channel-message.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "exists.schemas/channel-binding.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "exists.migrations/0017_channel_gateway.sql",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "source.IdentityBinding",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "source.ChannelSession",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "source.DuplicateMessage",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "source.IdentityBlocked",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "source.ChannelProvider",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "source.channel.inbound",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "source.channel.outbound",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "source.EvidenceDraft",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "channel.demo",
+      "pass": true,
+      "detail": "{\n  \"suite\": \"F21 Channel Gateway operational bootstrap\",\n  \"pass\": 8,\n  \"fail\": 0,\n  \"checks\": [\n    {\n      \"name\": \"identity_bind\",\n      \"pass\": true\n    },\n    {\n      \"name\": \"inbound_accept\",\n      \"pass\": true\n    },\n    {\n      \"name\": \"session_reuse\",\n      \"pass\": true\n    },\n    {\n      \"name\": \"dedup\",\n      \"pass\": true\n    },\n    {\n      \"name\": \"outbound_prepare\",\n      \"pass\": true\n    },\n    {\n      \"name\": \"pending_reject\",\n      \"pass\": true\n    },\n    {\n      \"name\": \"blocked_outbound\",\n      \"pass\": true\n    },\n    {\n      \"name\": \"events_recorded\",\n      \"pass\": true\n    }\n  ],\n  \"session_uuid\": \"01a0e662-bc2d-7bdc-93c1-7ecb0f33abdc\"\n}\n"
+    },
+    {
+      "name": "sprint.review",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "capability.channel.identity.bind",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "capability.channel.inbound.accept",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "capability.channel.session.resolve",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "capability.channel.outbound.prepare",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "capability.channel.outbound.send",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "capability.channel.provider.invoke",
+      "pass": true,
+      "detail": ""
+    }
+  ]
+}

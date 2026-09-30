@@ -1,0 +1,363 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import datetime as dt
+import hashlib
+import json
+import os
+import re
+import secrets
+import shutil
+import subprocess
+import sys
+import time
+import urllib.parse
+from pathlib import Path
+from typing import Any
+
+PROTOCOL = "phxclaw-process-v1"
+PLUGIN = "com.phxclaw.community.olmocr"
+PLUGIN_VERSION = "0.1.0"
+SUPPORTED = {"ocr.olmocr.health", "ocr.olmocr.extract", "ocr.olmocr.batch"}
+ALLOWED_EXTS = {".pdf", ".png", ".jpg", ".jpeg"}
+MAX_INPUTS = 64
+MAX_RETURN_CHARS = 750_000
+
+
+def uuid7() -> str:
+    ms = int(time.time() * 1000) & ((1 << 48) - 1)
+    rand_a = secrets.randbits(12)
+    rand_b = secrets.randbits(62)
+    value = (ms << 80) | (0x7 << 76) | (rand_a << 64) | (0b10 << 62) | rand_b
+    h = f"{value:032x}"
+    return f"{h[:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:]}"
+
+
+def now_iso() -> str:
+    return dt.datetime.now(dt.timezone.utc).isoformat()
+
+
+def project_root() -> Path:
+    # .../community/examples/olmocr/runner -> project root
+    return Path(__file__).resolve().parents[3]
+
+
+def sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def reply(correlation_uuid: str, *, status: str = "ok", payload: Any = None,
+          code: str | None = None, message: str | None = None, retryable: bool = False) -> dict[str, Any]:
+    return {
+        "protocol": PROTOCOL,
+        "message_uuid": uuid7(),
+        "correlation_uuid": correlation_uuid,
+        "status": status,
+        "emitted_at": now_iso(),
+        "payload": payload if payload is not None else {},
+        "error": None if code is None else {"code": code, "message": message or code, "retryable": retryable},
+    }
+
+
+def safe_under(root: Path, value: str | Path) -> Path:
+    root = root.resolve()
+    candidate = Path(value)
+    candidate = candidate.resolve() if candidate.is_absolute() else (root / candidate).resolve()
+    if candidate != root and root not in candidate.parents:
+        raise ValueError(f"path escapes allowed root: {candidate}")
+    return candidate
+
+
+def input_root() -> Path:
+    return Path(os.getenv("PHXCLAW_OLMOCR_INPUT_ROOT", str(project_root() / "var" / "documents"))).resolve()
+
+
+def output_root() -> Path:
+    return Path(os.getenv("PHXCLAW_OLMOCR_OUTPUT_ROOT", str(project_root() / "var" / "olmocr"))).resolve()
+
+
+def resolve_backend() -> list[str] | None:
+    explicit = os.getenv("PHXCLAW_OLMOCR_BIN", "").strip()
+    if explicit:
+        p = Path(explicit)
+        if p.is_file() and os.access(p, os.X_OK):
+            return [str(p.resolve())]
+        found = shutil.which(explicit)
+        if found:
+            return [found]
+        return None
+    found = shutil.which("olmocr")
+    if found:
+        return [found]
+    try:
+        import importlib.util
+        if importlib.util.find_spec("olmocr") is not None:
+            return [sys.executable, "-m", "olmocr.pipeline"]
+    except Exception:
+        pass
+    return None
+
+
+def backend_label(cmd: list[str] | None) -> str | None:
+    if not cmd:
+        return None
+    if len(cmd) >= 3 and cmd[1:3] == ["-m", "olmocr.pipeline"]:
+        return "python -m olmocr.pipeline"
+    return Path(cmd[0]).name
+
+
+def health_payload() -> dict[str, Any]:
+    cmd = resolve_backend()
+    local_model = os.getenv("PHXCLAW_OLMOCR_LOCAL_MODEL")
+    model_ready = bool(local_model and Path(local_model).exists())
+    return {
+        "plugin": PLUGIN,
+        "version": PLUGIN_VERSION,
+        "protocol": PROTOCOL,
+        "status": "healthy",
+        "adapter_ready": True,
+        "backend_available": cmd is not None,
+        "backend": backend_label(cmd),
+        "local_model_configured": bool(local_model),
+        "local_model_exists": model_ready,
+        "supported_capabilities": sorted(SUPPORTED),
+        "input_formats": ["pdf", "png", "jpg", "jpeg"],
+        "output_formats": ["markdown", "text"],
+        "remote_mode_compiled": True,
+        "remote_mode_default_enabled": False,
+        "notes": "Local GPU mode is fail-closed unless a local model path is configured. Remote mode requires an approved network-capable sandbox and exact-origin allowlist.",
+    }
+
+
+def normalize_origin(url: str) -> str:
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password:
+        raise ValueError("server must be an http(s) URL without embedded credentials")
+    port = parsed.port
+    default_port = (parsed.scheme == "https" and port == 443) or (parsed.scheme == "http" and port == 80)
+    host = parsed.hostname.lower()
+    return f"{parsed.scheme}://{host}" + ("" if port is None or default_port else f":{port}")
+
+
+def validate_remote_server(server: str) -> str:
+    origin = normalize_origin(server)
+    allowed = {item.strip().rstrip("/") for item in os.getenv("PHXCLAW_OLMOCR_SERVER_ALLOWLIST", "").split(",") if item.strip()}
+    if origin not in allowed:
+        raise PermissionError(f"remote server origin not allowlisted: {origin}")
+    if os.getenv("PHXCLAW_OLMOCR_API_KEY"):
+        raise PermissionError("authenticated remote olmOCR is blocked until PhxClaw Secret Broker can inject credentials without command-line exposure")
+    return server.rstrip("/")
+
+
+def validate_inputs(values: list[str]) -> list[Path]:
+    if not values:
+        raise ValueError("at least one input path is required")
+    if len(values) > MAX_INPUTS:
+        raise ValueError(f"too many inputs: {len(values)} > {MAX_INPUTS}")
+    root = input_root()
+    paths: list[Path] = []
+    for raw in values:
+        path = safe_under(root, raw)
+        if path.suffix.lower() not in ALLOWED_EXTS:
+            raise ValueError(f"unsupported input extension: {path.suffix}")
+        if not path.is_file():
+            raise FileNotFoundError(path)
+        paths.append(path)
+    return paths
+
+
+def markdown_to_text(content: str) -> str:
+    # Deterministic lightweight flattening. Keeps table text and reading order.
+    text = re.sub(r"^---\s*.*?\s*---\s*", "", content, flags=re.S)
+    text = re.sub(r"```.*?```", lambda m: re.sub(r"^```[^\n]*\n?|```$", "", m.group(0), flags=re.M), text, flags=re.S)
+    text = re.sub(r"!\[([^\]]*)\]\([^)]*\)", r"\1", text)
+    text = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text)
+    text = re.sub(r"^#{1,6}\s*", "", text, flags=re.M)
+    text = re.sub(r"[*_~`]", "", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def collect_outputs(job_root: Path, inputs: list[Path], include_content: bool, output_format: str) -> list[dict[str, Any]]:
+    markdown_root = job_root / "markdown"
+    candidates = sorted(markdown_root.rglob("*.md")) if markdown_root.exists() else []
+    if not candidates:
+        raise RuntimeError("olmOCR completed but no markdown output was found")
+
+    results: list[dict[str, Any]] = []
+    unused = candidates[:]
+    for source in inputs:
+        matches = [p for p in unused if p.stem == source.stem]
+        out = matches[0] if matches else (unused[0] if unused else candidates[-1])
+        if out in unused:
+            unused.remove(out)
+        content = out.read_text(encoding="utf-8", errors="replace")
+        value = markdown_to_text(content) if output_format == "text" else content
+        truncated = False
+        if include_content and len(value) > MAX_RETURN_CHARS:
+            value = value[:MAX_RETURN_CHARS]
+            truncated = True
+        results.append({
+            "source_path": str(source.relative_to(input_root())),
+            "source_sha256": sha256_file(source),
+            "output_path": str(out.relative_to(project_root())) if project_root() in out.resolve().parents else str(out),
+            "output_sha256": sha256_file(out),
+            "output_format": output_format,
+            "content": value if include_content else None,
+            "content_truncated": truncated,
+            "characters": len(content),
+        })
+    return results
+
+
+def execute_ocr(payload: dict[str, Any], *, batch: bool) -> dict[str, Any]:
+    backend = resolve_backend()
+    if backend is None:
+        raise RuntimeError("olmOCR backend not installed; install `olmocr` separately or set PHXCLAW_OLMOCR_BIN")
+
+    raw_inputs = payload.get("input_paths") if batch else [payload.get("input_path")]
+    if batch and not isinstance(raw_inputs, list):
+        raise ValueError("input_paths must be an array")
+    values = [str(x) for x in raw_inputs if x]
+    inputs = validate_inputs(values)
+
+    mode = str(payload.get("mode", "local")).lower()
+    output_format = str(payload.get("output_format", "markdown")).lower()
+    if output_format not in {"markdown", "text"}:
+        raise ValueError("output_format must be markdown or text")
+
+    model = str(payload.get("model") or os.getenv("PHXCLAW_OLMOCR_LOCAL_MODEL") or "").strip()
+    server = None
+    if mode == "local":
+        if not model:
+            raise RuntimeError("local mode requires PHXCLAW_OLMOCR_LOCAL_MODEL or payload.model; automatic network model download is intentionally disabled")
+        model_path = Path(model)
+        if not model_path.exists():
+            raise FileNotFoundError(f"local model path not found: {model}")
+        model = str(model_path.resolve())
+    elif mode == "remote":
+        server_raw = str(payload.get("server") or "").strip()
+        if not server_raw:
+            raise ValueError("remote mode requires server")
+        server = validate_remote_server(server_raw)
+        model = str(payload.get("model") or "allenai/olmOCR-2-7B-1025-FP8")
+    else:
+        raise ValueError("mode must be local or remote")
+
+    workers = int(payload.get("workers", 1))
+    if workers < 1 or workers > 64:
+        raise ValueError("workers must be between 1 and 64")
+    retries = int(payload.get("max_page_retries", 8))
+    if retries < 0 or retries > 32:
+        raise ValueError("max_page_retries must be between 0 and 32")
+    include_content = bool(payload.get("include_content", True))
+
+    job_uuid = uuid7()
+    root = output_root()
+    root.mkdir(parents=True, exist_ok=True)
+    job_root = safe_under(root, Path("jobs") / job_uuid)
+    job_root.mkdir(parents=True, exist_ok=False)
+
+    args = [*backend, str(job_root), "--markdown", "--workers", str(workers), "--max_page_retries", str(retries), "--model", model]
+    if server:
+        args += ["--server", server]
+    args += ["--pdfs", *[str(p) for p in inputs]]
+
+    started = time.monotonic()
+    proc = subprocess.run(
+        args,
+        cwd=project_root(),
+        text=True,
+        capture_output=True,
+        timeout=int(payload.get("timeout_seconds", 840)),
+        check=False,
+        env={**os.environ, "PYTHONUNBUFFERED": "1"},
+    )
+    elapsed_ms = round((time.monotonic() - started) * 1000)
+    if proc.returncode != 0:
+        stderr = proc.stderr[-4000:] if proc.stderr else ""
+        raise RuntimeError(f"olmOCR exited with {proc.returncode}: {stderr.strip()}")
+
+    outputs = collect_outputs(job_root, inputs, include_content, output_format)
+    return {
+        "job_uuid": job_uuid,
+        "provider": "olmOCR",
+        "plugin": PLUGIN,
+        "mode": mode,
+        "model": model if mode == "remote" else Path(model).name,
+        "server_origin": normalize_origin(server) if server else None,
+        "elapsed_ms": elapsed_ms,
+        "input_count": len(inputs),
+        "outputs": outputs,
+        "backend_stdout_tail": (proc.stdout or "")[-2000:],
+        "backend_stderr_tail": (proc.stderr or "")[-2000:],
+        "evidence_hints": {
+            "source_repository": "https://github.com/allenai/olmocr",
+            "upstream_license": "Apache-2.0",
+            "job_workspace": str(job_root.relative_to(project_root())) if project_root() in job_root.resolve().parents else str(job_root),
+        },
+    }
+
+
+def handle_process(envelope: dict[str, Any]) -> dict[str, Any]:
+    if envelope.get("protocol") != PROTOCOL:
+        mid = str(envelope.get("message_uuid") or uuid7())
+        return reply(mid, status="error", code="unsupported_protocol", message="unsupported process protocol")
+    mid = str(envelope.get("message_uuid") or uuid7())
+    kind = envelope.get("kind")
+    if kind == "health":
+        return reply(mid, payload=health_payload())
+    if kind == "shutdown":
+        return reply(mid, payload={"shutdown": True})
+    if kind == "cancel":
+        return reply(mid, status="error", code="cancel_not_supported", message="olmOCR adapter runs one-shot jobs", retryable=False)
+    if kind != "execute":
+        return reply(mid, status="error", code="invalid_kind", message=f"unsupported kind: {kind}")
+
+    outer = envelope.get("payload") or {}
+    capability = str(outer.get("capability") or "")
+    payload = outer.get("payload") or {}
+    if capability not in SUPPORTED:
+        return reply(mid, status="rejected", code="capability_not_supported", message=f"unsupported capability: {capability}")
+    try:
+        if capability == "ocr.olmocr.health":
+            return reply(mid, payload=health_payload())
+        if capability == "ocr.olmocr.extract":
+            return reply(mid, payload=execute_ocr(payload, batch=False))
+        return reply(mid, payload=execute_ocr(payload, batch=True))
+    except PermissionError as exc:
+        return reply(mid, status="rejected", code="policy_denied", message=str(exc), retryable=False)
+    except FileNotFoundError as exc:
+        return reply(mid, status="error", code="not_found", message=str(exc), retryable=False)
+    except (ValueError, TypeError) as exc:
+        return reply(mid, status="rejected", code="invalid_request", message=str(exc), retryable=False)
+    except subprocess.TimeoutExpired:
+        return reply(mid, status="error", code="backend_timeout", message="olmOCR backend timed out", retryable=True)
+    except Exception as exc:
+        return reply(mid, status="error", code="olmocr_backend_error", message=str(exc), retryable=False)
+
+
+def main() -> int:
+    if "--health" in sys.argv:
+        print(json.dumps(health_payload(), ensure_ascii=False))
+        return 0
+    data = sys.stdin.read()
+    line = next((ln for ln in data.splitlines() if ln.strip()), "")
+    if not line:
+        print(json.dumps(reply(uuid7(), status="error", code="empty_request", message="empty request"), ensure_ascii=False))
+        return 0
+    try:
+        envelope = json.loads(line)
+    except json.JSONDecodeError as exc:
+        print(json.dumps(reply(uuid7(), status="error", code="invalid_json", message=str(exc)), ensure_ascii=False))
+        return 0
+    print(json.dumps(handle_process(envelope), ensure_ascii=False))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

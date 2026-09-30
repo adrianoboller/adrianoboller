@@ -1,0 +1,5 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema","$id":"urn:phxclaw:schema:compatibility-n-n1:v0.27","type":"object","additionalProperties":false,
+  "required":["schema_version","candidate_version","source_state_sha256","rc_archive_sha256","first_release","previous_version","platforms","status","created_at"],
+  "properties":{"schema_version":{"const":"0.27.0"},"candidate_version":{"type":"string"},"source_state_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},"rc_archive_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},"first_release":{"type":"boolean"},"previous_version":{"type":["string","null"]},"platforms":{"type":"array","minItems":3,"maxItems":3},"status":{"const":"qualified"},"created_at":{"type":"string","format":"date-time"}}
+}

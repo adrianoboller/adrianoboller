@@ -1,0 +1,97 @@
+{
+  "suite": "PhxClaw v0.31 local contract tests",
+  "pass": 18,
+  "fail": 0,
+  "checks": [
+    {
+      "name": "prefer_local",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "cost_first_when_not_local",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "restricted_local_only",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "restricted_no_cloud_fallback",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "confidential_cloud_explicit_off",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "tools_capability",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "complexity_routes_cloud",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "data_control",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "stale_local_excluded",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "stale_catalog_excluded",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "open_circuit_excluded",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "budget_excludes_cloud",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "unknown_cloud_cost_excluded",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "evidence_hash_only",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "openai_no_raw_secret",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "anthropic_no_raw_secret",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "gemini_no_raw_secret",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "static_verifier",
+      "pass": true,
+      "detail": "{\"pass\": 74, \"fail\": 0}"
+    }
+  ]
+}

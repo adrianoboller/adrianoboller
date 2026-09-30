@@ -1,0 +1,20 @@
+{
+  "project": "PhxClaw",
+  "version": "0.63.0",
+  "feature": "Native Repo Intelligence / Tree-sitter",
+  "state": "source_ready_static_verified",
+  "native_rust_build": false,
+  "postgres_e2e": false,
+  "canonical_state": "config/project-state-canonical.v063.json",
+  "f19": "source_ready_static_verified",
+  "supported_tree_sitter_languages": [
+    "rust",
+    "python",
+    "javascript",
+    "typescript",
+    "go",
+    "c",
+    "cpp",
+    "java"
+  ]
+}

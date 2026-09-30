@@ -1,0 +1,100 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f644-769d-8ae3-769c0fa16faf",
+  "agent_id": 68,
+  "name": "Budget Manager",
+  "macroarea": "Gestão & Financeiro",
+  "nucleus": "Financeiro",
+  "role_type": "Agente de orçamento IA",
+  "mission": "Garante teto mensal de IA e controla gasto por task/sprint/modelo.",
+  "responsibilities": "Monitora custo real/estimado, limites warn/restrict/hard-stop, reservas e autorização de exceções.",
+  "resources": "Model runs, pricing config, PostgreSQL.",
+  "authorized_actions": "Bloquear/limitar chamadas pagas e emitir alertas.",
+  "trigger": "Cada chamada de modelo pago e fechamento mensal.",
+  "declared_dependencies": "Budget policy e saldo.",
+  "resolved_agent_dependencies": [
+    {
+      "uuid": "01a0e473-f645-7d82-8aff-cfaaa5ab5e3d",
+      "name": "Model Router"
+    }
+  ],
+  "deliverables": "Cost ledger e budget gate.",
+  "limits": "Nunca ultrapassa hard-stop sem autorização humana explícita.",
+  "next_gate": "Model Router/PO.",
+  "execution": "Permanente",
+  "models_allowed": [
+    "determinístico"
+  ],
+  "criticality": "Crítica",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F16 Scheduler + Background Jobs",
+    "F20 Team Runtime"
+  ],
+  "capabilities": [
+    "budget.ai.enforce",
+    "context.compile",
+    "job.read",
+    "memory.read",
+    "skill.read",
+    "team.message"
+  ],
+  "permissions": [
+    {
+      "name": "budget.ai.enforce",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "job.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "team.message",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Job UUIDv7 + lease/heartbeat/resume em PostgreSQL",
+  "event_topics": "agent.budget.manager.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; write sensível, gasto, publicação, privilégio ou ação destrutiva exigem gate explícito.",
+  "references": "oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão | ZeroClaw — benchmark Rust/providers/tools",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 69
+  }
+}

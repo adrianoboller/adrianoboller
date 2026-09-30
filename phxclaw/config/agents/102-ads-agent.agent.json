@@ -1,0 +1,119 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f666-7f5c-a943-7dde48b0f5f0",
+  "agent_id": 102,
+  "name": "ADS Agent",
+  "macroarea": "Produto & Growth",
+  "nucleus": "Produto/Marketing",
+  "role_type": "Agente de publicidade",
+  "mission": "Integra campanhas e métricas de anúncios quando aplicável.",
+  "responsibilities": "Cria/consulta entidades por adapters, valida políticas, budgets, regions e reconcilia status/metrics.",
+  "resources": "Ads APIs, Connector Platform, policy registry.",
+  "authorized_actions": "Executar operações autorizadas de campanha e coletar métricas.",
+  "trigger": "Módulo Ads habilitado com autorização.",
+  "declared_dependencies": "Campaign contract e budget.",
+  "resolved_agent_dependencies": [],
+  "deliverables": "Ads integration report.",
+  "limits": "Não gasta/publica sem autorização explícita e limites.",
+  "next_gate": "Data Attribution/FinOps/QA.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "codex",
+    "ollama"
+  ],
+  "criticality": "Alta",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F16 Scheduler + Background Jobs",
+    "F18 MCP + LSP Runtime",
+    "F20 Team Runtime",
+    "F21 Channel Gateway"
+  ],
+  "capabilities": [
+    "channel.ads.operate",
+    "channel.read",
+    "context.compile",
+    "job.read",
+    "lsp.read",
+    "mcp.invoke",
+    "memory.read",
+    "skill.read",
+    "team.message"
+  ],
+  "permissions": [
+    {
+      "name": "channel.ads.operate",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "channel.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "job.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "lsp.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "mcp.invoke",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "team.message",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Job UUIDv7 + lease/heartbeat/resume em PostgreSQL; Session/channel state sem credencial no contexto",
+  "event_topics": "agent.ads.agent.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; writes policy-gated; evidência obrigatória; sem autoaprovação.",
+  "references": "oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão | OpenClaw — gateway/nodes/channels; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 103
+  }
+}

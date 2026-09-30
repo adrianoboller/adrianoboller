@@ -1,0 +1,28 @@
+{
+  "version": "0.14.0",
+  "default_profile": "development",
+  "profiles": {
+    "development": {
+      "require_promoted_skills": false,
+      "allow_validated_skills": true,
+      "max_source_hits": 8,
+      "context_max_items": 24,
+      "context_max_bytes": 98304
+    },
+    "production": {
+      "require_promoted_skills": true,
+      "allow_validated_skills": false,
+      "max_source_hits": 8,
+      "context_max_items": 24,
+      "context_max_bytes": 98304
+    }
+  },
+  "event_topics": [
+    "research.pipeline",
+    "agent.runtime",
+    "skill.runtime",
+    "knowledge.source",
+    "context.compiler",
+    "evidence.ledger"
+  ]
+}

@@ -1,0 +1,147 @@
+{
+  "suite": "PhxClaw v0.39 package/security",
+  "pass": 28,
+  "fail": 0,
+  "checks": [
+    {
+      "name": "parse_json_PACKAGE.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "parse_json_overlay/capabilities/V039_CAPABILITIES_DELTA.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "parse_json_overlay/config/swarm-contract-policy.v039.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "parse_json_overlay/config/swarm-merge-intelligence-policy.v039.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "parse_json_overlay/reports/V039_GATE_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "parse_json_overlay/reports/V039_LOCAL_TEST_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "parse_json_overlay/reports/V039_NATIVE_PREFLIGHT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "parse_json_overlay/reports/V039_STATIC_VERIFY_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "parse_json_overlay/schemas/swarm-change-intent-v039.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "parse_json_overlay/schemas/swarm-integration-replay-v039.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "parse_json_overlay/schemas/swarm-merge-plan-v039.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "parse_json_overlay/schemas/swarm-resolution-v039.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "parse_json_overlay/schemas/swarm-semantic-conflict-v039.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "parse_json_repairs/V038_RLS_REPAIR.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "parse_json_reports/V039_GATE_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "parse_json_reports/V039_LOCAL_TEST_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "parse_json_reports/V039_NATIVE_PREFLIGHT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "parse_json_reports/V039_STATIC_VERIFY_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "parse_toml_overlay/crates/phxclaw-swarm-merge-intelligence/Cargo.toml",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_secret_sk-ant-",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_secret_sk-proj-",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_secret_BEGIN PRIVATE KEY",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_secret_ghp_",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_vendor_source",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_symlinks",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "repair_manifest_exists",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "native_separate_rls_url",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_direct_main_push",
+      "pass": true,
+      "detail": ""
+    }
+  ]
+}

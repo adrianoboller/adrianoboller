@@ -1,0 +1,9 @@
+{
+  "version": "0.66.0",
+  "gaps": [
+    "cargo fmt/check/test/clippy",
+    "PostgreSQL research/hypothesis persistence E2E",
+    "two-tenant RLS isolation E2E",
+    "concurrent experiment decision/update E2E"
+  ]
+}

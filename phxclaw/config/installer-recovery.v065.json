@@ -1,0 +1,32 @@
+{
+  "schema_version": "0.65.0",
+  "filesystem_backup": {
+    "content_addressed": true,
+    "reject_symlinks": true,
+    "verify_before_restore": true,
+    "atomic_staging_restore": true,
+    "preserve_rollback_copy": true,
+    "max_file_bytes": 8589934592,
+    "max_total_bytes": 549755813888
+  },
+  "postgresql": {
+    "backup_format": "custom",
+    "single_transaction_restore": true,
+    "passwords_in_argv": false,
+    "credential_source": "PGPASSFILE",
+    "required_tools": [
+      "pg_dump",
+      "pg_restore"
+    ]
+  },
+  "upgrade": {
+    "pre_upgrade_backup_required": true,
+    "verification_required_before_commit": true,
+    "rollback_on_apply_failure": true,
+    "rollback_on_verify_failure": true
+  },
+  "disaster_recovery": {
+    "restore_drill_required_for_release": true,
+    "record_rpo_rto": true
+  }
+}

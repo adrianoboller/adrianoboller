@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PhxClaw Predictive Recommendation",
+  "type": "object",
+  "required": [
+    "recommendation_uuid",
+    "task_uuid",
+    "selected_forecast_uuid",
+    "selected_model_profile_uuid",
+    "selected_agent_uuid",
+    "predicted_cost_usd",
+    "predicted_quality",
+    "predicted_success_probability",
+    "recommendation_sha256"
+  ],
+  "properties": {
+    "recommendation_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "task_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "selected_forecast_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "selected_model_profile_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "selected_agent_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "predicted_cost_usd": {
+      "type": "number",
+      "minimum": 0
+    },
+    "predicted_quality": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "predicted_success_probability": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "requires_cloud_escalation": {
+      "type": "boolean"
+    },
+    "recommendation_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

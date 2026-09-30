@@ -1,0 +1,33 @@
+{
+  "version": "0.36.0",
+  "deny_unverified_license": true,
+  "deny_missing_provenance": true,
+  "allow_auto_vendor": false,
+  "default_network": "deny_unless_skill_declares_and_task_allows",
+  "default_process": "deny_unless_exact_program_allowed",
+  "raw_shell": false,
+  "phase_order": [
+    "research_validate",
+    "understand_improve",
+    "create_explain",
+    "refine_deliver"
+  ],
+  "routing": {
+    "local_knowledge_before_web": true,
+    "max_skills_per_phase": 3,
+    "max_total_skills": 8,
+    "require_evidence_link_for_research": true,
+    "require_validation_before_delivery": true
+  },
+  "skill_memory": {
+    "observations_are_unverified": true,
+    "cannot_create_policy": true,
+    "cannot_modify_constitution": true,
+    "promotion_gate": "F24"
+  },
+  "side_effects": {
+    "publish_requires_approval": true,
+    "schedule_requires_budget_and_stop_condition": true,
+    "external_process_requires_exact_allowlist": true
+  }
+}

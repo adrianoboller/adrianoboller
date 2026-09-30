@@ -1,0 +1,1 @@
+{"version":"0.70.0","provider":"whisper.cpp","program":"configured-at-deployment","model":"configured-at-deployment","model_sha256":"required","timeout_seconds":{"default":900,"max":7200},"max_audio_bytes":{"default":536870912},"output":"txt","security":{"arbitrary_fixed_args":false,"model_integrity_required":true}}

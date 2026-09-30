@@ -1,0 +1,65 @@
+{
+  "version": "0.37.0",
+  "default_mode": "governed_autonomous",
+  "source_state_binding_required": true,
+  "evidence_freshness_required": true,
+  "stages": [
+    "intake",
+    "research",
+    "code_map",
+    "hypothesis",
+    "plan",
+    "implement",
+    "test",
+    "review",
+    "explain",
+    "deliver"
+  ],
+  "mutation": {
+    "only_stage": "implement",
+    "isolated_git_worktree_required": true,
+    "typed_actions_only": true,
+    "arbitrary_shell": false,
+    "checkpoint_before_mutation": true,
+    "diff_after_mutation": true
+  },
+  "approvals": {
+    "low_reversible_implementation": "policy_may_preapprove",
+    "medium_or_higher": "human_required",
+    "external_publish": "human_required",
+    "destructive": "human_required",
+    "production": "human_required"
+  },
+  "failure": {
+    "max_attempts_per_stage": 3,
+    "auto_retry_only_when_reversible": true,
+    "auto_rollback_on_mutation_failure": true,
+    "stop_when_rollback_unverified": true
+  },
+  "review": {
+    "independent_reviewer_for_critical": true,
+    "same_actor_cannot_self_approve_critical": true
+  },
+  "delivery": {
+    "publish_by_default": false,
+    "schedule_by_default": false,
+    "secret_export": false
+  },
+  "knowledge": {
+    "observations_are_not_truth": true,
+    "claims_require_evidence": true,
+    "accepted_knowledge_requires_promotion": true,
+    "policy_generation_by_learning": false
+  },
+  "skill_router": {
+    "requires_v036_catalog": true,
+    "license_and_provenance_gate": true,
+    "permissions_deny_by_default": true,
+    "max_external_skills_per_stage": 2
+  },
+  "resume": {
+    "append_only_stage_events": true,
+    "idempotency_key_required": true,
+    "fencing_token_required_for_mutation": true
+  }
+}

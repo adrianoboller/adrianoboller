@@ -1,0 +1,103 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f632-7358-9a30-45db2f4f7710",
+  "agent_id": 50,
+  "name": "QA Nível 1",
+  "macroarea": "Qualidade & Provas",
+  "nucleus": "Qualidade",
+  "role_type": "Gate de qualidade",
+  "mission": "Valida qualidade da implementação individual.",
+  "responsibilities": "Confere compile, lint, unit tests, error handling, padrões, documentação mínima e conformidade local.",
+  "resources": "Diff, CI, code standards, unit reports.",
+  "authorized_actions": "Aprovar/rejeitar implementação local.",
+  "trigger": "Patch pronto.",
+  "declared_dependencies": "Patch + unit evidence.",
+  "resolved_agent_dependencies": [],
+  "deliverables": "QA1 PASS/FAIL.",
+  "limits": "Não substitui integração nem objetivo.",
+  "next_gate": "QA2.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "claude",
+    "ollama"
+  ],
+  "criticality": "Alta",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F20 Team Runtime",
+    "F25 Knowledge / Evidence Graph"
+  ],
+  "capabilities": [
+    "context.compile",
+    "evidence.read",
+    "knowledge.read",
+    "memory.read",
+    "quality.gate.qa1",
+    "skill.read",
+    "team.message"
+  ],
+  "permissions": [
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "evidence.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "knowledge.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "quality.gate.qa1",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "team.message",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Knowledge/Evidence Graph com proveniência",
+  "event_topics": "agent.qa.nivel.1.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; writes policy-gated; evidência obrigatória; sem autoaprovação.",
+  "references": "oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão | ZeroClaw — benchmark Rust/providers/tools",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 51
+  }
+}

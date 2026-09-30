@@ -1,0 +1,9 @@
+{
+  "version":"0.32.0",
+  "store_raw_prompts":false,
+  "store_raw_outputs":false,
+  "default_profile_ttl_seconds":86400,
+  "promotion":{"min_samples":20,"min_success_basis_points":9000,"min_quality_basis_points":8500,"min_evidence_coverage_basis_points":9000,"max_quality_regression_basis_points":300,"max_success_regression_basis_points":200},
+  "adaptive":{"profile_required":false,"min_samples":20,"min_coverage_basis_points":9000,"min_success_basis_points":9000,"min_quality_basis_points":8500,"quality_weight":4,"success_weight":3,"latency_weight":1,"cost_weight":1},
+  "production_rules":["fixtures_never_promote","stale_profiles_never_route","suite_dataset_scorer_environment_hashes_must_match","no_model_is_best_globally"]
+}

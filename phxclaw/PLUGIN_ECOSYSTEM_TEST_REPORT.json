@@ -1,0 +1,376 @@
+{
+  "pass": 71,
+  "fail": 0,
+  "checks": [
+    {
+      "name": "workspace:crates/phxclaw-plugin-sdk",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "workspace:crates/phxclaw-community-registry",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "workspace:crates/phxclaw-extension-host",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "workspace:crates/phxclaw-octopus-bridge",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "workspace:apps/phxclaw-octopus-plugin",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "file:schemas/community-registry.schema.json",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "file:schemas/extension-invocation.schema.json",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "file:schemas/plugin-package.schema.json",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "file:schemas/extension-point-catalog.schema.json",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "file:schemas/release-policy.schema.json",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "file:migrations/0013_community_plugins.sql",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "file:config/community/registry.json",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "file:config/extension-points.json",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "file:config/release-policy.json",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "file:community/examples/octopus-bridge/phxclaw.plugin.template.json",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "file:community/examples/olmocr/phxclaw.plugin.template.json",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "file:community/examples/olmocr/phxclaw-olmocr-plugin",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "file:community/examples/olmocr/README.md",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "file:community/examples/olmocr/SBOM.spdx.json",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "file:docs/OLMOCR_PLUGIN_V010.md",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "file:docs/COMMUNITY_PLUGIN_ARCHITECTURE_V09.md",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "file:docs/OCTOPUS_REUSE_AUDIT_V09.md",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "file:docs/VERIFICATION_LEVELS_V09.md",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "file:community/CONTRIBUTING_PLUGINS.md",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "file:CONTRIBUTING.md",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "file:GOVERNANCE.md",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "file:SECURITY.md",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "file:LICENSE",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "extension-points:unique",
+      "ok": true,
+      "detail": [
+        "capability.provider",
+        "event.subscriber",
+        "model.provider",
+        "compiler.frontend",
+        "storage.provider",
+        "data.provider",
+        "channel.provider",
+        "device.node",
+        "ui.panel",
+        "knowledge.source",
+        "skill.provider",
+        "context.enricher",
+        "evidence.sink",
+        "release.gate"
+      ]
+    },
+    {
+      "name": "extension-point:capability.provider",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "extension-point:model.provider",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "extension-point:compiler.frontend",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "extension-point:channel.provider",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "extension-point:device.node",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "extension-point:knowledge.source",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "extension-point:skill.provider",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "extension-points:capability-stable",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release:no-mocks",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release:no-test-doubles",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release:no-skipped-gates",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "release:e2e-required",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "capability:plugin.extension.invoke",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "capability:plugin.extension.route.pin",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "capability:plugin.community.registry.read",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "capability:plugin.community.package.verify",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "capability:octopus.repo.map",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "capability:octopus.code.analyze",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "capability:octopus.shadow.check",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "capability:ocr.olmocr.health",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "capability:ocr.olmocr.extract",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "capability:ocr.olmocr.batch",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "capability:knowledge.olmocr.read",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "octopus:no-shell",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "octopus:allowlist",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "octopus:path-confinement",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "extension:ambiguity-fail-closed",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "extension:evidence",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "extension:event-bus",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "template:uuidv7",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "template:not-loadable",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "template:network-deny",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "olmocr-template:uuidv7",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "olmocr-template:not-loadable",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "olmocr-template:network-deny",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "olmocr-template:no-generic-collision",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "olmocr:subprocess-no-shell",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "olmocr:path-confinement",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "olmocr:remote-allowlist",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "olmocr:no-cli-api-key",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "registry:no-fake-release",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "registry:publisher",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

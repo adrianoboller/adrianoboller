@@ -1,0 +1,81 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f655-79ba-b433-fd32d0718d28",
+  "agent_id": 85,
+  "name": "Link",
+  "macroarea": "Operações & Infraestrutura",
+  "nucleus": "Tooling",
+  "role_type": "Agente de conectividade de ferramentas",
+  "mission": "Opera a ponte entre agentes e ferramentas aprovadas.",
+  "responsibilities": "Resolve tool capabilities, sessions, MCP/CLI adapters, health, routing e transformação de requests/responses.",
+  "resources": "Phoenix Tool Gateway, MCP, CLIs, provider adapters.",
+  "authorized_actions": "Conectar/desconectar tool, validar health e rotear chamada.",
+  "trigger": "Agent precisa de capability externa.",
+  "declared_dependencies": "Tool request autorizado.",
+  "resolved_agent_dependencies": [],
+  "deliverables": "Tool execution result/audit.",
+  "limits": "Não bypassa Seraph/Secrets/Tool policy.",
+  "next_gate": "Agent/Tool audit.",
+  "execution": "Permanente",
+  "models_allowed": [
+    "determinístico",
+    "ollama"
+  ],
+  "criticality": "Alta",
+  "modules": [
+    "F18 MCP + LSP Runtime",
+    "F22 Device Nodes"
+  ],
+  "capabilities": [
+    "lsp.read",
+    "mcp.invoke",
+    "node.observe",
+    "tool.connectivity.route"
+  ],
+  "permissions": [
+    {
+      "name": "lsp.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "mcp.invoke",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "tool.connectivity.route",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Node/session state efêmero e pareado; Estado operacional persistente em PostgreSQL",
+  "event_topics": "agent.link.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; writes policy-gated; evidência obrigatória; sem autoaprovação. Device input/screen exige autorização de sessão e logging.",
+  "references": "OpenClaw — gateway/nodes/channels; validar licença por versão | ZeroClaw — benchmark Rust/providers/tools | Claw Code Rust — referência técnica/clean-room",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 86
+  }
+}

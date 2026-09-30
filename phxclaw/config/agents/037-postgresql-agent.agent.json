@@ -1,0 +1,128 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f625-70a7-a3c0-51a2b0ec74c7",
+  "agent_id": 37,
+  "name": "PostgreSQL Agent",
+  "macroarea": "Dados & Integrações",
+  "nucleus": "Banco",
+  "role_type": "Agente PostgreSQL",
+  "mission": "Administra PostgreSQL como banco central de apoio e provider de dados.",
+  "responsibilities": "Schemas, migrations, indexes, EXPLAIN, locks, RLS quando necessário, tuning, backups e integridade.",
+  "resources": "psql, EXPLAIN ANALYZE, migrations, metrics.",
+  "authorized_actions": "Criar/otimizar migrations e queries, diagnosticar DB.",
+  "trigger": "Mudança de schema, query lenta, persistência PhxClaw.",
+  "declared_dependencies": "Data contracts e workload.",
+  "resolved_agent_dependencies": [
+    {
+      "uuid": "01a0e473-f635-7fb8-a692-79562cbd4ff6",
+      "name": "Guardian"
+    },
+    {
+      "uuid": "01a0e473-f652-73bf-95cc-e0fe919f7d54",
+      "name": "Migration Guardian"
+    }
+  ],
+  "deliverables": "Migration + query evidence + tuning report.",
+  "limits": "Não modifica produção manualmente fora de migration registrada.",
+  "next_gate": "Migration Guardian/Backup/QA.",
+  "execution": "Permanente",
+  "models_allowed": [
+    "codex",
+    "ollama"
+  ],
+  "criticality": "Crítica",
+  "modules": [
+    "F17 Checkpoint + Rollback",
+    "F18 MCP + LSP Runtime",
+    "F19 Repo Intelligence / Tree-sitter",
+    "F21 Channel Gateway",
+    "F25 Knowledge / Evidence Graph"
+  ],
+  "capabilities": [
+    "channel.read",
+    "checkpoint.read",
+    "database.postgresql.operate",
+    "evidence.read",
+    "knowledge.read",
+    "lsp.read",
+    "mcp.invoke",
+    "repo.read",
+    "tree_sitter.analyze"
+  ],
+  "permissions": [
+    {
+      "name": "channel.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "checkpoint.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "database.postgresql.operate",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "evidence.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "knowledge.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "lsp.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "mcp.invoke",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "repo.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "tree_sitter.analyze",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Checkpoint manifest + hashes + rollback evidence; Session/channel state sem credencial no contexto; Knowledge/Evidence Graph com proveniência; Estado operacional persistente em PostgreSQL",
+  "event_topics": "agent.postgresql.agent.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; write sensível, gasto, publicação, privilégio ou ação destrutiva exigem gate explícito.",
+  "references": "Architect (MIT) — AST/Tree-sitter/Repo Intelligence | Hermes — patterns; validar licença por versão | OpenClaw — gateway/nodes/channels; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 38
+  }
+}

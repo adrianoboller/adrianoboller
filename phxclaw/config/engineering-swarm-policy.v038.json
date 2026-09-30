@@ -1,0 +1,59 @@
+{
+  "version": "0.38.0",
+  "mode": "governed_parallel_swarm",
+  "max_parallel_teams": 6,
+  "teams": [
+    "research",
+    "architecture",
+    "coding",
+    "qa",
+    "security",
+    "documentation"
+  ],
+  "workspace": {
+    "shared_writable_worktree": false,
+    "isolated_worktree_per_team": true,
+    "integration_branch_required": true,
+    "direct_main_push": false
+  },
+  "scheduler": {
+    "dependency_aware": true,
+    "lease_required": true,
+    "fencing_required": true,
+    "expired_lease_recovery": true
+  },
+  "evidence": {
+    "source_state_binding_required": true,
+    "append_only": true,
+    "silent_conflict_resolution": false,
+    "majority_vote_for_facts": false
+  },
+  "independence": {
+    "qa_must_be_independent_from_coding": true,
+    "security_must_be_independent_from_coding": true,
+    "critical_resolver_must_be_independent": true
+  },
+  "merge_gate": {
+    "unresolved_conflicts_allowed": false,
+    "qa_pass_required": true,
+    "security_high_or_critical_allowed": false,
+    "architecture_approval_for_architecture_changes": true,
+    "documentation_required_for_public_or_behavioral_change": true,
+    "human_approval_for_main_or_production": true
+  },
+  "rollback": {
+    "checkpoint_per_mutating_team": true,
+    "rollback_must_be_verified": true,
+    "rollback_before_retry_on_failed_mutation": true
+  },
+  "skills": {
+    "reuse_v036_catalog": true,
+    "route_via_skill_router": true,
+    "no_arbitrary_shell": true
+  },
+  "mission_runtime": {
+    "reuse_v037_workflow": true,
+    "team_dispatch_via_f20": true,
+    "stage_events_append_only": true
+  }
+}

@@ -1,0 +1,117 @@
+{
+  "version": "0.68.0",
+  "pass": 22,
+  "fail": 0,
+  "checks": [
+    {
+      "name": "json:config/channel-providers.v068.json",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "json:schemas/channel-providers-v068.schema.json",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "json:sprints/f21.json",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "json:config/project-state-canonical.v068.json",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "cargo_toml",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "provider:pub struct TelegramProvider",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "provider:pub struct DiscordProvider",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "provider:pub struct SlackProvider",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "provider:pub struct WhatsAppProvider",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "provider:pub struct TeamsProvider",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "provider:channel:slack:send",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "provider:channel:whatsapp:send",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "provider:channel:teams:send",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "origin:https://api.telegram.org",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "origin:https://discord.com",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "origin:https://slack.com",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "origin:https://graph.microsoft.com",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "origin:https://graph.facebook.com",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "f21_source_ready",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "f21_no_source_gaps",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "migration_tables",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "migration_rls",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

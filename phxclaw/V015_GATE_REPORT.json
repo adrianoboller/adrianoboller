@@ -1,0 +1,54 @@
+{
+  "version": "0.15.0",
+  "status": "source_ready_static_verified_host_smoke_partial_runtime",
+  "focused": [
+    {
+      "file": "V014_PLUGIN_F20_TEST_REPORT.json",
+      "pass": 18,
+      "fail": 0
+    },
+    {
+      "file": "V015_CHANNEL_GATEWAY_TEST_REPORT.json",
+      "pass": 20,
+      "fail": 0
+    },
+    {
+      "file": "PLUGIN_ECOSYSTEM_TEST_REPORT.json",
+      "pass": 71,
+      "fail": 0
+    },
+    {
+      "file": "OLMOCR_PLUGIN_TEST_REPORT.json",
+      "pass": 5,
+      "fail": 0
+    },
+    {
+      "file": "MISSION_RUNTIME_TEST_REPORT.json",
+      "pass": 24,
+      "fail": 0
+    },
+    {
+      "file": "RESEARCH_PIPELINE_TEST_REPORT.json",
+      "pass": 34,
+      "fail": 0
+    },
+    {
+      "file": "F15_F16_TEST_REPORT.json",
+      "pass": 17,
+      "fail": 0
+    },
+    {
+      "file": "DESKTOP_HOST_TEST_REPORT.json",
+      "pass": 26,
+      "fail": 0
+    }
+  ],
+  "bootstrap_verifier": "PASS",
+  "cargo_available": false,
+  "rust_gates": [
+    "PENDING cargo check --workspace",
+    "PENDING cargo test --workspace",
+    "PENDING cargo clippy --workspace --all-targets -- -D warnings"
+  ],
+  "release_ready": false
+}

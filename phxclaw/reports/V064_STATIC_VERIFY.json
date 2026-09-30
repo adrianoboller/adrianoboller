@@ -1,0 +1,228 @@
+{
+  "version": "0.64.0",
+  "checks": [
+    {
+      "name": "workspace_version_064",
+      "pass": false,
+      "detail": ""
+    },
+    {
+      "name": "reqwest_stream_feature",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "runtime_struct_McpStdioSession",
+      "pass": true,
+      "detail": "struct McpStdioSession"
+    },
+    {
+      "name": "runtime_struct_LspStdioSession",
+      "pass": true,
+      "detail": "struct LspStdioSession"
+    },
+    {
+      "name": "runtime_struct_McpStreamableHttpClient",
+      "pass": true,
+      "detail": "struct McpStreamableHttpClient"
+    },
+    {
+      "name": "runtime_struct_ProcessSecurityPolicy",
+      "pass": true,
+      "detail": "struct ProcessSecurityPolicy"
+    },
+    {
+      "name": "runtime_struct_CapabilityPolicy",
+      "pass": true,
+      "detail": "struct CapabilityPolicy"
+    },
+    {
+      "name": "runtime_struct_Cancellation",
+      "pass": true,
+      "detail": "struct Cancellation"
+    },
+    {
+      "name": "runtime_struct_ReconnectPolicy",
+      "pass": true,
+      "detail": "struct ReconnectPolicy"
+    },
+    {
+      "name": "runtime_notifications_cancelled",
+      "pass": true,
+      "detail": "notifications/cancelled"
+    },
+    {
+      "name": "runtime_cancelRequest",
+      "pass": true,
+      "detail": "$/cancelRequest"
+    },
+    {
+      "name": "runtime_MCP_Protocol_Version",
+      "pass": true,
+      "detail": "MCP-Protocol-Version"
+    },
+    {
+      "name": "runtime_Mcp_Method",
+      "pass": true,
+      "detail": "Mcp-Method"
+    },
+    {
+      "name": "runtime_bytes_stream",
+      "pass": true,
+      "detail": "bytes_stream"
+    },
+    {
+      "name": "runtime_EvidenceLedger",
+      "pass": true,
+      "detail": "EvidenceLedger"
+    },
+    {
+      "name": "runtime_EventEnvelope",
+      "pass": true,
+      "detail": "EventEnvelope"
+    },
+    {
+      "name": "runtime_env_clear",
+      "pass": true,
+      "detail": "env_clear()"
+    },
+    {
+      "name": "runtime_kill_on_drop_true",
+      "pass": true,
+      "detail": "kill_on_drop(true)"
+    },
+    {
+      "name": "exists_migrations_0064_mcp_lsp_managed_runtime.sql",
+      "pass": true,
+      "detail": "migrations/0064_mcp_lsp_managed_runtime.sql"
+    },
+    {
+      "name": "exists_config_mcp-lsp-runtime.v064.json",
+      "pass": true,
+      "detail": "config/mcp-lsp-runtime.v064.json"
+    },
+    {
+      "name": "exists_schemas_mcp-lsp-runtime-v064.schema.json",
+      "pass": true,
+      "detail": "schemas/mcp-lsp-runtime-v064.schema.json"
+    },
+    {
+      "name": "exists_docs_ADR-0064-managed-mcp-lsp-runtime.md",
+      "pass": true,
+      "detail": "docs/ADR-0064-managed-mcp-lsp-runtime.md"
+    },
+    {
+      "name": "exists_docs_MCP_LSP_RUNTIME_V064.md",
+      "pass": true,
+      "detail": "docs/MCP_LSP_RUNTIME_V064.md"
+    },
+    {
+      "name": "exists_tests_v064_mcp_stdio_fixture.py",
+      "pass": true,
+      "detail": "tests/v064/mcp_stdio_fixture.py"
+    },
+    {
+      "name": "exists_tests_v064_lsp_stdio_fixture.py",
+      "pass": true,
+      "detail": "tests/v064/lsp_stdio_fixture.py"
+    },
+    {
+      "name": "exists_tools_v064_process_smoke.py",
+      "pass": true,
+      "detail": "tools/v064_process_smoke.py"
+    },
+    {
+      "name": "sql_protocol_sessions",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_protocol_requests",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_protocol_session_events",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_FORCE_ROW_LEVEL_SECURITY",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_protocol_append_only",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_current_tenant_uuid",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "canonical_version",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "f18_source_ready",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "f18_static_verified",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "f18_gaps_empty",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sprint_count_26",
+      "pass": true,
+      "detail": "26"
+    },
+    {
+      "name": "all_sprint_refs_v064",
+      "pass": false,
+      "detail": ""
+    },
+    {
+      "name": "real_process_smoke_7_7",
+      "pass": true,
+      "detail": "{'version': '0.64.0', 'checks': [{'name': 'mcp_real_process_initialize', 'pass': True, 'detail': ''}, {'name': 'mcp_real_process_tools', 'pass': True, 'detail': ''}, {'name': 'mcp_real_process_call', 'pass': True, 'detail': ''}, {'name': 'lsp_real_process_initialize', 'pass': True, 'detail': ''}, {'name': 'lsp_real_process_hover', 'pass': True, 'detail': ''}, {'name': 'lsp_real_process_shutdown', 'pass': True, 'detail': ''}, {'name': 'lsp_real_process_exit', 'pass': True, 'detail': ''}], 'pass': 7, 'fail': 0}"
+    },
+    {
+      "name": "toml_Cargo.toml_phxclaw-mcp-lsp-runtime",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "toml_Cargo.toml_PhxClaw_v0.65_CONSOLIDATED",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_mcp-lsp-runtime.v064.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_mcp-lsp-runtime-v064.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_project-state-canonical.v064.json",
+      "pass": true,
+      "detail": ""
+    }
+  ],
+  "pass": 42,
+  "fail": 2,
+  "native_rust": false
+}

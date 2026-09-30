@@ -1,0 +1,13 @@
+[package]
+name = "phxclaw-agent-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+phxclaw-agent-catalog = { path = "../phxclaw-agent-catalog" }
+phxclaw-sandbox = { path = "../phxclaw-sandbox" }
+phxclaw-types = { path = "../phxclaw-types" }
+thiserror.workspace = true
+uuid.workspace = true
+serde_json.workspace = true

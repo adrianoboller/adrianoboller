@@ -1,0 +1,15 @@
+{
+  "version": "0.29.0",
+  "source_ready": true,
+  "static_verified": true,
+  "runtime_verified": "partial",
+  "e2e_verified": false,
+  "release_ready": false,
+  "sprints": {
+    "green": 0,
+    "yellow": 26,
+    "red": 0
+  },
+  "capabilities_projected": 330,
+  "note": "F00-F25 remain yellow until native/RLS/E2E release evidence exists."
+}

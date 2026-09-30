@@ -1,0 +1,21 @@
+[package]
+name = "phxclaw-release-qualification"
+version = "0.25.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+description = "Native release qualification and attestation contracts for PhxClaw"
+
+[dependencies]
+ed25519-dalek = "2"
+base64 = "0.22"
+chrono = { version = "0.4", features = ["serde", "clock"] }
+phxclaw-release-hardening = { path = "../phxclaw-release-hardening" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+thiserror = "2"
+uuid = { version = "1", features = ["serde", "v7"] }
+
+[lints.rust]
+unsafe_code = "forbid"

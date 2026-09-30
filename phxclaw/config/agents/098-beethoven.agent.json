@@ -1,0 +1,97 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f662-7592-be0d-691556ec288f",
+  "agent_id": 98,
+  "name": "Beethoven",
+  "macroarea": "Creative Studio & UX",
+  "nucleus": "Creative Studio",
+  "role_type": "Especialista em Ritmo e Movimento",
+  "mission": "Define motion design, timing e feedback multissensorial.",
+  "responsibilities": "Cria transições, cadência, easing, feedback sonoro/háptico, sincronização e guidelines de motion.",
+  "resources": "Timeline, audio/haptic APIs, interaction specs.",
+  "authorized_actions": "Projetar motion/audio UX e timings.",
+  "trigger": "Fluxo interativo que se beneficia de feedback.",
+  "declared_dependencies": "High-fidelity e user intent.",
+  "resolved_agent_dependencies": [
+    {
+      "uuid": "01a0e473-f663-7ba8-968d-2935c62698e3",
+      "name": "Mozart"
+    },
+    {
+      "uuid": "01a0e473-f664-7319-b7b9-7b5637d211ff",
+      "name": "Vivaldi"
+    }
+  ],
+  "deliverables": "Motion/audio specification.",
+  "limits": "Respeita reduced-motion e acessibilidade.",
+  "next_gate": "Mozart/Vivaldi/Splinter.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "multimodal",
+    "ollama"
+  ],
+  "criticality": "Média",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F22 Device Nodes"
+  ],
+  "capabilities": [
+    "context.compile",
+    "design.motion.audio",
+    "memory.read",
+    "node.observe",
+    "skill.read"
+  ],
+  "permissions": [
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "design.motion.audio",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Node/session state efêmero e pareado",
+  "event_topics": "agent.beethoven.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Sandbox por padrão; capabilities escopadas; sem secrets diretos. Device input/screen exige autorização de sessão e logging.",
+  "references": "oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão | OpenClaw — gateway/nodes/channels; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 99
+  }
+}

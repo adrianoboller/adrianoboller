@@ -1,0 +1,39 @@
+{
+  "uuid": "01a0eab2-5c29-730a-908f-ee01cf1211d6",
+  "id": "definition-of-done",
+  "name": "Definition Of Done",
+  "category": "scrum",
+  "function": "Valida Definition of Done",
+  "capability": "project.skill.definition-of-done",
+  "agent_role": "scrum",
+  "permissions": [
+    "project.read",
+    "agile.write",
+    "project.mutate"
+  ],
+  "risk": "medium",
+  "approval_required": false,
+  "evidence_required": true,
+  "lifecycle_hooks": [
+    "before_invoke",
+    "after_invoke",
+    "on_failure"
+  ],
+  "rollback": "checkpoint",
+  "version": "0.42.0",
+  "semver": "0.42.0",
+  "manifest_uuid": "01a0eab2-5c30-7a40-80ec-579ec5724ecb",
+  "dependencies": [
+    "phxclaw-skill-runtime>=0.15",
+    "phxclaw-evidence-ledger>=0.9"
+  ],
+  "compatibility": {
+    "phxclaw": ">=0.41,<0.43"
+  },
+  "sandbox": "deny-by-default",
+  "signature_policy": "release-signing-required",
+  "provenance": {
+    "origin": "user-defined-project-management-suite",
+    "license": "PhxClaw project source policy"
+  }
+}

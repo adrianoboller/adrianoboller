@@ -1,0 +1,512 @@
+{
+  "suite": "PhxClaw v0.35 static verifier",
+  "pass": 101,
+  "fail": 0,
+  "checks": [
+    {
+      "name": "file:crates/phxclaw-ai-sre/Cargo.toml",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "file:crates/phxclaw-ai-sre/src/lib.rs",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "file:crates/phxclaw-ai-autopilot/Cargo.toml",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "file:crates/phxclaw-ai-autopilot/src/lib.rs",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "file:migrations/0035_ai_sre_autopilot.sql",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "file:config/ai-sre-policy.v035.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "file:capabilities/V035_CAPABILITIES_DELTA.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "file:docs/AI_SRE_COST_CAPACITY_AUTOPILOT_V035.md",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "file:ci/run-v035-native.sh",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "file:ci/run-v035-native.ps1",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "file:tests/sql/v035_rls_e2e.sql",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "schema:admission-decision-v035.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "schema:autopilot-execution-v035.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "schema:autopilot-plan-v035.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "schema:cost-forecast-v035.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "schema:demand-forecast-v035.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "schema:incident-detection-v035.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "schema:rate-limit-snapshot-v035.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "schema:slo-sample-v035.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "schema:sre-policy-v035.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "cap_base",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "cap_delta",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "cap_total",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "cap_unique",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_raw_prompts",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_raw_outputs",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_auto_capacity_purchase_default",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "v030_fence_authority",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "forecast_sample_ttl",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sre:SignedSrePolicyDocument",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sre:VerifiedSrePolicyDocument",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sre:verify_signed_policy",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sre:SloEvaluation",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sre:evaluate_slo",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sre:DemandForecast",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sre:forecast_demand",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sre:SignedRateLimitSnapshot",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sre:verify_rate_limit_snapshot",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sre:AdmissionDecision",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sre:admission_decision",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sre:CostForecast",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sre:forecast_cost",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sre:IncidentDetection",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sre:detect_incident",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sre:ed25519_dalek",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sre:ttl_seconds",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sre:max_sample_age_seconds",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sre:rate_limit_is_fresh",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sre:budget_limit_micro_usd",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sre:StaleSample",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sre:ContradictoryIncidentEvidence",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sre_admission_rechecks_rate",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sre_policy_rechecked_at_decision",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sre_queue_aging",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "autopilot:SignedAutopilotPlanDocument",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "autopilot:VerifiedAutopilotPlanDocument",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "autopilot:recompute_automatic",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "autopilot:verify_signed_plan",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "autopilot:authorize_automatic_execution",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "autopilot:TargetOutsidePortfolio",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "autopilot:AutomaticBoundsExceeded",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "autopilot:HumanApprovalRequired",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "autopilot:authorize_mutation",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "autopilot:LeaderLease",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "autopilot:OperationFence",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "autopilot:RequestCapacityIncrease",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "autopilot:RebalanceShare",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "autopilot:portfolio_providers",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "autopilot:PlanExpired",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "autopilot_no_promote",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "autopilot_no_shell",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "autopilot_provider_membership",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "autopilot_zero_budget_not_free",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "autopilot_binds_cost_incident",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "autopilot_expiry_execution",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_table:phxclaw_ai_sre_policies",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_table:phxclaw_ai_slo_samples",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_table:phxclaw_ai_slo_evaluations",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_table:phxclaw_ai_demand_samples",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_table:phxclaw_ai_demand_forecasts",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_table:phxclaw_ai_rate_limit_snapshots",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_table:phxclaw_ai_admission_decisions",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_table:phxclaw_ai_budget_snapshots",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_table:phxclaw_ai_cost_forecasts",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_table:phxclaw_ai_incident_events",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_table:phxclaw_ai_autopilot_plans",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_table:phxclaw_ai_autopilot_executions",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_budget_limit_snapshot",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_force_rls",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_correct_setting",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_no_bad_setting",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_append_only",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_fence",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_idempotent_execution",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_composite_tenant_fks",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "native_locked",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "native_separate_rls_role",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rls_test_cross_tenant",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rls_test_non_vacuous",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "toml:crates/phxclaw-ai-sre/Cargo.toml",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "toml:crates/phxclaw-ai-autopilot/Cargo.toml",
+      "pass": true,
+      "detail": ""
+    }
+  ]
+}

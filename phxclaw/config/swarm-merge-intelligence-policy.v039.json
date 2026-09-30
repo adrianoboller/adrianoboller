@@ -1,0 +1,34 @@
+{
+  "version": "0.39.0",
+  "deterministic_ordering": true,
+  "fail_closed_on_cycle": true,
+  "blocked_conflict_classes": [
+    "contract_violation",
+    "security_policy_conflict",
+    "evidence_conflict",
+    "schema_migration_conflict",
+    "behavioral_divergence"
+  ],
+  "required_independent_evidence": [
+    "qa",
+    "security"
+  ],
+  "require_architecture_evidence_on_contract_change": true,
+  "require_integration_replay": true,
+  "require_clean_replay": true,
+  "mutation_gate": {
+    "enabled": true,
+    "minimum_score_bps": 7000,
+    "minimum_mutants": 10,
+    "critical_survivor_blocks": true
+  },
+  "resolution": {
+    "append_only": true,
+    "trusted_signer_required_for_high_or_critical": true,
+    "majority_override_allowed": false
+  },
+  "merge": {
+    "target_main_requires_approval": true,
+    "rollback_checkpoint_required": true
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "version": "0.20.0",
+  "upstream": "RustClaw 0.5.0",
+  "license": "MIT",
+  "license_verified": true,
+  "vendor_path": "private/vendor/rustclaw/upstream",
+  "native_crate": "crates/phxclaw-rustclaw-native",
+  "process_plugin": "apps/phxclaw-rustclaw-native-plugin",
+  "policy": {
+    "repository_visibility": "private_only",
+    "plaintext_gateway_tokens": false,
+    "uuid_version": 7,
+    "official_persistence": "PostgreSQL",
+    "minimum_recurring_interval_seconds": 60,
+    "mcp_wire_modes": [
+      "content_length",
+      "ndjson"
+    ]
+  },
+  "adopted_upstream_areas": [
+    "gateway/protocol",
+    "session/memory",
+    "session/store concepts",
+    "cron model",
+    "tools/mcp compatibility"
+  ]
+}

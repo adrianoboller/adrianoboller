@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phxclaw.local/schemas/installer-recovery-v065.schema.json",
+  "type": "object",
+  "required": [
+    "filesystem_backup",
+    "postgresql",
+    "upgrade",
+    "disaster_recovery"
+  ],
+  "properties": {
+    "filesystem_backup": {
+      "type": "object"
+    },
+    "postgresql": {
+      "type": "object"
+    },
+    "upgrade": {
+      "type": "object"
+    },
+    "disaster_recovery": {
+      "type": "object"
+    }
+  }
+}

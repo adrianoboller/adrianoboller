@@ -1,0 +1,17 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://phxclaw.local/schemas/knowledge-contradiction-resolution.schema.json",
+  "title":"PhxClaw Knowledge Contradiction Resolution",
+  "type":"object",
+  "additionalProperties":false,
+  "required":["resolution_uuid","tenant_uuid","contradiction_uuid","resolution_node_uuid","resolved_by_uuid","resolution_sha256_hex","resolved_at"],
+  "properties":{
+    "resolution_uuid":{"type":"string","format":"uuid"},
+    "tenant_uuid":{"type":"string","format":"uuid"},
+    "contradiction_uuid":{"type":"string","format":"uuid"},
+    "resolution_node_uuid":{"type":"string","format":"uuid"},
+    "resolved_by_uuid":{"type":"string","format":"uuid"},
+    "resolution_sha256_hex":{"type":"string","pattern":"^[0-9a-fA-F]{64}$"},
+    "resolved_at":{"type":"string","format":"date-time"}
+  }
+}

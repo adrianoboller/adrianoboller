@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "tenant_uuid",
+    "arena_uuid",
+    "mode",
+    "task_family",
+    "complexity",
+    "evidence_class",
+    "champion",
+    "challengers",
+    "challenger_traffic_basis_points",
+    "assignment_salt_sha256",
+    "policy_sha256",
+    "starts_at_unix",
+    "expires_at_unix"
+  ],
+  "properties": {
+    "mode": {
+      "enum": [
+        "shadow",
+        "canary",
+        "paired"
+      ]
+    },
+    "evidence_class": {
+      "enum": [
+        "production",
+        "fixture"
+      ]
+    },
+    "challenger_traffic_basis_points": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 10000
+    },
+    "assignment_salt_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{64}$"
+    },
+    "policy_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{64}$"
+    }
+  }
+}

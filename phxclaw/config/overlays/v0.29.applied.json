@@ -1,0 +1,119 @@
+{
+  "version": "0.29.0",
+  "base": "0.28.0",
+  "copied": [
+    {
+      "path": "requirements-fleet-control.txt",
+      "sha256": "38a1f6c7bd34d60b38c88da6970d1edfd6911de6fb5c972ee4e340858de11cca"
+    },
+    {
+      "path": "config/trusted-control-signers.v029.json",
+      "sha256": "5f7fefcb0d2c4fe4fd14f1f86e6dfbb6693c22f7415f25e58394f70a0564b016"
+    },
+    {
+      "path": "config/fleet-control-policy.v029.json",
+      "sha256": "7cf8eb0b798d141579544f5c4fe4eb4ceb9359d1c5bd0bc933f3df6723c786e4"
+    },
+    {
+      "path": "capabilities/V029_CAPABILITIES_DELTA.json",
+      "sha256": "ab323137e19843d34f3478c99132f4cb47b3c8ad74e45183d1272535da4784b8"
+    },
+    {
+      "path": "schemas/fleet-control-state-v029.schema.json",
+      "sha256": "b38d55373149ed7698dd002a2f46c4d0c7731a7accaf58f03d4a145f053c46fb"
+    },
+    {
+      "path": "schemas/fleet-recovery-observation-v029.schema.json",
+      "sha256": "8f60744d6310114818807bef93602643cc05879248956ea6d496eb186cb2754b"
+    },
+    {
+      "path": "schemas/fleet-selector-v029.schema.json",
+      "sha256": "b23f4fc642958fc4034b3db3aa40be794455c95c2fe095c3387b0769026211aa"
+    },
+    {
+      "path": "schemas/fleet-maintenance-v029.schema.json",
+      "sha256": "c884a656a0946acc3c90ccf34661dc17f2256bdf8cda33080287dbae716c61d4"
+    },
+    {
+      "path": "schemas/fleet-command-plan-v029.schema.json",
+      "sha256": "d0e2802ac210602615ceab54a6d3351a566afbe5b71b1bf1495ebb823cc9594f"
+    },
+    {
+      "path": "schemas/fleet-inventory-node-v029.schema.json",
+      "sha256": "6be75a0764c8d935797318780109670f6389c2203d316b6ec7d1b1b9411b5615"
+    },
+    {
+      "path": "schemas/fleet-selector-snapshot-v029.schema.json",
+      "sha256": "2b5137e5e7afc8e14bfdd8fcaf3c6b7ae865d71cdf860041959376f6af5d44f7"
+    },
+    {
+      "path": "tools/create_control_plan.py",
+      "sha256": "d09e09e9f56fe86be363df76661f04f1256c0a8fd0ed02f3683cedbef09d4a89"
+    },
+    {
+      "path": "tools/v029_common.py",
+      "sha256": "4aebc07a6065b8b9c1d9fd703012cd3eb0ddfdf61e9b29451459697fff462a05"
+    },
+    {
+      "path": "tools/evaluate_heartbeat.py",
+      "sha256": "8cb33f14dede9d55d7d00069956a4375cc2b9be8e364852adbdc3c3147613fb2"
+    },
+    {
+      "path": "tools/scope_rollout.py",
+      "sha256": "07da9d7b261be204b659b42afac9b4320b66990087f7e40437eecc06cfdb4d31"
+    },
+    {
+      "path": "tools/verify_control_plan.py",
+      "sha256": "9b7c5fab9ea4664b8862fd8441f3b80da01e7ff759950ca31c543ff73030c4a4"
+    },
+    {
+      "path": "tools/assess_recovery.py",
+      "sha256": "610ad9cdd2582dc585add4d0469ae54d9a53d81e5fd5e69437668d6d56fd5fb4"
+    },
+    {
+      "path": "tools/verify_v029.py",
+      "sha256": "098833b30fffbdd38fa2b556deb9d681180141ef81ce6a18522035b58c90e2d7"
+    },
+    {
+      "path": "tools/select_control_nodes.py",
+      "sha256": "bd2bb842144f47e183f7ad16ec9a9ea4ad9ace6b198437736adda0018d9038f7"
+    },
+    {
+      "path": "tools/freeze_selector.py",
+      "sha256": "6a15a42466a50924a60100363a01a5c74d610236eeaa67c25ab22de043c04e11"
+    },
+    {
+      "path": "migrations/0029_fleet_control_plane.sql",
+      "sha256": "f3a7ca147b5448b8713e1d3b140840f5117f1134c9d4fe9fade0f8369dd898cc"
+    },
+    {
+      "path": "docs/PROJECT_STATUS_V029.json",
+      "sha256": "166e761af2a921fb70153f564dff45e1a2d986742167657b90d330d53df41fc4"
+    },
+    {
+      "path": "docs/FLEET_CONTROL_PLANE_V029.md",
+      "sha256": "173d8c9031b3e8c5178b04e1644b8951d0bc4fa32361b080cfcb9d1bbec30c5d"
+    },
+    {
+      "path": "ci/run-fleet-control-plane.ps1",
+      "sha256": "fa208f35bea49edf605323228202b51e37976c9675662f14cdb3a1e1839ce3cd"
+    },
+    {
+      "path": "ci/run-fleet-control-plane.sh",
+      "sha256": "1e41504d7247981b3be55525d391f7cece6a9b2b3f0c13ad0380a60be663e466"
+    },
+    {
+      "path": "crates/phxclaw-fleet-control-plane/Cargo.toml",
+      "sha256": "4d9852008067c09b9256927f3c146b80e09e60f0aa571160b29579283bcfe772"
+    },
+    {
+      "path": "crates/phxclaw-fleet-control-plane/src/lib.rs",
+      "sha256": "9d083df8fa4e9651334bdb28e81ac2c653dec2888d1ddc9316afd50abe26acfb"
+    },
+    {
+      "path": ".github/workflows/phxclaw-fleet-control-plane.yml",
+      "sha256": "826b1c28aa0c2eeab6501e5da9305b5c8d45c51414115b64097d09cd83cac173"
+    }
+  ],
+  "workspace": "fleet-control-plane crate present exactly once"
+}

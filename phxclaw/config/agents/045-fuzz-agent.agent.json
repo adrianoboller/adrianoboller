@@ -1,0 +1,89 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f62d-7437-9b52-a3e942163219",
+  "agent_id": 45,
+  "name": "Fuzz Agent",
+  "macroarea": "Qualidade & Provas",
+  "nucleus": "Qualidade",
+  "role_type": "Subagente de teste",
+  "mission": "Descobre crashes e inconsistências com entradas inesperadas.",
+  "responsibilities": "Gera entradas aleatórias/estruturadas, executa fuzzing, minimiza testcase e cria regression seed.",
+  "resources": "cargo-fuzz/libFuzzer, parsers, corpora.",
+  "authorized_actions": "Fuzz, minimizar crash, registrar seed.",
+  "trigger": "Parsers, codecs, schemas, protocolos e código crítico.",
+  "declared_dependencies": "Target fuzzável e invariantes.",
+  "resolved_agent_dependencies": [
+    {
+      "uuid": "01a0e473-f60a-7901-a95b-af0de0b5123c",
+      "name": "Brown"
+    },
+    {
+      "uuid": "01a0e473-f60b-796a-a1ff-a164537cd755",
+      "name": "Jones"
+    }
+  ],
+  "deliverables": "Crash/minimized testcase/evidence.",
+  "limits": "Não usa fuzz como substituto de especificação.",
+  "next_gate": "Brown/Jones/Security.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "determinístico",
+    "ollama"
+  ],
+  "criticality": "Alta",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine"
+  ],
+  "capabilities": [
+    "context.compile",
+    "memory.read",
+    "quality.fuzz.test",
+    "skill.read"
+  ],
+  "permissions": [
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "quality.fuzz.test",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo",
+  "event_topics": "agent.fuzz.agent.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; writes policy-gated; evidência obrigatória; sem autoaprovação.",
+  "references": "oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 46
+  }
+}

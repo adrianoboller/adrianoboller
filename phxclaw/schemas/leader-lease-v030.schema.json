@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "tenant_uuid",
+    "lease_uuid",
+    "holder_uuid",
+    "epoch",
+    "expires_at"
+  ],
+  "properties": {
+    "tenant_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "lease_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "holder_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "epoch": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "additionalProperties": false
+}

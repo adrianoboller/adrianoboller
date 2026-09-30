@@ -1,0 +1,12 @@
+{
+  "name": "phxclaw-bpm-editor",
+  "private": true,
+  "version": "0.67.0",
+  "scripts": {
+    "stage": "node scripts/stage-bpmn-js.mjs",
+    "serve": "python3 -m http.server 8097"
+  },
+  "dependencies": {
+    "bpmn-js": "18.30.1"
+  }
+}

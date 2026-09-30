@@ -1,0 +1,39 @@
+{
+  "uuid": "01a0eab2-5c2a-7435-96f9-e16e756c52e4",
+  "id": "root-cause-analysis",
+  "name": "Root Cause Analysis",
+  "category": "pdca",
+  "function": "Análise de causa raiz",
+  "capability": "project.skill.root-cause-analysis",
+  "agent_role": "pdca",
+  "permissions": [
+    "project.read",
+    "pdca.write",
+    "project.mutate"
+  ],
+  "risk": "medium",
+  "approval_required": false,
+  "evidence_required": true,
+  "lifecycle_hooks": [
+    "before_invoke",
+    "after_invoke",
+    "on_failure"
+  ],
+  "rollback": "checkpoint",
+  "version": "0.42.0",
+  "semver": "0.42.0",
+  "manifest_uuid": "01a0eab2-5c38-7ef6-b946-f811c6562eea",
+  "dependencies": [
+    "phxclaw-skill-runtime>=0.15",
+    "phxclaw-evidence-ledger>=0.9"
+  ],
+  "compatibility": {
+    "phxclaw": ">=0.41,<0.43"
+  },
+  "sandbox": "deny-by-default",
+  "signature_policy": "release-signing-required",
+  "provenance": {
+    "origin": "user-defined-project-management-suite",
+    "license": "PhxClaw project source policy"
+  }
+}

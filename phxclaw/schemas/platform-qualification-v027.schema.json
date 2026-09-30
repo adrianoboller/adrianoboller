@@ -1,0 +1,13 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"urn:phxclaw:schema:platform-qualification:v0.27",
+  "type":"object","additionalProperties":false,
+  "required":["schema_version","evidence_uuid","platform","architecture","candidate_version","source_state_sha256","rc_archive_sha256","artifact_name","artifact_sha256","artifact_size","evidence_files","evidence_bundle_sha256","fresh_install","upgrade_n_minus_1","rollback_or_restore","native_tests","code_signing","notarization","first_release","previous_version","created_at","signer_key_id","signature_algorithm","signature_b64"],
+  "properties":{
+    "schema_version":{"const":"0.27.0"},"evidence_uuid":{"type":"string","format":"uuid"},"platform":{"enum":["linux","windows","macos"]},"architecture":{"enum":["x86_64","aarch64"]},"candidate_version":{"type":"string","minLength":1},
+    "source_state_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},"rc_archive_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},"artifact_name":{"type":"string","minLength":1},"artifact_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},"artifact_size":{"type":"integer","minimum":1},
+    "evidence_files":{"type":"array","minItems":6,"maxItems":6,"items":{"type":"object","additionalProperties":false,"required":["name","sha256","size"],"properties":{"name":{"type":"string"},"sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},"size":{"type":"integer","minimum":1}}}},"evidence_bundle_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},
+    "fresh_install":{"enum":["verified","missing","failed","not_applicable"]},"upgrade_n_minus_1":{"enum":["verified","missing","failed","not_applicable"]},"rollback_or_restore":{"enum":["verified","missing","failed","not_applicable"]},"native_tests":{"enum":["verified","missing","failed"]},"code_signing":{"enum":["verified","missing","failed","not_applicable"]},"notarization":{"enum":["verified","missing","failed","not_applicable"]},
+    "first_release":{"type":"boolean"},"previous_version":{"type":["string","null"]},"created_at":{"type":"string","format":"date-time"},"signer_key_id":{"type":"string","minLength":1},"signature_algorithm":{"const":"ed25519"},"signature_b64":{"type":"string","minLength":1}
+  }
+}

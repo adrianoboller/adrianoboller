@@ -1,0 +1,40 @@
+{
+  "version": "0.24.0",
+  "base": "0.23.0",
+  "copied": [
+    {
+      "path": "config/release-hardening.v024.json",
+      "sha256": "b4e5e544e91deb8b9e08d69caba0ab78b745e75d866968bfef881a392ee8e3c4"
+    },
+    {
+      "path": "capabilities/V024_CAPABILITIES_DELTA.json",
+      "sha256": "c879be93e4b65b067e275d4b6a995695ab7eb3507a04cc633c50fda9c6b36065"
+    },
+    {
+      "path": "schemas/release-gate-proof.schema.json",
+      "sha256": "dd5882d8ce71723f36f4e241305c0db4dd23323ee4c161f2efcbb2e2b28a152d"
+    },
+    {
+      "path": "migrations/0024_release_hardening.sql",
+      "sha256": "e024e68db305fce0be31bac1f5d6579bbe41cb58b99b3015a50cc612a9634bf2"
+    },
+    {
+      "path": "docs/RELEASE_HARDENING_V024.md",
+      "sha256": "44a9d4db21061cd3777135034431b20ac9138a30314118b533a2f1d5ae0fdcad"
+    },
+    {
+      "path": "crates/phxclaw-release-hardening/Cargo.toml",
+      "sha256": "4f6f47a95360e1cf1fa7788caed7ac39bd897bf09328e2bfb1e74662d55381e9"
+    },
+    {
+      "path": "crates/phxclaw-release-hardening/src/lib.rs",
+      "sha256": "db6f111cba973f0411888430197a25e9e03ca104866792d33378b5c32f8dbfee"
+    },
+    {
+      "path": "tests/postgres/v024_rls_cross_tenant.sql",
+      "sha256": "54b58a65504d194ee14e1ce691c79b5883668ae76083a9257780fbfe8b201211"
+    }
+  ],
+  "workspace": "release-hardening crate present exactly once",
+  "cargo_repaired": false
+}

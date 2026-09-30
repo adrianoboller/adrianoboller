@@ -1,0 +1,100 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f601-710f-a4c9-f0e852a63358",
+  "agent_id": 1,
+  "name": "Product Owner – Humano",
+  "macroarea": "Governança & Estratégia",
+  "nucleus": "Governança",
+  "role_type": "Papel humano",
+  "mission": "Define o objetivo de negócio e mantém a autoridade final sobre prioridades e mudanças críticas.",
+  "responsibilities": "Define visão, prioridades, orçamento, riscos aceitáveis e critérios de sucesso; decide sobre mudanças constitucionais, releases críticas e impactos de produto.",
+  "resources": "Roadmap, relatórios QA, Evidence Graph, orçamento, métricas de produto.",
+  "authorized_actions": "Priorizar, aprovar objetivos, aceitar/rejeitar mudanças críticas, autorizar exceções.",
+  "trigger": "Nova iniciativa, conflito estratégico, release crítica ou mudança constitucional.",
+  "declared_dependencies": "Relatórios do PhxClaw, evidências, custos, riscos e recomendações dos agentes.",
+  "resolved_agent_dependencies": [
+    {
+      "uuid": "01a0e473-f602-7e32-9e89-7886eab11711",
+      "name": "Master Orchestrator"
+    }
+  ],
+  "deliverables": "Decisão humana rastreável, prioridade e aceite final de produto.",
+  "limits": "Não implementa nem substitui os gates técnicos.",
+  "next_gate": "Master Orchestrator / PMO recebe a decisão.",
+  "execution": "Permanente",
+  "models_allowed": [
+    "humano"
+  ],
+  "criticality": "Crítica",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F17 Checkpoint + Rollback",
+    "F20 Team Runtime"
+  ],
+  "capabilities": [
+    "checkpoint.read",
+    "context.compile",
+    "governance.objective.approve",
+    "memory.read",
+    "skill.read",
+    "team.message"
+  ],
+  "permissions": [
+    {
+      "name": "checkpoint.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "governance.objective.approve",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "team.message",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Checkpoint manifest + hashes + rollback evidence; Estado operacional persistente em PostgreSQL",
+  "event_topics": "agent.product.owner.humano.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Autoridade humana final; decisão registrada; sem execução técnica direta.",
+  "references": "oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão | ZeroClaw — benchmark Rust/providers/tools",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 2
+  }
+}

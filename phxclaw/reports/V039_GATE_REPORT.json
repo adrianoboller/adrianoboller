@@ -1,0 +1,47 @@
+{
+  "version": "0.39.0",
+  "status": {
+    "source_ready": true,
+    "static_verified": true,
+    "runtime_verified": "partial",
+    "e2e_verified": false,
+    "release_ready": false
+  },
+  "executed": [
+    {
+      "suite": "static verifier",
+      "pass": 54,
+      "fail": 0
+    },
+    {
+      "suite": "local/application",
+      "pass": 12,
+      "fail": 0
+    },
+    {
+      "suite": "package/security",
+      "pass": 28,
+      "fail": 0
+    }
+  ],
+  "capabilities": {
+    "base": 698,
+    "delta": 52,
+    "projected_total": 750
+  },
+  "sprints": {
+    "green": 0,
+    "yellow": 26,
+    "red": 0
+  },
+  "repairs": {
+    "v038_rls": "hash-guarded known-snapshot repair"
+  },
+  "pending": [
+    "cargo fmt/check/test/clippy",
+    "PostgreSQL real migration/RLS/concurrency E2E",
+    "real Git worktree semantic merge/replay/rollback E2E",
+    "real mutation-testing gate",
+    "Mission Runtime + Team Runtime E2E"
+  ]
+}

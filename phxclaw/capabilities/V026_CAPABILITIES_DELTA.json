@@ -1,0 +1,18 @@
+{
+  "version": "0.26.0",
+  "base_total": 266,
+  "delta_count": 10,
+  "projected_total": 276,
+  "capabilities": [
+    "release.rc.eligibility.evaluate",
+    "release.rc.build",
+    "release.rc.verify",
+    "release.sbom.generate",
+    "release.provenance.generate",
+    "release.compatibility.matrix",
+    "release.rollback.bundle",
+    "release.sprint.promotion.plan",
+    "release.artifact.manifest",
+    "release.rc.sign"
+  ]
+}

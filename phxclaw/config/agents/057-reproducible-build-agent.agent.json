@@ -1,0 +1,89 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f639-7ee3-b4bd-658857368ae7",
+  "agent_id": 57,
+  "name": "Reproducible Build Agent",
+  "macroarea": "Operações & Infraestrutura",
+  "nucleus": "Build",
+  "role_type": "Agente de build reproduzível",
+  "mission": "Garante que uma versão possa ser reconstruída a partir de fontes e toolchain registrados.",
+  "responsibilities": "Congela toolchain, lockfiles, flags, environment manifest e compara hashes/outputs onde aplicável.",
+  "resources": "Containers, Cargo.lock, rust-toolchain, Artifact Registry.",
+  "authorized_actions": "Rebuild limpo, comparar artifacts e emitir proof.",
+  "trigger": "Release candidate e auditoria.",
+  "declared_dependencies": "Source snapshot e build manifest.",
+  "resolved_agent_dependencies": [],
+  "deliverables": "Reproducibility Evidence.",
+  "limits": "Não aceita dependência não declarada.",
+  "next_gate": "QA3/Release.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "determinístico",
+    "ollama"
+  ],
+  "criticality": "Alta",
+  "modules": [
+    "F17 Checkpoint + Rollback",
+    "F18 MCP + LSP Runtime",
+    "F22 Device Nodes"
+  ],
+  "capabilities": [
+    "build.reproducible",
+    "checkpoint.read",
+    "lsp.read",
+    "mcp.invoke",
+    "node.observe"
+  ],
+  "permissions": [
+    {
+      "name": "build.reproducible",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "checkpoint.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "lsp.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "mcp.invoke",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Checkpoint manifest + hashes + rollback evidence; Node/session state efêmero e pareado",
+  "event_topics": "agent.reproducible.build.agent.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; writes policy-gated; evidência obrigatória; sem autoaprovação. Device input/screen exige autorização de sessão e logging.",
+  "references": "Hermes — patterns; validar licença por versão | OpenClaw — gateway/nodes/channels; validar licença por versão | ZeroClaw — benchmark Rust/providers/tools",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 58
+  }
+}

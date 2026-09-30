@@ -1,0 +1,17 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://phxclaw.local/schemas/knowledge-edge.schema.json",
+  "title":"PhxClaw Knowledge Edge",
+  "type":"object",
+  "additionalProperties":false,
+  "required":["edge_uuid","tenant_uuid","from_node_uuid","to_node_uuid","kind","created_at"],
+  "properties":{
+    "edge_uuid":{"type":"string","format":"uuid"},
+    "tenant_uuid":{"type":"string","format":"uuid"},
+    "from_node_uuid":{"type":"string","format":"uuid"},
+    "to_node_uuid":{"type":"string","format":"uuid"},
+    "kind":{"enum":["supports","refutes","derived_from","produced_by","validates","tests","depends_on","implements","supersedes","contradicts","approved_by","promoted_from","caused_by","relates_to"]},
+    "evidence_sha256_hex":{"type":["string","null"],"pattern":"^[0-9a-fA-F]{64}$"},
+    "created_at":{"type":"string","format":"date-time"}
+  }
+}

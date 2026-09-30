@@ -1,0 +1,205 @@
+{
+  "inventory_uuid": "01a0efd8-8896-796f-8ebb-3e467cea2ff9",
+  "generated_at": "2026-09-30T01:05:40.502013+00:00",
+  "bundle": {
+    "name": "ClaudeCodeFont.zip",
+    "sha256": "0d9ae4a92be1337cdbe508255c9c05bda87a3721b9100264973114e66e85491e"
+  },
+  "sources": [
+    {
+      "record_uuid": "01a0efd8-8896-7e1e-8836-5fb8da910146",
+      "source_name": "architect-main.zip",
+      "sha256": "479cd203847c590c4f13f2aa74f4cbc2318238821142d656b81d597cce471f9f",
+      "origin": {
+        "kind": "upstream_public",
+        "known": true,
+        "url": "https://github.com/camilooscargbaptista/architect"
+      },
+      "license": {
+        "class": "permissive",
+        "spdx": "MIT",
+        "local_evidence": true,
+        "evidence_sha256": "12be32dc9ca3e21f3bef46ed49e1ed06897a4429fcd3a4062c036a8a2f3adac4"
+      },
+      "archive_hash_verified": true,
+      "declared_leak": false,
+      "redistribution_prohibited": false,
+      "decision": "ALLOW",
+      "reasons": [
+        "LOCAL_MIT_LICENSE_PRESENT",
+        "ARCHIVE_SHA256_RECORDED",
+        "PUBLIC_UPSTREAM_IDENTIFIED"
+      ],
+      "evidence": [
+        {
+          "kind": "local_license",
+          "path": "architect-main/LICENSE"
+        },
+        {
+          "kind": "upstream",
+          "url": "https://github.com/camilooscargbaptista/architect"
+        }
+      ]
+    },
+    {
+      "record_uuid": "01a0efd8-8896-7cf1-92be-30490e49ba88",
+      "source_name": "oh-my-claudecode-main.zip",
+      "sha256": "06f2fffe9d14b2901893bd3ff99336075a5ebcf8010f499d18f2e0daf9b0f91b",
+      "origin": {
+        "kind": "upstream_public",
+        "known": true,
+        "url": "https://github.com/Yeachan-Heo/oh-my-claudecode"
+      },
+      "license": {
+        "class": "permissive",
+        "spdx": "MIT",
+        "local_evidence": true,
+        "evidence_sha256": "1d2b966f93feaa8928a57a69868388ee9016c86a341299fc5261ded44249af79"
+      },
+      "archive_hash_verified": true,
+      "declared_leak": false,
+      "redistribution_prohibited": false,
+      "decision": "ALLOW",
+      "reasons": [
+        "LOCAL_MIT_LICENSE_PRESENT",
+        "ARCHIVE_SHA256_RECORDED",
+        "PUBLIC_UPSTREAM_IDENTIFIED"
+      ],
+      "evidence": [
+        {
+          "kind": "local_license",
+          "path": "oh-my-claudecode-main/LICENSE"
+        },
+        {
+          "kind": "upstream",
+          "url": "https://github.com/Yeachan-Heo/oh-my-claudecode"
+        }
+      ]
+    },
+    {
+      "record_uuid": "01a0efd8-8896-7d1c-8721-6b8db458f0fa",
+      "source_name": "claw-code-main.zip",
+      "sha256": "5007c644fee493b85f152baca92d15c1dede156db5df5b60a7cdd7bec20528fa",
+      "origin": {
+        "kind": "upstream_public",
+        "known": true,
+        "url": "https://github.com/ultraworkers/claw-code"
+      },
+      "license": {
+        "class": "permissive",
+        "spdx": "MIT",
+        "local_evidence": false,
+        "evidence_sha256": null
+      },
+      "archive_hash_verified": true,
+      "declared_leak": false,
+      "redistribution_prohibited": false,
+      "decision": "QUARANTINE",
+      "reasons": [
+        "LOCAL_SNAPSHOT_MISSING_LICENSE_FILE",
+        "UPSTREAM_CURRENTLY_REPORTS_MIT_BUT_SNAPSHOT_IDENTITY_NOT_PINNED"
+      ],
+      "evidence": [
+        {
+          "kind": "upstream",
+          "url": "https://github.com/ultraworkers/claw-code"
+        },
+        {
+          "kind": "local_scan",
+          "detail": "No LICENSE/COPYING file found in supplied snapshot root."
+        }
+      ]
+    },
+    {
+      "record_uuid": "01a0efd8-8896-74be-8045-cb8d666b10a3",
+      "source_name": "claude-code-main.zip",
+      "sha256": "658ee4f0209ba359340e67ecd81e6f9ab08b013c5a6bdeab3d951f8a03cb729a",
+      "origin": {
+        "kind": "unknown",
+        "known": false,
+        "url": null
+      },
+      "license": {
+        "class": "proprietary",
+        "spdx": null,
+        "local_evidence": true,
+        "evidence_sha256": "24cba54b42e9559ab7f152b3bbbedcb4c3b1d5a3fff9aa3bdc784bafd5530e8c"
+      },
+      "archive_hash_verified": true,
+      "declared_leak": true,
+      "redistribution_prohibited": true,
+      "decision": "DENY",
+      "reasons": [
+        "SNAPSHOT_DECLARES_PROPRIETARY_LEAK",
+        "UNLICENSED_NOT_FOR_REDISTRIBUTION",
+        "DO_NOT_COPY_OR_LINK"
+      ],
+      "evidence": [
+        {
+          "kind": "local_license",
+          "path": "claude-code-main/LICENSE",
+          "detail": "Declares unlicensed proprietary leaked source and not for redistribution."
+        }
+      ]
+    },
+    {
+      "record_uuid": "01a0efd8-8896-7916-8b8b-265bbb1de32a",
+      "source_name": "src.zip",
+      "sha256": "8cd0e0b61ddc5755e2120876ece34f3b24613f1f5f0d97a659962a7282bc8921",
+      "origin": {
+        "kind": "unknown",
+        "known": false,
+        "url": null
+      },
+      "license": {
+        "class": "unknown",
+        "spdx": null,
+        "local_evidence": false,
+        "evidence_sha256": null
+      },
+      "archive_hash_verified": true,
+      "declared_leak": false,
+      "redistribution_prohibited": false,
+      "decision": "QUARANTINE",
+      "reasons": [
+        "ORIGIN_NOT_ESTABLISHED",
+        "LICENSE_NOT_ESTABLISHED"
+      ],
+      "evidence": [
+        {
+          "kind": "local_scan",
+          "detail": "Standalone src snapshot; origin/license not established by package root evidence."
+        }
+      ]
+    },
+    {
+      "record_uuid": "01a0efd8-8896-7dd8-94fe-555f45b46007",
+      "source_name": "phoenix s5272 phx cobol absorber.zip",
+      "sha256": "748e83bd215dbcb6394d49e679108ce3205b82e5c333e76eceeafd3bc0c6295b",
+      "origin": {
+        "kind": "user_supplied",
+        "known": true,
+        "url": null
+      },
+      "license": {
+        "class": "unknown",
+        "spdx": null,
+        "local_evidence": false,
+        "evidence_sha256": null
+      },
+      "archive_hash_verified": true,
+      "declared_leak": false,
+      "redistribution_prohibited": false,
+      "decision": "QUARANTINE",
+      "reasons": [
+        "USER_SUPPLIED_BUT_OWNERSHIP_LICENSE_ATTESTATION_NOT_RECORDED"
+      ],
+      "evidence": [
+        {
+          "kind": "bundle",
+          "detail": "Present in user-supplied ClaudeCodeFont.zip."
+        }
+      ]
+    }
+  ]
+}

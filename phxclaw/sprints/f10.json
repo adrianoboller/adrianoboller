@@ -1,0 +1,54 @@
+{
+  "uuid": "01a0e48f-3d0d-766e-9e80-341557e82cf5",
+  "code": "F10",
+  "title": "Connectivity Fabric",
+  "goal": "Unificar PostgreSQL, HTTPRequest/HTTPGetResult, Ollama e egress governado.",
+  "status": "review",
+  "tasks": [
+    {
+      "uuid": "01a0e48f-3d0e-7ab5-b3f8-6ebc2635ff9f",
+      "title": "PostgreSQL adapter",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e48f-3d0e-76b4-adb4-a8d77aec8445",
+      "title": "HTTPRequest completo",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e48f-3d0e-71b8-937e-1b052e537dc8",
+      "title": "HTTPGetResult completo",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e48f-3d0e-7885-90dc-1c1bf1c88bff",
+      "title": "Ollama API adapter",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e48f-3d0e-7794-8ccb-1ceb68ca586a",
+      "title": "Egress Broker allowlist",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e48f-3d0e-7346-a396-8c12f8529e42",
+      "title": "E2E PostgreSQL + Ollama",
+      "status": "blocked"
+    }
+  ],
+  "definition_of_done": [
+    "HTTP com auth/form/multipart/proxy/cookies",
+    "Ollama chat/generate/embed/model ops",
+    "egress deny-by-default",
+    "PostgreSQL parametrizado/transacional"
+  ],
+  "notes": [
+    "Integrações externas não são marcadas como E2E: não há PostgreSQL nem Ollama instalados neste host de montagem."
+  ],
+  "state": "review",
+  "canonical_project_version": "0.67.0",
+  "canonical_state_ref": "config/project-state-canonical.v067.json",
+  "implementation_state": "source_ready",
+  "verification_state": "static_verified",
+  "open_gaps": []
+}

@@ -1,0 +1,153 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f641-7b34-b9e3-ecbd4d238e17",
+  "agent_id": 65,
+  "name": "Knowledge Graph Agent",
+  "macroarea": "IA & Conhecimento",
+  "nucleus": "Conhecimento",
+  "role_type": "Agente de conhecimento",
+  "mission": "Mantém memória institucional e relações entre decisões, código e histórico.",
+  "responsibilities": "Liga ADRs, APIs, modules, bugs, research, sprints, versions e ownership; deduplica e mantém provenance.",
+  "resources": "PostgreSQL, embeddings/index, Git metadata.",
+  "authorized_actions": "Adicionar/atualizar relações e responder consultas estruturais.",
+  "trigger": "Novo conhecimento relevante ou alteração estrutural.",
+  "declared_dependencies": "Artifacts e metadata.",
+  "resolved_agent_dependencies": [
+    {
+      "uuid": "01a0e473-f640-799d-9824-531aea38c20c",
+      "name": "Context Compiler"
+    }
+  ],
+  "deliverables": "Knowledge Graph atualizado.",
+  "limits": "Não substitui fontes primárias; mantém provenance.",
+  "next_gate": "Context Compiler/Research.",
+  "execution": "Permanente",
+  "models_allowed": [
+    "ollama"
+  ],
+  "criticality": "Alta",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F17 Checkpoint + Rollback",
+    "F18 MCP + LSP Runtime",
+    "F19 Repo Intelligence / Tree-sitter",
+    "F20 Team Runtime",
+    "F24 Auto-learning + Skill Evolution",
+    "F25 Knowledge / Evidence Graph"
+  ],
+  "capabilities": [
+    "checkpoint.read",
+    "context.compile",
+    "evidence.read",
+    "knowledge.graph.manage",
+    "knowledge.read",
+    "lsp.read",
+    "mcp.invoke",
+    "memory.read",
+    "repo.read",
+    "skill.candidate.propose",
+    "skill.read",
+    "team.message",
+    "tree_sitter.analyze"
+  ],
+  "permissions": [
+    {
+      "name": "checkpoint.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "evidence.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "knowledge.graph.manage",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "knowledge.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "lsp.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "mcp.invoke",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "repo.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.candidate.propose",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "team.message",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "tree_sitter.analyze",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Checkpoint manifest + hashes + rollback evidence; Candidate Skill → Hypothesis → OPA/QA → Registry",
+  "event_topics": "agent.knowledge.graph.agent.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; writes policy-gated; evidência obrigatória; sem autoaprovação.",
+  "references": "Architect (MIT) — AST/Tree-sitter/Repo Intelligence | oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 66
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "version": "0.17.0",
+  "source_integration": {
+    "pass": 73,
+    "fail": 0
+  },
+  "bootstrap_verifier": "PASS",
+  "workspace_members": 53,
+  "rust_files_phoenix_owned": 109,
+  "rust_lines_phoenix_owned": 30562,
+  "capabilities": 182,
+  "agents": 110,
+  "sprints": 26,
+  "schemas": 28,
+  "migrations": 17,
+  "cargo_available": false,
+  "rustc_available": false,
+  "release_ready": false,
+  "pending_gates": [
+    "cargo fmt --check",
+    "cargo check --workspace",
+    "cargo test --workspace",
+    "cargo clippy --workspace --all-targets -- -D warnings",
+    "openclaw-rs bridge E2E with compiled upstream",
+    "RustClaw license text verification before source reuse"
+  ]
+}

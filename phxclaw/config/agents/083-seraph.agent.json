@@ -1,0 +1,95 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f653-7e06-8fa5-10c77bec7519",
+  "agent_id": 83,
+  "name": "Seraph",
+  "macroarea": "Segurança & Compliance",
+  "nucleus": "Segurança",
+  "role_type": "Agente Zero Trust",
+  "mission": "Controla quem pode fazer o quê dentro da fábrica.",
+  "responsibilities": "Aplica RBAC/capabilities, least privilege, break-glass, approval scopes e acesso a tools/repos/environments.",
+  "resources": "Agent Registry, RBAC, Tool Gateway, Secrets Manager.",
+  "authorized_actions": "Autorizar/negar capability e revogar acesso.",
+  "trigger": "Toda execução de agente/tool sensível.",
+  "declared_dependencies": "Role policy e task context.",
+  "resolved_agent_dependencies": [],
+  "deliverables": "Access decision/audit.",
+  "limits": "Não concede acesso além do necessário.",
+  "next_gate": "Tool Gateway/Agent runtime.",
+  "execution": "Permanente",
+  "models_allowed": [
+    "determinístico"
+  ],
+  "criticality": "Crítica",
+  "modules": [
+    "F18 MCP + LSP Runtime",
+    "F19 Repo Intelligence / Tree-sitter",
+    "F23 Secret & Credential Broker"
+  ],
+  "capabilities": [
+    "access.zerotrust.enforce",
+    "lsp.read",
+    "mcp.invoke",
+    "repo.read",
+    "secret.lease.request",
+    "tree_sitter.analyze"
+  ],
+  "permissions": [
+    {
+      "name": "access.zerotrust.enforce",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "lsp.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "mcp.invoke",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "repo.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "secret.lease.request",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "tree_sitter.analyze",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Somente metadados de segredo; valores nunca em prompt/log; Estado operacional persistente em PostgreSQL",
+  "event_topics": "agent.seraph.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; write sensível, gasto, publicação, privilégio ou ação destrutiva exigem gate explícito. Credenciais via broker/leases; nunca em prompt.",
+  "references": "Architect (MIT) — AST/Tree-sitter/Repo Intelligence | Hermes — patterns; validar licença por versão | OpenClaw — gateway/nodes/channels; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 84
+  }
+}

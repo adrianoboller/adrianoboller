@@ -1,0 +1,16 @@
+{
+  "version": "0.36.0",
+  "host_tools": {
+    "cargo": false,
+    "rustc": false,
+    "psql": false,
+    "postgres": false,
+    "python3": true,
+    "git": true
+  },
+  "native_build_proven": false,
+  "postgresql_e2e_proven": false,
+  "real_external_skill_adapters_proven": false,
+  "real_incident_recovery_drill_proven": false,
+  "authorized_chaos_experiment_proven": false
+}

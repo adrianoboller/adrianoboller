@@ -1,0 +1,39 @@
+{
+  "uuid": "01a0eab2-5c2a-7c8d-a5d2-449a55a81f23",
+  "id": "pdca-plan",
+  "name": "Pdca Plan",
+  "category": "pdca",
+  "function": "Define problema, meta, plano e indicadores",
+  "capability": "project.skill.pdca-plan",
+  "agent_role": "pdca",
+  "permissions": [
+    "project.read",
+    "pdca.write",
+    "project.mutate"
+  ],
+  "risk": "medium",
+  "approval_required": false,
+  "evidence_required": true,
+  "lifecycle_hooks": [
+    "before_invoke",
+    "after_invoke",
+    "on_failure"
+  ],
+  "rollback": "checkpoint",
+  "version": "0.42.0",
+  "semver": "0.42.0",
+  "manifest_uuid": "01a0eab2-5c37-72a4-abd3-bbda56a0457c",
+  "dependencies": [
+    "phxclaw-skill-runtime>=0.15",
+    "phxclaw-evidence-ledger>=0.9"
+  ],
+  "compatibility": {
+    "phxclaw": ">=0.41,<0.43"
+  },
+  "sandbox": "deny-by-default",
+  "signature_policy": "release-signing-required",
+  "provenance": {
+    "origin": "user-defined-project-management-suite",
+    "license": "PhxClaw project source policy"
+  }
+}

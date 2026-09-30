@@ -1,0 +1,30 @@
+{
+  "version": "0.26.0",
+  "base": "0.25.0",
+  "mode": "fail_closed",
+  "projected_capability_total": 276,
+  "public_rc_requirements": {
+    "candidate_version_must_be_semver_prerelease": true,
+    "qualification_release_ready": true,
+    "qualification_signature_trusted_ed25519": true,
+    "source_state_must_match_attestation": true,
+    "all_15_qualification_gates_verified": true,
+    "native_artifact_required": true,
+    "rollback_required_unless_first_release": true,
+    "rc_manifest_signature_trusted_ed25519": true,
+    "all_sprints_green": true
+  },
+  "outputs": [
+    "source bundle",
+    "artifact manifest",
+    "SPDX 2.3 SBOM",
+    "SLSA provenance v1 statement",
+    "compatibility matrix",
+    "sprint promotion plan",
+    "rollback bundle",
+    "signed RC manifest",
+    "final RC archive"
+  ],
+  "sign_command_env": "PHXCLAW_RELEASE_SIGN_CMD",
+  "trusted_signers_file": "config/trusted-release-signers.v025.json"
+}

@@ -1,0 +1,39 @@
+{
+  "version": "0.36.0",
+  "signed_policy_required": true,
+  "default_environment_allowlist": [
+    "sandbox",
+    "test",
+    "staging"
+  ],
+  "production": {
+    "enabled_by_default": false,
+    "human_approval_required": true,
+    "leader_fence_required": true,
+    "max_blast_radius_basis_points": 500,
+    "mandatory_abort_conditions": true
+  },
+  "allowed_faults": [
+    "provider_unavailable",
+    "added_latency",
+    "rate_limit_pressure",
+    "queue_saturation",
+    "model_error",
+    "database_read_only",
+    "network_partition_simulated"
+  ],
+  "forbidden_faults": [
+    "data_destruction",
+    "credential_exfiltration",
+    "unbounded_network_partition",
+    "arbitrary_shell"
+  ],
+  "recovery": {
+    "steady_state_required": true,
+    "evidence_required": true,
+    "postmortem_required_for_severity": [
+      "high",
+      "critical"
+    ]
+  }
+}

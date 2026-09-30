@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Adaptive Execution Telemetry",
+  "type": "object",
+  "required": [
+    "project_uuid",
+    "observed_at_epoch",
+    "source_state_sha256",
+    "evidence_sha256"
+  ],
+  "properties": {
+    "project_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "observed_at_epoch": {
+      "type": "integer"
+    },
+    "source_state_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "evidence_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  }
+}

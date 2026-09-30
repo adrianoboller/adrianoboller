@@ -1,0 +1,13 @@
+{
+  "schema_version": "phxclaw.source-attestation.v1",
+  "canonical_manifest_sha256": "87d52eb8688561b5810d0e0ef775cc210a3e8db2854819f912baf074fddca37d",
+  "signature": {
+    "algorithm": "ed25519",
+    "public_key_b64": "9unCh3tahvNFjg7x0bR45d1l/ah89m1CiKk3gS5Vnls=",
+    "signature_b64": "fz9zpMB65OUhP5gLq+TWNFytsctDI8RfkC+HxN6umbXG8S0SeAGdMh8pc7Wa/WZjQk8szuhG8+xICjx6dRmkBA==",
+    "public_key_fingerprint_sha256": "ecdf5b3028fe4dabf62b574c3cc07372e7d2b5eb51b12cec60c460c243e1680c"
+  },
+  "trust": "source_attestation_only",
+  "production_release_requires_resign": true,
+  "private_key_embedded": false
+}

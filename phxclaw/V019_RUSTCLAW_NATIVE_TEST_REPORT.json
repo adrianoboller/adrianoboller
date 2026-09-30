@@ -1,0 +1,244 @@
+{
+  "suite": "PhxClaw v0.19 RustClaw native MIT integration",
+  "pass": 47,
+  "fail": 0,
+  "rust_compiled": false,
+  "reason_if_not_compiled": "cargo/rustc availability is checked by the global verifier",
+  "checks": [
+    {
+      "name": "vendor_present",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "license_present",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "license_mit",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "lock_verified",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "provenance_reuse",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "status_verified",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "license_hash_matches",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "quarantine_removed",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "native_crate_member",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "native_plugin_member",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "version_current",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "native_GatewayInboundFrame",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "native_AuthProof",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "native_credential_lease_uuid",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "native_NativeSessionStore",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "native_ScheduleSpec",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "native_McpWireMode",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "native_ContentLength",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "native_Ndjson",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "native_RUSTCLAW_UPSTREAM_LICENSE",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_plaintext_gateway_token",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "uuidv7_used",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "mit_attribution",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "plugin_cap_rustclaw.native.gateway.negotiate",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "plugin_cap_rustclaw.native.session.scope",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "plugin_cap_rustclaw.native.cron.validate",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "plugin_cap_rustclaw.native.mcp.names",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "plugin_process_protocol",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "catalog_count_matches",
+      "pass": true,
+      "detail": "208 vs 208"
+    },
+    {
+      "name": "catalog_native_caps",
+      "pass": true,
+      "detail": "[]"
+    },
+    {
+      "name": "source_verified",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "upstream_config_verified",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "native_policy_private",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "native_policy_no_plaintext",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "native_policy_postgres",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "native_policy_mcp_modes",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "migration_phoenix_native_sessions",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "migration_phoenix_native_session_messages",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "migration_phoenix_scheduled_jobs",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sqlite_not_official",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "third_party_notice",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "integration_doc",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "cli_1",
+      "pass": true,
+      "detail": "PhxClaw 0.20.0\n"
+    },
+    {
+      "name": "cli_2",
+      "pass": true,
+      "detail": "de/RustClaw\",\n    \"license\": \"MIT\",\n    \"license_verified\": true,\n    \"version\": \"0.5.0\",\n    \"vendor_path\": \"private/vendor/rustclaw/upstream\",\n    \"lock_file\": \"private/vendor/rustclaw/UPSTREAM.lock.json\",\n    \"policy\": \"private_only\",\n    \"reuse\": \"allowed_with_notice\"\n  },\n  \"vendored\": true,\n  \"lock\": {\n    \"name\": \"RustClaw\",\n    \"repository\": \"https://github.com/Adaimade/RustClaw\",\n    \"source_kind\": \"user_supplied_archive\",\n    \"version\": \"0.5.0\",\n    \"license\": \"MIT\",\n    \"license_verified\": true,\n    \"archive_sha256\": \"53f9f87d6e453cadb3845c7fcf71e32db5e517230e29f7b264a1a69547b15968\",\n    \"license_sha256\": \"c6231661b04d1fcf342a6965a451a844364d026ccb3f9e7fde1910a0f92864ae\",\n    \"vendor_path\": \"private/vendor/rustclaw/upstream\",\n    \"vendored_at\": \"2026-09-28T02:37:00-03:00\"\n  }\n}\n"
+    },
+    {
+      "name": "cli_3",
+      "pass": true,
+      "detail": "rustclaw.native.cron.schedule          source_ready               phxclaw-rustclaw-native\nrustclaw.native.cron.validate          source_ready               phxclaw-rustclaw-native\nrustclaw.native.gateway.negotiate      source_ready               phxclaw-rustclaw-native\nrustclaw.native.mcp.content_length     source_ready               phxclaw-rustclaw-native\nrustclaw.native.mcp.names              source_ready               phxclaw-rustclaw-native\nrustclaw.native.mcp.ndjson             source_ready               phxclaw-rustclaw-native\nrustclaw.native.session.manage         source_ready               phxclaw-rustclaw-native\nrustclaw.native.session.scope          source_ready               phxclaw-rustclaw-native\n"
+    },
+    {
+      "name": "canonical_tool_name_contract",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "cron_min_contract",
+      "pass": true,
+      "detail": ""
+    }
+  ]
+}

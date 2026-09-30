@@ -1,0 +1,11 @@
+{
+  "version":"0.32.0",
+  "base_capability_count":395,
+  "delta_count":26,
+  "projected_total":421,
+  "capabilities":[
+    "ai.benchmark.suite.register","ai.benchmark.case.register","ai.benchmark.dataset.hash","ai.benchmark.scorer.attest","ai.benchmark.run.plan","ai.benchmark.run.record","ai.benchmark.observation.append","ai.benchmark.result.score","ai.benchmark.aggregate","ai.benchmark.regression.detect","ai.benchmark.profile.promote","ai.benchmark.profile.rollback","ai.benchmark.evidence.record",
+    "ai.adaptive.task.classify","ai.adaptive.rank","ai.adaptive.explain","ai.adaptive.profile.freshness","ai.adaptive.profile.confidence","ai.adaptive.quality.normalize","ai.adaptive.cost.normalize","ai.adaptive.latency.normalize","ai.adaptive.policy.evaluate","ai.adaptive.router.hint","ai.adaptive.evidence.record",
+    "ai.benchmark.fixture.run","ai.benchmark.fixture.verify"
+  ]
+}

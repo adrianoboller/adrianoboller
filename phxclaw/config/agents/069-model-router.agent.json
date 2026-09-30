@@ -1,0 +1,119 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f645-7d82-8aff-cfaaa5ab5e3d",
+  "agent_id": 69,
+  "name": "Model Router",
+  "macroarea": "IA & Conhecimento",
+  "nucleus": "IA",
+  "role_type": "Agente roteador",
+  "mission": "Escolhe Ollama, Codex, Claude ou outro provider conforme tarefa, custo e reputação.",
+  "responsibilities": "Classifica complexidade, privacidade, latência, skills e budget; aplica fallback/escalation ladder.",
+  "resources": "Model Registry, reputation, Budget Engine, provider adapters.",
+  "authorized_actions": "Selecionar modelo, retry/escalar e registrar decisão.",
+  "trigger": "Toda tarefa LLM.",
+  "declared_dependencies": "Task profile e Context Pack.",
+  "resolved_agent_dependencies": [],
+  "deliverables": "Model assignment + rationale.",
+  "limits": "Não bypassa orçamento/privacidade.",
+  "next_gate": "Agent runtime.",
+  "execution": "Permanente",
+  "models_allowed": [
+    "determinístico",
+    "ollama"
+  ],
+  "criticality": "Crítica",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F16 Scheduler + Background Jobs",
+    "F19 Repo Intelligence / Tree-sitter",
+    "F20 Team Runtime",
+    "F23 Secret & Credential Broker"
+  ],
+  "capabilities": [
+    "context.compile",
+    "job.read",
+    "memory.read",
+    "model.route",
+    "repo.read",
+    "secret.lease.request",
+    "skill.read",
+    "team.message",
+    "tree_sitter.analyze"
+  ],
+  "permissions": [
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "job.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "model.route",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "repo.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "secret.lease.request",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "team.message",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "tree_sitter.analyze",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Job UUIDv7 + lease/heartbeat/resume em PostgreSQL; Somente metadados de segredo; valores nunca em prompt/log",
+  "event_topics": "agent.model.router.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; write sensível, gasto, publicação, privilégio ou ação destrutiva exigem gate explícito. Credenciais via broker/leases; nunca em prompt.",
+  "references": "Architect (MIT) — AST/Tree-sitter/Repo Intelligence | oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 70
+  }
+}

@@ -1,0 +1,118 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f642-7a0b-9faa-0d9572211b9f",
+  "agent_id": 66,
+  "name": "Evidence Graph Agent",
+  "macroarea": "IA & Conhecimento",
+  "nucleus": "Evidência",
+  "role_type": "Agente de evidências",
+  "mission": "Liga cada requisito às provas que sustentam sua conclusão.",
+  "responsibilities": "Relaciona requirement→acceptance→test→result→commit→artifact→release; detecta lacunas.",
+  "resources": "PostgreSQL, CI reports, Git, Artifact Registry.",
+  "authorized_actions": "Criar links, validar completude e emitir missing evidence.",
+  "trigger": "Durante todo ciclo e especialmente QA3.",
+  "declared_dependencies": "Requisitos e evidências geradas.",
+  "resolved_agent_dependencies": [],
+  "deliverables": "Evidence Graph/completeness score.",
+  "limits": "Não cria evidência fictícia.",
+  "next_gate": "OPA/QA3.",
+  "execution": "Permanente",
+  "models_allowed": [
+    "ollama"
+  ],
+  "criticality": "Crítica",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F17 Checkpoint + Rollback",
+    "F22 Device Nodes",
+    "F24 Auto-learning + Skill Evolution",
+    "F25 Knowledge / Evidence Graph"
+  ],
+  "capabilities": [
+    "checkpoint.read",
+    "context.compile",
+    "evidence.graph.manage",
+    "evidence.read",
+    "knowledge.read",
+    "memory.read",
+    "node.observe",
+    "skill.candidate.propose",
+    "skill.read"
+  ],
+  "permissions": [
+    {
+      "name": "checkpoint.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "evidence.graph.manage",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "evidence.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "knowledge.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.candidate.propose",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Checkpoint manifest + hashes + rollback evidence; Node/session state efêmero e pareado",
+  "event_topics": "agent.evidence.graph.agent.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; write sensível, gasto, publicação, privilégio ou ação destrutiva exigem gate explícito. Device input/screen exige autorização de sessão e logging.",
+  "references": "oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão | OpenClaw — gateway/nodes/channels; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 67
+  }
+}

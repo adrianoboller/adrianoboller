@@ -1,0 +1,20 @@
+{
+  "project": "PhxClaw",
+  "version": "0.62.0",
+  "feature": "Canonical Project State + Knowledge Promotion Gate",
+  "state": "source_ready_static_verified",
+  "native_rust_build": false,
+  "postgres_e2e": false,
+  "canonical_state": "config/project-state-canonical.v062.json",
+  "invariants": [
+    "single_current_status_source",
+    "implementation_vs_verification_separated",
+    "promotion_requires_evidence",
+    "governed_requires_human",
+    "revocation_append_only",
+    "active_refutation_blocks",
+    "stale_evidence_blocks",
+    "contradiction_blocks",
+    "candidate_requires_allow_harvest"
+  ]
+}

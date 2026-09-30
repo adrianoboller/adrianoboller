@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phxclaw.local/schemas/extension-invocation.schema.json",
+  "title": "PhxClaw Extension Capability Invocation",
+  "type": "object",
+  "required": ["uuid", "correlation_uuid", "actor", "capability", "requested_permissions", "payload", "requested_at"],
+  "properties": {
+    "uuid": {"type": "string", "format": "uuid"},
+    "correlation_uuid": {"type": "string", "format": "uuid"},
+    "causation_uuid": {"type": ["string", "null"], "format": "uuid"},
+    "actor": {"type": "string", "minLength": 1},
+    "capability": {"type": "string", "minLength": 1},
+    "requested_permissions": {"type": "array"},
+    "payload": {},
+    "requested_at": {"type": "string", "format": "date-time"}
+  },
+  "additionalProperties": false
+}

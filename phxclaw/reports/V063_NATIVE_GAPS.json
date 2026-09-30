@@ -1,0 +1,60 @@
+{
+  "version": "0.63.0",
+  "closed": [
+    "F19_tree_sitter_source",
+    "F19_symbol_call_dependency_graph",
+    "F19_pagerank_hotspots"
+  ],
+  "remaining": [
+    {
+      "id": "native-rust",
+      "items": [
+        "cargo fmt --check",
+        "cargo check --workspace",
+        "cargo test --workspace",
+        "cargo clippy --workspace --all-targets -- -D warnings"
+      ]
+    },
+    {
+      "id": "postgres-e2e",
+      "items": [
+        "FULL INSTALL v0.62",
+        "POST_INSTALL_VERIFY v0.62",
+        "v062_knowledge_promotion_e2e.sql",
+        "RLS two-tenant isolation",
+        "concurrency/idempotency"
+      ]
+    },
+    {
+      "id": "F19-native-proof",
+      "items": [
+        "cargo build/test phxclaw-repo-intelligence",
+        "execute Tree-sitter analysis on representative Rust/Python/JS/TS/Go/C/C++/Java repositories",
+        "persist/reload PostgreSQL repo evidence"
+      ]
+    },
+    {
+      "id": "F18",
+      "items": [
+        "real MCP/LSP process manager",
+        "SSE/WebSocket/reconnect/cancel"
+      ]
+    },
+    {
+      "id": "F03",
+      "items": [
+        "backup/restore",
+        "upgrade/rollback",
+        "disaster recovery E2E"
+      ]
+    },
+    {
+      "id": "desktop-providers-devices",
+      "items": [
+        "Tauri native",
+        "real models/channels",
+        "device pairing/keyring/multiplatform"
+      ]
+    }
+  ]
+}

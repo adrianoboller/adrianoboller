@@ -1,0 +1,15 @@
+[package]
+name = "phxclaw-channel-providers"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+phxclaw-channel-gateway = { path = "../phxclaw-channel-gateway" }
+phxclaw-secret-broker = { path = "../phxclaw-secret-broker" }
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+url.workspace = true
+uuid.workspace = true

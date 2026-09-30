@@ -1,0 +1,13 @@
+[package]
+name = "phxclaw-knowledge-evidence-graph"
+version = "0.23.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Governed knowledge and evidence graph for PhxClaw"
+
+[dependencies]
+chrono = { version = "0.4", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+sha2 = "0.10"
+thiserror = "2"
+uuid = { version = "1", features = ["v7", "serde"] }

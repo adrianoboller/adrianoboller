@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "change_uuid",
+    "branch_ref",
+    "worktree_ref",
+    "source_state_sha256",
+    "core_auto_merge",
+    "human_approval_required"
+  ],
+  "properties": {
+    "change_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "branch_ref": {
+      "type": "string",
+      "pattern": "^agent/self-improve/"
+    },
+    "worktree_ref": {
+      "type": "string"
+    },
+    "source_state_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "core_auto_merge": {
+      "const": false
+    },
+    "human_approval_required": {
+      "const": true
+    }
+  },
+  "additionalProperties": true
+}

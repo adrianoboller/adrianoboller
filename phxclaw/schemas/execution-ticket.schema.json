@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:phxclaw:v045:execution-ticket",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "tenant_uuid",
+    "project_uuid",
+    "task_uuid",
+    "task_class",
+    "capability",
+    "complexity",
+    "data_class",
+    "context_fingerprint",
+    "source_state_sha256"
+  ],
+  "properties": {
+    "tenant_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "project_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "task_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "task_class": {
+      "type": "string",
+      "minLength": 1
+    },
+    "capability": {
+      "type": "string",
+      "minLength": 1
+    },
+    "complexity": {
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "extreme"
+      ]
+    },
+    "data_class": {
+      "enum": [
+        "public",
+        "internal",
+        "confidential",
+        "restricted"
+      ]
+    },
+    "context_fingerprint": {
+      "type": "string",
+      "minLength": 16
+    },
+    "source_state_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{64}$"
+    },
+    "priority": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "max_estimated_cost_usd": {
+      "type": "number",
+      "minimum": 0
+    }
+  }
+}

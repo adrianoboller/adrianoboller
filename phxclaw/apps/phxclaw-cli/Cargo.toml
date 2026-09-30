@@ -1,0 +1,29 @@
+[package]
+name = "phxclaw-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+phxclaw-agent-catalog = { path = "../../crates/phxclaw-agent-catalog" }
+phxclaw-agent-runtime = { path = "../../crates/phxclaw-agent-runtime" }
+phxclaw-evidence-ledger = { path = "../../crates/phxclaw-evidence-ledger" }
+phxclaw-live-bus = { path = "../../crates/phxclaw-live-bus" }
+phxclaw-memory-context = { path = "../../crates/phxclaw-memory-context" }
+phxclaw-research-pipeline = { path = "../../crates/phxclaw-research-pipeline" }
+phxclaw-skill-runtime = { path = "../../crates/phxclaw-skill-runtime" }
+phxclaw-source-registry = { path = "../../crates/phxclaw-source-registry" }
+phxclaw-hypothesis = { path = "../../crates/phxclaw-hypothesis" }
+phxclaw-installer = { path = "../../crates/phxclaw-installer" }
+phxclaw-kernel = { path = "../../crates/phxclaw-kernel" }
+phxclaw-model-gateway = { path = "../../crates/phxclaw-model-gateway" }
+phxclaw-plugin-registry = { path = "../../crates/phxclaw-plugin-registry" }
+phxclaw-process-protocol = { path = "../../crates/phxclaw-process-protocol" }
+phxclaw-research = { path = "../../crates/phxclaw-research" }
+phxclaw-sandbox = { path = "../../crates/phxclaw-sandbox" }
+phxclaw-task-graph = { path = "../../crates/phxclaw-task-graph" }
+phxclaw-types = { path = "../../crates/phxclaw-types" }
+chrono.workspace = true
+postgres.workspace = true
+serde_json.workspace = true

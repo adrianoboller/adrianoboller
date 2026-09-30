@@ -1,0 +1,36 @@
+{
+  "uuid": "01a0e64f-1626-7972-8fe4-8a03a1338e15",
+  "name": "rustclaw-user-source",
+  "ecosystem": "rustclaw",
+  "mode": "offline",
+  "authoritative": false,
+  "license_note": "MIT license text verified in user-supplied RustClaw-main(1).zip; source reuse is allowed with notice preservation.",
+  "local_root": "private/vendor/rustclaw/upstream",
+  "sync_strategy": "verified_user_archive_vendor",
+  "verified_version": "0.5.0",
+  "allowed_agents": [
+    "Research Agent",
+    "Documentador"
+  ],
+  "required_capabilities": [
+    "knowledge.rustclaw.read"
+  ],
+  "endpoints": [
+    {
+      "name": "RustClaw repository claimed by README",
+      "url": "https://github.com/Adaimade/RustClaw",
+      "authority": "user-supplied-verified-snapshot",
+      "purpose": "source repository",
+      "offline_relative_path": null
+    },
+    {
+      "name": "RustClaw README",
+      "url": "https://github.com/Adaimade/RustClaw/blob/main/README.md",
+      "authority": "user-supplied-verified-snapshot",
+      "purpose": "features and architecture",
+      "offline_relative_path": "README.md"
+    }
+  ],
+  "last_synced_at": "2026-09-28T02:37:00-03:00",
+  "reuse_state": "verified_mit_source"
+}

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phxclaw.local/schemas/process-envelope.schema.json",
+  "title": "PhxClaw Process Envelope v1",
+  "type": "object",
+  "required": ["protocol", "message_uuid", "correlation_uuid", "kind", "sent_at", "payload"],
+  "properties": {
+    "protocol": {"const": "phxclaw-process-v1"},
+    "message_uuid": {"type": "string", "format": "uuid"},
+    "correlation_uuid": {"type": ["string", "null"], "format": "uuid"},
+    "kind": {"enum": ["health", "execute", "cancel", "shutdown"]},
+    "sent_at": {"type": "string", "format": "date-time"},
+    "payload": {}
+  },
+  "additionalProperties": false
+}

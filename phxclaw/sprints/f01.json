@@ -1,0 +1,46 @@
+{
+  "uuid": "0199a5f1-0007-7007-8abc-000000000007",
+  "code": "F01",
+  "title": "Research Core",
+  "goal": "Criar pesquisador nativo com fontes, evidências, proveniência e hipóteses candidatas.",
+  "status": "active",
+  "tasks": [
+    {
+      "uuid": "0199a5f1-0008-7008-8abc-000000000008",
+      "title": "Modelar ResearchRecord",
+      "status": "done"
+    },
+    {
+      "uuid": "0199a5f1-0009-7009-8abc-000000000009",
+      "title": "Modelar EvidenceRef",
+      "status": "done"
+    },
+    {
+      "uuid": "0199a5f1-000a-700a-8abc-00000000000a",
+      "title": "Registrar proveniência",
+      "status": "done"
+    },
+    {
+      "uuid": "0199a5f1-000b-700b-8abc-00000000000b",
+      "title": "Persistir no PostgreSQL",
+      "status": "done"
+    },
+    {
+      "uuid": "0199a5f1-000c-700c-8abc-00000000000c",
+      "title": "Ligar ao Evidence Graph",
+      "status": "done"
+    }
+  ],
+  "definition_of_done": [
+    "evidências versionadas",
+    "proveniência registrada",
+    "persistência PostgreSQL",
+    "testes Rust verdes"
+  ],
+  "state": "review",
+  "canonical_project_version": "0.67.0",
+  "canonical_state_ref": "config/project-state-canonical.v067.json",
+  "implementation_state": "source_ready",
+  "verification_state": "static_verified",
+  "open_gaps": []
+}

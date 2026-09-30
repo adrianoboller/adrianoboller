@@ -1,0 +1,33 @@
+{
+  "policy_uuid": "019dc8d8-94a0-7b61-a7e2-bd1e8e58d9c1",
+  "name": "safe-source-harvest-v061",
+  "version": "1.0.0",
+  "fail_closed": true,
+  "requires_provenance_allow_for_reusable_knowledge": true,
+  "execute_external_code": false,
+  "copy_denied_sources": false,
+  "quarantine_may_store_content": true,
+  "follow_symlinks": false,
+  "limits": {
+    "max_files": 20000,
+    "max_file_bytes": 4194304,
+    "max_total_bytes": 268435456,
+    "max_excerpt_bytes": 2048
+  },
+  "knowledge": {
+    "allow_states": [
+      "raw_observation",
+      "unverified"
+    ],
+    "direct_governed_promotion": false,
+    "human_or_system_required_for_governed": true
+  },
+  "secret_markers": [
+    "-----BEGIN PRIVATE KEY-----",
+    "-----BEGIN OPENSSH PRIVATE KEY-----",
+    "AWS_SECRET_ACCESS_KEY=",
+    "ANTHROPIC_API_KEY=",
+    "OPENAI_API_KEY=",
+    "GITHUB_TOKEN="
+  ]
+}

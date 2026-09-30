@@ -1,0 +1,42 @@
+{
+  "suite": "PhxClaw v0.42 local overlay",
+  "pass": 7,
+  "fail": 0,
+  "checks": [
+    {
+      "name": "package_verify",
+      "pass": true,
+      "detail": "28/28 PASS\n"
+    },
+    {
+      "name": "apply",
+      "pass": true,
+      "detail": "PhxClaw v0.42 Project Management Suite applied\n"
+    },
+    {
+      "name": "installed_verify",
+      "pass": true,
+      "detail": "28/28 PASS\n"
+    },
+    {
+      "name": "canonical_pm_section",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "catalog_79",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "idempotent",
+      "pass": true,
+      "detail": "PhxClaw v0.42 Project Management Suite applied\n"
+    },
+    {
+      "name": "no_plain_secret",
+      "pass": true,
+      "detail": ""
+    }
+  ]
+}

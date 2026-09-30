@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PhxClaw Portfolio Scenario",
+  "type": "object",
+  "required": [
+    "scenario_uuid",
+    "twin_uuid",
+    "source_state_sha256",
+    "iterations",
+    "strategy"
+  ],
+  "properties": {
+    "scenario_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "twin_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "source_state_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "iterations": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 100000
+    },
+    "strategy": {
+      "enum": [
+        "PreservePlan",
+        "MinimizeCost",
+        "ProtectDeadline",
+        "ReduceContention",
+        "OllamaFirst",
+        "Balanced"
+      ]
+    }
+  }
+}

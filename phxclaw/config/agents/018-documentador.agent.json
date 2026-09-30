@@ -1,0 +1,167 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f612-770e-83ad-6e25803412ba",
+  "agent_id": 18,
+  "name": "Documentador",
+  "macroarea": "Qualidade & Provas",
+  "nucleus": "Documentação",
+  "role_type": "Agente de documentação",
+  "mission": "Produz documentação técnica e de usuário completa e navegável.",
+  "responsibilities": "Cria API docs, exemplos, tutoriais, runbooks, guias de migração, changelogs explicativos e índices.",
+  "resources": "Código, Perséfone, ADRs, examples, release notes. | Rust Official Source Registry: rust-lang.org; doc.rust-lang.org; play.rust-lang.org; github.com/rust-lang; rustup.rs; crates.io; Rust Book; std; Rust By Example; Rustonomicon; Rust Reference. Snapshot local via rustup/rust-docs em knowledge/offline/rust. | olmOCR official: allenai/olmocr (Apache-2.0), via Source Registry olmocr-official.",
+  "authorized_actions": "Escrever, atualizar, validar links/exemplos e organizar documentação. | Consultar help Rust offline/local, validar exemplos/API contra versão pinada e escalar para fonte online oficial quando necessário. | Executar OCR avançado em PDF/PNG/JPEG via capability ocr.olmocr.extract quando o provider estiver instalado e aprovado.",
+  "trigger": "Feature/release pronta para documentação.",
+  "declared_dependencies": "Comportamento real confirmado e artifacts. | Source Registry rust-official + índice offline local",
+  "resolved_agent_dependencies": [],
+  "deliverables": "Pacote documental completo.",
+  "limits": "Não substitui Perséfone nem QA.",
+  "next_gate": "Documentation Gate / Release.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "ollama"
+  ],
+  "criticality": "Média",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F18 MCP + LSP Runtime",
+    "F22 Device Nodes",
+    "F25 Knowledge / Evidence Graph"
+  ],
+  "capabilities": [
+    "context.compile",
+    "documentation.generate",
+    "documentation.write",
+    "evidence.read",
+    "knowledge.claw_code.read",
+    "knowledge.olmocr.read",
+    "knowledge.openclaw_rs.read",
+    "knowledge.read",
+    "knowledge.rust.read",
+    "knowledge.rustclaw.read",
+    "knowledge.source_registry.read",
+    "lsp.read",
+    "mcp.invoke",
+    "memory.read",
+    "node.observe",
+    "ocr.olmocr.extract",
+    "skill.read"
+  ],
+  "permissions": [
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "documentation.generate",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "documentation.write",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "evidence.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "knowledge.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "knowledge.rust.read",
+      "scopes": [
+        "rust-official"
+      ]
+    },
+    {
+      "name": "knowledge.source_registry.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "lsp.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "mcp.invoke",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "knowledge.olmocr.read",
+      "scopes": [
+        "olmocr-official"
+      ]
+    },
+    {
+      "name": "ocr.olmocr.extract",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "knowledge.claw_code.read",
+      "scopes": [
+        "claw-code-official"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Node/session state efêmero e pareado; Knowledge/Evidence Graph com proveniência | Rust docs snapshot versionado em knowledge/offline/rust; Context Pack registra versão/source hash",
+  "event_topics": "agent.documentador.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Sandbox por padrão; capabilities escopadas; sem secrets diretos. Device input/screen exige autorização de sessão e logging. Acesso permitido a rust-official com capability knowledge.rust.read; prioridade local-first para conhecimento estável, online oficial quando frescor/release atual for necessário; toda consulta registra UUIDv7, fonte, versão/data e Evidence Ledger.",
+  "references": "oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão | OpenClaw — gateway/nodes/channels; validar licença por versão | Rust oficial: https://www.rust-lang.org/ | https://doc.rust-lang.org/ | https://github.com/rust-lang | https://rustup.rs/ | https://crates.io/ | olmOCR oficial: https://github.com/allenai/olmocr",
+  "knowledge_sources": [
+    "claw-code-official",
+    "olmocr-official",
+    "openclaw-rs-user-source",
+    "rust-official",
+    "rustclaw-user-source"
+  ],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 19
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "version": "0.20.0",
+  "default_enabled": false,
+  "providers": [
+    {
+      "id": "telegram",
+      "implementation": "phxclaw-channel-providers",
+      "capabilities": [
+        "channel.telegram.send",
+        "channel.telegram.probe"
+      ],
+      "default_origin": "https://api.telegram.org",
+      "secret_scopes": [
+        "channel:telegram:send",
+        "channel:telegram:probe"
+      ],
+      "token_source": "secret_broker_only",
+      "enabled": false
+    },
+    {
+      "id": "discord",
+      "implementation": "phxclaw-channel-providers",
+      "capabilities": [
+        "channel.discord.send",
+        "channel.discord.probe"
+      ],
+      "default_origin": "https://discord.com",
+      "secret_scopes": [
+        "channel:discord:send",
+        "channel:discord:probe"
+      ],
+      "token_source": "secret_broker_only",
+      "enabled": false
+    }
+  ],
+  "policy": {
+    "allow_manifest_tokens": false,
+    "allow_argv_tokens": false,
+    "allow_log_tokens": false,
+    "require_secret_lease": true,
+    "require_origin_allowlist": true
+  }
+}

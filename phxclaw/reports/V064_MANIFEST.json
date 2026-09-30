@@ -1,0 +1,25 @@
+{
+  "project": "PhxClaw",
+  "version": "0.64.0",
+  "title": "Managed MCP/LSP Runtime",
+  "source_validation": {
+    "pass": 21,
+    "fail": 0
+  },
+  "static_verify": {
+    "pass": 44,
+    "fail": 0
+  },
+  "real_process_fixture_smoke": {
+    "pass": 7,
+    "fail": 0
+  },
+  "postgresql_static": {
+    "pass": 33,
+    "fail": 0,
+    "statements": 986
+  },
+  "native_rust_compilation": false,
+  "native_postgresql_execution": false,
+  "release_gate": "pending cargo + independent real MCP/LSP server E2E"
+}

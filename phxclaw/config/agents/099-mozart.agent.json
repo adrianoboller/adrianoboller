@@ -1,0 +1,81 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f663-7ba8-968d-2935c62698e3",
+  "agent_id": 99,
+  "name": "Mozart",
+  "macroarea": "Creative Studio & UX",
+  "nucleus": "Creative Studio",
+  "role_type": "Especialista em Fluidez e Simplicidade",
+  "mission": "Reduz carga cognitiva e torna jornadas rápidas, previsíveis e naturais.",
+  "responsibilities": "Remove passos desnecessários, simplifica menus, microinterações e feedback; otimiza clareza da sequência.",
+  "resources": "User flows, telemetry, prototypes, UX heuristics.",
+  "authorized_actions": "Simplificar jornada e comparar alternativas.",
+  "trigger": "Fluxo complexo ou fricção de uso.",
+  "declared_dependencies": "Journey metrics e design.",
+  "resolved_agent_dependencies": [],
+  "deliverables": "Simplified journey specification.",
+  "limits": "Não remove controle necessário por simplificação estética.",
+  "next_gate": "User Proof/Splinter.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "claude",
+    "ollama"
+  ],
+  "criticality": "Média",
+  "modules": [
+    "F20 Team Runtime",
+    "F25 Knowledge / Evidence Graph"
+  ],
+  "capabilities": [
+    "evidence.read",
+    "knowledge.read",
+    "team.message",
+    "ux.simplify"
+  ],
+  "permissions": [
+    {
+      "name": "evidence.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "knowledge.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "team.message",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "ux.simplify",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Knowledge/Evidence Graph com proveniência",
+  "event_topics": "agent.mozart.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Sandbox por padrão; capabilities escopadas; sem secrets diretos.",
+  "references": "oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | ZeroClaw — benchmark Rust/providers/tools",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 100
+  }
+}

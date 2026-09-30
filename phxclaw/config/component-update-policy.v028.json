@@ -1,0 +1,31 @@
+{
+  "version": "0.28.0",
+  "mode": "expand_contract",
+  "ordered_phases": [
+    "preflight",
+    "backup",
+    "database_expand",
+    "core",
+    "plugins",
+    "health_check",
+    "database_contract",
+    "cleanup"
+  ],
+  "automatic_phases": [
+    "preflight",
+    "backup",
+    "database_expand",
+    "core",
+    "plugins",
+    "health_check"
+  ],
+  "manual_approval_phases": [
+    "database_contract",
+    "cleanup"
+  ],
+  "irreversible_fence": "database_contract",
+  "require_plugin_core_compatibility": true,
+  "require_backup_before_database_change": true,
+  "rollback_before_irreversible_fence": "automatic_if_health_failed",
+  "rollback_after_irreversible_fence": "manual_restore_only"
+}

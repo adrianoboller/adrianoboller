@@ -1,0 +1,11 @@
+[package]
+name = "phxclaw"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+serde_json.workspace = true
+phxclaw-core-runtime = { path = "../../crates/phxclaw-core-runtime" }
+phxclaw-postgres-bootstrap = { path = "../../crates/phxclaw-postgres-bootstrap" }

@@ -1,0 +1,88 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f65f-7219-b54a-2165f244699f",
+  "agent_id": 95,
+  "name": "Raphaël / Rafael",
+  "macroarea": "Creative Studio & UX",
+  "nucleus": "Creative Studio",
+  "role_type": "Guardião da Harmonia",
+  "mission": "Mantém equilíbrio visual, grid, tipografia e consistência entre telas.",
+  "responsibilities": "Audita alinhamento, ritmo espacial, hierarquia, legibilidade, consistência e clareza visual.",
+  "resources": "Design tokens, grid tools, component inventory.",
+  "authorized_actions": "Revisar e harmonizar design.",
+  "trigger": "Após conceito ou durante review.",
+  "declared_dependencies": "Wireframes/high-fidelity.",
+  "resolved_agent_dependencies": [],
+  "deliverables": "Visual consistency review.",
+  "limits": "Não substitui Accessibility; trabalha em conjunto.",
+  "next_gate": "Splinter/Accessibility.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "multimodal",
+    "ollama"
+  ],
+  "criticality": "Média",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F22 Device Nodes"
+  ],
+  "capabilities": [
+    "context.compile",
+    "design.harmony.guard",
+    "memory.read",
+    "node.observe",
+    "skill.read"
+  ],
+  "permissions": [
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "design.harmony.guard",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Node/session state efêmero e pareado",
+  "event_topics": "agent.rapha.l.rafael.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Sandbox por padrão; capabilities escopadas; sem secrets diretos. Device input/screen exige autorização de sessão e logging.",
+  "references": "oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão | OpenClaw — gateway/nodes/channels; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 96
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Swarm Integration Replay",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "replay_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "swarm_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tenant_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "base_source_sha256": {
+      "type": "string",
+      "pattern": "^[0-9A-Fa-f]{64}$"
+    },
+    "merge_plan_sha256": {
+      "type": "string",
+      "pattern": "^[0-9A-Fa-f]{64}$"
+    },
+    "candidate_artifacts": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[0-9A-Fa-f]{64}$"
+      }
+    },
+    "replay_tree_sha256": {
+      "type": "string",
+      "pattern": "^[0-9A-Fa-f]{64}$"
+    },
+    "test_suite_sha256": {
+      "type": "string",
+      "pattern": "^[0-9A-Fa-f]{64}$"
+    },
+    "status": {
+      "enum": [
+        "passed",
+        "failed",
+        "diverged",
+        "side_effect_mismatch"
+      ]
+    },
+    "side_effects_sha256": {
+      "type": "string",
+      "pattern": "^[0-9A-Fa-f]{64}$"
+    }
+  },
+  "required": [
+    "replay_uuid",
+    "swarm_uuid",
+    "tenant_uuid",
+    "base_source_sha256",
+    "merge_plan_sha256",
+    "candidate_artifacts",
+    "replay_tree_sha256",
+    "test_suite_sha256",
+    "status",
+    "side_effects_sha256"
+  ]
+}

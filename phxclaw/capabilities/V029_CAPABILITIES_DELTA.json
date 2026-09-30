@@ -1,0 +1,29 @@
+{
+  "version": "0.29.0",
+  "base_total": 308,
+  "added": [
+    "fleet.control.inventory.list",
+    "fleet.control.inventory.reconcile",
+    "fleet.control.group.create",
+    "fleet.control.group.membership.manage",
+    "fleet.control.tag.manage",
+    "fleet.control.selector.evaluate",
+    "fleet.control.selector.snapshot",
+    "fleet.control.heartbeat.evaluate",
+    "fleet.control.maintenance.plan",
+    "fleet.control.maintenance.apply",
+    "fleet.control.command.plan",
+    "fleet.control.command.fanout",
+    "fleet.control.command.cancel",
+    "fleet.control.recovery.assess",
+    "fleet.control.recovery.authorize",
+    "fleet.control.quarantine.review",
+    "fleet.control.rollout.scope",
+    "fleet.control.rollout.membership.freeze",
+    "fleet.control.lease.acquire",
+    "fleet.control.lease.renew",
+    "fleet.control.lease.release",
+    "fleet.control.state.transition"
+  ],
+  "projected_total": 330
+}

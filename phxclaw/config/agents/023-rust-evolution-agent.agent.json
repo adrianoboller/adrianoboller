@@ -1,0 +1,120 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f617-7985-8311-d75e0057d77c",
+  "agent_id": 23,
+  "name": "Rust Evolution Agent",
+  "macroarea": "Pesquisa & Inovação",
+  "nucleus": "Rust",
+  "role_type": "Agente de evolução Rust",
+  "mission": "Mantém o Phoenix atualizado com avanços estáveis do Rust.",
+  "responsibilities": "Monitora rustc, Cargo, std, targets, deprecações, performance e segurança; testa cada stable em laboratório antes de promover.",
+  "resources": "Rust release notes, rustup, CI lab, benchmarks, Compatibility Matrix.",
+  "authorized_actions": "Abrir upgrade branch, executar full suite, propor modernizações PhoenixRustCore.",
+  "trigger": "Nova versão Rust Stable ou advisory crítico.",
+  "declared_dependencies": "Toolchain atual, changelog e benchmarks.",
+  "resolved_agent_dependencies": [
+    {
+      "uuid": "01a0e473-f635-7fb8-a692-79562cbd4ff6",
+      "name": "Guardian"
+    },
+    {
+      "uuid": "01a0e473-f637-7194-be89-ecefe3390927",
+      "name": "Versionador"
+    }
+  ],
+  "deliverables": "Rust Impact Report e decisão PROMOTE/HOLD.",
+  "limits": "Nunca atualiza produção só por existir versão nova.",
+  "next_gate": "Versionador / Guardian / PhoenixRustCore.",
+  "execution": "Permanente",
+  "models_allowed": [
+    "codex",
+    "ollama"
+  ],
+  "criticality": "Alta",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F18 MCP + LSP Runtime",
+    "F22 Device Nodes",
+    "F23 Secret & Credential Broker"
+  ],
+  "capabilities": [
+    "context.compile",
+    "lsp.read",
+    "mcp.invoke",
+    "memory.read",
+    "node.observe",
+    "secret.lease.request",
+    "skill.read",
+    "technology.rust.evaluate"
+  ],
+  "permissions": [
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "lsp.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "mcp.invoke",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "secret.lease.request",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "technology.rust.evaluate",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Node/session state efêmero e pareado; Somente metadados de segredo; valores nunca em prompt/log",
+  "event_topics": "agent.rust.evolution.agent.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; writes policy-gated; evidência obrigatória; sem autoaprovação. Device input/screen exige autorização de sessão e logging. Credenciais via broker/leases; nunca em prompt.",
+  "references": "oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão | OpenClaw — gateway/nodes/channels; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 24
+  }
+}

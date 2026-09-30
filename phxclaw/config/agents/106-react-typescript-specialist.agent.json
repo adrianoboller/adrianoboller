@@ -1,0 +1,122 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f66a-7b05-872b-8b3d724fe10a",
+  "agent_id": 106,
+  "name": "React/TypeScript Specialist",
+  "macroarea": "Engenharia & Arquitetura",
+  "nucleus": "UI legado",
+  "role_type": "Agente especialista legado",
+  "mission": "Mantém e migra código React/TypeScript existente quando Phoenix precisar interoperar.",
+  "responsibilities": "Corrige, encapsula e converte UI legada, cria adapters e planeja migração para Phoenix UI.",
+  "resources": "Node/TS toolchain, React repos, migration tools.",
+  "authorized_actions": "Manter/migrar sem expandir dependência estratégica.",
+  "trigger": "Integração com frontend legado.",
+  "declared_dependencies": "Legacy source + Phoenix contracts.",
+  "resolved_agent_dependencies": [
+    {
+      "uuid": "01a0e473-f610-77ff-b82c-aaa004721899",
+      "name": "Merovíngio"
+    }
+  ],
+  "deliverables": "Adapter/migration patch.",
+  "limits": "Não transforma React/TS em fundação Phoenix.",
+  "next_gate": "Merovíngio/Octopus/QA.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "codex"
+  ],
+  "criticality": "Média",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F18 MCP + LSP Runtime",
+    "F19 Repo Intelligence / Tree-sitter",
+    "F22 Device Nodes"
+  ],
+  "capabilities": [
+    "context.compile",
+    "legacy.web.react.manage",
+    "lsp.read",
+    "mcp.invoke",
+    "memory.read",
+    "node.observe",
+    "repo.read",
+    "skill.read",
+    "tree_sitter.analyze"
+  ],
+  "permissions": [
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "legacy.web.react.manage",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "lsp.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "mcp.invoke",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "repo.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "tree_sitter.analyze",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Node/session state efêmero e pareado",
+  "event_topics": "agent.react.typescript.specialist.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Sandbox por padrão; capabilities escopadas; sem secrets diretos. Device input/screen exige autorização de sessão e logging.",
+  "references": "Architect (MIT) — AST/Tree-sitter/Repo Intelligence | oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 107
+  }
+}

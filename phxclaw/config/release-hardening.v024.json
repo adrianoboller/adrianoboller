@@ -1,0 +1,27 @@
+{
+  "version": "0.24.0",
+  "mode": "fail_closed",
+  "proof_max_age_hours": 168,
+  "required_gates": [
+    "workspace_static",
+    "json_schema_static",
+    "migration_static",
+    "license_sbom",
+    "supply_chain",
+    "cargo_fmt",
+    "cargo_check",
+    "cargo_test",
+    "cargo_clippy",
+    "postgres_migration",
+    "rls_cross_tenant",
+    "skill_knowledge_lineage",
+    "mission_e2e",
+    "tauri_native_e2e",
+    "provider_model_e2e"
+  ],
+  "release_ready_requires_all": true,
+  "unavailable_is_pass": false,
+  "proof_must_match_workspace_sha256": true,
+  "tenant_relationships": "composite_fk",
+  "force_rls": true
+}

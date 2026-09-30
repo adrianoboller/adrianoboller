@@ -1,0 +1,19 @@
+[package]
+name = "phxclaw-release-hardening"
+version = "0.24.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+description = "Release gate, attestation and F24-to-F25 lineage hardening for PhxClaw"
+
+[dependencies]
+chrono = { version = "0.4", features = ["serde", "clock"] }
+phxclaw-knowledge-evidence-graph = { path = "../phxclaw-knowledge-evidence-graph" }
+phxclaw-skill-evolution = { path = "../phxclaw-skill-evolution" }
+serde = { version = "1", features = ["derive"] }
+sha2 = "0.10"
+thiserror = "2"
+uuid = { version = "1", features = ["serde", "v7"] }
+
+[lints.rust]
+unsafe_code = "forbid"

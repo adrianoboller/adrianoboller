@@ -1,0 +1,42 @@
+{
+  "sprint_uuid": "01a0e800-cf88-7dee-8fc3-91039f639254",
+  "sprint_id": "F24",
+  "title": "Auto-learning + Skill Evolution",
+  "version": "0.22.0",
+  "state": "review",
+  "color": "yellow",
+  "depends_on": [
+    "F01",
+    "F02",
+    "F04",
+    "F09",
+    "F15",
+    "F17",
+    "F20",
+    "F23"
+  ],
+  "deliverables": [
+    "Rust promotion-gate crate phxclaw-skill-evolution",
+    "epistemic boundary raw -> unverified -> accepted -> candidate -> promoted",
+    "immutable candidate digests bound to evidence",
+    "independent evaluator threshold and evidence freshness",
+    "zero high/critical security findings promotion gate",
+    "benchmark regression gate",
+    "human approval for behavior/risk changes",
+    "automatic path restricted to low-risk reversible no-behavior-change skill plugins",
+    "microkernel/Constitution/enforcement policy mutation blocked",
+    "PostgreSQL RLS journal and rollback lineage",
+    "v0.21 F22 RLS migration repair"
+  ],
+  "release_gates_required": [
+    "cargo fmt --check",
+    "cargo check --workspace",
+    "cargo test --workspace",
+    "cargo clippy --workspace --all-targets -- -D warnings",
+    "PostgreSQL real E2E",
+    "skill promotion/rollback E2E",
+    "Plugin Registry activation E2E",
+    "Evidence Ledger E2E"
+  ],
+  "done": false
+}

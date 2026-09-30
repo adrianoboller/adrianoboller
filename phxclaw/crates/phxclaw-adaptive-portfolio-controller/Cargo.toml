@@ -1,0 +1,12 @@
+[package]
+name = "phxclaw-adaptive-portfolio-controller"
+version = "0.53.1-consolidation"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+phxclaw-adaptive-portfolio-execution-controller = { path = "../phxclaw-adaptive-portfolio-execution-controller" }
+
+[lints.rust]
+unsafe_code = "forbid"

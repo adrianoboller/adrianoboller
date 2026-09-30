@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phxclaw.local/schemas/channel-binding.schema.json",
+  "title": "PhxClaw Channel Identity Binding",
+  "type": "object",
+  "required": ["uuid","channel","account_id","external_user_id","principal_uuid","state"],
+  "properties": {
+    "uuid": {"type":"string","format":"uuid"},
+    "channel": {"type":"string","minLength":1},
+    "account_id": {"type":"string","minLength":1},
+    "external_user_id": {"type":"string","minLength":1},
+    "principal_uuid": {"type":"string","format":"uuid"},
+    "state": {"enum":["pending","active","blocked"]}
+  },
+  "additionalProperties": false
+}

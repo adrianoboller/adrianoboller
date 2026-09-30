@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phxclaw.local/schemas/qualification-evidence-v025.schema.json",
+  "title": "PhxClaw Qualification Gate Evidence v0.25",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "gate",
+    "status",
+    "source_state_sha256_hex",
+    "tool_name",
+    "verified_at"
+  ],
+  "properties": {
+    "gate": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "status": {
+      "enum": [
+        "verified",
+        "failed",
+        "unavailable"
+      ]
+    },
+    "tool_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "tool_version": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 200
+    },
+    "evidence_ref": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 4096
+    },
+    "verified_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "exit_code": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "duration_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "command": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      }
+    },
+    "reason": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 4096
+    },
+    "source_state_sha256_hex": {
+      "type": "string",
+      "pattern": "^[A-Fa-f0-9]{64}$"
+    },
+    "evidence_sha256_hex": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[A-Fa-f0-9]{64}$"
+    }
+  }
+}

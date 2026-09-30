@@ -1,0 +1,11 @@
+[package]
+name = "phxclaw-software-factory"
+version = "0.40.0"
+edition = "2021"
+license = "Apache-2.0"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+uuid = { version = "1", features = ["v7", "serde"] }
+phxclaw-config-runtime = { path = "../phxclaw-config-runtime" }

@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "phxclaw://schemas/source-harvest-receipt-v061",
+  "title": "PhxClaw Safe Source Harvest Receipt v0.61",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "run_uuid",
+    "tenant_uuid",
+    "source_artifact_uuid",
+    "source_name",
+    "artifact_sha256_hex",
+    "provenance_decision",
+    "final_decision",
+    "files_seen",
+    "bytes_seen",
+    "files",
+    "candidates",
+    "started_at",
+    "completed_at"
+  ],
+  "properties": {
+    "run_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tenant_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "source_artifact_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "source_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "artifact_sha256_hex": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "provenance_decision": {
+      "enum": [
+        "ALLOW",
+        "QUARANTINE",
+        "DENY"
+      ]
+    },
+    "final_decision": {
+      "enum": [
+        "ALLOW",
+        "QUARANTINE",
+        "DENY"
+      ]
+    },
+    "provenance_reasons": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "security_reasons": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "files_seen": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "bytes_seen": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "completed_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

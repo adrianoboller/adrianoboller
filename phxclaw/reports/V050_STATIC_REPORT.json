@@ -1,0 +1,182 @@
+{
+  "suite": "v0.50 static",
+  "pass": 35,
+  "fail": 0,
+  "checks": [
+    {
+      "name": "json_config/capabilities-v050.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/portfolio-digital-twin.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/portfolio-scenario.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/portfolio-simulation-result.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/portfolio-decision-delegation.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "capability_count",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "uuidv7_caps",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_PortfolioTwin",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_ProjectTwin",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_ProjectDependency",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_Distribution",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_CalibrationEvidence",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_ScenarioSpec",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_PortfolioSimulationResult",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_ProjectSimulationResult",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_simulate",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_effective_seed",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_DependencyCycle",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_DecisionDelegation",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_assert_no_direct_mutation",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "authority_simulation is adviso",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "authority_direct_mutation_allo",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "authority_executive_decision_c",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "authority_autonomous_project_s",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "direct_mutation_false",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "delegate_v049",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "aggregates_only",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "raw_samples_false",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "knowledge_promoted",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_force_rls",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_rls_exact",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_append_only",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_no_update_mutation",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "ui_exists",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_legacy_brand",
+      "pass": true,
+      "detail": ""
+    }
+  ]
+}

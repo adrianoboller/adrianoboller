@@ -1,0 +1,65 @@
+{
+  "version": "0.13.0",
+  "generated_at": "2026-09-28T03:43:39Z",
+  "workspace_members": 45,
+  "rust_files": 47,
+  "rust_lines": 11260,
+  "json_files": 223,
+  "json_schemas": 24,
+  "migrations": 15,
+  "agents": 110,
+  "capabilities": 120,
+  "sprints": 26,
+  "sprint_status": {
+    "review": 16,
+    "active": 4,
+    "planned": 6
+  },
+  "test_suites": {
+    "desktop": {
+      "pass": 26,
+      "fail": 0
+    },
+    "f15_f16": {
+      "pass": 17,
+      "fail": 0
+    },
+    "research": {
+      "pass": 34,
+      "fail": 0
+    },
+    "plugin_ecosystem": {
+      "pass": 71,
+      "fail": 0
+    },
+    "olmocr": {
+      "pass": 5,
+      "fail": 0
+    },
+    "mission": {
+      "pass": 24,
+      "fail": 0
+    },
+    "process_smoke": {
+      "pass": 9,
+      "fail": 0
+    },
+    "v013_operational": {
+      "pass": 30,
+      "fail": 0
+    }
+  },
+  "total_reported_pass": 216,
+  "total_reported_fail": 0,
+  "cargo_available": false,
+  "release_ready": false,
+  "blocking_gates": [
+    "cargo fmt --check",
+    "cargo check --workspace",
+    "cargo test --workspace",
+    "cargo clippy --workspace --all-targets -- -D warnings",
+    "PostgreSQL E2E",
+    "Tauri native build/E2E",
+    "real model-provider mission E2E"
+  ]
+}

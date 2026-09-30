@@ -1,0 +1,59 @@
+{
+  "version": "0.23.0",
+  "base": "0.22.0",
+  "copied": [
+    {
+      "path": "config/knowledge-evidence-graph.v023.json",
+      "sha256": "289377db2b2ee54a8826c52de2d576966734f6f73a0a5455855a51f85e8285c5"
+    },
+    {
+      "path": "sprints/F25_KNOWLEDGE_EVIDENCE_GRAPH_V023.json",
+      "sha256": "5a4e303a688b6545cb7df83803fefb290c79a224382f7343c3b521a1bb26fa71"
+    },
+    {
+      "path": "capabilities/V023_CAPABILITIES_DELTA.json",
+      "sha256": "414b8bb6936cd1153daa7ceab82d090e350071e3f580839661d5049668dd6eea"
+    },
+    {
+      "path": "schemas/knowledge-contradiction-resolution.schema.json",
+      "sha256": "5af385d30e326365f5c3a4c57064e81a0bf82332dc394e67dfb4703a2eda8b63"
+    },
+    {
+      "path": "schemas/knowledge-node.schema.json",
+      "sha256": "2672fcd78bd222c021e6d91648539321cefb89e0b4c07e82e7766bd05fda5ffe"
+    },
+    {
+      "path": "schemas/knowledge-edge.schema.json",
+      "sha256": "45f2d5ddcebbc196efe860d1f9e41245ea6d6663492a6606f4fcf6059e9811ed"
+    },
+    {
+      "path": "schemas/evidence-binding.schema.json",
+      "sha256": "9aa62b7723794496c9772f1c6ff926cd34be4c87097517a27a80b74a8739183a"
+    },
+    {
+      "path": "schemas/knowledge-contradiction.schema.json",
+      "sha256": "dce304de7772bb18e6ea2bc2e97038163cda97f97a8fe1976b5316fbcea86414"
+    },
+    {
+      "path": "migrations/0023_knowledge_evidence_graph.sql",
+      "sha256": "0c14629e31027c015017139745da774d8bec34b069e78cab39d0f663bbae9139"
+    },
+    {
+      "path": "docs/F25_KNOWLEDGE_EVIDENCE_GRAPH.md",
+      "sha256": "cc84ec3443cc84ae0f290a44c05b3ba9cf6ed8fc6148dae1b28a27a1c957548f"
+    },
+    {
+      "path": "docs/PROJECT_STATUS_V023.md",
+      "sha256": "47bd066b256b8038ef80fb57311d0ce83394aa8787300d69389b638e6e278e31"
+    },
+    {
+      "path": "crates/phxclaw-knowledge-evidence-graph/Cargo.toml",
+      "sha256": "4b85553ec2e0d6a8ac3be1ab8261931ffba7088f5b713128fbff348c9d1a5610"
+    },
+    {
+      "path": "crates/phxclaw-knowledge-evidence-graph/src/lib.rs",
+      "sha256": "d543200ac181beae416f68023cdfa72f07952d37af656a3b475d5c5916187d8c"
+    }
+  ],
+  "workspace": "added F25 crate to workspace"
+}

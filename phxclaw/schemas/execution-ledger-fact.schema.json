@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "controller_epoch": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "evidence_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "type": "string"
+    },
+    "fact_kind": {
+      "type": "string"
+    },
+    "fact_uuid": {
+      "format": "uuid",
+      "type": "string"
+    },
+    "fencing_token": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "idempotency_key": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "payload_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "type": "string"
+    },
+    "reason_status": {
+      "enum": [
+        "verified",
+        "unverified",
+        "missing"
+      ]
+    },
+    "sequence_no": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "source_state_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "fact_uuid",
+    "sequence_no",
+    "controller_epoch",
+    "fencing_token",
+    "source_state_sha256",
+    "fact_kind",
+    "idempotency_key",
+    "payload_sha256",
+    "evidence_sha256",
+    "reason_status"
+  ],
+  "type": "object"
+}

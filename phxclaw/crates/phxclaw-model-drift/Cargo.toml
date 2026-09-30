@@ -1,0 +1,18 @@
+[package]
+name = "phxclaw-model-drift"
+version = "0.33.0"
+edition = "2021"
+license = "Apache-2.0"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+sha2 = "0.10"
+hex = "0.4"
+uuid = { version = "1", features = ["serde", "v7"] }
+thiserror = "2"
+phxclaw-ai-benchmark = { path = "../phxclaw-ai-benchmark" }
+phxclaw-model-arena = { path = "../phxclaw-model-arena" }
+phxclaw-adaptive-model-intelligence = { path = "../phxclaw-adaptive-model-intelligence" }

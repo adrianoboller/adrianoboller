@@ -1,0 +1,18 @@
+[package]
+name = "phxclaw-ai-portfolio"
+version = "0.34.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+hex = "0.4"
+uuid = { version = "1", features = ["serde", "v7"] }
+thiserror = "2"
+ed25519-dalek = "2"

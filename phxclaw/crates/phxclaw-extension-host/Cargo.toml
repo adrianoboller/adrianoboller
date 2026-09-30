@@ -1,0 +1,19 @@
+[package]
+name = "phxclaw-extension-host"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+phxclaw-evidence-ledger = { path = "../phxclaw-evidence-ledger" }
+phxclaw-live-bus = { path = "../phxclaw-live-bus" }
+phxclaw-plugin-registry = { path = "../phxclaw-plugin-registry" }
+phxclaw-plugin-sdk = { path = "../phxclaw-plugin-sdk" }
+phxclaw-process-protocol = { path = "../phxclaw-process-protocol" }
+phxclaw-sandbox = { path = "../phxclaw-sandbox" }
+phxclaw-types = { path = "../phxclaw-types" }
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+uuid.workspace = true

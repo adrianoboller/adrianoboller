@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Swarm Merge Order Plan",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "plan_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "swarm_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tenant_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "base_source_sha256": {
+      "type": "string",
+      "pattern": "^[0-9A-Fa-f]{64}$"
+    },
+    "ordered_intents": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "uniqueItems": true
+    },
+    "plan_sha256": {
+      "type": "string",
+      "pattern": "^[0-9A-Fa-f]{64}$"
+    }
+  },
+  "required": [
+    "plan_uuid",
+    "swarm_uuid",
+    "tenant_uuid",
+    "base_source_sha256",
+    "ordered_intents",
+    "plan_sha256"
+  ]
+}

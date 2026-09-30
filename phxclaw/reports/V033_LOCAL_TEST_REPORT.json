@@ -1,0 +1,142 @@
+{
+  "suite": "PhxClaw v0.33 local arena/drift/application tests",
+  "pass": 27,
+  "fail": 0,
+  "checks": [
+    {
+      "name": "deterministic_assignment",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "candidate_within_eligible",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "production_requires_promoted_profiles",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "ineligible_challenger_blocked",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "state_draft_active",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "terminal_state_blocked",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "ed25519_signature_fixture",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "ed25519_tamper_blocked",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "shadow_serves_champion",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "insufficient_window",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "winning_window",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "quality_regression",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "safety_pause",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "latency_regression",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "cost_regression",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "three_wins_recommend",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "fixture_never_recommends",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "mixed_windows_no_recommend",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "drift_quality_fallback",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "drift_latency_pause",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "drift_safety_fallback",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "static_verifier",
+      "pass": true,
+      "detail": "{\"pass\": 95, \"fail\": 0}"
+    },
+    {
+      "name": "apply_overlay",
+      "pass": true,
+      "detail": "PhxClaw v0.33 overlay applied: 19 files\nv0.33 crates present exactly once\nmarker=/tmp/tmptxegx9hj/config/overlays/v0.33.applied.json\n"
+    },
+    {
+      "name": "workspace_arena_once",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "workspace_drift_once",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "installed_verifier",
+      "pass": true,
+      "detail": "{\"pass\": 95, \"fail\": 0}"
+    },
+    {
+      "name": "idempotent_apply",
+      "pass": true,
+      "detail": "PhxClaw v0.33 overlay already applied\nv0.33 crates present exactly once\nmarker=/tmp/tmptxegx9hj/config/overlays/v0.33.applied.json\n"
+    }
+  ]
+}

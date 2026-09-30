@@ -1,0 +1,63 @@
+{
+  "manifest_version": "1.4.0",
+  "uuid": "01a0e600-0000-7000-8000-000000000013",
+  "name": "com.phxclaw.fixture.lifecycle",
+  "version": "1.1.0",
+  "kind": "tool",
+  "description": "Signed private lifecycle fixture",
+  "core_api": ">=0.13.0, <1.0.0",
+  "entrypoint": {
+    "type": "process",
+    "value": "phxclaw-fixture-plugin"
+  },
+  "dependencies": [],
+  "capabilities": [
+    "fixture.echo"
+  ],
+  "permissions": [],
+  "lifecycle": {
+    "install": "fixture.install",
+    "enable": "fixture.enable",
+    "disable": "fixture.disable",
+    "uninstall": "fixture.uninstall",
+    "health": "fixture.health"
+  },
+  "contracts": {
+    "input_schema": "input.schema.json",
+    "output_schema": "output.schema.json"
+  },
+  "sandbox": {
+    "network": "deny",
+    "network_allowlist": [],
+    "read_only_paths": [],
+    "write_paths": [],
+    "environment_allowlist": [],
+    "timeout_ms": 5000,
+    "memory_mb": 128,
+    "cpu_quota_percent": 20
+  },
+  "integrity": {
+    "artifact": "phxclaw-fixture-plugin",
+    "hash_algorithm": "sha256",
+    "digest": "f1265a4d4e5c43f1d1beca23b13397877f9dd7f57a801c38355ddb83385f1e9c",
+    "signature_algorithm": "ed25519",
+    "signature": "v2R4ImZNjZ9Y9tcmTBKkzGtE9AbvBq6NSz9n3+akTvbPfKKiqf900PWyOSEjjMbSECmf4rvZCcRX3yI0dkNBDw==",
+    "signer": "phxclaw-fixture-v013",
+    "provenance": "PhxClaw v0.13 test fixture"
+  },
+  "tests": [
+    {
+      "name": "health",
+      "command": "phxclaw-fixture-plugin --health",
+      "required": true
+    }
+  ],
+  "rollback": {
+    "strategy": "disable_and_restore_previous",
+    "steps": [
+      "disable current",
+      "restore previous",
+      "doctor"
+    ]
+  }
+}

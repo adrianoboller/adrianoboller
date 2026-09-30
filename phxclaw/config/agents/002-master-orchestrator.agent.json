@@ -1,0 +1,166 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f602-7e32-9e89-7886eab11711",
+  "agent_id": 2,
+  "name": "Master Orchestrator",
+  "macroarea": "Governança & Estratégia",
+  "nucleus": "Comando",
+  "role_type": "Agente líder",
+  "mission": "Coordena toda a fábrica e garante que cada trabalho siga dependências, permissões e gates.",
+  "responsibilities": "Instancia agentes, distribui tarefas, acompanha estado, resolve dependências operacionais, aciona escalonamentos e mantém a execução alinhada ao Sprint/Task Graph.",
+  "resources": "PostgreSQL, Task Graph, Agent Registry, Model Router, Tool Gateway, Budget Engine.",
+  "authorized_actions": "Criar/atribuir tasks, pausar fluxo, acionar especialistas, cobrar gates, encerrar execução.",
+  "trigger": "Qualquer demanda aceita para execução.",
+  "declared_dependencies": "Requisito aprovado, capacidade disponível, orçamento e dependências.",
+  "resolved_agent_dependencies": [],
+  "deliverables": "Plano de execução, task assignments, status e trilha de auditoria.",
+  "limits": "Não altera sozinho Constituição/ADRs nem aprova seu próprio fluxo.",
+  "next_gate": "Encaminha ao papel correto e ao próximo gate.",
+  "execution": "Permanente",
+  "models_allowed": [
+    "híbrido"
+  ],
+  "criticality": "Crítica",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F16 Scheduler + Background Jobs",
+    "F20 Team Runtime",
+    "F22 Device Nodes"
+  ],
+  "capabilities": [
+    "claw.doctor",
+    "claw.health",
+    "claw.mcp.status",
+    "claw.status",
+    "context.compile",
+    "job.read",
+    "mcp.degraded.report",
+    "mcp.protocol.negotiate",
+    "memory.read",
+    "mission.run",
+    "mission.step.execute",
+    "node.observe",
+    "skill.read",
+    "task.orchestrate",
+    "team.dispatch",
+    "team.message"
+  ],
+  "permissions": [
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "job.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "mission.run",
+      "scopes": [
+        "*"
+      ]
+    },
+    {
+      "name": "mission.step.execute",
+      "scopes": [
+        "*"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "task.orchestrate",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "team.message",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "team.dispatch",
+      "scopes": [
+        "*"
+      ]
+    },
+    {
+      "name": "claw.health",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "claw.doctor",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "claw.status",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "claw.mcp.status",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "mcp.protocol.negotiate",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "mcp.degraded.report",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Job UUIDv7 + lease/heartbeat/resume em PostgreSQL; Node/session state efêmero e pareado",
+  "event_topics": "agent.master.orchestrator.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; write sensível, gasto, publicação, privilégio ou ação destrutiva exigem gate explícito. Device input/screen exige autorização de sessão e logging.",
+  "references": "oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão | OpenClaw — gateway/nodes/channels; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 3
+  }
+}

@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "episode_uuid",
+    "tenant_uuid",
+    "project_uuid",
+    "task_uuid",
+    "agent_uuid",
+    "task_class",
+    "context_fingerprint_sha256",
+    "source_state_sha256",
+    "outcome",
+    "quality_score",
+    "evidence_class",
+    "evidence_sha256"
+  ],
+  "properties": {
+    "episode_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tenant_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "project_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "task_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "agent_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "task_class": {
+      "type": "string"
+    },
+    "context_fingerprint_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "source_state_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "outcome": {
+      "enum": [
+        "success",
+        "failure",
+        "partial"
+      ]
+    },
+    "quality_score": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "evidence_class": {
+      "enum": [
+        "production",
+        "fixture"
+      ]
+    },
+    "evidence_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "additionalProperties": true
+}

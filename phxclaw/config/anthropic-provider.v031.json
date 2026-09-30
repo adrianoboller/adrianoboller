@@ -1,0 +1,9 @@
+{
+  "version": "0.31.0",
+  "provider": "anthropic",
+  "origin": "https://api.anthropic.com",
+  "primary_path": "/v1/messages",
+  "credential_source": "phxclaw_secret_broker_handle",
+  "allow_custom_origin": false,
+  "custom_origin_allowlist": []
+}

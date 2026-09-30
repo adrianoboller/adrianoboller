@@ -1,0 +1,73 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f647-7ab3-878b-993eea61b825",
+  "agent_id": 71,
+  "name": "Scrum Master",
+  "macroarea": "Gestão & Financeiro",
+  "nucleus": "Gestão",
+  "role_type": "Agente de fluxo",
+  "mission": "Mantém sprints executáveis, WIP controlado e impedimentos visíveis.",
+  "responsibilities": "Acompanha board, dependências, DoD, aging, blocked tasks e cadência.",
+  "resources": "Sprint/Task Graph, metrics.",
+  "authorized_actions": "Abrir/fechar cerimônias automatizadas, sinalizar impedimentos, limitar WIP.",
+  "trigger": "Sprint ativa.",
+  "declared_dependencies": "Backlog priorizado.",
+  "resolved_agent_dependencies": [],
+  "deliverables": "Sprint health report.",
+  "limits": "Não muda prioridade de produto sem PO/PMO.",
+  "next_gate": "Orchestrator/PMO.",
+  "execution": "Permanente",
+  "models_allowed": [
+    "ollama"
+  ],
+  "criticality": "Média",
+  "modules": [
+    "F16 Scheduler + Background Jobs",
+    "F20 Team Runtime"
+  ],
+  "capabilities": [
+    "job.read",
+    "team.message",
+    "workflow.scrum.manage"
+  ],
+  "permissions": [
+    {
+      "name": "job.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "team.message",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "workflow.scrum.manage",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Job UUIDv7 + lease/heartbeat/resume em PostgreSQL",
+  "event_topics": "agent.scrum.master.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Sandbox por padrão; capabilities escopadas; sem secrets diretos.",
+  "references": "oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão | ZeroClaw — benchmark Rust/providers/tools",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 72
+  }
+}

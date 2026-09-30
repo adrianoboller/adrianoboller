@@ -1,0 +1,356 @@
+{
+  "version": "0.56.0",
+  "policy": {
+    "unavailable_is_pass": false,
+    "source_state_must_match": true,
+    "green_requires_all_required_gates": true,
+    "static_evidence_cannot_substitute_native_e2e": true
+  },
+  "campaign": {
+    "target_green_count": 10,
+    "priority_sprints": [
+      "F00",
+      "F02",
+      "F04",
+      "F05",
+      "F06",
+      "F09",
+      "F15",
+      "F17",
+      "F19",
+      "F20"
+    ]
+  },
+  "sprints": [
+    {
+      "sprint_id": "F00",
+      "title": "Constitution + Modular Workspace",
+      "priority_wave": 1,
+      "required_gates": [
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "bootstrap_static",
+        "workspace_metadata",
+        "uuidv7_integrity"
+      ]
+    },
+    {
+      "sprint_id": "F01",
+      "title": "Research Core",
+      "priority_wave": 2,
+      "required_gates": [
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "research_pipeline_e2e"
+      ]
+    },
+    {
+      "sprint_id": "F02",
+      "title": "Hypothesis Core",
+      "priority_wave": 1,
+      "required_gates": [
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "hypothesis_pipeline_e2e"
+      ]
+    },
+    {
+      "sprint_id": "F03",
+      "title": "Installer Core",
+      "priority_wave": 2,
+      "required_gates": [
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "installer_fresh_install_e2e"
+      ]
+    },
+    {
+      "sprint_id": "F04",
+      "title": "Plugin Registry",
+      "priority_wave": 1,
+      "required_gates": [
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "plugin_signature_e2e",
+        "plugin_postgresql_e2e",
+        "rls_e2e"
+      ]
+    },
+    {
+      "sprint_id": "F05",
+      "title": "Agent Runtime",
+      "priority_wave": 1,
+      "required_gates": [
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "sandbox_e2e",
+        "agent_runtime_e2e"
+      ]
+    },
+    {
+      "sprint_id": "F06",
+      "title": "Task Graph",
+      "priority_wave": 1,
+      "required_gates": [
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "task_graph_e2e",
+        "process_protocol_e2e",
+        "postgresql_e2e",
+        "rls_e2e"
+      ]
+    },
+    {
+      "sprint_id": "F07",
+      "title": "Model Gateway",
+      "priority_wave": 2,
+      "required_gates": [
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "model_gateway_e2e",
+        "ollama_real",
+        "provider_real_e2e"
+      ]
+    },
+    {
+      "sprint_id": "F08",
+      "title": "UI Shell & Splash",
+      "priority_wave": 2,
+      "required_gates": [
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "ui_shell_native_e2e"
+      ]
+    },
+    {
+      "sprint_id": "F09",
+      "title": "Event Bus + Transactional Outbox",
+      "priority_wave": 1,
+      "required_gates": [
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "event_bus_outbox_e2e",
+        "postgresql_e2e",
+        "rls_e2e"
+      ]
+    },
+    {
+      "sprint_id": "F10",
+      "title": "Connectivity Fabric",
+      "priority_wave": 2,
+      "required_gates": [
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "connectivity_e2e"
+      ]
+    },
+    {
+      "sprint_id": "F11",
+      "title": "Desktop + WebView + System Automation",
+      "priority_wave": 2,
+      "required_gates": [
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "desktop_automation_native_e2e"
+      ]
+    },
+    {
+      "sprint_id": "F12",
+      "title": "Media + Document Intelligence",
+      "priority_wave": 2,
+      "required_gates": [
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "media_document_e2e"
+      ]
+    },
+    {
+      "sprint_id": "F13",
+      "title": "Mindset + BPM",
+      "priority_wave": 2,
+      "required_gates": [
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "bpm_pdca_e2e"
+      ]
+    },
+    {
+      "sprint_id": "F14",
+      "title": "Desktop Host + Live API/Event Bus",
+      "priority_wave": 2,
+      "required_gates": [
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "desktop_live_api_native_e2e"
+      ]
+    },
+    {
+      "sprint_id": "F15",
+      "title": "Skill Runtime + Memory/Context Engine",
+      "priority_wave": 1,
+      "required_gates": [
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "skill_memory_context_e2e",
+        "postgresql_e2e",
+        "rls_e2e"
+      ]
+    },
+    {
+      "sprint_id": "F16",
+      "title": "Declarative Agent Registry + Official Knowledge Sources",
+      "priority_wave": 2,
+      "required_gates": [
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "agent_registry_sources_e2e"
+      ]
+    },
+    {
+      "sprint_id": "F17",
+      "title": "Checkpoint + Rollback",
+      "priority_wave": 1,
+      "required_gates": [
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "checkpoint_rollback_e2e"
+      ]
+    },
+    {
+      "sprint_id": "F18",
+      "title": "MCP + LSP Runtime",
+      "priority_wave": 2,
+      "required_gates": [
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "mcp_lsp_e2e"
+      ]
+    },
+    {
+      "sprint_id": "F19",
+      "title": "Repo Intelligence / Tree-sitter",
+      "priority_wave": 1,
+      "required_gates": [
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "repo_intelligence_e2e"
+      ]
+    },
+    {
+      "sprint_id": "F20",
+      "title": "Team Runtime",
+      "priority_wave": 1,
+      "required_gates": [
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "team_runtime_concurrency_e2e",
+        "postgresql_e2e",
+        "rls_e2e"
+      ]
+    },
+    {
+      "sprint_id": "F21",
+      "title": "Channel Gateway",
+      "priority_wave": 2,
+      "required_gates": [
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "channel_provider_real_e2e"
+      ]
+    },
+    {
+      "sprint_id": "F22",
+      "title": "Device Nodes",
+      "priority_wave": 2,
+      "required_gates": [
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "device_node_real_e2e"
+      ]
+    },
+    {
+      "sprint_id": "F23",
+      "title": "Secret & Credential Broker",
+      "priority_wave": 2,
+      "required_gates": [
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "secret_key_provider_real_e2e"
+      ]
+    },
+    {
+      "sprint_id": "F24",
+      "title": "Auto-learning + Skill Evolution",
+      "priority_wave": 2,
+      "required_gates": [
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "skill_promotion_rollback_e2e"
+      ]
+    },
+    {
+      "sprint_id": "F25",
+      "title": "Knowledge / Evidence Graph",
+      "priority_wave": 2,
+      "required_gates": [
+        "cargo_fmt",
+        "cargo_check",
+        "cargo_test",
+        "cargo_clippy",
+        "knowledge_evidence_graph_e2e",
+        "postgresql_e2e",
+        "rls_e2e"
+      ]
+    }
+  ]
+}

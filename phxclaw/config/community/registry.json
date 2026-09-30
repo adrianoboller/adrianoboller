@@ -1,0 +1,15 @@
+{
+  "registry_version": "1.0.0",
+  "generated_at": "2026-09-27T22:05:00-03:00",
+  "publishers": [
+    {
+      "id": "wxsolucoes",
+      "display_name": "WX Soluções",
+      "website": "https://wxsolucoes.com.br",
+      "repository": null,
+      "signer": "wxsolucoes-community-root-v1",
+      "trust_tier": "verified"
+    }
+  ],
+  "releases": []
+}

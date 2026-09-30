@@ -1,0 +1,24 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "title":"Incident Detection v0.35",
+  "type":"object","additionalProperties":false,
+  "required":["incident_uuid","severity","signals","detection_sha256"],
+  "properties": {
+    "incident_uuid":{"type":"string","format":"uuid"},
+    "severity":{"enum":["info","warning","critical"]},
+    "signals":{"type":"array","minItems":1,"items":{"$ref":"#/$defs/signal"}},
+    "detection_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"}
+  },
+  "$defs": {
+    "signal": {
+      "type":"object","additionalProperties":false,
+      "required":["kind","severity","evidence_sha256","summary"],
+      "properties": {
+        "kind":{"enum":["slo_burn","latency","queue_backpressure","rate_limit_exhaustion","budget_soft","budget_hard","provider_capacity","circuit_open","drift"]},
+        "severity":{"enum":["info","warning","critical"]},
+        "evidence_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},
+        "summary":{"type":"string","minLength":1,"maxLength":4096}
+      }
+    }
+  }
+}

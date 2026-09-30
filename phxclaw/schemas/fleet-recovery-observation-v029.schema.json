@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "phxclaw://schemas/fleet-recovery-observation-v029",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "node_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "previous_sequence": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "claimed_sequence": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "expected_fencing_token": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "received_fencing_token": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "heartbeat_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "node_uuid",
+    "previous_sequence",
+    "claimed_sequence",
+    "expected_fencing_token",
+    "received_fencing_token",
+    "heartbeat_at"
+  ]
+}

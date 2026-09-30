@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phxclaw.local/schemas/agent-request.schema.json",
+  "title": "PhxClaw Agent Request",
+  "type": "object",
+  "required": ["uuid", "capability", "payload", "requested_permissions", "created_at"],
+  "properties": {
+    "uuid": {"type": "string", "format": "uuid"},
+    "capability": {"type": "string", "minLength": 1},
+    "payload": {},
+    "requested_permissions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "scope"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "scope": {"type": "string", "minLength": 1}
+        },
+        "additionalProperties": false
+      }
+    },
+    "created_at": {"type": "string", "format": "date-time"}
+  },
+  "additionalProperties": false
+}

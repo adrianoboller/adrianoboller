@@ -1,0 +1,16 @@
+{
+  "version": "0.39.0",
+  "contract_kinds": [
+    "api",
+    "database",
+    "schema",
+    "behavior",
+    "security_policy",
+    "event",
+    "config"
+  ],
+  "breaking_changes_require_explicit_approval": true,
+  "database_destructive_changes_require_migration_plan": true,
+  "security_policy_weakening_forbidden_without_security_approval": true,
+  "event_schema_break_requires_consumer_evidence": true
+}

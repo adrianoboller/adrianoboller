@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PhxClaw Engineering Swarm v0.38",
+  "type": "object",
+  "required": [
+    "swarm_uuid",
+    "workflow_uuid",
+    "tenant_uuid",
+    "source_state_sha256",
+    "policy_sha256",
+    "enabled_teams"
+  ],
+  "properties": {
+    "swarm_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "workflow_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tenant_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "source_state_sha256": {
+      "type": "string",
+      "pattern": "^[0-9A-Fa-f]{64}$"
+    },
+    "policy_sha256": {
+      "type": "string",
+      "pattern": "^[0-9A-Fa-f]{64}$"
+    },
+    "enabled_teams": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "research",
+          "architecture",
+          "coding",
+          "qa",
+          "security",
+          "documentation"
+        ]
+      }
+    }
+  },
+  "additionalProperties": true
+}

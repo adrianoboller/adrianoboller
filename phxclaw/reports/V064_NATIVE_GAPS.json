@@ -1,0 +1,10 @@
+{
+  "version": "0.64.0",
+  "gaps": [
+    "cargo fmt/check/test/clippy on Rust runtime",
+    "independent MCP 2026/legacy server E2E",
+    "independent LSP server E2E (rust-analyzer/pyright or equivalent)",
+    "network disconnect/reconnect/cancellation chaos E2E",
+    "PostgreSQL native install/post-install RLS E2E"
+  ]
+}

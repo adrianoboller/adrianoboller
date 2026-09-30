@@ -1,0 +1,141 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f610-77ff-b82c-aaa004721899",
+  "agent_id": 16,
+  "name": "Merovíngio",
+  "macroarea": "Dados & Integrações",
+  "nucleus": "Vendor/Legado",
+  "role_type": "Agente de isolamento externo",
+  "mission": "Isola vendor, API externa e legado para evitar contaminação arquitetural.",
+  "responsibilities": "Cria adapters, anti-corruption layers, normaliza contratos, trata versões externas e define fallback/limites.",
+  "resources": "External APIs, SDKs, legacy repos, plugin interfaces.",
+  "authorized_actions": "Criar adapter, mapear contrato, encapsular dependência, testar degradação.",
+  "trigger": "Nova dependência externa, vendor ou legado.",
+  "declared_dependencies": "Contrato externo, licença e requisitos Phoenix.",
+  "resolved_agent_dependencies": [],
+  "deliverables": "Adapter Phoenix + testes + risco de dependência.",
+  "limits": "Não permite tipos/contratos externos vazarem para API pública Phoenix.",
+  "next_gate": "Integration/Compatibility.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "claude",
+    "codex"
+  ],
+  "criticality": "Alta",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F18 MCP + LSP Runtime",
+    "F19 Repo Intelligence / Tree-sitter",
+    "F21 Channel Gateway",
+    "F22 Device Nodes",
+    "F25 Knowledge / Evidence Graph"
+  ],
+  "capabilities": [
+    "channel.read",
+    "context.compile",
+    "evidence.read",
+    "knowledge.read",
+    "legacy.vendor.isolate",
+    "lsp.read",
+    "mcp.invoke",
+    "memory.read",
+    "node.observe",
+    "repo.read",
+    "skill.read",
+    "tree_sitter.analyze"
+  ],
+  "permissions": [
+    {
+      "name": "channel.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "evidence.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "knowledge.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "legacy.vendor.isolate",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "lsp.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "mcp.invoke",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "repo.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "tree_sitter.analyze",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Session/channel state sem credencial no contexto; Node/session state efêmero e pareado",
+  "event_topics": "agent.merovingio.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; writes policy-gated; evidência obrigatória; sem autoaprovação. Device input/screen exige autorização de sessão e logging.",
+  "references": "Architect (MIT) — AST/Tree-sitter/Repo Intelligence | oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 17
+  }
+}

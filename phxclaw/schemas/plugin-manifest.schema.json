@@ -1,0 +1,570 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phxclaw.local/schemas/plugin-manifest.schema.json",
+  "title": "PhxClaw Plugin Manifest",
+  "type": "object",
+  "required": [
+    "manifest_version",
+    "uuid",
+    "name",
+    "version",
+    "kind",
+    "description",
+    "core_api",
+    "entrypoint",
+    "dependencies",
+    "capabilities",
+    "permissions",
+    "lifecycle",
+    "contracts",
+    "sandbox",
+    "integrity",
+    "tests",
+    "rollback"
+  ],
+  "properties": {
+    "manifest_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]+$"
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "kind": {
+      "enum": [
+        "agent",
+        "tool",
+        "mcp",
+        "model_provider",
+        "command",
+        "behavior",
+        "ui_panel",
+        "integration",
+        "storage_provider",
+        "data_provider",
+        "compiler_frontend",
+        "other"
+      ]
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1
+    },
+    "core_api": {
+      "type": "string",
+      "minLength": 1
+    },
+    "entrypoint": {
+      "type": "object",
+      "required": [
+        "type",
+        "value"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "process",
+            "wasm",
+            "library",
+            "remote"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "dependencies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "uuid",
+          "version",
+          "optional"
+        ],
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "optional": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "capabilities": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "permissions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "scopes"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "scopes": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "lifecycle": {
+      "type": "object",
+      "required": [
+        "install",
+        "enable",
+        "disable",
+        "uninstall"
+      ],
+      "properties": {
+        "install": {
+          "type": "string",
+          "minLength": 1
+        },
+        "enable": {
+          "type": "string",
+          "minLength": 1
+        },
+        "disable": {
+          "type": "string",
+          "minLength": 1
+        },
+        "uninstall": {
+          "type": "string",
+          "minLength": 1
+        },
+        "health": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "contracts": {
+      "type": "object",
+      "required": [
+        "input_schema",
+        "output_schema"
+      ],
+      "properties": {
+        "input_schema": {
+          "type": "string",
+          "minLength": 1
+        },
+        "output_schema": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "sandbox": {
+      "type": "object",
+      "required": [
+        "network",
+        "network_allowlist",
+        "read_only_paths",
+        "write_paths",
+        "environment_allowlist",
+        "timeout_ms",
+        "memory_mb",
+        "cpu_quota_percent"
+      ],
+      "properties": {
+        "network": {
+          "enum": [
+            "deny",
+            "allowlist"
+          ]
+        },
+        "network_allowlist": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "read_only_paths": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "write_paths": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "environment_allowlist": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "memory_mb": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "cpu_quota_percent": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        }
+      },
+      "additionalProperties": false
+    },
+    "integrity": {
+      "type": "object",
+      "required": [
+        "artifact",
+        "hash_algorithm",
+        "digest",
+        "signature_algorithm",
+        "signature",
+        "signer",
+        "provenance"
+      ],
+      "properties": {
+        "artifact": {
+          "type": "string",
+          "minLength": 1
+        },
+        "hash_algorithm": {
+          "const": "sha256"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{64}$"
+        },
+        "signature_algorithm": {
+          "const": "ed25519"
+        },
+        "signature": {
+          "type": "string",
+          "minLength": 1
+        },
+        "signer": {
+          "type": "string",
+          "minLength": 1
+        },
+        "provenance": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "tests": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "command",
+          "required"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "command": {
+            "type": "string",
+            "minLength": 1
+          },
+          "required": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "rollback": {
+      "type": "object",
+      "required": [
+        "strategy",
+        "steps"
+      ],
+      "properties": {
+        "strategy": {
+          "type": "string",
+          "minLength": 1
+        },
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "agent": {
+      "type": "object",
+      "required": [
+        "display_name",
+        "role",
+        "priority",
+        "accepts",
+        "emits"
+      ],
+      "properties": {
+        "display_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "role": {
+          "type": "string",
+          "minLength": 1
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "accepts": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "emits": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "model_provider": {
+      "type": "object",
+      "required": [
+        "display_name",
+        "priority",
+        "transport",
+        "models"
+      ],
+      "properties": {
+        "display_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "transport": {
+          "enum": [
+            "process",
+            "wasm",
+            "remote_api",
+            "local_runtime"
+          ]
+        },
+        "models": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "capabilities",
+              "context_window",
+              "input_microunits_per_million_tokens",
+              "output_microunits_per_million_tokens",
+              "local"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "capabilities": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "context_window": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "input_microunits_per_million_tokens": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "output_microunits_per_million_tokens": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "local": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "extension_points": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "required": [
+          "point",
+          "contract_version"
+        ],
+        "properties": {
+          "point": {
+            "type": "string",
+            "minLength": 1
+          },
+          "contract_version": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "agent"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "required": [
+          "agent"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "agent"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "model_provider"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "required": [
+          "model_provider"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "model_provider"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "sandbox": {
+            "properties": {
+              "network": {
+                "const": "deny"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "sandbox": {
+            "properties": {
+              "network_allowlist": {
+                "maxItems": 0
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "additionalProperties": false
+}

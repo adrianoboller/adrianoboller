@@ -1,0 +1,131 @@
+{
+  "version": "0.28.0",
+  "base": "0.27.0",
+  "copied": [
+    {
+      "path": "requirements-fleet.txt",
+      "sha256": "e88d14a8b469de837c69ab9370d1d4efa7b004027a7c298c90fb4ba2593a0459"
+    },
+    {
+      "path": "config/fleet-rollout-policy.v028.json",
+      "sha256": "0ed4fe83ce1eaec2ff9c501471267e0b8319163edec7caa0ab30a0a714d1986c"
+    },
+    {
+      "path": "config/trusted-fleet-signers.v028.json",
+      "sha256": "de294bb3912f294095d374db67d9bbdb37c90f59518d7e99bddc4ab72161676d"
+    },
+    {
+      "path": "config/component-update-policy.v028.json",
+      "sha256": "a6bc41302c60c5916e8ed6a29a33efee109b120c1b374b43b2672402ddaa3099"
+    },
+    {
+      "path": "capabilities/V028_CAPABILITIES_DELTA.json",
+      "sha256": "fb7e4df78078c0689984431c893727da62b0b269b684d9fbe9164bd59fc2a55a"
+    },
+    {
+      "path": "schemas/database-contract-approval-v028.schema.json",
+      "sha256": "2ef46d07696b64eee660084fee9821586656627fb4a4d6226d01c1c142d16526"
+    },
+    {
+      "path": "schemas/fleet-rollout-plan-v028.schema.json",
+      "sha256": "726ba52161c31ec6fcb3bf20dfd115f109a1d48ffe4c8b9b5f7dc67b51d228f3"
+    },
+    {
+      "path": "schemas/fleet-rollback-authorization-v028.schema.json",
+      "sha256": "4223c09767902f41e353fef15af8614baf7d79cb8598ee995e09eaf63b9d13d0"
+    },
+    {
+      "path": "schemas/fleet-health-evidence-v028.schema.json",
+      "sha256": "52254229dbaa21b4bf74c3ac65eaa52e8c5eb8b215c40bd282bd78636389f168"
+    },
+    {
+      "path": "schemas/component-update-plan-v028.schema.json",
+      "sha256": "d52ebde2d592f8bd0b11196cf58f0cbcbcdddf68f5d2cdedea1f859c71ebcf45"
+    },
+    {
+      "path": "schemas/fleet-state-v028.schema.json",
+      "sha256": "ac03e9f0510cc62e56a3d60fcf9763eda19ab570f97d7ed957b7b80f47a2bee7"
+    },
+    {
+      "path": "tools/node_update_preflight.py",
+      "sha256": "b8aa65e08b08ab8bf5344d7f6ce08c4629634f5b5eb90e95a7a583010f7bc35c"
+    },
+    {
+      "path": "tools/create_component_plan.py",
+      "sha256": "4a60eada88de7bf015ac6c21da5acd8db2d1e78f261c24fe04d7c6e715466f7f"
+    },
+    {
+      "path": "tools/create_health_evidence.py",
+      "sha256": "ed00163d043cc2e3e548208e95092800621881bddb85edea315944c1f26fde25"
+    },
+    {
+      "path": "tools/select_fleet_nodes.py",
+      "sha256": "6b10fa22031c789c7d2b4dafdb56eec26a2b68b833d84117f21680a9b38bba49"
+    },
+    {
+      "path": "tools/create_rollout_plan.py",
+      "sha256": "65f3726552f924fc746a5248d8b2e410cd7eb8efb70398c0dd5885ae93faf092"
+    },
+    {
+      "path": "tools/create_database_contract_approval.py",
+      "sha256": "a095df77fa24201441a753f2b2718f07a681457c2783c54c929325b52e6b0a9f"
+    },
+    {
+      "path": "tools/verify_fleet_rollback_authorization.py",
+      "sha256": "82cac6037763902efd6c078ef62f21e225ff5fcb78ddbfac6472cb18c8e3557b"
+    },
+    {
+      "path": "tools/verify_component_plan.py",
+      "sha256": "b8435b2fbafe03c2fef69f71de5b38e24f91f5354ec9857268ec4be594d414ba"
+    },
+    {
+      "path": "tools/create_fleet_rollback_authorization.py",
+      "sha256": "0450c1311332a281691e228be990b048fc4710dc95e33b7593ae3f4b74dd1c42"
+    },
+    {
+      "path": "tools/v028_common.py",
+      "sha256": "652f25c7f67d1a02c60c09149af39dd6444b6cc56de26000a2730aabfd798cf2"
+    },
+    {
+      "path": "tools/evaluate_rollout.py",
+      "sha256": "890123e2fc561a661a452368967a5ce291abeefd18c685b42a231e4da90f83d8"
+    },
+    {
+      "path": "tools/verify_v028.py",
+      "sha256": "fda90071eb1c16b9f850a1120f05372241fd972456ad8c812d334525de980494"
+    },
+    {
+      "path": "migrations/0028_secure_fleet_rollout.sql",
+      "sha256": "e6f9537853b998459d004105cef985773d510012759799f4f922d058d795bd74"
+    },
+    {
+      "path": "docs/PROJECT_STATUS_V028.json",
+      "sha256": "b1001c73cb2a4264e5ede9354da7383a3dcc35529f9af22414b77169bcc3c26c"
+    },
+    {
+      "path": "docs/SECURE_FLEET_ROLLOUT_V028.md",
+      "sha256": "8df0274baa0b3126ae1107e7d427e00520f56abae5a16b08418f4e542485fcfe"
+    },
+    {
+      "path": "ci/run-fleet-rollout.ps1",
+      "sha256": "a16be99b045038bb17eb0ae1a8457bab2f1fab36f6f0cc1439f4ded816ce4332"
+    },
+    {
+      "path": "ci/run-fleet-rollout.sh",
+      "sha256": "7cde5c8cff1543d5516140aae0175463c847263ea4c8ee74efe4373a209a0b7b"
+    },
+    {
+      "path": "crates/phxclaw-fleet-updater/Cargo.toml",
+      "sha256": "445a1de9cc3f5cdc669746db66ccd5437f40b81bcecde5b9dc277e819518605a"
+    },
+    {
+      "path": "crates/phxclaw-fleet-updater/src/lib.rs",
+      "sha256": "99429e5e4e8ebf0977d28cdf8ebaa5b211326e8dca5248c593e8519f8c90dccb"
+    },
+    {
+      "path": ".github/workflows/phxclaw-fleet-rollout.yml",
+      "sha256": "cdc432534f0c16da4d5bde459039b540cc39cee7f37ed19eee26c709934cc940"
+    }
+  ],
+  "workspace": "fleet-updater crate present exactly once"
+}

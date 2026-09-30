@@ -1,0 +1,16 @@
+[package]
+name = "phxclaw-core-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+phxclaw-types = { path = "../phxclaw-types" }
+phxclaw-rustclaw-native = { path = "../phxclaw-rustclaw-native" }
+phxclaw-channel-gateway = { path = "../phxclaw-channel-gateway" }
+phxclaw-mcp-lsp-runtime = { path = "../phxclaw-mcp-lsp-runtime" }

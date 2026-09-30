@@ -1,0 +1,63 @@
+{
+  "version": "0.62.0",
+  "closed": [
+    "canonical_project_state",
+    "sprint_state_drift",
+    "knowledge_promotion_gate",
+    "human_governed_gate",
+    "append_only_revocation",
+    "tenant_setting_compatibility"
+  ],
+  "remaining": [
+    {
+      "id": "native-rust",
+      "items": [
+        "cargo fmt --check",
+        "cargo check --workspace",
+        "cargo test --workspace",
+        "cargo clippy --workspace --all-targets -- -D warnings"
+      ]
+    },
+    {
+      "id": "postgres-e2e",
+      "items": [
+        "FULL INSTALL v0.62",
+        "POST_INSTALL_VERIFY v0.62",
+        "v062_knowledge_promotion_e2e.sql",
+        "RLS two-tenant isolation",
+        "concurrency/idempotency"
+      ]
+    },
+    {
+      "id": "F19",
+      "items": [
+        "Tree-sitter parsers",
+        "symbol/call/dependency graph",
+        "hotspots/PageRank"
+      ]
+    },
+    {
+      "id": "F18",
+      "items": [
+        "real MCP/LSP process manager",
+        "SSE/WebSocket/reconnect/cancel"
+      ]
+    },
+    {
+      "id": "F03",
+      "items": [
+        "backup/restore",
+        "upgrade/rollback",
+        "disaster recovery E2E"
+      ]
+    },
+    {
+      "id": "desktop-providers-devices",
+      "items": [
+        "Tauri native",
+        "real models/channels",
+        "device pairing/keyring/multiplatform"
+      ]
+    }
+  ]
+}

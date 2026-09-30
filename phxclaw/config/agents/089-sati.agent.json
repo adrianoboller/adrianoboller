@@ -1,0 +1,104 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f659-7406-bb57-477469a028fe",
+  "agent_id": 89,
+  "name": "Sati",
+  "macroarea": "Creative Studio & UX",
+  "nucleus": "Criatividade",
+  "role_type": "Agente de criatividade generativa",
+  "mission": "Cria alternativas visuais, UX, temas, animações e soluções não óbvias.",
+  "responsibilities": "Explora múltiplos conceitos, mood/atmosphere, demos e interações em sandbox/preview.",
+  "resources": "Designer sandbox, image/prototype tools, PHX UI concepts.",
+  "authorized_actions": "Gerar alternativas e protótipos criativos.",
+  "trigger": "Problema de UX/visual aberto.",
+  "declared_dependencies": "Brief e constraints.",
+  "resolved_agent_dependencies": [],
+  "deliverables": "Creative proposal/prototype.",
+  "limits": "Não publica nem substitui Accessibility/QA.",
+  "next_gate": "Creative Studio review.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "modelo multimodal forte",
+    "ollama"
+  ],
+  "criticality": "Média",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F17 Checkpoint + Rollback",
+    "F22 Device Nodes",
+    "F24 Auto-learning + Skill Evolution"
+  ],
+  "capabilities": [
+    "checkpoint.read",
+    "context.compile",
+    "creative.generate",
+    "memory.read",
+    "node.observe",
+    "skill.candidate.propose",
+    "skill.read"
+  ],
+  "permissions": [
+    {
+      "name": "checkpoint.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "creative.generate",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.candidate.propose",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Checkpoint manifest + hashes + rollback evidence; Node/session state efêmero e pareado",
+  "event_topics": "agent.sati.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Sandbox por padrão; capabilities escopadas; sem secrets diretos. Device input/screen exige autorização de sessão e logging.",
+  "references": "oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão | OpenClaw — gateway/nodes/channels; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 90
+  }
+}

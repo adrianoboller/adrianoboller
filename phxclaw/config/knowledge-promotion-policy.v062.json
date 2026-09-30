@@ -1,0 +1,17 @@
+{
+  "version": "0.62",
+  "min_supporting_evidence": 2,
+  "min_independent_mechanisms": 2,
+  "max_evidence_age_seconds": 2592000,
+  "require_human_for_governed": true,
+  "allowed_system_target_states": [
+    "accepted"
+  ],
+  "allowed_human_target_states": [
+    "accepted",
+    "governed"
+  ],
+  "revocation_requires_human": true,
+  "unresolved_contradictions_block": true,
+  "active_refutations_block": true
+}

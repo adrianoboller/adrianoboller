@@ -1,0 +1,110 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f61f-706e-a43f-f39a2a424cc8",
+  "agent_id": 31,
+  "name": "Template Engine Agent",
+  "macroarea": "Engenharia & Arquitetura",
+  "nucleus": "Templates",
+  "role_type": "Agente de templates",
+  "mission": "Implementa templates versionados com herança, composição, slots, overrides e propagação.",
+  "responsibilities": "Mantém Dependency Graph de templates, impacto, rollback, variants e preservação de overrides em atualizações.",
+  "resources": "Phoenix IR, UUIDv7, Dependency Graph, tests.",
+  "authorized_actions": "Criar template engine, resolver dependências, propagar, rollback.",
+  "trigger": "Feature de template ou alteração em modelo mestre.",
+  "declared_dependencies": "Component Model e contracts.",
+  "resolved_agent_dependencies": [],
+  "deliverables": "Template runtime + impact evidence.",
+  "limits": "Não altera instâncias fora das regras de override.",
+  "next_gate": "OPA/Regression/Compatibility.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "codex"
+  ],
+  "criticality": "Crítica",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F17 Checkpoint + Rollback",
+    "F19 Repo Intelligence / Tree-sitter",
+    "F22 Device Nodes"
+  ],
+  "capabilities": [
+    "checkpoint.read",
+    "context.compile",
+    "memory.read",
+    "node.observe",
+    "repo.read",
+    "skill.read",
+    "template.manage",
+    "tree_sitter.analyze"
+  ],
+  "permissions": [
+    {
+      "name": "checkpoint.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "repo.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "template.manage",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "tree_sitter.analyze",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Checkpoint manifest + hashes + rollback evidence; Node/session state efêmero e pareado",
+  "event_topics": "agent.template.engine.agent.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; write sensível, gasto, publicação, privilégio ou ação destrutiva exigem gate explícito. Device input/screen exige autorização de sessão e logging.",
+  "references": "Architect (MIT) — AST/Tree-sitter/Repo Intelligence | oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 32
+  }
+}

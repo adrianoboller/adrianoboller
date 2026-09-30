@@ -1,0 +1,51 @@
+{
+  "version": "0.14.0",
+  "suite": "PhxClaw v0.14 consolidated gates",
+  "pass": 195,
+  "fail": 0,
+  "rust_compiled": false,
+  "cargo_available": false,
+  "verify_bootstrap": "PASS",
+  "reports": [
+    {
+      "file": "DESKTOP_HOST_TEST_REPORT.json",
+      "pass": 26,
+      "fail": 0
+    },
+    {
+      "file": "F15_F16_TEST_REPORT.json",
+      "pass": 17,
+      "fail": 0
+    },
+    {
+      "file": "RESEARCH_PIPELINE_TEST_REPORT.json",
+      "pass": 34,
+      "fail": 0
+    },
+    {
+      "file": "PLUGIN_ECOSYSTEM_TEST_REPORT.json",
+      "pass": 71,
+      "fail": 0
+    },
+    {
+      "file": "OLMOCR_PLUGIN_TEST_REPORT.json",
+      "pass": 5,
+      "fail": 0
+    },
+    {
+      "file": "MISSION_RUNTIME_TEST_REPORT.json",
+      "pass": 24,
+      "fail": 0
+    },
+    {
+      "file": "V014_PLUGIN_F20_TEST_REPORT.json",
+      "pass": 18,
+      "fail": 0
+    }
+  ],
+  "notes": [
+    "Rust cargo check/test/clippy not executed: toolchain unavailable in host.",
+    "F20 Rust source is review; operational bootstrap semantics passed.",
+    "Both uploaded private plugins passed signed lifecycle install/doctor/enable/disable/uninstall."
+  ]
+}

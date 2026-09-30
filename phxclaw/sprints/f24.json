@@ -1,0 +1,50 @@
+{
+  "uuid": "01a0e5ed-9673-731f-9a89-00d5ce114ec6",
+  "code": "F24",
+  "title": "Auto-learning + Skill Evolution",
+  "goal": "Transformar experiências em candidate skills e promover apenas após hipótese, prova objetiva, QA e policy.",
+  "status": "planned",
+  "tasks": [
+    {
+      "uuid": "01a0e5ed-9673-76f8-a9cd-3a5af0f79c6b",
+      "title": "Candidate detector",
+      "status": "planned"
+    },
+    {
+      "uuid": "01a0e5ed-9673-70cb-b6af-6034833f1bed",
+      "title": "Skill synthesizer",
+      "status": "planned"
+    },
+    {
+      "uuid": "01a0e5ed-9673-7071-b8f3-61d1f8fd4b13",
+      "title": "Validation harness",
+      "status": "planned"
+    },
+    {
+      "uuid": "01a0e5ed-9673-768c-8c39-b4ea5662e008",
+      "title": "Promotion gate",
+      "status": "planned"
+    },
+    {
+      "uuid": "01a0e5ed-9673-7cf5-8a2b-6b487a1b72df",
+      "title": "Rollback/deprecation",
+      "status": "planned"
+    }
+  ],
+  "definition_of_done": [
+    "Contratos e schemas versionados",
+    "Implementação integrada ao Event Bus e Evidence Ledger",
+    "Testes unitários e integração sem mocks para os caminhos obrigatórios",
+    "Documentação, observabilidade, segurança e rollback definidos",
+    "Gate E2E obrigatório antes de marcar done"
+  ],
+  "notes": [
+    "Planejado para a sequência pós-F16; não considerar implementado até os gates reais passarem."
+  ],
+  "state": "review",
+  "canonical_project_version": "0.67.0",
+  "canonical_state_ref": "config/project-state-canonical.v067.json",
+  "implementation_state": "source_ready",
+  "verification_state": "static_verified",
+  "open_gaps": []
+}

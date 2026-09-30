@@ -1,0 +1,65 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f62e-76dd-9584-db8fba3cc8c4",
+  "agent_id": 46,
+  "name": "Visual Regression Agent",
+  "macroarea": "Qualidade & Provas",
+  "nucleus": "Qualidade",
+  "role_type": "Subagente de teste",
+  "mission": "Detecta mudanças visuais não intencionais em telas e componentes.",
+  "responsibilities": "Captura baseline, compara pixels/estrutura, trata tolerâncias e vincula mudança a template/version.",
+  "resources": "Playwright screenshots, render captures, diff tooling.",
+  "authorized_actions": "Comparar e classificar diffs visuais.",
+  "trigger": "Mudança UI/template/theme.",
+  "declared_dependencies": "Approved baseline.",
+  "resolved_agent_dependencies": [],
+  "deliverables": "Visual diff evidence.",
+  "limits": "Não aprova mudança estética sozinho.",
+  "next_gate": "Creative/QA2.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "ollama"
+  ],
+  "criticality": "Média",
+  "modules": [
+    "F17 Checkpoint + Rollback"
+  ],
+  "capabilities": [
+    "checkpoint.read",
+    "quality.regression.test"
+  ],
+  "permissions": [
+    {
+      "name": "checkpoint.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "quality.regression.test",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Checkpoint manifest + hashes + rollback evidence",
+  "event_topics": "agent.visual.regression.agent.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Sandbox por padrão; capabilities escopadas; sem secrets diretos.",
+  "references": "Hermes — patterns; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 47
+  }
+}

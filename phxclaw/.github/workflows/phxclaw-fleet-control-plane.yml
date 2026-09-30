@@ -1,0 +1,23 @@
+name: PhxClaw Fleet Control Plane v0.29
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with: { components: rustfmt, clippy }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.13' }
+      - run: pip install -r requirements-fleet-control.txt
+      - run: bash ci/run-fleet-control-plane.sh
+  production-control:
+    needs: verify
+    runs-on: ubuntu-24.04
+    environment: fleet-production
+    if: ${{ false }}
+    steps:
+      - run: echo "Intentional manual integration point; no fleet side effect in source package."

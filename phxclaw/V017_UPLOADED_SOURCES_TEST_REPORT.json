@@ -1,0 +1,379 @@
+{
+  "suite": "PhxClaw v0.17 uploaded Rust source integration",
+  "pass": 74,
+  "fail": 0,
+  "openclaw_rs_vendored": true,
+  "rustclaw_quarantined": false,
+  "details": [
+    {
+      "name": "openclaw_vendor_present",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "openclaw_license_present",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "openclaw_license_mit",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "openclaw_workspace_version",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "openclaw_component_crates_openclaw-channels_src_traits.rs",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "openclaw_component_crates_openclaw-channels_src_allowlist.rs",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "openclaw_component_crates_openclaw-providers_src_traits.rs",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "openclaw_component_crates_openclaw-plugins_src_api.rs",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "openclaw_component_crates_openclaw-core_src_secrets_mod.rs",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "openclaw_component_crates_openclaw-core_src_events_mod.rs",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "openclaw_component_crates_openclaw-ipc_src_transport.rs",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "openclaw_lock_license",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "openclaw_lock_hash",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rustclaw_vendor_present",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rustclaw_license_present",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rustclaw_license_mit",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rustclaw_verified_state",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rustclaw_native_adopted",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "openclaw_bridge_workspace",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rustclaw_bridge_workspace",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rustclaw_vendor_not_direct_workspace_member",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rustclaw_native_workspace_member",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "openclaw_source_not_workspace_member",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "openclaw_cap_openclaw_rs.health",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "openclaw_cap_openclaw_rs.doctor",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "openclaw_cap_openclaw_rs.status",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "openclaw_cap_openclaw_rs.gateway.status",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "openclaw_cap_openclaw_rs.channels.list",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "openclaw_cap_openclaw_rs.channels.probe",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "openclaw_cap_openclaw_rs.config.show",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "openclaw_cap_openclaw_rs.config.validate",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "openclaw_workspace_confinement",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rustclaw_cap_rustclaw.health",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rustclaw_cap_rustclaw.status",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rustclaw_cap_rustclaw.github.scan",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rustclaw_cap_rustclaw.agent.prompt",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rustclaw_prompt_argv_fail_closed",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rustclaw_args_redacted",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "channel_ChannelCapabilities",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "channel_ChannelProbe",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "channel_ChannelAllowlist",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "channel_ChannelAllowlistEntry",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "channel_ChannelRouteRule",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "channel_ChannelAgentRouter",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "channel_ChannelProviderV2",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sdk_ExtensionRuntimeKind",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sdk_ExtensionHook",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sdk_BeforeMessage",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sdk_AfterMessage",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sdk_BeforeToolCall",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sdk_AfterToolCall",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sdk_SessionStart",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sdk_SessionEnd",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sdk_AgentResponse",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sdk_HookInvocation",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sdk_version_current",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "catalog_count_matches",
+      "pass": true,
+      "detail": "202 vs 202"
+    },
+    {
+      "name": "catalog_required_caps",
+      "pass": true,
+      "detail": "[]"
+    },
+    {
+      "name": "openclaw_source_authoritative",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rustclaw_source_verified_mit",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "research_openclaw_source",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "research_rustclaw_source",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "documenter_openclaw_source",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "documenter_rustclaw_source",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "exists_scripts_vendor_openclaw_rs.sh",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "exists_scripts_vendor_openclaw_rs.ps1",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "exists_scripts_vendor_rustclaw.sh",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "exists_scripts_vendor_rustclaw.ps1",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "exists_docs_UPLOADED_RUST_SOURCES_AUDIT_V017.md",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "cli_smoke_1",
+      "pass": true,
+      "detail": "PhxClaw 0.19.0\n"
+    },
+    {
+      "name": "cli_smoke_2",
+      "pass": true,
+      "detail": "\",\n    \"archive_name\": \"openclaw-rs-main.zip\",\n    \"archive_sha256\": \"4e64bc995552203912deb599208f41d6df0e4a745fe9bf6f3669056e4b84a721\",\n    \"upstream_repository\": \"https://github.com/neul-labs/openclaw-rs\",\n    \"workspace_version\": \"0.1.0\",\n    \"rust_version\": \"1.85\",\n    \"license\": \"MIT\",\n    \"license_file_present\": true,\n    \"vendored_path\": \"private/vendor/openclaw-rs/upstream\",\n    \"commit\": null,\n    \"note\": \"User-supplied source snapshot; exact git commit unavailable from archive.\"\n  }\n}\n"
+    },
+    {
+      "name": "cli_smoke_3",
+      "pass": true,
+      "detail": "\"lock\": {\n    \"name\": \"RustClaw\",\n    \"repository\": \"https://github.com/Adaimade/RustClaw\",\n    \"source_kind\": \"user_supplied_archive\",\n    \"version\": \"0.5.0\",\n    \"license\": \"MIT\",\n    \"license_verified\": true,\n    \"archive_sha256\": \"53f9f87d6e453cadb3845c7fcf71e32db5e517230e29f7b264a1a69547b15968\",\n    \"license_sha256\": \"c6231661b04d1fcf342a6965a451a844364d026ccb3f9e7fde1910a0f92864ae\",\n    \"vendor_path\": \"private/vendor/rustclaw/upstream\",\n    \"vendored_at\": \"2026-09-28T02:37:00-03:00\"\n  }\n}\n"
+    },
+    {
+      "name": "cli_smoke_4",
+      "pass": true,
+      "detail": "claw-rs-bridge\nopenclaw_rs.config.validate            source_ready               phxclaw-openclaw-rs-bridge\nopenclaw_rs.doctor                     source_ready               phxclaw-openclaw-rs-bridge\nopenclaw_rs.gateway.status             source_ready               phxclaw-openclaw-rs-bridge\nopenclaw_rs.health                     source_ready               phxclaw-openclaw-rs-bridge\nopenclaw_rs.status                     source_ready               phxclaw-openclaw-rs-bridge\n"
+    },
+    {
+      "name": "cli_smoke_5",
+      "pass": true,
+      "detail": "  phxclaw-rustclaw-native\nrustclaw.native.mcp.names              source_ready               phxclaw-rustclaw-native\nrustclaw.native.mcp.ndjson             source_ready               phxclaw-rustclaw-native\nrustclaw.native.session.manage         source_ready               phxclaw-rustclaw-native\nrustclaw.native.session.scope          source_ready               phxclaw-rustclaw-native\nrustclaw.status                        source_ready               phxclaw-rustclaw-bridge\n"
+    }
+  ]
+}

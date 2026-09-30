@@ -1,0 +1,14 @@
+[package]
+name = "phxclaw-task-graph"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+chrono.workspace = true
+phxclaw-types = { path = "../phxclaw-types" }
+postgres.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+uuid.workspace = true

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phxclaw.local/schemas/agent-response.schema.json",
+  "title": "PhxClaw Agent Response",
+  "type": "object",
+  "required": ["uuid", "request_uuid", "agent_uuid", "payload", "created_at"],
+  "properties": {
+    "uuid": {"type": "string", "format": "uuid"},
+    "request_uuid": {"type": "string", "format": "uuid"},
+    "agent_uuid": {"type": "string", "format": "uuid"},
+    "payload": {},
+    "created_at": {"type": "string", "format": "date-time"}
+  },
+  "additionalProperties": false
+}

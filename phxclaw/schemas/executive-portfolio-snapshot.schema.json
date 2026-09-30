@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PhxClaw Executive Portfolio Snapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "snapshot_uuid",
+    "tenant_uuid",
+    "generated_at",
+    "portfolio_health",
+    "projects",
+    "evidence_sha256",
+    "snapshot_sha256"
+  ],
+  "properties": {
+    "snapshot_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tenant_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "portfolio_health": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "projects": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "evidence_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "snapshot_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phxclaw.local/schemas/model-request.schema.json",
+  "title": "PhxClaw Model Request",
+  "type": "object",
+  "required": ["uuid", "capability", "input", "input_tokens_estimate", "output_tokens_limit", "max_cost_microunits", "preferred_models", "requires_local", "classification", "budget_account", "created_at"],
+  "properties": {
+    "uuid": {"type": "string", "format": "uuid"},
+    "capability": {"type": "string", "minLength": 1},
+    "input": {},
+    "input_tokens_estimate": {"type": "integer", "minimum": 0},
+    "output_tokens_limit": {"type": "integer", "minimum": 0},
+    "max_cost_microunits": {"type": "integer", "minimum": 0},
+    "preferred_models": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "requires_local": {"type": "boolean"},
+    "classification": {"enum": ["public", "internal", "confidential", "restricted"]},
+    "budget_account": {"type": "string", "minLength": 1},
+    "created_at": {"type": "string", "format": "date-time"}
+  },
+  "additionalProperties": false
+}

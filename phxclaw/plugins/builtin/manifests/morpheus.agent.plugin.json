@@ -1,0 +1,90 @@
+{
+  "manifest_version": "1.2.0",
+  "uuid": "01a0e430-4586-71ee-908d-54c04433e8e0",
+  "name": "com.phxclaw.agent.morpheus",
+  "version": "0.5.0",
+  "kind": "agent",
+  "description": "Agente estratégico plugável para visão, missão, riscos e planejamento.",
+  "core_api": ">=0.5.0, <0.6.0",
+  "entrypoint": {
+    "type": "process",
+    "value": "plugins/builtin/artifacts/morpheus-agent"
+  },
+  "dependencies": [],
+  "capabilities": [
+    "strategy.assess",
+    "mission.plan",
+    "risk.assess",
+    "decision.technical"
+  ],
+  "permissions": [
+    {
+      "name": "research.read",
+      "scopes": [
+        "evidence/*"
+      ]
+    },
+    {
+      "name": "state.read",
+      "scopes": [
+        "project/*"
+      ]
+    }
+  ],
+  "lifecycle": {
+    "install": "morpheus.install",
+    "enable": "morpheus.enable",
+    "disable": "morpheus.disable",
+    "uninstall": "morpheus.uninstall",
+    "health": "morpheus.health"
+  },
+  "contracts": {
+    "input_schema": "schemas/agent-request.schema.json",
+    "output_schema": "schemas/agent-response.schema.json"
+  },
+  "sandbox": {
+    "network": "deny",
+    "network_allowlist": [],
+    "read_only_paths": [],
+    "write_paths": [],
+    "environment_allowlist": [],
+    "timeout_ms": 5000,
+    "memory_mb": 256,
+    "cpu_quota_percent": 25
+  },
+  "integrity": {
+    "artifact": "plugins/builtin/artifacts/morpheus-agent",
+    "hash_algorithm": "sha256",
+    "digest": "b3e1ce3f3b97fc1dadfb940179f38191340588c304d9c6d9600da4e2f91f050d",
+    "signature_algorithm": "ed25519",
+    "signature": "kbhSn6HRnHeGxOJ0tQgQwntSsoMnAKIc1ZVjEMUEJkkBc4/hov6dsJ6IgTv1FYbndc//yFdsqVT3cJ11DrmdBQ==",
+    "signer": "phxclaw-dev-root-2026-v05r2",
+    "provenance": "PhxClaw Core Bootstrap v0.5 / signed development artifact"
+  },
+  "tests": [
+    {
+      "name": "signed-artifact-health",
+      "command": "plugins/builtin/artifacts/morpheus-agent --health",
+      "required": true
+    }
+  ],
+  "rollback": {
+    "strategy": "disable_and_restore_previous",
+    "steps": [
+      "disable plugin",
+      "restore previous signed manifest and artifact",
+      "re-run integrity and health gates"
+    ]
+  },
+  "agent": {
+    "display_name": "Morpheus",
+    "role": "Estratégia, missão e riscos",
+    "priority": 70,
+    "accepts": [
+      "application/json"
+    ],
+    "emits": [
+      "application/json"
+    ]
+  }
+}

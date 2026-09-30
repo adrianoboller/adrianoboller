@@ -1,0 +1,1671 @@
+{
+  "version": "0.20.0",
+  "catalog_uuid": "01a0e49b-d407-73f0-ad55-890b7f35ba2f",
+  "count": 208,
+  "capabilities": [
+    {
+      "uuid": "01a0e4f0-5c42-7a20-9e00-1701ad496cd0",
+      "name": "agent.catalog.route",
+      "service": "phxclaw-agent-runtime",
+      "risk": "internal",
+      "default_effect": "allow_if_declared",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e4e0-ea4c-7f9c-b64e-67a14dbdc184",
+      "name": "agent.registry.generate",
+      "service": "phxclaw-agent-registry-gen",
+      "risk": "build",
+      "default_effect": "allow_if_declared",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e4ba-9ec8-76fd-b982-7e39be9ffcc7",
+      "name": "api.realtime.connect",
+      "service": "phxclaw-api-gateway",
+      "risk": "network",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e49b-d407-76c8-81c3-87569f92d7bc",
+      "name": "bpm.approval.request",
+      "service": "phxclaw-bpm",
+      "risk": "internal",
+      "default_effect": "allow_if_declared",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e49b-d407-7826-b309-8d9c4d078f60",
+      "name": "bpm.process.execute",
+      "service": "phxclaw-bpm",
+      "risk": "internal",
+      "default_effect": "allow_if_declared",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e49b-d407-7b48-9b1a-1661385ffc95",
+      "name": "bpm.process.import",
+      "service": "phxclaw-bpm",
+      "risk": "internal",
+      "default_effect": "allow_if_declared",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e49b-d407-7ded-9963-f0683da31b44",
+      "name": "bpm.process.validate",
+      "service": "phxclaw-bpm",
+      "risk": "internal",
+      "default_effect": "allow_if_declared",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e64f-1627-7e50-b6e2-c0b2d87a426e",
+      "name": "channel.agent.route",
+      "service": "phxclaw-channel-gateway",
+      "risk": "identity",
+      "default_effect": "allow_if_declared",
+      "status": "source_ready"
+    },
+    {
+      "uuid": "01a0e64f-1627-7715-8f03-cc5ae56b24ab",
+      "name": "channel.allowlist.evaluate",
+      "service": "phxclaw-channel-gateway",
+      "risk": "identity",
+      "default_effect": "allow_if_declared",
+      "status": "source_ready"
+    },
+    {
+      "uuid": "01a0e65f-9877-735a-a644-6f0a90bc0a9d",
+      "name": "channel.discord.probe",
+      "service": "phxclaw-channel-providers",
+      "risk": "network",
+      "default_effect": "deny",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e65f-9877-7731-9f16-c39ca2bb5470",
+      "name": "channel.discord.send",
+      "service": "phxclaw-channel-providers",
+      "risk": "network",
+      "default_effect": "deny",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e632-0085-7460-98a9-2dd898e36538",
+      "name": "channel.identity.bind",
+      "service": "phxclaw-channel-gateway",
+      "risk": "identity",
+      "default_effect": "deny",
+      "status": "source_ready"
+    },
+    {
+      "uuid": "01a0e632-0085-70b8-82d3-c3756c83ac7a",
+      "name": "channel.identity.state",
+      "service": "phxclaw-channel-gateway",
+      "risk": "identity",
+      "default_effect": "deny",
+      "status": "source_ready"
+    },
+    {
+      "uuid": "01a0e632-0085-7df9-9dc9-bbbc4e552507",
+      "name": "channel.inbound.accept",
+      "service": "phxclaw-channel-gateway",
+      "risk": "external_input",
+      "default_effect": "deny",
+      "status": "source_ready"
+    },
+    {
+      "uuid": "01a0e632-0085-711e-a112-27fc170b6e91",
+      "name": "channel.outbound.prepare",
+      "service": "phxclaw-channel-gateway",
+      "risk": "external_output",
+      "default_effect": "deny",
+      "status": "source_ready"
+    },
+    {
+      "uuid": "01a0e632-0085-7e11-8f5a-c08a43c0ba51",
+      "name": "channel.outbound.send",
+      "service": "phxclaw-channel-gateway",
+      "risk": "network",
+      "default_effect": "deny",
+      "status": "source_ready"
+    },
+    {
+      "uuid": "01a0e632-0085-770e-b0a7-ea2d8adf4775",
+      "name": "channel.provider.invoke",
+      "service": "phxclaw-channel-gateway",
+      "risk": "network",
+      "default_effect": "deny",
+      "status": "source_ready"
+    },
+    {
+      "uuid": "01a0e64f-1627-774a-a40f-a3f21200f9d1",
+      "name": "channel.provider.probe",
+      "service": "phxclaw-channel-gateway",
+      "risk": "network",
+      "default_effect": "deny",
+      "status": "source_ready"
+    },
+    {
+      "uuid": "01a0e632-0085-7f42-823d-c0042fefffd4",
+      "name": "channel.session.resolve",
+      "service": "phxclaw-channel-gateway",
+      "risk": "internal",
+      "default_effect": "allow_if_declared",
+      "status": "source_ready"
+    },
+    {
+      "uuid": "01a0e65f-9877-774a-b5fb-88fa8fad8ddb",
+      "name": "channel.telegram.probe",
+      "service": "phxclaw-channel-providers",
+      "risk": "network",
+      "default_effect": "deny",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e65f-9877-7e07-84fb-30859d0d817c",
+      "name": "channel.telegram.send",
+      "service": "phxclaw-channel-providers",
+      "risk": "network",
+      "default_effect": "deny",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e610-b90c-7c5a-91a2-aaf19cbace5d",
+      "name": "checkpoint.create",
+      "service": "phxclaw-checkpoint",
+      "risk": "filesystem",
+      "default_effect": "deny",
+      "status": "source_ready"
+    },
+    {
+      "uuid": "01a0e610-b90d-74e9-b158-df29e4751f9d",
+      "name": "checkpoint.restore",
+      "service": "phxclaw-checkpoint",
+      "risk": "destructive",
+      "default_effect": "deny",
+      "status": "source_ready"
+    },
+    {
+      "uuid": "01a0e610-b90c-7d6f-bb46-8e1aafde6096",
+      "name": "checkpoint.verify",
+      "service": "phxclaw-checkpoint",
+      "risk": "filesystem",
+      "default_effect": "allow_if_declared",
+      "status": "source_ready"
+    },
+    {
+      "uuid": "01a0e63e-a2e2-7cf3-bbe4-3816d3255655",
+      "name": "claw.agents.list",
+      "service": "phxclaw-claw-code-bridge",
+      "risk": "read",
+      "default_effect": "allow_if_declared",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e63e-a2e2-7ab1-9133-559c99b1c769",
+      "name": "claw.doctor",
+      "service": "phxclaw-claw-code-bridge",
+      "risk": "read",
+      "default_effect": "allow_if_declared",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e63e-a2e2-7042-bf6c-cd072bf0125c",
+      "name": "claw.health",
+      "service": "phxclaw-claw-code-bridge",
+      "risk": "read",
+      "default_effect": "allow_if_declared",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e63e-a2e2-7fcc-bb9a-d36e4240468e",
+      "name": "claw.mcp.status",
+      "service": "phxclaw-claw-code-bridge",
+      "risk": "read",
+      "default_effect": "allow_if_declared",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e63e-a2e2-7a5f-994a-4700a277e966",
+      "name": "claw.prompt",
+      "service": "phxclaw-claw-code-bridge",
+      "risk": "host",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e63e-a2e2-7218-9401-29f7d5409ba9",
+      "name": "claw.sandbox.status",
+      "service": "phxclaw-claw-code-bridge",
+      "risk": "read",
+      "default_effect": "allow_if_declared",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e63e-a2e2-7181-a5e4-7eae9867e9ac",
+      "name": "claw.skills.list",
+      "service": "phxclaw-claw-code-bridge",
+      "risk": "read",
+      "default_effect": "allow_if_declared",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e63e-a2e2-7ece-a38e-181dd66d3bae",
+      "name": "claw.status",
+      "service": "phxclaw-claw-code-bridge",
+      "risk": "read",
+      "default_effect": "allow_if_declared",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e4e0-ea4c-742d-8d3b-b12e2efdedbf",
+      "name": "context.compile",
+      "service": "phxclaw-memory-context",
+      "risk": "internal",
+      "default_effect": "allow_if_declared",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e4f0-5c42-7319-8616-6e511a8fa2c8",
+      "name": "context.materialize",
+      "service": "phxclaw-memory-context",
+      "risk": "internal",
+      "default_effect": "allow_if_declared",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e69a-a936-7e6d-b0d1-1fac1939ecce",
+      "name": "core.runtime.start",
+      "service": "phxclaw-core-runtime",
+      "risk": "host",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e69a-a936-78e2-a97d-0be86b7917a7",
+      "name": "core.runtime.status",
+      "service": "phxclaw-core-runtime",
+      "risk": "internal",
+      "default_effect": "allow_if_declared",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e629-e95b-7779-8d01-429c65b50ae7",
+      "name": "dashboard.catalog.get",
+      "service": "com.phxclaw.private.dashboards",
+      "risk": "plugin",
+      "default_effect": "deny",
+      "status": "plugin_external"
+    },
+    {
+      "uuid": "01a0e629-e95b-7555-a756-76683fec2c6f",
+      "name": "dashboard.catalog.list",
+      "service": "com.phxclaw.private.dashboards",
+      "risk": "plugin",
+      "default_effect": "deny",
+      "status": "plugin_external"
+    },
+    {
+      "uuid": "01a0e629-e95b-786e-96f0-586efa4073b4",
+      "name": "dashboard.health",
+      "service": "com.phxclaw.private.dashboards",
+      "risk": "plugin",
+      "default_effect": "deny",
+      "status": "plugin_external"
+    },
+    {
+      "uuid": "01a0e629-e95b-761b-8a7e-217d5f89e2a3",
+      "name": "dashboard.preview.list",
+      "service": "com.phxclaw.private.dashboards",
+      "risk": "plugin",
+      "default_effect": "deny",
+      "status": "plugin_external"
+    },
+    {
+      "uuid": "01a0e629-e95b-7305-aaa6-82540bc0ed82",
+      "name": "dashboard.render.basic_html",
+      "service": "com.phxclaw.private.dashboards",
+      "risk": "plugin",
+      "default_effect": "deny",
+      "status": "plugin_external"
+    },
+    {
+      "uuid": "01a0e629-e95b-7887-90dc-ef03148541a3",
+      "name": "dashboard.source.status",
+      "service": "com.phxclaw.private.dashboards",
+      "risk": "plugin",
+      "default_effect": "deny",
+      "status": "plugin_external"
+    },
+    {
+      "uuid": "01a0e69a-a936-7e7d-807c-3f500c765192",
+      "name": "database.postgresql.configure",
+      "service": "phxclaw-postgres-bootstrap",
+      "risk": "host",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e69a-a936-72d2-8957-294e051142b4",
+      "name": "database.postgresql.doctor",
+      "service": "phxclaw-postgres-bootstrap",
+      "risk": "internal",
+      "default_effect": "allow_if_declared",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e69a-a936-7045-b341-2ec31f389c08",
+      "name": "database.postgresql.install",
+      "service": "phxclaw-postgres-bootstrap",
+      "risk": "host",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e69a-a936-7b01-b4fe-9c11a2aa7044",
+      "name": "database.postgresql.migrate",
+      "service": "phxclaw-postgres-bootstrap",
+      "risk": "database",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e4ba-9ec8-7b4a-9d38-9cd00a2512c0",
+      "name": "desktop.application.launch",
+      "service": "phxclaw-system-automation",
+      "risk": "host",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e4ba-9ec8-74d8-87df-d51e1e38f849",
+      "name": "desktop.host.status",
+      "service": "phxclaw-desktop",
+      "risk": "host",
+      "default_effect": "allow_if_declared",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e49b-d407-70f3-a4f0-ed8b1cec7a48",
+      "name": "desktop.input",
+      "service": "phxclaw-system-automation",
+      "risk": "host",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e4ba-9ec8-7d42-8936-22c066c1df1c",
+      "name": "desktop.webview.create",
+      "service": "phxclaw-desktop",
+      "risk": "host",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e49b-d407-7e67-ba5f-4180ac2fd462",
+      "name": "document.read",
+      "service": "phxclaw-document-io",
+      "risk": "data_write",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e49b-d407-75b1-bcb7-b8fcf106b75f",
+      "name": "document.write",
+      "service": "phxclaw-document-io",
+      "risk": "data_write",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e49b-d407-7598-9731-0d91dbaba7fe",
+      "name": "dom.attribute.remove",
+      "service": "phxclaw-webview-control",
+      "risk": "host",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e49b-d407-7750-aefc-ac8c8e67243f",
+      "name": "dom.attribute.set",
+      "service": "phxclaw-webview-control",
+      "risk": "host",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e49b-d407-7b1b-99d3-c2956c348b34",
+      "name": "dom.click",
+      "service": "phxclaw-webview-control",
+      "risk": "host",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e49b-d407-791b-9f2a-f7762cb3e993",
+      "name": "dom.computed_style.get",
+      "service": "phxclaw-webview-control",
+      "risk": "host",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e49b-d407-7a2e-9cd1-806f42a6ea71",
+      "name": "dom.event.dispatch",
+      "service": "phxclaw-webview-control",
+      "risk": "host",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e49b-d407-7a08-bde2-5774fbefae19",
+      "name": "dom.focus",
+      "service": "phxclaw-webview-control",
+      "risk": "host",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e49b-d407-7ef6-91a7-c302132b633f",
+      "name": "dom.html.get",
+      "service": "phxclaw-webview-control",
+      "risk": "host",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e49b-d407-76f8-9eb1-06852c274f17",
+      "name": "dom.html.set",
+      "service": "phxclaw-webview-control",
+      "risk": "host",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e49b-d407-7185-95b7-a93409e4984b",
+      "name": "dom.query",
+      "service": "phxclaw-webview-control",
+      "risk": "host",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e49b-d407-7436-b4af-8695557e3dc2",
+      "name": "dom.query_all",
+      "service": "phxclaw-webview-control",
+      "risk": "host",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e49b-d407-7866-970a-146ffb5cc37f",
+      "name": "dom.scroll_into_view",
+      "service": "phxclaw-webview-control",
+      "risk": "host",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e49b-d407-7376-902b-e35884c5c1cf",
+      "name": "dom.svg.export",
+      "service": "phxclaw-webview-control",
+      "risk": "host",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e49b-d407-7494-a7b7-a8f87b4fc6b9",
+      "name": "dom.type",
+      "service": "phxclaw-webview-control",
+      "risk": "host",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e4ba-9ec8-745a-b204-c9c4e2dbe68f",
+      "name": "event.live.publish",
+      "service": "phxclaw-live-bus",
+      "risk": "internal",
+      "default_effect": "allow_if_declared",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e4ba-9ec8-76fa-883f-3cc4053ad905",
+      "name": "event.live.subscribe",
+      "service": "phxclaw-live-bus",
+      "risk": "internal",
+      "default_effect": "allow_if_declared",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e4ba-9ec8-7a37-a4a0-716a009d0c6c",
+      "name": "evidence.ledger.append",
+      "service": "phxclaw-evidence-ledger",
+      "risk": "data_write",
+      "default_effect": "allow_if_declared",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e4ba-9ec8-7569-a8ac-2240652402e2",
+      "name": "evidence.ledger.verify",
+      "service": "phxclaw-evidence-ledger",
+      "risk": "data_read",
+      "default_effect": "allow_if_declared",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e629-e95b-7db3-93d8-197612d69ff7",
+      "name": "fx.catalog.summary",
+      "service": "com.phxclaw.private.web-fxsdk",
+      "risk": "plugin",
+      "default_effect": "deny",
+      "status": "plugin_external"
+    },
+    {
+      "uuid": "01a0e629-e95b-7474-9de3-99334fcbd351",
+      "name": "fx.health",
+      "service": "com.phxclaw.private.web-fxsdk",
+      "risk": "plugin",
+      "default_effect": "deny",
+      "status": "plugin_external"
+    },
+    {
+      "uuid": "01a0e629-e95b-7891-aaf5-ef709b9111fa",
+      "name": "fx.source.status",
+      "service": "com.phxclaw.private.web-fxsdk",
+      "risk": "plugin",
+      "default_effect": "deny",
+      "status": "plugin_external"
+    },
+    {
+      "uuid": "01a0e629-e95b-7de0-8260-53772b803940",
+      "name": "fx.theme.get",
+      "service": "com.phxclaw.private.web-fxsdk",
+      "risk": "plugin",
+      "default_effect": "deny",
+      "status": "plugin_external"
+    },
+    {
+      "uuid": "01a0e629-e95b-79e9-8dec-a59bea996dc8",
+      "name": "fx.theme.list",
+      "service": "com.phxclaw.private.web-fxsdk",
+      "risk": "plugin",
+      "default_effect": "deny",
+      "status": "plugin_external"
+    },
+    {
+      "uuid": "01a0e629-e95b-77f5-b28f-b3e3f0334c4f",
+      "name": "fx.tokens.emit_css",
+      "service": "com.phxclaw.private.web-fxsdk",
+      "risk": "plugin",
+      "default_effect": "deny",
+      "status": "plugin_external"
+    },
+    {
+      "uuid": "01a0e629-e95b-70df-9ab5-235c9c84e484",
+      "name": "fx.tokens.validate",
+      "service": "com.phxclaw.private.web-fxsdk",
+      "risk": "plugin",
+      "default_effect": "deny",
+      "status": "plugin_external"
+    },
+    {
+      "uuid": "01a0e629-e95b-78b7-8263-d00b139c85bd",
+      "name": "fx.ui.search",
+      "service": "com.phxclaw.private.web-fxsdk",
+      "risk": "plugin",
+      "default_effect": "deny",
+      "status": "plugin_external"
+    },
+    {
+      "uuid": "01a0e49b-d407-7552-b6ef-a93b147db3c0",
+      "name": "http.request",
+      "service": "phxclaw-http-client",
+      "risk": "network",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e49b-d407-7dd2-8996-e3a7863c0805",
+      "name": "http.result.get",
+      "service": "phxclaw-http-client",
+      "risk": "network",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e5ed-9675-7be4-af5f-80bd316d4e3e",
+      "name": "image.generate",
+      "service": "external-bridge:create-image",
+      "risk": "image",
+      "default_effect": "deny",
+      "status": "declared_external_bridge"
+    },
+    {
+      "uuid": "01a0e63e-a2e3-75fe-9e36-393b5fbc098f",
+      "name": "knowledge.claw_code.read",
+      "service": "phxclaw-source-registry",
+      "risk": "read",
+      "default_effect": "allow_if_declared",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e4f0-5c42-7afb-9bce-f9776e41a409",
+      "name": "knowledge.offline.search",
+      "service": "phxclaw-source-registry",
+      "risk": "internal",
+      "default_effect": "allow_if_declared",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e4e0-ea4c-7215-b22c-cb320c6ae18b",
+      "name": "knowledge.offline.sync",
+      "service": "phxclaw-source-registry",
+      "risk": "host",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e5b0-b5cc-7ab6-a6ff-0821c06bdf28",
+      "name": "knowledge.olmocr.read",
+      "service": "phxclaw-source-registry",
+      "risk": "external",
+      "default_effect": "allow_if_declared",
+      "status": "implemented_source_unverified"
+    },
+    {
+      "uuid": "01a0e64f-1627-7f4d-af99-6e3e68c16ec3",
+      "name": "knowledge.openclaw_rs.read",
+      "service": "phxclaw-source-registry",
+      "risk": "read",
+      "default_effect": "allow_if_declared",
+      "status": "source_ready"
+    },
+    {
+      "uuid": "01a0e4e0-ea4c-748b-9ede-94cb3a5b922f",
+      "name": "knowledge.rust.read",
+      "service": "phxclaw-source-registry",
+      "risk": "internal",
+      "default_effect": "allow_if_declared",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e64f-1627-7c17-8c00-76ad35c3f290",
+      "name": "knowledge.rustclaw.read",
+      "service": "phxclaw-source-registry",
+      "risk": "read",
+      "default_effect": "allow_if_declared",
+      "status": "source_ready"
+    },
+    {
+      "uuid": "01a0e4e0-ea4c-7c7a-8a05-c70b717a7391",
+      "name": "knowledge.source_registry.read",
+      "service": "phxclaw-source-registry",
+      "risk": "internal",
+      "default_effect": "allow_if_declared",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e63e-a2e2-72e9-a170-1b0b9476ec46",
+      "name": "mcp.degraded.report",
+      "service": "phxclaw-mcp-lsp-runtime",
+      "risk": "internal",
+      "default_effect": "allow_if_declared",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e63e-a2e2-7404-aa9f-79bed6a92d51",
+      "name": "mcp.lifecycle.validate",
+      "service": "phxclaw-mcp-lsp-runtime",
+      "risk": "internal",
+      "default_effect": "allow_if_declared",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e63e-a2e2-7765-9d1a-78a9e39c0962",
+      "name": "mcp.protocol.negotiate",
+      "service": "phxclaw-mcp-lsp-runtime",
+      "risk": "internal",
+      "default_effect": "allow_if_declared",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e63e-a2e2-79a3-9ada-da7bd74e828f",
+      "name": "mcp.transport.sse",
+      "service": "phxclaw-mcp-lsp-runtime",
+      "risk": "network",
+      "default_effect": "deny",
+      "status": "declared"
+    },
+    {
+      "uuid": "01a0e63e-a2e2-7236-bdea-ddae6cb0e4a9",
+      "name": "mcp.transport.stdio",
+      "service": "phxclaw-mcp-lsp-runtime",
+      "risk": "host",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e63e-a2e2-7620-a34e-0cf8fdc04757",
+      "name": "mcp.transport.streamable_http",
+      "service": "phxclaw-mcp-lsp-runtime",
+      "risk": "network",
+      "default_effect": "deny",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e63e-a2e2-7fdd-ab63-7ab7f16b5b58",
+      "name": "mcp.transport.websocket",
+      "service": "phxclaw-mcp-lsp-runtime",
+      "risk": "network",
+      "default_effect": "deny",
+      "status": "declared"
+    },
+    {
+      "uuid": "01a0e4e0-ea4c-7739-a1e2-1366c3afac92",
+      "name": "memory.read",
+      "service": "phxclaw-memory-context",
+      "risk": "internal",
+      "default_effect": "allow_if_declared",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e4e0-ea4c-7ed4-9ca8-15bcc80f210a",
+      "name": "memory.write",
+      "service": "phxclaw-memory-context",
+      "risk": "governed_write",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e49b-d407-72da-b861-deb7d8e036e7",
+      "name": "mindset.profile.evaluate",
+      "service": "phxclaw-bpm",
+      "risk": "internal",
+      "default_effect": "allow_if_declared",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e5da-2389-7f7b-b6b1-de586a68c488",
+      "name": "mission.run",
+      "service": "phxclaw-mission-runtime",
+      "risk": "internal",
+      "default_effect": "allow_if_declared",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e5da-2389-7590-a6be-d1b13044fa20",
+      "name": "mission.step.execute",
+      "service": "phxclaw-mission-runtime",
+      "risk": "internal",
+      "default_effect": "allow_if_declared",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e5b0-b5cc-7e9c-a9ec-cd16c8c0b517",
+      "name": "ocr.olmocr.batch",
+      "service": "com.phxclaw.community.olmocr",
+      "risk": "integration",
+      "default_effect": "deny",
+      "status": "implemented_adapter_backend_unverified"
+    },
+    {
+      "uuid": "01a0e5b0-b5cc-7140-80f6-f28cc041abc1",
+      "name": "ocr.olmocr.extract",
+      "service": "com.phxclaw.community.olmocr",
+      "risk": "integration",
+      "default_effect": "deny",
+      "status": "implemented_adapter_backend_unverified"
+    },
+    {
+      "uuid": "01a0e5b0-b5cc-796b-bce5-e03f3d868629",
+      "name": "ocr.olmocr.health",
+      "service": "com.phxclaw.community.olmocr",
+      "risk": "integration",
+      "default_effect": "deny",
+      "status": "implemented_adapter_backend_unverified"
+    },
+    {
+      "uuid": "01a0e49b-d407-7b03-b134-523102a1a290",
+      "name": "ocr.read",
+      "service": "phxclaw-media-intelligence",
+      "risk": "host",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e593-8e38-7e6a-82a9-a2eb601adf6a",
+      "name": "octopus.code.analyze",
+      "service": "phxclaw-octopus-bridge",
+      "risk": "integration",
+      "default_effect": "deny",
+      "status": "implemented_source_unverified"
+    },
+    {
+      "uuid": "01a0e593-8e38-7fd5-80a3-42f9add3cb3b",
+      "name": "octopus.contract.verify",
+      "service": "phxclaw-octopus-bridge",
+      "risk": "integration",
+      "default_effect": "deny",
+      "status": "implemented_source_unverified"
+    },
+    {
+      "uuid": "01a0e593-8e38-7c69-9658-b112298b2eb3",
+      "name": "octopus.dependency.map",
+      "service": "phxclaw-octopus-bridge",
+      "risk": "integration",
+      "default_effect": "deny",
+      "status": "implemented_source_unverified"
+    },
+    {
+      "uuid": "01a0e593-8e38-7451-b3bf-2a1642e70909",
+      "name": "octopus.knowledge.search",
+      "service": "phxclaw-octopus-bridge",
+      "risk": "internal",
+      "default_effect": "deny",
+      "status": "implemented_source_unverified"
+    },
+    {
+      "uuid": "01a0e593-8e38-73e5-bdb2-6ed2bd9b2319",
+      "name": "octopus.migration.plan",
+      "service": "phxclaw-octopus-bridge",
+      "risk": "integration",
+      "default_effect": "deny",
+      "status": "implemented_source_unverified"
+    },
+    {
+      "uuid": "01a0e593-8e38-7bed-a950-17bbda43ee16",
+      "name": "octopus.quality.evaluate",
+      "service": "phxclaw-octopus-bridge",
+      "risk": "integration",
+      "default_effect": "deny",
+      "status": "implemented_source_unverified"
+    },
+    {
+      "uuid": "01a0e593-8e38-7dd2-84c2-cb6e6fb0f8f6",
+      "name": "octopus.repo.grep_ast",
+      "service": "phxclaw-octopus-bridge",
+      "risk": "integration",
+      "default_effect": "deny",
+      "status": "implemented_source_unverified"
+    },
+    {
+      "uuid": "01a0e593-8e38-759f-86f4-7bd4c7a4f4d9",
+      "name": "octopus.repo.map",
+      "service": "phxclaw-octopus-bridge",
+      "risk": "integration",
+      "default_effect": "deny",
+      "status": "implemented_source_unverified"
+    },
+    {
+      "uuid": "01a0e593-8e38-7b72-a770-67e30559e4be",
+      "name": "octopus.security.scan",
+      "service": "phxclaw-octopus-bridge",
+      "risk": "security",
+      "default_effect": "deny",
+      "status": "implemented_source_unverified"
+    },
+    {
+      "uuid": "01a0e593-8e38-7421-9a60-d9eb1f103a88",
+      "name": "octopus.shadow.check",
+      "service": "phxclaw-octopus-bridge",
+      "risk": "security",
+      "default_effect": "deny",
+      "status": "implemented_source_unverified"
+    },
+    {
+      "uuid": "01a0e593-8e38-763c-9962-34763ae8aff3",
+      "name": "octopus.toolchain.status",
+      "service": "phxclaw-octopus-bridge",
+      "risk": "host",
+      "default_effect": "deny",
+      "status": "implemented_source_unverified"
+    },
+    {
+      "uuid": "01a0e49b-d407-7f33-bcb4-9a3dc462d6aa",
+      "name": "ollama.chat",
+      "service": "phxclaw-ollama-adapter",
+      "risk": "network",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e49b-d407-7b2b-87b9-4e6ec3d4a238",
+      "name": "ollama.delete",
+      "service": "phxclaw-ollama-adapter",
+      "risk": "network",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e49b-d407-7458-bf8d-3680dc74b3f7",
+      "name": "ollama.embed",
+      "service": "phxclaw-ollama-adapter",
+      "risk": "network",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e49b-d407-7844-a24e-7d716679f22e",
+      "name": "ollama.generate",
+      "service": "phxclaw-ollama-adapter",
+      "risk": "network",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e49b-d407-71b4-9fae-e2aebdb276a8",
+      "name": "ollama.models.list",
+      "service": "phxclaw-ollama-adapter",
+      "risk": "network",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e49b-d407-7d52-9e8f-c240b32f61e5",
+      "name": "ollama.pull",
+      "service": "phxclaw-ollama-adapter",
+      "risk": "network",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e49b-d407-73c7-84a6-1d5a9d1ae72c",
+      "name": "ollama.show",
+      "service": "phxclaw-ollama-adapter",
+      "risk": "network",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e49b-d407-7690-93d2-3276ab842a6e",
+      "name": "ollama.version",
+      "service": "phxclaw-ollama-adapter",
+      "risk": "network",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e5ed-9675-77f3-9135-29dc885da151",
+      "name": "openai.platform.manage",
+      "service": "external-bridge:openai-platform",
+      "risk": "credential",
+      "default_effect": "deny",
+      "status": "declared_external_bridge"
+    },
+    {
+      "uuid": "01a0e64f-1627-7a88-8789-07a7fce21c77",
+      "name": "openclaw_rs.channels.list",
+      "service": "phxclaw-openclaw-rs-bridge",
+      "risk": "read",
+      "default_effect": "allow_if_declared",
+      "status": "source_ready"
+    },
+    {
+      "uuid": "01a0e64f-1627-7942-8651-e4dd1c83e671",
+      "name": "openclaw_rs.channels.probe",
+      "service": "phxclaw-openclaw-rs-bridge",
+      "risk": "network",
+      "default_effect": "deny",
+      "status": "source_ready"
+    },
+    {
+      "uuid": "01a0e64f-1627-7a7d-b3e3-8769d67943ac",
+      "name": "openclaw_rs.config.show",
+      "service": "phxclaw-openclaw-rs-bridge",
+      "risk": "config",
+      "default_effect": "deny",
+      "status": "source_ready"
+    },
+    {
+      "uuid": "01a0e64f-1627-78dc-b2fa-1f39717916c9",
+      "name": "openclaw_rs.config.validate",
+      "service": "phxclaw-openclaw-rs-bridge",
+      "risk": "config",
+      "default_effect": "allow_if_declared",
+      "status": "source_ready"
+    },
+    {
+      "uuid": "01a0e64f-1627-7ae0-b75f-8e9d9294cdb7",
+      "name": "openclaw_rs.doctor",
+      "service": "phxclaw-openclaw-rs-bridge",
+      "risk": "read",
+      "default_effect": "allow_if_declared",
+      "status": "source_ready"
+    },
+    {
+      "uuid": "01a0e64f-1627-7f6d-a74a-93012e0aa383",
+      "name": "openclaw_rs.gateway.status",
+      "service": "phxclaw-openclaw-rs-bridge",
+      "risk": "read",
+      "default_effect": "allow_if_declared",
+      "status": "source_ready"
+    },
+    {
+      "uuid": "01a0e64f-1627-797f-a830-3da9f3420bc0",
+      "name": "openclaw_rs.health",
+      "service": "phxclaw-openclaw-rs-bridge",
+      "risk": "read",
+      "default_effect": "allow_if_declared",
+      "status": "source_ready"
+    },
+    {
+      "uuid": "01a0e64f-1627-72a3-a054-ba0ed9781084",
+      "name": "openclaw_rs.status",
+      "service": "phxclaw-openclaw-rs-bridge",
+      "risk": "read",
+      "default_effect": "allow_if_declared",
+      "status": "source_ready"
+    },
+    {
+      "uuid": "01a0e5ed-9675-7c84-bbc4-f317305d84b6",
+      "name": "pdf.manage",
+      "service": "external-bridge:pdf",
+      "risk": "filesystem",
+      "default_effect": "deny",
+      "status": "declared_external_bridge"
+    },
+    {
+      "uuid": "01a0e593-8e38-7959-863f-18dd021144f4",
+      "name": "plugin.community.package.verify",
+      "service": "phxclaw-community-registry",
+      "risk": "security",
+      "default_effect": "deny",
+      "status": "implemented_source_unverified"
+    },
+    {
+      "uuid": "01a0e593-8e38-7419-ab0f-0b386fb5603b",
+      "name": "plugin.community.publisher.trust",
+      "service": "phxclaw-community-registry",
+      "risk": "security",
+      "default_effect": "deny",
+      "status": "implemented_source_unverified"
+    },
+    {
+      "uuid": "01a0e593-8e38-7506-9273-5d3a04a50898",
+      "name": "plugin.community.registry.read",
+      "service": "phxclaw-community-registry",
+      "risk": "internal",
+      "default_effect": "allow_if_declared",
+      "status": "implemented_source_unverified"
+    },
+    {
+      "uuid": "01a0e610-b90c-7a2c-88da-54d516a428c0",
+      "name": "plugin.disable",
+      "service": "phxclaw-community-registry",
+      "risk": "privileged",
+      "default_effect": "deny",
+      "status": "host_bootstrap_verified"
+    },
+    {
+      "uuid": "01a0e610-b90c-771e-be2b-eebf7f23328a",
+      "name": "plugin.doctor",
+      "service": "phxclaw-community-registry",
+      "risk": "internal",
+      "default_effect": "allow_if_declared",
+      "status": "host_bootstrap_verified"
+    },
+    {
+      "uuid": "01a0e610-b90c-7b56-9b5b-e4aa97f03b93",
+      "name": "plugin.enable",
+      "service": "phxclaw-community-registry",
+      "risk": "privileged",
+      "default_effect": "deny",
+      "status": "host_bootstrap_verified"
+    },
+    {
+      "uuid": "01a0e593-8e38-76e4-b53d-67ef5aab53c6",
+      "name": "plugin.extension.invoke",
+      "service": "phxclaw-extension-host",
+      "risk": "internal",
+      "default_effect": "allow_if_declared",
+      "status": "implemented_source_unverified"
+    },
+    {
+      "uuid": "01a0e593-8e38-7710-9b21-52ae5ec20791",
+      "name": "plugin.extension.route.pin",
+      "service": "phxclaw-extension-host",
+      "risk": "security",
+      "default_effect": "deny",
+      "status": "implemented_source_unverified"
+    },
+    {
+      "uuid": "01a0e64f-1627-7ce2-affa-886f9e436e7f",
+      "name": "plugin.hook.invoke",
+      "service": "phxclaw-plugin-sdk",
+      "risk": "plugin",
+      "default_effect": "deny",
+      "status": "source_ready"
+    },
+    {
+      "uuid": "01a0e610-b90c-7468-a14d-5ab7abe2746e",
+      "name": "plugin.install",
+      "service": "phxclaw-community-registry",
+      "risk": "privileged",
+      "default_effect": "deny",
+      "status": "host_bootstrap_verified"
+    },
+    {
+      "uuid": "01a0e610-b90c-7201-baf9-a9044a42d24f",
+      "name": "plugin.rollback",
+      "service": "phxclaw-community-registry",
+      "risk": "privileged",
+      "default_effect": "deny",
+      "status": "host_bootstrap_verified"
+    },
+    {
+      "uuid": "01a0e610-b90c-77e8-9960-620369078660",
+      "name": "plugin.uninstall",
+      "service": "phxclaw-community-registry",
+      "risk": "privileged",
+      "default_effect": "deny",
+      "status": "host_bootstrap_verified"
+    },
+    {
+      "uuid": "01a0e49b-d407-71da-ad56-5f8807a0ed91",
+      "name": "postgres.connect",
+      "service": "phxclaw-postgres-adapter",
+      "risk": "data_write",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e49b-d407-7c50-af03-f845bd3e85ae",
+      "name": "postgres.execute",
+      "service": "phxclaw-postgres-adapter",
+      "risk": "data_write",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e49b-d407-7276-be6c-a1613d419015",
+      "name": "postgres.query",
+      "service": "phxclaw-postgres-adapter",
+      "risk": "data_write",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e49b-d407-7512-8d67-3364ad3b23ad",
+      "name": "postgres.transaction",
+      "service": "phxclaw-postgres-adapter",
+      "risk": "data_write",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e610-b90d-74bb-8a91-7808d3adf948",
+      "name": "protocol.lsp.invoke",
+      "service": "phxclaw-mcp-lsp-runtime",
+      "risk": "process",
+      "default_effect": "deny",
+      "status": "source_ready"
+    },
+    {
+      "uuid": "01a0e610-b90d-7318-8cf9-46f50affd19f",
+      "name": "protocol.mcp.invoke",
+      "service": "phxclaw-mcp-lsp-runtime",
+      "risk": "network",
+      "default_effect": "deny",
+      "status": "source_ready"
+    },
+    {
+      "uuid": "01a0e610-b90d-7dcb-bcd8-cdbe9d590cc4",
+      "name": "repo.rank",
+      "service": "phxclaw-repo-intelligence",
+      "risk": "internal",
+      "default_effect": "allow_if_declared",
+      "status": "source_ready"
+    },
+    {
+      "uuid": "01a0e610-b90d-7592-881f-1bad02851994",
+      "name": "repo.scan",
+      "service": "phxclaw-repo-intelligence",
+      "risk": "filesystem",
+      "default_effect": "allow_if_declared",
+      "status": "host_bootstrap_verified"
+    },
+    {
+      "uuid": "01a0e5ed-9675-7c72-a08c-c3801cdcb9ba",
+      "name": "research.deep",
+      "service": "external-bridge:deep-research",
+      "risk": "research",
+      "default_effect": "deny",
+      "status": "declared_external_bridge"
+    },
+    {
+      "uuid": "01a0e4f0-5c42-7d5e-af08-e74fab95ed0e",
+      "name": "research.pipeline.prepare",
+      "service": "phxclaw-research-pipeline",
+      "risk": "internal",
+      "default_effect": "allow_if_declared",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e64f-1627-7c8e-99b4-4811a7930e85",
+      "name": "rustclaw.agent.prompt",
+      "service": "phxclaw-rustclaw-bridge",
+      "risk": "sensitive_argv",
+      "default_effect": "deny",
+      "status": "source_ready"
+    },
+    {
+      "uuid": "01a0e64f-1627-7109-b444-ccfcab3bda1e",
+      "name": "rustclaw.github.scan",
+      "service": "phxclaw-rustclaw-bridge",
+      "risk": "network",
+      "default_effect": "deny",
+      "status": "source_ready"
+    },
+    {
+      "uuid": "01a0e64f-1627-7e4c-abd6-92e7289975aa",
+      "name": "rustclaw.health",
+      "service": "phxclaw-rustclaw-bridge",
+      "risk": "read",
+      "default_effect": "allow_if_declared",
+      "status": "source_ready"
+    },
+    {
+      "uuid": "01a0e68b-4925-77bf-a089-b27c603bd7db",
+      "name": "rustclaw.native.cron.schedule",
+      "service": "phxclaw-rustclaw-native",
+      "risk": "scheduler",
+      "default_effect": "deny",
+      "status": "source_ready"
+    },
+    {
+      "uuid": "01a0e68b-4925-7ae8-9e0c-6acba9ed5309",
+      "name": "rustclaw.native.cron.validate",
+      "service": "phxclaw-rustclaw-native",
+      "risk": "scheduler",
+      "default_effect": "allow_if_declared",
+      "status": "source_ready"
+    },
+    {
+      "uuid": "01a0e68b-4925-78d8-ab59-af708ae848b6",
+      "name": "rustclaw.native.gateway.negotiate",
+      "service": "phxclaw-rustclaw-native",
+      "risk": "identity",
+      "default_effect": "deny",
+      "status": "source_ready"
+    },
+    {
+      "uuid": "01a0e68b-4925-783c-a62e-1e4efc9be932",
+      "name": "rustclaw.native.mcp.content_length",
+      "service": "phxclaw-rustclaw-native",
+      "risk": "process",
+      "default_effect": "deny",
+      "status": "source_ready"
+    },
+    {
+      "uuid": "01a0e68b-4925-7ac6-b596-390a3c127172",
+      "name": "rustclaw.native.mcp.names",
+      "service": "phxclaw-rustclaw-native",
+      "risk": "internal",
+      "default_effect": "allow_if_declared",
+      "status": "source_ready"
+    },
+    {
+      "uuid": "01a0e68b-4925-7328-96c8-c354a2790724",
+      "name": "rustclaw.native.mcp.ndjson",
+      "service": "phxclaw-rustclaw-native",
+      "risk": "process",
+      "default_effect": "deny",
+      "status": "source_ready"
+    },
+    {
+      "uuid": "01a0e68b-4925-7324-92ca-bf520b462715",
+      "name": "rustclaw.native.session.manage",
+      "service": "phxclaw-rustclaw-native",
+      "risk": "memory",
+      "default_effect": "deny",
+      "status": "source_ready"
+    },
+    {
+      "uuid": "01a0e68b-4925-7839-9e9b-cb30dab85707",
+      "name": "rustclaw.native.session.scope",
+      "service": "phxclaw-rustclaw-native",
+      "risk": "internal",
+      "default_effect": "allow_if_declared",
+      "status": "source_ready"
+    },
+    {
+      "uuid": "01a0e64f-1627-71e2-bff9-aa2ea537b36d",
+      "name": "rustclaw.status",
+      "service": "phxclaw-rustclaw-bridge",
+      "risk": "read",
+      "default_effect": "allow_if_declared",
+      "status": "source_ready"
+    },
+    {
+      "uuid": "01a0e49b-d407-7d9c-b5f8-faa1e2ca5b21",
+      "name": "screen.capture",
+      "service": "phxclaw-system-automation",
+      "risk": "host",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e65f-9877-73b8-b199-78c5ad405d1b",
+      "name": "secret.lease.issue",
+      "service": "phxclaw-secret-broker",
+      "risk": "credential",
+      "default_effect": "deny",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e65f-9877-7f53-8714-f4e511040a16",
+      "name": "secret.lease.revoke",
+      "service": "phxclaw-secret-broker",
+      "risk": "credential",
+      "default_effect": "deny",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e65f-9877-7d1f-85de-64686558bf8d",
+      "name": "secret.metadata.read",
+      "service": "phxclaw-secret-broker",
+      "risk": "read",
+      "default_effect": "allow_if_declared",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e65f-9877-753a-9f25-a2c81eeea911",
+      "name": "secret.redact",
+      "service": "phxclaw-secret-broker",
+      "risk": "internal",
+      "default_effect": "allow_if_declared",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e65f-9877-754c-ae10-4b6d91477fb0",
+      "name": "secret.resolve",
+      "service": "phxclaw-secret-broker",
+      "risk": "credential",
+      "default_effect": "deny",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e65f-9877-7742-b9ff-7ffb71bbad59",
+      "name": "secret.revoke",
+      "service": "phxclaw-secret-broker",
+      "risk": "credential",
+      "default_effect": "deny",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e65f-9877-7b95-a5d2-6c304fe6bbaf",
+      "name": "secret.rotate",
+      "service": "phxclaw-secret-broker",
+      "risk": "credential",
+      "default_effect": "deny",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e65f-9877-7a14-8d3a-1945e3dfc060",
+      "name": "secret.store",
+      "service": "phxclaw-secret-broker",
+      "risk": "credential",
+      "default_effect": "deny",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e4e0-ea4c-7421-a3db-bffb55b01969",
+      "name": "skill.promote",
+      "service": "phxclaw-skill-runtime",
+      "risk": "approval_required",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e4e0-ea4b-72b5-9275-15e086253f61",
+      "name": "skill.read",
+      "service": "phxclaw-skill-runtime",
+      "risk": "internal",
+      "default_effect": "allow_if_declared",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e4e0-ea4c-7914-b5e2-5c7cac8da48f",
+      "name": "skill.resolve",
+      "service": "phxclaw-skill-runtime",
+      "risk": "internal",
+      "default_effect": "allow_if_declared",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e4f0-5c42-7dcc-9709-949e6a64ebce",
+      "name": "skill.resolve.lazy",
+      "service": "phxclaw-skill-runtime",
+      "risk": "internal",
+      "default_effect": "allow_if_declared",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e4e0-ea4c-76a5-a2b3-31f0e2f056e1",
+      "name": "skill.validate",
+      "service": "phxclaw-skill-runtime",
+      "risk": "governed_write",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e49b-d407-7e2d-a477-e3ab2e84fd9a",
+      "name": "speech.stt",
+      "service": "phxclaw-media-intelligence",
+      "risk": "host",
+      "default_effect": "deny",
+      "status": "adapter_requires_whisper"
+    },
+    {
+      "uuid": "01a0e49b-d407-7850-aa76-9e5e0f5ac606",
+      "name": "speech.tts",
+      "service": "phxclaw-media-intelligence",
+      "risk": "host",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e5ed-9675-780f-8666-ce980ebdef06",
+      "name": "spreadsheet.manage",
+      "service": "external-bridge:spreadsheets",
+      "risk": "filesystem",
+      "default_effect": "deny",
+      "status": "declared_external_bridge"
+    },
+    {
+      "uuid": "01a0e49b-d407-726f-8bb2-a3e38379a9ec",
+      "name": "system.command.execute",
+      "service": "phxclaw-system-automation",
+      "risk": "host",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e629-e95b-73c9-b739-6d7eca8dacdf",
+      "name": "team.cancel",
+      "service": "phxclaw-team-runtime",
+      "risk": "internal",
+      "default_effect": "allow_if_declared",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e629-e95b-7f30-acc1-38a01c698cd1",
+      "name": "team.dispatch",
+      "service": "phxclaw-team-runtime",
+      "risk": "internal",
+      "default_effect": "allow_if_declared",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e629-e95b-74c6-982f-4f57532f0806",
+      "name": "team.heartbeat",
+      "service": "phxclaw-team-runtime",
+      "risk": "internal",
+      "default_effect": "allow_if_declared",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e629-e95b-76f0-bdbb-5a2521ef1f19",
+      "name": "team.recover",
+      "service": "phxclaw-team-runtime",
+      "risk": "internal",
+      "default_effect": "allow_if_declared",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e629-e95b-7874-b684-6bebaa4a9fac",
+      "name": "team.session.create",
+      "service": "phxclaw-team-runtime",
+      "risk": "internal",
+      "default_effect": "allow_if_declared",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e629-e95b-73d4-b412-e6cb4364a3e2",
+      "name": "team.task.claim",
+      "service": "phxclaw-team-runtime",
+      "risk": "internal",
+      "default_effect": "allow_if_declared",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e629-e95b-7986-9732-166aebe9820e",
+      "name": "team.task.enqueue",
+      "service": "phxclaw-team-runtime",
+      "risk": "internal",
+      "default_effect": "allow_if_declared",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e5ed-9675-72c8-958f-df046dcf3332",
+      "name": "template.create",
+      "service": "external-bridge:template-creator",
+      "risk": "artifact",
+      "default_effect": "deny",
+      "status": "declared_external_bridge"
+    },
+    {
+      "uuid": "01a0e49b-d407-78b4-bf4a-fd298e49de2c",
+      "name": "uuid.v7.generate",
+      "service": "phxclaw-types",
+      "risk": "internal",
+      "default_effect": "allow_if_declared",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e5ed-9675-71a9-aeb5-815f908f36d3",
+      "name": "visualize.render",
+      "service": "external-bridge:visualize",
+      "risk": "artifact",
+      "default_effect": "deny",
+      "status": "declared_external_bridge"
+    },
+    {
+      "uuid": "01a0e5ed-9675-7250-ad0d-14f8f93d3652",
+      "name": "web.search",
+      "service": "external-bridge:search",
+      "risk": "network",
+      "default_effect": "deny",
+      "status": "declared_external_bridge"
+    },
+    {
+      "uuid": "01a0e49b-d407-7880-9508-62faf49e2f44",
+      "name": "webview.css.inject",
+      "service": "phxclaw-webview-control",
+      "risk": "host",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e49b-d407-7f35-a819-3c8af99cc1fa",
+      "name": "webview.javascript.evaluate",
+      "service": "phxclaw-webview-control",
+      "risk": "host",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e49b-d407-7814-a7a4-a72402bed3ce",
+      "name": "webview.load_html",
+      "service": "phxclaw-webview-control",
+      "risk": "host",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e49b-d407-7c0c-8aa1-3bff4cd91807",
+      "name": "webview.navigate",
+      "service": "phxclaw-webview-control",
+      "risk": "host",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e5da-2389-772a-b70c-65142c7da7a5",
+      "name": "workspace.command.run",
+      "service": "phxclaw-code-workspace",
+      "risk": "host",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e5da-2389-7b9c-bc2e-b956bead00f8",
+      "name": "workspace.diff",
+      "service": "phxclaw-code-workspace",
+      "risk": "read",
+      "default_effect": "allow_if_declared",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e5da-2389-7c9b-a935-ad0bee0f251b",
+      "name": "workspace.file.write",
+      "service": "phxclaw-code-workspace",
+      "risk": "write",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e5da-2389-749d-b3fd-aaaf2d7b6792",
+      "name": "workspace.gate.run",
+      "service": "phxclaw-code-workspace",
+      "risk": "host",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e5da-2389-7c18-a906-e1697067ccac",
+      "name": "workspace.git.read",
+      "service": "phxclaw-code-workspace",
+      "risk": "read",
+      "default_effect": "allow_if_declared",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e5da-2389-74a6-a110-066eff9a9bda",
+      "name": "workspace.snapshot",
+      "service": "phxclaw-code-workspace",
+      "risk": "read",
+      "default_effect": "allow_if_declared",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e5da-2389-7df0-b38a-ad452886f250",
+      "name": "workspace.worktree.create",
+      "service": "phxclaw-code-workspace",
+      "risk": "write",
+      "default_effect": "deny",
+      "status": "implemented"
+    },
+    {
+      "uuid": "01a0e5da-2389-770f-92b6-5317eff1bf4a",
+      "name": "workspace.worktree.remove",
+      "service": "phxclaw-code-workspace",
+      "risk": "write",
+      "default_effect": "deny",
+      "status": "implemented"
+    }
+  ]
+}

@@ -1,0 +1,52 @@
+#!/usr/bin/python3
+import datetime as dt
+import json
+import secrets
+import sys
+import time
+
+PROTOCOL = "phxclaw-process-v1"
+
+def uuid7():
+    ms = int(time.time() * 1000) & ((1 << 48) - 1)
+    a = secrets.randbits(12); b = secrets.randbits(62)
+    value = (ms << 80) | (0x7 << 76) | (a << 64) | (0b10 << 62) | b
+    h = f"{value:032x}"
+    return f"{h[:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:]}"
+
+def now():
+    return dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z")
+
+def emit(correlation, payload, status="ok", error=None):
+    print(json.dumps({
+        "protocol": PROTOCOL,
+        "message_uuid": uuid7(),
+        "correlation_uuid": correlation,
+        "status": status,
+        "emitted_at": now(),
+        "payload": payload,
+        "error": error,
+    }, separators=(",", ":"), ensure_ascii=False))
+
+def main():
+    if "--health" in sys.argv:
+        print(json.dumps({"plugin":"echo","status":"healthy","protocol":PROTOCOL}, separators=(",", ":")))
+        return 0
+    raw = sys.stdin.readline()
+    if not raw:
+        return 2
+    msg = json.loads(raw)
+    correlation = msg.get("message_uuid", uuid7())
+    if msg.get("protocol") != PROTOCOL:
+        emit(correlation, {}, "rejected", {"code":"unsupported_protocol","message":"protocol mismatch","retryable":False})
+        return 0
+    if msg.get("kind") == "health":
+        emit(correlation, {"plugin":"echo","status":"healthy"})
+    elif msg.get("kind") == "execute":
+        emit(correlation, {"echo":msg.get("payload")})
+    else:
+        emit(correlation, {"ack":msg.get("kind")})
+    return 0
+
+if __name__ == "__main__":
+    raise SystemExit(main())

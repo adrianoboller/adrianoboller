@@ -1,0 +1,102 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f623-7e37-91d5-fd9a71c267ad",
+  "agent_id": 35,
+  "name": "Action/Media Agent",
+  "macroarea": "Creative Studio & UX",
+  "nucleus": "Media",
+  "role_type": "Agente de mídia/ActionScript concepts",
+  "mission": "Implementa no Phoenix as facilidades úteis de Flash/ActionScript em Rust/WASM.",
+  "responsibilities": "Stage, Scene, Sprite, MovieClip, Timeline, Tween, Graphics, filters, audio/video, input e asset lifecycle.",
+  "resources": "Scene Graph, GPU backend, audio/video APIs, WASM.",
+  "authorized_actions": "Implementar media runtime e APIs modernas/compat.",
+  "trigger": "Feature de animação, visual, mídia ou migração ActionScript.",
+  "declared_dependencies": "Phoenix IR Media + graphics contracts.",
+  "resolved_agent_dependencies": [],
+  "deliverables": "Phoenix Media Runtime + demos.",
+  "limits": "Não incorpora Flash Player/AVM como dependência de aplicações novas.",
+  "next_gate": "GPU/WASM/QA visual.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "codex"
+  ],
+  "criticality": "Alta",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F18 MCP + LSP Runtime",
+    "F22 Device Nodes"
+  ],
+  "capabilities": [
+    "context.compile",
+    "lsp.read",
+    "mcp.invoke",
+    "media.action.process",
+    "memory.read",
+    "node.observe",
+    "skill.read"
+  ],
+  "permissions": [
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "lsp.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "mcp.invoke",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "media.action.process",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Node/session state efêmero e pareado",
+  "event_topics": "agent.action.media.agent.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; writes policy-gated; evidência obrigatória; sem autoaprovação. Device input/screen exige autorização de sessão e logging.",
+  "references": "oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão | OpenClaw — gateway/nodes/channels; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 36
+  }
+}

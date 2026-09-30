@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Portfolio Replan Request",
+  "type": "object",
+  "required": [
+    "request_uuid",
+    "base_plan_uuid",
+    "base_plan_sha256",
+    "source_state_sha256",
+    "shadow_only",
+    "request_sha256"
+  ],
+  "properties": {
+    "request_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "base_plan_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "base_plan_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "source_state_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "shadow_only": {
+      "const": true
+    },
+    "request_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  }
+}

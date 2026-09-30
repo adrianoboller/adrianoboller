@@ -1,0 +1,2 @@
+cryptography==46.0.1
+packaging==25.0

@@ -1,0 +1,13 @@
+[package]
+name = "phxclaw-octopus-plugin"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+chrono.workspace = true
+phxclaw-octopus-bridge = { path = "../../crates/phxclaw-octopus-bridge" }
+phxclaw-process-protocol = { path = "../../crates/phxclaw-process-protocol" }
+phxclaw-types = { path = "../../crates/phxclaw-types" }
+serde_json.workspace = true
+uuid.workspace = true

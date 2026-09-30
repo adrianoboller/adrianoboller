@@ -1,0 +1,13 @@
+{
+  "version": "0.57.0",
+  "source_ready": true,
+  "static_verified": true,
+  "runtime_verified": "partial",
+  "e2e_verified": false,
+  "release_ready": false,
+  "green_sprints": 0,
+  "yellow_sprints": 26,
+  "red_sprints": 0,
+  "new_capabilities": 98,
+  "projected_capabilities": 1814
+}

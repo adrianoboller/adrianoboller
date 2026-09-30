@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PhxClaw Supervisor Intervention Plan",
+  "type": "object",
+  "required": [
+    "plan_uuid",
+    "project_uuid",
+    "health_snapshot_uuid",
+    "source_state_sha256",
+    "policy_sha256",
+    "actions",
+    "plan_sha256"
+  ],
+  "properties": {
+    "plan_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "project_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "health_snapshot_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "source_state_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "policy_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "actions": {
+      "type": "array",
+      "maxItems": 12
+    },
+    "plan_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "additionalProperties": true
+}

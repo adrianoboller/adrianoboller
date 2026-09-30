@@ -1,0 +1,104 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f636-71b9-8133-865389aee00d",
+  "agent_id": 54,
+  "name": "Goal Drift Detector",
+  "macroarea": "Governança & Estratégia",
+  "nucleus": "Governança",
+  "role_type": "Agente de alinhamento",
+  "mission": "Detecta desvio entre objetivo original e estado atual da implementação.",
+  "responsibilities": "Compara requirements, tasks, commits, tests e OPA; mede gaps e requisitos sem evidência.",
+  "resources": "Requirements DB, Evidence Graph, Git, tests.",
+  "authorized_actions": "Gerar drift score e abrir gaps.",
+  "trigger": "Sprint/release review ou projeto longo.",
+  "declared_dependencies": "Objetivos versionados e estado atual.",
+  "resolved_agent_dependencies": [
+    {
+      "uuid": "01a0e473-f603-72b3-946d-c6b9621006f8",
+      "name": "Analista"
+    },
+    {
+      "uuid": "01a0e473-f605-74d9-812b-8ec827796405",
+      "name": "Morpheus"
+    }
+  ],
+  "deliverables": "Goal Drift Report.",
+  "limits": "Não redefine objetivo; sinaliza desvio.",
+  "next_gate": "Morpheus/Analista/QA3.",
+  "execution": "Permanente",
+  "models_allowed": [
+    "ollama"
+  ],
+  "criticality": "Alta",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F20 Team Runtime",
+    "F22 Device Nodes"
+  ],
+  "capabilities": [
+    "context.compile",
+    "goal.drift.detect",
+    "memory.read",
+    "node.observe",
+    "skill.read",
+    "team.message"
+  ],
+  "permissions": [
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "goal.drift.detect",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "team.message",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Node/session state efêmero e pareado; Estado operacional persistente em PostgreSQL",
+  "event_topics": "agent.goal.drift.detector.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; writes policy-gated; evidência obrigatória; sem autoaprovação. Device input/screen exige autorização de sessão e logging.",
+  "references": "oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão | OpenClaw — gateway/nodes/channels; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 55
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Demand Forecast v0.35",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "requests_per_minute",
+    "tokens_per_minute",
+    "peak_concurrency",
+    "recommended_concurrency",
+    "horizon_seconds",
+    "source_evidence_hashes",
+    "forecast_sha256"
+  ],
+  "properties": {
+    "requests_per_minute": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "tokens_per_minute": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "peak_concurrency": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "recommended_concurrency": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "horizon_seconds": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "source_evidence_hashes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      }
+    },
+    "forecast_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

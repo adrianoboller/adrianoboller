@@ -1,0 +1,97 @@
+{
+  "suite": "PhxClaw v0.14 uploaded packages + F20",
+  "pass": 18,
+  "fail": 0,
+  "details": [
+    {
+      "name": "private/plugins-src/phoenix-dashboards/phxclaw-dashboards-plugin.health",
+      "pass": true,
+      "detail": "{\"plugin\": \"com.phxclaw.private.dashboards\", \"version\": \"0.1.0\", \"status\": \"healthy\", \"protocol\": \"phxclaw-process-v1\", \"charts\": 62, \"rust_source_bundled\": true, \"cargo_available\": false, \"capabilities\": [\"dashboard.catalog.get\", \"dashboard.catalog.list\", \"dashboard.health\", \"dashboard.preview.list\", \"dashboard.render.basic_html\", \"dashboard.source.status\"]}\n"
+    },
+    {
+      "name": "private/plugins-src/phoenix-web-fxsdk/phxclaw-web-fxsdk-plugin.health",
+      "pass": true,
+      "detail": "{\"plugin\": \"com.phxclaw.private.web-fxsdk\", \"version\": \"0.1.0\", \"status\": \"healthy\", \"protocol\": \"phxclaw-process-v1\", \"tokens\": 56, \"brands\": 8, \"directions\": 5, \"skins\": 124, \"cargo_available\": false, \"capabilities\": [\"fx.catalog.summary\", \"fx.health\", \"fx.source.status\", \"fx.theme.get\", \"fx.theme.list\", \"fx.tokens.emit_css\", \"fx.tokens.validate\", \"fx.ui.search\"]}\n"
+    },
+    {
+      "name": "dash.catalog",
+      "pass": true,
+      "detail": "{'protocol': 'phxclaw-process-v1', 'message_uuid': '01a0e632-4a56-77e5-afa9-64e517ebe256', 'correlation_uuid': '19abc5cd-152d-444d-86f9-6d151d97ccc2', 'status': 'ok', 'emitted_at': '2026-09-28T04:07:30Z', 'payload': {'theme': 'observatorio', 'charts': [{'id': 'g0', 'tipo': 'linha', 'titulo': 'Linha'}, {'id': 'g1', 'tipo': 'area', 'titulo': '\u00c1rea'}, {'id': 'g2', 'tipo': 'barra', 'titulo': 'Barra'}, {'id': 'g3', 'tipo': 'coluna', 'titulo': 'Coluna'}, {'id': 'g4', 'tipo': 'pizza', 'titulo': 'Pizza'}, {'id': 'g5', 'tipo': 'donut', 'titulo': 'Donut'}, {'id': 'g6', 'tipo': 'dispersao', 'titulo': 'Dispers\u00e3o'}, {'id': 'g7', 'tipo': 'kpi', 'titulo': 'KPI Card'}, {'id': 'g8', 'tipo': 'gauge', 'titulo': 'Gauge'}, {'id': 'g9', 'tipo': 'radar', 'titulo': 'Radar'}, {'id': 'g10', 'tipo': 'funil', 'titulo': 'Funil'}, {'id': 'g11', 'tipo': 'heatmap', 'titulo': 'Heatmap'}, {'id': 'g12', 'tipo': 'treemap', 'titulo': 'Treemap'}, {'id': 'g13', 'tipo': 'sankey', 'titulo': 'Sankey'}, {'id': 'g14', 'tipo': 'sunburst', 'titulo': 'Sunburst'}, {'id': 'g15', 'tipo': 'waterfall', 'titulo': 'Waterfall'}, {'id': 'g16', 'tipo': 'bubble', 'titulo': 'Bubble'}, {'id': 'g17', 'tipo': 'candlestick', 'titulo': 'Candlestick'}, {'id': 'g18', 'tipo': 'bubble3d', 'titulo': 'Bubble3D'}, {'id': 'g19', 'tipo': 'barra3d', 'titulo': 'Barra3D'}, {'id': 'g20', 'tipo': 'boxplot', 'titulo': 'Boxplot'}, {'id': 'g21', 'tipo': 'pareto', 'titulo': 'Pareto'}, {'id': 'g22', 'tipo': 'gantt', 'titulo': 'Gantt'}, {'id': 'g23', 'tipo': 'rede', 'titulo': 'Rede'}, {'id': 'g24', 'tipo': 'superficie', 'titulo': 'Superficie'}, {'id': 'g25', 'tipo': 'malha3d', 'titulo': 'Malha3D'}, {'id': 'g26', 'tipo': 'pizza3d', 'titulo': 'Pizza3D'}, {'id': 'g27', 'tipo': 'combo', 'titulo': 'Combo'}, {'id': 'g28', 'tipo': 'contorno', 'titulo': 'Contorno'}, {'id': 'g29', 'tipo': 'themeriver', 'titulo': 'ThemeRiver'}, {'id': 'g30', 'tipo': 'funcaoxy', 'titulo': 'FuncaoXY'}, {'id': 'g31', 'tipo': 'derivada', 'titulo': 'Derivada'}, {'id': 'g32', 'tipo': 'argand', 'titulo': 'Argand'}, {'id': 'g33', 'tipo': 'determinante', 'titulo': 'Determinante'}, {'id': 'g34', 'tipo': 'geo', 'titulo': 'Geo'}, {'id': 'g35', 'tipo': 'tabela', 'titulo': 'Tabela'}, {'id': 'g36', 'tipo': 'campovetorial', 'titulo': 'CampoVetorial'}, {'id': 'g37', 'tipo': 'parallel', 'titulo': 'Parallel'}, {'id': 'g38', 'tipo': 'calendario', 'titulo': 'Calendario'}, {'id': 'g39', 'tipo': 'integral', 'titulo': 'IntegralDefinida'}, {'id': 'g40', 'tipo': 'polar', 'titulo': 'Polar'}, {'id': 'g41', 'tipo': 'transformacao', 'titulo': 'TransformacaoLinear'}, {'id': 'g42', 'tipo': 'linha3d', 'titulo': 'Linha3D'}, {'id': 'g43', 'tipo': 'histograma', 'titulo': 'Histograma'}, {'id': 'g44', 'tipo': 'stem', 'titulo': 'Stem'}, {'id': 'g45', 'tipo': 'escada', 'titulo': 'Escada'}, {'id': 'g46', 'tipo': 'errorbar', 'titulo': 'Errorbar'}, {'id': 'g47', 'tipo': 'mekko', 'titulo': 'Mekko'}, {'id': 'g48', 'tipo': 'grid', 'titulo': 'Grid'}, {'id': 'g49', 'tipo': 'piramide3d', 'titulo': 'Piramide3D'}, {'id': 'g50', 'tipo': 'cone3d', 'titulo': 'Cone3D'}, {'id': 'g51', 'tipo': 'funilconico', 'titulo': 'FunilConico'}, {'id': 'g52', 'tipo': 'funilconico3d', 'titulo': 'FunilConico3D'}, {'id': 'g53', 'tipo': 'heatmap3d', 'titulo': 'Heatmap3D'}, {'id': 'g54', 'tipo': 'histograma3d', 'titulo': 'Histograma3D'}, {'id': 'g55', 'tipo': 'waterfall3d', 'titulo': 'Waterfall3D'}, {'id': 'g56', 'tipo': 'sparkline', 'titulo': 'Sparkline'}, {'id': 'g57', 'tipo': 'semicirculo', 'titulo': 'Semicirculo'}, {'id': 'g58', 'tipo': 'piramide', 'titulo': 'Piramide'}, {'id': 'g59', 'tipo': 'fibonacci', 'titulo': 'Fibonacci'}, {'id': 'g60', 'tipo': 'monitor', 'titulo': 'MonitorBolhas'}, {'id': 'g61', 'tipo': 'monitor3d', 'titulo': 'MonitorBolhas3D'}]}, 'error': None}"
+    },
+    {
+      "name": "dash.render",
+      "pass": true,
+      "detail": "{'protocol': 'phxclaw-process-v1', 'message_uuid': '01a0e632-4ffe-7186-bf13-ebdc241aa293', 'correlation_uuid': '26014bfa-8dc4-4987-abd3-72d36da2fd00', 'status': 'ok', 'emitted_at': '2026-09-28T04:07:32Z', 'payload': {'output_path': 'var/dashboards/smoke.html', 'sha256': 'b38726c8e8548141b9ceee0431497c75feba700fcaf1f4323bb91af622bd4621', 'bytes': 1029731}, 'error': None}"
+    },
+    {
+      "name": "fx.summary",
+      "pass": true,
+      "detail": "{'protocol': 'phxclaw-process-v1', 'message_uuid': '01a0e632-558f-76ff-8e39-efde6db714a0', 'correlation_uuid': 'e86a7362-91c7-4927-be84-56b8e41caf1c', 'status': 'ok', 'emitted_at': '2026-09-28T04:07:33Z', 'payload': {'format': 'fxsdk-themes/v1', 'contract': 'od-design-system-project/v1 :: TOKEN_SCHEMA (56 tokens)', 'tokens': 56, 'brands': 8, 'directions': 5, 'skins': 124}, 'error': None}"
+    },
+    {
+      "name": "fx.css",
+      "pass": true,
+      "detail": "{'protocol': 'phxclaw-process-v1', 'message_uuid': '01a0e632-5b00-701d-b0b9-0a0282f21803', 'correlation_uuid': 'fec8ff92-3497-437f-93b5-43f5e41f6fc4', 'status': 'ok', 'emitted_at': '2026-09-28T04:07:34Z', 'payload': {'theme_id': 'zeus', 'css': ':root{\\n  --bg: #ffffff;\\n  --surface: #ffffff;\\n  --surface-warm: #f6f9fc;\\n  --fg: #061b31;\\n  --fg-2: #273951;\\n  --muted: #64748d;\\n  --meta: var(--muted);\\n  --border: #e5edf5;\\n  --border-soft: var(--border);\\n  --accent: #533afd;\\n  --accent-on: #ffffff;\\n  --accent-hover: #4434d4;\\n  --accent-active: #2e2b8c;\\n  --success: #15be53;\\n  --warn: #9b6829;\\n  --danger: #ea2261;\\n  --font-display: \"sohne-var\", \"S\u00f6hne\", \"Sohne\", \"SF Pro Display\", -apple-system, BlinkMacSystemFont, system-ui, \"Helvetica Neue\", Arial, sans-serif;\\n  --font-body: \"sohne-var\", \"S\u00f6hne\", \"Sohne\", \"SF Pro Display\", -apple-system, BlinkMacSystemFont, system-ui, \"Helvetica Neue\", Arial, sans-serif;\\n  --font-mono: \"SourceCodePro\", \"Source Code Pro\", ui-monospace, \"SF Mono\", \"JetBrains Mono\", Menlo, Monaco, Consolas, monospace;\\n  --text-xs: 12px;\\n  --text-sm: 14px;\\n  --text-base: 16px;\\n  --text-lg: 18px;\\n  --text-xl: 22px;\\n  --text-2xl: 32px;\\n  --text-3xl: 48px;\\n  --text-4xl: 56px;\\n  --leading-body: 1.40;\\n  --leading-tight: 1.10;\\n  --tracking-display: -0.02em;\\n  --space-1: 4px;\\n  --space-2: 8px;\\n  --space-3: 12px;\\n  --space-4: 16px;\\n  --space-5: 20px;\\n  --space-6: 24px;\\n  --space-8: 32px;\\n  --space-12: 48px;\\n  --section-y-desktop: 96px;\\n  --section-y-tablet: 64px;\\n  --section-y-phone: 40px;\\n  --radius-sm: 4px;\\n  --radius-md: 6px;\\n  --radius-lg: 8px;\\n  --radius-pill: 9999px;\\n  --elev-flat: none;\\n  --elev-ring: 0 0 0 1px var(--border);\\n  --elev-raised: rgba(50, 50, 93, 0.25) 0px 30px 45px -30px, rgba(0, 0, 0, 0.10) 0px 18px 36px -18px;\\n  --focus-ring: 0 0 0 2px var(--accent), 0 0 0 5px color-mix(in oklab, var(--accent), transparent 75%);\\n  --motion-fast: 150ms;\\n  --motion-base: 200ms;\\n  --ease-standard: cubic-bezier(0.2, 0, 0, 1);\\n  --container-max: 1080px;\\n  --container-gutter-desktop: 32px;\\n  --container-gutter-tablet: 24px;\\n  --container-gutter-phone: 16px;\\n}\\n', 'tokens': 56}, 'error': None}"
+    },
+    {
+      "name": "fx.ui.search",
+      "pass": true,
+      "detail": "{'protocol': 'phxclaw-process-v1', 'message_uuid': '01a0e632-609a-7704-a2ce-66c1322c7551', 'correlation_uuid': '9defc761-da56-4be3-8a1f-74bc554bd847', 'status': 'ok', 'emitted_at': '2026-09-28T04:07:36Z', 'payload': {'query': 'datagrid', 'hits': ['| Su\u00edte pr\u00f3pria | WX TableDataGrid v16 (first-party) | `wx.dev.br` |', '| Refer\u00eancia comercial | DevExpress DataGrid (taxonomia de padr\u00f5es \u2014 sem c\u00f3digo/estilos) | `js.devexpress.com` |', '| `FX-SEC-DATAGRID` | Datagrid \u2014 n\u00facleo | `Fx.ui.datagrid` | designreset.com/cork | ordena\u00e7\u00e3o por tipo, busca global, pagina\u00e7\u00e3o + por-p\u00e1gina, sele\u00e7\u00e3o com header, badges/money/date, c\u00e9lulas custom, a\u00e7\u00f5es por linha |', '| `FX-SEC-DATAGRID-V16` | Datagrid \u2014 v16 features | `Fx.ui.datagrid` | wx.dev.br | api CRUD (add/update/remove/setData/selected), export CSV com BOM (download offline); roadmap: multi-sort, pin, resize, virtual, expand |', '| `FX-CSS-LAZY` | CSS sob demanda (lazy opt-in) | `Fx.ui.cssLazy` | wx.dev.br | Fx.ui.cssLazy(true) troca a injecao monolitica (728 regras de uma vez) por injecao por bloco: cada componente injeta base compartilhada + so o seu bloco (fxkb kanban, fxgt gantt, fxdg datagrid, fxnot, fxfeed, fxrec) sob demanda e idempotente. Padrao (lazy off) e byte-identico; render pixel-identico provado por diff. Medidores cssTotalBytes/cssInjetadoBytes/cssBlocosInfo. Reduz o peso do CSS por pagina em producao (WebView) |'], 'count': 5}, 'error': None}"
+    },
+    {
+      "name": "com.phxclaw.private.dashboards.install",
+      "pass": true,
+      "detail": "INSTALLED com.phxclaw.private.dashboards 0.1.0 state=disabled\n"
+    },
+    {
+      "name": "com.phxclaw.private.dashboards.doctor",
+      "pass": true,
+      "detail": "HEALTHY com.phxclaw.private.dashboards 0.1.0 STATIC_OK\n"
+    },
+    {
+      "name": "com.phxclaw.private.dashboards.enable",
+      "pass": true,
+      "detail": "HEALTHY com.phxclaw.private.dashboards 0.1.0 STATIC_OK\nENABLED com.phxclaw.private.dashboards 0.1.0\n"
+    },
+    {
+      "name": "com.phxclaw.private.dashboards.disable",
+      "pass": true,
+      "detail": "DISABLED com.phxclaw.private.dashboards 0.1.0\n"
+    },
+    {
+      "name": "com.phxclaw.private.dashboards.uninstall",
+      "pass": true,
+      "detail": "UNINSTALLED com.phxclaw.private.dashboards\n"
+    },
+    {
+      "name": "com.phxclaw.private.web-fxsdk.install",
+      "pass": true,
+      "detail": "INSTALLED com.phxclaw.private.web-fxsdk 0.1.0 state=disabled\n"
+    },
+    {
+      "name": "com.phxclaw.private.web-fxsdk.doctor",
+      "pass": true,
+      "detail": "HEALTHY com.phxclaw.private.web-fxsdk 0.1.0 STATIC_OK\n"
+    },
+    {
+      "name": "com.phxclaw.private.web-fxsdk.enable",
+      "pass": true,
+      "detail": "HEALTHY com.phxclaw.private.web-fxsdk 0.1.0 STATIC_OK\nENABLED com.phxclaw.private.web-fxsdk 0.1.0\n"
+    },
+    {
+      "name": "com.phxclaw.private.web-fxsdk.disable",
+      "pass": true,
+      "detail": "DISABLED com.phxclaw.private.web-fxsdk 0.1.0\n"
+    },
+    {
+      "name": "com.phxclaw.private.web-fxsdk.uninstall",
+      "pass": true,
+      "detail": "UNINSTALLED com.phxclaw.private.web-fxsdk\n"
+    },
+    {
+      "name": "f20.team.demo",
+      "pass": true,
+      "detail": "{\n  \"status\": \"ok\",\n  \"checks\": [\n    \"parallel_claim\",\n    \"dependency_gate\",\n    \"heartbeat\",\n    \"lease_recovery\",\n    \"fencing_rejects_stale_worker\",\n    \"cancel\"\n  ],\n  \"teams\": [\n    {\n      \"name\": \"demo\",\n      \"max_parallelism\": 2,\n      \"uuid\": \"01a0e632-a5ac-7c68-baf4-47c83c575829\",\n      \"correlation_uuid\": \"01a0e632-a5ac-7c01-a8eb-e55c3c4b2040\",\n      \"state\": \"succeeded\",\n      \"tasks\": {\n        \"01a0e632-a5ac-719c-9eed-a9fc12b9be97\": {\n          \"name\": \"research\",\n          \"capability\": \"research.collect\",\n          \"depends_on\": [],\n          \"priority\": 0,\n          \"uuid\": \"01a0e632-a5ac-719c-9eed-a9fc12b9be97\",\n          \"state\": \"succeeded\",\n          \"worker_id\": null,\n          \"fencing_token\": 1,\n          \"lease_until\": null,\n          \"heartbeat_at\": 1790568474.0288801,\n          \"attempts\": 1,\n          \"cancel_requested\": false,\n          \"output\": {\n            \"ok\": 1\n          }\n        },\n        \"01a0e632-a5ac-798d-83ae-48a87a0bae59\": {\n          \"name\": \"repo\",\n          \"capability\": \"repo.scan\",\n          \"depends_on\": [],\n          \"priority\": 0,\n          \"uuid\": \"01a0e632-a5ac-798d-83ae-48a87a0bae59\",\n          \"state\": \"succeeded\",\n          \"worker_id\": null,\n          \"fencing_token\": 1,\n          \"lease_until\": null,\n          \"heartbeat_at\": 1790568474.0288746,\n          \"attempts\": 1,\n          \"cancel_requested\": false,\n          \"output\": {\n            \"ok\": 1\n          }\n        },\n        \"01a0e632-a5ac-788a-a766-73f8a160b5ad\": {\n          \"name\": \"synthesis\",\n          \"capability\": \"model.reasoning\",\n          \"depends_on\": [\n            \"01a0e632-a5ac-719c-9eed-a9fc12b9be97\",\n            \"01a0e632-a5ac-798d-83ae-48a87a0bae59\"\n          ],\n          \"priority\": 0,\n          \"uuid\": \"01a0e632-a5ac-788a-a766-73f8a160b5ad\",\n          \"state\": \"succeeded\",\n          \"worker_id\": null,\n          \"fencing_token\": 1,\n          \"lease_until\": null,\n          \"heartbeat_at\": 1790568474.028894,\n          \"attempts\": 1,\n          \"cancel_requested\": false,\n          \"output\": {\n            \"ok\": 1\n          }\n        }\n      }\n    },\n    {\n      \"name\": \"recovery\",\n      \"max_parallelism\": 1,\n      \"uuid\": \"01a0e632-a5ac-7332-8f42-46e891373474\",\n      \"correlation_uuid\": \"01a0e632-a5ac-77e7-8c25-8fba59a47d20\",\n      \"state\": \"succeeded\",\n      \"tasks\": {\n        \"01a0e632-a5ac-791a-8754-bcd2e3563d34\": {\n          \"name\": \"recovery\",\n          \"capability\": \"workspace.diff\",\n          \"depends_on\": [],\n          \"priority\": 0,\n          \"uuid\": \"01a0e632-a5ac-791a-8754-bcd2e3563d34\",\n          \"state\": \"succeeded\",\n          \"worker_id\": null,\n          \"fencing_token\": 3,\n          \"lease_until\": null,\n          \"heartbeat_at\": 1790568474.0591426,\n          \"attempts\": 2,\n          \"cancel_requested\": false,\n          \"output\": {\n            \"recovered\": true\n          }\n        }\n      }\n    },\n    {\n      \"name\": \"cancel\",\n      \"max_parallelism\": 4,\n      \"uuid\": \"01a0e632-a5cb-723e-9fb3-13a2dd1f63d7\",\n      \"correlation_uuid\": \"01a0e632-a5cb-7698-a9ec-2f69d97cd4de\",\n      \"state\": \"cancelled\",\n      \"tasks\": {\n        \"01a0e632-a5cb-79eb-82fa-75a837871926\": {\n          \"name\": \"cancel\",\n          \"capability\": \"workspace.diff\",\n          \"depends_on\": [],\n          \"priority\": 0,\n          \"uuid\": \"01a0e632-a5cb-79eb-82fa-75a837871926\",\n          \"state\": \"cancelled\",\n          \"worker_id\": null,\n          \"fencing_token\": 0,\n          \"lease_until\": null,\n          \"heartbeat_at\": null,\n          \"attempts\": 0,\n          \"cancel_requested\": false,\n          \"output\": null\n        }\n      }\n    }\n  ]\n}\n"
+    }
+  ]
+}

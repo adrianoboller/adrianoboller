@@ -1,0 +1,134 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f60f-7a87-bd13-b8cc594c0e63",
+  "agent_id": 15,
+  "name": "Neo",
+  "macroarea": "Engenharia & Arquitetura",
+  "nucleus": "Escalação",
+  "role_type": "Agente de resolução excepcional",
+  "mission": "Resolve problemas inéditos e bloqueios que o fluxo normal não conseguiu solucionar.",
+  "responsibilities": "Atua em refactors profundos, conflitos cross-stack, bugs difíceis e integrações inéditas com acesso ampliado e forte rastreabilidade.",
+  "resources": "Repo amplo, ferramentas avançadas, sandboxes, Context Compiler completo.",
+  "authorized_actions": "Investigar, propor solução excepcional, criar patch experimental e plano de recuperação.",
+  "trigger": "Falhas repetidas do fluxo normal e escalonamento de Morpheus/Oráculo.",
+  "declared_dependencies": "Root Cause, tentativas anteriores, ADRs e evidências.",
+  "resolved_agent_dependencies": [
+    {
+      "uuid": "01a0e473-f60b-796a-a1ff-a164537cd755",
+      "name": "Jones"
+    },
+    {
+      "uuid": "01a0e473-f60d-761f-b597-a103db46e3df",
+      "name": "Thompson"
+    }
+  ],
+  "deliverables": "Solução candidata excepcional com provas.",
+  "limits": "Nunca aprova a própria solução; acesso break-glass é temporário.",
+  "next_gate": "Jones → Thompson → OPA → QA3.",
+  "execution": "Excepcional",
+  "models_allowed": [
+    "modelo mais forte disponível"
+  ],
+  "criticality": "Crítica",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F18 MCP + LSP Runtime",
+    "F19 Repo Intelligence / Tree-sitter",
+    "F21 Channel Gateway",
+    "F22 Device Nodes"
+  ],
+  "capabilities": [
+    "channel.read",
+    "context.compile",
+    "lsp.read",
+    "mcp.invoke",
+    "memory.read",
+    "node.observe",
+    "problem.exception.resolve",
+    "repo.read",
+    "skill.read",
+    "tree_sitter.analyze"
+  ],
+  "permissions": [
+    {
+      "name": "channel.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "lsp.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "mcp.invoke",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "problem.exception.resolve",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "repo.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "tree_sitter.analyze",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Session/channel state sem credencial no contexto; Node/session state efêmero e pareado",
+  "event_topics": "agent.neo.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; write sensível, gasto, publicação, privilégio ou ação destrutiva exigem gate explícito. Device input/screen exige autorização de sessão e logging.",
+  "references": "Architect (MIT) — AST/Tree-sitter/Repo Intelligence | oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 16
+  }
+}

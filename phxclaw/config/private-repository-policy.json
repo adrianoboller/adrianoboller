@@ -1,0 +1,18 @@
+{
+  "version": "1.0.0",
+  "visibility": "private_only",
+  "public_repository_allowed": false,
+  "public_issue_tracker_allowed": false,
+  "public_plugin_source_allowed": false,
+  "community_distribution": {
+    "mode": "signed_packages_or_private_registry",
+    "source_required": false,
+    "binary_or_bundle_allowed": true
+  },
+  "rules": [
+    "PhxClaw source repositories MUST remain private.",
+    "Community contributions enter through private mirrors, signed .phxplugin bundles, patches, or reviewed import workflows.",
+    "No automated workflow may create or publish a public GitHub repository.",
+    "Repository URLs must be treated as confidential configuration unless explicitly approved by the Product Owner."
+  ]
+}

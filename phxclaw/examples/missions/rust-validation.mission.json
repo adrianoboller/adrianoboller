@@ -1,0 +1,84 @@
+{
+  "uuid": "01a0e5e1-0e89-7a17-862d-cc515880b56e",
+  "correlation_uuid": "01a0e5e1-0e89-7e37-a9a0-1af1b52b18a3",
+  "objective": "Validate the PhxClaw Rust workspace with deterministic build and test gates.",
+  "project_root": ".",
+  "base_ref": "HEAD",
+  "isolate_worktree": true,
+  "require_clean_start": true,
+  "steps": [
+    {
+      "uuid": "01a0e5e1-0e89-7c59-87c4-bc554566ce1a",
+      "name": "Capture repository snapshot",
+      "agent_capability": "job.worker.implement",
+      "action": {
+        "kind": "snapshot"
+      },
+      "required": true
+    },
+    {
+      "uuid": "01a0e5e1-0e89-70d6-9be2-4fed2068045f",
+      "name": "Cargo format gate",
+      "agent_capability": "quality.unit.test",
+      "action": {
+        "kind": "command_gate",
+        "gate": {
+          "name": "cargo-fmt",
+          "program": "cargo",
+          "args": [
+            "fmt",
+            "--check"
+          ],
+          "cwd": null
+        }
+      },
+      "required": true
+    },
+    {
+      "uuid": "01a0e5e1-0e89-7566-9ed4-28f77227cea3",
+      "name": "Cargo check gate",
+      "agent_capability": "quality.integration.test",
+      "action": {
+        "kind": "command_gate",
+        "gate": {
+          "name": "cargo-check",
+          "program": "cargo",
+          "args": [
+            "check",
+            "--workspace"
+          ],
+          "cwd": null
+        }
+      },
+      "required": true
+    },
+    {
+      "uuid": "01a0e5e1-0e89-799a-8558-a8f71c2fe6f7",
+      "name": "Cargo test gate",
+      "agent_capability": "quality.unit.test",
+      "action": {
+        "kind": "command_gate",
+        "gate": {
+          "name": "cargo-test",
+          "program": "cargo",
+          "args": [
+            "test",
+            "--workspace"
+          ],
+          "cwd": null
+        }
+      },
+      "required": true
+    },
+    {
+      "uuid": "01a0e5e1-0e89-7739-bb31-18c0117dd339",
+      "name": "Objective proof diff",
+      "agent_capability": "objective.prove",
+      "action": {
+        "kind": "diff"
+      },
+      "required": true
+    }
+  ],
+  "created_at": "2026-09-27T23:45:00-03:00"
+}

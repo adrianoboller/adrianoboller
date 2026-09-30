@@ -1,0 +1,11 @@
+[package]
+name = "phxclaw-provenance-core"
+version = "0.60.0"
+edition = "2021"
+license = "Proprietary"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]

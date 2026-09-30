@@ -1,0 +1,348 @@
+{
+  "version": "0.36.0",
+  "generated_from_user_skill_set": true,
+  "policy": "adapter_first_no_auto_vendor",
+  "count": 20,
+  "skills": [
+    {
+      "id": "agent_reach",
+      "name": "Agent Reach",
+      "category": "research_validate",
+      "linked_url": "https://lnkd.in/dQcsWamG",
+      "source_url": "https://github.com/Panniantong/Agent-Reach",
+      "license": "MIT",
+      "license_status": "verified_permissive",
+      "integration_mode": "external_cli_adapter",
+      "external_runtime": "agent-reach",
+      "capability": "skill.agent_reach.research",
+      "permissions": [
+        "network.read",
+        "process.exec:agent-reach"
+      ],
+      "notes": "Internet/social research adapter; network access remains policy-controlled."
+    },
+    {
+      "id": "last_30_days",
+      "name": "Last 30 Days",
+      "category": "research_validate",
+      "linked_url": "https://lnkd.in/dAKCU5rZ",
+      "source_url": "https://github.com/mvanhorn/last30days-skill",
+      "license": "MIT",
+      "license_status": "verified_permissive",
+      "integration_mode": "skill_adapter",
+      "external_runtime": "python/node optional",
+      "capability": "skill.last30days.research",
+      "permissions": [
+        "network.read"
+      ],
+      "notes": "Recency-focused research; source timestamps must be preserved."
+    },
+    {
+      "id": "deep_research",
+      "name": "Deep Research",
+      "category": "research_validate",
+      "linked_url": "https://lnkd.in/dfyYdMbc",
+      "source_url": "https://github.com/199-biotechnologies/claude-deep-research-skill",
+      "license": "MIT",
+      "license_status": "verified_permissive",
+      "integration_mode": "skill_adapter",
+      "external_runtime": "python optional",
+      "capability": "skill.deep_research.execute",
+      "permissions": [
+        "network.read",
+        "workspace.report.write"
+      ],
+      "notes": "Multi-phase research/validation methodology; output enters Evidence Ledger."
+    },
+    {
+      "id": "user_research",
+      "name": "User Research",
+      "category": "research_validate",
+      "linked_url": "https://lnkd.in/dRn7ysE9",
+      "source_url": "https://github.com/cookiy-ai/user-research-skill",
+      "license": "MIT",
+      "license_status": "verified_permissive",
+      "integration_mode": "skill_adapter",
+      "external_runtime": "none required",
+      "capability": "skill.user_research.execute",
+      "permissions": [
+        "network.read",
+        "workspace.report.write"
+      ],
+      "notes": "Research artifacts are claims until evidence/promotion gates accept them."
+    },
+    {
+      "id": "qmd_search",
+      "name": "QMD Search",
+      "category": "research_validate",
+      "linked_url": "https://lnkd.in/d646gEsi",
+      "source_url": "https://github.com/tobi/qmd",
+      "wrapper_url": "https://github.com/levineam/qmd-skill",
+      "license": "MIT",
+      "license_status": "verified_permissive",
+      "integration_mode": "external_cli_mcp_adapter",
+      "external_runtime": "qmd",
+      "capability": "skill.qmd.search",
+      "permissions": [
+        "workspace.read",
+        "process.exec:qmd"
+      ],
+      "notes": "Uses canonical upstream qmd MIT implementation; local knowledge search precedes web search when relevant."
+    },
+    {
+      "id": "graphify",
+      "name": "Graphify",
+      "category": "understand_improve",
+      "linked_url": "https://lnkd.in/dwk88J37",
+      "source_url": "https://github.com/Graphify-Labs/graphify",
+      "license": "Apache-2.0 / MIT (repository exposes both; preserve file-scope notices)",
+      "license_status": "verified_permissive_adapter_only",
+      "integration_mode": "external_cli_adapter",
+      "external_runtime": "graphify",
+      "capability": "skill.graphify.map",
+      "permissions": [
+        "workspace.read",
+        "workspace.graph.write",
+        "process.exec:graphify"
+      ],
+      "notes": "Local deterministic graph mapping preferred; no vendored source in this overlay."
+    },
+    {
+      "id": "ponytail",
+      "name": "Ponytail",
+      "category": "understand_improve",
+      "linked_url": "https://lnkd.in/dqnaCu9y",
+      "source_url": "https://github.com/DietrichGebert/ponytail",
+      "license": "MIT",
+      "license_status": "verified_permissive",
+      "integration_mode": "methodology_adapter",
+      "external_runtime": "none required",
+      "capability": "skill.ponytail.simplify",
+      "permissions": [
+        "workspace.read"
+      ],
+      "notes": "Used as simplification/minimal-change review methodology; does not bypass Phoenix approval gates."
+    },
+    {
+      "id": "napkin",
+      "name": "Napkin",
+      "category": "understand_improve",
+      "linked_url": "https://lnkd.in/dgYXGpTa",
+      "source_url": "https://github.com/blader/napkin",
+      "license": "MIT",
+      "license_status": "verified_permissive",
+      "integration_mode": "governed_memory_adapter",
+      "external_runtime": "none required",
+      "capability": "skill.napkin.learn",
+      "permissions": [
+        "workspace.learning.read",
+        "workspace.learning.write"
+      ],
+      "notes": "Lessons/corrections are stored as unverified learning observations, not policy or truth."
+    },
+    {
+      "id": "tech_debt_audit",
+      "name": "Tech Debt Audit",
+      "category": "understand_improve",
+      "linked_url": "https://lnkd.in/dTGJ7J73",
+      "source_url": "https://github.com/ksimback/tech-debt-skill",
+      "license": "MIT",
+      "license_status": "verified_permissive",
+      "integration_mode": "skill_adapter",
+      "external_runtime": "none required",
+      "capability": "skill.tech_debt.audit",
+      "permissions": [
+        "workspace.read",
+        "workspace.report.write"
+      ],
+      "notes": "Findings require file/evidence linkage before entering governed knowledge."
+    },
+    {
+      "id": "understand_anything",
+      "name": "Understand Anything",
+      "category": "understand_improve",
+      "linked_url": "https://lnkd.in/dQfCXwZ",
+      "source_url": "https://github.com/Egonex-AI/Understand-Anything",
+      "license": "MIT",
+      "license_status": "verified_permissive_name_matched",
+      "integration_mode": "knowledge_graph_adapter",
+      "external_runtime": "plugin optional",
+      "capability": "skill.understand_anything.map",
+      "permissions": [
+        "workspace.read",
+        "workspace.graph.write"
+      ],
+      "notes": "Short link could not be directly resolved in audit; project matched by exact supplied name and verified MIT repository."
+    },
+    {
+      "id": "ui_ux_pro_max",
+      "name": "UI/UX Pro Max",
+      "category": "create_explain",
+      "linked_url": "https://lnkd.in/dZua6Qcb",
+      "source_url": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill",
+      "license": "MIT",
+      "license_status": "verified_permissive",
+      "integration_mode": "skill_adapter",
+      "external_runtime": "python optional",
+      "capability": "skill.uiux.design",
+      "permissions": [
+        "workspace.read",
+        "workspace.artifact.write"
+      ],
+      "notes": "Design-system guidance and accessibility checks; project secrets must not be used as search queries."
+    },
+    {
+      "id": "frontend_slides",
+      "name": "Frontend Slides",
+      "category": "create_explain",
+      "linked_url": "https://lnkd.in/dw8W7nd9",
+      "source_url": "https://github.com/zarazhangrui/frontend-slides",
+      "license": "MIT",
+      "license_status": "verified_permissive",
+      "integration_mode": "artifact_adapter",
+      "external_runtime": "node/python optional",
+      "capability": "skill.frontend_slides.create",
+      "permissions": [
+        "workspace.read",
+        "workspace.artifact.write"
+      ],
+      "notes": "Creates HTML slides; deployment/export remain separately permissioned side effects."
+    },
+    {
+      "id": "scroll_world",
+      "name": "Scroll World",
+      "category": "create_explain",
+      "linked_url": "https://lnkd.in/dNNr8qEu",
+      "source_url": "https://github.com/oso95/scroll-world",
+      "license": "MIT",
+      "license_status": "verified_permissive",
+      "integration_mode": "skill_adapter",
+      "external_runtime": "web toolchain optional",
+      "capability": "skill.scroll_world.create",
+      "permissions": [
+        "workspace.read",
+        "workspace.artifact.write"
+      ],
+      "notes": "Interactive scroll storytelling patterns; outputs are reviewed before publish."
+    },
+    {
+      "id": "visual_explainer",
+      "name": "Visual Explainer",
+      "category": "create_explain",
+      "linked_url": "https://lnkd.in/dWJTUJBh",
+      "source_url": "https://github.com/nicobailon/visual-explainer",
+      "license": "MIT",
+      "license_status": "verified_permissive",
+      "integration_mode": "skill_adapter",
+      "external_runtime": "web toolchain optional",
+      "capability": "skill.visual_explainer.create",
+      "permissions": [
+        "workspace.read",
+        "workspace.artifact.write"
+      ],
+      "notes": "Visual explanation adapter; source facts remain evidence-linked."
+    },
+    {
+      "id": "fireworks_tech_graph",
+      "name": "Fireworks Tech Graph",
+      "category": "create_explain",
+      "linked_url": "https://lnkd.in/dE6Me95t",
+      "source_url": "https://github.com/yizhiyanhua-ai/fireworks-tech-graph",
+      "license": "MIT",
+      "license_status": "verified_permissive",
+      "integration_mode": "external_cli_adapter",
+      "external_runtime": "fireworks-tech-graph",
+      "capability": "skill.fireworks_tech_graph.create",
+      "permissions": [
+        "workspace.read",
+        "workspace.artifact.write",
+        "process.exec:fireworks-tech-graph"
+      ],
+      "notes": "Technical SVG/PNG/diagram generation; external fonts/network resources are disabled unless explicitly allowed."
+    },
+    {
+      "id": "claude_seo",
+      "name": "Claude SEO",
+      "category": "refine_deliver",
+      "linked_url": "https://lnkd.in/dmH-m_ur",
+      "source_url": "https://github.com/AgriciDaniel/claude-seo",
+      "license": "MIT",
+      "license_status": "verified_permissive",
+      "integration_mode": "skill_adapter",
+      "external_runtime": "none required",
+      "capability": "skill.claude_seo.audit",
+      "permissions": [
+        "workspace.read",
+        "network.read",
+        "workspace.report.write"
+      ],
+      "notes": "SEO audit/optimization methodology; publication remains an approval-gated side effect."
+    },
+    {
+      "id": "humanizer",
+      "name": "Humanizer",
+      "category": "refine_deliver",
+      "linked_url": "https://lnkd.in/dkfXR4WA",
+      "source_url": "https://github.com/blader/humanizer",
+      "license": "MIT",
+      "license_status": "verified_permissive",
+      "integration_mode": "text_transform_adapter",
+      "external_runtime": "none required",
+      "capability": "skill.humanizer.rewrite",
+      "permissions": [],
+      "notes": "Text-only transformation; may not alter factual claims without explicit evidence update."
+    },
+    {
+      "id": "auto_research_sleep",
+      "name": "Auto Research in Sleep",
+      "category": "refine_deliver",
+      "linked_url": "https://lnkd.in/d2pSW_9R",
+      "source_url": "https://github.com/wanshuiyin/Auto-claude-code-research-in-sleep",
+      "license": "MIT",
+      "license_status": "verified_permissive",
+      "integration_mode": "task_graph_adapter",
+      "external_runtime": "scheduler",
+      "capability": "skill.auto_research.schedule",
+      "permissions": [
+        "task.schedule",
+        "network.read"
+      ],
+      "notes": "Mapped to Phoenix Task Graph/Research Core; budget, cadence and stop conditions are mandatory."
+    },
+    {
+      "id": "video_shotcraft",
+      "name": "Video ShotCraft",
+      "category": "refine_deliver",
+      "linked_url": "https://lnkd.in/dis5vtnC",
+      "source_url": "https://github.com/karekin/video-shotcraft",
+      "license": "Apache-2.0 for repository code/skill; bundled media/assets carry separate terms",
+      "license_status": "verified_permissive_skill_only",
+      "integration_mode": "skill_adapter_no_bundled_assets",
+      "external_runtime": "remotion optional",
+      "capability": "skill.video_shotcraft.plan",
+      "permissions": [
+        "workspace.read",
+        "workspace.artifact.write"
+      ],
+      "notes": "Short link could not be directly resolved; exact-name repository matched. Do not vendor bundled audio/media. Remotion and asset licenses require separate review before commercial rendering."
+    },
+    {
+      "id": "ffmpeg_skill",
+      "name": "FFmpeg Skill",
+      "category": "refine_deliver",
+      "linked_url": "https://lnkd.in/d8GDMZk2",
+      "source_url": "https://github.com/kajisho5/ffmpeg-skill",
+      "license": "MIT for skill; FFmpeg binary licensing depends on build/configuration",
+      "license_status": "verified_permissive_skill_only",
+      "integration_mode": "external_binary_adapter",
+      "external_runtime": "ffmpeg",
+      "capability": "skill.ffmpeg.transform",
+      "permissions": [
+        "workspace.media.read",
+        "workspace.media.write",
+        "process.exec:ffmpeg"
+      ],
+      "notes": "Strict FFmpeg program allowlist, path confinement, timeout and output limits required."
+    }
+  ]
+}

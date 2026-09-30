@@ -1,0 +1,130 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f61a-75e5-a700-82b23d956190",
+  "agent_id": 26,
+  "name": "PhoenixRustCore Agent",
+  "macroarea": "Engenharia & Arquitetura",
+  "nucleus": "Rust",
+  "role_type": "Agente do núcleo Rust",
+  "mission": "Desenvolve extensões e abstrações próprias que complementam Rust Stable.",
+  "responsibilities": "Implementa crates de events, commands, signals, binding, tasks, reflection controlada, macros e ergonomia com foco em zero-cost quando possível.",
+  "resources": "Rust Stable, benchmarks, RFCs, cargo, Criterion.",
+  "authorized_actions": "Criar/alterar crates PhoenixRustCore, deprecar features superadas pelo Rust.",
+  "trigger": "Gap aprovado por hipótese/RFC.",
+  "declared_dependencies": "Rust Gap Database e ADR.",
+  "resolved_agent_dependencies": [
+    {
+      "uuid": "01a0e473-f637-7194-be89-ecefe3390927",
+      "name": "Versionador"
+    }
+  ],
+  "deliverables": "Crate versionado, testes e benchmark Rust puro vs Phoenix.",
+  "limits": "Não forka rustc nem cria incompatibilidade desnecessária.",
+  "next_gate": "Rust Evolution / QA / Versionador.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "codex"
+  ],
+  "criticality": "Crítica",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F16 Scheduler + Background Jobs",
+    "F18 MCP + LSP Runtime",
+    "F19 Repo Intelligence / Tree-sitter",
+    "F22 Device Nodes"
+  ],
+  "capabilities": [
+    "context.compile",
+    "core.rust.evolve",
+    "job.read",
+    "lsp.read",
+    "mcp.invoke",
+    "memory.read",
+    "node.observe",
+    "repo.read",
+    "skill.read",
+    "tree_sitter.analyze"
+  ],
+  "permissions": [
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "core.rust.evolve",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "job.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "lsp.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "mcp.invoke",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "repo.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "tree_sitter.analyze",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Job UUIDv7 + lease/heartbeat/resume em PostgreSQL; Node/session state efêmero e pareado",
+  "event_topics": "agent.phoenixrustcore.agent.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; write sensível, gasto, publicação, privilégio ou ação destrutiva exigem gate explícito. Device input/screen exige autorização de sessão e logging.",
+  "references": "Architect (MIT) — AST/Tree-sitter/Repo Intelligence | oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 27
+  }
+}

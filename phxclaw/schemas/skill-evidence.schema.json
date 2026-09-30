@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PhxClaw Skill Evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "candidate_uuid",
+    "artifact_sha256_hex",
+    "source_state_sha256_hex",
+    "required_suite_runs",
+    "passed_checks",
+    "failed_checks",
+    "security_critical_open",
+    "security_high_open",
+    "benchmark_regression_bps",
+    "independent_evaluators",
+    "freshest_evidence_at"
+  ],
+  "properties": {
+    "candidate_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "artifact_sha256_hex": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{64}$"
+    },
+    "source_state_sha256_hex": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{64}$"
+    },
+    "required_suite_runs": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "passed_checks": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "failed_checks": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "security_critical_open": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "security_high_open": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "benchmark_regression_bps": {
+      "type": "integer"
+    },
+    "independent_evaluators": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "freshest_evidence_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

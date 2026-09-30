@@ -1,0 +1,157 @@
+{
+  "suite": "PhxClaw v0.13 operational/bootstrap",
+  "pass": 30,
+  "fail": 0,
+  "details": [
+    {
+      "name": "cli.version",
+      "pass": true,
+      "detail": "PhxClaw 0.13.0\n"
+    },
+    {
+      "name": "cli.help",
+      "pass": true,
+      "detail": "usage: phx [-h]\n           {version,status,doctor,paths,privacy,sprints,plugins,agents,capabilities,mission,repo} ...\n\nPhxClaw command line - private, evidence-first agent platform\n\npositional arguments:\n  {version,status,doctor,paths,privacy,sprints,plugins,agents,capabilities,mission,repo}\n    version             show version\n    status              show project/runtime inventory\n    doctor              check required host tools\n    paths               show important project paths\n    privacy             show private repository policy\n    sprints             list/show sprint roadmap\n    plugins             private plugin lifecycle and external bridges\n    agents              inspect declarative agents\n    capabilities        list capabilities\n    mission             validate/run a mission\n    repo                deterministic repository inventory\n\noptions:\n  -h, --help            show this help message and exit\n"
+    },
+    {
+      "name": "plugin.install.v1",
+      "pass": true,
+      "detail": "INSTALLED com.phxclaw.fixture.lifecycle 1.0.0 state=disabled\n"
+    },
+    {
+      "name": "plugin.enable",
+      "pass": true,
+      "detail": "HEALTHY com.phxclaw.fixture.lifecycle 1.0.0 {\"status\": \"healthy\", \"version\": \"1.0.0\"}\nENABLED com.phxclaw.fixture.lifecycle 1.0.0\n"
+    },
+    {
+      "name": "plugin.doctor.real_health",
+      "pass": true,
+      "detail": "HEALTHY com.phxclaw.fixture.lifecycle 1.0.0 {\"status\": \"healthy\", \"version\": \"1.0.0\"}\n"
+    },
+    {
+      "name": "plugin.disable",
+      "pass": true,
+      "detail": "DISABLED com.phxclaw.fixture.lifecycle 1.0.0\n"
+    },
+    {
+      "name": "plugin.install.v2",
+      "pass": true,
+      "detail": "INSTALLED com.phxclaw.fixture.lifecycle 1.1.0 state=disabled\n"
+    },
+    {
+      "name": "plugin.rollback",
+      "pass": true,
+      "detail": "HEALTHY com.phxclaw.fixture.lifecycle 1.0.0 STATIC_OK\nROLLED_BACK com.phxclaw.fixture.lifecycle -> 1.0.0 state=disabled\n"
+    },
+    {
+      "name": "plugin.show",
+      "pass": true,
+      "detail": "{\n  \"uuid\": \"01a0e600-0000-7000-8000-000000000013\",\n  \"version\": \"1.0.0\",\n  \"path\": \"var/plugin-store/01a0e600-0000-7000-8000-000000000013/1.0.0\",\n  \"state\": \"disabled\",\n  \"installed_at\": \"2026-09-28T03:40:39.884232+00:00\",\n  \"capabilities\": [\n    \"fixture.echo\"\n  ],\n  \"history\": [\n    {\n      \"version\": \"1.1.0\",\n      \"path\": \"var/plugin-store/01a0e600-0000-7000-8000-000000000013/1.1.0\",\n      \"state\": \"disabled\",\n      \"installed_at\": \"2026-09-28T03:40:49.215734+00:00\"\n    }\n  ],\n  \"rolled_back_at\": \"2026-09-28T03:40:50.746883+00:00\",\n  \"last_doctor_at\": \"2026-09-28T03:40:50.770213+00:00\",\n  \"last_health\": \"STATIC_OK\"\n}\n"
+    },
+    {
+      "name": "plugin.uninstall",
+      "pass": true,
+      "detail": "UNINSTALLED com.phxclaw.fixture.lifecycle\n"
+    },
+    {
+      "name": "plugin.tamper_rejected",
+      "pass": true,
+      "detail": "package hash mismatch: phxclaw-fixture-plugin\n"
+    },
+    {
+      "name": "repo.scan",
+      "pass": true,
+      "detail": "files=420\n  1246    968     29601 8ff876c8b322 config/capability-catalog.json\n  1105    823     33108 558af162a3ef apps/phxclaw-desktop/src-tauri/src/lib.rs\n   936    668     18719 0e72e4653590 config/agents/registry.index.json\n"
+    },
+    {
+      "name": "workspace.phxclaw-checkpoint",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "workspace.phxclaw-mcp-lsp-runtime",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "workspace.phxclaw-repo-intelligence",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "workspace.phxclaw-mission-executors",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sprint.f17.review",
+      "pass": true,
+      "detail": "review"
+    },
+    {
+      "name": "sprint.f18.review",
+      "pass": true,
+      "detail": "review"
+    },
+    {
+      "name": "sprint.f19.review",
+      "pass": true,
+      "detail": "review"
+    },
+    {
+      "name": "capabilities.count",
+      "pass": true,
+      "detail": "120"
+    },
+    {
+      "name": "capability.plugin.install",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "capability.plugin.rollback",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "capability.checkpoint.create",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "capability.checkpoint.restore",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "capability.protocol.mcp.invoke",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "capability.protocol.lsp.invoke",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "capability.repo.scan",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "capability.repo.rank",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "mission.model_executor_attached",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "mission.extension_executor_attached",
+      "pass": true,
+      "detail": ""
+    }
+  ]
+}

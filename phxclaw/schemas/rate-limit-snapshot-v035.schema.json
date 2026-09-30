@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Rate Limit Snapshot v0.35",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "tenant_uuid",
+    "snapshot_uuid",
+    "provider_uuid",
+    "request_limit",
+    "requests_remaining",
+    "token_limit",
+    "tokens_remaining",
+    "reset_at_unix",
+    "observed_at_unix",
+    "ttl_seconds",
+    "snapshot_sha256"
+  ],
+  "properties": {
+    "tenant_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "snapshot_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "provider_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "request_limit": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "requests_remaining": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "token_limit": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "tokens_remaining": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "reset_at_unix": {
+      "type": "integer"
+    },
+    "observed_at_unix": {
+      "type": "integer"
+    },
+    "ttl_seconds": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "snapshot_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

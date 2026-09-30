@@ -1,0 +1,42 @@
+{
+  "format": "phxclaw-plugin-package-v1",
+  "manifest": "phxclaw.plugin.json",
+  "manifest_sha256": "4115b6f996272efd86b0529e384e8fe5a662d7ba2888362fd1c238382c7023bc",
+  "license": "LICENSE",
+  "readme": "README.md",
+  "sbom": "SBOM.spdx.json",
+  "files": [
+    {
+      "path": "LICENSE",
+      "sha256": "20701294644595872f35833b06c45c8a7120dc0a5a5d09128e043ac633aa413a"
+    },
+    {
+      "path": "README.md",
+      "sha256": "766d0eee1f3d6bf09c2559894d995af6fdf7e4c9c29fe37d05b3c83e235039bd"
+    },
+    {
+      "path": "SBOM.spdx.json",
+      "sha256": "40210dd06356613b880b9fb9bc392feabde12ed830bf37040c99c9c67d729294"
+    },
+    {
+      "path": "input.schema.json",
+      "sha256": "9091a8164f97eaca182b3d06d0e5a59e923c880ebc0148056c453c651f5b46cb"
+    },
+    {
+      "path": "output.schema.json",
+      "sha256": "9091a8164f97eaca182b3d06d0e5a59e923c880ebc0148056c453c651f5b46cb"
+    },
+    {
+      "path": "phxclaw-fixture-plugin",
+      "sha256": "f1265a4d4e5c43f1d1beca23b13397877f9dd7f57a801c38355ddb83385f1e9c"
+    },
+    {
+      "path": "phxclaw.plugin.json",
+      "sha256": "4115b6f996272efd86b0529e384e8fe5a662d7ba2888362fd1c238382c7023bc"
+    }
+  ],
+  "files_digest": "d4f622423c7fbc4d745206e699338a3326b6f93cf754e7482b1b4834c83f291b",
+  "signature_algorithm": "ed25519",
+  "signature": "YIjEbwrSEG45KnO0dUWR1UlJyqLAp8z4gD+wzE3uO4uNDpyLbgMPZIERRnsIl+4gUeETB8L9DGwl51dLTOukAQ==",
+  "signer": "phxclaw-fixture-v013"
+}

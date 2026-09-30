@@ -1,0 +1,13 @@
+{
+  "schema_version": "phxclaw.ha-policy.v1",
+  "lease_seconds": 15,
+  "renew_before_seconds": 5,
+  "controller_dead_after_seconds": 30,
+  "minimum_controllers_for_ha": 3,
+  "require_ha_postgres_for_production": true,
+  "partition_behavior": "self_fence",
+  "authority_clock": "postgresql",
+  "allow_local_single_postgres_in_production": false,
+  "max_reconcile_batch": 500,
+  "sharding": "rendezvous_hash"
+}

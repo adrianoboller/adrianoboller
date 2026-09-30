@@ -1,0 +1,93 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f63a-729d-91a1-22d4866232f0",
+  "agent_id": 58,
+  "name": "Backup Agent",
+  "macroarea": "Operações & Infraestrutura",
+  "nucleus": "Backup",
+  "role_type": "Agente de backup",
+  "mission": "Protege código, banco, artifacts, configuração e conhecimento da fábrica.",
+  "responsibilities": "Executa políticas full/incremental, criptografia, retenção, verificação de checksums e catálogo de backups.",
+  "resources": "PostgreSQL, Git, storage, Artifact Registry, secrets metadata.",
+  "authorized_actions": "Criar/validar backup e registrar manifest.",
+  "trigger": "Agenda ou antes de upgrade/release crítica.",
+  "declared_dependencies": "Inventário de dados.",
+  "resolved_agent_dependencies": [
+    {
+      "uuid": "01a0e473-f63b-7cad-b290-bec9166341e8",
+      "name": "Restore Agent"
+    }
+  ],
+  "deliverables": "Backup Manifest verificado.",
+  "limits": "Backup sem teste de restore não é considerado suficiente.",
+  "next_gate": "Restore Agent.",
+  "execution": "Permanente",
+  "models_allowed": [
+    "determinístico",
+    "ollama"
+  ],
+  "criticality": "Crítica",
+  "modules": [
+    "F17 Checkpoint + Rollback",
+    "F22 Device Nodes"
+  ],
+  "capabilities": [
+    "checkpoint.backup.create",
+    "checkpoint.create",
+    "checkpoint.read",
+    "checkpoint.verify",
+    "node.observe"
+  ],
+  "permissions": [
+    {
+      "name": "checkpoint.backup.create",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "checkpoint.create",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "checkpoint.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "checkpoint.verify",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Checkpoint manifest + hashes + rollback evidence; Node/session state efêmero e pareado; Estado operacional persistente em PostgreSQL",
+  "event_topics": "agent.backup.agent.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; write sensível, gasto, publicação, privilégio ou ação destrutiva exigem gate explícito. Device input/screen exige autorização de sessão e logging.",
+  "references": "Hermes — patterns; validar licença por versão | OpenClaw — gateway/nodes/channels; validar licença por versão | ZeroClaw — benchmark Rust/providers/tools",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 59
+  }
+}

@@ -1,0 +1,105 @@
+{
+  "version": "0.39.0",
+  "base": "0.38.0",
+  "copied": [
+    {
+      "path": "config/swarm-merge-intelligence-policy.v039.json",
+      "sha256": "c2e7f03d49f2a45074113c0ef773b9465a0dd111384735b76921ccfae2aa1b78"
+    },
+    {
+      "path": "config/swarm-contract-policy.v039.json",
+      "sha256": "bb41e0f606099f5db207911d39a77a5b551a176d845aa8ef72fc06cadaa4a5f9"
+    },
+    {
+      "path": "capabilities/V039_CAPABILITIES_DELTA.json",
+      "sha256": "5cab2f6b562f441b0596a69b3bab0b963981adb2421d7cd23cf180050ac73f67"
+    },
+    {
+      "path": "schemas/swarm-resolution-v039.schema.json",
+      "sha256": "74f0eb858d29dd83cf02c4f74dc45331949168c793972126886fe6b2b5c72b08"
+    },
+    {
+      "path": "schemas/swarm-change-intent-v039.schema.json",
+      "sha256": "c7cff68208ec7658d361d123520f762cf1af32280c2da51e1e46e861ec36dced"
+    },
+    {
+      "path": "schemas/swarm-integration-replay-v039.schema.json",
+      "sha256": "04dbd9b5bfd7b0743859b866deb4687306436a388a6f570d27123691ad43a31a"
+    },
+    {
+      "path": "schemas/swarm-merge-plan-v039.schema.json",
+      "sha256": "1cca27a3cb70132e3a87481294b93921836bdde44e4409d9df3c95070999831a"
+    },
+    {
+      "path": "schemas/swarm-semantic-conflict-v039.schema.json",
+      "sha256": "7cd4aae215169035fd49b05f9926eecaca6acec9a942a38d4fd576dabc42bf67"
+    },
+    {
+      "path": "tools/check_package_v039.py",
+      "sha256": "f3ce485fb2af6c28944f77c607b1d1cfa0b819b2f696b253f5217af6215a75cc"
+    },
+    {
+      "path": "tools/verify_v039.py",
+      "sha256": "53e5906195f163aeb5da7d7abdfc7fcbc7fbff25a03da1154aaac73a93c7b679"
+    },
+    {
+      "path": "tools/test_v039_local.py",
+      "sha256": "32f823187b782902a169f21b7993acb7ed7b00b5118f90ef53dae99405c50ce4"
+    },
+    {
+      "path": "reports/V039_PACKAGE_CHECKS.json",
+      "sha256": "a512559c59629608e62a2a196eece95ef8569ea99c6936952702ad98d05d0973"
+    },
+    {
+      "path": "reports/V039_LOCAL_TEST_REPORT.json",
+      "sha256": "5a367a93896d529ec0bfbbd632e555aa96595e774dbbf90107a1d24c90d9d01f"
+    },
+    {
+      "path": "reports/V039_STATIC_VERIFY_REPORT.json",
+      "sha256": "6f9373165f0ddd7b700caaec6a095a4d60f8b9176bbdfb5ca507ecc8a05310fb"
+    },
+    {
+      "path": "reports/BUILD_REPORT_V039.md",
+      "sha256": "01f7bb9e42f2986380c9e405baf05b148e814d6704bfb3951af3db283ab00b14"
+    },
+    {
+      "path": "reports/V039_NATIVE_PREFLIGHT.json",
+      "sha256": "05f5f14dd846d4289dec0b3b2efade58c51a2cb32d1a761c6c959bb3b7be498f"
+    },
+    {
+      "path": "reports/V039_GATE_REPORT.json",
+      "sha256": "2df2ca6f2f38d9dcd2c6681b8756da49bedf79616b4b28ed2bcf087e558efe49"
+    },
+    {
+      "path": "migrations/0039_swarm_consensus_merge_intelligence.sql",
+      "sha256": "395db415766dc3cbad91878948f89a1ce219a73bdb68951f20620d65ab8653f8"
+    },
+    {
+      "path": "docs/SWARM_CONSENSUS_MERGE_INTELLIGENCE_V039.md",
+      "sha256": "e1438c88086b6a97cddd8eb2bd24d8e8184d4f87405c476958649ac285e2286b"
+    },
+    {
+      "path": "ci/run-v039-native.ps1",
+      "sha256": "1d66c3650e60fe3d580bb47b0d87a62ef1dbf876d8a5bf5765913703c9b11913"
+    },
+    {
+      "path": "ci/run-v039-native.sh",
+      "sha256": "c556d28fefb5250de624fbc87a9b68e6fe3726dcbebe1e9966978acdf545a7b2"
+    },
+    {
+      "path": "crates/phxclaw-swarm-merge-intelligence/Cargo.toml",
+      "sha256": "bbfa32cb8ef11473d9353e3dc21d1a17a6fa8ffce532e539295f81dd7b9bb132"
+    },
+    {
+      "path": "crates/phxclaw-swarm-merge-intelligence/src/lib.rs",
+      "sha256": "8e7cf9889da3017e93319f443b753570a28b945332977269b1e6ead8761e29b2"
+    },
+    {
+      "path": "tests/sql/v039_rls_e2e.sql",
+      "sha256": "9f14c30423091257a16f3537057167774257f887fbe0c296014e8ed29c7890a6"
+    }
+  ],
+  "workspace": "v0.39 crate present exactly once",
+  "v038_repair": "v0.38 RLS repair applied with hash guard",
+  "cargo_lock_requires_refresh": false
+}

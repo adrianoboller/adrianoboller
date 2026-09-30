@@ -1,0 +1,12 @@
+{
+  "uuid": "01a0e68b-4926-7a72-881e-fa7ecd44c6c8",
+  "name": "rustclaw",
+  "repository": "https://github.com/Adaimade/RustClaw",
+  "license": "MIT",
+  "license_verified": true,
+  "version": "0.5.0",
+  "vendor_path": "private/vendor/rustclaw/upstream",
+  "lock_file": "private/vendor/rustclaw/UPSTREAM.lock.json",
+  "policy": "private_only",
+  "reuse": "allowed_with_notice"
+}

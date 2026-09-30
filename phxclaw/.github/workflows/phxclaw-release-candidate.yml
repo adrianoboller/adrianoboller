@@ -1,0 +1,87 @@
+name: PhxClaw Release Candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_version:
+        description: "SemVer prerelease, e.g. 0.26.0-rc.1"
+        required: true
+      first_release:
+        description: "Set true only when no previous release exists"
+        required: true
+        default: "false"
+      previous_release_path:
+        description: "Path to previously verified signed release when first_release=false"
+        required: false
+        default: ""
+      previous_release_url:
+        description: "HTTPS URL for previous signed release package when first_release=false"
+        required: false
+      previous_release_sha256:
+        description: "Expected SHA-256 for previous release package"
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  rc-linux:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: phxclaw_ci
+          POSTGRES_PASSWORD: phxclaw_ci
+          POSTGRES_DB: phxclaw_ci
+        ports: ["55432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U phxclaw_ci -d phxclaw_ci"
+          --health-interval 10s --health-timeout 5s --health-retries 10
+    env:
+      PHXCLAW_TEST_DATABASE_URL: postgresql://phxclaw_ci:phxclaw_ci@127.0.0.1:55432/phxclaw_ci
+      PHXCLAW_RLS_DATABASE_URL: postgresql://phxclaw_rls:phxclaw_rls@127.0.0.1:55432/phxclaw_ci
+      PHXCLAW_MISSION_E2E_CMD: ${{ vars.PHXCLAW_MISSION_E2E_CMD }}
+      PHXCLAW_TAURI_E2E_CMD: ${{ vars.PHXCLAW_TAURI_E2E_CMD }}
+      PHXCLAW_PROVIDER_MODEL_E2E_CMD: ${{ vars.PHXCLAW_PROVIDER_MODEL_E2E_CMD }}
+      PHXCLAW_RELEASE_SIGN_CMD: ${{ secrets.PHXCLAW_RELEASE_SIGN_CMD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with: { components: "rustfmt, clippy" }
+      - name: Prerequisites
+        run: |
+          sudo apt-get update && sudo apt-get install -y postgresql-client
+          python3 -m pip install --disable-pip-version-check jsonschema cryptography packaging
+          cargo install cargo-deny --locked
+      - name: Provision RLS role
+        run: |
+          psql "$PHXCLAW_TEST_DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='phxclaw_rls') THEN CREATE ROLE phxclaw_rls LOGIN PASSWORD 'phxclaw_rls' NOSUPERUSER NOBYPASSRLS; END IF; END $$;
+          SQL
+      - name: Strict qualification
+        run: python3 tools/qualify_release.py . --output reports/release-qualification/rc-linux --strict --public-release
+      - name: Native build
+        run: cargo build --locked --release --workspace
+      - name: Resolve rollback input
+        shell: bash
+        run: |
+          if [[ "${{ inputs.first_release }}" == "true" ]]; then exit 0; fi
+          test -n "${{ inputs.previous_release_url }}" || { echo "previous_release_url is required"; exit 4; }
+          test -n "${{ inputs.previous_release_sha256 }}" || { echo "previous_release_sha256 is required"; exit 4; }
+          case "${{ inputs.previous_release_url }}" in https://*) ;; *) echo "previous release URL must use HTTPS"; exit 4;; esac
+          curl --fail --location --proto '=https' --tlsv1.2 "${{ inputs.previous_release_url }}" -o previous-release.bin
+          echo "${{ inputs.previous_release_sha256 }}  previous-release.bin" | sha256sum --check --strict
+      - name: Build signed RC
+        shell: bash
+        run: |
+          EXTRA=()
+          if [[ "${{ inputs.first_release }}" == "true" ]]; then EXTRA+=(--first-release); else EXTRA+=(--previous-release previous-release.bin); fi
+          python3 tools/build_release_candidate.py . --qualification-dir reports/release-qualification/rc-linux --candidate-version "${{ inputs.candidate_version }}" --artifact target/release/phxclaw --output "dist/rc/${{ inputs.candidate_version }}" --public-rc "${EXTRA[@]}"
+      - name: Upload RC
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phxclaw-${{ inputs.candidate_version }}
+          path: dist/rc/${{ inputs.candidate_version }}
+          if-no-files-found: error

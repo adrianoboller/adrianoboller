@@ -1,0 +1,166 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f64f-7808-9d6c-26c8b0404446",
+  "agent_id": 79,
+  "name": "Agent Red Team",
+  "macroarea": "Segurança & Compliance",
+  "nucleus": "Segurança IA",
+  "role_type": "Agente adversarial de IA",
+  "mission": "Ataca a própria fábrica de agentes para encontrar abuso de tools/context/secrets.",
+  "responsibilities": "Testa prompt injection, tool poisoning, fake evidence, malicious repo, privilege escalation e sandbox escape.",
+  "resources": "Malicious fixtures, Tool Gateway, sandbox, model adapters.",
+  "authorized_actions": "Simular ataques, registrar exploit e exigir mitigação.",
+  "trigger": "Mudança em agents/tools/MCP/model gateway ou release.",
+  "declared_dependencies": "Threat scenarios.",
+  "resolved_agent_dependencies": [
+    {
+      "uuid": "01a0e473-f60d-761f-b597-a103db46e3df",
+      "name": "Thompson"
+    },
+    {
+      "uuid": "01a0e473-f653-7e06-8fa5-10c77bec7519",
+      "name": "Seraph"
+    }
+  ],
+  "deliverables": "AI Security Gate.",
+  "limits": "Ambiente autorizado e isolado.",
+  "next_gate": "Seraph/Thompson/QA3.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "claude",
+    "codex"
+  ],
+  "criticality": "Crítica",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F17 Checkpoint + Rollback",
+    "F18 MCP + LSP Runtime",
+    "F19 Repo Intelligence / Tree-sitter",
+    "F22 Device Nodes",
+    "F23 Secret & Credential Broker",
+    "F24 Auto-learning + Skill Evolution",
+    "F25 Knowledge / Evidence Graph"
+  ],
+  "capabilities": [
+    "checkpoint.read",
+    "context.compile",
+    "evidence.read",
+    "knowledge.read",
+    "lsp.read",
+    "mcp.invoke",
+    "memory.read",
+    "node.observe",
+    "repo.read",
+    "secret.lease.request",
+    "security.ai.redteam",
+    "skill.candidate.propose",
+    "skill.read",
+    "tree_sitter.analyze"
+  ],
+  "permissions": [
+    {
+      "name": "checkpoint.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "evidence.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "knowledge.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "lsp.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "mcp.invoke",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "repo.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "secret.lease.request",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "security.ai.redteam",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.candidate.propose",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "tree_sitter.analyze",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Checkpoint manifest + hashes + rollback evidence; Node/session state efêmero e pareado",
+  "event_topics": "agent.agent.red.team.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; write sensível, gasto, publicação, privilégio ou ação destrutiva exigem gate explícito. Device input/screen exige autorização de sessão e logging. Credenciais via broker/leases; nunca em prompt.",
+  "references": "Architect (MIT) — AST/Tree-sitter/Repo Intelligence | oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 80
+  }
+}

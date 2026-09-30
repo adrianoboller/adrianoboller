@@ -1,0 +1,44 @@
+{
+  "version": "0.38.0",
+  "status": {
+    "source_ready": true,
+    "static_verified": true,
+    "runtime_verified": "partial",
+    "e2e_verified": false,
+    "release_ready": false
+  },
+  "executed": [
+    {
+      "suite": "static verifier",
+      "pass": 53,
+      "fail": 0
+    },
+    {
+      "suite": "local/application",
+      "pass": 12,
+      "fail": 0
+    },
+    {
+      "suite": "package/security",
+      "pass": 24,
+      "fail": 0
+    }
+  ],
+  "capabilities": {
+    "base": 644,
+    "delta": 54,
+    "projected_total": 698
+  },
+  "sprints": {
+    "green": 0,
+    "yellow": 26,
+    "red": 0
+  },
+  "pending": [
+    "cargo fmt/check/test/clippy",
+    "PostgreSQL real migration/RLS/concurrency E2E",
+    "real Git worktree isolation/merge/rollback E2E",
+    "Mission Runtime + Team Runtime E2E",
+    "real external skill adapter E2E"
+  ]
+}

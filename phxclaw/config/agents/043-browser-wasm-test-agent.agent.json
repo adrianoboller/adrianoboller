@@ -1,0 +1,74 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f62b-72ef-88da-f7c5dd2b33f9",
+  "agent_id": 43,
+  "name": "Browser/WASM Test Agent",
+  "macroarea": "Qualidade & Provas",
+  "nucleus": "Qualidade",
+  "role_type": "Subagente de teste",
+  "mission": "Valida targets WebAssembly nos navegadores suportados.",
+  "responsibilities": "Roda Chromium/Firefox/WebKit, testa carregamento, JS/WASM boundary, WebGPU fallback, storage, input e performance básica.",
+  "resources": "Playwright, wasm-tools, browsers, test server.",
+  "authorized_actions": "Executar browser matrix e coletar traces.",
+  "trigger": "Mudança WASM/Web.",
+  "declared_dependencies": "WASM build e target matrix.",
+  "resolved_agent_dependencies": [],
+  "deliverables": "Browser compatibility report.",
+  "limits": "Não assume um browser como representativo dos demais.",
+  "next_gate": "Compatibility/QA2.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "codex",
+    "ollama"
+  ],
+  "criticality": "Alta",
+  "modules": [
+    "F17 Checkpoint + Rollback",
+    "F22 Device Nodes"
+  ],
+  "capabilities": [
+    "checkpoint.read",
+    "node.observe",
+    "quality.browser_wasm.test"
+  ],
+  "permissions": [
+    {
+      "name": "checkpoint.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "quality.browser_wasm.test",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Checkpoint manifest + hashes + rollback evidence; Node/session state efêmero e pareado",
+  "event_topics": "agent.browser.wasm.test.agent.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; writes policy-gated; evidência obrigatória; sem autoaprovação. Device input/screen exige autorização de sessão e logging.",
+  "references": "Hermes — patterns; validar licença por versão | OpenClaw — gateway/nodes/channels; validar licença por versão | ZeroClaw — benchmark Rust/providers/tools",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 44
+  }
+}

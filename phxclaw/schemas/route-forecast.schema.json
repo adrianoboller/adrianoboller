@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PhxClaw Route Forecast",
+  "type": "object",
+  "required": [
+    "forecast_uuid",
+    "project_uuid",
+    "task_class",
+    "context_fingerprint",
+    "agent_uuid",
+    "model_profile_uuid",
+    "sample_count",
+    "success_probability",
+    "expected_quality",
+    "expected_cost_usd",
+    "confidence",
+    "evidence_sha256",
+    "forecast_sha256"
+  ],
+  "properties": {
+    "forecast_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "project_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "task_class": {
+      "type": "string",
+      "minLength": 1
+    },
+    "context_fingerprint": {
+      "type": "string",
+      "minLength": 1
+    },
+    "agent_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "model_profile_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "sample_count": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "success_probability": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "expected_quality": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "expected_cost_usd": {
+      "type": "number",
+      "minimum": 0
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "evidence_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "forecast_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

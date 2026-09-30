@@ -1,0 +1,40 @@
+{
+  "uuid": "01a0eab2-5c2a-7a1a-985b-3589f469d4fa",
+  "id": "google-calendar-project-sync",
+  "name": "Google Calendar Project Sync",
+  "category": "integration",
+  "function": "Sincroniza marcos, reuniões, Sprints e compromissos com Google Calendar",
+  "capability": "project.integration.google_calendar",
+  "agent_role": "integration",
+  "permissions": [
+    "project.read",
+    "calendar.read",
+    "calendar.write"
+  ],
+  "risk": "high",
+  "approval_required": true,
+  "evidence_required": true,
+  "lifecycle_hooks": [
+    "before_invoke",
+    "after_invoke",
+    "on_failure"
+  ],
+  "rollback": "compensating_action",
+  "external_plugin": "Google Calendar",
+  "version": "0.42.0",
+  "semver": "0.42.0",
+  "manifest_uuid": "01a0eab2-5c41-79b3-b0db-de5fafa084ba",
+  "dependencies": [
+    "phxclaw-skill-runtime>=0.15",
+    "phxclaw-evidence-ledger>=0.9"
+  ],
+  "compatibility": {
+    "phxclaw": ">=0.41,<0.43"
+  },
+  "sandbox": "deny-by-default",
+  "signature_policy": "release-signing-required",
+  "provenance": {
+    "origin": "user-defined-project-management-suite",
+    "license": "PhxClaw project source policy"
+  }
+}

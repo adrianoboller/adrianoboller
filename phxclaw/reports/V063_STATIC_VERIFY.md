@@ -1,0 +1,36 @@
+# v0.63 Static Verify
+
+PASS 33 / FAIL 0
+- PASS — version
+- PASS — dep tree-sitter
+- PASS — dep tree-sitter-rust
+- PASS — dep tree-sitter-python
+- PASS — dep tree-sitter-javascript
+- PASS — dep tree-sitter-typescript
+- PASS — dep tree-sitter-go
+- PASS — dep tree-sitter-c
+- PASS — dep tree-sitter-cpp
+- PASS — dep tree-sitter-java
+- PASS — source Parser::new
+- PASS — source tree_sitter_rust::LANGUAGE
+- PASS — source tree_sitter_python::LANGUAGE
+- PASS — source LANGUAGE_TYPESCRIPT
+- PASS — source tree_sitter_go::LANGUAGE
+- PASS — source tree_sitter_c::LANGUAGE
+- PASS — source tree_sitter_cpp::LANGUAGE
+- PASS — source tree_sitter_java::LANGUAGE
+- PASS — source RepoSymbol
+- PASS — source RepoCall
+- PASS — source RepoDependency
+- PASS — source pagerank_ppm
+- PASS — source ParsedWithErrors
+- PASS — sql repo_analysis_runs
+- PASS — sql repo_symbols
+- PASS — sql repo_calls
+- PASS — sql repo_dependencies
+- PASS — sql repo_hotspots
+- PASS — sql FORCE ROW LEVEL SECURITY
+- PASS — sql append-only
+- PASS — F19 source ready
+- PASS — canonical 0.63
+- PASS — schema valid

@@ -1,0 +1,23 @@
+{
+  "version": "0.42.0",
+  "generated_at": "2026-09-29T01:07:26.037232+00:00",
+  "tools": {
+    "cargo": false,
+    "rustc": false,
+    "psql": false,
+    "postgres": false,
+    "node": true,
+    "python3": true
+  },
+  "native_release_gates_executed": false,
+  "pending": [
+    "cargo fmt --check",
+    "cargo check --workspace --locked",
+    "cargo test --workspace --locked",
+    "cargo clippy --workspace --all-targets --locked -- -D warnings",
+    "PostgreSQL/RLS E2E",
+    "Google Calendar connector E2E",
+    "Google Drive connector E2E",
+    "Microsoft Project adapter E2E"
+  ]
+}

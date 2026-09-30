@@ -1,0 +1,5 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema","$id":"urn:phxclaw:schema:multi-platform-qualification:v0.27","type":"object","additionalProperties":false,
+  "required":["schema_version","aggregate_uuid","candidate_version","source_state_sha256","rc_archive_sha256","first_release","previous_version","platform_bundle_sha256","compatibility_matrix_sha256","platforms","created_at","signer_key_id","signature_algorithm","signature_b64"],
+  "properties":{"schema_version":{"const":"0.27.0"},"aggregate_uuid":{"type":"string","format":"uuid"},"candidate_version":{"type":"string"},"source_state_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},"rc_archive_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},"first_release":{"type":"boolean"},"previous_version":{"type":["string","null"]},"platform_bundle_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},"compatibility_matrix_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},"platforms":{"type":"array","minItems":3,"maxItems":3},"created_at":{"type":"string","format":"date-time"},"signer_key_id":{"type":"string"},"signature_algorithm":{"const":"ed25519"},"signature_b64":{"type":"string"}}
+}

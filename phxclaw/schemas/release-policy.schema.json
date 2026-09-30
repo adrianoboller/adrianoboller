@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phxclaw.dev/schemas/release-policy.schema.json",
+  "title": "PhxClaw Release Policy",
+  "type": "object",
+  "required": ["version", "development", "release", "verification_levels"],
+  "properties": {
+    "version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"},
+    "development": {
+      "type": "object",
+      "required": ["allow_test_doubles", "allow_unverified_source"],
+      "properties": {
+        "allow_test_doubles": {"type": "boolean"},
+        "allow_unverified_source": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
+    "release": {
+      "type": "object",
+      "required": ["allow_test_doubles", "allow_mock_providers", "allow_skipped_required_gates", "required_gates"],
+      "properties": {
+        "allow_test_doubles": {"const": false},
+        "allow_mock_providers": {"const": false},
+        "allow_skipped_required_gates": {"const": false},
+        "required_gates": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string"}}
+      },
+      "additionalProperties": false
+    },
+    "verification_levels": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "meaning"],
+        "properties": {"name": {"type":"string"}, "meaning": {"type":"string"}},
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,62 @@
+{
+  "version": "0.35.0",
+  "status": {
+    "source_ready": true,
+    "static_verified": true,
+    "runtime_verified": "partial",
+    "e2e_verified": false,
+    "release_ready": false
+  },
+  "capabilities": {
+    "base": 488,
+    "delta": 42,
+    "projected_total": 530
+  },
+  "sprints": {
+    "green": 0,
+    "yellow": 26,
+    "red": 0,
+    "total": 26
+  },
+  "executed": [
+    {
+      "suite": "v0.35 static verifier",
+      "pass": 101,
+      "fail": 0
+    },
+    {
+      "suite": "v0.35 local/application/security",
+      "pass": 45,
+      "fail": 0
+    },
+    {
+      "suite": "v0.35 migration quoting",
+      "pass": 1,
+      "fail": 0
+    },
+    {
+      "suite": "v0.35 package checks",
+      "pass": 40,
+      "fail": 0
+    }
+  ],
+  "native_required_not_executed": [
+    "cargo fmt --check",
+    "cargo check --workspace --locked",
+    "cargo test --workspace --locked",
+    "cargo clippy --workspace --all-targets --locked -- -D warnings",
+    "PostgreSQL migration on real server",
+    "RLS cross-tenant E2E with NOSUPERUSER/NOBYPASSRLS role",
+    "provider/rate-limit live E2E",
+    "v0.30 HA/fencing mutation E2E"
+  ],
+  "security_notes": [
+    "rate-limit snapshots are revalidated at admission time",
+    "forecast/budget evidence is freshness bounded",
+    "zero budget does not make positive cost growth free",
+    "autopilot provider/model targets remain inside signed v0.34 portfolio",
+    "automatic plan binds cost forecast and incident detection hashes",
+    "autopilot execution rechecks expiry and v0.30 fencing",
+    "RLS E2E refuses vacuous fixture and privileged role"
+  ]
+}

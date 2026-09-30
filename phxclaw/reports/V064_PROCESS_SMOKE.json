@@ -1,0 +1,42 @@
+{
+  "version": "0.64.0",
+  "checks": [
+    {
+      "name": "mcp_real_process_initialize",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "mcp_real_process_tools",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "mcp_real_process_call",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "lsp_real_process_initialize",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "lsp_real_process_hover",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "lsp_real_process_shutdown",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "lsp_real_process_exit",
+      "pass": true,
+      "detail": ""
+    }
+  ],
+  "pass": 7,
+  "fail": 0
+}

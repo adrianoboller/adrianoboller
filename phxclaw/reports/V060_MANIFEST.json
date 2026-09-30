@@ -1,0 +1,100 @@
+{
+  "schema_version": "1.0",
+  "package_uuid": "01a0efd8-8895-7703-b632-dcae038596b1",
+  "name": "PhxClaw Provenance & License Firewall Overlay",
+  "version": "0.60.0",
+  "created_at": "2026-09-30T01:05:40.502013+00:00",
+  "baseline": "PhxClaw v0.59 Historical Backfill & Knowledge Migration",
+  "purpose": "Fail-closed source provenance, licensing, quarantine and evidence gate for external code and knowledge ingestion.",
+  "capabilities": [
+    "source.provenance.register",
+    "source.license.evaluate",
+    "source.ingestion.gate",
+    "source.evidence.record",
+    "source.quarantine"
+  ],
+  "security_model": "deny-by-default",
+  "contains_third_party_source_code": false,
+  "artifacts": [
+    {
+      "path": "README.md",
+      "sha256": "7457008ea0d060e32fddf304b9c3af817ebef64b9a238332c3dbe983aa3587d5",
+      "bytes": 1013
+    },
+    {
+      "path": "SHA256SUMS",
+      "sha256": "ea72a9511679070c0dace14aefc16f9a18258e9f6d5053d921a671867cf8377f",
+      "bytes": 1447
+    },
+    {
+      "path": "VERIFY_REPORT.md",
+      "sha256": "e318f4fdede4a62b65ebf3902e594b848a2a18ba4e1d502778dcd3c468ed8d85",
+      "bytes": 2098
+    },
+    {
+      "path": "VERSION",
+      "sha256": "9f3b241201d849aebe0a6a50fcdf0c2a0d7a9419bd7d87eab032e49f742f06a0",
+      "bytes": 7
+    },
+    {
+      "path": "crates/phxclaw-provenance-core/Cargo.toml",
+      "sha256": "91261fc082c6d80bf7d486c954e0dff2d5177b8740278af1231ad943195ba731",
+      "bytes": 162
+    },
+    {
+      "path": "crates/phxclaw-provenance-core/src/lib.rs",
+      "sha256": "46c0ff9a7295c597acd4110162531a8493cffe936ec01361a84149e7ecd636fa",
+      "bytes": 4248
+    },
+    {
+      "path": "docs/ADR-0060-source-provenance-firewall.md",
+      "sha256": "38d30067adb669517c498ed90b0bf0d7d9dace1a849dad566b6739906ea80763",
+      "bytes": 1925
+    },
+    {
+      "path": "docs/THIRD_PARTY_SOURCES_v060.md",
+      "sha256": "595d38c1f617983535f00c79869f4f5ccb6cf0743cadfd6d701a3227074184d8",
+      "bytes": 973
+    },
+    {
+      "path": "integration/INTEGRATION_v060.md",
+      "sha256": "8b5187e58fb96c97083cf65246453fd950587eda868daba55891783fe0ccc790",
+      "bytes": 1014
+    },
+    {
+      "path": "inventory/source_inventory_2026-09-29.json",
+      "sha256": "e717bab4bbef875626cc7afe7081f5555bd54439f3b8fc5f95ed9f54641994c9",
+      "bytes": 6209
+    },
+    {
+      "path": "policies/source-ingestion-policy.json",
+      "sha256": "e44fd8e3be31dbf60cf3d8d909bc96e441c5bc8361dcec642313c44705d10be8",
+      "bytes": 1206
+    },
+    {
+      "path": "schemas/source-provenance.schema.json",
+      "sha256": "69d7df314c854a111d4ecba413301009ec85f146155a9aad24190a1623d04125",
+      "bytes": 2018
+    },
+    {
+      "path": "scripts/verify_v060.py",
+      "sha256": "4e362408ee6707464cf55906829900bb5c9ebfce8586868731016e801d9485e6",
+      "bytes": 3670
+    },
+    {
+      "path": "sql/v060_source_provenance.sql",
+      "sha256": "cd48ab814ecdb28e428e6bea6109357d53a8483d5d05bdb9901d70a31255374c",
+      "bytes": 1609
+    },
+    {
+      "path": "tests/README.md",
+      "sha256": "c020a00deaff549d8d26b901a0666cfb0c1329d9c2202dd9223c3183836a3ff7",
+      "bytes": 462
+    },
+    {
+      "path": "ui/PhxClaw_ProvenanceFirewall_UI_v060.html",
+      "sha256": "bf8b925d93188aabe3c3ccfe16681c7c0c791a1b9a2970bab54a563809ca9a24",
+      "bytes": 2270
+    }
+  ]
+}

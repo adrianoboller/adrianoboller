@@ -1,0 +1,262 @@
+{
+  "version": "0.50.0",
+  "count": 64,
+  "capabilities": [
+    {
+      "uuid": "01a0ed93-06aa-72dd-8733-890ca60cbf1d",
+      "name": "portfolio.twin.create"
+    },
+    {
+      "uuid": "01a0ed93-06ab-77c6-8442-ba5bc264d4e4",
+      "name": "portfolio.twin.snapshot"
+    },
+    {
+      "uuid": "01a0ed93-06ac-7971-8725-74771c0c4c60",
+      "name": "portfolio.twin.get"
+    },
+    {
+      "uuid": "01a0ed93-06ad-7f42-9b91-927cce115e8a",
+      "name": "portfolio.twin.list"
+    },
+    {
+      "uuid": "01a0ed93-06ae-7213-839f-4cd602120782",
+      "name": "portfolio.twin.diff"
+    },
+    {
+      "uuid": "01a0ed93-06af-71e5-978d-0edbfccd1ac3",
+      "name": "portfolio.twin.hash.verify"
+    },
+    {
+      "uuid": "01a0ed93-06b0-7ee1-a45c-fc57c2eec420",
+      "name": "portfolio.project.attach"
+    },
+    {
+      "uuid": "01a0ed93-06b1-7f4e-871e-42c3cbf1bb0a",
+      "name": "portfolio.project.detach"
+    },
+    {
+      "uuid": "01a0ed93-06b2-79a0-b722-b3a2f265375a",
+      "name": "portfolio.project.update_projection"
+    },
+    {
+      "uuid": "01a0ed93-06b3-7778-89a2-1da33d4980ff",
+      "name": "portfolio.project.dependency.add"
+    },
+    {
+      "uuid": "01a0ed93-06b4-7d3c-9068-a728fd112dab",
+      "name": "portfolio.project.dependency.remove"
+    },
+    {
+      "uuid": "01a0ed93-06b5-7b2f-a0dc-6974d76fc396",
+      "name": "portfolio.project.dependency.validate"
+    },
+    {
+      "uuid": "01a0ed93-06b6-7c76-9973-7defa28124c2",
+      "name": "portfolio.resource.pool.create"
+    },
+    {
+      "uuid": "01a0ed93-06b7-7f0c-8157-50717a4750d1",
+      "name": "portfolio.resource.pool.update"
+    },
+    {
+      "uuid": "01a0ed93-06b8-718c-919f-eee2d1b0244c",
+      "name": "portfolio.resource.capacity.snapshot"
+    },
+    {
+      "uuid": "01a0ed93-06b9-7617-b84b-8084930bc803",
+      "name": "portfolio.resource.contention.detect"
+    },
+    {
+      "uuid": "01a0ed93-06ba-77a6-89c8-a624ada83f6d",
+      "name": "portfolio.resource.overallocation.forecast"
+    },
+    {
+      "uuid": "01a0ed93-06bb-718d-906b-f440587d756d",
+      "name": "portfolio.resource.rebalance.propose"
+    },
+    {
+      "uuid": "01a0ed93-06bc-7a9c-83cf-c991e618911b",
+      "name": "portfolio.agent.capacity.model"
+    },
+    {
+      "uuid": "01a0ed93-06bd-784c-9aa7-b99e6650be2e",
+      "name": "portfolio.agent.contention.detect"
+    },
+    {
+      "uuid": "01a0ed93-06be-7729-ba1b-5cca8cdf4a43",
+      "name": "portfolio.agent.assignment.simulate"
+    },
+    {
+      "uuid": "01a0ed93-06bf-777c-aa66-7f1dbf87351f",
+      "name": "portfolio.model.quota.simulate"
+    },
+    {
+      "uuid": "01a0ed93-06c0-7312-aa88-845ec8b7845a",
+      "name": "portfolio.model.cost.simulate"
+    },
+    {
+      "uuid": "01a0ed93-06c1-7e63-b54f-a67db75a8d92",
+      "name": "portfolio.model.local_cloud.mix.simulate"
+    },
+    {
+      "uuid": "01a0ed93-06c2-70c4-9b35-89dc2a0be329",
+      "name": "portfolio.calendar.load"
+    },
+    {
+      "uuid": "01a0ed93-06c3-70d7-8f72-2687c52893ce",
+      "name": "portfolio.calendar.working_days.compute"
+    },
+    {
+      "uuid": "01a0ed93-06c4-7d5a-96b8-a5dc21c79e50",
+      "name": "portfolio.calendar.shared_constraint.detect"
+    },
+    {
+      "uuid": "01a0ed93-06c5-73f6-a0b5-516f5272be23",
+      "name": "portfolio.milestone.register"
+    },
+    {
+      "uuid": "01a0ed93-06c6-7cff-ad3e-f0441f533db7",
+      "name": "portfolio.milestone.probability.compute"
+    },
+    {
+      "uuid": "01a0ed93-06c7-7680-b2d3-57116e6f4511",
+      "name": "portfolio.deadline.probability.compute"
+    },
+    {
+      "uuid": "01a0ed93-06c8-77dc-b265-30fb36b8c263",
+      "name": "portfolio.distribution.triangular"
+    },
+    {
+      "uuid": "01a0ed93-06c9-7e90-bf37-3037e9f2acff",
+      "name": "portfolio.distribution.pert"
+    },
+    {
+      "uuid": "01a0ed93-06ca-7f7d-b572-f5ce785a3102",
+      "name": "portfolio.distribution.empirical"
+    },
+    {
+      "uuid": "01a0ed93-06cb-73ac-9e2c-d40454685642",
+      "name": "portfolio.distribution.validate"
+    },
+    {
+      "uuid": "01a0ed93-06cc-7a0a-8902-96b95bea5061",
+      "name": "portfolio.distribution.calibrate"
+    },
+    {
+      "uuid": "01a0ed93-06cd-79dc-8c6c-34322cf92a9a",
+      "name": "portfolio.distribution.freshness.check"
+    },
+    {
+      "uuid": "01a0ed93-06ce-7222-ac12-394fcc6b5a83",
+      "name": "portfolio.montecarlo.plan"
+    },
+    {
+      "uuid": "01a0ed93-06cf-7fdc-9946-2bfe366fa092",
+      "name": "portfolio.montecarlo.run"
+    },
+    {
+      "uuid": "01a0ed93-06d0-7191-98d2-23ff8da696f4",
+      "name": "portfolio.montecarlo.cancel"
+    },
+    {
+      "uuid": "01a0ed93-06d1-7105-a8f5-bbadccec096f",
+      "name": "portfolio.montecarlo.replay"
+    },
+    {
+      "uuid": "01a0ed93-06d2-7594-8c23-0aae4f77a37a",
+      "name": "portfolio.montecarlo.seed.verify"
+    },
+    {
+      "uuid": "01a0ed93-06d3-7365-baba-f7345a7ae283",
+      "name": "portfolio.montecarlo.aggregate"
+    },
+    {
+      "uuid": "01a0ed93-06d4-782a-ab2a-18da228d48c7",
+      "name": "portfolio.metric.p50"
+    },
+    {
+      "uuid": "01a0ed93-06d5-7782-a058-8ed312b0cd5b",
+      "name": "portfolio.metric.p80"
+    },
+    {
+      "uuid": "01a0ed93-06d6-7f68-9732-230b3e942f06",
+      "name": "portfolio.metric.p90"
+    },
+    {
+      "uuid": "01a0ed93-06d7-7497-9a7e-3ec248f12f85",
+      "name": "portfolio.metric.cost.percentiles"
+    },
+    {
+      "uuid": "01a0ed93-06d8-720f-8846-3a7a04bb0608",
+      "name": "portfolio.metric.deadline.probability"
+    },
+    {
+      "uuid": "01a0ed93-06d9-7673-bd27-bbc8fde23276",
+      "name": "portfolio.metric.budget.overrun.probability"
+    },
+    {
+      "uuid": "01a0ed93-06da-7333-b5c3-bd6248f63fdb",
+      "name": "portfolio.metric.bottleneck.probability"
+    },
+    {
+      "uuid": "01a0ed93-06db-77f7-8346-124b41e7d9b5",
+      "name": "portfolio.metric.resource.contention.probability"
+    },
+    {
+      "uuid": "01a0ed93-06dc-7bed-977c-4cbef6433064",
+      "name": "portfolio.metric.schedule.criticality"
+    },
+    {
+      "uuid": "01a0ed93-06dd-7a06-8ab5-54811045c6e8",
+      "name": "portfolio.metric.expected.rework"
+    },
+    {
+      "uuid": "01a0ed93-06de-7049-9845-90f4028bdada",
+      "name": "portfolio.metric.portfolio.health"
+    },
+    {
+      "uuid": "01a0ed93-06df-7c4a-aafa-d9b4c3646ff4",
+      "name": "portfolio.metric.confidence"
+    },
+    {
+      "uuid": "01a0ed93-06e0-7cb5-9e76-ceeca64d53d3",
+      "name": "portfolio.scenario.create"
+    },
+    {
+      "uuid": "01a0ed93-06e1-703b-a6fa-ef2b6c5f1662",
+      "name": "portfolio.scenario.compare"
+    },
+    {
+      "uuid": "01a0ed93-06e2-7919-892d-dd11cf278e06",
+      "name": "portfolio.scenario.rank"
+    },
+    {
+      "uuid": "01a0ed93-06e3-7aae-a51c-4c560e5433ce",
+      "name": "portfolio.scenario.sensitivity"
+    },
+    {
+      "uuid": "01a0ed93-06e4-7811-99ed-3802780d9df8",
+      "name": "portfolio.scenario.whatif"
+    },
+    {
+      "uuid": "01a0ed93-06e5-7778-9f6d-04f18d1db553",
+      "name": "portfolio.scenario.recommendation.create"
+    },
+    {
+      "uuid": "01a0ed93-06e6-7ec7-a1b7-16d6fbf60f2e",
+      "name": "portfolio.decision.delegate"
+    },
+    {
+      "uuid": "01a0ed93-06e7-774a-9fb8-2cec918c2e3d",
+      "name": "portfolio.evidence.record"
+    },
+    {
+      "uuid": "01a0ed93-06e8-7784-847a-ca04c6eb78a6",
+      "name": "portfolio.event.append"
+    },
+    {
+      "uuid": "01a0ed93-06e9-72c3-bd9b-a25c6b024470",
+      "name": "portfolio.report.executive.render"
+    }
+  ]
+}

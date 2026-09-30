@@ -1,0 +1,19 @@
+[package]
+name = "phxclaw-system-automation"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+enigo = { workspace = true, optional = true }
+xcap = { workspace = true, optional = true }
+chrono.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+phxclaw-types = { path = "../phxclaw-types" }
+
+[features]
+default = []
+desktop-input = ["dep:enigo"]
+screen-capture = ["dep:xcap"]

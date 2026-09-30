@@ -1,0 +1,1 @@
+{"version":"0.69.0","transport":{"scheme":"wss","plaintext_ws":false,"protocol_version":1,"message_auth":"ed25519-envelope","replay_guard":"postgres-unique-reservation","fencing":true},"pairing":{"token":"one-time-sha256-at-rest","private_key":"os-keyring-only","server_private_key_copy":false},"platforms":["windows","linux","macos","android","ios"]}

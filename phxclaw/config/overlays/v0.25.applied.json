@@ -1,0 +1,83 @@
+{
+  "version": "0.25.0",
+  "base": "0.24.0",
+  "copied": [
+    {
+      "path": "requirements-release-qualification.txt",
+      "sha256": "d7df15f919551710a87b5862973435cedfe6c28985ab251626346de0caf312fe"
+    },
+    {
+      "path": "config/release-qualification.v025.json",
+      "sha256": "36a2878931f196dff52f0b57bffc84b7034fc9a2473aa43dda03207d5d629d4e"
+    },
+    {
+      "path": "config/trusted-release-signers.v025.json",
+      "sha256": "4ac44a6febb1c6bd72b98244cea447fa60bae12e64987e465c2589e66dd50ad6"
+    },
+    {
+      "path": "capabilities/V025_CAPABILITIES_DELTA.json",
+      "sha256": "7657d0c5d015fa510a50dc76df680e185077ad03644e3bbfc56b8e7ca209e5a0"
+    },
+    {
+      "path": "schemas/release-attestation-v025.schema.json",
+      "sha256": "c908416979aab7e68f578ef89f339d98428cb7ff563bc012ae2f5c7577648283"
+    },
+    {
+      "path": "schemas/trusted-release-signers-v025.schema.json",
+      "sha256": "afa06139e42c587455d2995ac8702d582215e65687ffa684b35bd3a0cd73fd33"
+    },
+    {
+      "path": "schemas/qualification-evidence-v025.schema.json",
+      "sha256": "dc280ee32463e71e81d8ede602c95d1b2fab82856f584ae74cbef7fb1e856b61"
+    },
+    {
+      "path": "tools/verify_v025.py",
+      "sha256": "cc87cef5ba2d7b42cf1bec1a4ce401a214d852906e99546d54fce433745886fa"
+    },
+    {
+      "path": "tools/source_state.py",
+      "sha256": "7ce73d4989e2daf3642aee73e0302ac00df64edf6597469987379e57ce8bc9b3"
+    },
+    {
+      "path": "tools/qualify_release.py",
+      "sha256": "f069a267e05b5d64a495c818dde5f41eda0b2e06106c38c55968d8cd1fb731e6"
+    },
+    {
+      "path": "docs/PROJECT_STATUS_V025.json",
+      "sha256": "cd0616f25428382e2eb7a107be0624b9f968306143236b34b096c7e99dc6c817"
+    },
+    {
+      "path": "docs/NATIVE_RELEASE_QUALIFICATION_V025.md",
+      "sha256": "8b0080b98821d629904585e574a58c236da45bcde37fb7c80350a3d7c5e6b1a7"
+    },
+    {
+      "path": "ci/run-release-qualification.ps1",
+      "sha256": "218f6b39595f343ecff8b81fcf8910677b76b8b9dd6bbc45f92da3c4a57c5cfa"
+    },
+    {
+      "path": "ci/run-release-qualification.sh",
+      "sha256": "27056999069016ec0f6c58cc7d53bc9dc8a3e1bf809ecac9ef8f014a6d3370f8"
+    },
+    {
+      "path": "crates/phxclaw-release-qualification/Cargo.toml",
+      "sha256": "e46e33afe9ebc94dfe39d7e90960273674477b1dc26742d9468d1f7e32d27f38"
+    },
+    {
+      "path": "crates/phxclaw-release-qualification/src/lib.rs",
+      "sha256": "cab744511732de6f014a93ce2aaa8db2bfab1b1f63957c6ce3fdce1f9fc6a8ac"
+    },
+    {
+      "path": ".github/workflows/phxclaw-release-qualification.yml",
+      "sha256": "cff596c4d0a06d941f2fb0e0869df1f0f96e2911967cc0dde48231f84295800b"
+    },
+    {
+      "path": "tests/postgres/v025_rls_role_prereq.sql",
+      "sha256": "ec43738fd3d5cace048083b323c886a15fe3fe239c16fecccc12d7139b715b70"
+    },
+    {
+      "path": "tests/postgres/v025_release_attestation.sql",
+      "sha256": "ae51160a811675aebd056de9949ac85a6a6b3da86f21c6a2046f457dbf0028ba"
+    }
+  ],
+  "workspace": "release-qualification crate present exactly once"
+}

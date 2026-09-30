@@ -1,0 +1,548 @@
+{
+  "version": "0.42.0",
+  "previous_projected": 802,
+  "added": 90,
+  "projected_total": 892,
+  "capabilities": [
+    {
+      "uuid": "01a0eab2-5c42-7ae4-94f8-411fd33d9dd0",
+      "capability": "project.skill.project-manager-orchestrator",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7dd4-ab79-050269dfcebd",
+      "capability": "project.skill.project-charter",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-737b-baf3-2fb7506d4ee0",
+      "capability": "project.skill.scope-management",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-730d-b940-af28f05229b9",
+      "capability": "project.skill.stakeholder-management",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-745e-aba8-81a71eb1d414",
+      "capability": "project.skill.project-governance",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-71b3-a09b-23186801fc7e",
+      "capability": "project.skill.project-health-check",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7084-a017-5579eeb2d903",
+      "capability": "project.skill.scrum-manager",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-748c-a325-c7b04209ed60",
+      "capability": "project.skill.product-backlog-manager",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-77ca-8dea-ccb413111746",
+      "capability": "project.skill.sprint-planning",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7e37-aa51-a5f23ee814b6",
+      "capability": "project.skill.sprint-backlog-manager",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7728-bef6-6ff42c4b3c0d",
+      "capability": "project.skill.daily-scrum",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7824-b54d-85fd2af248b1",
+      "capability": "project.skill.sprint-review",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7576-8ec4-47509339b715",
+      "capability": "project.skill.sprint-retrospective",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7fa9-9eb8-2ab40604abb1",
+      "capability": "project.skill.story-generator",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7b06-95df-1ce3e29507f0",
+      "capability": "project.skill.acceptance-criteria",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7ac7-8f36-6d1828f56778",
+      "capability": "project.skill.story-points-estimator",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7d1a-99ac-dd1b095b021b",
+      "capability": "project.skill.velocity-analyzer",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7697-9345-6339e3095868",
+      "capability": "project.skill.burndown-analyzer",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-777f-935a-43addc7139e0",
+      "capability": "project.skill.definition-of-done",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-76eb-95e8-4d83d7dbc907",
+      "capability": "project.skill.kanban-manager",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7a06-af33-2a49723ccf26",
+      "capability": "project.skill.kanban-board",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7a6a-a6b4-2a33921d8936",
+      "capability": "project.skill.wip-limit-manager",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7d25-ab24-2d1b3dfbeb76",
+      "capability": "project.skill.flow-analyzer",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7504-8ce4-d8b2ea53cd71",
+      "capability": "project.skill.bottleneck-detector",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-70d5-9f68-118a310c4dcd",
+      "capability": "project.skill.cycle-time-analyzer",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7ec2-8847-a827281976b4",
+      "capability": "project.skill.lead-time-analyzer",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-77bd-9410-271e8500524f",
+      "capability": "project.skill.cumulative-flow",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7034-bf44-53c6a25120de",
+      "capability": "project.skill.kanban-prioritizer",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-73a4-8ca4-9550148490b0",
+      "capability": "project.skill.ms-project-manager",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7639-a270-a6b419ddc1d0",
+      "capability": "project.skill.gantt-generator",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7059-9267-fffd6ca39200",
+      "capability": "project.skill.wbs-generator",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-74cc-b90c-d0b953c82283",
+      "capability": "project.skill.critical-path-manager",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7b2d-8ebf-f112bbeb9c1b",
+      "capability": "project.skill.dependency-manager",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7fdb-92df-9f3e57d70585",
+      "capability": "project.skill.milestone-manager",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7508-9011-9ff73d6a10d0",
+      "capability": "project.skill.resource-manager",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7781-b6d5-49af87a59f98",
+      "capability": "project.skill.resource-leveling",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-77c4-981c-adc9286f7215",
+      "capability": "project.skill.calendar-manager",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7865-8daf-56b883b87673",
+      "capability": "project.skill.baseline-manager",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7d7f-9d30-49a5175a00de",
+      "capability": "project.skill.schedule-variance",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-75d9-9346-48d4b3014373",
+      "capability": "project.skill.earned-value-manager",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7f1d-b2c5-1522746a1ff8",
+      "capability": "project.skill.project-import-export",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7973-902a-fed95740f1d6",
+      "capability": "project.skill.pdca-orchestrator",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-75a5-a05f-63523c3cdbb0",
+      "capability": "project.skill.pdca-plan",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7592-b678-f9a6f579c856",
+      "capability": "project.skill.pdca-do",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-74f5-8415-078c7b5578ae",
+      "capability": "project.skill.pdca-check",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-742a-be86-3c8a3f8799de",
+      "capability": "project.skill.pdca-act",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7f32-9917-f12ed20741d5",
+      "capability": "project.skill.root-cause-analysis",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-73e3-ab4f-2c9042b5a485",
+      "capability": "project.skill.five-whys",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-71df-90e9-1921967d3705",
+      "capability": "project.skill.ishikawa-analysis",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7764-88ed-fb480fdc0644",
+      "capability": "project.skill.corrective-action-manager",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7601-929b-2cdf09ed1c59",
+      "capability": "project.skill.continuous-improvement",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7bcb-b921-e1d77e1df085",
+      "capability": "project.skill.risk-manager",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-78fc-ab57-6687a1d1f75d",
+      "capability": "project.skill.risk-matrix",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7b2d-b719-d188444a9f5a",
+      "capability": "project.skill.issue-manager",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7a3e-9a1d-25ad3a7d1f1d",
+      "capability": "project.skill.dependency-risk-analyzer",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7bdc-ba5b-3f2b38eda2ee",
+      "capability": "project.skill.deadline-risk-predictor",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7536-931c-90c8fde3d58e",
+      "capability": "project.skill.mitigation-planner",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-75e1-b1c5-a4c325c4dc74",
+      "capability": "project.skill.project-cost-manager",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-79a9-805a-e79b8bd7be94",
+      "capability": "project.skill.budget-tracker",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7fb0-b297-f6646a3a0026",
+      "capability": "project.skill.cost-forecast",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7e4a-a8c2-9755e5993223",
+      "capability": "project.skill.cashflow-manager",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7004-ae56-546fd0ea5e86",
+      "capability": "project.skill.roi-analyzer",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-71ab-9d75-ecbd55815866",
+      "capability": "project.skill.earned-value-analyzer",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-768a-9111-82ade79b6b39",
+      "capability": "project.skill.project-ai-copilot",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-79ce-bd63-a44af3f9074e",
+      "capability": "project.skill.project-researcher",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-75f8-984d-9e0edd28a2aa",
+      "capability": "project.skill.project-hypothesis-manager",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-75cc-8274-ce3c0e6a900e",
+      "capability": "project.skill.project-planner-ai",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-71d6-9567-a1387269694d",
+      "capability": "project.skill.task-decomposer",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-79dd-bd58-f7cb4acfe670",
+      "capability": "project.skill.task-prioritizer",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7be4-a6d0-7b4e98180b34",
+      "capability": "project.skill.delay-predictor",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7a7e-8dca-4878a1a6488a",
+      "capability": "project.skill.resource-optimizer",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7d5a-8b82-c57a37f66c32",
+      "capability": "project.skill.next-best-action",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7137-9c39-8d51660c5942",
+      "capability": "project.skill.meeting-to-tasks",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-72be-b72f-15ab8250a053",
+      "capability": "project.skill.automatic-status-report",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7cfa-af07-48b99e8b0799",
+      "capability": "project.skill.lessons-learned-ai",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7260-8a9c-41177cf49d7a",
+      "capability": "project.skill.hybrid-project-management",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7272-9d8d-f8b0242ea0d4",
+      "capability": "project.skill.project-management-orchestrator",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7472-8365-82549d53f214",
+      "capability": "project.integration.google_calendar",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-72d2-8dd9-247d63bc7848",
+      "capability": "project.integration.google_drive",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7bb8-8c5f-4d874b0aa4c5",
+      "capability": "project.create",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7f2e-9364-53b31450a055",
+      "capability": "project.update",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7b50-b659-8a3aec8dc4ff",
+      "capability": "project.plan",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7d0b-8e00-050f68c1cf5d",
+      "capability": "project.health.evaluate",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7b99-ba8d-e4c15f6a5f1d",
+      "capability": "project.report.generate",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7e68-98ed-7f1d99174fea",
+      "capability": "project.metrics.compute",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7785-b73c-2deee3a05d8d",
+      "capability": "project.workflow.hybrid",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7936-bde2-44a7bde95c3c",
+      "capability": "project.governance.approve",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7f17-9cd4-e245faaf2ae8",
+      "capability": "project.baseline.compare",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-7993-9587-5287aa495acf",
+      "capability": "project.portfolio.dashboard",
+      "module": "project-management",
+      "version": "0.42.0"
+    },
+    {
+      "uuid": "01a0eab2-5c42-74b5-9479-10c7c98fa13e",
+      "capability": "project.evidence.record",
+      "module": "project-management",
+      "version": "0.42.0"
+    }
+  ]
+}

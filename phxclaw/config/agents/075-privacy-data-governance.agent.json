@@ -1,0 +1,116 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f64b-7d70-a70b-ecbeb962da57",
+  "agent_id": 75,
+  "name": "Privacy/Data Governance",
+  "macroarea": "Segurança & Compliance",
+  "nucleus": "Privacidade",
+  "role_type": "Agente de governança de dados",
+  "mission": "Controla classificação, retenção, PII, logs, anonimização e uso de dados.",
+  "responsibilities": "Define data classes, retention, minimization, masking, export/deletion policy e limites de contexto de LLM.",
+  "resources": "Schemas, logs, DB catalog, policy registry.",
+  "authorized_actions": "Classificar dados, bloquear exposição, definir retenção e anonimização.",
+  "trigger": "Novo dataset/campo/log/provider.",
+  "declared_dependencies": "Data inventory.",
+  "resolved_agent_dependencies": [
+    {
+      "uuid": "01a0e473-f645-7d82-8aff-cfaaa5ab5e3d",
+      "name": "Model Router"
+    }
+  ],
+  "deliverables": "Data Governance Gate.",
+  "limits": "Não envia PII a modelo externo sem política/autorização.",
+  "next_gate": "Secrets/Model Router/QA.",
+  "execution": "Permanente",
+  "models_allowed": [
+    "claude",
+    "ollama"
+  ],
+  "criticality": "Crítica",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F20 Team Runtime",
+    "F23 Secret & Credential Broker",
+    "F25 Knowledge / Evidence Graph"
+  ],
+  "capabilities": [
+    "context.compile",
+    "evidence.read",
+    "knowledge.read",
+    "memory.read",
+    "privacy.data.govern",
+    "secret.lease.request",
+    "skill.read",
+    "team.message"
+  ],
+  "permissions": [
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "evidence.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "knowledge.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "privacy.data.govern",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "secret.lease.request",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "team.message",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Somente metadados de segredo; valores nunca em prompt/log; Knowledge/Evidence Graph com proveniência",
+  "event_topics": "agent.privacy.data.governance.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; write sensível, gasto, publicação, privilégio ou ação destrutiva exigem gate explícito. Credenciais via broker/leases; nunca em prompt.",
+  "references": "oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão | OpenClaw — gateway/nodes/channels; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 76
+  }
+}

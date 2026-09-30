@@ -1,0 +1,51 @@
+{
+  "policy_uuid": "01a0efd8-8895-79f8-81b6-ca21308a4f8c",
+  "name": "source-ingestion-deny-by-default",
+  "version": "1.0.0",
+  "default_decision": "QUARANTINE",
+  "rules": [
+    {
+      "id": "P001",
+      "when": "declared_leak == true",
+      "decision": "DENY"
+    },
+    {
+      "id": "P002",
+      "when": "redistribution_prohibited == true",
+      "decision": "DENY"
+    },
+    {
+      "id": "P003",
+      "when": "license.class == proprietary",
+      "decision": "DENY"
+    },
+    {
+      "id": "P004",
+      "when": "origin.known == false",
+      "decision": "QUARANTINE"
+    },
+    {
+      "id": "P005",
+      "when": "license.local_evidence == false",
+      "decision": "QUARANTINE"
+    },
+    {
+      "id": "P006",
+      "when": "archive_hash_verified == false",
+      "decision": "QUARANTINE"
+    },
+    {
+      "id": "P007",
+      "when": "license.class == copyleft",
+      "decision": "QUARANTINE_MANUAL_REVIEW"
+    },
+    {
+      "id": "P008",
+      "when": "license.class == permissive AND local_evidence AND hash_verified AND origin_known",
+      "decision": "ALLOW"
+    }
+  ],
+  "fail_closed": true,
+  "copy_from_denied_sources": false,
+  "runtime_loading_from_denied_sources": false
+}

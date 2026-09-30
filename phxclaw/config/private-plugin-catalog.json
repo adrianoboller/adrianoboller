@@ -1,0 +1,37 @@
+{
+  "version": "0.14.0",
+  "visibility": "private_only",
+  "plugins": [
+    {
+      "name": "com.phxclaw.private.dashboards",
+      "package": "PhxClaw_Plugin_Phoenix_Dashboards_v0.1.phxplugin",
+      "capabilities": [
+        "dashboard.health",
+        "dashboard.catalog.list",
+        "dashboard.catalog.get",
+        "dashboard.render.basic_html",
+        "dashboard.preview.list",
+        "dashboard.source.status"
+      ],
+      "source": "uploaded phoenix-dashboards-completo 36.zip",
+      "distribution": "private_only"
+    },
+    {
+      "name": "com.phxclaw.private.web-fxsdk",
+      "package": "PhxClaw_Plugin_Web_Absorber_FXSDK_v0.1.phxplugin",
+      "capabilities": [
+        "fx.health",
+        "fx.catalog.summary",
+        "fx.theme.list",
+        "fx.theme.get",
+        "fx.tokens.validate",
+        "fx.tokens.emit_css",
+        "fx.ui.search",
+        "fx.source.status"
+      ],
+      "source": "uploaded phoenix-web-absorber-fxsdk 88.zip",
+      "distribution": "private_only",
+      "provenance_gate": "required_before_external_distribution"
+    }
+  ]
+}

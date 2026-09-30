@@ -1,0 +1,99 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+import base64, datetime as dt, json, os, platform, secrets, shutil, subprocess, sys, time
+from pathlib import Path
+PROTOCOL='phxclaw-process-v1'; TOOL='System Automation Tool'
+def uuid7():
+    ms=int(time.time()*1000)&((1<<48)-1); a=secrets.randbits(12); b=secrets.randbits(62); v=(ms<<80)|(7<<76)|(a<<64)|(2<<62)|b; h=f'{v:032x}'; return f'{h[:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:]}'
+def now():return dt.datetime.now(dt.timezone.utc).isoformat().replace('+00:00','Z')
+def reply(c,s='ok',p=None,e=None):return {'protocol':PROTOCOL,'message_uuid':uuid7(),'correlation_uuid':c,'status':s,'emitted_at':now(),'payload':p or {},'error':e}
+def enabled():return os.getenv('PHXCLAW_SYSTEM_AUTOMATION','0').lower() in ('1','true','yes','on')
+def command(p):
+    if not enabled(): raise PermissionError('system automation disabled; set PHXCLAW_SYSTEM_AUTOMATION=1 in the trusted host service')
+    shell=str(p.get('shell','direct')).lower(); timeout=max(.1,min(float(p.get('timeout_ms',60000))/1000,300)); cwd=p.get('cwd'); env=os.environ.copy(); env.update({str(k):str(v) for k,v in (p.get('env') or {}).items()})
+    if shell=='direct': args=[str(p['program'])]+[str(x) for x in p.get('args',[])]
+    elif shell in ('cmd','msdos'):
+        if os.name!='nt': raise RuntimeError('cmd.exe is available only on Windows')
+        args=['cmd.exe','/D','/S','/C',str(p['script'])]
+    elif shell=='powershell':
+        exe=shutil.which('pwsh') or shutil.which('powershell.exe')
+        if not exe: raise RuntimeError('PowerShell not available')
+        args=[exe,'-NoProfile','-NonInteractive','-Command',str(p['script'])]
+    elif shell in ('sh','bash'):
+        if os.name=='nt': raise RuntimeError('POSIX shell not available on this host')
+        exe='/bin/sh' if shell=='sh' else (shutil.which('bash') or '/bin/bash'); args=[exe,'-lc',str(p['script'])]
+    else: raise ValueError('unsupported shell '+shell)
+    start=time.monotonic(); x=subprocess.run(args,input=p.get('stdin'),text=True,capture_output=True,cwd=cwd,env=env,timeout=timeout)
+    return {'exit_code':x.returncode,'stdout':x.stdout,'stderr':x.stderr,'elapsed_ms':round((time.monotonic()-start)*1000)}
+def capture(p):
+    if not enabled(): raise PermissionError('system automation disabled')
+    out=Path(p['output']).expanduser(); out=(Path.cwd()/out if not out.is_absolute() else out).resolve(); out.parent.mkdir(parents=True,exist_ok=True)
+    fmt=str(p.get('format') or out.suffix.lstrip('.')).lower(); fps=int(p.get('fps',15)); duration=float(p.get('duration_ms',3000))/1000
+    if fmt=='svg':
+        # A generic desktop is pixels, not vector geometry. Export SVG as a standards-compliant
+        # wrapper that embeds the exact captured PNG. HTML/DOM capture can produce native SVG separately.
+        tmp=out.with_name(out.stem+'.capture.png')
+        nested=dict(p); nested['output']=str(tmp); nested['format']='png'
+        capture(nested)
+        try:
+            from PIL import Image
+            with Image.open(tmp) as im: width,height=im.size
+        except Exception:
+            width,height=1920,1080
+        encoded=base64.b64encode(tmp.read_bytes()).decode('ascii')
+        out.write_text(f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}"><image width="{width}" height="{height}" href="data:image/png;base64,{encoded}"/></svg>',encoding='utf-8')
+        tmp.unlink(missing_ok=True)
+        return {'output':str(out),'format':'svg','bytes':out.stat().st_size,'representation':'embedded-raster'}
+    system=platform.system().lower(); display=os.getenv('DISPLAY',':0.0')
+    if fmt in ('png','jpg','jpeg'):
+        if system=='linux': args=['ffmpeg','-y','-f','x11grab','-i',display,'-frames:v','1',str(out)]
+        elif system=='windows': args=['ffmpeg','-y','-f','gdigrab','-i','desktop','-frames:v','1',str(out)]
+        elif system=='darwin': args=['ffmpeg','-y','-f','avfoundation','-i','1:none','-frames:v','1',str(out)]
+        else: raise RuntimeError('unsupported platform')
+    elif fmt=='mp4':
+        if system=='linux': args=['ffmpeg','-y','-f','x11grab','-framerate',str(fps),'-i',display,'-t',str(duration),'-c:v','libx264','-pix_fmt','yuv420p',str(out)]
+        elif system=='windows': args=['ffmpeg','-y','-f','gdigrab','-framerate',str(fps),'-i','desktop','-t',str(duration),'-c:v','libx264','-pix_fmt','yuv420p',str(out)]
+        elif system=='darwin': args=['ffmpeg','-y','-f','avfoundation','-framerate',str(fps),'-i','1:none','-t',str(duration),'-c:v','libx264','-pix_fmt','yuv420p',str(out)]
+        else: raise RuntimeError('unsupported platform')
+    else: raise ValueError('screen capture supports png/jpg/svg/mp4')
+    x=subprocess.run(args,capture_output=True,text=True,timeout=max(30,duration+20))
+    if x.returncode: raise RuntimeError(x.stderr[-2000:])
+    return {'output':str(out),'format':fmt,'bytes':out.stat().st_size}
+def input_action(p):
+    if not enabled(): raise PermissionError('system automation disabled')
+    # Prefer xdotool on X11; Windows/macOS backends are delegated to the Rust Enigo provider.
+    if platform.system().lower()=='linux' and shutil.which('xdotool'):
+        act=p.get('action');
+        if act=='move_mouse': args=['xdotool','mousemove',str(p['x']),str(p['y'])]
+        elif act=='click': args=['xdotool','click',str(p.get('button',1))]
+        elif act=='text': args=['xdotool','type','--delay',str(p.get('delay_ms',10)),str(p.get('text',''))]
+        elif act=='key': args=['xdotool','key',str(p['key'])]
+        else: raise ValueError('unsupported input action')
+        x=subprocess.run(args,capture_output=True,text=True,timeout=10)
+        if x.returncode: raise RuntimeError(x.stderr)
+        return {'backend':'xdotool','action':act}
+    raise RuntimeError('host input backend unavailable here; PhxClaw Rust provider uses Enigo on Windows/macOS/Linux')
+def execute(ep):
+    cap=ep.get('capability',''); p=ep.get('payload') or {}
+    if cap=='system.command.execute': return {'capability':cap,**command(p)}
+    if cap=='screen.capture': return {'capability':cap,**capture(p)}
+    if cap=='desktop.input': return {'capability':cap,**input_action(p)}
+    raise ValueError('unsupported capability '+cap)
+def health():return {'tool':TOOL,'status':'healthy','protocol':PROTOCOL,'execution_enabled':enabled(),'platform':platform.system(),'ffmpeg':bool(shutil.which('ffmpeg')),'xdotool':bool(shutil.which('xdotool')),'note':'input/capture require a real desktop session and explicit host permission'}
+def handle(m):
+    c=m.get('message_uuid',uuid7()); k=m.get('kind')
+    if m.get('protocol')!=PROTOCOL:return reply(c,'rejected',e={'code':'unsupported_protocol','message':'expected '+PROTOCOL,'retryable':False})
+    if k=='health':return reply(c,p=health())
+    if k=='execute':
+        try:return reply(c,p=execute(m.get('payload') or {}))
+        except PermissionError as e:return reply(c,'rejected',e={'code':'permission_denied','message':str(e),'retryable':False})
+        except subprocess.TimeoutExpired:return reply(c,'error',e={'code':'timeout','message':'command timeout','retryable':False})
+        except Exception as e:return reply(c,'error',e={'code':'automation_error','message':str(e),'retryable':False})
+    if k in ('cancel','shutdown'):return reply(c,p={'ack':k})
+    return reply(c,'rejected',e={'code':'unsupported_kind','message':str(k),'retryable':False})
+def main():
+    if '--health' in sys.argv:print(json.dumps(health(),separators=(',',':')));return 0
+    line=sys.stdin.readline();
+    if not line:return 2
+    print(json.dumps(handle(json.loads(line)),separators=(',',':'),ensure_ascii=False));return 0
+if __name__=='__main__':raise SystemExit(main())

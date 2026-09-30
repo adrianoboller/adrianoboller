@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:phxclaw:v045:dispatch-lease",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "lease_uuid",
+    "project_uuid",
+    "task_uuid",
+    "agent_uuid",
+    "run_uuid",
+    "fencing_token",
+    "decision_sha256",
+    "lease_sha256",
+    "expires_at"
+  ],
+  "properties": {
+    "lease_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "project_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "task_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "agent_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "run_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "fencing_token": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "decision_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{64}$"
+    },
+    "lease_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{64}$"
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

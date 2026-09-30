@@ -1,0 +1,232 @@
+{
+  "version": "0.19.0",
+  "generated_at": "2026-09-28T05:50:19.429925+00:00",
+  "pass": 34,
+  "fail": 0,
+  "skip": 0,
+  "results": [
+    {
+      "name": "workspace.version",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "name": "artifact.lib",
+      "status": "PASS",
+      "detail": "crates/phxclaw-agent-catalog/src/lib.rs"
+    },
+    {
+      "name": "artifact.lib",
+      "status": "PASS",
+      "detail": "crates/phxclaw-research-pipeline/src/lib.rs"
+    },
+    {
+      "name": "artifact.lib",
+      "status": "PASS",
+      "detail": "crates/phxclaw-skill-runtime/src/lib.rs"
+    },
+    {
+      "name": "artifact.lib",
+      "status": "PASS",
+      "detail": "crates/phxclaw-memory-context/src/lib.rs"
+    },
+    {
+      "name": "artifact.lib",
+      "status": "PASS",
+      "detail": "crates/phxclaw-source-registry/src/lib.rs"
+    },
+    {
+      "name": "artifact.0012_research_context_pipeline",
+      "status": "PASS",
+      "detail": "migrations/0012_research_context_pipeline.sql"
+    },
+    {
+      "name": "agents.count",
+      "status": "PASS",
+      "detail": 110
+    },
+    {
+      "name": "research_agent.capabilities",
+      "status": "PASS",
+      "detail": []
+    },
+    {
+      "name": "research_agent.source_acl",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "name": "skill_index.count",
+      "status": "PASS",
+      "detail": 1
+    },
+    {
+      "name": "skill_index.rust",
+      "status": "PASS",
+      "detail": {
+        "name": "rust.research.official",
+        "version": "1.0.0",
+        "state": "validated",
+        "path": "rust-research.skill.json",
+        "triggers": [
+          "rust",
+          "cargo",
+          "crate",
+          "borrow",
+          "ownership",
+          "result",
+          "async",
+          "tokio",
+          "trait",
+          "lifetime",
+          "unsafe"
+        ],
+        "required_capabilities": [
+          "research.collect",
+          "knowledge.rust.read",
+          "knowledge.source_registry.read",
+          "context.compile",
+          "skill.read"
+        ],
+        "knowledge_sources": [
+          "rust-official"
+        ]
+      }
+    },
+    {
+      "name": "skill.hash",
+      "status": "PASS",
+      "detail": {
+        "expected": "7c8c1c66215b1d547d35906bdc4ce8c01fe95a62975b4f2af56e2f578b824277",
+        "actual": "7c8c1c66215b1d547d35906bdc4ce8c01fe95a62975b4f2af56e2f578b824277"
+      }
+    },
+    {
+      "name": "skill.state",
+      "status": "PASS",
+      "detail": "validated"
+    },
+    {
+      "name": "skill.source",
+      "status": "PASS",
+      "detail": [
+        "rust-official"
+      ]
+    },
+    {
+      "name": "skill.required_capabilities",
+      "status": "PASS",
+      "detail": []
+    },
+    {
+      "name": "skill.evidence_uuidv7",
+      "status": "PASS",
+      "detail": []
+    },
+    {
+      "name": "policy.dev_validated",
+      "status": "PASS",
+      "detail": {
+        "require_promoted_skills": false,
+        "allow_validated_skills": true,
+        "max_source_hits": 8,
+        "context_max_items": 24,
+        "context_max_bytes": 98304
+      }
+    },
+    {
+      "name": "policy.prod_promoted_only",
+      "status": "PASS",
+      "detail": {
+        "require_promoted_skills": true,
+        "allow_validated_skills": false,
+        "max_source_hits": 8,
+        "context_max_items": 24,
+        "context_max_bytes": 98304
+      }
+    },
+    {
+      "name": "offline_search.hit",
+      "status": "PASS",
+      "detail": 3
+    },
+    {
+      "name": "offline_search.result_first",
+      "status": "PASS",
+      "detail": [
+        50,
+        {
+          "path": "book/ch09-02-recoverable-errors-with-result.html",
+          "title": "Recoverable Errors with Result",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "text": "Rust represents recoverable errors with Result<T, E>. The question mark operator propagates errors to the calling function. Functions that can fail commonly return Result and callers can match on Ok and Err."
+        }
+      ]
+    },
+    {
+      "name": "event.research.pipeline",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "name": "event.agent.runtime",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "name": "event.skill.runtime",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "name": "event.knowledge.source",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "name": "event.context.compiler",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "name": "event.evidence.ledger",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "name": "pipeline.route_named",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "name": "pipeline.resolve_for_query",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "name": "pipeline.search_offline",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "name": "pipeline.compile_for_query",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "name": "pipeline.evidence_ledger.append",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "name": "capabilities.new",
+      "status": "PASS",
+      "detail": []
+    },
+    {
+      "name": "capabilities.count",
+      "status": "PASS",
+      "detail": 202
+    }
+  ]
+}

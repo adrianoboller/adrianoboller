@@ -1,0 +1,53 @@
+{
+  "uuid": "01a0e5ed-9673-7568-be51-508ca40e6c12",
+  "code": "F23",
+  "title": "Secret & Credential Broker",
+  "goal": "Centralizar segredos, escopos, rotação, lease, redaction e entrega efêmera a plugins/agentes.",
+  "status": "review",
+  "tasks": [
+    {
+      "uuid": "01a0e5ed-9673-70d7-9530-157e18e72cf3",
+      "title": "Secret vault contract",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e5ed-9673-761e-80cf-3282dc4ac79f",
+      "title": "Scoped lease tokens",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e5ed-9673-7eb6-a966-c4f4dd63241d",
+      "title": "Redaction/audit",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e5ed-9673-7503-a5b7-1cd51b12c915",
+      "title": "Rotation/revocation",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e5ed-9673-78a8-9b7f-fb4eccb046f0",
+      "title": "Provider credential E2E",
+      "status": "review"
+    }
+  ],
+  "definition_of_done": [
+    "Contratos e schemas versionados",
+    "Implementação integrada ao Event Bus e Evidence Ledger",
+    "Testes unitários e integração sem mocks para os caminhos obrigatórios",
+    "Documentação, observabilidade, segurança e rollback definidos",
+    "Gate E2E obrigatório antes de marcar done"
+  ],
+  "notes": [
+    "v0.18 implementa broker AES-256-GCM, leases UUIDv7, rotação/revogação e redaction.",
+    "Bootstrap file-key é adequado somente para implantação privada/local; produção deve injetar keyring/HSM/platform key provider.",
+    "Telegram/Discord usam leases efêmeras e não armazenam tokens em manifest/argv/log.",
+    "Não marcar done até cargo/test + provider E2E real + key provider de produção."
+  ],
+  "state": "review",
+  "canonical_project_version": "0.67.0",
+  "canonical_state_ref": "config/project-state-canonical.v067.json",
+  "implementation_state": "source_ready",
+  "verification_state": "static_verified",
+  "open_gaps": []
+}

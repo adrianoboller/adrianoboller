@@ -1,0 +1,71 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f65e-795b-b4bb-311ae6485b36",
+  "agent_id": 94,
+  "name": "Donatello",
+  "macroarea": "Creative Studio & UX",
+  "nucleus": "Creative Studio",
+  "role_type": "Engenheiro Criativo de Componentes",
+  "mission": "Transforma design em componentes reutilizáveis e tecnicamente executáveis.",
+  "responsibilities": "Define tokens, variants, states, templates, responsividade, slots e contratos com Phoenix UI.",
+  "resources": "Phoenix Component Model, Design Tokens, Template Engine.",
+  "authorized_actions": "Criar design system/component specs e mapear para implementação.",
+  "trigger": "Visual aprovado ou novo componente.",
+  "declared_dependencies": "High-fidelity e constraints técnicas.",
+  "resolved_agent_dependencies": [
+    {
+      "uuid": "01a0e473-f622-7f3f-ae87-743175a5d8ea",
+      "name": "UI/RAD Agent"
+    }
+  ],
+  "deliverables": "Component Design System.",
+  "limits": "Não cria exceções locais sem justificar no sistema.",
+  "next_gate": "UI/RAD Agent / QA visual.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "claude",
+    "codex"
+  ],
+  "criticality": "Alta",
+  "modules": [
+    "F22 Device Nodes"
+  ],
+  "capabilities": [
+    "design.component.engineer",
+    "node.observe"
+  ],
+  "permissions": [
+    {
+      "name": "design.component.engineer",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Node/session state efêmero e pareado",
+  "event_topics": "agent.donatello.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; writes policy-gated; evidência obrigatória; sem autoaprovação. Device input/screen exige autorização de sessão e logging.",
+  "references": "OpenClaw — gateway/nodes/channels; validar licença por versão | ZeroClaw — benchmark Rust/providers/tools",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 95
+  }
+}

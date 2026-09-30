@@ -1,0 +1,15 @@
+[package]
+name = "phxclaw-live-bus"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+uuid.workspace = true
+phxclaw-event-bus = { path = "../phxclaw-event-bus" }
+phxclaw-types = { path = "../phxclaw-types" }

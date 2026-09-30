@@ -1,0 +1,15 @@
+{
+  "suite": "PhxClaw v0.35 native preflight",
+  "host_tools": {
+    "cargo": false,
+    "rustc": false,
+    "psql": false,
+    "postgres": false,
+    "python3": true,
+    "git": true
+  },
+  "native_rust_gates_executed": false,
+  "postgresql_e2e_executed": false,
+  "provider_e2e_executed": false,
+  "note": "Unavailable native tools are not converted to PASS."
+}

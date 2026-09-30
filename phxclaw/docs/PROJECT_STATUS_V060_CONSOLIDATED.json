@@ -1,0 +1,11 @@
+{
+  "project": "PhxClaw",
+  "version": "0.60.0",
+  "baseline": "v0.59 + provenance/license firewall",
+  "source_ready": true,
+  "static_verified": "pending_consolidated_check",
+  "rust_compiled": false,
+  "postgres_e2e": false,
+  "release_ready": false,
+  "historical_gap_v034": "reconstructed_not_byte_identical"
+}

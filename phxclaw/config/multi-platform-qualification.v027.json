@@ -1,0 +1,35 @@
+{
+  "version": "0.27.0",
+  "mode": "fail_closed",
+  "required_platforms": [
+    {
+      "platform": "linux",
+      "architecture": "x86_64",
+      "github_runner": "ubuntu-24.04"
+    },
+    {
+      "platform": "windows",
+      "architecture": "x86_64",
+      "github_runner": "windows-2025"
+    },
+    {
+      "platform": "macos",
+      "architecture": "aarch64",
+      "github_runner": "macos-15"
+    }
+  ],
+  "requirements": {
+    "same_source_state": true,
+    "same_rc_archive": true,
+    "same_candidate_version": true,
+    "signed_platform_evidence": true,
+    "native_tests": true,
+    "fresh_install": true,
+    "upgrade_n_minus_1_unless_first_release": true,
+    "rollback_or_restore_unless_first_release": true,
+    "windows_authenticode_with_timestamp_and_allowed_thumbprint": true,
+    "macos_developer_id_gatekeeper_notarization_staple_and_allowed_team_id": true,
+    "platform_evidence_must_originate_from_native_runner": true
+  },
+  "projected_capability_total": 290
+}

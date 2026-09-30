@@ -1,0 +1,32 @@
+{
+  "version": "1.5.0",
+  "signers": [
+    {
+      "id": "phxclaw-dev-root-2026-v05r2",
+      "algorithm": "ed25519",
+      "public_key_base64": "utH47HRrIDMP8SLZh3WYNAjIuY7iGxzdIi5EaCBycRc=",
+      "status": "active",
+      "allowed_name_prefixes": [
+        "com.phxclaw."
+      ]
+    },
+    {
+      "id": "phxclaw-fixture-v013",
+      "algorithm": "ed25519",
+      "public_key_base64": "Ap5U0d2bSTcFrWuEfGL2WS/3c09uk3NT8FIXIs8ABRE=",
+      "status": "active",
+      "allowed_name_prefixes": [
+        "com.phxclaw.fixture."
+      ]
+    },
+    {
+      "id": "phxclaw-private-plugins-v014",
+      "algorithm": "ed25519",
+      "public_key_base64": "k1LnqTp9roZCsi83SPkIxpMiYCBdPYDTMXdc6AgVnyI=",
+      "status": "active",
+      "allowed_name_prefixes": [
+        "com.phxclaw.private."
+      ]
+    }
+  ]
+}

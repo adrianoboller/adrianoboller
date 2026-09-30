@@ -1,0 +1,9 @@
+{
+  "version": "0.28.0",
+  "source_ready": true,
+  "static_verified": true,
+  "runtime_verified": "partial",
+  "e2e_verified": false,
+  "release_ready": false,
+  "note": "Fleet/update policy and cryptographic contracts are source/static verified. Real fleet devices, native installers, production telemetry and database migrations remain release-host gates."
+}

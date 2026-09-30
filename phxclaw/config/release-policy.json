@@ -1,0 +1,57 @@
+{
+  "version": "0.20.0",
+  "development": {
+    "allow_test_doubles": true,
+    "allow_unverified_source": true
+  },
+  "release": {
+    "allow_test_doubles": false,
+    "allow_mock_providers": false,
+    "allow_skipped_required_gates": false,
+    "required_gates": [
+      "cargo.check.workspace",
+      "cargo.test.workspace",
+      "postgres.migrations.e2e",
+      "plugin.signatures.verify",
+      "plugin.sandbox.e2e",
+      "event_bus.outbox.e2e",
+      "desktop_host.e2e",
+      "model_gateway.real_provider.e2e",
+      "research_pipeline.real_source.e2e",
+      "evidence_chain.verify",
+      "mission.end_to_end",
+      "secret_broker.production_key_provider.e2e",
+      "channel.telegram.real_provider.e2e",
+      "channel.discord.real_provider.e2e"
+    ]
+  },
+  "verification_levels": [
+    {
+      "name": "source_ready",
+      "meaning": "Código e contratos existem, mas não houve build/runtime real."
+    },
+    {
+      "name": "static_verified",
+      "meaning": "Schemas, políticas, hashes e testes estáticos passaram."
+    },
+    {
+      "name": "runtime_verified",
+      "meaning": "Componente compilou e executou em ambiente real."
+    },
+    {
+      "name": "e2e_verified",
+      "meaning": "Fluxo atravessou dependências reais sem mocks."
+    },
+    {
+      "name": "release_ready",
+      "meaning": "Todos os gates obrigatórios passaram sem SKIP."
+    }
+  ],
+  "third_party": {
+    "rustclaw": {
+      "license": "MIT",
+      "status": "verified",
+      "vendor_path": "private/vendor/rustclaw/upstream"
+    }
+  }
+}

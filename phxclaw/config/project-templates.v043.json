@@ -1,0 +1,98 @@
+{
+  "version": "0.43.0",
+  "templates": [
+    {
+      "id": "blank",
+      "name": "Projeto vazio",
+      "kind": "generic",
+      "source_dirs": [
+        "src"
+      ],
+      "skills": [
+        "project-management-orchestrator"
+      ]
+    },
+    {
+      "id": "rust-service",
+      "name": "Rust Service",
+      "kind": "software",
+      "source_dirs": [
+        "crates",
+        "src"
+      ],
+      "skills": [
+        "project-management-orchestrator",
+        "tech-debt-audit"
+      ]
+    },
+    {
+      "id": "web-app",
+      "name": "Web App",
+      "kind": "software",
+      "source_dirs": [
+        "src",
+        "public"
+      ],
+      "skills": [
+        "ui-ux-pro-max",
+        "project-management-orchestrator"
+      ]
+    },
+    {
+      "id": "ai-agent",
+      "name": "AI Agent / MCP",
+      "kind": "ai",
+      "source_dirs": [
+        "src",
+        "skills",
+        "prompts"
+      ],
+      "skills": [
+        "deep-research",
+        "project-management-orchestrator"
+      ]
+    },
+    {
+      "id": "data-platform",
+      "name": "Data / Analytics",
+      "kind": "data",
+      "source_dirs": [
+        "src",
+        "sql",
+        "pipelines"
+      ],
+      "skills": [
+        "project-researcher",
+        "project-management-orchestrator"
+      ]
+    },
+    {
+      "id": "legacy-modernization",
+      "name": "Modernização legado → Rust",
+      "kind": "migration",
+      "source_dirs": [
+        "legacy",
+        "src",
+        "tests"
+      ],
+      "skills": [
+        "understand-anything",
+        "graphify",
+        "project-management-orchestrator"
+      ]
+    },
+    {
+      "id": "project-management",
+      "name": "Gestão de Projeto Híbrida",
+      "kind": "management",
+      "source_dirs": [
+        "docs",
+        "plans"
+      ],
+      "skills": [
+        "hybrid-project-management",
+        "project-management-orchestrator"
+      ]
+    }
+  ]
+}

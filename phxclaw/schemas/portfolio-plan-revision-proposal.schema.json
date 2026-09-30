@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Portfolio Plan Revision Proposal",
+  "type": "object",
+  "required": [
+    "revision_uuid",
+    "base_plan_uuid",
+    "candidate_plan_sha256",
+    "source_state_sha256",
+    "requires_approval",
+    "proposal_sha256"
+  ],
+  "properties": {
+    "revision_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "base_plan_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "candidate_plan_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "source_state_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "requires_approval": {
+      "const": true
+    },
+    "proposal_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  }
+}

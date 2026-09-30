@@ -1,0 +1,65 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f62c-74a3-a753-db209bca4317",
+  "agent_id": 44,
+  "name": "Regression Agent",
+  "macroarea": "Qualidade & Provas",
+  "nucleus": "Qualidade",
+  "role_type": "Subagente de teste",
+  "mission": "Impede que bugs conhecidos e comportamentos aceitos retornem.",
+  "responsibilities": "Mantém catálogo de regressões, vincula bug→test, executa suites históricas e minimiza flakiness.",
+  "resources": "Bug database, tests, CI history.",
+  "authorized_actions": "Executar regressão e abrir bloqueio se caso histórico falhar.",
+  "trigger": "Toda correção e release.",
+  "declared_dependencies": "Regression catalog.",
+  "resolved_agent_dependencies": [],
+  "deliverables": "Regression report.",
+  "limits": "Não remove teste histórico sem justificativa e aprovação.",
+  "next_gate": "QA2/Release.",
+  "execution": "Permanente",
+  "models_allowed": [
+    "ollama"
+  ],
+  "criticality": "Alta",
+  "modules": [
+    "F22 Device Nodes"
+  ],
+  "capabilities": [
+    "node.observe",
+    "quality.regression.test"
+  ],
+  "permissions": [
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "quality.regression.test",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Node/session state efêmero e pareado; Estado operacional persistente em PostgreSQL",
+  "event_topics": "agent.regression.agent.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; writes policy-gated; evidência obrigatória; sem autoaprovação. Device input/screen exige autorização de sessão e logging.",
+  "references": "OpenClaw — gateway/nodes/channels; validar licença por versão | ZeroClaw — benchmark Rust/providers/tools",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 45
+  }
+}

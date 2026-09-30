@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phxclaw.local/schemas/evidence.schema.json",
+  "title": "PhxClaw Evidence",
+  "type": "object",
+  "required": ["uuid", "uri", "source_type", "retrieved_at", "sha256"],
+  "properties": {
+    "uuid": {"type": "string", "format": "uuid"},
+    "uri": {"type": "string", "minLength": 1},
+    "source_type": {"type": "string", "minLength": 1},
+    "retrieved_at": {"type": "string", "format": "date-time"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
+    "notes": {"type": ["string", "null"]}
+  },
+  "additionalProperties": false
+}

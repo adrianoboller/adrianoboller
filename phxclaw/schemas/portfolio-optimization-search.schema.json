@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PhxClaw Portfolio Optimization Search",
+  "type": "object",
+  "required": [
+    "search_uuid",
+    "twin_uuid",
+    "source_state_sha256",
+    "search_space",
+    "constraints"
+  ],
+  "properties": {
+    "search_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "twin_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "source_state_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "search_space": {
+      "type": "object"
+    },
+    "constraints": {
+      "type": "object"
+    },
+    "objective_weights": {
+      "type": [
+        "object",
+        "null"
+      ]
+    }
+  }
+}

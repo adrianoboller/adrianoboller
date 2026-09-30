@@ -1,0 +1,34 @@
+{
+  "version": "0.40.0",
+  "source_ready": true,
+  "static_verified": true,
+  "runtime_verified": "partial",
+  "e2e_verified": false,
+  "release_ready": false,
+  "canonical_config": "config/phxclaw.config.json",
+  "config_editor": "ui/config.html",
+  "suites": {
+    "static": {
+      "pass": 25,
+      "fail": 0
+    },
+    "local_application": {
+      "pass": 25,
+      "fail": 0
+    },
+    "package_security": {
+      "pass": 13,
+      "fail": 0
+    }
+  },
+  "capabilities": {
+    "previous_projected": 750,
+    "new": 52,
+    "projected_total": 802
+  },
+  "sprints": {
+    "green": 0,
+    "yellow": 26,
+    "red": 0
+  }
+}

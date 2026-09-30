@@ -1,0 +1,80 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f664-7319-b7b9-7b5637d211ff",
+  "agent_id": 100,
+  "name": "Vivaldi",
+  "macroarea": "Creative Studio & UX",
+  "nucleus": "Creative Studio",
+  "role_type": "Especialista em Variação Contextual",
+  "mission": "Adapta experiência conforme contexto, estado, dispositivo, tema e etapa da jornada.",
+  "responsibilities": "Define variações sazonais/contextuais, claro/escuro, responsividade, intensidade visual por movimentos e transições entre estados.",
+  "resources": "Theme engine, state/device/context data, prototypes.",
+  "authorized_actions": "Criar contextual UX variants e regras de seleção.",
+  "trigger": "Experiência deve se adaptar a contexto.",
+  "declared_dependencies": "Design system e context signals.",
+  "resolved_agent_dependencies": [],
+  "deliverables": "Contextual UX specification.",
+  "limits": "Não introduz inconsistência ou distração; Accessibility/User Proof validam.",
+  "next_gate": "Splinter/Accessibility/User Proof.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "multimodal",
+    "ollama"
+  ],
+  "criticality": "Média",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine"
+  ],
+  "capabilities": [
+    "context.compile",
+    "memory.read",
+    "skill.read",
+    "ux.context.adapt"
+  ],
+  "permissions": [
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "ux.context.adapt",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo",
+  "event_topics": "agent.vivaldi.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Sandbox por padrão; capabilities escopadas; sem secrets diretos.",
+  "references": "oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 101
+  }
+}

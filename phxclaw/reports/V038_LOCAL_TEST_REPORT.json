@@ -1,0 +1,67 @@
+{
+  "suite": "PhxClaw v0.38 local/application",
+  "pass": 12,
+  "fail": 0,
+  "checks": [
+    {
+      "name": "parallel_qa_security",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "isolated_worktree",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "unresolved_conflict_blocks",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "qa_security_independent",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "security_high_blocks",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "main_needs_approval",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rollback_checkpoint",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "apply_first",
+      "pass": true,
+      "detail": "PhxClaw v0.38 overlay applied: 23 files\nv0.38 crate present exactly once\n"
+    },
+    {
+      "name": "apply_idempotent",
+      "pass": true,
+      "detail": "PhxClaw v0.38 overlay already applied\nv0.38 crate present exactly once\n"
+    },
+    {
+      "name": "crate_once",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "installed_verifier",
+      "pass": true,
+      "detail": "{\"pass\": 56, \"fail\": 0}\n"
+    },
+    {
+      "name": "unknown_conflict_fail_closed",
+      "pass": true,
+      "detail": "conflict: /tmp/tmpyf5b6ej4/base/config/engineering-swarm-policy.v038.json; v0.38 never force-overwrites unknown content\n"
+    }
+  ]
+}

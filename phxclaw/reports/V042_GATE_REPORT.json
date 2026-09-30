@@ -1,0 +1,48 @@
+{
+  "version": "0.42.0",
+  "module": "Project Management Suite",
+  "status": {
+    "source_ready": true,
+    "static_verified": true,
+    "runtime_verified": "partial",
+    "e2e_verified": false,
+    "release_ready": false
+  },
+  "counts": {
+    "specialized_skills": 77,
+    "connector_adapters": 2,
+    "skills_and_adapters": 79,
+    "new_capabilities": 90,
+    "projected_capabilities_total": 892,
+    "ui_screens": 13
+  },
+  "executed": [
+    {
+      "suite": "static verifier",
+      "pass": 28,
+      "fail": 0
+    },
+    {
+      "suite": "local overlay/application",
+      "pass": 7,
+      "fail": 0
+    },
+    {
+      "suite": "package/security",
+      "pass": 7,
+      "fail": 0
+    },
+    {
+      "suite": "ui javascript syntax",
+      "pass": 1,
+      "fail": 0
+    }
+  ],
+  "pending_native": [
+    "Rust fmt/check/test/clippy",
+    "PostgreSQL RLS E2E",
+    "Google Calendar live E2E",
+    "Google Drive live E2E",
+    "Microsoft Project adapter live E2E"
+  ]
+}

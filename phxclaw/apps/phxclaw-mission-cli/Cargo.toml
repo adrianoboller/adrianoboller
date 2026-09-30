@@ -1,0 +1,14 @@
+[package]
+name = "phxclaw-mission-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+phxclaw-agent-catalog = { path = "../../crates/phxclaw-agent-catalog" }
+phxclaw-code-workspace = { path = "../../crates/phxclaw-code-workspace" }
+phxclaw-evidence-ledger = { path = "../../crates/phxclaw-evidence-ledger" }
+phxclaw-live-bus = { path = "../../crates/phxclaw-live-bus" }
+phxclaw-mission-runtime = { path = "../../crates/phxclaw-mission-runtime" }
+serde_json.workspace = true

@@ -1,0 +1,14 @@
+[package]
+name = "phxclaw-hypothesis"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+phxclaw-types = { path = "../phxclaw-types" }
+uuid.workspace = true
+chrono.workspace = true
+postgres.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true

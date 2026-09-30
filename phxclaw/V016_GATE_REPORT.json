@@ -1,0 +1,26 @@
+{
+  "version": "0.16.0",
+  "scope": "Claw Code MIT integration + MCP Runtime v2 + private Claw Code bridge",
+  "workspace_members": 49,
+  "rust_source_files": 105,
+  "rust_source_lines": 29844,
+  "capabilities": 164,
+  "sprints": 26,
+  "agents": 110,
+  "v016_integration_tests": {
+    "pass": 39,
+    "fail": 0
+  },
+  "bootstrap_verifier": "PASS",
+  "upstream_vendor_checkout": {
+    "attempted": true,
+    "command": "./bin/phx upstream claw-code vendor",
+    "success": false,
+    "reason": "shell DNS could not resolve github.com in this execution environment",
+    "required_followup": "run the vendor command on a networked private build host; UPSTREAM.lock.json will record the exact commit"
+  },
+  "cargo_check": "NOT_RUN_TOOLCHAIN_UNAVAILABLE",
+  "cargo_test": "NOT_RUN_TOOLCHAIN_UNAVAILABLE",
+  "cargo_clippy": "NOT_RUN_TOOLCHAIN_UNAVAILABLE",
+  "release_ready": false
+}

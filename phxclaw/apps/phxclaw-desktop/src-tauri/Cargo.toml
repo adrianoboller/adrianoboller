@@ -1,0 +1,33 @@
+[package]
+name = "phxclaw-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "phxclaw_desktop_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[[bin]]
+name = "phxclaw-desktop"
+path = "src/main.rs"
+
+[dependencies]
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tauri = { version = "2.12.0" }
+tokio.workspace = true
+url.workspace = true
+uuid.workspace = true
+phxclaw-api-gateway = { path = "../../../crates/phxclaw-api-gateway" }
+phxclaw-desktop-protocol = { path = "../../../crates/phxclaw-desktop-protocol" }
+phxclaw-evidence-ledger = { path = "../../../crates/phxclaw-evidence-ledger" }
+phxclaw-event-bus = { path = "../../../crates/phxclaw-event-bus" }
+phxclaw-live-bus = { path = "../../../crates/phxclaw-live-bus" }
+phxclaw-system-automation = { path = "../../../crates/phxclaw-system-automation", features = ["desktop-input", "screen-capture"] }
+phxclaw-types = { path = "../../../crates/phxclaw-types" }
+phxclaw-webview-control = { path = "../../../crates/phxclaw-webview-control" }
+
+[build-dependencies]
+tauri-build = { version = "2" }

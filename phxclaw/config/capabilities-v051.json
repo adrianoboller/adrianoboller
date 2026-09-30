@@ -1,0 +1,294 @@
+{
+  "version": "0.51.0",
+  "count": 72,
+  "capabilities": [
+    {
+      "uuid": "01a0edb3-b991-7ce1-ae03-2d952940b292",
+      "name": "portfolio.optimizer.search.create"
+    },
+    {
+      "uuid": "01a0edb3-b992-7d60-9f2f-df4567037a00",
+      "name": "portfolio.optimizer.search.cancel"
+    },
+    {
+      "uuid": "01a0edb3-b993-7f81-bf42-ccf530379355",
+      "name": "portfolio.optimizer.search.resume"
+    },
+    {
+      "uuid": "01a0edb3-b994-7fc5-bfe9-ac91b71012d6",
+      "name": "portfolio.optimizer.search.get"
+    },
+    {
+      "uuid": "01a0edb3-b995-7d3e-8252-6fcf01509600",
+      "name": "portfolio.optimizer.search.list"
+    },
+    {
+      "uuid": "01a0edb3-b996-7909-83c1-9e0fdb950729",
+      "name": "portfolio.optimizer.search.hash.verify"
+    },
+    {
+      "uuid": "01a0edb3-b997-79c5-aec3-599066f6142a",
+      "name": "portfolio.optimizer.search.progress"
+    },
+    {
+      "uuid": "01a0edb3-b998-7995-9f62-454f888074d2",
+      "name": "portfolio.optimizer.space.define"
+    },
+    {
+      "uuid": "01a0edb3-b999-78be-907c-7c3a4e84be20",
+      "name": "portfolio.optimizer.space.validate"
+    },
+    {
+      "uuid": "01a0edb3-b99a-7c73-85f3-36b7947ea60f",
+      "name": "portfolio.optimizer.variable.agent_capacity"
+    },
+    {
+      "uuid": "01a0edb3-b99b-72e5-89d7-159cc3209958",
+      "name": "portfolio.optimizer.variable.model_quota"
+    },
+    {
+      "uuid": "01a0edb3-b99c-7c6c-89eb-58bf0e74e1df",
+      "name": "portfolio.optimizer.variable.duration_assumption"
+    },
+    {
+      "uuid": "01a0edb3-b99d-7998-95ad-3b4f7f092c10",
+      "name": "portfolio.optimizer.variable.cost_assumption"
+    },
+    {
+      "uuid": "01a0edb3-b99e-7602-b3c0-4c0c57fb06d8",
+      "name": "portfolio.optimizer.variable.strategy"
+    },
+    {
+      "uuid": "01a0edb3-b99f-7178-b5cf-ffda1bc1f55d",
+      "name": "portfolio.optimizer.variable.priority_profile"
+    },
+    {
+      "uuid": "01a0edb3-b9a0-7a73-b05c-1a68eb6d5b9b",
+      "name": "portfolio.optimizer.constraint.deadline"
+    },
+    {
+      "uuid": "01a0edb3-b9a1-72c2-9fa5-b1c1532b9460",
+      "name": "portfolio.optimizer.constraint.budget"
+    },
+    {
+      "uuid": "01a0edb3-b9a2-7388-8d75-f7d9197e28ff",
+      "name": "portfolio.optimizer.constraint.contention"
+    },
+    {
+      "uuid": "01a0edb3-b9a3-743a-b688-4f82a2d69af0",
+      "name": "portfolio.optimizer.constraint.cloud_share"
+    },
+    {
+      "uuid": "01a0edb3-b9a4-7c06-accd-f6487bfc2811",
+      "name": "portfolio.optimizer.constraint.hard_gate"
+    },
+    {
+      "uuid": "01a0edb3-b9a5-7419-abdc-2947d7c33b6a",
+      "name": "portfolio.optimizer.constraint.validate"
+    },
+    {
+      "uuid": "01a0edb3-b9a6-7ef3-8e36-ab758cc08ab4",
+      "name": "portfolio.optimizer.objective.cost"
+    },
+    {
+      "uuid": "01a0edb3-b9a7-724a-b511-6aa339d8aa3c",
+      "name": "portfolio.optimizer.objective.deadline"
+    },
+    {
+      "uuid": "01a0edb3-b9a8-7f22-af0f-d702ebb267e7",
+      "name": "portfolio.optimizer.objective.risk"
+    },
+    {
+      "uuid": "01a0edb3-b9a9-7f9e-85c8-803eb4972313",
+      "name": "portfolio.optimizer.objective.contention"
+    },
+    {
+      "uuid": "01a0edb3-b9aa-7334-a687-f41d70ef95f8",
+      "name": "portfolio.optimizer.objective.cloud_usage"
+    },
+    {
+      "uuid": "01a0edb3-b9ab-79e6-8eb7-060e583ac465",
+      "name": "portfolio.optimizer.objective.weights.validate"
+    },
+    {
+      "uuid": "01a0edb3-b9ac-7bfa-9b23-9e05880250cf",
+      "name": "portfolio.optimizer.candidate.generate.grid"
+    },
+    {
+      "uuid": "01a0edb3-b9ad-7d8d-9562-1890a0da1a70",
+      "name": "portfolio.optimizer.candidate.generate.coarse_to_fine"
+    },
+    {
+      "uuid": "01a0edb3-b9ae-7a02-918e-75ee7fa16adf",
+      "name": "portfolio.optimizer.candidate.generate.seeded"
+    },
+    {
+      "uuid": "01a0edb3-b9af-7c7c-9d09-2347781a838e",
+      "name": "portfolio.optimizer.candidate.dedupe"
+    },
+    {
+      "uuid": "01a0edb3-b9b0-704b-b5af-9a1fb2680187",
+      "name": "portfolio.optimizer.candidate.hash"
+    },
+    {
+      "uuid": "01a0edb3-b9b1-7443-a9e0-fdd51462f45c",
+      "name": "portfolio.optimizer.candidate.prune.static"
+    },
+    {
+      "uuid": "01a0edb3-b9b2-76a9-829a-859e1dcde98f",
+      "name": "portfolio.optimizer.simulate.coarse"
+    },
+    {
+      "uuid": "01a0edb3-b9b3-73ff-b7be-f5a259080a9e",
+      "name": "portfolio.optimizer.simulate.refine"
+    },
+    {
+      "uuid": "01a0edb3-b9b4-7741-8aa6-d4a555a02d08",
+      "name": "portfolio.optimizer.simulate.high_fidelity"
+    },
+    {
+      "uuid": "01a0edb3-b9b5-79f7-9420-7a5859e76b15",
+      "name": "portfolio.optimizer.simulation.replay"
+    },
+    {
+      "uuid": "01a0edb3-b9b6-700e-8c19-b06b17a74b29",
+      "name": "portfolio.optimizer.simulation.evidence.verify"
+    },
+    {
+      "uuid": "01a0edb3-b9b7-71ba-b139-8d63c3878719",
+      "name": "portfolio.optimizer.feasibility.evaluate"
+    },
+    {
+      "uuid": "01a0edb3-b9b8-7ea4-8006-d19e06232f51",
+      "name": "portfolio.optimizer.pareto.compute"
+    },
+    {
+      "uuid": "01a0edb3-b9b9-7b81-b563-be13aea0bf87",
+      "name": "portfolio.optimizer.pareto.dominance"
+    },
+    {
+      "uuid": "01a0edb3-b9ba-72da-a808-2809641f447e",
+      "name": "portfolio.optimizer.pareto.frontier"
+    },
+    {
+      "uuid": "01a0edb3-b9bb-7fe4-8e35-8702c2aba643",
+      "name": "portfolio.optimizer.pareto.explain"
+    },
+    {
+      "uuid": "01a0edb3-b9bc-7e56-a319-17f7a0f293bd",
+      "name": "portfolio.optimizer.utility.score"
+    },
+    {
+      "uuid": "01a0edb3-b9bd-7e44-a2cf-b0e90970d0c5",
+      "name": "portfolio.optimizer.sensitivity.one_way"
+    },
+    {
+      "uuid": "01a0edb3-b9be-7542-8ea1-2547f9dcf790",
+      "name": "portfolio.optimizer.sensitivity.robustness"
+    },
+    {
+      "uuid": "01a0edb3-b9bf-7b6d-9db8-3de1b91e626d",
+      "name": "portfolio.optimizer.sensitivity.rank_stability"
+    },
+    {
+      "uuid": "01a0edb3-b9c0-76b4-bf6e-d0dc2f270cea",
+      "name": "portfolio.optimizer.confidence.compute"
+    },
+    {
+      "uuid": "01a0edb3-b9c1-77b4-a4a6-ca4d152d172b",
+      "name": "portfolio.optimizer.knowledge.seed.fruitful"
+    },
+    {
+      "uuid": "01a0edb3-b9c2-763e-978a-52351bb68cf8",
+      "name": "portfolio.optimizer.knowledge.exclude.unfruitful"
+    },
+    {
+      "uuid": "01a0edb3-b9c3-7bbf-b312-827d1667318f",
+      "name": "portfolio.optimizer.knowledge.freshness.check"
+    },
+    {
+      "uuid": "01a0edb3-b9c4-7c1f-a004-444e116550c3",
+      "name": "portfolio.optimizer.knowledge.promoted.only"
+    },
+    {
+      "uuid": "01a0edb3-b9c5-7c92-bec6-f64394fe0e09",
+      "name": "portfolio.optimizer.recommendation.create"
+    },
+    {
+      "uuid": "01a0edb3-b9c6-7c95-8953-4f6534488bb4",
+      "name": "portfolio.optimizer.recommendation.compare"
+    },
+    {
+      "uuid": "01a0edb3-b9c7-7e9b-b40c-874f3016a709",
+      "name": "portfolio.optimizer.recommendation.explain"
+    },
+    {
+      "uuid": "01a0edb3-b9c8-7a4d-b85d-ee0f61859c05",
+      "name": "portfolio.optimizer.recommendation.delegate"
+    },
+    {
+      "uuid": "01a0edb3-b9c9-75d8-88ef-1b0d4f494ac1",
+      "name": "portfolio.optimizer.recommendation.approval.require"
+    },
+    {
+      "uuid": "01a0edb3-b9ca-74b9-a7c0-10d0a6682930",
+      "name": "portfolio.optimizer.cost.compute"
+    },
+    {
+      "uuid": "01a0edb3-b9cb-711d-96ad-065e9793f5d8",
+      "name": "portfolio.optimizer.deadline.compute"
+    },
+    {
+      "uuid": "01a0edb3-b9cc-7b5f-a311-41c4ecf88b5e",
+      "name": "portfolio.optimizer.risk.compute"
+    },
+    {
+      "uuid": "01a0edb3-b9cd-7740-a034-dc2387b570c5",
+      "name": "portfolio.optimizer.contention.compute"
+    },
+    {
+      "uuid": "01a0edb3-b9ce-7b6b-b57e-399e6fba1290",
+      "name": "portfolio.optimizer.cloud_share.compute"
+    },
+    {
+      "uuid": "01a0edb3-b9cf-7b50-8e1a-b889d3308a34",
+      "name": "portfolio.optimizer.audit.event.append"
+    },
+    {
+      "uuid": "01a0edb3-b9d0-75ab-8b2d-aae3568f319d",
+      "name": "portfolio.optimizer.evidence.record"
+    },
+    {
+      "uuid": "01a0edb3-b9d1-7244-82b9-2209437447d7",
+      "name": "portfolio.optimizer.report.executive.render"
+    },
+    {
+      "uuid": "01a0edb3-b9d2-7c8f-bac9-8a7345bc935b",
+      "name": "portfolio.optimizer.report.pareto.render"
+    },
+    {
+      "uuid": "01a0edb3-b9d3-747d-aa20-fe55d33d36d7",
+      "name": "portfolio.optimizer.report.tradeoff.render"
+    },
+    {
+      "uuid": "01a0edb3-b9d4-75d9-90c8-4556cd1cd211",
+      "name": "portfolio.optimizer.guard.no_direct_mutation"
+    },
+    {
+      "uuid": "01a0edb3-b9d5-7c90-ac9a-34f7e7901023",
+      "name": "portfolio.optimizer.guard.no_gate_override"
+    },
+    {
+      "uuid": "01a0edb3-b9d6-7908-8717-2b6453022ea1",
+      "name": "portfolio.optimizer.guard.no_unapproved_budget_increase"
+    },
+    {
+      "uuid": "01a0edb3-b9d7-751f-a495-61c2c6441e77",
+      "name": "portfolio.optimizer.guard.source_state"
+    },
+    {
+      "uuid": "01a0edb3-b9d8-7585-80ca-3ff5b1cfb0f3",
+      "name": "portfolio.optimizer.guard.max_search_budget"
+    }
+  ]
+}

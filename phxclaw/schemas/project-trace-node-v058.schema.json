@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PhxClaw Project Trace Node v0.58",
+  "type": "object",
+  "required": [
+    "tenant_uuid",
+    "project_uuid",
+    "node_uuid",
+    "kind",
+    "logical_key",
+    "title",
+    "source_state_sha256"
+  ],
+  "properties": {
+    "tenant_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "project_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "node_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "parent_uuid": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid"
+    },
+    "kind": {
+      "type": "string"
+    },
+    "logical_key": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "source_state_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "object_type": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "object_uuid": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid"
+    },
+    "metadata": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": true
+}

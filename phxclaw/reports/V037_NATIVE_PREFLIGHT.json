@@ -1,0 +1,13 @@
+{
+  "version": "0.37.0",
+  "host_tools": {
+    "cargo": false,
+    "rustc": false,
+    "psql": false,
+    "postgres": false,
+    "git": true,
+    "python3": true
+  },
+  "native_gates_executed": false,
+  "reason": "native Rust/PostgreSQL gates only run when tools and DB roles are available"
+}

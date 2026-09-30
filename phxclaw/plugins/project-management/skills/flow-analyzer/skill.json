@@ -1,0 +1,38 @@
+{
+  "uuid": "01a0eab2-5c2a-7471-a9f2-bdbf60841a38",
+  "id": "flow-analyzer",
+  "name": "Flow Analyzer",
+  "category": "kanban",
+  "function": "Analisa fluxo de trabalho",
+  "capability": "project.skill.flow-analyzer",
+  "agent_role": "kanban",
+  "permissions": [
+    "project.read",
+    "kanban.write"
+  ],
+  "risk": "low",
+  "approval_required": false,
+  "evidence_required": true,
+  "lifecycle_hooks": [
+    "before_invoke",
+    "after_invoke",
+    "on_failure"
+  ],
+  "rollback": "not_applicable",
+  "version": "0.42.0",
+  "semver": "0.42.0",
+  "manifest_uuid": "01a0eab2-5c31-7116-9b62-2e0a6844d263",
+  "dependencies": [
+    "phxclaw-skill-runtime>=0.15",
+    "phxclaw-evidence-ledger>=0.9"
+  ],
+  "compatibility": {
+    "phxclaw": ">=0.41,<0.43"
+  },
+  "sandbox": "deny-by-default",
+  "signature_policy": "release-signing-required",
+  "provenance": {
+    "origin": "user-defined-project-management-suite",
+    "license": "PhxClaw project source policy"
+  }
+}

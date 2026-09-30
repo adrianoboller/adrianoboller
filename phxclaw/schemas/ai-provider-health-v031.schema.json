@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phxclaw.local/schemas/ai-provider-health-v031.schema.json",
+  "title": "ai-provider-health-v031",
+  "additionalProperties": true,
+  "type": "object",
+  "required": [
+    "provider_uuid",
+    "health_basis_points",
+    "observed_at_unix",
+    "ttl_seconds"
+  ],
+  "properties": {
+    "provider_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "health_basis_points": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 10000
+    },
+    "observed_at_unix": {
+      "type": "integer"
+    },
+    "ttl_seconds": {
+      "type": "integer",
+      "minimum": 1
+    }
+  }
+}

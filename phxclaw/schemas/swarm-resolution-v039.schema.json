@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Signed Conflict Resolution",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "payload": {
+      "type": "object"
+    },
+    "signer_key_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "signer_public_key_base64": {
+      "type": "string",
+      "minLength": 40
+    },
+    "signature_base64": {
+      "type": "string",
+      "minLength": 80
+    }
+  },
+  "required": [
+    "payload",
+    "signer_key_id",
+    "signer_public_key_base64",
+    "signature_base64"
+  ]
+}

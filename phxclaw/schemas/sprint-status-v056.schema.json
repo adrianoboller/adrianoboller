@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "source_state_sha256",
+    "green",
+    "yellow",
+    "red",
+    "sprints"
+  ],
+  "properties": {
+    "source_state_sha256": {
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "green": {
+      "type": "integer"
+    },
+    "yellow": {
+      "type": "integer"
+    },
+    "red": {
+      "const": 0
+    },
+    "sprints": {
+      "type": "array",
+      "minItems": 26,
+      "maxItems": 26
+    }
+  }
+}

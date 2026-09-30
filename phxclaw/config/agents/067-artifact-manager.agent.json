@@ -1,0 +1,89 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f643-7271-9c16-dbafea8c5249",
+  "agent_id": 67,
+  "name": "Artifact Manager",
+  "macroarea": "Operações & Infraestrutura",
+  "nucleus": "Artefatos",
+  "role_type": "Agente de artefatos",
+  "mission": "Guarda e versiona binários, WASM, schemas, relatórios, screenshots e SBOMs.",
+  "responsibilities": "Mantém hashes, metadata, retention, provenance e ligação a build/release.",
+  "resources": "Object storage/filesystem, PostgreSQL, hash/signature tools.",
+  "authorized_actions": "Registrar, verificar, recuperar e expirar artifacts por política.",
+  "trigger": "Build/test/release produz artefato.",
+  "declared_dependencies": "Artifact + metadata.",
+  "resolved_agent_dependencies": [],
+  "deliverables": "Artifact Registry entry.",
+  "limits": "Não substitui Git nem apaga evidência sob retenção legal/técnica.",
+  "next_gate": "Reproducible Build/Release.",
+  "execution": "Permanente",
+  "models_allowed": [
+    "determinístico",
+    "ollama"
+  ],
+  "criticality": "Alta",
+  "modules": [
+    "F17 Checkpoint + Rollback",
+    "F22 Device Nodes",
+    "F25 Knowledge / Evidence Graph"
+  ],
+  "capabilities": [
+    "artifact.registry.manage",
+    "checkpoint.read",
+    "evidence.read",
+    "knowledge.read",
+    "node.observe"
+  ],
+  "permissions": [
+    {
+      "name": "artifact.registry.manage",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "checkpoint.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "evidence.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "knowledge.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Checkpoint manifest + hashes + rollback evidence; Node/session state efêmero e pareado; Knowledge/Evidence Graph com proveniência; Estado operacional persistente em PostgreSQL",
+  "event_topics": "agent.artifact.manager.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; writes policy-gated; evidência obrigatória; sem autoaprovação. Device input/screen exige autorização de sessão e logging.",
+  "references": "Hermes — patterns; validar licença por versão | OpenClaw — gateway/nodes/channels; validar licença por versão | ZeroClaw — benchmark Rust/providers/tools",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 68
+  }
+}

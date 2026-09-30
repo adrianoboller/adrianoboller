@@ -1,0 +1,66 @@
+{
+  "uuid": "01a0e48f-3d0e-7e1f-948b-b841a7c728ad",
+  "code": "F12",
+  "title": "Media + Document Intelligence",
+  "goal": "OCR, voz e leitura/escrita dos formatos de documentos solicitados.",
+  "status": "review",
+  "tasks": [
+    {
+      "uuid": "01a0e48f-3d0e-70ed-81e3-7f062e2b9beb",
+      "title": "OCR Tesseract para imagem/PDF",
+      "status": "done"
+    },
+    {
+      "uuid": "01a0e48f-3d0e-742a-b46a-50e5e1b0c7c8",
+      "title": "TTS local eSpeak",
+      "status": "done"
+    },
+    {
+      "uuid": "01a0e48f-3d0e-7ea5-bbb9-9cf9bb843e87",
+      "title": "STT Whisper adapter",
+      "status": "done"
+    },
+    {
+      "uuid": "01a0e48f-3d0e-72e7-83af-feeee44aadc3",
+      "title": "PDF read/write",
+      "status": "done"
+    },
+    {
+      "uuid": "01a0e48f-3d0e-7457-9bd7-b79e8cc66905",
+      "title": "TXT/CSV/JSON/XML/PY read/write",
+      "status": "done"
+    },
+    {
+      "uuid": "01a0e48f-3d0e-7ea9-9e77-0aa8b06996b2",
+      "title": "XLSX read/write",
+      "status": "done"
+    },
+    {
+      "uuid": "01a0e48f-3d0e-7f66-9644-9b9f4b567d08",
+      "title": "DOCX read/write",
+      "status": "done"
+    },
+    {
+      "uuid": "01a0e48f-3d0e-777d-bbc4-5d2960f291b8",
+      "title": "Whisper model/runtime E2E",
+      "status": "blocked"
+    }
+  ],
+  "definition_of_done": [
+    "OCR gera TXT",
+    "TTS gera \u00e1udio",
+    "STT possui provider substitu\u00edvel",
+    "formatos documentais cobertos",
+    "plugins assinados e sandboxados"
+  ],
+  "notes": [
+    "Office adapter e Media adapter processuais implementados. STT depende de bin\u00e1rio/modelo Whisper no host; n\u00e3o \u00e9 falsamente marcado como validado.",
+    "Source implementation is closed in v0.70; blocked native E2E is tracked in the release qualification matrix."
+  ],
+  "state": "review",
+  "canonical_project_version": "0.70.0",
+  "canonical_state_ref": "config/project-state-canonical.v070.json",
+  "implementation_state": "source_ready",
+  "verification_state": "static_verified",
+  "open_gaps": []
+}

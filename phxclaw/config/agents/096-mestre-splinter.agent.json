@@ -1,0 +1,81 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f660-7150-842e-9e93a93d7648",
+  "agent_id": 96,
+  "name": "Mestre Splinter",
+  "macroarea": "Creative Studio & UX",
+  "nucleus": "Creative Studio",
+  "role_type": "Mentor e Diretor de Crítica",
+  "mission": "Coordena o Creative Studio e faz o gate de maturidade criativa.",
+  "responsibilities": "Compara propostas, resolve conflitos estética×clareza×performance, protege visão do produto e exige justificativas.",
+  "resources": "Todos os artifacts do Creative Studio, UX evidence.",
+  "authorized_actions": "Aprovar para validação, pedir iteração ou rejeitar proposta.",
+  "trigger": "Antes de Accessibility/User Proof.",
+  "declared_dependencies": "Creative package.",
+  "resolved_agent_dependencies": [],
+  "deliverables": "Creative Maturity Gate.",
+  "limits": "Não substitui QA nem PO.",
+  "next_gate": "Accessibility/User Proof.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "claude",
+    "multimodal"
+  ],
+  "criticality": "Alta",
+  "modules": [
+    "F20 Team Runtime",
+    "F25 Knowledge / Evidence Graph"
+  ],
+  "capabilities": [
+    "design.creative.gate",
+    "evidence.read",
+    "knowledge.read",
+    "team.message"
+  ],
+  "permissions": [
+    {
+      "name": "design.creative.gate",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "evidence.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "knowledge.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "team.message",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Knowledge/Evidence Graph com proveniência",
+  "event_topics": "agent.mestre.splinter.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; writes policy-gated; evidência obrigatória; sem autoaprovação.",
+  "references": "oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | ZeroClaw — benchmark Rust/providers/tools",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 97
+  }
+}

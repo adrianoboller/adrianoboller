@@ -1,0 +1,14 @@
+[package]
+name = "phxclaw-hermes-bridge"
+version = "0.30.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+description = "Governed Hermes Agent skill, memory, MCP and GitHub interoperability for PhxClaw"
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+sha2 = "0.10"
+thiserror = "2"
+uuid = { version = "1", features = ["serde", "v7"] }
+[lints.rust]
+unsafe_code = "forbid"

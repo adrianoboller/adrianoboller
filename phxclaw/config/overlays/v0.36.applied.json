@@ -1,0 +1,112 @@
+{
+  "version": "0.36.0",
+  "base": "0.35.0",
+  "copied": [
+    {
+      "path": "config/skill-router-policy.v036.json",
+      "sha256": "b88af7d9c1f073696c23d643b5b11be3cf259c24b26b04091269183242812006"
+    },
+    {
+      "path": "config/chaos-resilience-policy.v036.json",
+      "sha256": "f268dbb96b1369e42f1cdead936400f89de17585863ccba7760bf2ade6ea6f2c"
+    },
+    {
+      "path": "config/skill-catalog.v036.json",
+      "sha256": "994c9806b230781120a07212263d2a74e15197cb15fc7abb0588ef691beab683"
+    },
+    {
+      "path": "capabilities/V036_CAPABILITIES_DELTA.json",
+      "sha256": "7c0b3bd3b602c6bef98b94fb0e3df7e6d9ad6273945fa7e385e7cb4f63e66cb6"
+    },
+    {
+      "path": "schemas/chaos-experiment-v036.schema.json",
+      "sha256": "eb2b9a3a8beceb3345f2972f319da70b037200a25e7f1f3ac17d1369584d582e"
+    },
+    {
+      "path": "schemas/skill-route-plan-v036.schema.json",
+      "sha256": "488ff4b38d123c21ecfce1e2baad4578ecffc2306052946b4bcad762ef95ae85"
+    },
+    {
+      "path": "schemas/incident-record-v036.schema.json",
+      "sha256": "cf9d340ac89ada492773a13e5bf0323fc5a4bc2c569bb3f792a50190d65a0d62"
+    },
+    {
+      "path": "tools/test_v036_local.py",
+      "sha256": "4660d16a5174701d728987783d8615b39f7037205dbc332768c2c5e175a189a1"
+    },
+    {
+      "path": "tools/check_package_v036.py",
+      "sha256": "6c0bbcded712fb40b202770fbc9770c8148af8bfc06f0f8bf7a53dbb6ca3b7e8"
+    },
+    {
+      "path": "tools/verify_v036.py",
+      "sha256": "6e6a6deffdcd26c60f8f2b6f49a8a3ca50f4bd4ce2cf94cb99fa0e7b02dbdcc4"
+    },
+    {
+      "path": "reports/BUILD_REPORT_V036.md",
+      "sha256": "933a180bd894f03c79d274e57cd89ec3da20b7117924d8ecf3fb13ebc8d99543"
+    },
+    {
+      "path": "reports/V036_LOCAL_TEST_REPORT.json",
+      "sha256": "9b1974be6e85fda9fae34c4445b0caafb9dbf9f38edae65fe7825e84a870142c"
+    },
+    {
+      "path": "reports/V036_GATE_REPORT.json",
+      "sha256": "515cccbd3e31c34d8b3595fd94c1686753575775c9ce8745b75caf0400420391"
+    },
+    {
+      "path": "reports/V036_STATIC_VERIFY_REPORT.json",
+      "sha256": "9f6ad585066ff0a11e4e76f8d657349b4ad3cc7009e301be997ab51fe0d058b0"
+    },
+    {
+      "path": "reports/V036_NATIVE_PREFLIGHT.json",
+      "sha256": "1edea826d4db04bbbb88bb013ea3ec3ad83146a219240a273bff487a2a531236"
+    },
+    {
+      "path": "reports/V036_PACKAGE_CHECKS.json",
+      "sha256": "611eb9d5f991b9c5beab17ddf5b4cd2a3b6cb527b40c8b1861dbf8f00022c95c"
+    },
+    {
+      "path": "migrations/0036_incident_chaos_skill_router.sql",
+      "sha256": "2d994b9ebc8be4d39ace2351194161505db7676da8fe8e5cf51c50fa1e51cf84"
+    },
+    {
+      "path": "docs/INCIDENT_CHAOS_SKILL_ROUTER_V036.md",
+      "sha256": "ea079a7e988115416035bfc72eec953a823db04f6913f28a75339330da923b24"
+    },
+    {
+      "path": "docs/THIRD_PARTY_SKILL_AUDIT_V036.md",
+      "sha256": "1454170b0c4a4b7950cd75d0da5b65d7893f3b9e78f5ee447dc19f3614128b11"
+    },
+    {
+      "path": "ci/run-v036-native.ps1",
+      "sha256": "bffd45b5a5b0171555343fef32d482c7da31b9382e4ea6c7a01cf32c079ebe4c"
+    },
+    {
+      "path": "ci/run-v036-native.sh",
+      "sha256": "e2c2a7e82ce9e8d17920af7d163d77e54a73d260ae0ec224b31c177ff35e087e"
+    },
+    {
+      "path": "crates/phxclaw-skill-router/Cargo.toml",
+      "sha256": "498d0027d817b2826b53a16820a9e9769594bae3953b4188d736be1bf46f7177"
+    },
+    {
+      "path": "crates/phxclaw-incident-chaos/Cargo.toml",
+      "sha256": "98066af17e3bf593a30dbe725854348ffc634de33f3145a1a7f2098e1a84e55f"
+    },
+    {
+      "path": "crates/phxclaw-incident-chaos/src/lib.rs",
+      "sha256": "51c00121ab11a7461fb4fa35895d2977328d5b5e5883babc61b2f5444dfc82ee"
+    },
+    {
+      "path": "crates/phxclaw-skill-router/src/lib.rs",
+      "sha256": "6f4f273c9249c8737b774994c71cb38e60907c1a29dea2c8f1a6f484b82ec63c"
+    },
+    {
+      "path": "tests/sql/v036_rls_e2e.sql",
+      "sha256": "72fbb454c9ea0d3c21746e8d2187c83212bd68651adc29f7c685d507ed474442"
+    }
+  ],
+  "workspace": "v0.36 crates present exactly once",
+  "cargo_lock_requires_refresh": false
+}

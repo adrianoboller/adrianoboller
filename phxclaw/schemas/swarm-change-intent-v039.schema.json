@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Swarm Change Intent",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "intent_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "swarm_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tenant_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "team": {
+      "type": "string"
+    },
+    "actor_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "base_source_sha256": {
+      "type": "string",
+      "pattern": "^[0-9A-Fa-f]{64}$"
+    },
+    "artifact_sha256": {
+      "type": "string",
+      "pattern": "^[0-9A-Fa-f]{64}$"
+    },
+    "changed_paths": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "changed_symbols": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "contract_changes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "uniqueItems": true
+    },
+    "depends_on_intents": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "uniqueItems": true
+    }
+  },
+  "required": [
+    "intent_uuid",
+    "swarm_uuid",
+    "tenant_uuid",
+    "team",
+    "actor_uuid",
+    "base_source_sha256",
+    "artifact_sha256",
+    "changed_paths",
+    "changed_symbols",
+    "contract_changes",
+    "depends_on_intents"
+  ]
+}

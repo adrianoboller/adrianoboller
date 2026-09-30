@@ -1,0 +1,176 @@
+{
+  "version": "0.30.0",
+  "base": "0.29.0",
+  "copied": [
+    {
+      "path": "config/ha-control-policy.v030.json",
+      "sha256": "ce7b7752cedf99a1dff63644e76f8926b2e62e5fd6852074f6e72d822719af88"
+    },
+    {
+      "path": "config/hermes-bridge-policy.v030.json",
+      "sha256": "5fe563e1a05c78218a04db7d3ba013174df3f3e0b9e893f6ec580ed5573986b2"
+    },
+    {
+      "path": "config/ollama-provider.v030.json",
+      "sha256": "5232a61b20f6a2c66599cdb17c6fa08fcd2b21a05dff865979590fb2171dd7e6"
+    },
+    {
+      "path": "config/obsidian-bridge-policy.v030.json",
+      "sha256": "fd1d8983d11b53b9755ad3bb94fcaf07f7d84889ceb4653cf675aff4f6869b85"
+    },
+    {
+      "path": "capabilities/V030_CAPABILITIES_DELTA.json",
+      "sha256": "cbcc7587b98db819d4b1a3d4a2fc44837f97ae9bb395d2c0ef06a6b96b83481a"
+    },
+    {
+      "path": "schemas/obsidian-exchange-v030.schema.json",
+      "sha256": "daaaea853797c9dacd9867e835430e0f7cf4481d9ff3a57d49934cc0da52fe27"
+    },
+    {
+      "path": "schemas/reconcile-intent-v030.schema.json",
+      "sha256": "9f87da5a70fb65464c7de2deba13c552de1f522d7b08acedcebc16457106e904"
+    },
+    {
+      "path": "schemas/leader-lease-v030.schema.json",
+      "sha256": "dc29c3406fc12b539db5e08aa1fa9b957ae21be9dcbdcc3610f960e9ce85f3b7"
+    },
+    {
+      "path": "schemas/ollama-provider-v030.schema.json",
+      "sha256": "2489a25b8f8912230eafb55009e8bc4bfc4af403d5340fca8a1da917a5961da8"
+    },
+    {
+      "path": "schemas/hermes-import-v030.schema.json",
+      "sha256": "c4332011299a52e0f210986a1eb8ab9279c383302e7d50d1632d6889ca0583b0"
+    },
+    {
+      "path": "schemas/controller-member-v030.schema.json",
+      "sha256": "b66a04380ca98f8d8463fec7affe584fadc4e75e5689b396846c4c10a2e9d5a7"
+    },
+    {
+      "path": "tools/probe_obsidian_vault.py",
+      "sha256": "448bc27fd134a35e3230a8d7b896886280aa34d5815923c63b5da06bcc918a2a"
+    },
+    {
+      "path": "tools/test_v030_local.py",
+      "sha256": "19705437c6e0b060c46fa06b62fedde516ed152e251f4973bc679859695c52bd"
+    },
+    {
+      "path": "tools/probe_ollama.py",
+      "sha256": "6f8681a097d6cc6cbcfe70acd2dbdcf90d53e246523b3bf25b5f707338b4bc3a"
+    },
+    {
+      "path": "tools/probe_hermes.py",
+      "sha256": "fb31e37954e06e0e96d75367b989334752cb85817d615854e0ecb5dbfa468c9c"
+    },
+    {
+      "path": "tools/verify_v030.py",
+      "sha256": "7823445666ca8b028ce535874e3a50e07553b52414177bf8a51dbfb589f39bd5"
+    },
+    {
+      "path": "migrations/0030_distributed_control_plane.sql",
+      "sha256": "49db116acc2de11fc692100cef8c540b66a92c00287040450171a364a56eafd9"
+    },
+    {
+      "path": "docs/UPSTREAM_REUSE_V030.md",
+      "sha256": "f94f2a9aeaa98c678d4cd66587ac7563fc7a5e877568b80d5c4595c5a763abda"
+    },
+    {
+      "path": "docs/THIRD_PARTY_NOTICES_V030.md",
+      "sha256": "b0cee0deb340fd511e0f1bdebd90f6c7f454df937ff6d4f8d5d6cac1a10137d1"
+    },
+    {
+      "path": "docs/DISTRIBUTED_CONTROL_PLANE_V030.md",
+      "sha256": "c7220b8a4ebb95f39aed0a9602a93e85bbed64f82db44b7da1e3caeea50d39e7"
+    },
+    {
+      "path": "docs/INTEGRATIONS_AUDIT_V030.md",
+      "sha256": "8f8ff3f3adc886d6bbc4dbe813c05fe48c81a817ff6ec9f8ce6e2acd863973ac"
+    },
+    {
+      "path": "ci/run-v030-native.ps1",
+      "sha256": "2a471403c1bee8d719d2968aca942e10f899252616873ea2fb76a5aa2820e4af"
+    },
+    {
+      "path": "ci/run-v030-native.sh",
+      "sha256": "12bbc5b3235ac3522d398aeec0e58ca02f163e25285e050e50504d04fd776e9c"
+    },
+    {
+      "path": "crates/phxclaw-ollama-provider/Cargo.toml",
+      "sha256": "07ffaafbf528a5095e53cb8a297eb60647f918634919aa649f4f4c94daeef24f"
+    },
+    {
+      "path": "crates/phxclaw-ha-control-plane/Cargo.toml",
+      "sha256": "2da8b50d0232bf862a079e174eb5624f6472e02e1c726754a3142450176214d7"
+    },
+    {
+      "path": "crates/phxclaw-hermes-bridge/Cargo.toml",
+      "sha256": "f20c1e5b40a0fdf7ba355a292cd229122d6e7ba25afce583fd506670d3701a2f"
+    },
+    {
+      "path": "crates/phxclaw-obsidian-bridge/Cargo.toml",
+      "sha256": "2640abbc30311c387610316906c6355e47e23881b5ac063307e510d67a94daff"
+    },
+    {
+      "path": "crates/phxclaw-obsidian-bridge/src/lib.rs",
+      "sha256": "dbbc46a1ec23d8ea2f24a5b8eeadd2640d1b70cd926f103468a33fd0bdc7fd2d"
+    },
+    {
+      "path": "crates/phxclaw-hermes-bridge/src/lib.rs",
+      "sha256": "ca36cfaf0dffbb172a7836a33da7a4d8554a2b7f51bf00af15015f3f99fd95bd"
+    },
+    {
+      "path": "crates/phxclaw-ha-control-plane/src/lib.rs",
+      "sha256": "6897dcbe71f81d36e9c6823bb24c8e74100f763ff9a4c8025a6ae89068bd100f"
+    },
+    {
+      "path": "crates/phxclaw-ollama-provider/src/lib.rs",
+      "sha256": "af13fcf69e05c7eedf77ca07fa56e6a71d48a798ac0fe44adf4c40e9565f470c"
+    },
+    {
+      "path": "integrations/obsidian-phxclaw/LICENSE",
+      "sha256": "070216992785800c370c17bbbb7642b2143bfb3bd52e878ded10834342d59320"
+    },
+    {
+      "path": "integrations/obsidian-phxclaw/package.json",
+      "sha256": "e25c276d4756c6232893a6fadb5f3a13db5fe634a6efa59f306d5701d7935102"
+    },
+    {
+      "path": "integrations/obsidian-phxclaw/manifest.json",
+      "sha256": "6c495e3231a8cb4eb5d8ceb8023938b6dde710198093e69f49c7e53528dc5ab7"
+    },
+    {
+      "path": "integrations/obsidian-phxclaw/src/main.ts",
+      "sha256": "d57edefe296ac922b23cb8e331d1042e400b2bbc63403fcea15b234b1ac09c3c"
+    },
+    {
+      "path": ".github/workflows/phxclaw-v030-ha-integrations.yml",
+      "sha256": "b7ddba5768874026b88f082a9b8e5dd514636f0457fcb756171a41b093e6d210"
+    },
+    {
+      "path": "plugins/hermes-bridge/phxclaw.plugin.json",
+      "sha256": "e43e88404d5df069384f859b8a66fc07585813c3b8a440d8e1327bd6ed135953"
+    },
+    {
+      "path": "plugins/hermes-bridge/SOURCE_INTEGRITY.json",
+      "sha256": "3c8c023e201945de1813aec06e971f0c295bcb1f033f44cf3d69f123c20a822f"
+    },
+    {
+      "path": "plugins/obsidian-bridge/phxclaw.plugin.json",
+      "sha256": "6e0033a6187faf7d9573898861dbf7132fd1790c90863658a494c1144f81379b"
+    },
+    {
+      "path": "plugins/obsidian-bridge/SOURCE_INTEGRITY.json",
+      "sha256": "1844ec74536370511e198a96368265976e28191672c403edbd55e27cf6c4c587"
+    },
+    {
+      "path": "plugins/ollama-provider/phxclaw.plugin.json",
+      "sha256": "74e264872c4223028b56efab5714ce49cee756181ae7b6118d515da4d8eafa8d"
+    },
+    {
+      "path": "plugins/ollama-provider/SOURCE_INTEGRITY.json",
+      "sha256": "0c7edfe70da6902fdf32c1c86efa6ed6331251301bd5029fe5ed885a255e0322"
+    }
+  ],
+  "workspace": "v0.30 crates present exactly once",
+  "cargo_lock_requires_refresh": false
+}

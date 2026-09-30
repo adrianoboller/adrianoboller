@@ -1,0 +1,147 @@
+{
+  "suite": "v0.48 static",
+  "pass": 27,
+  "fail": 1,
+  "checks": [
+    {
+      "name": "json_config/capabilities-v048.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/executive-portfolio-snapshot.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/executive-alert.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/executive-decision-request.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "capability_count",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "uuidv7_caps",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_PortfolioExecutiveSnapshot",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_ProjectExecutiveRow",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_rank_attention",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_rollup_portfolio",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_ExecutiveAlert",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_ExecutiveDecisionRequest",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_DelegateRequired",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_never",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "read_only_rule",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "delegate_supervisor",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "config_read_only",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "never_security_gate",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "never_privacy_gate",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "never_release_gate",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "never_knowledge_promotion_gate",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "never_fencing",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "never_budget_hard_limit",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_force_rls",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_rls_exact",
+      "pass": false,
+      "detail": ""
+    },
+    {
+      "name": "sql_append_only",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "ui_exists",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_legacy_brand",
+      "pass": true,
+      "detail": ""
+    }
+  ]
+}

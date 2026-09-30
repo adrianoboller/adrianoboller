@@ -1,0 +1,79 @@
+{
+  "uuid": "01a0e4bb-ad02-710a-b560-8a55aaf3fdd4",
+  "code": "F14",
+  "title": "Desktop Host real + Live API/Event Bus",
+  "goal": "Conectar o Command Center aos agentes e ao host via Tauri/WRY, event stream em tempo real e evid\u00eancia UUIDv7 para cada a\u00e7\u00e3o.",
+  "status": "review",
+  "tasks": [
+    {
+      "uuid": "01a0e4bb-ad02-7f3a-a37c-74cf1501a9d8",
+      "title": "Tauri Desktop Host v2.12",
+      "status": "done"
+    },
+    {
+      "uuid": "01a0e4bb-ad02-7cfe-aaf8-360dc3dad554",
+      "title": "LiveEventHub com broadcast e replay limitado",
+      "status": "done"
+    },
+    {
+      "uuid": "01a0e4bb-ad03-7816-8fe1-2b628e1c2479",
+      "title": "API loopback com health, snapshot, SSE e WebSocket",
+      "status": "done"
+    },
+    {
+      "uuid": "01a0e4bb-ad03-722c-bc52-d0a25ec8e7b7",
+      "title": "Bearer token local e host-control HTTP deny-by-default",
+      "status": "done"
+    },
+    {
+      "uuid": "01a0e4bb-ad03-7ce3-af0b-86d5bf3b6c75",
+      "title": "Bridge Tauri \u2194 UI para eventos em tempo real",
+      "status": "done"
+    },
+    {
+      "uuid": "01a0e4bb-ad03-7025-a902-0206f8defc90",
+      "title": "Dispatcher desktop.action para agentes",
+      "status": "done"
+    },
+    {
+      "uuid": "01a0e4bb-ad03-75e8-9a18-4bae64b78ffb",
+      "title": "Shell/app launch/input/screenshot atr\u00e1s de pol\u00edtica",
+      "status": "done"
+    },
+    {
+      "uuid": "01a0e4bb-ad03-783a-9d1b-920dc34a11c4",
+      "title": "WebView DOM bridge + native JavaScript eval",
+      "status": "done"
+    },
+    {
+      "uuid": "01a0e4bb-ad03-7ba4-9c0a-da0081b675dc",
+      "title": "Evidence Ledger append-only com hash chain",
+      "status": "done"
+    },
+    {
+      "uuid": "01a0e4bb-ad03-70d2-a5e9-e42a2d35c4b5",
+      "title": "E2E nativo Windows/Linux com Rust/Tauri",
+      "status": "blocked"
+    }
+  ],
+  "definition_of_done": [
+    "Command Center recebe EventEnvelope ao vivo",
+    "SSE e WebSocket publicados apenas em loopback com bearer auth",
+    "agentes podem solicitar desktop.action pelo Event Bus",
+    "host actions obedecem deny-by-default",
+    "cada a\u00e7\u00e3o gera EvidenceRecord UUIDv7 encadeado por SHA-256",
+    "WebView interno responde opera\u00e7\u00f5es DOM tipadas",
+    "E2E nativo compilado e executado em host com toolchain Rust/Tauri"
+  ],
+  "notes": [
+    "F14 foi antecipado antes do Skill Runtime porque \u00e9 depend\u00eancia para conectar UI, agentes, opera\u00e7\u00f5es locais e evid\u00eancias.",
+    "O ambiente de montagem n\u00e3o possui cargo/rustc, por isso build Tauri e E2E nativo permanecem bloqueados; valida\u00e7\u00f5es est\u00e1ticas e JavaScript s\u00e3o executadas.",
+    "Source implementation is closed in v0.70; blocked native E2E is tracked in the release qualification matrix."
+  ],
+  "state": "review",
+  "canonical_project_version": "0.70.0",
+  "canonical_state_ref": "config/project-state-canonical.v070.json",
+  "implementation_state": "source_ready",
+  "verification_state": "static_verified",
+  "open_gaps": []
+}

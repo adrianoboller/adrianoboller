@@ -1,0 +1,46 @@
+{
+  "spdxVersion": "SPDX-2.3",
+  "dataLicense": "CC0-1.0",
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "PhxClaw olmOCR adapter source",
+  "documentNamespace": "https://phxclaw.local/spdx/01a0e5b0-b5cf-77af-834a-39dd831563b6",
+  "creationInfo": {
+    "created": "2026-09-27T22:05:00Z",
+    "creators": [
+      "Tool: PhxClaw bootstrap generator"
+    ]
+  },
+  "packages": [
+    {
+      "name": "phxclaw-olmocr-adapter",
+      "SPDXID": "SPDXRef-Package-Adapter",
+      "versionInfo": "0.1.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "Apache-2.0",
+      "licenseDeclared": "Apache-2.0"
+    },
+    {
+      "name": "olmocr",
+      "SPDXID": "SPDXRef-Package-olmOCR",
+      "downloadLocation": "https://github.com/allenai/olmocr",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "Apache-2.0",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/olmocr"
+        }
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "spdxElementId": "SPDXRef-Package-Adapter",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-olmOCR"
+    }
+  ]
+}

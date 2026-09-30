@@ -1,0 +1,5 @@
+#!/usr/bin/env python3
+import json,sys
+if "--health" in sys.argv: print(json.dumps({"status":"healthy","version":"1.0.0"})); raise SystemExit(0)
+for line in sys.stdin:
+ print(json.dumps({"status":"ok","version":"1.0.0"}),flush=True)

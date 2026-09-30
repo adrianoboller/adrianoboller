@@ -1,0 +1,7 @@
+{
+  "suite": "PhxClaw v0.42 static verifier",
+  "pass": 28,
+  "total": 28,
+  "fail": 0,
+  "output": "28/28 PASS"
+}

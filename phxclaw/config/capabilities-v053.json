@@ -1,0 +1,506 @@
+{
+  "version": "0.53.0",
+  "count": 100,
+  "capabilities": [
+    {
+      "uuid": "0199f530-0001-7001-8001-000000000001",
+      "capability": "portfolio.execution.observe",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0002-7002-8002-000000000002",
+      "capability": "portfolio.execution.snapshot",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0003-7003-8003-000000000003",
+      "capability": "portfolio.execution.progress.read",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0004-7004-8004-000000000004",
+      "capability": "portfolio.execution.schedule.observe",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0005-7005-8005-000000000005",
+      "capability": "portfolio.execution.cost.observe",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0006-7006-8006-000000000006",
+      "capability": "portfolio.execution.capacity.observe",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0007-7007-8007-000000000007",
+      "capability": "portfolio.execution.agent.observe",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0008-7008-8008-000000000008",
+      "capability": "portfolio.execution.model.observe",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0009-7009-8009-000000000009",
+      "capability": "portfolio.execution.dependency.observe",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-000a-700a-800a-00000000000a",
+      "capability": "portfolio.execution.quality.observe",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-000b-700b-800b-00000000000b",
+      "capability": "portfolio.execution.risk.observe",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-000c-700c-800c-00000000000c",
+      "capability": "portfolio.execution.budget.observe",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-000d-700d-800d-00000000000d",
+      "capability": "portfolio.drift.detect",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-000e-700e-800e-00000000000e",
+      "capability": "portfolio.drift.schedule",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-000f-700f-800f-00000000000f",
+      "capability": "portfolio.drift.cost",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0010-7010-8010-000000000010",
+      "capability": "portfolio.drift.capacity",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0011-7011-8011-000000000011",
+      "capability": "portfolio.drift.agent",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0012-7012-8012-000000000012",
+      "capability": "portfolio.drift.model",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0013-7013-8013-000000000013",
+      "capability": "portfolio.drift.dependency",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0014-7014-8014-000000000014",
+      "capability": "portfolio.drift.quality",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0015-7015-8015-000000000015",
+      "capability": "portfolio.drift.budget",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0016-7016-8016-000000000016",
+      "capability": "portfolio.drift.confirm",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0017-7017-8017-000000000017",
+      "capability": "portfolio.drift.classify",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0018-7018-8018-000000000018",
+      "capability": "portfolio.drift.evidence",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0019-7019-8019-000000000019",
+      "capability": "portfolio.controller.evaluate",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-001a-701a-801a-00000000001a",
+      "capability": "portfolio.controller.cooldown",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-001b-701b-801b-00000000001b",
+      "capability": "portfolio.controller.debounce",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-001c-701c-801c-00000000001c",
+      "capability": "portfolio.controller.rate_limit",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-001d-701d-801d-00000000001d",
+      "capability": "portfolio.controller.fencing.verify",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-001e-701e-801e-00000000001e",
+      "capability": "portfolio.controller.leader.verify",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-001f-701f-801f-00000000001f",
+      "capability": "portfolio.controller.source_state.verify",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0020-7020-8020-000000000020",
+      "capability": "portfolio.controller.telemetry.freshness",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0021-7021-8021-000000000021",
+      "capability": "portfolio.controller.policy.verify",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0022-7022-8022-000000000022",
+      "capability": "portfolio.controller.hard_gate.verify",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0023-7023-8023-000000000023",
+      "capability": "portfolio.replan.request",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0024-7024-8024-000000000024",
+      "capability": "portfolio.replan.shadow",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0025-7025-8025-000000000025",
+      "capability": "portfolio.replan.compare",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0026-7026-8026-000000000026",
+      "capability": "portfolio.replan.plan_revision",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0027-7027-8027-000000000027",
+      "capability": "portfolio.replan.optimizer.invoke",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0028-7028-8028-000000000028",
+      "capability": "portfolio.replan.twin.invoke",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0029-7029-8029-000000000029",
+      "capability": "portfolio.replan.planner.invoke",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-002a-702a-802a-00000000002a",
+      "capability": "portfolio.replan.delta",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-002b-702b-802b-00000000002b",
+      "capability": "portfolio.replan.rationale",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-002c-702c-802c-00000000002c",
+      "capability": "portfolio.replan.evidence",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-002d-702d-802d-00000000002d",
+      "capability": "portfolio.replan.reject_stale",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-002e-702e-802e-00000000002e",
+      "capability": "portfolio.replan.version",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-002f-702f-802f-00000000002f",
+      "capability": "portfolio.reconcile.progress",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0030-7030-8030-000000000030",
+      "capability": "portfolio.reconcile.actuals",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0031-7031-8031-000000000031",
+      "capability": "portfolio.reconcile.milestone",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0032-7032-8032-000000000032",
+      "capability": "portfolio.reconcile.dependency",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0033-7033-8033-000000000033",
+      "capability": "portfolio.reconcile.resource",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0034-7034-8034-000000000034",
+      "capability": "portfolio.reconcile.model_quota",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0035-7035-8035-000000000035",
+      "capability": "portfolio.reconcile.budget",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0036-7036-8036-000000000036",
+      "capability": "portfolio.reconcile.forecast",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0037-7037-8037-000000000037",
+      "capability": "portfolio.reconcile.knowledge",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0038-7038-8038-000000000038",
+      "capability": "portfolio.reconcile.pdca",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0039-7039-8039-000000000039",
+      "capability": "portfolio.adaptive.cost_guard",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-003a-703a-803a-00000000003a",
+      "capability": "portfolio.adaptive.budget_guard",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-003b-703b-803b-00000000003b",
+      "capability": "portfolio.adaptive.cloud_throttle",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-003c-703c-803c-00000000003c",
+      "capability": "portfolio.adaptive.ollama_prefer",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-003d-703d-803d-00000000003d",
+      "capability": "portfolio.adaptive.model_route",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-003e-703e-803e-00000000003e",
+      "capability": "portfolio.adaptive.agent_route",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-003f-703f-803f-00000000003f",
+      "capability": "portfolio.adaptive.capacity_guard",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0040-7040-8040-000000000040",
+      "capability": "portfolio.adaptive.reservation_guard",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0041-7041-8041-000000000041",
+      "capability": "portfolio.decision.delegate",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0042-7042-8042-000000000042",
+      "capability": "portfolio.decision.envelope",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0043-7043-8043-000000000043",
+      "capability": "portfolio.decision.approval_required",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0044-7044-8044-000000000044",
+      "capability": "portfolio.decision.no_direct_mutation",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0045-7045-8045-000000000045",
+      "capability": "portfolio.decision.security_gate",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0046-7046-8046-000000000046",
+      "capability": "portfolio.decision.privacy_gate",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0047-7047-8047-000000000047",
+      "capability": "portfolio.decision.release_gate",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0048-7048-8048-000000000048",
+      "capability": "portfolio.decision.knowledge_gate",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0049-7049-8049-000000000049",
+      "capability": "portfolio.decision.budget_gate",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-004a-704a-804a-00000000004a",
+      "capability": "portfolio.decision.fencing_gate",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-004b-704b-804b-00000000004b",
+      "capability": "portfolio.learning.feedback",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-004c-704c-804c-00000000004c",
+      "capability": "portfolio.learning.fruitful_candidate",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-004d-704d-804d-00000000004d",
+      "capability": "portfolio.learning.unfruitful_candidate",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-004e-704e-804e-00000000004e",
+      "capability": "portfolio.learning.failure_signature",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-004f-704f-804f-00000000004f",
+      "capability": "portfolio.learning.context_fingerprint",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0050-7050-8050-000000000050",
+      "capability": "portfolio.learning.reuse_evidence",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0051-7051-8051-000000000051",
+      "capability": "portfolio.learning.pdca_close",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0052-7052-8052-000000000052",
+      "capability": "portfolio.learning.forecast_backtest",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0053-7053-8053-000000000053",
+      "capability": "portfolio.execution.event.append",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0054-7054-8054-000000000054",
+      "capability": "portfolio.execution.evidence.hash",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0055-7055-8055-000000000055",
+      "capability": "portfolio.execution.audit",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0056-7056-8056-000000000056",
+      "capability": "portfolio.execution.trace",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0057-7057-8057-000000000057",
+      "capability": "portfolio.execution.revision.read",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0058-7058-8058-000000000058",
+      "capability": "portfolio.execution.revision.compare",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0059-7059-8059-000000000059",
+      "capability": "portfolio.execution.status",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-005a-705a-805a-00000000005a",
+      "capability": "portfolio.execution.health",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-005b-705b-805b-00000000005b",
+      "capability": "portfolio.controller.ui",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-005c-705c-805c-00000000005c",
+      "capability": "portfolio.controller.timeline",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-005d-705d-805d-00000000005d",
+      "capability": "portfolio.controller.alerts",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-005e-705e-805e-00000000005e",
+      "capability": "portfolio.controller.replans",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-005f-705f-805f-00000000005f",
+      "capability": "portfolio.controller.metrics",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0060-7060-8060-000000000060",
+      "capability": "portfolio.controller.settings",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0061-7061-8061-000000000061",
+      "capability": "portfolio.controller.project_scope",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0062-7062-8062-000000000062",
+      "capability": "portfolio.controller.portfolio_scope",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0063-7063-8063-000000000063",
+      "capability": "portfolio.controller.safe_mode",
+      "version": "0.53.0"
+    },
+    {
+      "uuid": "0199f530-0064-7064-8064-000000000064",
+      "capability": "portfolio.controller.pause_replan",
+      "version": "0.53.0"
+    }
+  ]
+}

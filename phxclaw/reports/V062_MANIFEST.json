@@ -1,0 +1,14 @@
+{
+  "project": "PhxClaw",
+  "version": "0.62.0",
+  "feature": "Canonical Project State + Knowledge Promotion Gate",
+  "new_crate": "crates/phxclaw-knowledge-promotion",
+  "new_migration": "migrations/0062_canonical_state_knowledge_promotion.sql",
+  "new_schemas": [
+    "schemas/knowledge-promotion-request-v062.schema.json",
+    "schemas/project-canonical-state-v062.schema.json"
+  ],
+  "canonical_state": "config/project-state-canonical.v062.json",
+  "native_rust_build": false,
+  "postgres_e2e": false
+}

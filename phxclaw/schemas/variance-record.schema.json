@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "project_uuid": {
+      "format": "uuid",
+      "type": "string"
+    },
+    "reason_status": {
+      "enum": [
+        "verified",
+        "unverified",
+        "missing"
+      ]
+    },
+    "source_state_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "type": "string"
+    },
+    "variance_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "type": "string"
+    },
+    "variance_uuid": {
+      "format": "uuid",
+      "type": "string"
+    },
+    "work_item_uuid": {
+      "format": "uuid",
+      "type": "string"
+    }
+  },
+  "required": [
+    "variance_uuid",
+    "project_uuid",
+    "work_item_uuid",
+    "source_state_sha256",
+    "variance_sha256",
+    "reason_status"
+  ],
+  "type": "object"
+}

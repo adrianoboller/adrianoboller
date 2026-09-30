@@ -1,0 +1,668 @@
+{
+  "manifest_version": "1.0.0",
+  "source_workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+  "sheet": "Equipe 110",
+  "count": 110,
+  "agents": [
+    {
+      "uuid": "01a0e473-f601-710f-a4c9-f0e852a63358",
+      "agent_id": 1,
+      "name": "Product Owner – Humano",
+      "file": "001-product-owner-humano.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f602-7e32-9e89-7886eab11711",
+      "agent_id": 2,
+      "name": "Master Orchestrator",
+      "file": "002-master-orchestrator.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f603-72b3-946d-c6b9621006f8",
+      "agent_id": 3,
+      "name": "Analista",
+      "file": "003-analista.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f604-77d8-a13d-7ee652e67964",
+      "agent_id": 4,
+      "name": "Arquiteto",
+      "file": "004-arquiteto.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f605-74d9-812b-8ec827796405",
+      "agent_id": 5,
+      "name": "Morpheus",
+      "file": "005-morpheus.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f606-78cd-86b5-d4192e95853c",
+      "agent_id": 6,
+      "name": "Oráculo",
+      "file": "006-oraculo.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f607-777c-b4f3-12b3cc967d29",
+      "agent_id": 7,
+      "name": "Chaveiro",
+      "file": "007-chaveiro.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f608-7dd4-af8f-1c71de446420",
+      "agent_id": 8,
+      "name": "Johnson",
+      "file": "008-johnson.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f609-7168-9146-d774a9be6740",
+      "agent_id": 9,
+      "name": "Smith",
+      "file": "009-smith.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f60a-7901-a95b-af0de0b5123c",
+      "agent_id": 10,
+      "name": "Brown",
+      "file": "010-brown.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f60b-796a-a1ff-a164537cd755",
+      "agent_id": 11,
+      "name": "Jones",
+      "file": "011-jones.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f60c-7cce-90e3-302e5f81e9fa",
+      "agent_id": 12,
+      "name": "Jackson",
+      "file": "012-jackson.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f60d-761f-b597-a103db46e3df",
+      "agent_id": 13,
+      "name": "Thompson",
+      "file": "013-thompson.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f60e-7349-8ef7-425daf15e0ed",
+      "agent_id": 14,
+      "name": "Trinity",
+      "file": "014-trinity.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f60f-7a87-bd13-b8cc594c0e63",
+      "agent_id": 15,
+      "name": "Neo",
+      "file": "015-neo.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f610-77ff-b82c-aaa004721899",
+      "agent_id": 16,
+      "name": "Merovíngio",
+      "file": "016-merovingio.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f611-72bf-b507-5b0637df19bd",
+      "agent_id": 17,
+      "name": "Perséfone",
+      "file": "017-persefone.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f612-770e-83ad-6e25803412ba",
+      "agent_id": 18,
+      "name": "Documentador",
+      "file": "018-documentador.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f613-790f-be14-88850e521c18",
+      "agent_id": 19,
+      "name": "Research Lead / Pesquisador PDCA",
+      "file": "019-research-lead-pesquisador-pdca.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f614-70da-9cfb-4151c4cb515b",
+      "agent_id": 20,
+      "name": "Research Agent",
+      "file": "020-research-agent.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f615-7bc6-b58e-ccc8c315be7a",
+      "agent_id": 21,
+      "name": "Hypothesis Agent",
+      "file": "021-hypothesis-agent.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f616-784f-9b36-65d7a686fd41",
+      "agent_id": 22,
+      "name": "Technology Harvest",
+      "file": "022-technology-harvest.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f617-7985-8311-d75e0057d77c",
+      "agent_id": 23,
+      "name": "Rust Evolution Agent",
+      "file": "023-rust-evolution-agent.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f618-7e89-ae35-cbefc100260c",
+      "agent_id": 24,
+      "name": "WASM Evolution Agent",
+      "file": "024-wasm-evolution-agent.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f619-7298-be0c-c694efd0637c",
+      "agent_id": 25,
+      "name": "WebGPU/GPU Agent",
+      "file": "025-webgpu-gpu-agent.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f61a-75e5-a700-82b23d956190",
+      "agent_id": 26,
+      "name": "PhoenixRustCore Agent",
+      "file": "026-phoenixrustcore-agent.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f61b-7a18-bcb7-555a29859d43",
+      "agent_id": 27,
+      "name": "Compiler Agent",
+      "file": "027-compiler-agent.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f61c-76a6-9a24-862ff8ce3f31",
+      "agent_id": 28,
+      "name": "Phoenix IR Agent",
+      "file": "028-phoenix-ir-agent.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f61d-7108-9296-72259235c74d",
+      "agent_id": 29,
+      "name": "PHX JSON Agent",
+      "file": "029-phx-json-agent.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f61e-7a08-af45-723fadfdbd38",
+      "agent_id": 30,
+      "name": "UUIDv7 Guardian",
+      "file": "030-uuidv7-guardian.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f61f-706e-a43f-f39a2a424cc8",
+      "agent_id": 31,
+      "name": "Template Engine Agent",
+      "file": "031-template-engine-agent.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f620-7533-9bea-64a668b0ee29",
+      "agent_id": 32,
+      "name": "Event/Command Agent",
+      "file": "032-event-command-agent.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f621-76d1-b870-fd3b55c7c313",
+      "agent_id": 33,
+      "name": "Reactive Agent",
+      "file": "033-reactive-agent.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f622-7f3f-ae87-743175a5d8ea",
+      "agent_id": 34,
+      "name": "UI/RAD Agent",
+      "file": "034-ui-rad-agent.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f623-7e37-91d5-fd9a71c267ad",
+      "agent_id": 35,
+      "name": "Action/Media Agent",
+      "file": "035-action-media-agent.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f624-7dc6-a802-a5b8d35664a9",
+      "agent_id": 36,
+      "name": "Data Agent",
+      "file": "036-data-agent.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f625-70a7-a3c0-51a2b0ec74c7",
+      "agent_id": 37,
+      "name": "PostgreSQL Agent",
+      "file": "037-postgresql-agent.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f626-7e15-8998-5083b3ec2423",
+      "agent_id": 38,
+      "name": "Octopus Agent",
+      "file": "038-octopus-agent.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f627-75ee-a2ef-53a64bb8f06a",
+      "agent_id": 39,
+      "name": "Localization / NSL Agent",
+      "file": "039-localization-nsl-agent.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f628-7932-8302-5aec809de110",
+      "agent_id": 40,
+      "name": "Unit Test Agent",
+      "file": "040-unit-test-agent.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f629-769b-bb50-4313738edb4d",
+      "agent_id": 41,
+      "name": "Integration Test Agent",
+      "file": "041-integration-test-agent.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f62a-7c4c-8c76-539596e38bd3",
+      "agent_id": 42,
+      "name": "E2E Agent",
+      "file": "042-e2e-agent.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f62b-72ef-88da-f7c5dd2b33f9",
+      "agent_id": 43,
+      "name": "Browser/WASM Test Agent",
+      "file": "043-browser-wasm-test-agent.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f62c-74a3-a753-db209bca4317",
+      "agent_id": 44,
+      "name": "Regression Agent",
+      "file": "044-regression-agent.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f62d-7437-9b52-a3e942163219",
+      "agent_id": 45,
+      "name": "Fuzz Agent",
+      "file": "045-fuzz-agent.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f62e-76dd-9584-db8fba3cc8c4",
+      "agent_id": 46,
+      "name": "Visual Regression Agent",
+      "file": "046-visual-regression-agent.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f62f-7ac4-bbff-acbe3d50586d",
+      "agent_id": 47,
+      "name": "Performance Test Agent",
+      "file": "047-performance-test-agent.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f630-7221-98bb-b391fe065545",
+      "agent_id": 48,
+      "name": "Security Test Agent",
+      "file": "048-security-test-agent.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f631-7976-acb2-61b914cf23ae",
+      "agent_id": 49,
+      "name": "Objective Proof Agent – OPA",
+      "file": "049-objective-proof-agent-opa.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f632-7358-9a30-45db2f4f7710",
+      "agent_id": 50,
+      "name": "QA Nível 1",
+      "file": "050-qa-nivel-1.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f633-7bb9-b8ee-90a4d9a45a4d",
+      "agent_id": 51,
+      "name": "QA Nível 2",
+      "file": "051-qa-nivel-2.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f634-742e-a532-1321918650db",
+      "agent_id": 52,
+      "name": "QA Nível 3",
+      "file": "052-qa-nivel-3.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f635-7fb8-a692-79562cbd4ff6",
+      "agent_id": 53,
+      "name": "Guardian",
+      "file": "053-guardian.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f636-71b9-8133-865389aee00d",
+      "agent_id": 54,
+      "name": "Goal Drift Detector",
+      "file": "054-goal-drift-detector.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f637-7194-be89-ecefe3390927",
+      "agent_id": 55,
+      "name": "Versionador",
+      "file": "055-versionador.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f638-7c91-8f60-c7841a86639f",
+      "agent_id": 56,
+      "name": "Release Manager",
+      "file": "056-release-manager.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f639-7ee3-b4bd-658857368ae7",
+      "agent_id": 57,
+      "name": "Reproducible Build Agent",
+      "file": "057-reproducible-build-agent.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f63a-729d-91a1-22d4866232f0",
+      "agent_id": 58,
+      "name": "Backup Agent",
+      "file": "058-backup-agent.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f63b-7cad-b290-bec9166341e8",
+      "agent_id": 59,
+      "name": "Restore Agent",
+      "file": "059-restore-agent.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f63c-7f03-831f-1c952dfae36c",
+      "agent_id": 60,
+      "name": "SRE/Operations Agent",
+      "file": "060-sre-operations-agent.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f63d-777f-8139-a6985d95cae5",
+      "agent_id": 61,
+      "name": "Sandbox Manager",
+      "file": "061-sandbox-manager.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f63e-7112-b100-cfcf4b49c51c",
+      "agent_id": 62,
+      "name": "Tool/MCP Manager",
+      "file": "062-tool-mcp-manager.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f63f-781b-a066-be7496e4cd16",
+      "agent_id": 63,
+      "name": "Secrets Manager",
+      "file": "063-secrets-manager.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f640-799d-9824-531aea38c20c",
+      "agent_id": 64,
+      "name": "Context Compiler",
+      "file": "064-context-compiler.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f641-7b34-b9e3-ecbd4d238e17",
+      "agent_id": 65,
+      "name": "Knowledge Graph Agent",
+      "file": "065-knowledge-graph-agent.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f642-7a0b-9faa-0d9572211b9f",
+      "agent_id": 66,
+      "name": "Evidence Graph Agent",
+      "file": "066-evidence-graph-agent.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f643-7271-9c16-dbafea8c5249",
+      "agent_id": 67,
+      "name": "Artifact Manager",
+      "file": "067-artifact-manager.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f644-769d-8ae3-769c0fa16faf",
+      "agent_id": 68,
+      "name": "Budget Manager",
+      "file": "068-budget-manager.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f645-7d82-8aff-cfaaa5ab5e3d",
+      "agent_id": 69,
+      "name": "Model Router",
+      "file": "069-model-router.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f646-708d-8a03-c285edd8d91e",
+      "agent_id": 70,
+      "name": "Model Evaluator",
+      "file": "070-model-evaluator.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f647-7ab3-878b-993eea61b825",
+      "agent_id": 71,
+      "name": "Scrum Master",
+      "file": "071-scrum-master.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f648-750b-a5bd-559e1bb9ce20",
+      "agent_id": 72,
+      "name": "PMO / Planner",
+      "file": "072-pmo-planner.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f649-7199-8ffe-8302e5f79a04",
+      "agent_id": 73,
+      "name": "Licensor / Clean-Room Guardian",
+      "file": "073-licensor-clean-room-guardian.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f64a-778d-b1d0-39f299fdcb68",
+      "agent_id": 74,
+      "name": "Supply Chain Guardian",
+      "file": "074-supply-chain-guardian.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f64b-7d70-a70b-ecbeb962da57",
+      "agent_id": 75,
+      "name": "Privacy/Data Governance",
+      "file": "075-privacy-data-governance.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f64c-73f4-983a-ba644c60d255",
+      "agent_id": 76,
+      "name": "Accessibility Agent",
+      "file": "076-accessibility-agent.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f64d-75cd-8a00-29b3680a7558",
+      "agent_id": 77,
+      "name": "Compatibility Agent",
+      "file": "077-compatibility-agent.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f64e-7b28-ac9d-f846ee62aee3",
+      "agent_id": 78,
+      "name": "Chaos/Resilience Agent",
+      "file": "078-chaos-resilience-agent.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f64f-7808-9d6c-26c8b0404446",
+      "agent_id": 79,
+      "name": "Agent Red Team",
+      "file": "079-agent-red-team.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f650-745e-af5f-d56782a190b1",
+      "agent_id": 80,
+      "name": "User Proof / UX Research",
+      "file": "080-user-proof-ux-research.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f651-73ac-85cf-08512eae46c4",
+      "agent_id": 81,
+      "name": "FinOps Agent",
+      "file": "081-finops-agent.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f652-73bf-95cc-e0fe919f7d54",
+      "agent_id": 82,
+      "name": "Migration Guardian",
+      "file": "082-migration-guardian.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f653-7e06-8fa5-10c77bec7519",
+      "agent_id": 83,
+      "name": "Seraph",
+      "file": "083-seraph.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f654-7cd0-bdaa-d9b448fe310e",
+      "agent_id": 84,
+      "name": "Niobe",
+      "file": "084-niobe.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f655-79ba-b433-fd32d0718d28",
+      "agent_id": 85,
+      "name": "Link",
+      "file": "085-link.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f656-743b-926b-6f8ac00e7132",
+      "agent_id": 86,
+      "name": "Tank",
+      "file": "086-tank.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f657-70e6-aea4-487c8c041cc2",
+      "agent_id": 87,
+      "name": "Dozer",
+      "file": "087-dozer.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f658-7333-bb3a-af3afe577499",
+      "agent_id": 88,
+      "name": "Mouse",
+      "file": "088-mouse.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f659-7406-bb57-477469a028fe",
+      "agent_id": 89,
+      "name": "Sati",
+      "file": "089-sati.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f65a-7b3e-8cd5-841d03fd2ed6",
+      "agent_id": 90,
+      "name": "Spoon Boy",
+      "file": "090-spoon-boy.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f65b-7843-bd00-6ec15746660c",
+      "agent_id": 91,
+      "name": "Potentials / Aprendizes do Oráculo",
+      "file": "091-potentials-aprendizes-do-oraculo.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f65c-7e23-b1d6-7c75dec91318",
+      "agent_id": 92,
+      "name": "Leonardo da Vinci",
+      "file": "092-leonardo-da-vinci.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f65d-7a1d-b60f-8f2e353f1d84",
+      "agent_id": 93,
+      "name": "Michelângelo",
+      "file": "093-michelangelo.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f65e-795b-b4bb-311ae6485b36",
+      "agent_id": 94,
+      "name": "Donatello",
+      "file": "094-donatello.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f65f-7219-b54a-2165f244699f",
+      "agent_id": 95,
+      "name": "Raphaël / Rafael",
+      "file": "095-raphael-rafael.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f660-7150-842e-9e93a93d7648",
+      "agent_id": 96,
+      "name": "Mestre Splinter",
+      "file": "096-mestre-splinter.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f661-77bb-ac3d-0d27237afbf6",
+      "agent_id": 97,
+      "name": "Van Gogh",
+      "file": "097-van-gogh.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f662-7592-be0d-691556ec288f",
+      "agent_id": 98,
+      "name": "Beethoven",
+      "file": "098-beethoven.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f663-7ba8-968d-2935c62698e3",
+      "agent_id": 99,
+      "name": "Mozart",
+      "file": "099-mozart.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f664-7319-b7b9-7b5637d211ff",
+      "agent_id": 100,
+      "name": "Vivaldi",
+      "file": "100-vivaldi.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f665-76d0-b8c6-35d37d1a3a0f",
+      "agent_id": 101,
+      "name": "SOC Agent",
+      "file": "101-soc-agent.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f666-7f5c-a943-7dde48b0f5f0",
+      "agent_id": 102,
+      "name": "ADS Agent",
+      "file": "102-ads-agent.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f667-7726-82af-c0b6713d8e17",
+      "agent_id": 103,
+      "name": "Marketplace Agent",
+      "file": "103-marketplace-agent.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f668-758e-ac0f-2b3767ad7d2d",
+      "agent_id": 104,
+      "name": "Data Attribution Agent",
+      "file": "104-data-attribution-agent.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f669-7a16-8a21-a9f42684083a",
+      "agent_id": 105,
+      "name": "AI Evaluation Agent",
+      "file": "105-ai-evaluation-agent.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f66a-7b05-872b-8b3d724fe10a",
+      "agent_id": 106,
+      "name": "React/TypeScript Specialist",
+      "file": "106-react-typescript-specialist.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f66b-753d-9b63-ff887cd361d2",
+      "agent_id": 107,
+      "name": "Rust API/Domain Engineer",
+      "file": "107-rust-api-domain-engineer.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f66c-74ab-b32c-240f0bfd2eaa",
+      "agent_id": 108,
+      "name": "Rust Worker Engineer",
+      "file": "108-rust-worker-engineer.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f66d-7a71-9cf4-4f1bbb4362b7",
+      "agent_id": 109,
+      "name": "Connector Platform Agent",
+      "file": "109-connector-platform-agent.agent.json"
+    },
+    {
+      "uuid": "01a0e473-f66e-700e-bed6-715110ebbc7c",
+      "agent_id": 110,
+      "name": "Zelador de Espaço / Storage Steward",
+      "file": "110-zelador-de-espaco-storage-steward.agent.json"
+    }
+  ]
+}

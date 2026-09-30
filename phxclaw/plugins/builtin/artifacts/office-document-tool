@@ -1,0 +1,189 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+import base64, csv, datetime as dt, json, os, secrets, sys, time, xml.etree.ElementTree as ET
+from pathlib import Path
+
+PROTOCOL='phxclaw-process-v1'
+TOOL='Office Document Tool'
+
+def uuid7():
+    ms=int(time.time()*1000)&((1<<48)-1); a=secrets.randbits(12); b=secrets.randbits(62)
+    v=(ms<<80)|(0x7<<76)|(a<<64)|(0b10<<62)|b; h=f'{v:032x}'
+    return f'{h[:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:]}'
+
+def now(): return dt.datetime.now(dt.timezone.utc).isoformat().replace('+00:00','Z')
+def reply(corr,status='ok',payload=None,error=None):
+    return {'protocol':PROTOCOL,'message_uuid':uuid7(),'correlation_uuid':corr,'status':status,'emitted_at':now(),'payload':payload or {},'error':error}
+
+def allowed_roots():
+    raw=os.getenv('PHXCLAW_DOCUMENT_ROOTS','').strip()
+    roots=[Path(p).expanduser().resolve() for p in raw.split(os.pathsep) if p.strip()] if raw else [Path.cwd().resolve()]
+    return roots
+
+def safe_path(raw:str, for_write=False)->Path:
+    p=Path(raw).expanduser()
+    if not p.is_absolute(): p=Path.cwd()/p
+    base=(p.parent if for_write else p).resolve(strict=False)
+    candidate=p.resolve(strict=False)
+    if not any(candidate==r or r in candidate.parents for r in allowed_roots()):
+        raise PermissionError(f'path outside allowed roots: {candidate}')
+    if for_write: candidate.parent.mkdir(parents=True, exist_ok=True)
+    return candidate
+
+def detect(path:Path, explicit=None):
+    if explicit: return str(explicit).lower().lstrip('.')
+    return path.suffix.lower().lstrip('.')
+
+def read_pdf(path):
+    from pypdf import PdfReader
+    r=PdfReader(str(path)); texts=[]
+    for page in r.pages: texts.append(page.extract_text() or '')
+    return {'text':'\n\n'.join(texts),'structured':{'pages':texts},'metadata':{'pages':len(r.pages)}}
+
+def write_pdf(path,text,structured):
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+    c=canvas.Canvas(str(path),pagesize=A4); width,height=A4; margin=48; y=height-margin; font='Helvetica'; size=10
+    c.setFont(font,size)
+    content=text or ''
+    if not content and structured is not None: content=json.dumps(structured,ensure_ascii=False,indent=2)
+    for para in content.splitlines() or ['']:
+        words=para.split() or ['']; line=''
+        for word in words:
+            test=(line+' '+word).strip()
+            if stringWidth(test,font,size)>width-2*margin and line:
+                c.drawString(margin,y,line); y-=14; line=word
+                if y<margin: c.showPage(); c.setFont(font,size); y=height-margin
+            else: line=test
+        c.drawString(margin,y,line); y-=14
+        if y<margin: c.showPage(); c.setFont(font,size); y=height-margin
+    c.save()
+
+def read_xlsx(path):
+    import openpyxl
+    wb=openpyxl.load_workbook(path,data_only=False,read_only=False)
+    sheets={}
+    for ws in wb.worksheets:
+        rows=[]
+        for row in ws.iter_rows(values_only=True): rows.append(list(row))
+        sheets[ws.title]=rows
+    return {'text':None,'structured':{'sheets':sheets},'metadata':{'sheets':wb.sheetnames}}
+
+def write_xlsx(path,text,structured):
+    import openpyxl
+    wb=openpyxl.Workbook(); default=wb.active
+    data=(structured or {}).get('sheets') if isinstance(structured,dict) else None
+    if not data:
+        default.title='Sheet1'
+        for row in csv.reader((text or '').splitlines()): default.append(row)
+    else:
+        wb.remove(default)
+        for name,rows in data.items():
+            ws=wb.create_sheet(str(name)[:31] or 'Sheet')
+            if isinstance(rows,list):
+                for row in rows:
+                    if isinstance(row,dict):
+                        if ws.max_row==1 and ws['A1'].value is None:
+                            headers=list(row.keys()); ws.append(headers)
+                        headers=[c.value for c in ws[1]]; ws.append([row.get(h) for h in headers])
+                    elif isinstance(row,(list,tuple)): ws.append(list(row))
+                    else: ws.append([row])
+    wb.save(path)
+
+def read_docx(path):
+    from docx import Document
+    d=Document(str(path)); paras=[p.text for p in d.paragraphs]
+    tables=[]
+    for t in d.tables: tables.append([[cell.text for cell in row.cells] for row in t.rows])
+    return {'text':'\n'.join(paras),'structured':{'paragraphs':paras,'tables':tables},'metadata':{'paragraphs':len(paras),'tables':len(tables)}}
+
+def write_docx(path,text,structured):
+    from docx import Document
+    d=Document(); st=structured if isinstance(structured,dict) else {}
+    paras=st.get('paragraphs') if st else None
+    for line in (paras if isinstance(paras,list) else (text or '').splitlines()): d.add_paragraph(str(line))
+    for rows in st.get('tables',[]) if st else []:
+        if not rows: continue
+        cols=max(len(r) for r in rows); table=d.add_table(rows=0,cols=cols)
+        for row in rows:
+            cells=table.add_row().cells
+            for i,v in enumerate(row): cells[i].text='' if v is None else str(v)
+    d.save(str(path))
+
+def read_file(path,fmt):
+    if fmt=='pdf': return read_pdf(path)
+    if fmt in ('xlsx','xlsm'): return read_xlsx(path)
+    if fmt=='docx': return read_docx(path)
+    if fmt=='json':
+        text=path.read_text(encoding='utf-8'); return {'text':text,'structured':json.loads(text),'metadata':{}}
+    if fmt=='csv':
+        with path.open(newline='',encoding='utf-8-sig') as f: rows=list(csv.DictReader(f))
+        return {'text':None,'structured':rows,'metadata':{'rows':len(rows)}}
+    if fmt=='xml':
+        text=path.read_text(encoding='utf-8'); root=ET.fromstring(text); return {'text':text,'structured':None,'metadata':{'root':root.tag}}
+    if fmt in ('txt','py','md','log'):
+        return {'text':path.read_text(encoding='utf-8'),'structured':None,'metadata':{}}
+    raise ValueError(f'unsupported format: {fmt}')
+
+def write_file(path,fmt,text,structured):
+    if fmt=='pdf': write_pdf(path,text,structured); return
+    if fmt in ('xlsx','xlsm'): write_xlsx(path,text,structured); return
+    if fmt=='docx': write_docx(path,text,structured); return
+    if fmt=='json': path.write_text(json.dumps(structured,ensure_ascii=False,indent=2),encoding='utf-8'); return
+    if fmt=='csv':
+        rows=structured if isinstance(structured,list) else []
+        keys=[]
+        for r in rows:
+            if isinstance(r,dict):
+                for k in r:
+                    if k not in keys: keys.append(k)
+        with path.open('w',newline='',encoding='utf-8') as f:
+            w=csv.DictWriter(f,fieldnames=keys); w.writeheader(); w.writerows([{k:r.get(k,'') for k in keys} for r in rows])
+        return
+    if fmt=='xml':
+        if text is None:
+            raise ValueError('XML write requires text')
+        ET.fromstring(text)
+        path.write_text(text,encoding='utf-8')
+        return
+    if fmt in ('txt','py','md','log'): path.write_text(text or '',encoding='utf-8'); return
+    raise ValueError(f'unsupported format: {fmt}')
+
+def execute(envelope_payload):
+    cap=envelope_payload.get('capability',''); p=envelope_payload.get('payload') or {}
+    if cap=='document.read':
+        path=safe_path(p['path']); fmt=detect(path,p.get('format')); out=read_file(path,fmt)
+        return {'capability':cap,'path':str(path),'format':fmt,**out}
+    if cap=='document.write':
+        path=safe_path(p['path'],True); fmt=detect(path,p.get('format')); write_file(path,fmt,p.get('text'),p.get('structured'))
+        return {'capability':cap,'path':str(path),'format':fmt,'bytes':path.stat().st_size}
+    raise ValueError(f'unsupported capability: {cap}')
+
+def health():
+    mods={}
+    for name in ['pypdf','reportlab','openpyxl','docx']:
+        try: __import__(name); mods[name]=True
+        except Exception: mods[name]=False
+    return {'tool':TOOL,'status':'healthy','protocol':PROTOCOL,'formats':['pdf','txt','csv','json','xml','py','xlsx','docx'],'backends':mods}
+
+def handle(msg):
+    corr=msg.get('message_uuid',uuid7())
+    if msg.get('protocol')!=PROTOCOL: return reply(corr,'rejected',error={'code':'unsupported_protocol','message':'expected '+PROTOCOL,'retryable':False})
+    kind=msg.get('kind')
+    if kind=='health': return reply(corr,payload=health())
+    if kind=='execute':
+        try: return reply(corr,payload=execute(msg.get('payload') or {}))
+        except PermissionError as e: return reply(corr,'rejected',error={'code':'permission_denied','message':str(e),'retryable':False})
+        except Exception as e: return reply(corr,'error',error={'code':'document_error','message':str(e),'retryable':False})
+    if kind in ('cancel','shutdown'): return reply(corr,payload={'ack':kind})
+    return reply(corr,'rejected',error={'code':'unsupported_kind','message':str(kind),'retryable':False})
+
+def main():
+    if '--health' in sys.argv: print(json.dumps(health(),separators=(',',':'),ensure_ascii=False)); return 0
+    line=sys.stdin.readline()
+    if not line: return 2
+    try: out=handle(json.loads(line))
+    except Exception as e: out=reply(uuid7(),'error',error={'code':'unhandled_exception','message':str(e),'retryable':False})
+    print(json.dumps(out,separators=(',',':'),ensure_ascii=False,default=str)); return 0
+if __name__=='__main__': raise SystemExit(main())

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phxclaw.local/schemas/channel-message.schema.json",
+  "title": "PhxClaw Channel Message",
+  "type": "object",
+  "required": ["uuid","channel","account_id","conversation_id","direction","text"],
+  "properties": {
+    "uuid": {"type":"string","format":"uuid"},
+    "external_message_id": {"type":["string","null"]},
+    "channel": {"type":"string","minLength":1},
+    "account_id": {"type":"string","minLength":1},
+    "external_user_id": {"type":["string","null"]},
+    "conversation_id": {"type":"string","minLength":1},
+    "direction": {"enum":["inbound","outbound"]},
+    "text": {"type":"string"},
+    "attachments": {"type":"array","items":{"type":"object"}},
+    "metadata": {"type":"object"}
+  },
+  "additionalProperties": true
+}

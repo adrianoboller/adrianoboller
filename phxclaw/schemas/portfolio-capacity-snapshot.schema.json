@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phxclaw.local/schemas/portfolio-capacity-snapshot.schema.json",
+  "type": "object",
+  "properties": {
+    "source_state_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "portfolio_budget_limit": {
+      "type": "number",
+      "minimum": 0
+    },
+    "agent_hours_per_day": {
+      "type": "object"
+    },
+    "model_quota_per_day": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "source_state_sha256",
+    "portfolio_budget_limit",
+    "agent_hours_per_day",
+    "model_quota_per_day"
+  ],
+  "additionalProperties": false
+}

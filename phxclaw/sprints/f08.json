@@ -1,0 +1,49 @@
+{
+  "uuid": "01a0e476-5b82-757f-a04a-f0fc8c8f1a40",
+  "code": "F08",
+  "title": "PhxClaw UI Shell & Splash",
+  "goal": "Materializar a identidade visual do PhxClaw e um Command Center inicial sem acoplar UI ao microkernel.",
+  "status": "review",
+  "tasks": [
+    {
+      "uuid": "01a0e476-5b82-7c10-a17b-3e61fbf19afe",
+      "title": "Tela de splash animada",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e476-5b82-7a65-bd0a-b85d2b174bc4",
+      "title": "Command Center responsivo",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e476-5b82-75f2-a614-99ce9c74eadd",
+      "title": "Visualização do Task Graph",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e476-5b82-789d-b5aa-16d9b8398b18",
+      "title": "Painéis de agentes e Model Gateway",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e476-5b82-7571-8160-d611c52cb2f9",
+      "title": "Script local de preview",
+      "status": "review"
+    }
+  ],
+  "definition_of_done": [
+    "splash executável",
+    "dashboard navegável",
+    "prévia 1920x1080",
+    "UI desacoplada do core"
+  ],
+  "notes": [
+    "UI estática funcional em HTML/CSS/JS pronta para posterior integração com API/event stream do backend Rust."
+  ],
+  "state": "review",
+  "canonical_project_version": "0.67.0",
+  "canonical_state_ref": "config/project-state-canonical.v067.json",
+  "implementation_state": "source_ready",
+  "verification_state": "static_verified",
+  "open_gaps": []
+}

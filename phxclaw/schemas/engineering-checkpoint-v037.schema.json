@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "checkpoint_uuid",
+    "workflow_uuid",
+    "tenant_uuid",
+    "stage",
+    "source_state_sha256",
+    "workspace_state_sha256",
+    "fencing_token"
+  ],
+  "properties": {
+    "checkpoint_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "workflow_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tenant_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "stage": {
+      "enum": [
+        "implement"
+      ]
+    },
+    "source_state_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{64}$"
+    },
+    "workspace_state_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{64}$"
+    },
+    "git_commit": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "fencing_token": {
+      "type": "integer",
+      "minimum": 0
+    }
+  }
+}

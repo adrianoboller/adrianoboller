@@ -1,0 +1,482 @@
+{
+  "suite": "PhxClaw v0.33 static verifier",
+  "pass": 95,
+  "fail": 0,
+  "checks": [
+    {
+      "name": "cap_delta",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "cap_total",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "cap_unique",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "crate_phxclaw-model-arena",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "toml_phxclaw-model-arena",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "version_phxclaw-model-arena",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "unsafe_forbid_phxclaw-model-arena",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "crate_phxclaw-model-drift",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "toml_phxclaw-model-drift",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "version_phxclaw-model-drift",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "unsafe_forbid_phxclaw-model-drift",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "arena_candidate_key",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "arena_modes",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "arena_state_event",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "arena_state_transition",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "arena_invalid_transition",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "arena_signed_doc",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "arena_verified_doc",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "arena_ed25519",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "arena_trusted_signer",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "arena_canonical_spec",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "arena_eligibility_guard",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "arena_promoted_guard",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "arena_promoted_candidate_filter",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "arena_eligible_filter",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "arena_deterministic_assignment",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "arena_shadow",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "arena_canary",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "arena_paired",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "arena_pair_observation",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "arena_window",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "arena_verdict",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "arena_fixture_block",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "arena_consecutive_wins",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "arena_recommendation",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "arena_v032_gate",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "arena_profile_match",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "arena_assign_verified",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "arena_assign_promoted_profiles",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "arena_no_raw_prompt",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "arena_no_raw_output",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "drift_policy",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "drift_severity",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "drift_fallback",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "drift_fixture_boundary",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "drift_baseline",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "drift_promoted_baseline",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "drift_quality_drop",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "drift_success_drop",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "drift_latency",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "drift_cost",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "drift_safety",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "drift_event_hash",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "policy_shadow_default",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "policy_no_raw_prompts",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "policy_no_raw_outputs",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "policy_fixture_block",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "policy_v031_authority",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "policy_v032_authority",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "policy_never_broadens",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_phxclaw_ai_arenas",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_phxclaw_ai_arena_state_event",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_phxclaw_ai_arena_challengers",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_phxclaw_ai_arena_assignments",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_phxclaw_ai_arena_pair_observ",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_phxclaw_ai_arena_windows",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_phxclaw_ai_arena_verdicts",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_phxclaw_ai_arena_promotion_r",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_phxclaw_ai_drift_events",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_FORCE_ROW_LEVEL_SECURITY",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_phxclaw_ai_arena_no_mutation",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_REFERENCES_phxclaw_ai_perfor",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_REFERENCES_phxclaw_ai_provid",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_REFERENCES_phxclaw_ai_models",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_UNIQUE(tenant_uuid,arena_uui",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_tenant_setting",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_evidence_class",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_immutable_spec",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_no_raw_prompt",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_no_raw_output",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "schema_arena-window-v033.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "schema_arena-state-event-v033.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "schema_arena-promotion-recommendation-v033.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "schema_ai-drift-event-v033.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "schema_arena-assignment-v033.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "schema_arena-spec-v033.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "doc_authority_chain",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "doc_no_global",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "doc_fixture",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "doc_never_broadens",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "doc_promoted_required",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "doc_immutable_spec",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "ci_locked",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "ci_clippy",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "ci_psql",
+      "pass": true,
+      "detail": ""
+    }
+  ]
+}

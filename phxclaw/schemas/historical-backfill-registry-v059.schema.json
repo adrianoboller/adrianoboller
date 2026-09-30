@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PhxClaw v0.59 Backfill Registry",
+  "type": "object",
+  "required": [
+    "version",
+    "registry_count",
+    "sources"
+  ],
+  "properties": {
+    "version": {
+      "const": "0.59.0"
+    },
+    "registry_count": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "source_table",
+          "source_version",
+          "domain",
+          "node_kind",
+          "scope_policy",
+          "priority"
+        ],
+        "properties": {
+          "source_table": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "scope_policy": {
+            "enum": [
+              "direct_project",
+              "reference_required",
+              "portfolio_scope",
+              "tenant_scope"
+            ]
+          },
+          "priority": {
+            "type": "integer"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phxclaw.dev/schemas/extension-point-catalog.schema.json",
+  "title": "PhxClaw Extension Point Catalog",
+  "type": "object",
+  "required": ["version", "extension_points"],
+  "properties": {
+    "version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"},
+    "extension_points": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "contract_version", "execution", "description"],
+        "properties": {
+          "name": {"type": "string", "pattern": "^[a-z][a-z0-9_.-]+$"},
+          "contract_version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"},
+          "execution": {"enum": ["process", "wasm", "declarative", "host-mediated"]},
+          "description": {"type": "string", "minLength": 1},
+          "required_host_capabilities": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+          "stability": {"enum": ["stable", "beta", "experimental"]}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

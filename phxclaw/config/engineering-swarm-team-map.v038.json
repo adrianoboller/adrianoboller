@@ -1,0 +1,70 @@
+{
+  "research": {
+    "stages": [
+      "research"
+    ],
+    "skills": [
+      "agent-reach",
+      "last-30-days",
+      "deep-research",
+      "user-research",
+      "qmd-search"
+    ]
+  },
+  "architecture": {
+    "stages": [
+      "code_map",
+      "hypothesis",
+      "plan"
+    ],
+    "skills": [
+      "graphify",
+      "ponytail",
+      "napkin",
+      "tech-debt-audit",
+      "understand-anything"
+    ]
+  },
+  "coding": {
+    "stages": [
+      "implement"
+    ],
+    "skills": [
+      "understand-anything",
+      "tech-debt-audit"
+    ]
+  },
+  "qa": {
+    "stages": [
+      "test",
+      "review"
+    ],
+    "skills": [
+      "qmd-search",
+      "understand-anything"
+    ]
+  },
+  "security": {
+    "stages": [
+      "review"
+    ],
+    "skills": [
+      "tech-debt-audit",
+      "understand-anything"
+    ]
+  },
+  "documentation": {
+    "stages": [
+      "explain",
+      "deliver"
+    ],
+    "skills": [
+      "visual-explainer",
+      "frontend-slides",
+      "humanizer",
+      "claude-seo",
+      "ffmpeg-skill",
+      "video-shotcraft"
+    ]
+  }
+}

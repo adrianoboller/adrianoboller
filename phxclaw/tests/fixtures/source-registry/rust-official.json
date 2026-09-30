@@ -1,0 +1,30 @@
+{
+  "uuid": "01a0e4f0-5c42-7732-8df8-4d9b7eab7e19",
+  "name": "rust-official",
+  "ecosystem": "rust",
+  "mode": "hybrid",
+  "authoritative": true,
+  "license_note": "Test fixture only. Real source uses official Rust documentation licenses.",
+  "local_root": "tests/fixtures/rust-offline-sample",
+  "sync_strategy": "fixture",
+  "verified_version": "fixture-1.98.1",
+  "allowed_agents": [
+    "Research Agent",
+    "Research Lead / Pesquisador PDCA",
+    "Documentador",
+    "Perséfone"
+  ],
+  "required_capabilities": [
+    "knowledge.rust.read"
+  ],
+  "endpoints": [
+    {
+      "name": "The Rust Book",
+      "url": "https://doc.rust-lang.org/book/",
+      "authority": "official",
+      "purpose": "language learning and practical guide",
+      "offline_relative_path": "html/book/index.html"
+    }
+  ],
+  "last_synced_at": null
+}

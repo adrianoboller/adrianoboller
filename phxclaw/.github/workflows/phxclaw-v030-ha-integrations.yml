@@ -1,0 +1,23 @@
+name: PhxClaw v0.30 HA + integrations
+on: [push, pull_request]
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Static and local contract tests
+        run: |
+          python tools/verify_v030.py
+          python tools/test_v030_local.py
+      - name: Rust gates
+        run: |
+          cargo fmt --check
+          cargo check --workspace --locked
+          cargo test --workspace --locked
+          cargo clippy --workspace --all-targets --locked -- -D warnings

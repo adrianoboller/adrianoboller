@@ -1,0 +1,16 @@
+[package]
+name = "phxclaw-community-registry"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+chrono.workspace = true
+phxclaw-types = { path = "../phxclaw-types" }
+semver.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+url.workspace = true
+uuid.workspace = true

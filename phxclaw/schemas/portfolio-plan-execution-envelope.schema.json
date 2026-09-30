@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phxclaw.local/schemas/portfolio-plan-execution-envelope.schema.json",
+  "type": "object",
+  "properties": {
+    "plan_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "plan_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "source_state_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "delegate_to": {
+      "const": "executive_decision_center"
+    },
+    "direct_mutation": {
+      "const": false
+    },
+    "required_approvals": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "evidence_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  },
+  "required": [
+    "plan_uuid",
+    "plan_sha256",
+    "source_state_sha256",
+    "delegate_to",
+    "direct_mutation",
+    "required_approvals",
+    "evidence_sha256"
+  ],
+  "additionalProperties": false
+}

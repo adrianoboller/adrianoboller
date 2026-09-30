@@ -1,0 +1,39 @@
+{
+  "uuid": "01a0eab2-5c2a-738e-bc43-6e0dbdda07de",
+  "id": "critical-path-manager",
+  "name": "Critical Path Manager",
+  "category": "classical",
+  "function": "Calcula caminho crítico",
+  "capability": "project.skill.critical-path-manager",
+  "agent_role": "classical",
+  "permissions": [
+    "project.read",
+    "schedule.write",
+    "project.mutate"
+  ],
+  "risk": "medium",
+  "approval_required": false,
+  "evidence_required": true,
+  "lifecycle_hooks": [
+    "before_invoke",
+    "after_invoke",
+    "on_failure"
+  ],
+  "rollback": "checkpoint",
+  "version": "0.42.0",
+  "semver": "0.42.0",
+  "manifest_uuid": "01a0eab2-5c34-7979-9fa8-afa559a99808",
+  "dependencies": [
+    "phxclaw-skill-runtime>=0.15",
+    "phxclaw-evidence-ledger>=0.9"
+  ],
+  "compatibility": {
+    "phxclaw": ">=0.41,<0.43"
+  },
+  "sandbox": "deny-by-default",
+  "signature_policy": "release-signing-required",
+  "provenance": {
+    "origin": "user-defined-project-management-suite",
+    "license": "PhxClaw project source policy"
+  }
+}

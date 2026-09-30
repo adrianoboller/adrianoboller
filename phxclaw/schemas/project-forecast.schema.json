@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PhxClaw Project Forecast",
+  "type": "object",
+  "required": [
+    "forecast_uuid",
+    "project_uuid",
+    "task_count",
+    "expected_remaining_cost_usd",
+    "expected_remaining_duration_ms",
+    "deadline_risk",
+    "budget_overrun_risk",
+    "source_state_sha256",
+    "forecast_sha256"
+  ],
+  "properties": {
+    "forecast_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "project_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "task_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "expected_remaining_cost_usd": {
+      "type": "number",
+      "minimum": 0
+    },
+    "expected_remaining_duration_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "deadline_risk": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "budget_overrun_risk": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "source_state_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "forecast_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

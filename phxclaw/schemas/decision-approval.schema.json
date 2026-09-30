@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Decision Approval",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "approval_uuid",
+    "tenant_uuid",
+    "project_uuid",
+    "case_uuid",
+    "scenario_uuid",
+    "source_state_sha256",
+    "signer_uuid",
+    "public_key_hex",
+    "signature_hex",
+    "issued_at",
+    "expires_at"
+  ],
+  "properties": {
+    "approval_uuid": {
+      "type": "string"
+    },
+    "tenant_uuid": {
+      "type": "string"
+    },
+    "project_uuid": {
+      "type": "string"
+    },
+    "case_uuid": {
+      "type": "string"
+    },
+    "scenario_uuid": {
+      "type": "string"
+    },
+    "source_state_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "signer_uuid": {
+      "type": "string"
+    },
+    "public_key_hex": {
+      "type": "string"
+    },
+    "signature_hex": {
+      "type": "string"
+    },
+    "issued_at": {
+      "type": "string"
+    },
+    "expires_at": {
+      "type": "string"
+    }
+  }
+}

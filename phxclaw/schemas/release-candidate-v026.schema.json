@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:phxclaw:schema:release-candidate:v0.26",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "candidate_uuid",
+    "candidate_version",
+    "source_state_sha256",
+    "qualification_attestation_sha256",
+    "sbom_sha256",
+    "provenance_sha256",
+    "compatibility_matrix_sha256",
+    "sprint_promotion_plan_sha256",
+    "rollback_bundle_sha256",
+    "artifacts",
+    "created_at",
+    "signer_key_id",
+    "signature_algorithm",
+    "signature_b64",
+    "source_bundle_sha256",
+    "qualification_run_sha256",
+    "artifact_manifest_sha256"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "0.26.0"
+    },
+    "candidate_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "candidate_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_state_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "qualification_attestation_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "sbom_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "provenance_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "compatibility_matrix_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "sprint_promotion_plan_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "rollback_bundle_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "sha256",
+          "size",
+          "media_type"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "media_type": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "signer_key_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
+    },
+    "signature_algorithm": {
+      "anyOf": [
+        {
+          "const": "ed25519"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "signature_b64": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
+    },
+    "source_bundle_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "qualification_run_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "artifact_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

@@ -1,0 +1,12 @@
+[package]
+name = "phxclaw-active-project-scheduler"
+version = "0.45.1-consolidation"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+phxclaw-active-project-runtime = { path = "../phxclaw-active-project-runtime" }
+
+[lints.rust]
+unsafe_code = "forbid"

@@ -1,0 +1,123 @@
+{
+  "version": "0.27.0",
+  "base": "0.26.0",
+  "copied": [
+    {
+      "path": "requirements-ga.txt",
+      "sha256": "49c8aff67fc33807d4621439901b0280ece5437eb131c94ad41dd6aa8e2bd13c"
+    },
+    {
+      "path": "config/updater-policy.v027.json",
+      "sha256": "f9c6c1eab718d2b82a3b3fa30be17233e92014268da0a2c2916319991776293e"
+    },
+    {
+      "path": "config/multi-platform-qualification.v027.json",
+      "sha256": "eae5515479b732e925f2e907f3108a7f04297cbe0d191a24aa5eef0f14c653f6"
+    },
+    {
+      "path": "capabilities/V027_CAPABILITIES_DELTA.json",
+      "sha256": "86110d6c095f164bf6cf34da536c93796c01d7725ae8527ac1363af5d8a20450"
+    },
+    {
+      "path": "schemas/multi-platform-qualification-v027.schema.json",
+      "sha256": "250e0b23f9cb699c80dcf73eb355dd184bdf9ea60cdab75427d6a5aef5a8bd04"
+    },
+    {
+      "path": "schemas/ga-release-v027.schema.json",
+      "sha256": "9eebdc9d53a094b77ce6e53ef789e64cf603b350316daf8191a7d891ed491d4a"
+    },
+    {
+      "path": "schemas/update-manifest-v027.schema.json",
+      "sha256": "b45a2cc3c4af45cc7a6e3c38ee51c3a92d41254412a5ca84cdc83fb9706d43db"
+    },
+    {
+      "path": "schemas/platform-qualification-v027.schema.json",
+      "sha256": "6a6144dcae53865f17484775828d702a4a044875c68d839d8c318c115345cb9e"
+    },
+    {
+      "path": "schemas/rollback-authorization-v027.schema.json",
+      "sha256": "920c4c4d5d7aec125fe4ca5cb72b550af6df76fe7a9b9ff91ca27a02eb978f74"
+    },
+    {
+      "path": "schemas/compatibility-n-n1-v027.schema.json",
+      "sha256": "7fdae7c11a7b93f70f4db98cd2b6eb569a168fda48913f3e6d6a2e5e65ed6c88"
+    },
+    {
+      "path": "tools/build_ga_release.py",
+      "sha256": "5b30345a48e1be67cfbdea52db3c50665f370eabd209f6ffb584b51843f4ad77"
+    },
+    {
+      "path": "tools/create_rollback_authorization.py",
+      "sha256": "fc7174d176ffcf0881ea03e6d9fbb674b835d9f913e9af5c932ba2ee3517c375"
+    },
+    {
+      "path": "tools/create_platform_evidence.py",
+      "sha256": "13cd3adb7a1bc682d42e89495b59db7001b96e8388c44e8995a2ae2063200432"
+    },
+    {
+      "path": "tools/aggregate_platform_qualifications.py",
+      "sha256": "3521ff538ab09bf9ff108f95d325aafe0755accb9aa90758b1d5290757976536"
+    },
+    {
+      "path": "tools/run_platform_gates.py",
+      "sha256": "89d2c6be2e2ed11758d80b3cbe4364b1c44fd3f518d7cf0411e10595e98d9447"
+    },
+    {
+      "path": "tools/verify_ga_release.py",
+      "sha256": "69bb5cae041a73393cfdcd1d35d5a8c94099284cdf28c5d9adccc212cbbe13bc"
+    },
+    {
+      "path": "tools/v027_common.py",
+      "sha256": "8094c22b6b089c366d6ffcd98659baa084911f19c435cc4d2c8ca5b95c48c5fb"
+    },
+    {
+      "path": "tools/verify_v027.py",
+      "sha256": "5e80db5c21c6287e7319026207dbe1b9c34df7cc5eb2d61cda99bd1580afa028"
+    },
+    {
+      "path": "tools/verify_update_manifest.py",
+      "sha256": "0f24ea787432886a708a62f809ecae5561d933bc4f5fe2e99f8458531c7549f5"
+    },
+    {
+      "path": "docs/PROJECT_STATUS_V027.json",
+      "sha256": "39df04e2c86602027f9a27dba4eb7a32049a24fc81820eae55de575155ed7811"
+    },
+    {
+      "path": "docs/RELEASE_SOURCES_V027.md",
+      "sha256": "b7fa1470a50d0d496597bbbca628769f11900fed20f36ea662917afc9d39024f"
+    },
+    {
+      "path": "docs/MULTI_PLATFORM_GA_V027.md",
+      "sha256": "92214b9c46b091f83f11832aa8ff2348425aacc9b084440e29c5f6fd36ee1d42"
+    },
+    {
+      "path": "ci/run-platform-qualification.sh",
+      "sha256": "740a668ace41f1d125c697eabf8c4b5f654c2543b51f5962e424eaacc491fe24"
+    },
+    {
+      "path": "ci/run-platform-qualification.ps1",
+      "sha256": "68bb8d5a2f339116b6cfd8cb802fe86014f9b2f7e20faf060e07adfe8553214e"
+    },
+    {
+      "path": "ci/run-ga-release.ps1",
+      "sha256": "19268bd2bed971d89f4cfa7f66ffdbcee3f8cf75474968e5e1ea5ca743e447e0"
+    },
+    {
+      "path": "ci/run-ga-release.sh",
+      "sha256": "21aee114e0c4fdbb35add30bca54f53f7e3cdfca2924b1ccd35e9f889ec7395c"
+    },
+    {
+      "path": "crates/phxclaw-ga-release-manager/Cargo.toml",
+      "sha256": "e5db202708d6660d85bda4f042b0d376fc2550695e61f4eb1c96191aeacb4458"
+    },
+    {
+      "path": "crates/phxclaw-ga-release-manager/src/lib.rs",
+      "sha256": "edba8d71292dc1a9ee895a61d4766a09c2d63935493d1a1ae398f226f1b47ca0"
+    },
+    {
+      "path": ".github/workflows/phxclaw-ga-release.yml",
+      "sha256": "19fc9eaf775c9de41c81a9469e7956dd4cd75a8babab5b903886ae52103e0131"
+    }
+  ],
+  "workspace": "ga-release-manager crate present exactly once"
+}

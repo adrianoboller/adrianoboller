@@ -1,0 +1,88 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f62a-7c4c-8c76-539596e38bd3",
+  "agent_id": 42,
+  "name": "E2E Agent",
+  "macroarea": "Qualidade & Provas",
+  "nucleus": "Qualidade",
+  "role_type": "Subagente de teste",
+  "mission": "Prova jornadas completas do usuário/sistema do início ao fim.",
+  "responsibilities": "Executa flows reais, valida persistência e efeitos observáveis, coleta screenshots/traces/logs.",
+  "resources": "Playwright, app build, DB, test environment.",
+  "authorized_actions": "Executar jornada e produzir evidência.",
+  "trigger": "Feature pronta para validação funcional.",
+  "declared_dependencies": "Acceptance Criteria e release candidate.",
+  "resolved_agent_dependencies": [],
+  "deliverables": "E2E evidence.",
+  "limits": "Não reduz cenário ao nível de API quando objetivo é UI real.",
+  "next_gate": "OPA/QA3.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "codex",
+    "ollama"
+  ],
+  "criticality": "Alta",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F22 Device Nodes"
+  ],
+  "capabilities": [
+    "context.compile",
+    "memory.read",
+    "node.observe",
+    "quality.e2e.test",
+    "skill.read"
+  ],
+  "permissions": [
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "quality.e2e.test",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Node/session state efêmero e pareado",
+  "event_topics": "agent.e2e.agent.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; writes policy-gated; evidência obrigatória; sem autoaprovação. Device input/screen exige autorização de sessão e logging.",
+  "references": "oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão | OpenClaw — gateway/nodes/channels; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 43
+  }
+}

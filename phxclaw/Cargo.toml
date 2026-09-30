@@ -1,0 +1,164 @@
+[workspace]
+members = [
+  "crates/phxclaw-provenance-core",
+  "crates/phxclaw-safe-source-harvester",
+  "crates/phxclaw-knowledge-promotion",
+  "crates/phxclaw-self-evolving-intelligence",
+  "crates/phxclaw-reconciliation-ledger",
+  "crates/phxclaw-adaptive-portfolio-controller",
+  "crates/phxclaw-performance-fabric",
+  "crates/phxclaw-adaptive-portfolio-execution-controller",
+  "crates/phxclaw-active-project-scheduler",
+  "crates/phxclaw-autonomous-portfolio-planner",
+  "crates/phxclaw-portfolio-optimizer",
+  "crates/phxclaw-portfolio-digital-twin",
+  "crates/phxclaw-executive-decision-center",
+  "crates/phxclaw-executive-control-tower",
+  "crates/phxclaw-autonomous-project-supervisor",
+  "crates/phxclaw-predictive-project-intelligence",
+  "crates/phxclaw-active-project-runtime",
+  "crates/phxclaw-agent-control-plane",
+  "crates/phxclaw-project-management",
+  "crates/phxclaw-types",
+  "crates/phxclaw-kernel",
+  "crates/phxclaw-research",
+  "crates/phxclaw-hypothesis",
+  "crates/phxclaw-installer",
+  "crates/phxclaw-plugin-registry",
+  "crates/phxclaw-sandbox",
+  "crates/phxclaw-agent-catalog",
+  "crates/phxclaw-agent-runtime",
+  "crates/phxclaw-process-protocol",
+  "crates/phxclaw-task-graph",
+  "crates/phxclaw-model-gateway",
+  "crates/phxclaw-event-bus",
+  "crates/phxclaw-http-client",
+  "crates/phxclaw-egress-broker",
+  "crates/phxclaw-postgres-adapter",
+  "crates/phxclaw-ollama-adapter",
+  "crates/phxclaw-system-automation",
+  "crates/phxclaw-webview-control",
+  "crates/phxclaw-document-io",
+  "crates/phxclaw-media-intelligence",
+  "crates/phxclaw-bpm",
+  "crates/phxclaw-live-bus",
+  "crates/phxclaw-evidence-ledger",
+  "crates/phxclaw-api-gateway",
+  "crates/phxclaw-desktop-protocol",
+  "crates/phxclaw-skill-runtime",
+  "crates/phxclaw-memory-context",
+  "crates/phxclaw-source-registry",
+  "crates/phxclaw-research-pipeline",
+  "crates/phxclaw-plugin-sdk",
+  "crates/phxclaw-community-registry",
+  "crates/phxclaw-extension-host",
+  "crates/phxclaw-octopus-bridge",
+  "crates/phxclaw-code-workspace",
+  "crates/phxclaw-mission-runtime",
+  "crates/phxclaw-mission-executors",
+  "crates/phxclaw-checkpoint",
+  "crates/phxclaw-mcp-lsp-runtime",
+  "crates/phxclaw-repo-intelligence",
+  "crates/phxclaw-team-runtime",
+  "crates/phxclaw-channel-gateway",
+  "crates/phxclaw-secret-broker",
+  "crates/phxclaw-channel-providers",
+  "crates/phxclaw-claw-code-bridge",
+  "apps/phxclaw-desktop/src-tauri",
+  "apps/phxclaw-agent-registry-gen",
+  "apps/phxclaw-octopus-plugin",
+  "apps/phxclaw-mission-cli",
+  "apps/phxclaw-claw-code-plugin",
+  "crates/phxclaw-openclaw-rs-bridge",
+  "crates/phxclaw-rustclaw-bridge",
+  "crates/phxclaw-rustclaw-native",
+  "crates/phxclaw-core-runtime",
+  "crates/phxclaw-postgres-bootstrap",
+  "apps/phxclaw-openclaw-rs-plugin",
+  "apps/phxclaw-rustclaw-plugin",
+  "apps/phxclaw-rustclaw-native-plugin",
+  "apps/phxclaw",
+  "crates/phxclaw-key-provider",
+  "crates/phxclaw-device-nodes",
+  "crates/phxclaw-device-transport",
+  "apps/phxclaw-device-node",
+  "crates/phxclaw-skill-evolution",
+
+  "crates/phxclaw-knowledge-evidence-graph",
+  "crates/phxclaw-release-hardening",
+  "crates/phxclaw-release-qualification",
+  "crates/phxclaw-rc-factory",
+  "crates/phxclaw-ga-release-manager",
+  "crates/phxclaw-fleet-updater",
+  "crates/phxclaw-fleet-control-plane",
+  "crates/phxclaw-ha-control-plane",
+  "crates/phxclaw-obsidian-bridge",
+  "crates/phxclaw-hermes-bridge",
+  "crates/phxclaw-ollama-provider",
+  "crates/phxclaw-ai-fabric",
+  "crates/phxclaw-openai-provider",
+  "crates/phxclaw-anthropic-provider",
+  "crates/phxclaw-gemini-provider",
+  "crates/phxclaw-ai-benchmark",
+  "crates/phxclaw-adaptive-model-intelligence",
+  "crates/phxclaw-model-arena",
+  "crates/phxclaw-model-drift",
+  "crates/phxclaw-ai-portfolio",
+  "crates/phxclaw-capacity-manager",
+  "crates/phxclaw-ai-sre",
+  "crates/phxclaw-ai-autopilot",
+  "crates/phxclaw-skill-router",
+  "crates/phxclaw-incident-chaos",
+  "crates/phxclaw-autonomous-engineering",
+  "crates/phxclaw-engineering-swarm",
+  "crates/phxclaw-swarm-merge-intelligence",
+  "crates/phxclaw-config-runtime",
+  "crates/phxclaw-software-factory",
+]
+resolver = "3"
+
+[workspace.package]
+version = "0.70.0"
+edition = "2024"
+license = "Apache-2.0"
+authors = ["PhxClaw Team"]
+
+[workspace.dependencies]
+anyhow = "1"
+aes-gcm = "0.10"
+secrecy = { version = "0.10", features = ["serde"] }
+zeroize = { version = "1", features = ["derive"] }
+
+axum = { version = "0.8", features = ["json", "ws"] }
+futures-util = "0.3"
+getrandom = "0.3"
+tokio-stream = { version = "0.1", features = ["sync"] }
+base64 = "0.22"
+chrono = { version = "0.4", features = ["serde"] }
+csv = "1"
+ed25519-dalek = "2"
+enigo = "0.6.1"
+postgres = { version = "0.19", features = ["with-serde_json-1", "with-uuid-1", "with-chrono-0_4"] }
+quick-xml = { version = "0.38", features = ["serialize"] }
+reqwest = { version = "0.13", features = ["json", "multipart", "cookies", "blocking", "stream"] }
+semver = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+thiserror = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "process", "fs", "io-util", "sync", "net"] }
+url = "2"
+tokio-tungstenite = { version = "0.29", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
+uuid = { version = "1", features = ["v7", "serde"] }
+xcap = "0.9.8"
+
+walkdir = "2"
+tree-sitter = "=0.27.0"
+tree-sitter-rust = "=0.24.2"
+tree-sitter-python = "=0.25.0"
+tree-sitter-javascript = "=0.25.0"
+tree-sitter-typescript = "=0.23.2"
+tree-sitter-go = "=0.25.0"
+tree-sitter-c = "=0.24.2"
+tree-sitter-cpp = "=0.23.4"
+tree-sitter-java = "=0.23.5"

@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "pattern_uuid",
+    "pattern_kind",
+    "context_fingerprint_sha256",
+    "promotion_state",
+    "evidence_class",
+    "fresh_until",
+    "evidence_sha256"
+  ],
+  "properties": {
+    "pattern_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "pattern_kind": {
+      "enum": [
+        "fruitful",
+        "unfruitful"
+      ]
+    },
+    "promotion_state": {
+      "enum": [
+        "candidate",
+        "accepted",
+        "governed",
+        "stale",
+        "revoked"
+      ]
+    },
+    "evidence_class": {
+      "enum": [
+        "production",
+        "fixture"
+      ]
+    },
+    "context_fingerprint_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "fresh_until": {
+      "type": "string"
+    },
+    "evidence_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "additionalProperties": true
+}

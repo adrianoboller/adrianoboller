@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PhxClaw Database Contract Approval v0.28",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "approval_uuid",
+    "component_plan_sha256",
+    "fleet_state_sha256",
+    "target_core_version",
+    "fleet_compatible_percent",
+    "created_at",
+    "expires_at",
+    "signer_key_id",
+    "signature_algorithm",
+    "signature_b64"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "0.28.0"
+    },
+    "approval_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "component_plan_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{64}$"
+    },
+    "fleet_state_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{64}$"
+    },
+    "target_core_version": {
+      "type": "string"
+    },
+    "fleet_compatible_percent": {
+      "const": 100
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "signer_key_id": {
+      "type": "string"
+    },
+    "signature_algorithm": {
+      "const": "ed25519"
+    },
+    "signature_b64": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

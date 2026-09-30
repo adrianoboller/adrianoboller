@@ -1,0 +1,11 @@
+{
+  "suite": "v0.35 migration quoting",
+  "pass": 1,
+  "fail": 0,
+  "checks": [
+    {
+      "name": "0035_ai_sre_autopilot.sql",
+      "pass": true
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+{
+  "uuid": "0199a5f1-0021-7021-8abc-000000000021",
+  "code": "F05",
+  "title": "Agent Runtime",
+  "goal": "Criar runtime de agentes como plugins com capabilities, permissões e lifecycle.",
+  "status": "review",
+  "tasks": [
+    {
+      "uuid": "0199a5f1-0022-7022-8abc-000000000022",
+      "title": "Agent manifest profile",
+      "status": "done"
+    },
+    {
+      "uuid": "0199a5f1-0023-7023-8abc-000000000023",
+      "title": "Agent lifecycle",
+      "status": "done"
+    },
+    {
+      "uuid": "0199a5f1-0024-7024-8abc-000000000024",
+      "title": "Capability routing",
+      "status": "done"
+    },
+    {
+      "uuid": "0199a5f1-0025-7025-8abc-000000000025",
+      "title": "Permission enforcement",
+      "status": "done"
+    },
+    {
+      "uuid": "0199a5f1-0026-7026-8abc-000000000026",
+      "title": "Sandbox execution",
+      "status": "review"
+    }
+  ],
+  "definition_of_done": [
+    "agentes sem alterar core",
+    "deny by default",
+    "sandbox ativo",
+    "testes de isolamento"
+  ],
+  "notes": [
+    "Agent Runtime implementado como crate independente; agentes continuam plugins e não alteram o microkernel.",
+    "Roteamento determinístico usa prioridade declarada e UUID como desempate.",
+    "Permissões são deny-by-default e verificadas por claim/scope antes do dispatch.",
+    "Backend Bubblewrap gera isolamento de processo com rede negada, filesystem read-only e ambiente limpo; execução real depende de bwrap disponível no host.",
+    "Payload IPC do agente será fechado com o Task Graph/Process Protocol em F06; v0.3 executa lifecycle smoke do processo."
+  ],
+  "state": "review",
+  "canonical_project_version": "0.67.0",
+  "canonical_state_ref": "config/project-state-canonical.v067.json",
+  "implementation_state": "source_ready",
+  "verification_state": "static_verified",
+  "open_gaps": []
+}

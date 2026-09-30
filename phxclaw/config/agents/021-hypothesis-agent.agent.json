@@ -1,0 +1,105 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f615-7bc6-b58e-ccc8c315be7a",
+  "agent_id": 21,
+  "name": "Hypothesis Agent",
+  "macroarea": "Pesquisa & Inovação",
+  "nucleus": "Inovação",
+  "role_type": "Agente de hipóteses",
+  "mission": "Transforma descobertas, problemas e lacunas em hipóteses testáveis.",
+  "responsibilities": "Define afirmação, baseline, variável, experimento, critérios de confirmação/rejeição, riscos e evidências exigidas.",
+  "resources": "Research Pack, benchmarks, sandbox, Evidence Graph.",
+  "authorized_actions": "Criar Hypothesis UUIDv7, Experiment Plan e critérios mensuráveis.",
+  "trigger": "Pesquisa relevante, bug incerto ou oportunidade de melhoria.",
+  "declared_dependencies": "Evidências e problema claramente descrito.",
+  "resolved_agent_dependencies": [
+    {
+      "uuid": "01a0e473-f606-78cd-86b5-d4192e95853c",
+      "name": "Oráculo"
+    },
+    {
+      "uuid": "01a0e473-f658-7333-bb3a-af3afe577499",
+      "name": "Mouse"
+    }
+  ],
+  "deliverables": "Hipótese versionada e plano de experimento.",
+  "limits": "Não declara hipótese verdadeira sem experimento.",
+  "next_gate": "Mouse/Potentials → OPA/Oráculo.",
+  "execution": "Permanente",
+  "models_allowed": [
+    "claude",
+    "ollama"
+  ],
+  "criticality": "Alta",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F22 Device Nodes",
+    "F24 Auto-learning + Skill Evolution"
+  ],
+  "capabilities": [
+    "context.compile",
+    "hypothesis.formulate",
+    "memory.read",
+    "node.observe",
+    "skill.candidate.propose",
+    "skill.read"
+  ],
+  "permissions": [
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "hypothesis.formulate",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.candidate.propose",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Node/session state efêmero e pareado; Candidate Skill → Hypothesis → OPA/QA → Registry",
+  "event_topics": "agent.hypothesis.agent.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; writes policy-gated; evidência obrigatória; sem autoaprovação. Device input/screen exige autorização de sessão e logging.",
+  "references": "oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão | OpenClaw — gateway/nodes/channels; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 22
+  }
+}

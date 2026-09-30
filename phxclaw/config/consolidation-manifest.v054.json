@@ -1,0 +1,217 @@
+{
+  "version": "0.54.0",
+  "base": {
+    "version": "0.20.0",
+    "filename": "PhoenixClaw_Core_Bootstrap_v0.20.zip",
+    "size_bytes": 3368129,
+    "sha256": null,
+    "release_mode_requires_explicit_base_sha256": true
+  },
+  "overlays": [
+    {
+      "version": "0.21.0",
+      "filename": "PhoenixClaw_v0.21_F22_DeviceNodes_Overlay.zip",
+      "size_bytes": 25058,
+      "sha256": "5432e3229ab5c3a5077fde7e19d324930969ca01dfd7ef13ddb936e59c199f4b"
+    },
+    {
+      "version": "0.22.0",
+      "filename": "PhoenixClaw_v0.22_F24_SkillEvolution_Overlay.zip",
+      "size_bytes": 42749,
+      "sha256": "fec982af39dd135fde66478e94996f63d7d05460fc53d86ee396ee3bd1d0a1f4"
+    },
+    {
+      "version": "0.23.0",
+      "filename": "PhoenixClaw_v0.23_F25_KnowledgeEvidenceGraph_Overlay.zip",
+      "size_bytes": 31413,
+      "sha256": "07db500fd9227abd54b8dde22c5f496d428842a0c9938a023be17dff9f3884fa"
+    },
+    {
+      "version": "0.24.0",
+      "filename": "PhoenixClaw_v0.24_ReleaseHardening_Overlay.zip",
+      "size_bytes": 21039,
+      "sha256": "049dd6d976380600dbcf656bf600ccc62230678d58eb33fbcd569311cc739a33"
+    },
+    {
+      "version": "0.25.0",
+      "filename": "PhoenixClaw_v0.25_NativeReleaseQualification_Overlay.zip",
+      "size_bytes": 54889,
+      "sha256": "71ef835a662591f24e38667299b767f82ca078a19e35a5fc25fde08442d3728a"
+    },
+    {
+      "version": "0.26.0",
+      "filename": "PhoenixClaw_v0.26_ReleaseCandidateFactory_Overlay.zip",
+      "size_bytes": 34142,
+      "sha256": "012675ac9d46147d45b08366b33aa03f4027447dbb8eb92ecd7a93db01590d0b"
+    },
+    {
+      "version": "0.27.0",
+      "filename": "PhoenixClaw_v0.27_MultiPlatformGA_Overlay.zip",
+      "size_bytes": 49196,
+      "sha256": "067efdfe0b35033931c048f697d8cb6e742a91adf409223477667def68119157"
+    },
+    {
+      "version": "0.28.0",
+      "filename": "PhoenixClaw_v0.28_SecureFleetUpdater_Overlay.zip",
+      "size_bytes": 93349,
+      "sha256": "bd5af9ebb1016e7d756165e80656b5956da979c1f0479a271d27a86c76a8c8d9"
+    },
+    {
+      "version": "0.29.0",
+      "filename": "PhoenixClaw_v0.29_FleetControlPlane_Overlay.zip",
+      "size_bytes": 37933,
+      "sha256": "9b0f8090fc121ae0813f8bdab55e57dd8991a417c2df97b04719f5de7875a513"
+    },
+    {
+      "version": "0.30.0",
+      "filename": "PhoenixClaw_v0.30_DistributedHA_Integrations_Overlay.zip",
+      "size_bytes": 53784,
+      "sha256": "24c0f5c43d296a8c26d5046fbd1493f078e2811713200219286ab70c15e7f0be"
+    },
+    {
+      "version": "0.31.0",
+      "filename": "PhoenixClaw_v0.31_UnifiedAIFabric_Overlay.zip",
+      "size_bytes": 81774,
+      "sha256": "a03bfb3370f400a8bd7a1bb72ec8b4c9d2345fe3674e4811342a4c3bb49a2fec"
+    },
+    {
+      "version": "0.32.0",
+      "filename": "PhoenixClaw_v0.32_AIAdaptiveBenchmark_Overlay.zip",
+      "size_bytes": 43596,
+      "sha256": "e950b1e58f8416704a085c1c8629965aa81d136cc2248f2878681ee3871da115"
+    },
+    {
+      "version": "0.33.0",
+      "filename": "PhoenixClaw_v0.33_ContinuousModelArena_Overlay.zip",
+      "size_bytes": 68571,
+      "sha256": "5a388716218ea170e31af327debb385e9655b1544d9b10a549a970c5e69de318"
+    },
+    {
+      "version": "0.34.0",
+      "filename": "PhoenixClaw_v0.34_AIPortfolioManager_Overlay.zip",
+      "size_bytes": 54085,
+      "sha256": "5f6aa52a0d6d1d5fa6c7521743f76160271d12ac4a843edd953bb9c8526e5b76"
+    },
+    {
+      "version": "0.35.0",
+      "filename": "PhoenixClaw_v0.35_AISREAutopilot_Overlay.zip",
+      "size_bytes": 61300,
+      "sha256": "c0ceb236a248c5b8687a521e524c797e6383160f972ffe8bdaacb5996c6c9a43"
+    },
+    {
+      "version": "0.36.0",
+      "filename": "PhoenixClaw_v0.36_IncidentChaosSkillRouter_Overlay.zip",
+      "size_bytes": 44896,
+      "sha256": "4eb16b4f735e0081068ad423f5c6668914c0fe542b3680960416315c18c5860e"
+    },
+    {
+      "version": "0.37.0",
+      "filename": "PhoenixClaw_v0.37_AutonomousEngineeringWorkflow_Overlay.zip",
+      "size_bytes": 35876,
+      "sha256": "1d30ce2898d5aa14d9d5f57bee56032332031165d08d40f82ef7ca7462669e53"
+    },
+    {
+      "version": "0.38.0",
+      "filename": "PhoenixClaw_v0.38_AutonomousEngineeringSwarm_Overlay.zip",
+      "size_bytes": 33865,
+      "sha256": "29fd218f723980e87470c6af11afd662aa19928031844d269d1c6ab602f76004"
+    },
+    {
+      "version": "0.39.0",
+      "filename": "PhoenixClaw_v0.39_SwarmConsensusMergeIntelligence_Overlay.zip",
+      "size_bytes": 41543,
+      "sha256": "75270d5c967b9bdc11e8dfdb859c31c60bfc416b773aff0630641b75202d2bb2"
+    },
+    {
+      "version": "0.40.0",
+      "filename": "PhoenixClaw_v0.40_AutonomousSoftwareFactory_UnifiedConfig_Overlay.zip",
+      "size_bytes": 36736,
+      "sha256": "3c20cc3fa22a646ac97d52eee0c58f8f9b7aa56db37b774c44c929686d788bdb"
+    },
+    {
+      "version": "0.41.0",
+      "filename": "PhxClaw_v0.41_GlobalRename_Overlay.zip",
+      "size_bytes": 32949,
+      "sha256": "03884ac8bfdcc9bca7c7c73b7689ee933e0cd23adbb54125f429d04dc9c53160"
+    },
+    {
+      "version": "0.42.0",
+      "filename": "PhxClaw_v0.42_ProjectManagementSuite_Overlay.zip",
+      "size_bytes": 164763,
+      "sha256": "5a9d556f3e181a7bf0ff8ac67437367a87d9159bc14b6bfbd84e591980888d7d"
+    },
+    {
+      "version": "0.43.0",
+      "filename": "PhxClaw_v0.43_ProjectWorkspaceLifecycle_Overlay.zip",
+      "size_bytes": 13769,
+      "sha256": "e1b311b691a020b04106270115bafb68c896ae354d40d22adf014c7caeacb36a"
+    },
+    {
+      "version": "0.44.0",
+      "filename": "PhxClaw_v0.44_AgentControlPDCAKnowledge_Overlay.zip",
+      "size_bytes": 181025,
+      "sha256": "2ff4fc9eb5e91377ae43990c84f8ce14f3311210027dbde74f64ae85362cf404"
+    },
+    {
+      "version": "0.45.0",
+      "filename": "PhxClaw_v0.45_ActiveProjectScheduler_Overlay.zip",
+      "size_bytes": 23881,
+      "sha256": "76aaa51bcdd950dc448b6d4783c335d5e89f135b8d36ac2bf0bf08c5a496641f"
+    },
+    {
+      "version": "0.46.0",
+      "filename": "PhxClaw_v0.46_PredictiveProjectIntelligence_Overlay.zip",
+      "size_bytes": 23002,
+      "sha256": "87274289f10f19ab072c197787e66b2a40be18738443b056bc91a2f9f0f388fc"
+    },
+    {
+      "version": "0.47.0",
+      "filename": "PhxClaw_v0.47_AutonomousProjectSupervisor_Overlay.zip",
+      "size_bytes": 21013,
+      "sha256": "9cd7d035389f6423b0edf67c5ca91cffe510d4f84e113d03f63a5f2a80bccc22"
+    },
+    {
+      "version": "0.48.0",
+      "filename": "PhxClaw_v0.48_ExecutiveProjectControlTower_Overlay.zip",
+      "size_bytes": 23754,
+      "sha256": "0b8607a451ba7963a1a8515971d8619b65a44c1e422d2c1e74fbc44e52b375b0"
+    },
+    {
+      "version": "0.49.0",
+      "filename": "PhxClaw_v0.49_ExecutiveDecisionCenter_Overlay.zip",
+      "size_bytes": 28942,
+      "sha256": "fc5b5e083fa467832842c0dcc2d5ea6b485b21ca27c6451cc8154b7a50af9c14"
+    },
+    {
+      "version": "0.50.0",
+      "filename": "PhxClaw_v0.50_PortfolioDigitalTwin_Overlay.zip",
+      "size_bytes": 26852,
+      "sha256": "3a3a0c9ac5f9811240bff5a291dd66597fc753850cece3461ee313efc4200db2"
+    },
+    {
+      "version": "0.51.0",
+      "filename": "PhxClaw_v0.51_PortfolioOptimizer_Overlay.zip",
+      "size_bytes": 25626,
+      "sha256": "066e4742f957a5c1d45a37286a7d86a280cc053267a20ccc555a9b39b7376ba1"
+    },
+    {
+      "version": "0.52.0",
+      "filename": "PhxClaw_v0.52_AutonomousPortfolioPlanner_Overlay.zip",
+      "size_bytes": 23105,
+      "sha256": "df31ca14bc41a324bd0b79485cb7b85f1e4627181d3f78c804491368f3bba32b"
+    },
+    {
+      "version": "0.53.0",
+      "filename": "PhxClaw_v0.53_AdaptivePortfolioExecutionController_Overlay.zip",
+      "size_bytes": 22702,
+      "sha256": "6cb3c9f4849a2834192d95280462caaa10312eece4ef01559d9aefbea2a7b584"
+    }
+  ],
+  "after_assembly": {
+    "apply_v054": true,
+    "forbid_legacy_brand_in_live_source": true,
+    "run_static_verifiers": true,
+    "generate_cargo_lock_on_rust_host": true
+  },
+  "note": "Base v0.20 bytes were not mounted in this runtime. Release assembly requires the operator to provide its SHA-256 explicitly; development assembly may opt in to an unpinned base."
+}

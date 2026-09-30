@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phxclaw.local/schemas/pdca-learning-record.schema.json",
+  "oneOf": [
+    {"$ref":"#/$defs/fruitful"},
+    {"$ref":"#/$defs/unfruitful"}
+  ],
+  "$defs": {
+    "base": {
+      "type":"object",
+      "required":["tenant_uuid","project_uuid","task_class","context_fingerprint","source_state_sha256","evidence_refs","promotion_state"],
+      "properties": {
+        "tenant_uuid":{"type":"string","format":"uuid"},
+        "project_uuid":{"type":"string","format":"uuid"},
+        "task_class":{"type":"string","minLength":1},
+        "context_fingerprint":{"type":"string","minLength":16},
+        "source_state_sha256":{"type":"string","pattern":"^[a-fA-F0-9]{64}$"},
+        "evidence_refs":{"type":"array","items":{"type":"string"}},
+        "promotion_state":{"enum":["candidate","accepted","governed","superseded","expired"]}
+      }
+    },
+    "fruitful": {
+      "allOf":[{"$ref":"#/$defs/base"},{"type":"object","required":["kind","pattern_summary"],"properties":{"kind":{"const":"fruitful"},"pattern_summary":{"type":"string","minLength":1}}}]
+    },
+    "unfruitful": {
+      "allOf":[{"$ref":"#/$defs/base"},{"type":"object","required":["kind","failure_signature","root_cause","avoidance_rule"],"properties":{"kind":{"const":"unfruitful"},"failure_signature":{"type":"string","minLength":1},"root_cause":{"type":"string","minLength":1},"avoidance_rule":{"type":"string","minLength":1}}}]
+    }
+  }
+}

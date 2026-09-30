@@ -1,0 +1,2312 @@
+{
+  "version": "0.59.0",
+  "table_count": 95,
+  "tables": [
+    {
+      "source_version": "0.42.0",
+      "migration_file": "0042_project_management_suite.sql",
+      "migration_sha256": "29eec7c369acfac42160694e66c6eb12ccec83c9b2165279ffe23ece933e392c",
+      "source_table": "pm_projects",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "name",
+        "methodology",
+        "status",
+        "revision",
+        "created_at",
+        "updated_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid"
+      ]
+    },
+    {
+      "source_version": "0.42.0",
+      "migration_file": "0042_project_management_suite.sql",
+      "migration_sha256": "29eec7c369acfac42160694e66c6eb12ccec83c9b2165279ffe23ece933e392c",
+      "source_table": "pm_work_items",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "work_item_uuid",
+        "parent_uuid",
+        "title",
+        "state",
+        "priority",
+        "story_points",
+        "planned_start",
+        "planned_finish",
+        "actual_start",
+        "actual_finish",
+        "planned_cost",
+        "actual_cost",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "work_item_uuid",
+        "parent_uuid"
+      ]
+    },
+    {
+      "source_version": "0.42.0",
+      "migration_file": "0042_project_management_suite.sql",
+      "migration_sha256": "29eec7c369acfac42160694e66c6eb12ccec83c9b2165279ffe23ece933e392c",
+      "source_table": "pm_sprints",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "sprint_uuid",
+        "name",
+        "start_at",
+        "end_at",
+        "goal",
+        "status"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "sprint_uuid"
+      ]
+    },
+    {
+      "source_version": "0.42.0",
+      "migration_file": "0042_project_management_suite.sql",
+      "migration_sha256": "29eec7c369acfac42160694e66c6eb12ccec83c9b2165279ffe23ece933e392c",
+      "source_table": "pm_risks",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "risk_uuid",
+        "title",
+        "probability",
+        "impact",
+        "response",
+        "status"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "risk_uuid"
+      ]
+    },
+    {
+      "source_version": "0.42.0",
+      "migration_file": "0042_project_management_suite.sql",
+      "migration_sha256": "29eec7c369acfac42160694e66c6eb12ccec83c9b2165279ffe23ece933e392c",
+      "source_table": "pm_cost_snapshots",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "snapshot_uuid",
+        "pv",
+        "ev",
+        "ac",
+        "bac",
+        "captured_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "snapshot_uuid"
+      ]
+    },
+    {
+      "source_version": "0.42.0",
+      "migration_file": "0042_project_management_suite.sql",
+      "migration_sha256": "29eec7c369acfac42160694e66c6eb12ccec83c9b2165279ffe23ece933e392c",
+      "source_table": "pm_pdca_cycles",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "cycle_uuid",
+        "phase",
+        "objective",
+        "metric",
+        "evidence_sha256",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "cycle_uuid"
+      ]
+    },
+    {
+      "source_version": "0.42.0",
+      "migration_file": "0042_project_management_suite.sql",
+      "migration_sha256": "29eec7c369acfac42160694e66c6eb12ccec83c9b2165279ffe23ece933e392c",
+      "source_table": "pm_stakeholders",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "stakeholder_uuid",
+        "display_name",
+        "role",
+        "influence",
+        "interest",
+        "communication_plan"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "stakeholder_uuid"
+      ]
+    },
+    {
+      "source_version": "0.42.0",
+      "migration_file": "0042_project_management_suite.sql",
+      "migration_sha256": "29eec7c369acfac42160694e66c6eb12ccec83c9b2165279ffe23ece933e392c",
+      "source_table": "pm_events",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "event_uuid",
+        "event_type",
+        "payload",
+        "evidence_sha256",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "event_uuid"
+      ]
+    },
+    {
+      "source_version": "0.43.0",
+      "migration_file": "0043_project_workspace_lifecycle.sql",
+      "migration_sha256": "69e68d16a49c3f3620b3bcfa4c1060af5abc6f38896b1b458c79db7a40113dce",
+      "source_table": "phx_projects",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "name",
+        "slug",
+        "manifest_sha256",
+        "root_path",
+        "template_id",
+        "archived",
+        "created_at",
+        "last_opened_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid"
+      ]
+    },
+    {
+      "source_version": "0.43.0",
+      "migration_file": "0043_project_workspace_lifecycle.sql",
+      "migration_sha256": "69e68d16a49c3f3620b3bcfa4c1060af5abc6f38896b1b458c79db7a40113dce",
+      "source_table": "phx_project_versions",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "version_uuid",
+        "semver",
+        "git_commit",
+        "source_state_sha256",
+        "config_revision",
+        "backup_uuid",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "version_uuid",
+        "backup_uuid"
+      ]
+    },
+    {
+      "source_version": "0.43.0",
+      "migration_file": "0043_project_workspace_lifecycle.sql",
+      "migration_sha256": "69e68d16a49c3f3620b3bcfa4c1060af5abc6f38896b1b458c79db7a40113dce",
+      "source_table": "phx_project_log_events",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "log_uuid",
+        "severity",
+        "category",
+        "message_redacted",
+        "correlation_id",
+        "source_path",
+        "evidence_sha256",
+        "observed_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "log_uuid"
+      ]
+    },
+    {
+      "source_version": "0.43.0",
+      "migration_file": "0043_project_workspace_lifecycle.sql",
+      "migration_sha256": "69e68d16a49c3f3620b3bcfa4c1060af5abc6f38896b1b458c79db7a40113dce",
+      "source_table": "phx_project_backups",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "backup_uuid",
+        "source_state_sha256",
+        "backup_path",
+        "manifest_sha256",
+        "file_count",
+        "byte_count",
+        "verified",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "backup_uuid"
+      ]
+    },
+    {
+      "source_version": "0.43.0",
+      "migration_file": "0043_project_workspace_lifecycle.sql",
+      "migration_sha256": "69e68d16a49c3f3620b3bcfa4c1060af5abc6f38896b1b458c79db7a40113dce",
+      "source_table": "phx_project_activity_bindings",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "binding_uuid",
+        "activity_pattern",
+        "agent_uuid",
+        "skill_id",
+        "model_route",
+        "enabled",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "binding_uuid",
+        "agent_uuid"
+      ]
+    },
+    {
+      "source_version": "0.43.0",
+      "migration_file": "0043_project_workspace_lifecycle.sql",
+      "migration_sha256": "69e68d16a49c3f3620b3bcfa4c1060af5abc6f38896b1b458c79db7a40113dce",
+      "source_table": "phx_project_events",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "event_uuid",
+        "event_type",
+        "payload_sha256",
+        "payload",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "event_uuid"
+      ]
+    },
+    {
+      "source_version": "0.44.0",
+      "migration_file": "0044_agent_control_pdca_learning.sql",
+      "migration_sha256": "357e1f41dd97d7a7576081df2015cfd8e4b6eb4323fca09c4178b1845d9f0214",
+      "source_table": "phx_agent_runtime_profiles",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "agent_uuid",
+        "name",
+        "capability",
+        "default_complexity",
+        "model_hint",
+        "local_first",
+        "active",
+        "registry_sha256",
+        "created_at",
+        "updated_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "agent_uuid"
+      ]
+    },
+    {
+      "source_version": "0.44.0",
+      "migration_file": "0044_agent_control_pdca_learning.sql",
+      "migration_sha256": "357e1f41dd97d7a7576081df2015cfd8e4b6eb4323fca09c4178b1845d9f0214",
+      "source_table": "phx_agent_task_assignments",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "assignment_uuid",
+        "task_uuid",
+        "agent_uuid",
+        "complexity",
+        "capability",
+        "model_profile_uuid",
+        "routing_decision_sha256",
+        "lease_uuid",
+        "fencing_token",
+        "state",
+        "source_state_sha256",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "assignment_uuid",
+        "task_uuid",
+        "agent_uuid",
+        "model_profile_uuid",
+        "lease_uuid"
+      ]
+    },
+    {
+      "source_version": "0.44.0",
+      "migration_file": "0044_agent_control_pdca_learning.sql",
+      "migration_sha256": "357e1f41dd97d7a7576081df2015cfd8e4b6eb4323fca09c4178b1845d9f0214",
+      "source_table": "phx_model_routing_decisions",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "decision_uuid",
+        "task_uuid",
+        "agent_uuid",
+        "model_profile_uuid",
+        "provider",
+        "model",
+        "local_execution",
+        "estimated_cost_usd",
+        "quality_floor",
+        "decision_sha256",
+        "evidence",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "decision_uuid",
+        "task_uuid",
+        "agent_uuid",
+        "model_profile_uuid"
+      ]
+    },
+    {
+      "source_version": "0.44.0",
+      "migration_file": "0044_agent_control_pdca_learning.sql",
+      "migration_sha256": "357e1f41dd97d7a7576081df2015cfd8e4b6eb4323fca09c4178b1845d9f0214",
+      "source_table": "phx_agent_cost_ledger",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "entry_uuid",
+        "task_uuid",
+        "agent_uuid",
+        "model_profile_uuid",
+        "provider",
+        "estimated_cost_usd",
+        "actual_cost_usd",
+        "input_tokens",
+        "output_tokens",
+        "idempotency_key",
+        "created_at",
+        "settled_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "entry_uuid",
+        "task_uuid",
+        "agent_uuid",
+        "model_profile_uuid"
+      ]
+    },
+    {
+      "source_version": "0.44.0",
+      "migration_file": "0044_agent_control_pdca_learning.sql",
+      "migration_sha256": "357e1f41dd97d7a7576081df2015cfd8e4b6eb4323fca09c4178b1845d9f0214",
+      "source_table": "phx_pdca_cycles",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "cycle_uuid",
+        "task_uuid",
+        "phase",
+        "objective",
+        "expected_evidence",
+        "source_state_sha256",
+        "created_at",
+        "updated_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "cycle_uuid",
+        "task_uuid"
+      ]
+    },
+    {
+      "source_version": "0.44.0",
+      "migration_file": "0044_agent_control_pdca_learning.sql",
+      "migration_sha256": "357e1f41dd97d7a7576081df2015cfd8e4b6eb4323fca09c4178b1845d9f0214",
+      "source_table": "phx_pdca_events",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "event_uuid",
+        "cycle_uuid",
+        "phase",
+        "event_type",
+        "payload",
+        "evidence_sha256",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "event_uuid",
+        "cycle_uuid"
+      ]
+    },
+    {
+      "source_version": "0.44.0",
+      "migration_file": "0044_agent_control_pdca_learning.sql",
+      "migration_sha256": "357e1f41dd97d7a7576081df2015cfd8e4b6eb4323fca09c4178b1845d9f0214",
+      "source_table": "phx_knowledge_fruitful",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "knowledge_uuid",
+        "task_class",
+        "context_fingerprint",
+        "source_state_sha256",
+        "pattern_summary",
+        "agent_uuid",
+        "model_profile_uuid",
+        "skill_versions",
+        "quality_score",
+        "actual_cost_usd",
+        "evidence_refs",
+        "confidence",
+        "reuse_count",
+        "promotion_state",
+        "fresh_until",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "knowledge_uuid",
+        "agent_uuid",
+        "model_profile_uuid"
+      ]
+    },
+    {
+      "source_version": "0.44.0",
+      "migration_file": "0044_agent_control_pdca_learning.sql",
+      "migration_sha256": "357e1f41dd97d7a7576081df2015cfd8e4b6eb4323fca09c4178b1845d9f0214",
+      "source_table": "phx_knowledge_unfruitful",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "knowledge_uuid",
+        "task_class",
+        "context_fingerprint",
+        "source_state_sha256",
+        "failure_signature",
+        "root_cause",
+        "remediation",
+        "avoidance_rule",
+        "agent_uuid",
+        "model_profile_uuid",
+        "skill_versions",
+        "evidence_refs",
+        "occurrence_count",
+        "promotion_state",
+        "retry_after",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "knowledge_uuid",
+        "agent_uuid",
+        "model_profile_uuid"
+      ]
+    },
+    {
+      "source_version": "0.44.0",
+      "migration_file": "0044_agent_control_pdca_learning.sql",
+      "migration_sha256": "357e1f41dd97d7a7576081df2015cfd8e4b6eb4323fca09c4178b1845d9f0214",
+      "source_table": "phx_knowledge_reuse_events",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "event_uuid",
+        "task_uuid",
+        "knowledge_uuid",
+        "knowledge_kind",
+        "action",
+        "context_fingerprint",
+        "evidence_sha256",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "event_uuid",
+        "task_uuid",
+        "knowledge_uuid"
+      ]
+    },
+    {
+      "source_version": "0.45.0",
+      "migration_file": "0045_active_project_runtime.sql",
+      "migration_sha256": "9ea49afb3d0e04eecd971982ade64b61e4092e886cf6ef9063edc5092d4730cf",
+      "source_table": "phx_active_project_runtime",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "runtime_uuid",
+        "source_state_sha256",
+        "state",
+        "max_concurrency",
+        "max_budget_usd",
+        "current_fencing_token",
+        "created_at",
+        "updated_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "runtime_uuid"
+      ]
+    },
+    {
+      "source_version": "0.45.0",
+      "migration_file": "0045_active_project_runtime.sql",
+      "migration_sha256": "9ea49afb3d0e04eecd971982ade64b61e4092e886cf6ef9063edc5092d4730cf",
+      "source_table": "phx_project_task_queue",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "task_uuid",
+        "task_class",
+        "capability",
+        "complexity",
+        "data_class",
+        "priority",
+        "dependencies",
+        "context_fingerprint",
+        "source_state_sha256",
+        "state",
+        "attempts",
+        "max_attempts",
+        "required_agent_uuid",
+        "quality_floor",
+        "max_estimated_cost_usd",
+        "created_at",
+        "updated_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "task_uuid",
+        "required_agent_uuid"
+      ]
+    },
+    {
+      "source_version": "0.45.0",
+      "migration_file": "0045_active_project_runtime.sql",
+      "migration_sha256": "9ea49afb3d0e04eecd971982ade64b61e4092e886cf6ef9063edc5092d4730cf",
+      "source_table": "phx_agent_execution_leases",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "lease_uuid",
+        "task_uuid",
+        "agent_uuid",
+        "run_uuid",
+        "model_profile_uuid",
+        "decision_sha256",
+        "lease_sha256",
+        "fencing_token",
+        "estimated_cost_usd",
+        "expires_at",
+        "state",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "lease_uuid",
+        "task_uuid",
+        "agent_uuid",
+        "run_uuid",
+        "model_profile_uuid"
+      ]
+    },
+    {
+      "source_version": "0.45.0",
+      "migration_file": "0045_active_project_runtime.sql",
+      "migration_sha256": "9ea49afb3d0e04eecd971982ade64b61e4092e886cf6ef9063edc5092d4730cf",
+      "source_table": "phx_project_budget_reservations",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "reservation_uuid",
+        "run_uuid",
+        "task_uuid",
+        "estimated_usd",
+        "actual_usd",
+        "state",
+        "idempotency_key",
+        "created_at",
+        "settled_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "reservation_uuid",
+        "run_uuid",
+        "task_uuid"
+      ]
+    },
+    {
+      "source_version": "0.45.0",
+      "migration_file": "0045_active_project_runtime.sql",
+      "migration_sha256": "9ea49afb3d0e04eecd971982ade64b61e4092e886cf6ef9063edc5092d4730cf",
+      "source_table": "phx_execution_runtime_events",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "event_uuid",
+        "run_uuid",
+        "task_uuid",
+        "agent_uuid",
+        "event_type",
+        "payload",
+        "evidence_sha256",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "event_uuid",
+        "run_uuid",
+        "task_uuid",
+        "agent_uuid"
+      ]
+    },
+    {
+      "source_version": "0.46.0",
+      "migration_file": "0046_predictive_project_intelligence.sql",
+      "migration_sha256": "2bf8902453805dcb9167598f4c2a5c183dea1662fa133e62fd53a8533510a9f1",
+      "source_table": "phx_predictive_route_forecasts",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "forecast_uuid",
+        "task_class",
+        "context_fingerprint",
+        "agent_uuid",
+        "model_profile_uuid",
+        "provider",
+        "local",
+        "sample_count",
+        "success_probability",
+        "expected_quality",
+        "expected_cost_usd",
+        "expected_duration_ms",
+        "expected_retries",
+        "effective_cost_usd",
+        "confidence",
+        "evidence_sha256",
+        "forecast_sha256",
+        "generated_at",
+        "expires_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "forecast_uuid",
+        "agent_uuid",
+        "model_profile_uuid"
+      ]
+    },
+    {
+      "source_version": "0.46.0",
+      "migration_file": "0046_predictive_project_intelligence.sql",
+      "migration_sha256": "2bf8902453805dcb9167598f4c2a5c183dea1662fa133e62fd53a8533510a9f1",
+      "source_table": "phx_predictive_recommendations",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "recommendation_uuid",
+        "task_uuid",
+        "forecast_uuid",
+        "agent_uuid",
+        "model_profile_uuid",
+        "provider",
+        "local",
+        "predicted_cost_usd",
+        "predicted_quality",
+        "predicted_success_probability",
+        "recommendation_sha256",
+        "rationale",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "recommendation_uuid",
+        "task_uuid",
+        "forecast_uuid",
+        "agent_uuid",
+        "model_profile_uuid"
+      ]
+    },
+    {
+      "source_version": "0.46.0",
+      "migration_file": "0046_predictive_project_intelligence.sql",
+      "migration_sha256": "2bf8902453805dcb9167598f4c2a5c183dea1662fa133e62fd53a8533510a9f1",
+      "source_table": "phx_project_predictive_forecasts",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "forecast_uuid",
+        "task_count",
+        "expected_remaining_cost_usd",
+        "expected_remaining_duration_ms",
+        "expected_rework_cost_usd",
+        "deadline_risk",
+        "budget_overrun_risk",
+        "source_state_sha256",
+        "forecast_sha256",
+        "generated_at",
+        "expires_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "forecast_uuid"
+      ]
+    },
+    {
+      "source_version": "0.46.0",
+      "migration_file": "0046_predictive_project_intelligence.sql",
+      "migration_sha256": "2bf8902453805dcb9167598f4c2a5c183dea1662fa133e62fd53a8533510a9f1",
+      "source_table": "phx_forecast_feedback",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "feedback_uuid",
+        "forecast_uuid",
+        "run_uuid",
+        "actual_success",
+        "actual_quality",
+        "actual_cost_usd",
+        "actual_duration_ms",
+        "cost_absolute_error",
+        "duration_absolute_error_ms",
+        "quality_absolute_error",
+        "evidence_sha256",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "feedback_uuid",
+        "forecast_uuid",
+        "run_uuid"
+      ]
+    },
+    {
+      "source_version": "0.46.0",
+      "migration_file": "0046_predictive_project_intelligence.sql",
+      "migration_sha256": "2bf8902453805dcb9167598f4c2a5c183dea1662fa133e62fd53a8533510a9f1",
+      "source_table": "phx_predictive_events",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "event_uuid",
+        "event_type",
+        "object_uuid",
+        "payload",
+        "evidence_sha256",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "event_uuid",
+        "object_uuid"
+      ]
+    },
+    {
+      "source_version": "0.47.0",
+      "migration_file": "0047_autonomous_project_supervisor.sql",
+      "migration_sha256": "0e1fda91e13eddd2134d4c79ca9885a638008a1dbe785cd2fac3664066d9037d",
+      "source_table": "phx_project_supervisor_health",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "snapshot_uuid",
+        "source_state_sha256",
+        "payload",
+        "evidence_sha256",
+        "snapshot_sha256",
+        "generated_at",
+        "expires_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "snapshot_uuid"
+      ]
+    },
+    {
+      "source_version": "0.47.0",
+      "migration_file": "0047_autonomous_project_supervisor.sql",
+      "migration_sha256": "0e1fda91e13eddd2134d4c79ca9885a638008a1dbe785cd2fac3664066d9037d",
+      "source_table": "phx_project_supervisor_cycles",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "cycle_uuid",
+        "source_state_sha256",
+        "phase",
+        "payload",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "cycle_uuid"
+      ]
+    },
+    {
+      "source_version": "0.47.0",
+      "migration_file": "0047_autonomous_project_supervisor.sql",
+      "migration_sha256": "0e1fda91e13eddd2134d4c79ca9885a638008a1dbe785cd2fac3664066d9037d",
+      "source_table": "phx_project_supervisor_plans",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "plan_uuid",
+        "snapshot_uuid",
+        "source_state_sha256",
+        "policy_sha256",
+        "plan_sha256",
+        "payload",
+        "created_at",
+        "expires_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "plan_uuid",
+        "snapshot_uuid"
+      ]
+    },
+    {
+      "source_version": "0.47.0",
+      "migration_file": "0047_autonomous_project_supervisor.sql",
+      "migration_sha256": "0e1fda91e13eddd2134d4c79ca9885a638008a1dbe785cd2fac3664066d9037d",
+      "source_table": "phx_project_supervisor_actions",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "plan_uuid",
+        "action_uuid",
+        "kind",
+        "status",
+        "requires_approval",
+        "evidence_sha256",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "plan_uuid",
+        "action_uuid"
+      ]
+    },
+    {
+      "source_version": "0.47.0",
+      "migration_file": "0047_autonomous_project_supervisor.sql",
+      "migration_sha256": "0e1fda91e13eddd2134d4c79ca9885a638008a1dbe785cd2fac3664066d9037d",
+      "source_table": "phx_project_supervisor_events",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "event_uuid",
+        "correlation_uuid",
+        "event_type",
+        "payload",
+        "evidence_sha256",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "event_uuid",
+        "correlation_uuid"
+      ]
+    },
+    {
+      "source_version": "0.48.0",
+      "migration_file": "0048_executive_project_control_tower.sql",
+      "migration_sha256": "f8c78f898986dcfdaeea9c387030bcf791f370acd76e71fa0e0f1d1225c10ceb",
+      "source_table": "phx_executive_portfolio_snapshots",
+      "columns": [
+        "tenant_uuid",
+        "snapshot_uuid",
+        "generated_at",
+        "evidence_sha256",
+        "snapshot_sha256",
+        "payload"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "snapshot_uuid"
+      ]
+    },
+    {
+      "source_version": "0.48.0",
+      "migration_file": "0048_executive_project_control_tower.sql",
+      "migration_sha256": "f8c78f898986dcfdaeea9c387030bcf791f370acd76e71fa0e0f1d1225c10ceb",
+      "source_table": "phx_executive_project_snapshots",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "snapshot_uuid",
+        "portfolio_snapshot_uuid",
+        "source_state_sha256",
+        "evidence_sha256",
+        "health_score",
+        "attention_score",
+        "payload"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "snapshot_uuid",
+        "portfolio_snapshot_uuid"
+      ]
+    },
+    {
+      "source_version": "0.48.0",
+      "migration_file": "0048_executive_project_control_tower.sql",
+      "migration_sha256": "f8c78f898986dcfdaeea9c387030bcf791f370acd76e71fa0e0f1d1225c10ceb",
+      "source_table": "phx_executive_alerts",
+      "columns": [
+        "tenant_uuid",
+        "alert_uuid",
+        "project_uuid",
+        "severity",
+        "kind",
+        "title",
+        "evidence_sha256",
+        "created_at",
+        "acknowledged_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "alert_uuid",
+        "project_uuid"
+      ]
+    },
+    {
+      "source_version": "0.48.0",
+      "migration_file": "0048_executive_project_control_tower.sql",
+      "migration_sha256": "f8c78f898986dcfdaeea9c387030bcf791f370acd76e71fa0e0f1d1225c10ceb",
+      "source_table": "phx_executive_decision_requests",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "request_uuid",
+        "supervisor_plan_uuid",
+        "action_kind",
+        "evidence_sha256",
+        "requires_approval",
+        "status",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "request_uuid",
+        "supervisor_plan_uuid"
+      ]
+    },
+    {
+      "source_version": "0.48.0",
+      "migration_file": "0048_executive_project_control_tower.sql",
+      "migration_sha256": "f8c78f898986dcfdaeea9c387030bcf791f370acd76e71fa0e0f1d1225c10ceb",
+      "source_table": "phx_executive_events",
+      "columns": [
+        "tenant_uuid",
+        "event_uuid",
+        "project_uuid",
+        "event_type",
+        "evidence_sha256",
+        "payload",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "event_uuid",
+        "project_uuid"
+      ]
+    },
+    {
+      "source_version": "0.49.0",
+      "migration_file": "0049_executive_decision_center.sql",
+      "migration_sha256": "479fe5f7c635fe075356b9473625e020af22e6c8c083ecb1c6b17c042c52144d",
+      "source_table": "phx_executive_decision_cases",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "case_uuid",
+        "source_state_sha256",
+        "portfolio_snapshot_sha256",
+        "trigger_kind",
+        "trigger_evidence_sha256",
+        "created_at",
+        "expires_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "case_uuid"
+      ]
+    },
+    {
+      "source_version": "0.49.0",
+      "migration_file": "0049_executive_decision_center.sql",
+      "migration_sha256": "479fe5f7c635fe075356b9473625e020af22e6c8c083ecb1c6b17c042c52144d",
+      "source_table": "phx_executive_decision_scenarios",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "case_uuid",
+        "scenario_uuid",
+        "source_state_sha256",
+        "kind",
+        "scenario_sha256",
+        "model_evidence_sha256",
+        "payload",
+        "created_at",
+        "expires_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "case_uuid",
+        "scenario_uuid"
+      ]
+    },
+    {
+      "source_version": "0.49.0",
+      "migration_file": "0049_executive_decision_center.sql",
+      "migration_sha256": "479fe5f7c635fe075356b9473625e020af22e6c8c083ecb1c6b17c042c52144d",
+      "source_table": "phx_executive_decision_evaluations",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "case_uuid",
+        "scenario_uuid",
+        "evaluation_uuid",
+        "feasible",
+        "approval_required",
+        "utility_score",
+        "evaluation_sha256",
+        "payload",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "case_uuid",
+        "scenario_uuid",
+        "evaluation_uuid"
+      ]
+    },
+    {
+      "source_version": "0.49.0",
+      "migration_file": "0049_executive_decision_center.sql",
+      "migration_sha256": "479fe5f7c635fe075356b9473625e020af22e6c8c083ecb1c6b17c042c52144d",
+      "source_table": "phx_executive_decision_approvals",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "case_uuid",
+        "scenario_uuid",
+        "approval_uuid",
+        "signer_uuid",
+        "approval_sha256",
+        "public_key_hex",
+        "signature_hex",
+        "issued_at",
+        "expires_at",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "case_uuid",
+        "scenario_uuid",
+        "approval_uuid",
+        "signer_uuid"
+      ]
+    },
+    {
+      "source_version": "0.49.0",
+      "migration_file": "0049_executive_decision_center.sql",
+      "migration_sha256": "479fe5f7c635fe075356b9473625e020af22e6c8c083ecb1c6b17c042c52144d",
+      "source_table": "phx_executive_decision_executions",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "case_uuid",
+        "scenario_uuid",
+        "execution_uuid",
+        "supervisor_plan_uuid",
+        "source_state_sha256",
+        "scenario_sha256",
+        "approval_sha256",
+        "controller_epoch",
+        "fencing_token",
+        "evidence_sha256",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "case_uuid",
+        "scenario_uuid",
+        "execution_uuid",
+        "supervisor_plan_uuid"
+      ]
+    },
+    {
+      "source_version": "0.49.0",
+      "migration_file": "0049_executive_decision_center.sql",
+      "migration_sha256": "479fe5f7c635fe075356b9473625e020af22e6c8c083ecb1c6b17c042c52144d",
+      "source_table": "phx_executive_decision_events",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "case_uuid",
+        "event_uuid",
+        "event_type",
+        "evidence_sha256",
+        "payload",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "case_uuid",
+        "event_uuid"
+      ]
+    },
+    {
+      "source_version": "0.50.0",
+      "migration_file": "0050_portfolio_digital_twin.sql",
+      "migration_sha256": "b4bd978b5e8ddfdd568d6e959d50152559ab40b5c30b63bcd0cddefd966804b3",
+      "source_table": "phx_portfolio_twins",
+      "columns": [
+        "tenant_uuid",
+        "twin_uuid",
+        "source_state_sha256",
+        "created_at",
+        "twin_json",
+        "twin_sha256"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "twin_uuid"
+      ]
+    },
+    {
+      "source_version": "0.50.0",
+      "migration_file": "0050_portfolio_digital_twin.sql",
+      "migration_sha256": "b4bd978b5e8ddfdd568d6e959d50152559ab40b5c30b63bcd0cddefd966804b3",
+      "source_table": "phx_portfolio_scenarios",
+      "columns": [
+        "tenant_uuid",
+        "twin_uuid",
+        "scenario_uuid",
+        "source_state_sha256",
+        "scenario_sha256",
+        "spec",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "twin_uuid",
+        "scenario_uuid"
+      ]
+    },
+    {
+      "source_version": "0.50.0",
+      "migration_file": "0050_portfolio_digital_twin.sql",
+      "migration_sha256": "b4bd978b5e8ddfdd568d6e959d50152559ab40b5c30b63bcd0cddefd966804b3",
+      "source_table": "phx_portfolio_simulation_runs",
+      "columns": [
+        "tenant_uuid",
+        "scenario_uuid",
+        "run_uuid",
+        "source_state_sha256",
+        "iterations",
+        "seed",
+        "result_json",
+        "evidence_sha256",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "scenario_uuid",
+        "run_uuid"
+      ]
+    },
+    {
+      "source_version": "0.50.0",
+      "migration_file": "0050_portfolio_digital_twin.sql",
+      "migration_sha256": "b4bd978b5e8ddfdd568d6e959d50152559ab40b5c30b63bcd0cddefd966804b3",
+      "source_table": "phx_portfolio_calibration_evidence",
+      "columns": [
+        "tenant_uuid",
+        "evidence_uuid",
+        "source_state_sha256",
+        "promoted",
+        "fresh_until",
+        "sample_count",
+        "evidence_sha256",
+        "evidence_json",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "evidence_uuid"
+      ]
+    },
+    {
+      "source_version": "0.50.0",
+      "migration_file": "0050_portfolio_digital_twin.sql",
+      "migration_sha256": "b4bd978b5e8ddfdd568d6e959d50152559ab40b5c30b63bcd0cddefd966804b3",
+      "source_table": "phx_portfolio_decision_delegations",
+      "columns": [
+        "tenant_uuid",
+        "decision_case_uuid",
+        "scenario_uuid",
+        "simulation_evidence_sha256",
+        "delegate_to",
+        "direct_mutation",
+        "delegation_json",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "decision_case_uuid",
+        "scenario_uuid"
+      ]
+    },
+    {
+      "source_version": "0.50.0",
+      "migration_file": "0050_portfolio_digital_twin.sql",
+      "migration_sha256": "b4bd978b5e8ddfdd568d6e959d50152559ab40b5c30b63bcd0cddefd966804b3",
+      "source_table": "phx_portfolio_events",
+      "columns": [
+        "tenant_uuid",
+        "event_uuid",
+        "source_state_sha256",
+        "event_type",
+        "event_sha256",
+        "payload",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "event_uuid"
+      ]
+    },
+    {
+      "source_version": "0.51.0",
+      "migration_file": "0051_portfolio_optimizer.sql",
+      "migration_sha256": "4fdde51ff8dbbb237270986cb785ba67be7c619283840a8eff011df5e7dfe2c0",
+      "source_table": "phx_portfolio_optimization_searches",
+      "columns": [
+        "tenant_uuid",
+        "search_uuid",
+        "twin_uuid",
+        "source_state_sha256",
+        "plan_sha256",
+        "spec",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "search_uuid",
+        "twin_uuid"
+      ]
+    },
+    {
+      "source_version": "0.51.0",
+      "migration_file": "0051_portfolio_optimizer.sql",
+      "migration_sha256": "4fdde51ff8dbbb237270986cb785ba67be7c619283840a8eff011df5e7dfe2c0",
+      "source_table": "phx_portfolio_optimization_candidates",
+      "columns": [
+        "tenant_uuid",
+        "search_uuid",
+        "candidate_uuid",
+        "candidate_sha256",
+        "feasible",
+        "metrics",
+        "simulation_evidence_sha256",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "search_uuid",
+        "candidate_uuid"
+      ]
+    },
+    {
+      "source_version": "0.51.0",
+      "migration_file": "0051_portfolio_optimizer.sql",
+      "migration_sha256": "4fdde51ff8dbbb237270986cb785ba67be7c619283840a8eff011df5e7dfe2c0",
+      "source_table": "phx_portfolio_optimization_frontier",
+      "columns": [
+        "tenant_uuid",
+        "search_uuid",
+        "candidate_uuid",
+        "metrics",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "search_uuid",
+        "candidate_uuid"
+      ]
+    },
+    {
+      "source_version": "0.51.0",
+      "migration_file": "0051_portfolio_optimizer.sql",
+      "migration_sha256": "4fdde51ff8dbbb237270986cb785ba67be7c619283840a8eff011df5e7dfe2c0",
+      "source_table": "phx_portfolio_optimization_recommendations",
+      "columns": [
+        "tenant_uuid",
+        "recommendation_uuid",
+        "search_uuid",
+        "candidate_uuid",
+        "confidence",
+        "rank_stability",
+        "recommendation_sha256",
+        "direct_mutation",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "recommendation_uuid",
+        "search_uuid",
+        "candidate_uuid"
+      ]
+    },
+    {
+      "source_version": "0.51.0",
+      "migration_file": "0051_portfolio_optimizer.sql",
+      "migration_sha256": "4fdde51ff8dbbb237270986cb785ba67be7c619283840a8eff011df5e7dfe2c0",
+      "source_table": "phx_portfolio_optimization_events",
+      "columns": [
+        "tenant_uuid",
+        "event_uuid",
+        "search_uuid",
+        "event_type",
+        "payload",
+        "evidence_sha256",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "event_uuid",
+        "search_uuid"
+      ]
+    },
+    {
+      "source_version": "0.52.0",
+      "migration_file": "0052_autonomous_portfolio_planner.sql",
+      "migration_sha256": "84065624ef45d2d0e77a8b80d0b816f356cb312bdcfad673ebd0bef3bf34c6f0",
+      "source_table": "phx_portfolio_plans",
+      "columns": [
+        "tenant_uuid",
+        "plan_uuid",
+        "source_state_sha256",
+        "selected_candidate_hash",
+        "plan_sha256",
+        "requires_approval",
+        "total_budget_reserved",
+        "direct_mutation",
+        "payload",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "plan_uuid"
+      ]
+    },
+    {
+      "source_version": "0.52.0",
+      "migration_file": "0052_autonomous_portfolio_planner.sql",
+      "migration_sha256": "84065624ef45d2d0e77a8b80d0b816f356cb312bdcfad673ebd0bef3bf34c6f0",
+      "source_table": "phx_portfolio_plan_items",
+      "columns": [
+        "tenant_uuid",
+        "plan_uuid",
+        "project_uuid",
+        "sequence_no",
+        "planned_start_day",
+        "planned_finish_day",
+        "recommendation",
+        "budget_reservation",
+        "payload",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "plan_uuid",
+        "project_uuid"
+      ]
+    },
+    {
+      "source_version": "0.52.0",
+      "migration_file": "0052_autonomous_portfolio_planner.sql",
+      "migration_sha256": "84065624ef45d2d0e77a8b80d0b816f356cb312bdcfad673ebd0bef3bf34c6f0",
+      "source_table": "phx_portfolio_resource_reservations",
+      "columns": [
+        "tenant_uuid",
+        "reservation_uuid",
+        "plan_uuid",
+        "project_uuid",
+        "resource_kind",
+        "resource_key",
+        "start_day",
+        "finish_day",
+        "amount",
+        "evidence_sha256",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "reservation_uuid",
+        "plan_uuid",
+        "project_uuid"
+      ]
+    },
+    {
+      "source_version": "0.52.0",
+      "migration_file": "0052_autonomous_portfolio_planner.sql",
+      "migration_sha256": "84065624ef45d2d0e77a8b80d0b816f356cb312bdcfad673ebd0bef3bf34c6f0",
+      "source_table": "phx_portfolio_plan_delegations",
+      "columns": [
+        "tenant_uuid",
+        "delegation_uuid",
+        "plan_uuid",
+        "plan_sha256",
+        "delegate_to",
+        "direct_mutation",
+        "evidence_sha256",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "delegation_uuid",
+        "plan_uuid"
+      ]
+    },
+    {
+      "source_version": "0.52.0",
+      "migration_file": "0052_autonomous_portfolio_planner.sql",
+      "migration_sha256": "84065624ef45d2d0e77a8b80d0b816f356cb312bdcfad673ebd0bef3bf34c6f0",
+      "source_table": "phx_portfolio_planner_events",
+      "columns": [
+        "tenant_uuid",
+        "event_uuid",
+        "plan_uuid",
+        "event_type",
+        "evidence_sha256",
+        "payload",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "event_uuid",
+        "plan_uuid"
+      ]
+    },
+    {
+      "source_version": "0.53.0",
+      "migration_file": "0053_adaptive_portfolio_execution_controller.sql",
+      "migration_sha256": "a8392e1ab7d2bca83e4167320ca648cb6ad2ae7a473272dd0cd6567933a04775",
+      "source_table": "phx_portfolio_execution_controllers",
+      "columns": [
+        "tenant_uuid",
+        "controller_uuid",
+        "portfolio_uuid",
+        "active_plan_uuid",
+        "active_plan_sha256",
+        "source_state_sha256",
+        "revision_no",
+        "controller_epoch",
+        "fencing_token",
+        "direct_mutation",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "controller_uuid",
+        "portfolio_uuid",
+        "active_plan_uuid"
+      ]
+    },
+    {
+      "source_version": "0.53.0",
+      "migration_file": "0053_adaptive_portfolio_execution_controller.sql",
+      "migration_sha256": "a8392e1ab7d2bca83e4167320ca648cb6ad2ae7a473272dd0cd6567933a04775",
+      "source_table": "phx_portfolio_execution_observations",
+      "columns": [
+        "tenant_uuid",
+        "observation_uuid",
+        "controller_uuid",
+        "project_uuid",
+        "observed_at",
+        "source_state_sha256",
+        "evidence_sha256",
+        "payload",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "observation_uuid",
+        "controller_uuid",
+        "project_uuid"
+      ]
+    },
+    {
+      "source_version": "0.53.0",
+      "migration_file": "0053_adaptive_portfolio_execution_controller.sql",
+      "migration_sha256": "a8392e1ab7d2bca83e4167320ca648cb6ad2ae7a473272dd0cd6567933a04775",
+      "source_table": "phx_portfolio_drift_events",
+      "columns": [
+        "tenant_uuid",
+        "drift_uuid",
+        "controller_uuid",
+        "project_uuid",
+        "drift_kind",
+        "severity",
+        "magnitude",
+        "confirmed",
+        "evidence_sha256",
+        "payload",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "drift_uuid",
+        "controller_uuid",
+        "project_uuid"
+      ]
+    },
+    {
+      "source_version": "0.53.0",
+      "migration_file": "0053_adaptive_portfolio_execution_controller.sql",
+      "migration_sha256": "a8392e1ab7d2bca83e4167320ca648cb6ad2ae7a473272dd0cd6567933a04775",
+      "source_table": "phx_portfolio_replan_requests",
+      "columns": [
+        "tenant_uuid",
+        "request_uuid",
+        "controller_uuid",
+        "base_plan_uuid",
+        "base_plan_sha256",
+        "base_revision_no",
+        "source_state_sha256",
+        "shadow_only",
+        "request_sha256",
+        "payload",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "request_uuid",
+        "controller_uuid",
+        "base_plan_uuid"
+      ]
+    },
+    {
+      "source_version": "0.53.0",
+      "migration_file": "0053_adaptive_portfolio_execution_controller.sql",
+      "migration_sha256": "a8392e1ab7d2bca83e4167320ca648cb6ad2ae7a473272dd0cd6567933a04775",
+      "source_table": "phx_portfolio_plan_revision_proposals",
+      "columns": [
+        "tenant_uuid",
+        "revision_uuid",
+        "request_uuid",
+        "base_plan_uuid",
+        "base_plan_sha256",
+        "candidate_plan_sha256",
+        "source_state_sha256",
+        "proposal_sha256",
+        "requires_approval",
+        "direct_mutation",
+        "payload",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "revision_uuid",
+        "request_uuid",
+        "base_plan_uuid"
+      ]
+    },
+    {
+      "source_version": "0.53.0",
+      "migration_file": "0053_adaptive_portfolio_execution_controller.sql",
+      "migration_sha256": "a8392e1ab7d2bca83e4167320ca648cb6ad2ae7a473272dd0cd6567933a04775",
+      "source_table": "phx_portfolio_execution_events",
+      "columns": [
+        "tenant_uuid",
+        "event_uuid",
+        "controller_uuid",
+        "event_type",
+        "source_state_sha256",
+        "evidence_sha256",
+        "payload",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "event_uuid",
+        "controller_uuid"
+      ]
+    },
+    {
+      "source_version": "0.54.0",
+      "migration_file": "0054_consolidation_performance.sql",
+      "migration_sha256": "e28542f6a8eb459392a5efd97a38eb2aec2786fe88c251f92ce0cdf05b31518e",
+      "source_table": "phx_model_outcomes_v054",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "outcome_uuid",
+        "task_uuid",
+        "agent_uuid",
+        "task_class",
+        "model_profile_uuid",
+        "success",
+        "quality_score",
+        "actual_cost",
+        "latency_ms",
+        "input_tokens",
+        "output_tokens",
+        "failure_signature",
+        "failure_origin",
+        "source_state_sha256",
+        "evidence_sha256",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "outcome_uuid",
+        "task_uuid",
+        "agent_uuid",
+        "model_profile_uuid"
+      ]
+    },
+    {
+      "source_version": "0.54.0",
+      "migration_file": "0054_consolidation_performance.sql",
+      "migration_sha256": "e28542f6a8eb459392a5efd97a38eb2aec2786fe88c251f92ce0cdf05b31518e",
+      "source_table": "phx_agent_model_affinity_v054",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "affinity_uuid",
+        "agent_uuid",
+        "task_class",
+        "model_profile_uuid",
+        "sample_count",
+        "success_rate",
+        "avg_quality",
+        "avg_cost",
+        "avg_latency_ms",
+        "source_state_sha256",
+        "promoted",
+        "fresh_until",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "affinity_uuid",
+        "agent_uuid",
+        "model_profile_uuid"
+      ]
+    },
+    {
+      "source_version": "0.54.0",
+      "migration_file": "0054_consolidation_performance.sql",
+      "migration_sha256": "e28542f6a8eb459392a5efd97a38eb2aec2786fe88c251f92ce0cdf05b31518e",
+      "source_table": "phx_context_budget_decisions_v054",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "decision_uuid",
+        "task_uuid",
+        "requested_tokens",
+        "budget_tokens",
+        "model_limit_tokens",
+        "compressed_locally",
+        "source_state_sha256",
+        "decision_sha256",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "decision_uuid",
+        "task_uuid"
+      ]
+    },
+    {
+      "source_version": "0.54.0",
+      "migration_file": "0054_consolidation_performance.sql",
+      "migration_sha256": "e28542f6a8eb459392a5efd97a38eb2aec2786fe88c251f92ce0cdf05b31518e",
+      "source_table": "phx_prompt_plans_v054",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "prompt_uuid",
+        "task_uuid",
+        "model_profile_uuid",
+        "provider",
+        "prompt_sha256",
+        "source_state_sha256",
+        "policy_sha256",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "prompt_uuid",
+        "task_uuid",
+        "model_profile_uuid"
+      ]
+    },
+    {
+      "source_version": "0.54.0",
+      "migration_file": "0054_consolidation_performance.sql",
+      "migration_sha256": "e28542f6a8eb459392a5efd97a38eb2aec2786fe88c251f92ce0cdf05b31518e",
+      "source_table": "phx_semantic_cache_entries_v054",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "cache_uuid",
+        "cache_key_sha256",
+        "source_state_sha256",
+        "policy_sha256",
+        "model_profile_uuid",
+        "payload_sha256",
+        "fresh_until",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "cache_uuid",
+        "model_profile_uuid"
+      ]
+    },
+    {
+      "source_version": "0.54.0",
+      "migration_file": "0054_consolidation_performance.sql",
+      "migration_sha256": "e28542f6a8eb459392a5efd97a38eb2aec2786fe88c251f92ce0cdf05b31518e",
+      "source_table": "phx_semantic_cache_events_v054",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "event_uuid",
+        "cache_uuid",
+        "event_kind",
+        "evidence_sha256",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "event_uuid",
+        "cache_uuid"
+      ]
+    },
+    {
+      "source_version": "0.54.0",
+      "migration_file": "0054_consolidation_performance.sql",
+      "migration_sha256": "e28542f6a8eb459392a5efd97a38eb2aec2786fe88c251f92ce0cdf05b31518e",
+      "source_table": "phx_ollama_runtime_samples_v054",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "sample_uuid",
+        "model",
+        "loaded",
+        "size_vram",
+        "queue_depth",
+        "latency_ms",
+        "tokens_per_second",
+        "context_length",
+        "evidence_sha256",
+        "sampled_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "sample_uuid"
+      ]
+    },
+    {
+      "source_version": "0.54.0",
+      "migration_file": "0054_consolidation_performance.sql",
+      "migration_sha256": "e28542f6a8eb459392a5efd97a38eb2aec2786fe88c251f92ce0cdf05b31518e",
+      "source_table": "phx_performance_events_v054",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "event_uuid",
+        "event_kind",
+        "source_state_sha256",
+        "evidence_sha256",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "event_uuid"
+      ]
+    },
+    {
+      "source_version": "0.55.0",
+      "migration_file": "0055_reconciliation_execution_ledger.sql",
+      "migration_sha256": "7a12285f26af8f62a6c3c0952b28698efc2c5ec81cfaa3788cd1b671ff01e2e5",
+      "source_table": "phx_reconciliation_plan_snapshots",
+      "columns": [
+        "tenant_uuid",
+        "snapshot_uuid",
+        "project_uuid",
+        "plan_revision_uuid",
+        "source_state_sha256",
+        "plan_sha256",
+        "payload",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "snapshot_uuid",
+        "project_uuid",
+        "plan_revision_uuid"
+      ]
+    },
+    {
+      "source_version": "0.55.0",
+      "migration_file": "0055_reconciliation_execution_ledger.sql",
+      "migration_sha256": "7a12285f26af8f62a6c3c0952b28698efc2c5ec81cfaa3788cd1b671ff01e2e5",
+      "source_table": "phx_execution_ledger_facts",
+      "columns": [
+        "tenant_uuid",
+        "fact_uuid",
+        "project_uuid",
+        "work_item_uuid",
+        "sequence_no",
+        "controller_epoch",
+        "fencing_token",
+        "observed_at",
+        "source_state_sha256",
+        "fact_kind",
+        "idempotency_key",
+        "payload_sha256",
+        "evidence_sha256",
+        "reason_code",
+        "reason_status",
+        "causation_uuid",
+        "correlation_uuid",
+        "payload",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "fact_uuid",
+        "project_uuid",
+        "work_item_uuid",
+        "causation_uuid",
+        "correlation_uuid"
+      ]
+    },
+    {
+      "source_version": "0.55.0",
+      "migration_file": "0055_reconciliation_execution_ledger.sql",
+      "migration_sha256": "7a12285f26af8f62a6c3c0952b28698efc2c5ec81cfaa3788cd1b671ff01e2e5",
+      "source_table": "phx_reconciliation_variances",
+      "columns": [
+        "tenant_uuid",
+        "variance_uuid",
+        "project_uuid",
+        "work_item_uuid",
+        "plan_revision_uuid",
+        "source_state_sha256",
+        "variance_sha256",
+        "reason_status",
+        "reason_code",
+        "reason_evidence_sha256",
+        "payload",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "variance_uuid",
+        "project_uuid",
+        "work_item_uuid",
+        "plan_revision_uuid"
+      ]
+    },
+    {
+      "source_version": "0.55.0",
+      "migration_file": "0055_reconciliation_execution_ledger.sql",
+      "migration_sha256": "7a12285f26af8f62a6c3c0952b28698efc2c5ec81cfaa3788cd1b671ff01e2e5",
+      "source_table": "phx_reconciliation_causal_links",
+      "columns": [
+        "tenant_uuid",
+        "link_uuid",
+        "project_uuid",
+        "cause_fact_uuid",
+        "effect_variance_uuid",
+        "evidence_sha256",
+        "reason_code",
+        "verified",
+        "payload",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "link_uuid",
+        "project_uuid",
+        "cause_fact_uuid",
+        "effect_variance_uuid"
+      ]
+    },
+    {
+      "source_version": "0.55.0",
+      "migration_file": "0055_reconciliation_execution_ledger.sql",
+      "migration_sha256": "7a12285f26af8f62a6c3c0952b28698efc2c5ec81cfaa3788cd1b671ff01e2e5",
+      "source_table": "phx_sprint_gate_evidence",
+      "columns": [
+        "tenant_uuid",
+        "evidence_uuid",
+        "sprint_id",
+        "gate_id",
+        "source_state_sha256",
+        "result",
+        "evidence_sha256",
+        "tool_version",
+        "executed_at",
+        "payload",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "evidence_uuid"
+      ]
+    },
+    {
+      "source_version": "0.55.0",
+      "migration_file": "0055_reconciliation_execution_ledger.sql",
+      "migration_sha256": "7a12285f26af8f62a6c3c0952b28698efc2c5ec81cfaa3788cd1b671ff01e2e5",
+      "source_table": "phx_sprint_gate_status_snapshots",
+      "columns": [
+        "tenant_uuid",
+        "status_uuid",
+        "sprint_id",
+        "source_state_sha256",
+        "color",
+        "evidence_sha256",
+        "payload",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "status_uuid"
+      ]
+    },
+    {
+      "source_version": "0.57.0",
+      "migration_file": "0057_self_evolving_intelligence.sql",
+      "migration_sha256": "51b2437f01913907be80fbfc45f35ead0864fc9da29f1626f0820d3183a643e1",
+      "source_table": "phx_experience_episodes",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "episode_uuid",
+        "task_uuid",
+        "agent_uuid",
+        "model_profile_uuid",
+        "task_class",
+        "context_fingerprint_sha256",
+        "source_state_sha256",
+        "prompt_plan_sha256",
+        "outcome",
+        "quality_score",
+        "actual_cost_microunits",
+        "duration_ms",
+        "evidence_class",
+        "evidence_sha256",
+        "payload",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "episode_uuid",
+        "task_uuid",
+        "agent_uuid",
+        "model_profile_uuid"
+      ]
+    },
+    {
+      "source_version": "0.57.0",
+      "migration_file": "0057_self_evolving_intelligence.sql",
+      "migration_sha256": "51b2437f01913907be80fbfc45f35ead0864fc9da29f1626f0820d3183a643e1",
+      "source_table": "phx_context_fingerprints",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "fingerprint_sha256",
+        "source_state_sha256",
+        "dimensions",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid"
+      ]
+    },
+    {
+      "source_version": "0.57.0",
+      "migration_file": "0057_self_evolving_intelligence.sql",
+      "migration_sha256": "51b2437f01913907be80fbfc45f35ead0864fc9da29f1626f0820d3183a643e1",
+      "source_table": "phx_knowledge_patterns",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "pattern_uuid",
+        "pattern_kind",
+        "pattern_key",
+        "context_fingerprint_sha256",
+        "promotion_state",
+        "evidence_class",
+        "evidence_count",
+        "success_count",
+        "failure_count",
+        "reuse_count",
+        "confidence",
+        "root_cause",
+        "remediation",
+        "safe_retry_conditions",
+        "source_state_sha256",
+        "evidence_sha256",
+        "fresh_until",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "pattern_uuid"
+      ]
+    },
+    {
+      "source_version": "0.57.0",
+      "migration_file": "0057_self_evolving_intelligence.sql",
+      "migration_sha256": "51b2437f01913907be80fbfc45f35ead0864fc9da29f1626f0820d3183a643e1",
+      "source_table": "phx_evolution_candidates",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "candidate_uuid",
+        "candidate_kind",
+        "risk",
+        "reversible",
+        "touches_core_or_policy",
+        "evidence_class",
+        "source_state_sha256",
+        "artifact_sha256",
+        "state",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "candidate_uuid"
+      ]
+    },
+    {
+      "source_version": "0.57.0",
+      "migration_file": "0057_self_evolving_intelligence.sql",
+      "migration_sha256": "51b2437f01913907be80fbfc45f35ead0864fc9da29f1626f0820d3183a643e1",
+      "source_table": "phx_evolution_experiments",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "experiment_uuid",
+        "candidate_uuid",
+        "sandbox_ref",
+        "checkpoint_ref",
+        "source_state_sha256",
+        "result_sha256",
+        "status",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "experiment_uuid",
+        "candidate_uuid"
+      ]
+    },
+    {
+      "source_version": "0.57.0",
+      "migration_file": "0057_self_evolving_intelligence.sql",
+      "migration_sha256": "51b2437f01913907be80fbfc45f35ead0864fc9da29f1626f0820d3183a643e1",
+      "source_table": "phx_evolution_promotion_decisions",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "decision_uuid",
+        "candidate_uuid",
+        "decision",
+        "automatic",
+        "approver_uuid",
+        "reason",
+        "evidence_sha256",
+        "source_state_sha256",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "decision_uuid",
+        "candidate_uuid",
+        "approver_uuid"
+      ]
+    },
+    {
+      "source_version": "0.57.0",
+      "migration_file": "0057_self_evolving_intelligence.sql",
+      "migration_sha256": "51b2437f01913907be80fbfc45f35ead0864fc9da29f1626f0820d3183a643e1",
+      "source_table": "phx_learning_contradictions",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "contradiction_uuid",
+        "left_pattern_uuid",
+        "right_pattern_uuid",
+        "state",
+        "evidence_sha256",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "contradiction_uuid",
+        "left_pattern_uuid",
+        "right_pattern_uuid"
+      ]
+    },
+    {
+      "source_version": "0.57.0",
+      "migration_file": "0057_self_evolving_intelligence.sql",
+      "migration_sha256": "51b2437f01913907be80fbfc45f35ead0864fc9da29f1626f0820d3183a643e1",
+      "source_table": "phx_learning_contradiction_resolutions",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "resolution_uuid",
+        "contradiction_uuid",
+        "resolution",
+        "evidence_sha256",
+        "approver_uuid",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "resolution_uuid",
+        "contradiction_uuid",
+        "approver_uuid"
+      ]
+    },
+    {
+      "source_version": "0.57.0",
+      "migration_file": "0057_self_evolving_intelligence.sql",
+      "migration_sha256": "51b2437f01913907be80fbfc45f35ead0864fc9da29f1626f0820d3183a643e1",
+      "source_table": "phx_self_improvement_changes",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "change_uuid",
+        "candidate_uuid",
+        "branch_ref",
+        "worktree_ref",
+        "source_state_sha256",
+        "core_auto_merge",
+        "human_approval_required",
+        "status",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "change_uuid",
+        "candidate_uuid"
+      ]
+    },
+    {
+      "source_version": "0.57.0",
+      "migration_file": "0057_self_evolving_intelligence.sql",
+      "migration_sha256": "51b2437f01913907be80fbfc45f35ead0864fc9da29f1626f0820d3183a643e1",
+      "source_table": "phx_learning_events",
+      "columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "event_uuid",
+        "event_type",
+        "correlation_uuid",
+        "causation_uuid",
+        "source_state_sha256",
+        "evidence_sha256",
+        "payload",
+        "created_at"
+      ],
+      "uuid_columns": [
+        "tenant_uuid",
+        "project_uuid",
+        "event_uuid",
+        "correlation_uuid",
+        "causation_uuid"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,103 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f60c-7cce-90e3-302e5f81e9fa",
+  "agent_id": 12,
+  "name": "Jackson",
+  "macroarea": "Engenharia & Arquitetura",
+  "nucleus": "Performance",
+  "role_type": "Agente de performance",
+  "mission": "Encontra hot paths e reduz CPU, I/O, memória e latência com prova mensurável.",
+  "responsibilities": "Cria baseline, perfila, identifica gargalo, propõe otimização, mede before/after e verifica trade-offs.",
+  "resources": "Criterion, perf, flamegraph, hyperfine, ETW/WPR, métricas.",
+  "authorized_actions": "Medir, perfilar, propor e validar otimizações.",
+  "trigger": "Regressão de performance, metas de SLO ou módulo crítico.",
+  "declared_dependencies": "Benchmarks, telemetria e patch candidato.",
+  "resolved_agent_dependencies": [],
+  "deliverables": "Relatório before/after e recomendação.",
+  "limits": "Não aceita melhoria sem números reproduzíveis.",
+  "next_gate": "Performance Test / QA2.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "claude",
+    "codex"
+  ],
+  "criticality": "Alta",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F19 Repo Intelligence / Tree-sitter",
+    "F22 Device Nodes"
+  ],
+  "capabilities": [
+    "context.compile",
+    "memory.read",
+    "node.observe",
+    "performance.profile",
+    "repo.read",
+    "skill.read",
+    "tree_sitter.analyze"
+  ],
+  "permissions": [
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "performance.profile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "repo.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "tree_sitter.analyze",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Node/session state efêmero e pareado",
+  "event_topics": "agent.jackson.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; writes policy-gated; evidência obrigatória; sem autoaprovação. Device input/screen exige autorização de sessão e logging.",
+  "references": "Architect (MIT) — AST/Tree-sitter/Repo Intelligence | oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 13
+  }
+}

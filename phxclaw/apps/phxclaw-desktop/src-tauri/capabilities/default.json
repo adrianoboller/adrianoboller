@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main-capability",
+  "description": "PhxClaw trusted Command Center webview. Remote managed webviews are intentionally excluded.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

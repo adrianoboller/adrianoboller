@@ -1,0 +1,57 @@
+{
+  "version": "0.11.0",
+  "generated_at": "2026-09-28T02:44:26.578315+00:00",
+  "cargo_available": false,
+  "rustc_available": false,
+  "workspace_members": 41,
+  "rust_files": 43,
+  "rust_lines": 10996,
+  "capabilities": 99,
+  "agents": 110,
+  "schemas": 24,
+  "migrations": 14,
+  "suites": {
+    "mission_runtime": {
+      "pass": 24,
+      "fail": 0
+    },
+    "research_pipeline": {
+      "pass": 34,
+      "fail": 0
+    },
+    "f15_f16": {
+      "pass": 17,
+      "fail": 0
+    },
+    "desktop_host": {
+      "pass": 26,
+      "fail": 0
+    },
+    "plugin_ecosystem": {
+      "pass": 71,
+      "fail": 0
+    },
+    "olmocr": {
+      "pass": 5,
+      "fail": 0
+    },
+    "process_smoke": {
+      "pass": 9,
+      "fail": 0
+    },
+    "bootstrap_verifier": {
+      "pass": 1,
+      "fail": 0,
+      "note": "Executed separately: all static/process checks passed; cargo/rustc unavailable."
+    }
+  },
+  "release_ready": false,
+  "blocking_gates": [
+    "cargo fmt --check",
+    "cargo check --workspace",
+    "cargo test --workspace",
+    "cargo clippy --workspace --all-targets -- -D warnings",
+    "native Tauri build",
+    "PostgreSQL E2E"
+  ]
+}

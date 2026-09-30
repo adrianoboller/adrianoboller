@@ -1,0 +1,334 @@
+{
+  "version": "0.52.0",
+  "count": 82,
+  "capabilities": [
+    {
+      "uuid": "01a0edbd-d655-775e-a8cf-95422540f933",
+      "name": "portfolio.planner.plan.create"
+    },
+    {
+      "uuid": "01a0edbd-d656-75d8-afd3-f0ea0d9ff969",
+      "name": "portfolio.planner.plan.revise"
+    },
+    {
+      "uuid": "01a0edbd-d657-7e66-b04b-0df02db44b74",
+      "name": "portfolio.planner.plan.get"
+    },
+    {
+      "uuid": "01a0edbd-d658-7c3f-ace4-8a237285ae3d",
+      "name": "portfolio.planner.plan.list"
+    },
+    {
+      "uuid": "01a0edbd-d659-7531-8721-b590e92f0edb",
+      "name": "portfolio.planner.plan.hash.verify"
+    },
+    {
+      "uuid": "01a0edbd-d65a-79f9-bb64-78e275e2907f",
+      "name": "portfolio.planner.plan.explain"
+    },
+    {
+      "uuid": "01a0edbd-d65b-7b4a-9886-206d70edc670",
+      "name": "portfolio.planner.plan.compare"
+    },
+    {
+      "uuid": "01a0edbd-d65c-7aa0-8907-de39bdaa884b",
+      "name": "portfolio.planner.plan.cancel"
+    },
+    {
+      "uuid": "01a0edbd-d65d-7c33-9f90-1be34e224d63",
+      "name": "portfolio.planner.input.optimizer_result"
+    },
+    {
+      "uuid": "01a0edbd-d65e-7eb2-9462-4b8192efa922",
+      "name": "portfolio.planner.input.pareto_candidate"
+    },
+    {
+      "uuid": "01a0edbd-d65f-7da7-8cdd-c45d56b0daf4",
+      "name": "portfolio.planner.input.selected_candidate.require"
+    },
+    {
+      "uuid": "01a0edbd-d660-7403-adc2-dd752558c25b",
+      "name": "portfolio.planner.input.source_state.verify"
+    },
+    {
+      "uuid": "01a0edbd-d661-7d56-9043-d0a411b37844",
+      "name": "portfolio.planner.input.twin.verify"
+    },
+    {
+      "uuid": "01a0edbd-d662-7a6f-88a4-acee3c2659b8",
+      "name": "portfolio.planner.input.freshness.verify"
+    },
+    {
+      "uuid": "01a0edbd-d663-7f0b-b133-40da78f9ff5b",
+      "name": "portfolio.planner.roadmap.generate"
+    },
+    {
+      "uuid": "01a0edbd-d664-76c5-b853-50599197ffe9",
+      "name": "portfolio.planner.roadmap.sequence"
+    },
+    {
+      "uuid": "01a0edbd-d665-7221-a04e-7b59a1175ce8",
+      "name": "portfolio.planner.roadmap.phase"
+    },
+    {
+      "uuid": "01a0edbd-d666-7a28-a32e-a97b50ff4609",
+      "name": "portfolio.planner.roadmap.start_window"
+    },
+    {
+      "uuid": "01a0edbd-d667-70e4-a236-091cfe454d9a",
+      "name": "portfolio.planner.roadmap.hold_window"
+    },
+    {
+      "uuid": "01a0edbd-d668-7f8b-9660-41b007f8daba",
+      "name": "portfolio.planner.roadmap.pause_recommendation"
+    },
+    {
+      "uuid": "01a0edbd-d669-701c-bef9-9eb4ab7a280e",
+      "name": "portfolio.planner.roadmap.resume_recommendation"
+    },
+    {
+      "uuid": "01a0edbd-d66a-714f-9ca7-94b52b4e83e9",
+      "name": "portfolio.planner.roadmap.milestone.align"
+    },
+    {
+      "uuid": "01a0edbd-d66b-7721-966e-651680129ce1",
+      "name": "portfolio.planner.dependency.fs"
+    },
+    {
+      "uuid": "01a0edbd-d66c-7c18-8f63-695f43e4a2b2",
+      "name": "portfolio.planner.dependency.ss"
+    },
+    {
+      "uuid": "01a0edbd-d66d-7a1e-8e60-2f063ab231e5",
+      "name": "portfolio.planner.dependency.ff"
+    },
+    {
+      "uuid": "01a0edbd-d66e-74ca-bf6c-29643620cab2",
+      "name": "portfolio.planner.dependency.sf"
+    },
+    {
+      "uuid": "01a0edbd-d66f-7782-a26e-1676188ddedb",
+      "name": "portfolio.planner.dependency.lag"
+    },
+    {
+      "uuid": "01a0edbd-d670-7f3b-a35c-a12a422087ee",
+      "name": "portfolio.planner.dependency.validate"
+    },
+    {
+      "uuid": "01a0edbd-d671-77cf-974c-049d7d87ee45",
+      "name": "portfolio.planner.dependency.cycle.detect"
+    },
+    {
+      "uuid": "01a0edbd-d672-7504-abd5-bd715dd7825a",
+      "name": "portfolio.planner.resource.agent.reserve"
+    },
+    {
+      "uuid": "01a0edbd-d673-73d5-b11a-ca889ef3fd9b",
+      "name": "portfolio.planner.resource.agent.release"
+    },
+    {
+      "uuid": "01a0edbd-d674-703c-aedb-a8062f16107d",
+      "name": "portfolio.planner.resource.agent.capacity.check"
+    },
+    {
+      "uuid": "01a0edbd-d675-768d-acfc-08a8b8664e1f",
+      "name": "portfolio.planner.resource.agent.contention.detect"
+    },
+    {
+      "uuid": "01a0edbd-d676-7e13-8fde-0653af798c2d",
+      "name": "portfolio.planner.resource.resource.reserve"
+    },
+    {
+      "uuid": "01a0edbd-d677-7630-ae0d-06ef662a597d",
+      "name": "portfolio.planner.resource.resource.release"
+    },
+    {
+      "uuid": "01a0edbd-d678-7ac0-a93c-6aa3693830da",
+      "name": "portfolio.planner.resource.leveling"
+    },
+    {
+      "uuid": "01a0edbd-d679-73b2-b7bc-114a1d72db11",
+      "name": "portfolio.planner.model.quota.reserve"
+    },
+    {
+      "uuid": "01a0edbd-d67a-72b1-91d9-46a2e8c0d18f",
+      "name": "portfolio.planner.model.quota.release"
+    },
+    {
+      "uuid": "01a0edbd-d67b-777d-b965-1901b4fd975a",
+      "name": "portfolio.planner.model.ollama.prefer"
+    },
+    {
+      "uuid": "01a0edbd-d67c-7834-96ea-b667969dc194",
+      "name": "portfolio.planner.model.cloud.cap"
+    },
+    {
+      "uuid": "01a0edbd-d67d-71fc-b1c8-dde8feb483df",
+      "name": "portfolio.planner.model.budget.check"
+    },
+    {
+      "uuid": "01a0edbd-d67e-78f8-b11e-25bc87a13a9b",
+      "name": "portfolio.planner.model.capacity.check"
+    },
+    {
+      "uuid": "01a0edbd-d67f-7029-8db9-76ada0a4196a",
+      "name": "portfolio.planner.budget.envelope"
+    },
+    {
+      "uuid": "01a0edbd-d680-767a-a029-a0cf746ea32a",
+      "name": "portfolio.planner.budget.project.reserve"
+    },
+    {
+      "uuid": "01a0edbd-d681-7df6-aab5-4467a157b30d",
+      "name": "portfolio.planner.budget.portfolio.reserve"
+    },
+    {
+      "uuid": "01a0edbd-d682-72c6-926e-6bd6e904b884",
+      "name": "portfolio.planner.budget.forecast.check"
+    },
+    {
+      "uuid": "01a0edbd-d683-7a9e-b51d-6beaa25e778a",
+      "name": "portfolio.planner.budget.hard_limit.enforce"
+    },
+    {
+      "uuid": "01a0edbd-d684-7ed4-b9aa-7e3d9c2f3d18",
+      "name": "portfolio.planner.calendar.generate"
+    },
+    {
+      "uuid": "01a0edbd-d685-7b7e-b422-a849da35a861",
+      "name": "portfolio.planner.calendar.workday.apply"
+    },
+    {
+      "uuid": "01a0edbd-d686-7504-b1d8-1c6902cdcf84",
+      "name": "portfolio.planner.calendar.blackout.apply"
+    },
+    {
+      "uuid": "01a0edbd-d687-755b-9957-bc8f09a6ad50",
+      "name": "portfolio.planner.calendar.capacity.apply"
+    },
+    {
+      "uuid": "01a0edbd-d688-75d5-ba99-21de6d32ca66",
+      "name": "portfolio.planner.calendar.baseline.compare"
+    },
+    {
+      "uuid": "01a0edbd-d689-7120-9d05-39bf725cc8ab",
+      "name": "portfolio.planner.policy.locked_project"
+    },
+    {
+      "uuid": "01a0edbd-d68a-79f7-9084-e81656e72f3a",
+      "name": "portfolio.planner.policy.mandatory_date"
+    },
+    {
+      "uuid": "01a0edbd-d68b-74a1-add0-dba148b06860",
+      "name": "portfolio.planner.policy.priority"
+    },
+    {
+      "uuid": "01a0edbd-d68c-7360-bec3-23c2e253fe49",
+      "name": "portfolio.planner.policy.minimum_service"
+    },
+    {
+      "uuid": "01a0edbd-d68d-7611-b13f-c88668ec6dd2",
+      "name": "portfolio.planner.policy.fairness"
+    },
+    {
+      "uuid": "01a0edbd-d68e-73c2-9b4b-a3debc566208",
+      "name": "portfolio.planner.policy.starvation.guard"
+    },
+    {
+      "uuid": "01a0edbd-d68f-7abc-a33d-1ce51bf02f00",
+      "name": "portfolio.planner.gate.security"
+    },
+    {
+      "uuid": "01a0edbd-d690-7162-a0d9-846ea34eb19e",
+      "name": "portfolio.planner.gate.privacy"
+    },
+    {
+      "uuid": "01a0edbd-d691-7e92-b53f-38c8a4605c3f",
+      "name": "portfolio.planner.gate.release"
+    },
+    {
+      "uuid": "01a0edbd-d692-7f0e-9211-98cbf4becc3e",
+      "name": "portfolio.planner.gate.knowledge"
+    },
+    {
+      "uuid": "01a0edbd-d693-7196-a58d-d421c3e8b353",
+      "name": "portfolio.planner.gate.fencing"
+    },
+    {
+      "uuid": "01a0edbd-d694-7153-9604-51df3726881a",
+      "name": "portfolio.planner.gate.budget"
+    },
+    {
+      "uuid": "01a0edbd-d695-7e55-9fa5-67b668da1823",
+      "name": "portfolio.planner.gate.approval"
+    },
+    {
+      "uuid": "01a0edbd-d696-710f-b6d5-ffe9251beeaa",
+      "name": "portfolio.planner.decision.case.create"
+    },
+    {
+      "uuid": "01a0edbd-d697-7c55-831a-5beea3449b34",
+      "name": "portfolio.planner.decision.scenario.attach"
+    },
+    {
+      "uuid": "01a0edbd-d698-744e-8f1f-47efd676e05e",
+      "name": "portfolio.planner.decision.delegate"
+    },
+    {
+      "uuid": "01a0edbd-d699-70b2-a67d-6e6e42a75398",
+      "name": "portfolio.planner.decision.approval.require"
+    },
+    {
+      "uuid": "01a0edbd-d69a-76e1-a556-bad8195dbd23",
+      "name": "portfolio.planner.decision.execution_envelope.create"
+    },
+    {
+      "uuid": "01a0edbd-d69b-7128-abcc-c08978314569",
+      "name": "portfolio.planner.evidence.record"
+    },
+    {
+      "uuid": "01a0edbd-d69c-7330-a5ea-a6e78b319c81",
+      "name": "portfolio.planner.audit.event.append"
+    },
+    {
+      "uuid": "01a0edbd-d69d-77f6-ace1-24565692ff03",
+      "name": "portfolio.planner.report.roadmap.render"
+    },
+    {
+      "uuid": "01a0edbd-d69e-72f5-9add-a8bdfee1d00f",
+      "name": "portfolio.planner.report.resource.render"
+    },
+    {
+      "uuid": "01a0edbd-d69f-7456-9f4b-a227ca3964db",
+      "name": "portfolio.planner.report.budget.render"
+    },
+    {
+      "uuid": "01a0edbd-d6a0-7b0b-96c0-ee080d0382ba",
+      "name": "portfolio.planner.report.executive.render"
+    },
+    {
+      "uuid": "01a0edbd-d6a1-70fb-bc34-72dff2db242d",
+      "name": "portfolio.planner.guard.no_direct_mutation"
+    },
+    {
+      "uuid": "01a0edbd-d6a2-7063-ae30-814ac804b6f4",
+      "name": "portfolio.planner.guard.no_hidden_winner"
+    },
+    {
+      "uuid": "01a0edbd-d6a3-783a-b9ec-19a696cd3c13",
+      "name": "portfolio.planner.guard.no_unapproved_pause"
+    },
+    {
+      "uuid": "01a0edbd-d6a4-7fcf-9c92-a7e8da84b341",
+      "name": "portfolio.planner.guard.no_unapproved_budget_increase"
+    },
+    {
+      "uuid": "01a0edbd-d6a5-750b-82a7-6ffaa5097279",
+      "name": "portfolio.planner.guard.no_scope_change"
+    },
+    {
+      "uuid": "01a0edbd-d6a6-7297-b334-33ea67cbf7ec",
+      "name": "portfolio.planner.guard.no_baseline_change"
+    }
+  ]
+}

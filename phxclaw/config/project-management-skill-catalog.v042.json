@@ -1,0 +1,1969 @@
+{
+  "version": "0.42.0",
+  "module": "PhxClaw Project Management Suite",
+  "module_uuid": "01a0eab2-5c2a-7bcb-81c0-123c6ffcb021",
+  "specialized_skill_count": 77,
+  "connector_adapter_count": 2,
+  "total_skill_adapter_count": 79,
+  "canonical_orchestrator": "project-management-orchestrator",
+  "hybrid_engine": "hybrid-project-management",
+  "skills": [
+    {
+      "uuid": "01a0eab2-5c29-7a78-9cc2-682055035f7e",
+      "id": "project-manager-orchestrator",
+      "name": "Project Manager Orchestrator",
+      "category": "core",
+      "function": "Coordena todas as demais skills e agentes do projeto",
+      "capability": "project.skill.project-manager-orchestrator",
+      "agent_role": "core",
+      "permissions": [
+        "project.read",
+        "project.write",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/project-manager-orchestrator.input.schema.json",
+      "output_contract": "schemas/skills/project-manager-orchestrator.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c29-7436-b6b1-1d33ca52171e",
+      "id": "project-charter",
+      "name": "Project Charter",
+      "category": "core",
+      "function": "Cria termo de abertura, objetivos, escopo e responsáveis",
+      "capability": "project.skill.project-charter",
+      "agent_role": "core",
+      "permissions": [
+        "project.read",
+        "project.write",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/project-charter.input.schema.json",
+      "output_contract": "schemas/skills/project-charter.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c29-7250-9bfe-2807d31814a8",
+      "id": "scope-management",
+      "name": "Scope Management",
+      "category": "core",
+      "function": "Controla escopo, requisitos e mudanças",
+      "capability": "project.skill.scope-management",
+      "agent_role": "core",
+      "permissions": [
+        "project.read",
+        "project.write",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/scope-management.input.schema.json",
+      "output_contract": "schemas/skills/scope-management.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c29-734f-9531-0fa33efd3f3d",
+      "id": "stakeholder-management",
+      "name": "Stakeholder Management",
+      "category": "core",
+      "function": "Mapeia stakeholders, responsabilidades e comunicação",
+      "capability": "project.skill.stakeholder-management",
+      "agent_role": "core",
+      "permissions": [
+        "project.read",
+        "project.write",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/stakeholder-management.input.schema.json",
+      "output_contract": "schemas/skills/stakeholder-management.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c29-7c04-9518-143232d21d06",
+      "id": "project-governance",
+      "name": "Project Governance",
+      "category": "core",
+      "function": "Define regras, aprovações, auditoria e governança",
+      "capability": "project.skill.project-governance",
+      "agent_role": "core",
+      "permissions": [
+        "project.read",
+        "project.write",
+        "project.mutate"
+      ],
+      "risk": "high",
+      "approval_required": true,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/project-governance.input.schema.json",
+      "output_contract": "schemas/skills/project-governance.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c29-7eb1-841e-788f375949e3",
+      "id": "project-health-check",
+      "name": "Project Health Check",
+      "category": "core",
+      "function": "Calcula saúde geral do projeto e identifica desvios",
+      "capability": "project.skill.project-health-check",
+      "agent_role": "core",
+      "permissions": [
+        "project.read",
+        "project.write"
+      ],
+      "risk": "low",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/project-health-check.input.schema.json",
+      "output_contract": "schemas/skills/project-health-check.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "not_applicable"
+    },
+    {
+      "uuid": "01a0eab2-5c29-7521-98c7-d4ee14e0147f",
+      "id": "scrum-manager",
+      "name": "Scrum Manager",
+      "category": "scrum",
+      "function": "Gerencia Scrum completo",
+      "capability": "project.skill.scrum-manager",
+      "agent_role": "scrum",
+      "permissions": [
+        "project.read",
+        "agile.write",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/scrum-manager.input.schema.json",
+      "output_contract": "schemas/skills/scrum-manager.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c29-7ed3-af56-b850e4898fd1",
+      "id": "product-backlog-manager",
+      "name": "Product Backlog Manager",
+      "category": "scrum",
+      "function": "Cria e prioriza Product Backlog",
+      "capability": "project.skill.product-backlog-manager",
+      "agent_role": "scrum",
+      "permissions": [
+        "project.read",
+        "agile.write",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/product-backlog-manager.input.schema.json",
+      "output_contract": "schemas/skills/product-backlog-manager.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c29-7b6f-b168-fdbefe5a9a42",
+      "id": "sprint-planning",
+      "name": "Sprint Planning",
+      "category": "scrum",
+      "function": "Planeja Sprints",
+      "capability": "project.skill.sprint-planning",
+      "agent_role": "scrum",
+      "permissions": [
+        "project.read",
+        "agile.write",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/sprint-planning.input.schema.json",
+      "output_contract": "schemas/skills/sprint-planning.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c29-72e6-9e15-68a9f64e3144",
+      "id": "sprint-backlog-manager",
+      "name": "Sprint Backlog Manager",
+      "category": "scrum",
+      "function": "Controla tarefas da Sprint",
+      "capability": "project.skill.sprint-backlog-manager",
+      "agent_role": "scrum",
+      "permissions": [
+        "project.read",
+        "agile.write",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/sprint-backlog-manager.input.schema.json",
+      "output_contract": "schemas/skills/sprint-backlog-manager.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c29-726a-9041-6ec2fe798f29",
+      "id": "daily-scrum",
+      "name": "Daily Scrum",
+      "category": "scrum",
+      "function": "Gera acompanhamento diário",
+      "capability": "project.skill.daily-scrum",
+      "agent_role": "scrum",
+      "permissions": [
+        "project.read",
+        "agile.write",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/daily-scrum.input.schema.json",
+      "output_contract": "schemas/skills/daily-scrum.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c29-7196-9b7d-478f88ed34e0",
+      "id": "sprint-review",
+      "name": "Sprint Review",
+      "category": "scrum",
+      "function": "Avalia entregas realizadas",
+      "capability": "project.skill.sprint-review",
+      "agent_role": "scrum",
+      "permissions": [
+        "project.read",
+        "agile.write",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/sprint-review.input.schema.json",
+      "output_contract": "schemas/skills/sprint-review.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c29-7dc1-93af-6e374f550d82",
+      "id": "sprint-retrospective",
+      "name": "Sprint Retrospective",
+      "category": "scrum",
+      "function": "Identifica melhorias",
+      "capability": "project.skill.sprint-retrospective",
+      "agent_role": "scrum",
+      "permissions": [
+        "project.read",
+        "agile.write",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/sprint-retrospective.input.schema.json",
+      "output_contract": "schemas/skills/sprint-retrospective.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c29-7373-bb56-ad390cb3e151",
+      "id": "story-generator",
+      "name": "Story Generator",
+      "category": "scrum",
+      "function": "Cria User Stories",
+      "capability": "project.skill.story-generator",
+      "agent_role": "scrum",
+      "permissions": [
+        "project.read",
+        "agile.write"
+      ],
+      "risk": "low",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/story-generator.input.schema.json",
+      "output_contract": "schemas/skills/story-generator.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "not_applicable"
+    },
+    {
+      "uuid": "01a0eab2-5c29-7d1b-a6c0-268712b537fe",
+      "id": "acceptance-criteria",
+      "name": "Acceptance Criteria",
+      "category": "scrum",
+      "function": "Gera critérios de aceite",
+      "capability": "project.skill.acceptance-criteria",
+      "agent_role": "scrum",
+      "permissions": [
+        "project.read",
+        "agile.write",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/acceptance-criteria.input.schema.json",
+      "output_contract": "schemas/skills/acceptance-criteria.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c29-7f61-a925-2cf891a00beb",
+      "id": "story-points-estimator",
+      "name": "Story Points Estimator",
+      "category": "scrum",
+      "function": "Estima esforço",
+      "capability": "project.skill.story-points-estimator",
+      "agent_role": "scrum",
+      "permissions": [
+        "project.read",
+        "agile.write"
+      ],
+      "risk": "low",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/story-points-estimator.input.schema.json",
+      "output_contract": "schemas/skills/story-points-estimator.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "not_applicable"
+    },
+    {
+      "uuid": "01a0eab2-5c29-7456-ad2e-be21904a6867",
+      "id": "velocity-analyzer",
+      "name": "Velocity Analyzer",
+      "category": "scrum",
+      "function": "Analisa velocidade das Sprints",
+      "capability": "project.skill.velocity-analyzer",
+      "agent_role": "scrum",
+      "permissions": [
+        "project.read",
+        "agile.write"
+      ],
+      "risk": "low",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/velocity-analyzer.input.schema.json",
+      "output_contract": "schemas/skills/velocity-analyzer.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "not_applicable"
+    },
+    {
+      "uuid": "01a0eab2-5c29-7f09-85f2-eebf3b5452b2",
+      "id": "burndown-analyzer",
+      "name": "Burndown Analyzer",
+      "category": "scrum",
+      "function": "Cria e acompanha Burndown",
+      "capability": "project.skill.burndown-analyzer",
+      "agent_role": "scrum",
+      "permissions": [
+        "project.read",
+        "agile.write"
+      ],
+      "risk": "low",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/burndown-analyzer.input.schema.json",
+      "output_contract": "schemas/skills/burndown-analyzer.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "not_applicable"
+    },
+    {
+      "uuid": "01a0eab2-5c29-730a-908f-ee01cf1211d6",
+      "id": "definition-of-done",
+      "name": "Definition Of Done",
+      "category": "scrum",
+      "function": "Valida Definition of Done",
+      "capability": "project.skill.definition-of-done",
+      "agent_role": "scrum",
+      "permissions": [
+        "project.read",
+        "agile.write",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/definition-of-done.input.schema.json",
+      "output_contract": "schemas/skills/definition-of-done.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c29-7843-9e0e-95b10d73e941",
+      "id": "kanban-manager",
+      "name": "Kanban Manager",
+      "category": "kanban",
+      "function": "Gerencia quadro Kanban",
+      "capability": "project.skill.kanban-manager",
+      "agent_role": "kanban",
+      "permissions": [
+        "project.read",
+        "kanban.write",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/kanban-manager.input.schema.json",
+      "output_contract": "schemas/skills/kanban-manager.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c29-75de-abc3-2e5ae4039f58",
+      "id": "kanban-board",
+      "name": "Kanban Board",
+      "category": "kanban",
+      "function": "Cria colunas, cartões e fluxos",
+      "capability": "project.skill.kanban-board",
+      "agent_role": "kanban",
+      "permissions": [
+        "project.read",
+        "kanban.write",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/kanban-board.input.schema.json",
+      "output_contract": "schemas/skills/kanban-board.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-75c6-94ec-52fc58958af1",
+      "id": "wip-limit-manager",
+      "name": "Wip Limit Manager",
+      "category": "kanban",
+      "function": "Controla limites WIP",
+      "capability": "project.skill.wip-limit-manager",
+      "agent_role": "kanban",
+      "permissions": [
+        "project.read",
+        "kanban.write",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/wip-limit-manager.input.schema.json",
+      "output_contract": "schemas/skills/wip-limit-manager.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-7471-a9f2-bdbf60841a38",
+      "id": "flow-analyzer",
+      "name": "Flow Analyzer",
+      "category": "kanban",
+      "function": "Analisa fluxo de trabalho",
+      "capability": "project.skill.flow-analyzer",
+      "agent_role": "kanban",
+      "permissions": [
+        "project.read",
+        "kanban.write"
+      ],
+      "risk": "low",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/flow-analyzer.input.schema.json",
+      "output_contract": "schemas/skills/flow-analyzer.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "not_applicable"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-78e9-a354-486954e85409",
+      "id": "bottleneck-detector",
+      "name": "Bottleneck Detector",
+      "category": "kanban",
+      "function": "Detecta gargalos",
+      "capability": "project.skill.bottleneck-detector",
+      "agent_role": "kanban",
+      "permissions": [
+        "project.read",
+        "kanban.write",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/bottleneck-detector.input.schema.json",
+      "output_contract": "schemas/skills/bottleneck-detector.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-7108-94be-60786baabb94",
+      "id": "cycle-time-analyzer",
+      "name": "Cycle Time Analyzer",
+      "category": "kanban",
+      "function": "Mede Cycle Time",
+      "capability": "project.skill.cycle-time-analyzer",
+      "agent_role": "kanban",
+      "permissions": [
+        "project.read",
+        "kanban.write"
+      ],
+      "risk": "low",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/cycle-time-analyzer.input.schema.json",
+      "output_contract": "schemas/skills/cycle-time-analyzer.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "not_applicable"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-744b-9283-43e35246f8f8",
+      "id": "lead-time-analyzer",
+      "name": "Lead Time Analyzer",
+      "category": "kanban",
+      "function": "Mede Lead Time",
+      "capability": "project.skill.lead-time-analyzer",
+      "agent_role": "kanban",
+      "permissions": [
+        "project.read",
+        "kanban.write"
+      ],
+      "risk": "low",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/lead-time-analyzer.input.schema.json",
+      "output_contract": "schemas/skills/lead-time-analyzer.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "not_applicable"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-7a56-bda8-c8e5ed622f1f",
+      "id": "cumulative-flow",
+      "name": "Cumulative Flow",
+      "category": "kanban",
+      "function": "Gera Cumulative Flow Diagram",
+      "capability": "project.skill.cumulative-flow",
+      "agent_role": "kanban",
+      "permissions": [
+        "project.read",
+        "kanban.write",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/cumulative-flow.input.schema.json",
+      "output_contract": "schemas/skills/cumulative-flow.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-7a86-8197-cf2709c753aa",
+      "id": "kanban-prioritizer",
+      "name": "Kanban Prioritizer",
+      "category": "kanban",
+      "function": "Reprioriza tarefas automaticamente",
+      "capability": "project.skill.kanban-prioritizer",
+      "agent_role": "kanban",
+      "permissions": [
+        "project.read",
+        "kanban.write",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/kanban-prioritizer.input.schema.json",
+      "output_contract": "schemas/skills/kanban-prioritizer.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-7854-a4ea-1727536eb668",
+      "id": "ms-project-manager",
+      "name": "Ms Project Manager",
+      "category": "classical",
+      "function": "Interface lógica com Microsoft Project",
+      "capability": "project.skill.ms-project-manager",
+      "agent_role": "classical",
+      "permissions": [
+        "project.read",
+        "schedule.write",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/ms-project-manager.input.schema.json",
+      "output_contract": "schemas/skills/ms-project-manager.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-7af2-a4b1-a3e34deafcee",
+      "id": "gantt-generator",
+      "name": "Gantt Generator",
+      "category": "classical",
+      "function": "Gera gráfico de Gantt",
+      "capability": "project.skill.gantt-generator",
+      "agent_role": "classical",
+      "permissions": [
+        "project.read",
+        "schedule.write"
+      ],
+      "risk": "low",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/gantt-generator.input.schema.json",
+      "output_contract": "schemas/skills/gantt-generator.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "not_applicable"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-7c62-be8a-d6f2ad6e14ac",
+      "id": "wbs-generator",
+      "name": "Wbs Generator",
+      "category": "classical",
+      "function": "Cria EAP/WBS",
+      "capability": "project.skill.wbs-generator",
+      "agent_role": "classical",
+      "permissions": [
+        "project.read",
+        "schedule.write"
+      ],
+      "risk": "low",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/wbs-generator.input.schema.json",
+      "output_contract": "schemas/skills/wbs-generator.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "not_applicable"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-738e-bc43-6e0dbdda07de",
+      "id": "critical-path-manager",
+      "name": "Critical Path Manager",
+      "category": "classical",
+      "function": "Calcula caminho crítico",
+      "capability": "project.skill.critical-path-manager",
+      "agent_role": "classical",
+      "permissions": [
+        "project.read",
+        "schedule.write",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/critical-path-manager.input.schema.json",
+      "output_contract": "schemas/skills/critical-path-manager.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-7f2f-9ec3-9c29feecd644",
+      "id": "dependency-manager",
+      "name": "Dependency Manager",
+      "category": "classical",
+      "function": "Controla dependências FS/SS/FF/SF",
+      "capability": "project.skill.dependency-manager",
+      "agent_role": "classical",
+      "permissions": [
+        "project.read",
+        "schedule.write",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/dependency-manager.input.schema.json",
+      "output_contract": "schemas/skills/dependency-manager.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-77cd-a547-2bd1dfd127ff",
+      "id": "milestone-manager",
+      "name": "Milestone Manager",
+      "category": "classical",
+      "function": "Controla marcos",
+      "capability": "project.skill.milestone-manager",
+      "agent_role": "classical",
+      "permissions": [
+        "project.read",
+        "schedule.write",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/milestone-manager.input.schema.json",
+      "output_contract": "schemas/skills/milestone-manager.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-752e-a6e1-fc896914e0fa",
+      "id": "resource-manager",
+      "name": "Resource Manager",
+      "category": "classical",
+      "function": "Gerencia pessoas/equipamentos",
+      "capability": "project.skill.resource-manager",
+      "agent_role": "classical",
+      "permissions": [
+        "project.read",
+        "schedule.write",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/resource-manager.input.schema.json",
+      "output_contract": "schemas/skills/resource-manager.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-759f-b1a5-e572085ad36c",
+      "id": "resource-leveling",
+      "name": "Resource Leveling",
+      "category": "classical",
+      "function": "Resolve conflitos de recursos",
+      "capability": "project.skill.resource-leveling",
+      "agent_role": "classical",
+      "permissions": [
+        "project.read",
+        "schedule.write",
+        "project.mutate"
+      ],
+      "risk": "high",
+      "approval_required": true,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/resource-leveling.input.schema.json",
+      "output_contract": "schemas/skills/resource-leveling.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-7d0e-8bf5-31141c60bac8",
+      "id": "calendar-manager",
+      "name": "Calendar Manager",
+      "category": "classical",
+      "function": "Gerencia calendários e dias úteis",
+      "capability": "project.skill.calendar-manager",
+      "agent_role": "classical",
+      "permissions": [
+        "project.read",
+        "schedule.write",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/calendar-manager.input.schema.json",
+      "output_contract": "schemas/skills/calendar-manager.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-72d3-83dd-747a72cf7e54",
+      "id": "baseline-manager",
+      "name": "Baseline Manager",
+      "category": "classical",
+      "function": "Cria e compara baselines",
+      "capability": "project.skill.baseline-manager",
+      "agent_role": "classical",
+      "permissions": [
+        "project.read",
+        "schedule.write",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/baseline-manager.input.schema.json",
+      "output_contract": "schemas/skills/baseline-manager.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-75ad-8f6a-6facfccff0c4",
+      "id": "schedule-variance",
+      "name": "Schedule Variance",
+      "category": "classical",
+      "function": "Analisa atraso/adiantamento",
+      "capability": "project.skill.schedule-variance",
+      "agent_role": "classical",
+      "permissions": [
+        "project.read",
+        "schedule.write",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/schedule-variance.input.schema.json",
+      "output_contract": "schemas/skills/schedule-variance.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-7fa1-9e00-ec948ca9ce96",
+      "id": "earned-value-manager",
+      "name": "Earned Value Manager",
+      "category": "classical",
+      "function": "EVM: PV, EV, AC, CPI e SPI",
+      "capability": "project.skill.earned-value-manager",
+      "agent_role": "classical",
+      "permissions": [
+        "project.read",
+        "schedule.write",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/earned-value-manager.input.schema.json",
+      "output_contract": "schemas/skills/earned-value-manager.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-711c-90c8-f9e5544927d2",
+      "id": "project-import-export",
+      "name": "Project Import Export",
+      "category": "classical",
+      "function": "Importa/exporta dados de MS Project",
+      "capability": "project.skill.project-import-export",
+      "agent_role": "classical",
+      "permissions": [
+        "project.read",
+        "schedule.write",
+        "project.mutate"
+      ],
+      "risk": "high",
+      "approval_required": true,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/project-import-export.input.schema.json",
+      "output_contract": "schemas/skills/project-import-export.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-753b-80a4-e50efaee8fe8",
+      "id": "pdca-orchestrator",
+      "name": "Pdca Orchestrator",
+      "category": "pdca",
+      "function": "Gerencia o ciclo PDCA",
+      "capability": "project.skill.pdca-orchestrator",
+      "agent_role": "pdca",
+      "permissions": [
+        "project.read",
+        "pdca.write",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/pdca-orchestrator.input.schema.json",
+      "output_contract": "schemas/skills/pdca-orchestrator.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-7c8d-a5d2-449a55a81f23",
+      "id": "pdca-plan",
+      "name": "Pdca Plan",
+      "category": "pdca",
+      "function": "Define problema, meta, plano e indicadores",
+      "capability": "project.skill.pdca-plan",
+      "agent_role": "pdca",
+      "permissions": [
+        "project.read",
+        "pdca.write",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/pdca-plan.input.schema.json",
+      "output_contract": "schemas/skills/pdca-plan.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-7de8-9c37-948d9799ee47",
+      "id": "pdca-do",
+      "name": "Pdca Do",
+      "category": "pdca",
+      "function": "Executa e acompanha ações",
+      "capability": "project.skill.pdca-do",
+      "agent_role": "pdca",
+      "permissions": [
+        "project.read",
+        "pdca.write",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/pdca-do.input.schema.json",
+      "output_contract": "schemas/skills/pdca-do.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-7cc5-a0a5-433241ad12d0",
+      "id": "pdca-check",
+      "name": "Pdca Check",
+      "category": "pdca",
+      "function": "Mede resultado versus meta",
+      "capability": "project.skill.pdca-check",
+      "agent_role": "pdca",
+      "permissions": [
+        "project.read",
+        "pdca.write"
+      ],
+      "risk": "low",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/pdca-check.input.schema.json",
+      "output_contract": "schemas/skills/pdca-check.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "not_applicable"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-7fb7-91b6-4f305ee4d990",
+      "id": "pdca-act",
+      "name": "Pdca Act",
+      "category": "pdca",
+      "function": "Padroniza melhorias ou gera correções",
+      "capability": "project.skill.pdca-act",
+      "agent_role": "pdca",
+      "permissions": [
+        "project.read",
+        "pdca.write",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/pdca-act.input.schema.json",
+      "output_contract": "schemas/skills/pdca-act.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-7435-96f9-e16e756c52e4",
+      "id": "root-cause-analysis",
+      "name": "Root Cause Analysis",
+      "category": "pdca",
+      "function": "Análise de causa raiz",
+      "capability": "project.skill.root-cause-analysis",
+      "agent_role": "pdca",
+      "permissions": [
+        "project.read",
+        "pdca.write",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/root-cause-analysis.input.schema.json",
+      "output_contract": "schemas/skills/root-cause-analysis.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-7530-b77f-952da0b8e5c4",
+      "id": "five-whys",
+      "name": "Five Whys",
+      "category": "pdca",
+      "function": "Executa 5 Porquês",
+      "capability": "project.skill.five-whys",
+      "agent_role": "pdca",
+      "permissions": [
+        "project.read",
+        "pdca.write"
+      ],
+      "risk": "low",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/five-whys.input.schema.json",
+      "output_contract": "schemas/skills/five-whys.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "not_applicable"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-78af-b198-6a886cbcaa0e",
+      "id": "ishikawa-analysis",
+      "name": "Ishikawa Analysis",
+      "category": "pdca",
+      "function": "Diagrama de Ishikawa",
+      "capability": "project.skill.ishikawa-analysis",
+      "agent_role": "pdca",
+      "permissions": [
+        "project.read",
+        "pdca.write"
+      ],
+      "risk": "low",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/ishikawa-analysis.input.schema.json",
+      "output_contract": "schemas/skills/ishikawa-analysis.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "not_applicable"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-7eb8-8d6d-c49509fbd39c",
+      "id": "corrective-action-manager",
+      "name": "Corrective Action Manager",
+      "category": "pdca",
+      "function": "Controla ações corretivas",
+      "capability": "project.skill.corrective-action-manager",
+      "agent_role": "pdca",
+      "permissions": [
+        "project.read",
+        "pdca.write",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/corrective-action-manager.input.schema.json",
+      "output_contract": "schemas/skills/corrective-action-manager.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-7e13-8a83-a9c036907c81",
+      "id": "continuous-improvement",
+      "name": "Continuous Improvement",
+      "category": "pdca",
+      "function": "Alimenta novos ciclos PDCA",
+      "capability": "project.skill.continuous-improvement",
+      "agent_role": "pdca",
+      "permissions": [
+        "project.read",
+        "pdca.write",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/continuous-improvement.input.schema.json",
+      "output_contract": "schemas/skills/continuous-improvement.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-7214-9ef1-5a8c30c94f2f",
+      "id": "risk-manager",
+      "name": "Risk Manager",
+      "category": "risk_issue",
+      "function": "Registro e controle de riscos",
+      "capability": "project.skill.risk-manager",
+      "agent_role": "risk_issue",
+      "permissions": [
+        "project.read",
+        "risk.write",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/risk-manager.input.schema.json",
+      "output_contract": "schemas/skills/risk-manager.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-7d82-a55f-f6c6edd70a8e",
+      "id": "risk-matrix",
+      "name": "Risk Matrix",
+      "category": "risk_issue",
+      "function": "Probabilidade × impacto",
+      "capability": "project.skill.risk-matrix",
+      "agent_role": "risk_issue",
+      "permissions": [
+        "project.read",
+        "risk.write",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/risk-matrix.input.schema.json",
+      "output_contract": "schemas/skills/risk-matrix.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-7272-921c-95b1075d7a49",
+      "id": "issue-manager",
+      "name": "Issue Manager",
+      "category": "risk_issue",
+      "function": "Controle de problemas/incidentes",
+      "capability": "project.skill.issue-manager",
+      "agent_role": "risk_issue",
+      "permissions": [
+        "project.read",
+        "risk.write",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/issue-manager.input.schema.json",
+      "output_contract": "schemas/skills/issue-manager.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-7458-8959-12021ac1900c",
+      "id": "dependency-risk-analyzer",
+      "name": "Dependency Risk Analyzer",
+      "category": "risk_issue",
+      "function": "Detecta riscos entre tarefas",
+      "capability": "project.skill.dependency-risk-analyzer",
+      "agent_role": "risk_issue",
+      "permissions": [
+        "project.read",
+        "risk.write"
+      ],
+      "risk": "low",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/dependency-risk-analyzer.input.schema.json",
+      "output_contract": "schemas/skills/dependency-risk-analyzer.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "not_applicable"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-7b70-a891-8c8270757265",
+      "id": "deadline-risk-predictor",
+      "name": "Deadline Risk Predictor",
+      "category": "risk_issue",
+      "function": "Detecta risco de atraso",
+      "capability": "project.skill.deadline-risk-predictor",
+      "agent_role": "risk_issue",
+      "permissions": [
+        "project.read",
+        "risk.write"
+      ],
+      "risk": "low",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/deadline-risk-predictor.input.schema.json",
+      "output_contract": "schemas/skills/deadline-risk-predictor.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "not_applicable"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-7339-8e3e-7361dd5c4717",
+      "id": "mitigation-planner",
+      "name": "Mitigation Planner",
+      "category": "risk_issue",
+      "function": "Cria planos de mitigação",
+      "capability": "project.skill.mitigation-planner",
+      "agent_role": "risk_issue",
+      "permissions": [
+        "project.read",
+        "risk.write",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/mitigation-planner.input.schema.json",
+      "output_contract": "schemas/skills/mitigation-planner.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-720f-8bbf-bc80a7b4b7e9",
+      "id": "project-cost-manager",
+      "name": "Project Cost Manager",
+      "category": "cost",
+      "function": "Orçamento do projeto",
+      "capability": "project.skill.project-cost-manager",
+      "agent_role": "cost",
+      "permissions": [
+        "project.read",
+        "finance.project.write",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/project-cost-manager.input.schema.json",
+      "output_contract": "schemas/skills/project-cost-manager.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-73f0-afb0-0891e352f9a9",
+      "id": "budget-tracker",
+      "name": "Budget Tracker",
+      "category": "cost",
+      "function": "Planejado × realizado",
+      "capability": "project.skill.budget-tracker",
+      "agent_role": "cost",
+      "permissions": [
+        "project.read",
+        "finance.project.write",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/budget-tracker.input.schema.json",
+      "output_contract": "schemas/skills/budget-tracker.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-7168-9b1c-56567271d16d",
+      "id": "cost-forecast",
+      "name": "Cost Forecast",
+      "category": "cost",
+      "function": "Previsão de custo final",
+      "capability": "project.skill.cost-forecast",
+      "agent_role": "cost",
+      "permissions": [
+        "project.read",
+        "finance.project.write",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/cost-forecast.input.schema.json",
+      "output_contract": "schemas/skills/cost-forecast.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-7de7-b67f-4deee9313eaa",
+      "id": "cashflow-manager",
+      "name": "Cashflow Manager",
+      "category": "cost",
+      "function": "Fluxo de caixa do projeto",
+      "capability": "project.skill.cashflow-manager",
+      "agent_role": "cost",
+      "permissions": [
+        "project.read",
+        "finance.project.write",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/cashflow-manager.input.schema.json",
+      "output_contract": "schemas/skills/cashflow-manager.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-7a1e-b963-ab1b8efda8f9",
+      "id": "roi-analyzer",
+      "name": "Roi Analyzer",
+      "category": "cost",
+      "function": "ROI",
+      "capability": "project.skill.roi-analyzer",
+      "agent_role": "cost",
+      "permissions": [
+        "project.read",
+        "finance.project.write"
+      ],
+      "risk": "low",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/roi-analyzer.input.schema.json",
+      "output_contract": "schemas/skills/roi-analyzer.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "not_applicable"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-75dc-988a-f6240029511d",
+      "id": "earned-value-analyzer",
+      "name": "Earned Value Analyzer",
+      "category": "cost",
+      "function": "CPI/SPI/EAC/ETC/VAC",
+      "capability": "project.skill.earned-value-analyzer",
+      "agent_role": "cost",
+      "permissions": [
+        "project.read",
+        "finance.project.write"
+      ],
+      "risk": "low",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/earned-value-analyzer.input.schema.json",
+      "output_contract": "schemas/skills/earned-value-analyzer.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "not_applicable"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-7c08-a242-12dfb4ac8517",
+      "id": "project-ai-copilot",
+      "name": "Project Ai Copilot",
+      "category": "ai_automation",
+      "function": "Copiloto do gerente de projetos",
+      "capability": "project.skill.project-ai-copilot",
+      "agent_role": "ai_automation",
+      "permissions": [
+        "project.read",
+        "ai.route",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/project-ai-copilot.input.schema.json",
+      "output_contract": "schemas/skills/project-ai-copilot.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-71fd-8fd8-b7b28ddf2e5b",
+      "id": "project-researcher",
+      "name": "Project Researcher",
+      "category": "ai_automation",
+      "function": "Pesquisa tecnologias e soluções",
+      "capability": "project.skill.project-researcher",
+      "agent_role": "ai_automation",
+      "permissions": [
+        "project.read",
+        "ai.route"
+      ],
+      "risk": "low",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/project-researcher.input.schema.json",
+      "output_contract": "schemas/skills/project-researcher.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "not_applicable"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-790f-a631-8ad03b6c4b1f",
+      "id": "project-hypothesis-manager",
+      "name": "Project Hypothesis Manager",
+      "category": "ai_automation",
+      "function": "Cria hipóteses testáveis",
+      "capability": "project.skill.project-hypothesis-manager",
+      "agent_role": "ai_automation",
+      "permissions": [
+        "project.read",
+        "ai.route",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/project-hypothesis-manager.input.schema.json",
+      "output_contract": "schemas/skills/project-hypothesis-manager.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-72c3-b507-f2fb244c666f",
+      "id": "project-planner-ai",
+      "name": "Project Planner Ai",
+      "category": "ai_automation",
+      "function": "Propõe cronograma automaticamente",
+      "capability": "project.skill.project-planner-ai",
+      "agent_role": "ai_automation",
+      "permissions": [
+        "project.read",
+        "ai.route",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/project-planner-ai.input.schema.json",
+      "output_contract": "schemas/skills/project-planner-ai.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-78c2-9d4a-932c60266615",
+      "id": "task-decomposer",
+      "name": "Task Decomposer",
+      "category": "ai_automation",
+      "function": "Divide objetivos em tarefas",
+      "capability": "project.skill.task-decomposer",
+      "agent_role": "ai_automation",
+      "permissions": [
+        "project.read",
+        "ai.route",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/task-decomposer.input.schema.json",
+      "output_contract": "schemas/skills/task-decomposer.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-7466-a81d-071ab9380fd9",
+      "id": "task-prioritizer",
+      "name": "Task Prioritizer",
+      "category": "ai_automation",
+      "function": "Prioriza automaticamente",
+      "capability": "project.skill.task-prioritizer",
+      "agent_role": "ai_automation",
+      "permissions": [
+        "project.read",
+        "ai.route",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/task-prioritizer.input.schema.json",
+      "output_contract": "schemas/skills/task-prioritizer.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-7008-a9b5-6818c25a01fd",
+      "id": "delay-predictor",
+      "name": "Delay Predictor",
+      "category": "ai_automation",
+      "function": "Prevê atrasos",
+      "capability": "project.skill.delay-predictor",
+      "agent_role": "ai_automation",
+      "permissions": [
+        "project.read",
+        "ai.route"
+      ],
+      "risk": "low",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/delay-predictor.input.schema.json",
+      "output_contract": "schemas/skills/delay-predictor.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "not_applicable"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-71dd-9f1c-c9f35cc7b27c",
+      "id": "resource-optimizer",
+      "name": "Resource Optimizer",
+      "category": "ai_automation",
+      "function": "Otimiza alocação",
+      "capability": "project.skill.resource-optimizer",
+      "agent_role": "ai_automation",
+      "permissions": [
+        "project.read",
+        "ai.route",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/resource-optimizer.input.schema.json",
+      "output_contract": "schemas/skills/resource-optimizer.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-7947-b342-8ac4f7b2f502",
+      "id": "next-best-action",
+      "name": "Next Best Action",
+      "category": "ai_automation",
+      "function": "Recomenda próxima ação operacional",
+      "capability": "project.skill.next-best-action",
+      "agent_role": "ai_automation",
+      "permissions": [
+        "project.read",
+        "ai.route",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/next-best-action.input.schema.json",
+      "output_contract": "schemas/skills/next-best-action.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-7e23-8dac-41a2ab4098bb",
+      "id": "meeting-to-tasks",
+      "name": "Meeting To Tasks",
+      "category": "ai_automation",
+      "function": "Converte reunião em ações",
+      "capability": "project.skill.meeting-to-tasks",
+      "agent_role": "ai_automation",
+      "permissions": [
+        "project.read",
+        "ai.route",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/meeting-to-tasks.input.schema.json",
+      "output_contract": "schemas/skills/meeting-to-tasks.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-7fdc-bae7-7e995f35101c",
+      "id": "automatic-status-report",
+      "name": "Automatic Status Report",
+      "category": "ai_automation",
+      "function": "Gera relatório executivo",
+      "capability": "project.skill.automatic-status-report",
+      "agent_role": "ai_automation",
+      "permissions": [
+        "project.read",
+        "ai.route"
+      ],
+      "risk": "low",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/automatic-status-report.input.schema.json",
+      "output_contract": "schemas/skills/automatic-status-report.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "not_applicable"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-7cfc-8f5b-07bee272b6ce",
+      "id": "lessons-learned-ai",
+      "name": "Lessons Learned Ai",
+      "category": "ai_automation",
+      "function": "Cria base de lições aprendidas",
+      "capability": "project.skill.lessons-learned-ai",
+      "agent_role": "ai_automation",
+      "permissions": [
+        "project.read",
+        "ai.route",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/lessons-learned-ai.input.schema.json",
+      "output_contract": "schemas/skills/lessons-learned-ai.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-74fa-b4f7-fce769e8f96a",
+      "id": "hybrid-project-management",
+      "name": "Hybrid Project Management",
+      "category": "hybrid",
+      "function": "Integra WBS/Gantt, Scrum, Kanban e PDCA em um fluxo único",
+      "capability": "project.skill.hybrid-project-management",
+      "agent_role": "hybrid",
+      "permissions": [
+        "project.read",
+        "project.orchestrate",
+        "project.mutate"
+      ],
+      "risk": "medium",
+      "approval_required": false,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/hybrid-project-management.input.schema.json",
+      "output_contract": "schemas/skills/hybrid-project-management.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-7d03-8022-2a6f225ffab6",
+      "id": "project-management-orchestrator",
+      "name": "Project Management Orchestrator",
+      "category": "hybrid",
+      "function": "Orquestra MS Project, Scrum, Kanban, PDCA, Custos, Riscos, Recursos e IA",
+      "capability": "project.skill.project-management-orchestrator",
+      "agent_role": "hybrid",
+      "permissions": [
+        "project.read",
+        "project.orchestrate",
+        "project.mutate"
+      ],
+      "risk": "high",
+      "approval_required": true,
+      "evidence_required": true,
+      "input_contract": "schemas/skills/project-management-orchestrator.input.schema.json",
+      "output_contract": "schemas/skills/project-management-orchestrator.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "checkpoint"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-7a1a-985b-3589f469d4fa",
+      "id": "google-calendar-project-sync",
+      "name": "Google Calendar Project Sync",
+      "category": "integration",
+      "function": "Sincroniza marcos, reuniões, Sprints e compromissos com Google Calendar",
+      "capability": "project.integration.google_calendar",
+      "agent_role": "integration",
+      "permissions": [
+        "project.read",
+        "calendar.read",
+        "calendar.write"
+      ],
+      "risk": "high",
+      "approval_required": true,
+      "evidence_required": true,
+      "input_contract": "schemas/integrations/google-calendar-project-sync.input.schema.json",
+      "output_contract": "schemas/integrations/google-calendar-project-sync.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "compensating_action",
+      "external_plugin": "Google Calendar"
+    },
+    {
+      "uuid": "01a0eab2-5c2a-7fb1-9486-a705060195a4",
+      "id": "google-drive-project-docs",
+      "name": "Google Drive Project Documents",
+      "category": "integration",
+      "function": "Lê, cria e organiza atas, planos, relatórios e documentos do projeto no Google Drive",
+      "capability": "project.integration.google_drive",
+      "agent_role": "integration",
+      "permissions": [
+        "project.read",
+        "drive.read",
+        "drive.write"
+      ],
+      "risk": "high",
+      "approval_required": true,
+      "evidence_required": true,
+      "input_contract": "schemas/integrations/google-drive-project-docs.input.schema.json",
+      "output_contract": "schemas/integrations/google-drive-project-docs.output.schema.json",
+      "lifecycle_hooks": [
+        "before_invoke",
+        "after_invoke",
+        "on_failure"
+      ],
+      "rollback": "compensating_action",
+      "external_plugin": "Google Drive"
+    }
+  ]
+}

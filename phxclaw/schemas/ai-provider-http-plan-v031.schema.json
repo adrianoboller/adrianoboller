@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phxclaw.local/schemas/ai-provider-http-plan-v031.schema.json",
+  "title": "ai-provider-http-plan-v031",
+  "additionalProperties": true,
+  "type": "object",
+  "required": [
+    "method",
+    "url",
+    "credential",
+    "body"
+  ],
+  "properties": {
+    "method": {
+      "const": "POST"
+    },
+    "url": {
+      "type": "string",
+      "format": "uri"
+    },
+    "credential": {
+      "type": "object",
+      "required": [
+        "secret_uuid",
+        "header"
+      ],
+      "properties": {
+        "secret_uuid": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "header": {
+          "type": "string"
+        },
+        "scheme": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "body": {
+      "type": "object"
+    }
+  }
+}

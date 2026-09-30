@@ -1,0 +1,473 @@
+{
+  "version": "0.54.0",
+  "capabilities": [
+    {
+      "name": "performance.consolidation.manifest.read",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.consolidation.manifest.verify",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.consolidation.overlay.verify",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.consolidation.overlay.apply",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "medium"
+    },
+    {
+      "name": "performance.consolidation.checkout.assemble",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.consolidation.checkout.verify",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.consolidation.checkout.hash",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.consolidation.checkout.package",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.consolidation.legacy.scan",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.consolidation.release.freeze",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.ollama.runtime.status",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.ollama.runtime.models",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.ollama.runtime.running",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.ollama.runtime.sample",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.ollama.runtime.health",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.ollama.runtime.local_only",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.ollama.runtime.capacity",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.ollama.runtime.queue",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.ollama.runtime.parallelism",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.ollama.runtime.context",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.ollama.runtime.keep_alive",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.ollama.runtime.warm_pool",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.ollama.runtime.role.bind",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.ollama.runtime.fast_lane",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.prompt.compiler.compile",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.prompt.compiler.hash",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.prompt.compiler.schema",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.prompt.compiler.tools",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.prompt.compiler.constraints",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.prompt.compiler.project_context",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.prompt.compiler.skill_context",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.prompt.compiler.provider_render",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.context.budget.estimate",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.context.budget.cap",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.context.budget.retrieve",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.context.budget.compress",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.context.budget.validate",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.context.budget.evidence",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.context.budget.history",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.context.budget.reject_oversize",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.cache.semantic.key",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.cache.semantic.get",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.cache.semantic.put",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "medium"
+    },
+    {
+      "name": "performance.cache.semantic.hit",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.cache.semantic.miss",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.cache.semantic.invalidate",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.cache.semantic.evidence",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.cache.semantic.ttl",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.dedup.task.fingerprint",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.dedup.task.find_equivalent",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.dedup.task.reuse",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.dedup.task.reject_duplicate",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.dedup.task.evidence",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.affinity.agent_model.observe",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.affinity.agent_model.aggregate",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.affinity.agent_model.promote",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.affinity.agent_model.select",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.affinity.agent_model.decay",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.affinity.agent_model.freshness",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.affinity.agent_model.evidence",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.affinity.agent_model.cost_quality",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.outcome.model_outcome.record",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.outcome.model_outcome.success",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.outcome.model_outcome.failure",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.outcome.model_outcome.root_cause",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.outcome.model_outcome.cost",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.outcome.model_outcome.latency",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.outcome.model_outcome.tokens",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.outcome.model_outcome.tests",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.native.gate.preflight",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.native.gate.rust",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.native.gate.postgresql",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.native.gate.rls",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.native.gate.ollama",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.native.gate.mission",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.native.gate.desktop",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.native.gate.report",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    },
+    {
+      "name": "performance.native.gate.green_plan",
+      "version": "0.54.0",
+      "status": "source_ready",
+      "risk": "low"
+    }
+  ]
+}

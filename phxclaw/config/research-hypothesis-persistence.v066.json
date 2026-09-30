@@ -1,0 +1,15 @@
+{
+  "version": "0.66.0",
+  "research": {
+    "tenant_isolated": true,
+    "evidence_digest_required": true,
+    "knowledge_graph_linking": true
+  },
+  "hypothesis": {
+    "append_only_decisions": true,
+    "explicit_transition_guard": true,
+    "experiment_runs_persisted": true,
+    "knowledge_graph_linking": true
+  },
+  "release_gate": "native_postgresql_e2e"
+}

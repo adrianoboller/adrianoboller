@@ -1,0 +1,137 @@
+{
+  "version": "0.61.0",
+  "pass": 26,
+  "fail": 0,
+  "checks": [
+    {
+      "name": "file:crates/phxclaw-safe-source-harvester/Cargo.toml",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "file:crates/phxclaw-safe-source-harvester/src/lib.rs",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "file:migrations/0061_safe_source_harvester.sql",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "file:config/source-harvest-policy.v061.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "file:schemas/source-harvest-receipt-v061.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "file:docs/ADR-0061-safe-source-harvester.md",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "file:docs/INTEGRATION_V061.md",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "workspace_member",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_forbid_unsafe",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_process_command",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "deny_short_circuit",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "quarantine_clears_candidates",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "content_addressed",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "secret_scan",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "knowledge_raw_only",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "policy_fail_closed",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "policy_no_execution",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "policy_deny_no_copy",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "schema_id",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_candidate_allow_trigger",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_immutable_receipts",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_rls_force",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_current_setting_valid",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json:source-harvest-policy.v061.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json:source-harvest-receipt-v061.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json:PROJECT_STATUS_V061_CONSOLIDATED.json",
+      "pass": true,
+      "detail": ""
+    }
+  ]
+}

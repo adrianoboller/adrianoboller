@@ -1,0 +1,13 @@
+[package]
+name = "phxclaw-rustclaw-native-plugin"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+chrono.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+phxclaw-process-protocol = { path = "../../crates/phxclaw-process-protocol" }
+phxclaw-rustclaw-native = { path = "../../crates/phxclaw-rustclaw-native" }
+phxclaw-types = { path = "../../crates/phxclaw-types" }

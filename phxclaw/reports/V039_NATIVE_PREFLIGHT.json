@@ -1,0 +1,7 @@
+{
+  "cargo": false,
+  "rustc": false,
+  "psql": false,
+  "postgres": false,
+  "note": "native gates unavailable on this host; not treated as PASS"
+}

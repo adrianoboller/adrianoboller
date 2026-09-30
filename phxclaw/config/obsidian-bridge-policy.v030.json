@@ -1,0 +1,12 @@
+{
+  "schema_version": "phxclaw.obsidian-policy.v1",
+  "formats": [
+    "markdown",
+    "json-canvas"
+  ],
+  "import_default_trust": "unverified_context",
+  "allow_overwrite_source_notes": false,
+  "preserve_frontmatter": true,
+  "preserve_source_hash": true,
+  "max_note_bytes": 2097152
+}

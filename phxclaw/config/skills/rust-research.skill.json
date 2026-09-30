@@ -1,0 +1,87 @@
+{
+  "uuid": "01a0e4f0-5c42-77a7-afe1-36aed980c899",
+  "name": "rust.research.official",
+  "version": "1.0.0",
+  "description": "Research Rust implementation questions using official local-first knowledge, bounded context and traceable evidence.",
+  "state": "validated",
+  "required_capabilities": [
+    "research.collect",
+    "knowledge.rust.read",
+    "knowledge.source_registry.read",
+    "context.compile",
+    "skill.read"
+  ],
+  "steps": [
+    {
+      "order": 1,
+      "instruction": "Classify the Rust question and requested freshness before selecting a source.",
+      "capability": "research.collect",
+      "requires_human_approval": false
+    },
+    {
+      "order": 2,
+      "instruction": "Resolve rust-official through Source Registry and enforce agent/capability ACL.",
+      "capability": "knowledge.source_registry.read",
+      "requires_human_approval": false
+    },
+    {
+      "order": 3,
+      "instruction": "For stable knowledge, search the synchronized rust-docs index before online retrieval.",
+      "capability": "knowledge.rust.read",
+      "requires_human_approval": false
+    },
+    {
+      "order": 4,
+      "instruction": "Compile only relevant memory/context within classification, item and byte limits.",
+      "capability": "context.compile",
+      "requires_human_approval": false
+    },
+    {
+      "order": 5,
+      "instruction": "Return source-backed findings and register correlation/evidence for every stage.",
+      "capability": "research.collect",
+      "requires_human_approval": false
+    }
+  ],
+  "triggers": [
+    "rust",
+    "cargo",
+    "crate",
+    "borrow",
+    "ownership",
+    "result",
+    "async",
+    "tokio",
+    "trait",
+    "lifetime",
+    "unsafe"
+  ],
+  "knowledge_sources": [
+    "rust-official"
+  ],
+  "context_namespaces": [
+    "rust",
+    "project",
+    "architecture",
+    "decisions"
+  ],
+  "input_schema": {},
+  "output_schema": {},
+  "provenance": [
+    "PhxClaw clean-room procedure",
+    "Rust official documentation source registry"
+  ],
+  "evidence": [
+    {
+      "uuid": "01a0e4f0-5c42-7762-a71d-1e3fd40c6b63",
+      "uri": "file://docs/RUST_RESEARCH_SKILL_VALIDATION.md",
+      "source_type": "validation_document",
+      "retrieved_at": "2026-09-27T22:20:00Z",
+      "sha256": "3aba1e1f9a816c4479984413ebccfe5296470eb1a321c3720611f133f90fae51",
+      "notes": "Structural validation evidence; native Rust test gate remains separate."
+    }
+  ],
+  "created_at": "2026-09-27T22:20:00Z",
+  "updated_at": "2026-09-27T22:20:00Z",
+  "sha256": "7c8c1c66215b1d547d35906bdc4ce8c01fe95a62975b4f2af56e2f578b824277"
+}

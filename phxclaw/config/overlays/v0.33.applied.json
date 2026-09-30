@@ -1,0 +1,108 @@
+{
+  "version": "0.33.0",
+  "base": "0.32.0",
+  "copied": [
+    {
+      "path": "config/model-arena-policy.v033.json",
+      "sha256": "5bf749d8ffd744ec1b61ce092485151345a2472b463a95d4e32501d61e3a9c86"
+    },
+    {
+      "path": "capabilities/V033_CAPABILITIES_DELTA.json",
+      "sha256": "f236ff5fb232a901f895f6beb06f5747829d0b401e022e2853cfd78290b42a3c"
+    },
+    {
+      "path": "schemas/arena-window-v033.schema.json",
+      "sha256": "ac26e1f744a3960ed218de999975b40a9ee9ffba718cd6b29c232601a0fa14f6"
+    },
+    {
+      "path": "schemas/arena-state-event-v033.schema.json",
+      "sha256": "21f12917be6cd6761e0e8a747ca2963c3f003ab75d690a75885c2703bf6ac9b9"
+    },
+    {
+      "path": "schemas/arena-promotion-recommendation-v033.schema.json",
+      "sha256": "7efff5e7549c91543b2c3531e4e5cbe7a51c6f81d2f8fbfd41f4088d8e208ddc"
+    },
+    {
+      "path": "schemas/ai-drift-event-v033.schema.json",
+      "sha256": "3c3dbaeefd032d07371b9bdb282db11e47a045e1381b8525f60506f529141b10"
+    },
+    {
+      "path": "schemas/arena-assignment-v033.schema.json",
+      "sha256": "6b0a8d1d2bb2518eaa75660e62e616c352eebe7297080f56f1cf7abd6bca0ecc"
+    },
+    {
+      "path": "schemas/arena-spec-v033.schema.json",
+      "sha256": "c56533482778ee701f4a47851ad6a28d6fe18edf599324f41ae1a82d1bb8739d"
+    },
+    {
+      "path": "tools/test_v033_local.py",
+      "sha256": "5d59121c2d5fcf2ca6d6b8dcfe0bbafb02d118ad94f7e3f591537ba6e539d295"
+    },
+    {
+      "path": "tools/verify_v033.py",
+      "sha256": "510800f788be2673c2ea59ecbf96ea549234a6d754a7ad2daa68d4c5f33368ec"
+    },
+    {
+      "path": "reports/V033_GATE_REPORT.json",
+      "sha256": "4677164ca876d1c85c128b5831c5cec49f37d49c01a91696742ee5e395f6322f"
+    },
+    {
+      "path": "reports/V033_PACKAGE_CHECKS.json",
+      "sha256": "8fdacda842dedc654408368b65ec55916b5fe909fb90d428647005f6e3533622"
+    },
+    {
+      "path": "reports/V033_LOCAL_TEST_REPORT.json",
+      "sha256": "c787d6babb710f898ec7d48db3c9c881f65d4340586cc90990d213fcc94a4efb"
+    },
+    {
+      "path": "reports/BUILD_REPORT_V033.md",
+      "sha256": "22b5a04337801358bd7bfc604e77e2920f29f1a220533389568e27b80723b64d"
+    },
+    {
+      "path": "reports/V033_STATIC_VERIFY_REPORT.json",
+      "sha256": "9d9d6f0cd909c6315a2e5e7477cb032a8ccb5b3f2b9b0ca2b77966dd2165eb40"
+    },
+    {
+      "path": "migrations/0033_continuous_model_arena.sql",
+      "sha256": "7eea04646f46b2ccc1e4a6c486fd81afe4f4b0ad56c960a26bbbf68f564fcd1a"
+    },
+    {
+      "path": "docs/CONTINUOUS_MODEL_ARENA_V033.md",
+      "sha256": "c9299a2676e9a4aed43d37d4c7e2e8982bae64eee4c42f4c87316e22aee0cc3c"
+    },
+    {
+      "path": "ci/run-v033-native.sh",
+      "sha256": "3facab4f25f36939fa5fff0da2d023fdc097abc1acab19cd77699b601a1cbd02"
+    },
+    {
+      "path": "ci/run-v033-native.ps1",
+      "sha256": "0db967cc07e39553092be5f322749a22bf3619a96ac97af4f919495ca8fe2994"
+    },
+    {
+      "path": "crates/phxclaw-model-arena/Cargo.toml",
+      "sha256": "8fc81408772250cdb6243fb0b480ce9e09cf04ce4205bee161f866cd0c5de874"
+    },
+    {
+      "path": "crates/phxclaw-model-drift/Cargo.toml",
+      "sha256": "f5af2e2a93772fa9f877a684fbadd4a97d8c15f5955e7c7b834c45840fb665f9"
+    },
+    {
+      "path": "crates/phxclaw-model-drift/src/lib.rs",
+      "sha256": "a5146369e33fc3e3f02c522ea7ea4cbf08f587121cafe37f812b66ea9eaa1f25"
+    },
+    {
+      "path": "crates/phxclaw-model-arena/src/lib.rs",
+      "sha256": "9287870efbf9562012837dc5a952f64d0a5412de35f8e24775a6bb462ed0e06e"
+    },
+    {
+      "path": "tools/__pycache__/test_v033_local.cpython-313.pyc",
+      "sha256": "c0dcc00844b2addcdcefe76652fd4a128417c2bf82b70a9aedf7c505588b0e32"
+    },
+    {
+      "path": "tools/__pycache__/verify_v033.cpython-313.pyc",
+      "sha256": "86d32356f253f6b9207b7f676fb8061e3fa674306f40e86960393df42fbb5327"
+    }
+  ],
+  "workspace": "v0.33 crates present exactly once",
+  "cargo_lock_requires_refresh": false
+}

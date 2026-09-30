@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phxclaw.local/schemas/evidence-record.schema.json",
+  "title": "PhxClaw Evidence Record",
+  "type": "object",
+  "required": ["uuid", "action_uuid", "actor", "capability", "action", "outcome", "request_summary", "result_summary", "artifact_uris", "occurred_at", "previous_hash", "record_hash"],
+  "properties": {
+    "uuid": {"type": "string", "format": "uuid"},
+    "action_uuid": {"type": "string", "format": "uuid"},
+    "correlation_uuid": {"type": ["string", "null"], "format": "uuid"},
+    "actor": {"type": "string", "minLength": 1},
+    "capability": {"type": "string", "minLength": 1},
+    "action": {"type": "string", "minLength": 1},
+    "outcome": {"enum": ["requested", "succeeded", "failed", "denied", "cancelled"]},
+    "request_summary": {},
+    "result_summary": {},
+    "artifact_uris": {"type": "array", "items": {"type": "string"}},
+    "occurred_at": {"type": "string", "format": "date-time"},
+    "previous_hash": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+    "record_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  },
+  "additionalProperties": false
+}

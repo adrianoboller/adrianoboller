@@ -1,0 +1,4602 @@
+{
+  "suite": "PhxClaw v0.29 static verifier",
+  "pass": 917,
+  "fail": 2,
+  "checks": [
+    {
+      "name": "file_crates/phxclaw-fleet-control-plane/Cargo.toml",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "file_crates/phxclaw-fleet-control-plane/src/lib.rs",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "file_config/fleet-control-policy.v029.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "file_config/trusted-control-signers.v029.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "file_migrations/0029_fleet_control_plane.sql",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "file_tools/v029_common.py",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "file_tools/freeze_selector.py",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "file_tools/select_control_nodes.py",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "file_tools/evaluate_heartbeat.py",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "file_tools/assess_recovery.py",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "file_tools/scope_rollout.py",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "file_tools/create_control_plan.py",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "file_tools/verify_control_plan.py",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "file_tools/verify_v029.py",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "file_schemas/fleet-selector-v029.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "file_schemas/fleet-inventory-node-v029.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "file_schemas/fleet-selector-snapshot-v029.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "file_schemas/fleet-command-plan-v029.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "file_schemas/fleet-maintenance-v029.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "file_schemas/fleet-recovery-observation-v029.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "file_schemas/fleet-control-state-v029.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "file_capabilities/V029_CAPABILITIES_DELTA.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "file_docs/PROJECT_STATUS_V029.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "file_docs/FLEET_CONTROL_PLANE_V029.md",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "file_.github/workflows/phxclaw-fleet-control-plane.yml",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "file_ci/run-fleet-control-plane.sh",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "file_ci/run-fleet-control-plane.ps1",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_PLUGIN_ECOSYSTEM_TEST_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_V014_PLUGIN_F20_TEST_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_V09_GATE_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_V09_SMOKE_TEST_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_DESKTOP_HOST_TEST_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_MISSION_RUNTIME_TEST_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_V020_GATE_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_PRIVATE_PLUGIN_PACKAGE_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_OLMOCR_PLUGIN_TEST_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_V017_GATE_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_F15_F16_TEST_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_V011_GATE_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_V016_GATE_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_V014_GATE_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_V018_GATE_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_V013_GATE_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_V015_GATE_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_V017_UPLOADED_SOURCES_TEST_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_V016_CLAW_CODE_TEST_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_V019_GATE_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_V015_CHANNEL_GATEWAY_TEST_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_V013_OPERATIONAL_TEST_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_RESEARCH_PIPELINE_TEST_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_V020_UNIFIED_CORE_INSTALL_TEST_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_V019_RUSTCLAW_NATIVE_TEST_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_V018_SECRET_CHANNEL_TEST_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/ha-control-policy.v030.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/project-management-skill-catalog.v042.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/external-capability-bridges.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/anthropic-provider.v031.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/capabilities-v058.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/project-templates.v043.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/project-management-hybrid-flow.v042.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/native-qualification.v056.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/consolidation-manifest.v054.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/ai-fabric-policy.v031.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/release-candidate.v026.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/private-plugin-catalog.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/capabilities-v050.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/gemini-provider.v031.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/capabilities-v048.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/phxclaw.config.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/sprint-gate-map.v026.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/capabilities-v057.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/capabilities-v059.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/skill-evolution.v022.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/fleet-rollout-policy.v028.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/engineering-swarm-team-map.v038.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/capabilities-v052.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/skill-router-policy.v036.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/project-traceability.v058.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/release-hardening.v024.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/trusted-control-signers.v029.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/ai-portfolio-policy.v034.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/capabilities-v055.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/ai-benchmark-policy.v032.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/capabilities-v047.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/source-ingestion-policy.v060.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/native_cores.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/release-policy.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/historical-backfill-registry.v059.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/autonomous-engineering-policy.v037.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/trusted-fleet-signers.v028.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/capabilities-v049.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/extension-points.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/desktop-host.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/component-update-policy.v028.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/engineering-stage-skill-map.v037.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/updater-policy.v027.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/private-repository-policy.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/ai-sre-policy.v035.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/sprint-gate-matrix.v056.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/release-qualification.v025.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/capabilities-v051.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/historical-table-inventory.v059.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/capabilities-v045.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/device-nodes.v021.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/constitution.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/multi-platform-qualification.v027.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/capabilities-v046.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/research-pipeline.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/knowledge-evidence-graph.v023.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/swarm-merge-intelligence-policy.v039.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/capabilities-v044.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/chaos-resilience-policy.v036.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/hermes-bridge-policy.v030.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/trusted-release-signers.v025.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/capabilities-v053.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/model-arena-policy.v033.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/ollama-provider.v030.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/capability-catalog.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/mission-runtime.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/key-provider.v021.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/channel-providers.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/capabilities-v054.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/obsidian-bridge-policy.v030.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/swarm-contract-policy.v039.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/rustclaw-native.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/fleet-control-policy.v029.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/skill-catalog.v036.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/engineering-swarm-policy.v038.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/openai-provider.v031.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_inventory/source_inventory_2026-09-29.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_sprints/f05.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_sprints/f09.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_sprints/f22.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_sprints/f04.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_sprints/f03.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_sprints/f15.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_sprints/f16.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_sprints/F25_KNOWLEDGE_EVIDENCE_GRAPH_V023.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_sprints/f11.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_sprints/f07.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_sprints/f10.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_sprints/F24_SKILL_EVOLUTION_V022.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_sprints/f06.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_sprints/f02.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_sprints/f25.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_sprints/f18.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_sprints/f23.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_sprints/f19.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_sprints/f01.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_sprints/F22_DEVICE_NODES_V021.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_sprints/f13.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_sprints/f21.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_sprints/f08.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_sprints/f00.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_sprints/f24.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_sprints/f14.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_sprints/f20.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_sprints/f12.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_sprints/f17.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_capabilities/V026_CAPABILITIES_DELTA.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_capabilities/V032_CAPABILITIES_DELTA.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_capabilities/V021_CAPABILITIES_DELTA.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_capabilities/V040_CAPABILITIES_DELTA.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_capabilities/V022_CAPABILITIES_DELTA.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_capabilities/V027_CAPABILITIES_DELTA.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_capabilities/V023_CAPABILITIES_DELTA.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_capabilities/V025_CAPABILITIES_DELTA.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_capabilities/V028_CAPABILITIES_DELTA.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_capabilities/V039_CAPABILITIES_DELTA.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_capabilities/V030_CAPABILITIES_DELTA.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_capabilities/V033_CAPABILITIES_DELTA.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_capabilities/V038_CAPABILITIES_DELTA.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_capabilities/V037_CAPABILITIES_DELTA.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_capabilities/V031_CAPABILITIES_DELTA.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_capabilities/V043_CAPABILITIES_DELTA.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_capabilities/V029_CAPABILITIES_DELTA.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_capabilities/V024_CAPABILITIES_DELTA.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_capabilities/V036_CAPABILITIES_DELTA.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_capabilities/V042_CAPABILITIES_DELTA.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_capabilities/V035_CAPABILITIES_DELTA.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/source-provenance-v060.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/swarm-team-evidence-v038.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/knowledge-contradiction-resolution.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/chaos-experiment-v036.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/evolution-candidate-v057.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/arena-window-v033.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/knowledge-node.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/executive-decision-request.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/ai-budget-reservation-v031.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/sre-policy-v035.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skill-evidence.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/secret-broker.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/plugin-package.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/cost-forecast-v035.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/context-fingerprint-v057.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/portfolio-optimization-search.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/fleet-control-state-v029.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/arena-state-event-v033.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skill-promotion.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/process-envelope.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/research-context-envelope.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/obsidian-exchange-v030.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/portfolio-optimization-delegation.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/historical-backfill-report-v059.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/ai-adaptive-route-v032.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/knowledge-edge.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/sprint-status-v056.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/portfolio-decision-delegation.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/reconcile-intent-v030.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/process-reply.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/variance-record.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/swarm-merge-candidate-v038.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/database-contract-approval-v028.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/ai-benchmark-observation-v032.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/release-candidate-v026.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/ai-benchmark-suite-v032.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/portfolio-optimization-candidate.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/sprint-promotion-plan-v026.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/arena-promotion-recommendation-v033.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/swarm-conflict-v038.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/swarm-resolution-v039.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/portfolio-scenario.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/portfolio-plan-execution-envelope.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/project-trace-node-v058.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/compiled-prompt-plan.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/research-task.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/execution-ledger-fact.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/release-policy.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/agent-manifest.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/device-node.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/plugin-manifest.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/fleet-rollout-plan-v028.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/rate-limit-snapshot-v035.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/device-envelope.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/channel-message.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/autopilot-plan-v035.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/portfolio-capacity-snapshot.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/channel-binding.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/evidence-binding.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/knowledge-source.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/project-management-v042.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/agent-request.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/swarm-change-intent-v039.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/native-gate-evidence-v056.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/release-attestation-v025.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/multi-platform-qualification-v027.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/demand-forecast-v035.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/slo-sample-v035.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/dispatch-lease.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/portfolio-project-demand.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/portfolio-simulation-result.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/project-health-snapshot.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/admission-decision-v035.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/portfolio-plan-revision-proposal.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/ai-provider-http-plan-v031.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/device-command.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/self-improvement-change-v057.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/adaptive-execution-telemetry.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/extension-point-catalog.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/extension-invocation.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/fleet-rollback-authorization-v028.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/sprint.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/ga-release-v027.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/learning-observation.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/evidence.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/swarm-integration-replay-v039.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/pdca-learning-record.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/portfolio-drift-event.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skill-route-plan-v036.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/ai-profile-promotion-v032.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/performance-routing-decision.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skill-candidate.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/release-gate-proof.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/evidence-record.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/fleet-health-evidence-v028.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/experience-episode-v057.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/update-manifest-v027.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/fleet-recovery-observation-v029.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/fleet-selector-v029.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/platform-qualification-v027.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/model-request.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/engineering-swarm-v038.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/rollback-authorization-v027.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/pdca-runtime-result.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/model-response.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/mission.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/ai-provider-health-v031.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/reconciliation-report.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/portfolio-replan-request.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/portfolio-digital-twin.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/predictive-recommendation.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/model-outcome.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/component-update-plan-v028.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/engineering-stage-evidence-v037.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/ai-route-request-v031.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/project-forecast.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/engineering-workflow-v037.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/knowledge-pattern-v057.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/executive-alert.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/ai-route-decision-v031.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/ai-model-record-v031.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/incident-record-v036.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/community-registry.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/engineering-checkpoint-v037.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/trusted-release-signers-v025.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/route-forecast.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/ai-drift-event-v033.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/fleet-maintenance-v029.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/arena-assignment-v033.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/arena-spec-v033.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/decision-execution-envelope.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/executive-portfolio-snapshot.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/team-task.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/leader-lease-v030.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/portfolio-roadmap-plan.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/trust-store.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/promotion-decision-v057.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/supervisor-intervention-plan.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/ollama-provider-v030.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/decision-approval.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/knowledge-contradiction.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/project-manifest.v1.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/what-if-scenario.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/hermes-import-v030.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/incident-detection-v035.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/agent-response.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/historical-backfill-registry-v059.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/config-api-v040.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/ai-performance-profile-v032.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/phxclaw-config-v040.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/fleet-command-plan-v029.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/compatibility-n-n1-v027.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/swarm-merge-plan-v039.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/key-provider.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/execution-ticket.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/team-session.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/fleet-inventory-node-v029.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/controller-member-v030.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/agent-task-assignment.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/desktop-action.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skill-manifest.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/ollama-runtime-sample.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/portfolio-optimization-result.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/fleet-selector-snapshot-v029.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/fleet-state-v028.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/executive-decision-case.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/task.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/qualification-evidence-v025.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/sprint-gate-evidence.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/autopilot-execution-v035.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/swarm-semantic-conflict-v039.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_reports/V038_PACKAGE_CHECKS.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_reports/BRAND_RENAME_V041.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_reports/V040_NATIVE_PREFLIGHT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_reports/V033_GATE_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_reports/V032_STATIC_VERIFY_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_reports/V033_PACKAGE_CHECKS.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_reports/V036_LOCAL_TEST_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_reports/V037_STATIC_VERIFY_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_reports/V035_GATE_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_reports/V039_PACKAGE_CHECKS.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_reports/V038_LOCAL_TEST_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_reports/V060_MANIFEST.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_reports/V038_NATIVE_PREFLIGHT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_reports/V036_GATE_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_reports/V038_GATE_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_reports/V042_GATE_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_reports/V035_STATIC_VERIFY_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_reports/V035_NATIVE_PREFLIGHT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_reports/V036_STATIC_VERIFY_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_reports/V036_NATIVE_PREFLIGHT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_reports/V039_LOCAL_TEST_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_reports/V039_STATIC_VERIFY_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_reports/V037_PACKAGE_CHECKS.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_reports/V036_PACKAGE_CHECKS.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_reports/V033_LOCAL_TEST_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_reports/V038_STATIC_VERIFY_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_reports/V028_STATIC_VERIFY_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_reports/V037_GATE_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_reports/V042_STATIC_VERIFY_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_reports/V031_STATIC_VERIFY_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_reports/V040_GATE_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_reports/V039_NATIVE_PREFLIGHT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_reports/V040_STATIC_VERIFY_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_reports/V040_LOCAL_TEST_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_reports/V035_MIGRATION_QUOTING_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_reports/V035_PACKAGE_CHECKS.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_reports/V040_PACKAGE_CHECKS.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_reports/V037_LOCAL_TEST_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_reports/V042_PACKAGE_CHECKS.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_reports/V033_STATIC_VERIFY_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_reports/V031_LOCAL_TEST_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_reports/V035_LOCAL_TEST_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_reports/V042_NATIVE_PREFLIGHT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_reports/V042_LOCAL_TEST_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_reports/V037_NATIVE_PREFLIGHT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_reports/V039_GATE_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_reports/V032_LOCAL_TEST_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_docs/PROJECT_STATUS_V028.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_docs/PROJECT_STATUS_V025.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_docs/PROJECT_STATUS_V029.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_docs/PROJECT_STATUS_V060_CONSOLIDATED.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_docs/PROJECT_STATUS_V027.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_docs/PROJECT_STATUS_V057.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_docs/PROJECT_STATUS_V026.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_docs/PROJECT_STATUS_V058.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_var/plugin-registry/installed.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_integrations/obsidian-phxclaw/package.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_integrations/obsidian-phxclaw/manifest.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_apps/phxclaw-desktop/src-tauri/tauri.conf.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_apps/phxclaw-desktop/src-tauri/capabilities/default.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_examples/missions/rust-validation.mission.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_community/bridges/chatgpt-capabilities/create-image.phxclaw.plugin.template.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_community/bridges/chatgpt-capabilities/pdf.phxclaw.plugin.template.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_community/bridges/chatgpt-capabilities/visualize.phxclaw.plugin.template.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_community/bridges/chatgpt-capabilities/deep-research.phxclaw.plugin.template.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_community/bridges/chatgpt-capabilities/search.phxclaw.plugin.template.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_community/bridges/chatgpt-capabilities/spreadsheets.phxclaw.plugin.template.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_community/bridges/chatgpt-capabilities/openai-platform.phxclaw.plugin.template.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_community/bridges/chatgpt-capabilities/template-creator.phxclaw.plugin.template.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_community/examples/olmocr/phxclaw.plugin.template.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_community/examples/olmocr/SBOM.spdx.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_community/examples/octopus-bridge/phxclaw.plugin.template.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/lead-time-analyzer.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/pdca-act.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/pdca-do.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/story-generator.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/task-decomposer.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/cycle-time-analyzer.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/pdca-plan.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/wbs-generator.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/dependency-manager.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/pdca-act.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/burndown-analyzer.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/task-prioritizer.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/flow-analyzer.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/roi-analyzer.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/delay-predictor.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/project-management-orchestrator.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/root-cause-analysis.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/schedule-variance.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/task-prioritizer.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/root-cause-analysis.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/mitigation-planner.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/lessons-learned-ai.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/stakeholder-management.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/scope-management.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/wbs-generator.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/kanban-manager.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/story-points-estimator.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/scope-management.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/resource-optimizer.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/ishikawa-analysis.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/pdca-plan.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/ishikawa-analysis.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/project-planner-ai.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/burndown-analyzer.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/cashflow-manager.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/risk-matrix.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/kanban-board.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/five-whys.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/velocity-analyzer.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/scrum-manager.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/project-ai-copilot.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/milestone-manager.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/flow-analyzer.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/project-cost-manager.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/project-planner-ai.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/cost-forecast.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/project-health-check.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/five-whys.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/cumulative-flow.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/project-hypothesis-manager.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/baseline-manager.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/calendar-manager.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/issue-manager.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/cumulative-flow.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/resource-leveling.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/project-cost-manager.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/lead-time-analyzer.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/sprint-planning.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/project-import-export.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/project-charter.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/project-governance.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/resource-manager.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/milestone-manager.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/product-backlog-manager.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/kanban-board.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/project-manager-orchestrator.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/deadline-risk-predictor.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/project-import-export.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/gantt-generator.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/project-hypothesis-manager.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/bottleneck-detector.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/resource-manager.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/calendar-manager.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/critical-path-manager.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/sprint-review.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/meeting-to-tasks.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/daily-scrum.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/product-backlog-manager.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/story-points-estimator.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/acceptance-criteria.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/earned-value-manager.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/resource-leveling.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/mitigation-planner.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/project-researcher.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/continuous-improvement.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/sprint-backlog-manager.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/corrective-action-manager.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/dependency-risk-analyzer.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/automatic-status-report.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/budget-tracker.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/daily-scrum.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/wip-limit-manager.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/lessons-learned-ai.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/pdca-check.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/ms-project-manager.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/kanban-manager.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/issue-manager.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/pdca-orchestrator.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/definition-of-done.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/wip-limit-manager.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/task-decomposer.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/kanban-prioritizer.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/gantt-generator.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/ms-project-manager.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/velocity-analyzer.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/earned-value-analyzer.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/hybrid-project-management.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/cost-forecast.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/pdca-check.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/project-researcher.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/cashflow-manager.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/risk-manager.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/corrective-action-manager.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/pdca-do.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/critical-path-manager.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/roi-analyzer.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/schedule-variance.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/sprint-planning.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/earned-value-manager.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/project-management-orchestrator.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/story-generator.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/dependency-manager.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/earned-value-analyzer.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/automatic-status-report.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/next-best-action.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/resource-optimizer.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/next-best-action.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/project-governance.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/sprint-review.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/meeting-to-tasks.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/risk-manager.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/deadline-risk-predictor.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/sprint-backlog-manager.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/stakeholder-management.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/hybrid-project-management.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/acceptance-criteria.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/baseline-manager.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/dependency-risk-analyzer.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/project-ai-copilot.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/bottleneck-detector.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/budget-tracker.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/project-manager-orchestrator.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/sprint-retrospective.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/project-health-check.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/risk-matrix.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/pdca-orchestrator.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/definition-of-done.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/project-charter.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/kanban-prioritizer.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/continuous-improvement.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/delay-predictor.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/scrum-manager.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/cycle-time-analyzer.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/skills/sprint-retrospective.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/integrations/google-calendar-project-sync.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/integrations/google-calendar-project-sync.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/integrations/google-drive-project-docs.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/integrations/google-drive-project-docs.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/hermes-bridge/phxclaw.plugin.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/hermes-bridge/SOURCE_INTEGRITY.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/gemini-provider/phxclaw.plugin.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/gemini-provider/SOURCE_INTEGRITY.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/obsidian-bridge/phxclaw.plugin.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/obsidian-bridge/SOURCE_INTEGRITY.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/anthropic-provider/phxclaw.plugin.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/anthropic-provider/SOURCE_INTEGRITY.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/examples/echo.plugin.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/examples/echo.output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/examples/echo.input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/ollama-provider/phxclaw.plugin.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/ollama-provider/SOURCE_INTEGRITY.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/openai-provider/phxclaw.plugin.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/openai-provider/SOURCE_INTEGRITY.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/project-management.plugin.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/task-prioritizer/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/sprint-retrospective/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/next-best-action/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/root-cause-analysis/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/ishikawa-analysis/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/project-charter/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/cycle-time-analyzer/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/critical-path-manager/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/project-ai-copilot/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/cumulative-flow/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/gantt-generator/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/daily-scrum/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/continuous-improvement/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/wip-limit-manager/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/schedule-variance/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/dependency-manager/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/project-manager-orchestrator/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/google-drive-project-docs/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/risk-matrix/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/pdca-do/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/five-whys/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/pdca-check/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/kanban-manager/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/lessons-learned-ai/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/pdca-orchestrator/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/story-generator/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/definition-of-done/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/earned-value-manager/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/resource-manager/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/story-points-estimator/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/resource-optimizer/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/deadline-risk-predictor/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/delay-predictor/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/lead-time-analyzer/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/cost-forecast/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/project-cost-manager/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/cashflow-manager/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/baseline-manager/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/task-decomposer/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/google-calendar-project-sync/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/automatic-status-report/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/project-hypothesis-manager/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/ms-project-manager/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/resource-leveling/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/project-management-orchestrator/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/kanban-prioritizer/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/burndown-analyzer/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/risk-manager/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/scrum-manager/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/sprint-backlog-manager/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/velocity-analyzer/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/sprint-review/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/roi-analyzer/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/wbs-generator/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/pdca-plan/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/acceptance-criteria/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/flow-analyzer/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/project-planner-ai/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/pdca-act/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/budget-tracker/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/corrective-action-manager/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/milestone-manager/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/mitigation-planner/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/sprint-planning/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/issue-manager/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/product-backlog-manager/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/project-import-export/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/calendar-manager/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/project-governance/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/scope-management/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/dependency-risk-analyzer/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/earned-value-analyzer/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/stakeholder-management/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/meeting-to-tasks/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/project-health-check/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/kanban-board/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/bottleneck-detector/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/hybrid-project-management/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/project-management/skills/project-researcher/skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/builtin/manifests/oracle.agent.plugin.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/builtin/manifests/master-orchestrator.agent.plugin.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/builtin/manifests/media-intelligence.tool.plugin.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/builtin/manifests/office-document.tool.plugin.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/builtin/manifests/local-deterministic.model-provider.plugin.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_plugins/builtin/manifests/morpheus.agent.plugin.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_tests/fixtures/source-registry/rust-official.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_tests/fixtures/plugin-lifecycle/v1.1.0/output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_tests/fixtures/plugin-lifecycle/v1.1.0/input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_tests/fixtures/plugin-lifecycle/v1.1.0/phxclaw.plugin.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_tests/fixtures/plugin-lifecycle/v1.1.0/PACKAGE.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_tests/fixtures/plugin-lifecycle/v1.1.0/SBOM.spdx.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_tests/fixtures/plugin-lifecycle/v1.0.0/output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_tests/fixtures/plugin-lifecycle/v1.0.0/input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_tests/fixtures/plugin-lifecycle/v1.0.0/phxclaw.plugin.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_tests/fixtures/plugin-lifecycle/v1.0.0/PACKAGE.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_tests/fixtures/plugin-lifecycle/v1.0.0/SBOM.spdx.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_private/plugins-src/claw-code-bridge/phoenixclaw.plugin.template.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_private/plugins-src/claw-code-bridge/output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_private/plugins-src/claw-code-bridge/input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_private/plugins-src/phoenix-dashboards/output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_private/plugins-src/phoenix-dashboards/phoenixclaw.plugin.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_private/plugins-src/phoenix-dashboards/input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_private/plugins-src/phoenix-dashboards/PACKAGE.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_private/plugins-src/phoenix-dashboards/SBOM.spdx.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_private/plugins-src/phoenix-web-fxsdk/output.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_private/plugins-src/phoenix-web-fxsdk/phoenixclaw.plugin.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_private/plugins-src/phoenix-web-fxsdk/input.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_private/plugins-src/phoenix-web-fxsdk/PACKAGE.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_private/plugins-src/phoenix-web-fxsdk/SBOM.spdx.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_private/plugins-src/phoenix-web-fxsdk/source/fxsdk/fxsdk-themes.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_private/plugins-src/phoenix-dashboards/source/graficos_62.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_private/plugins-src/phoenix-dashboards/source/phoenix-dashboards/examples/vendas.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_private/plugins-src/phoenix-dashboards/source/phoenix-dashboards/examples/investimentos.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_private/vendor/claw-code/UPSTREAM.fetch-status.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_private/vendor/rustclaw/LICENSE_STATUS.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_private/vendor/rustclaw/PROVENANCE.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_private/vendor/rustclaw/UPSTREAM.lock.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_private/vendor/openclaw-rs/UPSTREAM.lock.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_private/vendor/openclaw-rs/upstream/crates/openclaw-ui/tsconfig.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_private/vendor/openclaw-rs/upstream/crates/openclaw-ui/tsconfig.app.json",
+      "pass": false,
+      "detail": "Expecting property name enclosed in double quotes: line 11 column 5 (char 244)"
+    },
+    {
+      "name": "json_private/vendor/openclaw-rs/upstream/crates/openclaw-ui/package.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_private/vendor/openclaw-rs/upstream/crates/openclaw-ui/tsconfig.node.json",
+      "pass": false,
+      "detail": "Expecting property name enclosed in double quotes: line 10 column 5 (char 222)"
+    },
+    {
+      "name": "json_private/vendor/openclaw-rs/upstream/crates/openclaw-ui/package-lock.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_private/vendor/rustclaw/upstream/zeabur.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/upstreams/rustclaw.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/upstreams/claw-code.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/install/postgresql.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/patches/v059-historical-backfill.patch.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/trust/plugin-signers.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/community/registry.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/059-restore-agent.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/027-compiler-agent.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/106-react-typescript-specialist.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/088-mouse.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/094-donatello.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/030-uuidv7-guardian.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/052-qa-nivel-3.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/028-phoenix-ir-agent.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/050-qa-nivel-1.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/034-ui-rad-agent.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/023-rust-evolution-agent.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/087-dozer.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/022-technology-harvest.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/092-leonardo-da-vinci.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/014-trinity.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/011-jones.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/068-budget-manager.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/043-browser-wasm-test-agent.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/026-phoenixrustcore-agent.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/090-spoon-boy.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/076-accessibility-agent.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/070-model-evaluator.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/054-goal-drift-detector.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/team110.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/017-persefone.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/081-finops-agent.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/056-release-manager.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/063-secrets-manager.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/067-artifact-manager.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/072-pmo-planner.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/071-scrum-master.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/110-zelador-de-espaco-storage-steward.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/007-chaveiro.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/046-visual-regression-agent.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/105-ai-evaluation-agent.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/060-sre-operations-agent.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/032-event-command-agent.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/101-soc-agent.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/044-regression-agent.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/055-versionador.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/040-unit-test-agent.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/016-merovingio.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/109-connector-platform-agent.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/048-security-test-agent.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/107-rust-api-domain-engineer.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/078-chaos-resilience-agent.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/024-wasm-evolution-agent.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/083-seraph.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/064-context-compiler.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/008-johnson.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/091-potentials-aprendizes-do-oraculo.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/085-link.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/041-integration-test-agent.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/031-template-engine-agent.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/025-webgpu-gpu-agent.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/075-privacy-data-governance.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/079-agent-red-team.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/005-morpheus.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/080-user-proof-ux-research.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/004-arquiteto.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/015-neo.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/049-objective-proof-agent-opa.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/103-marketplace-agent.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/009-smith.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/036-data-agent.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/089-sati.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/021-hypothesis-agent.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/104-data-attribution-agent.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/100-vivaldi.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/102-ads-agent.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/077-compatibility-agent.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/035-action-media-agent.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/020-research-agent.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/073-licensor-clean-room-guardian.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/013-thompson.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/074-supply-chain-guardian.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/057-reproducible-build-agent.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/006-oraculo.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/053-guardian.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/037-postgresql-agent.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/062-tool-mcp-manager.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/002-master-orchestrator.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/029-phx-json-agent.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/registry.index.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/038-octopus-agent.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/093-michelangelo.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/097-van-gogh.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/033-reactive-agent.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/051-qa-nivel-2.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/045-fuzz-agent.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/098-beethoven.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/010-brown.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/042-e2e-agent.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/061-sandbox-manager.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/001-product-owner-humano.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/082-migration-guardian.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/003-analista.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/039-localization-nsl-agent.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/086-tank.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/018-documentador.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/066-evidence-graph-agent.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/095-raphael-rafael.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/096-mestre-splinter.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/019-research-lead-pesquisador-pdca.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/084-niobe.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/047-performance-test-agent.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/065-knowledge-graph-agent.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/069-model-router.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/099-mozart.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/012-jackson.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/108-rust-worker-engineer.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/agents/058-backup-agent.agent.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/skills/rust-research.skill.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/skills/registry.index.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/knowledge-sources/rustclaw-user-source.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/knowledge-sources/openclaw-rs-user-source.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/knowledge-sources/olmocr-official.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/knowledge-sources/rust-official.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/knowledge-sources/claw-code-official.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/overlays/v0.33.applied.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/overlays/v0.25.applied.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/overlays/v0.27.applied.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/overlays/v0.35.applied.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/overlays/v0.36.applied.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/overlays/v0.21.applied.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/overlays/v0.38.applied.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/overlays/v0.60.applied.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/overlays/v0.30.applied.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/overlays/v0.24.applied.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/overlays/v0.22.applied.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/overlays/v0.23.applied.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/overlays/v0.34.applied.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/overlays/v0.31.applied.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/overlays/v0.37.applied.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/overlays/v0.29.applied.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/overlays/v0.40.applied.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/overlays/v0.26.applied.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/overlays/v0.39.applied.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/overlays/v0.32.applied.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_config/overlays/v0.28.applied.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "crate_toml",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_InventoryNode",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_FleetSelector",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_SelectorSnapshot",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_freeze_selector",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_verify_snapshot",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_MaintenanceWindow",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_SignedControlPlanDocument",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_verify_signed_control_plan",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_signed_control_plan_payload",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_plan_fanout",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_authorize_command",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_selected_for_percent",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_scoped_rollout_members",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_RecoveryObservation",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_assess_recovery",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_SequenceRegression",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_MembershipDrift",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_FencingMismatch",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_session_fencing_token",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "depends_f22",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "depends_v028",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_shell",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "f22_boundary",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "snapshot_required",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "pg_fencing",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "force_rls",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "composite_fks",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "device_fk",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "fleet_fk",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "lease_cas",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "plan_cas",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "append_only",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "selector_logic",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "selector_excludes_blocked",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "drift_guard",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "recovery_guards",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "signed_control_plan",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "policy_bound",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "arguments_bound",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "shell_reject",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "raw_secret_reject",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "secret_handles_bound",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "fencing_separated",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_requires_signed_plan",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "cap_total",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "cap_unique",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sprint_colors",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_fake_release",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "manual_workflow",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "production_env",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_auto_side_effect",
+      "pass": true,
+      "detail": ""
+    }
+  ]
+}

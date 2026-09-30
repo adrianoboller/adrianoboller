@@ -1,0 +1,138 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f66b-753d-9b63-ff887cd361d2",
+  "agent_id": 107,
+  "name": "Rust API/Domain Engineer",
+  "macroarea": "Engenharia & Arquitetura",
+  "nucleus": "Rust",
+  "role_type": "Subagente Rust",
+  "mission": "Implementa serviços, domínio, validação e autorização em Rust.",
+  "responsibilities": "Modela domain types, use cases, API services, validation e authz com testes.",
+  "resources": "Rust toolchain, contracts, Data/Event layers.",
+  "authorized_actions": "Implementar domínio e serviços.",
+  "trigger": "Task backend/domínio.",
+  "declared_dependencies": "Chaveiro contracts e requirements.",
+  "resolved_agent_dependencies": [
+    {
+      "uuid": "01a0e473-f607-777c-b4f3-12b3cc967d29",
+      "name": "Chaveiro"
+    },
+    {
+      "uuid": "01a0e473-f60b-796a-a1ff-a164537cd755",
+      "name": "Jones"
+    },
+    {
+      "uuid": "01a0e473-f60d-761f-b597-a103db46e3df",
+      "name": "Thompson"
+    }
+  ],
+  "deliverables": "Domain implementation.",
+  "limits": "Não define contratos sozinho.",
+  "next_gate": "Jones/Thompson.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "codex"
+  ],
+  "criticality": "Alta",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F18 MCP + LSP Runtime",
+    "F19 Repo Intelligence / Tree-sitter",
+    "F22 Device Nodes",
+    "F23 Secret & Credential Broker"
+  ],
+  "capabilities": [
+    "context.compile",
+    "lsp.read",
+    "mcp.invoke",
+    "memory.read",
+    "node.observe",
+    "repo.read",
+    "rust.domain.implement",
+    "secret.lease.request",
+    "skill.read",
+    "tree_sitter.analyze"
+  ],
+  "permissions": [
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "lsp.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "mcp.invoke",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "repo.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "rust.domain.implement",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "secret.lease.request",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "tree_sitter.analyze",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Node/session state efêmero e pareado; Somente metadados de segredo; valores nunca em prompt/log",
+  "event_topics": "agent.rust.api.domain.engineer.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; writes policy-gated; evidência obrigatória; sem autoaprovação. Device input/screen exige autorização de sessão e logging. Credenciais via broker/leases; nunca em prompt.",
+  "references": "Architect (MIT) — AST/Tree-sitter/Repo Intelligence | oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 108
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "version": "0.60.0",
+  "base": "0.59.0",
+  "mode": "manual_integration_per_INTEGRATION_V060",
+  "changed": [
+    "crates/phxclaw-provenance-core/Cargo.toml",
+    "crates/phxclaw-provenance-core/src/lib.rs",
+    "migrations/0060_source_provenance.sql",
+    "config/source-ingestion-policy.v060.json",
+    "schemas/source-provenance-v060.schema.json",
+    "inventory/source_inventory_2026-09-29.json",
+    "tools/verify_v060.py",
+    "ui/provenance-firewall-v060.html",
+    "docs/ADR-0060-source-provenance-firewall.md",
+    "docs/THIRD_PARTY_SOURCES_v060.md",
+    "docs/INTEGRATION_V060.md",
+    "reports/V060_VERIFY_REPORT.md",
+    "reports/V060_MANIFEST.json",
+    "tests/v060/README.md",
+    "Cargo.toml",
+    "config/phxclaw.config.json"
+  ],
+  "native_release_gates": "pending"
+}

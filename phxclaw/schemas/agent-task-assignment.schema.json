@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phxclaw.local/schemas/agent-task-assignment.schema.json",
+  "type": "object",
+  "required": ["tenant_uuid","project_uuid","task_uuid","agent_uuid","complexity","capability","source_state_sha256"],
+  "properties": {
+    "tenant_uuid": {"type":"string","format":"uuid"},
+    "project_uuid": {"type":"string","format":"uuid"},
+    "task_uuid": {"type":"string","format":"uuid"},
+    "agent_uuid": {"type":"string","format":"uuid"},
+    "complexity": {"enum":["low","medium","high","extreme"]},
+    "capability": {"type":"string","minLength":1},
+    "source_state_sha256": {"type":"string","pattern":"^[a-fA-F0-9]{64}$"},
+    "model_profile_uuid": {"type":"string","format":"uuid"},
+    "routing_decision_sha256": {"type":"string","pattern":"^[a-fA-F0-9]{64}$"}
+  },
+  "additionalProperties": true
+}

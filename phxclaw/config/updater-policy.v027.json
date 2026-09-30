@@ -1,0 +1,18 @@
+{
+  "version": "0.27.0",
+  "mode": "fail_closed",
+  "allowed_channels": [
+    "stable",
+    "rc"
+  ],
+  "require_https": true,
+  "require_trusted_ed25519": true,
+  "require_sha256_and_size": true,
+  "require_expiry": true,
+  "require_monotonic_sequence": true,
+  "downgrade_default": "deny",
+  "rollback_authorization": "separate_signed_token",
+  "max_metadata_lifetime_hours": 168,
+  "rollback_token_max_lifetime_hours": 72,
+  "max_targets": 16
+}

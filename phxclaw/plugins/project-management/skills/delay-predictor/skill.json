@@ -1,0 +1,38 @@
+{
+  "uuid": "01a0eab2-5c2a-7008-a9b5-6818c25a01fd",
+  "id": "delay-predictor",
+  "name": "Delay Predictor",
+  "category": "ai_automation",
+  "function": "Prevê atrasos",
+  "capability": "project.skill.delay-predictor",
+  "agent_role": "ai_automation",
+  "permissions": [
+    "project.read",
+    "ai.route"
+  ],
+  "risk": "low",
+  "approval_required": false,
+  "evidence_required": true,
+  "lifecycle_hooks": [
+    "before_invoke",
+    "after_invoke",
+    "on_failure"
+  ],
+  "rollback": "not_applicable",
+  "version": "0.42.0",
+  "semver": "0.42.0",
+  "manifest_uuid": "01a0eab2-5c3f-71ec-9862-4e6125fe1b65",
+  "dependencies": [
+    "phxclaw-skill-runtime>=0.15",
+    "phxclaw-evidence-ledger>=0.9"
+  ],
+  "compatibility": {
+    "phxclaw": ">=0.41,<0.43"
+  },
+  "sandbox": "deny-by-default",
+  "signature_policy": "release-signing-required",
+  "provenance": {
+    "origin": "user-defined-project-management-suite",
+    "license": "PhxClaw project source policy"
+  }
+}

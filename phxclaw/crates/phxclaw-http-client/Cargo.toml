@@ -1,0 +1,16 @@
+[package]
+name = "phxclaw-http-client"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+base64.workspace = true
+chrono.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+url.workspace = true
+uuid.workspace = true
+phxclaw-types = { path = "../phxclaw-types" }

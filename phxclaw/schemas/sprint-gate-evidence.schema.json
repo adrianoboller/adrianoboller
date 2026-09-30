@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "evidence_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "type": "string"
+    },
+    "gate_id": {
+      "type": "string"
+    },
+    "result": {
+      "enum": [
+        "pass",
+        "fail",
+        "unavailable"
+      ]
+    },
+    "source_state_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "type": "string"
+    },
+    "sprint_id": {
+      "pattern": "^F(?:0[0-9]|1[0-9]|2[0-5])$",
+      "type": "string"
+    },
+    "tool_version": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "sprint_id",
+    "gate_id",
+    "source_state_sha256",
+    "result",
+    "evidence_sha256",
+    "tool_version"
+  ],
+  "type": "object"
+}

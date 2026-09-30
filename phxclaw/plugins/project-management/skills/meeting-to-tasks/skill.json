@@ -1,0 +1,39 @@
+{
+  "uuid": "01a0eab2-5c2a-7e23-8dac-41a2ab4098bb",
+  "id": "meeting-to-tasks",
+  "name": "Meeting To Tasks",
+  "category": "ai_automation",
+  "function": "Converte reunião em ações",
+  "capability": "project.skill.meeting-to-tasks",
+  "agent_role": "ai_automation",
+  "permissions": [
+    "project.read",
+    "ai.route",
+    "project.mutate"
+  ],
+  "risk": "medium",
+  "approval_required": false,
+  "evidence_required": true,
+  "lifecycle_hooks": [
+    "before_invoke",
+    "after_invoke",
+    "on_failure"
+  ],
+  "rollback": "checkpoint",
+  "version": "0.42.0",
+  "semver": "0.42.0",
+  "manifest_uuid": "01a0eab2-5c40-7ef8-9ae1-404f6f896b8f",
+  "dependencies": [
+    "phxclaw-skill-runtime>=0.15",
+    "phxclaw-evidence-ledger>=0.9"
+  ],
+  "compatibility": {
+    "phxclaw": ">=0.41,<0.43"
+  },
+  "sandbox": "deny-by-default",
+  "signature_policy": "release-signing-required",
+  "provenance": {
+    "origin": "user-defined-project-management-suite",
+    "license": "PhxClaw project source policy"
+  }
+}

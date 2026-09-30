@@ -1,0 +1,176 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f63e-7112-b100-cfcf4b49c51c",
+  "agent_id": 62,
+  "name": "Tool/MCP Manager",
+  "macroarea": "Operações & Infraestrutura",
+  "nucleus": "Ferramentas",
+  "role_type": "Agente de ferramentas",
+  "mission": "Mantém Tool Registry e MCPs aprovados com versões, riscos e capabilities.",
+  "responsibilities": "Descobre, instala via Installer Core, testa health/security, controla whitelist e adapters.",
+  "resources": "MCP Registry, Tool Gateway, license/security scans.",
+  "authorized_actions": "Registrar, habilitar, desabilitar e atualizar ferramentas.",
+  "trigger": "Nova ferramenta/MCP ou update.",
+  "declared_dependencies": "Manifest, license, capabilities.",
+  "resolved_agent_dependencies": [
+    {
+      "uuid": "01a0e473-f60d-761f-b597-a103db46e3df",
+      "name": "Thompson"
+    },
+    {
+      "uuid": "01a0e473-f653-7e06-8fa5-10c77bec7519",
+      "name": "Seraph"
+    }
+  ],
+  "deliverables": "Approved Tool Registry.",
+  "limits": "Nenhum MCP novo entra sem revisão.",
+  "next_gate": "Seraph/Thompson/Link.",
+  "execution": "Permanente",
+  "models_allowed": [
+    "claude",
+    "ollama"
+  ],
+  "criticality": "Alta",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F18 MCP + LSP Runtime",
+    "F22 Device Nodes",
+    "F23 Secret & Credential Broker"
+  ],
+  "capabilities": [
+    "context.compile",
+    "lsp.read",
+    "mcp.invoke",
+    "memory.read",
+    "node.observe",
+    "plugin.disable",
+    "plugin.doctor",
+    "plugin.enable",
+    "plugin.install",
+    "plugin.rollback",
+    "plugin.uninstall",
+    "protocol.lsp.invoke",
+    "protocol.mcp.invoke",
+    "secret.lease.request",
+    "skill.read",
+    "tool.mcp.registry.manage"
+  ],
+  "permissions": [
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "lsp.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "mcp.invoke",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "plugin.disable",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "plugin.doctor",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "plugin.enable",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "plugin.install",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "plugin.rollback",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "plugin.uninstall",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "protocol.lsp.invoke",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "protocol.mcp.invoke",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "secret.lease.request",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "tool.mcp.registry.manage",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Node/session state efêmero e pareado; Somente metadados de segredo; valores nunca em prompt/log",
+  "event_topics": "agent.tool.mcp.manager.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; writes policy-gated; evidência obrigatória; sem autoaprovação. Device input/screen exige autorização de sessão e logging. Credenciais via broker/leases; nunca em prompt.",
+  "references": "oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão | OpenClaw — gateway/nodes/channels; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 63
+  }
+}

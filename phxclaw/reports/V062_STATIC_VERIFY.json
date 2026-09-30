@@ -1,0 +1,167 @@
+{
+  "version": "0.62.0",
+  "pass": 32,
+  "fail": 0,
+  "checks": [
+    {
+      "name": "canonical version",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "26 canonical sprints",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "no planned/active canonical state",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sprint descriptors synced",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "promotion crate member",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "workspace version 0.62.0",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "rust token active_refutation",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "rust token stale_evidence",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "rust token unresolved_contradictions",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "rust token HumanApprovalRequired",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "rust token knowledge.promote",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "rust token knowledge.revoke",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "graph exposes node lookup",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "graph append-only rejection version",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sql token knowledge_promotion_requests",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sql token knowledge_promotion_evidence",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sql token knowledge_promotion_reviews",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sql token knowledge_promotion_receipts",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sql token knowledge_revocations",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sql token validate_knowledge_promotion_review",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sql token candidate promotion requires v0.62 Knowledge Promotion Gate receipt",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sql token FORCE ROW LEVEL SECURITY",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sql token current_tenant_uuid",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "governed human DB gate",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "refute DB gate",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "contradiction DB gate",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "json schema knowledge-promotion-request-v062.schema.json",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "json schema project-canonical-state-v062.schema.json",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "0062 migration exists",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "no false release-ready README.md",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "no false release-ready QUALITY_STATUS.md",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "no false release-ready BUILD_REPORT.md",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "base_url",
+    "allow_loopback_http",
+    "pull_requires_approval"
+  ],
+  "properties": {
+    "base_url": {
+      "type": "string",
+      "minLength": 1
+    },
+    "allow_loopback_http": {
+      "type": "boolean"
+    },
+    "allow_remote_https": {
+      "type": "boolean"
+    },
+    "pull_requires_approval": {
+      "type": "boolean"
+    }
+  },
+  "additionalProperties": true
+}

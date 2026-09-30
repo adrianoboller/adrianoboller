@@ -1,0 +1,25 @@
+{
+  "version": "0.28.0",
+  "base_total": 290,
+  "added": [
+    "update.channel.plan",
+    "update.channel.verify",
+    "update.fleet.cohort.assign",
+    "update.fleet.rollout.start",
+    "update.fleet.rollout.advance",
+    "update.fleet.rollout.pause",
+    "update.fleet.rollout.resume",
+    "update.fleet.rollback.authorize",
+    "update.fleet.rollback.request",
+    "update.fleet.health.record",
+    "update.fleet.health.evaluate",
+    "update.node.transaction.plan",
+    "update.node.transaction.verify",
+    "update.component.order.resolve",
+    "update.sequence.guard",
+    "update.fleet.state.verify",
+    "update.database.contract.approve",
+    "update.database.contract.verify"
+  ],
+  "projected_total": 308
+}

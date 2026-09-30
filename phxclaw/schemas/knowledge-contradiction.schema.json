@@ -1,0 +1,17 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://phxclaw.local/schemas/knowledge-contradiction.schema.json",
+  "title":"PhxClaw Knowledge Contradiction",
+  "type":"object",
+  "additionalProperties":false,
+  "required":["contradiction_uuid","tenant_uuid","left_claim_uuid","right_claim_uuid","subject_key","predicate_key","detected_at"],
+  "properties":{
+    "contradiction_uuid":{"type":"string","format":"uuid"},
+    "tenant_uuid":{"type":"string","format":"uuid"},
+    "left_claim_uuid":{"type":"string","format":"uuid"},
+    "right_claim_uuid":{"type":"string","format":"uuid"},
+    "subject_key":{"type":"string","minLength":1,"maxLength":500},
+    "predicate_key":{"type":"string","minLength":1,"maxLength":300},
+    "detected_at":{"type":"string","format":"date-time"}
+  }
+}

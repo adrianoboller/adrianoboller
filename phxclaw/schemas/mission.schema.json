@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phxclaw.dev/schemas/mission.schema.json",
+  "title": "PhxClaw Mission",
+  "type": "object",
+  "required": ["uuid", "correlation_uuid", "objective", "project_root", "base_ref", "isolate_worktree", "require_clean_start", "steps", "created_at"],
+  "properties": {
+    "uuid": {"type": "string", "format": "uuid"},
+    "correlation_uuid": {"type": "string", "format": "uuid"},
+    "objective": {"type": "string", "minLength": 1},
+    "project_root": {"type": "string", "minLength": 1},
+    "base_ref": {"type": "string", "minLength": 1},
+    "isolate_worktree": {"type": "boolean"},
+    "require_clean_start": {"type": "boolean"},
+    "created_at": {"type": "string", "format": "date-time"},
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["uuid", "name", "agent_capability", "action", "required"],
+        "properties": {
+          "uuid": {"type": "string", "format": "uuid"},
+          "name": {"type": "string", "minLength": 1},
+          "agent_capability": {"type": "string", "minLength": 1},
+          "required": {"type": "boolean"},
+          "action": {"type": "object", "required": ["kind"]}
+        }
+      }
+    }
+  }
+}

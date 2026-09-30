@@ -1,0 +1,205 @@
+{
+  "version": "0.67.0",
+  "checks": [
+    {
+      "name": "workspace_version_067",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "bpm_struct_PersistentTokenLease",
+      "pass": true,
+      "detail": "struct PersistentTokenLease"
+    },
+    {
+      "name": "bpm_struct_ReplayState",
+      "pass": true,
+      "detail": "struct ReplayState"
+    },
+    {
+      "name": "bpm_struct_BpmStore",
+      "pass": true,
+      "detail": "struct BpmStore"
+    },
+    {
+      "name": "bpm_FOR_UPDATE_SKIP_LOCKED",
+      "pass": true,
+      "detail": "FOR UPDATE SKIP LOCKED"
+    },
+    {
+      "name": "bpm_fencing_token",
+      "pass": true,
+      "detail": "fencing_token"
+    },
+    {
+      "name": "bpm_token_advanced",
+      "pass": true,
+      "detail": "token_advanced"
+    },
+    {
+      "name": "bpm_token_completed",
+      "pass": true,
+      "detail": "token_completed"
+    },
+    {
+      "name": "bpm_bpm_checkpoints",
+      "pass": true,
+      "detail": "bpm_checkpoints"
+    },
+    {
+      "name": "bpm_state_leased_AND_lease_until_clock_timestamp_",
+      "pass": true,
+      "detail": "state='leased' AND lease_until<=clock_timestamp()"
+    },
+    {
+      "name": "bpm_query_one_SELECT_set_config",
+      "pass": true,
+      "detail": "query_one(\"SELECT set_config"
+    },
+    {
+      "name": "no_execute_select_set_config",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "bpmn_js_pin",
+      "pass": true,
+      "detail": "{'bpmn-js': '18.30.1'}"
+    },
+    {
+      "name": "exists_apps_phxclaw-bpm-editor_index_html",
+      "pass": true,
+      "detail": "apps/phxclaw-bpm-editor/index.html"
+    },
+    {
+      "name": "exists_apps_phxclaw-bpm-editor_editor_js",
+      "pass": true,
+      "detail": "apps/phxclaw-bpm-editor/editor.js"
+    },
+    {
+      "name": "exists_apps_phxclaw-bpm-editor_editor_css",
+      "pass": true,
+      "detail": "apps/phxclaw-bpm-editor/editor.css"
+    },
+    {
+      "name": "exists_apps_phxclaw-bpm-editor_scripts_stage-bpmn-js_mjs",
+      "pass": true,
+      "detail": "apps/phxclaw-bpm-editor/scripts/stage-bpmn-js.mjs"
+    },
+    {
+      "name": "node_check_editor.js",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "node_check_stage-bpmn-js.mjs",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_bpm_process_definitions",
+      "pass": true,
+      "detail": "bpm_process_definitions"
+    },
+    {
+      "name": "sql_bpm_instances_v2",
+      "pass": true,
+      "detail": "bpm_instances_v2"
+    },
+    {
+      "name": "sql_bpm_tokens_v2",
+      "pass": true,
+      "detail": "bpm_tokens_v2"
+    },
+    {
+      "name": "sql_bpm_events_v2",
+      "pass": true,
+      "detail": "bpm_events_v2"
+    },
+    {
+      "name": "sql_bpm_checkpoints",
+      "pass": true,
+      "detail": "bpm_checkpoints"
+    },
+    {
+      "name": "sql_FORCE_ROW_LEVEL_SECURITY",
+      "pass": true,
+      "detail": "FORCE ROW LEVEL SECURITY"
+    },
+    {
+      "name": "sql_tenant_isolation_v067",
+      "pass": true,
+      "detail": "tenant_isolation_v067"
+    },
+    {
+      "name": "sql_bpm_event_append_only",
+      "pass": true,
+      "detail": "bpm_event_append_only"
+    },
+    {
+      "name": "canonical_067",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "f13_source_ready",
+      "pass": true,
+      "detail": "{'id': 'F13', 'title': 'Mindset + BPM', 'implementation_state': 'source_ready', 'verification_state': 'static_verified', 'gaps': []}"
+    },
+    {
+      "name": "f13_static_verified",
+      "pass": true,
+      "detail": "{'id': 'F13', 'title': 'Mindset + BPM', 'implementation_state': 'source_ready', 'verification_state': 'static_verified', 'gaps': []}"
+    },
+    {
+      "name": "f13_gaps_empty",
+      "pass": true,
+      "detail": "[]"
+    },
+    {
+      "name": "sprints_26",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sprint_refs_067",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "exists_config_bpm-runtime_v067_json",
+      "pass": true,
+      "detail": "config/bpm-runtime.v067.json"
+    },
+    {
+      "name": "exists_schemas_bpm-runtime-v067_schema_json",
+      "pass": true,
+      "detail": "schemas/bpm-runtime-v067.schema.json"
+    },
+    {
+      "name": "exists_docs_ADR-0067-bpm-editor-crash-safe-replay_md",
+      "pass": true,
+      "detail": "docs/ADR-0067-bpm-editor-crash-safe-replay.md"
+    },
+    {
+      "name": "exists_docs_BPM_RUNTIME_V067_md",
+      "pass": true,
+      "detail": "docs/BPM_RUNTIME_V067.md"
+    },
+    {
+      "name": "exists_tests_postgres_v067_bpm_replay_e2e_sql",
+      "pass": true,
+      "detail": "tests/postgres/v067_bpm_replay_e2e.sql"
+    },
+    {
+      "name": "exists_reports_V067_NATIVE_GAPS_json",
+      "pass": true,
+      "detail": "reports/V067_NATIVE_GAPS.json"
+    }
+  ],
+  "pass": 39,
+  "fail": 0,
+  "native_rust": false,
+  "native_postgresql": false,
+  "npm_install": false
+}

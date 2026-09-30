@@ -1,0 +1,22 @@
+{
+  "version": "0.23.0",
+  "base_expected": 232,
+  "delta_count": 14,
+  "expected_after_merge": 246,
+  "capabilities": [
+    {"capability_uuid":"01a0e809-1406-7687-9e11-7a38f78fe5b3","name":"knowledge.graph.node.write","default_permission":"deny","audited":true},
+    {"capability_uuid":"01a0e809-1406-7b9c-a4b0-12c3bf241b2f","name":"knowledge.graph.edge.write","default_permission":"deny","audited":true},
+    {"capability_uuid":"01a0e809-1406-759e-9596-6ecff4559ad0","name":"knowledge.evidence.bind","default_permission":"deny","audited":true},
+    {"capability_uuid":"01a0e809-1406-74a4-82cd-45bdfdd50afa","name":"knowledge.claim.evaluate","default_permission":"deny","audited":true},
+    {"capability_uuid":"01a0e809-1406-7d34-8f37-a7867e154759","name":"knowledge.claim.promote","default_permission":"deny","audited":true},
+    {"capability_uuid":"01a0e809-1406-77e5-9e33-c42f31b678c2","name":"knowledge.contradiction.detect","default_permission":"deny","audited":true},
+    {"capability_uuid":"01a0e809-1406-7f2a-8492-3cb6046c914f","name":"knowledge.contradiction.resolve","default_permission":"deny","audited":true},
+    {"capability_uuid":"01a0e809-1406-787c-a3bc-a19ce38d2f53","name":"knowledge.graph.traverse","default_permission":"deny","audited":true},
+    {"capability_uuid":"01a0e809-1406-7bde-a3a9-3ecf8c8b31f0","name":"knowledge.graph.impact","default_permission":"deny","audited":true},
+    {"capability_uuid":"01a0e809-1406-7f06-9c2d-f651fd7a3a98","name":"knowledge.snapshot.create","default_permission":"deny","audited":true},
+    {"capability_uuid":"01a0e809-1406-77ee-affd-5e46af79a0dc","name":"knowledge.snapshot.verify","default_permission":"deny","audited":true},
+    {"capability_uuid":"01a0e809-1406-7279-b4ff-f5b3bd06a6ef","name":"knowledge.provenance.trace","default_permission":"deny","audited":true},
+    {"capability_uuid":"01a0e809-1406-7a0b-969a-e8251ffb9acb","name":"knowledge.lineage.explain","default_permission":"deny","audited":true},
+    {"capability_uuid":"01a0e809-1406-7a41-a709-9a0ac9d2a0b9","name":"knowledge.graph.export","default_permission":"deny","audited":true}
+  ]
+}

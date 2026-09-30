@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phxclaw.local/schemas/engineering-workflow-v037.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "workflow_uuid",
+    "tenant_uuid",
+    "objective",
+    "source_state_sha256",
+    "policy_sha256",
+    "skill_catalog_sha256",
+    "risk",
+    "max_attempts_per_stage"
+  ],
+  "properties": {
+    "workflow_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tenant_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "objective": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_state_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{64}$"
+    },
+    "policy_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{64}$"
+    },
+    "skill_catalog_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{64}$"
+    },
+    "risk": {
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ]
+    },
+    "max_attempts_per_stage": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10
+    },
+    "allowed_skill_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    }
+  }
+}

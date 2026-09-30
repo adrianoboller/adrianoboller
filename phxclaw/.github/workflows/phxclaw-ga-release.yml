@@ -1,0 +1,175 @@
+name: PhxClaw Multi-Platform GA
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_version:
+        description: "Verified RC version, e.g. 0.27.0-rc.1"
+        required: true
+      ga_version:
+        description: "Stable SemVer, e.g. 0.27.0"
+        required: true
+      rc_url:
+        description: "HTTPS URL to verified v0.26 RC archive"
+        required: true
+      rc_sha256:
+        description: "Expected RC archive SHA-256"
+        required: true
+      previous_version:
+        description: "Previous GA version; blank only for first release"
+        required: false
+        default: ""
+      sequence:
+        description: "New monotonic updater sequence"
+        required: true
+      previous_sequence:
+        description: "Previous updater sequence; 0 only for first release"
+        required: true
+        default: "0"
+      base_url:
+        description: "HTTPS release artifact base URL"
+        required: true
+      first_release:
+        description: "Skip N/N-1 only for first GA release"
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform: linux
+            architecture: x86_64
+            artifact: target/release/phxclaw
+            fresh_var: PHXCLAW_LINUX_FRESH_INSTALL_CMD
+            upgrade_var: PHXCLAW_LINUX_UPGRADE_N_MINUS_1_CMD
+            rollback_var: PHXCLAW_LINUX_ROLLBACK_RESTORE_CMD
+          - runner: windows-2025
+            platform: windows
+            architecture: x86_64
+            artifact: target/release/phxclaw.exe
+            fresh_var: PHXCLAW_WINDOWS_FRESH_INSTALL_CMD
+            upgrade_var: PHXCLAW_WINDOWS_UPGRADE_N_MINUS_1_CMD
+            rollback_var: PHXCLAW_WINDOWS_ROLLBACK_RESTORE_CMD
+          - runner: macos-15
+            platform: macos
+            architecture: aarch64
+            artifact: dist/macos/PhxClaw.dmg
+            fresh_var: PHXCLAW_MACOS_FRESH_INSTALL_CMD
+            upgrade_var: PHXCLAW_MACOS_UPGRADE_N_MINUS_1_CMD
+            rollback_var: PHXCLAW_MACOS_ROLLBACK_RESTORE_CMD
+    runs-on: ${{ matrix.runner }}
+    env:
+      PHXCLAW_RELEASE_SIGN_CMD: ${{ secrets.PHXCLAW_RELEASE_SIGN_CMD }}
+      PHXCLAW_PLATFORM_SIGN_CMD: ${{ matrix.platform == 'windows' && secrets.PHXCLAW_WINDOWS_SIGN_CMD || (matrix.platform == 'macos' && secrets.PHXCLAW_MACOS_SIGN_CMD || '') }}
+      PHXCLAW_FRESH_INSTALL_CMD: ${{ vars[matrix.fresh_var] }}
+      PHXCLAW_UPGRADE_N_MINUS_1_CMD: ${{ vars[matrix.upgrade_var] }}
+      PHXCLAW_ROLLBACK_RESTORE_CMD: ${{ vars[matrix.rollback_var] }}
+      PHXCLAW_WINDOWS_SIGNER_THUMBPRINTS: ${{ vars.PHXCLAW_WINDOWS_SIGNER_THUMBPRINTS }}
+      PHXCLAW_MACOS_TEAM_IDS: ${{ vars.PHXCLAW_MACOS_TEAM_IDS }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with: { components: "rustfmt, clippy" }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.13" }
+      - run: python -m pip install --disable-pip-version-check -r requirements-ga.txt
+      - name: Fetch and verify exact RC
+        shell: bash
+        run: |
+          curl --fail --location --proto '=https' --tlsv1.2 "${{ inputs.rc_url }}" -o input-rc.zip
+          echo "${{ inputs.rc_sha256 }}  input-rc.zip" | sha256sum --check --strict
+          python tools/verify_release_candidate.py input-rc.zip --trust-store config/trusted-release-signers.v025.json > rc-verified.json
+          python - <<'PY'
+          import json,sys
+          o=json.load(open('rc-verified.json'))
+          if o['candidate_version'] != '${{ inputs.candidate_version }}': sys.exit('RC candidate version mismatch')
+          PY
+      - name: Native release build
+        run: cargo build --locked --release --workspace
+      - name: Platform signing hook
+        shell: python
+        run: |
+          import os, subprocess
+          c=os.environ.get("PHXCLAW_PLATFORM_SIGN_CMD","").strip()
+          if c:
+              raise SystemExit(subprocess.call(c,shell=True))
+      - name: Native platform gates
+        shell: bash
+        run: |
+          EXTRA=()
+          if [[ "${{ inputs.first_release }}" == "true" ]]; then
+            EXTRA+=(--first-release)
+          else
+            test -n "${{ inputs.previous_version }}" || { echo "previous_version required"; exit 4; }
+            EXTRA+=(--previous-version "${{ inputs.previous_version }}")
+          fi
+          python tools/run_platform_gates.py . \
+            --artifact "${{ matrix.artifact }}" --rc input-rc.zip \
+            --candidate-version "${{ inputs.candidate_version }}" \
+            --platform "${{ matrix.platform }}" --architecture "${{ matrix.architecture }}" \
+            --evidence-dir "reports/platform-${{ matrix.platform }}" "${EXTRA[@]}"
+      - name: Sign platform evidence
+        run: python tools/create_platform_evidence.py . --artifact "${{ matrix.artifact }}" --evidence-dir "reports/platform-${{ matrix.platform }}" --output "platform-${{ matrix.platform }}.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: platform-${{ matrix.platform }}
+          path: |
+            platform-${{ matrix.platform }}.json
+            ${{ matrix.artifact }}
+            reports/platform-${{ matrix.platform }}/
+          if-no-files-found: error
+
+  ga:
+    needs: qualify
+    runs-on: ubuntu-24.04
+    env:
+      PHXCLAW_RELEASE_SIGN_CMD: ${{ secrets.PHXCLAW_RELEASE_SIGN_CMD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.13" }
+      - run: python -m pip install --disable-pip-version-check -r requirements-ga.txt
+      - uses: actions/download-artifact@v4
+        with: { path: downloaded }
+      - name: Fetch and verify exact RC
+        run: |
+          curl --fail --location --proto '=https' --tlsv1.2 "${{ inputs.rc_url }}" -o input-rc.zip
+          echo "${{ inputs.rc_sha256 }}  input-rc.zip" | sha256sum --check --strict
+          python tools/verify_release_candidate.py input-rc.zip --trust-store config/trusted-release-signers.v025.json
+      - name: Aggregate platform evidence
+        shell: bash
+        run: |
+          EXTRA=()
+          if [[ "${{ inputs.first_release }}" == "true" ]]; then EXTRA+=(--first-release); fi
+          python tools/aggregate_platform_qualifications.py . \
+            --evidence downloaded/platform-linux/platform-linux.json \
+            --evidence downloaded/platform-windows/platform-windows.json \
+            --evidence downloaded/platform-macos/platform-macos.json \
+            --output-dir reports/multi-platform "${EXTRA[@]}"
+      - name: Build and independently verify signed GA
+        shell: bash
+        run: |
+          LINUX_ART="$(find downloaded/platform-linux -type f -name phxclaw | head -1)"
+          WIN_ART="$(find downloaded/platform-windows -type f -name phxclaw.exe | head -1)"
+          MAC_ART="$(find downloaded/platform-macos -type f -name phxclaw | head -1)"
+          python tools/build_ga_release.py . --rc input-rc.zip \
+            --multi-platform reports/multi-platform/multi-platform-qualification.json \
+            --compatibility-matrix reports/multi-platform/compatibility-n-n1.json \
+            --version "${{ inputs.ga_version }}" --sequence "${{ inputs.sequence }}" --previous-sequence "${{ inputs.previous_sequence }}" \
+            --base-url "${{ inputs.base_url }}" \
+            --artifact "linux:x86_64=${LINUX_ART}" --artifact "windows:x86_64=${WIN_ART}" --artifact "macos:aarch64=${MAC_ART}" \
+            --output "dist/ga/${{ inputs.ga_version }}"
+          python tools/verify_ga_release.py . "dist/ga/${{ inputs.ga_version }}/PhxClaw-${{ inputs.ga_version }}-GA.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PhxClaw-${{ inputs.ga_version }}-GA
+          path: dist/ga/${{ inputs.ga_version }}/
+          if-no-files-found: error

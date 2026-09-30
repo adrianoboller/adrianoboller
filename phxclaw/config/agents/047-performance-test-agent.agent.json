@@ -1,0 +1,71 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f62f-7ac4-bbff-acbe3d50586d",
+  "agent_id": 47,
+  "name": "Performance Test Agent",
+  "macroarea": "Qualidade & Provas",
+  "nucleus": "Qualidade",
+  "role_type": "Subagente de teste",
+  "mission": "Mede performance independentemente de quem implementou.",
+  "responsibilities": "Executa benchmarks padronizados, compara baseline/release, identifica regressão e variância.",
+  "resources": "Criterion, hyperfine, telemetry, benchmark DB.",
+  "authorized_actions": "Rodar perf suite e gate thresholds.",
+  "trigger": "Mudança em hot path/release.",
+  "declared_dependencies": "Benchmark definitions.",
+  "resolved_agent_dependencies": [
+    {
+      "uuid": "01a0e473-f60c-7cce-90e3-302e5f81e9fa",
+      "name": "Jackson"
+    }
+  ],
+  "deliverables": "Performance Gate.",
+  "limits": "Não altera benchmark para fazer resultado parecer melhor.",
+  "next_gate": "Jackson/QA2.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "determinístico",
+    "ollama"
+  ],
+  "criticality": "Alta",
+  "modules": [
+    "F17 Checkpoint + Rollback"
+  ],
+  "capabilities": [
+    "checkpoint.read",
+    "quality.performance.test"
+  ],
+  "permissions": [
+    {
+      "name": "checkpoint.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "quality.performance.test",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Checkpoint manifest + hashes + rollback evidence",
+  "event_topics": "agent.performance.test.agent.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; writes policy-gated; evidência obrigatória; sem autoaprovação.",
+  "references": "Hermes — patterns; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 48
+  }
+}

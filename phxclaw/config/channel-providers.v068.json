@@ -1,0 +1,11 @@
+{
+  "version": "0.68.0",
+  "providers": {
+    "telegram": {"adapter":"phxclaw.telegram.rest","origin":"https://api.telegram.org","send_scope":"channel:telegram:send","probe_scope":"channel:telegram:probe"},
+    "discord": {"adapter":"phxclaw.discord.rest","origin":"https://discord.com","send_scope":"channel:discord:send","probe_scope":"channel:discord:probe"},
+    "slack": {"adapter":"phxclaw.slack.web-api","origin":"https://slack.com","send_scope":"channel:slack:send","probe_scope":"channel:slack:probe"},
+    "whatsapp": {"adapter":"phxclaw.whatsapp.cloud-api","origin":"https://graph.facebook.com","send_scope":"channel:whatsapp:send","probe_scope":"channel:whatsapp:probe","graph_version":"configurable"},
+    "teams": {"adapter":"phxclaw.teams.graph","origin":"https://graph.microsoft.com","send_scope":"channel:teams:send","probe_scope":"channel:teams:probe","auth":"delegated-token-required-for-normal-send"}
+  },
+  "security": {"secrets":"secret-broker-leases-only","http":"deny","origin_allowlist":"required","errors":"redacted"}
+}

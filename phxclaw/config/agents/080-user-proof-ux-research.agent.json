@@ -1,0 +1,133 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f650-745e-af5f-d56782a190b1",
+  "agent_id": 80,
+  "name": "User Proof / UX Research",
+  "macroarea": "Creative Studio & UX",
+  "nucleus": "UX",
+  "role_type": "Agente de prova de usabilidade",
+  "mission": "Verifica se uma pessoa consegue atingir o objetivo com clareza, rapidez e poucos erros.",
+  "responsibilities": "Executa jornadas, mede passos/cliques/tempo/erros, coleta fricções e compara alternativas.",
+  "resources": "UI build, telemetry, scripted personas, Playwright quando útil.",
+  "authorized_actions": "Executar user proof e emitir findings.",
+  "trigger": "Feature UX pronta após Accessibility.",
+  "declared_dependencies": "Objetivo de usuário e build.",
+  "resolved_agent_dependencies": [],
+  "deliverables": "Usability Proof.",
+  "limits": "Não substitui OPA técnico nem decide estética sozinho.",
+  "next_gate": "QA/Creative Studio.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "claude",
+    "ollama"
+  ],
+  "criticality": "Alta",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F18 MCP + LSP Runtime",
+    "F19 Repo Intelligence / Tree-sitter",
+    "F24 Auto-learning + Skill Evolution",
+    "F25 Knowledge / Evidence Graph"
+  ],
+  "capabilities": [
+    "context.compile",
+    "evidence.read",
+    "knowledge.read",
+    "lsp.read",
+    "mcp.invoke",
+    "memory.read",
+    "repo.read",
+    "skill.candidate.propose",
+    "skill.read",
+    "tree_sitter.analyze",
+    "ux.prove"
+  ],
+  "permissions": [
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "evidence.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "knowledge.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "lsp.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "mcp.invoke",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "repo.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.candidate.propose",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "tree_sitter.analyze",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "ux.prove",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Candidate Skill → Hypothesis → OPA/QA → Registry; Knowledge/Evidence Graph com proveniência",
+  "event_topics": "agent.user.proof.ux.research.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; writes policy-gated; evidência obrigatória; sem autoaprovação.",
+  "references": "Architect (MIT) — AST/Tree-sitter/Repo Intelligence | oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 81
+  }
+}

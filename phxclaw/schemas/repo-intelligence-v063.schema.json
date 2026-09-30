@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phxclaw.local/schemas/repo-intelligence-v063.schema.json",
+  "type": "object",
+  "required": [
+    "inventory",
+    "parses",
+    "symbols",
+    "calls",
+    "dependencies",
+    "hotspots"
+  ],
+  "properties": {
+    "inventory": {
+      "type": "object"
+    },
+    "parses": {
+      "type": "array"
+    },
+    "symbols": {
+      "type": "array"
+    },
+    "calls": {
+      "type": "array"
+    },
+    "dependencies": {
+      "type": "array"
+    },
+    "hotspots": {
+      "type": "array"
+    }
+  }
+}

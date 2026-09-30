@@ -1,0 +1,58 @@
+{
+  "version": "0.29.0",
+  "mode": "fail_closed",
+  "authoritative_identity": "f22_device_nodes",
+  "authoritative_fleet_state": "postgresql",
+  "max_fanout": 5000,
+  "max_parallel": 100,
+  "stale_after_seconds": 45,
+  "offline_after_seconds": 90,
+  "recovery_grace_seconds": 120,
+  "selector": {
+    "regions_max": 64,
+    "groups_any_max": 64,
+    "tags_all_max": 64,
+    "exclude_tags_max": 64,
+    "freeze_membership_before_side_effects": true
+  },
+  "remote_commands": {
+    "arbitrary_shell": false,
+    "use_f22_device_command_contract": true,
+    "require_declared_device_capability": true,
+    "raw_secrets": false,
+    "max_ttl_seconds": 600,
+    "high_critical_require_approval": true
+  },
+  "maintenance": {
+    "max_window_seconds": 86400,
+    "requires_reason": true,
+    "protected_actions_require_approval": true
+  },
+  "recovery": {
+    "sequence_regression": "quarantine",
+    "fencing_mismatch": "reject",
+    "offline_rejoin_state": "recovering",
+    "require_reconciliation_before_active": true
+  },
+  "rollout_scope": {
+    "compose_with_v028_cohort": true,
+    "membership_snapshot_required": true,
+    "membership_drift": "reject"
+  },
+  "control_lease": {
+    "postgresql_cas_fencing": true,
+    "single_active_controller_per_fleet": true
+  },
+  "audit": {
+    "event_bus": true,
+    "evidence_ledger": true,
+    "append_only_events": true
+  },
+  "protected_capabilities": [
+    "device.system.exec",
+    "device.system.power",
+    "device.files.write",
+    "device.network.change",
+    "device.secret.rotate"
+  ]
+}

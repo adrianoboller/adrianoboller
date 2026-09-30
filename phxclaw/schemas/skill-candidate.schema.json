@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PhxClaw Skill Candidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "candidate_uuid",
+    "tenant_uuid",
+    "skill_uuid",
+    "target_namespace",
+    "boundary",
+    "artifact_sha256_hex",
+    "manifest_sha256_hex",
+    "source_state_sha256_hex",
+    "risk",
+    "behavior_change",
+    "reversible",
+    "created_at"
+  ],
+  "properties": {
+    "candidate_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tenant_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "skill_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "base_release_uuid": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid"
+    },
+    "target_namespace": {
+      "type": "string",
+      "pattern": "^skills\\.[A-Za-z0-9_.-]+$",
+      "maxLength": 200
+    },
+    "boundary": {
+      "const": "skill_plugin"
+    },
+    "artifact_sha256_hex": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{64}$"
+    },
+    "manifest_sha256_hex": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{64}$"
+    },
+    "source_state_sha256_hex": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{64}$"
+    },
+    "risk": {
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ]
+    },
+    "behavior_change": {
+      "type": "boolean"
+    },
+    "reversible": {
+      "type": "boolean"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

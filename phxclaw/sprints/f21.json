@@ -1,0 +1,52 @@
+{
+  "uuid": "01a0e5ed-9673-7055-b22b-bc4ec1fab66a",
+  "code": "F21",
+  "title": "Channel Gateway",
+  "goal": "Adicionar canais como plugins privados e governados, com identidade, sess\u00e3o, policy e auditoria.",
+  "status": "review",
+  "tasks": [
+    {
+      "uuid": "01a0e5ed-9673-7531-bc19-305f10336023",
+      "title": "Channel contract",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e5ed-9673-7aa7-a4f4-689da705612d",
+      "title": "Identity/session router",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e5ed-9673-7656-9b45-32201b7523ac",
+      "title": "Telegram adapter",
+      "status": "done"
+    },
+    {
+      "uuid": "01a0e5ed-9673-7327-b4c6-ca78311e14ab",
+      "title": "WhatsApp adapter",
+      "status": "done"
+    },
+    {
+      "uuid": "01a0e5ed-9673-7de5-b1f9-23ded069a46f",
+      "title": "Slack/Discord/Teams adapters",
+      "status": "done"
+    }
+  ],
+  "definition_of_done": [
+    "Contratos e schemas versionados",
+    "Implementa\u00e7\u00e3o integrada ao Event Bus e Evidence Ledger",
+    "Testes unit\u00e1rios e integra\u00e7\u00e3o sem mocks para os caminhos obrigat\u00f3rios",
+    "Documenta\u00e7\u00e3o, observabilidade, seguran\u00e7a e rollback definidos",
+    "Gate E2E obrigat\u00f3rio antes de marcar done"
+  ],
+  "notes": [
+    "Provider-neutral gateway plus Telegram/Discord/Slack/WhatsApp/Teams source adapters are implemented.",
+    "All credentials are Secret Broker leases and origins are allowlisted HTTPS by default.",
+    "Credentialed real-provider E2E remains a release gate, not an implementation gap."
+  ],
+  "state": "review",
+  "canonical_project_version": "0.68.0",
+  "canonical_state_ref": "config/project-state-canonical.v068.json",
+  "implementation_state": "source_ready",
+  "verification_state": "static_verified",
+  "open_gaps": []
+}

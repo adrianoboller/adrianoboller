@@ -1,0 +1,29 @@
+{
+  "version": "0.33.0",
+  "default_mode": "shadow",
+  "store_raw_prompts": false,
+  "store_raw_outputs": false,
+  "fixture_evidence_can_promote": false,
+  "base_router_authority": "v0.31",
+  "profile_promotion_authority": "v0.32",
+  "challenger_traffic_basis_points": 500,
+  "min_paired_samples": 50,
+  "required_consecutive_wins": 3,
+  "thresholds": {
+    "min_quality_improvement_basis_points": 100,
+    "min_success_improvement_basis_points": 0,
+    "max_quality_regression_basis_points": 200,
+    "max_success_regression_basis_points": 100,
+    "max_latency_regression_basis_points": 1500,
+    "max_cost_regression_basis_points": 2000
+  },
+  "production_rules": [
+    "arena_never_broadens_base_eligibility",
+    "only_promoted_profiles_are_valid_baselines",
+    "fixtures_never_promote",
+    "safety_violation_pauses_or_falls_back",
+    "promotion_is_recommendation_only",
+    "v032_promotion_gate_remains_authority",
+    "stale_profiles_are_ineligible"
+  ]
+}

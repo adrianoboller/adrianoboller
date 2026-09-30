@@ -1,0 +1,42 @@
+{
+  "suite": "PhxClaw v0.42 package checks",
+  "pass": 7,
+  "fail": 0,
+  "checks": [
+    {
+      "name": "json_parse",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_legacy_brand",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "skill_manifests_79",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "schemas_158",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "ui_exists",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "migration_exists",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_obvious_secrets",
+      "pass": true,
+      "detail": ""
+    }
+  ]
+}

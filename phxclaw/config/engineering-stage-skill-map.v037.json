@@ -1,0 +1,157 @@
+{
+  "version": "0.37.0",
+  "requires_skill_catalog": "0.36.x",
+  "catalog_count_expected": 20,
+  "principle": "task appears -> choose governed skill(s) for research/build/explain/deliver; core mutation remains Mission Runtime authority",
+  "stages": [
+    {
+      "stage": "intake",
+      "mutates_workspace": false,
+      "skill_ids": [],
+      "core": [
+        "Research Core",
+        "Hypothesis Core",
+        "Mission Runtime"
+      ],
+      "required_evidence": [
+        "objective_hash",
+        "source_state_sha256"
+      ]
+    },
+    {
+      "stage": "research",
+      "mutates_workspace": false,
+      "skill_ids": [
+        "qmd_search",
+        "agent_reach",
+        "last_30_days",
+        "deep_research",
+        "user_research"
+      ],
+      "selection": "local qmd first when relevant; network skills only when policy allows",
+      "required_evidence": [
+        "research_sources",
+        "freshness",
+        "provenance"
+      ]
+    },
+    {
+      "stage": "code_map",
+      "mutates_workspace": false,
+      "skill_ids": [
+        "graphify",
+        "understand_anything",
+        "qmd_search"
+      ],
+      "selection": "prefer deterministic/local mapping before generative interpretation",
+      "required_evidence": [
+        "source_state_sha256",
+        "map_sha256"
+      ]
+    },
+    {
+      "stage": "hypothesis",
+      "mutates_workspace": false,
+      "skill_ids": [
+        "tech_debt_audit",
+        "ponytail",
+        "napkin",
+        "deep_research"
+      ],
+      "selection": "Hypothesis Core owns hypothesis state; skills provide observations only",
+      "required_evidence": [
+        "hypothesis_uuid",
+        "supporting_evidence",
+        "falsification_criteria"
+      ]
+    },
+    {
+      "stage": "plan",
+      "mutates_workspace": false,
+      "skill_ids": [
+        "ponytail",
+        "tech_debt_audit",
+        "graphify"
+      ],
+      "selection": "minimal reversible plan preferred",
+      "required_evidence": [
+        "plan_sha256",
+        "risk_class",
+        "rollback_strategy"
+      ]
+    },
+    {
+      "stage": "implement",
+      "mutates_workspace": true,
+      "skill_ids": [
+        "ui_ux_pro_max"
+      ],
+      "selection": "external skill is advisory; Mission Runtime performs typed workspace actions in isolated worktree",
+      "required_evidence": [
+        "checkpoint_uuid",
+        "workspace_before_sha256",
+        "diff_sha256"
+      ]
+    },
+    {
+      "stage": "test",
+      "mutates_workspace": false,
+      "skill_ids": [
+        "tech_debt_audit",
+        "understand_anything"
+      ],
+      "selection": "deterministic tests before model review",
+      "required_evidence": [
+        "test_run_uuid",
+        "test_results_sha256"
+      ]
+    },
+    {
+      "stage": "review",
+      "mutates_workspace": false,
+      "skill_ids": [
+        "ponytail",
+        "tech_debt_audit",
+        "understand_anything"
+      ],
+      "selection": "independent reviewer required when policy marks stage critical",
+      "required_evidence": [
+        "review_uuid",
+        "reviewer_identity",
+        "findings_sha256"
+      ]
+    },
+    {
+      "stage": "explain",
+      "mutates_workspace": false,
+      "skill_ids": [
+        "visual_explainer",
+        "fireworks_tech_graph",
+        "frontend_slides",
+        "scroll_world",
+        "ui_ux_pro_max"
+      ],
+      "selection": "choose artifact skill by deliverable type; facts remain evidence-linked",
+      "required_evidence": [
+        "explanation_sha256",
+        "evidence_links"
+      ]
+    },
+    {
+      "stage": "deliver",
+      "mutates_workspace": false,
+      "skill_ids": [
+        "humanizer",
+        "claude_seo",
+        "video_shotcraft",
+        "ffmpeg_skill",
+        "auto_research_sleep"
+      ],
+      "selection": "refine only; any external publish/schedule remains a separately approved side effect",
+      "required_evidence": [
+        "delivery_intent_sha256",
+        "artifact_sha256"
+      ]
+    }
+  ]
+}

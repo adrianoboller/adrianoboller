@@ -1,0 +1,8 @@
+{
+  "project": "PhxClaw",
+  "version": "0.63.0",
+  "feature": "Native Repo Intelligence / Tree-sitter",
+  "migration": "0063_repo_intelligence_tree_sitter.sql",
+  "native_cargo": false,
+  "native_postgres": false
+}

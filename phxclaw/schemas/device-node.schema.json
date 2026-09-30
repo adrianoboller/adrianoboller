@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "phoenix://schemas/device-node-v1",
+  "title": "PhxClaw Device Node v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "node_uuid",
+    "tenant_uuid",
+    "display_name",
+    "state",
+    "public_key_ed25519_b64",
+    "capabilities"
+  ],
+  "properties": {
+    "node_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tenant_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "display_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "state": {
+      "enum": [
+        "pending",
+        "enrolled",
+        "active",
+        "degraded",
+        "quarantined",
+        "revoked"
+      ]
+    },
+    "public_key_ed25519_b64": {
+      "type": "string",
+      "minLength": 40,
+      "maxLength": 60
+    },
+    "capabilities": {
+      "type": "array",
+      "maxItems": 512,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "version"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        }
+      }
+    },
+    "last_seen_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    }
+  }
+}

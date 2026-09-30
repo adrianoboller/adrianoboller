@@ -1,0 +1,49 @@
+{
+  "uuid": "0199a5f1-002d-702d-8abc-00000000002d",
+  "code": "F07",
+  "title": "Model Gateway",
+  "goal": "Criar gateway de modelos desacoplado com providers via plugins, roteamento e orçamento.",
+  "status": "review",
+  "tasks": [
+    {
+      "uuid": "0199a5f1-002e-702e-8abc-00000000002e",
+      "title": "Provider contract",
+      "status": "review"
+    },
+    {
+      "uuid": "0199a5f1-002f-702f-8abc-00000000002f",
+      "title": "Model Router interface",
+      "status": "review"
+    },
+    {
+      "uuid": "0199a5f1-0030-7030-8abc-000000000030",
+      "title": "Budget policy",
+      "status": "review"
+    },
+    {
+      "uuid": "0199a5f1-0031-7031-8abc-000000000031",
+      "title": "Fallback policy",
+      "status": "review"
+    },
+    {
+      "uuid": "0199a5f1-0032-7032-8abc-000000000032",
+      "title": "Telemetry",
+      "status": "review"
+    }
+  ],
+  "definition_of_done": [
+    "providers plugáveis",
+    "roteamento determinístico",
+    "budget enforcement",
+    "telemetria"
+  ],
+  "notes": [
+    "Implementado em Rust: provider contract, router determinístico, budget reservation/settlement, fallback chain, política local/restricted e telemetria. Provider local assinado incluído para validação sem rede."
+  ],
+  "state": "review",
+  "canonical_project_version": "0.67.0",
+  "canonical_state_ref": "config/project-state-canonical.v067.json",
+  "implementation_state": "source_ready",
+  "verification_state": "static_verified",
+  "open_gaps": []
+}

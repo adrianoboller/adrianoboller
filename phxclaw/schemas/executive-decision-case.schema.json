@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Executive Decision Case",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "case_uuid",
+    "tenant_uuid",
+    "project_uuid",
+    "source_state_sha256",
+    "trigger_kind",
+    "trigger_evidence_sha256",
+    "created_at",
+    "expires_at"
+  ],
+  "properties": {
+    "case_uuid": {
+      "type": "string"
+    },
+    "tenant_uuid": {
+      "type": "string"
+    },
+    "project_uuid": {
+      "type": "string"
+    },
+    "source_state_sha256": {
+      "type": "string"
+    },
+    "trigger_kind": {
+      "type": "string"
+    },
+    "trigger_evidence_sha256": {
+      "type": "string"
+    },
+    "created_at": {
+      "type": "string"
+    },
+    "expires_at": {
+      "type": "string"
+    }
+  }
+}

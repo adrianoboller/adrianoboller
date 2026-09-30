@@ -1,0 +1,23 @@
+{
+  "version": "0.21.0",
+  "service_uuid": "01a0e7b3-b661-7289-8e12-1affa23f87d2",
+  "protocol_version": 1,
+  "authoritative_store": "postgresql",
+  "max_clock_skew_seconds": 60,
+  "max_command_ttl_seconds": 600,
+  "heartbeat_interval_seconds": 20,
+  "offline_after_seconds": 75,
+  "require_ed25519": true,
+  "deny_quarantined": true,
+  "deny_revoked": true,
+  "replay_reservation_required": true,
+  "secret_transport": "handles_only",
+  "approval_required_risk": [
+    "high",
+    "critical"
+  ],
+  "release": {
+    "allow_in_memory_replay_guard": false,
+    "allow_mock_device_provider": false
+  }
+}

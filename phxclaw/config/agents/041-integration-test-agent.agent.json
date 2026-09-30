@@ -1,0 +1,109 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f629-769b-bb50-4313738edb4d",
+  "agent_id": 41,
+  "name": "Integration Test Agent",
+  "macroarea": "Qualidade & Provas",
+  "nucleus": "Qualidade",
+  "role_type": "Subagente de teste",
+  "mission": "Valida contratos e interação entre módulos/serviços.",
+  "responsibilities": "Testa DB, APIs, plugins, event/command pipelines e limites entre crates com ambiente controlado.",
+  "resources": "test DB, containers, service mocks, contract tests.",
+  "authorized_actions": "Montar ambiente e executar integração.",
+  "trigger": "Mudança cross-module.",
+  "declared_dependencies": "Contracts + builds.",
+  "resolved_agent_dependencies": [],
+  "deliverables": "Integration report.",
+  "limits": "Não usa mocks onde o objetivo exige integração real.",
+  "next_gate": "QA2.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "codex"
+  ],
+  "criticality": "Alta",
+  "modules": [
+    "F16 Scheduler + Background Jobs",
+    "F18 MCP + LSP Runtime",
+    "F21 Channel Gateway"
+  ],
+  "capabilities": [
+    "channel.read",
+    "job.read",
+    "lsp.read",
+    "mcp.invoke",
+    "quality.integration.test",
+    "workspace.command.run",
+    "workspace.gate.run",
+    "workspace.snapshot"
+  ],
+  "permissions": [
+    {
+      "name": "channel.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "job.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "lsp.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "mcp.invoke",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "quality.integration.test",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "workspace.command.run",
+      "scopes": [
+        "*"
+      ]
+    },
+    {
+      "name": "workspace.gate.run",
+      "scopes": [
+        "*"
+      ]
+    },
+    {
+      "name": "workspace.snapshot",
+      "scopes": [
+        "*"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Job UUIDv7 + lease/heartbeat/resume em PostgreSQL; Session/channel state sem credencial no contexto",
+  "event_topics": "agent.integration.test.agent.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; writes policy-gated; evidência obrigatória; sem autoaprovação.",
+  "references": "oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão | OpenClaw — gateway/nodes/channels; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 42
+  }
+}

@@ -1,0 +1,18 @@
+[package]
+name = "phxclaw-mcp-lsp-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+phxclaw-types = { path = "../phxclaw-types" }
+phxclaw-evidence-ledger = { path = "../phxclaw-evidence-ledger" }
+phxclaw-event-bus = { path = "../phxclaw-event-bus" }
+futures-util.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+url.workspace = true
+uuid.workspace = true

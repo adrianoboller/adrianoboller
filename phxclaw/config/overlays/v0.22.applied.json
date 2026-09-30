@@ -1,0 +1,61 @@
+{
+  "version": "0.22.0",
+  "base": "0.21.0",
+  "repair": "0021 repaired d3b6907449e5 -> 2437f257e2b3",
+  "rust_repair": "F22 Rust repaired 9dde41ea1ddf -> 9ad2b4bd17f9",
+  "copied": [
+    {
+      "path": "config/skill-evolution.v022.json",
+      "sha256": "c1fdee405b789ebea8641f4076d112830cd2c937629d4f10661e97c0d22eb73f"
+    },
+    {
+      "path": "sprints/F24_SKILL_EVOLUTION_V022.json",
+      "sha256": "8e668aa9528550eb5697f603ce33a769863e6f0ee39b50e40c725876c0787f4f"
+    },
+    {
+      "path": "capabilities/V022_CAPABILITIES_DELTA.json",
+      "sha256": "e0377ebe9fb5cc4ae889f78e994f88805303c7797b3c5735880b40f8a888467f"
+    },
+    {
+      "path": "schemas/skill-evidence.schema.json",
+      "sha256": "723861607b9dd4e9b97b55c6440a18727a673264442e7bd632933d48c1081851"
+    },
+    {
+      "path": "schemas/skill-promotion.schema.json",
+      "sha256": "3c51dae10effe93df255f3f07218eea7102357ca127370cd60d8cfc546d87df8"
+    },
+    {
+      "path": "schemas/learning-observation.schema.json",
+      "sha256": "4f886105c829d0ae781ccdbfadd55eafc60f419defcdd203510784431c8a7594"
+    },
+    {
+      "path": "schemas/skill-candidate.schema.json",
+      "sha256": "ed29810c9240fb74d9430b377b05ad0f036f1d7d3fe0061bc4943038e1526183"
+    },
+    {
+      "path": "migrations/0022_skill_evolution.sql",
+      "sha256": "2c135a905b19d84d4093e60fd648b8b2f784758579fefbe5063717d57b5a36d5"
+    },
+    {
+      "path": "docs/F24_AUTO_LEARNING_SKILL_EVOLUTION.md",
+      "sha256": "a5fd95e512dbb341400575f96f28d380313192a3010c6c147997fba327169ece"
+    },
+    {
+      "path": "docs/F22_RLS_REPAIR_V022.md",
+      "sha256": "788c7e64fdcea57ec6bc8afd45bb61b78162bd6262fedd254b284bcf812e08f4"
+    },
+    {
+      "path": "docs/PROJECT_STATUS_V022.md",
+      "sha256": "3acb910ff4b273e3c42e193d8c22ea6ebaf9d7e10681b84e0829f0ebd0f24df3"
+    },
+    {
+      "path": "crates/phxclaw-skill-evolution/Cargo.toml",
+      "sha256": "ce1581f458952c91fdfa86ce6e0817bd4741897c92fc01355c0d15da6f26e537"
+    },
+    {
+      "path": "crates/phxclaw-skill-evolution/src/lib.rs",
+      "sha256": "b0b4ca8835cf0d0d5ada6ebc5dc5194b5866b5cd80d2428f91e6f14ca7cb273b"
+    }
+  ],
+  "workspace": "added F24 crate to workspace"
+}

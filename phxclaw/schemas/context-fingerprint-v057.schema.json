@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "language",
+    "framework",
+    "module",
+    "project_type",
+    "task_class",
+    "risk",
+    "environment",
+    "dependency_fingerprint",
+    "source_state_sha256"
+  ],
+  "properties": {
+    "language": {
+      "type": "string"
+    },
+    "framework": {
+      "type": "string"
+    },
+    "module": {
+      "type": "string"
+    },
+    "project_type": {
+      "type": "string"
+    },
+    "task_class": {
+      "type": "string"
+    },
+    "environment": {
+      "type": "string"
+    },
+    "dependency_fingerprint": {
+      "type": "string"
+    },
+    "source_state_sha256": {
+      "type": "string"
+    },
+    "risk": {
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ]
+    }
+  },
+  "additionalProperties": false
+}

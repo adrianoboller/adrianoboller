@@ -1,0 +1,131 @@
+{
+  "version": "0.20.0",
+  "extension_points": [
+    {
+      "name": "capability.provider",
+      "contract_version": "1.0.0",
+      "execution": "process",
+      "description": "Fornece uma ou mais capabilities tipadas ao Extension Host.",
+      "required_host_capabilities": [
+        "plugin.extension.invoke"
+      ],
+      "stability": "stable"
+    },
+    {
+      "name": "event.subscriber",
+      "contract_version": "1.0.0",
+      "execution": "process",
+      "description": "Consome eventos filtrados do Event Bus sem acesso direto ao barramento interno.",
+      "required_host_capabilities": [
+        "event.live.subscribe"
+      ],
+      "stability": "beta"
+    },
+    {
+      "name": "model.provider",
+      "contract_version": "1.0.0",
+      "execution": "process",
+      "description": "Integra providers/modelos ao Model Gateway.",
+      "required_host_capabilities": [],
+      "stability": "stable"
+    },
+    {
+      "name": "compiler.frontend",
+      "contract_version": "1.0.0",
+      "execution": "process",
+      "description": "Adiciona parser/frontend de linguagem que produz IR contratada.",
+      "required_host_capabilities": [],
+      "stability": "beta"
+    },
+    {
+      "name": "storage.provider",
+      "contract_version": "1.0.0",
+      "execution": "process",
+      "description": "Adiciona backend de armazenamento sob contratos do core.",
+      "required_host_capabilities": [],
+      "stability": "beta"
+    },
+    {
+      "name": "data.provider",
+      "contract_version": "1.0.0",
+      "execution": "process",
+      "description": "Fornece dados externos tipados e governados.",
+      "required_host_capabilities": [],
+      "stability": "beta"
+    },
+    {
+      "name": "channel.provider",
+      "contract_version": "1.0.0",
+      "execution": "process",
+      "description": "Adiciona canais como Telegram, WhatsApp, Slack, Discord, Teams ou e-mail.",
+      "required_host_capabilities": [],
+      "stability": "experimental"
+    },
+    {
+      "name": "device.node",
+      "contract_version": "1.0.0",
+      "execution": "host-mediated",
+      "description": "Expõe um nó Windows/Linux/Mobile por capabilities e pairing seguro.",
+      "required_host_capabilities": [
+        "desktop.host.status"
+      ],
+      "stability": "experimental"
+    },
+    {
+      "name": "ui.panel",
+      "contract_version": "1.0.0",
+      "execution": "declarative",
+      "description": "Adiciona painel ao Command Center sem acesso implícito ao host.",
+      "required_host_capabilities": [],
+      "stability": "experimental"
+    },
+    {
+      "name": "knowledge.source",
+      "contract_version": "1.0.0",
+      "execution": "process",
+      "description": "Adiciona uma fonte de conhecimento ao Source Registry.",
+      "required_host_capabilities": [
+        "knowledge.source_registry.read"
+      ],
+      "stability": "beta"
+    },
+    {
+      "name": "skill.provider",
+      "contract_version": "1.0.0",
+      "execution": "process",
+      "description": "Distribui ou resolve skills versionadas e assinadas.",
+      "required_host_capabilities": [
+        "skill.resolve.lazy"
+      ],
+      "stability": "experimental"
+    },
+    {
+      "name": "context.enricher",
+      "contract_version": "1.0.0",
+      "execution": "process",
+      "description": "Produz candidatos de contexto sem contornar as políticas do Context Compiler.",
+      "required_host_capabilities": [
+        "context.compile"
+      ],
+      "stability": "experimental"
+    },
+    {
+      "name": "evidence.sink",
+      "contract_version": "1.0.0",
+      "execution": "process",
+      "description": "Replica evidências para um destino externo preservando hash/correlação.",
+      "required_host_capabilities": [
+        "evidence.ledger.append"
+      ],
+      "stability": "experimental"
+    },
+    {
+      "name": "release.gate",
+      "contract_version": "1.0.0",
+      "execution": "process",
+      "description": "Adiciona gates determinísticos de release/QA.",
+      "required_host_capabilities": [],
+      "stability": "experimental"
+    }
+  ]
+}

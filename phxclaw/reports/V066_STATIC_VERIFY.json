@@ -1,0 +1,254 @@
+{
+  "version": "0.66.0",
+  "checks": [
+    {
+      "name": "workspace_version_066",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "members_exist",
+      "pass": true,
+      "detail": "111"
+    },
+    {
+      "name": "toml_parse",
+      "pass": true,
+      "detail": "[]"
+    },
+    {
+      "name": "json_parse",
+      "pass": true,
+      "detail": "[]"
+    },
+    {
+      "name": "research_ResearchPersistenceContext",
+      "pass": true,
+      "detail": "ResearchPersistenceContext"
+    },
+    {
+      "name": "research_persist_record",
+      "pass": true,
+      "detail": "persist_record"
+    },
+    {
+      "name": "research_research_records",
+      "pass": true,
+      "detail": "research_records"
+    },
+    {
+      "name": "research_research_record_evidence",
+      "pass": true,
+      "detail": "research_record_evidence"
+    },
+    {
+      "name": "research_link_knowledge_node",
+      "pass": true,
+      "detail": "link_knowledge_node"
+    },
+    {
+      "name": "research_source_state_sha256",
+      "pass": true,
+      "detail": "source_state_sha256"
+    },
+    {
+      "name": "research_query_one_SELECT_set_config",
+      "pass": true,
+      "detail": "query_one(\"SELECT set_config"
+    },
+    {
+      "name": "hypothesis_HypothesisPersistenceContext",
+      "pass": true,
+      "detail": "HypothesisPersistenceContext"
+    },
+    {
+      "name": "hypothesis_record_decision",
+      "pass": true,
+      "detail": "record_decision"
+    },
+    {
+      "name": "hypothesis_valid_transition",
+      "pass": true,
+      "detail": "valid_transition"
+    },
+    {
+      "name": "hypothesis_start_experiment",
+      "pass": true,
+      "detail": "start_experiment"
+    },
+    {
+      "name": "hypothesis_finish_experiment",
+      "pass": true,
+      "detail": "finish_experiment"
+    },
+    {
+      "name": "hypothesis_hypothesis_decisions",
+      "pass": true,
+      "detail": "hypothesis_decisions"
+    },
+    {
+      "name": "hypothesis_experiment_runs",
+      "pass": true,
+      "detail": "experiment_runs"
+    },
+    {
+      "name": "hypothesis_link_knowledge_node",
+      "pass": true,
+      "detail": "link_knowledge_node"
+    },
+    {
+      "name": "hypothesis_query_one_SELECT_set_config",
+      "pass": true,
+      "detail": "query_one(\"SELECT set_config"
+    },
+    {
+      "name": "no_execute_select_set_config",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_research_records",
+      "pass": true,
+      "detail": "research_records"
+    },
+    {
+      "name": "sql_research_record_evidence",
+      "pass": true,
+      "detail": "research_record_evidence"
+    },
+    {
+      "name": "sql_research_graph_links",
+      "pass": true,
+      "detail": "research_graph_links"
+    },
+    {
+      "name": "sql_hypothesis_records",
+      "pass": true,
+      "detail": "hypothesis_records"
+    },
+    {
+      "name": "sql_experiment_plans",
+      "pass": true,
+      "detail": "experiment_plans"
+    },
+    {
+      "name": "sql_hypothesis_evidence",
+      "pass": true,
+      "detail": "hypothesis_evidence"
+    },
+    {
+      "name": "sql_hypothesis_decisions",
+      "pass": true,
+      "detail": "hypothesis_decisions"
+    },
+    {
+      "name": "sql_experiment_runs",
+      "pass": true,
+      "detail": "experiment_runs"
+    },
+    {
+      "name": "sql_experiment_run_evidence",
+      "pass": true,
+      "detail": "experiment_run_evidence"
+    },
+    {
+      "name": "sql_hypothesis_graph_links",
+      "pass": true,
+      "detail": "hypothesis_graph_links"
+    },
+    {
+      "name": "sql_FORCE_ROW_LEVEL_SECURITY",
+      "pass": true,
+      "detail": "FORCE ROW LEVEL SECURITY"
+    },
+    {
+      "name": "sql_tenant_isolation_v066",
+      "pass": true,
+      "detail": "tenant_isolation_v066"
+    },
+    {
+      "name": "sql_reject_research_hypothesis_delete",
+      "pass": true,
+      "detail": "reject_research_hypothesis_delete"
+    },
+    {
+      "name": "canonical_066",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sprint_26",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "F01_source_ready",
+      "pass": true,
+      "detail": "{'id': 'F01', 'title': 'Research Core', 'implementation_state': 'source_ready', 'verification_state': 'static_verified', 'gaps': []}"
+    },
+    {
+      "name": "F01_static_verified",
+      "pass": true,
+      "detail": "{'id': 'F01', 'title': 'Research Core', 'implementation_state': 'source_ready', 'verification_state': 'static_verified', 'gaps': []}"
+    },
+    {
+      "name": "F01_gaps_empty",
+      "pass": true,
+      "detail": "[]"
+    },
+    {
+      "name": "F02_source_ready",
+      "pass": true,
+      "detail": "{'id': 'F02', 'title': 'Hypothesis Core', 'implementation_state': 'source_ready', 'verification_state': 'static_verified', 'gaps': []}"
+    },
+    {
+      "name": "F02_static_verified",
+      "pass": true,
+      "detail": "{'id': 'F02', 'title': 'Hypothesis Core', 'implementation_state': 'source_ready', 'verification_state': 'static_verified', 'gaps': []}"
+    },
+    {
+      "name": "F02_gaps_empty",
+      "pass": true,
+      "detail": "[]"
+    },
+    {
+      "name": "sprint_refs_066",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "exists_config_research-hypothesis-persistence_v066_json",
+      "pass": true,
+      "detail": "config/research-hypothesis-persistence.v066.json"
+    },
+    {
+      "name": "exists_schemas_research-hypothesis-persistence-v066_schema_json",
+      "pass": true,
+      "detail": "schemas/research-hypothesis-persistence-v066.schema.json"
+    },
+    {
+      "name": "exists_docs_ADR-0066-research-hypothesis-persistence_md",
+      "pass": true,
+      "detail": "docs/ADR-0066-research-hypothesis-persistence.md"
+    },
+    {
+      "name": "exists_docs_RESEARCH_HYPOTHESIS_PERSISTENCE_V066_md",
+      "pass": true,
+      "detail": "docs/RESEARCH_HYPOTHESIS_PERSISTENCE_V066.md"
+    },
+    {
+      "name": "exists_tests_postgres_v066_research_hypothesis_e2e_sql",
+      "pass": true,
+      "detail": "tests/postgres/v066_research_hypothesis_e2e.sql"
+    },
+    {
+      "name": "exists_reports_V066_NATIVE_GAPS_json",
+      "pass": true,
+      "detail": "reports/V066_NATIVE_GAPS.json"
+    }
+  ],
+  "pass": 49,
+  "fail": 0,
+  "native_rust": false,
+  "native_postgresql": false
+}

@@ -1,0 +1,84 @@
+{
+  "manifest_version": "1.2.0",
+  "uuid": "01a0e46d-ea09-7866-95e3-562e8dd480c1",
+  "name": "com.phxclaw.model-provider.local-deterministic",
+  "version": "0.5.0",
+  "kind": "model_provider",
+  "description": "Provider local determinístico de desenvolvimento para validar o Model Gateway sem rede nem chaves externas.",
+  "core_api": ">=0.5.0, <0.6.0",
+  "entrypoint": {
+    "type": "process",
+    "value": "plugins/builtin/artifacts/local-model-provider"
+  },
+  "dependencies": [],
+  "capabilities": [
+    "model.chat",
+    "model.code",
+    "model.reasoning"
+  ],
+  "permissions": [],
+  "lifecycle": {
+    "install": "local-model.install",
+    "enable": "local-model.enable",
+    "disable": "local-model.disable",
+    "uninstall": "local-model.uninstall",
+    "health": "local-model.health"
+  },
+  "contracts": {
+    "input_schema": "schemas/model-request.schema.json",
+    "output_schema": "schemas/model-response.schema.json"
+  },
+  "sandbox": {
+    "network": "deny",
+    "network_allowlist": [],
+    "read_only_paths": [],
+    "write_paths": [],
+    "environment_allowlist": [],
+    "timeout_ms": 5000,
+    "memory_mb": 256,
+    "cpu_quota_percent": 25
+  },
+  "integrity": {
+    "artifact": "plugins/builtin/artifacts/local-model-provider",
+    "hash_algorithm": "sha256",
+    "digest": "79d1a9ba09cb9d6b60feb499b099352b07a9d320fe7b93b22ea1604d38ce8035",
+    "signature_algorithm": "ed25519",
+    "signature": "htpdz3WbGE2qy/Y2HERNoVg+1tkLKfw5zejZ8yNBDeYUCbv/gRWUTqvNQFWcLIOyo72EYYUHNl9uYS0mOxMkDw==",
+    "signer": "phxclaw-dev-root-2026-v05r2",
+    "provenance": "PhxClaw Core Bootstrap v0.5 / signed development artifact"
+  },
+  "tests": [
+    {
+      "name": "local-provider-health",
+      "command": "plugins/builtin/artifacts/local-model-provider --health",
+      "required": true
+    }
+  ],
+  "rollback": {
+    "strategy": "disable_and_restore_previous",
+    "steps": [
+      "disable provider",
+      "restore previous signed manifest and artifact",
+      "re-run integrity and health gates"
+    ]
+  },
+  "model_provider": {
+    "display_name": "PhxClaw Local Deterministic Provider",
+    "priority": 25,
+    "transport": "process",
+    "models": [
+      {
+        "id": "phoenix-local-stub-v1",
+        "capabilities": [
+          "model.chat",
+          "model.code",
+          "model.reasoning"
+        ],
+        "context_window": 32768,
+        "input_microunits_per_million_tokens": 0,
+        "output_microunits_per_million_tokens": 0,
+        "local": true
+      }
+    ]
+  }
+}

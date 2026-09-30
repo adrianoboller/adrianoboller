@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phxclaw.local/schemas/desktop-action.schema.json",
+  "title": "PhxClaw Desktop Action v1",
+  "type": "object",
+  "required": ["protocol", "uuid", "actor", "capability", "action", "requested_at"],
+  "properties": {
+    "protocol": {"const": "phxclaw-desktop-v1"},
+    "uuid": {"type": "string", "format": "uuid"},
+    "correlation_uuid": {"type": ["string", "null"], "format": "uuid"},
+    "actor": {"type": "string", "minLength": 1},
+    "capability": {"type": "string", "minLength": 1},
+    "requested_at": {"type": "string", "format": "date-time"},
+    "action": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "enum": ["launch_application", "execute_command", "input", "capture_screen", "web_view"]
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

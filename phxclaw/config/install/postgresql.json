@@ -1,0 +1,38 @@
+{
+  "schema_version": "1.0.0",
+  "production": {
+    "major": 18,
+    "version": "18.6",
+    "windows_bundle_build": "18.6-4",
+    "windows_bundle_url": "https://get.enterprisedb.com/postgresql/postgresql-18.6-4-windows-x64-binaries.zip",
+    "windows_bundle_sha256": "1DF55002AFE95B945D934C078B13E82C1603FA546731E511D068AA983B4EAD28",
+    "linux_package": "postgresql-18",
+    "macos_formula": "postgresql@18"
+  },
+  "preview": {
+    "major": 19,
+    "allowed_for_production": false,
+    "reason": "PostgreSQL 19 is still beta in September 2026"
+  },
+  "managed_cluster": {
+    "port": 55432,
+    "listen_addresses": ["127.0.0.1", "::1"],
+    "database": "phxclaw",
+    "owner_role": "phxclaw_owner",
+    "application_role": "phxclaw_app",
+    "auth": "scram-sha-256",
+    "encoding": "UTF8",
+    "data_dir": "var/runtime/postgresql/data",
+    "runtime_dir": "var/runtime/postgresql",
+    "log_dir": "var/log/postgresql"
+  },
+  "policy": {
+    "prefer_existing_supported_server": true,
+    "minimum_supported_major": 16,
+    "bind_loopback_only": true,
+    "passwords_in_argv": false,
+    "require_hash_verification_for_downloads": true,
+    "run_migrations_transactionally": true,
+    "allow_postgresql_19_preview": false
+  }
+}

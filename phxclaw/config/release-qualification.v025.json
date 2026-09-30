@@ -1,0 +1,100 @@
+{
+  "version": "0.25.0",
+  "base": "0.24.0",
+  "mode": "fail_closed",
+  "projected_capability_total": 266,
+  "canonical_source_state": {
+    "algorithm": "sha256-tree-v1",
+    "exclude_prefixes": [
+      ".git/",
+      "target/",
+      "var/",
+      "dist/",
+      "reports/release-qualification/"
+    ],
+    "exclude_suffixes": [
+      ".log",
+      ".tmp",
+      ".pyc"
+    ],
+    "exclude_names": [
+      ".DS_Store"
+    ]
+  },
+  "required_gates": [
+    "workspace_static",
+    "json_schema_static",
+    "migration_static",
+    "license_sbom",
+    "supply_chain",
+    "cargo_fmt",
+    "cargo_check",
+    "cargo_test",
+    "cargo_clippy",
+    "postgres_migration",
+    "rls_cross_tenant",
+    "skill_knowledge_lineage",
+    "mission_e2e",
+    "tauri_native_e2e",
+    "provider_model_e2e"
+  ],
+  "native_commands": {
+    "cargo_fmt": [
+      "cargo",
+      "fmt",
+      "--all",
+      "--",
+      "--check"
+    ],
+    "cargo_check": [
+      "cargo",
+      "check",
+      "--locked",
+      "--workspace",
+      "--all-targets"
+    ],
+    "cargo_test": [
+      "cargo",
+      "test",
+      "--locked",
+      "--workspace",
+      "--all-targets"
+    ],
+    "cargo_clippy": [
+      "cargo",
+      "clippy",
+      "--locked",
+      "--workspace",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ]
+  },
+  "external_gate_env": {
+    "mission_e2e": "PHXCLAW_MISSION_E2E_CMD",
+    "tauri_native_e2e": "PHXCLAW_TAURI_E2E_CMD",
+    "provider_model_e2e": "PHXCLAW_PROVIDER_MODEL_E2E_CMD"
+  },
+  "postgres": {
+    "database_url_env": "PHXCLAW_TEST_DATABASE_URL",
+    "required_client": "psql",
+    "on_error_stop": true,
+    "run_all_migrations": true,
+    "rls_test": "tests/postgres/v024_rls_cross_tenant.sql",
+    "attestation_test": "tests/postgres/v025_release_attestation.sql",
+    "rls_database_url_env": "PHXCLAW_RLS_DATABASE_URL",
+    "passwords_in_argv": false,
+    "rls_role_must_be_non_superuser": true
+  },
+  "attestation": {
+    "schema": "schemas/release-attestation-v025.schema.json",
+    "unsigned_allowed_for_qualification": true,
+    "signed_required_for_public_release": true,
+    "sign_command_env": "PHXCLAW_RELEASE_SIGN_CMD",
+    "trusted_signers_file": "config/trusted-release-signers.v025.json",
+    "signer_protocol": "sign canonical payload file and return JSON {signer_key_id,signature_b64}",
+    "signature_algorithm": "ed25519",
+    "verify_command_env": "PHXCLAW_RELEASE_VERIFY_CMD"
+  }
+}

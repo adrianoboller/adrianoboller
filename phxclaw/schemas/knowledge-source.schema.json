@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phxclaw.local/schemas/knowledge-source.schema.json",
+  "title": "PhxClaw Knowledge Source",
+  "type": "object",
+  "required": [
+    "uuid",
+    "name",
+    "ecosystem",
+    "mode",
+    "authoritative",
+    "local_root",
+    "sync_strategy",
+    "allowed_agents",
+    "required_capabilities",
+    "endpoints"
+  ],
+  "properties": {
+    "uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "name": {
+      "type": "string"
+    },
+    "ecosystem": {
+      "type": "string"
+    },
+    "mode": {
+      "enum": [
+        "online",
+        "offline",
+        "hybrid"
+      ]
+    },
+    "authoritative": {
+      "type": "boolean"
+    },
+    "license_note": {
+      "type": "string"
+    },
+    "local_root": {
+      "type": "string"
+    },
+    "sync_strategy": {
+      "type": "string"
+    },
+    "verified_version": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "allowed_agents": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "required_capabilities": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "endpoints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "url",
+          "authority",
+          "purpose",
+          "offline_relative_path"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "authority": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": "string"
+          },
+          "offline_relative_path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "last_synced_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "reuse_state": {
+      "enum": [
+        "reference_only",
+        "quarantined_reference_only",
+        "verified_mit_source",
+        "clean_room_reference"
+      ]
+    }
+  },
+  "additionalProperties": false
+}

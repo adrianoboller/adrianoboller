@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "What-if Scenario",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "scenario_uuid",
+    "case_uuid",
+    "tenant_uuid",
+    "project_uuid",
+    "source_state_sha256",
+    "kind",
+    "impact",
+    "scenario_sha256"
+  ],
+  "properties": {
+    "scenario_uuid": {
+      "type": "string"
+    },
+    "case_uuid": {
+      "type": "string"
+    },
+    "tenant_uuid": {
+      "type": "string"
+    },
+    "project_uuid": {
+      "type": "string"
+    },
+    "source_state_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "kind": {
+      "type": "string"
+    },
+    "impact": {
+      "type": "object"
+    },
+    "scenario_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

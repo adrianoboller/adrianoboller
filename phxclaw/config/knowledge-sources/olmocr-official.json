@@ -1,0 +1,51 @@
+{
+  "uuid": "01a0e5b0-b5cc-7c1d-b548-7d848cdd1752",
+  "name": "olmocr-official",
+  "ecosystem": "AllenAI olmOCR",
+  "mode": "online",
+  "authoritative": true,
+  "license_note": "The upstream allenai/olmocr repository declares Apache-2.0. PhxClaw does not vendor upstream model weights or Python package in this bootstrap.",
+  "local_root": "knowledge/offline/olmocr",
+  "sync_strategy": "Pin an upstream release/commit, archive README/docs/LICENSE/pyproject and model metadata, hash each file, then register the snapshot before offline use.",
+  "verified_version": null,
+  "allowed_agents": [
+    "Research Agent",
+    "Documentador",
+    "Research Lead / Pesquisador PDCA",
+    "Perséfone"
+  ],
+  "required_capabilities": [
+    "knowledge.olmocr.read"
+  ],
+  "endpoints": [
+    {
+      "name": "repository",
+      "url": "https://github.com/allenai/olmocr",
+      "authority": "Allen Institute for AI / official GitHub repository",
+      "purpose": "Source, releases, README, issues and implementation reference",
+      "offline_relative_path": null
+    },
+    {
+      "name": "readme",
+      "url": "https://github.com/allenai/olmocr/blob/main/README.md",
+      "authority": "Allen Institute for AI / official GitHub repository",
+      "purpose": "Installation, usage, supported input types and inference modes",
+      "offline_relative_path": null
+    },
+    {
+      "name": "pyproject",
+      "url": "https://github.com/allenai/olmocr/blob/main/pyproject.toml",
+      "authority": "Allen Institute for AI / official GitHub repository",
+      "purpose": "Python version, dependencies, extras and package metadata",
+      "offline_relative_path": null
+    },
+    {
+      "name": "model",
+      "url": "https://huggingface.co/allenai/olmOCR-2-7B-1025-FP8",
+      "authority": "Allen Institute for AI / official model page",
+      "purpose": "Default v2 model metadata and weights reference",
+      "offline_relative_path": null
+    }
+  ],
+  "last_synced_at": null
+}

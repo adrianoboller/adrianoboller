@@ -1,0 +1,510 @@
+{
+  "capabilities": [
+    {
+      "name": "reconciliation.plan.snapshot",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7624-8b9d-a77a31f55cdb",
+      "version": "0.55.0"
+    },
+    {
+      "name": "reconciliation.plan.version",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7e02-81c4-b5dfc6c57e64",
+      "version": "0.55.0"
+    },
+    {
+      "name": "reconciliation.plan.lineage",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-780f-92b6-28d08274149d",
+      "version": "0.55.0"
+    },
+    {
+      "name": "reconciliation.plan.compare",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-70b9-a1fc-2013ae262723",
+      "version": "0.55.0"
+    },
+    {
+      "name": "reconciliation.plan.baseline",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7feb-98f4-eeb79bb46c50",
+      "version": "0.55.0"
+    },
+    {
+      "name": "reconciliation.plan.delta",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-79fc-900b-2acf9ff134d4",
+      "version": "0.55.0"
+    },
+    {
+      "name": "reconciliation.plan.variance",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-70b9-9e27-9e2cc9e4f0c0",
+      "version": "0.55.0"
+    },
+    {
+      "name": "reconciliation.plan.schedule",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7773-ba26-e1037701a89b",
+      "version": "0.55.0"
+    },
+    {
+      "name": "reconciliation.plan.cost",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7c7d-a2eb-5d5278254835",
+      "version": "0.55.0"
+    },
+    {
+      "name": "reconciliation.plan.resource",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-76a2-92ca-57c917762398",
+      "version": "0.55.0"
+    },
+    {
+      "name": "reconciliation.plan.agent",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7af6-86a2-f96bbc951fb7",
+      "version": "0.55.0"
+    },
+    {
+      "name": "reconciliation.plan.model",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-75c0-8dac-bdcf15c94feb",
+      "version": "0.55.0"
+    },
+    {
+      "name": "reconciliation.plan.skill",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7a8a-b2d9-42d77cde889d",
+      "version": "0.55.0"
+    },
+    {
+      "name": "reconciliation.plan.dependency",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7e3d-a0e0-52a92a157167",
+      "version": "0.55.0"
+    },
+    {
+      "name": "reconciliation.plan.milestone",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7d0d-9a19-1895b9723c0b",
+      "version": "0.55.0"
+    },
+    {
+      "name": "reconciliation.plan.scope",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7405-905f-dab8b0f55c1d",
+      "version": "0.55.0"
+    },
+    {
+      "name": "reconciliation.plan.quality",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7665-b776-4e9cb1979592",
+      "version": "0.55.0"
+    },
+    {
+      "name": "reconciliation.plan.budget",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7d79-903f-235853579d2c",
+      "version": "0.55.0"
+    },
+    {
+      "name": "reconciliation.plan.health",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7994-aa79-81cf51efbf7a",
+      "version": "0.55.0"
+    },
+    {
+      "name": "reconciliation.plan.explain",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7059-97ad-6a4163791971",
+      "version": "0.55.0"
+    },
+    {
+      "name": "execution.ledger.fact.append",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7449-a539-1121724b3bcc",
+      "version": "0.55.0"
+    },
+    {
+      "name": "execution.ledger.fact.validate",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7179-837b-1a85caaf1801",
+      "version": "0.55.0"
+    },
+    {
+      "name": "execution.ledger.fact.idempotency",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7e27-906f-bef4c43c2288",
+      "version": "0.55.0"
+    },
+    {
+      "name": "execution.ledger.fact.sequence",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7249-9e19-e253554ee0f8",
+      "version": "0.55.0"
+    },
+    {
+      "name": "execution.ledger.fact.fencing",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-75a5-8c73-8f0d3e144e15",
+      "version": "0.55.0"
+    },
+    {
+      "name": "execution.ledger.fact.replay",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7a21-8bbb-d58a4a926202",
+      "version": "0.55.0"
+    },
+    {
+      "name": "execution.ledger.fact.query",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7ade-831d-ca4f4183bfc7",
+      "version": "0.55.0"
+    },
+    {
+      "name": "execution.ledger.fact.timeline",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7919-8f3c-680e7bb38cfa",
+      "version": "0.55.0"
+    },
+    {
+      "name": "execution.ledger.fact.hash",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7cbb-8f98-033975887598",
+      "version": "0.55.0"
+    },
+    {
+      "name": "execution.ledger.fact.source_state",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7914-9385-8efa329c515b",
+      "version": "0.55.0"
+    },
+    {
+      "name": "execution.ledger.event.append",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7023-a6c6-fb6490befadc",
+      "version": "0.55.0"
+    },
+    {
+      "name": "execution.ledger.event.correlate",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7253-9e03-a382fd42e13b",
+      "version": "0.55.0"
+    },
+    {
+      "name": "execution.ledger.event.causation",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-762a-ad86-e0f7b1ef2025",
+      "version": "0.55.0"
+    },
+    {
+      "name": "execution.ledger.event.reason",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7738-948b-8555178d658e",
+      "version": "0.55.0"
+    },
+    {
+      "name": "execution.ledger.checkpoint.create",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-76de-b1b7-9ee5685fddf3",
+      "version": "0.55.0"
+    },
+    {
+      "name": "execution.ledger.checkpoint.verify",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7863-a454-46ba08f04eac",
+      "version": "0.55.0"
+    },
+    {
+      "name": "execution.ledger.cursor.advance",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-74bd-92c6-3f944d7fdcfd",
+      "version": "0.55.0"
+    },
+    {
+      "name": "execution.ledger.cursor.resume",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7503-b261-d06fd5637ad7",
+      "version": "0.55.0"
+    },
+    {
+      "name": "causality.link.create",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7007-b827-8e051472d57b",
+      "version": "0.55.0"
+    },
+    {
+      "name": "causality.link.verify",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7daa-b13e-383ab22307fd",
+      "version": "0.55.0"
+    },
+    {
+      "name": "causality.reason.code",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7f38-8f5a-d05af38a79ff",
+      "version": "0.55.0"
+    },
+    {
+      "name": "causality.reason.evidence",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-75e5-8c8f-253f6e284462",
+      "version": "0.55.0"
+    },
+    {
+      "name": "causality.reason.approval",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7873-826b-412fc14f83f5",
+      "version": "0.55.0"
+    },
+    {
+      "name": "causality.reason.decision",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-787e-83ce-c5105823aa98",
+      "version": "0.55.0"
+    },
+    {
+      "name": "causality.reason.supervisor",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7e83-9bfc-6375c4d0d651",
+      "version": "0.55.0"
+    },
+    {
+      "name": "causality.reason.scheduler",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7431-907f-3d8ee88effec",
+      "version": "0.55.0"
+    },
+    {
+      "name": "causality.reason.model_router",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7612-b3fb-8786b6b3afd9",
+      "version": "0.55.0"
+    },
+    {
+      "name": "causality.reason.agent_router",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7072-8cfe-b11214ef718d",
+      "version": "0.55.0"
+    },
+    {
+      "name": "causality.reason.unknown",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7051-8636-f8d70c527656",
+      "version": "0.55.0"
+    },
+    {
+      "name": "causality.graph.export",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-70da-87b2-727912c2528f",
+      "version": "0.55.0"
+    },
+    {
+      "name": "variance.detect",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7f44-b56a-87cf95fb699b",
+      "version": "0.55.0"
+    },
+    {
+      "name": "variance.classify",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-71a4-a4bf-2406cb669f47",
+      "version": "0.55.0"
+    },
+    {
+      "name": "variance.threshold",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-772f-a17e-7018e1293794",
+      "version": "0.55.0"
+    },
+    {
+      "name": "variance.schedule",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7797-bb20-cb55e5153001",
+      "version": "0.55.0"
+    },
+    {
+      "name": "variance.cost",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7954-bc97-1e0cae3baa62",
+      "version": "0.55.0"
+    },
+    {
+      "name": "variance.agent",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-72e0-a521-f6cb42909de2",
+      "version": "0.55.0"
+    },
+    {
+      "name": "variance.model",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-791b-af13-962b0cbca0ca",
+      "version": "0.55.0"
+    },
+    {
+      "name": "variance.resource",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7637-a08f-b4bd360c1e02",
+      "version": "0.55.0"
+    },
+    {
+      "name": "variance.dependency",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7252-bdc3-de6bca3f86d5",
+      "version": "0.55.0"
+    },
+    {
+      "name": "variance.quality",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-765f-a7e0-b8ba7d5b023f",
+      "version": "0.55.0"
+    },
+    {
+      "name": "audit.replay.snapshot",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7405-8ffc-1f01455122cb",
+      "version": "0.55.0"
+    },
+    {
+      "name": "audit.replay.reconstruct",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-717e-8a42-66f9d290850e",
+      "version": "0.55.0"
+    },
+    {
+      "name": "audit.replay.timeline",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7da7-8f3a-4543bcfea298",
+      "version": "0.55.0"
+    },
+    {
+      "name": "audit.replay.diff",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-78bd-b591-5ad68989dd12",
+      "version": "0.55.0"
+    },
+    {
+      "name": "audit.replay.export",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7ce8-a4cf-83372c30b42a",
+      "version": "0.55.0"
+    },
+    {
+      "name": "audit.replay.proof",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7fbb-a734-2f62f7a68b05",
+      "version": "0.55.0"
+    },
+    {
+      "name": "audit.replay.tamper_detect",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-76c8-a0c4-e14b044c6842",
+      "version": "0.55.0"
+    },
+    {
+      "name": "audit.replay.source_chain",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7615-9345-187d1dae3bee",
+      "version": "0.55.0"
+    },
+    {
+      "name": "audit.replay.decision_chain",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7b12-a3ce-b8f492cf73c8",
+      "version": "0.55.0"
+    },
+    {
+      "name": "audit.replay.execution_chain",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7e42-b863-0668c5ed40c1",
+      "version": "0.55.0"
+    },
+    {
+      "name": "sprint.gate.evidence.append",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7d0d-9699-d0621cc65e37",
+      "version": "0.55.0"
+    },
+    {
+      "name": "sprint.gate.evidence.verify",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7aac-aa65-8e538e0adb27",
+      "version": "0.55.0"
+    },
+    {
+      "name": "sprint.gate.evidence.source_state",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7d6f-acf1-3681c8a87ac8",
+      "version": "0.55.0"
+    },
+    {
+      "name": "sprint.gate.status.reconcile",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-737b-aab6-e4dd8bc667d4",
+      "version": "0.55.0"
+    },
+    {
+      "name": "sprint.gate.status.green",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-73c4-a55e-937ad94c720a",
+      "version": "0.55.0"
+    },
+    {
+      "name": "sprint.gate.status.yellow",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7521-8a2b-376c851a78a6",
+      "version": "0.55.0"
+    },
+    {
+      "name": "sprint.gate.status.block",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7a16-8e84-26394aa45bf8",
+      "version": "0.55.0"
+    },
+    {
+      "name": "sprint.gate.matrix.export",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7210-a1d9-86506b3563e2",
+      "version": "0.55.0"
+    },
+    {
+      "name": "sprint.gate.native_gate.map",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-79f6-9ec3-005417536b7a",
+      "version": "0.55.0"
+    },
+    {
+      "name": "sprint.gate.promotion.explain",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-74a6-9492-0715296034fe",
+      "version": "0.55.0"
+    },
+    {
+      "name": "reconciliation.ui.overview",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7918-b9a8-4370e4ee6bf1",
+      "version": "0.55.0"
+    },
+    {
+      "name": "reconciliation.ui.timeline",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-7a72-a523-5bccb10bbafd",
+      "version": "0.55.0"
+    },
+    {
+      "name": "reconciliation.ui.why_changed",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-77b7-afd6-388058348bb3",
+      "version": "0.55.0"
+    },
+    {
+      "name": "reconciliation.ui.sprint_matrix",
+      "status": "source_ready",
+      "uuid": "01a0ee2b-ea4d-72c6-8500-cc5f847d688c",
+      "version": "0.55.0"
+    }
+  ],
+  "count": 84,
+  "version": "0.55.0"
+}

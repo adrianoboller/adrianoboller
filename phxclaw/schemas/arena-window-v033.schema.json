@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "window_uuid",
+    "arena_uuid",
+    "challenger",
+    "sample_count",
+    "quality_delta_basis_points",
+    "success_delta_basis_points",
+    "window_sha256"
+  ],
+  "properties": {
+    "sample_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "window_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{64}$"
+    }
+  }
+}

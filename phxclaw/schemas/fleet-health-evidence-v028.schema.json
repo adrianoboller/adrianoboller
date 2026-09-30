@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PhxClaw Fleet Health Evidence v0.28",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "evidence_uuid",
+    "rollout_uuid",
+    "stage_index",
+    "samples",
+    "success_rate",
+    "crash_rate",
+    "rollback_rate",
+    "stale_heartbeat_rate",
+    "install_error_rate",
+    "window_started_at",
+    "created_at",
+    "signer_key_id",
+    "signature_algorithm",
+    "signature_b64"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "0.28.0"
+    },
+    "evidence_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "rollout_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "stage_index": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "samples": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "success_rate": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "crash_rate": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "rollback_rate": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "stale_heartbeat_rate": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "install_error_rate": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "window_started_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "signer_key_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "signature_algorithm": {
+      "const": "ed25519"
+    },
+    "signature_b64": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

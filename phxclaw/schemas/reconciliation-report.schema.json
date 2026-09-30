@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "actual_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "type": "string"
+    },
+    "plan_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "type": "string"
+    },
+    "source_state_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "type": "string"
+    },
+    "unproven_reasons": {
+      "type": "array"
+    },
+    "variances": {
+      "type": "array"
+    }
+  },
+  "required": [
+    "source_state_sha256",
+    "plan_sha256",
+    "actual_sha256",
+    "variances",
+    "unproven_reasons"
+  ],
+  "type": "object"
+}

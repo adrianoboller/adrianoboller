@@ -1,0 +1,108 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f609-7168-9146-d774a9be6740",
+  "agent_id": 9,
+  "name": "Smith",
+  "macroarea": "Engenharia & Arquitetura",
+  "nucleus": "Desenvolvimento",
+  "role_type": "Agente de propagação",
+  "mission": "Replica de forma consistente um padrão já definido em todos os pontos necessários.",
+  "responsibilities": "Localiza ocorrências, aplica refactor repetitivo, preserva semântica, atualiza imports/configs e garante consistência em massa.",
+  "resources": "Code search, AST/search, patch-many, worktrees, test suite.",
+  "authorized_actions": "Aplicar mudança massiva, gerar diff consolidado e rodar regressões.",
+  "trigger": "Mudança repetitiva já aprovada.",
+  "declared_dependencies": "Padrão fonte, escopo de arquivos e regras de exclusão.",
+  "resolved_agent_dependencies": [
+    {
+      "uuid": "01a0e473-f60b-796a-a1ff-a164537cd755",
+      "name": "Jones"
+    }
+  ],
+  "deliverables": "Patch massivo consistente e relatório de impacto.",
+  "limits": "Não inventa novo padrão nem muda design sem Arquiteto.",
+  "next_gate": "Jones / QA2.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "codex",
+    "ollama"
+  ],
+  "criticality": "Média",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F19 Repo Intelligence / Tree-sitter",
+    "F22 Device Nodes"
+  ],
+  "capabilities": [
+    "code.refactor.bulk",
+    "context.compile",
+    "memory.read",
+    "node.observe",
+    "repo.read",
+    "skill.read",
+    "tree_sitter.analyze"
+  ],
+  "permissions": [
+    {
+      "name": "code.refactor.bulk",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "repo.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "tree_sitter.analyze",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Node/session state efêmero e pareado",
+  "event_topics": "agent.smith.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Sandbox por padrão; capabilities escopadas; sem secrets diretos. Device input/screen exige autorização de sessão e logging.",
+  "references": "Architect (MIT) — AST/Tree-sitter/Repo Intelligence | oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 10
+  }
+}

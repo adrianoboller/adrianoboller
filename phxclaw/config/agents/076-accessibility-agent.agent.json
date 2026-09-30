@@ -1,0 +1,66 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f64c-73f4-983a-ba644c60d255",
+  "agent_id": 76,
+  "name": "Accessibility Agent",
+  "macroarea": "Creative Studio & UX",
+  "nucleus": "UX",
+  "role_type": "Agente de acessibilidade",
+  "mission": "Garante uso por teclado, contraste, foco, semântica e tecnologias assistivas.",
+  "responsibilities": "Audita WCAG aplicável, screen reader tree, focus order, states, motion preferences e contraste.",
+  "resources": "Accessibility tree, browser tools, visual specs.",
+  "authorized_actions": "Bloquear UI inacessível e propor correções.",
+  "trigger": "Toda feature UI/template/theme.",
+  "declared_dependencies": "Build visual e component semantics.",
+  "resolved_agent_dependencies": [],
+  "deliverables": "Accessibility Report/Gate.",
+  "limits": "Pode barrar decisão estética.",
+  "next_gate": "User Proof/QA.",
+  "execution": "Permanente",
+  "models_allowed": [
+    "claude",
+    "ollama"
+  ],
+  "criticality": "Alta",
+  "modules": [
+    "F22 Device Nodes"
+  ],
+  "capabilities": [
+    "accessibility.validate",
+    "node.observe"
+  ],
+  "permissions": [
+    {
+      "name": "accessibility.validate",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Node/session state efêmero e pareado; Estado operacional persistente em PostgreSQL",
+  "event_topics": "agent.accessibility.agent.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; writes policy-gated; evidência obrigatória; sem autoaprovação. Device input/screen exige autorização de sessão e logging.",
+  "references": "OpenClaw — gateway/nodes/channels; validar licença por versão | ZeroClaw — benchmark Rust/providers/tools",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 77
+  }
+}

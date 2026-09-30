@@ -1,0 +1,50 @@
+{
+  "uuid": "0199a5f1-0001-7001-8abc-000000000001",
+  "code": "F00",
+  "title": "Constitution + Modular Workspace",
+  "goal": "Congelar constituição e converter o bootstrap em workspace modular.",
+  "status": "review",
+  "tasks": [
+    {
+      "uuid": "0199a5f1-0002-7002-8abc-000000000002",
+      "title": "Workspace Cargo modular",
+      "status": "review"
+    },
+    {
+      "uuid": "0199a5f1-0003-7003-8abc-000000000003",
+      "title": "Constitution v0.2",
+      "status": "done"
+    },
+    {
+      "uuid": "0199a5f1-0004-7004-8abc-000000000004",
+      "title": "Schemas de Sprint e evidência",
+      "status": "done"
+    },
+    {
+      "uuid": "0199a5f1-0005-7005-8abc-000000000005",
+      "title": "Gate UUIDv7",
+      "status": "done"
+    },
+    {
+      "uuid": "0199a5f1-0006-7006-8abc-000000000006",
+      "title": "cargo check/test do workspace",
+      "status": "blocked"
+    }
+  ],
+  "definition_of_done": [
+    "workspace modular",
+    "constitution validada",
+    "UUIDv7 validado",
+    "cargo check passa",
+    "cargo test passa"
+  ],
+  "notes": [
+    "Estrutura e validações estáticas concluídas; compilação bloqueada porque o ambiente de montagem não possui Rust/Cargo."
+  ],
+  "state": "review",
+  "canonical_project_version": "0.67.0",
+  "canonical_state_ref": "config/project-state-canonical.v067.json",
+  "implementation_state": "source_ready",
+  "verification_state": "static_verified",
+  "open_gaps": []
+}

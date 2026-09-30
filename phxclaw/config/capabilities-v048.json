@@ -1,0 +1,230 @@
+{
+  "version": "0.48.0",
+  "count": 56,
+  "capabilities": [
+    {
+      "uuid": "01a0ed7d-9426-73b6-a929-55489132daa5",
+      "name": "executive.portfolio.snapshot"
+    },
+    {
+      "uuid": "01a0ed7d-9426-7af9-99b5-70b0c280a7e5",
+      "name": "executive.portfolio.health"
+    },
+    {
+      "uuid": "01a0ed7d-9426-7785-b74e-2484d7142b94",
+      "name": "executive.portfolio.attention.rank"
+    },
+    {
+      "uuid": "01a0ed7d-9426-7bdc-9dcd-5d4903b5382c",
+      "name": "executive.portfolio.cost.rollup"
+    },
+    {
+      "uuid": "01a0ed7d-9426-7aa0-9646-fa5613c5d8d5",
+      "name": "executive.portfolio.schedule.rollup"
+    },
+    {
+      "uuid": "01a0ed7d-9426-7c48-a18d-80a850d5fc42",
+      "name": "executive.portfolio.risk.rollup"
+    },
+    {
+      "uuid": "01a0ed7d-9426-78d8-8af3-7e22a772604a",
+      "name": "executive.portfolio.agent.rollup"
+    },
+    {
+      "uuid": "01a0ed7d-9426-7629-90b6-aebccf8ddd38",
+      "name": "executive.portfolio.model.rollup"
+    },
+    {
+      "uuid": "01a0ed7d-9426-7752-9df1-096203e1f03f",
+      "name": "executive.portfolio.pdca.rollup"
+    },
+    {
+      "uuid": "01a0ed7d-9426-7dab-8bea-568af4634e8e",
+      "name": "executive.portfolio.intervention.rollup"
+    },
+    {
+      "uuid": "01a0ed7d-9426-7aac-8dc7-a4af30170920",
+      "name": "executive.project.snapshot"
+    },
+    {
+      "uuid": "01a0ed7d-9426-7bcc-b51a-8fe00a1cc18a",
+      "name": "executive.project.health"
+    },
+    {
+      "uuid": "01a0ed7d-9426-77dc-b88a-8e6408160152",
+      "name": "executive.project.deadline.risk"
+    },
+    {
+      "uuid": "01a0ed7d-9426-7593-a2f0-f02ab515bd5d",
+      "name": "executive.project.budget.risk"
+    },
+    {
+      "uuid": "01a0ed7d-9426-7651-80c2-0b049b397451",
+      "name": "executive.project.rework.risk"
+    },
+    {
+      "uuid": "01a0ed7d-9426-748b-a91c-380fb7177b20",
+      "name": "executive.project.quality"
+    },
+    {
+      "uuid": "01a0ed7d-9426-735b-bf15-d30a69f7831b",
+      "name": "executive.project.wip"
+    },
+    {
+      "uuid": "01a0ed7d-9426-7748-8b6e-5bdad8d694d4",
+      "name": "executive.project.blockers"
+    },
+    {
+      "uuid": "01a0ed7d-9426-7cff-ba5f-cae3f363e558",
+      "name": "executive.project.critical.path"
+    },
+    {
+      "uuid": "01a0ed7d-9426-7983-a849-9a26e1d5f10d",
+      "name": "executive.project.milestones"
+    },
+    {
+      "uuid": "01a0ed7d-9426-7d6e-9ce5-8b5fa1223b80",
+      "name": "executive.project.cost.eac"
+    },
+    {
+      "uuid": "01a0ed7d-9426-7e98-abfa-c09c2a2668ff",
+      "name": "executive.project.cost.etc"
+    },
+    {
+      "uuid": "01a0ed7d-9426-7c93-af9a-df7eb07beb43",
+      "name": "executive.project.cost.vac"
+    },
+    {
+      "uuid": "01a0ed7d-9426-7a97-b3dd-8f7bfe7cf110",
+      "name": "executive.project.cost.cpi"
+    },
+    {
+      "uuid": "01a0ed7d-9426-7551-aebf-00c368c77afd",
+      "name": "executive.project.schedule.spi"
+    },
+    {
+      "uuid": "01a0ed7d-9426-7285-bc9b-5bab8685b6e0",
+      "name": "executive.project.velocity"
+    },
+    {
+      "uuid": "01a0ed7d-9426-7da2-8041-064cb9573a36",
+      "name": "executive.project.cycle.time"
+    },
+    {
+      "uuid": "01a0ed7d-9426-77cc-94aa-655fb0612651",
+      "name": "executive.project.lead.time"
+    },
+    {
+      "uuid": "01a0ed7d-9426-7826-ad2a-f037a0da8039",
+      "name": "executive.project.burndown"
+    },
+    {
+      "uuid": "01a0ed7d-9426-720e-9f58-89dad4ee0da7",
+      "name": "executive.project.cumulative.flow"
+    },
+    {
+      "uuid": "01a0ed7d-9426-7a5a-9f9e-3c5d0f622c49",
+      "name": "executive.agents.utilization"
+    },
+    {
+      "uuid": "01a0ed7d-9426-70e1-9e1e-bcbc48f29958",
+      "name": "executive.agents.cost"
+    },
+    {
+      "uuid": "01a0ed7d-9426-78d6-a560-6f0e91f4ec10",
+      "name": "executive.agents.load"
+    },
+    {
+      "uuid": "01a0ed7d-9426-7414-a1b1-753769763d11",
+      "name": "executive.agents.model.mix"
+    },
+    {
+      "uuid": "01a0ed7d-9426-796c-bc3b-e4322df4d0df",
+      "name": "executive.agents.ollama.share"
+    },
+    {
+      "uuid": "01a0ed7d-9426-75ca-ab05-064f65e3e1e8",
+      "name": "executive.models.cost"
+    },
+    {
+      "uuid": "01a0ed7d-9426-7049-8ed7-22de51027c6a",
+      "name": "executive.models.latency"
+    },
+    {
+      "uuid": "01a0ed7d-9426-7acd-9dec-3fe47f67872a",
+      "name": "executive.models.quality"
+    },
+    {
+      "uuid": "01a0ed7d-9426-7838-bb5e-8312d31b108a",
+      "name": "executive.models.fallback"
+    },
+    {
+      "uuid": "01a0ed7d-9426-7b88-82f0-ebab212c1e40",
+      "name": "executive.models.budget"
+    },
+    {
+      "uuid": "01a0ed7d-9426-73cd-ac6c-84eb2856f947",
+      "name": "executive.pdca.status"
+    },
+    {
+      "uuid": "01a0ed7d-9426-7a54-af54-4852d2057a81",
+      "name": "executive.knowledge.fruitful"
+    },
+    {
+      "uuid": "01a0ed7d-9426-75a0-b17a-fab480eaa628",
+      "name": "executive.knowledge.unfruitful"
+    },
+    {
+      "uuid": "01a0ed7d-9426-7570-b001-2b7f7ff29f60",
+      "name": "executive.supervisor.interventions"
+    },
+    {
+      "uuid": "01a0ed7d-9426-74b7-82a6-4f99999ecca6",
+      "name": "executive.alert.list"
+    },
+    {
+      "uuid": "01a0ed7d-9426-719f-8368-e9c80adcfc50",
+      "name": "executive.alert.acknowledge"
+    },
+    {
+      "uuid": "01a0ed7d-9426-747a-b7c7-cea15314a0a5",
+      "name": "executive.alert.escalate"
+    },
+    {
+      "uuid": "01a0ed7d-9426-7a5e-985f-4f95ba1639b9",
+      "name": "executive.decision.request"
+    },
+    {
+      "uuid": "01a0ed7d-9426-766e-84d0-cdd3b3c8738f",
+      "name": "executive.decision.approve"
+    },
+    {
+      "uuid": "01a0ed7d-9426-78d2-8640-83d24ad529e7",
+      "name": "executive.decision.reject"
+    },
+    {
+      "uuid": "01a0ed7d-9426-7c18-9fec-53cb9f1da323",
+      "name": "executive.report.generate"
+    },
+    {
+      "uuid": "01a0ed7d-9426-70ea-8e09-da0f3dd0f592",
+      "name": "executive.report.export"
+    },
+    {
+      "uuid": "01a0ed7d-9426-7632-95de-a90036628572",
+      "name": "executive.dashboard.configure"
+    },
+    {
+      "uuid": "01a0ed7d-9426-70ec-919f-8c8256bc29b9",
+      "name": "executive.dashboard.refresh"
+    },
+    {
+      "uuid": "01a0ed7d-9426-75d2-bb69-b3b1acf399fb",
+      "name": "executive.audit.query"
+    },
+    {
+      "uuid": "01a0ed7d-9426-77cc-ad66-7a4cfaca0573",
+      "name": "executive.evidence.open"
+    }
+  ]
+}

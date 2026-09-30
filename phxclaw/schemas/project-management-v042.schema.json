@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phxclaw.local/schemas/project-management-v042.schema.json",
+  "title": "PhxClaw Project Management",
+  "type": "object",
+  "required": [
+    "enabled",
+    "mode",
+    "orchestrator",
+    "methods",
+    "governance",
+    "health",
+    "integrations",
+    "skills"
+  ],
+  "properties": {
+    "enabled": {
+      "type": "boolean"
+    },
+    "mode": {
+      "enum": [
+        "hybrid",
+        "scrum",
+        "kanban",
+        "classical",
+        "pdca"
+      ]
+    },
+    "orchestrator": {
+      "const": "project-management-orchestrator"
+    },
+    "hybrid_skill": {
+      "const": "hybrid-project-management"
+    },
+    "methods": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "boolean"
+      }
+    },
+    "defaults": {
+      "type": "object"
+    },
+    "governance": {
+      "type": "object"
+    },
+    "health": {
+      "type": "object"
+    },
+    "integrations": {
+      "type": "object"
+    },
+    "ui": {
+      "type": "object"
+    },
+    "skills": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": false
+}

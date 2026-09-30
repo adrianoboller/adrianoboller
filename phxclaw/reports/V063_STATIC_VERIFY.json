@@ -1,0 +1,172 @@
+{
+  "version": "0.63.0",
+  "pass": 33,
+  "fail": 0,
+  "checks": [
+    {
+      "name": "version",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dep tree-sitter",
+      "ok": true,
+      "detail": "=0.27.0"
+    },
+    {
+      "name": "dep tree-sitter-rust",
+      "ok": true,
+      "detail": "=0.24.2"
+    },
+    {
+      "name": "dep tree-sitter-python",
+      "ok": true,
+      "detail": "=0.25.0"
+    },
+    {
+      "name": "dep tree-sitter-javascript",
+      "ok": true,
+      "detail": "=0.25.0"
+    },
+    {
+      "name": "dep tree-sitter-typescript",
+      "ok": true,
+      "detail": "=0.23.2"
+    },
+    {
+      "name": "dep tree-sitter-go",
+      "ok": true,
+      "detail": "=0.25.0"
+    },
+    {
+      "name": "dep tree-sitter-c",
+      "ok": true,
+      "detail": "=0.24.2"
+    },
+    {
+      "name": "dep tree-sitter-cpp",
+      "ok": true,
+      "detail": "=0.23.4"
+    },
+    {
+      "name": "dep tree-sitter-java",
+      "ok": true,
+      "detail": "=0.23.5"
+    },
+    {
+      "name": "source Parser::new",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "source tree_sitter_rust::LANGUAGE",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "source tree_sitter_python::LANGUAGE",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "source LANGUAGE_TYPESCRIPT",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "source tree_sitter_go::LANGUAGE",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "source tree_sitter_c::LANGUAGE",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "source tree_sitter_cpp::LANGUAGE",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "source tree_sitter_java::LANGUAGE",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "source RepoSymbol",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "source RepoCall",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "source RepoDependency",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "source pagerank_ppm",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "source ParsedWithErrors",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sql repo_analysis_runs",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sql repo_symbols",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sql repo_calls",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sql repo_dependencies",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sql repo_hotspots",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sql FORCE ROW LEVEL SECURITY",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sql append-only",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "F19 source ready",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "canonical 0.63",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "schema valid",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

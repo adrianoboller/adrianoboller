@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "phxclaw://schemas/fleet-command-plan-v029",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "plan_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tenant_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "snapshot": {
+      "$ref": "phxclaw://schemas/fleet-selector-snapshot-v029"
+    },
+    "capability": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "arguments": {
+      "type": "object"
+    },
+    "secret_handles": {
+      "type": "array"
+    },
+    "risk": {
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ]
+    },
+    "approval_uuid": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid"
+    },
+    "max_parallel": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "idempotency_seed": {
+      "type": "string",
+      "minLength": 16,
+      "maxLength": 200
+    },
+    "arguments_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "policy_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "signer_key_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "signature_algorithm": {
+      "const": "ed25519"
+    },
+    "signature_b64": {
+      "type": "string",
+      "minLength": 80
+    }
+  },
+  "required": [
+    "plan_uuid",
+    "tenant_uuid",
+    "snapshot",
+    "capability",
+    "arguments",
+    "secret_handles",
+    "risk",
+    "max_parallel",
+    "expires_at",
+    "idempotency_seed",
+    "arguments_sha256",
+    "created_at",
+    "policy_sha256",
+    "signer_key_id",
+    "signature_algorithm",
+    "signature_b64"
+  ]
+}

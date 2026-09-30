@@ -1,0 +1,314 @@
+{
+  "artifact": "PhxClaw_PostgreSQL_FULL_INSTALL_v0.67.sql",
+  "sha256": "ebc24d32f7d9bd3bbe76aa868c65b9b7c219bcf4fa8631d139880853350ac5ee",
+  "bytes": 393055,
+  "lines": 5279,
+  "statements": 1030,
+  "checks": [
+    {
+      "name": "utf8_decode",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "lexical_split",
+      "pass": true,
+      "detail": "1030 statements"
+    },
+    {
+      "name": "paren_balance",
+      "pass": true,
+      "detail": "balance=0 min=0 state=code"
+    },
+    {
+      "name": "single_begin",
+      "pass": true,
+      "detail": "['\\nBEGIN;']"
+    },
+    {
+      "name": "single_commit",
+      "pass": true,
+      "detail": "['COMMIT;\\n']"
+    },
+    {
+      "name": "no_concurrent_index",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_vacuum_in_tx",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_psql_meta",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_known_malformed_current_setting",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_empty_nullif_second_arg",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "migration_ledger_67",
+      "pass": true,
+      "detail": "67"
+    },
+    {
+      "name": "migration_0034_present",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "migration_0059_present",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "migration_0060_present",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "migration_0061_present",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "migration_0062_present",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "migration_0063_present",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "migration_0064_present",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "migration_0065_present",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "migration_0066_present",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "migration_0067_present",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "expected_relation_phx_source_artifact",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "expected_relation_phx_historical_backfill_runs",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "expected_relation_phx_project_trace_nodes",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "expected_relation_phx_source_harvest_run",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "expected_relation_phx_source_knowledge_candidate",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "expected_relation_knowledge_promotion_requests",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "expected_relation_knowledge_promotion_receipts",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "expected_relation_project_state_snapshots",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "expected_relation_repo_analysis_runs",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "expected_relation_repo_symbols",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "expected_relation_repo_hotspots",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "expected_relation_protocol_sessions",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "expected_relation_protocol_requests",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "expected_relation_protocol_session_events",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "expected_relation_backup_sets",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "expected_relation_backup_objects",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "expected_relation_restore_runs",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "expected_relation_upgrade_runs",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "expected_relation_disaster_recovery_drills",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "expected_relation_research_records",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "expected_relation_research_record_evidence",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "expected_relation_research_graph_links",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "expected_relation_hypothesis_records",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "expected_relation_experiment_plans",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "expected_relation_hypothesis_evidence",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "expected_relation_hypothesis_decisions",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "expected_relation_experiment_runs",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "expected_relation_experiment_run_evidence",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "expected_relation_hypothesis_graph_links",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "expected_relation_bpm_process_definitions",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "expected_relation_bpm_instances_v2",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "expected_relation_bpm_tokens_v2",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "expected_relation_bpm_events_v2",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "expected_relation_bpm_checkpoints",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "literal_relation_dependency_order",
+      "pass": true,
+      "detail": "[]"
+    },
+    {
+      "name": "v067_migration_present",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "v067_bpm_event_function",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "v067_bpm_append_only_trigger",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "v067_bpm_rls_policy",
+      "pass": true,
+      "detail": ""
+    }
+  ],
+  "pass": 56,
+  "fail": 0,
+  "dependency_issues": [],
+  "native_postgresql_execution": false,
+  "native_postgresql_reason": "psql/postgres/initdb are not installed in this execution host"
+}

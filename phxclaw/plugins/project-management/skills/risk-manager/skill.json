@@ -1,0 +1,39 @@
+{
+  "uuid": "01a0eab2-5c2a-7214-9ef1-5a8c30c94f2f",
+  "id": "risk-manager",
+  "name": "Risk Manager",
+  "category": "risk_issue",
+  "function": "Registro e controle de riscos",
+  "capability": "project.skill.risk-manager",
+  "agent_role": "risk_issue",
+  "permissions": [
+    "project.read",
+    "risk.write",
+    "project.mutate"
+  ],
+  "risk": "medium",
+  "approval_required": false,
+  "evidence_required": true,
+  "lifecycle_hooks": [
+    "before_invoke",
+    "after_invoke",
+    "on_failure"
+  ],
+  "rollback": "checkpoint",
+  "version": "0.42.0",
+  "semver": "0.42.0",
+  "manifest_uuid": "01a0eab2-5c3a-789c-8f5a-f82385e047ed",
+  "dependencies": [
+    "phxclaw-skill-runtime>=0.15",
+    "phxclaw-evidence-ledger>=0.9"
+  ],
+  "compatibility": {
+    "phxclaw": ">=0.41,<0.43"
+  },
+  "sandbox": "deny-by-default",
+  "signature_policy": "release-signing-required",
+  "provenance": {
+    "origin": "user-defined-project-management-suite",
+    "license": "PhxClaw project source policy"
+  }
+}

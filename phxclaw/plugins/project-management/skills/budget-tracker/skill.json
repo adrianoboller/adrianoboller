@@ -1,0 +1,39 @@
+{
+  "uuid": "01a0eab2-5c2a-73f0-afb0-0891e352f9a9",
+  "id": "budget-tracker",
+  "name": "Budget Tracker",
+  "category": "cost",
+  "function": "Planejado × realizado",
+  "capability": "project.skill.budget-tracker",
+  "agent_role": "cost",
+  "permissions": [
+    "project.read",
+    "finance.project.write",
+    "project.mutate"
+  ],
+  "risk": "medium",
+  "approval_required": false,
+  "evidence_required": true,
+  "lifecycle_hooks": [
+    "before_invoke",
+    "after_invoke",
+    "on_failure"
+  ],
+  "rollback": "checkpoint",
+  "version": "0.42.0",
+  "semver": "0.42.0",
+  "manifest_uuid": "01a0eab2-5c3b-7a6b-b12f-919aef9d55d4",
+  "dependencies": [
+    "phxclaw-skill-runtime>=0.15",
+    "phxclaw-evidence-ledger>=0.9"
+  ],
+  "compatibility": {
+    "phxclaw": ">=0.41,<0.43"
+  },
+  "sandbox": "deny-by-default",
+  "signature_policy": "release-signing-required",
+  "provenance": {
+    "origin": "user-defined-project-management-suite",
+    "license": "PhxClaw project source policy"
+  }
+}

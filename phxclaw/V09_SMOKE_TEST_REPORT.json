@@ -1,0 +1,69 @@
+{
+  "version": "0.9.0",
+  "generated_at": "2026-09-28T03:41:35.834240+00:00",
+  "pass": 9,
+  "fail": 0,
+  "skip": 0,
+  "results": [
+    {
+      "name": "health.morpheus-agent",
+      "status": "PASS",
+      "elapsed_ms": 99,
+      "detail": "ok"
+    },
+    {
+      "name": "health.oracle-agent",
+      "status": "PASS",
+      "elapsed_ms": 98,
+      "detail": "ok"
+    },
+    {
+      "name": "health.master-orchestrator-agent",
+      "status": "PASS",
+      "elapsed_ms": 119,
+      "detail": "ok"
+    },
+    {
+      "name": "health.local-model-provider",
+      "status": "PASS",
+      "elapsed_ms": 85,
+      "detail": "ok"
+    },
+    {
+      "name": "health.office-document-tool",
+      "status": "PASS",
+      "elapsed_ms": 1965,
+      "detail": "ok"
+    },
+    {
+      "name": "health.media-intelligence-tool",
+      "status": "PASS",
+      "elapsed_ms": 1438,
+      "detail": "ok"
+    },
+    {
+      "name": "health.system-automation-tool",
+      "status": "PASS",
+      "elapsed_ms": 1385,
+      "detail": "ok"
+    },
+    {
+      "name": "system.command.real_process",
+      "status": "PASS",
+      "elapsed_ms": 2801,
+      "detail": {
+        "exit_code": 0,
+        "stdout": "PHOENIX_V09_OK"
+      }
+    },
+    {
+      "name": "system.command.fail_closed",
+      "status": "PASS",
+      "elapsed_ms": 1426,
+      "detail": {
+        "status": "rejected",
+        "code": "permission_denied"
+      }
+    }
+  ]
+}

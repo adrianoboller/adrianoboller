@@ -1,0 +1,104 @@
+{
+  "version": "0.22.0",
+  "base_capability_count": 220,
+  "delta_count": 12,
+  "expected_after_merge": 232,
+  "capabilities": [
+    {
+      "capability_uuid": "01a0e800-cf88-7841-a3c5-4a9930c9ca21",
+      "name": "learning.observation.ingest",
+      "version": "1.0.0",
+      "extension_point": "skill.provider",
+      "default_permission": "deny",
+      "audited": true
+    },
+    {
+      "capability_uuid": "01a0e800-cf88-7a63-a3d5-6c4ac35ef9de",
+      "name": "learning.observation.accept",
+      "version": "1.0.0",
+      "extension_point": "skill.provider",
+      "default_permission": "deny",
+      "audited": true
+    },
+    {
+      "capability_uuid": "01a0e800-cf88-771f-9d46-44b9f6e793f2",
+      "name": "learning.hypothesis.link",
+      "version": "1.0.0",
+      "extension_point": "skill.provider",
+      "default_permission": "deny",
+      "audited": true
+    },
+    {
+      "capability_uuid": "01a0e800-cf88-7004-a34e-28074251cf3b",
+      "name": "skill.candidate.synthesize",
+      "version": "1.0.0",
+      "extension_point": "skill.provider",
+      "default_permission": "deny",
+      "audited": true
+    },
+    {
+      "capability_uuid": "01a0e800-cf88-76dc-bfd3-db0e1ba294af",
+      "name": "skill.candidate.evaluate",
+      "version": "1.0.0",
+      "extension_point": "skill.provider",
+      "default_permission": "deny",
+      "audited": true
+    },
+    {
+      "capability_uuid": "01a0e800-cf88-72b1-a4d6-87b15720607d",
+      "name": "skill.candidate.quarantine",
+      "version": "1.0.0",
+      "extension_point": "skill.provider",
+      "default_permission": "deny",
+      "audited": true
+    },
+    {
+      "capability_uuid": "01a0e800-cf88-7477-81b9-4f5051cdb68e",
+      "name": "skill.promotion.request",
+      "version": "1.0.0",
+      "extension_point": "release.gate",
+      "default_permission": "deny",
+      "audited": true
+    },
+    {
+      "capability_uuid": "01a0e800-cf88-7ae7-9cfa-84d47874efbd",
+      "name": "skill.promotion.approve",
+      "version": "1.0.0",
+      "extension_point": "release.gate",
+      "default_permission": "deny",
+      "audited": true
+    },
+    {
+      "capability_uuid": "01a0e800-cf88-7945-bfbf-090cd4d3cd05",
+      "name": "skill.promotion.reject",
+      "version": "1.0.0",
+      "extension_point": "release.gate",
+      "default_permission": "deny",
+      "audited": true
+    },
+    {
+      "capability_uuid": "01a0e800-cf88-779c-a294-6be6ad41ea9b",
+      "name": "skill.release.publish",
+      "version": "1.0.0",
+      "extension_point": "skill.provider",
+      "default_permission": "deny",
+      "audited": true
+    },
+    {
+      "capability_uuid": "01a0e800-cf88-7d9a-98e7-a4d3d218a4df",
+      "name": "skill.release.activate",
+      "version": "1.0.0",
+      "extension_point": "release.gate",
+      "default_permission": "deny",
+      "audited": true
+    },
+    {
+      "capability_uuid": "01a0e800-cf88-7f5e-9b76-5bf58ef315b7",
+      "name": "skill.release.rollback",
+      "version": "1.0.0",
+      "extension_point": "release.gate",
+      "default_permission": "deny",
+      "audited": true
+    }
+  ]
+}

@@ -1,0 +1,377 @@
+{
+  "suite": "PhxClaw v0.31 static verifier",
+  "pass": 68,
+  "fail": 6,
+  "checks": [
+    {
+      "name": "cap_delta",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "cap_total",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "cap_unique",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "crate_phxclaw-ai-fabric",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "toml_phxclaw-ai-fabric",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "crate_phxclaw-openai-provider",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "toml_phxclaw-openai-provider",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "crate_phxclaw-anthropic-provider",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "toml_phxclaw-anthropic-provider",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "crate_phxclaw-gemini-provider",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "toml_phxclaw-gemini-provider",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "ai_restricted",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "ai_confidential",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "ai_fresh_catalog",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "ai_fresh_health",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "ai_budget",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "ai_unknown_cost",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "ai_circuit",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "ai_fallback",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "ai_prompt_hash",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "ai_evidence",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "ai_deterministic",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "ai_decision_canonical_sort",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "ai_complexity_gate",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "ai_no_prompt_content",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_force_rls",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_tenant_setting",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_budget_reserve",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_budget_settle",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_row_lock",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_budget_idempotent",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_settle_idempotent",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_append_health",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_append_route",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_append_events",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "openai_https",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "openai_userinfo",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "openai_secret_uuid",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "openai_no_raw_key",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "anthropic_https",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "anthropic_userinfo",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "anthropic_secret_uuid",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "anthropic_no_raw_key",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "gemini_https",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "gemini_userinfo",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "gemini_secret_uuid",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "gemini_no_raw_key",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "openai_responses",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "openai_store_false",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "anthropic_messages",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "anthropic_version",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "gemini_interactions",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "gemini_embed",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "uuidv7_openai-provider",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "semver_openai-provider",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_vendor_openai-provider",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "digest_openai-provider",
+      "pass": false,
+      "detail": ""
+    },
+    {
+      "name": "signature_openai-provider",
+      "pass": false,
+      "detail": ""
+    },
+    {
+      "name": "uuidv7_anthropic-provider",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "semver_anthropic-provider",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_vendor_anthropic-provider",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "digest_anthropic-provider",
+      "pass": false,
+      "detail": ""
+    },
+    {
+      "name": "signature_anthropic-provider",
+      "pass": false,
+      "detail": ""
+    },
+    {
+      "name": "uuidv7_gemini-provider",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "semver_gemini-provider",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_vendor_gemini-provider",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "digest_gemini-provider",
+      "pass": false,
+      "detail": ""
+    },
+    {
+      "name": "signature_gemini-provider",
+      "pass": false,
+      "detail": ""
+    },
+    {
+      "name": "schema_ai-budget-reservation-v031.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "schema_ai-provider-http-plan-v031.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "schema_ai-provider-health-v031.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "schema_ai-route-request-v031.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "schema_ai-route-decision-v031.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "schema_ai-model-record-v031.schema.json",
+      "pass": true,
+      "detail": ""
+    }
+  ]
+}

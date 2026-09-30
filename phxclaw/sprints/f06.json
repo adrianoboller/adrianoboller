@@ -1,0 +1,49 @@
+{
+  "uuid": "0199a5f1-0027-7027-8abc-000000000027",
+  "code": "F06",
+  "title": "Task Graph",
+  "goal": "Criar grafo determinístico de tarefas, dependências, retries e approval gates.",
+  "status": "review",
+  "tasks": [
+    {
+      "uuid": "0199a5f1-0028-7028-8abc-000000000028",
+      "title": "Task schema",
+      "status": "review"
+    },
+    {
+      "uuid": "0199a5f1-0029-7029-8abc-000000000029",
+      "title": "DAG validator",
+      "status": "review"
+    },
+    {
+      "uuid": "0199a5f1-002a-702a-8abc-00000000002a",
+      "title": "Scheduler contract",
+      "status": "review"
+    },
+    {
+      "uuid": "0199a5f1-002b-702b-8abc-00000000002b",
+      "title": "Retry/idempotency",
+      "status": "review"
+    },
+    {
+      "uuid": "0199a5f1-002c-702c-8abc-00000000002c",
+      "title": "Approval gates",
+      "status": "review"
+    }
+  ],
+  "definition_of_done": [
+    "DAG validado",
+    "execução rastreável",
+    "idempotência",
+    "approval gates"
+  ],
+  "notes": [
+    "Implementado em Rust: DAG validator, scheduler, retry/backoff, idempotência, approval gates, journal de eventos e persistência PostgreSQL. Cargo gate permanece pendente neste ambiente."
+  ],
+  "state": "review",
+  "canonical_project_version": "0.67.0",
+  "canonical_state_ref": "config/project-state-canonical.v067.json",
+  "implementation_state": "source_ready",
+  "verification_state": "static_verified",
+  "open_gaps": []
+}

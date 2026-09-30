@@ -1,0 +1,39 @@
+{
+  "uuid": "01a0eab2-5c2a-759f-b1a5-e572085ad36c",
+  "id": "resource-leveling",
+  "name": "Resource Leveling",
+  "category": "classical",
+  "function": "Resolve conflitos de recursos",
+  "capability": "project.skill.resource-leveling",
+  "agent_role": "classical",
+  "permissions": [
+    "project.read",
+    "schedule.write",
+    "project.mutate"
+  ],
+  "risk": "high",
+  "approval_required": true,
+  "evidence_required": true,
+  "lifecycle_hooks": [
+    "before_invoke",
+    "after_invoke",
+    "on_failure"
+  ],
+  "rollback": "checkpoint",
+  "version": "0.42.0",
+  "semver": "0.42.0",
+  "manifest_uuid": "01a0eab2-5c35-7595-8354-f578b9c9af20",
+  "dependencies": [
+    "phxclaw-skill-runtime>=0.15",
+    "phxclaw-evidence-ledger>=0.9"
+  ],
+  "compatibility": {
+    "phxclaw": ">=0.41,<0.43"
+  },
+  "sandbox": "deny-by-default",
+  "signature_policy": "release-signing-required",
+  "provenance": {
+    "origin": "user-defined-project-management-suite",
+    "license": "PhxClaw project source policy"
+  }
+}

@@ -1,0 +1,150 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f66d-7a71-9cf4-4f1bbb4362b7",
+  "agent_id": 109,
+  "name": "Connector Platform Agent",
+  "macroarea": "Dados & Integrações",
+  "nucleus": "Integrações",
+  "role_type": "Agente de conectores",
+  "mission": "Cria plataforma padronizada para OAuth, rate limits, retries e APIs externas.",
+  "responsibilities": "Define connector lifecycle, auth abstraction, pagination, webhooks, quotas, error mapping e sandbox tests.",
+  "resources": "HTTP, Secrets, Tool Gateway, schemas, external APIs.",
+  "authorized_actions": "Criar connector SDK/adapters e health checks.",
+  "trigger": "Nova integração externa.",
+  "declared_dependencies": "Chaveiro contracts + Merovíngio policies.",
+  "resolved_agent_dependencies": [
+    {
+      "uuid": "01a0e473-f607-777c-b4f3-12b3cc967d29",
+      "name": "Chaveiro"
+    },
+    {
+      "uuid": "01a0e473-f610-77ff-b82c-aaa004721899",
+      "name": "Merovíngio"
+    }
+  ],
+  "deliverables": "Connector package + contract tests.",
+  "limits": "Não expõe credenciais nem vendor types ao domínio.",
+  "next_gate": "Security/Integration.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "codex"
+  ],
+  "criticality": "Alta",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F17 Checkpoint + Rollback",
+    "F18 MCP + LSP Runtime",
+    "F21 Channel Gateway",
+    "F22 Device Nodes",
+    "F23 Secret & Credential Broker",
+    "F25 Knowledge / Evidence Graph"
+  ],
+  "capabilities": [
+    "channel.read",
+    "checkpoint.read",
+    "connector.platform.manage",
+    "context.compile",
+    "evidence.read",
+    "knowledge.read",
+    "lsp.read",
+    "mcp.invoke",
+    "memory.read",
+    "node.observe",
+    "secret.lease.request",
+    "skill.read"
+  ],
+  "permissions": [
+    {
+      "name": "channel.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "checkpoint.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "connector.platform.manage",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "evidence.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "knowledge.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "lsp.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "mcp.invoke",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "secret.lease.request",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Checkpoint manifest + hashes + rollback evidence; Session/channel state sem credencial no contexto",
+  "event_topics": "agent.connector.platform.agent.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; writes policy-gated; evidência obrigatória; sem autoaprovação. Device input/screen exige autorização de sessão e logging. Credenciais via broker/leases; nunca em prompt.",
+  "references": "oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão | OpenClaw — gateway/nodes/channels; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 110
+  }
+}

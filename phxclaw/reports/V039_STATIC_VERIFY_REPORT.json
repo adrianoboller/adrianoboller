@@ -1,0 +1,272 @@
+{
+  "suite": "PhxClaw v0.39 static verifier",
+  "pass": 53,
+  "fail": 0,
+  "checks": [
+    {
+      "name": "exists_crates/phxclaw-swarm-merge-intelligence/Cargo.toml",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "exists_crates/phxclaw-swarm-merge-intelligence/src/lib.rs",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "exists_config/swarm-merge-intelligence-policy.v039.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "exists_config/swarm-contract-policy.v039.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "exists_migrations/0039_swarm_consensus_merge_intelligence.sql",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "exists_tests/sql/v039_rls_e2e.sql",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_ContractKind",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_ConflictClass",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_ChangeIntent",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_SemanticConflict",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_MergeOrderPlan",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_IntegrationReplayEvidence",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_MutationEvidence",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_SignedResolutionDocument",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_VerifiedResolution",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_ConsensusEvidence",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_detect_semantic_conflicts",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_build_merge_order",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_contract_gate",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_replay_gate",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_mutation_gate",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_verify_signed_resolution",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_consensus_gate",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_merge_bundle_hash",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_no_majority_override",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_DependencyCycle",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_BlockingConflict",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_UntrustedSigner",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_ed25519_verify",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_no_majority_comment",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "policy_majority_override_false",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "policy_mutation_gate",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "policy_replay_required",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_table_swarm_change_intents",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_table_swarm_contract_surfaces",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_table_swarm_semantic_conflicts_v039",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_table_swarm_merge_dependencies_v039",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_table_swarm_merge_plans_v039",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_table_swarm_integration_replays_v039",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_table_swarm_mutation_evidence_v039",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_table_swarm_resolution_documents_v039",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_table_swarm_consensus_decisions_v039",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_table_swarm_merge_execution_events_v039",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_force_rls",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_rls_quoting",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_append_only",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_tenant_fk",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_swarm_fk_intents",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_swarm_fk_plan",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_mutant_bound",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "native_locked",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "native_separate_rls_url",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "native_no_fake_pass",
+      "pass": true,
+      "detail": ""
+    }
+  ]
+}

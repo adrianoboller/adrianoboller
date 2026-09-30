@@ -1,0 +1,36 @@
+{
+  "sprint_uuid": "01a0e7b3-b661-70bc-9fb2-7a21927cd577",
+  "sprint_id": "F22",
+  "title": "Device Nodes",
+  "version": "0.21.0",
+  "state": "review",
+  "color": "yellow",
+  "depends_on": [
+    "F05",
+    "F09",
+    "F17",
+    "F21",
+    "F23"
+  ],
+  "deliverables": [
+    "Rust domain/runtime crate phxclaw-device-nodes",
+    "Ed25519 signed device envelope",
+    "PostgreSQL authoritative registry/replay/command journal",
+    "one-time enrollment token hashes",
+    "idempotent command queue + fencing",
+    "approval gates for high/critical or protected capabilities",
+    "Secret Broker handle-only command credentials",
+    "RLS tenant isolation",
+    "production OS keyring provider integration boundary"
+  ],
+  "release_gates_required": [
+    "cargo fmt --check",
+    "cargo check --workspace",
+    "cargo test --workspace",
+    "cargo clippy --workspace --all-targets -- -D warnings",
+    "PostgreSQL real E2E",
+    "device-node transport E2E",
+    "Secret Broker + OS keyring E2E"
+  ],
+  "done": false
+}

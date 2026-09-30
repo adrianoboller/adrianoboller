@@ -1,0 +1,15 @@
+[package]
+name = "phxclaw-obsidian-bridge"
+version = "0.30.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+description = "Obsidian Markdown and JSON Canvas interoperability for PhxClaw knowledge/evidence"
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+thiserror = "2"
+uuid = { version = "1", features = ["serde", "v7"] }
+[lints.rust]
+unsafe_code = "forbid"

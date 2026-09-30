@@ -1,0 +1,39 @@
+{
+  "uuid": "01a0eab2-5c29-72e6-9e15-68a9f64e3144",
+  "id": "sprint-backlog-manager",
+  "name": "Sprint Backlog Manager",
+  "category": "scrum",
+  "function": "Controla tarefas da Sprint",
+  "capability": "project.skill.sprint-backlog-manager",
+  "agent_role": "scrum",
+  "permissions": [
+    "project.read",
+    "agile.write",
+    "project.mutate"
+  ],
+  "risk": "medium",
+  "approval_required": false,
+  "evidence_required": true,
+  "lifecycle_hooks": [
+    "before_invoke",
+    "after_invoke",
+    "on_failure"
+  ],
+  "rollback": "checkpoint",
+  "version": "0.42.0",
+  "semver": "0.42.0",
+  "manifest_uuid": "01a0eab2-5c2d-771a-bff7-451f0ce8b9d2",
+  "dependencies": [
+    "phxclaw-skill-runtime>=0.15",
+    "phxclaw-evidence-ledger>=0.9"
+  ],
+  "compatibility": {
+    "phxclaw": ">=0.41,<0.43"
+  },
+  "sandbox": "deny-by-default",
+  "signature_policy": "release-signing-required",
+  "provenance": {
+    "origin": "user-defined-project-management-suite",
+    "license": "PhxClaw project source policy"
+  }
+}

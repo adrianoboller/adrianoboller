@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PhxClaw Portfolio Digital Twin",
+  "type": "object",
+  "required": [
+    "twin_uuid",
+    "tenant_uuid",
+    "source_state_sha256",
+    "projects",
+    "model_quotas_per_day"
+  ],
+  "properties": {
+    "twin_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tenant_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "source_state_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "projects": {
+      "type": "array",
+      "minItems": 1
+    },
+    "dependencies": {
+      "type": "array"
+    },
+    "shared_resources": {
+      "type": "array"
+    },
+    "model_quotas_per_day": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "number",
+        "exclusiveMinimum": 0
+      }
+    }
+  }
+}

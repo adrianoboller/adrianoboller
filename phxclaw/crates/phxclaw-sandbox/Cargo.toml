@@ -1,0 +1,10 @@
+[package]
+name = "phxclaw-sandbox"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+phxclaw-types = { path = "../phxclaw-types" }
+thiserror.workspace = true
+serde_json.workspace = true

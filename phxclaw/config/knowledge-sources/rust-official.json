@@ -1,0 +1,100 @@
+{
+  "uuid": "01a0e4dc-d1e1-7285-b0e9-7e8530f99573",
+  "name": "rust-official",
+  "ecosystem": "rust",
+  "mode": "hybrid",
+  "authoritative": true,
+  "license_note": "Preserve upstream Rust documentation attribution and licenses; do not republish third-party crates without checking their own licenses.",
+  "local_root": "knowledge/offline/rust",
+  "sync_strategy": "rustup_component:rust-docs",
+  "verified_version": "1.98.1",
+  "allowed_agents": [
+    "Research Agent",
+    "Research Lead / Pesquisador PDCA",
+    "Documentador",
+    "Perséfone"
+  ],
+  "required_capabilities": [
+    "knowledge.rust.read"
+  ],
+  "endpoints": [
+    {
+      "name": "Rust home",
+      "url": "https://www.rust-lang.org/",
+      "authority": "official",
+      "purpose": "language home, install and project navigation",
+      "offline_relative_path": null
+    },
+    {
+      "name": "Rust Documentation",
+      "url": "https://doc.rust-lang.org/",
+      "authority": "official",
+      "purpose": "official documentation bookshelf",
+      "offline_relative_path": "html/index.html"
+    },
+    {
+      "name": "The Rust Book",
+      "url": "https://doc.rust-lang.org/book/",
+      "authority": "official",
+      "purpose": "language learning and practical guide",
+      "offline_relative_path": "html/book/index.html"
+    },
+    {
+      "name": "Standard Library",
+      "url": "https://doc.rust-lang.org/std/",
+      "authority": "official",
+      "purpose": "std API reference",
+      "offline_relative_path": "html/std/index.html"
+    },
+    {
+      "name": "Rust By Example",
+      "url": "https://doc.rust-lang.org/rust-by-example/",
+      "authority": "official",
+      "purpose": "runnable examples and language examples",
+      "offline_relative_path": "html/rust-by-example/index.html"
+    },
+    {
+      "name": "Rustonomicon",
+      "url": "https://doc.rust-lang.org/nomicon/",
+      "authority": "official",
+      "purpose": "unsafe Rust and advanced systems topics",
+      "offline_relative_path": "html/nomicon/index.html"
+    },
+    {
+      "name": "Rust Reference",
+      "url": "https://doc.rust-lang.org/reference/",
+      "authority": "official",
+      "purpose": "language syntax and semantics reference",
+      "offline_relative_path": "html/reference/index.html"
+    },
+    {
+      "name": "Playground",
+      "url": "https://play.rust-lang.org/",
+      "authority": "official",
+      "purpose": "online compilation and experiments",
+      "offline_relative_path": null
+    },
+    {
+      "name": "Rust GitHub organization",
+      "url": "https://github.com/rust-lang",
+      "authority": "official",
+      "purpose": "official source repositories and issue history",
+      "offline_relative_path": null
+    },
+    {
+      "name": "rustup",
+      "url": "https://rustup.rs/",
+      "authority": "official",
+      "purpose": "toolchain installation",
+      "offline_relative_path": null
+    },
+    {
+      "name": "crates.io",
+      "url": "https://crates.io/",
+      "authority": "official_registry",
+      "purpose": "Rust package registry; package-level authority depends on crate owner",
+      "offline_relative_path": null
+    }
+  ],
+  "last_synced_at": null
+}

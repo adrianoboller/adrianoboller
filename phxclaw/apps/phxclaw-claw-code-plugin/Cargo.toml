@@ -1,0 +1,17 @@
+[package]
+name = "phxclaw-claw-code-plugin"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "phxclaw-claw-code-plugin"
+path = "src/main.rs"
+
+[dependencies]
+chrono.workspace = true
+phxclaw-claw-code-bridge = { path = "../../crates/phxclaw-claw-code-bridge" }
+phxclaw-process-protocol = { path = "../../crates/phxclaw-process-protocol" }
+phxclaw-types = { path = "../../crates/phxclaw-types" }
+serde_json.workspace = true
+uuid.workspace = true

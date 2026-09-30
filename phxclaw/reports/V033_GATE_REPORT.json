@@ -1,0 +1,55 @@
+{
+  "version": "0.33.0",
+  "status": {
+    "source_ready": true,
+    "static_verified": true,
+    "runtime_verified": "partial",
+    "e2e_verified": false,
+    "release_ready": false
+  },
+  "sprints": {
+    "green": 0,
+    "yellow": 26,
+    "red": 0,
+    "total": 26
+  },
+  "capabilities": {
+    "base": 421,
+    "delta": 30,
+    "projected_total": 451
+  },
+  "executed": [
+    {
+      "suite": "v0.33 static verifier",
+      "pass": 95,
+      "fail": 0
+    },
+    {
+      "suite": "v0.33 local arena/drift/application",
+      "pass": 27,
+      "fail": 0
+    }
+  ],
+  "host_tools": {
+    "cargo": false,
+    "rustc": false,
+    "psql": false,
+    "postgres": false
+  },
+  "required_not_executed": [
+    "cargo fmt --check",
+    "cargo check --workspace --locked",
+    "cargo test --workspace --locked",
+    "cargo clippy --workspace --all-targets --locked -- -D warnings",
+    "PostgreSQL 0033 migration E2E",
+    "RLS cross-tenant E2E",
+    "live provider champion/challenger Arena E2E"
+  ],
+  "governance": [
+    "v0.31 remains safety/privacy/budget eligibility authority",
+    "v0.32 Promotion Gate remains profile promotion authority",
+    "v0.33 Arena cannot broaden base eligibility",
+    "production arena candidates require promoted v0.32 profiles",
+    "fixture evidence cannot produce a promotion recommendation"
+  ]
+}

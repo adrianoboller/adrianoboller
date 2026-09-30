@@ -1,0 +1,148 @@
+{
+  "version": "0.14.0",
+  "generated_at": "2026-09-28T04:03:41.437707+00:00",
+  "pass": 26,
+  "fail": 0,
+  "skip": 0,
+  "results": [
+    {
+      "name": "workspace.member_count",
+      "status": "PASS",
+      "detail": 46
+    },
+    {
+      "name": "workspace.version",
+      "status": "PASS",
+      "detail": "0.14.0"
+    },
+    {
+      "name": "tauri.version",
+      "status": "PASS",
+      "detail": "0.14.0"
+    },
+    {
+      "name": "tauri.frontendDist",
+      "status": "PASS",
+      "detail": "/mnt/data/PhxClaw_Core_Bootstrap_v0.14/apps/phxclaw-ui"
+    },
+    {
+      "name": "api.loopback",
+      "status": "PASS",
+      "detail": "127.0.0.1"
+    },
+    {
+      "name": "api.host_control_default_deny",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "name": "policy.command_execution",
+      "status": "PASS",
+      "detail": false
+    },
+    {
+      "name": "policy.shell_execution",
+      "status": "PASS",
+      "detail": false
+    },
+    {
+      "name": "policy.desktop_input",
+      "status": "PASS",
+      "detail": false
+    },
+    {
+      "name": "policy.screen_capture",
+      "status": "PASS",
+      "detail": false
+    },
+    {
+      "name": "policy.webview_control",
+      "status": "PASS",
+      "detail": false
+    },
+    {
+      "name": "policy.external_webviews",
+      "status": "PASS",
+      "detail": false
+    },
+    {
+      "name": "policy.managed_webview_origin_allowlist",
+      "status": "PASS",
+      "detail": []
+    },
+    {
+      "name": "api.non_loopback_guard",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "name": "api.bearer_auth",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "name": "api.sse",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "name": "api.websocket",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "name": "api.host_topic_guard",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "name": "evidence.uuidv7",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "name": "evidence.sha256",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "name": "evidence.previous_hash",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "name": "evidence.sync_data",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "name": "ui.javascript_syntax",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "capabilities.count",
+      "status": "PASS",
+      "detail": 141
+    },
+    {
+      "name": "capabilities.f14",
+      "status": "PASS",
+      "detail": [
+        "api.realtime.connect",
+        "desktop.application.launch",
+        "desktop.host.status",
+        "desktop.webview.create",
+        "event.live.publish",
+        "event.live.subscribe",
+        "evidence.ledger.append",
+        "evidence.ledger.verify"
+      ]
+    },
+    {
+      "name": "evidence.hash_chain_shape",
+      "status": "PASS",
+      "detail": "666a520047ccb78ccc01865ba7c070c95a3ef968fbefb54b8b0ad27b3effadcb"
+    }
+  ]
+}

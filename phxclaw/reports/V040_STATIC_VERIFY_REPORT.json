@@ -1,0 +1,7 @@
+{
+  "suite": "v0.40 static",
+  "pass": 25,
+  "fail": 0,
+  "returncode": 0,
+  "output": "PASS config_version \nPASS canonical_path \nPASS legacy_not_authoritative \nPASS plaintext_forbidden \nPASS deny_default \nPASS software_factory \nPASS schema_validate \nPASS schema_instance \nPASS config_html_api \nPASS config_html_revision \nPASS config_html_import_export \nPASS config_html_secret_guard \nPASS config_html_raw \nPASS rust_atomic \nPASS rust_revision_conflict \nPASS rust_history \nPASS rust_secret_scan \nPASS rust_uuidv7 \nPASS factory_checkpoint \nPASS factory_approval \nPASS sql_force_rls \nPASS sql_rls_exact \nPASS sql_append_only \nPASS cap_total \nPASS cap_new \nTOTAL 25 PASS / 0 FAIL\n"
+}

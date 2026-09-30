@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PhxClaw Executive Decision Request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "request_uuid",
+    "tenant_uuid",
+    "project_uuid",
+    "supervisor_plan_uuid",
+    "action_kind",
+    "rationale",
+    "evidence_sha256",
+    "requires_approval"
+  ],
+  "properties": {
+    "request_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tenant_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "project_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "supervisor_plan_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "action_kind": {
+      "type": "string"
+    },
+    "rationale": {
+      "type": "string"
+    },
+    "expected_effect": {
+      "type": "string"
+    },
+    "evidence_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "requires_approval": {
+      "type": "boolean"
+    }
+  }
+}

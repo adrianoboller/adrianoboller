@@ -1,0 +1,26 @@
+[package]
+name = "phxclaw-device-transport"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+base64.workspace = true
+chrono.workspace = true
+ed25519-dalek.workspace = true
+futures-util.workspace = true
+getrandom.workspace = true
+phxclaw-device-nodes = { path = "../phxclaw-device-nodes" }
+phxclaw-key-provider = { path = "../phxclaw-key-provider" }
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-tungstenite.workspace = true
+url.workspace = true
+uuid.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"

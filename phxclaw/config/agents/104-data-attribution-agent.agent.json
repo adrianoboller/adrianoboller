@@ -1,0 +1,103 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f668-758e-ac0f-2b3767ad7d2d",
+  "agent_id": 104,
+  "name": "Data Attribution Agent",
+  "macroarea": "Dados & Integrações",
+  "nucleus": "Dados",
+  "role_type": "Agente de atribuição de dados",
+  "mission": "Garante origem, deduplicação, definição e reconciliação de eventos e métricas.",
+  "responsibilities": "Define event dictionary, source-of-truth, currency/timezone normalization, dedupe keys e attribution rules.",
+  "resources": "Event streams, metrics DB, schemas, connector metadata.",
+  "authorized_actions": "Classificar/normalizar/reconciliar eventos e detectar duplicatas.",
+  "trigger": "Múltiplas fontes alimentam métrica.",
+  "declared_dependencies": "Data contracts.",
+  "resolved_agent_dependencies": [],
+  "deliverables": "Metrics dictionary/attribution evidence.",
+  "limits": "Não inventa causalidade sem regra definida.",
+  "next_gate": "Data/FinOps/AI Evaluation.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "ollama"
+  ],
+  "criticality": "Média",
+  "modules": [
+    "F16 Scheduler + Background Jobs",
+    "F18 MCP + LSP Runtime",
+    "F21 Channel Gateway",
+    "F25 Knowledge / Evidence Graph"
+  ],
+  "capabilities": [
+    "channel.read",
+    "data.attribution.reconcile",
+    "evidence.read",
+    "job.read",
+    "knowledge.read",
+    "lsp.read",
+    "mcp.invoke"
+  ],
+  "permissions": [
+    {
+      "name": "channel.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "data.attribution.reconcile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "evidence.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "job.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "knowledge.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "lsp.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "mcp.invoke",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Job UUIDv7 + lease/heartbeat/resume em PostgreSQL; Session/channel state sem credencial no contexto; Knowledge/Evidence Graph com proveniência",
+  "event_topics": "agent.data.attribution.agent.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Sandbox por padrão; capabilities escopadas; sem secrets diretos.",
+  "references": "oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão | OpenClaw — gateway/nodes/channels; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 105
+  }
+}

@@ -1,0 +1,49 @@
+{
+  "uuid": "01a0e48f-3d0d-793a-b547-4bc88546f02a",
+  "code": "F09",
+  "title": "Event Bus + Transactional Outbox",
+  "goal": "Entregar eventos persistentes, ordenados e publicáveis sem perder o acoplamento transacional.",
+  "status": "review",
+  "tasks": [
+    {
+      "uuid": "01a0e48f-3d0d-771a-8a30-3eeed25b26b3",
+      "title": "EventEnvelope UUIDv7",
+      "status": "done"
+    },
+    {
+      "uuid": "01a0e48f-3d0d-7202-9750-4a4f4311fbe6",
+      "title": "Transactional Outbox PostgreSQL",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e48f-3d0d-783a-b047-33ed1cef25d0",
+      "title": "Claim concorrente SKIP LOCKED",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e48f-3d0d-7201-b0bb-96fd06652fd5",
+      "title": "Retry/reschedule",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e48f-3d0d-7ffb-a3c8-0932f8b534d0",
+      "title": "Teste em PostgreSQL real",
+      "status": "blocked"
+    }
+  ],
+  "definition_of_done": [
+    "evento rastreável",
+    "outbox transacional",
+    "concorrência segura",
+    "replay/auditoria"
+  ],
+  "notes": [
+    "Código e migration implementados; execução contra PostgreSQL real continua bloqueada neste ambiente."
+  ],
+  "state": "review",
+  "canonical_project_version": "0.67.0",
+  "canonical_state_ref": "config/project-state-canonical.v067.json",
+  "implementation_state": "source_ready",
+  "verification_state": "static_verified",
+  "open_gaps": []
+}

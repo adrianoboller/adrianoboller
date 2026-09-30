@@ -1,0 +1,15 @@
+[package]
+name = "phxclaw-swarm-merge-intelligence"
+version = "0.39.0"
+edition = "2021"
+license = "Apache-2.0"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+thiserror = "2"
+uuid = { version = "1", features = ["v7", "serde"] }
+base64 = "0.22"
+ed25519-dalek = "2"
+phxclaw-engineering-swarm = { path = "../phxclaw-engineering-swarm" }

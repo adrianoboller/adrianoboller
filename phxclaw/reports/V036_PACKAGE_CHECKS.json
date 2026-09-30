@@ -1,0 +1,62 @@
+{
+  "suite": "v0.36 package checks",
+  "pass": 11,
+  "fail": 0,
+  "checks": [
+    {
+      "name": "package_exists:README.md",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "package_exists:PACKAGE.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "package_exists:THIRD_PARTY_NOTICES_DELTA.md",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "package_exists:overlay/docs/THIRD_PARTY_SKILL_AUDIT_V036.md",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "package_exists:tools/apply_overlay.py",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "package_exists:tools/verify_v036.py",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "package_exists:tools/test_v036_local.py",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_vendor_tree",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_obvious_secret",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "catalog_20",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "shotcraft_no_assets",
+      "pass": true,
+      "detail": ""
+    }
+  ]
+}

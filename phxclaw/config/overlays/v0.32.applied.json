@@ -1,0 +1,89 @@
+{
+  "version": "0.32.0",
+  "base": "0.31.0",
+  "copied": [
+    {
+      "path": "config/ai-benchmark-policy.v032.json",
+      "sha256": "d43e4be5960e75eb456a93b2b884895aee34a8ca210b54e8a37a0759d8094c40"
+    },
+    {
+      "path": "capabilities/V032_CAPABILITIES_DELTA.json",
+      "sha256": "171a5886f6e25dc90ab1c0dee4330240602091ca8bde3a303c167cceb47e8b33"
+    },
+    {
+      "path": "schemas/ai-adaptive-route-v032.schema.json",
+      "sha256": "9127bc97f50b1deb4d6d4f53f3e7dc8d0e7db05006794f1a2a27a6c2cbfaad6c"
+    },
+    {
+      "path": "schemas/ai-benchmark-observation-v032.schema.json",
+      "sha256": "738fb07bd16ea35468e46f25839e3738c8c8fd06998950503e829e94c3de39db"
+    },
+    {
+      "path": "schemas/ai-benchmark-suite-v032.schema.json",
+      "sha256": "5fe3dc7ed4502915f22cdd3a4d84a554b912198506b3fc13c230c3553465cbe4"
+    },
+    {
+      "path": "schemas/ai-profile-promotion-v032.schema.json",
+      "sha256": "fd94295fe21b4e9ba37c30da60bef9b14e04cb5bc69dc7c3a9ab973970a6c082"
+    },
+    {
+      "path": "schemas/ai-performance-profile-v032.schema.json",
+      "sha256": "082f45e0c8cc71853bcb9179cd138de2e02052a30bd99547d02fa8fc30025767"
+    },
+    {
+      "path": "tools/verify_v032.py",
+      "sha256": "d2fcaa86049064e617056178e82a6b2fed529f4f5948ccd50f9885659430c851"
+    },
+    {
+      "path": "tools/test_v032_local.py",
+      "sha256": "ff119ead0ae449362643d9ea9399b68482440c105ef5f73acb06222c9ac91b4a"
+    },
+    {
+      "path": "reports/V032_STATIC_VERIFY_REPORT.json",
+      "sha256": "56618e23eee3fab620ca2f5f8e717b1ef4e93e02f8c15deb8116f4d05a657684"
+    },
+    {
+      "path": "reports/V032_LOCAL_TEST_REPORT.json",
+      "sha256": "6759c67f4a1ff7478fcb408a1f619e5e9bedd7da0a3ddc207493bd8202f64ea5"
+    },
+    {
+      "path": "migrations/0032_ai_benchmark_adaptive.sql",
+      "sha256": "b6cec12ad92b993ddc1bc9af9d86690f96416047af3aacfb158089761f744e98"
+    },
+    {
+      "path": "docs/AI_BENCHMARK_ADAPTIVE_INTELLIGENCE_V032.md",
+      "sha256": "cbf6668bacbed97ee7518dfcb0a25443c904988297cebab82a4cdfff0c5b083b"
+    },
+    {
+      "path": "docs/V031_MIGRATION_REPAIR_V032.md",
+      "sha256": "9df56c891d8e56b610c288928ce62044b074aad59fac585d1ef20140658f202e"
+    },
+    {
+      "path": "ci/run-v032-native.sh",
+      "sha256": "58288df639058af6170197ffa890cfbfce37df757917db10418671317ef9e1bc"
+    },
+    {
+      "path": "ci/run-v032-native.ps1",
+      "sha256": "382e767f958559b1f50bbb27baa9884571f70a2aa1369192173f4857d4b98be6"
+    },
+    {
+      "path": "crates/phxclaw-adaptive-model-intelligence/Cargo.toml",
+      "sha256": "1359daf3b8d34354f573f2791900f47da89611df68cee90a1923e6d7233f2643"
+    },
+    {
+      "path": "crates/phxclaw-ai-benchmark/Cargo.toml",
+      "sha256": "f763695743fb897f0d1a596771062eb2dcb5509ceb724a01dd1ee1f596ec5181"
+    },
+    {
+      "path": "crates/phxclaw-ai-benchmark/src/lib.rs",
+      "sha256": "f2e51861a875544aa999a68e0582cea220a3b402ecc04abd3e598db4ce400965"
+    },
+    {
+      "path": "crates/phxclaw-adaptive-model-intelligence/src/lib.rs",
+      "sha256": "189428df284563dfd20bd68910668c5ad48ac289196987b5d9511bb8001b3641"
+    }
+  ],
+  "workspace": "v0.32 crates present exactly once",
+  "v031_repair": "repaired_known_v031_sql_quoting_defect",
+  "cargo_lock_requires_refresh": false
+}

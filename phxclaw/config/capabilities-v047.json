@@ -1,0 +1,266 @@
+{
+  "version": "0.47.0",
+  "count": 52,
+  "capabilities": [
+    {
+      "uuid": "01a0ed6d-b1b4-7222-927c-593b4cf42912",
+      "name": "supervisor.health.capture",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-71ff-b535-72a9d08f2c15",
+      "name": "supervisor.health.score",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-7ae1-b290-ad98b7a0ccdc",
+      "name": "supervisor.project.evaluate",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-7a25-9e00-3ebee5b59d25",
+      "name": "supervisor.project.watch",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-7a1f-b4c1-322336120a05",
+      "name": "supervisor.intervention.plan",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-7549-9c77-1234ebd1edb5",
+      "name": "supervisor.intervention.validate",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-71a5-8da1-36ce9e4cceb1",
+      "name": "supervisor.intervention.approve",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-7210-934c-2770a29c33a9",
+      "name": "supervisor.intervention.execute",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-7b3b-af91-af9c67ff9cb1",
+      "name": "supervisor.intervention.cancel",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-7d88-bbea-f22ad2e619e4",
+      "name": "supervisor.intervention.replay",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-7903-bbec-abcf8a659ad7",
+      "name": "supervisor.task.reassign",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-76ec-a6de-015b7145e99b",
+      "name": "supervisor.task.reprioritize",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-7c76-8a8d-1f1c3b729cd8",
+      "name": "supervisor.task.defer",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-7c11-8c77-967575399870",
+      "name": "supervisor.task.split",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-7b7c-8c35-4914dad54441",
+      "name": "supervisor.task.retry_strategy",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-7cf8-8e7c-b1c5567a46a4",
+      "name": "supervisor.sprint.replan",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-72bf-a98d-126deac7b064",
+      "name": "supervisor.sprint.resequence",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-7312-b524-256abb8faa5e",
+      "name": "supervisor.sprint.capacity_rebalance",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-7dee-a10d-974e2356604c",
+      "name": "supervisor.sprint.goal_guard",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-7697-9bd5-09f39bdfdee9",
+      "name": "supervisor.kanban.wip_tune",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-7536-afe3-498ad9c052f9",
+      "name": "supervisor.kanban.bottleneck_relief",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-767d-9af2-30d3a2460c01",
+      "name": "supervisor.kanban.flow_rebalance",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-7b91-ae11-eb574ffbe312",
+      "name": "supervisor.gantt.reschedule",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-7fa3-bbb1-eea5fbd24f8e",
+      "name": "supervisor.gantt.critical_path_recompute",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-7ba9-82c0-65946391b6c7",
+      "name": "supervisor.gantt.milestone_guard",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-71c1-bf41-fdaa38e77433",
+      "name": "supervisor.gantt.baseline_compare",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-79d4-8306-e73c7cd40fdc",
+      "name": "supervisor.resource.rebalance",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-79b6-b17f-e1f4d3e6f2fb",
+      "name": "supervisor.resource.capacity_forecast",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-74d9-ace5-a09fc0249ba2",
+      "name": "supervisor.budget.reforecast",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-7950-8f10-5d6f966859f6",
+      "name": "supervisor.budget.rebalance",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-772b-a9b6-b91588ffa1e7",
+      "name": "supervisor.budget.cloud_throttle",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-713d-ba3b-f2c6ccf130ea",
+      "name": "supervisor.risk.deadline",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-7029-a236-a24a3e728445",
+      "name": "supervisor.risk.cost",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-7158-8bef-7aeb19633141",
+      "name": "supervisor.risk.rework",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-79ed-bfeb-f50e79ed664d",
+      "name": "supervisor.risk.quality",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-7a79-aff1-b7706eacc184",
+      "name": "supervisor.pdca.open",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-7991-9f19-e1ccacba5051",
+      "name": "supervisor.pdca.plan",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-741a-ae03-33a5020d9dcf",
+      "name": "supervisor.pdca.do",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-7617-86f9-f4df6ffe79a7",
+      "name": "supervisor.pdca.check",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-7efb-9da2-24e3095a1c98",
+      "name": "supervisor.pdca.act",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-704f-a3b7-d130d19bb4d5",
+      "name": "supervisor.pdca.close",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-7e62-842e-7c26d1d375aa",
+      "name": "supervisor.knowledge.consult",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-72ec-ae19-334ca6a491d0",
+      "name": "supervisor.knowledge.fruitful_reuse",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-7ff2-b6b6-5ca75cf66a64",
+      "name": "supervisor.knowledge.unfruitful_avoid",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-7193-88e9-f3d91262fdc2",
+      "name": "supervisor.agent.capacity",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-7111-bc6b-6a8ae0b7872d",
+      "name": "supervisor.model.route_cost_aware",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-705a-b4b8-bf64e754c05d",
+      "name": "supervisor.guard.scope",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-7619-973c-571a94822459",
+      "name": "supervisor.guard.approval",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-712c-8575-2def4f456d33",
+      "name": "supervisor.guard.hard_gate",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-735c-8047-1d060c9496b5",
+      "name": "supervisor.guard.source_state",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-7c36-92d1-d259b78b966d",
+      "name": "supervisor.evidence.record",
+      "introduced": "0.47.0"
+    },
+    {
+      "uuid": "01a0ed6d-b1b5-7dc6-b9b3-fd47b7f0f290",
+      "name": "supervisor.status.report",
+      "introduced": "0.47.0"
+    }
+  ]
+}

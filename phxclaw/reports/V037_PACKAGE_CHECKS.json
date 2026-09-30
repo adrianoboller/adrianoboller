@@ -1,0 +1,67 @@
+{
+  "suite": "PhxClaw v0.37 package/security checks",
+  "pass": 12,
+  "fail": 0,
+  "checks": [
+    {
+      "name": "package/PACKAGE.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "package/README.md",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "package/THIRD_PARTY_NOTICES_DELTA.md",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "package/tools/apply_overlay.py",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "package/tools/verify_v037.py",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "package/tools/test_v037_local.py",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_symlinks",
+      "pass": true,
+      "detail": "[]"
+    },
+    {
+      "name": "no_obvious_secrets",
+      "pass": true,
+      "detail": "[]"
+    },
+    {
+      "name": "pkg_version",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "skills_reused",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_vendor",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "notice_no_new_vendor",
+      "pass": true,
+      "detail": ""
+    }
+  ]
+}

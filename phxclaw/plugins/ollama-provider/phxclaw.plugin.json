@@ -1,0 +1,58 @@
+{
+  "schema_version": "phxclaw.plugin.source.v1",
+  "plugin_uuid": "01a0e8cd-5b43-72c9-b02d-83bc90f5bfe2",
+  "name": "phxclaw-ollama-provider",
+  "version": "0.30.0",
+  "core_api": ">=0.30.0 <0.31.0",
+  "extension_points": [
+    "model.provider"
+  ],
+  "capabilities": [
+    "ollama.provider.health",
+    "ollama.model.list",
+    "ollama.chat",
+    "ollama.embed",
+    "ollama.openai.compat",
+    "ollama.model.pull.plan",
+    "ollama.model.inspect",
+    "ollama.anthropic.compat"
+  ],
+  "permissions": [
+    "network.loopback",
+    "secret.handle.read",
+    "approval.request"
+  ],
+  "network_origins": [
+    "http://127.0.0.1:11434"
+  ],
+  "lifecycle_hooks": [
+    "validate",
+    "start",
+    "health",
+    "stop"
+  ],
+  "dependencies": [],
+  "compatibility": {
+    "platforms": [
+      "linux",
+      "windows",
+      "macos"
+    ],
+    "process_protocol": "v1"
+  },
+  "provenance": {
+    "upstream_reference": "https://github.com/ollama/ollama",
+    "reuse_mode": "interoperability_contract_only",
+    "source_tree_vendored": false
+  },
+  "rollback": {
+    "strategy": "disable_plugin",
+    "preserve_data": true
+  },
+  "release_requirements": [
+    "production publisher signature",
+    "artifact sha256",
+    "SBOM",
+    "native/e2e gates"
+  ]
+}

@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "evidence_uuid",
+    "workflow_uuid",
+    "tenant_uuid",
+    "stage",
+    "attempt",
+    "source_state_sha256",
+    "input_sha256",
+    "output_sha256",
+    "actor_uuid"
+  ],
+  "properties": {
+    "evidence_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "workflow_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tenant_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "stage": {
+      "enum": [
+        "intake",
+        "research",
+        "code_map",
+        "hypothesis",
+        "plan",
+        "implement",
+        "test",
+        "review",
+        "explain",
+        "deliver"
+      ]
+    },
+    "attempt": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "source_state_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{64}$"
+    },
+    "input_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{64}$"
+    },
+    "output_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{64}$"
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "actor_uuid": {
+      "type": "string",
+      "format": "uuid"
+    }
+  }
+}

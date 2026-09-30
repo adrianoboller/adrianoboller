@@ -1,0 +1,198 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f614-70da-9cfb-4151c4cb515b",
+  "agent_id": 20,
+  "name": "Research Agent",
+  "macroarea": "Pesquisa & Inovação",
+  "nucleus": "Pesquisa",
+  "role_type": "Subagente pesquisador",
+  "mission": "Pesquisa uma questão delimitada em fontes autorizadas e rastreáveis.",
+  "responsibilities": "Busca documentação, release notes, papers, issues e repos oficiais; registra data, licença, autoridade, contradições e confiança.",
+  "resources": "Web, Git, Source Registry, bibliografia, Evidence Graph. | Rust Official Source Registry: rust-lang.org; doc.rust-lang.org; play.rust-lang.org; github.com/rust-lang; rustup.rs; crates.io; Rust Book; std; Rust By Example; Rustonomicon; Rust Reference. Snapshot local via rustup/rust-docs em knowledge/offline/rust. | olmOCR official: allenai/olmocr (Apache-2.0), via Source Registry olmocr-official.",
+  "authorized_actions": "Pesquisar, comparar, citar, classificar confiança e sugerir hipóteses. | Consultar help Rust offline/local, validar exemplos/API contra versão pinada e escalar para fonte online oficial quando necessário. | Executar OCR avançado em PDF/PNG/JPEG via capability ocr.olmocr.extract quando o provider estiver instalado e aprovado.",
+  "trigger": "Task de pesquisa atribuída.",
+  "declared_dependencies": "Pergunta delimitada e política de fontes. | Source Registry rust-official + índice offline local",
+  "resolved_agent_dependencies": [],
+  "deliverables": "Research Pack com fontes e confiança.",
+  "limits": "Não implementa e não usa fonte não autorizada sem marcação.",
+  "next_gate": "Research Lead / Hypothesis.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "ollama"
+  ],
+  "criticality": "Média",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F17 Checkpoint + Rollback",
+    "F19 Repo Intelligence / Tree-sitter",
+    "F22 Device Nodes",
+    "F23 Secret & Credential Broker",
+    "F24 Auto-learning + Skill Evolution",
+    "F25 Knowledge / Evidence Graph"
+  ],
+  "capabilities": [
+    "checkpoint.read",
+    "context.compile",
+    "evidence.read",
+    "knowledge.claw_code.read",
+    "knowledge.olmocr.read",
+    "knowledge.openclaw_rs.read",
+    "knowledge.read",
+    "knowledge.rust.read",
+    "knowledge.rustclaw.read",
+    "knowledge.source_registry.read",
+    "memory.read",
+    "node.observe",
+    "ocr.olmocr.extract",
+    "repo.read",
+    "repo.scan",
+    "research.collect",
+    "research.source.read",
+    "secret.lease.request",
+    "skill.candidate.propose",
+    "skill.read",
+    "tree_sitter.analyze"
+  ],
+  "permissions": [
+    {
+      "name": "checkpoint.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "evidence.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "knowledge.olmocr.read",
+      "scopes": [
+        "olmocr-official"
+      ]
+    },
+    {
+      "name": "knowledge.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "knowledge.rust.read",
+      "scopes": [
+        "rust-official"
+      ]
+    },
+    {
+      "name": "knowledge.source_registry.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "ocr.olmocr.extract",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "repo.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "repo.scan",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "research.collect",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "research.source.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "secret.lease.request",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.candidate.propose",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "tree_sitter.analyze",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "knowledge.claw_code.read",
+      "scopes": [
+        "claw-code-official"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Checkpoint manifest + hashes + rollback evidence; Node/session state efêmero e pareado | Rust docs snapshot versionado em knowledge/offline/rust; Context Pack registra versão/source hash",
+  "event_topics": "agent.research.agent.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Sandbox por padrão; capabilities escopadas; sem secrets diretos. Device input/screen exige autorização de sessão e logging. Credenciais via broker/leases; nunca em prompt. Acesso permitido a rust-official com capability knowledge.rust.read; prioridade local-first para conhecimento estável, online oficial quando frescor/release atual for necessário; toda consulta registra UUIDv7, fonte, versão/data e Evidence Ledger.",
+  "references": "Architect (MIT) — AST/Tree-sitter/Repo Intelligence | oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão | Rust oficial: https://www.rust-lang.org/ | https://doc.rust-lang.org/ | https://github.com/rust-lang | https://rustup.rs/ | https://crates.io/ | olmOCR oficial: https://github.com/allenai/olmocr",
+  "knowledge_sources": [
+    "claw-code-official",
+    "olmocr-official",
+    "openclaw-rs-user-source",
+    "rust-official",
+    "rustclaw-user-source"
+  ],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 21
+  }
+}

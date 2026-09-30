@@ -1,0 +1,39 @@
+{
+  "uuid": "01a0eab2-5c2a-752e-a6e1-fc896914e0fa",
+  "id": "resource-manager",
+  "name": "Resource Manager",
+  "category": "classical",
+  "function": "Gerencia pessoas/equipamentos",
+  "capability": "project.skill.resource-manager",
+  "agent_role": "classical",
+  "permissions": [
+    "project.read",
+    "schedule.write",
+    "project.mutate"
+  ],
+  "risk": "medium",
+  "approval_required": false,
+  "evidence_required": true,
+  "lifecycle_hooks": [
+    "before_invoke",
+    "after_invoke",
+    "on_failure"
+  ],
+  "rollback": "checkpoint",
+  "version": "0.42.0",
+  "semver": "0.42.0",
+  "manifest_uuid": "01a0eab2-5c35-7422-99bf-e13366796fd4",
+  "dependencies": [
+    "phxclaw-skill-runtime>=0.15",
+    "phxclaw-evidence-ledger>=0.9"
+  ],
+  "compatibility": {
+    "phxclaw": ">=0.41,<0.43"
+  },
+  "sandbox": "deny-by-default",
+  "signature_policy": "release-signing-required",
+  "provenance": {
+    "origin": "user-defined-project-management-suite",
+    "license": "PhxClaw project source policy"
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "version": "1.0.0",
+  "skills": [
+    {
+      "name": "rust.research.official",
+      "version": "1.0.0",
+      "state": "validated",
+      "path": "rust-research.skill.json",
+      "triggers": [
+        "rust",
+        "cargo",
+        "crate",
+        "borrow",
+        "ownership",
+        "result",
+        "async",
+        "tokio",
+        "trait",
+        "lifetime",
+        "unsafe"
+      ],
+      "required_capabilities": [
+        "research.collect",
+        "knowledge.rust.read",
+        "knowledge.source_registry.read",
+        "context.compile",
+        "skill.read"
+      ],
+      "knowledge_sources": [
+        "rust-official"
+      ]
+    }
+  ]
+}

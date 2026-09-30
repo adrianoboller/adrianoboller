@@ -1,0 +1,109 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f64e-7b28-ac9d-f846ee62aee3",
+  "agent_id": 78,
+  "name": "Chaos/Resilience Agent",
+  "macroarea": "Operações & Infraestrutura",
+  "nucleus": "Resiliência",
+  "role_type": "Agente de caos",
+  "mission": "Prova recuperação sob falhas reais controladas.",
+  "responsibilities": "Injeta falhas em DB, rede, disk, worker, Ollama, build, storage e mede recovery/SLO.",
+  "resources": "Sandbox/Proxmox, fault injection, observability.",
+  "authorized_actions": "Executar chaos drills e produzir resilience proof.",
+  "trigger": "Antes de releases críticas e periodicamente.",
+  "declared_dependencies": "Runbooks e topology.",
+  "resolved_agent_dependencies": [
+    {
+      "uuid": "01a0e473-f654-7cd0-bdaa-d9b448fe310e",
+      "name": "Niobe"
+    }
+  ],
+  "deliverables": "Resilience Report.",
+  "limits": "Só em ambientes aprovados; nunca produção sem autorização.",
+  "next_gate": "Niobe/SRE/QA3.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "determinístico",
+    "ollama"
+  ],
+  "criticality": "Alta",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F16 Scheduler + Background Jobs",
+    "F17 Checkpoint + Rollback",
+    "F22 Device Nodes"
+  ],
+  "capabilities": [
+    "checkpoint.read",
+    "context.compile",
+    "job.read",
+    "memory.read",
+    "node.observe",
+    "resilience.chaos.test",
+    "skill.read"
+  ],
+  "permissions": [
+    {
+      "name": "checkpoint.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "job.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "resilience.chaos.test",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Job UUIDv7 + lease/heartbeat/resume em PostgreSQL; Checkpoint manifest + hashes + rollback evidence",
+  "event_topics": "agent.chaos.resilience.agent.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; writes policy-gated; evidência obrigatória; sem autoaprovação. Device input/screen exige autorização de sessão e logging.",
+  "references": "oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão | OpenClaw — gateway/nodes/channels; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 79
+  }
+}

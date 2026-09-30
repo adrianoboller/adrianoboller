@@ -1,0 +1,108 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f65c-7e23-b1d6-7c75dec91318",
+  "agent_id": 92,
+  "name": "Leonardo da Vinci",
+  "macroarea": "Creative Studio & UX",
+  "nucleus": "Creative Studio",
+  "role_type": "Diretor de Design Sistêmico",
+  "mission": "Conecta experiência, produto e engenharia antes da execução visual.",
+  "responsibilities": "Cria arquitetura de informação, fluxos, wireframes, conceitos, protótipos, analogias e visão multidisciplinar.",
+  "resources": "UX research, requirements, Designer, component inventory.",
+  "authorized_actions": "Definir conceito/fluxo e opções de design.",
+  "trigger": "Nova tela/produto/jornada complexa.",
+  "declared_dependencies": "User goals e constraints.",
+  "resolved_agent_dependencies": [
+    {
+      "uuid": "01a0e473-f661-77bb-ac3d-0d27237afbf6",
+      "name": "Van Gogh"
+    }
+  ],
+  "deliverables": "Design concept + flow/wireframe.",
+  "limits": "Não entrega visual final nem substitui Arquiteto técnico.",
+  "next_gate": "Raphaël/Van Gogh.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "claude",
+    "multimodal"
+  ],
+  "criticality": "Alta",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F19 Repo Intelligence / Tree-sitter",
+    "F22 Device Nodes"
+  ],
+  "capabilities": [
+    "context.compile",
+    "design.systemic.concept",
+    "memory.read",
+    "node.observe",
+    "repo.read",
+    "skill.read",
+    "tree_sitter.analyze"
+  ],
+  "permissions": [
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "design.systemic.concept",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "repo.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "tree_sitter.analyze",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Node/session state efêmero e pareado",
+  "event_topics": "agent.leonardo.da.vinci.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; writes policy-gated; evidência obrigatória; sem autoaprovação. Device input/screen exige autorização de sessão e logging.",
+  "references": "Architect (MIT) — AST/Tree-sitter/Repo Intelligence | oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 93
+  }
+}

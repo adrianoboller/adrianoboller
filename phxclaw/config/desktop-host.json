@@ -1,0 +1,26 @@
+{
+  "version": "0.14.0",
+  "api": {
+    "bind": "127.0.0.1",
+    "port": 48187,
+    "auth": "bearer",
+    "allow_publish": true,
+    "allow_host_control_topics": false,
+    "replay_limit": 2000
+  },
+  "host_policy": {
+    "command_execution": false,
+    "shell_execution": false,
+    "desktop_input": false,
+    "screen_capture": false,
+    "webview_control": false,
+    "external_webviews": false,
+    "managed_webview_origin_allowlist": []
+  },
+  "evidence": {
+    "local_append_only": true,
+    "hash": "sha256",
+    "uuid": "uuidv7",
+    "official_store": "PostgreSQL"
+  }
+}

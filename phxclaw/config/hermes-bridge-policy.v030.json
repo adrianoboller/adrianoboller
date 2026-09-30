@@ -1,0 +1,12 @@
+{
+  "schema_version": "phxclaw.hermes-policy.v1",
+  "skill_import": "f24_candidate_only",
+  "memory_import": "f25_unverified_observation_only",
+  "context_import": "f25_unverified_observation_only",
+  "github_default": "read_only",
+  "github_write_requires_approval": true,
+  "mcp_default": "deny_unpinned_tools",
+  "cron_import": "f06_task_graph_only",
+  "subagent_import": "f20_team_runtime_only",
+  "allow_secret_import": false
+}

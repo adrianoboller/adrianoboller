@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phxclaw.local/schemas/process-reply.schema.json",
+  "title": "PhxClaw Process Reply v1",
+  "type": "object",
+  "required": ["protocol", "message_uuid", "correlation_uuid", "status", "emitted_at", "payload", "error"],
+  "properties": {
+    "protocol": {"const": "phxclaw-process-v1"},
+    "message_uuid": {"type": "string", "format": "uuid"},
+    "correlation_uuid": {"type": "string", "format": "uuid"},
+    "status": {"enum": ["ok", "error", "rejected"]},
+    "emitted_at": {"type": "string", "format": "date-time"},
+    "payload": {},
+    "error": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "required": ["code", "message", "retryable"],
+          "properties": {
+            "code": {"type": "string", "minLength": 1},
+            "message": {"type": "string", "minLength": 1},
+            "retryable": {"type": "boolean"}
+          },
+          "additionalProperties": false
+        }
+      ]
+    }
+  },
+  "additionalProperties": false
+}

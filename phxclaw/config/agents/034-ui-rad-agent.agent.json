@@ -1,0 +1,80 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f622-7f3f-ae87-743175a5d8ea",
+  "agent_id": 34,
+  "name": "UI/RAD Agent",
+  "macroarea": "Creative Studio & UX",
+  "nucleus": "UI",
+  "role_type": "Agente de UI/RAD",
+  "mission": "Constrói controles, telas, layouts e infraestrutura visual do Phoenix Studio.",
+  "responsibilities": "Implementa Window/Screen/Panel/Button/Grid/Form/layout responsivo, inspector bindings e integração com templates.",
+  "resources": "Phoenix IR, Component Model, Designer model, accessibility hooks.",
+  "authorized_actions": "Criar controles e Designer, gerar/editar IR.",
+  "trigger": "Feature visual ou RAD.",
+  "declared_dependencies": "Creative specs, templates e runtime.",
+  "resolved_agent_dependencies": [],
+  "deliverables": "UI components + designer functionality.",
+  "limits": "Não codifica texto internacionalizável fixo nem ignora acessibilidade.",
+  "next_gate": "Creative Studio → Accessibility → User Proof.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "codex"
+  ],
+  "criticality": "Alta",
+  "modules": [
+    "F18 MCP + LSP Runtime",
+    "F22 Device Nodes"
+  ],
+  "capabilities": [
+    "lsp.read",
+    "mcp.invoke",
+    "node.observe",
+    "ui.rad.build"
+  ],
+  "permissions": [
+    {
+      "name": "lsp.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "mcp.invoke",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "ui.rad.build",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Node/session state efêmero e pareado",
+  "event_topics": "agent.ui.rad.agent.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; writes policy-gated; evidência obrigatória; sem autoaprovação. Device input/screen exige autorização de sessão e logging.",
+  "references": "OpenClaw — gateway/nodes/channels; validar licença por versão | ZeroClaw — benchmark Rust/providers/tools | Claw Code Rust — referência técnica/clean-room",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 35
+  }
+}

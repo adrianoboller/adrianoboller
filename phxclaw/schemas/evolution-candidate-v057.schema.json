@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "candidate_uuid",
+    "kind",
+    "risk",
+    "reversible",
+    "touches_core_or_policy",
+    "evidence_class",
+    "source_state_sha256",
+    "artifact_sha256"
+  ],
+  "properties": {
+    "candidate_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "kind": {
+      "enum": [
+        "knowledge",
+        "prompt",
+        "skill",
+        "workflow",
+        "code",
+        "core_policy"
+      ]
+    },
+    "risk": {
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ]
+    },
+    "reversible": {
+      "type": "boolean"
+    },
+    "touches_core_or_policy": {
+      "type": "boolean"
+    },
+    "evidence_class": {
+      "enum": [
+        "production",
+        "fixture"
+      ]
+    },
+    "source_state_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "artifact_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "additionalProperties": true
+}

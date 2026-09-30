@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "conflict_uuid",
+    "swarm_uuid",
+    "tenant_uuid",
+    "kind",
+    "teams",
+    "subject"
+  ],
+  "properties": {
+    "kind": {
+      "enum": [
+        "source_drift",
+        "overlapping_write",
+        "evidence_conflict",
+        "architecture_conflict",
+        "qa_failure",
+        "security_finding",
+        "documentation_mismatch"
+      ]
+    },
+    "teams": {
+      "type": "array",
+      "minItems": 2,
+      "uniqueItems": true
+    }
+  },
+  "additionalProperties": true
+}

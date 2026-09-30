@@ -1,0 +1,57 @@
+{
+  "suite": "PhxClaw v0.37 local/application tests",
+  "pass": 10,
+  "fail": 0,
+  "checks": [
+    {
+      "name": "stage_order",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "all_20_skills_wired",
+      "pass": true,
+      "detail": "20"
+    },
+    {
+      "name": "implement_checkpoint",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "research_qmd_first",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "delivery_refinement_skills",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "deterministic_digest_fixture",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "apply_first",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "apply_idempotent",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "installed_verifier",
+      "pass": true,
+      "detail": "SUMMARY 48 PASS / 0 FAIL"
+    },
+    {
+      "name": "unknown_conflict_fail_closed",
+      "pass": true,
+      "detail": ""
+    }
+  ]
+}

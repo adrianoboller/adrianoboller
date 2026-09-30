@@ -1,0 +1,202 @@
+{
+  "suite": "v0.52 static",
+  "pass": 39,
+  "fail": 0,
+  "checks": [
+    {
+      "name": "json_config/capabilities-v052.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/portfolio-roadmap-plan.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/portfolio-plan-execution-envelope.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/portfolio-project-demand.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json_schemas/portfolio-capacity-snapshot.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "capability_count",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "uuidv7_caps",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_OptimizerSelection",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_ProjectDemand",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_ProjectDependency",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_CapacitySnapshot",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_PlannerPolicy",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_ProjectRoadmapItem",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_PortfolioPlan",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_DecisionExecutionEnvelope",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_dependency_order",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_dependency_bounds",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_window_feasible",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_build_plan",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_execution_envelope",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_assert_no_direct_mutation",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "authority_DIRECT_MUTATION_ALLO",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "authority_executive_decision_c",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "authority_SelectedCandidateReq",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "authority_CandidateNotPareto",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "authority_DependencyCycle",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "authority_allow_budget_increas",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "direct_mutation_false",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "selected_candidate_required",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "auto_execute_false",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "budget_increase_false",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "ollama_local_first",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_force_rls",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_rls_exact",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_append_only",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_direct_mutation_false",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sql_delegate_fk",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "ui_exists",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_legacy_brand",
+      "pass": true,
+      "detail": ""
+    }
+  ]
+}

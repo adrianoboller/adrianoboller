@@ -1,0 +1,96 @@
+{
+  "version": "0.37.0",
+  "base": "0.36.0",
+  "copied": [
+    {
+      "path": "config/autonomous-engineering-policy.v037.json",
+      "sha256": "810b84871368881305271a1c5b845d5d06628acb972dea8e90fd06358ca14548"
+    },
+    {
+      "path": "config/engineering-stage-skill-map.v037.json",
+      "sha256": "3ff06dc6f99471e477311c3bde912cbca21a391a3dbc7311a29af252e7be12fe"
+    },
+    {
+      "path": "capabilities/V037_CAPABILITIES_DELTA.json",
+      "sha256": "3ba81c572763c1dd363be9b700098c9f81b6d55f8a0ad587ee9566b214a6e3c7"
+    },
+    {
+      "path": "schemas/engineering-stage-evidence-v037.schema.json",
+      "sha256": "78d1ed500a12c541ed27e86de54e15f17689d826dbf4aed5ff958c28ad1dcab9"
+    },
+    {
+      "path": "schemas/engineering-workflow-v037.schema.json",
+      "sha256": "051f9a10bf0cd60781f32c6f3b08ba19b8b4bb59facf3bf65becb4146259f16b"
+    },
+    {
+      "path": "schemas/engineering-checkpoint-v037.schema.json",
+      "sha256": "558f2ed434b1e3a6d6070dbd913b2815f992f273a1daf6bf68e1c068edfa100d"
+    },
+    {
+      "path": "tools/test_v037_local.py",
+      "sha256": "bd1637dd449ce608915c79105f92ef975d2aa7d277efe54d01aa761f00cbeabb"
+    },
+    {
+      "path": "tools/check_package_v037.py",
+      "sha256": "6dd596163e1dd52a3a2065c28c6725e9cd3dd7a4a83661ca48bdafb1bb46405a"
+    },
+    {
+      "path": "tools/verify_v037.py",
+      "sha256": "b593f11623da497165232f72cbfc52b781d533398e224da8133e500b65e4ca80"
+    },
+    {
+      "path": "reports/V037_STATIC_VERIFY_REPORT.json",
+      "sha256": "149f54aa42ac20b3c1e05dad2317579601c9ab8adaa3aaf967c99277f782e870"
+    },
+    {
+      "path": "reports/V037_PACKAGE_CHECKS.json",
+      "sha256": "92433974f5d08c3169b6d8392979596af1f8fb7d5bde9047011aca1d850b563d"
+    },
+    {
+      "path": "reports/V037_GATE_REPORT.json",
+      "sha256": "4744ee99211b4d7417e33f925774ac5f3913ce785e921b78e0a1946e131d427f"
+    },
+    {
+      "path": "reports/V037_LOCAL_TEST_REPORT.json",
+      "sha256": "8721acc4972b19c9e3809b03ba41aee9b5d83c5bb146d350759137bc452d96cf"
+    },
+    {
+      "path": "reports/BUILD_REPORT_V037.md",
+      "sha256": "093fda11567f2402e8a898ba16ebd0303df89cfe4d2136c484d7b97cce553f82"
+    },
+    {
+      "path": "reports/V037_NATIVE_PREFLIGHT.json",
+      "sha256": "1e06bced34ecff63e47c8623f1ad95758a952cbbacf0c30931f58f099c40befd"
+    },
+    {
+      "path": "migrations/0037_autonomous_engineering_workflow.sql",
+      "sha256": "e411c441d2e9eecdc88d57a84b39267efd8032b4ff3309fb79dbc16cee2418d1"
+    },
+    {
+      "path": "docs/AUTONOMOUS_ENGINEERING_WORKFLOW_V037.md",
+      "sha256": "822d3a4a31f212ff24abc2adbf35d10bed0d63b0f6223f0ef7fba596a2c95fdb"
+    },
+    {
+      "path": "ci/run-v037-native.ps1",
+      "sha256": "d381b8bf8dd4690e2898cea576c4565f7676e31eb9569c68a74806fbcc9b6367"
+    },
+    {
+      "path": "ci/run-v037-native.sh",
+      "sha256": "c4faa972a534315259a70d71cd6388e0fc2c84150999c8bbc69c33614dace6d8"
+    },
+    {
+      "path": "crates/phxclaw-autonomous-engineering/Cargo.toml",
+      "sha256": "90f9da8f0a566d6a71b1799ae8e492747018f0e0166f82025228e1b6f0ba6e22"
+    },
+    {
+      "path": "crates/phxclaw-autonomous-engineering/src/lib.rs",
+      "sha256": "436ec31bebb1c7b59d1759cadc30c311f4352f9e278499f417f7fa14935d6278"
+    },
+    {
+      "path": "tests/sql/v037_rls_e2e.sql",
+      "sha256": "dd94f3b053352d49a0af955596aceb6be054e499ffa8fadad5bbf1d863febca9"
+    }
+  ],
+  "workspace": "v0.37 crate present exactly once",
+  "cargo_lock_requires_refresh": false
+}

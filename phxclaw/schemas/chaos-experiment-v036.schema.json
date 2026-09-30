@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PhxClaw v0.36 Chaos Experiment",
+  "type": "object",
+  "required": [
+    "experiment_uuid",
+    "tenant_uuid",
+    "environment",
+    "fault",
+    "blast_radius_basis_points",
+    "steady_state_sha256",
+    "abort_conditions_sha256",
+    "recovery_runbook_uuid"
+  ],
+  "properties": {
+    "experiment_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tenant_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "environment": {
+      "enum": [
+        "sandbox",
+        "test",
+        "staging",
+        "production"
+      ]
+    },
+    "blast_radius_basis_points": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 10000
+    },
+    "steady_state_sha256": {
+      "type": "string",
+      "pattern": "^[A-Fa-f0-9]{64}$"
+    },
+    "abort_conditions_sha256": {
+      "type": "string",
+      "pattern": "^[A-Fa-f0-9]{64}$"
+    }
+  },
+  "additionalProperties": true
+}

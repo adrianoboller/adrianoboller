@@ -1,0 +1,108 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f649-7199-8ffe-8302e5f79a04",
+  "agent_id": 73,
+  "name": "Licensor / Clean-Room Guardian",
+  "macroarea": "Segurança & Compliance",
+  "nucleus": "Licenças",
+  "role_type": "Agente de proveniência",
+  "mission": "Protege licenças, copyright, proveniência e clean-room engineering.",
+  "responsibilities": "Classifica licença, origem, compatibilidade, proíbe ingestão de código vazado/incompatível e separa especificação de implementação.",
+  "resources": "Source Registry, license texts, SBOM, Git provenance.",
+  "authorized_actions": "APPROVE/QUARANTINE/BLOCK source e registrar provenance.",
+  "trigger": "Novo código externo, dataset, repo ou plugin.",
+  "declared_dependencies": "Fonte/licença e uso pretendido.",
+  "resolved_agent_dependencies": [
+    {
+      "uuid": "01a0e473-f616-784f-9b36-65d7a686fd41",
+      "name": "Technology Harvest"
+    }
+  ],
+  "deliverables": "Provenance/Clean-room Gate.",
+  "limits": "Não autoriza reutilização sem base de licença.",
+  "next_gate": "Technology Harvest/Supply Chain.",
+  "execution": "Permanente",
+  "models_allowed": [
+    "claude",
+    "ollama"
+  ],
+  "criticality": "Crítica",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F19 Repo Intelligence / Tree-sitter",
+    "F23 Secret & Credential Broker"
+  ],
+  "capabilities": [
+    "context.compile",
+    "governance.constitution.enforce",
+    "memory.read",
+    "repo.read",
+    "secret.lease.request",
+    "skill.read",
+    "tree_sitter.analyze"
+  ],
+  "permissions": [
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "governance.constitution.enforce",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "repo.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "secret.lease.request",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "tree_sitter.analyze",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Somente metadados de segredo; valores nunca em prompt/log; Estado operacional persistente em PostgreSQL",
+  "event_topics": "agent.licensor.clean.room.guardian.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; write sensível, gasto, publicação, privilégio ou ação destrutiva exigem gate explícito. Credenciais via broker/leases; nunca em prompt.",
+  "references": "Architect (MIT) — AST/Tree-sitter/Repo Intelligence | oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 74
+  }
+}

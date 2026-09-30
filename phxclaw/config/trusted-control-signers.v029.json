@@ -1,0 +1,5 @@
+{
+  "version": "0.29.0",
+  "signers": [],
+  "note": "Fleet-control authority is provisioned out-of-band and is separate from release, GA, updater and device identity keys."
+}

@@ -1,0 +1,16 @@
+{
+  "version": "0.25.0",
+  "phase": "native_release_qualification",
+  "sprints": {
+    "green": 0,
+    "yellow": 26,
+    "red": 0,
+    "total": 26
+  },
+  "source_ready": true,
+  "static_verified": true,
+  "runtime_verified": "partial",
+  "e2e_verified": false,
+  "release_ready": false,
+  "note": "No sprint becomes green until its native/runtime/E2E acceptance gates are proven on a release-capable host."
+}

@@ -1,0 +1,36 @@
+{
+  "version": "0.42.0",
+  "workflow": "hybrid-project-management",
+  "orchestrator": "project-management-orchestrator",
+  "flow": [
+    "objective",
+    "project-charter",
+    "wbs-generator",
+    "gantt-generator",
+    "product-backlog-manager",
+    "sprint-planning",
+    "kanban-manager",
+    "execution",
+    "metrics",
+    "pdca-orchestrator",
+    "corrective-action-manager",
+    "next_sprint",
+    "schedule_refresh"
+  ],
+  "cross_cutting": [
+    "project-governance",
+    "stakeholder-management",
+    "risk-manager",
+    "project-cost-manager",
+    "resource-manager",
+    "project-health-check",
+    "project-ai-copilot"
+  ],
+  "principles": {
+    "single_source_of_truth": true,
+    "evidence_required": true,
+    "changes_require_traceability": true,
+    "high_risk_requires_approval": true,
+    "pdca_continuous": true
+  }
+}

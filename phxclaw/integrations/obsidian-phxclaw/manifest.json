@@ -1,0 +1,9 @@
+{
+  "id": "phxclaw-bridge",
+  "name": "PhxClaw Bridge",
+  "version": "0.30.0",
+  "minAppVersion": "1.5.0",
+  "description": "Exchange governed Markdown/JSON Canvas with PhxClaw.",
+  "author": "PhxClaw",
+  "isDesktopOnly": false
+}

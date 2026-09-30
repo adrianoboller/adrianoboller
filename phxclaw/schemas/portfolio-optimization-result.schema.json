@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PhxClaw Portfolio Optimization Result",
+  "type": "object",
+  "required": [
+    "search_uuid",
+    "plan_hash",
+    "source_state_sha256",
+    "generated_count",
+    "coarse_evaluated_count",
+    "refined_count",
+    "final_evaluated_count",
+    "pareto_frontier",
+    "confidence",
+    "rank_stability",
+    "evidence_sha256"
+  ],
+  "properties": {
+    "search_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "plan_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "source_state_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "pareto_frontier": {
+      "type": "array"
+    },
+    "recommended_candidate_hash": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "rank_stability": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "evidence_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "generated_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "coarse_evaluated_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "refined_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "final_evaluated_count": {
+      "type": "integer",
+      "minimum": 0
+    }
+  }
+}

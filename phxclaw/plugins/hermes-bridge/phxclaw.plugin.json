@@ -1,0 +1,57 @@
+{
+  "schema_version": "phxclaw.plugin.source.v1",
+  "plugin_uuid": "01a0e8cd-5b43-7950-8927-0f3a3adb1d35",
+  "name": "phxclaw-hermes-bridge",
+  "version": "0.30.0",
+  "core_api": ">=0.30.0 <0.31.0",
+  "extension_points": [
+    "skill.provider"
+  ],
+  "capabilities": [
+    "hermes.skill.import",
+    "hermes.skill.export",
+    "hermes.memory.observe",
+    "hermes.mcp.translate",
+    "hermes.github.policy.evaluate",
+    "hermes.context.import",
+    "hermes.doctor.bridge",
+    "hermes.cron.translate",
+    "hermes.subagent.translate"
+  ],
+  "permissions": [
+    "mcp.read",
+    "github.read",
+    "approval.request"
+  ],
+  "network_origins": [],
+  "lifecycle_hooks": [
+    "validate",
+    "start",
+    "health",
+    "stop"
+  ],
+  "dependencies": [],
+  "compatibility": {
+    "platforms": [
+      "linux",
+      "windows",
+      "macos"
+    ],
+    "process_protocol": "v1"
+  },
+  "provenance": {
+    "upstream_reference": "https://github.com/NousResearch/hermes-agent",
+    "reuse_mode": "interoperability_contract_only",
+    "source_tree_vendored": false
+  },
+  "rollback": {
+    "strategy": "disable_plugin",
+    "preserve_data": true
+  },
+  "release_requirements": [
+    "production publisher signature",
+    "artifact sha256",
+    "SBOM",
+    "native/e2e gates"
+  ]
+}

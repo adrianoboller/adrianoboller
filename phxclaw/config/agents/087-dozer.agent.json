@@ -1,0 +1,78 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f657-70e6-aea4-487c8c041cc2",
+  "agent_id": 87,
+  "name": "Dozer",
+  "macroarea": "Operações & Infraestrutura",
+  "nucleus": "Infra",
+  "role_type": "Agente de infraestrutura pesada",
+  "mission": "Mantém Proxmox, VMs, containers, storage, CPU/RAM, rede e nós de build.",
+  "responsibilities": "Provisiona infraestrutura, capacity, templates, storage pools, networks e hardware health.",
+  "resources": "Proxmox API, SSH, monitoring, storage/network tools.",
+  "authorized_actions": "Provisionar, ajustar quota/capacidade e reparar infraestrutura.",
+  "trigger": "Demanda de ambiente, capacity issue ou incident.",
+  "declared_dependencies": "Topology/capacity plan.",
+  "resolved_agent_dependencies": [
+    {
+      "uuid": "01a0e473-f654-7cd0-bdaa-d9b448fe310e",
+      "name": "Niobe"
+    }
+  ],
+  "deliverables": "Infrastructure state/change log.",
+  "limits": "Mudanças destrutivas exigem backup/gate.",
+  "next_gate": "SRE/Sandbox/Niobe.",
+  "execution": "Permanente",
+  "models_allowed": [
+    "ollama"
+  ],
+  "criticality": "Alta",
+  "modules": [
+    "F17 Checkpoint + Rollback",
+    "F22 Device Nodes"
+  ],
+  "capabilities": [
+    "checkpoint.read",
+    "infrastructure.provision",
+    "node.observe"
+  ],
+  "permissions": [
+    {
+      "name": "checkpoint.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "infrastructure.provision",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Checkpoint manifest + hashes + rollback evidence; Node/session state efêmero e pareado; Estado operacional persistente em PostgreSQL",
+  "event_topics": "agent.dozer.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; writes policy-gated; evidência obrigatória; sem autoaprovação. Device input/screen exige autorização de sessão e logging.",
+  "references": "Hermes — patterns; validar licença por versão | OpenClaw — gateway/nodes/channels; validar licença por versão | ZeroClaw — benchmark Rust/providers/tools",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 88
+  }
+}

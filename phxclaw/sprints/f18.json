@@ -1,0 +1,57 @@
+{
+  "uuid": "01a0e5ed-9672-764b-a465-9b8aa78b4dc6",
+  "code": "F18",
+  "title": "MCP + LSP Runtime",
+  "goal": "Integrar MCP e LSP como runtimes governados por capabilities, permissões, timeouts e evidência.",
+  "status": "review",
+  "tasks": [
+    {
+      "uuid": "01a0e5ed-9672-7232-999d-4dd6a87c92cd",
+      "title": "MCP client/server contracts",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e5ed-9672-7908-998f-bac8eb6066ba",
+      "title": "LSP session manager",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e5ed-9672-7952-9768-9161b639e5f9",
+      "title": "Capability mediation",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e5ed-9672-776a-b765-8240a7e693ef",
+      "title": "Timeout/cancel/reconnect",
+      "status": "review"
+    },
+    {
+      "uuid": "01a0e5ed-9672-795a-93b3-62880ef7b8f7",
+      "title": "E2E MCP/LSP",
+      "status": "review"
+    }
+  ],
+  "definition_of_done": [
+    "Contratos e schemas versionados",
+    "Implementação integrada ao Event Bus e Evidence Ledger",
+    "Testes unitários e integração sem mocks para os caminhos obrigatórios",
+    "Documentação, observabilidade, segurança e rollback definidos",
+    "Gate E2E obrigatório antes de marcar done"
+  ],
+  "notes": [
+    "Planejado para a sequência pós-F16; não considerar implementado até os gates reais passarem.",
+    "JSON-RPC MCP/LSP framing source implemented; real server E2E pending.",
+    "v0.16 adds typed JSON-RPC errors/ids, legacy + modern MCP version model, flexible Content-Length framing and degraded reports.",
+    "Claw Code MIT upstream is integrated by compatibility code + private external CLI bridge; full vendor checkout is fetched only on private networked build hosts.",
+    "Remote Streamable HTTP/SSE/WebSocket transports are not release-ready until real E2E gates pass.",
+    "v0.64 adds managed real child-process sessions for MCP/LSP stdio and Streamable HTTP request transport.",
+    "Host-level real-process fixture smoke: 7/7 PASS; Rust cargo/native independent-server E2E remains a release gate.",
+    "WebSocket is treated as a non-standard PhxClaw extension; standard remote MCP release path is Streamable HTTP."
+  ],
+  "state": "review",
+  "canonical_project_version": "0.67.0",
+  "canonical_state_ref": "config/project-state-canonical.v067.json",
+  "implementation_state": "source_ready",
+  "verification_state": "static_verified",
+  "open_gaps": []
+}

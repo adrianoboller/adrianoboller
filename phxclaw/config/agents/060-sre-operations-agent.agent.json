@@ -1,0 +1,82 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f63c-7f03-831f-1c952dfae36c",
+  "agent_id": 60,
+  "name": "SRE/Operations Agent",
+  "macroarea": "Operações & Infraestrutura",
+  "nucleus": "Operações",
+  "role_type": "Agente SRE",
+  "mission": "Mantém disponibilidade, observabilidade e capacidade da fábrica.",
+  "responsibilities": "Monitora serviços, SLOs, incidentes, capacity planning, logs/metrics/traces e runbooks.",
+  "resources": "Prometheus/Grafana/OTel, Proxmox, systemd, logs.",
+  "authorized_actions": "Diagnosticar, ajustar capacidade, reiniciar com política, criar runbook.",
+  "trigger": "Degradação, alertas ou planejamento de capacidade.",
+  "declared_dependencies": "Telemetry e topology.",
+  "resolved_agent_dependencies": [
+    {
+      "uuid": "01a0e473-f654-7cd0-bdaa-d9b448fe310e",
+      "name": "Niobe"
+    },
+    {
+      "uuid": "01a0e473-f657-70e6-aea4-487c8c041cc2",
+      "name": "Dozer"
+    }
+  ],
+  "deliverables": "Operations report e ações seguras.",
+  "limits": "Mudança destrutiva exige gate apropriado.",
+  "next_gate": "Niobe/Dozer/QA.",
+  "execution": "Permanente",
+  "models_allowed": [
+    "ollama"
+  ],
+  "criticality": "Alta",
+  "modules": [
+    "F16 Scheduler + Background Jobs",
+    "F22 Device Nodes"
+  ],
+  "capabilities": [
+    "job.read",
+    "node.observe",
+    "operations.sre.manage"
+  ],
+  "permissions": [
+    {
+      "name": "job.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "operations.sre.manage",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Job UUIDv7 + lease/heartbeat/resume em PostgreSQL; Node/session state efêmero e pareado",
+  "event_topics": "agent.sre.operations.agent.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; writes policy-gated; evidência obrigatória; sem autoaprovação. Device input/screen exige autorização de sessão e logging.",
+  "references": "oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão | OpenClaw — gateway/nodes/channels; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 61
+  }
+}

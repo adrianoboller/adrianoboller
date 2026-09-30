@@ -1,0 +1,202 @@
+{
+  "suite": "PhxClaw v0.20 unified product/runtime/installer",
+  "pass": 39,
+  "fail": 0,
+  "checks": [
+    {
+      "name": "version_020",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "workspace_crates/phxclaw-core-runtime",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "workspace_crates/phxclaw-postgres-bootstrap",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "workspace_apps/phxclaw",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "core_PhoenixCoreRuntime",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "core_CoreService",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "core_NativeSessionStore",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "core_ChannelAgentRouter",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "core_create_schedule",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "core_mcp_tool_name",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "core_product_surface",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "postgres_prod_18",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "postgres_19_preview_disabled",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "postgres_loopback_only",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "postgres_no_password_argv",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "postgres_hash_required",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "postgres_windows_sha256",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "installer_--pwfile=",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "installer_env['PGPASSWORD']",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "installer_safe_extract_zip",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "installer_windows_bundle_sha256",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "installer_apply_migrations",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "installer_store_secret",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "installer_no_superpassword_argv",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "installer_no_plaintext_runtime_password",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "capability_count",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "new_capabilities",
+      "pass": true,
+      "detail": "[]"
+    },
+    {
+      "name": "constitution_version",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "constitution_services",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "cli_1",
+      "pass": true,
+      "detail": "PhxClaw 0.20.0\n"
+    },
+    {
+      "name": "cli_2",
+      "pass": true,
+      "detail": "version=0.20.0\nsprints=26\nsprints_green=0\nsprints_yellow=23\nsprints_red=3\nagents=110\ncapabilities=208\nexternal_bridges=8\ninstalled_plugins=0\nrepository_visibility=private_only\n"
+    },
+    {
+      "name": "cli_3",
+      "pass": true,
+      "detail": "{\n  \"product\": \"PhxClaw\",\n  \"version\": \"0.20.0\",\n  \"core_binary\": \"not_built\",\n  \"source_ready\": true,\n  \"static_verified\": true,\n  \"release_ready\": false\n}\n"
+    },
+    {
+      "name": "cli_4",
+      "pass": true,
+      "detail": "e_url\": \"https://get.enterprisedb.com/postgresql/postgresql-18.6-4-windows-x64-binaries.zip\",\n    \"windows_bundle_sha256\": \"1DF55002AFE95B945D934C078B13E82C1603FA546731E511D068AA983B4EAD28\",\n    \"linux_package\": \"postgresql-18\",\n    \"macos_formula\": \"postgresql@18\"\n  },\n  \"managed_cluster\": {\n    \"port\": 55432,\n    \"listen_addresses\": [\n      \"127.0.0.1\",\n      \"::1\"\n    ],\n    \"database\": \"phxclaw\",\n    \"owner_role\": \"phxclaw_owner\",\n    \"application_role\": \"phxclaw_app\",\n    \"auth\": \"scram-sha-256\",\n    \"encoding\": \"UTF8\",\n    \"data_dir\": \"var/runtime/postgresql/data\",\n    \"runtime_dir\": \"var/runtime/postgresql\",\n    \"log_dir\": \"var/log/postgresql\"\n  },\n  \"existing\": false,\n  \"policy\": {\n    \"prefer_existing_supported_server\": true,\n    \"minimum_supported_major\": 16,\n    \"bind_loopback_only\": true,\n    \"passwords_in_argv\": false,\n    \"require_hash_verification_for_downloads\": true,\n    \"run_migrations_transactionally\": true,\n    \"allow_postgresql_19_preview\": false\n  }\n}\n"
+    },
+    {
+      "name": "cli_5",
+      "pass": true,
+      "detail": "   Model Gateway\nF08  YELLOW  review      PhxClaw UI Shell & Splash\nF09  YELLOW  review      Event Bus + Transactional Outbox\nF10  YELLOW  review      Connectivity Fabric\nF11  YELLOW  review      Desktop + WebView + System Automation\nF12  YELLOW  review      Media + Document Intelligence\nF13  YELLOW  active      Mindset + BPM\nF14  YELLOW  review      Desktop Host real + Live API/Event Bus\nF15  YELLOW  review      Skill Runtime + Memory/Context Engine\nF16  YELLOW  review      Declarative Agent Registry + Official Knowledge Sources\nF17  YELLOW  review      Checkpoint + Rollback\nF18  YELLOW  review      MCP + LSP Runtime\nF19  YELLOW  review      Repo Intelligence / Tree-sitter\nF20  YELLOW  review      Team Runtime\nF21  YELLOW  review      Channel Gateway\nF22  RED     planned     Device Nodes\nF23  YELLOW  review      Secret & Credential Broker\nF24  RED     planned     Auto-learning + Skill Evolution\nF25  RED     planned     Knowledge / Evidence Graph\nTOTAL 26 | GREEN=0 YELLOW=23 RED=3\n"
+    },
+    {
+      "name": "status_sprint_counts",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "sprint_labels",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "artifact_docs/UNIFIED_CORE_RUNTIME_V020.md",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "artifact_docs/INSTALLATION_V020.md",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "artifact_migrations/0020_core_runtime_installation.sql",
+      "pass": true,
+      "detail": ""
+    }
+  ]
+}

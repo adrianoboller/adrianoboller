@@ -1,0 +1,107 @@
+{
+  "suite": "PhxClaw v0.33 package checks",
+  "pass": 20,
+  "fail": 0,
+  "checks": [
+    {
+      "name": "json:PACKAGE.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json:reports/V033_GATE_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json:reports/V033_STATIC_VERIFY_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json:reports/V033_LOCAL_TEST_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json:overlay/schemas/arena-window-v033.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json:overlay/schemas/arena-promotion-recommendation-v033.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json:overlay/schemas/arena-state-event-v033.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json:overlay/schemas/arena-spec-v033.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json:overlay/schemas/ai-drift-event-v033.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json:overlay/schemas/arena-assignment-v033.schema.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json:overlay/capabilities/V033_CAPABILITIES_DELTA.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json:overlay/reports/V033_GATE_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json:overlay/reports/V033_STATIC_VERIFY_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json:overlay/reports/V033_LOCAL_TEST_REPORT.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "json:overlay/config/model-arena-policy.v033.json",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "toml:overlay/crates/phxclaw-model-arena/Cargo.toml",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "toml:overlay/crates/phxclaw-model-drift/Cargo.toml",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "migration_rls_quote",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_raw_prompt_storage",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "capability_total",
+      "pass": true,
+      "detail": ""
+    }
+  ]
+}

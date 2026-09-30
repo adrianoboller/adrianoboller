@@ -1,0 +1,36 @@
+{
+  "version": "0.22.0",
+  "epistemic_boundary": [
+    "raw_observation",
+    "unverified_context",
+    "accepted_evidence",
+    "candidate_skill",
+    "promoted_skill"
+  ],
+  "promotion": {
+    "allowed_boundary": "skill_plugin",
+    "namespace_prefix": "skills.",
+    "min_independent_evaluators": 2,
+    "max_evidence_age_hours": 24,
+    "max_benchmark_regression_bps": 0,
+    "zero_open_security_critical": true,
+    "zero_open_security_high": true,
+    "auto_low_risk_requires_reversible": true,
+    "human_approval_for_behavior_change": true,
+    "human_approval_for_medium_high_critical": true
+  },
+  "forbidden_autonomous_targets": [
+    "microkernel",
+    "constitution",
+    "enforcement_policy",
+    "release_policy",
+    "secret_policy"
+  ],
+  "integrations": {
+    "research_core": "accepted evidence only",
+    "hypothesis_core": "validated hypotheses may seed candidates",
+    "evidence_ledger": "all evaluations and promotions",
+    "checkpoint_rollback": "release lineage mandatory for updates",
+    "plugin_registry": "activation boundary"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "version": "0.67.0",
+  "editor": {
+    "engine": "bpmn-js",
+    "version": "18.30.1",
+    "decoupled": true
+  },
+  "runtime": {
+    "claim": "FOR UPDATE SKIP LOCKED",
+    "fencing": true,
+    "append_only_events": true,
+    "checkpoints": true,
+    "replay_order": "sequence",
+    "lease_expiry_reclaim": true
+  },
+  "release_gates": [
+    "npm_stage_browser_e2e",
+    "postgresql_crash_recovery_e2e",
+    "cargo_test"
+  ]
+}

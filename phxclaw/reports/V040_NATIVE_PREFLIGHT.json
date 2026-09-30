@@ -1,0 +1,19 @@
+{
+  "tools": {
+    "cargo": false,
+    "rustc": false,
+    "psql": false,
+    "postgres": false,
+    "node": true,
+    "git": true
+  },
+  "release_ready": false,
+  "required_not_executed": [
+    "cargo fmt --check",
+    "cargo check --workspace --locked",
+    "cargo test --workspace --locked",
+    "cargo clippy --workspace --all-targets --locked -- -D warnings",
+    "PostgreSQL real RLS E2E",
+    "Autonomous Software Factory E2E"
+  ]
+}

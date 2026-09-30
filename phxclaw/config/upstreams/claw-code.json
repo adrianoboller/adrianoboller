@@ -1,0 +1,23 @@
+{
+  "name": "ultraworkers/claw-code",
+  "canonical_repository": "https://github.com/ultraworkers/claw-code",
+  "license": "MIT",
+  "source_of_truth": "rust/",
+  "vendor_destination": "private/vendor/claw-code",
+  "policy": "private-only",
+  "fetch_mode": "git",
+  "default_ref": "main",
+  "integration": {
+    "copy_upstream_source_into_core": false,
+    "use_as_reference_and_bridge": true,
+    "preserve_license": true,
+    "record_commit_lock": true
+  },
+  "areas_used": [
+    "MCP JSON-RPC framing/lifecycle concepts",
+    "tool qualification conventions",
+    "degraded MCP startup reporting",
+    "CLI bridge surfaces",
+    "parity-test patterns"
+  ]
+}

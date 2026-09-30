@@ -1,0 +1,14 @@
+{
+  "version": "0.58.0",
+  "module": "Project Trace Tree & Decision Index",
+  "source_ready": true,
+  "static_verified": true,
+  "runtime_verified": "partial",
+  "release_ready": false,
+  "native_blockers": [
+    "cargo/rustc",
+    "PostgreSQL real E2E",
+    "RLS cross-tenant E2E",
+    "backfill integration E2E"
+  ]
+}

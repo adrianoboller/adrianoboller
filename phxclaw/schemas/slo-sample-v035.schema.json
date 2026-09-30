@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SLO Sample v0.35",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "sample_uuid",
+    "success_count",
+    "total_count",
+    "p95_latency_ms",
+    "p95_queue_wait_ms",
+    "observed_at_unix",
+    "window_seconds",
+    "evidence_sha256"
+  ],
+  "properties": {
+    "sample_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "success_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "total_count": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "p95_latency_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "p95_queue_wait_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "observed_at_unix": {
+      "type": "integer"
+    },
+    "window_seconds": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "evidence_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

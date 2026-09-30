@@ -1,0 +1,100 @@
+{
+  "version": "0.38.0",
+  "base": "0.37.0",
+  "copied": [
+    {
+      "path": "config/engineering-swarm-team-map.v038.json",
+      "sha256": "99e2250b12c2416870526ff93f45e5769dcfba7dde57837eebf2c2be8f57c5b4"
+    },
+    {
+      "path": "config/engineering-swarm-policy.v038.json",
+      "sha256": "ca48647bcdcea132afd33144438f44eb46e398524f4c1d363fedae23669e8513"
+    },
+    {
+      "path": "capabilities/V038_CAPABILITIES_DELTA.json",
+      "sha256": "bd69ccc0fcd73973c51743a199dac7dc8b1da9ea380d33e8589686412afda0fc"
+    },
+    {
+      "path": "schemas/swarm-team-evidence-v038.schema.json",
+      "sha256": "32af224303db7d5d262ad10e8a0f2b80b6674ab442b4834a489f7eb6db389a84"
+    },
+    {
+      "path": "schemas/swarm-merge-candidate-v038.schema.json",
+      "sha256": "f6a623a6dfb58621b6bde514cbd0cb98131bf7383d5cfe9e00312ff3630973a5"
+    },
+    {
+      "path": "schemas/swarm-conflict-v038.schema.json",
+      "sha256": "b2a3c4572cfbaec8345fdaf23d7651e961dfe55e42b0c5febc35d42f9f32bd83"
+    },
+    {
+      "path": "schemas/engineering-swarm-v038.schema.json",
+      "sha256": "72353b7c401adacda4e3ce6b536d9d212822cf70a5fb565c1a3b2adb49b6753d"
+    },
+    {
+      "path": "tools/check_package_v038.py",
+      "sha256": "345e5b0ef30bbd7ef9d11bfa4678d748d830ae2acc2f0abe74c023b714c83977"
+    },
+    {
+      "path": "tools/verify_v038.py",
+      "sha256": "616f1ba7bac0e5e3309e82618726c7304a241c59bb6357cc52d6cec2ad25cdac"
+    },
+    {
+      "path": "tools/test_v038_local.py",
+      "sha256": "ba06aa1c72567c00926004da8d6a5e0a7bd8109ae81d25770767dd3f1589c8a9"
+    },
+    {
+      "path": "reports/V038_PACKAGE_CHECKS.json",
+      "sha256": "44cd1453944384a7ba8fd2ec0c777df1e2ca256ff85c0066d2ccc2e20679572c"
+    },
+    {
+      "path": "reports/BUILD_REPORT_V038.md",
+      "sha256": "c1f86e9e96bbdcf93268b5f0625e6efd85336f7b37c31a3ca5dd14a49d8bf245"
+    },
+    {
+      "path": "reports/V038_LOCAL_TEST_REPORT.json",
+      "sha256": "bd6fadc9b66d3a63e9bb2ee14f5875f56029dbacccda7499c30365a286b2f05d"
+    },
+    {
+      "path": "reports/V038_NATIVE_PREFLIGHT.json",
+      "sha256": "05f5f14dd846d4289dec0b3b2efade58c51a2cb32d1a761c6c959bb3b7be498f"
+    },
+    {
+      "path": "reports/V038_GATE_REPORT.json",
+      "sha256": "9a9600980bccec76dab44fe1a2f1cb57846d3ff11031b7edb7b0a624bc5e2057"
+    },
+    {
+      "path": "reports/V038_STATIC_VERIFY_REPORT.json",
+      "sha256": "97c3a4daf1fdec4a9e912423d5b3a1f3b4884726b4218f087b2a95a318a270ca"
+    },
+    {
+      "path": "migrations/0038_autonomous_engineering_swarm.sql",
+      "sha256": "4a3096b46a95ed0d5a72083c9ee999665ae4a46c55111902316a318ab85bd3a2"
+    },
+    {
+      "path": "docs/AUTONOMOUS_ENGINEERING_SWARM_V038.md",
+      "sha256": "9b744a30ec9ed536c16d3403d6694f9c5e9974354d509aca5a8d49a614202f81"
+    },
+    {
+      "path": "ci/run-v038-native.sh",
+      "sha256": "0e1b8f8d8e3557f16bcae9dd9bb336e0c19b1c2892cf1788739199708c038cf8"
+    },
+    {
+      "path": "ci/run-v038-native.ps1",
+      "sha256": "ced9e83579981250badc35c2f332b3c178256266c937460be614a2ce8e9505e0"
+    },
+    {
+      "path": "crates/phxclaw-engineering-swarm/Cargo.toml",
+      "sha256": "29bfb71ff1edd2ef3719c7a0c9897d02c9454868f8a0c5cffb7421fac53c727f"
+    },
+    {
+      "path": "crates/phxclaw-engineering-swarm/src/lib.rs",
+      "sha256": "64af50146019d443bb652cf98a5be679efbbc08cc651cd26ddc4463493d974d5"
+    },
+    {
+      "path": "tests/sql/v038_rls_e2e.sql",
+      "sha256": "a2c6692f9af8712bbf6e91268d047fcf76f0b7ac332e04d7d1f53c76b0a9fb96"
+    }
+  ],
+  "workspace": "v0.38 crate present exactly once",
+  "cargo_lock_requires_refresh": false
+}

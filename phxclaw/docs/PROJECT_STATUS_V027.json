@@ -1,0 +1,9 @@
+{
+  "version": "0.27.0",
+  "source_ready": true,
+  "static_verified": true,
+  "runtime_verified": "partial",
+  "e2e_verified": false,
+  "release_ready": false,
+  "note": "GA remains blocked until trusted Linux/Windows/macOS native evidence is produced on real release hosts."
+}

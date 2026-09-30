@@ -1,0 +1,142 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f606-78cd-86b5-d4192e95853c",
+  "agent_id": 6,
+  "name": "Oráculo",
+  "macroarea": "Governança & Estratégia",
+  "nucleus": "Decisão",
+  "role_type": "Agente de decisão",
+  "mission": "Escolhe o caminho técnico com base no repositório e em evidências reais.",
+  "responsibilities": "Compara alternativas usando código, ADRs, métricas, testes, pesquisa e custo; produz decisão explicável, nível de confiança e impacto.",
+  "resources": "Repo, ADRs, Evidence Graph, benchmarks, pesquisas, Compatibility Matrix.",
+  "authorized_actions": "Emitir Decision Record, recomendar opção, pedir experimento adicional.",
+  "trigger": "Decisão difícil, ambiguidade técnica ou conflito entre alternativas.",
+  "declared_dependencies": "Evidence Pack, hipóteses, arquitetura atual e restrições.",
+  "resolved_agent_dependencies": [
+    {
+      "uuid": "01a0e473-f604-77d8-a13d-7ee652e67964",
+      "name": "Arquiteto"
+    },
+    {
+      "uuid": "01a0e473-f605-74d9-812b-8ec827796405",
+      "name": "Morpheus"
+    }
+  ],
+  "deliverables": "Decision Record com opções, riscos, evidências e confiança.",
+  "limits": "Não muda arquitetura crítica sem gate humano/RFC.",
+  "next_gate": "Arquiteto / Morpheus / PO quando crítico.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "claude"
+  ],
+  "criticality": "Crítica",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F19 Repo Intelligence / Tree-sitter",
+    "F20 Team Runtime",
+    "F22 Device Nodes",
+    "F24 Auto-learning + Skill Evolution",
+    "F25 Knowledge / Evidence Graph"
+  ],
+  "capabilities": [
+    "context.compile",
+    "decision.evidence.resolve",
+    "evidence.read",
+    "knowledge.read",
+    "memory.read",
+    "node.observe",
+    "repo.read",
+    "skill.candidate.propose",
+    "skill.read",
+    "team.message",
+    "tree_sitter.analyze"
+  ],
+  "permissions": [
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "decision.evidence.resolve",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "evidence.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "knowledge.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "repo.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.candidate.propose",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "team.message",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "tree_sitter.analyze",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Node/session state efêmero e pareado; Candidate Skill → Hypothesis → OPA/QA → Registry",
+  "event_topics": "agent.oraculo.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; write sensível, gasto, publicação, privilégio ou ação destrutiva exigem gate explícito. Device input/screen exige autorização de sessão e logging.",
+  "references": "Architect (MIT) — AST/Tree-sitter/Repo Intelligence | oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 7
+  }
+}

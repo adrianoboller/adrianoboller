@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "task_uuid",
+    "agent_uuid",
+    "model_profile_uuid",
+    "success",
+    "quality_score",
+    "actual_cost",
+    "evidence_sha256"
+  ],
+  "properties": {
+    "task_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "agent_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "model_profile_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "success": {
+      "type": "boolean"
+    },
+    "quality_score": {
+      "type": "number"
+    },
+    "actual_cost": {
+      "type": "number",
+      "minimum": 0
+    },
+    "failure_origin": {
+      "enum": [
+        "model",
+        "prompt",
+        "context",
+        "tool",
+        "dependency",
+        "policy",
+        "unknown"
+      ]
+    },
+    "evidence_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

@@ -1,0 +1,122 @@
+{
+  "suite": "PhxClaw v0.32 local benchmark/adaptive tests",
+  "pass": 23,
+  "fail": 0,
+  "checks": [
+    {
+      "name": "aggregate_samples",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "aggregate_coverage",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "aggregate_quality",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "aggregate_p95",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "aggregate_median_cost",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "promotion_pass",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "fixture_never_promotes",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "stale_profile_never_promotes",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "regression_blocked",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "duplicate_observation_blocked",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "adaptive_prefers_measured_quality",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "restricted_cloud_never_reintroduced",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "stale_profile_excluded",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "profile_required_fail_closed",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "static_verifier",
+      "pass": true,
+      "detail": "{\"pass\": 72, \"fail\": 0}"
+    },
+    {
+      "name": "fixture_known_bad_hash",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "apply_overlay",
+      "pass": true,
+      "detail": "PhxClaw v0.32 overlay applied: 20 files\nrepaired_known_v031_sql_quoting_defect\nv0.32 crates present exactly once\nmarker=/tmp/tmpujkrpbu0/config/overlays/v0.32.applied.json\n"
+    },
+    {
+      "name": "v031_repaired",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "workspace_benchmark_once",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "workspace_adaptive_once",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "installed_verifier",
+      "pass": true,
+      "detail": "{\"pass\": 72, \"fail\": 0}"
+    },
+    {
+      "name": "idempotent_apply",
+      "pass": true,
+      "detail": "PhxClaw v0.32 overlay already applied\nalready_fixed\nv0.32 crates present exactly once\nmarker=/tmp/tmpujkrpbu0/config/overlays/v0.32.applied.json\n"
+    },
+    {
+      "name": "unknown_v031_change_blocked",
+      "pass": true,
+      "detail": "v0.31 migration has unknown content; refusing automatic repair: 5facf7d39963d380c3726c936f241db992f4baaa7d66afc62564dd70377aa751\n"
+    }
+  ]
+}

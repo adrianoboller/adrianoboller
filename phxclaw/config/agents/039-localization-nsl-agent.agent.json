@@ -1,0 +1,95 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f627-75ee-a2ef-53a64bb8f06a",
+  "agent_id": 39,
+  "name": "Localization / NSL Agent",
+  "macroarea": "Dados & Integrações",
+  "nucleus": "Localização",
+  "role_type": "Agente i18n/NSL",
+  "mission": "Centraliza mensagens e impede textos internacionalizáveis chumbados no código.",
+  "responsibilities": "Mantém resource keys, catálogos pt-BR/en/etc., placeholders, pluralização, fallback, scanner e consistency checks.",
+  "resources": "Locale catalogs, PHX JSON, source scanner, UI.",
+  "authorized_actions": "Extrair strings, validar keys, criar traduções e bloquear hardcode.",
+  "trigger": "Feature com texto de usuário ou nova língua.",
+  "declared_dependencies": "UI/API messages e locale policy.",
+  "resolved_agent_dependencies": [],
+  "deliverables": "Catálogos + i18n report.",
+  "limits": "Não altera significado funcional sem revisão.",
+  "next_gate": "Accessibility/User Proof/QA.",
+  "execution": "Permanente",
+  "models_allowed": [
+    "ollama"
+  ],
+  "criticality": "Alta",
+  "modules": [
+    "F18 MCP + LSP Runtime",
+    "F21 Channel Gateway",
+    "F25 Knowledge / Evidence Graph"
+  ],
+  "capabilities": [
+    "channel.read",
+    "evidence.read",
+    "i18n.localize",
+    "knowledge.read",
+    "lsp.read",
+    "mcp.invoke"
+  ],
+  "permissions": [
+    {
+      "name": "channel.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "evidence.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "i18n.localize",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "knowledge.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "lsp.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "mcp.invoke",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Session/channel state sem credencial no contexto; Knowledge/Evidence Graph com proveniência; Estado operacional persistente em PostgreSQL",
+  "event_topics": "agent.localization.nsl.agent.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; writes policy-gated; evidência obrigatória; sem autoaprovação.",
+  "references": "OpenClaw — gateway/nodes/channels; validar licença por versão | ZeroClaw — benchmark Rust/providers/tools | Claw Code Rust — referência técnica/clean-room",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 40
+  }
+}

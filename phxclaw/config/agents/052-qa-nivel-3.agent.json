@@ -1,0 +1,150 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f634-742e-a532-1321918650db",
+  "agent_id": 52,
+  "name": "QA Nível 3",
+  "macroarea": "Qualidade & Provas",
+  "nucleus": "Qualidade",
+  "role_type": "Gate final",
+  "mission": "Decide se a entrega está pronta para produto/release com base em todas as evidências.",
+  "responsibilities": "Avalia requisito, OPA, segurança, compatibilidade, documentação, performance, restore/reproducibility quando aplicável.",
+  "resources": "Evidence Graph completo, QA1/QA2, OPA, release candidate.",
+  "authorized_actions": "APPROVE, REJECT ou CONDITIONAL.",
+  "trigger": "Release candidate.",
+  "declared_dependencies": "Pacote completo de evidências.",
+  "resolved_agent_dependencies": [
+    {
+      "uuid": "01a0e473-f637-7194-be89-ecefe3390927",
+      "name": "Versionador"
+    },
+    {
+      "uuid": "01a0e473-f638-7c91-8f60-c7841a86639f",
+      "name": "Release Manager"
+    }
+  ],
+  "deliverables": "Gate final documentado.",
+  "limits": "Não corrige código nem ignora evidência ausente.",
+  "next_gate": "Versionador/Release Manager ou retorno.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "claude"
+  ],
+  "criticality": "Crítica",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F17 Checkpoint + Rollback",
+    "F19 Repo Intelligence / Tree-sitter",
+    "F20 Team Runtime",
+    "F22 Device Nodes",
+    "F23 Secret & Credential Broker",
+    "F25 Knowledge / Evidence Graph"
+  ],
+  "capabilities": [
+    "checkpoint.read",
+    "context.compile",
+    "evidence.read",
+    "knowledge.read",
+    "memory.read",
+    "node.observe",
+    "quality.gate.qa3",
+    "repo.read",
+    "secret.lease.request",
+    "skill.read",
+    "team.message",
+    "tree_sitter.analyze"
+  ],
+  "permissions": [
+    {
+      "name": "checkpoint.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "evidence.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "knowledge.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "quality.gate.qa3",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "repo.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "secret.lease.request",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "team.message",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "tree_sitter.analyze",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Checkpoint manifest + hashes + rollback evidence; Node/session state efêmero e pareado",
+  "event_topics": "agent.qa.nivel.3.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; write sensível, gasto, publicação, privilégio ou ação destrutiva exigem gate explícito. Device input/screen exige autorização de sessão e logging. Credenciais via broker/leases; nunca em prompt.",
+  "references": "Architect (MIT) — AST/Tree-sitter/Repo Intelligence | oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 53
+  }
+}

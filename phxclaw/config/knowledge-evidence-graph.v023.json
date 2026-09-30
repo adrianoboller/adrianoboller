@@ -1,0 +1,31 @@
+{
+  "version": "0.23.0",
+  "epistemic_boundary": [
+    "raw_observation",
+    "unverified",
+    "accepted",
+    "governed"
+  ],
+  "rules": {
+    "raw_sources_immutable": true,
+    "evidence_immutable": true,
+    "interpretations_use_supersedes": true,
+    "learning_cannot_create_policy_constraint_or_decision": true,
+    "learning_cannot_mark_accepted_or_governed": true,
+    "accepted_claim_requires_evidence_bound_to_same_source_state": true,
+    "active_refuting_evidence_blocks_promotion": true,
+    "unresolved_contradiction_blocks_promotion": true,
+    "governed_claim_requires_human_by_default": true,
+    "graph_centrality_is_not_truth": true,
+    "model_confidence_is_not_truth": true
+  },
+  "promotion": {
+    "min_supporting_evidence": 2,
+    "min_independent_mechanisms": 2,
+    "governed_without_human": false
+  },
+  "query_limits": {
+    "max_depth": 32,
+    "max_nodes": 10000
+  }
+}

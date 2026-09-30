@@ -1,0 +1,87 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f630-7221-98bb-b391fe065545",
+  "agent_id": 48,
+  "name": "Security Test Agent",
+  "macroarea": "Qualidade & Provas",
+  "nucleus": "Qualidade",
+  "role_type": "Subagente de teste",
+  "mission": "Valida controles de segurança por testes práticos autorizados.",
+  "responsibilities": "Testa authz, input, secrets, injection, filesystem/network boundaries, plugin sandbox e abuse cases.",
+  "resources": "Security harness, fuzz, test identities, sandbox.",
+  "authorized_actions": "Executar security tests e registrar exploit/repro.",
+  "trigger": "Superfície sensível ou release.",
+  "declared_dependencies": "Threat model e build.",
+  "resolved_agent_dependencies": [
+    {
+      "uuid": "01a0e473-f60d-761f-b597-a103db46e3df",
+      "name": "Thompson"
+    }
+  ],
+  "deliverables": "Security evidence.",
+  "limits": "Atua só em ambientes autorizados.",
+  "next_gate": "Thompson/QA3.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "claude",
+    "codex"
+  ],
+  "criticality": "Crítica",
+  "modules": [
+    "F17 Checkpoint + Rollback",
+    "F22 Device Nodes",
+    "F23 Secret & Credential Broker"
+  ],
+  "capabilities": [
+    "checkpoint.read",
+    "node.observe",
+    "quality.security.test",
+    "secret.lease.request"
+  ],
+  "permissions": [
+    {
+      "name": "checkpoint.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "quality.security.test",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "secret.lease.request",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Checkpoint manifest + hashes + rollback evidence; Node/session state efêmero e pareado; Somente metadados de segredo; valores nunca em prompt/log",
+  "event_topics": "agent.security.test.agent.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; write sensível, gasto, publicação, privilégio ou ação destrutiva exigem gate explícito. Device input/screen exige autorização de sessão e logging. Credenciais via broker/leases; nunca em prompt.",
+  "references": "Hermes — patterns; validar licença por versão | OpenClaw — gateway/nodes/channels; validar licença por versão | ZeroClaw — benchmark Rust/providers/tools",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 49
+  }
+}

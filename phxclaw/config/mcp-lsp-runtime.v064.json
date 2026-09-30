@@ -1,0 +1,37 @@
+{
+  "schema_version": "0.64.0",
+  "default_session_policy": {
+    "request_timeout_ms": 30000,
+    "startup_timeout_ms": 15000,
+    "shutdown_timeout_ms": 5000,
+    "max_frame_bytes": 4194304,
+    "max_unsolicited_messages": 128,
+    "max_restarts": 3,
+    "restart_backoff_ms": 250
+  },
+  "security": {
+    "process_execution": "deny_by_default",
+    "require_absolute_allowlisted_executable": true,
+    "environment": "allowlist_only",
+    "remote_mcp_https_required": true,
+    "loopback_http_allowed": true,
+    "remote_origins": "explicit_allowlist"
+  },
+  "mcp": {
+    "standard_transports": ["stdio", "streamable_http"],
+    "websocket": "non_standard_extension_only",
+    "modern_protocol": "2026-07-28",
+    "legacy_default": "2025-11-25"
+  },
+  "lsp": {
+    "wire": "jsonrpc_2_content_length",
+    "process_transport": "stdio",
+    "lifecycle": ["initialize", "initialized", "shutdown", "exit"],
+    "cancellation_method": "$/cancelRequest"
+  },
+  "evidence": {
+    "event_topic": "phxclaw.runtime.protocol",
+    "append_evidence_ledger": true,
+    "persist_session_audit": true
+  }
+}

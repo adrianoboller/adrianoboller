@@ -1,0 +1,3 @@
+cryptography>=43,<47
+jsonschema>=4.23,<5
+packaging>=24,<27

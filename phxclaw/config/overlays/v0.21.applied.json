@@ -1,0 +1,71 @@
+{
+  "version": "0.21.0",
+  "base": "0.20.0",
+  "copied": [
+    {
+      "path": "config/device-nodes.v021.json",
+      "sha256": "531b56872d6c5b5f3ed3e4e0ba8e9d7bffbb69357a26bd0cbd7baa8b103fe9b2"
+    },
+    {
+      "path": "config/key-provider.v021.json",
+      "sha256": "caae632bb99547c6aca5aac3946c98dedacf48cb4d7bf71cc7b5a80c665472a5"
+    },
+    {
+      "path": "sprints/F22_DEVICE_NODES_V021.json",
+      "sha256": "82737237277287d24e872b1d6470ec7dd8fb755db34dbe320a684079e03fe51b"
+    },
+    {
+      "path": "capabilities/V021_CAPABILITIES_DELTA.json",
+      "sha256": "ad00392fce6a8ac5e8e6a2c9201d269a6aaaf4a5ea6b40d7d6fd6ba18425734a"
+    },
+    {
+      "path": "schemas/device-node.schema.json",
+      "sha256": "7e1fde600db271d747c1f67f90396d642004e80eb918d0d82959e0144177e767"
+    },
+    {
+      "path": "schemas/device-envelope.schema.json",
+      "sha256": "ca791cd685230da60df0f1b3fe02946ce0ffc8523fdc139aa40ecc749f94c2ef"
+    },
+    {
+      "path": "schemas/device-command.schema.json",
+      "sha256": "9774d8dbed9501404a8c7e4bb19077798098a0f4f6fdfc8d19b775f2aea1a9ce"
+    },
+    {
+      "path": "schemas/key-provider.schema.json",
+      "sha256": "c8dbe2f8e1427b7afbc7d228c35b35ad0678dd54afee996a40af4eef52fd6399"
+    },
+    {
+      "path": "migrations/0021_device_nodes.sql",
+      "sha256": "d3b6907449e55de5e2988ac15dabff82fcad3739cffe542e22b84af77bbbcbe2"
+    },
+    {
+      "path": "docs/PROJECT_STATUS_V021.md",
+      "sha256": "bd88e0528c91af0fb8ca4b6dd349d82d1aabfd022d5e76174face705b0c410e5"
+    },
+    {
+      "path": "docs/F23_KEY_PROVIDER_HARDENING_V021.md",
+      "sha256": "4a62ea3fe0d45936f0822964d5fe6168c40b86c2d017b00c29868f21afee1e4a"
+    },
+    {
+      "path": "docs/F22_DEVICE_NODES_ARCHITECTURE.md",
+      "sha256": "f4591bb5108d5beccf9cc2e63b31196c52c6b37a87b3dd23e15cf24551ed8c71"
+    },
+    {
+      "path": "crates/phxclaw-device-nodes/Cargo.toml",
+      "sha256": "9f485f1562900086553bf149c98ef5bbfe9e9c1e57886a51acf8952792c0344f"
+    },
+    {
+      "path": "crates/phxclaw-key-provider/Cargo.toml",
+      "sha256": "da7aff3ee47f58fb1e8d98d28e83d891173457fd6dd9c47c27f6489f4402d512"
+    },
+    {
+      "path": "crates/phxclaw-key-provider/src/lib.rs",
+      "sha256": "e82e0842a1d3f11345180a59132088b282bc647068854992ad307d2ff5e1deb6"
+    },
+    {
+      "path": "crates/phxclaw-device-nodes/src/lib.rs",
+      "sha256": "9dde41ea1ddfff2a059b7b84ec7d9dac41cbc1a3f328e175a648366d26ae13b0"
+    }
+  ],
+  "workspace": "added 2 workspace members"
+}

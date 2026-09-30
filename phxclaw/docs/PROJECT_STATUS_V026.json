@@ -1,0 +1,16 @@
+{
+  "version": "0.26.0",
+  "phase": "release_candidate_factory",
+  "sprints": {
+    "green": 0,
+    "yellow": 26,
+    "red": 0,
+    "total": 26
+  },
+  "source_ready": true,
+  "static_verified": true,
+  "runtime_verified": "partial",
+  "e2e_verified": false,
+  "release_ready": false,
+  "note": "This source package does not turn sprints green. A signed RC generated from a trusted release-ready v0.25 attestation may carry a green promotion snapshot."
+}

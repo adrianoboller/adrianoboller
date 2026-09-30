@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "source_uuid",
+    "source_sha256",
+    "trust",
+    "markdown"
+  ],
+  "properties": {
+    "source_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "source_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "trust": {
+      "enum": [
+        "unverified_context",
+        "accepted_knowledge",
+        "governed_knowledge"
+      ]
+    },
+    "markdown": {
+      "type": "string"
+    },
+    "source_path": {
+      "type": "string"
+    },
+    "exported_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "additionalProperties": false
+}

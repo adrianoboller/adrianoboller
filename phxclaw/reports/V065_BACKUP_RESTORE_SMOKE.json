@@ -1,0 +1,45 @@
+{
+  "version": "0.65.0",
+  "scope": "host_filesystem_backup_restore_fixture",
+  "checks": [
+    {
+      "name": "backup_manifest_created",
+      "pass": true
+    },
+    {
+      "name": "backup_verifies",
+      "pass": true
+    },
+    {
+      "name": "restore_content_a",
+      "pass": true
+    },
+    {
+      "name": "restore_content_b",
+      "pass": true
+    },
+    {
+      "name": "content_addressed_dedup",
+      "pass": true
+    },
+    {
+      "name": "second_backup_verifies",
+      "pass": true
+    },
+    {
+      "name": "rollback_copy_preserved",
+      "pass": true
+    },
+    {
+      "name": "corruption_detected",
+      "pass": true
+    },
+    {
+      "name": "symlink_rejected",
+      "pass": true
+    }
+  ],
+  "pass": 9,
+  "fail": 0,
+  "postgresql_native": false
+}

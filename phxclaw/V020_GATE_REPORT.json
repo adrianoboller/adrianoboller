@@ -1,0 +1,59 @@
+{
+  "version": "0.20.0",
+  "status": {
+    "source_ready": true,
+    "static_verified": true,
+    "release_ready": false
+  },
+  "sprints": {
+    "green": 0,
+    "yellow": 23,
+    "red": 3,
+    "total": 26
+  },
+  "executed": [
+    {
+      "suite": "v0.20 unified core/install",
+      "pass": 39,
+      "fail": 0
+    },
+    {
+      "suite": "v0.19 RustClaw native compatibility regression",
+      "pass": 47,
+      "fail": 0
+    },
+    {
+      "suite": "F23/F21 secret/channel regression",
+      "pass": 33,
+      "fail": 0
+    },
+    {
+      "suite": "bootstrap verifier",
+      "pass": 1,
+      "fail": 0
+    }
+  ],
+  "host_tools": {
+    "cargo": false,
+    "rustc": false,
+    "psql": false,
+    "postgres": false,
+    "python3": true,
+    "git": true
+  },
+  "required_not_executed": [
+    "cargo fmt --check",
+    "cargo check --workspace",
+    "cargo test --workspace",
+    "cargo clippy --workspace --all-targets -- -D warnings",
+    "PostgreSQL real E2E",
+    "Tauri native E2E",
+    "real provider/model E2E",
+    "mission end-to-end"
+  ],
+  "security_notes": [
+    "runtime secrets removed from distributable snapshot",
+    "database runtime config stores password_secret_uuid, not plaintext password",
+    "PostgreSQL production default is 18.6; PostgreSQL 19 beta is preview-only"
+  ]
+}

@@ -1,0 +1,106 @@
+{
+  "manifest_version": "1.3.0",
+  "uuid": "01a0e5b0-b5cf-77af-834a-39dd831563b6",
+  "name": "com.phxclaw.community.olmocr",
+  "version": "0.1.0",
+  "kind": "tool",
+  "description": "PhxClaw process adapter for AllenAI olmOCR. Converts PDF/PNG/JPEG documents to Markdown/text while keeping execution behind capabilities, sandbox policy and Evidence Ledger.",
+  "core_api": ">=0.10.0, <1.0.0",
+  "entrypoint": {
+    "type": "process",
+    "value": "community/examples/olmocr/phxclaw-olmocr-plugin"
+  },
+  "dependencies": [],
+  "capabilities": [
+    "ocr.olmocr.health",
+    "ocr.olmocr.extract",
+    "ocr.olmocr.batch"
+  ],
+  "extension_points": [
+    {
+      "point": "capability.provider",
+      "contract_version": "^1.0.0"
+    }
+  ],
+  "permissions": [
+    {
+      "name": "filesystem.read",
+      "scopes": [
+        "var/documents/*"
+      ]
+    },
+    {
+      "name": "filesystem.write",
+      "scopes": [
+        "var/olmocr/*"
+      ]
+    },
+    {
+      "name": "process.execute",
+      "scopes": [
+        "olmocr"
+      ]
+    }
+  ],
+  "lifecycle": {
+    "install": "olmocr.adapter.install",
+    "enable": "olmocr.adapter.enable",
+    "disable": "olmocr.adapter.disable",
+    "uninstall": "olmocr.adapter.uninstall",
+    "health": "olmocr.adapter.health"
+  },
+  "contracts": {
+    "input_schema": "schemas/extension-invocation.schema.json",
+    "output_schema": "schemas/process-reply.schema.json"
+  },
+  "sandbox": {
+    "network": "deny",
+    "network_allowlist": [],
+    "read_only_paths": [
+      "var/documents",
+      "var/models"
+    ],
+    "write_paths": [
+      "var/olmocr"
+    ],
+    "environment_allowlist": [
+      "PHXCLAW_OLMOCR_BIN",
+      "PHXCLAW_OLMOCR_INPUT_ROOT",
+      "PHXCLAW_OLMOCR_OUTPUT_ROOT",
+      "PHXCLAW_OLMOCR_LOCAL_MODEL"
+    ],
+    "timeout_ms": 900000,
+    "memory_mb": 4096,
+    "cpu_quota_percent": 90
+  },
+  "integrity": {
+    "artifact": "community/examples/olmocr/phxclaw-olmocr-plugin",
+    "hash_algorithm": "sha256",
+    "digest": "<generated-by-phxclaw-plugin-pack>",
+    "signature_algorithm": "ed25519",
+    "signature": "<generated-by-phxclaw-plugin-sign>",
+    "signer": "<publisher-signer-id>",
+    "provenance": "PhxClaw adapter source maintained separately from upstream olmOCR; upstream is an external Apache-2.0 dependency."
+  },
+  "tests": [
+    {
+      "name": "adapter-health",
+      "command": "community/examples/olmocr/phxclaw-olmocr-plugin --health",
+      "required": true
+    },
+    {
+      "name": "protocol-static",
+      "command": "python3 scripts/test_olmocr_plugin.py",
+      "required": true
+    }
+  ],
+  "rollback": {
+    "strategy": "disable_and_restore_previous",
+    "steps": [
+      "disable olmOCR route",
+      "restore previous OCR provider pin",
+      "remove plugin environment/model references",
+      "re-run OCR health and evidence gates"
+    ]
+  }
+}

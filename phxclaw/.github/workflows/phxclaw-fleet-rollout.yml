@@ -1,0 +1,32 @@
+name: phxclaw-fleet-rollout-v028
+on:
+  workflow_dispatch:
+    inputs:
+      channel: {description: "canary|beta|stable", required: true, default: "canary"}
+      rollout_plan: {description: "Path to signed rollout plan", required: true}
+      health_evidence: {description: "Path to signed health evidence", required: true}
+permissions:
+  contents: read
+env:
+  PYTHONDONTWRITEBYTECODE: "1"
+jobs:
+  verify-and-evaluate:
+    runs-on: ubuntu-24.04
+    environment: fleet-production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.13"}
+      - run: pip install -r requirements-fleet.txt
+      - name: Static policy verification
+        run: python tools/verify_v028.py
+      - name: Evaluate signed health gate
+        env:
+          PHXCLAW_FLEET_SIGN_CMD: ${{ secrets.PHXCLAW_FLEET_SIGN_CMD }}
+        run: python tools/evaluate_rollout.py . --rollout-plan "${{ inputs.rollout_plan }}" --health-evidence "${{ inputs.health_evidence }}" --out var/fleet/state.json
+      - name: Preserve decision evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phxclaw-fleet-v028-decision
+          path: var/fleet/

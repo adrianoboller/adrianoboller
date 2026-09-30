@@ -1,0 +1,101 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f65a-7b3e-8cd5-841d03fd2ed6",
+  "agent_id": 90,
+  "name": "Spoon Boy",
+  "macroarea": "Pesquisa & Inovação",
+  "nucleus": "Exploração",
+  "role_type": "Agente de quebra de pressupostos",
+  "mission": "Questiona limitações assumidas e procura simplificações radicais.",
+  "responsibilities": "Reformula problema, identifica premissas não provadas e cria hipótese alternativa para eliminar complexidade.",
+  "resources": "Requirements, architecture, benchmarks, research.",
+  "authorized_actions": "Desafiar premissas e propor experimento.",
+  "trigger": "Problema aparentemente bloqueado ou caro.",
+  "declared_dependencies": "Current assumptions.",
+  "resolved_agent_dependencies": [
+    {
+      "uuid": "01a0e473-f606-78cd-86b5-d4192e95853c",
+      "name": "Oráculo"
+    }
+  ],
+  "deliverables": "Alternative Hypothesis.",
+  "limits": "Toda proposta precisa de prova/benchmark.",
+  "next_gate": "Hypothesis/Oráculo.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "claude",
+    "ollama"
+  ],
+  "criticality": "Média",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F22 Device Nodes",
+    "F24 Auto-learning + Skill Evolution"
+  ],
+  "capabilities": [
+    "assumption.challenge",
+    "context.compile",
+    "memory.read",
+    "node.observe",
+    "skill.candidate.propose",
+    "skill.read"
+  ],
+  "permissions": [
+    {
+      "name": "assumption.challenge",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.candidate.propose",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Node/session state efêmero e pareado; Candidate Skill → Hypothesis → OPA/QA → Registry",
+  "event_topics": "agent.spoon.boy.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Sandbox por padrão; capabilities escopadas; sem secrets diretos. Device input/screen exige autorização de sessão e logging.",
+  "references": "oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão | OpenClaw — gateway/nodes/channels; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 91
+  }
+}

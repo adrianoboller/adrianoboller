@@ -1,0 +1,23 @@
+name: PhxClaw v0.31 AI Fabric
+on:
+  workflow_dispatch:
+  pull_request:
+jobs:
+  static-and-rust:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: pip install cryptography
+      - run: python tools/verify_v031.py
+      - run: python tools/test_v031_local.py
+      - run: cargo generate-lockfile
+      - run: cargo fmt --check
+      - run: cargo check --workspace --locked
+      - run: cargo test --workspace --locked
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings

@@ -1,0 +1,13 @@
+[package]
+name = "phxclaw-autonomous-engineering"
+version = "0.37.0"
+edition = "2021"
+license = "Apache-2.0"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+thiserror = "2"
+uuid = { version = "1", features = ["v7", "serde"] }
+phxclaw-skill-router = { path = "../phxclaw-skill-router" }

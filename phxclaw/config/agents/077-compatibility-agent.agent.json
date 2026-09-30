@@ -1,0 +1,109 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f64d-75cd-8a00-29b3680a7558",
+  "agent_id": 77,
+  "name": "Compatibility Agent",
+  "macroarea": "Qualidade & Provas",
+  "nucleus": "Compatibilidade",
+  "role_type": "Agente de compatibilidade",
+  "mission": "Prova compatibilidade retroativa de IR, PHX JSON, APIs, templates e projetos antigos.",
+  "responsibilities": "Mantém corpus de versões, executa migrations e smoke tests em old projects/targets.",
+  "resources": "Version matrix, migration suite, archived projects.",
+  "authorized_actions": "Testar forward/backward compatibility e bloquear breaking não tratado.",
+  "trigger": "Mudança de schema/API/runtime/toolchain.",
+  "declared_dependencies": "Versões anteriores e migrators.",
+  "resolved_agent_dependencies": [
+    {
+      "uuid": "01a0e473-f635-7fb8-a692-79562cbd4ff6",
+      "name": "Guardian"
+    },
+    {
+      "uuid": "01a0e473-f637-7194-be89-ecefe3390927",
+      "name": "Versionador"
+    },
+    {
+      "uuid": "01a0e473-f652-73bf-95cc-e0fe919f7d54",
+      "name": "Migration Guardian"
+    }
+  ],
+  "deliverables": "Compatibility Matrix/Gate.",
+  "limits": "Não aceita quebra silenciosa.",
+  "next_gate": "Versionador/Migration Guardian/QA2.",
+  "execution": "Permanente",
+  "models_allowed": [
+    "codex",
+    "ollama"
+  ],
+  "criticality": "Crítica",
+  "modules": [
+    "F17 Checkpoint + Rollback",
+    "F18 MCP + LSP Runtime",
+    "F19 Repo Intelligence / Tree-sitter"
+  ],
+  "capabilities": [
+    "checkpoint.read",
+    "compatibility.validate",
+    "lsp.read",
+    "mcp.invoke",
+    "repo.read",
+    "tree_sitter.analyze"
+  ],
+  "permissions": [
+    {
+      "name": "checkpoint.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "compatibility.validate",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "lsp.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "mcp.invoke",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "repo.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "tree_sitter.analyze",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Checkpoint manifest + hashes + rollback evidence; Estado operacional persistente em PostgreSQL",
+  "event_topics": "agent.compatibility.agent.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; write sensível, gasto, publicação, privilégio ou ação destrutiva exigem gate explícito.",
+  "references": "Architect (MIT) — AST/Tree-sitter/Repo Intelligence | Hermes — patterns; validar licença por versão | ZeroClaw — benchmark Rust/providers/tools",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 78
+  }
+}

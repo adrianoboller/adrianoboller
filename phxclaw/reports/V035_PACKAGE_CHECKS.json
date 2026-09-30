@@ -1,0 +1,207 @@
+{
+  "suite": "PhxClaw v0.35 package checks",
+  "pass": 40,
+  "fail": 0,
+  "checks": [
+    {
+      "name": "package_json_parse",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "version",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "base_version",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "projected_capabilities",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "release_not_claimed",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "capability_math",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "capability_unique",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_symlinks",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_pycache",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "all_json_toml_parse",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "present:crates/phxclaw-ai-sre/src/lib.rs",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "present:crates/phxclaw-ai-autopilot/src/lib.rs",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "present:migrations/0035_ai_sre_autopilot.sql",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "present:tests/sql/v035_rls_e2e.sql",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "present:ci/run-v035-native.sh",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "present:ci/run-v035-native.ps1",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rust_unsafe_forbidden",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_raw_prompt_persistence",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "freshness_contract",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "budget_limit_bound",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "incident_conflict_guard",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "provider_membership_guard",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "plan_evidence_binding",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "execution_expiry_guard",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "leader_fence_guard",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_shell_escape",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_model_promotion",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "twelve_tables",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "force_rls",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rls_quoting_safe",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "append_only",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "tenant_composite_fks",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "execution_idempotent",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rls_non_vacuous",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rls_cross_tenant_assertion",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "separate_rls_connection",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rls_role_guard",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "cargo_locked",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_obvious_secrets",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "third_party_delta",
+      "pass": true,
+      "detail": ""
+    }
+  ]
+}

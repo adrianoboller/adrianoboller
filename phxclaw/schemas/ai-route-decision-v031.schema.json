@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phxclaw.local/schemas/ai-route-decision-v031.schema.json",
+  "title": "ai-route-decision-v031",
+  "additionalProperties": true,
+  "type": "object",
+  "required": [
+    "request_uuid",
+    "selected_provider_uuid",
+    "selected_model_id",
+    "decision_sha256"
+  ],
+  "properties": {
+    "request_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "selected_provider_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "selected_model_id": {
+      "type": "string"
+    },
+    "decision_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

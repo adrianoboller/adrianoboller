@@ -1,0 +1,112 @@
+{
+  "version": "0.69.0",
+  "pass": 21,
+  "fail": 0,
+  "checks": [
+    {
+      "name": "json:config/device-transport.v069.json",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "json:schemas/device-node-v069.schema.json",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "json:sprints/f22.json",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "json:config/project-state-canonical.v069.json",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "toml:Cargo.toml",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "toml:crates/phxclaw-device-transport/Cargo.toml",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "toml:apps/phxclaw-device-node/Cargo.toml",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "source:NodeIdentity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "source:generate_and_store",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "source:WssDeviceClient",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "source:InsecureTransport",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "source:sign_envelope",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "source:EnrollmentRepository",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "source:DevicePlatform",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "node_app_keyring",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "node_app_wss",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "atomic_enrollment",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "pairing_audit",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "force_rls",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "f22_source_ready",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "f22_no_source_gaps",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

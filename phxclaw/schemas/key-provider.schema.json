@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "phoenix://schemas/key-provider-v1",
+  "title": "PhxClaw Key Provider Config v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "provider_uuid",
+    "kind",
+    "production_safe",
+    "key_id"
+  ],
+  "properties": {
+    "provider_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "kind": {
+      "enum": [
+        "os_keyring",
+        "external_kms",
+        "dev_env"
+      ]
+    },
+    "production_safe": {
+      "type": "boolean"
+    },
+    "key_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "service": {
+      "type": "string",
+      "maxLength": 200
+    },
+    "namespace": {
+      "type": "string",
+      "maxLength": 200
+    }
+  }
+}

@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "phoenix://schemas/device-command-v1",
+  "title": "PhxClaw Device Command v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "command_uuid",
+    "tenant_uuid",
+    "node_uuid",
+    "capability",
+    "arguments",
+    "secret_handles",
+    "idempotency_key",
+    "risk",
+    "submitted_at",
+    "not_before",
+    "expires_at",
+    "fencing_token"
+  ],
+  "properties": {
+    "command_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tenant_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "node_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "capability": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "arguments": {
+      "type": "object"
+    },
+    "secret_handles": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "secret_uuid"
+        ],
+        "properties": {
+          "secret_uuid": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "lease_uuid": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          }
+        }
+      }
+    },
+    "idempotency_key": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "risk": {
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ]
+    },
+    "approval": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "required": [
+        "approval_uuid",
+        "approved_by_uuid",
+        "approved_at"
+      ],
+      "properties": {
+        "approval_uuid": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "approved_by_uuid": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "approved_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "submitted_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "not_before": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "fencing_token": {
+      "type": "integer",
+      "minimum": 0
+    }
+  }
+}

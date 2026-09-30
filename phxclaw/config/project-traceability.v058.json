@@ -1,0 +1,37 @@
+{
+  "version": "0.58.0",
+  "enabled": true,
+  "canonical_store": "postgresql",
+  "hierarchy": {
+    "max_depth": 64,
+    "immutable_nodes": true,
+    "path_index": "uuid_array_gin"
+  },
+  "search": {
+    "full_text": true,
+    "metadata_gin": true,
+    "source_hash_lookup": true
+  },
+  "source_registry": {
+    "require_sha256": true,
+    "require_provenance": true,
+    "allow_raw_secret_content": false
+  },
+  "bindings": {
+    "experience_ledger": true,
+    "context_fingerprints": true,
+    "fruitful_unfruitful": true,
+    "evolution_candidates": true,
+    "experiments": true,
+    "promotion_decisions": true,
+    "contradictions": true,
+    "self_improvement": true,
+    "execution_ledger": true
+  },
+  "decision_support": {
+    "why_trace": true,
+    "ancestor_trace": true,
+    "descendant_trace": true,
+    "cross_links": true
+  }
+}

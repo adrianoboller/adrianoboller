@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:phxclaw:v045:pdca-runtime-result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "run_uuid",
+    "acceptance_passed",
+    "qa_passed",
+    "security_passed",
+    "quality_score",
+    "actual_cost_usd",
+    "evidence_refs"
+  ],
+  "properties": {
+    "run_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "acceptance_passed": {
+      "type": "boolean"
+    },
+    "qa_passed": {
+      "type": "boolean"
+    },
+    "security_passed": {
+      "type": "boolean"
+    },
+    "quality_score": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "actual_cost_usd": {
+      "type": "number",
+      "minimum": 0
+    },
+    "evidence_refs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "failure_signature": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "root_cause": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "remediation": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  }
+}

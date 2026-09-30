@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Admission Decision v0.35",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "request_uuid",
+    "action",
+    "priority_score",
+    "reason",
+    "rate_limit_snapshot_sha256",
+    "decision_sha256"
+  ],
+  "properties": {
+    "request_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "action": {
+      "enum": [
+        "admit",
+        "queue",
+        "reject"
+      ]
+    },
+    "priority_score": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "reason": {
+      "type": "string"
+    },
+    "rate_limit_snapshot_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "decision_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

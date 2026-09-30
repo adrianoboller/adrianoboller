@@ -1,0 +1,216 @@
+{
+  "project": "PhxClaw",
+  "version": "0.70.0",
+  "generated_at": "2026-09-30T06:53:00-03:00",
+  "verification_ceiling": "static_verified",
+  "sprints": [
+    {
+      "id": "F00",
+      "title": "Constitution + Modular Workspace",
+      "implementation_state": "source_ready",
+      "verification_state": "static_verified",
+      "gaps": []
+    },
+    {
+      "id": "F01",
+      "title": "Research Core",
+      "implementation_state": "source_ready",
+      "verification_state": "static_verified",
+      "gaps": []
+    },
+    {
+      "id": "F02",
+      "title": "Hypothesis Core",
+      "implementation_state": "source_ready",
+      "verification_state": "static_verified",
+      "gaps": []
+    },
+    {
+      "id": "F03",
+      "title": "Installer Core",
+      "implementation_state": "source_ready",
+      "verification_state": "static_verified",
+      "gaps": []
+    },
+    {
+      "id": "F04",
+      "title": "Plugin Registry",
+      "implementation_state": "source_ready",
+      "verification_state": "static_verified",
+      "gaps": []
+    },
+    {
+      "id": "F05",
+      "title": "Agent Runtime",
+      "implementation_state": "source_ready",
+      "verification_state": "static_verified",
+      "gaps": []
+    },
+    {
+      "id": "F06",
+      "title": "Task Graph",
+      "implementation_state": "source_ready",
+      "verification_state": "static_verified",
+      "gaps": []
+    },
+    {
+      "id": "F07",
+      "title": "Model Gateway",
+      "implementation_state": "source_ready",
+      "verification_state": "static_verified",
+      "gaps": []
+    },
+    {
+      "id": "F08",
+      "title": "PhxClaw UI Shell & Splash",
+      "implementation_state": "source_ready",
+      "verification_state": "static_verified",
+      "gaps": []
+    },
+    {
+      "id": "F09",
+      "title": "Event Bus + Transactional Outbox",
+      "implementation_state": "source_ready",
+      "verification_state": "static_verified",
+      "gaps": []
+    },
+    {
+      "id": "F10",
+      "title": "Connectivity Fabric",
+      "implementation_state": "source_ready",
+      "verification_state": "static_verified",
+      "gaps": []
+    },
+    {
+      "id": "F11",
+      "title": "Desktop + WebView + System Automation",
+      "implementation_state": "source_ready",
+      "verification_state": "static_verified",
+      "gaps": []
+    },
+    {
+      "id": "F12",
+      "title": "Media + Document Intelligence",
+      "implementation_state": "source_ready",
+      "verification_state": "static_verified",
+      "gaps": []
+    },
+    {
+      "id": "F13",
+      "title": "Mindset + BPM",
+      "implementation_state": "source_ready",
+      "verification_state": "static_verified",
+      "gaps": []
+    },
+    {
+      "id": "F14",
+      "title": "Desktop Host real + Live API/Event Bus",
+      "implementation_state": "source_ready",
+      "verification_state": "static_verified",
+      "gaps": []
+    },
+    {
+      "id": "F15",
+      "title": "Skill Runtime + Memory/Context Engine",
+      "implementation_state": "source_ready",
+      "verification_state": "static_verified",
+      "gaps": []
+    },
+    {
+      "id": "F16",
+      "title": "Declarative Agent Registry + Official Knowledge Sources",
+      "implementation_state": "source_ready",
+      "verification_state": "static_verified",
+      "gaps": []
+    },
+    {
+      "id": "F17",
+      "title": "Checkpoint + Rollback",
+      "implementation_state": "source_ready",
+      "verification_state": "static_verified",
+      "gaps": []
+    },
+    {
+      "id": "F18",
+      "title": "MCP + LSP Runtime",
+      "implementation_state": "source_ready",
+      "verification_state": "static_verified",
+      "gaps": []
+    },
+    {
+      "id": "F19",
+      "title": "Repo Intelligence / Tree-sitter",
+      "implementation_state": "source_ready",
+      "verification_state": "static_verified",
+      "gaps": []
+    },
+    {
+      "id": "F20",
+      "title": "Team Runtime",
+      "implementation_state": "source_ready",
+      "verification_state": "static_verified",
+      "gaps": []
+    },
+    {
+      "id": "F21",
+      "title": "Channel Gateway",
+      "implementation_state": "source_ready",
+      "verification_state": "static_verified",
+      "gaps": []
+    },
+    {
+      "id": "F22",
+      "title": "Device Nodes",
+      "implementation_state": "source_ready",
+      "verification_state": "static_verified",
+      "gaps": []
+    },
+    {
+      "id": "F23",
+      "title": "Secret & Credential Broker",
+      "implementation_state": "source_ready",
+      "verification_state": "static_verified",
+      "gaps": []
+    },
+    {
+      "id": "F24",
+      "title": "Auto-learning + Skill Evolution",
+      "implementation_state": "source_ready",
+      "verification_state": "static_verified",
+      "gaps": []
+    },
+    {
+      "id": "F25",
+      "title": "Knowledge / Evidence Graph",
+      "implementation_state": "source_ready",
+      "verification_state": "static_verified",
+      "gaps": []
+    }
+  ],
+  "release_blockers": [
+    "cargo_fmt_check",
+    "cargo_check_workspace",
+    "cargo_test_workspace",
+    "cargo_clippy_deny_warnings",
+    "postgresql_full_install_e2e",
+    "postgresql_rls_two_tenant_e2e",
+    "bubblewrap_sandbox_e2e",
+    "tauri_native_e2e",
+    "real_provider_e2e",
+    "mission_team_e2e",
+    "fresh_install_upgrade_rollback_restore",
+    "multi_platform_windows_linux_macos",
+    "tree_sitter_native_cargo_build_and_repo_e2e",
+    "mcp_lsp_native_cargo_and_real_server_e2e",
+    "installer_postgresql_backup_restore_upgrade_rollback_native_e2e",
+    "research_postgresql_persistence_native_e2e",
+    "hypothesis_experiment_postgresql_native_e2e",
+    "bpm_editor_browser_build_e2e",
+    "bpm_postgresql_crash_recovery_replay_e2e",
+    "channel_provider_credentialed_e2e",
+    "device_pairing_wss_keyring_multiplatform_e2e",
+    "desktop_os_automation_e2e",
+    "real_stt_model_e2e",
+    "native_tauri_e2e"
+  ]
+}

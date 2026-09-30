@@ -1,0 +1,33 @@
+{
+  "version": "0.14.0",
+  "isolation": {
+    "worktree_by_default": true,
+    "branch_prefix": "agent/mission/",
+    "require_clean_start": true
+  },
+  "execution": {
+    "shells_allowed": false,
+    "direct_program_allowlist": [
+      "git",
+      "cargo",
+      "rustc",
+      "python3",
+      "node",
+      "npm"
+    ],
+    "timeout_ms": 300000,
+    "max_output_bytes": 4194304
+  },
+  "release_gates": [
+    "cargo fmt --check",
+    "cargo check --workspace",
+    "cargo test --workspace",
+    "cargo clippy --workspace --all-targets -- -D warnings"
+  ],
+  "fail_closed": {
+    "missing_model_executor": true,
+    "missing_extension_executor": true,
+    "missing_required_agent": true,
+    "failed_required_gate": true
+  }
+}

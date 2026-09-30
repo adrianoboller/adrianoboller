@@ -1,0 +1,132 @@
+{
+  "version": "0.35.0",
+  "base": "0.34.0",
+  "copied": [
+    {
+      "path": "config/ai-sre-policy.v035.json",
+      "sha256": "babdf9c70d1dd170b855d813a0ce283de24f5f460c8896b8cd503eb78d60bbc2"
+    },
+    {
+      "path": "capabilities/V035_CAPABILITIES_DELTA.json",
+      "sha256": "6b1d57d4187b8e3882364140b2420b1aaa245ac253be12668a2d2e74476b44d0"
+    },
+    {
+      "path": "schemas/sre-policy-v035.schema.json",
+      "sha256": "2cd89a9e2caf20ea15ae3d76c17f9167d2d8e787803bef3f5df0f23fcff9a79d"
+    },
+    {
+      "path": "schemas/cost-forecast-v035.schema.json",
+      "sha256": "d14d07c55f15423e0494113e41c26733575b5a84d52d5ae6a62dd9626f335a0f"
+    },
+    {
+      "path": "schemas/rate-limit-snapshot-v035.schema.json",
+      "sha256": "8451dd20a88c5303fabeb95191e1e2487b1153484e2b7169d998213ada1f309d"
+    },
+    {
+      "path": "schemas/autopilot-plan-v035.schema.json",
+      "sha256": "5bc818b1082eca9384f3ede9174e765f2392916c48839a6b1422de51673eacc8"
+    },
+    {
+      "path": "schemas/demand-forecast-v035.schema.json",
+      "sha256": "9505c1d8f8250ced1131e4090307b3481cc6474e2ef52eeab066c17f483324d6"
+    },
+    {
+      "path": "schemas/slo-sample-v035.schema.json",
+      "sha256": "7733c98ad358561b1057d1def7507794e81fa6d46a6d35268785991993940b47"
+    },
+    {
+      "path": "schemas/admission-decision-v035.schema.json",
+      "sha256": "87fe1304a2fb5fb60fa8ccf8535ad00ee30b18654ef07dc9b9d10d3508ba1d44"
+    },
+    {
+      "path": "schemas/incident-detection-v035.schema.json",
+      "sha256": "f5df37908282c4963e7f55955cb1f725db326cc05c28094e7ec573123da22d0c"
+    },
+    {
+      "path": "schemas/autopilot-execution-v035.schema.json",
+      "sha256": "ab55f86eb2cc1915702e4507ab09deff63081a74c9c756bcda57e08782172ff4"
+    },
+    {
+      "path": "tools/check_migration_quoting.py",
+      "sha256": "06882a82b7724bfeea6760f162274e75ea2d4b8f3381c1efca8e7f73d32b9fc7"
+    },
+    {
+      "path": "tools/check_package_v035.py",
+      "sha256": "f573d4f2fbff01489ab3dda6ff4415fb4e79adcf013071d9dd964a5424ba1453"
+    },
+    {
+      "path": "tools/test_v035_local.py",
+      "sha256": "901eeb3afb8c10f17f28bdc0b578b38f77fddc12d7b47550825e33b672dea201"
+    },
+    {
+      "path": "tools/verify_v035.py",
+      "sha256": "6f2ca5d964eeb971a5746a0a1967fc4d515297ff2c88917bc0b8201b1435d850"
+    },
+    {
+      "path": "reports/V035_GATE_REPORT.json",
+      "sha256": "601646f3c1115766af411f7350f7f4e5d0ddb857fdb31525404ee4803026e091"
+    },
+    {
+      "path": "reports/V035_STATIC_VERIFY_REPORT.json",
+      "sha256": "cfbb930446969471e7150814ea0901184dc63dca81297a8c73c5480f3c16daff"
+    },
+    {
+      "path": "reports/V035_NATIVE_PREFLIGHT.json",
+      "sha256": "0be14d01ac2b500b6f89a24e5e0b73e98c90cac5fac834812e1986f593e094b4"
+    },
+    {
+      "path": "reports/BUILD_REPORT_V035.md",
+      "sha256": "ea3c7b6817796d1e2adcc052704e95aef6caba1afcb8b5532e769950103b5745"
+    },
+    {
+      "path": "reports/V035_MIGRATION_QUOTING_REPORT.json",
+      "sha256": "d437e07414f7ddc52da099d3d8f98e72ac09cb5456798fd7b6917259a8e8d52c"
+    },
+    {
+      "path": "reports/V035_PACKAGE_CHECKS.json",
+      "sha256": "3e691df79b4aa524d2bcb1cd6f3a8e8272eec53b381e86e3247fafcde3a0849f"
+    },
+    {
+      "path": "reports/V035_LOCAL_TEST_REPORT.json",
+      "sha256": "b169f342763d1cc28850cda3bf9570cc8fd42ba94de691284b05d9e1a245e1e0"
+    },
+    {
+      "path": "migrations/0035_ai_sre_autopilot.sql",
+      "sha256": "504fe2a066c2e9c6ad7efb27917fbc5e1a4561f38c952fc96471abde233b3247"
+    },
+    {
+      "path": "docs/AI_SRE_COST_CAPACITY_AUTOPILOT_V035.md",
+      "sha256": "8626012c53935375a2d11deff18e3c73b647de8ff5c4979fa09880f1690115b8"
+    },
+    {
+      "path": "ci/run-v035-native.ps1",
+      "sha256": "fa70e49018b7e5f032c1b53e817c05d982b92fb0f25c59d838be70f4c189ecf1"
+    },
+    {
+      "path": "ci/run-v035-native.sh",
+      "sha256": "b54cf40da69fa274e06c34fe5c6e14908ae7e6bdf2f4c130a396635c02ff3b81"
+    },
+    {
+      "path": "crates/phxclaw-ai-autopilot/Cargo.toml",
+      "sha256": "a28c060306ea3c3a09b4182883a26de73e33b02a8912cf9ad5a111f3da5bfdfb"
+    },
+    {
+      "path": "crates/phxclaw-ai-sre/Cargo.toml",
+      "sha256": "3282426693abc69f7d01a810f2a4d2c694c77df02fa9005193ef5b88f8a1eb79"
+    },
+    {
+      "path": "crates/phxclaw-ai-sre/src/lib.rs",
+      "sha256": "d301052420018b3e7eed8fc1c03cc09471b6ffe99afba628e2ffa9dc96d1ab6f"
+    },
+    {
+      "path": "crates/phxclaw-ai-autopilot/src/lib.rs",
+      "sha256": "259ea2ce2a3a8ac8f49b87342e859c829fa957a1136cd21112f93b26db78c0e5"
+    },
+    {
+      "path": "tests/sql/v035_rls_e2e.sql",
+      "sha256": "aac04a4040395d61fedc7770a1fa8cfd18ba1dc2e6f16b12d47c145c8efbd491"
+    }
+  ],
+  "workspace": "v0.35 crates present exactly once",
+  "cargo_lock_requires_refresh": false
+}

@@ -1,0 +1,101 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f603-72b3-946d-c6b9621006f8",
+  "agent_id": 3,
+  "name": "Analista",
+  "macroarea": "Governança & Estratégia",
+  "nucleus": "Produto",
+  "role_type": "Agente de análise",
+  "mission": "Transforma pedidos vagos em escopo executável, MVP e critérios de aceite objetivos.",
+  "responsibilities": "Recorta a demanda, identifica usuários, casos de uso, fora de escopo, dependências, riscos, MVP, requisitos funcionais/não funcionais e critérios de aceite mensuráveis.",
+  "resources": "Knowledge Graph, histórico, requisitos, entrevistas/contexto, templates de escopo.",
+  "authorized_actions": "Criar Requirement, Acceptance Criteria, MVP, riscos e perguntas em aberto.",
+  "trigger": "Demanda nova ou alteração relevante.",
+  "declared_dependencies": "Pedido humano, contexto do produto e decisões anteriores.",
+  "resolved_agent_dependencies": [
+    {
+      "uuid": "01a0e473-f604-77d8-a13d-7ee652e67964",
+      "name": "Arquiteto"
+    }
+  ],
+  "deliverables": "Escopo versionado, MVP e critérios de aceite.",
+  "limits": "Não escolhe arquitetura nem implementa.",
+  "next_gate": "Arquiteto.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "claude",
+    "ollama"
+  ],
+  "criticality": "Alta",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F20 Team Runtime",
+    "F22 Device Nodes"
+  ],
+  "capabilities": [
+    "context.compile",
+    "memory.read",
+    "node.observe",
+    "requirements.analyze",
+    "skill.read",
+    "team.message"
+  ],
+  "permissions": [
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "requirements.analyze",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "team.message",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Node/session state efêmero e pareado",
+  "event_topics": "agent.analista.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; writes policy-gated; evidência obrigatória; sem autoaprovação. Device input/screen exige autorização de sessão e logging.",
+  "references": "oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão | OpenClaw — gateway/nodes/channels; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 4
+  }
+}

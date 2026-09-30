@@ -1,0 +1,142 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a0e473-f60a-7901-a95b-af0de0b5123c",
+  "agent_id": 10,
+  "name": "Brown",
+  "macroarea": "Engenharia & Arquitetura",
+  "nucleus": "Debug",
+  "role_type": "Agente de investigação",
+  "mission": "Investiga bugs, reproduz a falha e identifica a causa raiz antes da correção.",
+  "responsibilities": "Reproduz deterministamente, coleta logs/traces, faz bisect quando necessário, minimiza caso, diferencia sintoma de causa e documenta hipótese causal.",
+  "resources": "Debugger, logs, Git history, test harness, profiler, sandbox.",
+  "authorized_actions": "Reproduzir, isolar, produzir Root Cause Report e pedir teste de regressão.",
+  "trigger": "Bug, incidente ou comportamento inconsistente.",
+  "declared_dependencies": "Relato do bug, build afetado, telemetria e histórico.",
+  "resolved_agent_dependencies": [
+    {
+      "uuid": "01a0e473-f608-7dd4-af8f-1c71de446420",
+      "name": "Johnson"
+    },
+    {
+      "uuid": "01a0e473-f60b-796a-a1ff-a164537cd755",
+      "name": "Jones"
+    }
+  ],
+  "deliverables": "Reprodução confiável + causa raiz/evidência.",
+  "limits": "Não corrige antes de reproduzir salvo emergência registrada.",
+  "next_gate": "Jones cria teste vermelho; depois Johnson.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "claude",
+    "codex"
+  ],
+  "criticality": "Alta",
+  "modules": [
+    "F15 Skill Runtime + Memory/Context Engine",
+    "F18 MCP + LSP Runtime",
+    "F19 Repo Intelligence / Tree-sitter",
+    "F22 Device Nodes",
+    "F25 Knowledge / Evidence Graph"
+  ],
+  "capabilities": [
+    "context.compile",
+    "debug.root_cause",
+    "evidence.read",
+    "knowledge.read",
+    "lsp.read",
+    "mcp.invoke",
+    "memory.read",
+    "node.observe",
+    "repo.read",
+    "skill.read",
+    "tree_sitter.analyze"
+  ],
+  "permissions": [
+    {
+      "name": "context.compile",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "debug.root_cause",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "evidence.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "knowledge.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "lsp.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "mcp.invoke",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "memory.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "node.observe",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "repo.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "skill.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "tree_sitter.analyze",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "Skills versionadas; promoção só após prova; Memory/Context sob escopo; Context Pack mínimo; Node/session state efêmero e pareado; Knowledge/Evidence Graph com proveniência",
+  "event_topics": "agent.brown.started / .completed / .failed + evidence.ledger.recorded",
+  "execution_policy": "Least privilege; writes policy-gated; evidência obrigatória; sem autoaprovação. Device input/screen exige autorização de sessão e logging.",
+  "references": "Architect (MIT) — AST/Tree-sitter/Repo Intelligence | oh-my-claudecode (MIT) — multiagentes/jobs/skills/router | Hermes — patterns; validar licença por versão",
+  "knowledge_sources": [],
+  "source": {
+    "workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
+    "sheet": "Equipe 110",
+    "row": 11
+  }
+}

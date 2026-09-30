@@ -1,0 +1,20 @@
+{
+  "version": "0.24.0",
+  "base_capability_count": 246,
+  "delta_count": 12,
+  "projected_total": 258,
+  "capabilities": [
+    "release.preflight.run",
+    "release.gate.evaluate",
+    "release.gate.record",
+    "release.gate.evidence.bind",
+    "release.attestation.build",
+    "release.lineage.skill.record",
+    "release.workspace.hash",
+    "release.supply_chain.verify",
+    "release.rls.verify",
+    "release.postgres.verify",
+    "release.mission.verify",
+    "release.status.explain"
+  ]
+}

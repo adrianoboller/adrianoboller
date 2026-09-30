@@ -1,0 +1,232 @@
+{
+  "suite": "PhxClaw v0.35 local/application/security",
+  "pass": 45,
+  "fail": 0,
+  "checks": [
+    {
+      "name": "ed25519_policy_signature",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "tampered_policy_rejected",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "slo_availability",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "slo_burn_detected",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "demand_forecast_deterministic",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "demand_forecast_recent_weight",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "fresh_sample_allowed",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "future_sample_rejected",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "stale_sample_rejected",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rate_limit_signature",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rate_limit_fresh",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rate_limit_ttl_rechecked_at_admission",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "rate_limit_reset_rechecked_at_admission",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "admission_admit",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "admission_queue",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "admission_hard_reject",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "critical_can_queue_not_bypass_rate",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "queue_aging_increases_priority",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "cost_healthy",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "cost_soft",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "cost_hard",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "zero_budget_positive_cost_is_hard",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "zero_budget_positive_delta_not_free",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "incident_identical_duplicate_dedup",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "incident_conflicting_duplicate_rejected",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "safe_throttle_auto",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "unsafe_scale_requires_approval",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "cost_increase_requires_headroom",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "capacity_purchase_disabled_default",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "zero_budget_increase_requires_approval",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "provider_outside_portfolio_blocked",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "plan_requires_cost_and_incident_evidence",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "missing_incident_evidence_rejected",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "expired_plan_blocked",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "migration_quoting",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "force_rls",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "execution_fencing",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "append_only",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "budget_limit_persisted",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "apply_success",
+      "pass": true,
+      "detail": "PhxClaw v0.35 overlay applied: 31 files\nv0.35 crates present exactly once\nmarker=/tmp/v035test_yp567mb4/PhxClaw/config/overlays/v0.35.applied.json\n"
+    },
+    {
+      "name": "apply_idempotent",
+      "pass": true,
+      "detail": "PhxClaw v0.35 overlay already applied\nv0.35 crates present exactly once\nmarker=/tmp/v035test_yp567mb4/PhxClaw/config/overlays/v0.35.applied.json\n"
+    },
+    {
+      "name": "workspace_once",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "installed_verifier",
+      "pass": true,
+      "detail": "PASS=101 FAIL=0\n"
+    },
+    {
+      "name": "unknown_conflict_fail_closed",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "malformed_base_fail_closed",
+      "pass": true,
+      "detail": ""
+    }
+  ]
+}

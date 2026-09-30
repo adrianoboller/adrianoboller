@@ -1,0 +1,58 @@
+{
+  "uuid": "01a0e63e-a2e3-79b5-9df0-29aa6fde2f42",
+  "name": "claw-code-official",
+  "ecosystem": "claw-code",
+  "mode": "hybrid",
+  "authoritative": true,
+  "license_note": "Upstream ultraworkers/claw-code is MIT. Preserve upstream LICENSE and commit lock for vendored snapshots.",
+  "local_root": "private/vendor/claw-code/upstream",
+  "sync_strategy": "git_clone_locked_commit",
+  "verified_version": null,
+  "allowed_agents": [
+    "Research Agent",
+    "Documentador",
+    "Master Orchestrator",
+    "Rust Worker Engineer"
+  ],
+  "required_capabilities": [
+    "knowledge.claw_code.read"
+  ],
+  "endpoints": [
+    {
+      "name": "Claw Code repository",
+      "url": "https://github.com/ultraworkers/claw-code",
+      "authority": "official",
+      "purpose": "canonical upstream repository",
+      "offline_relative_path": null
+    },
+    {
+      "name": "Claw Code Rust workspace",
+      "url": "https://github.com/ultraworkers/claw-code/tree/main/rust",
+      "authority": "official",
+      "purpose": "canonical Rust runtime workspace",
+      "offline_relative_path": "rust"
+    },
+    {
+      "name": "Claw Code Rust README",
+      "url": "https://github.com/ultraworkers/claw-code/blob/main/rust/README.md",
+      "authority": "official",
+      "purpose": "crate map and runtime features",
+      "offline_relative_path": "rust/README.md"
+    },
+    {
+      "name": "Claw Code Usage",
+      "url": "https://github.com/ultraworkers/claw-code/blob/main/USAGE.md",
+      "authority": "official",
+      "purpose": "CLI and operational commands",
+      "offline_relative_path": "USAGE.md"
+    },
+    {
+      "name": "Claw Code License",
+      "url": "https://github.com/ultraworkers/claw-code/blob/main/LICENSE",
+      "authority": "official",
+      "purpose": "MIT license text",
+      "offline_relative_path": "LICENSE"
+    }
+  ],
+  "last_synced_at": null
+}

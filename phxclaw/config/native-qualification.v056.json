@@ -1,0 +1,54 @@
+{
+  "version": "0.56.0",
+  "mode": "native_qualification_green_campaign",
+  "target_green_sprints": 10,
+  "source_state": {
+    "exclude": [
+      ".git",
+      "target",
+      "reports",
+      "var",
+      "logs",
+      "backups",
+      "node_modules",
+      ".cache"
+    ],
+    "hash_algorithm": "sha256"
+  },
+  "toolchain": {
+    "rust": "project rust-toolchain.toml when present, otherwise trusted stable",
+    "postgresql": "18.x policy from PhxClaw v0.20",
+    "ollama": "loopback only by default"
+  },
+  "database": {
+    "admin_env": "DATABASE_URL",
+    "rls_env": "PHXCLAW_RLS_DATABASE_URL",
+    "require_rls_nonsuperuser": true,
+    "require_rls_nobypassrls": true,
+    "destructive_migrations_require_disposable_database_flag": true
+  },
+  "ollama": {
+    "base_url": "http://127.0.0.1:11434",
+    "remote_refused_by_default": true
+  },
+  "release": {
+    "forbid_mock_pass": true,
+    "unavailable_is_pass": false,
+    "first_wave": [
+      "F00",
+      "F02",
+      "F04",
+      "F05",
+      "F06",
+      "F09",
+      "F15",
+      "F17",
+      "F19",
+      "F20"
+    ]
+  },
+  "notes": [
+    "This release adds qualification infrastructure, not new product/domain features.",
+    "No sprint turns green unless every required gate is PASS for the same source-state hash."
+  ]
+}

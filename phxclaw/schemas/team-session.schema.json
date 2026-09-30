@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phxclaw.local/schemas/team-session.schema.json",
+  "title": "PhxClaw Team Session",
+  "type": "object",
+  "required": [
+    "uuid",
+    "correlation_uuid",
+    "name",
+    "state",
+    "max_parallelism",
+    "tasks"
+  ],
+  "properties": {
+    "uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "correlation_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "state": {
+      "enum": [
+        "planned",
+        "running",
+        "draining",
+        "succeeded",
+        "failed",
+        "cancelled"
+      ]
+    },
+    "max_parallelism": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 256
+    },
+    "tasks": {
+      "type": "array",
+      "items": {
+        "$ref": "team-task.schema.json"
+      }
+    }
+  },
+  "additionalProperties": true
+}

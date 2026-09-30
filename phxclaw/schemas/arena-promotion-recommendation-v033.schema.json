@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "recommendation_uuid",
+    "arena_uuid",
+    "challenger",
+    "champion",
+    "policy_sha256",
+    "supporting_window_hashes",
+    "recommendation_sha256",
+    "requires_v032_promotion_gate"
+  ],
+  "properties": {
+    "requires_v032_promotion_gate": {
+      "const": true
+    },
+    "recommendation_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{64}$"
+    }
+  }
+}

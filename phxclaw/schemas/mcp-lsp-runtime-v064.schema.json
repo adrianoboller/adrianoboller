@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phxclaw.local/schemas/mcp-lsp-runtime-v064.schema.json",
+  "title": "PhxClaw MCP/LSP Runtime v0.64",
+  "type": "object",
+  "required": ["schema_version", "default_session_policy", "security", "mcp", "lsp", "evidence"],
+  "properties": {
+    "schema_version": {"const": "0.64.0"},
+    "default_session_policy": {
+      "type": "object",
+      "required": ["request_timeout_ms", "startup_timeout_ms", "shutdown_timeout_ms", "max_frame_bytes"],
+      "properties": {
+        "request_timeout_ms": {"type": "integer", "minimum": 1},
+        "startup_timeout_ms": {"type": "integer", "minimum": 1},
+        "shutdown_timeout_ms": {"type": "integer", "minimum": 1},
+        "max_frame_bytes": {"type": "integer", "minimum": 1024},
+        "max_unsolicited_messages": {"type": "integer", "minimum": 1},
+        "max_restarts": {"type": "integer", "minimum": 0},
+        "restart_backoff_ms": {"type": "integer", "minimum": 1}
+      },
+      "additionalProperties": false
+    },
+    "security": {"type": "object"},
+    "mcp": {"type": "object"},
+    "lsp": {"type": "object"},
+    "evidence": {"type": "object"}
+  },
+  "additionalProperties": false
+}

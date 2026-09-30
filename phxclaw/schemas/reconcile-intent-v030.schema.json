@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "tenant_uuid",
+    "intent_uuid",
+    "controller_uuid",
+    "leader_epoch",
+    "source_state_sha256",
+    "target_state_sha256",
+    "status"
+  ],
+  "properties": {
+    "tenant_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "intent_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "controller_uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "leader_epoch": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "source_state_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "target_state_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "status": {
+      "enum": [
+        "planned",
+        "committed",
+        "rejected",
+        "superseded"
+      ]
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,106 @@
+{
+  "manifest_version": "1.2.0",
+  "uuid": "01a0e430-4586-73cf-9272-d0796a92dc28",
+  "name": "com.phxclaw.agent.master-orchestrator",
+  "version": "0.5.0",
+  "kind": "agent",
+  "description": "Orquestrador mestre plugável para coordenar agentes, tarefas e gates.",
+  "core_api": ">=0.5.0, <0.6.0",
+  "entrypoint": {
+    "type": "process",
+    "value": "plugins/builtin/artifacts/master-orchestrator-agent"
+  },
+  "dependencies": [
+    {
+      "uuid": "01a0e430-4586-71ee-908d-54c04433e8e0",
+      "version": ">=0.4.0, <0.5.0",
+      "optional": false
+    },
+    {
+      "uuid": "01a0e430-4586-7d4c-ade9-2bb709f7dac1",
+      "version": ">=0.4.0, <0.5.0",
+      "optional": false
+    }
+  ],
+  "capabilities": [
+    "orchestration.dispatch",
+    "orchestration.coordinate",
+    "workflow.control"
+  ],
+  "permissions": [
+    {
+      "name": "agent.invoke",
+      "scopes": [
+        "agents/*"
+      ]
+    },
+    {
+      "name": "task.read",
+      "scopes": [
+        "tasks/*"
+      ]
+    },
+    {
+      "name": "task.write",
+      "scopes": [
+        "tasks/*"
+      ]
+    }
+  ],
+  "lifecycle": {
+    "install": "master.install",
+    "enable": "master.enable",
+    "disable": "master.disable",
+    "uninstall": "master.uninstall",
+    "health": "master.health"
+  },
+  "contracts": {
+    "input_schema": "schemas/agent-request.schema.json",
+    "output_schema": "schemas/agent-response.schema.json"
+  },
+  "sandbox": {
+    "network": "deny",
+    "network_allowlist": [],
+    "read_only_paths": [],
+    "write_paths": [],
+    "environment_allowlist": [],
+    "timeout_ms": 5000,
+    "memory_mb": 256,
+    "cpu_quota_percent": 25
+  },
+  "integrity": {
+    "artifact": "plugins/builtin/artifacts/master-orchestrator-agent",
+    "hash_algorithm": "sha256",
+    "digest": "bdf65d8f7645a2be833e50522673a0a76ba141449445f8b5411bbcbe3e85f2d1",
+    "signature_algorithm": "ed25519",
+    "signature": "YqnGmAY71tI2nYsNry6TJN75DavazEik6MWYVevppxDJFnJU3C+A/rYL99Tym8keKcYA6YnZ9pg96otCiAd7AA==",
+    "signer": "phxclaw-dev-root-2026-v05r2",
+    "provenance": "PhxClaw Core Bootstrap v0.5 / signed development artifact"
+  },
+  "tests": [
+    {
+      "name": "signed-artifact-health",
+      "command": "plugins/builtin/artifacts/master-orchestrator-agent --health",
+      "required": true
+    }
+  ],
+  "rollback": {
+    "strategy": "disable_and_restore_previous",
+    "steps": [
+      "disable plugin",
+      "restore previous signed manifest and artifact",
+      "re-run integrity and health gates"
+    ]
+  },
+  "agent": {
+    "display_name": "Master Orchestrator",
+    "role": "Coordenação geral e distribuição determinística",
+    "priority": 100,
+    "accepts": [
+      "application/json"
+    ],
+    "emits": [
+      "application/json"
+    ]
+  }
+}
