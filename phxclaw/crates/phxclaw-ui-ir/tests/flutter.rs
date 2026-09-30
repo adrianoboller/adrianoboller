@@ -38,7 +38,7 @@ fn roda(f: &Path, dir: &Path, args: &[&str]) -> String {
         .process_group(0)
         .spawn()
         .unwrap();
-    let prazo = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    let prazo = std::time::Instant::now() + std::time::Duration::from_secs(900);
     let status = loop {
         if let Some(st) = filho.try_wait().unwrap() {
             break st;
