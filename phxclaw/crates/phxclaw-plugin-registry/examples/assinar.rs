@@ -30,14 +30,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut n = 0;
     for e in std::fs::read_dir(&pasta)? {
         let p = e?.path();
-        if p.extension().and_then(|x| x.to_str()) != Some("json") {
+        // so manifesto: a pasta de exemplos tem schemas .json ao lado, sem assinatura
+        if !p.to_string_lossy().ends_with(".plugin.json") {
             continue;
         }
         let texto = std::fs::read_to_string(&p)?;
         let v: serde_json::Value = serde_json::from_str(&texto)?;
         let signer = v["integrity"]["signer"].as_str().unwrap_or_default();
         let chave = chave_do_signatario(&semente, signer, &trust)?;
-        std::fs::write(&p, reassinar(&texto, &raiz, &chave)?)?;
+        let formato = trust
+            .signer(signer)
+            .map(|s| s.signature_format)
+            .unwrap_or(1);
+        std::fs::write(&p, reassinar(&texto, &raiz, &chave, formato)?)?;
         println!("reassinado {}", p.display());
         n += 1;
     }

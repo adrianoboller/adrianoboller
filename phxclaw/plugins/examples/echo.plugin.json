@@ -1,63 +1,66 @@
 {
-  "manifest_version": "1.2.0",
-  "uuid": "01a0e430-4586-7336-a32e-7fb080e83d31",
-  "name": "com.phxclaw.example.echo",
-  "version": "0.5.0",
-  "kind": "tool",
-  "description": "Plugin mínimo assinado para testar registry, sandbox e contratos.",
-  "core_api": ">=0.5.0, <0.6.0",
-  "entrypoint": {
-    "type": "process",
-    "value": "plugins/examples/bin/phxclaw-example-echo"
-  },
-  "dependencies": [],
+  "agent": null,
   "capabilities": [
     "echo"
   ],
-  "permissions": [],
-  "lifecycle": {
-    "install": "echo.install",
-    "enable": "echo.enable",
-    "disable": "echo.disable",
-    "uninstall": "echo.uninstall",
-    "health": "echo.health"
-  },
   "contracts": {
     "input_schema": "plugins/examples/echo.input.schema.json",
     "output_schema": "plugins/examples/echo.output.schema.json"
   },
-  "sandbox": {
-    "network": "deny",
-    "network_allowlist": [],
-    "read_only_paths": [],
-    "write_paths": [],
-    "environment_allowlist": [],
-    "timeout_ms": 5000,
-    "memory_mb": 256,
-    "cpu_quota_percent": 25
+  "core_api": ">=0.5.0, <0.6.0",
+  "dependencies": [],
+  "description": "Plugin mínimo assinado para testar registry, sandbox e contratos.",
+  "entrypoint": {
+    "type": "process",
+    "value": "plugins/examples/bin/phxclaw-example-echo"
   },
+  "extension_points": [],
   "integrity": {
     "artifact": "plugins/examples/bin/phxclaw-example-echo",
+    "digest": "54b0ff8f1b68a7e84a9f124b593a9804d54a42647d85006deb1fc6e14e41577f",
     "hash_algorithm": "sha256",
-    "digest": "87c97b4e3a04bfdcda634adc114a1c540578d44cfe58c73e0f2335ea5a2921c0",
+    "provenance": "PhxClaw Core Bootstrap v0.5 / signed development artifact",
+    "signature": "X9Yb1WDSEv7Ni2JuXufDC9oIDohlZDzOQytLRNPqVQy177swLxBgfBXGcsCEYsCOdIJnW5RQs9h+TgvJCobuBQ==",
     "signature_algorithm": "ed25519",
-    "signature": "GK/9v/tQLHC9/u+Tr46SBnuW52vp4utCk2J7Bo6TkXdTMzBC3e+sM1qOchE5rMO3aOcA6RwP+Li3BYXDx4SHDg==",
-    "signer": "phxclaw-dev-root-2026-v05r2",
-    "provenance": "PhxClaw Core Bootstrap v0.5 / signed development artifact"
+    "signer": "phxclaw-dev-root-2026-v07"
   },
-  "tests": [
-    {
-      "name": "signed-artifact-health",
-      "command": "plugins/examples/bin/phxclaw-example-echo --health",
-      "required": true
-    }
-  ],
+  "kind": "tool",
+  "lifecycle": {
+    "disable": "echo.disable",
+    "enable": "echo.enable",
+    "health": "echo.health",
+    "install": "echo.install",
+    "uninstall": "echo.uninstall"
+  },
+  "manifest_version": "1.2.0",
+  "model_provider": null,
+  "name": "com.phxclaw.example.echo",
+  "permissions": [],
   "rollback": {
-    "strategy": "disable_and_restore_previous",
     "steps": [
       "disable plugin",
       "restore previous signed manifest and artifact",
       "re-run integrity and health gates"
-    ]
-  }
+    ],
+    "strategy": "disable_and_restore_previous"
+  },
+  "sandbox": {
+    "cpu_quota_percent": 25,
+    "environment_allowlist": [],
+    "memory_mb": 256,
+    "network": "deny",
+    "network_allowlist": [],
+    "read_only_paths": [],
+    "timeout_ms": 5000,
+    "write_paths": []
+  },
+  "tests": [
+    {
+      "command": "plugins/examples/bin/phxclaw-example-echo --health",
+      "name": "signed-artifact-health",
+      "required": true
+    }
+  ],
+  "uuid": "01a0e430-4586-7336-a32e-7fb080e83d31",
+  "version": "0.5.0"
 }

@@ -26,6 +26,26 @@ def is_v7(value: str) -> bool:
         return False
 
 
+def manifesto_canonico(manifest):
+    # mesma forma do Rust (phxclaw_plugin_registry::manifesto_canonico): JSON compacto,
+    # chaves ordenadas, assinatura vazia
+    import copy, hashlib, json as _j
+    m = copy.deepcopy(manifest)
+    m["integrity"]["signature"] = ""
+    return _j.dumps(m, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def mensagem_do_formato(manifest, formato):
+    i = manifest["integrity"]
+    base = (f"uuid={manifest['uuid']}\nname={manifest['name']}\n"
+            f"version={manifest['version']}\nsha256={i['digest']}\n")
+    if formato >= 2:
+        import hashlib
+        h = hashlib.sha256(manifesto_canonico(manifest).encode("utf-8")).hexdigest()
+        return (f"PHXCLAW-PLUGIN-V2\n{base}manifesto_sha256={h}\n").encode("utf-8")
+    return ("PHXCLAW-PLUGIN-V1\n" + base).encode("utf-8")
+
+
 def signing_message(manifest: dict) -> bytes:
     return (
         "PHXCLAW-PLUGIN-V1\n"
@@ -72,7 +92,7 @@ def verify_plugin_integrity(parsed: dict[Path, object]) -> None:
             try:
                 public_key = base64.b64decode(signer["public_key_base64"], validate=True)
                 signature = base64.b64decode(integrity["signature"], validate=True)
-                Ed25519PublicKey.from_public_bytes(public_key).verify(signature, signing_message(manifest))
+                Ed25519PublicKey.from_public_bytes(public_key).verify(signature, mensagem_do_formato(manifest, signer.get("signature_format", 1)))
             except Exception as exc:
                 fail(f"Ed25519 verification failed for {path}: {exc}")
         verified += 1

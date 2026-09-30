@@ -2,13 +2,24 @@
   "version": "1.5.0",
   "signers": [
     {
-      "id": "phxclaw-dev-root-2026-v05r2",
+      "id": "phxclaw-dev-root-2026-v07",
       "algorithm": "ed25519",
-      "public_key_base64": "utH47HRrIDMP8SLZh3WYNAjIuY7iGxzdIi5EaCBycRc=",
+      "public_key_base64": "1D3KzsKkMZRMrEKFR34ydVcIZ91XLy8qgciKDn+1/yc=",
       "status": "active",
       "allowed_name_prefixes": [
         "com.phxclaw."
-      ]
+      ],
+      "signature_format": 2
+    },
+    {
+      "id": "phxclaw-dev-root-2026-v05r2",
+      "algorithm": "ed25519",
+      "public_key_base64": "utH47HRrIDMP8SLZh3WYNAjIuY7iGxzdIi5EaCBycRc=",
+      "status": "retired",
+      "allowed_name_prefixes": [
+        "com.phxclaw."
+      ],
+      "retired_reason": "chave privada perdida (externa, fora do ambiente); substituida pela v07 em 30/09/2026 por decisao do dono"
     },
     {
       "id": "phxclaw-fixture-v013",

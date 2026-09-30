@@ -23,6 +23,15 @@ pub struct TrustedSigner {
     pub public_key_base64: String,
     pub status: String,
     pub allowed_name_prefixes: Vec<String>,
+    /// 1 = a assinatura cobre uuid, nome, versao e o hash do artefato (legado); 2 = cobre o
+    /// manifesto INTEIRO (permissoes, sandbox, entrypoint, dependencias). Por signatario:
+    /// quem e V2 nunca aceita V1, senao uma assinatura V1 antiga deixaria trocar permissoes.
+    #[serde(default = "formato_legado")]
+    pub signature_format: u8,
+}
+
+fn formato_legado() -> u8 {
+    1
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -555,13 +564,49 @@ impl PluginRegistry {
             })?;
 
         verifying_key
-            .verify(signing_message(manifest).as_bytes(), &signature)
+            .verify(
+                mensagem_do_formato(manifest, signer.signature_format).as_bytes(),
+                &signature,
+            )
             .map_err(|error| RegistryError::Integrity {
                 plugin: manifest.name.clone(),
                 reason: format!("Ed25519 verification failed: {error}"),
             })?;
         Ok(())
     }
+}
+
+/// A mensagem assinada no formato do signatario: um lugar so para o assinador e para a
+/// verificacao, para os dois nunca divergirem.
+pub fn mensagem_do_formato(manifest: &PluginManifest, formato: u8) -> String {
+    if formato >= 2 {
+        signing_message_v2(manifest)
+    } else {
+        signing_message(manifest)
+    }
+}
+
+/// Forma canonica do manifesto: JSON compacto de chaves ordenadas, com a propria
+/// assinatura vazia. Os verificadores em Python reproduzem a mesma forma.
+pub fn manifesto_canonico(manifest: &PluginManifest) -> String {
+    let mut m = manifest.clone();
+    m.integrity.signature = String::new();
+    serde_json::to_value(&m)
+        .map(|v| v.to_string())
+        .unwrap_or_default()
+}
+
+/// V2: a V1 mais o sha256 do manifesto inteiro. Na V1, editar `permissions`, `sandbox`
+/// ou `entrypoint` nao quebrava a assinatura (achado em 30/09, ao reassinar os builtin).
+pub fn signing_message_v2(manifest: &PluginManifest) -> String {
+    format!(
+        "PHXCLAW-PLUGIN-V2\nuuid={}\nname={}\nversion={}\nsha256={}\nmanifesto_sha256={}\n",
+        manifest.uuid,
+        manifest.name,
+        manifest.version,
+        manifest.integrity.digest,
+        hex_sha256(manifesto_canonico(manifest).as_bytes())
+    )
 }
 
 pub fn signing_message(manifest: &PluginManifest) -> String {
@@ -635,7 +680,8 @@ mod tests {
             .discover_tree(&root().join("plugins/builtin/manifests"))
             .unwrap();
         assert!(report.accepted >= 3);
-        assert_eq!(report.quarantined, 0);
+        // o motivo da quarentena aparece na falha: sem ele, "1 != 0" nao diz o que olhar
+        assert_eq!(report.quarantined, 0, "{:#?}", registry.quarantine());
         registry.resolve_dependencies().unwrap();
     }
 
@@ -663,7 +709,7 @@ mod tests {
         ))
         .unwrap();
         v["integrity"]["signer"] = "teste".into();
-        let novo = reassinar(&v.to_string(), &root(), &chave).unwrap();
+        let novo = reassinar(&v.to_string(), &root(), &chave, 1).unwrap();
         let constitution: serde_json::Value =
             serde_json::from_str(include_str!("../../../config/constitution.json")).unwrap();
         let api = constitution["plugin_api_version"]
@@ -674,6 +720,31 @@ mod tests {
         let m: PluginManifest = serde_json::from_str(&novo).unwrap();
         reg.register(m, Path::new("reassinado.plugin.json"))
             .unwrap();
+    }
+
+    #[test]
+    fn permissao_ou_rede_adulteradas_quebram_a_assinatura_v2() {
+        // com a V1 este teste passava a manifesto adulterado: permissoes e rede ficavam
+        // fora da mensagem assinada
+        for adulterar in ["permissao", "rede", "entrypoint"] {
+            let mut reg = registry();
+            let input =
+                include_str!("../../../plugins/builtin/manifests/morpheus.agent.plugin.json");
+            let mut v: serde_json::Value = serde_json::from_str(input).unwrap();
+            match adulterar {
+                "permissao" => v["permissions"][0]["scopes"] = serde_json::json!(["*"]),
+                "rede" => {
+                    v["sandbox"]["network"] = "allowlist".into();
+                    v["sandbox"]["network_allowlist"] = serde_json::json!(["exfiltra.exemplo"]);
+                }
+                _ => v["entrypoint"]["value"] = "/bin/sh".into(),
+            }
+            let m: PluginManifest = serde_json::from_value(v).unwrap();
+            let e = reg
+                .register(m, Path::new("adulterado.plugin.json"))
+                .unwrap_err();
+            assert!(e.to_string().contains("Ed25519"), "{adulterar}: {e}");
+        }
     }
 
     #[test]

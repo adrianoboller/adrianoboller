@@ -1,84 +1,86 @@
 {
-  "manifest_version": "1.2.0",
-  "uuid": "01a0e46d-ea09-7866-95e3-562e8dd480c1",
-  "name": "com.phxclaw.model-provider.local-deterministic",
-  "version": "0.5.0",
-  "kind": "model_provider",
-  "description": "Provider local determinístico de desenvolvimento para validar o Model Gateway sem rede nem chaves externas.",
-  "core_api": ">=0.5.0, <0.6.0",
-  "entrypoint": {
-    "type": "process",
-    "value": "plugins/builtin/artifacts/local-model-provider"
-  },
-  "dependencies": [],
+  "agent": null,
   "capabilities": [
     "model.chat",
     "model.code",
     "model.reasoning"
   ],
-  "permissions": [],
-  "lifecycle": {
-    "install": "local-model.install",
-    "enable": "local-model.enable",
-    "disable": "local-model.disable",
-    "uninstall": "local-model.uninstall",
-    "health": "local-model.health"
-  },
   "contracts": {
     "input_schema": "schemas/model-request.schema.json",
     "output_schema": "schemas/model-response.schema.json"
   },
-  "sandbox": {
-    "network": "deny",
-    "network_allowlist": [],
-    "read_only_paths": [],
-    "write_paths": [],
-    "environment_allowlist": [],
-    "timeout_ms": 5000,
-    "memory_mb": 256,
-    "cpu_quota_percent": 25
+  "core_api": ">=0.5.0, <0.6.0",
+  "dependencies": [],
+  "description": "Provider local determinístico de desenvolvimento para validar o Model Gateway sem rede nem chaves externas.",
+  "entrypoint": {
+    "type": "process",
+    "value": "plugins/builtin/artifacts/local-model-provider"
   },
+  "extension_points": [],
   "integrity": {
     "artifact": "plugins/builtin/artifacts/local-model-provider",
+    "digest": "e3f7f7c94ef1a2ae6d7544ba0a48a9e080130aa7aad5c3d14ed9f22903bdf7c3",
     "hash_algorithm": "sha256",
-    "digest": "79d1a9ba09cb9d6b60feb499b099352b07a9d320fe7b93b22ea1604d38ce8035",
+    "provenance": "PhxClaw Core Bootstrap v0.5 / signed development artifact",
+    "signature": "eXkcjondZSdxvAulAeu65eJkdiAj5r0JB/v0ltcUlYYiQqcYY6TMN1UWWRruQme6TOkO2EK0vva8XxhKshm7AQ==",
     "signature_algorithm": "ed25519",
-    "signature": "htpdz3WbGE2qy/Y2HERNoVg+1tkLKfw5zejZ8yNBDeYUCbv/gRWUTqvNQFWcLIOyo72EYYUHNl9uYS0mOxMkDw==",
-    "signer": "phxclaw-dev-root-2026-v05r2",
-    "provenance": "PhxClaw Core Bootstrap v0.5 / signed development artifact"
+    "signer": "phxclaw-dev-root-2026-v07"
   },
-  "tests": [
-    {
-      "name": "local-provider-health",
-      "command": "plugins/builtin/artifacts/local-model-provider --health",
-      "required": true
-    }
-  ],
-  "rollback": {
-    "strategy": "disable_and_restore_previous",
-    "steps": [
-      "disable provider",
-      "restore previous signed manifest and artifact",
-      "re-run integrity and health gates"
-    ]
+  "kind": "model_provider",
+  "lifecycle": {
+    "disable": "local-model.disable",
+    "enable": "local-model.enable",
+    "health": "local-model.health",
+    "install": "local-model.install",
+    "uninstall": "local-model.uninstall"
   },
+  "manifest_version": "1.2.0",
   "model_provider": {
     "display_name": "PhxClaw Local Deterministic Provider",
-    "priority": 25,
-    "transport": "process",
     "models": [
       {
-        "id": "phoenix-local-stub-v1",
         "capabilities": [
           "model.chat",
           "model.code",
           "model.reasoning"
         ],
         "context_window": 32768,
+        "id": "phoenix-local-stub-v1",
         "input_microunits_per_million_tokens": 0,
-        "output_microunits_per_million_tokens": 0,
-        "local": true
+        "local": true,
+        "output_microunits_per_million_tokens": 0
       }
-    ]
-  }
+    ],
+    "priority": 25,
+    "transport": "process"
+  },
+  "name": "com.phxclaw.model-provider.local-deterministic",
+  "permissions": [],
+  "rollback": {
+    "steps": [
+      "disable provider",
+      "restore previous signed manifest and artifact",
+      "re-run integrity and health gates"
+    ],
+    "strategy": "disable_and_restore_previous"
+  },
+  "sandbox": {
+    "cpu_quota_percent": 25,
+    "environment_allowlist": [],
+    "memory_mb": 256,
+    "network": "deny",
+    "network_allowlist": [],
+    "read_only_paths": [],
+    "timeout_ms": 5000,
+    "write_paths": []
+  },
+  "tests": [
+    {
+      "command": "plugins/builtin/artifacts/local-model-provider --health",
+      "name": "local-provider-health",
+      "required": true
+    }
+  ],
+  "uuid": "01a0e46d-ea09-7866-95e3-562e8dd480c1",
+  "version": "0.5.0"
 }

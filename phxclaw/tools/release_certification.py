@@ -123,9 +123,11 @@ def main() -> int:
                    detalhe=lambda o: (re.search(r"placar: .*", o) or [None])[0])
         else:
             portao(codigo, True, bloqueio=BLOQUEIOS.get(codigo, "sem executor neste ambiente"))
-    portao("builtin_plugin_signatures", True, bloqueio=(
-        "6 manifestos builtin com digest/assinatura quebrados desde o rename da v0.41; "
-        "reassinar exige a chave privada phxclaw-dev-root-2026-v05r2 (externa)"))
+    # Medido, nao declarado: os manifestos builtin carregam pela raiz v07 com assinatura V2
+    # (que cobre o manifesto inteiro), o adulterado e recusado e a chave errada nao assina.
+    portao("builtin_plugin_signatures", True,
+           cmd="cargo test -p phxclaw-plugin-registry --lib 2>&1",
+           ok=lambda rc, o: rc == 0 and "signed_builtin_agents_load ... ok" in o)
 
     obrig = [g for g in portoes if g["required"]]
     certificada = all(g["status"] == "passed" for g in obrig)

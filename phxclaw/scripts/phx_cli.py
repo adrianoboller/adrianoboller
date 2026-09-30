@@ -126,6 +126,26 @@ def path_safe(base, rel):
     return out
 
 def read_trust_store(): return loadj('config/trust/plugin-signers.json')
+def manifesto_canonico(manifest):
+    # mesma forma do Rust (phxclaw_plugin_registry::manifesto_canonico): JSON compacto,
+    # chaves ordenadas, assinatura vazia
+    import copy, hashlib, json as _j
+    m = copy.deepcopy(manifest)
+    m["integrity"]["signature"] = ""
+    return _j.dumps(m, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def mensagem_do_formato(manifest, formato):
+    i = manifest["integrity"]
+    base = (f"uuid={manifest['uuid']}\nname={manifest['name']}\n"
+            f"version={manifest['version']}\nsha256={i['digest']}\n")
+    if formato >= 2:
+        import hashlib
+        h = hashlib.sha256(manifesto_canonico(manifest).encode("utf-8")).hexdigest()
+        return (f"PHXCLAW-PLUGIN-V2\n{base}manifesto_sha256={h}\n").encode("utf-8")
+    return ("PHXCLAW-PLUGIN-V1\n" + base).encode("utf-8")
+
+
 def signing_message(manifest):
     i=manifest['integrity']
     return (f"PHXCLAW-PLUGIN-V1\nuuid={manifest['uuid']}\nname={manifest['name']}\nversion={manifest['version']}\nsha256={i['digest']}\n").encode()
@@ -139,7 +159,7 @@ def verify_manifest_signature(manifest):
     if Ed25519PublicKey is None: raise SystemExit('cryptography package required for Ed25519 verification')
     try:
         pub=Ed25519PublicKey.from_public_bytes(base64.b64decode(signer['public_key_base64'],validate=True))
-        pub.verify(base64.b64decode(manifest['integrity']['signature'],validate=True), signing_message(manifest))
+        pub.verify(base64.b64decode(manifest['integrity']['signature'],validate=True), mensagem_do_formato(manifest, signer.get('signature_format',1)))
     except Exception as e: raise SystemExit(f'Ed25519 verification failed: {e}')
 
 def core_compatible(req):

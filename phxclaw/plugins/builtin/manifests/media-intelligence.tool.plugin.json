@@ -1,42 +1,42 @@
 {
-  "manifest_version": "1.2.0",
-  "version": "0.5.0",
-  "core_api": ">=0.5.0, <0.6.0",
-  "dependencies": [],
-  "contracts": {
-    "input_schema": "schemas/process-envelope.schema.json",
-    "output_schema": "schemas/process-reply.schema.json"
-  },
-  "integrity": {
-    "artifact": "plugins/builtin/artifacts/media-intelligence-tool",
-    "hash_algorithm": "sha256",
-    "digest": "9116f9219cf6b84903571e4bc12f8f939c18c364de40e58e45be232681a38613",
-    "signature_algorithm": "ed25519",
-    "signature": "oLvYCEwz8Bw6fE/Q93yZ9E6kA2GFEeQWR3PmtxV5dWVsN8wjWH06oemRPOfSTFZ8z8rNv8avDRx1oyD62RQJAA==",
-    "signer": "phxclaw-dev-root-2026-v05r2",
-    "provenance": "PhxClaw Core Bootstrap v0.5 / signed development artifact"
-  },
-  "rollback": {
-    "strategy": "disable_and_restore_previous",
-    "steps": [
-      "disable plugin",
-      "restore previous signed manifest and artifact",
-      "re-run integrity and health gates"
-    ]
-  },
-  "uuid": "01a0e48d-cc90-7ca9-890b-718a72fa1c6d",
-  "name": "com.phxclaw.tool.media-intelligence",
-  "kind": "tool",
-  "description": "OCR com Tesseract, texto-para-voz via engine local e contrato voz-para-texto via Whisper.",
-  "entrypoint": {
-    "type": "process",
-    "value": "plugins/builtin/artifacts/media-intelligence-tool"
-  },
+  "agent": null,
   "capabilities": [
     "ocr.read",
     "speech.tts",
     "speech.stt"
   ],
+  "contracts": {
+    "input_schema": "schemas/process-envelope.schema.json",
+    "output_schema": "schemas/process-reply.schema.json"
+  },
+  "core_api": ">=0.5.0, <0.6.0",
+  "dependencies": [],
+  "description": "OCR com Tesseract, texto-para-voz via engine local e contrato voz-para-texto via Whisper.",
+  "entrypoint": {
+    "type": "process",
+    "value": "plugins/builtin/artifacts/media-intelligence-tool"
+  },
+  "extension_points": [],
+  "integrity": {
+    "artifact": "plugins/builtin/artifacts/media-intelligence-tool",
+    "digest": "8e1b8e748b61c81d7827ad5ee8bda642d83689569cd1fa49a3233c821ce16f41",
+    "hash_algorithm": "sha256",
+    "provenance": "PhxClaw Core Bootstrap v0.5 / signed development artifact",
+    "signature": "ggIwVsTNAmzrxOdC563BVGWvDDa5HDYWWPJOei9zay3A7HjpaFilewzhFtZqg4l4rIs6FRjthP/uSI0WnR7TBA==",
+    "signature_algorithm": "ed25519",
+    "signer": "phxclaw-dev-root-2026-v07"
+  },
+  "kind": "tool",
+  "lifecycle": {
+    "disable": "media.disable",
+    "enable": "media.enable",
+    "health": "media.health",
+    "install": "media.install",
+    "uninstall": "media.uninstall"
+  },
+  "manifest_version": "1.2.0",
+  "model_provider": null,
+  "name": "com.phxclaw.tool.media-intelligence",
   "permissions": [
     {
       "name": "filesystem.read",
@@ -61,36 +61,39 @@
       ]
     }
   ],
-  "lifecycle": {
-    "install": "media.install",
-    "enable": "media.enable",
-    "disable": "media.disable",
-    "uninstall": "media.uninstall",
-    "health": "media.health"
+  "rollback": {
+    "steps": [
+      "disable plugin",
+      "restore previous signed manifest and artifact",
+      "re-run integrity and health gates"
+    ],
+    "strategy": "disable_and_restore_previous"
   },
   "sandbox": {
-    "network": "deny",
-    "network_allowlist": [],
-    "read_only_paths": [
-      "project/*"
-    ],
-    "write_paths": [
-      "var/media"
-    ],
+    "cpu_quota_percent": 80,
     "environment_allowlist": [
       "PHXCLAW_MEDIA_ROOTS",
       "PHXCLAW_WHISPER_BIN",
       "PHXCLAW_WHISPER_MODEL"
     ],
-    "timeout_ms": 600000,
     "memory_mb": 1024,
-    "cpu_quota_percent": 80
+    "network": "deny",
+    "network_allowlist": [],
+    "read_only_paths": [
+      "project/*"
+    ],
+    "timeout_ms": 600000,
+    "write_paths": [
+      "var/media"
+    ]
   },
   "tests": [
     {
-      "name": "media-health",
       "command": "plugins/builtin/artifacts/media-intelligence-tool --health",
+      "name": "media-health",
       "required": true
     }
-  ]
+  ],
+  "uuid": "01a0e48d-cc90-7ca9-890b-718a72fa1c6d",
+  "version": "0.5.0"
 }

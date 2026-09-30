@@ -1,21 +1,52 @@
 {
-  "manifest_version": "1.2.0",
-  "uuid": "01a0e430-4586-7d4c-ade9-2bb709f7dac1",
-  "name": "com.phxclaw.agent.oracle",
-  "version": "0.5.0",
-  "kind": "agent",
-  "description": "Agente de decisão técnica, gates arquiteturais e avaliação de evidências.",
-  "core_api": ">=0.5.0, <0.6.0",
-  "entrypoint": {
-    "type": "process",
-    "value": "plugins/builtin/artifacts/oracle-agent"
+  "agent": {
+    "accepts": [
+      "application/json"
+    ],
+    "display_name": "Oráculo",
+    "emits": [
+      "application/json"
+    ],
+    "priority": 90,
+    "role": "Decisão técnica baseada em evidências"
   },
-  "dependencies": [],
   "capabilities": [
     "decision.technical",
     "evidence.evaluate",
     "architecture.gate"
   ],
+  "contracts": {
+    "input_schema": "schemas/agent-request.schema.json",
+    "output_schema": "schemas/agent-response.schema.json"
+  },
+  "core_api": ">=0.5.0, <0.6.0",
+  "dependencies": [],
+  "description": "Agente de decisão técnica, gates arquiteturais e avaliação de evidências.",
+  "entrypoint": {
+    "type": "process",
+    "value": "plugins/builtin/artifacts/oracle-agent"
+  },
+  "extension_points": [],
+  "integrity": {
+    "artifact": "plugins/builtin/artifacts/oracle-agent",
+    "digest": "4095d2d0fef88fc9d3bf5f24b125341bb4b55ad5ec1794dcbbb8d61bf51bb2e8",
+    "hash_algorithm": "sha256",
+    "provenance": "PhxClaw Core Bootstrap v0.5 / signed development artifact",
+    "signature": "tQq8UVXNYFKWvyK2zXZRXM6PjksBYl0L4Ct5HyBtzp7rqx3G5paycR2AQ54Rjz1YNYCqAvC4J3t53ib2ErrCAQ==",
+    "signature_algorithm": "ed25519",
+    "signer": "phxclaw-dev-root-2026-v07"
+  },
+  "kind": "agent",
+  "lifecycle": {
+    "disable": "oracle.disable",
+    "enable": "oracle.enable",
+    "health": "oracle.health",
+    "install": "oracle.install",
+    "uninstall": "oracle.uninstall"
+  },
+  "manifest_version": "1.2.0",
+  "model_provider": null,
+  "name": "com.phxclaw.agent.oracle",
   "permissions": [
     {
       "name": "research.read",
@@ -36,60 +67,31 @@
       ]
     }
   ],
-  "lifecycle": {
-    "install": "oracle.install",
-    "enable": "oracle.enable",
-    "disable": "oracle.disable",
-    "uninstall": "oracle.uninstall",
-    "health": "oracle.health"
-  },
-  "contracts": {
-    "input_schema": "schemas/agent-request.schema.json",
-    "output_schema": "schemas/agent-response.schema.json"
-  },
-  "sandbox": {
-    "network": "deny",
-    "network_allowlist": [],
-    "read_only_paths": [],
-    "write_paths": [],
-    "environment_allowlist": [],
-    "timeout_ms": 5000,
-    "memory_mb": 256,
-    "cpu_quota_percent": 25
-  },
-  "integrity": {
-    "artifact": "plugins/builtin/artifacts/oracle-agent",
-    "hash_algorithm": "sha256",
-    "digest": "c88080a45a482f139eab6e049b4e51db130af0fff0673d2d6fdbe87d48f0462c",
-    "signature_algorithm": "ed25519",
-    "signature": "2M9dgw5KT07LT91gpZOc95Dwy9o/kjLByInpvvJEtpKa+2Pjin7kJgoEWhT9Lm5xAN1piiRPZFfAaYrZF11wAA==",
-    "signer": "phxclaw-dev-root-2026-v05r2",
-    "provenance": "PhxClaw Core Bootstrap v0.5 / signed development artifact"
-  },
-  "tests": [
-    {
-      "name": "signed-artifact-health",
-      "command": "plugins/builtin/artifacts/oracle-agent --health",
-      "required": true
-    }
-  ],
   "rollback": {
-    "strategy": "disable_and_restore_previous",
     "steps": [
       "disable plugin",
       "restore previous signed manifest and artifact",
       "re-run integrity and health gates"
-    ]
-  },
-  "agent": {
-    "display_name": "Oráculo",
-    "role": "Decisão técnica baseada em evidências",
-    "priority": 90,
-    "accepts": [
-      "application/json"
     ],
-    "emits": [
-      "application/json"
-    ]
-  }
+    "strategy": "disable_and_restore_previous"
+  },
+  "sandbox": {
+    "cpu_quota_percent": 25,
+    "environment_allowlist": [],
+    "memory_mb": 256,
+    "network": "deny",
+    "network_allowlist": [],
+    "read_only_paths": [],
+    "timeout_ms": 5000,
+    "write_paths": []
+  },
+  "tests": [
+    {
+      "command": "plugins/builtin/artifacts/oracle-agent --health",
+      "name": "signed-artifact-health",
+      "required": true
+    }
+  ],
+  "uuid": "01a0e430-4586-7d4c-ade9-2bb709f7dac1",
+  "version": "0.5.0"
 }

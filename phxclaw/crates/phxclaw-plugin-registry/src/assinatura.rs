@@ -3,7 +3,7 @@
 //! verificacao usa: assinar por outra conta seria a copia que diverge no dia em que o
 //! formato mudar.
 
-use crate::{PluginManifest, RegistryError, TrustStore, signing_message};
+use crate::{PluginManifest, RegistryError, TrustStore, mensagem_do_formato};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use ed25519_dalek::{Signer, SigningKey};
 use sha2::{Digest, Sha256};
@@ -46,8 +46,9 @@ pub fn reassinar(
     manifesto_json: &str,
     raiz: &Path,
     chave: &SigningKey,
+    formato: u8,
 ) -> Result<String, RegistryError> {
-    let mut valor: serde_json::Value =
+    let valor: serde_json::Value =
         serde_json::from_str(manifesto_json).map_err(|e| RegistryError::Integrity {
             plugin: "?".into(),
             reason: e.to_string(),
@@ -62,9 +63,17 @@ pub fn reassinar(
         .iter()
         .map(|b| format!("{b:02x}"))
         .collect();
-    let assinatura = BASE64.encode(chave.sign(signing_message(&m).as_bytes()).to_bytes());
-    valor["integrity"]["digest"] = m.integrity.digest.clone().into();
-    valor["integrity"]["signature"] = assinatura.into();
+    m.integrity.signature = BASE64.encode(
+        chave
+            .sign(mensagem_do_formato(&m, formato).as_bytes())
+            .to_bytes(),
+    );
+    // grava o manifesto na forma TIPADA (chaves ordenadas, campos com padrao explicitos):
+    // e sobre ela que a V2 calcula o hash, aqui e nos verificadores em Python
+    let valor = serde_json::to_value(&m).map_err(|e| RegistryError::Integrity {
+        plugin: m.name.clone(),
+        reason: e.to_string(),
+    })?;
     let mut s = serde_json::to_string_pretty(&valor).map_err(|e| RegistryError::Integrity {
         plugin: m.name.clone(),
         reason: e.to_string(),

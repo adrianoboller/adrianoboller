@@ -1,37 +1,5 @@
 {
-  "manifest_version": "1.2.0",
-  "version": "0.5.0",
-  "core_api": ">=0.5.0, <0.6.0",
-  "dependencies": [],
-  "contracts": {
-    "input_schema": "schemas/process-envelope.schema.json",
-    "output_schema": "schemas/process-reply.schema.json"
-  },
-  "integrity": {
-    "artifact": "plugins/builtin/artifacts/office-document-tool",
-    "hash_algorithm": "sha256",
-    "digest": "c01edd76984c537ac6c59983f6ab1c40e0aa1e67ff651b5dd217898a3a8a3a52",
-    "signature_algorithm": "ed25519",
-    "signature": "/FrvdS4fuHoQ9+6bKpCKPxHo/30vPoeIJdkvaEaoBWLVHet65p/Vv/jS1W342OvAIZ0CqQy9B6mP0AhR9cGJAw==",
-    "signer": "phxclaw-dev-root-2026-v05r2",
-    "provenance": "PhxClaw Core Bootstrap v0.5 / signed development artifact"
-  },
-  "rollback": {
-    "strategy": "disable_and_restore_previous",
-    "steps": [
-      "disable plugin",
-      "restore previous signed manifest and artifact",
-      "re-run integrity and health gates"
-    ]
-  },
-  "uuid": "01a0e48d-cc90-7d7f-981c-6f8a7494ec78",
-  "name": "com.phxclaw.tool.office-document",
-  "kind": "tool",
-  "description": "Leitura e escrita governada de PDF, TXT, CSV, JSON, XML, PY, XLSX e DOCX.",
-  "entrypoint": {
-    "type": "process",
-    "value": "plugins/builtin/artifacts/office-document-tool"
-  },
+  "agent": null,
   "capabilities": [
     "document.read",
     "document.write",
@@ -43,6 +11,38 @@
     "document.xml",
     "document.text"
   ],
+  "contracts": {
+    "input_schema": "schemas/process-envelope.schema.json",
+    "output_schema": "schemas/process-reply.schema.json"
+  },
+  "core_api": ">=0.5.0, <0.6.0",
+  "dependencies": [],
+  "description": "Leitura e escrita governada de PDF, TXT, CSV, JSON, XML, PY, XLSX e DOCX.",
+  "entrypoint": {
+    "type": "process",
+    "value": "plugins/builtin/artifacts/office-document-tool"
+  },
+  "extension_points": [],
+  "integrity": {
+    "artifact": "plugins/builtin/artifacts/office-document-tool",
+    "digest": "ffbce175f16a87355e42b121f4c52a338cce932656e2eb4ea5afa0fb953b741b",
+    "hash_algorithm": "sha256",
+    "provenance": "PhxClaw Core Bootstrap v0.5 / signed development artifact",
+    "signature": "tZpzeLTZ32ahe/pXVoltUGQp7YL85lwFcBe4+ADapRkLvv0mpL8DhWXtAwla2cLhh3v+mjw1a6c1hpn6rYD1Aw==",
+    "signature_algorithm": "ed25519",
+    "signer": "phxclaw-dev-root-2026-v07"
+  },
+  "kind": "tool",
+  "lifecycle": {
+    "disable": "office.disable",
+    "enable": "office.enable",
+    "health": "office.health",
+    "install": "office.install",
+    "uninstall": "office.uninstall"
+  },
+  "manifest_version": "1.2.0",
+  "model_provider": null,
+  "name": "com.phxclaw.tool.office-document",
   "permissions": [
     {
       "name": "filesystem.read",
@@ -57,34 +57,37 @@
       ]
     }
   ],
-  "lifecycle": {
-    "install": "office.install",
-    "enable": "office.enable",
-    "disable": "office.disable",
-    "uninstall": "office.uninstall",
-    "health": "office.health"
+  "rollback": {
+    "steps": [
+      "disable plugin",
+      "restore previous signed manifest and artifact",
+      "re-run integrity and health gates"
+    ],
+    "strategy": "disable_and_restore_previous"
   },
   "sandbox": {
+    "cpu_quota_percent": 50,
+    "environment_allowlist": [
+      "PHXCLAW_DOCUMENT_ROOTS"
+    ],
+    "memory_mb": 512,
     "network": "deny",
     "network_allowlist": [],
     "read_only_paths": [
       "project/*"
     ],
+    "timeout_ms": 30000,
     "write_paths": [
       "var/documents"
-    ],
-    "environment_allowlist": [
-      "PHXCLAW_DOCUMENT_ROOTS"
-    ],
-    "timeout_ms": 30000,
-    "memory_mb": 512,
-    "cpu_quota_percent": 50
+    ]
   },
   "tests": [
     {
-      "name": "office-health",
       "command": "plugins/builtin/artifacts/office-document-tool --health",
+      "name": "office-health",
       "required": true
     }
-  ]
+  ],
+  "uuid": "01a0e48d-cc90-7d7f-981c-6f8a7494ec78",
+  "version": "0.5.0"
 }
