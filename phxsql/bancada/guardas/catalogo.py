@@ -15855,6 +15855,149 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         ],
     },
     {
+        "id": "dblink-empurra-upsert-de-mysql-no-postgres",
+        "titulo": "O DbLink empurra para o PostgreSQL com o upsert do MySQL",
+        "porque": (
+            "pedido 583: o empurrao da sincronia montava `INSERT ... ON "
+            "DUPLICATE KEY UPDATE c=VALUES(c)` com crase para todo motor, e o "
+            "PostgreSQL recusa por sintaxe -- a sincronia contra ele nao rodava. "
+            "O upsert saiu para o `Motor::upsert`, que no PostgreSQL escreve "
+            "`ON CONFLICT (chave) DO UPDATE SET c=EXCLUDED.c`."
+        ),
+        "arquivo": "crates/phxsql-server/src/dblink/dialeto.rs",
+        "trecho": """            Motor::MySql => {
+                let set: Vec<String> = nomes.iter().map(|n| format!("{n}=VALUES({n})")).collect();
+""",
+        "troca": """            // DEFEITO REPOSTO (583): o upsert do MySQL para os dois.
+            Motor::MySql | Motor::Postgres => {
+                let set: Vec<String> = nomes.iter().map(|n| format!("{n}=VALUES({n})")).collect();
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_dblink_dialeto_da_sincronia::a_sincronia_contra_postgres_roda_ida_e_volta_no_dialeto_dele",
+            "servidor::testes_dblink_dialeto_da_sincronia::o_bytea_do_postgres_chega_byte_a_byte",
+            "dblink::dialeto::testes::o_upsert_o_binario_e_a_leitura_saem_no_dialeto",
+        ],
+        "seguem": [
+            "servidor::testes_dblink_dialeto_da_sincronia::o_blob_do_mysql_chega_byte_a_byte",
+            "dblink::sincronia::testes::empurrao_em_lotes_e_sempre_reentravel",
+        ],
+    },
+    {
+        "id": "dblink-empurra-booleano-como-numero",
+        "titulo": "O DbLink empurra o booleano como 1/0",
+        "porque": (
+            "pedido 583: `Value::Bool` subia como `1`/`0`, e o PostgreSQL "
+            "recusa gravar `integer` numa coluna `boolean`. Sai agora pelo "
+            "`Motor::booleano` -- `TRUE`/`FALSE`, que valem nos dois."
+        ),
+        "arquivo": "crates/phxsql-server/src/dblink/sincronia.rs",
+        "trecho": """        Value::Bool(b) => motor.booleano(*b).into(),
+""",
+        "troca": """        // DEFEITO REPOSTO (583): booleano como numero.
+        Value::Bool(b) => if *b { "1" } else { "0" }.into(),
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_dblink_dialeto_da_sincronia::a_sincronia_contra_postgres_roda_ida_e_volta_no_dialeto_dele",
+        ],
+        "seguem": [
+            "dblink::dialeto::testes::o_upsert_o_binario_e_a_leitura_saem_no_dialeto",
+            "servidor::testes_dblink_dialeto_da_sincronia::o_blob_do_mysql_chega_byte_a_byte",
+        ],
+    },
+    {
+        "id": "dblink-puxar-le-booleano-pela-carga-colada",
+        "titulo": "O DbLink, ao puxar, lê o booleano pela régua da carga colada",
+        "porque": (
+            "pedido 583: a celula booleana ia ao `valor_de_texto`, que nao conhece "
+            "o `t`/`f` do PostgreSQL -- todo booleano de la recusava a rodada. "
+            "Agora passa pelo `booleano_lido`, a leitura unica dos dois motores."
+        ),
+        "arquivo": "crates/phxsql-server/src/dblink/sincronia.rs",
+        "trecho": """            (Some(t), ColumnType::Bool) => match booleano_lido(t) {
+                Some(b) => Value::Bool(b),
+                None => {
+                    return Err(col.recusa_sem_valor(
+                        PhxError::Tipo("esperado um booleano do outro banco".into()),
+                        t.len(),
+                    ))
+                }
+            },
+""",
+        "troca": """            // DEFEITO REPOSTO (583): booleano pela carga colada.
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_dblink_dialeto_da_sincronia::a_sincronia_contra_postgres_roda_ida_e_volta_no_dialeto_dele",
+        ],
+        "seguem": [
+            "servidor::testes_dblink_dialeto_da_sincronia::o_blob_do_mysql_chega_byte_a_byte",
+            "servidor::testes_dblink_dialeto_da_sincronia::o_uuid_remoto_nao_vira_uuid_inventado",
+        ],
+    },
+    {
+        "id": "dblink-puxar-le-blob-cru",
+        "titulo": "O DbLink, ao puxar, lê o BLOB cru como se fosse hexadecimal",
+        "porque": (
+            "pedido 584, medido: o `SELECT *` entrega o BLOB cru, o leitor o "
+            "guarda como `String` (com U+FFFD no byte invalido) e o puxar o "
+            "passava pelo `hex_para_bytes`. Os bytes `cafe` viravam os DOIS "
+            "bytes `CA FE`, calados; `00 FF 80` recusava a rodada; todo `bytea` "
+            "do PostgreSQL (`\\x...`) recusava. A leitura pede agora o "
+            "hexadecimal ao servidor: `HEX()` e `encode(..,'hex')`."
+        ),
+        "arquivo": "crates/phxsql-server/src/dblink/dialeto.rs",
+        "trecho": """                    (Motor::MySql, "BLOB" | "BINARY" | "VARBINARY" | "GEOMETRY") => {
+                        format!("HEX({n}) AS {n}")
+                    }
+                    (Motor::Postgres, "BYTEA") => format!("encode({n},'hex') AS {n}"),
+""",
+        "troca": """                    // DEFEITO REPOSTO (584): o binario viaja cru.
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_dblink_dialeto_da_sincronia::o_blob_do_mysql_chega_byte_a_byte",
+            "servidor::testes_dblink_dialeto_da_sincronia::o_bytea_do_postgres_chega_byte_a_byte",
+            "dblink::dialeto::testes::o_upsert_o_binario_e_a_leitura_saem_no_dialeto",
+        ],
+        "seguem": [
+            "servidor::testes_dblink_dialeto_da_sincronia::a_sincronia_contra_postgres_roda_ida_e_volta_no_dialeto_dele",
+            "servidor::testes_dblink_dialeto_da_sincronia::o_uuid_remoto_nao_vira_uuid_inventado",
+        ],
+    },
+    {
+        "id": "dblink-puxar-inventa-uuid",
+        "titulo": "O DbLink, ao puxar, troca a célula «novo» por um uuid aleatório",
+        "porque": (
+            "pedido 584, medido: a celula uuid ia ao `valor_de_texto`, onde "
+            "`novo`, `v4` e `v7` sao ordens de GERAR. Vindo de outro banco, "
+            "`novo` gravava um uuid inventado, diferente a cada rodada. Agora e "
+            "`Uuid::de_texto` estrito, com a recusa sem valor."
+        ),
+        "arquivo": "crates/phxsql-server/src/dblink/sincronia.rs",
+        "trecho": """            (Some(t), ColumnType::Uuid) if !t.trim().is_empty() => Value::Uuid(
+                phxsql_core::uuid::Uuid::de_texto(t)
+                    .map_err(|e| col.recusa_sem_valor(e, t.len()))?,
+            ),
+""",
+        "troca": """            // DEFEITO REPOSTO (584): uuid pela carga colada.
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_dblink_dialeto_da_sincronia::o_uuid_remoto_nao_vira_uuid_inventado",
+        ],
+        "seguem": [
+            "servidor::testes_dblink_dialeto_da_sincronia::a_sincronia_contra_postgres_roda_ida_e_volta_no_dialeto_dele",
+            "servidor::testes_dblink_dialeto_da_sincronia::o_blob_do_mysql_chega_byte_a_byte",
+        ],
+    },
+    {
         "id": "faixa-do-slot-cita-coluna-marcada",
         "titulo": "A faixa do tipo, conferida no slot, cita o número de coluna marcada",
         "porque": (

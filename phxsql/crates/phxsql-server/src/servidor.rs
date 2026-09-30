@@ -26175,15 +26175,12 @@ impl Servidor {
                     )));
                 }
             }
-            // So os metadados: LIMIT 0 traz as colunas tipadas sem uma linha.
-            let r = c.consultar(
-                &format!(
-                    "SELECT * FROM {} LIMIT 0",
-                    crate::dblink::entre_crases(&sinc.remota)
-                ),
-                1,
-            )?;
-            let (esquema, chave) = sincronia::esquema_local_de(&sinc.local_tabela, &r.colunas)?;
+            // So os metadados, no dialeto de la (pedido 583): o `LIMIT 0` no
+            // MySQL(R), o catalogo no PostgreSQL(R), que e o unico dos dois
+            // que diz qual coluna e a chave.
+            let colunas = sincronia::colunas_do_espelho(d.motor, &mut c, &sinc.remota)?;
+            let (esquema, chave) =
+                sincronia::esquema_local_de(d.motor, &sinc.local_tabela, &colunas)?;
             buscadas.push((sinc, esquema, chave));
         }
         c.encerrar();
@@ -26297,14 +26294,14 @@ impl Servidor {
             // de ca nada e decidido aqui -- esquema, mapa, chave, indice, linhas
             // locais e o plano saem todos sob a trava, do mesmo retrato em que
             // a gravacao acontece.
+            //
+            // Duas idas, as duas no dialeto de la (pedidos 583 e 584): as
+            // colunas primeiro, para a leitura pedir o binario em hexadecimal
+            // -- o protocolo de texto entrega o BLOB cru, e o leitor o guarda
+            // como `String`.
             let teto = d.max_linhas;
-            let r = c.consultar(
-                &format!(
-                    "SELECT * FROM {}",
-                    crate::dblink::entre_crases(&sinc.remota)
-                ),
-                teto + 1,
-            )?;
+            let meta = c.consultar(&d.motor.sql_metadados(&sinc.remota)?, 1)?;
+            let r = c.consultar(&d.motor.sql_leitura(&sinc.remota, &meta.colunas)?, teto + 1)?;
             if r.truncado || r.linhas.len() as u64 > teto {
                 return Err(PhxError::LimiteExcedido(format!(
                     "a tabela remota {:?} passa das {} linhas da ligacao: suba o \
@@ -26394,6 +26391,7 @@ impl Servidor {
             let empurrao = sincronia::sql_do_empurrao(
                 d.motor,
                 &sinc.remota,
+                &sinc.chave,
                 &colunas_sql,
                 &plano.para_la,
                 500,
@@ -65568,9 +65566,10 @@ mod testes_dblink_fora_da_trava {
         relogio.elapsed()
     }
 
-    /// **545: enquanto o par goteja, o resto do banco anda.** Tres idas ao
-    /// fio, as tres que iam com a trava na mao: o `LIMIT 0` do
-    /// `dblink_ligar`, e o `SELECT` e o empurrao do `dblink_sincronizar`.
+    /// **545: enquanto o par goteja, o resto do banco anda.** As idas ao fio
+    /// que iam com a trava na mao: o `LIMIT 0` do `dblink_ligar`, e o
+    /// `SELECT` e o empurrao do `dblink_sincronizar` -- e, desde o 584, o
+    /// `LIMIT 0` que a sincronia faz antes da leitura.
     ///
     /// # Prova real
     ///
@@ -65625,7 +65624,11 @@ mod testes_dblink_fora_da_trava {
         let s2 = Arc::clone(&s);
         let sincronizar =
             std::thread::spawn(move || pede(&s2, r#""op":"dblink_sincronizar","dblink":"erp""#));
-        let no_select = espera_do_vizinho(&s, &avisos, "SELECT * FROM `clientes`", 2);
+        // Desde o 584 a rodada vai ao fio duas vezes antes do empurrao: as
+        // colunas (`LIMIT 0`) e a leitura com o binario em hexadecimal. As
+        // duas tem de andar sem a trava, e as duas se medem.
+        let no_select = espera_do_vizinho(&s, &avisos, "SELECT * FROM `clientes` LIMIT 0", 2);
+        let na_leitura = espera_do_vizinho(&s, &avisos, "SELECT `id`,`nome` FROM `clientes`", 4);
         let no_empurrao = espera_do_vizinho(&s, &avisos, "INSERT", 3);
         let r = sincronizar.join().unwrap().unwrap().escrever();
 
@@ -65636,7 +65639,8 @@ mod testes_dblink_fora_da_trava {
         // prendiam o banco, e nao so a primeira.
         let presas: Vec<String> = [
             ("LIMIT 0 do dblink_ligar", no_ligar),
-            ("SELECT do dblink_sincronizar", no_select),
+            ("LIMIT 0 do dblink_sincronizar", no_select),
+            ("SELECT do dblink_sincronizar", na_leitura),
             ("empurrao do dblink_sincronizar", no_empurrao),
         ]
         .iter()
@@ -65843,5 +65847,508 @@ mod testes_dblink_valor_no_fio {
             .to_string();
         assert!(!e.contains("999"), "a recusa citou o dado de la: {e}");
         assert!(e.contains("\"nasc\"") && e.contains("14 bytes"), "{e}");
+    }
+}
+
+/// Pedidos 583 e 584: a sincronia do DbLink no dialeto de cada motor, e os
+/// tipos que o puxar trazia errados, provados pelo soquete contra pares falsos
+/// do PostgreSQL(R) e do MySQL(R) que respondem como o de verdade responde --
+/// inclusive o erro de sintaxe do PostgreSQL(R) para a crase e para o
+/// `ON DUPLICATE KEY`, e o BLOB cru do `SELECT *` do MySQL(R).
+///
+/// O terceiro motor, `phxsql`, nao entra aqui: a sincronia recusa esse motor
+/// antes de ir ao fio (`exigir_catalogo_em_sql`), porque entre dois PhxSql a
+/// convergencia e a replicacao nativa.
+#[cfg(test)]
+mod testes_dblink_dialeto_da_sincronia {
+    use super::testes_dblink_fora_da_trava::{
+        coluna, lenenc, ler_pacote, pede, quadro, saudar, servidor, EOF,
+    };
+    use super::*;
+    use std::io::{Read, Write};
+    use std::net::{TcpListener, TcpStream};
+    use std::sync::mpsc;
+
+    type Celulas = Vec<Vec<Option<Vec<u8>>>>;
+
+    fn hex(b: &[u8], maiuscula: bool) -> String {
+        b.iter()
+            .map(|x| {
+                if maiuscula {
+                    format!("{x:02X}")
+                } else {
+                    format!("{x:02x}")
+                }
+            })
+            .collect()
+    }
+
+    // ------------------------------------------------ o PostgreSQL(R) falso
+
+    /// Uma coluna la: nome, OID do tipo, o texto do `format_type` e se e chave.
+    #[derive(Clone)]
+    struct ColPg {
+        nome: &'static str,
+        oid: u32,
+        tipo: &'static str,
+        chave: bool,
+    }
+
+    fn col_pg(nome: &'static str, oid: u32, tipo: &'static str, chave: bool) -> ColPg {
+        ColPg {
+            nome,
+            oid,
+            tipo,
+            chave,
+        }
+    }
+
+    fn msg_pg(tipo: u8, corpo: &[u8]) -> Vec<u8> {
+        let mut m = vec![tipo];
+        m.extend_from_slice(&((corpo.len() + 4) as i32).to_be_bytes());
+        m.extend_from_slice(corpo);
+        m
+    }
+
+    fn descricao_pg(cols: &[(&str, u32)]) -> Vec<u8> {
+        let mut c = (cols.len() as i16).to_be_bytes().to_vec();
+        for (nome, oid) in cols {
+            c.extend_from_slice(nome.as_bytes());
+            c.push(0);
+            c.extend_from_slice(&0i32.to_be_bytes());
+            c.extend_from_slice(&0i16.to_be_bytes());
+            c.extend_from_slice(&oid.to_be_bytes());
+            c.extend_from_slice(&(-1i16).to_be_bytes());
+            c.extend_from_slice(&(-1i32).to_be_bytes());
+            c.extend_from_slice(&0i16.to_be_bytes());
+        }
+        c
+    }
+
+    fn linha_pg(celulas: &[Option<Vec<u8>>]) -> Vec<u8> {
+        let mut c = (celulas.len() as i16).to_be_bytes().to_vec();
+        for cel in celulas {
+            match cel {
+                None => c.extend_from_slice(&(-1i32).to_be_bytes()),
+                Some(b) => {
+                    c.extend_from_slice(&(b.len() as i32).to_be_bytes());
+                    c.extend_from_slice(b);
+                }
+            }
+        }
+        c
+    }
+
+    /// A resposta a uma instrucao, como o PostgreSQL(R) a daria. O que ele
+    /// recusaria por sintaxe -- crase, `ON DUPLICATE KEY` -- volta como `E`.
+    fn resposta_pg(sql: &str, cols: &[ColPg], linhas: &Celulas) -> Vec<u8> {
+        let mut r = Vec::new();
+        if sql.contains('`') || sql.contains("DUPLICATE KEY") || sql.contains("VALUES(") {
+            r.extend(msg_pg(b'E', b"SERROR\0C42601\0Msyntax error\0\0"));
+            r.extend(msg_pg(b'Z', b"I"));
+            return r;
+        }
+        if sql.contains("pg_attribute") {
+            let nomes = ["Field", "Type", "Null", "Key", "Default", "Comment"];
+            let d: Vec<(&str, u32)> = nomes.iter().map(|n| (*n, 25)).collect();
+            r.extend(msg_pg(b'T', &descricao_pg(&d)));
+            let cel = |t: &str| Some(t.as_bytes().to_vec());
+            for c in cols {
+                r.extend(msg_pg(
+                    b'D',
+                    &linha_pg(&[
+                        cel(c.nome),
+                        cel(c.tipo),
+                        cel(if c.chave { "NO" } else { "YES" }),
+                        cel(if c.chave { "PRI" } else { "" }),
+                        cel(""),
+                        cel(""),
+                    ]),
+                ));
+            }
+        } else if sql.starts_with("SELECT") {
+            let d: Vec<(&str, u32)> = cols.iter().map(|c| (c.nome, c.oid)).collect();
+            r.extend(msg_pg(b'T', &descricao_pg(&d)));
+            if !sql.contains("LIMIT 0") {
+                for l in linhas {
+                    let render: Vec<Option<Vec<u8>>> = l
+                        .iter()
+                        .zip(cols)
+                        .map(|(cel, c)| {
+                            cel.as_ref().map(|b| {
+                                // O bytea sai no `bytea_output = hex`, o padrao;
+                                // pela `encode(..,'hex')`, sem o `\x`.
+                                if c.oid != 17 {
+                                    b.clone()
+                                } else if sql.contains(&format!("encode(\"{}\",'hex')", c.nome)) {
+                                    hex(b, false).into_bytes()
+                                } else {
+                                    format!("\\x{}", hex(b, false)).into_bytes()
+                                }
+                            })
+                        })
+                        .collect();
+                    r.extend(msg_pg(b'D', &linha_pg(&render)));
+                }
+            }
+        } else {
+            r.extend(msg_pg(b'C', b"INSERT 0 1\0"));
+            r.extend(msg_pg(b'Z', b"I"));
+            return r;
+        }
+        r.extend(msg_pg(b'C', b"SELECT 1\0"));
+        r.extend(msg_pg(b'Z', b"I"));
+        r
+    }
+
+    fn atender_pg(
+        mut s: TcpStream,
+        cols: Vec<ColPg>,
+        linhas: Celulas,
+        avisar: mpsc::Sender<String>,
+    ) {
+        let mut tam = [0u8; 4];
+        if s.read_exact(&mut tam).is_err() {
+            return;
+        }
+        let mut abertura = vec![0u8; (i32::from_be_bytes(tam).max(4) - 4) as usize];
+        if s.read_exact(&mut abertura).is_err() {
+            return;
+        }
+        let mut ola = msg_pg(b'R', &0i32.to_be_bytes());
+        ola.extend(msg_pg(b'S', b"server_version\x0016.0-falso\0"));
+        ola.extend(msg_pg(b'K', &[0, 0, 0, 7, 0, 0, 0, 9]));
+        ola.extend(msg_pg(b'Z', b"I"));
+        if s.write_all(&ola).is_err() {
+            return;
+        }
+        loop {
+            let mut cabeca = [0u8; 5];
+            if s.read_exact(&mut cabeca).is_err() {
+                return;
+            }
+            let n = i32::from_be_bytes([cabeca[1], cabeca[2], cabeca[3], cabeca[4]]);
+            let mut corpo = vec![0u8; (n.max(4) - 4) as usize];
+            if s.read_exact(&mut corpo).is_err() || cabeca[0] != b'Q' {
+                return;
+            }
+            let sql =
+                String::from_utf8_lossy(corpo.strip_suffix(&[0]).unwrap_or(&corpo)).into_owned();
+            let _ = avisar.send(sql.clone());
+            if s.write_all(&resposta_pg(&sql, &cols, &linhas)).is_err() {
+                return;
+            }
+        }
+    }
+
+    fn par_pg(cols: Vec<ColPg>, linhas: Celulas) -> (u16, mpsc::Receiver<String>) {
+        let ouvinte = TcpListener::bind("127.0.0.1:0").unwrap();
+        let porta = ouvinte.local_addr().unwrap().port();
+        let (avisar, avisos) = mpsc::channel();
+        std::thread::spawn(move || {
+            for s in ouvinte.incoming() {
+                let Ok(s) = s else { return };
+                let (cols, linhas, avisar) = (cols.clone(), linhas.clone(), avisar.clone());
+                std::thread::spawn(move || atender_pg(s, cols, linhas, avisar));
+            }
+        });
+        (porta, avisos)
+    }
+
+    // ------------------------------------------------------ o MySQL(R) falso
+
+    /// Uma coluna la: nome, codigo do tipo, bandeiras e tamanho no fio.
+    type ColMy = (&'static str, u8, u16, u32);
+
+    /// Como o MySQL(R): o `SELECT *` manda o BLOB CRU; o `HEX(..)` manda o
+    /// texto hexadecimal, em maiuscula, numa coluna de texto.
+    fn resposta_my(sql: &str, cols: &[ColMy], linhas: &Celulas) -> Vec<Vec<u8>> {
+        if !sql.starts_with("SELECT") {
+            return vec![vec![0x00, 0x01, 0x00, 0x02, 0x00, 0x00, 0x00]];
+        }
+        let em_hex = |nome: &str| sql.contains(&format!("HEX(`{nome}`)"));
+        let mut r = vec![vec![cols.len() as u8]];
+        for (nome, codigo, bandeiras, tamanho) in cols {
+            r.push(if em_hex(nome) {
+                coluna(nome, 0xfd, 0, tamanho * 2)
+            } else {
+                coluna(nome, *codigo, *bandeiras, *tamanho)
+            });
+        }
+        r.push(EOF.to_vec());
+        if !sql.contains("LIMIT 0") {
+            for l in linhas {
+                let mut p = Vec::new();
+                for (cel, (nome, ..)) in l.iter().zip(cols) {
+                    match cel {
+                        None => p.push(0xFB),
+                        Some(b) if em_hex(nome) => lenenc(&mut p, hex(b, true).as_bytes()),
+                        Some(b) => lenenc(&mut p, b),
+                    }
+                }
+                r.push(p);
+            }
+        }
+        r.push(EOF.to_vec());
+        r
+    }
+
+    fn atender_my(
+        mut s: TcpStream,
+        cols: Vec<ColMy>,
+        linhas: Celulas,
+        avisar: mpsc::Sender<String>,
+    ) {
+        if !saudar(&mut s) {
+            return;
+        }
+        while let Some(pacote) = ler_pacote(&mut s) {
+            if pacote.first() != Some(&0x03) {
+                return;
+            }
+            let sql = String::from_utf8_lossy(&pacote[1..]).into_owned();
+            let _ = avisar.send(sql.clone());
+            let mut bytes = Vec::new();
+            for (i, carga) in resposta_my(&sql, &cols, &linhas).iter().enumerate() {
+                bytes.extend(quadro(i as u8 + 1, carga));
+            }
+            if s.write_all(&bytes).is_err() {
+                return;
+            }
+        }
+    }
+
+    fn par_my(cols: Vec<ColMy>, linhas: Celulas) -> (u16, mpsc::Receiver<String>) {
+        let ouvinte = TcpListener::bind("127.0.0.1:0").unwrap();
+        let porta = ouvinte.local_addr().unwrap().port();
+        let (avisar, avisos) = mpsc::channel();
+        std::thread::spawn(move || {
+            for s in ouvinte.incoming() {
+                let Ok(s) = s else { return };
+                let (cols, linhas, avisar) = (cols.clone(), linhas.clone(), avisar.clone());
+                std::thread::spawn(move || atender_my(s, cols, linhas, avisar));
+            }
+        });
+        (porta, avisos)
+    }
+
+    // ------------------------------------------------------------ o preparo
+
+    fn salvar(s: &Arc<Servidor>, motor: &str, porta: u16) {
+        pede(s, r#""op":"criar_database","database":"loja""#).unwrap();
+        pede(
+            s,
+            &format!(
+                r#""op":"dblink_salvar","nome":"erp","motor":"{motor}","host":"127.0.0.1",
+                   "porta":{porta},"usuario":"u","database":"erp","timeout_s":5,
+                   "somente_leitura":false,"cifra":false"#
+            ),
+        )
+        .unwrap();
+    }
+
+    fn ligar(s: &Arc<Servidor>, sentido: &str) -> Result<Json> {
+        pede(
+            s,
+            &format!(
+                r#""op":"dblink_ligar","dblink":"erp","tabelas":[{{"remota":"clientes",
+                   "local_database":"loja","sentido":"{sentido}","dono":"aqui"}}]"#
+            ),
+        )
+    }
+
+    fn varrer(s: &Arc<Servidor>) -> String {
+        pede(s, r#""op":"varrer","database":"loja","tabela":"clientes""#)
+            .unwrap()
+            .escrever()
+    }
+
+    fn cel(t: &str) -> Option<Vec<u8>> {
+        Some(t.as_bytes().to_vec())
+    }
+
+    const TABELA_COM_UUID: &str = r#""op":"criar_tabela","database":"loja","tabela":"clientes",
+        "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true},{"nome":"cod","tipo":"Uuid"}],
+        "indices":[{"nome":"porChave","colunas":["id"],"unico":true}]"#;
+
+    /// **583: uma rodada inteira ida e volta contra o PostgreSQL(R).** Liga,
+    /// puxa a linha de la (com o booleano `t`) e empurra a daqui (com aspa e
+    /// booleano falso), conferindo o SQL que chegou ao par.
+    ///
+    /// # Prova real
+    ///
+    /// Com a instrucao de MySQL(R) de volta -- crase, `ON DUPLICATE KEY
+    /// UPDATE`, `1`/`0` --, o par recusa por sintaxe e a rodada nem liga; com
+    /// o booleano do fio lido pela regua da carga colada, o `t` recusa.
+    #[test]
+    fn a_sincronia_contra_postgres_roda_ida_e_volta_no_dialeto_dele() {
+        let dir = DirTemp::novo("583-dblink-pg");
+        let s = servidor(&dir);
+        let cols = vec![
+            col_pg("id", 23, "integer", true),
+            col_pg("nome", 1043, "character varying(40)", false),
+            col_pg("ativo", 16, "boolean", false),
+        ];
+        let (porta, avisos) = par_pg(cols, vec![vec![cel("1"), cel("remoto"), cel("t")]]);
+        salvar(&s, "postgres", porta);
+        let r = match ligar(&s, "dois") {
+            Ok(j) => j.escrever(),
+            Err(e) => panic!("o dblink_ligar contra o PostgreSQL falhou: {e}"),
+        };
+        assert!(
+            r.contains("\"tabela_criada\":true") && r.contains("\"chave\":\"id\""),
+            "{r}"
+        );
+        pede(
+            &s,
+            r#""op":"inserir","database":"loja","tabela":"clientes",
+               "linha":{"id":2,"nome":"D'Avila","ativo":false}"#,
+        )
+        .unwrap();
+        let r = match pede(&s, r#""op":"dblink_sincronizar","dblink":"erp""#) {
+            Ok(j) => j.escrever(),
+            Err(e) => panic!("o dblink_sincronizar contra o PostgreSQL falhou: {e}"),
+        };
+        assert!(r.contains("\"puxadas_novas\":1"), "{r}");
+        assert!(r.contains("\"empurradas\":1"), "{r}");
+
+        let recebidas: Vec<String> = avisos.try_iter().collect();
+        for sql in &recebidas {
+            assert!(
+                !sql.contains('`'),
+                "crase de MySQL no fio do PostgreSQL: {sql}"
+            );
+        }
+        let insert = recebidas
+            .iter()
+            .find(|q| q.starts_with("INSERT"))
+            .expect("o par nao recebeu o INSERT");
+        assert_eq!(
+            insert,
+            "INSERT INTO \"clientes\" (\"id\",\"nome\",\"ativo\") VALUES \
+             (2,E'D''Avila',FALSE) ON CONFLICT (\"id\") DO UPDATE SET \
+             \"nome\"=EXCLUDED.\"nome\",\"ativo\"=EXCLUDED.\"ativo\""
+        );
+        // O `t` do fio chegou como verdadeiro, e nao como recusa nem falso.
+        let local = varrer(&s);
+        assert!(local.contains("\"remoto\""), "{local}");
+        assert!(local.contains("\"ativo\":true"), "{local}");
+    }
+
+    /// **584, BLOB pelo MySQL(R):** o `SELECT *` manda o BLOB cru, e o puxar
+    /// o passava pelo `hex_para_bytes`. Os bytes `cafe` viravam os DOIS bytes
+    /// `CA FE`, calados; os bytes `00 FF 80` recusavam a rodada.
+    ///
+    /// # Prova real
+    ///
+    /// Com a leitura por `SELECT *` de volta, a primeira rodada grava `cafe`
+    /// como os dois bytes `CA FE` (o dado errado CALADO) e a segunda recusa na
+    /// linha 2. O teste falha nas duas, cada uma com a sua mensagem.
+    #[test]
+    fn o_blob_do_mysql_chega_byte_a_byte() {
+        let cols: Vec<ColMy> = vec![("id", 0x03, 0x0003, 11), ("foto", 0xfc, 0x0090, 65_535)];
+        let so_cafe = vec![vec![cel("1"), Some(b"cafe".to_vec())]];
+        let todas = vec![
+            vec![cel("1"), Some(b"cafe".to_vec())],
+            vec![cel("2"), Some(vec![0x00, 0xFF, 0x80])],
+            vec![cel("3"), Some(Vec::new())],
+            vec![cel("4"), None],
+        ];
+        for linhas in [so_cafe, todas] {
+            let n = linhas.len();
+            let dir = DirTemp::novo("584-dblink-blob-my");
+            let s = servidor(&dir);
+            let (porta, _avisos) = par_my(cols.clone(), linhas);
+            salvar(&s, "mysql", porta);
+            ligar(&s, "puxar").unwrap();
+            let r = match pede(&s, r#""op":"dblink_sincronizar","dblink":"erp""#) {
+                Ok(j) => j.escrever(),
+                Err(e) => panic!("o puxar recusou um BLOB: {e}"),
+            };
+            assert!(r.contains(&format!("\"puxadas_novas\":{n}")), "{r}");
+            let local = varrer(&s);
+            assert!(
+                local.contains("\"63616665\""),
+                "cafe nao chegou como 4 bytes: {local}"
+            );
+            if n > 1 {
+                assert!(local.contains("\"00ff80\""), "{local}");
+            }
+        }
+    }
+
+    /// **584, bytea pelo PostgreSQL(R):** o texto do `bytea` vem com `\x` na
+    /// frente, e o `hex_para_bytes` o recusava -- todo bytea parava a rodada.
+    #[test]
+    fn o_bytea_do_postgres_chega_byte_a_byte() {
+        let dir = DirTemp::novo("584-dblink-bytea-pg");
+        let s = servidor(&dir);
+        let cols = vec![
+            col_pg("id", 23, "integer", true),
+            col_pg("foto", 17, "bytea", false),
+        ];
+        let linhas = vec![
+            vec![cel("1"), Some(vec![0x00, 0xFF, 0x80])],
+            vec![cel("2"), Some(b"cafe".to_vec())],
+        ];
+        let (porta, avisos) = par_pg(cols, linhas);
+        salvar(&s, "postgres", porta);
+        ligar(&s, "dois").unwrap();
+        let r = match pede(&s, r#""op":"dblink_sincronizar","dblink":"erp""#) {
+            Ok(j) => j.escrever(),
+            Err(e) => panic!("o puxar recusou um bytea: {e}"),
+        };
+        assert!(r.contains("\"puxadas_novas\":2"), "{r}");
+        let local = varrer(&s);
+        assert!(
+            local.contains("\"00ff80\"") && local.contains("\"63616665\""),
+            "{local}"
+        );
+        // E o empurrao do bytea sobe sem depender do `bytea_output` nem do
+        // `standard_conforming_strings`: `decode('..','hex')`.
+        pede(
+            &s,
+            r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":3,"foto":"0a0b"}"#,
+        )
+        .unwrap();
+        pede(&s, r#""op":"dblink_sincronizar","dblink":"erp""#).unwrap();
+        let insert = avisos
+            .try_iter()
+            .find(|q| q.starts_with("INSERT"))
+            .expect("o par nao recebeu o INSERT");
+        assert!(insert.contains("(3,decode('0a0b','hex'))"), "{insert}");
+    }
+
+    /// **584, uuid:** a celula remota `novo` (ou `v4`, `v7`) numa coluna local
+    /// Uuid virava um uuid ALEATORIO -- o gerador da carga colada respondendo
+    /// por um dado que veio de outro banco, um diferente a cada rodada. Agora
+    /// recusa sem citar a celula; e o uuid de verdade chega igual.
+    #[test]
+    fn o_uuid_remoto_nao_vira_uuid_inventado() {
+        let cols: Vec<ColMy> = vec![("id", 0x03, 0x0003, 11), ("cod", 0xfe, 0, 144)];
+        let u = "0190a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b";
+        for (celula, vale) in [(u, true), ("novo", false), ("v4", false), ("v7", false)] {
+            let dir = DirTemp::novo("584-dblink-uuid");
+            let s = servidor(&dir);
+            let (porta, _avisos) = par_my(cols.clone(), vec![vec![cel("1"), cel(celula)]]);
+            salvar(&s, "mysql", porta);
+            // A tabela local ja existe, com a coluna Uuid: e o caminho em que
+            // um uuid local recebe a celula de la.
+            pede(&s, TABELA_COM_UUID).unwrap();
+            ligar(&s, "puxar").unwrap();
+            let r = pede(&s, r#""op":"dblink_sincronizar","dblink":"erp""#);
+            match (r, vale) {
+                (Ok(_), true) => assert!(varrer(&s).contains(u), "{}", varrer(&s)),
+                (Err(e), true) => panic!("o uuid de verdade recusou: {e}"),
+                (Ok(_), false) => panic!(
+                    "a celula {celula:?} de la virou um uuid inventado aqui: {}",
+                    varrer(&s)
+                ),
+                (Err(e), false) => {
+                    let e = e.to_string();
+                    assert!(e.contains("\"cod\"") && !e.contains(celula), "{e}");
+                }
+            }
+        }
     }
 }

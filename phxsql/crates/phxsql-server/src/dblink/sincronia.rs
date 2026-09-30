@@ -17,8 +17,18 @@
 //! - **o teto e `max_linhas` da ligacao.** Tabela maior que o teto recusa com
 //!   erro claro em vez de sincronizar metade e fingir que acabou.
 //!
-//! O empurrao usa `INSERT ... ON DUPLICATE KEY UPDATE`, entao empurrar a mesma
-//! linha duas vezes e inofensivo -- a rodada pode cair no meio e recomecar.
+//! O empurrao grava por cima quando a chave ja existe (`ON DUPLICATE KEY
+//! UPDATE` no MySQL(R), `ON CONFLICT … DO UPDATE` no PostgreSQL(R), os dois
+//! pelo `Motor::upsert`), entao empurrar a mesma linha duas vezes e inofensivo
+//! -- a rodada pode cair no meio e recomecar.
+//!
+//! # O dialeto mora num lugar so
+//!
+//! Tudo o que muda de um motor para o outro -- nome citado, valor, booleano,
+//! binario, o upsert, a leitura com o binario em hexadecimal -- sai de uma
+//! funcao do `Motor` (`dialeto.rs`). Ate o pedido 583 so o texto saia de la; o
+//! resto era MySQL(R) escrito aqui, e a sincronia contra o PostgreSQL(R) morria
+//! no primeiro `SELECT` com crase.
 
 use std::collections::HashMap;
 
@@ -31,8 +41,9 @@ use phxsql_core::types::ColumnType;
 use phxsql_core::value::Value;
 use phxsql_store::table::Table;
 
-use super::conexao::Coluna;
-use super::{entre_crases, Motor};
+use super::conexao::{Coluna, Conexao};
+use super::dialeto::booleano_lido;
+use super::Motor;
 
 /// Para onde o dado anda.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -155,7 +166,10 @@ impl Sincronia {
 ///   pessoa declarou la.
 /// - `tamanho` de `DECIMAL(p,s)` chega como p + 2 quando ha casa decimal (sinal
 ///   e ponto) e p + 1 quando nao ha (so o sinal).
-fn tipo_local(c: &Coluna) -> Result<ColumnType> {
+fn tipo_local(motor: Motor, c: &Coluna) -> Result<ColumnType> {
+    if motor == Motor::Postgres {
+        return tipo_local_pg(c);
+    }
     Ok(match c.tipo.as_str() {
         "TINYINT" => {
             // TINYINT(1) e a convencao de booleano do MySQL(R); os outros sao
@@ -196,13 +210,119 @@ fn tipo_local(c: &Coluna) -> Result<ColumnType> {
     })
 }
 
+/// O tipo local para uma coluna do PostgreSQL(R), pelo texto do `format_type`
+/// -- pedido 583.
+///
+/// O vocabulario e outro (`integer`, `character varying(40)`, `timestamp(3)
+/// without time zone`), e o tamanho vem no proprio texto, em CARACTERES: nao
+/// ha a conta de bytes do utf8mb4. O que nao tem par recusa nomeando o tipo, em
+/// vez de virar texto calado:
+///
+/// - `numeric` sem precisao guarda ate 131.072 digitos; nenhum `Decimal`
+///   daqui o recebe sem arredondar.
+/// - `timestamp with time zone` sai no fio com o fuso da SESSAO de la; o
+///   `DateTime` daqui nao guarda fuso, e gravar a hora de parede de outra
+///   sessao seria dado diferente para a mesma linha.
+fn tipo_local_pg(c: &Coluna) -> Result<ColumnType> {
+    let t = c.tipo.trim().to_ascii_lowercase();
+    let (base, args) = match (t.find('('), t.find(')')) {
+        (Some(i), Some(j)) if j > i => (
+            format!("{}{}", t[..i].trim_end(), &t[j + 1..]),
+            Some(t[i + 1..j].to_string()),
+        ),
+        _ => (t.clone(), None),
+    };
+    let numeros: Vec<u32> = args
+        .as_deref()
+        .unwrap_or("")
+        .split(',')
+        .filter_map(|n| n.trim().parse().ok())
+        .collect();
+    let sem_par = || {
+        PhxError::Esquema(format!(
+            "coluna {:?}: o tipo {} do outro banco nao tem par aqui",
+            c.nome, c.tipo
+        ))
+    };
+    Ok(match base.as_str() {
+        "smallint" => ColumnType::Int2,
+        "integer" => ColumnType::Int4,
+        "bigint" => ColumnType::Int8,
+        "boolean" => ColumnType::Bool,
+        "real" => ColumnType::Real4,
+        "double precision" => ColumnType::Real8,
+        "numeric" => match numeros.as_slice() {
+            [p] => ColumnType::Decimal {
+                precisao: (*p).clamp(1, 38) as u8,
+                escala: 0,
+            },
+            [p, s] => ColumnType::Decimal {
+                precisao: (*p).clamp(1, 38) as u8,
+                escala: (*s).min(38) as u8,
+            },
+            _ => return Err(sem_par()),
+        },
+        "date" => ColumnType::Date,
+        "time without time zone" => ColumnType::Time,
+        "timestamp without time zone" => ColumnType::DateTime,
+        "character varying" | "character" => match numeros.as_slice() {
+            [n] => ColumnType::Str((*n).clamp(1, u16::MAX as u32) as u16),
+            _ => ColumnType::Memo,
+        },
+        "text" | "json" | "jsonb" => ColumnType::Memo,
+        "bytea" => ColumnType::Bin,
+        "uuid" => ColumnType::Uuid,
+        _ => return Err(sem_par()),
+    })
+}
+
+/// As colunas da tabela remota com o que o espelho precisa: tipo, nulo e se
+/// e chave primaria -- pedido 583.
+///
+/// No MySQL(R) o `LIMIT 0` traz tudo isso nas bandeiras de cada coluna. No
+/// PostgreSQL(R) a `RowDescription` so traz o OID do tipo: nem nulo, nem chave
+/// -- e sem chave o espelho recusaria toda tabela. La a pergunta vai ao
+/// catalogo, pela MESMA consulta do `dblink_estrutura` (`sql_colunas`), lida
+/// pelos nomes das colunas.
+pub fn colunas_do_espelho(motor: Motor, c: &mut Conexao, remota: &str) -> Result<Vec<Coluna>> {
+    match motor {
+        Motor::Postgres => {
+            let r = c.consultar(&motor.sql_colunas("", remota)?, u64::MAX)?;
+            let pos = |nome: &str| {
+                r.colunas
+                    .iter()
+                    .position(|c| c.nome == nome)
+                    .ok_or_else(|| {
+                        PhxError::Esquema(format!(
+                            "o catalogo do outro banco nao devolveu a coluna {nome:?}"
+                        ))
+                    })
+            };
+            let (f, t, n, k) = (pos("Field")?, pos("Type")?, pos("Null")?, pos("Key")?);
+            let texto =
+                |l: &[Option<String>], i: usize| l.get(i).cloned().flatten().unwrap_or_default();
+            Ok(r.linhas
+                .iter()
+                .map(|l| Coluna {
+                    nome: texto(l, f),
+                    tipo: texto(l, t),
+                    nulavel: texto(l, n) == "YES",
+                    primaria: texto(l, k) == "PRI",
+                    ..Coluna::default()
+                })
+                .collect())
+        }
+        _ => Ok(c.consultar(&motor.sql_metadados(remota)?, 1)?.colunas),
+    }
+}
+
 /// Monta o esquema local espelhando as colunas remotas, e diz qual e a chave.
 ///
 /// A chave primaria vira indice UNICO local -- e o que permite o upsert sem
 /// varrer -- e tem de ser de UMA coluna: chave composta fica para quando
 /// alguem precisar dela de verdade, com o pedido na mesa.
 /// DIVIDA: o espelho do DbLink so aceita chave primaria de UMA coluna -- tabela remota com chave composta recusa
-pub fn esquema_local_de(nome: &str, colunas: &[Coluna]) -> Result<(Schema, String)> {
+pub fn esquema_local_de(motor: Motor, nome: &str, colunas: &[Coluna]) -> Result<(Schema, String)> {
     if colunas.is_empty() {
         return Err(PhxError::Esquema(format!(
             "a tabela remota {nome:?} nao tem colunas visiveis"
@@ -229,7 +349,7 @@ pub fn esquema_local_de(nome: &str, colunas: &[Coluna]) -> Result<(Schema, Strin
 
     let mut cols = Vec::with_capacity(colunas.len());
     for c in colunas {
-        let mut col = Column::new(&c.nome, tipo_local(c)?);
+        let mut col = Column::new(&c.nome, tipo_local(motor, c)?);
         if !c.nulavel {
             col = col.obrigatoria();
         }
@@ -290,6 +410,40 @@ pub fn linha_remota_para_negocio(
             // conflito na mesma linha para sempre.
             (Some(t), ColumnType::Str(_)) => Value::Str(t.clone()),
             (Some(t), ColumnType::Memo) => Value::Memo(t.clone()),
+            // Os tres abaixo sao dos pedidos 583 e 584: a regua da carga
+            // colada (`valor_de_texto`) e para quem DIGITA, e responde por
+            // coisas que o fio nunca deveria decidir.
+            //
+            // O booleano: `t`/`f` do PostgreSQL(R) nao estao na regua da
+            // carga, e todo booleano de la recusava a rodada. `booleano_lido`
+            // e a leitura unica dos dois motores.
+            (Some(t), ColumnType::Bool) => match booleano_lido(t) {
+                Some(b) => Value::Bool(b),
+                None => {
+                    return Err(col.recusa_sem_valor(
+                        PhxError::Tipo("esperado um booleano do outro banco".into()),
+                        t.len(),
+                    ))
+                }
+            },
+            // O binario chega em hexadecimal porque a leitura o pede assim
+            // (`Motor::sql_leitura`); e vazio e o BLOB vazio, nao NULL -- o
+            // fio ja distingue os dois, e a carga colada troca um pelo outro.
+            (Some(t), ColumnType::Bin) => Value::Bin(
+                phxsql_core::carga::hex_para_bytes(t)
+                    .map_err(|e| col.recusa_sem_valor(e, t.len()))?,
+            ),
+            // O uuid: na carga colada, `novo`, `v4` e `v7` sao ordens de
+            // GERAR um identificador. Vindo de outro banco, a celula e dado:
+            // gerar aqui gravava um uuid inventado, diferente a cada rodada.
+            (Some(t), ColumnType::Uuid) if !t.trim().is_empty() => Value::Uuid(
+                phxsql_core::uuid::Uuid::de_texto(t)
+                    .map_err(|e| col.recusa_sem_valor(e, t.len()))?,
+            ),
+            (Some(t), ColumnType::Uuid256) if !t.trim().is_empty() => Value::Uuid256(
+                phxsql_core::uuid::Uuid256::de_texto(t)
+                    .map_err(|e| col.recusa_sem_valor(e, t.len()))?,
+            ),
             // A recusa passa pela porta do 464, e SEMPRE redigida (pedido
             // 557): a celula e de um titular do outro banco, que ninguem
             // digitou aqui, e o erro vai ao `acessos.log` e ao `jobs.log`.
@@ -334,7 +488,7 @@ pub fn mapa_de_colunas(esquema: &Schema, remotas: &[Coluna]) -> Result<Vec<(usiz
 pub fn valor_para_sql(v: &Value, ty: &ColumnType, motor: Motor) -> Result<String> {
     Ok(match v {
         Value::Null => "NULL".into(),
-        Value::Bool(b) => if *b { "1" } else { "0" }.into(),
+        Value::Bool(b) => motor.booleano(*b).into(),
         Value::Int(n) => n.to_string(),
         Value::UInt(n) => n.to_string(),
         Value::Real(x) => {
@@ -379,18 +533,7 @@ pub fn valor_para_sql(v: &Value, ty: &ColumnType, motor: Motor) -> Result<String
         // nao tem tipo UUID garantido, e qualquer VARCHAR os recebe.
         Value::Uuid(u) => motor.texto(&u.to_string())?,
         Value::Uuid256(u) => motor.texto(&u.to_string())?,
-        Value::Bin(b) => {
-            let mut s = String::with_capacity(2 + b.len() * 2);
-            s.push_str("0x");
-            for byte in b {
-                s.push_str(&format!("{byte:02x}"));
-            }
-            if b.is_empty() {
-                "''".into()
-            } else {
-                s
-            }
-        }
+        Value::Bin(b) => motor.binario(b)?,
     })
 }
 
@@ -511,13 +654,15 @@ pub fn aplicar_para_ca(
     Ok((inseridas, alteradas))
 }
 
-/// Monta os INSERT ... ON DUPLICATE KEY UPDATE do empurrao, em lotes.
+/// Monta os upserts do empurrao, em lotes, no dialeto do motor.
 ///
-/// O ON DUPLICATE e o que torna a rodada REENTRAVEL: cair no meio e recomecar
-/// grava a mesma linha de novo e nada dobra.
+/// O upsert e o que torna a rodada REENTRAVEL: cair no meio e recomecar grava
+/// a mesma linha de novo e nada dobra. `chave` e a coluna da chave primaria --
+/// o `ON CONFLICT` do PostgreSQL(R) exige nomea-la.
 pub fn sql_do_empurrao(
     motor: Motor,
     tabela_remota: &str,
+    chave: &str,
     colunas: &[(String, ColumnType)],
     linhas: &[Vec<Value>],
     por_lote: usize,
@@ -525,8 +670,7 @@ pub fn sql_do_empurrao(
     if linhas.is_empty() {
         return Ok(Vec::new());
     }
-    let nomes: Vec<String> = colunas.iter().map(|(n, _)| entre_crases(n)).collect();
-    let atualiza: Vec<String> = nomes.iter().map(|n| format!("{n}=VALUES({n})")).collect();
+    let nomes: Vec<String> = colunas.iter().map(|(n, _)| n.clone()).collect();
 
     let mut sqls = Vec::new();
     for lote in linhas.chunks(por_lote.max(1)) {
@@ -546,13 +690,7 @@ pub fn sql_do_empurrao(
             }
             valores.push(format!("({})", celulas.join(",")));
         }
-        sqls.push(format!(
-            "INSERT INTO {} ({}) VALUES {} ON DUPLICATE KEY UPDATE {}",
-            entre_crases(tabela_remota),
-            nomes.join(","),
-            valores.join(","),
-            atualiza.join(",")
-        ));
+        sqls.push(motor.upsert(tabela_remota, &nomes, chave, &valores)?);
     }
     Ok(sqls)
 }
@@ -661,7 +799,7 @@ mod testes {
         // Um VARCHAR(60) chega como 240 bytes; a tabela local tem de nascer
         // com 60 caracteres, nao 240 -- senao toda ficha "cabe" quatro vezes.
         assert_eq!(
-            tipo_local(&col("nome", "VARCHAR", 240, 0, false)).unwrap(),
+            tipo_local(Motor::MySql, &col("nome", "VARCHAR", 240, 0, false)).unwrap(),
             ColumnType::Str(60)
         );
     }
@@ -669,11 +807,11 @@ mod testes {
     #[test]
     fn tipo_local_tinyint_um_e_booleano_os_outros_sao_numeros() {
         assert_eq!(
-            tipo_local(&col("ativo", "TINYINT", 1, 0, false)).unwrap(),
+            tipo_local(Motor::MySql, &col("ativo", "TINYINT", 1, 0, false)).unwrap(),
             ColumnType::Bool
         );
         assert_eq!(
-            tipo_local(&col("idade", "TINYINT", 4, 0, false)).unwrap(),
+            tipo_local(Motor::MySql, &col("idade", "TINYINT", 4, 0, false)).unwrap(),
             ColumnType::Int1
         );
     }
@@ -683,14 +821,14 @@ mod testes {
         // DECIMAL(10,2) viaja como tamanho 12 (sinal e ponto);
         // DECIMAL(5,0) como 6 (so o sinal).
         assert_eq!(
-            tipo_local(&col("limite", "DECIMAL", 12, 2, false)).unwrap(),
+            tipo_local(Motor::MySql, &col("limite", "DECIMAL", 12, 2, false)).unwrap(),
             ColumnType::Decimal {
                 precisao: 10,
                 escala: 2
             }
         );
         assert_eq!(
-            tipo_local(&col("qtde", "DECIMAL", 6, 0, false)).unwrap(),
+            tipo_local(Motor::MySql, &col("qtde", "DECIMAL", 6, 0, false)).unwrap(),
             ColumnType::Decimal {
                 precisao: 5,
                 escala: 0
@@ -698,9 +836,39 @@ mod testes {
         );
     }
 
+    /// Pedido 583: o vocabulario do `format_type` do PostgreSQL(R), com o
+    /// tamanho em CARACTERES no proprio texto -- sem a divisao por 4 do
+    /// utf8mb4, que aqui encolheria o `varchar(40)` para 10.
+    #[test]
+    fn tipo_local_do_postgres_le_o_format_type() {
+        let pg = |t: &str| tipo_local(Motor::Postgres, &col("c", t, 0, 0, false));
+        assert_eq!(pg("integer").unwrap(), ColumnType::Int4);
+        assert_eq!(pg("character varying(40)").unwrap(), ColumnType::Str(40));
+        assert_eq!(pg("character varying").unwrap(), ColumnType::Memo);
+        assert_eq!(pg("boolean").unwrap(), ColumnType::Bool);
+        assert_eq!(
+            pg("numeric(10,2)").unwrap(),
+            ColumnType::Decimal {
+                precisao: 10,
+                escala: 2
+            }
+        );
+        assert_eq!(
+            pg("timestamp(3) without time zone").unwrap(),
+            ColumnType::DateTime
+        );
+        assert_eq!(pg("bytea").unwrap(), ColumnType::Bin);
+        assert_eq!(pg("uuid").unwrap(), ColumnType::Uuid);
+        // Sem par honesto: recusa nomeando o tipo, em vez de texto calado.
+        for sem in ["numeric", "timestamp with time zone", "interval", "point"] {
+            let e = pg(sem).unwrap_err().to_string();
+            assert!(e.contains(sem), "{e}");
+        }
+    }
+
     #[test]
     fn tipo_local_recusa_o_que_nao_tem_par() {
-        assert!(tipo_local(&col("area", "POLYGON", 0, 0, false)).is_err());
+        assert!(tipo_local(Motor::MySql, &col("area", "POLYGON", 0, 0, false)).is_err());
     }
 
     // ------------------------------------------------- o esquema espelhado
@@ -711,15 +879,15 @@ mod testes {
             col("id", "INT", 11, 0, true),
             col("nome", "VARCHAR", 240, 0, false),
         ];
-        let (esq, chave) = esquema_local_de("clientes", &com_pk).unwrap();
+        let (esq, chave) = esquema_local_de(Motor::MySql, "clientes", &com_pk).unwrap();
         assert_eq!(chave, "id");
         assert!(esq.indices().iter().any(|i| i.nome == "porChave"));
 
         let sem_pk = [col("nome", "VARCHAR", 240, 0, false)];
-        assert!(esquema_local_de("clientes", &sem_pk).is_err());
+        assert!(esquema_local_de(Motor::MySql, "clientes", &sem_pk).is_err());
 
         let composta = [col("a", "INT", 11, 0, true), col("b", "INT", 11, 0, true)];
-        assert!(esquema_local_de("clientes", &composta).is_err());
+        assert!(esquema_local_de(Motor::MySql, "clientes", &composta).is_err());
     }
 
     // ------------------------------------------------------ o mapa por nome
@@ -731,7 +899,7 @@ mod testes {
             col("id", "INT", 11, 0, true),
             col("nome", "VARCHAR", 240, 0, false),
         ];
-        let (esq, _) = esquema_local_de("clientes", &remotas).unwrap();
+        let (esq, _) = esquema_local_de(Motor::MySql, "clientes", &remotas).unwrap();
 
         let em_outra_ordem = [remotas[1].clone(), remotas[0].clone()];
         let mapa = mapa_de_colunas(&esq, &em_outra_ordem).unwrap();
@@ -743,7 +911,7 @@ mod testes {
     #[test]
     fn mapa_recusa_coluna_remota_que_nao_existe_aqui() {
         let remotas = [col("id", "INT", 11, 0, true)];
-        let (esq, _) = esquema_local_de("clientes", &remotas).unwrap();
+        let (esq, _) = esquema_local_de(Motor::MySql, "clientes", &remotas).unwrap();
         let com_nova = [remotas[0].clone(), col("telefone", "VARCHAR", 80, 0, false)];
         assert!(mapa_de_colunas(&esq, &com_nova).is_err());
     }
@@ -829,7 +997,7 @@ mod testes {
             col("nasc", "DATE", 10, 0, false),
             col("nome", "VARCHAR", 240, 0, false),
         ];
-        let (esq, _) = esquema_local_de("c", &colunas).unwrap();
+        let (esq, _) = esquema_local_de(Motor::MySql, "c", &colunas).unwrap();
         let negocio = posicoes_de_negocio(&esq);
         let mapa = mapa_de_colunas(&esq, &colunas).unwrap();
         let e = linha_remota_para_negocio(
@@ -859,7 +1027,7 @@ mod testes {
             ("nome".to_string(), ColumnType::Str(60)),
         ];
         let linhas = vec![linha(1, "a"), linha(2, "b"), linha(3, "c")];
-        let sqls = sql_do_empurrao(Motor::MySql, "clientes", &colunas, &linhas, 2).unwrap();
+        let sqls = sql_do_empurrao(Motor::MySql, "clientes", "id", &colunas, &linhas, 2).unwrap();
         assert_eq!(sqls.len(), 2, "3 linhas em lotes de 2 sao 2 comandos");
         for sql in &sqls {
             // E o ON DUPLICATE que deixa a rodada cair no meio e recomecar.

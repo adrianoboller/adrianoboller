@@ -118,6 +118,138 @@ impl Motor {
         })
     }
 
+    /// Um VALOR binario como literal deste motor -- pedido 583.
+    ///
+    /// O `0x…` de antes e so do MySQL(R): o PostgreSQL(R) o le como o numero
+    /// zero seguido de um nome, e recusa. As formas escolhidas nao levam aspa
+    /// nem contrabarra de dado, pelo mesmo motivo do `texto`: o sentido nao
+    /// depende de modo do servidor.
+    ///
+    /// - **MySQL(R)/MariaDB:** `X'…'`, que vale vazio (`X''`).
+    /// - **PostgreSQL(R):** `decode('…','hex')`. O `'\x…'` dependeria do
+    ///   `standard_conforming_strings` para a contrabarra chegar inteira.
+    /// - **PhxSql:** recusa. O lexico daqui nao tem literal binario, e a
+    ///   sincronia recusa este motor antes de montar valor.
+    pub fn binario(self, bytes: &[u8]) -> Result<String> {
+        let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+        Ok(match self {
+            Motor::MySql => format!("X'{hex}'"),
+            Motor::Postgres => format!("decode('{hex}','hex')"),
+            Motor::Phx => {
+                return Err(PhxError::Tipo(
+                    "o SQL do PhxSql nao tem literal binario: o valor sobe pela op \
+                     `inserir`, nao por instrucao"
+                        .into(),
+                ))
+            }
+        })
+    }
+
+    /// O `INSERT` que grava por cima quando a chave ja existe -- pedido 583.
+    ///
+    /// E a instrucao que torna o empurrao da sincronia reentravel, e cada um
+    /// a escreve de um jeito:
+    ///
+    /// - **MySQL(R)/MariaDB:** `ON DUPLICATE KEY UPDATE c=VALUES(c)`, que
+    ///   dispara em QUALQUER chave unica da tabela.
+    /// - **PostgreSQL(R):** `ON CONFLICT (chave) DO UPDATE SET c=EXCLUDED.c`,
+    ///   que exige nomear a chave -- e por isso ela e parametro. A chave sai
+    ///   do `SET` (trocar a chave pelo mesmo valor nao muda nada, e so polui);
+    ///   tabela so de chave vira `DO NOTHING`, que e o `SET` vazio valido.
+    /// - **PhxSql:** recusa. O `ON CONFLICT` daqui nao aceita `excluded.c`
+    ///   (`phxsql-sql/src/dml.rs`), e a sincronia recusa este motor antes.
+    ///
+    /// `colunas` sao nomes CRUS (esta funcao os cita); `linhas` ja sao as
+    /// tuplas montadas, `(v1,v2,…)`, pelo `valor_para_sql` deste motor.
+    pub fn upsert(
+        self,
+        tabela: &str,
+        colunas: &[String],
+        chave: &str,
+        linhas: &[String],
+    ) -> Result<String> {
+        let nomes: Vec<String> = colunas.iter().map(|n| self.citar(n)).collect();
+        let cabeca = format!(
+            "INSERT INTO {} ({}) VALUES {}",
+            self.alvo("", tabela)?,
+            nomes.join(","),
+            linhas.join(",")
+        );
+        Ok(match self {
+            Motor::MySql => {
+                let set: Vec<String> = nomes.iter().map(|n| format!("{n}=VALUES({n})")).collect();
+                format!("{cabeca} ON DUPLICATE KEY UPDATE {}", set.join(","))
+            }
+            Motor::Postgres => {
+                let set: Vec<String> = colunas
+                    .iter()
+                    .filter(|n| !n.eq_ignore_ascii_case(chave))
+                    .map(|n| {
+                        let c = self.citar(n);
+                        format!("{c}=EXCLUDED.{c}")
+                    })
+                    .collect();
+                let acao = if set.is_empty() {
+                    "DO NOTHING".to_string()
+                } else {
+                    format!("DO UPDATE SET {}", set.join(","))
+                };
+                format!("{cabeca} ON CONFLICT ({}) {acao}", self.citar(chave))
+            }
+            Motor::Phx => {
+                return Err(PhxError::Esquema(
+                    "o motor phxsql nao recebe o empurrao da sincronia em SQL: entre \
+                     dois PhxSql a convergencia e a replicacao nativa"
+                        .into(),
+                ))
+            }
+        })
+    }
+
+    /// So as colunas, sem linha nenhuma: `SELECT * … LIMIT 0`.
+    pub fn sql_metadados(self, tabela: &str) -> Result<String> {
+        Ok(format!("SELECT * FROM {} LIMIT 0", self.alvo("", tabela)?))
+    }
+
+    /// A leitura inteira de uma tabela, com cada coluna binaria em TEXTO
+    /// hexadecimal -- pedido 584.
+    ///
+    /// O protocolo de texto dos dois entrega a celula como bytes, e o nosso
+    /// leitor as guarda como `String`: um BLOB cru do MySQL(R) virava texto
+    /// com `U+FFFD` no lugar do byte invalido, e o `hex_para_bytes` depois ou
+    /// recusava (`00 FF`) ou, pior, lia `cafe` como os dois bytes `CA FE`. O
+    /// `bytea` do PostgreSQL(R) chega como `\x…` no `bytea_output = hex`, e
+    /// como escape no outro modo. Pedir o hexadecimal ao proprio servidor --
+    /// `HEX()` num, `encode(…,'hex')` no outro -- tira as duas duvidas: o fio
+    /// so leva digito, em qualquer modo.
+    ///
+    /// `colunas` sao as do `sql_metadados`, com o tipo no nome do fio.
+    pub fn sql_leitura(self, tabela: &str, colunas: &[super::conexao::Coluna]) -> Result<String> {
+        let lista: Vec<String> = colunas
+            .iter()
+            .map(|c| {
+                let n = self.citar(&c.nome);
+                match (self, c.tipo.as_str()) {
+                    (Motor::MySql, "BLOB" | "BINARY" | "VARBINARY" | "GEOMETRY") => {
+                        format!("HEX({n}) AS {n}")
+                    }
+                    (Motor::Postgres, "BYTEA") => format!("encode({n},'hex') AS {n}"),
+                    _ => n,
+                }
+            })
+            .collect();
+        if lista.is_empty() {
+            return Err(PhxError::Esquema(format!(
+                "a tabela remota {tabela:?} nao tem colunas visiveis"
+            )));
+        }
+        Ok(format!(
+            "SELECT {} FROM {}",
+            lista.join(","),
+            self.alvo("", tabela)?
+        ))
+    }
+
     /// Recusa a montagem de SQL de CATALOGO para quem nao tem catalogo em SQL.
     ///
     /// O erro nomeia a operacao NATIVA que responde a mesma pergunta, em vez
@@ -475,7 +607,8 @@ impl Motor {
     ///
     /// `TRUE`/`FALSE` valem nos dois, e e por isso que sao a escolha: `1`/`0`
     /// vale no MySQL(R) e o PostgreSQL(R) recusa comparar `boolean` com
-    /// `integer`.
+    /// `integer` -- e recusa GRAVAR `1` numa coluna `boolean`, que e o que o
+    /// empurrao da sincronia fazia (pedido 583). No MySQL(R) `TRUE` e `1`.
     pub fn booleano(self, v: bool) -> &'static str {
         if v {
             "TRUE"
@@ -929,6 +1062,67 @@ mod testes {
         for ruim in ["2026-08-29'; DROP TABLE x; --", "now()", ""] {
             assert!(Motor::Postgres.data(ruim).is_err(), "aceitou {ruim:?}");
         }
+    }
+
+    /// Pedido 583: o upsert, o binario e a leitura saem no dialeto de cada
+    /// um. O ramo do MySQL(R) nao muda uma letra do que ja ia ao fio.
+    #[test]
+    fn o_upsert_o_binario_e_a_leitura_saem_no_dialeto() {
+        let cols = ["id".to_string(), "nome".to_string()];
+        let linhas = ["(1,'a')".to_string()];
+        assert_eq!(
+            Motor::MySql
+                .upsert("clientes", &cols, "id", &linhas)
+                .unwrap(),
+            "INSERT INTO `clientes` (`id`,`nome`) VALUES (1,'a') \
+             ON DUPLICATE KEY UPDATE `id`=VALUES(`id`),`nome`=VALUES(`nome`)"
+        );
+        assert_eq!(
+            Motor::Postgres
+                .upsert("clientes", &cols, "id", &linhas)
+                .unwrap(),
+            "INSERT INTO \"clientes\" (\"id\",\"nome\") VALUES (1,'a') \
+             ON CONFLICT (\"id\") DO UPDATE SET \"nome\"=EXCLUDED.\"nome\""
+        );
+        // Tabela so de chave: o SET vazio do PostgreSQL(R) e `DO NOTHING`.
+        let so_chave = Motor::Postgres
+            .upsert("t", &cols[..1], "id", &["(1)".to_string()])
+            .unwrap();
+        assert!(
+            so_chave.ends_with("ON CONFLICT (\"id\") DO NOTHING"),
+            "{so_chave}"
+        );
+        assert!(Motor::Phx.upsert("t", &cols, "id", &linhas).is_err());
+
+        assert_eq!(Motor::MySql.binario(&[0, 0xff]).unwrap(), "X'00ff'");
+        assert_eq!(Motor::MySql.binario(&[]).unwrap(), "X''");
+        assert_eq!(
+            Motor::Postgres.binario(&[0, 0xff]).unwrap(),
+            "decode('00ff','hex')"
+        );
+        assert!(Motor::Phx.binario(&[1]).is_err());
+
+        let c = |nome: &str, tipo: &str| super::super::conexao::Coluna {
+            nome: nome.into(),
+            tipo: tipo.into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            Motor::MySql
+                .sql_leitura("t", &[c("id", "INT"), c("foto", "BLOB")])
+                .unwrap(),
+            "SELECT `id`,HEX(`foto`) AS `foto` FROM `t`"
+        );
+        assert_eq!(
+            Motor::Postgres
+                .sql_leitura("t", &[c("id", "INT4"), c("foto", "BYTEA")])
+                .unwrap(),
+            "SELECT \"id\",encode(\"foto\",'hex') AS \"foto\" FROM \"t\""
+        );
+        assert_eq!(
+            Motor::Postgres.sql_metadados("t").unwrap(),
+            "SELECT * FROM \"t\" LIMIT 0"
+        );
     }
 
     /// O defeito que este teste existe para pegar: `== "1"` trata todo
