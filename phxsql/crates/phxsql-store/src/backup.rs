@@ -355,8 +355,114 @@ pub fn executar_zip(
     // `op_backups` so reconhece `.zip`, entao o `.part` fica invisivel para
     // quem lista backups ate o `rename` de [`finalizar_zip`] -- uma recusa
     // no meio nunca deixa um `.zip` pela metade parecendo pronto.
-    escrever_sem_sync(&parcial(&alvo), &bytes)?;
+    //
+    // Pedido 555: a recusa DEPOIS de o `.part` nascer apaga o `.part` -- senao
+    // ele ficava na pasta para sempre, porque a rotacao so reconhece o nome
+    // final. A recusa do proprio `open` NAO apaga nada: ali nada nosso
+    // nasceu, e o nome pode ser de outro (pedido 569).
+    let p = parcial(&alvo);
+    let arquivo = crate::util::recriar_do_banco(&p, false)?;
+    let escrito = (|| -> Result<()> {
+        let mut w = std::io::BufWriter::new(&arquivo);
+        w.write_all(&bytes)?;
+        w.flush()?;
+        Ok(())
+    })();
+    if let Err(e) = escrito {
+        drop(arquivo);
+        descartar_parcial(&p);
+        return Err(e);
+    }
     Ok((alvo, r))
+}
+
+/// Idade a partir da qual um `.part` nosso na pasta e ORFAO -- pedido 555.
+///
+/// O `.part` vivo so existe entre o fim da escrita (o `mtime`) e o `rename`
+/// de [`finalizar_zip`], e esse intervalo e so o `fsync`. Mas o `fsync` roda
+/// FORA da trava de dados, entao outro backup para a mesma pasta pode
+/// terminar no meio dele: sem a idade, a faxina de um apagaria o `.part` que
+/// o outro ainda vai renomear. Uma hora cobre `fsync` lento em USB ou disco
+/// de rede e o relogio de um compartilhamento um pouco adiantado.
+const IDADE_DE_ORFAO: std::time::Duration = std::time::Duration::from_secs(3600);
+
+/// Apaga o `.part` pelo NOME, sem abrir -- o caminho de erro do pedido 555.
+///
+/// `remove_file` nunca segue link simbolico nem abre FIFO (pedidos 568/570):
+/// se alguem trocou o nome, some o link, e o alvo dele fica intacto. Falhar
+/// aqui nao muda nada para quem chamou -- o erro que importa e o que ja vai
+/// subir -- e o que sobrar a faxina de [`limpar_parciais_orfaos`] alcanca.
+fn descartar_parcial(p: &Path) {
+    let _ = std::fs::remove_file(p);
+}
+
+/// O nome tem a cara de um `.part` NOSSO: `Banco_Admin_Data_HoraMin.zip.part`
+/// -- o mesmo crivo de [`escolher_para_apagar`], com o sufixo do parcial.
+fn e_nome_de_parcial(nome: &str) -> bool {
+    nome.strip_suffix(".part")
+        .is_some_and(|zip| zip.ends_with(".zip") && zip.matches('_').count() >= 3)
+}
+
+/// A faxina dos `.part` que um backup que falhou deixou para tras -- pedido
+/// 555. Roda em [`finalizar_zip`], depois do `rename` que deu certo, entao
+/// alcanca os tres chamadores (CLI, `backup` pelo protocolo e o agendado)
+/// pelo MESMO motor, e FORA da trava de dados no servidor.
+///
+/// So apaga o que e comprovadamente nosso, e por isso sao quatro crivos:
+///
+/// 1. o NOME tem o formato dos nossos -- backup nao apaga arquivo que nao
+///    criou, a mesma regra da rotacao;
+/// 2. o `lstat` diz arquivo REGULAR -- link simbolico, FIFO e dispositivo
+///    ficam, e nenhum e aberto (pedidos 568/570: seguir o link apagaria o
+///    que ele aponta; abrir a FIFO pararia o backup);
+/// 3. o DONO e o mesmo do zip que acabamos de criar (so Unix) -- arquivo de
+///    outro usuario plantado com o nosso formato de nome nao e nosso (569);
+/// 4. o `mtime` e mais velho que [`IDADE_DE_ORFAO`] -- o `.part` de um
+///    backup vizinho ainda no `fsync` nao e orfao.
+///
+/// Devolve quantos apagou. Erro de leitura da pasta nao sobe: a faxina e
+/// acessorio do backup que ja deu certo, e nao pode transforma-lo em falha.
+fn limpar_parciais_orfaos(pasta: &Path, nosso: &std::fs::Metadata) -> usize {
+    let Ok(dir) = std::fs::read_dir(pasta) else {
+        return 0;
+    };
+    let agora = std::time::SystemTime::now();
+    let mut apagados = 0;
+    for entrada in dir.flatten() {
+        let nome = entrada.file_name();
+        if !nome.to_str().is_some_and(e_nome_de_parcial) {
+            continue;
+        }
+        let caminho = entrada.path();
+        let Ok(m) = std::fs::symlink_metadata(&caminho) else {
+            continue;
+        };
+        if !m.file_type().is_file() || !mesmo_dono(&m, nosso) {
+            continue;
+        }
+        let velho = m
+            .modified()
+            .ok()
+            .and_then(|t| agora.duration_since(t).ok())
+            .is_some_and(|idade| idade >= IDADE_DE_ORFAO);
+        if velho && std::fs::remove_file(&caminho).is_ok() {
+            apagados += 1;
+        }
+    }
+    apagados
+}
+
+fn mesmo_dono(a: &std::fs::Metadata, b: &std::fs::Metadata) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        a.uid() == b.uid()
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (a, b);
+        true
+    }
 }
 
 /// O nome PARCIAL de um zip de backup: `<nome>.part`, no mesmo diretorio.
@@ -377,10 +483,25 @@ fn parcial(alvo: &Path) -> PathBuf {
 /// O `rename` passa pelo motor do pedido 467, com o `fsync` do diretorio --
 /// na versao que devolve `Err` em vez de derrubar o servidor, porque o
 /// destino do backup nao e o disco do banco.
+///
+/// Pedido 555: se o `fsync` ou o `rename` recusam, o `.part` sai junto com o
+/// erro -- um zip que nao chegou ao nome final nunca vai chegar, e a rotacao
+/// nao o enxerga. Deu certo, a faxina dos orfaos de corridas anteriores roda
+/// aqui, uma vez por backup, pelo motor de [`limpar_parciais_orfaos`].
 pub fn finalizar_zip(alvo: &Path) -> Result<()> {
     let parcial = parcial(alvo);
-    sincronizar_arquivo(&parcial)?;
-    crate::sincronia::trocar_duravel_sem_abortar(&parcial, alvo)
+    let trocado = sincronizar_arquivo(&parcial)
+        .and_then(|()| crate::sincronia::trocar_duravel_sem_abortar(&parcial, alvo));
+    if let Err(e) = trocado {
+        // Depois de um `rename` que passou (recusa so no `fsync` do
+        // diretorio) o `.part` ja nao existe, e apagar nao acha nada.
+        descartar_parcial(&parcial);
+        return Err(e);
+    }
+    if let (Some(pasta), Ok(nosso)) = (alvo.parent(), std::fs::symlink_metadata(alvo)) {
+        limpar_parciais_orfaos(pasta, &nosso);
+    }
+    Ok(())
 }
 
 /// Dos arquivos da pasta, quais apagar para sobrarem `manter`.
@@ -718,7 +839,8 @@ mod tests {
     }
 
     /// O mesmo C2, do lado do ZIP: uma recusa nao pode deixar o nome FINAL
-    /// visivel -- so' o `.part`, que `op_backups` nao lista.
+    /// visivel. E nem o `.part` fica (pedido 555): zip que nao chegou ao nome
+    /// final nunca chega, e a rotacao nao o enxergaria para apagar.
     #[test]
     fn zip_final_nao_nasce_se_o_fsync_recusa() {
         let base = temp("c2-zip");
@@ -737,6 +859,13 @@ mod tests {
         crate::sincronia::falha_de_teste::desarmar(&pasta);
         assert!(erro.is_err(), "o fsync do zip tinha de recusar");
         assert!(!zip.is_file(), "o nome final nao pode aparecer");
+        assert!(
+            std::fs::read_dir(&pasta)
+                .unwrap()
+                .flatten()
+                .all(|e| !e.file_name().to_string_lossy().ends_with(".part")),
+            "o .part do fsync recusado ficou na pasta"
+        );
     }
 
     #[test]

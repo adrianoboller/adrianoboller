@@ -17213,4 +17213,29 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "a_exclusao_cujo_motivo_falha_ainda_anota_no_diario",
         ],
     },
+    {
+        "id": "zip-que-falha-no-rename-deixa-o-part",
+        "titulo": "o `rename` final do backup em ZIP que recusa deixa o `.part` na pasta para sempre",
+        "porque": (
+            "pedido 555: o `.part` so vira `.zip` no `rename` de "
+            "`finalizar_zip`, e a rotacao so reconhece o nome final -- cada "
+            "recusa deixava um zip inteiro na pasta sem ninguem apagar. A "
+            "prova derruba o `rename` de verdade (um diretorio no nome do "
+            "zip, `EISDIR`), nao por arma forjada."
+        ),
+        "arquivo": "crates/phxsql-store/src/backup.rs",
+        "trecho": """        descartar_parcial(&parcial);
+        return Err(e);
+""",
+        "troca": """        // DEFEITO REPOSTO (555): a recusa sobe e o `.part` fica.
+        return Err(e);
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "parcial-do-zip-nao-fica"],
+        "caem": ["o_rename_que_recusa_nao_deixa_o_part"],
+        "seguem": [
+            "a_escrita_que_recusa_no_meio_nao_deixa_o_part",
+            "a_proxima_corrida_limpa_so_o_part_orfao_que_e_nosso",
+        ],
+    },
 ]
