@@ -17266,6 +17266,49 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "seguem": ["a_copia_que_recusa_no_meio_nao_deixa_a_pasta"],
     },
     {
+        "id": "backup-reaproveitado-que-falha-deixa-o-manifesto-velho",
+        "titulo": "o backup em pasta REAPROVEITADA que falha deixa o `backup.json` velho descrevendo cópias que já mudaram",
+        "porque": (
+            "pedido 577, irmao do 576: a corrida que falha no meio ja "
+            "sobrescreveu as primeiras copias (o nome nao nasceu nela, a "
+            "faxina do 576 nao as tira), e o manifesto da corrida anterior "
+            "ficava dizendo «pronto» com SHA que nao bate. Sai pelo NOME "
+            "(`remove_file`, nao segue link) antes da primeira escrita. A "
+            "prova derruba a copia de verdade (`ulimit -f`, `EFBIG`)."
+        ),
+        "arquivo": "crates/phxsql-store/src/backup.rs",
+        "trecho": """    invalidar_manifesto_velho(destino)?;
+""",
+        "troca": """    // DEFEITO REPOSTO (577): o manifesto velho fica no lugar.
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "manifesto-velho-nao-fica"],
+        "caem": ["a_corrida_que_falha_na_pasta_reaproveitada_leva_o_manifesto_velho"],
+        "seguem": ["o_zip_que_falha_nao_deixa_a_pasta_que_criou"],
+    },
+    {
+        "id": "zip-que-falha-deixa-a-pasta-que-criou",
+        "titulo": "o backup em ZIP que falha deixa vazia a pasta que ele mesmo criou",
+        "porque": (
+            "pedido 577, o menor: o `.part` ja saia (555), mas a pasta que "
+            "`executar_zip` criou ficava vazia na arvore do usuario. Sai "
+            "SO a que nasceu nesta chamada, com `remove_dir` (so vazia, nao "
+            "segue link), pelo motor do 576. A prova derruba a escrita de "
+            "verdade (`ulimit -f`, `EFBIG`)."
+        ),
+        "arquivo": "crates/phxsql-store/src/backup.rs",
+        "trecho": """    if feito.is_err() {
+        descartar_corrida(&criadas);
+    }
+""",
+        "troca": """    // DEFEITO REPOSTO (577): a pasta criada fica.
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "manifesto-velho-nao-fica"],
+        "caem": ["o_zip_que_falha_nao_deixa_a_pasta_que_criou"],
+        "seguem": ["a_corrida_que_falha_na_pasta_reaproveitada_leva_o_manifesto_velho"],
+    },
+    {
         "id": "cascata-dispara-after-do-elo-so-no-commit",
         "titulo": "a mesma cascata do `ao_alterar` dispara o AFTER da filha no COMMIT e não na alteração solta",
         "porque": (

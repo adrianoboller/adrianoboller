@@ -330,7 +330,31 @@ pub fn executar_zip(
             origem.display()
         )));
     }
-    crate::util::criar_diretorio_do_banco(pasta)?;
+    // Pedido 577: a pasta que esta chamada cria sai junto com o erro -- o
+    // `.part` ja sai pelo `escrever_sem_sync`, e sem isto sobrava a pasta
+    // vazia que ninguem pediu. Pelo motor do 576: so' a que NASCEU aqui, e
+    // com `remove_dir`, que so' remove vazia e nao segue link.
+    let mut criadas = Copias::default();
+    if let Err(e) = criar_pasta_da_corrida(pasta, &mut criadas.pastas) {
+        descartar_corrida(&criadas);
+        return Err(e);
+    }
+    let feito = montar_zip(&origem, pasta, banco, admin, quando_ms);
+    if feito.is_err() {
+        descartar_corrida(&criadas);
+    }
+    feito
+}
+
+/// O corpo de [`executar_zip`] depois da pasta criada, separado para o erro
+/// dele passar pela faxina da pasta num lugar so' (pedido 577).
+fn montar_zip(
+    origem: &Path,
+    pasta: &Path,
+    banco: &str,
+    admin: &str,
+    quando_ms: i64,
+) -> Result<(PathBuf, Relatorio)> {
     let alvo = pasta.join(nome_do_zip(
         if banco.is_empty() { "dados" } else { banco },
         admin,
@@ -342,8 +366,8 @@ pub fn executar_zip(
         database: (!banco.is_empty()).then(|| banco.to_string()),
         ..Relatorio::default()
     };
-    for arquivo in listar(&origem)? {
-        let rel = relativo(&origem, &arquivo);
+    for arquivo in listar(origem)? {
+        let rel = relativo(origem, &arquivo);
         let dados = std::fs::read(&arquivo)?;
         zip.acrescentar(&rel, &dados);
         r.bytes += dados.len() as u64;
@@ -588,7 +612,17 @@ fn copiar_arvore(
     copias: &mut Copias,
 ) -> Result<()> {
     criar_pasta_da_corrida(destino, &mut copias.pastas)?;
-    for arquivo in listar(raiz)? {
+    let arquivos = listar(raiz)?;
+    // Pedido 577: o manifesto de uma corrida ANTERIOR sai antes da primeira
+    // escrita. Pasta reaproveitada que falha no meio fica com copias ja
+    // sobrescritas (o nome nao e' desta corrida, a faxina do 576 nao as tira,
+    // e esta certo nao tirar), e o `backup.json` velho continuaria dizendo
+    // «pronto» com SHA que nao bate mais. Sem ele, `op_backups` nao a lista e
+    // o `restaurar` a recusa inteira ("nao e um backup do PhxSql") em vez de
+    // confiar num manifesto que mente. So' depois do `listar`: se a leitura
+    // da raiz recusa, nenhuma copia mudou e o backup velho continua valendo.
+    invalidar_manifesto_velho(destino)?;
+    for arquivo in arquivos {
         let rel = relativo(raiz, &arquivo);
         let dados = std::fs::read(&arquivo)?;
         let alvo = destino.join(&rel);
@@ -612,6 +646,29 @@ fn copiar_arvore(
         });
     }
     Ok(())
+}
+
+/// Apaga pelo NOME o `backup.json` que ja estava no destino -- pedido 577.
+///
+/// `remove_file` nao segue link nem abre FIFO (pedidos 568/570): se o nome
+/// for um link, some o link e o alvo fica. Um DIRETORIO nesse nome nao e'
+/// manifesto de ninguem (o `restaurar` e o `conferir` pedem arquivo) e nao se
+/// apaga -- nada recursivo aqui. A recusa do `remove_file` SOBE: seguir
+/// sobrescrevendo copias com o manifesto velho no lugar e' o defeito que este
+/// passo existe para impedir, e ate aqui nenhuma copia mudou.
+///
+/// **Nao medido:** o `unlink` nao ganha `fsync` do diretorio -- ele roda sob a
+/// trava de dados, e a catraca `alcancam-fsync-2` so' desce. Numa queda da
+/// MAQUINA antes do `fsync` das copias, o manifesto pode voltar junto com
+/// copias que nao voltaram inteiras.
+fn invalidar_manifesto_velho(destino: &Path) -> Result<()> {
+    let manifesto = destino.join(MANIFESTO);
+    match std::fs::symlink_metadata(&manifesto) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e.into()),
+        Ok(m) if m.is_dir() => Ok(()),
+        Ok(_) => Ok(std::fs::remove_file(&manifesto)?),
+    }
 }
 
 /// O que UMA corrida de [`executar`] fez no destino -- pedido 576.
