@@ -1490,6 +1490,9 @@ pub struct Servidor {
     /// passa a escrever um arquivo que antes nao escrevia -- que e a regra do
     /// "guarda nova entra pedida" aplicada ao disco.
     estatica_do_fio: Mutex<Option<[u8; 32]>>,
+    /// A identidade TLS da porta de dados, lida no `escutar` (pedido 572,
+    /// T6). `None` = a porta so fala claro, como sempre falou.
+    tls_dos_dados: Mutex<Option<Arc<phxsql_core::tls::Identidade>>>,
     /// O que o servidor esta fazendo AGORA: atividades, threads e as series.
     ///
     /// `Arc` porque as threads de fundo carregam o registro consigo para
@@ -1819,6 +1822,7 @@ impl Servidor {
             max_linhas_vivo: AtomicU64::new(max_linhas),
             espelho_vivo: AtomicBool::new(espelho),
             estatica_do_fio: Mutex::new(None),
+            tls_dos_dados: Mutex::new(None),
             telemetria: Arc::new(crate::telemetria::Telemetria::default()),
             cadastro_vivo: RwLock::new(cadastro_de_arranque),
             cadastro_geracao: AtomicU64::new(0),
@@ -2315,6 +2319,12 @@ impl Servidor {
     /// Sobe o servidor e atende ate o processo ser encerrado.
     pub fn escutar(self: &Arc<Self>) -> Result<()> {
         let endereco = self.config.endereco()?;
+        // Pediu TLS e nao deu: a porta NAO sobe. Cair calada para o claro
+        // seria o rebaixamento que a `docs/CIFRA-DO-FIO.md` §2 recusa.
+        let tls = self.identidade_http("dados", &self.config.tls, &self.config.bind)?;
+        if let Ok(mut t) = self.tls_dos_dados.lock() {
+            *t = tls;
+        }
         let ouvinte = TcpListener::bind(endereco)
             .map_err(|e| PhxError::Esquema(format!("nao consegui escutar em {endereco}: {e}")))?;
         eprintln!(
@@ -10399,6 +10409,37 @@ impl Servidor {
         let _ = http::responder_json(fluxo, codigo, &Json::objeto(campos));
     }
 
+    /// O fio da conexao da porta de dados: claro, ou TLS quando a porta tem
+    /// identidade e o PRIMEIRO byte e o de um registro de aperto (`0x16`).
+    ///
+    /// Na mesma porta, e decidido pelo cliente -- como o PostgreSQL
+    /// (`SSLRequest`) e o MySQL (a flag no aperto), que negociam o TLS na
+    /// porta de sempre. Um pedido JSON comeca por `{`, e nunca por `0x16`,
+    /// entao a decisao nao adivinha nada. `None` = a conexao acabou aqui.
+    fn abrir_fio_de_dados(
+        &self,
+        fluxo: TcpStream,
+        par: SocketAddr,
+    ) -> Option<(crate::fio_dados::Leitura, crate::fio_dados::Escrita)> {
+        let id = self.tls_dos_dados.lock().ok().and_then(|t| t.clone());
+        let Some(id) = id else {
+            return crate::fio_dados::claro(fluxo).ok();
+        };
+        let mut primeiro = [0u8; 1];
+        match fluxo.peek(&mut primeiro) {
+            Ok(1) if primeiro[0] == 0x16 => {}
+            Ok(1) => return crate::fio_dados::claro(fluxo).ok(),
+            _ => return None,
+        }
+        match phxsql_core::tls::aceitar(fluxo, &id, &[]) {
+            Ok(t) => Some(crate::fio_dados::tls(t)),
+            Err(e) => {
+                self.anotar_aperto_tls_recusado(par, "dados", &e);
+                None
+            }
+        }
+    }
+
     fn atender(&self, fluxo: TcpStream, par: SocketAddr) {
         // So nos testes: a prova real da permissao RAII (pedido 248) precisa
         // de um panico DE VERDADE dentro da thread da conexao. Simula-lo por
@@ -10411,6 +10452,15 @@ impl Servidor {
         let ip = par.ip().to_string();
         let porta = par.port();
         let _ = fluxo.set_read_timeout(Some(Duration::from_secs(self.config.timeout_s)));
+
+        // O soquete vai para o registro para que `encerrar_sessao` consiga
+        // fecha-lo de fora: a thread desta conexao passa a vida parada dentro
+        // de um `read_line`, e so um `shutdown` a acorda. Clonado ANTES do
+        // aperto TLS, que toma posse do soquete.
+        let para_fechar = fluxo.try_clone().ok().map(Arc::new);
+        let Some((leitura, mut saida)) = self.abrir_fio_de_dados(fluxo, par) else {
+            return;
+        };
 
         // Antes de qualquer coisa: quem esta na lista de bloqueio nao entra.
         let agora = crate::agora_ms();
@@ -10429,33 +10479,21 @@ impl Servidor {
                 tabela: String::new(),
                 codigo: 0,
             });
-            let escrita = fluxo.try_clone();
-            if let Ok(mut saida) = escrita {
-                let _ = writeln!(
-                    saida,
-                    "{}",
-                    self.resposta_erro(
-                        "conexao",
-                        &PhxError::Autorizacao(self.recado_de_bloqueio(&b)),
-                        0
-                    )
-                    .escrever()
-                );
-            }
+            let _ = writeln!(
+                saida,
+                "{}",
+                self.resposta_erro(
+                    "conexao",
+                    &PhxError::Autorizacao(self.recado_de_bloqueio(&b)),
+                    0
+                )
+                .escrever()
+            );
             return;
         }
 
         let permitido = self.config.ip_permitido(&ip);
-        let escrita = fluxo.try_clone();
-        // O soquete vai para o registro para que `encerrar_sessao` consiga
-        // fecha-lo de fora: a thread desta conexao passa a vida parada dentro
-        // de um `read_line`, e so um `shutdown` a acorda.
-        let para_fechar = fluxo.try_clone().ok().map(Arc::new);
-        let mut leitor = BufReader::new(fluxo);
-        let mut saida = match escrita {
-            Ok(f) => f,
-            Err(_) => return,
-        };
+        let mut leitor = BufReader::new(leitura);
 
         if !permitido {
             self.violacao_leve(&ip, "conexao", "ip fora da lista de permitidos");
@@ -10538,7 +10576,9 @@ impl Servidor {
             // se refresca na hora da pergunta, pela mesma funcao que o
             // `despachar` usa, e a linha pequena -- quase todas -- nem
             // pergunta.
-            let cifrado = canal.cifrado();
+            // O TLS da porta (pedido 572) e cifra de verdade, e conta como tal
+            // para o teto de quem ainda nao provou quem e.
+            let cifrado = canal.cifrado() || saida.cifrado();
             let mut teto = TETO_DO_APERTO;
             // A linha mora DENTRO da volta, e nao fora do laco -- pedido 442,
             // a metade da memoria. Declarada fora, a `String` velha so morria
@@ -10664,7 +10704,7 @@ impl Servidor {
                     sessao.transcricao_do_fio = canal.transcricao();
                     continue;
                 }
-                if self.config.cifra_fio.exigir {
+                if self.config.cifra_fio.exigir && !saida.cifrado() {
                     self.recusar_texto_claro(&mut saida, &ip, porta);
                     return;
                 }
@@ -10907,7 +10947,7 @@ impl Servidor {
         &self,
         pedido: &Json,
         canal: &mut Canal,
-        saida: &mut TcpStream,
+        saida: &mut crate::fio_dados::Escrita,
         ip: &str,
         porta: u16,
     ) -> bool {
@@ -10974,7 +11014,7 @@ impl Servidor {
     /// recebe algo que ele SABE exibir, em vez de um silencio ou de uma
     /// conexao que morre sem motivo. O estrago de ligar isto por engano tem de
     /// ser visivel no primeiro pedido.
-    fn recusar_texto_claro(&self, saida: &mut TcpStream, ip: &str, porta: u16) {
+    fn recusar_texto_claro(&self, saida: &mut crate::fio_dados::Escrita, ip: &str, porta: u16) {
         let erro = PhxError::Autorizacao(self.msg("erro.cifra_do_fio_exigida", &[]));
         self.anotar(&Acesso {
             quando_ms: crate::agora_ms(),

@@ -4159,6 +4159,10 @@ pub struct Config {
     pub politica: Politica,
     /// Arquivo da lista de bloqueio.
     pub blacklist: PathBuf,
+    /// TLS nativo na porta de DADOS (pedido 572, T6): na mesma porta, pelo
+    /// primeiro byte -- como o PostgreSQL e o MySQL, que negociam o TLS na
+    /// porta de sempre. Ver [`TlsPorta`].
+    pub tls: TlsPorta,
     /// Interface web.
     pub web: Web,
     /// Webservice REST com OpenAPI. Ver [`Rest`].
@@ -4247,6 +4251,7 @@ impl std::fmt::Debug for Config {
             cadastro,
             politica,
             blacklist,
+            tls,
             web,
             rest,
             backup,
@@ -4283,6 +4288,7 @@ impl std::fmt::Debug for Config {
             .field("cadastro", cadastro)
             .field("politica", politica)
             .field("blacklist", blacklist)
+            .field("tls", tls)
             .field("web", web)
             .field("rest", rest)
             .field("backup", backup)
@@ -4314,8 +4320,11 @@ impl std::fmt::Debug for Config {
 // no primeiro nivel -- quem a escrevesse no arquivo levava um "campo que este
 // servidor nao conhece" sobre um campo que ele le e obedece. Aviso falso gasta
 // a confianca do aviso verdadeiro.
-const CAMPOS_CONHECIDOS: [&str; 31] = [
+const CAMPOS_CONHECIDOS: [&str; 34] = [
     "bind",
+    "tls",
+    "tls_certificado",
+    "tls_chave",
     "base",
     "token",
     "max_linhas",
@@ -4575,6 +4584,7 @@ impl Default for Config {
             cadastro: Cadastro::default(),
             politica: Politica::default(),
             blacklist: PathBuf::from("blacklist.json"),
+            tls: TlsPorta::default(),
             web: Web::default(),
             rest: Rest::default(),
             backup: Backup::default(),
@@ -4794,6 +4804,7 @@ impl Config {
                     .map(|seg| seg.texto_ou("blacklist", "blacklist.json"))
                     .unwrap_or("blacklist.json"),
             ),
+            tls: TlsPorta::de_json(j),
             web: Web::de_json(j, &mut saidas),
             rest: Rest::de_json(j),
             backup: Backup::de_json(j)?,

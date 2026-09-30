@@ -970,6 +970,14 @@ ser a única saída.
 - **Porta TLS não responde em claro**: quem fala HTTP cru recebe um alerta TLS
   na hora, e nenhum byte de HTTP.
 
+**A porta de dados (5000) também**, com `"tls": true` na raiz do `config.json`
+(e `tls_certificado`/`tls_chave`, mesma regra; o autoassinado é
+`tls-dados-*.pem`). Na **mesma porta**: o cliente decide pelo primeiro byte —
+`0x16` abre o aperto TLS, `{` é o JSON Lines de sempre —, como o PostgreSQL e o
+MySQL negociam o TLS na porta deles. O cliente em claro continua exatamente
+como era, inclusive recusado pela `cifra_fio.exigir`; o que chega por TLS conta
+como cifrado. Prova: `tests/tls-da-porta-de-dados.rs`.
+
 O que se oferece hoje: `TLS_CHACHA20_POLY1305_SHA256` com X25519 ou P-256, e
 assinatura `ecdsa_secp256r1_sha256`. O **AES-128-GCM** (obrigatório pela §9.1 da
 RFC 8446) é o T5 do pedido 572; a **porta 5000** e o DbLink, o T6. Provas:

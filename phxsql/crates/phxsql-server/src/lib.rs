@@ -31,6 +31,7 @@ pub mod direito_coluna;
 pub mod diretivas;
 pub mod email;
 pub mod exportar;
+mod fio_dados;
 pub mod http;
 pub mod idiomas;
 pub mod jobs;
