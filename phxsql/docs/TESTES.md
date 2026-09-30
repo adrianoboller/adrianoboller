@@ -977,9 +977,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `carga-adiada-orfa-sem-reconstruir` | a carga adiada que sai sem o `bulkinsert(false)` (conexão caída, reserva vencida) deixa o índice suspenso até o próximo arranque | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**332 das 488 guardas do catálogo: 1 aposentada, 327 provadas, 4 redundantes** — 9057 s de mutação, medido em 2026-09-16 15:25.
+**332 das 489 guardas do catálogo: 1 aposentada, 327 provadas, 4 redundantes** — 9057 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 157 das 488 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 157 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 158 das 489 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 158 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
@@ -1138,6 +1138,7 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `exclusao-de-vez-sem-conferir-o-teto-do-diario` — no teto do diário, a exclusão de vez tira a linha do `.reg` e só então o `.log` recusa
 - `exclusao-de-vez-motivo-que-falha-pula-o-diario` — na exclusão de vez, o `.reason` que falha com o slot já livre devolve o erro antes do `.log` — a linha some sem evento
 - `insercao-fts-que-falha-pula-o-diario` — na inclusão, o `.fts` que falha com a linha já no `.reg` devolve o erro antes do `.log` — a linha fica sem evento
+- `zip-que-falha-no-rename-deixa-o-part` — o `rename` final do backup em ZIP que recusa deixa o `.part` na pasta para sempre
 
 As guardas que esta corrida ainda cita, hoje aposentadas:
 
