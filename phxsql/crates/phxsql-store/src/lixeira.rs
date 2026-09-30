@@ -560,6 +560,12 @@ impl LixeiraFile {
         self.volumes.sincronizar()
     }
 
+    /// O nome de um volume, para quem precisa do `fsync` da pasta dele depois
+    /// de apagar -- o `esvaziar`, pedido 591.
+    pub(crate) fn caminho(&self, volume: u32) -> std::path::PathBuf {
+        self.volumes.caminho(volume)
+    }
+
     /// Quantos arquivos o `.trash` ja mandou ao disco de verdade. Ver
     /// `Volumes::sincronizados` -- conta o ARQUIVO, e nao a chamada.
     pub fn sincronizados(&self) -> u64 {

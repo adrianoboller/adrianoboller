@@ -18362,6 +18362,97 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         ],
     },
     {
+        "id": "excluir-tabela-sem-fsync-da-pasta",
+        "titulo": "`excluir_tabela` respondia «excluída» com os `unlink` só no cache do núcleo: numa queda a tabela voltava, inteira ou pela metade",
+        "porque": (
+            "pedido 591, irmao do 589. O `unlink` e dado da PASTA; sem o "
+            "`fsync` dela a tabela que o cliente ouviu excluir volta numa "
+            "queda -- o `.reg` sem o `.ndx`, ou inteira, e a regra primordial "
+            "conferiu um estado que a queda desfaz. `excluir_tabela_adiando_o_fsync` "
+            "devolve os nomes que sairam num `PorSincronizar`, e o "
+            "`levar_ao_disco` sincroniza a pasta -- no servidor, fora da trava."
+        ),
+        "arquivo": "crates/phxsql-store/src/catalogo.rs",
+        "trecho": """        let pendente = PorSincronizar::entradas_que_sairam(sairam);""",
+        "troca": """        // DEFEITO REPOSTO (591): os nomes apagados sem fsync da pasta.
+        let _ = sairam;
+        let pendente = PorSincronizar::default();""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": ["catalogo::testes_excluir_vai_ao_disco::excluir_esvaziar_e_expurgar_vao_ao_disco"],
+        "seguem": [
+            "catalogo::testes_gestao::excluir_tabela_leva_os_arquivos_dela_e_so_os_dela",
+            "catalogo::testes_copia_entre_bancos::excluir_tabela_nao_deixa_arquivo_nenhum_para_tras",
+        ],
+    },
+    {
+        "id": "esvaziar-lixeira-sem-fsync-da-pasta",
+        "titulo": "`esvaziar_lixeira` apagava os volumes do `.trash` sem `fsync` da pasta: numa queda o dado apagado de vez voltava, com o `.reason` dizendo que saiu",
+        "porque": (
+            "pedido 591, irmao do excluir. O esvaziar apaga os volumes do "
+            "`.trash` e recria o primeiro; as duas coisas sao entradas do "
+            "diretorio. `esvaziar_lixeira_adiando_o_fsync` devolve o nome, e "
+            "o `levar_ao_disco` sincroniza a pasta -- no servidor, fora da trava."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        let pendente =
+            crate::catalogo::PorSincronizar::entradas_que_sairam(vec![self.lixeira.caminho(1)]);""",
+        "troca": """        // DEFEITO REPOSTO (591): o `.trash` esvaziado sem fsync da pasta.
+        let pendente = crate::catalogo::PorSincronizar::default();""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": ["catalogo::testes_excluir_vai_ao_disco::excluir_esvaziar_e_expurgar_vao_ao_disco"],
+        "seguem": [
+            "catalogo::testes_gestao::excluir_tabela_leva_os_arquivos_dela_e_so_os_dela",
+        ],
+    },
+    {
+        "id": "expurgo-da-trilha-sem-fsync-da-pasta",
+        "titulo": "A fase 3 do expurgo da trilha apagava os volumes do `.lgpd` sem `fsync` da pasta: numa queda o volume vencido voltava, com o rastro selado dizendo que saiu",
+        "porque": (
+            "pedido 591, irmao do excluir. O comentario do `apagar_volume` "
+            "dizia que nenhum `unlink` desta casa fazia o `fsync` da pasta e "
+            "deixava para um ajudante unico; o ajudante e o `PorSincronizar`. "
+            "`concluir_expurgo_da_trilha_adiando_o_fsync` devolve os nomes, e "
+            "o servidor os leva ao disco numa fase 4, fora da trava."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        let pendente = crate::catalogo::PorSincronizar::entradas_que_sairam(nomes);""",
+        "troca": """        // DEFEITO REPOSTO (591): os volumes expurgados sem fsync da pasta.
+        let _: Vec<std::path::PathBuf> = nomes;
+        let pendente = crate::catalogo::PorSincronizar::default();""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": ["catalogo::testes_excluir_vai_ao_disco::excluir_esvaziar_e_expurgar_vao_ao_disco"],
+        "seguem": [
+            "catalogo::testes_gestao::excluir_tabela_leva_os_arquivos_dela_e_so_os_dela",
+        ],
+    },
+    {
+        "id": "levar-ao-disco-esquece-o-que-saiu",
+        "titulo": "O `levar_ao_disco` sincronizava a pasta do que nasceu e esquecia a do que saiu: as três exclusões respondiam antes do disco",
+        "porque": (
+            "pedido 591. O motor e um so para criar, copiar e apagar; se o "
+            "laco das entradas que sairam cai, as tres exclusoes voltam a "
+            "responder com o `unlink` so no cache, e as criacoes do 589 "
+            "continuam certas -- por isso a guarda do motor e separada."
+        ),
+        "arquivo": "crates/phxsql-store/src/catalogo.rs",
+        "trecho": """        for entrada in &self.entradas_que_sairam {
+            pastas.entry(pai_de(entrada)).or_insert(entrada);
+        }""",
+        "troca": """        // DEFEITO REPOSTO (591): o motor esquece a pasta do que saiu.
+        for entrada in &self.entradas_que_sairam {
+            let _ = entrada;
+        }""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": ["catalogo::testes_excluir_vai_ao_disco::excluir_esvaziar_e_expurgar_vao_ao_disco"],
+        "seguem": [
+            "catalogo::testes_criar_vai_ao_disco::criar_database_schema_e_tabela_vao_ao_disco",
+        ],
+    },
+    {
         "id": "backup-atravessa-link-na-pasta-do-meio",
         "titulo": "o backup volta a criar e atravessar as pastas do destino pelo NOME: um link numa pasta do meio (`copias/loja -> dados/rh`) grava a cópia por cima da tabela viva de outro database",
         "porque": (

@@ -7645,11 +7645,33 @@ impl Table {
 
     /// Esvazia a lixeira. Registra o expurgo no `.reason` ANTES de apagar:
     /// o motivo tem de sobreviver ao dado.
+    ///
+    /// Responde depois do `fsync` da pasta (pedido 591): o esvaziar apaga os
+    /// volumes do `.trash` e recria o primeiro, e as duas coisas sao entradas
+    /// do diretorio. Sem o `fsync` dele, uma queda devolvia o `.trash` velho
+    /// -- o dado que o dono mandou apagar de vez, com o rastro no `.reason`
+    /// dizendo que saiu. Quem segura a trava global usa
+    /// [`Self::esvaziar_lixeira_adiando_o_fsync`].
     pub fn esvaziar_lixeira(&mut self, motivo: &str) -> Result<u64> {
+        let (apagadas, pendente) = self.esvaziar_lixeira_adiando_o_fsync(motivo)?;
+        pendente.levar_ao_disco()?;
+        Ok(apagadas)
+    }
+
+    /// O [`Self::esvaziar_lixeira`] sem o `fsync` da pasta, que volta em
+    /// [`crate::catalogo::PorSincronizar`] para o servidor esperar o disco
+    /// fora da trava global (catraca `alcancam-fsync-2`).
+    pub fn esvaziar_lixeira_adiando_o_fsync(
+        &mut self,
+        motivo: &str,
+    ) -> Result<(u64, crate::catalogo::PorSincronizar)> {
         self.conferir_motivo(motivo)?;
         self.motivos.registrar(Tipo::Expurgo, 0, motivo, "")?;
         self.motivos.sincronizar()?;
-        self.lixeira.esvaziar()
+        let apagadas = self.lixeira.esvaziar()?;
+        let pendente =
+            crate::catalogo::PorSincronizar::entradas_que_sairam(vec![self.lixeira.caminho(1)]);
+        Ok((apagadas, pendente))
     }
 
     /// Fase 1 do expurgo da trilha (pedido 368): decide o que sai e grava o
@@ -7704,11 +7726,30 @@ impl Table {
     /// Fase 3 do expurgo da trilha: derruba os volumes que a fase 1 decidiu.
     /// So aceita um expurgo SELADO -- o rastro ja no disco. Devolve os volumes
     /// que sairam. Ver [`TrilhaFile::apagar_expurgados`].
+    ///
+    /// Responde depois do `fsync` da pasta (pedido 591, irmao do excluir):
+    /// sem ele, o volume expurgado por prazo da LGPD voltava numa queda, com
+    /// o rastro selado dizendo que saiu. O servidor usa
+    /// [`Self::concluir_expurgo_da_trilha_adiando_o_fsync`].
     pub fn concluir_expurgo_da_trilha(
         &mut self,
         selado: &trilha::ExpurgoSelado,
     ) -> Result<Vec<u32>> {
-        self.trilha.apagar_expurgados(selado)
+        let (saiu, pendente) = self.concluir_expurgo_da_trilha_adiando_o_fsync(selado)?;
+        pendente.levar_ao_disco()?;
+        Ok(saiu)
+    }
+
+    /// A fase 3 sem o `fsync` da pasta, para o servidor esperar o disco fora
+    /// da trava global, como ja faz com o rastro na fase 2.
+    pub fn concluir_expurgo_da_trilha_adiando_o_fsync(
+        &mut self,
+        selado: &trilha::ExpurgoSelado,
+    ) -> Result<(Vec<u32>, crate::catalogo::PorSincronizar)> {
+        let saiu = self.trilha.apagar_expurgados(selado)?;
+        let nomes = saiu.iter().map(|v| self.trilha.caminho(*v)).collect();
+        let pendente = crate::catalogo::PorSincronizar::entradas_que_sairam(nomes);
+        Ok((saiu, pendente))
     }
 
     /// As tres fases do expurgo da trilha de uma vez, para quem nao tem trava

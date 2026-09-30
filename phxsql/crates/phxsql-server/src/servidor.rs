@@ -20009,7 +20009,7 @@ impl Servidor {
         }
         let dados = self.travar_dados()?;
         let db = dados.abrir_database(database)?;
-        let apagados = db.excluir_tabela(tabela)?;
+        let (apagados, pendente) = db.excluir_tabela_adiando_o_fsync(tabela)?;
         self.renomear_nas_sujas(database, tabela, None);
         self.esquecer_diario(database, tabela);
         // Os gatilhos da tabela saem junto, como no MySQL(R): um orfao
@@ -20020,6 +20020,12 @@ impl Servidor {
             gatilhos_apagados = r.excluir_gatilhos_da_tabela(database, tabela)?;
             self.ha_gatilhos.store(r.ha_gatilhos(), Ordering::Relaxed);
         }
+        // Pedido 591: o `fsync` da pasta, onde moravam os nomes que sairam,
+        // fora da trava e antes da resposta -- sem ele a tabela «excluida»
+        // volta numa queda, inteira ou pela metade.
+        drop(db);
+        drop(dados);
+        pendente.levar_ao_disco()?;
         Ok(Json::objeto(vec![
             ("database", Json::texto_de(database)),
             ("tabela", Json::texto_de(tabela)),
@@ -23204,10 +23210,15 @@ impl Servidor {
                     .into(),
             ));
         }
-        let _trava = self.travar_dados()?;
-        let mut t = self.abrir_travada(&_trava, p, sessao)?;
-        let apagadas = t.esvaziar_lixeira(&motivo)?;
+        let trava = self.travar_dados()?;
+        let mut t = self.abrir_travada(&trava, p, sessao)?;
+        let (apagadas, pendente) = t.esvaziar_lixeira_adiando_o_fsync(&motivo)?;
         t.sincronizar()?;
+        // Pedido 591: o `fsync` da pasta do `.trash` fora da trava e antes da
+        // resposta -- sem ele o dado apagado de vez volta numa queda.
+        drop(t);
+        drop(trava);
+        pendente.levar_ao_disco()?;
         Ok(Json::objeto(vec![
             ("database", Json::texto_de(p.texto_ou("database", ""))),
             ("tabela", Json::texto_de(p.texto_ou("tabela", ""))),
@@ -23378,12 +23389,16 @@ impl Servidor {
         // Fase 2, SEM a trava: o rastro vai ao disco.
         let selado = preparado.selar()?;
         // Fase 3, com a trava de novo: os volumes saem.
-        let restam = {
+        let (restam, pendente) = {
             let dados = self.travar_dados()?;
             let mut t = self.abrir_travada(&dados, p, sessao)?;
-            t.concluir_expurgo_da_trilha(&selado)?;
-            t.total_da_trilha()?
+            let (_, pendente) = t.concluir_expurgo_da_trilha_adiando_o_fsync(&selado)?;
+            (t.total_da_trilha()?, pendente)
         };
+        // Fase 4, SEM a trava (pedido 591): o `fsync` da pasta, onde moravam
+        // os volumes que sairam. Sem ele o volume vencido volta numa queda,
+        // com o rastro selado dizendo que saiu.
+        pendente.levar_ao_disco()?;
         Ok(ExpurgoDaTabela {
             expurgo: selado.em_expurgo(),
             restam,

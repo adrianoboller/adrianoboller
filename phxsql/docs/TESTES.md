@@ -991,6 +991,11 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `zip-fsync-reabre-o-part` | o `fsync` do `.part` do backup em ZIP cai num descritor REABERTO, e não no de quem escreveu | 1 | ✅ provada |
 | `backup-manifesto-novo-sem-fsync-da-pasta` | o manifesto novo do backup nasce sem o `fsync` da pasta de onde o `backup.json` velho saiu | 1 | ✅ provada |
 | `zip-rename-que-recusa-deixa-a-pasta` | o `rename` final do backup em ZIP que recusa deixa vazia a pasta que a corrida criou | 1 | ✅ provada |
+| `criar-tabela-sem-fsync-dos-arquivos` | `criar_tabela` respondia «criada» com o `.reg`, o `.ndx` e os outros arquivos só no cache do núcleo: numa queda a tabela podia sumir ou voltar sem o esquema | 1 | ✅ provada |
+| `excluir-tabela-sem-fsync-da-pasta` | `excluir_tabela` respondia «excluída» com os `unlink` só no cache do núcleo: numa queda a tabela voltava, inteira ou pela metade | 1 | ✅ provada |
+| `esvaziar-lixeira-sem-fsync-da-pasta` | `esvaziar_lixeira` apagava os volumes do `.trash` sem `fsync` da pasta: numa queda o dado apagado de vez voltava, com o `.reason` dizendo que saiu | 1 | ✅ provada |
+| `expurgo-da-trilha-sem-fsync-da-pasta` | A fase 3 do expurgo da trilha apagava os volumes do `.lgpd` sem `fsync` da pasta: numa queda o volume vencido voltava, com o rastro selado dizendo que saiu | 1 | ✅ provada |
+| `levar-ao-disco-esquece-o-que-saiu` | O `levar_ao_disco` sincronizava a pasta do que nasceu e esquecia a do que saiu: as três exclusões respondiam antes do disco | 1 | ✅ provada |
 | `backup-atravessa-link-na-pasta-do-meio` | o backup volta a criar e atravessar as pastas do destino pelo NOME: um link numa pasta do meio (`copias/loja -> dados/rh`) grava a cópia por cima da tabela viva de outro database | 1 | ✅ provada |
 | `backup-escreve-no-arquivo-de-outro-dono` | o backup volta a truncar e reescrever o arquivo regular de OUTRO dono (ou com link físico) que já está no destino: quem plantou fica dono da cópia do banco, e no ZIP o `.part` plantado vira o `.zip` final | 1 | ✅ provada |
 | `fifo-trocada-na-janela-para-o-backup` | o motor da permissão volta a abrir pelo nome seguindo link e esperando leitor: trocar o nome por um link para FIFO entre o `lstat` e o `open` para o backup com a trava de dados na mão | 1 | ✅ provada |
@@ -1000,9 +1005,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `faxina-do-backup-sem-conferir-o-inode` | a faxina do backup remove pelo descritor da mãe mas não confere o inode: a pasta vazia de outro que entrou no nome da nossa sai | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**355 das 533 guardas do catálogo: 1 aposentada, 350 provadas, 4 redundantes** — 9435 s de mutação, medido em 2026-09-16 15:25.
+**360 das 537 guardas do catálogo: 1 aposentada, 355 provadas, 4 redundantes** — 9484 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 179 das 533 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 179 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 178 das 537 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 178 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
@@ -1179,7 +1184,6 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `copia-de-tabela-sem-fsync-da-pasta` — A cópia de tabela sincronizava os arquivos e não a pasta: o nome novo podia sumir numa queda depois do «ok»
 - `colar-em-schema-novo-sem-fsync-do-database` — Colar num schema que ainda não existe criava a pasta dele sem `fsync` do database: a cópia sincronizada podia morar numa pasta que a queda leva
 - `porta-anunciada-em-pedacos` — A linha «porta de dados escutando em …» saía em várias escritas: quem lia o log no meio via a porta pela metade
-- `criar-tabela-sem-fsync-dos-arquivos` — `criar_tabela` respondia «criada» com o `.reg`, o `.ndx` e os outros arquivos só no cache do núcleo: numa queda a tabela podia sumir ou voltar sem o esquema
 - `garantir-schema-sem-fsync-do-database` — `criar_schema` e `criar_tabela` num schema novo criavam a pasta sem `fsync` do database: o schema que o cliente ouviu criar podia sumir numa queda
 - `criar-database-sem-fsync-da-base` — `criar_database` criava a pasta sem `fsync` da base: o database que o cliente ouviu criar podia sumir numa queda
 - `marca-do-database-sem-fsync` — O marcador `_database.json` nascia sem `fsync`: numa queda uma colmeia voltava como database padrão, calada

@@ -95,9 +95,9 @@
       "id": "excluir-tabela-lista-curta",
       "titulo": "`excluir_tabela` apaga SEIS extensões e a tabela já tem NOVE",
       "veredito": "PROVADA",
-      "segundos": 2.06,
+      "segundos": 7.63,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-09-30 23:46"
     },
     {
       "id": "backup-sem-sha256",
@@ -2788,6 +2788,46 @@
       "segundos": 5.09,
       "notas": [],
       "quando": "2026-09-30 23:05"
+    },
+    {
+      "id": "criar-tabela-sem-fsync-dos-arquivos",
+      "titulo": "`criar_tabela` respondia «criada» com o `.reg`, o `.ndx` e os outros arquivos só no cache do núcleo: numa queda a tabela podia sumir ou voltar sem o esquema",
+      "veredito": "PROVADA",
+      "segundos": 9.08,
+      "notas": [],
+      "quando": "2026-09-30 23:46"
+    },
+    {
+      "id": "excluir-tabela-sem-fsync-da-pasta",
+      "titulo": "`excluir_tabela` respondia «excluída» com os `unlink` só no cache do núcleo: numa queda a tabela voltava, inteira ou pela metade",
+      "veredito": "PROVADA",
+      "segundos": 8.76,
+      "notas": [],
+      "quando": "2026-09-30 23:45"
+    },
+    {
+      "id": "esvaziar-lixeira-sem-fsync-da-pasta",
+      "titulo": "`esvaziar_lixeira` apagava os volumes do `.trash` sem `fsync` da pasta: numa queda o dado apagado de vez voltava, com o `.reason` dizendo que saiu",
+      "veredito": "PROVADA",
+      "segundos": 8.78,
+      "notas": [],
+      "quando": "2026-09-30 23:45"
+    },
+    {
+      "id": "expurgo-da-trilha-sem-fsync-da-pasta",
+      "titulo": "A fase 3 do expurgo da trilha apagava os volumes do `.lgpd` sem `fsync` da pasta: numa queda o volume vencido voltava, com o rastro selado dizendo que saiu",
+      "veredito": "PROVADA",
+      "segundos": 9.18,
+      "notas": [],
+      "quando": "2026-09-30 23:45"
+    },
+    {
+      "id": "levar-ao-disco-esquece-o-que-saiu",
+      "titulo": "O `levar_ao_disco` sincronizava a pasta do que nasceu e esquecia a do que saiu: as três exclusões respondiam antes do disco",
+      "veredito": "PROVADA",
+      "segundos": 7.33,
+      "notas": [],
+      "quando": "2026-09-30 23:46"
     },
     {
       "id": "backup-atravessa-link-na-pasta-do-meio",

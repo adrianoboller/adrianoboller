@@ -397,6 +397,12 @@ dia, nunca no desejado:
   faxina que remove a pasta criada pelo nome real
   (`faxina-do-backup-remove-pasta-pelo-nome`) e a que remove sem conferir o
   inode (`faxina-do-backup-sem-conferir-o-inode`). Contado pelo `--catraca`.
+  **SUBIU para 538 em 30/09/2026** (pedido 591): quatro guardas -- a tabela
+  excluida sem `fsync` da pasta (`excluir-tabela-sem-fsync-da-pasta`), o
+  `.trash` esvaziado idem (`esvaziar-lixeira-sem-fsync-da-pasta`), a fase 3
+  do expurgo da trilha idem (`expurgo-da-trilha-sem-fsync-da-pasta`) e o
+  motor que esquece a pasta do que saiu (`levar-ao-disco-esquece-o-que-saiu`).
+  No merge com o 593 (534): 534 + 4 = 538.
   impedir. Ele e a unica coisa nesta regua que reprova o APAGAMENTO; tudo o
   mais aqui reprova o envelhecimento.
 
@@ -505,7 +511,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 534
+PISO_DAS_ENTRADAS = 538
 
 # ------------------------------------------------------------- APOSENTADAS
 #

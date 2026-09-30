@@ -1684,6 +1684,12 @@ impl TrilhaFile {
         }
         Ok(saiu)
     }
+
+    /// O nome de um volume, para quem precisa do `fsync` da pasta dele depois
+    /// de apagar -- a fase 3 do expurgo, pedido 591.
+    pub(crate) fn caminho(&self, volume: u32) -> std::path::PathBuf {
+        self.volumes.caminho(volume)
+    }
 }
 
 #[cfg(test)]
