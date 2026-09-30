@@ -14156,11 +14156,23 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
 """,
         "pacote": "phxsql-store",
         "alvo": ["--test", "fechar-nao-baixa-a-marca"],
+        # ATUALIZADO em 30/09/2026: `a_escrita_que_nao_terminou_tira_o_atestado`
+        # estava em `seguem` e a guarda dava ESTRAGOU. Medido: com o defeito
+        # reposto ele cai na PREMISSA (linha 203, «o cabecalho no arquivo e o
+        # mesmo que o fechar atestou») -- o fechar sem fsync reescreve o
+        # cabecalho e muda o CRC. Cair na premissa ainda e acusar o defeito,
+        # entao ele passa para `caem`. O mesmo vale para
+        # `renomear_duplicar_e_colar_tabela_recem_escrita_abrem_sem_recusa`
+        # (cai em «o destino chega marcado», linha 257): todo teste deste
+        # binario parte de «o fechar deixa o 1», e a troca desfaz justamente
+        # isso -- nao ha teste aqui que fique de pe, e `seguem` fica vazio
+        # em vez de apontar um que mentiria.
         "caem": [
             "o_fechar_deixa_o_1_e_so_o_sincronizar_grava_o_0",
             "o_processo_novo_manda_reconstruir_o_que_so_foi_fechado",
+            "a_escrita_que_nao_terminou_tira_o_atestado",
         ],
-        "seguem": ["a_escrita_que_nao_terminou_tira_o_atestado"],
+        "seguem": [],
     },
     {
         "id": "atestado-sobrevive-a-escrita",
@@ -15644,21 +15656,47 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "o texto de hoje -- ver a entrada IRMA `backup-fsync-derruba-o-"
             "servidor`, que testa so essa segunda linha."
         ),
-        "arquivo": "crates/phxsql-store/src/backup.rs",
-        "trecho": """fn sincronizar_arquivo(alvo: &Path) -> Result<()> {
+        # ATUALIZADO em 30/09/2026 (pedido 552): o `fsync` saiu do
+        # `sincronizar_arquivo` (que reabre pelo nome e hoje so atende a
+        # copia acima do teto de descritores) para o descritor que escreveu.
+        # Com a troca so no caminho velho a guarda dava NAO PEGOU 0/2 -- o
+        # defeito reposto nao alcancava mais o caminho que os testes usam.
+        # As tres trocas repoem os tres `fsync` do arquivo de backup.
+        "trocas": [
+            {
+                "arquivo": "crates/phxsql-store/src/backup.rs",
+                "trecho": """fn sincronizar_arquivo(alvo: &Path) -> Result<()> {
     let arquivo = OpenOptions::new().read(true).write(true).open(alvo)?;
     // `sem_abortar`: o destino do backup nao e o disco do banco que o
     // gancho do 509 protege -- pedido 524, condicao C1 do parecer do DBA.
     crate::sincronia::sync_all_sem_abortar(&arquivo, alvo)
 }
 """,
-        "troca": """fn sincronizar_arquivo(alvo: &Path) -> Result<()> {
-    // DEFEITO REPOSTO (524): nao sincroniza -- "concluido" pode nao
+                "troca": """fn sincronizar_arquivo(alvo: &Path) -> Result<()> {
+    // DEFEITO REPOSTO (524, 1/3): nao sincroniza -- "concluido" pode nao
     // estar no disco do destino.
     let _ = alvo;
     Ok(())
 }
 """,
+            },
+            {
+                "arquivo": "crates/phxsql-store/src/backup.rs",
+                "trecho": """            Some(arquivo) => crate::sincronia::sync_all_sem_abortar(arquivo, caminho)?,
+""",
+                "troca": """            // DEFEITO REPOSTO (524, 2/3): a copia aberta nao sincroniza.
+            Some(_) => {}
+""",
+            },
+            {
+                "arquivo": "crates/phxsql-store/src/backup.rs",
+                "trecho": """    let trocado = crate::sincronia::sync_all_sem_abortar(&zip.arquivo, &parcial)
+""",
+                "troca": """    // DEFEITO REPOSTO (524, 3/3): o `.part` nao sincroniza.
+    let trocado = Ok(())
+""",
+            },
+        ],
         "pacote": "phxsql-store",
         "alvo": ["--lib"],
         "caem": [
@@ -18071,14 +18109,18 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "porque": (
             "pedido 586. A entrada de um arquivo novo e dado da PASTA; sem o "
             "`fsync` dela, o conteudo sincronizado pode voltar sem nome que o "
-            "alcance. O `levar_ao_disco` sincroniza a pasta de destino depois "
-            "do ultimo arquivo, pelo motor `sincronia`."
+            "alcance. O `levar_ao_disco` sincroniza a pasta de cada arquivo "
+            "depois do ultimo, pelo motor `sincronia` (desde o 589, o laco das "
+            "pastas e um so para copia e criacao)."
         ),
         "arquivo": "crates/phxsql-store/src/catalogo.rs",
-        "trecho": """        if let Some((_, caminho)) = self.arquivos.first() {
-            crate::sincronia::sincronizar_os_diretorios(caminho, caminho, true)?;""",
-        "troca": """        if let Some((_, caminho)) = self.arquivos.first() {
-            // DEFEITO REPOSTO (586): a pasta de destino sem fsync.""",
+        "trecho": """        for (_, caminho) in &self.arquivos {
+            pastas.entry(pai_de(caminho)).or_insert(caminho);
+        }""",
+        "troca": """        // DEFEITO REPOSTO (586): a pasta dos arquivos sem fsync.
+        for (_, caminho) in &self.arquivos {
+            let _ = caminho;
+        }""",
         "pacote": "phxsql-store",
         "alvo": ["--lib"],
         "caem": ["catalogo::testes_copia_entre_bancos::as_copias_de_tabela_vao_ao_disco"],
@@ -18092,13 +18134,17 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "porque": (
             "pedido 586. `copiar_tabela_para` com destino `schema.tabela` "
             "cria a pasta do schema (`garantir_schema`), e a entrada dela e "
-            "dado do DATABASE. O `levar_ao_disco` sincroniza o database quando "
-            "a pasta nasceu nesta copia (`pasta_nova`)."
+            "dado do DATABASE. O `levar_ao_disco` sincroniza a mae de cada "
+            "pasta que nasceu (`entradas_novas`)."
         ),
         "arquivo": "crates/phxsql-store/src/catalogo.rs",
-        "trecho": """                    crate::sincronia::sincronizar_os_diretorios(pasta, pasta, true)?;""",
-        "troca": """                    // DEFEITO REPOSTO (586): a pasta nova sem fsync do pai.
-                    let _ = pasta;""",
+        "trecho": """        for entrada in &self.entradas_novas {
+            pastas.entry(pai_de(entrada)).or_insert(entrada);
+        }""",
+        "troca": """        // DEFEITO REPOSTO (586): a pasta nova sem fsync da mae.
+        for entrada in &self.entradas_novas {
+            let _ = entrada;
+        }""",
         "pacote": "phxsql-store",
         "alvo": ["--lib"],
         "caem": ["catalogo::testes_copia_entre_bancos::as_copias_de_tabela_vao_ao_disco"],
@@ -18124,5 +18170,95 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "alvo": ["--test", "anuncio-numa-escrita-so"],
         "caem": ["cada_linha_de_anuncio_sai_num_write_so"],
         "seguem": [],
+    },
+    {
+        "id": "criar-tabela-sem-fsync-dos-arquivos",
+        "titulo": "`criar_tabela` respondia «criada» com o `.reg`, o `.ndx` e os outros arquivos só no cache do núcleo: numa queda a tabela podia sumir ou voltar sem o esquema",
+        "porque": (
+            "pedido 589, irmao do 586. `Table::criar` abria e escrevia os "
+            "arquivos sem `fsync` nenhum (medido pelo `strace -y`: so o "
+            "`fdatasync` da subida do byte 52 do `.ndx`), e nem a pasta. Agora "
+            "`criar_tabela_adiando_o_fsync` devolve os descritores duplicados "
+            "(`Table::descritores_da_criacao`), e o `levar_ao_disco` os "
+            "sincroniza -- no servidor, depois de soltar a trava global."
+        ),
+        "arquivo": "crates/phxsql-store/src/catalogo.rs",
+        "trecho": """        pendente.arquivos.extend(t.descritores_da_criacao()?);""",
+        "troca": """        // DEFEITO REPOSTO (589): os arquivos da tabela sem fsync.
+        let _ = t.descritores_da_criacao()?;""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": ["catalogo::testes_criar_vai_ao_disco::criar_database_schema_e_tabela_vao_ao_disco"],
+        "seguem": [
+            "catalogo::testes_copia_entre_bancos::as_copias_de_tabela_vao_ao_disco",
+            "catalogo::testes_copia_entre_bancos::renomear_move_a_tabela_inteira",
+        ],
+    },
+    {
+        "id": "garantir-schema-sem-fsync-do-database",
+        "titulo": "`criar_schema` e `criar_tabela` num schema novo criavam a pasta sem `fsync` do database: o schema que o cliente ouviu criar podia sumir numa queda",
+        "porque": (
+            "pedido 589. O 586 deu ao colar o `fsync` do database quando ele "
+            "criava a pasta do schema, e os outros dois chamadores do MESMO "
+            "`garantir_schema` ficaram sem. Agora os tres passam por "
+            "`garantir_schema_adiando_o_fsync`, que devolve a entrada nova, e "
+            "o `levar_ao_disco` sincroniza a mae dela."
+        ),
+        "arquivo": "crates/phxsql-store/src/catalogo.rs",
+        "trecho": """        let pendente = PorSincronizar::entrada_nova(&caminho);
+        Ok((caminho, pendente))""",
+        "troca": """        // DEFEITO REPOSTO (589): a pasta nova do schema sem fsync do database.
+        Ok((caminho, PorSincronizar::default()))""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": [
+            "catalogo::testes_criar_vai_ao_disco::criar_database_schema_e_tabela_vao_ao_disco",
+            "catalogo::testes_copia_entre_bancos::as_copias_de_tabela_vao_ao_disco",
+        ],
+        "seguem": [
+            "catalogo::testes_copia_entre_bancos::colar_dentro_de_schema_que_ainda_nao_existe_cria_a_pasta",
+        ],
+    },
+    {
+        "id": "criar-database-sem-fsync-da-base",
+        "titulo": "`criar_database` criava a pasta sem `fsync` da base: o database que o cliente ouviu criar podia sumir numa queda",
+        "porque": (
+            "pedido 589. A entrada da pasta nova e dado da BASE; sem o `fsync` "
+            "dela, o database volta ausente depois de a resposta ter dito "
+            "«criado». `criar_database_com_tipo_adiando_o_fsync` devolve a "
+            "entrada nova, e o `levar_ao_disco` sincroniza a base."
+        ),
+        "arquivo": "crates/phxsql-store/src/catalogo.rs",
+        "trecho": """        let mut pendente = PorSincronizar::entrada_nova(&caminho);
+        pendente.arquivos.push(escrever_marca(&caminho, tipo)?);""",
+        "troca": """        // DEFEITO REPOSTO (589): o database novo sem fsync da base.
+        let mut pendente = PorSincronizar::default();
+        pendente.arquivos.push(escrever_marca(&caminho, tipo)?);""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": ["catalogo::testes_criar_vai_ao_disco::criar_database_schema_e_tabela_vao_ao_disco"],
+        "seguem": [
+            "catalogo::testes_copia_entre_bancos::as_copias_de_tabela_vao_ao_disco",
+        ],
+    },
+    {
+        "id": "marca-do-database-sem-fsync",
+        "titulo": "O marcador `_database.json` nascia sem `fsync`: numa queda uma colmeia voltava como database padrão, calada",
+        "porque": (
+            "pedido 589. Ausencia do marcador e Padrao por decisao (nao quebra "
+            "a abertura), e por isso mesmo a perda nao avisa ninguem: o tipo "
+            "do database muda sozinho. `escrever_marca` devolve o descritor "
+            "que escreveu, e ele vai ao disco com a criacao."
+        ),
+        "arquivo": "crates/phxsql-store/src/catalogo.rs",
+        "trecho": """        pendente.arquivos.push(escrever_marca(&caminho, tipo)?);""",
+        "troca": """        // DEFEITO REPOSTO (589): o marcador do tipo sem fsync.
+        let _marca = escrever_marca(&caminho, tipo)?;""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": ["catalogo::testes_criar_vai_ao_disco::criar_database_schema_e_tabela_vao_ao_disco"],
+        "seguem": [
+            "catalogo::testes_copia_entre_bancos::as_copias_de_tabela_vao_ao_disco",
+        ],
     },
 ]

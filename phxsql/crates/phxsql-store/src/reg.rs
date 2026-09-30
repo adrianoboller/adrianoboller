@@ -266,6 +266,11 @@ pub struct Fronteira {
 pub const SEM_PERIODO: i64 = i64::MIN;
 
 impl RegFile {
+    /// Os descritores abertos, para o `fsync` da criacao fora da trava --
+    /// pedido 589. Ver [`crate::volume::Volumes::descritores`].
+    pub(crate) fn descritores(&self) -> std::io::Result<Vec<(std::fs::File, std::path::PathBuf)>> {
+        self.volumes.descritores()
+    }
     pub fn criar(diretorio: impl AsRef<Path>, nome: &str, esquema: Schema) -> Result<RegFile> {
         let paginacao = esquema.paginacao();
         let bytes_esquema = esquema.serializar();

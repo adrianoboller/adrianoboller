@@ -2714,6 +2714,19 @@ começa com `_` e termina em `.json` de propósito: não é `.reg`, então a
 varredura de tabelas o ignora de graça, e o `_` o afasta de qualquer nome de
 tabela válido.
 
+**Criar só responde depois do disco** (pedido 589, irmão do 586, que fez o
+mesmo na cópia de tabela). Como a descoberta é estrutural, a entrada de
+diretório **é** o catálogo: uma pasta ou um `.reg` que a queda leva é um
+database, schema ou tabela que deixa de existir. Por isso criar database,
+schema ou tabela leva ao disco, antes do «ok», nesta ordem: cada arquivo novo
+no descritor que o escreveu (o `.reg`, o `.ndx`, os demais da tabela e o
+`_database.json`); depois a pasta onde eles nasceram; depois a mãe de cada
+pasta nova — o database para o schema, a base para o database —, da mais
+funda para a mais rasa. Ficam de fora, de propósito, o `.pag` (derivado, nasce
+por `rename`) e o `_formato-volumes.json` da pasta nova (perdê-lo só refaz uma
+varredura que não renomeia nada). No servidor esse `fsync` acontece **depois
+de soltar a trava global** e antes da resposta.
+
 ### 11.1 `_database.json` — o tipo do database
 
 Decisão do dono, 11/09/2026: o PhxSql passa a ter **três tipos** de database,

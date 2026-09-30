@@ -815,6 +815,12 @@ fn escolher_filho(p: &[u8], ck_len: usize, alvo: &[u8]) -> usize {
 // ------------------------------------------------------------- NdxFile
 
 impl NdxFile {
+    /// O descritor deste `.ndx`, duplicado, com o caminho -- pedido 589. Ver
+    /// [`crate::volume::Volumes::descritores`]: e o mesmo descritor aberto, e
+    /// nao um reaberto pelo caminho.
+    pub(crate) fn descritor_aberto(&self) -> std::io::Result<(File, PathBuf)> {
+        Ok((self.arquivo.try_clone()?, self.caminho.clone()))
+    }
     /// Cria o `.ndx` com uma arvore vazia para cada indice do esquema.
     pub fn criar(caminho: impl AsRef<Path>, esquema: &Schema) -> Result<NdxFile> {
         Self::criar_com_pagina(caminho, esquema, PAGINA_PADRAO)

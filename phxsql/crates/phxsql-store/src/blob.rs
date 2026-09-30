@@ -77,6 +77,11 @@ pub struct BlobFile {
 }
 
 impl BlobFile {
+    /// Os descritores abertos, para o `fsync` da criacao fora da trava --
+    /// pedido 589. Ver [`crate::volume::Volumes::descritores`].
+    pub(crate) fn descritores(&self) -> std::io::Result<Vec<(std::fs::File, std::path::PathBuf)>> {
+        self.volumes.descritores()
+    }
     pub fn criar(
         diretorio: impl AsRef<Path>,
         nome: &str,

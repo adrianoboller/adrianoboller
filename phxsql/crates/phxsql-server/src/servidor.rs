@@ -34,7 +34,7 @@ use phxsql_core::expressao::Expressao;
 use phxsql_core::fio::{Canal, Recebido, TETO_DO_APERTO, TETO_DO_REGISTRO};
 use phxsql_core::json::Json;
 use phxsql_core::semaforo::{Permissao, Semaforo};
-use phxsql_store::catalogo::{Aberta, Instancia, Raiz};
+use phxsql_store::catalogo::{Aberta, Instancia, PorSincronizar, Raiz};
 use phxsql_store::leitura::{Legivel, TabelaLeitura};
 use phxsql_store::log::Operacao;
 use phxsql_store::memoria::{Consulta, Filtro, Operador, Ordem, TabelaMemoria};
@@ -3605,22 +3605,19 @@ impl Servidor {
         no: &crate::replica::NoSource,
     ) -> Result<Option<u64>> {
         let trava = self.travar_dados()?;
-        let db = trava.garantir_database(database)?;
-        // Tabela que ainda nao existe aqui nasce do MESMO bloco de esquema que
-        // o source tem, e nao de uma remontagem a partir de JSON: e assim que
-        // o payload da imagem cai byte a byte no lugar certo.
-        let mut tabela = match db.abrir_qualificada(&no.nome) {
-            Ok(t) => t,
-            Err(_) => match &no.esquema {
-                Some(e) => {
-                    let schema = no.nome.split_once('.').map(|(s, _)| s.to_string());
-                    eprintln!("replicacao: criando {database}.{} aqui", no.nome);
-                    db.criar_tabela(schema.as_deref(), e.clone())?
-                }
-                None => return Ok(None),
-            },
+        let (tabela, pendente) = garantir_tabela_da_replica(&trava, database, no)?;
+        let Some(mut tabela) = tabela else {
+            drop(trava);
+            pendente.levar_ao_disco()?;
+            return Ok(None);
         };
-        Ok(Some(tabela.eventos()?))
+        let eventos = tabela.eventos()?;
+        // Pedido 589: a tabela fecha sob a trava, como sempre fechou; o
+        // `fsync` do que nasceu aqui vai depois de solta-la.
+        drop(tabela);
+        drop(trava);
+        pendente.levar_ao_disco()?;
+        Ok(Some(eventos))
     }
 
     /// Aplica UM lote ja lido do soquete. Fase 3: so trabalho no dado.
@@ -5452,18 +5449,26 @@ impl Servidor {
         origem: &crate::config::Origem,
         meu_hash: u16,
     ) -> Result<Option<(String, usize)>> {
+        // Pedido 589: o que nasceu sob a trava vai ao disco depois de ela
+        // soltar -- a trava e da funcao de dentro, e solta ao ela voltar.
+        let (saida, pendente) = self.abrir_para_bidi_sob_a_trava(database, no, origem, meu_hash)?;
+        pendente.levar_ao_disco()?;
+        Ok(saida)
+    }
+
+    /// O [`Self::abrir_para_bidi`] com a trava na mao, devolvendo o `fsync`
+    /// do que criou (vazio quando a tabela ja existia).
+    fn abrir_para_bidi_sob_a_trava(
+        &self,
+        database: &str,
+        no: &crate::replica::NoSource,
+        origem: &crate::config::Origem,
+        meu_hash: u16,
+    ) -> Result<(Option<(String, usize)>, PorSincronizar)> {
         let trava = self.travar_dados()?;
-        let db = trava.garantir_database(database)?;
-        let mut tabela = match db.abrir_qualificada(&no.nome) {
-            Ok(t) => t,
-            Err(_) => match &no.esquema {
-                Some(e) => {
-                    let schema = no.nome.split_once('.').map(|(s, _)| s.to_string());
-                    eprintln!("replicacao: criando {database}.{} aqui", no.nome);
-                    db.criar_tabela(schema.as_deref(), e.clone())?
-                }
-                None => return Ok(None),
-            },
+        let (tabela, pendente) = garantir_tabela_da_replica(&trava, database, no)?;
+        let Some(mut tabela) = tabela else {
+            return Ok((None, pendente));
         };
         let chave_tab = format!("{database}/{}", no.nome);
         let Some((indice, pos_chave)) = bidirecional::chave_unica(tabela.esquema()) else {
@@ -5479,7 +5484,7 @@ impl Servidor {
             self.anotar_estado(&origem.nome, |e| {
                 e.recusas.insert(chave_tab.clone(), motivo.clone());
             });
-            return Ok(None);
+            return Ok((None, pendente));
         };
         // A tabela serve: se ela ja esteve recusada, o recado sai. Recado que
         // sobrevive ao conserto vira configuracao que mente -- alguem criou o
@@ -5490,7 +5495,7 @@ impl Servidor {
         // O diario local que ainda nao passou pelo mapa de toques -- inclui a
         // escrita local desde a ultima rodada, que e quem disputa o conflito.
         self.absorver_diario_local(&mut tabela, &chave_tab, pos_chave, meu_hash)?;
-        Ok(Some((indice, pos_chave)))
+        Ok((Some((indice, pos_chave)), pendente))
     }
 
     /// Aplica UM lote bidirecional ja lido do soquete. Fase 3.
@@ -12852,7 +12857,13 @@ impl Servidor {
         // recusa vem de `de_texto`, na DECLARACAO, antes de criar o diretorio.
         let tipo = phxsql_core::TipoDatabase::de_texto(p.texto_ou("tipo", ""))?;
         let dados = self.travar_dados()?;
-        let db = dados.criar_database_com_tipo(nome, tipo)?;
+        let (db, pendente) = dados.criar_database_com_tipo_adiando_o_fsync(nome, tipo)?;
+        // Pedido 589: criar precisa da trava (dois criadores no mesmo nome);
+        // o `fsync` do marcador e da entrada na base nao, e sob ela seria
+        // secao nova na catraca `alcancam-fsync-2`. Solta, sincroniza, e so
+        // entao responde -- o mesmo desenho do colar (586).
+        drop(dados);
+        pendente.levar_ao_disco()?;
         // O marcador ja foi gravado. Se o motor do tipo ainda nao existe, o
         // database nasce valido e com o tipo reservado, mas quem tentar operar
         // tabela nele recebe «motor em construcao» -- a nota avisa de antemao,
@@ -19203,7 +19214,13 @@ impl Servidor {
             return Err(PhxError::Esquema("informe \"schema\"".into()));
         }
         let dados = self.travar_dados()?;
-        dados.abrir_database(database)?.criar_schema(schema)?;
+        let (_, pendente) = dados
+            .abrir_database(database)?
+            .criar_schema_adiando_o_fsync(schema)?;
+        // Pedido 589: o `fsync` do database, onde mora a entrada da pasta
+        // nova, fora da trava e antes da resposta.
+        drop(dados);
+        pendente.levar_ao_disco()?;
         Ok(Json::objeto(vec![
             ("database", Json::texto_de(database)),
             ("schema", Json::texto_de(schema)),
@@ -19249,7 +19266,15 @@ impl Servidor {
                 phxsql_store::catalogo::qualificar(schema.as_deref(), &nome)
             )));
         }
-        let t = db.criar_tabela(schema.as_deref(), esquema)?;
+        let (t, pendente) = db.criar_tabela_adiando_o_fsync(schema.as_deref(), esquema)?;
+        // Pedido 589: os arquivos da tabela, a pasta dela e -- se o schema
+        // nasceu aqui -- o database vao ao disco FORA da trava, e antes da
+        // resposta. A tabela fecha antes da trava soltar, como sempre fechou:
+        // o `Drop` dela mexe no `.ndx`, e isso e trabalho de quem segura.
+        let esquema_criado = t.esquema().clone();
+        drop(t);
+        drop(dados);
+        pendente.levar_ao_disco()?;
         let qualificado = phxsql_store::catalogo::qualificar(schema.as_deref(), &nome);
         // A regra de coluna que ja ESPERAVA por esta tabela -- pedido 235. O
         // cadastro a aceitou com aviso porque a tabela nao existia; se ela
@@ -19257,7 +19282,7 @@ impl Servidor {
         // momento em que alguem esta olhando. Nao recusa: a tabela e a
         // modelagem certa e o cadastro e o que esta errado -- e o cadastro se
         // conserta pelo `usuario_alterar`, que agora recusa a mesma coluna.
-        let avisos = self.regras_de_coluna_inertes(database, &qualificado, t.esquema());
+        let avisos = self.regras_de_coluna_inertes(database, &qualificado, &esquema_criado);
         let mut pares = vec![
             ("database", Json::texto_de(database)),
             (
@@ -19268,11 +19293,17 @@ impl Servidor {
                 },
             ),
             ("tabela", Json::texto_de(qualificado)),
-            ("colunas", Json::de_u64(t.esquema().colunas().len() as u64)),
-            ("indices", Json::de_u64(t.esquema().indices().len() as u64)),
+            (
+                "colunas",
+                Json::de_u64(esquema_criado.colunas().len() as u64),
+            ),
+            (
+                "indices",
+                Json::de_u64(esquema_criado.indices().len() as u64),
+            ),
             (
                 "paginada",
-                Json::Bool(t.esquema().paginacao().registros_por_arquivo > 0),
+                Json::Bool(esquema_criado.paginacao().registros_por_arquivo > 0),
             ),
         ];
         // So quando ha: a resposta de sempre nao ganha campo vazio.
@@ -26271,8 +26302,13 @@ impl Servidor {
         // Nenhuma ida ao fio acontece daqui ate solta-la.
         let dados = self.travar_dados()?;
         let mut ligadas = Vec::new();
+        // Pedido 589: o que nasce aqui vai ao disco depois de a trava soltar,
+        // e antes da resposta -- o mesmo desenho do `criar_tabela` da rede.
+        let mut pendente = PorSincronizar::default();
         for (mut sinc, esquema, chave) in buscadas {
-            let db = dados.garantir_database(&sinc.local_database)?;
+            let (db, do_database) =
+                dados.garantir_database_adiando_o_fsync(&sinc.local_database)?;
+            pendente.juntar(do_database);
             let criada = match db.abrir_qualificada(&sinc.local_tabela) {
                 Ok(existente) => {
                     // Tabela ja existente serve, desde que a chave case; o
@@ -26281,7 +26317,9 @@ impl Servidor {
                     false
                 }
                 Err(_) => {
-                    db.criar_tabela(None, esquema)?;
+                    let (t, da_tabela) = db.criar_tabela_adiando_o_fsync(None, esquema)?;
+                    drop(t);
+                    pendente.juntar(da_tabela);
                     true
                 }
             };
@@ -26303,6 +26341,7 @@ impl Servidor {
             d.sincronias.push(sinc);
         }
         drop(dados);
+        pendente.levar_ao_disco()?;
         let mut r = self.dblink.tomar("dblink")?;
         let gravacao = r.salvar(d)?;
         Ok(Json::objeto(vec![
@@ -29537,6 +29576,40 @@ fn fsync_recusado_derruba_o_processo(
 /// reparo que deu certo seria derrubar todas as conexoes por um log.
 fn dizer_no_diagnostico(texto: &str) {
     let _ = writeln!(std::io::stderr(), "{texto}");
+}
+
+/// Abre a tabela da replica, criando-a -- e o database -- se ainda nao
+/// existem aqui. `None` quando ela nao existe e o source nao mandou o esquema
+/// -- e o database que nasceu mesmo assim continua no `fsync` devolvido.
+///
+/// Um so para as duas fases 1 (unidirecional e bidirecional), que repetiam o
+/// mesmo `match`: o pedido 589 tinha de entrar nas duas, e a que alguem
+/// esquecesse criaria tabela sem `fsync`. O `fsync` volta por fazer, para
+/// quem chama leva-lo ao disco depois de soltar a trava.
+///
+/// Tabela que ainda nao existe aqui nasce do MESMO bloco de esquema que o
+/// source tem, e nao de uma remontagem a partir de JSON: e assim que o
+/// payload da imagem cai byte a byte no lugar certo.
+fn garantir_tabela_da_replica(
+    dados: &Instancia,
+    database: &str,
+    no: &crate::replica::NoSource,
+) -> Result<(Option<Table>, PorSincronizar)> {
+    let (db, mut pendente) = dados.garantir_database_adiando_o_fsync(database)?;
+    let tabela = match db.abrir_qualificada(&no.nome) {
+        Ok(t) => t,
+        Err(_) => match &no.esquema {
+            Some(e) => {
+                let schema = no.nome.split_once('.').map(|(s, _)| s.to_string());
+                eprintln!("replicacao: criando {database}.{} aqui", no.nome);
+                let (t, criada) = db.criar_tabela_adiando_o_fsync(schema.as_deref(), e.clone())?;
+                pendente.juntar(criada);
+                t
+            }
+            None => return Ok((None, pendente)),
+        },
+    };
+    Ok((Some(tabela), pendente))
 }
 
 /// So nos testes: o panico que o `panico_de_teste_na_op` pede -- pedido 451.

@@ -1122,14 +1122,24 @@ mod tests {
         dados_de_exemplo(&raiz);
 
         let (_, caminhos) = executar(&raiz, &destino, 1_787_000_000_000).unwrap();
+        // A arma mira o ARQUIVO copiado, nao a pasta: desde o 579 as pastas
+        // tambem sincronizam, e armada no `destino` a recusa da pasta dava o
+        // mesmo Err -- a copia sem `fsync` passava (guarda `backup-sem-fsync`,
+        // NAO PEGOU 1/2 em 30/09/2026).
+        let copia = destino.join("Z/cadastroClientes.reg");
+        assert!(
+            copia.is_file(),
+            "o teste supoe a copia em {}",
+            copia.display()
+        );
         crate::sincronia::falha_de_teste::armar(
-            &destino,
+            &copia,
             crate::sincronia::falha_de_teste::Onde::Fsync,
             1,
         );
         let e = sincronizar_copias(&caminhos)
             .expect_err("fsync recusado tem de virar Err, nao Ok silencioso");
-        crate::sincronia::falha_de_teste::desarmar(&destino);
+        crate::sincronia::falha_de_teste::desarmar(&copia);
         assert!(
             matches!(e, PhxError::Io(_)),
             "familia errada para uma recusa de fsync: {e}"

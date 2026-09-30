@@ -379,6 +379,12 @@ dia, nunca no desejado:
   ODBC so com silencio (`odbc-sem-prazo-total`) e o total do driver pela vida
   da conexao (`odbc-total-pela-vida-da-conexao`). Contado pelo `--catraca`:
   508 + 3.
+  **SUBIU para 524 em 30/09/2026** (pedido 589): quatro guardas -- os
+  arquivos da tabela nova sem `fsync` (`criar-tabela-sem-fsync-dos-arquivos`),
+  a pasta nova do schema sem `fsync` do database
+  (`garantir-schema-sem-fsync-do-database`), o database novo sem `fsync` da
+  base (`criar-database-sem-fsync-da-base`) e o marcador do tipo sem `fsync`
+  (`marca-do-database-sem-fsync`). Contado pelo `--catraca`: 520 + 4.
   impedir. Ele e a unica coisa nesta regua que reprova o APAGAMENTO; tudo o
   mais aqui reprova o envelhecimento.
 
@@ -487,7 +493,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 521
+PISO_DAS_ENTRADAS = 525
 
 # ------------------------------------------------------------- APOSENTADAS
 #

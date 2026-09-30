@@ -968,18 +968,27 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `pagina-despejada-que-o-disco-recusou-some` | a página suja despejada do cache que o disco recusou some: nem no arquivo, nem na RAM | 1 | ✅ provada |
 | `servidor-segue-de-pe-depois-do-fsync-recusado` | o servidor segue de pé depois de um `fsync` recusado, gravando num disco que já se sabe que mente | 1 | ✅ provada |
 | `completar-engole-a-tabela-que-nao-foi-ao-disco` | a recuperação engole o erro do `sincronizar` e apaga a marca de um commit cujo dado não foi ao disco | 1 | ✅ provada |
+| `fechar-baixa-o-byte-52-sem-fsync` | o `fechar` grava o byte 52 em 0 sem `fsync`: o núcleo guarda o cabeçalho limpo e perde as páginas | 3 | ✅ provada |
 | `restauracao-nao-reconstroi-o-marcado` | a restauração de backup devolve a tabela com o `.ndx` marcado, e ela recusa toda escrita até alguém mandar `reindexar` | 1 | ✅ provada |
+| `backup-sem-fsync` | o backup responde "concluido" sem `fsync` nenhum | 2 | ✅ provada |
 | `migracao-do-separador-decide-pelo-nome` | a migracao do separador de volume le `vendas_2024.reg` como volume 2024 de `vendas` e some com a tabela | 1 | ✅ provada |
 | `marca-do-separador-antes-dos-renomes` | a marca do formato de volume vai ao disco antes dos `rename`s, e a queda no meio deixa o diretorio marcado e meio migrado | 1 | ✅ provada |
 | `painel-com-copia-do-analisador-de-volume` | o painel soma os bytes do `.reg` por uma copia do nome do volume e mede zero em tabela de 4 digitos ou por letra | 1 | ✅ provada |
 | `carga-adiada-solta-sem-reconstruir` | o `bulkinsert(false)` da carga com o índice adiado solta a reserva com a árvore suspensa | 1 | ✅ provada |
 | `suspensao-do-indice-so-na-ram` | a suspensão do `.ndx` para a carga adiada fica só na memória, e a queda no meio deixa a árvore vazia se declarando limpa | 2 | ✅ provada |
 | `carga-adiada-orfa-sem-reconstruir` | a carga adiada que sai sem o `bulkinsert(false)` (conexão caída, reserva vencida) deixa o índice suspenso até o próximo arranque | 1 | ✅ provada |
+| `cluster-replica-sem-recuo` | O laço da réplica do CLUSTER retentava a cada pulso sem o `Ritmo`: sem recuo nem para rede nem para limite | 1 | ✅ provada |
+| `copia-de-tabela-sem-fsync-da-pasta` | A cópia de tabela sincronizava os arquivos e não a pasta: o nome novo podia sumir numa queda depois do «ok» | 1 | ✅ provada |
+| `colar-em-schema-novo-sem-fsync-do-database` | Colar num schema que ainda não existe criava a pasta dele sem `fsync` do database: a cópia sincronizada podia morar numa pasta que a queda leva | 1 | ✅ provada |
+| `criar-tabela-sem-fsync-dos-arquivos` | `criar_tabela` respondia «criada» com o `.reg`, o `.ndx` e os outros arquivos só no cache do núcleo: numa queda a tabela podia sumir ou voltar sem o esquema | 1 | ✅ provada |
+| `garantir-schema-sem-fsync-do-database` | `criar_schema` e `criar_tabela` num schema novo criavam a pasta sem `fsync` do database: o schema que o cliente ouviu criar podia sumir numa queda | 2 | ✅ provada |
+| `criar-database-sem-fsync-da-base` | `criar_database` criava a pasta sem `fsync` da base: o database que o cliente ouviu criar podia sumir numa queda | 1 | ✅ provada |
+| `marca-do-database-sem-fsync` | O marcador `_database.json` nascia sem `fsync`: numa queda uma colmeia voltava como database padrão, calada | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**332 das 520 guardas do catálogo: 1 aposentada, 327 provadas, 4 redundantes** — 9057 s de mutação, medido em 2026-09-16 15:25.
+**341 das 524 guardas do catálogo: 1 aposentada, 336 provadas, 4 redundantes** — 9179 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 189 das 520 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 189 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 184 das 524 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 184 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
@@ -1030,7 +1039,6 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `dblink-mysql-sem-teto-do-quadro-acumulado` — `ler_quadro` do DbLink MySQL(R) junta continuações de 16 MB sem teto sobre o total
 - `smtp-sem-teto-de-linhas-de-continuacao` — o cliente SMTP aceita QUALQUER número de linhas de continuação (`250-...`), sem teto
 - `por-login-para-no-primeiro-que-casa` — `Cadastro::por_login` é um `find`: quem não existe custa muito mais que o primeiro da lista
-- `fechar-baixa-o-byte-52-sem-fsync` — o `fechar` grava o byte 52 em 0 sem `fsync`: o núcleo guarda o cabeçalho limpo e perde as páginas
 - `atestado-sobrevive-a-escrita` — o atestado do processo sobrevive à escrita que não terminou: a reabertura confia na árvore de antes dela
 - `atestado-pelo-caminho-e-nao-pelo-arquivo` — o atestado do processo vale para o caminho, e não para o arquivo: outro `.ndx` no mesmo lugar abre confiado
 - `atestado-de-antes-da-recusa-vale-depois` — o atestado que o `fechar` deu ANTES de um `fsync` recusado no diretório continua valendo depois dele
@@ -1087,7 +1095,6 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `fts-nasce-com-permissao-aberta` — o `.fts` nasce `644` -- legivel por todo usuario da maquina
 - `conferir-fk-afirma-indice-sao-quando-marcado` — a conferencia contra a MAE afirma "esta sao" com o indice marcado
 - `procura-das-filhas-afirma-indice-sao-quando-marcado` — a procura pelas filhas afirma "esta sao" com o indice marcado
-- `backup-sem-fsync` — o backup responde "concluido" sem `fsync` nenhum
 - `backup-fsync-derruba-o-servidor` — o `fsync` recusado no DESTINO DE UM BACKUP derruba o servidor inteiro
 - `diff-null-na-chave-apaga-linha-irma` — o `diff` com NULL repetido no indice some com linhas do relatorio
 - `recusa-de-coluna-marcada-cita-o-valor` — A recusa de conversão cita o valor curto de coluna marcada como dado pessoal
@@ -1163,12 +1170,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `porta-lida-pela-metade` — O apoio dos testes lia a porta do phxsqld antes de a linha acabar: o eprintln! sai em várias escritas, e o parse do endereço pela metade dava AddrParseError (ou a porta errada)
 - `copia-da-troca-sem-fsync` — A cópia de reserva da troca no restaurar (o caminho sem rename) apagava a origem sem fsync da cópia: uma queda no meio deixava a única via de volta pela metade
 - `replica-limite-sem-recuo` — O estouro do prazo total da réplica caía em `Outra`: o par que goteja era retentado no intervalo fixo, sem recuo
-- `cluster-replica-sem-recuo` — O laço da réplica do CLUSTER retentava a cada pulso sem o `Ritmo`: sem recuo nem para rede nem para limite
 - `odbc-sem-prazo-total` — O driver ODBC só tinha prazo por LEITURA: um servidor que goteja um byte antes de cada prazo prendia a thread do aplicativo dentro do SQLExecDirect
 - `odbc-total-pela-vida-da-conexao` — O prazo total do driver ODBC contado pela vida da conexão, e não por pedido: o aplicativo que abre de manhã e consulta à tarde cairia no primeiro pedido depois do total
 - `copia-de-tabela-sem-fsync` — `duplicar_tabela` e `copiar_tabela_para` respondiam «ok» com a cópia só no cache do núcleo: uma queda podia levar a tabela nova, ou deixá-la rasgada
-- `copia-de-tabela-sem-fsync-da-pasta` — A cópia de tabela sincronizava os arquivos e não a pasta: o nome novo podia sumir numa queda depois do «ok»
-- `colar-em-schema-novo-sem-fsync-do-database` — Colar num schema que ainda não existe criava a pasta dele sem `fsync` do database: a cópia sincronizada podia morar numa pasta que a queda leva
 - `porta-anunciada-em-pedacos` — A linha «porta de dados escutando em …» saía em várias escritas: quem lia o log no meio via a porta pela metade
 
 As guardas que esta corrida ainda cita, hoje aposentadas:
