@@ -2793,9 +2793,9 @@
       "id": "backup-atravessa-link-na-pasta-do-meio",
       "titulo": "o backup volta a criar e atravessar as pastas do destino pelo NOME: um link numa pasta do meio (`copias/loja -> dados/rh`) grava a cópia por cima da tabela viva de outro database",
       "veredito": "PROVADA",
-      "segundos": 9.13,
+      "segundos": 7.73,
       "notas": [],
-      "quando": "2026-09-30 23:00"
+      "quando": "2026-09-30 23:40"
     },
     {
       "id": "backup-escreve-no-arquivo-de-outro-dono",
@@ -2820,6 +2820,30 @@
       "segundos": 7.1,
       "notas": [],
       "quando": "2026-09-30 23:01"
+    },
+    {
+      "id": "fsync-da-pasta-do-backup-pelo-nome",
+      "titulo": "o `fsync` da pasta do backup reabre pelo NOME fora da trava: trocada por um link, sincroniza a pasta do outro lado e a nossa nunca",
+      "veredito": "PROVADA",
+      "segundos": 5.98,
+      "notas": [],
+      "quando": "2026-09-30 23:39"
+    },
+    {
+      "id": "faxina-do-backup-remove-pasta-pelo-nome",
+      "titulo": "a faxina do backup que falhou remove a pasta criada pelo NOME real: um link numa pasta do meio faz apagar a pasta vazia de outro",
+      "veredito": "PROVADA",
+      "segundos": 6.93,
+      "notas": [],
+      "quando": "2026-09-30 23:39"
+    },
+    {
+      "id": "faxina-do-backup-sem-conferir-o-inode",
+      "titulo": "a faxina do backup remove pelo descritor da mãe mas não confere o inode: a pasta vazia de outro que entrou no nome da nossa sai",
+      "veredito": "PROVADA",
+      "segundos": 6.34,
+      "notas": [],
+      "quando": "2026-09-30 23:39"
     },
     {
       "id": "cifra-do-fio-imposta",

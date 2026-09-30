@@ -440,20 +440,43 @@ impl Pasta {
         }
     }
 
-    /// Entra na subpasta `nome`, criando-a 0700 se falta, e anota em
-    /// `criadas` (pelo caminho real) a que nasceu aqui -- para a faxina do
-    /// 576. Link, arquivo, ou qualquer coisa que nao e diretorio no nome
-    /// RECUSA: o backup nao grava atraves dele.
+    /// O caminho real desta pasta: o da mensagem, e o de quem nao tem `/proc`.
+    pub fn real(&self) -> &Path {
+        &self.real
+    }
+
+    /// O descritor aberto, quando a pasta chega por ele -- e nele que o
+    /// `fsync` da pasta tem de cair (pedido 593), e nao num `open` pelo nome
+    /// feito depois, que segue o link que alguem pos no lugar.
+    pub fn descritor(&self) -> Option<&File> {
+        self.dir.as_ref()
+    }
+
+    /// O `fstat` do descritor; sem ele, o `lstat` do caminho real.
+    pub fn metadados(&self) -> std::io::Result<std::fs::Metadata> {
+        match &self.dir {
+            Some(d) => d.metadata(),
+            None => std::fs::symlink_metadata(&self.real),
+        }
+    }
+
+    /// Entra na subpasta `nome` de `mae`, criando-a 0700 se falta, e anota em
+    /// `criadas` a que nasceu aqui -- para a faxina do 576, que a remove pelo
+    /// descritor de `mae` (pedido 593). Link, arquivo, ou qualquer coisa que
+    /// nao e diretorio no nome RECUSA: o backup nao grava atraves dele.
+    ///
+    /// Associada, e nao metodo: a nascida guarda a `mae` (`Arc`), e e por ela
+    /// que a remocao chega ao nome sem atravessar link no caminho.
     pub fn entrar(
-        &self,
+        mae: &std::sync::Arc<Pasta>,
         nome: &std::ffi::OsStr,
-        criadas: &mut Vec<std::path::PathBuf>,
+        criadas: &mut Vec<Nascida>,
     ) -> std::io::Result<Pasta> {
-        let alvo = self.por_dentro(nome);
-        let real = self.real.join(nome);
-        if std::fs::symlink_metadata(&alvo).is_err() {
+        let alvo = mae.por_dentro(nome);
+        let real = mae.real.join(nome);
+        let nasce = std::fs::symlink_metadata(&alvo).is_err();
+        if nasce {
             criar_diretorio_do_banco(&alvo)?;
-            criadas.push(real.clone());
         }
         let recusa = || {
             std::io::Error::other(format!(
@@ -464,21 +487,109 @@ impl Pasta {
                 real.display()
             ))
         };
-        let dir = match &self.dir {
-            Some(_) => Some(abrir_diretorio(&alvo, true).map_err(|e| {
-                match std::fs::symlink_metadata(&alvo) {
+        let aberta = match &mae.dir {
+            Some(_) => abrir_diretorio(&alvo, true)
+                .map(|d| Pasta {
+                    dir: Some(d),
+                    real: real.clone(),
+                })
+                .map_err(|e| match std::fs::symlink_metadata(&alvo) {
                     Ok(m) if !m.is_dir() => recusa(),
                     _ => e,
-                }
-            })?),
-            None => {
-                if !std::fs::symlink_metadata(&alvo)?.is_dir() {
-                    return Err(recusa());
-                }
-                None
-            }
+                }),
+            None => match std::fs::symlink_metadata(&alvo) {
+                Ok(m) if m.is_dir() => Ok(Pasta {
+                    dir: None,
+                    real: real.clone(),
+                }),
+                Ok(_) => Err(recusa()),
+                Err(e) => Err(e),
+            },
         };
-        Ok(Pasta { dir, real })
+        if nasce {
+            // A identidade de quem nasceu e a do descritor que a corrida vai
+            // usar; se ele nao abriu, a do nome logo depois do `mkdir` -- a
+            // pasta anotada mesmo assim, para a faxina ainda alcanca-la.
+            let id = match &aberta {
+                Ok(p) => p.metadados().ok(),
+                Err(_) => std::fs::symlink_metadata(&alvo).ok(),
+            };
+            criadas.push(Nascida {
+                mae: mae.clone(),
+                nome: nome.to_os_string(),
+                id: id.as_ref().and_then(identidade),
+            });
+        }
+        aberta
+    }
+}
+
+/// Uma pasta que a corrida do backup fez nascer -- pedido 593.
+///
+/// Guarda a MAE aberta e o dev/inode da nascida, e nao so o caminho: a
+/// faxina de uma corrida que falhou roda fora da trava, e pelo nome real um
+/// link posto numa pasta do meio fazia o `remove_dir` cair na pasta de outro
+/// (vazia, que e o que o `rmdir` aceita). Pelo descritor da mae, so o ultimo
+/// nome se resolve por nome -- e ele se confere pelo inode antes.
+#[derive(Debug)]
+pub struct Nascida {
+    mae: std::sync::Arc<Pasta>,
+    nome: std::ffi::OsString,
+    id: Option<(u64, u64)>,
+}
+
+impl Nascida {
+    /// Anota `filha`, ja aberta, como nascida em `mae` com o nome `nome` --
+    /// para quem criou a pasta por outro caminho (o `create_dir_all` do
+    /// destino) e so depois a abriu.
+    pub fn anotar(mae: std::sync::Arc<Pasta>, nome: &std::ffi::OsStr, filha: &Pasta) -> Nascida {
+        Nascida {
+            mae,
+            nome: nome.to_os_string(),
+            id: filha.metadados().ok().as_ref().and_then(identidade),
+        }
+    }
+
+    /// A pasta mae, aberta -- a que recebe o `fsync` da entrada nova.
+    pub fn mae(&self) -> &std::sync::Arc<Pasta> {
+        &self.mae
+    }
+
+    /// Remove a pasta se ela ainda e a que nasceu: pelo descritor da mae,
+    /// conferindo dev/inode com `lstat` antes, e com `remove_dir` -- que so
+    /// remove VAZIA e, no ultimo nome, nao segue link (`rmdir` de link da
+    /// `ENOTDIR`). A `std` nao tem `unlinkat`; o `/proc/self/fd/N/nome` da
+    /// mae e o mesmo efeito, sem `unsafe`.
+    ///
+    /// **A janela que sobra, dita:** entre o `lstat` e o `rmdir`, trocar o
+    /// nome por OUTRA pasta vazia (um `rename` dentro da mesma mae) faz
+    /// remover essa outra. So vazia, e so dentro da mae que a corrida abriu:
+    /// nao atravessa link para fora. Fechar pede o `unlinkat` sobre o
+    /// descritor da propria nascida, que a `std` nao da. Fora do Linux (sem
+    /// `/proc`), a mae e o caminho real e a conferencia e o `lstat` dele --
+    /// o comportamento de antes, com o inode conferido onde ha Unix.
+    pub fn remover(&self) -> bool {
+        let alvo = self.mae.por_dentro(&self.nome);
+        match std::fs::symlink_metadata(&alvo) {
+            Ok(m) if m.is_dir() && identidade(&m) == self.id => std::fs::remove_dir(&alvo).is_ok(),
+            _ => false,
+        }
+    }
+}
+
+/// O que identifica um arquivo ou pasta para quem o reencontra depois:
+/// dispositivo e inode. Fora do Unix a `std` nao os da, e vale `None` dos
+/// dois lados -- a conferencia vira a do tipo, que ja passou.
+pub fn identidade(m: &std::fs::Metadata) -> Option<(u64, u64)> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        Some((m.dev(), m.ino()))
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = m;
+        None
     }
 }
 

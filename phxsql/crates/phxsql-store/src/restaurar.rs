@@ -831,7 +831,7 @@ mod tests {
     fn copia_de(raiz: &Path, destino: &Path, quando_ms: i64) {
         let (r, caminhos) = crate::backup::executar(raiz, destino, quando_ms).unwrap();
         crate::backup::sincronizar_copias(&caminhos).unwrap();
-        crate::backup::finalizar_manifesto(destino, quando_ms, &r).unwrap();
+        crate::backup::finalizar_manifesto(&caminhos, quando_ms, &r).unwrap();
     }
 
     #[test]

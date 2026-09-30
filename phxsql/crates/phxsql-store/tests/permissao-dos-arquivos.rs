@@ -211,7 +211,7 @@ fn a_copia_do_backup_e_a_restauracao_ficam_so_do_dono() {
     let destino = d.join("copias").join("hoje");
     let (r, caminhos) = backup::executar(&raiz, &destino, 1).unwrap();
     backup::sincronizar_copias(&caminhos).unwrap();
-    backup::finalizar_manifesto(&destino, 1, &r).unwrap();
+    backup::finalizar_manifesto(&caminhos, 1, &r).unwrap();
     assert!(
         caminhos.len() > 5,
         "o backup copiou {} arquivos",
@@ -378,7 +378,7 @@ fn o_backup_nao_atravessa_o_link_plantado_no_destino() {
     for vez in 1..=2 {
         let (r, c) = backup::executar(&raiz, &destino, vez).unwrap();
         backup::sincronizar_copias(&c).unwrap();
-        backup::finalizar_manifesto(&destino, vez, &r).unwrap();
+        backup::finalizar_manifesto(&c, vez, &r).unwrap();
     }
     let plantado = destino.join("loja").join("clientes.reg");
     assert_eq!(modo(&plantado), 0o600, "o reuso por cima do povoado");

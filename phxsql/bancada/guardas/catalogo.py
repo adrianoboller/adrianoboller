@@ -18381,6 +18381,8 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         let _ = (nome, entrar_na_pasta, &mut ancora_de);
         crate::util::criar_diretorio_do_banco(alvo.parent().unwrap())?;
         let por_dentro = alvo.clone();
+        // O fsync da pasta (593) cai no destino: a pasta do meio nem abriu.
+        let pasta = 0;
 """,
         "pacote": "phxsql-store",
         "alvo": ["--test", "destino-do-backup-sem-atalho"],
@@ -18472,5 +18474,76 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "backup::tests::alem_do_teto_a_copia_reabre_e_o_backup_fica_inteiro",
             "backup::tests::copia_tudo_e_confere",
         ],
+    },
+    {
+        "id": "fsync-da-pasta-do-backup-pelo-nome",
+        "titulo": "o `fsync` da pasta do backup reabre pelo NOME fora da trava: trocada por um link, sincroniza a pasta do outro lado e a nossa nunca",
+        "porque": (
+            "pedido 593, irmao do 568: o resto do backup ja andava pelo "
+            "descritor da `Pasta`, e o `sincronizar_pasta` (579) abria pelo "
+            "nome. A prova troca a pasta por um link pendurado entre a escrita "
+            "e o `fsync`: pelo nome o `open` segue o link e recusa com "
+            "`ENOENT`; pelo descritor o nome nem se resolve."
+        ),
+        "arquivo": "crates/phxsql-store/src/backup.rs",
+        "trecho": """    match pasta.descritor() {
+        Some(d) => crate::sincronia::sync_all_sem_abortar(d, &de_quem),
+""",
+        "troca": """    // DEFEITO REPOSTO (593): o fsync da pasta abre pelo NOME.
+    match None::<&File> {
+        Some(d) => crate::sincronia::sync_all_sem_abortar(d, &de_quem),
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "destino-do-backup-sem-atalho"],
+        "caem": ["o_fsync_da_pasta_nao_segue_o_link_posto_no_lugar"],
+        "seguem": ["o_backup_nao_atravessa_link_numa_pasta_do_meio"],
+    },
+    {
+        "id": "faxina-do-backup-remove-pasta-pelo-nome",
+        "titulo": "a faxina do backup que falhou remove a pasta criada pelo NOME real: um link numa pasta do meio faz apagar a pasta vazia de outro",
+        "porque": (
+            "pedido 593: `descartar_pastas` fazia `remove_dir` pelo caminho "
+            "real, fora da trava. Com `copias/loja` trocada por um link para a "
+            "pasta de outro, o `rmdir` de `copias/loja/sub` atravessava o link "
+            "e apagava a `sub` vazia do outro. Agora sai pelo descritor da mae "
+            "(`/proc/self/fd/N/nome`), conferindo dev/inode."
+        ),
+        "arquivo": "crates/phxsql-store/src/util.rs",
+        "trecho": """        let alvo = self.mae.por_dentro(&self.nome);
+        match std::fs::symlink_metadata(&alvo) {
+            Ok(m) if m.is_dir() && identidade(&m) == self.id => std::fs::remove_dir(&alvo).is_ok(),
+""",
+        "troca": """        // DEFEITO REPOSTO (593): pelo nome real, sem conferir o inode.
+        let alvo = self.mae.real().join(&self.nome);
+        match std::fs::symlink_metadata(&alvo) {
+            Ok(m) if m.is_dir() || identidade(&m) == self.id => std::fs::remove_dir(&alvo).is_ok(),
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "destino-do-backup-sem-atalho"],
+        "caem": [
+            "a_faxina_nao_atravessa_link_na_pasta_do_meio",
+            "a_faxina_nao_remove_a_pasta_vazia_trocada_no_nome",
+        ],
+        "seguem": ["o_backup_nao_atravessa_link_numa_pasta_do_meio"],
+    },
+    {
+        "id": "faxina-do-backup-sem-conferir-o-inode",
+        "titulo": "a faxina do backup remove pelo descritor da mãe mas não confere o inode: a pasta vazia de outro que entrou no nome da nossa sai",
+        "porque": (
+            "pedido 593, a outra metade: o descritor da mae impede atravessar "
+            "link, mas o ultimo nome ainda se resolve por nome. Uma pasta "
+            "vazia de outro posta por `rename` no nome da nossa sairia no "
+            "`rmdir`. O dev/inode anotado ao nascer a separa."
+        ),
+        "arquivo": "crates/phxsql-store/src/util.rs",
+        "trecho": """            Ok(m) if m.is_dir() && identidade(&m) == self.id => std::fs::remove_dir(&alvo).is_ok(),
+""",
+        "troca": """            // DEFEITO REPOSTO (593): sem conferir o inode.
+            Ok(m) if m.is_dir() => std::fs::remove_dir(&alvo).is_ok(),
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "destino-do-backup-sem-atalho"],
+        "caem": ["a_faxina_nao_remove_a_pasta_vazia_trocada_no_nome"],
+        "seguem": ["a_faxina_nao_atravessa_link_na_pasta_do_meio"],
     },
 ]

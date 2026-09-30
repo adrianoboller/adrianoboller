@@ -285,6 +285,19 @@ fn sincronizou_no_mesmo(chamadas: &[Chamada], p: &str) -> Result<usize, String> 
     Err(format!("{p}: nenhum fsync no descritor {fd}"))
 }
 
+/// Para onde o descritor `fd` aponta no fim de `antes`: a ultima abertura
+/// que o devolveu, se nenhum `close` dele veio depois.
+fn aponta_para(antes: &[Chamada], fd: i64) -> Option<&str> {
+    for c in antes.iter().rev() {
+        match c {
+            Chamada::Abriu(p, f) if *f == fd => return Some(p),
+            Chamada::Fechou(f) if *f == fd => return None,
+            _ => {}
+        }
+    }
+    None
+}
+
 /// O corpo do filho da pasta: uma corrida numa pasta REAPROVEITADA (ja tem o
 /// `backup.json` da corrida anterior), do `executar` ao `concluir`.
 fn filho_da_pasta() -> bool {
@@ -365,28 +378,23 @@ fn a_pasta_sincroniza_antes_do_manifesto_novo() {
         .position(|c| matches!(c, Chamada::Abriu(p, _) if *p == manifesto))
         .expect("a premissa: o manifesto novo nasceu");
     assert!(apagou < nasceu, "a premissa: o velho sai antes do novo");
-    // Um descritor aberto na PASTA, entre o unlink e o manifesto novo, que
-    // recebe fsync ainda antes do manifesto novo.
-    let sincronizou_a_pasta = chamadas[apagou..nasceu]
-        .iter()
-        .enumerate()
-        .any(|(i, c)| match c {
-            Chamada::Abriu(p, fd) if *p == pasta => chamadas[apagou + i + 1..nasceu]
-                .iter()
-                .any(|c| matches!(c, Chamada::Sincronizou(f) if f == fd)),
-            _ => false,
-        });
+    // Um `fsync`, entre o unlink e o manifesto novo, num descritor que
+    // naquele instante aponta para a PASTA. Pedido 593: o descritor e o que a
+    // corrida abriu ANTES de escrever (a `Pasta`), e nao um `open` pelo nome
+    // feito ali -- por isso a pergunta e para onde o descritor aponta.
+    let sincronizou_a_pasta = (apagou..nasceu).any(|i| {
+        matches!(&chamadas[i], Chamada::Sincronizou(f)
+            if aponta_para(&chamadas[..i], *f) == Some(pasta.as_str()))
+    });
     assert!(
         sincronizou_a_pasta,
         "o manifesto novo nasceu sem o fsync da pasta de onde o velho saiu:\n{:#?}",
         &chamadas[apagou..=nasceu]
     );
     // E o nome do manifesto novo tambem: fsync da pasta depois dele.
-    let depois = chamadas[nasceu..].iter().enumerate().any(|(i, c)| match c {
-        Chamada::Abriu(p, fd) if *p == pasta => chamadas[nasceu + i + 1..]
-            .iter()
-            .any(|c| matches!(c, Chamada::Sincronizou(f) if f == fd)),
-        _ => false,
+    let depois = (nasceu..chamadas.len()).any(|i| {
+        matches!(&chamadas[i], Chamada::Sincronizou(f)
+            if aponta_para(&chamadas[..i], *f) == Some(pasta.as_str()))
     });
     assert!(
         depois,

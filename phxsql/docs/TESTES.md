@@ -995,11 +995,14 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `backup-escreve-no-arquivo-de-outro-dono` | o backup volta a truncar e reescrever o arquivo regular de OUTRO dono (ou com link físico) que já está no destino: quem plantou fica dono da cópia do banco, e no ZIP o `.part` plantado vira o `.zip` final | 1 | ✅ provada |
 | `fifo-trocada-na-janela-para-o-backup` | o motor da permissão volta a abrir pelo nome seguindo link e esperando leitor: trocar o nome por um link para FIFO entre o `lstat` e o `open` para o backup com a trava de dados na mão | 1 | ✅ provada |
 | `copia-reaberta-pelo-nome-no-fsync` | a cópia além do teto de descritores volta a reabrir pelo NOME para o `fsync`: trocada por um link, o `fsync` cai noutro arquivo e o manifesto diz «pronto» sobre a cópia que nunca sincronizou | 1 | ✅ provada |
+| `fsync-da-pasta-do-backup-pelo-nome` | o `fsync` da pasta do backup reabre pelo NOME fora da trava: trocada por um link, sincroniza a pasta do outro lado e a nossa nunca | 1 | ✅ provada |
+| `faxina-do-backup-remove-pasta-pelo-nome` | a faxina do backup que falhou remove a pasta criada pelo NOME real: um link numa pasta do meio faz apagar a pasta vazia de outro | 2 | ✅ provada |
+| `faxina-do-backup-sem-conferir-o-inode` | a faxina do backup remove pelo descritor da mãe mas não confere o inode: a pasta vazia de outro que entrou no nome da nossa sai | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**352 das 530 guardas do catálogo: 1 aposentada, 347 provadas, 4 redundantes** — 9417 s de mutação, medido em 2026-09-16 15:25.
+**355 das 533 guardas do catálogo: 1 aposentada, 350 provadas, 4 redundantes** — 9435 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 179 das 530 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 179 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 179 das 533 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 179 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação

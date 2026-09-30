@@ -277,3 +277,107 @@ fn a_fifo_trocada_na_janela_nao_para_o_motor() {
         "a prova rodou poucas voltas para alcancar a janela: {voltas}"
     );
 }
+
+/// Uma raiz com UMA pasta a mais de fundura (`loja/sub/c.reg`), para a
+/// corrida criar duas pastas encaixadas no destino -- a de fora e a de dentro.
+fn raiz_funda(d: &Path) -> PathBuf {
+    let raiz = d.join("dados");
+    std::fs::create_dir_all(raiz.join("loja/sub")).unwrap();
+    std::fs::write(raiz.join("loja/sub/c.reg"), b"PHXREG loja").unwrap();
+    raiz
+}
+
+/// Um destino que JA existe com um diretorio no nome `backup.json`: o
+/// manifesto recusa de verdade no fim, e a faxina do 576 roda.
+fn destino_que_recusa_o_manifesto(d: &Path) -> PathBuf {
+    let destino = d.join("copias");
+    std::fs::create_dir_all(destino.join(backup::MANIFESTO)).unwrap();
+    std::fs::write(destino.join(backup::MANIFESTO).join("dentro"), b"alheio").unwrap();
+    destino
+}
+
+/// **Pedido 593: o `fsync` da pasta cai no descritor que a corrida abriu, e
+/// nao no que estiver no nome.**
+///
+/// Entre a escrita (sob a trava) e o `fsync` (fora dela), a pasta `loja` do
+/// destino sai do lugar e um link entra no nome. Pelo nome, o `open` seguia o
+/// link: para a pasta de outro, sincronizava a do outro e respondia Ok sobre
+/// a nossa, que nunca sincronizava. Aqui o link aponta para o nada, que e o
+/// jeito de o `open` pelo nome APARECER sem `strace` -- recusa com `ENOENT`,
+/// e o backup inteiro falhava. Pelo descritor, o nome nem se resolve.
+#[test]
+fn o_fsync_da_pasta_nao_segue_o_link_posto_no_lugar() {
+    let d = DirTemp::novo("593-fsync-pelo-descritor");
+    let raiz = raiz_com_dois(&d);
+    let destino = d.join("copias");
+    let (r, c) = backup::executar(&raiz, &destino, 1).unwrap();
+    std::fs::rename(destino.join("loja"), d.join("loja-movida")).unwrap();
+    std::os::unix::fs::symlink(d.join("nao-existe"), destino.join("loja")).unwrap();
+
+    let feito = backup::concluir(&destino, 1, &r, &c);
+    assert!(
+        feito.is_ok(),
+        "o fsync da pasta abriu o NOME, e seguiu o link posto no lugar da \
+         pasta que a corrida escreveu: {feito:?}"
+    );
+    assert!(
+        std::fs::symlink_metadata(destino.join("loja"))
+            .unwrap()
+            .file_type()
+            .is_symlink(),
+        "o backup mexeu no link em vez de ignora-lo"
+    );
+}
+
+/// **Pedido 593: a faxina nao atravessa um link posto numa pasta do meio.**
+///
+/// A corrida cria `copias/loja/sub` e o manifesto recusa. Antes da faxina,
+/// `copias/loja` sai do lugar e vira um link para a pasta de outro, que tem
+/// uma `sub` vazia. Pelo nome real, `remove_dir("copias/loja/sub")` seguia o
+/// link do meio e apagava a `sub` do outro. Pelo descritor da mae, a faxina
+/// remove a NOSSA `sub` -- a que foi movida junto -- e a do outro fica.
+#[test]
+fn a_faxina_nao_atravessa_link_na_pasta_do_meio() {
+    let d = DirTemp::novo("593-faxina-link-no-meio");
+    let raiz = raiz_funda(&d);
+    let destino = destino_que_recusa_o_manifesto(&d);
+    let (r, c) = backup::executar(&raiz, &destino, 1).unwrap();
+    let alheia = d.join("alheia");
+    std::fs::create_dir_all(alheia.join("sub")).unwrap();
+    std::fs::rename(destino.join("loja"), d.join("loja-movida")).unwrap();
+    std::os::unix::fs::symlink(&alheia, destino.join("loja")).unwrap();
+
+    backup::concluir(&destino, 1, &r, &c).expect_err("a premissa: o manifesto recusa");
+    assert!(
+        alheia.join("sub").is_dir(),
+        "a faxina seguiu o link da pasta do meio e apagou a pasta VAZIA de \
+         outro do lado de la"
+    );
+    assert!(
+        std::fs::symlink_metadata(d.join("loja-movida/sub")).is_err(),
+        "a pasta que a corrida criou nao saiu pelo descritor da mae"
+    );
+}
+
+/// **Pedido 593: a faxina confere que a pasta no nome e a que nasceu.**
+///
+/// Sem link nenhum: a nossa `sub` sai do lugar e uma pasta vazia de outro
+/// entra no nome dela por `rename`. Pelo nome, o `remove_dir` apagava a do
+/// outro (vazia, o `rmdir` aceita). Com o dev/inode anotado ao nascer, a do
+/// outro fica.
+#[test]
+fn a_faxina_nao_remove_a_pasta_vazia_trocada_no_nome() {
+    let d = DirTemp::novo("593-faxina-troca-no-nome");
+    let raiz = raiz_funda(&d);
+    let destino = destino_que_recusa_o_manifesto(&d);
+    let (r, c) = backup::executar(&raiz, &destino, 1).unwrap();
+    std::fs::rename(destino.join("loja/sub"), d.join("sub-movida")).unwrap();
+    std::fs::create_dir_all(d.join("de-outro")).unwrap();
+    std::fs::rename(d.join("de-outro"), destino.join("loja/sub")).unwrap();
+
+    backup::concluir(&destino, 1, &r, &c).expect_err("a premissa: o manifesto recusa");
+    assert!(
+        destino.join("loja/sub").is_dir(),
+        "a faxina removeu a pasta vazia de outro que entrou no nome da nossa"
+    );
+}
