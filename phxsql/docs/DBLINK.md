@@ -605,6 +605,27 @@ e `1`/`0`), e o uuid por `Uuid::de_texto` estrito: a célula `novo` (ou `v4`,
 `v7`) virava um uuid **aleatório**, diferente a cada rodada, porque na carga
 colada essas palavras são ordens de gerar. Agora recusa, sem citar a célula.
 
+**A tela mostra o binário remoto como o dado (pedido 590, medido).** O
+`dblink_ler` e o `dblink_consultar` passavam a célula binária pelo leitor com
+perda: no par falso do MySQL(R), `00 FF 80` aparecia como `\u0000` e dois
+`U+FFFD`, e o `bytea` do PostgreSQL(R) aparecia no texto do fio (`\x00ff80`,
+ou octal no `bytea_output = escape`). O `SELECT` livre não se reescreve, então
+quem decide é o **leitor do fio de cada motor**, pelo que o protocolo diz da
+coluna — e não pelo nome do tipo:
+
+| | quem diz «bytes» | forma na tela e no JSON |
+|---|---|---|
+| MySQL(R) / MariaDB | conjunto de caracteres **63** (`binary`) numa coluna de cadeia (`VARBINARY`, `BINARY`, `BLOB`, `BIT`, `GEOMETRY`) | hexadecimal minúsculo |
+| PostgreSQL(R) | OID **17** (`bytea`) no `RowDescription`; `\x…`, `escape` e o formato binário decodificam para o mesmo byte | hexadecimal minúsculo, sem `\x` |
+| PhxSql | tipo `Bin` do esquema (o outro lado já manda hexadecimal) | hexadecimal minúsculo |
+
+A forma é a do BLOB daqui (`valores::bytes_para_hex`), para o dado de lá e o
+de cá aparecerem iguais; a coluna leva `"binario": true` no JSON — é a marca
+que diz que `cafe` ali são dois bytes, e não a palavra. A bandeira `BINARY`
+(0x80) **não** decide: ela acende também num `VARCHAR` em `utf8mb4_bin`, que é
+texto UTF-8 legítimo e continua texto. `bytea` cujo texto não decodifica
+recusa a consulta, em vez de mostrar um palpite.
+
 ### As duas operações
 
 - **`dblink_ligar`** cria (ou confere) a tabela local espelhando a prima:

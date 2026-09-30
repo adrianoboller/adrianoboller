@@ -88,7 +88,17 @@ pub struct Coluna {
     /// Numero, para a tela alinhar a direita e o assistente de pivot oferecer
     /// como medida.
     pub numerico: bool,
+    /// Cadeia de bytes, e nao de caracteres -- pedido 590. A celula dela sai
+    /// em hexadecimal minusculo, como o BLOB daqui sai na tela e no JSON.
+    pub binario: bool,
 }
+
+/// O conjunto de caracteres `binary` do protocolo.
+///
+/// E ele, e nao a bandeira `BINARY_FLAG` (0x80), que diz "estes bytes nao sao
+/// texto": a bandeira tambem acende numa colacao `_bin` (um `VARCHAR` em
+/// `utf8mb4_bin` e texto UTF-8 legitimo) e em toda coluna numerica.
+const CHARSET_BINARIO: u16 = 63;
 
 #[derive(Debug, Default)]
 pub struct Resultado {
@@ -337,7 +347,7 @@ impl Conexao {
                 truncado = true;
                 continue;
             }
-            linhas.push(ler_linha(&q, colunas.len())?);
+            linhas.push(ler_linha(&q, &colunas)?);
         }
         Ok(Resultado {
             colunas,
@@ -521,7 +531,8 @@ fn ler_coluna(p: &[u8]) -> Result<Coluna> {
     let nome = texto_lenenc(p, &mut i)?;
     pular_lenenc(p, &mut i)?; // nome de origem
     le_lenenc(p, &mut i); // comprimento do bloco fixo
-    i += 2; // conjunto de caracteres
+    let charset = le_u16(p, i).unwrap_or(0);
+    i += 2;
     let tamanho = le_u32(p, i).unwrap_or(0);
     i += 4;
     let codigo = *p.get(i).unwrap_or(&0);
@@ -539,19 +550,36 @@ fn ler_coluna(p: &[u8]) -> Result<Coluna> {
         nulavel: bandeiras & 0x0001 == 0,
         primaria: bandeiras & 0x0002 != 0,
         numerico: eh_numerico(codigo),
+        binario: charset == CHARSET_BINARIO && eh_cadeia(codigo),
     })
 }
 
-fn ler_linha(p: &[u8], quantas: usize) -> Result<Vec<Option<String>>> {
+/// Os codigos que carregam cadeia no protocolo de texto -- os que podem ser
+/// bytes crus quando o conjunto e `binary`. Numero e data tambem vem com o
+/// conjunto 63, mas a celula deles e digito ASCII, e continua texto.
+fn eh_cadeia(codigo: u8) -> bool {
+    matches!(codigo, 0x0f | 0x10 | 0xf9..=0xfe | 0xff)
+}
+
+fn ler_linha(p: &[u8], colunas: &[Coluna]) -> Result<Vec<Option<String>>> {
     let mut i = 0;
-    let mut v = Vec::with_capacity(quantas);
-    for _ in 0..quantas {
+    let mut v = Vec::with_capacity(colunas.len());
+    for c in colunas {
         match p.get(i) {
             // 0xFB e NULL. Guardar como None, e nao como "", porque um texto
             // vazio e um valor e NULL e a ausencia dele.
             Some(0xFB) => {
                 i += 1;
                 v.push(None);
+            }
+            // Pedido 590: o BLOB atravessa o `COM_QUERY` como bytes crus, e o
+            // `from_utf8_lossy` do texto trocava todo byte invalido por
+            // `U+FFFD` -- a celula da tela nao era o dado, e quem a copiava
+            // levava outro valor. O hexadecimal sai do MESMO conversor do BLOB
+            // daqui, para o dado de la e o de ca aparecerem na mesma forma.
+            Some(_) if c.binario => {
+                let bytes = fatia_lenenc(p, &mut i)?;
+                v.push(Some(crate::valores::bytes_para_hex(bytes)))
             }
             Some(_) => v.push(Some(texto_lenenc(p, &mut i)?)),
             None => v.push(None),
@@ -801,7 +829,19 @@ mod testes {
     fn nulo_nao_vira_texto_vazio() {
         // Uma linha com tres campos: "ab", NULL, "".
         let linha = vec![2, b'a', b'b', 0xFB, 0];
-        let v = ler_linha(&linha, 3).unwrap();
+        let texto = Coluna {
+            nome: String::new(),
+            tabela: String::new(),
+            tipo: "VARCHAR".into(),
+            tipo_codigo: 0xfd,
+            tamanho: 0,
+            decimais: 0,
+            nulavel: true,
+            primaria: false,
+            numerico: false,
+            binario: false,
+        };
+        let v = ler_linha(&linha, &[texto.clone(), texto.clone(), texto]).unwrap();
         assert_eq!(v[0], Some("ab".to_string()));
         assert_eq!(v[1], None);
         assert_eq!(v[2], Some(String::new()));

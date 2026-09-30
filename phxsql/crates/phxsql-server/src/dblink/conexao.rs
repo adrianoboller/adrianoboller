@@ -42,6 +42,12 @@ pub struct Coluna {
     pub nulavel: bool,
     pub primaria: bool,
     pub numerico: bool,
+    /// Bytes, e nao texto -- pedido 590. Quem decide e o leitor do fio de
+    /// cada motor (o conjunto `binary` no MySQL(R), o OID do `bytea` no
+    /// PostgreSQL(R)), e a celula ja chega aqui em hexadecimal minusculo, na
+    /// mesma forma do BLOB daqui. A marca viaja para quem le o JSON saber que
+    /// `cafe` ali sao dois bytes, e nao a palavra.
+    pub binario: bool,
 }
 
 #[derive(Debug, Default)]
@@ -78,6 +84,7 @@ impl Resultado {
                                 ("nulavel", Json::Bool(c.nulavel)),
                                 ("primaria", Json::Bool(c.primaria)),
                                 ("numerico", Json::Bool(c.numerico)),
+                                ("binario", Json::Bool(c.binario)),
                             ])
                         })
                         .collect(),
@@ -123,6 +130,7 @@ impl From<mysql::Resultado> for Resultado {
                     nulavel: c.nulavel,
                     primaria: c.primaria,
                     numerico: c.numerico,
+                    binario: c.binario,
                 })
                 .collect(),
             linhas: r.linhas,
@@ -154,6 +162,7 @@ impl From<pg::Resultado> for Resultado {
                     nulavel: true,
                     primaria: false,
                     numerico: c.numerico,
+                    binario: c.binario,
                 })
                 .collect(),
             linhas: r.linhas,

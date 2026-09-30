@@ -977,9 +977,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `carga-adiada-orfa-sem-reconstruir` | a carga adiada que sai sem o `bulkinsert(false)` (conexão caída, reserva vencida) deixa o índice suspenso até o próximo arranque | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**332 das 519 guardas do catálogo: 1 aposentada, 327 provadas, 4 redundantes** — 9057 s de mutação, medido em 2026-09-16 15:25.
+**332 das 521 guardas do catálogo: 1 aposentada, 327 provadas, 4 redundantes** — 9057 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 188 das 519 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 188 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 190 das 521 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 190 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
@@ -1099,6 +1099,8 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `dblink-puxar-le-booleano-pela-carga-colada` — O DbLink, ao puxar, lê o booleano pela régua da carga colada
 - `dblink-puxar-le-blob-cru` — O DbLink, ao puxar, lê o BLOB cru como se fosse hexadecimal
 - `dblink-puxar-inventa-uuid` — O DbLink, ao puxar, troca a célula «novo» por um uuid aleatório
+- `dblink-tela-mostra-blob-com-perda` — O DbLink mostra na tela o BLOB remoto pelo leitor com perda
+- `dblink-colacao-bin-vira-hex` — O DbLink mostra em hexadecimal o texto de uma colação _bin
 - `faixa-do-slot-cita-coluna-marcada` — A faixa do tipo, conferida no slot, cita o número de coluna marcada
 - `carga-colada-converte-sem-a-coluna` — A carga colada converte a célula sem a marca da coluna
 - `upsert-converte-sem-a-coluna` — O `atualizar` do upsert converte o valor sem a marca da coluna
