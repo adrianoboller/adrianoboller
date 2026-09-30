@@ -223,18 +223,29 @@ impl Motor {
     /// `HEX()` num, `encode(…,'hex')` no outro -- tira as duas duvidas: o fio
     /// so leva digito, em qualquer modo.
     ///
-    /// `colunas` sao as do `sql_metadados`, com o tipo no nome do fio.
+    /// `colunas` sao as do `sql_metadados`. A pergunta "e binario?" e a marca
+    /// `binario` que o leitor do fio de cada motor ja pos nelas (pedido 592):
+    /// decidir aqui por uma lista de nomes de tipo seria uma segunda resposta,
+    /// e foi a segunda resposta -- o nome saido da bandeira 0x80 -- que lia um
+    /// `VARCHAR` em `utf8mb4_bin` com `HEX()`.
+    ///
+    /// O `BIT` do MySQL(R) e binario no fio (bytes big-endian), mas o espelho o
+    /// guarda como `Int8`: pedir `HEX()` entregaria digitos hex que a conversao
+    /// do inteiro le como DECIMAIS -- `0x0110` (272) virava 110, calado. O
+    /// `CAST(.. AS UNSIGNED)` pede ao servidor o numero em decimal, que e a
+    /// forma que o `Int8` le; o `BIT(64)` acima de `i64::MAX` recusa em vez de
+    /// dar a volta.
     pub fn sql_leitura(self, tabela: &str, colunas: &[super::conexao::Coluna]) -> Result<String> {
         let lista: Vec<String> = colunas
             .iter()
             .map(|c| {
                 let n = self.citar(&c.nome);
-                match (self, c.tipo.as_str()) {
-                    (Motor::MySql, "BLOB" | "BINARY" | "VARBINARY" | "GEOMETRY") => {
-                        format!("HEX({n}) AS {n}")
-                    }
-                    (Motor::Postgres, "BYTEA") => format!("encode({n},'hex') AS {n}"),
-                    _ => n,
+                match self {
+                    _ if !c.binario => n,
+                    Motor::MySql if c.tipo == "BIT" => format!("CAST({n} AS UNSIGNED) AS {n}"),
+                    Motor::MySql => format!("HEX({n}) AS {n}"),
+                    Motor::Postgres => format!("encode({n},'hex') AS {n}"),
+                    Motor::Phx => n,
                 }
             })
             .collect();
@@ -1102,20 +1113,32 @@ mod testes {
         );
         assert!(Motor::Phx.binario(&[1]).is_err());
 
-        let c = |nome: &str, tipo: &str| super::super::conexao::Coluna {
+        // A marca `binario` e a do leitor do fio: e ela, e nao o nome do
+        // tipo, que decide (pedido 592).
+        let c = |nome: &str, tipo: &str, binario: bool| super::super::conexao::Coluna {
             nome: nome.into(),
             tipo: tipo.into(),
+            binario,
             ..Default::default()
         };
         assert_eq!(
             Motor::MySql
-                .sql_leitura("t", &[c("id", "INT"), c("foto", "BLOB")])
+                .sql_leitura(
+                    "t",
+                    &[
+                        c("id", "INT", false),
+                        c("foto", "BLOB", true),
+                        c("apelido", "VARCHAR", false),
+                        c("bits", "BIT", true),
+                    ]
+                )
                 .unwrap(),
-            "SELECT `id`,HEX(`foto`) AS `foto` FROM `t`"
+            "SELECT `id`,HEX(`foto`) AS `foto`,`apelido`,\
+             CAST(`bits` AS UNSIGNED) AS `bits` FROM `t`"
         );
         assert_eq!(
             Motor::Postgres
-                .sql_leitura("t", &[c("id", "INT4"), c("foto", "BYTEA")])
+                .sql_leitura("t", &[c("id", "INT4", false), c("foto", "BYTEA", true)])
                 .unwrap(),
             "SELECT \"id\",encode(\"foto\",'hex') AS \"foto\" FROM \"t\""
         );

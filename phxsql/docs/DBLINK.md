@@ -626,6 +626,20 @@ que diz que `cafe` ali são dois bytes, e não a palavra. A bandeira `BINARY`
 texto UTF-8 legítimo e continua texto. `bytea` cujo texto não decodifica
 recusa a consulta, em vez de mostrar um palpite.
 
+**O espelho decide pelo mesmo ponto que a tela (pedido 592, medido).** No
+MySQL(R), a pergunta «é binário?» tem **uma** resposta, `eh_binario` em
+`dblink/mysql.rs` (conjunto 63 numa coluna de cadeia). Dela saem a marca
+`binario` do leitor, o nome do tipo — e, pelo nome, o tipo local do
+`dblink_ligar` — e a leitura da sincronia (`Motor::sql_leitura` decide pela
+marca, não por uma lista de nomes). Antes o nome do tipo decidia pela bandeira
+0x80: no par falso, um `VARCHAR` em `utf8mb4_bin` com «Blumenau ç» nascia
+`Bin` aqui e era lido com `HEX()`, enquanto a tela o mostrava como texto.
+Junto, o `BIT`: é binário no fio, mas o espelho o guarda `Int8`, e o hex do
+leitor ia ao `valor_de_texto`, que lê os dígitos como **decimais** — `0x0110`
+(272) gravava 110, calado, e `00ff` recusava. A leitura pede
+`CAST(c AS UNSIGNED)`: o servidor manda o número em decimal. `BIT(64)` acima de
+`i64::MAX` recusa, em vez de dar a volta.
+
 ### As duas operações
 
 - **`dblink_ligar`** cria (ou confere) a tabela local espelhando a prima:

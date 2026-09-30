@@ -540,18 +540,32 @@ fn ler_coluna(p: &[u8]) -> Result<Coluna> {
     let bandeiras = le_u16(p, i).unwrap_or(0);
     i += 2;
     let decimais = *p.get(i).unwrap_or(&0);
+    let binario = eh_binario(charset, codigo);
     Ok(Coluna {
         decimais,
         nome,
         tabela,
-        tipo: nome_do_tipo(codigo, bandeiras).to_string(),
+        tipo: nome_do_tipo(codigo, binario).to_string(),
         tipo_codigo: codigo,
         tamanho,
         nulavel: bandeiras & 0x0001 == 0,
         primaria: bandeiras & 0x0002 != 0,
         numerico: eh_numerico(codigo),
-        binario: charset == CHARSET_BINARIO && eh_cadeia(codigo),
+        binario,
     })
+}
+
+/// A decisao UNICA de "estes bytes nao sao texto" para uma coluna do fio do
+/// MySQL(R) -- pedido 592.
+///
+/// O leitor da celula (590), o nome do tipo e, por ele, o tipo local do
+/// espelho e a leitura da sincronia (`Motor::sql_leitura`, pela marca
+/// `binario`) saem todos daqui. Antes o nome do tipo decidia pela bandeira
+/// 0x80, que acende tambem numa colacao `_bin`: a tela mostrava o `VARCHAR` em
+/// `utf8mb4_bin` como texto, e o espelho o criava `Bin` e o lia com `HEX()` --
+/// a mesma coluna com duas respostas, conforme quem perguntava.
+pub(crate) fn eh_binario(charset: u16, codigo: u8) -> bool {
+    charset == CHARSET_BINARIO && eh_cadeia(codigo)
 }
 
 /// Os codigos que carregam cadeia no protocolo de texto -- os que podem ser
@@ -588,8 +602,9 @@ fn ler_linha(p: &[u8], colunas: &[Coluna]) -> Result<Vec<Option<String>>> {
     Ok(v)
 }
 
-fn nome_do_tipo(codigo: u8, bandeiras: u16) -> &'static str {
-    let binario = bandeiras & 0x0080 != 0;
+/// `binario` vem do `eh_binario`, e nunca da bandeira 0x80: era ela que fazia
+/// o `utf8mb4_bin` virar `VARBINARY` e nascer `Bin` no espelho (pedido 592).
+fn nome_do_tipo(codigo: u8, binario: bool) -> &'static str {
     match codigo {
         0x00 | 0xf6 => "DECIMAL",
         0x01 => "TINYINT",

@@ -16004,15 +16004,17 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         # `HEX()`/`encode` da leitura deu NAO PEGOU 1/3 -- o BLOB chegava
         # inteiro pelo leitor. As duas defesas sao reais; o defeito do 584 so
         # volta repondo as duas, e e o que as tres trocas fazem.
+        # ATUALIZADO em 30/09/2026 (pedido 592): o `sql_leitura` passou a
+        # decidir pela marca `binario` do leitor, e nao pela lista de nomes de
+        # tipo; a troca repoe o mesmo defeito na forma nova.
         "trocas": [
             {
                 "arquivo": "crates/phxsql-server/src/dblink/dialeto.rs",
-                "trecho": """                    (Motor::MySql, "BLOB" | "BINARY" | "VARBINARY" | "GEOMETRY") => {
-                        format!("HEX({n}) AS {n}")
-                    }
-                    (Motor::Postgres, "BYTEA") => format!("encode({n},'hex') AS {n}"),
+                "trecho": """                    Motor::MySql => format!("HEX({n}) AS {n}"),
+                    Motor::Postgres => format!("encode({n},'hex') AS {n}"),
 """,
                 "troca": """                    // DEFEITO REPOSTO (584): o binario viaja cru.
+                    Motor::MySql | Motor::Postgres => n,
 """,
             },
             {
@@ -16121,19 +16123,75 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "binario por ela trocaria `Blumenau ç` por digitos na tela. Quem "
             "diz bytes e o conjunto de caracteres 63 (`binary`)."
         ),
+        # ATUALIZADO em 30/09/2026 (pedido 592): a decisao saiu para o ponto
+        # unico `eh_binario`, chamado uma vez no `ler_coluna`; a troca repoe a
+        # bandeira ali, e por isso derruba tambem o espelho do 592.
         "arquivo": "crates/phxsql-server/src/dblink/mysql.rs",
-        "trecho": """        binario: charset == CHARSET_BINARIO && eh_cadeia(codigo),
+        "trecho": """    let binario = eh_binario(charset, codigo);
 """,
-        "troca": """        // DEFEITO REPOSTO (590): a bandeira decide, e nao o conjunto.
-        binario: bandeiras & 0x80 != 0 && charset != CHARSET_BINARIO + 1 && eh_cadeia(codigo),
+        "troca": """    // DEFEITO REPOSTO (590): a bandeira decide, e nao o conjunto.
+    let binario = bandeiras & 0x80 != 0 && charset != CHARSET_BINARIO + 1 && eh_cadeia(codigo);
 """,
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
         "caem": [
             "servidor::testes_dblink_dialeto_da_sincronia::o_blob_do_mysql_aparece_na_tela_como_o_dado",
+            "servidor::testes_dblink_dialeto_da_sincronia::o_espelho_do_mysql_decide_binario_pelo_conjunto_e_le_o_bit_inteiro",
         ],
         "seguem": [
             "servidor::testes_dblink_dialeto_da_sincronia::o_bytea_do_postgres_aparece_na_tela_como_o_dado",
+        ],
+    },
+    {
+        "id": "dblink-espelho-bin-pela-bandeira",
+        "titulo": "O espelho do DbLink cria Bin a coluna de texto em colação _bin",
+        "porque": (
+            "pedido 592, medido: o `nome_do_tipo` do MySQL decidia binario pela "
+            "bandeira 0x80, que acende num `VARCHAR` em `utf8mb4_bin`. O "
+            "`dblink_ligar` criava a coluna local `Bin` para um texto, enquanto "
+            "a tela (590) o mostrava como texto -- a mesma coluna com duas "
+            "respostas. O nome do tipo passou a sair do ponto unico "
+            "`eh_binario` (conjunto 63)."
+        ),
+        "arquivo": "crates/phxsql-server/src/dblink/mysql.rs",
+        "trecho": """        tipo: nome_do_tipo(codigo, binario).to_string(),
+""",
+        "troca": """        // DEFEITO REPOSTO (592): o nome do tipo decide pela bandeira.
+        tipo: nome_do_tipo(codigo, bandeiras & 0x0080 != 0).to_string(),
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_dblink_dialeto_da_sincronia::o_espelho_do_mysql_decide_binario_pelo_conjunto_e_le_o_bit_inteiro",
+        ],
+        "seguem": [
+            "servidor::testes_dblink_dialeto_da_sincronia::o_blob_do_mysql_aparece_na_tela_como_o_dado",
+            "servidor::testes_dblink_dialeto_da_sincronia::o_blob_do_mysql_chega_byte_a_byte",
+        ],
+    },
+    {
+        "id": "dblink-bit-lido-como-hex-decimal",
+        "titulo": "O DbLink puxa o BIT do MySQL em hexadecimal e o grava como decimal",
+        "porque": (
+            "pedido 592, medido: o leitor do 590 entrega o `BIT(16)` como os "
+            "digitos hex dos bytes, e o espelho o guarda `Int8` pelo "
+            "`valor_de_texto`, que le `0110` (272) como 110 -- calado -- e "
+            "recusa `00ff`. A leitura pede `CAST(.. AS UNSIGNED)`: o servidor "
+            "manda o numero em decimal."
+        ),
+        "arquivo": "crates/phxsql-server/src/dblink/dialeto.rs",
+        "trecho": """                    Motor::MySql if c.tipo == "BIT" => format!("CAST({n} AS UNSIGNED) AS {n}"),
+""",
+        "troca": """                    // DEFEITO REPOSTO (592): o BIT segue o caminho do BLOB.
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_dblink_dialeto_da_sincronia::o_espelho_do_mysql_decide_binario_pelo_conjunto_e_le_o_bit_inteiro",
+            "dblink::dialeto::testes::o_upsert_o_binario_e_a_leitura_saem_no_dialeto",
+        ],
+        "seguem": [
+            "servidor::testes_dblink_dialeto_da_sincronia::o_blob_do_mysql_chega_byte_a_byte",
         ],
     },
     {

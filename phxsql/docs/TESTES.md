@@ -973,7 +973,7 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `backup-fsync-derruba-o-servidor` | o `fsync` recusado no DESTINO DE UM BACKUP derruba o servidor inteiro | 1 | ✅ provada |
 | `dblink-puxar-le-blob-cru` | O DbLink, ao puxar, lê o BLOB cru como se fosse hexadecimal | 3 | ✅ provada |
 | `dblink-tela-mostra-blob-com-perda` | O DbLink mostra na tela o BLOB remoto pelo leitor com perda | 2 | ✅ provada |
-| `dblink-colacao-bin-vira-hex` | O DbLink mostra em hexadecimal o texto de uma colação _bin | 1 | ✅ provada |
+| `dblink-colacao-bin-vira-hex` | O DbLink mostra em hexadecimal o texto de uma colação _bin | 2 | ✅ provada |
 | `arquivo-refeito-herda-o-modo-velho` | o arquivo que o banco REFAZ por cima de um antigo -- o `.ndx` e o `.fts` do `reindexar` -- herda o `644` dele | 1 | ✅ provada |
 | `copia-do-backup-nasce-aberta` | a cópia do backup volta a nascer `644` -- até a do `.lgpd`, que nasceu `600` | 1 | ✅ provada |
 | `backup-atravessa-link-plantado` | o motor da permissão volta a seguir o link simbólico no último nome: um link plantado no destino do backup faz o `.reg` ser gravado NA vítima de fora, e ela vira 0600 | 3 | ✅ provada |
@@ -997,9 +997,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `copia-reaberta-pelo-nome-no-fsync` | a cópia além do teto de descritores volta a reabrir pelo NOME para o `fsync`: trocada por um link, o `fsync` cai noutro arquivo e o manifesto diz «pronto» sobre a cópia que nunca sincronizou | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**352 das 530 guardas do catálogo: 1 aposentada, 347 provadas, 4 redundantes** — 9417 s de mutação, medido em 2026-09-16 15:25.
+**352 das 532 guardas do catálogo: 1 aposentada, 347 provadas, 4 redundantes** — 9417 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 179 das 530 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 179 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 181 das 532 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 181 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
@@ -1116,6 +1116,8 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `dblink-empurra-booleano-como-numero` — O DbLink empurra o booleano como 1/0
 - `dblink-puxar-le-booleano-pela-carga-colada` — O DbLink, ao puxar, lê o booleano pela régua da carga colada
 - `dblink-puxar-inventa-uuid` — O DbLink, ao puxar, troca a célula «novo» por um uuid aleatório
+- `dblink-espelho-bin-pela-bandeira` — O espelho do DbLink cria Bin a coluna de texto em colação _bin
+- `dblink-bit-lido-como-hex-decimal` — O DbLink puxa o BIT do MySQL em hexadecimal e o grava como decimal
 - `faixa-do-slot-cita-coluna-marcada` — A faixa do tipo, conferida no slot, cita o número de coluna marcada
 - `carga-colada-converte-sem-a-coluna` — A carga colada converte a célula sem a marca da coluna
 - `upsert-converte-sem-a-coluna` — O `atualizar` do upsert converte o valor sem a marca da coluna
