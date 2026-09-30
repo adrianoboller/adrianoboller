@@ -10,7 +10,7 @@ uma tabela unica para ficar leve o cadastro, e na hora de usar e transparente
 para select, insert, update, softdelete e delete»*.
 
 O desenho ja existia: `ModoParticao::PorQuantidade`, documentado em
-`docs/FORMATO.md` (secao 8), com volumes `Tabela_001.reg` .. `Tabela_NNN.reg`
+`docs/FORMATO.md` (secao 8), com volumes `Tabela#001.reg` .. `Tabela#NNN.reg`
 e o endereco por DIVISAO: `volume = (rowid-1)/registros_por_arquivo + 1`. Esta
 sonda nao le o codigo: exercita as cinco operacoes contra um `phxsqld` de pe,
 com 1.000.000 de linhas em dez volumes de 100.000, e mede se ler uma pagina no

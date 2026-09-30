@@ -1,4 +1,4 @@
-//! Partição alfanumérica: `Clientes_A.reg` até `Clientes_Outros.reg`.
+//! Partição alfanumérica: `Clientes#A.reg` até `Clientes#Outros.reg`.
 //!
 //! O que estes testes protegem, em ordem de importância:
 //!
@@ -88,14 +88,14 @@ fn cada_letra_ganha_o_arquivo_dela() {
     }
     t.sincronizar().unwrap();
 
-    let existe = |s: &str| dir.0.join(format!("clientes_{s}.reg")).exists();
-    assert!(existe("A"), "faltou o clientes_A.reg");
+    let existe = |s: &str| dir.0.join(format!("clientes#{s}.reg")).exists();
+    assert!(existe("A"), "faltou o clientes#A.reg");
     assert!(existe("B"));
     assert!(existe("S"));
     assert!(existe("0"));
     assert!(existe("Outros"));
     // O balde que nunca recebeu linha NÃO ganha arquivo: uma tabela de
-    // clientes sem nenhum nome com Q não precisa de um _Q.reg vazio.
+    // clientes sem nenhum nome com Q não precisa de um #Q.reg vazio.
     assert!(!existe("Q"), "criou arquivo para um balde vazio");
 
     // Duas Silvas moram no mesmo arquivo.
@@ -199,7 +199,7 @@ fn a_varredura_salta_os_vazios_entre_baldes() {
 /// O efeito não era lentidão, era recusa: pela porta de dados o `varrer` monta
 /// o campo `ha_antes` com esta função, então **toda página que começasse no
 /// primeiro slot de um balde** voltava `NAO_ENCONTRADO` em vez de linhas —
-/// e a página 1 também, quando o balde `_A` estava vazio. Achado exercitando
+/// e a página 1 também, quando o balde `#A` estava vazio. Achado exercitando
 /// o `varrer` por soquete (`bancada/utilizacao-padrao/`), não lendo o código:
 /// os 33 testes daqui provavam a ida, e nenhum provava a volta.
 #[test]
@@ -331,7 +331,7 @@ fn o_pag_descreve_a_particao() {
     assert_eq!(baldes.len(), 37);
     assert_eq!(baldes[18].texto_ou("letra", ""), "S");
     assert_eq!(baldes[18].inteiro_ou("registros", -1), 2);
-    assert_eq!(baldes[18].texto_ou("arquivo", ""), "clientes_S.reg");
+    assert_eq!(baldes[18].texto_ou("arquivo", ""), "clientes#S.reg");
     assert_eq!(baldes[18].inteiro_ou("primeiro_rowid", -1), 18 * 500 + 1);
 
     // Apagar o descritor não quebra a tabela: ele é gerado, não é verdade.
@@ -357,7 +357,7 @@ fn excluir_no_balde_nao_reaproveita_o_slot() {
     assert_eq!(t.varrer().unwrap().len(), 2);
 }
 
-/// Só o `.reg` se parte por letra. Um `clientes_B.log` se leria como «o
+/// Só o `.reg` se parte por letra. Um `clientes#B.log` se leria como «o
 /// diário do balde B», e o diário é da tabela inteira — ele rola por tamanho.
 #[test]
 fn so_o_reg_leva_a_letra_no_nome() {
@@ -368,15 +368,15 @@ fn so_o_reg_leva_a_letra_no_nome() {
 
     let tem = |n: &str| dir.0.join(n).exists();
     // O .reg do balde S, com a letra.
-    assert!(tem("clientes_S.reg"), "faltou o clientes_S.reg");
+    assert!(tem("clientes#S.reg"), "faltou o clientes#S.reg");
     // E os externos com o sufixo numérico, não com letra.
     for ext in ["bin", "memo", "log", "trash", "reason"] {
         assert!(
-            tem(&format!("clientes_001.{ext}")),
+            tem(&format!("clientes#001.{ext}")),
             "o .{ext} nao saiu com sufixo numerico"
         );
         assert!(
-            !tem(&format!("clientes_A.{ext}")),
+            !tem(&format!("clientes#A.{ext}")),
             "o .{ext} saiu com sufixo de LETRA"
         );
     }
@@ -409,8 +409,9 @@ fn os_baldes_aparecem_como_uma_tabela_so() {
     );
 }
 
-/// E uma tabela que por acaso se chama `dados_X` continua sendo ela mesma:
-/// só conta como balde quando o volume 1 (`_A`) está ali do lado.
+/// E uma tabela que por acaso se chama `dados_X` continua sendo ela mesma --
+/// desde o pedido 508 por construção: o balde é `dados#X`, e o `_` não separa
+/// volume nenhum.
 #[test]
 fn tabela_com_nome_de_balde_nao_e_confundida() {
     use phxsql_store::catalogo::Instancia;
@@ -439,8 +440,8 @@ fn tabela_com_nome_de_balde_nao_e_confundida() {
 /// A bissecção pelo `rownum` NÃO vale aqui, e o motor tem de saber disso.
 ///
 /// A armadilha: `rowid = (balde-1) × registros_por_arquivo + slot`. A Silva
-/// digitada primeiro mora no `_S`, com rowid alto; a Alves digitada depois
-/// mora no `_A`, com rowid 1. O `rownum` 1 está num rowid MAIOR que o do
+/// digitada primeiro mora no `#S`, com rowid alto; a Alves digitada depois
+/// mora no `#A`, com rowid 1. O `rownum` 1 está num rowid MAIOR que o do
 /// `rownum` 2 — a sequência não está ordenada, e bissetar devolveria a linha
 /// errada em silêncio.
 #[test]

@@ -1380,7 +1380,7 @@ fn tipo_desconhecido_recusa_na_hora() {
 /// esta ABI, com uma coluna candidata (`cpf`, o mesmo nome que os testes do
 /// oraculo em `phxsql-core::schema` usam) e linhas com primeiros caracteres
 /// bem diferentes, sempre cai num UNICO arquivo `.reg`. Particao por posicao
-/// teria produzido `nome_A.reg`, `nome_9.reg`, `nome_Outros.reg`... (ver
+/// teria produzido `nome#A.reg`, `nome#9.reg`, `nome#Outros.reg`... (ver
 /// `BALDES` em `paginacao.rs`) -- e e' assim, pelo sistema de arquivos e nao
 /// por um campo interno, que se enxerga que a paginacao nunca foi ligada.
 ///

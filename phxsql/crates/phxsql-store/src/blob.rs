@@ -15,7 +15,7 @@
 //! # Paginacao
 //!
 //! Fotos e anexos sao o que mais faz um arquivo crescer, entao o `.bin` e o
-//! `.memo` tambem se partem em volumes: `Tabela_001.bin`, `Tabela_002.bin`...
+//! `.memo` tambem se partem em volumes: `Tabela#001.bin`, `Tabela#002.bin`...
 //! Cada volume tem cabecalho e contabilidade proprios, e um bloco nunca e
 //! partido entre dois volumes -- se nao couber no atual, vai inteiro para o
 //! proximo. O `Ponteiro` gravado no `.reg` carrega o numero do volume.

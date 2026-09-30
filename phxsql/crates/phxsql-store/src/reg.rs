@@ -239,7 +239,7 @@ pub struct RegFile {
     ///
     /// Indice do vetor = balde - 1, com 37 posicoes fixas. Vazio nos outros
     /// modos. Cada balde tem o proprio contador porque a linha vai para o
-    /// volume DELA: um contador global nao diria em que slot do `_S` a proxima
+    /// volume DELA: um contador global nao diria em que slot do `#S` a proxima
     /// Silva entra.
     baldes: Vec<u64>,
 }
@@ -331,7 +331,7 @@ impl RegFile {
         if r.esquema.paginacao().modo.por_letra() {
             // Os 37 baldes existem desde a criacao, todos vazios. O ARQUIVO de
             // cada um so nasce na primeira linha que cair nele: uma tabela de
-            // clientes que nunca teve nome com Q nao precisa de um `_Q.reg`
+            // clientes que nunca teve nome com Q nao precisa de um `#Q.reg`
             // vazio ocupando lugar.
             r.baldes = vec![0; BALDES.len()];
         }
@@ -1024,8 +1024,8 @@ impl RegFile {
             por_u64(&mut buf, 84, f.chave_periodo as u64);
         }
         // Na particao alfanumerica, quantos slots este balde ja usou. Por
-        // volume, e nao no volume 1: o contador do `_S` tem de viajar junto
-        // com o `_S`.
+        // volume, e nao no volume 1: o contador do `#S` tem de viajar junto
+        // com o `#S`.
         if let Some(usados) = self.baldes.get(volume as usize - 1) {
             por_u64(&mut buf, 100, *usados);
         }
@@ -1876,7 +1876,7 @@ impl RegFile {
     /// rowid sem saber que balde existe.
     ///
     /// `registros_por_arquivo` passa a ser um teto POR LETRA, e nao da tabela.
-    /// Numa base brasileira o `_S` enche muito antes do `_K`, e o erro diz qual
+    /// Numa base brasileira o `#S` enche muito antes do `#K`, e o erro diz qual
     /// balde encheu -- porque «tabela cheia» com 3% de ocupacao seria uma
     /// mensagem que nao ajuda ninguem.
     pub fn inserir_no_balde(&mut self, payload: &[u8], balde: u32) -> Result<RowId> {
@@ -2346,7 +2346,7 @@ impl RegFile {
     /// O proximo ativo quando a tabela e alfanumerica.
     ///
     /// Aqui `slot_count` e uma marca d'agua, e nao uma contagem: entre o fim do
-    /// balde `_A` e o comeco do `_B` ha `registros_por_arquivo` menos os usados
+    /// balde `#A` e o comeco do `#B` ha `registros_por_arquivo` menos os usados
     /// de puro vazio. Andar de um em um por esse vazio faria uma varredura de
     /// mil linhas custar milhoes de leituras -- que e exatamente o defeito que
     /// a paginacao acabou de tirar do caminho.
@@ -2687,6 +2687,45 @@ fn reescrever_volume(
 /// nonce e no dado associado da cifra, e o nome so aparece na mensagem de erro.
 type Transformador<'a> = &'a mut dyn FnMut(u32, RowId, &[u8], &str) -> Result<Vec<u8>>;
 
+/// O numero do volume (bytes 12..16) e a paginacao que um `.reg` DECLARA no
+/// proprio cabecalho e bloco de esquema -- a pergunta da migracao do pedido
+/// 508: `vendas_2024.reg` e o volume 2024 de `vendas`, ou a tabela
+/// `vendas_2024`?
+///
+/// Todo volume carrega o esquema inteiro (ver o topo deste arquivo), entao o
+/// arquivo responde sozinho, sem abrir a tabela. O CRC do cabecalho e o do
+/// esquema se conferem antes de acreditar em qualquer numero: `None` e «nao
+/// deu para saber», e quem chama recusa em vez de adivinhar.
+pub(crate) fn volume_e_paginacao_declarados(caminho: &Path) -> Option<(u32, Paginacao)> {
+    let mut f = File::open(caminho).ok()?;
+    let mut cab = vec![0u8; CAB_LEN];
+    ler_exato(&mut f, 0, &mut cab).ok()?;
+    if cab[0..8] != *MAGIC_REG {
+        return None;
+    }
+    let versao = u16::from_le_bytes([cab[8], cab[9]]);
+    let cab_len = match versao {
+        VERSAO_CIFRADO => CAB_LEN_CIFRADO,
+        VERSAO => CAB_LEN,
+        _ => return None,
+    };
+    if cab_len > CAB_LEN {
+        cab.resize(cab_len, 0);
+        ler_exato(&mut f, 0, &mut cab).ok()?;
+    }
+    let c = Campos(&cab);
+    if crc32(&cab[..cab_len - 4]) != c.u32(cab_len - 4) {
+        return None;
+    }
+    let mut bytes = vec![0u8; c.u32(52) as usize];
+    ler_exato(&mut f, cab_len as u64, &mut bytes).ok()?;
+    if crc32(&bytes) != c.u32(56) {
+        return None;
+    }
+    let esquema = Schema::desserializar(&bytes).ok()?;
+    Some((c.u32(12), esquema.paginacao()))
+}
+
 /// `(slot_size, data_offset, CRC do esquema)` que um arquivo de volume
 /// **declara**, ou `None` se ele nem chega a ser um cabecalho valido.
 ///
@@ -2988,8 +3027,8 @@ pub(crate) fn cifrado_no_volume(caminho: &Path) -> Option<bool> {
 /// varre o diretorio e escolhe pelo **cabecalho**, e nao pelo nome: o volume 1
 /// e o que se declara volume 1 nos bytes 12..16.
 ///
-/// Pelo nome nao daria. Na particao alfanumerica os sufixos sao `_A`.. `_Z`,
-/// `_0`.. `_9` e `_Outros`, e ordenar texto poria `_0` antes de `_A` -- o que
+/// Pelo nome nao daria. Na particao alfanumerica os sufixos sao `#A`.. `#Z`,
+/// `#0`.. `#9` e `#Outros`, e ordenar texto poria `#0` antes de `#A` -- o que
 /// escolheria como volume 1 um arquivo que nao tem os contadores da tabela.
 /// Ler 128 bytes de cada candidato uma vez, na abertura, custa nada: volume e
 /// coisa que se conta em dezenas.
@@ -3014,7 +3053,9 @@ fn achar_primeiro_volume(diretorio: &Path, nome: &str, ext: &str) -> Result<Path
             diretorio.display()
         )));
     }
-    let prefixo = format!("{nome}_");
+    // O candidato e quem o motor unico do pedido 508 le como volume DESTA
+    // tabela -- e nao «quem comeca por `nome` e separador»: `vendas#2024`
+    // e volume de `vendas`, e `vendas_2024.reg` e outra tabela.
     let mut candidatos: Vec<PathBuf> = std::fs::read_dir(diretorio)?
         .filter_map(|e| e.ok())
         .map(|e| e.path())
@@ -3022,12 +3063,10 @@ fn achar_primeiro_volume(diretorio: &Path, nome: &str, ext: &str) -> Result<Path
             if p.extension().and_then(|s| s.to_str()) != Some(ext) {
                 return false;
             }
-            match p.file_stem().and_then(|s| s.to_str()) {
-                Some(base) => base
-                    .strip_prefix(&prefixo)
-                    .is_some_and(|sufixo| !sufixo.is_empty()),
-                None => false,
-            }
+            p.file_stem()
+                .and_then(|s| s.to_str())
+                .and_then(phxsql_core::paginacao::separar_volume)
+                .is_some_and(|(tabela, _)| tabela == nome)
         })
         .collect();
     candidatos.sort();
@@ -3247,9 +3286,9 @@ mod tests {
         }
         assert_eq!(r.slots(), 25);
         assert_eq!(r.volumes(), vec![1, 2, 3]);
-        assert!(d.join("cadastroClientes_001.reg").exists());
-        assert!(d.join("cadastroClientes_002.reg").exists());
-        assert!(d.join("cadastroClientes_003.reg").exists());
+        assert!(d.join("cadastroClientes#001.reg").exists());
+        assert!(d.join("cadastroClientes#002.reg").exists());
+        assert!(d.join("cadastroClientes#003.reg").exists());
         std::fs::remove_dir_all(&d).unwrap();
     }
 

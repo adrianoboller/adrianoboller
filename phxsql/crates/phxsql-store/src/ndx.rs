@@ -2569,6 +2569,11 @@ pub mod panico_de_teste {
         /// `Table::reconstruir_fts` (pedido 472): o `.fts` recriado VAZIO e a
         /// primeira linha ja nele; as outras, nao.
         NoMeioDoReconstruirFts,
+        /// A migracao do separador de volume (pedido 508): antes de CADA
+        /// `rename` de `x_NNN` para `x#NNN`, e antes da marca do diretorio.
+        /// Com a pausa na segunda passagem, o primeiro volume ja mudou de
+        /// nome e o resto nao.
+        EntreRenomesDoSeparador,
     }
 
     #[cfg(debug_assertions)]

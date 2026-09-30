@@ -775,7 +775,7 @@ fn o_expurgo_da_trilha_cifrada_decide_sem_abrir_o_corpo() {
     let ativo = *volumes.last().unwrap();
     // O corpo esta mesmo cifrado: sem isto, o teste passaria com a cifra
     // desligada e nao provaria nada sobre o passo com etiqueta.
-    let bruto = std::fs::read(d.join("clientes_001.lgpd")).unwrap();
+    let bruto = std::fs::read(d.join("clientes#001.lgpd")).unwrap();
     assert!(
         !bruto.windows(11).any(|w| w == b"00000000001"),
         "o volume da trilha esta em claro"
@@ -785,7 +785,7 @@ fn o_expurgo_da_trilha_cifrada_decide_sem_abrir_o_corpo() {
     let selado = t.expurgar_trilha(limite, "retencao").unwrap();
     assert_eq!(selado.expurgo().volumes.len(), volumes.len() - 1);
     assert_eq!(t.volumes_da_trilha().unwrap(), vec![ativo]);
-    assert!(!d.join("clientes_001.lgpd").exists());
+    assert!(!d.join("clientes#001.lgpd").exists());
     assert!(d.join("clientes.lgpd").exists());
 
     let resto = t.trilha(0, 0).unwrap();

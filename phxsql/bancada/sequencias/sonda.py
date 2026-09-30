@@ -110,14 +110,15 @@ class Servidor:
 
     def cabecalho(self, database, tabela, volume=1, sufixo=None):
         """Os contadores lidos do DISCO. `sufixo` para a particao por letra,
-        onde o volume 1 e o balde `_A` e nao `_001`."""
+        onde o volume 1 e o balde `#A` e nao `#001` (separador `#` desde o
+        pedido 508)."""
         d = f"{self.base}/dados/{database}"
         if sufixo is not None:
             nome = f"{d}/{tabela}{sufixo}.reg"
         elif volume == 1 and os.path.exists(f"{d}/{tabela}.reg"):
             nome = f"{d}/{tabela}.reg"
         else:
-            nome = f"{d}/{tabela}_{volume:03d}.reg"
+            nome = f"{d}/{tabela}#{volume:03d}.reg"
         if not os.path.exists(nome):
             return None
         with open(nome, "rb") as f:
@@ -332,16 +333,16 @@ def bloco_14(sv):
     arquivos = sorted(f for f in os.listdir(f"{sv.base}/dados/loja")
                       if f.startswith("alfa") and f.endswith(".reg"))
     print("  volumes:", arquivos)
-    print("  cabecalho do balde _A (o volume 1):", sv.cabecalho("loja", "alfa", sufixo="_A"))
-    print("  cabecalho do balde _S:", sv.cabecalho("loja", "alfa", sufixo="_S"))
+    print("  cabecalho do balde #A (o volume 1):", sv.cabecalho("loja", "alfa", sufixo="#A"))
+    print("  cabecalho do balde #S:", sv.cabecalho("loja", "alfa", sufixo="#S"))
     sv.pedir(op="begin")
     r = diz("inserir DENTRO de transacao numa alfanumerica (tem de recusar)",
             sv.pedir(op="inserir", database="loja", tabela="alfa", linha={"c": "Costa"}))
     sv.pedir(op="rollback")
     MEDIDO["particao_por_letra"] = {
         "linhas": linhas, "volumes": arquivos,
-        "cab_A": sv.cabecalho("loja", "alfa", sufixo="_A"),
-        "cab_S": sv.cabecalho("loja", "alfa", sufixo="_S"),
+        "cab_A": sv.cabecalho("loja", "alfa", sufixo="#A"),
+        "cab_S": sv.cabecalho("loja", "alfa", sufixo="#S"),
         "transacao_recusa": r.get("erro"),
     }
 

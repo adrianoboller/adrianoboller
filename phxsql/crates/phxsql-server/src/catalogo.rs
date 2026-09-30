@@ -1219,7 +1219,7 @@ pub const OPERACOES: &[Operacao] = &[
                 "integer",
                 "liga a paginação: quantas linhas por volume",
             ),
-            opc("digitos", "integer", "largura do sufixo `_001` do volume"),
+            opc("digitos", "integer", "largura do sufixo `#001` do volume"),
             opc(
                 "motivo_obrigatorio",
                 "boolean",

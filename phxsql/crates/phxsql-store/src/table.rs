@@ -1017,7 +1017,7 @@ impl Table {
 
         let ndx = NdxFile::criar(caminho(&diretorio, &nome, EXT_NDX), &esquema)?;
         // Os arquivos que NAO se partem por letra levam o sufixo numerico.
-        // Ver `Paginacao::para_externos`: um `Clientes_B.log` se leria como o
+        // Ver `Paginacao::para_externos`: um `Clientes#B.log` se leria como o
         // diario do balde B, e o diario e da tabela inteira.
         let externos = paginacao.para_externos();
         let bin = BlobFile::criar(&diretorio, &nome, EXT_BIN, MAGIC_BIN, externos)?;
@@ -4893,7 +4893,7 @@ impl Table {
     ///
     /// `None` nos outros modos. O valor da coluna de referencia vira texto
     /// pela mesma funcao que o `.reason` usa -- entao numero tambem particiona,
-    /// e o `12345` cai no balde `_1`.
+    /// e o `12345` cai no balde `#1`.
     fn balde_da_linha(&self, valores: &[Value]) -> Result<Option<u32>> {
         let modo = self.esquema.paginacao().modo;
         if !modo.por_letra() {
@@ -5655,7 +5655,7 @@ impl Table {
         // referencia de «Silva» para «Andrade» mudaria o arquivo em que a
         // linha mora, e com ele o rowid -- que e a identidade dela e esta em
         // todo indice. Mover nao e opcao; deixar a linha no balde errado
-        // tambem nao, porque ai o `_S` deixa de conter os S e a particao para
+        // tambem nao, porque ai o `#S` deixa de conter os S e a particao para
         // de valer. Entao a alteracao e RECUSADA, com o caminho escrito.
         if let (Some(a), Some(b)) = (
             self.balde_da_linha(&valores_antigos)?,
@@ -6900,8 +6900,8 @@ impl Table {
             return Ok(None);
         }
         // Na particao alfanumerica o `rownum` NAO cresce com o rowid, e ai a
-        // bisseccao nao vale: a Silva digitada primeiro mora no `_S`, com
-        // rowid alto, e a Alves digitada depois mora no `_A`, com rowid 1 --
+        // bisseccao nao vale: a Silva digitada primeiro mora no `#S`, com
+        // rowid alto, e a Alves digitada depois mora no `#A`, com rowid 1 --
         // rownum 1 num rowid maior que o do rownum 2. Bissetar uma sequencia
         // que nao esta ordenada devolve resposta errada em silencio, que e
         // pior que devolver devagar. Ali se varre.
@@ -8049,7 +8049,7 @@ impl Table {
     /// primeiro registro dele passou do corte por idade (`lgpd.volume_dias`)
     /// contado de `agora`. Devolve o numero que fechou; `None` se nada fechou.
     ///
-    /// Fechar e renomear o ativo para `_NNN` e fazer nascer o seguinte: nenhum
+    /// Fechar e renomear o ativo para `#NNN` e fazer nascer o seguinte: nenhum
     /// byte de registro muda. E o passo que deixa o volume elegivel para o
     /// expurgo, que nunca derruba o ativo -- e por isso a passada da retencao
     /// e a op do administrador o chamam ANTES de planejar.
@@ -8066,6 +8066,21 @@ impl Table {
         &mut self,
     ) -> Result<(crate::blob::EstatisticaBlob, crate::blob::EstatisticaBlob)> {
         Ok((self.bin.estatistica()?, self.memo.estatistica()?))
+    }
+
+    /// Os caminhos dos volumes do `.reg` que existem, compostos pelo mesmo
+    /// motor que os abre.
+    ///
+    /// Existe para quem precisa do ARQUIVO -- o painel soma o tamanho deles
+    /// --, e nao para montar o nome de novo: o painel compunha `x.reg` para o
+    /// volume 1 e `x_NNN.reg` de tres digitos para os outros, e somava zero
+    /// byte de toda tabela de 4 digitos ou por letra (pedido 508).
+    pub fn caminhos_do_reg(&self) -> Vec<std::path::PathBuf> {
+        self.reg
+            .volumes()
+            .into_iter()
+            .map(|v| self.reg.caminho(v))
+            .collect()
     }
 
     /// Volumes existentes de cada arquivo paginado.

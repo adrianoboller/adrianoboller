@@ -43,7 +43,7 @@
 //! cabecalho e o que salva a leitura -- um volume inteiro se pula sem abrir.
 //!
 //! Como o `.log` cresce para sempre, ele tambem e paginado em
-//! `Tabela_001.log`, `Tabela_002.log`, ... pelo tamanho de volume do esquema.
+//! `Tabela#001.log`, `Tabela#002.log`, ... pelo tamanho de volume do esquema.
 //!
 //! # A cifra do corpo (versao 3)
 //!

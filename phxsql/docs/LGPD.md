@@ -535,7 +535,8 @@ ativo para sempre (§«A premissa», abaixo). O papel C decidiu o formato B, e e
 entrou na mesma versão (`FORMATO.md` §7, «Nomes e volumes»):
 
 - o **ativo** é sempre `<tabela>.lgpd`; os **fechados** são
-  `<tabela>_NNN.lgpd`, com `NNN` igual ao `volume` do cabeçalho — no mínimo
+  `<tabela>#NNN.lgpd` (o separador era `_` até o pedido 508), com `NNN` igual
+  ao `volume` do cabeçalho — no mínimo
   três dígitos, **sem teto**, nunca reusado;
 - a trilha **não segue** a paginação do `.reg`: nem `registros_por_arquivo`,
   nem `max_arquivos`, nem `recursos.diario_volume_mib`;
@@ -548,8 +549,9 @@ entrou na mesma versão (`FORMATO.md` §7, «Nomes e volumes»):
   uma vez na vida dele — e uma queda entre o `rename` e o nascimento cai na
   mesma regra;
 - trilha gravada antes abre **sem reescrita**: o arquivo único vira o ativo
-  volume 1; a paginada `_001`…`_K` vira fechados e o ativo nasce `K+1`; a de
-  sufixo `_0001` é achada pelo nome antigo.
+  volume 1; a paginada `#001`…`#K` (os `_001`…`_K` do binário anterior,
+  depois da migração do separador do pedido 508) vira fechados e o ativo nasce
+  `K+1`; a de sufixo `#0001` é achada pela largura antiga.
 - o ativo **mais curto que o cabeçalho** é nascimento interrompido pela queda:
   conta como ausente, a tabela abre, e o próximo evento o faz nascer de novo
   com o mesmo número. Sem isso, um `clientes.lgpd` de 0 byte trancava a
@@ -560,11 +562,14 @@ entrou na mesma versão (`FORMATO.md` §7, «Nomes e volumes»):
   disco junto do rastro: o número dele só existia na listagem dos fechados que
   o expurgo apaga (P3).
 
-**E o nome da tabela não pode ser o de um volume** (segunda revisão, B1): o
-ativo da trilha de `x_001` é `x_001.lgpd` com volume 1 — nome e número do
-fechado 1 da trilha de `x` —, e o papel C mediu o expurgo de `x` apagando-o.
-Nenhuma conferência de cabeçalho separa os dois; quem separa é a
-**declaração**. `criar_tabela`, `duplicar_tabela`, `copiar_tabela_para` e
+**E o nome da tabela não podia ser o de um volume** (segunda revisão, B1): com
+o separador `_`, o ativo da trilha de `x_001` era `x_001.lgpd` com volume 1 —
+nome e número do fechado 1 da trilha de `x` —, e o papel C mediu o expurgo de
+`x` apagando-o. **Desde o pedido 508 o fechado 1 de `x` é `x#001.lgpd`**, o `#`
+não entra em nome de tabela, e a colisão acabou pela raiz: `x_001`,
+`pedidos_2025` e `x_A` voltaram a ser nomes aceitos (`FORMATO.md` §8, «O
+separador de volume»). O que segue é o histórico de como a declaração
+segurou a porta até lá. `criar_tabela`, `duplicar_tabela`, `copiar_tabela_para` e
 `renomear_tabela` fazem a mesma pergunta por uma função só
 (`exigir_nome_que_volta`, no `catalogo.rs`): o nome que o catálogo não lê de
 volta como ele mesmo é recusado. `x_001` e `pedidos_2025` recusam;

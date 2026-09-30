@@ -211,14 +211,14 @@ Definida no `CREATE TABLE`, com dois parâmetros:
 |---|---|
 | `registros_por_arquivo` | quantos registros cabem em cada volume |
 | `max_arquivos` | quantos volumes a tabela pode ter |
-| `digitos` | largura do sufixo, padrão 3 (`_001`) |
+| `digitos` | largura do sufixo, padrão 3 (`#001`) |
 
 Capacidade da tabela = `registros_por_arquivo x max_arquivos`.
 
 ```
-cadastroClientes_001.reg
-cadastroClientes_002.reg
-cadastroClientes_003.reg
+cadastroClientes#001.reg
+cadastroClientes#002.reg
+cadastroClientes#003.reg
 ```
 
 **O endereçamento continua sendo uma conta, não uma busca** — que é a

@@ -1,6 +1,6 @@
 //! Conjunto de volumes de um arquivo paginado.
 //!
-//! Uma tabela grande se parte em `Tabela_001.reg`, `Tabela_002.reg`, ... Este
+//! Uma tabela grande se parte em `Tabela#001.reg`, `Tabela#002.reg`, ... Este
 //! modulo esconde essa divisao: quem chama pede "leia tantos bytes no offset X
 //! do volume N" e nao precisa saber quantos arquivos existem nem quais estao
 //! abertos.
@@ -27,11 +27,11 @@ pub const LIMITE_ABERTOS_PADRAO: usize = 64;
 /// Como o numero do volume vira nome de arquivo.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Nomes {
-    /// `nome` + o sufixo da paginacao (`_001`, `_A`, ou nada). Todos os
+    /// `nome` + o sufixo da paginacao (`#001`, `#A`, ou nada). Todos os
     /// conjuntos, menos a trilha.
     DaPaginacao,
     /// A trilha `.lgpd` (pedido 368, formato B): o volume `ativo` mora em
-    /// `nome.ext`, sem sufixo, e os fechados em `nome_NNN.ext`, com NNN de no
+    /// `nome.ext`, sem sufixo, e os fechados em `nome#NNN.ext`, com NNN de no
     /// minimo 3 digitos e sem teto -- o numero do nome e o `volume` do
     /// cabecalho, e nunca se reusa.
     ///
@@ -522,7 +522,7 @@ impl Volumes {
 
     /// Um conjunto nomeado como a trilha `.lgpd` (pedido 368, formato B): o
     /// volume `ativo` mora em `nome.ext`, sem sufixo, e os outros em
-    /// `nome_NNN.ext`. Ver [`Nomes::DaTrilha`].
+    /// `nome#NNN.ext`. Ver [`Nomes::DaTrilha`].
     pub fn novo_da_trilha(
         diretorio: impl AsRef<Path>,
         nome: impl Into<String>,
@@ -554,27 +554,28 @@ impl Volumes {
         }
     }
 
-    /// O nome canonico de um volume FECHADO da trilha: `nome_NNN.ext`, com NNN
-    /// de no minimo 3 digitos e sem teto.
+    /// O nome canonico de um volume FECHADO da trilha: `nome#NNN.ext`, com NNN
+    /// de no minimo 3 digitos e sem teto. O sufixo sai do motor unico do
+    /// pedido 508 ([`phxsql_core::paginacao::sufixo_de_digitos`]).
     pub fn caminho_fechado_da_trilha(&self, volume: u32) -> PathBuf {
-        self.diretorio
-            .join(format!("{}_{:03}.{}", self.nome, volume, self.ext))
+        self.caminho_legado_da_trilha(volume, phxsql_core::paginacao::DIGITOS_PADRAO)
     }
 
     /// O nome de um volume da trilha gravado ANTES do formato B, com o sufixo
-    /// de `largura` digitos que a tabela usava.
+    /// de `largura` digitos que a tabela usava. «Legado» e o do formato B da
+    /// trilha (pedido 368), e nao o do separador: a migracao do 508 renomeia
+    /// `x_0001.lgpd` para `x#0001.lgpd`, e a largura continua a de antes.
     pub fn caminho_legado_da_trilha(&self, volume: u32, largura: u8) -> PathBuf {
         self.diretorio.join(format!(
-            "{}_{:0largura$}.{}",
+            "{}{}.{}",
             self.nome,
-            volume,
-            self.ext,
-            largura = largura as usize
+            phxsql_core::paginacao::sufixo_de_digitos(volume, largura),
+            self.ext
         ))
     }
 
     /// Fecha o volume ativo da trilha: o arquivo de nome fixo passa a se
-    /// chamar `nome_NNN.ext`, e o numero seguinte passa a ser o ativo -- ainda
+    /// chamar `nome#NNN.ext`, e o numero seguinte passa a ser o ativo -- ainda
     /// sem arquivo; quem chama o faz nascer. Devolve o numero que fechou.
     ///
     /// # Por que o descritor sai antes do `rename`
@@ -1250,11 +1251,11 @@ mod tests {
         let v = Volumes::novo(&d, "cadastroClientes", "reg", p);
         assert_eq!(
             v.caminho(1).file_name().unwrap().to_string_lossy(),
-            "cadastroClientes_001.reg"
+            "cadastroClientes#001.reg"
         );
         assert_eq!(
             v.caminho(42).file_name().unwrap().to_string_lossy(),
-            "cadastroClientes_042.reg"
+            "cadastroClientes#042.reg"
         );
         std::fs::remove_dir_all(&d).unwrap();
     }
@@ -1543,6 +1544,14 @@ mod tests {
         // desta conta) para o embutido completar a cascata pelo mesmo motor.
         // Nao e familia do `Volumes`: nasce com `create_new`, e o
         // `gravar_marca` a sincroniza (`sync_all`) antes de devolver.
+        // Pedido 508: `separador.rs` entra com 3 -- o `rename` de cada volume
+        // da migracao do separador (com o `fsync` do diretorio pelo motor
+        // antes da marca), o temporario da marca (`recriar_do_banco`,
+        // sincronizado e trocado por `trocar_duravel`) e a marca do diretorio
+        // que NASCE neste binario (`escrever_do_banco`, sem `fsync` de
+        // proposito: perde-la so refaz uma varredura que nao renomeia nada).
+        // Nenhum e familia do `Volumes`: o volume renomeado nao esta aberto
+        // por ninguem, porque a migracao roda antes de o diretorio ser lido.
         const HOJE: &[(&str, usize)] = &[
             ("backup.rs", 2),
             ("catalogo.rs", 5),
@@ -1551,6 +1560,7 @@ mod tests {
             ("pag.rs", 2),
             ("reg.rs", 2),
             ("restaurar.rs", 3),
+            ("separador.rs", 3),
             ("sincronia.rs", 2),
             ("util.rs", 9),
             ("volume.rs", 2),

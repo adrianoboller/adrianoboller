@@ -23,7 +23,7 @@ informação. Ver §7.
 | `.log` | Diário de inclusões, alterações e exclusões | `PHXLOG\0\0` | sim | quem tem `diario` |
 | `.trash` | Linhas que saíram do `.reg`, inteiras | `PHXTRH\0\0` | sim | **só `administrar`** |
 | `.reason` | Por que cada linha foi excluída, e por quem | `PHXRSN\0\0` | sim | **só `administrar`** |
-| `.lgpd` | Quem alterou e quem leu as colunas de dado pessoal | `PHXLGP\0\0` | **própria** — ativo `.lgpd`, fechados `_NNN` (§7) | **só `administrar`** |
+| `.lgpd` | Quem alterou e quem leu as colunas de dado pessoal | `PHXLGP\0\0` | **própria** — ativo `.lgpd`, fechados `#NNN` (§7) | **só `administrar`** |
 | `.pag` | Descritor de partição, em JSON | — (texto) | não | quem lê a tabela |
 | `.fts` | Índice de texto (termo → linhas), só se a tabela declara um | `PHXNDX\0\0` — é um `.ndx` por dentro | **não** | quem tem `ler` |
 
@@ -58,8 +58,10 @@ contra o dado ficar **ruim** — bit trocado, escrita cortada, setor com
 defeito. **Não** protege contra o disco morrer: os dois arquivos moram no mesmo
 lugar.
 
-Uma tabela grande se parte em volumes numerados — `cadastroClientes_001.reg`,
-`_002.reg`, … — segundo os parâmetros do `CREATE TABLE`. Ver a seção 8.
+Uma tabela grande se parte em volumes numerados — `cadastroClientes#001.reg`,
+`#002.reg`, … — segundo os parâmetros do `CREATE TABLE`. Ver a seção 8. O
+separador é o `#` desde o pedido 508 (era `_`); o disco anterior migra sozinho
+uma vez — §8, «O separador de volume».
 
 **Convenções gerais**
 
@@ -757,8 +759,8 @@ o mesmo motivo de o endereço sair de uma conta — a ordem lógica é a ordem
 física.
 
 **A exceção que a partição alfanumérica cria.** Ali o `rownum` **não** cresce
-com o rowid: a Silva digitada primeiro mora no `_S`, com rowid alto, e a Alves
-digitada depois mora no `_A`, com rowid 1 — número de ordem 1 num rowid maior
+com o rowid: a Silva digitada primeiro mora no `#S`, com rowid alto, e a Alves
+digitada depois mora no `#A`, com rowid 1 — número de ordem 1 num rowid maior
 que o do número 2. Bissetar uma sequência que não está ordenada devolveria a
 linha errada *em silêncio*, que é pior que devolver devagar; nesse modo o motor
 varre. É a razão de `Table::posicao_e_rownum` recusar a partição por letra.
@@ -1990,9 +1992,9 @@ obedece `registros_por_arquivo`, `max_arquivos` nem `recursos.diario_volume_mib`
 | arquivo | o que é |
 |---|---|
 | `<tabela>.lgpd` | o volume **ativo** — o único que recebe escrita. Nome **fixo** |
-| `<tabela>_NNN.lgpd` | um volume **fechado**. `NNN` é o `volume` do cabeçalho: no mínimo 3 dígitos, **sem teto** (`_999`, `_1000`), nunca reusado |
+| `<tabela>#NNN.lgpd` | um volume **fechado**. `NNN` é o `volume` do cabeçalho: no mínimo 3 dígitos, **sem teto** (`#999`, `#1000`), nunca reusado |
 
-- **Fechar** é *renomear* o ativo para `_NNN` e fazer nascer o ativo `NNN+1`.
+- **Fechar** é *renomear* o ativo para `#NNN` e fazer nascer o ativo `NNN+1`.
   Nenhum byte de registro nem de cabeçalho muda: o nonce da cifra sai do offset
   e do UUID do registro, e a chave, do sal do cabeçalho — nada disso depende do
   nome.
@@ -2023,37 +2025,26 @@ obedece `registros_por_arquivo`, `max_arquivos` nem `recursos.diario_volume_mib`
   maior que 1. O ativo nunca sai; a passada da retenção fecha o ativo velho
   **antes** de planejar.
 - **O cabeçalho confere o nome:** volume fechado cujo cabeçalho diz outro
-  número é recusado como corrompido. Isso **não** protege a trilha de uma
-  tabela cujo nome termina em `_NNN`: o ativo de `x_001` é `x_001.lgpd`,
-  volume 1 — o mesmo nome e o mesmo número do fechado 1 de `x` —, e o papel C
-  mediu o expurgo de `x` apagando-o (P2a). Quem protege é a **declaração**:
-  `criar_tabela`, `duplicar_tabela`, `copiar_tabela_para` e `renomear_tabela`
-  recusam, pela mesma função, o nome que o catálogo leria como volume de
-  outra tabela — o sufixo `_` seguido só de dígitos, **ou uma das 37 letras
-  da partição alfanumérica** (pedido **506**), **ou um ponto**, que colide
-  com o separador do nome qualificado (pedido **507**). A recusa da letra é
-  **sintática**, sem perguntar ao disco: perguntar ao disco pergunta pelo
-  próprio arquivo que a declaração ainda não criou — `x_A` sozinho respondia
-  «não sou balde» antes de nascer e «sou o balde 1 de `x`» um instante depois,
-  e `x_B` nascia do lado sem erro nenhum porque o disco já tinha o `_A` que o
-  fazia parecer balde também; o `excluir_tabela("x")` seguinte apagava os 16
-  arquivos das duas, sem tabela `x` nenhuma (medido pelo papel C, N1). O
-  separador `_` de volume, que colide com qualquer nome que o use, continua
-  pendente: é o pedido **508**, mudança de formato. A tabela `_NNN`, `_A` ou
-  com ponto já criada antes dessas recusas continua **abrindo** pelo nome
-  exato — a recusa é só para o nome novo; `existe_tabela`/`todas_as_tabelas`
-  continuam sujeitas à mesma ambiguidade estrutural até o 508 fechar o
-  separador.
+  número é recusado como corrompido. Com o separador `_` de antes do pedido
+  **508** isso **não** protegia a trilha de uma tabela cujo nome terminava em
+  `_NNN`: o ativo de `x_001` era `x_001.lgpd`, volume 1 — o mesmo nome e o
+  mesmo número do fechado 1 de `x` —, e o papel C mediu o expurgo de `x`
+  apagando-o (P2a). Os pedidos 368, 506 e 507 fecharam a porta pela
+  **declaração**, recusando o nome. O 508 fechou pela **raiz**: o fechado 1 de
+  `x` é `x#001.lgpd`, o `#` não entra em nome de tabela, e `x_001` voltou a ser
+  nome aceito — os quatro motores o aceitam. O ponto continua recusado (507),
+  porque colide com o nome qualificado e não com o volume.
 
 **Migração, sem reescrita** — a trilha gravada antes do formato B abre como
 está:
 
 - tabela sem paginação: `<tabela>.lgpd`, volume 1, **já é** o ativo;
-- tabela paginada, `_001` a `_K` sem `<tabela>.lgpd`: os K viram **fechados** e
+- tabela paginada, `#001` a `#K` sem `<tabela>.lgpd` (os `_001` a `_K` do
+  binário anterior, depois da migração do separador — §8): os K viram **fechados** e
   o ativo nasce `K+1` no primeiro evento;
-- tabela paginada com sufixo de largura diferente de 3 (`_0001`): os volumes de
+- tabela paginada com sufixo de largura diferente de 3 (`#0001`): os volumes de
   antes continuam no nome em que nasceram, e são achados por ele; os que
-  fecharem depois ganham o nome canônico (`_004`).
+  fecharem depois ganham o nome canônico (`#004`).
 
 **Downgrade:** o binário anterior não segue a trilha de uma tabela **paginada**
 depois do formato B — ele procura o ativo em `_NNN` e não o acha no nome fixo.
@@ -2075,7 +2066,7 @@ Definida no `CREATE TABLE` e gravada no esquema:
 |---|---|
 | `registros_por_arquivo` | quantos registros cabem em cada volume do `.reg` |
 | `max_arquivos` | quantos volumes a tabela pode ter |
-| `digitos` | largura do sufixo, padrão 3 (`_001`) |
+| `digitos` | largura do sufixo, padrão 3 (`#001`) |
 | `bytes_por_arquivo` | tamanho de cada volume dos arquivos externos (menos o `.lgpd`, que tem corte próprio — §7) |
 | `modo` | **o que faz o volume cortar**: a contagem ou o calendário |
 
@@ -2091,9 +2082,9 @@ no sufixo — 999 com três dígitos.
 
 | `modo` | quando o volume corta | sufixo |
 |---|---|---|
-| `PorQuantidade` | a cada `registros_por_arquivo` linhas | `_001` |
-| `PorPeriodo { coluna, periodo }` | quando o período da coluna de data vira — **ou** quando o volume enche | `_001` |
-| `PorLetra { coluna }` | **não corta**: são 37 volumes fixos, e a linha vai para o da letra dela | `_A`, `_0`, `_Outros` |
+| `PorQuantidade` | a cada `registros_por_arquivo` linhas | `#001` |
+| `PorPeriodo { coluna, periodo }` | quando o período da coluna de data vira — **ou** quando o volume enche | `#001` |
+| `PorLetra { coluna }` | **não corta**: são 37 volumes fixos, e a linha vai para o da letra dela | `#A`, `#0`, `#Outros` |
 
 O período é `Mensal`, `Bimestral`, `Semestral` ou `Anual`, e os blocos sempre
 começam em janeiro: bimestre é jan-fev, mar-abr, …; semestre é jan-jun e
@@ -2123,10 +2114,10 @@ Três garantias sobrevivem intactas:
 ### A partição alfanumérica
 
 ```
-cadastroClientes_A.reg   cadastroClientes_0.reg
-cadastroClientes_B.reg   cadastroClientes_1.reg      cadastroClientes_Outros.reg
+cadastroClientes#A.reg   cadastroClientes#0.reg
+cadastroClientes#B.reg   cadastroClientes#1.reg      cadastroClientes#Outros.reg
 …                        …
-cadastroClientes_Z.reg   cadastroClientes_9.reg
+cadastroClientes#Z.reg   cadastroClientes#9.reg
 ```
 
 São **37 volumes**, sempre os mesmos, nesta ordem: `A`..`Z` (1..26), `0`..`9`
@@ -2135,9 +2126,9 @@ endereço de toda linha já gravada.
 
 O volume sai da **primeira letra** de uma coluna de referência, e o valor dela
 vira texto pela mesma função que o `.reason` usa — então número também
-particiona, e `12345` cai no `_1`. Três decisões:
+particiona, e `12345` cai no `#1`. Três decisões:
 
-- **Acento cai na letra sem acento.** «Ávila» vai para o `_A`. Um balde `_Á`
+- **Acento cai na letra sem acento.** «Ávila» vai para o `#A`. Um balde `#Á`
   separado faria «Avila» e «Ávila» — a mesma pessoa digitada por duas pessoas —
   pararem em arquivos diferentes. A tabela de dobra é escrita à mão e cobre o
   português, o espanhol e o alemão; o que não cobrir cai em `Outros`, que é um
@@ -2170,7 +2161,7 @@ Fica no volume, e não num arquivo separado, pela mesma razão da fronteira do
 período: um arquivo separado seria uma segunda verdade.
 
 O `slot_count` do volume 1 deixa de ser "quantos slots" e passa a ser a **marca
-d'água** — o maior rowid que já existiu. Entre o fim do `_A` e o começo do `_B`
+d'água** — o maior rowid que já existiu. Entre o fim do `#A` e o começo do `#B`
 há `registros_por_arquivo` menos os usados de puro vazio, então a varredura anda
 **por balde**: dentro do balde vai até `usados`, e no fim salta direto para o
 início do próximo.
@@ -2189,7 +2180,7 @@ alfabética de balde — que é a ordem do arquivo.
 #### O teto passa a ser por letra
 
 `registros_por_arquivo` é o teto **de cada balde**, e não da tabela. Num
-cadastro brasileiro o `_S` costuma ter dez vezes o `_K`: quem enche primeiro
+cadastro brasileiro o `#S` costuma ter dez vezes o `#K`: quem enche primeiro
 derruba a inserção daquela letra com as outras 36 ainda com espaço, e o erro
 diz **qual** balde encheu — «tabela cheia» com 3% de ocupação seria uma
 mensagem que não ajuda ninguém.
@@ -2199,7 +2190,7 @@ mensagem que não ajuda ninguém.
 **Alterar a coluna de referência.** Mudar «Silva» para «Andrade» mudaria o
 arquivo em que a linha mora, e com ele o rowid — que é a identidade dela em
 todo índice. Mover não é opção; deixar a linha no balde errado também não,
-porque aí o `_S` deixa de conter os S. Então a alteração é recusada, com o
+porque aí o `#S` deixa de conter os S. Então a alteração é recusada, com o
 caminho escrito na mensagem: exclua e insira de novo, e a linha nova nasce no
 balde certo com outro rowid.
 
@@ -2275,8 +2266,78 @@ mesmo *lazy open* que o `FileManager` do Clarion(R) faz.
 
 A paginação mora dentro do esquema, que mora dentro do primeiro volume — e a
 largura do sufixo faz parte dela. Abrir uma tabela, então, começa varrendo o
-diretório atrás de `nome.reg` ou do menor `nome_<dígitos>.reg`, e só depois de
+diretório atrás de `nome.reg` ou dos `nome#<sufixo>.reg`, escolhendo pelo
+cabeçalho o que se declara volume 1, e só depois de
 ler o esquema é que o conjunto de volumes é montado.
+
+### O separador de volume: `#` (pedido 508)
+
+O sufixo de volume se separa do nome da tabela por **`#`**: `clientes#001.reg`,
+`clientes#A.reg`, `clientes#001.lgpd`. Até o pedido 508 era o `_`, e o `_` é o
+caractere mais comum de nome de tabela: `vendas_2024.reg` se escrevia igual ao
+volume 2024 de `vendas`, e os pedidos 368/506 tinham de **recusar** o nome —
+que os quatro motores aceitam. A escolha é do papel J: o `.` morre pela
+sobrecarga com o nome qualificado `schema.tabela`; o `-` porque `itens-pedido`
+é nome plausível; o `~` colide com o 8.3 do Windows e com arquivo de backup; o
+`#` é o das partições do MySQL e do MariaDB (`#P#`) — 3 + 2 = **5** na régua,
+contra o `.` com o PostgreSQL = 4.
+
+- **O `#` não entra em nome** de database, schema ou tabela (`validar_nome`),
+  com a mensagem dizendo por quê. É isso que torna o separador inequívoco por
+  construção: o nome responde sozinho, sem perguntar ao disco — a pergunta ao
+  disco que o 506 teve de desmontar (`x_A` mudava de resposta no instante em
+  que nascia) deixou de existir.
+- **Um motor só** compõe e lê o sufixo: `SEPARADOR_DE_VOLUME`,
+  `Paginacao::sufixo`, `sufixo_de_digitos` e `separar_volume`, em
+  `phxsql-core/src/paginacao.rs`. As duas cópias do analisador que moravam
+  fora dele — a vitrine do `restaurar` (só dígitos, sem letra) e o painel do
+  servidor (volume 1 sem sufixo, sempre 3 dígitos) — passaram a chamá-lo. O
+  painel media **0** byte de tabela de 4 dígitos ou por letra e deixava o
+  volume 1 de fora das de 3 dígitos (medido: 0 contra 37.884, 0 contra 39.676
+  e 27.188 contra 37.884 bytes, 350 linhas em cada).
+
+**A marca `_formato-volumes.json`**, por **diretório** — o do database e o de
+cada schema. O catálogo lista as tabelas de um diretório pelo nome dos `.reg`,
+então ele precisa saber **qual analisador** usar antes de listar, e a resposta
+é do diretório, não da tabela. Só a presença decide; o conteúdo
+(`{"separador_de_volume": "#", "pedido": 508}`) é para quem abre com um `ls`.
+Diretório que nasce neste binário nasce marcado, sem `fsync` — perdê-la numa
+queda só refaz uma varredura que não renomeia nada. Diretório sem marca é do
+binário anterior.
+
+**A migração**, uma vez, idempotente — na abertura da **raiz** (subida do
+servidor, `Instancia::nova`, a base do embutido) e no palco da restauração, que
+é onde não há punho vivo. A abertura de **database**, que roda dentro das
+seções da trava, só confere a marca: sem ela e sem nada a renomear, ganha a
+marca; com volume de nome velho (um diretório copiado por fora com o processo
+no ar), **recusa** dizendo para reabrir — migrar ali seria migrar sem o `fsync`
+que a torna segura, e poria `fsync` em toda seção que abre database. A ficha
+compartilhada (leitura) nem isso: desce para a exclusiva.
+
+1. **As tabelas do diretório**, pelos `.reg`. Nome sem `_`+sufixo é tabela.
+   Nome que o analisador velho corta (`vendas_2024`) é decidido pelo
+   **cabeçalho**: todo volume carrega o próprio número (off 12) e o esquema com
+   a paginação, e ele é volume de `vendas` só se a paginação dele, escrita com
+   o separador antigo, dá exatamente `_2024` para o número que ele declara. A
+   tabela `vendas_2024` sem paginação nunca passa nessa conta, e uma paginada
+   nem tem arquivo sem sufixo. Cabeçalho que não se lê fica com a leitura do
+   binário anterior (dígitos são volume; letra é volume quando o `_A` está ao
+   lado) — é o que aquele arquivo significava até aqui.
+2. **O plano:** todo arquivo `T_sufixo.ext` (e `.ext.novo`, a troca do
+   `acrescentar_coluna`) cujo `T` é tabela e cujo `T_sufixo` **não** é,
+   para as onze extensões do catálogo, vira `T#sufixo.ext`. Se os dois nomes
+   existem ao mesmo tempo, para como **corrompido** sem renomear nada.
+3. `rename` de cada um; `fsync` do diretório; o `.pag` de cada tabela
+   **regerado** do `.reg` (ele guarda `"arquivo": "clientes_A.reg"`, e só se
+   regrava no `sincronizar`); e a marca por temporário, `fsync`, `rename` e
+   `fsync` do diretório (`sincronia::trocar_duravel`).
+
+A **queda no meio** re-roda: cada `rename` é atômico, o que já tem `#` é lido
+pelo analisador novo e pula, o resto se renomeia; a marca só existe depois de
+tudo. Provado contra o sistema operacional (`tests/separador-de-volume.rs`:
+filho parado entre dois `rename`s e morto por `SIGKILL`). **Backup antigo**
+restaura pela mesma migração, no palco. **Downgrade:** o binário anterior não
+lê `#`; volta-se renomeando `#`→`_` e apagando a marca.
 
 ### O que `sincronizar` alcança — e a assimetria que decide a forma da marca
 
@@ -2401,7 +2462,7 @@ partida**, que arquivo guarda o quê, e quanto tem em cada um:
   "max_arquivos": 37,
   "endereco": "volume = (rowid - 1) / registros_por_arquivo + 1; …",
   "baldes": [
-    { "balde": 1, "letra": "A", "arquivo": "clientes_A.reg",
+    { "balde": 1, "letra": "A", "arquivo": "clientes#A.reg",
       "existe": true, "registros": 2, "primeiro_rowid": 1 },
     …
   ]
@@ -2523,6 +2584,7 @@ devolver lixo.
 base/
 └── Z/                        database Z
     ├── _database.json        o TIPO do database (padrão/hive/vetorial)
+    ├── _formato-volumes.json o separador de volume é `#` (pedido 508, §8)
     ├── cadastroClientes.reg  ┐
     ├── cadastroClientes.ndx  ├ tabelas da raiz (sem schema)
     ├── ...                   ┘
@@ -2537,8 +2599,10 @@ database; um diretório dentro de um database é um schema; um arquivo `.reg` é
 uma tabela. Tabelas soltas na raiz do database são as "tabelas raiz" —
 equivalentes ao `public` do Postgres ou ao `dbo` do SQL Server.
 
-A **única** marcação é o tipo do database (ver §11.1 adiante): a detecção de
-schema e de tabela continua 100% estrutural, como sempre foi. Um diretório sem
+As marcações são duas: o tipo do database (ver §11.1 adiante) e, desde o
+pedido 508, o `_formato-volumes.json` de cada diretório, que diz qual separador
+de volume o nome dos arquivos usa (§8). A detecção de schema e de tabela
+continua 100% estrutural, como sempre foi. Um diretório sem
 `_database.json` é um database **padrão**, sem migração — por isso a marca não
 muda a regra de descoberta, só acrescenta uma informação que antes não existia.
 
@@ -2547,7 +2611,8 @@ que o catálogo do FraseSQL espera. Duas tabelas de mesmo nome em schemas
 diferentes não colidem.
 
 Nomes de database, schema e tabela são validados: nada de `..`, barra,
-contrabarra, dois-pontos, curinga ou caractere de controle. O `_database.json`
+contrabarra, dois-pontos, curinga, `#` (o separador de volume, §8) ou caractere
+de controle. O `_database.json`
 começa com `_` e termina em `.json` de propósito: não é `.reg`, então a
 varredura de tabelas o ignora de graça, e o `_` o afasta de qualquer nome de
 tabela válido.

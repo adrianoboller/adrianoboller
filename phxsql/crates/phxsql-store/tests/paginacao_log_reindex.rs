@@ -69,8 +69,8 @@ fn tabela_paginada_de_ponta_a_ponta() {
     // 500 registros / 50 por arquivo = 10 volumes de .reg.
     let (vreg, _, _, _) = t.volumes_por_arquivo();
     assert_eq!(vreg.len(), 10, "volumes de .reg: {vreg:?}");
-    assert!(dir.0.join("cadastroClientes_001.reg").exists());
-    assert!(dir.0.join("cadastroClientes_010.reg").exists());
+    assert!(dir.0.join("cadastroClientes#001.reg").exists());
+    assert!(dir.0.join("cadastroClientes#010.reg").exists());
     // O .ndx nao pagina: continua sendo um arquivo so.
     assert!(dir.0.join("cadastroClientes.ndx").exists());
 
@@ -383,9 +383,9 @@ fn volume_corta_quando_o_mes_vira() {
     assert_eq!(
         vols,
         vec![
-            "lancamentos_001.reg".to_string(),
-            "lancamentos_002.reg".to_string(),
-            "lancamentos_003.reg".to_string()
+            "lancamentos#001.reg".to_string(),
+            "lancamentos#002.reg".to_string(),
+            "lancamentos#003.reg".to_string()
         ],
         "tres meses tinham de dar tres volumes"
     );

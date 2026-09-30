@@ -585,9 +585,10 @@ fn nascimento_interrompido(caminho: &Path) -> Result<bool> {
 /// # Os nomes (pedido 368, formato B)
 ///
 /// O volume **ativo** -- o unico que recebe escrita -- e sempre
-/// `<tabela>.lgpd`, de nome fixo. Os **fechados** sao `<tabela>_NNN.lgpd`, com
+/// `<tabela>.lgpd`, de nome fixo. Os **fechados** sao `<tabela>#NNN.lgpd`, com
 /// NNN igual ao `volume` do cabecalho: no minimo 3 digitos, sem teto, nunca
-/// reusado. Fechar e RENOMEAR o ativo para `_NNN` e fazer nascer o ativo
+/// reusado (o separador era o `_` ate o pedido 508). Fechar e RENOMEAR o ativo
+/// para `#NNN` e fazer nascer o ativo
 /// `NNN+1`; nenhum byte de registro ou de cabecalho muda com isso.
 ///
 /// A trilha e independente da paginacao do `.reg`: nao segue
@@ -622,9 +623,11 @@ fn nascimento_interrompido(caminho: &Path) -> Result<bool> {
 ///
 /// - trilha de arquivo unico gravada antes: ja e `<tabela>.lgpd`, volume 1 --
 ///   vira o ativo como esta;
-/// - trilha paginada `_001` a `_K`, sem `<tabela>.lgpd`: os K viram fechados,
+/// - trilha paginada `#001` a `#K`, sem `<tabela>.lgpd`: os K viram fechados,
 ///   e o ativo nasce `K+1` no primeiro evento. Sufixo de largura diferente de
-///   3 (`_0001`) continua no nome em que nasceu (ver `largura_legada`).
+///   3 (`#0001`) continua na largura em que nasceu (ver `largura_legada`); o
+///   SEPARADOR, esse, a migracao do pedido 508 ja trocou antes de a trilha
+///   abrir.
 ///
 /// # Por que este nasce preguicoso, e os outros tres nao
 ///
@@ -650,7 +653,7 @@ pub struct TrilhaFile {
     /// listagem do diretorio?
     resolvido: bool,
     /// A largura do sufixo que a trilha usava ANTES do formato B, quando ela
-    /// nao era 3 (`_0001`). `None` na tabela sem paginacao e na de 3 digitos,
+    /// nao era 3 (`#0001`). `None` na tabela sem paginacao e na de 3 digitos,
     /// cujos nomes antigos ja sao os nomes novos.
     largura_legada: Option<u8>,
     /// Os volumes legados ja foram procurados nesta instancia?
@@ -736,9 +739,13 @@ impl TrilhaFile {
     }
 
     /// O maior numero de volume fechado no diretorio, pelo NOME
-    /// (`<tabela>_<digitos>.lgpd`, de qualquer largura). Zero se nao ha.
+    /// (`<tabela>#<digitos>.lgpd`, de qualquer largura). Zero se nao ha.
+    ///
+    /// O nome se le pelo motor unico do pedido 508
+    /// ([`phxsql_core::paginacao::separar_volume`]): com o `_` de antes,
+    /// `x_001.lgpd` -- o ATIVO da tabela `x_001` -- contava como fechado 1
+    /// de `x`.
     fn maior_fechado_no_disco(&self) -> Result<u32> {
-        let prefixo = format!("{}_", self.volumes.nome());
         let fim = format!(".{EXT_LGPD}");
         let mut maior = 0u32;
         let entradas = match std::fs::read_dir(self.volumes.diretorio()) {
@@ -751,13 +758,13 @@ impl TrilhaFile {
             let Some(nome) = nome.to_str() else {
                 continue;
             };
-            let Some(meio) = nome
-                .strip_prefix(prefixo.as_str())
-                .and_then(|r| r.strip_suffix(fim.as_str()))
+            let Some((tabela, meio)) = nome
+                .strip_suffix(fim.as_str())
+                .and_then(phxsql_core::paginacao::separar_volume)
             else {
                 continue;
             };
-            if meio.is_empty() || !meio.bytes().all(|b| b.is_ascii_digit()) {
+            if tabela != self.volumes.nome() || !meio.bytes().all(|b| b.is_ascii_digit()) {
                 continue;
             }
             if let Ok(n) = meio.parse::<u32>() {
@@ -790,7 +797,7 @@ impl TrilhaFile {
     }
 
     /// Anda do ativo para baixo pelos nomes canonicos; o primeiro numero que
-    /// falta no nome canonico e existe no nome antigo (`_0001`) e o mais alto
+    /// falta no nome canonico e existe no nome antigo (`#0001`) e o mais alto
     /// dos volumes de antes do formato B -- abaixo dele, todos estao no nome
     /// antigo, porque o formato B nunca cria nome com outra largura.
     fn procurar_legado(&mut self, largura: u8) {
@@ -815,11 +822,11 @@ impl TrilhaFile {
         // O numero do nome E o do cabecalho: e o que o rastro e o bilhete
         // citam, e arquivo que diz outro numero nao e deste volume.
         //
-        // Isto NAO separa a trilha de `x` da de uma tabela `x_001`: o ativo
-        // dela e `x_001.lgpd` com volume 1 no cabecalho -- nome e numero do
-        // fechado 1 de `x` --, e o expurgo de `x` o apagava (papel C, P2a).
-        // Quem separa e a declaracao: o catalogo recusa criar tabela com nome
-        // que ele leria como volume (`exigir_nome_que_volta`).
+        // Isto sozinho NAO separaria a trilha de `x` da de uma tabela
+        // `x_001` no separador `_` de antes do pedido 508: o ativo dela era
+        // `x_001.lgpd` com volume 1 no cabecalho -- nome e numero do fechado 1
+        // de `x` --, e o expurgo de `x` o apagava (papel C, P2a). Quem separa
+        // hoje e o separador `#`, que nome de tabela nao aceita.
         if cab.volume != volume {
             return Err(PhxError::Corrompido(format!(
                 "{}: o cabecalho diz volume {}, e o nome diz {volume}",
@@ -865,7 +872,7 @@ impl TrilhaFile {
         Ok(cab)
     }
 
-    /// Fecha o volume ativo: ele passa a `<tabela>_NNN.lgpd`, e o ativo NNN+1
+    /// Fecha o volume ativo: ele passa a `<tabela>#NNN.lgpd`, e o ativo NNN+1
     /// nasce no lugar. Devolve o numero que fechou; `None` quando nao ha ativo
     /// ou ele esta vazio -- fechar volume sem registro so criaria arquivo.
     ///
@@ -2054,7 +2061,7 @@ mod testes {
         );
         assert_eq!(
             no_disco(&d),
-            vec!["t.lgpd", "t_003.lgpd", "t_004.lgpd"],
+            vec!["t#003.lgpd", "t#004.lgpd", "t.lgpd"],
             "o disco nao e o que o expurgo diz"
         );
     }
@@ -2075,7 +2082,7 @@ mod testes {
         let (e, saiu) = expurgar(&d, &mut t, em("2015-01-01"));
         assert!(saiu.is_empty(), "saiu {saiu:?}: {e:?}");
         assert_eq!(e.parada, Parada::Fronteira);
-        assert_eq!(no_disco(&d), vec!["t.lgpd", "t_001.lgpd"]);
+        assert_eq!(no_disco(&d), vec!["t#001.lgpd", "t.lgpd"]);
     }
 
     /// **O volume ativo nunca sai**, nem com todo registro vencido. Os tres
@@ -2138,7 +2145,7 @@ mod testes {
         assert!(r.is_err(), "o volume ativo foi aceito para apagar: {r:?}");
         assert_eq!(
             no_disco(&d),
-            vec!["t.lgpd", "t_001.lgpd", "t_002.lgpd"],
+            vec!["t#001.lgpd", "t#002.lgpd", "t.lgpd"],
             "a recusa tem de vir ANTES do primeiro unlink"
         );
     }
@@ -2167,7 +2174,7 @@ mod testes {
         assert_eq!(selado.expurgo().volumes.len(), 2);
         // O UUID do primeiro registro do volume 1: cabecalho do volume (64) +
         // 24 bytes dentro do registro.
-        let caminho = d.join("t_001.lgpd");
+        let caminho = d.join("t#001.lgpd");
         let mut bruto = std::fs::read(&caminho).unwrap();
         bruto[64 + 24] ^= 0xFF;
         std::fs::write(&caminho, &bruto).unwrap();
@@ -2208,8 +2215,8 @@ mod testes {
             .selar()
             .unwrap();
         assert_eq!(selado.expurgo().volumes.len(), 3);
-        std::fs::rename(d.join("t_002.lgpd"), d.join("fora.bin")).unwrap();
-        std::fs::create_dir(d.join("t_002.lgpd")).unwrap();
+        std::fs::rename(d.join("t#002.lgpd"), d.join("fora.bin")).unwrap();
+        std::fs::create_dir(d.join("t#002.lgpd")).unwrap();
 
         let erro = t.apagar_expurgados(&selado).unwrap_err().to_string();
         assert!(
@@ -2218,7 +2225,7 @@ mod testes {
         );
         assert_eq!(
             no_disco(&d),
-            vec!["t.lgpd", "t_002.lgpd", "t_003.lgpd"],
+            vec!["t#002.lgpd", "t#003.lgpd", "t.lgpd"],
             "o volume 1 saiu, o 2 falhou e o 3 nao foi tentado"
         );
     }
@@ -2306,14 +2313,14 @@ mod testes {
         assert_eq!(saiu, vec![1], "{e:?}");
         assert_eq!(e.parada, Parada::Fronteira);
         assert_eq!(e.parou_no_volume, 2);
-        assert_eq!(no_disco(&d), vec!["t.lgpd", "t_002.lgpd", "t_003.lgpd"]);
+        assert_eq!(no_disco(&d), vec!["t#002.lgpd", "t#003.lgpd", "t.lgpd"]);
     }
 
     /// **A tabela SEM paginacao passa a expurgar** (formato B, pedido 368).
     /// Antes, a trilha dela era um arquivo so, que era o ativo para sempre, e
     /// o expurgo respondia `arquivo_unico` sem apagar nada. Agora o ativo fecha
     /// por idade -- o primeiro registro passou de `lgpd.volume_dias` --, vira
-    /// `t_001.lgpd`, o ativo 2 nasce no nome fixo, e o volume 1 sai inteiro.
+    /// `t#001.lgpd`, o ativo 2 nasce no nome fixo, e o volume 1 sai inteiro.
     ///
     /// **Defeito reposto** (o `fechar_se_velho` nao fecha): nada sai, e o
     /// `assert_eq!(saiu, vec![1])` cai.
@@ -2332,7 +2339,7 @@ mod testes {
         assert_eq!(e.retido_vencido_desde, Some(em("2010-01-01")));
 
         assert_eq!(t.fechar_se_velho(crate::util::agora_ms()).unwrap(), Some(1));
-        assert_eq!(no_disco(&d), vec!["t.lgpd", "t_001.lgpd"]);
+        assert_eq!(no_disco(&d), vec!["t#001.lgpd", "t.lgpd"]);
         let (e, saiu) = expurgar(&d, &mut t, crate::util::agora_ms());
         assert_eq!(saiu, vec![1], "{e:?}");
         assert_eq!(e.registros(), 3);
@@ -2367,12 +2374,12 @@ mod testes {
             Some(1),
             "nao fechou com 31 dias"
         );
-        assert_eq!(no_disco(&d), vec!["t.lgpd", "t_001.lgpd"]);
+        assert_eq!(no_disco(&d), vec!["t#001.lgpd", "t.lgpd"]);
         // O ativo novo esta vazio: fechar de novo nao faz nada.
         assert_eq!(t.fechar_se_velho(comeco + 400 * 86_400_000).unwrap(), None);
     }
 
-    /// **O fechamento pedido**: o ativo com registro vira `t_NNN.lgpd`, com NNN
+    /// **O fechamento pedido**: o ativo com registro vira `t#NNN.lgpd`, com NNN
     /// igual ao volume do CABECALHO, e o ativo seguinte nasce no nome fixo com
     /// o numero seguinte gravado no cabecalho dele. Nenhum byte do volume
     /// fechado muda -- e renomear. O ativo vazio nao fecha.
@@ -2385,7 +2392,7 @@ mod testes {
         let antes = std::fs::read(d.join("t.lgpd")).unwrap();
         assert_eq!(t.fechar_ativo().unwrap(), Some(1));
         assert_eq!(
-            std::fs::read(d.join("t_001.lgpd")).unwrap(),
+            std::fs::read(d.join("t#001.lgpd")).unwrap(),
             antes,
             "fechar mudou os bytes do volume"
         );
@@ -2405,7 +2412,7 @@ mod testes {
     }
 
     /// **A queda entre o `rename` e o nascimento do novo ativo.** O ativo 3
-    /// virou `t_003.lgpd` e o processo morreu antes de o 4 nascer: nao ha
+    /// virou `t#003.lgpd` e o processo morreu antes de o 4 nascer: nao ha
     /// `t.lgpd`. A trilha reaberta acha os tres pela listagem (o maior
     /// fechado + 1 e o ativo), le tudo, e o proximo registro faz nascer o
     /// ativo 4 -- nunca de novo o 1.
@@ -2426,8 +2433,8 @@ mod testes {
         );
         drop(t);
         // A queda: o rename aconteceu, o nascimento nao.
-        std::fs::rename(d.join("t.lgpd"), d.join("t_003.lgpd")).unwrap();
-        assert_eq!(no_disco(&d), vec!["t_001.lgpd", "t_002.lgpd", "t_003.lgpd"]);
+        std::fs::rename(d.join("t.lgpd"), d.join("t#003.lgpd")).unwrap();
+        assert_eq!(no_disco(&d), vec!["t#001.lgpd", "t#002.lgpd", "t#003.lgpd"]);
 
         let mut t = aberta(&d, paginada());
         assert!(t.existe(), "a trilha sumiu sem o ativo");
@@ -2542,7 +2549,7 @@ mod testes {
         assert_eq!(t.fechar_ativo().unwrap(), Some(2));
         drop(t);
         std::fs::remove_file(d.join("t.lgpd")).unwrap();
-        assert_eq!(no_disco(&d), vec!["t_001.lgpd", "t_002.lgpd"]);
+        assert_eq!(no_disco(&d), vec!["t#001.lgpd", "t#002.lgpd"]);
 
         let mut t = aberta(&d, paginada());
         let e = com_rastro(&d, t.planejar_expurgo(em("2015-01-01")).unwrap());
@@ -2566,10 +2573,11 @@ mod testes {
         );
     }
 
-    /// O numero do NOME e o do CABECALHO: um arquivo no lugar de `t_001.lgpd`
+    /// O numero do NOME e o do CABECALHO: um arquivo no lugar de `t#001.lgpd`
     /// cujo cabecalho diz outro volume e recusado, e nao lido como se fosse
-    /// desta trilha. (Nao cobre a tabela `t_001`, cujo ativo tem volume 1 no
-    /// cabecalho: essa quem barra e a declaracao, no catalogo.)
+    /// desta trilha. (A tabela `t_001`, cujo ativo tem volume 1 no cabecalho,
+    /// deixou de colidir no pedido 508: o ativo dela e `t_001.lgpd`, e o
+    /// fechado 1 de `t` e `t#001.lgpd`.)
     ///
     /// **Defeito reposto** (sem conferir o numero no `cab`): a leitura soma o
     /// arquivo trocado e o `is_err` cai.
@@ -2581,7 +2589,7 @@ mod testes {
             &[&["2026-01-01", "2026-01-02", "2026-01-03"], &["2026-02-01"]],
         );
         drop(t);
-        std::fs::copy(d.join("t.lgpd"), d.join("t_001.lgpd")).unwrap();
+        std::fs::copy(d.join("t.lgpd"), d.join("t#001.lgpd")).unwrap();
         let mut t = aberta(&d, paginada());
         let r = t.total();
         assert!(
@@ -2591,7 +2599,7 @@ mod testes {
     }
 
     /// O numero do volume nao tem teto nem largura fixa: o 999 fecha como
-    /// `t_999.lgpd` e o 1000 como `t_1000.lgpd`, e a leitura anda por eles.
+    /// `t#999.lgpd` e o 1000 como `t#1000.lgpd`, e a leitura anda por eles.
     #[test]
     fn a_numeracao_nao_tem_teto() {
         let d = temp("sem-teto-de-numero");
@@ -2603,7 +2611,7 @@ mod testes {
         assert_eq!(t.fechar_ativo().unwrap(), Some(999));
         gravar_em(&mut t, em("2026-01-02"), "2");
         assert_eq!(t.fechar_ativo().unwrap(), Some(1000));
-        assert_eq!(no_disco(&d), vec!["t.lgpd", "t_1000.lgpd", "t_999.lgpd"]);
+        assert_eq!(no_disco(&d), vec!["t#1000.lgpd", "t#999.lgpd", "t.lgpd"]);
         let mut t = aberta(&d, Paginacao::DESLIGADA);
         assert_eq!(t.volumes_existentes().unwrap(), vec![999, 1000, 1001]);
         assert_eq!(t.total().unwrap(), 2);
@@ -2630,7 +2638,7 @@ mod testes {
             &d,
             &[&["2010-01-01", "2010-01-02", "2010-01-03"], &["2021-01-01"]],
         );
-        let caminho = d.join("t_001.lgpd");
+        let caminho = d.join("t#001.lgpd");
         let mut bruto = std::fs::read(&caminho).unwrap();
         // Um byte do corpo do segundo registro.
         bruto[64 + TAMANHO + REGISTRO_CAB + 10] ^= 0x01;

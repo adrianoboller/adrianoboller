@@ -690,7 +690,7 @@ fn alterar_email(t: &mut Table, i: u32) {
 }
 
 /// **O expurgo pela tabela padrao, de ponta a ponta.** Vinte alteracoes por
-/// volume, fechados a pedido: tres volumes fechados (`clientes_001` a `_003`)
+/// volume, fechados a pedido: tres volumes fechados (`clientes#001` a `#003`)
 /// e o ativo 4 em `clientes.lgpd`. O expurgo com um limite depois de tudo
 /// derruba os fechados e deixa o ativo, grava o rastro no `.reason` com o bit
 /// do expurgo da trilha e sem a chave de linha, e a trilha que sobra continua
@@ -719,9 +719,9 @@ fn o_expurgo_pela_tabela_padrao_grava_o_rastro_e_so_derruba_volume_fechado() {
     assert_eq!(t.volumes_da_trilha().unwrap(), vec![1, 2, 3, 4]);
     for nome in [
         "clientes.lgpd",
-        "clientes_001.lgpd",
-        "clientes_002.lgpd",
-        "clientes_003.lgpd",
+        "clientes#001.lgpd",
+        "clientes#002.lgpd",
+        "clientes#003.lgpd",
     ] {
         assert!(d.join(nome).exists(), "{nome} nao existe");
     }
@@ -742,9 +742,9 @@ fn o_expurgo_pela_tabela_padrao_grava_o_rastro_e_so_derruba_volume_fechado() {
     assert_eq!(t.volumes_da_trilha().unwrap(), vec![4]);
     for (nome, fica) in [
         ("clientes.lgpd", true),
-        ("clientes_001.lgpd", false),
-        ("clientes_002.lgpd", false),
-        ("clientes_003.lgpd", false),
+        ("clientes#001.lgpd", false),
+        ("clientes#002.lgpd", false),
+        ("clientes#003.lgpd", false),
     ] {
         assert_eq!(
             d.join(nome).exists(),
@@ -863,7 +863,7 @@ fn a_tabela_abre_com_o_ativo_da_trilha_de_zero_byte() {
     assert_eq!(ev.last().unwrap().depois, "a2@x.com");
     assert_eq!(
         lgpd_no_disco(&d),
-        vec!["clientes.lgpd", "clientes_001.lgpd"]
+        vec!["clientes#001.lgpd", "clientes.lgpd"]
     );
 }
 
@@ -879,6 +879,9 @@ fn migrar(caso: &str) -> (comum::DirTemp, Table) {
     for e in std::fs::read_dir(&origem).unwrap().flatten() {
         std::fs::copy(e.path(), d.join(e.file_name())).unwrap();
     }
+    // O separador de volume desse binario era o `_`: a migracao do pedido
+    // 508 roda primeiro, como rodaria na subida do servidor sobre este disco.
+    phxsql_store::separador::migrar_database(&d).unwrap();
     let mut t = Table::abrir(&d, "clientes").unwrap();
     t.definir_usuario(7);
     (d, t)
@@ -898,7 +901,7 @@ fn lgpd_no_disco(d: &std::path::Path) -> Vec<String> {
 /// **Migracao 1: a trilha de arquivo unico** (tabela sem paginacao). O
 /// `clientes.lgpd` de antes ja e o ativo, volume 1: le os 5, e o proximo
 /// evento entra NELE, sem arquivo novo. Fechado a pedido, vira
-/// `clientes_001.lgpd` e se expurga.
+/// `clientes#001.lgpd` e se expurga.
 #[test]
 fn a_trilha_de_arquivo_unico_de_antes_vira_o_ativo() {
     let (d, mut t) = migrar("unico");
@@ -916,7 +919,8 @@ fn a_trilha_de_arquivo_unico_de_antes_vira_o_ativo() {
     assert_eq!(t.volumes_da_trilha().unwrap(), vec![2]);
 }
 
-/// **Migracao 2: a trilha paginada** `_001` a `_003`, sem `clientes.lgpd`.
+/// **Migracao 2: a trilha paginada** `_001` a `_003`, sem `clientes.lgpd`
+/// (a migracao do separador, pedido 508, os leva a `#001` a `#003`).
 /// Os tres viram fechados, o ativo nasce 4 no primeiro evento, e o expurgo
 /// derruba os tres de antes.
 ///
@@ -933,10 +937,10 @@ fn a_trilha_paginada_de_antes_vira_fechados_e_o_ativo_nasce_depois() {
     assert_eq!(
         lgpd_no_disco(&d),
         vec![
-            "clientes.lgpd",
-            "clientes_001.lgpd",
-            "clientes_002.lgpd",
-            "clientes_003.lgpd"
+            "clientes#001.lgpd",
+            "clientes#002.lgpd",
+            "clientes#003.lgpd",
+            "clientes.lgpd"
         ]
     );
     assert_eq!(t.volumes_da_trilha().unwrap(), vec![1, 2, 3, 4]);
@@ -948,9 +952,11 @@ fn a_trilha_paginada_de_antes_vira_fechados_e_o_ativo_nasce_depois() {
 }
 
 /// **Migracao 3: a trilha paginada de sufixo com QUATRO digitos**
-/// (`_0001` a `_0003`). Os nomes antigos ficam como estao -- nada se renomeia
-/// nem se reescreve --, sao lidos pelo nome em que nasceram, o ativo nasce 4,
-/// o volume 4 fecha no nome canonico `_004`, e o expurgo leva os quatro.
+/// (`_0001` a `_0003`). A LARGURA antiga fica como esta -- o formato B nao
+/// renomeia nem reescreve; so o separador troca, pela migracao do pedido 508
+/// (`#0001`) --, os volumes sao lidos pela largura em que nasceram, o ativo
+/// nasce 4, o volume 4 fecha no nome canonico `#004`, e o expurgo leva os
+/// quatro.
 ///
 /// **Defeito reposto** (sem procurar o nome legado): a trilha migrada aparece
 /// vazia, e a primeira asserção cai.
@@ -964,11 +970,11 @@ fn a_trilha_de_sufixo_de_quatro_digitos_de_antes_continua_legivel() {
     assert_eq!(
         lgpd_no_disco(&d),
         vec![
-            "clientes.lgpd",
-            "clientes_0001.lgpd",
-            "clientes_0002.lgpd",
-            "clientes_0003.lgpd",
-            "clientes_004.lgpd"
+            "clientes#0001.lgpd",
+            "clientes#0002.lgpd",
+            "clientes#0003.lgpd",
+            "clientes#004.lgpd",
+            "clientes.lgpd"
         ]
     );
     drop(t);
