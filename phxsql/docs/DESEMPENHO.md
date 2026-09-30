@@ -837,6 +837,46 @@ precaução de projeto para virar consequência medida.
 - **N = 10.000.000**: não tentado, por orçamento de disco (3,0–3,1 GiB livres).
 - **Mais de um operador**: não medido; um cliente sequencial já basta para
   revelar uma trava global, que bloqueia todo mundo e não só quem chegou antes.
+
+#### 4.4-ter Entregue em 30/09/2026 — o regime (b), pedido, e medido pelo motor
+
+Decisão do dono (pedido 324): `"adiar_indice": true` no `bulkinsert(true)`,
+**pedido**; sem pedir, nada muda. Entrou o regime (b) — suspender **sob a
+reserva**, sem thread, e reconstruir no `bulkinsert(false)` antes de soltar —
+com as restrições do parecer do papel C: R1 (índice único recusa), a tabela
+com dados recusa (o b′ acima, que perde), R3 (mãe de chave conferida recusa),
+R2 (a marca no disco, byte 53 do `.ndx`, antes da primeira linha — ver
+`FORMATO.md` §2) e o aviso do 255 no arranque.
+
+O número de cima (2,10×) media a **equivalência** — carregar numa tabela sem
+índice e cronometrar o `reindexar` em outra — e tinha um índice **único** no
+regime em linha. A R1 tira esse caso. Remedido pelo caminho de verdade
+(`Table::adiar_indice` → `inserir` → `reindexar` → `sincronizar`), dois índices
+**não** únicos, tabela vazia, carga embaralhada, com a conferência de mesmo
+estado embutida (`VERIFICACAO ok` em todas):
+
+```bash
+cargo build --release --examples -p phxsql-store
+target/release/examples/indice-adiado-de-verdade 1000000
+```
+
+| N | em linha | adiado (carga + refazer) | ganho |
+|---:|---:|---:|---|
+| 100.000 (8 corridas) | 0,668–0,817 s | 0,587–0,776 s | **faixas se cruzam — sem vencedor** |
+| 1.000.000 (3 corridas) | 10,52–10,84 s | 6,15–6,51 s (3,59–3,69 + 2,56–2,88) | **1,62–1,76×** |
+
+Medido com a máquina ocupada por outras sessões (carga média de 3,2 a 7,2 em
+4 núcleos durante as corridas): os absolutos estão acima dos de 17/09, e o
+número a guardar é a razão com a faixa. Duas diferenças contra o 2,10×, e as
+duas são do desenho e não do ruído: o regime em linha deixou de pagar a
+pergunta «já existe?» do índice único, e o adiado passou a **tirar as chaves**
+por linha — é ali que a linha que não cabe no índice é recusada, e recusar no
+`reindexar` do fim custaria a carga inteira no `.reg`.
+
+**O que o número NÃO mede:** a pausa. O `reindexar` do fim roda sob a trava
+global, e a um milhão de linhas o servidor inteiro para durante ele (a medição
+do regime (c), acima: 1.627–1.661 ms). É o preço que o dono aceitou ao decidir
+que a opção é pedida.
 ---
 
 ## 4.5 A réplica: a causa registrada estava errada

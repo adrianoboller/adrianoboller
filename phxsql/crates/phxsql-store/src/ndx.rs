@@ -636,6 +636,22 @@ pub struct NdxFile {
     /// `reindexar`. Mesmo desenho da `escritas_em_voo`: quem sabe que nao
     /// terminou e o proprio trabalho, e nao `thread::panicking()`.
     cascata_em_voo: bool,
+    /// O indice esta SUSPENSO por uma carga que pediu o indice adiado
+    /// (pedido 324): o `.reg` anda sem ele, e so o `reindexar` o traz de
+    /// volta. Mora no byte 53 do cabecalho, e nao so aqui, porque a reserva
+    /// da carga e memoria de processo -- e processo morto nao diz nada a quem
+    /// reabre (parecer do papel C, R2).
+    ///
+    /// # Por que um byte novo, e nao o 52
+    ///
+    /// O 52 diz «nao confie nesta arvore», e diz isso igual para a queda e
+    /// para a carga. O que o 52 sozinho NAO diz e o que tres lugares precisam
+    /// saber: o `inserir` (gravar o `.reg` sem a arvore e o combinado, e nao
+    /// uma arvore rasgada), a mensagem de recusa (esperar a carga, e nao
+    /// `reparar indice`) e o arranque (reconstruir, que ele ja faz pelo 52).
+    /// O 52 sobe JUNTO, e e ele que faz um binario que nao conhece o 53
+    /// recusar e reconstruir em vez de responder com a arvore vazia.
+    suspenso: bool,
 }
 
 // ---------------------------------------------------------------- paginas
@@ -880,6 +896,7 @@ impl NdxFile {
             escrita_interrompida: false,
             mudancas_na_arvore: 0,
             cascata_em_voo: false,
+            suspenso: false,
         };
         n.arquivo.set_len(page_size as u64)?;
 
@@ -956,6 +973,11 @@ impl NdxFile {
         // ali, e zero e "limpo" -- que e a verdade para quem so escrevia
         // atraves. Nao ha migracao a fazer.
         let sujo = cab[52] != 0;
+        // Byte 53: suspenso por uma carga com o indice adiado (pedido 324).
+        // Zero em todo arquivo escrito antes -- e zero e «nao suspenso», que e
+        // a verdade para eles. Suspenso nunca e coerente: a arvore esta atras
+        // do `.reg` por desenho, com ou sem atestado deste processo.
+        let suspenso = cab[53] != 0;
         // O 1 que um `fechar` DESTE processo deixou nao e queda: as paginas
         // estao no nucleo, e o cabecalho e o mesmo que ele gravou (pedido
         // 522). Depois de um `fsync` recusado no diretorio o nucleo deixa de
@@ -1042,13 +1064,14 @@ impl NdxFile {
             gravacoes: 0,
             estrutura_mudou: false,
             sujo,
-            precisa_reconstruir: sujo && !coerente_no_nucleo,
+            precisa_reconstruir: suspenso || (sujo && !coerente_no_nucleo),
             mudou_desde_o_fecho: false,
             crc_do_cabecalho,
             escritas_em_voo: 0,
             escrita_interrompida: false,
             mudancas_na_arvore: 0,
             cascata_em_voo: false,
+            suspenso,
         })
     }
 
@@ -1077,6 +1100,7 @@ impl NdxFile {
             escrita_interrompida: false,
             mudancas_na_arvore: 0,
             cascata_em_voo: false,
+            suspenso: false,
         }
     }
 
@@ -1173,6 +1197,10 @@ impl NdxFile {
         // dizer "limpo" -- entao um `.ndx` escrito antes desta versao continua
         // sendo lido com o significado certo, sem migracao.
         buf[52] = u8::from(self.sujo);
+        // Byte 53: suspenso por carga (pedido 324). Zero em todo arquivo que
+        // nao passou por `suspender`, e o `criar` do `reindexar` nasce com ele
+        // em zero -- e so assim que a suspensao acaba.
+        buf[53] = u8::from(self.suspenso);
         // 56..96: o material de cifra, nos bytes que ja eram reservados. Em
         // claro isto nao escreve nada, e o cabecalho fica byte a byte o que
         // sempre foi.
@@ -1701,8 +1729,69 @@ impl NdxFile {
         self.precisa_reconstruir
     }
 
+    /// O indice esta suspenso por uma carga com o indice adiado?
+    pub fn suspenso(&self) -> bool {
+        self.suspenso
+    }
+
+    /// Suspende o indice para uma carga: daqui ate o `reindexar`, o `.reg`
+    /// anda sem a arvore, e a arvore recusa toda pergunta (pedido 324).
+    ///
+    /// # A ordem e a garantia (parecer do papel C, R2)
+    ///
+    /// Os bytes 52 e 53 vao ao DISCO -- gravados e levados por `fdatasync` --
+    /// antes de esta funcao voltar, e portanto antes da primeira linha da
+    /// carga. Uma queda depois disto deixa um `.ndx` que se declara suspenso,
+    /// e o arranque o reconstroi pelo `.reg` (pedido 522). Sem o `fsync`, o
+    /// nucleo podia levar ao disco as linhas do `.reg` e perder o cabecalho,
+    /// e a arvore vazia voltaria se declarando limpa: busca respondendo
+    /// «nao achei» em silencio, e `excluir` achando que a mae nao tem filha.
+    ///
+    /// E a arvore em RAM NAO desce: `precisa_reconstruir` fecha a porta de
+    /// `fechar`, `sincronizar` e `Drop`. Nada do que esta aqui vale mais --
+    /// quem refaz e o `reindexar`, do `.reg` inteiro.
+    ///
+    /// Recusa sobre arvore que ja nao presta: suspender por cima trocaria o
+    /// motivo escrito no disco, e o operador perderia a pista da queda.
+    pub fn suspender(&mut self) -> Result<()> {
+        if self.suspenso {
+            return Ok(());
+        }
+        self.conferir_confiavel()?;
+        let (sujo, suspenso) = (self.sujo, self.suspenso);
+        self.sujo = true;
+        self.suspenso = true;
+        let gravado = self.gravar_cabecalho().and_then(|()| {
+            self.arquivo.flush()?;
+            crate::sincronia::sync_data(&self.arquivo, &self.caminho)
+        });
+        if let Err(e) = gravado {
+            self.sujo = sujo;
+            self.suspenso = suspenso;
+            return Err(e);
+        }
+        retirar_atestado(&self.caminho);
+        self.precisa_reconstruir = true;
+        Ok(())
+    }
+
     /// Recusa operar sobre um indice que ficou para tras numa queda.
     fn conferir_confiavel(&self) -> Result<()> {
+        // A suspensao vem ANTES da queda porque ela tambem liga
+        // `precisa_reconstruir`, e a mensagem da queda mandaria `reparar
+        // indice` no meio de uma carga que vai reconstrui-lo sozinha no fim --
+        // o recado que da uma ordem que a situacao desmente (pedido 176).
+        // E sai como `EmCarga`, e nao `Corrompido`: nao ha corrupcao nenhuma,
+        // e o codigo do erro e o que o cliente trata sem ler a frase.
+        if self.suspenso {
+            return Err(PhxError::EmCarga(format!(
+                "o indice de {} esta suspenso por uma carga com o indice adiado \
+                 (BULKINSERT com \"adiar_indice\"): ele volta a responder quando \
+                 a carga terminar, e o `bulkinsert` false o reconstroi; se a carga \
+                 caiu no meio, o arranque o reconstroi",
+                self.caminho.display()
+            )));
+        }
         if self.precisa_reconstruir {
             return Err(PhxError::Corrompido(format!(
                 "o indice de {} ficou para tras numa queda e nao e confiavel: \

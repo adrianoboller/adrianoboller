@@ -14906,14 +14906,15 @@ impl Servidor {
         if db.is_empty() || tab.is_empty() {
             return false;
         }
-        let k = crate::carga::chave(db, tab);
-        match self.cargas.lock() {
-            Ok(c) => c
-                .todas()
-                .iter()
-                .any(|r| crate::carga::chave(&r.database, &r.tabela) == k),
-            Err(_) => false,
-        }
+        self.reservada(db, tab)
+    }
+
+    /// A tabela `db/tab` tem reserva de carga, de quem quer que seja.
+    fn reservada(&self, db: &str, tab: &str) -> bool {
+        self.cargas
+            .lock()
+            .map(|c| c.reservada(db, tab))
+            .unwrap_or(false)
     }
 
     /// `bulkinsert`: reserva a tabela para uma carga, ou solta.
@@ -14949,20 +14950,37 @@ impl Servidor {
             ));
         }
 
-        // A tabela tem de existir -- reservar o que nao existe esconderia um
-        // erro de digitacao ate o fim da carga.
-        {
-            let dados = self.travar_dados()?;
-            dados
-                .abrir_database(&database)?
-                .abrir_qualificada(&tabela)?;
+        // `"adiar_indice": true` so vale no `ligado: true`, e so pedido
+        // (pedido 324). Soltar nao pergunta: o que decide reconstruir e a
+        // marca no `.ndx`, e nao a lembranca de quem pediu -- a reserva pode
+        // ter vencido, ou o administrador pode estar soltando a carga alheia.
+        let adiar = p.campo("adiar_indice").and_then(Json::booleano) == Some(true);
+        if adiar && !ligar {
+            return Err(PhxError::Esquema(
+                "\"adiar_indice\" vale so para reservar (\"ligado\": true); ao \
+                 soltar, o indice adiado se reconstroi sozinho"
+                    .into(),
+            ));
         }
 
+        // UMA secao critica para os dois sentidos, e a ordem das travas e
+        // sempre dados -> cargas (ninguem toma a de dados segurando a de
+        // cargas). A tabela tem de existir -- reservar o que nao existe
+        // esconderia um erro de digitacao ate o fim da carga --, e o indice
+        // adiado precisa dela aberta nos dois pontos: suspender antes da
+        // primeira linha, e reconstruir antes de soltar. Duas secoes seriam
+        // duas tomadas da trava para a mesma carga, e a do meio deixaria
+        // outro pedido entrar entre reservar e suspender.
+        let trava = self.travar_dados()?;
+        let mut t = self.abrir_travada(&trava, p, sessao)?;
         let agora = crate::agora_ms();
         let mut cargas = self.cargas.tomar("cargas")?;
 
         if ligar {
             let prazo = self.config.recursos.carga_prazo_min as i64 * 60_000;
+            let ja_era_minha = cargas.todas().iter().any(|r| {
+                r.ligacao == sessao.ligacao && r.database == database && r.tabela == tabela
+            });
             let r = cargas.reservar(
                 &database,
                 &tabela,
@@ -14972,12 +14990,31 @@ impl Servidor {
                 agora,
                 prazo,
             )?;
+            // Reservar e suspender sao um passo so para quem ve de fora: a
+            // suspensao que recusa desfaz a reserva que ACABOU de nascer (a
+            // renovada fica, ela era do cliente antes deste pedido). As
+            // recusas da declaracao sao todas do motor -- `adiar_indice`.
+            if adiar {
+                if let Err(e) = t.adiar_indice() {
+                    if !ja_era_minha {
+                        let _ = cargas.soltar(&database, &tabela, sessao.ligacao, true, agora);
+                    }
+                    return Err(e);
+                }
+                // Na lista das sujas desde ja: se a reserva vencer ou a
+                // conexao cair sem nenhuma linha gravada, e o fecho da janela
+                // que reconstroi o indice -- e ele so olha as sujas.
+                if let Ok(mut sujas) = self.sujas.lock() {
+                    sujas.insert(format!("{database}/{tabela}"));
+                }
+            }
             drop(cargas);
             return Ok(Json::objeto(vec![
                 ("bulkinsert", Json::Bool(true)),
                 ("database", Json::texto_de(&database)),
                 ("tabela", Json::texto_de(&tabela)),
                 ("reservada", Json::Bool(true)),
+                ("indice_adiado", Json::Bool(t.indice_suspenso())),
                 (
                     "expira_em_s",
                     Json::de_u64(((r.expira_ms - agora).max(0) / 1000) as u64),
@@ -14991,6 +15028,22 @@ impl Servidor {
 
         // Soltar: o dono solta o seu; o administrador solta o de qualquer um.
         let forcar = sessao.usuario.as_ref().map(|u| u.e_admin()).unwrap_or(true);
+        cargas.conferir_soltura(&database, &tabela, sessao.ligacao, forcar, agora)?;
+
+        // O indice adiado se reconstroi ANTES de a reserva sair (pedido 324):
+        // do `remove` em diante qualquer ligacao pode perguntar ao indice, e
+        // ele tem de estar inteiro. O `reindexar` monta em lote a partir do
+        // `.reg` e deixa o byte 52 em 1 com o 53 em 0 -- quem baixa o 52 e o
+        // `sincronizar` logo abaixo, depois dos dois `fsync`. Se falhar, a
+        // reserva FICA e o erro sobe: soltar com a arvore suspensa entregaria
+        // a tabela aos outros recusando toda busca.
+        let reconstruido = if t.indice_suspenso() {
+            let inicio = Instant::now();
+            t.reindexar()?;
+            Some(inicio.elapsed().as_millis() as u64)
+        } else {
+            None
+        };
         let r = cargas.soltar(&database, &tabela, sessao.ligacao, forcar, agora)?;
         drop(cargas);
 
@@ -15012,17 +15065,15 @@ impl Servidor {
         // E tudo sob a trava de dados, inclusive o `remove`: a reserva ja
         // foi solta, e entre o `fsync` e o `remove` outro escritor podia
         // entrar, sujar a tabela de novo e ve-la sair das sujas sem `fsync`.
-        {
-            let trava = self.travar_dados()?;
-            let mut t = self.abrir_travada(&trava, p, sessao)?;
-            t.sincronizar()?;
-            if let Ok(mut sujas) = self.sujas.lock() {
-                sujas.remove(&format!("{database}/{tabela}"));
-            }
-            self.descarregar_sujas_com(&trava);
+        t.sincronizar()?;
+        if let Ok(mut sujas) = self.sujas.lock() {
+            sujas.remove(&format!("{database}/{tabela}"));
         }
+        self.descarregar_sujas_com(&trava);
+        drop(t);
+        drop(trava);
 
-        Ok(Json::objeto(vec![
+        let mut resposta = vec![
             ("bulkinsert", Json::Bool(false)),
             ("database", Json::texto_de(&database)),
             ("tabela", Json::texto_de(&tabela)),
@@ -15031,7 +15082,12 @@ impl Servidor {
             // aparecia como "durou 0s", que e um numero que nao ajuda ninguem.
             ("durou_ms", Json::de_u64((agora - r.desde_ms).max(0) as u64)),
             ("sincronizada", Json::Bool(true)),
-        ]))
+        ];
+        if let Some(ms) = reconstruido {
+            resposta.push(("indice_reconstruido", Json::Bool(true)));
+            resposta.push(("reconstruir_ms", Json::de_u64(ms)));
+        }
+        Ok(Json::objeto(resposta))
     }
 
     /// `cargas`: quais tabelas estao reservadas agora, e por quem.
@@ -18439,6 +18495,25 @@ impl Servidor {
                     .abrir_database(db)
                     .and_then(|d| d.abrir_qualificada(tab))
                 {
+                    // O indice adiado de uma carga que saiu SEM o
+                    // `bulkinsert(false)` -- conexao que caiu, reserva que
+                    // venceu (pedido 324). A reserva ja nao esta la, e o
+                    // indice suspenso recusaria toda busca ate o proximo
+                    // arranque. Reconstroi aqui, antes do `fsync` que baixa o
+                    // byte 52. O portao e um `bool` do punho ja aberto: sem
+                    // carga adiada, este fecho custa o que custava.
+                    Ok(mut t) if t.indice_suspenso() && !self.reservada(db, tab) => {
+                        match t.reindexar() {
+                            Ok(_) => {
+                                chaves.push(chave.clone());
+                                abertas.push(t);
+                            }
+                            // A marca fica no disco: a tabela continua
+                            // recusando dizendo que ha carga, e o arranque
+                            // reconstroi. A chave fica para a proxima passada.
+                            Err(_) => faltaram.push(chave.clone()),
+                        }
+                    }
                     Ok(t) => {
                         chaves.push(chave.clone());
                         abertas.push(t);
@@ -37105,6 +37180,349 @@ mod testes_bulkinsert {
             e.to_string().contains("porta de dados"),
             "o recado nao explica: {e}"
         );
+    }
+    // ------------------------------------------------ o indice adiado (324)
+    //
+    // Decisao do dono de 30/09/2026: `"adiar_indice": true` no
+    // `bulkinsert(true)`, pedido. O que estes testes travam: o indice sai
+    // CERTO no fim (chave a chave), ninguem le a arvore suspensa -- nem a
+    // propria ligacao, nem o `verificar` --, a marca vai ao disco antes da
+    // primeira linha, as recusas da declaracao, a queda da conexao
+    // reconstruindo, e o comportamento VELHO de quem nao pede.
+
+    const RESERVA_ADIADA: &str =
+        r#""op":"bulkinsert","database":"b","tabela":"p","ligado":true,"adiar_indice":true"#;
+    const RESERVA_P: &str = r#""op":"bulkinsert","database":"b","tabela":"p","ligado":true"#;
+    const SOLTA_P: &str = r#""op":"bulkinsert","database":"b","tabela":"p","ligado":false"#;
+
+    /// Tabela `p` sem indice unico: `porId` e `porCidade`, os dois comuns.
+    fn com_tabela_adiavel(dir: &std::path::Path) -> Arc<Servidor> {
+        let s = com_tabela(dir);
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"p",
+                    "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true},
+                               {"nome":"cidade","tipo":"Str","tamanho":20}],
+                    "indices":[{"nome":"porId","colunas":["id"]},
+                               {"nome":"porCidade","colunas":["cidade"]}]}"#,
+            ),
+            &Sessao::default(),
+        )
+        .unwrap();
+        s
+    }
+
+    const CIDADES: [&str; 3] = ["Blumenau", "Joinville", "Lages"];
+
+    /// `n` linhas em lotes de 100, pela ligacao `ligacao`, em ordem
+    /// embaralhada (i * 7919 mod n) para a arvore nao sair ordenada de graca.
+    fn carregar(s: &Arc<Servidor>, ligacao: u64, n: u64) {
+        let ids: Vec<u64> = (0..n).map(|i| (i * 7919) % n + 1).collect();
+        for lote in ids.chunks(100) {
+            let linhas: Vec<String> = lote
+                .iter()
+                .map(|i| {
+                    format!(
+                        r#"{{"id":{i},"cidade":"{}"}}"#,
+                        CIDADES[(*i as usize) % CIDADES.len()]
+                    )
+                })
+                .collect();
+            pede(
+                s,
+                ligacao,
+                &format!(
+                    r#""op":"inserir_lote","database":"b","tabela":"p","linhas":[{}]"#,
+                    linhas.join(",")
+                ),
+            )
+            .unwrap();
+        }
+    }
+
+    fn buscar_id(s: &Arc<Servidor>, ligacao: u64, id: u64) -> Result<Json> {
+        pede(
+            s,
+            ligacao,
+            &format!(
+                r#""op":"buscar","database":"b","tabela":"p","indice":"porId","chave":[{id}]"#
+            ),
+        )
+    }
+
+    /// Os bytes 52 e 53 do cabecalho do `.ndx`, lidos do ARQUIVO.
+    fn marcas_no_disco(dir: &std::path::Path) -> (u8, u8) {
+        let bytes = std::fs::read(dir.join("b").join("p.ndx")).unwrap();
+        (bytes[52], bytes[53])
+    }
+
+    /// **A prova principal.** A carga adiada termina com o indice CERTO, chave
+    /// a chave, e ninguem ve a arvore suspensa no meio.
+    ///
+    /// Defeito reposto (o `t.reindexar()` tirado do `bulkinsert(false)`): a
+    /// reserva sai com o indice suspenso, e a primeira busca depois de soltar
+    /// recusa -- `buscar_id(..).unwrap()` cai.
+    /// Defeito reposto (o `suspender` sem gravar o cabecalho): o byte 53 le 0
+    /// no disco antes da primeira linha, e o `assert_eq!(marcas, (1, 1))` cai.
+    #[test]
+    fn a_carga_adiada_termina_com_o_indice_certo() {
+        let dir = dir_temp("adiar-certo");
+        let s = com_tabela_adiavel(&dir);
+        let r = pede(&s, 1, RESERVA_ADIADA).unwrap();
+        assert!(
+            matches!(r.campo("indice_adiado"), Some(Json::Bool(true))),
+            "{r:?}"
+        );
+        // R2: a marca no DISCO antes da primeira linha.
+        assert_eq!(
+            marcas_no_disco(&dir),
+            (1, 1),
+            "a marca de suspenso nao foi ao disco antes da carga"
+        );
+
+        const N: u64 = 600;
+        carregar(&s, 1, N);
+
+        // Ninguem le a arvore suspensa: nem a propria ligacao...
+        let e = buscar_id(&s, 1, 1).unwrap_err();
+        assert_eq!(e.nome(), "EM_CARGA", "{e}");
+        assert!(e.to_string().contains("suspenso"), "{e}");
+        assert!(
+            !e.to_string().contains("reparar indice"),
+            "mandou reparar um indice que a carga reconstroi: {e}"
+        );
+        // ...nem o `verificar`, que contaria «0 chaves para N registros»...
+        let e = pede(&s, 1, r#""op":"verificar","database":"b","tabela":"p""#).unwrap_err();
+        assert_eq!(e.nome(), "EM_CARGA", "{e}");
+        // ...nem outra ligacao.
+        assert_eq!(buscar_id(&s, 2, 1).unwrap_err().nome(), "EM_CARGA");
+
+        let r = pede(&s, 1, SOLTA_P).unwrap();
+        assert!(
+            matches!(r.campo("indice_reconstruido"), Some(Json::Bool(true))),
+            "{r:?}"
+        );
+        assert_eq!(
+            marcas_no_disco(&dir),
+            (0, 0),
+            "o fecho nao baixou as marcas"
+        );
+
+        // Chave a chave, de OUTRA ligacao: exatamente uma linha por id.
+        for id in 1..=N {
+            let r = buscar_id(&s, 2, id).unwrap_or_else(|e| panic!("id {id}: {e}"));
+            let linhas = r.campo("linhas").and_then(Json::lista).unwrap();
+            assert_eq!(linhas.len(), 1, "id {id}: {}", r.escrever());
+            assert_eq!(linhas[0].inteiro_ou("id", -1), id as i64);
+        }
+        // O nao unico tambem, pela contagem de cada cidade.
+        let mut total = 0;
+        for c in CIDADES {
+            let r = pede(
+                &s,
+                2,
+                &format!(
+                    r#""op":"buscar","database":"b","tabela":"p","indice":"porCidade","chave":["{c}"],"max":100000"#
+                ),
+            )
+            .unwrap();
+            total += r.campo("linhas").and_then(Json::lista).unwrap().len();
+        }
+        assert_eq!(total as u64, N);
+        pede(&s, 2, r#""op":"verificar","database":"b","tabela":"p""#).unwrap();
+    }
+
+    /// **O comportamento VELHO.** Sem `adiar_indice`, a reserva e a de sempre:
+    /// o indice acompanha linha a linha, o dono busca no meio da carga, nada
+    /// vai ao byte 53, e soltar nao reconstroi nada.
+    #[test]
+    fn sem_pedir_o_indice_adiado_nada_muda() {
+        let dir = dir_temp("adiar-velho");
+        let s = com_tabela_adiavel(&dir);
+        let r = pede(&s, 1, RESERVA_P).unwrap();
+        assert!(matches!(r.campo("indice_adiado"), Some(Json::Bool(false))));
+        carregar(&s, 1, 200);
+        let r = buscar_id(&s, 1, 37).unwrap();
+        assert_eq!(r.campo("linhas").and_then(Json::lista).unwrap().len(), 1);
+        assert_eq!(
+            marcas_no_disco(&dir).1,
+            0,
+            "o byte 53 subiu sem ninguem pedir"
+        );
+        let r = pede(&s, 1, SOLTA_P).unwrap();
+        assert!(r.campo("indice_reconstruido").is_none(), "{r:?}");
+    }
+
+    /// As recusas da DECLARACAO -- e a reserva que acabou de nascer sai junto,
+    /// senao a recusa deixaria a tabela presa para os outros.
+    #[test]
+    fn adiar_recusa_na_declaracao() {
+        let dir = dir_temp("adiar-recusas");
+        let s = com_tabela_adiavel(&dir);
+
+        // R1: indice unico.
+        let e = pede(
+            &s,
+            1,
+            r#""op":"bulkinsert","database":"b","tabela":"c","ligado":true,"adiar_indice":true"#,
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("UNICO"), "{e}");
+        assert!(
+            pede(&s, 2, INSERE).is_ok(),
+            "a recusa deixou a reserva presa"
+        );
+
+        // Tabela com dados: o regime b', medido perdendo.
+        pede(
+            &s,
+            1,
+            r#""op":"inserir","database":"b","tabela":"p","linha":{"id":1}"#,
+        )
+        .unwrap();
+        let e = pede(&s, 1, RESERVA_ADIADA).unwrap_err();
+        assert!(e.to_string().contains("0,67"), "{e}");
+        assert!(
+            buscar_id(&s, 2, 1).is_ok(),
+            "a recusa deixou a reserva presa"
+        );
+
+        // R3: mae de chave conferida.
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"m",
+                    "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true}],
+                    "indices":[{"nome":"porId","colunas":["id"]}]}"#,
+            ),
+            &Sessao::default(),
+        )
+        .unwrap();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"f",
+                    "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true},
+                               {"nome":"m_id","tipo":"Int4"}],
+                    "indices":[{"nome":"porM","colunas":["m_id"]}],
+                    "chaves_estrangeiras":[{"nome":"fk_m","colunas":["m_id"],
+                                            "tabela_ref":"m","colunas_ref":["id"]}]}"#,
+            ),
+            &Sessao::default(),
+        )
+        .unwrap();
+        let e = pede(
+            &s,
+            1,
+            r#""op":"bulkinsert","database":"b","tabela":"m","ligado":true,"adiar_indice":true"#,
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("f declara"), "{e}");
+
+        // Soltar nao aceita o pedido: quem decide reconstruir e a marca.
+        let e = pede(
+            &s,
+            1,
+            r#""op":"bulkinsert","database":"b","tabela":"p","ligado":false,"adiar_indice":true"#,
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("so para reservar"), "{e}");
+    }
+
+    /// A conexao que cai no meio da carga adiada: o `bulkinsert(false)` nunca
+    /// vem, e e o fecho da janela da saida que reconstroi.
+    ///
+    /// Defeito reposto (o braco `indice_suspenso()` tirado do
+    /// `descarregar_sujas_com`): a reserva sai, o indice fica suspenso, e a
+    /// busca do outro recusa -- `buscar_id(..).unwrap()` cai.
+    #[test]
+    fn a_queda_da_conexao_reconstroi_o_indice_adiado() {
+        let dir = dir_temp("adiar-queda");
+        let s = com_tabela_adiavel(&dir);
+        pede(&s, 1, RESERVA_ADIADA).unwrap();
+        carregar(&s, 1, 150);
+        s.soltar_cargas_da_ligacao(1);
+        for id in [1, 75, 150] {
+            let r = buscar_id(&s, 2, id).unwrap_or_else(|e| panic!("id {id}: {e}"));
+            assert_eq!(r.campo("linhas").and_then(Json::lista).unwrap().len(), 1);
+        }
+        assert_eq!(marcas_no_disco(&dir), (0, 0));
+    }
+
+    /// A reserva que VENCE no meio da carga adiada, sem ninguem soltar: a
+    /// arvore suspensa recusa -- nunca responde vazia -- ate o fecho seguinte
+    /// a reconstruir.
+    #[test]
+    fn a_reserva_vencida_nunca_responde_com_a_arvore_vazia() {
+        let dir = dir_temp("adiar-vencida");
+        let s = com_tabela_adiavel(&dir);
+        pede(&s, 1, RESERVA_ADIADA).unwrap();
+        carregar(&s, 1, 50);
+        // Vence agora: o proprio `barra` limpa na primeira consulta de outro.
+        {
+            let mut c = s.cargas.lock().unwrap();
+            let todas = c.todas();
+            let r = &todas[0];
+            c.reservar(
+                &r.database,
+                &r.tabela,
+                "",
+                r.ligacao,
+                "",
+                crate::agora_ms(),
+                -1,
+            )
+            .unwrap();
+        }
+        match buscar_id(&s, 2, 7) {
+            Err(e) => {
+                eprintln!("324 vencida: recusou -- {e}");
+                assert_eq!(e.nome(), "EM_CARGA", "{e}");
+            }
+            Ok(r) => assert_eq!(
+                r.campo("linhas").and_then(Json::lista).unwrap().len(),
+                1,
+                "a arvore suspensa respondeu errado: {}",
+                r.escrever()
+            ),
+        }
+        s.descarregar_sujas();
+        let r = buscar_id(&s, 2, 7).unwrap();
+        assert_eq!(r.campo("linhas").and_then(Json::lista).unwrap().len(), 1);
+    }
+
+    /// R4 (pedido 322) NAO e pre-requisito, e isto e a prova: o lado B de uma
+    /// junção nao passa pelo Portao 4, mas a arvore suspensa recusa sozinha.
+    /// A pergunta que importa e se ha resposta ERRADA -- zero pares com a
+    /// tabela carregada --, e nao ha.
+    #[test]
+    fn o_lado_b_da_juncao_nao_le_a_arvore_suspensa() {
+        let dir = dir_temp("adiar-juntar");
+        let s = com_tabela_adiavel(&dir);
+        pede(&s, 2, INSERE).unwrap();
+        pede(&s, 1, RESERVA_ADIADA).unwrap();
+        carregar(&s, 1, 10);
+        let r = pede(
+            &s,
+            2,
+            r#""op":"juntar","database":"b","a":{"tabela":"c","chave":"id"},
+               "b":{"tabela":"p","chave":"id","indice":"porId"}"#,
+        );
+        match r {
+            Err(e) => {
+                eprintln!("324 juntar: recusou -- {e}");
+                assert_eq!(e.nome(), "EM_CARGA", "{e}");
+            }
+            Ok(j) => {
+                eprintln!("324 juntar: respondeu -- {}", j.escrever());
+                let pares = j
+                    .campo("linhas")
+                    .and_then(Json::lista)
+                    .map_or(0, |l| l.len());
+                assert_eq!(pares, 1, "junção leu a arvore suspensa: {}", j.escrever());
+            }
+        }
     }
 }
 

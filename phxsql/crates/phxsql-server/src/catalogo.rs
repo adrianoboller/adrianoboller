@@ -1083,6 +1083,11 @@ pub const OPERACOES: &[Operacao] = &[
             DB,
             TAB,
             obr("ligado", "boolean", "true reserva, false solta"),
+            opc(
+                "adiar_indice",
+                "boolean",
+                "só ao reservar tabela vazia sem índice único: o .ndx fica suspenso e se reconstrói em lote ao soltar",
+            ),
         ],
         exemplo: r#"{"op":"bulkinsert","database":"loja","tabela":"clientes","ligado":true}"#,
         ferramenta_mcp: false,

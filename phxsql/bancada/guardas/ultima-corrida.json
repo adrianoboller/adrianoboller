@@ -697,17 +697,17 @@
       "id": "recado-manda-reparar-arquivo-sao",
       "titulo": "a mãe invisível manda reparar o índice — de um arquivo intacto",
       "veredito": "PROVADA",
-      "segundos": 2.11,
+      "segundos": 3.87,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-09-30 15:57"
     },
     {
       "id": "procura-das-filhas-manda-reparar-arquivo-sao",
       "titulo": "a procura pelas filhas manda reparar o índice — de um arquivo intacto",
       "veredito": "PROVADA",
-      "segundos": 1.93,
+      "segundos": 4.01,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-09-30 15:57"
     },
     {
       "id": "recuperacao-nao-reconstroi-a-filha",
@@ -1169,9 +1169,9 @@
       "id": "bulkinsert-false-nao-drena-a-marca",
       "titulo": "o `bulkinsert(false)` sincroniza a tabela e deixa a marca `.tx` do COMMIT no disco",
       "veredito": "PROVADA",
-      "segundos": 58.49,
+      "segundos": 54.16,
       "notas": [],
-      "quando": "2026-09-24 13:28"
+      "quando": "2026-09-30 15:59"
     },
     {
       "id": "fecho-sem-suja-nao-drena-a-marca",
@@ -2636,6 +2636,30 @@
       "segundos": 38.6,
       "notas": [],
       "quando": "2026-09-30 13:25"
+    },
+    {
+      "id": "carga-adiada-solta-sem-reconstruir",
+      "titulo": "o `bulkinsert(false)` da carga com o índice adiado solta a reserva com a árvore suspensa",
+      "veredito": "PROVADA",
+      "segundos": 47.29,
+      "notas": [],
+      "quando": "2026-09-30 15:52"
+    },
+    {
+      "id": "suspensao-do-indice-so-na-ram",
+      "titulo": "a suspensão do `.ndx` para a carga adiada fica só na memória, e a queda no meio deixa a árvore vazia se declarando limpa",
+      "veredito": "PROVADA",
+      "segundos": 2.05,
+      "notas": [],
+      "quando": "2026-09-30 15:53"
+    },
+    {
+      "id": "carga-adiada-orfa-sem-reconstruir",
+      "titulo": "a carga adiada que sai sem o `bulkinsert(false)` (conexão caída, reserva vencida) deixa o índice suspenso até o próximo arranque",
+      "veredito": "PROVADA",
+      "segundos": 38.99,
+      "notas": [],
+      "quando": "2026-09-30 15:55"
     },
     {
       "id": "cifra-do-fio-imposta",

@@ -948,7 +948,8 @@ de índices; as demais são nós da B+tree.
 | 40 | 4 | CRC-32 do diretório |
 | 44 | 8 | alterado em |
 | 52 | 1 | **marca de sujo** (0 = fechado limpo) |
-| 53 | 3 | reservado |
+| 53 | 1 | **suspenso por carga** (0 = não; pedido 324) |
+| 54 | 2 | reservado |
 | 56 | 40 | **material de cifra** (`cofre::Material`), só na versão 2 |
 | 96 | 28 | reservado |
 | 124 | 4 | CRC-32 dos bytes 0..124 |
@@ -999,6 +1000,44 @@ migração:** arquivo da versão 1 continua abrindo e continua em claro, e só o
 termos): **0,862%** da capacidade de folha (116 → 115 entradas), **+0,032%**
 em disco, **1,23×–1,49×** por termo indexado e **2,40×–2,76×** por busca de
 palavra. A tabela inteira está em `SEGURANCA.md` §11.12.
+
+#### O índice suspenso por carga (byte 53, pedido 324, 30/09/2026)
+
+`bulkinsert` com `"adiar_indice": true` **suspende** o `.ndx`: as inserções
+da reserva gravam o `.reg` e o `.log` e não tocam a árvore, e o
+`bulkinsert(false)` a reconstrói em lote (`reindexar`) **antes** de soltar a
+reserva. O byte 53 em 1 é esse estado, e ele mora no **disco** porque a
+reserva é memória de processo — processo morto não diz nada a quem reabre
+(parecer do papel C, R2).
+
+- **A ordem é a garantia.** `NdxFile::suspender` grava os bytes 52 **e** 53
+  em 1 e leva o cabeçalho ao disco com `fdatasync` antes de voltar — antes,
+  portanto, da primeira linha da carga. Sem o `fsync`, o núcleo podia levar
+  as linhas do `.reg` e perder o cabeçalho: a árvore vazia voltaria se
+  declarando limpa.
+- **Quem abre um `.ndx` com o 53 em 1** o trata como marcado, com ou sem
+  atestado deste processo: toda operação de índice recusa, com `EM_CARGA` e
+  não com corrupção — e a mensagem manda esperar a carga, não `reparar
+  indice`. O `inserir` grava o `.reg` sem abrir a janela do índice; o índice
+  único recusa pelo portão de sempre, porque a pergunta «já existe?» não se
+  adia.
+- **O 52 sobe junto de propósito.** Um binário que não conhece o 53 lê o 52,
+  recusa e manda reconstruir — em vez de responder com a árvore vazia.
+- **Só o `reindexar` tira o 53**: o `NdxFile::criar` nasce com ele em 0. O
+  `fechar`, o `sincronizar` e o `Drop` não levam nada ao arquivo de um índice
+  suspenso.
+- **Uma queda no meio** deixa o 52 e o 53 em 1, e o arranque reconstrói pelo
+  `.reg` (pedido 522) e avisa (pedido 255). A conexão que cai e a reserva que
+  vence sem o `bulkinsert(false)` são reconstruídas no fecho da janela
+  seguinte; até lá a árvore recusa, nunca responde vazia.
+
+**Arquivo escrito antes tem zero no byte 53**, que é «não suspenso» — a
+verdade para ele. Não há migração nem versão nova; o leiaute não muda, só um
+byte reservado ganhou nome. Por que um byte novo e não o 52 sozinho: o 52 diz
+«não confie nesta árvore» igual para a queda e para a carga, e três lugares
+precisam da diferença — o `inserir` (gravar sem a árvore é o combinado), a
+mensagem de recusa e a declaração da carga, que recusa suspender uma árvore
+que **já** caiu.
 
 #### A marca de sujo (byte 52), e por que ela existe
 
