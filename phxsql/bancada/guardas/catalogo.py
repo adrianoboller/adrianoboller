@@ -17298,4 +17298,73 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "servidor::testes_dblink_cifra::salvar_pela_tela_nao_apaga_o_pino_nem_a_decisao_da_cifra",
         ],
     },
+    {
+        "id": "dblink-no-fio-com-a-trava-de-dados",
+        "titulo": "`dblink_ligar` e `dblink_sincronizar` vão ao fio com a trava de dados global na mão: um par que goteja abaixo do prazo por leitura prende todo pedido de todo cliente",
+        "porque": (
+            "pedido 545 (SEC D1 da revisao de 24/09/2026). As tres idas ao "
+            "fio que iam com a trava na mao -- o `LIMIT 0` do ligar, o "
+            "`SELECT` inteiro e o empurrao do sincronizar -- passam a "
+            "acontecer fora dela; a trava cobre so o trecho local. Medido "
+            "reposto, contra um MySQL(R) falso que goteja cada resposta em "
+            "1,2 s: um `inserir` em outra tabela esperou 1,24 s no ligar e "
+            "2,45 s no sincronizar; com o conserto, abaixo do limiar de "
+            "600 ms. As tres trocas repoem as tres idas; cada uma sozinha "
+            "tambem derruba o teste (o empurrao reposto sozinho: 1,21 s)."
+        ),
+        "trocas": [
+            {
+                "arquivo": "crates/phxsql-server/src/servidor.rs",
+                "trecho": """        let mut buscadas = Vec::with_capacity(pedidos.len());
+""",
+                "troca": """        // DEFEITO REPOSTO (545, 1/3): a trava antes do fio do ligar.
+        let dados_545 = self.travar_dados()?;
+        let mut buscadas = Vec::with_capacity(pedidos.len());
+""",
+            },
+            {
+                "arquivo": "crates/phxsql-server/src/servidor.rs",
+                "trecho": """        let dados = self.travar_dados()?;
+        let mut ligadas = Vec::new();
+""",
+                "troca": """        let dados = dados_545;
+        let mut ligadas = Vec::new();
+""",
+            },
+            {
+                "arquivo": "crates/phxsql-server/src/servidor.rs",
+                "trecho": """            let teto = d.max_linhas;
+""",
+                "troca": """            // DEFEITO REPOSTO (545, 2/3): a trava antes do SELECT remoto.
+            let mut dados = self.travar_dados()?;
+            let teto = d.max_linhas;
+""",
+            },
+            {
+                "arquivo": "crates/phxsql-server/src/servidor.rs",
+                "trecho": """            let mut dados = self.travar_dados()?;
+            let db = dados.abrir_database(&sinc.local_database)?;
+""",
+                "troca": """            let db = dados.abrir_database(&sinc.local_database)?;
+""",
+            },
+            {
+                "arquivo": "crates/phxsql-server/src/servidor.rs",
+                "trecho": """            drop(t);
+            drop(dados);
+""",
+                "troca": """            // DEFEITO REPOSTO (545, 3/3): a trava segue na mao pelo empurrao.
+            drop(t);
+""",
+            },
+        ],
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_dblink_fora_da_trava::o_par_que_goteja_nao_prende_o_banco",
+        ],
+        "seguem": [
+            "servidor::testes_dblink_cifra::salvar_sem_trocar_o_destino_continua_herdando_a_senha",
+        ],
+    },
 ]
