@@ -65567,6 +65567,18 @@ mod testes_dblink_fora_da_trava {
 
     /// A definicao de uma coluna de `clientes`, no formato do protocolo 41.
     pub(super) fn coluna(nome: &str, codigo: u8, bandeiras: u16, tamanho: u32) -> Vec<u8> {
+        coluna_em(nome, codigo, bandeiras, tamanho, 45)
+    }
+
+    /// A mesma definicao dizendo o conjunto de caracteres: 63 e o `binary`
+    /// que o MySQL(R) manda num BLOB, 45 o `utf8mb4` de um texto -- pedido 590.
+    pub(super) fn coluna_em(
+        nome: &str,
+        codigo: u8,
+        bandeiras: u16,
+        tamanho: u32,
+        charset: u16,
+    ) -> Vec<u8> {
         let mut p = Vec::new();
         for campo in [&b"def"[..], b"erp", b"clientes", b"clientes"] {
             lenenc(&mut p, campo);
@@ -65574,7 +65586,7 @@ mod testes_dblink_fora_da_trava {
         lenenc(&mut p, nome.as_bytes());
         lenenc(&mut p, nome.as_bytes());
         p.push(0x0c);
-        p.extend_from_slice(&[45, 0]);
+        p.extend_from_slice(&charset.to_le_bytes());
         p.extend_from_slice(&tamanho.to_le_bytes());
         p.push(codigo);
         p.extend_from_slice(&bandeiras.to_le_bytes());
@@ -66017,7 +66029,7 @@ mod testes_dblink_valor_no_fio {
 #[cfg(test)]
 mod testes_dblink_dialeto_da_sincronia {
     use super::testes_dblink_fora_da_trava::{
-        coluna, lenenc, ler_pacote, pede, quadro, saudar, servidor, EOF,
+        coluna, coluna_em, lenenc, ler_pacote, pede, quadro, saudar, servidor, EOF,
     };
     use super::*;
     use std::io::{Read, Write};
@@ -66122,7 +66134,16 @@ mod testes_dblink_dialeto_da_sincronia {
                 ));
             }
         } else if sql.starts_with("SELECT") {
-            let d: Vec<(&str, u32)> = cols.iter().map(|c| (c.nome, c.oid)).collect();
+            // O `encode(..,'hex')` devolve `text` (OID 25), e nao `bytea`: e o
+            // que o PostgreSQL(R) de verdade anuncia no `RowDescription`, e
+            // o leitor do fio decide o binario por ele -- pedido 590.
+            let d: Vec<(&str, u32)> = cols
+                .iter()
+                .map(|c| {
+                    let codificada = sql.contains(&format!("encode(\"{}\",'hex')", c.nome));
+                    (c.nome, if codificada { 25 } else { c.oid })
+                })
+                .collect();
             r.extend(msg_pg(b'T', &descricao_pg(&d)));
             if !sql.contains("LIMIT 0") {
                 for l in linhas {
@@ -66212,8 +66233,9 @@ mod testes_dblink_dialeto_da_sincronia {
 
     // ------------------------------------------------------ o MySQL(R) falso
 
-    /// Uma coluna la: nome, codigo do tipo, bandeiras e tamanho no fio.
-    type ColMy = (&'static str, u8, u16, u32);
+    /// Uma coluna la: nome, codigo do tipo, bandeiras, tamanho e conjunto de
+    /// caracteres no fio (63 e o `binary` de um BLOB de verdade).
+    type ColMy = (&'static str, u8, u16, u32, u16);
 
     /// Como o MySQL(R): o `SELECT *` manda o BLOB CRU; o `HEX(..)` manda o
     /// texto hexadecimal, em maiuscula, numa coluna de texto.
@@ -66223,11 +66245,11 @@ mod testes_dblink_dialeto_da_sincronia {
         }
         let em_hex = |nome: &str| sql.contains(&format!("HEX(`{nome}`)"));
         let mut r = vec![vec![cols.len() as u8]];
-        for (nome, codigo, bandeiras, tamanho) in cols {
+        for (nome, codigo, bandeiras, tamanho, charset) in cols {
             r.push(if em_hex(nome) {
                 coluna(nome, 0xfd, 0, tamanho * 2)
             } else {
-                coluna(nome, *codigo, *bandeiras, *tamanho)
+                coluna_em(nome, *codigo, *bandeiras, *tamanho, *charset)
             });
         }
         r.push(EOF.to_vec());
@@ -66401,7 +66423,10 @@ mod testes_dblink_dialeto_da_sincronia {
     /// linha 2. O teste falha nas duas, cada uma com a sua mensagem.
     #[test]
     fn o_blob_do_mysql_chega_byte_a_byte() {
-        let cols: Vec<ColMy> = vec![("id", 0x03, 0x0003, 11), ("foto", 0xfc, 0x0090, 65_535)];
+        let cols: Vec<ColMy> = vec![
+            ("id", 0x03, 0x0003, 11, 63),
+            ("foto", 0xfc, 0x0090, 65_535, 63),
+        ];
         let so_cafe = vec![vec![cel("1"), Some(b"cafe".to_vec())]];
         let todas = vec![
             vec![cel("1"), Some(b"cafe".to_vec())],
@@ -66480,7 +66505,7 @@ mod testes_dblink_dialeto_da_sincronia {
     /// recusa sem citar a celula; e o uuid de verdade chega igual.
     #[test]
     fn o_uuid_remoto_nao_vira_uuid_inventado() {
-        let cols: Vec<ColMy> = vec![("id", 0x03, 0x0003, 11), ("cod", 0xfe, 0, 144)];
+        let cols: Vec<ColMy> = vec![("id", 0x03, 0x0003, 11, 63), ("cod", 0xfe, 0, 144, 45)];
         let u = "0190a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b";
         for (celula, vale) in [(u, true), ("novo", false), ("v4", false), ("v7", false)] {
             let dir = DirTemp::novo("584-dblink-uuid");
@@ -66504,6 +66529,144 @@ mod testes_dblink_dialeto_da_sincronia {
                     assert!(e.contains("\"cod\"") && !e.contains(celula), "{e}");
                 }
             }
+        }
+    }
+    // ------------------------------------------ pedido 590: a celula exibida
+
+    /// As celulas de uma coluna, pelo NOME, na resposta da grade -- e a marca
+    /// `binario` dela. Ler por nome, e nao por posicao, porque a tela le assim.
+    fn celulas_de(r: &Json, nome: &str) -> (Vec<Json>, bool) {
+        let cols = r.campo("colunas").and_then(Json::lista).unwrap();
+        let i = cols
+            .iter()
+            .position(|c| c.texto_ou("nome", "") == nome)
+            .unwrap_or_else(|| panic!("sem a coluna {nome:?}: {}", r.escrever()));
+        let binario = cols[i].booleano_ou("binario", false);
+        let linhas = r.campo("linhas").and_then(Json::lista).unwrap();
+        let v = linhas
+            .iter()
+            .map(|l| l.lista().unwrap()[i].clone())
+            .collect();
+        (v, binario)
+    }
+
+    /// Confere a resposta das duas ops da tela contra o que esta la: o
+    /// binario em hexadecimal minusculo (a forma do BLOB daqui), NULL como
+    /// NULL, e o texto UTF-8 -- acento e travessao -- intacto.
+    fn confere_a_grade(op: &str, r: &Json) {
+        let texto = r.escrever();
+        assert!(!texto.contains('\u{FFFD}'), "{op}: U+FFFD na tela: {texto}");
+        let (foto, bin) = celulas_de(r, "foto");
+        assert!(bin, "{op}: a coluna binaria nao veio marcada: {texto}");
+        assert_eq!(
+            foto,
+            vec![
+                Json::texto_de("00ff80"),
+                Json::texto_de("63616665"),
+                Json::texto_de(""),
+                Json::Nulo
+            ],
+            "{op}: a celula exibida nao e o dado"
+        );
+        let (nome, bin) = celulas_de(r, "nome");
+        assert!(!bin, "{op}: texto marcado como binario");
+        assert_eq!(nome[0], Json::texto_de("São Paulo — ação"), "{op}");
+        assert_eq!(nome[1], Json::texto_de("cafe"), "{op}: o texto virou hex");
+    }
+
+    fn linhas_590() -> Celulas {
+        vec![
+            vec![
+                cel("1"),
+                Some(vec![0x00, 0xFF, 0x80]),
+                cel("São Paulo — ação"),
+            ],
+            vec![cel("2"), Some(b"cafe".to_vec()), cel("cafe")],
+            vec![cel("3"), Some(Vec::new()), cel("")],
+            vec![cel("4"), None, None],
+        ]
+    }
+
+    /// **590, MySQL(R):** o `dblink_ler` e o `dblink_consultar` mostravam o
+    /// BLOB pelo `from_utf8_lossy` -- `00 FF 80` virava `\0` e dois `U+FFFD`,
+    /// e `cafe` aparecia como a palavra. O conjunto `binary` (63) da definicao
+    /// da coluna decide; o texto -- inclusive o `_bin`, que acende a mesma
+    /// bandeira 0x80 -- continua texto.
+    ///
+    /// # Prova real
+    ///
+    /// Com o leitor do fio de volta ao `texto_lenenc` para toda coluna, as
+    /// duas ops falham no `U+FFFD`; com a decisao pela bandeira 0x80 em vez do
+    /// conjunto, o `apelido` em `utf8mb4_bin` vira hexadecimal e falha.
+    #[test]
+    fn o_blob_do_mysql_aparece_na_tela_como_o_dado() {
+        let dir = DirTemp::novo("590-dblink-tela-my");
+        let s = servidor(&dir);
+        let cols: Vec<ColMy> = vec![
+            ("id", 0x03, 0x0083, 11, 63),
+            ("foto", 0xfc, 0x0090, 65_535, 63),
+            ("nome", 0xfd, 0, 160, 45),
+        ];
+        let mut linhas = linhas_590();
+        // Uma quarta coluna em `utf8mb4_bin`: bandeira BINARY acesa, texto.
+        let mut cols = cols;
+        cols.push(("apelido", 0xfd, 0x0080, 160, 45));
+        for l in &mut linhas {
+            l.push(cel("Blumenau ç"));
+        }
+        let (porta, _avisos) = par_my(cols, linhas);
+        salvar(&s, "mysql", porta);
+        for (op, pedido) in [
+            (
+                "dblink_ler",
+                r#""op":"dblink_ler","dblink":"erp","tabela":"clientes""#,
+            ),
+            (
+                "dblink_consultar",
+                r#""op":"dblink_consultar","dblink":"erp","sql":"SELECT * FROM clientes""#,
+            ),
+        ] {
+            let r = pede(&s, pedido).unwrap_or_else(|e| panic!("{op}: {e}"));
+            confere_a_grade(op, &r);
+            let (apelido, bin) = celulas_de(&r, "apelido");
+            assert!(!bin, "{op}: a colacao _bin nao e binario");
+            assert_eq!(apelido[0], Json::texto_de("Blumenau ç"), "{op}");
+            let (id, bin) = celulas_de(&r, "id");
+            assert!(!bin && id[0] == Json::texto_de("1"), "{op}: {id:?}");
+        }
+    }
+
+    /// **590, PostgreSQL(R):** o `bytea` aparecia no texto do fio -- `\x00ff80`
+    /// no `bytea_output = hex`, e `\000\377\200` no `escape` --, uma forma
+    /// que muda com a configuracao do outro servidor e nao e a do BLOB daqui.
+    ///
+    /// # Prova real
+    ///
+    /// Com o leitor de volta ao `from_utf8_lossy` para toda coluna, a celula
+    /// chega `\x00ff80` e o teste falha nas duas ops.
+    #[test]
+    fn o_bytea_do_postgres_aparece_na_tela_como_o_dado() {
+        let dir = DirTemp::novo("590-dblink-tela-pg");
+        let s = servidor(&dir);
+        let cols = vec![
+            col_pg("id", 23, "integer", true),
+            col_pg("foto", 17, "bytea", false),
+            col_pg("nome", 1043, "character varying(40)", false),
+        ];
+        let (porta, _avisos) = par_pg(cols, linhas_590());
+        salvar(&s, "postgres", porta);
+        for (op, pedido) in [
+            (
+                "dblink_ler",
+                r#""op":"dblink_ler","dblink":"erp","tabela":"clientes""#,
+            ),
+            (
+                "dblink_consultar",
+                r#""op":"dblink_consultar","dblink":"erp","sql":"SELECT * FROM clientes""#,
+            ),
+        ] {
+            let r = pede(&s, pedido).unwrap_or_else(|e| panic!("{op}: {e}"));
+            confere_a_grade(op, &r);
         }
     }
 }

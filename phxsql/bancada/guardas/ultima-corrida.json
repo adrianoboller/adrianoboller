@@ -2614,6 +2614,30 @@
       "quando": "2026-09-30 13:25"
     },
     {
+      "id": "dblink-puxar-le-blob-cru",
+      "titulo": "O DbLink, ao puxar, lê o BLOB cru como se fosse hexadecimal",
+      "veredito": "PROVADA",
+      "segundos": 57.35,
+      "notas": [],
+      "quando": "2026-09-30 22:59"
+    },
+    {
+      "id": "dblink-tela-mostra-blob-com-perda",
+      "titulo": "O DbLink mostra na tela o BLOB remoto pelo leitor com perda",
+      "veredito": "PROVADA",
+      "segundos": 62.77,
+      "notas": [],
+      "quando": "2026-09-30 22:47"
+    },
+    {
+      "id": "dblink-colacao-bin-vira-hex",
+      "titulo": "O DbLink mostra em hexadecimal o texto de uma colação _bin",
+      "veredito": "PROVADA",
+      "segundos": 62.13,
+      "notas": [],
+      "quando": "2026-09-30 22:49"
+    },
+    {
       "id": "migracao-do-separador-decide-pelo-nome",
       "titulo": "a migracao do separador de volume le `vendas_2024.reg` como volume 2024 de `vendas` e some com a tabela",
       "veredito": "PROVADA",

@@ -682,6 +682,9 @@ fn colunas_da_grade(e: &Json) -> Vec<Coluna> {
                 || tipo.starts_with("Decimal")
                 || tipo.starts_with("Float")
                 || tipo == "Sequence",
+            // O `varrer` do outro PhxSql ja manda o `Bin` em hexadecimal: a
+            // celula e a mesma forma, so falta a marca -- pedido 590.
+            binario: tipo == "Bin",
             tipo,
         });
     }

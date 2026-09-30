@@ -15986,14 +15986,39 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "do PostgreSQL (`\\x...`) recusava. A leitura pede agora o "
             "hexadecimal ao servidor: `HEX()` e `encode(..,'hex')`."
         ),
-        "arquivo": "crates/phxsql-server/src/dblink/dialeto.rs",
-        "trecho": """                    (Motor::MySql, "BLOB" | "BINARY" | "VARBINARY" | "GEOMETRY") => {
+        # ATUALIZADO em 30/09/2026 (pedido 590): o leitor do fio passou a
+        # decidir o binario sozinho (charset 63 / OID 17), entao tirar SO o
+        # `HEX()`/`encode` da leitura deu NAO PEGOU 1/3 -- o BLOB chegava
+        # inteiro pelo leitor. As duas defesas sao reais; o defeito do 584 so
+        # volta repondo as duas, e e o que as tres trocas fazem.
+        "trocas": [
+            {
+                "arquivo": "crates/phxsql-server/src/dblink/dialeto.rs",
+                "trecho": """                    (Motor::MySql, "BLOB" | "BINARY" | "VARBINARY" | "GEOMETRY") => {
                         format!("HEX({n}) AS {n}")
                     }
                     (Motor::Postgres, "BYTEA") => format!("encode({n},'hex') AS {n}"),
 """,
-        "troca": """                    // DEFEITO REPOSTO (584): o binario viaja cru.
+                "troca": """                    // DEFEITO REPOSTO (584): o binario viaja cru.
 """,
+            },
+            {
+                "arquivo": "crates/phxsql-server/src/dblink/mysql.rs",
+                "trecho": """            Some(_) if c.binario => {
+""",
+                "troca": """            // DEFEITO REPOSTO (584, leitor): o BLOB passa pelo leitor com perda.
+            Some(_) if false && c.binario => {
+""",
+            },
+            {
+                "arquivo": "crates/phxsql-server/src/pg/mod.rs",
+                "trecho": """            Some(c) if c.binario => bytea_em_hex(b, c)?,
+""",
+                "troca": """            // DEFEITO REPOSTO (584, leitor): o bytea sai no texto do fio.
+            Some(c) if false && c.binario => bytea_em_hex(b, c)?,
+""",
+            },
+        ],
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
         "caem": [
@@ -16031,6 +16056,71 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "seguem": [
             "servidor::testes_dblink_dialeto_da_sincronia::a_sincronia_contra_postgres_roda_ida_e_volta_no_dialeto_dele",
             "servidor::testes_dblink_dialeto_da_sincronia::o_blob_do_mysql_chega_byte_a_byte",
+        ],
+    },
+    {
+        "id": "dblink-tela-mostra-blob-com-perda",
+        "titulo": "O DbLink mostra na tela o BLOB remoto pelo leitor com perda",
+        "porque": (
+            "pedido 590, medido: `dblink_ler` e `dblink_consultar` passavam a "
+            "celula binaria pelo `from_utf8_lossy` -- `00 FF 80` aparecia como "
+            "`\\u0000` e dois U+FFFD no MySQL, e o `bytea` do PostgreSQL como o "
+            "texto do fio (`\\x00ff80`, ou octal no `escape`). O leitor de cada "
+            "motor decide pelo protocolo (conjunto 63; OID 17) e escreve pelo "
+            "`bytes_para_hex` do BLOB daqui."
+        ),
+        "trocas": [
+            {
+                "arquivo": "crates/phxsql-server/src/dblink/mysql.rs",
+                "trecho": """            Some(_) if c.binario => {
+""",
+                "troca": """            // DEFEITO REPOSTO (590 1/2): o BLOB passa pelo leitor com perda.
+            Some(_) if false && c.binario => {
+""",
+            },
+            {
+                "arquivo": "crates/phxsql-server/src/pg/mod.rs",
+                "trecho": """            Some(c) if c.binario => bytea_em_hex(b, c)?,
+""",
+                "troca": """            // DEFEITO REPOSTO (590 2/2): o bytea sai no texto do fio.
+            Some(c) if false && c.binario => bytea_em_hex(b, c)?,
+""",
+            },
+        ],
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_dblink_dialeto_da_sincronia::o_blob_do_mysql_aparece_na_tela_como_o_dado",
+            "servidor::testes_dblink_dialeto_da_sincronia::o_bytea_do_postgres_aparece_na_tela_como_o_dado",
+        ],
+        "seguem": [
+            "servidor::testes_dblink_dialeto_da_sincronia::o_blob_do_mysql_chega_byte_a_byte",
+            "servidor::testes_dblink_dialeto_da_sincronia::o_bytea_do_postgres_chega_byte_a_byte",
+            "pg::testes::o_bytea_sai_no_hex_do_blob_daqui_nas_tres_formas",
+        ],
+    },
+    {
+        "id": "dblink-colacao-bin-vira-hex",
+        "titulo": "O DbLink mostra em hexadecimal o texto de uma colação _bin",
+        "porque": (
+            "pedido 590: a bandeira BINARY (0x80) do MySQL acende tambem num "
+            "`VARCHAR` em `utf8mb4_bin` -- texto UTF-8 legitimo. Decidir o "
+            "binario por ela trocaria `Blumenau ç` por digitos na tela. Quem "
+            "diz bytes e o conjunto de caracteres 63 (`binary`)."
+        ),
+        "arquivo": "crates/phxsql-server/src/dblink/mysql.rs",
+        "trecho": """        binario: charset == CHARSET_BINARIO && eh_cadeia(codigo),
+""",
+        "troca": """        // DEFEITO REPOSTO (590): a bandeira decide, e nao o conjunto.
+        binario: bandeiras & 0x80 != 0 && charset != CHARSET_BINARIO + 1 && eh_cadeia(codigo),
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_dblink_dialeto_da_sincronia::o_blob_do_mysql_aparece_na_tela_como_o_dado",
+        ],
+        "seguem": [
+            "servidor::testes_dblink_dialeto_da_sincronia::o_bytea_do_postgres_aparece_na_tela_como_o_dado",
         ],
     },
     {

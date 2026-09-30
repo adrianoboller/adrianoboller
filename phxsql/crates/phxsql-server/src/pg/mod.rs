@@ -80,7 +80,16 @@ pub struct Coluna {
     pub tamanho: i16,
     /// Numero, para a tela alinhar a direita e o pivot oferecer como medida.
     pub numerico: bool,
+    /// `bytea` -- pedido 590. A celula dela sai em hexadecimal minusculo, sem
+    /// o `\x`, como o BLOB daqui sai na tela e no JSON.
+    pub binario: bool,
+    /// Formato do campo no `RowDescription`: 0 texto, 1 binario. O protocolo
+    /// simples so manda texto, mas um cursor `BINARY` manda o `bytea` cru.
+    pub formato: i16,
 }
+
+/// O OID do `bytea` no catalogo do PostgreSQL(R).
+const OID_BYTEA: u32 = 17;
 
 #[derive(Debug, Default)]
 pub struct Resultado {
@@ -298,7 +307,7 @@ impl Conexao {
             match m.tipo {
                 b'T' => r.colunas = ler_descricao(&m.corpo)?,
                 b'D' => {
-                    let linha = ler_linha(&m.corpo)?;
+                    let linha = ler_linha(&m.corpo, &r.colunas)?;
                     if (r.linhas.len() as u64) < teto {
                         r.linhas.push(linha);
                     } else {
@@ -424,34 +433,93 @@ fn ler_descricao(corpo: &[u8]) -> Result<Vec<Coluna>> {
         let tipo_oid = l.i32()? as u32;
         let tamanho = l.i16()?;
         let _modificador = l.i32()?;
-        let _formato = l.i16()?;
+        let formato = l.i16()?;
         colunas.push(Coluna {
             nome,
             tipo_oid,
             tipo: nome_do_tipo(tipo_oid),
             tamanho,
             numerico: e_numerico(tipo_oid),
+            binario: tipo_oid == OID_BYTEA,
+            formato,
         });
     }
     Ok(colunas)
 }
 
-fn ler_linha(corpo: &[u8]) -> Result<Vec<Option<String>>> {
+fn ler_linha(corpo: &[u8], colunas: &[Coluna]) -> Result<Vec<Option<String>>> {
     let mut l = Leitor::novo(corpo);
     let n = quantos_campos(&mut l)?;
     let mut linha = Vec::with_capacity(n);
-    for _ in 0..n {
+    for k in 0..n {
         let tam = l.i32()?;
         if tam < 0 {
             // -1 e NULL de verdade. Cadeia vazia tem tamanho 0, e nao e a
             // mesma coisa -- confundir as duas troca o dado.
             linha.push(None);
-        } else {
-            let b = l.bytes(tam as usize)?;
-            linha.push(Some(String::from_utf8_lossy(b).into_owned()));
+            continue;
         }
+        let b = l.bytes(tam as usize)?;
+        linha.push(Some(match colunas.get(k) {
+            Some(c) if c.binario => bytea_em_hex(b, c)?,
+            _ => String::from_utf8_lossy(b).into_owned(),
+        }));
     }
     Ok(linha)
+}
+
+/// O `bytea` no hexadecimal minusculo do BLOB daqui -- pedido 590.
+///
+/// O texto do `bytea` nunca e o dado: no `bytea_output = hex` (o padrao) ele
+/// e `\x` + digitos; no `escape`, os bytes nao imprimiveis viram `\ooo` e a
+/// contrabarra vira `\\`. Mostrar esse texto cru poria na tela uma forma que
+/// muda com a configuracao do OUTRO servidor, e a mesma imagem apareceria
+/// diferente aqui e la. Decodificar e reescrever pelo conversor do BLOB local
+/// deixa uma forma so. Texto que nao decodifica e recusa: mostrar um palpite
+/// seria a mesma mentira sobre o dado que este conserto tira.
+fn bytea_em_hex(b: &[u8], c: &Coluna) -> Result<String> {
+    if c.formato == 1 {
+        return Ok(crate::valores::bytes_para_hex(b));
+    }
+    let bytes = if let Some(h) = b.strip_prefix(b"\\x") {
+        std::str::from_utf8(h)
+            .ok()
+            .and_then(|t| crate::valores::hex_para_bytes(t).ok())
+    } else {
+        bytea_de_escape(b)
+    };
+    let bytes = bytes.ok_or_else(|| {
+        erro(format!(
+            "a coluna bytea {:?} chegou num texto que nao decodifica",
+            c.nome
+        ))
+    })?;
+    Ok(crate::valores::bytes_para_hex(&bytes))
+}
+
+/// O formato `escape` do `bytea`: `\\` e a contrabarra, `\ooo` e o byte em
+/// octal, e o resto vale o proprio byte.
+fn bytea_de_escape(b: &[u8]) -> Option<Vec<u8>> {
+    let mut saida = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] != b'\\' {
+            saida.push(b[i]);
+            i += 1;
+        } else if b.get(i + 1) == Some(&b'\\') {
+            saida.push(b'\\');
+            i += 2;
+        } else {
+            let o = b.get(i + 1..i + 4)?;
+            if !o.iter().all(|d| (b'0'..=b'7').contains(d)) {
+                return None;
+            }
+            let v = o.iter().fold(0u32, |a, d| a * 8 + (d - b'0') as u32);
+            saida.push(u8::try_from(v).ok()?);
+            i += 4;
+        }
+    }
+    Some(saida)
 }
 
 /// `CommandComplete` traz "INSERT 0 12", "UPDATE 3", "SELECT 7".
@@ -690,10 +758,43 @@ mod testes {
         d.extend_from_slice(&2i32.to_be_bytes());
         d.extend_from_slice(b"oi");
 
-        let linha = ler_linha(&d).unwrap();
+        let linha = ler_linha(&d, &[]).unwrap();
         assert_eq!(linha[0], None);
         assert_eq!(linha[1], Some(String::new()));
         assert_eq!(linha[2], Some("oi".into()));
+    }
+
+    /// **590: as tres formas do `bytea` chegam ao mesmo hexadecimal.** O
+    /// `hex` e o `escape` do `bytea_output`, e o formato binario de um cursor
+    /// `BINARY` -- a tela nao pode mostrar o dado de tres jeitos conforme a
+    /// configuracao do outro servidor. E texto que nao decodifica e recusa.
+    #[test]
+    fn o_bytea_sai_no_hex_do_blob_daqui_nas_tres_formas() {
+        let col = |formato| Coluna {
+            nome: "foto".into(),
+            tipo_oid: OID_BYTEA,
+            tipo: "BYTEA".into(),
+            tamanho: -1,
+            numerico: false,
+            binario: true,
+            formato,
+        };
+        let dado = [0x00u8, 0xFF, 0x80, b'\\', b'a'];
+        let formas: [(&[u8], i16); 3] = [
+            (b"\\x00ff805c61", 0),
+            (b"\\000\\377\\200\\\\a", 0),
+            (&dado, 1),
+        ];
+        for (fio, formato) in formas {
+            assert_eq!(
+                bytea_em_hex(fio, &col(formato)).unwrap(),
+                "00ff805c61",
+                "{fio:?}"
+            );
+        }
+        for torto in [&b"\\xzz"[..], b"\\x0", b"\\9", b"\\1", b"\\400"] {
+            assert!(bytea_em_hex(torto, &col(0)).is_err(), "{torto:?}");
+        }
     }
 
     #[test]
@@ -702,7 +803,7 @@ mod testes {
         d.extend_from_slice(&2i16.to_be_bytes());
         d.extend_from_slice(&10i32.to_be_bytes());
         d.extend_from_slice(b"cur"); // menos bytes do que o declarado
-        assert!(ler_linha(&d).is_err());
+        assert!(ler_linha(&d, &[]).is_err());
     }
 
     #[test]
