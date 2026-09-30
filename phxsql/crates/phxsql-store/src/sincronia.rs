@@ -112,7 +112,25 @@ static RECUSADOS: Mutex<Vec<(PathBuf, String)>> = Mutex::new(Vec::new());
 static HA_RECUSADO: AtomicBool = AtomicBool::new(false);
 
 /// O que o processo faz no instante da recusa. Ver [`ao_recusar`].
-static GANCHO: OnceLock<fn(&Path, &io::Error)> = OnceLock::new();
+static GANCHO: OnceLock<Gancho> = OnceLock::new();
+
+/// Por que o disco derrubou o processo. O gancho e UM so -- a decisao «o
+/// servidor cai, a biblioteca fica com o erro» nao se escreve duas vezes --, e
+/// o motivo vai junto porque o que vem DEPOIS da queda nao e o mesmo.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Queda {
+    /// O `fsync` foi recusado (pedido 509): o nucleo pode ter descartado o
+    /// que nao foi ao disco, e no mesmo boot o arranque nao sabe a diferenca.
+    FsyncRecusado,
+    /// O `.log` nao gravou o evento de uma linha que JA esta no `.reg`
+    /// (pedido 498, decisao do dono de 30/09/2026): o disco nao mente, so
+    /// encheu. A marca do evento devido ficou no cabecalho do `.log`, e a
+    /// abertura seguinte completa -- subir no mesmo boot e o certo.
+    DiarioSemEvento,
+}
+
+/// A assinatura do gancho do processo.
+pub type Gancho = fn(Queda, &Path, &io::Error);
 
 /// Registra o que ESTE PROCESSO faz quando um `fsync` for recusado.
 ///
@@ -120,8 +138,21 @@ static GANCHO: OnceLock<fn(&Path, &io::Error)> = OnceLock::new();
 /// erro que nao sai mais. Vale uma vez por processo: a segunda chamada nao
 /// troca a primeira, porque a politica e do processo e nao de quem chamou por
 /// ultimo -- um teste que sobe dois servidores nao pode trocar a do outro.
-pub fn ao_recusar(gancho: fn(&Path, &io::Error)) {
+pub fn ao_recusar(gancho: Gancho) {
     let _ = GANCHO.set(gancho);
+}
+
+/// O `.log` falhou DEPOIS de a linha estar no `.reg` -- pedido 498.
+///
+/// A mesma politica do [`sync_all`]: o servidor cai (o gancho aborta), a
+/// biblioteca fica com o erro. NAO marca o diretorio em [`RECUSADOS`]: o
+/// disco que encheu nao descartou pagina nenhuma, e o `fsync` seguinte
+/// continua dizendo a verdade. Quem chama ja deixou a marca do evento devido
+/// no cabecalho do `.log` -- e ela, e nao o diretorio, que segura a tabela.
+pub fn diario_sem_evento(caminho: &Path, e: &io::Error) {
+    if let Some(gancho) = GANCHO.get() {
+        gancho(Queda::DiarioSemEvento, caminho, e);
+    }
 }
 
 /// O `fsync` do motor: `File::sync_all`, e a regra de depois.
@@ -254,7 +285,7 @@ fn sync_all_interno(
         recusar(caminho, &e);
         if com_gancho {
             if let Some(gancho) = GANCHO.get() {
-                gancho(caminho, &e);
+                gancho(Queda::FsyncRecusado, caminho, &e);
             }
         }
         return Err(PhxError::Io(e));
@@ -363,6 +394,12 @@ pub mod falha_de_teste {
         /// A gravacao de um registro da trilha (`.lgpd`) devolve ENOSPC --
         /// o observador que falha DEPOIS de a linha estar gravada (pedido 486).
         GravacaoDaTrilha,
+        /// A gravacao de um evento do `.log` devolve ENOSPC -- o disco que
+        /// enche entre o `.reg` e o diario (pedido 498).
+        GravacaoDoDiario,
+        /// A gravacao de um motivo (`.reason`) devolve ENOSPC -- o observador
+        /// da exclusao de vez que falha com o slot ja liberado (pedido 498).
+        GravacaoDoMotivo,
     }
 
     #[cfg(debug_assertions)]
@@ -418,7 +455,10 @@ pub mod falha_de_teste {
         ALGUMA.store(a.len(), std::sync::atomic::Ordering::Release);
         Some(std::io::Error::from_raw_os_error(match onde {
             Onde::Fsync => 5,
-            Onde::PaginaDoIndice | Onde::GravacaoDaTrilha => 28,
+            Onde::PaginaDoIndice
+            | Onde::GravacaoDaTrilha
+            | Onde::GravacaoDoDiario
+            | Onde::GravacaoDoMotivo => 28,
         }))
     }
 }

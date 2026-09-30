@@ -79,3 +79,39 @@ fn no_teto_do_diario_a_alteracao_recusa_sem_gravar_a_linha() {
         "a insercao recusada deixou linha no .reg"
     );
 }
+
+/// O irmao que faltava: a exclusao de vez. Ela nao passava pelo
+/// `preparar_diario` dos outros tres caminhos -- guardava na lixeira, tirava o
+/// slot e so entao o `.log` recusava no teto: a linha sumia sem evento. Agora
+/// a conferencia vem antes da lixeira, e a linha fica.
+#[test]
+fn no_teto_do_diario_a_exclusao_de_vez_recusa_sem_tirar_a_linha() {
+    let d = DirTemp::novo("diario-no-teto-excluir");
+    let mut t = tabela(&d.0);
+    let rowid = t
+        .inserir(&[Value::Int(1), Value::Str("a0@x.com".into())])
+        .unwrap();
+    let mut no_teto = false;
+    for i in 1..=2000 {
+        let email = format!("a{i}@x.com");
+        if t.atualizar(rowid, &[Value::Int(1), Value::Str(email)])
+            .is_err()
+        {
+            no_teto = true;
+            break;
+        }
+    }
+    assert!(
+        no_teto,
+        "o diario nunca chegou ao teto -- o teste nao mediu nada"
+    );
+    let e = t.excluir_de_vez(rowid, "teste").unwrap_err();
+    assert!(
+        matches!(&e, PhxError::LimiteExcedido(m) if m.contains("diario")),
+        "recusou por outro motivo: {e:?}"
+    );
+    assert!(
+        t.ler(rowid).unwrap().is_some(),
+        "a exclusao recusada TIROU a linha do .reg sem evento no diario"
+    );
+}

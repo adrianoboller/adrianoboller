@@ -833,6 +833,41 @@ pub struct Cabecalho {
     iteracoes: u32,
     /// A chave deste volume, quando ele e cifrado.
     pub chave: Option<Chave>,
+    /// A marca do evento devido -- so o `.log` a usa (pedido 498). Ver
+    /// [`Marca`].
+    pub marca: Option<Marca>,
+}
+
+/// Bytes da marca do evento devido, no cabecalho do volume.
+pub const MARCA_LEN: usize = 16;
+
+/// Onde a marca mora: nos bytes que cada versao ja reservava e gravava zero.
+/// Na versao 3 o 40..64 e do material de cifra, e por isso ela vai para
+/// depois da prova.
+fn off_marca(cab_len: usize) -> usize {
+    if cab_len >= CAB_V3 {
+        80
+    } else {
+        40
+    }
+}
+
+/// A marca de «um evento ficou devendo» no cabecalho do `.log` -- pedido 498.
+///
+/// O cofre so a guarda: o que os bytes querem dizer e do [`crate::log`]. Ela
+/// e escrita SO no caminho da falha, regravando no lugar o cabecalho que ja
+/// existe -- sobrescrever bytes alocados nao pede espaco novo, que e o que
+/// o disco cheio nao tem. Enquanto ela esta de pe, o `alterado em` (32..40)
+/// carrega o carimbo do evento devido, em milissegundos: ninguem le aquele
+/// campo, e o carimbo e parte do evento que a abertura vai completar.
+///
+/// Ausencia benigna, e por isso nao sobe versao: todo cabecalho gravado antes
+/// dela traz zero ali, e zero quer dizer «nada devido» -- que era verdade.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Marca {
+    pub carimbo: i64,
+    /// O primeiro byte nunca e zero numa marca de pe.
+    pub bytes: [u8; MARCA_LEN],
 }
 
 impl Cabecalho {
@@ -851,6 +886,7 @@ impl Cabecalho {
                 sal: [0u8; SAL_LEN],
                 iteracoes: 0,
                 chave: None,
+                marca: None,
             });
         }
         let mut sal = [0u8; SAL_LEN];
@@ -865,6 +901,7 @@ impl Cabecalho {
             sal,
             iteracoes,
             chave: Some(chave),
+            marca: None,
         })
     }
 
@@ -875,6 +912,11 @@ impl Cabecalho {
             quantos,
             ..*self
         }
+    }
+
+    /// O mesmo cabecalho, com a marca do evento devido de pe ou baixada.
+    pub fn com_marca(&self, marca: Option<Marca>) -> Cabecalho {
+        Cabecalho { marca, ..*self }
     }
 
     pub fn cifrado(&self) -> bool {
@@ -1016,7 +1058,17 @@ pub fn ler_cabecalho(
         sal: [0u8; SAL_LEN],
         iteracoes: 0,
         chave: None,
+        marca: None,
     };
+    let om = off_marca(cab_len);
+    if bruto[om] != 0 {
+        let mut bytes = [0u8; MARCA_LEN];
+        bytes.copy_from_slice(&bruto[om..om + MARCA_LEN]);
+        cab.marca = Some(Marca {
+            carimbo: c.u64(32) as i64,
+            bytes,
+        });
+    }
     if versao >= 3 && bruto[40] & FLAG_CIFRADO != 0 {
         cab.sal.copy_from_slice(&bruto[48..48 + SAL_LEN]);
         cab.iteracoes = c.u32(44);
@@ -1043,7 +1095,14 @@ pub fn gravar_cabecalho(cab: &Cabecalho, magic: &[u8; 8]) -> Vec<u8> {
     por_u32(&mut buf, 12, cab.volume);
     por_u64(&mut buf, 16, cab.quantos);
     por_u64(&mut buf, 24, cab.fim);
-    por_i64(&mut buf, 32, crate::util::agora());
+    match cab.marca {
+        Some(m) => {
+            por_i64(&mut buf, 32, m.carimbo);
+            let om = off_marca(cab.cab_len);
+            buf[om..om + MARCA_LEN].copy_from_slice(&m.bytes);
+        }
+        None => por_i64(&mut buf, 32, crate::util::agora()),
+    }
     if let Some(chave) = cab.chave {
         buf[40] = FLAG_CIFRADO;
         por_u32(&mut buf, 44, cab.iteracoes);

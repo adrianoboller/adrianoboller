@@ -189,7 +189,7 @@ fn fecho(rotulo: &str, dir: &Path) {
 }
 
 /// O gancho do servidor, sem o servidor: o `phxsqld` nao roda aqui dentro.
-fn abortar(caminho: &Path, e: &std::io::Error) {
+fn abortar(_: phxsql_store::sincronia::Queda, caminho: &Path, e: &std::io::Error) {
     println!("gancho=ABORTA {} ({e})", caminho.display());
     use std::io::Write;
     let _ = std::io::stdout().flush();

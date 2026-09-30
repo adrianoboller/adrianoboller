@@ -362,6 +362,11 @@ dia, nunca no desejado:
   marca gravada antes dos `rename`s (a queda deixa o diretorio marcado e meio
   migrado), e o painel com a copia velha do nome do volume. Contado pelo
   `--numeros`: 466 + 3.
+  **SUBIU para 485 em 30/09/2026** (pedido 498, o `.log` que falha depois do
+  `.reg`): sete guardas -- a falha sem a marca do evento devido, a abertura
+  que nao completa, o servidor que segue de pe, o disco cheio que grava a
+  sentinela do 509, a exclusao de vez que nao confere o teto antes, e os dois
+  observadores (o `.reason` e o `.fts`) cujo `?` pulava o diario.
   impedir. Ele e a unica coisa nesta regua que reprova o APAGAMENTO; tudo o
   mais aqui reprova o envelhecimento.
 
@@ -470,7 +475,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 478
+PISO_DAS_ENTRADAS = 485
 
 # ------------------------------------------------------------- APOSENTADAS
 #

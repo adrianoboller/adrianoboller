@@ -458,6 +458,13 @@ impl MotivoFile {
         // O offset entra no nonce: e ele o numero de ordem que um arquivo
         // append-only nunca reaproveita.
         let bytes = m.escrever(&cab, cab.fim);
+        #[cfg(debug_assertions)]
+        if let Some(erro) = crate::sincronia::falha_de_teste::disparar(
+            &self.volumes.caminho(volume),
+            crate::sincronia::falha_de_teste::Onde::GravacaoDoMotivo,
+        ) {
+            return Err(PhxError::Io(erro));
+        }
         self.volumes.escrever(volume, cab.fim, &bytes)?;
         self.gravar_cab(cab.com(cab.fim + bytes.len() as u64, cab.quantos + 1))
     }

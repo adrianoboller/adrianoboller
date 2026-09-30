@@ -29308,7 +29308,32 @@ fn conferir_sentinela_509(base: &Path) -> Result<()> {
     ))))
 }
 
-fn fsync_recusado_derruba_o_processo(caminho: &Path, e: &std::io::Error) {
+/// O gancho do processo para o disco que recusa -- o `abort`.
+///
+/// Serve a DUAS quedas pelo mesmo motor (`sincronia::Queda`): o `fsync`
+/// recusado do 509, e o `.log` que falhou depois de a linha estar no `.reg`
+/// (pedido 498, decisao do dono de 30/09/2026: derrubar e completar, como o
+/// PANIC do PostgreSQL na falha de escrita do WAL). So a primeira grava a
+/// sentinela: ali o cache do nucleo mente no mesmo boot. Na segunda o disco
+/// so encheu -- a marca do evento devido ficou no cabecalho do `.log`, e a
+/// primeira abertura da tabela depois de subir completa o evento pela linha.
+fn fsync_recusado_derruba_o_processo(
+    queda: phxsql_store::sincronia::Queda,
+    caminho: &Path,
+    e: &std::io::Error,
+) {
+    if queda == phxsql_store::sincronia::Queda::DiarioSemEvento {
+        dizer_no_diagnostico(&format!(
+            "PHXSQL: o diario {} nao gravou o evento de uma linha que JA esta no \
+             .reg ({e}). Linha sem diario e replica divergindo e cascata pulada, \
+             entao o processo vai ABORTAR em vez de seguir de pe, como o PostgreSQL \
+             (PANIC) na falha de escrita do WAL. Libere espaco e suba de novo: a \
+             primeira abertura da tabela completa o evento pela marca no cabecalho \
+             do .log (pedido 498).",
+            caminho.display()
+        ));
+        std::process::abort();
+    }
     gravar_sentinela_509(caminho, e);
     dizer_no_diagnostico(&format!(
         "PHXSQL: o fsync de {} foi RECUSADO ({e}). Depois disso o nucleo pode ter \
@@ -63046,6 +63071,87 @@ mod testes_do_panico_sob_a_trava {
         conferir_indice(porta, &[1, 2, 3, 4, 5, 10, 11, 12]);
     }
 
+    /// Pedido 498, o resto: o `.log` que falha por DISCO CHEIO depois de a
+    /// linha estar no `.reg` derruba o processo pelo mesmo gancho do 509, e a
+    /// primeira abertura da tabela depois de subir completa o evento.
+    ///
+    /// O filho arma UM ENOSPC forjado no `write` do evento (so depois da
+    /// semeadura), e o `inserir` do id 20 grava a linha e cai. Com o defeito
+    /// (sem o gancho) o filho segue DE PE e a linha fica sem diario -- o C2a
+    /// do 496, 294 linhas sem evento no tmpfs cheio. Sem a marca, ou sem a
+    /// cura na abertura, o processo cai mas o diario continua com 5 eventos.
+    ///
+    /// E NAO e o 509: o disco que encheu nao mente, e o arranque no mesmo
+    /// boot sobe -- a sentinela do 509 nao pode nascer daqui.
+    #[cfg(unix)]
+    #[test]
+    fn diario_que_falha_depois_da_linha_derruba_e_a_abertura_completa() {
+        let dir = DirTemp::novo("diario-498");
+        let (mut filho, porta) = subir_filho(&dir, "diario_498");
+        semear(porta);
+        std::fs::write(dir.join("armar"), "").unwrap();
+        let ate = Instant::now() + Duration::from_secs(20);
+        while !dir.join("armado").exists() {
+            assert!(
+                Instant::now() < ate,
+                "o filho nao armou a falha: {}",
+                diagnostico(&dir)
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        let resposta = pedir(
+            porta,
+            r#""op":"inserir","database":"loja","tabela":"clientes",
+               "valores":{"id":20,"nome":"T20"}"#,
+        );
+        let Some(st) = fim_do_filho(&mut filho, Duration::from_secs(10)) else {
+            let _ = filho.kill();
+            let _ = filho.wait();
+            panic!(
+                "o diario falhou depois da linha e o processo seguiu DE PE, \
+                 respondendo {:?}: linha sem diario com o servidor servindo\n{}",
+                resposta.map(|j| j.escrever()),
+                diagnostico(&dir)
+            );
+        };
+        caiu_pelo_abort(st, &dir, porta);
+        assert!(
+            diagnostico(&dir).contains("pedido 498"),
+            "o filho caiu sem dizer por que: {}",
+            diagnostico(&dir)
+        );
+        assert!(
+            !dir.join(super::SENTINELA_509).exists(),
+            "o disco cheio deixou a sentinela do 509, que impede subir no mesmo boot"
+        );
+
+        // Sobe no MESMO boot, e a primeira abertura completa.
+        let s = Servidor::novo(config_base(&dir)).unwrap();
+        let porta = porta_de_dados_de_verdade(&s);
+        assert!(
+            ids(porta, "clientes").contains(&20),
+            "a linha 20 nao esta no .reg -- a prova nao mediu o caso"
+        );
+        let mut t = Table::abrir(dir.join("loja"), "clientes").unwrap();
+        let eventos = t.diario(0, 0).unwrap();
+        let ultimo = eventos.last().expect("diario vazio");
+        assert_eq!(
+            eventos.len(),
+            6,
+            "a linha 20 ficou sem evento depois de subir: {eventos:?}"
+        );
+        assert_eq!(ultimo.operacao, phxsql_store::log::Operacao::Inclusao);
+        let linha = t
+            .ler(ultimo.rowid)
+            .unwrap()
+            .expect("o evento aponta o vazio");
+        assert_eq!(
+            linha[0],
+            Value::Int(20),
+            "o evento completado e de outra linha"
+        );
+    }
+
     /// Pedido 509 (a): sentinela que nao diz o boot nao se da por vencida --
     /// o lado seguro e nao subir, e a recusa diz o arquivo.
     #[test]
@@ -63813,6 +63919,23 @@ mod testes_do_panico_sob_a_trava {
                     phxsql_store::sincronia::falha_de_teste::armar(
                         &dir,
                         phxsql_store::sincronia::falha_de_teste::Onde::Fsync,
+                        1,
+                    );
+                    std::fs::write(dir.join("armado"), "").unwrap();
+                });
+            }
+            // Pedido 498: o pai cria `armar`, e o filho arma UM ENOSPC no
+            // `write` do proximo evento de diario da base -- o do `inserir`
+            // que o pai manda depois, com a linha ja no `.reg`.
+            "diario_498" => {
+                let dir = dir.clone();
+                std::thread::spawn(move || {
+                    while !dir.join("armar").exists() {
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
+                    phxsql_store::sincronia::falha_de_teste::armar(
+                        &dir,
+                        phxsql_store::sincronia::falha_de_teste::Onde::GravacaoDoDiario,
                         1,
                     );
                     std::fs::write(dir.join("armado"), "").unwrap();

@@ -1,0 +1,418 @@
+{
+ "medido_em": "2026-09-30T16:58:40+00:00",
+ "nucleo": "6.18.44-fc-v50",
+ "binario": "disco-que-recusa",
+ "rodadas": 1,
+ "cenarios": {
+  "498-256k": {
+   "1": [
+    "insercoes ok=667 erros=40",
+    "byte52=1",
+    "vivas=693 inclusoes_no_log=667 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=26"
+   ]
+  },
+  "498-272k": {
+   "1": [
+    "insercoes ok=719 erros=40",
+    "byte52=1",
+    "vivas=719 inclusoes_no_log=719 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-288k": {
+   "1": [
+    "insercoes ok=771 erros=40",
+    "byte52=1",
+    "vivas=771 inclusoes_no_log=771 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-304k": {
+   "1": [
+    "insercoes ok=823 erros=40",
+    "byte52=1",
+    "vivas=823 inclusoes_no_log=823 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-320k": {
+   "1": [
+    "insercoes ok=867 erros=40",
+    "byte52=1",
+    "vivas=875 inclusoes_no_log=867 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=8"
+   ]
+  },
+  "498-336k": {
+   "1": [
+    "insercoes ok=912 erros=40",
+    "byte52=1",
+    "vivas=927 inclusoes_no_log=912 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=15"
+   ]
+  },
+  "498-352k": {
+   "1": [
+    "insercoes ok=956 erros=40",
+    "byte52=1",
+    "vivas=979 inclusoes_no_log=956 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=23"
+   ]
+  },
+  "498-368k": {
+   "1": [
+    "insercoes ok=1004 erros=40",
+    "byte52=1",
+    "vivas=1004 inclusoes_no_log=1004 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-384k": {
+   "1": [
+    "insercoes ok=1056 erros=40",
+    "byte52=1",
+    "vivas=1056 inclusoes_no_log=1056 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-400k": {
+   "1": [
+    "insercoes ok=1108 erros=40",
+    "byte52=1",
+    "vivas=1108 inclusoes_no_log=1108 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-416k": {
+   "1": [
+    "insercoes ok=1157 erros=40",
+    "byte52=1",
+    "vivas=1160 inclusoes_no_log=1157 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=3"
+   ]
+  },
+  "498-432k": {
+   "1": [
+    "insercoes ok=1201 erros=40",
+    "byte52=1",
+    "vivas=1212 inclusoes_no_log=1201 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=11"
+   ]
+  },
+  "498-448k": {
+   "1": [
+    "insercoes ok=1246 erros=40",
+    "byte52=1",
+    "vivas=1264 inclusoes_no_log=1246 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=18"
+   ]
+  },
+  "498-464k": {
+   "1": [
+    "insercoes ok=1290 erros=40",
+    "byte52=1",
+    "vivas=1316 inclusoes_no_log=1290 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=26"
+   ]
+  },
+  "498-480k": {
+   "1": [
+    "insercoes ok=1341 erros=40",
+    "byte52=1",
+    "vivas=1341 inclusoes_no_log=1341 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-496k": {
+   "1": [
+    "insercoes ok=1393 erros=40",
+    "byte52=1",
+    "vivas=1393 inclusoes_no_log=1393 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-512k": {
+   "1": [
+    "insercoes ok=1445 erros=40",
+    "byte52=1",
+    "vivas=1445 inclusoes_no_log=1445 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-528k": {
+   "1": [
+    "insercoes ok=1491 erros=40",
+    "byte52=1",
+    "vivas=1497 inclusoes_no_log=1491 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=6"
+   ]
+  },
+  "498-544k": {
+   "1": [
+    "insercoes ok=1535 erros=40",
+    "byte52=1",
+    "vivas=1549 inclusoes_no_log=1535 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=14"
+   ]
+  },
+  "498-560k": {
+   "1": [
+    "insercoes ok=1580 erros=40",
+    "byte52=1",
+    "vivas=1601 inclusoes_no_log=1580 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=21"
+   ]
+  },
+  "498-576k": {
+   "1": [
+    "insercoes ok=1627 erros=40",
+    "byte52=1",
+    "vivas=1627 inclusoes_no_log=1627 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-592k": {
+   "1": [
+    "insercoes ok=1678 erros=40",
+    "byte52=1",
+    "vivas=1678 inclusoes_no_log=1678 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-608k": {
+   "1": [
+    "insercoes ok=1730 erros=40",
+    "byte52=1",
+    "vivas=1730 inclusoes_no_log=1730 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-624k": {
+   "1": [
+    "insercoes ok=1780 erros=40",
+    "byte52=1",
+    "vivas=1782 inclusoes_no_log=1780 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=2"
+   ]
+  },
+  "498-640k": {
+   "1": [
+    "insercoes ok=1825 erros=40",
+    "byte52=1",
+    "vivas=1834 inclusoes_no_log=1825 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=9"
+   ]
+  },
+  "498-656k": {
+   "1": [
+    "insercoes ok=1869 erros=40",
+    "byte52=1",
+    "vivas=1886 inclusoes_no_log=1869 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=17"
+   ]
+  },
+  "498-672k": {
+   "1": [
+    "insercoes ok=1914 erros=40",
+    "byte52=1",
+    "vivas=1938 inclusoes_no_log=1914 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=24"
+   ]
+  },
+  "498-688k": {
+   "1": [
+    "insercoes ok=1964 erros=40",
+    "byte52=1",
+    "vivas=1964 inclusoes_no_log=1964 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-704k": {
+   "1": [
+    "insercoes ok=2016 erros=40",
+    "byte52=1",
+    "vivas=2016 inclusoes_no_log=2016 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-720k": {
+   "1": [
+    "insercoes ok=2067 erros=40",
+    "byte52=1",
+    "vivas=2067 inclusoes_no_log=2067 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-736k": {
+   "1": [
+    "insercoes ok=2114 erros=40",
+    "byte52=1",
+    "vivas=2119 inclusoes_no_log=2114 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=5"
+   ]
+  },
+  "498-752k": {
+   "1": [
+    "insercoes ok=2158 erros=40",
+    "byte52=1",
+    "vivas=2171 inclusoes_no_log=2158 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=13"
+   ]
+  },
+  "498-768k": {
+   "1": [
+    "insercoes ok=2203 erros=40",
+    "byte52=1",
+    "vivas=2223 inclusoes_no_log=2203 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=20"
+   ]
+  },
+  "498-784k": {
+   "1": [
+    "insercoes ok=2249 erros=40",
+    "byte52=1",
+    "vivas=2249 inclusoes_no_log=2249 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-800k": {
+   "1": [
+    "insercoes ok=2301 erros=40",
+    "byte52=1",
+    "vivas=2301 inclusoes_no_log=2301 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-816k": {
+   "1": [
+    "insercoes ok=2353 erros=40",
+    "byte52=1",
+    "vivas=2353 inclusoes_no_log=2353 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-832k": {
+   "1": [
+    "insercoes ok=2403 erros=40",
+    "byte52=1",
+    "vivas=2404 inclusoes_no_log=2403 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=1"
+   ]
+  },
+  "498-848k": {
+   "1": [
+    "insercoes ok=2448 erros=40",
+    "byte52=1",
+    "vivas=2456 inclusoes_no_log=2448 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=8"
+   ]
+  },
+  "498-864k": {
+   "1": [
+    "insercoes ok=2492 erros=40",
+    "byte52=1",
+    "vivas=2508 inclusoes_no_log=2492 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=16"
+   ]
+  },
+  "498-880k": {
+   "1": [
+    "insercoes ok=2537 erros=40",
+    "byte52=1",
+    "vivas=2560 inclusoes_no_log=2537 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=23"
+   ]
+  },
+  "498-896k": {
+   "1": [
+    "insercoes ok=2586 erros=40",
+    "byte52=1",
+    "vivas=2586 inclusoes_no_log=2586 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  }
+ }
+}
