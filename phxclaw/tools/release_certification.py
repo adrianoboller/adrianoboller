@@ -21,6 +21,10 @@ a rodada sem as WHISPER_* caiu de 8/13 para 7/13 sem nenhuma mudanca de codigo):
   PHXCLAW_E2E_WHISPER_MODEL=/var/tmp/ggml-tiny.en.bin
   PHXCLAW_E2E_WHISPER_MODEL_SHA256=<o X-Linked-ETag do arquivo no Hugging Face, nao o sha256sum local>
   PHXCLAW_E2E_WHISPER_AUDIO=/var/tmp/whisper.cpp/samples/jfk.wav
+e o Ollama SERVINDO, nao so instalado (medido em 30/09: processo parado derrubou o provider
+com o codigo intacto; o teste avulso passou 2/2 depois de subir):
+  OLLAMA_MODELS=/var/tmp/ollama-models /opt/ollama/bin/ollama serve &
+  curl -sf http://127.0.0.1:11434/api/tags   # tem de responder antes de certificar
 """
 from __future__ import annotations
 
