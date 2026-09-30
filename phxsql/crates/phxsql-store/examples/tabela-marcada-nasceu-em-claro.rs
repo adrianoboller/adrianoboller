@@ -41,6 +41,7 @@
 
 use std::path::{Path, PathBuf};
 
+use phxsql_core::paginacao::separar_volume;
 use phxsql_core::schema::Schema;
 
 /// A versao e o esquema, lidos do cabecalho do `.reg` SEM CHAVE NENHUMA.
@@ -79,19 +80,13 @@ fn versao_e_esquema(caminho: &Path) -> Option<(u16, Result<Schema, String>)> {
     ))
 }
 
-/// O nome da tabela a partir do arquivo: `clientes_003.reg` -> `clientes`.
+/// O nome da tabela a partir do arquivo: `clientes#003.reg` -> `clientes`.
 ///
-/// O corte no sublinhado seguido de digitos e o mesmo criterio do somador de
-/// disco da bancada: `pedidos_001` e a mesma tabela que `pedidos`, e
-/// `pedidos2` nao e.
+/// Pelo motor unico do pedido 508, e nao por um corte proprio: `pedidos#001`
+/// e a mesma tabela que `pedidos`, e `pedidos_2024` e outra.
 fn nome_da_tabela(arquivo: &str) -> String {
     let base = arquivo.trim_end_matches(".reg");
-    match base.rsplit_once('_') {
-        Some((cabeca, cauda)) if !cauda.is_empty() && cauda.chars().all(|c| c.is_ascii_digit()) => {
-            cabeca.to_string()
-        }
-        _ => base.to_string(),
-    }
+    separar_volume(base).map_or(base, |(t, _)| t).to_string()
 }
 
 fn main() {
@@ -123,13 +118,29 @@ fn main() {
 
         for nome in nomes {
             vistas += 1;
-            // O volume 1 basta: todo volume carrega o cabecalho completo, e a
-            // cifra e decidida na CRIACAO da tabela, uma vez so.
+            // Um volume qualquer basta: todo volume carrega o cabecalho
+            // completo, e a cifra e decidida na CRIACAO da tabela, uma vez
+            // so. O nome sem sufixo, ou o primeiro volume que o motor le como
+            // desta tabela -- a largura e a letra nao se adivinham.
             let v1 = dir.join(format!("{nome}.reg"));
             let v1 = if v1.exists() {
                 v1
             } else {
-                dir.join(format!("{nome}_001.reg"))
+                let mut vols: Vec<PathBuf> = std::fs::read_dir(dir)
+                    .into_iter()
+                    .flatten()
+                    .flatten()
+                    .map(|e| e.path())
+                    .filter(|p| {
+                        p.extension().and_then(|x| x.to_str()) == Some("reg")
+                            && p.file_stem()
+                                .and_then(|x| x.to_str())
+                                .and_then(separar_volume)
+                                .is_some_and(|(t, _)| t == nome)
+                    })
+                    .collect();
+                vols.sort();
+                vols.into_iter().next().unwrap_or(v1)
             };
             let Some((versao, esquema)) = versao_e_esquema(&v1) else {
                 nao_conferidas.push((

@@ -2478,14 +2478,6 @@
       "quando": "2026-09-24 13:28"
     },
     {
-      "id": "cifra-do-fio-imposta",
-      "titulo": "a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho",
-      "veredito": "PROVADA",
-      "segundos": 7.94,
-      "notas": [],
-      "quando": "2026-09-16 15:25"
-    },
-    {
       "id": "commit-sem-pre-conferencia",
       "titulo": "o COMMIT confere a chave estrangeira so na passada, depois da marca, e grava a parte da frente",
       "veredito": "PROVADA",
@@ -2612,6 +2604,46 @@
       "segundos": 69.56,
       "notas": [],
       "quando": "2026-09-24 15:15"
+    },
+    {
+      "id": "restauracao-nao-reconstroi-o-marcado",
+      "titulo": "a restauração de backup devolve a tabela com o `.ndx` marcado, e ela recusa toda escrita até alguém mandar `reindexar`",
+      "veredito": "PROVADA",
+      "segundos": 3.4,
+      "notas": [],
+      "quando": "2026-09-30 13:25"
+    },
+    {
+      "id": "migracao-do-separador-decide-pelo-nome",
+      "titulo": "a migracao do separador de volume le `vendas_2024.reg` como volume 2024 de `vendas` e some com a tabela",
+      "veredito": "PROVADA",
+      "segundos": 3.07,
+      "notas": [],
+      "quando": "2026-09-30 13:25"
+    },
+    {
+      "id": "marca-do-separador-antes-dos-renomes",
+      "titulo": "a marca do formato de volume vai ao disco antes dos `rename`s, e a queda no meio deixa o diretorio marcado e meio migrado",
+      "veredito": "PROVADA",
+      "segundos": 2.61,
+      "notas": [],
+      "quando": "2026-09-30 13:25"
+    },
+    {
+      "id": "painel-com-copia-do-analisador-de-volume",
+      "titulo": "o painel soma os bytes do `.reg` por uma copia do nome do volume e mede zero em tabela de 4 digitos ou por letra",
+      "veredito": "PROVADA",
+      "segundos": 38.6,
+      "notas": [],
+      "quando": "2026-09-30 13:25"
+    },
+    {
+      "id": "cifra-do-fio-imposta",
+      "titulo": "a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho",
+      "veredito": "PROVADA",
+      "segundos": 7.94,
+      "notas": [],
+      "quando": "2026-09-16 15:25"
     }
   ]
 }

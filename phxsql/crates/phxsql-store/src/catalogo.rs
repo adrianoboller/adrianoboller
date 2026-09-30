@@ -16,6 +16,9 @@
 //! e um database; um diretorio dentro de um database e um schema; um arquivo
 //! `.reg` e uma tabela. Tabelas soltas na raiz do database sao as "tabelas
 //! raiz" -- equivalentes ao `public` do Postgres ou ao `dbo` do SQL Server.
+//! As duas marcas que existem (`_database.json`, o tipo, e
+//! `_formato-volumes.json`, o separador de volume do pedido 508 -- ver
+//! [`crate::separador`]) acrescentam informacao sem mudar essa descoberta.
 //!
 //! O nome qualificado de uma tabela e `schema.tabela`, ou so `tabela` quando
 //! ela esta na raiz. E o mesmo formato que o catalogo do FraseSQL espera.
@@ -25,7 +28,7 @@ use std::path::{Path, PathBuf};
 
 use phxsql_core::error::{PhxError, Result};
 use phxsql_core::json::Json;
-use phxsql_core::paginacao::BALDES;
+use phxsql_core::paginacao::{separar_volume, SEPARADOR_DE_VOLUME};
 use phxsql_core::schema::Schema;
 use phxsql_core::TipoDatabase;
 use phxsql_core::EXT_REG;
@@ -66,6 +69,20 @@ fn ler_marca(diretorio: &Path) -> TipoDatabase {
 use crate::fts::EXT_FTS;
 use crate::table::{SemEscrever, Table};
 
+/// O arquivo `precos#002.reg` pertence a tabela `precos` na extensao `reg`?
+///
+/// Ou e o nome exato, ou e o nome que o motor unico do pedido 508
+/// ([`separar_volume`]) le como volume DESTA tabela. Sem a conferencia do
+/// sufixo, `precos#historico.reg` seria dado como volume de `precos` e a
+/// exclusao levaria o arquivo junto; e desde o 508 `precos_2024.reg` e outra
+/// tabela, que nenhum sufixo de `precos` alcanca.
+fn pertence(arquivo: &str, tabela: &str, ext: &str) -> bool {
+    let Some(sem_ext) = arquivo.strip_suffix(&format!(".{ext}")) else {
+        return false;
+    };
+    sem_ext == tabela || separar_volume(sem_ext).is_some_and(|(t, _)| t == tabela)
+}
+
 /// O nome nao e um engano de digitacao: e uma tentativa de sair do diretorio.
 ///
 /// Separa as duas coisas de proposito. `"minha tabela!"` e um nome ruim --
@@ -73,51 +90,6 @@ use crate::table::{SemEscrever, Table};
 /// por acidente. Quem chama precisa poder tratar os dois casos de forma
 /// diferente, e e por isso que esta funcao existe separada de
 /// [`validar_nome`].
-/// `esquema.tabela` vira `(Some("esquema"), "tabela")`.
-/// O arquivo `precos_002.reg` pertence a tabela `precos` na extensao `reg`?
-///
-/// A conferencia do sufixo importa: sem ela, `precos_historico.reg` seria
-/// dado como volume de `precos` e a exclusao levaria a tabela errada junto.
-fn pertence(arquivo: &str, tabela: &str, ext: &str) -> bool {
-    let Some(sem_ext) = arquivo.strip_suffix(&format!(".{ext}")) else {
-        return false;
-    };
-    let Some(sufixo) = sem_ext.strip_prefix(tabela) else {
-        return false;
-    };
-    // Ou e o nome exato, ou e o nome mais `_` e um sufixo de volume: so
-    // digitos, ou uma das 37 letras da particao alfanumerica.
-    if sufixo.is_empty() {
-        return true;
-    }
-    let Some(s) = sufixo.strip_prefix('_') else {
-        return false;
-    };
-    sufixo_e_de_volume(s)
-}
-
-/// Este sufixo e o nome de um balde da particao alfanumerica?
-///
-/// Comparacao contra a lista EXATA, e nao "uma letra qualquer": a lista tem 37
-/// nomes e nenhum outro serve. Sem isso, `precos_historico.reg` viraria volume
-/// de `precos` -- que e o defeito que esta conferencia existe para evitar,
-/// agora com um caso a mais.
-fn e_balde(s: &str) -> bool {
-    BALDES.contains(&s)
-}
-
-/// O que vem depois do `_` e reservado para volume: so digitos, ou uma das 37
-/// letras da particao alfanumerica ([`e_balde`]).
-///
-/// Fonte UNICA para as tres perguntas que dependem disto -- `pertence` (um
-/// arquivo e volume desta tabela?), [`nome_da_tabela`] (de volta, o nome sem
-/// o volume) e [`nome_termina_em_sufixo_de_volume`] (um nome NASCENDO colide
-/// com um volume?). Copiar a lista de baldes numa quarta pergunta e' o que o
-/// parecer do pedido 368 (N1) pediu para nao fazer.
-fn sufixo_e_de_volume(s: &str) -> bool {
-    !s.is_empty() && (s.bytes().all(|b| b.is_ascii_digit()) || e_balde(s))
-}
-
 pub fn nome_hostil(nome: &str) -> bool {
     nome == "."
         || nome == ".."
@@ -129,6 +101,16 @@ pub fn nome_hostil(nome: &str) -> bool {
 
 /// Recusa nomes que escapariam do diretorio ou quebrariam o sistema de
 /// arquivos. Vale para database, schema e tabela.
+///
+/// # O `#`, desde o pedido 508
+///
+/// O `#` e o separador de volume no nome do arquivo
+/// ([`SEPARADOR_DE_VOLUME`]): `clientes#001.reg` e o volume 1 de `clientes`.
+/// Nome que o contivesse voltaria a ser ambiguo, que e exatamente o que a
+/// troca do `_` pelo `#` existe para acabar -- entao ele sai do nome, e a
+/// recusa diz por que. Vale tambem para database e schema, de proposito: uma
+/// regra so para os tres nomes, que sao todos nomes de diretorio ou arquivo
+/// do mesmo motor, em vez de um caractere que entra num e nao no outro.
 pub fn validar_nome(rotulo: &str, nome: &str) -> Result<()> {
     if nome.is_empty() {
         return Err(PhxError::Esquema(format!("{rotulo} sem nome")));
@@ -143,25 +125,16 @@ pub fn validar_nome(rotulo: &str, nome: &str) -> Result<()> {
             "{rotulo} {nome:?} tem caractere que nao pode entrar em nome de arquivo"
         )));
     }
-    Ok(())
-}
-
-/// O NOME (sem tocar o disco) termina num sufixo que o catalogo reserva para
-/// volume?
-///
-/// Existe separada de [`nome_da_tabela`] porque a dela, para a LETRA,
-/// pergunta ao disco se o volume 1 (`_A`) ja esta la -- e so assim ela separa
-/// `dados_X` (uma tabela de verdade) do balde X de `dados`. Numa DECLARACAO
-/// essa pergunta e sobre o proprio arquivo que a operacao esta prestes a
-/// criar: `x_A` respondia "nao sou balde" um instante antes de nascer e "sou
-/// o balde 1 de x" um instante depois -- a resposta mudava sozinha, e nada
-/// no meio tinha mudado alem do arquivo ter passado a existir. Esta funcao
-/// nao toca o disco, entao a resposta e a mesma antes e depois. Pedido 506.
-fn nome_termina_em_sufixo_de_volume(nome: &str) -> bool {
-    match nome.rsplit_once('_') {
-        Some((antes, sufixo)) if !antes.is_empty() => sufixo_e_de_volume(sufixo),
-        _ => false,
+    if nome.contains(SEPARADOR_DE_VOLUME) {
+        return Err(PhxError::Esquema(format!(
+            "{rotulo} {nome:?} tem {SEPARADOR_DE_VOLUME:?}, e o \
+             {SEPARADOR_DE_VOLUME} e reservado: no nome do arquivo ele separa a \
+             tabela do volume (clientes{SEPARADOR_DE_VOLUME}001.reg e o volume 1 \
+             de clientes), e um nome com ele se confundiria com o volume de \
+             outra tabela. Escolha um nome sem {SEPARADOR_DE_VOLUME}"
+        )));
     }
+    Ok(())
 }
 
 /// Recusa o nome de tabela que o catalogo NAO leria de volta como ele mesmo.
@@ -171,47 +144,23 @@ fn nome_termina_em_sufixo_de_volume(nome: &str) -> bool {
 /// numa funcao so porque a lei manda que funcao e comando venham do mesmo
 /// motor: a porta que ficasse com uma copia da regra seria a que diverge.
 ///
-/// # O que o nome ambiguo quebra
+/// # O que sobrou dela depois do pedido 508
 ///
-/// `pedidos_2025.reg` se escreve igual ao volume 2025 de uma tabela
-/// `pedidos`: a tabela nasce e some da arvore, e o `excluir_tabela` de
-/// `pedidos` leva os arquivos dela junto. Desde o formato B da trilha
-/// (pedido 368) o estrago sai da operacao rara e vai para a rotineira:
-/// `x_001.lgpd` -- o ATIVO da trilha de `x_001` -- tem o nome de um volume
-/// FECHADO da trilha de `x`, e o expurgo de `x` o apagava (medido pelo papel
-/// C, P2a). Recusar na DECLARACAO custa um erro lido enquanto se cria a
-/// tabela; recusar tarde custa a trilha de dado pessoal de outra tabela.
+/// Ate o 508 o separador de volume era o `_`, e `pedidos_2025` se escrevia
+/// igual ao volume 2025 de `pedidos`: a tabela nascia e sumia da arvore, e o
+/// expurgo de `x` apagava a trilha de `x_001` (pedidos 368, 506). A recusa do
+/// sufixo `_` morava aqui. Com o `#` como separador e o `#` fora do nome
+/// ([`validar_nome`]), `vendas_2024` e nome de tabela como qualquer outro --
+/// os quatro motores o aceitam -- e a recusa sai.
 ///
-/// # Por que PERGUNTA em vez de reimplementar
-///
-/// A lista de sufixos reservados vem de [`sufixo_e_de_volume`] (que e a
-/// MESMA `BALDES` que [`nome_da_tabela`] usa para resolver um volume ja
-/// gravado), e o nome qualificado vem de [`separar_qualificado`] (a MESMA que
-/// toda abertura usa); uma segunda copia de qualquer uma delas divergiria
-/// calada. A tabela `_NNN`/`_A`/com ponto que ja existe continua abrindo --
-/// a recusa e so para o nome novo, nas quatro portas.
-///
-/// # O sufixo de letra (pedido 506) e o ponto (pedido 507)
-///
-/// Ate o pedido 506, so o sufixo de DIGITOS era recusado aqui: o de LETRA
-/// dependia de [`nome_da_tabela`] perguntar ao disco (ver
-/// [`nome_termina_em_sufixo_de_volume`]), e por isso `x_A` sozinho nascia e
-/// sumia da arvore -- e `x_B` nascia do lado sem erro nenhum, porque agora o
-/// disco tinha o `_A` que fazia o `_B` parecer balde tambem. O
-/// `excluir_tabela("x")` seguinte apagava os 16 arquivos das duas tabelas
-/// (medido pelo papel C, N1). Agora as 37 letras entram pela mesma pergunta
-/// sintatica dos digitos.
-///
-/// O ponto tambem se recusa aqui, pelo pedido 507: `a.b` na raiz se escreve
-/// igual ao nome QUALIFICADO schema `a` tabela `b` -- `criar_tabela` aceitava
-/// e `abrir_qualificada("a.b")` nunca achava a tabela de volta, porque
-/// [`separar_qualificado`] a lia como outro schema.
-///
-/// # O que ainda falta, e nao e desta funcao
-///
-/// O separador `_` de volume colide com qualquer nome de tabela que o use --
-/// reduzir essa perda pede um separador que nome de tabela nao aceite, o que
-/// e MUDANCA DE FORMATO (pedido 508), fora deste pedido.
+/// O que fica e o ponto, pelo pedido 507: `a.b` na raiz se escreve igual ao
+/// nome QUALIFICADO schema `a` tabela `b`, e `abrir_qualificada("a.b")` nunca
+/// achava a tabela de volta. E fica a pergunta ESTRUTURAL, que custa um
+/// `rsplit` e nenhum disco: o nome, escrito como arquivo, volta pelo
+/// [`nome_da_tabela`] como ele mesmo? Hoje ela nao recusa nada que o
+/// `validar_nome` deixe passar -- e existe para que o dia em que alguem mudar
+/// o separador sem mudar a recusa seja o dia em que esta funcao reclama, e
+/// nao o dia em que uma tabela some.
 fn exigir_nome_que_volta(dir: &Path, nome: &str) -> Result<()> {
     if separar_qualificado(nome).0.is_some() {
         return Err(PhxError::Esquema(format!(
@@ -221,15 +170,11 @@ fn exigir_nome_que_volta(dir: &Path, nome: &str) -> Result<()> {
              Escolha um nome sem ponto"
         )));
     }
-    if nome_termina_em_sufixo_de_volume(nome)
-        || nome_da_tabela(&dir.join(format!("{nome}.{EXT_REG}"))).as_deref() != Some(nome)
-    {
+    if nome_da_tabela(&dir.join(format!("{nome}.{EXT_REG}"))).as_deref() != Some(nome) {
         return Err(PhxError::Esquema(format!(
             "{nome} nao serve como nome de tabela: o catalogo o leria como um \
-             VOLUME de outra tabela (o sufixo `_` seguido so de digitos, ou de \
-             uma das 37 letras da particao, e reservado para isso) -- a tabela \
-             sumiria da arvore, e a trilha .lgpd dela se confundiria com a da \
-             outra. Escolha um nome que nao termine assim"
+             VOLUME de outra tabela, e a tabela sumiria da arvore. Escolha um \
+             nome sem {SEPARADOR_DE_VOLUME}"
         )));
     }
     Ok(())
@@ -237,37 +182,19 @@ fn exigir_nome_que_volta(dir: &Path, nome: &str) -> Result<()> {
 
 /// Extrai o nome da tabela de um arquivo `.reg`, tirando o sufixo de volume.
 ///
-/// `cadastroClientes.reg` e `cadastroClientes_007.reg` devolvem os dois
-/// `cadastroClientes`.
+/// `cadastroClientes.reg` e `cadastroClientes#007.reg` devolvem os dois
+/// `cadastroClientes`; `vendas_2024.reg` devolve `vendas_2024`.
+///
+/// Sem disco nenhum, desde o pedido 508: com o `_` como separador, o sufixo de
+/// LETRA so contava como balde quando o volume 1 (`_A`) estava do lado, e a
+/// resposta mudava sozinha no instante em que o arquivo nascia (pedido 506).
+/// Com um separador que nome de tabela nao aceita, o nome responde sozinho.
 fn nome_da_tabela(caminho: &Path) -> Option<String> {
     if caminho.extension().and_then(|s| s.to_str()) != Some(EXT_REG) {
         return None;
     }
     let base = caminho.file_stem()?.to_str()?;
-    let Some((antes, sufixo)) = base.rsplit_once('_') else {
-        return Some(base.to_string());
-    };
-    if antes.is_empty() || sufixo.is_empty() {
-        return Some(base.to_string());
-    }
-    if sufixo.chars().all(|c| c.is_ascii_digit()) {
-        return Some(antes.to_string());
-    }
-    // Sufixo de LETRA so conta como balde quando o volume 1 esta ali do lado.
-    //
-    // A conferencia existe por causa de uma ambiguidade real: uma tabela
-    // chamada `dados_X` e o balde X de uma tabela `dados` se escrevem igual.
-    // O volume 1 (`_A`) nasce com a tabela alfanumerica e nunca falta, entao a
-    // presenca dele e o que separa os dois casos -- e uma tabela `dados_X`
-    // sozinha continua sendo ela mesma.
-    if e_balde(sufixo)
-        && caminho
-            .with_file_name(format!("{antes}_{}.{EXT_REG}", BALDES[0]))
-            .exists()
-    {
-        return Some(antes.to_string());
-    }
-    Some(base.to_string())
+    Some(separar_volume(base).map_or(base, |(t, _)| t).to_string())
 }
 
 /// Os nomes de tabela que moram num diretorio, resolvendo o sufixo de
@@ -317,7 +244,7 @@ pub(crate) fn tabelas_em(diretorio: &Path) -> Result<Vec<String>> {
     Ok(nomes)
 }
 
-fn subdiretorios(diretorio: &Path) -> Result<Vec<String>> {
+pub(crate) fn subdiretorios(diretorio: &Path) -> Result<Vec<String>> {
     if !diretorio.is_dir() {
         return Ok(Vec::new());
     }
@@ -371,9 +298,16 @@ pub struct Instancia {
 impl Instancia {
     /// Abre (criando se preciso) a raiz de dados -- 0700 quando nasce aqui,
     /// pelo motor da permissao (pedido 542).
+    ///
+    /// E aqui, na abertura da RAIZ, que o disco do binario anterior ao pedido
+    /// 508 troca o separador de volume (ver [`crate::separador`]): uma vez,
+    /// antes da primeira operacao, e fora de qualquer trava. O database que
+    /// recusar a migracao nao impede a raiz de abrir -- ele recusa na propria
+    /// abertura, com o motivo.
     pub fn nova(base: impl AsRef<Path>) -> Result<Instancia> {
         let base = base.as_ref().to_path_buf();
         crate::util::criar_diretorio_do_banco(&base)?;
+        let _ = crate::separador::migrar_base(&base);
         Ok(Instancia {
             base,
             _so_com_a_ficha: PhantomData,
@@ -400,6 +334,7 @@ impl Instancia {
         }
         crate::util::criar_diretorio_do_banco(&caminho)?;
         escrever_marca(&caminho, tipo)?;
+        crate::separador::marcar_novo(&caminho)?;
         Ok(Database {
             nome: nome.to_string(),
             caminho,
@@ -419,6 +354,10 @@ impl Instancia {
                 "database {nome} nao existe neste servidor"
             )));
         }
+        // O diretorio tem de estar no formato de nome do pedido 508 antes de
+        // o catalogo listar qualquer coisa nele. Depois da primeira resposta
+        // o custo e um `HashSet` em RAM -- ver `separador::ja_migrados`.
+        crate::separador::exigir_migrado(&caminho)?;
         let tipo = ler_marca(&caminho);
         Ok(Database {
             nome: nome.to_string(),
@@ -575,6 +514,14 @@ impl Raiz {
             base: self.base.clone(),
             _so_com_a_ficha: PhantomData,
         };
+        // O database que ainda nao tem a marca do formato de nome (pedido
+        // 508) ganha a marca -- ou recusa -- na abertura; e marca e escrita.
+        validar_nome("database", database)?;
+        if crate::separador::precisa_migrar(&self.base.join(database)) {
+            return Ok(Aberta::PrecisaDaFichaExclusiva(
+                "o database ainda nao tem a marca do formato de nome (pedido 508)",
+            ));
+        }
         let db = so_para_achar_o_caminho.abrir_database(database)?;
         db.exigir_motor_padrao()?;
         let (schema, nome) = separar_qualificado(qualificado);
@@ -684,13 +631,17 @@ impl Database {
             )));
         }
         crate::util::criar_diretorio_do_banco(&caminho)?;
+        crate::separador::marcar_novo(&caminho)?;
         Ok(caminho)
     }
 
     pub fn garantir_schema(&self, nome: &str) -> Result<PathBuf> {
         validar_nome("schema", nome)?;
         let caminho = self.caminho.join(nome);
-        crate::util::criar_diretorio_do_banco(&caminho)?;
+        if !caminho.is_dir() {
+            crate::util::criar_diretorio_do_banco(&caminho)?;
+            crate::separador::marcar_novo(&caminho)?;
+        }
         Ok(caminho)
     }
 
@@ -1090,7 +1041,7 @@ impl Database {
                 let f = f.to_string_lossy();
                 if pertence(&f, nome_o, ext) {
                     // Preserva o sufixo do volume, como a copia faz:
-                    // `precos_002.reg` vira `novo_002.reg`.
+                    // `precos#002.reg` vira `novo#002.reg`.
                     let novo = format!("{nome_d}{}", &f[nome_o.len()..]);
                     mover.push((arq.path(), dir_d.join(novo)));
                 }
@@ -1178,8 +1129,8 @@ impl Database {
                 let f = arq.file_name();
                 let f = f.to_string_lossy();
                 if pertence(&f, nome_o, ext) {
-                    // Preserva o sufixo do volume: `precos_002.reg` vira
-                    // `copia_002.reg`, nao `copia.reg`.
+                    // Preserva o sufixo do volume: `precos#002.reg` vira
+                    // `copia#002.reg`, nao `copia.reg`.
                     let novo = format!("{nome_d}{}", &f[nome_o.len()..]);
                     // Pelo motor da permissao (pedido 542): a copia nasce
                     // 0600, sem herdar o modo da origem.
@@ -1562,7 +1513,7 @@ mod tests {
             t.inserir(&[Value::Int(i), Value::Null]).unwrap();
         }
         // 4 volumes de .reg, mas uma unica tabela na listagem.
-        assert!(base.join("Z/grande_004.reg").exists());
+        assert!(base.join("Z/grande#004.reg").exists());
         assert_eq!(z.tabelas(None).unwrap(), vec!["grande"]);
         std::fs::remove_dir_all(&base).unwrap();
     }
@@ -1663,13 +1614,26 @@ mod tests {
             Some("cadastroClientes")
         );
         assert_eq!(
-            nome_da_tabela(Path::new("cadastroClientes_007.reg")).as_deref(),
+            nome_da_tabela(Path::new("cadastroClientes#007.reg")).as_deref(),
             Some("cadastroClientes")
         );
-        // Sublinhado que nao e sufixo de volume fica no nome.
+        assert_eq!(
+            nome_da_tabela(Path::new("cadastroClientes#Outros.reg")).as_deref(),
+            Some("cadastroClientes")
+        );
+        // Sublinhado nunca e sufixo de volume desde o pedido 508: fica no
+        // nome, com digitos ou com letra de balde depois dele.
         assert_eq!(
             nome_da_tabela(Path::new("cadastro_clientes.reg")).as_deref(),
             Some("cadastro_clientes")
+        );
+        assert_eq!(
+            nome_da_tabela(Path::new("vendas_2024.reg")).as_deref(),
+            Some("vendas_2024")
+        );
+        assert_eq!(
+            nome_da_tabela(Path::new("dados_X.reg")).as_deref(),
+            Some("dados_X")
         );
         assert_eq!(nome_da_tabela(Path::new("cadastroClientes.ndx")), None);
     }
@@ -1720,13 +1684,19 @@ mod testes_gestao {
         // O caso que apagaria a tabela errada: `precos_historico` comeca com
         // `precos`. Sem conferir o sufixo, excluir `precos` levaria as duas.
         assert!(pertence("precos.reg", "precos", "reg"));
-        assert!(pertence("precos_001.reg", "precos", "reg"));
-        assert!(pertence("precos_00042.reg", "precos", "reg"));
+        assert!(pertence("precos#001.reg", "precos", "reg"));
+        assert!(pertence("precos#00042.reg", "precos", "reg"));
+        assert!(pertence("precos#A.reg", "precos", "reg"));
 
         assert!(!pertence("precos_historico.reg", "precos", "reg"));
+        assert!(!pertence("precos#historico.reg", "precos", "reg"));
         assert!(!pertence("precos2.reg", "precos", "reg"));
-        assert!(!pertence("precos_.reg", "precos", "reg"));
-        assert!(!pertence("precos_1a.reg", "precos", "reg"));
+        assert!(!pertence("precos#.reg", "precos", "reg"));
+        assert!(!pertence("precos#1a.reg", "precos", "reg"));
+        // Pedido 508: `precos_2024` e OUTRA tabela, e excluir `precos` nao a
+        // leva -- com o separador `_` levava.
+        assert!(!pertence("precos_2024.reg", "precos", "reg"));
+        assert!(!pertence("precos_A.reg", "precos", "reg"));
         assert!(!pertence("precos.ndx", "precos", "reg"), "extensao errada");
         assert!(!pertence("outra.reg", "precos", "reg"));
     }
@@ -2362,41 +2332,38 @@ mod testes_copia_entre_bancos {
         .unwrap()
     }
 
-    /// **O achado que a propria prova deste renomear trouxe.**
+    /// **O achado que a propria prova deste renomear trouxe** -- e o que o
+    /// pedido 508 fez com ele.
     ///
     /// A primeira versao do teste acima renomeava para `pedidos_2025`. Moveu
-    /// os oito arquivos, devolveu sucesso -- e a tabela SUMIU da arvore, porque
-    /// `nome_da_tabela` le `pedidos_2025.reg` como o volume 2025 de uma tabela
-    /// `pedidos`. Renomear com sucesso e perder a tabela e o pior par possivel:
-    /// nada avisa.
+    /// os oito arquivos, devolveu sucesso -- e a tabela SUMIU da arvore,
+    /// porque com o separador `_` o `nome_da_tabela` lia `pedidos_2025.reg`
+    /// como o volume 2025 de `pedidos`. Ate o 508 a saida foi recusar o nome.
+    /// Com o separador `#`, `pedidos_2025` e nome como outro qualquer: o
+    /// renomear passa e a tabela VOLTA pelo nome novo. O que recusa agora e o
+    /// `#`, e a recusa diz por que.
     ///
-    /// A recusa nao reimplementa a regra do sufixo -- ela PERGUNTA ao
-    /// `nome_da_tabela`, que e quem a possui. Uma segunda copia da regra
-    /// divergiria dele calada, que e a mesma armadilha da receita de um numero
-    /// que envelhece.
+    /// **Defeito reposto** (`SEPARADOR_DE_VOLUME` de volta a `_`): a tabela
+    /// renomeada some da listagem e o `existe_tabela` cai.
     #[test]
-    fn renomear_recusa_nome_que_o_catalogo_leria_como_volume() {
+    fn renomear_para_nome_com_sublinhado_e_digitos_volta_como_ele_mesmo() {
         // Pedido 150: guarda de Drop, nao `rm` no fim do corpo.
         let base = crate::apoio_teste::DirTemp::novo("phx-renom-vol");
         let cat = Instancia::nova(&base).unwrap();
         let db = cat.criar_database("loja").unwrap();
         db.criar_tabela(None, esquema("pedidos")).unwrap();
 
-        // `_` + so digitos: o sufixo de volume numerico.
-        let e = db.renomear_tabela("pedidos", "pedidos_2025").unwrap_err();
-        assert!(e.to_string().contains("VOLUME"), "{e}");
-        // A origem tem de continuar inteira: recusar depois de mover seria pior.
-        assert!(db.existe_tabela(None, "pedidos").unwrap());
+        db.renomear_tabela("pedidos", "pedidos_2025").unwrap();
+        assert!(db.existe_tabela(None, "pedidos_2025").unwrap());
+        assert!(!db.existe_tabela(None, "pedidos").unwrap());
+        assert!(db.abrir_tabela(None, "pedidos_2025").is_ok());
 
-        // A regra e mais AMPLA do que parecia, e o teste corrigiu a suposicao:
-        // `pedidos_de_2025` tambem e recusado, porque o que conta e o ultimo
-        // trecho depois do `_` ser so digitos -- ele seria lido como o volume
-        // 2025 de uma tabela `pedidos_de`. Nao e so o nome curto que colide.
-        assert!(db.renomear_tabela("pedidos", "pedidos_de_2025").is_err());
-
-        // E o nome que de fato NAO e ambiguo passa -- senao a guarda recusaria
-        // tudo, que e o defeito irmao de uma guarda boa demais.
-        assert!(db.renomear_tabela("pedidos", "pedidos_de_janeiro").is_ok());
+        // O `#` e o separador: recusa, e a origem continua inteira.
+        let e = db
+            .renomear_tabela("pedidos_2025", "pedidos#2026")
+            .unwrap_err();
+        assert!(e.to_string().contains("separa a tabela do volume"), "{e}");
+        assert!(db.existe_tabela(None, "pedidos_2025").unwrap());
     }
 
     /// Os arquivos do diretorio cujo nome comeca por `prefixo` -- pelo sistema
@@ -2412,109 +2379,108 @@ mod testes_copia_entre_bancos {
         v
     }
 
-    /// **A mesma pergunta na porta da CRIACAO** (pedido 368, B1 do papel C).
-    /// `x_001` e o nome do volume 1 de `x` -- e, desde o formato B da trilha,
-    /// `x_001.lgpd` (o ATIVO da trilha de `x_001`) e o nome do volume fechado
-    /// 1 da trilha de `x`: o expurgo de `x` o apagava (P2a). A recusa vem
-    /// antes de qualquer arquivo nascer; `x_historico`, que nao e ambiguo,
-    /// nasce.
-    ///
-    /// **Defeito reposto** (tirar a chamada do `criar_tabela`): `x_001` nasce
-    /// e o `unwrap_err` cai.
-    #[test]
-    fn criar_recusa_nome_que_o_catalogo_leria_como_volume() {
-        let base = crate::apoio_teste::DirTemp::novo("phx-criar-vol");
-        let cat = Instancia::nova(&base).unwrap();
-        let db = cat.criar_database("loja").unwrap();
-
-        let Err(e) = db.criar_tabela(None, esquema("x_001")) else {
-            panic!("x_001 nasceu: o catalogo a leria como o volume 1 de x");
-        };
-        assert!(e.to_string().contains("VOLUME"), "{e}");
-        assert!(
-            arquivos_com(db.caminho(), "x_001").is_empty(),
-            "a recusa tem de vir antes do primeiro arquivo"
-        );
-
-        db.criar_tabela(None, esquema("x_historico")).unwrap();
-        assert!(db.existe_tabela(None, "x_historico").unwrap());
-        // Num schema, a mesma pergunta.
-        assert!(db.criar_tabela(Some("arq"), esquema("x_2025")).is_err());
+    /// Linhas de uma tabela, na ordem de digitacao, so a coluna `id`.
+    fn ids(db: &Database, nome: &str) -> Vec<i64> {
+        let mut t = db.abrir_qualificada(nome).unwrap();
+        t.varrer()
+            .unwrap()
+            .into_iter()
+            .map(|(_, l)| match l[0] {
+                Value::Int(i) => i,
+                ref v => panic!("id inesperado {v:?}"),
+            })
+            .collect()
     }
 
-    /// **As portas que COPIAM fazem a mesma pergunta.** `duplicar_tabela`
-    /// (dentro do database) e `copiar_tabela_para` (o «colar» entre
-    /// databases, irmao dele) recusam `x_002`/`x_003` sem copiar arquivo
-    /// nenhum, e aceitam o nome que nao e ambiguo.
+    /// **Pedido 508: `vendas_2024` nasce, e convive com `vendas` paginada no
+    /// mesmo diretorio sem se confundir.**
     ///
-    /// **Defeito reposto** (tirar a chamada de uma das duas): a copia nasce
-    /// com nome de volume e o `unwrap_err` daquela porta cai.
+    /// E o caso que os quatro motores aceitam e que o separador `_` impedia:
+    /// `vendas_2024.reg` se escrevia igual ao volume 2024 de `vendas`. Aqui
+    /// `vendas` tem volumes de 4 digitos -- o `vendas#2024` existiria se ela
+    /// crescesse ate la -- e a outra tabela chama `vendas_2024`. As duas
+    /// aparecem na listagem, cada uma le as proprias linhas, e o
+    /// `excluir_tabela("vendas")` leva os arquivos de `vendas` e SO os dela --
+    /// que e o estrago que o 368 e o 506 mediram com o separador antigo.
+    ///
+    /// **Defeito reposto** (`SEPARADOR_DE_VOLUME` de volta a `_` no
+    /// `paginacao.rs`): `vendas_2024` e recusada na criacao, ou some da
+    /// listagem como volume de `vendas`, e o teste cai.
     #[test]
-    fn duplicar_e_copiar_recusam_nome_que_o_catalogo_leria_como_volume() {
-        let base = crate::apoio_teste::DirTemp::novo("phx-copia-vol");
+    fn vendas_2024_nasce_e_convive_com_vendas_paginada() {
+        let base = crate::apoio_teste::DirTemp::novo("phx-508-convive");
+        let cat = Instancia::nova(&base).unwrap();
+        let db = cat.criar_database("loja").unwrap();
+        let paginada = esquema("vendas")
+            .com_paginacao(
+                phxsql_core::paginacao::Paginacao::nova(2, 999)
+                    .unwrap()
+                    .com_digitos(4)
+                    .unwrap(),
+            )
+            .unwrap();
+        let mut v = db.criar_tabela(None, paginada).unwrap();
+        for i in 1..=5i64 {
+            v.inserir(&[Value::Int(i), Value::Null]).unwrap();
+        }
+        drop(v);
+        let mut outra = db.criar_tabela(None, esquema("vendas_2024")).unwrap();
+        for i in 100..=102i64 {
+            outra.inserir(&[Value::Int(i), Value::Null]).unwrap();
+        }
+        drop(outra);
+        // A letra do balde tambem deixou de ser sufixo reservado.
+        db.criar_tabela(None, esquema("vendas_A")).unwrap();
+
+        assert!(base.join("loja/vendas#0003.reg").exists());
+        assert_eq!(
+            db.tabelas(None).unwrap(),
+            vec!["vendas", "vendas_2024", "vendas_A"]
+        );
+        assert_eq!(ids(&db, "vendas"), vec![1, 2, 3, 4, 5]);
+        assert_eq!(ids(&db, "vendas_2024"), vec![100, 101, 102]);
+
+        db.excluir_tabela("vendas").unwrap();
+        assert!(arquivos_com(db.caminho(), "vendas#").is_empty());
+        assert_eq!(db.tabelas(None).unwrap(), vec!["vendas_2024", "vendas_A"]);
+        assert_eq!(ids(&db, "vendas_2024"), vec![100, 101, 102]);
+    }
+
+    /// **O `#` e recusado nas quatro portas que dao nome a uma tabela**, antes
+    /// de qualquer arquivo nascer, e com o motivo na mensagem. E o outro lado
+    /// da troca: o separador so e inequivoco porque nome nenhum o contem.
+    ///
+    /// **Defeito reposto** (tirar a conferencia do `#` do `validar_nome`):
+    /// `x#001` nasce -- e o catalogo o lista como o volume 1 de `x` -- e o
+    /// `unwrap_err` cai.
+    #[test]
+    fn o_separador_de_volume_e_recusado_nas_quatro_portas() {
+        let base = crate::apoio_teste::DirTemp::novo("phx-508-portas");
         let cat = Instancia::nova(&base).unwrap();
         let db = cat.criar_database("loja").unwrap();
         let outro = cat.criar_database("arquivo").unwrap();
-        db.criar_tabela(None, esquema("x_historico")).unwrap();
 
-        let e = db.duplicar_tabela("x_historico", "x_002").unwrap_err();
-        assert!(e.to_string().contains("VOLUME"), "{e}");
-        assert!(arquivos_com(db.caminho(), "x_002").is_empty());
-        assert!(db.duplicar_tabela("x_historico", "x_copia").is_ok());
-
-        let e = db
-            .copiar_tabela_para("x_historico", &outro, "x_003")
-            .unwrap_err();
-        assert!(e.to_string().contains("VOLUME"), "{e}");
-        assert!(arquivos_com(outro.caminho(), "x_003").is_empty());
-        assert!(db
-            .copiar_tabela_para("x_historico", &outro, "x_arquivado")
-            .is_ok());
-    }
-
-    /// **Pedido 506**: o sufixo de LETRA da particao recusa na declaracao,
-    /// sem perguntar ao disco -- a mesma pergunta que ja valia so para
-    /// digitos.
-    ///
-    /// O defeito medido pelo papel C (N1): `criar_tabela("x_A")` respondia
-    /// "nao sou balde" ao [`nome_da_tabela`] porque `x_A.reg` ainda nao
-    /// existia, nascia, e um instante depois passava a responder "sou o
-    /// balde 1 de x" -- `todas_as_tabelas` virava `["x"]` e
-    /// `existe_tabela("x_A")` virava falso.
-    ///
-    /// **Defeito reposto** (tirar `nome_termina_em_sufixo_de_volume` da
-    /// conferencia): `x_A` nasce e o `unwrap_err`/panic abaixo cai, porque
-    /// [`nome_da_tabela`] so enxerga a ambiguidade DEPOIS que o arquivo
-    /// existe -- a mesma janela que deixava `x_A` nascer antes deste pedido.
-    #[test]
-    fn criar_recusa_sufixo_de_letra_da_particao_sem_perguntar_ao_disco() {
-        let base = crate::apoio_teste::DirTemp::novo("phx-criar-balde");
-        let cat = Instancia::nova(&base).unwrap();
-        let db = cat.criar_database("loja").unwrap();
-
-        let Err(e) = db.criar_tabela(None, esquema("x_A")) else {
-            panic!("x_A nasceu: o catalogo a leria como o balde 1 de x");
+        let Err(e) = db.criar_tabela(None, esquema("x#001")) else {
+            panic!("x#001 nasceu: o catalogo a leria como o volume 1 de x");
         };
-        assert!(e.to_string().contains("VOLUME"), "{e}");
-        assert!(
-            arquivos_com(db.caminho(), "x_A").is_empty(),
-            "a recusa tem de vir antes do primeiro arquivo"
-        );
+        assert!(e.to_string().contains("separa a tabela do volume"), "{e}");
+        assert!(arquivos_com(db.caminho(), "x#").is_empty());
+        assert!(db.criar_tabela(Some("arq"), esquema("x#A")).is_err());
 
-        // TODA letra do balde recusa, nao so a `_A` que a conferencia por
-        // disco enxergava: `x_B` nunca tinha `_A` ao lado para aquela
-        // conferencia flagrar, e por isso nascia -- e contaminava a arvore
-        // assim que `x_A` tambem existisse (papel C, N1: 16 arquivos
-        // apagados por um `excluir_tabela("x")` sem tabela `x` nenhuma).
-        assert!(db.criar_tabela(None, esquema("x_B")).is_err());
-        assert!(db.criar_tabela(None, esquema("x_Outros")).is_err());
+        db.criar_tabela(None, esquema("x_001")).unwrap();
+        assert!(db.existe_tabela(None, "x_001").unwrap());
+        assert!(db.duplicar_tabela("x_001", "x#002").is_err());
+        assert!(db.copiar_tabela_para("x_001", &outro, "x#003").is_err());
+        assert!(db.renomear_tabela("x_001", "x#004").is_err());
+        assert!(arquivos_com(db.caminho(), "x#").is_empty());
+        assert!(arquivos_com(outro.caminho(), "x#").is_empty());
 
-        // Nomes que NAO sao ambiguos continuam nascendo -- a guarda boa
-        // demais e o defeito irmao da guarda fraca demais.
-        assert!(db.criar_tabela(None, esquema("x_historico")).is_ok());
-        assert!(db.criar_tabela(None, esquema("vendas_abc")).is_ok());
-        // `b` minusculo nao e balde -- so as 37 letras MAIUSCULAS e digitos.
-        assert!(db.criar_tabela(None, esquema("a_b")).is_ok());
+        // E o nome com `_` passa nas portas que copiam -- a guarda boa demais
+        // e o defeito irmao da fraca demais.
+        assert!(db.duplicar_tabela("x_001", "x_002").is_ok());
+        assert!(db.copiar_tabela_para("x_001", &outro, "x_003").is_ok());
+        assert_eq!(db.tabelas(None).unwrap(), vec!["x_001", "x_002"]);
+        assert_eq!(outro.tabelas(None).unwrap(), vec!["x_003"]);
     }
 
     /// **Pedido 507**: o ponto no nome recusa na declaracao, pela mesma
@@ -2540,34 +2506,6 @@ mod testes_copia_entre_bancos {
 
         // Nome sem ponto, do mesmo formato, continua nascendo.
         assert!(db.criar_tabela(None, esquema("ab")).is_ok());
-    }
-
-    /// **Tabela que ja existia com esse nome continua ABRINDO** -- a recusa e
-    /// so para o nome NOVO, nas quatro portas de declaracao. Uma tabela
-    /// `x_A` chegada por outro caminho (migracao, binario anterior ao 506)
-    /// nao fica presa para sempre: `abrir_tabela`/`abrir_qualificada` vao
-    /// direto ao arquivo `x_A.reg` pelo nome exato, sem passar por
-    /// `nome_da_tabela` -- essa e a mesma porta que `Table::abrir` sempre
-    /// usou, e esta guarda nova nao entra nela.
-    ///
-    /// `existe_tabela`/`todas_as_tabelas`, que LISTAM o diretorio, continuam
-    /// enxergando esta `x_A` isolada como o balde 1 de uma tabela `x` que nao
-    /// existe -- e' a mesma ambiguidade estrutural do N1, e so o separador de
-    /// volume (pedido 508, formato) a fecha por completo. Este pedido fecha
-    /// a PORTA DE ENTRADA; a tabela `x_A` de antes dele continua tendo a
-    /// mesma limitacao de sempre, nao uma nova.
-    #[test]
-    fn tabela_x_a_ja_existente_continua_abrindo() {
-        let base = crate::apoio_teste::DirTemp::novo("phx-x-a-legado");
-        let cat = Instancia::nova(&base).unwrap();
-        let db = cat.criar_database("loja").unwrap();
-
-        // Bypassa `criar_tabela` de proposito: e a mesma porta baixa que um
-        // banco existente, gravado antes desta recusa, usaria.
-        Table::criar(db.caminho(), esquema("x_A")).unwrap();
-
-        assert!(db.abrir_tabela(None, "x_A").is_ok());
-        assert!(db.abrir_qualificada("x_A").is_ok());
     }
 
     /// Destino ocupado recusa, e a origem fica intata.

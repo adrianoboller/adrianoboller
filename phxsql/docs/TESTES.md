@@ -952,7 +952,6 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `reparo-ignora-a-operacao-impossivel` | a marca em voo com operação impossível fica no disco e o processo segue de pé, com as travas da transação soltas | 1 | ✅ provada |
 | `reparo-apaga-a-marca-gravada-que-nao-se-rele` | a marca em voo JÁ GRAVADA que não se relê no reparo sai do disco como «não confere»: a transação confirmada fica pela metade, ou sem bilhete para o arranque | 1 | ✅ provada |
 | `reparo-com-panico-engolido` | um `catch_unwind` em volta do reparo engole o pânico duplo: a trava fica fechada com o processo de pé | 1 | ✅ provada |
-| `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 | `commit-sem-pre-conferencia` | o COMMIT confere a chave estrangeira so na passada, depois da marca, e grava a parte da frente | 9 | ✅ provada |
 | `sobreposicao-acha-pela-chave-velha` | o buscar da sobreposicao acha pela chave velha a linha do disco que o prefixo alterou | 1 | ✅ provada |
 | `mae-viva-lida-por-baixo-da-sobreposicao` | a conferencia de «mae viva» le o disco por baixo da marca pendente | 1 | ✅ provada |
@@ -969,10 +968,15 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `pagina-despejada-que-o-disco-recusou-some` | a página suja despejada do cache que o disco recusou some: nem no arquivo, nem na RAM | 1 | ✅ provada |
 | `servidor-segue-de-pe-depois-do-fsync-recusado` | o servidor segue de pé depois de um `fsync` recusado, gravando num disco que já se sabe que mente | 1 | ✅ provada |
 | `completar-engole-a-tabela-que-nao-foi-ao-disco` | a recuperação engole o erro do `sincronizar` e apaga a marca de um commit cujo dado não foi ao disco | 1 | ✅ provada |
+| `restauracao-nao-reconstroi-o-marcado` | a restauração de backup devolve a tabela com o `.ndx` marcado, e ela recusa toda escrita até alguém mandar `reindexar` | 1 | ✅ provada |
+| `migracao-do-separador-decide-pelo-nome` | a migracao do separador de volume le `vendas_2024.reg` como volume 2024 de `vendas` e some com a tabela | 1 | ✅ provada |
+| `marca-do-separador-antes-dos-renomes` | a marca do formato de volume vai ao disco antes dos `rename`s, e a queda no meio deixa o diretorio marcado e meio migrado | 1 | ✅ provada |
+| `painel-com-copia-do-analisador-de-volume` | o painel soma os bytes do `.reg` por uma copia do nome do volume e mede zero em tabela de 4 digitos ou por letra | 1 | ✅ provada |
+| `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**325 das 466 guardas do catálogo: 1 aposentada, 320 provadas, 4 redundantes** — 8922 s de mutação, medido em 2026-09-16 15:25.
+**329 das 469 guardas do catálogo: 1 aposentada, 324 provadas, 4 redundantes** — 8970 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 142 das 466 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 142 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 141 das 469 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 141 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
@@ -1029,7 +1033,6 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `atestado-de-antes-da-recusa-vale-depois` — o atestado que o `fechar` deu ANTES de um `fsync` recusado no diretório continua valendo depois dele
 - `fts-fora-do-fecho-da-janela` — o `.fts` fica fora do fecho da janela: nenhum `fsync` o alcança, e o byte 52 dele só desce sem `fsync`
 - `reindexar-deixa-o-punho-velho-gravar` — o `reindexar` deixa o punho velho gravar páginas e cabeçalho por cima do `.ndx` recém-truncado
-- `restauracao-nao-reconstroi-o-marcado` — a restauração de backup devolve a tabela com o `.ndx` marcado, e ela recusa toda escrita até alguém mandar `reindexar`
 - `arranque-nao-reconstroi-o-marcado` — o arranque não reconstrói o `.ndx` que o processo anterior só fechou: a tabela sobe recusando até alguém mandar `reindexar`
 - `atestado-fica-no-caminho-velho` — renomear, duplicar ou colar uma tabela escrita desde o último fecho deixa o destino recusando tudo, sem queda nenhuma
 - `renomear-esquece-o-atestado` — o renomear move os arquivos e deixa o atestado no nome velho: a tabela renomeada recusa tudo

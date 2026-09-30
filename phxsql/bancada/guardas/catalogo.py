@@ -14268,9 +14268,12 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "caiam por isso. O palco reconstroi com o motor do arranque."
         ),
         "arquivo": "crates/phxsql-store/src/restaurar.rs",
-        "trecho": """            crate::catalogo::Database::no_diretorio(&palco).reconstruir_indices_marcados();
+        # ATUALIZADO em 30/09/2026 (pedido 508): o palco migra o separador de
+        # volume antes, e o `Database` do palco ganhou nome para servir tambem a
+        # lista de tabelas. A chamada e a mesma.
+        "trecho": """        let (indices_reconstruidos, indices_pendentes) = no_palco.reconstruir_indices_marcados();
 """,
-        "troca": """            (0usize, Vec::<String>::new()); // DEFEITO REPOSTO (522)
+        "troca": """        let (indices_reconstruidos, indices_pendentes) = (0usize, Vec::<String>::new()); // DEFEITO REPOSTO (522)
 """,
         "pacote": "phxsql-store",
         "alvo": ["--lib"],
@@ -16686,5 +16689,83 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "a_subida_recusada_recusa_antes_do_reg",
             "a_subida_sincroniza_uma_vez_por_janela",
         ],
+    },
+    {
+        "id": "migracao-do-separador-decide-pelo-nome",
+        "titulo": "a migracao do separador de volume le `vendas_2024.reg` como volume 2024 de `vendas` e some com a tabela",
+        "porque": (
+            "pedido 508: o separador de volume trocou de `_` para `#`, e o disco "
+            "do binario anterior migra uma vez. Antes do pedido 368 o nome "
+            "`vendas_2024` era aceito, e no disco velho `vendas_2024.reg` pode ser "
+            "a tabela ou o volume 2024 de uma `vendas` paginada -- o NOME nao "
+            "responde. Quem responde e o cabecalho: o numero do volume (off 12) e a "
+            "paginacao do esquema, escrita com o separador antigo. Decidir pelo "
+            "nome renomeia a tabela alheia para `vendas#2024.reg`: ela some da "
+            "arvore e `vendas` ganha um volume que nao e dela."
+        ),
+        "arquivo": "crates/phxsql-store/src/separador.rs",
+        "trecho": """        let e_volume = match crate::reg::volume_e_paginacao_declarados(&dir.join(nome)) {
+""",
+        "troca": """        // DEFEITO REPOSTO (508): decide pelo NOME, como o catalogo anterior.
+        let e_volume = match None::<(u32, phxsql_core::paginacao::Paginacao)> {
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "separador-de-volume"],
+        "caem": ["o_leiaute_velho_abre_migra_e_le_as_mesmas_linhas"],
+        "seguem": ["o_mesmo_volume_nos_dois_nomes_para_como_corrompido"],
+    },
+    {
+        "id": "marca-do-separador-antes-dos-renomes",
+        "titulo": "a marca do formato de volume vai ao disco antes dos `rename`s, e a queda no meio deixa o diretorio marcado e meio migrado",
+        "porque": (
+            "pedido 508: a marca `_formato-volumes.json` e o que diz ao catalogo "
+            "qual analisador de nome usar, e diretorio marcado nao migra de novo. "
+            "Se ela vier antes dos `rename`s, uma queda entre dois deles deixa o "
+            "diretorio marcado com volumes ainda no nome velho, que o analisador "
+            "novo nao le -- a tabela some calada. Provado contra o sistema "
+            "operacional: filho parado entre dois `rename`s e morto por SIGKILL."
+        ),
+        "arquivo": "crates/phxsql-store/src/separador.rs",
+        "trecho": """    let plano = planejar(dir)?;
+    for (de, para) in &plano {
+""",
+        "troca": """    let plano = planejar(dir)?;
+    gravar_marca(dir)?; // DEFEITO REPOSTO (508): a marca antes dos renomes.
+    for (de, para) in &plano {
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "separador-de-volume"],
+        "caem": ["a_queda_entre_dois_renomes_completa_na_reabertura"],
+        "seguem": ["o_leiaute_velho_abre_migra_e_le_as_mesmas_linhas"],
+        "prazo": 600,
+    },
+    {
+        "id": "painel-com-copia-do-analisador-de-volume",
+        "titulo": "o painel soma os bytes do `.reg` por uma copia do nome do volume e mede zero em tabela de 4 digitos ou por letra",
+        "porque": (
+            "pedido 508, lei de que funcao e comando vem do mesmo motor: o painel "
+            "compunha `x.reg` para o volume 1 e `x_NNN` de tres digitos para os "
+            "outros. Medido antes do conserto, 350 linhas por tabela: 0 contra "
+            "37.884 bytes (4 digitos), 0 contra 39.676 (por letra) e 27.188 "
+            "contra 37.884 (3 digitos, o volume 1 fora da soma). O caminho vem "
+            "agora de `Table::caminhos_do_reg`, que pergunta ao motor que abre."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """            .map(|v| self.reg.caminho(v))
+""",
+        "troca": """            // DEFEITO REPOSTO (508): a copia velha do nome do volume.
+            .map(|v| {
+                self.diretorio.join(format!(
+                    "{}{}.reg",
+                    self.nome,
+                    if v == 1 { String::new() } else { format!("_{v:03}") }
+                ))
+            })
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": ["servidor::testes_painel_508::painel_soma_os_bytes_do_disco"],
+        "seguem": [],
+        "prazo": 900,
     },
 ]

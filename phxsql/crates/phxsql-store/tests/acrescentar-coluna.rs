@@ -666,7 +666,7 @@ fn paginada_reescreve_cada_volume_e_preserva_a_ordem() {
     // Os quatro volumes existem e todos declaram a MESMA largura de slot.
     let mut larguras = std::collections::BTreeSet::new();
     for v in 1..=4 {
-        let b = std::fs::read(d.0.join(format!("clientes_{v:03}.reg"))).unwrap();
+        let b = std::fs::read(d.0.join(format!("clientes#{v:03}.reg"))).unwrap();
         larguras.insert(u32::from_le_bytes([b[16], b[17], b[18], b[19]]));
     }
     assert_eq!(larguras.len(), 1, "volume ficou com a largura velha");
@@ -831,7 +831,7 @@ fn a_queda_sem_o_novo_recusa_em_vez_de_ler_deslocado() {
     };
     assert!(e.contains("pela metade"), "{e}");
     assert!(
-        e.contains("_003"),
+        e.contains("#003"),
         "a mensagem tem de dizer QUAL volume: {e}"
     );
 }

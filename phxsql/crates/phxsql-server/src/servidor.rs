@@ -1580,6 +1580,20 @@ impl Servidor {
         let (max_linhas, somente_leitura, espelho) =
             (config.max_linhas, config.somente_leitura, config.espelho);
         let mut raiz = Raiz::nova(&config.base)?;
+        // O separador de volume do binario anterior (`_`) vira `#` AQUI, uma
+        // vez, antes da primeira operacao e fora de qualquer trava: a abertura
+        // de database, que roda dentro das secoes, so confere a marca (pedido
+        // 508, `separador::exigir_migrado`). Database que recusa a migracao
+        // nao impede a subida; ele recusa na abertura, com o motivo.
+        let (migrados, recusados) = phxsql_store::separador::migrar_base(&config.base);
+        if migrados > 0 {
+            eprintln!(
+                "pedido 508: {migrados} arquivo(s) de volume renomeados do separador `_` para `#`"
+            );
+        }
+        for r in recusados {
+            eprintln!("AVISO: a migracao do separador de volume (pedido 508) recusou {r}");
+        }
         // A base que JA EXISTIA com permissao larga (pedido 542): o banco
         // cria tudo 0600/0700 desde entao, mas nao aperta o que achou -- a
         // regua do J nao recusa (PG 4 contra 6) e apertar calado tiraria o
@@ -21129,7 +21143,7 @@ impl Servidor {
                         ("max_arquivos", Json::de_u64(pag.max_arquivos as u64)),
                         ("capacidade", Json::de_u64(pag.capacidade())),
                         // A largura do sufixo vai junto porque sem ela nao da
-                        // para escrever o nome do volume: `_1` e `_001` sao
+                        // para escrever o nome do volume: `#1` e `#001` sao
                         // arquivos diferentes.
                         ("digitos", Json::de_u64(pag.digitos as u64)),
                         (
@@ -21161,9 +21175,12 @@ impl Servidor {
                                                 ("letra", Json::texto_de(*letra)),
                                                 (
                                                     "arquivo",
+                                                    // Pelo motor que compoe o
+                                                    // nome do volume (508).
                                                     Json::texto_de(format!(
-                                                        "{}_{letra}.reg",
-                                                        e.nome()
+                                                        "{}{}.reg",
+                                                        e.nome(),
+                                                        pag.sufixo(n)
                                                     )),
                                                 ),
                                                 (
@@ -26809,23 +26826,15 @@ impl Servidor {
                     if let Ok(tab) = db.abrir_qualificada(t) {
                         let regs = tab.registros();
                         registros_db += regs;
+                        // O caminho de cada volume vem do motor que o abre
+                        // (pedido 508). A copia que morava aqui punha o
+                        // volume 1 sem sufixo e os outros em `_NNN` de tres
+                        // digitos: numa tabela paginada o volume 1 nunca era
+                        // somado, e numa de 4 digitos ou por letra nenhum.
                         let bytes: u64 = tab
-                            .volumes_por_arquivo()
-                            .0
+                            .caminhos_do_reg()
                             .iter()
-                            .map(|v| {
-                                std::fs::metadata(tab.diretorio().join(format!(
-                                    "{}{}.reg",
-                                    t.rsplit('.').next().unwrap_or(t),
-                                    if *v == 1 {
-                                        String::new()
-                                    } else {
-                                        format!("_{v:03}")
-                                    }
-                                )))
-                                .map(|m| m.len())
-                                .unwrap_or(0)
-                            })
+                            .map(|c| std::fs::metadata(c).map(|m| m.len()).unwrap_or(0))
                             .sum();
                         bytes_total += bytes;
                         maiores.push((format!("{nome}/{t}"), regs, bytes));
@@ -60955,7 +60964,7 @@ mod testes_expurgo_da_trilha {
         }
         assert_eq!(
             no_disco(&dir),
-            vec!["c.lgpd", "c_001.lgpd", "c_002.lgpd", "c_003.lgpd"]
+            vec!["c#001.lgpd", "c#002.lgpd", "c#003.lgpd", "c.lgpd"]
         );
 
         // +1: o ultimo registro pode ser do MESMO milissegundo, e o limite
@@ -61116,7 +61125,7 @@ mod testes_expurgo_da_trilha {
             "{}",
             dois_anos.resumo()
         );
-        assert_eq!(no_disco(&dir), vec!["c.lgpd", "c_001.lgpd"]);
+        assert_eq!(no_disco(&dir), vec!["c#001.lgpd", "c.lgpd"]);
         assert!(expurgos_no_reason(&s).is_empty());
 
         let seis_anos = s
@@ -64078,6 +64087,114 @@ mod testes_trava_suja {
             let t = e.to_string();
             assert!(t.starts_with("[SP000010]"), "{t}");
             assert!(t.contains("\"visoes\""), "a recusa nao nomeia a trava: {t}");
+        }
+    }
+}
+
+/// O painel soma os bytes do `.reg` pelo caminho que o MOTOR compoe (pedido
+/// 508), e nao por uma copia do analisador de nome.
+#[cfg(test)]
+mod testes_painel_508 {
+    use super::*;
+    use phxsql_core::paginacao::Paginacao;
+    use phxsql_core::schema::{Column, Schema};
+    use phxsql_core::types::ColumnType;
+    use phxsql_core::value::Value;
+
+    fn servidor(dir: &std::path::Path) -> Arc<Servidor> {
+        let mut c = Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            jobs: dir.join("jobs.json"),
+            token: "t".into(),
+            ..Config::default()
+        };
+        c.cifra_fio.exigir = false;
+        Servidor::novo(c).unwrap()
+    }
+
+    /// Quantos bytes os `.reg` da tabela ocupam, pelo SISTEMA DE ARQUIVOS --
+    /// o `du` do teste, que nao passa pelo motor que esta sendo provado.
+    fn no_disco(dir: &std::path::Path, tabela: &str) -> u64 {
+        std::fs::read_dir(dir)
+            .unwrap()
+            .flatten()
+            .filter(|e| {
+                let n = e.file_name().to_string_lossy().into_owned();
+                n.ends_with(".reg")
+                    && (n == format!("{tabela}.reg") || n.starts_with(&format!("{tabela}#")))
+            })
+            .map(|e| e.metadata().unwrap().len())
+            .sum()
+    }
+
+    /// **O painel mede o que o disco tem, em toda regra de nome de volume.**
+    ///
+    /// A copia do analisador que morava no `op_painel` compunha `x.reg` para o
+    /// volume 1 e `x_NNN.reg` de tres digitos para os outros: numa tabela
+    /// paginada o volume 1 nunca entrava na soma, e numa de 4 digitos ou por
+    /// letra nenhum volume entrava -- medido antes do conserto, 0 contra
+    /// 37.884 bytes (4 digitos), 0 contra 39.676 (por letra) e 27.188 contra
+    /// 37.884 (3 digitos, 350 linhas em cada).
+    ///
+    /// **Defeito reposto** (`Table::caminhos_do_reg` com a composicao velha):
+    /// as tres somas saem menores que o disco e o `assert_eq!` cai.
+    #[test]
+    fn painel_soma_os_bytes_do_disco() {
+        let d = crate::apoio_teste::DirTemp::novo("painel-508");
+        let s = servidor(&d.0);
+        let inst = phxsql_store::catalogo::Instancia::nova(&d.0).unwrap();
+        let db = inst.criar_database("loja").unwrap();
+        let colunas = || {
+            vec![
+                Column::new("id", ColumnType::Int8).obrigatoria(),
+                Column::new("nome", ColumnType::Str(40)).obrigatoria(),
+            ]
+        };
+        let tabelas = [
+            ("d3", Paginacao::nova(100, 99).unwrap()),
+            (
+                "d4",
+                Paginacao::nova(100, 99).unwrap().com_digitos(4).unwrap(),
+            ),
+            ("letra", Paginacao::por_letra(1_000, 1).unwrap()),
+        ];
+        let nomes = ["Ana", "Bruno", "Carla", "Zeca", "0800", "Ovo"];
+        for (nome, p) in tabelas {
+            let e = Schema::new(nome, colunas(), vec![])
+                .unwrap()
+                .com_paginacao(p)
+                .unwrap();
+            let mut t = db.criar_tabela(None, e).unwrap();
+            for i in 0..350i64 {
+                t.inserir(&[
+                    Value::Int(i),
+                    Value::Str(nomes[i as usize % nomes.len()].into()),
+                ])
+                .unwrap();
+            }
+            t.sincronizar().unwrap();
+        }
+        let painel = s.op_painel(&Sessao::default()).unwrap();
+        let maiores = painel
+            .campo("maiores_tabelas")
+            .and_then(Json::lista)
+            .unwrap();
+        let bytes = |t: &str| {
+            maiores
+                .iter()
+                .find(|m| m.texto_ou("tabela", "") == format!("loja/{t}"))
+                .map(|m| m.inteiro_ou("bytes", -1))
+                .unwrap()
+        };
+        let loja = d.0.join("loja");
+        for t in ["d3", "d4", "letra"] {
+            let disco = no_disco(&loja, t);
+            eprintln!("508 painel: {t}: painel={} disco={disco}", bytes(t));
+            assert!(disco > 0);
+            assert_eq!(bytes(t), disco as i64, "{t}: o painel nao mede o disco");
         }
     }
 }

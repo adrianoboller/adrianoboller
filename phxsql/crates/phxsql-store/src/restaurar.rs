@@ -329,7 +329,28 @@ fn databases_de(escopo: &Escopo, esperados: &BTreeMap<String, (u64, String)>) ->
 /// Aproximacao de VITRINE, e nao catalogo: sai dos nomes de arquivo, sem abrir
 /// nenhum `.reg`. Serve para a tela dizer o que tem dentro antes de restaurar;
 /// depois de restaurado, quem responde e o catalogo de verdade.
+///
+/// # Os dois formatos de nome, pelo mesmo motor
+///
+/// O nome se le pelo analisador do pedido 508
+/// ([`phxsql_core::paginacao::separar_volume_com`]), e nao por uma copia: a
+/// copia que morava aqui entendia so digitos, e mostrava cada balde de uma
+/// tabela por letra (`clientes_A`, `clientes_B`...) como uma tabela. O
+/// separador depende de QUANDO a copia foi feita: o diretorio que traz a marca
+/// do formato novo (`_formato-volumes.json`) usa o `#`; o que nao traz e de
+/// antes do 508 e usa o `_`. Nesse ultimo, `vendas_2024` criada antes do 368
+/// aparece como `vendas` -- a vitrine nao le cabecalho; a restauracao le, e
+/// migra (ver [`Preparada::preparar`]).
 pub fn tabelas_dos_caminhos(caminhos: &[String]) -> Vec<String> {
+    use phxsql_core::paginacao::{separar_volume_com, SEPARADOR_DE_VOLUME, SEPARADOR_LEGADO};
+    let marca = crate::separador::MARCA_FORMATO_VOLUMES;
+    let marcado = |dir: Option<&str>| {
+        let alvo = match dir {
+            Some(d) => format!("{d}/{marca}"),
+            None => marca.to_string(),
+        };
+        caminhos.contains(&alvo)
+    };
     let mut nomes: Vec<String> = caminhos
         .iter()
         .filter_map(|c| {
@@ -338,17 +359,12 @@ pub fn tabelas_dos_caminhos(caminhos: &[String]) -> Vec<String> {
                 Some((d, a)) => (Some(d), a),
                 None => (None, sem_ext),
             };
-            // `precos_002` e volume de `precos`; `precos_historico` nao e.
-            let tabela = match arquivo.rsplit_once('_') {
-                Some((antes, sufixo))
-                    if !antes.is_empty()
-                        && !sufixo.is_empty()
-                        && sufixo.bytes().all(|b| b.is_ascii_digit()) =>
-                {
-                    antes
-                }
-                _ => arquivo,
+            let separador = if marcado(dir) {
+                SEPARADOR_DE_VOLUME
+            } else {
+                SEPARADOR_LEGADO
             };
+            let tabela = separar_volume_com(arquivo, separador).map_or(arquivo, |(t, _)| t);
             Some(match dir {
                 Some(d) => format!("{d}.{tabela}"),
                 None => tabela.to_string(),
@@ -588,16 +604,20 @@ impl Preparada {
         // fora da trava e antes de o database entrar na raiz -- e com o mesmo
         // motor do arranque. O PITR, que reaplica o diario no palco depois
         // disto, ja encontra a arvore em dia.
-        let (indices_reconstruidos, indices_pendentes) =
-            crate::catalogo::Database::no_diretorio(&palco).reconstruir_indices_marcados();
+        //
+        // Antes dela, o separador de volume (pedido 508): um backup feito pelo
+        // binario anterior traz `x_001.reg`, e o catalogo deste so le
+        // `x#001.reg`. A migracao e a MESMA da subida -- pelo cabecalho, com
+        // `fsync` e marca --, e roda no palco, onde nenhum punho existe. O
+        // backup novo traz a marca junto e passa sem renomear nada.
+        crate::separador::migrar_database(&palco)?;
+        let no_palco = crate::catalogo::Database::no_diretorio(&palco);
+        let (indices_reconstruidos, indices_pendentes) = no_palco.reconstruir_indices_marcados();
 
         Ok(Preparada {
-            tabelas: tabelas_dos_caminhos(
-                &meus
-                    .iter()
-                    .map(|(c, _, _)| c.strip_prefix(&prefixo).unwrap_or(c).to_string())
-                    .collect::<Vec<_>>(),
-            ),
+            // Do catalogo, e nao da vitrine dos nomes: o palco ja migrou, e
+            // quem responde «que tabelas ha aqui» e o mesmo motor que as abre.
+            tabelas: no_palco.todas_as_tabelas()?,
             palco,
             de,
             arquivos: meus.len(),
@@ -808,7 +828,10 @@ mod tests {
         for (arquivo, esperado) in [
             ("clientes.reg", "registros de clientes"),
             ("clientes.ndx", "indices de clientes"),
-            ("clientes_002.reg", "volume dois"),
+            // A copia e de antes do pedido 508 (sem a marca do formato): o
+            // volume chega com `_` e sai migrado para `#`, pelo mesmo motor
+            // da subida.
+            ("clientes#002.reg", "volume dois"),
             ("matriz/pedidos.reg", "pedidos do schema"),
         ] {
             let lido = std::fs::read(raiz.join("Z_restaurado").join(arquivo)).unwrap();
@@ -1219,5 +1242,47 @@ mod tests {
         assert!(conteudo(&base.join("qualquer/coisa.txt")).is_err());
         assert!(conteudo(&base.join("nem existe")).is_err());
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// **A vitrine le o nome pelo motor do pedido 508, nos dois formatos.**
+    ///
+    /// A copia do analisador que morava aqui entendia so digitos: um backup
+    /// antigo de tabela por letra listava cada balde como uma tabela
+    /// (`clientes_A`, `clientes_B`...). O backup novo traz a marca do
+    /// formato no diretorio, e nele `vendas_2024` e tabela, nao volume.
+    ///
+    /// **Defeito reposto** (a copia de antes, so digitos e so `_`): o antigo
+    /// lista os baldes como tabelas e o novo lista `clientes#A`.
+    #[test]
+    fn a_vitrine_le_o_nome_pelo_motor_nos_dois_formatos() {
+        let antigos: Vec<String> = [
+            "clientes_A.reg",
+            "clientes_B.reg",
+            "clientes_001.log",
+            "vendas_001.reg",
+            "vendas_002.reg",
+            "x/itens_0001.reg",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        assert_eq!(
+            tabelas_dos_caminhos(&antigos),
+            vec!["clientes", "vendas", "x.itens"]
+        );
+        let marca = crate::separador::MARCA_FORMATO_VOLUMES;
+        let novos: Vec<String> = vec![
+            marca.to_string(),
+            "clientes#A.reg".into(),
+            "clientes#B.reg".into(),
+            "vendas_2024.reg".into(),
+            "vendas#001.reg".into(),
+            format!("x/{marca}"),
+            "x/itens#0001.reg".into(),
+        ];
+        assert_eq!(
+            tabelas_dos_caminhos(&novos),
+            vec!["clientes", "vendas", "vendas_2024", "x.itens"]
+        );
     }
 }

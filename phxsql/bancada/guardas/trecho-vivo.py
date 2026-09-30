@@ -357,6 +357,11 @@ dia, nunca no desejado:
   duas guardas -- o portao da redacao da senha lido por espaco e a senha
   depois de `IDENTIFIED BY`. Contado no dia: 305 entradas vivas + 1
   aposentada.
+  **SUBIU para 469 em 30/09/2026** (pedido 508, o separador de volume `#`):
+  tres guardas -- a migracao que decide pelo NOME e some com `vendas_2024`, a
+  marca gravada antes dos `rename`s (a queda deixa o diretorio marcado e meio
+  migrado), e o painel com a copia velha do nome do volume. Contado pelo
+  `--numeros`: 466 + 3.
   impedir. Ele e a unica coisa nesta regua que reprova o APAGAMENTO; tudo o
   mais aqui reprova o envelhecimento.
 
@@ -465,7 +470,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 467
+PISO_DAS_ENTRADAS = 470
 
 # ------------------------------------------------------------- APOSENTADAS
 #

@@ -3,10 +3,12 @@
 //! Uma tabela grande se parte em volumes numerados:
 //!
 //! ```text
-//! cadastroClientes_001.reg
-//! cadastroClientes_002.reg
-//! cadastroClientes_003.reg
+//! cadastroClientes#001.reg
+//! cadastroClientes#002.reg
+//! cadastroClientes#003.reg
 //! ```
+//!
+//! O separador e o `#` desde o pedido 508 -- ver [`SEPARADOR_DE_VOLUME`].
 //!
 //! A quantidade de registros por arquivo e a quantidade de arquivos sao
 //! definidas na criacao da tabela e ficam gravadas no esquema.
@@ -35,8 +37,77 @@ use crate::RowId;
 /// Bytes por volume adotados por padrao nos arquivos externos (1 GiB).
 pub const BYTES_POR_ARQUIVO_PADRAO: u64 = 1024 * 1024 * 1024;
 
-/// Largura padrao do sufixo numerico (`_001`).
+/// Largura padrao do sufixo numerico (`#001`).
 pub const DIGITOS_PADRAO: u8 = 3;
+
+/// O caractere que separa o nome da tabela do sufixo de volume no NOME do
+/// arquivo: `clientes#001.reg`, `clientes#A.reg`. Pedido 508.
+///
+/// # Por que `#`, e por que ele sai do nome de tabela
+///
+/// Ate o 508 era o `_`, e o `_` e o caractere mais comum de nome de tabela:
+/// `vendas_2024.reg` se escrevia igual ao volume 2024 de `vendas`, e o 368
+/// tinha de recusar o nome na declaracao -- nome que os quatro motores
+/// aceitam. O separador tem de ser um caractere que nome de tabela NAO aceita,
+/// e por isso o `validar_nome` do catalogo recusa o `#`: a ambiguidade some
+/// por construcao, sem perguntar ao disco.
+///
+/// A escolha e do papel J: o `.` morre pela sobrecarga com o nome qualificado
+/// `schema.tabela`; o `-` porque `itens-pedido` e nome plausivel; o `~` colide
+/// com o 8.3 do Windows e com arquivo de backup. O `#` e o das particoes do
+/// MySQL e do MariaDB (`#P#`): 3 + 2 = 5 na regua, contra o `.` com o PG = 4.
+///
+/// **Um motor so**: todo lugar que COMPOE um sufixo passa por
+/// [`sufixo_de_digitos`] ou [`Paginacao::sufixo`], e todo lugar que LE um
+/// passa por [`separar_volume`]. Copia do analisador fora daqui e o que fez o
+/// painel medir zero byte de tabela paginada ate o 508.
+pub const SEPARADOR_DE_VOLUME: char = '#';
+
+/// O separador de ANTES do pedido 508. So a migracao o le -- nada grava com
+/// ele, e o catalogo nao o reconhece: um diretorio sem a marca de formato
+/// passa pela migracao antes de ser listado.
+pub const SEPARADOR_LEGADO: char = '_';
+
+/// O sufixo de um volume numerado: separador e o numero com no minimo
+/// `largura` digitos (`#001`, `#0007`, `#1000`).
+pub fn sufixo_de_digitos(volume: u32, largura: u8) -> String {
+    sufixo_de_digitos_com(SEPARADOR_DE_VOLUME, volume, largura)
+}
+
+fn sufixo_de_digitos_com(separador: char, volume: u32, largura: u8) -> String {
+    format!("{separador}{volume:0largura$}", largura = largura as usize)
+}
+
+/// O que vem depois do separador e reservado para volume: so digitos, ou um
+/// dos 37 nomes EXATOS dos baldes da particao alfanumerica.
+///
+/// Comparacao contra a lista exata, e nao «uma letra qualquer»: sem ela,
+/// `precos#historico` viraria volume de `precos`.
+pub fn e_sufixo_de_volume(s: &str) -> bool {
+    !s.is_empty() && (s.bytes().all(|b| b.is_ascii_digit()) || BALDES.contains(&s))
+}
+
+/// Separa `tabela#sufixo` em `(tabela, sufixo)` quando o sufixo e de volume.
+/// `None` para o nome sem sufixo -- que e o proprio nome da tabela.
+///
+/// Recebe o nome SEM extensao. E a pergunta que o catalogo faz ao listar, que
+/// a abertura faz ao achar o volume 1 e que a trilha faz ao contar os
+/// fechados: uma resposta so para as tres.
+pub fn separar_volume(base: &str) -> Option<(&str, &str)> {
+    separar_volume_com(base, SEPARADOR_DE_VOLUME)
+}
+
+/// O mesmo corte, com o separador dado. Existe para a MIGRACAO do pedido 508
+/// (e a vitrine de backup antigo), que precisam ler o nome como o binario
+/// anterior o escrevia; ninguem mais o chama com outro separador.
+pub fn separar_volume_com(base: &str, separador: char) -> Option<(&str, &str)> {
+    match base.rsplit_once(separador) {
+        Some((antes, sufixo)) if !antes.is_empty() && e_sufixo_de_volume(sufixo) => {
+            Some((antes, sufixo))
+        }
+        _ => None,
+    }
+}
 
 /// Em que ritmo um volume novo comeca, quando a particao e por periodo.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -193,8 +264,8 @@ pub enum ModoParticao {
 
 /// Os baldes da particao alfanumerica, na ordem em que viram volume.
 ///
-/// A ordem e o formato: o balde 1 e o `_A`, o 27 e o `_0`, o 37 e o
-/// `_Outros`. Mudar esta lista mudaria o endereco de toda linha ja gravada.
+/// A ordem e o formato: o balde 1 e o `#A`, o 27 e o `#0`, o 37 e o
+/// `#Outros`. Mudar esta lista mudaria o endereco de toda linha ja gravada.
 pub const BALDES: [&str; 37] = [
     "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S",
     "T", "U", "V", "W", "X", "Y", "Z", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "Outros",
@@ -207,7 +278,7 @@ pub const BALDE_OUTROS: u32 = 37;
 ///
 /// # As tres decisoes
 ///
-/// **Acento cai na letra sem acento.** «Ávila» vai para o `_A`. Um balde
+/// **Acento cai na letra sem acento.** «Ávila» vai para o `#A`. Um balde
 /// `_Á` separado dividiria o cadastro em dois lugares que ninguem procura
 /// juntos, e faria «Avila» e «Ávila» -- que sao a mesma pessoa digitada por
 /// duas pessoas -- pararem em arquivos diferentes.
@@ -389,7 +460,7 @@ impl Paginacao {
     ///
     /// `registros_por_arquivo` passa a ser o teto POR LETRA, e nao da tabela.
     /// Dimensionar isto e a decisao que a tabela pede: num cadastro brasileiro
-    /// o `_S` costuma ter dez vezes o `_K`, e quem enche primeiro derruba a
+    /// o `#S` costuma ter dez vezes o `#K`, e quem enche primeiro derruba a
     /// insercao daquela letra -- com as outras 36 ainda vazias.
     pub fn por_letra(registros_por_arquivo: u64, coluna: u16) -> Result<Paginacao> {
         Paginacao {
@@ -410,7 +481,7 @@ impl Paginacao {
     /// So o `.reg` -- e o espelho `.bkp`, que e um clone dele -- se parte por
     /// letra. O `.bin`, o `.memo`, o `.log`, o `.trash` e o `.reason` rolam por
     /// TAMANHO, e continuam rolando: um `.log` que passa do volume 1 viraria
-    /// `Clientes_B.log`, que se le como «o diario do balde B» e nao e -- o
+    /// `Clientes#B.log`, que se le como «o diario do balde B» e nao e -- o
     /// diario e da tabela inteira.
     ///
     /// Entao eles voltam ao sufixo numerico, com tres digitos.
@@ -520,19 +591,31 @@ impl Paginacao {
         rowid >= 1 && rowid <= self.capacidade()
     }
 
-    /// Sufixo do nome do arquivo: `_001` com paginacao, `_A` na alfanumerica,
+    /// Sufixo do nome do arquivo: `#001` com paginacao, `#A` na alfanumerica,
     /// vazio sem paginacao.
     pub fn sufixo(&self, volume: u32) -> String {
+        self.sufixo_com(SEPARADOR_DE_VOLUME, volume)
+    }
+
+    /// O sufixo que o binario de ANTES do pedido 508 gravava (`_001`, `_A`).
+    /// So a migracao pergunta: e com ele que ela confere, pelo cabecalho do
+    /// volume, se `vendas_2024.reg` e o volume 2024 de `vendas` ou a tabela
+    /// `vendas_2024`.
+    pub fn sufixo_legado(&self, volume: u32) -> String {
+        self.sufixo_com(SEPARADOR_LEGADO, volume)
+    }
+
+    fn sufixo_com(&self, separador: char, volume: u32) -> String {
         if !self.ligada() {
             String::new()
         } else if self.modo.por_letra() {
             // Fora da faixa nao acontece por construcao, mas um nome de
             // arquivo e o ultimo lugar onde se quer um `unwrap`: um volume
-            // desconhecido vira `_Outros`, que existe e e legivel.
+            // desconhecido vira `#Outros`, que existe e e legivel.
             let i = (volume as usize).clamp(1, BALDES.len());
-            format!("_{}", BALDES[i - 1])
+            format!("{separador}{}", BALDES[i - 1])
         } else {
-            format!("_{:0largura$}", volume, largura = self.digitos as usize)
+            sufixo_de_digitos_com(separador, volume, self.digitos)
         }
     }
 
@@ -633,11 +716,36 @@ mod tests {
     #[test]
     fn sufixo_e_zero_a_esquerda() {
         let p = Paginacao::nova(100, 999).unwrap();
-        assert_eq!(p.sufixo(1), "_001");
-        assert_eq!(p.sufixo(42), "_042");
-        assert_eq!(p.sufixo(999), "_999");
+        assert_eq!(p.sufixo(1), "#001");
+        assert_eq!(p.sufixo(42), "#042");
+        assert_eq!(p.sufixo(999), "#999");
+        assert_eq!(p.sufixo_legado(42), "_042");
         let q = p.com_digitos(4).unwrap();
-        assert_eq!(q.sufixo(7), "_0007");
+        assert_eq!(q.sufixo(7), "#0007");
+    }
+
+    /// O motor que compoe e o motor que le sao o mesmo: todo sufixo que
+    /// [`Paginacao::sufixo`] escreve, [`separar_volume`] le de volta -- nas
+    /// duas regras de nome, digitos de qualquer largura e as 37 letras.
+    #[test]
+    fn o_sufixo_que_se_escreve_e_o_que_se_le() {
+        let d4 = Paginacao::nova(10, 99).unwrap().com_digitos(4).unwrap();
+        let letra = Paginacao::por_letra(10, 1).unwrap();
+        for (p, v) in [(d4, 7u32), (letra, 1), (letra, 27), (letra, 37)] {
+            let nome = format!("vendas_2024{}", p.sufixo(v));
+            let (t, suf) = separar_volume(&nome).expect(&nome);
+            assert_eq!(t, "vendas_2024", "{nome}");
+            assert_eq!(&p.sufixo(v)[1..], suf);
+        }
+        // O `_` deixou de ser separador: `vendas_2024` e nome de tabela.
+        assert_eq!(separar_volume("vendas_2024"), None);
+        assert_eq!(separar_volume("precos#historico"), None);
+        assert_eq!(separar_volume("#001"), None);
+        // E o analisador legado continua lendo como o binario anterior lia.
+        assert_eq!(
+            separar_volume_com("vendas_2024", SEPARADOR_LEGADO),
+            Some(("vendas", "2024"))
+        );
     }
 
     #[test]

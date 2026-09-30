@@ -22,7 +22,7 @@
 //!
 //! # Por que "volume fechado" e a unidade certa
 //!
-//! Os tres arquivos ja sao paginados: `Tabela_001.log`, `Tabela_002.log`, ...
+//! Os tres arquivos ja sao paginados: `Tabela#001.log`, `Tabela#002.log`, ...
 //! Um volume que nao e o ultimo **nunca mais recebe escrita** -- entao
 //! compacta-lo nao exige rotacionar nada, que era o bloqueio registrado.
 //!

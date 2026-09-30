@@ -150,8 +150,8 @@ class Conexao:
 def bytes_no_disco(base, database, tabela):
     """Quantos bytes cada arquivo da tabela ocupa, por extensao.
 
-    Soma TODOS os volumes: uma tabela paginada tem `nome_001.reg`,
-    `nome_002.reg`… e uma alfanumerica tem `nome_A.reg`, `nome_B.reg`… O que
+    Soma TODOS os volumes: uma tabela paginada tem `nome#001.reg`,
+    `nome#002.reg`… e uma alfanumerica tem `nome#A.reg`, `nome#B.reg`… O que
     interessa e o que a tabela ocupa, e nao o que o primeiro arquivo dela
     ocupa."""
     pasta = os.path.join(base, "base", database)
@@ -164,9 +164,11 @@ def bytes_no_disco(base, database, tabela):
         raiz, ext = nome.rsplit(".", 1)
         if ext not in saida:
             continue
-        # `pedidos`, `pedidos_001` e `pedidos_A` sao a mesma tabela; `pedidos2`
-        # nao e. O corte no sublinhado e o que separa os dois casos.
-        if raiz != tabela and not raiz.startswith(tabela + "_"):
+        # `pedidos`, `pedidos#001` e `pedidos#A` sao a mesma tabela;
+        # `pedidos2` e `pedidos_2024` nao sao. O `#` e o separador de volume
+        # desde o pedido 508 (`SEPARADOR_DE_VOLUME` no `paginacao.rs`), e nome
+        # de tabela nao o aceita -- por isso o corte nele basta.
+        if raiz != tabela and not raiz.startswith(tabela + "#"):
             continue
         saida[ext] += os.path.getsize(os.path.join(pasta, nome))
     return saida

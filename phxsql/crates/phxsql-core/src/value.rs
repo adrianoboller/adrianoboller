@@ -95,7 +95,7 @@ pub const OFFSET_MAXIMO: u64 = (1 << 48) - 1;
 ///
 /// O offset ocupa 48 bits (256 TB por volume) e os 16 bits liberados passam a
 /// guardar o numero do volume, para que o conteudo externo tambem possa ser
-/// paginado em `Tabela_001.bin`, `Tabela_002.bin` e assim por diante.
+/// paginado em `Tabela#001.bin`, `Tabela#002.bin` e assim por diante.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Ponteiro {
     /// Volume do arquivo externo. 1 quando nao ha paginacao.

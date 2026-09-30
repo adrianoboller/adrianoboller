@@ -178,7 +178,10 @@ pub fn montar(nome: &str, esquema: &Schema, baldes: &[u64], volumes: &[u32]) -> 
                  \"existe\": {existe}, \"registros\": {usados}, \
                  \"primeiro_rowid\": {primeiro} }}{}\n",
                 texto(letra),
-                texto(&format!("{nome}_{letra}.reg")),
+                // O nome sai do motor que COMPOE o nome do volume (pedido
+                // 508), e nao de um `_` digitado aqui: o `.pag` existe para
+                // dizer a quem esta de fora em que ARQUIVO a linha esta.
+                texto(&format!("{nome}{}.reg", p.sufixo(n as u32))),
                 if n == BALDES.len() { "" } else { "," },
             ));
         }
@@ -271,7 +274,7 @@ mod testes {
         assert_eq!(lista.len(), 37);
         assert_eq!(lista[0].texto_ou("letra", ""), "A");
         assert_eq!(lista[0].inteiro_ou("registros", -1), 12);
-        assert_eq!(lista[0].texto_ou("arquivo", ""), "clientes_A.reg");
+        assert_eq!(lista[0].texto_ou("arquivo", ""), "clientes#A.reg");
         assert_eq!(lista[18].texto_ou("letra", ""), "S");
         assert_eq!(lista[18].inteiro_ou("registros", -1), 4_000);
         assert_eq!(lista[36].texto_ou("letra", ""), "Outros");
