@@ -3700,6 +3700,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "phxclaw-agent"
+version = "0.70.0"
+
+[[package]]
 name = "phxclaw-agent-catalog"
 version = "0.70.0"
 dependencies = [
@@ -3720,6 +3724,15 @@ dependencies = [
  "sha2 0.10.9",
  "thiserror 2.0.21",
  "uuid",
+]
+
+[[package]]
+name = "phxclaw-agent-core"
+version = "0.70.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -3895,6 +3908,10 @@ dependencies = [
  "thiserror 2.0.21",
  "uuid",
 ]
+
+[[package]]
+name = "phxclaw-browser"
+version = "0.70.0"
 
 [[package]]
 name = "phxclaw-capacity-manager"
@@ -4412,6 +4429,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "phxclaw-llm"
+version = "0.70.0"
+
+[[package]]
 name = "phxclaw-mcp-lsp-runtime"
 version = "0.70.0"
 dependencies = [
@@ -4570,6 +4591,10 @@ dependencies = [
  "serde_json",
  "uuid",
 ]
+
+[[package]]
+name = "phxclaw-office"
+version = "0.70.0"
 
 [[package]]
 name = "phxclaw-ollama-adapter"
@@ -5086,6 +5111,10 @@ dependencies = [
  "serde_json",
  "uuid",
 ]
+
+[[package]]
+name = "phxclaw-web-search"
+version = "0.70.0"
 
 [[package]]
 name = "phxclaw-webview-control"

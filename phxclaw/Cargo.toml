@@ -114,6 +114,12 @@ members = [
   "crates/phxclaw-swarm-merge-intelligence",
   "crates/phxclaw-config-runtime",
   "crates/phxclaw-software-factory",
+  "crates/phxclaw-agent-core",
+  "crates/phxclaw-llm",
+  "crates/phxclaw-browser",
+  "crates/phxclaw-web-search",
+  "crates/phxclaw-office",
+  "crates/phxclaw-agent",
 ]
 resolver = "3"
 
