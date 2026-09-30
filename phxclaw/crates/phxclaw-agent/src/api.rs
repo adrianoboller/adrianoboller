@@ -6,7 +6,10 @@
 //! - so ouve em loopback por padrao; expor e decisao do operador;
 //! - o webhook de fim de tarefa sai pelo EgressBroker, com lista de origens: um webhook
 //!   livre seria uma porta de SSRF controlada por quem cria a tarefa;
-//! - artefato so se serve de dentro da pasta da tarefa (mesmo `confine` das ferramentas).
+//! - artefato so se serve de dentro da pasta da tarefa (mesmo `confine` das ferramentas);
+//! - criar tarefa passa por um balde de fichas: cada tarefa gasta modelo, e um laco de
+//!   cliente com defeito esvaziaria a cota do provedor. Consulta nao gasta ficha, porque
+//!   acompanhar tarefa e sondagem legitima.
 
 use crate::agenda::Agenda;
 use crate::motor::{Agent, CancelFlag, NoObserver};
@@ -24,6 +27,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 /// Monta o agente de uma tarefa a partir do modelo pedido ("ollama:qwen2.5:1.5b", ...).
 pub type AgentFactory = Arc<dyn Fn(&str) -> Result<Agent, String> + Send + Sync>;
@@ -38,6 +42,41 @@ pub struct ApiState {
     pub agenda: Arc<Mutex<Agenda>>,
     /// Origens para onde webhook pode ir. Vazio = webhook recusado.
     pub webhook_origins: Vec<String>,
+    /// Teto de criacao de tarefas (balde de fichas).
+    pub limite: Arc<Limite>,
+}
+
+/// Balde de fichas: `capacidade` de rajada, reposto a `por_minuto`.
+pub struct Limite {
+    capacidade: f64,
+    por_seg: f64,
+    estado: Mutex<(f64, Instant)>,
+}
+
+impl Limite {
+    pub fn por_minuto(n: u32) -> Self {
+        let n = f64::from(n.max(1));
+        Self {
+            capacidade: n,
+            por_seg: n / 60.0,
+            estado: Mutex::new((n, Instant::now())),
+        }
+    }
+
+    /// Gasta uma ficha, ou diz em quantos segundos a proxima chega.
+    pub fn tomar(&self) -> Result<(), u64> {
+        let mut e = self.estado.lock().unwrap_or_else(|p| p.into_inner());
+        let agora = Instant::now();
+        let fichas =
+            (e.0 + agora.duration_since(e.1).as_secs_f64() * self.por_seg).min(self.capacidade);
+        if fichas >= 1.0 {
+            *e = (fichas - 1.0, agora);
+            Ok(())
+        } else {
+            *e = (fichas, agora);
+            Err(((1.0 - fichas) / self.por_seg).ceil().max(1.0) as u64)
+        }
+    }
 }
 
 pub fn router(state: ApiState) -> Router {
@@ -94,6 +133,15 @@ async fn criar(State(s): State<ApiState>, h: HeaderMap, Json(n): Json<NovaTarefa
     }
     let modelo = n.model.unwrap_or_else(|| s.default_model.clone());
     let agente = (s.factory)(&modelo).map_err(|e| erro(StatusCode::BAD_REQUEST, e))?;
+    // Depois da validacao: pedido invalido nao gasta a cota de quem errou o campo.
+    if let Err(seg) = s.limite.tomar() {
+        return Ok((
+            StatusCode::TOO_MANY_REQUESTS,
+            [(header::RETRY_AFTER, seg.to_string())],
+            Json(json!({"error": "limite de criacao de tarefas", "retry_after": seg})),
+        )
+            .into_response());
+    }
     let mut t = Task::new(objetivo, modelo);
     t.webhook = n.webhook;
     s.store

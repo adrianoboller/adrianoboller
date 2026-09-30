@@ -48,7 +48,8 @@ Bearer em `var/agente/api.token` (0600) ou `PHXCLAW_API_TOKEN`. Só loopback por
 | POST/GET | `/v1/schedules` | `{name, objective, cron \| every_seconds>=60}` |
 | GET | `/sites/{id}/{pasta}/` | site publicado pelo agente |
 
-Webhook de fim de tarefa só para origens de `PHXCLAW_WEBHOOK_ORIGINS`.
+Webhook de fim de tarefa só para origens de `PHXCLAW_WEBHOOK_ORIGINS`. Criar tarefa gasta ficha de um
+balde (`PHXCLAW_API_TAREFAS_POR_MINUTO`, padrão 10): além dele, `429` com `Retry-After`.
 
 ## Guardas do motor (cada uma nasceu de uma falha medida)
 

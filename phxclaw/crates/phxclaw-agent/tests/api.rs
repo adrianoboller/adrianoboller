@@ -1,6 +1,6 @@
 //! API de tarefas pelo fio HTTP de verdade: servidor axum numa porta local, cliente reqwest.
 
-use phxclaw_agent::api::{AgentFactory, ApiState, disparar_agenda, router};
+use phxclaw_agent::api::{AgentFactory, ApiState, Limite, disparar_agenda, router};
 use phxclaw_agent::*;
 use phxclaw_agent_core::{LlmReply, Tool};
 use serde_json::{Value, json};
@@ -23,6 +23,10 @@ fn roteiro() -> Vec<LlmReply> {
 }
 
 async fn subir(webhooks: Vec<String>) -> (String, ApiState) {
+    subir_com(webhooks, 1000).await
+}
+
+async fn subir_com(webhooks: Vec<String>, por_minuto: u32) -> (String, ApiState) {
     let dir = std::env::temp_dir().join(format!("phx-api-{}", phxclaw_types::new_uuid_v7()));
     let store = TaskStore::new(dir.join("tasks")).unwrap();
     let st2 = store.clone();
@@ -56,6 +60,7 @@ async fn subir(webhooks: Vec<String>) -> (String, ApiState) {
         running: Arc::new(Mutex::new(HashMap::new())),
         agenda: Arc::new(Mutex::new(Agenda::open(dir.join("agenda.json")).unwrap())),
         webhook_origins: webhooks,
+        limite: Arc::new(Limite::por_minuto(por_minuto)),
     };
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", l.local_addr().unwrap());
@@ -396,4 +401,54 @@ async fn site_so_e_servido_depois_de_publicado_e_com_csp_sandbox() {
             "{p}"
         );
     }
+}
+
+#[tokio::test]
+async fn criar_alem_do_limite_e_429_com_retry_after_e_consulta_nao_gasta() {
+    let (base, _) = subir_com(vec![], 2).await;
+    let criar = |obj: &str| {
+        cli()
+            .post(format!("{base}/v1/tasks"))
+            .bearer_auth(TOKEN)
+            .json(&json!({"objective": obj}))
+            .send()
+    };
+    // pedido invalido nao gasta ficha
+    assert_eq!(criar("").await.unwrap().status(), 400);
+    let a = criar("um").await.unwrap();
+    assert_eq!(a.status(), 202);
+    let id = a.json::<Value>().await.unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    // consultar varias vezes nao gasta ficha
+    for _ in 0..5 {
+        let r = cli()
+            .get(format!("{base}/v1/tasks/{id}"))
+            .bearer_auth(TOKEN)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status(), 200);
+    }
+    assert_eq!(criar("dois").await.unwrap().status(), 202);
+    let r = criar("tres").await.unwrap();
+    assert_eq!(r.status(), 429);
+    let seg: u64 = r.headers()["retry-after"]
+        .to_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!((1..=30).contains(&seg), "retry-after {seg}");
+}
+
+#[test]
+fn balde_repoe_fichas_com_o_tempo() {
+    let l = Limite::por_minuto(60); // uma ficha por segundo
+    for _ in 0..60 {
+        l.tomar().unwrap();
+    }
+    assert_eq!(l.tomar(), Err(1));
+    std::thread::sleep(Duration::from_millis(1100));
+    assert!(l.tomar().is_ok());
 }

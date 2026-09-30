@@ -177,6 +177,12 @@ async fn servir(args: &[String]) -> Result<()> {
                     .collect()
             })
             .unwrap_or_default(),
+        limite: Arc::new(phxclaw_agent::api::Limite::por_minuto(
+            env::var("PHXCLAW_API_TAREFAS_POR_MINUTO")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(10),
+        )),
     };
     let agenda_state = state.clone();
     tokio::spawn(async move {
