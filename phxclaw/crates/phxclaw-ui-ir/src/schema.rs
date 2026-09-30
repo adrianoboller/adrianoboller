@@ -319,6 +319,20 @@ pub fn rotulo(nome: &str) -> String {
         ("ie", "IE"),
         ("pagamento", "pagamento"),
         ("comissao", "comissão"),
+        ("servico", "serviço"),
+        ("veiculo", "veículo"),
+        ("usuario", "usuário"),
+        ("funcionario", "funcionário"),
+        ("orcamento", "orçamento"),
+        ("historico", "histórico"),
+        ("municipio", "município"),
+        ("credito", "crédito"),
+        ("debito", "débito"),
+        ("responsavel", "responsável"),
+        ("tecnico", "técnico"),
+        ("mecanico", "mecânico"),
+        ("fabricacao", "fabricação"),
+        ("validade", "validade"),
     ];
     let palavras: Vec<String> = nome
         .split('_')
@@ -335,6 +349,31 @@ pub fn rotulo(nome: &str) -> String {
     let mut c = s.chars();
     match c.next() {
         Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+        None => s,
+    }
+}
+
+/// Singular da palavra-nucleo (a primeira) de um nome de tabela: "ordens_servico" ->
+/// "ordem_servico". Tabela no plural e costume comum, e sem isto o rotulo saia
+/// "Clienteses" (visto numa tela gerada pelo agente). Palavras em -us, -is e -ês ficam
+/// como estao: "status", "lapis" e "mes" no singular terminam assim.
+pub fn singular_tabela(nome: &str) -> String {
+    let (w, resto) = nome
+        .split_once('_')
+        .map_or((nome, None), |(a, b)| (a, Some(b)));
+    let s = if let Some(r) = w.strip_suffix("oes") {
+        format!("{r}ao")
+    } else if let Some(r) = w.strip_suffix("ns") {
+        format!("{r}m")
+    } else if w.len() > 4 && (w.ends_with("res") || w.ends_with("zes") || w.ends_with("ses")) {
+        w[..w.len() - 2].to_string()
+    } else if w.len() > 3 && (w.ends_with("as") || w.ends_with("os") || w.ends_with("es")) {
+        w[..w.len() - 1].to_string()
+    } else {
+        w.to_string()
+    };
+    match resto {
+        Some(r) => format!("{s}_{r}"),
         None => s,
     }
 }
@@ -359,7 +398,11 @@ fn plural(r: &str) -> String {
     } else {
         r.split(' ').next().unwrap_or(r).to_string()
     };
-    let p = if let Some(s) = alvo.strip_suffix('m') {
+    // -us, -is e -x nao mudam no plural: "os status", "os lapis", "os tórax"
+    let invariavel = alvo.ends_with("us") || alvo.ends_with("is") || alvo.ends_with('x');
+    let p = if invariavel {
+        alvo.clone()
+    } else if let Some(s) = alvo.strip_suffix('m') {
         format!("{s}ns")
     } else if let Some(s) = alvo.strip_suffix("ão") {
         format!("{s}ões")
@@ -534,8 +577,8 @@ pub fn analyze(nome_app: &str, p: &Parsed) -> App {
             .collect();
         let mut e = Entity {
             name: t.name.clone(),
-            label: rotulo(&t.name),
-            label_plural: plural(&rotulo(&t.name)),
+            label: rotulo(&singular_tabela(&t.name)),
+            label_plural: plural(&rotulo(&singular_tabela(&t.name))),
             primary_key: t.primary_key.clone(),
             display_field: display(t),
             fields,

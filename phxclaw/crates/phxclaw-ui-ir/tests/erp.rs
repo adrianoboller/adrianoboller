@@ -157,3 +157,29 @@ fn ddl_mysql_com_crase_e_auto_increment() {
             .any(|s| matches!(s, Screen::MasterDetail { detail, .. } if detail == "nota_linha"))
     );
 }
+
+#[test]
+fn tabela_no_plural_da_rotulo_singular_e_plural_certo() {
+    // o agente escreveu tabelas no plural e a tela saiu "Consulta de clienteses"
+    let sql = "CREATE TABLE clientes (id serial PRIMARY KEY, nome varchar(80) NOT NULL);\
+               CREATE TABLE veiculos (id serial PRIMARY KEY, cliente_id int REFERENCES clientes(id));\
+               CREATE TABLE ordens_servico (id serial PRIMARY KEY, veiculo_id int REFERENCES veiculos(id), valor_total numeric(12,2));\
+               CREATE TABLE status (id serial PRIMARY KEY, nome varchar(20));";
+    let (app, _) = from_sql("Oficina", sql);
+    let r: Vec<(&str, &str)> = app
+        .entities
+        .iter()
+        .map(|e| (e.label.as_str(), e.label_plural.as_str()))
+        .collect();
+    assert_eq!(
+        r,
+        vec![
+            ("Cliente", "Clientes"),
+            ("Veículo", "Veículos"),
+            ("Ordem serviço", "Ordens serviço"),
+            ("Status", "Status"),
+        ]
+    );
+    let titulos: Vec<&str> = app.screens.iter().map(|s| s.title()).collect();
+    assert!(titulos.contains(&"Consulta de clientes"), "{titulos:?}");
+}

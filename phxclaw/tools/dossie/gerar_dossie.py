@@ -66,7 +66,7 @@ def codigo() -> dict:
 def esteira() -> list[dict]:
     itens = []
     for linha in ESTEIRA.read_text().splitlines():
-        m = re.match(r"\|\s*([EU]\d+)\s*\|\s*(.+?)\s*\|(.+)\|\s*$", linha)
+        m = re.match(r"\|\s*([EU]\d+[a-z]?)\s*\|\s*(.+?)\s*\|(.+)\|\s*$", linha)
         if not m:
             continue
         cols = [c.strip() for c in m.group(3).split("|")]

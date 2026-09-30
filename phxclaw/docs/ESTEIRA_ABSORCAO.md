@@ -60,7 +60,7 @@ exigência do anexo): `schema.rs` produz o `App` do `ir.rs`; `html.rs` só lê o
 | # | Próximo | Estado |
 |---|---|---|
 | U1 | ferramenta do agente `design_erp_ui` (grava `ui-ir.json` + `index.html`, publicável) | ✓ 30/09 — qwen2.5:3b a chamou no 1º passo e concluiu |
-| U2 | Prompt → UI-IR (modelo preenche o IR, validado pelo serde) | ☐ |
+| U2 | Prompt → UI-IR | ✓ 30/09 — o modelo escreve o `CREATE TABLE` e o analisador determinístico faz o resto (hipótese «modelo preenche o IR» não foi preciso medir: SQL o modelo já sabe). qwen2.5:3b gerou a oficina com OS mestre/detalhe e total; desviou em 2 chamadas e numa planilha que ninguém pediu. Achou o defeito das tabelas no plural («Clienteses»), consertado com RED |
 | U3 | Screenshot → UI-IR (visão) | ☐ bloqueado: modelo com visão |
 | U4a | renderizador React (esbuild; `design_erp_ui` com `react: true`) | ✓ 30/09 — construído com npm real e exercitado no Chromium: itens, total, remoção, data, menu; RED medido |
 | U4b | renderizadores WinDev/WebDev (WLanguage) e Flutter | ☐ sem WinDev/Flutter neste ambiente para provar |
