@@ -1,18 +1,18 @@
 {
   "product": "PhxClaw",
   "version": "0.70.0",
-  "certified_at": "2026-09-30T11:47:13+00:00",
+  "certified_at": "2026-09-30T13:28:09+00:00",
   "environment": "Linux 6.18.44-fc-v50 x86_64",
   "verdict": "NOT_CERTIFIED",
-  "required_passed": 7,
-  "required_total": 12,
+  "required_passed": 8,
+  "required_total": 13,
   "gates": [
     {
       "gate": "cargo_fmt",
       "required": true,
       "status": "passed",
       "command": "cargo fmt --all --check",
-      "seconds": 0.7,
+      "seconds": 1.0,
       "evidence_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "tail": []
     },
@@ -21,7 +21,7 @@
       "required": true,
       "status": "passed",
       "command": "cargo clippy --workspace --all-targets -q -- -D warnings",
-      "seconds": 1.0,
+      "seconds": 2.2,
       "evidence_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "tail": []
     },
@@ -30,17 +30,17 @@
       "required": true,
       "status": "failed",
       "command": "cargo test --workspace --no-fail-fast 2>&1",
-      "seconds": 24.6,
-      "evidence_sha256": "31f4d3f78f0f96d4a58b04c4d8db461e3ca24f7f34c7851d8742a84244ba28a3",
+      "seconds": 28.5,
+      "evidence_sha256": "a431a31133503b7e0139e8140c25e73f2f564d4a9479774846977d513b1d2619",
       "tail": [
         "",
         "error: 1 target failed:",
         "    `-p phxclaw-plugin-registry --lib`"
       ],
       "measured": {
-        "passed": 113,
+        "passed": 233,
         "failed": 1,
-        "ignored": 9
+        "ignored": 11
       }
     },
     {
@@ -48,15 +48,33 @@
       "required": true,
       "status": "passed",
       "command": "cargo audit 2>&1",
-      "seconds": 2.2,
-      "evidence_sha256": "a612f2acd503fce7e533c9f95bf75c2f49ff0a6ef1ab84ccaad6c99e96d91e01",
+      "seconds": 5.1,
+      "evidence_sha256": "d7b429a1decff77e288e4579ae0e6ff50ca74ac5675edc04c8e0e0d192e42d87",
       "tail": [
-        "URL:       https://rustsec.org/advisories/RUSTSEC-2024-0429",
+        "Warning:   yanked",
         "",
-        "warning: 2 allowed warnings found"
+        "warning: 3 allowed warnings found"
       ],
       "measured": {
         "vulnerabilities": 0
+      }
+    },
+    {
+      "gate": "agente_autonomo",
+      "required": true,
+      "status": "passed",
+      "command": "cargo test -q -p phxclaw-agent -p phxclaw-llm -p phxclaw-browser -p phxclaw-web-search -p phxclaw-office 2>&1",
+      "seconds": 79.6,
+      "evidence_sha256": "e747d9e6d19d10f7aff6e20f0645a5b8b401aca3365d5708c5339b7ae7344160",
+      "tail": [
+        "running 0 tests",
+        "",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ],
+      "measured": {
+        "passed": 112,
+        "failed": 0,
+        "ignored": 2
       }
     },
     {
@@ -64,7 +82,7 @@
       "required": true,
       "status": "passed",
       "command": "tests/postgres/run_e2e.sh 2>&1",
-      "seconds": 7.7,
+      "seconds": 28.0,
       "evidence_sha256": "29bdec5521655f510f26ad8c0eb67f122263c67f9696579cee8a397909b6a2a7",
       "tail": [
         "ok   [rust/rls] phxclaw-bpm pg_e2e",
@@ -78,26 +96,26 @@
       "required": true,
       "status": "passed",
       "command": "(tests/chaos/pg_kill_loop.sh 30 >/dev/null 2>&1 &) ; cargo test -q -p phxclaw-hypothesis --test pg_chaos -- --ignored --nocapture 2>&1",
-      "seconds": 30.4,
-      "evidence_sha256": "a895fd97b1aa814ab2e805b3aa7e6751502bc84afca7f5488cf190f4eddc5d27",
+      "seconds": 31.8,
+      "evidence_sha256": "ae41c037c2150dadec58790d6b9454bce5401dd25507b8d0d6a15fe1cd9babb3",
       "tail": [
-        "caos: 30 s, 5292 ok, 6 erros, 6 reconexoes, 1766 hipoteses no banco, 0 perdidas, 0 divergentes",
+        "caos: 30 s, 6595 ok, 5 erros, 5 reconexoes, 2200 hipoteses no banco, 0 perdidas, 0 divergentes",
         ".",
-        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 30.04s"
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 30.05s"
       ],
-      "measured": "caos: 30 s, 5292 ok, 6 erros, 6 reconexoes, 1766 hipoteses no banco, 0 perdidas, 0 divergentes"
+      "measured": "caos: 30 s, 6595 ok, 5 erros, 5 reconexoes, 2200 hipoteses no banco, 0 perdidas, 0 divergentes"
     },
     {
       "gate": "provider_local_ollama_e2e",
       "required": false,
       "status": "passed",
       "command": "cargo test -q -p phxclaw-ollama-adapter --test ollama_e2e -- --ignored 2>&1",
-      "seconds": 1.0,
-      "evidence_sha256": "942bfd9de6c22be9385530f09d716816a6eb1d38de4c00bc1b8a165d2cce60f9",
+      "seconds": 56.8,
+      "evidence_sha256": "10960e3dadfa4e8b6a3311fa74a1daf91cae6ce6188ca8d7e7c803857d69872f",
       "tail": [
         "running 2 tests",
         "..",
-        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.57s"
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 30.97s"
       ]
     },
     {
@@ -126,10 +144,10 @@
       "required": true,
       "status": "passed",
       "command": "cargo build -q -p phxclaw-desktop && python3 tests/desktop/desktop_e2e.py 2>&1",
-      "seconds": 27.0,
-      "evidence_sha256": "91627c65cb23be79cea9d469c67684e8a25181656a26cd2145a1ca044318a82f",
+      "seconds": 118.4,
+      "evidence_sha256": "605325fede6cd00ab1e981183ee6fa422eb6c9e272071c7477729490a17b52b3",
       "tail": [
-        "ok   verify_evidence continua valido depois da negacao :: {\"records\": 121, \"final_hash\": \"95da19a34d90779cc042e4965bcd98ae49fdf4c71b2c3cf043e972909d2a7fdb\", \"valid\": true, \"first_invalid_line\": null}",
+        "ok   verify_evidence continua valido depois da negacao :: {\"records\": 129, \"final_hash\": \"fd6baaed323e16e49d41045c9e169abe3e5ff3a3315c4c9f71cc51b32a899238\", \"valid\": true, \"first_invalid_line\": null}",
         "ok   captura da janela gravada :: /home/user/adrianoboller/phxclaw/tests/desktop/out/desktop_e2e.png",
         "placar: 12/12"
       ],
@@ -140,12 +158,12 @@
       "required": true,
       "status": "passed",
       "command": "cargo test -q -p phxclaw-media-intelligence --test stt_e2e -- --ignored 2>&1",
-      "seconds": 8.9,
-      "evidence_sha256": "9063d848cbe7beb37dc1a0ba0acb8849af1931d4116abb3572c88900ddb740ad",
+      "seconds": 21.7,
+      "evidence_sha256": "83a17808dfd8605126f7ff04d4e264d76be370cd83e6d1b1d7fad768f02b1b9b",
       "tail": [
         "running 2 tests",
         "..",
-        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.29s"
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 14.27s"
       ],
       "measured": "test result: ok. 2 passed; 0 failed;"
     },
