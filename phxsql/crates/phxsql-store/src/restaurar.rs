@@ -731,15 +731,42 @@ fn renomear_ou_copiar(de: &Path, para: &Path) -> Result<()> {
         // Pedido 467: o nome novo so vale depois do `fsync` dos diretorios.
         return crate::sincronia::sincronizar_os_diretorios(de, para, true);
     }
+    copiar_e_apagar(de, para)
+}
+
+/// O caminho da COPIA da troca: `de` inteiro em `para`, e so entao `de` sai.
+///
+/// # Por que tudo vai ao disco ANTES do `remove_dir_all` (pedido 582)
+///
+/// Quando o `rename` recusa (a raiz de dados e ponto de montagem, e o
+/// vizinho dela mora em outro disco), a reserva do database substituido e
+/// ESTA copia -- e logo depois a origem e apagada. Sem `fsync`, uma queda no
+/// meio podia voltar com a origem ja fora e a copia so no cache do nucleo: a
+/// unica via de volta, pela metade. A ordem e a do `durable_rename` do
+/// PostgreSQL levada a uma arvore: cada arquivo no descritor que o escreveu,
+/// cada pasta depois das entradas dela, o nome de `para` no pai -- e so
+/// depois o apagar, com o `fsync` do pai de `de` para a saida valer tambem.
+///
+/// Com a trava de dados na mao, e fica: quem chama e o `confirmar`, e a troca
+/// do database tem de ser uma so para quem le. A copia ja estava sob a
+/// trava; o `fsync` e o preco de ela servir para alguma coisa.
+fn copiar_e_apagar(de: &Path, para: &Path) -> Result<()> {
     copiar_arvore(de, para)?;
+    crate::sincronia::sincronizar_os_diretorios(para, para, true)?;
     std::fs::remove_dir_all(de)?;
-    Ok(())
+    crate::sincronia::sincronizar_os_diretorios(de, de, true)
 }
 
 /// Pelo motor da permissao (pedido 542): diretorio 0700 e arquivo 0600 no
 /// destino, sem herdar o modo da origem -- o `fs::copy` da `std` o herdaria.
+///
+/// Pedido 582: cada arquivo sincroniza no descritor que o escreveu, e a pasta
+/// `para` sincroniza depois da ultima entrada dela -- a entrada e dado da
+/// PASTA. A subpasta ja voltou sincronizada da recursao antes de o nome dela
+/// entrar na conta desta.
 fn copiar_arvore(de: &Path, para: &Path) -> Result<()> {
     crate::util::criar_diretorio_do_banco(para)?;
+    let mut alguma: Option<PathBuf> = None;
     for entrada in std::fs::read_dir(de)? {
         let entrada = entrada?;
         let origem = entrada.path();
@@ -750,8 +777,16 @@ fn copiar_arvore(de: &Path, para: &Path) -> Result<()> {
         if origem.is_dir() {
             copiar_arvore(&origem, &alvo)?;
         } else {
-            crate::util::copiar_do_banco(&origem, &alvo)?;
+            let escrito = crate::util::copiar_do_banco(&origem, &alvo)?;
+            crate::sincronia::sync_all(&escrito, &alvo)?;
         }
+        alguma = Some(alvo);
+    }
+    // O `fsync` da pasta vai pelo nome de uma entrada dela: e pelo pai do
+    // caminho que `sincronia` marca a recusa, e marcar o pai de `para`
+    // envenenaria as vizinhas. Pasta vazia nao tem entrada a levar.
+    if let Some(entrada) = alguma {
+        crate::sincronia::sincronizar_os_diretorios(&entrada, &entrada, true)?;
     }
     Ok(())
 }
@@ -1284,5 +1319,143 @@ mod tests {
             tabelas_dos_caminhos(&novos),
             vec!["clientes", "vendas", "vendas_2024", "x.itens"]
         );
+    }
+
+    /// O filho que o teste de baixo roda debaixo do `strace`.
+    #[test]
+    #[ignore = "roda so dentro de a_copia_da_troca_vai_ao_disco_antes_de_apagar"]
+    fn filho_da_copia_da_troca() {
+        let d = PathBuf::from(std::env::var("PHX_582_DIR").unwrap());
+        copiar_e_apagar(&d.join("antigo"), &d.join("reserva")).unwrap();
+    }
+
+    /// **Pedido 582, contra o sistema operacional: a copia da troca vai ao
+    /// disco INTEIRA antes de a origem sair.**
+    ///
+    /// Pelo `strace -y` (o caminho ao lado de cada descritor): cada arquivo
+    /// da reserva recebe `fsync` no descritor que o criou, sem `close` no
+    /// meio; cada pasta da reserva, depois da ultima entrada criada nela; a
+    /// pasta de cima, depois de a reserva nascer -- tudo antes do primeiro
+    /// `unlink`/`rmdir` da origem. E a pasta de cima de novo depois dele,
+    /// para a saida da origem valer.
+    ///
+    /// **Nao medido:** a queda em si (pede derrubar a maquina, ou um
+    /// `dm-flakey` com `CAP_SYS_ADMIN`). O que se prova e a ORDEM e o
+    /// DESCRITOR das chamadas, que e o que o conserto muda.
+    #[test]
+    fn a_copia_da_troca_vai_ao_disco_antes_de_apagar() {
+        if std::process::Command::new("strace")
+            .arg("-V")
+            .output()
+            .is_err()
+        {
+            eprintln!("sem strace nesta maquina: a prova do 582 NAO MEDIDA");
+            return;
+        }
+        let t = temp("582-strace");
+        let d = std::fs::canonicalize(&t.0).unwrap();
+        let antigo = d.join("antigo");
+        std::fs::create_dir_all(antigo.join("sub/vazia")).unwrap();
+        std::fs::write(antigo.join("a.reg"), b"registros").unwrap();
+        std::fs::write(antigo.join("a.ndx"), b"indice").unwrap();
+        std::fs::write(antigo.join("sub/c.reg"), b"do schema").unwrap();
+        let traco = d.join("traco.txt");
+        let saida = std::process::Command::new("strace")
+            .args([
+                "-f",
+                "-y",
+                "-e",
+                "trace=openat,close,fsync,mkdir,mkdirat,unlink,unlinkat,rmdir",
+                "-o",
+            ])
+            .arg(&traco)
+            .arg(std::env::current_exe().unwrap())
+            .args([
+                "--ignored",
+                "--exact",
+                "restaurar::tests::filho_da_copia_da_troca",
+            ])
+            .env("PHX_582_DIR", &d)
+            .output()
+            .unwrap();
+        assert!(
+            saida.status.success(),
+            "{}",
+            String::from_utf8_lossy(&saida.stderr)
+        );
+        let texto = std::fs::read_to_string(&traco).unwrap();
+        let linhas: Vec<&str> = texto.lines().filter(|l| l.contains(" = ")).collect();
+        let ok = |l: &str| l.trim_end().ends_with("= 0") || l.contains(") = 0");
+        let txt = |p: &Path| p.display().to_string();
+        let reserva = d.join("reserva");
+        // O primeiro `unlink`/`rmdir` com sucesso de algo da origem.
+        let de_txt = format!("{}/", txt(&antigo));
+        let apagou = linhas
+            .iter()
+            .position(|l| {
+                (l.contains("unlink") || l.contains("rmdir"))
+                    && (l.contains(&de_txt) || l.contains(&format!("<{}>", txt(&antigo))))
+                    && ok(l)
+            })
+            .unwrap_or_else(|| panic!("a premissa: a origem saiu por unlink:\n{texto}"));
+        let fsync_de = |alvo: &str, desde: usize, ate: usize| {
+            linhas[desde..ate]
+                .iter()
+                .any(|l| l.contains("fsync(") && l.contains(&format!("<{alvo}>)")) && ok(l))
+        };
+        let mut erros = Vec::new();
+        // Cada arquivo: o `fsync` no descritor que o criou, antes do apagar.
+        for f in ["a.reg", "a.ndx", "sub/c.reg"] {
+            let p = txt(&reserva.join(f));
+            let Some((i, fd)) = linhas.iter().enumerate().find_map(|(i, l)| {
+                (l.starts_with(|c: char| c.is_ascii_digit())
+                    && l.contains("openat(")
+                    && l.contains(&format!("\"{p}\""))
+                    && l.contains("O_CREAT"))
+                .then(|| l.rsplit("= ").next().map(|s| (i, s.trim().to_string())))
+                .flatten()
+            }) else {
+                erros.push(format!("{p}: nao nasceu por openat"));
+                continue;
+            };
+            let fechou = linhas[i + 1..]
+                .iter()
+                .position(|l| l.contains(&format!("close({fd})")))
+                .map_or(linhas.len(), |j| i + 1 + j);
+            let sincronizou = linhas[i + 1..fechou.min(apagou)]
+                .iter()
+                .any(|l| l.contains(&format!("fsync({fd})")) && ok(l));
+            if !sincronizou {
+                erros.push(format!(
+                    "{p}: sem fsync no descritor {fd} antes do close/apagar"
+                ));
+            }
+        }
+        // Cada pasta: o `fsync` depois da ultima entrada que nasceu nela.
+        for pasta in [reserva.join("sub"), reserva.clone(), d.clone()] {
+            let p = txt(&pasta);
+            let ultima = linhas[..apagou]
+                .iter()
+                .rposition(|l| {
+                    (l.contains("O_CREAT") || l.contains("mkdir"))
+                        && l.split('"')
+                            .nth(1)
+                            .is_some_and(|c| Path::new(c).parent().is_some_and(|pai| txt(pai) == p))
+                })
+                .unwrap_or_else(|| panic!("a premissa: algo nasceu em {p}:\n{texto}"));
+            if !fsync_de(&p, ultima + 1, apagou) {
+                erros.push(format!(
+                    "{p}: sem fsync da pasta entre a ultima entrada e o apagar"
+                ));
+            }
+        }
+        if !fsync_de(&txt(&d), apagou + 1, linhas.len()) {
+            erros.push(format!(
+                "{}: sem fsync da pasta depois de a origem sair",
+                txt(&d)
+            ));
+        }
+        assert!(erros.is_empty(), "{erros:#?}\n{texto}");
+        assert!(!antigo.exists() && reserva.join("sub/c.reg").is_file());
     }
 }

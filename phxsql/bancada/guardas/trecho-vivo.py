@@ -370,6 +370,10 @@ dia, nunca no desejado:
   **SUBIU para 493 em 30/09/2026** (pedido 545): uma guarda -- o DbLink que
   ia ao fio com a trava de dados global na mao
   (`dblink-no-fio-com-a-trava-de-dados`). Contado pelo `--catraca`: 492 + 1; no merge com o 576 (que tambem subiu de 492 para 493), 494.
+  **SUBIU para 504 em 30/09/2026** (pedidos 581 e 582): duas guardas -- a
+  porta lida pela metade no apoio dos testes (`porta-lida-pela-metade`) e a
+  copia de reserva do restaurar sem `fsync` (`copia-da-troca-sem-fsync`).
+  Contado pelo `--catraca`: 502 + 2.
   impedir. Ele e a unica coisa nesta regua que reprova o APAGAMENTO; tudo o
   mais aqui reprova o envelhecimento.
 
@@ -478,7 +482,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 506
+PISO_DAS_ENTRADAS = 508
 
 # ------------------------------------------------------------- APOSENTADAS
 #

@@ -64,13 +64,13 @@ fn subir(dir: &Path) -> Result<(Filho, u16), String> {
             .spawn()
             .expect("nao consegui iniciar o phxsqld"),
     );
-    const LINHA: &str = "porta de dados escutando em ";
     let ate = Instant::now() + Duration::from_secs(20);
     loop {
         let texto = std::fs::read_to_string(&erro_padrao).unwrap_or_default();
-        if let Some(resto) = texto.lines().find_map(|l| l.strip_prefix(LINHA)) {
-            let alvo: SocketAddr = resto.trim().parse().unwrap();
-            return Ok((filho, alvo.port()));
+        // Pedido 581: so a linha INTEIRA -- o `eprintln!` da porta sai em
+        // varias escritas, e o prefixo casava antes de o endereco chegar.
+        if let Some(porta) = comum::porta_no_texto(&texto) {
+            return porta.map(|p| (filho, p));
         }
         if let Some(st) = filho.0.try_wait().unwrap() {
             // Relido DEPOIS da saida: o texto de cima pode ser de antes do
