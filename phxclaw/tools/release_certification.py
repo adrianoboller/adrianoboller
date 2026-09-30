@@ -12,6 +12,15 @@ relatorio para reports/RELEASE_CERTIFICATION_v0.70.{json,md}.
 
 Uso: python3 tools/release_certification.py [--sem-caos]
 Ambiente: PGHOST/PGPORT (padrao /tmp:55432); PHXCLAW_E2E_OLLAMA_URL para o provider.
+
+Receita completa (sem ela, portoes que passam aparecem BLOCKED ou FAILED -- medido em 30/09:
+a rodada sem as WHISPER_* caiu de 8/13 para 7/13 sem nenhuma mudanca de codigo):
+  PHXCLAW_E2E_OLLAMA_URL=http://127.0.0.1:11434/api/ PHXCLAW_E2E_OLLAMA_MODEL=smollm2:135m
+  PHXCLAW_E2E_OLLAMA_EMBED_MODEL=all-minilm
+  PHXCLAW_E2E_WHISPER_BIN=/var/tmp/whisper.cpp/build/bin/whisper-cli
+  PHXCLAW_E2E_WHISPER_MODEL=/var/tmp/ggml-tiny.en.bin
+  PHXCLAW_E2E_WHISPER_MODEL_SHA256=<o X-Linked-ETag do arquivo no Hugging Face, nao o sha256sum local>
+  PHXCLAW_E2E_WHISPER_AUDIO=/var/tmp/whisper.cpp/samples/jfk.wav
 """
 from __future__ import annotations
 
