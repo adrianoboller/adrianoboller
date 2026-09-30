@@ -120,6 +120,34 @@ const DEGRAU_DO_ENVELOPE: usize = 128;
 /// legitima de nenhum dos dois passa dele.
 pub const TETO_DE_COLUNAS: u64 = 4096;
 
+/// O prazo TOTAL de uma operacao do DbLink, em multiplos do `timeout_s` --
+/// pedido 578.
+///
+/// Decisao (papel J, regua do CLAUDE.md): a FORMA converge nos tres maduros
+/// -- um total por instrucao separado do prazo de silencio por pacote
+/// (`statement_timeout` no PG, `max_statement_time` no MariaDB,
+/// `max_execution_time` no MySQL, ao lado de `net_read_timeout` 30 s /
+/// `net_write_timeout` 60 s) --, e entra sem pergunta. O PADRAO dos tres e 0
+/// (sem total), e aqui ele DIVERGE, pela restricao nossa: la quem opera
+/// derruba a sessao presa (`pg_cancel_backend`, `KILL QUERY`); aqui a thread
+/// presa e a de um job ou de uma conexao, e nao ha comando que a solte.
+///
+/// Sessenta silencios seguidos e generoso de proposito (10 s de fabrica =
+/// 10 min por operacao): a guarda entra sem quebrar sincronizacao legitima
+/// de tabela grande, e o dono da ligacao ajusta pelo MESMO campo, o
+/// `timeout_s` -- um segundo numero ao lado dele seria mais um para ninguem
+/// ajustar, a escolha do `email.rs` no 463. Escolhido, nao medido.
+pub const MULTIPLO_DO_PRAZO_TOTAL: u32 = 60;
+
+/// Como o total do DbLink se apresenta quando acaba.
+static ROTULO_DO_PRAZO: crate::prazo::Rotulo = crate::prazo::Rotulo {
+    quem: "dblink: a operacao com o outro banco",
+    // Sem o multiplo escrito: o total em segundos ja sai na mensagem, e o
+    // numero repetido aqui envelheceria calado no dia em que a constante mudar.
+    regra: "o timeout_s da ligacao vezes o multiplo do pedido 578; suba o \
+            timeout_s se o outro lado e legitimamente lento",
+};
+
 /// Qual banco esta do outro lado.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Motor {
@@ -664,6 +692,18 @@ impl Definicao {
             .unwrap_or_else(|e| panic!("token de ligacao trancada: {e}"))
     }
 
+    /// O prazo de cada operacao desta ligacao: o silencio e o `timeout_s`,
+    /// o total e ele vezes [`MULTIPLO_DO_PRAZO_TOTAL`]. Um lugar so para os
+    /// tres clientes -- o cliente que calculasse o seu seria o que diverge.
+    pub fn prazo(&self) -> crate::prazo::Prazo {
+        let silencio = Duration::from_secs(self.timeout_s);
+        crate::prazo::Prazo::com_total(
+            silencio,
+            silencio.saturating_mul(MULTIPLO_DO_PRAZO_TOTAL),
+            &ROTULO_DO_PRAZO,
+        )
+    }
+
     /// A cifra que VALE para esta ligacao -- e o unico lugar que responde.
     ///
     /// Um metodo so, e nao um campo lido direto, porque a resposta depende do
@@ -923,7 +963,7 @@ impl Definicao {
                 &self.usuario,
                 self.senha()?,
                 &self.database,
-                Duration::from_secs(self.timeout_s),
+                self.prazo(),
             ),
             Motor::Postgres => Err(PhxError::Esquema(
                 "esta ligacao e PostgreSQL(R): use `conectar_pg`, ou `abrir`, \
@@ -947,7 +987,7 @@ impl Definicao {
                 &self.usuario,
                 self.senha()?,
                 &self.database,
-                Duration::from_secs(self.timeout_s),
+                self.prazo(),
             ),
             Motor::MySql => Err(PhxError::Esquema(
                 "esta ligacao e MySQL(R); use `conectar`".into(),

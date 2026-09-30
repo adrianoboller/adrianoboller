@@ -42,15 +42,16 @@
 //! mais, por exemplo. Toda linha que entra na mensagem passa por
 //! [`uma_linha_so`].
 
-use std::io::{self, BufRead, BufReader, Read, Write};
+use std::io::{self, BufRead, BufReader, Write};
 use std::net::TcpStream;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use phxsql_core::base64;
 use phxsql_core::error::{PhxError, Result};
 use phxsql_core::fio::{Canal, Recebido, TETO_DO_APERTO};
 
 use crate::config::Email;
+use crate::prazo::{self, ComPrazo, Prazo, Rotulo};
 
 /// Teto de linhas de CONTINUACAO (`250-...`) que uma resposta aceita --
 /// pedido 463.
@@ -122,16 +123,13 @@ fn enviar_com(cfg: &Email, assunto: &str, corpo: &str, silencio: Duration) -> Re
     let fluxo = conectar(&alvo, silencio)?;
     // O relogio da conversa comeca depois do `connect`, que ja tem prazo
     // proprio por endereco.
-    let prazo = Prazo::novo(silencio, passos_da_conversa(cfg));
-    let duplicado = fluxo
-        .try_clone()
-        .map_err(|e| PhxError::Esquema(format!("smtp: nao consegui duplicar: {e}")))?;
+    let total = silencio.saturating_mul(passos_da_conversa(cfg));
+    let (leitura, escrita) =
+        ComPrazo::armar(fluxo, Prazo::com_total(silencio, total, &ROTULO_SMTP))
+            .map_err(|e| PhxError::Esquema(format!("smtp: nao consegui armar: {e}")))?;
     let mut sessao = Sessao {
-        leitor: BufReader::new(ComPrazo {
-            fluxo: duplicado,
-            prazo,
-        }),
-        escrita: ComPrazo { fluxo, prazo },
+        leitor: BufReader::new(leitura),
+        escrita,
     };
 
     sessao.esperar(&[220])?;
@@ -189,114 +187,16 @@ fn conectar(alvo: &str, espera: Duration) -> Result<TcpStream> {
     )))
 }
 
-/// Os dois prazos da conversa: o de SILENCIO, por leitura e por escrita, e o
-/// TOTAL -- pedido 463. Ver [`enviar_com`].
-#[derive(Clone, Copy)]
-struct Prazo {
-    silencio: Duration,
-    total: Duration,
-    /// `None` so quando o `timeout_s` e tao grande que o instante nao se
-    /// representa: ai o silencio e o unico prazo, como antes.
-    ate: Option<Instant>,
-}
+/// Como o prazo total do SMTP se apresenta quando acaba.
+static ROTULO_SMTP: Rotulo = Rotulo {
+    quem: "smtp: a conversa com o rele",
+    regra: "o timeout_s vezes as idas e voltas da conversa (pedido 463)",
+};
 
-impl Prazo {
-    fn novo(silencio: Duration, passos: u32) -> Prazo {
-        let total = silencio.saturating_mul(passos);
-        Prazo {
-            silencio,
-            total,
-            ate: Instant::now().checked_add(total),
-        }
-    }
-
-    /// Quanto ESTA leitura ou escrita pode esperar: o silencio, ou o que
-    /// sobra da conversa, o que for menor. E por syscall, e nao por linha: uma
-    /// linha pingada byte a byte tambem para no total.
-    fn espera(&self) -> io::Result<Duration> {
-        let Some(ate) = self.ate else {
-            return Ok(self.silencio);
-        };
-        let resta = ate.saturating_duration_since(Instant::now());
-        if resta.is_zero() {
-            return Err(self.esgotado());
-        }
-        Ok(resta.min(self.silencio))
-    }
-
-    /// O erro do soquete, trocado pelo do prazo total quando foi ELE que
-    /// acabou -- e nao o silencio de sempre, que continua dizendo o que diz.
-    fn explicar(&self, e: io::Error) -> io::Error {
-        let esgotou = self.ate.is_some_and(|ate| Instant::now() >= ate);
-        if esgotou
-            && matches!(
-                e.kind(),
-                io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
-            )
-        {
-            self.esgotado()
-        } else {
-            e
-        }
-    }
-
-    fn esgotado(&self) -> io::Error {
-        io::Error::new(io::ErrorKind::TimedOut, PrazoEsgotado(self.total))
-    }
-}
-
-/// O prazo total da conversa acabou. Tipo proprio, e nao texto, para o erro
-/// do SMTP o reconhecer sem comparar frase.
-#[derive(Debug)]
-struct PrazoEsgotado(Duration);
-
-impl std::fmt::Display for PrazoEsgotado {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "smtp: a conversa com o rele passou do prazo total de {:.1} s -- o \
-             timeout_s vezes as idas e voltas da conversa (pedido 463)",
-            self.0.as_secs_f64()
-        )
-    }
-}
-
-impl std::error::Error for PrazoEsgotado {}
-
-/// O erro de E/S do SMTP: o do prazo total vira `LimiteExcedido`, que e o que
-/// ele e; o resto continua como era.
+/// O erro de E/S do SMTP: o do prazo total vira `LimiteExcedido` (pelo motor
+/// comum, `crate::prazo`); o resto continua como era.
 fn erro_de_io(o_que: &str, e: io::Error) -> PhxError {
-    match e.get_ref().and_then(|x| x.downcast_ref::<PrazoEsgotado>()) {
-        Some(p) => PhxError::LimiteExcedido(p.to_string()),
-        None => PhxError::Esquema(format!("smtp: {o_que}: {e}")),
-    }
-}
-
-/// O soquete com o [`Prazo`] por cima: cada `read` e cada `write` armam o
-/// tempo que ainda cabe antes de ir ao nucleo.
-struct ComPrazo {
-    fluxo: TcpStream,
-    prazo: Prazo,
-}
-
-impl Read for ComPrazo {
-    fn read(&mut self, b: &mut [u8]) -> io::Result<usize> {
-        let espera = self.prazo.espera()?;
-        self.fluxo.set_read_timeout(Some(espera))?;
-        self.fluxo.read(b).map_err(|e| self.prazo.explicar(e))
-    }
-}
-
-impl Write for ComPrazo {
-    fn write(&mut self, b: &[u8]) -> io::Result<usize> {
-        let espera = self.prazo.espera()?;
-        self.fluxo.set_write_timeout(Some(espera))?;
-        self.fluxo.write(b).map_err(|e| self.prazo.explicar(e))
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        self.fluxo.flush()
-    }
+    prazo::classificar(e, |e| PhxError::Esquema(format!("smtp: {o_que}: {e}")))
 }
 
 struct Sessao {
@@ -574,6 +474,7 @@ pub(crate) fn nome_da_maquina() -> String {
 mod testes {
     use super::*;
     use phxsql_core::json::Json;
+    use std::time::Instant;
 
     fn cfg() -> Email {
         let j = Json::analisar(

@@ -43,6 +43,8 @@ use std::net::TcpStream;
 use std::time::Duration;
 
 use phxsql_core::error::{PhxError, Result};
+
+use crate::prazo::{self, ComPrazo, Prazo};
 use phxsql_core::fio::TETO_DO_REGISTRO;
 use phxsql_core::hash::sha256;
 use phxsql_core::sha1::sha1;
@@ -99,8 +101,8 @@ pub struct Resultado {
 }
 
 pub struct Conexao {
-    fluxo: BufReader<TcpStream>,
-    escrita: TcpStream,
+    fluxo: BufReader<ComPrazo>,
+    escrita: ComPrazo,
     sequencia: u8,
     /// Versao anunciada no aperto de mao, para o teste de ligacao mostrar.
     pub versao: String,
@@ -115,19 +117,17 @@ impl Conexao {
         usuario: &str,
         senha: &str,
         database: &str,
-        espera: Duration,
+        prazo: Prazo,
     ) -> Result<Conexao> {
-        let soquete = conectar(host, porta, espera)?;
-        soquete
-            .set_read_timeout(Some(espera))
-            .and_then(|_| soquete.set_write_timeout(Some(espera)))
-            .and_then(|_| soquete.set_nodelay(true))
+        let soquete = conectar(host, porta, prazo.silencio())?;
+        // O relogio do total comeca DEPOIS do `connect`, que tem prazo
+        // proprio por endereco: o aperto de mao e a primeira operacao.
+        let (leitura, escrita) = soquete
+            .set_nodelay(true)
+            .and_then(|_| ComPrazo::armar(soquete, prazo.rearmado()))
             .map_err(|e| erro(format!("nao consegui armar a conexao: {e}")))?;
-        let escrita = soquete
-            .try_clone()
-            .map_err(|e| erro(format!("nao consegui duplicar o soquete: {e}")))?;
         let mut c = Conexao {
-            fluxo: BufReader::new(soquete),
+            fluxo: BufReader::new(leitura),
             escrita,
             sequencia: 0,
             versao: String::new(),
@@ -269,6 +269,7 @@ impl Conexao {
     /// de proposito: nem toda instrucao aceita `LIMIT`, e o teto tem de valer
     /// para todas.
     pub fn consultar(&mut self, sql: &str, teto: u64) -> Result<Resultado> {
+        self.rearmar();
         self.sequencia = 0;
         let mut p = Vec::with_capacity(sql.len() + 1);
         p.push(COM_QUERY);
@@ -348,6 +349,7 @@ impl Conexao {
 
     /// Um `ping`: barato, e serve para o botao "testar ligacao".
     pub fn ping(&mut self) -> Result<()> {
+        self.rearmar();
         self.sequencia = 0;
         self.escrever_quadro(&[COM_PING])?;
         let r = self.ler_quadro()?;
@@ -359,8 +361,17 @@ impl Conexao {
     }
 
     pub fn encerrar(&mut self) {
+        self.rearmar();
         self.sequencia = 0;
         let _ = self.escrever_quadro(&[COM_QUIT]);
+    }
+
+    /// Cada operacao publica tem o prazo total inteiro -- pedido 578. O
+    /// total e por OPERACAO, e nao pela vida da conexao: a sincronia usa a
+    /// mesma conexao para dezenas de instrucoes, e o relogio de uma nao pode
+    /// cortar a seguinte.
+    fn rearmar(&mut self) {
+        prazo::rearmar(self.fluxo.get_mut(), &mut self.escrita);
     }
 
     // ------------------------------------------------------------- quadros
@@ -378,7 +389,7 @@ impl Conexao {
             .write_all(&cabeca)
             .and_then(|_| self.escrita.write_all(carga))
             .and_then(|_| self.escrita.flush())
-            .map_err(|e| erro(format!("escrita falhou: {e}")))
+            .map_err(|e| prazo::classificar(e, |e| erro(format!("escrita falhou: {e}"))))
     }
 
     /// Le um quadro, juntando as continuacoes de 16 MB, sem passar de
@@ -408,7 +419,7 @@ impl Conexao {
             let mut cabeca = [0u8; 4];
             self.fluxo
                 .read_exact(&mut cabeca)
-                .map_err(|e| erro(format!("leitura falhou: {e}")))?;
+                .map_err(|e| prazo::classificar(e, |e| erro(format!("leitura falhou: {e}"))))?;
             let n = u32::from_le_bytes([cabeca[0], cabeca[1], cabeca[2], 0]) as usize;
             self.sequencia = cabeca[3].wrapping_add(1);
             let inicio = carga.len();
@@ -420,9 +431,11 @@ impl Conexao {
                 )));
             }
             carga.resize(inicio + n, 0);
-            self.fluxo
-                .read_exact(&mut carga[inicio..])
-                .map_err(|e| erro(format!("leitura falhou no meio do quadro: {e}")))?;
+            self.fluxo.read_exact(&mut carga[inicio..]).map_err(|e| {
+                prazo::classificar(e, |e| {
+                    erro(format!("leitura falhou no meio do quadro: {e}"))
+                })
+            })?;
             // Um quadro cheio quer dizer "tem mais": o proximo continua a mesma
             // carga. Parar aqui cortaria resultado grande pela metade.
             if n < 0x00FF_FFFF {
@@ -802,9 +815,10 @@ mod testes {
     /// teto. O que depende do sistema operacional se prova contra o sistema
     /// operacional, e nao por teste unitario.
     fn conexao_crua(fluxo: TcpStream) -> Conexao {
-        let escrita = fluxo.try_clone().unwrap();
+        let (leitura, escrita) =
+            ComPrazo::armar(fluxo, Prazo::so_silencio(Duration::from_secs(5))).unwrap();
         Conexao {
-            fluxo: BufReader::new(fluxo),
+            fluxo: BufReader::new(leitura),
             escrita,
             sequencia: 0,
             versao: String::new(),
@@ -1026,7 +1040,14 @@ mod testes {
     }
 
     fn abrir_em(porta: u16) -> Result<Conexao> {
-        Conexao::abrir("127.0.0.1", porta, "u", "s", "", Duration::from_secs(5))
+        Conexao::abrir(
+            "127.0.0.1",
+            porta,
+            "u",
+            "s",
+            "",
+            Prazo::so_silencio(Duration::from_secs(5)),
+        )
     }
 
     /// **544, o irmao no aperto de mao: a troca de plugin sem o NUL.**

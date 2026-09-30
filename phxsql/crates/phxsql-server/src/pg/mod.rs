@@ -59,6 +59,7 @@ use std::time::Duration;
 use phxsql_core::error::{PhxError, Result};
 
 use crate::dblink::TETO_DE_COLUNAS;
+use crate::prazo::{self, ComPrazo, Prazo};
 
 /// Versao 3.0 do protocolo, a mesma desde o PostgreSQL(R) 7.4.
 const PROTOCOLO_3: i32 = 196_608;
@@ -92,8 +93,8 @@ pub struct Resultado {
 }
 
 pub struct Conexao {
-    fluxo: BufReader<TcpStream>,
-    escrita: TcpStream,
+    fluxo: BufReader<ComPrazo>,
+    escrita: ComPrazo,
     /// `server_version` anunciado no `ParameterStatus`, para o teste mostrar.
     pub versao: String,
     /// PID do processo do servidor que atende esta conexao.
@@ -114,20 +115,18 @@ impl Conexao {
         usuario: &str,
         senha: &str,
         database: &str,
-        espera: Duration,
+        prazo: Prazo,
     ) -> Result<Conexao> {
-        let soquete = conectar(host, porta, espera)?;
-        soquete
-            .set_read_timeout(Some(espera))
-            .and_then(|_| soquete.set_write_timeout(Some(espera)))
-            .and_then(|_| soquete.set_nodelay(true))
+        let soquete = conectar(host, porta, prazo.silencio())?;
+        // O relogio do total comeca DEPOIS do `connect`, que tem prazo
+        // proprio por endereco: o aperto de mao e a primeira operacao.
+        let (leitura, escrita) = soquete
+            .set_nodelay(true)
+            .and_then(|_| ComPrazo::armar(soquete, prazo.rearmado()))
             .map_err(|e| erro(format!("nao consegui armar a conexao: {e}")))?;
-        let escrita = soquete
-            .try_clone()
-            .map_err(|e| erro(format!("nao consegui duplicar o soquete: {e}")))?;
 
         let mut c = Conexao {
-            fluxo: BufReader::new(soquete),
+            fluxo: BufReader::new(leitura),
             escrita,
             versao: String::new(),
             conexao_id: 0,
@@ -287,6 +286,7 @@ impl Conexao {
     /// parar de LER deixaria a conexao fora de sincronia. Le-se ate o fim e
     /// guarda-se ate o teto -- e `truncado` diz que houve corte.
     pub fn consultar(&mut self, sql: &str, teto: u64) -> Result<Resultado> {
+        self.rearmar();
         let mut p = Vec::with_capacity(sql.len() + 1);
         cadeia_nula(&mut p, sql);
         self.escrever(b'Q', &p)?;
@@ -327,7 +327,14 @@ impl Conexao {
     }
 
     pub fn encerrar(&mut self) {
+        self.rearmar();
         let _ = self.escrever(b'X', &[]);
+    }
+
+    /// Cada operacao publica tem o prazo total inteiro -- pedido 578. O
+    /// `ping` passa pelo `consultar`, e por isso nao rearma de novo.
+    fn rearmar(&mut self) {
+        prazo::rearmar(self.fluxo.get_mut(), &mut self.escrita);
     }
 
     // ------------------------------------------------------------ mensagens
@@ -340,7 +347,7 @@ impl Conexao {
         self.escrita
             .write_all(&m)
             .and_then(|_| self.escrita.flush())
-            .map_err(|e| erro(format!("nao consegui escrever: {e}")))
+            .map_err(|e| prazo::classificar(e, |e| erro(format!("nao consegui escrever: {e}"))))
     }
 
     /// So a de abertura: sem byte de tipo, e o tamanho ja contando a si mesmo.
@@ -351,14 +358,14 @@ impl Conexao {
         self.escrita
             .write_all(&m)
             .and_then(|_| self.escrita.flush())
-            .map_err(|e| erro(format!("nao consegui escrever: {e}")))
+            .map_err(|e| prazo::classificar(e, |e| erro(format!("nao consegui escrever: {e}"))))
     }
 
     fn ler_mensagem(&mut self) -> Result<Mensagem> {
         let mut cabecalho = [0u8; 5];
-        self.fluxo
-            .read_exact(&mut cabecalho)
-            .map_err(|e| erro(format!("conexao caiu esperando resposta: {e}")))?;
+        self.fluxo.read_exact(&mut cabecalho).map_err(|e| {
+            prazo::classificar(e, |e| erro(format!("conexao caiu esperando resposta: {e}")))
+        })?;
         let tamanho = i32::from_be_bytes([cabecalho[1], cabecalho[2], cabecalho[3], cabecalho[4]]);
         // O tamanho inclui os 4 bytes dele mesmo. Menor que 4 e mensagem
         // corrompida -- e sem esta conferencia viraria um `usize` gigante.
@@ -368,9 +375,11 @@ impl Conexao {
             )));
         }
         let mut corpo = vec![0u8; tamanho as usize - 4];
-        self.fluxo
-            .read_exact(&mut corpo)
-            .map_err(|e| erro(format!("conexao caiu no meio da mensagem: {e}")))?;
+        self.fluxo.read_exact(&mut corpo).map_err(|e| {
+            prazo::classificar(e, |e| {
+                erro(format!("conexao caiu no meio da mensagem: {e}"))
+            })
+        })?;
         Ok(Mensagem {
             tipo: cabecalho[0],
             corpo,
@@ -781,12 +790,10 @@ mod testes {
     /// se prova aqui e a leitura do resultado.
     fn conexao_com(porta: u16) -> Conexao {
         let fluxo = TcpStream::connect(("127.0.0.1", porta)).unwrap();
-        fluxo
-            .set_read_timeout(Some(Duration::from_secs(5)))
-            .unwrap();
-        let escrita = fluxo.try_clone().unwrap();
+        let (leitura, escrita) =
+            ComPrazo::armar(fluxo, Prazo::so_silencio(Duration::from_secs(5))).unwrap();
         Conexao {
-            fluxo: BufReader::new(fluxo),
+            fluxo: BufReader::new(leitura),
             escrita,
             versao: String::new(),
             conexao_id: 0,
