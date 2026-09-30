@@ -924,6 +924,19 @@ impl NdxFile {
         conferir_magic(&nome, MAGIC_NDX, &cab[0..8])?;
 
         let c = Campos(&cab);
+        // O CRC ANTES da versao: num cabecalho rasgado a versao tambem e lixo,
+        // e recusar por «versao nao suportada» mandaria atualizar o binario.
+        //
+        // E o cabecalho que nao confere nao trava mais a tabela (pedido 575):
+        // o `.ndx` e DERIVADO do `.reg`, e a pagina 0 e a que uma queda no
+        // meio da gravacao dela rasga -- nada a ordena depois das outras. Ele
+        // volta RASGADO: sem indice nenhum, pedindo reconstrucao, e sem
+        // gravar nada. A tabela abre, o indice recusa dizendo o remedio, e o
+        // `reindexar` -- o manual e o do arranque -- o refaz pelo `.reg`. E o
+        // que o `REINDEX` do PostgreSQL e do SQLite fazem com indice corrompido.
+        if crc32(&cab[..124]) != c.u32(124) {
+            return Ok(NdxFile::rasgado(arquivo, caminho));
+        }
         let versao = c.u16(8);
         if versao != VERSAO && versao != VERSAO_SELADA {
             return Err(PhxError::VersaoNaoSuportada {
@@ -931,11 +944,6 @@ impl NdxFile {
                 encontrada: versao,
                 suportada: VERSAO_SELADA,
             });
-        }
-        if crc32(&cab[..124]) != c.u32(124) {
-            return Err(PhxError::Corrompido(format!(
-                "cabecalho de {nome} com CRC invalido"
-            )));
         }
 
         let page_size = c.u32(12) as usize;
@@ -982,11 +990,9 @@ impl NdxFile {
         }
 
         let mut dir = vec![0u8; dir_len];
-        ler_exato(&mut arquivo, CAB_LEN as u64, &mut dir)?;
-        if crc32(&dir) != dir_crc {
-            return Err(PhxError::Corrompido(format!(
-                "diretorio de indices de {nome} com CRC invalido"
-            )));
+        if ler_exato(&mut arquivo, CAB_LEN as u64, &mut dir).is_err() || crc32(&dir) != dir_crc {
+            // O diretorio mora na mesma pagina 0: rasgado pelo mesmo motivo.
+            return Ok(NdxFile::rasgado(arquivo, caminho));
         }
 
         let mut indices = Vec::with_capacity(qtd_indices);
@@ -1044,6 +1050,34 @@ impl NdxFile {
             mudancas_na_arvore: 0,
             cascata_em_voo: false,
         })
+    }
+
+    /// O `.ndx` cuja pagina 0 nao confere (pedido 575): nenhum indice, nada a
+    /// gravar, e pedindo reconstrucao. `precisa_reconstruir` e o que o faz
+    /// recusar toda operacao de indice com o remedio escrito, e o que impede
+    /// o `fechar`, o `sincronizar` e o `Drop` de levarem qualquer coisa ao
+    /// arquivo -- quem o refaz e o `reindexar`, por `NdxFile::criar`.
+    fn rasgado(arquivo: File, caminho: PathBuf) -> NdxFile {
+        NdxFile {
+            arquivo,
+            caminho,
+            page_size: PAGINA_PADRAO,
+            material: cofre::Material::EM_CLARO,
+            qtd_paginas: 0,
+            pagina_livre: 0,
+            indices: Vec::new(),
+            cache: CachePaginas::nova(cache_paginas()),
+            gravacoes: 0,
+            estrutura_mudou: false,
+            sujo: true,
+            precisa_reconstruir: true,
+            mudou_desde_o_fecho: false,
+            crc_do_cabecalho: 0,
+            escritas_em_voo: 0,
+            escrita_interrompida: false,
+            mudancas_na_arvore: 0,
+            cascata_em_voo: false,
+        }
     }
 
     /// Bytes que a selagem cobra no fim de cada pagina: o tempero e a

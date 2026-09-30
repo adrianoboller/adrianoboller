@@ -1028,6 +1028,16 @@ faltando, e **toda operação recusa** com a mensagem que manda reconstruir. Um
 chaves desde a construção em lote. Um índice atrasado **em silêncio** não tem
 conserto, porque ninguém sabe que ele está errado.
 
+**E a página 0 que não confere conta como marcada** (pedido 575, 30/09/2026).
+Ela é o cabeçalho e o diretório de índices, e nada ordena a gravação dela depois
+das outras: uma queda no meio a rasga. Até o 575, o CRC do cabeçalho que não
+batia recusava **abrir a tabela**, e nem o arranque nem o `reindexar` a
+alcançavam, embora o `.ndx` seja derivado. Agora o `.ndx` volta *rasgado*: sem
+índice nenhum, recusando com o remédio escrito e sem gravar nada. O `reindexar`,
+o manual e o do arranque, o refaz pelo `.reg`. O CRC é conferido **antes** da
+versão, porque num cabeçalho rasgado a versão também é lixo. O *magic* errado
+continua recusando: ali o arquivo é de outra coisa. O formato não muda.
+
 E fechar não limpa a marca de um arquivo que já foi **aberto** sujo: nada foi
 reconstruído. Só o `reindexar`, que recria o arquivo, a tira — senão bastaria
 abrir e fechar para o defeito virar invisível.

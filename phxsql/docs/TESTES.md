@@ -974,9 +974,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `painel-com-copia-do-analisador-de-volume` | o painel soma os bytes do `.reg` por uma copia do nome do volume e mede zero em tabela de 4 digitos ou por letra | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**329 das 471 guardas do catálogo: 1 aposentada, 324 provadas, 4 redundantes** — 8970 s de mutação, medido em 2026-09-16 15:25.
+**329 das 472 guardas do catálogo: 1 aposentada, 324 provadas, 4 redundantes** — 8970 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 143 das 471 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 143 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 144 das 472 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 144 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
@@ -1054,6 +1054,7 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `excluir-sem-janela-do-texto` — o excluir de vez deixa a linha viva fora da busca num panico entre o texto e o slot
 - `cascata-embutida-sem-pre-conferencia` — a cascata do embutido grava a mae antes de conferir a FK da filha para OUTRA mae
 - `jobs-devolve-a-coluna-negada` — o `jobs` devolve o pedido salvo inteiro, com o valor da coluna negada que alguem digitou na definicao
+- `cabecalho-do-ndx-rasgado-trava-a-tabela` — o cabecalho do `.ndx` rasgado impede a tabela de abrir, e nem o arranque nem o `reindexar` o refazem
 - `arranque-reconstroi-calado` — o arranque reconstroi indice marcado e so diz no `stderr`: quem opera nao fica sabendo da queda
 - `reconstruir-fts-sem-janela` — o panico no meio do `reconstruir_fts` grava o indice de texto pela metade marcado limpo
 - `carimbo-da-a-volta-no-teto` — o rowstamp empurrado ao teto por evento replicado da a volta, e o filho nasce com carimbo menor que o pai

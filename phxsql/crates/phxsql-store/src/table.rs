@@ -1769,7 +1769,9 @@ impl Table {
         // e e assim que toda tabela gravada antes desta versao abre igual.
         let trilha = TrilhaFile::abrir(&diretorio, nome, externos)?;
 
-        if ndx.indices().len() != reg.esquema().indices().len() {
+        // O `.ndx` rasgado (575) nao tem indice nenhum para contar: ele ja
+        // recusa tudo pedindo o `reindexar`, que o refaz pelo esquema.
+        if !ndx.precisa_reconstruir() && ndx.indices().len() != reg.esquema().indices().len() {
             return Err(PhxError::Corrompido(format!(
                 "{nome}: .ndx tem {} indices, o esquema do .reg declara {}",
                 ndx.indices().len(),

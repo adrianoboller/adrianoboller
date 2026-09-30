@@ -270,10 +270,25 @@ def marcar(t):
     return t
 
 
+# O ESTADO de um pedido fora do COMECO da linha: `| ☑️ || ☑️ |` grudado no
+# titulo, ou no meio de outra linha. Foi o que um `re.sub` errado fez em
+# 30/09/2026: tres fechamentos (350, 255, 575) foram parar na LINHA 1, os
+# pedidos ficaram ☐, e este leitor -- que so olha linha que COMECA como
+# pedido -- contou 16,0% em vez de 15,6% e imprimiu exito. Numero que o
+# gerador deixa passar calado e numero errado com cara de certo.
+ESTADO_GRUDADO = re.compile(r".\| (?:" + "|".join(re.escape(e) for e in ("☑️", "◐", "☐", "⏸")) + r") \|\|")
+
+
 def ler():
     itens = []
     for numero_da_linha, l in enumerate(
             FONTE.read_text(encoding="utf-8").split("\n"), 1):
+        if ESTADO_GRUDADO.search(l) or (numero_da_linha == 1 and not l.startswith("# ")):
+            raise SystemExit(
+                f"PENDENCIAS.md:{numero_da_linha}: ha estado de pedido fora do "
+                "comeco da linha (ou o titulo nao e a linha 1) -- uma edicao "
+                "colou o fechamento de um pedido em outra linha, e o pedido "
+                "continua com o estado velho. Desfaca a colagem antes de contar.")
         m = LINHA.match(l)
         if not m:
             q = QUALQUER.match(l)

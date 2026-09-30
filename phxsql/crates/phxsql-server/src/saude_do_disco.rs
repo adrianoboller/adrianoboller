@@ -688,6 +688,20 @@ fn canario(caminho: &Path, agora_ms: i64, passada: u64) -> Result<(), (Tipo, Str
 
 #[cfg(test)]
 mod testes {
+
+    /// O ramo do pedido 255 que diz o que NAO se reconstruiu, nomeando a
+    /// tabela -- e o arranque de sempre, que nao diz nada.
+    #[test]
+    fn o_evento_do_arranque_nomeia_o_pendente_e_cala_sem_nada() {
+        assert!(evento_do_arranque(1, 0, &[]).is_none());
+        let pendente = vec!["loja/itens: o .reg nao abriu".to_string()];
+        let ev = evento_do_arranque(1, 2, &pendente).unwrap();
+        assert_eq!(ev.tipo, Tipo::Arranque);
+        assert!(ev.texto.starts_with("2 indice(s)"), "{}", ev.texto);
+        assert!(ev.texto.contains("1 NAO se reconstruiram"), "{}", ev.texto);
+        assert!(ev.texto.contains("loja/itens"), "{}", ev.texto);
+    }
+
     use super::*;
     use crate::apoio_teste::DirTemp;
 

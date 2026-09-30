@@ -56904,20 +56904,41 @@ mod testes_da_saude_do_disco {
         assert!(s.saude.ultimo_evento().is_none());
         drop(s);
 
-        // E o que NAO se reconstruiu tambem avisa, dizendo qual: o cabecalho
-        // do `.ndx` rasgado -- byte mexido sem o CRC acompanhar.
+        // **Pedido 575:** o cabecalho do `.ndx` RASGADO -- byte mexido sem o
+        // CRC acompanhar, o que uma queda no meio da pagina 0 deixa. Antes a
+        // tabela nem abria, e o arranque a deixava pendente («cabecalho com
+        // CRC invalido», medido); agora ela abre, o arranque a reconstroi pelo
+        // `.reg`, avisa, e o indice acha as duas linhas.
         let ndx = dir.join("loja").join("itens.ndx");
         let mut b = std::fs::read(&ndx).unwrap();
         b[52] ^= 1;
         std::fs::write(&ndx, b).unwrap();
+        phxsql_store::ndx::esquecer_atestados_para_teste(&dir);
         let s = Servidor::novo(config_base(&dir)).unwrap();
         let eventos = s.saude.esperar(std::time::Duration::ZERO);
         let ev = eventos
             .iter()
             .find(|e| e.tipo == crate::saude_do_disco::Tipo::Arranque)
-            .unwrap_or_else(|| panic!("o pendente nao avisou: {eventos:?}"));
-        assert!(ev.texto.contains("NAO se reconstruiram"), "{}", ev.texto);
-        assert!(ev.texto.contains("loja/itens"), "{}", ev.texto);
+            .unwrap_or_else(|| panic!("o cabecalho rasgado nao avisou: {eventos:?}"));
+        assert!(
+            ev.texto.starts_with("1 indice(s)") && !ev.texto.contains("NAO se"),
+            "o cabecalho rasgado ficou pendente: {}",
+            ev.texto
+        );
+        drop(s);
+        let inst = phxsql_store::catalogo::Instancia::nova(&*dir).unwrap();
+        let mut t = inst
+            .abrir_database("loja")
+            .unwrap()
+            .abrir_qualificada("itens")
+            .unwrap();
+        for id in [1, 2] {
+            assert_eq!(
+                t.buscar("porId", &[Value::Int(id)]).unwrap().len(),
+                1,
+                "id {id}"
+            );
+        }
     }
 
     /// Liga o rele falso e, se pedido, o SMS pelo gateway.

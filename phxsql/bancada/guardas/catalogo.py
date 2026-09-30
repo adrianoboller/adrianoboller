@@ -14777,6 +14777,31 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         ],
     },
     {
+        "id": "cabecalho-do-ndx-rasgado-trava-a-tabela",
+        "titulo": "o cabecalho do `.ndx` rasgado impede a tabela de abrir, e nem o arranque nem o `reindexar` o refazem",
+        "porque": (
+            "pedido 575, achado pela prova do 255: com um byte da pagina 0 sem "
+            "o CRC acompanhar, `Table::abrir` recusava e o arranque deixava a "
+            "tabela pendente -- medido: «cabecalho ... com CRC invalido»."
+        ),
+        "arquivo": "crates/phxsql-store/src/ndx.rs",
+        "trecho": """        if crc32(&cab[..124]) != c.u32(124) {
+            return Ok(NdxFile::rasgado(arquivo, caminho));
+        }
+""",
+        "troca": """        if crc32(&cab[..124]) != c.u32(124) {
+            let _ = NdxFile::rasgado;
+            return Err(PhxError::Corrompido(format!("cabecalho de {nome} com CRC invalido")));
+        }
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_da_saude_do_disco::o_arranque_que_reconstroi_indice_avisa_pelo_carteiro",
+        ],
+        "seguem": [],
+    },
+    {
         "id": "arranque-reconstroi-calado",
         "titulo": "o arranque reconstroi indice marcado e so diz no `stderr`: quem opera nao fica sabendo da queda",
         "porque": (
