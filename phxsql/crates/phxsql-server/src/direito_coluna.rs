@@ -56,6 +56,10 @@ pub enum PorColuna {
     /// Devolve (ou grava) dado de linha por um caminho que a peneira NAO
     /// conhece. Recusa para quem tem regra de coluna na tabela.
     Recusa,
+    /// Devolve PEDIDOS SALVOS -- a definicao de um job (pedido 350). O valor
+    /// da coluna negada que alguem digitou na definicao sai redigido: vira o
+    /// tamanho, como o Profiler faz. Ver [`tapar_pedidos_salvos`].
+    PedidoSalvo,
 }
 
 /// A classe de cada operacao do protocolo, incluindo os apelidos que o
@@ -299,8 +303,8 @@ pub const CLASSES: &[(&str, PorColuna)] = &[
     // recusar aqui tiraria a recuperacao de desastre de quem tem uma regra de
     // coluna em qualquer tabela do servidor.
     ("restaurar_backup", PorColuna::Nenhum),
-    ("jobs", PorColuna::Nenhum),
-    ("job_listar", PorColuna::Nenhum),
+    ("jobs", PorColuna::PedidoSalvo),
+    ("job_listar", PorColuna::PedidoSalvo),
     ("job_salvar", PorColuna::Nenhum),
     ("job_ligar", PorColuna::Nenhum),
     ("job_excluir", PorColuna::Nenhum),
@@ -636,6 +640,96 @@ pub fn peneirar(resposta: Json, onde: Onde, negadas: &[String]) -> Json {
             ),
             outra => outra,
         },
+    }
+}
+
+/// **Pedido 350, decisao do dono de 30/09/2026: redigir analisando.** Todo
+/// objeto com o campo `pedido` (a definicao de um job), em qualquer
+/// profundidade da resposta, passa pela [`tapar_no_pedido`] com as colunas
+/// que `negadas(database, tabela)` diz que este usuario nao le.
+///
+/// O pedido que nao diz a tabela que alcanca -- o `sql`, por exemplo -- nao
+/// se analisa, e o que nao se analisa nao vira texto: o pedido inteiro sai
+/// como `{op, redigido}`, com o tamanho. E a lei da casa para quem mostra
+/// texto cru (CLAUDE.md, o corolario do Profiler).
+pub fn tapar_pedidos_salvos(resposta: Json, negadas: &dyn Fn(&str, &str) -> Vec<String>) -> Json {
+    match resposta {
+        Json::Objeto(pares) => Json::Objeto(
+            pares
+                .into_iter()
+                .map(|(k, v)| {
+                    if k == "pedido" && matches!(v, Json::Objeto(_)) {
+                        let tapado = tapar_um_pedido(v, negadas);
+                        (k, tapado)
+                    } else {
+                        (k, tapar_pedidos_salvos(v, negadas))
+                    }
+                })
+                .collect(),
+        ),
+        Json::Lista(itens) => Json::Lista(
+            itens
+                .into_iter()
+                .map(|v| tapar_pedidos_salvos(v, negadas))
+                .collect(),
+        ),
+        outro => outro,
+    }
+}
+
+fn tapar_um_pedido(pedido: Json, negadas: &dyn Fn(&str, &str) -> Vec<String>) -> Json {
+    let op = pedido.texto_ou("op", "").trim().to_string();
+    let base = pedido.texto_ou("database", "").to_string();
+    let alvos = tabelas_do_pedido(&op, &pedido);
+    if alvos.is_empty() {
+        let tamanho = pedido.escrever().len();
+        return Json::objeto(vec![
+            ("op", Json::texto_de(op)),
+            (
+                "redigido",
+                Json::texto_de(format!("<pedido, {tamanho} bytes>")),
+            ),
+        ]);
+    }
+    let mut todas: Vec<String> = Vec::new();
+    for t in &alvos {
+        for n in negadas(&base, t) {
+            if !todas.iter().any(|x| mesmo_nome(x, &n)) {
+                todas.push(n);
+            }
+        }
+    }
+    tapar_no_pedido(pedido, &todas)
+}
+
+/// Troca pelo TAMANHO o valor de todo campo cujo nome e uma coluna negada,
+/// em qualquer profundidade: `linha`, `valores`, `linhas`, `onde` -- a arvore
+/// e percorrida inteira, em vez de adivinhar onde a coluna mora.
+pub fn tapar_no_pedido(pedido: Json, negadas: &[String]) -> Json {
+    if negadas.is_empty() {
+        return pedido;
+    }
+    match pedido {
+        Json::Objeto(pares) => Json::Objeto(
+            pares
+                .into_iter()
+                .map(|(k, v)| {
+                    if negadas.iter().any(|n| mesmo_nome(n, &k)) {
+                        let tamanho = v.escrever().len();
+                        (k, Json::texto_de(format!("<redigido, {tamanho} bytes>")))
+                    } else {
+                        (k, tapar_no_pedido(v, negadas))
+                    }
+                })
+                .collect(),
+        ),
+        Json::Lista(itens) => Json::Lista(
+            itens
+                .into_iter()
+                .map(|v| tapar_no_pedido(v, negadas))
+                .collect(),
+        ),
+        outro => outro,
     }
 }
 

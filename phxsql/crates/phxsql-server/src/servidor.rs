@@ -7823,6 +7823,13 @@ impl Servidor {
         match dc::classe(op) {
             PorColuna::Nenhum => self.executar(op, pedido, sessao),
 
+            // A definicao de um job e dado que alguem digitou (pedido 350): o
+            // valor da coluna negada sai redigido, analisando o pedido.
+            PorColuna::PedidoSalvo => Ok(dc::tapar_pedidos_salvos(
+                self.executar(op, pedido, sessao)?,
+                &|db, t| u.colunas_negadas(db, t, Atividade::Ler),
+            )),
+
             // Devolve (ou grava) dado de linha por um caminho que a peneira
             // nao sabe percorrer. Recusar e mais seguro que vazar.
             PorColuna::Recusa => {
@@ -34945,6 +34952,53 @@ mod testes_direito_por_coluna {
         )
         .unwrap();
         assert_eq!(c.texto_ou("nome", ""), "x");
+    }
+
+    /// **Pedido 350:** o `jobs` devolvia o pedido salvo inteiro, e o valor
+    /// de uma coluna negada digitado na definicao do job saia para quem nao
+    /// le essa coluna. Decisao do dono (30/09/2026): redigir analisando. O
+    /// `salario` vira o tamanho, o resto do pedido fica, e o job `sql` -- que
+    /// nao diz a tabela que alcanca -- sai inteiro como tamanho.
+    ///
+    /// # Prova real
+    ///
+    /// Com `jobs` de volta a classe `Nenhum`, o `5000` sai na resposta -- o
+    /// vermelho medido.
+    #[test]
+    fn o_jobs_redige_a_coluna_negada_na_definicao_do_job() {
+        let dir = dir_temp("350-jobs");
+        let (s, ses) = servidor(&dir, so_a_folha_tem_regra());
+        {
+            let mut r = s.jobs.tomar("jobs").unwrap();
+            for item in [
+                r#"{"nome":"reajuste","pedido":{"op":"atualizar","database":"b",
+                    "tabela":"folha","rowid":1,"valores":{"id":1,"nome":"ana","salario":5000}}}"#,
+                r#"{"nome":"consulta","pedido":{"op":"sql","database":"b",
+                    "texto":"SELECT salario FROM folha WHERE salario = 5000"}}"#,
+            ] {
+                r.salvar(crate::jobs::Job::de_json(&Json::analisar(item).unwrap()).unwrap())
+                    .unwrap();
+            }
+        }
+        // O apelido chega ao portao como o nome chega: os dois, ou o que
+        // ficar de fora vira a porta dos fundos.
+        for op in ["jobs", "job_listar"] {
+            let r = pede(&s, &ses, &format!(r#""op":"{op}""#)).unwrap();
+            let texto = r.escrever();
+            assert!(
+                !texto.contains("5000"),
+                "{op} vazou a coluna negada: {texto}"
+            );
+            assert!(texto.contains("<redigido,"), "{op}: {texto}");
+            assert!(
+                texto.contains("\"nome\":\"ana\""),
+                "{op} levou o resto junto: {texto}"
+            );
+            assert!(
+                texto.contains("<pedido,"),
+                "{op}: o sql nao virou tamanho: {texto}"
+            );
+        }
     }
 
     /// **A pergunta tambem responde.** A peneira tira o valor DEPOIS de o

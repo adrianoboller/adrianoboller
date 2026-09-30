@@ -1,0 +1,34 @@
+{
+  "jobs": [
+    {
+      "nome": "reajuste",
+      "descricao": "",
+      "ligado": false,
+      "usuario": "",
+      "cada_minutos": 60,
+      "pedido": {
+        "op": "atualizar",
+        "database": "b",
+        "tabela": "folha",
+        "rowid": 1,
+        "valores": {
+          "id": 1,
+          "nome": "ana",
+          "salario": 5000
+        }
+      }
+    },
+    {
+      "nome": "consulta",
+      "descricao": "",
+      "ligado": false,
+      "usuario": "",
+      "cada_minutos": 60,
+      "pedido": {
+        "op": "sql",
+        "database": "b",
+        "texto": "SELECT salario FROM folha WHERE salario = 5000"
+      }
+    }
+  ]
+}

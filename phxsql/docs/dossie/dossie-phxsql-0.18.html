@@ -151,6 +151,10 @@ code,kbd,.mono,.dado{font-family:"IBM Plex Mono",ui-monospace,"SFMono-Regular",M
 /* ------------------------------------------------------------ cabecalho */
 header.capa{padding:48px 0 8px;border-bottom:1px solid var(--linha)}
 @media (min-width:1060px){header.capa{padding:64px 0 8px}}
+.selo-aviso{font-size:.82rem;opacity:.75;margin:6px 0 22px;max-width:60ch}
+/* O commit e DADO: o uppercase do selo o mostrava como 5825FE21, e o hash e
+   minusculo -- a mesma mentira do BLUMENAU. Rotulo se estiliza; dado, nunca. */
+.selo code{text-transform:none}
 .selo{
   display:inline-flex;align-items:center;gap:9px;
   font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.14em;
@@ -405,7 +409,8 @@ footer p{max-width:var(--medida)}
 
 <header class="capa">
   <!-- selo:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-  <div class="selo">Dossiê técnico · versão 0.19.0 · retrato de 30/09/2026</div>
+  <div class="selo">Dossiê técnico · versão 0.19.0 · retrato de 30/09/2026 14:31 UTC · commit <code>5825fe21</code></div>
+  <p class="selo-aviso">Se este retrato for mais velho que a última rodada de trabalho, o link que você abriu mostra uma versão fixada: peça o link novo, ou abra a página pelo dono.</p>
   <!-- selo:fim -->
   <h1>Ph<span class="x">x</span>Sql <span class="leve">— sete arquivos,<br>uma tabela</span></h1>
   <div class="assinatura">Built to store. Engineered to scale.</div>
@@ -441,12 +446,12 @@ footer p{max-width:var(--medida)}
 
   <div class="painel">
   <!-- projeto:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-    <div><div class="v">288.991</div><div class="r">linhas de Rust</div></div>
-    <div><div class="v">3.383</div><div class="r">testes</div></div>
+    <div><div class="v">290.105</div><div class="r">linhas de Rust</div></div>
+    <div><div class="v">3.388</div><div class="r">testes</div></div>
     <div><div class="v">0</div><div class="r">dependências</div></div>
     <div><div class="v">9</div><div class="r">crates</div></div>
     <div><div class="v">7</div><div class="r">arquivos/tabela</div></div>
-    <div><div class="v">80.693</div><div class="r">linhas de doc</div></div>
+    <div><div class="v">80.767</div><div class="r">linhas de doc</div></div>
   <!-- projeto:fim -->
   </div>
 </header>
@@ -5429,7 +5434,7 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
 <!-- idiomas:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
     <div><div class="v">6</div><div class="r">idiomas na tabela</div></div>
     <div><div class="v">2.268</div><div class="r">textos na fábrica</div></div>
-    <div><div class="v">880</div><div class="r">ainda cravados</div></div>
+    <div><div class="v">879</div><div class="r">ainda cravados</div></div>
     <div><div class="v">72%</div><div class="r">da interface</div></div>
     <div><div class="v">880</div><div class="r">catraca (o teto)</div></div>
   <!-- idiomas:fim -->
@@ -6182,8 +6187,8 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
 <!-- pedidos:inicio (gerado por docs/dossie/pagina-dos-pedidos.py) -->
     <div><div class="v">574</div><div class="r">pedidos, ao todo</div></div>
     <div><div class="v">414</div><div class="r">feitos</div></div>
-    <div><div class="v">17</div><div class="r">parciais</div></div>
-    <div><div class="v">62</div><div class="r">planejados</div></div>
+    <div><div class="v">18</div><div class="r">parciais</div></div>
+    <div><div class="v">61</div><div class="r">planejados</div></div>
     <div><div class="v">81</div><div class="r">depois da versão</div></div>
     <div><div class="v">16,0%</div><div class="r">falta da versão (sem ⏸, desde 24/09/2026)</div></div>
   <!-- pedidos:fim -->
@@ -6273,8 +6278,8 @@ cadastroClientes_Z.reg   cadastroClientes_9.reg</code></pre>
 
 <footer>
   <!-- rodape:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-  <p>PhxSql 0.19.0 · 288.991 linhas de Rust em 9 crates,
-  mais 1288 KiB de interface · 3.383 testes ·
+  <p>PhxSql 0.19.0 · 290.105 linhas de Rust em 9 crates,
+  mais 1288 KiB de interface · 3.388 testes ·
   nenhuma dependência externa.
   Especificação byte a byte em <code>docs/FORMATO.md</code>, cadastro e
   permissões em <code>docs/USUARIOS.md</code>, a replicação em

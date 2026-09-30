@@ -256,8 +256,24 @@ def selo_da_capa(versao_do_projeto: str, quando: str) -> str:
     numero que ninguem mede. Esta e' a data em que os numeros da capa foram
     medidos -- a mesma disciplina da pagina dos testes.
     """
+    # 30/09/2026, decisao do dono no 326: a hora e o commit entram junto do
+    # dia -- duas rodadas no mesmo dia davam o mesmo selo --, e a frase diz ao
+    # leitor o que fazer, em vez de deixa-lo adivinhar por que a data e velha.
     return (f'\n  <div class="selo">Dossiê técnico · versão '
-            f'{versao_do_projeto} · retrato de {quando}</div>\n  ')
+            f'{versao_do_projeto} · retrato de {quando}</div>\n'
+            f'  <p class="selo-aviso">Se este retrato for mais velho que a última rodada '
+            f'de trabalho, o link que você abriu mostra uma versão fixada: peça o link '
+            f'novo, ou abra a página pelo dono.</p>\n  ')
+
+
+def quando_do_retrato() -> str:
+    """Dia, hora (UTC) e commit curto da arvore que este gerador mediu."""
+    commit = subprocess.run(
+        ["git", "rev-parse", "--short=8", "HEAD"],
+        cwd=RAIZ, capture_output=True, text=True, check=False,
+    ).stdout.strip() or "sem git"
+    return (time.strftime("%d/%m/%Y %H:%M UTC", time.gmtime())
+            + f" · commit <code>{commit}</code>")
 
 
 def testes_que_passam() -> int:
@@ -594,7 +610,7 @@ def main() -> None:
   e o que ainda falta em <code>docs/PENDENCIAS.md</code>.</p>
   """
 
-    selo = selo_da_capa(n["versao"], time.strftime("%d/%m/%Y"))
+    selo = selo_da_capa(n["versao"], quando_do_retrato())
 
     painel_idiomas = f"""
     <div><div class="v">6</div><div class="r">idiomas na tabela</div></div>

@@ -35,7 +35,7 @@ teste que o motivou ainda cai. [§8](#8-as-guardas-provar-que-a-prova-pega).
 ## 1. A cobertura de hoje, medida
 
 <!-- testes:total:inicio (gerado por docs/dossie/numeros-do-projeto.py) -->
-`cargo test --workspace`: **3.383 testes, 0 falhas** — somado dos `test result:` de uma rodada de verdade, e não digitado: quem escreve este número é `docs/dossie/numeros-do-projeto.py`, e ele **aborta se a suíte falhar**.
+`cargo test --workspace`: **3.388 testes, 0 falhas** — somado dos `test result:` de uma rodada de verdade, e não digitado: quem escreve este número é `docs/dossie/numeros-do-projeto.py`, e ele **aborta se a suíte falhar**.
 <!-- testes:total:fim --> Por área,
 contando `#[test]` por arquivo e agrupando:
 
@@ -974,9 +974,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `painel-com-copia-do-analisador-de-volume` | o painel soma os bytes do `.reg` por uma copia do nome do volume e mede zero em tabela de 4 digitos ou por letra | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**329 das 469 guardas do catálogo: 1 aposentada, 324 provadas, 4 redundantes** — 8970 s de mutação, medido em 2026-09-16 15:25.
+**329 das 470 guardas do catálogo: 1 aposentada, 324 provadas, 4 redundantes** — 8970 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 141 das 469 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 141 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 142 das 470 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 142 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
@@ -1053,6 +1053,7 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `atualizar-sem-janela-do-texto` — o atualizar deixa o texto novo fora da busca num panico entre o `.reg` e o `.fts`
 - `excluir-sem-janela-do-texto` — o excluir de vez deixa a linha viva fora da busca num panico entre o texto e o slot
 - `cascata-embutida-sem-pre-conferencia` — a cascata do embutido grava a mae antes de conferir a FK da filha para OUTRA mae
+- `jobs-devolve-a-coluna-negada` — o `jobs` devolve o pedido salvo inteiro, com o valor da coluna negada que alguem digitou na definicao
 - `reconstruir-fts-sem-janela` — o panico no meio do `reconstruir_fts` grava o indice de texto pela metade marcado limpo
 - `carimbo-da-a-volta-no-teto` — o rowstamp empurrado ao teto por evento replicado da a volta, e o filho nasce com carimbo menor que o pai
 - `upsert-solto-sem-trava-da-linha` — o upsert solto altera a linha que uma transacao segura, e o COMMIT dela apaga a escrita

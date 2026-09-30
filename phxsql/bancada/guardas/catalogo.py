@@ -14755,6 +14755,28 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "seguem": [],
     },
     {
+        "id": "jobs-devolve-a-coluna-negada",
+        "titulo": "o `jobs` devolve o pedido salvo inteiro, com o valor da coluna negada que alguem digitou na definicao",
+        "porque": (
+            "pedido 350, SEC/343; decisao do dono de 30/09/2026: redigir "
+            "analisando. Medido antes: o `salario` 5000 da definicao do job "
+            "saia para quem tem a coluna negada."
+        ),
+        "arquivo": "crates/phxsql-server/src/direito_coluna.rs",
+        "trecho": """    ("jobs", PorColuna::PedidoSalvo),
+""",
+        "troca": """    ("jobs", PorColuna::Nenhum),
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_direito_por_coluna::o_jobs_redige_a_coluna_negada_na_definicao_do_job",
+        ],
+        "seguem": [
+            "servidor::testes_direito_por_coluna::a_leitura_esconde_a_coluna_negada",
+        ],
+    },
+    {
         "id": "reconstruir-fts-sem-janela",
         "titulo": "o panico no meio do `reconstruir_fts` grava o indice de texto pela metade marcado limpo",
         "porque": (
