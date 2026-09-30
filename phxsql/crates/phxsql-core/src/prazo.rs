@@ -24,13 +24,20 @@
 //!
 //! Sem total ([`Prazo::so_silencio`]) o caminho nao toca o soquete a cada
 //! leitura: o silencio foi armado uma vez em [`ComPrazo::armar`], e quem nao
-//! pediu total (a replica) nao paga `setsockopt` por leitura.
+//! pediu total nao paga `setsockopt` por leitura.
+//!
+//! # Por que mora no core
+//!
+//! Nasceu no `phxsql-server` (pedido 578) e desceu para ca no 585: o driver
+//! ODBC fala o mesmo fio com o mesmo servidor e so depende do core. Deixado
+//! la em cima, o driver teria de escrever o seu -- a segunda resposta para a
+//! mesma pergunta, que e o que a petrea proibe.
 
 use std::io::{self, Read, Write};
 use std::net::TcpStream;
 use std::time::{Duration, Instant};
 
-use phxsql_core::error::PhxError;
+use crate::error::PhxError;
 
 /// Como o erro do total se apresenta: QUEM passou do prazo e QUAL regra o
 /// calculou. Estatico porque cada cliente tem um so, e o erro precisa dizer a
@@ -157,6 +164,43 @@ pub fn reclassificar(e: PhxError) -> PhxError {
         PhxError::Io(io) => classificar(io, PhxError::Io),
         outro => outro,
     }
+}
+
+/// Quantos silencios um PEDIDO inteiro pode durar na conversa com um PhxSql
+/// -- pedido 580, e desde o 585 tambem o do driver ODBC.
+///
+/// Decisao (papel J, regua do CLAUDE.md): os maduros convergem em SO
+/// silencio na replicacao (`wal_receiver_timeout`/`wal_sender_timeout` 60 s
+/// no PG, `replica_net_timeout` 60 s no MySQL e no MariaDB, `tcp_user_timeout`
+/// 0) e em total 0 -- e nos drivers tambem (`SQL_ATTR_QUERY_TIMEOUT` nasce 0
+/// no psqlODBC, no Connector/ODBC e no MariaDB Connector/ODBC). Diverge aqui
+/// pela mesma restricao do 578: la quem opera derruba a sessao presa
+/// (`pg_cancel_backend`, `KILL QUERY`, `SQLCancel`); aqui a thread do laco,
+/// da sonda, do console ou do aplicativo dentro do driver (que nao tem
+/// `SQLCancel`) fica presa ao par que goteja e nada a solta. O total e POR
+/// PEDIDO, rearmado a cada pedido -- nunca pela vida da conexao, que e longa e
+/// legitima. Vinte silencios de 30 s = 10 min por pedido, o mesmo total de
+/// fabrica do DbLink (10 s x 60): a maior linha que o fio aceita
+/// (`TETO_DO_REGISTRO`, 128 MiB) ainda chega a 218 KiB/s. Escolhido, nao
+/// medido.
+pub const MULTIPLO_DO_TOTAL_DA_CONVERSA: u32 = 20;
+
+static ROTULO_DA_CONVERSA: Rotulo = Rotulo {
+    quem: "a conversa com o outro PhxSql",
+    regra: "o total por pedido e o silencio vezes o multiplo do pedido 580 \
+            (10 min com o silencio de fabrica de 30 s)",
+};
+
+/// O prazo da conversa com outro PhxSql para quem nao tem regra propria: o
+/// laco da replica, a sonda `replicacao_testar`, o console e o driver ODBC.
+/// UM lugar so -- quem calculasse o seu seria o chamador que volta a prender
+/// a thread.
+pub fn prazo_da_conversa(silencio: Duration) -> Prazo {
+    Prazo::com_total(
+        silencio,
+        silencio.saturating_mul(MULTIPLO_DO_TOTAL_DA_CONVERSA),
+        &ROTULO_DA_CONVERSA,
+    )
 }
 
 /// O soquete com o [`Prazo`] por cima.

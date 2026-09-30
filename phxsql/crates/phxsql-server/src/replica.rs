@@ -564,43 +564,17 @@ pub const PRAZO_DE_CONEXAO: Duration = Duration::from_secs(10);
 /// curto e a origem responde de uma vez; era o `30` cravado em `ligar`.
 pub const SILENCIO_DA_REPLICA: Duration = Duration::from_secs(30);
 
-/// Quantos silencios um PEDIDO inteiro pode durar -- pedido 580.
-///
-/// Decisao (papel J, regua do CLAUDE.md): os maduros convergem em SO
-/// silencio na replicacao (`wal_receiver_timeout`/`wal_sender_timeout` 60 s
-/// no PG, `replica_net_timeout` 60 s no MySQL e no MariaDB, `tcp_user_timeout`
-/// 0) e em total 0. Diverge aqui pela mesma restricao do 578: la quem opera
-/// derruba a sessao presa; aqui a thread do laco, da sonda ou do console fica
-/// presa ao par que goteja e nada a solta. O total e POR PEDIDO, rearmado em
-/// `Cliente::pedir` -- nunca pela vida da conexao, que no laco e longa e
-/// legitima. Vinte silencios de 30 s = 10 min por pedido, o mesmo total de
-/// fabrica do DbLink (10 s x 60): a maior linha que o fio aceita
-/// (`TETO_DO_REGISTRO`, 128 MiB) ainda chega a 218 KiB/s. Escolhido, nao
-/// medido.
-pub const MULTIPLO_DO_TOTAL_DA_CONVERSA: u32 = 20;
-
-static ROTULO_DA_CONVERSA: prazo::Rotulo = prazo::Rotulo {
-    quem: "a conversa com o outro PhxSql",
-    regra: "o total por pedido e o silencio vezes o multiplo do pedido 580 \
-            (10 min com o silencio de fabrica da replica)",
-};
+// O multiplo do total e o `prazo_da_conversa` desceram para o motor
+// (`phxsql_core::prazo`) no pedido 585, porque o driver ODBC conversa com o
+// mesmo servidor pelo mesmo fio e nao depende deste crate. Reexportados aqui
+// para os chamadores de sempre (laco, sonda, console) nao mudarem de porta.
+pub use crate::prazo::{prazo_da_conversa, MULTIPLO_DO_TOTAL_DA_CONVERSA};
 
 static ROTULO_DO_PULSO: prazo::Rotulo = prazo::Rotulo {
     quem: "o pulso do cluster",
     regra: "o pedido inteiro do pulso tem de caber num silencio \
             (2 x pulso_s, no minimo 5 s) -- pedido 580",
 };
-
-/// O prazo da conversa com outro PhxSql para quem nao tem regra propria: o
-/// laco da replica, a sonda `replicacao_testar` e o console. UM lugar so --
-/// quem calculasse o seu seria o chamador que volta a prender a thread.
-pub fn prazo_da_conversa(silencio: Duration) -> Prazo {
-    Prazo::com_total(
-        silencio,
-        silencio.saturating_mul(MULTIPLO_DO_TOTAL_DA_CONVERSA),
-        &ROTULO_DA_CONVERSA,
-    )
-}
 
 /// O prazo do pulso do cluster e da propagacao das ordens dele -- pedido 580.
 ///
@@ -677,6 +651,17 @@ pub enum Falha {
     /// Nao deu para chegar na origem, ou a conexao caiu no meio. Passa
     /// sozinho: a origem volta, a rede volta.
     Rede,
+    /// A conversa passou de um LIMITE -- pedido 585. O caso que motivou e o
+    /// par que goteja: o prazo total (`prazo.rs`) corta o pedido e devolve
+    /// `LimiteExcedido`; antes isso caia em `Outra` e o laco voltava ao
+    /// mesmo par no intervalo fixo, prendendo a thread um total inteiro de
+    /// cada vez. Entram junto a linha acima do teto do `Canal` e o
+    /// `LIMITE_EXCEDIDO` que a propria origem responde (lotada, por exemplo):
+    /// os tres dizem «esta conversa, agora, nao cabe», e insistir no mesmo
+    /// ritmo so repete a conta. Recua como a [`Falha::Rede`], no mesmo
+    /// contador: os maduros tratam o estouro do prazo da conversa como
+    /// conexao caida (ver [`Ritmo`]).
+    Limite,
     /// Qualquer outra coisa -- esquema, tabela recusada, dado corrompido.
     /// Continua no intervalo fixo de sempre, porque ninguem mediu que o
     /// recuo ajudaria aqui e guarda nova entra pedida.
@@ -695,14 +680,19 @@ impl Falha {
         match e {
             PhxError::Autorizacao(_) => Falha::CredencialRecusada,
             PhxError::Io(_) => Falha::Rede,
+            // O par que goteja no desafio ou no aperto estoura o total AQUI,
+            // antes de entrar -- e o irmao do mesmo estouro na rodada.
+            PhxError::LimiteExcedido(_) => Falha::Limite,
             _ => Falha::Outra,
         }
     }
 
-    /// A classificacao de um erro DEPOIS de entrar: so a rede se distingue.
+    /// A classificacao de um erro DEPOIS de entrar: a rede e o limite se
+    /// distinguem; a credencial nao (ver [`Falha::ao_ligar`]).
     pub fn na_rodada(e: &PhxError) -> Falha {
         match e {
             PhxError::Io(_) => Falha::Rede,
+            PhxError::LimiteExcedido(_) => Falha::Limite,
             _ => Falha::Outra,
         }
     }
@@ -726,7 +716,20 @@ pub enum Decisao {
 }
 
 /// O ritmo do laco: intervalo fixo entre rodadas em vao, recuo exponencial
-/// para a REDE, estacionamento para a credencial.
+/// para a REDE e o LIMITE, estacionamento para a credencial.
+///
+/// **O limite recua como a rede -- pedido 585, decisao do J pela regua.** Os
+/// tres maduros convergem em tratar o estouro do prazo da conversa como
+/// conexao caida, pela MESMA via de nova tentativa: o MySQL e o MariaDB, ao
+/// estourar o `replica_net_timeout`/`slave_net_timeout` (60 s), dao a conexao
+/// por quebrada e religam a cada `MASTER_CONNECT_RETRY` (60 s); o PostgreSQL,
+/// ao estourar o `wal_receiver_timeout` (60 s), encerra o walreceiver e tenta
+/// de novo depois do `wal_retrieve_retry_interval` (5 s). Convergencia 9
+/// (PG 4 + MariaDB 3 + MySQL 2) contra 0; o SQLite nao replica. Entra sem
+/// pergunta. O que eles NAO tem e o recuo exponencial -- os tres esperam o
+/// intervalo fixo; o nosso recuo e o do pedido 203, e o teto dele (60 s) e o
+/// `MASTER_CONNECT_RETRY` de fabrica. A primeira falha espera so a base: uma
+/// replica que gotejou UMA vez volta no intervalo de sempre.
 ///
 /// O recuo da rede dobra a partir do `reconectar_em` e para em
 /// [`Ritmo::TETO`] -- um minuto. O teto e baixo de proposito: uma conexao por
@@ -765,7 +768,10 @@ impl Ritmo {
                 self.seguidas = 0;
                 Decisao::Estacionar
             }
-            Falha::Rede => {
+            // O limite recua no MESMO contador da rede, e nao num proprio:
+            // um par que ora cai e ora goteja e o mesmo par doente, e dois
+            // contadores o deixariam voltar na base a cada troca de sintoma.
+            Falha::Rede | Falha::Limite => {
                 let espera = self.espera_de_rede();
                 self.seguidas = self.seguidas.saturating_add(1);
                 Decisao::Dormir(espera)
@@ -806,6 +812,23 @@ mod testes_do_ritmo {
         // `replicar` sem direito se corrige no master, sem religar aqui.
         assert_eq!(Falha::na_rodada(&recusa), Falha::Outra);
         assert_eq!(Falha::na_rodada(&queda), Falha::Rede);
+        // O limite (pedido 585) se distingue nas duas fases.
+        let limite = PhxError::LimiteExcedido("passou do prazo total".into());
+        assert_eq!(Falha::ao_ligar(&limite), Falha::Limite);
+        assert_eq!(Falha::na_rodada(&limite), Falha::Limite);
+    }
+
+    /// O limite recua no MESMO contador da rede: alternar os sintomas nao
+    /// devolve o par doente a base. E a primeira falha, de qualquer um, e a
+    /// base -- a volta depois de uma falha unica nao atrasa.
+    #[test]
+    fn limite_e_rede_recuam_no_mesmo_contador() {
+        let mut r = Ritmo::novo(s(1));
+        assert_eq!(r.apos(Falha::Limite), Decisao::Dormir(s(1)));
+        assert_eq!(r.apos(Falha::Rede), Decisao::Dormir(s(2)));
+        assert_eq!(r.apos(Falha::Limite), Decisao::Dormir(s(4)));
+        r.sucesso();
+        assert_eq!(r.apos(Falha::Limite), Decisao::Dormir(s(1)));
     }
 
     /// O defeito do pedido 203 reposto seria este teste caindo: a credencial
@@ -1227,6 +1250,89 @@ mod testes_do_prazo_total_da_conversa {
                 "{quem} voltou em {durou:?}, antes do total de {total:?}"
             );
         }
+    }
+
+    /// O ritmo depois de `falhas` rodadas perdidas para o mesmo erro, a
+    /// partir do `reconectar_em` de 1 s das origens destes testes.
+    fn esperas_apos(falha: Falha, falhas: usize) -> Vec<Duration> {
+        let mut r = Ritmo::novo(Duration::from_secs(1));
+        (0..falhas)
+            .map(|_| match r.apos(falha) {
+                Decisao::Dormir(d) => d,
+                Decisao::Estacionar => panic!("o par que goteja estacionou o laco"),
+            })
+            .collect()
+    }
+
+    /// Roda `f` numa thread e espera ate `PACIENCIA`: com o total fora do
+    /// lugar o par que goteja prende, e o teste tem de reprovar em vez de
+    /// pendurar a suite.
+    fn sem_pendurar<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
+        let (avisar, aviso) = mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = avisar.send(f());
+        });
+        aviso
+            .recv_timeout(PACIENCIA)
+            .expect("preso ao par que goteja alem da paciencia")
+    }
+
+    /// **585: o par que goteja NA RODADA recua, e nao volta no intervalo
+    /// fixo.** O erro e o de verdade, tirado do soquete pela porta que o laco
+    /// usa (`ligar_com_prazo` + `puxar`), e a classificacao e a mesma que o
+    /// `servidor::rodada_classificada` aplica (`Falha::na_rodada`). A primeira
+    /// espera e a base -- a replica que gotejou uma vez volta no intervalo de
+    /// sempre --, e dali em diante dobra.
+    ///
+    /// # Prova real
+    ///
+    /// Com o `LimiteExcedido` de volta a `Outra` em `na_rodada`, as esperas
+    /// saem `[1, 1, 1, 1]`: o laco voltaria ao par a cada segundo.
+    #[test]
+    fn o_par_que_goteja_na_rodada_recua() {
+        let porta = par_que_goteja();
+        let erro = sem_pendurar(move || {
+            ligar_com_prazo(&origem_para(porta), SILENCIO, Duration::from_secs(2))
+                .and_then(|mut c| puxar(&mut c, "db", "t", 0).map(|_| ()))
+                .expect_err("o par que goteja nao pode completar a rodada")
+        });
+        assert!(
+            matches!(erro, PhxError::LimiteExcedido(_)),
+            "o estouro do total saiu como {erro:?}"
+        );
+        let s = Duration::from_secs;
+        assert_eq!(
+            esperas_apos(Falha::na_rodada(&erro), 4),
+            vec![s(1), s(2), s(4), s(8)],
+            "o estouro do total na rodada tem de recuar como a rede"
+        );
+    }
+
+    /// **585, o irmao: o par que goteja no DESAFIO, antes de entrar.** Mesma
+    /// conversa, outra fase -- e a fase tem classificacao propria
+    /// (`Falha::ao_ligar`), que e por onde o estouro escaparia para `Outra`
+    /// se so a rodada fosse consertada.
+    #[test]
+    fn o_par_que_goteja_no_desafio_recua() {
+        let porta = par_que_goteja();
+        let erro = sem_pendurar(move || {
+            let mut o = origem_para(porta);
+            o.usuario = "replicador".into();
+            o.senha = "irrelevante".into();
+            ligar_com_prazo(&o, SILENCIO, Duration::from_secs(2))
+                .map(|_| ())
+                .expect_err("o par que goteja nao pode completar o desafio")
+        });
+        assert!(
+            matches!(erro, PhxError::LimiteExcedido(_)),
+            "o estouro do total no desafio saiu como {erro:?}"
+        );
+        let s = Duration::from_secs;
+        assert_eq!(
+            esperas_apos(Falha::ao_ligar(&erro), 3),
+            vec![s(1), s(2), s(4)],
+            "o estouro do total ao ligar tem de recuar como a rede"
+        );
     }
 
     /// **O COMPORTAMENTO VELHO: a replica saudavel com lote longo continua.**

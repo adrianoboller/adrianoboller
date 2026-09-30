@@ -41,7 +41,10 @@ pub mod mcp;
 pub mod mensagens;
 pub mod pg;
 pub mod pivot;
-pub mod prazo;
+// O motor do prazo total mora no core desde o pedido 585: o driver ODBC
+// conversa pelo mesmo fio e nao depende deste crate. O caminho `crate::prazo`
+// continua valendo para quem ja o usava.
+pub use phxsql_core::prazo;
 pub mod profiler;
 pub mod pulso;
 pub mod replica;

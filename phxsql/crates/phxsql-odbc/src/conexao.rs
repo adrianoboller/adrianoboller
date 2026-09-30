@@ -3,8 +3,10 @@
 //! ja fala. O driver nao inventa transporte: ele e um cliente comum.
 
 use phxsql_core::base64;
+use phxsql_core::error::PhxError;
 use phxsql_core::fio::{Canal as FioCanal, Iniciador, Recebido};
 use phxsql_core::json::Json;
+use phxsql_core::prazo::{self, ComPrazo};
 use std::io::{BufReader, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::time::Duration;
@@ -300,18 +302,39 @@ pub struct Canal {
     /// O lado de ESCRITA. O de leitura e o `BufReader` abaixo, sobre um clone
     /// do mesmo soquete -- o timeout vale para os dois, e um clone e o que
     /// deixa ler e escrever sem uma trava so.
-    fluxo: TcpStream,
-    leitor: BufReader<TcpStream>,
+    ///
+    /// Os dois passam pelo `ComPrazo` do motor (pedido 585): o silencio de
+    /// sempre e o total POR PEDIDO, rearmado em [`Canal::pedir`].
+    fluxo: ComPrazo,
+    leitor: BufReader<ComPrazo>,
     token: String,
     /// `Claro` ate o aperto fechar; `Cifrado` da linha seguinte em diante.
     fio: FioCanal,
 }
 
+/// O silencio da conversa do driver: quanto um pedido pode ficar sem um byte.
+/// Era o `30` cravado no `abrir`, e e o mesmo da replica.
+const SILENCIO_DO_DRIVER: Duration = Duration::from_secs(30);
+
 impl Canal {
+    /// Cada pedido tem o total inteiro -- pedido 585, o mesmo rearme do
+    /// `replica::Cliente`. Pela vida da conexao, um aplicativo que abre de
+    /// manha e consulta a tarde cairia na primeira consulta depois do total.
+    fn rearmar(&mut self) {
+        prazo::rearmar(self.leitor.get_mut(), &mut self.fluxo);
+    }
+
     /// Abre o soquete, liga o tunel quando a receita pede, e faz o login
     /// quando ha usuario. Erro ja sai com o SQLSTATE certo: 08001 nao alcancou
     /// (ou o aperto caiu), 28000 credencial recusada.
     pub fn abrir(r: &Receita) -> Result<Canal, Falha> {
+        Canal::abrir_com(r, SILENCIO_DO_DRIVER)
+    }
+
+    /// [`Canal::abrir`] com o silencio dito por quem chama. Existe para a
+    /// prova contra o sistema operacional medir o par que goteja com prazos
+    /// curtos; o total sai do silencio pelo MESMO `prazo_da_conversa`.
+    fn abrir_com(r: &Receita, silencio: Duration) -> Result<Canal, Falha> {
         if r.servidor.is_empty() || r.porta == 0 {
             return Err(Falha::nova(
                 "HY000",
@@ -338,17 +361,19 @@ impl Canal {
             }
         }
         let Some(tcp) = tcp else { return Err(ultimo) };
-        // Sem timeout de leitura o aplicativo congelaria junto com a rede, e
-        // quem congela dentro de um SQLExecDirect nao tem como cancelar.
-        let _ = tcp.set_read_timeout(Some(Duration::from_secs(30)));
-        let _ = tcp.set_write_timeout(Some(Duration::from_secs(30)));
-        let leitor =
-            BufReader::new(tcp.try_clone().map_err(|e| {
-                Falha::nova("08001", format!("nao clonei o soquete de {alvo}: {e}"))
-            })?);
+        // Sem prazo o aplicativo congelaria junto com a rede, e quem congela
+        // dentro de um SQLExecDirect nao tem como cancelar -- este driver nao
+        // tem `SQLCancel`. E o silencio sozinho nao basta: o servidor que
+        // goteja um byte antes de cada prazo prendia a thread do aplicativo
+        // pelo tempo que quisesse (pedido 585). Silencio e total saem do
+        // MESMO motor da replica (`phxsql_core::prazo`), porque a pergunta e
+        // a mesma: quanto um pedido a um phxsqld pode durar. O relogio do
+        // total comeca depois do `connect`, que tem prazo proprio.
+        let (leitura, fluxo) = ComPrazo::armar(tcp, prazo::prazo_da_conversa(silencio))
+            .map_err(|e| Falha::nova("08001", format!("nao armei o soquete de {alvo}: {e}")))?;
         let mut canal = Canal {
-            fluxo: tcp,
-            leitor,
+            fluxo,
+            leitor: BufReader::new(leitura),
             token: r.token.clone(),
             fio: FioCanal::Claro,
         };
@@ -457,6 +482,7 @@ impl Canal {
     /// vira cifrado. A partir da proxima linha, `pedir` sela e abre registros.
     /// Reusa o `fio` do core inteiro -- aqui nao ha cripto nenhuma.
     fn cifrar(&mut self, pino: Option<[u8; 32]>) -> Result<(), Falha> {
+        self.rearmar();
         let (iniciador, m1) = Iniciador::comecar(pino);
         let pedido = Json::objeto(vec![
             ("op", Json::texto_de("cifrar")),
@@ -467,7 +493,10 @@ impl Canal {
             .write_all(pedido.as_bytes())
             .and_then(|_| self.fluxo.write_all(b"\n"))
             .and_then(|_| self.fluxo.flush())
-            .map_err(|e| Falha::nova("08001", format!("mandando o aperto de mao: {e}")))?;
+            .map_err(|e| {
+                let e = prazo::classificar(e, PhxError::Io);
+                Falha::nova("08001", format!("mandando o aperto de mao: {e}"))
+            })?;
 
         // O TETO vale aqui tambem -- pedido 312, fechado no ODBC pelo 434.
         //
@@ -483,6 +512,7 @@ impl Canal {
         let resposta = match self
             .fio
             .ler_ate(&mut self.leitor, phxsql_core::fio::TETO_DO_APERTO)
+            .map_err(prazo::reclassificar)
             .map_err(|e| Falha::nova("08001", format!("lendo o aperto de mao: {e}")))?
         {
             Recebido::Linha(l) => l,
@@ -516,16 +546,13 @@ impl Canal {
         // Pino errado cai aqui, dentro do `terminar`. A mensagem NAO ecoa
         // chave nenhuma -- mesmo a publica fica de fora, para o diagnostico
         // nunca virar um lugar de onde se leia material de chave.
-        let (transporte, _apresentada) = iniciador.terminar(&m2).map_err(|e| {
-            use phxsql_core::error::PhxError;
-            match e {
-                PhxError::Autorizacao(_) => Falha::nova(
-                    "08001",
-                    "a chave apresentada pelo servidor nao confere com o pino \
+        let (transporte, _apresentada) = iniciador.terminar(&m2).map_err(|e| match e {
+            PhxError::Autorizacao(_) => Falha::nova(
+                "08001",
+                "a chave apresentada pelo servidor nao confere com o pino \
                      (CHAVE_DO_FIO): pode ser outro servidor ou alguem no meio",
-                ),
-                _ => Falha::nova("08001", "o aperto de mao da cifra nao fechou"),
-            }
+            ),
+            _ => Falha::nova("08001", "o aperto de mao da cifra nao fechou"),
         })?;
         self.fio = FioCanal::Cifrado(Box::new(transporte));
         Ok(())
@@ -544,18 +571,27 @@ impl Canal {
         // O `\n` sai por conta do `Canal`: em claro ele escreve a linha crua,
         // cifrado ele sela um registro Base64 -- de qualquer jeito, uma linha.
         let linha = Json::Objeto(todos).escrever();
+        self.rearmar();
 
         // Falha de escrita ou leitura menciona so a OPERACAO: o corpo do
         // pedido pode carregar senha, e mensagem de erro vira log alheio. O
         // erro do `fio` nunca carrega o corpo -- e falha de rede ou de
         // etiqueta, nao o texto do pedido.
+        //
+        // O estouro do total (pedido 585) sai como `LimiteExcedido`, com a
+        // regra, e continua 08S01: o pedido foi cortado no meio da linha, o
+        // fio ficou fora de passo e a conexao nao serve mais -- que e o que
+        // 08S01 manda o aplicativo fazer (religar). HYT00 diria «a consulta
+        // expirou, a conexao segue», e ela nao segue.
         self.fio
             .escrever(&mut self.fluxo, &linha)
+            .map_err(prazo::reclassificar)
             .map_err(|e| Falha::nova("08S01", format!("mandando {op}: {e}")))?;
 
         let resposta = match self
             .fio
             .ler(&mut self.leitor)
+            .map_err(prazo::reclassificar)
             .map_err(|e| Falha::nova("08S01", format!("lendo a resposta de {op}: {e}")))?
         {
             Recebido::Linha(l) => l,
@@ -596,10 +632,20 @@ impl Canal {
 #[cfg(test)]
 mod testes {
     use super::*;
-    // So os servidores de MENTIRA deste modulo leem linha crua: eles sao o
-    // outro lado do fio, e o teto protege quem RECEBE. O driver de producao
-    // le pelo `fio::Canal`, e por isso o `BufRead` saiu de cima.
-    use std::io::BufRead as _;
+
+    /// A linha do pedido, lida pelos servidores de MENTIRA deste modulo.
+    ///
+    /// Eles tambem leem pelo motor (`fio::Canal`, em claro), e nao por um
+    /// `read_line` cru -- pedido 585: ate aqui eram as quatro leituras de
+    /// linha fora do `Canal` que a petrea «mesmo motor» citava, isentas por
+    /// serem o outro lado do fio. O teto e o do aperto porque o que chega
+    /// aqui e o `cifrar` ou um pedido de login, que nao passam de 1 KiB.
+    fn ler_pedido<L: std::io::BufRead>(leitor: &mut L) -> Option<String> {
+        match FioCanal::Claro.ler_ate(leitor, phxsql_core::fio::TETO_DO_APERTO) {
+            Ok(Recebido::Linha(l)) => Some(l),
+            _ => None,
+        }
+    }
 
     #[test]
     fn receita_completa() {
@@ -825,10 +871,9 @@ mod testes {
             let mut leitor = BufReader::new(soquete);
 
             // 1. o `cifrar`, em claro.
-            let mut linha = String::new();
-            if leitor.read_line(&mut linha).unwrap_or(0) == 0 {
+            let Some(linha) = ler_pedido(&mut leitor) else {
                 return;
-            }
+            };
             let pedido = Json::analisar(&linha).unwrap();
             let m1 = base64::decodificar(pedido.texto_ou("e", "")).unwrap();
             let (transporte, m2) = phxsql_core::fio::responder(&estatica, &m1).unwrap();
@@ -905,8 +950,7 @@ mod testes {
             let _ = soquete.set_write_timeout(Some(Duration::from_secs(3)));
             let mut escrita = soquete.try_clone().unwrap();
             let mut leitor = BufReader::new(soquete);
-            let mut linha = String::new();
-            if leitor.read_line(&mut linha).unwrap_or(0) == 0 {
+            if ler_pedido(&mut leitor).is_none() {
                 return;
             }
             let gorda = "A".repeat(2 * phxsql_core::fio::TETO_DO_APERTO as usize);
@@ -983,8 +1027,7 @@ mod testes {
             let _ = soquete.set_read_timeout(Some(Duration::from_secs(3)));
             let mut escrita = soquete.try_clone().unwrap();
             let mut leitor = BufReader::new(soquete);
-            let mut linha = String::new();
-            if leitor.read_line(&mut linha).unwrap_or(0) == 0 {
+            if ler_pedido(&mut leitor).is_none() {
                 return;
             }
             let recusa = Json::objeto(vec![
@@ -1127,10 +1170,9 @@ mod testes {
             let mut transcricao: Option<[u8; 32]> = None;
 
             if cifra {
-                let mut linha = String::new();
-                if leitor.read_line(&mut linha).unwrap_or(0) == 0 {
+                let Some(linha) = ler_pedido(&mut leitor) else {
                     return;
-                }
+                };
                 let pedido = Json::analisar(&linha).unwrap();
                 let m1 = base64::decodificar(pedido.texto_ou("e", "")).unwrap();
                 let (transporte, m2) = phxsql_core::fio::responder(&estatica, &m1).unwrap();
@@ -1350,6 +1392,117 @@ mod testes {
             !erro.mensagem.contains("PWD-ERRADA"),
             "o diagnostico nao pode carregar a senha: {}",
             erro.mensagem
+        );
+    }
+
+    // --- Pedido 585: o prazo TOTAL por pedido, contra o sistema operacional ---
+
+    /// O silencio curto destas provas; o total sai dele pelo MESMO
+    /// `prazo_da_conversa` da producao: 200 ms x 20 = 4 s.
+    const SILENCIO_DA_PROVA: Duration = Duration::from_millis(200);
+
+    fn receita_em_claro(porta: u16) -> Receita {
+        Receita {
+            servidor: "127.0.0.1".into(),
+            porta,
+            cifra: false,
+            ..Receita::default()
+        }
+    }
+
+    /// Um servidor que responde cada pedido gotejando `resposta` um byte a
+    /// cada `passo` -- o pedido e lido pelo motor, como nos outros servidores
+    /// de mentira. Para quando o driver fecha: e o que o conserto faz ao
+    /// cortar. `vezes` pedidos, e depois vai embora.
+    fn servidor_que_goteja(resposta: &'static [u8], passo: Duration, vezes: usize) -> u16 {
+        let escuta = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let porta = escuta.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            let Ok((soquete, _)) = escuta.accept() else {
+                return;
+            };
+            let Ok(mut escrita) = soquete.try_clone() else {
+                return;
+            };
+            let mut leitor = BufReader::new(soquete);
+            for _ in 0..vezes {
+                if ler_pedido(&mut leitor).is_none() {
+                    return;
+                }
+                for b in resposta {
+                    std::thread::sleep(passo);
+                    if escrita.write_all(&[*b]).is_err() {
+                        return;
+                    }
+                }
+            }
+        });
+        porta
+    }
+
+    /// **585: o servidor que goteja nao prende a thread do aplicativo.** Um
+    /// byte a cada 20 ms, dez vezes abaixo do silencio, sem nunca fechar a
+    /// linha: so o total corta. Tem de voltar 08S01, dizendo o prazo total, e
+    /// perto dele -- nem antes (o silencio nao estourou), nem nunca.
+    ///
+    /// # Prova real
+    ///
+    /// Com o defeito reposto (so o silencio, o `abrir` de antes), o `pedir`
+    /// nao volta em 10 s: o aplicativo ficaria dentro do `SQLExecDirect` pelo
+    /// tempo que o servidor quisesse, e este driver nao tem `SQLCancel`.
+    #[test]
+    fn o_servidor_que_goteja_para_no_prazo_total() {
+        static SEM_FIM: [u8; 100_000] = [b'x'; 100_000];
+        let porta = servidor_que_goteja(&SEM_FIM, Duration::from_millis(20), 1);
+        let (avisar, aviso) = mpsc::channel();
+        std::thread::spawn(move || {
+            let inicio = std::time::Instant::now();
+            let r = Canal::abrir_com(&receita_em_claro(porta), SILENCIO_DA_PROVA)
+                .and_then(|mut c| c.pedir(vec![("op", Json::texto_de("ping"))]).map(|_| ()));
+            let _ = avisar.send((r, inicio.elapsed()));
+        });
+        let (r, durou) = aviso
+            .recv_timeout(Duration::from_secs(10))
+            .expect("o pedido ficou preso ao servidor que goteja alem de 10 s");
+        let f = match r {
+            Err(f) => f,
+            Ok(()) => panic!("o servidor que goteja nao pode completar a resposta"),
+        };
+        assert_eq!(f.estado, "08S01", "{}", f.mensagem);
+        assert!(f.mensagem.contains("prazo total"), "{}", f.mensagem);
+        let total = SILENCIO_DA_PROVA.saturating_mul(prazo::MULTIPLO_DO_TOTAL_DA_CONVERSA);
+        assert!(
+            durou + Duration::from_millis(300) >= total,
+            "voltou em {durou:?}, antes do total de {total:?}: quem cortou foi o silencio"
+        );
+    }
+
+    /// **O COMPORTAMENTO VELHO: o servidor lento e legitimo continua.** Duas
+    /// respostas de ~2,5 s cada (um byte a cada 25 ms, mais de doze
+    /// silencios): nenhuma passa do total de 4 s, a SOMA passa. O total e por
+    /// PEDIDO; se fosse pela vida da conexao, a segunda cairia -- e e isso
+    /// que derrubaria o aplicativo que abre de manha e consulta a tarde.
+    #[test]
+    fn o_servidor_lento_e_legitimo_continua() {
+        static RESPOSTA: &[u8] =
+            b"{\"ok\":true,\"resultado\":{\"eco\":\"lento\",\"folga\":\".................................................\"}}\n";
+        let porta = servidor_que_goteja(RESPOSTA, Duration::from_millis(25), 2);
+        let mut c = match Canal::abrir_com(&receita_em_claro(porta), SILENCIO_DA_PROVA) {
+            Ok(c) => c,
+            Err(f) => panic!("{}: {}", f.estado, f.mensagem),
+        };
+        let inicio = std::time::Instant::now();
+        for vez in 0..2 {
+            let r = c
+                .pedir(vec![("op", Json::texto_de("ping"))])
+                .unwrap_or_else(|f| panic!("o pedido {vez} caiu: {} {}", f.estado, f.mensagem));
+            assert_eq!(r.texto_ou("eco", ""), "lento");
+        }
+        let total = SILENCIO_DA_PROVA.saturating_mul(prazo::MULTIPLO_DO_TOTAL_DA_CONVERSA);
+        assert!(
+            inicio.elapsed() > total,
+            "a soma ({:?}) nao passou do total ({total:?}): a prova nao prova nada",
+            inicio.elapsed()
         );
     }
 }
