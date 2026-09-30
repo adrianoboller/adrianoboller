@@ -1809,7 +1809,8 @@ onde ela volta: o `.reg` não reaproveita slot, nem por restauração.
 `esvaziar_lixeira` apaga os volumes e recomeça do volume 1. Daqui não volta —
 e por isso o expurgo é registrado no `.reason` **antes** de o dado sair, e a
 operação exige motivo escrito mesmo numa tabela que não exige motivo para
-excluir.
+excluir. E só responde depois do `fsync` da pasta (pedido 591): sem ele, a
+queda devolvia o `.trash` velho com o `.reason` dizendo que saiu.
 
 ---
 
@@ -2726,6 +2727,15 @@ funda para a mais rasa. Ficam de fora, de propósito, o `.pag` (derivado, nasce
 por `rename`) e o `_formato-volumes.json` da pasta nova (perdê-lo só refaz uma
 varredura que não renomeia nada). No servidor esse `fsync` acontece **depois
 de soltar a trava global** e antes da resposta.
+
+**Excluir também só responde depois do disco** (pedido 591). Pelo mesmo
+motivo, ao contrário: um nome que a queda devolve é uma tabela que volta a
+existir — inteira, ou pela metade (o `.reg` sem o `.ndx`). `excluir_tabela`
+apaga os arquivos e faz o `fsync` da pasta deles antes do «ok»; o mesmo vale
+para os dois outros apagamentos de arquivo inteiro da tabela: o
+`esvaziar_lixeira` (os volumes do `.trash`, §5) e a fase 3 do expurgo
+da trilha (os volumes fechados do `.lgpd`, §7). No servidor, também fora da trava
+global. Não existe excluir de schema nem de database.
 
 ### 11.1 `_database.json` — o tipo do database
 

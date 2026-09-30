@@ -1143,10 +1143,10 @@ impl Volumes {
     /// venha a nascer com o mesmo numero -- que numa trilha nao nasce, porque
     /// o numero do volume so anda para a frente.
     ///
-    /// Sem `fsync` do diretorio depois, e de proposito: nenhum `unlink` nem
-    /// `rename` desta casa o faz (pedido 467), e um ajudante unico para os dois
-    /// e o conserto certo -- um `fsync` de diretorio so aqui seria a regra
-    /// escrita duas vezes, e a que alguem esquecesse divergiria calada.
+    /// Sem `fsync` do diretorio aqui, e de proposito: quem apaga devolve o nome
+    /// que saiu num `catalogo::PorSincronizar` (pedido 591), e o `fsync` da
+    /// pasta acontece la, um por pasta e fora da trava global. Um `fsync`
+    /// escondido aqui seria a regra escrita duas vezes -- e pago sob a trava.
     pub fn apagar_volume(&mut self, volume: u32) -> Result<()> {
         self.abertos.remove(&volume);
         if let Some(pos) = self.ordem.iter().position(|v| *v == volume) {

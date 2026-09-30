@@ -970,7 +970,27 @@ impl Database {
     /// OUTRO schema apontando para ca por nome qualificado nao e vista. Fecha-
     /// -lo pede varrer todos os schemas por `excluir_tabela`, e essa e uma
     /// decisao de custo que se toma com numero na mao, nao de passagem.
+    ///
+    /// # Responde depois do `fsync` da pasta (pedido 591)
+    ///
+    /// O `unlink` so vale no disco depois do `fsync` do diretorio. Sem ele,
+    /// uma queda devolvia a tabela que o cliente ouviu «excluida» -- inteira,
+    /// ou pela metade (o `.reg` sem o `.ndx`), e a regra primordial tinha
+    /// conferido um estado que a queda desfaz. Quem segura a trava global usa
+    /// [`Self::excluir_tabela_adiando_o_fsync`] e leva ao disco depois.
     pub fn excluir_tabela(&self, qualificado: &str) -> Result<Vec<String>> {
+        let (apagados, pendente) = self.excluir_tabela_adiando_o_fsync(qualificado)?;
+        pendente.levar_ao_disco()?;
+        Ok(apagados)
+    }
+
+    /// O [`Self::excluir_tabela`] sem o `fsync` da pasta: ele volta em
+    /// [`PorSincronizar`], para o servidor soltar a trava global antes de
+    /// esperar o disco (a catraca `alcancam-fsync-2`, como no 589).
+    pub fn excluir_tabela_adiando_o_fsync(
+        &self,
+        qualificado: &str,
+    ) -> Result<(Vec<String>, PorSincronizar)> {
         self.exigir_motor_padrao()?;
         let (schema, nome) = separar_qualificado(qualificado);
         let (schema, nome) = (schema.as_deref(), nome.as_str());
@@ -983,6 +1003,9 @@ impl Database {
                  filhos -- apague {filha} primeiro, ou tire a chave dela"
             )));
         }
+        // Os caminhos inteiros, para o `fsync` da pasta; `apagados` e so o
+        // nome, que e o que a resposta mostra.
+        let mut sairam = Vec::new();
         let mut apagados = Vec::new();
         for ext in Self::EXTENSOES_TODAS {
             // Uma tabela paginada tem varios volumes por extensao.
@@ -992,6 +1015,7 @@ impl Database {
                 if pertence(&f, nome, ext) {
                     std::fs::remove_file(arq.path())?;
                     apagados.push(f.to_string());
+                    sairam.push(arq.path());
                 }
             }
         }
@@ -1004,7 +1028,8 @@ impl Database {
         // O que ela devia ao disco foi apagado junto (536).
         crate::volume::mudar_pendentes_de_nome(&dir, nome, None);
         apagados.sort();
-        Ok(apagados)
+        let pendente = PorSincronizar::entradas_que_sairam(sairam);
+        Ok((apagados, pendente))
     }
 
     /// Os arquivos que esta tabela TEM em disco, com extensao e sem o nome.
@@ -1332,7 +1357,7 @@ impl Database {
         }
         Ok(PorSincronizar {
             arquivos,
-            entradas_novas: Vec::new(),
+            ..PorSincronizar::default()
         })
     }
 
@@ -1372,6 +1397,10 @@ pub struct PorSincronizar {
     arquivos: Vec<(std::fs::File, PathBuf)>,
     /// As pastas que nasceram: a entrada de cada uma e dado da pasta MAE.
     entradas_novas: Vec<PathBuf>,
+    /// Os nomes que SAIRAM (pedido 591): o `unlink` tambem e dado da pasta,
+    /// e sem o `fsync` dela a tabela excluida volta numa queda, inteira ou
+    /// pela metade -- depois de o cliente ouvir «excluida».
+    entradas_que_sairam: Vec<PathBuf>,
 }
 
 impl PorSincronizar {
@@ -1380,6 +1409,17 @@ impl PorSincronizar {
         PorSincronizar {
             arquivos: Vec::new(),
             entradas_novas: vec![pasta.to_path_buf()],
+            entradas_que_sairam: Vec::new(),
+        }
+    }
+
+    /// Os nomes que uma exclusao apagou -- pedido 591. Quem apaga numa pasta
+    /// so precisa dar UM nome dela: o `fsync` e da pasta, e o
+    /// [`Self::levar_ao_disco`] faz um por pasta, por mais nomes que saiam.
+    pub(crate) fn entradas_que_sairam(nomes: Vec<PathBuf>) -> PorSincronizar {
+        PorSincronizar {
+            entradas_que_sairam: nomes,
+            ..PorSincronizar::default()
         }
     }
 
@@ -1388,6 +1428,7 @@ impl PorSincronizar {
     pub fn juntar(&mut self, outra: PorSincronizar) {
         self.arquivos.extend(outra.arquivos);
         self.entradas_novas.extend(outra.entradas_novas);
+        self.entradas_que_sairam.extend(outra.entradas_que_sairam);
     }
 
     /// O `fsync` de cada arquivo NO DESCRITOR QUE O ESCREVEU, e depois o de
@@ -1412,6 +1453,11 @@ impl PorSincronizar {
             pastas.entry(pai_de(caminho)).or_insert(caminho);
         }
         for entrada in &self.entradas_novas {
+            pastas.entry(pai_de(entrada)).or_insert(entrada);
+        }
+        // O nome que saiu nao existe mais, mas a pasta dele sim, e e por ela
+        // que a `sincronia` abre e marca -- o mesmo calculo das outras duas.
+        for entrada in &self.entradas_que_sairam {
             pastas.entry(pai_de(entrada)).or_insert(entrada);
         }
         let mut ordem: Vec<(PathBuf, &Path)> = pastas.into_iter().collect();
@@ -3205,6 +3251,172 @@ mod testes_criar_vai_ao_disco {
                         txt(mae)
                     ));
                 }
+            }
+        }
+        assert!(erros.is_empty(), "{erros:#?}\n{texto}");
+    }
+}
+
+#[cfg(test)]
+mod testes_excluir_vai_ao_disco {
+    use super::*;
+    use phxsql_core::schema::{Column, IndexColumn, IndexDef};
+    use phxsql_core::types::{ColumnType, DadoPessoal};
+    use phxsql_core::value::Value;
+
+    fn esquema(nome: &str) -> Schema {
+        Schema::new(
+            nome,
+            vec![
+                Column::new("id", ColumnType::Int8).obrigatoria(),
+                Column::new("email", ColumnType::Str(40)).com_dado_pessoal(DadoPessoal::Pessoal),
+            ],
+            vec![IndexDef::new("porId", vec![IndexColumn::asc(0)])
+                .unico()
+                .primaria()],
+        )
+        .unwrap()
+    }
+
+    /// A marca que separa, no traco, o que cada operacao fez: um `openat` de
+    /// um nome que nao existe (a mesma do 589).
+    fn passo(base: &Path, n: u32) {
+        let _ = std::fs::File::open(base.join(format!("passo-{n}")));
+    }
+
+    /// O filho que o `strace` observa: excluir a tabela, esvaziar a lixeira e
+    /// expurgar a trilha, cada um entre dois [`passo`]s.
+    #[test]
+    #[ignore = "roda so dentro de excluir_esvaziar_e_expurgar_vao_ao_disco"]
+    fn filho_das_exclusoes() {
+        let base = PathBuf::from(std::env::var("PHX_591_DIR").unwrap());
+        let inst = Instancia::nova(&base).unwrap();
+        let d = inst.criar_database("d").unwrap();
+        drop(d.criar_tabela(None, esquema("sai")).unwrap());
+        let mut t = d.criar_tabela(None, esquema("fica")).unwrap();
+        t.definir_usuario(7);
+        // Tres volumes fechados da trilha, e duas linhas na lixeira. Laco com
+        // teto fixo: 3 x 3 alteracoes.
+        t.inserir(&[Value::Int(1), Value::Str("a@x.com".into())])
+            .unwrap();
+        for v in 0..3u32 {
+            for i in 0..3u32 {
+                let email = format!("a{v}{i}@x.com");
+                t.atualizar(1, &[Value::Int(1), Value::Str(email)]).unwrap();
+            }
+            assert!(t.fechar_volume_da_trilha(true, 0).unwrap().is_some());
+        }
+        t.inserir(&[Value::Int(2), Value::Str("b@x.com".into())])
+            .unwrap();
+        t.inserir(&[Value::Int(3), Value::Str("c@x.com".into())])
+            .unwrap();
+        t.excluir_de_vez(2, "a").unwrap();
+        t.excluir_de_vez(3, "b").unwrap();
+        t.sincronizar().unwrap();
+        passo(&base, 0);
+        d.excluir_tabela("sai").unwrap();
+        passo(&base, 1);
+        assert_eq!(t.esvaziar_lixeira("limpeza").unwrap(), 2);
+        passo(&base, 2);
+        let limite = phxsql_core::datahora::ms_de_instante_iso("2099-01-01").unwrap();
+        t.expurgar_trilha(limite, "prazo vencido").unwrap();
+        passo(&base, 3);
+    }
+
+    /// **Pedido 591, contra o sistema operacional.**
+    ///
+    /// Em cada operacao, antes da seguinte comecar: os nomes que ela apagou
+    /// (`unlink` bem-sucedido) e a pasta deles recebe `fsync` DEPOIS do
+    /// ultimo -- sem ele a entrada apagada volta numa queda, e a tabela
+    /// «excluida», o `.trash` «esvaziado» ou o volume «expurgado» voltam com
+    /// ela.
+    ///
+    /// **Nao medido:** a queda em si (pede derrubar a maquina). O que se prova
+    /// e o DESCRITOR e a ORDEM das chamadas, que e o que o conserto muda.
+    #[test]
+    fn excluir_esvaziar_e_expurgar_vao_ao_disco() {
+        if std::process::Command::new("strace")
+            .arg("-V")
+            .output()
+            .is_err()
+        {
+            eprintln!("sem strace nesta maquina: a prova do 591 NAO MEDIDA");
+            return;
+        }
+        let t = crate::apoio_teste::DirTemp::novo("cat-591-strace");
+        let base = std::fs::canonicalize(&t.0).unwrap();
+        let traco = t.0.join("traco.txt");
+        let saida = std::process::Command::new("strace")
+            .args([
+                "-f",
+                "-y",
+                "-e",
+                "trace=openat,close,fsync,unlink,unlinkat",
+                "-o",
+            ])
+            .arg(&traco)
+            .arg(std::env::current_exe().unwrap())
+            .args([
+                "--ignored",
+                "--exact",
+                "catalogo::testes_excluir_vai_ao_disco::filho_das_exclusoes",
+            ])
+            .env("PHX_591_DIR", &base)
+            .output()
+            .unwrap();
+        assert!(
+            saida.status.success(),
+            "{}",
+            String::from_utf8_lossy(&saida.stderr)
+        );
+        let texto = std::fs::read_to_string(&traco).unwrap();
+        let linhas: Vec<&str> = texto.lines().filter(|l| l.contains(" = ")).collect();
+        let txt = |p: &Path| p.display().to_string();
+        let marca = |n: u32| {
+            let alvo = format!("\"{}\"", txt(&base.join(format!("passo-{n}"))));
+            linhas
+                .iter()
+                .position(|l| l.contains("openat(") && l.contains(&alvo))
+                .unwrap_or_else(|| panic!("a premissa: o passo {n} no traco:\n{texto}"))
+        };
+        let ok = |l: &str| l.trim_end().ends_with("= 0");
+        let pasta = base.join("d");
+        let fsync_da_pasta = format!("<{}>)", txt(&pasta));
+        let mut erros = Vec::new();
+        // (passo, prefixo dos nomes que saem)
+        for (n, prefixo) in [(1, "sai."), (2, "fica"), (3, "fica")] {
+            let janela = &linhas[marca(n - 1) + 1..marca(n)];
+            let apagados: Vec<usize> = janela
+                .iter()
+                .enumerate()
+                .filter(|(_, l)| {
+                    l.contains("unlink")
+                        && ok(l)
+                        && l.split('"').nth(1).is_some_and(|c| {
+                            let p = Path::new(c);
+                            p.parent().is_some_and(|x| x == pasta)
+                                && p.file_name()
+                                    .is_some_and(|f| f.to_string_lossy().starts_with(prefixo))
+                        })
+                })
+                .map(|(i, _)| i)
+                .collect();
+            let Some(ultimo) = apagados.last() else {
+                erros.push(format!(
+                    "passo {n}: a premissa: nada saiu de {}",
+                    txt(&pasta)
+                ));
+                continue;
+            };
+            let sincronizou = janela[ultimo + 1..]
+                .iter()
+                .any(|l| l.contains("fsync(") && l.contains(&fsync_da_pasta) && ok(l));
+            if !sincronizou {
+                erros.push(format!(
+                    "passo {n}: {} nomes sairam de {} e a pasta ficou sem fsync",
+                    apagados.len(),
+                    txt(&pasta)
+                ));
             }
         }
         assert!(erros.is_empty(), "{erros:#?}\n{texto}");

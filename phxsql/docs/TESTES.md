@@ -997,9 +997,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `copia-reaberta-pelo-nome-no-fsync` | a cópia além do teto de descritores volta a reabrir pelo NOME para o `fsync`: trocada por um link, o `fsync` cai noutro arquivo e o manifesto diz «pronto» sobre a cópia que nunca sincronizou | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**352 das 530 guardas do catálogo: 1 aposentada, 347 provadas, 4 redundantes** — 9417 s de mutação, medido em 2026-09-16 15:25.
+**352 das 534 guardas do catálogo: 1 aposentada, 347 provadas, 4 redundantes** — 9417 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 179 das 530 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 179 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 183 das 534 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 183 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
@@ -1180,6 +1180,10 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `garantir-schema-sem-fsync-do-database` — `criar_schema` e `criar_tabela` num schema novo criavam a pasta sem `fsync` do database: o schema que o cliente ouviu criar podia sumir numa queda
 - `criar-database-sem-fsync-da-base` — `criar_database` criava a pasta sem `fsync` da base: o database que o cliente ouviu criar podia sumir numa queda
 - `marca-do-database-sem-fsync` — O marcador `_database.json` nascia sem `fsync`: numa queda uma colmeia voltava como database padrão, calada
+- `excluir-tabela-sem-fsync-da-pasta` — `excluir_tabela` respondia «excluída» com os `unlink` só no cache do núcleo: numa queda a tabela voltava, inteira ou pela metade
+- `esvaziar-lixeira-sem-fsync-da-pasta` — `esvaziar_lixeira` apagava os volumes do `.trash` sem `fsync` da pasta: numa queda o dado apagado de vez voltava, com o `.reason` dizendo que saiu
+- `expurgo-da-trilha-sem-fsync-da-pasta` — A fase 3 do expurgo da trilha apagava os volumes do `.lgpd` sem `fsync` da pasta: numa queda o volume vencido voltava, com o rastro selado dizendo que saiu
+- `levar-ao-disco-esquece-o-que-saiu` — O `levar_ao_disco` sincronizava a pasta do que nasceu e esquecia a do que saiu: as três exclusões respondiam antes do disco
 
 As guardas que esta corrida ainda cita, hoje aposentadas:
 
