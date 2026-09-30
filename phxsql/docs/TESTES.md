@@ -971,9 +971,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `servidor-segue-de-pe-depois-do-fsync-recusado` | o servidor segue de pé depois de um `fsync` recusado, gravando num disco que já se sabe que mente | 1 | ✅ provada |
 | `completar-engole-a-tabela-que-nao-foi-ao-disco` | a recuperação engole o erro do `sincronizar` e apaga a marca de um commit cujo dado não foi ao disco | 1 | ✅ provada |
 
-**325 das 465 guardas do catálogo: 1 aposentada, 320 provadas, 4 redundantes** — 8922 s de mutação, medido em 2026-09-16 15:25.
+**325 das 466 guardas do catálogo: 1 aposentada, 320 provadas, 4 redundantes** — 8922 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 141 das 465 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 141 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 142 das 466 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 142 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
@@ -1050,6 +1050,7 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `inserir-sem-janela-do-texto` — o inserir deixa a linha viva fora da busca de texto num panico entre o `.reg` e o `indexar_texto`
 - `atualizar-sem-janela-do-texto` — o atualizar deixa o texto novo fora da busca num panico entre o `.reg` e o `.fts`
 - `excluir-sem-janela-do-texto` — o excluir de vez deixa a linha viva fora da busca num panico entre o texto e o slot
+- `cascata-embutida-sem-pre-conferencia` — a cascata do embutido grava a mae antes de conferir a FK da filha para OUTRA mae
 - `reconstruir-fts-sem-janela` — o panico no meio do `reconstruir_fts` grava o indice de texto pela metade marcado limpo
 - `carimbo-da-a-volta-no-teto` — o rowstamp empurrado ao teto por evento replicado da a volta, e o filho nasce com carimbo menor que o pai
 - `upsert-solto-sem-trava-da-linha` — o upsert solto altera a linha que uma transacao segura, e o COMMIT dela apaga a escrita

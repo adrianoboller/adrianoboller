@@ -3302,6 +3302,17 @@ impl Table {
                 abertas.insert(elo.tabela.clone(), self.abrir_filha(&elo.tabela)?);
             }
         }
+        // A pre-conferencia do COMMIT, antes da marca (pedido 574): sem ela,
+        // a FK da filha para OUTRA mae recusava o elo DEPOIS da mae gravada.
+        let guardada = self.sobreposta.take();
+        let conferida = self.pre_conferir_a_cascata(rowid, crua, antes, &lista, &mut abertas);
+        // O prefixo so vale para a conferencia: a passada grava pelo disco,
+        // como a do COMMIT, e os handles voltam sem ele.
+        self.sobreposta = guardada;
+        for filha in abertas.values_mut() {
+            filha.sobreposta = None;
+        }
+        conferida?;
         let mut escritas = Vec::with_capacity(1 + lista.len());
         escritas.push(Escrita {
             database: String::new(),
@@ -3331,6 +3342,61 @@ impl Table {
         let marca =
             crate::marca::gravar_marca(&self.diretorio, id, crate::util::agora_ms(), &escritas)?;
         Ok((marca, escritas, abertas))
+    }
+
+    /// **Pedido 574:** a mae e cada elo da cascata pelas MESMAS guardas da
+    /// pre-conferencia do COMMIT ([`Table::pre_conferir`]) -- FK nos dois
+    /// sentidos, unicidade, a arvore --, na ordem da lista e com a
+    /// visibilidade de PREFIXO: cada elo ve a mae nova e os elos de antes, e
+    /// nenhum dos de depois. E o 567 do servidor, no embutido, sem uma segunda
+    /// copia das guardas.
+    ///
+    /// A recusa sai com nada gravado: nem a marca existe ainda.
+    fn pre_conferir_a_cascata(
+        &mut self,
+        rowid: RowId,
+        crua: &[Value],
+        antes: &[Value],
+        lista: &[EscritaDaCascata],
+        abertas: &mut HashMap<String, Table>,
+    ) -> Result<()> {
+        use crate::marca::{ComAMae, MaesAbertas};
+        let nada = "a alteracao com cascata foi recusada ANTES da marca: nada foi \
+                    gravado, nem a mae nem as filhas";
+        {
+            let mut maes = MaesAbertas {
+                abertas: &mut *abertas,
+            };
+            self.pre_conferir(rowid, Pendente::Alteracao(crua, antes), "", &mut maes)
+                .map_err(|e| e.com_nota(&format!("{} rowid {rowid}: {nada}", self.nome)))?;
+        }
+        for elo in lista {
+            let Some(mut filha) = abertas.remove(&elo.tabela) else {
+                continue;
+            };
+            let feito = {
+                let mut maes = ComAMae {
+                    mae: &mut *self,
+                    resto: MaesAbertas {
+                        abertas: &mut *abertas,
+                    },
+                };
+                filha.pre_conferir(
+                    elo.rowid,
+                    Pendente::Alteracao(&elo.linha, &elo.linha_antiga),
+                    "",
+                    &mut maes,
+                )
+            };
+            abertas.insert(elo.tabela.clone(), filha);
+            feito.map_err(|e| {
+                e.com_nota(&format!(
+                    "no elo da cascata que ela leva a {} rowid {}: {nada}",
+                    elo.tabela, elo.rowid
+                ))
+            })?;
+        }
+        Ok(())
     }
 
     /// Pedido 563: aplica os ELOS da marca -- a mae ja escreveu, por `self` --

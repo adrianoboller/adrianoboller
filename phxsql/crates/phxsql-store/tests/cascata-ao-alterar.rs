@@ -1025,3 +1025,78 @@ fn a_trilha_que_falha_nao_deixa_a_filha_orfa() {
         "a trilha falhou e a filha ficou ORFA na chave velha"
     );
 }
+
+/// **Pedido 574, o 567 no embutido:** a filha tem DUAS chaves na mesma
+/// coluna -- `fk_cliente` para clientes e `fk_vend` para vendedores. A mae
+/// 5->6 leva as filhas para 6, e vendedores nao tem 6. Sem a pre-conferencia,
+/// a marca do 563 entrava, a mae gravava em 6 e o primeiro elo recusava pela
+/// `fk_vend`: a filha ficava na chave velha, denunciada pela marca, mas orfa.
+/// Agora recusa ANTES da marca, com nada gravado e nenhuma marca no disco.
+///
+/// # Prova real
+///
+/// Sem o `pre_conferir_a_cascata` no `gravar_a_marca_da_cascata`, a mae
+/// fica em 6 e a marca `.tx` fica no diretorio -- o vermelho medido.
+#[test]
+fn a_fk_da_filha_para_outra_mae_recusa_antes_da_marca_no_embutido() {
+    let d = dir("574-duas-maes");
+    let mut clientes = mae(&d);
+    let r_mae = clientes
+        .inserir(&[Value::Int(5), Value::Str("ana".into())])
+        .unwrap();
+    clientes.sincronizar().unwrap();
+    let e = Schema::new(
+        "vendedores",
+        vec![Column::new("id", ColumnType::Int4).obrigatoria()],
+        vec![IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico()],
+    )
+    .unwrap();
+    let mut vendedores = Table::criar(&*d, e).unwrap();
+    vendedores.inserir(&[Value::Int(5)]).unwrap();
+    vendedores.sincronizar().unwrap();
+    drop(vendedores);
+    let e = Schema::new(
+        "pedidos",
+        vec![
+            Column::new("id", ColumnType::Int4).obrigatoria(),
+            Column::new("cod", ColumnType::Int4),
+        ],
+        vec![
+            IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico(),
+            IndexDef::new("porCod", vec![IndexColumn::asc(1)]),
+        ],
+    )
+    .unwrap()
+    .com_chaves_estrangeiras(vec![
+        ForeignKey::new("fk_cliente", vec![1], "clientes", vec!["id".into()]),
+        ForeignKey::new("fk_vend", vec![1], "vendedores", vec!["id".into()]),
+    ])
+    .unwrap();
+    let mut pedidos = Table::criar(&*d, e).unwrap();
+    let filhas: Vec<u64> = (10..12)
+        .map(|id| pedidos.inserir(&[Value::Int(id), Value::Int(5)]).unwrap())
+        .collect();
+    pedidos.sincronizar().unwrap();
+    drop(pedidos);
+
+    let erro = clientes
+        .atualizar(r_mae, &[Value::Int(6), Value::Str("ana".into())])
+        .expect_err("a cascata leva as filhas para 6, que vendedores nao tem");
+    assert!(matches!(erro, PhxError::Integridade(_)), "{erro}");
+    assert!(erro.to_string().contains("nada foi"), "{erro}");
+    drop(clientes);
+
+    let mut clientes = Table::abrir(&*d, "clientes").unwrap();
+    assert_eq!(clientes.ler(r_mae).unwrap().unwrap()[0], Value::Int(5));
+    let mut pedidos = Table::abrir(&*d, "pedidos").unwrap();
+    for r in filhas {
+        assert_eq!(aponta_para(&mut pedidos, r), Value::Int(5));
+    }
+    let marcas: Vec<_> = std::fs::read_dir(&*d)
+        .unwrap()
+        .flatten()
+        .filter(|e| e.file_name().to_string_lossy().ends_with(".tx"))
+        .map(|e| e.file_name())
+        .collect();
+    assert!(marcas.is_empty(), "sobrou marca: {marcas:?}");
+}

@@ -14732,6 +14732,26 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "seguem": ["panico_no_inserir_nao_deixa_a_linha_fora_da_busca_de_texto"],
     },
     {
+        "id": "cascata-embutida-sem-pre-conferencia",
+        "titulo": "a cascata do embutido grava a mae antes de conferir a FK da filha para OUTRA mae",
+        "porque": (
+            "pedido 574, resto do 563: a marca entrava sem a pre-conferencia "
+            "do 567; o elo recusava pela `fk_vend` depois da mae gravada, e a "
+            "filha ficava na chave velha com a marca presa."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        conferida?;
+        let mut escritas = Vec::with_capacity(1 + lista.len());
+""",
+        "troca": """        let _ = conferida;
+        let mut escritas = Vec::with_capacity(1 + lista.len());
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "cascata-ao-alterar"],
+        "caem": ["a_fk_da_filha_para_outra_mae_recusa_antes_da_marca_no_embutido"],
+        "seguem": [],
+    },
+    {
         "id": "reconstruir-fts-sem-janela",
         "titulo": "o panico no meio do `reconstruir_fts` grava o indice de texto pela metade marcado limpo",
         "porque": (

@@ -29471,17 +29471,7 @@ fn pedido_da_tabela(database: &str, tabela: &str) -> Json {
 /// codigo nao pode mudar so porque a frase ganhou um contexto. As outras
 /// passam intactas.
 fn com_nota(e: PhxError, nota: &str) -> PhxError {
-    let junta = |m: String| format!("{m}; {nota}");
-    match e {
-        PhxError::Esquema(m) => PhxError::Esquema(junta(m)),
-        PhxError::Tipo(m) => PhxError::Tipo(junta(m)),
-        PhxError::NaoEncontrado(m) => PhxError::NaoEncontrado(junta(m)),
-        PhxError::Duplicado(m) => PhxError::Duplicado(junta(m)),
-        PhxError::Integridade(m) => PhxError::Integridade(junta(m)),
-        PhxError::LimiteExcedido(m) => PhxError::LimiteExcedido(junta(m)),
-        PhxError::Conflito(m) => PhxError::Conflito(junta(m)),
-        outro => outro,
-    }
+    e.com_nota(nota)
 }
 
 /// Os valores de um indice, na ordem das colunas dele.
