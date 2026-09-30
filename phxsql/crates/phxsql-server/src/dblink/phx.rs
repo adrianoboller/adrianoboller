@@ -51,13 +51,12 @@
 //! do login E antes do primeiro pedido, porque o TOKEN de servico viaja no
 //! primeiro pedido que sair. Cifrar depois protegeria so o que sobrou.
 
-use std::time::Duration;
-
 use phxsql_core::error::{PhxError, Result};
 use phxsql_core::json::Json;
 
 use super::conexao::{Coluna, Resultado};
 use super::{nome_seguro, Definicao};
+use crate::prazo::Prazo;
 use crate::replica::Cliente;
 
 /// A conexao com o outro PhxSql.
@@ -77,7 +76,11 @@ impl Conexao {
     /// atravessar a fronteira a mao, e o dia em que alguem esquecesse um
     /// abriria uma conexao em claro que compila. `replica::ligar` recebe
     /// `&Origem` pelo mesmo motivo.
-    pub fn abrir(d: &Definicao) -> Result<Conexao> {
+    ///
+    /// O `prazo` vem de fora -- em producao, [`Definicao::prazo`] -- para a
+    /// prova do pedido 578 poder dizer um silencio abaixo do segundo, que o
+    /// `timeout_s` nao sabe dizer.
+    pub fn abrir(d: &Definicao, prazo: Prazo) -> Result<Conexao> {
         // As duas credenciais pelo portao, e ANTES de ir a rede: a ligacao
         // com `token_remoto_env` ou `senha_env` que falta recusa aqui,
         // nomeando a variavel, em vez de bater no outro servidor sem token e
@@ -87,8 +90,7 @@ impl Conexao {
         let token = d.token_remoto()?;
         let usuario = d.usuario.as_str();
         let senha = if usuario.is_empty() { "" } else { d.senha()? };
-        let espera = Duration::from_secs(d.timeout_s);
-        let mut cliente = Cliente::conectar(&d.host, d.porta, token, espera)?;
+        let mut cliente = Cliente::conectar_com_total(&d.host, d.porta, token, prazo)?;
         // O TUNEL antes de tudo, e aqui o motivo e mais forte que na replica:
         // o token de servico nao vai no `connect`, vai no PRIMEIRO pedido que
         // sair deste cliente. Cifrar depois do login -- ou depois do `ping` --
@@ -176,8 +178,13 @@ fn ensinar_onde_vai_o_token(e: PhxError, token: &str) -> PhxError {
 /// conselho seria falso -- e com pino a falha provavel e outra, a chave
 /// apresentada nao conferir. Ensinar a baixar a guarda ali seria ensinar
 /// exatamente o rebaixamento que o pino existe para impedir.
+///
+/// E o prazo total (pedido 578) tambem passa sem a frase: o servidor anterior
+/// ao aperto RESPONDE recusando, depressa; quem goteja ate o total esta vivo e
+/// segurando a conversa, e mandar desligar a cifra ali seria uma ordem que o
+/// proprio erro desmente -- com o custo de rebaixar a ligacao a toa.
 fn ensinar_a_desligar_a_cifra(e: PhxError, d: &Definicao) -> PhxError {
-    if !d.chave_do_fio.trim().is_empty() {
+    if !d.chave_do_fio.trim().is_empty() || matches!(e, PhxError::LimiteExcedido(_)) {
         return e;
     }
     PhxError::Esquema(format!(

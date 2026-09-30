@@ -19,7 +19,7 @@
 //! `dialeto` as montou assim, e nao porque este tipo as tenha reordenado. A
 //! traducao mora no SQL, onde da para ler as duas versoes lado a lado.
 
-use std::time::Duration;
+use crate::prazo::Prazo;
 
 use phxsql_core::error::Result;
 use phxsql_core::json::Json;
@@ -244,7 +244,14 @@ impl Definicao {
     /// Substitui o par `conectar`/`conectar_pg`, que continuam existindo para
     /// quem precisa do tipo concreto -- o teste de protocolo, por exemplo.
     pub fn abrir(&self) -> Result<Conexao> {
-        let espera = Duration::from_secs(self.timeout_s);
+        self.abrir_com(self.prazo())
+    }
+
+    /// O mesmo, com o prazo na mao -- a prova do pedido 578 precisa de um
+    /// silencio abaixo do segundo. Os TRES motores passam por aqui, e e isso
+    /// que a prova percorre: o cliente que ficasse de fora do prazo comum
+    /// reprovaria nela.
+    pub(crate) fn abrir_com(&self, prazo: Prazo) -> Result<Conexao> {
         Ok(match self.motor {
             Motor::MySql => Conexao::MySql(Box::new(mysql::Conexao::abrir(
                 &self.host,
@@ -252,7 +259,7 @@ impl Definicao {
                 &self.usuario,
                 self.senha()?,
                 &self.database,
-                espera,
+                prazo,
             )?)),
             Motor::Postgres => Conexao::Postgres(Box::new(pg::Conexao::abrir(
                 &self.host,
@@ -260,13 +267,136 @@ impl Definicao {
                 &self.usuario,
                 self.senha()?,
                 &self.database,
-                espera,
+                prazo,
             )?)),
             // Este recebe a DEFINICAO inteira, e nao primitivas, porque o fio
             // dele tem cifra e pino: campo do fio que atravessa a fronteira a
             // mao e campo que alguem esquece de passar um dia, e o esquecimento
             // compila e abre a conexao em claro.
-            Motor::Phx => Conexao::Phx(Box::new(phx::Conexao::abrir(self)?)),
+            Motor::Phx => Conexao::Phx(Box::new(phx::Conexao::abrir(self, prazo)?)),
         })
+    }
+}
+
+#[cfg(test)]
+mod testes_do_prazo_total {
+    //! Pedido 578: o par que goteja abaixo do prazo de silencio.
+
+    use super::*;
+    use crate::prazo::Rotulo;
+    use phxsql_core::error::PhxError;
+    use std::io::Write;
+    use std::net::TcpListener;
+    use std::sync::mpsc;
+    use std::time::{Duration, Instant};
+
+    static ROTULO: Rotulo = Rotulo {
+        quem: "dblink de prova",
+        regra: "prova do 578",
+    };
+
+    /// Um byte a cada `PASSO`, bem abaixo do `SILENCIO`: nenhuma leitura
+    /// estoura o prazo por leitura, e a resposta nunca termina. Os tres
+    /// protocolos esperam uma mensagem longa -- o quadro do MySQL(R) de
+    /// 65.535 bytes, a mensagem `R` do PostgreSQL(R) de 64 KiB, a linha do
+    /// aperto do PhxSql sem quebra -- e o gotejo a enche devagar.
+    const PASSO: Duration = Duration::from_millis(100);
+    const SILENCIO: Duration = Duration::from_millis(400);
+    const TOTAL: Duration = Duration::from_millis(1500);
+    /// Quanto o teste espera antes de declarar a thread presa. Sem o total
+    /// ela ficaria presa para sempre; aqui basta o total com folga larga.
+    const PACIENCIA: Duration = Duration::from_secs(6);
+
+    fn par_que_goteja(prefixo: &'static [u8]) -> u16 {
+        let ouvinte = TcpListener::bind("127.0.0.1:0").unwrap();
+        let porta = ouvinte.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            let Ok((mut s, _)) = ouvinte.accept() else {
+                return;
+            };
+            if s.write_all(prefixo).is_err() {
+                return;
+            }
+            // Para quando o cliente fecha -- e o que o conserto faz ao cortar.
+            loop {
+                std::thread::sleep(PASSO);
+                if s.write_all(b"x").is_err() {
+                    return;
+                }
+            }
+        });
+        porta
+    }
+
+    fn ligacao(motor: &str, porta: u16) -> Definicao {
+        Definicao::de_json(
+            &Json::analisar(&format!(
+                r#"{{"nome":"prova578","motor":"{motor}","host":"127.0.0.1","porta":{porta},
+                    "usuario":"","token_remoto":"t","timeout_s":1}}"#
+            ))
+            .unwrap(),
+        )
+        .unwrap()
+    }
+
+    /// **578: os TRES clientes do DbLink param no prazo total.** Cada um abre
+    /// contra um par que goteja, pelo mesmo `abrir_com` que a producao usa, e
+    /// tem de voltar com `LimiteExcedido` perto do total -- nem antes (o
+    /// silencio nao estourou), nem nunca.
+    ///
+    /// # Prova real
+    ///
+    /// Com o defeito reposto (so o prazo de silencio, o de antes), nenhum dos
+    /// tres volta em `PACIENCIA`: o vermelho lista quais ficaram presos.
+    #[test]
+    fn o_par_que_goteja_para_no_prazo_total() {
+        let casos: [(&str, &'static [u8]); 3] = [
+            ("mysql", &[0xFF, 0xFF, 0x00, 0x00]),
+            ("postgres", &[b'R', 0x00, 0x01, 0x00, 0x00]),
+            ("phxsql", b""),
+        ];
+        let (avisar, avisos) = mpsc::channel();
+        for (motor, prefixo) in casos {
+            let d = ligacao(motor, par_que_goteja(prefixo));
+            let avisar = avisar.clone();
+            std::thread::spawn(move || {
+                let relogio = Instant::now();
+                let r = d
+                    .abrir_com(Prazo::com_total(SILENCIO, TOTAL, &ROTULO))
+                    .map(|_| ());
+                let _ = avisar.send((motor, r, relogio.elapsed()));
+            });
+        }
+        drop(avisar);
+        let prazo_final = Instant::now() + PACIENCIA;
+        let mut voltaram = Vec::new();
+        while voltaram.len() < casos.len() {
+            let resta = prazo_final.saturating_duration_since(Instant::now());
+            match avisos.recv_timeout(resta) {
+                Ok(v) => voltaram.push(v),
+                Err(_) => break,
+            }
+        }
+        let presos: Vec<&str> = casos
+            .iter()
+            .map(|(m, _)| *m)
+            .filter(|m| !voltaram.iter().any(|(v, _, _)| v == m))
+            .collect();
+        assert!(
+            presos.is_empty(),
+            "o par que goteja prendeu a thread alem de {PACIENCIA:?} -- sem prazo total: {presos:?}"
+        );
+        for (motor, r, durou) in voltaram {
+            match r {
+                Err(PhxError::LimiteExcedido(m)) => {
+                    assert!(m.contains("prazo total"), "{motor}: {m}")
+                }
+                outro => panic!("{motor}: esperava o prazo total, veio {outro:?}"),
+            }
+            assert!(
+                durou >= TOTAL - PASSO,
+                "{motor}: cortou em {durou:?}, antes do total {TOTAL:?}"
+            );
+        }
     }
 }

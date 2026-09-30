@@ -41,6 +41,7 @@ use phxsql_core::base64;
 use phxsql_core::fio::{Canal, Iniciador, Recebido};
 
 use crate::config::Origem;
+use crate::prazo::{self, ComPrazo, Prazo};
 use crate::valores::hex_para_bytes;
 
 /// Quantos eventos puxar por vez.
@@ -58,8 +59,8 @@ const LOTE: u64 = 500;
 
 /// Uma conexao com o source, falando o JSON por linha da porta de dados.
 pub struct Cliente {
-    fluxo: TcpStream,
-    leitor: BufReader<TcpStream>,
+    fluxo: ComPrazo,
+    leitor: BufReader<ComPrazo>,
     token: String,
     /// Em claro (como sempre foi) ou dentro do tunel. Ver
     /// `docs/CIFRA-DO-FIO.md`.
@@ -75,7 +76,8 @@ impl Cliente {
     /// do cluster, em [`Cliente::conectar_com_prazo`], e os IRMAOS ficaram sem
     /// ele: o laco da replica e a sonda `replicacao_testar` (via `ligar`), o
     /// dblink para outro PhxSql e o console de linha de comando -- todos
-    /// chamam esta funcao. Revisao SEC, A5. Ela continua existindo em vez de
+    /// chamavam esta funcao (o dblink saiu para [`Cliente::conectar_com_total`]
+    /// no pedido 578). Revisao SEC, A5. Ela continua existindo em vez de
     /// ser apagada porque os tres chamadores nao tem prazo proprio a dizer; o
     /// que nao existe mais e um caminho SEM prazo.
     pub fn conectar(host: &str, porta: u16, token: &str, espera: Duration) -> Result<Cliente> {
@@ -90,6 +92,35 @@ impl Cliente {
         porta: u16,
         token: &str,
         espera: Duration,
+        prazo_conexao: Duration,
+    ) -> Result<Cliente> {
+        Cliente::abrir(
+            host,
+            porta,
+            token,
+            Prazo::so_silencio(espera),
+            prazo_conexao,
+        )
+    }
+
+    /// Conecta com prazo TOTAL por pedido, alem do silencio -- pedido 578. E
+    /// o caminho do DbLink para outro PhxSql: la a thread presa e a de um job
+    /// ou de uma conexao do servidor. A replica, o pulso e o console
+    /// continuam so com o silencio, porque o total deles e outra decisao.
+    pub fn conectar_com_total(
+        host: &str,
+        porta: u16,
+        token: &str,
+        prazo: Prazo,
+    ) -> Result<Cliente> {
+        Cliente::abrir(host, porta, token, prazo, PRAZO_DE_CONEXAO)
+    }
+
+    fn abrir(
+        host: &str,
+        porta: u16,
+        token: &str,
+        prazo: Prazo,
         prazo_conexao: Duration,
     ) -> Result<Cliente> {
         use std::net::ToSocketAddrs;
@@ -111,16 +142,17 @@ impl Cliente {
             })?;
         let fluxo = TcpStream::connect_timeout(&endereco, prazo_conexao)
             .map_err(|e| PhxError::Io(std::io::Error::new(e.kind(), format!("{alvo}: {e}"))))?;
-        Cliente::montar(fluxo, token, espera)
+        Cliente::montar(fluxo, token, prazo)
     }
 
-    fn montar(fluxo: TcpStream, token: &str, espera: Duration) -> Result<Cliente> {
+    fn montar(fluxo: TcpStream, token: &str, prazo: Prazo) -> Result<Cliente> {
         // Nagle segura a resposta em ate 40 ms, e aqui toda troca e um pedido
         // pequeno esperando resposta -- exatamente o caso em que ele so atrasa.
         let _ = fluxo.set_nodelay(true);
-        fluxo.set_read_timeout(Some(espera))?;
-        fluxo.set_write_timeout(Some(espera))?;
-        let leitor = BufReader::new(fluxo.try_clone()?);
+        // O relogio do total comeca DEPOIS do `connect`, que tem prazo
+        // proprio por endereco.
+        let (leitura, fluxo) = ComPrazo::armar(fluxo, prazo.rearmado())?;
+        let leitor = BufReader::new(leitura);
         Ok(Cliente {
             fluxo,
             leitor,
@@ -139,15 +171,18 @@ impl Cliente {
     ///
     /// Devolve a chave que o source apresentou, para quem quiser anota-la.
     pub fn cifrar(&mut self, pino: Option<[u8; 32]>) -> Result<[u8; 32]> {
+        self.rearmar();
         let (iniciador, m1) = Iniciador::comecar(pino);
         let pedido = Json::objeto(vec![
             ("op", Json::texto_de("cifrar")),
             ("e", Json::texto_de(base64::codificar(&m1))),
         ])
         .escrever();
-        self.fluxo.write_all(pedido.as_bytes())?;
-        self.fluxo.write_all(b"\n")?;
-        self.fluxo.flush()?;
+        self.fluxo
+            .write_all(pedido.as_bytes())
+            .and_then(|_| self.fluxo.write_all(b"\n"))
+            .and_then(|_| self.fluxo.flush())
+            .map_err(|e| prazo::classificar(e, PhxError::Io))?;
 
         // O TETO vale aqui tambem -- pedido 312. Esta leitura acontece antes
         // de existir tunel e antes de qualquer autenticacao, e durante muito
@@ -157,7 +192,8 @@ impl Cliente {
         // de sempre -- so com o teto do APERTO, que e curto de proposito.
         let resposta = match self
             .canal
-            .ler_ate(&mut self.leitor, phxsql_core::fio::TETO_DO_APERTO)?
+            .ler_ate(&mut self.leitor, phxsql_core::fio::TETO_DO_APERTO)
+            .map_err(prazo::reclassificar)?
         {
             Recebido::Linha(l) => l,
             Recebido::Fim => {
@@ -183,6 +219,12 @@ impl Cliente {
         Ok(apresentada)
     }
 
+    /// Cada pedido tem o prazo total inteiro, quando ha total -- pedido 578.
+    /// Sem total e um `Copy` de tres campos, e o soquete nem e tocado.
+    fn rearmar(&mut self) {
+        prazo::rearmar(self.leitor.get_mut(), &mut self.fluxo);
+    }
+
     /// A transcricao do aperto, quando esta conexao passou pelo tunel.
     ///
     /// Quem a usa e a prova de identidade do pulso (pedido 278), pelo mesmo
@@ -198,9 +240,16 @@ impl Cliente {
             campos.push(("token", Json::texto_de(self.token.clone())));
         }
         let linha = Json::objeto(campos).escrever();
-        self.canal.escrever(&mut self.fluxo, &linha)?;
+        self.rearmar();
+        self.canal
+            .escrever(&mut self.fluxo, &linha)
+            .map_err(prazo::reclassificar)?;
 
-        let resposta = match self.canal.ler(&mut self.leitor)? {
+        let resposta = match self
+            .canal
+            .ler(&mut self.leitor)
+            .map_err(prazo::reclassificar)?
+        {
             Recebido::Linha(l) => l,
             Recebido::Fim => {
                 return Err(PhxError::Io(std::io::Error::other(

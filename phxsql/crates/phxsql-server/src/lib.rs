@@ -41,6 +41,7 @@ pub mod mcp;
 pub mod mensagens;
 pub mod pg;
 pub mod pivot;
+pub mod prazo;
 pub mod profiler;
 pub mod pulso;
 pub mod replica;

@@ -9225,11 +9225,16 @@ pub fn limpar() {
             "registro, que e a prova de que aquele teto nao alcancava ali. "
             "Reposto o defeito, o erro que volta nem e limite: e o reset da "
             "conexao depois de a memoria ja ter sido reservada."
+            "\n\n"
+            "RE-APONTADA em 30/09/2026 (pedido 578): o trecho ganhou o "
+            "`.map_err(prazo::reclassificar)` do prazo total; o defeito "
+            "reposto e o mesmo."
         ),
         "arquivo": "crates/phxsql-server/src/replica.rs",
         "trecho": """        let resposta = match self
             .canal
-            .ler_ate(&mut self.leitor, phxsql_core::fio::TETO_DO_APERTO)?
+            .ler_ate(&mut self.leitor, phxsql_core::fio::TETO_DO_APERTO)
+            .map_err(prazo::reclassificar)?
         {
             Recebido::Linha(l) => l,
             Recebido::Fim => {
@@ -15454,11 +15459,17 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "silencio de 500 ms e prazo total de 4,5 s, o rele que pinga a "
             "cada 50 ms segurou a conversa 6,03 s -- ate ele mesmo fechar --; "
             "com o conserto, 4,506 s."
+            "\n\n"
+            "RE-APONTADA em 30/09/2026 (pedido 578): o `Prazo` e o `ComPrazo` "
+            "desceram para `crate::prazo`, o motor comum com o DbLink. Repor "
+            "o defeito no motor derrubaria os dois clientes de uma vez; aqui "
+            "ele volta so no SMTP -- a conversa armada so com o silencio, "
+            "que e o de antes do 463."
         ),
         "arquivo": "crates/phxsql-server/src/email.rs",
-        "trecho": """            ate: Instant::now().checked_add(total),
+        "trecho": """        ComPrazo::armar(fluxo, Prazo::com_total(silencio, total, &ROTULO_SMTP))
 """,
-        "troca": """            ate: None, // DEFEITO REPOSTO (463)
+        "troca": """        ComPrazo::armar(fluxo, Prazo::so_silencio(silencio)) // DEFEITO REPOSTO (463)
 """,
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
@@ -17435,6 +17446,35 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         ],
         "seguem": [
             "servidor::testes_dblink_cifra::salvar_sem_trocar_o_destino_continua_herdando_a_senha",
+        ],
+    },
+    {
+        "id": "dblink-sem-prazo-total",
+        "titulo": "Os três clientes do DbLink (mysql, pg e phx) só têm prazo por LEITURA: um par que goteja um byte antes de cada prazo prende a thread do job ou da conexão para sempre",
+        "porque": (
+            "pedido 578, resto do 545. O `ComPrazo` do `email.rs` (pedido "
+            "463) desceu para `crate::prazo`, o motor unico, e os tres "
+            "clientes passam por ele pelo `Definicao::abrir_com`, com o total "
+            "rearmado a cada operacao. Reposto aqui o caminho de antes -- so "
+            "o silencio --, nenhum dos tres volta em 6 s contra o par que "
+            "goteja um byte a cada 100 ms com silencio de 400 ms; com o "
+            "conserto os tres voltam com `LimiteExcedido` perto de 1,5 s."
+        ),
+        "arquivo": "crates/phxsql-server/src/dblink/conexao.rs",
+        "trecho": """    pub(crate) fn abrir_com(&self, prazo: Prazo) -> Result<Conexao> {
+        Ok(match self.motor {""",
+        "troca": """    pub(crate) fn abrir_com(&self, prazo: Prazo) -> Result<Conexao> {
+        // DEFEITO REPOSTO (578): so o prazo de silencio, sem o total.
+        let prazo = Prazo::so_silencio(prazo.silencio());
+        Ok(match self.motor {""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "dblink::conexao::testes_do_prazo_total::o_par_que_goteja_para_no_prazo_total",
+        ],
+        "seguem": [
+            "prazo::testes::o_total_recomeca_a_cada_operacao_e_corta_a_que_passa",
+            "email::testes::o_rele_que_pinga_e_cortado_no_prazo_total",
         ],
     },
 ]
