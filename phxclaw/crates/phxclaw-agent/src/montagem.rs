@@ -85,6 +85,10 @@ impl Montagem {
                 network: self.shell_network,
                 timeout: Duration::from_secs(120),
             }));
+            tools.push(Arc::new(crate::ferramentas::BackgroundShellTool::new(
+                bwrap.into(),
+                self.shell_network,
+            )));
         }
         if let Some(b) = &self.search {
             tools.push(Arc::new(WebSearchTool { backend: b.clone() }));

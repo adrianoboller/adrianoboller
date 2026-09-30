@@ -20,7 +20,7 @@ desenho nosso:
 
 | # | Lacuna | Estado no PhxClaw | Próximo passo |
 |---|---|---|---|
-| E1 | Processo de terminal em segundo plano (iniciar, ler saída parcial, matar) | só `shell` síncrono com prazo | ferramenta `shell_bg` no mesmo `run_in_workdir` (bwrap), com teto de processos por tarefa |
+| E1 | Processo de terminal em segundo plano (iniciar, ler saída parcial, matar) | `shell_bg` (start/status/stop/list) montado pela mesma função do `shell`; teto de 4 vivos por tarefa e vigia de 10 min; stop conferido pelo `/proc`; RED medido | ✓ 30/09 |
 | E2 | Edição precisa de arquivo (`str_replace`, ver faixa de linhas, inserir) | `edit_file` (trecho único, recusa 0 ou >1) e `read_file` com faixa numerada; 4 testes, RED medido | ✓ 30/09 |
 | E3 | Limite de taxa por token na API | balde de fichas na criação de tarefa (`PHXCLAW_API_TAREFAS_POR_MINUTO`, padrão 10); 429 com `Retry-After`; consulta e pedido inválido não gastam | ✓ 30/09 |
 

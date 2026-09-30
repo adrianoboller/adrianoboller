@@ -9,8 +9,9 @@ use phxclaw_agent_core::{
     BoxFut, Llm, LlmError, LlmOptions, LlmReply, Message, Tool, ToolContext, ToolError, ToolOutput,
     ToolSpec, Usage,
 };
-use phxclaw_sandbox::{WorkdirCommand, run_in_workdir};
+use phxclaw_sandbox::{WorkdirCommand, run_in_workdir, workdir_sandbox_command};
 use serde_json::{Value, json};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -85,6 +86,187 @@ Returns exit code, stdout and stderr."
                 ),
                 artifacts,
             })
+        })
+    }
+}
+
+/// Processo de shell em segundo plano (servidor, compilacao longa, observador): o mesmo
+/// sandbox do `shell`, montado pela mesma funcao, com a saida num arquivo da pasta.
+///
+/// Dois tetos, porque processo esquecido e o defeito tipico aqui: `max_por_tarefa`
+/// processos vivos por tarefa, e `vida_max` de vida -- um vigia mata o que passar dela,
+/// mesmo que o modelo nunca mais pergunte por ele.
+pub struct BackgroundShellTool {
+    pub bwrap: PathBuf,
+    pub network: bool,
+    pub max_por_tarefa: usize,
+    pub vida_max: Duration,
+    procs: Arc<Mutex<HashMap<String, Vec<Processo>>>>,
+}
+
+struct Processo {
+    id: usize,
+    comando: String,
+    child: std::process::Child,
+    log: PathBuf,
+}
+
+impl BackgroundShellTool {
+    pub fn new(bwrap: PathBuf, network: bool) -> Self {
+        Self {
+            bwrap,
+            network,
+            max_por_tarefa: 4,
+            vida_max: Duration::from_secs(600),
+            procs: Arc::default(),
+        }
+    }
+}
+
+/// Ultimos `n` bytes do arquivo, cortados em fronteira de caractere.
+fn cauda(p: &std::path::Path, n: usize) -> String {
+    let b = std::fs::read(p).unwrap_or_default();
+    let ini = b.len().saturating_sub(n);
+    let t = String::from_utf8_lossy(&b[ini..]).into_owned();
+    if ini > 0 { format!("[...]{t}") } else { t }
+}
+
+impl Tool for BackgroundShellTool {
+    fn spec(&self) -> ToolSpec {
+        ToolSpec {
+            name: "shell_bg".into(),
+            description: "Background shell process in the task sandbox (/work). action=start with \
+'command' returns an id; action=status with 'id' returns running/exit code and the output tail; \
+action=stop with 'id' kills it; action=list shows all. Use for servers or long jobs."
+                .into(),
+            parameters: json!({"type":"object","properties":{
+                "action":{"type":"string","enum":["start","status","stop","list"]},
+                "command":{"type":"string"},
+                "id":{"type":"integer"}
+            },"required":["action"]}),
+        }
+    }
+    fn capability(&self) -> &'static str {
+        "shell.exec"
+    }
+    fn run<'a>(
+        &'a self,
+        args: Value,
+        ctx: &'a ToolContext,
+    ) -> BoxFut<'a, Result<ToolOutput, ToolError>> {
+        Box::pin(async move {
+            let acao = arg_str(&args, "action")?;
+            let id_pedido = args.get("id").and_then(Value::as_u64).map(|x| x as usize);
+            let mut todos = self.procs.lock().unwrap_or_else(|p| p.into_inner());
+            let lista = todos.entry(ctx.task_id.clone()).or_default();
+            let estado = |p: &mut Processo| match p.child.try_wait() {
+                Ok(None) => "rodando".to_string(),
+                Ok(Some(st)) => st
+                    .code()
+                    .map(|c| format!("terminou com {c}"))
+                    .unwrap_or_else(|| "terminou por sinal".into()),
+                Err(e) => format!("erro: {e}"),
+            };
+            match acao {
+                "start" => {
+                    let comando = arg_str(&args, "command")?.to_string();
+                    let vivos = lista
+                        .iter_mut()
+                        .filter_map(|p| p.child.try_wait().ok())
+                        .filter(Option::is_none)
+                        .count();
+                    if vivos >= self.max_por_tarefa {
+                        return Err(ToolError::Denied(format!(
+                            "ja ha {vivos} processos rodando nesta tarefa (teto {}); pare um com action=stop",
+                            self.max_por_tarefa
+                        )));
+                    }
+                    let id = lista.iter().map(|p| p.id).max().unwrap_or(0) + 1;
+                    let dir = ctx.workdir.join(".bg");
+                    std::fs::create_dir_all(&dir).map_err(|e| ToolError::Failed(e.to_string()))?;
+                    let log = dir.join(format!("{id}.log"));
+                    let f = std::fs::File::create(&log)
+                        .map_err(|e| ToolError::Failed(e.to_string()))?;
+                    let f2 = f
+                        .try_clone()
+                        .map_err(|e| ToolError::Failed(e.to_string()))?;
+                    let cmd = WorkdirCommand {
+                        workdir: ctx.workdir.clone(),
+                        script: comando.clone(),
+                        timeout: self.vida_max,
+                        network: self.network,
+                        max_output_bytes: 0,
+                    };
+                    let child = workdir_sandbox_command(&self.bwrap, &cmd)
+                        .map_err(|e| ToolError::Failed(e.to_string()))?
+                        .stdin(std::process::Stdio::null())
+                        .stdout(f)
+                        .stderr(f2)
+                        .spawn()
+                        .map_err(|e| ToolError::Failed(e.to_string()))?;
+                    lista.push(Processo {
+                        id,
+                        comando,
+                        child,
+                        log,
+                    });
+                    // Vigia da vida maxima: nao depende de o modelo voltar a perguntar.
+                    let procs = self.procs.clone();
+                    let (tarefa, vida) = (ctx.task_id.clone(), self.vida_max);
+                    std::thread::spawn(move || {
+                        std::thread::sleep(vida);
+                        let mut t = procs.lock().unwrap_or_else(|p| p.into_inner());
+                        if let Some(p) = t
+                            .get_mut(&tarefa)
+                            .and_then(|l| l.iter_mut().find(|p| p.id == id))
+                            && matches!(p.child.try_wait(), Ok(None))
+                        {
+                            let _ = p.child.kill();
+                            let _ = p.child.wait();
+                        }
+                    });
+                    Ok(ToolOutput::text(format!(
+                        "iniciado id {id}; saida em .bg/{id}.log; morre sozinho em {} s",
+                        self.vida_max.as_secs()
+                    )))
+                }
+                "status" | "stop" => {
+                    let id = id_pedido.ok_or_else(|| {
+                        ToolError::InvalidArguments(
+                            "falta 'id' (numero devolvido pelo start)".into(),
+                        )
+                    })?;
+                    let p = lista.iter_mut().find(|p| p.id == id).ok_or_else(|| {
+                        ToolError::InvalidArguments(format!("nao ha processo {id} nesta tarefa"))
+                    })?;
+                    if acao == "stop" && matches!(p.child.try_wait(), Ok(None)) {
+                        let _ = p.child.kill();
+                        let _ = p.child.wait();
+                    }
+                    Ok(ToolOutput::text(format!(
+                        "id {id}: {}\nsaida:\n{}",
+                        estado(p),
+                        cauda(&p.log, 4000)
+                    )))
+                }
+                "list" => {
+                    let l: Vec<String> = lista
+                        .iter_mut()
+                        .map(|p| {
+                            let e = estado(p);
+                            format!("{}\t{e}\t{}", p.id, p.comando)
+                        })
+                        .collect();
+                    Ok(ToolOutput::text(if l.is_empty() {
+                        "(nenhum processo)".into()
+                    } else {
+                        l.join("\n")
+                    }))
+                }
+                outra => Err(ToolError::InvalidArguments(format!(
+                    "action desconhecida: {outra} (start, status, stop, list)"
+                ))),
+            }
         })
     }
 }

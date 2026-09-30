@@ -223,9 +223,13 @@ pub struct WorkdirOutput {
     pub truncated: bool,
 }
 
-pub fn run_in_workdir(bwrap: &Path, cmd: &WorkdirCommand) -> Result<WorkdirOutput, SandboxError> {
-    use std::io::Read;
-    use std::process::Stdio;
+/// O processo do sandbox, montado num lugar so: o `shell` sincrono e o de segundo plano
+/// saem daqui, para a lista de binds e o ambiente limpo nunca divergirem entre os dois.
+/// Quem chama escolhe so para onde vao stdin/stdout/stderr.
+pub fn workdir_sandbox_command(
+    bwrap: &Path,
+    cmd: &WorkdirCommand,
+) -> Result<Command, SandboxError> {
     fs::create_dir_all(&cmd.workdir)?;
     let workdir = fs::canonicalize(&cmd.workdir)?;
     let mut args: Vec<String> = vec![
@@ -277,12 +281,19 @@ pub fn run_in_workdir(bwrap: &Path, cmd: &WorkdirCommand) -> Result<WorkdirOutpu
         cmd.script.clone(),
     ]);
     // Ambiente limpo e fixo: nada do processo pai (tokens, chaves) entra no sandbox.
-    let mut child = Command::new(bwrap)
-        .args(&args)
+    let mut c = Command::new(bwrap);
+    c.args(&args)
         .env_clear()
         .env("PATH", "/usr/local/bin:/usr/bin:/bin")
         .env("HOME", "/work")
-        .env("LANG", "C.UTF-8")
+        .env("LANG", "C.UTF-8");
+    Ok(c)
+}
+
+pub fn run_in_workdir(bwrap: &Path, cmd: &WorkdirCommand) -> Result<WorkdirOutput, SandboxError> {
+    use std::io::Read;
+    use std::process::Stdio;
+    let mut child = workdir_sandbox_command(bwrap, cmd)?
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
