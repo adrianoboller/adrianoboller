@@ -352,6 +352,52 @@ fn pendentes_da_familia(familia: PathBuf) -> Pendentes {
     reg.entry(familia).or_default().clone()
 }
 
+/// O registro das familias da tabela `nome` segue o arquivo quando ela e
+/// renomeada (`destino`), ou sai quando ela e apagada (`None`) -- pedido 536.
+///
+/// A chave e o CAMINHO, e o `rename` muda o caminho sem mudar o inode: sem
+/// isto, o que foi escrito antes do renomear ficava registrado no nome velho
+/// para sempre -- `familias_devendo_em` contando uma divida que nenhum
+/// `sincronizar` alcanca --, e o nome novo nascia sem os `batizados`, com a
+/// regra de pular descritor limpo lendo um registro que nao era o dele. E o
+/// irmao do `ndx::levar_atestado`, que faz o mesmo com o atestado do 522.
+///
+/// Apagada, o registro sai: o dado que ele devia ao disco acabou de ser
+/// removido, e uma homonima que nascer depois nao herda divida de ninguem.
+pub(crate) fn mudar_pendentes_de_nome(
+    diretorio: &Path,
+    nome: &str,
+    destino: Option<(&Path, &str)>,
+) {
+    let dir = absoluto_lexico(diretorio).unwrap_or_else(|| diretorio.to_path_buf());
+    let mut reg = trava(&ESCRITAS_PENDENTES);
+    let velhas: Vec<PathBuf> = reg
+        .keys()
+        .filter(|k| {
+            k.parent() == Some(dir.as_path())
+                && k.file_stem().and_then(|s| s.to_str()) == Some(nome)
+        })
+        .cloned()
+        .collect();
+    for velha in velhas {
+        let Some(registro) = reg.remove(&velha) else {
+            continue;
+        };
+        let Some((dir_d, nome_d)) = destino else {
+            continue;
+        };
+        let ext = velha.extension().and_then(|e| e.to_str()).unwrap_or("");
+        let nova = reg.entry(familia(dir_d, nome_d, ext)).or_default().clone();
+        let (escritos, batizados) = {
+            let r = trava(&registro);
+            (r.escritos.clone(), r.batizados.clone())
+        };
+        let mut n = trava(&nova);
+        n.escritos.extend(escritos);
+        n.batizados.extend(batizados);
+    }
+}
+
 /// Quantas familias de arquivo AINDA DEVEM ao disco, dentro deste diretorio.
 ///
 /// # Por que ela existe, e por que ela e' publica

@@ -18728,6 +18728,32 @@ impl Servidor {
             .unwrap_or(false)
     }
 
+    /// **Pedido 536:** a tabela que sumiu pelo nome -- excluida ou renomeada
+    /// -- sai das sujas pelo nome velho. A chave das sujas e o nome: depois do
+    /// `excluir_tabela` ou do `renomear_tabela` ela nao abre mais, e o fecho
+    /// segurava TODAS as marcas de COMMIT por ela (o lado seguro dele) ate o
+    /// processo cair -- e no arranque a marca reaplicava `Atualizar` velho por
+    /// cima do que foi escrito depois.
+    ///
+    /// Renomeada, a chave MUDA de nome, e o `fsync` fica com o fecho seguinte,
+    /// que abre a tabela pelo nome novo: a marca continua esperando por um
+    /// `fsync` posterior a escrita, como o invariante do
+    /// `descarregar_sujas_com` pede. Excluida, a chave so sai -- o dado que a
+    /// marca esperava levar ao disco acabou de ser apagado. Nenhum `fsync`
+    /// entra aqui com a trava na mao: a catraca `alcancam-fsync-2` do mapa da
+    /// trava mediu os dois caminhos e nao sobe. Quem chama segura a trava de
+    /// dados, e ninguem suja a tabela entre a troca de nome e esta linha.
+    fn renomear_nas_sujas(&self, database: &str, tabela: &str, destino: Option<&str>) {
+        let Ok(mut sujas) = self.sujas.lock() else {
+            return;
+        };
+        if sujas.remove(&format!("{database}/{tabela}")) {
+            if let Some(d) = destino {
+                sujas.insert(format!("{database}/{d}"));
+            }
+        }
+    }
+
     /// Tira das sujas as chaves que o fecho ja levou ao disco -- e so elas.
     /// Ver o A1 no `descarregar_sujas_com`.
     fn tirar_das_sujas(&self, chaves: &[String]) {
@@ -19764,6 +19790,7 @@ impl Servidor {
         let dados = self.travar_dados()?;
         let db = dados.abrir_database(database)?;
         let apagados = db.excluir_tabela(tabela)?;
+        self.renomear_nas_sujas(database, tabela, None);
         self.esquecer_diario(database, tabela);
         // Os gatilhos da tabela saem junto, como no MySQL(R): um orfao
         // dispararia contra uma homonima futura que nao tem nada com ele.
@@ -19849,6 +19876,7 @@ impl Servidor {
         let dados = self.travar_dados()?;
         let db = dados.abrir_database(database)?;
         let movidos = db.renomear_tabela(tabela, destino)?;
+        self.renomear_nas_sujas(database, tabela, Some(destino));
         Ok(Json::objeto(vec![
             ("database", Json::texto_de(database)),
             ("origem", Json::texto_de(tabela)),
@@ -43251,6 +43279,53 @@ mod testes_janela_e_cadeia {
             vec!["b/naoexiste".to_string()],
             "so a que falhou volta para as sujas — as que sincronizaram nao              podem voltar (seria fsync de novo a cada janela), e a que falhou              nao pode sumir (seria dado sem `fsync` que ninguem mais tenta)"
         );
+    }
+
+    /// **Pedido 536:** a tabela escrita na janela e depois excluida ou
+    /// renomeada ficava nas sujas pelo nome velho -- um `b/naoexiste` de
+    /// verdade --, e o fecho segurava TODAS as marcas de COMMIT ate o processo
+    /// cair; no arranque, a marca reaplicava `Atualizar` velho por cima do que
+    /// foi escrito depois. Agora o `excluir_tabela` tira a chave e o
+    /// `renomear_tabela` a muda de nome, sob a mesma trava, e o fecho seguinte
+    /// sincroniza pelo nome novo e apaga as marcas.
+    ///
+    /// # Prova real
+    ///
+    /// Sem o `renomear_nas_sujas`, a marca fica e as sujas guardam `b/a` e
+    /// `b/b` -- o vermelho medido antes do conserto.
+    #[test]
+    fn tabela_excluida_ou_renomeada_na_janela_nao_segura_as_marcas() {
+        let (s, _guarda) = servidor_janela_curta("536-some-da-janela");
+        sujar_as_duas(&s);
+        let marca = marca_de_mentira(&s, "transacao_5.tx");
+        let dono = Sessao::default();
+        s.executar(
+            "excluir_tabela",
+            &pedido(r#"{"database":"b","tabela":"a","confirmar":"a"}"#),
+            &dono,
+        )
+        .unwrap();
+        s.executar(
+            "renomear_tabela",
+            &pedido(r#"{"database":"b","tabela":"b","destino":"c"}"#),
+            &dono,
+        )
+        .unwrap();
+
+        let dados = s.travar_dados().unwrap();
+        s.descarregar_sujas_com(&dados);
+        drop(dados);
+
+        let sujas: Vec<String> = s.sujas.lock().unwrap().iter().cloned().collect();
+        assert!(
+            sujas.is_empty(),
+            "a tabela que sumiu pelo nome ficou nas sujas: {sujas:?}"
+        );
+        assert!(
+            !marca.exists(),
+            "a marca ficou presa por uma tabela que nao existe mais pelo nome dela"
+        );
+        assert_eq!(devendo(&s), 0, "a tabela renomeada ficou devendo ao disco");
     }
 
     /// **O `fsync` que falha DENTRO do fio**, que e o irmao do de cima.

@@ -971,9 +971,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `servidor-segue-de-pe-depois-do-fsync-recusado` | o servidor segue de pé depois de um `fsync` recusado, gravando num disco que já se sabe que mente | 1 | ✅ provada |
 | `completar-engole-a-tabela-que-nao-foi-ao-disco` | a recuperação engole o erro do `sincronizar` e apaga a marca de um commit cujo dado não foi ao disco | 1 | ✅ provada |
 
-**325 das 457 guardas do catálogo: 1 aposentada, 320 provadas, 4 redundantes** — 8922 s de mutação, medido em 2026-09-16 15:25.
+**325 das 459 guardas do catálogo: 1 aposentada, 320 provadas, 4 redundantes** — 8922 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 133 das 457 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 133 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 135 das 459 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 135 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
@@ -1044,6 +1044,8 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `upsert-solto-ressuscita-a-excluida` — o upsert fora de transação ressuscita a linha excluída suave; o mesmo upsert dentro a mantém excluída
 - `mescla-do-upsert-sobre-o-disco` — o upsert com SET dentro da transação mescla sobre a linha do disco, e a excluída na lista ressuscita
 - `elo-do-empilhar-pelo-disco` — o elo que o `empilhar` planeja pelo disco sobrescreve o que a própria lista já escreveu na filha
+- `tabela-que-some-segura-as-marcas` — a tabela escrita na janela e excluida ou renomeada fica nas sujas pelo nome velho e segura todas as marcas de COMMIT
+- `renomear-deixa-o-registro-no-nome-velho` — o renomear deixa o registro do que deve ao disco no nome velho, e a divida fica para sempre onde ninguem sincroniza
 - `carimbo-da-a-volta-no-teto` — o rowstamp empurrado ao teto por evento replicado da a volta, e o filho nasce com carimbo menor que o pai
 - `upsert-solto-sem-trava-da-linha` — o upsert solto altera a linha que uma transacao segura, e o COMMIT dela apaga a escrita
 - `cascata-solta-sem-trava-da-filha` — a cascata solta grava a filha que uma transacao segura, por cima do X dela

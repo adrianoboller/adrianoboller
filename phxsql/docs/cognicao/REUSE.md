@@ -4,7 +4,12 @@
      `--catraca` reprova se este arquivo nao bater com o que o extrator
      geraria agora; rode o comando sem flag para atualizar. -->
 
-Gerado dos `cognicao_*.md` com `**Estado:** FRUTIFERO` -- 6 hoje, de 347 cognicoes no total.
+Gerado dos `cognicao_*.md` com `**Estado:** FRUTIFERO` -- 7 hoje, de 348 cognicoes no total.
+
+## Chave por caminho não segue o `rename`: mudar o nome nas sujas não bastava
+
+- Evidencia: `crates/phxsql-server/src/servidor.rs::tabela_excluida_ou_renomeada_na_janela_nao_segura_as_marcas` falha com `mudar_pendentes_de_nome` desligado (`familias_devendo_em` = 12) e passa com ele ligado; guarda `renomear-deixa-o-registro-no-nome-velho` em `bancada/guardas/catalogo.py`, provada pelo `provar-guardas.py --so`. Pedido 536, 30/09/2026.
+- Arquivo: [cognicao_chave-por-caminho-nao-segue-o-rename_20260930_1930.md](cognicao_chave-por-caminho-nao-segue-o-rename_20260930_1930.md)
 
 ## Congelar a filha não basta: a varredura da chave congela a MÃE também
 

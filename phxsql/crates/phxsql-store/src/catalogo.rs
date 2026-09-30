@@ -964,6 +964,8 @@ impl Database {
                 self.nome()
             )));
         }
+        // O que ela devia ao disco foi apagado junto (536).
+        crate::volume::mudar_pendentes_de_nome(&dir, nome, None);
         apagados.sort();
         Ok(apagados)
     }
@@ -1119,6 +1121,8 @@ impl Database {
         for (de, para) in &feitos {
             crate::ndx::levar_atestado(de, para, true);
         }
+        // E o registro do que ainda deve ao disco, pelo mesmo motivo (536).
+        crate::volume::mudar_pendentes_de_nome(&dir_o, nome_o, Some((&dir_d, nome_d)));
         Ok(feitos.len())
     }
 

@@ -14564,6 +14564,52 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         ],
     },
     {
+        "id": "tabela-que-some-segura-as-marcas",
+        "titulo": "a tabela escrita na janela e excluida ou renomeada fica nas sujas pelo nome velho e segura todas as marcas de COMMIT",
+        "porque": (
+            "pedido 536, papel C na revisao do 522: a chave das sujas e o nome; "
+            "depois do excluir/renomear ela nao abre, o fecho segura as marcas "
+            "ate o processo cair, e o arranque reaplica `Atualizar` velho por "
+            "cima de dado novo. Medido antes do conserto: sujas `b/a`, `b/b`."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        if sujas.remove(&format!("{database}/{tabela}")) {
+""",
+        "troca": """        if false && sujas.remove(&format!("{database}/{tabela}")) {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_janela_e_cadeia::tabela_excluida_ou_renomeada_na_janela_nao_segura_as_marcas",
+        ],
+        "seguem": [
+            "servidor::testes_janela_e_cadeia::tabela_que_nao_sincroniza_segura_as_marcas",
+        ],
+    },
+    {
+        "id": "renomear-deixa-o-registro-no-nome-velho",
+        "titulo": "o renomear deixa o registro do que deve ao disco no nome velho, e a divida fica para sempre onde ninguem sincroniza",
+        "porque": (
+            "pedido 536, achado na propria frente: com a chave das sujas "
+            "mudando de nome, o fecho abria a tabela pelo nome novo e o "
+            "registro de pendentes (chave = caminho) ficava no velho -- "
+            "`familias_devendo_em` mediu 12 familias devendo depois do fecho."
+        ),
+        "arquivo": "crates/phxsql-store/src/volume.rs",
+        "trecho": """    for velha in velhas {
+""",
+        "troca": """    for velha in velhas.into_iter().take(0) {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_janela_e_cadeia::tabela_excluida_ou_renomeada_na_janela_nao_segura_as_marcas",
+        ],
+        "seguem": [
+            "servidor::testes_janela_e_cadeia::tabela_que_nao_sincroniza_segura_as_marcas",
+        ],
+    },
+    {
         "id": "carimbo-da-a-volta-no-teto",
         "titulo": "o rowstamp empurrado ao teto por evento replicado da a volta, e o filho nasce com carimbo menor que o pai",
         "porque": (
