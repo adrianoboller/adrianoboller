@@ -50,21 +50,53 @@ mkdir -p "$PROVA/monta/lei" "$PROVA/extraido"
 cd "$RAIZ"
 
 echo "== 1/6 a historia: o bundle provado do backup.sh"
-./phxsql/backup.sh "$(git rev-parse --abbrev-ref HEAD)" "$DESTINO" | tail -3
+# Saida num arquivo, nao num pipe: `| tail -3` escondia o codigo de saida do backup.sh
+# (o sh nao tem pipefail), e em 30/09 um bundle que NAO restaurava passou por aqui.
+if ! ./phxsql/backup.sh "$(git rev-parse --abbrev-ref HEAD)" "$DESTINO" > "$PROVA/historia.log" 2>&1; then
+    cat "$PROVA/historia.log" >&2
+    echo "REPROVOU: o backup.sh falhou; nada foi empacotado" >&2
+    exit 1
+fi
+tail -3 "$PROVA/historia.log"
 BUNDLE=$(ls -t "$DESTINO"/phxsql-*.bundle | head -1)
 
+echo "== 1b/6 a historia de TODAS as branches (o bundle acima leva so a atual)"
+TODAS="$DESTINO/repositorio-todas-branches-$CARIMBO.bundle"
+git bundle create "$TODAS" --all 2>/dev/null
+git bundle verify "$TODAS" >/dev/null
+git clone -q --mirror "$TODAS" "$PROVA/todas.git"
+for b in $(git for-each-ref --format='%(refname:short)' refs/heads); do
+    AQUI=$(git rev-parse "$b"); LA=$(git -C "$PROVA/todas.git" rev-parse "$b" 2>/dev/null || echo ausente)
+    [ "$AQUI" = "$LA" ] || { echo "REPROVOU: branch $b difere no bundle ($AQUI x $LA)" >&2; rm -f "$TODAS"; exit 1; }
+done
+N_BRANCHES=$(git for-each-ref refs/heads | wc -l)
+echo "  $N_BRANCHES branches conferidas pela ponta: $(basename "$TODAS") ($(du -h "$TODAS" | cut -f1))"
+
 echo "== 2/6 a lei: os dois CLAUDE.md, com o SHA-256 de cada um"
-[ -f "$LEI_GLOBAL" ] || { echo "REPROVOU: $LEI_GLOBAL nao existe" >&2; exit 1; }
-cp "$LEI_GLOBAL" "$PROVA/monta/lei/CLAUDE-global.md"
+# Sem a lei global o pacote AINDA sai (abortar tudo nao guardaria nada), mas a ausencia
+# vai escrita no pacote, no manifesto e no fim da saida -- medido em 30/09: o conteiner
+# foi recriado e o arquivo se perdeu, exatamente o risco que este passo existe para cobrir.
 cp "$RAIZ/CLAUDE.md" "$PROVA/monta/lei/CLAUDE-projeto.md"
-( cd "$PROVA/monta/lei" && sha256sum CLAUDE-global.md CLAUDE-projeto.md > SHA256SUMS )
+if [ -f "$LEI_GLOBAL" ]; then
+    LEI_GLOBAL_OK=1
+    cp "$LEI_GLOBAL" "$PROVA/monta/lei/CLAUDE-global.md"
+    ( cd "$PROVA/monta/lei" && sha256sum CLAUDE-global.md CLAUDE-projeto.md > SHA256SUMS )
+else
+    LEI_GLOBAL_OK=0
+    echo "  AUSENTE: $LEI_GLOBAL nao existe neste conteiner; o pacote leva so a lei do projeto" >&2
+    echo "$LEI_GLOBAL nao existia quando este pacote foi gerado ($(date '+%Y-%m-%d %H:%M'))." \
+        > "$PROVA/monta/lei/AUSENTE-CLAUDE-global.txt"
+    ( cd "$PROVA/monta/lei" && sha256sum CLAUDE-projeto.md > SHA256SUMS )
+fi
 
 echo "== 3/6 a arvore: arquivos, diretorios e subdiretorios"
 # Diretorios entram explicitamente (sem recursao) para que o VAZIO sobreviva.
 # A poda e uma funcao, nao uma string: `eval` com parenteses quebra no dash.
 varrer() {
-    find . \( -path ./phxsql/target -o -path ./.git -o -name __pycache__ \
-              -o -path ./.claude/worktrees \) -prune -o "$@"
+    # todo target/ de cargo (o do phxclaw tinha 17 GB em 30/09 e a poda so conhecia o do
+    # phxsql), e os derivados de npm e do Flutter
+    find . \( -path ./.git -o -name target -o -name node_modules -o -name .dart_tool \
+              -o -name __pycache__ -o -path ./.claude/worktrees \) -prune -o "$@"
 }
 varrer -type d -print > "$PROVA/dirs"
 if [ "$TETO" = "0" ]; then
@@ -83,17 +115,25 @@ N_DIRS=$(wc -l < "$PROVA/dirs"); N_ARQ=$(wc -l < "$PROVA/arquivos"); N_GRANDES=$
 
 echo "== 4/6 o manifesto"
 {
-    echo "PhxSql -- pacote completo, gerado por phxsql/backup-completo.sh"
+    echo "adrianoboller (PhxSql + PhxClaw) -- pacote completo, gerado por phxsql/backup-completo.sh"
     echo "quando:     $(date '+%Y-%m-%d %H:%M:%S %Z')"
     echo "branch:     $(git rev-parse --abbrev-ref HEAD)"
     echo "commit:     $(git rev-parse HEAD)"
     echo "historia:   $(basename "$BUNDLE") ($(du -h "$BUNDLE" | cut -f1), provado restaurando pelo backup.sh)"
+    echo "            $(basename "$TODAS") ($N_BRANCHES branches, cada ponta conferida)"
+    if [ "$LEI_GLOBAL_OK" = 1 ]; then
     echo "lei:        lei/CLAUDE-global.md  <- $LEI_GLOBAL"
+    else
+    echo "lei:        lei/CLAUDE-global.md  AUSENTE -- $LEI_GLOBAL nao existia neste conteiner"
+    fi
     echo "            lei/CLAUDE-projeto.md <- $RAIZ/CLAUDE.md"
     echo "arvore:     $N_ARQ arquivos, $N_DIRS diretorios (com os vazios)"
     echo
     echo "O QUE FICOU DE FORA -- isto nao e linha de exito:"
-    echo "  phxsql/target/        $(du -sh phxsql/target 2>/dev/null | cut -f1)  compilado, o cargo refaz"
+    echo "  */target/             $(du -shc phxsql/target phxclaw/target 2>/dev/null | tail -1 | cut -f1)  compilado, o cargo refaz"
+    echo "  node_modules/, .dart_tool/   derivados do npm e do Flutter"
+    echo "  fora do repositorio e NAO incluidos: /var/tmp/phxclaw-pg (PostgreSQL de teste),"
+    echo "    /var/tmp/ollama-models, /opt/flutter, /opt/ollama -- ambiente, refeito por instalacao"
     echo "  .git/                 $(du -sh .git | cut -f1)  a historia esta no bundle acima"
     echo "  __pycache__/, .claude/worktrees/   derivados"
     if [ "$N_GRANDES" -gt 0 ]; then
@@ -107,6 +147,7 @@ echo "== 4/6 o manifesto"
     echo "COMO RESTAURAR:"
     echo "  tar -xzf $(basename "$PACOTE")          # a arvore e a lei/"
     echo "  git clone --branch <branch> $(basename "$BUNDLE") phxsql-restaurado   # a historia"
+    echo "  git clone --mirror $(basename "$TODAS") repositorio.git               # todas as branches"
     echo "  cp lei/CLAUDE-global.md ~/.claude/CLAUDE.md"
     echo "  sha256sum -c lei/SHA256SUMS"
 } > "$PROVA/monta/MANIFESTO.txt"
@@ -128,7 +169,9 @@ if ! ( cd "$PROVA/extraido" && sha256sum -c --quiet "$PROVA/somas" ); then
 fi
 # A lei: os dois CLAUDE.md batem com os originais, byte a byte.
 ( cd "$PROVA/extraido/lei" && sha256sum -c --quiet SHA256SUMS )
-cmp -s "$LEI_GLOBAL" "$PROVA/extraido/lei/CLAUDE-global.md" || { echo "REPROVOU: CLAUDE-global.md difere" >&2; rm -f "$PACOTE"; exit 1; }
+if [ "$LEI_GLOBAL_OK" = 1 ]; then
+    cmp -s "$LEI_GLOBAL" "$PROVA/extraido/lei/CLAUDE-global.md" || { echo "REPROVOU: CLAUDE-global.md difere" >&2; rm -f "$PACOTE"; exit 1; }
+fi
 cmp -s "$RAIZ/CLAUDE.md" "$PROVA/extraido/lei/CLAUDE-projeto.md" || { echo "REPROVOU: CLAUDE-projeto.md difere" >&2; rm -f "$PACOTE"; exit 1; }
 # Os diretorios, inclusive os vazios.
 FALTA=0
@@ -143,4 +186,8 @@ if [ "$N_GRANDES" -gt 0 ]; then
     echo
     echo "FICARAM DE FORA $N_GRANDES arquivo(s) acima de $TETO -- nomeados no MANIFESTO.txt:"
     awk -F'\t' '{printf "  %6.0f MiB  %s\n", $1/1048576, $2}' "$PROVA/grandes"
+fi
+if [ "$LEI_GLOBAL_OK" = 0 ]; then
+    echo
+    echo "FALTOU A LEI GLOBAL: $LEI_GLOBAL nao existia; o pacote NAO a contem."
 fi
