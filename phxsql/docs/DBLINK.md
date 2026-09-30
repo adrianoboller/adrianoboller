@@ -578,6 +578,33 @@ E o puxar deixou de aparar: texto chega como veio, `''` continua `''` e não
 vira nulo. A recusa de conversão de uma célula puxada **nunca cita o valor**
 (pedido 557): diz coluna, tipo e tamanho em bytes, pelo `Column::recusa_sem_valor`.
 
+**A instrução inteira sai no dialeto de lá (pedido 583).** Até 30/09/2026 só o
+texto saía do `Motor`; o resto era MySQL(R) escrito na sincronia — crase no
+nome, `ON DUPLICATE KEY UPDATE`, booleano `1`/`0`, binário `0x…` — e contra o
+PostgreSQL(R) a rodada morria no primeiro `SELECT`. Hoje cada pedaço sai de uma
+função do `Motor` (`dblink/dialeto.rs`), e nenhuma operação pergunta «é PG?»:
+
+| pedaço | MySQL(R) / MariaDB | PostgreSQL(R) |
+|---|---|---|
+| nome | `` `clientes` `` | `"clientes"` |
+| upsert (`Motor::upsert`) | `ON DUPLICATE KEY UPDATE c=VALUES(c)` | `ON CONFLICT (chave) DO UPDATE SET c=EXCLUDED.c` (a chave sai do `SET`; tabela só de chave vira `DO NOTHING`) |
+| booleano (`Motor::booleano`) | `TRUE`/`FALSE` | `TRUE`/`FALSE` — o PG recusa gravar `1` em `boolean` |
+| binário (`Motor::binario`) | `X'…'` | `decode('…','hex')` — sem contrabarra, em qualquer `standard_conforming_strings` |
+| colunas do espelho | `LIMIT 0` (as bandeiras dizem chave e nulo) | o catálogo, pela mesma consulta do `dblink_estrutura`: a `RowDescription` não diz qual coluna é a chave |
+| tipos do espelho | nome do fio (`VARCHAR`, bytes ÷ 4) | `format_type` (`character varying(40)`, em caracteres); `numeric` sem precisão e `timestamp with time zone` **recusam** nomeando o tipo |
+
+**O puxar pede o binário em hexadecimal (pedido 584, medido).** O protocolo de
+texto entrega o BLOB cru, e o leitor o guarda como texto: no par falso do
+MySQL(R), os bytes `cafe` chegavam como os **dois** bytes `CA FE`, calados, e
+`00 FF 80` recusava a rodada; todo `bytea` do PostgreSQL(R) (`\x…`) recusava.
+A rodada agora vai ao fio duas vezes antes do empurrão — as colunas
+(`Motor::sql_metadados`) e a leitura com `HEX(c)` / `encode(c,'hex')`
+(`Motor::sql_leitura`) —, as duas **sem a trava de dados** (pedido 545). BLOB
+vazio chega vazio, não nulo. O booleano lido passa por `booleano_lido` (`t`/`f`
+e `1`/`0`), e o uuid por `Uuid::de_texto` estrito: a célula `novo` (ou `v4`,
+`v7`) virava um uuid **aleatório**, diferente a cada rodada, porque na carga
+colada essas palavras são ordens de gerar. Agora recusa, sem citar a célula.
+
 ### As duas operações
 
 - **`dblink_ligar`** cria (ou confere) a tabela local espelhando a prima:
@@ -588,8 +615,8 @@ vira nulo. A recusa de conversão de uma célula puxada **nunca cita o valor**
   sem varrer. Cada tabela ligada guarda `sentido` (puxar / empurrar / dois) e
   `dono` (aqui / lá).
 - **`dblink_sincronizar`** roda uma rodada e devolve o relatório: puxadas
-  novas e alteradas, empurradas, iguais, conflitos. O empurrão usa
-  `INSERT ... ON DUPLICATE KEY UPDATE` em lotes — cair no meio e recomeçar
+  novas e alteradas, empurradas, iguais, conflitos. O empurrão usa o
+  upsert do motor (`Motor::upsert`) em lotes — cair no meio e recomeçar
   grava a mesma linha de novo e nada dobra (estágio 6 da prova: rodada
   repetida dá 0/0/0).
 
