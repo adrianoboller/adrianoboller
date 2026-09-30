@@ -114,6 +114,11 @@ async function connectNativeBridge() {
 
   try {
     const status = await invoke('host_status');
+    // A versao vem do host (CARGO_PKG_VERSION); cravada no HTML, ficou em v0.11.0 ate a 0.70.
+    for (const id of ['brandVersion', 'kernelVersion']) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = `v${status.version}`;
+    }
     hostSession.textContent = compactUuid(status.session_uuid);
     liveReceivers.textContent = String(status.live_bus?.receiver_count ?? 0);
     hostPolicy.textContent = [

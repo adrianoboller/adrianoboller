@@ -1,7 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "PhxClaw",
-  "version": "0.14.0",
   "identifier": "br.com.phxclaw.desktop",
   "build": {
     "frontendDist": "../../phxclaw-ui"
