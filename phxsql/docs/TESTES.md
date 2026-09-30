@@ -977,9 +977,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `carga-adiada-orfa-sem-reconstruir` | a carga adiada que sai sem o `bulkinsert(false)` (conexão caída, reserva vencida) deixa o índice suspenso até o próximo arranque | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**332 das 491 guardas do catálogo: 1 aposentada, 327 provadas, 4 redundantes** — 9057 s de mutação, medido em 2026-09-16 15:25.
+**332 das 492 guardas do catálogo: 1 aposentada, 327 provadas, 4 redundantes** — 9057 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 160 das 491 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 160 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 161 das 492 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 161 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
@@ -1139,6 +1139,7 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `exclusao-de-vez-motivo-que-falha-pula-o-diario` — na exclusão de vez, o `.reason` que falha com o slot já livre devolve o erro antes do `.log` — a linha some sem evento
 - `insercao-fts-que-falha-pula-o-diario` — na inclusão, o `.fts` que falha com a linha já no `.reg` devolve o erro antes do `.log` — a linha fica sem evento
 - `zip-que-falha-no-rename-deixa-o-part` — o `rename` final do backup em ZIP que recusa deixa o `.part` na pasta para sempre
+- `backup-em-pasta-que-falha-deixa-as-copias` — o backup em PASTA cujo manifesto recusa deixa as cópias na pasta sem `backup.json` para sempre
 - `cascata-dispara-after-do-elo-so-no-commit` — a mesma cascata do `ao_alterar` dispara o AFTER da filha no COMMIT e não na alteração solta
 - `dblink-troca-o-host-e-herda-a-senha` — trocar o host de uma ligação do DbLink sem mandar a senha herda a guardada, e ela sai para o destino novo
 

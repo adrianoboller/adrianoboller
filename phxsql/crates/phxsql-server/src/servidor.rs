@@ -6145,8 +6145,7 @@ impl Servidor {
             }
         };
         if let Some(a_sincronizar) = a_sincronizar {
-            phxsql_store::backup::sincronizar_copias(&a_sincronizar)?;
-            phxsql_store::backup::finalizar_manifesto(&destino, quando, &r)?;
+            phxsql_store::backup::concluir(&destino, quando, &r, &a_sincronizar)?;
         } else {
             phxsql_store::backup::finalizar_zip(&destino)?;
         }
@@ -23445,8 +23444,12 @@ impl Servidor {
             }
         };
         if let Some(a_sincronizar) = a_sincronizar {
-            phxsql_store::backup::sincronizar_copias(&a_sincronizar)?;
-            phxsql_store::backup::finalizar_manifesto(std::path::Path::new(&destino), quando, &r)?;
+            phxsql_store::backup::concluir(
+                std::path::Path::new(&destino),
+                quando,
+                &r,
+                &a_sincronizar,
+            )?;
         } else if let Some(caminho) = &caminho_zip {
             phxsql_store::backup::finalizar_zip(caminho)?;
         }

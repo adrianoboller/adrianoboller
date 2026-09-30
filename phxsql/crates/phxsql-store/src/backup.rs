@@ -529,10 +529,11 @@ pub fn escolher_para_apagar(nomes: &[String], manter: usize) -> Vec<String> {
 /// sincronizar nada.
 ///
 /// Quem chama e responsavel por segurar a trava de dados durante ESTA
-/// chamada (ela le `raiz`). Devolve, alem do relatorio, os caminhos das
-/// COPIAS (sem o manifesto) para [`sincronizar_copias`] rodar depois, com a trava
-/// ja solta -- e so entao [`finalizar_manifesto`] escreve e sincroniza o
-/// `backup.json`. Ver a nota "Escrever e sincronizar sao DOIS passos" no
+/// chamada (ela le `raiz`). Devolve, alem do relatorio, as [`Copias`] (sem o
+/// manifesto) para [`concluir`] rodar depois, com a trava ja solta: ele
+/// sincroniza cada uma e so entao escreve e sincroniza o `backup.json`, e
+/// numa falha apaga o que esta corrida criou (pedido 576). A falha DENTRO
+/// desta funcao ja sai com a mesma faxina feita. Ver a nota "Escrever e sincronizar sao DOIS passos" no
 /// topo do modulo.
 ///
 /// # Por que a gravacao NAO fica em cache -- pedido 524
@@ -553,7 +554,7 @@ pub fn escolher_para_apagar(nomes: &[String], manter: usize) -> Vec<String> {
 /// mesmo boot aprova pelo cache do nucleo, que e a mentira que o 509 P1 ja
 /// mediu. Sem manifesto, a pasta nunca parece um backup pronto -- nem para
 /// quem lista, nem para quem confere.
-pub fn executar(raiz: &Path, destino: &Path, _quando_ms: i64) -> Result<(Relatorio, Vec<PathBuf>)> {
+pub fn executar(raiz: &Path, destino: &Path, _quando_ms: i64) -> Result<(Relatorio, Copias)> {
     if !raiz.is_dir() {
         return Err(PhxError::NaoEncontrado(format!(
             "a raiz de dados {} nao existe",
@@ -566,19 +567,43 @@ pub fn executar(raiz: &Path, destino: &Path, _quando_ms: i64) -> Result<(Relator
             "o destino do backup nao pode ficar dentro da raiz de dados".into(),
         ));
     }
-    crate::util::criar_diretorio_do_banco(destino)?;
-
     let mut r = Relatorio::default();
-    let mut caminhos = Vec::new();
+    let mut copias = Copias::default();
+    // Pedido 576: a recusa no meio da copia (disco cheio, `EFBIG`, nome
+    // ocupado) sai daqui com o que esta corrida fez nascer ja apagado --
+    // senao ficava uma pasta de copias sem manifesto que ninguem reconhece.
+    if let Err(e) = copiar_arvore(raiz, destino, &mut r, &mut copias) {
+        descartar_corrida(&copias);
+        return Err(e);
+    }
+    Ok((r, copias))
+}
+
+/// O laco de [`executar`], separado para o erro dele passar pela faxina da
+/// corrida num lugar so'.
+fn copiar_arvore(
+    raiz: &Path,
+    destino: &Path,
+    r: &mut Relatorio,
+    copias: &mut Copias,
+) -> Result<()> {
+    criar_pasta_da_corrida(destino, &mut copias.pastas)?;
     for arquivo in listar(raiz)? {
         let rel = relativo(raiz, &arquivo);
         let dados = std::fs::read(&arquivo)?;
         let alvo = destino.join(&rel);
         if let Some(pai) = alvo.parent() {
-            crate::util::criar_diretorio_do_banco(pai)?;
+            criar_pasta_da_corrida(pai, &mut copias.pastas)?;
         }
+        // O `lstat` ANTES de escrever e' o que separa a copia que nasceu
+        // agora da que ja existia (destino reaproveitado): so' a primeira e'
+        // desta corrida, e so' ela pode sair numa falha.
+        let nasce = std::fs::symlink_metadata(&alvo).is_err();
         escrever_sem_sync(&alvo, &dados)?;
-        caminhos.push(alvo);
+        if nasce {
+            copias.nascidas.push(alvo.clone());
+        }
+        copias.caminhos.push(alvo);
         r.bytes += dados.len() as u64;
         r.arquivos.push(Arquivo {
             caminho: rel,
@@ -586,7 +611,101 @@ pub fn executar(raiz: &Path, destino: &Path, _quando_ms: i64) -> Result<(Relator
             sha256: para_hex(&sha256(&dados)),
         });
     }
-    Ok((r, caminhos))
+    Ok(())
+}
+
+/// O que UMA corrida de [`executar`] fez no destino -- pedido 576.
+///
+/// Existe porque a pasta do backup, no `op backup`, e' escolhida pelo usuario
+/// e pode ter outra coisa dentro: numa falha, a unica faxina segura e' a que
+/// sabe, pela lista da propria corrida, o que ela criou. Varrer a pasta ou
+/// apagar a arvore reabriria a porta do link (pedidos 568/569/570).
+///
+/// Derefere para a lista de copias escritas, que e' o que
+/// [`sincronizar_copias`] percorre.
+#[derive(Debug, Default)]
+pub struct Copias {
+    /// Toda copia escrita, na ordem -- inclusive as que sobrescreveram um
+    /// nome que ja existia; todas precisam de `fsync`.
+    caminhos: Vec<PathBuf>,
+    /// Das copias, as cujo NOME nasceu nesta corrida: so' estas saem numa
+    /// falha. A que sobrescreveu um nome antigo nao e' nossa para apagar.
+    nascidas: Vec<PathBuf>,
+    /// Diretorios que esta corrida criou, do mais externo para o mais interno.
+    pastas: Vec<PathBuf>,
+}
+
+impl std::ops::Deref for Copias {
+    type Target = [PathBuf];
+    fn deref(&self) -> &[PathBuf] {
+        &self.caminhos
+    }
+}
+
+/// Cria `p` (com os pais que faltarem) e anota em `criadas` os que ESTA
+/// chamada fez nascer -- pedido 576.
+///
+/// Anota pelo que existe DEPOIS da chamada, com erro ou sem: o `create_dir_all`
+/// que recusa no meio ja deixou os de cima criados, e sem anota-los a faxina
+/// nao os alcancaria.
+fn criar_pasta_da_corrida(p: &Path, criadas: &mut Vec<PathBuf>) -> Result<()> {
+    let mut faltam = Vec::new();
+    let mut atual = Some(p);
+    while let Some(a) = atual {
+        if a.as_os_str().is_empty() || std::fs::symlink_metadata(a).is_ok() {
+            break;
+        }
+        faltam.push(a.to_path_buf());
+        atual = a.parent();
+    }
+    let criado = crate::util::criar_diretorio_do_banco(p);
+    for a in faltam.into_iter().rev() {
+        if std::fs::symlink_metadata(&a).is_ok_and(|m| m.is_dir()) {
+            criadas.push(a);
+        }
+    }
+    Ok(criado?)
+}
+
+/// A faxina de uma corrida que falhou -- pedido 576, pelo motor do 555.
+///
+/// So' apaga o que a corrida anotou: cada copia pelo NOME
+/// ([`descartar_parcial`], `remove_file`, que nunca segue link nem abre
+/// FIFO), e depois cada pasta criada, da mais interna para a mais externa,
+/// com `remove_dir` -- que so' remove diretorio VAZIO e recusa link. Pasta
+/// com qualquer coisa dentro que nao era nossa fica, com a coisa dentro.
+/// Falhar aqui nao muda o erro que sobe: e' esse que importa a quem chamou.
+fn descartar_corrida(copias: &Copias) {
+    for arquivo in &copias.nascidas {
+        descartar_parcial(arquivo);
+    }
+    for pasta in copias.pastas.iter().rev() {
+        let _ = std::fs::remove_dir(pasta);
+    }
+}
+
+/// Os dois passos de depois da copia -- [`sincronizar_copias`] e
+/// [`finalizar_manifesto`] -- com a faxina do pedido 576 no erro.
+///
+/// E' o caminho dos tres chamadores (CLI, `backup` pelo protocolo e o
+/// agendado): uma recusa no `fsync` de uma copia ou na escrita do manifesto
+/// deixava as copias na pasta sem `backup.json`, e nem `op_backups` nem a
+/// rotacao as reconhecem -- ficavam para sempre. Roda FORA da trava de dados,
+/// como os dois passos que envolve.
+pub fn concluir(destino: &Path, quando_ms: i64, r: &Relatorio, copias: &Copias) -> Result<()> {
+    let manifesto = destino.join(MANIFESTO);
+    let manifesto_nasce = std::fs::symlink_metadata(&manifesto).is_err();
+    let feito =
+        sincronizar_copias(copias).and_then(|()| finalizar_manifesto(destino, quando_ms, r));
+    if feito.is_err() {
+        // O manifesto que nasceu agora e nao sincronizou diria «pronto» sobre
+        // copias que acabam de sair; o que ja existia antes nao e' nosso.
+        if manifesto_nasce {
+            descartar_parcial(&manifesto);
+        }
+        descartar_corrida(copias);
+    }
+    feito
 }
 
 /// Escreve e sincroniza o `backup.json` -- so DEPOIS de [`sincronizar_copias`] ter

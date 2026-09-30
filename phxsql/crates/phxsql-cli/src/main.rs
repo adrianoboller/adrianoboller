@@ -705,10 +705,10 @@ fn backup(args: &[String], base: &str, destino: &str) -> phxsql_core::error::Res
 
     let (r, a_sincronizar) =
         phxsql_store::backup::executar(Path::new(base), Path::new(destino), agora)?;
-    phxsql_store::backup::sincronizar_copias(&a_sincronizar)?;
     // O manifesto so' nasce depois de toda copia sincronizada (pedido 524,
-    // condicao C2): antes disto, o destino nem parece um backup pronto.
-    phxsql_store::backup::finalizar_manifesto(Path::new(destino), agora, &r)?;
+    // condicao C2): antes disto, o destino nem parece um backup pronto. E a
+    // falha no meio leva junto o que a corrida criou (pedido 576).
+    phxsql_store::backup::concluir(Path::new(destino), agora, &r, &a_sincronizar)?;
     diga!("copiados {} arquivos, {} bytes", r.arquivos.len(), r.bytes);
     diga!(
         "manifesto em {}/{}",
