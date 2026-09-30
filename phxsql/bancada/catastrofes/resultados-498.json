@@ -1,0 +1,418 @@
+{
+ "medido_em": "2026-09-30T16:58:47+00:00",
+ "nucleo": "6.18.44-fc-v50",
+ "binario": "disco-que-recusa",
+ "rodadas": 1,
+ "cenarios": {
+  "498-256k": {
+   "1": [
+    "gancho=ABORTA p1/db/pedidos.log ([SP000010] erro de E/S: No space left on device (os error 28))",
+    "byte52=1",
+    "vivas=668 inclusoes_no_log=668 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-272k": {
+   "1": [
+    "insercoes ok=719 erros=40",
+    "byte52=1",
+    "vivas=719 inclusoes_no_log=719 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-288k": {
+   "1": [
+    "insercoes ok=771 erros=40",
+    "byte52=1",
+    "vivas=771 inclusoes_no_log=771 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-304k": {
+   "1": [
+    "insercoes ok=823 erros=40",
+    "byte52=1",
+    "vivas=823 inclusoes_no_log=823 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-320k": {
+   "1": [
+    "gancho=ABORTA p1/db/pedidos.log ([SP000010] erro de E/S: No space left on device (os error 28))",
+    "byte52=1",
+    "vivas=868 inclusoes_no_log=868 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-336k": {
+   "1": [
+    "gancho=ABORTA p1/db/pedidos.log ([SP000010] erro de E/S: No space left on device (os error 28))",
+    "byte52=1",
+    "vivas=913 inclusoes_no_log=913 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-352k": {
+   "1": [
+    "gancho=ABORTA p1/db/pedidos.log ([SP000010] erro de E/S: No space left on device (os error 28))",
+    "byte52=1",
+    "vivas=957 inclusoes_no_log=957 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-368k": {
+   "1": [
+    "insercoes ok=1004 erros=40",
+    "byte52=1",
+    "vivas=1004 inclusoes_no_log=1004 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-384k": {
+   "1": [
+    "insercoes ok=1056 erros=40",
+    "byte52=1",
+    "vivas=1056 inclusoes_no_log=1056 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-400k": {
+   "1": [
+    "insercoes ok=1108 erros=40",
+    "byte52=1",
+    "vivas=1108 inclusoes_no_log=1108 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-416k": {
+   "1": [
+    "gancho=ABORTA p1/db/pedidos.log ([SP000010] erro de E/S: No space left on device (os error 28))",
+    "byte52=1",
+    "vivas=1158 inclusoes_no_log=1158 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-432k": {
+   "1": [
+    "gancho=ABORTA p1/db/pedidos.log ([SP000010] erro de E/S: No space left on device (os error 28))",
+    "byte52=1",
+    "vivas=1202 inclusoes_no_log=1202 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-448k": {
+   "1": [
+    "gancho=ABORTA p1/db/pedidos.log ([SP000010] erro de E/S: No space left on device (os error 28))",
+    "byte52=1",
+    "vivas=1247 inclusoes_no_log=1247 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-464k": {
+   "1": [
+    "gancho=ABORTA p1/db/pedidos.log ([SP000010] erro de E/S: No space left on device (os error 28))",
+    "byte52=1",
+    "vivas=1291 inclusoes_no_log=1291 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-480k": {
+   "1": [
+    "insercoes ok=1341 erros=40",
+    "byte52=1",
+    "vivas=1341 inclusoes_no_log=1341 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-496k": {
+   "1": [
+    "insercoes ok=1393 erros=40",
+    "byte52=1",
+    "vivas=1393 inclusoes_no_log=1393 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-512k": {
+   "1": [
+    "insercoes ok=1445 erros=40",
+    "byte52=1",
+    "vivas=1445 inclusoes_no_log=1445 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-528k": {
+   "1": [
+    "gancho=ABORTA p1/db/pedidos.log ([SP000010] erro de E/S: No space left on device (os error 28))",
+    "byte52=1",
+    "vivas=1492 inclusoes_no_log=1492 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-544k": {
+   "1": [
+    "gancho=ABORTA p1/db/pedidos.log ([SP000010] erro de E/S: No space left on device (os error 28))",
+    "byte52=1",
+    "vivas=1536 inclusoes_no_log=1536 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-560k": {
+   "1": [
+    "gancho=ABORTA p1/db/pedidos.log ([SP000010] erro de E/S: No space left on device (os error 28))",
+    "byte52=1",
+    "vivas=1581 inclusoes_no_log=1581 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-576k": {
+   "1": [
+    "insercoes ok=1627 erros=40",
+    "byte52=1",
+    "vivas=1627 inclusoes_no_log=1627 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-592k": {
+   "1": [
+    "insercoes ok=1678 erros=40",
+    "byte52=1",
+    "vivas=1678 inclusoes_no_log=1678 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-608k": {
+   "1": [
+    "insercoes ok=1730 erros=40",
+    "byte52=1",
+    "vivas=1730 inclusoes_no_log=1730 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-624k": {
+   "1": [
+    "gancho=ABORTA p1/db/pedidos.log ([SP000010] erro de E/S: No space left on device (os error 28))",
+    "byte52=1",
+    "vivas=1781 inclusoes_no_log=1781 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-640k": {
+   "1": [
+    "gancho=ABORTA p1/db/pedidos.log ([SP000010] erro de E/S: No space left on device (os error 28))",
+    "byte52=1",
+    "vivas=1826 inclusoes_no_log=1826 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-656k": {
+   "1": [
+    "gancho=ABORTA p1/db/pedidos.log ([SP000010] erro de E/S: No space left on device (os error 28))",
+    "byte52=1",
+    "vivas=1870 inclusoes_no_log=1870 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-672k": {
+   "1": [
+    "gancho=ABORTA p1/db/pedidos.log ([SP000010] erro de E/S: No space left on device (os error 28))",
+    "byte52=1",
+    "vivas=1915 inclusoes_no_log=1915 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-688k": {
+   "1": [
+    "insercoes ok=1964 erros=40",
+    "byte52=1",
+    "vivas=1964 inclusoes_no_log=1964 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-704k": {
+   "1": [
+    "insercoes ok=2016 erros=40",
+    "byte52=1",
+    "vivas=2016 inclusoes_no_log=2016 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-720k": {
+   "1": [
+    "insercoes ok=2067 erros=40",
+    "byte52=1",
+    "vivas=2067 inclusoes_no_log=2067 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-736k": {
+   "1": [
+    "gancho=ABORTA p1/db/pedidos.log ([SP000010] erro de E/S: No space left on device (os error 28))",
+    "byte52=1",
+    "vivas=2115 inclusoes_no_log=2115 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-752k": {
+   "1": [
+    "gancho=ABORTA p1/db/pedidos.log ([SP000010] erro de E/S: No space left on device (os error 28))",
+    "byte52=1",
+    "vivas=2159 inclusoes_no_log=2159 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-768k": {
+   "1": [
+    "gancho=ABORTA p1/db/pedidos.log ([SP000010] erro de E/S: No space left on device (os error 28))",
+    "byte52=1",
+    "vivas=2204 inclusoes_no_log=2204 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-784k": {
+   "1": [
+    "insercoes ok=2249 erros=40",
+    "byte52=1",
+    "vivas=2249 inclusoes_no_log=2249 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-800k": {
+   "1": [
+    "insercoes ok=2301 erros=40",
+    "byte52=1",
+    "vivas=2301 inclusoes_no_log=2301 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-816k": {
+   "1": [
+    "insercoes ok=2353 erros=40",
+    "byte52=1",
+    "vivas=2353 inclusoes_no_log=2353 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-832k": {
+   "1": [
+    "gancho=ABORTA p1/db/pedidos.log ([SP000010] erro de E/S: No space left on device (os error 28))",
+    "byte52=1",
+    "vivas=2404 inclusoes_no_log=2404 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-848k": {
+   "1": [
+    "gancho=ABORTA p1/db/pedidos.log ([SP000010] erro de E/S: No space left on device (os error 28))",
+    "byte52=1",
+    "vivas=2449 inclusoes_no_log=2449 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-864k": {
+   "1": [
+    "gancho=ABORTA p1/db/pedidos.log ([SP000010] erro de E/S: No space left on device (os error 28))",
+    "byte52=1",
+    "vivas=2493 inclusoes_no_log=2493 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-880k": {
+   "1": [
+    "gancho=ABORTA p1/db/pedidos.log ([SP000010] erro de E/S: No space left on device (os error 28))",
+    "byte52=1",
+    "vivas=2538 inclusoes_no_log=2538 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  },
+  "498-896k": {
+   "1": [
+    "insercoes ok=2586 erros=40",
+    "byte52=1",
+    "vivas=2586 inclusoes_no_log=2586 precisa_reconstruir=true",
+    "buscar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "verificar=ERRO [SP000010] arquivo corrompido: o indice de p1/db/pedidos.ndx ficou para tras numa queda e nao e confiavel: reconstrua com `reparar indice` antes de usar",
+    "sem_evento=0"
+   ]
+  }
+ }
+}

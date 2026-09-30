@@ -4,7 +4,7 @@
      `--catraca` reprova se este arquivo nao bater com o que o extrator
      geraria agora; rode o comando sem flag para atualizar. -->
 
-Gerado dos `cognicao_*.md` com `**Estado:** INFRUTIFERO` -- 4 hoje, de 352 cognicoes no total.
+Gerado dos `cognicao_*.md` com `**Estado:** INFRUTIFERO` -- 5 hoje, de 354 cognicoes no total.
 
 ## Dono de arquivo é sinal FORTE, não um palpite como data ou conteúdo
 
@@ -23,6 +23,12 @@ Gerado dos `cognicao_*.md` com `**Estado:** INFRUTIFERO` -- 4 hoje, de 352 cogni
 - Causa: o integrador comitou o lote integridade 2 (`18f1575`) com os quatro portões verdes na árvore exata e a revisão do DBA ainda correndo. O parecer chegou 35 minutos depois e bloqueou o 540, medido: pela sincronia do DbLink o índice único da mãe se corrompia em 5 de 5 rodadas (0 de 5 na base). Nenhum portão podia ver isso: a suíte não tinha teste que inserisse e cascateasse no mesmo punho, que era justamente o terceiro chamador que a frente não olhou.
 - Prevencao: lote que toca formato em disco, concorrência ou garantia de dado só vai ao commit depois do parecer do papel que o revisa; a pressão para comitar se atende comitando o que não depende dele (registro do juiz, MODELOS, pareceres), por caminho. Se o parecer bloquear depois de um commit, o pedido volta a parcial no commit seguinte, com o número, em vez de continuar dizendo feito.
 - Arquivo: [cognicao_portao-verde-nao-substitui-o-parecer-do-lote-de-risco_20260924_2036.md](cognicao_portao-verde-nao-substitui-o-parecer-do-lote-de-risco_20260924_2036.md)
+
+## O rascunho da sessão é dividido entre agentes: diretório com nome genérico é de outro
+
+- Causa: extraí um `git archive` do `HEAD` em `scratchpad/antes/` supondo o rascunho só meu; ele já tinha uma árvore `antes/phxsql` de outra frente (datas de 10:58, com `target/`), e o `tar -x` sobrescreveu o `crates/`, o `Cargo.toml` e o `Cargo.lock` dela. O mesmo rascunho tinha `arvore-antes`, `mutantes.py`, `provar.sh` e uma montagem minha esquecida em `mnt/`.
+- Prevencao: antes de escrever no rascunho, listar o que já está lá; e trabalhar sempre num subdiretório com o número do pedido (`p498/`), nunca num nome genérico como `antes/`, `mnt/` ou `prova.txt`. Montagem de teste se desmonta no mesmo passo em que nasce.
+- Arquivo: [cognicao_rascunho-da-sessao-e-dividido-entre-agentes_20260930_1655.md](cognicao_rascunho-da-sessao-e-dividido-entre-agentes_20260930_1655.md)
 
 ## Pipe escapado duas vezes numa regex: três fechamentos colaram no título
 

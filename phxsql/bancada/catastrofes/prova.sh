@@ -32,6 +32,9 @@
 #              mede e o byte 52 que o disco guardou e o `excluir` do pai com
 #              filhas -- sem o `fdatasync` da subida, o disco guardava o 0 do
 #              ultimo fecho e o pai com filhas se apagava calado.
+#   498 (C2a)  tmpfs de 41 tamanhos: o disco enche ENTRE o `.reg` e o `.log`,
+#              com o gancho do servidor. Depois o tmpfs cresce, a abertura
+#              completa o evento devido, e se contam as linhas sem evento.
 #   CENARIOS="522" roda so o 522: e o que compara o binario de antes com o de
 #              depois, porque os modos do 509 exigem o gancho que so existe
 #              desde o 509. O mesmo vale para CENARIOS="533".
@@ -211,7 +214,31 @@ c533() {
   done
 }
 
-CENARIOS="${CENARIOS:-512 509 522 533}"
+# ------------------------------------------------------------------ 498 (C2a)
+# O `.log` que falha DEPOIS de a linha estar no `.reg`: tmpfs de 41 tamanhos
+# (256..896 KiB, de 16 em 16), a carga com a imagem no diario ate o disco
+# encher, e o gancho do servidor (`ABORTA=1`). Depois o tmpfs cresce e o
+# `conferir` abre a tabela -- a abertura completa o evento devido -- e conta
+# as vivas contra as inclusoes do diario. `sem_evento` e a diferenca: o C2a do
+# 496 mediu 294 somados em 22 de 41 tamanhos.
+c498() {
+  local rotulo="$1" r k saida vivas incl
+  for r in $(seq 1 "$RODADAS"); do
+    for k in $(seq 256 16 896); do
+      mount -t tmpfs -o size=${k}k tmpfs "$S/p1"
+      while IFS= read -r l; do anotar "$rotulo-${k}k#$r" "$l"; done < <(ABORTA=1 SEM_SYNC=1 "$P" enospc "$S/p1/db" 20000 2>&1)
+      mount -o remount,size=64m "$S/p1"
+      saida="$("$P" conferir "$S/p1/db" 2>&1)"
+      while IFS= read -r l; do anotar "$rotulo-${k}k#$r" "$l"; done <<< "$saida"
+      vivas="$(sed -n 's/.*vivas=\([0-9]*\).*/\1/p' <<< "$saida")"
+      incl="$(sed -n 's/.*inclusoes_no_log=\([0-9]*\).*/\1/p' <<< "$saida")"
+      anotar "$rotulo-${k}k#$r" "sem_evento=$(( ${vivas:-0} - ${incl:-0} ))"
+      umount "$S/p1"
+    done
+  done
+}
+
+CENARIOS="${CENARIOS:-512 509 522 533 498}"
 if [[ " $CENARIOS " == *" 512 "* ]]; then
 echo "== 512 (C2b): tmpfs de 512 KiB, segundo fecho no mesmo punho"
 c2b "512-mesmo-punho" ""
@@ -237,6 +264,11 @@ echo "== 533 (C4): 5.000 filhas novas, o .reg e as paginas do .ndx chegam, a pag
 c533 "533-inserir-paginas" inserir paginas
 echo "== 533 (move): 5.000 filhas mudam de pai no mesmo slot, o .reg chega e nada do .ndx"
 c533 "533-mover-nada" mover nada
+fi
+
+if [[ " $CENARIOS " == *" 498 "* ]]; then
+echo "== 498 (C2a): tmpfs de 41 tamanhos, o .log que falha depois do .reg, o gancho do servidor"
+c498 "498"
 fi
 
 python3 - "$REG" "$SAIDA" "$P" "$RODADAS" <<'PY'

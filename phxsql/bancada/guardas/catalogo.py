@@ -17023,4 +17023,194 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "servidor::testes_bulkinsert::a_carga_adiada_termina_com_o_indice_certo",
         ],
     },
+    {
+        "id": "diario-que-falha-sem-marca-do-evento-devido",
+        "titulo": "o `.log` que falha depois de a linha estar no `.reg` não deixa a marca do evento devido, e a abertura não sabe o que completar",
+        "porque": (
+            "pedido 498, o resto (decisao do dono de 30/09/2026: derrubar e "
+            "completar, como o PANIC do PostgreSQL na falha do WAL). A marca "
+            "vai ao cabecalho do volume 1 NO LUGAR -- o arquivo a parte (H2) "
+            "nasce com 0 bytes no tmpfs cheio, medido. Sem ela a queda deixa a "
+            "linha sem evento: o C2a do 496, 294 linhas em 22 de 41 tamanhos."
+        ),
+        "arquivo": "crates/phxsql-store/src/log.rs",
+        "trecho": """        let marcou = self.marcar_devido(EventoDevido {
+            operacao,
+            rowid,
+            carimbo,
+            origem,
+            usuario: self.usuario,
+            com_imagem: !imagem.is_empty(),
+        });
+""",
+        "troca": """        // DEFEITO REPOSTO (498): a falha nao deixa a marca no disco.
+        self.devendo = Some(EventoDevido {
+            operacao,
+            rowid,
+            carimbo,
+            origem,
+            usuario: self.usuario,
+            com_imagem: !imagem.is_empty(),
+        });
+        let marcou: Result<()> = Ok(());
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "diario-que-falha"],
+        "caem": [
+            "a_insercao_cujo_diario_falha_completa_na_abertura",
+            "a_alteracao_e_a_exclusao_completam_com_a_versao_e_a_imagem_certas",
+            "o_evento_forcado_completa_com_o_carimbo_e_a_origem_do_nascimento",
+        ],
+        "seguem": ["sem_falha_nada_muda"],
+    },
+    {
+        "id": "abertura-nao-completa-o-evento-devido",
+        "titulo": "a abertura da tabela acha a marca do evento devido e não completa o `.log` pela linha",
+        "porque": (
+            "pedido 498: a marca sem a cura e um bilhete que ninguem le -- a "
+            "linha continua sem evento, e a tabela passa a recusar toda "
+            "escrita para sempre, porque o diario continua devendo."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        aberta.completar_evento_devido()?;
+""",
+        "troca": """        // DEFEITO REPOSTO (498): a abertura nao completa.
+        let _ = Table::completar_evento_devido;
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "diario-que-falha"],
+        "caem": [
+            "a_insercao_cujo_diario_falha_completa_na_abertura",
+            "a_alteracao_e_a_exclusao_completam_com_a_versao_e_a_imagem_certas",
+            "o_evento_forcado_completa_com_o_carimbo_e_a_origem_do_nascimento",
+        ],
+        "seguem": [
+            "sem_falha_nada_muda",
+            "abrir_para_ler_uma_tabela_devendo_pede_a_ficha_de_escrita",
+        ],
+    },
+    {
+        "id": "diario-que-falha-nao-derruba-o-servidor",
+        "titulo": "o servidor segue de pé depois de o `.log` falhar com a linha já no `.reg` — linha sem diário servindo",
+        "porque": (
+            "pedido 498, decisao do dono de 30/09/2026: nunca fica linha sem "
+            "diario com o servidor de pe. O `.log` chama o MESMO gancho do "
+            "509 (`sincronia::ao_recusar`), com a queda `DiarioSemEvento`. "
+            "Medido com o defeito: o filho segue de pe depois do ENOSPC."
+        ),
+        "arquivo": "crates/phxsql-store/src/log.rs",
+        "trecho": """        crate::sincronia::diario_sem_evento(&self.volumes.caminho(1), &io);
+""",
+        "troca": """        // DEFEITO REPOSTO (498): o processo nao cai.
+        let _ = crate::sincronia::diario_sem_evento;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_panico_sob_a_trava::diario_que_falha_depois_da_linha_derruba_e_a_abertura_completa",
+        ],
+        "seguem": [
+            "servidor::testes_do_panico_sob_a_trava::fsync_recusado_derruba_o_processo_e_a_marca_fica",
+        ],
+        "prazo": 600,
+    },
+    {
+        "id": "disco-cheio-deixa-a-sentinela-do-509",
+        "titulo": "o disco cheio que derruba pelo `.log` grava a sentinela do `fsync` recusado, e o servidor não sobe no mesmo boot",
+        "porque": (
+            "pedido 498: o gancho e UM (o do 509), mas a queda nao e a mesma. "
+            "No `fsync` recusado o cache do nucleo mente no mesmo boot; no "
+            "disco cheio ele nao mente, e quem nao sobe deixa a linha sem "
+            "evento ate alguem reiniciar a maquina."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """    if queda == phxsql_store::sincronia::Queda::DiarioSemEvento {
+""",
+        "troca": """    // DEFEITO REPOSTO (498): toda queda vira a do 509.
+    if false && queda == phxsql_store::sincronia::Queda::DiarioSemEvento {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_panico_sob_a_trava::diario_que_falha_depois_da_linha_derruba_e_a_abertura_completa",
+        ],
+        "seguem": [
+            "servidor::testes_do_panico_sob_a_trava::fsync_recusado_derruba_o_processo_e_a_marca_fica",
+        ],
+        "prazo": 600,
+    },
+    {
+        "id": "exclusao-de-vez-sem-conferir-o-teto-do-diario",
+        "titulo": "no teto do diário, a exclusão de vez tira a linha do `.reg` e só então o `.log` recusa",
+        "porque": (
+            "pedido 498, o irmao do teto: o `inserir`, o `atualizar` e a marca "
+            "suave perguntam ao `.log` antes da primeira escrita (o "
+            "`preparar_diario`); a exclusao de vez chama o mesmo `registrar` "
+            "na mesma ordem -- depois do slot -- e ficou de fora."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        self.log.conferir_teto(imagem_do_evento.len())?;
+""",
+        "troca": """        // DEFEITO REPOSTO (498): a exclusao nao pergunta antes.
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "diario-no-teto"],
+        "caem": ["no_teto_do_diario_a_exclusao_de_vez_recusa_sem_tirar_a_linha"],
+        "seguem": ["no_teto_do_diario_a_alteracao_recusa_sem_gravar_a_linha"],
+    },
+    {
+        "id": "exclusao-de-vez-motivo-que-falha-pula-o-diario",
+        "titulo": "na exclusão de vez, o `.reason` que falha com o slot já livre devolve o erro antes do `.log` — a linha some sem evento",
+        "porque": (
+            "pedido 498, o irmao do disco cheio: o `.reason` e o `.log` sao "
+            "gravados depois do slot, na mesma ordem, e o `?` do primeiro "
+            "pulava o segundo -- sem marca e sem queda, porque o diario nem "
+            "chegava a ser tentado. A regra do 486 (`gravar_a_alteracao`): "
+            "cada passo roda, e o primeiro erro volta no fim."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """            let motivado = self
+                .motivos
+                .registrar(Tipo::Fisica, rowid, motivo, &identidade)
+                .map(|_| ());
+""",
+        "troca": """            // DEFEITO REPOSTO (498): o motivo que falha pula o diario.
+            self.motivos
+                .registrar(Tipo::Fisica, rowid, motivo, &identidade)?;
+            let motivado: Result<()> = Ok(());
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "diario-que-falha"],
+        "caem": ["a_exclusao_cujo_motivo_falha_ainda_anota_no_diario"],
+        "seguem": [
+            "sem_falha_nada_muda",
+            "a_insercao_cujo_indice_de_texto_falha_ainda_anota_no_diario",
+        ],
+    },
+    {
+        "id": "insercao-fts-que-falha-pula-o-diario",
+        "titulo": "na inclusão, o `.fts` que falha com a linha já no `.reg` devolve o erro antes do `.log` — a linha fica sem evento",
+        "porque": (
+            "pedido 498, o mesmo irmao no `inserir`: o `indexado?` vinha antes "
+            "do `anotar_imagem`. O `.fts` atrasado se conserta com o "
+            "`reconstruir_fts`; a linha sem evento nao se conserta."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        let anotado = self.anotar_imagem(Operacao::Inclusao, rowid, 1, &imagem);
+""",
+        "troca": """        // DEFEITO REPOSTO (498): o `.fts` que falha pula o diario.
+        let indexado: Result<()> = match indexado {
+            Ok(()) => Ok(()),
+            Err(e) => return Err(e),
+        };
+        let anotado = self.anotar_imagem(Operacao::Inclusao, rowid, 1, &imagem);
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "diario-que-falha"],
+        "caem": ["a_insercao_cujo_indice_de_texto_falha_ainda_anota_no_diario"],
+        "seguem": [
+            "sem_falha_nada_muda",
+            "a_exclusao_cujo_motivo_falha_ainda_anota_no_diario",
+        ],
+    },
 ]

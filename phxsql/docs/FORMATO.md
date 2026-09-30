@@ -1551,7 +1551,8 @@ append-only e sem índice: é um diário, não uma tabela.
 | 12 | 4 | número do volume |
 | 16 | 8 | eventos neste volume |
 | 24 | 8 | `fim` — ponto de anexação |
-| 32 | 8 | alterado em |
+| 32 | 8 | alterado em — **ou**, com a marca de pé, o carimbo do evento devido (ms) |
+| 40 | 16 | **marca do evento devido** — só no volume 1, só na versão 2 (ver abaixo) |
 | 56 | 4 | CRC-32 dos bytes 0..56 — **só na versão 2** |
 
 E na versão 3, que é a do volume cifrado:
@@ -1562,6 +1563,7 @@ E na versão 3, que é a do volume cifrado:
 | 44 | 4 | iterações do PBKDF2 |
 | 48 | 16 | sal do PBKDF2, em claro |
 | 64 | 16 | prova da chave — etiqueta Poly1305 de mensagem vazia |
+| 80 | 16 | **marca do evento devido** — só no volume 1 (ver abaixo) |
 | 120 | 4 | CRC-32 dos bytes 0..120 |
 
 O CRC muda de lugar porque o cabeçalho muda de tamanho; ele fica sempre nos
@@ -1581,6 +1583,39 @@ existe faz o volume *seguinte* nascer na versão 3, com sal próprio; os volumes
 anteriores continuam em claro e continuam abrindo. Um arquivo *append-only* não
 se reescreve, então não há como cifrar para trás — e dizer o contrário seria
 vender uma garantia que o desenho não dá.
+
+### A marca do evento devido (pedido 498)
+
+Quando o `write` de um evento falha **depois** de a linha estar no `.reg` — o
+disco que encheu entre as duas gravações —, o motor regrava **no lugar** o
+cabeçalho do volume 1 com a marca de pé e derruba o servidor (decisão do dono,
+30/09/2026: derrubar e completar, como o PANIC do PostgreSQL na falha de
+escrita do WAL). Sobrescrever bytes que já existem não pede espaço novo; um
+arquivo à parte pediria, e medido no tmpfs cheio ele nasce com 0 bytes.
+
+```
+[operação u8, bit 7 = o evento levava imagem][res u8][origem u16][usuário u32][rowid u64]
+```
+
+e, enquanto a marca está de pé, o `alterado em` (32..40) carrega o **carimbo
+do evento devido**, em milissegundos — ninguém lê aquele campo, e o carimbo é
+parte do evento (no bidirecional ele decide o conflito). A versão e a imagem
+**não** vão na marca: saem da linha como ela está no `.reg` — ou, na exclusão
+de vez, da última entrada da lixeira —, que não mudou desde a falha porque o
+diário devendo **recusa toda escrita** até a tabela ser reaberta.
+
+A abertura com escrita completa: anexa o evento, faz o `fsync` do diário e só
+então baixa a marca. Uma queda entre os dois deixa a marca de pé com o evento
+já lá, e a abertura seguinte o reconhece pelo trio (operação, rowid, carimbo)
+no fim do diário em vez de anexá-lo duas vezes. A abertura **só para ler**
+devolve «precisa escrever». Primeiro byte zero = nada devido — todo cabeçalho
+gravado antes da marca traz zero ali, e por isso ela **não sobe a versão**
+(ausência benigna).
+
+O volume que **nasceu sem cabeçalho** (o arquivo criado na virada, o cabeçalho
+que não coube) é o último, acima do 1 e com menos de 64 bytes: nunca teve
+evento, e a abertura com escrita o apaga em vez de deixar o `.log` inteiro sem
+abrir.
 
 ### Evento: 44 bytes de cabeçalho, e talvez um corpo
 

@@ -977,9 +977,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `carga-adiada-orfa-sem-reconstruir` | a carga adiada que sai sem o `bulkinsert(false)` (conexão caída, reserva vencida) deixa o índice suspenso até o próximo arranque | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**332 das 481 guardas do catálogo: 1 aposentada, 327 provadas, 4 redundantes** — 9057 s de mutação, medido em 2026-09-16 15:25.
+**332 das 488 guardas do catálogo: 1 aposentada, 327 provadas, 4 redundantes** — 9057 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 150 das 481 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 150 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 157 das 488 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 157 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
@@ -1131,6 +1131,13 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `base-por-link-cala-o-alerta` — o alerta da base antiga cala quando `config.base` é um link simbólico
 - `arranque-cala-o-alerta-da-base-por-link` — o `phxsqld` sobe numa base `644`/`755` alcançada por link simbólico sem dizer nada
 - `ndx-novo-sobe-com-o-diretorio-vazio` — o primeiro cabeçalho durável de um `.ndx` novo leva o byte 52 em 1 e ZERO índices: a queda no meio do `reindexar` trava a tabela
+- `diario-que-falha-sem-marca-do-evento-devido` — o `.log` que falha depois de a linha estar no `.reg` não deixa a marca do evento devido, e a abertura não sabe o que completar
+- `abertura-nao-completa-o-evento-devido` — a abertura da tabela acha a marca do evento devido e não completa o `.log` pela linha
+- `diario-que-falha-nao-derruba-o-servidor` — o servidor segue de pé depois de o `.log` falhar com a linha já no `.reg` — linha sem diário servindo
+- `disco-cheio-deixa-a-sentinela-do-509` — o disco cheio que derruba pelo `.log` grava a sentinela do `fsync` recusado, e o servidor não sobe no mesmo boot
+- `exclusao-de-vez-sem-conferir-o-teto-do-diario` — no teto do diário, a exclusão de vez tira a linha do `.reg` e só então o `.log` recusa
+- `exclusao-de-vez-motivo-que-falha-pula-o-diario` — na exclusão de vez, o `.reason` que falha com o slot já livre devolve o erro antes do `.log` — a linha some sem evento
+- `insercao-fts-que-falha-pula-o-diario` — na inclusão, o `.fts` que falha com a linha já no `.reg` devolve o erro antes do `.log` — a linha fica sem evento
 
 As guardas que esta corrida ainda cita, hoje aposentadas:
 

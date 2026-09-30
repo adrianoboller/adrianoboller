@@ -772,6 +772,23 @@ pub struct Table {
     como_replica: bool,
 }
 
+/// A imagem da linha a partir do payload e do CONTEUDO dos externos. Uma so
+/// montagem para a linha viva ([`Table::imagem_da_linha`]) e para a que ja
+/// saiu do `.reg` e mora na lixeira (o evento devido do pedido 498): a
+/// replica le as duas com o mesmo [`Table::abrir_imagem`].
+fn montar_imagem(payload: &[u8], externos: &[(u16, Vec<u8>)]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(payload.len() + 64);
+    out.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+    out.extend_from_slice(payload);
+    out.extend_from_slice(&(externos.len() as u16).to_le_bytes());
+    for (coluna, bytes) in externos {
+        out.extend_from_slice(&coluna.to_le_bytes());
+        out.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
+        out.extend_from_slice(bytes);
+    }
+    out
+}
+
 fn caminho(diretorio: &Path, nome: &str, ext: &str) -> PathBuf {
     diretorio.join(format!("{nome}.{ext}"))
 }
@@ -1862,6 +1879,11 @@ impl Table {
         if refazer {
             aberta.reconstruir_fts()?;
         }
+        // O evento que o `.log` ficou devendo (pedido 498) se completa ANTES
+        // de a tabela servir: quem a abrir para ler ou replicar ja ve o
+        // diario inteiro. So acontece com `escrever` -- sem ele, o
+        // `abrir_sem_escrever` do `.log` ja devolveu «precisa escrever».
+        aberta.completar_evento_devido()?;
         Ok(SemEscrever::Aberta(aberta))
     }
 
@@ -5326,9 +5348,15 @@ impl Table {
         if janela {
             self.ndx.terminar_escrita(true);
         }
-        if nasce_marcada {
-            self.reg.mudar_marcadas(1)?;
-        }
+        // Daqui para baixo a linha ESTA no `.reg`, e nenhum erro pula o
+        // diario (pedido 498, a regra do 486 no `gravar_a_alteracao`): o
+        // contador de marcadas e o `.fts` sao consertaveis depois, a linha
+        // sem evento nao. Cada passo roda, e o PRIMEIRO erro volta no fim.
+        let marcadas = if nasce_marcada {
+            self.reg.mudar_marcadas(1)
+        } else {
+            Ok(())
+        };
         // O indice de texto entra DEPOIS das chaves, e por isso ele nao
         // participa do desfazer acima: a unicidade e as chaves ja passaram, e
         // um `.fts` que falhasse aqui deixaria a linha gravada e o indice
@@ -5336,8 +5364,10 @@ impl Table {
         // uma linha perdida.
         let indexado = self.indexar_texto(rowid, &payload);
         self.fechar_janela_do_texto(texto, indexado.is_ok());
+        let anotado = self.anotar_imagem(Operacao::Inclusao, rowid, 1, &imagem);
+        marcadas?;
         indexado?;
-        self.anotar_imagem(Operacao::Inclusao, rowid, 1, &imagem)?;
+        anotado?;
         Ok(rowid)
     }
 
@@ -5378,8 +5408,12 @@ impl Table {
             Some((c, o)) => (Some(c), o),
             None => (None, 0),
         };
+        // A linha JA esta no `.reg`: o diario que falha aqui marca o evento
+        // devido e derruba o servidor (pedido 498). Os quatro caminhos -- a
+        // inclusao, a alteracao, a marca suave e a exclusao de vez -- passam
+        // por aqui, e e por isso que a decisao mora num lugar so.
         self.log
-            .registrar_detalhado(operacao, rowid, versao, imagem, carimbo, origem)?;
+            .registrar_depois_da_linha(operacao, rowid, versao, imagem, carimbo, origem)?;
         Ok(())
     }
 
@@ -6135,6 +6169,10 @@ impl Table {
         } else {
             Vec::new()
         };
+        // O diario confere que cabe ANTES da primeira escrita (pedido 498), o
+        // irmao do `preparar_diario` dos outros tres caminhos: aqui a recusa
+        // do teto vinha depois de o slot sair, e a linha sumia sem evento.
+        self.log.conferir_teto(imagem_do_evento.len())?;
         self.lixeira.guardar(rowid, &payload, externos)?;
 
         // O texto sai do indice ANTES de os blocos externos serem liberados:
@@ -6177,23 +6215,22 @@ impl Table {
         self.fechar_janela_do_texto(texto, feito.is_ok());
         let (removeu, estava_marcada) = feito?;
         if removeu {
-            if estava_marcada {
-                self.reg.mudar_marcadas(-1)?;
-            }
-            self.motivos
-                .registrar(Tipo::Fisica, rowid, motivo, &identidade)?;
-            let (carimbo, origem) = match self.evento_forcado.take() {
-                Some((c, o)) => (Some(c), o),
-                None => (None, 0),
+            // O slot ja saiu: nenhum erro pula o diario (pedido 498). O
+            // contador e o `.reason` sao observadores; a linha que some sem
+            // evento e a replica que nunca a apaga.
+            let marcadas = if estava_marcada {
+                self.reg.mudar_marcadas(-1)
+            } else {
+                Ok(())
             };
-            self.log.registrar_detalhado(
-                Operacao::Exclusao,
-                rowid,
-                0,
-                &imagem_do_evento,
-                carimbo,
-                origem,
-            )?;
+            let motivado = self
+                .motivos
+                .registrar(Tipo::Fisica, rowid, motivo, &identidade)
+                .map(|_| ());
+            let anotado = self.anotar_imagem(Operacao::Exclusao, rowid, 0, &imagem_do_evento);
+            marcadas?;
+            motivado?;
+            anotado?;
         }
         Ok(removeu)
     }
@@ -6492,16 +6529,63 @@ impl Table {
     /// para qualquer coisa. E a mesma razao de o `.trash` guardar conteudo.
     pub fn imagem_da_linha(&mut self, payload: &[u8]) -> Result<Vec<u8>> {
         let externos = self.conteudo_externo(payload)?;
-        let mut out = Vec::with_capacity(payload.len() + 64);
-        out.extend_from_slice(&(payload.len() as u32).to_le_bytes());
-        out.extend_from_slice(payload);
-        out.extend_from_slice(&(externos.len() as u16).to_le_bytes());
-        for (coluna, bytes) in &externos {
-            out.extend_from_slice(&coluna.to_le_bytes());
-            out.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
-            out.extend_from_slice(bytes);
-        }
-        Ok(out)
+        Ok(montar_imagem(payload, &externos))
+    }
+
+    /// Completa o evento que o `.log` ficou devendo -- pedido 498.
+    ///
+    /// A versao e a imagem saem da linha como ela esta AGORA: desde a falha a
+    /// tabela nao gravou mais nada (o diario devendo recusa), entao «agora» e
+    /// o instante do evento. A exclusao de vez nao tem mais linha no `.reg`;
+    /// a imagem dela, quando o evento a levava, sai da lixeira, que a guardou
+    /// com o conteudo dos externos antes de o slot sair.
+    fn completar_evento_devido(&mut self) -> Result<()> {
+        let Some(d) = self.log.devido() else {
+            return Ok(());
+        };
+        let (versao, imagem) = match d.operacao {
+            Operacao::Exclusao => {
+                let imagem = if d.com_imagem {
+                    let total = self.lixeira.total()?;
+                    let ultima = match total {
+                        0 => None,
+                        n => self.lixeira.ler(n - 1, 1, true)?.pop(),
+                    };
+                    match ultima {
+                        Some(u) if u.rowid == d.rowid => montar_imagem(&u.payload, &u.externos),
+                        _ => {
+                            return Err(PhxError::Corrompido(format!(
+                                "{}: o diario deve a exclusao da linha {} com imagem, \
+                                 e a ultima linha da lixeira nao e ela (pedido 498)",
+                                self.nome, d.rowid
+                            )))
+                        }
+                    }
+                } else {
+                    Vec::new()
+                };
+                (0, imagem)
+            }
+            Operacao::Inclusao | Operacao::Alteracao => {
+                let Some(versao) = self.reg.versao(d.rowid)? else {
+                    return Err(PhxError::Corrompido(format!(
+                        "{}: o diario deve o evento de {} da linha {}, e ela nao esta \
+                         viva no .reg -- a marca so sobe depois de a linha gravar, e a \
+                         tabela nao grava mais nada enquanto deve (pedido 498)",
+                        self.nome,
+                        d.operacao.nome(),
+                        d.rowid
+                    )));
+                };
+                let imagem = if d.com_imagem {
+                    self.imagem_da_linha_do_rowid(d.rowid)?
+                } else {
+                    Vec::new()
+                };
+                (versao, imagem)
+            }
+        };
+        self.log.completar_devido(versao, &imagem)
     }
 
     /// A imagem da linha de um rowid, lendo o payload do `.reg`.

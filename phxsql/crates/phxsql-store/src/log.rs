@@ -308,6 +308,99 @@ pub struct MarcaDoDiario {
     pub offset: u64,
 }
 
+/// O evento que o `.log` ficou devendo a uma linha que ja esta no `.reg` --
+/// pedido 498.
+///
+/// # O que ela guarda, e o que ela NAO guarda
+///
+/// Guarda o que so existia no instante da escrita: QUAL linha, QUE operacao,
+/// quem, quando e de onde (o carimbo e a origem forcados do bidirecional
+/// decidem conflito, e completar com o relogio da abertura elegeria o evento
+/// errado), e se o evento levava imagem -- o interruptor e do servidor, e a
+/// abertura da tabela ainda nao o conhece. NAO guarda a versao nem a imagem:
+/// as duas se derivam da linha como ela esta no `.reg`, que nao mudou mais
+/// desde a falha, porque a tabela recusa toda escrita enquanto deve.
+///
+/// # O formato, 16 bytes no cabecalho do volume 1
+///
+/// ```text
+/// [operacao u8, bit 7 = com imagem][res u8][origem u16][usuario u32][rowid u64]
+/// ```
+///
+/// e o carimbo no `alterado em` (32..40). Ver [`cofre::Marca`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EventoDevido {
+    pub operacao: Operacao,
+    pub rowid: RowId,
+    pub carimbo: i64,
+    pub origem: u16,
+    pub usuario: u32,
+    pub com_imagem: bool,
+}
+
+/// Bit 7 do primeiro byte da marca: o evento devido levava imagem.
+const MARCA_COM_IMAGEM: u8 = 0x80;
+
+impl EventoDevido {
+    fn marca(&self) -> cofre::Marca {
+        let mut bytes = [0u8; cofre::MARCA_LEN];
+        bytes[0] = self.operacao.tag() | if self.com_imagem { MARCA_COM_IMAGEM } else { 0 };
+        por_u16(&mut bytes, 2, self.origem);
+        por_u32(&mut bytes, 4, self.usuario);
+        por_u64(&mut bytes, 8, self.rowid);
+        cofre::Marca {
+            carimbo: self.carimbo,
+            bytes,
+        }
+    }
+
+    fn da_marca(m: &cofre::Marca, nome: &str) -> Result<EventoDevido> {
+        let c = Campos(&m.bytes);
+        let operacao = Operacao::de_tag(m.bytes[0] & !MARCA_COM_IMAGEM).map_err(|_| {
+            PhxError::Corrompido(format!(
+                "{nome}: a marca de evento devido traz a operacao {}, que nao existe",
+                m.bytes[0]
+            ))
+        })?;
+        Ok(EventoDevido {
+            operacao,
+            rowid: c.u64(8),
+            carimbo: m.carimbo,
+            origem: c.u16(2),
+            usuario: c.u32(4),
+            com_imagem: m.bytes[0] & MARCA_COM_IMAGEM != 0,
+        })
+    }
+}
+
+/// O teto da imagem, contado no que vai AO ARQUIVO: num volume cifrado a
+/// etiqueta de 16 bytes anda junto, e deixar a soma passar do teto faria a
+/// leitura recusar o proprio evento que acabamos de gravar. Uma conta so, para
+/// o [`LogFile::conferir_teto`] de antes da linha e o registro de depois.
+fn conferir_imagem(tam_imagem: usize) -> Result<()> {
+    if tam_imagem as u64 + cofre::ACRESCIMO as u64 > IMAGEM_MAX as u64 {
+        return Err(PhxError::LimiteExcedido(format!(
+            "imagem de {tam_imagem} bytes passa do teto de {IMAGEM_MAX} do diario"
+        )));
+    }
+    Ok(())
+}
+
+/// O ultimo volume, quando ele nasceu sem cabecalho -- pedido 498.
+///
+/// Virar de volume e criar o arquivo e depois gravar o cabecalho; no disco
+/// cheio o arquivo nasce e o cabecalho nao cabe. Ele nunca teve evento (o
+/// evento vem depois do cabecalho), e sem esta saida o `.log` inteiro deixava
+/// de abrir -- a tabela junto. So o ultimo, so acima do 1, e so com menos
+/// bytes que o menor cabecalho: um volume com cabecalho legivel nao cai aqui.
+fn sem_cabecalho(volumes: &mut Volumes, existentes: &[u32]) -> Result<Option<u32>> {
+    let ultimo = *existentes.last().unwrap_or(&1);
+    if ultimo > 1 && volumes.tamanho(ultimo)? < cofre::CAB_V2 as u64 {
+        return Ok(Some(ultimo));
+    }
+    Ok(None)
+}
+
 pub struct LogFile {
     volumes: Volumes,
     cabs: HashMap<u32, Cabecalho>,
@@ -316,6 +409,9 @@ pub struct LogFile {
     marca: Option<MarcaDoDiario>,
     /// Usuario aplicado aos eventos gravados daqui em diante.
     pub usuario: u32,
+    /// O evento que este diario deve (pedido 498). De pe, nada mais se anexa
+    /// -- ver [`LogFile::conferir_teto`] -- ate a abertura completar.
+    devendo: Option<EventoDevido>,
 }
 
 impl LogFile {
@@ -329,6 +425,7 @@ impl LogFile {
             volume_atual: 1,
             marca: None,
             usuario: 0,
+            devendo: None,
         };
         l.volumes.criar(1)?;
         l.gravar_cab(Cabecalho::novo(1)?)?;
@@ -345,20 +442,30 @@ impl LogFile {
                 volumes.caminho(1).display()
             )));
         }
-        let volume_atual = *existentes.last().unwrap();
+        let mut volumes = volumes;
+        let volume_atual = match sem_cabecalho(&mut volumes, &existentes)? {
+            // O volume que nasceu sem cabecalho nunca teve evento: sai.
+            Some(orfao) => {
+                volumes.apagar_volume(orfao)?;
+                orfao - 1
+            }
+            None => *existentes.last().unwrap(),
+        };
         let mut l = LogFile {
             volumes,
             cabs: HashMap::new(),
             volume_atual,
             marca: None,
             usuario: 0,
+            devendo: None,
         };
-        l.cab(1)?;
+        let primeiro = l.cab(1)?;
         l.cab(volume_atual)?;
         // So o volume CORRENTE pode ter ficado atrasado: os anteriores foram
         // fechados quando a paginacao virou, e ali o cabecalho vai a disco na
         // hora.
         l.curar(volume_atual, true)?;
+        l.devendo = l.devido_no(&primeiro)?;
         Ok(l)
     }
 
@@ -383,6 +490,11 @@ impl LogFile {
                 volumes.caminho(1).display()
             )));
         }
+        let mut volumes = volumes;
+        // Apagar o volume que nasceu sem cabecalho e escrever.
+        if sem_cabecalho(&mut volumes, &existentes)?.is_some() {
+            return Ok(None);
+        }
         let volume_atual = *existentes.last().unwrap();
         let mut l = LogFile {
             volumes,
@@ -390,8 +502,12 @@ impl LogFile {
             volume_atual,
             marca: None,
             usuario: 0,
+            devendo: None,
         };
-        l.cab(1)?;
+        // O evento devido (498) se completa escrevendo.
+        if l.cab(1)?.marca.is_some() {
+            return Ok(None);
+        }
         l.cab(volume_atual)?;
         // A cura ANDA, e nao grava: se ela achou evento alem do fim que o
         // cabecalho declara, e porque o cabecalho precisa ser corrigido -- e
@@ -454,15 +570,8 @@ impl LogFile {
         carimbo: Option<i64>,
         origem: u16,
     ) -> Result<Evento> {
-        // O teto conta o que vai AO ARQUIVO: num volume cifrado a etiqueta de
-        // 16 bytes anda junto, e deixar a soma passar do teto faria a leitura
-        // recusar o proprio evento que acabamos de gravar.
-        if imagem.len() as u64 + cofre::ACRESCIMO as u64 > IMAGEM_MAX as u64 {
-            return Err(PhxError::LimiteExcedido(format!(
-                "imagem de {} bytes passa do teto de {IMAGEM_MAX} do diario",
-                imagem.len()
-            )));
-        }
+        self.conferir_devendo()?;
+        conferir_imagem(imagem.len())?;
         // O tamanho que vai ao arquivo pode ser maior que o da imagem: num
         // volume cifrado o corpo leva a etiqueta de 16 bytes atras dele.
         let atual = self.cab(self.volume_atual)?;
@@ -502,10 +611,172 @@ impl LogFile {
     /// tabela pergunta ANTES de gravar a linha, porque recusar depois deixava
     /// o valor novo no `.reg` sem diario -- replica divergindo e cascata
     /// pulada. Nao escreve nada.
+    ///
+    /// Recusa tambem a imagem acima do [`IMAGEM_MAX`] -- a MESMA conta do
+    /// [`Self::registrar_detalhado`] -- e o diario que esta devendo um evento:
+    /// anexar outro antes do devido poria na replica a alteracao de uma linha
+    /// que ela ainda nao recebeu.
     pub fn conferir_teto(&mut self, tam_imagem: usize) -> Result<()> {
+        self.conferir_devendo()?;
+        conferir_imagem(tam_imagem)?;
         let atual = self.cab(self.volume_atual)?;
         let ocupa = EVENTO_CAB as u64 + atual.ocupa(tam_imagem) as u64;
         self.destino(ocupa).map(|_| ())
+    }
+
+    fn conferir_devendo(&self) -> Result<()> {
+        match &self.devendo {
+            None => Ok(()),
+            Some(d) => Err(PhxError::Io(std::io::Error::other(format!(
+                "o diario de {} deve o evento de {} da linha {}: a gravacao dele \
+                 falhou depois de a linha estar no .reg. Nada mais se grava nesta \
+                 tabela ate ela ser aberta de novo -- a abertura completa o evento \
+                 a partir da linha (pedido 498)",
+                self.volumes.nome(),
+                d.operacao.nome(),
+                d.rowid
+            )))),
+        }
+    }
+
+    /// O evento que este diario deve, se deve. Ver [`EventoDevido`].
+    pub fn devido(&self) -> Option<EventoDevido> {
+        self.devendo
+    }
+
+    fn devido_no(&self, cab: &Cabecalho) -> Result<Option<EventoDevido>> {
+        let nome = self.volumes.caminho(1).display().to_string();
+        cab.marca
+            .as_ref()
+            .map(|m| EventoDevido::da_marca(m, &nome))
+            .transpose()
+    }
+
+    /// Registra o evento de uma linha que JA ESTA no `.reg` -- pedido 498.
+    ///
+    /// O `.log` que falha aqui deixaria a linha sem diario: replica
+    /// divergindo e cascata pulada. A decisao do dono (30/09/2026) e a do
+    /// PostgreSQL na falha de escrita do WAL: derrubar e completar. Entao,
+    /// na falha:
+    ///
+    /// 1. a marca do evento devido vai ao cabecalho do volume 1, NO LUGAR --
+    ///    sobrescrever bytes que ja existem nao pede espaco novo, e o disco
+    ///    cheio e justamente o que nao tem. Um arquivo a parte (H2) morreria
+    ///    ai: medido no tmpfs cheio, o arquivo novo nasce com 0 bytes;
+    /// 2. o gancho do processo roda ([`crate::sincronia::diario_sem_evento`]):
+    ///    o servidor aborta ali, com a trava na mao, sem responder;
+    /// 3. a biblioteca, que nao cai, fica com o erro -- e o diario recusa
+    ///    toda escrita ate a tabela ser reaberta.
+    ///
+    /// A abertura seguinte completa o evento pela linha
+    /// ([`LogFile::completar_devido`]).
+    ///
+    /// # Por que a marca so sobe na falha, e nao antes de cada escrita
+    ///
+    /// Subi-la antes do `.reg` e baixa-la depois do evento (H1) cobriria
+    /// tambem o `SIGKILL` entre os dois -- a dois `pwrite` por linha, medidos
+    /// em 0,39-0,47 us cada, sobre 3,8 us da insercao sem indice. Aqui o
+    /// processo SABE que falhou, e a marca sobe no mesmo lugar sem custar nada
+    /// ao laco quente. O `SIGKILL` no meio fica como estava (ver o 498 no
+    /// `PENDENCIAS.md`).
+    pub fn registrar_depois_da_linha(
+        &mut self,
+        operacao: Operacao,
+        rowid: RowId,
+        versao: u64,
+        imagem: &[u8],
+        carimbo: Option<i64>,
+        origem: u16,
+    ) -> Result<Evento> {
+        let carimbo = carimbo.unwrap_or_else(agora_ms);
+        let e = match self.registrar_detalhado(
+            operacao,
+            rowid,
+            versao,
+            imagem,
+            Some(carimbo),
+            origem,
+        ) {
+            Ok(e) => return Ok(e),
+            Err(e) => e,
+        };
+        // O diario ja devendo nao troca a marca: a primeira e a que a
+        // abertura completa, e a tabela recusou esta escrita antes de gravar
+        // a linha.
+        if self.devendo.is_some() {
+            return Err(e);
+        }
+        let marcou = self.marcar_devido(EventoDevido {
+            operacao,
+            rowid,
+            carimbo,
+            origem,
+            usuario: self.usuario,
+            com_imagem: !imagem.is_empty(),
+        });
+        let io = std::io::Error::other(match &marcou {
+            Ok(()) => e.to_string(),
+            Err(m) => format!("{e} (e a marca do evento devido tambem falhou: {m})"),
+        });
+        crate::sincronia::diario_sem_evento(&self.volumes.caminho(1), &io);
+        Err(PhxError::Io(std::io::Error::other(format!(
+            "a linha {rowid} esta no .reg e o diario nao gravou o evento de {} \
+             dela ({io}). {} (pedido 498)",
+            operacao.nome(),
+            if marcou.is_ok() {
+                "A marca ficou no cabecalho do .log e a proxima abertura da tabela \
+                 completa o evento; ate la ela nao grava mais nada"
+            } else {
+                "A MARCA NAO FICOU: a proxima abertura nao sabera qual evento falta"
+            }
+        ))))
+    }
+
+    fn marcar_devido(&mut self, d: EventoDevido) -> Result<()> {
+        self.devendo = Some(d);
+        let c = self.cab(1)?;
+        self.gravar_cab(c.com_marca(Some(d.marca())))
+    }
+
+    /// Completa o evento devido, com a versao e a imagem que a TABELA
+    /// derivou da linha -- pedido 498. Sem marca, nao faz nada.
+    ///
+    /// A ordem e a que torna a repeticao inofensiva: o evento, o `fsync` do
+    /// diario, e so entao a marca desce. Uma queda entre os dois deixa a
+    /// marca de pe com o evento ja la, e a proxima abertura o reconhece pelo
+    /// par (operacao, rowid, carimbo) no fim do diario, em vez de anexa-lo
+    /// duas vezes -- nada mais se anexou depois dele, porque o diario
+    /// devendo recusa.
+    pub fn completar_devido(&mut self, versao: u64, imagem: &[u8]) -> Result<()> {
+        let Some(d) = self.devendo else {
+            return Ok(());
+        };
+        let total = self.total()?;
+        let ja_esta = total > 0
+            && self.ler(total - 1, 1)?.first().is_some_and(|e| {
+                e.operacao == d.operacao && e.rowid == d.rowid && e.carimbo == d.carimbo
+            });
+        if !ja_esta {
+            self.devendo = None;
+            let usuario = std::mem::replace(&mut self.usuario, d.usuario);
+            let feito = self.registrar_detalhado(
+                d.operacao,
+                d.rowid,
+                versao,
+                imagem,
+                Some(d.carimbo),
+                d.origem,
+            );
+            self.usuario = usuario;
+            if let Err(e) = feito {
+                self.devendo = Some(d);
+                return Err(e);
+            }
+            self.sincronizar()?;
+        }
+        self.devendo = None;
+        let c = self.cab(1)?;
+        self.gravar_cab(c.com_marca(None))
     }
 
     fn anexar(&mut self, mut evento: Evento, imagem: &[u8]) -> Result<()> {
@@ -532,6 +803,13 @@ impl LogFile {
         evento.escrever(&mut buf, tempero);
         let corpo = cab.selar(tempero, cab.fim, &Evento::associado(&buf), imagem);
         evento.conferir_e_fechar(&mut buf, &corpo);
+        #[cfg(debug_assertions)]
+        if let Some(erro) = crate::sincronia::falha_de_teste::disparar(
+            &self.volumes.caminho(volume),
+            crate::sincronia::falha_de_teste::Onde::GravacaoDoDiario,
+        ) {
+            return Err(PhxError::Io(erro));
+        }
         self.volumes.escrever(volume, cab.fim, &buf)?;
         if !corpo.is_empty() {
             self.volumes
