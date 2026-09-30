@@ -3642,9 +3642,15 @@ name = "phxclaw"
 version = "0.70.0"
 dependencies = [
  "anyhow",
+ "axum",
+ "phxclaw-agent",
+ "phxclaw-api-gateway",
+ "phxclaw-browser",
  "phxclaw-core-runtime",
  "phxclaw-postgres-bootstrap",
+ "phxclaw-secret-broker",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -3708,12 +3714,16 @@ dependencies = [
  "futures-util",
  "phxclaw-agent-core",
  "phxclaw-api-gateway",
+ "phxclaw-browser",
  "phxclaw-egress-broker",
  "phxclaw-evidence-ledger",
  "phxclaw-http-client",
+ "phxclaw-llm",
+ "phxclaw-office",
  "phxclaw-rustclaw-native",
  "phxclaw-sandbox",
  "phxclaw-types",
+ "phxclaw-web-search",
  "reqwest",
  "serde",
  "serde_json",
@@ -4632,6 +4642,11 @@ dependencies = [
 [[package]]
 name = "phxclaw-office"
 version = "0.70.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
 
 [[package]]
 name = "phxclaw-ollama-adapter"

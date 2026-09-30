@@ -166,6 +166,12 @@ fn safe_id(id: &str) -> String {
 /// Caminho dentro da pasta de trabalho da tarefa, ou erro. Recusa absoluto, `..` e
 /// symlink que aponte para fora: e a unica porta de disco das ferramentas.
 pub fn confine(workdir: &Path, relative: &str) -> Result<PathBuf, String> {
+    // O shell ve a pasta da tarefa como /work; o modelo repete esse caminho nas ferramentas
+    // de arquivo (medido: 4 negacoes seguidas de read_file("/work/...")). E o mesmo lugar.
+    let relative = relative
+        .strip_prefix("/work/")
+        .or_else(|| relative.strip_prefix("./"))
+        .unwrap_or(relative);
     let rel = Path::new(relative);
     if rel.is_absolute()
         || rel
@@ -227,6 +233,8 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("phx-conf-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
         assert!(confine(&dir, "a/b.txt").is_ok());
+        assert_eq!(confine(&dir, "/work/a/b.txt").unwrap(), dir.join("a/b.txt"));
+        assert!(confine(&dir, "/work/../x").is_err());
         assert!(confine(&dir, "../x").is_err());
         assert!(confine(&dir, "/etc/passwd").is_err());
         #[cfg(unix)]

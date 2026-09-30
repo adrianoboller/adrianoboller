@@ -209,6 +209,11 @@ pub trait Tool: Send + Sync {
         args: Value,
         ctx: &'a ToolContext,
     ) -> BoxFut<'a, Result<ToolOutput, ToolError>>;
+    /// Chamado quando a tarefa termina, em qualquer estado: a ferramenta que segura recurso
+    /// por tarefa (navegador, processo) solta aqui. Padrao: nada a soltar.
+    fn finish<'a>(&'a self, _task_id: &'a str) -> BoxFut<'a, ()> {
+        Box::pin(async {})
+    }
 }
 
 /// Trunca texto para devolver ao modelo sem estourar o contexto, cortando em fronteira

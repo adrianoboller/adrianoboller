@@ -4,9 +4,11 @@
 //! dispara tarefas agendadas. Os provedores de modelo e as ferramentas de navegador,
 //! busca e documentos entram pelos traits de `phxclaw-agent-core`.
 
+pub mod adaptadores;
 pub mod agenda;
 pub mod api;
 pub mod ferramentas;
+pub mod montagem;
 pub mod motor;
 pub mod tarefa;
 

@@ -275,3 +275,130 @@ async fn ferramenta_lenta_vira_timeout_e_o_agente_segue() {
     assert_eq!(t.steps[0].outcome, "erro");
     assert_eq!(t.status, TaskStatus::Completed);
 }
+
+#[tokio::test]
+async fn terceira_chamada_identica_nao_roda() {
+    let passos: Vec<_> = (0..4)
+        .map(|i| ScriptedLlm::call(&format!("c{i}"), "list_files", json!({})))
+        .chain([ScriptedLlm::text("fim")])
+        .collect();
+    let llm = Arc::new(ScriptedLlm::new(passos));
+    let s = store();
+    let a = Agent::new(
+        llm.clone(),
+        tools_basicas(),
+        AgentConfig::default().grant(&["fs.read"]),
+        s.clone(),
+    );
+    let t = a
+        .run(
+            Task::new("x", "roteiro"),
+            &CancelFlag::default(),
+            &NoObserver,
+        )
+        .await;
+    let saidas: Vec<_> = t
+        .steps
+        .iter()
+        .filter(|p| p.tool.is_some())
+        .map(|p| p.outcome.as_str())
+        .collect();
+    assert_eq!(saidas, vec!["ok", "ok", "repetida", "repetida"]);
+    assert!(
+        llm.seen.lock().unwrap()[3]
+            .0
+            .last()
+            .unwrap()
+            .content
+            .starts_with("REPEATED CALL")
+    );
+    // a repetida nao virou evidencia de execucao: so as 2 que rodaram
+    let rel = phxclaw_evidence_ledger::EvidenceLedger::open(s.evidence_path(&t.id))
+        .unwrap()
+        .verify()
+        .unwrap();
+    assert_eq!(rel.records, 2);
+}
+
+#[tokio::test]
+async fn narrar_a_acao_nao_encerra_quando_o_fim_e_ferramenta() {
+    let llm = Arc::new(ScriptedLlm::new(vec![
+        ScriptedLlm::text("I will create relatorio.md now."),
+        ScriptedLlm::call(
+            "c1",
+            "write_file",
+            json!({"path": "relatorio.md", "content": "x"}),
+        ),
+        ScriptedLlm::call(
+            "c2",
+            "final_answer",
+            json!({"answer": "relatorio.md criado"}),
+        ),
+    ]));
+    let cfg = AgentConfig {
+        require_final_tool: true,
+        ..AgentConfig::default()
+    }
+    .grant(&["fs.write"]);
+    let a = Agent::new(llm.clone(), tools_basicas(), cfg, store());
+    let t = a
+        .run(
+            Task::new("x", "roteiro"),
+            &CancelFlag::default(),
+            &NoObserver,
+        )
+        .await;
+    assert_eq!(t.status, TaskStatus::Completed);
+    assert_eq!(t.answer.as_deref(), Some("relatorio.md criado"));
+    assert_eq!(
+        t.artifacts.len(),
+        1,
+        "a narracao encerrou antes de criar o arquivo"
+    );
+    assert!(
+        llm.seen.lock().unwrap()[0]
+            .1
+            .contains(&"final_answer".to_string())
+    );
+}
+
+#[tokio::test]
+async fn final_answer_sem_o_arquivo_pedido_e_recusado() {
+    let llm = Arc::new(ScriptedLlm::new(vec![
+        ScriptedLlm::call(
+            "c0",
+            "final_answer",
+            json!({"answer": "rust.md has been created"}),
+        ),
+        ScriptedLlm::call(
+            "c1",
+            "write_file",
+            json!({"path": "rust.md", "content": "1.98.1"}),
+        ),
+        ScriptedLlm::call("c2", "final_answer", json!({"answer": "rust.md criado"})),
+    ]));
+    let cfg = AgentConfig {
+        require_final_tool: true,
+        ..AgentConfig::default()
+    }
+    .grant(&["fs.write"]);
+    let a = Agent::new(llm.clone(), tools_basicas(), cfg, store());
+    let t = a
+        .run(
+            Task::new("write the version into rust.md", "roteiro"),
+            &CancelFlag::default(),
+            &NoObserver,
+        )
+        .await;
+    assert_eq!(t.steps[0].outcome, "recusado");
+    assert!(
+        llm.seen.lock().unwrap()[1]
+            .0
+            .last()
+            .unwrap()
+            .content
+            .contains("rust.md")
+    );
+    assert_eq!(t.answer.as_deref(), Some("rust.md criado"));
+    assert_eq!(t.artifacts.len(), 1);
+}

@@ -29,6 +29,10 @@ pub struct AgentConfig {
     pub capabilities: BTreeSet<String>,
     /// Instrucao extra do operador, somada ao prompt de sistema.
     pub extra_instructions: Option<String>,
+    /// O fim e uma ferramenta explicita (`final_answer`). Medido com modelo pequeno: ele
+    /// terminava NARRANDO a acao ("I will create rust.xlsx") sem chamar a ferramenta.
+    /// Resposta so em texto recebe ate 2 lembretes antes de ser aceita como final.
+    pub require_final_tool: bool,
 }
 
 impl Default for AgentConfig {
@@ -40,6 +44,7 @@ impl Default for AgentConfig {
             options: LlmOptions::default(),
             capabilities: BTreeSet::new(),
             extra_instructions: None,
+            require_final_tool: false,
         }
     }
 }
@@ -144,7 +149,17 @@ Reply ONLY with JSON: {{\"steps\": [\"short step\", ...]}} with 2 to 7 steps, in
 
     /// Executa a tarefa ate a resposta final, o teto de passos, erro ou cancelamento.
     /// Grava o estado a cada passo e devolve a tarefa final.
-    pub async fn run(&self, mut task: Task, cancel: &CancelFlag, obs: &dyn Observer) -> Task {
+    pub async fn run(&self, task: Task, cancel: &CancelFlag, obs: &dyn Observer) -> Task {
+        let id = task.id.clone();
+        let fim = self.run_inner(task, cancel, obs).await;
+        // Solta o que as ferramentas seguraram para esta tarefa (navegador aberto etc.).
+        for t in &self.tools {
+            t.finish(&id).await;
+        }
+        fim
+    }
+
+    async fn run_inner(&self, mut task: Task, cancel: &CancelFlag, obs: &dyn Observer) -> Task {
         task.status = TaskStatus::Running;
         task.updated_at = Utc::now();
         self.persist(&task, obs);
@@ -165,7 +180,17 @@ Reply ONLY with JSON: {{\"steps\": [\"short step\", ...]}} with 2 to 7 steps, in
             timeout: self.config.tool_timeout,
         };
         let _ = std::fs::create_dir_all(&ctx.workdir);
-        let specs = self.visible_specs();
+        let mut specs = self.visible_specs();
+        if self.config.require_final_tool {
+            specs.push(ToolSpec {
+                name: "final_answer".into(),
+                description: "Call this ONLY when everything the user asked is done (all requested files created). \
+The answer is shown to the user."
+                    .into(),
+                parameters: json!({"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"]}),
+            });
+        }
+        let mut lembretes = 0u32;
         let mut sistema = PROMPT_BASE.to_string();
         if !task.plan.is_empty() {
             sistema.push_str("\n\nApproved plan:\n");
@@ -181,6 +206,7 @@ Reply ONLY with JSON: {{\"steps\": [\"short step\", ...]}} with 2 to 7 steps, in
             Message::system(sistema),
             Message::user(task.objective.clone()),
         ];
+        let mut chamadas: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
 
         for passo in 0..self.config.max_steps {
             if cancel.is_cancelled() {
@@ -199,6 +225,73 @@ Reply ONLY with JSON: {{\"steps\": [\"short step\", ...]}} with 2 to 7 steps, in
             };
             task.usage.input_tokens += reply.usage.input_tokens;
             task.usage.output_tokens += reply.usage.output_tokens;
+            if let Some(fim) = reply.tool_calls.iter().find(|c| c.name == "final_answer") {
+                let r = fim
+                    .arguments
+                    .get("answer")
+                    .and_then(Value::as_str)
+                    .unwrap_or(&reply.content)
+                    .trim()
+                    .to_string();
+                // Conclusao se VERIFICA, nao se aceita: medido com modelo pequeno, ele chamou
+                // final_answer dizendo "rust.xlsx has been created" sem ter usado ferramenta.
+                let faltando = arquivos_pedidos(&task.objective)
+                    .into_iter()
+                    .filter(|f| !ctx.workdir.join(f).exists())
+                    .collect::<Vec<_>>();
+                let nada_rodou = !task
+                    .steps
+                    .iter()
+                    .any(|p| p.tool.is_some() && p.outcome == "ok");
+                let recusa = if !faltando.is_empty() {
+                    Some(format!(
+                        "final_answer REJECTED: these requested files do not exist yet in the task directory: {}. \
+Create them with the appropriate tool first.",
+                        faltando.join(", ")
+                    ))
+                } else if nada_rodou && !specs.is_empty() && lembretes < 2 {
+                    Some("final_answer REJECTED: you have not used any tool yet. Use the tools to actually do the work \
+(search, open pages, create files) before finishing.".to_string())
+                } else {
+                    None
+                };
+                if let Some(motivo) = recusa.filter(|_| lembretes < 3) {
+                    lembretes += 1;
+                    self.record(
+                        &mut task,
+                        passo,
+                        "ferramenta",
+                        Some("final_answer".into()),
+                        fim.arguments.clone(),
+                        "recusado",
+                        &motivo,
+                    );
+                    msgs.push(Message::assistant(reply.content.clone(), vec![fim.clone()]));
+                    msgs.push(Message::tool_result(fim, motivo));
+                    continue;
+                }
+                self.record(&mut task, passo, "pensamento", None, Value::Null, "ok", &r);
+                task.answer = Some(r);
+                return self.finish(task, TaskStatus::Completed, None, obs);
+            }
+            if reply.tool_calls.is_empty() && self.config.require_final_tool && lembretes < 2 {
+                lembretes += 1;
+                self.record(
+                    &mut task,
+                    passo,
+                    "pensamento",
+                    None,
+                    Value::Null,
+                    "ok",
+                    &reply.content,
+                );
+                msgs.push(Message::assistant(reply.content.clone(), vec![]));
+                msgs.push(Message::user(
+                    "Continue: call the next tool needed to complete the objective (for example create the requested file). \
+If everything requested is already done, call final_answer.",
+                ));
+                continue;
+            }
             if reply.tool_calls.is_empty() {
                 task.answer = Some(reply.content.trim().to_string());
                 self.record(
@@ -231,8 +324,22 @@ Reply ONLY with JSON: {{\"steps\": [\"short step\", ...]}} with 2 to 7 steps, in
                 if cancel.is_cancelled() {
                     return self.finish(task, TaskStatus::Cancelled, None, obs);
                 }
-                let (texto, outcome, artefatos) =
-                    self.call_tool(call, &ctx, &ledger, &task.id).await;
+                // Mesma ferramenta com os mesmos argumentos pela 3a vez: nao roda. Medido com
+                // modelo pequeno: 8 buscas identicas seguidas, ate o buscador bloquear por robo.
+                let assinatura = format!("{}{}", call.name, call.arguments);
+                let repeticoes = chamadas.entry(assinatura).or_insert(0u32);
+                *repeticoes += 1;
+                let (texto, outcome, artefatos) = if *repeticoes >= 3 {
+                    (
+                        "REPEATED CALL: you already made this exact call twice and have its result above. \
+Do not repeat it; use that result, try a different tool or arguments, or give the final answer."
+                            .to_string(),
+                        "repetida",
+                        vec![],
+                    )
+                } else {
+                    self.call_tool(call, &ctx, &ledger, &task.id).await
+                };
                 self.record(
                     &mut task,
                     passo,
@@ -382,6 +489,32 @@ Reply ONLY with JSON: {{\"steps\": [\"short step\", ...]}} with 2 to 7 steps, in
     }
 }
 
+/// Nomes de arquivo que o objetivo pede explicitamente ("crie rust.xlsx"): a conclusao
+/// so e aceita quando eles existem na pasta da tarefa.
+pub fn arquivos_pedidos(objetivo: &str) -> Vec<String> {
+    const EXT: &[&str] = &[
+        "xlsx", "docx", "pptx", "md", "csv", "png", "html", "txt", "json", "pdf",
+    ];
+    let mut v: Vec<String> = objetivo
+        .split(|c: char| c.is_whitespace() || matches!(c, ',' | ';' | '(' | ')' | '"' | '\'' | '`'))
+        .map(|p| p.trim_end_matches(['.', ':', '!', '?']))
+        .filter(|p| {
+            p.rsplit_once('.').is_some_and(|(nome, ext)| {
+                !nome.is_empty()
+                    && !nome.contains("//")
+                    && !p.contains("://")
+                    && EXT.contains(&ext.to_ascii_lowercase().as_str())
+                    && nome
+                        .chars()
+                        .all(|c| c.is_alphanumeric() || matches!(c, '-' | '_' | '/'))
+            })
+        })
+        .map(str::to_string)
+        .collect();
+    v.dedup();
+    v
+}
+
 /// Aceita o JSON cercado de texto ou de ``` que modelos pequenos costumam devolver.
 pub fn parse_plan(texto: &str) -> Option<Vec<String>> {
     let ini = texto.find('{')?;
@@ -447,6 +580,17 @@ pub fn media_type(path: &str) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn arquivos_pedidos_saem_do_objetivo() {
+        assert_eq!(
+            arquivos_pedidos(
+                "create a spreadsheet rust.xlsx, then write relatorio.md. See https://x.com/a.html"
+            ),
+            vec!["rust.xlsx", "relatorio.md"]
+        );
+        assert!(arquivos_pedidos("versao 1.98.1 do Rust").is_empty());
+    }
 
     #[test]
     fn plano_aceita_json_cercado() {

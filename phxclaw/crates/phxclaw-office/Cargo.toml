@@ -4,4 +4,11 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+# O ZIP (store na escrita, store+deflate na leitura) e o CRC-32 sao escritos
+# na propria crate: o OPC/OOXML aceita entradas sem compressao, a saida fica
+# deterministica byte a byte sem depender do nivel de compressao de uma
+# biblioteca, e a arvore de dependencias nao cresce por ~400 linhas.
 [dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true

@@ -6,6 +6,10 @@ license.workspace = true
 
 [dependencies]
 phxclaw-agent-core = { path = "../phxclaw-agent-core" }
+phxclaw-browser = { path = "../phxclaw-browser" }
+phxclaw-llm = { path = "../phxclaw-llm" }
+phxclaw-office = { path = "../phxclaw-office" }
+phxclaw-web-search = { path = "../phxclaw-web-search" }
 phxclaw-evidence-ledger = { path = "../phxclaw-evidence-ledger" }
 phxclaw-rustclaw-native = { path = "../phxclaw-rustclaw-native" }
 phxclaw-sandbox = { path = "../phxclaw-sandbox" }
