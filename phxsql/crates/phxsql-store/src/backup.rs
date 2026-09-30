@@ -91,10 +91,15 @@ use std::collections::BTreeMap;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use phxsql_core::error::{PhxError, Result};
 use phxsql_core::hash::{para_hex, sha256};
 use phxsql_core::json::Json;
+
+// O dev/inode que identifica a copia (e a pasta nascida, pedido 593) mora no
+// motor da `Pasta`: as duas conferencias sao a mesma pergunta.
+use crate::util::identidade;
 
 /// Nome do manifesto dentro do destino.
 pub const MANIFESTO: &str = "backup.json";
@@ -179,22 +184,6 @@ fn sincronizar_arquivo(alvo: &Path, anotado: Option<(u64, u64)>, mostrar: &Path)
     crate::sincronia::sync_all_sem_abortar(&arquivo, mostrar)
 }
 
-/// O que identifica o arquivo que o backup escreveu, para a reabertura saber
-/// que e o mesmo: dispositivo e inode. Fora do Unix a `std` nao os da, e
-/// vale o que valia (`None == None`).
-fn identidade(m: &std::fs::Metadata) -> Option<(u64, u64)> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        Some((m.dev(), m.ino()))
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = m;
-        None
-    }
-}
-
 /// O erro de quem abriu pelo `/proc/self/fd/N/nome` da [`crate::util::Pasta`]
 /// dito pelo caminho REAL: `/proc/self/fd/7/c.reg` nao diz nada a quem le o
 /// log. So o texto muda; o tipo do erro fica.
@@ -249,33 +238,44 @@ pub fn sincronizar_copias(copias: &Copias) -> Result<()> {
 /// recusa e a arma de teste sao as mesmas dos arquivos). O nome passado e o
 /// do MANIFESTO dentro dela: a recusa marca a propria pasta, e nao a mae --
 /// que no backup agendado e a pasta dos backups vizinhos.
-fn sincronizar_pasta(pasta: &Path) -> Result<()> {
-    crate::sincronia::sincronizar_pasta_sem_abortar(pasta, &pasta.join(MANIFESTO))
+///
+/// Pedido 593: no DESCRITOR que a corrida abriu, e nao num `open` pelo nome.
+/// Roda fora da trava, e o nome pode ter virado um link desde a escrita: o
+/// `fsync` caia na pasta do outro lado dele, e as entradas das copias -- que
+/// estao na pasta que a corrida abriu -- nunca sincronizavam. Sem descritor
+/// (fora do Linux, sem `/proc`), fica o `open` pelo nome de antes.
+fn sincronizar_pasta(pasta: &crate::util::Pasta) -> Result<()> {
+    let de_quem = pasta.real().join(MANIFESTO);
+    match pasta.descritor() {
+        Some(d) => crate::sincronia::sync_all_sem_abortar(d, &de_quem),
+        None => crate::sincronia::sincronizar_pasta_sem_abortar(pasta.real(), &de_quem),
+    }
 }
 
 /// As pastas cujas ENTRADAS esta corrida mudou, sem repetir: o destino, a
 /// pasta de cada copia, e a mae de cada pasta criada (a entrada da pasta nova
 /// mora na mae dela). Da mais funda para a mais rasa: a do destino -- a que
 /// perdeu o `backup.json` velho -- fica perto do fim, logo antes do manifesto.
-fn pastas_tocadas(copias: &Copias) -> Vec<PathBuf> {
-    let mut pastas: Vec<PathBuf> = Vec::new();
-    let mut anotar = |p: &Path| {
-        if !p.as_os_str().is_empty() && !pastas.iter().any(|q| q == p) {
-            pastas.push(p.to_path_buf());
+///
+/// Pedido 593: devolve as pastas ABERTAS, e nao os nomes -- o `fsync` cai no
+/// descritor por onde a corrida escreveu. Sem repetir pelo caminho real.
+fn pastas_tocadas(copias: &Copias) -> Vec<Arc<crate::util::Pasta>> {
+    let mut pastas: Vec<Arc<crate::util::Pasta>> = Vec::new();
+    let mut anotar = |p: &Arc<crate::util::Pasta>| {
+        if !pastas.iter().any(|q| q.real() == p.real()) {
+            pastas.push(p.clone());
         }
     };
-    for c in &copias.caminhos {
-        if let Some(pai) = c.parent() {
-            anotar(pai);
-        }
+    for &i in &copias.onde {
+        anotar(&copias.ancoras[i]);
     }
     for p in &copias.pastas {
-        if let Some(mae) = p.parent() {
-            anotar(mae);
-        }
+        anotar(p.mae());
     }
-    anotar(&copias.destino);
-    pastas.sort_by_key(|p| std::cmp::Reverse(p.components().count()));
+    if let Some(destino) = copias.ancoras.first() {
+        anotar(destino);
+    }
+    pastas.sort_by_key(|p| std::cmp::Reverse(p.real().components().count()));
     pastas
 }
 
@@ -545,7 +545,7 @@ pub fn executar_zip(
 pub struct ZipParcial {
     alvo: PathBuf,
     arquivo: File,
-    pastas: Vec<PathBuf>,
+    pastas: Vec<crate::util::Nascida>,
 }
 
 impl std::ops::Deref for ZipParcial {
@@ -846,7 +846,9 @@ fn copiar_arvore(
     // Pedido 568: daqui para dentro o destino se percorre pelo descritor de
     // cada pasta, sem seguir link em componente nenhum. O proprio `destino`
     // e o unico nome que se segue: ele e escolha de quem chama.
-    copias.ancoras.push(crate::util::Pasta::abrir(destino)?);
+    copias
+        .ancoras
+        .push(Arc::new(crate::util::Pasta::abrir(destino)?));
     let mut ancora_de: BTreeMap<PathBuf, usize> = BTreeMap::new();
     ancora_de.insert(PathBuf::new(), 0);
     let arquivos = listar(raiz)?;
@@ -884,6 +886,7 @@ fn copiar_arvore(
         copias
             .reabrir
             .push((por_dentro, identidade(&arquivo.metadata()?)));
+        copias.onde.push(pasta);
         let seguras = copias.abertos.iter().filter(|a| a.is_some()).count();
         copias.abertos.push((seguras < teto).then_some(arquivo));
         copias.caminhos.push(alvo);
@@ -916,8 +919,12 @@ fn entrar_na_pasta(
             indice = i;
             continue;
         }
-        let nova = copias.ancoras[indice].entrar(componente.as_os_str(), &mut copias.pastas)?;
-        copias.ancoras.push(nova);
+        let nova = crate::util::Pasta::entrar(
+            &copias.ancoras[indice],
+            componente.as_os_str(),
+            &mut copias.pastas,
+        )?;
+        copias.ancoras.push(Arc::new(nova));
         indice = copias.ancoras.len() - 1;
         ancora_de.insert(atual.clone(), indice);
     }
@@ -980,10 +987,15 @@ pub struct Copias {
     nascidas: Vec<PathBuf>,
     /// As pastas do destino abertas por descritor (pedido 568); a primeira e
     /// o proprio destino. Vivem ate o fim da corrida: os nomes de `reabrir` e
-    /// `nascidas` so valem enquanto elas estao abertas.
-    ancoras: Vec<crate::util::Pasta>,
-    /// Diretorios que esta corrida criou, do mais externo para o mais interno.
-    pastas: Vec<PathBuf>,
+    /// `nascidas` so valem enquanto elas estao abertas. `Arc` porque a pasta
+    /// nascida guarda a mae dela (pedido 593).
+    ancoras: Vec<Arc<crate::util::Pasta>>,
+    /// Paralela a `caminhos`: o indice, em `ancoras`, da pasta da copia --
+    /// a que recebe o `fsync` da entrada dela (pedido 593).
+    onde: Vec<usize>,
+    /// Diretorios que esta corrida criou, do mais externo para o mais
+    /// interno, cada um com a mae aberta e o inode (pedido 593).
+    pastas: Vec<crate::util::Nascida>,
 }
 
 impl std::ops::Deref for Copias {
@@ -999,7 +1011,13 @@ impl std::ops::Deref for Copias {
 /// Anota pelo que existe DEPOIS da chamada, com erro ou sem: o `create_dir_all`
 /// que recusa no meio ja deixou os de cima criados, e sem anota-los a faxina
 /// nao os alcancaria.
-fn criar_pasta_da_corrida(p: &Path, criadas: &mut Vec<PathBuf>) -> Result<()> {
+///
+/// Pedido 593: anota ABRINDO -- a mae da mais externa pelo nome (e o caminho
+/// que quem chama escolheu, como o proprio destino na `Pasta`) e cada nascida
+/// dali para dentro pelo descritor da de cima, sem seguir link. A faxina as
+/// remove por esse descritor, conferindo o inode; a que nao abre (um link ja
+/// plantado no nome) nao se anota, e nao sai.
+fn criar_pasta_da_corrida(p: &Path, criadas: &mut Vec<crate::util::Nascida>) -> Result<()> {
     let mut faltam = Vec::new();
     let mut atual = Some(p);
     while let Some(a) = atual {
@@ -1010,9 +1028,23 @@ fn criar_pasta_da_corrida(p: &Path, criadas: &mut Vec<PathBuf>) -> Result<()> {
         atual = a.parent();
     }
     let criado = crate::util::criar_diretorio_do_banco(p);
-    for a in faltam.into_iter().rev() {
-        if std::fs::symlink_metadata(&a).is_ok_and(|m| m.is_dir()) {
-            criadas.push(a);
+    let mae_de_todas = faltam.last().and_then(|a| a.parent()).map(|m| {
+        if m.as_os_str().is_empty() {
+            Path::new(".")
+        } else {
+            m
+        }
+    });
+    if let Some(Ok(mae)) = mae_de_todas.map(crate::util::Pasta::abrir) {
+        let mut mae = Arc::new(mae);
+        let mut nenhuma = Vec::new();
+        for a in faltam.iter().rev() {
+            let Some(nome) = a.file_name() else { break };
+            let Ok(filha) = crate::util::Pasta::entrar(&mae, nome, &mut nenhuma) else {
+                break;
+            };
+            criadas.push(crate::util::Nascida::anotar(mae, nome, &filha));
+            mae = Arc::new(filha);
         }
     }
     Ok(criado?)
@@ -1037,9 +1069,14 @@ fn descartar_corrida(copias: &Copias) {
 /// [`finalizar_zip`] -- que nao tem copia nenhuma, so o `.part` e as pastas
 /// -- pagar o MESMO motor (pedido 579) em vez de um segundo laco de
 /// `remove_dir`.
-fn descartar_pastas(pastas: &[PathBuf]) {
+///
+/// Pedido 593: cada uma sai pelo descritor da MAE e so se ainda e a que
+/// nasceu (dev/inode) -- [`crate::util::Nascida::remover`], com a janela que
+/// sobra dita la. Pelo nome real, um link posto numa pasta do meio fazia o
+/// `remove_dir` apagar a pasta vazia de outro do lado de la.
+fn descartar_pastas(pastas: &[crate::util::Nascida]) {
     for pasta in pastas.iter().rev() {
-        let _ = std::fs::remove_dir(pasta);
+        pasta.remover();
     }
 }
 
@@ -1051,11 +1088,14 @@ fn descartar_pastas(pastas: &[PathBuf]) {
 /// deixava as copias na pasta sem `backup.json`, e nem `op_backups` nem a
 /// rotacao as reconhecem -- ficavam para sempre. Roda FORA da trava de dados,
 /// como os dois passos que envolve.
+///
+/// `destino` fica na assinatura pelos chamadores; o manifesto vai para a
+/// pasta que a corrida ABRIU (pedido 593), a mesma das copias.
 pub fn concluir(destino: &Path, quando_ms: i64, r: &Relatorio, copias: &Copias) -> Result<()> {
-    let manifesto = destino.join(MANIFESTO);
+    let _ = destino;
+    let manifesto = no_destino(copias, MANIFESTO);
     let manifesto_nasce = std::fs::symlink_metadata(&manifesto).is_err();
-    let feito =
-        sincronizar_copias(copias).and_then(|()| finalizar_manifesto(destino, quando_ms, r));
+    let feito = sincronizar_copias(copias).and_then(|()| finalizar_manifesto(copias, quando_ms, r));
     if feito.is_err() {
         // O manifesto que nasceu agora e nao sincronizou diria «pronto» sobre
         // copias que acabam de sair; o que ja existia antes nao e' nosso.
@@ -1079,11 +1119,30 @@ pub fn concluir(destino: &Path, quando_ms: i64, r: &Relatorio, copias: &Copias) 
 /// O `fsync` e no descritor que escreveu (pedido 552), e depois vem o da
 /// pasta (pedido 579): o nome do manifesto e uma entrada de diretorio, e sem
 /// ela duravel a queda podia voltar sem ele -- ou com o velho.
-pub fn finalizar_manifesto(destino: &Path, quando_ms: i64, r: &Relatorio) -> Result<()> {
-    let manifesto = destino.join(MANIFESTO);
-    let arquivo = escrever_sem_sync(&manifesto, r.para_json(quando_ms).escrever().as_bytes())?;
-    crate::sincronia::sync_all_sem_abortar(&arquivo, &manifesto)?;
-    sincronizar_pasta(destino)
+///
+/// Pedido 593: o manifesto nasce na pasta que a corrida ABRIU e sincroniza no
+/// descritor dela, e nao pelo nome do destino -- o `fsync` pelo nome, fora da
+/// trava, caia do outro lado de um link posto no lugar. Por isso recebe as
+/// [`Copias`], e nao o caminho.
+pub fn finalizar_manifesto(copias: &Copias, quando_ms: i64, r: &Relatorio) -> Result<()> {
+    let manifesto = no_destino(copias, MANIFESTO);
+    let real = copias.destino.join(MANIFESTO);
+    let arquivo = escrever_sem_sync(&manifesto, r.para_json(quando_ms).escrever().as_bytes())
+        .map_err(|e| no_nome_real(e, &manifesto, &real))?;
+    crate::sincronia::sync_all_sem_abortar(&arquivo, &real)?;
+    match copias.ancoras.first() {
+        Some(destino) => sincronizar_pasta(destino),
+        None => crate::sincronia::sincronizar_pasta_sem_abortar(&copias.destino, &real),
+    }
+}
+
+/// O nome `nome` dentro do destino, pelo descritor que a corrida abriu; sem
+/// ele (corrida que nem chegou a abrir), pelo caminho real.
+fn no_destino(copias: &Copias, nome: &str) -> PathBuf {
+    match copias.ancoras.first() {
+        Some(d) => d.por_dentro(std::ffi::OsStr::new(nome)),
+        None => copias.destino.join(nome),
+    }
 }
 
 /// Le o manifesto e confere cada arquivo do destino, byte a byte.
@@ -1175,7 +1234,7 @@ mod tests {
     fn backup_pronto(raiz: &Path, destino: &Path, quando_ms: i64) -> Relatorio {
         let (r, caminhos) = executar(raiz, destino, quando_ms).unwrap();
         sincronizar_copias(&caminhos).unwrap();
-        finalizar_manifesto(destino, quando_ms, &r).unwrap();
+        finalizar_manifesto(&caminhos, quando_ms, &r).unwrap();
         r
     }
 
@@ -1429,7 +1488,10 @@ mod tests {
         std::fs::create_dir_all(&raiz).unwrap();
         dados_de_exemplo(&raiz);
         let (_, copias) = executar(&raiz, &destino, 0).unwrap();
-        let p = pastas_tocadas(&copias);
+        let p: Vec<PathBuf> = pastas_tocadas(&copias)
+            .iter()
+            .map(|p| p.real().to_path_buf())
+            .collect();
         for esperada in [
             destino.join("Z/schemaX"),
             destino.join("Z"),

@@ -392,6 +392,11 @@ dia, nunca no desejado:
   `lstat` e o `open` (`fifo-trocada-na-janela-para-o-backup`) e a copia
   reaberta pelo nome para o `fsync` (`copia-reaberta-pelo-nome-no-fsync`).
   No merge com o 589 e o 590 (que levaram o piso a 527): 527 + 4 = 531.
+  **SUBIU para 534 em 30/09/2026** (pedido 593): tres guardas -- o `fsync`
+  da pasta do backup pelo nome (`fsync-da-pasta-do-backup-pelo-nome`), a
+  faxina que remove a pasta criada pelo nome real
+  (`faxina-do-backup-remove-pasta-pelo-nome`) e a que remove sem conferir o
+  inode (`faxina-do-backup-sem-conferir-o-inode`). Contado pelo `--catraca`.
   impedir. Ele e a unica coisa nesta regua que reprova o APAGAMENTO; tudo o
   mais aqui reprova o envelhecimento.
 
@@ -500,7 +505,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 531
+PISO_DAS_ENTRADAS = 534
 
 # ------------------------------------------------------------- APOSENTADAS
 #

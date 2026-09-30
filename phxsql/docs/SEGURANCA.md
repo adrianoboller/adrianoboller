@@ -6433,12 +6433,62 @@ mudou de trecho, porque o motor mudou de corpo.
   troca fica. O crivo do dono cai para só o `nlink` fora do Linux. No Windows
   vale o que valia.
 - **Sem `/proc` montado** no Linux, o mesmo recuo da `Pasta`.
-- **O `fsync` das PASTAS** (`sincronizar_pasta`, pedido 579) ainda abre cada uma
-  pelo nome, fora da trava: trocada por link, sincroniza a pasta errada — não
-  escreve dado em lugar nenhum, mas a pasta certa pode ficar sem o `fsync`. E o
-  `remove_dir` da faxina das pastas criadas segue pelo nome real (só remove
-  pasta vazia).
+- **O `fsync` das PASTAS e a faxina delas** — eram o resíduo desta lista e
+  viraram o pedido 593, fechado na §33.5.
 - **O destino em si** segue link, de propósito: é escolha de quem chama. O ZIP
   grava direto nele, então só o último nome conta ali.
 - **A restauração** (`restaurar.rs`) escreve na raiz de dados, não no destino, e
   não entrou nesta frente.
+
+### 33.5 O `fsync` e a faxina das pastas, pelo mesmo motor (pedido 593)
+
+O resíduo da §33.4: `sincronizar_pasta` (579) e `descartar_pastas` (576)
+abriam e removiam as pastas **pelo nome real**, fora da trava. Uma pasta
+trocada por link entre a escrita e o `fsync` fazia sincronizar a pasta do outro
+lado dele (e a nossa, onde estão as entradas das cópias, nunca); entre a
+escrita e a faxina de uma corrida que falhou, um link numa pasta **do meio**
+fazia o `remove_dir` apagar a pasta vazia de outro. Os dois passam pelo motor
+da `util::Pasta`:
+
+- **O `fsync` no descritor.** `pastas_tocadas` devolve as pastas **abertas** —
+  a de cada cópia, o destino e a mãe de cada pasta criada —, e o `fsync` cai no
+  descritor por onde a corrida escreveu. O manifesto novo nasce e sincroniza
+  pelo descritor do destino (`finalizar_manifesto` recebe as `Copias`, não o
+  caminho). A marca da recusa e a arma de teste seguem as do `sincronia`, pelo
+  caminho real.
+- **A faxina relativa à mãe, conferindo o inode.** Cada pasta que a corrida faz
+  nascer vira uma `util::Nascida`: a mãe aberta (`Arc<Pasta>`), o nome e o
+  dev/inode do descritor que a corrida usou. As de dentro do destino nascem pela
+  `Pasta::entrar`; o destino e as mães que faltavam, criados pelo
+  `create_dir_all`, se anotam abrindo — a mãe da mais externa pelo nome (o
+  caminho que quem chama escolheu) e cada uma dali para dentro sem seguir link.
+  A remoção é `lstat` + `remove_dir` no `/proc/self/fd/N/nome` da mãe: a `std`
+  não tem `unlinkat`, e o `rmdir` não segue link no último nome (`ENOTDIR`). O
+  ZIP (`finalizar_zip`) paga o mesmo motor.
+
+**A janela que sobra, dita:** entre o `lstat` e o `rmdir`, trocar o nome da
+pasta nascida por **outra pasta vazia** (um `rename` dentro da mesma mãe) faz
+remover essa outra. Só vazia, e só dentro da mãe que a corrida abriu — não
+atravessa link para fora. Fechá-la pede o `unlinkat` sobre o descritor, que a
+`std` não dá. **Fora do Linux** (sem `/proc` ou sem constante conferida), a
+`Pasta` não tem descritor: o `fsync` volta ao `open` pelo nome e a faxina ao
+caminho real com o `lstat` dele — o comportamento de antes, com o inode
+conferido onde há Unix.
+
+| prova (`destino-do-backup-sem-atalho`) | com o conserto | com o defeito reposto |
+|---|---|---|
+| `o_fsync_da_pasta_nao_segue_o_link_posto_no_lugar` | `loja/` movida e um link pendurado no nome entre a escrita e o `fsync`: a corrida conclui, o link fica | o `open` pelo nome segue o link e recusa (`ENOENT`) |
+| `a_faxina_nao_atravessa_link_na_pasta_do_meio` | `copias/loja` vira link para a pasta de outro com `sub/` vazia; o manifesto recusa: a `sub` do outro fica e a nossa, movida, sai pelo descritor da mãe | «apagou a pasta VAZIA de outro do lado de lá» |
+| `a_faxina_nao_remove_a_pasta_vazia_trocada_no_nome` | uma pasta vazia de outro entra por `rename` no nome da nossa `sub`: fica | «removeu a pasta vazia de outro» |
+
+Guardas: `fsync-da-pasta-do-backup-pelo-nome`,
+`faxina-do-backup-remove-pasta-pelo-nome` e
+`faxina-do-backup-sem-conferir-o-inode`. A prova do 579 pelo `strace`
+(`a_pasta_sincroniza_antes_do_manifesto_novo`) passou a perguntar para onde o
+descritor sincronizado **aponta**, e não se ele foi aberto entre o `unlink` e o
+manifesto: o descritor da pasta agora é o que a corrida abriu antes de
+escrever.
+
+**O irmão que fica:** o `rename` final do ZIP (`trocar_duravel_sem_abortar`)
+ainda sincroniza a pasta pelo nome, dentro do motor do 467 — é o motor da troca
+durável da raiz de dados, e mudá-lo alcança todo chamador.
