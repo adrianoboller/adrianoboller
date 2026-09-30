@@ -31,6 +31,7 @@ use crate::log::{Evento, LogFile, Operacao, EXT_LOG};
 use crate::motivo::{Motivo, MotivoFile, Tipo, EXT_REASON};
 use crate::ndx::{panico_de_teste, NdxFile};
 use crate::reg::RegFile;
+use crate::reg::TrocaDoEsquema;
 // Qualificado: `crate::log::Evento` ja ocupa o nome `Evento` aqui, e os dois
 // eventos sao coisas diferentes -- um e do diario, o outro e da trilha.
 use crate::trilha::{self, TrilhaFile, EXT_LGPD};
@@ -1112,7 +1113,49 @@ impl Table {
     /// `"verificar": false` -- e ai e escolha escrita em vez de omissao.
     pub fn redeclarar_chaves_estrangeiras(&mut self, fks: Vec<ForeignKey>) -> Result<bool> {
         let recibo = self.conferir_chaves_que_nascem(&fks, None)?;
-        self.redeclarar_depois_de_conferir(fks, recibo)
+        self.redeclarar_depois_de_conferir(fks, recibo, None)
+    }
+
+    /// **Pedido 422: a FASE A do esquema com estas chaves**, quando o bloco
+    /// nao cabe antes do slot 1 -- `None` quando cabe, e ai nao ha reescrita
+    /// para adiantar. Quem chama congelou a tabela e soltou a trava; a FASE B
+    /// entra pelo [`Table::redeclarar_depois_de_conferir`].
+    pub fn preparar_chaves_estrangeiras(
+        &mut self,
+        fks: &[ForeignKey],
+    ) -> Result<Option<TrocaDoEsquema>> {
+        let novo = self.reg.esquema_com_chaves_estrangeiras(fks.to_vec())?;
+        self.preparar_troca(novo)
+    }
+
+    /// O mesmo, para as marcas de dado pessoal -- a reescrita da tabela
+    /// gravada antes da v6. Ver [`Table::marcar_dado_pessoal_com`].
+    pub fn preparar_marcas(
+        &mut self,
+        marcas: &[(String, phxsql_core::types::DadoPessoal)],
+    ) -> Result<Option<TrocaDoEsquema>> {
+        let novo = self.reg.esquema_com_marcas(marcas)?;
+        self.preparar_troca(novo)
+    }
+
+    fn preparar_troca(&mut self, novo: Schema) -> Result<Option<TrocaDoEsquema>> {
+        if self.reg.esquema_cabe(&novo) {
+            return Ok(None);
+        }
+        Ok(Some(self.reg.regravar_esquema_fase_a(novo)?))
+    }
+
+    /// A FASE B, se a troca preparada ainda descreve o esquema pedido AGORA;
+    /// senao os `*.novo` saem e a regravacao volta ao caminho de uma fase so.
+    /// Com a tabela congelada nada muda entre as fases -- e isto e o cinto,
+    /// para o dia em que alguem chamar as duas com pedidos diferentes.
+    fn aplicar_troca(&mut self, t: TrocaDoEsquema, novo: Schema) -> Result<bool> {
+        if t.esquema().serializar() == novo.serializar() {
+            self.reg.regravar_esquema_fase_b(t)?;
+            return Ok(true);
+        }
+        t.descartar();
+        self.reg.regravar_esquema_uma_fase(novo)
     }
 
     /// A metade CARA de [`Table::redeclarar_chaves_estrangeiras`]: a varredura
@@ -1168,6 +1211,7 @@ impl Table {
         &mut self,
         fks: Vec<ForeignKey>,
         recibo: ChavesConferidas,
+        troca: Option<TrocaDoEsquema>,
     ) -> Result<bool> {
         let faltam: Vec<ForeignKey> = fks
             .iter()
@@ -1177,7 +1221,13 @@ impl Table {
         if !faltam.is_empty() {
             self.conferir_chaves_que_nascem(&faltam, None)?;
         }
-        let moveu = self.reg.regravar_chaves_estrangeiras(fks)?;
+        let moveu = match troca {
+            Some(t) => {
+                let novo = self.reg.esquema_com_chaves_estrangeiras(fks.clone())?;
+                self.aplicar_troca(t, novo)?
+            }
+            None => self.reg.regravar_chaves_estrangeiras(fks)?,
+        };
         self.esquema = self.reg.esquema().clone();
         // Estado derivado do esquema se refaz JUNTO com ele -- e nao se
         // enumera aqui o que «pode ter mudado», porque enumerar excecao e como
@@ -7432,7 +7482,23 @@ impl Table {
         &mut self,
         marcas: &[(String, phxsql_core::types::DadoPessoal)],
     ) -> Result<bool> {
-        let reescreveu = self.reg.remarcar_dado_pessoal(marcas)?;
+        self.marcar_dado_pessoal_com(marcas, None)
+    }
+
+    /// [`Table::marcar_dado_pessoal`] com a FASE A ja feita fora da trava
+    /// (pedido 422) -- ver [`Table::preparar_marcas`].
+    pub fn marcar_dado_pessoal_com(
+        &mut self,
+        marcas: &[(String, phxsql_core::types::DadoPessoal)],
+        troca: Option<TrocaDoEsquema>,
+    ) -> Result<bool> {
+        let reescreveu = match troca {
+            Some(t) => {
+                let novo = self.reg.esquema_com_marcas(marcas)?;
+                self.aplicar_troca(t, novo)?
+            }
+            None => self.reg.remarcar_dado_pessoal(marcas)?,
+        };
         self.esquema = self.reg.esquema().clone();
         self.colunas_marcadas = marcadas_do_esquema(&self.esquema);
         Ok(reescreveu)

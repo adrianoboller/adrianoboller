@@ -1161,6 +1161,14 @@ impl RegFile {
     ///
     /// Devolve `true` quando os arquivos foram reescritos (o caminho caro).
     pub fn regravar_chaves_estrangeiras(&mut self, fks: Vec<ForeignKey>) -> Result<bool> {
+        let novo = self.esquema_com_chaves_estrangeiras(fks)?;
+        self.regravar_esquema(novo)
+    }
+
+    /// O esquema com estas chaves, conferido -- sem gravar nada. E o que o
+    /// [`RegFile::regravar_chaves_estrangeiras`] grava, separado para a FASE A
+    /// do pedido 422 poder montar o mesmo esquema fora da trava.
+    pub fn esquema_com_chaves_estrangeiras(&self, fks: Vec<ForeignKey>) -> Result<Schema> {
         let novo = self.esquema.clone().com_chaves_estrangeiras(fks)?;
         // O endereco de cada linha sai do slot_size, e este caminho nao pode
         // toca-lo. Se um dia a declaracao passar a mudar o payload, este e o
@@ -1172,7 +1180,7 @@ impl RegFile {
                     .into(),
             ));
         }
-        self.regravar_esquema(novo)
+        Ok(novo)
     }
 
     /// Regrava a marca de dado pessoal de uma ou mais colunas.
@@ -1193,6 +1201,16 @@ impl RegFile {
         &mut self,
         marcas: &[(String, phxsql_core::types::DadoPessoal)],
     ) -> Result<bool> {
+        let novo = self.esquema_com_marcas(marcas)?;
+        self.regravar_esquema(novo)
+    }
+
+    /// O esquema com estas marcas, conferido -- sem gravar nada. Ver
+    /// [`RegFile::esquema_com_chaves_estrangeiras`].
+    pub fn esquema_com_marcas(
+        &self,
+        marcas: &[(String, phxsql_core::types::DadoPessoal)],
+    ) -> Result<Schema> {
         let mut novo = self.esquema.clone();
         for (coluna, grau) in marcas {
             novo.marcar_dado_pessoal(coluna, *grau)?;
@@ -1237,12 +1255,127 @@ impl RegFile {
                     .into(),
             ));
         }
-        self.regravar_esquema(novo)
+        Ok(novo)
     }
 
     /// Troca o bloco de esquema gravado, pelos dois caminhos possiveis.
     ///
     /// Devolve `true` quando os arquivos precisaram ser reescritos.
+    /// O bloco deste esquema cabe antes do slot 1? Cabendo, regravar e o
+    /// caminho barato -- o cabecalho de cada volume no lugar; nao cabendo, e
+    /// a reescrita de todos os volumes.
+    pub fn esquema_cabe(&self, novo: &Schema) -> bool {
+        self.cab_len as u64 + novo.serializar().len() as u64 <= self.data_offset
+    }
+
+    /// **Pedido 422: a FASE A do caminho caro do [`RegFile::regravar_esquema`]**
+    /// -- cada volume (e o espelho dele) vira um `*.novo` completo e
+    /// sincronizado, com o primeiro slot mais adiante. Nenhum `rename`; o
+    /// `self` continua descrevendo a tabela VELHA, que continua inteira no
+    /// disco.
+    ///
+    /// Existe para a reescrita correr FORA da trava global, com a tabela
+    /// congelada (`crate::congelamento`), e so a FASE B -- os `rename` --
+    /// dentro dela. E o desenho do `alargar_fase_a`, e reaproveita as pecas
+    /// dele: o retrato, a troca com o volume 1 primeiro, e o
+    /// `terminar_troca_interrompida`, que ja reconhece `*.novo` pela geometria
+    /// (`slot_size`, `data_offset`, CRC do esquema) e por isso cobre tambem
+    /// este caso.
+    pub fn regravar_esquema_fase_a(&mut self, novo: Schema) -> Result<TrocaDoEsquema> {
+        let bytes = novo.serializar();
+        let crc = crc32(&bytes);
+        let origem = self.data_offset;
+        let destino = alinhar(self.cab_len as u64 + bytes.len() as u64, ALINHAMENTO);
+
+        self.volumes.fechar_todos();
+        let mut primeiros: Vec<(u32, RowId, PathBuf, Option<PathBuf>)> = Vec::new();
+        for v in self.volumes.existentes() {
+            primeiros.push((
+                v,
+                self.primeiro_rowid_do_volume(v),
+                self.volumes.caminho(v),
+                self.volumes.caminho_do_espelho(v),
+            ));
+        }
+        let retrato = retratar(&primeiros);
+
+        // Os cabecalhos saem do `montar_cabecalho`, que le o `self`: troca-se
+        // o esquema so pelo tempo de monta-los, e o `self` volta a ser a
+        // tabela velha antes de qualquer arquivo ser escrito.
+        let velho = (
+            std::mem::replace(&mut self.esquema, novo.clone()),
+            std::mem::replace(&mut self.esquema_bytes, bytes.clone()),
+            std::mem::replace(&mut self.esquema_crc, crc),
+            std::mem::replace(&mut self.data_offset, destino),
+        );
+        let cabs: Vec<Vec<u8>> = primeiros
+            .iter()
+            .map(|(v, ..)| self.montar_cabecalho(*v))
+            .collect();
+        self.esquema = velho.0;
+        self.esquema_bytes = velho.1;
+        self.esquema_crc = velho.2;
+        self.data_offset = velho.3;
+
+        let a_trocar = TrocaPendente {
+            slots: 0,
+            trocas: primeiros
+                .iter()
+                .map(|(_, _, caminho, espelho)| (caminho.clone(), espelho.clone()))
+                .collect(),
+            retrato,
+        };
+        for ((_, _, caminho, espelho), cab) in primeiros.iter().zip(&cabs) {
+            let escrito =
+                reescrever_volume(caminho, cab, &bytes, origem, destino, false).and_then(|_| {
+                    match espelho {
+                        // O espelho e reescrito LENDO DO ESPELHO, como no caminho
+                        // de uma fase so.
+                        Some(e) if e.exists() => {
+                            reescrever_volume(e, cab, &bytes, origem, destino, false)
+                        }
+                        _ => Ok(()),
+                    }
+                });
+            if let Err(e) = escrito {
+                a_trocar.descartar();
+                return Err(e);
+            }
+        }
+        Ok(TrocaDoEsquema {
+            troca: a_trocar,
+            esquema: novo,
+            bytes,
+            crc,
+            data_offset: destino,
+        })
+    }
+
+    /// A FASE B: confere o retrato, e so `rename` -- o volume 1 primeiro, que
+    /// e o ponto de compromisso. Quem soltou a trava entre as fases a toma de
+    /// novo ANTES desta.
+    ///
+    /// Retrato que nao bate descarta os `*.novo` e recusa: nada foi trocado,
+    /// e a tabela continua inteira e velha.
+    pub fn regravar_esquema_fase_b(&mut self, t: TrocaDoEsquema) -> Result<()> {
+        if let Err(e) = t.troca.conferir_retrato() {
+            t.troca.descartar();
+            return Err(e);
+        }
+        self.alargar_fase_b(t.troca)?;
+        self.esquema = t.esquema;
+        self.esquema_bytes = t.bytes;
+        self.esquema_crc = t.crc;
+        self.data_offset = t.data_offset;
+        Ok(())
+    }
+
+    /// O [`RegFile::regravar_esquema`] para quem desistiu de uma troca
+    /// preparada e grava de uma fase so.
+    pub fn regravar_esquema_uma_fase(&mut self, novo: Schema) -> Result<bool> {
+        self.regravar_esquema(novo)
+    }
+
     fn regravar_esquema(&mut self, novo: Schema) -> Result<bool> {
         let bytes = novo.serializar();
         let crc = crc32(&bytes);
@@ -1275,6 +1408,7 @@ impl RegFile {
                 &self.esquema_bytes,
                 origem,
                 destino,
+                true,
             )?;
             // O espelho e reescrito LENDO DO ESPELHO: a copia independente
             // dele sobrevive a mudanca, que e para o que ele existe. Uma
@@ -1283,7 +1417,7 @@ impl RegFile {
             // novo -- o mesmo caminho de um espelho que nasceu depois.
             if let Some(espelho) = self.volumes.caminho_do_espelho(v) {
                 if espelho.exists() {
-                    reescrever_volume(&espelho, &cab, &self.esquema_bytes, origem, destino)?;
+                    reescrever_volume(&espelho, &cab, &self.esquema_bytes, origem, destino, true)?;
                 }
             }
         }
@@ -2489,18 +2623,19 @@ fn aad_do_slot(volume: u32, rowid: RowId, versao: u64) -> [u8; 20] {
 /// nunca um meio-termo com o cabecalho de um e os slots do outro. Copiar no
 /// proprio arquivo, de tras para a frente, seria mais barato em disco e
 /// deixaria exatamente esse meio-termo se a maquina caisse.
+///
+/// Com `trocar` falso para no `*.novo` sincronizado, sem `rename`: e a FASE A
+/// do pedido 422 ([`RegFile::regravar_esquema_fase_a`]), que troca depois,
+/// sob a trava. Um corpo so para os dois caminhos -- a escrita e a mesma.
 fn reescrever_volume(
     caminho: &Path,
     cab: &[u8],
     esquema_bytes: &[u8],
     origem: u64,
     destino: u64,
+    trocar: bool,
 ) -> Result<()> {
-    let nome = caminho
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_default();
-    let tmp = caminho.with_file_name(format!("{nome}.novo"));
+    let tmp = caminho_do_novo(caminho);
 
     let mut de = File::open(caminho)?;
     let tamanho = de.metadata()?.len();
@@ -2526,7 +2661,9 @@ fn reescrever_volume(
     }
     crate::sincronia::sync_all(&para, &tmp)?;
     drop(para);
-    std::fs::rename(&tmp, caminho)?;
+    if trocar {
+        std::fs::rename(&tmp, caminho)?;
+    }
     Ok(())
 }
 
@@ -2668,6 +2805,29 @@ impl TrocaPendente {
             }
         }
         apagados
+    }
+}
+
+/// A FASE A do [`RegFile::regravar_esquema_fase_a`] pronta: os `*.novo` e o
+/// esquema que a FASE B passa a descrever depois dos `rename`.
+pub struct TrocaDoEsquema {
+    troca: TrocaPendente,
+    esquema: Schema,
+    bytes: Vec<u8>,
+    crc: u32,
+    data_offset: u64,
+}
+
+impl TrocaDoEsquema {
+    /// O esquema que a troca grava -- para quem vai aplicar conferir que e o
+    /// mesmo que pediria agora.
+    pub fn esquema(&self) -> &Schema {
+        &self.esquema
+    }
+
+    /// Joga fora os `*.novo`, quando a FASE B nao vai acontecer.
+    pub fn descartar(self) -> usize {
+        self.troca.descartar()
     }
 }
 

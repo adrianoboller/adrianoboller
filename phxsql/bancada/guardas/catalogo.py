@@ -9748,7 +9748,11 @@ pub fn limpar() {
             "entrasse so na migracao deixaria este com o defeito inteiro."
         ),
         "arquivo": "crates/phxsql-server/src/servidor.rs",
-        "trecho": """        if let Some(recado) = self.transacao_na_vizinhanca(
+        # ATUALIZADO em 30/09/2026 (pedido 422): o `marcar_lgpd` passou a
+        # fazer a MESMA pergunta com o mesmo texto, e o trecho ficou ambiguo.
+        # A linha do comentario de cima e so do `acrescentar_coluna`.
+        "trecho": """        // nao so no portao de fora. Ver `transacao_na_vizinhanca`.
+        if let Some(recado) = self.transacao_na_vizinhanca(
             &dados,
             p.texto_ou("database", ""),
             p.texto_ou("tabela", ""),
@@ -9757,7 +9761,8 @@ pub fn limpar() {
             return Err(PhxError::EmTransacao(recado));
         }
 """,
-        "troca": """        // DEFEITO REPOSTO (426): o irmao sem a pergunta.
+        "troca": """        // nao so no portao de fora. Ver `transacao_na_vizinhanca`.
+        // DEFEITO REPOSTO (426): o irmao sem a pergunta.
 """,
         "pacote": "phxsql-server",
         "alvo": ["--test", "commit-pelo-soquete"],

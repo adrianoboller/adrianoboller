@@ -1353,13 +1353,14 @@ pub struct Servidor {
     passada_quebra_congelando: Mutex<Option<phxsql_store::congelamento::Congelada>>,
     #[cfg(test)]
     passada_quebra_congela: std::sync::atomic::AtomicBool,
-    /// So nos testes: roda UMA vez no meio da varredura da chave que nasce
-    /// conferida -- com a trava global SOLTA e as duas tabelas congeladas
-    /// (pedido 422). E o que torna a prova deterministica: o teste grava na
-    /// filha, apaga o pai e usa a vizinha exatamente dentro da janela, sem
+    /// So nos testes: roda UMA vez na janela sem a trava global do
+    /// `declarar_fk` e do `marcar_lgpd` -- depois da varredura e da FASE A,
+    /// antes de retomar a trava, com as tabelas congeladas (pedido 422). E o
+    /// que torna a prova deterministica: o teste grava na filha, apaga o pai,
+    /// usa a vizinha e olha os `*.novo` exatamente dentro da janela, sem
     /// depender de corrida nenhuma.
     #[cfg(test)]
-    no_meio_da_varredura_da_fk: Mutex<Option<Box<dyn FnOnce() + Send>>>,
+    na_janela_sem_trava: Mutex<Option<Box<dyn FnOnce() + Send>>>,
     /// So nos testes: a PROXIMA operacao com este nome arma, na thread que a
     /// atende, o panico de teste do motor (`ndx::panico_de_teste`) -- pedido
     /// 451. O panico e o do motor, no meio de uma escrita de verdade e com a
@@ -1766,7 +1767,7 @@ impl Servidor {
             #[cfg(test)]
             passada_quebra_congela: std::sync::atomic::AtomicBool::new(false),
             #[cfg(test)]
-            no_meio_da_varredura_da_fk: Mutex::new(None),
+            na_janela_sem_trava: Mutex::new(None),
             #[cfg(test)]
             panico_de_teste_na_op: Mutex::new(None),
             #[cfg(test)]
@@ -18935,21 +18936,19 @@ impl Servidor {
         // varre e para a que nao varre.
         let mut solta = self.preparar_a_declaracao_solta(&dados, p, &t, &fk_nova)?;
         drop(dados);
-        #[cfg(test)]
-        {
-            let gancho = self
-                .no_meio_da_varredura_da_fk
-                .lock()
-                .ok()
-                .and_then(|mut g| g.take());
-            if let Some(g) = gancho {
-                g();
-            }
-        }
         let recibo = t.conferir_chaves_que_nascem(&fks, solta.mae.as_mut())?;
         solta.mae = None;
+        // E a reescrita do `.reg`, quando o bloco de esquema nao cabe antes do
+        // slot 1: a FASE A tambem aqui fora, e so os `rename` la dentro.
+        let troca = t.preparar_chaves_estrangeiras(&fks)?;
+        // Em bloco, e nao solto: o mapa da trava le `#[cfg(test)]` ate a
+        // chave seguinte, e solto ele engolia a secao da trava retomada.
+        #[cfg(test)]
+        {
+            self.rodar_gancho_da_janela();
+        }
         let dados = self.travar_dados()?;
-        let reescreveu = t.redeclarar_depois_de_conferir(fks, recibo)?;
+        let reescreveu = t.redeclarar_depois_de_conferir(fks, recibo, troca)?;
         // O congelamento sai antes da trava: quem estava esperando por ela
         // encontra as tabelas ja abertas.
         drop(solta);
@@ -19005,6 +19004,19 @@ impl Servidor {
     ///
     /// A regravacao do esquema -- inclusive a condicional, quando o bloco nao
     /// cabe -- continua sob a trava retomada.
+    /// So nos testes: roda o [`Servidor::na_janela_sem_trava`], uma vez.
+    #[cfg(test)]
+    fn rodar_gancho_da_janela(&self) {
+        let gancho = self
+            .na_janela_sem_trava
+            .lock()
+            .ok()
+            .and_then(|mut g| g.take());
+        if let Some(g) = gancho {
+            g();
+        }
+    }
+
     fn preparar_a_declaracao_solta(
         &self,
         dados: &Instancia,
@@ -22439,10 +22451,35 @@ impl Servidor {
             };
             marcas.push((nome.clone(), grau));
         }
-        let _trava = self.travar_dados()?;
-        let mut t = self.abrir_travada(&_trava, p, sessao)?;
-        let reescreveu = t.marcar_dado_pessoal(&marcas)?;
+        // Pedido 422: a mesma forma do `declarar_fk` -- congela, solta, FASE A
+        // fora da trava (a reescrita da tabela gravada antes da v6, quando o
+        // bloco nao cabe), retoma, grava. Transacao viva na vizinhanca: quem
+        // cede e a declaracao (D5 do 426).
+        let dados = self.travar_dados()?;
+        let mut t = self.abrir_travada(&dados, p, sessao)?;
+        if let Some(recado) = self.transacao_na_vizinhanca(
+            &dados,
+            p.texto_ou("database", ""),
+            p.texto_ou("tabela", ""),
+            &t,
+        )? {
+            return Err(PhxError::EmTransacao(recado));
+        }
+        let posse =
+            phxsql_store::congelamento::congelar(t.diretorio(), t.nome(), "marcando dado pessoal")?;
+        drop(dados);
+        let troca = t.preparar_marcas(&marcas)?;
+        // Em bloco, e nao solto: o mapa da trava le `#[cfg(test)]` ate a
+        // chave seguinte, e solto ele engolia a secao da trava retomada.
+        #[cfg(test)]
+        {
+            self.rodar_gancho_da_janela();
+        }
+        let dados = self.travar_dados()?;
+        let reescreveu = t.marcar_dado_pessoal_com(&marcas, troca)?;
         t.sincronizar()?;
+        drop(posse);
+        drop(dados);
         let marcadas: Vec<Json> = t
             .colunas_marcadas()
             .iter()
@@ -57624,7 +57661,7 @@ mod testes_do_bit_indisponivel_na_trilha {
 /// **Pedido 422: a varredura da chave que nasce conferida roda com a trava
 /// global SOLTA, e com a filha E a mae congeladas.**
 ///
-/// O gancho `no_meio_da_varredura_da_fk` roda na mesma thread do
+/// O gancho `na_janela_sem_trava` roda na mesma thread do
 /// `declarar_fk`, entre soltar a trava e varrer -- por isso a prova nao
 /// depende de corrida: ou a trava esta solta e o gancho consegue pedir, ou
 /// ela esta presa e o teste nem termina.
@@ -57702,7 +57739,7 @@ mod testes_da_varredura_da_fk_fora_da_trava {
         {
             let s2 = Arc::clone(&s);
             let vistos = Arc::clone(&vistos);
-            *s.no_meio_da_varredura_da_fk.lock().unwrap() = Some(Box::new(move || {
+            *s.na_janela_sem_trava.lock().unwrap() = Some(Box::new(move || {
                 let dono = Sessao::default();
                 let mut v = vistos.lock().unwrap();
                 for (rotulo, op, txt) in [
@@ -57863,6 +57900,141 @@ mod testes_da_varredura_da_fk_fora_da_trava {
         assert!(e.adianta_repetir(), "{e}");
         pede(r#""op":"commit""#).expect("o COMMIT da transacao que segurou a declaracao");
         declarar().expect("depois do COMMIT a declaracao tinha de passar");
+    }
+
+    /// Os `*.novo` de `b` agora, pelo nome do volume.
+    fn novos(dir: &std::path::Path) -> Vec<String> {
+        std::fs::read_dir(dir.join("b"))
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .filter(|n| n.ends_with(".novo"))
+            .collect()
+    }
+
+    /// **A reescrita do `.reg` tambem sai da trava**: um nome comprido faz o
+    /// bloco de esquema nao caber antes do slot 1, e a FASE A -- o `*.novo` de
+    /// cada volume -- acontece na janela, com a vizinha gravando. So os
+    /// `rename` ficam para a trava retomada.
+    #[test]
+    fn a_reescrita_do_esquema_acontece_fora_da_trava() {
+        let (s, dir) = preparar("reescrita");
+        type NaJanela = Option<(Vec<String>, bool)>;
+        let na_janela: Arc<Mx<NaJanela>> = Arc::new(Mx::new(None));
+        {
+            let s2 = Arc::clone(&s);
+            let d = dir.to_path_buf();
+            let na_janela = Arc::clone(&na_janela);
+            *s.na_janela_sem_trava.lock().unwrap() = Some(Box::new(move || {
+                let vizinha = s2
+                    .executar(
+                        "inserir",
+                        &pedido(r#"{"database":"b","tabela":"vizinha","linha":{"id":9}}"#),
+                        &Sessao::default(),
+                    )
+                    .is_ok();
+                *na_janela.lock().unwrap() = Some((novos(&d), vizinha));
+            }));
+        }
+        let r = s
+            .executar(
+                "declarar_fk",
+                &pedido(
+                    r#"{"database":"b","tabela":"pedidos",
+                        "nome":"fk_cliente_com_nome_comprido_de_proposito_para_estourar_a_folga_do_alinhamento",
+                        "colunas":["cliente_id"],"tabela_ref":"clientes","colunas_ref":["id"]}"#,
+                ),
+                &Sessao::default(),
+            )
+            .expect("a declaracao com reescrita falhou");
+        assert!(
+            r.booleano_ou("arquivos_reescritos", false),
+            "o preparo falhou: o nome nao forcou a reescrita, e o teste nao exercitou a FASE A"
+        );
+        let (vistos, vizinha) = na_janela
+            .lock()
+            .unwrap()
+            .clone()
+            .expect("o gancho nao rodou");
+        assert!(
+            vistos.iter().any(|n| n.starts_with("pedidos")),
+            "nenhum `*.novo` de pedidos na janela: a reescrita ficou para dentro da trava ({vistos:?})"
+        );
+        assert!(vizinha, "a vizinha nao gravou durante a reescrita");
+        assert!(
+            novos(&dir).is_empty(),
+            "sobrou `*.novo` depois da troca: {:?}",
+            novos(&dir)
+        );
+        let l = s
+            .executar(
+                "ler",
+                &pedido(r#"{"database":"b","tabela":"pedidos","rowid":1}"#),
+                &Sessao::default(),
+            )
+            .expect("a linha de antes nao se le depois da reescrita");
+        assert_eq!(l.inteiro_ou("cliente_id", -1), 1, "{}", l.escrever());
+    }
+
+    /// O `marcar_lgpd` tem a mesma forma: na janela a tabela esta congelada
+    /// e a vizinha grava; com transacao viva na tabela, ele cede.
+    #[test]
+    fn marcar_lgpd_solta_a_trava_e_cede_a_transacao() {
+        let (s, _dir) = preparar("lgpd");
+        let vistos: Arc<Mx<Vec<(&'static str, bool)>>> = Arc::new(Mx::new(Vec::new()));
+        {
+            let s2 = Arc::clone(&s);
+            let vistos = Arc::clone(&vistos);
+            *s.na_janela_sem_trava.lock().unwrap() = Some(Box::new(move || {
+                let mut v = vistos.lock().unwrap();
+                for (rotulo, txt) in [
+                    (
+                        "vizinha",
+                        r#"{"database":"b","tabela":"vizinha","linha":{"id":7}}"#,
+                    ),
+                    (
+                        "clientes",
+                        r#"{"database":"b","tabela":"clientes","linha":{"id":8}}"#,
+                    ),
+                ] {
+                    let r = s2.executar("inserir", &pedido(txt), &Sessao::default());
+                    v.push((rotulo, r.is_ok()));
+                }
+            }));
+        }
+        let marcar = || {
+            s.executar(
+                "marcar_lgpd",
+                &pedido(r#"{"database":"b","tabela":"clientes","colunas":{"id":"pessoal"}}"#),
+                &Sessao::default(),
+            )
+        };
+        marcar().expect("marcar_lgpd falhou");
+        let v = vistos.lock().unwrap().clone();
+        assert_eq!(
+            v,
+            vec![("vizinha", true), ("clientes", false)],
+            "a janela: {v:?}"
+        );
+
+        let pede = |corpo: &str| {
+            let mut ses = Sessao {
+                ligacao: 9,
+                ip: "127.0.0.1".into(),
+                ..Sessao::default()
+            };
+            s.despachar(
+                &format!(r#"{{"token":"t",{corpo}}}"#),
+                &mut ses,
+                "127.0.0.1",
+            )
+            .2
+        };
+        pede(r#""op":"begin""#).unwrap();
+        pede(r#""op":"inserir","database":"b","tabela":"clientes","linha":{"id":30}"#).unwrap();
+        let e = marcar().expect_err("marcar_lgpd congelou a tabela de uma transacao viva");
+        assert_eq!(e.nome(), "EM_TRANSACAO", "{e}");
+        pede(r#""op":"commit""#).expect("o COMMIT que segurou a marcacao");
     }
 
     /// O comportamento VELHO: dado sujo continua recusando a chave conferida,
