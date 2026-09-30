@@ -352,7 +352,7 @@ impl<'a> BpmStore<'a> {
         let next = old + 1;
         let until = Utc::now() + chrono::Duration::seconds(lease_seconds.max(1));
         tx.execute("UPDATE phxclaw.bpm_tokens_v2 SET state='leased',lease_owner=$2,lease_until=$3,fencing_token=$4,updated_at=clock_timestamp() WHERE token_uuid=$1",&[&token_uuid,&worker,&until,&next])?;
-        tx.execute("INSERT INTO phxclaw.bpm_events_v2(event_uuid,tenant_uuid,instance_uuid,token_uuid,event_type,node_id,fencing_token,payload,occurred_at) VALUES($1,$2,$3,$4,'token_claimed',$5,$6,jsonb_build_object('worker',$7),clock_timestamp())",&[&new_uuid_v7(),&tenant_uuid,&instance_uuid,&token_uuid,&node_id,&next,&worker])?;
+        tx.execute("INSERT INTO phxclaw.bpm_events_v2(event_uuid,tenant_uuid,instance_uuid,token_uuid,event_type,node_id,fencing_token,payload,occurred_at) VALUES($1,$2,$3,$4,'token_claimed',$5,$6,jsonb_build_object('worker',$7::text),clock_timestamp())",&[&new_uuid_v7(),&tenant_uuid,&instance_uuid,&token_uuid,&node_id,&next,&worker])?;
         tx.commit()?;
         Ok(PersistentTokenLease {
             token_uuid,

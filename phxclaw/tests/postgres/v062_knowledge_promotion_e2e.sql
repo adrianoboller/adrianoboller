@@ -104,5 +104,5 @@ BEGIN
   END;
 END $must_fail_bridge$;
 
-RAISE NOTICE 'PASS: PhxClaw v0.62 knowledge promotion native E2E fixture.';
+DO $pass$ BEGIN RAISE NOTICE 'PASS: PhxClaw v0.62 knowledge promotion native E2E fixture.'; END $pass$;
 ROLLBACK;

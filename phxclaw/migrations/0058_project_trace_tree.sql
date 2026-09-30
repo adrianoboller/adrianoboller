@@ -2,6 +2,12 @@
 CREATE OR REPLACE FUNCTION phx_v058_deny_mutation() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN RAISE EXCEPTION 'PhxClaw v0.58 append-only relation'; END $$;
 
+-- Reparo native-v070: array_to_string e STABLE e o PostgreSQL recusa coluna gerada
+-- que nao seja IMMUTABLE. Para text[] a saida nao depende de configuracao de sessao.
+CREATE OR REPLACE FUNCTION phx_immutable_tags_text(p_tags text[]) RETURNS text
+  LANGUAGE sql IMMUTABLE PARALLEL SAFE
+  AS $fn$ SELECT coalesce(array_to_string(p_tags, ' '), '') $fn$;
+
 CREATE TABLE phx_project_trace_nodes (
   tenant_uuid uuid NOT NULL,
   project_uuid uuid NOT NULL,
@@ -20,7 +26,7 @@ CREATE TABLE phx_project_trace_nodes (
   tags text[] NOT NULL DEFAULT '{}',
   metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
   search_document tsvector GENERATED ALWAYS AS (
-    to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(logical_key,'') || ' ' || coalesce(array_to_string(tags,' '),''))
+    to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(logical_key,'') || ' ' || phx_immutable_tags_text(tags))
   ) STORED,
   created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   PRIMARY KEY (tenant_uuid, project_uuid, node_uuid),

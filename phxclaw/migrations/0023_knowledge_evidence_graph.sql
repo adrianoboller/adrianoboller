@@ -24,7 +24,9 @@ CREATE TABLE IF NOT EXISTS phxclaw.knowledge_nodes (
   provenance jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_by_uuid uuid,
   created_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (tenant_uuid, kind, content_sha256, source_state_sha256)
+  -- Reparo native-v070: o motor promove/rejeita clonando o no e trocando so o estado
+  -- (promoted_claim_version); sem epistemic_state na chave, a versao que ele gera era recusada.
+  UNIQUE (tenant_uuid, kind, content_sha256, source_state_sha256, epistemic_state)
 );
 
 CREATE TABLE IF NOT EXISTS phxclaw.knowledge_edges (

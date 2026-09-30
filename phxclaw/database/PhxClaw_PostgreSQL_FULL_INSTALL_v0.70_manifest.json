@@ -1,0 +1,569 @@
+{
+  "project": "PhxClaw",
+  "version": "0.70.0",
+  "migration_versions": 70,
+  "migrations": [
+    {
+      "version": 1,
+      "migration_name": "0001_core.sql",
+      "source_sha256": "f2485cf33b54af12c7854c3be64abc096bf59acf550e3728da8cf9343dee7462",
+      "effective_sha256": "f2485cf33b54af12c7854c3be64abc096bf59acf550e3728da8cf9343dee7462",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 2,
+      "migration_name": "0002_plugin_registry.sql",
+      "source_sha256": "02bf59886e1465ed113bd2b5b120b7496f3f0066b1a7c7b4ff6ee52eacc9e2b4",
+      "effective_sha256": "02bf59886e1465ed113bd2b5b120b7496f3f0066b1a7c7b4ff6ee52eacc9e2b4",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 3,
+      "migration_name": "0003_plugin_quarantine_and_agents.sql",
+      "source_sha256": "e61f73f3508f8c84de519cdae6a5d0e45bd1da0eef8da865a237941e5279eb03",
+      "effective_sha256": "e61f73f3508f8c84de519cdae6a5d0e45bd1da0eef8da865a237941e5279eb03",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 4,
+      "migration_name": "0004_task_graph.sql",
+      "source_sha256": "bda0bdf72d7c4aed50686a37e660cf28bba0e05d40d5ecde03d25e101eca9254",
+      "effective_sha256": "d93705ac0d950f57999a77ade3150551c7245aa267c5c73b02d8b9a278634304",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 5,
+      "migration_name": "0005_model_gateway.sql",
+      "source_sha256": "55e5a058ad3f719101d238f19277b0ea3de35e783e73d9ec68f65fc94e43eb8f",
+      "effective_sha256": "4236125d792aaff3a3e7e3bf93c87b050ab2f894a9abdf9ca437f6dfccebca8e",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 6,
+      "migration_name": "0006_event_outbox.sql",
+      "source_sha256": "afc78cfc6133a485f84fdc33ff8517013edf744bc036102b765cf69d4a83edc7",
+      "effective_sha256": "e60fac3750a838eb75bad93c4d84210e33b868d1a6f7500baddd2bbf403448c7",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 7,
+      "migration_name": "0007_capability_audit.sql",
+      "source_sha256": "350b512b7404b1609ead9724f96d26ab617a62e6a601228274436a6f76bf27c2",
+      "effective_sha256": "af739fa3441e9c6a3200364f35082ec0d4eba176ea2252c21d1ff5cdf260c098",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 8,
+      "migration_name": "0008_bpm.sql",
+      "source_sha256": "981317d58c563ea8ef1098a2beecf192fe684d8c591d5076822cf9340993f0a3",
+      "effective_sha256": "672c302b8c247f8253304b609aea110c96214e28013c48296a39acbcf896fa2e",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 9,
+      "migration_name": "0009_desktop_host_and_evidence.sql",
+      "source_sha256": "7d7a0f973662ab751ce446b2893715e1fb17f746b1052e0ca0f5599864cfddb1",
+      "effective_sha256": "cf2676b3819c5d0b0ee8bb0ada37ad624717ffd3b49a02c8eca2cd995ed52107",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 10,
+      "migration_name": "0010_skill_memory_context.sql",
+      "source_sha256": "83be717555c82c366c38786b265f65c1cf240234878e202eb3cab50f0e6cbe9b",
+      "effective_sha256": "662d6c4fa95247e7c778b4b174e659cf981f9a2f7ef827833efaf627d4c57fd1",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 11,
+      "migration_name": "0011_agent_registry_and_knowledge_sources.sql",
+      "source_sha256": "70a6cee502d4bdc77052a2106dfa39a2680eb4bec2e25046578ff35d3f965f8a",
+      "effective_sha256": "29236dfc83e21531cab3a855f04dfd2636482755989ec2288fe6dfb35f1fcf7e",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 12,
+      "migration_name": "0012_research_context_pipeline.sql",
+      "source_sha256": "3fe13c7928bc4d49c39bc65045cd629071c9335f3f7e84c4a9454428c5a929bd",
+      "effective_sha256": "d5a8d015ffc28eb0f793fd6e20a3ef02cdf5783f51cad75bf4a441127e3f55d6",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 13,
+      "migration_name": "0013_community_plugins.sql",
+      "source_sha256": "a05e98711081eb23ee2ac4f3620813759752483f2df9b8f83d467109ce96fd12",
+      "effective_sha256": "907e371e0ca1d73cd43dcf4f7759d1a777b555f436a54c0c05d96504249a1941",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 14,
+      "migration_name": "0014_mission_runtime.sql",
+      "source_sha256": "407bfb1458fe55e964572ce0e2e7d795eaf06be52d62155d7d51cc7e70a2fb94",
+      "effective_sha256": "407bfb1458fe55e964572ce0e2e7d795eaf06be52d62155d7d51cc7e70a2fb94",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 15,
+      "migration_name": "0015_private_plugins_checkpoint_repo.sql",
+      "source_sha256": "0bea9a1fbe407a3ea4db89683b5fb6759b432fcf586f25c561ab6e18abb9ed88",
+      "effective_sha256": "0bea9a1fbe407a3ea4db89683b5fb6759b432fcf586f25c561ab6e18abb9ed88",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 16,
+      "migration_name": "0016_team_runtime.sql",
+      "source_sha256": "e7f8a9357e8d1084f8b33e7399f5740226960e429b3b37ce19144876a505a60c",
+      "effective_sha256": "e7f8a9357e8d1084f8b33e7399f5740226960e429b3b37ce19144876a505a60c",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 17,
+      "migration_name": "0017_channel_gateway.sql",
+      "source_sha256": "4836f476822525dc0bf68f204ee0cd4d906ece9f4a7e7670a4af551fb2d6c8c5",
+      "effective_sha256": "4836f476822525dc0bf68f204ee0cd4d906ece9f4a7e7670a4af551fb2d6c8c5",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 18,
+      "migration_name": "0018_secret_broker_and_channel_providers.sql",
+      "source_sha256": "e25765f8d6018de1ea46619045e03aeabd199a5585d994a78b95309ad61f76bc",
+      "effective_sha256": "e25765f8d6018de1ea46619045e03aeabd199a5585d994a78b95309ad61f76bc",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 19,
+      "migration_name": "0019_rustclaw_native_session_cron.sql",
+      "source_sha256": "18ed46863e256c7bac137bf66b8c1fd66963dc4d197588f47447799bf04f4f81",
+      "effective_sha256": "18ed46863e256c7bac137bf66b8c1fd66963dc4d197588f47447799bf04f4f81",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 20,
+      "migration_name": "0020_core_runtime_installation.sql",
+      "source_sha256": "377b7244406732487454c168d35f70333dde06243c8c791267b4fd3f07c92dcd",
+      "effective_sha256": "377b7244406732487454c168d35f70333dde06243c8c791267b4fd3f07c92dcd",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 21,
+      "migration_name": "0021_device_nodes.sql",
+      "source_sha256": "4ebfc729ade0602b21dc9e938404139d3d7a52841552ad39a53dfc15816b37e6",
+      "effective_sha256": "9ff86519b488944f9e8cfef89b9631a45ec4d5c2fc154784fb5a16df046f3918",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 22,
+      "migration_name": "0022_skill_evolution.sql",
+      "source_sha256": "b4957401365f55d8b090dcd3c88a7a53acc6b3a5b792d85370c3c720fdee5841",
+      "effective_sha256": "c624c5cac41e3fb560bbf86eff10ad4f44e699c82618cc029d6c4835b56059fd",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 23,
+      "migration_name": "0023_knowledge_evidence_graph.sql",
+      "source_sha256": "6f27ee3e147ad449476e9db5117c76f7481bca1df28f272756bd88c13514801b",
+      "effective_sha256": "fca76dabc2b7c65e0ea1450be8f4fa5bf5062225ca5023d67b7145472e062b70",
+      "source_status": "original",
+      "repair_notes": "native-v070: UNIQUE de knowledge_nodes ganhou epistemic_state; o motor versiona o no trocando so o estado"
+    },
+    {
+      "version": 24,
+      "migration_name": "0024_release_hardening.sql",
+      "source_sha256": "088f1d7382589ec438d116ef2c8b69b006fbbe468a006e15ae06689fbab9f2dc",
+      "effective_sha256": "1ea4a84a792ba7facfaef0010acaab3150e79520a870e802dc38c546f084d99b",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 25,
+      "migration_name": "0025_NO_OP",
+      "source_sha256": "62e729ec32bc54787cbd66c99d23744a135c04de69834ab03e9f32c6dbd669f1",
+      "effective_sha256": "62e729ec32bc54787cbd66c99d23744a135c04de69834ab03e9f32c6dbd669f1",
+      "source_status": "no_op",
+      "repair_notes": "v0.25 release qualification — sem DDL persistente"
+    },
+    {
+      "version": 26,
+      "migration_name": "0026_NO_OP",
+      "source_sha256": "b5f4474fc3b067efe282e77c2058c3bb598eb838e42f66ee22b35c02fa7e75f6",
+      "effective_sha256": "b5f4474fc3b067efe282e77c2058c3bb598eb838e42f66ee22b35c02fa7e75f6",
+      "source_status": "no_op",
+      "repair_notes": "v0.26 release candidate factory — sem DDL persistente"
+    },
+    {
+      "version": 27,
+      "migration_name": "0027_NO_OP",
+      "source_sha256": "ab5652c0657251ba68c27d0649c299b62ff780a6c16eb5931868a4f67ffa011e",
+      "effective_sha256": "ab5652c0657251ba68c27d0649c299b62ff780a6c16eb5931868a4f67ffa011e",
+      "source_status": "no_op",
+      "repair_notes": "v0.27 multi-platform GA — sem DDL persistente"
+    },
+    {
+      "version": 28,
+      "migration_name": "0028_secure_fleet_rollout.sql",
+      "source_sha256": "3ef15fc146f3629a44a83f2c0f56305bec95b03bb6a898189f7a6e7c01c0eecf",
+      "effective_sha256": "0d34a3a9049013a4491afdfee555b49fdac5209e6757463a0d5d6ada007ed578",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 29,
+      "migration_name": "0029_fleet_control_plane.sql",
+      "source_sha256": "574f924fbb0f82026233b4e1314fe32eed80cf0f02207366df8781d494754101",
+      "effective_sha256": "89946a43a7322e72bbc807a5c10dde716d005b1cafaf52c4c8b70c6d08b88708",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 30,
+      "migration_name": "0030_distributed_control_plane.sql",
+      "source_sha256": "a1e461d5140a37763f2376b41e11ebc97e9ca797e54559e2852484f9149d6a09",
+      "effective_sha256": "7b6e7efc52304c0b7347adfcb95a0fc43a153bd6f03f3b2a52984ec996d2dac1",
+      "source_status": "original",
+      "repair_notes": "reparo sintático current_setting/NULLIF: 2 ocorrência(s)"
+    },
+    {
+      "version": 31,
+      "migration_name": "0031_unified_ai_fabric.sql",
+      "source_sha256": "3ca6213c61d29f177b86185446c667a7f168f9d2827b6147577f199529b6ffa6",
+      "effective_sha256": "3ca6213c61d29f177b86185446c667a7f168f9d2827b6147577f199529b6ffa6",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 32,
+      "migration_name": "0032_ai_benchmark_adaptive.sql",
+      "source_sha256": "d45c3441699300a01508293e60ff2795155bb441339e1b23be3b522101dbad85",
+      "effective_sha256": "d45c3441699300a01508293e60ff2795155bb441339e1b23be3b522101dbad85",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 33,
+      "migration_name": "0033_continuous_model_arena.sql",
+      "source_sha256": "394b4f1286f57721bec497d44fc3ad5d8424a22826ebadd1279167967d860def",
+      "effective_sha256": "394b4f1286f57721bec497d44fc3ad5d8424a22826ebadd1279167967d860def",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 34,
+      "migration_name": "0034_ai_portfolio_manager.sql",
+      "source_sha256": "135603d3696bbbf9064ddd27762529ec64e95badf09bce29bc3c2953bf4e775d",
+      "effective_sha256": "135603d3696bbbf9064ddd27762529ec64e95badf09bce29bc3c2953bf4e775d",
+      "source_status": "reconstructed",
+      "repair_notes": "v0.34 AIPortfolioManager reconstruída; artefato original indisponível para materialização"
+    },
+    {
+      "version": 35,
+      "migration_name": "0035_ai_sre_autopilot.sql",
+      "source_sha256": "34a41049aa66fdaa486c50777678336832973ed3000e2e794b6b9c10accd2986",
+      "effective_sha256": "1dc84852db03b98fd76b706c4e9b0e1ebb79114389c089ed6a75fff7086d924d",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 36,
+      "migration_name": "0036_incident_chaos_skill_router.sql",
+      "source_sha256": "4c2c38956526579425f470c45cd4fd8eb3ea30ecddef0213a42d90dbd17162a9",
+      "effective_sha256": "0aa4f7d72af8548fc5f25b38b4635cd771fc8c3badc841ece63b0787145f77aa",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 37,
+      "migration_name": "0037_autonomous_engineering_workflow.sql",
+      "source_sha256": "6f1195ac6dec98c4cd13d822308ad00ae382d5f89e88e7f867adf9ef7d082566",
+      "effective_sha256": "0b5a319658f646c928865815166413637daac87af0b01945c0373f9514cae617",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 38,
+      "migration_name": "0038_autonomous_engineering_swarm.sql",
+      "source_sha256": "73ba9be645176a36011eed77814c4adbbdc1ae9b9c94d96b39c4a9ca20036310",
+      "effective_sha256": "6e9c5dc6ff1b241c8d5c5eda98254cc3b5a89251e36589fbe94495ba742fb440",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 39,
+      "migration_name": "0039_swarm_consensus_merge_intelligence.sql",
+      "source_sha256": "ec5325ff8ce16073318ef9e43c000ab3bce1c3f32bf33f8452670f5a4559423f",
+      "effective_sha256": "44fff33de8f526c5307474d6f9178acbd5fed1c273ce3ed75ce2dd709075339d",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 40,
+      "migration_name": "0040_unified_configuration_and_factory.sql",
+      "source_sha256": "591569af912d323a6e78fcae3847d3b6709a61f7b1c82970b62378e47a5bdf15",
+      "effective_sha256": "aba242cca390dd0972a9a3e124e170d6279f5532b0017e4485e21be5a7b7d756",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 41,
+      "migration_name": "0041_NO_OP",
+      "source_sha256": "7597349e413cc5b8c4607e5033668dd3b7c06f97859f229389ca662b285ccc05",
+      "effective_sha256": "7597349e413cc5b8c4607e5033668dd3b7c06f97859f229389ca662b285ccc05",
+      "source_status": "no_op",
+      "repair_notes": "v0.41 global rename — sem DDL persistente"
+    },
+    {
+      "version": 42,
+      "migration_name": "0042_project_management_suite.sql",
+      "source_sha256": "29eec7c369acfac42160694e66c6eb12ccec83c9b2165279ffe23ece933e392c",
+      "effective_sha256": "0cfd20489830eeaaa675c771f95809f180cbcbaa2138e51b9cd93d2a08d23ce4",
+      "source_status": "original",
+      "repair_notes": "reparo sintático current_setting/NULLIF: 2 ocorrência(s)"
+    },
+    {
+      "version": 43,
+      "migration_name": "0043_project_workspace_lifecycle.sql",
+      "source_sha256": "69e68d16a49c3f3620b3bcfa4c1060af5abc6f38896b1b458c79db7a40113dce",
+      "effective_sha256": "5b8dafac2620a233b8a256952c2cfba9affb2f649b8162b65debb9c4dd4f8a7f",
+      "source_status": "original",
+      "repair_notes": "reparo sintático current_setting/NULLIF: 2 ocorrência(s)"
+    },
+    {
+      "version": 44,
+      "migration_name": "0044_agent_control_pdca_learning.sql",
+      "source_sha256": "357e1f41dd97d7a7576081df2015cfd8e4b6eb4323fca09c4178b1845d9f0214",
+      "effective_sha256": "761bca32815c6b0a70aff81b53e042922ca67d9799a2bad0dac07210aac35a00",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 45,
+      "migration_name": "0045_active_project_runtime.sql",
+      "source_sha256": "9ea49afb3d0e04eecd971982ade64b61e4092e886cf6ef9063edc5092d4730cf",
+      "effective_sha256": "692f448628d01336e1426e55c9488ce89a2790c36dbd6c105a5055cb6e278ef3",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 46,
+      "migration_name": "0046_predictive_project_intelligence.sql",
+      "source_sha256": "2bf8902453805dcb9167598f4c2a5c183dea1662fa133e62fd53a8533510a9f1",
+      "effective_sha256": "5ad3ae5877760a5b0125a9d2e40318b5de3e3ce609465269d6f05df7f466274b",
+      "source_status": "original",
+      "repair_notes": "reparo sintático current_setting/NULLIF: 2 ocorrência(s)"
+    },
+    {
+      "version": 47,
+      "migration_name": "0047_autonomous_project_supervisor.sql",
+      "source_sha256": "0e1fda91e13eddd2134d4c79ca9885a638008a1dbe785cd2fac3664066d9037d",
+      "effective_sha256": "e5fbde91ffbbacd423fd686b643883f1c66c1d65bf8da08b91628668fcb00fc9",
+      "source_status": "original",
+      "repair_notes": "reparo sintático current_setting/NULLIF: 2 ocorrência(s)"
+    },
+    {
+      "version": 48,
+      "migration_name": "0048_executive_project_control_tower.sql",
+      "source_sha256": "8be832ebc5c5d80e7a183753609713e7678860f4c2ce5c3395b17ceb31e54baa",
+      "effective_sha256": "8be832ebc5c5d80e7a183753609713e7678860f4c2ce5c3395b17ceb31e54baa",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 49,
+      "migration_name": "0049_executive_decision_center.sql",
+      "source_sha256": "479fe5f7c635fe075356b9473625e020af22e6c8c083ecb1c6b17c042c52144d",
+      "effective_sha256": "479fe5f7c635fe075356b9473625e020af22e6c8c083ecb1c6b17c042c52144d",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 50,
+      "migration_name": "0050_portfolio_digital_twin.sql",
+      "source_sha256": "b4bd978b5e8ddfdd568d6e959d50152559ab40b5c30b63bcd0cddefd966804b3",
+      "effective_sha256": "b4bd978b5e8ddfdd568d6e959d50152559ab40b5c30b63bcd0cddefd966804b3",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 51,
+      "migration_name": "0051_portfolio_optimizer.sql",
+      "source_sha256": "4fdde51ff8dbbb237270986cb785ba67be7c619283840a8eff011df5e7dfe2c0",
+      "effective_sha256": "4fdde51ff8dbbb237270986cb785ba67be7c619283840a8eff011df5e7dfe2c0",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 52,
+      "migration_name": "0052_autonomous_portfolio_planner.sql",
+      "source_sha256": "84065624ef45d2d0e77a8b80d0b816f356cb312bdcfad673ebd0bef3bf34c6f0",
+      "effective_sha256": "23d36d17d9e57087df3d4aa98d2ae6c300c534dad4c41b4baaebe467489a5b43",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 53,
+      "migration_name": "0053_adaptive_portfolio_execution_controller.sql",
+      "source_sha256": "a8392e1ab7d2bca83e4167320ca648cb6ad2ae7a473272dd0cd6567933a04775",
+      "effective_sha256": "11a1d54545f22bd5532c4bc066587c0382ab2edde967eaa8190518ef56da8244",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 54,
+      "migration_name": "0054_consolidation_performance.sql",
+      "source_sha256": "e28542f6a8eb459392a5efd97a38eb2aec2786fe88c251f92ce0cdf05b31518e",
+      "effective_sha256": "2e0441b399750bb42ced3539c47188482196276382028f9206d57f95d1039ea4",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 55,
+      "migration_name": "0055_reconciliation_execution_ledger.sql",
+      "source_sha256": "7a12285f26af8f62a6c3c0952b28698efc2c5ec81cfaa3788cd1b671ff01e2e5",
+      "effective_sha256": "171116b0cdade030900865db90bec7eb94741470b8120e4fd95eb95b97da8728",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 56,
+      "migration_name": "0056_NO_OP",
+      "source_sha256": "3f1917d1d401a4ca35e7b24b220a47fcea4e4b8a144d33c473f656a35a4068b1",
+      "effective_sha256": "3f1917d1d401a4ca35e7b24b220a47fcea4e4b8a144d33c473f656a35a4068b1",
+      "source_status": "no_op",
+      "repair_notes": "v0.56 native qualification green campaign — sem DDL persistente"
+    },
+    {
+      "version": 57,
+      "migration_name": "0057_self_evolving_intelligence.sql",
+      "source_sha256": "51b2437f01913907be80fbfc45f35ead0864fc9da29f1626f0820d3183a643e1",
+      "effective_sha256": "51b2437f01913907be80fbfc45f35ead0864fc9da29f1626f0820d3183a643e1",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 58,
+      "migration_name": "0058_project_trace_tree.sql",
+      "source_sha256": "6613b4e54b1db25871580d98391d5264e03b254de8932d90d50b5be584512993",
+      "effective_sha256": "ea36664c221ee2b2eb2e2411772e17b46eca41d13bd7c4d05d1552699ad73cc0",
+      "source_status": "original",
+      "repair_notes": "native-v070: array_to_string e STABLE; coluna gerada exige IMMUTABLE -> wrapper phx_immutable_tags_text(text[])"
+    },
+    {
+      "version": 59,
+      "migration_name": "0059_historical_backfill.sql",
+      "source_sha256": "bae400458067f7641b78f7cddc3ab5a43ad9296ac22aba6cca7a6eccb6321ae0",
+      "effective_sha256": "dafab4579aa8ca07c06278137f3d1cb5b51573d350cef1fff2d4bf53287c68ab",
+      "source_status": "original",
+      "repair_notes": "reparo sintático current_setting/NULLIF: 2 ocorrência(s)"
+    },
+    {
+      "version": 60,
+      "migration_name": "0060_source_provenance.sql",
+      "source_sha256": "cd48ab814ecdb28e428e6bea6109357d53a8483d5d05bdb9901d70a31255374c",
+      "effective_sha256": "cd48ab814ecdb28e428e6bea6109357d53a8483d5d05bdb9901d70a31255374c",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 61,
+      "migration_name": "0061_safe_source_harvester.sql",
+      "source_sha256": "7adcf8e43691bd959e11d66ab7ba47924e447a84ba23c53d053d1082eb9daff5",
+      "effective_sha256": "7adcf8e43691bd959e11d66ab7ba47924e447a84ba23c53d053d1082eb9daff5",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 62,
+      "migration_name": "0062_canonical_state_knowledge_promotion.sql",
+      "source_sha256": "2cfc215e6a71abc57b9641c1797da66d5d234205b49cb3ebd829ac0c04b0e615",
+      "effective_sha256": "2cfc215e6a71abc57b9641c1797da66d5d234205b49cb3ebd829ac0c04b0e615",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 63,
+      "migration_name": "0063_repo_intelligence_tree_sitter.sql",
+      "source_sha256": "ec87fa188036d998c8cc47ec38f17dc1e70c820919cf70f722f8b6e8964e3036",
+      "effective_sha256": "ec87fa188036d998c8cc47ec38f17dc1e70c820919cf70f722f8b6e8964e3036",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 64,
+      "migration_name": "0064_mcp_lsp_managed_runtime.sql",
+      "source_sha256": "85b6c8f7166ca173fa0a43e31f0c3f69676b1212a0f18e84a8b64006da69a836",
+      "effective_sha256": "85b6c8f7166ca173fa0a43e31f0c3f69676b1212a0f18e84a8b64006da69a836",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 65,
+      "migration_name": "0065_installer_backup_restore_dr.sql",
+      "source_sha256": "0a9c93b1580f9c99eafc199c252cc7c58055bd3c23bd55f4a9f0167c54473021",
+      "effective_sha256": "af7ba5b43e33629566ec5eae4ae13946b260e3889b6ad5ba3c09c764c77c5cfa",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 66,
+      "migration_name": "0066_research_hypothesis_persistence.sql",
+      "source_sha256": "0d097922a8ff4d63fc2fdc9cbb43a7676c07ca5e989c49072ed9bd4e45859fa7",
+      "effective_sha256": "eb7d79e01b54c816148f74da51533f0c475b713e3c52a0bae202ba28ffc5ebc8",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 67,
+      "migration_name": "0067_bpm_crash_safe_runtime.sql",
+      "source_sha256": "2d4d6d2b5310a7dabf6cd6fec5906b9b9e8f589edac50f1e5967aca52ff79cfc",
+      "effective_sha256": "7b312370b68aa95bea3284fadd0453849c6e90978f5a4bab2ed487b70cfcf625",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 68,
+      "migration_name": "0068_channel_provider_runtime.sql",
+      "source_sha256": "4f85d19d6a5ea60788a6bf530f2fb68a7dd9c98cd61a8342cd7a9c7aae4b3211",
+      "effective_sha256": "4f85d19d6a5ea60788a6bf530f2fb68a7dd9c98cd61a8342cd7a9c7aae4b3211",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 69,
+      "migration_name": "0069_device_pairing_transport.sql",
+      "source_sha256": "c5ec56233461b0817c4262cd8d29ec3ed906f276a8d89981626a67cd623a5912",
+      "effective_sha256": "c5ec56233461b0817c4262cd8d29ec3ed906f276a8d89981626a67cd623a5912",
+      "source_status": "original",
+      "repair_notes": null
+    },
+    {
+      "version": 70,
+      "migration_name": "0070_native_qualification_matrix.sql",
+      "source_sha256": "16044375b74506da99fcbcb64b1872484c080d90764119b45629d140e324b5fb",
+      "effective_sha256": "ca963e019fdfc5f9f94b2ce6c1a51544aa91555687cef6b9f0f5035530e72ba4",
+      "source_status": "original",
+      "repair_notes": "native-v070: 21 politicas RLS liam so phxclaw.tenant_id; unificadas em phxclaw.current_tenant_uuid()"
+    }
+  ],
+  "full_install_sha256": "1e0623405e83fda6be22383f8fd9b0f4feaff4dda8401b6116f51cd3552a2292",
+  "native_execution_claimed": false
+}

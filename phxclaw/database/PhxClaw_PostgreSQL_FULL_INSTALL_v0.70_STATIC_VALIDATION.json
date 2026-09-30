@@ -1,0 +1,165 @@
+{
+  "version": "0.70.0",
+  "sha256": "c9ab279c50262bb2870d59989273278f66180d3d038b168d8c660cbf853e39b3",
+  "lines": 5437,
+  "statements_semicolon": 1658,
+  "pass": 31,
+  "fail": 0,
+  "checks": [
+    {
+      "name": "single_begin",
+      "ok": true,
+      "detail": "1"
+    },
+    {
+      "name": "single_commit",
+      "ok": true,
+      "detail": "1"
+    },
+    {
+      "name": "ledger_1_70",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "name": "table:channel_provider_accounts",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "table:channel_delivery_attempts",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "table:device_platform_state",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "table:device_pairing_audit",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "table:native_verification_runs",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "table:native_gate_catalog",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "consume_enrollment",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "advisory_lock",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "preflight_v70",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "final_count_70",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "no_concurrently",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "no_vacuum",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dollar_quote:$p$",
+      "ok": true,
+      "detail": "6"
+    },
+    {
+      "name": "dollar_quote:$do$",
+      "ok": true,
+      "detail": "6"
+    },
+    {
+      "name": "dollar_quote:$phx_final_check$",
+      "ok": true,
+      "detail": "2"
+    },
+    {
+      "name": "dollar_quote:$cmd$",
+      "ok": true,
+      "detail": "2"
+    },
+    {
+      "name": "dollar_quote:$trg$",
+      "ok": true,
+      "detail": "4"
+    },
+    {
+      "name": "dollar_quote:$policy$",
+      "ok": true,
+      "detail": "8"
+    },
+    {
+      "name": "dollar_quote:$$",
+      "ok": true,
+      "detail": "164"
+    },
+    {
+      "name": "dollar_quote:$ddl$",
+      "ok": true,
+      "detail": "6"
+    },
+    {
+      "name": "dollar_quote:$rls$",
+      "ok": true,
+      "detail": "12"
+    },
+    {
+      "name": "dollar_quote:$q$",
+      "ok": true,
+      "detail": "8"
+    },
+    {
+      "name": "dollar_quote:$immut$",
+      "ok": true,
+      "detail": "2"
+    },
+    {
+      "name": "dollar_quote:$no_delete$",
+      "ok": true,
+      "detail": "2"
+    },
+    {
+      "name": "dollar_quote:$phx_preflight$",
+      "ok": true,
+      "detail": "2"
+    },
+    {
+      "name": "dollar_quote:$kg_rls$",
+      "ok": true,
+      "detail": "2"
+    },
+    {
+      "name": "dollar_quote:$phx$",
+      "ok": true,
+      "detail": "4"
+    },
+    {
+      "name": "dollar_quote:$fn$",
+      "ok": true,
+      "detail": "24"
+    }
+  ]
+}

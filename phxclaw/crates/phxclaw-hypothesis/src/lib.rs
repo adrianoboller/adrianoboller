@@ -18,6 +18,10 @@ pub enum HypothesisError {
     NotFound,
     #[error("invalid status transition from {0:?} to {1:?}")]
     InvalidTransition(HypothesisStatus, HypothesisStatus),
+    #[error("hypothesis is no longer {0:?}: another decision won")]
+    StaleDecision(HypothesisStatus),
+    #[error("experiment run is not running (already finished or unknown)")]
+    RunNotRunning,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -122,8 +126,14 @@ impl HypothesisCore {
             "SELECT set_config('phxclaw.tenant_uuid',$1,true)",
             &[&tenant_uuid.to_string()],
         )?;
+        // O UPDATE confere o estado de origem e vem ANTES do diario: duas decisoes
+        // concorrentes a partir do mesmo estado nao podem as duas acontecer. A segunda
+        // espera a trava de linha da primeira, reavalia o WHERE e acha 0 linhas.
+        let mudou = tx.execute("UPDATE phxclaw.hypothesis_records SET current_status=$2,updated_at=clock_timestamp() WHERE hypothesis_uuid=$1 AND current_status=$3",&[&hypothesis_uuid,&status_str(&to),&status_str(&from)])?;
+        if mudou != 1 {
+            return Err(HypothesisError::StaleDecision(from));
+        }
         tx.execute("INSERT INTO phxclaw.hypothesis_decisions(decision_uuid,hypothesis_uuid,from_status,to_status,note,actor,decided_at) VALUES($1,$2,$3,$4,$5,$6,clock_timestamp())",&[&new_uuid_v7(),&hypothesis_uuid,&status_str(&from),&status_str(&to),&note,&actor])?;
-        tx.execute("UPDATE phxclaw.hypothesis_records SET current_status=$2,updated_at=clock_timestamp() WHERE hypothesis_uuid=$1",&[&hypothesis_uuid,&status_str(&to)])?;
         tx.commit()?;
         Ok(())
     }
@@ -154,7 +164,12 @@ impl HypothesisCore {
             "SELECT set_config('phxclaw.tenant_uuid',$1,true)",
             &[&tenant_uuid.to_string()],
         )?;
-        tx.execute("UPDATE phxclaw.experiment_runs SET state='completed',success=$2,result_summary=$3,completed_at=$4 WHERE run_uuid=$1 AND tenant_uuid=$5 AND state='running'",&[&result.run_uuid,&result.success,&result.result_summary,&result.completed_at,&tenant_uuid])?;
+        // Zero linhas aqui quer dizer que o experimento ja foi fechado (ou nao existe):
+        // ignorar deixaria o segundo resultado sumir sem ninguem saber.
+        let fechou = tx.execute("UPDATE phxclaw.experiment_runs SET state='completed',success=$2,result_summary=$3,completed_at=$4 WHERE run_uuid=$1 AND tenant_uuid=$5 AND state='running'",&[&result.run_uuid,&result.success,&result.result_summary,&result.completed_at,&tenant_uuid])?;
+        if fechou != 1 {
+            return Err(HypothesisError::RunNotRunning);
+        }
         for e in &result.evidence {
             validate_digest(&e.sha256)?;
             tx.execute("INSERT INTO phxclaw.experiment_run_evidence(run_uuid,evidence_uuid,uri,source_type,retrieved_at,sha256,notes) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING",&[&result.run_uuid,&e.uuid,&e.uri,&e.source_type,&e.retrieved_at,&e.sha256,&e.notes])?;
