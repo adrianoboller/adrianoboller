@@ -108,7 +108,7 @@ pub fn import_bpmn_xml(xml: &str) -> Result<BpmProcess, BpmError> {
         match reader.read_event() {
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
                 let qname = e.name();
-                let local = local_name(qname.as_ref());
+                let local = local_name(qname.as_ref().as_bytes());
                 if local == b"process" {
                     process.external_id = attr(&e, b"id")?;
                 } else if let Some(kind) = node_kind(local) {
@@ -144,8 +144,13 @@ pub fn import_bpmn_xml(xml: &str) -> Result<BpmProcess, BpmError> {
 fn attr(e: &quick_xml::events::BytesStart<'_>, name: &[u8]) -> Result<Option<String>, BpmError> {
     for a in e.attributes() {
         let a = a.map_err(|e| BpmError::Xml(e.to_string()))?;
-        if local_name(a.key.as_ref()) == name {
-            return Ok(Some(String::from_utf8_lossy(a.value.as_ref()).into_owned()));
+        if local_name(a.key.as_ref().as_bytes()) == name {
+            // O valor cru traz as entidades do arquivo (&amp;); o que o modelador escreveu
+            // e o texto decodificado.
+            let valor = a
+                .normalized_value(quick_xml::XmlVersion::Implicit1_0)
+                .map_err(|e| BpmError::Xml(e.to_string()))?;
+            return Ok(Some(valor.into_owned()));
         }
     }
     Ok(None)
@@ -450,5 +455,43 @@ impl<'a> BpmStore<'a> {
             if let Some(t)=token{match kind.as_str(){"token_created"|"token_advanced"=>{if let Some(n)=node.clone(){state.token_nodes.insert(t,n);}state.completed_tokens.remove(&t);},"token_completed"=>{state.token_nodes.remove(&t);state.completed_tokens.insert(t);},_=>{}}}
         }
         Ok(state)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const BPMN: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">
+  <bpmn:process id="Pedido">
+    <bpmn:startEvent id="s" name="Inicio"/>
+    <bpmn:userTask id="t" name="Aprovar P&amp;D &lt;urgente&gt;"/>
+    <bpmn:endEvent id="e"/>
+    <bpmn:sequenceFlow id="f1" sourceRef="s" targetRef="t"/>
+    <bpmn:sequenceFlow id="f2" sourceRef="t" targetRef="e"/>
+  </bpmn:process>
+</bpmn:definitions>"#;
+
+    #[test]
+    fn importa_bpmn_com_prefixo_de_namespace() {
+        let p = import_bpmn_xml(BPMN).unwrap();
+        assert_eq!(p.external_id.as_deref(), Some("Pedido"));
+        assert_eq!(p.nodes.len(), 3);
+        assert_eq!(p.flows.len(), 2);
+        assert!(matches!(p.nodes["t"].kind, BpmNodeKind::UserTask));
+        assert_eq!(dag_order(&p).unwrap(), vec!["s", "t", "e"]);
+    }
+
+    #[test]
+    fn nome_com_entidade_xml_volta_decodificado() {
+        // O nome e dado de quem modelou: "P&D <urgente>", nao o texto escapado do arquivo.
+        let p = import_bpmn_xml(BPMN).unwrap();
+        assert_eq!(p.nodes["t"].name.as_deref(), Some("Aprovar P&D <urgente>"));
+    }
+
+    #[test]
+    fn xml_quebrado_e_recusado() {
+        assert!(import_bpmn_xml("<bpmn:process id='x'><bpmn:task id='a'></bpmn:process>").is_err());
     }
 }
