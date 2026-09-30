@@ -43,6 +43,7 @@ pub mod sha1;
 pub mod sha512;
 pub mod termo;
 pub mod tipo_database;
+pub mod tls13;
 pub mod types;
 pub mod uuid;
 pub mod value;
