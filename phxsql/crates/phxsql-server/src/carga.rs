@@ -9,11 +9,21 @@
 //!    entra, para o dado nao ficar meio velho e meio novo para quem consulta;
 //! 2. **uma sincronizacao so**, no fim, em vez de uma por janela.
 //!
-//! E abre a porta para a terceira, que e a maior e ainda nao esta feita:
-//! **adiar o indice**. A objecao registrada em `docs/DESEMPENHO.md` contra
-//! adiar era que a leitura veria um indice defasado e `buscar` responderia
-//! errado em silencio. Com a tabela reservada nao ha leitura para ver.
-//! DIVIDA: o BULKINSERT ainda paga o indice linha a linha -- adiar o `.ndx` e' a terceira parte, a maior, e nao esta feita
+//! E a terceira, **pedida** (pedido 324, decisao do dono de 30/09/2026):
+//! `"adiar_indice": true` no `bulkinsert(true)` suspende o `.ndx` -- as
+//! insercoes da reserva gravam o `.reg` e nao a arvore, e o `bulkinsert(false)`
+//! a reconstroi em lote ANTES de soltar a reserva. Sem pedir, nada muda.
+//!
+//! A objecao antiga contra adiar -- a leitura veria um indice defasado e
+//! `buscar` responderia errado em silencio -- NAO cai por a tabela estar
+//! reservada: a reserva e memoria de processo, a propria ligacao le, e tres
+//! operacoes escondem a tabela do portao (parecer do papel C, §2). Cai pela
+//! marca no DISCO (byte 53 do `.ndx`, `NdxFile::suspender`): enquanto ela
+//! estiver la, toda pergunta ao indice RECUSA dizendo que ha carga, de
+//! qualquer ligacao e por qualquer operacao, e uma queda no meio faz o
+//! arranque reconstruir. As recusas da declaracao (indice unico, tabela com
+//! dados, mae de chave conferida, indice ja marcado) moram em
+//! `Table::adiar_indice`, no motor.
 //!
 //! # A parte perigosa, e as duas redes embaixo dela
 //!
@@ -145,15 +155,33 @@ impl Cargas {
         forcar: bool,
         agora_ms: i64,
     ) -> Result<Reserva> {
-        let k = chave(database, tabela);
-        match self.dentro.get(&k) {
+        self.conferir_soltura(database, tabela, ligacao, forcar, agora_ms)?;
+        Ok(self.dentro.remove(&chave(database, tabela)).unwrap())
+    }
+
+    /// Esta ligacao PODE soltar esta reserva? A pergunta do [`Cargas::soltar`]
+    /// sem o `remove`.
+    ///
+    /// Existe para o `bulkinsert(false)` com o indice adiado: a reconstrucao
+    /// acontece ANTES de soltar, e quem nao pode soltar nao pode mandar
+    /// reconstruir o indice da carga alheia. Uma funcao so para as duas, senao
+    /// a regra de quem solta divergiria da de quem reconstroi.
+    pub fn conferir_soltura(
+        &self,
+        database: &str,
+        tabela: &str,
+        ligacao: u64,
+        forcar: bool,
+        agora_ms: i64,
+    ) -> Result<()> {
+        match self.dentro.get(&chave(database, tabela)) {
             None => Err(PhxError::NaoEncontrado(format!(
                 "{database}.{tabela} nao esta reservada"
             ))),
             Some(d) if d.ligacao != ligacao && !forcar && d.expira_ms > agora_ms => {
                 Err(PhxError::EmCarga(recado(d, agora_ms)))
             }
-            Some(_) => Ok(self.dentro.remove(&k).unwrap()),
+            Some(_) => Ok(()),
         }
     }
 
@@ -201,6 +229,11 @@ impl Cargas {
         let mut v: Vec<Reserva> = self.dentro.values().cloned().collect();
         v.sort_by_key(|r| r.desde_ms);
         v
+    }
+
+    /// Esta tabela tem reserva, de quem quer que seja?
+    pub fn reservada(&self, database: &str, tabela: &str) -> bool {
+        self.dentro.contains_key(&chave(database, tabela))
     }
 
     pub fn quantas(&self) -> usize {

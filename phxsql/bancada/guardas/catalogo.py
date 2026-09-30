@@ -3631,8 +3631,11 @@ pub fn limpar() {
         # a emprestada pela transacao) chamam. A unica diferenca no texto e a
         # indentacao, de doze espacos para oito -- a pergunta a mae, que e o
         # que separa arquivo sao de corrupcao de verdade, esta intacta.
-        "trecho": """        let pendente = mae
-            .indice_precisa_reconstruir()
+        # ATUALIZADO em 30/09/2026 (pedido 324): o portao passou a deixar de
+        # fora o indice SUSPENSO por carga, que nao tem transacao a confirmar
+        # nem `reparar indice` a rodar. O defeito reposto e o mesmo -- sem o
+        # portao, tudo volta ao erro cru.
+        "trecho": """        let pendente = (mae.indice_precisa_reconstruir() && !mae.indice_suspenso())
             .then(|| caminho(mae.diretorio(), mae.nome(), EXT_NDX));""",
         "troca": """        // DEFEITO REPOSTO: sem o portao, tudo cai no caminho do erro
         // cru e o recado volta a mandar reparar arquivo intacto.
@@ -3667,9 +3670,11 @@ pub fn limpar() {
             "ausencia da palavra `reparar`."
         ),
         "arquivo": "crates/phxsql-store/src/table.rs",
-        "trecho": """                let filha_com_indice_pendente = filha
-                    .indice_precisa_reconstruir()
-                    .then(|| caminho(filha.diretorio(), filha.nome(), EXT_NDX));""",
+        # ATUALIZADO em 30/09/2026 (pedido 324): o irmao de cima, pelo mesmo
+        # motivo -- o indice suspenso por carga fica fora do portao.
+        "trecho": """                let filha_com_indice_pendente = (filha.indice_precisa_reconstruir()
+                    && !filha.indice_suspenso())
+                .then(|| caminho(filha.diretorio(), filha.nome(), EXT_NDX));""",
         "troca": """                // DEFEITO REPOSTO: sem o portao, o recado volta a mandar
                 // reparar um indice intacto.
                 let filha_com_indice_pendente: Option<std::path::PathBuf> = None;""",
@@ -5592,21 +5597,25 @@ pub fn limpar() {
             "chamar a MESMA drenagem, na mesma ordem, sob a mesma trava."
         ),
         "arquivo": "crates/phxsql-server/src/servidor.rs",
-        "trecho": """            t.sincronizar()?;
-            if let Ok(mut sujas) = self.sujas.lock() {
-                sujas.remove(&format!("{database}/{tabela}"));
-            }
-            self.descarregar_sujas_com(&trava);
+        # ATUALIZADO em 30/09/2026 (pedido 324): o `bulkinsert` passou a ter
+        # UMA secao critica para reservar e soltar (o indice adiado precisa da
+        # tabela aberta nos dois pontos), e o bloco proprio do soltar sumiu --
+        # a indentacao desceu um nivel. A drenagem e a mesma.
+        "trecho": """        t.sincronizar()?;
+        if let Ok(mut sujas) = self.sujas.lock() {
+            sujas.remove(&format!("{database}/{tabela}"));
         }
+        self.descarregar_sujas_com(&trava);
+        drop(t);
 """,
-        "troca": """            t.sincronizar()?;
-            // DEFEITO REPOSTO (pedido 254): a tabela sai das sujas sem passar
-            // pela drenagem do fecho -- a marca do COMMIT feito na reserva
-            // fica no disco depois do «ok».
-            if let Ok(mut sujas) = self.sujas.lock() {
-                sujas.remove(&format!("{database}/{tabela}"));
-            }
+        "troca": """        t.sincronizar()?;
+        // DEFEITO REPOSTO (pedido 254): a tabela sai das sujas sem passar
+        // pela drenagem do fecho -- a marca do COMMIT feito na reserva
+        // fica no disco depois do «ok».
+        if let Ok(mut sujas) = self.sujas.lock() {
+            sujas.remove(&format!("{database}/{tabela}"));
         }
+        drop(t);
 """,
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
@@ -16838,5 +16847,73 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "caem": ["servidor::testes_painel_508::painel_soma_os_bytes_do_disco"],
         "seguem": [],
         "prazo": 900,
+    },
+    {
+        "id": "carga-adiada-solta-sem-reconstruir",
+        "titulo": "o `bulkinsert(false)` da carga com o índice adiado solta a reserva com a árvore suspensa",
+        "porque": (
+            "pedido 324, decisao do dono de 30/09/2026: o `.ndx` adiado se "
+            "reconstroi ANTES de soltar a reserva. Sem o `reindexar`, a tabela "
+            "volta aos outros recusando toda busca -- medido: a primeira "
+            "`buscar` depois de soltar cai com EM_CARGA."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """            t.reindexar()?;
+            Some(inicio.elapsed().as_millis() as u64)
+""",
+        "troca": """            Some(inicio.elapsed().as_millis() as u64)
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_bulkinsert::a_carga_adiada_termina_com_o_indice_certo",
+        ],
+        "seguem": [
+            "servidor::testes_bulkinsert::sem_pedir_o_indice_adiado_nada_muda",
+        ],
+    },
+    {
+        "id": "suspensao-do-indice-so-na-ram",
+        "titulo": "a suspensão do `.ndx` para a carga adiada fica só na memória, e a queda no meio deixa a árvore vazia se declarando limpa",
+        "porque": (
+            "pedido 324, restricao R2 do parecer do papel C: a reserva e "
+            "memoria de processo, e processo morto nao diz nada a quem reabre. "
+            "Medido com o filho morto por SIGKILL: sem o cabecalho no disco, os "
+            "bytes 52 e 53 ficam em 0 e o arranque nao reconstroi nada."
+        ),
+        "arquivo": "crates/phxsql-store/src/ndx.rs",
+        "trecho": """        let gravado = self.gravar_cabecalho().and_then(|()| {
+""",
+        "troca": """        let gravado = Ok::<(), PhxError>(()).and_then(|()| {
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "indice-adiado"],
+        "caem": [
+            "a_queda_no_meio_da_carga_adiada_reconstroi_no_arranque",
+            "a_reabertura_no_mesmo_processo_continua_suspensa",
+        ],
+        "seguem": [],
+    },
+    {
+        "id": "carga-adiada-orfa-sem-reconstruir",
+        "titulo": "a carga adiada que sai sem o `bulkinsert(false)` (conexão caída, reserva vencida) deixa o índice suspenso até o próximo arranque",
+        "porque": (
+            "pedido 324: a reserva morre por tres caminhos, e so um deles e o "
+            "`bulkinsert(false)`. O fecho da janela e o irmao que alcanca os "
+            "outros dois; sem ele, a busca do vizinho recusa ate reiniciar."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """                    Ok(mut t) if t.indice_suspenso() && !self.reservada(db, tab) => {
+""",
+        "troca": """                    Ok(mut t) if false && t.indice_suspenso() && !self.reservada(db, tab) => {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_bulkinsert::a_queda_da_conexao_reconstroi_o_indice_adiado",
+        ],
+        "seguem": [
+            "servidor::testes_bulkinsert::a_carga_adiada_termina_com_o_indice_certo",
+        ],
     },
 ]

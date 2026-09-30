@@ -2279,8 +2279,10 @@ impl Table {
         // NOMEAR os dois em vez de escolher um: quem le decide com o que sabe
         // sobre a propria transacao, e o `reparar indice` so entra quando a
         // pessoa tem certeza de que nada mais escreve ali.
-        let pendente = mae
-            .indice_precisa_reconstruir()
+        // Indice SUSPENSO por carga fica fora das duas explicacoes de baixo:
+        // nao ha transacao a confirmar nem `reparar indice` a rodar. O erro do
+        // portao ja diz a verdade sobre ele, e vai inteiro no ramo generico.
+        let pendente = (mae.indice_precisa_reconstruir() && !mae.indice_suspenso())
             .then(|| caminho(mae.diretorio(), mae.nome(), EXT_NDX));
         let achou = mae.buscar(&indice, chave).map_err(|e| {
             if let Some(ndx) = pendente {
@@ -2422,39 +2424,21 @@ impl Table {
         ja_lida: Option<&[Value]>,
         mut maes: Option<&mut dyn MaesEmProgresso>,
     ) -> Result<()> {
-        let irmas = crate::catalogo::tabelas_em(&self.diretorio)?;
         let eu = self.nome.clone();
         // A LINHA NAO SE LE AQUI, e essa e a licao do Profiler: o portao vem
         // antes do trabalho. Sem nenhuma irma apontando para esta tabela nao
         // ha o que procurar, e ler a linha para jogar fora custava 1,46 us por
         // exclusao no caso comum -- que e o de tabela nenhuma referenciar esta.
         let mut minha: Option<Linha> = None;
-        for irma in irmas {
-            // A AUTO-REFERENCIA entra na mesma volta, com ESTE handle no papel
-            // da filha (pedido 491). Ate aqui ela era um `continue` seco, e
-            // excluir o chefe que tem subordinado respondia `Ok` com o
-            // subordinado orfao -- de vez e suave, fora e dentro de transacao.
-            // O handle e o mesmo pelo motivo do `conferir_fks_com`, que ja
-            // conferia o outro lado da mesma chave assim: um segundo
-            // descritor nao ve o que este ja escreveu, e na pre-conferencia do
-            // COMMIT e este que carrega o prefixo da lista.
+        for (irma, fk) in self.fks_que_apontam_para_mim()? {
+            // A AUTO-REFERENCIA usa ESTE handle no papel da filha (pedido
+            // 491), pelo motivo do `conferir_fks_com`, que ja conferia o
+            // outro lado da mesma chave assim: um segundo descritor nao ve o
+            // que este ja escreveu, e na pre-conferencia do COMMIT e este que
+            // carrega o prefixo da lista.
             let propria = irma == eu;
-            let esquema = if propria {
-                self.esquema.clone()
-            } else {
-                match crate::reg::RegFile::abrir(&self.diretorio, &irma) {
-                    Ok(r) => r.esquema().clone(),
-                    // Irma que nao abre nao e motivo para a mae nao poder
-                    // sair: o erro dela e problema dela, e mistura-lo aqui
-                    // faria uma tabela quebrada trancar exclusoes no banco
-                    // inteiro.
-                    Err(_) => continue,
-                }
-            };
-            for fk in esquema.chaves_estrangeiras() {
-                if !fk.verificar || nome_simples(&fk.tabela_ref) != eu {
-                    continue;
-                }
+            let fk = &fk;
+            {
                 // Agora sim ha quem aponte para esta tabela: a linha entra.
                 if minha.is_none() {
                     let referencia_externa = fk.colunas_ref.iter().any(|nome| {
@@ -3089,9 +3073,11 @@ impl Table {
                     filha.reindexar()?;
                     self.indices_da_cascata_reconstruidos += 1;
                 }
-                let filha_com_indice_pendente = filha
-                    .indice_precisa_reconstruir()
-                    .then(|| caminho(filha.diretorio(), filha.nome(), EXT_NDX));
+                // O IRMAO do `conferir_uma_fk`: suspenso por carga nao manda
+                // confirmar nem reparar -- o erro do portao diz a verdade.
+                let filha_com_indice_pendente = (filha.indice_precisa_reconstruir()
+                    && !filha.indice_suspenso())
+                .then(|| caminho(filha.diretorio(), filha.nome(), EXT_NDX));
                 let rowids = filha.buscar(&indice, &antiga).map_err(|e| {
                     if let Some(ndx) = filha_com_indice_pendente {
                         return PhxError::Integridade(format!(
@@ -5220,6 +5206,9 @@ impl Table {
         let (completos, rownum_reservado) = self.linha_final(valores, None, None, maes)?;
         let valores = &completos[..];
 
+        // As chaves se tiram MESMO com o indice adiado (pedido 324): tirar a
+        // chave e onde a linha que nao cabe no indice e recusada, e recusar
+        // aqui custa a linha; recusar no `reindexar` do fim custaria a carga.
         let chaves = self.todas_as_chaves(valores)?;
 
         // A conferencia acontece AQUI, antes de qualquer gravacao, e nao la
@@ -5227,6 +5216,11 @@ impl Table {
         // reaproveita slot. Descobrir a duplicidade depois de gravar exigiria
         // desfazer, e o slot desfeito ficaria morto para sempre. Uma tabela que
         // recebe muita insercao repetida iria inchando sem nunca crescer.
+        //
+        // Com o indice suspenso, o indice unico recusa AQUI, pelo portao do
+        // `descritor` -- a pergunta «ja existe?» nao se adia. O `adiar_indice`
+        // ja recusa a carga que tem indice unico; esta e a segunda rede, e ela
+        // nao custa uma linha a mais.
         for (i, chave) in chaves.iter().enumerate() {
             let Some(chave) = chave else { continue };
             if self.participa_da_unicidade(i, chave) && self.ndx.existe(i, chave)? {
@@ -5236,6 +5230,11 @@ impl Table {
                 )));
             }
         }
+        // Indice suspenso por carga: a linha vai ao `.reg` e ao `.log`, e a
+        // arvore fica para o `reindexar` do fim. Nao abre janela nenhuma -- os
+        // bytes 52 e 53 ja estao no disco desde o `adiar_indice`, e sao eles
+        // que fazem uma queda daqui em diante reconstruir no arranque.
+        let adiado = self.ndx.suspenso();
 
         let payload = self.montar_payload(valores)?;
         let ponteiros = self.ponteiros(&payload)?;
@@ -5261,7 +5260,7 @@ impl Table {
         // primeira escrita que o indice ainda nao acompanha, e um panico ate a
         // ultima chave deixa o `.ndx` sem descarregar. Linha que nao entra em
         // indice nenhum nao abre janela -- nao ha arvore para ficar atras.
-        let janela = chaves.iter().any(Option::is_some);
+        let janela = !adiado && chaves.iter().any(Option::is_some);
         if janela {
             self.ndx.comecar_escrita()?;
         }
@@ -5301,7 +5300,9 @@ impl Table {
         panico_de_teste::passar(panico_de_teste::Ponto::InserirDepoisDoContador);
 
         for (i, chave) in chaves.iter().enumerate() {
-            let Some(chave) = chave else { continue };
+            let Some(chave) = chave.as_ref().filter(|_| !adiado) else {
+                continue;
+            };
             // `ja_conferido`: a unicidade foi conferida logo acima, antes de
             // qualquer gravacao. Deixar o `inserir` conferir de novo custaria
             // uma segunda descida na arvore para a mesma resposta.
@@ -7866,6 +7867,124 @@ impl Table {
                 .fts
                 .as_ref()
                 .is_some_and(|f| f.marca_so_neste_processo())
+    }
+
+    /// O indice desta tabela esta suspenso por uma carga com o indice adiado?
+    pub fn indice_suspenso(&self) -> bool {
+        self.ndx.suspenso()
+    }
+
+    /// Suspende o `.ndx` para uma carga: as insercoes seguintes gravam o
+    /// `.reg` e nao a arvore, e o `reindexar` do fim a monta em lote (pedido
+    /// 324, regime (b) da `docs/DESEMPENHO.md` §4.4-bis).
+    ///
+    /// Toda recusa acontece AQUI, na declaracao da carga, e nao no meio dela:
+    /// a carga se pede uma vez e insere um milhao de vezes, e recusar tarde
+    /// custa a carga inteira no `.reg`, que nunca reaproveita slot. As quatro
+    /// portas, na ordem do parecer do papel C
+    /// (`docs/propostas/parecer-dba-adiar-o-ndx-no-bulkinsert-2026-09-17.md`):
+    ///
+    /// * **R1 -- indice unico nao se adia.** Ele e a propria decisao de
+    ///   aceitar ou recusar a linha; adiar seria descobrir a repetida no fim,
+    ///   com a carga ja gravada e o evento ja no `.log` -- e a replica parada
+    ///   no `Duplicado` para sempre (§3.4 do parecer).
+    /// * **Tabela com dados nao se adia.** Medido (§4.4-bis, regime b'): o
+    ///   `reindexar` refaz a tabela INTEIRA, e em 17/09/2026 nenhum M pagou,
+    ///   nem M = N -- 0,67-0,79x. Aceitar seria vender uma carga mais lenta
+    ///   com o indice fora do ar durante ela.
+    /// * **R3 -- mae de chave conferida nao se adia.** Enquanto a arvore
+    ///   estiver suspensa, «existe este pai?» nao tem como responder, e a
+    ///   chave conferida precisa de indice dos dois lados.
+    /// * **R2 -- arvore que ja nao presta nao se suspende.** A marca da queda
+    ///   e a unica pista que o operador tem.
+    pub fn adiar_indice(&mut self) -> Result<()> {
+        if self.ndx.suspenso() {
+            return Ok(());
+        }
+        let eu = self.nome.clone();
+        if let Some(unico) = self.esquema.indices().iter().find(|i| i.unico) {
+            return Err(PhxError::Esquema(format!(
+                "{eu} nao pode carregar com o indice adiado: {} e um indice UNICO, \
+                 e ele e a propria decisao de aceitar ou recusar a linha. Adiar \
+                 seria gravar primeiro e descobrir a chave repetida no fim -- e o \
+                 `.reg` nunca reaproveita slot, entao a carga inteira ficaria como \
+                 buraco permanente. Carregue sem adiar, ou tire o indice unico \
+                 antes da carga e recrie-o depois",
+                unico.nome
+            )));
+        }
+        let vivas = self.reg.registros();
+        if vivas > 0 {
+            return Err(PhxError::Esquema(format!(
+                "{eu} nao pode carregar com o indice adiado: ela ja tem {vivas} \
+                 linhas, e o `reindexar` do fim refaz a tabela inteira, nao so o \
+                 que entrou. Medido em 17/09/2026 (docs/DESEMPENHO.md 4.4-bis), \
+                 adiar numa tabela com dados PERDE em todo tamanho de carga \
+                 testado -- 0,67 a 0,79x mesmo dobrando a tabela. O ganho medido \
+                 e so para tabela vazia: carregue sem adiar"
+            )));
+        }
+        let filhas: std::collections::BTreeSet<String> = self
+            .fks_que_apontam_para_mim()?
+            .into_iter()
+            .map(|(irma, _)| irma)
+            .collect();
+        if !filhas.is_empty() {
+            let nomes: Vec<&str> = filhas.iter().map(String::as_str).collect();
+            return Err(PhxError::Integridade(format!(
+                "{eu} nao pode carregar com o indice adiado: {} declara{} chave \
+                 estrangeira conferida para {eu}, e enquanto o indice estiver \
+                 suspenso a conferencia «existe este pai?» nao tem como responder \
+                 -- carregue sem adiar, ou desligue `verificar` nessas chaves antes",
+                nomes.join(", "),
+                if nomes.len() == 1 { "" } else { "m" }
+            )));
+        }
+        if self.indice_precisa_reconstruir() {
+            return Err(PhxError::Corrompido(format!(
+                "o indice de {eu} ficou para tras numa queda e nao e confiavel: \
+                 reconstrua com `reparar indice` antes de comecar a carga -- adiar \
+                 sobre um indice que ja nao presta apaga a unica marca que diz isso"
+            )));
+        }
+        self.ndx.suspender()
+    }
+
+    /// Quem declara chave estrangeira CONFERIDA apontando para esta tabela:
+    /// o nome da irma e a chave.
+    ///
+    /// UMA varredura para as duas perguntas que a fazem -- o `excluir` («esta
+    /// linha tem filha?») e o `adiar_indice` («alguem precisa do meu indice
+    /// para conferir?»). Duas copias da mesma lista seriam dois lugares onde
+    /// a regra de quem conta pode divergir.
+    ///
+    /// A AUTO-REFERENCIA entra, com o esquema DESTE handle (pedido 491): ate
+    /// ali ela era um `continue` seco, e excluir o chefe que tem subordinado
+    /// respondia `Ok` com o subordinado orfao.
+    ///
+    /// Irma que nao abre fica de fora: o erro dela e problema dela, e
+    /// mistura-lo aqui faria uma tabela quebrada trancar exclusoes no banco
+    /// inteiro.
+    fn fks_que_apontam_para_mim(&self) -> Result<Vec<(String, ForeignKey)>> {
+        let irmas = crate::catalogo::tabelas_em(&self.diretorio)?;
+        let eu = &self.nome;
+        let mut achadas = Vec::new();
+        for irma in irmas {
+            let esquema = if &irma == eu {
+                self.esquema.clone()
+            } else {
+                match crate::reg::RegFile::abrir(&self.diretorio, &irma) {
+                    Ok(r) => r.esquema().clone(),
+                    Err(_) => continue,
+                }
+            };
+            for fk in esquema.chaves_estrangeiras() {
+                if fk.verificar && nome_simples(&fk.tabela_ref) == eu {
+                    achadas.push((irma.clone(), fk.clone()));
+                }
+            }
+        }
+        Ok(achadas)
     }
 
     /// O indice desta tabela ficou para tras numa queda?

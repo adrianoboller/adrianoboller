@@ -972,11 +972,14 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `migracao-do-separador-decide-pelo-nome` | a migracao do separador de volume le `vendas_2024.reg` como volume 2024 de `vendas` e some com a tabela | 1 | ✅ provada |
 | `marca-do-separador-antes-dos-renomes` | a marca do formato de volume vai ao disco antes dos `rename`s, e a queda no meio deixa o diretorio marcado e meio migrado | 1 | ✅ provada |
 | `painel-com-copia-do-analisador-de-volume` | o painel soma os bytes do `.reg` por uma copia do nome do volume e mede zero em tabela de 4 digitos ou por letra | 1 | ✅ provada |
+| `carga-adiada-solta-sem-reconstruir` | o `bulkinsert(false)` da carga com o índice adiado solta a reserva com a árvore suspensa | 1 | ✅ provada |
+| `suspensao-do-indice-so-na-ram` | a suspensão do `.ndx` para a carga adiada fica só na memória, e a queda no meio deixa a árvore vazia se declarando limpa | 2 | ✅ provada |
+| `carga-adiada-orfa-sem-reconstruir` | a carga adiada que sai sem o `bulkinsert(false)` (conexão caída, reserva vencida) deixa o índice suspenso até o próximo arranque | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**329 das 472 guardas do catálogo: 1 aposentada, 324 provadas, 4 redundantes** — 8970 s de mutação, medido em 2026-09-16 15:25.
+**332 das 475 guardas do catálogo: 1 aposentada, 327 provadas, 4 redundantes** — 9057 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 144 das 472 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 144 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 144 das 475 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 144 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
