@@ -20,7 +20,7 @@ O que a regua DEIXA DE FORA, de proposito: higiene de gerador, contagem de
 catraca, cosmetico de tela, pesquisa, e tudo o que so o time enxerga. Sao
 legitimos e continuam registrados -- so nao seguram a versao.
 
-## A lista: 14 pedidos -- **10 FECHADOS, 2 parados no dono, 2 parciais** (30/09/2026, lidos da marca do `PENDENCIAS.md`)
+## A lista: 14 pedidos -- **11 FECHADOS, 2 parados no dono, 1 parcial** (30/09/2026, lidos da marca do `PENDENCIAS.md`)
 
 O 355 saiu porque ja estava fechado; o 426 entrou pela excecao. Fechado aqui
 quer dizer **em codigo, com portoes verdes e no `origin`** -- nao "pronto para
@@ -28,9 +28,9 @@ revisar".
 
 | estado | pedidos |
 |---|---|
-| FECHADO | 392 `8f63d7a` · 278 `8f63d7a` · 312 `8f63d7a` · 275 `3add5a9` · 327 `af4a5a5` · 419 · 372 · 426 · 381 (29/09) · 422 (30/09) |
+| FECHADO | 392 `8f63d7a` · 278 `8f63d7a` · 312 `8f63d7a` · 275 `3add5a9` · 327 `af4a5a5` · 419 · 372 · 426 · 381 (29/09) · 422 (30/09) · 262 (30/09, etapa 1 como contrato; etapa 2 no 571 ⏸) |
 | parado no DONO | 326 -- refazer o compartilhamento da pagina; nao e consertavel daqui · 255 -- reconstruir sozinho no arranque muda o tempo de subida |
-| PARCIAL | 262 (etapa 2: o `AFTER` antes da marca) · 339 |
+| PARCIAL | 339 |
 
 ### A. Corrompe ou perde dado (5)
 
