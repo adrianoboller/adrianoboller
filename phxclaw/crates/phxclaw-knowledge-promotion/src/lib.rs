@@ -3,7 +3,7 @@
 use chrono::{DateTime, Duration, Utc};
 use phxclaw_evidence_ledger::{EvidenceDraft, EvidenceLedger, EvidenceOutcome, LedgerError};
 use phxclaw_knowledge_evidence_graph::{
-    EpistemicState, GraphError, KnowledgeEdge, KnowledgeGraph, KnowledgeNode, MutationAuthority,
+    EpistemicState, GraphError, KnowledgeGraph, MutationAuthority,
     PromotionPolicy as GraphPromotionPolicy,
 };
 use serde::{Deserialize, Serialize};
@@ -238,6 +238,7 @@ impl KnowledgePromotionGate {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn promote(
         &self,
         graph: &mut KnowledgeGraph,
@@ -307,6 +308,7 @@ impl KnowledgePromotionGate {
         Ok(receipt)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn revoke(
         &self,
         graph: &mut KnowledgeGraph,
@@ -391,7 +393,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use phxclaw_knowledge_evidence_graph::{EdgeKind, EvidenceBinding, NodeKind};
+    use phxclaw_knowledge_evidence_graph::{EdgeKind, EvidenceBinding, KnowledgeNode, NodeKind};
 
     fn digest(ch: char) -> String {
         ch.to_string().repeat(64)

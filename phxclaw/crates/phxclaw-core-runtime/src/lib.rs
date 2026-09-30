@@ -14,7 +14,7 @@ use phxclaw_rustclaw_native::{
     NativeScheduledJob, NativeSession, NativeSessionStore, RustClawNativeError, ScheduleSpec,
     negotiate_gateway_protocol,
 };
-use phxclaw_types::{is_uuid_v7, new_uuid_v7};
+use phxclaw_types::new_uuid_v7;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -148,7 +148,7 @@ impl PhoenixCoreRuntime {
             runtime_uuid: self.runtime_uuid,
             product: PRODUCT_NAME.into(),
             version: self.version.clone(),
-            started_at: self.started_at.clone(),
+            started_at: self.started_at,
             services: self.services.values().cloned().collect(),
         }
     }
@@ -215,6 +215,7 @@ pub enum CoreRuntimeError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use phxclaw_types::is_uuid_v7;
 
     #[test]
     fn facade_hides_upstream_names_from_user_contract() {

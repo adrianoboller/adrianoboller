@@ -102,6 +102,7 @@ impl HypothesisCore {
         tx.commit()?;
         Ok(())
     }
+    #[allow(clippy::too_many_arguments)]
     pub fn record_decision(
         &self,
         client: &mut Client,

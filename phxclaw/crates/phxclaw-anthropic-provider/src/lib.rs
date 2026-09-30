@@ -49,6 +49,7 @@ fn fixed_url(
     u.join(path).map_err(|_| ProviderError::OriginDenied)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn messages_plan(
     origin: &str,
     allow_custom: &[String],

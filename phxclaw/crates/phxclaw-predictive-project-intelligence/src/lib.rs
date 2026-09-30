@@ -108,6 +108,7 @@ fn confidence(n: usize) -> f64 {
     (n as f64 / (n as f64 + 5.0)).clamp(0.0, 0.99)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn forecast_route(
     project_uuid: Uuid,
     task_class: &str,
@@ -343,6 +344,9 @@ pub fn forecast_project(
         .iter()
         .map(|x| x.expected_cost_usd * x.rework_risk)
         .sum::<f64>();
+    // max/min e nao clamp de proposito: com NaN na entrada, max(0.0) devolve 0.0 e o risco
+    // continua numero; clamp propagaria o NaN para o painel.
+    #[allow(clippy::manual_clamp)]
     let deadline_risk = if millis_to_deadline == 0 {
         1.0
     } else {
@@ -351,6 +355,7 @@ pub fn forecast_project(
             .min(1.0)
     };
     let total_expected = expected_remaining_cost_usd + expected_rework_cost_usd;
+    #[allow(clippy::manual_clamp)]
     let budget_overrun_risk = if remaining_budget_usd <= 0.0 {
         if total_expected > 0.0 {
             1.0

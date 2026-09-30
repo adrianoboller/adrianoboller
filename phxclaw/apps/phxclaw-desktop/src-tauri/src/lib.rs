@@ -928,6 +928,7 @@ fn finalize_action_with_outcome(
     Ok(result)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn record_simple_evidence(
     state: &DesktopState,
     action_uuid: Uuid,

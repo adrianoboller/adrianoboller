@@ -326,7 +326,7 @@ mod tests {
     }
     #[test]
     fn core_never_auto_merges() {
-        assert!(!CORE_AUTO_MERGE);
+        const { assert!(!CORE_AUTO_MERGE) };
     }
     #[test]
     fn governed_unfruitful_blocks_exact_context() {

@@ -278,6 +278,7 @@ impl ModelGateway {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn settle(
         &mut self,
         request: &ModelRequest,

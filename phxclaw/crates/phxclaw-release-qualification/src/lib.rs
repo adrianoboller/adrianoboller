@@ -9,7 +9,6 @@ use phxclaw_release_hardening::{
     ReleasePolicy, REQUIRED_GATES,
 };
 use serde::{Deserialize, Serialize};
-use serde_json;
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 use uuid::Uuid;
@@ -290,7 +289,6 @@ pub fn all_verified_proofs(workspace_sha256_hex: &str, now: DateTime<Utc>) -> Ve
 #[cfg(test)]
 mod tests {
     use super::*;
-    use base64::Engine as _;
 
     fn digest(ch: char) -> String {
         ch.to_string().repeat(64)

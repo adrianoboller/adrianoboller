@@ -484,10 +484,10 @@ impl KnowledgeGraph {
             .filter(|binding| {
                 binding.tenant_uuid == claim.tenant_uuid
                     && binding.claim_node_uuid == claim_uuid
-                    && !binding
+                    && binding
                         .valid_until
                         .as_ref()
-                        .is_some_and(|until| &now >= until)
+                        .is_none_or(|until| &now < until)
                     && now >= binding.collected_at
             })
             .collect();
@@ -542,7 +542,7 @@ impl KnowledgeGraph {
         let mut promoted = claim.clone();
         promoted.node_uuid = Uuid::now_v7();
         promoted.state = decision.target_state;
-        promoted.created_at = now.clone();
+        promoted.created_at = now;
         let edge = KnowledgeEdge {
             edge_uuid: Uuid::now_v7(),
             tenant_uuid: claim.tenant_uuid,
@@ -587,7 +587,7 @@ impl KnowledgeGraph {
         let mut rejected = claim.clone();
         rejected.node_uuid = Uuid::now_v7();
         rejected.state = EpistemicState::Rejected;
-        rejected.created_at = now.clone();
+        rejected.created_at = now;
         let edge = KnowledgeEdge {
             edge_uuid: Uuid::now_v7(),
             tenant_uuid: claim.tenant_uuid,

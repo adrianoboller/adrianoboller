@@ -129,7 +129,7 @@ fn fresh(now: i64, observed: i64, ttl: u64) -> bool {
 fn cost(m: &ModelRecord, r: &RouteRequest) -> Option<u64> {
     let i = m.input_cost_micro_usd_per_million? as u128 * r.estimated_input_tokens as u128;
     let o = m.output_cost_micro_usd_per_million? as u128 * r.estimated_output_tokens as u128;
-    Some(((i + o + 999_999) / 1_000_000).min(u64::MAX as u128) as u64)
+    Some((i + o).div_ceil(1_000_000).min(u64::MAX as u128) as u64)
 }
 fn cloud_allowed(p: &RoutingPolicy, r: &RouteRequest) -> bool {
     let explicit = r.allow_cloud.unwrap_or(p.default_allow_cloud);
@@ -229,7 +229,7 @@ pub fn route(
             reasons.push("reasoning_tier_too_low".into());
         }
         if let Some(mx) = req.max_p95_latency_ms {
-            if m.p95_latency_ms.map_or(true, |v| v > mx) {
+            if m.p95_latency_ms.is_none_or(|v| v > mx) {
                 reasons.push("latency_limit".into());
             }
         }

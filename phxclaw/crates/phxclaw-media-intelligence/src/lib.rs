@@ -244,10 +244,10 @@ impl WhisperCppProvider {
         if let Some(language) = &request.language {
             command.arg("-l").arg(language);
         }
-        if let Some(threads) = self.threads {
-            if threads > 0 {
-                command.arg("-t").arg(threads.to_string());
-            }
+        if let Some(threads) = self.threads
+            && threads > 0
+        {
+            command.arg("-t").arg(threads.to_string());
         }
         command.stdout(Stdio::null()).stderr(Stdio::piped());
         let mut child = command.spawn()?;

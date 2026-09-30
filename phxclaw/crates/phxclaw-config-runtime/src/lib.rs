@@ -83,12 +83,13 @@ fn scan_secrets(v: &Value, path: &str) -> Result<(), ConfigError> {
         Value::Object(m) => {
             for (k, val) in m {
                 let p = format!("{path}/{k}");
-                if suspicious_key(k) && !allowed_secret_reference(k) {
-                    if matches!(val, Value::String(s) if !s.is_empty()) {
-                        return Err(ConfigError::Invalid(format!(
-                            "plaintext secret-like value forbidden at {p}"
-                        )));
-                    }
+                if suspicious_key(k)
+                    && !allowed_secret_reference(k)
+                    && matches!(val, Value::String(s) if !s.is_empty())
+                {
+                    return Err(ConfigError::Invalid(format!(
+                        "plaintext secret-like value forbidden at {p}"
+                    )));
                 }
                 if allowed_secret_reference(k) {
                     if let Value::String(s) = val {

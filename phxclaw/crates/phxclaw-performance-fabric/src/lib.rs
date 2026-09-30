@@ -271,13 +271,12 @@ impl PerformanceFabric {
             })
         });
 
-        if demand.budget_remaining.is_some() {
-            if eligible
+        if demand.budget_remaining.is_some()
+            && eligible
                 .iter()
                 .any(|c| !c.local && c.estimated_cost.is_none())
-            {
-                eligible.retain(|c| c.local || c.estimated_cost.is_some());
-            }
+        {
+            eligible.retain(|c| c.local || c.estimated_cost.is_some());
         }
         if eligible.is_empty() {
             return Err(FabricError::NoEligibleModel);
@@ -391,6 +390,7 @@ impl PerformanceFabric {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn compile_prompt(
         provider: &str,
         model: &str,

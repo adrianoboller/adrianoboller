@@ -5,7 +5,7 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
-    path::{Path, PathBuf},
+    path::Path,
 };
 use tree_sitter::{Language, Node, Parser, Point};
 use walkdir::WalkDir;
@@ -254,6 +254,7 @@ pub fn analyze(root: &Path) -> RepoIntelligence {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn visit(
     node: Node<'_>,
     src: &[u8],
@@ -266,35 +267,35 @@ fn visit(
 ) {
     let kind = node.kind();
     let mut pushed = false;
-    if is_symbol_kind(language, kind) {
-        if let Some(name) = symbol_name(node, src) {
-            let qualified = if stack.is_empty() {
-                name.clone()
-            } else {
-                format!("{}::{}", stack.join("::"), name)
-            };
-            let id = stable_id(&[
-                "symbol",
-                file,
-                kind,
-                &qualified,
-                &node.start_byte().to_string(),
-                &node.end_byte().to_string(),
-            ]);
-            symbols.push(RepoSymbol {
-                symbol_id: id,
-                file_path: file.into(),
-                language: language.into(),
-                kind: kind.into(),
-                name: name.clone(),
-                qualified_hint: qualified,
-                range: range(node),
-                complexity: branch_complexity(node),
-            });
-            if is_scope_kind(language, kind) {
-                stack.push(name);
-                pushed = true;
-            }
+    if is_symbol_kind(language, kind)
+        && let Some(name) = symbol_name(node, src)
+    {
+        let qualified = if stack.is_empty() {
+            name.clone()
+        } else {
+            format!("{}::{}", stack.join("::"), name)
+        };
+        let id = stable_id(&[
+            "symbol",
+            file,
+            kind,
+            &qualified,
+            &node.start_byte().to_string(),
+            &node.end_byte().to_string(),
+        ]);
+        symbols.push(RepoSymbol {
+            symbol_id: id,
+            file_path: file.into(),
+            language: language.into(),
+            kind: kind.into(),
+            name: name.clone(),
+            qualified_hint: qualified,
+            range: range(node),
+            complexity: branch_complexity(node),
+        });
+        if is_scope_kind(language, kind) {
+            stack.push(name);
+            pushed = true;
         }
     }
     if is_call_kind(language, kind) {
@@ -455,10 +456,10 @@ fn is_dependency_kind(lang: &str, k: &str) -> bool {
 }
 fn symbol_name(node: Node<'_>, src: &[u8]) -> Option<String> {
     for f in ["name", "declarator", "type"] {
-        if let Some(n) = node.child_by_field_name(f) {
-            if let Some(x) = first_identifier(n, src, 0) {
-                return Some(x);
-            }
+        if let Some(n) = node.child_by_field_name(f)
+            && let Some(x) = first_identifier(n, src, 0)
+        {
+            return Some(x);
         }
     }
     first_identifier(node, src, 0)
@@ -495,8 +496,7 @@ fn call_target(node: Node<'_>, src: &[u8]) -> Option<String> {
 }
 fn normalize_target_name(s: &str) -> String {
     s.split(|c: char| !(c.is_alphanumeric() || c == '_'))
-        .filter(|x| !x.is_empty())
-        .last()
+        .rfind(|x| !x.is_empty())
         .unwrap_or(s)
         .to_string()
 }
@@ -605,7 +605,7 @@ fn resolve_dependencies(deps: &mut [RepoDependency], files: &[RepoFile]) {
             .or_insert_with(|| f.path.clone());
     }
     for d in deps {
-        let raw = d.raw.replace('"', " ").replace('\'', " ");
+        let raw = d.raw.replace(['"', '\''], " ");
         let mut hits: Vec<_> = keys
             .iter()
             .filter(|(k, _)| k.len() > 1 && raw.contains(k.as_str()))
@@ -637,23 +637,21 @@ fn compute_hotspots(
     for c in calls {
         if let Some(&a) = idx.get(&c.file_path) {
             for id in &c.resolved_symbol_ids {
-                if let Some(fp) = symfile.get(id) {
-                    if let Some(&b) = idx.get(fp) {
-                        if a != b {
-                            edges.insert((a, b));
-                        }
-                    }
+                if let Some(fp) = symfile.get(id)
+                    && let Some(&b) = idx.get(fp)
+                    && a != b
+                {
+                    edges.insert((a, b));
                 }
             }
         }
     }
     for d in deps {
-        if let (Some(&a), Some(fp)) = (idx.get(&d.file_path), d.resolved_file.as_ref()) {
-            if let Some(&b) = idx.get(fp) {
-                if a != b {
-                    edges.insert((a, b));
-                }
-            }
+        if let (Some(&a), Some(fp)) = (idx.get(&d.file_path), d.resolved_file.as_ref())
+            && let Some(&b) = idx.get(fp)
+            && a != b
+        {
+            edges.insert((a, b));
         }
     }
     let n = paths.len();

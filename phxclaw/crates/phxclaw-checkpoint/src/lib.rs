@@ -151,15 +151,15 @@ impl CheckpointManager {
 
 fn ignored(path: &Path, workspace: &Path, store_root: &Path) -> bool {
     let rel = path.strip_prefix(workspace).ok();
-    if let Some(rel) = rel {
-        if rel.components().next().is_some_and(|c| {
+    if let Some(rel) = rel
+        && rel.components().next().is_some_and(|c| {
             matches!(
                 c.as_os_str().to_str(),
                 Some(".git" | "target" | "node_modules" | "var")
             )
-        }) {
-            return true;
-        }
+        })
+    {
+        return true;
     }
     path.starts_with(store_root)
 }

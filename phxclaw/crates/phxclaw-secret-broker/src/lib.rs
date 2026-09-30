@@ -8,6 +8,7 @@
 //! - revocation and rotation are explicit;
 //! - a bootstrap file key provider is supplied for local/private deployments;
 //!   production deployments should inject a platform key provider / HSM / keyring.
+//!
 //! Portions of the storage/redaction design are informed by MIT-licensed openclaw-rs.
 
 use aes_gcm::{
@@ -26,7 +27,7 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
     fs,
-    path::{Path, PathBuf},
+    path::PathBuf,
     sync::{Arc, Mutex},
 };
 use thiserror::Error;

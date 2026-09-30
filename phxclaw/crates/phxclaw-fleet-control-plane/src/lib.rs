@@ -291,6 +291,7 @@ pub fn verify_signed_control_plan(
     .map_err(|_| ControlError::InvalidControlPlan)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn plan_fanout(
     plan: &SignedControlPlanDocument,
     resolved_approval: Option<ApprovalRef>,
@@ -335,7 +336,7 @@ pub fn plan_fanout(
             arguments: plan.arguments.clone(),
             secret_handles: plan.secret_handles.clone(),
             idempotency_key: format!("{}:{}", plan.idempotency_seed, id),
-            risk: plan.risk.clone(),
+            risk: plan.risk,
             approval: resolved_approval.clone(),
             submitted_at: now,
             not_before: now,

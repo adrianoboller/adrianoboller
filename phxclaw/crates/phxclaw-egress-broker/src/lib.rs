@@ -4,22 +4,12 @@ use std::collections::BTreeSet;
 use thiserror::Error;
 use url::Url;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct EgressPolicy {
     pub enabled: bool,
     /// Exact origins: scheme://host[:port], e.g. http://127.0.0.1:11434.
     pub allowed_origins: BTreeSet<String>,
     pub allow_http: bool,
-}
-
-impl Default for EgressPolicy {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            allowed_origins: BTreeSet::new(),
-            allow_http: false,
-        }
-    }
 }
 
 #[derive(Debug, Error)]
@@ -97,8 +87,10 @@ mod tests {
 
     #[test]
     fn exact_origin_allowlist() {
-        let mut policy = EgressPolicy::default();
-        policy.enabled = true;
+        let mut policy = EgressPolicy {
+            enabled: true,
+            ..EgressPolicy::default()
+        };
         policy
             .allowed_origins
             .insert("https://api.example.com".into());

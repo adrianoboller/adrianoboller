@@ -892,12 +892,13 @@ pub mod managed_runtime {
                 if line == "\r\n" || line == "\n" {
                     break;
                 }
-                if let Some((key, value)) = line.split_once(':') {
-                    if key.trim().eq_ignore_ascii_case("content-length") {
-                        content_length = Some(value.trim().parse().map_err(|_| {
+                if let Some((key, value)) = line.split_once(':')
+                    && key.trim().eq_ignore_ascii_case("content-length")
+                {
+                    content_length =
+                        Some(value.trim().parse().map_err(|_| {
                             RuntimeError::Protocol("invalid Content-Length".into())
                         })?);
-                    }
                 }
             }
             let length = content_length
@@ -978,15 +979,14 @@ pub mod managed_runtime {
             cancellation: Cancellation,
         ) -> Result<JsonRpcExchange, RuntimeError> {
             self.capabilities.allow_method(&request.method)?;
-            if request.method == "tools/call" {
-                if let Some(name) = request
+            if request.method == "tools/call"
+                && let Some(name) = request
                     .params
                     .as_ref()
                     .and_then(|p| p.get("name"))
                     .and_then(Value::as_str)
-                {
-                    self.capabilities.allow_tool(name)?;
-                }
+            {
+                self.capabilities.allow_tool(name)?;
             }
             let request_id = request.id.clone();
             let method = request.method.clone();
@@ -1336,15 +1336,14 @@ pub mod managed_runtime {
             cancellation: Cancellation,
         ) -> Result<JsonRpcExchange, RuntimeError> {
             self.capabilities.allow_method(&request.method)?;
-            if request.method == "tools/call" {
-                if let Some(name) = request
+            if request.method == "tools/call"
+                && let Some(name) = request
                     .params
                     .as_ref()
                     .and_then(|p| p.get("name"))
                     .and_then(Value::as_str)
-                {
-                    self.capabilities.allow_tool(name)?;
-                }
+            {
+                self.capabilities.allow_tool(name)?;
             }
             let request_id = request.id.clone();
             let method = request.method.clone();
@@ -1546,7 +1545,7 @@ pub mod managed_runtime {
                 RuntimeError::ProcessClosed
                     | RuntimeError::Timeout
                     | RuntimeError::Http(_)
-                    | RuntimeError::HttpStatus(502 | 503 | 504)
+                    | RuntimeError::HttpStatus(502..=504)
             )
         }
     }

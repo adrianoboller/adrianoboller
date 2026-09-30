@@ -97,7 +97,7 @@ impl<B: SandboxBackend> ExtensionHost<B> {
             let valid = self
                 .registry
                 .manifest(&plugin_uuid)
-                .filter(|manifest| self.registry.state(&plugin_uuid) == Some(PluginState::Enabled))
+                .filter(|_manifest| self.registry.state(&plugin_uuid) == Some(PluginState::Enabled))
                 .filter(|manifest| manifest.capabilities.iter().any(|item| item == capability));
             return valid.ok_or_else(|| ExtensionHostError::InvalidPin {
                 capability: capability.to_owned(),

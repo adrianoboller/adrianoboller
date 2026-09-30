@@ -97,15 +97,15 @@ impl CommunityRegistryIndex {
             if publisher.signer.trim().is_empty() {
                 errors.push(format!("publisher {} is missing signer", publisher.id));
             }
-            if let Some(url) = &publisher.website {
-                if Url::parse(url).is_err() {
-                    errors.push(format!("publisher {} has invalid website", publisher.id));
-                }
+            if let Some(url) = &publisher.website
+                && Url::parse(url).is_err()
+            {
+                errors.push(format!("publisher {} has invalid website", publisher.id));
             }
-            if let Some(url) = &publisher.repository {
-                if Url::parse(url).is_err() {
-                    errors.push(format!("publisher {} has invalid repository", publisher.id));
-                }
+            if let Some(url) = &publisher.repository
+                && Url::parse(url).is_err()
+            {
+                errors.push(format!("publisher {} has invalid repository", publisher.id));
             }
             if publishers.insert(publisher.id.clone(), publisher).is_some() {
                 errors.push(format!("duplicate publisher id: {}", publisher.id));

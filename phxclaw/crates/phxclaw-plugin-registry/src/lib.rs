@@ -328,17 +328,17 @@ impl PluginRegistry {
     fn quarantine_path(&mut self, path: &Path, error: &RegistryError) {
         let mut plugin_uuid = None;
         let mut plugin_name = None;
-        if let Ok(input) = fs::read_to_string(path) {
-            if let Ok(value) = serde_json::from_str::<serde_json::Value>(&input) {
-                plugin_uuid = value
-                    .get("uuid")
-                    .and_then(|value| value.as_str())
-                    .and_then(|value| Uuid::parse_str(value).ok());
-                plugin_name = value
-                    .get("name")
-                    .and_then(|value| value.as_str())
-                    .map(str::to_owned);
-            }
+        if let Ok(input) = fs::read_to_string(path)
+            && let Ok(value) = serde_json::from_str::<serde_json::Value>(&input)
+        {
+            plugin_uuid = value
+                .get("uuid")
+                .and_then(|value| value.as_str())
+                .and_then(|value| Uuid::parse_str(value).ok());
+            plugin_name = value
+                .get("name")
+                .and_then(|value| value.as_str())
+                .map(str::to_owned);
         }
         if let Some(plugin_uuid) = plugin_uuid {
             self.states.insert(plugin_uuid, PluginState::Quarantined);

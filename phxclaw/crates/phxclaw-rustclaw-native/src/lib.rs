@@ -302,7 +302,7 @@ pub fn validate_schedule(schedule: &ScheduleSpec) -> Result<(), RustClawNativeEr
                 return Err(RustClawNativeError::InvalidCronExpression);
             }
             let fields = expr.split_whitespace().count();
-            if matches!(fields, 5 | 6 | 7) {
+            if matches!(fields, 5..=7) {
                 Ok(())
             } else {
                 Err(RustClawNativeError::InvalidCronExpression)

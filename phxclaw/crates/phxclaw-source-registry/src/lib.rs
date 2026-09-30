@@ -395,7 +395,7 @@ fn make_excerpt(text: &str, query_terms: &BTreeSet<String>, max_chars: usize) ->
     };
     let mut excerpt = text[start_byte..end_byte].trim().to_string();
     if start_byte > 0 {
-        excerpt.insert_str(0, "…");
+        excerpt.insert(0, '…');
     }
     if end_byte < text.len() {
         excerpt.push('…');

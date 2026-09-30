@@ -42,8 +42,11 @@ pub struct CanvasNode {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CanvasEdge {
     pub id: String,
-    pub fromNode: String,
-    pub toNode: String,
+    // O formato JSON Canvas do Obsidian grava camelCase; o nome Rust segue a convencao.
+    #[serde(rename = "fromNode")]
+    pub from_node: String,
+    #[serde(rename = "toNode")]
+    pub to_node: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
 }
@@ -113,8 +116,8 @@ pub fn canvas_from_graph(nodes: &[(Uuid, String)], edges: &[(Uuid, Uuid, String)
         .enumerate()
         .map(|(i, (a, b, label))| CanvasEdge {
             id: format!("e{}", i),
-            fromNode: a.to_string(),
-            toNode: b.to_string(),
+            from_node: a.to_string(),
+            to_node: b.to_string(),
             label: Some(label.clone()),
         })
         .collect();

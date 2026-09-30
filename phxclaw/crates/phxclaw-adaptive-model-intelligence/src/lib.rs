@@ -166,7 +166,7 @@ pub fn route_adaptive(
     candidates.sort_by(|a, b| {
         (a.provider_uuid.to_string(), &a.model_id).cmp(&(b.provider_uuid.to_string(), &b.model_id))
     });
-    ranked.sort_by(|a, b| a.cmp(b));
+    ranked.sort();
     let (selected_provider_uuid, selected_model_id, used) =
         if let Some((_, p, m, _)) = ranked.first() {
             (*p, m.clone(), true)

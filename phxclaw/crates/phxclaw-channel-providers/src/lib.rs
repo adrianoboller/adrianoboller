@@ -171,16 +171,19 @@ impl TelegramProvider {
                 }))
                 .send()
                 .map_err(|error| {
-                    ProviderError::Request(scrub_text(&error.to_string(), &[token.clone()]))
+                    ProviderError::Request(scrub_text(
+                        &error.to_string(),
+                        std::slice::from_ref(token),
+                    ))
                 })?;
             let status = response.status();
             let body = response.text().map_err(|error| {
-                ProviderError::Request(scrub_text(&error.to_string(), &[token.clone()]))
+                ProviderError::Request(scrub_text(&error.to_string(), std::slice::from_ref(token)))
             })?;
             if !status.is_success() {
                 return Err(ProviderError::Http {
                     status: status.as_u16(),
-                    body: scrub_text(&body, &[token.clone()]),
+                    body: scrub_text(&body, std::slice::from_ref(token)),
                 });
             }
             let parsed: TelegramResponse = serde_json::from_str(&body)
@@ -207,7 +210,7 @@ impl TelegramProvider {
                 token.expose()
             );
             let response = self.client.get(endpoint).send().map_err(|error| {
-                ProviderError::Request(scrub_text(&error.to_string(), &[token.clone()]))
+                ProviderError::Request(scrub_text(&error.to_string(), std::slice::from_ref(token)))
             })?;
             if !response.status().is_success() {
                 return Ok(ChannelProbe {
@@ -349,7 +352,10 @@ impl DiscordProvider {
                 .json(&json!({"content":message.text,"allowed_mentions":{"parse":[]}}))
                 .send()
                 .map_err(|error| {
-                    ProviderError::Request(scrub_text(&error.to_string(), &[token.clone()]))
+                    ProviderError::Request(scrub_text(
+                        &error.to_string(),
+                        std::slice::from_ref(token),
+                    ))
                 })?;
             let status = response.status();
             let body = response
@@ -358,7 +364,7 @@ impl DiscordProvider {
             if !status.is_success() {
                 return Err(ProviderError::Http {
                     status: status.as_u16(),
-                    body: scrub_text(&body, &[token.clone()]),
+                    body: scrub_text(&body, std::slice::from_ref(token)),
                 });
             }
             let parsed: DiscordMessage = serde_json::from_str(&body)
@@ -380,7 +386,10 @@ impl DiscordProvider {
                 .header("Authorization", format!("Bot {}", token.expose()))
                 .send()
                 .map_err(|error| {
-                    ProviderError::Request(scrub_text(&error.to_string(), &[token.clone()]))
+                    ProviderError::Request(scrub_text(
+                        &error.to_string(),
+                        std::slice::from_ref(token),
+                    ))
                 })?;
             if !response.status().is_success() {
                 return Ok(ChannelProbe {
@@ -509,11 +518,11 @@ impl SlackProvider {
                 .bearer_auth(token.expose())
                 .json(&json!({"channel":message.conversation_id,"text":message.text}))
                 .send()
-                .map_err(|error| ProviderError::Request(scrub_text(&error.to_string(), &[token.clone()])))?;
+                .map_err(|error| ProviderError::Request(scrub_text(&error.to_string(), std::slice::from_ref(token))))?;
             let status = response.status();
             let body = response.text().map_err(|error| ProviderError::Request(error.to_string()))?;
             if !status.is_success() {
-                return Err(ProviderError::Http { status: status.as_u16(), body: scrub_text(&body, &[token.clone()]) });
+                return Err(ProviderError::Http { status: status.as_u16(), body: scrub_text(&body, std::slice::from_ref(token)) });
             }
             let parsed: SlackMessageResponse = serde_json::from_str(&body).map_err(|error| ProviderError::Response(error.to_string()))?;
             if !parsed.ok { return Err(ProviderError::Response(parsed.error.unwrap_or_else(|| "Slack returned ok=false".into()))); }
@@ -532,7 +541,10 @@ impl SlackProvider {
                 .bearer_auth(token.expose())
                 .send()
                 .map_err(|error| {
-                    ProviderError::Request(scrub_text(&error.to_string(), &[token.clone()]))
+                    ProviderError::Request(scrub_text(
+                        &error.to_string(),
+                        std::slice::from_ref(token),
+                    ))
                 })?;
             let status = response.status();
             let body = response
@@ -671,9 +683,9 @@ impl WhatsAppProvider {
         self.with_token("channel:whatsapp:send",|token|{
             let response=self.client.post(self.endpoint("/messages")).bearer_auth(token.expose())
                 .json(&json!({"messaging_product":"whatsapp","recipient_type":"individual","to":message.conversation_id,"type":"text","text":{"preview_url":false,"body":message.text}}))
-                .send().map_err(|error|ProviderError::Request(scrub_text(&error.to_string(),&[token.clone()])))?;
+                .send().map_err(|error|ProviderError::Request(scrub_text(&error.to_string(),std::slice::from_ref(token))))?;
             let status=response.status(); let body=response.text().map_err(|error|ProviderError::Request(error.to_string()))?;
-            if !status.is_success(){return Err(ProviderError::Http{status:status.as_u16(),body:scrub_text(&body,&[token.clone()])});}
+            if !status.is_success(){return Err(ProviderError::Http{status:status.as_u16(),body:scrub_text(&body,std::slice::from_ref(token))});}
             let parsed:WhatsAppMessageResponse=serde_json::from_str(&body).map_err(|error|ProviderError::Response(error.to_string()))?;
             let id=parsed.messages.and_then(|mut x|x.pop()).map(|x|x.id).ok_or_else(||ProviderError::Response("WhatsApp response missing message id".into()))?;
             Ok(ProviderReceipt{provider_message_id:id,metadata:json!({"provider":"whatsapp","phone_number_id":self.phone_number_id})})
@@ -692,7 +704,10 @@ impl WhatsAppProvider {
                 .bearer_auth(token.expose())
                 .send()
                 .map_err(|error| {
-                    ProviderError::Request(scrub_text(&error.to_string(), &[token.clone()]))
+                    ProviderError::Request(scrub_text(
+                        &error.to_string(),
+                        std::slice::from_ref(token),
+                    ))
                 })?;
             if !response.status().is_success() {
                 return Ok(ChannelProbe {
@@ -838,7 +853,7 @@ impl TeamsProvider {
                 .json(&json!({"body":{"contentType":"text","content":message.text}}))
                 .send()
                 .map_err(|e| {
-                    ProviderError::Request(scrub_text(&e.to_string(), &[token.clone()]))
+                    ProviderError::Request(scrub_text(&e.to_string(), std::slice::from_ref(token)))
                 })?;
             let status = response.status();
             let body = response
@@ -847,7 +862,7 @@ impl TeamsProvider {
             if !status.is_success() {
                 return Err(ProviderError::Http {
                     status: status.as_u16(),
-                    body: scrub_text(&body, &[token.clone()]),
+                    body: scrub_text(&body, std::slice::from_ref(token)),
                 });
             }
             let parsed: TeamsMessage =
@@ -867,7 +882,7 @@ impl TeamsProvider {
                 .bearer_auth(token.expose())
                 .send()
                 .map_err(|e| {
-                    ProviderError::Request(scrub_text(&e.to_string(), &[token.clone()]))
+                    ProviderError::Request(scrub_text(&e.to_string(), std::slice::from_ref(token)))
                 })?;
             if !response.status().is_success() {
                 return Ok(ChannelProbe {

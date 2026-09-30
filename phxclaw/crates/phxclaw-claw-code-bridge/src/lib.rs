@@ -130,12 +130,12 @@ impl ClawCodeBridge {
             .stderr(Stdio::piped())
             .spawn()?;
 
-        if let Some(text) = stdin_text {
-            if let Some(mut stdin) = child.stdin.take() {
-                stdin.write_all(text.as_bytes())?;
-                stdin.write_all(b"\n")?;
-                stdin.flush()?;
-            }
+        if let Some(text) = stdin_text
+            && let Some(mut stdin) = child.stdin.take()
+        {
+            stdin.write_all(text.as_bytes())?;
+            stdin.write_all(b"\n")?;
+            stdin.flush()?;
         }
 
         let timeout = Duration::from_millis(self.config.timeout_ms.max(1));

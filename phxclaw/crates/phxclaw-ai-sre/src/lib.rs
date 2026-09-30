@@ -298,7 +298,7 @@ fn ceil_div(n: u128, d: u128) -> u128 {
     if d == 0 {
         u128::MAX
     } else {
-        (n + d - 1) / d
+        n.div_ceil(d)
     }
 }
 fn policy_active(now_unix: i64, p: &VerifiedSrePolicyDocument) -> bool {

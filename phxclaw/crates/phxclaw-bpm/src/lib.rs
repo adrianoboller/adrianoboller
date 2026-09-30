@@ -116,19 +116,19 @@ pub fn import_bpmn_xml(xml: &str) -> Result<BpmProcess, BpmError> {
                         let name = attr(&e, b"name")?;
                         process.nodes.insert(id.clone(), BpmNode { id, name, kind });
                     }
-                } else if local == b"sequenceFlow" {
-                    if let (Some(id), Some(source), Some(target)) = (
+                } else if local == b"sequenceFlow"
+                    && let (Some(id), Some(source), Some(target)) = (
                         attr(&e, b"id")?,
                         attr(&e, b"sourceRef")?,
                         attr(&e, b"targetRef")?,
-                    ) {
-                        process.flows.push(BpmFlow {
-                            id,
-                            source,
-                            target,
-                            name: attr(&e, b"name")?,
-                        });
-                    }
+                    )
+                {
+                    process.flows.push(BpmFlow {
+                        id,
+                        source,
+                        target,
+                        name: attr(&e, b"name")?,
+                    });
                 }
             }
             Ok(Event::Eof) => break,

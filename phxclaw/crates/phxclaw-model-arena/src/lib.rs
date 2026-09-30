@@ -418,7 +418,7 @@ pub fn aggregate_window(
     for o in observations {
         if o.tenant_uuid != spec.tenant_uuid
             || o.arena_uuid != spec.arena_uuid
-            || &o.champion != &spec.champion
+            || o.champion != spec.champion
             || &o.challenger != challenger
             || o.evidence_class != spec.evidence_class
             || !valid_sha(&o.dataset_sha256)

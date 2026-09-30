@@ -148,7 +148,8 @@ fn percentile95(mut v: Vec<u64>) -> u64 {
         return 0;
     }
     v.sort_unstable();
-    let idx = ((v.len() * 95 + 99) / 100)
+    let idx = (v.len() * 95)
+        .div_ceil(100)
         .saturating_sub(1)
         .min(v.len() - 1);
     v[idx]

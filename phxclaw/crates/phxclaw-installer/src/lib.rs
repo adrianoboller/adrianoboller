@@ -779,6 +779,7 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), InstallerError> {
     fs::rename(tmp, path)?;
     Ok(())
 }
+#[allow(clippy::too_many_arguments)]
 fn evidence(
     ledger: Option<&EvidenceLedger>,
     action_uuid: Uuid,

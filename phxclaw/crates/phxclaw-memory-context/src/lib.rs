@@ -283,18 +283,16 @@ fn scope_matches(scope: &MemoryScope, filter: &ContextScopeFilter) -> bool {
     match scope {
         MemoryScope::Session(uuid) => filter
             .session_uuid
-            .map_or(true, |candidate| candidate == *uuid),
-        MemoryScope::Agent(uuid) => filter
-            .agent_uuid
-            .map_or(true, |candidate| candidate == *uuid),
+            .is_none_or(|candidate| candidate == *uuid),
+        MemoryScope::Agent(uuid) => filter.agent_uuid.is_none_or(|candidate| candidate == *uuid),
         MemoryScope::Project(project) => filter
             .project
             .as_ref()
-            .map_or(true, |candidate| candidate == project),
+            .is_none_or(|candidate| candidate == project),
         MemoryScope::Organization(org) => filter
             .organization
             .as_ref()
-            .map_or(true, |candidate| candidate == org),
+            .is_none_or(|candidate| candidate == org),
     }
 }
 
