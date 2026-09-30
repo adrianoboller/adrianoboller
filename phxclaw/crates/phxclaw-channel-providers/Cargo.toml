@@ -17,3 +17,4 @@ uuid.workspace = true
 [dev-dependencies]
 phxclaw-evidence-ledger = { path = "../phxclaw-evidence-ledger" }
 phxclaw-live-bus = { path = "../phxclaw-live-bus" }
+chrono.workspace = true

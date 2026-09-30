@@ -42,7 +42,7 @@ BLOQUEIOS = {
         "exige hardware multiplataforma (Windows, macOS, Android, iOS). O servidor WSS existe "
         "desde 30/09 e o pareamento esta provado em Linux entre processos, com TLS, token de "
         "uso unico, reconexao pela chave guardada e cerca crescente; falta o resto das plataformas"),
-    "channel_provider_credentialed_e2e": "exige credenciais reais de Telegram/Discord/Slack/WhatsApp/Teams (decisao do dono)",
+    "channel_provider_credentialed_e2e": "PHXCLAW_TELEGRAM_BOT_TOKEN/PHXCLAW_TELEGRAM_CHAT_ID nao definidos (bot do BotFather, nas variaveis do ambiente)",
     "real_stt_model_e2e": "PHXCLAW_E2E_WHISPER_* nao definidos (whisper.cpp + modelo com SHA-256 de fonte externa)",
 }
 
@@ -118,6 +118,11 @@ def main() -> int:
         if codigo == "real_stt_model_e2e" and os.environ.get("PHXCLAW_E2E_WHISPER_BIN"):
             portao(codigo, True, "cargo test -q -p phxclaw-media-intelligence --test stt_e2e -- --ignored 2>&1",
                    detalhe=lambda o: (re.search(r"test result: .*?;.*?;", o) or [None])[0])
+        elif codigo == "channel_provider_credentialed_e2e" and os.environ.get("PHXCLAW_TELEGRAM_BOT_TOKEN"):
+            # Telegram real com o bot do dono: conecta, entrega e recusa token adulterado.
+            portao(codigo, True,
+                   "cargo test -q -p phxclaw-channel-providers --test telegram_e2e -- --ignored --nocapture 2>&1",
+                   detalhe=lambda o: (re.search(r"entregue: .*", o) or [None])[0])
         elif codigo == "native_tauri_e2e":
             portao(codigo, True, "cargo build -q -p phxclaw-desktop && python3 tests/desktop/desktop_e2e.py 2>&1",
                    detalhe=lambda o: (re.search(r"placar: .*", o) or [None])[0])

@@ -4178,6 +4178,7 @@ dependencies = [
 name = "phxclaw-channel-providers"
 version = "0.70.0"
 dependencies = [
+ "chrono",
  "phxclaw-channel-gateway",
  "phxclaw-evidence-ledger",
  "phxclaw-live-bus",
