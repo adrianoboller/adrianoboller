@@ -15,6 +15,7 @@
 //!
 //! Os quatro juntos formam a tabela de dados `cadastroClientes`.
 
+pub mod aes;
 pub mod asn1;
 pub mod base64;
 pub mod carga;

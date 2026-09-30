@@ -34,7 +34,7 @@ use std::io::{Read, Write};
 
 use crate::error::{PhxError, Result};
 use crate::hash::iguais_em_tempo_constante;
-use crate::tls13::{self, tipo, Protecao, Transcricao, MAX_CLARO, RESUMO};
+use crate::tls13::{self, tipo, Conjunto, Protecao, Transcricao, MAX_CLARO, RESUMO};
 
 /// O maior `ClientHello` aceito. Um navegador com chave pos-quantica manda
 /// uns 1,8 KiB; o teto da folga de sobra sem deixar um estranho alocar 16 MiB
@@ -45,7 +45,6 @@ pub const TETO_CLIENT_HELLO: usize = 32 * 1024;
 /// `ClientHello` (o `Finished` tem 36 bytes; o `KeyUpdate`, 5).
 const TETO_MENSAGEM: usize = 1024;
 
-const CHACHA20_POLY1305_SHA256: u16 = 0x1303;
 const X25519: u16 = 0x001d;
 const SECP256R1: u16 = 0x0017;
 const ECDSA_SECP256R1_SHA256: u16 = 0x0403;
@@ -327,11 +326,11 @@ fn extensao(t: u16, dados: &[u8]) -> Vec<u8> {
     r
 }
 
-fn server_hello(random: &[u8; 32], sessao: &[u8], chave_ext: &[u8]) -> Vec<u8> {
+fn server_hello(random: &[u8; 32], sessao: &[u8], conjunto: Conjunto, chave_ext: &[u8]) -> Vec<u8> {
     let mut c = vec![3, 3];
     c.extend_from_slice(random);
     c.extend_from_slice(&vetor8(sessao));
-    c.extend_from_slice(&CHACHA20_POLY1305_SHA256.to_be_bytes());
+    c.extend_from_slice(&conjunto.id().to_be_bytes());
     c.push(0);
     let mut e = extensao(ext::VERSOES, &TLS13.to_be_bytes());
     e.extend_from_slice(&extensao(ext::CHAVES, chave_ext));
@@ -556,23 +555,32 @@ impl Troca {
 /// Os grupos na ordem da nossa preferencia.
 const GRUPOS: [u16; 2] = [X25519, SECP256R1];
 
-fn conferir_ola(o: &Ola) -> Aperto<()> {
+/// Os conjuntos na ordem da nossa preferencia: o ChaCha20 primeiro, porque o
+/// AES desta casa e de tempo constante e por isso mais lento (`crate::aes`).
+/// A §4.1.1 deixa a escolha ao servidor.
+const CONJUNTOS: [Conjunto; 2] = [Conjunto::Chacha20Poly1305Sha256, Conjunto::Aes128GcmSha256];
+
+/// Confere o `ClientHello` e devolve o conjunto escolhido.
+fn conferir_ola(o: &Ola) -> Aperto<Conjunto> {
     if !o.versoes.contains(&TLS13) {
         return falha(alerta::PROTOCOL_VERSION, "o cliente nao oferece TLS 1.3");
     }
-    if !o.conjuntos.contains(&CHACHA20_POLY1305_SHA256) {
+    let Some(conjunto) = CONJUNTOS
+        .into_iter()
+        .find(|c| o.conjuntos.contains(&c.id()))
+    else {
         return falha(
             alerta::HANDSHAKE_FAILURE,
-            "o cliente nao oferece TLS_CHACHA20_POLY1305_SHA256",
+            "o cliente nao oferece TLS_CHACHA20_POLY1305_SHA256 nem TLS_AES_128_GCM_SHA256",
         );
-    }
+    };
     if !o.assinaturas.contains(&ECDSA_SECP256R1_SHA256) {
         return falha(
             alerta::HANDSHAKE_FAILURE,
             "o cliente nao aceita ecdsa_secp256r1_sha256",
         );
     }
-    Ok(())
+    Ok(conjunto)
 }
 
 /// O que o aperto negociou, para quem usa o fluxo.
@@ -585,6 +593,8 @@ pub struct Negociado {
     pub nome: Option<String>,
     /// O grupo da troca de chaves (`0x001d` X25519, `0x0017` P-256).
     pub grupo: u16,
+    /// O conjunto de cifra do registro.
+    pub conjunto: Conjunto,
 }
 
 fn apertar<S: Read + Write>(
@@ -601,7 +611,7 @@ fn apertar<S: Read + Write>(
         );
     }
     let mut ola = analisar_ola(&m[4..])?;
-    conferir_ola(&ola)?;
+    let conjunto = conferir_ola(&ola)?;
     transcricao.acrescentar(&m);
     let mut ccs_enviado = false;
 
@@ -624,7 +634,7 @@ fn apertar<S: Read + Write>(
             let resumo_ch1 = transcricao.resumo();
             transcricao = Transcricao::default();
             transcricao.acrescentar(&mensagem(hs::MESSAGE_HASH, &resumo_ch1));
-            let hrr = server_hello(&RANDOM_HRR, &ola.sessao, &g.to_be_bytes());
+            let hrr = server_hello(&RANDOM_HRR, &ola.sessao, conjunto, &g.to_be_bytes());
             transcricao.acrescentar(&hrr);
             r.escrever(tipo::HANDSHAKE, &hrr)?;
             if !ola.sessao.is_empty() {
@@ -640,7 +650,13 @@ fn apertar<S: Read + Write>(
                 );
             }
             let ola2 = analisar_ola(&m2[4..])?;
-            conferir_ola(&ola2)?;
+            // §4.1.4: o conjunto do HRR e o do ServerHello tem de ser o mesmo.
+            if conferir_ola(&ola2)? != conjunto {
+                return falha(
+                    alerta::ILLEGAL_PARAMETER,
+                    "o segundo ClientHello mudou o conjunto de cifra",
+                );
+            }
             if ola2.sessao != ola.sessao {
                 return falha(
                     alerta::ILLEGAL_PARAMETER,
@@ -670,7 +686,7 @@ fn apertar<S: Read + Write>(
     crate::cifra::sortear(&mut random);
     let mut chave_ext = troca.grupo().to_be_bytes().to_vec();
     chave_ext.extend_from_slice(&vetor16(&troca.publica()));
-    let sh = server_hello(&random, &ola.sessao, &chave_ext);
+    let sh = server_hello(&random, &ola.sessao, conjunto, &chave_ext);
     transcricao.acrescentar(&sh);
     r.escrever(tipo::HANDSHAKE, &sh)?;
     if !ola.sessao.is_empty() && !ccs_enviado {
@@ -682,8 +698,8 @@ fn apertar<S: Read + Write>(
     let t_sh = transcricao.resumo();
     let c_hs = tls13::derivar_segredo(&segredo_hs, "c hs traffic", &t_sh);
     let s_hs = tls13::derivar_segredo(&segredo_hs, "s hs traffic", &t_sh);
-    r.envio = Some(Protecao::de_segredo(&s_hs));
-    r.recebimento = Some(Protecao::de_segredo(&c_hs));
+    r.envio = Some(Protecao::de_segredo_com(&s_hs, conjunto));
+    r.recebimento = Some(Protecao::de_segredo_com(&c_hs, conjunto));
 
     // EncryptedExtensions: so o ALPN, e so se houver um em comum.
     let alpn = ola
@@ -754,6 +770,7 @@ fn apertar<S: Read + Write>(
         alpn,
         nome: ola.nome,
         grupo,
+        conjunto,
     };
     Ok((negociado, c_ap, s_ap))
 }
@@ -780,8 +797,8 @@ pub fn aceitar<S: Read + Write>(
         Ok((negociado, c_ap, s_ap)) => Ok(FluxoTls {
             r: Registro {
                 fluxo: r.fluxo,
-                envio: Some(Protecao::de_segredo(&s_ap)),
-                recebimento: Some(Protecao::de_segredo(&c_ap)),
+                envio: Some(Protecao::de_segredo_com(&s_ap, negociado.conjunto)),
+                recebimento: Some(Protecao::de_segredo_com(&c_ap, negociado.conjunto)),
                 pendente: Vec::new(),
             },
             segredo_envio: s_ap,
@@ -872,12 +889,18 @@ impl<S: Read + Write> FluxoTls<S> {
                 (hs::KEY_UPDATE, [pedido @ (0 | 1)]) => {
                     // §4.6.3: o proximo registro do cliente ja vem com a chave nova.
                     self.segredo_recebimento = proximo_segredo(&self.segredo_recebimento);
-                    self.r.recebimento = Some(Protecao::de_segredo(&self.segredo_recebimento));
+                    self.r.recebimento = Some(Protecao::de_segredo_com(
+                        &self.segredo_recebimento,
+                        self.negociado.conjunto,
+                    ));
                     if *pedido == 1 {
                         self.r
                             .escrever(tipo::HANDSHAKE, &mensagem(hs::KEY_UPDATE, &[0]))?;
                         self.segredo_envio = proximo_segredo(&self.segredo_envio);
-                        self.r.envio = Some(Protecao::de_segredo(&self.segredo_envio));
+                        self.r.envio = Some(Protecao::de_segredo_com(
+                            &self.segredo_envio,
+                            self.negociado.conjunto,
+                        ));
                     }
                 }
                 (hs::KEY_UPDATE, _) => {
@@ -1135,19 +1158,74 @@ mod testes {
 
     #[test]
     fn cliente_sem_o_nosso_conjunto_recebe_o_alerta_e_nao_a_conexao() {
-        let (_d, id, pem) = com_certificado("sem-chacha");
+        // AES-256 so: nenhum dos dois que esta casa fala.
+        let (_d, id, pem) = com_certificado("sem-conjunto");
         let (porta, h) = servir(id);
         let (s, visto) = s_client(
             porta,
             &pem,
-            &["-ciphersuites", "TLS_AES_128_GCM_SHA256"],
+            &["-ciphersuites", "TLS_AES_256_GCM_SHA384"],
             &[PEDIDO],
             h,
         );
         let e = visto.expect_err("aceitou sem conjunto em comum");
-        assert!(e.contains("CHACHA20"), "{e}");
+        assert!(e.contains("AES_128_GCM"), "{e}");
         assert!(s.contains("handshake failure"), "{s}");
         assert!(!s.contains("ola!"));
+    }
+
+    #[test]
+    fn cliente_so_de_aes_128_gcm_conversa_pelo_aes() {
+        // O que a §9.1 obriga: o cliente que so fala AES-128-GCM, com o curl
+        // conferindo a cadeia -- e troca de chave no meio, que re-deriva a
+        // chave AES pelo conjunto negociado.
+        let (_d, id, pem) = com_certificado("so-aes");
+        let (porta, h) = servir(id);
+        let (s, visto) = s_client(
+            porta,
+            &pem,
+            &["-ciphersuites", "TLS_AES_128_GCM_SHA256", "-msg"],
+            &["K\n", PEDIDO],
+            h,
+        );
+        let (neg, _) = visto.expect("o servidor falhou");
+        assert!(s.contains("ola!"), "{s}");
+        assert!(s.contains("TLS_AES_128_GCM_SHA256"), "{s}");
+        assert!(s.matches("KeyUpdate").count() >= 2, "{s}");
+        assert_eq!(neg.conjunto, Conjunto::Aes128GcmSha256);
+
+        let (_d2, id, pem) = com_certificado("so-aes-curl");
+        let (porta, h) = servir(id);
+        let c = Command::new("curl")
+            .args(["-sS", "--max-time", "20", "--tlsv1.3"])
+            .args(["--tls13-ciphers", "TLS_AES_128_GCM_SHA256"])
+            .arg("--cacert")
+            .arg(&pem)
+            .arg(format!("https://127.0.0.1:{porta}/"))
+            .output()
+            .unwrap();
+        let (neg, _) = h.join().unwrap().expect("o servidor falhou com o curl");
+        assert_eq!(String::from_utf8_lossy(&c.stdout), "ola!\n");
+        assert_eq!(neg.conjunto, Conjunto::Aes128GcmSha256);
+    }
+
+    #[test]
+    fn com_os_dois_oferecidos_o_servidor_prefere_o_chacha() {
+        let (_d, id, pem) = com_certificado("preferencia");
+        let (porta, h) = servir(id);
+        let (s, visto) = s_client(
+            porta,
+            &pem,
+            &[
+                "-ciphersuites",
+                "TLS_AES_128_GCM_SHA256:TLS_CHACHA20_POLY1305_SHA256",
+            ],
+            &[PEDIDO],
+            h,
+        );
+        let (neg, _) = visto.expect("o servidor falhou");
+        assert!(s.contains("ola!"), "{s}");
+        assert_eq!(neg.conjunto, Conjunto::Chacha20Poly1305Sha256);
     }
 
     #[test]
@@ -1231,7 +1309,9 @@ mod testes {
         let mut corpo = vec![3, 3];
         corpo.extend_from_slice(&[7u8; 32]);
         corpo.extend_from_slice(&vetor8(&[]));
-        corpo.extend_from_slice(&vetor16(&CHACHA20_POLY1305_SHA256.to_be_bytes()));
+        corpo.extend_from_slice(&vetor16(
+            &Conjunto::Chacha20Poly1305Sha256.id().to_be_bytes(),
+        ));
         corpo.extend_from_slice(&vetor8(&[0]));
         let mut chave = X25519.to_be_bytes().to_vec();
         chave.extend_from_slice(&vetor16(&crate::x25519::chave_publica(&privada)));
