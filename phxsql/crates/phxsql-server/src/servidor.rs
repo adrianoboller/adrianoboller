@@ -1594,6 +1594,10 @@ impl Servidor {
         // Antes de tudo, e antes da recuperacao abaixo -- que tambem
         // sincroniza: o `fsync` recusado derruba o processo (pedido 509).
         phxsql_store::sincronia::ao_recusar(fsync_recusado_derruba_o_processo);
+        // E o arranque que vem DEPOIS de uma queda dessas, no mesmo boot, nao
+        // sobe (pedido 509, saida (a), decisao do dono em 30/09/2026).
+        conferir_sentinela_509(&config.base)?;
+        registrar_base_da_sentinela(&config.base);
         // `recursos.cache_paginas` estava no config.json e na documentacao
         // desde a 0.13.0 -- e nao era lido por ninguem, porque o cache nao
         // existia. Agora existe, e o campo passa a valer. Tem de ser aqui,
@@ -28922,7 +28926,116 @@ impl<T> TomarTrava<T> for Mutex<T> {
 /// boot le do cache do nucleo o que o disco perdeu, o `sincronizar` responde
 /// Ok e a marca sairia -- o 509 continua aberto nessa metade. O que parar
 /// compra e nao confirmar mais nada sobre este disco neste processo.
+/// A sentinela do pedido 509, na raiz da instancia.
+///
+/// # O buraco que ela fecha
+///
+/// O `fsync` recusado derruba o processo -- mas o supervisor que o sobe de
+/// novo no MESMO boot encontra o cache do nucleo devolvendo o que o disco
+/// perdeu: medido pelo papel C (3/3), o arranque le as 5.000 linhas do
+/// cache, a recuperacao as da por aplicadas, a marca sai, e depois de
+/// remontar o `.log` esta ilegivel e o `.ndx` com CRC invalido. Nenhum dos
+/// quatro motores de referencia trata o caso; a saida (a) -- nao subir no
+/// mesmo boot -- foi decisao do dono (SLA), em 30/09/2026.
+///
+/// # O formato
+///
+/// Texto, tres linhas `chave=valor`: `boot_id` (o de
+/// `/proc/sys/kernel/random/boot_id`, ou vazio onde nao ha), `caminho` (o
+/// arquivo cujo `fsync` foi recusado) e `quando_ms`. Ver `docs/FORMATO.md`.
+///
+/// Gravada SEM `fsync`, de proposito: quem precisa le-la e o arranque do
+/// MESMO boot, pelo mesmo cache. Depois de reiniciar, perde-la nao custa nada
+/// -- o cache que mentia tambem se foi.
+const SENTINELA_509: &str = ".fsync-recusado";
+
+/// As raizes das instancias deste processo: o gancho e um `fn` sem captura, e
+/// precisa saber onde gravar.
+static BASES_DA_SENTINELA: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+
+fn registrar_base_da_sentinela(base: &Path) {
+    let mut b = BASES_DA_SENTINELA
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if !b.iter().any(|x| x == base) {
+        b.push(base.to_path_buf());
+    }
+}
+
+/// O identificador deste boot. `None` onde o sistema nao o diz.
+fn boot_id() -> Option<String> {
+    std::fs::read_to_string("/proc/sys/kernel/random/boot_id")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+fn gravar_sentinela_509(caminho: &Path, e: &std::io::Error) {
+    let bases = BASES_DA_SENTINELA
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
+    let texto = format!(
+        "boot_id={}\ncaminho={}\nerro={e}\nquando_ms={}\n",
+        boot_id().unwrap_or_default(),
+        caminho.display(),
+        crate::agora_ms()
+    );
+    // Em TODAS as raizes deste processo: a recusa pode ter sido fora de
+    // qualquer uma (o diretorio do config), e o lado seguro e nenhuma subir.
+    for b in bases {
+        let _ = std::fs::write(b.join(SENTINELA_509), &texto);
+    }
+}
+
+/// O arranque: com a sentinela no disco, sobe so se o boot mudou.
+fn conferir_sentinela_509(base: &Path) -> Result<()> {
+    let arquivo = base.join(SENTINELA_509);
+    let Ok(texto) = std::fs::read_to_string(&arquivo) else {
+        return Ok(());
+    };
+    let gravado = texto
+        .lines()
+        .find_map(|l| l.strip_prefix("boot_id="))
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    let agora = boot_id();
+    if !gravado.is_empty() && agora.as_deref().is_some_and(|b| b != gravado) {
+        // Outro boot: o cache que mentia se foi, e o que esta no disco e a
+        // verdade -- a recuperacao e o `reindexar` do 522 cuidam dela.
+        let _ = std::fs::remove_file(&arquivo);
+        eprintln!(
+            "aviso: {} registrava um fsync recusado num boot ANTERIOR; o cache \
+             daquele boot se foi, e o arranque segue pela recuperacao (pedido 509)",
+            arquivo.display()
+        );
+        return Ok(());
+    }
+    let caminho = texto
+        .lines()
+        .find_map(|l| l.strip_prefix("caminho="))
+        .unwrap_or("?");
+    Err(PhxError::Io(std::io::Error::other(format!(
+        "o servidor NAO sobe: o fsync de {caminho} foi recusado neste MESMO boot \
+         ({}). O cache do nucleo pode estar devolvendo o que o disco perdeu, e a \
+         recuperacao daria por gravado o que nao esta. Remonte o volume ou \
+         reinicie a maquina e suba de novo{} (pedido 509)",
+        arquivo.display(),
+        if agora.is_none() {
+            format!(
+                "; este sistema nao informa o boot, entao, DEPOIS de reiniciar, \
+                 apague {}",
+                arquivo.display()
+            )
+        } else {
+            String::new()
+        }
+    ))))
+}
+
 fn fsync_recusado_derruba_o_processo(caminho: &Path, e: &std::io::Error) {
+    gravar_sentinela_509(caminho, e);
     dizer_no_diagnostico(&format!(
         "PHXSQL: o fsync de {} foi RECUSADO ({e}). Depois disso o nucleo pode ter \
          descartado o que nao foi ao disco, e o proximo fsync responderia Ok sem \
@@ -61957,11 +62070,47 @@ mod testes_do_panico_sob_a_trava {
             1,
             "a marca do COMMIT tinha de ficar no disco: a queda nao drena nada"
         );
+        // Pedido 509, saida (a): NO MESMO BOOT o arranque nao sobe -- o cache
+        // do nucleo poderia estar devolvendo o que o disco perdeu.
+        let sentinela = dir.join(super::SENTINELA_509);
+        assert!(sentinela.exists(), "a queda nao deixou a sentinela");
+        let e = Servidor::novo(config_base(&dir))
+            .err()
+            .expect("subiu no mesmo boot depois de um fsync recusado");
+        assert!(e.to_string().contains("MESMO boot"), "{e}");
+        assert_eq!(marcas(&dir).len(), 1, "a recusa de subir mexeu na marca");
+        // Outro boot: a sentinela diz um boot que nao e este.
+        let texto = std::fs::read_to_string(&sentinela).unwrap();
+        let outro: String = texto
+            .lines()
+            .map(|l| {
+                if l.starts_with("boot_id=") {
+                    "boot_id=um-boot-que-ja-passou".to_string()
+                } else {
+                    l.to_string()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        std::fs::write(&sentinela, outro).unwrap();
         // O arranque completa a transacao que a marca confirmou.
         let s = Servidor::novo(config_base(&dir)).unwrap();
+        assert!(!sentinela.exists(), "a sentinela de outro boot nao saiu");
         let porta = porta_de_dados_de_verdade(&s);
         assert!(marcas(&dir).is_empty(), "o arranque nao completou a marca");
         conferir_indice(porta, &[1, 2, 3, 4, 5, 10, 11, 12]);
+    }
+
+    /// Pedido 509 (a): sentinela que nao diz o boot nao se da por vencida --
+    /// o lado seguro e nao subir, e a recusa diz o arquivo.
+    #[test]
+    fn sentinela_sem_boot_nao_deixa_subir() {
+        let dir = DirTemp::novo("sentinela-509-sem-boot");
+        std::fs::create_dir_all(&dir.0).unwrap();
+        std::fs::write(dir.join(super::SENTINELA_509), "caminho=/x\n").unwrap();
+        let e = super::conferir_sentinela_509(&dir.0).unwrap_err();
+        assert!(e.to_string().contains(super::SENTINELA_509), "{e}");
+        assert!(dir.join(super::SENTINELA_509).exists());
     }
 
     /// **Pedido 524, condicao C1 do parecer do DBA: o `fsync` recusado no

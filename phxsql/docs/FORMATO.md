@@ -3639,3 +3639,29 @@ base, porque o backup copia a base inteira: na base ela entraria no próprio
 backup, e um banco restaurado nasceria achando que caiu no meio de uma cópia.
 O nome começa com ponto e não tem a cara `Banco_Admin_Data_HoraMin.zip`, então
 a faxina do `manter` não o alcança.
+
+## 23. `.fsync-recusado` — a sentinela do pedido 509
+
+Um arquivo de texto na **raiz da instância** (`config.base`), gravado pelo gancho
+que derruba o processo quando um `fsync` do banco é recusado, **antes** do
+`abort` e **sem** `fsync`:
+
+```text
+boot_id=<conteúdo de /proc/sys/kernel/random/boot_id, ou vazio>
+caminho=<o arquivo cujo fsync foi recusado>
+erro=<o erro do sistema>
+quando_ms=<milissegundos desde 1970>
+```
+
+O arranque (`Servidor::novo`, antes da recuperação) o lê:
+
+- **mesmo boot, ou boot desconhecido** → o servidor **não sobe**, e a recusa diz
+  o arquivo e o que fazer (remontar o volume ou reiniciar a máquina; onde o
+  sistema não informa o boot, apagá-lo depois de reiniciar);
+- **outro boot** → o arquivo sai e o arranque segue pela recuperação.
+
+Sem `fsync` de propósito: quem precisa lê-lo é o arranque do **mesmo** boot,
+pelo mesmo cache do núcleo. Depois de reiniciar, perdê-lo não custa nada — o
+cache que devolvia o que o disco perdeu também se foi. É um arquivo, e não um
+diretório: a listagem das bases o ignora. Decisão do dono (saída (a) do 509),
+30/09/2026; prova em `fsync_recusado_derruba_o_processo_e_a_marca_fica`.
