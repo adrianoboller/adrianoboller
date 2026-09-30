@@ -1,0 +1,112 @@
+<title>Dossiê PhxClaw</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Exo+2:wght@500;700&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400&display=swap">
+<style>
+/* painel de engenharia: capa com os numeros, depois portoes, esteira e historico em blocos */
+:root {
+  --fundo:#f3f4f8; --papel:#ffffff; --tinta:#161a2e; --suave:#5a6078; --linha:#d9dce8;
+  --marca:#C63C0A; --ok:#1c7a45; --ruim:#b3261e; --trava:#8a5a00;
+  --disp:"Exo 2", "Segoe UI", sans-serif; --corpo:"Source Sans 3", "Segoe UI", sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --fundo:#010418; --papel:#0b1030; --tinta:#e8eaf5; --suave:#9aa0bd; --linha:#232a52;
+  --marca:#ff6a2b; --ok:#4fd08a; --ruim:#ff7b72; --trava:#f0b44c; color-scheme:dark; } }
+:root[data-theme="dark"] {
+  --fundo:#010418; --papel:#0b1030; --tinta:#e8eaf5; --suave:#9aa0bd; --linha:#232a52;
+  --marca:#ff6a2b; --ok:#4fd08a; --ruim:#ff7b72; --trava:#f0b44c; color-scheme:dark; }
+body { background:var(--fundo); color:var(--tinta); font:16px/1.5 var(--corpo); }
+.wrap { max-width:1080px; margin:0 auto; padding-inline:16px; padding-block:32px 48px;
+  display:grid; gap:28px; }
+h1,h2 { font-family:var(--disp); text-wrap:balance; margin:0; }
+h1 { font-size:2.2rem; letter-spacing:.01em; }
+h1 span { color:var(--marca); }
+h2 { font-size:1.25rem; display:flex; gap:10px; align-items:baseline; }
+h2 small { font:400 .8rem var(--mono); color:var(--suave); }
+.sub { color:var(--suave); margin:.2rem 0 0; }
+.capa { display:grid; grid-template-columns:auto 1fr; gap:28px; align-items:center;
+  background:var(--papel); border:1px solid var(--linha); border-radius:10px; padding:24px; }
+.rosca text { font-family:var(--disp); fill:var(--tinta); }
+.tiles { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }
+.tile { display:grid; gap:2px; }
+.tile b { font:700 1.7rem var(--disp); font-variant-numeric:tabular-nums; }
+.tile span { font-size:.82rem; color:var(--suave); text-transform:uppercase; letter-spacing:.06em; }
+.tile b.ruim { color:var(--ruim); }
+.veredito { font:700 .85rem var(--mono); color:var(--ruim); border:1px solid var(--ruim);
+  border-radius:4px; padding:2px 8px; justify-self:start; }
+section { display:grid; gap:12px; min-width:0; }
+.tab { overflow-x:auto; background:var(--papel); border:1px solid var(--linha); border-radius:10px; }
+table { border-collapse:collapse; width:100%; font-size:.93rem; }
+th,td { text-align:left; padding:9px 12px; border-bottom:1px solid var(--linha); vertical-align:top; }
+th { font:600 .75rem var(--corpo); text-transform:uppercase; letter-spacing:.06em; color:var(--suave); }
+tr:last-child td { border-bottom:0; }
+td.mot { color:var(--suave); font-size:.87rem; }
+td.num { font-family:var(--mono); }
+.pl { font:600 .74rem var(--mono); padding:1px 7px; border-radius:3px; border:1px solid; white-space:nowrap; }
+.pl-passed,.pl-feito { color:var(--ok); }
+.pl-failed { color:var(--ruim); }
+.pl-blocked,.pl-bloqueado { color:var(--trava); border-style:dashed; }
+.pl-aberto { color:var(--suave); }
+.formula { font:400 .82rem var(--mono); color:var(--suave); }
+ul.git { list-style:none; margin:0; padding:0; display:grid; gap:6px; font-size:.92rem; }
+ul.git li { display:grid; grid-template-columns:auto auto 1fr; gap:10px; min-width:0; }
+ul.git code { font-family:var(--mono); color:var(--marca); }
+.dt { font-family:var(--mono); color:var(--suave); }
+footer { font-size:.8rem; color:var(--suave); border-top:1px solid var(--linha); padding-top:12px; }
+@media (max-width:620px) { .tiles { grid-template-columns:repeat(2,minmax(0,1fr)); } .capa { grid-template-columns:1fr; justify-items:start; }
+  ul.git li { grid-template-columns:auto 1fr; } ul.git li .dt { display:none; } }
+</style>
+<div class="wrap">
+<header>
+  <h1>Phx<span>Claw</span> · dossiê</h1>
+  <p class="sub">Versão 0.70.0 · branch <code>phxclaw/v070-nativo</code> · gerado em 30/09/2026 14:26 UTC</p>
+</header>
+
+<div class="capa">
+  <svg class="rosca" width="140" height="140" viewBox="0 0 140 140" role="img"
+       aria-label="8 de 21 itens concluídos">
+    <circle cx="70" cy="70" r="52" fill="none" stroke="var(--linha)" stroke-width="14"/>
+    <circle cx="70" cy="70" r="52" fill="none" stroke="var(--marca)" stroke-width="14"
+      stroke-dasharray="124.5 326.7" transform="rotate(-90 70 70)"/>
+    <text x="70" y="72" text-anchor="middle" font-size="26" font-weight="700">61.9%</text>
+    <text x="70" y="92" text-anchor="middle" font-size="11" fill="var(--suave)">falta</text>
+  </svg>
+  <div style="display:grid;gap:14px;min-width:0">
+    <span class="veredito">NOT_CERTIFIED · 8/13 portões obrigatórios</span>
+    <div class="tiles">
+      <div class="tile"><b>239</b><span>testes passam</span></div>
+      <div class="tile"><b class="ruim">1</b><span>testes falham</span></div>
+      <div class="tile"><b>55.590</b><span>linhas de Rust</span></div>
+      <div class="tile"><b>113</b><span>crates · 13 apps</span></div>
+      <div class="tile"><b>69</b><span>commits</span></div>
+      <div class="tile"><b>6</b><span>cognições</span></div>
+    </div>
+    <p class="formula">falta = (5 portões obrigatórios não passados + 8 itens abertos da esteira) / (13 + 8) = 13/21</p>
+  </div>
+</div>
+
+<section>
+  <h2>Certificação de release <small>medida em 30/09/2026 13:28 UTC</small></h2>
+  <div class="tab"><table>
+    <thead><tr><th>Portão</th><th>Obrigatório</th><th>Estado</th><th>Motivo</th></tr></thead>
+    <tbody><tr><td>Formatação (cargo fmt)</td><td>sim</td><td><span class="pl pl-passed">passou</span></td><td class='mot'></td></tr><tr><td>Clippy sem avisos</td><td>sim</td><td><span class="pl pl-passed">passou</span></td><td class='mot'></td></tr><tr><td>Suíte de testes inteira</td><td>sim</td><td><span class="pl pl-failed">falhou</span></td><td class='mot'>1 teste falhou em phxclaw-plugin-registry — mesma causa da assinatura dos plugins (chave externa)</td></tr><tr><td>Auditoria de dependências</td><td>sim</td><td><span class="pl pl-passed">passou</span></td><td class='mot'></td></tr><tr><td>Agente autônomo</td><td>sim</td><td><span class="pl pl-passed">passou</span></td><td class='mot'></td></tr><tr><td>PostgreSQL ponta a ponta</td><td>sim</td><td><span class="pl pl-passed">passou</span></td><td class='mot'></td></tr><tr><td>Caos: SIGKILL no PostgreSQL</td><td>sim</td><td><span class="pl pl-passed">passou</span></td><td class='mot'></td></tr><tr><td>Modelo local (Ollama)</td><td>não</td><td><span class="pl pl-passed">passou</span></td><td class='mot'></td></tr><tr><td>Canais com credencial real</td><td>sim</td><td><span class="pl pl-blocked">bloqueado</span></td><td class='mot'>exige credenciais reais de Telegram/Discord/Slack/WhatsApp/Teams (decisao do dono)</td></tr><tr><td>Automação de desktop físico</td><td>sim</td><td><span class="pl pl-blocked">bloqueado</span></td><td class='mot'>exige desktop FISICO (teclado, mouse, captura reais); aqui so ha Xvfb</td></tr><tr><td>Pareamento de dispositivos</td><td>sim</td><td><span class="pl pl-blocked">bloqueado</span></td><td class='mot'>exige hardware multiplataforma; e o servidor WSS de dispositivos NAO existe no fonte (DeviceEnvelope sem consumidor fora do device-transport)</td></tr><tr><td>Desktop Tauri (WebDriver)</td><td>sim</td><td><span class="pl pl-passed">passou</span></td><td class='mot'></td></tr><tr><td>Voz para texto (modelo real)</td><td>sim</td><td><span class="pl pl-passed">passou</span></td><td class='mot'></td></tr><tr><td>Assinatura dos plugins nativos</td><td>sim</td><td><span class="pl pl-blocked">bloqueado</span></td><td class='mot'>6 manifestos builtin com digest/assinatura quebrados desde o rename da v0.41; reassinar exige a chave privada phxclaw-dev-root-2026-v05r2 (externa)</td></tr></tbody>
+  </table></div>
+  <p class="formula">suíte: 239 passam, 1 falham, 11 ignorados · cargo test --workspace, rodado por este gerador · 30/09/2026 14:26 UTC</p>
+</section>
+
+<section>
+  <h2>Esteira de produção <small>docs/ESTEIRA_ABSORCAO.md</small></h2>
+  <div class="tab"><table>
+    <thead><tr><th>#</th><th>Item</th><th>Estado</th><th>Nota</th></tr></thead>
+    <tbody><tr><td class='num'>E1</td><td>Processo de terminal em segundo plano (iniciar, ler saída parcial, matar)</td><td><span class="pl pl-aberto">aberto</span></td><td class='mot'></td></tr><tr><td class='num'>E2</td><td>Edição precisa de arquivo (`str_replace`, ver faixa de linhas, inserir)</td><td><span class="pl pl-aberto">aberto</span></td><td class='mot'></td></tr><tr><td class='num'>E3</td><td>Limite de taxa por token na API</td><td><span class="pl pl-aberto">aberto</span></td><td class='mot'></td></tr><tr><td class='num'>U1</td><td>ferramenta do agente `design_erp_ui` (grava `ui-ir.json` + `site/index.html`, publicável)</td><td><span class="pl pl-aberto">aberto</span></td><td class='mot'></td></tr><tr><td class='num'>U2</td><td>Prompt → UI-IR (modelo preenche o IR, validado pelo serde)</td><td><span class="pl pl-aberto">aberto</span></td><td class='mot'></td></tr><tr><td class='num'>U3</td><td>Screenshot → UI-IR (visão)</td><td><span class="pl pl-bloqueado">bloqueado</span></td><td class='mot'>bloqueado: modelo com visão</td></tr><tr><td class='num'>U4</td><td>renderizadores WinDev/WebDev (WLanguage), React, Flutter</td><td><span class="pl pl-aberto">aberto</span></td><td class='mot'></td></tr><tr><td class='num'>U5</td><td>data no formato do idioma (o print mostra `mm/dd/yyyy`: é o locale do navegador, não do IR)</td><td><span class="pl pl-aberto">aberto</span></td><td class='mot'></td></tr></tbody>
+  </table></div>
+</section>
+
+<section>
+  <h2>Últimos commits</h2>
+  <ul class="git"><li><code>37c2867</code><span class='dt'>30/09 13:38</span>ui-ir: designer de telas ERP (SQL -&gt; UI-IR -&gt; HTML) e esteira da absorcao</li><li><code>3a5aa4c</code><span class='dt'>30/09 13:28</span>PhxClaw: guia do agente autonomo, cognicoes da rodada e certificacao remedida (8/13)</li><li><code>894f2c1</code><span class='dt'>30/09 13:21</span>PhxClaw: e-mail e publicacao de site no agente; conclusao so com arquivo pedido existente</li><li><code>6787eb8</code><span class='dt'>30/09 13:01</span>PhxClaw: agente autonomo ligado de ponta a ponta -- documentos, adaptadores, binario e guardas contra modelo pequeno</li><li><code>568aa30</code><span class='dt'>30/09 12:41</span>PhxClaw: provedores de IA que enviam, navegador operado, busca web e API de tarefas</li><li><code>bbc0e99</code><span class='dt'>30/09 12:35</span>PhxClaw: motor do agente autonomo -- planejar, executar com ferramentas sob politica, evidencia por passo</li><li><code>6bfd362</code><span class='dt'>30/09 12:25</span>PhxClaw: contrato do agente autonomo (phxclaw-agent-core) e esqueleto das 5 frentes</li><li><code>1611c52</code><span class='dt'>30/09 12:11</span>PhxClaw: video de demonstracao gravado da tela real, e o roteiro para refaze-lo</li></ul>
+</section>
+
+<footer>Nenhum número desta página foi digitado: todos saem de
+<code>tools/dossie/gerar_dossie.py</code>, que lê a certificação, roda a suíte, conta o fonte e lê a esteira.</footer>
+</div>
