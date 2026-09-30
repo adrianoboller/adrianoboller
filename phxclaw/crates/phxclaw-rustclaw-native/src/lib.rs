@@ -10,7 +10,7 @@
 //! - `src/tools/mcp.rs`
 //!
 //! The original MIT license is preserved in
-//! `private/vendor/rustclaw/upstream/LICENSE.md`.
+//! `LICENSE-UPSTREAM-RUSTCLAW.md`, neste crate.
 
 use chrono::{DateTime, Utc};
 use phxclaw_mcp_lsp_runtime::{

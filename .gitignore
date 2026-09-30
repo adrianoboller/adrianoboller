@@ -25,3 +25,4 @@ phxsql-completo-*.tar.gz
 # some e volta a cada corrida, e entrou por engano no commit 9d1f4b8.
 plugins/**/__pycache__/
 backups/
+phxclaw/private/
