@@ -14802,6 +14802,24 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "seguem": [],
     },
     {
+        "id": "smtp-ecoa-a-credencial",
+        "titulo": "o erro do SMTP traz o texto do rele, e o rele que ecoa a credencial poe o base64 da senha no log",
+        "porque": (
+            "pedido 550, papel SEC: fere «senha nunca em texto puro». Medido "
+            "antes: `smtp recusou: 535 5.7.8 credencial recusada: <base64 da "
+            "senha>` saia inteiro no erro."
+        ),
+        "arquivo": "crates/phxsql-server/src/email.rs",
+        "trecho": """        sessao.comando_sigiloso(&base64::codificar(senha.as_bytes()), &[235])?;
+""",
+        "troca": """        sessao.comando(&base64::codificar(senha.as_bytes()), &[235])?;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": ["email::testes::o_eco_da_credencial_na_recusa_do_auth_nao_sai_no_erro"],
+        "seguem": ["email::testes::a_conversa_normal_continua_inteira"],
+    },
+    {
         "id": "arranque-reconstroi-calado",
         "titulo": "o arranque reconstroi indice marcado e so diz no `stderr`: quem opera nao fica sabendo da queda",
         "porque": (

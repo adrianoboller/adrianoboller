@@ -65,6 +65,19 @@ impl AsRef<Path> for DirTemp {
 /// cabecalhos). Morava no modulo de testes da politica; veio para ca quando a
 /// saude do disco (pedido 249) precisou do mesmo rele.
 pub fn rele_falso() -> (u16, std::sync::mpsc::Receiver<String>) {
+    rele_falso_com(false)
+}
+
+/// O MESMO rele, mal-educado (pedido 550): pede o `AUTH LOGIN` e recusa a
+/// senha ECOANDO a linha que recebeu -- `535 5.7.8 credencial recusada:
+/// <base64>`. Um rele so, e nao um segundo servidor de mentira: o
+/// `conferidor_canal` conta cada leitura de linha de soquete, e a lei e que
+/// funcao e comando nao se duplicam.
+pub fn rele_falso_que_ecoa_o_auth() -> u16 {
+    rele_falso_com(true).0
+}
+
+fn rele_falso_com(ecoa_o_auth: bool) -> (u16, std::sync::mpsc::Receiver<String>) {
     use std::io::{BufRead, BufReader, Write};
     let ouvinte = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let porta = ouvinte.local_addr().unwrap().port();
@@ -80,10 +93,23 @@ pub fn rele_falso() -> (u16, std::sync::mpsc::Receiver<String>) {
                 let mut leitor = BufReader::new(fluxo);
                 let _ = escrita.write_all(b"220 rele-falso\r\n");
                 let mut linha = String::new();
+                // Os passos do AUTH que faltam: o usuario, depois a senha.
+                let mut no_auth = 0u8;
                 while leitor.read_line(&mut linha).unwrap_or(0) > 0 {
-                    let comando = linha.trim_end().to_uppercase();
+                    let recebido = linha.trim_end().to_string();
+                    let comando = recebido.to_uppercase();
                     linha.clear();
-                    if comando == "DATA" {
+                    if ecoa_o_auth && comando == "AUTH LOGIN" {
+                        no_auth = 2;
+                        let _ = escrita.write_all(b"334 VXNlcm5hbWU6\r\n");
+                    } else if no_auth == 2 {
+                        no_auth = 1;
+                        let _ = escrita.write_all(b"334 UGFzc3dvcmQ6\r\n");
+                    } else if no_auth == 1 {
+                        let eco = format!("535 5.7.8 credencial recusada: {recebido}\r\n");
+                        let _ = escrita.write_all(eco.as_bytes());
+                        return;
+                    } else if comando == "DATA" {
                         let _ = escrita.write_all(b"354 manda\r\n");
                         let mut corpo = String::new();
                         let mut l = String::new();

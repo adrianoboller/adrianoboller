@@ -145,11 +145,13 @@ fn enviar_com(cfg: &Email, assunto: &str, corpo: &str, silencio: Duration) -> Re
     }
 
     if !cfg.usuario.is_empty() {
-        sessao.comando("AUTH LOGIN", &[334])?;
-        sessao.comando(&base64::codificar(cfg.usuario.as_bytes()), &[334])?;
-        // A senha entra aqui e em lugar nenhum mais: o erro devolvido por
-        // `esperar` traz a resposta do SERVIDOR, nunca o que foi enviado.
-        sessao.comando(&base64::codificar(senha.as_bytes()), &[235])?;
+        // Os tres passos do AUTH respondem pela via SIGILOSA (pedido 550): e
+        // nelas que o rele acabou de receber a credencial, e ha rele que a
+        // ecoa na recusa (`535 ... <base64>`). O erro aqui nunca traz o que
+        // foi enviado -- e agora tambem nao o texto livre do que VOLTOU.
+        sessao.comando_sigiloso("AUTH LOGIN", &[334])?;
+        sessao.comando_sigiloso(&base64::codificar(cfg.usuario.as_bytes()), &[334])?;
+        sessao.comando_sigiloso(&base64::codificar(senha.as_bytes()), &[235])?;
     }
 
     sessao.comando(&format!("MAIL FROM:<{}>", uma_linha_so(&cfg.de)?), &[250])?;
@@ -317,6 +319,76 @@ impl Sessao {
 
     fn esperar(&mut self, esperados: &[u16]) -> Result<String> {
         ler_resposta(&mut self.leitor, esperados)
+    }
+
+    /// O `comando` cuja resposta pode ecoar a credencial -- ver
+    /// [`redigir_resposta`].
+    fn comando_sigiloso(&mut self, linha: &str, esperados: &[u16]) -> Result<String> {
+        self.cru(&format!("{linha}\r\n"))?;
+        ler_resposta(&mut self.leitor, esperados).map_err(redigir_erro)
+    }
+}
+
+/// **Pedido 550:** a resposta do rele a um passo do `AUTH`, redigida
+/// ANALISANDO, nunca recortando -- a lei que o Profiler deixou (CLAUDE.md).
+/// Fica o que se analisa: o codigo de tres digitos e o status estendido
+/// `x.y.z` da RFC 3463, que e o que diz o motivo a quem opera. O texto livre
+/// nao se analisa -- o rele pode ter posto ali o base64 da senha, e base64
+/// nao e cifra --, entao vira o tamanho em bytes.
+fn redigir_resposta(linha: &str) -> String {
+    let mut partes = linha.trim().splitn(3, ' ');
+    let codigo = partes.next().unwrap_or("");
+    let codigo_valido = codigo.len() == 3 && codigo.bytes().all(|b| b.is_ascii_digit());
+    if !codigo_valido {
+        return format!("<resposta sem codigo, {} bytes, omitida>", linha.len());
+    }
+    let resto = linha.trim()[codigo.len()..].trim_start();
+    let (estendido, livre) = match resto.split_once(' ') {
+        Some((e, l)) if status_estendido(e) => (Some(e), l),
+        _ if status_estendido(resto) => (Some(resto), ""),
+        _ => (None, resto),
+    };
+    let mut saida = codigo.to_string();
+    if let Some(e) = estendido {
+        saida.push(' ');
+        saida.push_str(e);
+    }
+    if !livre.is_empty() {
+        saida.push_str(&format!(
+            " <texto do rele, {} bytes, omitido: resposta ao envio da credencial>",
+            livre.len()
+        ));
+    }
+    saida
+}
+
+/// `classe.assunto.detalhe` da RFC 3463: digito, ponto, 1-3 digitos, ponto,
+/// 1-3 digitos. So numero -- nao cabe senha nenhuma aqui.
+fn status_estendido(t: &str) -> bool {
+    let p: Vec<&str> = t.split('.').collect();
+    p.len() == 3
+        && p.iter()
+            .all(|x| !x.is_empty() && x.len() <= 3 && x.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// O erro de `ler_resposta` com a resposta do rele redigida. So os dois que
+/// carregam o texto do rele mudam; o de E/S e o de teto nao trazem nada dele.
+fn redigir_erro(e: PhxError) -> PhxError {
+    match e {
+        PhxError::Esquema(m) => {
+            if let Some(ultima) = m.strip_prefix("smtp recusou: ") {
+                PhxError::Esquema(format!("smtp recusou: {}", redigir_resposta(ultima)))
+            } else if m.starts_with("smtp: resposta sem codigo: ") {
+                PhxError::Esquema(format!(
+                    "smtp: resposta sem codigo ({} bytes, omitida: resposta ao envio da \
+                     credencial)",
+                    m.len() - "smtp: resposta sem codigo: ".len()
+                ))
+            } else {
+                PhxError::Esquema(m)
+            }
+        }
+        outro => outro,
     }
 }
 
@@ -511,6 +583,49 @@ mod testes {
         )
         .unwrap();
         crate::config::Config::de_json(&j).unwrap().alertas.email
+    }
+
+    /// **Pedido 550:** o rele que ecoa a credencial na recusa do `AUTH`
+    /// (`535 5.7.8 ... <base64 da senha>`). O erro que sobe -- e que vai ao
+    /// log e a tela -- nao pode trazer a senha, nem em claro nem em base64.
+    ///
+    /// # Prova real
+    ///
+    /// Com o `comando` comum no lugar do `comando_sigiloso`, o base64 da
+    /// senha sai no erro -- o vermelho medido.
+    #[test]
+    fn o_eco_da_credencial_na_recusa_do_auth_nao_sai_no_erro() {
+        let senha = "segredo-do-rele-9x";
+        let b64 = base64::codificar(senha.as_bytes());
+        let porta = crate::apoio_teste::rele_falso_que_ecoa_o_auth();
+        let j = Json::analisar(&format!(
+            r#"{{"alertas":{{"ligado":true,"email":{{"ligado":true,
+                "servidor":"127.0.0.1","porta":{porta},"de":"phx@exemplo.com",
+                "para":["a@exemplo.com"],"usuario":"phx","senha":"{senha}"}}}}}}"#
+        ))
+        .unwrap();
+        let c = crate::config::Config::de_json(&j).unwrap().alertas.email;
+        let e = enviar_com(&c, "a", "b", Duration::from_secs(5))
+            .expect_err("o rele recusou o AUTH")
+            .to_string();
+        assert!(!e.contains(&b64), "o base64 da senha saiu no erro: {e}");
+        assert!(!e.contains(senha), "a senha saiu no erro: {e}");
+        assert!(
+            e.contains("535 5.7.8"),
+            "o motivo que se analisa sumiu: {e}"
+        );
+        assert!(e.contains("bytes, omitido"), "{e}");
+    }
+
+    #[test]
+    fn a_resposta_redigida_guarda_o_codigo_e_o_status() {
+        assert_eq!(redigir_resposta("535 5.7.8"), "535 5.7.8");
+        assert_eq!(
+            redigir_resposta("535 5.7.8 falhou c2VuaGE="),
+            "535 5.7.8 <texto do rele, 15 bytes, omitido: resposta ao envio da credencial>"
+        );
+        assert!(redigir_resposta("535 c2VuaGE=").starts_with("535 <texto do rele"));
+        assert!(redigir_resposta("lixo c2VuaGE=").starts_with("<resposta sem codigo"));
     }
 
     #[test]
