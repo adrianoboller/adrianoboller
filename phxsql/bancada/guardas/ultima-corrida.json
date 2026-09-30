@@ -2614,6 +2614,22 @@
       "quando": "2026-09-30 13:25"
     },
     {
+      "id": "backup-sem-fsync",
+      "titulo": "o backup responde \"concluido\" sem `fsync` nenhum",
+      "veredito": "PROVADA",
+      "segundos": 6.94,
+      "notas": [],
+      "quando": "2026-09-30 23:01"
+    },
+    {
+      "id": "backup-fsync-derruba-o-servidor",
+      "titulo": "o `fsync` recusado no DESTINO DE UM BACKUP derruba o servidor inteiro",
+      "veredito": "PROVADA",
+      "segundos": 57.89,
+      "notas": [],
+      "quando": "2026-09-30 23:08"
+    },
+    {
       "id": "dblink-puxar-le-blob-cru",
       "titulo": "O DbLink, ao puxar, lê o BLOB cru como se fosse hexadecimal",
       "veredito": "PROVADA",
@@ -2636,6 +2652,30 @@
       "segundos": 62.13,
       "notas": [],
       "quando": "2026-09-30 22:49"
+    },
+    {
+      "id": "arquivo-refeito-herda-o-modo-velho",
+      "titulo": "o arquivo que o banco REFAZ por cima de um antigo -- o `.ndx` e o `.fts` do `reindexar` -- herda o `644` dele",
+      "veredito": "PROVADA",
+      "segundos": 5.5,
+      "notas": [],
+      "quando": "2026-09-30 23:03"
+    },
+    {
+      "id": "copia-do-backup-nasce-aberta",
+      "titulo": "a cópia do backup volta a nascer `644` -- até a do `.lgpd`, que nasceu `600`",
+      "veredito": "PROVADA",
+      "segundos": 5.24,
+      "notas": [],
+      "quando": "2026-09-30 23:04"
+    },
+    {
+      "id": "backup-atravessa-link-plantado",
+      "titulo": "o motor da permissão volta a seguir o link simbólico no último nome: um link plantado no destino do backup faz o `.reg` ser gravado NA vítima de fora, e ela vira 0600",
+      "veredito": "PROVADA",
+      "segundos": 10.35,
+      "notas": [],
+      "quando": "2026-09-30 23:04"
     },
     {
       "id": "migracao-do-separador-decide-pelo-nome",
@@ -2684,6 +2724,102 @@
       "segundos": 38.99,
       "notas": [],
       "quando": "2026-09-30 15:55"
+    },
+    {
+      "id": "zip-que-falha-no-rename-deixa-o-part",
+      "titulo": "o `rename` final do backup em ZIP que recusa deixa o `.part` na pasta para sempre",
+      "veredito": "PROVADA",
+      "segundos": 5.19,
+      "notas": [],
+      "quando": "2026-09-30 23:05"
+    },
+    {
+      "id": "backup-em-pasta-que-falha-deixa-as-copias",
+      "titulo": "o backup em PASTA cujo manifesto recusa deixa as cópias na pasta sem `backup.json` para sempre",
+      "veredito": "PROVADA",
+      "segundos": 4.86,
+      "notas": [],
+      "quando": "2026-09-30 23:05"
+    },
+    {
+      "id": "backup-reaproveitado-que-falha-deixa-o-manifesto-velho",
+      "titulo": "o backup em pasta REAPROVEITADA que falha deixa o `backup.json` velho descrevendo cópias que já mudaram",
+      "veredito": "PROVADA",
+      "segundos": 5.08,
+      "notas": [],
+      "quando": "2026-09-30 23:05"
+    },
+    {
+      "id": "backup-fsync-reabre-a-copia",
+      "titulo": "o `fsync` da cópia do backup cai num descritor REABERTO, e não no de quem escreveu",
+      "veredito": "PROVADA",
+      "segundos": 5.12,
+      "notas": [],
+      "quando": "2026-09-30 23:06"
+    },
+    {
+      "id": "backup-copia-fecha-o-descritor-antes-do-fsync",
+      "titulo": "a cópia do backup fecha o descritor na escrita, sob a trava, e o inode fica livre para sair da memória antes do `fsync`",
+      "veredito": "PROVADA",
+      "segundos": 5.09,
+      "notas": [],
+      "quando": "2026-09-30 23:04"
+    },
+    {
+      "id": "zip-fsync-reabre-o-part",
+      "titulo": "o `fsync` do `.part` do backup em ZIP cai num descritor REABERTO, e não no de quem escreveu",
+      "veredito": "PROVADA",
+      "segundos": 5.19,
+      "notas": [],
+      "quando": "2026-09-30 23:06"
+    },
+    {
+      "id": "backup-manifesto-novo-sem-fsync-da-pasta",
+      "titulo": "o manifesto novo do backup nasce sem o `fsync` da pasta de onde o `backup.json` velho saiu",
+      "veredito": "PROVADA",
+      "segundos": 5.06,
+      "notas": [],
+      "quando": "2026-09-30 23:05"
+    },
+    {
+      "id": "zip-rename-que-recusa-deixa-a-pasta",
+      "titulo": "o `rename` final do backup em ZIP que recusa deixa vazia a pasta que a corrida criou",
+      "veredito": "PROVADA",
+      "segundos": 5.09,
+      "notas": [],
+      "quando": "2026-09-30 23:05"
+    },
+    {
+      "id": "backup-atravessa-link-na-pasta-do-meio",
+      "titulo": "o backup volta a criar e atravessar as pastas do destino pelo NOME: um link numa pasta do meio (`copias/loja -> dados/rh`) grava a cópia por cima da tabela viva de outro database",
+      "veredito": "PROVADA",
+      "segundos": 9.13,
+      "notas": [],
+      "quando": "2026-09-30 23:00"
+    },
+    {
+      "id": "backup-escreve-no-arquivo-de-outro-dono",
+      "titulo": "o backup volta a truncar e reescrever o arquivo regular de OUTRO dono (ou com link físico) que já está no destino: quem plantou fica dono da cópia do banco, e no ZIP o `.part` plantado vira o `.zip` final",
+      "veredito": "PROVADA",
+      "segundos": 9.19,
+      "notas": [],
+      "quando": "2026-09-30 23:00"
+    },
+    {
+      "id": "fifo-trocada-na-janela-para-o-backup",
+      "titulo": "o motor da permissão volta a abrir pelo nome seguindo link e esperando leitor: trocar o nome por um link para FIFO entre o `lstat` e o `open` para o backup com a trava de dados na mão",
+      "veredito": "PROVADA",
+      "segundos": 25.51,
+      "notas": [],
+      "quando": "2026-09-30 23:15"
+    },
+    {
+      "id": "copia-reaberta-pelo-nome-no-fsync",
+      "titulo": "a cópia além do teto de descritores volta a reabrir pelo NOME para o `fsync`: trocada por um link, o `fsync` cai noutro arquivo e o manifesto diz «pronto» sobre a cópia que nunca sincronizou",
+      "veredito": "PROVADA",
+      "segundos": 7.1,
+      "notas": [],
+      "quando": "2026-09-30 23:01"
     },
     {
       "id": "cifra-do-fio-imposta",

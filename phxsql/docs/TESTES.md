@@ -968,27 +968,38 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `pagina-despejada-que-o-disco-recusou-some` | a página suja despejada do cache que o disco recusou some: nem no arquivo, nem na RAM | 1 | ✅ provada |
 | `servidor-segue-de-pe-depois-do-fsync-recusado` | o servidor segue de pé depois de um `fsync` recusado, gravando num disco que já se sabe que mente | 1 | ✅ provada |
 | `completar-engole-a-tabela-que-nao-foi-ao-disco` | a recuperação engole o erro do `sincronizar` e apaga a marca de um commit cujo dado não foi ao disco | 1 | ✅ provada |
-| `fechar-baixa-o-byte-52-sem-fsync` | o `fechar` grava o byte 52 em 0 sem `fsync`: o núcleo guarda o cabeçalho limpo e perde as páginas | 3 | ✅ provada |
 | `restauracao-nao-reconstroi-o-marcado` | a restauração de backup devolve a tabela com o `.ndx` marcado, e ela recusa toda escrita até alguém mandar `reindexar` | 1 | ✅ provada |
 | `backup-sem-fsync` | o backup responde "concluido" sem `fsync` nenhum | 2 | ✅ provada |
+| `backup-fsync-derruba-o-servidor` | o `fsync` recusado no DESTINO DE UM BACKUP derruba o servidor inteiro | 1 | ✅ provada |
+| `dblink-puxar-le-blob-cru` | O DbLink, ao puxar, lê o BLOB cru como se fosse hexadecimal | 3 | ✅ provada |
+| `dblink-tela-mostra-blob-com-perda` | O DbLink mostra na tela o BLOB remoto pelo leitor com perda | 2 | ✅ provada |
+| `dblink-colacao-bin-vira-hex` | O DbLink mostra em hexadecimal o texto de uma colação _bin | 1 | ✅ provada |
+| `arquivo-refeito-herda-o-modo-velho` | o arquivo que o banco REFAZ por cima de um antigo -- o `.ndx` e o `.fts` do `reindexar` -- herda o `644` dele | 1 | ✅ provada |
+| `copia-do-backup-nasce-aberta` | a cópia do backup volta a nascer `644` -- até a do `.lgpd`, que nasceu `600` | 1 | ✅ provada |
+| `backup-atravessa-link-plantado` | o motor da permissão volta a seguir o link simbólico no último nome: um link plantado no destino do backup faz o `.reg` ser gravado NA vítima de fora, e ela vira 0600 | 3 | ✅ provada |
 | `migracao-do-separador-decide-pelo-nome` | a migracao do separador de volume le `vendas_2024.reg` como volume 2024 de `vendas` e some com a tabela | 1 | ✅ provada |
 | `marca-do-separador-antes-dos-renomes` | a marca do formato de volume vai ao disco antes dos `rename`s, e a queda no meio deixa o diretorio marcado e meio migrado | 1 | ✅ provada |
 | `painel-com-copia-do-analisador-de-volume` | o painel soma os bytes do `.reg` por uma copia do nome do volume e mede zero em tabela de 4 digitos ou por letra | 1 | ✅ provada |
 | `carga-adiada-solta-sem-reconstruir` | o `bulkinsert(false)` da carga com o índice adiado solta a reserva com a árvore suspensa | 1 | ✅ provada |
 | `suspensao-do-indice-so-na-ram` | a suspensão do `.ndx` para a carga adiada fica só na memória, e a queda no meio deixa a árvore vazia se declarando limpa | 2 | ✅ provada |
 | `carga-adiada-orfa-sem-reconstruir` | a carga adiada que sai sem o `bulkinsert(false)` (conexão caída, reserva vencida) deixa o índice suspenso até o próximo arranque | 1 | ✅ provada |
-| `cluster-replica-sem-recuo` | O laço da réplica do CLUSTER retentava a cada pulso sem o `Ritmo`: sem recuo nem para rede nem para limite | 1 | ✅ provada |
-| `copia-de-tabela-sem-fsync-da-pasta` | A cópia de tabela sincronizava os arquivos e não a pasta: o nome novo podia sumir numa queda depois do «ok» | 1 | ✅ provada |
-| `colar-em-schema-novo-sem-fsync-do-database` | Colar num schema que ainda não existe criava a pasta dele sem `fsync` do database: a cópia sincronizada podia morar numa pasta que a queda leva | 1 | ✅ provada |
-| `criar-tabela-sem-fsync-dos-arquivos` | `criar_tabela` respondia «criada» com o `.reg`, o `.ndx` e os outros arquivos só no cache do núcleo: numa queda a tabela podia sumir ou voltar sem o esquema | 1 | ✅ provada |
-| `garantir-schema-sem-fsync-do-database` | `criar_schema` e `criar_tabela` num schema novo criavam a pasta sem `fsync` do database: o schema que o cliente ouviu criar podia sumir numa queda | 2 | ✅ provada |
-| `criar-database-sem-fsync-da-base` | `criar_database` criava a pasta sem `fsync` da base: o database que o cliente ouviu criar podia sumir numa queda | 1 | ✅ provada |
-| `marca-do-database-sem-fsync` | O marcador `_database.json` nascia sem `fsync`: numa queda uma colmeia voltava como database padrão, calada | 1 | ✅ provada |
+| `zip-que-falha-no-rename-deixa-o-part` | o `rename` final do backup em ZIP que recusa deixa o `.part` na pasta para sempre | 1 | ✅ provada |
+| `backup-em-pasta-que-falha-deixa-as-copias` | o backup em PASTA cujo manifesto recusa deixa as cópias na pasta sem `backup.json` para sempre | 1 | ✅ provada |
+| `backup-reaproveitado-que-falha-deixa-o-manifesto-velho` | o backup em pasta REAPROVEITADA que falha deixa o `backup.json` velho descrevendo cópias que já mudaram | 1 | ✅ provada |
+| `backup-fsync-reabre-a-copia` | o `fsync` da cópia do backup cai num descritor REABERTO, e não no de quem escreveu | 1 | ✅ provada |
+| `backup-copia-fecha-o-descritor-antes-do-fsync` | a cópia do backup fecha o descritor na escrita, sob a trava, e o inode fica livre para sair da memória antes do `fsync` | 2 | ✅ provada |
+| `zip-fsync-reabre-o-part` | o `fsync` do `.part` do backup em ZIP cai num descritor REABERTO, e não no de quem escreveu | 1 | ✅ provada |
+| `backup-manifesto-novo-sem-fsync-da-pasta` | o manifesto novo do backup nasce sem o `fsync` da pasta de onde o `backup.json` velho saiu | 1 | ✅ provada |
+| `zip-rename-que-recusa-deixa-a-pasta` | o `rename` final do backup em ZIP que recusa deixa vazia a pasta que a corrida criou | 1 | ✅ provada |
+| `backup-atravessa-link-na-pasta-do-meio` | o backup volta a criar e atravessar as pastas do destino pelo NOME: um link numa pasta do meio (`copias/loja -> dados/rh`) grava a cópia por cima da tabela viva de outro database | 1 | ✅ provada |
+| `backup-escreve-no-arquivo-de-outro-dono` | o backup volta a truncar e reescrever o arquivo regular de OUTRO dono (ou com link físico) que já está no destino: quem plantou fica dono da cópia do banco, e no ZIP o `.part` plantado vira o `.zip` final | 1 | ✅ provada |
+| `fifo-trocada-na-janela-para-o-backup` | o motor da permissão volta a abrir pelo nome seguindo link e esperando leitor: trocar o nome por um link para FIFO entre o `lstat` e o `open` para o backup com a trava de dados na mão | 1 | ✅ provada |
+| `copia-reaberta-pelo-nome-no-fsync` | a cópia além do teto de descritores volta a reabrir pelo NOME para o `fsync`: trocada por um link, o `fsync` cai noutro arquivo e o manifesto diz «pronto» sobre a cópia que nunca sincronizou | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**341 das 524 guardas do catálogo: 1 aposentada, 336 provadas, 4 redundantes** — 9179 s de mutação, medido em 2026-09-16 15:25.
+**352 das 530 guardas do catálogo: 1 aposentada, 347 provadas, 4 redundantes** — 9417 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 184 das 524 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 184 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 179 das 530 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 179 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
@@ -1039,6 +1050,7 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `dblink-mysql-sem-teto-do-quadro-acumulado` — `ler_quadro` do DbLink MySQL(R) junta continuações de 16 MB sem teto sobre o total
 - `smtp-sem-teto-de-linhas-de-continuacao` — o cliente SMTP aceita QUALQUER número de linhas de continuação (`250-...`), sem teto
 - `por-login-para-no-primeiro-que-casa` — `Cadastro::por_login` é um `find`: quem não existe custa muito mais que o primeiro da lista
+- `fechar-baixa-o-byte-52-sem-fsync` — o `fechar` grava o byte 52 em 0 sem `fsync`: o núcleo guarda o cabeçalho limpo e perde as páginas
 - `atestado-sobrevive-a-escrita` — o atestado do processo sobrevive à escrita que não terminou: a reabertura confia na árvore de antes dela
 - `atestado-pelo-caminho-e-nao-pelo-arquivo` — o atestado do processo vale para o caminho, e não para o arquivo: outro `.ndx` no mesmo lugar abre confiado
 - `atestado-de-antes-da-recusa-vale-depois` — o atestado que o `fechar` deu ANTES de um `fsync` recusado no diretório continua valendo depois dele
@@ -1095,7 +1107,6 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `fts-nasce-com-permissao-aberta` — o `.fts` nasce `644` -- legivel por todo usuario da maquina
 - `conferir-fk-afirma-indice-sao-quando-marcado` — a conferencia contra a MAE afirma "esta sao" com o indice marcado
 - `procura-das-filhas-afirma-indice-sao-quando-marcado` — a procura pelas filhas afirma "esta sao" com o indice marcado
-- `backup-fsync-derruba-o-servidor` — o `fsync` recusado no DESTINO DE UM BACKUP derruba o servidor inteiro
 - `diff-null-na-chave-apaga-linha-irma` — o `diff` com NULL repetido no indice some com linhas do relatorio
 - `recusa-de-coluna-marcada-cita-o-valor` — A recusa de conversão cita o valor curto de coluna marcada como dado pessoal
 - `dblink-empurra-valor-pela-regua-de-nome` — O DbLink empurra valor de texto pela régua de NOME de objeto
@@ -1104,7 +1115,6 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `dblink-empurra-upsert-de-mysql-no-postgres` — O DbLink empurra para o PostgreSQL com o upsert do MySQL
 - `dblink-empurra-booleano-como-numero` — O DbLink empurra o booleano como 1/0
 - `dblink-puxar-le-booleano-pela-carga-colada` — O DbLink, ao puxar, lê o booleano pela régua da carga colada
-- `dblink-puxar-le-blob-cru` — O DbLink, ao puxar, lê o BLOB cru como se fosse hexadecimal
 - `dblink-puxar-inventa-uuid` — O DbLink, ao puxar, troca a célula «novo» por um uuid aleatório
 - `faixa-do-slot-cita-coluna-marcada` — A faixa do tipo, conferida no slot, cita o número de coluna marcada
 - `carga-colada-converte-sem-a-coluna` — A carga colada converte a célula sem a marca da coluna
@@ -1138,11 +1148,8 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `subida-do-byte-52-sincroniza-a-cada-pagina` — a subida do byte 52 sincroniza a cada página suja, e não só na passagem de 0 para 1: um `fdatasync` no laço quente de toda escrita
 - `arquivo-do-banco-nasce-aberto` — os arquivos do banco voltam a nascer na permissão do `umask`: `.reg`, `.ndx`, `.log`, `.lgpd`… `644`, legíveis por todo usuário da máquina
 - `diretorio-do-banco-nasce-aberto` — a raiz, o database, o palco da restauração e o destino do backup voltam a nascer `755`
-- `arquivo-refeito-herda-o-modo-velho` — o arquivo que o banco REFAZ por cima de um antigo -- o `.ndx` e o `.fts` do `reindexar` -- herda o `644` dele
-- `copia-do-backup-nasce-aberta` — a cópia do backup volta a nascer `644` -- até a do `.lgpd`, que nasceu `600`
 - `base-antiga-sem-alerta` — a base antiga, `644` em `755`, deixa de ser apontada: o motor não aperta o que existe e ninguém avisa
 - `arranque-nao-alerta-a-base-antiga` — o `phxsqld` sobe numa base `644`/`755` sem dizer nada
-- `backup-atravessa-link-plantado` — o motor da permissão volta a seguir o link simbólico no último nome: um link plantado no destino do backup faz o `.reg` ser gravado NA vítima de fora, e ela vira 0600
 - `base-por-link-cala-o-alerta` — o alerta da base antiga cala quando `config.base` é um link simbólico
 - `arranque-cala-o-alerta-da-base-por-link` — o `phxsqld` sobe numa base `644`/`755` alcançada por link simbólico sem dizer nada
 - `ndx-novo-sobe-com-o-diretorio-vazio` — o primeiro cabeçalho durável de um `.ndx` novo leva o byte 52 em 1 e ZERO índices: a queda no meio do `reindexar` trava a tabela
@@ -1153,15 +1160,7 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `exclusao-de-vez-sem-conferir-o-teto-do-diario` — no teto do diário, a exclusão de vez tira a linha do `.reg` e só então o `.log` recusa
 - `exclusao-de-vez-motivo-que-falha-pula-o-diario` — na exclusão de vez, o `.reason` que falha com o slot já livre devolve o erro antes do `.log` — a linha some sem evento
 - `insercao-fts-que-falha-pula-o-diario` — na inclusão, o `.fts` que falha com a linha já no `.reg` devolve o erro antes do `.log` — a linha fica sem evento
-- `zip-que-falha-no-rename-deixa-o-part` — o `rename` final do backup em ZIP que recusa deixa o `.part` na pasta para sempre
-- `backup-em-pasta-que-falha-deixa-as-copias` — o backup em PASTA cujo manifesto recusa deixa as cópias na pasta sem `backup.json` para sempre
-- `backup-reaproveitado-que-falha-deixa-o-manifesto-velho` — o backup em pasta REAPROVEITADA que falha deixa o `backup.json` velho descrevendo cópias que já mudaram
 - `zip-que-falha-deixa-a-pasta-que-criou` — o backup em ZIP que falha deixa vazia a pasta que ele mesmo criou
-- `backup-fsync-reabre-a-copia` — o `fsync` da cópia do backup cai num descritor REABERTO, e não no de quem escreveu
-- `backup-copia-fecha-o-descritor-antes-do-fsync` — a cópia do backup fecha o descritor na escrita, sob a trava, e o inode fica livre para sair da memória antes do `fsync`
-- `zip-fsync-reabre-o-part` — o `fsync` do `.part` do backup em ZIP cai num descritor REABERTO, e não no de quem escreveu
-- `backup-manifesto-novo-sem-fsync-da-pasta` — o manifesto novo do backup nasce sem o `fsync` da pasta de onde o `backup.json` velho saiu
-- `zip-rename-que-recusa-deixa-a-pasta` — o `rename` final do backup em ZIP que recusa deixa vazia a pasta que a corrida criou
 - `cascata-dispara-after-do-elo-so-no-commit` — a mesma cascata do `ao_alterar` dispara o AFTER da filha no COMMIT e não na alteração solta
 - `dblink-troca-o-host-e-herda-a-senha` — trocar o host de uma ligação do DbLink sem mandar a senha herda a guardada, e ela sai para o destino novo
 - `dblink-no-fio-com-a-trava-de-dados` — `dblink_ligar` e `dblink_sincronizar` vão ao fio com a trava de dados global na mão: um par que goteja abaixo do prazo por leitura prende todo pedido de todo cliente
@@ -1170,10 +1169,17 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `porta-lida-pela-metade` — O apoio dos testes lia a porta do phxsqld antes de a linha acabar: o eprintln! sai em várias escritas, e o parse do endereço pela metade dava AddrParseError (ou a porta errada)
 - `copia-da-troca-sem-fsync` — A cópia de reserva da troca no restaurar (o caminho sem rename) apagava a origem sem fsync da cópia: uma queda no meio deixava a única via de volta pela metade
 - `replica-limite-sem-recuo` — O estouro do prazo total da réplica caía em `Outra`: o par que goteja era retentado no intervalo fixo, sem recuo
+- `cluster-replica-sem-recuo` — O laço da réplica do CLUSTER retentava a cada pulso sem o `Ritmo`: sem recuo nem para rede nem para limite
 - `odbc-sem-prazo-total` — O driver ODBC só tinha prazo por LEITURA: um servidor que goteja um byte antes de cada prazo prendia a thread do aplicativo dentro do SQLExecDirect
 - `odbc-total-pela-vida-da-conexao` — O prazo total do driver ODBC contado pela vida da conexão, e não por pedido: o aplicativo que abre de manhã e consulta à tarde cairia no primeiro pedido depois do total
 - `copia-de-tabela-sem-fsync` — `duplicar_tabela` e `copiar_tabela_para` respondiam «ok» com a cópia só no cache do núcleo: uma queda podia levar a tabela nova, ou deixá-la rasgada
+- `copia-de-tabela-sem-fsync-da-pasta` — A cópia de tabela sincronizava os arquivos e não a pasta: o nome novo podia sumir numa queda depois do «ok»
+- `colar-em-schema-novo-sem-fsync-do-database` — Colar num schema que ainda não existe criava a pasta dele sem `fsync` do database: a cópia sincronizada podia morar numa pasta que a queda leva
 - `porta-anunciada-em-pedacos` — A linha «porta de dados escutando em …» saía em várias escritas: quem lia o log no meio via a porta pela metade
+- `criar-tabela-sem-fsync-dos-arquivos` — `criar_tabela` respondia «criada» com o `.reg`, o `.ndx` e os outros arquivos só no cache do núcleo: numa queda a tabela podia sumir ou voltar sem o esquema
+- `garantir-schema-sem-fsync-do-database` — `criar_schema` e `criar_tabela` num schema novo criavam a pasta sem `fsync` do database: o schema que o cliente ouviu criar podia sumir numa queda
+- `criar-database-sem-fsync-da-base` — `criar_database` criava a pasta sem `fsync` da base: o database que o cliente ouviu criar podia sumir numa queda
+- `marca-do-database-sem-fsync` — O marcador `_database.json` nascia sem `fsync`: numa queda uma colmeia voltava como database padrão, calada
 
 As guardas que esta corrida ainda cita, hoje aposentadas:
 

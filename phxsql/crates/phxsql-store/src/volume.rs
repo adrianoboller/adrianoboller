@@ -1575,6 +1575,13 @@ mod tests {
         // `duplicar_tabela` e do `copiar_tabela_para` viraram UM laco
         // (`copiar_os_arquivos`), que devolve os descritores para o
         // `levar_ao_disco` sincronizar antes de publicar.
+        // Pedidos 568/569/570: `util.rs` 9 -> 11. O `recriar_no_destino` (o
+        // motor do 542 com o crivo do dono, so para o destino do backup) entra
+        // na lista dos ABRIDORES para o `backup.rs` continuar contando 2 -- a
+        // copia, o `.part` e o manifesto abrem por ele --, e a definicao dele
+        // conta 1 no `util.rs`; o outro e o `open` de diretorio da `Pasta`
+        // (`O_DIRECTORY | O_NOFOLLOW`), que so le: e o descritor pelo qual o
+        // backup chega ao nome sem atravessar link numa pasta do meio.
         const HOJE: &[(&str, usize)] = &[
             ("backup.rs", 2),
             ("catalogo.rs", 4),
@@ -1585,10 +1592,10 @@ mod tests {
             ("restaurar.rs", 3),
             ("separador.rs", 3),
             ("sincronia.rs", 2),
-            ("util.rs", 9),
+            ("util.rs", 11),
             ("volume.rs", 2),
         ];
-        const ABRIDORES: [&str; 8] = [
+        const ABRIDORES: [&str; 9] = [
             "OpenOptions::new()",
             "File::create(",
             "fs::write(",
@@ -1597,6 +1604,7 @@ mod tests {
             "recriar_do_banco(",
             "escrever_do_banco(",
             "copiar_do_banco(",
+            "recriar_no_destino(",
         ];
         let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
         let mut medido: BTreeMap<String, usize> = BTreeMap::new();

@@ -385,6 +385,13 @@ dia, nunca no desejado:
   (`garantir-schema-sem-fsync-do-database`), o database novo sem `fsync` da
   base (`criar-database-sem-fsync-da-base`) e o marcador do tipo sem `fsync`
   (`marca-do-database-sem-fsync`). Contado pelo `--catraca`: 520 + 4.
+  **SUBIU para 531 em 30/09/2026** (pedidos 568, 569 e 570): quatro guardas
+  -- o link numa pasta do meio do destino
+  (`backup-atravessa-link-na-pasta-do-meio`), o arquivo de outro dono no
+  destino (`backup-escreve-no-arquivo-de-outro-dono`), a FIFO trocada entre o
+  `lstat` e o `open` (`fifo-trocada-na-janela-para-o-backup`) e a copia
+  reaberta pelo nome para o `fsync` (`copia-reaberta-pelo-nome-no-fsync`).
+  No merge com o 589 e o 590 (que levaram o piso a 527): 527 + 4 = 531.
   impedir. Ele e a unica coisa nesta regua que reprova o APAGAMENTO; tudo o
   mais aqui reprova o envelhecimento.
 
@@ -493,7 +500,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 527
+PISO_DAS_ENTRADAS = 531
 
 # ------------------------------------------------------------- APOSENTADAS
 #

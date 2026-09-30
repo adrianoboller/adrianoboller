@@ -52,7 +52,8 @@ pub mod volume;
 pub mod permissao {
     pub use crate::util::{
         copiar_do_banco, criar_diretorio_do_banco, escrever_do_banco, opcoes_do_banco,
-        permissao_larga, recriar_do_banco, MODO_DO_ARQUIVO, MODO_DO_DIRETORIO,
+        permissao_larga, recriar_do_banco, recriar_no_destino, sem_seguir_nem_esperar,
+        MODO_DO_ARQUIVO, MODO_DO_DIRETORIO,
     };
 }
 
