@@ -14564,6 +14564,27 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         ],
     },
     {
+        "id": "carimbo-da-a-volta-no-teto",
+        "titulo": "o rowstamp empurrado ao teto por evento replicado da a volta, e o filho nasce com carimbo menor que o pai",
+        "porque": (
+            "pedido 511, C13 do catalogo de catastrofes do papel C: o "
+            "`fetch_add` do `proximo_carimbo` devolvia `u64::MAX, 0, 1` em "
+            "release e entrava em panico em debug. Fere a regra primordial "
+            "vista pelo tempo."
+        ),
+        "arquivo": "crates/phxsql-store/src/no.rs",
+        "trecho": """        .fetch_update(Ordering::SeqCst, Ordering::SeqCst, seguinte)
+""",
+        "troca": """        .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |u| Some(u.wrapping_add(1)))
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "carimbo-no-teto"],
+        "caem": [
+            "no_teto_o_carimbo_recusa_a_insercao_em_vez_de_dar_a_volta",
+        ],
+        "seguem": [],
+    },
+    {
         "id": "upsert-solto-sem-trava-da-linha",
         "titulo": "o upsert solto altera a linha que uma transacao segura, e o COMMIT dela apaga a escrita",
         "porque": (

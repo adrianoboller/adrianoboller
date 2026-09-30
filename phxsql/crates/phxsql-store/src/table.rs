@@ -3431,34 +3431,35 @@ impl Table {
     /// que chegou: sem isso, um evento remoto com carimbo alto entra e a
     /// proxima escrita LOCAL sairia atras de uma linha que ja esta la. E o
     /// mesmo remedio do `anotar_sequencia`.
-    fn carimbar_linha(&mut self, valores: &mut [Value], anterior: Option<&Linha>) {
+    fn carimbar_linha(&mut self, valores: &mut [Value], anterior: Option<&Linha>) -> Result<()> {
         let Some(i) = self.esquema.coluna_rowstamp() else {
-            return;
+            return Ok(());
         };
         let t = self.esquema.coluna_rowtime();
         if let Some(linha) = anterior {
             self.manter_carimbo(valores, linha);
-            return;
+            return Ok(());
         }
         if self.como_replica {
             if let Value::UInt(n) = valores[i] {
                 if n > 0 {
                     crate::no::empurrar_carimbo(n);
                     self.reg.anotar_carimbo(n);
-                    return;
+                    return Ok(());
                 }
             }
             // Veio sem carimbo: o source e anterior ao v10. Carimbar aqui
             // divergiria do retrato dele, entao a linha fica em zero -- o
             // mesmo «anterior ao carimbo» da linha migrada.
-            return;
+            return Ok(());
         }
-        let carimbo = crate::no::proximo_carimbo();
+        let carimbo = crate::no::proximo_carimbo()?;
         valores[i] = Value::UInt(carimbo);
         self.reg.anotar_carimbo(carimbo);
         if let Some(t) = t {
             valores[t] = Value::DateTime(crate::util::agora_ms());
         }
+        Ok(())
     }
 
     /// A metade da alteracao do [`Table::carimbar_linha`]: mantem o que a
@@ -4877,7 +4878,7 @@ impl Table {
         // ha reserva aqui -- ao contrario do `rownum`, buraco no carimbo nao e
         // divergencia: a replica honra o que veio e nunca gera o dela. Na
         // alteracao ele so MANTEM o que a linha ja tinha.
-        self.carimbar_linha(&mut linha, anterior);
+        self.carimbar_linha(&mut linha, anterior)?;
         // A sequencia entra ANTES das chaves: se a coluna estiver num indice,
         // a chave tem de ser a do numero que vai ser gravado, nao a do nulo.
         // Na alteracao, nulo guarda o numero que a linha ja tinha.

@@ -37,8 +37,37 @@ static INICIO_DA_SEQUENCIA: AtomicU64 = AtomicU64::new(0);
 ///
 /// Nunca devolve 0: zero e reservado para «esta linha nasceu antes de a coluna
 /// existir», e uma linha nova nunca pode ser confundida com uma dessas.
-pub fn proximo_carimbo() -> u64 {
-    ULTIMO_CARIMBO.fetch_add(1, Ordering::SeqCst) + 1
+///
+/// # No teto, recusa -- nunca da a volta (pedido 511)
+///
+/// Um evento replicado pode empurrar o contador ate `u64::MAX`
+/// ([`empurrar_carimbo`]). O `fetch_add` de antes dava a volta: em release,
+/// `u64::MAX, 0, 1` -- o carimbo que prova «o pai veio antes do filho»
+/// recomecava do zero, e o filho saia menor que o pai; em debug, panico. Os
+/// tres maduros convergem em recusar a escrita no teto do contador (o
+/// PostgreSQL para de dar `xid` perto da volta; MySQL e MariaDB recusam o
+/// `AUTO_INCREMENT` no maximo do tipo), e e isso que se faz: a escrita
+/// recusa, e o contador fica onde esta.
+pub fn proximo_carimbo() -> Result<u64, phxsql_core::PhxError> {
+    ULTIMO_CARIMBO
+        .fetch_update(Ordering::SeqCst, Ordering::SeqCst, seguinte)
+        .map(|anterior| anterior + 1)
+        .map_err(|_| {
+            phxsql_core::PhxError::LimiteExcedido(format!(
+                "o carimbo de criacao (rowstamp) deste no chegou ao teto ({}): dar a \
+                 volta faria o filho nascer com carimbo menor que o do pai, entao a \
+                 insercao e recusada. Um evento replicado com carimbo no teto e a \
+                 causa provavel -- confira a origem",
+                u64::MAX
+            ))
+        })
+}
+
+/// O carimbo que vem depois de `ultimo`, ou nada no teto. Separada para o
+/// teto se provar sem mexer no contador do processo, que os outros testes
+/// dividem.
+fn seguinte(ultimo: u64) -> Option<u64> {
+    ultimo.checked_add(1)
 }
 
 /// Empurra o contador para pelo menos `ate`. Nunca o faz recuar.
@@ -106,6 +135,12 @@ mod testes {
     use super::*;
 
     #[test]
+    fn no_teto_o_seguinte_nao_da_a_volta() {
+        assert_eq!(seguinte(u64::MAX - 1), Some(u64::MAX));
+        assert_eq!(seguinte(u64::MAX), None);
+    }
+
+    #[test]
     fn sem_faixa_o_piso_e_o_proprio_numero() {
         // A guarda do comportamento VELHO, que e a que mais importa: toda
         // tabela gravada antes da v10 tem passo 1.
@@ -151,12 +186,12 @@ mod testes {
 
     #[test]
     fn o_carimbo_nunca_empata_nem_recua() {
-        let anterior = proximo_carimbo();
-        let depois = proximo_carimbo();
+        let anterior = proximo_carimbo().unwrap();
+        let depois = proximo_carimbo().unwrap();
         assert!(depois > anterior, "{depois} nao e maior que {anterior}");
         empurrar_carimbo(anterior);
         assert!(
-            proximo_carimbo() > depois,
+            proximo_carimbo().unwrap() > depois,
             "empurrar para tras fez o contador recuar"
         );
     }
