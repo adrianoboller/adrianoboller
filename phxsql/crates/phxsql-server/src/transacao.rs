@@ -1292,11 +1292,25 @@ pub fn gravar_marca(
 
     let caminho = caminho_da_marca(diretorio, id);
     let mut f = criar_privado(&caminho, id)?;
-    f.write_all(&b)?;
     // O `sync_all` e a peca, e nao um detalhe: sem ele a marca pode estar so
     // no cache do sistema quando a passada comecar, e a queda deixaria o dado
     // meio gravado sem nenhuma intencao no disco para completar.
-    f.sync_all()?;
+    //
+    // E ele passa pelo motor do pedido 509 (pedido 503, item 3): o `fsync`
+    // recusado derruba o servidor ali mesmo, como o PANIC do PostgreSQL no
+    // WAL. Antes, o `sync_all` cru que falhava deixava a marca INTEIRA no
+    // disco enquanto o COMMIT respondia «abortada», e o arranque seguinte a
+    // aplicava por cima de gravacao mais nova. Onde nao ha gancho (a
+    // biblioteca), a marca que nao se confirmou SAI do disco antes do erro.
+    let feito = f
+        .write_all(&b)
+        .map_err(PhxError::from)
+        .and_then(|()| phxsql_store::sincronia::sync_all(&f, &caminho));
+    if let Err(e) = feito {
+        drop(f);
+        let _ = std::fs::remove_file(&caminho);
+        return Err(e);
+    }
     Ok(caminho)
 }
 
@@ -1509,12 +1523,22 @@ pub struct Relatorio {
     /// Marcas CIFRADAS que este servidor nao conseguiu abrir. **Ficaram no
     /// disco**, e cada linha diz qual e por que -- ver [`Leitura::SemChave`].
     pub paradas: Vec<String>,
+    /// Marcas que o ARRANQUE nao conseguiu LER -- erro de E/S, e nao marca
+    /// que nao confere (pedido 503, 1a). **Ficaram no disco**, e o servidor
+    /// nao sobe enquanto houver uma: a marca pode ser um commit confirmado, e
+    /// apaga-la ou subir por cima dela sao as duas maneiras de perde-lo.
+    pub sem_leitura: Vec<String>,
     pub ms: u64,
 }
 
 impl Relatorio {
     pub fn houve(&self) -> bool {
         self.achadas > 0 || self.indices_reconstruidos > 0 || !self.indices_pendentes.is_empty()
+    }
+
+    /// Ha marca que o arranque nao leu: o servidor nao pode subir (503, 1a).
+    pub fn impede_subir(&self) -> bool {
+        !self.sem_leitura.is_empty()
     }
 
     /// O bloco que o arranque imprime.
@@ -1568,6 +1592,15 @@ impl Relatorio {
                 self.paradas.len()
             ));
             for p in &self.paradas {
+                s.push_str(&format!("     ! {p}\n"));
+            }
+        }
+        if !self.sem_leitura.is_empty() {
+            s.push_str(&format!(
+                "\x20 marcas que NAO SE LERAM ....... {}   (NAO foram apagadas; o servidor NAO sobe)\n",
+                self.sem_leitura.len()
+            ));
+            for p in &self.sem_leitura {
                 s.push_str(&format!("     ! {p}\n"));
             }
         }
@@ -1712,7 +1745,7 @@ enum NoArranque {
 /// Trata UMA marca achada: completa, descarta ou deixa parada. Devolve se ela
 /// pode sair do disco.
 ///
-/// E o corpo do laco do [`recuperar`] e tambem o de [`completar_marca`] -- um
+/// E o corpo do laco do [`recuperar`] e tambem o de [`completar_marca_em_voo`] -- um
 /// lugar so, porque um segundo caminho para «completar um commit» seria um
 /// segundo lugar para errar. O que muda entre os dois e so o [`NoArranque`].
 fn tratar_marca(
@@ -1747,6 +1780,19 @@ fn tratar_marca(
             ));
             false
         }
+        // No ARRANQUE, a marca que nem se leu nao e «commit que nunca comecou»:
+        // o erro e do disco, e nao do arquivo (pedido 503, 1a). O PostgreSQL
+        // (FATAL ao ler o WAL e o controle), o MySQL e o MariaDB (o InnoDB
+        // aborta a recuperacao) convergem em NAO descartar e NAO subir por
+        // cima -- aceite automatico. Ela fica, e o servidor nao sobe.
+        Err(e) if arranque == NoArranque::Sim => {
+            r.sem_leitura.push(format!(
+                "{}: a marca nao se leu ({e}). Confira o disco e suba de novo: \
+                 ela pode ser uma transacao confirmada",
+                caminho.display()
+            ));
+            false
+        }
         Ok(Leitura::NaoConfere) if arranque == NoArranque::Gravada => {
             r.impossiveis.push(format!(
                 "{}: a marca que este processo gravou e sincronizou nao confere \
@@ -1764,7 +1810,7 @@ fn tratar_marca(
     }
 }
 
-/// Completa UMA marca com o servidor de pe e a trava de dados JA na mao de
+/// [`completar_marca_em_voo`] completa UMA marca com o servidor de pe e a trava de dados JA na mao de
 /// quem chama -- a do `COMMIT` cuja passada acabou de quebrar depois da marca.
 ///
 /// # Por que com a trava de quem chama, e nao tomando outra
@@ -1779,10 +1825,7 @@ fn tratar_marca(
 /// Porque as outras marcas da base sao de commits que ja aplicaram e esperam o
 /// fecho da janela de durabilidade (`marcas_pendentes`): nao ha o que
 /// completar nelas, e quem as apaga e quem sincroniza.
-pub fn completar_marca(dados: &Instancia, database: &str, caminho: &Path) -> Relatorio {
-    completar_com(dados, database, caminho, NoArranque::Nao)
-}
-
+///
 /// A marca EM VOO do reparo da trava de dados (pedido 451). `gravada` diz se
 /// o `gravar_marca` dela ja voltou `Ok`: antes disso, marca que nao existe ou
 /// que nao confere e commit que nunca comecou, e sai como sempre; depois,
@@ -1801,8 +1844,8 @@ pub fn completar_marca_em_voo(
     completar_com(dados, database, caminho, politica)
 }
 
-/// O corpo comum do [`completar_marca`] e do [`completar_marca_em_voo`]: o
-/// que muda entre os dois e so a politica.
+/// O corpo do [`completar_marca_em_voo`]: o que muda entre o arranque e o
+/// reparo e so a politica.
 fn completar_com(
     dados: &Instancia,
     database: &str,

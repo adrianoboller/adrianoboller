@@ -1624,8 +1624,16 @@ impl Servidor {
         // bloco de relatorio dizendo zero em toda subida treina quem opera a
         // nao ler o relatorio.
         let recuperacao = crate::transacao::recuperar(&raiz.exclusiva());
-        if recuperacao.houve() {
+        if recuperacao.houve() || recuperacao.impede_subir() {
             eprintln!("{}", recuperacao.texto(&config.base));
+        }
+        if recuperacao.impede_subir() {
+            return Err(PhxError::Io(std::io::Error::other(format!(
+                "o servidor NAO subiu: {} marca(s) de commit nao se leram por erro \
+                 de E/S, e nenhuma foi apagada -- {}",
+                recuperacao.sem_leitura.len(),
+                recuperacao.sem_leitura.join("; ")
+            ))));
         }
         // O cadastro contra o esquema -- pedido 235 -- com as tabelas em
         // disco e ANTES de a porta abrir. `Config::ler` carregou o cadastro
@@ -17988,8 +17996,12 @@ impl Servidor {
                 //
                 // O codigo e o da recuperacao do arranque, para uma marca so;
                 // a diferenca de politica (a marca da operacao impossivel
-                // FICA) esta em `transacao::completar_marca`.
-                let r = crate::transacao::completar_marca(trava, database, marca);
+                // FICA) esta em `transacao::completar_marca_em_voo`. E a marca
+                // e a que ESTE processo gravou e sincronizou: a que nao se rele
+                // fica no disco (pedido 503, 1b) -- antes ela saia, e a resposta
+                // dizia «pendente, se completa na proxima recuperacao», que era
+                // falso.
+                let r = crate::transacao::completar_marca_em_voo(trava, database, marca, true);
                 if r.houve() {
                     eprintln!("{}", r.texto(&self.config.base));
                 }
@@ -18499,7 +18511,7 @@ impl Servidor {
     ///    A chave so sai das sujas depois do `fsync` dela (A1): o panico que
     ///    interrompeu um fecho nao apaga bilhete de dado que nao foi ao disco;
     /// 2. completa a marca EM VOO desta tomada, e so ela (M1), pelo
-    ///    [`crate::transacao::completar_marca`] -- o mesmo motor do braco de
+    ///    [`crate::transacao::completar_marca_em_voo`] -- o mesmo motor do braco de
     ///    erro do `COMMIT`, em O(1). O `.ndx` que a queda deixou para tras e
     ///    reconstruido por ser tabela nomeada na marca, e o `COMMIT` que
     ///    morreu no meio da passada sai inteiro antes de o `AoSair` soltar as
@@ -22226,7 +22238,7 @@ impl Servidor {
         // recusaria, a recuperacao reconstruiria a mae pelo `.reg`, e o `Drop`
         // deste `t`, na troca la embaixo, gravaria a arvore VELHA por cima --
         // `buscar` pela chave nova dando 0, medido 5 de 5 pela sincronia.
-        // Passar o `t` para a passada nao bastaria: o `completar_marca` do
+        // Passar o `t` para a passada nao bastaria: o `completar_marca_em_voo` do
         // braco que quebra no meio abre o punho DELE na mesma mae. Sem
         // `fsync`, e o `t` limpo da `op_atualizar` nao grava nada aqui.
         t.descer_ao_nucleo()?;
@@ -46443,6 +46455,128 @@ mod testes_transacoes {
             r.texto_ou("aviso", "").contains("completou na hora"),
             "a passada quebrou e a resposta nao diz: {}",
             r.escrever()
+        );
+    }
+
+    /// Uma escrita de `clientes`, para as marcas escritas a mao abaixo.
+    fn escrita_de_clientes(id: i64) -> Vec<crate::transacao::Escrita> {
+        vec![crate::transacao::Escrita {
+            database: "loja".into(),
+            tabela: "clientes".into(),
+            acao: crate::transacao::Acao::Inserir,
+            rowid: id as u64,
+            linha: vec![Value::Int(id), Value::Str("a".into()), Value::Bool(false)],
+            linha_antiga: Vec::new(),
+            motivo: String::new(),
+            cascata_na_lista: false,
+            elo_do_empilhar: false,
+        }]
+    }
+
+    /// **Pedido 503, (1a)**: a marca que o ARRANQUE nao consegue ler (erro de
+    /// E/S) nao e «commit que nunca comecou». Ela fica no disco e o servidor
+    /// NAO sobe; com o disco de volta, o arranque a completa. Com o defeito,
+    /// o erro caia no «descartada» e a transacao confirmada sumia calada.
+    #[test]
+    fn marca_que_nao_se_le_no_arranque_fica_e_o_servidor_nao_sobe() {
+        let dir = dir_temp("503-1a");
+        let s = servidor(&dir);
+        let ses = sessao(5031);
+        base(&s, &ses);
+        let caminho = crate::transacao::gravar_marca(
+            &dir.join("loja"),
+            9,
+            crate::agora_ms(),
+            &escrita_de_clientes(1),
+        )
+        .unwrap();
+        drop(s);
+
+        crate::transacao::falhar_a_proxima_leitura_de_teste();
+        let c = Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            token: "t".into(),
+            ..Config::default()
+        };
+        let e = Servidor::novo(c)
+            .err()
+            .expect("subiu com uma marca que nao se leu");
+        assert!(e.to_string().contains("NAO subiu"), "{e}");
+        assert!(caminho.exists(), "a marca que nao se leu foi APAGADA");
+
+        let s = servidor(&dir);
+        assert_eq!(
+            quantas(&s, &ses, "clientes"),
+            1,
+            "o arranque nao a completou"
+        );
+        assert!(!caminho.exists());
+    }
+
+    /// **Pedido 503, (1b)**: no braco de erro do 426, a marca que ESTE
+    /// processo gravou e que nao se rele fica no disco -- e a resposta que diz
+    /// «se completa na proxima recuperacao» passa a ser verdade. Com o
+    /// defeito, a marca saia e a transacao ficava pela metade para sempre.
+    #[test]
+    fn braco_do_426_com_marca_que_nao_se_le_deixa_a_marca_para_o_arranque() {
+        let dir = dir_temp("503-1b");
+        let s = servidor(&dir);
+        let ses = sessao(5032);
+        crate::transacao::falhar_a_proxima_leitura_de_teste();
+        let r = commit_que_quebra(&s, &ses, false);
+        assert_eq!(
+            marcas_em(&dir.join("loja")),
+            1,
+            "a marca que nao se releu saiu do disco: {}",
+            r.escrever()
+        );
+        drop(s);
+        let s = servidor(&dir);
+        let (c, p) = (quantas(&s, &ses, "clientes"), quantas(&s, &ses, "pedidos"));
+        assert_eq!((c, p), (1, 1), "o arranque nao completou a transacao");
+    }
+
+    /// O filho do teste de baixo: um processo SEM servidor, entao sem o
+    /// gancho que derruba -- o caso da biblioteca embutida.
+    #[test]
+    #[ignore = "roda so dentro de a_marca_que_nao_se_confirma_sai_do_disco"]
+    fn filho_503_3() {
+        let dir = std::path::PathBuf::from(std::env::var("PHX_503_DIR").unwrap());
+        phxsql_store::sincronia::falha_de_teste::armar(
+            &dir,
+            phxsql_store::sincronia::falha_de_teste::Onde::Fsync,
+            1,
+        );
+        let r = crate::transacao::gravar_marca(&dir, 3, crate::agora_ms(), &escrita_de_clientes(1));
+        assert!(r.is_err(), "o fsync recusado da marca respondeu Ok");
+        let sobrou = std::fs::read_dir(&dir).unwrap().count();
+        assert_eq!(sobrou, 0, "a marca que nao se confirmou ficou no disco");
+    }
+
+    /// **Pedido 503, (3)**: o `fsync` da marca que falha nao deixa a marca
+    /// INTEIRA no disco enquanto o COMMIT responde «abortada» -- o arranque
+    /// seguinte a aplicaria por cima de gravacao mais nova. Num processo
+    /// limpo, porque o gancho do servidor derrubaria este.
+    #[test]
+    fn a_marca_que_nao_se_confirma_sai_do_disco() {
+        let dir = DirTemp::novo("503-3");
+        let st = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--ignored",
+                "--exact",
+                "servidor::testes_transacoes::filho_503_3",
+            ])
+            .env("PHX_503_DIR", &dir.0)
+            .output()
+            .unwrap();
+        let saida = String::from_utf8_lossy(&st.stdout);
+        assert!(
+            st.status.success() && saida.contains("1 passed"),
+            "{saida}{}",
+            String::from_utf8_lossy(&st.stderr)
         );
     }
 

@@ -9860,11 +9860,11 @@ pub fn limpar() {
         # ATUALIZADO em 24/09/2026 (pedido 540): o braco mora no
         # `passada_sob_a_marca`, que recebe a trava emprestada e nao a solta
         # -- quem chama solta. O ponto de reposicao e a mesma chamada.
-        "trecho": """                let r = crate::transacao::completar_marca(trava, database, marca);
+        "trecho": """                let r = crate::transacao::completar_marca_em_voo(trava, database, marca, true);
 """,
         "troca": """                // DEFEITO REPOSTO (426 c): toma a trava de novo com a do topo viva.
                 let r = match self.travar_dados() {
-                    Ok(t) => crate::transacao::completar_marca(&t, database, marca),
+                    Ok(t) => crate::transacao::completar_marca_em_voo(&t, database, marca, true),
                     Err(_) => crate::transacao::Relatorio::default(),
                 };
                 let _ = &trava;
