@@ -124,6 +124,11 @@ pub struct FtsFile {
 }
 
 impl FtsFile {
+    /// O descritor do `.ndx` de dentro, para o `fsync` da criacao fora da
+    /// trava -- pedido 589.
+    pub(crate) fn descritor_aberto(&self) -> std::io::Result<(std::fs::File, std::path::PathBuf)> {
+        self.ndx.descritor_aberto()
+    }
     /// Cria o arquivo com um indice interno por `dobrar` da lista.
     ///
     /// A lista vem do esquema da tabela, na ordem dos indices de texto

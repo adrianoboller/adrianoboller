@@ -692,6 +692,25 @@ impl Volumes {
         self.espelho.as_ref().map(|e| e.caminho(volume))
     }
 
+    /// Os descritores ABERTOS deste conjunto (e do espelho), duplicados, com
+    /// o caminho de cada um -- pedido 589.
+    ///
+    /// Existe para quem cria uma tabela com a trava global na mao levar os
+    /// arquivos ao disco DEPOIS de solta-la: o `fsync` vale pelo inode, e o
+    /// `try_clone` e o mesmo descritor aberto (a mesma `struct file` do
+    /// nucleo), entao carrega o erro de *writeback* que um descritor reaberto
+    /// pelo caminho perderia (pedido 552, o caso *fsyncgate*).
+    pub(crate) fn descritores(&self) -> std::io::Result<Vec<(File, PathBuf)>> {
+        let mut saida = Vec::with_capacity(self.abertos.len());
+        for (volume, arquivo) in &self.abertos {
+            saida.push((arquivo.try_clone()?, self.caminho(*volume)));
+        }
+        if let Some(e) = &self.espelho {
+            saida.extend(e.descritores()?);
+        }
+        Ok(saida)
+    }
+
     /// Caminho de um volume. Sem paginacao o sufixo e vazio.
     pub fn caminho(&self, volume: u32) -> PathBuf {
         match self.nomes {

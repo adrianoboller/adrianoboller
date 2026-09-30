@@ -45,13 +45,21 @@ use phxsql_core::EXT_REG;
 const MARCA_DATABASE: &str = "_database.json";
 
 /// Grava o marcador do tipo no diretorio do database.
-fn escrever_marca(diretorio: &Path, tipo: TipoDatabase) -> Result<()> {
+///
+/// Devolve o descritor que escreveu, com o caminho (pedido 589): perder o
+/// marcador numa queda nao quebra a abertura -- ausencia e Padrao --, mas
+/// faz uma colmeia voltar como database padrao, calada. Entao ele vai ao
+/// disco com a criacao, e no descritor que o escreveu (pedido 552).
+fn escrever_marca(diretorio: &Path, tipo: TipoDatabase) -> Result<(std::fs::File, PathBuf)> {
+    use std::io::Write;
     let j = Json::objeto(vec![
         ("tipo", Json::texto_de(tipo.como_texto())),
         ("versao", Json::de_i64(1)),
     ]);
-    crate::util::escrever_do_banco(&diretorio.join(MARCA_DATABASE), j.escrever_identado())?;
-    Ok(())
+    let caminho = diretorio.join(MARCA_DATABASE);
+    let mut arquivo = crate::util::recriar_do_banco(&caminho, false)?;
+    arquivo.write_all(j.escrever_identado().as_bytes())?;
+    Ok((arquivo, caminho))
 }
 
 /// Le o tipo do marcador. Ausencia, leitura falha, JSON quebrado ou tipo
@@ -326,20 +334,40 @@ impl Instancia {
     /// Cria um database de um TIPO dado (padrao/hive/vetorial) e grava o
     /// marcador. O tipo nasce com o database e nao muda depois: um database e'
     /// de um tipo so, como uma tabela nasce com um esquema.
+    ///
+    /// Responde depois do `fsync` (pedido 589). Quem segura a trava global usa
+    /// [`Self::criar_database_com_tipo_adiando_o_fsync`] e leva ao disco
+    /// depois de solta-la -- a mesma criacao, so que adiando.
     pub fn criar_database_com_tipo(&self, nome: &str, tipo: TipoDatabase) -> Result<Database> {
+        let (db, pendente) = self.criar_database_com_tipo_adiando_o_fsync(nome, tipo)?;
+        pendente.levar_ao_disco()?;
+        Ok(db)
+    }
+
+    /// A criacao do [`Self::criar_database_com_tipo`], devolvendo o `fsync`
+    /// por fazer: o do marcador, o da pasta dele e o da entrada dela na base.
+    pub fn criar_database_com_tipo_adiando_o_fsync(
+        &self,
+        nome: &str,
+        tipo: TipoDatabase,
+    ) -> Result<(Database, PorSincronizar)> {
         validar_nome("database", nome)?;
         let caminho = self.base.join(nome);
         if caminho.exists() {
             return Err(PhxError::Esquema(format!("database {nome} ja existe")));
         }
         crate::util::criar_diretorio_do_banco(&caminho)?;
-        escrever_marca(&caminho, tipo)?;
+        let mut pendente = PorSincronizar::entrada_nova(&caminho);
+        pendente.arquivos.push(escrever_marca(&caminho, tipo)?);
         crate::separador::marcar_novo(&caminho)?;
-        Ok(Database {
-            nome: nome.to_string(),
-            caminho,
-            tipo,
-        })
+        Ok((
+            Database {
+                nome: nome.to_string(),
+                caminho,
+                tipo,
+            },
+            pendente,
+        ))
     }
 
     pub fn abrir_database(&self, nome: &str) -> Result<Database> {
@@ -368,9 +396,20 @@ impl Instancia {
 
     /// Cria o database se ainda nao existir.
     pub fn garantir_database(&self, nome: &str) -> Result<Database> {
+        let (db, pendente) = self.garantir_database_adiando_o_fsync(nome)?;
+        pendente.levar_ao_disco()?;
+        Ok(db)
+    }
+
+    /// O [`Self::garantir_database`] com o `fsync` por fazer -- vazio quando o
+    /// database ja existia (pedido 589).
+    pub fn garantir_database_adiando_o_fsync(
+        &self,
+        nome: &str,
+    ) -> Result<(Database, PorSincronizar)> {
         match self.abrir_database(nome) {
-            Ok(d) => Ok(d),
-            Err(_) => self.criar_database(nome),
+            Ok(d) => Ok((d, PorSincronizar::default())),
+            Err(_) => self.criar_database_com_tipo_adiando_o_fsync(nome, TipoDatabase::Padrao),
         }
     }
 
@@ -621,7 +660,17 @@ impl Database {
         }
     }
 
+    /// Cria um schema -- uma pasta dentro do database. Responde depois do
+    /// `fsync` do database, que e onde mora a entrada da pasta nova (pedido
+    /// 589); quem segura a trava usa [`Self::criar_schema_adiando_o_fsync`].
     pub fn criar_schema(&self, nome: &str) -> Result<PathBuf> {
+        let (caminho, pendente) = self.criar_schema_adiando_o_fsync(nome)?;
+        pendente.levar_ao_disco()?;
+        Ok(caminho)
+    }
+
+    /// A criacao do [`Self::criar_schema`], devolvendo o `fsync` por fazer.
+    pub fn criar_schema_adiando_o_fsync(&self, nome: &str) -> Result<(PathBuf, PorSincronizar)> {
         validar_nome("schema", nome)?;
         let caminho = self.caminho.join(nome);
         if caminho.exists() {
@@ -630,19 +679,36 @@ impl Database {
                 self.nome
             )));
         }
-        crate::util::criar_diretorio_do_banco(&caminho)?;
-        crate::separador::marcar_novo(&caminho)?;
+        self.garantir_schema_adiando_o_fsync(nome)
+    }
+
+    /// Cria a pasta do schema se ainda nao existir, e responde depois do
+    /// `fsync` do database quando ela nasceu aqui (pedido 589).
+    pub fn garantir_schema(&self, nome: &str) -> Result<PathBuf> {
+        let (caminho, pendente) = self.garantir_schema_adiando_o_fsync(nome)?;
+        pendente.levar_ao_disco()?;
         Ok(caminho)
     }
 
-    pub fn garantir_schema(&self, nome: &str) -> Result<PathBuf> {
+    /// O [`Self::garantir_schema`] com o `fsync` por fazer. E o laco UNICO
+    /// dos tres caminhos que criam pasta de schema -- `criar_schema`,
+    /// `criar_tabela` e o colar --: o 589 nasceu porque o colar (586) ganhou o
+    /// `fsync` do database e os outros dois, que chamavam o mesmo
+    /// `garantir_schema`, ficaram sem.
+    ///
+    /// A marca de formato da pasta nova (`separador::marcar_novo`) fica fora
+    /// do `fsync` de proposito: perde-la so refaz uma varredura que nao
+    /// renomeia nada (ver o comentario dela).
+    pub fn garantir_schema_adiando_o_fsync(&self, nome: &str) -> Result<(PathBuf, PorSincronizar)> {
         validar_nome("schema", nome)?;
         let caminho = self.caminho.join(nome);
-        if !caminho.is_dir() {
-            crate::util::criar_diretorio_do_banco(&caminho)?;
-            crate::separador::marcar_novo(&caminho)?;
+        if caminho.is_dir() {
+            return Ok((caminho, PorSincronizar::default()));
         }
-        Ok(caminho)
+        crate::util::criar_diretorio_do_banco(&caminho)?;
+        crate::separador::marcar_novo(&caminho)?;
+        let pendente = PorSincronizar::entrada_nova(&caminho);
+        Ok((caminho, pendente))
     }
 
     pub fn schemas(&self) -> Result<Vec<String>> {
@@ -734,15 +800,35 @@ impl Database {
         (feitas, pendentes)
     }
 
+    /// Cria uma tabela, e responde depois de os arquivos dela, a pasta e --
+    /// se a pasta do schema nasceu aqui -- o database estarem no disco (pedido
+    /// 589). Quem segura a trava global usa
+    /// [`Self::criar_tabela_adiando_o_fsync`] e leva ao disco depois.
     pub fn criar_tabela(&self, schema: Option<&str>, esquema: Schema) -> Result<Table> {
+        let (t, pendente) = self.criar_tabela_adiando_o_fsync(schema, esquema)?;
+        pendente.levar_ao_disco()?;
+        Ok(t)
+    }
+
+    /// A criacao do [`Self::criar_tabela`], devolvendo o `fsync` por fazer:
+    /// os descritores que o `Table::criar` abriu (duplicados -- ver
+    /// `Table::descritores_da_criacao`), a pasta onde eles nasceram e, se o
+    /// schema nasceu junto, a entrada dele no database.
+    pub fn criar_tabela_adiando_o_fsync(
+        &self,
+        schema: Option<&str>,
+        esquema: Schema,
+    ) -> Result<(Table, PorSincronizar)> {
         self.exigir_motor_padrao()?;
         validar_nome("tabela", esquema.nome())?;
-        let dir = match schema {
-            None => self.caminho.clone(),
-            Some(s) => self.garantir_schema(s)?,
+        let (dir, mut pendente) = match schema {
+            None => (self.caminho.clone(), PorSincronizar::default()),
+            Some(s) => self.garantir_schema_adiando_o_fsync(s)?,
         };
         exigir_nome_que_volta(&dir, esquema.nome())?;
-        Table::criar(dir, esquema)
+        let t = Table::criar(dir, esquema)?;
+        pendente.arquivos.extend(t.descritores_da_criacao()?);
+        Ok((t, pendente))
     }
 
     pub fn abrir_tabela(&self, schema: Option<&str>, nome: &str) -> Result<Table> {
@@ -1124,7 +1210,7 @@ impl Database {
         &self,
         origem: &str,
         destino: &str,
-    ) -> Result<CopiaPorSincronizar> {
+    ) -> Result<PorSincronizar> {
         self.exigir_motor_padrao()?;
         let (schema_o, nome_o) = separar_qualificado(origem);
         let (schema_d, nome_d) = separar_qualificado(destino);
@@ -1138,7 +1224,7 @@ impl Database {
         let dir_o = self.diretorio(schema_o)?;
         let dir_d = self.diretorio(schema_d)?;
         exigir_nome_que_volta(&dir_d, nome_d)?;
-        let copia = Self::copiar_os_arquivos(&dir_o, nome_o, &dir_d, nome_d, false)?;
+        let copia = Self::copiar_os_arquivos(&dir_o, nome_o, &dir_d, nome_d)?;
         if copia.arquivos.is_empty() {
             return Err(PhxError::NaoEncontrado(format!(
                 "tabela {origem} nao existe em {}",
@@ -1170,7 +1256,7 @@ impl Database {
         origem: &str,
         destino_db: &Database,
         destino: &str,
-    ) -> Result<CopiaPorSincronizar> {
+    ) -> Result<PorSincronizar> {
         // Os DOIS lados: colar de OU para uma colmeia e' tao invalido quanto
         // criar tabela nela. O motor padrao le e escreve tabela relacional, e
         // nenhuma das duas pontas pode ser de outro tipo.
@@ -1193,12 +1279,12 @@ impl Database {
         // cola espera, e o mesmo que `criar_tabela` faz. A pasta que nasce
         // aqui e entrada do database: o `fsync` dele vai junto da copia, senao
         // a copia sincronizada moraria numa pasta que a queda pode levar.
-        let (dir_d, pasta_nova) = match schema_d {
-            None => (destino_db.caminho().to_path_buf(), false),
-            Some(sc) => {
-                let nova = !destino_db.caminho().join(sc).is_dir();
-                (destino_db.garantir_schema(sc)?, nova)
-            }
+        let (dir_d, mut pendente) = match schema_d {
+            None => (
+                destino_db.caminho().to_path_buf(),
+                PorSincronizar::default(),
+            ),
+            Some(sc) => destino_db.garantir_schema_adiando_o_fsync(sc)?,
         };
         if dir_o == dir_d && nome_o == nome_d {
             return Err(PhxError::Duplicado(
@@ -1206,14 +1292,15 @@ impl Database {
             ));
         }
         exigir_nome_que_volta(&dir_d, nome_d)?;
-        let copia = Self::copiar_os_arquivos(&dir_o, nome_o, &dir_d, nome_d, pasta_nova)?;
+        let copia = Self::copiar_os_arquivos(&dir_o, nome_o, &dir_d, nome_d)?;
         if copia.arquivos.is_empty() {
             return Err(PhxError::NaoEncontrado(format!(
                 "tabela {origem} nao existe em {}",
                 self.nome()
             )));
         }
-        Ok(copia)
+        pendente.juntar(copia);
+        Ok(pendente)
     }
 
     /// O laco das duas copias -- um so, para o `fsync` de uma nao faltar na
@@ -1223,8 +1310,7 @@ impl Database {
         nome_o: &str,
         dir_d: &Path,
         nome_d: &str,
-        pasta_nova: bool,
-    ) -> Result<CopiaPorSincronizar> {
+    ) -> Result<PorSincronizar> {
         let mut arquivos = Vec::new();
         for ext in Self::EXTENSOES {
             for arq in std::fs::read_dir(dir_o)?.flatten() {
@@ -1244,9 +1330,9 @@ impl Database {
                 }
             }
         }
-        Ok(CopiaPorSincronizar {
+        Ok(PorSincronizar {
             arquivos,
-            pasta_nova,
+            entradas_novas: Vec::new(),
         })
     }
 
@@ -1255,52 +1341,93 @@ impl Database {
     }
 }
 
-/// Uma copia de tabela que ja esta nos nomes novos e ainda deve o disco --
-/// pedido 586.
+/// O que uma criacao ou copia de catalogo ja fez nos nomes novos e ainda deve
+/// ao disco -- pedidos 586 (a copia de tabela) e 589 (criar database, schema
+/// e tabela).
 ///
-/// # Por que o `fsync` sai da copia
+/// # Por que o `fsync` sai da operacao
 ///
-/// No servidor as duas copias rodam com a trava global na mao, e a catraca
+/// No servidor essas operacoes rodam com a trava global na mao, e a catraca
 /// `alcancam-fsync-2` do `mapa-da-trava.py` proibe `fsync` novo ali: cada um
-/// e a proxima conexao esperando o disco. Copiar precisa da trava (e ela que
-/// impede a origem de mudar no meio); sincronizar nao precisa -- o `fsync` e
-/// do inode e vale por qualquer descritor que o escreveu, e so este tem a
-/// garantia do *fsyncgate* (pedido 552). Entao a copia devolve os descritores
+/// e a proxima conexao esperando o disco. Criar e copiar precisam da trava (e
+/// ela que impede a origem de mudar no meio, e dois criadores de colidirem no
+/// mesmo nome); sincronizar nao precisa -- o `fsync` e do inode e vale por
+/// qualquer descritor que o escreveu, e so este tem a garantia do
+/// *fsyncgate* (pedido 552). Entao a operacao devolve os descritores
 /// abertos, e quem chama solta a trava e leva ao disco antes de responder.
 ///
 /// A janela entre soltar e sincronizar e a de qualquer escrita sem `fsync`:
 /// a tabela ja e visivel, mas ninguem ouviu «ok» por ela ainda.
-#[must_use = "a copia so vale depois de levar_ao_disco"]
-pub struct CopiaPorSincronizar {
+///
+/// # Um tipo so para as quatro operacoes
+///
+/// O 589 e o 586 de novo: o colar ganhou o `fsync` do database quando criava
+/// a pasta do schema, e o `criar_schema` e o `criar_tabela`, que chamavam o
+/// MESMO `garantir_schema`, ficaram sem. Aqui a decisao «o que deve o disco,
+/// e em que ordem» mora uma vez; quem cria so diz o que criou.
+#[must_use = "a criacao so vale depois de levar_ao_disco"]
+#[derive(Default)]
+pub struct PorSincronizar {
+    /// Os arquivos novos, cada um no descritor que o escreveu.
     arquivos: Vec<(std::fs::File, PathBuf)>,
-    /// A pasta do schema nasceu nesta copia: a entrada dela no database
-    /// tambem deve o disco.
-    pasta_nova: bool,
+    /// As pastas que nasceram: a entrada de cada uma e dado da pasta MAE.
+    entradas_novas: Vec<PathBuf>,
 }
 
-impl CopiaPorSincronizar {
-    /// O `fsync` de cada arquivo NO DESCRITOR QUE O ESCREVEU, e depois o da
-    /// pasta -- a ordem do `durable_rename` do PostgreSQL: a entrada so vale
-    /// depois de o conteudo para o qual ela aponta estar no disco. Pelo motor
+impl PorSincronizar {
+    /// Uma pasta que acabou de nascer, e nada mais por enquanto.
+    fn entrada_nova(pasta: &Path) -> PorSincronizar {
+        PorSincronizar {
+            arquivos: Vec::new(),
+            entradas_novas: vec![pasta.to_path_buf()],
+        }
+    }
+
+    /// Soma o que outra etapa da mesma operacao ficou devendo -- o schema que
+    /// o colar criou, e a copia que foi morar nele.
+    pub fn juntar(&mut self, outra: PorSincronizar) {
+        self.arquivos.extend(outra.arquivos);
+        self.entradas_novas.extend(outra.entradas_novas);
+    }
+
+    /// O `fsync` de cada arquivo NO DESCRITOR QUE O ESCREVEU, e depois o de
+    /// cada pasta que ganhou entrada -- a ordem do `durable_rename` do
+    /// PostgreSQL: a entrada so vale depois de o conteudo para o qual ela
+    /// aponta estar no disco. As pastas vao da mais funda para a mais rasa:
+    /// a do schema (onde a tabela nasceu) antes do database (onde o schema
+    /// nasceu), antes da base (onde o database nasceu). Pelo motor
     /// [`crate::sincronia`], com o gancho do processo: e dado do banco.
     ///
-    /// Devolve quantos arquivos foram copiados.
+    /// Devolve quantos arquivos foram levados.
     pub fn levar_ao_disco(self) -> Result<usize> {
         for (arquivo, caminho) in &self.arquivos {
             crate::sincronia::sync_all(arquivo, caminho)?;
         }
-        // O `fsync` da pasta vai pelo nome de uma entrada dela: e pelo pai do
-        // caminho que a `sincronia` marca a recusa. Todos os arquivos moram
-        // na mesma pasta de destino, entao um basta.
-        if let Some((_, caminho)) = self.arquivos.first() {
-            crate::sincronia::sincronizar_os_diretorios(caminho, caminho, true)?;
-            if self.pasta_nova {
-                if let Some(pasta) = caminho.parent() {
-                    crate::sincronia::sincronizar_os_diretorios(pasta, pasta, true)?;
-                }
-            }
+        // Cada pasta vai pelo nome de uma entrada dela: e pelo pai do caminho
+        // que a `sincronia` marca a recusa. Uma por pasta, por mais arquivos
+        // que tenham nascido nela.
+        let mut pastas: std::collections::BTreeMap<PathBuf, &Path> =
+            std::collections::BTreeMap::new();
+        for (_, caminho) in &self.arquivos {
+            pastas.entry(pai_de(caminho)).or_insert(caminho);
+        }
+        for entrada in &self.entradas_novas {
+            pastas.entry(pai_de(entrada)).or_insert(entrada);
+        }
+        let mut ordem: Vec<(PathBuf, &Path)> = pastas.into_iter().collect();
+        ordem.sort_by_key(|(pasta, _)| std::cmp::Reverse(pasta.components().count()));
+        for (_, entrada) in ordem {
+            crate::sincronia::sincronizar_os_diretorios(entrada, entrada, true)?;
         }
         Ok(self.arquivos.len())
+    }
+}
+
+/// A pasta de um caminho, como a `sincronia` a calcula: vazio vira `.`.
+fn pai_de(caminho: &Path) -> PathBuf {
+    match caminho.parent() {
+        Some(d) if !d.as_os_str().is_empty() => d.to_path_buf(),
+        _ => PathBuf::from("."),
     }
 }
 
@@ -2903,5 +3030,183 @@ mod testes_do_invariante {
             std::mem::size_of::<PathBuf>(),
             "o marcador da trava passou a ocupar espaco"
         );
+    }
+}
+
+/// Pedido 589: criar database, schema e tabela responde depois de estar no
+/// disco -- provado contra o sistema operacional, pelo `strace -y`.
+#[cfg(test)]
+mod testes_criar_vai_ao_disco {
+    use super::*;
+    use phxsql_core::schema::{Column, IndexColumn, IndexDef};
+    use phxsql_core::types::ColumnType;
+
+    fn esquema(nome: &str) -> Schema {
+        Schema::new(
+            nome,
+            vec![Column::new("id", ColumnType::Int8).obrigatoria()],
+            vec![IndexDef::new("porId", vec![IndexColumn::asc(0)]).primaria()],
+        )
+        .unwrap()
+    }
+
+    /// Um `openat` de um nome que nao existe: a marca que separa, no traco,
+    /// o que cada operacao fez. Sem ela o `fsync` do database que a tabela
+    /// da raiz paga no fim passaria pelo que o `criar_schema` ficou devendo.
+    fn passo(base: &Path, n: u32) {
+        let _ = std::fs::File::open(base.join(format!("passo-{n}")));
+    }
+
+    /// O filho que o `strace` observa: as quatro criacoes, cada uma separada
+    /// da seguinte por um [`passo`].
+    #[test]
+    #[ignore = "roda so dentro de criar_database_schema_e_tabela_vao_ao_disco"]
+    fn filho_das_criacoes() {
+        let base = PathBuf::from(std::env::var("PHX_589_DIR").unwrap());
+        let inst = Instancia::nova(&base).unwrap();
+        passo(&base, 0);
+        let d = inst.criar_database("d").unwrap();
+        passo(&base, 1);
+        d.criar_schema("s").unwrap();
+        passo(&base, 2);
+        // Schema que ainda nao existe: e o `garantir_schema` do 589.
+        let t1 = d.criar_tabela(Some("n"), esquema("t1")).unwrap();
+        passo(&base, 3);
+        let t2 = d.criar_tabela(None, esquema("t2")).unwrap();
+        passo(&base, 4);
+        drop((t1, t2));
+    }
+
+    /// **Pedido 589, contra o sistema operacional.**
+    ///
+    /// Em cada operacao, antes da seguinte comecar: todo arquivo que ela
+    /// criou recebe `fsync` (o `.pag` fica de fora -- e derivado, e nasce por
+    /// `rename` justamente para dispensa-lo); a pasta onde eles nasceram
+    /// recebe `fsync` depois do ultimo; e a pasta que nasceu tem a entrada
+    /// dela sincronizada na mae -- a base para o database, o database para o
+    /// schema.
+    ///
+    /// **Nao medido:** a queda em si (pede derrubar a maquina). O que se prova
+    /// e o DESCRITOR e a ORDEM das chamadas, que e o que o conserto muda.
+    #[test]
+    fn criar_database_schema_e_tabela_vao_ao_disco() {
+        if std::process::Command::new("strace")
+            .arg("-V")
+            .output()
+            .is_err()
+        {
+            eprintln!("sem strace nesta maquina: a prova do 589 NAO MEDIDA");
+            return;
+        }
+        let t = crate::apoio_teste::DirTemp::novo("cat-589-strace");
+        let base = std::fs::canonicalize(&t.0).unwrap();
+        let traco = t.0.join("traco.txt");
+        let saida = std::process::Command::new("strace")
+            .args([
+                "-f",
+                "-y",
+                "-e",
+                "trace=openat,close,fsync,mkdir,mkdirat",
+                "-o",
+            ])
+            .arg(&traco)
+            .arg(std::env::current_exe().unwrap())
+            .args([
+                "--ignored",
+                "--exact",
+                "catalogo::testes_criar_vai_ao_disco::filho_das_criacoes",
+            ])
+            .env("PHX_589_DIR", &base)
+            .output()
+            .unwrap();
+        assert!(
+            saida.status.success(),
+            "{}",
+            String::from_utf8_lossy(&saida.stderr)
+        );
+        let texto = std::fs::read_to_string(&traco).unwrap();
+        let linhas: Vec<&str> = texto.lines().filter(|l| l.contains(" = ")).collect();
+        let txt = |p: &Path| p.display().to_string();
+        let marca = |n: u32| {
+            let alvo = format!("\"{}\"", txt(&base.join(format!("passo-{n}"))));
+            linhas
+                .iter()
+                .position(|l| l.contains("openat(") && l.contains(&alvo))
+                .unwrap_or_else(|| panic!("a premissa: o passo {n} no traco:\n{texto}"))
+        };
+        let ok = |l: &str| l.trim_end().ends_with("= 0");
+        let fsync_de = |p: &Path, janela: &[&str]| {
+            janela
+                .iter()
+                .any(|l| l.contains("fsync(") && l.contains(&format!("<{}>)", txt(p))) && ok(l))
+        };
+        let mut erros = Vec::new();
+        // (passo, pasta onde nascem arquivos e o prefixo deles, pastas que nascem)
+        type Caso<'a> = (u32, Option<(PathBuf, &'a str)>, Vec<PathBuf>);
+        let d = base.join("d");
+        let casos: [Caso; 4] = [
+            (1, Some((d.clone(), "_database.json")), vec![d.clone()]),
+            (2, None, vec![d.join("s")]),
+            (3, Some((d.join("n"), "t1.")), vec![d.join("n")]),
+            (4, Some((d.clone(), "t2.")), vec![]),
+        ];
+        for (n, arquivos, pastas_novas) in casos {
+            let janela = &linhas[marca(n - 1) + 1..marca(n)];
+            if let Some((pasta, prefixo)) = arquivos {
+                let criados: Vec<(usize, String)> = janela
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, l)| {
+                        let caminho = l.split('"').nth(1)?;
+                        let p = Path::new(caminho);
+                        let nome = p.file_name()?.to_string_lossy().to_string();
+                        (l.contains("openat(")
+                            && l.contains("O_CREAT")
+                            && p.parent().is_some_and(|x| x == pasta)
+                            && nome.starts_with(prefixo)
+                            && !nome.contains(".pag"))
+                        .then(|| (i, caminho.to_string()))
+                    })
+                    .collect();
+                if criados.is_empty() {
+                    erros.push(format!(
+                        "passo {n}: a premissa: nada nasceu em {}",
+                        txt(&pasta)
+                    ));
+                    continue;
+                }
+                for (i, caminho) in &criados {
+                    if !fsync_de(Path::new(caminho), &janela[i + 1..]) {
+                        erros.push(format!("passo {n}: {caminho} sem fsync antes da resposta"));
+                    }
+                }
+                let ultimo = criados.last().map_or(0, |c| c.0);
+                if !fsync_de(&pasta, &janela[ultimo + 1..]) {
+                    erros.push(format!(
+                        "passo {n}: {} sem fsync depois do ultimo arquivo criado nela",
+                        txt(&pasta)
+                    ));
+                }
+            }
+            for nova in pastas_novas {
+                let alvo = format!("\"{}\"", txt(&nova));
+                let Some(nasceu) = janela
+                    .iter()
+                    .position(|l| l.contains("mkdir") && l.contains(&alvo) && ok(l))
+                else {
+                    erros.push(format!("passo {n}: a premissa: {} nao nasceu", txt(&nova)));
+                    continue;
+                };
+                let mae = nova.parent().unwrap();
+                if !fsync_de(mae, &janela[nasceu + 1..]) {
+                    erros.push(format!(
+                        "passo {n}: {} nasceu e {} ficou sem fsync",
+                        txt(&nova),
+                        txt(mae)
+                    ));
+                }
+            }
+        }
+        assert!(erros.is_empty(), "{erros:#?}\n{texto}");
     }
 }

@@ -4995,6 +4995,30 @@ impl Table {
     ///
     /// Gerado, e nunca lido pelo motor: a verdade continua no bloco de esquema
     /// do `.reg` e nos cabecalhos dos volumes. Ver [`crate::pag`].
+    /// Os descritores dos arquivos que [`Table::criar`] abriu, duplicados --
+    /// pedido 589: quem criou com a trava global na mao os leva ao disco
+    /// depois de solta-la ([`crate::catalogo::PorSincronizar`]).
+    ///
+    /// O `.pag` fica de fora de proposito: e descritor gerado, o motor nao o
+    /// le, e ele nasce por `rename` justamente para dispensar o `fsync` (ver
+    /// `pag::escrever`). A trilha `.lgpd` so nasce no primeiro evento, e o
+    /// `.reg` vai por ultimo: e a presenca dele que faz a tabela existir.
+    pub(crate) fn descritores_da_criacao(
+        &self,
+    ) -> Result<Vec<(std::fs::File, std::path::PathBuf)>> {
+        let mut saida = vec![self.ndx.descritor_aberto()?];
+        if let Some(f) = &self.fts {
+            saida.push(f.descritor_aberto()?);
+        }
+        saida.extend(self.bin.descritores()?);
+        saida.extend(self.memo.descritores()?);
+        saida.extend(self.log.descritores()?);
+        saida.extend(self.lixeira.descritores()?);
+        saida.extend(self.motivos.descritores()?);
+        saida.extend(self.reg.descritores()?);
+        Ok(saida)
+    }
+
     pub fn gravar_pag(&mut self) -> Result<std::path::PathBuf> {
         let volumes = self.reg.volumes();
         crate::pag::escrever(

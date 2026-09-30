@@ -415,6 +415,11 @@ pub struct LogFile {
 }
 
 impl LogFile {
+    /// Os descritores abertos, para o `fsync` da criacao fora da trava --
+    /// pedido 589. Ver [`crate::volume::Volumes::descritores`].
+    pub(crate) fn descritores(&self) -> std::io::Result<Vec<(std::fs::File, std::path::PathBuf)>> {
+        self.volumes.descritores()
+    }
     pub fn criar(diretorio: impl AsRef<Path>, nome: &str, paginacao: Paginacao) -> Result<LogFile> {
         // O diario corta o volume no tamanho DELE, que nao e o do `.bin`. Ver
         // `crate::diario`: sem configuracao, manda o esquema, como sempre.
