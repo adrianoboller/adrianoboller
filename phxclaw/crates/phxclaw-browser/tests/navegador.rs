@@ -261,8 +261,17 @@ async fn navegacao_e_rede_iniciadas_pela_pagina_passam_pela_politica() {
     let raiz = format!("{}/", ok.origem());
     p.goto(&raiz).await.unwrap();
 
-    // Clique num link para a origem proibida.
+    // Clique num link para a origem proibida. Espera o bloqueio ser registrado antes de
+    // navegar de novo: sob carga, o goto seguinte cancelava a navegacao do clique antes de
+    // ela ser tentada, e o teste falhava sem furo nenhum (o proibido seguia com 0 conexoes).
     p.click("#proibido").await.unwrap();
+    let alvo = format!(":{}/segredo", proibido.porta);
+    for _ in 0..50 {
+        if b.blocked_requests().iter().any(|x| x.url.contains(&alvo)) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
     // fetch() da propria pagina: SSRF pela porta dos sub-recursos.
     let js = format!(
         "fetch('http://127.0.0.1:{}/api', {{mode: 'no-cors'}}).then(() => 'passou', () => 'barrado')",
