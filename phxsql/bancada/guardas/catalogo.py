@@ -17239,6 +17239,33 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         ],
     },
     {
+        "id": "backup-em-pasta-que-falha-deixa-as-copias",
+        "titulo": "o backup em PASTA cujo manifesto recusa deixa as cópias na pasta sem `backup.json` para sempre",
+        "porque": (
+            "pedido 576, irmao do 555: `executar` → `concluir` "
+            "(`sincronizar_copias`, `finalizar_manifesto`) subia o erro e "
+            "deixava as copias sem manifesto, que nem `op_backups` nem a "
+            "rotacao reconhecem. A faxina apaga SO o que a corrida anotou "
+            "(copia cujo nome nasceu agora, pasta criada agora e vazia), "
+            "porque a pasta e do usuario e pode ter outra coisa dentro. A "
+            "prova derruba o manifesto de verdade (um diretorio no nome "
+            "`backup.json`), nao por arma forjada."
+        ),
+        "arquivo": "crates/phxsql-store/src/backup.rs",
+        "trecho": """        descartar_corrida(copias);
+    }
+    feito
+""",
+        "troca": """        // DEFEITO REPOSTO (576): a recusa sobe e as copias ficam.
+    }
+    feito
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "copia-que-falha-nao-fica"],
+        "caem": ["o_manifesto_que_recusa_leva_so_o_que_a_corrida_criou"],
+        "seguem": ["a_copia_que_recusa_no_meio_nao_deixa_a_pasta"],
+    },
+    {
         "id": "cascata-dispara-after-do-elo-so-no-commit",
         "titulo": "a mesma cascata do `ao_alterar` dispara o AFTER da filha no COMMIT e não na alteração solta",
         "porque": (
