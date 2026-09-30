@@ -14802,6 +14802,23 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "seguem": [],
     },
     {
+        "id": "recado-de-trava-entrega-o-login",
+        "titulo": "o recado de trava mostra o login do dono dela a quem esbarrou, que pode nem ter direito na tabela",
+        "porque": (
+            "pedido 549, papel SEC. Os tres maduros convergem em nao nomear o "
+            "usuario no erro de trava; medido antes: `pela transacao 2 de ana`."
+        ),
+        "arquivo": "crates/phxsql-server/src/transacao.rs",
+        "trecho": """    let dono = format!("pela transacao {} (ligacao {})", t.id, t.ligacao);
+""",
+        "troca": """    let dono = format!("pela transacao {} de {} (ligacao {})", t.id, t.usuario, t.ligacao);
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": ["transacao::testes::o_recado_da_barrada_nomeia_quem_segura"],
+        "seguem": [],
+    },
+    {
         "id": "smtp-ecoa-a-credencial",
         "titulo": "o erro do SMTP traz o texto do rele, e o rele que ecoa a credencial poe o base64 da senha no log",
         "porque": (

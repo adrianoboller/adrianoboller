@@ -712,14 +712,12 @@ impl Transacoes {
 /// procurar sozinha.
 fn quem(t: &Transacao, agora_ms: i64) -> String {
     let ha = ((agora_ms - t.desde_ms).max(0) / 1000) as u64;
-    let dono = if t.usuario.is_empty() {
-        format!("pela transacao {} (ligacao {})", t.id, t.ligacao)
-    } else {
-        format!(
-            "pela transacao {} de {} (ligacao {})",
-            t.id, t.usuario, t.ligacao
-        )
-    };
+    // O LOGIN do dono da trava nao sai (pedido 549): o recado vai a quem
+    // esbarrou, que pode nem ter direito na tabela travada, e o login e dado
+    // de outro usuario. Os tres maduros convergem -- o PostgreSQL nomeia o
+    // processo e a transacao, MySQL e MariaDB so o «Lock wait timeout»;
+    // nenhum nomeia o usuario. Quem administra ve o dono pelo `transacoes`.
+    let dono = format!("pela transacao {} (ligacao {})", t.id, t.ligacao);
     format!(
         "{dono}, aberta em {} ha {ha}s; ela solta no COMMIT ou no ROLLBACK",
         phxsql_core::datahora::instante_iso(t.desde_ms)
@@ -1006,8 +1004,14 @@ mod testes {
         };
         let recado = t.recado_da_barrada(&b, 10_000);
         assert!(recado.contains("9001"), "{recado}");
-        assert!(recado.contains("ana"), "{recado}");
+        assert!(recado.contains(&format!("transacao {id}")), "{recado}");
         assert!(recado.contains("ROLLBACK"), "{recado}");
+        // Pedido 549: o login do dono NAO sai -- era o comportamento que
+        // este teste cravava, e e o que o pedido desfaz.
+        assert!(
+            !recado.contains("ana"),
+            "o recado entregou o login: {recado}"
+        );
 
         // Transacao que ja saiu: o recado nao mente, so fica mais curto.
         let b2 = crate::travas::Barrada {
