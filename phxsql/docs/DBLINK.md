@@ -560,12 +560,23 @@ não de preguiça:
 - **O teto é o `max_linhas` da ligação.** Tabela maior recusa com erro claro;
   sincronizar metade e fingir que acabou seria pior que não sincronizar.
 
-E um limite herdado do módulo, agora visível aqui: **texto com aspa simples
-recusa o empurrão** (`Sant'Ana` não sobe). É a mesma decisão do `nome_seguro`
-— escapar depende do modo do outro servidor (`NO_BACKSLASH_ESCAPES` muda o
-que a contrabarra faz), então o que emendaria SQL é recusado com erro, nunca
-emendado. Se um dia o escape entrar, entra por decisão medida (aspa dobrada
-não depende do modo; a contrabarra sim), não por acidente.
+**Valor não é nome (pedido 556).** Até 30/09/2026 todo texto empurrado passava
+pela régua de nome do `nome_seguro`: `Sant'Ana`, um Memo com quebra de linha ou
+mais de 128 bytes recusavam **citando o valor inteiro**, e `Ana ` subia como
+`Ana`. Hoje o valor sai pelo `Motor::texto` (`dblink/dialeto.rs`), a função
+única de citar valor, numa forma cujo sentido **não depende do modo** do outro
+servidor — os três maduros só convergem na aspa dobrada; na contrabarra
+divergem por modo (`standard_conforming_strings`, `NO_BACKSLASH_ESCAPES`):
+
+| destino | forma | por quê |
+|---|---|---|
+| MySQL(R) / MariaDB | `_utf8mb4 X'…'` | hexadecimal com introdutor: nem aspa nem contrabarra de dado dentro, em qualquer `sql_mode` e conjunto de caracteres; o NUL viaja |
+| PostgreSQL(R) | `E'…'` com `\\` e `''` | a forma `E` escapa a contrabarra com qualquer `standard_conforming_strings`; o NUL **recusa** (o `text` não o guarda), sem citar o valor |
+| PhxSql | `'…'` com `''` | o léxico daqui não tem escape de contrabarra |
+
+E o puxar deixou de aparar: texto chega como veio, `''` continua `''` e não
+vira nulo. A recusa de conversão de uma célula puxada **nunca cita o valor**
+(pedido 557): diz coluna, tipo e tamanho em bytes, pelo `Column::recusa_sem_valor`.
 
 ### As duas operações
 

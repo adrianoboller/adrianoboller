@@ -533,14 +533,38 @@ impl Column {
         if !self.dado_pessoal.e_pessoal() {
             return e;
         }
-        let redigida = |motivo: &str| {
-            format!(
+        self.redigir(e, None)
+    }
+
+    /// A recusa de um valor que NAO foi digitado por quem vai le-la -- pedido
+    /// 557: a celula que o DbLink puxa do outro banco.
+    ///
+    /// A excecao da coluna sem marca em [`Column::recusa_de_valor`] existe
+    /// porque o valor curto citado mostra a quem digitou o proprio erro. A
+    /// celula remota nao tem esse leitor: e dado de um titular de la, e a
+    /// recusa vai ao `acessos.log`, ao Profiler e ao `jobs.log`, onde ninguem
+    /// a digitou. Por isso redige SEMPRE, marca ou nao -- e pelo mesmo motor,
+    /// para a regra de redigir continuar escrita num lugar so. No lugar do
+    /// valor vai o tamanho em bytes, que diz «veio lixo» ou «veio texto
+    /// longo demais» sem dizer o que veio.
+    pub fn recusa_sem_valor(&self, e: PhxError, bytes: usize) -> PhxError {
+        self.redigir(e, Some(bytes))
+    }
+
+    fn redigir(&self, e: PhxError, bytes: Option<usize>) -> PhxError {
+        let redigida = |motivo: &str| match bytes {
+            None => format!(
                 "coluna {:?} ({:?}, dado {}): o valor recebido {motivo}; \
                  a recusa nao cita valor de coluna marcada",
                 self.nome,
                 self.ty,
                 self.dado_pessoal.nome()
-            )
+            ),
+            Some(n) => format!(
+                "coluna {:?} ({:?}): o valor recebido, de {n} bytes, {motivo}; \
+                 a recusa nao cita valor vindo de outro banco",
+                self.nome, self.ty
+            ),
         };
         match e {
             PhxError::Tipo(_) => PhxError::Tipo(redigida("nao serve ao tipo")),
@@ -2442,6 +2466,26 @@ mod testes_recusa_de_valor {
         }
         // Defeito interno nao se disfarca de recusa de tipo.
         let r = cpf.recusa_de_valor(PhxError::Corrompido("espaco insuficiente".into()));
+        assert!(matches!(r, PhxError::Corrompido(ref d) if d == "espaco insuficiente"));
+    }
+
+    /// Pedido 557: o valor que veio de outro banco se redige mesmo em coluna
+    /// sem marca, e diz o tamanho no lugar do valor.
+    #[test]
+    fn o_valor_de_fora_se_redige_mesmo_sem_marca() {
+        let c = Column::new("nascimento", ColumnType::Date);
+        let r = c.recusa_sem_valor(
+            PhxError::Tipo("data invalida: \"999.888.777-66\"".into()),
+            14,
+        );
+        assert_eq!(r.codigo(), PhxError::Tipo(String::new()).codigo());
+        let t = r.to_string();
+        assert!(!t.contains("999"), "citou o valor: {t}");
+        assert!(
+            t.contains("\"nascimento\"") && t.contains("Date") && t.contains("14 bytes"),
+            "{t}"
+        );
+        let r = c.recusa_sem_valor(PhxError::Corrompido("espaco insuficiente".into()), 3);
         assert!(matches!(r, PhxError::Corrompido(ref d) if d == "espaco insuficiente"));
     }
 

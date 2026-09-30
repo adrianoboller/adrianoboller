@@ -6326,3 +6326,36 @@ Guardas novas, provadas nos dois sentidos pela árvore de trabalho:
 `arranque-cala-o-alerta-da-base-por-link`.
 
 **Re-checagem (24/09/2026, 21:20).** O SEC e o juiz mediram três resíduos com o binário consertado, e eles ficam abertos: o link num nome INTERMEDIÁRIO do destino (pedido 568: `ok:true` e a tabela de outro database vivo sobrescrita), o arquivo regular de OUTRO dono que já está no destino, inclusive o `.part` do ZIP (569), e a FIFO na janela entre o `lstat` e o `open`, com o `fsync` da cópia reaberto pelo nome (570). O 542 fecha o `umask` e o link no último nome; não fecha «o backup não grava fora de si».
+
+## 32. O DbLink citava o valor: régua de nome no empurrão, célula alheia no puxar (pedidos 556 e 557)
+
+**556, empurrar.** O `valor_para_sql` citava `Str`/`Memo` pelo `literal` do
+catálogo, que é o `nome_seguro`: régua de **nome**. «D'Avila», todo Memo com
+quebra de linha e todo texto acima de 128 bytes recusavam a rodada **citando o
+valor inteiro**, sem teto, e o `acessos.log` o gravava; «Ana » subia «Ana». Hoje
+o valor sai pelo `Motor::texto` (`dblink/dialeto.rs`), a função única de citar
+valor, numa forma cujo sentido não depende do modo do servidor de lá — os três
+maduros só convergem na aspa dobrada, e na contrabarra divergem por modo
+(`standard_conforming_strings`, `NO_BACKSLASH_ESCAPES`), que é onde mora a
+injeção clássica. MySQL(R)/MariaDB recebem `_utf8mb4 X'…'` (sem aspa nem
+contrabarra de dado no fio, o NUL viaja); PostgreSQL(R) recebe `E'…'` com `\\` e
+`''`, e o NUL recusa sem citar; PhxSql recebe `'…'` com `''`. O puxar deixou de
+aparar pelo mesmo motivo, senão «Ana » viraria conflito eterno.
+
+**557, puxar.** A célula remota que não servia ao tipo local saía na recusa —
+`data invalida: "999.888.777-66"` —, dado de um titular de lá. Passa agora pelo
+`Column::recusa_sem_valor`, o mesmo motor do 464 (`recusa_de_valor` delega a
+ele): redige **sempre**, marca ou não, porque ninguém aqui digitou aquele valor,
+e dá coluna, tipo e tamanho em bytes.
+
+| prova | com o conserto | com o defeito reposto |
+|---|---|---|
+| `servidor::testes_dblink_valor_no_fio::o_empurrao_leva_o_valor_byte_a_byte_sem_regua_de_nome` (soquete, MySQL falso) | os três valores chegam byte a byte no `INSERT` | `nome longo demais: "éééé…"` — o valor inteiro na recusa |
+| `servidor::testes_dblink_valor_no_fio::a_celula_remota_recusada_nao_sai_citada` (soquete) | `coluna "nasc" (Date): o valor recebido, de 14 bytes, nao serve ao tipo` | `data invalida: "999.888.777-66"` |
+
+Guardas: `dblink-empurra-valor-pela-regua-de-nome`,
+`dblink-puxar-cita-a-celula-remota` e `dblink-puxar-apara-o-texto`.
+
+**Fica de fora, dito:** a sincronia com PostgreSQL(R) continua montando SQL de
+MySQL(R) no resto da instrução (`SELECT * FROM` com crase, `ON DUPLICATE KEY
+UPDATE`, booleano `1`/`0`); o valor já sai no dialeto certo, a instrução não.

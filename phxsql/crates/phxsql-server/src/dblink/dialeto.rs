@@ -58,6 +58,66 @@ impl Motor {
         }
     }
 
+    /// Um VALOR de texto como literal deste motor -- pedido 556.
+    ///
+    /// Nome e valor sao perguntas diferentes, e por isso funcoes diferentes:
+    /// o nome passa pela regua do `nome_seguro` (recusa aspa, apara), e o
+    /// valor e dado de alguem -- «D'Avila», um Memo de varias linhas, «Ana »
+    /// com o espaco -- e tem de chegar la byte a byte. Todo empurrao cita
+    /// valor por aqui; o `nome_seguro` continua so para nome.
+    ///
+    /// # A escolha por dialeto, e por que nenhuma depende do modo do servidor
+    ///
+    /// Os tres maduros convergem so na aspa dobrada (`''`). Na contrabarra
+    /// divergem, e a divergencia e de MODO, nao so de motor: o PostgreSQL(R)
+    /// a le literal com `standard_conforming_strings` ligado (padrao desde a
+    /// 9.1) e como escape com ele desligado; o MySQL(R) e o MariaDB a leem
+    /// como escape, salvo sob `NO_BACKSLASH_ESCAPES`. Quem cita sem saber o
+    /// modo erra num dos dois -- e errar a contrabarra antes de uma aspa e a
+    /// injecao classica. Entao cada motor recebe a forma cujo sentido NAO
+    /// depende de modo nenhum:
+    ///
+    /// - **MySQL(R)/MariaDB:** `_utf8mb4 X'…'`. Literal hexadecimal com
+    ///   introdutor, documentado nos dois: nao leva aspa nem contrabarra de
+    ///   dado dentro, entao nem o `sql_mode` nem um conjunto de caracteres
+    ///   multibyte da conexao (o `0xbf27` do GBK) mudam onde ele fecha, e o
+    ///   NUL viaja como `00`.
+    /// - **PostgreSQL(R):** `E'…'`, com `\\` e `''`. A forma `E` escapa a
+    ///   contrabarra com qualquer `standard_conforming_strings`. O NUL e
+    ///   RECUSADO: o `text` do PostgreSQL(R) nao guarda o byte zero, e
+    ///   corta-lo seria gravar outro dado calado.
+    /// - **PhxSql:** `'…'` com `''` -- o lexico daqui nao tem escape de
+    ///   contrabarra (`lexico::literal_de_texto`), entao so a aspa se dobra.
+    ///
+    /// A recusa nao cita o valor; quem chama sabe a coluna e a poe na frente.
+    pub fn texto(self, valor: &str) -> Result<String> {
+        Ok(match self {
+            Motor::MySql => {
+                if valor.is_empty() {
+                    return Ok("''".into());
+                }
+                let mut s = String::with_capacity(12 + valor.len() * 2);
+                s.push_str("_utf8mb4 X'");
+                for b in valor.as_bytes() {
+                    s.push_str(&format!("{b:02X}"));
+                }
+                s.push('\'');
+                s
+            }
+            Motor::Postgres => {
+                if valor.contains('\0') {
+                    return Err(PhxError::Tipo(format!(
+                        "texto de {} bytes com o byte NUL: o text do PostgreSQL(R) \
+                         nao o guarda, e corta-lo gravaria outro dado",
+                        valor.len()
+                    )));
+                }
+                format!("E'{}'", valor.replace('\\', "\\\\").replace('\'', "''"))
+            }
+            Motor::Phx => format!("'{}'", valor.replace('\'', "''")),
+        })
+    }
+
     /// Recusa a montagem de SQL de CATALOGO para quem nao tem catalogo em SQL.
     ///
     /// O erro nomeia a operacao NATIVA que responde a mesma pergunta, em vez
