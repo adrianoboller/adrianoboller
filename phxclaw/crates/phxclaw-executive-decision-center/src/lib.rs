@@ -12,25 +12,36 @@ use std::cmp::Ordering;
 use thiserror::Error;
 use uuid::Uuid;
 
-pub const DECISION_RULE: &str = "observe -> simulate -> compare -> approve -> delegate to supervisor";
-pub const HARD_GATE_RULE: &str = "never override security/privacy/release/knowledge/fencing/hard-budget gates";
+pub const DECISION_RULE: &str =
+    "observe -> simulate -> compare -> approve -> delegate to supervisor";
+pub const HARD_GATE_RULE: &str =
+    "never override security/privacy/release/knowledge/fencing/hard-budget gates";
 pub const EXECUTION_RULE: &str = "decision-center does not mutate project state directly";
 
 #[derive(Debug, Error)]
 pub enum DecisionError {
-    #[error("stale source or forecast")] Stale,
-    #[error("source-state mismatch")] SourceStateMismatch,
-    #[error("tenant/project mismatch")] ScopeMismatch,
-    #[error("hard gate violation")] HardGate,
-    #[error("approval required")] ApprovalRequired,
-    #[error("approval signer not trusted")] UntrustedSigner,
-    #[error("approval signature invalid")] InvalidSignature,
-    #[error("operational execution must be delegated to v0.47 supervisor")] DelegateRequired,
-    #[error("scenario invalid: {0}")] InvalidScenario(String),
+    #[error("stale source or forecast")]
+    Stale,
+    #[error("source-state mismatch")]
+    SourceStateMismatch,
+    #[error("tenant/project mismatch")]
+    ScopeMismatch,
+    #[error("hard gate violation")]
+    HardGate,
+    #[error("approval required")]
+    ApprovalRequired,
+    #[error("approval signer not trusted")]
+    UntrustedSigner,
+    #[error("approval signature invalid")]
+    InvalidSignature,
+    #[error("operational execution must be delegated to v0.47 supervisor")]
+    DelegateRequired,
+    #[error("scenario invalid: {0}")]
+    InvalidScenario(String),
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all="snake_case")]
+#[serde(rename_all = "snake_case")]
 pub enum DecisionKind {
     Reprioritize,
     ReassignAgent,
@@ -48,14 +59,26 @@ pub enum DecisionKind {
 
 impl DecisionKind {
     pub fn requires_explicit_approval(self) -> bool {
-        matches!(self,
-            Self::ScopeChange | Self::BaselineChange | Self::DeadlineChange |
-            Self::BudgetIncrease | Self::ProductionChange | Self::DestructiveChange)
+        matches!(
+            self,
+            Self::ScopeChange
+                | Self::BaselineChange
+                | Self::DeadlineChange
+                | Self::BudgetIncrease
+                | Self::ProductionChange
+                | Self::DestructiveChange
+        )
     }
     pub fn reversible_by_default(self) -> bool {
-        matches!(self,
-            Self::Reprioritize | Self::ReassignAgent | Self::ReduceWip |
-            Self::ResequenceTasks | Self::ModelRouteChange | Self::ResourceLeveling)
+        matches!(
+            self,
+            Self::Reprioritize
+                | Self::ReassignAgent
+                | Self::ReduceWip
+                | Self::ResequenceTasks
+                | Self::ModelRouteChange
+                | Self::ResourceLeveling
+        )
     }
 }
 
@@ -196,109 +219,209 @@ pub fn scenario_hash(s: &WhatIfScenario) -> String {
         "expires_at":s.expires_at,
         "model_evidence_sha256":s.model_evidence_sha256,
     });
-    format!("{:x}", Sha256::digest(serde_json::to_vec(&canonical).expect("scenario json")))
+    format!(
+        "{:x}",
+        Sha256::digest(serde_json::to_vec(&canonical).expect("scenario json"))
+    )
 }
 
-pub fn validate_case(case: &DecisionCase, now: DateTime<Utc>) -> Result<(),DecisionError> {
-    if case.expires_at < now { return Err(DecisionError::Stale); }
-    if case.source_state_sha256.len()!=64 || case.trigger_evidence_sha256.len()!=64 { return Err(DecisionError::InvalidScenario("invalid evidence hash".into())); }
+pub fn validate_case(case: &DecisionCase, now: DateTime<Utc>) -> Result<(), DecisionError> {
+    if case.expires_at < now {
+        return Err(DecisionError::Stale);
+    }
+    if case.source_state_sha256.len() != 64 || case.trigger_evidence_sha256.len() != 64 {
+        return Err(DecisionError::InvalidScenario(
+            "invalid evidence hash".into(),
+        ));
+    }
     Ok(())
 }
 
-pub fn evaluate(s:&WhatIfScenario, w:&ObjectiveWeights, c:&DecisionConstraints, now:DateTime<Utc>) -> Result<ScenarioEvaluation,DecisionError> {
-    if s.expires_at < now { return Err(DecisionError::Stale); }
-    if scenario_hash(s) != s.scenario_sha256 { return Err(DecisionError::InvalidScenario("scenario hash mismatch".into())); }
-    let hard_ok = c.security_gate_passed && c.privacy_gate_passed && c.release_gate_passed && c.knowledge_gate_passed && c.fencing_valid && c.hard_budget_ok;
-    if !hard_ok { return Err(DecisionError::HardGate); }
-    let mut reasons=Vec::new();
-    if s.impact.cost_delta_usd > c.max_budget_increase_usd { reasons.push("budget_constraint".into()); }
-    if s.impact.deadline_delta_days > c.max_deadline_slip_days { reasons.push("deadline_constraint".into()); }
-    if s.impact.risk_delta > c.max_risk_increase { reasons.push("risk_constraint".into()); }
-    if s.impact.quality_delta < c.min_quality_delta { reasons.push("quality_constraint".into()); }
-    let feasible=reasons.is_empty();
-    let utility = (-w.deadline*s.impact.deadline_delta_days)
-        + (-w.cost*s.impact.cost_delta_usd/1000.0)
-        + (-w.risk*s.impact.risk_delta*100.0)
-        + (w.quality*s.impact.quality_delta*100.0)
-        + (w.capacity*s.impact.capacity_delta*100.0);
-    Ok(ScenarioEvaluation{
-        scenario_uuid:s.scenario_uuid,
+pub fn evaluate(
+    s: &WhatIfScenario,
+    w: &ObjectiveWeights,
+    c: &DecisionConstraints,
+    now: DateTime<Utc>,
+) -> Result<ScenarioEvaluation, DecisionError> {
+    if s.expires_at < now {
+        return Err(DecisionError::Stale);
+    }
+    if scenario_hash(s) != s.scenario_sha256 {
+        return Err(DecisionError::InvalidScenario(
+            "scenario hash mismatch".into(),
+        ));
+    }
+    let hard_ok = c.security_gate_passed
+        && c.privacy_gate_passed
+        && c.release_gate_passed
+        && c.knowledge_gate_passed
+        && c.fencing_valid
+        && c.hard_budget_ok;
+    if !hard_ok {
+        return Err(DecisionError::HardGate);
+    }
+    let mut reasons = Vec::new();
+    if s.impact.cost_delta_usd > c.max_budget_increase_usd {
+        reasons.push("budget_constraint".into());
+    }
+    if s.impact.deadline_delta_days > c.max_deadline_slip_days {
+        reasons.push("deadline_constraint".into());
+    }
+    if s.impact.risk_delta > c.max_risk_increase {
+        reasons.push("risk_constraint".into());
+    }
+    if s.impact.quality_delta < c.min_quality_delta {
+        reasons.push("quality_constraint".into());
+    }
+    let feasible = reasons.is_empty();
+    let utility = (-w.deadline * s.impact.deadline_delta_days)
+        + (-w.cost * s.impact.cost_delta_usd / 1000.0)
+        + (-w.risk * s.impact.risk_delta * 100.0)
+        + (w.quality * s.impact.quality_delta * 100.0)
+        + (w.capacity * s.impact.capacity_delta * 100.0);
+    Ok(ScenarioEvaluation {
+        scenario_uuid: s.scenario_uuid,
         feasible,
-        approval_required:s.kind.requires_explicit_approval(),
-        utility_score:utility*s.impact.confidence.clamp(0.0,1.0),
-        reasons
+        approval_required: s.kind.requires_explicit_approval(),
+        utility_score: utility * s.impact.confidence.clamp(0.0, 1.0),
+        reasons,
     })
 }
 
-pub fn compare(scenarios:&[WhatIfScenario], w:&ObjectiveWeights, c:&DecisionConstraints, now:DateTime<Utc>) -> Result<Vec<ScenarioEvaluation>,DecisionError> {
-    let mut out=Vec::new();
-    for s in scenarios { out.push(evaluate(s,w,c,now)?); }
-    out.sort_by(|a,b| {
-        b.feasible.cmp(&a.feasible)
-            .then_with(|| b.utility_score.partial_cmp(&a.utility_score).unwrap_or(Ordering::Equal))
+pub fn compare(
+    scenarios: &[WhatIfScenario],
+    w: &ObjectiveWeights,
+    c: &DecisionConstraints,
+    now: DateTime<Utc>,
+) -> Result<Vec<ScenarioEvaluation>, DecisionError> {
+    let mut out = Vec::new();
+    for s in scenarios {
+        out.push(evaluate(s, w, c, now)?);
+    }
+    out.sort_by(|a, b| {
+        b.feasible
+            .cmp(&a.feasible)
+            .then_with(|| {
+                b.utility_score
+                    .partial_cmp(&a.utility_score)
+                    .unwrap_or(Ordering::Equal)
+            })
             .then_with(|| a.scenario_uuid.cmp(&b.scenario_uuid))
     });
     Ok(out)
 }
 
-pub fn sensitivity(s:&WhatIfScenario, w:&ObjectiveWeights) -> Vec<SensitivityPoint> {
-    let base = (-w.deadline*s.impact.deadline_delta_days)
-        + (-w.cost*s.impact.cost_delta_usd/1000.0)
-        + (-w.risk*s.impact.risk_delta*100.0)
-        + (w.quality*s.impact.quality_delta*100.0)
-        + (w.capacity*s.impact.capacity_delta*100.0);
-    [-0.20,-0.10,0.10,0.20].iter().flat_map(|d| {
-        ["confidence","cost","deadline"].iter().map(move |v| SensitivityPoint{
-            variable:(*v).into(), delta_pct:*d,
-            resulting_utility: match *v {
-                "confidence" => base*(s.impact.confidence*(1.0+d)).clamp(0.0,1.0),
-                "cost" => base - w.cost*(s.impact.cost_delta_usd*d)/1000.0,
-                _ => base - w.deadline*(s.impact.deadline_delta_days*d),
-            }
+pub fn sensitivity(s: &WhatIfScenario, w: &ObjectiveWeights) -> Vec<SensitivityPoint> {
+    let base = (-w.deadline * s.impact.deadline_delta_days)
+        + (-w.cost * s.impact.cost_delta_usd / 1000.0)
+        + (-w.risk * s.impact.risk_delta * 100.0)
+        + (w.quality * s.impact.quality_delta * 100.0)
+        + (w.capacity * s.impact.capacity_delta * 100.0);
+    [-0.20, -0.10, 0.10, 0.20]
+        .iter()
+        .flat_map(|d| {
+            ["confidence", "cost", "deadline"]
+                .iter()
+                .map(move |v| SensitivityPoint {
+                    variable: (*v).into(),
+                    delta_pct: *d,
+                    resulting_utility: match *v {
+                        "confidence" => base * (s.impact.confidence * (1.0 + d)).clamp(0.0, 1.0),
+                        "cost" => base - w.cost * (s.impact.cost_delta_usd * d) / 1000.0,
+                        _ => base - w.deadline * (s.impact.deadline_delta_days * d),
+                    },
+                })
         })
-    }).collect()
+        .collect()
 }
 
-pub fn verify_approval(a:SignedApproval, trusted_signers:&[(Uuid,VerifyingKey)], now:DateTime<Utc>) -> Result<VerifiedApproval,DecisionError> {
-    if a.expires_at < now || a.issued_at > now+Duration::minutes(5) { return Err(DecisionError::Stale); }
-    let key=trusted_signers.iter().find(|(id,_)| *id==a.signer_uuid).map(|(_,k)|k).ok_or(DecisionError::UntrustedSigner)?;
-    if hex::encode(key.as_bytes()) != a.public_key_hex.to_lowercase() { return Err(DecisionError::UntrustedSigner); }
-    let payload=serde_json::json!({
+pub fn verify_approval(
+    a: SignedApproval,
+    trusted_signers: &[(Uuid, VerifyingKey)],
+    now: DateTime<Utc>,
+) -> Result<VerifiedApproval, DecisionError> {
+    if a.expires_at < now || a.issued_at > now + Duration::minutes(5) {
+        return Err(DecisionError::Stale);
+    }
+    let key = trusted_signers
+        .iter()
+        .find(|(id, _)| *id == a.signer_uuid)
+        .map(|(_, k)| k)
+        .ok_or(DecisionError::UntrustedSigner)?;
+    if hex::encode(key.as_bytes()) != a.public_key_hex.to_lowercase() {
+        return Err(DecisionError::UntrustedSigner);
+    }
+    let payload = serde_json::json!({
         "approval_uuid":a.approval_uuid,"tenant_uuid":a.tenant_uuid,"project_uuid":a.project_uuid,
         "case_uuid":a.case_uuid,"scenario_uuid":a.scenario_uuid,"source_state_sha256":a.source_state_sha256,
         "signer_uuid":a.signer_uuid,"issued_at":a.issued_at,"expires_at":a.expires_at
     });
-    let bytes=serde_json::to_vec(&payload).expect("approval json");
-    let sig_bytes=hex::decode(&a.signature_hex).map_err(|_|DecisionError::InvalidSignature)?;
-    let sig=Signature::from_slice(&sig_bytes).map_err(|_|DecisionError::InvalidSignature)?;
-    key.verify(&bytes,&sig).map_err(|_|DecisionError::InvalidSignature)?;
-    let approval_sha256=format!("{:x}",Sha256::digest(bytes));
-    Ok(VerifiedApproval{document:a,approval_sha256})
-}
-
-pub fn build_execution_envelope(
-    case:&DecisionCase,
-    scenario:&WhatIfScenario,
-    supervisor_plan_uuid:Uuid,
-    approval:Option<&VerifiedApproval>,
-    controller_epoch:u64,
-    fencing_token:u64,
-) -> Result<DecisionExecutionEnvelope,DecisionError> {
-    if case.tenant_uuid!=scenario.tenant_uuid || case.project_uuid!=scenario.project_uuid || case.case_uuid!=scenario.case_uuid { return Err(DecisionError::ScopeMismatch); }
-    if case.source_state_sha256!=scenario.source_state_sha256 { return Err(DecisionError::SourceStateMismatch); }
-    if scenario.kind.requires_explicit_approval() && approval.is_none() { return Err(DecisionError::ApprovalRequired); }
-    if let Some(a)=approval {
-        if a.document.tenant_uuid!=case.tenant_uuid || a.document.project_uuid!=case.project_uuid || a.document.case_uuid!=case.case_uuid || a.document.scenario_uuid!=scenario.scenario_uuid || a.document.source_state_sha256!=case.source_state_sha256 { return Err(DecisionError::ScopeMismatch); }
-    }
-    if controller_epoch==0 || fencing_token==0 { return Err(DecisionError::HardGate); }
-    let evidence=serde_json::json!({"case":case.case_uuid,"scenario":scenario.scenario_uuid,"source":case.source_state_sha256,"scenario_sha256":scenario.scenario_sha256,"approval":approval.map(|a|&a.approval_sha256),"controller_epoch":controller_epoch,"fencing_token":fencing_token});
-    let evidence_sha256=format!("{:x}",Sha256::digest(serde_json::to_vec(&evidence).expect("execution evidence")));
-    Ok(DecisionExecutionEnvelope{
-        execution_uuid:Uuid::now_v7(), tenant_uuid:case.tenant_uuid, project_uuid:case.project_uuid,
-        case_uuid:case.case_uuid, scenario_uuid:scenario.scenario_uuid, supervisor_plan_uuid,
-        source_state_sha256:case.source_state_sha256.clone(), scenario_sha256:scenario.scenario_sha256.clone(),
-        approval_sha256:approval.map(|a|a.approval_sha256.clone()), controller_epoch, fencing_token, evidence_sha256
+    let bytes = serde_json::to_vec(&payload).expect("approval json");
+    let sig_bytes = hex::decode(&a.signature_hex).map_err(|_| DecisionError::InvalidSignature)?;
+    let sig = Signature::from_slice(&sig_bytes).map_err(|_| DecisionError::InvalidSignature)?;
+    key.verify(&bytes, &sig)
+        .map_err(|_| DecisionError::InvalidSignature)?;
+    let approval_sha256 = format!("{:x}", Sha256::digest(bytes));
+    Ok(VerifiedApproval {
+        document: a,
+        approval_sha256,
     })
 }
 
-pub fn direct_operational_mutation() -> Result<(),DecisionError> { Err(DecisionError::DelegateRequired) }
+pub fn build_execution_envelope(
+    case: &DecisionCase,
+    scenario: &WhatIfScenario,
+    supervisor_plan_uuid: Uuid,
+    approval: Option<&VerifiedApproval>,
+    controller_epoch: u64,
+    fencing_token: u64,
+) -> Result<DecisionExecutionEnvelope, DecisionError> {
+    if case.tenant_uuid != scenario.tenant_uuid
+        || case.project_uuid != scenario.project_uuid
+        || case.case_uuid != scenario.case_uuid
+    {
+        return Err(DecisionError::ScopeMismatch);
+    }
+    if case.source_state_sha256 != scenario.source_state_sha256 {
+        return Err(DecisionError::SourceStateMismatch);
+    }
+    if scenario.kind.requires_explicit_approval() && approval.is_none() {
+        return Err(DecisionError::ApprovalRequired);
+    }
+    if let Some(a) = approval {
+        if a.document.tenant_uuid != case.tenant_uuid
+            || a.document.project_uuid != case.project_uuid
+            || a.document.case_uuid != case.case_uuid
+            || a.document.scenario_uuid != scenario.scenario_uuid
+            || a.document.source_state_sha256 != case.source_state_sha256
+        {
+            return Err(DecisionError::ScopeMismatch);
+        }
+    }
+    if controller_epoch == 0 || fencing_token == 0 {
+        return Err(DecisionError::HardGate);
+    }
+    let evidence = serde_json::json!({"case":case.case_uuid,"scenario":scenario.scenario_uuid,"source":case.source_state_sha256,"scenario_sha256":scenario.scenario_sha256,"approval":approval.map(|a|&a.approval_sha256),"controller_epoch":controller_epoch,"fencing_token":fencing_token});
+    let evidence_sha256 = format!(
+        "{:x}",
+        Sha256::digest(serde_json::to_vec(&evidence).expect("execution evidence"))
+    );
+    Ok(DecisionExecutionEnvelope {
+        execution_uuid: Uuid::now_v7(),
+        tenant_uuid: case.tenant_uuid,
+        project_uuid: case.project_uuid,
+        case_uuid: case.case_uuid,
+        scenario_uuid: scenario.scenario_uuid,
+        supervisor_plan_uuid,
+        source_state_sha256: case.source_state_sha256.clone(),
+        scenario_sha256: scenario.scenario_sha256.clone(),
+        approval_sha256: approval.map(|a| a.approval_sha256.clone()),
+        controller_epoch,
+        fencing_token,
+        evidence_sha256,
+    })
+}
+
+pub fn direct_operational_mutation() -> Result<(), DecisionError> {
+    Err(DecisionError::DelegateRequired)
+}

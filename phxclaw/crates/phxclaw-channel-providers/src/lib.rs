@@ -6,10 +6,10 @@ use phxclaw_channel_gateway::{
     ChannelCapabilities, ChannelProbe, ChannelProvider, ChannelProviderV2, OutboundMessage,
     ProviderReceipt,
 };
-use phxclaw_secret_broker::{scrub_text, SecretBroker, SecretBrokerError, SecretValue};
+use phxclaw_secret_broker::{SecretBroker, SecretBrokerError, SecretValue, scrub_text};
 use reqwest::blocking::Client;
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::{collections::BTreeSet, sync::Arc, time::Duration};
 use thiserror::Error;
 use url::Url;
@@ -59,11 +59,15 @@ impl ProviderEndpointPolicy {
     pub fn validate(&self, base: &str) -> Result<Url, ProviderError> {
         let url = Url::parse(base).map_err(|error| ProviderError::Endpoint(error.to_string()))?;
         if url.scheme() != "https" && !(self.allow_http && url.scheme() == "http") {
-            return Err(ProviderError::Endpoint("provider endpoint scheme is not allowed".into()));
+            return Err(ProviderError::Endpoint(
+                "provider endpoint scheme is not allowed".into(),
+            ));
         }
         let origin = url.origin().ascii_serialization();
         if !self.allowed_origins.contains(&origin) {
-            return Err(ProviderError::Endpoint(format!("provider origin not allowed: {origin}")));
+            return Err(ProviderError::Endpoint(format!(
+                "provider origin not allowed: {origin}"
+            )));
         }
         Ok(url)
     }
@@ -133,10 +137,17 @@ impl TelegramProvider {
         })
     }
 
-    fn with_token<T>(&self, scope: &str, f: impl FnOnce(&SecretValue) -> Result<T, ProviderError>) -> Result<T, ProviderError> {
-        let lease = self
-            .broker
-            .issue_lease(self.token_secret_uuid, "channel.provider.telegram", scope, 30)?;
+    fn with_token<T>(
+        &self,
+        scope: &str,
+        f: impl FnOnce(&SecretValue) -> Result<T, ProviderError>,
+    ) -> Result<T, ProviderError> {
+        let lease = self.broker.issue_lease(
+            self.token_secret_uuid,
+            "channel.provider.telegram",
+            scope,
+            30,
+        )?;
         let token = self.broker.resolve(lease.uuid, scope)?;
         let result = f(&token);
         let _ = self.broker.revoke_lease(lease.uuid);
@@ -146,7 +157,11 @@ impl TelegramProvider {
     fn send_impl(&self, message: &OutboundMessage) -> Result<ProviderReceipt, ProviderError> {
         self.policy.validate(&self.base_origin)?;
         self.with_token("channel:telegram:send", |token| {
-            let endpoint = format!("{}/bot{}/sendMessage", self.base_origin.trim_end_matches('/'), token.expose());
+            let endpoint = format!(
+                "{}/bot{}/sendMessage",
+                self.base_origin.trim_end_matches('/'),
+                token.expose()
+            );
             let response = self
                 .client
                 .post(endpoint)
@@ -155,11 +170,13 @@ impl TelegramProvider {
                     "text": message.text,
                 }))
                 .send()
-                .map_err(|error| ProviderError::Request(scrub_text(&error.to_string(), &[token.clone()])))?;
+                .map_err(|error| {
+                    ProviderError::Request(scrub_text(&error.to_string(), &[token.clone()]))
+                })?;
             let status = response.status();
-            let body = response
-                .text()
-                .map_err(|error| ProviderError::Request(scrub_text(&error.to_string(), &[token.clone()])))?;
+            let body = response.text().map_err(|error| {
+                ProviderError::Request(scrub_text(&error.to_string(), &[token.clone()]))
+            })?;
             if !status.is_success() {
                 return Err(ProviderError::Http {
                     status: status.as_u16(),
@@ -171,7 +188,9 @@ impl TelegramProvider {
             if !parsed.ok {
                 return Err(ProviderError::Response("Telegram returned ok=false".into()));
             }
-            let result = parsed.result.ok_or_else(|| ProviderError::Response("Telegram response missing result".into()))?;
+            let result = parsed.result.ok_or_else(|| {
+                ProviderError::Response("Telegram response missing result".into())
+            })?;
             Ok(ProviderReceipt {
                 provider_message_id: result.message_id.to_string(),
                 metadata: json!({"provider":"telegram","account_id":self.account_id}),
@@ -182,12 +201,14 @@ impl TelegramProvider {
     fn probe_impl(&self) -> Result<ChannelProbe, ProviderError> {
         self.policy.validate(&self.base_origin)?;
         self.with_token("channel:telegram:probe", |token| {
-            let endpoint = format!("{}/bot{}/getMe", self.base_origin.trim_end_matches('/'), token.expose());
-            let response = self
-                .client
-                .get(endpoint)
-                .send()
-                .map_err(|error| ProviderError::Request(scrub_text(&error.to_string(), &[token.clone()])))?;
+            let endpoint = format!(
+                "{}/bot{}/getMe",
+                self.base_origin.trim_end_matches('/'),
+                token.expose()
+            );
+            let response = self.client.get(endpoint).send().map_err(|error| {
+                ProviderError::Request(scrub_text(&error.to_string(), &[token.clone()]))
+            })?;
             if !response.status().is_success() {
                 return Ok(ChannelProbe {
                     connected: false,
@@ -196,7 +217,9 @@ impl TelegramProvider {
                     error: Some(format!("HTTP {}", response.status().as_u16())),
                 });
             }
-            let body = response.text().map_err(|error| ProviderError::Request(error.to_string()))?;
+            let body = response
+                .text()
+                .map_err(|error| ProviderError::Request(error.to_string()))?;
             let parsed: TelegramMeResponse = serde_json::from_str(&body)
                 .map_err(|error| ProviderError::Response(error.to_string()))?;
             let me = parsed.result;
@@ -211,7 +234,9 @@ impl TelegramProvider {
 }
 
 impl ChannelProvider for TelegramProvider {
-    fn channel(&self) -> &str { "telegram" }
+    fn channel(&self) -> &str {
+        "telegram"
+    }
 
     fn send(&self, message: &OutboundMessage) -> Result<ProviderReceipt, String> {
         self.send_impl(message).map_err(|error| error.to_string())
@@ -219,7 +244,9 @@ impl ChannelProvider for TelegramProvider {
 }
 
 impl ChannelProviderV2 for TelegramProvider {
-    fn provider_id(&self) -> &str { "phxclaw.telegram.rest" }
+    fn provider_id(&self) -> &str {
+        "phxclaw.telegram.rest"
+    }
 
     fn capabilities(&self) -> ChannelCapabilities {
         ChannelCapabilities {
@@ -290,10 +317,17 @@ impl DiscordProvider {
         })
     }
 
-    fn with_token<T>(&self, scope: &str, f: impl FnOnce(&SecretValue) -> Result<T, ProviderError>) -> Result<T, ProviderError> {
-        let lease = self
-            .broker
-            .issue_lease(self.token_secret_uuid, "channel.provider.discord", scope, 30)?;
+    fn with_token<T>(
+        &self,
+        scope: &str,
+        f: impl FnOnce(&SecretValue) -> Result<T, ProviderError>,
+    ) -> Result<T, ProviderError> {
+        let lease = self.broker.issue_lease(
+            self.token_secret_uuid,
+            "channel.provider.discord",
+            scope,
+            30,
+        )?;
         let token = self.broker.resolve(lease.uuid, scope)?;
         let result = f(&token);
         let _ = self.broker.revoke_lease(lease.uuid);
@@ -303,16 +337,24 @@ impl DiscordProvider {
     fn send_impl(&self, message: &OutboundMessage) -> Result<ProviderReceipt, ProviderError> {
         self.policy.validate(&self.base_origin)?;
         self.with_token("channel:discord:send", |token| {
-            let endpoint = format!("{}/channels/{}/messages", self.base_origin.trim_end_matches('/'), message.conversation_id);
+            let endpoint = format!(
+                "{}/channels/{}/messages",
+                self.base_origin.trim_end_matches('/'),
+                message.conversation_id
+            );
             let response = self
                 .client
                 .post(endpoint)
                 .header("Authorization", format!("Bot {}", token.expose()))
                 .json(&json!({"content":message.text,"allowed_mentions":{"parse":[]}}))
                 .send()
-                .map_err(|error| ProviderError::Request(scrub_text(&error.to_string(), &[token.clone()])))?;
+                .map_err(|error| {
+                    ProviderError::Request(scrub_text(&error.to_string(), &[token.clone()]))
+                })?;
             let status = response.status();
-            let body = response.text().map_err(|error| ProviderError::Request(error.to_string()))?;
+            let body = response
+                .text()
+                .map_err(|error| ProviderError::Request(error.to_string()))?;
             if !status.is_success() {
                 return Err(ProviderError::Http {
                     status: status.as_u16(),
@@ -337,7 +379,9 @@ impl DiscordProvider {
                 .get(endpoint)
                 .header("Authorization", format!("Bot {}", token.expose()))
                 .send()
-                .map_err(|error| ProviderError::Request(scrub_text(&error.to_string(), &[token.clone()])))?;
+                .map_err(|error| {
+                    ProviderError::Request(scrub_text(&error.to_string(), &[token.clone()]))
+                })?;
             if !response.status().is_success() {
                 return Ok(ChannelProbe {
                     connected: false,
@@ -360,7 +404,9 @@ impl DiscordProvider {
 }
 
 impl ChannelProvider for DiscordProvider {
-    fn channel(&self) -> &str { "discord" }
+    fn channel(&self) -> &str {
+        "discord"
+    }
 
     fn send(&self, message: &OutboundMessage) -> Result<ProviderReceipt, String> {
         self.send_impl(message).map_err(|error| error.to_string())
@@ -368,7 +414,9 @@ impl ChannelProvider for DiscordProvider {
 }
 
 impl ChannelProviderV2 for DiscordProvider {
-    fn provider_id(&self) -> &str { "phxclaw.discord.rest" }
+    fn provider_id(&self) -> &str {
+        "phxclaw.discord.rest"
+    }
 
     fn capabilities(&self) -> ChannelCapabilities {
         ChannelCapabilities {
@@ -389,7 +437,6 @@ impl ChannelProviderV2 for DiscordProvider {
     }
 }
 
-
 #[derive(Clone)]
 pub struct SlackProvider {
     broker: Arc<SecretBroker>,
@@ -401,7 +448,11 @@ pub struct SlackProvider {
 }
 
 impl SlackProvider {
-    pub fn new(broker: Arc<SecretBroker>, token_secret_uuid: Uuid, account_id: impl Into<String>) -> Result<Self, ProviderError> {
+    pub fn new(
+        broker: Arc<SecretBroker>,
+        token_secret_uuid: Uuid,
+        account_id: impl Into<String>,
+    ) -> Result<Self, ProviderError> {
         Self::new_with_origin(
             broker,
             token_secret_uuid,
@@ -426,11 +477,24 @@ impl SlackProvider {
             .user_agent("PhxClaw/0.68 SlackProvider")
             .build()
             .map_err(|error| ProviderError::Request(error.to_string()))?;
-        Ok(Self { broker, token_secret_uuid, account_id: account_id.into(), base_origin, policy, client })
+        Ok(Self {
+            broker,
+            token_secret_uuid,
+            account_id: account_id.into(),
+            base_origin,
+            policy,
+            client,
+        })
     }
 
-    fn with_token<T>(&self, scope: &str, f: impl FnOnce(&SecretValue) -> Result<T, ProviderError>) -> Result<T, ProviderError> {
-        let lease = self.broker.issue_lease(self.token_secret_uuid, "channel.provider.slack", scope, 30)?;
+    fn with_token<T>(
+        &self,
+        scope: &str,
+        f: impl FnOnce(&SecretValue) -> Result<T, ProviderError>,
+    ) -> Result<T, ProviderError> {
+        let lease =
+            self.broker
+                .issue_lease(self.token_secret_uuid, "channel.provider.slack", scope, 30)?;
         let token = self.broker.resolve(lease.uuid, scope)?;
         let result = f(&token);
         let _ = self.broker.revoke_lease(lease.uuid);
@@ -462,25 +526,66 @@ impl SlackProvider {
         self.policy.validate(&self.base_origin)?;
         self.with_token("channel:slack:probe", |token| {
             let endpoint = format!("{}/auth.test", self.base_origin.trim_end_matches('/'));
-            let response = self.client.post(endpoint).bearer_auth(token.expose()).send()
-                .map_err(|error| ProviderError::Request(scrub_text(&error.to_string(), &[token.clone()])))?;
+            let response = self
+                .client
+                .post(endpoint)
+                .bearer_auth(token.expose())
+                .send()
+                .map_err(|error| {
+                    ProviderError::Request(scrub_text(&error.to_string(), &[token.clone()]))
+                })?;
             let status = response.status();
-            let body = response.text().map_err(|error| ProviderError::Request(error.to_string()))?;
-            if !status.is_success() { return Ok(ChannelProbe { connected:false, account_id:None, display_name:None, error:Some(format!("HTTP {}",status.as_u16())) }); }
-            let parsed: SlackAuthResponse = serde_json::from_str(&body).map_err(|error| ProviderError::Response(error.to_string()))?;
-            Ok(ChannelProbe { connected: parsed.ok, account_id: parsed.team_id.or(parsed.user_id), display_name: parsed.user.or(parsed.team), error: parsed.error })
+            let body = response
+                .text()
+                .map_err(|error| ProviderError::Request(error.to_string()))?;
+            if !status.is_success() {
+                return Ok(ChannelProbe {
+                    connected: false,
+                    account_id: None,
+                    display_name: None,
+                    error: Some(format!("HTTP {}", status.as_u16())),
+                });
+            }
+            let parsed: SlackAuthResponse = serde_json::from_str(&body)
+                .map_err(|error| ProviderError::Response(error.to_string()))?;
+            Ok(ChannelProbe {
+                connected: parsed.ok,
+                account_id: parsed.team_id.or(parsed.user_id),
+                display_name: parsed.user.or(parsed.team),
+                error: parsed.error,
+            })
         })
     }
 }
 
 impl ChannelProvider for SlackProvider {
-    fn channel(&self) -> &str { "slack" }
-    fn send(&self, message: &OutboundMessage) -> Result<ProviderReceipt, String> { self.send_impl(message).map_err(|error| error.to_string()) }
+    fn channel(&self) -> &str {
+        "slack"
+    }
+    fn send(&self, message: &OutboundMessage) -> Result<ProviderReceipt, String> {
+        self.send_impl(message).map_err(|error| error.to_string())
+    }
 }
 impl ChannelProviderV2 for SlackProvider {
-    fn provider_id(&self) -> &str { "phxclaw.slack.web-api" }
-    fn capabilities(&self) -> ChannelCapabilities { ChannelCapabilities { text:true, images:true, videos:true, voice:true, files:true, threads:true, reactions:true, editing:true, deletion:true } }
-    fn probe(&self) -> Result<ChannelProbe, String> { self.probe_impl().map_err(|error| error.to_string()) }
+    fn provider_id(&self) -> &str {
+        "phxclaw.slack.web-api"
+    }
+    fn capabilities(&self) -> ChannelCapabilities {
+        ChannelCapabilities {
+            text: true,
+            images: true,
+            videos: true,
+            voice: true,
+            files: true,
+            threads: true,
+            reactions: true,
+            editing: true,
+            deletion: true,
+        }
+    }
+    fn probe(&self) -> Result<ChannelProbe, String> {
+        self.probe_impl().map_err(|error| error.to_string())
+    }
 }
 
 #[derive(Clone)]
@@ -496,25 +601,72 @@ pub struct WhatsAppProvider {
 
 impl WhatsAppProvider {
     pub fn new(
-        broker: Arc<SecretBroker>, token_secret_uuid: Uuid, phone_number_id: impl Into<String>, graph_version: impl Into<String>
+        broker: Arc<SecretBroker>,
+        token_secret_uuid: Uuid,
+        phone_number_id: impl Into<String>,
+        graph_version: impl Into<String>,
     ) -> Result<Self, ProviderError> {
-        Self::new_with_origin(broker, token_secret_uuid, phone_number_id, graph_version, META_GRAPH_DEFAULT_ORIGIN, ProviderEndpointPolicy::locked_defaults())
+        Self::new_with_origin(
+            broker,
+            token_secret_uuid,
+            phone_number_id,
+            graph_version,
+            META_GRAPH_DEFAULT_ORIGIN,
+            ProviderEndpointPolicy::locked_defaults(),
+        )
     }
     pub fn new_with_origin(
-        broker: Arc<SecretBroker>, token_secret_uuid: Uuid, phone_number_id: impl Into<String>, graph_version: impl Into<String>,
-        base_origin: impl Into<String>, policy: ProviderEndpointPolicy,
+        broker: Arc<SecretBroker>,
+        token_secret_uuid: Uuid,
+        phone_number_id: impl Into<String>,
+        graph_version: impl Into<String>,
+        base_origin: impl Into<String>,
+        policy: ProviderEndpointPolicy,
     ) -> Result<Self, ProviderError> {
-        let base_origin=base_origin.into(); policy.validate(&base_origin)?;
-        let client=Client::builder().connect_timeout(Duration::from_secs(10)).timeout(Duration::from_secs(30))
-            .user_agent("PhxClaw/0.68 WhatsAppProvider").build().map_err(|error| ProviderError::Request(error.to_string()))?;
-        Ok(Self{broker,token_secret_uuid,phone_number_id:phone_number_id.into(),graph_version:graph_version.into(),base_origin,policy,client})
+        let base_origin = base_origin.into();
+        policy.validate(&base_origin)?;
+        let client = Client::builder()
+            .connect_timeout(Duration::from_secs(10))
+            .timeout(Duration::from_secs(30))
+            .user_agent("PhxClaw/0.68 WhatsAppProvider")
+            .build()
+            .map_err(|error| ProviderError::Request(error.to_string()))?;
+        Ok(Self {
+            broker,
+            token_secret_uuid,
+            phone_number_id: phone_number_id.into(),
+            graph_version: graph_version.into(),
+            base_origin,
+            policy,
+            client,
+        })
     }
-    fn with_token<T>(&self, scope:&str, f:impl FnOnce(&SecretValue)->Result<T,ProviderError>)->Result<T,ProviderError>{
-        let lease=self.broker.issue_lease(self.token_secret_uuid,"channel.provider.whatsapp",scope,30)?;
-        let token=self.broker.resolve(lease.uuid,scope)?; let result=f(&token); let _=self.broker.revoke_lease(lease.uuid); result
+    fn with_token<T>(
+        &self,
+        scope: &str,
+        f: impl FnOnce(&SecretValue) -> Result<T, ProviderError>,
+    ) -> Result<T, ProviderError> {
+        let lease = self.broker.issue_lease(
+            self.token_secret_uuid,
+            "channel.provider.whatsapp",
+            scope,
+            30,
+        )?;
+        let token = self.broker.resolve(lease.uuid, scope)?;
+        let result = f(&token);
+        let _ = self.broker.revoke_lease(lease.uuid);
+        result
     }
-    fn endpoint(&self, suffix:&str)->String{ format!("{}/{}/{}{}",self.base_origin.trim_end_matches('/'),self.graph_version.trim_matches('/'),self.phone_number_id,suffix) }
-    fn send_impl(&self,message:&OutboundMessage)->Result<ProviderReceipt,ProviderError>{
+    fn endpoint(&self, suffix: &str) -> String {
+        format!(
+            "{}/{}/{}{}",
+            self.base_origin.trim_end_matches('/'),
+            self.graph_version.trim_matches('/'),
+            self.phone_number_id,
+            suffix
+        )
+    }
+    fn send_impl(&self, message: &OutboundMessage) -> Result<ProviderReceipt, ProviderError> {
         self.policy.validate(&self.base_origin)?;
         self.with_token("channel:whatsapp:send",|token|{
             let response=self.client.post(self.endpoint("/messages")).bearer_auth(token.expose())
@@ -527,84 +679,288 @@ impl WhatsAppProvider {
             Ok(ProviderReceipt{provider_message_id:id,metadata:json!({"provider":"whatsapp","phone_number_id":self.phone_number_id})})
         })
     }
-    fn probe_impl(&self)->Result<ChannelProbe,ProviderError>{
+    fn probe_impl(&self) -> Result<ChannelProbe, ProviderError> {
         self.policy.validate(&self.base_origin)?;
-        self.with_token("channel:whatsapp:probe",|token|{
-            let url=format!("{}?fields=id,display_phone_number,verified_name",self.endpoint(""));
-            let response=self.client.get(url).bearer_auth(token.expose()).send().map_err(|error|ProviderError::Request(scrub_text(&error.to_string(),&[token.clone()])))?;
-            if !response.status().is_success(){return Ok(ChannelProbe{connected:false,account_id:None,display_name:None,error:Some(format!("HTTP {}",response.status().as_u16()))});}
-            let parsed:WhatsAppPhone= response.json().map_err(|error|ProviderError::Response(error.to_string()))?;
-            Ok(ChannelProbe{connected:true,account_id:Some(parsed.id),display_name:parsed.verified_name.or(parsed.display_phone_number),error:None})
+        self.with_token("channel:whatsapp:probe", |token| {
+            let url = format!(
+                "{}?fields=id,display_phone_number,verified_name",
+                self.endpoint("")
+            );
+            let response = self
+                .client
+                .get(url)
+                .bearer_auth(token.expose())
+                .send()
+                .map_err(|error| {
+                    ProviderError::Request(scrub_text(&error.to_string(), &[token.clone()]))
+                })?;
+            if !response.status().is_success() {
+                return Ok(ChannelProbe {
+                    connected: false,
+                    account_id: None,
+                    display_name: None,
+                    error: Some(format!("HTTP {}", response.status().as_u16())),
+                });
+            }
+            let parsed: WhatsAppPhone = response
+                .json()
+                .map_err(|error| ProviderError::Response(error.to_string()))?;
+            Ok(ChannelProbe {
+                connected: true,
+                account_id: Some(parsed.id),
+                display_name: parsed.verified_name.or(parsed.display_phone_number),
+                error: None,
+            })
         })
     }
 }
-impl ChannelProvider for WhatsAppProvider{ fn channel(&self)->&str{"whatsapp"} fn send(&self,message:&OutboundMessage)->Result<ProviderReceipt,String>{self.send_impl(message).map_err(|e|e.to_string())} }
-impl ChannelProviderV2 for WhatsAppProvider{
-    fn provider_id(&self)->&str{"phxclaw.whatsapp.cloud-api"}
-    fn capabilities(&self)->ChannelCapabilities{ChannelCapabilities{text:true,images:true,videos:true,voice:true,files:true,threads:false,reactions:true,editing:true,deletion:false}}
-    fn probe(&self)->Result<ChannelProbe,String>{self.probe_impl().map_err(|e|e.to_string())}
+impl ChannelProvider for WhatsAppProvider {
+    fn channel(&self) -> &str {
+        "whatsapp"
+    }
+    fn send(&self, message: &OutboundMessage) -> Result<ProviderReceipt, String> {
+        self.send_impl(message).map_err(|e| e.to_string())
+    }
+}
+impl ChannelProviderV2 for WhatsAppProvider {
+    fn provider_id(&self) -> &str {
+        "phxclaw.whatsapp.cloud-api"
+    }
+    fn capabilities(&self) -> ChannelCapabilities {
+        ChannelCapabilities {
+            text: true,
+            images: true,
+            videos: true,
+            voice: true,
+            files: true,
+            threads: false,
+            reactions: true,
+            editing: true,
+            deletion: false,
+        }
+    }
+    fn probe(&self) -> Result<ChannelProbe, String> {
+        self.probe_impl().map_err(|e| e.to_string())
+    }
 }
 
 #[derive(Clone, Debug)]
-pub enum TeamsRoute { Chat, Channel { team_id: String } }
+pub enum TeamsRoute {
+    Chat,
+    Channel { team_id: String },
+}
 
 #[derive(Clone)]
 pub struct TeamsProvider {
-    broker: Arc<SecretBroker>, token_secret_uuid: Uuid, account_id:String, route:TeamsRoute,
-    base_origin:String, policy:ProviderEndpointPolicy, client:Client,
+    broker: Arc<SecretBroker>,
+    token_secret_uuid: Uuid,
+    account_id: String,
+    route: TeamsRoute,
+    base_origin: String,
+    policy: ProviderEndpointPolicy,
+    client: Client,
 }
-impl TeamsProvider{
-    pub fn new(broker:Arc<SecretBroker>,token_secret_uuid:Uuid,account_id:impl Into<String>,route:TeamsRoute)->Result<Self,ProviderError>{
-        Self::new_with_origin(broker,token_secret_uuid,account_id,route,"https://graph.microsoft.com/v1.0",ProviderEndpointPolicy::locked_defaults())
+impl TeamsProvider {
+    pub fn new(
+        broker: Arc<SecretBroker>,
+        token_secret_uuid: Uuid,
+        account_id: impl Into<String>,
+        route: TeamsRoute,
+    ) -> Result<Self, ProviderError> {
+        Self::new_with_origin(
+            broker,
+            token_secret_uuid,
+            account_id,
+            route,
+            "https://graph.microsoft.com/v1.0",
+            ProviderEndpointPolicy::locked_defaults(),
+        )
     }
-    pub fn new_with_origin(broker:Arc<SecretBroker>,token_secret_uuid:Uuid,account_id:impl Into<String>,route:TeamsRoute,base_origin:impl Into<String>,policy:ProviderEndpointPolicy)->Result<Self,ProviderError>{
-        let base_origin=base_origin.into(); policy.validate(&base_origin)?;
-        let client=Client::builder().connect_timeout(Duration::from_secs(10)).timeout(Duration::from_secs(30)).user_agent("PhxClaw/0.68 TeamsProvider").build().map_err(|e|ProviderError::Request(e.to_string()))?;
-        Ok(Self{broker,token_secret_uuid,account_id:account_id.into(),route,base_origin,policy,client})
-    }
-    fn with_token<T>(&self,scope:&str,f:impl FnOnce(&SecretValue)->Result<T,ProviderError>)->Result<T,ProviderError>{let lease=self.broker.issue_lease(self.token_secret_uuid,"channel.provider.teams",scope,30)?;let token=self.broker.resolve(lease.uuid,scope)?;let result=f(&token);let _=self.broker.revoke_lease(lease.uuid);result}
-    fn send_impl(&self,message:&OutboundMessage)->Result<ProviderReceipt,ProviderError>{
-        self.policy.validate(&self.base_origin)?;
-        self.with_token("channel:teams:send",|token|{
-            let endpoint=match &self.route{TeamsRoute::Chat=>format!("{}/chats/{}/messages",self.base_origin.trim_end_matches('/'),message.conversation_id),TeamsRoute::Channel{team_id}=>format!("{}/teams/{}/channels/{}/messages",self.base_origin.trim_end_matches('/'),team_id,message.conversation_id)};
-            let response=self.client.post(endpoint).bearer_auth(token.expose()).json(&json!({"body":{"contentType":"text","content":message.text}})).send().map_err(|e|ProviderError::Request(scrub_text(&e.to_string(),&[token.clone()])))?;
-            let status=response.status();let body=response.text().map_err(|e|ProviderError::Request(e.to_string()))?;
-            if !status.is_success(){return Err(ProviderError::Http{status:status.as_u16(),body:scrub_text(&body,&[token.clone()])});}
-            let parsed:TeamsMessage=serde_json::from_str(&body).map_err(|e|ProviderError::Response(e.to_string()))?;
-            Ok(ProviderReceipt{provider_message_id:parsed.id,metadata:json!({"provider":"teams","account_id":self.account_id})})
+    pub fn new_with_origin(
+        broker: Arc<SecretBroker>,
+        token_secret_uuid: Uuid,
+        account_id: impl Into<String>,
+        route: TeamsRoute,
+        base_origin: impl Into<String>,
+        policy: ProviderEndpointPolicy,
+    ) -> Result<Self, ProviderError> {
+        let base_origin = base_origin.into();
+        policy.validate(&base_origin)?;
+        let client = Client::builder()
+            .connect_timeout(Duration::from_secs(10))
+            .timeout(Duration::from_secs(30))
+            .user_agent("PhxClaw/0.68 TeamsProvider")
+            .build()
+            .map_err(|e| ProviderError::Request(e.to_string()))?;
+        Ok(Self {
+            broker,
+            token_secret_uuid,
+            account_id: account_id.into(),
+            route,
+            base_origin,
+            policy,
+            client,
         })
     }
-    fn probe_impl(&self)->Result<ChannelProbe,ProviderError>{
+    fn with_token<T>(
+        &self,
+        scope: &str,
+        f: impl FnOnce(&SecretValue) -> Result<T, ProviderError>,
+    ) -> Result<T, ProviderError> {
+        let lease =
+            self.broker
+                .issue_lease(self.token_secret_uuid, "channel.provider.teams", scope, 30)?;
+        let token = self.broker.resolve(lease.uuid, scope)?;
+        let result = f(&token);
+        let _ = self.broker.revoke_lease(lease.uuid);
+        result
+    }
+    fn send_impl(&self, message: &OutboundMessage) -> Result<ProviderReceipt, ProviderError> {
         self.policy.validate(&self.base_origin)?;
-        self.with_token("channel:teams:probe",|token|{
-            let response=self.client.get(format!("{}/me",self.base_origin.trim_end_matches('/'))).bearer_auth(token.expose()).send().map_err(|e|ProviderError::Request(scrub_text(&e.to_string(),&[token.clone()])))?;
-            if !response.status().is_success(){return Ok(ChannelProbe{connected:false,account_id:None,display_name:None,error:Some(format!("HTTP {}",response.status().as_u16()))});}
-            let me:TeamsMe=response.json().map_err(|e|ProviderError::Response(e.to_string()))?;
-            Ok(ChannelProbe{connected:true,account_id:Some(me.id),display_name:me.display_name.or(me.user_principal_name),error:None})
+        self.with_token("channel:teams:send", |token| {
+            let endpoint = match &self.route {
+                TeamsRoute::Chat => format!(
+                    "{}/chats/{}/messages",
+                    self.base_origin.trim_end_matches('/'),
+                    message.conversation_id
+                ),
+                TeamsRoute::Channel { team_id } => format!(
+                    "{}/teams/{}/channels/{}/messages",
+                    self.base_origin.trim_end_matches('/'),
+                    team_id,
+                    message.conversation_id
+                ),
+            };
+            let response = self
+                .client
+                .post(endpoint)
+                .bearer_auth(token.expose())
+                .json(&json!({"body":{"contentType":"text","content":message.text}}))
+                .send()
+                .map_err(|e| {
+                    ProviderError::Request(scrub_text(&e.to_string(), &[token.clone()]))
+                })?;
+            let status = response.status();
+            let body = response
+                .text()
+                .map_err(|e| ProviderError::Request(e.to_string()))?;
+            if !status.is_success() {
+                return Err(ProviderError::Http {
+                    status: status.as_u16(),
+                    body: scrub_text(&body, &[token.clone()]),
+                });
+            }
+            let parsed: TeamsMessage =
+                serde_json::from_str(&body).map_err(|e| ProviderError::Response(e.to_string()))?;
+            Ok(ProviderReceipt {
+                provider_message_id: parsed.id,
+                metadata: json!({"provider":"teams","account_id":self.account_id}),
+            })
+        })
+    }
+    fn probe_impl(&self) -> Result<ChannelProbe, ProviderError> {
+        self.policy.validate(&self.base_origin)?;
+        self.with_token("channel:teams:probe", |token| {
+            let response = self
+                .client
+                .get(format!("{}/me", self.base_origin.trim_end_matches('/')))
+                .bearer_auth(token.expose())
+                .send()
+                .map_err(|e| {
+                    ProviderError::Request(scrub_text(&e.to_string(), &[token.clone()]))
+                })?;
+            if !response.status().is_success() {
+                return Ok(ChannelProbe {
+                    connected: false,
+                    account_id: None,
+                    display_name: None,
+                    error: Some(format!("HTTP {}", response.status().as_u16())),
+                });
+            }
+            let me: TeamsMe = response
+                .json()
+                .map_err(|e| ProviderError::Response(e.to_string()))?;
+            Ok(ChannelProbe {
+                connected: true,
+                account_id: Some(me.id),
+                display_name: me.display_name.or(me.user_principal_name),
+                error: None,
+            })
         })
     }
 }
-impl ChannelProvider for TeamsProvider{fn channel(&self)->&str{"teams"}fn send(&self,message:&OutboundMessage)->Result<ProviderReceipt,String>{self.send_impl(message).map_err(|e|e.to_string())}}
-impl ChannelProviderV2 for TeamsProvider{
-    fn provider_id(&self)->&str{"phxclaw.teams.graph"}
-    fn capabilities(&self)->ChannelCapabilities{ChannelCapabilities{text:true,images:true,videos:true,voice:false,files:true,threads:true,reactions:true,editing:true,deletion:true}}
-    fn probe(&self)->Result<ChannelProbe,String>{self.probe_impl().map_err(|e|e.to_string())}
+impl ChannelProvider for TeamsProvider {
+    fn channel(&self) -> &str {
+        "teams"
+    }
+    fn send(&self, message: &OutboundMessage) -> Result<ProviderReceipt, String> {
+        self.send_impl(message).map_err(|e| e.to_string())
+    }
+}
+impl ChannelProviderV2 for TeamsProvider {
+    fn provider_id(&self) -> &str {
+        "phxclaw.teams.graph"
+    }
+    fn capabilities(&self) -> ChannelCapabilities {
+        ChannelCapabilities {
+            text: true,
+            images: true,
+            videos: true,
+            voice: false,
+            files: true,
+            threads: true,
+            reactions: true,
+            editing: true,
+            deletion: true,
+        }
+    }
+    fn probe(&self) -> Result<ChannelProbe, String> {
+        self.probe_impl().map_err(|e| e.to_string())
+    }
 }
 
 #[derive(Debug, Deserialize)]
-struct SlackMessageResponse { ok: bool, ts: Option<String>, channel: Option<String>, error: Option<String> }
+struct SlackMessageResponse {
+    ok: bool,
+    ts: Option<String>,
+    channel: Option<String>,
+    error: Option<String>,
+}
 #[derive(Debug, Deserialize)]
-struct SlackAuthResponse { ok: bool, team: Option<String>, team_id: Option<String>, user: Option<String>, user_id: Option<String>, error: Option<String> }
+struct SlackAuthResponse {
+    ok: bool,
+    team: Option<String>,
+    team_id: Option<String>,
+    user: Option<String>,
+    user_id: Option<String>,
+    error: Option<String>,
+}
 #[derive(Debug, Deserialize)]
-struct WhatsAppMessageResponse { messages: Option<Vec<WhatsAppMessageId>> }
+struct WhatsAppMessageResponse {
+    messages: Option<Vec<WhatsAppMessageId>>,
+}
 #[derive(Debug, Deserialize)]
-struct WhatsAppMessageId { id: String }
+struct WhatsAppMessageId {
+    id: String,
+}
 #[derive(Debug, Deserialize)]
-struct WhatsAppPhone { id:String, display_phone_number:Option<String>, verified_name:Option<String> }
+struct WhatsAppPhone {
+    id: String,
+    display_phone_number: Option<String>,
+    verified_name: Option<String>,
+}
 #[derive(Debug, Deserialize)]
-struct TeamsMessage { id:String }
+struct TeamsMessage {
+    id: String,
+}
 #[derive(Debug, Deserialize)]
-struct TeamsMe { id:String, #[serde(rename="displayName")] display_name:Option<String>, #[serde(rename="userPrincipalName")] user_principal_name:Option<String> }
+struct TeamsMe {
+    id: String,
+    #[serde(rename = "displayName")]
+    display_name: Option<String>,
+    #[serde(rename = "userPrincipalName")]
+    user_principal_name: Option<String>,
+}
 
 #[derive(Debug, Deserialize)]
 struct TelegramResponse {

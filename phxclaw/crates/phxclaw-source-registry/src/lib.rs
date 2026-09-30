@@ -143,7 +143,10 @@ impl SourceRegistry {
 
         let index = source.offline_index_path(project_root);
         let offline_ready = index.is_file() && index.metadata()?.len() > 0;
-        let prefer_online = matches!(freshness, SourceFreshness::Current | SourceFreshness::Latest);
+        let prefer_online = matches!(
+            freshness,
+            SourceFreshness::Current | SourceFreshness::Latest
+        );
 
         if !prefer_online
             && matches!(source.mode, SourceMode::Offline | SourceMode::Hybrid)
@@ -323,7 +326,11 @@ fn endpoint_score(endpoint: &SourceEndpoint, query_terms: &BTreeSet<String>) -> 
     let name = endpoint.name.to_ascii_lowercase();
     let purpose = endpoint.purpose.to_ascii_lowercase();
     let url = endpoint.url.to_ascii_lowercase();
-    let mut score = if endpoint.authority == "official" { 10 } else { 5 };
+    let mut score = if endpoint.authority == "official" {
+        10
+    } else {
+        5
+    };
     for term in query_terms {
         if name.contains(term) {
             score += 8;
@@ -442,7 +449,9 @@ mod tests {
                 path: "book/ch09.html".into(),
                 title: "Recoverable Errors with Result".into(),
                 sha256: "a".repeat(64),
-                text: "Rust uses Result<T, E> and the question mark operator for recoverable errors.".into(),
+                text:
+                    "Rust uses Result<T, E> and the question mark operator for recoverable errors."
+                        .into(),
             },
             OfflineDocumentRecord {
                 path: "std/string.html".into(),

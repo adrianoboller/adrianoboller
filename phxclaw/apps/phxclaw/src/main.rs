@@ -1,8 +1,10 @@
 #![forbid(unsafe_code)]
 
-use anyhow::{bail, Result};
-use phxclaw_core_runtime::{CoreService, PhoenixCoreRuntime, ServiceState, PRODUCT_CLI, PRODUCT_NAME};
-use phxclaw_postgres_bootstrap::{build_install_plan, HostPlatform, PostgreSqlBootstrapConfig};
+use anyhow::{Result, bail};
+use phxclaw_core_runtime::{
+    CoreService, PRODUCT_CLI, PRODUCT_NAME, PhoenixCoreRuntime, ServiceState,
+};
+use phxclaw_postgres_bootstrap::{HostPlatform, PostgreSqlBootstrapConfig, build_install_plan};
 use std::env;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -25,9 +27,21 @@ fn main() -> Result<()> {
 fn core_command(args: &[String]) -> Result<()> {
     let sub = args.first().map(String::as_str).unwrap_or("status");
     let mut runtime = PhoenixCoreRuntime::new(VERSION, "Master Orchestrator");
-    runtime.set_service_state(CoreService::Kernel, ServiceState::Ready, "constitution accepted");
-    runtime.set_service_state(CoreService::AgentRegistry, ServiceState::Ready, "110 declarative agents");
-    runtime.set_service_state(CoreService::MissionRuntime, ServiceState::Ready, "mission facade loaded");
+    runtime.set_service_state(
+        CoreService::Kernel,
+        ServiceState::Ready,
+        "constitution accepted",
+    );
+    runtime.set_service_state(
+        CoreService::AgentRegistry,
+        ServiceState::Ready,
+        "110 declarative agents",
+    );
+    runtime.set_service_state(
+        CoreService::MissionRuntime,
+        ServiceState::Ready,
+        "mission facade loaded",
+    );
     match sub {
         "status" | "start" => {
             let status = runtime.status();

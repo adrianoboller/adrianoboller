@@ -128,13 +128,25 @@ fn rank_complexity(c: Complexity) -> u8 {
 }
 
 fn candidate_allowed(req: &TaskRoutingRequest, c: &ModelCandidate) -> bool {
-    if !c.promoted || !c.healthy { return false; }
-    if !c.supported_capabilities.contains(&req.capability) { return false; }
-    if rank_complexity(c.max_complexity) < rank_complexity(req.complexity) { return false; }
-    if c.quality_score < req.quality_floor { return false; }
-    if c.estimated_cost_usd > req.max_estimated_cost_usd { return false; }
+    if !c.promoted || !c.healthy {
+        return false;
+    }
+    if !c.supported_capabilities.contains(&req.capability) {
+        return false;
+    }
+    if rank_complexity(c.max_complexity) < rank_complexity(req.complexity) {
+        return false;
+    }
+    if c.quality_score < req.quality_floor {
+        return false;
+    }
+    if c.estimated_cost_usd > req.max_estimated_cost_usd {
+        return false;
+    }
     if let Some(max_latency) = req.max_p95_latency_ms {
-        if c.p95_latency_ms > max_latency { return false; }
+        if c.p95_latency_ms > max_latency {
+            return false;
+        }
     }
     match req.data_class {
         DataClass::Restricted => c.is_local && c.restricted_allowed,
@@ -150,23 +162,36 @@ pub fn route_model(
     req: &TaskRoutingRequest,
     candidates: &[ModelCandidate],
 ) -> Result<RoutingDecision, ControlError> {
-    if !agent.active || agent.project_uuid != req.project_uuid || agent.agent_uuid != req.agent_uuid {
+    if !agent.active || agent.project_uuid != req.project_uuid || agent.agent_uuid != req.agent_uuid
+    {
         return Err(ControlError::AgentNotActive);
     }
     if req.complexity == Complexity::Extreme && !req.require_independent_review {
         return Err(ControlError::IndependentReviewRequired);
     }
 
-    let mut eligible: Vec<&ModelCandidate> = candidates.iter()
+    let mut eligible: Vec<&ModelCandidate> = candidates
+        .iter()
         .filter(|c| candidate_allowed(req, c))
         .collect();
-    if eligible.is_empty() { return Err(ControlError::NoEligibleModel); }
+    if eligible.is_empty() {
+        return Err(ControlError::NoEligibleModel);
+    }
 
     eligible.sort_by(|a, b| {
         // local-first only after all hard gates pass
-        let local_a = if agent.local_first && a.is_local { 0 } else { 1 };
-        let local_b = if agent.local_first && b.is_local { 0 } else { 1 };
-        local_a.cmp(&local_b)
+        let local_a = if agent.local_first && a.is_local {
+            0
+        } else {
+            1
+        };
+        let local_b = if agent.local_first && b.is_local {
+            0
+        } else {
+            1
+        };
+        local_a
+            .cmp(&local_b)
             .then_with(|| a.estimated_cost_usd.total_cmp(&b.estimated_cost_usd))
             .then_with(|| b.quality_score.total_cmp(&a.quality_score))
             .then_with(|| a.p95_latency_ms.cmp(&b.p95_latency_ms))
@@ -176,11 +201,17 @@ pub fn route_model(
     let selected = eligible[0];
     let mut reason = vec![
         "privacy/capability/complexity/quality/budget gates satisfied".to_string(),
-        if selected.is_local { "local-first eligible".to_string() } else { "cloud fallback required".to_string() },
+        if selected.is_local {
+            "local-first eligible".to_string()
+        } else {
+            "cloud fallback required".to_string()
+        },
         "lowest governed cost among preferred candidates".to_string(),
     ];
     if let Some(hint) = &agent.model_hint {
-        reason.push(format!("agent model hint retained as non-authoritative preference: {hint}"));
+        reason.push(format!(
+            "agent model hint retained as non-authoritative preference: {hint}"
+        ));
     }
 
     let decision_uuid = Uuid::now_v7();
@@ -192,7 +223,10 @@ pub fn route_model(
         "source_state_sha256": req.source_state_sha256,
         "estimated_cost_usd": selected.estimated_cost_usd,
     });
-    let digest = format!("{:x}", Sha256::digest(serde_json::to_vec(&canonical).unwrap()));
+    let digest = format!(
+        "{:x}",
+        Sha256::digest(serde_json::to_vec(&canonical).unwrap())
+    );
 
     Ok(RoutingDecision {
         decision_uuid,
@@ -210,7 +244,13 @@ pub fn route_model(
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub enum PdcaPhase { Plan, Do, Check, Act, Closed }
+pub enum PdcaPhase {
+    Plan,
+    Do,
+    Check,
+    Act,
+    Closed,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PdcaCycle {
@@ -226,20 +266,34 @@ pub struct PdcaCycle {
 }
 
 impl PdcaCycle {
-    pub fn new(req: &TaskRoutingRequest, objective: String, expected_evidence: Vec<String>) -> Self {
+    pub fn new(
+        req: &TaskRoutingRequest,
+        objective: String,
+        expected_evidence: Vec<String>,
+    ) -> Self {
         Self {
-            cycle_uuid: Uuid::now_v7(), tenant_uuid: req.tenant_uuid, project_uuid: req.project_uuid,
-            task_uuid: req.task_uuid, phase: PdcaPhase::Plan, objective, expected_evidence,
-            source_state_sha256: req.source_state_sha256.clone(), created_at: Utc::now(),
+            cycle_uuid: Uuid::now_v7(),
+            tenant_uuid: req.tenant_uuid,
+            project_uuid: req.project_uuid,
+            task_uuid: req.task_uuid,
+            phase: PdcaPhase::Plan,
+            objective,
+            expected_evidence,
+            source_state_sha256: req.source_state_sha256.clone(),
+            created_at: Utc::now(),
         }
     }
     pub fn advance(&mut self, next: PdcaPhase) -> Result<(), ControlError> {
-        let ok = matches!((self.phase, next),
-            (PdcaPhase::Plan, PdcaPhase::Do) |
-            (PdcaPhase::Do, PdcaPhase::Check) |
-            (PdcaPhase::Check, PdcaPhase::Act) |
-            (PdcaPhase::Act, PdcaPhase::Closed));
-        if !ok { return Err(ControlError::InvalidPdcaTransition); }
+        let ok = matches!(
+            (self.phase, next),
+            (PdcaPhase::Plan, PdcaPhase::Do)
+                | (PdcaPhase::Do, PdcaPhase::Check)
+                | (PdcaPhase::Check, PdcaPhase::Act)
+                | (PdcaPhase::Act, PdcaPhase::Closed)
+        );
+        if !ok {
+            return Err(ControlError::InvalidPdcaTransition);
+        }
         self.phase = next;
         Ok(())
     }
@@ -309,33 +363,60 @@ pub fn classify_learning(outcome: &ExecutionOutcome) -> Result<EitherKnowledge, 
     let success = outcome.acceptance_passed && outcome.qa_passed && outcome.security_passed;
     if success {
         Ok(EitherKnowledge::Fruitful(FruitfulKnowledge {
-            knowledge_uuid: Uuid::now_v7(), tenant_uuid: outcome.tenant_uuid, project_uuid: outcome.project_uuid,
-            task_class: outcome.task_class.clone(), context_fingerprint: outcome.context_fingerprint.clone(),
+            knowledge_uuid: Uuid::now_v7(),
+            tenant_uuid: outcome.tenant_uuid,
+            project_uuid: outcome.project_uuid,
+            task_class: outcome.task_class.clone(),
+            context_fingerprint: outcome.context_fingerprint.clone(),
             source_state_sha256: outcome.source_state_sha256.clone(),
-            pattern_summary: "candidate successful execution pattern; requires F24/F25 promotion".into(),
-            agent_uuid: outcome.agent_uuid, model_profile_uuid: outcome.model_profile_uuid,
-            quality_score: outcome.quality_score, actual_cost_usd: outcome.actual_cost_usd,
-            evidence_refs: outcome.evidence_refs.clone(), confidence: outcome.quality_score,
-            reuse_count: 0, promotion_state: "candidate".into(),
+            pattern_summary: "candidate successful execution pattern; requires F24/F25 promotion"
+                .into(),
+            agent_uuid: outcome.agent_uuid,
+            model_profile_uuid: outcome.model_profile_uuid,
+            quality_score: outcome.quality_score,
+            actual_cost_usd: outcome.actual_cost_usd,
+            evidence_refs: outcome.evidence_refs.clone(),
+            confidence: outcome.quality_score,
+            reuse_count: 0,
+            promotion_state: "candidate".into(),
         }))
     } else {
-        let sig = outcome.failure_signature.clone().unwrap_or_else(|| "unspecified_failure".into());
-        let cause = outcome.root_cause.clone().unwrap_or_else(|| "root cause pending".into());
+        let sig = outcome
+            .failure_signature
+            .clone()
+            .unwrap_or_else(|| "unspecified_failure".into());
+        let cause = outcome
+            .root_cause
+            .clone()
+            .unwrap_or_else(|| "root cause pending".into());
         Ok(EitherKnowledge::Unfruitful(UnfruitfulKnowledge {
-            knowledge_uuid: Uuid::now_v7(), tenant_uuid: outcome.tenant_uuid, project_uuid: outcome.project_uuid,
-            task_class: outcome.task_class.clone(), context_fingerprint: outcome.context_fingerprint.clone(),
-            source_state_sha256: outcome.source_state_sha256.clone(), failure_signature: sig.clone(),
-            root_cause: cause, remediation: outcome.remediation.clone(),
-            avoidance_rule: format!("before repeating {sig}, require context match + remediation evidence"),
-            agent_uuid: outcome.agent_uuid, model_profile_uuid: outcome.model_profile_uuid,
-            evidence_refs: outcome.evidence_refs.clone(), occurrence_count: 1, promotion_state: "candidate".into(),
+            knowledge_uuid: Uuid::now_v7(),
+            tenant_uuid: outcome.tenant_uuid,
+            project_uuid: outcome.project_uuid,
+            task_class: outcome.task_class.clone(),
+            context_fingerprint: outcome.context_fingerprint.clone(),
+            source_state_sha256: outcome.source_state_sha256.clone(),
+            failure_signature: sig.clone(),
+            root_cause: cause,
+            remediation: outcome.remediation.clone(),
+            avoidance_rule: format!(
+                "before repeating {sig}, require context match + remediation evidence"
+            ),
+            agent_uuid: outcome.agent_uuid,
+            model_profile_uuid: outcome.model_profile_uuid,
+            evidence_refs: outcome.evidence_refs.clone(),
+            occurrence_count: 1,
+            promotion_state: "candidate".into(),
         }))
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum EitherKnowledge { Fruitful(FruitfulKnowledge), Unfruitful(UnfruitfulKnowledge) }
+pub enum EitherKnowledge {
+    Fruitful(FruitfulKnowledge),
+    Unfruitful(UnfruitfulKnowledge),
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PreTaskKnowledgeGuard {
@@ -353,15 +434,39 @@ pub fn knowledge_guard(
     fruitful: &[FruitfulKnowledge],
     unfruitful: &[UnfruitfulKnowledge],
 ) -> PreTaskKnowledgeGuard {
-    let reused_successes = fruitful.iter()
-        .filter(|k| k.task_class == task_class && k.context_fingerprint == context_fingerprint && k.promotion_state != "candidate")
-        .map(|k| k.knowledge_uuid).collect::<Vec<_>>();
-    let matched = unfruitful.iter()
-        .filter(|k| k.task_class == task_class && k.context_fingerprint == context_fingerprint && k.promotion_state != "candidate")
+    let reused_successes = fruitful
+        .iter()
+        .filter(|k| {
+            k.task_class == task_class
+                && k.context_fingerprint == context_fingerprint
+                && k.promotion_state != "candidate"
+        })
+        .map(|k| k.knowledge_uuid)
+        .collect::<Vec<_>>();
+    let matched = unfruitful
+        .iter()
+        .filter(|k| {
+            k.task_class == task_class
+                && k.context_fingerprint == context_fingerprint
+                && k.promotion_state != "candidate"
+        })
         .collect::<Vec<_>>();
     let block = matched.iter().any(|k| !k.avoidance_rule.is_empty());
-    let warnings = matched.iter().map(|k| format!("known failed pattern: {} — {}", k.failure_signature, k.avoidance_rule)).collect();
-    PreTaskKnowledgeGuard { reused_successes, matched_failures: matched.iter().map(|k| k.knowledge_uuid).collect(), warnings, block }
+    let warnings = matched
+        .iter()
+        .map(|k| {
+            format!(
+                "known failed pattern: {} — {}",
+                k.failure_signature, k.avoidance_rule
+            )
+        })
+        .collect();
+    PreTaskKnowledgeGuard {
+        reused_successes,
+        matched_failures: matched.iter().map(|k| k.knowledge_uuid).collect(),
+        warnings,
+        block,
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

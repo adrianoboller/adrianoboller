@@ -1,10 +1,17 @@
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use chrono::{DateTime, Utc};
 use phxclaw_types::new_uuid_v7;
-use reqwest::{header::{HeaderMap, HeaderName, HeaderValue}, redirect::Policy, Method, Proxy};
+use reqwest::{
+    Method, Proxy,
+    header::{HeaderMap, HeaderName, HeaderValue},
+    redirect::Policy,
+};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
-use std::{collections::BTreeMap, time::{Duration, Instant}};
+use serde_json::{Value, json};
+use std::{
+    collections::BTreeMap,
+    time::{Duration, Instant},
+};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -90,7 +97,9 @@ pub struct HttpResult {
 
 impl HttpResult {
     pub fn bytes(&self) -> Result<Vec<u8>, HttpClientError> {
-        BASE64.decode(&self.body_base64).map_err(|e| HttpClientError::Decode(e.to_string()))
+        BASE64
+            .decode(&self.body_base64)
+            .map_err(|e| HttpClientError::Decode(e.to_string()))
     }
 
     pub fn text(&self) -> Result<String, HttpClientError> {
@@ -179,7 +188,10 @@ pub async fn http_request(spec: &HttpRequestSpec) -> Result<HttpResult, HttpClie
         spec.json.is_some(),
         !spec.form.is_empty(),
         !spec.multipart_fields.is_empty() || !spec.multipart_files.is_empty(),
-    ].into_iter().filter(|v| *v).count();
+    ]
+    .into_iter()
+    .filter(|v| *v)
+    .count();
     if body_modes > 1 {
         return Err(HttpClientError::InvalidRequest(
             "body_base64, json, form and multipart are mutually exclusive".into(),
@@ -187,7 +199,9 @@ pub async fn http_request(spec: &HttpRequestSpec) -> Result<HttpResult, HttpClie
     }
 
     if let Some(body_b64) = &spec.body_base64 {
-        let body = BASE64.decode(body_b64).map_err(|e| HttpClientError::Decode(e.to_string()))?;
+        let body = BASE64
+            .decode(body_b64)
+            .map_err(|e| HttpClientError::Decode(e.to_string()))?;
         request = request.body(body);
     } else if let Some(value) = &spec.json {
         request = request.json(value);
@@ -199,11 +213,13 @@ pub async fn http_request(spec: &HttpRequestSpec) -> Result<HttpResult, HttpClie
             form = form.text(field.name.clone(), field.value.clone());
         }
         for file in &spec.multipart_files {
-            let bytes = BASE64.decode(&file.bytes_base64)
+            let bytes = BASE64
+                .decode(&file.bytes_base64)
                 .map_err(|e| HttpClientError::Decode(e.to_string()))?;
             let mut part = reqwest::multipart::Part::bytes(bytes).file_name(file.file_name.clone());
             if let Some(content_type) = &file.content_type {
-                part = part.mime_str(content_type)
+                part = part
+                    .mime_str(content_type)
                     .map_err(|e| HttpClientError::InvalidRequest(e.to_string()))?;
             }
             form = form.part(file.field_name.clone(), part);
@@ -215,8 +231,11 @@ pub async fn http_request(spec: &HttpRequestSpec) -> Result<HttpResult, HttpClie
     let response = request.send().await?;
     let final_url = response.url().to_string();
     let status = response.status().as_u16();
-    let content_type = response.headers().get(reqwest::header::CONTENT_TYPE)
-        .and_then(|v| v.to_str().ok()).map(ToOwned::to_owned);
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .map(ToOwned::to_owned);
     let response_headers = headers_to_map(response.headers());
     let bytes = response.bytes().await?;
 
@@ -233,7 +252,10 @@ pub async fn http_request(spec: &HttpRequestSpec) -> Result<HttpResult, HttpClie
 }
 
 /// PhxClaw equivalent of HTTPGetResult over a previously completed request.
-pub fn http_get_result(result: &HttpResult, mode: HttpGetResultMode) -> Result<Value, HttpClientError> {
+pub fn http_get_result(
+    result: &HttpResult,
+    mode: HttpGetResultMode,
+) -> Result<Value, HttpClientError> {
     Ok(match mode {
         HttpGetResultMode::BytesBase64 => Value::String(result.body_base64.clone()),
         HttpGetResultMode::Text => Value::String(result.text()?),

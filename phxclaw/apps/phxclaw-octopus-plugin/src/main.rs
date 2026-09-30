@@ -1,11 +1,11 @@
 use chrono::Utc;
 use phxclaw_octopus_bridge::{OctopusBridge, OctopusBridgeConfig};
 use phxclaw_process_protocol::{
-    ProcessEnvelope, ProcessErrorBody, ProcessMessageKind, ProcessReply, ProcessReplyStatus,
-    PROCESS_PROTOCOL_V1,
+    PROCESS_PROTOCOL_V1, ProcessEnvelope, ProcessErrorBody, ProcessMessageKind, ProcessReply,
+    ProcessReplyStatus,
 };
 use phxclaw_types::new_uuid_v7;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::io::{Read, Write};
 
 fn main() {
@@ -18,7 +18,10 @@ fn main() {
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut input = String::new();
     std::io::stdin().read_to_string(&mut input)?;
-    let line = input.lines().find(|line| !line.trim().is_empty()).ok_or("empty request")?;
+    let line = input
+        .lines()
+        .find(|line| !line.trim().is_empty())
+        .ok_or("empty request")?;
     let request: ProcessEnvelope<Value> = serde_json::from_str(line)?;
     if request.protocol != PROCESS_PROTOCOL_V1 {
         return Err(format!("unsupported protocol {}", request.protocol).into());
@@ -28,13 +31,28 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let reply = match request.kind {
         ProcessMessageKind::Health => match bridge.health() {
             Ok(payload) => ok_reply(request.message_uuid, payload),
-            Err(error) => error_reply(request.message_uuid, "octopus_unavailable", &error.to_string(), true),
+            Err(error) => error_reply(
+                request.message_uuid,
+                "octopus_unavailable",
+                &error.to_string(),
+                true,
+            ),
         },
         ProcessMessageKind::Execute => {
-            let capability = request.payload.get("capability").and_then(Value::as_str).unwrap_or_default();
-            let payload = request.payload.get("payload").cloned().unwrap_or_else(|| json!({}));
+            let capability = request
+                .payload
+                .get("capability")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let payload = request
+                .payload
+                .get("payload")
+                .cloned()
+                .unwrap_or_else(|| json!({}));
             match bridge.invoke(capability, &payload) {
-                Ok(result) if result.exit_code == 0 => ok_reply(request.message_uuid, serde_json::to_value(result)?),
+                Ok(result) if result.exit_code == 0 => {
+                    ok_reply(request.message_uuid, serde_json::to_value(result)?)
+                }
                 Ok(result) => ProcessReply {
                     protocol: PROCESS_PROTOCOL_V1.into(),
                     message_uuid: new_uuid_v7(),
@@ -48,10 +66,20 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         retryable: false,
                     }),
                 },
-                Err(error) => error_reply(request.message_uuid, "octopus_bridge_error", &error.to_string(), false),
+                Err(error) => error_reply(
+                    request.message_uuid,
+                    "octopus_bridge_error",
+                    &error.to_string(),
+                    false,
+                ),
             }
         }
-        ProcessMessageKind::Cancel => error_reply(request.message_uuid, "cancel_not_supported", "Octopus bridge operations are one-shot processes", false),
+        ProcessMessageKind::Cancel => error_reply(
+            request.message_uuid,
+            "cancel_not_supported",
+            "Octopus bridge operations are one-shot processes",
+            false,
+        ),
         ProcessMessageKind::Shutdown => ok_reply(request.message_uuid, json!({"shutdown": true})),
     };
 

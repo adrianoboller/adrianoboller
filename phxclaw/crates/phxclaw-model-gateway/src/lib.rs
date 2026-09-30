@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use phxclaw_types::{new_uuid_v7, ModelDescriptor, PluginManifest};
+use phxclaw_types::{ModelDescriptor, PluginManifest, new_uuid_v7};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -134,7 +134,10 @@ impl ModelGateway {
         Self::default()
     }
 
-    pub fn register_provider(&mut self, manifest: PluginManifest) -> Result<Uuid, ModelGatewayError> {
+    pub fn register_provider(
+        &mut self,
+        manifest: PluginManifest,
+    ) -> Result<Uuid, ModelGatewayError> {
         if manifest.kind != "model_provider" || manifest.model_provider.is_none() {
             return Err(ModelGatewayError::NotProvider(manifest.name));
         }
@@ -142,7 +145,8 @@ impl ModelGateway {
             return Err(ModelGatewayError::DuplicateProvider(manifest.uuid));
         }
         let uuid = manifest.uuid;
-        self.providers.insert(uuid, ProviderRegistration { manifest });
+        self.providers
+            .insert(uuid, ProviderRegistration { manifest });
         Ok(uuid)
     }
 
@@ -177,9 +181,16 @@ impl ModelGateway {
 
         for registration in self.providers.values() {
             let manifest = &registration.manifest;
-            let profile = manifest.model_provider.as_ref().expect("validated provider profile");
+            let profile = manifest
+                .model_provider
+                .as_ref()
+                .expect("validated provider profile");
             for model in &profile.models {
-                if !model.capabilities.iter().any(|capability| capability == &request.capability) {
+                if !model
+                    .capabilities
+                    .iter()
+                    .any(|capability| capability == &request.capability)
+                {
                     continue;
                 }
                 if request.requires_local && !model.local {
@@ -188,10 +199,18 @@ impl ModelGateway {
                 if request.classification == DataClassification::Restricted && !model.local {
                     continue;
                 }
-                if request.input_tokens_estimate.saturating_add(request.output_tokens_limit) > model.context_window {
+                if request
+                    .input_tokens_estimate
+                    .saturating_add(request.output_tokens_limit)
+                    > model.context_window
+                {
                     continue;
                 }
-                let cost = estimate_cost(model, request.input_tokens_estimate, request.output_tokens_limit);
+                let cost = estimate_cost(
+                    model,
+                    request.input_tokens_estimate,
+                    request.output_tokens_limit,
+                );
                 if cost > account_limit {
                     continue;
                 }
@@ -216,12 +235,18 @@ impl ModelGateway {
             left.preference_rank
                 .cmp(&right.preference_rank)
                 .then_with(|| right.provider_priority.cmp(&left.provider_priority))
-                .then_with(|| left.estimated_cost_microunits.cmp(&right.estimated_cost_microunits))
+                .then_with(|| {
+                    left.estimated_cost_microunits
+                        .cmp(&right.estimated_cost_microunits)
+                })
                 .then_with(|| left.provider_uuid.cmp(&right.provider_uuid))
                 .then_with(|| left.model_id.cmp(&right.model_id))
         });
 
-        let selected = candidates.first().cloned().ok_or(ModelGatewayError::NoRoute(request.uuid))?;
+        let selected = candidates
+            .first()
+            .cloned()
+            .ok_or(ModelGatewayError::NoRoute(request.uuid))?;
         let fallbacks = candidates.into_iter().skip(1).collect();
         Ok(ModelRouteDecision {
             request_uuid: request.uuid,
@@ -269,10 +294,14 @@ impl ModelGateway {
             .ok_or_else(|| ModelGatewayError::UnknownBudget(request.budget_account.clone()))?;
         let reserved = decision.selected.estimated_cost_microunits;
         if account.reserved_microunits < reserved {
-            return Err(ModelGatewayError::ReservationUnderflow(request.budget_account.clone()));
+            return Err(ModelGatewayError::ReservationUnderflow(
+                request.budget_account.clone(),
+            ));
         }
         account.reserved_microunits -= reserved;
-        account.spent_microunits = account.spent_microunits.saturating_add(actual_cost_microunits);
+        account.spent_microunits = account
+            .spent_microunits
+            .saturating_add(actual_cost_microunits);
         self.telemetry.push(ModelTelemetry {
             uuid: new_uuid_v7(),
             request_uuid: request.uuid,
@@ -316,33 +345,62 @@ mod tests {
             kind: "model_provider".into(),
             description: "test provider".into(),
             core_api: ">=0.4.0, <0.5.0".into(),
-            entrypoint: PluginEntrypoint { kind: "process".into(), value: "test".into() },
+            entrypoint: PluginEntrypoint {
+                kind: "process".into(),
+                value: "test".into(),
+            },
             dependencies: vec![],
             capabilities: vec!["model.chat".into()],
             extension_points: vec![],
             permissions: vec![],
             lifecycle: PluginLifecycle {
-                install: "install".into(), enable: "enable".into(), disable: "disable".into(),
-                uninstall: "uninstall".into(), health: Some("health".into()),
+                install: "install".into(),
+                enable: "enable".into(),
+                disable: "disable".into(),
+                uninstall: "uninstall".into(),
+                health: Some("health".into()),
             },
-            contracts: PluginContracts { input_schema: "in".into(), output_schema: "out".into() },
+            contracts: PluginContracts {
+                input_schema: "in".into(),
+                output_schema: "out".into(),
+            },
             sandbox: PluginSandboxPolicy {
-                network: SandboxNetworkMode::Deny, network_allowlist: vec![], read_only_paths: vec![],
-                write_paths: vec![], environment_allowlist: vec![], timeout_ms: 1000, memory_mb: 128,
+                network: SandboxNetworkMode::Deny,
+                network_allowlist: vec![],
+                read_only_paths: vec![],
+                write_paths: vec![],
+                environment_allowlist: vec![],
+                timeout_ms: 1000,
+                memory_mb: 128,
                 cpu_quota_percent: 20,
             },
             integrity: PluginIntegrity {
-                artifact: "test".into(), hash_algorithm: "sha256".into(), digest: "0".repeat(64),
-                signature_algorithm: "ed25519".into(), signature: "test".into(), signer: "test".into(),
+                artifact: "test".into(),
+                hash_algorithm: "sha256".into(),
+                digest: "0".repeat(64),
+                signature_algorithm: "ed25519".into(),
+                signature: "test".into(),
+                signer: "test".into(),
                 provenance: "test".into(),
             },
-            tests: vec![PluginTestSpec { name: "test".into(), command: "test".into(), required: true }],
-            rollback: PluginRollback { strategy: "disable".into(), steps: vec!["disable".into()] },
+            tests: vec![PluginTestSpec {
+                name: "test".into(),
+                command: "test".into(),
+                required: true,
+            }],
+            rollback: PluginRollback {
+                strategy: "disable".into(),
+                steps: vec!["disable".into()],
+            },
             agent: None,
             model_provider: Some(ModelProviderProfile {
-                display_name: name.into(), priority, transport: "process".into(),
+                display_name: name.into(),
+                priority,
+                transport: "process".into(),
                 models: vec![ModelDescriptor {
-                    id: model_id.into(), capabilities: vec!["model.chat".into()], context_window: 32_000,
+                    id: model_id.into(),
+                    capabilities: vec!["model.chat".into()],
+                    context_window: 32_000,
                     input_microunits_per_million_tokens: 1000,
                     output_microunits_per_million_tokens: 2000,
                     local,
@@ -354,8 +412,17 @@ mod tests {
     #[test]
     fn routing_is_deterministic_and_honors_local_policy() {
         let mut gateway = ModelGateway::new();
-        gateway.register_provider(provider("com.phxclaw.provider.remote", 100, false, "remote")).unwrap();
-        gateway.register_provider(provider("com.phxclaw.provider.local", 50, true, "local")).unwrap();
+        gateway
+            .register_provider(provider(
+                "com.phxclaw.provider.remote",
+                100,
+                false,
+                "remote",
+            ))
+            .unwrap();
+        gateway
+            .register_provider(provider("com.phxclaw.provider.local", 50, true, "local"))
+            .unwrap();
         gateway.set_budget("default", 1_000_000);
         let mut request = ModelRequest::new("model.chat", Value::Null);
         request.requires_local = true;

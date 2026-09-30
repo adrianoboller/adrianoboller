@@ -118,7 +118,9 @@ impl CodeWorkspace {
         fs::create_dir_all(&state_root)?;
         let state_root = fs::canonicalize(&state_root)?;
         if state_root.starts_with(&root) {
-            return Err(WorkspaceError::StateInsideWorkspace(state_root.display().to_string()));
+            return Err(WorkspaceError::StateInsideWorkspace(
+                state_root.display().to_string(),
+            ));
         }
         let executor = ShellExecutor::new(ExecutionPolicy {
             enabled: true,
@@ -126,12 +128,19 @@ impl CodeWorkspace {
             max_timeout_ms: policy.command_timeout_ms,
             denied_programs: vec![],
         });
-        let this = Self { root, state_root, policy, executor };
+        let this = Self {
+            root,
+            state_root,
+            policy,
+            executor,
+        };
         this.git(&["rev-parse", "--is-inside-work-tree"], &this.root)?;
         Ok(this)
     }
 
-    pub fn root(&self) -> &Path { &self.root }
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
 
     pub fn snapshot(&self) -> Result<GitSnapshot, WorkspaceError> {
         Ok(GitSnapshot {
@@ -156,15 +165,26 @@ impl CodeWorkspace {
         if !self.policy.allow_git_mutation {
             return Err(WorkspaceError::GitMutationDisabled);
         }
-        if base_ref.trim().is_empty() || base_ref.starts_with('-') || base_ref.contains(char::is_whitespace) {
+        if base_ref.trim().is_empty()
+            || base_ref.starts_with('-')
+            || base_ref.contains(char::is_whitespace)
+        {
             return Err(WorkspaceError::InvalidBaseRef(base_ref.to_string()));
         }
         let short = mission_uuid.to_string()[..12].to_string();
         let branch = format!("agent/mission/{short}");
-        let path = self.state_root.join("worktrees").join(mission_uuid.to_string());
-        if let Some(parent) = path.parent() { fs::create_dir_all(parent)?; }
+        let path = self
+            .state_root
+            .join("worktrees")
+            .join(mission_uuid.to_string());
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
         let path_text = path.to_string_lossy().into_owned();
-        self.git(&["worktree", "add", "-b", &branch, &path_text, base_ref], &self.root)?;
+        self.git(
+            &["worktree", "add", "-b", &branch, &path_text, base_ref],
+            &self.root,
+        )?;
         Ok(WorktreeHandle {
             uuid: new_uuid_v7(),
             mission_uuid,
@@ -196,7 +216,9 @@ impl CodeWorkspace {
         let root = fs::canonicalize(workspace_root)?;
         let relative = normalize_relative(relative_path)?;
         let target = root.join(relative);
-        if let Some(parent) = target.parent() { fs::create_dir_all(parent)?; }
+        if let Some(parent) = target.parent() {
+            fs::create_dir_all(parent)?;
+        }
         if !target.starts_with(&root) {
             return Err(WorkspaceError::PathEscape(target.display().to_string()));
         }
@@ -210,19 +232,31 @@ impl CodeWorkspace {
         })
     }
 
-    pub fn run_gate(&self, gate: &GateSpec, default_cwd: &Path) -> Result<GateResult, WorkspaceError> {
+    pub fn run_gate(
+        &self,
+        gate: &GateSpec,
+        default_cwd: &Path,
+    ) -> Result<GateResult, WorkspaceError> {
         let cwd = gate.cwd.as_deref().unwrap_or(default_cwd);
         self.ensure_inside(cwd)?;
         self.ensure_program_allowed(&gate.program)?;
         let mut request = CommandRequest::direct(gate.program.clone(), gate.args.clone());
         request.cwd = Some(cwd.to_path_buf());
         request.timeout_ms = self.policy.command_timeout_ms;
-        let command = self.executor.execute(&request).map_err(|e| WorkspaceError::Command(e.to_string()))?;
-        if command.stdout.len().saturating_add(command.stderr.len()) > self.policy.max_output_bytes {
+        let command = self
+            .executor
+            .execute(&request)
+            .map_err(|e| WorkspaceError::Command(e.to_string()))?;
+        if command.stdout.len().saturating_add(command.stderr.len()) > self.policy.max_output_bytes
+        {
             return Err(WorkspaceError::OutputLimit);
         }
         let passed = !command.timed_out && command.exit_code == Some(0);
-        Ok(GateResult { name: gate.name.clone(), command, passed })
+        Ok(GateResult {
+            name: gate.name.clone(),
+            command,
+            passed,
+        })
     }
 
     fn ensure_inside(&self, path: &Path) -> Result<(), WorkspaceError> {
@@ -235,8 +269,16 @@ impl CodeWorkspace {
     }
 
     fn ensure_program_allowed(&self, program: &str) -> Result<(), WorkspaceError> {
-        let allowed = self.policy.allowed_programs.iter().any(|item| item == program);
-        if allowed { Ok(()) } else { Err(WorkspaceError::ProgramDenied(program.to_string())) }
+        let allowed = self
+            .policy
+            .allowed_programs
+            .iter()
+            .any(|item| item == program);
+        if allowed {
+            Ok(())
+        } else {
+            Err(WorkspaceError::ProgramDenied(program.to_string()))
+        }
     }
 
     fn git_text(&self, args: &[&str], cwd: &Path) -> Result<String, WorkspaceError> {
@@ -246,19 +288,24 @@ impl CodeWorkspace {
 
     fn git(&self, args: &[&str], cwd: &Path) -> Result<CommandResult, WorkspaceError> {
         self.ensure_program_allowed("git")?;
-        let mut request = CommandRequest::direct(
-            "git",
-            args.iter().map(|v| (*v).to_string()).collect(),
-        );
+        let mut request =
+            CommandRequest::direct("git", args.iter().map(|v| (*v).to_string()).collect());
         request.cwd = Some(cwd.to_path_buf());
         request.timeout_ms = self.policy.command_timeout_ms;
-        let result = self.executor.execute(&request).map_err(|e| WorkspaceError::Command(e.to_string()))?;
+        let result = self
+            .executor
+            .execute(&request)
+            .map_err(|e| WorkspaceError::Command(e.to_string()))?;
         if result.stdout.len().saturating_add(result.stderr.len()) > self.policy.max_output_bytes {
             return Err(WorkspaceError::OutputLimit);
         }
         if result.timed_out || result.exit_code != Some(0) {
             return Err(WorkspaceError::Command(format!(
-                "git {:?} exit={:?} timeout={} stderr={}", args, result.exit_code, result.timed_out, result.stderr.trim()
+                "git {:?} exit={:?} timeout={} stderr={}",
+                args,
+                result.exit_code,
+                result.timed_out,
+                result.stderr.trim()
             )));
         }
         Ok(result)

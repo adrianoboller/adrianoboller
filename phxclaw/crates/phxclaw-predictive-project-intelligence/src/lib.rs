@@ -4,8 +4,8 @@
 //! knowledge promotion, budget, lease or fencing policies owned by earlier PhxClaw layers.
 
 use chrono::{DateTime, Duration, Utc};
-use phxclaw_agent_control_plane::{Complexity, FruitfulKnowledge, UnfruitfulKnowledge};
 use phxclaw_active_project_runtime::ProjectTask;
+use phxclaw_agent_control_plane::{Complexity, FruitfulKnowledge, UnfruitfulKnowledge};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -89,11 +89,19 @@ pub struct RouteForecast {
 }
 
 fn mean(xs: &[f64]) -> f64 {
-    if xs.is_empty() { 0.0 } else { xs.iter().sum::<f64>() / xs.len() as f64 }
+    if xs.is_empty() {
+        0.0
+    } else {
+        xs.iter().sum::<f64>() / xs.len() as f64
+    }
 }
 
 fn mean_u64(xs: &[u64]) -> u64 {
-    if xs.is_empty() { 0 } else { (xs.iter().map(|x| *x as u128).sum::<u128>() / xs.len() as u128) as u64 }
+    if xs.is_empty() {
+        0
+    } else {
+        (xs.iter().map(|x| *x as u128).sum::<u128>() / xs.len() as u128) as u64
+    }
 }
 
 fn confidence(n: usize) -> f64 {
@@ -111,23 +119,57 @@ pub fn forecast_route(
     now: DateTime<Utc>,
 ) -> Result<RouteForecast, PredictiveError> {
     let cutoff = now - Duration::days(policy.history_window_days);
-    let samples: Vec<&HistoricalOutcome> = history.iter().filter(|h| {
-        h.project_uuid == project_uuid && h.task_class == task_class &&
-        h.context_fingerprint == context_fingerprint && h.agent_uuid == agent_uuid &&
-        h.model_profile_uuid == model_profile_uuid && h.observed_at >= cutoff
-    }).collect();
-    if samples.iter().any(|h| !h.governed) { return Err(PredictiveError::UngovernedEvidence); }
-    if samples.len() < policy.min_governed_samples { return Err(PredictiveError::InsufficientHistory); }
-    let success_probability = samples.iter().filter(|h| h.success).count() as f64 / samples.len() as f64;
+    let samples: Vec<&HistoricalOutcome> = history
+        .iter()
+        .filter(|h| {
+            h.project_uuid == project_uuid
+                && h.task_class == task_class
+                && h.context_fingerprint == context_fingerprint
+                && h.agent_uuid == agent_uuid
+                && h.model_profile_uuid == model_profile_uuid
+                && h.observed_at >= cutoff
+        })
+        .collect();
+    if samples.iter().any(|h| !h.governed) {
+        return Err(PredictiveError::UngovernedEvidence);
+    }
+    if samples.len() < policy.min_governed_samples {
+        return Err(PredictiveError::InsufficientHistory);
+    }
+    let success_probability =
+        samples.iter().filter(|h| h.success).count() as f64 / samples.len() as f64;
     let expected_quality = mean(&samples.iter().map(|h| h.quality_score).collect::<Vec<_>>());
-    let expected_cost_usd = mean(&samples.iter().map(|h| h.actual_cost_usd).collect::<Vec<_>>());
+    let expected_cost_usd = mean(
+        &samples
+            .iter()
+            .map(|h| h.actual_cost_usd)
+            .collect::<Vec<_>>(),
+    );
     let expected_duration_ms = mean_u64(&samples.iter().map(|h| h.duration_ms).collect::<Vec<_>>());
-    let expected_retries = mean(&samples.iter().map(|h| h.retry_count as f64).collect::<Vec<_>>());
-    let effective_cost_usd = if success_probability > 0.0 { expected_cost_usd / success_probability } else { f64::INFINITY };
+    let expected_retries = mean(
+        &samples
+            .iter()
+            .map(|h| h.retry_count as f64)
+            .collect::<Vec<_>>(),
+    );
+    let effective_cost_usd = if success_probability > 0.0 {
+        expected_cost_usd / success_probability
+    } else {
+        f64::INFINITY
+    };
     let conf = confidence(samples.len());
     let provider = samples[0].provider.clone();
     let local = samples[0].local;
-    let evidence_sha256 = format!("{:x}", Sha256::digest(samples.iter().flat_map(|h| h.evidence_sha256.as_bytes()).copied().collect::<Vec<_>>()));
+    let evidence_sha256 = format!(
+        "{:x}",
+        Sha256::digest(
+            samples
+                .iter()
+                .flat_map(|h| h.evidence_sha256.as_bytes())
+                .copied()
+                .collect::<Vec<_>>()
+        )
+    );
     let forecast_uuid = Uuid::now_v7();
     let expires_at = now + Duration::seconds(policy.forecast_ttl_seconds);
     let canonical = serde_json::json!({
@@ -139,11 +181,32 @@ pub fn forecast_route(
         "expected_retries": expected_retries, "evidence_sha256": evidence_sha256,
         "expires_at": expires_at,
     });
-    let forecast_sha256 = format!("{:x}", Sha256::digest(serde_json::to_vec(&canonical).expect("forecast canonical json")));
-    Ok(RouteForecast { forecast_uuid, project_uuid, task_class: task_class.into(), context_fingerprint: context_fingerprint.into(),
-        agent_uuid, model_profile_uuid, provider, local, sample_count: samples.len(), success_probability,
-        expected_quality, expected_cost_usd, expected_duration_ms, expected_retries, effective_cost_usd,
-        confidence: conf, generated_at: now, expires_at, evidence_sha256, forecast_sha256 })
+    let forecast_sha256 = format!(
+        "{:x}",
+        Sha256::digest(serde_json::to_vec(&canonical).expect("forecast canonical json"))
+    );
+    Ok(RouteForecast {
+        forecast_uuid,
+        project_uuid,
+        task_class: task_class.into(),
+        context_fingerprint: context_fingerprint.into(),
+        agent_uuid,
+        model_profile_uuid,
+        provider,
+        local,
+        sample_count: samples.len(),
+        success_probability,
+        expected_quality,
+        expected_cost_usd,
+        expected_duration_ms,
+        expected_retries,
+        effective_cost_usd,
+        confidence: conf,
+        generated_at: now,
+        expires_at,
+        evidence_sha256,
+        forecast_sha256,
+    })
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -170,17 +233,26 @@ pub fn recommend_route(
     policy: &PredictivePolicy,
     now: DateTime<Utc>,
 ) -> Result<RouteRecommendation, PredictiveError> {
-    let mut eligible = forecasts.iter().filter(|f| {
-        f.project_uuid == task.project_uuid && f.task_class == task.task_class &&
-        f.context_fingerprint == task.context_fingerprint && f.expires_at >= now &&
-        f.confidence >= policy.confidence_floor && f.expected_quality >= task.quality_floor &&
-        f.expected_cost_usd <= task.max_estimated_cost_usd &&
-        (1.0 - f.success_probability) <= policy.max_predicted_rework_risk
-    }).collect::<Vec<_>>();
-    if eligible.is_empty() { return Err(PredictiveError::NoRecommendedRoute); }
-    eligible.sort_by(|a,b| {
+    let mut eligible = forecasts
+        .iter()
+        .filter(|f| {
+            f.project_uuid == task.project_uuid
+                && f.task_class == task.task_class
+                && f.context_fingerprint == task.context_fingerprint
+                && f.expires_at >= now
+                && f.confidence >= policy.confidence_floor
+                && f.expected_quality >= task.quality_floor
+                && f.expected_cost_usd <= task.max_estimated_cost_usd
+                && (1.0 - f.success_probability) <= policy.max_predicted_rework_risk
+        })
+        .collect::<Vec<_>>();
+    if eligible.is_empty() {
+        return Err(PredictiveError::NoRecommendedRoute);
+    }
+    eligible.sort_by(|a, b| {
         // local-first only among routes that satisfy the same hard prediction gates.
-        let la=if a.local {0} else {1}; let lb=if b.local {0} else {1};
+        let la = if a.local { 0 } else { 1 };
+        let lb = if b.local { 0 } else { 1 };
         la.cmp(&lb)
             .then_with(|| a.effective_cost_usd.total_cmp(&b.effective_cost_usd))
             .then_with(|| b.expected_quality.total_cmp(&a.expected_quality))
@@ -188,22 +260,40 @@ pub fn recommend_route(
             .then_with(|| a.expected_duration_ms.cmp(&b.expected_duration_ms))
             .then_with(|| a.model_profile_uuid.cmp(&b.model_profile_uuid))
     });
-    let s=eligible[0];
-    let recommendation_uuid=Uuid::now_v7();
-    let rationale=vec![
+    let s = eligible[0];
+    let recommendation_uuid = Uuid::now_v7();
+    let rationale = vec![
         "governed historical evidence matched exact task class and context".into(),
-        if s.local { "local/Ollama route satisfies predictive quality and cost gates".into() } else { "cloud route justified because no eligible local forecast ranked ahead".into() },
+        if s.local {
+            "local/Ollama route satisfies predictive quality and cost gates".into()
+        } else {
+            "cloud route justified because no eligible local forecast ranked ahead".into()
+        },
         "final execution still requires v0.45 routing, budget, lease and fencing gates".into(),
     ];
-    let canonical=serde_json::json!({"recommendation_uuid":recommendation_uuid,"task_uuid":task.task_uuid,
+    let canonical = serde_json::json!({"recommendation_uuid":recommendation_uuid,"task_uuid":task.task_uuid,
         "forecast_uuid":s.forecast_uuid,"model_profile_uuid":s.model_profile_uuid,"agent_uuid":s.agent_uuid,
         "forecast_sha256":s.forecast_sha256,"source_state_sha256":task.source_state_sha256});
-    let recommendation_sha256=format!("{:x}",Sha256::digest(serde_json::to_vec(&canonical).expect("recommendation json")));
-    Ok(RouteRecommendation { recommendation_uuid, task_uuid:task.task_uuid, selected_forecast_uuid:s.forecast_uuid,
-        selected_model_profile_uuid:s.model_profile_uuid, selected_agent_uuid:s.agent_uuid, provider:s.provider.clone(),
-        local:s.local, predicted_cost_usd:s.expected_cost_usd, predicted_quality:s.expected_quality,
-        predicted_success_probability:s.success_probability, predicted_duration_ms:s.expected_duration_ms,
-        rationale, requires_cloud_escalation:!s.local, recommendation_sha256 })
+    let recommendation_sha256 = format!(
+        "{:x}",
+        Sha256::digest(serde_json::to_vec(&canonical).expect("recommendation json"))
+    );
+    Ok(RouteRecommendation {
+        recommendation_uuid,
+        task_uuid: task.task_uuid,
+        selected_forecast_uuid: s.forecast_uuid,
+        selected_model_profile_uuid: s.model_profile_uuid,
+        selected_agent_uuid: s.agent_uuid,
+        provider: s.provider.clone(),
+        local: s.local,
+        predicted_cost_usd: s.expected_cost_usd,
+        predicted_quality: s.expected_quality,
+        predicted_success_probability: s.success_probability,
+        predicted_duration_ms: s.expected_duration_ms,
+        rationale,
+        requires_cloud_escalation: !s.local,
+        recommendation_sha256,
+    })
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -232,24 +322,70 @@ pub struct ProjectForecast {
     pub forecast_sha256: String,
 }
 
-pub fn forecast_project(project_uuid: Uuid, task_forecasts: &[TaskForecast], remaining_budget_usd: f64,
-    millis_to_deadline: u64, source_state_sha256: &str, ttl_seconds: i64, now: DateTime<Utc>) -> ProjectForecast {
-    let expected_remaining_cost_usd = task_forecasts.iter().map(|x| x.expected_cost_usd).sum::<f64>();
-    let expected_remaining_duration_ms = task_forecasts.iter().map(|x| x.expected_duration_ms).sum::<u64>();
-    let expected_rework_cost_usd = task_forecasts.iter().map(|x| x.expected_cost_usd * x.rework_risk).sum::<f64>();
-    let deadline_risk = if millis_to_deadline == 0 { 1.0 } else { (expected_remaining_duration_ms as f64 / millis_to_deadline as f64 - 0.8).max(0.0).min(1.0) };
+pub fn forecast_project(
+    project_uuid: Uuid,
+    task_forecasts: &[TaskForecast],
+    remaining_budget_usd: f64,
+    millis_to_deadline: u64,
+    source_state_sha256: &str,
+    ttl_seconds: i64,
+    now: DateTime<Utc>,
+) -> ProjectForecast {
+    let expected_remaining_cost_usd = task_forecasts
+        .iter()
+        .map(|x| x.expected_cost_usd)
+        .sum::<f64>();
+    let expected_remaining_duration_ms = task_forecasts
+        .iter()
+        .map(|x| x.expected_duration_ms)
+        .sum::<u64>();
+    let expected_rework_cost_usd = task_forecasts
+        .iter()
+        .map(|x| x.expected_cost_usd * x.rework_risk)
+        .sum::<f64>();
+    let deadline_risk = if millis_to_deadline == 0 {
+        1.0
+    } else {
+        (expected_remaining_duration_ms as f64 / millis_to_deadline as f64 - 0.8)
+            .max(0.0)
+            .min(1.0)
+    };
     let total_expected = expected_remaining_cost_usd + expected_rework_cost_usd;
-    let budget_overrun_risk = if remaining_budget_usd <= 0.0 { if total_expected > 0.0 {1.0} else {0.0} }
-        else { (total_expected / remaining_budget_usd - 0.8).max(0.0).min(1.0) };
-    let forecast_uuid=Uuid::now_v7(); let expires_at=now+Duration::seconds(ttl_seconds);
-    let canonical=serde_json::json!({"forecast_uuid":forecast_uuid,"project_uuid":project_uuid,"task_count":task_forecasts.len(),
+    let budget_overrun_risk = if remaining_budget_usd <= 0.0 {
+        if total_expected > 0.0 {
+            1.0
+        } else {
+            0.0
+        }
+    } else {
+        (total_expected / remaining_budget_usd - 0.8)
+            .max(0.0)
+            .min(1.0)
+    };
+    let forecast_uuid = Uuid::now_v7();
+    let expires_at = now + Duration::seconds(ttl_seconds);
+    let canonical = serde_json::json!({"forecast_uuid":forecast_uuid,"project_uuid":project_uuid,"task_count":task_forecasts.len(),
         "expected_cost":expected_remaining_cost_usd,"expected_duration_ms":expected_remaining_duration_ms,
         "expected_rework_cost":expected_rework_cost_usd,"deadline_risk":deadline_risk,"budget_overrun_risk":budget_overrun_risk,
         "source_state_sha256":source_state_sha256,"expires_at":expires_at});
-    let forecast_sha256=format!("{:x}",Sha256::digest(serde_json::to_vec(&canonical).expect("project forecast json")));
-    ProjectForecast{forecast_uuid,project_uuid,task_count:task_forecasts.len(),expected_remaining_cost_usd,
-        expected_remaining_duration_ms,expected_rework_cost_usd,deadline_risk,budget_overrun_risk,generated_at:now,
-        expires_at,source_state_sha256:source_state_sha256.into(),forecast_sha256}
+    let forecast_sha256 = format!(
+        "{:x}",
+        Sha256::digest(serde_json::to_vec(&canonical).expect("project forecast json"))
+    );
+    ProjectForecast {
+        forecast_uuid,
+        project_uuid,
+        task_count: task_forecasts.len(),
+        expected_remaining_cost_usd,
+        expected_remaining_duration_ms,
+        expected_rework_cost_usd,
+        deadline_risk,
+        budget_overrun_risk,
+        generated_at: now,
+        expires_at,
+        source_state_sha256: source_state_sha256.into(),
+        forecast_sha256,
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -261,13 +397,41 @@ pub struct KnowledgeSignalSummary {
     pub avoidance_rules: Vec<String>,
 }
 
-pub fn summarize_knowledge(task_class: &str, context_fingerprint: &str, fruitful: &[FruitfulKnowledge], unfruitful: &[UnfruitfulKnowledge]) -> KnowledgeSignalSummary {
-    let fs=fruitful.iter().filter(|k| k.task_class==task_class && k.context_fingerprint==context_fingerprint && k.promotion_state!="candidate").collect::<Vec<_>>();
-    let us=unfruitful.iter().filter(|k| k.task_class==task_class && k.context_fingerprint==context_fingerprint && k.promotion_state!="candidate").collect::<Vec<_>>();
-    KnowledgeSignalSummary { fruitful_matches:fs.len(), unfruitful_matches:us.len(),
-        best_known_cost_usd:fs.iter().map(|k| k.actual_cost_usd).min_by(|a,b| a.total_cmp(b)),
-        best_known_quality:fs.iter().map(|k| k.quality_score).max_by(|a,b| a.total_cmp(b)),
-        avoidance_rules:us.iter().map(|k| k.avoidance_rule.clone()).collect() }
+pub fn summarize_knowledge(
+    task_class: &str,
+    context_fingerprint: &str,
+    fruitful: &[FruitfulKnowledge],
+    unfruitful: &[UnfruitfulKnowledge],
+) -> KnowledgeSignalSummary {
+    let fs = fruitful
+        .iter()
+        .filter(|k| {
+            k.task_class == task_class
+                && k.context_fingerprint == context_fingerprint
+                && k.promotion_state != "candidate"
+        })
+        .collect::<Vec<_>>();
+    let us = unfruitful
+        .iter()
+        .filter(|k| {
+            k.task_class == task_class
+                && k.context_fingerprint == context_fingerprint
+                && k.promotion_state != "candidate"
+        })
+        .collect::<Vec<_>>();
+    KnowledgeSignalSummary {
+        fruitful_matches: fs.len(),
+        unfruitful_matches: us.len(),
+        best_known_cost_usd: fs
+            .iter()
+            .map(|k| k.actual_cost_usd)
+            .min_by(|a, b| a.total_cmp(b)),
+        best_known_quality: fs
+            .iter()
+            .map(|k| k.quality_score)
+            .max_by(|a, b| a.total_cmp(b)),
+        avoidance_rules: us.iter().map(|k| k.avoidance_rule.clone()).collect(),
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -279,13 +443,26 @@ pub struct ForecastError {
     pub success_prediction_correct: bool,
 }
 
-pub fn backtest_route(f: &RouteForecast, actual_success: bool, actual_quality: f64, actual_cost_usd: f64, actual_duration_ms: u64) -> ForecastError {
-    ForecastError { forecast_uuid:f.forecast_uuid, cost_absolute_error:(f.expected_cost_usd-actual_cost_usd).abs(),
-        duration_absolute_error_ms:f.expected_duration_ms.abs_diff(actual_duration_ms),
-        quality_absolute_error:(f.expected_quality-actual_quality).abs(),
-        success_prediction_correct:(f.success_probability >= 0.5)==actual_success }
+pub fn backtest_route(
+    f: &RouteForecast,
+    actual_success: bool,
+    actual_quality: f64,
+    actual_cost_usd: f64,
+    actual_duration_ms: u64,
+) -> ForecastError {
+    ForecastError {
+        forecast_uuid: f.forecast_uuid,
+        cost_absolute_error: (f.expected_cost_usd - actual_cost_usd).abs(),
+        duration_absolute_error_ms: f.expected_duration_ms.abs_diff(actual_duration_ms),
+        quality_absolute_error: (f.expected_quality - actual_quality).abs(),
+        success_prediction_correct: (f.success_probability >= 0.5) == actual_success,
+    }
 }
 
-pub fn summarize_cost_by_provider(history: &[HistoricalOutcome]) -> BTreeMap<String,f64> {
-    let mut out=BTreeMap::new(); for h in history { *out.entry(h.provider.clone()).or_insert(0.0)+=h.actual_cost_usd; } out
+pub fn summarize_cost_by_provider(history: &[HistoricalOutcome]) -> BTreeMap<String, f64> {
+    let mut out = BTreeMap::new();
+    for h in history {
+        *out.entry(h.provider.clone()).or_insert(0.0) += h.actual_cost_usd;
+    }
+    out
 }

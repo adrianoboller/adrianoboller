@@ -12,8 +12,8 @@ fn main() -> Result<()> {
         anyhow::bail!("usage: phxclaw-mission-cli <mission.json>");
     }
     let package_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let mission: MissionSpec = serde_json::from_slice(&fs::read(&args[1])?)
-        .context("invalid mission JSON")?;
+    let mission: MissionSpec =
+        serde_json::from_slice(&fs::read(&args[1])?).context("invalid mission JSON")?;
 
     let agents = AgentCatalog::load_dir(package_root.join("config/agents"))?;
     let live_bus = LiveEventHub::new(512, 512);
@@ -24,8 +24,12 @@ fn main() -> Result<()> {
         allow_git_mutation: true,
         allow_file_write: true,
         allowed_programs: vec![
-            "git".into(), "cargo".into(), "rustc".into(), "python3".into(),
-            "node".into(), "npm".into(),
+            "git".into(),
+            "cargo".into(),
+            "rustc".into(),
+            "python3".into(),
+            "node".into(),
+            "npm".into(),
         ],
         command_timeout_ms: 300_000,
         max_output_bytes: 4 * 1024 * 1024,
@@ -33,11 +37,7 @@ fn main() -> Result<()> {
     let state_root = env::var_os("PHXCLAW_STATE_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| env::temp_dir().join("phxclaw-state"));
-    let workspace = CodeWorkspace::open(
-        &mission.project_root,
-        state_root,
-        policy,
-    )?;
+    let workspace = CodeWorkspace::open(&mission.project_root, state_root, policy)?;
     let report = runtime.run(&workspace, &mission)?;
     println!("{}", serde_json::to_string_pretty(&report)?);
     Ok(())

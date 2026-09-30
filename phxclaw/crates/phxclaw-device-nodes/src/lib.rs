@@ -83,7 +83,9 @@ impl DeviceNode {
         let bytes = B64
             .decode(&self.public_key_ed25519_b64)
             .map_err(|_| DeviceError::InvalidPublicKey)?;
-        let bytes: [u8; 32] = bytes.try_into().map_err(|_| DeviceError::InvalidPublicKey)?;
+        let bytes: [u8; 32] = bytes
+            .try_into()
+            .map_err(|_| DeviceError::InvalidPublicKey)?;
         VerifyingKey::from_bytes(&bytes).map_err(|_| DeviceError::InvalidPublicKey)
     }
 }
@@ -121,8 +123,11 @@ impl DeviceEnvelope {
     }
 
     pub fn decode_and_verify_body(&self) -> Result<Vec<u8>, DeviceError> {
-        let body = B64.decode(&self.body_b64).map_err(|_| DeviceError::InvalidBody)?;
-        let expected = hex::decode(&self.body_sha256_hex).map_err(|_| DeviceError::BodyHashMismatch)?;
+        let body = B64
+            .decode(&self.body_b64)
+            .map_err(|_| DeviceError::InvalidBody)?;
+        let expected =
+            hex::decode(&self.body_sha256_hex).map_err(|_| DeviceError::BodyHashMismatch)?;
         if expected.len() != 32 {
             return Err(DeviceError::BodyHashMismatch);
         }
@@ -290,11 +295,20 @@ pub fn validate_fencing(expected: i64, received: i64) -> Result<(), DeviceError>
 }
 
 fn contains_raw_secret_like_value(value: &Value) -> bool {
-    const FORBIDDEN: &[&str] = &["password", "passwd", "token", "api_key", "apikey", "secret", "private_key"];
+    const FORBIDDEN: &[&str] = &[
+        "password",
+        "passwd",
+        "token",
+        "api_key",
+        "apikey",
+        "secret",
+        "private_key",
+    ];
     match value {
         Value::Object(map) => map.iter().any(|(k, v)| {
             let normalized = k.to_ascii_lowercase();
-            let allowed_handle = normalized.ends_with("_secret_uuid") || normalized.ends_with("_lease_uuid");
+            let allowed_handle =
+                normalized.ends_with("_secret_uuid") || normalized.ends_with("_lease_uuid");
             (!allowed_handle && FORBIDDEN.iter().any(|f| normalized == *f))
                 || contains_raw_secret_like_value(v)
         }),
@@ -305,8 +319,17 @@ fn contains_raw_secret_like_value(value: &Value) -> bool {
 
 pub trait DeviceRepository {
     fn get_node(&self, tenant_uuid: Uuid, node_uuid: Uuid) -> Result<DeviceNode, DeviceError>;
-    fn persist_heartbeat(&mut self, tenant_uuid: Uuid, node_uuid: Uuid, at: DateTime<Utc>) -> Result<(), DeviceError>;
-    fn next_fencing_token(&mut self, tenant_uuid: Uuid, node_uuid: Uuid) -> Result<i64, DeviceError>;
+    fn persist_heartbeat(
+        &mut self,
+        tenant_uuid: Uuid,
+        node_uuid: Uuid,
+        at: DateTime<Utc>,
+    ) -> Result<(), DeviceError>;
+    fn next_fencing_token(
+        &mut self,
+        tenant_uuid: Uuid,
+        node_uuid: Uuid,
+    ) -> Result<i64, DeviceError>;
 }
 
 #[cfg(test)]
@@ -327,6 +350,9 @@ mod tests {
 
     #[test]
     fn stale_fencing_is_rejected() {
-        assert!(matches!(validate_fencing(8, 7), Err(DeviceError::FencingMismatch)));
+        assert!(matches!(
+            validate_fencing(8, 7),
+            Err(DeviceError::FencingMismatch)
+        ));
     }
 }

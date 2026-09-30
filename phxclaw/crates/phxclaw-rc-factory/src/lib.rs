@@ -116,7 +116,9 @@ pub fn candidate_signing_payload(manifest: &ReleaseCandidateManifest) -> Vec<u8>
         manifest.source_state_sha256.to_ascii_lowercase(),
         manifest.source_bundle_sha256.to_ascii_lowercase(),
         manifest.qualification_run_sha256.to_ascii_lowercase(),
-        manifest.qualification_attestation_sha256.to_ascii_lowercase(),
+        manifest
+            .qualification_attestation_sha256
+            .to_ascii_lowercase(),
         manifest.artifact_manifest_sha256.to_ascii_lowercase(),
         manifest.sbom_sha256.to_ascii_lowercase(),
         manifest.provenance_sha256.to_ascii_lowercase(),
@@ -124,8 +126,11 @@ pub fn candidate_signing_payload(manifest: &ReleaseCandidateManifest) -> Vec<u8>
         manifest.sprint_promotion_plan_sha256.to_ascii_lowercase(),
         manifest.rollback_bundle_sha256.to_ascii_lowercase(),
         artifacts_hash,
-        manifest.created_at.to_rfc3339_opts(SecondsFormat::AutoSi, true),
-    ).into_bytes()
+        manifest
+            .created_at
+            .to_rfc3339_opts(SecondsFormat::AutoSi, true),
+    )
+    .into_bytes()
 }
 
 pub fn build_candidate_manifest(
@@ -137,7 +142,8 @@ pub fn build_candidate_manifest(
     inputs: CandidateInputs,
     now: DateTime<Utc>,
 ) -> Result<ReleaseCandidateManifest, RcFactoryError> {
-    let parsed = Version::parse(candidate_version).map_err(|_| RcFactoryError::InvalidCandidateVersion)?;
+    let parsed =
+        Version::parse(candidate_version).map_err(|_| RcFactoryError::InvalidCandidateVersion)?;
     if parsed.pre.is_empty() {
         return Err(RcFactoryError::InvalidCandidateVersion);
     }
@@ -148,11 +154,15 @@ pub fn build_candidate_manifest(
         ReleaseSurface::PublicRelease,
         trusted_qualification_signers,
         now,
-    ).map_err(|_| RcFactoryError::QualificationVerification)?;
+    )
+    .map_err(|_| RcFactoryError::QualificationVerification)?;
     if !attestation.assessment.release_ready {
         return Err(RcFactoryError::QualificationNotReady);
     }
-    if !inputs.current_source_state_sha256.eq_ignore_ascii_case(&attestation.workspace_sha256_hex) {
+    if !inputs
+        .current_source_state_sha256
+        .eq_ignore_ascii_case(&attestation.workspace_sha256_hex)
+    {
         return Err(RcFactoryError::SourceStateMismatch);
     }
     if inputs.artifacts.is_empty() {
@@ -185,7 +195,9 @@ pub fn build_candidate_manifest(
         source_state_sha256: inputs.current_source_state_sha256.to_ascii_lowercase(),
         source_bundle_sha256: inputs.source_bundle_sha256.to_ascii_lowercase(),
         qualification_run_sha256: inputs.qualification_run_sha256.to_ascii_lowercase(),
-        qualification_attestation_sha256: inputs.qualification_attestation_sha256.to_ascii_lowercase(),
+        qualification_attestation_sha256: inputs
+            .qualification_attestation_sha256
+            .to_ascii_lowercase(),
         artifact_manifest_sha256: inputs.artifact_manifest_sha256.to_ascii_lowercase(),
         sbom_sha256: inputs.sbom_sha256.to_ascii_lowercase(),
         provenance_sha256: inputs.provenance_sha256.to_ascii_lowercase(),
@@ -204,17 +216,33 @@ pub fn verify_candidate_signature(
     manifest: &ReleaseCandidateManifest,
     trusted_signers: &[TrustedReleaseSigner],
 ) -> Result<(), RcFactoryError> {
-    let key_id = manifest.signer_key_id.as_deref().ok_or(RcFactoryError::InvalidSignature)?;
+    let key_id = manifest
+        .signer_key_id
+        .as_deref()
+        .ok_or(RcFactoryError::InvalidSignature)?;
     if manifest.signature_algorithm.as_deref() != Some("ed25519") {
         return Err(RcFactoryError::InvalidSignature);
     }
-    let sig_b64 = manifest.signature_b64.as_deref().ok_or(RcFactoryError::InvalidSignature)?;
-    let signer = trusted_signers.iter().find(|s| s.key_id == key_id).ok_or(RcFactoryError::SignerNotTrusted)?;
-    let key_bytes = STANDARD.decode(&signer.public_key_b64).map_err(|_| RcFactoryError::InvalidSignature)?;
-    let key_array: [u8; 32] = key_bytes.try_into().map_err(|_| RcFactoryError::InvalidSignature)?;
+    let sig_b64 = manifest
+        .signature_b64
+        .as_deref()
+        .ok_or(RcFactoryError::InvalidSignature)?;
+    let signer = trusted_signers
+        .iter()
+        .find(|s| s.key_id == key_id)
+        .ok_or(RcFactoryError::SignerNotTrusted)?;
+    let key_bytes = STANDARD
+        .decode(&signer.public_key_b64)
+        .map_err(|_| RcFactoryError::InvalidSignature)?;
+    let key_array: [u8; 32] = key_bytes
+        .try_into()
+        .map_err(|_| RcFactoryError::InvalidSignature)?;
     let key = VerifyingKey::from_bytes(&key_array).map_err(|_| RcFactoryError::InvalidSignature)?;
-    let sig_bytes = STANDARD.decode(sig_b64).map_err(|_| RcFactoryError::InvalidSignature)?;
-    let signature = Signature::try_from(sig_bytes.as_slice()).map_err(|_| RcFactoryError::InvalidSignature)?;
+    let sig_bytes = STANDARD
+        .decode(sig_b64)
+        .map_err(|_| RcFactoryError::InvalidSignature)?;
+    let signature =
+        Signature::try_from(sig_bytes.as_slice()).map_err(|_| RcFactoryError::InvalidSignature)?;
     key.verify_strict(&candidate_signing_payload(manifest), &signature)
         .map_err(|_| RcFactoryError::InvalidSignature)
 }

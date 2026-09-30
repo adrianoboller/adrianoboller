@@ -1,4 +1,4 @@
-use phxclaw_types::{is_uuid_v7, PermissionClaim, PluginPermission};
+use phxclaw_types::{PermissionClaim, PluginPermission, is_uuid_v7};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -184,7 +184,9 @@ impl AgentCatalog {
     }
 
     pub fn get_by_name(&self, name: &str) -> Option<&AgentManifest> {
-        self.by_name.get(name).and_then(|uuid| self.by_uuid.get(uuid))
+        self.by_name
+            .get(name)
+            .and_then(|uuid| self.by_uuid.get(uuid))
     }
 
     pub fn candidates_for_capability(&self, capability: &str) -> Vec<&AgentManifest> {
@@ -260,8 +262,7 @@ mod tests {
 
     #[test]
     fn loads_official_agent_catalog() {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../config/agents");
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../config/agents");
         let catalog = AgentCatalog::load_dir(root).unwrap();
         assert_eq!(catalog.len(), 110);
         let research = catalog.get_by_name("Research Agent").unwrap();

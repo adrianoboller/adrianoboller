@@ -7,23 +7,65 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "command", rename_all = "snake_case")]
 pub enum WebViewCommand {
-    Navigate { url: String },
-    LoadHtml { html: String, base_url: Option<String> },
-    EvaluateJavascript { script: String },
-    InjectCss { css: String },
-    QuerySelector { selector: String },
-    QuerySelectorAll { selector: String },
-    GetOuterHtml { selector: Option<String> },
-    SetInnerHtml { selector: String, html: String },
-    SetAttribute { selector: String, name: String, value: String },
-    RemoveAttribute { selector: String, name: String },
-    Click { selector: String },
-    Focus { selector: String },
-    TypeText { selector: String, text: String },
-    DispatchEvent { selector: String, event_type: String, detail: Value },
-    ScrollIntoView { selector: String },
-    GetComputedStyle { selector: String },
-    DomToSvg { selector: Option<String> },
+    Navigate {
+        url: String,
+    },
+    LoadHtml {
+        html: String,
+        base_url: Option<String>,
+    },
+    EvaluateJavascript {
+        script: String,
+    },
+    InjectCss {
+        css: String,
+    },
+    QuerySelector {
+        selector: String,
+    },
+    QuerySelectorAll {
+        selector: String,
+    },
+    GetOuterHtml {
+        selector: Option<String>,
+    },
+    SetInnerHtml {
+        selector: String,
+        html: String,
+    },
+    SetAttribute {
+        selector: String,
+        name: String,
+        value: String,
+    },
+    RemoveAttribute {
+        selector: String,
+        name: String,
+    },
+    Click {
+        selector: String,
+    },
+    Focus {
+        selector: String,
+    },
+    TypeText {
+        selector: String,
+        text: String,
+    },
+    DispatchEvent {
+        selector: String,
+        event_type: String,
+        detail: Value,
+    },
+    ScrollIntoView {
+        selector: String,
+    },
+    GetComputedStyle {
+        selector: String,
+    },
+    DomToSvg {
+        selector: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -35,7 +77,11 @@ pub struct WebViewRequest {
 
 impl WebViewRequest {
     pub fn new(view_uuid: Uuid, command: WebViewCommand) -> Self {
-        Self { uuid: new_uuid_v7(), view_uuid, command }
+        Self {
+            uuid: new_uuid_v7(),
+            view_uuid,
+            command,
+        }
     }
 }
 

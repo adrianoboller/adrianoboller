@@ -2,7 +2,7 @@
 
 use phxclaw_types::new_uuid_v7;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 use uuid::Uuid;
@@ -113,7 +113,9 @@ pub fn negotiate_legacy_version(server_version: &str) -> Result<&'static str, Pr
     supported_protocol_versions()
         .iter()
         .copied()
-        .find(|candidate| *candidate == server_version && protocol_era(candidate) == Some(McpProtocolEra::Legacy))
+        .find(|candidate| {
+            *candidate == server_version && protocol_era(candidate) == Some(McpProtocolEra::Legacy)
+        })
         .ok_or_else(|| ProtocolError::UnsupportedProtocolVersion(server_version.to_owned()))
 }
 
@@ -207,7 +209,11 @@ impl McpDegradedReport {
         available_tools: Vec<String>,
         expected_tools: Vec<String>,
     ) -> Self {
-        let mut working = working_servers.into_iter().collect::<BTreeSet<_>>().into_iter().collect::<Vec<_>>();
+        let mut working = working_servers
+            .into_iter()
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
         let available = available_tools.into_iter().collect::<BTreeSet<_>>();
         let expected = expected_tools.into_iter().collect::<BTreeSet<_>>();
         let missing_tools = expected.difference(&available).cloned().collect::<Vec<_>>();
@@ -262,7 +268,13 @@ pub fn tool_result_is_error(value: &Value) -> bool {
 pub fn normalize_mcp_name(input: &str) -> String {
     input
         .chars()
-        .map(|ch| if ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-') { ch } else { '_' })
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-') {
+                ch
+            } else {
+                '_'
+            }
+        })
         .collect()
 }
 
@@ -310,15 +322,17 @@ pub fn encode_lsp_message(value: &Value) -> Vec<u8> {
 pub fn decode_content_length_message(input: &[u8]) -> Result<(Value, usize), ProtocolError> {
     let crlf = b"\r\n\r\n";
     let lf = b"\n\n";
-    let (header_end, marker_len) = if let Some(pos) = input.windows(crlf.len()).position(|window| window == crlf) {
-        (pos, crlf.len())
-    } else if let Some(pos) = input.windows(lf.len()).position(|window| window == lf) {
-        (pos, lf.len())
-    } else {
-        return Err(ProtocolError::Incomplete);
-    };
+    let (header_end, marker_len) =
+        if let Some(pos) = input.windows(crlf.len()).position(|window| window == crlf) {
+            (pos, crlf.len())
+        } else if let Some(pos) = input.windows(lf.len()).position(|window| window == lf) {
+            (pos, lf.len())
+        } else {
+            return Err(ProtocolError::Incomplete);
+        };
 
-    let header = std::str::from_utf8(&input[..header_end]).map_err(|_| ProtocolError::InvalidContentLength)?;
+    let header = std::str::from_utf8(&input[..header_end])
+        .map_err(|_| ProtocolError::InvalidContentLength)?;
     let length = header
         .lines()
         .find_map(|line| {
@@ -332,11 +346,16 @@ pub fn decode_content_length_message(input: &[u8]) -> Result<(Value, usize), Pro
         .map_err(|_| ProtocolError::InvalidContentLength)?;
 
     let body_start = header_end + marker_len;
-    let body_end = body_start.checked_add(length).ok_or(ProtocolError::InvalidContentLength)?;
+    let body_end = body_start
+        .checked_add(length)
+        .ok_or(ProtocolError::InvalidContentLength)?;
     if input.len() < body_end {
         return Err(ProtocolError::Incomplete);
     }
-    Ok((serde_json::from_slice(&input[body_start..body_end])?, body_end))
+    Ok((
+        serde_json::from_slice(&input[body_start..body_end])?,
+        body_end,
+    ))
 }
 
 pub fn decode_lsp_message(input: &[u8]) -> Result<(Value, usize), ProtocolError> {
@@ -350,7 +369,10 @@ pub fn encode_mcp_line(value: &Value) -> Vec<u8> {
 }
 
 pub fn decode_mcp_line(input: &[u8]) -> Result<(Value, usize), ProtocolError> {
-    let end = input.iter().position(|byte| *byte == b'\n').ok_or(ProtocolError::Incomplete)?;
+    let end = input
+        .iter()
+        .position(|byte| *byte == b'\n')
+        .ok_or(ProtocolError::Incomplete)?;
     Ok((serde_json::from_slice(&input[..end])?, end + 1))
 }
 
@@ -390,7 +412,10 @@ pub fn modern_request_meta(client_name: &str, client_version: &str) -> Value {
     })
 }
 
-pub fn validate_response_id(request: &JsonRpcRequest, response: &JsonRpcResponse) -> Result<(), ProtocolError> {
+pub fn validate_response_id(
+    request: &JsonRpcRequest,
+    response: &JsonRpcResponse,
+) -> Result<(), ProtocolError> {
     if request.id == response.id {
         Ok(())
     } else {
@@ -424,18 +449,30 @@ mod tests {
     #[test]
     fn notification_is_classified_without_id() {
         let value = json!({"jsonrpc":"2.0","method":"notifications/progress","params":{}});
-        assert_eq!(classify_jsonrpc_message(&value).unwrap(), JsonRpcMessageClass::Notification);
+        assert_eq!(
+            classify_jsonrpc_message(&value).unwrap(),
+            JsonRpcMessageClass::Notification
+        );
     }
 
     #[test]
     fn legacy_and_modern_eras_are_explicit() {
-        assert_eq!(protocol_era(MCP_PROTOCOL_2025_11_25), Some(McpProtocolEra::Legacy));
-        assert_eq!(protocol_era(MCP_PROTOCOL_2026_07_28), Some(McpProtocolEra::Modern));
+        assert_eq!(
+            protocol_era(MCP_PROTOCOL_2025_11_25),
+            Some(McpProtocolEra::Legacy)
+        );
+        assert_eq!(
+            protocol_era(MCP_PROTOCOL_2026_07_28),
+            Some(McpProtocolEra::Modern)
+        );
     }
 
     #[test]
     fn tool_prefix_is_stable() {
-        assert_eq!(qualified_tool_name("claude.ai Example Server", "weather tool"), "mcp__claude_ai_Example_Server__weather_tool");
+        assert_eq!(
+            qualified_tool_name("claude.ai Example Server", "weather tool"),
+            "mcp__claude_ai_Example_Server__weather_tool"
+        );
     }
 
     #[test]
@@ -458,7 +495,10 @@ mod tests {
             false,
         )
         .unwrap_err();
-        assert!(matches!(err, ProtocolError::IllegalLifecycleTransition { .. }));
+        assert!(matches!(
+            err,
+            ProtocolError::IllegalLifecycleTransition { .. }
+        ));
     }
 
     #[test]
@@ -475,24 +515,24 @@ mod tests {
 
 pub mod managed_runtime {
     use super::{
-        classify_jsonrpc_message, encode_content_length_message, encode_mcp_line,
         JsonRpcId, JsonRpcMessageClass, JsonRpcRequest, JsonRpcResponse,
-        MCP_DEFAULT_LEGACY_PROTOCOL, MCP_DEFAULT_MODERN_PROTOCOL,
+        MCP_DEFAULT_LEGACY_PROTOCOL, MCP_DEFAULT_MODERN_PROTOCOL, classify_jsonrpc_message,
+        encode_content_length_message, encode_mcp_line,
     };
     use futures_util::StreamExt;
-    use phxclaw_evidence_ledger::{EvidenceDraft, EvidenceLedger, EvidenceOutcome, LedgerError};
     use phxclaw_event_bus::EventEnvelope;
+    use phxclaw_evidence_ledger::{EvidenceDraft, EvidenceLedger, EvidenceOutcome, LedgerError};
     use phxclaw_types::new_uuid_v7;
     use serde::{Deserialize, Serialize};
-    use serde_json::{json, Value};
+    use serde_json::{Value, json};
     use std::{
         collections::{BTreeMap, BTreeSet},
         future::Future,
         path::PathBuf,
         process::Stdio,
         sync::{
-            atomic::{AtomicBool, Ordering},
             Arc,
+            atomic::{AtomicBool, Ordering},
         },
         time::Duration,
     };
@@ -552,30 +592,53 @@ pub mod managed_runtime {
     impl ProcessSecurityPolicy {
         pub fn validate(&self, spec: &ProcessSpec) -> Result<ValidatedProcessSpec, RuntimeError> {
             if spec.args.len() > self.max_args {
-                return Err(RuntimeError::PolicyDenied("too many process arguments".into()));
+                return Err(RuntimeError::PolicyDenied(
+                    "too many process arguments".into(),
+                ));
             }
             let arg_bytes = spec.args.iter().map(String::len).sum::<usize>();
             if arg_bytes > self.max_arg_bytes {
-                return Err(RuntimeError::PolicyDenied("process arguments exceed byte limit".into()));
+                return Err(RuntimeError::PolicyDenied(
+                    "process arguments exceed byte limit".into(),
+                ));
             }
             if spec.env.keys().any(|k| !self.allowed_env_keys.contains(k)) {
-                return Err(RuntimeError::PolicyDenied("environment key is not allowlisted".into()));
+                return Err(RuntimeError::PolicyDenied(
+                    "environment key is not allowlisted".into(),
+                ));
             }
             let executable = std::fs::canonicalize(&spec.executable)
                 .map_err(|e| RuntimeError::ProcessSpec(format!("executable: {e}")))?;
-            let allowed = self.allowed_executables.iter().filter_map(|p| std::fs::canonicalize(p).ok())
+            let allowed = self
+                .allowed_executables
+                .iter()
+                .filter_map(|p| std::fs::canonicalize(p).ok())
                 .any(|p| p == executable);
             if !allowed {
-                return Err(RuntimeError::PolicyDenied(format!("executable not allowlisted: {}", executable.display())));
+                return Err(RuntimeError::PolicyDenied(format!(
+                    "executable not allowlisted: {}",
+                    executable.display()
+                )));
             }
             let cwd = std::fs::canonicalize(&spec.cwd)
                 .map_err(|e| RuntimeError::ProcessSpec(format!("cwd: {e}")))?;
-            let cwd_allowed = self.allowed_cwd_roots.iter().filter_map(|p| std::fs::canonicalize(p).ok())
+            let cwd_allowed = self
+                .allowed_cwd_roots
+                .iter()
+                .filter_map(|p| std::fs::canonicalize(p).ok())
                 .any(|root| cwd.starts_with(root));
             if !cwd_allowed {
-                return Err(RuntimeError::PolicyDenied(format!("cwd outside allowlisted roots: {}", cwd.display())));
+                return Err(RuntimeError::PolicyDenied(format!(
+                    "cwd outside allowlisted roots: {}",
+                    cwd.display()
+                )));
             }
-            Ok(ValidatedProcessSpec { executable, args: spec.args.clone(), cwd, env: spec.env.clone() })
+            Ok(ValidatedProcessSpec {
+                executable,
+                args: spec.args.clone(),
+                cwd,
+                env: spec.env.clone(),
+            })
         }
     }
 
@@ -629,14 +692,22 @@ pub mod managed_runtime {
                 self.inner.notify.notify_waiters();
             }
         }
-        pub fn is_cancelled(&self) -> bool { self.inner.cancelled.load(Ordering::SeqCst) }
+        pub fn is_cancelled(&self) -> bool {
+            self.inner.cancelled.load(Ordering::SeqCst)
+        }
         pub async fn cancelled(&self) {
-            if self.is_cancelled() { return; }
+            if self.is_cancelled() {
+                return;
+            }
             self.inner.notify.notified().await;
         }
     }
 
-    async fn controlled<T, F>(future: F, duration: Duration, cancellation: Cancellation) -> Result<T, RuntimeError>
+    async fn controlled<T, F>(
+        future: F,
+        duration: Duration,
+        cancellation: Cancellation,
+    ) -> Result<T, RuntimeError>
     where
         F: Future<Output = Result<T, RuntimeError>>,
     {
@@ -656,14 +727,25 @@ pub mod managed_runtime {
     }
 
     impl CapabilityPolicy {
-        pub fn deny_all() -> Self { Self { allowed_methods: BTreeSet::new(), allowed_tools: BTreeSet::new() } }
+        pub fn deny_all() -> Self {
+            Self {
+                allowed_methods: BTreeSet::new(),
+                allowed_tools: BTreeSet::new(),
+            }
+        }
         pub fn allow_method(&self, method: &str) -> Result<(), RuntimeError> {
-            if self.allowed_methods.contains(method) { Ok(()) }
-            else { Err(RuntimeError::CapabilityDenied(method.to_owned())) }
+            if self.allowed_methods.contains(method) {
+                Ok(())
+            } else {
+                Err(RuntimeError::CapabilityDenied(method.to_owned()))
+            }
         }
         pub fn allow_tool(&self, tool: &str) -> Result<(), RuntimeError> {
-            if self.allowed_tools.contains(tool) { Ok(()) }
-            else { Err(RuntimeError::CapabilityDenied(format!("tool:{tool}"))) }
+            if self.allowed_tools.contains(tool) {
+                Ok(())
+            } else {
+                Err(RuntimeError::CapabilityDenied(format!("tool:{tool}")))
+            }
         }
     }
 
@@ -675,7 +757,10 @@ pub mod managed_runtime {
 
     impl RuntimeAudit {
         pub fn new(actor: impl Into<String>, ledger: Option<EvidenceLedger>) -> Self {
-            Self { actor: actor.into(), ledger }
+            Self {
+                actor: actor.into(),
+                ledger,
+            }
         }
 
         pub fn record(
@@ -721,7 +806,8 @@ pub mod managed_runtime {
     impl ManagedChild {
         async fn spawn(spec: &ValidatedProcessSpec) -> Result<Self, RuntimeError> {
             let mut command = Command::new(&spec.executable);
-            command.args(&spec.args)
+            command
+                .args(&spec.args)
                 .current_dir(&spec.cwd)
                 .env_clear()
                 .envs(&spec.env)
@@ -730,15 +816,32 @@ pub mod managed_runtime {
                 .stderr(Stdio::piped())
                 .kill_on_drop(true);
             let mut child = command.spawn()?;
-            let stdin = child.stdin.take().ok_or(RuntimeError::MissingPipe("stdin"))?;
-            let stdout = child.stdout.take().ok_or(RuntimeError::MissingPipe("stdout"))?;
-            let stderr = child.stderr.take().ok_or(RuntimeError::MissingPipe("stderr"))?;
+            let stdin = child
+                .stdin
+                .take()
+                .ok_or(RuntimeError::MissingPipe("stdin"))?;
+            let stdout = child
+                .stdout
+                .take()
+                .ok_or(RuntimeError::MissingPipe("stdout"))?;
+            let stderr = child
+                .stderr
+                .take()
+                .ok_or(RuntimeError::MissingPipe("stderr"))?;
             let stderr_task = tokio::spawn(async move {
                 let mut bytes = Vec::new();
-                let _ = stderr.take(DEFAULT_STDERR_BYTES).read_to_end(&mut bytes).await;
+                let _ = stderr
+                    .take(DEFAULT_STDERR_BYTES)
+                    .read_to_end(&mut bytes)
+                    .await;
                 bytes
             });
-            Ok(Self { child, stdin, stdout: BufReader::new(stdout), stderr_task })
+            Ok(Self {
+                child,
+                stdin,
+                stdout: BufReader::new(stdout),
+                stderr_task,
+            })
         }
 
         async fn write_line(&mut self, value: &Value) -> Result<(), RuntimeError> {
@@ -751,10 +854,18 @@ pub mod managed_runtime {
         async fn read_line(&mut self, max: usize) -> Result<Value, RuntimeError> {
             let mut bytes = Vec::new();
             let read = self.stdout.read_until(b'\n', &mut bytes).await?;
-            if read == 0 { return Err(RuntimeError::ProcessClosed); }
-            if bytes.len() > max { return Err(RuntimeError::FrameTooLarge(bytes.len())); }
-            if bytes.last() == Some(&b'\n') { bytes.pop(); }
-            if bytes.last() == Some(&b'\r') { bytes.pop(); }
+            if read == 0 {
+                return Err(RuntimeError::ProcessClosed);
+            }
+            if bytes.len() > max {
+                return Err(RuntimeError::FrameTooLarge(bytes.len()));
+            }
+            if bytes.last() == Some(&b'\n') {
+                bytes.pop();
+            }
+            if bytes.last() == Some(&b'\r') {
+                bytes.pop();
+            }
             Ok(serde_json::from_slice(&bytes)?)
         }
 
@@ -771,23 +882,33 @@ pub mod managed_runtime {
             loop {
                 let mut line = String::new();
                 let read = self.stdout.read_line(&mut line).await?;
-                if read == 0 { return Err(RuntimeError::ProcessClosed); }
+                if read == 0 {
+                    return Err(RuntimeError::ProcessClosed);
+                }
                 header_bytes += read;
-                if header_bytes > 64 * 1024 { return Err(RuntimeError::FrameTooLarge(header_bytes)); }
-                if line == "\r\n" || line == "\n" { break; }
+                if header_bytes > 64 * 1024 {
+                    return Err(RuntimeError::FrameTooLarge(header_bytes));
+                }
+                if line == "\r\n" || line == "\n" {
+                    break;
+                }
                 if let Some((key, value)) = line.split_once(':') {
                     if key.trim().eq_ignore_ascii_case("content-length") {
-                        content_length = Some(value.trim().parse().map_err(|_| RuntimeError::Protocol("invalid Content-Length".into()))?);
+                        content_length = Some(value.trim().parse().map_err(|_| {
+                            RuntimeError::Protocol("invalid Content-Length".into())
+                        })?);
                     }
                 }
             }
-            let length = content_length.ok_or_else(|| RuntimeError::Protocol("missing Content-Length".into()))?;
-            if length > max { return Err(RuntimeError::FrameTooLarge(length)); }
+            let length = content_length
+                .ok_or_else(|| RuntimeError::Protocol("missing Content-Length".into()))?;
+            if length > max {
+                return Err(RuntimeError::FrameTooLarge(length));
+            }
             let mut body = vec![0u8; length];
             self.stdout.read_exact(&mut body).await?;
             Ok(serde_json::from_slice(&body)?)
         }
-
 
         async fn terminate(mut self, grace: Duration) -> Result<Vec<u8>, RuntimeError> {
             drop(self.stdin);
@@ -827,9 +948,23 @@ pub mod managed_runtime {
                 ManagedChild::spawn(&validated),
                 Duration::from_millis(policy.startup_timeout_ms),
                 Cancellation::default(),
-            ).await?;
-            let this = Self { session_uuid, child: Some(child), policy, capabilities, audit };
-            let _ = this.audit.record(this.session_uuid, "mcp.session", "mcp.process.spawned", EvidenceOutcome::Succeeded, json!({"executable": validated.executable}), json!({}))?;
+            )
+            .await?;
+            let this = Self {
+                session_uuid,
+                child: Some(child),
+                policy,
+                capabilities,
+                audit,
+            };
+            let _ = this.audit.record(
+                this.session_uuid,
+                "mcp.session",
+                "mcp.process.spawned",
+                EvidenceOutcome::Succeeded,
+                json!({"executable": validated.executable}),
+                json!({}),
+            )?;
             Ok(this)
         }
 
@@ -837,10 +972,19 @@ pub mod managed_runtime {
             self.child.as_mut().ok_or(RuntimeError::SessionClosed)
         }
 
-        pub async fn request(&mut self, request: JsonRpcRequest, cancellation: Cancellation) -> Result<JsonRpcExchange, RuntimeError> {
+        pub async fn request(
+            &mut self,
+            request: JsonRpcRequest,
+            cancellation: Cancellation,
+        ) -> Result<JsonRpcExchange, RuntimeError> {
             self.capabilities.allow_method(&request.method)?;
             if request.method == "tools/call" {
-                if let Some(name) = request.params.as_ref().and_then(|p| p.get("name")).and_then(Value::as_str) {
+                if let Some(name) = request
+                    .params
+                    .as_ref()
+                    .and_then(|p| p.get("name"))
+                    .and_then(Value::as_str)
+                {
                     self.capabilities.allow_tool(name)?;
                 }
             }
@@ -855,7 +999,10 @@ pub mod managed_runtime {
             let mut notifications = Vec::new();
             loop {
                 let read = self.child()?.read_line(max);
-                enum ReadOutcome { Cancelled, Value(Result<Result<Value, RuntimeError>, tokio::time::error::Elapsed>) }
+                enum ReadOutcome {
+                    Cancelled,
+                    Value(Result<Result<Value, RuntimeError>, tokio::time::error::Elapsed>),
+                }
                 let outcome = if is_initialize {
                     ReadOutcome::Value(timeout(timeout_duration, read).await)
                 } else {
@@ -868,52 +1015,97 @@ pub mod managed_runtime {
                     ReadOutcome::Cancelled => {
                         let cancel = json!({"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":request_id,"reason":"client_cancelled"}});
                         let _ = self.child()?.write_line(&cancel).await;
-                        let _ = self.audit.record(self.session_uuid, "mcp.request", "mcp.request.cancelled", EvidenceOutcome::Cancelled, json!({"method":method}), json!({}))?;
+                        let _ = self.audit.record(
+                            self.session_uuid,
+                            "mcp.request",
+                            "mcp.request.cancelled",
+                            EvidenceOutcome::Cancelled,
+                            json!({"method":method}),
+                            json!({}),
+                        )?;
                         return Err(RuntimeError::Cancelled);
                     }
                     ReadOutcome::Value(Ok(v)) => v?,
                     ReadOutcome::Value(Err(_)) => return Err(RuntimeError::Timeout),
                 };
-                match classify_jsonrpc_message(&value).map_err(|e| RuntimeError::Protocol(e.to_string()))? {
+                match classify_jsonrpc_message(&value)
+                    .map_err(|e| RuntimeError::Protocol(e.to_string()))?
+                {
                     JsonRpcMessageClass::Success | JsonRpcMessageClass::Error => {
                         let response: JsonRpcResponse = serde_json::from_value(value)?;
                         if response.id == request_id {
-                            let outcome = if response.error.is_some() { EvidenceOutcome::Failed } else { EvidenceOutcome::Succeeded };
-                            let _ = self.audit.record(self.session_uuid, "mcp.request", "mcp.request.completed", outcome, json!({"method":method}), json!({"notification_count":notifications.len()}))?;
-                            return Ok(JsonRpcExchange { response, notifications });
+                            let outcome = if response.error.is_some() {
+                                EvidenceOutcome::Failed
+                            } else {
+                                EvidenceOutcome::Succeeded
+                            };
+                            let _ = self.audit.record(
+                                self.session_uuid,
+                                "mcp.request",
+                                "mcp.request.completed",
+                                outcome,
+                                json!({"method":method}),
+                                json!({"notification_count":notifications.len()}),
+                            )?;
+                            return Ok(JsonRpcExchange {
+                                response,
+                                notifications,
+                            });
                         }
                     }
                     _ => {
                         notifications.push(value);
-                        if notifications.len() > max_unsolicited { return Err(RuntimeError::TooManyUnsolicited); }
+                        if notifications.len() > max_unsolicited {
+                            return Err(RuntimeError::TooManyUnsolicited);
+                        }
                     }
                 }
             }
         }
 
-        pub async fn initialize_legacy(&mut self, client_name: &str, client_version: &str) -> Result<JsonRpcExchange, RuntimeError> {
-            let req = JsonRpcRequest::new("initialize", json!({
-                "protocolVersion": MCP_DEFAULT_LEGACY_PROTOCOL,
-                "capabilities": {},
-                "clientInfo": {"name":client_name,"version":client_version}
-            }));
+        pub async fn initialize_legacy(
+            &mut self,
+            client_name: &str,
+            client_version: &str,
+        ) -> Result<JsonRpcExchange, RuntimeError> {
+            let req = JsonRpcRequest::new(
+                "initialize",
+                json!({
+                    "protocolVersion": MCP_DEFAULT_LEGACY_PROTOCOL,
+                    "capabilities": {},
+                    "clientInfo": {"name":client_name,"version":client_version}
+                }),
+            );
             let exchange = self.request(req, Cancellation::default()).await?;
-            self.child()?.write_line(&json!({"jsonrpc":"2.0","method":"notifications/initialized","params":{}})).await?;
+            self.child()?
+                .write_line(
+                    &json!({"jsonrpc":"2.0","method":"notifications/initialized","params":{}}),
+                )
+                .await?;
             Ok(exchange)
         }
 
-        pub async fn discover_modern(&mut self, client_name: &str, client_version: &str) -> Result<JsonRpcExchange, RuntimeError> {
-            let req = JsonRpcRequest::new("server/discover", json!({"_meta":{
-                "io.modelcontextprotocol/protocolVersion":MCP_DEFAULT_MODERN_PROTOCOL,
-                "io.modelcontextprotocol/clientInfo":{"name":client_name,"version":client_version},
-                "io.modelcontextprotocol/clientCapabilities":{}
-            }}));
+        pub async fn discover_modern(
+            &mut self,
+            client_name: &str,
+            client_version: &str,
+        ) -> Result<JsonRpcExchange, RuntimeError> {
+            let req = JsonRpcRequest::new(
+                "server/discover",
+                json!({"_meta":{
+                    "io.modelcontextprotocol/protocolVersion":MCP_DEFAULT_MODERN_PROTOCOL,
+                    "io.modelcontextprotocol/clientInfo":{"name":client_name,"version":client_version},
+                    "io.modelcontextprotocol/clientCapabilities":{}
+                }}),
+            );
             self.request(req, Cancellation::default()).await
         }
 
         pub async fn close(mut self) -> Result<Vec<u8>, RuntimeError> {
             let child = self.child.take().ok_or(RuntimeError::SessionClosed)?;
-            child.terminate(Duration::from_millis(self.policy.shutdown_timeout_ms)).await
+            child
+                .terminate(Duration::from_millis(self.policy.shutdown_timeout_ms))
+                .await
         }
     }
 
@@ -935,11 +1127,24 @@ pub mod managed_runtime {
         ) -> Result<Self, RuntimeError> {
             let validated = security.validate(spec)?;
             let session_uuid = new_uuid_v7();
-            let child = controlled(ManagedChild::spawn(&validated), Duration::from_millis(policy.startup_timeout_ms), Cancellation::default()).await?;
-            Ok(Self { session_uuid, child: Some(child), policy, capabilities, audit })
+            let child = controlled(
+                ManagedChild::spawn(&validated),
+                Duration::from_millis(policy.startup_timeout_ms),
+                Cancellation::default(),
+            )
+            .await?;
+            Ok(Self {
+                session_uuid,
+                child: Some(child),
+                policy,
+                capabilities,
+                audit,
+            })
         }
 
-        fn child(&mut self) -> Result<&mut ManagedChild, RuntimeError> { self.child.as_mut().ok_or(RuntimeError::SessionClosed) }
+        fn child(&mut self) -> Result<&mut ManagedChild, RuntimeError> {
+            self.child.as_mut().ok_or(RuntimeError::SessionClosed)
+        }
 
         pub async fn notify(&mut self, method: &str, params: Value) -> Result<(), RuntimeError> {
             self.capabilities.allow_method(method)?;
@@ -947,17 +1152,26 @@ pub mod managed_runtime {
             self.child()?.write_content_length(&value).await
         }
 
-        pub async fn request(&mut self, request: JsonRpcRequest, cancellation: Cancellation) -> Result<JsonRpcExchange, RuntimeError> {
+        pub async fn request(
+            &mut self,
+            request: JsonRpcRequest,
+            cancellation: Cancellation,
+        ) -> Result<JsonRpcExchange, RuntimeError> {
             self.capabilities.allow_method(&request.method)?;
             let request_id = request.id.clone();
             let method = request.method.clone();
-            self.child()?.write_content_length(&serde_json::to_value(&request)?).await?;
+            self.child()?
+                .write_content_length(&serde_json::to_value(&request)?)
+                .await?;
             let duration = Duration::from_millis(self.policy.request_timeout_ms);
             let max = self.policy.max_frame_bytes;
             let mut notifications = Vec::new();
             loop {
                 let read = self.child()?.read_content_length(max);
-                enum ReadOutcome { Cancelled, Value(Result<Result<Value, RuntimeError>, tokio::time::error::Elapsed>) }
+                enum ReadOutcome {
+                    Cancelled,
+                    Value(Result<Result<Value, RuntimeError>, tokio::time::error::Elapsed>),
+                }
                 let outcome = tokio::select! {
                     _ = cancellation.cancelled(), if method != "initialize" => ReadOutcome::Cancelled,
                     result = timeout(duration, read) => ReadOutcome::Value(result),
@@ -971,43 +1185,72 @@ pub mod managed_runtime {
                     ReadOutcome::Value(Ok(v)) => v?,
                     ReadOutcome::Value(Err(_)) => return Err(RuntimeError::Timeout),
                 };
-                match classify_jsonrpc_message(&value).map_err(|e| RuntimeError::Protocol(e.to_string()))? {
+                match classify_jsonrpc_message(&value)
+                    .map_err(|e| RuntimeError::Protocol(e.to_string()))?
+                {
                     JsonRpcMessageClass::Success | JsonRpcMessageClass::Error => {
                         let response: JsonRpcResponse = serde_json::from_value(value)?;
                         if response.id == request_id {
-                            let outcome=if response.error.is_some(){EvidenceOutcome::Failed}else{EvidenceOutcome::Succeeded};
-                            let _=self.audit.record(self.session_uuid,"lsp.request","lsp.request.completed",outcome,json!({"method":method}),json!({"notification_count":notifications.len()}))?;
-                            return Ok(JsonRpcExchange{response,notifications});
+                            let outcome = if response.error.is_some() {
+                                EvidenceOutcome::Failed
+                            } else {
+                                EvidenceOutcome::Succeeded
+                            };
+                            let _ = self.audit.record(
+                                self.session_uuid,
+                                "lsp.request",
+                                "lsp.request.completed",
+                                outcome,
+                                json!({"method":method}),
+                                json!({"notification_count":notifications.len()}),
+                            )?;
+                            return Ok(JsonRpcExchange {
+                                response,
+                                notifications,
+                            });
                         }
                     }
                     _ => {
                         notifications.push(value);
-                        if notifications.len()>self.policy.max_unsolicited_messages { return Err(RuntimeError::TooManyUnsolicited); }
+                        if notifications.len() > self.policy.max_unsolicited_messages {
+                            return Err(RuntimeError::TooManyUnsolicited);
+                        }
                     }
                 }
             }
         }
 
-        pub async fn initialize(&mut self, root_uri: Option<&str>, initialization_options: Value) -> Result<JsonRpcExchange, RuntimeError> {
-            let req=JsonRpcRequest::new("initialize",json!({
-                "processId":std::process::id(),"rootUri":root_uri,"capabilities":{},"initializationOptions":initialization_options
-            }));
-            let exchange=self.request(req,Cancellation::default()).await?;
-            self.notify("initialized",json!({})).await?;
+        pub async fn initialize(
+            &mut self,
+            root_uri: Option<&str>,
+            initialization_options: Value,
+        ) -> Result<JsonRpcExchange, RuntimeError> {
+            let req = JsonRpcRequest::new(
+                "initialize",
+                json!({
+                    "processId":std::process::id(),"rootUri":root_uri,"capabilities":{},"initializationOptions":initialization_options
+                }),
+            );
+            let exchange = self.request(req, Cancellation::default()).await?;
+            self.notify("initialized", json!({})).await?;
             Ok(exchange)
         }
 
         pub async fn shutdown(mut self) -> Result<Vec<u8>, RuntimeError> {
-            if self.child.is_none() { return Err(RuntimeError::SessionClosed); }
+            if self.child.is_none() {
+                return Err(RuntimeError::SessionClosed);
+            }
             if self.capabilities.allowed_methods.contains("shutdown") {
-                let req=JsonRpcRequest::new("shutdown",Value::Null);
-                let _=self.request(req,Cancellation::default()).await;
+                let req = JsonRpcRequest::new("shutdown", Value::Null);
+                let _ = self.request(req, Cancellation::default()).await;
             }
             if self.capabilities.allowed_methods.contains("exit") {
-                let _=self.notify("exit",Value::Null).await;
+                let _ = self.notify("exit", Value::Null).await;
             }
-            let child=self.child.take().ok_or(RuntimeError::SessionClosed)?;
-            child.terminate(Duration::from_millis(self.policy.shutdown_timeout_ms)).await
+            let child = self.child.take().ok_or(RuntimeError::SessionClosed)?;
+            child
+                .terminate(Duration::from_millis(self.policy.shutdown_timeout_ms))
+                .await
         }
     }
 
@@ -1021,20 +1264,33 @@ pub mod managed_runtime {
 
     impl Default for HttpEndpointPolicy {
         fn default() -> Self {
-            Self { allowed_origins:BTreeSet::new(),allow_loopback_http:true,max_response_bytes:DEFAULT_MAX_FRAME_BYTES,connect_timeout_ms:10_000 }
+            Self {
+                allowed_origins: BTreeSet::new(),
+                allow_loopback_http: true,
+                max_response_bytes: DEFAULT_MAX_FRAME_BYTES,
+                connect_timeout_ms: 10_000,
+            }
         }
     }
 
     impl HttpEndpointPolicy {
         fn validate(&self, endpoint: &Url) -> Result<(), RuntimeError> {
-            let host=endpoint.host_str().ok_or_else(||RuntimeError::PolicyDenied("endpoint has no host".into()))?;
-            let loopback=matches!(host,"localhost"|"127.0.0.1"|"::1");
-            if endpoint.scheme()!="https" && !(self.allow_loopback_http && loopback && endpoint.scheme()=="http") {
-                return Err(RuntimeError::PolicyDenied("remote MCP requires HTTPS; HTTP is loopback-only".into()));
+            let host = endpoint
+                .host_str()
+                .ok_or_else(|| RuntimeError::PolicyDenied("endpoint has no host".into()))?;
+            let loopback = matches!(host, "localhost" | "127.0.0.1" | "::1");
+            if endpoint.scheme() != "https"
+                && !(self.allow_loopback_http && loopback && endpoint.scheme() == "http")
+            {
+                return Err(RuntimeError::PolicyDenied(
+                    "remote MCP requires HTTPS; HTTP is loopback-only".into(),
+                ));
             }
-            let origin=endpoint.origin().ascii_serialization();
+            let origin = endpoint.origin().ascii_serialization();
             if !self.allowed_origins.contains(&origin) {
-                return Err(RuntimeError::PolicyDenied(format!("origin not allowlisted: {origin}")));
+                return Err(RuntimeError::PolicyDenied(format!(
+                    "origin not allowlisted: {origin}"
+                )));
             }
             Ok(())
         }
@@ -1051,75 +1307,159 @@ pub mod managed_runtime {
     }
 
     impl McpStreamableHttpClient {
-        pub fn new(endpoint: Url, policy:SessionPolicy, endpoint_policy:HttpEndpointPolicy, capabilities:CapabilityPolicy, audit:RuntimeAudit) -> Result<Self,RuntimeError> {
+        pub fn new(
+            endpoint: Url,
+            policy: SessionPolicy,
+            endpoint_policy: HttpEndpointPolicy,
+            capabilities: CapabilityPolicy,
+            audit: RuntimeAudit,
+        ) -> Result<Self, RuntimeError> {
             endpoint_policy.validate(&endpoint)?;
-            let client=reqwest::Client::builder()
+            let client = reqwest::Client::builder()
                 .connect_timeout(Duration::from_millis(endpoint_policy.connect_timeout_ms))
                 .build()?;
-            Ok(Self{session_uuid:new_uuid_v7(),endpoint,client,policy,endpoint_policy,capabilities,audit})
+            Ok(Self {
+                session_uuid: new_uuid_v7(),
+                endpoint,
+                client,
+                policy,
+                endpoint_policy,
+                capabilities,
+                audit,
+            })
         }
 
-        pub async fn request(&self, request:JsonRpcRequest, protocol_version:&str, cancellation:Cancellation) -> Result<JsonRpcExchange,RuntimeError> {
+        pub async fn request(
+            &self,
+            request: JsonRpcRequest,
+            protocol_version: &str,
+            cancellation: Cancellation,
+        ) -> Result<JsonRpcExchange, RuntimeError> {
             self.capabilities.allow_method(&request.method)?;
-            if request.method=="tools/call" {
-                if let Some(name)=request.params.as_ref().and_then(|p|p.get("name")).and_then(Value::as_str) { self.capabilities.allow_tool(name)?; }
+            if request.method == "tools/call" {
+                if let Some(name) = request
+                    .params
+                    .as_ref()
+                    .and_then(|p| p.get("name"))
+                    .and_then(Value::as_str)
+                {
+                    self.capabilities.allow_tool(name)?;
+                }
             }
-            let request_id=request.id.clone();
-            let method=request.method.clone();
-            let mut builder=self.client.post(self.endpoint.clone())
-                .header("Accept","application/json, text/event-stream")
-                .header("Content-Type","application/json")
-                .header("MCP-Protocol-Version",protocol_version)
+            let request_id = request.id.clone();
+            let method = request.method.clone();
+            let mut builder = self
+                .client
+                .post(self.endpoint.clone())
+                .header("Accept", "application/json, text/event-stream")
+                .header("Content-Type", "application/json")
+                .header("MCP-Protocol-Version", protocol_version)
                 .json(&request);
-            if protocol_version==MCP_DEFAULT_MODERN_PROTOCOL {
-                builder=builder.header("Mcp-Method",&method);
-                if let Some(name)=request.params.as_ref().and_then(|p|p.get("name")).and_then(Value::as_str) { builder=builder.header("Mcp-Name",name); }
+            if protocol_version == MCP_DEFAULT_MODERN_PROTOCOL {
+                builder = builder.header("Mcp-Method", &method);
+                if let Some(name) = request
+                    .params
+                    .as_ref()
+                    .and_then(|p| p.get("name"))
+                    .and_then(Value::as_str)
+                {
+                    builder = builder.header("Mcp-Name", name);
+                }
             }
-            let response=controlled(async { Ok(builder.send().await?) },Duration::from_millis(self.policy.request_timeout_ms),cancellation.clone()).await?;
-            let status=response.status();
-            if !status.is_success() { return Err(RuntimeError::HttpStatus(status.as_u16())); }
-            let content_type=response.headers().get(reqwest::header::CONTENT_TYPE).and_then(|v|v.to_str().ok()).unwrap_or("").to_owned();
-            let exchange=if content_type.contains("text/event-stream") {
-                self.read_sse_response(response,request_id.clone(),cancellation).await?
+            let response = controlled(
+                async { Ok(builder.send().await?) },
+                Duration::from_millis(self.policy.request_timeout_ms),
+                cancellation.clone(),
+            )
+            .await?;
+            let status = response.status();
+            if !status.is_success() {
+                return Err(RuntimeError::HttpStatus(status.as_u16()));
+            }
+            let content_type = response
+                .headers()
+                .get(reqwest::header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("")
+                .to_owned();
+            let exchange = if content_type.contains("text/event-stream") {
+                self.read_sse_response(response, request_id.clone(), cancellation)
+                    .await?
             } else {
-                let bytes=response.bytes().await?;
-                if bytes.len()>self.endpoint_policy.max_response_bytes { return Err(RuntimeError::FrameTooLarge(bytes.len())); }
-                let value:Value=serde_json::from_slice(&bytes)?;
-                let response:JsonRpcResponse=serde_json::from_value(value)?;
-                if response.id!=request_id { return Err(RuntimeError::ResponseIdMismatch); }
-                JsonRpcExchange{response,notifications:Vec::new()}
+                let bytes = response.bytes().await?;
+                if bytes.len() > self.endpoint_policy.max_response_bytes {
+                    return Err(RuntimeError::FrameTooLarge(bytes.len()));
+                }
+                let value: Value = serde_json::from_slice(&bytes)?;
+                let response: JsonRpcResponse = serde_json::from_value(value)?;
+                if response.id != request_id {
+                    return Err(RuntimeError::ResponseIdMismatch);
+                }
+                JsonRpcExchange {
+                    response,
+                    notifications: Vec::new(),
+                }
             };
-            let outcome=if exchange.response.error.is_some(){EvidenceOutcome::Failed}else{EvidenceOutcome::Succeeded};
-            let _=self.audit.record(self.session_uuid,"mcp.request","mcp.http.completed",outcome,json!({"method":method,"endpoint":self.endpoint}),json!({"notifications":exchange.notifications.len()}))?;
+            let outcome = if exchange.response.error.is_some() {
+                EvidenceOutcome::Failed
+            } else {
+                EvidenceOutcome::Succeeded
+            };
+            let _ = self.audit.record(
+                self.session_uuid,
+                "mcp.request",
+                "mcp.http.completed",
+                outcome,
+                json!({"method":method,"endpoint":self.endpoint}),
+                json!({"notifications":exchange.notifications.len()}),
+            )?;
             Ok(exchange)
         }
 
-        async fn read_sse_response(&self, response:reqwest::Response, request_id:JsonRpcId, cancellation:Cancellation) -> Result<JsonRpcExchange,RuntimeError> {
-            let mut stream=response.bytes_stream();
-            let mut pending=Vec::<u8>::new();
-            let mut notifications=Vec::new();
+        async fn read_sse_response(
+            &self,
+            response: reqwest::Response,
+            request_id: JsonRpcId,
+            cancellation: Cancellation,
+        ) -> Result<JsonRpcExchange, RuntimeError> {
+            let mut stream = response.bytes_stream();
+            let mut pending = Vec::<u8>::new();
+            let mut notifications = Vec::new();
             loop {
-                let next=tokio::select! {
+                let next = tokio::select! {
                     _=cancellation.cancelled()=>return Err(RuntimeError::Cancelled),
                     result=timeout(Duration::from_millis(self.policy.request_timeout_ms),stream.next())=>match result{Ok(v)=>v,Err(_)=>return Err(RuntimeError::Timeout)}
                 };
-                let Some(chunk)=next else{return Err(RuntimeError::ProcessClosed)};
+                let Some(chunk) = next else {
+                    return Err(RuntimeError::ProcessClosed);
+                };
                 pending.extend_from_slice(&chunk?);
-                if pending.len()>self.endpoint_policy.max_response_bytes{return Err(RuntimeError::FrameTooLarge(pending.len()));}
-                while let Some(pos)=pending.windows(2).position(|w|w==b"\n\n") {
-                    let event=pending.drain(..pos+2).collect::<Vec<_>>();
-                    let text=String::from_utf8_lossy(&event);
+                if pending.len() > self.endpoint_policy.max_response_bytes {
+                    return Err(RuntimeError::FrameTooLarge(pending.len()));
+                }
+                while let Some(pos) = pending.windows(2).position(|w| w == b"\n\n") {
+                    let event = pending.drain(..pos + 2).collect::<Vec<_>>();
+                    let text = String::from_utf8_lossy(&event);
                     for line in text.lines() {
-                        if let Some(data)=line.strip_prefix("data:") {
-                            let value:Value=serde_json::from_str(data.trim())?;
-                            match classify_jsonrpc_message(&value).map_err(|e|RuntimeError::Protocol(e.to_string()))? {
-                                JsonRpcMessageClass::Success|JsonRpcMessageClass::Error=>{
-                                    let response:JsonRpcResponse=serde_json::from_value(value)?;
-                                    if response.id==request_id{return Ok(JsonRpcExchange{response,notifications});}
+                        if let Some(data) = line.strip_prefix("data:") {
+                            let value: Value = serde_json::from_str(data.trim())?;
+                            match classify_jsonrpc_message(&value)
+                                .map_err(|e| RuntimeError::Protocol(e.to_string()))?
+                            {
+                                JsonRpcMessageClass::Success | JsonRpcMessageClass::Error => {
+                                    let response: JsonRpcResponse = serde_json::from_value(value)?;
+                                    if response.id == request_id {
+                                        return Ok(JsonRpcExchange {
+                                            response,
+                                            notifications,
+                                        });
+                                    }
                                 }
-                                _=>{
+                                _ => {
                                     notifications.push(value);
-                                    if notifications.len()>self.policy.max_unsolicited_messages{return Err(RuntimeError::TooManyUnsolicited);}
+                                    if notifications.len() > self.policy.max_unsolicited_messages {
+                                        return Err(RuntimeError::TooManyUnsolicited);
+                                    }
                                 }
                             }
                         }
@@ -1131,23 +1471,26 @@ pub mod managed_runtime {
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct ReconnectPolicy {
-        pub max_attempts:u32,
-        pub initial_backoff_ms:u64,
-        pub max_backoff_ms:u64,
+        pub max_attempts: u32,
+        pub initial_backoff_ms: u64,
+        pub max_backoff_ms: u64,
     }
 
     impl ReconnectPolicy {
-        pub async fn run<T,F,Fut>(&self, mut operation:F)->Result<T,RuntimeError>
-        where F:FnMut(u32)->Fut, Fut:Future<Output=Result<T,RuntimeError>> {
-            let mut delay=self.initial_backoff_ms.max(1);
+        pub async fn run<T, F, Fut>(&self, mut operation: F) -> Result<T, RuntimeError>
+        where
+            F: FnMut(u32) -> Fut,
+            Fut: Future<Output = Result<T, RuntimeError>>,
+        {
+            let mut delay = self.initial_backoff_ms.max(1);
             for attempt in 0..=self.max_attempts {
                 match operation(attempt).await {
-                    Ok(v)=>return Ok(v),
-                    Err(e) if attempt<self.max_attempts && e.is_reconnectable()=>{
+                    Ok(v) => return Ok(v),
+                    Err(e) if attempt < self.max_attempts && e.is_reconnectable() => {
                         sleep(Duration::from_millis(delay)).await;
-                        delay=(delay.saturating_mul(2)).min(self.max_backoff_ms.max(delay));
+                        delay = (delay.saturating_mul(2)).min(self.max_backoff_ms.max(delay));
                     }
-                    Err(e)=>return Err(e),
+                    Err(e) => return Err(e),
                 }
             }
             Err(RuntimeError::ReconnectExhausted)
@@ -1197,12 +1540,20 @@ pub mod managed_runtime {
     }
 
     impl RuntimeError {
-        pub fn is_reconnectable(&self)->bool {
-            matches!(self,RuntimeError::ProcessClosed|RuntimeError::Timeout|RuntimeError::Http(_)|RuntimeError::HttpStatus(502|503|504))
+        pub fn is_reconnectable(&self) -> bool {
+            matches!(
+                self,
+                RuntimeError::ProcessClosed
+                    | RuntimeError::Timeout
+                    | RuntimeError::Http(_)
+                    | RuntimeError::HttpStatus(502 | 503 | 504)
+            )
         }
     }
 
-    pub fn websocket_is_extension_transport() -> bool { true }
+    pub fn websocket_is_extension_transport() -> bool {
+        true
+    }
     pub fn mcp_standard_remote_transport_note() -> &'static str {
         "MCP standard remote transport is Streamable HTTP; WebSocket remains an explicitly non-standard extension in PhxClaw."
     }
@@ -1213,31 +1564,60 @@ pub mod managed_runtime {
 
         #[test]
         fn deny_by_default_process_policy() {
-            let policy=ProcessSecurityPolicy::default();
-            let spec=ProcessSpec{executable:"/definitely/not/allowed".into(),args:vec![],cwd:"/".into(),env:BTreeMap::new()};
+            let policy = ProcessSecurityPolicy::default();
+            let spec = ProcessSpec {
+                executable: "/definitely/not/allowed".into(),
+                args: vec![],
+                cwd: "/".into(),
+                env: BTreeMap::new(),
+            };
             assert!(policy.validate(&spec).is_err());
         }
 
         #[test]
         fn capability_policy_is_deny_by_default() {
-            assert!(CapabilityPolicy::deny_all().allow_method("tools/list").is_err());
+            assert!(
+                CapabilityPolicy::deny_all()
+                    .allow_method("tools/list")
+                    .is_err()
+            );
         }
 
         #[tokio::test]
         async fn cancellation_wakes_waiter() {
-            let token=Cancellation::default();
-            let other=token.clone();
-            tokio::spawn(async move{sleep(Duration::from_millis(5)).await;other.cancel();});
+            let token = Cancellation::default();
+            let other = token.clone();
+            tokio::spawn(async move {
+                sleep(Duration::from_millis(5)).await;
+                other.cancel();
+            });
             token.cancelled().await;
             assert!(token.is_cancelled());
         }
 
         #[tokio::test]
         async fn reconnect_policy_retries_only_reconnectable_errors() {
-            let policy=ReconnectPolicy{max_attempts:2,initial_backoff_ms:1,max_backoff_ms:2};
-            let mut n=0;
-            let value=policy.run(|_|{n+=1;let now=n;async move{if now<2{Err(RuntimeError::Timeout)}else{Ok(7)}}}).await.unwrap();
-            assert_eq!(value,7);
+            let policy = ReconnectPolicy {
+                max_attempts: 2,
+                initial_backoff_ms: 1,
+                max_backoff_ms: 2,
+            };
+            let mut n = 0;
+            let value = policy
+                .run(|_| {
+                    n += 1;
+                    let now = n;
+                    async move {
+                        if now < 2 {
+                            Err(RuntimeError::Timeout)
+                        } else {
+                            Ok(7)
+                        }
+                    }
+                })
+                .await
+                .unwrap();
+            assert_eq!(value, 7);
         }
     }
 }

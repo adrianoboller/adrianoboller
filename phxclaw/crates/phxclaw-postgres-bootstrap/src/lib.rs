@@ -78,14 +78,20 @@ pub fn build_install_plan(
         HostPlatform::WindowsX64 => {
             steps.push(InstallStep {
                 id: "download".into(),
-                description: "Download the pinned EDB PostgreSQL binary ZIP and verify SHA-256".into(),
-                command: vec!["phoenix-installer".into(), "postgres-download-windows".into()],
+                description: "Download the pinned EDB PostgreSQL binary ZIP and verify SHA-256"
+                    .into(),
+                command: vec![
+                    "phoenix-installer".into(),
+                    "postgres-download-windows".into(),
+                ],
                 requires_admin: false,
                 destructive: false,
             });
             steps.push(InstallStep {
                 id: "initdb".into(),
-                description: "Initialize a private SCRAM-authenticated cluster under var/runtime/postgresql".into(),
+                description:
+                    "Initialize a private SCRAM-authenticated cluster under var/runtime/postgresql"
+                        .into(),
                 command: vec!["initdb".into(), "--auth=scram-sha-256".into()],
                 requires_admin: false,
                 destructive: false,
@@ -94,21 +100,33 @@ pub fn build_install_plan(
         HostPlatform::DebianLike => steps.push(InstallStep {
             id: "pgdg-apt".into(),
             description: "Install PostgreSQL from the official PGDG APT repository".into(),
-            command: vec!["apt-get".into(), "install".into(), format!("postgresql-{}", cfg.stable_major)],
+            command: vec![
+                "apt-get".into(),
+                "install".into(),
+                format!("postgresql-{}", cfg.stable_major),
+            ],
             requires_admin: true,
             destructive: false,
         }),
         HostPlatform::RedHatLike => steps.push(InstallStep {
             id: "pgdg-rpm".into(),
             description: "Install PostgreSQL from the official PGDG RPM repository".into(),
-            command: vec!["dnf".into(), "install".into(), format!("postgresql{}-server", cfg.stable_major)],
+            command: vec![
+                "dnf".into(),
+                "install".into(),
+                format!("postgresql{}-server", cfg.stable_major),
+            ],
             requires_admin: true,
             destructive: false,
         }),
         HostPlatform::MacOs => steps.push(InstallStep {
             id: "brew".into(),
             description: "Install PostgreSQL with Homebrew".into(),
-            command: vec!["brew".into(), "install".into(), format!("postgresql@{}", cfg.stable_major)],
+            command: vec![
+                "brew".into(),
+                "install".into(),
+                format!("postgresql@{}", cfg.stable_major),
+            ],
             requires_admin: false,
             destructive: false,
         }),
@@ -161,10 +179,11 @@ pub fn bootstrap_sql(database: &str, app_role: &str) -> Result<String, Bootstrap
 fn validate_identifier(value: &str) -> Result<(), BootstrapError> {
     if value.is_empty()
         || value.len() > 63
+        || !value.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
         || !value
             .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_')
-        || !value.chars().next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+            .next()
+            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
     {
         return Err(BootstrapError::InvalidIdentifier(value.into()));
     }

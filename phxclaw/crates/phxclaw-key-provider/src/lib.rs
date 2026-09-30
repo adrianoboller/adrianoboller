@@ -131,13 +131,10 @@ impl KeyProvider for OsKeyringProvider {
     }
 
     fn load(&self, key_id: &str) -> Result<KeyMaterial, KeyProviderError> {
-        let encoded = self
-            .entry(key_id)?
-            .get_password()
-            .map_err(|e| match e {
-                keyring::Error::NoEntry => KeyProviderError::NotFound,
-                other => KeyProviderError::Provider(other.to_string()),
-            })?;
+        let encoded = self.entry(key_id)?.get_password().map_err(|e| match e {
+            keyring::Error::NoEntry => KeyProviderError::NotFound,
+            other => KeyProviderError::Provider(other.to_string()),
+        })?;
         let bytes = B64.decode(encoded).map_err(|_| KeyProviderError::Decode)?;
         KeyMaterial::new(bytes)
     }
@@ -168,7 +165,9 @@ pub struct DevEnvKeyProvider {
 #[cfg(feature = "dev-env")]
 impl DevEnvKeyProvider {
     pub fn new(prefix: impl Into<String>) -> Self {
-        Self { prefix: prefix.into() }
+        Self {
+            prefix: prefix.into(),
+        }
     }
 }
 
@@ -184,18 +183,26 @@ impl KeyProvider for DevEnvKeyProvider {
 
     fn load(&self, key_id: &str) -> Result<KeyMaterial, KeyProviderError> {
         validate_key_id(key_id)?;
-        let env_name = format!("{}_{}", self.prefix, key_id.replace([':', '/', '.', '-'], "_"));
+        let env_name = format!(
+            "{}_{}",
+            self.prefix,
+            key_id.replace([':', '/', '.', '-'], "_")
+        );
         let encoded = std::env::var(env_name).map_err(|_| KeyProviderError::NotFound)?;
         let bytes = B64.decode(encoded).map_err(|_| KeyProviderError::Decode)?;
         KeyMaterial::new(bytes)
     }
 
     fn store(&self, _key_id: &str, _material: &KeyMaterial) -> Result<(), KeyProviderError> {
-        Err(KeyProviderError::Provider("environment provider is read-only".into()))
+        Err(KeyProviderError::Provider(
+            "environment provider is read-only".into(),
+        ))
     }
 
     fn delete(&self, _key_id: &str) -> Result<(), KeyProviderError> {
-        Err(KeyProviderError::Provider("environment provider is read-only".into()))
+        Err(KeyProviderError::Provider(
+            "environment provider is read-only".into(),
+        ))
     }
 }
 
@@ -205,16 +212,29 @@ mod tests {
 
     struct UnsafeProvider;
     impl KeyProvider for UnsafeProvider {
-        fn provider_id(&self) -> &str { "unsafe-test" }
-        fn is_release_safe(&self) -> bool { false }
-        fn load(&self, _key_id: &str) -> Result<KeyMaterial, KeyProviderError> { Err(KeyProviderError::NotFound) }
-        fn store(&self, _key_id: &str, _material: &KeyMaterial) -> Result<(), KeyProviderError> { Ok(()) }
-        fn delete(&self, _key_id: &str) -> Result<(), KeyProviderError> { Ok(()) }
+        fn provider_id(&self) -> &str {
+            "unsafe-test"
+        }
+        fn is_release_safe(&self) -> bool {
+            false
+        }
+        fn load(&self, _key_id: &str) -> Result<KeyMaterial, KeyProviderError> {
+            Err(KeyProviderError::NotFound)
+        }
+        fn store(&self, _key_id: &str, _material: &KeyMaterial) -> Result<(), KeyProviderError> {
+            Ok(())
+        }
+        fn delete(&self, _key_id: &str) -> Result<(), KeyProviderError> {
+            Ok(())
+        }
     }
 
     #[test]
     fn weak_key_is_rejected() {
-        assert!(matches!(KeyMaterial::new(vec![0_u8; 16]), Err(KeyProviderError::WeakKey)));
+        assert!(matches!(
+            KeyMaterial::new(vec![0_u8; 16]),
+            Err(KeyProviderError::WeakKey)
+        ));
     }
 
     #[test]

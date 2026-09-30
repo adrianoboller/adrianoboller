@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::{fs, path::{Path, PathBuf}};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 use thiserror::Error;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -48,7 +51,12 @@ pub enum DocumentIoError {
 }
 
 pub fn detect_format(path: &Path) -> Option<DocumentFormat> {
-    match path.extension()?.to_string_lossy().to_ascii_lowercase().as_str() {
+    match path
+        .extension()?
+        .to_string_lossy()
+        .to_ascii_lowercase()
+        .as_str()
+    {
         "pdf" => Some(DocumentFormat::Pdf),
         "txt" | "md" | "log" => Some(DocumentFormat::Txt),
         "csv" => Some(DocumentFormat::Csv),
@@ -61,32 +69,57 @@ pub fn detect_format(path: &Path) -> Option<DocumentFormat> {
     }
 }
 
-pub fn read_native(path: &Path, format: DocumentFormat) -> Result<DocumentReadResult, DocumentIoError> {
+pub fn read_native(
+    path: &Path,
+    format: DocumentFormat,
+) -> Result<DocumentReadResult, DocumentIoError> {
     match format {
         DocumentFormat::Txt | DocumentFormat::Python | DocumentFormat::Xml => {
             let text = fs::read_to_string(path)?;
-            Ok(DocumentReadResult { path: path.into(), format, text: Some(text), structured: None, metadata: Value::Null })
+            Ok(DocumentReadResult {
+                path: path.into(),
+                format,
+                text: Some(text),
+                structured: None,
+                metadata: Value::Null,
+            })
         }
         DocumentFormat::Json => {
             let text = fs::read_to_string(path)?;
             let value: Value = serde_json::from_str(&text)?;
-            Ok(DocumentReadResult { path: path.into(), format, text: Some(text), structured: Some(value), metadata: Value::Null })
+            Ok(DocumentReadResult {
+                path: path.into(),
+                format,
+                text: Some(text),
+                structured: Some(value),
+                metadata: Value::Null,
+            })
         }
         DocumentFormat::Csv => {
             let mut reader = csv::Reader::from_path(path)?;
-            let headers = reader.headers()?.iter().map(ToOwned::to_owned).collect::<Vec<_>>();
+            let headers = reader
+                .headers()?
+                .iter()
+                .map(ToOwned::to_owned)
+                .collect::<Vec<_>>();
             let mut rows = Vec::<Value>::new();
             for record in reader.records() {
                 let record = record?;
                 let mut object = serde_json::Map::new();
                 for (idx, value) in record.iter().enumerate() {
-                    let key = headers.get(idx).cloned().unwrap_or_else(|| format!("column_{idx}"));
+                    let key = headers
+                        .get(idx)
+                        .cloned()
+                        .unwrap_or_else(|| format!("column_{idx}"));
                     object.insert(key, Value::String(value.to_owned()));
                 }
                 rows.push(Value::Object(object));
             }
             Ok(DocumentReadResult {
-                path: path.into(), format, text: None, structured: Some(Value::Array(rows)),
+                path: path.into(),
+                format,
+                text: None,
+                structured: Some(Value::Array(rows)),
                 metadata: serde_json::json!({"headers": headers}),
             })
         }
@@ -102,19 +135,34 @@ pub fn write_native(request: &DocumentWriteRequest) -> Result<(), DocumentIoErro
             fs::write(&request.path, request.text.as_deref().unwrap_or_default())?;
         }
         DocumentFormat::Json => {
-            let value = request.structured.as_ref().ok_or_else(|| DocumentIoError::Invalid("JSON requires structured payload".into()))?;
+            let value = request.structured.as_ref().ok_or_else(|| {
+                DocumentIoError::Invalid("JSON requires structured payload".into())
+            })?;
             fs::write(&request.path, serde_json::to_vec_pretty(value)?)?;
         }
         DocumentFormat::Csv => {
-            let rows = request.structured.as_ref().and_then(Value::as_array)
+            let rows = request
+                .structured
+                .as_ref()
+                .and_then(Value::as_array)
                 .ok_or_else(|| DocumentIoError::Invalid("CSV requires array of objects".into()))?;
             let mut writer = csv::Writer::from_path(&request.path)?;
-            let headers = rows.first().and_then(Value::as_object)
-                .map(|o| o.keys().cloned().collect::<Vec<_>>()).unwrap_or_default();
-            if !headers.is_empty() { writer.write_record(&headers)?; }
+            let headers = rows
+                .first()
+                .and_then(Value::as_object)
+                .map(|o| o.keys().cloned().collect::<Vec<_>>())
+                .unwrap_or_default();
+            if !headers.is_empty() {
+                writer.write_record(&headers)?;
+            }
             for row in rows {
-                let object = row.as_object().ok_or_else(|| DocumentIoError::Invalid("CSV row must be object".into()))?;
-                let values = headers.iter().map(|h| value_as_text(object.get(h))).collect::<Vec<_>>();
+                let object = row
+                    .as_object()
+                    .ok_or_else(|| DocumentIoError::Invalid("CSV row must be object".into()))?;
+                let values = headers
+                    .iter()
+                    .map(|h| value_as_text(object.get(h)))
+                    .collect::<Vec<_>>();
                 writer.write_record(values)?;
             }
             writer.flush()?;

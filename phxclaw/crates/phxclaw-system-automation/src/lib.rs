@@ -128,19 +128,33 @@ pub struct ShellExecutor {
 }
 
 impl ShellExecutor {
-    pub fn new(policy: ExecutionPolicy) -> Self { Self { policy } }
+    pub fn new(policy: ExecutionPolicy) -> Self {
+        Self { policy }
+    }
 
     pub fn launch(&self, request: &LaunchRequest) -> Result<LaunchResult, AutomationError> {
-        if !self.policy.enabled { return Err(AutomationError::Disabled); }
+        if !self.policy.enabled {
+            return Err(AutomationError::Disabled);
+        }
         let program_key = request.program.trim().to_ascii_lowercase();
-        if self.policy.denied_programs.iter().any(|p| p.eq_ignore_ascii_case(&program_key)) {
+        if self
+            .policy
+            .denied_programs
+            .iter()
+            .any(|p| p.eq_ignore_ascii_case(&program_key))
+        {
             return Err(AutomationError::DeniedProgram(request.program.clone()));
         }
         let mut command = Command::new(&request.program);
         command.args(&request.args);
-        if let Some(cwd) = &request.cwd { command.current_dir(cwd); }
+        if let Some(cwd) = &request.cwd {
+            command.current_dir(cwd);
+        }
         command.envs(&request.env);
-        command.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+        command
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
         let child = command.spawn()?;
         Ok(LaunchResult {
             request_uuid: request.uuid,
@@ -150,7 +164,9 @@ impl ShellExecutor {
     }
 
     pub fn execute(&self, request: &CommandRequest) -> Result<CommandResult, AutomationError> {
-        if !self.policy.enabled { return Err(AutomationError::Disabled); }
+        if !self.policy.enabled {
+            return Err(AutomationError::Disabled);
+        }
         if !matches!(request.shell, ShellKind::Direct) && !self.policy.allow_shells {
             return Err(AutomationError::ShellDisabled);
         }
@@ -158,15 +174,26 @@ impl ShellExecutor {
             return Err(AutomationError::TimeoutPolicy);
         }
         let program_key = request.program_or_script.trim().to_ascii_lowercase();
-        if self.policy.denied_programs.iter().any(|p| p.eq_ignore_ascii_case(&program_key)) {
-            return Err(AutomationError::DeniedProgram(request.program_or_script.clone()));
+        if self
+            .policy
+            .denied_programs
+            .iter()
+            .any(|p| p.eq_ignore_ascii_case(&program_key))
+        {
+            return Err(AutomationError::DeniedProgram(
+                request.program_or_script.clone(),
+            ));
         }
 
         let mut command = command_for(request)?;
-        if let Some(cwd) = &request.cwd { command.current_dir(cwd); }
+        if let Some(cwd) = &request.cwd {
+            command.current_dir(cwd);
+        }
         command.envs(&request.env);
         command.stdout(Stdio::piped()).stderr(Stdio::piped());
-        if request.stdin.is_some() { command.stdin(Stdio::piped()); }
+        if request.stdin.is_some() {
+            command.stdin(Stdio::piped());
+        }
 
         let started = Instant::now();
         let mut child = command.spawn()?;
@@ -177,7 +204,9 @@ impl ShellExecutor {
         let timeout = Duration::from_millis(request.timeout_ms);
         let mut timed_out = false;
         loop {
-            if child.try_wait()?.is_some() { break; }
+            if child.try_wait()?.is_some() {
+                break;
+            }
             if started.elapsed() >= timeout {
                 timed_out = true;
                 let _ = child.kill();
@@ -207,16 +236,29 @@ fn command_for(request: &CommandRequest) -> Result<Command, AutomationError> {
             return Ok(c);
         }
         ShellKind::Cmd if cfg!(windows) => {
-            let mut c = Command::new("cmd.exe"); c.args(["/D", "/S", "/C", &request.program_or_script]); c
+            let mut c = Command::new("cmd.exe");
+            c.args(["/D", "/S", "/C", &request.program_or_script]);
+            c
         }
         ShellKind::PowerShell if cfg!(windows) => {
-            let mut c = Command::new("powershell.exe"); c.args(["-NoProfile", "-NonInteractive", "-Command", &request.program_or_script]); c
+            let mut c = Command::new("powershell.exe");
+            c.args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                &request.program_or_script,
+            ]);
+            c
         }
         ShellKind::Sh if cfg!(unix) => {
-            let mut c = Command::new("/bin/sh"); c.args(["-lc", &request.program_or_script]); c
+            let mut c = Command::new("/bin/sh");
+            c.args(["-lc", &request.program_or_script]);
+            c
         }
         ShellKind::Bash if cfg!(unix) => {
-            let mut c = Command::new("bash"); c.args(["-lc", &request.program_or_script]); c
+            let mut c = Command::new("bash");
+            c.args(["-lc", &request.program_or_script]);
+            c
         }
         other => return Err(AutomationError::UnsupportedShell(other)),
     };
@@ -257,7 +299,6 @@ pub fn ffmpeg_record_command(input_args: &[String], output: &str) -> CommandRequ
     args.push(output.to_string());
     CommandRequest::direct("ffmpeg", args)
 }
-
 
 #[cfg(feature = "desktop-input")]
 pub struct EnigoInputProvider {
@@ -316,13 +357,23 @@ impl InputProvider for EnigoInputProvider {
                 "down" => Some(Key::DownArrow),
                 "left" => Some(Key::LeftArrow),
                 "right" => Some(Key::RightArrow),
-                "f1" => Some(Key::F1), "f2" => Some(Key::F2), "f3" => Some(Key::F3),
-                "f4" => Some(Key::F4), "f5" => Some(Key::F5), "f6" => Some(Key::F6),
-                "f7" => Some(Key::F7), "f8" => Some(Key::F8), "f9" => Some(Key::F9),
-                "f10" => Some(Key::F10), "f11" => Some(Key::F11), "f12" => Some(Key::F12),
+                "f1" => Some(Key::F1),
+                "f2" => Some(Key::F2),
+                "f3" => Some(Key::F3),
+                "f4" => Some(Key::F4),
+                "f5" => Some(Key::F5),
+                "f6" => Some(Key::F6),
+                "f7" => Some(Key::F7),
+                "f8" => Some(Key::F8),
+                "f9" => Some(Key::F9),
+                "f10" => Some(Key::F10),
+                "f11" => Some(Key::F11),
+                "f12" => Some(Key::F12),
                 _ => None,
             };
-            if let Some(k) = named { return Ok(k); }
+            if let Some(k) = named {
+                return Ok(k);
+            }
             let mut chars = raw.chars();
             match (chars.next(), chars.next()) {
                 (Some(c), None) => Ok(Key::Unicode(c)),
@@ -332,30 +383,56 @@ impl InputProvider for EnigoInputProvider {
 
         match action {
             InputAction::MoveMouse { x, y } => self.inner.move_mouse(*x, *y, Coordinate::Abs),
-            InputAction::MouseButton { button: b, state } => self.inner.button(button(b)?, direction(state)?),
+            InputAction::MouseButton { button: b, state } => {
+                self.inner.button(button(b)?, direction(state)?)
+            }
             InputAction::Scroll { dx, dy } => {
-                if *dx != 0 { self.inner.scroll(*dx, Axis::Horizontal).map_err(|e| e.to_string())?; }
-                if *dy != 0 { self.inner.scroll(*dy, Axis::Vertical).map_err(|e| e.to_string())?; }
+                if *dx != 0 {
+                    self.inner
+                        .scroll(*dx, Axis::Horizontal)
+                        .map_err(|e| e.to_string())?;
+                }
+                if *dy != 0 {
+                    self.inner
+                        .scroll(*dy, Axis::Vertical)
+                        .map_err(|e| e.to_string())?;
+                }
                 return Ok(());
             }
             InputAction::Key { key: k, state } => self.inner.key(key(k)?, direction(state)?),
             InputAction::Text { text } => self.inner.text(text),
             InputAction::Hotkey { keys } => {
                 let parsed = keys.iter().map(|k| key(k)).collect::<Result<Vec<_>, _>>()?;
-                for k in &parsed { self.inner.key(*k, Direction::Press).map_err(|e| e.to_string())?; }
-                for k in parsed.iter().rev() { self.inner.key(*k, Direction::Release).map_err(|e| e.to_string())?; }
+                for k in &parsed {
+                    self.inner
+                        .key(*k, Direction::Press)
+                        .map_err(|e| e.to_string())?;
+                }
+                for k in parsed.iter().rev() {
+                    self.inner
+                        .key(*k, Direction::Release)
+                        .map_err(|e| e.to_string())?;
+                }
                 return Ok(());
             }
-        }.map_err(|e| e.to_string())
+        }
+        .map_err(|e| e.to_string())
     }
 }
 
 #[cfg(feature = "screen-capture")]
 pub fn capture_primary_monitor(output: &std::path::Path) -> Result<(), AutomationError> {
-    let monitors = xcap::Monitor::all().map_err(|e| AutomationError::Io(std::io::Error::other(e.to_string())))?;
-    let monitor = monitors.into_iter().find(|m| m.is_primary().unwrap_or(false))
+    let monitors = xcap::Monitor::all()
+        .map_err(|e| AutomationError::Io(std::io::Error::other(e.to_string())))?;
+    let monitor = monitors
+        .into_iter()
+        .find(|m| m.is_primary().unwrap_or(false))
         .ok_or_else(|| AutomationError::Io(std::io::Error::other("no primary monitor")))?;
-    let image = monitor.capture_image().map_err(|e| AutomationError::Io(std::io::Error::other(e.to_string())))?;
-    image.save(output).map_err(|e| AutomationError::Io(std::io::Error::other(e.to_string())))?;
+    let image = monitor
+        .capture_image()
+        .map_err(|e| AutomationError::Io(std::io::Error::other(e.to_string())))?;
+    image
+        .save(output)
+        .map_err(|e| AutomationError::Io(std::io::Error::other(e.to_string())))?;
     Ok(())
 }

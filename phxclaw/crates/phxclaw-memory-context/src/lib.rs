@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use phxclaw_types::{new_uuid_v7, EvidenceRef};
+use phxclaw_types::{EvidenceRef, new_uuid_v7};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -281,8 +281,12 @@ impl ContextCompiler {
 
 fn scope_matches(scope: &MemoryScope, filter: &ContextScopeFilter) -> bool {
     match scope {
-        MemoryScope::Session(uuid) => filter.session_uuid.map_or(true, |candidate| candidate == *uuid),
-        MemoryScope::Agent(uuid) => filter.agent_uuid.map_or(true, |candidate| candidate == *uuid),
+        MemoryScope::Session(uuid) => filter
+            .session_uuid
+            .map_or(true, |candidate| candidate == *uuid),
+        MemoryScope::Agent(uuid) => filter
+            .agent_uuid
+            .map_or(true, |candidate| candidate == *uuid),
         MemoryScope::Project(project) => filter
             .project
             .as_ref()
@@ -383,7 +387,10 @@ mod tests {
     fn query_ranks_matching_memory_first() {
         let mut store = InMemoryStore::default();
         for (key, value) in [
-            ("rust", serde_json::json!({"note": "Use Result and the ? operator in Rust"})),
+            (
+                "rust",
+                serde_json::json!({"note": "Use Result and the ? operator in Rust"}),
+            ),
             ("other", serde_json::json!({"note": "CSS layout"})),
         ] {
             store

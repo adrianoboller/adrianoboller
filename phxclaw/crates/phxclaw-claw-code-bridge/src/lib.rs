@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::{
     fs,
     io::Write,
@@ -102,9 +102,15 @@ impl ClawCodeBridge {
         }))
     }
 
-    pub fn invoke(&self, capability: &str, payload: &Value) -> Result<BridgeResult, ClawCodeBridgeError> {
+    pub fn invoke(
+        &self,
+        capability: &str,
+        payload: &Value,
+    ) -> Result<BridgeResult, ClawCodeBridgeError> {
         if !Self::supported_capabilities().contains(&capability) {
-            return Err(ClawCodeBridgeError::UnsupportedCapability(capability.to_owned()));
+            return Err(ClawCodeBridgeError::UnsupportedCapability(
+                capability.to_owned(),
+            ));
         }
         let executable = resolve_executable(&self.config.executable).ok_or_else(|| {
             ClawCodeBridgeError::ExecutableUnavailable(self.config.executable.display().to_string())
@@ -115,7 +121,11 @@ impl ClawCodeBridge {
         let mut child = Command::new(&executable)
             .args(&args)
             .current_dir(&cwd)
-            .stdin(if stdin_text.is_some() { Stdio::piped() } else { Stdio::null() })
+            .stdin(if stdin_text.is_some() {
+                Stdio::piped()
+            } else {
+                Stdio::null()
+            })
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()?;
@@ -161,15 +171,27 @@ impl ClawCodeBridge {
     }
 
     fn resolve_workspace(&self, payload: &Value) -> Result<PathBuf, ClawCodeBridgeError> {
-        let root = fs::canonicalize(&self.config.workspace_root)
-            .map_err(|_| ClawCodeBridgeError::PathOutsideWorkspace(self.config.workspace_root.display().to_string()))?;
-        let requested = payload.get("workspace").and_then(Value::as_str).unwrap_or(".");
+        let root = fs::canonicalize(&self.config.workspace_root).map_err(|_| {
+            ClawCodeBridgeError::PathOutsideWorkspace(
+                self.config.workspace_root.display().to_string(),
+            )
+        })?;
+        let requested = payload
+            .get("workspace")
+            .and_then(Value::as_str)
+            .unwrap_or(".");
         let candidate = Path::new(requested);
-        let joined = if candidate.is_absolute() { candidate.to_path_buf() } else { root.join(candidate) };
+        let joined = if candidate.is_absolute() {
+            candidate.to_path_buf()
+        } else {
+            root.join(candidate)
+        };
         let resolved = fs::canonicalize(&joined)
             .map_err(|_| ClawCodeBridgeError::PathOutsideWorkspace(requested.to_owned()))?;
         if !resolved.starts_with(&root) {
-            return Err(ClawCodeBridgeError::PathOutsideWorkspace(requested.to_owned()));
+            return Err(ClawCodeBridgeError::PathOutsideWorkspace(
+                requested.to_owned(),
+            ));
         }
         Ok(resolved)
     }
@@ -181,13 +203,34 @@ impl ClawCodeBridge {
     ) -> Result<(Vec<String>, Option<String>), ClawCodeBridgeError> {
         let json_output = vec!["--output-format".to_owned(), "json".to_owned()];
         let invocation = match capability {
-            "claw.health" => (vec!["version".into(), "--output-format".into(), "json".into()], None),
-            "claw.doctor" => (vec!["doctor".into(), "--output-format".into(), "json".into()], None),
-            "claw.status" => (vec!["status".into(), "--output-format".into(), "json".into()], None),
-            "claw.sandbox.status" => (vec!["sandbox".into(), "--output-format".into(), "json".into()], None),
-            "claw.mcp.status" => (vec!["mcp".into(), "--output-format".into(), "json".into()], None),
-            "claw.skills.list" => (vec!["skills".into(), "--output-format".into(), "json".into()], None),
-            "claw.agents.list" => (vec!["agents".into(), "--output-format".into(), "json".into()], None),
+            "claw.health" => (
+                vec!["version".into(), "--output-format".into(), "json".into()],
+                None,
+            ),
+            "claw.doctor" => (
+                vec!["doctor".into(), "--output-format".into(), "json".into()],
+                None,
+            ),
+            "claw.status" => (
+                vec!["status".into(), "--output-format".into(), "json".into()],
+                None,
+            ),
+            "claw.sandbox.status" => (
+                vec!["sandbox".into(), "--output-format".into(), "json".into()],
+                None,
+            ),
+            "claw.mcp.status" => (
+                vec!["mcp".into(), "--output-format".into(), "json".into()],
+                None,
+            ),
+            "claw.skills.list" => (
+                vec!["skills".into(), "--output-format".into(), "json".into()],
+                None,
+            ),
+            "claw.agents.list" => (
+                vec!["agents".into(), "--output-format".into(), "json".into()],
+                None,
+            ),
             "claw.prompt" => {
                 let prompt = payload
                     .get("prompt")
@@ -204,7 +247,11 @@ impl ClawCodeBridge {
                         "read-only" | "workspace-write" | "danger-full-access" => {
                             args.splice(0..0, ["--permission-mode".into(), mode.into()]);
                         }
-                        _ => return Err(ClawCodeBridgeError::InvalidPayload("invalid permission_mode".into())),
+                        _ => {
+                            return Err(ClawCodeBridgeError::InvalidPayload(
+                                "invalid permission_mode".into(),
+                            ));
+                        }
                     }
                 }
                 (args, Some(prompt.to_owned()))

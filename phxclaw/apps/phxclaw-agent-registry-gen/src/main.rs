@@ -61,7 +61,11 @@ struct AgentManifest {
 }
 
 fn text(row: &[calamine::Data], index: usize) -> String {
-    row.get(index).map(ToString::to_string).unwrap_or_default().trim().to_string()
+    row.get(index)
+        .map(ToString::to_string)
+        .unwrap_or_default()
+        .trim()
+        .to_string()
 }
 
 fn slug(value: &str) -> String {
@@ -80,49 +84,93 @@ fn slug(value: &str) -> String {
 }
 
 fn split_pipe(value: &str) -> Vec<String> {
-    value.split('|').map(str::trim).filter(|x| !x.is_empty()).map(str::to_string).collect()
+    value
+        .split('|')
+        .map(str::trim)
+        .filter(|x| !x.is_empty())
+        .map(str::to_string)
+        .collect()
 }
 
 fn models(value: &str) -> Vec<String> {
-    value.split(['/', ',', '|'])
+    value
+        .split(['/', ',', '|'])
         .map(str::trim)
         .filter(|x| !x.is_empty())
         .map(|x| x.to_ascii_lowercase())
         .collect::<BTreeSet<_>>()
-        .into_iter().collect()
+        .into_iter()
+        .collect()
 }
 
 fn module_capabilities(modules: &[String]) -> BTreeSet<String> {
     let mut caps = BTreeSet::new();
     for module in modules {
-        if module.starts_with("F14") { caps.insert("desktop.host.request".to_string()); }
-        if module.starts_with("F15") { caps.insert("skill.read".to_string()); caps.insert("memory.read".to_string()); caps.insert("context.compile".to_string()); }
-        if module.starts_with("F16") { caps.insert("job.read".to_string()); }
-        if module.starts_with("F17") { caps.insert("checkpoint.read".to_string()); }
-        if module.starts_with("F18") { caps.insert("mcp.invoke".to_string()); caps.insert("lsp.read".to_string()); }
-        if module.starts_with("F19") { caps.insert("repo.read".to_string()); caps.insert("tree_sitter.analyze".to_string()); }
-        if module.starts_with("F20") { caps.insert("team.message".to_string()); }
-        if module.starts_with("F21") { caps.insert("channel.read".to_string()); }
-        if module.starts_with("F22") { caps.insert("node.observe".to_string()); }
-        if module.starts_with("F23") { caps.insert("secret.lease.request".to_string()); }
-        if module.starts_with("F24") { caps.insert("skill.candidate.propose".to_string()); }
-        if module.starts_with("F25") { caps.insert("knowledge.read".to_string()); caps.insert("evidence.read".to_string()); }
+        if module.starts_with("F14") {
+            caps.insert("desktop.host.request".to_string());
+        }
+        if module.starts_with("F15") {
+            caps.insert("skill.read".to_string());
+            caps.insert("memory.read".to_string());
+            caps.insert("context.compile".to_string());
+        }
+        if module.starts_with("F16") {
+            caps.insert("job.read".to_string());
+        }
+        if module.starts_with("F17") {
+            caps.insert("checkpoint.read".to_string());
+        }
+        if module.starts_with("F18") {
+            caps.insert("mcp.invoke".to_string());
+            caps.insert("lsp.read".to_string());
+        }
+        if module.starts_with("F19") {
+            caps.insert("repo.read".to_string());
+            caps.insert("tree_sitter.analyze".to_string());
+        }
+        if module.starts_with("F20") {
+            caps.insert("team.message".to_string());
+        }
+        if module.starts_with("F21") {
+            caps.insert("channel.read".to_string());
+        }
+        if module.starts_with("F22") {
+            caps.insert("node.observe".to_string());
+        }
+        if module.starts_with("F23") {
+            caps.insert("secret.lease.request".to_string());
+        }
+        if module.starts_with("F24") {
+            caps.insert("skill.candidate.propose".to_string());
+        }
+        if module.starts_with("F25") {
+            caps.insert("knowledge.read".to_string());
+            caps.insert("evidence.read".to_string());
+        }
     }
     caps
 }
 
 fn main() -> Result<()> {
     let mut args = env::args().skip(1);
-    let workbook_path = PathBuf::from(args.next().context("usage: phxclaw-agent-registry-gen <workbook.xlsx> <out-dir>")?);
+    let workbook_path = PathBuf::from(
+        args.next()
+            .context("usage: phxclaw-agent-registry-gen <workbook.xlsx> <out-dir>")?,
+    );
     let out_dir = PathBuf::from(args.next().context("missing output directory")?);
     fs::create_dir_all(&out_dir)?;
 
     let mut workbook = open_workbook_auto(&workbook_path)
         .with_context(|| format!("open {}", workbook_path.display()))?;
-    let range = workbook.worksheet_range("Equipe 110")
+    let range = workbook
+        .worksheet_range("Equipe 110")
         .context("read sheet Equipe 110")?;
 
-    let rows: Vec<_> = range.rows().skip(1).filter(|row| !text(row, 3).is_empty()).collect();
+    let rows: Vec<_> = range
+        .rows()
+        .skip(1)
+        .filter(|row| !text(row, 3).is_empty())
+        .collect();
     if rows.len() != 110 {
         bail!("expected 110 agent rows, found {}", rows.len());
     }
@@ -130,29 +178,49 @@ fn main() -> Result<()> {
     let mut identities = BTreeMap::<String, Uuid>::new();
     for row in &rows {
         let name = text(row, 3);
-        let id = Uuid::parse_str(&text(row, 17)).with_context(|| format!("invalid UUID for {name}"))?;
-        if (id.as_bytes()[6] >> 4) != 7 { bail!("{name} does not use UUIDv7"); }
+        let id =
+            Uuid::parse_str(&text(row, 17)).with_context(|| format!("invalid UUID for {name}"))?;
+        if (id.as_bytes()[6] >> 4) != 7 {
+            bail!("{name} does not use UUIDv7");
+        }
         identities.insert(name, id);
     }
 
-    let workbook_name = workbook_path.file_name().and_then(|x| x.to_str()).unwrap_or("agents.xlsx").to_string();
+    let workbook_name = workbook_path
+        .file_name()
+        .and_then(|x| x.to_str())
+        .unwrap_or("agents.xlsx")
+        .to_string();
     let mut index = Vec::<serde_json::Value>::new();
 
     for (offset, row) in rows.iter().enumerate() {
         let name = text(row, 3);
         let uuid = identities[&name];
         let raw_dependencies = format!("{} | {}", text(row, 10), text(row, 13));
-        let resolved_agent_dependencies = identities.iter()
-            .filter(|(candidate, _)| *candidate != &name && candidate.len() >= 5 && raw_dependencies.contains(candidate.as_str()))
-            .map(|(candidate, id)| AgentDependency { uuid: *id, name: candidate.clone() })
+        let resolved_agent_dependencies = identities
+            .iter()
+            .filter(|(candidate, _)| {
+                *candidate != &name
+                    && candidate.len() >= 5
+                    && raw_dependencies.contains(candidate.as_str())
+            })
+            .map(|(candidate, id)| AgentDependency {
+                uuid: *id,
+                name: candidate.clone(),
+            })
             .collect::<Vec<_>>();
 
         let modules = split_pipe(&text(row, 18));
         let mut capabilities = module_capabilities(&modules);
         let principal = text(row, 19);
-        if !principal.is_empty() { capabilities.insert(principal); }
+        if !principal.is_empty() {
+            capabilities.insert(principal);
+        }
         let mut knowledge_sources = vec![];
-        if matches!(name.as_str(), "Research Agent" | "Research Lead / Pesquisador PDCA" | "Documentador" | "Perséfone") {
+        if matches!(
+            name.as_str(),
+            "Research Agent" | "Research Lead / Pesquisador PDCA" | "Documentador" | "Perséfone"
+        ) {
             capabilities.insert("knowledge.rust.read".into());
             capabilities.insert("knowledge.source_registry.read".into());
             knowledge_sources.push("rust-official".into());
@@ -164,10 +232,17 @@ fn main() -> Result<()> {
             capabilities.insert("documentation.write".into());
         }
 
-        let permissions = capabilities.iter().map(|cap| Permission {
-            name: cap.clone(),
-            scopes: if cap.starts_with("knowledge.rust") { vec!["rust-official".into()] } else { vec!["project".into()] },
-        }).collect();
+        let permissions = capabilities
+            .iter()
+            .map(|cap| Permission {
+                name: cap.clone(),
+                scopes: if cap.starts_with("knowledge.rust") {
+                    vec!["rust-official".into()]
+                } else {
+                    vec!["project".into()]
+                },
+            })
+            .collect();
 
         let manifest = AgentManifest {
             manifest_version: "1.0.0".into(),
@@ -193,27 +268,57 @@ fn main() -> Result<()> {
             modules,
             capabilities: capabilities.into_iter().collect(),
             permissions,
-            lifecycle: vec!["registered", "starting", "ready", "busy", "draining", "stopped", "failed", "quarantined"].into_iter().map(str::to_string).collect(),
+            lifecycle: vec![
+                "registered",
+                "starting",
+                "ready",
+                "busy",
+                "draining",
+                "stopped",
+                "failed",
+                "quarantined",
+            ]
+            .into_iter()
+            .map(str::to_string)
+            .collect(),
             memory_skill_state: text(row, 20),
             event_topics: text(row, 21),
             execution_policy: text(row, 22),
             references: text(row, 23),
             knowledge_sources,
-            source: SourceRef { workbook: workbook_name.clone(), sheet: "Equipe 110".into(), row: offset + 2 },
+            source: SourceRef {
+                workbook: workbook_name.clone(),
+                sheet: "Equipe 110".into(),
+                row: offset + 2,
+            },
         };
 
-        let file_name = format!("{:03}-{}.agent.json", manifest.agent_id, slug(&manifest.name));
-        fs::write(out_dir.join(&file_name), serde_json::to_vec_pretty(&manifest)?)?;
+        let file_name = format!(
+            "{:03}-{}.agent.json",
+            manifest.agent_id,
+            slug(&manifest.name)
+        );
+        fs::write(
+            out_dir.join(&file_name),
+            serde_json::to_vec_pretty(&manifest)?,
+        )?;
         index.push(serde_json::json!({"uuid": manifest.uuid, "agent_id": manifest.agent_id, "name": manifest.name, "file": file_name}));
     }
 
-    fs::write(out_dir.join("registry.index.json"), serde_json::to_vec_pretty(&serde_json::json!({
-        "manifest_version": "1.0.0",
-        "source_workbook": workbook_name,
-        "sheet": "Equipe 110",
-        "count": index.len(),
-        "agents": index
-    }))?)?;
-    println!("generated {} manifests in {}", index.len(), out_dir.display());
+    fs::write(
+        out_dir.join("registry.index.json"),
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "manifest_version": "1.0.0",
+            "source_workbook": workbook_name,
+            "sheet": "Equipe 110",
+            "count": index.len(),
+            "agents": index
+        }))?,
+    )?;
+    println!(
+        "generated {} manifests in {}",
+        index.len(),
+        out_dir.display()
+    );
     Ok(())
 }

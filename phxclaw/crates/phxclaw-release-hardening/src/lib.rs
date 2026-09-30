@@ -4,7 +4,8 @@
 use chrono::{DateTime, Duration, Utc};
 use phxclaw_knowledge_evidence_graph::{
     EdgeKind, EpistemicState as GraphState, EvidenceBinding, GraphSnapshot, KnowledgeEdge,
-    KnowledgeGraph, KnowledgeNode, MutationAuthority, NodeKind, PromotionPolicy as GraphPromotionPolicy,
+    KnowledgeGraph, KnowledgeNode, MutationAuthority, NodeKind,
+    PromotionPolicy as GraphPromotionPolicy,
 };
 use phxclaw_skill_evolution::{SkillCandidate, SkillRelease};
 use serde::{Deserialize, Serialize};
@@ -98,7 +99,9 @@ pub struct ReleasePolicy {
 
 impl Default for ReleasePolicy {
     fn default() -> Self {
-        Self { max_proof_age: Duration::days(7) }
+        Self {
+            max_proof_age: Duration::days(7),
+        }
     }
 }
 
@@ -136,12 +139,18 @@ pub fn evaluate_release(
         if !valid_sha256_hex(&proof.source_state_sha256_hex) {
             return Err(ReleaseError::InvalidDigest);
         }
-        if !proof.source_state_sha256_hex.eq_ignore_ascii_case(workspace_sha256_hex) {
+        if !proof
+            .source_state_sha256_hex
+            .eq_ignore_ascii_case(workspace_sha256_hex)
+        {
             return Err(ReleaseError::SourceStateMismatch);
         }
         match proof.status {
             GateStatus::Verified | GateStatus::Failed => {
-                let digest = proof.evidence_sha256_hex.as_deref().ok_or(ReleaseError::MissingEvidenceDigest)?;
+                let digest = proof
+                    .evidence_sha256_hex
+                    .as_deref()
+                    .ok_or(ReleaseError::MissingEvidenceDigest)?;
                 if !valid_sha256_hex(digest) {
                     return Err(ReleaseError::InvalidDigest);
                 }
@@ -154,7 +163,9 @@ pub fn evaluate_release(
                 }
             }
         }
-        if now.signed_duration_since(proof.verified_at) > policy.max_proof_age || now < proof.verified_at {
+        if now.signed_duration_since(proof.verified_at) > policy.max_proof_age
+            || now < proof.verified_at
+        {
             return Err(ReleaseError::StaleEvidence);
         }
         if by_gate.insert(proof.gate, proof).is_some() {
@@ -185,13 +196,17 @@ pub fn evaluate_release(
     ];
 
     let verified = |gate: &ReleaseGate| {
-        by_gate.get(gate).is_some_and(|proof| proof.status == GateStatus::Verified)
+        by_gate
+            .get(gate)
+            .is_some_and(|proof| proof.status == GateStatus::Verified)
     };
     let source_ready = [
         ReleaseGate::WorkspaceStatic,
         ReleaseGate::JsonSchemaStatic,
         ReleaseGate::MigrationStatic,
-    ].iter().all(verified);
+    ]
+    .iter()
+    .all(verified);
     let static_verified = source_ready && static_gates.iter().all(verified);
     let runtime_verified = static_verified && runtime_gates.iter().all(verified);
     let e2e_verified = runtime_verified && e2e_gates.iter().all(verified);
@@ -251,8 +266,12 @@ pub fn record_skill_release_lineage(
     if release.candidate_uuid != candidate.candidate_uuid
         || release.skill_uuid != candidate.skill_uuid
         || release.previous_release_uuid != candidate.base_release_uuid
-        || !release.artifact_sha256_hex.eq_ignore_ascii_case(&candidate.artifact_sha256_hex)
-        || !release.manifest_sha256_hex.eq_ignore_ascii_case(&candidate.manifest_sha256_hex)
+        || !release
+            .artifact_sha256_hex
+            .eq_ignore_ascii_case(&candidate.artifact_sha256_hex)
+        || !release
+            .manifest_sha256_hex
+            .eq_ignore_ascii_case(&candidate.manifest_sha256_hex)
     {
         return Err(ReleaseError::LineageMismatch);
     }
@@ -275,7 +294,9 @@ pub fn record_skill_release_lineage(
     for item in evidence {
         if !valid_sha256_hex(&item.evidence_sha256_hex)
             || !valid_sha256_hex(&item.source_state_sha256_hex)
-            || !item.source_state_sha256_hex.eq_ignore_ascii_case(&candidate.source_state_sha256_hex)
+            || !item
+                .source_state_sha256_hex
+                .eq_ignore_ascii_case(&candidate.source_state_sha256_hex)
             || now < item.collected_at
             || item.valid_until.as_ref().is_some_and(|until| &now >= until)
         {
@@ -285,80 +306,183 @@ pub fn record_skill_release_lineage(
 
     let tenant_uuid = candidate.tenant_uuid;
     let artifact_node = KnowledgeNode {
-        node_uuid: Uuid::now_v7(), tenant_uuid, kind: NodeKind::Artifact, state: GraphState::Accepted,
-        content_sha256_hex: candidate.artifact_sha256_hex.clone(), source_state_sha256_hex: candidate.source_state_sha256_hex.clone(),
-        subject_key: Some(format!("skill:{}", candidate.skill_uuid)), predicate_key: Some("candidate_artifact".into()),
-        value_sha256_hex: Some(candidate.artifact_sha256_hex.clone()), confidence_ppm: 1_000_000, created_at: now,
+        node_uuid: Uuid::now_v7(),
+        tenant_uuid,
+        kind: NodeKind::Artifact,
+        state: GraphState::Accepted,
+        content_sha256_hex: candidate.artifact_sha256_hex.clone(),
+        source_state_sha256_hex: candidate.source_state_sha256_hex.clone(),
+        subject_key: Some(format!("skill:{}", candidate.skill_uuid)),
+        predicate_key: Some("candidate_artifact".into()),
+        value_sha256_hex: Some(candidate.artifact_sha256_hex.clone()),
+        confidence_ppm: 1_000_000,
+        created_at: now,
     };
     let skill_node = KnowledgeNode {
-        node_uuid: Uuid::now_v7(), tenant_uuid, kind: NodeKind::Skill, state: GraphState::Accepted,
-        content_sha256_hex: candidate.manifest_sha256_hex.clone(), source_state_sha256_hex: candidate.source_state_sha256_hex.clone(),
-        subject_key: Some(format!("skill:{}", candidate.skill_uuid)), predicate_key: Some("manifest".into()),
-        value_sha256_hex: Some(candidate.manifest_sha256_hex.clone()), confidence_ppm: 1_000_000, created_at: now,
+        node_uuid: Uuid::now_v7(),
+        tenant_uuid,
+        kind: NodeKind::Skill,
+        state: GraphState::Accepted,
+        content_sha256_hex: candidate.manifest_sha256_hex.clone(),
+        source_state_sha256_hex: candidate.source_state_sha256_hex.clone(),
+        subject_key: Some(format!("skill:{}", candidate.skill_uuid)),
+        predicate_key: Some("manifest".into()),
+        value_sha256_hex: Some(candidate.manifest_sha256_hex.clone()),
+        confidence_ppm: 1_000_000,
+        created_at: now,
     };
-    let release_content = sha256_hex(format!(
-        "{}|{}|{}|{}|{}", release.release_uuid, release.candidate_uuid, release.skill_uuid,
-        release.artifact_sha256_hex.to_ascii_lowercase(), release.manifest_sha256_hex.to_ascii_lowercase()
-    ).as_bytes());
+    let release_content = sha256_hex(
+        format!(
+            "{}|{}|{}|{}|{}",
+            release.release_uuid,
+            release.candidate_uuid,
+            release.skill_uuid,
+            release.artifact_sha256_hex.to_ascii_lowercase(),
+            release.manifest_sha256_hex.to_ascii_lowercase()
+        )
+        .as_bytes(),
+    );
     let release_node = KnowledgeNode {
-        node_uuid: Uuid::now_v7(), tenant_uuid, kind: NodeKind::Release, state: GraphState::Accepted,
-        content_sha256_hex: release_content, source_state_sha256_hex: candidate.source_state_sha256_hex.clone(),
-        subject_key: Some(format!("release:{}", release.release_uuid)), predicate_key: Some("skill_release".into()),
-        value_sha256_hex: Some(candidate.artifact_sha256_hex.clone()), confidence_ppm: 1_000_000, created_at: now,
+        node_uuid: Uuid::now_v7(),
+        tenant_uuid,
+        kind: NodeKind::Release,
+        state: GraphState::Accepted,
+        content_sha256_hex: release_content,
+        source_state_sha256_hex: candidate.source_state_sha256_hex.clone(),
+        subject_key: Some(format!("release:{}", release.release_uuid)),
+        predicate_key: Some("skill_release".into()),
+        value_sha256_hex: Some(candidate.artifact_sha256_hex.clone()),
+        confidence_ppm: 1_000_000,
+        created_at: now,
     };
-    let claim_content = sha256_hex(format!(
-        "promoted|{}|{}|{}", release.release_uuid, candidate.skill_uuid, candidate.artifact_sha256_hex.to_ascii_lowercase()
-    ).as_bytes());
+    let claim_content = sha256_hex(
+        format!(
+            "promoted|{}|{}|{}",
+            release.release_uuid,
+            candidate.skill_uuid,
+            candidate.artifact_sha256_hex.to_ascii_lowercase()
+        )
+        .as_bytes(),
+    );
     let claim_node = KnowledgeNode {
-        node_uuid: Uuid::now_v7(), tenant_uuid, kind: NodeKind::Claim, state: GraphState::Unverified,
-        content_sha256_hex: claim_content, source_state_sha256_hex: candidate.source_state_sha256_hex.clone(),
-        subject_key: Some(format!("skill:{}", candidate.skill_uuid)), predicate_key: Some("release_promoted".into()),
-        value_sha256_hex: Some(candidate.artifact_sha256_hex.clone()), confidence_ppm: 1_000_000, created_at: now,
+        node_uuid: Uuid::now_v7(),
+        tenant_uuid,
+        kind: NodeKind::Claim,
+        state: GraphState::Unverified,
+        content_sha256_hex: claim_content,
+        source_state_sha256_hex: candidate.source_state_sha256_hex.clone(),
+        subject_key: Some(format!("skill:{}", candidate.skill_uuid)),
+        predicate_key: Some("release_promoted".into()),
+        value_sha256_hex: Some(candidate.artifact_sha256_hex.clone()),
+        confidence_ppm: 1_000_000,
+        created_at: now,
     };
 
-    graph.add_node(MutationAuthority::System, artifact_node.clone()).map_err(|e| ReleaseError::KnowledgeGraph(e.to_string()))?;
-    graph.add_node(MutationAuthority::System, skill_node.clone()).map_err(|e| ReleaseError::KnowledgeGraph(e.to_string()))?;
-    graph.add_node(MutationAuthority::System, release_node.clone()).map_err(|e| ReleaseError::KnowledgeGraph(e.to_string()))?;
-    graph.add_node(MutationAuthority::System, claim_node.clone()).map_err(|e| ReleaseError::KnowledgeGraph(e.to_string()))?;
+    graph
+        .add_node(MutationAuthority::System, artifact_node.clone())
+        .map_err(|e| ReleaseError::KnowledgeGraph(e.to_string()))?;
+    graph
+        .add_node(MutationAuthority::System, skill_node.clone())
+        .map_err(|e| ReleaseError::KnowledgeGraph(e.to_string()))?;
+    graph
+        .add_node(MutationAuthority::System, release_node.clone())
+        .map_err(|e| ReleaseError::KnowledgeGraph(e.to_string()))?;
+    graph
+        .add_node(MutationAuthority::System, claim_node.clone())
+        .map_err(|e| ReleaseError::KnowledgeGraph(e.to_string()))?;
 
     for (from, to, kind) in [
-        (release_node.node_uuid, skill_node.node_uuid, EdgeKind::Implements),
-        (release_node.node_uuid, artifact_node.node_uuid, EdgeKind::PromotedFrom),
-        (claim_node.node_uuid, release_node.node_uuid, EdgeKind::RelatesTo),
+        (
+            release_node.node_uuid,
+            skill_node.node_uuid,
+            EdgeKind::Implements,
+        ),
+        (
+            release_node.node_uuid,
+            artifact_node.node_uuid,
+            EdgeKind::PromotedFrom,
+        ),
+        (
+            claim_node.node_uuid,
+            release_node.node_uuid,
+            EdgeKind::RelatesTo,
+        ),
     ] {
-        graph.add_edge(KnowledgeEdge {
-            edge_uuid: Uuid::now_v7(), tenant_uuid, from_node_uuid: from, to_node_uuid: to, kind,
-            evidence_sha256_hex: None, created_at: now,
-        }).map_err(|e| ReleaseError::KnowledgeGraph(e.to_string()))?;
+        graph
+            .add_edge(KnowledgeEdge {
+                edge_uuid: Uuid::now_v7(),
+                tenant_uuid,
+                from_node_uuid: from,
+                to_node_uuid: to,
+                kind,
+                evidence_sha256_hex: None,
+                created_at: now,
+            })
+            .map_err(|e| ReleaseError::KnowledgeGraph(e.to_string()))?;
     }
 
     for item in evidence {
         let evidence_node = KnowledgeNode {
-            node_uuid: item.evidence_uuid, tenant_uuid, kind: NodeKind::Evidence, state: GraphState::Accepted,
-            content_sha256_hex: item.evidence_sha256_hex.clone(), source_state_sha256_hex: item.source_state_sha256_hex.clone(),
-            subject_key: Some(format!("candidate:{}", candidate.candidate_uuid)), predicate_key: Some("promotion_evidence".into()),
-            value_sha256_hex: Some(item.evidence_sha256_hex.clone()), confidence_ppm: 1_000_000, created_at: item.collected_at,
+            node_uuid: item.evidence_uuid,
+            tenant_uuid,
+            kind: NodeKind::Evidence,
+            state: GraphState::Accepted,
+            content_sha256_hex: item.evidence_sha256_hex.clone(),
+            source_state_sha256_hex: item.source_state_sha256_hex.clone(),
+            subject_key: Some(format!("candidate:{}", candidate.candidate_uuid)),
+            predicate_key: Some("promotion_evidence".into()),
+            value_sha256_hex: Some(item.evidence_sha256_hex.clone()),
+            confidence_ppm: 1_000_000,
+            created_at: item.collected_at,
         };
-        graph.add_node(MutationAuthority::System, evidence_node).map_err(|e| ReleaseError::KnowledgeGraph(e.to_string()))?;
-        graph.bind_evidence(EvidenceBinding {
-            binding_uuid: Uuid::now_v7(), tenant_uuid, claim_node_uuid: claim_node.node_uuid,
-            evidence_node_uuid: item.evidence_uuid, relation: EdgeKind::Supports,
-            evidence_sha256_hex: item.evidence_sha256_hex.clone(), source_state_sha256_hex: item.source_state_sha256_hex.clone(),
-            mechanism: item.mechanism.clone(), collected_at: item.collected_at, valid_until: item.valid_until,
-        }, now).map_err(|e| ReleaseError::KnowledgeGraph(e.to_string()))?;
+        graph
+            .add_node(MutationAuthority::System, evidence_node)
+            .map_err(|e| ReleaseError::KnowledgeGraph(e.to_string()))?;
+        graph
+            .bind_evidence(
+                EvidenceBinding {
+                    binding_uuid: Uuid::now_v7(),
+                    tenant_uuid,
+                    claim_node_uuid: claim_node.node_uuid,
+                    evidence_node_uuid: item.evidence_uuid,
+                    relation: EdgeKind::Supports,
+                    evidence_sha256_hex: item.evidence_sha256_hex.clone(),
+                    source_state_sha256_hex: item.source_state_sha256_hex.clone(),
+                    mechanism: item.mechanism.clone(),
+                    collected_at: item.collected_at,
+                    valid_until: item.valid_until,
+                },
+                now,
+            )
+            .map_err(|e| ReleaseError::KnowledgeGraph(e.to_string()))?;
     }
 
-    let target_state = if human_approved { GraphState::Governed } else { GraphState::Accepted };
-    let decision = graph.evaluate_claim_promotion(
-        claim_node.node_uuid,
-        target_state,
-        &GraphPromotionPolicy { min_supporting_evidence: 2, min_independent_mechanisms: 2, allow_governed_without_human: false },
-        now,
-    ).map_err(|e| ReleaseError::KnowledgeGraph(e.to_string()))?;
-    let (promoted_claim, supersedes) = graph.promoted_claim_version(claim_node.node_uuid, &decision, human_approved, now)
+    let target_state = if human_approved {
+        GraphState::Governed
+    } else {
+        GraphState::Accepted
+    };
+    let decision = graph
+        .evaluate_claim_promotion(
+            claim_node.node_uuid,
+            target_state,
+            &GraphPromotionPolicy {
+                min_supporting_evidence: 2,
+                min_independent_mechanisms: 2,
+                allow_governed_without_human: false,
+            },
+            now,
+        )
         .map_err(|e| ReleaseError::KnowledgeGraph(e.to_string()))?;
-    graph.add_node(MutationAuthority::System, promoted_claim.clone()).map_err(|e| ReleaseError::KnowledgeGraph(e.to_string()))?;
-    graph.add_edge(supersedes).map_err(|e| ReleaseError::KnowledgeGraph(e.to_string()))?;
+    let (promoted_claim, supersedes) = graph
+        .promoted_claim_version(claim_node.node_uuid, &decision, human_approved, now)
+        .map_err(|e| ReleaseError::KnowledgeGraph(e.to_string()))?;
+    graph
+        .add_node(MutationAuthority::System, promoted_claim.clone())
+        .map_err(|e| ReleaseError::KnowledgeGraph(e.to_string()))?;
+    graph
+        .add_edge(supersedes)
+        .map_err(|e| ReleaseError::KnowledgeGraph(e.to_string()))?;
 
     let snapshot = graph.snapshot(tenant_uuid, now);
     Ok(SkillLineageReceipt {
@@ -377,31 +501,60 @@ mod tests {
     use super::*;
     use phxclaw_skill_evolution::{ChangeBoundary, RiskLevel};
 
-    fn digest(ch: char) -> String { ch.to_string().repeat(64) }
+    fn digest(ch: char) -> String {
+        ch.to_string().repeat(64)
+    }
 
     #[test]
     fn unavailable_is_never_release_ready() {
         let now = Utc::now();
         let workspace = digest('a');
-        let proofs: Vec<GateProof> = REQUIRED_GATES.iter().map(|gate| GateProof {
-            gate: *gate,
-            status: if *gate == ReleaseGate::CargoCheck { GateStatus::Unavailable } else { GateStatus::Verified },
-            source_state_sha256_hex: workspace.clone(),
-            evidence_sha256_hex: if *gate == ReleaseGate::CargoCheck { None } else { Some(digest('b')) },
-            tool_name: "test".into(), tool_version: None, evidence_ref: None, verified_at: now,
-        }).collect();
+        let proofs: Vec<GateProof> = REQUIRED_GATES
+            .iter()
+            .map(|gate| GateProof {
+                gate: *gate,
+                status: if *gate == ReleaseGate::CargoCheck {
+                    GateStatus::Unavailable
+                } else {
+                    GateStatus::Verified
+                },
+                source_state_sha256_hex: workspace.clone(),
+                evidence_sha256_hex: if *gate == ReleaseGate::CargoCheck {
+                    None
+                } else {
+                    Some(digest('b'))
+                },
+                tool_name: "test".into(),
+                tool_version: None,
+                evidence_ref: None,
+                verified_at: now,
+            })
+            .collect();
         let result = evaluate_release(&workspace, &proofs, &ReleasePolicy::default(), now).unwrap();
         assert!(!result.release_ready);
-        assert!(result.blockers.iter().any(|b| b.contains("CargoCheck") && b.contains("unavailable")));
+        assert!(result
+            .blockers
+            .iter()
+            .any(|b| b.contains("CargoCheck") && b.contains("unavailable")));
     }
 
     #[test]
     fn source_hash_mismatch_is_rejected() {
         let now = Utc::now();
-        let proof = GateProof { gate: ReleaseGate::WorkspaceStatic, status: GateStatus::Verified,
-            source_state_sha256_hex: digest('b'), evidence_sha256_hex: Some(digest('c')),
-            tool_name: "test".into(), tool_version: None, evidence_ref: None, verified_at: now };
-        assert_eq!(evaluate_release(&digest('a'), &[proof], &ReleasePolicy::default(), now), Err(ReleaseError::SourceStateMismatch));
+        let proof = GateProof {
+            gate: ReleaseGate::WorkspaceStatic,
+            status: GateStatus::Verified,
+            source_state_sha256_hex: digest('b'),
+            evidence_sha256_hex: Some(digest('c')),
+            tool_name: "test".into(),
+            tool_version: None,
+            evidence_ref: None,
+            verified_at: now,
+        };
+        assert_eq!(
+            evaluate_release(&digest('a'), &[proof], &ReleasePolicy::default(), now),
+            Err(ReleaseError::SourceStateMismatch)
+        );
     }
 
     #[test]
@@ -409,15 +562,33 @@ mod tests {
         let now = Utc::now();
         let tenant = Uuid::now_v7();
         let candidate = SkillCandidate {
-            candidate_uuid: Uuid::now_v7(), tenant_uuid: tenant, skill_uuid: Uuid::now_v7(), base_release_uuid: None,
-            target_namespace: "skills.demo".into(), boundary: ChangeBoundary::SkillPlugin,
-            artifact_sha256_hex: digest('a'), manifest_sha256_hex: digest('b'), source_state_sha256_hex: digest('c'),
-            risk: RiskLevel::Low, behavior_change: false, reversible: true, created_at: now,
+            candidate_uuid: Uuid::now_v7(),
+            tenant_uuid: tenant,
+            skill_uuid: Uuid::now_v7(),
+            base_release_uuid: None,
+            target_namespace: "skills.demo".into(),
+            boundary: ChangeBoundary::SkillPlugin,
+            artifact_sha256_hex: digest('a'),
+            manifest_sha256_hex: digest('b'),
+            source_state_sha256_hex: digest('c'),
+            risk: RiskLevel::Low,
+            behavior_change: false,
+            reversible: true,
+            created_at: now,
         };
-        let release = SkillRelease { release_uuid: Uuid::now_v7(), candidate_uuid: Uuid::now_v7(), skill_uuid: candidate.skill_uuid,
-            previous_release_uuid: None, artifact_sha256_hex: candidate.artifact_sha256_hex.clone(),
-            manifest_sha256_hex: candidate.manifest_sha256_hex.clone(), promoted_at: now };
+        let release = SkillRelease {
+            release_uuid: Uuid::now_v7(),
+            candidate_uuid: Uuid::now_v7(),
+            skill_uuid: candidate.skill_uuid,
+            previous_release_uuid: None,
+            artifact_sha256_hex: candidate.artifact_sha256_hex.clone(),
+            manifest_sha256_hex: candidate.manifest_sha256_hex.clone(),
+            promoted_at: now,
+        };
         let mut graph = KnowledgeGraph::default();
-        assert_eq!(record_skill_release_lineage(&mut graph, &candidate, &release, &[], false, now), Err(ReleaseError::LineageMismatch));
+        assert_eq!(
+            record_skill_release_lineage(&mut graph, &candidate, &release, &[], false, now),
+            Err(ReleaseError::LineageMismatch)
+        );
     }
 }

@@ -1,8 +1,6 @@
 use chrono::Utc;
 use phxclaw_agent_runtime::{AgentRuntimeError, LogicalAgentRuntime, LogicalRouteDecision};
-use phxclaw_evidence_ledger::{
-    EvidenceDraft, EvidenceLedger, EvidenceOutcome, LedgerError,
-};
+use phxclaw_evidence_ledger::{EvidenceDraft, EvidenceLedger, EvidenceOutcome, LedgerError};
 use phxclaw_live_bus::{LiveBusError, LiveEventHub};
 use phxclaw_memory_context::{
     ContextBundle, ContextCompiler, ContextPolicy, ContextScopeFilter, MemoryError, MemoryStore,
@@ -14,9 +12,9 @@ use phxclaw_skill_runtime::{
 use phxclaw_source_registry::{
     OfflineSearchHit, ResolvedSource, SourceFreshness, SourceRegistry, SourceRegistryError,
 };
-use phxclaw_types::{new_uuid_v7, AgentRequest, EvidenceRef, PermissionClaim, ResearchRecord};
+use phxclaw_types::{AgentRequest, EvidenceRef, PermissionClaim, ResearchRecord, new_uuid_v7};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{collections::BTreeSet, path::PathBuf};
 use thiserror::Error;
@@ -250,7 +248,9 @@ impl ResearchPipeline {
             },
         ];
 
-        let route = self.agent_runtime.route_named(&task.preferred_agent, &request)?;
+        let route = self
+            .agent_runtime
+            .route_named(&task.preferred_agent, &request)?;
         let route_event = self.live_bus.publish_json(
             "agent.runtime",
             "routed",
@@ -473,11 +473,8 @@ impl ResearchPipeline {
         )?;
 
         let research_core = ResearchCore;
-        let mut research_record = research_core.create_record(
-            "rust",
-            task.query.clone(),
-            source_evidence.clone(),
-        );
+        let mut research_record =
+            research_core.create_record("rust", task.query.clone(), source_evidence.clone());
         research_record.findings = if source_hits.is_empty() {
             vec!["Official online source selected; content retrieval is still required under egress policy.".into()]
         } else {
@@ -577,9 +574,13 @@ mod tests {
         let catalog = AgentCatalog::load_dir(project_root.join("config/agents")).unwrap();
         let mut runtime = LogicalAgentRuntime::from_catalog(catalog).unwrap();
         runtime.start_all();
-        let resolver = LazySkillResolver::load(project_root.join("config/skills/registry.index.json")).unwrap();
-        let sources = SourceRegistry::load_dir(project_root.join("tests/fixtures/source-registry")).unwrap();
-        let ledger_path = std::env::temp_dir().join(format!("phoenix-research-{}.jsonl", new_uuid_v7()));
+        let resolver =
+            LazySkillResolver::load(project_root.join("config/skills/registry.index.json"))
+                .unwrap();
+        let sources =
+            SourceRegistry::load_dir(project_root.join("tests/fixtures/source-registry")).unwrap();
+        let ledger_path =
+            std::env::temp_dir().join(format!("phoenix-research-{}.jsonl", new_uuid_v7()));
         let ledger = EvidenceLedger::open(&ledger_path).unwrap();
         let live_bus = LiveEventHub::new(64, 64);
         let bus_probe = live_bus.clone();
@@ -596,14 +597,19 @@ mod tests {
             ledger.clone(),
         );
         let mut memory = InMemoryStore::default();
-        memory.put(MemoryRecord::new(
-            "rust",
-            "error-handling",
-            json!({"note": "Use Result for recoverable errors and ? to propagate them"}),
-            MemoryScope::Project("phxclaw".into()),
-            DataClassification::Internal,
-            vec![],
-        ).unwrap()).unwrap();
+        memory
+            .put(
+                MemoryRecord::new(
+                    "rust",
+                    "error-handling",
+                    json!({"note": "Use Result for recoverable errors and ? to propagate them"}),
+                    MemoryScope::Project("phxclaw".into()),
+                    DataClassification::Internal,
+                    vec![],
+                )
+                .unwrap(),
+            )
+            .unwrap();
 
         let task = ResearchTask::rust("How do I propagate Result errors in Rust?", "phxclaw");
         let prepared = pipeline.prepare(&memory, &task).unwrap();
@@ -615,8 +621,16 @@ mod tests {
         assert!(prepared.evidence.len() >= 2);
         assert!(ledger.verify().unwrap().valid);
         let events = bus_probe.snapshot(64).unwrap();
-        assert!(events.iter().any(|event| event.topic == "research.pipeline" && event.event_type == "ready"));
-        assert!(events.iter().all(|event| event.correlation_uuid == Some(task.correlation_uuid)));
+        assert!(
+            events
+                .iter()
+                .any(|event| event.topic == "research.pipeline" && event.event_type == "ready")
+        );
+        assert!(
+            events
+                .iter()
+                .all(|event| event.correlation_uuid == Some(task.correlation_uuid))
+        );
         let _ = fs::remove_file(ledger_path);
     }
 }

@@ -10,23 +10,48 @@ pub const UNAVAILABLE_IS_PASS: bool = false;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum EvidenceClass { Production, Fixture }
+pub enum EvidenceClass {
+    Production,
+    Fixture,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum Outcome { Success, Failure, Partial }
+pub enum Outcome {
+    Success,
+    Failure,
+    Partial,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum RiskLevel { Low, Medium, High, Critical }
+pub enum RiskLevel {
+    Low,
+    Medium,
+    High,
+    Critical,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum PromotionState { Candidate, Accepted, Governed, Stale, Revoked }
+pub enum PromotionState {
+    Candidate,
+    Accepted,
+    Governed,
+    Stale,
+    Revoked,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum CandidateKind { Knowledge, Prompt, Skill, Workflow, Code, CorePolicy }
+pub enum CandidateKind {
+    Knowledge,
+    Prompt,
+    Skill,
+    Workflow,
+    Code,
+    CorePolicy,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextFingerprintInput {
@@ -143,7 +168,10 @@ pub fn canonical_sha256<T: Serialize>(value: &T) -> String {
 
 pub fn create_context_fingerprint(input: ContextFingerprintInput) -> ContextFingerprint {
     let fingerprint_sha256 = canonical_sha256(&input);
-    ContextFingerprint { fingerprint_sha256, input }
+    ContextFingerprint {
+        fingerprint_sha256,
+        input,
+    }
 }
 
 pub fn context_compatible(required: &ContextFingerprint, observed: &ContextFingerprint) -> bool {
@@ -157,9 +185,16 @@ pub fn context_compatible(required: &ContextFingerprint, observed: &ContextFinge
             && required.input.dependency_fingerprint == observed.input.dependency_fingerprint)
 }
 
-pub fn strong_preference_allowed(pattern: &KnowledgePattern, now_epoch_s: i64) -> Result<bool, LearningError> {
-    if pattern.evidence_class == EvidenceClass::Fixture { return Err(LearningError::FixturePromotion); }
-    if pattern.fresh_until_epoch_s < now_epoch_s { return Err(LearningError::Stale); }
+pub fn strong_preference_allowed(
+    pattern: &KnowledgePattern,
+    now_epoch_s: i64,
+) -> Result<bool, LearningError> {
+    if pattern.evidence_class == EvidenceClass::Fixture {
+        return Err(LearningError::FixturePromotion);
+    }
+    if pattern.fresh_until_epoch_s < now_epoch_s {
+        return Err(LearningError::Stale);
+    }
     Ok(pattern.promotion_state == PromotionState::Governed && pattern.evidence_count >= 2)
 }
 
@@ -176,21 +211,48 @@ pub fn unfruitful_guard_blocks(
         && pattern.failure_count > 0
 }
 
-pub fn can_auto_promote(candidate: &EvolutionCandidate, policy: &PromotionPolicy) -> PromotionDecision {
+pub fn can_auto_promote(
+    candidate: &EvolutionCandidate,
+    policy: &PromotionPolicy,
+) -> PromotionDecision {
     if candidate.evidence_class != EvidenceClass::Production {
-        return PromotionDecision { allowed: false, automatic: false, reason: "fixture evidence cannot promote production".into() };
+        return PromotionDecision {
+            allowed: false,
+            automatic: false,
+            reason: "fixture evidence cannot promote production".into(),
+        };
     }
     if candidate.touches_core_or_policy || candidate.kind == CandidateKind::CorePolicy {
-        return PromotionDecision { allowed: false, automatic: false, reason: "core/policy requires human governance".into() };
+        return PromotionDecision {
+            allowed: false,
+            automatic: false,
+            reason: "core/policy requires human governance".into(),
+        };
     }
     if candidate.fresh_until_epoch_s < policy.now_epoch_s {
-        return PromotionDecision { allowed: false, automatic: false, reason: "candidate evidence is stale".into() };
+        return PromotionDecision {
+            allowed: false,
+            automatic: false,
+            reason: "candidate evidence is stale".into(),
+        };
     }
     if candidate.independent_evaluators < policy.min_independent_evaluators {
-        return PromotionDecision { allowed: false, automatic: false, reason: "insufficient independent evaluators".into() };
+        return PromotionDecision {
+            allowed: false,
+            automatic: false,
+            reason: "insufficient independent evaluators".into(),
+        };
     }
-    if !candidate.tests_passed || candidate.security_high_critical_open > 0 || candidate.benchmark_regressed || candidate.unresolved_contradictions > 0 {
-        return PromotionDecision { allowed: false, automatic: false, reason: "quality/security/benchmark/contradiction gate failed".into() };
+    if !candidate.tests_passed
+        || candidate.security_high_critical_open > 0
+        || candidate.benchmark_regressed
+        || candidate.unresolved_contradictions > 0
+    {
+        return PromotionDecision {
+            allowed: false,
+            automatic: false,
+            reason: "quality/security/benchmark/contradiction gate failed".into(),
+        };
     }
     let prompt_auto = candidate.kind == CandidateKind::Prompt
         && candidate.risk == RiskLevel::Low
@@ -198,14 +260,24 @@ pub fn can_auto_promote(candidate: &EvolutionCandidate, policy: &PromotionPolicy
         && policy.autonomy_level >= 2
         && policy.allow_low_risk_prompt_auto_promotion;
     if prompt_auto {
-        return PromotionDecision { allowed: true, automatic: true, reason: "reversible low-risk prompt passed governed promotion gates".into() };
+        return PromotionDecision {
+            allowed: true,
+            automatic: true,
+            reason: "reversible low-risk prompt passed governed promotion gates".into(),
+        };
     }
-    PromotionDecision { allowed: true, automatic: false, reason: "candidate passed gates but requires explicit promotion approval".into() }
+    PromotionDecision {
+        allowed: true,
+        automatic: false,
+        reason: "candidate passed gates but requires explicit promotion approval".into(),
+    }
 }
 
 pub fn confidence(success: u32, failure: u32, reuse: u32) -> f64 {
     let total = success.saturating_add(failure);
-    if total == 0 { return 0.0; }
+    if total == 0 {
+        return 0.0;
+    }
     let empirical = success as f64 / total as f64;
     let reuse_bonus = (reuse.min(20) as f64) / 200.0;
     (empirical * 0.95 + reuse_bonus).min(0.999)
@@ -228,21 +300,57 @@ mod tests {
     use super::*;
     #[test]
     fn fixture_never_auto_promotes() {
-        let c = EvolutionCandidate { candidate_uuid: Uuid::now_v7(), kind: CandidateKind::Prompt, risk: RiskLevel::Low, reversible:true,
-          touches_core_or_policy:false, evidence_class:EvidenceClass::Fixture, source_state_sha256:"s".into(), artifact_sha256:"a".into(), independent_evaluators:2,
-          tests_passed:true, security_high_critical_open:0, benchmark_regressed:false, unresolved_contradictions:0, fresh_until_epoch_s:100 };
-        let p=PromotionPolicy{autonomy_level:2,allow_low_risk_prompt_auto_promotion:true,min_independent_evaluators:2,now_epoch_s:10};
-        assert!(!can_auto_promote(&c,&p).allowed);
+        let c = EvolutionCandidate {
+            candidate_uuid: Uuid::now_v7(),
+            kind: CandidateKind::Prompt,
+            risk: RiskLevel::Low,
+            reversible: true,
+            touches_core_or_policy: false,
+            evidence_class: EvidenceClass::Fixture,
+            source_state_sha256: "s".into(),
+            artifact_sha256: "a".into(),
+            independent_evaluators: 2,
+            tests_passed: true,
+            security_high_critical_open: 0,
+            benchmark_regressed: false,
+            unresolved_contradictions: 0,
+            fresh_until_epoch_s: 100,
+        };
+        let p = PromotionPolicy {
+            autonomy_level: 2,
+            allow_low_risk_prompt_auto_promotion: true,
+            min_independent_evaluators: 2,
+            now_epoch_s: 10,
+        };
+        assert!(!can_auto_promote(&c, &p).allowed);
     }
     #[test]
-    fn core_never_auto_merges() { assert!(!CORE_AUTO_MERGE); }
+    fn core_never_auto_merges() {
+        assert!(!CORE_AUTO_MERGE);
+    }
     #[test]
     fn governed_unfruitful_blocks_exact_context() {
-        let p=KnowledgePattern{pattern_uuid:Uuid::now_v7(),tenant_uuid:Uuid::now_v7(),project_uuid:Uuid::now_v7(),pattern_key:"x".into(),context_fingerprint_sha256:"ctx".into(),
-          promotion_state:PromotionState::Governed,evidence_class:EvidenceClass::Production,evidence_count:2,success_count:0,failure_count:3,reuse_count:0,confidence:0.9,
-          root_cause:Some("bad context".into()),remediation:Some("retrieve more context".into()),safe_retry_conditions:Some("context complete".into()),fresh_until_epoch_s:100,
-          source_state_sha256:"s".into(),evidence_sha256:"e".into()};
-        assert!(unfruitful_guard_blocks(&p,"ctx",10));
-        assert!(!unfruitful_guard_blocks(&p,"other",10));
+        let p = KnowledgePattern {
+            pattern_uuid: Uuid::now_v7(),
+            tenant_uuid: Uuid::now_v7(),
+            project_uuid: Uuid::now_v7(),
+            pattern_key: "x".into(),
+            context_fingerprint_sha256: "ctx".into(),
+            promotion_state: PromotionState::Governed,
+            evidence_class: EvidenceClass::Production,
+            evidence_count: 2,
+            success_count: 0,
+            failure_count: 3,
+            reuse_count: 0,
+            confidence: 0.9,
+            root_cause: Some("bad context".into()),
+            remediation: Some("retrieve more context".into()),
+            safe_retry_conditions: Some("context complete".into()),
+            fresh_until_epoch_s: 100,
+            source_state_sha256: "s".into(),
+            evidence_sha256: "e".into(),
+        };
+        assert!(unfruitful_guard_blocks(&p, "ctx", 10));
+        assert!(!unfruitful_guard_blocks(&p, "other", 10));
     }
 }

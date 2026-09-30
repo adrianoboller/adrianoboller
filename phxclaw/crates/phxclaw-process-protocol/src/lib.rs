@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use phxclaw_sandbox::{SandboxBackend, SandboxError};
-use phxclaw_types::{new_uuid_v7, PluginManifest};
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use phxclaw_types::{PluginManifest, new_uuid_v7};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
 use std::{
     io::{Read, Write},
@@ -168,11 +168,13 @@ impl<B: SandboxBackend> ProcessRunner<B> {
                     handle.read_to_string(&mut stderr)?;
                 }
                 if !status.success() {
-                    return Err(ProcessProtocolError::ProcessFailed(if stderr.trim().is_empty() {
-                        status.to_string()
-                    } else {
-                        stderr.trim().to_owned()
-                    }));
+                    return Err(ProcessProtocolError::ProcessFailed(
+                        if stderr.trim().is_empty() {
+                            status.to_string()
+                        } else {
+                            stderr.trim().to_owned()
+                        },
+                    ));
                 }
                 if stdout.len() > MAX_FRAME_BYTES {
                     return Err(ProcessProtocolError::FrameTooLarge);

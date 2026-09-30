@@ -1,8 +1,11 @@
 use chrono::Utc;
 use phxclaw_event_bus::EventEnvelope;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
-use std::{collections::VecDeque, sync::{Arc, RwLock}};
+use serde_json::{Value, json};
+use std::{
+    collections::VecDeque,
+    sync::{Arc, RwLock},
+};
 use thiserror::Error;
 use tokio::sync::broadcast;
 use uuid::Uuid;
@@ -80,13 +83,30 @@ impl LiveEventHub {
     pub fn snapshot(&self, limit: usize) -> Result<Vec<EventEnvelope>, LiveBusError> {
         let replay = self.replay.read().map_err(|_| LiveBusError::Poisoned)?;
         let take = limit.max(1).min(replay.len());
-        Ok(replay.iter().skip(replay.len().saturating_sub(take)).cloned().collect())
+        Ok(replay
+            .iter()
+            .skip(replay.len().saturating_sub(take))
+            .cloned()
+            .collect())
     }
 
-    pub fn since(&self, event_uuid: Uuid, limit: usize) -> Result<Vec<EventEnvelope>, LiveBusError> {
+    pub fn since(
+        &self,
+        event_uuid: Uuid,
+        limit: usize,
+    ) -> Result<Vec<EventEnvelope>, LiveBusError> {
         let replay = self.replay.read().map_err(|_| LiveBusError::Poisoned)?;
-        let start = replay.iter().position(|e| e.uuid == event_uuid).map(|i| i + 1).unwrap_or(0);
-        Ok(replay.iter().skip(start).take(limit.max(1)).cloned().collect())
+        let start = replay
+            .iter()
+            .position(|e| e.uuid == event_uuid)
+            .map(|i| i + 1)
+            .unwrap_or(0);
+        Ok(replay
+            .iter()
+            .skip(start)
+            .take(limit.max(1))
+            .cloned()
+            .collect())
     }
 
     pub fn stats(&self) -> Result<LiveBusStats, LiveBusError> {
@@ -114,8 +134,12 @@ impl LiveEventHub {
 }
 
 fn validate(event: &EventEnvelope) -> Result<(), LiveBusError> {
-    if event.topic.trim().is_empty() { return Err(LiveBusError::EmptyTopic); }
-    if event.event_type.trim().is_empty() { return Err(LiveBusError::EmptyEventType); }
+    if event.topic.trim().is_empty() {
+        return Err(LiveBusError::EmptyTopic);
+    }
+    if event.event_type.trim().is_empty() {
+        return Err(LiveBusError::EmptyEventType);
+    }
     Ok(())
 }
 
@@ -127,7 +151,9 @@ mod tests {
     async fn publish_replay_and_receive() {
         let hub = LiveEventHub::new(32, 3);
         let mut rx = hub.subscribe();
-        let event = hub.publish_json("test", "created", json!({"ok": true}), None, None).unwrap();
+        let event = hub
+            .publish_json("test", "created", json!({"ok": true}), None, None)
+            .unwrap();
         assert_eq!(rx.recv().await.unwrap().uuid, event.uuid);
         assert_eq!(hub.snapshot(10).unwrap().len(), 1);
     }
@@ -136,7 +162,8 @@ mod tests {
     fn replay_is_bounded() {
         let hub = LiveEventHub::new(16, 2);
         for n in 0..4 {
-            hub.publish_json("test", "n", json!({"n": n}), None, None).unwrap();
+            hub.publish_json("test", "n", json!({"n": n}), None, None)
+                .unwrap();
         }
         let replay = hub.snapshot(10).unwrap();
         assert_eq!(replay.len(), 2);

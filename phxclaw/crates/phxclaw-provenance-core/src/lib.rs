@@ -57,7 +57,10 @@ pub fn evaluate(claim: &ProvenanceClaim<'_>) -> Evaluation {
         reasons.push(ReasonCode::ProprietarySource);
     }
     if !reasons.is_empty() {
-        return Evaluation { decision: IngestionDecision::Deny, reasons };
+        return Evaluation {
+            decision: IngestionDecision::Deny,
+            reasons,
+        };
     }
 
     if !claim.origin_known {
@@ -77,7 +80,10 @@ pub fn evaluate(claim: &ProvenanceClaim<'_>) -> Evaluation {
     }
 
     if !reasons.is_empty() {
-        return Evaluation { decision: IngestionDecision::Quarantine, reasons };
+        return Evaluation {
+            decision: IngestionDecision::Quarantine,
+            reasons,
+        };
     }
 
     Evaluation {

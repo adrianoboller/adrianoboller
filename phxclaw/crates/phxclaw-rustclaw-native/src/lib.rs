@@ -14,13 +14,13 @@
 
 use chrono::{DateTime, Utc};
 use phxclaw_mcp_lsp_runtime::{
-    decode_content_length_message, decode_mcp_line, encode_content_length_message,
-    encode_mcp_line, qualified_tool_name, ProtocolError,
+    ProtocolError, decode_content_length_message, decode_mcp_line, encode_content_length_message,
+    encode_mcp_line, qualified_tool_name,
 };
 use phxclaw_memory_context::MemoryScope;
 use phxclaw_types::new_uuid_v7;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use thiserror::Error;
@@ -185,7 +185,11 @@ pub struct NativeSessionStore {
 }
 
 impl NativeSessionStore {
-    pub fn create(&mut self, principal_uuid: Option<Uuid>, channel: Option<String>) -> NativeSession {
+    pub fn create(
+        &mut self,
+        principal_uuid: Option<Uuid>,
+        channel: Option<String>,
+    ) -> NativeSession {
         let now = Utc::now();
         let session = NativeSession {
             uuid: new_uuid_v7(),
@@ -331,7 +335,11 @@ pub fn decode_mcp_compat(mode: McpWireMode, input: &[u8]) -> Result<(Value, usiz
 }
 
 pub fn rustclaw_legacy_tool_name(server_name: &str, tool_name: &str) -> String {
-    format!("mcp_{}_{}", normalize_legacy_name(server_name), normalize_legacy_name(tool_name))
+    format!(
+        "mcp_{}_{}",
+        normalize_legacy_name(server_name),
+        normalize_legacy_name(tool_name)
+    )
 }
 
 pub fn phoenix_tool_name(server_name: &str, tool_name: &str) -> String {
@@ -341,7 +349,13 @@ pub fn phoenix_tool_name(server_name: &str, tool_name: &str) -> String {
 fn normalize_legacy_name(value: &str) -> String {
     value
         .chars()
-        .map(|ch| if ch.is_ascii_alphanumeric() || ch == '_' { ch } else { '_' })
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '_' {
+                ch
+            } else {
+                '_'
+            }
+        })
         .collect()
 }
 
@@ -431,7 +445,13 @@ mod tests {
 
     #[test]
     fn canonical_mcp_name_is_collision_resistant() {
-        assert_eq!(phoenix_tool_name("server.one", "weather tool"), "mcp__server_one__weather_tool");
-        assert_eq!(rustclaw_legacy_tool_name("server.one", "weather tool"), "mcp_server_one_weather_tool");
+        assert_eq!(
+            phoenix_tool_name("server.one", "weather tool"),
+            "mcp__server_one__weather_tool"
+        );
+        assert_eq!(
+            rustclaw_legacy_tool_name("server.one", "weather tool"),
+            "mcp_server_one_weather_tool"
+        );
     }
 }

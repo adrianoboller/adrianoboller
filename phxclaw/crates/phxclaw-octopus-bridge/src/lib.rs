@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -88,8 +88,9 @@ impl OctopusBridge {
     }
 
     pub fn health(&self) -> Result<Value, OctopusBridgeError> {
-        let executable = resolve_executable(&self.config.executable)
-            .ok_or_else(|| OctopusBridgeError::ExecutableUnavailable(self.config.executable.display().to_string()))?;
+        let executable = resolve_executable(&self.config.executable).ok_or_else(|| {
+            OctopusBridgeError::ExecutableUnavailable(self.config.executable.display().to_string())
+        })?;
         Ok(json!({
             "healthy": true,
             "executable": executable,
@@ -98,12 +99,19 @@ impl OctopusBridge {
         }))
     }
 
-    pub fn invoke(&self, capability: &str, payload: &Value) -> Result<BridgeResult, OctopusBridgeError> {
+    pub fn invoke(
+        &self,
+        capability: &str,
+        payload: &Value,
+    ) -> Result<BridgeResult, OctopusBridgeError> {
         if !Self::supported_capabilities().contains(&capability) {
-            return Err(OctopusBridgeError::UnsupportedCapability(capability.to_owned()));
+            return Err(OctopusBridgeError::UnsupportedCapability(
+                capability.to_owned(),
+            ));
         }
-        let executable = resolve_executable(&self.config.executable)
-            .ok_or_else(|| OctopusBridgeError::ExecutableUnavailable(self.config.executable.display().to_string()))?;
+        let executable = resolve_executable(&self.config.executable).ok_or_else(|| {
+            OctopusBridgeError::ExecutableUnavailable(self.config.executable.display().to_string())
+        })?;
         let args = self.build_args(capability, payload)?;
         let started = Instant::now();
         let mut child = Command::new(&executable)
@@ -116,7 +124,9 @@ impl OctopusBridge {
         loop {
             if child.try_wait()?.is_some() {
                 let output = child.wait_with_output()?;
-                if output.stdout.len() > self.config.max_output_bytes || output.stderr.len() > self.config.max_output_bytes {
+                if output.stdout.len() > self.config.max_output_bytes
+                    || output.stderr.len() > self.config.max_output_bytes
+                {
                     return Err(OctopusBridgeError::OutputTooLarge);
                 }
                 let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
@@ -142,11 +152,18 @@ impl OctopusBridge {
         }
     }
 
-    fn build_args(&self, capability: &str, payload: &Value) -> Result<Vec<String>, OctopusBridgeError> {
+    fn build_args(
+        &self,
+        capability: &str,
+        payload: &Value,
+    ) -> Result<Vec<String>, OctopusBridgeError> {
         match capability {
             "octopus.repo.map" => {
                 let workspace = self.safe_path(require_str(payload, "workspace")?)?;
-                let token_budget = payload.get("token_budget").and_then(Value::as_u64).unwrap_or(2048);
+                let token_budget = payload
+                    .get("token_budget")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(2048);
                 Ok(vec![
                     "repo-map".into(),
                     workspace.display().to_string(),
@@ -158,7 +175,10 @@ impl OctopusBridge {
                 let workspace = self.safe_path(require_str(payload, "workspace")?)?;
                 let pattern = require_str(payload, "pattern")?;
                 let context = payload.get("context").and_then(Value::as_u64).unwrap_or(3);
-                let exts = payload.get("exts").and_then(Value::as_str).unwrap_or("rs,py,c,go");
+                let exts = payload
+                    .get("exts")
+                    .and_then(Value::as_str)
+                    .unwrap_or("rs,py,c,go");
                 Ok(vec![
                     "repo-grep".into(),
                     workspace.display().to_string(),
@@ -171,7 +191,11 @@ impl OctopusBridge {
             }
             "octopus.code.analyze" => {
                 let path = self.safe_path(require_str(payload, "path")?)?;
-                let mut args = vec!["code-analyze".into(), "--path".into(), path.display().to_string()];
+                let mut args = vec![
+                    "code-analyze".into(),
+                    "--path".into(),
+                    path.display().to_string(),
+                ];
                 if let Some(language) = payload.get("language").and_then(Value::as_str) {
                     args.extend(["--language".into(), language.into()]);
                 }
@@ -183,18 +207,40 @@ impl OctopusBridge {
             }
             "octopus.security.scan" => {
                 let workspace = self.safe_path(require_str(payload, "workspace")?)?;
-                let output = self.safe_path(payload.get("output").and_then(Value::as_str).unwrap_or("logs/security_scan.json"))?;
-                Ok(vec!["security-scan".into(), workspace.display().to_string(), output.display().to_string()])
+                let output = self.safe_path(
+                    payload
+                        .get("output")
+                        .and_then(Value::as_str)
+                        .unwrap_or("logs/security_scan.json"),
+                )?;
+                Ok(vec![
+                    "security-scan".into(),
+                    workspace.display().to_string(),
+                    output.display().to_string(),
+                ])
             }
             "octopus.migration.plan" => {
                 let workspace = self.safe_path(require_str(payload, "workspace")?)?;
-                let output = self.safe_path(payload.get("output").and_then(Value::as_str).unwrap_or("logs/migration_plan.json"))?;
-                Ok(vec!["migration-plan".into(), workspace.display().to_string(), output.display().to_string()])
+                let output = self.safe_path(
+                    payload
+                        .get("output")
+                        .and_then(Value::as_str)
+                        .unwrap_or("logs/migration_plan.json"),
+                )?;
+                Ok(vec![
+                    "migration-plan".into(),
+                    workspace.display().to_string(),
+                    output.display().to_string(),
+                ])
             }
             "octopus.contract.verify" => {
                 let py_file = self.safe_path(require_str(payload, "py_file")?)?;
                 let rs_file = self.safe_path(require_str(payload, "rs_file")?)?;
-                Ok(vec!["contract-verify".into(), py_file.display().to_string(), rs_file.display().to_string()])
+                Ok(vec![
+                    "contract-verify".into(),
+                    py_file.display().to_string(),
+                    rs_file.display().to_string(),
+                ])
             }
             "octopus.shadow.check" => {
                 let file = self.safe_path(require_str(payload, "file")?)?;
@@ -207,7 +253,11 @@ impl OctopusBridge {
             "octopus.knowledge.search" => {
                 let db = self.safe_path(require_str(payload, "db")?)?;
                 let query = require_str(payload, "query")?;
-                Ok(vec!["knowledge-search".into(), db.display().to_string(), query.into()])
+                Ok(vec![
+                    "knowledge-search".into(),
+                    db.display().to_string(),
+                    query.into(),
+                ])
             }
             "octopus.toolchain.status" => Ok(vec!["toolchain-status".into()]),
             other => Err(OctopusBridgeError::UnsupportedCapability(other.into())),
@@ -217,7 +267,11 @@ impl OctopusBridge {
     fn safe_path(&self, input: &str) -> Result<PathBuf, OctopusBridgeError> {
         let root = canonical_or_current(&self.config.workspace_root)?;
         let candidate = Path::new(input);
-        let joined = if candidate.is_absolute() { candidate.to_path_buf() } else { root.join(candidate) };
+        let joined = if candidate.is_absolute() {
+            candidate.to_path_buf()
+        } else {
+            root.join(candidate)
+        };
         let resolved = canonical_or_lexical(&joined)?;
         if !resolved.starts_with(&root) {
             return Err(OctopusBridgeError::PathOutsideWorkspace(input.into()));
@@ -238,7 +292,9 @@ fn canonical_or_current(path: &Path) -> Result<PathBuf, OctopusBridgeError> {
     if path.exists() {
         Ok(fs::canonicalize(path)?)
     } else {
-        Err(OctopusBridgeError::PathOutsideWorkspace(path.display().to_string()))
+        Err(OctopusBridgeError::PathOutsideWorkspace(
+            path.display().to_string(),
+        ))
     }
 }
 
@@ -246,9 +302,13 @@ fn canonical_or_lexical(path: &Path) -> Result<PathBuf, OctopusBridgeError> {
     if path.exists() {
         return Ok(fs::canonicalize(path)?);
     }
-    let parent = path.parent().ok_or_else(|| OctopusBridgeError::InvalidPayload("path has no parent".into()))?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| OctopusBridgeError::InvalidPayload("path has no parent".into()))?;
     let parent = fs::canonicalize(parent)?;
-    let file_name = path.file_name().ok_or_else(|| OctopusBridgeError::InvalidPayload("path has no basename".into()))?;
+    let file_name = path
+        .file_name()
+        .ok_or_else(|| OctopusBridgeError::InvalidPayload("path has no basename".into()))?;
     Ok(parent.join(file_name))
 }
 

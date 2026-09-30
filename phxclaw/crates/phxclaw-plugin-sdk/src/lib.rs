@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use phxclaw_types::{new_uuid_v7, PermissionClaim};
+use phxclaw_types::{PermissionClaim, new_uuid_v7};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
@@ -40,7 +40,12 @@ pub struct HookInvocation {
 }
 
 impl HookInvocation {
-    pub fn new(correlation_uuid: Uuid, hook: ExtensionHook, actor: impl Into<String>, payload: Value) -> Self {
+    pub fn new(
+        correlation_uuid: Uuid,
+        hook: ExtensionHook,
+        actor: impl Into<String>,
+        payload: Value,
+    ) -> Self {
         Self {
             uuid: new_uuid_v7(),
             correlation_uuid,

@@ -21,7 +21,11 @@ pub struct DesktopActionRequest {
 }
 
 impl DesktopActionRequest {
-    pub fn new(actor: impl Into<String>, capability: impl Into<String>, action: DesktopAction) -> Self {
+    pub fn new(
+        actor: impl Into<String>,
+        capability: impl Into<String>,
+        action: DesktopAction,
+    ) -> Self {
         Self {
             protocol: DESKTOP_PROTOCOL.into(),
             uuid: new_uuid_v7(),
@@ -80,7 +84,11 @@ pub struct DesktopActionResult {
 }
 
 impl DesktopActionResult {
-    pub fn finished(request: &DesktopActionRequest, status: DesktopActionStatus, output: Value) -> Self {
+    pub fn finished(
+        request: &DesktopActionRequest,
+        status: DesktopActionStatus,
+        output: Value,
+    ) -> Self {
         Self {
             protocol: DESKTOP_PROTOCOL.into(),
             uuid: new_uuid_v7(),

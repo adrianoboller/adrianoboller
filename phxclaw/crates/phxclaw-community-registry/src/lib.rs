@@ -82,7 +82,10 @@ impl CommunityRegistryIndex {
     pub fn validate(&self) -> RegistryValidationReport {
         let mut errors = Vec::new();
         if Version::parse(&self.registry_version).is_err() {
-            errors.push(format!("invalid registry_version: {}", self.registry_version));
+            errors.push(format!(
+                "invalid registry_version: {}",
+                self.registry_version
+            ));
         }
 
         let mut publishers = BTreeMap::new();
@@ -116,13 +119,22 @@ impl CommunityRegistryIndex {
                 errors.push(format!("{} uses a non-UUIDv7 plugin id", release.name));
             }
             if Version::parse(&release.version).is_err() {
-                errors.push(format!("{} has invalid semver {}", release.name, release.version));
+                errors.push(format!(
+                    "{} has invalid semver {}",
+                    release.name, release.version
+                ));
             }
             if VersionReq::parse(&release.core_api).is_err() {
-                errors.push(format!("{} has invalid core_api {}", release.name, release.core_api));
+                errors.push(format!(
+                    "{} has invalid core_api {}",
+                    release.name, release.core_api
+                ));
             }
             if !publishers.contains_key(&release.publisher_id) {
-                errors.push(format!("{} references unknown publisher {}", release.name, release.publisher_id));
+                errors.push(format!(
+                    "{} references unknown publisher {}",
+                    release.name, release.publisher_id
+                ));
             }
             if release.license.trim().is_empty() {
                 errors.push(format!("{} is missing license metadata", release.name));
@@ -136,7 +148,10 @@ impl CommunityRegistryIndex {
                 }
             }
             if release.signature_algorithm != "ed25519" || release.signature.trim().is_empty() {
-                errors.push(format!("{} must be published with an Ed25519 signature", release.name));
+                errors.push(format!(
+                    "{} must be published with an Ed25519 signature",
+                    release.name
+                ));
             }
             if release.signer.trim().is_empty() || release.provenance.trim().is_empty() {
                 errors.push(format!("{} is missing signer/provenance", release.name));
@@ -148,17 +163,27 @@ impl CommunityRegistryIndex {
                 errors.push(format!("{} has invalid source_repository", release.name));
             }
             if let Ok(url) = Url::parse(&release.package_url) {
-                if url.scheme() != "https" && publishers.get(&release.publisher_id).is_some_and(|p| p.trust_tier != TrustTier::LocalDevelopment) {
+                if url.scheme() != "https"
+                    && publishers
+                        .get(&release.publisher_id)
+                        .is_some_and(|p| p.trust_tier != TrustTier::LocalDevelopment)
+                {
                     errors.push(format!("{} package_url must use https", release.name));
                 }
             } else {
                 errors.push(format!("{} has invalid package_url", release.name));
             }
             if !release_keys.insert((release.plugin_uuid, release.version.clone())) {
-                errors.push(format!("duplicate release {} {}", release.plugin_uuid, release.version));
+                errors.push(format!(
+                    "duplicate release {} {}",
+                    release.plugin_uuid, release.version
+                ));
             }
             if !name_versions.insert((release.name.clone(), release.version.clone())) {
-                errors.push(format!("duplicate name/version {} {}", release.name, release.version));
+                errors.push(format!(
+                    "duplicate name/version {} {}",
+                    release.name, release.version
+                ));
             }
         }
 
@@ -170,17 +195,24 @@ impl CommunityRegistryIndex {
         }
     }
 
-    pub fn compatible_releases<'a>(&'a self, core_version: &Version) -> Vec<&'a CommunityPluginRelease> {
+    pub fn compatible_releases<'a>(
+        &'a self,
+        core_version: &Version,
+    ) -> Vec<&'a CommunityPluginRelease> {
         let mut releases = self
             .releases
             .iter()
             .filter(|release| !release.yanked)
-            .filter(|release| VersionReq::parse(&release.core_api).is_ok_and(|req| req.matches(core_version)))
+            .filter(|release| {
+                VersionReq::parse(&release.core_api).is_ok_and(|req| req.matches(core_version))
+            })
             .collect::<Vec<_>>();
         releases.sort_by(|left, right| {
-            left.name
-                .cmp(&right.name)
-                .then_with(|| Version::parse(&right.version).ok().cmp(&Version::parse(&left.version).ok()))
+            left.name.cmp(&right.name).then_with(|| {
+                Version::parse(&right.version)
+                    .ok()
+                    .cmp(&Version::parse(&left.version).ok())
+            })
         });
         releases
     }

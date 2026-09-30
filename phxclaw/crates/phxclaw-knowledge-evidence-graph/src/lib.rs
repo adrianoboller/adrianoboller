@@ -235,15 +235,24 @@ pub fn authorize_new_node(
 ) -> Result<(), GraphError> {
     validate_node_digests(node)?;
     if authority == MutationAuthority::Learning {
-        if matches!(node.kind, NodeKind::Policy | NodeKind::Constraint | NodeKind::Decision) {
+        if matches!(
+            node.kind,
+            NodeKind::Policy | NodeKind::Constraint | NodeKind::Decision
+        ) {
             return Err(GraphError::ForbiddenAuthority);
         }
-        if !matches!(node.state, EpistemicState::RawObservation | EpistemicState::Unverified) {
+        if !matches!(
+            node.state,
+            EpistemicState::RawObservation | EpistemicState::Unverified
+        ) {
             return Err(GraphError::LearningMustRemainUnverified);
         }
     }
     if matches!(node.state, EpistemicState::Governed)
-        && !matches!(authority, MutationAuthority::Human | MutationAuthority::System)
+        && !matches!(
+            authority,
+            MutationAuthority::Human | MutationAuthority::System
+        )
     {
         return Err(GraphError::ForbiddenAuthority);
     }
@@ -276,8 +285,14 @@ impl KnowledgeGraph {
                 return Err(GraphError::InvalidDigest);
             }
         }
-        let from = self.nodes.get(&edge.from_node_uuid).ok_or(GraphError::NodeNotFound)?;
-        let to = self.nodes.get(&edge.to_node_uuid).ok_or(GraphError::NodeNotFound)?;
+        let from = self
+            .nodes
+            .get(&edge.from_node_uuid)
+            .ok_or(GraphError::NodeNotFound)?;
+        let to = self
+            .nodes
+            .get(&edge.to_node_uuid)
+            .ok_or(GraphError::NodeNotFound)?;
         if from.tenant_uuid != edge.tenant_uuid || to.tenant_uuid != edge.tenant_uuid {
             return Err(GraphError::CrossTenant);
         }
@@ -291,14 +306,24 @@ impl KnowledgeGraph {
         Ok(())
     }
 
-    pub fn bind_evidence(&mut self, binding: EvidenceBinding, now: DateTime<Utc>) -> Result<(), GraphError> {
+    pub fn bind_evidence(
+        &mut self,
+        binding: EvidenceBinding,
+        now: DateTime<Utc>,
+    ) -> Result<(), GraphError> {
         if !valid_sha256_hex(&binding.evidence_sha256_hex)
             || !valid_sha256_hex(&binding.source_state_sha256_hex)
         {
             return Err(GraphError::InvalidDigest);
         }
-        let claim = self.nodes.get(&binding.claim_node_uuid).ok_or(GraphError::NodeNotFound)?;
-        let evidence = self.nodes.get(&binding.evidence_node_uuid).ok_or(GraphError::NodeNotFound)?;
+        let claim = self
+            .nodes
+            .get(&binding.claim_node_uuid)
+            .ok_or(GraphError::NodeNotFound)?;
+        let evidence = self
+            .nodes
+            .get(&binding.evidence_node_uuid)
+            .ok_or(GraphError::NodeNotFound)?;
         if claim.tenant_uuid != binding.tenant_uuid || evidence.tenant_uuid != binding.tenant_uuid {
             return Err(GraphError::CrossTenant);
         }
@@ -317,7 +342,12 @@ impl KnowledgeGraph {
         {
             return Err(GraphError::SourceStateMismatch);
         }
-        if binding.valid_until.as_ref().is_some_and(|until| &now >= until) || now < binding.collected_at {
+        if binding
+            .valid_until
+            .as_ref()
+            .is_some_and(|until| &now >= until)
+            || now < binding.collected_at
+        {
             return Err(GraphError::StaleEvidence);
         }
         if let Some(existing) = self.bindings.get(&binding.binding_uuid) {
@@ -331,9 +361,17 @@ impl KnowledgeGraph {
     }
 
     pub fn add_contradiction(&mut self, contradiction: Contradiction) -> Result<(), GraphError> {
-        let left = self.nodes.get(&contradiction.left_claim_uuid).ok_or(GraphError::NodeNotFound)?;
-        let right = self.nodes.get(&contradiction.right_claim_uuid).ok_or(GraphError::NodeNotFound)?;
-        if left.tenant_uuid != contradiction.tenant_uuid || right.tenant_uuid != contradiction.tenant_uuid {
+        let left = self
+            .nodes
+            .get(&contradiction.left_claim_uuid)
+            .ok_or(GraphError::NodeNotFound)?;
+        let right = self
+            .nodes
+            .get(&contradiction.right_claim_uuid)
+            .ok_or(GraphError::NodeNotFound)?;
+        if left.tenant_uuid != contradiction.tenant_uuid
+            || right.tenant_uuid != contradiction.tenant_uuid
+        {
             return Err(GraphError::CrossTenant);
         }
         if let Some(existing) = self.contradictions.get(&contradiction.contradiction_uuid) {
@@ -374,7 +412,8 @@ impl KnowledgeGraph {
         {
             return Err(GraphError::IdentityCollision);
         }
-        self.resolutions.insert(resolution.resolution_uuid, resolution);
+        self.resolutions
+            .insert(resolution.resolution_uuid, resolution);
         Ok(())
     }
 
@@ -385,7 +424,10 @@ impl KnowledgeGraph {
             .filter(|node| {
                 node.tenant_uuid == tenant_uuid
                     && node.kind == NodeKind::Claim
-                    && matches!(node.state, EpistemicState::Accepted | EpistemicState::Governed)
+                    && matches!(
+                        node.state,
+                        EpistemicState::Accepted | EpistemicState::Governed
+                    )
                     && node.subject_key.is_some()
                     && node.predicate_key.is_some()
                     && node.value_sha256_hex.is_some()
@@ -412,8 +454,14 @@ impl KnowledgeGraph {
         policy: &PromotionPolicy,
         now: DateTime<Utc>,
     ) -> Result<PromotionDecision, GraphError> {
-        let claim = self.nodes.get(&claim_uuid).ok_or(GraphError::NodeNotFound)?;
-        if !matches!(target_state, EpistemicState::Accepted | EpistemicState::Governed) {
+        let claim = self
+            .nodes
+            .get(&claim_uuid)
+            .ok_or(GraphError::NodeNotFound)?;
+        if !matches!(
+            target_state,
+            EpistemicState::Accepted | EpistemicState::Governed
+        ) {
             return Err(GraphError::InvalidPromotionTarget);
         }
         if claim.kind != NodeKind::Claim {
@@ -436,25 +484,34 @@ impl KnowledgeGraph {
             .filter(|binding| {
                 binding.tenant_uuid == claim.tenant_uuid
                     && binding.claim_node_uuid == claim_uuid
-                    && !binding.valid_until.as_ref().is_some_and(|until| &now >= until)
+                    && !binding
+                        .valid_until
+                        .as_ref()
+                        .is_some_and(|until| &now >= until)
                     && now >= binding.collected_at
             })
             .collect();
-        if active.iter().any(|binding| binding.relation == EdgeKind::Refutes) {
+        if active
+            .iter()
+            .any(|binding| binding.relation == EdgeKind::Refutes)
+        {
             return Err(GraphError::RefutingEvidence);
         }
         let supporting: Vec<&EvidenceBinding> = active
             .into_iter()
             .filter(|binding| binding.relation == EdgeKind::Supports)
             .collect();
-        let mechanisms: BTreeSet<&str> = supporting.iter().map(|binding| binding.mechanism.as_str()).collect();
+        let mechanisms: BTreeSet<&str> = supporting
+            .iter()
+            .map(|binding| binding.mechanism.as_str())
+            .collect();
         if supporting.len() < policy.min_supporting_evidence
             || mechanisms.len() < policy.min_independent_mechanisms
         {
             return Err(GraphError::InsufficientEvidence);
         }
-        let requires_human_approval = target_state == EpistemicState::Governed
-            && !policy.allow_governed_without_human;
+        let requires_human_approval =
+            target_state == EpistemicState::Governed && !policy.allow_governed_without_human;
         Ok(PromotionDecision {
             claim_node_uuid: claim_uuid,
             target_state,
@@ -472,7 +529,10 @@ impl KnowledgeGraph {
         human_approved: bool,
         now: DateTime<Utc>,
     ) -> Result<(KnowledgeNode, KnowledgeEdge), GraphError> {
-        let claim = self.nodes.get(&claim_uuid).ok_or(GraphError::NodeNotFound)?;
+        let claim = self
+            .nodes
+            .get(&claim_uuid)
+            .ok_or(GraphError::NodeNotFound)?;
         if !decision.eligible || decision.claim_node_uuid != claim_uuid {
             return Err(GraphError::InsufficientEvidence);
         }
@@ -495,16 +555,21 @@ impl KnowledgeGraph {
         Ok((promoted, edge))
     }
 
-
     pub fn node(&self, node_uuid: Uuid) -> Option<&KnowledgeNode> {
         self.nodes.get(&node_uuid)
     }
 
     pub fn unresolved_contradiction_count(&self, claim_uuid: Uuid) -> usize {
-        self.contradictions.values().filter(|item| {
-            (item.left_claim_uuid == claim_uuid || item.right_claim_uuid == claim_uuid)
-                && !self.resolutions.values().any(|resolution| resolution.contradiction_uuid == item.contradiction_uuid)
-        }).count()
+        self.contradictions
+            .values()
+            .filter(|item| {
+                (item.left_claim_uuid == claim_uuid || item.right_claim_uuid == claim_uuid)
+                    && !self
+                        .resolutions
+                        .values()
+                        .any(|resolution| resolution.contradiction_uuid == item.contradiction_uuid)
+            })
+            .count()
     }
 
     pub fn rejected_claim_version(
@@ -512,7 +577,10 @@ impl KnowledgeGraph {
         claim_uuid: Uuid,
         now: DateTime<Utc>,
     ) -> Result<(KnowledgeNode, KnowledgeEdge), GraphError> {
-        let claim = self.nodes.get(&claim_uuid).ok_or(GraphError::NodeNotFound)?;
+        let claim = self
+            .nodes
+            .get(&claim_uuid)
+            .ok_or(GraphError::NodeNotFound)?;
         if claim.kind != NodeKind::Claim {
             return Err(GraphError::InvalidPromotionTarget);
         }
@@ -550,9 +618,11 @@ impl KnowledgeGraph {
             if seen.len() >= max_nodes || !seen.insert(node_uuid) || depth >= max_depth {
                 continue;
             }
-            for edge in self.edges.values().filter(|edge| {
-                edge.tenant_uuid == tenant_uuid && edge.from_node_uuid == node_uuid
-            }) {
+            for edge in self
+                .edges
+                .values()
+                .filter(|edge| edge.tenant_uuid == tenant_uuid && edge.from_node_uuid == node_uuid)
+            {
                 if !seen.contains(&edge.to_node_uuid) {
                     queue.push_back((edge.to_node_uuid, depth + 1));
                 }
@@ -565,7 +635,11 @@ impl KnowledgeGraph {
         let mut records = Vec::new();
         let mut node_count = 0usize;
         let mut edge_count = 0usize;
-        for node in self.nodes.values().filter(|node| node.tenant_uuid == tenant_uuid) {
+        for node in self
+            .nodes
+            .values()
+            .filter(|node| node.tenant_uuid == tenant_uuid)
+        {
             node_count += 1;
             records.push(format!(
                 "N|{}|{:?}|{:?}|{}|{}",
@@ -576,7 +650,11 @@ impl KnowledgeGraph {
                 node.source_state_sha256_hex.to_ascii_lowercase()
             ));
         }
-        for edge in self.edges.values().filter(|edge| edge.tenant_uuid == tenant_uuid) {
+        for edge in self
+            .edges
+            .values()
+            .filter(|edge| edge.tenant_uuid == tenant_uuid)
+        {
             edge_count += 1;
             records.push(format!(
                 "E|{}|{}|{}|{:?}|{}",
@@ -587,7 +665,11 @@ impl KnowledgeGraph {
                 edge.evidence_sha256_hex.as_deref().unwrap_or("-")
             ));
         }
-        for binding in self.bindings.values().filter(|binding| binding.tenant_uuid == tenant_uuid) {
+        for binding in self
+            .bindings
+            .values()
+            .filter(|binding| binding.tenant_uuid == tenant_uuid)
+        {
             records.push(format!(
                 "B|{}|{}|{}|{:?}|{}|{}|{}",
                 binding.binding_uuid,
@@ -599,7 +681,11 @@ impl KnowledgeGraph {
                 binding.mechanism
             ));
         }
-        for contradiction in self.contradictions.values().filter(|item| item.tenant_uuid == tenant_uuid) {
+        for contradiction in self
+            .contradictions
+            .values()
+            .filter(|item| item.tenant_uuid == tenant_uuid)
+        {
             records.push(format!(
                 "C|{}|{}|{}",
                 contradiction.contradiction_uuid,
@@ -607,7 +693,11 @@ impl KnowledgeGraph {
                 contradiction.right_claim_uuid
             ));
         }
-        for resolution in self.resolutions.values().filter(|item| item.tenant_uuid == tenant_uuid) {
+        for resolution in self
+            .resolutions
+            .values()
+            .filter(|item| item.tenant_uuid == tenant_uuid)
+        {
             records.push(format!(
                 "R|{}|{}|{}|{}|{}",
                 resolution.resolution_uuid,
@@ -657,14 +747,20 @@ mod tests {
     fn learning_cannot_create_policy() {
         let tenant = Uuid::now_v7();
         let policy = node(tenant, NodeKind::Policy, EpistemicState::Unverified, 'a');
-        assert_eq!(authorize_new_node(MutationAuthority::Learning, &policy), Err(GraphError::ForbiddenAuthority));
+        assert_eq!(
+            authorize_new_node(MutationAuthority::Learning, &policy),
+            Err(GraphError::ForbiddenAuthority)
+        );
     }
 
     #[test]
     fn learning_cannot_mark_claim_accepted() {
         let tenant = Uuid::now_v7();
         let claim = node(tenant, NodeKind::Claim, EpistemicState::Accepted, 'a');
-        assert_eq!(authorize_new_node(MutationAuthority::Learning, &claim), Err(GraphError::LearningMustRemainUnverified));
+        assert_eq!(
+            authorize_new_node(MutationAuthority::Learning, &claim),
+            Err(GraphError::LearningMustRemainUnverified)
+        );
     }
 
     #[test]
@@ -673,8 +769,12 @@ mod tests {
         let mut graph = KnowledgeGraph::default();
         let claim = node(tenant, NodeKind::Claim, EpistemicState::Unverified, 'a');
         let evidence = node(tenant, NodeKind::Evidence, EpistemicState::Accepted, 'b');
-        graph.add_node(MutationAuthority::Agent, claim.clone()).unwrap();
-        graph.add_node(MutationAuthority::System, evidence.clone()).unwrap();
+        graph
+            .add_node(MutationAuthority::Agent, claim.clone())
+            .unwrap();
+        graph
+            .add_node(MutationAuthority::System, evidence.clone())
+            .unwrap();
         let binding = EvidenceBinding {
             binding_uuid: Uuid::now_v7(),
             tenant_uuid: tenant,
@@ -687,7 +787,10 @@ mod tests {
             collected_at: Utc::now(),
             valid_until: None,
         };
-        assert_eq!(graph.bind_evidence(binding, Utc::now()), Err(GraphError::SourceStateMismatch));
+        assert_eq!(
+            graph.bind_evidence(binding, Utc::now()),
+            Err(GraphError::SourceStateMismatch)
+        );
     }
 
     #[test]
@@ -713,17 +816,28 @@ mod tests {
         let mut graph = KnowledgeGraph::default();
         let claim = node(tenant, NodeKind::Claim, EpistemicState::Unverified, 'a');
         let other = node(tenant, NodeKind::Claim, EpistemicState::Accepted, 'b');
-        graph.add_node(MutationAuthority::Agent, claim.clone()).unwrap();
-        graph.add_node(MutationAuthority::System, other.clone()).unwrap();
-        graph.add_contradiction(Contradiction {
-            contradiction_uuid: Uuid::now_v7(),
-            tenant_uuid: tenant,
-            left_claim_uuid: claim.node_uuid,
-            right_claim_uuid: other.node_uuid,
-            detected_at: Utc::now(),
-        }).unwrap();
+        graph
+            .add_node(MutationAuthority::Agent, claim.clone())
+            .unwrap();
+        graph
+            .add_node(MutationAuthority::System, other.clone())
+            .unwrap();
+        graph
+            .add_contradiction(Contradiction {
+                contradiction_uuid: Uuid::now_v7(),
+                tenant_uuid: tenant,
+                left_claim_uuid: claim.node_uuid,
+                right_claim_uuid: other.node_uuid,
+                detected_at: Utc::now(),
+            })
+            .unwrap();
         assert_eq!(
-            graph.evaluate_claim_promotion(claim.node_uuid, EpistemicState::Accepted, &PromotionPolicy::default(), Utc::now()),
+            graph.evaluate_claim_promotion(
+                claim.node_uuid,
+                EpistemicState::Accepted,
+                &PromotionPolicy::default(),
+                Utc::now()
+            ),
             Err(GraphError::UnresolvedContradiction)
         );
     }

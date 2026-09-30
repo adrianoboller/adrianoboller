@@ -6,8 +6,8 @@ use phxclaw_process_protocol::{
     ProcessEnvelope, ProcessMessageKind, ProcessProtocolError, ProcessReplyStatus, ProcessRunner,
 };
 use phxclaw_sandbox::SandboxBackend;
-use phxclaw_types::{new_uuid_v7, PermissionClaim, PluginManifest, PluginState};
-use serde_json::{json, Value};
+use phxclaw_types::{PermissionClaim, PluginManifest, PluginState, new_uuid_v7};
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use thiserror::Error;
@@ -33,11 +33,18 @@ pub enum ExtensionHostError {
     #[error("no enabled plugin provides capability {0}")]
     NoProvider(String),
     #[error("capability {capability} is ambiguous across enabled plugins: {plugins:?}")]
-    Ambiguous { capability: String, plugins: Vec<Uuid> },
+    Ambiguous {
+        capability: String,
+        plugins: Vec<Uuid>,
+    },
     #[error("pinned plugin {plugin} does not provide enabled capability {capability}")]
     InvalidPin { capability: String, plugin: Uuid },
     #[error("permission denied for plugin {plugin}: {permission} scope={scope}")]
-    PermissionDenied { plugin: String, permission: String, scope: String },
+    PermissionDenied {
+        plugin: String,
+        permission: String,
+        scope: String,
+    },
     #[error("plugin process failure: {0}")]
     Process(#[from] ProcessProtocolError),
     #[error("event bus failure: {0}")]
@@ -82,7 +89,10 @@ impl<B: SandboxBackend> ExtensionHost<B> {
         &mut self.routes
     }
 
-    pub fn route_capability(&self, capability: &str) -> Result<&PluginManifest, ExtensionHostError> {
+    pub fn route_capability(
+        &self,
+        capability: &str,
+    ) -> Result<&PluginManifest, ExtensionHostError> {
         if let Some(plugin_uuid) = self.routes.pinned(capability) {
             let valid = self
                 .registry
@@ -112,7 +122,10 @@ impl<B: SandboxBackend> ExtensionHost<B> {
         }
     }
 
-    pub fn invoke(&self, request: &CapabilityInvocation) -> Result<CapabilityResult, ExtensionHostError> {
+    pub fn invoke(
+        &self,
+        request: &CapabilityInvocation,
+    ) -> Result<CapabilityResult, ExtensionHostError> {
         let manifest = self.route_capability(&request.capability)?;
         authorize(manifest, &request.requested_permissions)?;
 
@@ -144,7 +157,11 @@ impl<B: SandboxBackend> ExtensionHost<B> {
         match self.runner.request::<Value, Value>(manifest, &envelope) {
             Ok(reply) => {
                 let success = reply.status == ProcessReplyStatus::Ok;
-                let status = if success { InvocationStatus::Succeeded } else { InvocationStatus::Rejected };
+                let status = if success {
+                    InvocationStatus::Succeeded
+                } else {
+                    InvocationStatus::Rejected
+                };
                 let result = CapabilityResult {
                     uuid: new_uuid_v7(),
                     invocation_uuid: request.uuid,
@@ -155,7 +172,11 @@ impl<B: SandboxBackend> ExtensionHost<B> {
                     error_message: reply.error.as_ref().map(|error| error.message.clone()),
                     emitted_at: chrono::Utc::now(),
                 };
-                let outcome = if success { EvidenceOutcome::Succeeded } else { EvidenceOutcome::Denied };
+                let outcome = if success {
+                    EvidenceOutcome::Succeeded
+                } else {
+                    EvidenceOutcome::Denied
+                };
                 let evidence = self.evidence.append(EvidenceDraft {
                     action_uuid: request.uuid,
                     correlation_uuid: Some(request.correlation_uuid),
@@ -222,11 +243,17 @@ impl<B: SandboxBackend> ExtensionHost<B> {
     }
 }
 
-fn authorize(manifest: &PluginManifest, claims: &[PermissionClaim]) -> Result<(), ExtensionHostError> {
+fn authorize(
+    manifest: &PluginManifest,
+    claims: &[PermissionClaim],
+) -> Result<(), ExtensionHostError> {
     for claim in claims {
         let allowed = manifest.permissions.iter().any(|permission| {
             permission.name == claim.name
-                && permission.scopes.iter().any(|scope| scope == "*" || scope == &claim.scope)
+                && permission
+                    .scopes
+                    .iter()
+                    .any(|scope| scope == "*" || scope == &claim.scope)
         });
         if !allowed {
             return Err(ExtensionHostError::PermissionDenied {
@@ -241,5 +268,8 @@ fn authorize(manifest: &PluginManifest, claims: &[PermissionClaim]) -> Result<()
 
 fn sha256_json(value: &Value) -> String {
     let bytes = serde_json::to_vec(value).unwrap_or_default();
-    Sha256::digest(bytes).iter().map(|byte| format!("{byte:02x}")).collect()
+    Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }

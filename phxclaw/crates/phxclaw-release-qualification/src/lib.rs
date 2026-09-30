@@ -103,14 +103,31 @@ pub fn verify_attestation_signature(
     attestation: &ReleaseAttestationV025,
     trusted_signers: &[TrustedReleaseSigner],
 ) -> Result<(), QualificationError> {
-    let key_id = attestation.signer_key_id.as_deref().ok_or(QualificationError::SignatureRequired)?;
-    let signature_b64 = attestation.signature_b64.as_deref().ok_or(QualificationError::SignatureRequired)?;
-    let signer = trusted_signers.iter().find(|s| s.key_id == key_id).ok_or(QualificationError::SignerNotTrusted)?;
-    let key_bytes = STANDARD.decode(&signer.public_key_b64).map_err(|_| QualificationError::InvalidPublicKey)?;
-    let key_array: [u8; 32] = key_bytes.try_into().map_err(|_| QualificationError::InvalidPublicKey)?;
-    let key = VerifyingKey::from_bytes(&key_array).map_err(|_| QualificationError::InvalidPublicKey)?;
-    let sig_bytes = STANDARD.decode(signature_b64).map_err(|_| QualificationError::InvalidSignature)?;
-    let signature = Signature::try_from(sig_bytes.as_slice()).map_err(|_| QualificationError::InvalidSignature)?;
+    let key_id = attestation
+        .signer_key_id
+        .as_deref()
+        .ok_or(QualificationError::SignatureRequired)?;
+    let signature_b64 = attestation
+        .signature_b64
+        .as_deref()
+        .ok_or(QualificationError::SignatureRequired)?;
+    let signer = trusted_signers
+        .iter()
+        .find(|s| s.key_id == key_id)
+        .ok_or(QualificationError::SignerNotTrusted)?;
+    let key_bytes = STANDARD
+        .decode(&signer.public_key_b64)
+        .map_err(|_| QualificationError::InvalidPublicKey)?;
+    let key_array: [u8; 32] = key_bytes
+        .try_into()
+        .map_err(|_| QualificationError::InvalidPublicKey)?;
+    let key =
+        VerifyingKey::from_bytes(&key_array).map_err(|_| QualificationError::InvalidPublicKey)?;
+    let sig_bytes = STANDARD
+        .decode(signature_b64)
+        .map_err(|_| QualificationError::InvalidSignature)?;
+    let signature = Signature::try_from(sig_bytes.as_slice())
+        .map_err(|_| QualificationError::InvalidSignature)?;
     key.verify_strict(&attestation_signing_payload(attestation), &signature)
         .map_err(|_| QualificationError::InvalidSignature)
 }
@@ -157,16 +174,21 @@ pub fn proof_bundle_sha256_hex(proofs: &[GateProof]) -> String {
             GateStatus::Unavailable => "unavailable",
         }
     }
-    let mut rows: Vec<CanonicalProof<'_>> = proofs.iter().map(|proof| CanonicalProof {
-        gate: gate_name(proof.gate),
-        status: status_name(proof.status),
-        source_state_sha256: proof.source_state_sha256_hex.to_ascii_lowercase(),
-        evidence_sha256: proof.evidence_sha256_hex.as_deref(),
-        tool_name: &proof.tool_name,
-        tool_version: proof.tool_version.as_deref(),
-        evidence_ref: proof.evidence_ref.as_deref(),
-        verified_at: proof.verified_at.to_rfc3339_opts(SecondsFormat::AutoSi, true),
-    }).collect();
+    let mut rows: Vec<CanonicalProof<'_>> = proofs
+        .iter()
+        .map(|proof| CanonicalProof {
+            gate: gate_name(proof.gate),
+            status: status_name(proof.status),
+            source_state_sha256: proof.source_state_sha256_hex.to_ascii_lowercase(),
+            evidence_sha256: proof.evidence_sha256_hex.as_deref(),
+            tool_name: &proof.tool_name,
+            tool_version: proof.tool_version.as_deref(),
+            evidence_ref: proof.evidence_ref.as_deref(),
+            verified_at: proof
+                .verified_at
+                .to_rfc3339_opts(SecondsFormat::AutoSi, true),
+        })
+        .collect();
     rows.sort_by_key(|row| row.gate);
     let encoded = serde_json::to_vec(&rows).expect("canonical proof serialization cannot fail");
     format!("{:x}", Sha256::digest(encoded))
@@ -195,7 +217,10 @@ pub fn build_attestation(
         signature_b64: None,
         signature_algorithm: None,
     };
-    attestation.signing_payload_sha256_hex = format!("{:x}", Sha256::digest(attestation_signing_payload(&attestation)));
+    attestation.signing_payload_sha256_hex = format!(
+        "{:x}",
+        Sha256::digest(attestation_signing_payload(&attestation))
+    );
     Ok(attestation)
 }
 
@@ -216,14 +241,19 @@ pub fn verify_attestation(
     if run.run_uuid != attestation.run_uuid
         || run.release_uuid != attestation.release_uuid
         || run.version != attestation.version
-        || !run.workspace_sha256_hex.eq_ignore_ascii_case(&attestation.workspace_sha256_hex)
+        || !run
+            .workspace_sha256_hex
+            .eq_ignore_ascii_case(&attestation.workspace_sha256_hex)
     {
         return Err(QualificationError::SourceStateMismatch);
     }
     let recomputed = evaluate_release(&run.workspace_sha256_hex, &run.proofs, policy, now)?;
     if recomputed != attestation.assessment
         || proof_bundle_sha256_hex(&run.proofs) != attestation.proof_bundle_sha256_hex
-        || format!("{:x}", Sha256::digest(attestation_signing_payload(attestation))) != attestation.signing_payload_sha256_hex
+        || format!(
+            "{:x}",
+            Sha256::digest(attestation_signing_payload(attestation))
+        ) != attestation.signing_payload_sha256_hex
     {
         return Err(QualificationError::AssessmentMismatch);
     }
@@ -233,8 +263,8 @@ pub fn verify_attestation(
                 return Err(QualificationError::InvalidSignature);
             }
             verify_attestation_signature(attestation, trusted_signers)?
-        },
-        (None, None) if surface == ReleaseSurface::InternalQualification => {},
+        }
+        (None, None) if surface == ReleaseSurface::InternalQualification => {}
         (None, None) => return Err(QualificationError::SignatureRequired),
         _ => return Err(QualificationError::PartialSignature),
     }
@@ -262,20 +292,34 @@ mod tests {
     use super::*;
     use base64::Engine as _;
 
-    fn digest(ch: char) -> String { ch.to_string().repeat(64) }
+    fn digest(ch: char) -> String {
+        ch.to_string().repeat(64)
+    }
 
     #[test]
     fn all_verified_proofs_can_be_release_ready() {
         let now = Utc::now();
         let workspace = digest('a');
         let run = QualificationRun {
-            run_uuid: Uuid::now_v7(), release_uuid: Uuid::now_v7(), version: "0.25.0".into(),
-            workspace_sha256_hex: workspace.clone(), started_at: now, finished_at: now,
+            run_uuid: Uuid::now_v7(),
+            release_uuid: Uuid::now_v7(),
+            version: "0.25.0".into(),
+            workspace_sha256_hex: workspace.clone(),
+            started_at: now,
+            finished_at: now,
             proofs: all_verified_proofs(&workspace, now),
         };
         let attestation = build_attestation(&run, &ReleasePolicy::default(), now).unwrap();
         assert!(attestation.assessment.release_ready);
-        verify_attestation(&run, &attestation, &ReleasePolicy::default(), ReleaseSurface::InternalQualification, &[], now).unwrap();
+        verify_attestation(
+            &run,
+            &attestation,
+            &ReleasePolicy::default(),
+            ReleaseSurface::InternalQualification,
+            &[],
+            now,
+        )
+        .unwrap();
     }
 
     #[test]
@@ -283,12 +327,20 @@ mod tests {
         let now = Utc::now();
         let workspace = digest('a');
         let mut proofs = all_verified_proofs(&workspace, now);
-        let cargo_check = proofs.iter_mut().find(|p| p.gate == ReleaseGate::CargoCheck).unwrap();
+        let cargo_check = proofs
+            .iter_mut()
+            .find(|p| p.gate == ReleaseGate::CargoCheck)
+            .unwrap();
         cargo_check.status = GateStatus::Unavailable;
         cargo_check.evidence_sha256_hex = None;
         let run = QualificationRun {
-            run_uuid: Uuid::now_v7(), release_uuid: Uuid::now_v7(), version: "0.25.0".into(),
-            workspace_sha256_hex: workspace, started_at: now, finished_at: now, proofs,
+            run_uuid: Uuid::now_v7(),
+            release_uuid: Uuid::now_v7(),
+            version: "0.25.0".into(),
+            workspace_sha256_hex: workspace,
+            started_at: now,
+            finished_at: now,
+            proofs,
         };
         let attestation = build_attestation(&run, &ReleasePolicy::default(), now).unwrap();
         assert!(!attestation.assessment.release_ready);
@@ -296,22 +348,35 @@ mod tests {
 
     #[test]
     fn proof_bundle_hash_is_cross_language_canonical() {
-        let when = DateTime::parse_from_rfc3339("2026-09-28T12:00:00Z").unwrap().with_timezone(&Utc);
+        let when = DateTime::parse_from_rfc3339("2026-09-28T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
         let proofs = vec![
             GateProof {
-                gate: ReleaseGate::WorkspaceStatic, status: GateStatus::Verified,
-                source_state_sha256_hex: "a".repeat(64), evidence_sha256_hex: Some("c".repeat(64)),
-                tool_name: "verify_v025".into(), tool_version: Some("0.25.0".into()),
-                evidence_ref: Some("workspace_static.log".into()), verified_at: when,
+                gate: ReleaseGate::WorkspaceStatic,
+                status: GateStatus::Verified,
+                source_state_sha256_hex: "a".repeat(64),
+                evidence_sha256_hex: Some("c".repeat(64)),
+                tool_name: "verify_v025".into(),
+                tool_version: Some("0.25.0".into()),
+                evidence_ref: Some("workspace_static.log".into()),
+                verified_at: when,
             },
             GateProof {
-                gate: ReleaseGate::CargoCheck, status: GateStatus::Verified,
-                source_state_sha256_hex: "a".repeat(64), evidence_sha256_hex: Some("b".repeat(64)),
-                tool_name: "cargo".into(), tool_version: Some("1.90.0".into()),
-                evidence_ref: Some("cargo_check.log".into()), verified_at: when,
+                gate: ReleaseGate::CargoCheck,
+                status: GateStatus::Verified,
+                source_state_sha256_hex: "a".repeat(64),
+                evidence_sha256_hex: Some("b".repeat(64)),
+                tool_name: "cargo".into(),
+                tool_version: Some("1.90.0".into()),
+                evidence_ref: Some("cargo_check.log".into()),
+                verified_at: when,
             },
         ];
-        assert_eq!(proof_bundle_sha256_hex(&proofs), "8026ca26cea13700bba5f5f7fea2e9370768120d97b44999dab08b0a2d5eceb6");
+        assert_eq!(
+            proof_bundle_sha256_hex(&proofs),
+            "8026ca26cea13700bba5f5f7fea2e9370768120d97b44999dab08b0a2d5eceb6"
+        );
     }
 
     #[test]
@@ -320,13 +385,24 @@ mod tests {
         let now = Utc::now();
         let workspace = digest('a');
         let run = QualificationRun {
-            run_uuid: Uuid::now_v7(), release_uuid: Uuid::now_v7(), version: "0.25.0".into(),
-            workspace_sha256_hex: workspace.clone(), started_at: now, finished_at: now,
+            run_uuid: Uuid::now_v7(),
+            release_uuid: Uuid::now_v7(),
+            version: "0.25.0".into(),
+            workspace_sha256_hex: workspace.clone(),
+            started_at: now,
+            finished_at: now,
             proofs: all_verified_proofs(&workspace, now),
         };
         let mut attestation = build_attestation(&run, &ReleasePolicy::default(), now).unwrap();
         assert_eq!(
-            verify_attestation(&run, &attestation, &ReleasePolicy::default(), ReleaseSurface::PublicRelease, &[], now),
+            verify_attestation(
+                &run,
+                &attestation,
+                &ReleasePolicy::default(),
+                ReleaseSurface::PublicRelease,
+                &[],
+                now
+            ),
             Err(QualificationError::SignatureRequired)
         );
         let signing = SigningKey::from_bytes(&[7u8; 32]);
@@ -339,12 +415,26 @@ mod tests {
             key_id: "release-test".into(),
             public_key_b64: STANDARD.encode(verifying.to_bytes()),
         }];
-        verify_attestation(&run, &attestation, &ReleasePolicy::default(), ReleaseSurface::PublicRelease, &trusted, now).unwrap();
+        verify_attestation(
+            &run,
+            &attestation,
+            &ReleasePolicy::default(),
+            ReleaseSurface::PublicRelease,
+            &trusted,
+            now,
+        )
+        .unwrap();
         attestation.signature_b64 = Some(STANDARD.encode([0u8; 64]));
         assert_eq!(
-            verify_attestation(&run, &attestation, &ReleasePolicy::default(), ReleaseSurface::PublicRelease, &trusted, now),
+            verify_attestation(
+                &run,
+                &attestation,
+                &ReleasePolicy::default(),
+                ReleaseSurface::PublicRelease,
+                &trusted,
+                now
+            ),
             Err(QualificationError::InvalidSignature)
         );
     }
 }
-

@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::{
     env, fs,
     path::{Path, PathBuf},
@@ -125,12 +125,20 @@ impl OpenClawRsBridge {
         })
     }
 
-    pub fn invoke(&self, capability: &str, payload: &Value) -> Result<BridgeResult, OpenClawRsBridgeError> {
+    pub fn invoke(
+        &self,
+        capability: &str,
+        payload: &Value,
+    ) -> Result<BridgeResult, OpenClawRsBridgeError> {
         if !Self::supported_capabilities().contains(&capability) {
-            return Err(OpenClawRsBridgeError::UnsupportedCapability(capability.to_owned()));
+            return Err(OpenClawRsBridgeError::UnsupportedCapability(
+                capability.to_owned(),
+            ));
         }
         let executable = resolve_executable(&self.config.executable).ok_or_else(|| {
-            OpenClawRsBridgeError::ExecutableUnavailable(self.config.executable.display().to_string())
+            OpenClawRsBridgeError::ExecutableUnavailable(
+                self.config.executable.display().to_string(),
+            )
         })?;
         let cwd = self.resolve_workspace(payload)?;
         let args = build_args(capability);
@@ -176,15 +184,27 @@ impl OpenClawRsBridge {
     }
 
     fn resolve_workspace(&self, payload: &Value) -> Result<PathBuf, OpenClawRsBridgeError> {
-        let root = fs::canonicalize(&self.config.workspace_root)
-            .map_err(|_| OpenClawRsBridgeError::PathOutsideWorkspace(self.config.workspace_root.display().to_string()))?;
-        let requested = payload.get("workspace").and_then(Value::as_str).unwrap_or(".");
+        let root = fs::canonicalize(&self.config.workspace_root).map_err(|_| {
+            OpenClawRsBridgeError::PathOutsideWorkspace(
+                self.config.workspace_root.display().to_string(),
+            )
+        })?;
+        let requested = payload
+            .get("workspace")
+            .and_then(Value::as_str)
+            .unwrap_or(".");
         let candidate = Path::new(requested);
-        let joined = if candidate.is_absolute() { candidate.to_path_buf() } else { root.join(candidate) };
+        let joined = if candidate.is_absolute() {
+            candidate.to_path_buf()
+        } else {
+            root.join(candidate)
+        };
         let resolved = fs::canonicalize(&joined)
             .map_err(|_| OpenClawRsBridgeError::PathOutsideWorkspace(requested.to_owned()))?;
         if !resolved.starts_with(&root) {
-            return Err(OpenClawRsBridgeError::PathOutsideWorkspace(requested.to_owned()));
+            return Err(OpenClawRsBridgeError::PathOutsideWorkspace(
+                requested.to_owned(),
+            ));
         }
         Ok(resolved)
     }

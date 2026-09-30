@@ -123,7 +123,12 @@ impl<B: SandboxBackend> AgentRuntime<B> {
             .collect::<Vec<_>>();
 
         candidates.sort_by(|left, right| {
-            let left_priority = left.manifest.agent.as_ref().map(|agent| agent.priority).unwrap_or(0);
+            let left_priority = left
+                .manifest
+                .agent
+                .as_ref()
+                .map(|agent| agent.priority)
+                .unwrap_or(0);
             let right_priority = right
                 .manifest
                 .agent
@@ -148,7 +153,10 @@ impl<B: SandboxBackend> AgentRuntime<B> {
         })
     }
 
-    pub fn prepare_dispatch(&self, request: &AgentRequest) -> Result<DispatchPlan, AgentRuntimeError> {
+    pub fn prepare_dispatch(
+        &self,
+        request: &AgentRequest,
+    ) -> Result<DispatchPlan, AgentRuntimeError> {
         let route = self.route(request)?;
         let instance = self
             .agents
@@ -158,7 +166,10 @@ impl<B: SandboxBackend> AgentRuntime<B> {
         Ok(DispatchPlan { route, sandbox })
     }
 
-    pub fn execute_lifecycle_smoke(&mut self, request: &AgentRequest) -> Result<bool, AgentRuntimeError> {
+    pub fn execute_lifecycle_smoke(
+        &mut self,
+        request: &AgentRequest,
+    ) -> Result<bool, AgentRuntimeError> {
         let route = self.route(request)?;
         let instance = self
             .agents
@@ -247,9 +258,13 @@ mod tests {
 
     fn manifest(name: &str) -> PluginManifest {
         let input = match name {
-            "morpheus" => include_str!("../../../plugins/builtin/manifests/morpheus.agent.plugin.json"),
+            "morpheus" => {
+                include_str!("../../../plugins/builtin/manifests/morpheus.agent.plugin.json")
+            }
             "oracle" => include_str!("../../../plugins/builtin/manifests/oracle.agent.plugin.json"),
-            _ => include_str!("../../../plugins/builtin/manifests/master-orchestrator.agent.plugin.json"),
+            _ => include_str!(
+                "../../../plugins/builtin/manifests/master-orchestrator.agent.plugin.json"
+            ),
         };
         serde_json::from_str(input).unwrap()
     }
@@ -371,7 +386,9 @@ impl LogicalAgentRuntime {
     }
 
     pub fn agent_by_name(&self, name: &str) -> Option<&LogicalAgentInstance> {
-        self.agents.values().find(|instance| instance.manifest.name == name)
+        self.agents
+            .values()
+            .find(|instance| instance.manifest.name == name)
     }
 
     pub fn route(&self, request: &AgentRequest) -> Result<LogicalRouteDecision, AgentRuntimeError> {
@@ -426,11 +443,14 @@ impl LogicalAgentRuntime {
         agent_name: &str,
         request: &AgentRequest,
     ) -> Result<LogicalRouteDecision, AgentRuntimeError> {
-        let selected = self
-            .agent_by_name(agent_name)
-            .ok_or_else(|| AgentRuntimeError::NoRoute(format!("{} via {}", request.capability, agent_name)))?;
+        let selected = self.agent_by_name(agent_name).ok_or_else(|| {
+            AgentRuntimeError::NoRoute(format!("{} via {}", request.capability, agent_name))
+        })?;
         if selected.state != AgentState::Ready || !selected.manifest.provides(&request.capability) {
-            return Err(AgentRuntimeError::NoRoute(format!("{} via {}", request.capability, agent_name)));
+            return Err(AgentRuntimeError::NoRoute(format!(
+                "{} via {}",
+                request.capability, agent_name
+            )));
         }
         selected
             .manifest

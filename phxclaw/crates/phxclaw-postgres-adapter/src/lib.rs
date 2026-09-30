@@ -80,7 +80,10 @@ impl PostgresAdapter {
     /// Returns every row as PostgreSQL row_to_json(), preserving native JSON types.
     pub fn query_json(&mut self, command: &SqlCommand) -> Result<Vec<Value>, PostgresAdapterError> {
         ensure_sql(&command.sql)?;
-        let wrapped = format!("SELECT row_to_json(_phoenix_row) FROM ({}) AS _phoenix_row", command.sql);
+        let wrapped = format!(
+            "SELECT row_to_json(_phoenix_row) FROM ({}) AS _phoenix_row",
+            command.sql
+        );
         let owned = bind_params(&command.params);
         let refs = as_refs(&owned);
         let rows = self.client.query(&wrapped, &refs)?;
@@ -88,7 +91,10 @@ impl PostgresAdapter {
     }
 
     /// Executes a deterministic list of statements in a single transaction.
-    pub fn transaction(&mut self, commands: &[SqlCommand]) -> Result<Vec<SqlExecution>, PostgresAdapterError> {
+    pub fn transaction(
+        &mut self,
+        commands: &[SqlCommand],
+    ) -> Result<Vec<SqlExecution>, PostgresAdapterError> {
         let mut tx = self.client.transaction()?;
         let mut out = Vec::with_capacity(commands.len());
         for command in commands {
@@ -109,7 +115,11 @@ impl PostgresAdapter {
 }
 
 fn ensure_sql(sql: &str) -> Result<(), PostgresAdapterError> {
-    if sql.trim().is_empty() { Err(PostgresAdapterError::EmptyQuery) } else { Ok(()) }
+    if sql.trim().is_empty() {
+        Err(PostgresAdapterError::EmptyQuery)
+    } else {
+        Ok(())
+    }
 }
 
 enum BoundParam {
@@ -122,23 +132,29 @@ enum BoundParam {
 }
 
 fn bind_params(values: &[SqlParam]) -> Vec<BoundParam> {
-    values.iter().map(|value| match value {
-        SqlParam::Null => BoundParam::Null(None),
-        SqlParam::Bool(v) => BoundParam::Bool(*v),
-        SqlParam::I64(v) => BoundParam::I64(*v),
-        SqlParam::F64(v) => BoundParam::F64(*v),
-        SqlParam::Text(v) => BoundParam::Text(v.clone()),
-        SqlParam::Json(v) => BoundParam::Json(v.clone()),
-    }).collect()
+    values
+        .iter()
+        .map(|value| match value {
+            SqlParam::Null => BoundParam::Null(None),
+            SqlParam::Bool(v) => BoundParam::Bool(*v),
+            SqlParam::I64(v) => BoundParam::I64(*v),
+            SqlParam::F64(v) => BoundParam::F64(*v),
+            SqlParam::Text(v) => BoundParam::Text(v.clone()),
+            SqlParam::Json(v) => BoundParam::Json(v.clone()),
+        })
+        .collect()
 }
 
 fn as_refs(values: &[BoundParam]) -> Vec<&(dyn ToSql + Sync)> {
-    values.iter().map(|value| match value {
-        BoundParam::Null(v) => v as &(dyn ToSql + Sync),
-        BoundParam::Bool(v) => v as &(dyn ToSql + Sync),
-        BoundParam::I64(v) => v as &(dyn ToSql + Sync),
-        BoundParam::F64(v) => v as &(dyn ToSql + Sync),
-        BoundParam::Text(v) => v as &(dyn ToSql + Sync),
-        BoundParam::Json(v) => v as &(dyn ToSql + Sync),
-    }).collect()
+    values
+        .iter()
+        .map(|value| match value {
+            BoundParam::Null(v) => v as &(dyn ToSql + Sync),
+            BoundParam::Bool(v) => v as &(dyn ToSql + Sync),
+            BoundParam::I64(v) => v as &(dyn ToSql + Sync),
+            BoundParam::F64(v) => v as &(dyn ToSql + Sync),
+            BoundParam::Text(v) => v as &(dyn ToSql + Sync),
+            BoundParam::Json(v) => v as &(dyn ToSql + Sync),
+        })
+        .collect()
 }

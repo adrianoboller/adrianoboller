@@ -6,11 +6,21 @@ use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
-pub enum TaskComplexity { Low, Medium, High, Extreme }
+pub enum TaskComplexity {
+    Low,
+    Medium,
+    High,
+    Extreme,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum DataClass { Public, Internal, Confidential, Restricted }
+pub enum DataClass {
+    Public,
+    Internal,
+    Confidential,
+    Restricted,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
@@ -25,7 +35,16 @@ pub enum ExecutionTier {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
-pub enum ModelRole { Classifier, Coder, Reviewer, LogAnalyzer, Rag, Planner, Docs, Embeddings }
+pub enum ModelRole {
+    Classifier,
+    Coder,
+    Reviewer,
+    LogAnalyzer,
+    Rag,
+    Planner,
+    Docs,
+    Embeddings,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskDemand {
@@ -195,7 +214,11 @@ pub enum FabricError {
 pub struct PerformanceFabric;
 
 impl PerformanceFabric {
-    pub fn context_budget(complexity: TaskComplexity, requested: u32, model_limit: u32) -> Result<ContextBudgetDecision, FabricError> {
+    pub fn context_budget(
+        complexity: TaskComplexity,
+        requested: u32,
+        model_limit: u32,
+    ) -> Result<ContextBudgetDecision, FabricError> {
         let configured = match complexity {
             TaskComplexity::Low => 4_096,
             TaskComplexity::Medium => 8_192,
@@ -203,7 +226,9 @@ impl PerformanceFabric {
             TaskComplexity::Extreme => 32_768,
         };
         let budget = configured.min(model_limit);
-        if requested > model_limit { return Err(FabricError::ContextBudgetExceeded); }
+        if requested > model_limit {
+            return Err(FabricError::ContextBudgetExceeded);
+        }
         Ok(ContextBudgetDecision {
             budget_tokens: budget,
             requested_tokens: requested,
@@ -219,89 +244,236 @@ impl PerformanceFabric {
         knowledge_guards: &[KnowledgeGuard],
         context_fingerprint: &str,
     ) -> Result<RoutingDecision, FabricError> {
-        let mut eligible: Vec<&ModelCandidate> = candidates.iter().filter(|c| {
-            c.promoted && c.fresh && c.healthy && c.supports_structured_output
-                && c.quality_score >= demand.quality_floor
-                && demand.required_capabilities.is_subset(&c.capabilities)
-        }).collect();
+        let mut eligible: Vec<&ModelCandidate> = candidates
+            .iter()
+            .filter(|c| {
+                c.promoted
+                    && c.fresh
+                    && c.healthy
+                    && c.supports_structured_output
+                    && c.quality_score >= demand.quality_floor
+                    && demand.required_capabilities.is_subset(&c.capabilities)
+            })
+            .collect();
 
         if matches!(demand.data_class, DataClass::Restricted) {
             eligible.retain(|c| c.local);
-            if eligible.is_empty() { return Err(FabricError::RestrictedRequiresLocal); }
+            if eligible.is_empty() {
+                return Err(FabricError::RestrictedRequiresLocal);
+            }
         }
 
-        eligible.retain(|c| !knowledge_guards.iter().any(|g| {
-            g.model_profile_uuid == c.profile_uuid && g.context_fingerprint == context_fingerprint && g.promoted_failure
-        }));
+        eligible.retain(|c| {
+            !knowledge_guards.iter().any(|g| {
+                g.model_profile_uuid == c.profile_uuid
+                    && g.context_fingerprint == context_fingerprint
+                    && g.promoted_failure
+            })
+        });
 
         if demand.budget_remaining.is_some() {
-            if eligible.iter().any(|c| !c.local && c.estimated_cost.is_none()) {
+            if eligible
+                .iter()
+                .any(|c| !c.local && c.estimated_cost.is_none())
+            {
                 eligible.retain(|c| c.local || c.estimated_cost.is_some());
             }
         }
-        if eligible.is_empty() { return Err(FabricError::NoEligibleModel); }
+        if eligible.is_empty() {
+            return Err(FabricError::NoEligibleModel);
+        }
 
         let affinity = |c: &ModelCandidate| -> f64 {
-            affinities.iter().find(|a| {
-                a.agent_uuid == demand.agent_uuid && a.task_class == demand.task_class
-                    && a.model_profile_uuid == c.profile_uuid && a.source_state_sha256 == demand.source_state_sha256
-                    && a.fresh && a.promoted && a.sample_count >= 3
-            }).map(|a| a.success_rate * 0.55 + a.avg_quality * 0.45).unwrap_or(0.0)
+            affinities
+                .iter()
+                .find(|a| {
+                    a.agent_uuid == demand.agent_uuid
+                        && a.task_class == demand.task_class
+                        && a.model_profile_uuid == c.profile_uuid
+                        && a.source_state_sha256 == demand.source_state_sha256
+                        && a.fresh
+                        && a.promoted
+                        && a.sample_count >= 3
+                })
+                .map(|a| a.success_rate * 0.55 + a.avg_quality * 0.45)
+                .unwrap_or(0.0)
         };
 
-        eligible.sort_by(|a,b| {
+        eligible.sort_by(|a, b| {
             let tier = |c: &ModelCandidate| if c.local { 0u8 } else { 1u8 };
-            tier(a).cmp(&tier(b))
-                .then_with(|| affinity(b).partial_cmp(&affinity(a)).unwrap_or(std::cmp::Ordering::Equal))
-                .then_with(|| a.estimated_cost.unwrap_or(f64::INFINITY).partial_cmp(&b.estimated_cost.unwrap_or(f64::INFINITY)).unwrap_or(std::cmp::Ordering::Equal))
-                .then_with(|| a.p95_latency_ms.unwrap_or(u64::MAX).cmp(&b.p95_latency_ms.unwrap_or(u64::MAX)))
+            tier(a)
+                .cmp(&tier(b))
+                .then_with(|| {
+                    affinity(b)
+                        .partial_cmp(&affinity(a))
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .then_with(|| {
+                    a.estimated_cost
+                        .unwrap_or(f64::INFINITY)
+                        .partial_cmp(&b.estimated_cost.unwrap_or(f64::INFINITY))
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .then_with(|| {
+                    a.p95_latency_ms
+                        .unwrap_or(u64::MAX)
+                        .cmp(&b.p95_latency_ms.unwrap_or(u64::MAX))
+                })
                 .then_with(|| a.model.cmp(&b.model))
         });
-        let c=eligible[0];
-        if let (Some(rem), Some(cost))=(demand.budget_remaining,c.estimated_cost) {
-            if cost>rem { return Err(FabricError::NoEligibleModel); }
-        }
-        let requested=demand.estimated_input_tokens.saturating_add(demand.expected_output_tokens);
-        let budget=Self::context_budget(demand.complexity,requested,c.max_context_tokens)?;
-        let tier=if c.local {
-            if matches!(demand.complexity,TaskComplexity::Low|TaskComplexity::Medium) { ExecutionTier::OllamaFast } else { ExecutionTier::OllamaSpecialized }
-        } else if matches!(demand.complexity,TaskComplexity::Extreme) { ExecutionTier::CloudPremium } else { ExecutionTier::CloudEconomic };
-        let cache_key=SemanticCacheKey {
-            tenant_uuid:demand.tenant_uuid, project_uuid:demand.project_uuid,
-            source_state_sha256:demand.source_state_sha256.clone(), policy_sha256:demand.policy_sha256.clone(),
-            task_fingerprint:hash_json(&(demand.task_class.clone(),context_fingerprint,demand.required_capabilities.clone())),
-            model_profile_uuid:c.profile_uuid, prompt_sha256:"pending_prompt_compiler".into(),
-        };
-        let cache_key_sha256=hash_json(&cache_key);
-        let mut reasons=vec!["hard gates satisfied".to_string()];
-        if c.local { reasons.push("verified local candidate preferred to reduce cloud cost and exposure".into()); }
-        if affinity(c)>0.0 { reasons.push("fresh promoted agent-model affinity available".into()); }
-        if c.warm { reasons.push("model already warm".into()); }
-        let decision_sha256=hash_json(&(demand.task_uuid,c.profile_uuid,&tier,&cache_key_sha256,&reasons));
-        Ok(RoutingDecision{tier,provider:c.provider.clone(),model:c.model.clone(),model_profile_uuid:c.profile_uuid,context_budget:budget,keep_alive:if c.local{Some("5m".into())}else{None},cache_key_sha256,decision_sha256,reasons})
-    }
-
-    pub fn compile_prompt(provider:&str, model:&str, system:&str, context_blocks:Vec<String>, constraints:Vec<String>, tools:Vec<String>, output_schema:serde_json::Value, source_state_sha256:&str, policy_sha256:&str) -> CompiledPromptPlan {
-        let payload=serde_json::json!({"provider":provider,"model":model,"system":system,"context_blocks":context_blocks,"constraints":constraints,"tools":tools,"output_schema":output_schema,"source_state_sha256":source_state_sha256,"policy_sha256":policy_sha256});
-        let prompt_sha256=hash_json(&payload);
-        CompiledPromptPlan{prompt_uuid:Uuid::now_v7(),provider:provider.into(),model:model.into(),system:system.into(),context_blocks:payload["context_blocks"].as_array().unwrap().iter().map(|v|v.as_str().unwrap_or_default().to_string()).collect(),constraints:payload["constraints"].as_array().unwrap().iter().map(|v|v.as_str().unwrap_or_default().to_string()).collect(),tools:payload["tools"].as_array().unwrap().iter().map(|v|v.as_str().unwrap_or_default().to_string()).collect(),output_schema:payload["output_schema"].clone(),source_state_sha256:source_state_sha256.into(),policy_sha256:policy_sha256.into(),prompt_sha256}
-    }
-
-    pub fn warm_pool(samples:&[OllamaRuntimeSample], interactive_models:&BTreeSet<String>, memory_pressure:bool) -> WarmPoolPlan {
-        let mut keep_hot=Vec::new(); let mut load_on_demand=Vec::new(); let mut reasons=BTreeMap::new();
-        for s in samples {
-            if !memory_pressure && interactive_models.contains(&s.model) {
-                keep_hot.push(s.model.clone()); reasons.insert(s.model.clone(),"interactive demand and no memory pressure".into());
-            } else {
-                load_on_demand.push(s.model.clone()); reasons.insert(s.model.clone(),if memory_pressure{"memory pressure".into()}else{"background/on-demand role".into()});
+        let c = eligible[0];
+        if let (Some(rem), Some(cost)) = (demand.budget_remaining, c.estimated_cost) {
+            if cost > rem {
+                return Err(FabricError::NoEligibleModel);
             }
         }
-        keep_hot.sort(); keep_hot.dedup(); load_on_demand.sort(); load_on_demand.dedup();
-        WarmPoolPlan{keep_hot,load_on_demand,reasons}
+        let requested = demand
+            .estimated_input_tokens
+            .saturating_add(demand.expected_output_tokens);
+        let budget = Self::context_budget(demand.complexity, requested, c.max_context_tokens)?;
+        let tier = if c.local {
+            if matches!(
+                demand.complexity,
+                TaskComplexity::Low | TaskComplexity::Medium
+            ) {
+                ExecutionTier::OllamaFast
+            } else {
+                ExecutionTier::OllamaSpecialized
+            }
+        } else if matches!(demand.complexity, TaskComplexity::Extreme) {
+            ExecutionTier::CloudPremium
+        } else {
+            ExecutionTier::CloudEconomic
+        };
+        let cache_key = SemanticCacheKey {
+            tenant_uuid: demand.tenant_uuid,
+            project_uuid: demand.project_uuid,
+            source_state_sha256: demand.source_state_sha256.clone(),
+            policy_sha256: demand.policy_sha256.clone(),
+            task_fingerprint: hash_json(&(
+                demand.task_class.clone(),
+                context_fingerprint,
+                demand.required_capabilities.clone(),
+            )),
+            model_profile_uuid: c.profile_uuid,
+            prompt_sha256: "pending_prompt_compiler".into(),
+        };
+        let cache_key_sha256 = hash_json(&cache_key);
+        let mut reasons = vec!["hard gates satisfied".to_string()];
+        if c.local {
+            reasons.push(
+                "verified local candidate preferred to reduce cloud cost and exposure".into(),
+            );
+        }
+        if affinity(c) > 0.0 {
+            reasons.push("fresh promoted agent-model affinity available".into());
+        }
+        if c.warm {
+            reasons.push("model already warm".into());
+        }
+        let decision_sha256 = hash_json(&(
+            demand.task_uuid,
+            c.profile_uuid,
+            &tier,
+            &cache_key_sha256,
+            &reasons,
+        ));
+        Ok(RoutingDecision {
+            tier,
+            provider: c.provider.clone(),
+            model: c.model.clone(),
+            model_profile_uuid: c.profile_uuid,
+            context_budget: budget,
+            keep_alive: if c.local { Some("5m".into()) } else { None },
+            cache_key_sha256,
+            decision_sha256,
+            reasons,
+        })
+    }
+
+    pub fn compile_prompt(
+        provider: &str,
+        model: &str,
+        system: &str,
+        context_blocks: Vec<String>,
+        constraints: Vec<String>,
+        tools: Vec<String>,
+        output_schema: serde_json::Value,
+        source_state_sha256: &str,
+        policy_sha256: &str,
+    ) -> CompiledPromptPlan {
+        let payload = serde_json::json!({"provider":provider,"model":model,"system":system,"context_blocks":context_blocks,"constraints":constraints,"tools":tools,"output_schema":output_schema,"source_state_sha256":source_state_sha256,"policy_sha256":policy_sha256});
+        let prompt_sha256 = hash_json(&payload);
+        CompiledPromptPlan {
+            prompt_uuid: Uuid::now_v7(),
+            provider: provider.into(),
+            model: model.into(),
+            system: system.into(),
+            context_blocks: payload["context_blocks"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_str().unwrap_or_default().to_string())
+                .collect(),
+            constraints: payload["constraints"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_str().unwrap_or_default().to_string())
+                .collect(),
+            tools: payload["tools"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_str().unwrap_or_default().to_string())
+                .collect(),
+            output_schema: payload["output_schema"].clone(),
+            source_state_sha256: source_state_sha256.into(),
+            policy_sha256: policy_sha256.into(),
+            prompt_sha256,
+        }
+    }
+
+    pub fn warm_pool(
+        samples: &[OllamaRuntimeSample],
+        interactive_models: &BTreeSet<String>,
+        memory_pressure: bool,
+    ) -> WarmPoolPlan {
+        let mut keep_hot = Vec::new();
+        let mut load_on_demand = Vec::new();
+        let mut reasons = BTreeMap::new();
+        for s in samples {
+            if !memory_pressure && interactive_models.contains(&s.model) {
+                keep_hot.push(s.model.clone());
+                reasons.insert(
+                    s.model.clone(),
+                    "interactive demand and no memory pressure".into(),
+                );
+            } else {
+                load_on_demand.push(s.model.clone());
+                reasons.insert(
+                    s.model.clone(),
+                    if memory_pressure {
+                        "memory pressure".into()
+                    } else {
+                        "background/on-demand role".into()
+                    },
+                );
+            }
+        }
+        keep_hot.sort();
+        keep_hot.dedup();
+        load_on_demand.sort();
+        load_on_demand.dedup();
+        WarmPoolPlan {
+            keep_hot,
+            load_on_demand,
+            reasons,
+        }
     }
 }
 
-pub fn hash_json<T: Serialize>(value:&T)->String {
-    let bytes=serde_json::to_vec(value).expect("serializable");
-    format!("{:x}",Sha256::digest(bytes))
+pub fn hash_json<T: Serialize>(value: &T) -> String {
+    let bytes = serde_json::to_vec(value).expect("serializable");
+    format!("{:x}", Sha256::digest(bytes))
 }

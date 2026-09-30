@@ -1,5 +1,5 @@
 use chrono::{DateTime, Duration, Utc};
-use phxclaw_types::{is_uuid_v7, new_uuid_v7, PermissionClaim};
+use phxclaw_types::{PermissionClaim, is_uuid_v7, new_uuid_v7};
 use postgres::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -178,7 +178,8 @@ impl TaskGraph {
             {
                 return Err(TaskGraphError::InvalidRetry(task.uuid));
             }
-            if task.idempotency_key.trim().is_empty() || !keys.insert(task.idempotency_key.clone()) {
+            if task.idempotency_key.trim().is_empty() || !keys.insert(task.idempotency_key.clone())
+            {
                 return Err(TaskGraphError::DuplicateIdempotency(task.idempotency_key));
             }
             let id = task.uuid;
@@ -325,11 +326,17 @@ impl TaskScheduler {
         note: Option<String>,
         now: DateTime<Utc>,
     ) -> Result<(), TaskGraphError> {
-        let task = self.graph.task(&task_uuid).ok_or(TaskGraphError::UnknownTask(task_uuid))?;
+        let task = self
+            .graph
+            .task(&task_uuid)
+            .ok_or(TaskGraphError::UnknownTask(task_uuid))?;
         if task.approval.as_ref().is_none_or(|gate| !gate.required) {
             return Err(TaskGraphError::NotAwaitingApproval(task_uuid));
         }
-        let state = self.states.get_mut(&task_uuid).ok_or(TaskGraphError::UnknownTask(task_uuid))?;
+        let state = self
+            .states
+            .get_mut(&task_uuid)
+            .ok_or(TaskGraphError::UnknownTask(task_uuid))?;
         state.approval = Some(ApprovalRecord {
             task_uuid,
             decision: ApprovalDecision::Approved,
@@ -349,11 +356,17 @@ impl TaskScheduler {
         note: Option<String>,
         now: DateTime<Utc>,
     ) -> Result<(), TaskGraphError> {
-        let task = self.graph.task(&task_uuid).ok_or(TaskGraphError::UnknownTask(task_uuid))?;
+        let task = self
+            .graph
+            .task(&task_uuid)
+            .ok_or(TaskGraphError::UnknownTask(task_uuid))?;
         if task.approval.as_ref().is_none_or(|gate| !gate.required) {
             return Err(TaskGraphError::NotAwaitingApproval(task_uuid));
         }
-        let state = self.states.get_mut(&task_uuid).ok_or(TaskGraphError::UnknownTask(task_uuid))?;
+        let state = self
+            .states
+            .get_mut(&task_uuid)
+            .ok_or(TaskGraphError::UnknownTask(task_uuid))?;
         state.approval = Some(ApprovalRecord {
             task_uuid,
             decision: ApprovalDecision::Rejected,
@@ -381,11 +394,18 @@ impl TaskScheduler {
                 .cmp(&left.priority)
                 .then_with(|| left.uuid.cmp(&right.uuid))
         });
-        let selected = ready.into_iter().take(limit).map(|task| task.uuid).collect::<Vec<_>>();
+        let selected = ready
+            .into_iter()
+            .take(limit)
+            .map(|task| task.uuid)
+            .collect::<Vec<_>>();
         let mut claimed = Vec::with_capacity(selected.len());
 
         for task_uuid in selected {
-            let state = self.states.get_mut(&task_uuid).expect("ready task has state");
+            let state = self
+                .states
+                .get_mut(&task_uuid)
+                .expect("ready task has state");
             state.attempts += 1;
             state.status = TaskStatus::Running;
             let run = TaskRun {
@@ -418,7 +438,11 @@ impl TaskScheduler {
         result: Value,
         now: DateTime<Utc>,
     ) -> Result<(), TaskGraphError> {
-        let task_uuid = self.runs.get(&run_uuid).ok_or(TaskGraphError::UnknownRun(run_uuid))?.task_uuid;
+        let task_uuid = self
+            .runs
+            .get(&run_uuid)
+            .ok_or(TaskGraphError::UnknownRun(run_uuid))?
+            .task_uuid;
         self.ensure_active_run(task_uuid, run_uuid)?;
         if let Some(run) = self.runs.get_mut(&run_uuid) {
             run.status = TaskStatus::Succeeded;
@@ -442,7 +466,11 @@ impl TaskScheduler {
         now: DateTime<Utc>,
     ) -> Result<(), TaskGraphError> {
         let error = error.into();
-        let task_uuid = self.runs.get(&run_uuid).ok_or(TaskGraphError::UnknownRun(run_uuid))?.task_uuid;
+        let task_uuid = self
+            .runs
+            .get(&run_uuid)
+            .ok_or(TaskGraphError::UnknownRun(run_uuid))?
+            .task_uuid;
         self.ensure_active_run(task_uuid, run_uuid)?;
         if let Some(run) = self.runs.get_mut(&run_uuid) {
             run.status = TaskStatus::Failed;
@@ -493,11 +521,19 @@ impl TaskScheduler {
     pub fn refresh(&mut self, now: DateTime<Utc>) {
         let task_ids = self.graph.topological_order().to_vec();
         for task_uuid in task_ids {
-            let Some(task) = self.graph.task(&task_uuid) else { continue };
+            let Some(task) = self.graph.task(&task_uuid) else {
+                continue;
+            };
             let current = self.states.get(&task_uuid).map(|state| state.status);
             if matches!(
                 current,
-                Some(TaskStatus::Running | TaskStatus::Succeeded | TaskStatus::Failed | TaskStatus::Cancelled | TaskStatus::DeadLetter)
+                Some(
+                    TaskStatus::Running
+                        | TaskStatus::Succeeded
+                        | TaskStatus::Failed
+                        | TaskStatus::Cancelled
+                        | TaskStatus::DeadLetter
+                )
             ) {
                 continue;
             }
@@ -514,9 +550,10 @@ impl TaskScheduler {
             }
 
             let requires_approval = task.approval.as_ref().is_some_and(|gate| gate.required);
-            let approved = state.approval.as_ref().is_some_and(|approval| {
-                approval.decision == ApprovalDecision::Approved
-            });
+            let approved = state
+                .approval
+                .as_ref()
+                .is_some_and(|approval| approval.decision == ApprovalDecision::Approved);
             if requires_approval && !approved {
                 state.status = TaskStatus::WaitingApproval;
             } else if state.next_eligible_at > now {
@@ -528,7 +565,10 @@ impl TaskScheduler {
     }
 
     fn ensure_active_run(&self, task_uuid: Uuid, run_uuid: Uuid) -> Result<(), TaskGraphError> {
-        let state = self.states.get(&task_uuid).ok_or(TaskGraphError::UnknownTask(task_uuid))?;
+        let state = self
+            .states
+            .get(&task_uuid)
+            .ok_or(TaskGraphError::UnknownTask(task_uuid))?;
         if state.active_run_uuid != Some(run_uuid) || state.status != TaskStatus::Running {
             return Err(TaskGraphError::RunMismatch {
                 task: task_uuid,
@@ -622,7 +662,10 @@ mod tests {
         let mut b = TaskSpec::new("b", "b.run", Value::Null, "b");
         a.dependencies.push(b.uuid);
         b.dependencies.push(a.uuid);
-        assert!(matches!(TaskGraph::new(vec![a, b]), Err(TaskGraphError::Cycle)));
+        assert!(matches!(
+            TaskGraph::new(vec![a, b]),
+            Err(TaskGraphError::Cycle)
+        ));
     }
 
     #[test]
@@ -640,12 +683,28 @@ mod tests {
         let graph = TaskGraph::new(vec![first, second]).unwrap();
         let now = Utc::now();
         let mut scheduler = TaskScheduler::new(graph);
-        assert_eq!(scheduler.state(&first_id).unwrap().status, TaskStatus::Ready);
-        assert_eq!(scheduler.state(&second_id).unwrap().status, TaskStatus::Blocked);
+        assert_eq!(
+            scheduler.state(&first_id).unwrap().status,
+            TaskStatus::Ready
+        );
+        assert_eq!(
+            scheduler.state(&second_id).unwrap().status,
+            TaskStatus::Blocked
+        );
         let run = scheduler.claim_ready(1, now)[0].clone();
-        scheduler.succeed(run.uuid, serde_json::json!({"ok": true}), now).unwrap();
-        assert_eq!(scheduler.state(&second_id).unwrap().status, TaskStatus::WaitingApproval);
-        scheduler.approve(second_id, "product-owner", None, now).unwrap();
-        assert_eq!(scheduler.state(&second_id).unwrap().status, TaskStatus::Ready);
+        scheduler
+            .succeed(run.uuid, serde_json::json!({"ok": true}), now)
+            .unwrap();
+        assert_eq!(
+            scheduler.state(&second_id).unwrap().status,
+            TaskStatus::WaitingApproval
+        );
+        scheduler
+            .approve(second_id, "product-owner", None, now)
+            .unwrap();
+        assert_eq!(
+            scheduler.state(&second_id).unwrap().status,
+            TaskStatus::Ready
+        );
     }
 }

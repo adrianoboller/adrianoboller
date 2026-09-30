@@ -1,27 +1,32 @@
 use axum::{
+    Json, Router,
     extract::{
-        ws::{Message, WebSocket, WebSocketUpgrade},
         Query, State,
+        ws::{Message, WebSocket, WebSocketUpgrade},
     },
     http::{HeaderMap, StatusCode},
     response::{
-        sse::{Event, KeepAlive, Sse},
         IntoResponse, Response,
+        sse::{Event, KeepAlive, Sse},
     },
     routing::{get, post},
-    Json, Router,
 };
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Utc};
 use futures_util::{SinkExt, Stream, StreamExt};
 use phxclaw_event_bus::EventEnvelope;
 use phxclaw_live_bus::LiveEventHub;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
-use std::{convert::Infallible, net::{IpAddr, Ipv4Addr, SocketAddr}, sync::Arc, time::Duration};
+use serde_json::{Value, json};
+use std::{
+    convert::Infallible,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+    sync::Arc,
+    time::Duration,
+};
 use thiserror::Error;
 use tokio::{net::TcpListener, sync::oneshot};
-use tokio_stream::wrappers::{errors::BroadcastStreamRecvError, BroadcastStream};
+use tokio_stream::wrappers::{BroadcastStream, errors::BroadcastStreamRecvError};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -119,7 +124,12 @@ pub async fn start(
     let addr = listener.local_addr()?;
     let started_at = Utc::now();
     let build_version = build_version.into();
-    let state = Arc::new(AppState { hub, config, started_at, build_version: build_version.clone() });
+    let state = Arc::new(AppState {
+        hub,
+        config,
+        started_at,
+        build_version: build_version.clone(),
+    });
 
     let app = Router::new()
         .route("/v1/health", get(health))
@@ -131,17 +141,20 @@ pub async fn start(
 
     let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
     tokio::spawn(async move {
-        let server = axum::serve(listener, app)
-            .with_graceful_shutdown(async move {
-                let _ = shutdown_rx.await;
-            });
+        let server = axum::serve(listener, app).with_graceful_shutdown(async move {
+            let _ = shutdown_rx.await;
+        });
         if let Err(error) = server.await {
             eprintln!("PhxClaw API gateway stopped with error: {error}");
         }
     });
 
     Ok(ApiServerHandle {
-        info: ApiServerInfo { addr, started_at, build_version },
+        info: ApiServerInfo {
+            addr,
+            started_at,
+            build_version,
+        },
         shutdown: Some(shutdown_tx),
     })
 }
@@ -167,7 +180,10 @@ async fn snapshot(
     if !authorized(&headers, &state.config.bearer_token) {
         return unauthorized();
     }
-    let limit = query.limit.unwrap_or(100).min(state.config.replay_limit.max(1));
+    let limit = query
+        .limit
+        .unwrap_or(100)
+        .min(state.config.replay_limit.max(1));
     let result = match query.after {
         Some(after) => state.hub.since(after, limit),
         None => state.hub.snapshot(limit),
@@ -178,10 +194,7 @@ async fn snapshot(
     }
 }
 
-async fn sse(
-    State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-) -> Response {
+async fn sse(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
     if !authorized(&headers, &state.config.bearer_token) {
         return unauthorized();
     }
@@ -194,15 +207,17 @@ async fn sse(
                 .json_data(event)
                 .unwrap_or_else(|_| Event::default().event("serialization_error").data("{}")),
         ),
-        Err(BroadcastStreamRecvError::Lagged(dropped)) => Ok(
-            Event::default()
-                .event("stream_lagged")
-                .json_data(json!({"dropped": dropped}))
-                .unwrap_or_else(|_| Event::default().event("stream_lagged").data("{}")),
-        ),
+        Err(BroadcastStreamRecvError::Lagged(dropped)) => Ok(Event::default()
+            .event("stream_lagged")
+            .json_data(json!({"dropped": dropped}))
+            .unwrap_or_else(|_| Event::default().event("stream_lagged").data("{}"))),
     });
     Sse::new(stream)
-        .keep_alive(KeepAlive::new().interval(Duration::from_secs(15)).text("phxclaw"))
+        .keep_alive(
+            KeepAlive::new()
+                .interval(Duration::from_secs(15))
+                .text("phxclaw"),
+        )
         .into_response()
 }
 
@@ -214,13 +229,21 @@ async fn ws(
     if !authorized(&headers, &state.config.bearer_token) {
         return unauthorized();
     }
-    upgrade.on_upgrade(move |socket| websocket_session(socket, state)).into_response()
+    upgrade
+        .on_upgrade(move |socket| websocket_session(socket, state))
+        .into_response()
 }
 
 async fn websocket_session(mut socket: WebSocket, state: Arc<AppState>) {
     let replay = state.hub.snapshot(50).unwrap_or_default();
     for event in replay {
-        if socket.send(Message::Text(serde_json::to_string(&event).unwrap_or_default().into())).await.is_err() {
+        if socket
+            .send(Message::Text(
+                serde_json::to_string(&event).unwrap_or_default().into(),
+            ))
+            .await
+            .is_err()
+        {
             return;
         }
     }
@@ -285,22 +308,38 @@ async fn publish(
 }
 
 fn is_host_control_topic(topic: &str) -> bool {
-    ["desktop.", "system.command", "system.input", "screen.", "webview.action"]
-        .iter()
-        .any(|prefix| topic.starts_with(prefix))
+    [
+        "desktop.",
+        "system.command",
+        "system.input",
+        "screen.",
+        "webview.action",
+    ]
+    .iter()
+    .any(|prefix| topic.starts_with(prefix))
 }
 
 fn authorized(headers: &HeaderMap, expected: &str) -> bool {
-    let Some(value) = headers.get(axum::http::header::AUTHORIZATION) else { return false; };
-    let Ok(value) = value.to_str() else { return false; };
-    let Some(provided) = value.strip_prefix("Bearer ") else { return false; };
+    let Some(value) = headers.get(axum::http::header::AUTHORIZATION) else {
+        return false;
+    };
+    let Ok(value) = value.to_str() else {
+        return false;
+    };
+    let Some(provided) = value.strip_prefix("Bearer ") else {
+        return false;
+    };
     constant_time_eq(provided.as_bytes(), expected.as_bytes())
 }
 
 fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
-    if left.len() != right.len() { return false; }
+    if left.len() != right.len() {
+        return false;
+    }
     let mut diff = 0u8;
-    for (a, b) in left.iter().zip(right) { diff |= a ^ b; }
+    for (a, b) in left.iter().zip(right) {
+        diff |= a ^ b;
+    }
     diff == 0
 }
 
@@ -312,16 +351,44 @@ pub fn generate_bearer_token() -> String {
 }
 
 fn unauthorized() -> Response {
-    (StatusCode::UNAUTHORIZED, Json(ApiErrorBody { error: "unauthorized", message: "valid bearer token required".into() })).into_response()
+    (
+        StatusCode::UNAUTHORIZED,
+        Json(ApiErrorBody {
+            error: "unauthorized",
+            message: "valid bearer token required".into(),
+        }),
+    )
+        .into_response()
 }
 fn forbidden(message: String) -> Response {
-    (StatusCode::FORBIDDEN, Json(ApiErrorBody { error: "forbidden", message })).into_response()
+    (
+        StatusCode::FORBIDDEN,
+        Json(ApiErrorBody {
+            error: "forbidden",
+            message,
+        }),
+    )
+        .into_response()
 }
 fn bad_request(message: String) -> Response {
-    (StatusCode::BAD_REQUEST, Json(ApiErrorBody { error: "bad_request", message })).into_response()
+    (
+        StatusCode::BAD_REQUEST,
+        Json(ApiErrorBody {
+            error: "bad_request",
+            message,
+        }),
+    )
+        .into_response()
 }
 fn internal(message: String) -> Response {
-    (StatusCode::INTERNAL_SERVER_ERROR, Json(ApiErrorBody { error: "internal_error", message })).into_response()
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(ApiErrorBody {
+            error: "internal_error",
+            message,
+        }),
+    )
+        .into_response()
 }
 
 #[cfg(test)]

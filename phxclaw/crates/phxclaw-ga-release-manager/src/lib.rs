@@ -39,11 +39,17 @@ pub struct TrustedSigner {
     #[serde(default = "default_true")]
     pub enabled: bool,
 }
-fn default_true() -> bool { true }
+fn default_true() -> bool {
+    true
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
-pub enum Platform { Linux, Windows, Macos }
+pub enum Platform {
+    Linux,
+    Windows,
+    Macos,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PlatformEvidence {
@@ -115,7 +121,9 @@ pub struct RollbackAuthorization {
     pub signature_b64: String,
 }
 
-fn valid_sha256(v: &str) -> bool { v.len() == 64 && v.bytes().all(|b| b.is_ascii_hexdigit()) }
+fn valid_sha256(v: &str) -> bool {
+    v.len() == 64 && v.bytes().all(|b| b.is_ascii_hexdigit())
+}
 fn hash_json<T: Serialize>(v: &T) -> String {
     let bytes = serde_json::to_vec(v).expect("serializable release metadata");
     format!("{:x}", Sha256::digest(bytes))
@@ -152,32 +160,69 @@ pub fn rollback_payload(o: &RollbackAuthorization) -> Vec<u8> {
     ).into_bytes()
 }
 
-pub fn verify_ed25519(payload: &[u8], key_id: &str, signature_b64: &str, signers: &[TrustedSigner]) -> Result<(), GaError> {
-    let signer = signers.iter().find(|s| s.enabled && s.key_id == key_id).ok_or(GaError::SignerNotTrusted)?;
-    let kb = STANDARD.decode(&signer.public_key_b64).map_err(|_| GaError::InvalidSignature)?;
-    let ka: [u8;32] = kb.try_into().map_err(|_| GaError::InvalidSignature)?;
+pub fn verify_ed25519(
+    payload: &[u8],
+    key_id: &str,
+    signature_b64: &str,
+    signers: &[TrustedSigner],
+) -> Result<(), GaError> {
+    let signer = signers
+        .iter()
+        .find(|s| s.enabled && s.key_id == key_id)
+        .ok_or(GaError::SignerNotTrusted)?;
+    let kb = STANDARD
+        .decode(&signer.public_key_b64)
+        .map_err(|_| GaError::InvalidSignature)?;
+    let ka: [u8; 32] = kb.try_into().map_err(|_| GaError::InvalidSignature)?;
     let key = VerifyingKey::from_bytes(&ka).map_err(|_| GaError::InvalidSignature)?;
-    let sb = STANDARD.decode(signature_b64).map_err(|_| GaError::InvalidSignature)?;
+    let sb = STANDARD
+        .decode(signature_b64)
+        .map_err(|_| GaError::InvalidSignature)?;
     let sig = Signature::try_from(sb.as_slice()).map_err(|_| GaError::InvalidSignature)?;
-    key.verify_strict(payload, &sig).map_err(|_| GaError::InvalidSignature)
+    key.verify_strict(payload, &sig)
+        .map_err(|_| GaError::InvalidSignature)
 }
 
-pub fn verify_platform_evidence(o: &PlatformEvidence, signers: &[TrustedSigner]) -> Result<(), GaError> {
-    if !valid_sha256(&o.source_state_sha256) || !valid_sha256(&o.rc_archive_sha256)
-        || !valid_sha256(&o.artifact_sha256) || !valid_sha256(&o.evidence_bundle_sha256) || o.artifact_size == 0 {
+pub fn verify_platform_evidence(
+    o: &PlatformEvidence,
+    signers: &[TrustedSigner],
+) -> Result<(), GaError> {
+    if !valid_sha256(&o.source_state_sha256)
+        || !valid_sha256(&o.rc_archive_sha256)
+        || !valid_sha256(&o.artifact_sha256)
+        || !valid_sha256(&o.evidence_bundle_sha256)
+        || o.artifact_size == 0
+    {
         return Err(GaError::InvalidDigest);
     }
-    if o.signature_algorithm != "ed25519" { return Err(GaError::InvalidSignature); }
-    if o.native_tests != "verified" || o.fresh_install != "verified" { return Err(GaError::PlatformIncomplete); }
-    if !o.first_release && (o.upgrade_n_minus_1 != "verified" || o.rollback_or_restore != "verified" || o.previous_version.is_none()) {
+    if o.signature_algorithm != "ed25519" {
+        return Err(GaError::InvalidSignature);
+    }
+    if o.native_tests != "verified" || o.fresh_install != "verified" {
+        return Err(GaError::PlatformIncomplete);
+    }
+    if !o.first_release
+        && (o.upgrade_n_minus_1 != "verified"
+            || o.rollback_or_restore != "verified"
+            || o.previous_version.is_none())
+    {
         return Err(GaError::PlatformIncomplete);
     }
     match o.platform {
-        Platform::Windows if o.code_signing != "verified" => return Err(GaError::PlatformIncomplete),
-        Platform::Macos if o.code_signing != "verified" || o.notarization != "verified" => return Err(GaError::PlatformIncomplete),
+        Platform::Windows if o.code_signing != "verified" => {
+            return Err(GaError::PlatformIncomplete)
+        }
+        Platform::Macos if o.code_signing != "verified" || o.notarization != "verified" => {
+            return Err(GaError::PlatformIncomplete)
+        }
         _ => {}
     }
-    verify_ed25519(&platform_payload(o), &o.signer_key_id, &o.signature_b64, signers)
+    verify_ed25519(
+        &platform_payload(o),
+        &o.signer_key_id,
+        &o.signature_b64,
+        signers,
+    )
 }
 
 pub fn verify_update_transition(
@@ -188,29 +233,57 @@ pub fn verify_update_transition(
     now: DateTime<Utc>,
     signers: &[TrustedSigner],
 ) -> Result<(), GaError> {
-    if manifest.sequence <= current_sequence { return Err(GaError::SequenceNotMonotonic); }
-    if manifest.expires_at <= now || manifest.created_at > now + Duration::minutes(5)
-        || manifest.expires_at - manifest.created_at > Duration::hours(168) {
+    if manifest.sequence <= current_sequence {
+        return Err(GaError::SequenceNotMonotonic);
+    }
+    if manifest.expires_at <= now
+        || manifest.created_at > now + Duration::minutes(5)
+        || manifest.expires_at - manifest.created_at > Duration::hours(168)
+    {
         return Err(GaError::InvalidMetadataLifetime);
     }
-    if !valid_sha256(&manifest.source_state_sha256) || manifest.targets.iter().any(|t| !valid_sha256(&t.sha256) || t.size == 0 || !t.url.starts_with("https://")) {
+    if !valid_sha256(&manifest.source_state_sha256)
+        || manifest
+            .targets
+            .iter()
+            .any(|t| !valid_sha256(&t.sha256) || t.size == 0 || !t.url.starts_with("https://"))
+    {
         return Err(GaError::InvalidDigest);
     }
-    verify_ed25519(&update_payload(manifest), &manifest.signer_key_id, &manifest.signature_b64, signers)?;
+    verify_ed25519(
+        &update_payload(manifest),
+        &manifest.signer_key_id,
+        &manifest.signature_b64,
+        signers,
+    )?;
     let current = Version::parse(current_version).map_err(|_| GaError::InvalidVersionTransition)?;
-    let target = Version::parse(&manifest.version).map_err(|_| GaError::InvalidVersionTransition)?;
+    let target =
+        Version::parse(&manifest.version).map_err(|_| GaError::InvalidVersionTransition)?;
     if target < current {
         let token = rollback.ok_or(GaError::RollbackAuthorizationRequired)?;
-        if token.from_version != current_version || token.to_version != manifest.version
-            || token.from_sequence != current_sequence || token.to_sequence != manifest.sequence
-            || token.expires_at <= now || token.created_at > now + Duration::minutes(5)
-            || token.expires_at - token.created_at > Duration::hours(72) {
+        if token.from_version != current_version
+            || token.to_version != manifest.version
+            || token.from_sequence != current_sequence
+            || token.to_sequence != manifest.sequence
+            || token.expires_at <= now
+            || token.created_at > now + Duration::minutes(5)
+            || token.expires_at - token.created_at > Duration::hours(72)
+        {
             return Err(GaError::RollbackAuthorizationRequired);
         }
-        let from = Version::parse(&token.from_version).map_err(|_| GaError::InvalidVersionTransition)?;
-        let to = Version::parse(&token.to_version).map_err(|_| GaError::InvalidVersionTransition)?;
-        if to >= from { return Err(GaError::InvalidVersionTransition); }
-        verify_ed25519(&rollback_payload(token), &token.signer_key_id, &token.signature_b64, signers)?;
+        let from =
+            Version::parse(&token.from_version).map_err(|_| GaError::InvalidVersionTransition)?;
+        let to =
+            Version::parse(&token.to_version).map_err(|_| GaError::InvalidVersionTransition)?;
+        if to >= from {
+            return Err(GaError::InvalidVersionTransition);
+        }
+        verify_ed25519(
+            &rollback_payload(token),
+            &token.signer_key_id,
+            &token.signature_b64,
+            signers,
+        )?;
     }
     Ok(())
 }

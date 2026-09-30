@@ -1,7 +1,7 @@
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use chrono::{DateTime, Utc};
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
-use phxclaw_types::{is_uuid_v7, PluginManifest, PluginState, SandboxNetworkMode};
+use phxclaw_types::{PluginManifest, PluginState, SandboxNetworkMode, is_uuid_v7};
 use postgres::Client;
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
@@ -35,7 +35,9 @@ impl TrustStore {
     }
 
     pub fn signer(&self, id: &str) -> Option<&TrustedSigner> {
-        self.signers.iter().find(|signer| signer.id == id && signer.status == "active")
+        self.signers
+            .iter()
+            .find(|signer| signer.id == id && signer.status == "active")
     }
 }
 
@@ -71,7 +73,11 @@ pub enum RegistryError {
     #[error("missing required dependency {dependency} for plugin {plugin}")]
     MissingDependency { plugin: String, dependency: Uuid },
     #[error("dependency version mismatch: plugin {plugin} requires {requirement}, found {found}")]
-    DependencyVersion { plugin: String, requirement: String, found: String },
+    DependencyVersion {
+        plugin: String,
+        requirement: String,
+        found: String,
+    },
     #[error("untrusted signer {signer} for plugin {plugin}")]
     UntrustedSigner { plugin: String, signer: String },
     #[error("integrity failure for plugin {plugin}: {reason}")]
@@ -174,13 +180,21 @@ impl PluginRegistry {
         self.load_json(&input, path)
     }
 
-    pub fn register(&mut self, manifest: PluginManifest, source: &Path) -> Result<(), RegistryError> {
+    pub fn register(
+        &mut self,
+        manifest: PluginManifest,
+        source: &Path,
+    ) -> Result<(), RegistryError> {
         self.validate_manifest(&manifest)?;
         self.verify_integrity(&manifest)?;
         if self.manifests.contains_key(&manifest.uuid) {
             return Err(RegistryError::Duplicate(manifest.uuid));
         }
-        if self.manifests.values().any(|item| item.name == manifest.name) {
+        if self
+            .manifests
+            .values()
+            .any(|item| item.name == manifest.name)
+        {
             return Err(RegistryError::DuplicateName(manifest.name));
         }
         self.states.insert(manifest.uuid, PluginState::Validated);
@@ -194,13 +208,17 @@ impl PluginRegistry {
             for dep in &plugin.dependencies {
                 match self.manifests.get(&dep.uuid) {
                     Some(found) => {
-                        let req = VersionReq::parse(&dep.version).map_err(|error| RegistryError::Invalid {
-                            plugin: plugin.name.clone(),
-                            reason: format!("invalid dependency semver requirement: {error}"),
+                        let req = VersionReq::parse(&dep.version).map_err(|error| {
+                            RegistryError::Invalid {
+                                plugin: plugin.name.clone(),
+                                reason: format!("invalid dependency semver requirement: {error}"),
+                            }
                         })?;
-                        let found_version = Version::parse(&found.version).map_err(|error| RegistryError::Invalid {
-                            plugin: found.name.clone(),
-                            reason: format!("invalid semver: {error}"),
+                        let found_version = Version::parse(&found.version).map_err(|error| {
+                            RegistryError::Invalid {
+                                plugin: found.name.clone(),
+                                reason: format!("invalid semver: {error}"),
+                            }
                         })?;
                         if !req.matches(&found_version) {
                             return Err(RegistryError::DependencyVersion {
@@ -215,7 +233,7 @@ impl PluginRegistry {
                         return Err(RegistryError::MissingDependency {
                             plugin: plugin.name.clone(),
                             dependency: dep.uuid,
-                        })
+                        });
                     }
                 }
             }
@@ -226,7 +244,11 @@ impl PluginRegistry {
     pub fn persist_postgres(&self, client: &mut Client) -> Result<(), RegistryError> {
         let mut transaction = client.transaction()?;
         for manifest in self.manifests.values() {
-            let state = self.states.get(&manifest.uuid).copied().unwrap_or(PluginState::Validated);
+            let state = self
+                .states
+                .get(&manifest.uuid)
+                .copied()
+                .unwrap_or(PluginState::Validated);
             let manifest_json = serde_json::to_value(manifest)?;
             transaction.execute(
                 "INSERT INTO phoenix_plugin_manifests \
@@ -254,7 +276,13 @@ impl PluginRegistry {
             transaction.execute(
                 "INSERT INTO phoenix_plugin_quarantine \
                  (plugin_uuid, plugin_name, source, reason, observed_at) VALUES ($1,$2,$3,$4,$5)",
-                &[&item.plugin_uuid, &item.plugin_name, &item.source, &item.reason, &item.observed_at],
+                &[
+                    &item.plugin_uuid,
+                    &item.plugin_name,
+                    &item.source,
+                    &item.reason,
+                    &item.observed_at,
+                ],
             )?;
         }
         transaction.commit()?;
@@ -306,7 +334,10 @@ impl PluginRegistry {
                     .get("uuid")
                     .and_then(|value| value.as_str())
                     .and_then(|value| Uuid::parse_str(value).ok());
-                plugin_name = value.get("name").and_then(|value| value.as_str()).map(str::to_owned);
+                plugin_name = value
+                    .get("name")
+                    .and_then(|value| value.as_str())
+                    .map(str::to_owned);
             }
         }
         if let Some(plugin_uuid) = plugin_uuid {
@@ -330,7 +361,8 @@ impl PluginRegistry {
         if !is_uuid_v7(&manifest.uuid) {
             return Err(invalid("plugin UUID must be UUIDv7".into()));
         }
-        Version::parse(&manifest.version).map_err(|error| invalid(format!("invalid semver: {error}")))?;
+        Version::parse(&manifest.version)
+            .map_err(|error| invalid(format!("invalid semver: {error}")))?;
         Version::parse(&manifest.manifest_version)
             .map_err(|error| invalid(format!("invalid manifest version: {error}")))?;
         let api_req = VersionReq::parse(&manifest.core_api)
@@ -348,11 +380,18 @@ impl PluginRegistry {
         }
         let mut extension_points = std::collections::BTreeSet::new();
         for extension in &manifest.extension_points {
-            if extension.point.trim().is_empty() || !extension_points.insert(extension.point.clone()) {
-                return Err(invalid("extension point names must be non-empty and unique".into()));
+            if extension.point.trim().is_empty()
+                || !extension_points.insert(extension.point.clone())
+            {
+                return Err(invalid(
+                    "extension point names must be non-empty and unique".into(),
+                ));
             }
             VersionReq::parse(&extension.contract_version).map_err(|error| {
-                invalid(format!("invalid extension contract version for {}: {error}", extension.point))
+                invalid(format!(
+                    "invalid extension contract version for {}: {error}",
+                    extension.point
+                ))
             })?;
         }
         if manifest.kind == "agent" && manifest.agent.is_none() {
@@ -362,7 +401,9 @@ impl PluginRegistry {
             return Err(invalid("agent profile is only valid for kind=agent".into()));
         }
         if manifest.kind == "model_provider" && manifest.model_provider.is_none() {
-            return Err(invalid("kind=model_provider requires a model_provider profile".into()));
+            return Err(invalid(
+                "kind=model_provider requires a model_provider profile".into(),
+            ));
         }
         if manifest.kind != "model_provider" && manifest.model_provider.is_some() {
             return Err(invalid(
@@ -371,7 +412,9 @@ impl PluginRegistry {
         }
         if let Some(provider) = &manifest.model_provider {
             if provider.models.is_empty() {
-                return Err(invalid("model_provider must declare at least one model".into()));
+                return Err(invalid(
+                    "model_provider must declare at least one model".into(),
+                ));
             }
             let mut model_ids = std::collections::BTreeSet::new();
             for model in &provider.models {
@@ -392,7 +435,11 @@ impl PluginRegistry {
             return Err(invalid("only ed25519 signatures are accepted".into()));
         }
         if manifest.integrity.digest.len() != 64
-            || !manifest.integrity.digest.chars().all(|character| character.is_ascii_hexdigit())
+            || !manifest
+                .integrity
+                .digest
+                .chars()
+                .all(|character| character.is_ascii_hexdigit())
         {
             return Err(invalid("digest must be 64 hex chars".into()));
         }
@@ -412,10 +459,14 @@ impl PluginRegistry {
             return Err(invalid("rollback steps are required".into()));
         }
         if manifest.sandbox.timeout_ms == 0 || manifest.sandbox.memory_mb == 0 {
-            return Err(invalid("sandbox timeout and memory must be greater than zero".into()));
+            return Err(invalid(
+                "sandbox timeout and memory must be greater than zero".into(),
+            ));
         }
         if !(1..=100).contains(&manifest.sandbox.cpu_quota_percent) {
-            return Err(invalid("sandbox cpu_quota_percent must be between 1 and 100".into()));
+            return Err(invalid(
+                "sandbox cpu_quota_percent must be between 1 and 100".into(),
+            ));
         }
         if manifest.sandbox.network == SandboxNetworkMode::Deny
             && !manifest.sandbox.network_allowlist.is_empty()
@@ -470,20 +521,24 @@ impl PluginRegistry {
             });
         }
 
-        let public_key = BASE64
-            .decode(&signer.public_key_base64)
-            .map_err(|error| RegistryError::Integrity {
+        let public_key =
+            BASE64
+                .decode(&signer.public_key_base64)
+                .map_err(|error| RegistryError::Integrity {
+                    plugin: manifest.name.clone(),
+                    reason: format!("invalid trusted public key encoding: {error}"),
+                })?;
+        let public_key: [u8; 32] = public_key
+            .try_into()
+            .map_err(|_| RegistryError::Integrity {
                 plugin: manifest.name.clone(),
-                reason: format!("invalid trusted public key encoding: {error}"),
+                reason: "trusted public key must be exactly 32 bytes".into(),
             })?;
-        let public_key: [u8; 32] = public_key.try_into().map_err(|_| RegistryError::Integrity {
-            plugin: manifest.name.clone(),
-            reason: "trusted public key must be exactly 32 bytes".into(),
-        })?;
-        let verifying_key = VerifyingKey::from_bytes(&public_key).map_err(|error| RegistryError::Integrity {
-            plugin: manifest.name.clone(),
-            reason: format!("invalid Ed25519 public key: {error}"),
-        })?;
+        let verifying_key =
+            VerifyingKey::from_bytes(&public_key).map_err(|error| RegistryError::Integrity {
+                plugin: manifest.name.clone(),
+                reason: format!("invalid Ed25519 public key: {error}"),
+            })?;
 
         let signature = BASE64
             .decode(&manifest.integrity.signature)
@@ -491,10 +546,11 @@ impl PluginRegistry {
                 plugin: manifest.name.clone(),
                 reason: format!("invalid signature encoding: {error}"),
             })?;
-        let signature = Signature::from_slice(&signature).map_err(|error| RegistryError::Integrity {
-            plugin: manifest.name.clone(),
-            reason: format!("invalid Ed25519 signature: {error}"),
-        })?;
+        let signature =
+            Signature::from_slice(&signature).map_err(|error| RegistryError::Integrity {
+                plugin: manifest.name.clone(),
+                reason: format!("invalid Ed25519 signature: {error}"),
+            })?;
 
         verifying_key
             .verify(signing_message(manifest).as_bytes(), &signature)
@@ -557,14 +613,16 @@ mod tests {
     }
 
     fn registry() -> PluginRegistry {
-        let trust_store = TrustStore::from_json(include_str!(
-            "../../../config/trust/plugin-signers.json"
-        ))
-        .unwrap();
+        let trust_store =
+            TrustStore::from_json(include_str!("../../../config/trust/plugin-signers.json"))
+                .unwrap();
         // A versao sai da constituicao: cravada aqui, envelheceu em 0.3.0 enquanto os manifestos pediam 0.5.
         let constitution: serde_json::Value =
             serde_json::from_str(include_str!("../../../config/constitution.json")).unwrap();
-        let api = constitution["plugin_api_version"].as_str().unwrap().to_owned();
+        let api = constitution["plugin_api_version"]
+            .as_str()
+            .unwrap()
+            .to_owned();
         PluginRegistry::new(api, root(), trust_store)
     }
 

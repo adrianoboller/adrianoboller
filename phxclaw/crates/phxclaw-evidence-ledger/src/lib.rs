@@ -90,23 +90,25 @@ impl EvidenceLedger {
         }
         let report = verify_path(&path)?;
         if !report.valid {
-            return Err(LedgerError::InvalidRecord(report.first_invalid_line.unwrap_or(0)));
+            return Err(LedgerError::InvalidRecord(
+                report.first_invalid_line.unwrap_or(0),
+            ));
         }
-        Ok(Self { path, last_hash: Arc::new(Mutex::new(report.final_hash)) })
+        Ok(Self {
+            path,
+            last_hash: Arc::new(Mutex::new(report.final_hash)),
+        })
     }
 
-    pub fn path(&self) -> &Path { &self.path }
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
 
     pub fn append(&self, draft: EvidenceDraft) -> Result<EvidenceRecord, LedgerError> {
         let mut last_hash = self.last_hash.lock().map_err(|_| LedgerError::Poisoned)?;
         let occurred_at = Utc::now();
         let uuid = new_uuid_v7();
-        let payload = canonical_payload(
-            uuid,
-            &draft,
-            occurred_at,
-            last_hash.clone(),
-        );
+        let payload = canonical_payload(uuid, &draft, occurred_at, last_hash.clone());
         let record_hash = sha256_hex(&serde_json::to_vec(&payload)?);
         let record = EvidenceRecord {
             uuid,
@@ -124,7 +126,10 @@ impl EvidenceLedger {
             record_hash: record_hash.clone(),
         };
 
-        let mut file = OpenOptions::new().create(true).append(true).open(&self.path)?;
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.path)?;
         serde_json::to_writer(&mut file, &record)?;
         file.write_all(b"\n")?;
         file.flush()?;
@@ -142,7 +147,9 @@ impl EvidenceLedger {
         let mut records = Vec::new();
         for line in BufReader::new(file).lines() {
             let line = line?;
-            if line.trim().is_empty() { continue; }
+            if line.trim().is_empty() {
+                continue;
+            }
             records.push(serde_json::from_str(&line)?);
             if records.len() > limit.max(1) {
                 records.remove(0);
@@ -158,7 +165,9 @@ fn verify_path(path: &Path) -> Result<VerifyReport, LedgerError> {
     let mut count = 0usize;
     for (index, line) in BufReader::new(file).lines().enumerate() {
         let line = line?;
-        if line.trim().is_empty() { continue; }
+        if line.trim().is_empty() {
+            continue;
+        }
         let record: EvidenceRecord = serde_json::from_str(&line)?;
         let draft = EvidenceDraft {
             action_uuid: record.action_uuid,
@@ -184,7 +193,12 @@ fn verify_path(path: &Path) -> Result<VerifyReport, LedgerError> {
         previous = Some(record.record_hash);
         count += 1;
     }
-    Ok(VerifyReport { records: count, valid: true, first_invalid_line: None, final_hash: previous })
+    Ok(VerifyReport {
+        records: count,
+        valid: true,
+        first_invalid_line: None,
+        final_hash: previous,
+    })
 }
 
 fn canonical_payload(
@@ -195,24 +209,52 @@ fn canonical_payload(
 ) -> Value {
     let mut map = BTreeMap::<String, Value>::new();
     map.insert("uuid".into(), Value::String(uuid.to_string()));
-    map.insert("action_uuid".into(), Value::String(draft.action_uuid.to_string()));
-    map.insert("correlation_uuid".into(), draft.correlation_uuid.map(|u| Value::String(u.to_string())).unwrap_or(Value::Null));
+    map.insert(
+        "action_uuid".into(),
+        Value::String(draft.action_uuid.to_string()),
+    );
+    map.insert(
+        "correlation_uuid".into(),
+        draft
+            .correlation_uuid
+            .map(|u| Value::String(u.to_string()))
+            .unwrap_or(Value::Null),
+    );
     map.insert("actor".into(), Value::String(draft.actor.clone()));
     map.insert("capability".into(), Value::String(draft.capability.clone()));
     map.insert("action".into(), Value::String(draft.action.clone()));
-    map.insert("outcome".into(), serde_json::to_value(&draft.outcome).expect("serializable outcome"));
-    map.insert("request_summary".into(), canonical_value(draft.request_summary.clone()));
-    map.insert("result_summary".into(), canonical_value(draft.result_summary.clone()));
-    map.insert("artifact_uris".into(), serde_json::to_value(&draft.artifact_uris).expect("serializable artifacts"));
-    map.insert("occurred_at".into(), Value::String(occurred_at.to_rfc3339()));
-    map.insert("previous_hash".into(), previous_hash.map(Value::String).unwrap_or(Value::Null));
+    map.insert(
+        "outcome".into(),
+        serde_json::to_value(&draft.outcome).expect("serializable outcome"),
+    );
+    map.insert(
+        "request_summary".into(),
+        canonical_value(draft.request_summary.clone()),
+    );
+    map.insert(
+        "result_summary".into(),
+        canonical_value(draft.result_summary.clone()),
+    );
+    map.insert(
+        "artifact_uris".into(),
+        serde_json::to_value(&draft.artifact_uris).expect("serializable artifacts"),
+    );
+    map.insert(
+        "occurred_at".into(),
+        Value::String(occurred_at.to_rfc3339()),
+    );
+    map.insert(
+        "previous_hash".into(),
+        previous_hash.map(Value::String).unwrap_or(Value::Null),
+    );
     serde_json::to_value(map).expect("serializable canonical payload")
 }
 
 fn canonical_value(value: Value) -> Value {
     match value {
         Value::Object(map) => {
-            let sorted = map.into_iter()
+            let sorted = map
+                .into_iter()
                 .map(|(k, v)| (k, canonical_value(v)))
                 .collect::<BTreeMap<_, _>>();
             serde_json::to_value(sorted).expect("canonical object")
@@ -225,7 +267,11 @@ fn canonical_value(value: Value) -> Value {
 fn sha256_hex(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(bytes);
-    hasher.finalize().iter().map(|b| format!("{b:02x}")).collect()
+    hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 #[cfg(test)]
@@ -238,17 +284,19 @@ mod tests {
         let path = std::env::temp_dir().join(format!("phoenix-evidence-{}.jsonl", new_uuid_v7()));
         let ledger = EvidenceLedger::open(&path).unwrap();
         for n in 0..3 {
-            ledger.append(EvidenceDraft {
-                action_uuid: new_uuid_v7(),
-                correlation_uuid: None,
-                actor: "test".into(),
-                capability: "test.action".into(),
-                action: "test".into(),
-                outcome: EvidenceOutcome::Succeeded,
-                request_summary: json!({"n": n}),
-                result_summary: json!({"ok": true}),
-                artifact_uris: vec![],
-            }).unwrap();
+            ledger
+                .append(EvidenceDraft {
+                    action_uuid: new_uuid_v7(),
+                    correlation_uuid: None,
+                    actor: "test".into(),
+                    capability: "test.action".into(),
+                    action: "test".into(),
+                    outcome: EvidenceOutcome::Succeeded,
+                    request_summary: json!({"n": n}),
+                    result_summary: json!({"ok": true}),
+                    artifact_uris: vec![],
+                })
+                .unwrap();
         }
         let report = ledger.verify().unwrap();
         assert!(report.valid);

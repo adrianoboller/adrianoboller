@@ -1,31 +1,29 @@
-use phxclaw_api_gateway::{generate_bearer_token, start as start_api, ApiGatewayConfig, ApiServerHandle, ApiServerInfo};
-use phxclaw_desktop_protocol::{
-    DesktopAction, DesktopActionRequest, DesktopActionResult, DesktopActionStatus, DESKTOP_PROTOCOL,
+use phxclaw_api_gateway::{
+    ApiGatewayConfig, ApiServerHandle, ApiServerInfo, generate_bearer_token, start as start_api,
 };
+use phxclaw_desktop_protocol::{
+    DESKTOP_PROTOCOL, DesktopAction, DesktopActionRequest, DesktopActionResult, DesktopActionStatus,
+};
+use phxclaw_event_bus::EventEnvelope;
 use phxclaw_evidence_ledger::{
     EvidenceDraft, EvidenceLedger, EvidenceOutcome, EvidenceRecord, VerifyReport,
 };
-use phxclaw_event_bus::EventEnvelope;
 use phxclaw_live_bus::{LiveBusStats, LiveEventHub};
 use phxclaw_system_automation::{
-    capture_primary_monitor, CommandRequest, CommandResult, EnigoInputProvider, ExecutionPolicy,
-    InputAction, InputProvider, LaunchRequest, LaunchResult, ShellExecutor,
+    CommandRequest, CommandResult, EnigoInputProvider, ExecutionPolicy, InputAction, InputProvider,
+    LaunchRequest, LaunchResult, ShellExecutor, capture_primary_monitor,
 };
 use phxclaw_types::new_uuid_v7;
 use phxclaw_webview_control::WebViewCommand;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::{
     collections::{BTreeSet, HashMap},
     net::{IpAddr, Ipv4Addr},
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
-use tauri::{
-    Emitter, Manager, State,
-    utils::config::WebviewUrl,
-    webview::WebviewWindowBuilder,
-};
+use tauri::{Emitter, Manager, State, utils::config::WebviewUrl, webview::WebviewWindowBuilder};
 use url::Url;
 use uuid::Uuid;
 
@@ -56,11 +54,23 @@ impl HostPolicy {
     }
 
     fn allows_url(&self, url: &Url) -> bool {
-        if !self.external_webviews { return false; }
-        if !matches!(url.scheme(), "http" | "https") { return false; }
-        if !url.username().is_empty() || url.password().is_some() { return false; }
-        let Some(host) = url.host_str() else { return false; };
-        let default_port = match url.scheme() { "http" => 80, "https" => 443, _ => return false };
+        if !self.external_webviews {
+            return false;
+        }
+        if !matches!(url.scheme(), "http" | "https") {
+            return false;
+        }
+        if !url.username().is_empty() || url.password().is_some() {
+            return false;
+        }
+        let Some(host) = url.host_str() else {
+            return false;
+        };
+        let default_port = match url.scheme() {
+            "http" => 80,
+            "https" => 443,
+            _ => return false,
+        };
         let port = url.port().unwrap_or(default_port);
         let origin = if port == default_port {
             format!("{}://{}", url.scheme(), host)
@@ -126,7 +136,11 @@ fn host_status(state: State<'_, DesktopState>) -> HostStatus {
         version: env!("CARGO_PKG_VERSION").into(),
         session_uuid: state.session_uuid,
         protocol: DESKTOP_PROTOCOL,
-        api: state.api.lock().ok().and_then(|g| g.as_ref().map(|h| h.info.clone())),
+        api: state
+            .api
+            .lock()
+            .ok()
+            .and_then(|g| g.as_ref().map(|h| h.info.clone())),
         api_token_path: state.api_token_path.clone(),
         policy: state.policy.clone(),
         live_bus: state.hub.stats().ok(),
@@ -135,27 +149,46 @@ fn host_status(state: State<'_, DesktopState>) -> HostStatus {
 }
 
 #[tauri::command]
-fn events_snapshot(state: State<'_, DesktopState>, limit: Option<usize>) -> Result<Vec<EventEnvelope>, String> {
-    state.hub.snapshot(limit.unwrap_or(100).min(1000)).map_err(|e| e.to_string())
+fn events_snapshot(
+    state: State<'_, DesktopState>,
+    limit: Option<usize>,
+) -> Result<Vec<EventEnvelope>, String> {
+    state
+        .hub
+        .snapshot(limit.unwrap_or(100).min(1000))
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn publish_ui_event(state: State<'_, DesktopState>, request: PublishUiEvent) -> Result<EventEnvelope, String> {
+fn publish_ui_event(
+    state: State<'_, DesktopState>,
+    request: PublishUiEvent,
+) -> Result<EventEnvelope, String> {
     if request.topic.starts_with("desktop.") || request.topic.starts_with("system.command") {
         return Err("UI event cannot publish host-control topics directly".into());
     }
-    state.hub.publish_json(
-        request.topic,
-        request.event_type,
-        request.payload,
-        request.correlation_uuid,
-        None,
-    ).map_err(|e| e.to_string())
+    state
+        .hub
+        .publish_json(
+            request.topic,
+            request.event_type,
+            request.payload,
+            request.correlation_uuid,
+            None,
+        )
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-async fn execute_shell(state: State<'_, DesktopState>, request: CommandRequest) -> Result<DesktopActionResult, String> {
-    let action = DesktopActionRequest::new("command-center", "system.command.execute", DesktopAction::ExecuteCommand { request });
+async fn execute_shell(
+    state: State<'_, DesktopState>,
+    request: CommandRequest,
+) -> Result<DesktopActionResult, String> {
+    let action = DesktopActionRequest::new(
+        "command-center",
+        "system.command.execute",
+        DesktopAction::ExecuteCommand { request },
+    );
     execute_shell_action(&state, action).await
 }
 
@@ -175,13 +208,23 @@ async fn launch_application(
 }
 
 #[tauri::command]
-fn apply_input(state: State<'_, DesktopState>, action: InputAction) -> Result<DesktopActionResult, String> {
-    let request = DesktopActionRequest::new("command-center", "system.input.control", DesktopAction::Input { action });
+fn apply_input(
+    state: State<'_, DesktopState>,
+    action: InputAction,
+) -> Result<DesktopActionResult, String> {
+    let request = DesktopActionRequest::new(
+        "command-center",
+        "system.input.control",
+        DesktopAction::Input { action },
+    );
     execute_input_action(&state, request)
 }
 
 #[tauri::command]
-fn capture_screen(state: State<'_, DesktopState>, format: Option<String>) -> Result<DesktopActionResult, String> {
+fn capture_screen(
+    state: State<'_, DesktopState>,
+    format: Option<String>,
+) -> Result<DesktopActionResult, String> {
     let request = DesktopActionRequest::new(
         "command-center",
         "screen.capture",
@@ -203,7 +246,10 @@ fn request_webview_action(
     let request = DesktopActionRequest::new(
         "command-center",
         "webview.dom.control",
-        DesktopAction::WebView { view_label: view_label.clone(), command },
+        DesktopAction::WebView {
+            view_label: view_label.clone(),
+            command,
+        },
     );
     dispatch_webview_action(&app, &state, request, &view_label)
 }
@@ -213,11 +259,18 @@ fn complete_webview_action(
     state: State<'_, DesktopState>,
     completion: WebViewCompletion,
 ) -> Result<DesktopActionResult, String> {
-    let request = state.pending_webview.lock().map_err(|_| "pending webview lock poisoned")?
+    let request = state
+        .pending_webview
+        .lock()
+        .map_err(|_| "pending webview lock poisoned")?
         .remove(&completion.request_uuid)
         .ok_or_else(|| "unknown webview request".to_string())?;
 
-    let status = if completion.ok { DesktopActionStatus::Succeeded } else { DesktopActionStatus::Failed };
+    let status = if completion.ok {
+        DesktopActionStatus::Succeeded
+    } else {
+        DesktopActionStatus::Failed
+    };
     let output = if completion.ok {
         completion.value
     } else {
@@ -227,8 +280,14 @@ fn complete_webview_action(
 }
 
 #[tauri::command]
-fn evidence_tail(state: State<'_, DesktopState>, limit: Option<usize>) -> Result<Vec<EvidenceRecord>, String> {
-    state.ledger.tail(limit.unwrap_or(50).min(500)).map_err(|e| e.to_string())
+fn evidence_tail(
+    state: State<'_, DesktopState>,
+    limit: Option<usize>,
+) -> Result<Vec<EvidenceRecord>, String> {
+    state
+        .ledger
+        .tail(limit.unwrap_or(50).min(500))
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -251,21 +310,30 @@ async fn create_managed_webview(
     let policy = state.policy.clone();
     let requested_url = parsed.clone();
     WebviewWindowBuilder::new(&app, label.clone(), WebviewUrl::External(parsed))
-        .title(format!("PhxClaw • {}", requested_url.host_str().unwrap_or("WebView")))
+        .title(format!(
+            "PhxClaw • {}",
+            requested_url.host_str().unwrap_or("WebView")
+        ))
         .inner_size(1280.0, 820.0)
         .on_navigation(move |candidate| policy.allows_url(candidate))
         .build()
         .map_err(|e| format!("failed to create managed webview: {e}"))?;
-    state.managed_webviews.lock().map_err(|_| "managed webview lock poisoned")?
+    state
+        .managed_webviews
+        .lock()
+        .map_err(|_| "managed webview lock poisoned")?
         .insert(label.clone(), origin_of(&requested_url));
 
-    let event = state.hub.publish_json(
-        "desktop.webview",
-        "managed_webview_created",
-        json!({"label": label, "url": requested_url}),
-        None,
-        None,
-    ).map_err(|e| e.to_string())?;
+    let event = state
+        .hub
+        .publish_json(
+            "desktop.webview",
+            "managed_webview_created",
+            json!({"label": label, "url": requested_url}),
+            None,
+            None,
+        )
+        .map_err(|e| e.to_string())?;
     let _ = record_simple_evidence(
         &state,
         event.uuid,
@@ -278,7 +346,10 @@ async fn create_managed_webview(
         vec![],
     );
 
-    Ok(ManagedWebView { label, url: requested_url.to_string() })
+    Ok(ManagedWebView {
+        label,
+        url: requested_url.to_string(),
+    })
 }
 
 pub fn run() {
@@ -300,10 +371,14 @@ pub fn run() {
             };
             let shell = Arc::new(ShellExecutor::new(execution_policy));
 
-            let api_token = std::env::var("PHXCLAW_API_TOKEN").unwrap_or_else(|_| generate_bearer_token());
+            let api_token =
+                std::env::var("PHXCLAW_API_TOKEN").unwrap_or_else(|_| generate_bearer_token());
             let api_token_path = app_data.join("api/api.token");
             write_secret_file(&api_token_path, &api_token)?;
-            let api_port = std::env::var("PHXCLAW_API_PORT").ok().and_then(|v| v.parse().ok()).unwrap_or(48_187);
+            let api_port = std::env::var("PHXCLAW_API_PORT")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(48_187);
             let api_config = ApiGatewayConfig {
                 bind_ip: IpAddr::V4(Ipv4Addr::LOCALHOST),
                 port: api_port,
@@ -312,7 +387,11 @@ pub fn run() {
                 allow_host_control_topics: policy.api_host_control,
                 replay_limit: 2_000,
             };
-            let api = tauri::async_runtime::block_on(start_api(hub.clone(), api_config, env!("CARGO_PKG_VERSION")))?;
+            let api = tauri::async_runtime::block_on(start_api(
+                hub.clone(),
+                api_config,
+                env!("CARGO_PKG_VERSION"),
+            ))?;
 
             app.manage(DesktopState {
                 session_uuid: new_uuid_v7(),
@@ -332,7 +411,9 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 loop {
                     match ui_rx.recv().await {
-                        Ok(event) => { let _ = app_handle.emit("phoenix:event", &event); }
+                        Ok(event) => {
+                            let _ = app_handle.emit("phoenix:event", &event);
+                        }
                         Err(tokio::sync::broadcast::error::RecvError::Lagged(dropped)) => {
                             let lag = LiveEventHub::lag_event(dropped, "tauri-ui-bridge");
                             let _ = app_handle.emit("phoenix:event", &lag);
@@ -351,8 +432,14 @@ pub fn run() {
                         Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
                         Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                     };
-                    if event.topic != "desktop.action" || event.event_type != "requested" { continue; }
-                    let Ok(request) = serde_json::from_value::<DesktopActionRequest>(event.payload.clone()) else { continue; };
+                    if event.topic != "desktop.action" || event.event_type != "requested" {
+                        continue;
+                    }
+                    let Ok(request) =
+                        serde_json::from_value::<DesktopActionRequest>(event.payload.clone())
+                    else {
+                        continue;
+                    };
                     let state = dispatcher_app.state::<DesktopState>();
                     let result = dispatch_agent_action(&dispatcher_app, &state, request).await;
                     if let Err(error) = result {
@@ -421,85 +508,172 @@ async fn dispatch_agent_action(
         DesktopAction::ExecuteCommand { .. } => execute_shell_action_ref(state, request).await,
         DesktopAction::Input { .. } => execute_input_action_ref(state, request),
         DesktopAction::CaptureScreen { .. } => execute_capture_action_ref(state, request),
-        DesktopAction::WebView { view_label, .. } => dispatch_webview_action(app, state, request, &view_label),
+        DesktopAction::WebView { view_label, .. } => {
+            dispatch_webview_action(app, state, request, &view_label)
+        }
     }
 }
 
-async fn execute_shell_action(state: &DesktopState, request: DesktopActionRequest) -> Result<DesktopActionResult, String> {
+async fn execute_shell_action(
+    state: &DesktopState,
+    request: DesktopActionRequest,
+) -> Result<DesktopActionResult, String> {
     execute_shell_action_ref(state, request).await
 }
 
-async fn execute_shell_action_ref(state: &DesktopState, request: DesktopActionRequest) -> Result<DesktopActionResult, String> {
-    let DesktopAction::ExecuteCommand { request: command } = &request.action else { return Err("wrong desktop action".into()); };
+async fn execute_shell_action_ref(
+    state: &DesktopState,
+    request: DesktopActionRequest,
+) -> Result<DesktopActionResult, String> {
+    let DesktopAction::ExecuteCommand { request: command } = &request.action else {
+        return Err("wrong desktop action".into());
+    };
     let command = command.clone();
     let shell = state.shell.clone();
     let summary = safe_command_summary(&command);
-    let result = tauri::async_runtime::spawn_blocking(move || shell.execute(&command)).await.map_err(|e| e.to_string())?;
+    let result = tauri::async_runtime::spawn_blocking(move || shell.execute(&command))
+        .await
+        .map_err(|e| e.to_string())?;
     match result {
         Ok(output) => finalize_command(state, &request, EvidenceOutcome::Succeeded, output),
         Err(error) => finalize_denied_or_failed(state, &request, error.to_string()),
     }
-    .map(|mut r| { if r.output.get("request").is_none() { r.output["request"] = summary; } r })
+    .map(|mut r| {
+        if r.output.get("request").is_none() {
+            r.output["request"] = summary;
+        }
+        r
+    })
 }
 
-async fn execute_launch_action(state: &DesktopState, request: DesktopActionRequest) -> Result<DesktopActionResult, String> {
+async fn execute_launch_action(
+    state: &DesktopState,
+    request: DesktopActionRequest,
+) -> Result<DesktopActionResult, String> {
     execute_launch_action_ref(state, request).await
 }
 
-async fn execute_launch_action_ref(state: &DesktopState, request: DesktopActionRequest) -> Result<DesktopActionResult, String> {
-    let DesktopAction::LaunchApplication { program, args, cwd } = &request.action else { return Err("wrong desktop action".into()); };
+async fn execute_launch_action_ref(
+    state: &DesktopState,
+    request: DesktopActionRequest,
+) -> Result<DesktopActionResult, String> {
+    let DesktopAction::LaunchApplication { program, args, cwd } = &request.action else {
+        return Err("wrong desktop action".into());
+    };
     let mut launch = LaunchRequest::new(program.clone(), args.clone());
     launch.cwd = cwd.clone();
     let shell = state.shell.clone();
-    let result = tauri::async_runtime::spawn_blocking(move || shell.launch(&launch)).await.map_err(|e| e.to_string())?;
+    let result = tauri::async_runtime::spawn_blocking(move || shell.launch(&launch))
+        .await
+        .map_err(|e| e.to_string())?;
     match result {
         Ok(output) => finalize_launch(state, &request, output),
         Err(error) => finalize_denied_or_failed(state, &request, error.to_string()),
     }
 }
 
-fn execute_input_action(state: &DesktopState, request: DesktopActionRequest) -> Result<DesktopActionResult, String> {
+fn execute_input_action(
+    state: &DesktopState,
+    request: DesktopActionRequest,
+) -> Result<DesktopActionResult, String> {
     execute_input_action_ref(state, request)
 }
 
-fn execute_input_action_ref(state: &DesktopState, request: DesktopActionRequest) -> Result<DesktopActionResult, String> {
+fn execute_input_action_ref(
+    state: &DesktopState,
+    request: DesktopActionRequest,
+) -> Result<DesktopActionResult, String> {
     if !state.policy.desktop_input {
-        return finalize_action(state, &request, DesktopActionStatus::Denied, json!({"error":"desktop input disabled by policy"}), vec![]);
+        return finalize_action(
+            state,
+            &request,
+            DesktopActionStatus::Denied,
+            json!({"error":"desktop input disabled by policy"}),
+            vec![],
+        );
     }
-    let DesktopAction::Input { action } = &request.action else { return Err("wrong desktop action".into()); };
+    let DesktopAction::Input { action } = &request.action else {
+        return Err("wrong desktop action".into());
+    };
     let mut provider = match EnigoInputProvider::new() {
         Ok(provider) => provider,
-        Err(error) => return finalize_action(
+        Err(error) => {
+            return finalize_action(
+                state,
+                &request,
+                DesktopActionStatus::Failed,
+                json!({"error": format!("input provider: {error}")}),
+                vec![],
+            );
+        }
+    };
+    match provider.apply(action) {
+        Ok(()) => finalize_action(
+            state,
+            &request,
+            DesktopActionStatus::Succeeded,
+            json!({"applied": true}),
+            vec![],
+        ),
+        Err(error) => finalize_action(
             state,
             &request,
             DesktopActionStatus::Failed,
-            json!({"error": format!("input provider: {error}")}),
+            json!({"error":error}),
             vec![],
         ),
-    };
-    match provider.apply(action) {
-        Ok(()) => finalize_action(state, &request, DesktopActionStatus::Succeeded, json!({"applied": true}), vec![]),
-        Err(error) => finalize_action(state, &request, DesktopActionStatus::Failed, json!({"error":error}), vec![]),
     }
 }
 
-fn execute_capture_action(state: &DesktopState, request: DesktopActionRequest) -> Result<DesktopActionResult, String> {
+fn execute_capture_action(
+    state: &DesktopState,
+    request: DesktopActionRequest,
+) -> Result<DesktopActionResult, String> {
     execute_capture_action_ref(state, request)
 }
 
-fn execute_capture_action_ref(state: &DesktopState, request: DesktopActionRequest) -> Result<DesktopActionResult, String> {
+fn execute_capture_action_ref(
+    state: &DesktopState,
+    request: DesktopActionRequest,
+) -> Result<DesktopActionResult, String> {
     if !state.policy.screen_capture {
-        return finalize_action(state, &request, DesktopActionStatus::Denied, json!({"error":"screen capture disabled by policy"}), vec![]);
+        return finalize_action(
+            state,
+            &request,
+            DesktopActionStatus::Denied,
+            json!({"error":"screen capture disabled by policy"}),
+            vec![],
+        );
     }
-    let DesktopAction::CaptureScreen { format, target } = &request.action else { return Err("wrong desktop action".into()); };
+    let DesktopAction::CaptureScreen { format, target } = &request.action else {
+        return Err("wrong desktop action".into());
+    };
     if target != "primary_monitor" {
-        return finalize_action(state, &request, DesktopActionStatus::Denied, json!({"error":"only primary_monitor is enabled in v0.6"}), vec![]);
+        return finalize_action(
+            state,
+            &request,
+            DesktopActionStatus::Denied,
+            json!({"error":"only primary_monitor is enabled in v0.6"}),
+            vec![],
+        );
     }
     if !matches!(format.to_ascii_lowercase().as_str(), "png" | "jpg" | "jpeg") {
-        return finalize_action(state, &request, DesktopActionStatus::Denied, json!({"error":"capture format must be png/jpg/jpeg"}), vec![]);
+        return finalize_action(
+            state,
+            &request,
+            DesktopActionStatus::Denied,
+            json!({"error":"capture format must be png/jpg/jpeg"}),
+            vec![],
+        );
     }
-    let extension = if format.eq_ignore_ascii_case("jpeg") { "jpg" } else { format.as_str() };
-    let path = state.captures_dir.join(format!("{}.{}", request.uuid, extension));
+    let extension = if format.eq_ignore_ascii_case("jpeg") {
+        "jpg"
+    } else {
+        format.as_str()
+    };
+    let path = state
+        .captures_dir
+        .join(format!("{}.{}", request.uuid, extension));
     match capture_primary_monitor(&path) {
         Ok(()) => finalize_action(
             state,
@@ -508,7 +682,13 @@ fn execute_capture_action_ref(state: &DesktopState, request: DesktopActionReques
             json!({"path": path, "target": target, "format": extension}),
             vec![format!("file://{}", path.display())],
         ),
-        Err(error) => finalize_action(state, &request, DesktopActionStatus::Failed, json!({"error":error.to_string()}), vec![]),
+        Err(error) => finalize_action(
+            state,
+            &request,
+            DesktopActionStatus::Failed,
+            json!({"error":error.to_string()}),
+            vec![],
+        ),
     }
 }
 
@@ -529,7 +709,11 @@ fn dispatch_webview_action(
     }
 
     let is_main = view_label == "main";
-    let is_managed = state.managed_webviews.lock().map_err(|_| "managed webview lock poisoned")?.contains_key(view_label);
+    let is_managed = state
+        .managed_webviews
+        .lock()
+        .map_err(|_| "managed webview lock poisoned")?
+        .contains_key(view_label);
     if !is_main && !is_managed {
         return finalize_action(
             state,
@@ -543,9 +727,19 @@ fn dispatch_webview_action(
     // Native eval provides arbitrary JavaScript side effects without enabling unsafe-eval
     // in the trusted Command Center CSP. Query-like DOM commands still use the typed
     // frontend bridge so results can be returned and evidenced.
-    if let DesktopAction::WebView { command: WebViewCommand::EvaluateJavascript { script }, .. } = &request.action {
+    if let DesktopAction::WebView {
+        command: WebViewCommand::EvaluateJavascript { script },
+        ..
+    } = &request.action
+    {
         let Some(window) = app.get_webview_window(view_label) else {
-            return finalize_action(state, &request, DesktopActionStatus::Failed, json!({"error":"webview not found"}), vec![]);
+            return finalize_action(
+                state,
+                &request,
+                DesktopActionStatus::Failed,
+                json!({"error":"webview not found"}),
+                vec![],
+            );
         };
         if let Err(error) = window.eval(script) {
             return finalize_action(
@@ -575,9 +769,16 @@ fn dispatch_webview_action(
         );
     }
 
-    state.pending_webview.lock().map_err(|_| "pending webview lock poisoned")?.insert(request.uuid, request.clone());
+    state
+        .pending_webview
+        .lock()
+        .map_err(|_| "pending webview lock poisoned")?
+        .insert(request.uuid, request.clone());
     if let Err(error) = app.emit_to(view_label, "phoenix:webview-request", &request) {
-        let _ = state.pending_webview.lock().map(|mut pending| pending.remove(&request.uuid));
+        let _ = state
+            .pending_webview
+            .lock()
+            .map(|mut pending| pending.remove(&request.uuid));
         return finalize_action(
             state,
             &request,
@@ -586,7 +787,11 @@ fn dispatch_webview_action(
             vec![],
         );
     }
-    let result = DesktopActionResult::finished(&request, DesktopActionStatus::Accepted, json!({"queued": true, "view_label": view_label}));
+    let result = DesktopActionResult::finished(
+        &request,
+        DesktopActionStatus::Accepted,
+        json!({"queued": true, "view_label": view_label}),
+    );
     let _ = state.hub.publish_json(
         "desktop.action",
         "accepted",
@@ -626,15 +831,38 @@ fn finalize_command(
         "stderr": truncate(&output.stderr, 8192),
         "finished_at": output.finished_at,
     });
-    let status = if output.exit_code == Some(0) && !output.timed_out { DesktopActionStatus::Succeeded } else { DesktopActionStatus::Failed };
+    let status = if output.exit_code == Some(0) && !output.timed_out {
+        DesktopActionStatus::Succeeded
+    } else {
+        DesktopActionStatus::Failed
+    };
     finalize_action_with_outcome(state, request, status, payload, vec![], outcome)
 }
 
-fn finalize_denied_or_failed(state: &DesktopState, request: &DesktopActionRequest, error: String) -> Result<DesktopActionResult, String> {
+fn finalize_denied_or_failed(
+    state: &DesktopState,
+    request: &DesktopActionRequest,
+    error: String,
+) -> Result<DesktopActionResult, String> {
     let denied = error.contains("disabled by policy") || error.contains("denied by policy");
-    let status = if denied { DesktopActionStatus::Denied } else { DesktopActionStatus::Failed };
-    let outcome = if denied { EvidenceOutcome::Denied } else { EvidenceOutcome::Failed };
-    finalize_action_with_outcome(state, request, status, json!({"error": error}), vec![], outcome)
+    let status = if denied {
+        DesktopActionStatus::Denied
+    } else {
+        DesktopActionStatus::Failed
+    };
+    let outcome = if denied {
+        EvidenceOutcome::Denied
+    } else {
+        EvidenceOutcome::Failed
+    };
+    finalize_action_with_outcome(
+        state,
+        request,
+        status,
+        json!({"error": error}),
+        vec![],
+        outcome,
+    )
 }
 
 fn finalize_action(
@@ -661,17 +889,20 @@ fn finalize_action_with_outcome(
     artifact_uris: Vec<String>,
     outcome: EvidenceOutcome,
 ) -> Result<DesktopActionResult, String> {
-    let record = state.ledger.append(EvidenceDraft {
-        action_uuid: request.uuid,
-        correlation_uuid: request.correlation_uuid,
-        actor: request.actor.clone(),
-        capability: request.capability.clone(),
-        action: action_name(&request.action).into(),
-        outcome,
-        request_summary: safe_action_summary(&request.action),
-        result_summary: bounded_value(output.clone(), 8192),
-        artifact_uris,
-    }).map_err(|e| e.to_string())?;
+    let record = state
+        .ledger
+        .append(EvidenceDraft {
+            action_uuid: request.uuid,
+            correlation_uuid: request.correlation_uuid,
+            actor: request.actor.clone(),
+            capability: request.capability.clone(),
+            action: action_name(&request.action).into(),
+            outcome,
+            request_summary: safe_action_summary(&request.action),
+            result_summary: bounded_value(output.clone(), 8192),
+            artifact_uris,
+        })
+        .map_err(|e| e.to_string())?;
 
     let mut result = DesktopActionResult::finished(request, status, output);
     result.evidence_uuid = Some(record.uuid);
@@ -708,17 +939,20 @@ fn record_simple_evidence(
     result_summary: Value,
     artifact_uris: Vec<String>,
 ) -> Result<EvidenceRecord, String> {
-    state.ledger.append(EvidenceDraft {
-        action_uuid,
-        correlation_uuid: None,
-        actor: actor.into(),
-        capability: capability.into(),
-        action: action.into(),
-        outcome,
-        request_summary,
-        result_summary,
-        artifact_uris,
-    }).map_err(|e| e.to_string())
+    state
+        .ledger
+        .append(EvidenceDraft {
+            action_uuid,
+            correlation_uuid: None,
+            actor: actor.into(),
+            capability: capability.into(),
+            action: action.into(),
+            outcome,
+            request_summary,
+            result_summary,
+            artifact_uris,
+        })
+        .map_err(|e| e.to_string())
 }
 
 fn action_name(action: &DesktopAction) -> &'static str {
@@ -733,18 +967,27 @@ fn action_name(action: &DesktopAction) -> &'static str {
 
 fn safe_action_summary(action: &DesktopAction) -> Value {
     match action {
-        DesktopAction::LaunchApplication { program, args, cwd } => json!({"program": program, "arg_count": args.len(), "cwd": cwd}),
+        DesktopAction::LaunchApplication { program, args, cwd } => {
+            json!({"program": program, "arg_count": args.len(), "cwd": cwd})
+        }
         DesktopAction::ExecuteCommand { request } => safe_command_summary(request),
         DesktopAction::Input { action } => match action {
             InputAction::MoveMouse { x, y } => json!({"action":"move_mouse","x":x,"y":y}),
-            InputAction::MouseButton { button, state } => json!({"action":"mouse_button","button":button,"state":state}),
+            InputAction::MouseButton { button, state } => {
+                json!({"action":"mouse_button","button":button,"state":state})
+            }
             InputAction::Scroll { dx, dy } => json!({"action":"scroll","dx":dx,"dy":dy}),
             InputAction::Key { key, state } => json!({"action":"key","key":key,"state":state}),
-            InputAction::Text { text } => json!({"action":"text","characters":text.chars().count(),"content":"[redacted]"}),
+            InputAction::Text { text } => {
+                json!({"action":"text","characters":text.chars().count(),"content":"[redacted]"})
+            }
             InputAction::Hotkey { keys } => json!({"action":"hotkey","keys":keys}),
         },
         DesktopAction::CaptureScreen { format, target } => json!({"format":format,"target":target}),
-        DesktopAction::WebView { view_label, command } => json!({"view_label":view_label,"command":webview_command_name(command)}),
+        DesktopAction::WebView {
+            view_label,
+            command,
+        } => json!({"view_label":view_label,"command":webview_command_name(command)}),
     }
 }
 
@@ -786,15 +1029,28 @@ fn webview_command_name(command: &WebViewCommand) -> &'static str {
 fn bounded_value(value: Value, max_string_chars: usize) -> Value {
     match value {
         Value::String(s) => Value::String(truncate(&s, max_string_chars)),
-        Value::Array(values) => Value::Array(values.into_iter().take(256).map(|v| bounded_value(v, max_string_chars)).collect()),
-        Value::Object(map) => Value::Object(map.into_iter().take(256).map(|(k, v)| (k, bounded_value(v, max_string_chars))).collect()),
+        Value::Array(values) => Value::Array(
+            values
+                .into_iter()
+                .take(256)
+                .map(|v| bounded_value(v, max_string_chars))
+                .collect(),
+        ),
+        Value::Object(map) => Value::Object(
+            map.into_iter()
+                .take(256)
+                .map(|(k, v)| (k, bounded_value(v, max_string_chars)))
+                .collect(),
+        ),
         other => other,
     }
 }
 
 fn truncate(value: &str, max_chars: usize) -> String {
     let mut out = value.chars().take(max_chars).collect::<String>();
-    if value.chars().count() > max_chars { out.push_str("…[truncated]"); }
+    if value.chars().count() > max_chars {
+        out.push_str("…[truncated]");
+    }
     out
 }
 
@@ -803,15 +1059,30 @@ fn origin_of(url: &Url) -> String {
 }
 
 fn env_flag(name: &str) -> bool {
-    std::env::var(name).ok().map(|v| matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on")).unwrap_or(false)
+    std::env::var(name)
+        .ok()
+        .map(|v| matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+        .unwrap_or(false)
 }
 
 fn env_csv(name: &str) -> BTreeSet<String> {
-    std::env::var(name).ok().into_iter().flat_map(|v| v.split(',').map(str::trim).filter(|s| !s.is_empty()).map(str::to_string).collect::<Vec<_>>()).collect()
+    std::env::var(name)
+        .ok()
+        .into_iter()
+        .flat_map(|v| {
+            v.split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+        .collect()
 }
 
 fn write_secret_file(path: &Path, value: &str) -> std::io::Result<()> {
-    if let Some(parent) = path.parent() { std::fs::create_dir_all(parent)?; }
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
     std::fs::write(path, value.as_bytes())?;
     #[cfg(unix)]
     {

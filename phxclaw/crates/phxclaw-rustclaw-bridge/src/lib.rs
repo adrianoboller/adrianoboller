@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::{
     env, fs,
     path::{Path, PathBuf},
@@ -59,7 +59,9 @@ pub enum RustClawBridgeError {
     UnsupportedCapability(String),
     #[error("invalid payload: {0}")]
     InvalidPayload(String),
-    #[error("RustClaw prompt would be exposed in process argv; set PHXCLAW_RUSTCLAW_ALLOW_PROMPT_ARGV=true only after explicit approval")]
+    #[error(
+        "RustClaw prompt would be exposed in process argv; set PHXCLAW_RUSTCLAW_ALLOW_PROMPT_ARGV=true only after explicit approval"
+    )]
     PromptArgvDenied,
     #[error("workspace path is outside the configured root: {0}")]
     PathOutsideWorkspace(String),
@@ -103,9 +105,15 @@ impl RustClawBridge {
         })
     }
 
-    pub fn invoke(&self, capability: &str, payload: &Value) -> Result<BridgeResult, RustClawBridgeError> {
+    pub fn invoke(
+        &self,
+        capability: &str,
+        payload: &Value,
+    ) -> Result<BridgeResult, RustClawBridgeError> {
         if !Self::supported_capabilities().contains(&capability) {
-            return Err(RustClawBridgeError::UnsupportedCapability(capability.to_owned()));
+            return Err(RustClawBridgeError::UnsupportedCapability(
+                capability.to_owned(),
+            ));
         }
         let executable = resolve_executable(&self.config.executable).ok_or_else(|| {
             RustClawBridgeError::ExecutableUnavailable(self.config.executable.display().to_string())
@@ -153,24 +161,43 @@ impl RustClawBridge {
     }
 
     fn resolve_workspace(&self, payload: &Value) -> Result<PathBuf, RustClawBridgeError> {
-        let root = fs::canonicalize(&self.config.workspace_root)
-            .map_err(|_| RustClawBridgeError::PathOutsideWorkspace(self.config.workspace_root.display().to_string()))?;
-        let requested = payload.get("workspace").and_then(Value::as_str).unwrap_or(".");
+        let root = fs::canonicalize(&self.config.workspace_root).map_err(|_| {
+            RustClawBridgeError::PathOutsideWorkspace(
+                self.config.workspace_root.display().to_string(),
+            )
+        })?;
+        let requested = payload
+            .get("workspace")
+            .and_then(Value::as_str)
+            .unwrap_or(".");
         let candidate = Path::new(requested);
-        let joined = if candidate.is_absolute() { candidate.to_path_buf() } else { root.join(candidate) };
+        let joined = if candidate.is_absolute() {
+            candidate.to_path_buf()
+        } else {
+            root.join(candidate)
+        };
         let resolved = fs::canonicalize(&joined)
             .map_err(|_| RustClawBridgeError::PathOutsideWorkspace(requested.to_owned()))?;
         if !resolved.starts_with(&root) {
-            return Err(RustClawBridgeError::PathOutsideWorkspace(requested.to_owned()));
+            return Err(RustClawBridgeError::PathOutsideWorkspace(
+                requested.to_owned(),
+            ));
         }
         Ok(resolved)
     }
 
-    fn build_args(&self, capability: &str, payload: &Value) -> Result<(Vec<String>, Vec<String>), RustClawBridgeError> {
+    fn build_args(
+        &self,
+        capability: &str,
+        payload: &Value,
+    ) -> Result<(Vec<String>, Vec<String>), RustClawBridgeError> {
         match capability {
             "rustclaw.health" => Ok((vec!["health".into()], vec!["health".into()])),
             "rustclaw.status" => Ok((vec!["status".into()], vec!["status".into()])),
-            "rustclaw.github.scan" => Ok((vec!["github".into(), "scan".into()], vec!["github".into(), "scan".into()])),
+            "rustclaw.github.scan" => Ok((
+                vec!["github".into(), "scan".into()],
+                vec!["github".into(), "scan".into()],
+            )),
             "rustclaw.agent.prompt" => {
                 if !self.config.allow_prompt_in_argv {
                     return Err(RustClawBridgeError::PromptArgvDenied);
@@ -181,8 +208,18 @@ impl RustClawBridge {
                     .filter(|value| !value.trim().is_empty())
                     .ok_or_else(|| RustClawBridgeError::InvalidPayload("missing prompt".into()))?;
                 Ok((
-                    vec!["agent".into(), prompt.to_owned(), "--stream".into(), "false".into()],
-                    vec!["agent".into(), "[REDACTED]".into(), "--stream".into(), "false".into()],
+                    vec![
+                        "agent".into(),
+                        prompt.to_owned(),
+                        "--stream".into(),
+                        "false".into(),
+                    ],
+                    vec![
+                        "agent".into(),
+                        "[REDACTED]".into(),
+                        "--stream".into(),
+                        "false".into(),
+                    ],
                 ))
             }
             other => Err(RustClawBridgeError::UnsupportedCapability(other.into())),

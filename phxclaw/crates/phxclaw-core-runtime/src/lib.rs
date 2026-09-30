@@ -11,8 +11,8 @@ use chrono::{DateTime, Utc};
 use phxclaw_channel_gateway::{ChannelAgentRouter, ChannelRouteRule};
 use phxclaw_mcp_lsp_runtime::qualified_tool_name;
 use phxclaw_rustclaw_native::{
-    negotiate_gateway_protocol, NativeScheduledJob, NativeSession, NativeSessionStore,
-    RustClawNativeError, ScheduleSpec,
+    NativeScheduledJob, NativeSession, NativeSessionStore, RustClawNativeError, ScheduleSpec,
+    negotiate_gateway_protocol,
 };
 use phxclaw_types::{is_uuid_v7, new_uuid_v7};
 use serde::{Deserialize, Serialize};
@@ -196,7 +196,9 @@ impl PhoenixCoreRuntime {
         client_max: Option<u32>,
         supported: &[u32],
     ) -> Result<u32, CoreRuntimeError> {
-        Ok(negotiate_gateway_protocol(client_min, client_max, supported)?)
+        Ok(negotiate_gateway_protocol(
+            client_min, client_max, supported,
+        )?)
     }
 
     pub fn mcp_tool_name(&self, server: &str, tool: &str) -> String {

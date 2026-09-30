@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use phxclaw_types::{new_uuid_v7, EvidenceRef};
+use phxclaw_types::{EvidenceRef, new_uuid_v7};
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -100,7 +100,9 @@ impl SkillManifest {
     }
 
     pub fn verify_hash(&self) -> Result<bool, SkillError> {
-        Ok(self.sha256.eq_ignore_ascii_case(&canonical_skill_hash(self)?))
+        Ok(self
+            .sha256
+            .eq_ignore_ascii_case(&canonical_skill_hash(self)?))
     }
 
     pub fn required_capability_set(&self) -> BTreeSet<String> {
@@ -166,16 +168,21 @@ impl SkillRegistry {
         requirement: &str,
         promoted_only: bool,
     ) -> Result<&SkillManifest, SkillError> {
-        let req = VersionReq::parse(requirement).map_err(|source| SkillError::InvalidRequirement {
-            requirement: requirement.to_string(),
-            source,
-        })?;
+        let req =
+            VersionReq::parse(requirement).map_err(|source| SkillError::InvalidRequirement {
+                requirement: requirement.to_string(),
+                source,
+            })?;
         self.by_name
             .get(name)
             .into_iter()
             .flatten()
             .filter(|skill| !promoted_only || skill.state == SkillState::Promoted)
-            .find(|skill| Version::parse(&skill.version).map(|v| req.matches(&v)).unwrap_or(false))
+            .find(|skill| {
+                Version::parse(&skill.version)
+                    .map(|v| req.matches(&v))
+                    .unwrap_or(false)
+            })
             .ok_or_else(|| SkillError::NotFound {
                 name: name.to_string(),
                 requirement: requirement.to_string(),
@@ -303,9 +310,11 @@ impl LazySkillResolver {
         policy: &SkillResolutionPolicy,
     ) -> Result<SkillResolution, SkillError> {
         let version_req = if let Some(requirement) = &request.version_requirement {
-            Some(VersionReq::parse(requirement).map_err(|source| SkillError::InvalidRequirement {
-                requirement: requirement.clone(),
-                source,
+            Some(VersionReq::parse(requirement).map_err(|source| {
+                SkillError::InvalidRequirement {
+                    requirement: requirement.clone(),
+                    source,
+                }
             })?)
         } else {
             None
@@ -325,9 +334,11 @@ impl LazySkillResolver {
                 continue;
             }
             if let Some(req) = &version_req {
-                let version = Version::parse(&entry.version).map_err(|source| SkillError::InvalidVersion {
-                    version: entry.version.clone(),
-                    source,
+                let version = Version::parse(&entry.version).map_err(|source| {
+                    SkillError::InvalidVersion {
+                        version: entry.version.clone(),
+                        source,
+                    }
                 })?;
                 if !req.matches(&version) {
                     continue;
@@ -342,7 +353,10 @@ impl LazySkillResolver {
             }
             if request.knowledge_source.as_ref().is_some_and(|source| {
                 !entry.knowledge_sources.is_empty()
-                    && !entry.knowledge_sources.iter().any(|candidate| candidate == source)
+                    && !entry
+                        .knowledge_sources
+                        .iter()
+                        .any(|candidate| candidate == source)
             }) {
                 continue;
             }
@@ -355,16 +369,19 @@ impl LazySkillResolver {
             let mut matched = Vec::new();
             for trigger in &entry.triggers {
                 let normalized = trigger.to_ascii_lowercase();
-                if query_terms.contains(&normalized) || request.query.to_ascii_lowercase().contains(&normalized) {
+                if query_terms.contains(&normalized)
+                    || request.query.to_ascii_lowercase().contains(&normalized)
+                {
                     score += 10;
                     matched.push(trigger.clone());
                 }
             }
-            if request
-                .knowledge_source
-                .as_ref()
-                .is_some_and(|source| entry.knowledge_sources.iter().any(|candidate| candidate == source))
-            {
+            if request.knowledge_source.as_ref().is_some_and(|source| {
+                entry
+                    .knowledge_sources
+                    .iter()
+                    .any(|candidate| candidate == source)
+            }) {
                 score += 20;
             }
             candidates.push((entry, score, matched));
@@ -381,12 +398,14 @@ impl LazySkillResolver {
                 .then_with(|| left.name.cmp(&right.name))
         });
 
-        let (entry, score, matched_triggers) = candidates.first().cloned().ok_or_else(|| {
-            SkillError::NoResolution {
-                query: request.query.clone(),
-                preferred_name: request.preferred_name.clone(),
-            }
-        })?;
+        let (entry, score, matched_triggers) =
+            candidates
+                .first()
+                .cloned()
+                .ok_or_else(|| SkillError::NoResolution {
+                    query: request.query.clone(),
+                    preferred_name: request.preferred_name.clone(),
+                })?;
         let manifest = self.load_manifest(entry)?;
         Ok(SkillResolution {
             skill: manifest,
@@ -402,7 +421,10 @@ impl LazySkillResolver {
             return Err(SkillError::PathEscape(entry.path.clone()));
         }
         let manifest: SkillManifest = serde_json::from_slice(&fs::read(&path)?)?;
-        if manifest.name != entry.name || manifest.version != entry.version || manifest.state != entry.state {
+        if manifest.name != entry.name
+            || manifest.version != entry.version
+            || manifest.state != entry.state
+        {
             return Err(SkillError::IndexMismatch(entry.name.clone()));
         }
         if !manifest.verify_hash()? {
@@ -453,9 +475,15 @@ fn tokenize(value: &str) -> BTreeSet<String> {
 #[derive(Debug, Error)]
 pub enum SkillError {
     #[error("invalid skill version {version}: {source}")]
-    InvalidVersion { version: String, source: semver::Error },
+    InvalidVersion {
+        version: String,
+        source: semver::Error,
+    },
     #[error("invalid version requirement {requirement}: {source}")]
-    InvalidRequirement { requirement: String, source: semver::Error },
+    InvalidRequirement {
+        requirement: String,
+        source: semver::Error,
+    },
     #[error("duplicate skill {name}@{version}")]
     Duplicate { name: String, version: String },
     #[error("skill {name} matching {requirement} was not found")]
@@ -467,7 +495,10 @@ pub enum SkillError {
     #[error("promotion proof rejected for skill {0}")]
     PromotionProofRejected(Uuid),
     #[error("no skill resolution for query {query} preferred={preferred_name:?}")]
-    NoResolution { query: String, preferred_name: Option<String> },
+    NoResolution {
+        query: String,
+        preferred_name: Option<String>,
+    },
     #[error("skill index path is invalid: {0}")]
     InvalidIndexPath(String),
     #[error("skill path escaped skill root: {0}")]
@@ -499,6 +530,9 @@ mod tests {
 
     #[test]
     fn production_policy_rejects_validated_skill() {
-        assert!(!state_allowed(SkillState::Validated, &SkillResolutionPolicy::default()));
+        assert!(!state_allowed(
+            SkillState::Validated,
+            &SkillResolutionPolicy::default()
+        ));
     }
 }

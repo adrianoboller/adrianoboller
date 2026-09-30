@@ -1,6 +1,6 @@
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use thiserror::Error;
 use url::Url;
 
@@ -98,21 +98,32 @@ impl OllamaClient {
             "messages": messages,
             "stream": false
         });
-        if let Some(tools) = tools { body["tools"] = tools; }
-        if let Some(think) = think { body["think"] = think; }
-        if let Some(format) = format { body["format"] = format; }
+        if let Some(tools) = tools {
+            body["tools"] = tools;
+        }
+        if let Some(think) = think {
+            body["think"] = think;
+        }
+        if let Some(format) = format {
+            body["format"] = format;
+        }
         self.post_json("chat", body).await
     }
 
     pub async fn embed(&self, model: &str, input: Value) -> Result<Value, OllamaError> {
-        self.post_json("embed", json!({
-            "model": model,
-            "input": input
-        })).await
+        self.post_json(
+            "embed",
+            json!({
+                "model": model,
+                "input": input
+            }),
+        )
+        .await
     }
 
     pub async fn pull(&self, model: &str) -> Result<Value, OllamaError> {
-        self.post_json("pull", json!({"model": model, "stream": false})).await
+        self.post_json("pull", json!({"model": model, "stream": false}))
+            .await
     }
 
     pub async fn show(&self, model: &str) -> Result<Value, OllamaError> {
@@ -121,7 +132,12 @@ impl OllamaClient {
 
     pub async fn delete(&self, model: &str) -> Result<Value, OllamaError> {
         let url = self.endpoint("delete")?;
-        let response = self.http.delete(url).json(&json!({"model": model})).send().await?;
+        let response = self
+            .http
+            .delete(url)
+            .json(&json!({"model": model}))
+            .send()
+            .await?;
         parse_response(response).await
     }
 
@@ -131,7 +147,12 @@ impl OllamaClient {
     }
 
     async fn post_json(&self, path: &str, body: Value) -> Result<Value, OllamaError> {
-        let response = self.http.post(self.endpoint(path)?).json(&body).send().await?;
+        let response = self
+            .http
+            .post(self.endpoint(path)?)
+            .json(&body)
+            .send()
+            .await?;
         parse_response(response).await
     }
 
@@ -144,7 +165,10 @@ async fn parse_response(response: reqwest::Response) -> Result<Value, OllamaErro
     let status = response.status();
     let text = response.text().await?;
     if !status.is_success() {
-        return Err(OllamaError::Api { status: status.as_u16(), body: text });
+        return Err(OllamaError::Api {
+            status: status.as_u16(),
+            body: text,
+        });
     }
     if text.trim().is_empty() {
         return Ok(json!({"status":"ok"}));

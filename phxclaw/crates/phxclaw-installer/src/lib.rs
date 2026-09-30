@@ -73,7 +73,9 @@ impl Default for BackupPolicy {
             max_total_bytes: 512 * 1024 * 1024 * 1024,
             reject_symlinks: true,
             excluded_components: [".git", "target", "node_modules", ".cache"]
-                .into_iter().map(str::to_owned).collect(),
+                .into_iter()
+                .map(str::to_owned)
+                .collect(),
         }
     }
 }
@@ -184,7 +186,9 @@ impl BackupRepository {
         Ok(Self { root })
     }
 
-    pub fn root(&self) -> &Path { &self.root }
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
 
     pub fn create_backup(
         &self,
@@ -199,46 +203,77 @@ impl BackupRepository {
         }
         let backup_uuid = new_uuid_v7();
         let action_uuid = new_uuid_v7();
-        evidence(ledger, action_uuid, "installer.backup", "backup.create", EvidenceOutcome::Requested,
-            json!({"source":source.display().to_string()}), json!({}), vec![])?;
+        evidence(
+            ledger,
+            action_uuid,
+            "installer.backup",
+            "backup.create",
+            EvidenceOutcome::Requested,
+            json!({"source":source.display().to_string()}),
+            json!({}),
+            vec![],
+        )?;
         let mut entries = Vec::new();
         let mut total_bytes = 0u64;
         let mut deduplicated_blobs = 0usize;
         for item in WalkDir::new(source).follow_links(false).sort_by_file_name() {
             let item = item?;
             let path = item.path();
-            if path == source { continue; }
-            let rel = path.strip_prefix(source).map_err(|_| InstallerError::UnsafePath(path.display().to_string()))?;
-            if excluded(rel, &policy.excluded_components) { continue; }
+            if path == source {
+                continue;
+            }
+            let rel = path
+                .strip_prefix(source)
+                .map_err(|_| InstallerError::UnsafePath(path.display().to_string()))?;
+            if excluded(rel, &policy.excluded_components) {
+                continue;
+            }
             if item.file_type().is_symlink() {
                 if policy.reject_symlinks {
                     return Err(InstallerError::SymlinkRejected(rel.display().to_string()));
                 }
                 continue;
             }
-            if !item.file_type().is_file() { continue; }
+            if !item.file_type().is_file() {
+                continue;
+            }
             validate_relative(rel)?;
             let meta = item.metadata()?;
             if meta.len() > policy.max_file_bytes {
-                return Err(InstallerError::FileTooLarge { path: rel.display().to_string(), bytes: meta.len() });
+                return Err(InstallerError::FileTooLarge {
+                    path: rel.display().to_string(),
+                    bytes: meta.len(),
+                });
             }
-            total_bytes = total_bytes.checked_add(meta.len()).ok_or(InstallerError::BackupTooLarge)?;
-            if total_bytes > policy.max_total_bytes { return Err(InstallerError::BackupTooLarge); }
+            total_bytes = total_bytes
+                .checked_add(meta.len())
+                .ok_or(InstallerError::BackupTooLarge)?;
+            if total_bytes > policy.max_total_bytes {
+                return Err(InstallerError::BackupTooLarge);
+            }
             let digest = sha256_file(path)?;
             let blob = self.blob_path(&digest);
             if blob.exists() {
                 deduplicated_blobs += 1;
             } else {
-                if let Some(parent) = blob.parent() { fs::create_dir_all(parent)?; }
+                if let Some(parent) = blob.parent() {
+                    fs::create_dir_all(parent)?;
+                }
                 let tmp = blob.with_extension(format!("tmp-{}", backup_uuid));
                 copy_file_synced(path, &tmp)?;
                 if sha256_file(&tmp)? != digest {
                     let _ = fs::remove_file(&tmp);
-                    return Err(InstallerError::VerificationFailed(format!("blob changed while copying: {}", rel.display())));
+                    return Err(InstallerError::VerificationFailed(format!(
+                        "blob changed while copying: {}",
+                        rel.display()
+                    )));
                 }
                 match fs::rename(&tmp, &blob) {
-                    Ok(_) => {},
-                    Err(e) if blob.exists() => { let _ = fs::remove_file(&tmp); let _ = e; },
+                    Ok(_) => {}
+                    Err(e) if blob.exists() => {
+                        let _ = fs::remove_file(&tmp);
+                        let _ = e;
+                    }
                     Err(e) => return Err(InstallerError::Io(e)),
                 }
             }
@@ -249,7 +284,7 @@ impl BackupRepository {
                 readonly: meta.permissions().readonly(),
             });
         }
-        entries.sort_by(|a,b| a.path.cmp(&b.path));
+        entries.sort_by(|a, b| a.path.cmp(&b.path));
         let manifest = BackupManifest {
             schema_version: 1,
             backup_uuid,
@@ -265,7 +300,10 @@ impl BackupRepository {
         atomic_write(&manifest_path, &bytes)?;
         let report = self.verify_backup(backup_uuid)?;
         if !report.valid {
-            return Err(InstallerError::VerificationFailed(format!("backup {} did not verify", backup_uuid)));
+            return Err(InstallerError::VerificationFailed(format!(
+                "backup {} did not verify",
+                backup_uuid
+            )));
         }
         let receipt = BackupReceipt {
             backup_uuid,
@@ -275,26 +313,41 @@ impl BackupRepository {
             total_bytes,
             deduplicated_blobs,
         };
-        evidence(ledger, action_uuid, "installer.backup", "backup.create", EvidenceOutcome::Succeeded,
-            json!({"backup_uuid":backup_uuid}), serde_json::to_value(&receipt)?, vec![receipt.manifest_path.clone()])?;
+        evidence(
+            ledger,
+            action_uuid,
+            "installer.backup",
+            "backup.create",
+            EvidenceOutcome::Succeeded,
+            json!({"backup_uuid":backup_uuid}),
+            serde_json::to_value(&receipt)?,
+            vec![receipt.manifest_path.clone()],
+        )?;
         Ok(receipt)
     }
 
     pub fn verify_backup(&self, backup_uuid: Uuid) -> Result<VerifyBackupReport, InstallerError> {
         let manifest_path = self.manifest_path(backup_uuid);
-        if !manifest_path.is_file() { return Err(InstallerError::ManifestNotFound(backup_uuid)); }
+        if !manifest_path.is_file() {
+            return Err(InstallerError::ManifestNotFound(backup_uuid));
+        }
         let bytes = fs::read(&manifest_path)?;
         let manifest_sha256 = sha256_bytes(&bytes);
         let manifest: BackupManifest = serde_json::from_slice(&bytes)?;
         if manifest.backup_uuid != backup_uuid {
-            return Err(InstallerError::VerificationFailed("manifest UUID mismatch".into()));
+            return Err(InstallerError::VerificationFailed(
+                "manifest UUID mismatch".into(),
+            ));
         }
         let mut missing_blobs = Vec::new();
         let mut hash_mismatches = Vec::new();
         for entry in &manifest.entries {
             validate_relative(Path::new(&entry.path))?;
             let blob = self.blob_path(&entry.sha256);
-            if !blob.is_file() { missing_blobs.push(entry.path.clone()); continue; }
+            if !blob.is_file() {
+                missing_blobs.push(entry.path.clone());
+                continue;
+            }
             let meta = fs::metadata(&blob)?;
             if meta.len() != entry.size_bytes || sha256_file(&blob)? != entry.sha256 {
                 hash_mismatches.push(entry.path.clone());
@@ -317,41 +370,72 @@ impl BackupRepository {
         ledger: Option<&EvidenceLedger>,
     ) -> Result<RestoreReceipt, InstallerError> {
         let target = target.as_ref();
-        let parent = target.parent().ok_or_else(|| InstallerError::InvalidTarget(target.display().to_string()))?;
+        let parent = target
+            .parent()
+            .ok_or_else(|| InstallerError::InvalidTarget(target.display().to_string()))?;
         fs::create_dir_all(parent)?;
         let verify = self.verify_backup(backup_uuid)?;
-        if !verify.valid { return Err(InstallerError::VerificationFailed("source backup invalid".into())); }
+        if !verify.valid {
+            return Err(InstallerError::VerificationFailed(
+                "source backup invalid".into(),
+            ));
+        }
         let restore_uuid = new_uuid_v7();
         let action_uuid = new_uuid_v7();
-        evidence(ledger, action_uuid, "installer.restore", "restore.begin", EvidenceOutcome::Requested,
-            json!({"backup_uuid":backup_uuid,"target":target.display().to_string()}), json!({}), vec![])?;
-        let manifest: BackupManifest = serde_json::from_slice(&fs::read(self.manifest_path(backup_uuid))?)?;
+        evidence(
+            ledger,
+            action_uuid,
+            "installer.restore",
+            "restore.begin",
+            EvidenceOutcome::Requested,
+            json!({"backup_uuid":backup_uuid,"target":target.display().to_string()}),
+            json!({}),
+            vec![],
+        )?;
+        let manifest: BackupManifest =
+            serde_json::from_slice(&fs::read(self.manifest_path(backup_uuid))?)?;
         let staging = parent.join(format!(".phx-restore-{}", restore_uuid));
-        if staging.exists() { fs::remove_dir_all(&staging)?; }
+        if staging.exists() {
+            fs::remove_dir_all(&staging)?;
+        }
         fs::create_dir_all(&staging)?;
         let build_result = (|| -> Result<(), InstallerError> {
             for entry in &manifest.entries {
-                let rel = Path::new(&entry.path); validate_relative(rel)?;
+                let rel = Path::new(&entry.path);
+                validate_relative(rel)?;
                 let out = staging.join(rel);
-                if let Some(p) = out.parent() { fs::create_dir_all(p)?; }
+                if let Some(p) = out.parent() {
+                    fs::create_dir_all(p)?;
+                }
                 copy_file_synced(&self.blob_path(&entry.sha256), &out)?;
                 let mut perms = fs::metadata(&out)?.permissions();
-                perms.set_readonly(entry.readonly); fs::set_permissions(&out, perms)?;
+                perms.set_readonly(entry.readonly);
+                fs::set_permissions(&out, perms)?;
                 if sha256_file(&out)? != entry.sha256 {
-                    return Err(InstallerError::VerificationFailed(format!("restored hash mismatch: {}", entry.path)));
+                    return Err(InstallerError::VerificationFailed(format!(
+                        "restored hash mismatch: {}",
+                        entry.path
+                    )));
                 }
             }
             Ok(())
         })();
-        if let Err(e) = build_result { let _ = fs::remove_dir_all(&staging); return Err(e); }
+        if let Err(e) = build_result {
+            let _ = fs::remove_dir_all(&staging);
+            return Err(e);
+        }
         let rollback = parent.join(format!(".phx-rollback-{}", restore_uuid));
         let had_target = target.exists();
         if had_target {
-            if rollback.exists() { fs::remove_dir_all(&rollback)?; }
+            if rollback.exists() {
+                fs::remove_dir_all(&rollback)?;
+            }
             fs::rename(target, &rollback)?;
         }
         if let Err(e) = fs::rename(&staging, target) {
-            if had_target && rollback.exists() && !target.exists() { let _ = fs::rename(&rollback, target); }
+            if had_target && rollback.exists() && !target.exists() {
+                let _ = fs::rename(&rollback, target);
+            }
             return Err(InstallerError::Io(e));
         }
         let receipt = RestoreReceipt {
@@ -363,13 +447,23 @@ impl BackupRepository {
             verified: true,
             completed_at: Utc::now(),
         };
-        evidence(ledger, action_uuid, "installer.restore", "restore.commit", EvidenceOutcome::Succeeded,
-            json!({"backup_uuid":backup_uuid}), serde_json::to_value(&receipt)?, vec![])?;
+        evidence(
+            ledger,
+            action_uuid,
+            "installer.restore",
+            "restore.commit",
+            EvidenceOutcome::Succeeded,
+            json!({"backup_uuid":backup_uuid}),
+            serde_json::to_value(&receipt)?,
+            vec![],
+        )?;
         Ok(receipt)
     }
 
     fn manifest_path(&self, backup_uuid: Uuid) -> PathBuf {
-        self.root.join("manifests").join(format!("{backup_uuid}.json"))
+        self.root
+            .join("manifests")
+            .join(format!("{backup_uuid}.json"))
     }
     fn blob_path(&self, sha256: &str) -> PathBuf {
         let prefix = &sha256[..sha256.len().min(2)];
@@ -384,7 +478,9 @@ impl InstallerCore {
     pub fn plan(&self, action: InstallAction, target: impl Into<String>) -> InstallPlan {
         let target = target.into();
         InstallPlan {
-            uuid: new_uuid_v7(), action, target: target.clone(),
+            uuid: new_uuid_v7(),
+            action,
+            target: target.clone(),
             preflight_checks: vec![
                 "validate constitution".into(),
                 "validate target manifest".into(),
@@ -392,7 +488,11 @@ impl InstallerCore {
                 "verify backup repository writeability".into(),
                 "verify rollback path before mutation".into(),
             ],
-            steps: vec![format!("create pre-change backup for {target}"), format!("execute plan for {target}"), format!("verify resulting state for {target}")],
+            steps: vec![
+                format!("create pre-change backup for {target}"),
+                format!("execute plan for {target}"),
+                format!("verify resulting state for {target}"),
+            ],
             rollback_steps: vec![format!("restore verified previous state for {target}")],
             created_at: Utc::now(),
         }
@@ -411,16 +511,23 @@ pub fn execute_transactional_upgrade<E: UpgradeExecutor>(
     let run_uuid = new_uuid_v7();
     let backup = repo.create_backup(source, from_version, policy, ledger)?;
     let mut receipt = UpgradeReceipt {
-        run_uuid, from_version: from_version.into(), to_version: to_version.into(),
-        pre_upgrade_backup_uuid: backup.backup_uuid, apply_succeeded: false,
-        verify_succeeded: false, rollback_attempted: false, rollback_succeeded: false,
+        run_uuid,
+        from_version: from_version.into(),
+        to_version: to_version.into(),
+        pre_upgrade_backup_uuid: backup.backup_uuid,
+        apply_succeeded: false,
+        verify_succeeded: false,
+        rollback_attempted: false,
+        rollback_succeeded: false,
         completed_at: Utc::now(),
     };
     if let Err(e) = executor.apply() {
         receipt.rollback_attempted = true;
         receipt.rollback_succeeded = executor.rollback().is_ok();
         receipt.completed_at = Utc::now();
-        if !receipt.rollback_succeeded { return Err(InstallerError::UpgradeRollback(e)); }
+        if !receipt.rollback_succeeded {
+            return Err(InstallerError::UpgradeRollback(e));
+        }
         return Err(InstallerError::UpgradeApply(e));
     }
     receipt.apply_succeeded = true;
@@ -428,7 +535,9 @@ pub fn execute_transactional_upgrade<E: UpgradeExecutor>(
         receipt.rollback_attempted = true;
         receipt.rollback_succeeded = executor.rollback().is_ok();
         receipt.completed_at = Utc::now();
-        if !receipt.rollback_succeeded { return Err(InstallerError::UpgradeRollback(e)); }
+        if !receipt.rollback_succeeded {
+            return Err(InstallerError::UpgradeRollback(e));
+        }
         return Err(InstallerError::UpgradeVerify(e));
     }
     receipt.verify_succeeded = true;
@@ -444,14 +553,38 @@ pub fn pg_dump_custom(
 ) -> Result<ExternalProcessReceipt, InstallerError> {
     validate_program(&tools.pg_dump, "pg_dump")?;
     validate_pgpass(connection)?;
-    if let Some(parent) = output.parent() { fs::create_dir_all(parent)?; }
+    if let Some(parent) = output.parent() {
+        fs::create_dir_all(parent)?;
+    }
     let action_uuid = new_uuid_v7();
-    evidence(ledger, action_uuid, "installer.postgresql.backup", "pg_dump", EvidenceOutcome::Requested,
-        json!({"database":connection.database,"output":output.display().to_string()}), json!({}), vec![])?;
+    evidence(
+        ledger,
+        action_uuid,
+        "installer.postgresql.backup",
+        "pg_dump",
+        EvidenceOutcome::Requested,
+        json!({"database":connection.database,"output":output.display().to_string()}),
+        json!({}),
+        vec![],
+    )?;
     let status = base_pg_command(&tools.pg_dump, connection)
-        .arg("--format=custom").arg("--no-password").arg("--file").arg(output)
-        .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::inherit()).status()?;
-    process_result(status, &tools.pg_dump, output, action_uuid, ledger, "installer.postgresql.backup", "pg_dump")
+        .arg("--format=custom")
+        .arg("--no-password")
+        .arg("--file")
+        .arg(output)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::inherit())
+        .status()?;
+    process_result(
+        status,
+        &tools.pg_dump,
+        output,
+        action_uuid,
+        ledger,
+        "installer.postgresql.backup",
+        "pg_dump",
+    )
 }
 
 pub fn pg_restore_custom(
@@ -463,15 +596,44 @@ pub fn pg_restore_custom(
 ) -> Result<ExternalProcessReceipt, InstallerError> {
     validate_program(&tools.pg_restore, "pg_restore")?;
     validate_pgpass(connection)?;
-    if !input.is_file() { return Err(InstallerError::InvalidSource(input.display().to_string())); }
+    if !input.is_file() {
+        return Err(InstallerError::InvalidSource(input.display().to_string()));
+    }
     let action_uuid = new_uuid_v7();
-    evidence(ledger, action_uuid, "installer.postgresql.restore", "pg_restore", EvidenceOutcome::Requested,
-        json!({"database":connection.database,"input":input.display().to_string(),"clean":clean_before_restore}), json!({}), vec![])?;
+    evidence(
+        ledger,
+        action_uuid,
+        "installer.postgresql.restore",
+        "pg_restore",
+        EvidenceOutcome::Requested,
+        json!({"database":connection.database,"input":input.display().to_string(),"clean":clean_before_restore}),
+        json!({}),
+        vec![],
+    )?;
     let mut cmd = base_pg_command(&tools.pg_restore, connection);
-    cmd.arg("--no-password").arg("--exit-on-error").arg("--single-transaction").arg("--dbname").arg(&connection.database);
-    if clean_before_restore { cmd.arg("--clean").arg("--if-exists"); }
-    let status = cmd.arg(input).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::inherit()).status()?;
-    process_result(status, &tools.pg_restore, input, action_uuid, ledger, "installer.postgresql.restore", "pg_restore")
+    cmd.arg("--no-password")
+        .arg("--exit-on-error")
+        .arg("--single-transaction")
+        .arg("--dbname")
+        .arg(&connection.database);
+    if clean_before_restore {
+        cmd.arg("--clean").arg("--if-exists");
+    }
+    let status = cmd
+        .arg(input)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::inherit())
+        .status()?;
+    process_result(
+        status,
+        &tools.pg_restore,
+        input,
+        action_uuid,
+        ledger,
+        "installer.postgresql.restore",
+        "pg_restore",
+    )
 }
 
 fn base_pg_command(program: &Path, c: &PostgresConnectionSpec) -> Command {
@@ -487,7 +649,11 @@ fn base_pg_command(program: &Path, c: &PostgresConnectionSpec) -> Command {
 }
 
 fn validate_pgpass(c: &PostgresConnectionSpec) -> Result<(), InstallerError> {
-    if !c.pgpassfile.is_file() { return Err(InstallerError::InvalidSource(c.pgpassfile.display().to_string())); }
+    if !c.pgpassfile.is_file() {
+        return Err(InstallerError::InvalidSource(
+            c.pgpassfile.display().to_string(),
+        ));
+    }
     Ok(())
 }
 
@@ -498,51 +664,145 @@ fn validate_program(path: &Path, expected: &str) -> Result<(), InstallerError> {
     Ok(())
 }
 
-fn process_result(status: ExitStatus, program: &Path, artifact: &Path, action_uuid: Uuid, ledger: Option<&EvidenceLedger>, capability: &str, action: &str) -> Result<ExternalProcessReceipt, InstallerError> {
+fn process_result(
+    status: ExitStatus,
+    program: &Path,
+    artifact: &Path,
+    action_uuid: Uuid,
+    ledger: Option<&EvidenceLedger>,
+    capability: &str,
+    action: &str,
+) -> Result<ExternalProcessReceipt, InstallerError> {
     let code = status.code().unwrap_or(-1);
     if !status.success() {
-        evidence(ledger, action_uuid, capability, action, EvidenceOutcome::Failed, json!({}), json!({"status_code":code}), vec![])?;
-        return Err(InstallerError::ProcessFailed { program: program.display().to_string(), status: code.to_string() });
+        evidence(
+            ledger,
+            action_uuid,
+            capability,
+            action,
+            EvidenceOutcome::Failed,
+            json!({}),
+            json!({"status_code":code}),
+            vec![],
+        )?;
+        return Err(InstallerError::ProcessFailed {
+            program: program.display().to_string(),
+            status: code.to_string(),
+        });
     }
-    let receipt = ExternalProcessReceipt { action_uuid, program: program.display().to_string(), status_code: code, artifact_path: artifact.display().to_string(), completed_at: Utc::now() };
-    evidence(ledger, action_uuid, capability, action, EvidenceOutcome::Succeeded, json!({}), serde_json::to_value(&receipt)?, vec![artifact.display().to_string()])?;
+    let receipt = ExternalProcessReceipt {
+        action_uuid,
+        program: program.display().to_string(),
+        status_code: code,
+        artifact_path: artifact.display().to_string(),
+        completed_at: Utc::now(),
+    };
+    evidence(
+        ledger,
+        action_uuid,
+        capability,
+        action,
+        EvidenceOutcome::Succeeded,
+        json!({}),
+        serde_json::to_value(&receipt)?,
+        vec![artifact.display().to_string()],
+    )?;
     Ok(receipt)
 }
 
 fn excluded(rel: &Path, excluded: &BTreeSet<String>) -> bool {
-    rel.components().any(|c| match c { Component::Normal(v) => excluded.contains(&v.to_string_lossy().to_string()), _ => false })
+    rel.components().any(|c| match c {
+        Component::Normal(v) => excluded.contains(&v.to_string_lossy().to_string()),
+        _ => false,
+    })
 }
 
 fn validate_relative(path: &Path) -> Result<(), InstallerError> {
-    if path.is_absolute() || path.as_os_str().is_empty() { return Err(InstallerError::UnsafePath(path.display().to_string())); }
+    if path.is_absolute() || path.as_os_str().is_empty() {
+        return Err(InstallerError::UnsafePath(path.display().to_string()));
+    }
     for c in path.components() {
-        if !matches!(c, Component::Normal(_)) { return Err(InstallerError::UnsafePath(path.display().to_string())); }
+        if !matches!(c, Component::Normal(_)) {
+            return Err(InstallerError::UnsafePath(path.display().to_string()));
+        }
     }
     Ok(())
 }
 
 fn rel_to_string(path: &Path) -> Result<String, InstallerError> {
     validate_relative(path)?;
-    Ok(path.components().map(|c| c.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/"))
+    Ok(path
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/"))
 }
 
 fn sha256_file(path: &Path) -> Result<String, InstallerError> {
-    let mut file = File::open(path)?; let mut h = Sha256::new(); let mut buf = vec![0u8; BUFFER_BYTES];
-    loop { let n = file.read(&mut buf)?; if n == 0 { break; } h.update(&buf[..n]); }
+    let mut file = File::open(path)?;
+    let mut h = Sha256::new();
+    let mut buf = vec![0u8; BUFFER_BYTES];
+    loop {
+        let n = file.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        h.update(&buf[..n]);
+    }
     Ok(format!("{:x}", h.finalize()))
 }
-fn sha256_bytes(bytes: &[u8]) -> String { let mut h=Sha256::new(); h.update(bytes); format!("{:x}",h.finalize()) }
+fn sha256_bytes(bytes: &[u8]) -> String {
+    let mut h = Sha256::new();
+    h.update(bytes);
+    format!("{:x}", h.finalize())
+}
 
 fn copy_file_synced(src: &Path, dst: &Path) -> Result<(), InstallerError> {
-    let mut input = File::open(src)?; let mut output = File::create(dst)?; std::io::copy(&mut input,&mut output)?; output.flush()?; output.sync_all()?; Ok(())
+    let mut input = File::open(src)?;
+    let mut output = File::create(dst)?;
+    std::io::copy(&mut input, &mut output)?;
+    output.flush()?;
+    output.sync_all()?;
+    Ok(())
 }
 fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), InstallerError> {
-    if let Some(parent)=path.parent(){fs::create_dir_all(parent)?;} let tmp=path.with_extension(format!("tmp-{}",new_uuid_v7()));
-    { let mut f=File::create(&tmp)?; f.write_all(bytes)?; f.flush()?; f.sync_all()?; }
-    fs::rename(tmp,path)?; Ok(())
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let tmp = path.with_extension(format!("tmp-{}", new_uuid_v7()));
+    {
+        let mut f = File::create(&tmp)?;
+        f.write_all(bytes)?;
+        f.flush()?;
+        f.sync_all()?;
+    }
+    fs::rename(tmp, path)?;
+    Ok(())
 }
-fn evidence(ledger: Option<&EvidenceLedger>, action_uuid: Uuid, capability:&str, action:&str, outcome:EvidenceOutcome, request:serde_json::Value, result:serde_json::Value, artifacts:Vec<String>) -> Result<(),InstallerError>{
-    if let Some(l)=ledger { l.append(EvidenceDraft{action_uuid,correlation_uuid:None,actor:"phxclaw-installer".into(),capability:capability.into(),action:action.into(),outcome,request_summary:request,result_summary:result,artifact_uris:artifacts}).map_err(|e|InstallerError::Evidence(e.to_string()))?; }
+fn evidence(
+    ledger: Option<&EvidenceLedger>,
+    action_uuid: Uuid,
+    capability: &str,
+    action: &str,
+    outcome: EvidenceOutcome,
+    request: serde_json::Value,
+    result: serde_json::Value,
+    artifacts: Vec<String>,
+) -> Result<(), InstallerError> {
+    if let Some(l) = ledger {
+        l.append(EvidenceDraft {
+            action_uuid,
+            correlation_uuid: None,
+            actor: "phxclaw-installer".into(),
+            capability: capability.into(),
+            action: action.into(),
+            outcome,
+            request_summary: request,
+            result_summary: result,
+            artifact_uris: artifacts,
+        })
+        .map_err(|e| InstallerError::Evidence(e.to_string()))?;
+    }
     Ok(())
 }
 
@@ -550,7 +810,9 @@ fn evidence(ledger: Option<&EvidenceLedger>, action_uuid: Uuid, capability:&str,
 mod tests {
     use super::*;
 
-    fn temp(name:&str)->PathBuf{std::env::temp_dir().join(format!("phxclaw-installer-{name}-{}",new_uuid_v7()))}
+    fn temp(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("phxclaw-installer-{name}-{}", new_uuid_v7()))
+    }
 
     #[test]
     fn installer_always_has_rollback() {
@@ -560,13 +822,25 @@ mod tests {
 
     #[test]
     fn backup_restore_roundtrip() {
-        let source=temp("source"); let repo=temp("repo"); let target=temp("target");
+        let source = temp("source");
+        let repo = temp("repo");
+        let target = temp("target");
         fs::create_dir_all(source.join("nested")).unwrap();
-        fs::write(source.join("a.txt"),b"alpha").unwrap(); fs::write(source.join("nested/b.txt"),b"beta").unwrap();
-        let r=BackupRepository::open(&repo).unwrap(); let receipt=r.create_backup(&source,"0.65.0",&BackupPolicy::default(),None).unwrap();
+        fs::write(source.join("a.txt"), b"alpha").unwrap();
+        fs::write(source.join("nested/b.txt"), b"beta").unwrap();
+        let r = BackupRepository::open(&repo).unwrap();
+        let receipt = r
+            .create_backup(&source, "0.65.0", &BackupPolicy::default(), None)
+            .unwrap();
         assert!(r.verify_backup(receipt.backup_uuid).unwrap().valid);
-        let restored=r.restore_backup(receipt.backup_uuid,&target,None).unwrap(); assert!(restored.verified);
-        assert_eq!(fs::read(target.join("a.txt")).unwrap(),b"alpha"); assert_eq!(fs::read(target.join("nested/b.txt")).unwrap(),b"beta");
-        let _=fs::remove_dir_all(source);let _=fs::remove_dir_all(repo);let _=fs::remove_dir_all(target);
+        let restored = r
+            .restore_backup(receipt.backup_uuid, &target, None)
+            .unwrap();
+        assert!(restored.verified);
+        assert_eq!(fs::read(target.join("a.txt")).unwrap(), b"alpha");
+        assert_eq!(fs::read(target.join("nested/b.txt")).unwrap(), b"beta");
+        let _ = fs::remove_dir_all(source);
+        let _ = fs::remove_dir_all(repo);
+        let _ = fs::remove_dir_all(target);
     }
 }

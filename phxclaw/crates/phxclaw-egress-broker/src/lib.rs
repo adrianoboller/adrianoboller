@@ -1,4 +1,4 @@
-use phxclaw_http_client::{http_request, HttpClientError, HttpRequestSpec, HttpResult};
+use phxclaw_http_client::{HttpClientError, HttpRequestSpec, HttpResult, http_request};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use thiserror::Error;
@@ -14,7 +14,11 @@ pub struct EgressPolicy {
 
 impl Default for EgressPolicy {
     fn default() -> Self {
-        Self { enabled: false, allowed_origins: BTreeSet::new(), allow_http: false }
+        Self {
+            enabled: false,
+            allowed_origins: BTreeSet::new(),
+            allow_http: false,
+        }
     }
 }
 
@@ -38,10 +42,14 @@ pub struct EgressBroker {
 }
 
 impl EgressBroker {
-    pub fn new(policy: EgressPolicy) -> Self { Self { policy } }
+    pub fn new(policy: EgressPolicy) -> Self {
+        Self { policy }
+    }
 
     pub fn validate_url(&self, raw: &str) -> Result<Url, EgressError> {
-        if !self.policy.enabled { return Err(EgressError::Disabled); }
+        if !self.policy.enabled {
+            return Err(EgressError::Disabled);
+        }
         let url = Url::parse(raw)?;
         let scheme = url.scheme();
         if scheme != "https" && scheme != "http" {
@@ -59,7 +67,9 @@ impl EgressBroker {
 
     pub async fn request(&self, spec: &HttpRequestSpec) -> Result<HttpResult, EgressError> {
         self.validate_url(&spec.url)?;
-        if let Some(proxy) = &spec.proxy { self.validate_url(proxy)?; }
+        if let Some(proxy) = &spec.proxy {
+            self.validate_url(proxy)?;
+        }
         Ok(http_request(spec).await?)
     }
 }
@@ -79,16 +89,25 @@ mod tests {
     #[test]
     fn deny_by_default() {
         let broker = EgressBroker::new(EgressPolicy::default());
-        assert!(matches!(broker.validate_url("https://example.com"), Err(EgressError::Disabled)));
+        assert!(matches!(
+            broker.validate_url("https://example.com"),
+            Err(EgressError::Disabled)
+        ));
     }
 
     #[test]
     fn exact_origin_allowlist() {
         let mut policy = EgressPolicy::default();
         policy.enabled = true;
-        policy.allowed_origins.insert("https://api.example.com".into());
+        policy
+            .allowed_origins
+            .insert("https://api.example.com".into());
         let broker = EgressBroker::new(policy);
-        assert!(broker.validate_url("https://api.example.com/v1/test").is_ok());
+        assert!(
+            broker
+                .validate_url("https://api.example.com/v1/test")
+                .is_ok()
+        );
         assert!(broker.validate_url("https://example.com").is_err());
     }
 }

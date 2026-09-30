@@ -1,13 +1,16 @@
 use chrono::{DateTime, Utc};
 use phxclaw_agent_catalog::{AgentCatalog, AgentManifest};
-use phxclaw_code_workspace::{CodeWorkspace, GateResult, GateSpec, WorktreeHandle, WorkspaceError};
+use phxclaw_code_workspace::{CodeWorkspace, GateResult, GateSpec, WorkspaceError, WorktreeHandle};
 use phxclaw_evidence_ledger::{EvidenceDraft, EvidenceLedger, EvidenceOutcome, LedgerError};
 use phxclaw_live_bus::{LiveBusError, LiveEventHub};
-use phxclaw_types::{new_uuid_v7, PermissionClaim};
+use phxclaw_types::{PermissionClaim, new_uuid_v7};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use std::{path::{Path, PathBuf}, sync::Arc};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -60,7 +63,11 @@ pub struct MissionStep {
 }
 
 impl MissionStep {
-    pub fn new(name: impl Into<String>, agent_capability: impl Into<String>, action: MissionAction) -> Self {
+    pub fn new(
+        name: impl Into<String>,
+        agent_capability: impl Into<String>,
+        action: MissionAction,
+    ) -> Self {
         Self {
             uuid: new_uuid_v7(),
             name: name.into(),
@@ -117,7 +124,9 @@ pub enum MissionError {
     NoAgent(String),
     #[error("real model execution is required for capability {0}; no model executor is attached")]
     ModelExecutorRequired(String),
-    #[error("real extension execution is required for capability {0}; no extension executor is attached")]
+    #[error(
+        "real extension execution is required for capability {0}; no extension executor is attached"
+    )]
     ExtensionExecutorRequired(String),
     #[error("model execution failed: {0}")]
     ModelExecution(String),
@@ -140,15 +149,32 @@ pub enum MissionError {
 }
 
 pub trait ModelExecutor: Send + Sync {
-    fn execute_model(&self, capability: &str, input: &Value, correlation_uuid: Uuid, actor: &str) -> Result<Value, String>;
+    fn execute_model(
+        &self,
+        capability: &str,
+        input: &Value,
+        correlation_uuid: Uuid,
+        actor: &str,
+    ) -> Result<Value, String>;
 }
 
 pub trait ExtensionExecutor: Send + Sync {
-    fn execute_extension(&self, capability: &str, input: &Value, correlation_uuid: Uuid, actor: &str) -> Result<Value, String>;
+    fn execute_extension(
+        &self,
+        capability: &str,
+        input: &Value,
+        correlation_uuid: Uuid,
+        actor: &str,
+    ) -> Result<Value, String>;
 }
 
 pub trait TeamExecutor: Send + Sync {
-    fn execute_team(&self, plan: &Value, correlation_uuid: Uuid, actor: &str) -> Result<Value, String>;
+    fn execute_team(
+        &self,
+        plan: &Value,
+        correlation_uuid: Uuid,
+        actor: &str,
+    ) -> Result<Value, String>;
 }
 
 pub struct MissionRuntime {
@@ -162,17 +188,39 @@ pub struct MissionRuntime {
 
 impl MissionRuntime {
     pub fn new(agents: AgentCatalog, live_bus: LiveEventHub, evidence: EvidenceLedger) -> Self {
-        Self { agents, live_bus, evidence, model_executor: None, extension_executor: None, team_executor: None }
+        Self {
+            agents,
+            live_bus,
+            evidence,
+            model_executor: None,
+            extension_executor: None,
+            team_executor: None,
+        }
     }
 
-    pub fn with_model_executor(mut self, executor: Arc<dyn ModelExecutor>) -> Self { self.model_executor = Some(executor); self }
+    pub fn with_model_executor(mut self, executor: Arc<dyn ModelExecutor>) -> Self {
+        self.model_executor = Some(executor);
+        self
+    }
 
-    pub fn with_extension_executor(mut self, executor: Arc<dyn ExtensionExecutor>) -> Self { self.extension_executor = Some(executor); self }
+    pub fn with_extension_executor(mut self, executor: Arc<dyn ExtensionExecutor>) -> Self {
+        self.extension_executor = Some(executor);
+        self
+    }
 
-    pub fn with_team_executor(mut self, executor: Arc<dyn TeamExecutor>) -> Self { self.team_executor = Some(executor); self }
+    pub fn with_team_executor(mut self, executor: Arc<dyn TeamExecutor>) -> Self {
+        self.team_executor = Some(executor);
+        self
+    }
 
-    pub fn run(&self, workspace: &CodeWorkspace, mission: &MissionSpec) -> Result<MissionReport, MissionError> {
-        if mission.steps.is_empty() { return Err(MissionError::EmptyMission); }
+    pub fn run(
+        &self,
+        workspace: &CodeWorkspace,
+        mission: &MissionSpec,
+    ) -> Result<MissionReport, MissionError> {
+        if mission.steps.is_empty() {
+            return Err(MissionError::EmptyMission);
+        }
         let started_at = Utc::now();
         let start_snapshot = workspace.snapshot()?;
         if mission.require_clean_start && !start_snapshot.status_porcelain.trim().is_empty() {
@@ -197,8 +245,13 @@ impl MissionRuntime {
 
         let worktree = if mission.isolate_worktree {
             Some(workspace.create_worktree(mission.uuid, &mission.base_ref)?)
-        } else { None };
-        let execution_root = worktree.as_ref().map(|w| w.path.as_path()).unwrap_or(workspace.root());
+        } else {
+            None
+        };
+        let execution_root = worktree
+            .as_ref()
+            .map(|w| w.path.as_path())
+            .unwrap_or(workspace.root());
         let mut results = Vec::new();
 
         for step in &mission.steps {
@@ -209,12 +262,21 @@ impl MissionRuntime {
                 Some(mission.correlation_uuid), Some(started_event.uuid),
             )?;
             let permission_name = action_capability(&step.action);
-            let outcome = agent.authorize(&[PermissionClaim {
-                name: permission_name.to_string(),
-                scope: execution_root.display().to_string(),
-            }])
-            .map_err(|error| MissionError::PermissionDenied(error.to_string()))
-            .and_then(|_| self.execute_step(workspace, execution_root, step, mission.correlation_uuid, &agent.name));
+            let outcome = agent
+                .authorize(&[PermissionClaim {
+                    name: permission_name.to_string(),
+                    scope: execution_root.display().to_string(),
+                }])
+                .map_err(|error| MissionError::PermissionDenied(error.to_string()))
+                .and_then(|_| {
+                    self.execute_step(
+                        workspace,
+                        execution_root,
+                        step,
+                        mission.correlation_uuid,
+                        &agent.name,
+                    )
+                });
             match outcome {
                 Ok(output) => {
                     let evidence = self.evidence.append(EvidenceDraft {
@@ -271,9 +333,11 @@ impl MissionRuntime {
                     });
                     if step.required {
                         self.live_bus.publish_json(
-                            "mission.runtime", "failed",
+                            "mission.runtime",
+                            "failed",
                             json!({"mission_uuid": mission.uuid, "step_uuid": step.uuid}),
-                            Some(mission.correlation_uuid), Some(step_event.uuid),
+                            Some(mission.correlation_uuid),
+                            Some(step_event.uuid),
                         )?;
                         return Err(MissionError::RequiredStepFailed(step.name.clone()));
                     }
@@ -302,7 +366,10 @@ impl MissionRuntime {
     }
 
     fn resolve_agent(&self, capability: &str) -> Result<&AgentManifest, MissionError> {
-        self.agents.candidates_for_capability(capability).into_iter().next()
+        self.agents
+            .candidates_for_capability(capability)
+            .into_iter()
+            .next()
             .ok_or_else(|| MissionError::NoAgent(capability.to_string()))
     }
 
@@ -315,7 +382,9 @@ impl MissionRuntime {
         actor: &str,
     ) -> Result<Value, MissionError> {
         match &step.action {
-            MissionAction::Snapshot => Ok(serde_json::to_value(workspace.snapshot()?).expect("snapshot serializes")),
+            MissionAction::Snapshot => {
+                Ok(serde_json::to_value(workspace.snapshot()?).expect("snapshot serializes"))
+            }
             MissionAction::WriteFile { path, contents } => {
                 let result = workspace.write_file(execution_root, path, contents.as_bytes())?;
                 Ok(serde_json::to_value(result).expect("file write serializes"))
@@ -323,23 +392,41 @@ impl MissionRuntime {
             MissionAction::CommandGate { gate } => {
                 let result: GateResult = workspace.run_gate(gate, execution_root)?;
                 if !result.passed {
-                    return Err(MissionError::RequiredStepFailed(format!("gate {}", gate.name)));
+                    return Err(MissionError::RequiredStepFailed(format!(
+                        "gate {}",
+                        gate.name
+                    )));
                 }
                 Ok(serde_json::to_value(result).expect("gate serializes"))
             }
             MissionAction::Diff => Ok(json!({"diff": workspace.diff(Some(execution_root))?})),
             MissionAction::ModelSynthesis { capability, input } => {
-                let executor = self.model_executor.as_ref().ok_or_else(|| MissionError::ModelExecutorRequired(capability.clone()))?;
-                executor.execute_model(capability, input, correlation_uuid, actor).map_err(MissionError::ModelExecution)
+                let executor = self
+                    .model_executor
+                    .as_ref()
+                    .ok_or_else(|| MissionError::ModelExecutorRequired(capability.clone()))?;
+                executor
+                    .execute_model(capability, input, correlation_uuid, actor)
+                    .map_err(MissionError::ModelExecution)
             }
             MissionAction::ExtensionCall { capability, input } => {
-                let executor = self.extension_executor.as_ref().ok_or_else(|| MissionError::ExtensionExecutorRequired(capability.clone()))?;
-                executor.execute_extension(capability, input, correlation_uuid, actor).map_err(MissionError::ExtensionExecution)
-            },
+                let executor = self
+                    .extension_executor
+                    .as_ref()
+                    .ok_or_else(|| MissionError::ExtensionExecutorRequired(capability.clone()))?;
+                executor
+                    .execute_extension(capability, input, correlation_uuid, actor)
+                    .map_err(MissionError::ExtensionExecution)
+            }
             MissionAction::TeamDispatch { plan } => {
-                let executor = self.team_executor.as_ref().ok_or(MissionError::TeamExecutorRequired)?;
-                executor.execute_team(plan, correlation_uuid, actor).map_err(MissionError::TeamExecution)
-            },
+                let executor = self
+                    .team_executor
+                    .as_ref()
+                    .ok_or(MissionError::TeamExecutorRequired)?;
+                executor
+                    .execute_team(plan, correlation_uuid, actor)
+                    .map_err(MissionError::TeamExecution)
+            }
         }
     }
 }
@@ -374,11 +461,19 @@ fn safe_action_summary(action: &MissionAction) -> Value {
         MissionAction::WriteFile { path, contents } => json!({
             "kind": "write_file", "path": path, "content_sha256": sha256_text(contents), "bytes": contents.len()
         }),
-        MissionAction::CommandGate { gate } => json!({"kind": "command_gate", "name": gate.name, "program": gate.program, "args": gate.args}),
+        MissionAction::CommandGate { gate } => {
+            json!({"kind": "command_gate", "name": gate.name, "program": gate.program, "args": gate.args})
+        }
         MissionAction::Diff => json!({"kind": "diff"}),
-        MissionAction::ModelSynthesis { capability, input } => json!({"kind": "model_synthesis", "capability": capability, "input_sha256": sha256_text(&input.to_string())}),
-        MissionAction::ExtensionCall { capability, input } => json!({"kind": "extension_call", "capability": capability, "input_sha256": sha256_text(&input.to_string())}),
-        MissionAction::TeamDispatch { plan } => json!({"kind":"team_dispatch","plan_sha256":sha256_text(&plan.to_string())}),
+        MissionAction::ModelSynthesis { capability, input } => {
+            json!({"kind": "model_synthesis", "capability": capability, "input_sha256": sha256_text(&input.to_string())})
+        }
+        MissionAction::ExtensionCall { capability, input } => {
+            json!({"kind": "extension_call", "capability": capability, "input_sha256": sha256_text(&input.to_string())})
+        }
+        MissionAction::TeamDispatch { plan } => {
+            json!({"kind":"team_dispatch","plan_sha256":sha256_text(&plan.to_string())})
+        }
     }
 }
 
@@ -413,7 +508,11 @@ impl PostgresMissionJournal {
             ],
         )?;
         for step in &report.steps {
-            let spec = mission.steps.iter().find(|item| item.uuid == step.step_uuid).expect("report step belongs to mission");
+            let spec = mission
+                .steps
+                .iter()
+                .find(|item| item.uuid == step.step_uuid)
+                .expect("report step belongs to mission");
             tx.execute(
                 "INSERT INTO phoenix_mission_steps \
                  (uuid, mission_uuid, name, agent_capability, action, required, status, agent_uuid, agent_name, evidence_uuid, output, finished_at) \

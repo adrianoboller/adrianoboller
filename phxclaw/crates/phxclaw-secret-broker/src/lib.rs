@@ -11,10 +11,10 @@
 //! Portions of the storage/redaction design are informed by MIT-licensed openclaw-rs.
 
 use aes_gcm::{
-    aead::{Aead, KeyInit},
     Aes256Gcm, Nonce,
+    aead::{Aead, KeyInit},
 };
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use chrono::{DateTime, Duration, Utc};
 use phxclaw_evidence_ledger::{EvidenceDraft, EvidenceLedger, EvidenceOutcome, LedgerError};
 use phxclaw_live_bus::{LiveBusError, LiveEventHub};
@@ -126,7 +126,8 @@ impl FileMasterKeyProvider {
             fs::create_dir_all(parent)?;
         }
         let mut bytes = [0u8; 32];
-        getrandom::fill(&mut bytes).map_err(|error| SecretBrokerError::Crypto(error.to_string()))?;
+        getrandom::fill(&mut bytes)
+            .map_err(|error| SecretBrokerError::Crypto(error.to_string()))?;
         fs::write(&self.path, BASE64.encode(bytes))?;
         #[cfg(unix)]
         {
@@ -142,9 +143,9 @@ impl MasterKeyProvider for FileMasterKeyProvider {
     fn key(&self) -> Result<[u8; 32], SecretBrokerError> {
         self.ensure()?;
         let text = fs::read_to_string(&self.path)?;
-        let bytes = BASE64
-            .decode(text.trim())
-            .map_err(|error| SecretBrokerError::Crypto(format!("invalid master key encoding: {error}")))?;
+        let bytes = BASE64.decode(text.trim()).map_err(|error| {
+            SecretBrokerError::Crypto(format!("invalid master key encoding: {error}"))
+        })?;
         bytes
             .try_into()
             .map_err(|_| SecretBrokerError::Crypto("master key must decode to 32 bytes".into()))
@@ -168,7 +169,10 @@ pub enum SecretBrokerError {
     #[error("secret is revoked: {0}")]
     SecretRevoked(Uuid),
     #[error("scope denied: requested={requested} allowed={allowed:?}")]
-    ScopeDenied { requested: String, allowed: Vec<String> },
+    ScopeDenied {
+        requested: String,
+        allowed: Vec<String>,
+    },
     #[error("invalid secret name")]
     InvalidName,
     #[error("invalid lease duration")]
@@ -251,7 +255,11 @@ impl SecretBroker {
         Ok(descriptor)
     }
 
-    pub fn rotate(&self, secret_uuid: Uuid, value: SecretValue) -> Result<SecretDescriptor, SecretBrokerError> {
+    pub fn rotate(
+        &self,
+        secret_uuid: Uuid,
+        value: SecretValue,
+    ) -> Result<SecretDescriptor, SecretBrokerError> {
         let current = self.descriptor(secret_uuid)?;
         if current.revoked_at.is_some() {
             return Err(SecretBrokerError::SecretRevoked(secret_uuid));
@@ -321,11 +329,20 @@ impl SecretBroker {
             .map_err(|_| SecretBrokerError::Poisoned)?
             .leases
             .insert(lease.uuid, lease.clone());
-        self.record("lease_issued", &descriptor, Some(&lease), EvidenceOutcome::Succeeded)?;
+        self.record(
+            "lease_issued",
+            &descriptor,
+            Some(&lease),
+            EvidenceOutcome::Succeeded,
+        )?;
         Ok(lease)
     }
 
-    pub fn resolve(&self, lease_uuid: Uuid, requested_scope: &str) -> Result<SecretValue, SecretBrokerError> {
+    pub fn resolve(
+        &self,
+        lease_uuid: Uuid,
+        requested_scope: &str,
+    ) -> Result<SecretValue, SecretBrokerError> {
         let lease = self
             .state
             .lock()
@@ -351,7 +368,12 @@ impl SecretBroker {
             return Err(SecretBrokerError::LeaseInactive(lease_uuid));
         }
         let value = self.read_secret(&descriptor)?;
-        self.record("resolved", &descriptor, Some(&lease), EvidenceOutcome::Succeeded)?;
+        self.record(
+            "resolved",
+            &descriptor,
+            Some(&lease),
+            EvidenceOutcome::Succeeded,
+        )?;
         Ok(value)
     }
 
@@ -390,13 +412,18 @@ impl SecretBroker {
         let mut loaded = BTreeMap::new();
         for entry in fs::read_dir(&self.root)? {
             let entry = entry?;
-            if !entry.path().is_file() || entry.path().extension().and_then(|x| x.to_str()) != Some("phxsecret") {
+            if !entry.path().is_file()
+                || entry.path().extension().and_then(|x| x.to_str()) != Some("phxsecret")
+            {
                 continue;
             }
             let envelope: SecretFileEnvelope = serde_json::from_slice(&fs::read(entry.path())?)?;
             loaded.insert(envelope.descriptor.uuid, envelope.descriptor);
         }
-        self.state.lock().map_err(|_| SecretBrokerError::Poisoned)?.descriptors = loaded;
+        self.state
+            .lock()
+            .map_err(|_| SecretBrokerError::Poisoned)?
+            .descriptors = loaded;
         Ok(())
     }
 
@@ -404,11 +431,16 @@ impl SecretBroker {
         self.root.join(format!("{}.phxsecret", descriptor.uuid))
     }
 
-    fn write_secret(&self, descriptor: &SecretDescriptor, value: &SecretValue) -> Result<(), SecretBrokerError> {
+    fn write_secret(
+        &self,
+        descriptor: &SecretDescriptor,
+        value: &SecretValue,
+    ) -> Result<(), SecretBrokerError> {
         let key = self.key_provider.key()?;
         let cipher = Aes256Gcm::new((&key).into());
         let mut nonce_bytes = [0u8; NONCE_BYTES];
-        getrandom::fill(&mut nonce_bytes).map_err(|error| SecretBrokerError::Crypto(error.to_string()))?;
+        getrandom::fill(&mut nonce_bytes)
+            .map_err(|error| SecretBrokerError::Crypto(error.to_string()))?;
         let nonce = Nonce::from_slice(&nonce_bytes);
         let ciphertext = cipher
             .encrypt(nonce, value.expose().as_bytes())
@@ -430,7 +462,10 @@ impl SecretBroker {
         Ok(())
     }
 
-    fn persist_descriptor_only(&self, descriptor: &SecretDescriptor) -> Result<(), SecretBrokerError> {
+    fn persist_descriptor_only(
+        &self,
+        descriptor: &SecretDescriptor,
+    ) -> Result<(), SecretBrokerError> {
         let old = self.read_envelope(descriptor.uuid)?;
         let envelope = SecretFileEnvelope {
             descriptor: descriptor.clone(),
@@ -445,8 +480,12 @@ impl SecretBroker {
 
     fn read_secret(&self, descriptor: &SecretDescriptor) -> Result<SecretValue, SecretBrokerError> {
         let envelope = self.read_envelope(descriptor.uuid)?;
-        let nonce_bytes = BASE64.decode(envelope.nonce_base64).map_err(|error| SecretBrokerError::Crypto(error.to_string()))?;
-        let ciphertext = BASE64.decode(envelope.ciphertext_base64).map_err(|error| SecretBrokerError::Crypto(error.to_string()))?;
+        let nonce_bytes = BASE64
+            .decode(envelope.nonce_base64)
+            .map_err(|error| SecretBrokerError::Crypto(error.to_string()))?;
+        let ciphertext = BASE64
+            .decode(envelope.ciphertext_base64)
+            .map_err(|error| SecretBrokerError::Crypto(error.to_string()))?;
         if nonce_bytes.len() != NONCE_BYTES {
             return Err(SecretBrokerError::Crypto("invalid nonce length".into()));
         }
@@ -456,7 +495,8 @@ impl SecretBroker {
         let mut plaintext = cipher
             .decrypt(nonce, ciphertext.as_ref())
             .map_err(|error| SecretBrokerError::Crypto(error.to_string()))?;
-        let text = String::from_utf8(plaintext.clone()).map_err(|error| SecretBrokerError::Crypto(error.to_string()))?;
+        let text = String::from_utf8(plaintext.clone())
+            .map_err(|error| SecretBrokerError::Crypto(error.to_string()))?;
         plaintext.zeroize();
         Ok(SecretValue::new(text))
     }
@@ -465,7 +505,9 @@ impl SecretBroker {
         let descriptor = self.descriptor(secret_uuid)?;
         let bytes = fs::read(self.path_for(&descriptor))?;
         if !bytes.starts_with(FILE_MAGIC) {
-            return Err(SecretBrokerError::Crypto("invalid secret file magic".into()));
+            return Err(SecretBrokerError::Crypto(
+                "invalid secret file magic".into(),
+            ));
         }
         Ok(serde_json::from_slice(&bytes[FILE_MAGIC.len()..])?)
     }
@@ -497,7 +539,9 @@ impl SecretBroker {
         self.evidence.append(EvidenceDraft {
             action_uuid: correlation,
             correlation_uuid: Some(correlation),
-            actor: lease.map(|item| item.consumer.clone()).unwrap_or_else(|| "Secrets Manager".into()),
+            actor: lease
+                .map(|item| item.consumer.clone())
+                .unwrap_or_else(|| "Secrets Manager".into()),
             capability: format!("secret.{event}"),
             action: format!("secret.{event}"),
             outcome,
@@ -516,7 +560,12 @@ impl SecretBroker {
 }
 
 fn validate_name(value: &str) -> Result<(), SecretBrokerError> {
-    if value.is_empty() || value.len() > 128 || !value.chars().all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.')) {
+    if value.is_empty()
+        || value.len() > 128
+        || !value
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'))
+    {
         return Err(SecretBrokerError::InvalidName);
     }
     Ok(())
@@ -529,11 +578,16 @@ fn normalize_scopes(mut scopes: Vec<String>) -> Vec<String> {
 }
 
 fn scope_allowed(allowed: &[String], requested: &str) -> bool {
-    allowed.iter().any(|scope| scope == "*" || scope == requested)
+    allowed
+        .iter()
+        .any(|scope| scope == "*" || scope == requested)
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
-    Sha256::digest(bytes).iter().map(|byte| format!("{byte:02x}")).collect()
+    Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 pub fn scrub_text(text: &str, known_values: &[SecretValue]) -> String {
@@ -544,7 +598,16 @@ pub fn scrub_text(text: &str, known_values: &[SecretValue]) -> String {
             output = output.replace(exposed, "[REDACTED]");
         }
     }
-    for marker in ["api_key=", "apikey=", "token=", "secret=", "password=", "Authorization: Bearer ", "Authorization: Basic ", "x-api-key: "] {
+    for marker in [
+        "api_key=",
+        "apikey=",
+        "token=",
+        "secret=",
+        "password=",
+        "Authorization: Bearer ",
+        "Authorization: Basic ",
+        "x-api-key: ",
+    ] {
         output = scrub_after_marker(&output, marker);
     }
     output
@@ -554,7 +617,9 @@ fn scrub_after_marker(text: &str, marker: &str) -> String {
     let mut output = text.to_owned();
     let mut cursor = 0usize;
     while cursor < output.len() {
-        let Some(relative) = output[cursor..].find(marker) else { break };
+        let Some(relative) = output[cursor..].find(marker) else {
+            break;
+        };
         let start = cursor + relative + marker.len();
         let end = output[start..]
             .find(|ch: char| ch.is_whitespace() || matches!(ch, '"' | '\'' | '&' | ','))

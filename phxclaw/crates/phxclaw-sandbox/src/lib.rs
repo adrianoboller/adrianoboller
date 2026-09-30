@@ -65,7 +65,9 @@ impl SandboxBackend for BwrapSandbox {
     }
 
     fn probe(&self) -> Result<(), SandboxError> {
-        if self.bwrap_path.is_file() || find_in_path(self.bwrap_path.to_string_lossy().as_ref()).is_some() {
+        if self.bwrap_path.is_file()
+            || find_in_path(self.bwrap_path.to_string_lossy().as_ref()).is_some()
+        {
             Ok(())
         } else {
             Err(SandboxError::BackendUnavailable(
@@ -94,9 +96,9 @@ impl SandboxBackend for BwrapSandbox {
                 "entrypoint escaped the package root".into(),
             ));
         }
-        let relative_entrypoint = entrypoint
-            .strip_prefix(&package_root)
-            .map_err(|_| SandboxError::InvalidPath("entrypoint is not inside package root".into()))?;
+        let relative_entrypoint = entrypoint.strip_prefix(&package_root).map_err(|_| {
+            SandboxError::InvalidPath("entrypoint is not inside package root".into())
+        })?;
         let guest_entrypoint = format!("/phxclaw/{}", relative_entrypoint.display());
 
         let mut args = vec![
@@ -120,11 +122,7 @@ impl SandboxBackend for BwrapSandbox {
 
         for system_path in ["/usr", "/bin", "/lib", "/lib64"] {
             if Path::new(system_path).exists() {
-                args.extend([
-                    "--ro-bind".into(),
-                    system_path.into(),
-                    system_path.into(),
-                ]);
+                args.extend(["--ro-bind".into(), system_path.into(), system_path.into()]);
             }
         }
 
@@ -136,7 +134,11 @@ impl SandboxBackend for BwrapSandbox {
 
         for relative in &manifest.sandbox.write_paths {
             let rel = Path::new(relative);
-            if rel.is_absolute() || rel.components().any(|component| matches!(component, std::path::Component::ParentDir)) {
+            if rel.is_absolute()
+                || rel
+                    .components()
+                    .any(|component| matches!(component, std::path::Component::ParentDir))
+            {
                 return Err(SandboxError::InvalidPath(format!(
                     "writable path must be a package-relative path without '..': {relative}"
                 )));
@@ -150,11 +152,7 @@ impl SandboxBackend for BwrapSandbox {
                 )));
             }
             let guest_path = format!("/phxclaw/{}", rel.display());
-            args.extend([
-                "--bind".into(),
-                host_path.display().to_string(),
-                guest_path,
-            ]);
+            args.extend(["--bind".into(), host_path.display().to_string(), guest_path]);
         }
 
         args.push("--".into());

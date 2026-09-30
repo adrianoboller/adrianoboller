@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use phxclaw_types::new_uuid_v7;
-use quick_xml::{events::Event, Reader};
+use quick_xml::{Reader, events::Event};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use thiserror::Error;
@@ -28,8 +28,16 @@ impl MindsetProfile {
                 "least_privilege".into(),
                 "rollback_first".into(),
             ],
-            priorities: vec!["correctness".into(), "security".into(), "traceability".into(), "speed".into()],
-            constraints: vec!["no_silent_privilege_escalation".into(), "no_untracked_side_effects".into()],
+            priorities: vec![
+                "correctness".into(),
+                "security".into(),
+                "traceability".into(),
+                "speed".into(),
+            ],
+            constraints: vec![
+                "no_silent_privilege_escalation".into(),
+                "no_untracked_side_effects".into(),
+            ],
             evidence_required: true,
             human_approval_for: vec!["release.publish".into(), "system.destructive".into()],
         }
@@ -110,9 +118,16 @@ pub fn import_bpmn_xml(xml: &str) -> Result<BpmProcess, BpmError> {
                     }
                 } else if local == b"sequenceFlow" {
                     if let (Some(id), Some(source), Some(target)) = (
-                        attr(&e, b"id")?, attr(&e, b"sourceRef")?, attr(&e, b"targetRef")?
+                        attr(&e, b"id")?,
+                        attr(&e, b"sourceRef")?,
+                        attr(&e, b"targetRef")?,
                     ) {
-                        process.flows.push(BpmFlow { id, source, target, name: attr(&e, b"name")? });
+                        process.flows.push(BpmFlow {
+                            id,
+                            source,
+                            target,
+                            name: attr(&e, b"name")?,
+                        });
                     }
                 }
             }
@@ -159,10 +174,16 @@ pub fn validate_process(process: &BpmProcess) -> Result<(), BpmError> {
     }
     for flow in &process.flows {
         if !process.nodes.contains_key(&flow.source) {
-            return Err(BpmError::UnknownNode { flow: flow.id.clone(), node: flow.source.clone() });
+            return Err(BpmError::UnknownNode {
+                flow: flow.id.clone(),
+                node: flow.source.clone(),
+            });
         }
         if !process.nodes.contains_key(&flow.target) {
-            return Err(BpmError::UnknownNode { flow: flow.id.clone(), node: flow.target.clone() });
+            return Err(BpmError::UnknownNode {
+                flow: flow.id.clone(),
+                node: flow.target.clone(),
+            });
         }
     }
     Ok(())
@@ -171,14 +192,27 @@ pub fn validate_process(process: &BpmProcess) -> Result<(), BpmError> {
 /// Deterministic topological order for BPM fragments that are expected to be DAGs.
 /// Long-running BPMN with loops can use the token runtime instead of this helper.
 pub fn dag_order(process: &BpmProcess) -> Result<Vec<String>, BpmError> {
-    let mut indegree = process.nodes.keys().map(|k| (k.clone(), 0usize)).collect::<BTreeMap<_, _>>();
+    let mut indegree = process
+        .nodes
+        .keys()
+        .map(|k| (k.clone(), 0usize))
+        .collect::<BTreeMap<_, _>>();
     let mut edges = BTreeMap::<String, Vec<String>>::new();
     for flow in &process.flows {
         *indegree.entry(flow.target.clone()).or_default() += 1;
-        edges.entry(flow.source.clone()).or_default().push(flow.target.clone());
+        edges
+            .entry(flow.source.clone())
+            .or_default()
+            .push(flow.target.clone());
     }
-    for values in edges.values_mut() { values.sort(); values.dedup(); }
-    let mut ready = indegree.iter().filter_map(|(k,v)| (*v == 0).then_some(k.clone())).collect::<VecDeque<_>>();
+    for values in edges.values_mut() {
+        values.sort();
+        values.dedup();
+    }
+    let mut ready = indegree
+        .iter()
+        .filter_map(|(k, v)| (*v == 0).then_some(k.clone()))
+        .collect::<VecDeque<_>>();
     let mut order = Vec::with_capacity(process.nodes.len());
     while let Some(node) = ready.pop_front() {
         order.push(node.clone());
@@ -186,11 +220,17 @@ pub fn dag_order(process: &BpmProcess) -> Result<Vec<String>, BpmError> {
             for target in next {
                 let d = indegree.get_mut(target).expect("known target");
                 *d -= 1;
-                if *d == 0 { ready.push_back(target.clone()); }
+                if *d == 0 {
+                    ready.push_back(target.clone());
+                }
             }
         }
     }
-    if order.len() != process.nodes.len() { Err(BpmError::Cycle) } else { Ok(order) }
+    if order.len() != process.nodes.len() {
+        Err(BpmError::Cycle)
+    } else {
+        Ok(order)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -204,7 +244,10 @@ pub struct ProcessToken {
 
 impl ProcessToken {
     pub fn at_start(process: &BpmProcess) -> Result<Self, BpmError> {
-        let start = process.nodes.values().find(|n| n.kind == BpmNodeKind::Start)
+        let start = process
+            .nodes
+            .values()
+            .find(|n| n.kind == BpmNodeKind::Start)
             .ok_or(BpmError::MissingStart)?;
         Ok(Self {
             uuid: new_uuid_v7(),
@@ -216,10 +259,13 @@ impl ProcessToken {
     }
 
     pub fn outgoing<'a>(&self, process: &'a BpmProcess) -> Vec<&'a BpmFlow> {
-        process.flows.iter().filter(|f| f.source == self.current_node).collect()
+        process
+            .flows
+            .iter()
+            .filter(|f| f.source == self.current_node)
+            .collect()
     }
 }
-
 
 // ---- v0.67 crash-safe persistent runtime -----------------------------------
 use postgres::Client;
@@ -255,59 +301,150 @@ pub enum PersistentBpmError {
     InstanceNotFound,
 }
 
-pub struct BpmStore<'a> { client: &'a mut Client }
+pub struct BpmStore<'a> {
+    client: &'a mut Client,
+}
 impl<'a> BpmStore<'a> {
-    pub fn new(client: &'a mut Client) -> Self { Self { client } }
+    pub fn new(client: &'a mut Client) -> Self {
+        Self { client }
+    }
 
-    pub fn start_instance(&mut self, tenant_uuid:Uuid, process_uuid:Uuid, start_node:&str, variables:JsonValue) -> Result<(Uuid,Uuid),PersistentBpmError> {
-        let instance_uuid=new_uuid_v7();let token_uuid=new_uuid_v7();let event_uuid=new_uuid_v7();
-        let mut tx=self.client.transaction()?;tx.query_one("SELECT set_config('phxclaw.tenant_uuid',$1,true)",&[&tenant_uuid.to_string()])?;
+    pub fn start_instance(
+        &mut self,
+        tenant_uuid: Uuid,
+        process_uuid: Uuid,
+        start_node: &str,
+        variables: JsonValue,
+    ) -> Result<(Uuid, Uuid), PersistentBpmError> {
+        let instance_uuid = new_uuid_v7();
+        let token_uuid = new_uuid_v7();
+        let event_uuid = new_uuid_v7();
+        let mut tx = self.client.transaction()?;
+        tx.query_one(
+            "SELECT set_config('phxclaw.tenant_uuid',$1,true)",
+            &[&tenant_uuid.to_string()],
+        )?;
         tx.execute("INSERT INTO phxclaw.bpm_instances_v2(instance_uuid,tenant_uuid,process_uuid,state,variables,started_at) VALUES($1,$2,$3,'running',$4,clock_timestamp())",&[&instance_uuid,&tenant_uuid,&process_uuid,&variables])?;
         tx.execute("INSERT INTO phxclaw.bpm_tokens_v2(token_uuid,tenant_uuid,instance_uuid,node_id,state,fencing_token,updated_at) VALUES($1,$2,$3,$4,'ready',0,clock_timestamp())",&[&token_uuid,&tenant_uuid,&instance_uuid,&start_node])?;
         tx.execute("INSERT INTO phxclaw.bpm_events_v2(event_uuid,tenant_uuid,instance_uuid,token_uuid,event_type,node_id,fencing_token,payload,occurred_at) VALUES($1,$2,$3,$4,'token_created',$5,0,'{}'::jsonb,clock_timestamp())",&[&event_uuid,&tenant_uuid,&instance_uuid,&token_uuid,&start_node])?;
-        tx.commit()?;Ok((instance_uuid,token_uuid))
+        tx.commit()?;
+        Ok((instance_uuid, token_uuid))
     }
 
-    pub fn claim_ready_token(&mut self, tenant_uuid:Uuid, worker:&str, lease_seconds:i64) -> Result<PersistentTokenLease,PersistentBpmError> {
-        let mut tx=self.client.transaction()?;tx.query_one("SELECT set_config('phxclaw.tenant_uuid',$1,true)",&[&tenant_uuid.to_string()])?;
+    pub fn claim_ready_token(
+        &mut self,
+        tenant_uuid: Uuid,
+        worker: &str,
+        lease_seconds: i64,
+    ) -> Result<PersistentTokenLease, PersistentBpmError> {
+        let mut tx = self.client.transaction()?;
+        tx.query_one(
+            "SELECT set_config('phxclaw.tenant_uuid',$1,true)",
+            &[&tenant_uuid.to_string()],
+        )?;
         let row=tx.query_opt(r#"SELECT token_uuid,instance_uuid,node_id,fencing_token FROM phxclaw.bpm_tokens_v2
           WHERE tenant_uuid=$1 AND (state='ready' OR (state='leased' AND lease_until<=clock_timestamp()))
           ORDER BY updated_at,token_uuid FOR UPDATE SKIP LOCKED LIMIT 1"#,&[&tenant_uuid])?.ok_or(PersistentBpmError::NoReadyToken)?;
-        let token_uuid:Uuid=row.get(0);let instance_uuid:Uuid=row.get(1);let node_id:String=row.get(2);let old:i64=row.get(3);let next=old+1;
-        let until=Utc::now()+chrono::Duration::seconds(lease_seconds.max(1));
+        let token_uuid: Uuid = row.get(0);
+        let instance_uuid: Uuid = row.get(1);
+        let node_id: String = row.get(2);
+        let old: i64 = row.get(3);
+        let next = old + 1;
+        let until = Utc::now() + chrono::Duration::seconds(lease_seconds.max(1));
         tx.execute("UPDATE phxclaw.bpm_tokens_v2 SET state='leased',lease_owner=$2,lease_until=$3,fencing_token=$4,updated_at=clock_timestamp() WHERE token_uuid=$1",&[&token_uuid,&worker,&until,&next])?;
         tx.execute("INSERT INTO phxclaw.bpm_events_v2(event_uuid,tenant_uuid,instance_uuid,token_uuid,event_type,node_id,fencing_token,payload,occurred_at) VALUES($1,$2,$3,$4,'token_claimed',$5,$6,jsonb_build_object('worker',$7),clock_timestamp())",&[&new_uuid_v7(),&tenant_uuid,&instance_uuid,&token_uuid,&node_id,&next,&worker])?;
-        tx.commit()?;Ok(PersistentTokenLease{token_uuid,instance_uuid,node_id,fencing_token:next,lease_owner:worker.into(),lease_until:until})
+        tx.commit()?;
+        Ok(PersistentTokenLease {
+            token_uuid,
+            instance_uuid,
+            node_id,
+            fencing_token: next,
+            lease_owner: worker.into(),
+            lease_until: until,
+        })
     }
 
-    pub fn advance_token(&mut self, tenant_uuid:Uuid, lease:&PersistentTokenLease, next_node:&str, payload:JsonValue) -> Result<(),PersistentBpmError> {
-        let mut tx=self.client.transaction()?;tx.query_one("SELECT set_config('phxclaw.tenant_uuid',$1,true)",&[&tenant_uuid.to_string()])?;
+    pub fn advance_token(
+        &mut self,
+        tenant_uuid: Uuid,
+        lease: &PersistentTokenLease,
+        next_node: &str,
+        payload: JsonValue,
+    ) -> Result<(), PersistentBpmError> {
+        let mut tx = self.client.transaction()?;
+        tx.query_one(
+            "SELECT set_config('phxclaw.tenant_uuid',$1,true)",
+            &[&tenant_uuid.to_string()],
+        )?;
         let changed=tx.execute(r#"UPDATE phxclaw.bpm_tokens_v2 SET node_id=$4,state='ready',lease_owner=NULL,lease_until=NULL,updated_at=clock_timestamp()
           WHERE token_uuid=$1 AND tenant_uuid=$2 AND instance_uuid=$3 AND fencing_token=$5 AND state='leased'"#,&[&lease.token_uuid,&tenant_uuid,&lease.instance_uuid,&next_node,&lease.fencing_token])?;
-        if changed!=1{return Err(PersistentBpmError::StaleLease);}
+        if changed != 1 {
+            return Err(PersistentBpmError::StaleLease);
+        }
         tx.execute("INSERT INTO phxclaw.bpm_events_v2(event_uuid,tenant_uuid,instance_uuid,token_uuid,event_type,node_id,fencing_token,payload,occurred_at) VALUES($1,$2,$3,$4,'token_advanced',$5,$6,$7,clock_timestamp())",&[&new_uuid_v7(),&tenant_uuid,&lease.instance_uuid,&lease.token_uuid,&next_node,&lease.fencing_token,&payload])?;
-        tx.commit()?;Ok(())
+        tx.commit()?;
+        Ok(())
     }
 
-    pub fn complete_token(&mut self, tenant_uuid:Uuid, lease:&PersistentTokenLease, payload:JsonValue) -> Result<(),PersistentBpmError> {
-        let mut tx=self.client.transaction()?;tx.query_one("SELECT set_config('phxclaw.tenant_uuid',$1,true)",&[&tenant_uuid.to_string()])?;
+    pub fn complete_token(
+        &mut self,
+        tenant_uuid: Uuid,
+        lease: &PersistentTokenLease,
+        payload: JsonValue,
+    ) -> Result<(), PersistentBpmError> {
+        let mut tx = self.client.transaction()?;
+        tx.query_one(
+            "SELECT set_config('phxclaw.tenant_uuid',$1,true)",
+            &[&tenant_uuid.to_string()],
+        )?;
         let changed=tx.execute("UPDATE phxclaw.bpm_tokens_v2 SET state='completed',lease_owner=NULL,lease_until=NULL,updated_at=clock_timestamp() WHERE token_uuid=$1 AND tenant_uuid=$2 AND fencing_token=$3 AND state='leased'",&[&lease.token_uuid,&tenant_uuid,&lease.fencing_token])?;
-        if changed!=1{return Err(PersistentBpmError::StaleLease);}
+        if changed != 1 {
+            return Err(PersistentBpmError::StaleLease);
+        }
         tx.execute("INSERT INTO phxclaw.bpm_events_v2(event_uuid,tenant_uuid,instance_uuid,token_uuid,event_type,node_id,fencing_token,payload,occurred_at) VALUES($1,$2,$3,$4,'token_completed',$5,$6,$7,clock_timestamp())",&[&new_uuid_v7(),&tenant_uuid,&lease.instance_uuid,&lease.token_uuid,&lease.node_id,&lease.fencing_token,&payload])?;
         let remaining:i64=tx.query_one("SELECT count(*) FROM phxclaw.bpm_tokens_v2 WHERE instance_uuid=$1 AND state<>'completed'",&[&lease.instance_uuid])?.get(0);
-        if remaining==0{tx.execute("UPDATE phxclaw.bpm_instances_v2 SET state='completed',completed_at=clock_timestamp() WHERE instance_uuid=$1",&[&lease.instance_uuid])?;}
-        tx.commit()?;Ok(())
+        if remaining == 0 {
+            tx.execute("UPDATE phxclaw.bpm_instances_v2 SET state='completed',completed_at=clock_timestamp() WHERE instance_uuid=$1",&[&lease.instance_uuid])?;
+        }
+        tx.commit()?;
+        Ok(())
     }
 
-    pub fn checkpoint(&mut self, tenant_uuid:Uuid, instance_uuid:Uuid) -> Result<Uuid,PersistentBpmError> {
-        let state=self.replay(tenant_uuid,instance_uuid)?;let checkpoint_uuid=new_uuid_v7();let payload=serde_json::to_value(&state).unwrap_or(JsonValue::Null);
-        self.client.execute("INSERT INTO phxclaw.bpm_checkpoints(checkpoint_uuid,tenant_uuid,instance_uuid,through_sequence,state_snapshot,created_at) VALUES($1,$2,$3,$4,$5,clock_timestamp())",&[&checkpoint_uuid,&tenant_uuid,&instance_uuid,&state.last_sequence,&payload])?;Ok(checkpoint_uuid)
+    pub fn checkpoint(
+        &mut self,
+        tenant_uuid: Uuid,
+        instance_uuid: Uuid,
+    ) -> Result<Uuid, PersistentBpmError> {
+        let state = self.replay(tenant_uuid, instance_uuid)?;
+        let checkpoint_uuid = new_uuid_v7();
+        let payload = serde_json::to_value(&state).unwrap_or(JsonValue::Null);
+        self.client.execute("INSERT INTO phxclaw.bpm_checkpoints(checkpoint_uuid,tenant_uuid,instance_uuid,through_sequence,state_snapshot,created_at) VALUES($1,$2,$3,$4,$5,clock_timestamp())",&[&checkpoint_uuid,&tenant_uuid,&instance_uuid,&state.last_sequence,&payload])?;
+        Ok(checkpoint_uuid)
     }
 
-    pub fn replay(&mut self, tenant_uuid:Uuid, instance_uuid:Uuid) -> Result<ReplayState,PersistentBpmError> {
-        self.client.query_one("SELECT set_config('phxclaw.tenant_uuid',$1,false)",&[&tenant_uuid.to_string()])?;
-        if self.client.query_opt("SELECT 1 FROM phxclaw.bpm_instances_v2 WHERE instance_uuid=$1 AND tenant_uuid=$2",&[&instance_uuid,&tenant_uuid])?.is_none(){return Err(PersistentBpmError::InstanceNotFound);}
-        let mut state=ReplayState{instance_uuid,..Default::default()};
+    pub fn replay(
+        &mut self,
+        tenant_uuid: Uuid,
+        instance_uuid: Uuid,
+    ) -> Result<ReplayState, PersistentBpmError> {
+        self.client.query_one(
+            "SELECT set_config('phxclaw.tenant_uuid',$1,false)",
+            &[&tenant_uuid.to_string()],
+        )?;
+        if self
+            .client
+            .query_opt(
+                "SELECT 1 FROM phxclaw.bpm_instances_v2 WHERE instance_uuid=$1 AND tenant_uuid=$2",
+                &[&instance_uuid, &tenant_uuid],
+            )?
+            .is_none()
+        {
+            return Err(PersistentBpmError::InstanceNotFound);
+        }
+        let mut state = ReplayState {
+            instance_uuid,
+            ..Default::default()
+        };
         for row in self.client.query("SELECT sequence,token_uuid,event_type,node_id FROM phxclaw.bpm_events_v2 WHERE instance_uuid=$1 ORDER BY sequence",&[&instance_uuid])?{
             let seq:i64=row.get(0);let token:Option<Uuid>=row.get(1);let kind:String=row.get(2);let node:Option<String>=row.get(3);state.last_sequence=seq;
             if let Some(t)=token{match kind.as_str(){"token_created"|"token_advanced"=>{if let Some(n)=node.clone(){state.token_nodes.insert(t,n);}state.completed_tokens.remove(&t);},"token_completed"=>{state.token_nodes.remove(&t);state.completed_tokens.insert(t);},_=>{}}}

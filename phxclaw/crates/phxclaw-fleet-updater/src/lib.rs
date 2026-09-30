@@ -43,19 +43,42 @@ pub struct FleetSigner {
     #[serde(default = "default_true")]
     pub enabled: bool,
 }
-fn default_true() -> bool { true }
+fn default_true() -> bool {
+    true
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
-pub enum Channel { Canary, Beta, Stable }
+pub enum Channel {
+    Canary,
+    Beta,
+    Stable,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub enum RolloutState { Draft, Active, Paused, RollbackRequired, RollingBack, Completed, Aborted }
+pub enum RolloutState {
+    Draft,
+    Active,
+    Paused,
+    RollbackRequired,
+    RollingBack,
+    Completed,
+    Aborted,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub enum ComponentKind { Preflight, Backup, DatabaseExpand, Core, Plugin, HealthCheck, DatabaseContract, Cleanup }
+pub enum ComponentKind {
+    Preflight,
+    Backup,
+    DatabaseExpand,
+    Core,
+    Plugin,
+    HealthCheck,
+    DatabaseContract,
+    Cleanup,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RolloutStage {
@@ -64,7 +87,6 @@ pub struct RolloutStage {
     pub min_samples: u32,
     pub soak_seconds: u64,
 }
-
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct HealthThresholds {
@@ -170,9 +192,20 @@ pub fn component_plan_payload(o: &ComponentPlan) -> Vec<u8> {
     ).into_bytes()
 }
 
-pub fn verify_component_plan_signature(o: &ComponentPlan, signers: &[FleetSigner]) -> Result<(), FleetError> {
-    if !valid_sha256(&o.policy_sha256) || o.signature_algorithm != "ed25519" { return Err(FleetError::InvalidSignature); }
-    verify_fleet_signature(&component_plan_payload(o), &o.signer_key_id, "fleet.component_plan", &o.signature_b64, signers)
+pub fn verify_component_plan_signature(
+    o: &ComponentPlan,
+    signers: &[FleetSigner],
+) -> Result<(), FleetError> {
+    if !valid_sha256(&o.policy_sha256) || o.signature_algorithm != "ed25519" {
+        return Err(FleetError::InvalidSignature);
+    }
+    verify_fleet_signature(
+        &component_plan_payload(o),
+        &o.signer_key_id,
+        "fleet.component_plan",
+        &o.signature_b64,
+        signers,
+    )
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -184,22 +217,39 @@ pub struct NodeUpdateState {
     pub known_good_sequence: u64,
 }
 
-fn valid_sha256(v: &str) -> bool { v.len() == 64 && v.bytes().all(|b| b.is_ascii_hexdigit()) }
+fn valid_sha256(v: &str) -> bool {
+    v.len() == 64 && v.bytes().all(|b| b.is_ascii_hexdigit())
+}
 
-pub fn verify_fleet_signature(payload: &[u8], key_id: &str, purpose: &str, sig_b64: &str, signers: &[FleetSigner]) -> Result<(), FleetError> {
-    let signer = signers.iter().find(|s| s.enabled && s.key_id == key_id && s.purposes.iter().any(|p| p == purpose)).ok_or(FleetError::SignerNotTrusted)?;
-    let kb = STANDARD.decode(&signer.public_key_b64).map_err(|_| FleetError::InvalidSignature)?;
+pub fn verify_fleet_signature(
+    payload: &[u8],
+    key_id: &str,
+    purpose: &str,
+    sig_b64: &str,
+    signers: &[FleetSigner],
+) -> Result<(), FleetError> {
+    let signer = signers
+        .iter()
+        .find(|s| s.enabled && s.key_id == key_id && s.purposes.iter().any(|p| p == purpose))
+        .ok_or(FleetError::SignerNotTrusted)?;
+    let kb = STANDARD
+        .decode(&signer.public_key_b64)
+        .map_err(|_| FleetError::InvalidSignature)?;
     let ka: [u8; 32] = kb.try_into().map_err(|_| FleetError::InvalidSignature)?;
     let key = VerifyingKey::from_bytes(&ka).map_err(|_| FleetError::InvalidSignature)?;
-    let sb = STANDARD.decode(sig_b64).map_err(|_| FleetError::InvalidSignature)?;
+    let sb = STANDARD
+        .decode(sig_b64)
+        .map_err(|_| FleetError::InvalidSignature)?;
     let sig = Signature::try_from(sb.as_slice()).map_err(|_| FleetError::InvalidSignature)?;
-    key.verify_strict(payload, &sig).map_err(|_| FleetError::InvalidSignature)
+    key.verify_strict(payload, &sig)
+        .map_err(|_| FleetError::InvalidSignature)
 }
 
 pub fn rollout_payload(o: &RolloutPlan) -> Vec<u8> {
     let stages = serde_json::to_vec(&o.stages).expect("serializable stages");
     let health = serde_json::to_vec(&o.health_thresholds).expect("serializable health thresholds");
-    let critical = serde_json::to_vec(&o.critical_thresholds).expect("serializable critical thresholds");
+    let critical =
+        serde_json::to_vec(&o.critical_thresholds).expect("serializable critical thresholds");
     format!(
         "phxclaw-fleet-rollout-v028\nrollout_uuid={}\ntenant_uuid={}\nchannel={}\nversion={}\nsequence={}\nsource_state_sha256={}\nupdate_manifest_sha256={}\npolicy_sha256={}\nhealth_thresholds_sha256={:x}\ncritical_thresholds_sha256={:x}\nhealth_evidence_max_age_seconds={}\nstages_sha256={:x}\ncreated_at={}\nexpires_at={}\n",
         o.rollout_uuid, o.tenant_uuid,
@@ -228,72 +278,208 @@ pub fn state_payload(o: &FleetState) -> Vec<u8> {
     ).into_bytes()
 }
 
-pub fn verify_rollout_plan(o: &RolloutPlan, now: DateTime<Utc>, signers: &[FleetSigner]) -> Result<(), FleetError> {
-    if !valid_sha256(&o.source_state_sha256) || !valid_sha256(&o.update_manifest_sha256) || !valid_sha256(&o.policy_sha256) { return Err(FleetError::InvalidDigest); }
-    if o.sequence == 0 || o.stages.is_empty() || o.stages.iter().any(|s| s.percent == 0 || s.percent > 100 || s.min_samples == 0 || s.soak_seconds == 0) { return Err(FleetError::TransitionDenied); }
-    if o.stages.windows(2).any(|w| w[1].index != w[0].index + 1 || w[1].percent <= w[0].percent) { return Err(FleetError::TransitionDenied); }
-    if o.expires_at <= now || o.created_at > now + Duration::minutes(5) || o.expires_at - o.created_at > Duration::days(14) { return Err(FleetError::TransitionDenied); }
-    if o.signature_algorithm != "ed25519" { return Err(FleetError::InvalidSignature); }
+pub fn verify_rollout_plan(
+    o: &RolloutPlan,
+    now: DateTime<Utc>,
+    signers: &[FleetSigner],
+) -> Result<(), FleetError> {
+    if !valid_sha256(&o.source_state_sha256)
+        || !valid_sha256(&o.update_manifest_sha256)
+        || !valid_sha256(&o.policy_sha256)
+    {
+        return Err(FleetError::InvalidDigest);
+    }
+    if o.sequence == 0
+        || o.stages.is_empty()
+        || o.stages
+            .iter()
+            .any(|s| s.percent == 0 || s.percent > 100 || s.min_samples == 0 || s.soak_seconds == 0)
+    {
+        return Err(FleetError::TransitionDenied);
+    }
+    if o.stages
+        .windows(2)
+        .any(|w| w[1].index != w[0].index + 1 || w[1].percent <= w[0].percent)
+    {
+        return Err(FleetError::TransitionDenied);
+    }
+    if o.expires_at <= now
+        || o.created_at > now + Duration::minutes(5)
+        || o.expires_at - o.created_at > Duration::days(14)
+    {
+        return Err(FleetError::TransitionDenied);
+    }
+    if o.signature_algorithm != "ed25519" {
+        return Err(FleetError::InvalidSignature);
+    }
     Version::parse(&o.version).map_err(|_| FleetError::TransitionDenied)?;
-    verify_fleet_signature(&rollout_payload(o), &o.signer_key_id, "fleet.rollout", &o.signature_b64, signers)
+    verify_fleet_signature(
+        &rollout_payload(o),
+        &o.signer_key_id,
+        "fleet.rollout",
+        &o.signature_b64,
+        signers,
+    )
 }
 
 pub fn cohort_bucket(node_uuid: Uuid, rollout_uuid: Uuid) -> u16 {
-    let mut h = Sha256::new(); h.update(node_uuid.as_bytes()); h.update(rollout_uuid.as_bytes());
-    let d = h.finalize(); u16::from_be_bytes([d[0], d[1]]) % 10_000
+    let mut h = Sha256::new();
+    h.update(node_uuid.as_bytes());
+    h.update(rollout_uuid.as_bytes());
+    let d = h.finalize();
+    u16::from_be_bytes([d[0], d[1]]) % 10_000
 }
 
 pub fn selected_for_percent(node_uuid: Uuid, rollout_uuid: Uuid, percent: u8) -> bool {
-    percent > 0 && percent <= 100 && cohort_bucket(node_uuid, rollout_uuid) < u16::from(percent) * 100
+    percent > 0
+        && percent <= 100
+        && cohort_bucket(node_uuid, rollout_uuid) < u16::from(percent) * 100
 }
 
-pub fn verify_health(o: &HealthEvidence, plan: &RolloutPlan, now: DateTime<Utc>, signers: &[FleetSigner]) -> Result<(), FleetError> {
-    let stage = plan.stages.iter().find(|s| s.index == o.stage_index).ok_or(FleetError::HealthGateFailed)?;
-    if o.rollout_uuid != plan.rollout_uuid || o.samples < stage.min_samples || o.created_at < o.window_started_at || now - o.created_at > Duration::seconds(plan.health_evidence_max_age_seconds as i64) || o.created_at - o.window_started_at < Duration::seconds(stage.soak_seconds as i64) { return Err(FleetError::HealthGateFailed); }
-    if !(0.0..=1.0).contains(&o.success_rate) || !(0.0..=1.0).contains(&o.crash_rate) || !(0.0..=1.0).contains(&o.rollback_rate) || !(0.0..=1.0).contains(&o.stale_heartbeat_rate) || !(0.0..=1.0).contains(&o.install_error_rate) { return Err(FleetError::HealthGateFailed); }
-    if o.signature_algorithm != "ed25519" { return Err(FleetError::InvalidSignature); }
-    verify_fleet_signature(&health_payload(o), &o.signer_key_id, "fleet.health", &o.signature_b64, signers)?;
-    if o.success_rate < plan.health_thresholds.min_success_rate || o.crash_rate > plan.health_thresholds.max_crash_rate || o.rollback_rate > plan.health_thresholds.max_rollback_rate || o.stale_heartbeat_rate > plan.health_thresholds.max_stale_heartbeat_rate || o.install_error_rate > plan.health_thresholds.max_install_error_rate { return Err(FleetError::HealthGateFailed); }
+pub fn verify_health(
+    o: &HealthEvidence,
+    plan: &RolloutPlan,
+    now: DateTime<Utc>,
+    signers: &[FleetSigner],
+) -> Result<(), FleetError> {
+    let stage = plan
+        .stages
+        .iter()
+        .find(|s| s.index == o.stage_index)
+        .ok_or(FleetError::HealthGateFailed)?;
+    if o.rollout_uuid != plan.rollout_uuid
+        || o.samples < stage.min_samples
+        || o.created_at < o.window_started_at
+        || now - o.created_at > Duration::seconds(plan.health_evidence_max_age_seconds as i64)
+        || o.created_at - o.window_started_at < Duration::seconds(stage.soak_seconds as i64)
+    {
+        return Err(FleetError::HealthGateFailed);
+    }
+    if !(0.0..=1.0).contains(&o.success_rate)
+        || !(0.0..=1.0).contains(&o.crash_rate)
+        || !(0.0..=1.0).contains(&o.rollback_rate)
+        || !(0.0..=1.0).contains(&o.stale_heartbeat_rate)
+        || !(0.0..=1.0).contains(&o.install_error_rate)
+    {
+        return Err(FleetError::HealthGateFailed);
+    }
+    if o.signature_algorithm != "ed25519" {
+        return Err(FleetError::InvalidSignature);
+    }
+    verify_fleet_signature(
+        &health_payload(o),
+        &o.signer_key_id,
+        "fleet.health",
+        &o.signature_b64,
+        signers,
+    )?;
+    if o.success_rate < plan.health_thresholds.min_success_rate
+        || o.crash_rate > plan.health_thresholds.max_crash_rate
+        || o.rollback_rate > plan.health_thresholds.max_rollback_rate
+        || o.stale_heartbeat_rate > plan.health_thresholds.max_stale_heartbeat_rate
+        || o.install_error_rate > plan.health_thresholds.max_install_error_rate
+    {
+        return Err(FleetError::HealthGateFailed);
+    }
     Ok(())
 }
 
 pub fn verify_state(o: &FleetState, signers: &[FleetSigner]) -> Result<(), FleetError> {
-    if o.generation == 0 || o.fencing_token == 0 || o.signature_algorithm != "ed25519" { return Err(FleetError::TransitionDenied); }
-    verify_fleet_signature(&state_payload(o), &o.signer_key_id, "fleet.state", &o.signature_b64, signers)
+    if o.generation == 0 || o.fencing_token == 0 || o.signature_algorithm != "ed25519" {
+        return Err(FleetError::TransitionDenied);
+    }
+    verify_fleet_signature(
+        &state_payload(o),
+        &o.signer_key_id,
+        "fleet.state",
+        &o.signature_b64,
+        signers,
+    )
 }
 
-pub fn verify_node_sequence(node: &NodeUpdateState, target_version: &str, target_sequence: u64) -> Result<(), FleetError> {
+pub fn verify_node_sequence(
+    node: &NodeUpdateState,
+    target_version: &str,
+    target_sequence: u64,
+) -> Result<(), FleetError> {
     Version::parse(&node.current_version).map_err(|_| FleetError::AntiRollback)?;
     Version::parse(target_version).map_err(|_| FleetError::AntiRollback)?;
-    if target_sequence <= node.current_sequence { return Err(FleetError::AntiRollback); }
+    if target_sequence <= node.current_sequence {
+        return Err(FleetError::AntiRollback);
+    }
     Ok(())
 }
 
-pub fn component_order(components: &[UpdateComponent], target_core_version: &str) -> Result<Vec<Uuid>, FleetError> {
+pub fn component_order(
+    components: &[UpdateComponent],
+    target_core_version: &str,
+) -> Result<Vec<Uuid>, FleetError> {
     Version::parse(target_core_version).map_err(|_| FleetError::CompatibilityMismatch)?;
     let ids: BTreeSet<Uuid> = components.iter().map(|c| c.component_uuid).collect();
-    if ids.len() != components.len() || components.iter().any(|c| !valid_sha256(&c.sha256) || c.dependencies.iter().any(|d| !ids.contains(d))) { return Err(FleetError::InvalidComponentGraph); }
-    let target = Version::parse(target_core_version).map_err(|_| FleetError::CompatibilityMismatch)?;
-    for c in components.iter().filter(|c| c.kind == ComponentKind::Plugin) {
-        if let Some(min) = &c.core_min { if target < Version::parse(min).map_err(|_| FleetError::CompatibilityMismatch)? { return Err(FleetError::CompatibilityMismatch); } }
-        if let Some(max) = &c.core_max_exclusive { if target >= Version::parse(max).map_err(|_| FleetError::CompatibilityMismatch)? { return Err(FleetError::CompatibilityMismatch); } }
+    if ids.len() != components.len()
+        || components
+            .iter()
+            .any(|c| !valid_sha256(&c.sha256) || c.dependencies.iter().any(|d| !ids.contains(d)))
+    {
+        return Err(FleetError::InvalidComponentGraph);
     }
-    let mut indegree: BTreeMap<Uuid, usize> = components.iter().map(|c| (c.component_uuid, c.dependencies.len())).collect();
+    let target =
+        Version::parse(target_core_version).map_err(|_| FleetError::CompatibilityMismatch)?;
+    for c in components
+        .iter()
+        .filter(|c| c.kind == ComponentKind::Plugin)
+    {
+        if let Some(min) = &c.core_min {
+            if target < Version::parse(min).map_err(|_| FleetError::CompatibilityMismatch)? {
+                return Err(FleetError::CompatibilityMismatch);
+            }
+        }
+        if let Some(max) = &c.core_max_exclusive {
+            if target >= Version::parse(max).map_err(|_| FleetError::CompatibilityMismatch)? {
+                return Err(FleetError::CompatibilityMismatch);
+            }
+        }
+    }
+    let mut indegree: BTreeMap<Uuid, usize> = components
+        .iter()
+        .map(|c| (c.component_uuid, c.dependencies.len()))
+        .collect();
     let mut reverse: BTreeMap<Uuid, Vec<Uuid>> = BTreeMap::new();
-    for c in components { for d in &c.dependencies { reverse.entry(*d).or_default().push(c.component_uuid); } }
-    let mut q: VecDeque<Uuid> = indegree.iter().filter_map(|(id,n)| if *n == 0 { Some(*id) } else { None }).collect();
+    for c in components {
+        for d in &c.dependencies {
+            reverse.entry(*d).or_default().push(c.component_uuid);
+        }
+    }
+    let mut q: VecDeque<Uuid> = indegree
+        .iter()
+        .filter_map(|(id, n)| if *n == 0 { Some(*id) } else { None })
+        .collect();
     let mut out = Vec::new();
     while let Some(id) = q.pop_front() {
         out.push(id);
         for dep in reverse.get(&id).into_iter().flatten() {
-            let n = indegree.get_mut(dep).ok_or(FleetError::InvalidComponentGraph)?; *n -= 1; if *n == 0 { q.push_back(*dep); }
+            let n = indegree
+                .get_mut(dep)
+                .ok_or(FleetError::InvalidComponentGraph)?;
+            *n -= 1;
+            if *n == 0 {
+                q.push_back(*dep);
+            }
         }
     }
-    if out.len() != components.len() { return Err(FleetError::InvalidComponentGraph); }
+    if out.len() != components.len() {
+        return Err(FleetError::InvalidComponentGraph);
+    }
     Ok(out)
 }
 
-pub fn allow_database_contract(fleet_compatible_percent: u8, manual_approval: bool, prior_health_verified: bool) -> Result<(), FleetError> {
-    if fleet_compatible_percent != 100 || !manual_approval || !prior_health_verified { return Err(FleetError::DatabaseContractBlocked); }
+pub fn allow_database_contract(
+    fleet_compatible_percent: u8,
+    manual_approval: bool,
+    prior_health_verified: bool,
+) -> Result<(), FleetError> {
+    if fleet_compatible_percent != 100 || !manual_approval || !prior_health_verified {
+        return Err(FleetError::DatabaseContractBlocked);
+    }
     Ok(())
 }

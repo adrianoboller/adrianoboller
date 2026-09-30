@@ -217,7 +217,9 @@ pub fn evaluate_candidate(
         }
     }
     if evidence.candidate_uuid != candidate.candidate_uuid
-        || !evidence.artifact_sha256_hex.eq_ignore_ascii_case(&candidate.artifact_sha256_hex)
+        || !evidence
+            .artifact_sha256_hex
+            .eq_ignore_ascii_case(&candidate.artifact_sha256_hex)
         || !evidence
             .source_state_sha256_hex
             .eq_ignore_ascii_case(&candidate.source_state_sha256_hex)
@@ -268,13 +270,18 @@ pub fn authorize_promotion(
     approval: Option<&ApprovalRef>,
     now: DateTime<Utc>,
 ) -> Result<(), EvolutionError> {
-    if !decision.eligible || !decision.blockers.is_empty() || decision.candidate_uuid != candidate.candidate_uuid {
+    if !decision.eligible
+        || !decision.blockers.is_empty()
+        || decision.candidate_uuid != candidate.candidate_uuid
+    {
         return Err(EvolutionError::PromotionBlocked);
     }
     if decision.requires_human_approval {
         let approval = approval.ok_or(EvolutionError::ApprovalRequired)?;
         if approval.candidate_uuid != candidate.candidate_uuid
-            || !approval.artifact_sha256_hex.eq_ignore_ascii_case(&candidate.artifact_sha256_hex)
+            || !approval
+                .artifact_sha256_hex
+                .eq_ignore_ascii_case(&candidate.artifact_sha256_hex)
             || now < approval.approved_at
             || now >= approval.expires_at
         {
@@ -371,7 +378,8 @@ mod tests {
     fn low_risk_reversible_candidate_can_use_auto_path() {
         let now = Utc::now();
         let c = candidate(now);
-        let d = evaluate_candidate(&c, &evidence(&c, now), &PromotionPolicy::default(), now).unwrap();
+        let d =
+            evaluate_candidate(&c, &evidence(&c, now), &PromotionPolicy::default(), now).unwrap();
         assert_eq!(d.path, PromotionPath::AutoLowRisk);
         assert!(!d.requires_human_approval);
     }
@@ -381,9 +389,13 @@ mod tests {
         let now = Utc::now();
         let mut c = candidate(now);
         c.behavior_change = true;
-        let d = evaluate_candidate(&c, &evidence(&c, now), &PromotionPolicy::default(), now).unwrap();
+        let d =
+            evaluate_candidate(&c, &evidence(&c, now), &PromotionPolicy::default(), now).unwrap();
         assert!(d.requires_human_approval);
-        assert_eq!(authorize_promotion(&c, &d, None, now), Err(EvolutionError::ApprovalRequired));
+        assert_eq!(
+            authorize_promotion(&c, &d, None, now),
+            Err(EvolutionError::ApprovalRequired)
+        );
     }
 
     #[test]
