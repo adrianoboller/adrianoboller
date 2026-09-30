@@ -1,0 +1,359 @@
+//! API HTTP de tarefas do agente: criar, acompanhar, aprovar plano, cancelar, baixar
+//! artefato, agendar. E o equivalente da API de tarefas do Manus, rodando local.
+//!
+//! Decisoes que valem saber:
+//! - o Bearer e conferido pela MESMA funcao do api-gateway (tempo constante);
+//! - so ouve em loopback por padrao; expor e decisao do operador;
+//! - o webhook de fim de tarefa sai pelo EgressBroker, com lista de origens: um webhook
+//!   livre seria uma porta de SSRF controlada por quem cria a tarefa;
+//! - artefato so se serve de dentro da pasta da tarefa (mesmo `confine` das ferramentas).
+
+use crate::agenda::Agenda;
+use crate::motor::{Agent, CancelFlag, NoObserver};
+use crate::tarefa::{Task, TaskStatus, TaskStore, confine};
+use axum::extract::{Path, State};
+use axum::http::{HeaderMap, StatusCode, header};
+use axum::response::{IntoResponse, Response};
+use axum::routing::{get, post};
+use axum::{Json, Router};
+use chrono::Utc;
+use phxclaw_egress_broker::{EgressBroker, EgressPolicy};
+use phxclaw_http_client::HttpRequestSpec;
+use phxclaw_rustclaw_native::ScheduleSpec;
+use serde::Deserialize;
+use serde_json::{Value, json};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+
+/// Monta o agente de uma tarefa a partir do modelo pedido ("ollama:qwen2.5:1.5b", ...).
+pub type AgentFactory = Arc<dyn Fn(&str) -> Result<Agent, String> + Send + Sync>;
+
+#[derive(Clone)]
+pub struct ApiState {
+    pub store: TaskStore,
+    pub factory: AgentFactory,
+    pub default_model: String,
+    pub token: String,
+    pub running: Arc<Mutex<HashMap<String, CancelFlag>>>,
+    pub agenda: Arc<Mutex<Agenda>>,
+    /// Origens para onde webhook pode ir. Vazio = webhook recusado.
+    pub webhook_origins: Vec<String>,
+}
+
+pub fn router(state: ApiState) -> Router {
+    Router::new()
+        .route("/health", get(|| async { Json(json!({"ok": true})) }))
+        .route("/v1/tasks", post(criar).get(listar))
+        .route("/v1/tasks/{id}", get(obter))
+        .route("/v1/tasks/{id}/plan", post(editar_plano))
+        .route("/v1/tasks/{id}/approve", post(aprovar))
+        .route("/v1/tasks/{id}/cancel", post(cancelar))
+        .route("/v1/tasks/{id}/artifacts/{*path}", get(artefato))
+        .route("/v1/schedules", post(agendar).get(agenda))
+        .with_state(state)
+}
+
+type Resp = Result<Response, (StatusCode, Json<Value>)>;
+
+fn erro(code: StatusCode, msg: impl Into<String>) -> (StatusCode, Json<Value>) {
+    (code, Json(json!({"error": msg.into()})))
+}
+
+fn auth(s: &ApiState, h: &HeaderMap) -> Result<(), (StatusCode, Json<Value>)> {
+    if phxclaw_api_gateway::authorized(h, &s.token) {
+        Ok(())
+    } else {
+        Err(erro(StatusCode::UNAUTHORIZED, "token ausente ou invalido"))
+    }
+}
+
+#[derive(Deserialize)]
+struct NovaTarefa {
+    objective: String,
+    #[serde(default)]
+    model: Option<String>,
+    /// Plan Mode: gera o plano e espera aprovacao antes de executar.
+    #[serde(default)]
+    plan_first: bool,
+    #[serde(default)]
+    webhook: Option<String>,
+}
+
+async fn criar(State(s): State<ApiState>, h: HeaderMap, Json(n): Json<NovaTarefa>) -> Resp {
+    auth(&s, &h)?;
+    let objetivo = n.objective.trim();
+    if objetivo.is_empty() || objetivo.len() > 20_000 {
+        return Err(erro(
+            StatusCode::BAD_REQUEST,
+            "objective vazio ou maior que 20000",
+        ));
+    }
+    if let Some(w) = &n.webhook {
+        webhook_permitido(&s, w).map_err(|e| erro(StatusCode::BAD_REQUEST, e))?;
+    }
+    let modelo = n.model.unwrap_or_else(|| s.default_model.clone());
+    let agente = (s.factory)(&modelo).map_err(|e| erro(StatusCode::BAD_REQUEST, e))?;
+    let mut t = Task::new(objetivo, modelo);
+    t.webhook = n.webhook;
+    s.store
+        .save(&t)
+        .map_err(|e| erro(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let id = t.id.clone();
+    let st = s.clone();
+    if n.plan_first {
+        tokio::spawn(async move {
+            let mut t = t;
+            match agente.plan(&mut t).await {
+                Ok(()) => t.status = TaskStatus::AwaitingApproval,
+                Err(e) => {
+                    t.status = TaskStatus::Failed;
+                    t.error = Some(format!("plano: {e}"));
+                }
+            }
+            let _ = st.store.save(&t);
+        });
+    } else {
+        executar(st, agente, t);
+    }
+    Ok((StatusCode::ACCEPTED, Json(json!({"id": id}))).into_response())
+}
+
+/// Roda em segundo plano, registra o cancelamento e chama o webhook no fim.
+pub fn executar(s: ApiState, agente: Agent, t: Task) {
+    let cancel = CancelFlag::default();
+    s.running
+        .lock()
+        .unwrap()
+        .insert(t.id.clone(), cancel.clone());
+    tokio::spawn(async move {
+        let id = t.id.clone();
+        let fim = agente.run(t, &cancel, &NoObserver).await;
+        s.running.lock().unwrap().remove(&id);
+        if let Some(w) = fim.webhook.clone() {
+            chamar_webhook(&s, &w, &fim).await;
+        }
+    });
+}
+
+fn webhook_permitido(s: &ApiState, url: &str) -> Result<(), String> {
+    broker_webhook(s)
+        .validate_url(url)
+        .map(|_| ())
+        .map_err(|e| format!("webhook: {e}"))
+}
+
+fn broker_webhook(s: &ApiState) -> EgressBroker {
+    let mut p = EgressPolicy {
+        enabled: !s.webhook_origins.is_empty(),
+        allow_http: s.webhook_origins.iter().any(|o| o.starts_with("http://")),
+        ..EgressPolicy::default()
+    };
+    p.allowed_origins.extend(s.webhook_origins.iter().cloned());
+    EgressBroker::new(p)
+}
+
+async fn chamar_webhook(s: &ApiState, url: &str, t: &Task) {
+    let mut spec = HttpRequestSpec::get(url.to_string());
+    spec.method = "POST".into();
+    spec.json = Some(json!({"event": "task.finished", "task": resumo(t)}));
+    spec.follow_redirects = false;
+    let _ = broker_webhook(s).request(&spec).await;
+}
+
+fn resumo(t: &Task) -> Value {
+    json!({
+        "id": t.id, "objective": t.objective, "status": t.status, "model": t.model,
+        "created_at": t.created_at, "updated_at": t.updated_at, "answer": t.answer,
+        "error": t.error, "steps": t.steps.len(), "artifacts": t.artifacts, "usage": t.usage,
+        "parent": t.parent,
+    })
+}
+
+async fn listar(State(s): State<ApiState>, h: HeaderMap) -> Resp {
+    auth(&s, &h)?;
+    let l = s
+        .store
+        .list()
+        .map_err(|e| erro(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(l.iter().map(resumo).collect::<Vec<_>>()).into_response())
+}
+
+fn carregar(s: &ApiState, id: &str) -> Result<Task, (StatusCode, Json<Value>)> {
+    s.store
+        .load(id)
+        .map_err(|_| erro(StatusCode::NOT_FOUND, "tarefa inexistente"))
+}
+
+async fn obter(State(s): State<ApiState>, h: HeaderMap, Path(id): Path<String>) -> Resp {
+    auth(&s, &h)?;
+    Ok(Json(carregar(&s, &id)?).into_response())
+}
+
+#[derive(Deserialize)]
+struct Plano {
+    steps: Vec<String>,
+}
+
+async fn editar_plano(
+    State(s): State<ApiState>,
+    h: HeaderMap,
+    Path(id): Path<String>,
+    Json(p): Json<Plano>,
+) -> Resp {
+    auth(&s, &h)?;
+    let mut t = carregar(&s, &id)?;
+    if t.status != TaskStatus::AwaitingApproval {
+        return Err(erro(
+            StatusCode::CONFLICT,
+            "so se edita plano de tarefa esperando aprovacao",
+        ));
+    }
+    t.plan = p
+        .steps
+        .into_iter()
+        .map(|x| x.trim().to_string())
+        .filter(|x| !x.is_empty())
+        .take(20)
+        .collect();
+    t.updated_at = Utc::now();
+    s.store
+        .save(&t)
+        .map_err(|e| erro(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(t).into_response())
+}
+
+async fn aprovar(State(s): State<ApiState>, h: HeaderMap, Path(id): Path<String>) -> Resp {
+    auth(&s, &h)?;
+    let t = carregar(&s, &id)?;
+    if t.status != TaskStatus::AwaitingApproval {
+        return Err(erro(
+            StatusCode::CONFLICT,
+            "tarefa nao esta esperando aprovacao",
+        ));
+    }
+    let agente = (s.factory)(&t.model).map_err(|e| erro(StatusCode::BAD_REQUEST, e))?;
+    executar(s.clone(), agente, t);
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(json!({"id": id, "status": "running"})),
+    )
+        .into_response())
+}
+
+async fn cancelar(State(s): State<ApiState>, h: HeaderMap, Path(id): Path<String>) -> Resp {
+    auth(&s, &h)?;
+    let mut t = carregar(&s, &id)?;
+    if let Some(c) = s.running.lock().unwrap().get(&id) {
+        c.cancel();
+        return Ok((
+            StatusCode::ACCEPTED,
+            Json(json!({"id": id, "status": "cancelling"})),
+        )
+            .into_response());
+    }
+    if t.status.is_final() {
+        return Err(erro(StatusCode::CONFLICT, "tarefa ja terminou"));
+    }
+    // plano esperando aprovacao: cancela direto
+    t.status = TaskStatus::Cancelled;
+    t.updated_at = Utc::now();
+    let _ = s.store.save(&t);
+    Ok(Json(json!({"id": id, "status": "cancelled"})).into_response())
+}
+
+async fn artefato(
+    State(s): State<ApiState>,
+    h: HeaderMap,
+    Path((id, path)): Path<(String, String)>,
+) -> Resp {
+    auth(&s, &h)?;
+    let t = carregar(&s, &id)?;
+    let a = t
+        .artifacts
+        .iter()
+        .find(|a| a.path == path)
+        .ok_or_else(|| erro(StatusCode::NOT_FOUND, "artefato inexistente"))?;
+    let alvo = confine(&s.store.workdir(&id), &path).map_err(|e| erro(StatusCode::FORBIDDEN, e))?;
+    let bytes = std::fs::read(alvo).map_err(|e| erro(StatusCode::NOT_FOUND, e.to_string()))?;
+    let nome = path
+        .rsplit('/')
+        .next()
+        .unwrap_or("artefato")
+        .replace('"', "");
+    Ok((
+        [
+            (header::CONTENT_TYPE, a.media_type.clone()),
+            (
+                header::CONTENT_DISPOSITION,
+                format!("attachment; filename=\"{nome}\""),
+            ),
+            // o conteudo foi produzido pelo agente a partir da web: nunca executa no navegador
+            (header::CONTENT_SECURITY_POLICY, "sandbox".to_string()),
+            (header::X_CONTENT_TYPE_OPTIONS, "nosniff".to_string()),
+        ],
+        bytes,
+    )
+        .into_response())
+}
+
+#[derive(Deserialize)]
+struct NovoAgendamento {
+    name: String,
+    objective: String,
+    /// Cron de 5 campos (UTC) ou `every_seconds` (>= 60).
+    #[serde(default)]
+    cron: Option<String>,
+    #[serde(default)]
+    every_seconds: Option<u64>,
+}
+
+async fn agendar(State(s): State<ApiState>, h: HeaderMap, Json(n): Json<NovoAgendamento>) -> Resp {
+    auth(&s, &h)?;
+    let spec = match (n.cron, n.every_seconds) {
+        (Some(c), None) => ScheduleSpec::CronExpression(c),
+        (None, Some(x)) => ScheduleSpec::EverySeconds(x),
+        _ => {
+            return Err(erro(
+                StatusCode::BAD_REQUEST,
+                "informe cron OU every_seconds",
+            ));
+        }
+    };
+    let item = s
+        .agenda
+        .lock()
+        .unwrap()
+        .add(&n.name, &n.objective, spec, Utc::now())
+        .map_err(|e| erro(StatusCode::BAD_REQUEST, e))?;
+    Ok((StatusCode::CREATED, Json(item)).into_response())
+}
+
+async fn agenda(State(s): State<ApiState>, h: HeaderMap) -> Resp {
+    auth(&s, &h)?;
+    Ok(Json(s.agenda.lock().unwrap().items.clone()).into_response())
+}
+
+/// Dispara o que venceu na agenda; o servidor chama isto periodicamente.
+pub fn disparar_agenda(s: &ApiState) -> usize {
+    let vencidos = s.agenda.lock().unwrap().due(Utc::now());
+    let mut n = 0;
+    for v in vencidos {
+        if let Ok(agente) = (s.factory)(&s.default_model) {
+            let t = Task::new(v.objective.clone(), s.default_model.clone());
+            if let Some(item) = s
+                .agenda
+                .lock()
+                .unwrap()
+                .items
+                .iter_mut()
+                .find(|x| x.id == v.id)
+            {
+                item.last_task = Some(t.id.clone());
+            }
+            let _ = s.agenda.lock().unwrap().save();
+            executar(s.clone(), agente, t);
+            n += 1;
+        }
+    }
+    n
+}

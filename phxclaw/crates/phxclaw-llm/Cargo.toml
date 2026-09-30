@@ -5,3 +5,11 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+phxclaw-agent-core = { path = "../phxclaw-agent-core" }
+reqwest.workspace = true
+serde_json.workspace = true
+url.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

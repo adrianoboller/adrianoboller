@@ -1,0 +1,11 @@
+{
+  "type": "search",
+  "query": {"original": "rust programming language"},
+  "web": {
+    "type": "search",
+    "results": [
+      {"title": "Rust Programming Language", "url": "https://www.rust-lang.org/", "description": "A language empowering <strong>everyone</strong> to build reliable &amp; efficient software.", "language": "en"},
+      {"title": "Rust &#x2014; Wikipedia", "url": "https://en.wikipedia.org/wiki/Rust_(programming_language)", "description": "Rust is a <strong>general-purpose</strong> language."}
+    ]
+  }
+}

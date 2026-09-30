@@ -318,7 +318,9 @@ fn is_host_control_topic(topic: &str) -> bool {
     .any(|prefix| topic.starts_with(prefix))
 }
 
-fn authorized(headers: &HeaderMap, expected: &str) -> bool {
+/// Checagem de Bearer da base (tempo constante). Publica para que a API de tarefas use a
+/// MESMA decisao em vez de uma segunda copia.
+pub fn authorized(headers: &HeaderMap, expected: &str) -> bool {
     let Some(value) = headers.get(axum::http::header::AUTHORIZATION) else {
         return false;
     };

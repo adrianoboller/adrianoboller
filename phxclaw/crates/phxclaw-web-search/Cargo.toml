@@ -5,3 +5,13 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+phxclaw-agent-core = { path = "../phxclaw-agent-core" }
+phxclaw-egress-broker = { path = "../phxclaw-egress-broker" }
+phxclaw-http-client = { path = "../phxclaw-http-client" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

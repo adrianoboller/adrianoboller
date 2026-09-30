@@ -5,6 +5,7 @@
 //! busca e documentos entram pelos traits de `phxclaw-agent-core`.
 
 pub mod agenda;
+pub mod api;
 pub mod ferramentas;
 pub mod motor;
 pub mod tarefa;

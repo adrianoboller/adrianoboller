@@ -3703,13 +3703,18 @@ dependencies = [
 name = "phxclaw-agent"
 version = "0.70.0"
 dependencies = [
+ "axum",
  "chrono",
  "futures-util",
  "phxclaw-agent-core",
+ "phxclaw-api-gateway",
+ "phxclaw-egress-broker",
  "phxclaw-evidence-ledger",
+ "phxclaw-http-client",
  "phxclaw-rustclaw-native",
  "phxclaw-sandbox",
  "phxclaw-types",
+ "reqwest",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -3925,6 +3930,17 @@ dependencies = [
 [[package]]
 name = "phxclaw-browser"
 version = "0.70.0"
+dependencies = [
+ "base64 0.22.1",
+ "futures-util",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-tungstenite",
+ "url",
+ "uuid",
+]
 
 [[package]]
 name = "phxclaw-capacity-manager"
@@ -4444,6 +4460,14 @@ dependencies = [
 [[package]]
 name = "phxclaw-llm"
 version = "0.70.0"
+dependencies = [
+ "phxclaw-agent-core",
+ "reqwest",
+ "serde_json",
+ "tokio",
+ "url",
+ "uuid",
+]
 
 [[package]]
 name = "phxclaw-mcp-lsp-runtime"
@@ -5128,6 +5152,16 @@ dependencies = [
 [[package]]
 name = "phxclaw-web-search"
 version = "0.70.0"
+dependencies = [
+ "phxclaw-agent-core",
+ "phxclaw-egress-broker",
+ "phxclaw-http-client",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "url",
+]
 
 [[package]]
 name = "phxclaw-webview-control"

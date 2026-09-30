@@ -1,0 +1,13 @@
+{
+  "query": "rust programming language",
+  "number_of_results": 0,
+  "results": [
+    {"url": "https://www.rust-lang.org/", "title": "Rust Programming Language", "content": "A language empowering everyone.", "engine": "duckduckgo", "score": 4.0},
+    {"url": "https://en.wikipedia.org/wiki/Rust_(programming_language)", "title": "Rust (programming language)", "engine": "wikipedia"},
+    {"url": "ftp://arquivo.example/rust.tar", "title": "Esquema que o agente nao segue", "content": "x"},
+    {"title": "Sem URL", "content": "descartado"},
+    {"url": "https://www.rust-lang.org/", "title": "Duplicado", "content": "descartado"}
+  ],
+  "answers": [],
+  "suggestions": ["rust lang"]
+}

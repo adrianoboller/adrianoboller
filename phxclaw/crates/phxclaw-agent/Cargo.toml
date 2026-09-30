@@ -16,3 +16,10 @@ serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 tokio.workspace = true
+axum.workspace = true
+phxclaw-api-gateway = { path = "../phxclaw-api-gateway" }
+phxclaw-egress-broker = { path = "../phxclaw-egress-broker" }
+phxclaw-http-client = { path = "../phxclaw-http-client" }
+
+[dev-dependencies]
+reqwest.workspace = true

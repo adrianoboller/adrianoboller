@@ -94,10 +94,14 @@ impl EgressBroker {
             }
             let proximo = self.validate_url(url.join(destino)?.as_str())?;
             if origin(&proximo) != origin(&url) {
-                // Credencial de uma origem nao viaja para outra.
+                // Credencial de uma origem nao viaja para outra. Lista do que PASSA, nao do
+                // que se tira: a lista de proibidos esquecia chave em cabecalho proprio
+                // (X-Subscription-Token do Brave, x-api-key, x-goog-api-key).
                 salto.auth = Default::default();
                 salto.headers.retain(|k, _| {
-                    !k.eq_ignore_ascii_case("authorization") && !k.eq_ignore_ascii_case("cookie")
+                    ["accept", "accept-language", "content-type", "user-agent"]
+                        .iter()
+                        .any(|ok| k.eq_ignore_ascii_case(ok))
                 });
             }
             if resposta.status == 303
@@ -234,5 +238,43 @@ mod tests {
             b.request(&spec).await,
             Err(EgressError::InvalidCertsDenied)
         ));
+    }
+
+    #[tokio::test]
+    async fn chave_em_cabecalho_proprio_nao_atravessa_redirect_para_outra_origem() {
+        // destino guarda o pedido que recebeu
+        let l = TcpListener::bind("127.0.0.1:0").unwrap();
+        let destino = format!("http://{}", l.local_addr().unwrap());
+        let visto = Arc::new(std::sync::Mutex::new(String::new()));
+        let v2 = Arc::clone(&visto);
+        std::thread::spawn(move || {
+            if let Ok((mut s, _)) = l.accept() {
+                let mut buf = [0u8; 8192];
+                let n = s.read(&mut buf).unwrap_or(0);
+                *v2.lock().unwrap() = String::from_utf8_lossy(&buf[..n]).to_lowercase();
+                let _ = s.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok");
+            }
+        });
+        let (origem, _) = servidor(format!(
+            "HTTP/1.1 302 Found\r\nLocation: {destino}/x\r\nContent-Length: 0\r\n\r\n"
+        ));
+        let b = broker(&[&origem, &destino]);
+        let mut spec = HttpRequestSpec::get(format!("{origem}/inicio"));
+        for (k, v) in [
+            ("X-Subscription-Token", "chave-brave"),
+            ("x-api-key", "chave-a"),
+            ("x-goog-api-key", "chave-g"),
+            ("Accept", "text/html"),
+        ] {
+            spec.headers.insert(k.into(), v.into());
+        }
+        let r = b.request(&spec).await.unwrap();
+        assert_eq!(r.status, 200);
+        let pedido = visto.lock().unwrap().clone();
+        assert!(
+            !pedido.contains("chave-"),
+            "credencial atravessou a origem: {pedido}"
+        );
+        assert!(pedido.contains("accept: text/html"), "{pedido}");
     }
 }
