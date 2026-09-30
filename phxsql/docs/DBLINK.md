@@ -264,9 +264,21 @@ Quem escrever cliente novo faz o mesmo: monta o mapa `nome → índice` a partir
 de `resultado.colunas.colunas[].nome` e pergunta por nome. Ler por posição
 funciona por sorte no MySQL® e mente no PostgreSQL®.
 
-`dblink_salvar` sem o campo `senha` **mantém** a que já estava. É o que faz a
-tela de edição funcionar: ela nunca recebe a senha, então não teria como
-devolvê-la, e sem essa regra mudar a porta apagaria a credencial.
+`dblink_salvar` sem o campo `senha` **mantém** a que já estava — **desde que o
+destino seja o mesmo**. É o que faz a tela de edição funcionar: ela nunca
+recebe a senha, então não teria como devolvê-la, e sem essa regra mudar o
+timeout apagaria a credencial.
+
+Trocar **host, porta, motor, usuário ou pino** sem mandar a credencial é
+**recusado** (pedido 470): «mande a senha junto ao trocar o host». A guardada
+foi dada àquele destino; herdá-la para um novo deixava uma sessão de
+administrador roubada apontar a ligação para um ouvinte dela e receber o
+`mysql_native_password` (quebrável offline, porque quem ouve escolhe o sal) ou
+o token de uma ligação `phxsql`. O token segue a mesma regra, na ligação
+`phxsql`. Recusar, e não apagar calado: apagar deixaria a ligação gravada sem
+credencial, e o erro só apareceria no primeiro teste. A recusa mora nas
+funções de herança (`com_a_senha_de`, `com_o_token_de`), para valer em todo
+caminho que herda.
 
 `dblink_consultar` pede que **as duas** travas cedam para escrever: a ligação
 não pode ser somente-leitura E este servidor também não. Um espelho não vira

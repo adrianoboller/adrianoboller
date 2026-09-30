@@ -25939,21 +25939,31 @@ impl Servidor {
 
     /// Cria ou substitui uma ligacao.
     ///
-    /// Sem o campo `senha`, a senha que ja estava fica. Isso e o que faz a tela
-    /// de edicao funcionar: ela nunca RECEBE a senha, entao nao teria como
-    /// devolve-la, e sem esta regra editar a porta apagaria a credencial.
+    /// Sem o campo `senha`, a senha que ja estava fica -- desde que o DESTINO
+    /// seja o mesmo. Isso e o que faz a tela de edicao funcionar: ela nunca
+    /// RECEBE a senha, entao nao teria como devolve-la, e sem esta regra editar
+    /// o timeout apagaria a credencial. Trocar host, porta, motor, usuario ou
+    /// pino sem mandar a credencial RECUSA (pedido 470); a recusa mora nas
+    /// funcoes de heranca, e nao aqui, para valer em todo caminho que herda.
     fn op_dblink_salvar(&self, p: &Json) -> Result<Json> {
         let mut r = self.dblink.tomar("dblink")?;
         let mut d = Definicao::de_json(p)?;
         if let Ok(antiga) = r.achar(&d.nome) {
+            // O pino vem PRIMEIRO porque e parte do destino: a heranca da
+            // senha e do token compara o pino, e pino ausente no pedido (a
+            // tela nunca o manda) nao pode contar como pino trocado. O motivo
+            // da heranca dele esta mais abaixo, junto da conferencia do motor.
+            if p.campo("chave_do_fio").is_none() {
+                d = d.com_o_pino_de(antiga);
+            }
             if p.campo("senha").is_none() && d.senha_env.is_empty() {
-                d = d.com_a_senha_de(antiga);
+                d = d.com_a_senha_de(antiga)?;
             }
             // O token tem a CONDICAO DELE, e nao a da senha: quem troca so a
             // senha de uma ligacao `phxsql` nao pode perder a chave da porta
             // da rede -- e a tela nunca o recebe de volta ("(oculto)").
             if p.campo("token_remoto").is_none() && d.token_env.is_empty() {
-                d = d.com_o_token_de(antiga);
+                d = d.com_o_token_de(antiga)?;
             }
             // A tela salva sem mandar as sincronias; um salvar comum nao pode
             // apagar o que o assistente montou.
@@ -25967,20 +25977,19 @@ impl Servidor {
             if p.campo("cifra").is_none() {
                 d = d.com_a_cifra_de(antiga);
             }
-            // O PINO tem a condicao DELE, e e o lugar que faltava: a tela nunca
-            // recebe o pino de volta (`para_json` so da `tem_pino`, porque a
-            // lista de quem tem pino e mapa para atacante), entao sem esta
-            // linha TODO salvar pela tela apagaria o pino -- e a ligacao
-            // continuaria anunciando «cifrada», com o tunel sem ancora e o
-            // painel identico. Rebaixamento silencioso e o pior dos dois.
+            // O PINO (herdado no topo deste bloco) tem a condicao DELE, e foi o
+            // lugar que faltava: a tela nunca recebe o pino de volta
+            // (`para_json` so da `tem_pino`, porque a lista de quem tem pino e
+            // mapa para atacante), entao sem aquela heranca TODO salvar pela
+            // tela apagaria o pino -- e a ligacao continuaria anunciando
+            // «cifrada», com o tunel sem ancora e o painel identico.
+            // Rebaixamento silencioso e o pior dos dois.
             //
             // Campo AUSENTE herda; campo presente e vazio APAGA, que e decisao
-            // escrita -- e e por isso que as duas condicoes nao se juntam com a
-            // de cima: uma so decidindo pelas duas apagaria o campo que ela nao
-            // olhou, que e o estrago que estas funcoes existem para impedir.
-            if p.campo("chave_do_fio").is_none() {
-                d = d.com_o_pino_de(antiga);
-            }
+            // escrita -- e e por isso que as condicoes nao se juntam: uma so
+            // decidindo por todas apagaria o campo que ela nao olhou, que e o
+            // estrago que estas funcoes existem para impedir.
+            //
             // A heranca monta uma definicao que NINGUEM declarou, e por isso a
             // recusa por motor volta a ser feita aqui: trocar o motor de
             // `phxsql` para `mysql` sem mandar `cifra` passaria pelo `de_json`
@@ -31749,14 +31758,16 @@ mod testes_dblink_cifra {
 
         // O salvar que a TELA manda: os campos do formulario, sem pino, sem
         // token e sem cifra -- porque nenhum dos tres volta no `para_json`.
+        // O destino fica o MESMO: trocar o host sem o token recusa desde o
+        // pedido 470 (ver `trocar_o_host_sem_a_senha_recusa_em_vez_de_herdar`).
         let r = salvar(
             &s,
-            r#"{"op":"dblink_salvar","nome":"erp","motor":"phxsql","host":"10.0.0.9",
+            r#"{"op":"dblink_salvar","nome":"erp","motor":"phxsql","host":"10.0.0.7",
                 "database":"erp"}"#,
         )
         .unwrap();
         let d = ligacao(&s, "erp");
-        assert_eq!(d.host, "10.0.0.9", "a edicao nao pegou");
+        assert_eq!(d.database, "erp", "a edicao nao pegou");
         assert_eq!(d.chave_do_fio, PINO, "o salvar pela tela APAGOU o pino");
         assert_eq!(d.token(), "TOK", "o salvar pela tela apagou o token");
         assert!(d.cifra());
@@ -31818,6 +31829,159 @@ mod testes_dblink_cifra {
         // Sem pino a cifra volta ao padrao -- que continua LIGADO. Apagar a
         // ancora nao e desligar o tunel.
         assert!(d.cifra());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Pedido 470: trocar o DESTINO sem mandar a credencial recusa, em vez de
+    /// herdar a guardada.
+    ///
+    /// O defeito: `dblink_salvar` com host novo e sem `senha` herdava a senha
+    /// gravada, e uma sessao de administrador roubada a recebia apontando a
+    /// ligacao para um ouvinte dela. Cada campo do destino se prova sozinho,
+    /// porque cada um e um jeito de apontar para outro lugar.
+    #[test]
+    fn trocar_o_host_sem_a_senha_recusa_em_vez_de_herdar() {
+        let dir = DirTemp::novo("dblink-470-senha");
+        let s = servidor(&dir);
+        let base = r#""op":"dblink_salvar","nome":"erp","motor":"mysql""#;
+        salvar(
+            &s,
+            &format!(
+                r#"{{{base},"host":"10.0.0.7","porta":3306,"usuario":"leitor",
+                     "senha":"MARCA-470"}}"#
+            ),
+        )
+        .unwrap();
+        for (campo, trocado) in [
+            (
+                "host",
+                r#""host":"10.6.6.6","porta":3306,"usuario":"leitor""#,
+            ),
+            (
+                "porta",
+                r#""host":"10.0.0.7","porta":3307,"usuario":"leitor""#,
+            ),
+            (
+                "usuario",
+                r#""host":"10.0.0.7","porta":3306,"usuario":"outro""#,
+            ),
+        ] {
+            let e = salvar(&s, &format!("{{{base},{trocado}}}")).unwrap_err();
+            let t = e.to_string();
+            assert!(t.contains("mande a senha"), "{campo}: {t}");
+            assert!(t.contains(&format!("({campo})")), "{campo}: {t}");
+            assert!(!t.contains("MARCA-470"), "a recusa vazou a senha: {t}");
+        }
+        // O motor tambem e destino: a mesma senha num postgres no mesmo host
+        // e outro servico ouvindo.
+        let e = salvar(
+            &s,
+            r#"{"op":"dblink_salvar","nome":"erp","motor":"postgres","host":"10.0.0.7",
+                "porta":3306,"usuario":"leitor"}"#,
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("(motor)"), "{e}");
+        // E nada foi gravado: a ligacao continua a que era, com a senha dela.
+        let d = ligacao(&s, "erp");
+        assert_eq!(d.host, "10.0.0.7");
+        assert_eq!(d.senha().unwrap(), "MARCA-470");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// O token do outro PhxSql e credencial pelo mesmo motivo, e o pino e
+    /// destino: trocar o pino e aceitar outra chave do outro lado.
+    #[test]
+    fn trocar_o_host_ou_o_pino_sem_o_token_recusa_em_vez_de_herdar() {
+        let dir = DirTemp::novo("dblink-470-token");
+        let s = servidor(&dir);
+        salvar(
+            &s,
+            &format!(
+                r#"{{"op":"dblink_salvar","nome":"erp","motor":"phxsql","host":"h",
+                     "token_remoto":"TOK-470","chave_do_fio":"{PINO}"}}"#
+            ),
+        )
+        .unwrap();
+        let e = salvar(
+            &s,
+            r#"{"op":"dblink_salvar","nome":"erp","motor":"phxsql","host":"h2"}"#,
+        )
+        .unwrap_err();
+        let t = e.to_string();
+        assert!(t.contains("mande a token_remoto"), "{t}");
+        assert!(!t.contains("TOK-470"), "a recusa vazou o token: {t}");
+        let outro = "c".repeat(64);
+        let e = salvar(
+            &s,
+            &format!(
+                r#"{{"op":"dblink_salvar","nome":"erp","motor":"phxsql","host":"h",
+                     "chave_do_fio":"{outro}"}}"#
+            ),
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("(chave_do_fio)"), "{e}");
+        let d = ligacao(&s, "erp");
+        assert_eq!(d.host, "h");
+        assert_eq!(d.chave_do_fio, PINO);
+        // Quem MANDA a credencial junto troca o destino normalmente.
+        salvar(
+            &s,
+            r#"{"op":"dblink_salvar","nome":"erp","motor":"phxsql","host":"h2",
+                "token_remoto":"TOK-NOVO"}"#,
+        )
+        .unwrap();
+        let d = ligacao(&s, "erp");
+        assert_eq!(d.host, "h2");
+        assert_eq!(d.token(), "TOK-NOVO");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// O comportamento VELHO continua: salvar sem trocar o destino herda a
+    /// senha (a tela nunca a recebe de volta), e quem manda a senha junto
+    /// troca o host. Sem este lado, a guarda recusaria todo salvar da tela.
+    #[test]
+    fn salvar_sem_trocar_o_destino_continua_herdando_a_senha() {
+        let dir = DirTemp::novo("dblink-470-velho");
+        let s = servidor(&dir);
+        salvar(
+            &s,
+            r#"{"op":"dblink_salvar","nome":"erp","motor":"mysql","host":"ERP.local",
+                "usuario":"leitor","senha":"MARCA-470"}"#,
+        )
+        .unwrap();
+        // Mesma maquina com outra caixa, base e teto novos: nada disso aponta
+        // para outro lugar.
+        salvar(
+            &s,
+            r#"{"op":"dblink_salvar","nome":"erp","motor":"mysql","host":"erp.local",
+                "usuario":"leitor","database":"vendas","timeout_s":9}"#,
+        )
+        .unwrap();
+        let d = ligacao(&s, "erp");
+        assert_eq!(d.database, "vendas");
+        assert_eq!(
+            d.senha().unwrap(),
+            "MARCA-470",
+            "o salvar da tela apagou a senha"
+        );
+        // A senha nova junto do host novo passa, e a guardada NAO vai junto.
+        salvar(
+            &s,
+            r#"{"op":"dblink_salvar","nome":"erp","motor":"mysql","host":"10.0.0.9",
+                "usuario":"leitor","senha":"NOVA-470"}"#,
+        )
+        .unwrap();
+        let d = ligacao(&s, "erp");
+        assert_eq!(d.host, "10.0.0.9");
+        assert_eq!(d.senha().unwrap(), "NOVA-470");
+        // E a variavel de ambiente conta como mandar: e escolha escrita.
+        salvar(
+            &s,
+            r#"{"op":"dblink_salvar","nome":"erp","motor":"mysql","host":"10.0.0.10",
+                "usuario":"leitor","senha_env":"PHX_470_NAO_EXISTE"}"#,
+        )
+        .unwrap();
+        assert_eq!(ligacao(&s, "erp").host, "10.0.0.10");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -31976,10 +32140,13 @@ mod testes_dblink_cifra {
             .texto_ou("senha_cifrada", "")
             .to_string();
         assert!(!envelope.is_empty());
+        // O destino fica o MESMO: trocar a porta sem a senha recusa desde o
+        // pedido 470, e aqui o que se prova e a heranca do envelope.
         let r = s
             .op_dblink_salvar(
                 &Json::analisar(
-                    r#"{"op":"dblink_salvar","nome":"loja","host":"127.0.0.1","porta":2}"#,
+                    r#"{"op":"dblink_salvar","nome":"loja","host":"127.0.0.1","porta":1,
+                        "descricao":"editada pela tela"}"#,
                 )
                 .unwrap(),
             )
@@ -32057,8 +32224,7 @@ mod testes_dblink_cifra {
             .contains("CLARO-372-MIGRA"));
         let r = s
             .op_dblink_salvar(
-                &Json::analisar(r#"{"op":"dblink_salvar","nome":"loja","host":"10.0.0.9"}"#)
-                    .unwrap(),
+                &Json::analisar(r#"{"op":"dblink_salvar","nome":"loja","descricao":"x"}"#).unwrap(),
             )
             .unwrap();
         let cadastro = r.campo("cadastro").unwrap();
