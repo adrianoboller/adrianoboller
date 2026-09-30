@@ -1,0 +1,160 @@
+{
+  "product": "PhxClaw",
+  "version": "0.70.0",
+  "certified_at": "2026-09-30T11:47:13+00:00",
+  "environment": "Linux 6.18.44-fc-v50 x86_64",
+  "verdict": "NOT_CERTIFIED",
+  "required_passed": 7,
+  "required_total": 12,
+  "gates": [
+    {
+      "gate": "cargo_fmt",
+      "required": true,
+      "status": "passed",
+      "command": "cargo fmt --all --check",
+      "seconds": 0.7,
+      "evidence_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tail": []
+    },
+    {
+      "gate": "cargo_clippy_deny_warnings",
+      "required": true,
+      "status": "passed",
+      "command": "cargo clippy --workspace --all-targets -q -- -D warnings",
+      "seconds": 1.0,
+      "evidence_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tail": []
+    },
+    {
+      "gate": "cargo_test_workspace",
+      "required": true,
+      "status": "failed",
+      "command": "cargo test --workspace --no-fail-fast 2>&1",
+      "seconds": 24.6,
+      "evidence_sha256": "31f4d3f78f0f96d4a58b04c4d8db461e3ca24f7f34c7851d8742a84244ba28a3",
+      "tail": [
+        "",
+        "error: 1 target failed:",
+        "    `-p phxclaw-plugin-registry --lib`"
+      ],
+      "measured": {
+        "passed": 113,
+        "failed": 1,
+        "ignored": 9
+      }
+    },
+    {
+      "gate": "cargo_audit",
+      "required": true,
+      "status": "passed",
+      "command": "cargo audit 2>&1",
+      "seconds": 2.2,
+      "evidence_sha256": "a612f2acd503fce7e533c9f95bf75c2f49ff0a6ef1ab84ccaad6c99e96d91e01",
+      "tail": [
+        "URL:       https://rustsec.org/advisories/RUSTSEC-2024-0429",
+        "",
+        "warning: 2 allowed warnings found"
+      ],
+      "measured": {
+        "vulnerabilities": 0
+      }
+    },
+    {
+      "gate": "postgresql_e2e",
+      "required": true,
+      "status": "passed",
+      "command": "tests/postgres/run_e2e.sh 2>&1",
+      "seconds": 7.7,
+      "evidence_sha256": "29bdec5521655f510f26ad8c0eb67f122263c67f9696579cee8a397909b6a2a7",
+      "tail": [
+        "ok   [rust/rls] phxclaw-bpm pg_e2e",
+        "ok   [prepare] 54 preparam, 0 falham, 54 literais SQL",
+        "placar: 16 ok, 0 falha(s)"
+      ],
+      "measured": "16 ok, 0 falha(s)"
+    },
+    {
+      "gate": "postgresql_chaos_sigkill",
+      "required": true,
+      "status": "passed",
+      "command": "(tests/chaos/pg_kill_loop.sh 30 >/dev/null 2>&1 &) ; cargo test -q -p phxclaw-hypothesis --test pg_chaos -- --ignored --nocapture 2>&1",
+      "seconds": 30.4,
+      "evidence_sha256": "a895fd97b1aa814ab2e805b3aa7e6751502bc84afca7f5488cf190f4eddc5d27",
+      "tail": [
+        "caos: 30 s, 5292 ok, 6 erros, 6 reconexoes, 1766 hipoteses no banco, 0 perdidas, 0 divergentes",
+        ".",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 30.04s"
+      ],
+      "measured": "caos: 30 s, 5292 ok, 6 erros, 6 reconexoes, 1766 hipoteses no banco, 0 perdidas, 0 divergentes"
+    },
+    {
+      "gate": "provider_local_ollama_e2e",
+      "required": false,
+      "status": "passed",
+      "command": "cargo test -q -p phxclaw-ollama-adapter --test ollama_e2e -- --ignored 2>&1",
+      "seconds": 1.0,
+      "evidence_sha256": "942bfd9de6c22be9385530f09d716816a6eb1d38de4c00bc1b8a165d2cce60f9",
+      "tail": [
+        "running 2 tests",
+        "..",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.57s"
+      ]
+    },
+    {
+      "gate": "channel_provider_credentialed_e2e",
+      "required": true,
+      "status": "blocked",
+      "reason": "exige credenciais reais de Telegram/Discord/Slack/WhatsApp/Teams (decisao do dono)",
+      "evidence_sha256": null
+    },
+    {
+      "gate": "desktop_os_automation_e2e",
+      "required": true,
+      "status": "blocked",
+      "reason": "exige desktop FISICO (teclado, mouse, captura reais); aqui so ha Xvfb",
+      "evidence_sha256": null
+    },
+    {
+      "gate": "device_pairing_wss_keyring_multiplatform_e2e",
+      "required": true,
+      "status": "blocked",
+      "reason": "exige hardware multiplataforma; e o servidor WSS de dispositivos NAO existe no fonte (DeviceEnvelope sem consumidor fora do device-transport)",
+      "evidence_sha256": null
+    },
+    {
+      "gate": "native_tauri_e2e",
+      "required": true,
+      "status": "passed",
+      "command": "cargo build -q -p phxclaw-desktop && python3 tests/desktop/desktop_e2e.py 2>&1",
+      "seconds": 27.0,
+      "evidence_sha256": "91627c65cb23be79cea9d469c67684e8a25181656a26cd2145a1ca044318a82f",
+      "tail": [
+        "ok   verify_evidence continua valido depois da negacao :: {\"records\": 121, \"final_hash\": \"95da19a34d90779cc042e4965bcd98ae49fdf4c71b2c3cf043e972909d2a7fdb\", \"valid\": true, \"first_invalid_line\": null}",
+        "ok   captura da janela gravada :: /home/user/adrianoboller/phxclaw/tests/desktop/out/desktop_e2e.png",
+        "placar: 12/12"
+      ],
+      "measured": "placar: 12/12"
+    },
+    {
+      "gate": "real_stt_model_e2e",
+      "required": true,
+      "status": "passed",
+      "command": "cargo test -q -p phxclaw-media-intelligence --test stt_e2e -- --ignored 2>&1",
+      "seconds": 8.9,
+      "evidence_sha256": "9063d848cbe7beb37dc1a0ba0acb8849af1931d4116abb3572c88900ddb740ad",
+      "tail": [
+        "running 2 tests",
+        "..",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.29s"
+      ],
+      "measured": "test result: ok. 2 passed; 0 failed;"
+    },
+    {
+      "gate": "builtin_plugin_signatures",
+      "required": true,
+      "status": "blocked",
+      "reason": "6 manifestos builtin com digest/assinatura quebrados desde o rename da v0.41; reassinar exige a chave privada phxclaw-dev-root-2026-v05r2 (externa)",
+      "evidence_sha256": null
+    }
+  ]
+}

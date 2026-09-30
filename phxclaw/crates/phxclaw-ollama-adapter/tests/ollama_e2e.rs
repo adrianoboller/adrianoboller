@@ -40,7 +40,11 @@ async fn versao_modelos_chat_e_embed_reais() {
         content: "Reply with the single word: ok".into(),
         images: vec![],
     }];
-    let r = c.chat(&modelo, &msgs, None, None, None).await.unwrap();
+    let limite = Some(json!({"temperature": 0, "num_predict": 16}));
+    let r = c
+        .chat(&modelo, &msgs, None, None, None, limite)
+        .await
+        .unwrap();
     let texto = r["message"]["content"].as_str().unwrap_or_default();
     assert!(!texto.trim().is_empty(), "resposta vazia: {r}");
     assert_eq!(r["done"], json!(true), "{r}");
@@ -67,7 +71,7 @@ async fn modelo_inexistente_vira_erro_de_api_com_status() {
         images: vec![],
     }];
     match c
-        .chat("nao-existe-phxclaw:0b", &msgs, None, None, None)
+        .chat("nao-existe-phxclaw:0b", &msgs, None, None, None, None)
         .await
     {
         Err(OllamaError::Api { status, .. }) => assert_eq!(status, 404),

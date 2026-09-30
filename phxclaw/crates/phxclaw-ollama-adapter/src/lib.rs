@@ -92,6 +92,7 @@ impl OllamaClient {
         tools: Option<Value>,
         think: Option<Value>,
         format: Option<Value>,
+        options: Option<Value>,
     ) -> Result<Value, OllamaError> {
         let mut body = json!({
             "model": model,
@@ -106,6 +107,11 @@ impl OllamaClient {
         }
         if let Some(format) = format {
             body["format"] = format;
+        }
+        // Sem options nao ha como limitar a geracao: medido, um modelo pequeno a 0,8 de
+        // temperatura as vezes nao para e so solta o provider no timeout (2 min).
+        if let Some(options) = options {
+            body["options"] = options;
         }
         self.post_json("chat", body).await
     }
