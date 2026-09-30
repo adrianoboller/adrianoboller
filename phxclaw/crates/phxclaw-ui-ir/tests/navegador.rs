@@ -87,6 +87,20 @@ async fn pedido_adiciona_itens_e_recalcula_total_no_chromium() {
         .await
         .unwrap();
     assert_eq!(v, serde_json::json!(["15/03/2026", true, "dd/mm/aaaa"]));
+    // mesma regra do DateValid (juliano ate 04/10/1582) que o Rust e o WLanguage gerados
+    for (digitos, valida) in [("29021500", true), ("10101582", false), ("29021900", false)] {
+        p.eval("document.querySelector('#pedido_documento [name=dt_emissao]').value=''")
+            .await
+            .unwrap();
+        for ch in digitos.chars() {
+            p.type_text(data, &ch.to_string()).await.unwrap();
+        }
+        let ok = p
+            .eval("document.querySelector('#pedido_documento [name=dt_emissao]').validity.valid")
+            .await
+            .unwrap();
+        assert_eq!(ok, serde_json::json!(valida), "{digitos}");
+    }
     // o cadastro de cliente tem obrigatorios marcados e o lookup do pedido aponta para cliente
     let obrig = p
         .eval("document.querySelectorAll('#cliente_cadastro [required]').length")

@@ -22,6 +22,7 @@ fn main() {
     ];
     for (pasta, lista) in [
         ("react", phxclaw_ui_ir::react::render(&app)),
+        ("flutter", phxclaw_ui_ir::flutter::render(&app)),
         ("rust", phxclaw_ui_ir::rust::render(&app)),
         ("wlanguage", phxclaw_ui_ir::wlanguage::render(&app)),
     ] {

@@ -392,3 +392,31 @@ async fn close_ordeiro_tambem_limpa() {
     b.close().await.unwrap();
     assert!(!perfil.exists());
 }
+
+#[test]
+fn idioma_do_sistema_vira_bcp47_ou_nada() {
+    use phxclaw_browser::idioma_do_sistema as f;
+    assert_eq!(f(Some("pt_BR.UTF-8")).as_deref(), Some("pt-BR"));
+    assert_eq!(f(Some("en_US")).as_deref(), Some("en-US"));
+    assert_eq!(f(Some("de")).as_deref(), Some("de"));
+    assert_eq!(f(Some("C")), None);
+    assert_eq!(f(Some("POSIX")), None);
+    assert_eq!(f(Some("C.UTF-8")), None);
+    assert_eq!(f(None), None);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn idioma_da_pagina_e_bcp47_valido() {
+    // "en-US@posix" (o que o Chromium deduz de LANG=C) quebra Intl.Locale e, com ele,
+    // qualquer app que leia o idioma na largada -- o Flutter web parava assim
+    let (ok, _) = cenario();
+    let Some(b) = lancar(&ok).await else { return };
+    let p = b.new_page().await.unwrap();
+    p.goto(&format!("{}/", ok.origem())).await.unwrap();
+    let r = p
+        .eval("(()=>{try{new Intl.Locale(navigator.language);return navigator.language}catch(e){return 'invalido: '+navigator.language}})()")
+        .await
+        .unwrap();
+    let t = r.as_str().unwrap().to_string();
+    assert!(!t.starts_with("invalido"), "{t}");
+}

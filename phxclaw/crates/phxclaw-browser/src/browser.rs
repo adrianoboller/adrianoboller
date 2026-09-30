@@ -29,6 +29,30 @@ pub struct LaunchOptions {
     pub navigation_timeout: Duration,
     pub window_size: (u32, u32),
     pub extra_args: Vec<String>,
+    /// Idioma da pagina (BCP 47). `None` = o do `LANG` do sistema quando valido, senao pt-BR.
+    pub idioma: Option<String>,
+}
+
+/// `LANG` do sistema em etiqueta BCP 47: "pt_BR.UTF-8" -> "pt-BR". "C" e "POSIX" nao sao
+/// idioma: deixados ao Chromium viravam "en-US@posix", que `Intl.Locale` recusa -- e o app
+/// Flutter web parava na largada com "Incorrect locale information provided".
+pub fn idioma_do_sistema(lang: Option<&str>) -> Option<String> {
+    let base = lang?.split(['.', '@']).next()?.trim();
+    if base.is_empty() || base.eq_ignore_ascii_case("c") || base.eq_ignore_ascii_case("posix") {
+        return None;
+    }
+    let mut partes = base.split(['_', '-']);
+    let lingua = partes.next()?.to_ascii_lowercase();
+    if !(2..=3).contains(&lingua.len()) || !lingua.bytes().all(|b| b.is_ascii_alphabetic()) {
+        return None;
+    }
+    match partes.next() {
+        Some(r) if r.len() == 2 && r.bytes().all(|b| b.is_ascii_alphabetic()) => {
+            Some(format!("{lingua}-{}", r.to_ascii_uppercase()))
+        }
+        None => Some(lingua),
+        _ => None,
+    }
 }
 
 impl Default for LaunchOptions {
@@ -41,6 +65,7 @@ impl Default for LaunchOptions {
             navigation_timeout: Duration::from_secs(30),
             window_size: (1280, 800),
             extra_args: Vec::new(),
+            idioma: None,
         }
     }
 }
@@ -155,6 +180,20 @@ impl Browser {
                 "--window-size={},{}",
                 opts.window_size.0, opts.window_size.1
             ));
+        let idioma = opts
+            .idioma
+            .clone()
+            .or_else(|| {
+                idioma_do_sistema(
+                    std::env::var("LC_ALL")
+                        .ok()
+                        .or_else(|| std::env::var("LANG").ok())
+                        .as_deref(),
+                )
+            })
+            .unwrap_or_else(|| "pt-BR".into());
+        cmd.arg(format!("--lang={idioma}"))
+            .arg(format!("--accept-lang={idioma}"));
         if running_as_root() {
             // O sandbox do Chromium recusa subir como root (conteiner, CI) e
             // o processo morre na largada. So nesse caso ele sai; fora dele o

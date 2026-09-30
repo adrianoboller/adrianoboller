@@ -64,7 +64,7 @@ exigência do anexo): `schema.rs` produz o `App` do `ir.rs`; `html.rs` só lê o
 | U3 | Screenshot → UI-IR (visão) | ☐ bloqueado: modelo com visão |
 | U4a | renderizador React (esbuild; `design_erp_ui` com `react: true`) | ✓ 30/09 — construído com npm real e exercitado no Chromium: itens, total, remoção, data, menu; RED medido |
 | U4b | regras em WLanguage (`Validar_`, `Incluir_`, `Excluir_`, `Total_` por arquivo HFSQL) | ☐ gerado; mesmas mensagens do Rust (teste de paridade); as 12 funções emitidas conferidas no Help WLanguage 2026 (corpus do plugin WX, página por função, guarda por teste). A conferência achou o `DateValid` juliano antes de 1582 e o Rust foi alinhado. **Falta compilar no WinDev**, e isso só o dono pode fazer |
-| U4c | Flutter | ☐ sem Flutter neste ambiente |
+| U4c | Flutter (`lib/ui.dart` fixo + `lib/telas.dart` gerado + teste de widget gerado) | ✓ 30/09 — SDK 3.47.5 real: `analyze` sem problema, o teste que o projeto traz passa (itens somam, 31/02 recusada, calendário do `DateValid`), `build web` sobe no Chromium do PhxClaw; RED medido. Achou defeito no navegador do agente: idioma `en-US@posix` quebrava `Intl.Locale` |
 | U5 | data no formato do idioma | ✓ 30/09 — máscara dd/mm/aaaa própria (o nativo segue o idioma do navegador); 31/02 recusada no Chromium, RED medido |
 | U6 | regras em Rust (crate só `std`: structs, validação, banco com FK e restringir, totais, sequência que não volta) | ✓ 30/09 — o teste gera o crate, compila com `cargo` de verdade e roda o comportamento; RED medido |
 

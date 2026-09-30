@@ -228,11 +228,20 @@ export function mascaraData(v, dh) {
   return r;
 }
 
+// mesma regra do DateValid do WLanguage (Help 3027003) e do Rust gerado
+export function dataValida(d, mo, a) {
+  if (a < 1 || a > 9999 || mo < 1 || mo > 12) return false;
+  const k = a * 10000 + mo * 100 + d;
+  if (k >= 15821005 && k <= 15821014) return false;
+  const bis = k < 15821005 ? a % 4 === 0 : (a % 4 === 0 && a % 100 !== 0) || a % 400 === 0;
+  const dias = [31, bis ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return d >= 1 && d <= dias[mo - 1];
+}
+
 export function dataOk(v, dh) {
   const m = (dh ? /^(\d{2})\/(\d{2})\/(\d{4}) (\d{2}):(\d{2})$/ : /^(\d{2})\/(\d{2})\/(\d{4})$/).exec(v);
   if (!m) return false;
-  const d = +m[1], mo = +m[2], a = +m[3], t = new Date(a, mo - 1, d);
-  return t.getFullYear() === a && t.getMonth() === mo - 1 && t.getDate() === d && (!dh || (+m[4] < 24 && +m[5] < 60));
+  return dataValida(+m[1], +m[2], +m[3]) && (!dh || (+m[4] < 24 && +m[5] < 60));
 }
 
 function Data({ id, f, valor, muda, dh }) {
