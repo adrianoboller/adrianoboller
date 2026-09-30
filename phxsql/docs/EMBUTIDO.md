@@ -324,7 +324,7 @@ não se desfaz.
 
 | função | o que faz |
 |---|---|
-| `phx_base_abrir` | abre a raiz de dados e o database; `PHX_CRIAR` cria se faltar |
+| `phx_base_abrir` | abre a raiz de dados e o database; `PHX_CRIAR` cria se faltar. Sem punho de tabela vivo daquele database, completa antes a marca `.tx` que uma queda deixou no meio de uma cascata do `ao_alterar` e reconstrói o índice que ficou marcado (pedido 563); a marca que nem se lê recusa a abertura |
 | `phx_base_fechar` | libera |
 | `phx_base_tabelas_qtd` / `phx_base_tabela_nome` | lista as tabelas, sem alocar |
 

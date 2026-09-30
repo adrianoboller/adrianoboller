@@ -276,6 +276,19 @@ fn tabelas(base: &Path, database: &str) -> Result<()> {
 }
 
 fn reindex(dir: &Path, nome: &str) -> Result<()> {
+    // Pedido 563: ANTES de reconstruir, a marca `.tx` que uma queda deixou no
+    // diretorio. Reindexar primeiro reconstruiria o `.ndx` da filha com a
+    // orfa dentro -- a filha na chave velha que a mae ja nao tem -- e a marca
+    // que a completaria chegaria depois, sobre um indice que ja a escondeu.
+    let r = phxsql_store::marca::recuperar_no_diretorio(dir);
+    if r.houve() {
+        diga!("{}", r.texto(dir));
+    }
+    if r.impede_subir() {
+        return Err(phxsql_core::PhxError::Io(std::io::Error::other(
+            "ha marca de transacao que nao se leu; confira o disco antes de reindexar",
+        )));
+    }
     let mut t = Table::abrir(dir, nome)?;
     diga!("recriando o .ndx de {nome} a partir do .reg...");
     let indices = t.reindexar()?;

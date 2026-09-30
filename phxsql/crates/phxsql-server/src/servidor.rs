@@ -70,44 +70,10 @@ pub(crate) fn nome_simples_da_tabela(qualificado: &str) -> &str {
     qualificado.rsplit_once('.').map_or(qualificado, |(_, t)| t)
 }
 
-/// Empresta a conferencia de FK as MAES que a MESMA passada de commit (ou a
-/// recuperacao) ja abriu -- o conserto do P0 (`docs/ACID.md` §0). Sem isto, a
-/// filha abria a mae num SEGUNDO descritor, que a guarda de visibilidade do
-/// `.ndx` recusa enquanto o primeiro handle tem escrita pendente.
-///
-/// Reusar o handle e o mesmo desenho do InnoDB, que nunca teve o buraco porque
-/// nunca houve dois objetos para a mesma tabela na transacao. A ordem preserva
-/// a petrea sozinha: a passada aplica na ordem empilhada, entao o pai so esta
-/// visivel aqui se foi aplicado ANTES da filha -- filha antes do pai continua
-/// recusada, como deve.
-pub(crate) struct MaesAbertas<'a> {
-    pub(crate) abertas: &'a mut HashMap<String, Table>,
-}
-
-impl phxsql_store::table::MaesEmProgresso for MaesAbertas<'_> {
-    fn mae(&mut self, tabela_ref: &str) -> Option<&mut Table> {
-        // A chave do mapa pode vir qualificada; `tabela_ref` ja chega simples.
-        // O `find` fecha o emprestimo imutavel antes do `get_mut`.
-        let chave = self
-            .abertas
-            .keys()
-            .find(|k| nome_simples_da_tabela(k).eq_ignore_ascii_case(tabela_ref))
-            .cloned()?;
-        self.abertas.get_mut(&chave)
-    }
-
-    /// Na passada e na recuperacao os handles nao carregam sobreposicao -- a
-    /// lista ja foi aplicada no disco deles -- e isto devolve `None`. Na
-    /// pre-conferencia do COMMIT (pedido 448) eles carregam o prefixo, e o
-    /// plano do `ao_alterar` abre a filha enxergando-o. O MESMO mapa serve
-    /// aos tres: e a mesma pergunta, com o prefixo onde ele estiver.
-    fn prefixo(&self, tabela: &str) -> Option<Arc<phxsql_store::table::Sobreposicao>> {
-        self.abertas
-            .iter()
-            .find(|(k, _)| nome_simples_da_tabela(k).eq_ignore_ascii_case(tabela))
-            .and_then(|(_, t)| t.sobreposicao().cloned())
-    }
-}
+/// O emprestimo das MAES que a passada ja abriu mora no store desde o pedido
+/// 563, junto da marca que o usa: a passada do COMMIT, a recuperacao e a
+/// cascata do embutido perguntam pelo MESMO mapa.
+pub(crate) use phxsql_store::marca::MaesAbertas;
 
 /// Esta escrita da lista e da tabela `tabela` do `database`? UM criterio, para
 /// a leitura da transacao (`sobreposicao`) e a linha que o `empilhar` ve

@@ -846,16 +846,27 @@ fn excluir_o_chefe_que_tem_subordinado_recusa_de_vez_e_suave() {
 /// fechava a CADA linha, o `Drop` do desenrolar achava `escritas_em_voo = 0`,
 /// descarregava e BAIXAVA o byte 52.
 ///
-/// A mae ja esta gravada e a filha 2 continua na chave velha: fora de
-/// transacao nao ha marca que complete a cascata, e o `.reg` nao desfaz. O que
-/// a prova cobra e que isso RECUSE, e nao que suma.
+/// # O que mudou com o pedido 563, e por que a expectativa mudou junto
+///
+/// Ate o 563 a prova terminava no `reindexar`: fora de transacao nao havia
+/// marca que completasse a cascata, e o que se cobrava era a filha RECUSAR em
+/// vez de sumir -- com a filha 2 na chave velha para sempre, e o `reindexar`
+/// reconstruindo o indice COM a orfa dentro. Era o defeito do 563 escrito
+/// como o comportamento esperado.
+///
+/// Agora a cascata do `Table::atualizar` grava a marca `.tx` antes da mae. A
+/// primeira metade da prova NAO muda -- aberta sem recuperacao, a filha
+/// continua recusando, que e a defesa do 490 e fica --, e a segunda passa a
+/// cobrar o fim certo: a recuperacao da marca completa a filha 2, e o indice
+/// acha as duas na chave nova e nenhuma na velha.
 ///
 /// # Prova real
 ///
-/// Sem o conserto, `indice_precisa_reconstruir` volta falso e o `buscar` na
-/// filha responde como se nada tivesse acontecido -- o vermelho medido.
+/// Sem o conserto do 490, `indice_precisa_reconstruir` volta falso e o
+/// `buscar` na filha responde como se nada tivesse acontecido. Sem a marca do
+/// 563, a recuperacao nao acha o que completar e a filha 2 fica em 1.
 #[test]
-fn panico_entre_duas_filhas_deixa_a_filha_recusando_como_um_sigkill() {
+fn panico_entre_duas_filhas_deixa_a_filha_recusando_ate_a_marca_completar() {
     use phxsql_store::ndx::panico_de_teste::{armar, desarmar, Ponto};
     let d = dir("panico-490");
     let mut m = mae(&d);
@@ -897,9 +908,28 @@ fn panico_entre_duas_filhas_deixa_a_filha_recusando_como_um_sigkill() {
         recusa.is_err(),
         "o indice da filha respondeu depois do panico no meio da cascata: {recusa:?}"
     );
-    // E o caminho de volta e o de uma queda: o `reindexar`.
-    f.reindexar().unwrap();
-    assert_eq!(f.buscar("porCliente", &[Value::Int(1)]).unwrap(), vec![p2]);
+    drop(f);
+    // E o caminho de volta e o de uma queda: a recuperacao da marca -- a
+    // mesma que o `phx_base_abrir` e o `reindex` do CLI chamam --, e nao o
+    // `reindexar`, que reconstruiria o indice com a filha 2 na chave 1.
+    let r = phxsql_store::marca::recuperar_no_diretorio(&d);
+    assert_eq!(
+        (r.completadas, r.impossiveis.len()),
+        (1, 0),
+        "a marca da cascata nao foi completada: {}",
+        r.texto(&d)
+    );
+    let mut f = Table::abrir(&d, "pedidos").unwrap();
+    assert_eq!(
+        (aponta_para(&mut f, p1), aponta_para(&mut f, p2)),
+        (Value::Int(7), Value::Int(7)),
+        "a recuperacao nao levou a filha 2 a chave nova"
+    );
+    assert!(f.buscar("porCliente", &[Value::Int(1)]).unwrap().is_empty());
+    assert_eq!(
+        f.buscar("porCliente", &[Value::Int(7)]).unwrap(),
+        vec![p1, p2]
+    );
 }
 
 /// **O irmao do 490, uma janela antes:** a mae ja esta no disco na chave nova,
