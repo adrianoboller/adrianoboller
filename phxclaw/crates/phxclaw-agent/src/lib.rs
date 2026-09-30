@@ -7,9 +7,11 @@
 pub mod adaptadores;
 pub mod agenda;
 pub mod api;
+pub mod email;
 pub mod ferramentas;
 pub mod montagem;
 pub mod motor;
+pub mod site;
 pub mod tarefa;
 
 pub use agenda::{Agenda, Schedule};

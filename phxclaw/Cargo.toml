@@ -168,3 +168,12 @@ tree-sitter-go = "=0.25.0"
 tree-sitter-c = "=0.24.2"
 tree-sitter-cpp = "=0.23.4"
 tree-sitter-java = "=0.23.5"
+
+# Informacao de depuracao so com arquivo e linha (backtrace continua util). Medido em
+# 30/09/2026: com debug completo, target/debug/deps chegou a 18 GB e encheu o disco duas
+# vezes no meio da suite.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.test]
+debug = "line-tables-only"

@@ -272,7 +272,7 @@ Create them with the appropriate tool first.",
                 }
                 self.record(&mut task, passo, "pensamento", None, Value::Null, "ok", &r);
                 task.answer = Some(r);
-                return self.finish(task, TaskStatus::Completed, None, obs);
+                return self.concluir(task, &ctx.workdir, obs);
             }
             if reply.tool_calls.is_empty() && self.config.require_final_tool && lembretes < 2 {
                 lembretes += 1;
@@ -303,7 +303,7 @@ If everything requested is already done, call final_answer.",
                     "ok",
                     &reply.content,
                 );
-                return self.finish(task, TaskStatus::Completed, None, obs);
+                return self.concluir(task, &ctx.workdir, obs);
             }
             if !reply.content.trim().is_empty() {
                 self.record(
@@ -467,6 +467,25 @@ Do not repeat it; use that result, try a different tool or arguments, or give th
             outcome: outcome.into(),
             summary: truncate_for_model(texto.trim(), 400),
         });
+    }
+
+    /// Toda conclusao passa por aqui: se o objetivo pediu arquivos que nao existem, a tarefa
+    /// termina FALHA, dizendo quais. Medido: depois de 3 recusas, uma resposta em texto
+    /// ("Your website is live at [insert URL here]") saia como completed sem o arquivo.
+    fn concluir(&self, task: Task, workdir: &std::path::Path, obs: &dyn Observer) -> Task {
+        let faltando: Vec<String> = arquivos_pedidos(&task.objective)
+            .into_iter()
+            .filter(|f| !workdir.join(f).exists())
+            .collect();
+        if faltando.is_empty() {
+            self.finish(task, TaskStatus::Completed, None, obs)
+        } else {
+            let e = format!(
+                "conclusao nao verificada: arquivos pedidos ausentes: {}",
+                faltando.join(", ")
+            );
+            self.finish(task, TaskStatus::Failed, Some(e), obs)
+        }
     }
 
     fn persist(&self, task: &Task, obs: &dyn Observer) {

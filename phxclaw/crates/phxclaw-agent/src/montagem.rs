@@ -23,6 +23,7 @@ pub const CAPACIDADES_PADRAO: &[&str] = &[
     "doc.write",
     "shell.exec",
     "agent.spawn",
+    "site.publish",
 ];
 
 #[derive(Clone)]
@@ -90,6 +91,15 @@ impl Montagem {
             tools.extend(browser_tools(self.browser.clone()));
         }
         tools.extend(office_tools());
+        tools.push(Arc::new(crate::site::PublishSiteTool {
+            base_url: std::env::var("PHXCLAW_PUBLIC_URL")
+                .unwrap_or_else(|_| "http://127.0.0.1:8787".into()),
+        }));
+        // E-mail so existe se o operador configurou SMTP, e so roda se `mail.send` for
+        // concedida explicitamente: nao esta no padrao.
+        if let Some(c) = crate::email::SmtpConfig::from_env() {
+            tools.push(Arc::new(crate::email::EmailTool { config: c }));
+        }
         let caps: Vec<&str> = self.capabilities.iter().map(String::as_str).collect();
         let config = AgentConfig {
             max_steps: self.max_steps,

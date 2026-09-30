@@ -50,6 +50,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/v1/tasks/{id}/cancel", post(cancelar))
         .route("/v1/tasks/{id}/artifacts/{*path}", get(artefato))
         .route("/v1/schedules", post(agendar).get(agenda))
+        .route("/sites/{id}/{*path}", get(site))
         .with_state(state)
 }
 
@@ -356,4 +357,38 @@ pub fn disparar_agenda(s: &ApiState) -> usize {
         }
     }
     n
+}
+
+/// Site publicado pelo agente. Sem Bearer: e para abrir no navegador. So serve pasta que a
+/// ferramenta publish_site marcou (marca fora do alcance do shell), com CSP sandbox.
+async fn site(State(s): State<ApiState>, Path((id, path)): Path<(String, String)>) -> Resp {
+    let publicadas = crate::site::published(&s.store.dir(&id));
+    let rel = path.trim_start_matches('/');
+    let rel = if rel.ends_with('/') || rel.is_empty() {
+        format!("{rel}index.html")
+    } else {
+        rel.to_string()
+    };
+    if !publicadas.iter().any(|p| rel.starts_with(&format!("{p}/"))) {
+        return Err(erro(StatusCode::NOT_FOUND, "site nao publicado"));
+    }
+    let alvo = confine(&s.store.workdir(&id), &rel)
+        .map_err(|_| erro(StatusCode::NOT_FOUND, "fora do site"))?;
+    let bytes =
+        std::fs::read(alvo).map_err(|_| erro(StatusCode::NOT_FOUND, "arquivo inexistente"))?;
+    Ok((
+        [
+            (
+                header::CONTENT_TYPE,
+                crate::motor::media_type(&rel).to_string(),
+            ),
+            (
+                header::CONTENT_SECURITY_POLICY,
+                "sandbox allow-scripts allow-forms".to_string(),
+            ),
+            (header::X_CONTENT_TYPE_OPTIONS, "nosniff".to_string()),
+        ],
+        bytes,
+    )
+        .into_response())
 }

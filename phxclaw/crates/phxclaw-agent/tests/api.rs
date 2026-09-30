@@ -325,3 +325,75 @@ async fn agenda_cria_tarefa_quando_vence() {
     assert_eq!(l.as_array().unwrap().len(), 1);
     assert_eq!(disparar_agenda(&st), 0, "disparou duas vezes");
 }
+
+#[tokio::test]
+async fn site_so_e_servido_depois_de_publicado_e_com_csp_sandbox() {
+    let (base, st) = subir(vec![]).await;
+    let id = cli()
+        .post(format!("{base}/v1/tasks"))
+        .bearer_auth(TOKEN)
+        .json(&json!({"objective": "x"}))
+        .send()
+        .await
+        .unwrap()
+        .json::<Value>()
+        .await
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    esperar(&base, &id, "completed").await;
+    let w = st.store.workdir(&id);
+    std::fs::create_dir_all(w.join("site")).unwrap();
+    std::fs::write(w.join("site/index.html"), "<h1>ola</h1>").unwrap();
+    // escrito mas nao publicado: 404
+    let r = cli()
+        .get(format!("{base}/sites/{id}/site/index.html"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 404);
+    let ctx = phxclaw_agent_core::ToolContext {
+        task_id: id.clone(),
+        workdir: w.clone(),
+        timeout: Duration::from_secs(5),
+    };
+    let t = phxclaw_agent::site::PublishSiteTool {
+        base_url: base.clone(),
+    };
+    use phxclaw_agent_core::Tool as _;
+    let out = t.run(json!({"folder": "site"}), &ctx).await.unwrap();
+    assert!(
+        out.content
+            .ends_with(&format!("/sites/{id}/site/index.html"))
+    );
+    let r = cli()
+        .get(format!("{base}/sites/{id}/site/"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    assert_eq!(
+        r.headers()["content-security-policy"],
+        "sandbox allow-scripts allow-forms"
+    );
+    assert_eq!(r.text().await.unwrap(), "<h1>ola</h1>");
+    // o resto da pasta da tarefa continua fora
+    std::fs::write(w.join("segredo.txt"), "x").unwrap();
+    for p in [
+        "segredo.txt",
+        "site/../segredo.txt",
+        "site/%2e%2e/segredo.txt",
+    ] {
+        assert_ne!(
+            cli()
+                .get(format!("{base}/sites/{id}/{p}"))
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            200,
+            "{p}"
+        );
+    }
+}

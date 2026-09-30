@@ -78,6 +78,9 @@ def main() -> int:
     portao("cargo_audit", True, "cargo audit 2>&1",
            detalhe=lambda o: {"vulnerabilities": 0 if "vulnerabilities found" not in o else
                               int(re.search(r"(\d+) vulnerabilit", o).group(1))})
+    portao("agente_autonomo", True,
+           "cargo test -q -p phxclaw-agent -p phxclaw-llm -p phxclaw-browser -p phxclaw-web-search -p phxclaw-office 2>&1",
+           detalhe=placar_cargo)
     portao("postgresql_e2e", True, "tests/postgres/run_e2e.sh 2>&1",
            env={"PGHOST": PGHOST, "PGPORT": PGPORT},
            detalhe=lambda o: re.search(r"placar: (.*)", o).group(1) if "placar:" in o else None)

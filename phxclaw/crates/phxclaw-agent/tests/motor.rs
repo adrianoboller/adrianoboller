@@ -402,3 +402,25 @@ async fn final_answer_sem_o_arquivo_pedido_e_recusado() {
     assert_eq!(t.answer.as_deref(), Some("rust.md criado"));
     assert_eq!(t.artifacts.len(), 1);
 }
+
+#[tokio::test]
+async fn resposta_sem_o_arquivo_pedido_termina_falha_e_nao_concluida() {
+    let llm = Arc::new(ScriptedLlm::new(vec![ScriptedLlm::text(
+        "Your website is live at [insert URL here]",
+    )]));
+    let a = Agent::new(
+        llm,
+        tools_basicas(),
+        AgentConfig::default().grant(&["fs.write"]),
+        store(),
+    );
+    let t = a
+        .run(
+            Task::new("write site/index.html and publish it", "roteiro"),
+            &CancelFlag::default(),
+            &NoObserver,
+        )
+        .await;
+    assert_eq!(t.status, TaskStatus::Failed);
+    assert!(t.error.unwrap().contains("site/index.html"));
+}
