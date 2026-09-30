@@ -22,14 +22,42 @@ fn flutter() -> Option<PathBuf> {
         .or_else(|| Some(PathBuf::from("/opt/flutter/bin/flutter")).filter(|p| p.is_file()))
 }
 
+/// Roda um comando do flutter com prazo. Travado (medido: com o disco cheio o `flutter test`
+/// falhava e ficava pendurado meia hora, segurando a suite inteira), o grupo de processos
+/// inteiro morre e o teste falha dizendo onde -- o `timeout` do shell matava so o filho e
+/// deixava o compilador Dart orfao.
 fn roda(f: &Path, dir: &Path, args: &[&str]) -> String {
-    let o = Command::new(f)
+    use std::os::unix::process::CommandExt;
+    let saida = std::env::temp_dir().join(format!("phx-flutter-{}.log", std::process::id()));
+    let log = std::fs::File::create(&saida).unwrap();
+    let mut filho = Command::new(f)
         .args(args)
         .current_dir(dir)
-        .output()
+        .stdout(log.try_clone().unwrap())
+        .stderr(log)
+        .process_group(0)
+        .spawn()
         .unwrap();
-    let t = String::from_utf8_lossy(&o.stdout).to_string() + &String::from_utf8_lossy(&o.stderr);
-    assert!(o.status.success(), "flutter {args:?} falhou:\n{t}");
+    let prazo = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    let status = loop {
+        if let Some(st) = filho.try_wait().unwrap() {
+            break st;
+        }
+        if std::time::Instant::now() > prazo {
+            let _ = Command::new("kill")
+                .args(["-KILL", &format!("-{}", filho.id())])
+                .status();
+            let _ = filho.wait();
+            panic!(
+                "flutter {args:?} passou de 15 min e foi encerrado:\n{}",
+                std::fs::read_to_string(&saida).unwrap_or_default()
+            );
+        }
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    };
+    let t = std::fs::read_to_string(&saida).unwrap_or_default();
+    let _ = std::fs::remove_file(&saida);
+    assert!(status.success(), "flutter {args:?} falhou:\n{t}");
     t
 }
 
