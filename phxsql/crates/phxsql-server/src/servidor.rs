@@ -6119,7 +6119,10 @@ impl Servidor {
         // de la. Ver a nota "Escrever e sincronizar sao DOIS passos" em
         // `backup.rs`. UM bloco de trava por chamada, como sempre -- so o
         // que esta DENTRO dele mudou.
-        let (destino, r, a_sincronizar) = {
+        // O zip volta com o descritor de quem o escreveu (pedido 552), e e
+        // nele que o `finalizar_zip` sincroniza -- por isso viaja inteiro, e
+        // nao so o caminho.
+        let (destino, r, a_sincronizar, zip) = {
             let _trava = self.travar_dados()?;
             // So nos testes: o panico COM a trava de escrita na mao (pedido
             // 502) -- o que abortava o processo quando o backup rodava na
@@ -6127,27 +6130,27 @@ impl Servidor {
             #[cfg(test)]
             self.armar_panico_de_teste("backup_agendado");
             if b.zip {
-                let (caminho, r) = phxsql_store::backup::executar_zip(
+                let (zip, r) = phxsql_store::backup::executar_zip(
                     &self.config.base,
                     &b.destino,
                     &b.database,
                     &b.admin,
                     quando,
                 )?;
-                (caminho, r, None)
+                (zip.to_path_buf(), r, None, Some(zip))
             } else {
                 let pasta = b.destino.join(
                     phxsql_core::datahora::instante_iso(quando).replace([' ', ':', ','], "-"),
                 );
                 let (r, a_sincronizar) =
                     phxsql_store::backup::executar(&self.config.base, &pasta, quando)?;
-                (pasta, r, Some(a_sincronizar))
+                (pasta, r, Some(a_sincronizar), None)
             }
         };
         if let Some(a_sincronizar) = a_sincronizar {
             phxsql_store::backup::concluir(&destino, quando, &r, &a_sincronizar)?;
-        } else {
-            phxsql_store::backup::finalizar_zip(&destino)?;
+        } else if let Some(zip) = &zip {
+            phxsql_store::backup::finalizar_zip(zip)?;
         }
         let onde = destino.display().to_string();
 

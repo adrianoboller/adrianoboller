@@ -2653,6 +2653,19 @@ instante legível (um escrito à mão, com `"agora"`) faz o PITR **recusar
 nomeando o campo**, enquanto a restauração simples do mesmo arquivo continua
 funcionando.
 
+**O manifesto existir quer dizer «pronto no disco», e a ordem é o que garante
+isso.** Numa pasta reaproveitada, o `backup.json` da corrida anterior sai antes
+da primeira cópia (pedido 577). Cada cópia sincroniza no **mesmo descritor**
+que a escreveu, sem fechar e reabrir (pedido 552: reabrir deixa o núcleo
+despejar o inode com o erro de *writeback*). Depois vem o `fsync` de cada pasta
+que a corrida tocou, com a do destino por último (pedido 579: a remoção do
+manifesto velho é dado de diretório). Só então o manifesto novo nasce, é
+sincronizado, e a pasta sincroniza outra vez. Acima de um teto de descritores
+(um quarto da folga do processo, no máximo 1024), as cópias que excedem voltam
+a reabrir pelo nome. A janela que fica (queda entre a remoção, feita sob a
+trava, e o `fsync` da pasta) não foi medida; o `conferir` acusa o manifesto
+velho pelo SHA.
+
 Num backup em ZIP o manifesto vai **dentro** do próprio arquivo, e é a última
 entrada — ele já sabe de todas as outras. O ZIP é escrito com DEFLATE de
 Huffman fixo e lido com os três tipos de bloco da RFC 1951, porque a cópia que
