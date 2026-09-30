@@ -249,8 +249,12 @@ URLS_PUBLICADAS = {
     # e enquanto ela nao e renomeada a navegacao cai no nome do arquivo, que
     # e o certo, porque URL velha apontando para faixa de outro conteudo
     # seria mentira. Renomeado depois de republicar, nunca antes.
-    "pedidos-351-420.html": "https://claude.ai/artifact/5BKdtkEBVo1kyR8CEyevKm",
-    "pedidos-421-mais.html": "https://claude.ai/artifact/9ogdsW7DBrM7WLheoRwm15",
+    # E pela terceira vez em 30/09/2026: `351-410`, `411-500` e `501-mais`,
+    # publicadas NOVAS e so depois postas aqui. As de `351-420` e `421-mais`
+    # ficaram orfas no servico -- apagar e do dono.
+    "pedidos-351-410.html": "https://claude.ai/artifact/GPpyFuyY9gzCGtSh7o4x1W",
+    "pedidos-411-500.html": "https://claude.ai/artifact/GgPYzTX4rx12BX4SxmfQKK",
+    "pedidos-501-mais.html": "https://claude.ai/artifact/HrYgYQ6UYNTBP1hPt127b2",
 }
 
 
