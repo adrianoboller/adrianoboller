@@ -221,8 +221,8 @@ type Pendentes = Arc<Mutex<Registro>>;
 /// `docs/DESEMPENHO.md`; o que ele NAO resolve esta escrito na propria funcao.
 static ESCRITAS_PENDENTES: Mutex<BTreeMap<PathBuf, Pendentes>> = Mutex::new(BTreeMap::new());
 
-/// A chave da familia: `diretorio/nome.ext`, com o diretorio em caminho
-/// ABSOLUTO lexico.
+/// A chave da familia: `diretorio/nome.ext`, com o diretorio como o DISCO o
+/// ve ([`diretorio_real`]).
 ///
 /// # Por que aqui, e nao em quem chama
 ///
@@ -232,29 +232,72 @@ static ESCRITAS_PENDENTES: Mutex<BTreeMap<PathBuf, Pendentes>> = Mutex::new(BTre
 /// aparece numa queda de energia. Quem chama pode resolver antes, e
 /// `Table::abrir` resolve, mas por VELOCIDADE e nao por correcao.
 ///
-/// # Por que lexico, e nao `canonicalize`
+/// # A historia da chave
 ///
-/// `canonicalize` toca o disco, resolve *symlink* e **falha quando o caminho
-/// ainda nao existe** -- o que quebraria `Table::criar`, que monta o conjunto
-/// antes de o primeiro arquivo nascer. Aqui e' so' conta de componentes.
-///
-/// # O que ele NAO resolve, e e' decisao
-///
-/// * `..` no meio: nao se remove (medido -- `/tmp/y/../x` continua diferente
-///   de `/tmp/x`). Nao alcanca o servidor, porque `validar_nome` recusa `..`
-///   em database, schema e tabela; alcanca quem passa a RAIZ, e a raiz vem do
-///   `config.json` ou do chamador C da FFI;
-/// * dois *symlinks* para o mesmo diretorio: so' `canonicalize` os junta, e o
-///   preco dela esta acima.
-///
-/// Nos dois casos que sobram a degradacao e a de sempre -- volta ao
-/// comportamento antigo --, e ela **nao e' benigna**: ver o registro acima.
+/// Ate' 05/09/2026 era o caminho cru; depois, o absoluto lexico, que junta a
+/// relativa com a absoluta e deixava `..` e symlink partirem a familia. Desde
+/// o pedido 551 (30/09/2026) e' o real, memorizado por diretorio -- o custo e o
+/// porque estao no [`diretorio_real`].
 fn familia(diretorio: &Path, nome: &str, ext: &str) -> PathBuf {
-    let arquivo = format!("{nome}.{ext}");
-    match absoluto_lexico(diretorio) {
-        Some(a) => a.join(arquivo),
-        None => diretorio.join(arquivo),
+    diretorio_real(diretorio).join(format!("{nome}.{ext}"))
+}
+
+/// Lexico -> real, por diretorio, para o processo inteiro. Ver
+/// [`diretorio_real`].
+static DIRETORIOS_REAIS: Mutex<BTreeMap<PathBuf, PathBuf>> = Mutex::new(BTreeMap::new());
+
+/// O diretorio como o disco o ve: symlink e `..` resolvidos -- a grafia que
+/// NAO parte a familia (pedido 551).
+///
+/// # Por que memorizado, e nao um `canonicalize` por chamada
+///
+/// Medido em 30/09/2026: `canonicalize` custa ~3,0 us, e abrir uma tabela
+/// cria ~6 `Volumes` (uma familia por extensao) sobre 49 us de abertura --
+/// +37% no caminho de todo pedido do servidor, para um defeito que o servidor
+/// nao tem (a raiz dele tem uma grafia so). Memorizado, cada diretorio paga
+/// UMA vez por processo, e o resto e uma consulta a um mapa.
+///
+/// # Por que aqui, e nao canonicalizando a raiz da instancia
+///
+/// Porque a raiz nao e a unica porta: o servidor abre tabela pela `Instancia`
+/// e tambem pelo `config.base`, e a CLI pelo `Table::abrir` com o caminho que
+/// o usuario digitou. Resolver so uma das portas criaria a familia partida
+/// que hoje nao existe -- a mesma tabela por uma grafia resolvida e por outra
+/// crua. Todas passam pela `familia`, entao a resolucao mora nela.
+///
+/// # O diretorio que ainda nao existe
+///
+/// Resolve o ANCESTRAL mais fundo que existe e cola o resto por cima, sem
+/// memorizar: a proxima chamada, com o diretorio ja criado, chega a mesma
+/// resposta enquanto o resto nao tiver symlink nem `..` -- e o resto e o que
+/// o motor acabou de criar, com nome validado.
+///
+/// # O preco, dito
+///
+/// Um symlink que MUDA de alvo com o processo de pe continua respondendo o
+/// alvo velho. Nenhuma porta do motor faz isso; quem o fizer por fora, com o
+/// banco aberto, esta trocando o diretorio de dados de um processo vivo.
+fn diretorio_real(diretorio: &Path) -> PathBuf {
+    let lexica = absoluto_lexico(diretorio).unwrap_or_else(|| diretorio.to_path_buf());
+    if let Some(real) = trava(&DIRETORIOS_REAIS).get(&lexica) {
+        return real.clone();
     }
+    if let Ok(real) = std::fs::canonicalize(&lexica) {
+        trava(&DIRETORIOS_REAIS).insert(lexica, real.clone());
+        return real;
+    }
+    let mut resto = Vec::new();
+    let mut atual = lexica.as_path();
+    while let Some(pai) = atual.parent() {
+        if let Some(nome) = atual.file_name() {
+            resto.push(nome.to_owned());
+        }
+        if let Ok(real) = std::fs::canonicalize(pai) {
+            return resto.iter().rev().fold(real, |c, n| c.join(n));
+        }
+        atual = pai;
+    }
+    lexica
 }
 
 /// O caminho em forma ABSOLUTA lexica, ou `None` quando ele ja serve.
@@ -310,7 +353,7 @@ pub(crate) fn absoluto_lexico(diretorio: &Path) -> Option<PathBuf> {
 /// cabecalho separa (lido pelo papel C, nao medido); e ela e o que cabe no
 /// caminho de todo pedido. As familias do `Volumes` NAO estao nesse lado: la,
 /// errar a grafia parte a familia, e familia partida perde dado (item 15 do
-/// cabecalho deste arquivo; pedido proprio aberto). Para a recusa do `fsync` (pedido 509), errar e o OPOSTO: o
+/// cabecalho deste arquivo; fechado pelo `diretorio_real`, pedido 551). Para a recusa do `fsync` (pedido 509), errar e o OPOSTO: o
 /// mesmo diretorio por `link/` ou por `dir/../dir` nao casava com a recusa
 /// gravada por `dir/`, e sincronizava Ok o que o nucleo pode ter descartado
 /// (pedido 523, medido pelo papel C). Quem pergunta la so pergunta com uma
@@ -369,7 +412,7 @@ pub(crate) fn mudar_pendentes_de_nome(
     nome: &str,
     destino: Option<(&Path, &str)>,
 ) {
-    let dir = absoluto_lexico(diretorio).unwrap_or_else(|| diretorio.to_path_buf());
+    let dir = diretorio_real(diretorio);
     let mut reg = trava(&ESCRITAS_PENDENTES);
     let velhas: Vec<PathBuf> = reg
         .keys()
@@ -421,7 +464,7 @@ pub(crate) fn mudar_pendentes_de_nome(
 /// quem estivesse rodando ao lado. Instrumento que mede o vizinho nao mede
 /// nada.
 pub fn familias_devendo_em(diretorio: &Path) -> usize {
-    let prefixo = absoluto_lexico(diretorio).unwrap_or_else(|| diretorio.to_path_buf());
+    let prefixo = diretorio_real(diretorio);
     // Os `Arc` saem primeiro e a trava de fora SE SOLTA: tomar a de dentro com
     // a de fora na mao criaria a unica ordem de duas travas deste modulo, e
     // ordem que existe uma vez so' e' a que ninguem lembra de respeitar depois.
@@ -1171,10 +1214,22 @@ mod tests {
         // O que a resolucao junta, e era o defeito.
         let cwd = std::env::current_dir().unwrap();
         assert_eq!(chave(cwd.join("dados").to_str().unwrap()), chave("dados"));
-        // E o que ela NAO junta, de proposito: `..` fica, e `canonicalize`
-        // seria o unico jeito -- ao preco de tocar o disco e de falhar em
-        // caminho que ainda nao existe, que quebraria `Table::criar`.
-        assert_ne!(chave("/tmp/x"), chave("/tmp/y/../x"));
+        // Desde o 551 a chave e a do disco (`diretorio_real`): `..` e symlink
+        // que chegam ao MESMO diretorio dao a mesma familia. Antes, `..` ficava
+        // e a familia partia -- e familia partida perde dado.
+        let d = dir_temp("grafias");
+        std::fs::create_dir_all(d.join("y")).unwrap();
+        std::fs::create_dir_all(d.join("x")).unwrap();
+        let direto = d.join("x");
+        let por_ponto_ponto = d.join("y").join("..").join("x");
+        let k = |p: &Path| familia(p, "clientes", "reg");
+        assert_eq!(k(&direto), k(&por_ponto_ponto), "`..` partiu a familia");
+        #[cfg(unix)]
+        {
+            let link = d.join("atalho");
+            std::os::unix::fs::symlink(&direto, &link).unwrap();
+            assert_eq!(k(&direto), k(&link), "o symlink partiu a familia");
+        }
     }
 
     #[test]

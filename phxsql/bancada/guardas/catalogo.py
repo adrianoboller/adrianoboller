@@ -3881,20 +3881,18 @@ pub fn limpar() {
                   "*A lista do que falta tambem e palpite ate alguem medir*, e uma "
                   "afirmacao de «isto e benigno» e a mesma familia de palpite.",
         "arquivo": "crates/phxsql-store/src/volume.rs",
+        # ATUALIZADO em 30/09/2026 (pedido 551): a chave passou a sair do
+        # `diretorio_real`, que faz a lexica e a do disco; o defeito reposto
+        # continua o do caminho CRU.
         "trecho": """fn familia(diretorio: &Path, nome: &str, ext: &str) -> PathBuf {
-    let arquivo = format!("{nome}.{ext}");
-    match absoluto_lexico(diretorio) {
-        Some(a) => a.join(arquivo),
-        None => diretorio.join(arquivo),
-    }
+    diretorio_real(diretorio).join(format!("{nome}.{ext}"))
 }""",
         "troca": """fn familia(diretorio: &Path, nome: &str, ext: &str) -> PathBuf {
     // DEFEITO REPOSTO: a chave da familia pelo caminho CRU. Quem abre por
     // `dados/loja` e quem fecha a janela por `/srv/dados/loja` entram em duas
     // familias, e a marca de quem escreveu nao chega a quem sincroniza.
-    let arquivo = format!("{nome}.{ext}");
-    let _ = absoluto_lexico(diretorio);
-    diretorio.join(arquivo)
+    let _ = diretorio_real;
+    diretorio.join(format!("{nome}.{ext}"))
 }""",
         "pacote": "phxsql-store",
         "alvo": ["--test", "grafia-do-diretorio-nao-divide-a-familia"],
@@ -14608,6 +14606,27 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "seguem": [
             "servidor::testes_janela_e_cadeia::tabela_que_nao_sincroniza_segura_as_marcas",
         ],
+    },
+    {
+        "id": "familia-partida-por-grafia",
+        "titulo": "a familia do `Volumes` se parte por symlink e `..`, e familia partida perde dado",
+        "porque": (
+            "pedido 551, papel C na conferencia do 523: a chave da familia era "
+            "a grafia lexica; `dir/y/../x` e `x` davam duas familias, e a sonda "
+            "`sonda-do-volume-do-meio` mediu o fecho deixando o volume sujo "
+            "para tras."
+        ),
+        "arquivo": "crates/phxsql-store/src/volume.rs",
+        "trecho": """    diretorio_real(diretorio).join(format!("{nome}.{ext}"))
+""",
+        "troca": """    absoluto_lexico(diretorio).unwrap_or_else(|| diretorio.to_path_buf()).join(format!("{nome}.{ext}"))
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": [
+            "volume::tests::a_chave_da_familia_junta_as_grafias_que_o_pathbuf_ja_junta",
+        ],
+        "seguem": [],
     },
     {
         "id": "carimbo-da-a-volta-no-teto",
