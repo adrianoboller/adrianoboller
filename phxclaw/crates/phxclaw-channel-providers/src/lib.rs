@@ -126,7 +126,7 @@ impl TelegramProvider {
             .timeout(Duration::from_secs(30))
             .user_agent("PhxClaw/0.18 TelegramProvider")
             .build()
-            .map_err(|error| ProviderError::Request(error.to_string()))?;
+            .map_err(http_error)?;
         Ok(Self {
             broker,
             token_secret_uuid,
@@ -172,13 +172,16 @@ impl TelegramProvider {
                 .send()
                 .map_err(|error| {
                     ProviderError::Request(scrub_text(
-                        &error.to_string(),
+                        &error.without_url().to_string(),
                         std::slice::from_ref(token),
                     ))
                 })?;
             let status = response.status();
             let body = response.text().map_err(|error| {
-                ProviderError::Request(scrub_text(&error.to_string(), std::slice::from_ref(token)))
+                ProviderError::Request(scrub_text(
+                    &error.without_url().to_string(),
+                    std::slice::from_ref(token),
+                ))
             })?;
             if !status.is_success() {
                 return Err(ProviderError::Http {
@@ -210,7 +213,10 @@ impl TelegramProvider {
                 token.expose()
             );
             let response = self.client.get(endpoint).send().map_err(|error| {
-                ProviderError::Request(scrub_text(&error.to_string(), std::slice::from_ref(token)))
+                ProviderError::Request(scrub_text(
+                    &error.without_url().to_string(),
+                    std::slice::from_ref(token),
+                ))
             })?;
             if !response.status().is_success() {
                 return Ok(ChannelProbe {
@@ -220,9 +226,7 @@ impl TelegramProvider {
                     error: Some(format!("HTTP {}", response.status().as_u16())),
                 });
             }
-            let body = response
-                .text()
-                .map_err(|error| ProviderError::Request(error.to_string()))?;
+            let body = response.text().map_err(http_error)?;
             let parsed: TelegramMeResponse = serde_json::from_str(&body)
                 .map_err(|error| ProviderError::Response(error.to_string()))?;
             let me = parsed.result;
@@ -309,7 +313,7 @@ impl DiscordProvider {
             .timeout(Duration::from_secs(30))
             .user_agent("PhxClaw/0.18 DiscordProvider")
             .build()
-            .map_err(|error| ProviderError::Request(error.to_string()))?;
+            .map_err(http_error)?;
         Ok(Self {
             broker,
             token_secret_uuid,
@@ -353,14 +357,12 @@ impl DiscordProvider {
                 .send()
                 .map_err(|error| {
                     ProviderError::Request(scrub_text(
-                        &error.to_string(),
+                        &error.without_url().to_string(),
                         std::slice::from_ref(token),
                     ))
                 })?;
             let status = response.status();
-            let body = response
-                .text()
-                .map_err(|error| ProviderError::Request(error.to_string()))?;
+            let body = response.text().map_err(http_error)?;
             if !status.is_success() {
                 return Err(ProviderError::Http {
                     status: status.as_u16(),
@@ -387,7 +389,7 @@ impl DiscordProvider {
                 .send()
                 .map_err(|error| {
                     ProviderError::Request(scrub_text(
-                        &error.to_string(),
+                        &error.without_url().to_string(),
                         std::slice::from_ref(token),
                     ))
                 })?;
@@ -485,7 +487,7 @@ impl SlackProvider {
             .timeout(Duration::from_secs(30))
             .user_agent("PhxClaw/0.68 SlackProvider")
             .build()
-            .map_err(|error| ProviderError::Request(error.to_string()))?;
+            .map_err(http_error)?;
         Ok(Self {
             broker,
             token_secret_uuid,
@@ -518,9 +520,9 @@ impl SlackProvider {
                 .bearer_auth(token.expose())
                 .json(&json!({"channel":message.conversation_id,"text":message.text}))
                 .send()
-                .map_err(|error| ProviderError::Request(scrub_text(&error.to_string(), std::slice::from_ref(token))))?;
+                .map_err(|error| ProviderError::Request(scrub_text(&error.without_url().to_string(), std::slice::from_ref(token))))?;
             let status = response.status();
-            let body = response.text().map_err(|error| ProviderError::Request(error.to_string()))?;
+            let body = response.text().map_err(http_error)?;
             if !status.is_success() {
                 return Err(ProviderError::Http { status: status.as_u16(), body: scrub_text(&body, std::slice::from_ref(token)) });
             }
@@ -542,14 +544,12 @@ impl SlackProvider {
                 .send()
                 .map_err(|error| {
                     ProviderError::Request(scrub_text(
-                        &error.to_string(),
+                        &error.without_url().to_string(),
                         std::slice::from_ref(token),
                     ))
                 })?;
             let status = response.status();
-            let body = response
-                .text()
-                .map_err(|error| ProviderError::Request(error.to_string()))?;
+            let body = response.text().map_err(http_error)?;
             if !status.is_success() {
                 return Ok(ChannelProbe {
                     connected: false,
@@ -642,7 +642,7 @@ impl WhatsAppProvider {
             .timeout(Duration::from_secs(30))
             .user_agent("PhxClaw/0.68 WhatsAppProvider")
             .build()
-            .map_err(|error| ProviderError::Request(error.to_string()))?;
+            .map_err(http_error)?;
         Ok(Self {
             broker,
             token_secret_uuid,
@@ -683,8 +683,8 @@ impl WhatsAppProvider {
         self.with_token("channel:whatsapp:send",|token|{
             let response=self.client.post(self.endpoint("/messages")).bearer_auth(token.expose())
                 .json(&json!({"messaging_product":"whatsapp","recipient_type":"individual","to":message.conversation_id,"type":"text","text":{"preview_url":false,"body":message.text}}))
-                .send().map_err(|error|ProviderError::Request(scrub_text(&error.to_string(),std::slice::from_ref(token))))?;
-            let status=response.status(); let body=response.text().map_err(|error|ProviderError::Request(error.to_string()))?;
+                .send().map_err(|error|ProviderError::Request(scrub_text(&error.without_url().to_string(),std::slice::from_ref(token))))?;
+            let status=response.status(); let body=response.text().map_err(http_error)?;
             if !status.is_success(){return Err(ProviderError::Http{status:status.as_u16(),body:scrub_text(&body,std::slice::from_ref(token))});}
             let parsed:WhatsAppMessageResponse=serde_json::from_str(&body).map_err(|error|ProviderError::Response(error.to_string()))?;
             let id=parsed.messages.and_then(|mut x|x.pop()).map(|x|x.id).ok_or_else(||ProviderError::Response("WhatsApp response missing message id".into()))?;
@@ -705,7 +705,7 @@ impl WhatsAppProvider {
                 .send()
                 .map_err(|error| {
                     ProviderError::Request(scrub_text(
-                        &error.to_string(),
+                        &error.without_url().to_string(),
                         std::slice::from_ref(token),
                     ))
                 })?;
@@ -806,7 +806,7 @@ impl TeamsProvider {
             .timeout(Duration::from_secs(30))
             .user_agent("PhxClaw/0.68 TeamsProvider")
             .build()
-            .map_err(|e| ProviderError::Request(e.to_string()))?;
+            .map_err(http_error)?;
         Ok(Self {
             broker,
             token_secret_uuid,
@@ -853,12 +853,13 @@ impl TeamsProvider {
                 .json(&json!({"body":{"contentType":"text","content":message.text}}))
                 .send()
                 .map_err(|e| {
-                    ProviderError::Request(scrub_text(&e.to_string(), std::slice::from_ref(token)))
+                    ProviderError::Request(scrub_text(
+                        &e.without_url().to_string(),
+                        std::slice::from_ref(token),
+                    ))
                 })?;
             let status = response.status();
-            let body = response
-                .text()
-                .map_err(|e| ProviderError::Request(e.to_string()))?;
+            let body = response.text().map_err(http_error)?;
             if !status.is_success() {
                 return Err(ProviderError::Http {
                     status: status.as_u16(),
@@ -882,7 +883,10 @@ impl TeamsProvider {
                 .bearer_auth(token.expose())
                 .send()
                 .map_err(|e| {
-                    ProviderError::Request(scrub_text(&e.to_string(), std::slice::from_ref(token)))
+                    ProviderError::Request(scrub_text(
+                        &e.without_url().to_string(),
+                        std::slice::from_ref(token),
+                    ))
                 })?;
             if !response.status().is_success() {
                 return Ok(ChannelProbe {
@@ -1040,4 +1044,82 @@ pub fn provider_metadata() -> Value {
             "secret_scopes": ["channel:teams:send", "channel:teams:probe"]
         }
     })
+}
+
+/// Todo erro HTTP deste crate passa por aqui. O reqwest escreve a URL no Display do
+/// erro, e a URL do Telegram carrega o token (`/bot<TOKEN>/...`): um corpo cortado no
+/// meio vazava o token inteiro. Tirar a URL na origem cobre todo caminho de erro, inclusive
+/// o que alguem escrever amanha sem lembrar do scrub_text.
+fn http_error(error: reqwest::Error) -> ProviderError {
+    ProviderError::Request(error.without_url().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use phxclaw_evidence_ledger::EvidenceLedger;
+    use phxclaw_live_bus::LiveEventHub;
+    use phxclaw_secret_broker::{FileMasterKeyProvider, SecretValue};
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    const TOKEN: &str = "123456:TOKEN-QUE-NAO-PODE-VAZAR";
+
+    /// Servidor que responde 200, promete 1000 bytes e fecha depois de 10: o corpo cai
+    /// no meio, e o erro do reqwest sai com a URL -- que no Telegram carrega o token.
+    fn servidor_que_corta_o_corpo() -> String {
+        let l = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = l.local_addr().unwrap();
+        std::thread::spawn(move || {
+            if let Ok((mut s, _)) = l.accept() {
+                let mut buf = [0u8; 4096];
+                let _ = s.read(&mut buf);
+                let _ = s.write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 1000\r\n\r\n{\"ok\":true",
+                );
+            }
+        });
+        format!("http://{addr}")
+    }
+
+    #[test]
+    fn corpo_cortado_no_probe_nao_vaza_o_token() {
+        let dir = std::env::temp_dir().join(format!("phx-chan-{}", uuid::Uuid::now_v7()));
+        let key = Arc::new(FileMasterKeyProvider::new(dir.join("master.key")));
+        key.ensure().unwrap();
+        let broker = Arc::new(
+            SecretBroker::new(
+                dir.join("secrets"),
+                key,
+                LiveEventHub::new(16, 16),
+                EvidenceLedger::open(dir.join("evidence.jsonl")).unwrap(),
+            )
+            .unwrap(),
+        );
+        let d = broker
+            .store(
+                "telegram",
+                "channels",
+                vec!["*".into()],
+                SecretValue::new(TOKEN.into()),
+            )
+            .unwrap();
+        let origem = servidor_que_corta_o_corpo();
+        let p = TelegramProvider::new_with_origin(
+            broker,
+            d.uuid,
+            "conta",
+            origem.clone(),
+            ProviderEndpointPolicy::locked_defaults()
+                .with_origin(origem)
+                .allow_http(true),
+        )
+        .unwrap();
+        let erro = ChannelProviderV2::probe(&p).expect_err("corpo cortado tem de falhar");
+        assert!(
+            !erro.contains("TOKEN-QUE-NAO-PODE-VAZAR"),
+            "token vazou no erro: {erro}"
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }

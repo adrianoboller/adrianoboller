@@ -13,3 +13,7 @@ serde_json.workspace = true
 thiserror.workspace = true
 url.workspace = true
 uuid.workspace = true
+
+[dev-dependencies]
+phxclaw-evidence-ledger = { path = "../phxclaw-evidence-ledger" }
+phxclaw-live-bus = { path = "../phxclaw-live-bus" }

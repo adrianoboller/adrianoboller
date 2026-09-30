@@ -12,6 +12,10 @@ use thiserror::Error;
 pub struct SandboxPlan {
     pub program: PathBuf,
     pub args: Vec<String>,
+    /// Ambiente EXATO do processo bwrap (que o repassa ao plugin). Fica fora de `args`
+    /// de proposito: argv e publico em /proc/<pid>/cmdline, e segredo la vaza para
+    /// qualquer usuario local.
+    pub env: Vec<(String, String)>,
     pub timeout: Duration,
 }
 
@@ -117,7 +121,6 @@ impl SandboxBackend for BwrapSandbox {
             "/phxclaw".into(),
             "--chdir".into(),
             "/phxclaw".into(),
-            "--clearenv".into(),
         ];
 
         for system_path in ["/usr", "/bin", "/lib", "/lib64"] {
@@ -126,11 +129,19 @@ impl SandboxBackend for BwrapSandbox {
             }
         }
 
-        for variable in &manifest.sandbox.environment_allowlist {
-            if let Ok(value) = env::var(variable) {
-                args.extend(["--setenv".into(), variable.clone(), value]);
-            }
-        }
+        // Nada de --setenv VAR VALOR: o valor iria para o argv. O bwrap herda o ambiente
+        // do processo que o lanca, e o execute() limpa esse ambiente (env_clear) antes de
+        // por so a lista permitida -- o mesmo efeito do --clearenv, sem o vazamento.
+        let child_env: Vec<(String, String)> = manifest
+            .sandbox
+            .environment_allowlist
+            .iter()
+            .filter_map(|variable| {
+                env::var(variable)
+                    .ok()
+                    .map(|value| (variable.clone(), value))
+            })
+            .collect();
 
         for relative in &manifest.sandbox.write_paths {
             let rel = Path::new(relative);
@@ -161,6 +172,7 @@ impl SandboxBackend for BwrapSandbox {
         Ok(SandboxPlan {
             program: self.bwrap_path.clone(),
             args,
+            env: child_env,
             timeout: Duration::from_millis(manifest.sandbox.timeout_ms),
         })
     }
@@ -168,7 +180,11 @@ impl SandboxBackend for BwrapSandbox {
     fn execute(&self, manifest: &PluginManifest) -> Result<ExitStatus, SandboxError> {
         self.probe()?;
         let plan = self.plan(manifest)?;
-        let mut child = Command::new(&plan.program).args(&plan.args).spawn()?;
+        let mut child = Command::new(&plan.program)
+            .args(&plan.args)
+            .env_clear()
+            .envs(plan.env.iter().map(|(k, v)| (k, v)))
+            .spawn()?;
         let started = Instant::now();
         loop {
             if let Some(status) = child.try_wait()? {
@@ -208,6 +224,25 @@ mod tests {
         let sandbox = BwrapSandbox::with_binary(&root, "/usr/bin/bwrap");
         let plan = sandbox.plan(&manifest).unwrap();
         assert!(plan.args.iter().any(|arg| arg == "--unshare-net"));
-        assert!(plan.args.iter().any(|arg| arg == "--clearenv"));
+        // O ambiente do plugin e so a lista permitida (o morpheus nao pede nenhuma).
+        assert!(plan.env.is_empty(), "{:?}", plan.env);
+    }
+
+    #[test]
+    fn segredo_permitido_nao_vai_para_o_argv() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let input = include_str!("../../../plugins/builtin/manifests/morpheus.agent.plugin.json");
+        let mut manifest: PluginManifest = serde_json::from_str(input).unwrap();
+        // PATH existe em qualquer ambiente de teste e serve de segredo de mentira.
+        let valor = env::var("PATH").unwrap();
+        manifest.sandbox.environment_allowlist = vec!["PATH".into()];
+        let plan = BwrapSandbox::with_binary(&root, "/usr/bin/bwrap")
+            .plan(&manifest)
+            .unwrap();
+        assert!(
+            plan.args.iter().all(|arg| arg != &valor),
+            "valor de variavel permitida apareceu no argv"
+        );
+        assert_eq!(plan.env, vec![("PATH".to_string(), valor)]);
     }
 }

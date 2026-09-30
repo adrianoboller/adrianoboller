@@ -13,6 +13,7 @@ name = "phxclaw-desktop"
 path = "src/main.rs"
 
 [dependencies]
+phxclaw-secret-broker = { path = "../../../crates/phxclaw-secret-broker" }
 chrono.workspace = true
 serde.workspace = true
 serde_json.workspace = true

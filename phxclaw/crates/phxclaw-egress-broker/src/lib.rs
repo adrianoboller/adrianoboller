@@ -24,6 +24,10 @@ pub enum EgressError {
     OriginDenied(String),
     #[error(transparent)]
     Http(#[from] HttpClientError),
+    #[error("accept_invalid_certs is denied by egress policy")]
+    InvalidCertsDenied,
+    #[error("too many redirects (limit {0})")]
+    TooManyRedirects(usize),
 }
 
 #[derive(Clone)]
@@ -55,12 +59,61 @@ impl EgressBroker {
         Ok(url)
     }
 
+    /// O broker segue os redirects ELE MESMO, salto a salto, reconferindo cada Location
+    /// contra a lista. Deixar o cliente HTTP seguir sozinho validava so a primeira URL: uma
+    /// origem permitida respondendo 302 para 169.254.169.254 ou 127.0.0.1 levava o pedido
+    /// para dentro da maquina (SSRF).
     pub async fn request(&self, spec: &HttpRequestSpec) -> Result<HttpResult, EgressError> {
-        self.validate_url(&spec.url)?;
+        // Certificado invalido aceito e MITM consentido: a politica de egresso nao delega.
+        if spec.accept_invalid_certs {
+            return Err(EgressError::InvalidCertsDenied);
+        }
+        let mut url = self.validate_url(&spec.url)?;
         if let Some(proxy) = &spec.proxy {
             self.validate_url(proxy)?;
         }
-        Ok(http_request(spec).await?)
+        let mut salto = spec.clone();
+        salto.follow_redirects = false;
+        let limite = if spec.follow_redirects {
+            spec.max_redirects
+        } else {
+            0
+        };
+        for n in 0..=limite {
+            salto.url = url.to_string();
+            let resposta = http_request(&salto).await?;
+            let redirect = matches!(resposta.status, 301 | 302 | 303 | 307 | 308);
+            if !spec.follow_redirects || !redirect {
+                return Ok(resposta);
+            }
+            let Some(destino) = resposta.headers.get("location").and_then(|v| v.first()) else {
+                return Ok(resposta);
+            };
+            if n == limite {
+                return Err(EgressError::TooManyRedirects(limite));
+            }
+            let proximo = self.validate_url(url.join(destino)?.as_str())?;
+            if origin(&proximo) != origin(&url) {
+                // Credencial de uma origem nao viaja para outra.
+                salto.auth = Default::default();
+                salto.headers.retain(|k, _| {
+                    !k.eq_ignore_ascii_case("authorization") && !k.eq_ignore_ascii_case("cookie")
+                });
+            }
+            if resposta.status == 303
+                || (matches!(resposta.status, 301 | 302)
+                    && salto.method.eq_ignore_ascii_case("POST"))
+            {
+                salto.method = "GET".into();
+                salto.body_base64 = None;
+                salto.json = None;
+                salto.form.clear();
+                salto.multipart_fields.clear();
+                salto.multipart_files.clear();
+            }
+            url = proximo;
+        }
+        Err(EgressError::TooManyRedirects(limite))
     }
 }
 
@@ -101,5 +154,85 @@ mod tests {
                 .is_ok()
         );
         assert!(broker.validate_url("https://example.com").is_err());
+    }
+
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// Servidor HTTP minimo: responde `resposta` a cada conexao e conta quantas recebeu.
+    fn servidor(resposta: String) -> (String, Arc<AtomicUsize>) {
+        let l = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = format!("http://{}", l.local_addr().unwrap());
+        let conexoes = Arc::new(AtomicUsize::new(0));
+        let c = Arc::clone(&conexoes);
+        std::thread::spawn(move || {
+            for s in l.incoming() {
+                let Ok(mut s) = s else { break };
+                c.fetch_add(1, Ordering::SeqCst);
+                let mut buf = [0u8; 4096];
+                let _ = s.read(&mut buf);
+                let _ = s.write_all(resposta.as_bytes());
+            }
+        });
+        (addr, conexoes)
+    }
+
+    fn broker(origens: &[&str]) -> EgressBroker {
+        let mut policy = EgressPolicy {
+            enabled: true,
+            allow_http: true,
+            ..EgressPolicy::default()
+        };
+        for o in origens {
+            policy.allowed_origins.insert((*o).into());
+        }
+        EgressBroker::new(policy)
+    }
+
+    #[tokio::test]
+    async fn redirect_para_origem_fora_da_lista_e_recusado_sem_tocar_o_alvo() {
+        let (interno, toques) =
+            servidor("HTTP/1.1 200 OK\r\nContent-Length: 7\r\n\r\nsegredo".into());
+        let (permitido, _) = servidor(format!(
+            "HTTP/1.1 302 Found\r\nLocation: {interno}/latest/meta-data\r\nContent-Length: 0\r\n\r\n"
+        ));
+        let b = broker(&[&permitido]);
+        let r = b
+            .request(&HttpRequestSpec::get(format!("{permitido}/x")))
+            .await;
+        assert!(matches!(r, Err(EgressError::OriginDenied(_))), "{r:?}");
+        assert_eq!(
+            toques.load(Ordering::SeqCst),
+            0,
+            "o alvo interno recebeu conexao"
+        );
+    }
+
+    #[tokio::test]
+    async fn redirect_dentro_da_lista_e_seguido() {
+        let (destino, _) = servidor("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok".into());
+        let (origem, _) = servidor(format!(
+            "HTTP/1.1 302 Found\r\nLocation: {destino}/fim\r\nContent-Length: 0\r\n\r\n"
+        ));
+        let b = broker(&[&origem, &destino]);
+        let r = b
+            .request(&HttpRequestSpec::get(format!("{origem}/inicio")))
+            .await
+            .unwrap();
+        assert_eq!(r.status, 200);
+        assert!(r.final_url.ends_with("/fim"), "{}", r.final_url);
+    }
+
+    #[tokio::test]
+    async fn certificado_invalido_nao_se_aceita_por_pedido() {
+        let b = broker(&["https://api.example.com"]);
+        let mut spec = HttpRequestSpec::get("https://api.example.com/x");
+        spec.accept_invalid_certs = true;
+        assert!(matches!(
+            b.request(&spec).await,
+            Err(EgressError::InvalidCertsDenied)
+        ));
     }
 }

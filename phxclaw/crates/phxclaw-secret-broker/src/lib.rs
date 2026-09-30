@@ -27,7 +27,7 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
     fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
 use thiserror::Error;
@@ -129,13 +129,11 @@ impl FileMasterKeyProvider {
         let mut bytes = [0u8; 32];
         getrandom::fill(&mut bytes)
             .map_err(|error| SecretBrokerError::Crypto(error.to_string()))?;
-        fs::write(&self.path, BASE64.encode(bytes))?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(&self.path, fs::Permissions::from_mode(0o600))?;
-        }
+        let mut encoded = BASE64.encode(bytes);
+        let written = write_private_file(&self.path, encoded.as_bytes());
+        encoded.zeroize();
         bytes.zeroize();
+        written?;
         Ok(())
     }
 }
@@ -453,13 +451,7 @@ impl SecretBroker {
         };
         let mut bytes = FILE_MAGIC.to_vec();
         bytes.extend_from_slice(&serde_json::to_vec_pretty(&envelope)?);
-        let path = self.path_for(descriptor);
-        fs::write(&path, bytes)?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(&path, fs::Permissions::from_mode(0o600))?;
-        }
+        write_private_file(&self.path_for(descriptor), &bytes)?;
         Ok(())
     }
 
@@ -475,7 +467,7 @@ impl SecretBroker {
         };
         let mut bytes = FILE_MAGIC.to_vec();
         bytes.extend_from_slice(&serde_json::to_vec_pretty(&envelope)?);
-        fs::write(self.path_for(descriptor), bytes)?;
+        write_private_file(&self.path_for(descriptor), &bytes)?;
         Ok(())
     }
 
@@ -572,6 +564,40 @@ fn validate_name(value: &str) -> Result<(), SecretBrokerError> {
     Ok(())
 }
 
+/// Unico jeito de gravar arquivo secreto nesta base (chave mestra, envelope de segredo,
+/// token da API do desktop). O arquivo NASCE 0600: gravar e so depois ajustar a permissao
+/// deixava uma janela em que ele existia com a umask (0644) e outro usuario o lia. Grava num
+/// temporario exclusivo ao lado e renomeia por cima -- atomico, e troca tambem o arquivo
+/// antigo que tivesse permissao frouxa.
+pub fn write_private_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(parent)?;
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let tmp = parent.join(format!(".{name}.{}.tmp", new_uuid_v7().simple()));
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let result = options.open(&tmp).and_then(|mut file| {
+        file.write_all(bytes)?;
+        file.sync_all()
+    });
+    match result.and_then(|()| fs::rename(&tmp, path)) {
+        Ok(()) => Ok(()),
+        Err(error) => {
+            let _ = fs::remove_file(&tmp);
+            Err(error)
+        }
+    }
+}
+
 fn normalize_scopes(mut scopes: Vec<String>) -> Vec<String> {
     scopes.sort();
     scopes.dedup();
@@ -647,5 +673,24 @@ mod tests {
         let secret = SecretValue::new("abc123".into());
         let scrubbed = scrub_text("token=abc123 Authorization: Bearer abc123", &[secret]);
         assert!(!scrubbed.contains("abc123"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn arquivo_privado_nasce_0600_mesmo_com_umask_frouxa_e_troca_o_antigo() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("phx-priv-{}", new_uuid_v7().simple()));
+        fs::create_dir_all(&dir).unwrap();
+        let alvo = dir.join("api.token");
+        // Arquivo antigo com permissao frouxa: tem de sair 0600 depois da regravacao.
+        fs::write(&alvo, b"velho").unwrap();
+        fs::set_permissions(&alvo, fs::Permissions::from_mode(0o644)).unwrap();
+        write_private_file(&alvo, b"novo").unwrap();
+        let modo = fs::metadata(&alvo).unwrap().permissions().mode() & 0o777;
+        assert_eq!(modo, 0o600, "modo {modo:o}");
+        assert_eq!(fs::read(&alvo).unwrap(), b"novo");
+        // Nenhum temporario sobra ao lado.
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
+        let _ = fs::remove_dir_all(dir);
     }
 }

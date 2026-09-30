@@ -3928,6 +3928,8 @@ name = "phxclaw-channel-providers"
 version = "0.70.0"
 dependencies = [
  "phxclaw-channel-gateway",
+ "phxclaw-evidence-ledger",
+ "phxclaw-live-bus",
  "phxclaw-secret-broker",
  "reqwest",
  "serde",
@@ -4037,6 +4039,7 @@ dependencies = [
  "phxclaw-event-bus",
  "phxclaw-evidence-ledger",
  "phxclaw-live-bus",
+ "phxclaw-secret-broker",
  "phxclaw-system-automation",
  "phxclaw-types",
  "phxclaw-webview-control",
@@ -4128,6 +4131,7 @@ dependencies = [
  "phxclaw-http-client",
  "serde",
  "thiserror 2.0.21",
+ "tokio",
  "url",
 ]
 

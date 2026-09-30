@@ -1081,14 +1081,6 @@ fn env_csv(name: &str) -> BTreeSet<String> {
 }
 
 fn write_secret_file(path: &Path, value: &str) -> std::io::Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    std::fs::write(path, value.as_bytes())?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
-    }
-    Ok(())
+    // Mesmo motor do secret-broker: o arquivo nasce 0600, sem janela com a umask.
+    phxclaw_secret_broker::write_private_file(path, value.as_bytes())
 }

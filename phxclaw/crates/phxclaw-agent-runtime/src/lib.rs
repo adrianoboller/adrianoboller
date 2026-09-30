@@ -245,6 +245,7 @@ mod tests {
             Ok(SandboxPlan {
                 program: PathBuf::from("fake"),
                 args: vec![],
+                env: vec![],
                 timeout: Duration::from_secs(1),
             })
         }
