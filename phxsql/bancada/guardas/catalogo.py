@@ -630,13 +630,11 @@ GUARDAS = [
         }
         let dados = self.travar_dados()?;
         let db = dados.abrir_database(database)?;
-        let copiados = db.duplicar_tabela(tabela, destino)?;
 """,
         "troca": """        // DEFEITO REPOSTO: so a origem passou pelo portao geral.
         let _ = sessao;
         let dados = self.travar_dados()?;
         let db = dados.abrir_database(database)?;
-        let copiados = db.duplicar_tabela(tabela, destino)?;
 """,
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
@@ -17781,5 +17779,92 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "restaurar::tests::por_cima_guarda_o_antigo_fora_da_raiz",
             "restaurar::tests::restaura_da_arvore_copiada_escolhendo_o_banco",
         ],
+    },
+    {
+        "id": "copia-de-tabela-sem-fsync",
+        "titulo": "`duplicar_tabela` e `copiar_tabela_para` respondiam «ok» com a cópia só no cache do núcleo: uma queda podia levar a tabela nova, ou deixá-la rasgada",
+        "porque": (
+            "pedido 586, irmas do 582. As duas copias passavam por "
+            "`copiar_do_banco` e fechavam o descritor sem `fsync`. Agora a "
+            "copia devolve os descritores (`CopiaPorSincronizar`) e o "
+            "`levar_ao_disco` sincroniza cada arquivo NO DESCRITOR QUE O "
+            "ESCREVEU -- no servidor, depois de soltar a trava global. Pelo "
+            "`strace -y`: `fsync(fd<copia.*>)` antes do `close` de cada um."
+        ),
+        "arquivo": "crates/phxsql-store/src/catalogo.rs",
+        "trecho": """        for (arquivo, caminho) in &self.arquivos {
+            crate::sincronia::sync_all(arquivo, caminho)?;
+        }""",
+        "troca": """        // DEFEITO REPOSTO (586): a copia fecha sem fsync.
+        for (arquivo, caminho) in &self.arquivos {
+            let _ = (arquivo, caminho);
+        }""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": ["catalogo::testes_copia_entre_bancos::as_copias_de_tabela_vao_ao_disco"],
+        "seguem": [
+            "catalogo::testes_copia_entre_bancos::colar_dentro_de_schema_que_ainda_nao_existe_cria_a_pasta",
+            "catalogo::testes_copia_entre_bancos::colar_em_outro_banco_preserva_rowids_e_ordem",
+        ],
+    },
+    {
+        "id": "copia-de-tabela-sem-fsync-da-pasta",
+        "titulo": "A cópia de tabela sincronizava os arquivos e não a pasta: o nome novo podia sumir numa queda depois do «ok»",
+        "porque": (
+            "pedido 586. A entrada de um arquivo novo e dado da PASTA; sem o "
+            "`fsync` dela, o conteudo sincronizado pode voltar sem nome que o "
+            "alcance. O `levar_ao_disco` sincroniza a pasta de destino depois "
+            "do ultimo arquivo, pelo motor `sincronia`."
+        ),
+        "arquivo": "crates/phxsql-store/src/catalogo.rs",
+        "trecho": """        if let Some((_, caminho)) = self.arquivos.first() {
+            crate::sincronia::sincronizar_os_diretorios(caminho, caminho, true)?;""",
+        "troca": """        if let Some((_, caminho)) = self.arquivos.first() {
+            // DEFEITO REPOSTO (586): a pasta de destino sem fsync.""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": ["catalogo::testes_copia_entre_bancos::as_copias_de_tabela_vao_ao_disco"],
+        "seguem": [
+            "catalogo::testes_copia_entre_bancos::colar_dentro_de_schema_que_ainda_nao_existe_cria_a_pasta",
+        ],
+    },
+    {
+        "id": "colar-em-schema-novo-sem-fsync-do-database",
+        "titulo": "Colar num schema que ainda não existe criava a pasta dele sem `fsync` do database: a cópia sincronizada podia morar numa pasta que a queda leva",
+        "porque": (
+            "pedido 586. `copiar_tabela_para` com destino `schema.tabela` "
+            "cria a pasta do schema (`garantir_schema`), e a entrada dela e "
+            "dado do DATABASE. O `levar_ao_disco` sincroniza o database quando "
+            "a pasta nasceu nesta copia (`pasta_nova`)."
+        ),
+        "arquivo": "crates/phxsql-store/src/catalogo.rs",
+        "trecho": """                    crate::sincronia::sincronizar_os_diretorios(pasta, pasta, true)?;""",
+        "troca": """                    // DEFEITO REPOSTO (586): a pasta nova sem fsync do pai.
+                    let _ = pasta;""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": ["catalogo::testes_copia_entre_bancos::as_copias_de_tabela_vao_ao_disco"],
+        "seguem": [
+            "catalogo::testes_copia_entre_bancos::colar_dentro_de_schema_que_ainda_nao_existe_cria_a_pasta",
+        ],
+    },
+    {
+        "id": "porta-anunciada-em-pedacos",
+        "titulo": "A linha «porta de dados escutando em …» saía em várias escritas: quem lia o log no meio via a porta pela metade",
+        "porque": (
+            "pedido 586, pela origem do 581. O `eprintln!` escreve cada pedaco "
+            "do formato numa syscall (o `stderr` da `std` nao tem buffer), e o "
+            "leitor que nao espera o `\\n` le `:43` de `:4321` como OUTRA "
+            "porta. O `anunciar` monta a linha e a escreve de uma vez; o "
+            "`strace -e write` do `phxsqld` ve a linha inteira num `write`."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """            anunciar(&format!("porta de dados escutando em {e}"));""",
+        "troca": """            // DEFEITO REPOSTO (586): a linha sai em pedacos.
+            eprintln!("porta de dados escutando em {e}");""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "anuncio-numa-escrita-so"],
+        "caem": ["cada_linha_de_anuncio_sai_num_write_so"],
+        "seguem": [],
     },
 ]

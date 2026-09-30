@@ -1109,7 +1109,22 @@ impl Database {
     ///
     /// Copiar os arquivos preserva a ordem de digitacao e os rowids; reinserir
     /// linha a linha nao preservaria nem um nem outro.
+    ///
+    /// Responde depois do `fsync` da copia (pedido 586). Quem segura a trava
+    /// global e nao quer pagar o `fsync` sob ela usa
+    /// [`Self::duplicar_tabela_adiando_o_fsync`] e leva ao disco depois de
+    /// solta-la -- as duas sao a MESMA copia, esta so nao adia.
     pub fn duplicar_tabela(&self, origem: &str, destino: &str) -> Result<usize> {
+        self.duplicar_tabela_adiando_o_fsync(origem, destino)?
+            .levar_ao_disco()
+    }
+
+    /// A copia do [`Self::duplicar_tabela`], devolvendo o `fsync` por fazer.
+    pub fn duplicar_tabela_adiando_o_fsync(
+        &self,
+        origem: &str,
+        destino: &str,
+    ) -> Result<CopiaPorSincronizar> {
         self.exigir_motor_padrao()?;
         let (schema_o, nome_o) = separar_qualificado(origem);
         let (schema_d, nome_d) = separar_qualificado(destino);
@@ -1123,45 +1138,39 @@ impl Database {
         let dir_o = self.diretorio(schema_o)?;
         let dir_d = self.diretorio(schema_d)?;
         exigir_nome_que_volta(&dir_d, nome_d)?;
-        let mut copiados = 0usize;
-        for ext in Self::EXTENSOES {
-            for arq in std::fs::read_dir(&dir_o)?.flatten() {
-                let f = arq.file_name();
-                let f = f.to_string_lossy();
-                if pertence(&f, nome_o, ext) {
-                    // Preserva o sufixo do volume: `precos#002.reg` vira
-                    // `copia#002.reg`, nao `copia.reg`.
-                    let novo = format!("{nome_d}{}", &f[nome_o.len()..]);
-                    // Pelo motor da permissao (pedido 542): a copia nasce
-                    // 0600, sem herdar o modo da origem.
-                    crate::util::copiar_do_banco(&arq.path(), &dir_d.join(&novo))?;
-                    // O atestado do pedido 522 vale para a copia: ela saiu do
-                    // nucleo junto do `.reg` dela. Ver `ndx::levar_atestado`.
-                    crate::ndx::levar_atestado(&arq.path(), &dir_d.join(&novo), false);
-                    copiados += 1;
-                }
-            }
-        }
-        if copiados == 0 {
+        let copia = Self::copiar_os_arquivos(&dir_o, nome_o, &dir_d, nome_d, false)?;
+        if copia.arquivos.is_empty() {
             return Err(PhxError::NaoEncontrado(format!(
                 "tabela {origem} nao existe em {}",
                 self.nome()
             )));
         }
-        Ok(copiados)
+        Ok(copia)
     }
 
     /// Copia uma tabela para OUTRO database -- o "colar" da tela.
     ///
     /// O `duplicar_tabela` copia dentro do mesmo database; este atravessa. E a
     /// mesma copia byte a byte, e pela mesma razao: a copia nasce com os
-    /// mesmos rowids e na mesma ordem de digitacao.
+    /// mesmos rowids e na mesma ordem de digitacao. E responde depois do
+    /// `fsync`, pelo mesmo motivo do irmao (pedido 586).
     pub fn copiar_tabela_para(
         &self,
         origem: &str,
         destino_db: &Database,
         destino: &str,
     ) -> Result<usize> {
+        self.copiar_tabela_para_adiando_o_fsync(origem, destino_db, destino)?
+            .levar_ao_disco()
+    }
+
+    /// A copia do [`Self::copiar_tabela_para`], devolvendo o `fsync` por fazer.
+    pub fn copiar_tabela_para_adiando_o_fsync(
+        &self,
+        origem: &str,
+        destino_db: &Database,
+        destino: &str,
+    ) -> Result<CopiaPorSincronizar> {
         // Os DOIS lados: colar de OU para uma colmeia e' tao invalido quanto
         // criar tabela nela. O motor padrao le e escreve tabela relacional, e
         // nenhuma das duas pontas pode ser de outro tipo.
@@ -1181,10 +1190,15 @@ impl Database {
         }
         let dir_o = self.diretorio(schema_o)?;
         // Colar num schema que ainda nao existe cria a pasta -- e o que quem
-        // cola espera, e o mesmo que `criar_tabela` faz.
-        let dir_d = match schema_d {
-            None => destino_db.caminho().to_path_buf(),
-            Some(sc) => destino_db.garantir_schema(sc)?,
+        // cola espera, e o mesmo que `criar_tabela` faz. A pasta que nasce
+        // aqui e entrada do database: o `fsync` dele vai junto da copia, senao
+        // a copia sincronizada moraria numa pasta que a queda pode levar.
+        let (dir_d, pasta_nova) = match schema_d {
+            None => (destino_db.caminho().to_path_buf(), false),
+            Some(sc) => {
+                let nova = !destino_db.caminho().join(sc).is_dir();
+                (destino_db.garantir_schema(sc)?, nova)
+            }
         };
         if dir_o == dir_d && nome_o == nome_d {
             return Err(PhxError::Duplicado(
@@ -1192,34 +1206,101 @@ impl Database {
             ));
         }
         exigir_nome_que_volta(&dir_d, nome_d)?;
-
-        let mut copiados = 0usize;
-        for ext in Self::EXTENSOES {
-            for arq in std::fs::read_dir(&dir_o)?.flatten() {
-                let f = arq.file_name();
-                let f = f.to_string_lossy();
-                if pertence(&f, nome_o, ext) {
-                    let novo = format!("{nome_d}{}", &f[nome_o.len()..]);
-                    // Pelo motor da permissao (pedido 542): a copia nasce
-                    // 0600, sem herdar o modo da origem.
-                    crate::util::copiar_do_banco(&arq.path(), &dir_d.join(&novo))?;
-                    // O mesmo do `duplicar_tabela`: o atestado vai junto.
-                    crate::ndx::levar_atestado(&arq.path(), &dir_d.join(&novo), false);
-                    copiados += 1;
-                }
-            }
-        }
-        if copiados == 0 {
+        let copia = Self::copiar_os_arquivos(&dir_o, nome_o, &dir_d, nome_d, pasta_nova)?;
+        if copia.arquivos.is_empty() {
             return Err(PhxError::NaoEncontrado(format!(
                 "tabela {origem} nao existe em {}",
                 self.nome()
             )));
         }
-        Ok(copiados)
+        Ok(copia)
+    }
+
+    /// O laco das duas copias -- um so, para o `fsync` de uma nao faltar na
+    /// outra, que e exatamente como o 586 nasceu (irmas do 582).
+    fn copiar_os_arquivos(
+        dir_o: &Path,
+        nome_o: &str,
+        dir_d: &Path,
+        nome_d: &str,
+        pasta_nova: bool,
+    ) -> Result<CopiaPorSincronizar> {
+        let mut arquivos = Vec::new();
+        for ext in Self::EXTENSOES {
+            for arq in std::fs::read_dir(dir_o)?.flatten() {
+                let f = arq.file_name();
+                let f = f.to_string_lossy();
+                if pertence(&f, nome_o, ext) {
+                    // Preserva o sufixo do volume: `precos#002.reg` vira
+                    // `copia#002.reg`, nao `copia.reg`.
+                    let novo = dir_d.join(format!("{nome_d}{}", &f[nome_o.len()..]));
+                    // Pelo motor da permissao (pedido 542): a copia nasce
+                    // 0600, sem herdar o modo da origem.
+                    let escrito = crate::util::copiar_do_banco(&arq.path(), &novo)?;
+                    // O atestado do pedido 522 vale para a copia: ela saiu do
+                    // nucleo junto do `.reg` dela. Ver `ndx::levar_atestado`.
+                    crate::ndx::levar_atestado(&arq.path(), &novo, false);
+                    arquivos.push((escrito, novo));
+                }
+            }
+        }
+        Ok(CopiaPorSincronizar {
+            arquivos,
+            pasta_nova,
+        })
     }
 
     pub fn existe_tabela(&self, schema: Option<&str>, nome: &str) -> Result<bool> {
         Ok(self.tabelas(schema)?.iter().any(|t| t == nome))
+    }
+}
+
+/// Uma copia de tabela que ja esta nos nomes novos e ainda deve o disco --
+/// pedido 586.
+///
+/// # Por que o `fsync` sai da copia
+///
+/// No servidor as duas copias rodam com a trava global na mao, e a catraca
+/// `alcancam-fsync-2` do `mapa-da-trava.py` proibe `fsync` novo ali: cada um
+/// e a proxima conexao esperando o disco. Copiar precisa da trava (e ela que
+/// impede a origem de mudar no meio); sincronizar nao precisa -- o `fsync` e
+/// do inode e vale por qualquer descritor que o escreveu, e so este tem a
+/// garantia do *fsyncgate* (pedido 552). Entao a copia devolve os descritores
+/// abertos, e quem chama solta a trava e leva ao disco antes de responder.
+///
+/// A janela entre soltar e sincronizar e a de qualquer escrita sem `fsync`:
+/// a tabela ja e visivel, mas ninguem ouviu «ok» por ela ainda.
+#[must_use = "a copia so vale depois de levar_ao_disco"]
+pub struct CopiaPorSincronizar {
+    arquivos: Vec<(std::fs::File, PathBuf)>,
+    /// A pasta do schema nasceu nesta copia: a entrada dela no database
+    /// tambem deve o disco.
+    pasta_nova: bool,
+}
+
+impl CopiaPorSincronizar {
+    /// O `fsync` de cada arquivo NO DESCRITOR QUE O ESCREVEU, e depois o da
+    /// pasta -- a ordem do `durable_rename` do PostgreSQL: a entrada so vale
+    /// depois de o conteudo para o qual ela aponta estar no disco. Pelo motor
+    /// [`crate::sincronia`], com o gancho do processo: e dado do banco.
+    ///
+    /// Devolve quantos arquivos foram copiados.
+    pub fn levar_ao_disco(self) -> Result<usize> {
+        for (arquivo, caminho) in &self.arquivos {
+            crate::sincronia::sync_all(arquivo, caminho)?;
+        }
+        // O `fsync` da pasta vai pelo nome de uma entrada dela: e pelo pai do
+        // caminho que a `sincronia` marca a recusa. Todos os arquivos moram
+        // na mesma pasta de destino, entao um basta.
+        if let Some((_, caminho)) = self.arquivos.first() {
+            crate::sincronia::sincronizar_os_diretorios(caminho, caminho, true)?;
+            if self.pasta_nova {
+                if let Some(pasta) = caminho.parent() {
+                    crate::sincronia::sincronizar_os_diretorios(pasta, pasta, true)?;
+                }
+            }
+        }
+        Ok(self.arquivos.len())
     }
 }
 
@@ -2600,6 +2681,161 @@ mod testes_copia_entre_bancos {
         assert!(base.join("b").join("historico").is_dir());
 
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// O filho que o `strace` observa: as duas copias, pelo caminho do
+    /// servidor -- copiar com a trava, levar ao disco depois.
+    #[test]
+    #[ignore = "roda so dentro de as_copias_de_tabela_vao_ao_disco"]
+    fn filho_das_copias_de_tabela() {
+        let base = PathBuf::from(std::env::var("PHX_586_DIR").unwrap());
+        let inst = Instancia::nova(&base).unwrap();
+        let a = inst.abrir_database("a").unwrap();
+        let b = inst.abrir_database("b").unwrap();
+        a.duplicar_tabela_adiando_o_fsync("t", "copia")
+            .unwrap()
+            .levar_ao_disco()
+            .unwrap();
+        a.copiar_tabela_para_adiando_o_fsync("t", &b, "novo.t")
+            .unwrap()
+            .levar_ao_disco()
+            .unwrap();
+    }
+
+    /// **Pedido 586, contra o sistema operacional: a copia de tabela responde
+    /// depois de estar no disco.**
+    ///
+    /// Pelo `strace -y`: cada arquivo da copia recebe `fsync` no descritor
+    /// que o criou, antes do `close` dele; a pasta de destino recebe `fsync`
+    /// depois do ultimo arquivo criado nela; e a pasta de schema que o colar
+    /// criou tem a entrada dela sincronizada no database (`fsync` de `b`).
+    ///
+    /// **Nao medido:** a queda em si (pede derrubar a maquina). O que se prova
+    /// e o DESCRITOR e a ORDEM das chamadas, que e o que o conserto muda.
+    #[test]
+    fn as_copias_de_tabela_vao_ao_disco() {
+        if std::process::Command::new("strace")
+            .arg("-V")
+            .output()
+            .is_err()
+        {
+            eprintln!("sem strace nesta maquina: a prova do 586 NAO MEDIDA");
+            return;
+        }
+        let t = crate::apoio_teste::DirTemp::novo("cat-586-strace");
+        let base = std::fs::canonicalize(&t.0).unwrap();
+        {
+            let inst = Instancia::nova(&base).unwrap();
+            let a = inst.criar_database("a").unwrap();
+            inst.criar_database("b").unwrap();
+            let mut tab = a.criar_tabela(None, esquema("t")).unwrap();
+            tab.inserir(&[Value::Int(1), Value::Str("um".into())])
+                .unwrap();
+            tab.sincronizar().unwrap();
+        }
+        let traco = base.join("traco.txt");
+        let saida = std::process::Command::new("strace")
+            .args([
+                "-f",
+                "-y",
+                "-e",
+                "trace=openat,close,fsync,mkdir,mkdirat",
+                "-o",
+            ])
+            .arg(&traco)
+            .arg(std::env::current_exe().unwrap())
+            .args([
+                "--ignored",
+                "--exact",
+                "catalogo::testes_copia_entre_bancos::filho_das_copias_de_tabela",
+            ])
+            .env("PHX_586_DIR", &base)
+            .output()
+            .unwrap();
+        assert!(
+            saida.status.success(),
+            "{}",
+            String::from_utf8_lossy(&saida.stderr)
+        );
+        let texto = std::fs::read_to_string(&traco).unwrap();
+        let linhas: Vec<&str> = texto.lines().filter(|l| l.contains(" = ")).collect();
+        let ok = |l: &str| l.trim_end().ends_with("= 0");
+        let txt = |p: &Path| p.display().to_string();
+        let fsync_da_pasta = |p: &Path, desde: usize| {
+            linhas[desde..]
+                .iter()
+                .any(|l| l.contains("fsync(") && l.contains(&format!("<{}>)", txt(p))) && ok(l))
+        };
+        let mut erros = Vec::new();
+        for pasta in [base.join("a"), base.join("b/novo")] {
+            let prefixo = if pasta.ends_with("novo") {
+                "t."
+            } else {
+                "copia."
+            };
+            // Os arquivos que a copia CRIOU nesta pasta, com o descritor.
+            let criados: Vec<(usize, String, String)> = linhas
+                .iter()
+                .enumerate()
+                .filter_map(|(i, l)| {
+                    let caminho = l.split('"').nth(1)?;
+                    let p = Path::new(caminho);
+                    let nome = p.file_name()?.to_string_lossy().to_string();
+                    (l.contains("openat(")
+                        && l.contains("O_CREAT")
+                        && p.parent().is_some_and(|d| d == pasta)
+                        && nome.starts_with(prefixo))
+                    .then(|| {
+                        // Com `-y` o retorno vem decorado (`= 5</caminho>`):
+                        // so os digitos sao o descritor.
+                        let fd: String = l
+                            .rsplit("= ")
+                            .next()?
+                            .chars()
+                            .take_while(char::is_ascii_digit)
+                            .collect();
+                        Some((i, caminho.to_string(), fd))
+                    })
+                    .flatten()
+                })
+                .collect();
+            if criados.is_empty() {
+                erros.push(format!("a premissa: nada nasceu em {}", txt(&pasta)));
+                continue;
+            }
+            for (i, caminho, fd) in &criados {
+                let fechou = linhas[i + 1..]
+                    .iter()
+                    .position(|l| l.contains(&format!("close({fd}<")))
+                    .map_or(linhas.len(), |j| i + 1 + j);
+                let sincronizou = linhas[i + 1..fechou]
+                    .iter()
+                    .any(|l| l.contains(&format!("fsync({fd}<{caminho}>)")) && ok(l));
+                if !sincronizou {
+                    erros.push(format!(
+                        "{caminho}: sem fsync no descritor {fd} antes do close"
+                    ));
+                }
+            }
+            let ultimo = criados.last().map_or(0, |c| c.0);
+            if !fsync_da_pasta(&pasta, ultimo + 1) {
+                erros.push(format!(
+                    "{}: sem fsync da pasta depois do ultimo arquivo da copia",
+                    txt(&pasta)
+                ));
+            }
+        }
+        // A pasta do schema nasceu no colar: a entrada dela e dado de `b`.
+        let nasceu = linhas
+            .iter()
+            .position(|l| {
+                l.contains("mkdir") && l.contains(&format!("\"{}\"", txt(&base.join("b/novo"))))
+            })
+            .unwrap_or_else(|| panic!("a premissa: o colar criou b/novo:\n{texto}"));
+        if !fsync_da_pasta(&base.join("b"), nasceu + 1) {
+            erros.push("b: sem fsync do database depois de a pasta do schema nascer".into());
+        }
+        assert!(erros.is_empty(), "{erros:#?}\n{texto}");
     }
 }
 

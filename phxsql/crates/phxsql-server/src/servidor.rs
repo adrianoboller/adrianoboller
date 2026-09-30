@@ -61,6 +61,26 @@ use crate::valores::{
     largura_do_tipo, linha_para_json,
 };
 
+/// Uma linha de anuncio do arranque no erro padrao, numa escrita SO.
+///
+/// O `eprintln!` nao e uma escrita so: o `stderr` da `std` nao tem buffer, e
+/// cada pedaco do formato -- o texto fixo, cada octeto do `SocketAddr` --
+/// sai numa syscall propria (medido pelo pedido 581, `strace -e write`).
+/// Quem le o arquivo no meio ve a linha pela metade, e a porta cortada em
+/// `:43` de `:4321` ainda se le -- como OUTRA porta. O apoio `comum` dos
+/// testes aprendeu a esperar o `\n`; os leitores de fora dele (os scripts
+/// da `bancada/`, quem monitora o log) nao. Montar a linha inteira e
+/// mandar de uma vez fecha pela origem (pedido 586).
+///
+/// Erro de escrita e ignorado: anuncio que nao saiu nao derruba o servidor
+/// que ja subiu.
+pub(crate) fn anunciar(linha: &str) {
+    let mut inteira = String::with_capacity(linha.len() + 1);
+    inteira.push_str(linha);
+    inteira.push('\n');
+    let _ = std::io::stderr().lock().write_all(inteira.as_bytes());
+}
+
 pub const VERSAO: &str = env!("CARGO_PKG_VERSION");
 
 /// O nome da tabela sem o esquema qualificador: `vendas.clientes` vira
@@ -2357,11 +2377,11 @@ impl Servidor {
         }
         let ouvinte = TcpListener::bind(endereco)
             .map_err(|e| PhxError::Esquema(format!("nao consegui escutar em {endereco}: {e}")))?;
-        eprintln!(
+        anunciar(&format!(
             "PhxSql {VERSAO} escutando em {endereco} | base {} | papel {}",
             self.config.base.display(),
             self.config.replicacao.papel.nome()
-        );
+        ));
         eprintln!("log de acessos: {}", self.config.log_acessos.display());
         if self.config.replicacao.papel != crate::config::Papel::Isolado {
             let portas = self.config.replicacao.portas();
@@ -2560,7 +2580,7 @@ impl Servidor {
             if let Ok(mut atual) = self.endereco_dos_dados.lock() {
                 *atual = Some(e);
             }
-            eprintln!("porta de dados escutando em {e}");
+            anunciar(&format!("porta de dados escutando em {e}"));
         }
         self.porta_no_ar.store(true, Ordering::SeqCst);
     }
@@ -8973,11 +8993,11 @@ impl Servidor {
                 *atual = Some(e);
             }
         }
-        eprintln!(
+        anunciar(&format!(
             "interface web em {}://{endereco} | sessao de {} min",
             if tls.is_some() { "https" } else { "http" },
             self.config.web.sessao_minutos
-        );
+        ));
         // O estado do tunel de cada destino, dito ALTO no arranque -- e nao so
         // no dia em que alguem abre a conexao. `cifra` sem pino protege da
         // escuta passiva e nada mais, e essa e a linha que a §8 manda dizer com
@@ -9193,11 +9213,11 @@ impl Servidor {
                 *atual = Some(e);
             }
         }
-        eprintln!(
+        anunciar(&format!(
             "webservice REST em {esquema}://{endereco}{} | especificacao em \
              {esquema}://{endereco}/openapi.json",
             crate::rest::PREFIXO
-        );
+        ));
         self.aceitar_http(ouvinte, "rest", tls, |s, fluxo, par| {
             s.atender_rest(fluxo, par)
         });
@@ -9245,10 +9265,10 @@ impl Servidor {
                 *atual = Some(e);
             }
         }
-        eprintln!(
+        anunciar(&format!(
             "explorador da API REST em {}://{endereco}",
             if tls.is_some() { "https" } else { "http" }
-        );
+        ));
         self.aceitar_http(ouvinte, "swagger", tls, |s, fluxo, par| {
             s.atender_swagger(fluxo, par)
         });
@@ -12838,7 +12858,12 @@ impl Servidor {
         let dados = self.travar_dados()?;
         let origem = dados.abrir_database(origem_db)?;
         let alvo = dados.abrir_database(destino_db)?;
-        let copiados = origem.copiar_tabela_para(tabela, &alvo, destino)?;
+        let copia = origem.copiar_tabela_para_adiando_o_fsync(tabela, &alvo, destino)?;
+        // Pedido 586: a copia precisa da trava (a origem nao muda no meio); o
+        // `fsync` dela nao, e sob a trava seria secao nova na catraca
+        // `alcancam-fsync-2`. Solta, sincroniza, e so entao responde.
+        drop(dados);
+        let copiados = copia.levar_ao_disco()?;
         Ok(Json::objeto(vec![
             ("origem_database", Json::texto_de(origem_db)),
             ("origem", Json::texto_de(tabela)),
@@ -19948,7 +19973,11 @@ impl Servidor {
         }
         let dados = self.travar_dados()?;
         let db = dados.abrir_database(database)?;
-        let copiados = db.duplicar_tabela(tabela, destino)?;
+        let copia = db.duplicar_tabela_adiando_o_fsync(tabela, destino)?;
+        // O mesmo do `copiar_tabela` (pedido 586): o `fsync` fora da trava,
+        // antes da resposta.
+        drop(dados);
+        let copiados = copia.levar_ao_disco()?;
         Ok(Json::objeto(vec![
             ("database", Json::texto_de(database)),
             ("origem", Json::texto_de(tabela)),

@@ -977,9 +977,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `carga-adiada-orfa-sem-reconstruir` | a carga adiada que sai sem o `bulkinsert(false)` (conexão caída, reserva vencida) deixa o índice suspenso até o próximo arranque | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**332 das 507 guardas do catálogo: 1 aposentada, 327 provadas, 4 redundantes** — 9057 s de mutação, medido em 2026-09-16 15:25.
+**332 das 511 guardas do catálogo: 1 aposentada, 327 provadas, 4 redundantes** — 9057 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 176 das 507 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 180 das 511 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 180 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
@@ -1157,6 +1157,10 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `replica-sem-prazo-total` — O laço da réplica, a sonda e o console só têm prazo por LEITURA: um par que goteja um byte antes de cada prazo prende a thread para sempre
 - `porta-lida-pela-metade` — O apoio dos testes lia a porta do phxsqld antes de a linha acabar: o eprintln! sai em várias escritas, e o parse do endereço pela metade dava AddrParseError (ou a porta errada)
 - `copia-da-troca-sem-fsync` — A cópia de reserva da troca no restaurar (o caminho sem rename) apagava a origem sem fsync da cópia: uma queda no meio deixava a única via de volta pela metade
+- `copia-de-tabela-sem-fsync` — `duplicar_tabela` e `copiar_tabela_para` respondiam «ok» com a cópia só no cache do núcleo: uma queda podia levar a tabela nova, ou deixá-la rasgada
+- `copia-de-tabela-sem-fsync-da-pasta` — A cópia de tabela sincronizava os arquivos e não a pasta: o nome novo podia sumir numa queda depois do «ok»
+- `colar-em-schema-novo-sem-fsync-do-database` — Colar num schema que ainda não existe criava a pasta dele sem `fsync` do database: a cópia sincronizada podia morar numa pasta que a queda leva
+- `porta-anunciada-em-pedacos` — A linha «porta de dados escutando em …» saía em várias escritas: quem lia o log no meio via a porta pela metade
 
 As guardas que esta corrida ainda cita, hoje aposentadas:
 

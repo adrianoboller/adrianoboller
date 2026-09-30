@@ -281,7 +281,8 @@ fn atestado(caminho: &Path, crc: u32) -> bool {
 ///
 /// O atestado e guardado pelo caminho, e `renomear_tabela`,
 /// `duplicar_tabela` e `copiar_tabela_para` poem o `.ndx` num caminho novo
-/// sem `fsync` nenhum. Sem isto, a tabela escrita desde o ultimo fecho da
+/// sem `fsync` sob a trava (as copias o pagam depois de solta-la, pedido
+/// 586). Sem isto, a tabela escrita desde o ultimo fecho da
 /// janela chegava ao destino com o 1 e sem atestado, e recusava TODA
 /// operacao dizendo «arquivo corrompido» -- sem queda nenhuma (medido pelo
 /// papel C: 9 recusas em 9, e 0 em 3 antes do 522).

@@ -1552,9 +1552,13 @@ mod tests {
         // proposito: perde-la so refaz uma varredura que nao renomeia nada).
         // Nenhum e familia do `Volumes`: o volume renomeado nao esta aberto
         // por ninguem, porque a migracao roda antes de o diretorio ser lido.
+        // Pedido 586: `catalogo.rs` 5 -> 4 -- as duas `copiar_do_banco` do
+        // `duplicar_tabela` e do `copiar_tabela_para` viraram UM laco
+        // (`copiar_os_arquivos`), que devolve os descritores para o
+        // `levar_ao_disco` sincronizar antes de publicar.
         const HOJE: &[(&str, usize)] = &[
             ("backup.rs", 2),
-            ("catalogo.rs", 5),
+            ("catalogo.rs", 4),
             ("marca.rs", 1),
             ("ndx.rs", 2),
             ("pag.rs", 2),
