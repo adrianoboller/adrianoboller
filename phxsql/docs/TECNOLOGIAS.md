@@ -34,20 +34,20 @@ foi estimado no lugar de uma medição que faltou.
 <!-- GERADO: bloco_linguagens_rust() -->
 | crate | arquivos .rs | codigo | teste | comentario | vazias | total |
 |---|---:|---:|---:|---:|---:|---:|
-| `phxsql-cli` | 1 | 819 | 104 | 119 | 78 | 1120 |
+| `phxsql-cli` | 1 | 828 | 104 | 123 | 78 | 1133 |
 | `phxsql-cmd` | 2 | 618 | 110 | 207 | 65 | 1000 |
-| `phxsql-core` | 35 | 12242 | 5374 | 4280 | 1659 | 23555 |
-| `phxsql-ffi` | 7 | 1465 | 1373 | 839 | 267 | 3944 |
+| `phxsql-core` | 39 | 14735 | 5759 | 4556 | 1918 | 26968 |
+| `phxsql-ffi` | 7 | 1509 | 1589 | 908 | 282 | 4288 |
 | `phxsql-odbc` | 7 | 3060 | 1258 | 1069 | 269 | 5656 |
-| `phxsql-server` | 62 | 54492 | 42496 | 31177 | 6531 | 134696 |
+| `phxsql-server` | 63 | 53227 | 43244 | 31675 | 6531 | 134677 |
 | `phxsql-sql` | 10 | 7329 | 4111 | 2839 | 841 | 15120 |
-| `phxsql-store` | 27 | 18353 | 4174 | 8136 | 1958 | 32621 |
+| `phxsql-store` | 28 | 20706 | 4225 | 8465 | 2095 | 35491 |
 | `phxzip` | 9 | 3074 | 501 | 804 | 284 | 4663 |
-| **total** | **160** | **101452** | **59501** | **49470** | **11952** | **222375** |
+| **total** | **166** | **105086** | **60901** | **50646** | **12363** | **228996** |
 
-Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **59501/101452 = 0.59×**.
+Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **60901/105086 = 0.58×**.
 
-Alem do `src/`: **88** programas de medicao em `examples/` (22014 linhas — bancada em Rust, nao produto nem teste) e **98** arquivos em `tests/` de integracao fora de `src/` (36611 linhas).
+Alem do `src/`: **91** programas de medicao em `examples/` (22283 linhas — bancada em Rust, nao produto nem teste) e **103** arquivos em `tests/` de integracao fora de `src/` (37597 linhas).
 <!-- /GERADO -->
 
 A proporção teste/código sai medida no bloco acima, não digitada aqui. O
@@ -109,9 +109,9 @@ mesmo motivo que o rodapé já errou uma vez.
 | o que | onde | arquivos | linhas |
 |---|---|---:|---:|
 | JavaScript (prova ponta a ponta) | `testes-web/` | 58 | 12991 |
-| Python (bancada de medicao) | `bancada/` | 139 | 66437 |
+| Python (bancada de medicao) | `bancada/` | 139 | 66797 |
 | Shell (empacotar, zelador, provas) | todo o repositorio | 24 | 3786 |
-| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 575 | 130198 |
+| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 579 | 130502 |
 | Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | 38 | 17899 |
 
 A linha «Markdown (documentacao tecnica)» acima **exclui o proprio `docs/TECNOLOGIAS.md`** da contagem — ele e a SAIDA deste extrator, e contar a saida como entrada faz cada gravacao mudar o numero que a gravacao seguinte vai ler (pedido 404: tres corridas seguidas sem edicao nenhuma publicaram 106.750 -> 106.752 -> 106.753 linhas, nunca um ponto fixo). Mesmo molde da §17 da setima pagina de status, que escreve «— (esta pagina)» em vez de medir a si mesma.
@@ -341,7 +341,7 @@ Conferidores em `crates/phxsql-server/src/`: `conferidor.rs`, `conferidor_botoes
 
 **27** catracas (`TETO*`) encontradas em `crates/phxsql-server/src/`.
 
-`bancada/guardas/catalogo.py` cataloga **453** defeitos repostos, contados de `len(GUARDAS)` depois de importar o modulo (nao por regex no texto -- entradas com `trocas` tem mais de um `{` cada, e uma contagem de chaves as conta em dobro ou mais). Linhas do arquivo: 16333. Refazer a prova: `python3 bancada/guardas/provar-guardas.py`.
+`bancada/guardas/catalogo.py` cataloga **466** defeitos repostos, contados de `len(GUARDAS)` depois de importar o modulo (nao por regex no texto -- entradas com `trocas` tem mais de um `{` cada, e uma contagem de chaves as conta em dobro ou mais). Linhas do arquivo: 16690. Refazer a prova: `python3 bancada/guardas/provar-guardas.py`.
 <!-- /GERADO -->
 
 - **Ponta a ponta, pelo navegador**: os arquivos `.mjs` de `testes-web/` —
@@ -546,7 +546,7 @@ defeito.
 ### 4.5 Testes, medidos agora
 
 <!-- GERADO: bloco_testes() -->
-`cargo test --workspace`: **3312** testes passaram, **0** falharam (medido em 2026-09-30 00:39:07, commit `0587c319`, do `CAPABILITIES.json`).
+`cargo test --workspace`: **3348** testes passaram, **0** falharam (medido em 2026-09-30 03:12:35, commit `c0f9fa30`, do `CAPABILITIES.json`).
 <!-- /GERADO -->
 
 Esta é a única linha deste documento que muda legitimamente a cada rodada, e
@@ -616,7 +616,7 @@ proposta de voltar sem medição nova.
 ### 5.1 Pedidos recusados, do próprio `PENDENCIAS.md`
 
 <!-- GERADO: bloco_recusados() -->
-`docs/PENDENCIAS.md` tem **570** pedidos numerados; **102** trazem a palavra RECUSADO no proprio texto:
+`docs/PENDENCIAS.md` tem **574** pedidos numerados; **107** trazem a palavra RECUSADO no proprio texto:
 
 | # | pedido |
 |---:|---|
@@ -658,6 +658,7 @@ proposta de voltar sem medição nova.
 | 253 | **Bancada «chutar a tomada»: SIGKILL dentro da transação aberta, no meio do BULKINSERT, do `inserir_lote`, do `reindexar` e da transação dentro da reserva — 0 desfechos inválidos em 408 quedas** |
 | 258 | **`Volumes::sincronizar` sincroniza todo descritor aberto sem pular os limpos: 8 `fsync` por inserir e 9 por excluir no regime por operação** |
 | 259 | **O excluir do padrão custa 24–28 µs mesmo sem fsync, contra 3,7–4,4 do inserir: 8 `write` e ~5 `openat` por exclusão** |
+| 262 | **Gatilho AFTER que grava pela mesma sessão dentro do COMMIT não chega a gravar** |
 | 265 | **Um gerador de telemetria e logs medidos — a seção NÃO NASCE na sétima página** |
 | 267 | **`panico_dentro_do_atender_devolve_a_vaga_da_porta_de_dados` exige que os TRÊS pânicos aconteçam, e sob carga o terceiro não chega** |
 | 278 | **SEC A1 (alta) — o pulso do cluster aceita identidade auto-declarada, e uma epoca forjada rebaixa o master para sempre, inclusive apos reiniciar** |
@@ -710,6 +711,7 @@ proposta de voltar sem medição nova.
 | 481 | **O CONFLITO do par vira negacao de servico em pasta com sticky bit, e a mensagem dele se chama «conflito de escrita»** |
 | 484 | **O quarto estado `⏸` («depois da versao»): visivel, e fora da conta do que falta** |
 | 497 | **O `acessos.log` grava o texto do erro sem redigir: um literal sem fechar vai inteiro para o log, com o dado pessoal dentro** |
+| 498 | **O `.log` no teto de volumes recusa a alteracao DEPOIS de gravar a linha: o valor novo fica no `.reg` sem diario** |
 | 504 | **O SIGABRT da H5 pode deixar um core dump com a chave derivada do cofre** |
 | 508 | **O separador de volume no NOME do arquivo colide com nome de tabela: trocar o `_` por um caractere que nome de tabela nao aceita, antes de haver dado em producao** |
 | 509 | **`fsync` que falhou e repetido responde Ok, e o fecho apaga a marca: o dado some depois da remontagem** |
@@ -722,6 +724,9 @@ proposta de voltar sem medição nova.
 | 559 | **O prazo da transacao varre tambem a que esta em COMMIT: solta as travas de um COMMIT em curso, e o `devolver_a_lista` a devolve ATIVA, desfazendo o ABORT_ONLY** |
 | 560 | **A diretiva `ALTER … SET <campo sigiloso> = <palavra sem aspas>` sai crua no perfil e no anel — e o irmão pelo JSON (`diretiva_gravar` «valor», `config_gravar` «campos» com `alertas.email.senha`) também** |
 | 570 | **Trocar o nome por um link para FIFO entre o `lstat` e o `open` para o backup com a trava de dados na mão — e o `fsync` da cópia reabre pelo NOME, fora da trava** |
+| 572 | **ORDEM DO DONO, 30/09/2026 -- TLS no transporte, TLS 1.3 ESCRITO AQUI** |
+| 573 | **O `fsync` recusado nao chega mais a saude do disco: o aviso por e-mail sumiu** |
+| 574 | **A cascata do `Table::atualizar` embutido não passa pela pré-conferência do 567: uma FK da filha para OUTRA mãe recusa um elo depois da mãe gravada** |
 <!-- /GERADO -->
 
 Os dois mais relevantes para este documento —

@@ -425,7 +425,7 @@ com o raciocínio de cada uma, está em `docs/CATRACAS.md`.
 | `TETO_TESTE_FORA_DO_BINARIO` (testes que existem, mas nao no binario que a entrada nomeia) | `bancada/guardas/trecho-vivo.py` | 0 | **0** | em cima, sem folga |
 | `TETO_TESTE_SEM_MODULO` (testes de alvo --lib nomeados sem o caminho do modulo) | `bancada/guardas/trecho-vivo.py` | 0 | **0** | em cima, sem folga |
 | `TETO_NAO_JULGADA_ESCONDIDA` (entradas que a ultima corrida nao julgou e que a pagina nao nomeia) | `bancada/guardas/trecho-vivo.py` | 0 | **0** | em cima, sem folga |
-| `PISO_DAS_ENTRADAS` (entradas vivas do catalogo mais as aposentadas escritas) | `bancada/guardas/trecho-vivo.py` | piso 448 | **448** | em cima, sem folga |
+| `PISO_DAS_ENTRADAS` (entradas vivas do catalogo mais as aposentadas escritas) | `bancada/guardas/trecho-vivo.py` | piso 467 | **467** | em cima, sem folga |
 
 *25 catraca(s) medida(s) por conferidor + 2 catraca(s) imposta(s) por teste sem `--numeros` = **27** catraca(s) ao todo. Refaz com `python3 docs/qa/medir.py`.*
 
@@ -443,14 +443,15 @@ uma constante que seja limite de funcionamento sai daqui escrevendo
 
 - `TETO` — `crates/phxsql-server/src/replica.rs:631`
 - `TETO_APERTO` — `bancada/seguranca/revisao-434-435/medir.py:13`
-- `TETO_DA_CITACAO` — `crates/phxsql-core/src/error.rs:449`
+- `TETO_CLIENT_HELLO` — `crates/phxsql-core/src/tls.rs:42`
+- `TETO_DA_CITACAO` — `crates/phxsql-core/src/error.rs:467`
 - `TETO_DA_SENHA` — `crates/phxsql-core/src/senha.rs:67`
 - `TETO_DE_COLUNAS` — `crates/phxsql-server/src/dblink/mod.rs:121`
 - `TETO_DO_APERTO` — `crates/phxsql-core/src/fio.rs:524`
 - `TETO_DO_REGISTRO` — `crates/phxsql-core/src/fio.rs:495`
 - `TETO_PADRAO` — `crates/phxzip/src/phz.rs:58`
 
-**Não consegui medir:** bancada/catracas/todas.py: nao rodou (1)
+**Não consegui medir:** bancada/catracas/todas.py: escreve `catraca:nome=` e nao respondeu ao `--numeros`
 <!-- catracas:fim -->
 
 > **Esta tabela NÃO se edita à mão — ela se gera.** Com
