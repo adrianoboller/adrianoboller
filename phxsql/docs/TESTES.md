@@ -977,9 +977,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `carga-adiada-orfa-sem-reconstruir` | a carga adiada que sai sem o `bulkinsert(false)` (conexão caída, reserva vencida) deixa o índice suspenso até o próximo arranque | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**332 das 510 guardas do catálogo: 1 aposentada, 327 provadas, 4 redundantes** — 9057 s de mutação, medido em 2026-09-16 15:25.
+**332 das 514 guardas do catálogo: 1 aposentada, 327 provadas, 4 redundantes** — 9057 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 179 das 510 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 179 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 183 das 514 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 183 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
@@ -1160,6 +1160,10 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `replica-limite-sem-recuo` — O estouro do prazo total da réplica caía em `Outra`: o par que goteja era retentado no intervalo fixo, sem recuo
 - `odbc-sem-prazo-total` — O driver ODBC só tinha prazo por LEITURA: um servidor que goteja um byte antes de cada prazo prendia a thread do aplicativo dentro do SQLExecDirect
 - `odbc-total-pela-vida-da-conexao` — O prazo total do driver ODBC contado pela vida da conexão, e não por pedido: o aplicativo que abre de manhã e consulta à tarde cairia no primeiro pedido depois do total
+- `copia-de-tabela-sem-fsync` — `duplicar_tabela` e `copiar_tabela_para` respondiam «ok» com a cópia só no cache do núcleo: uma queda podia levar a tabela nova, ou deixá-la rasgada
+- `copia-de-tabela-sem-fsync-da-pasta` — A cópia de tabela sincronizava os arquivos e não a pasta: o nome novo podia sumir numa queda depois do «ok»
+- `colar-em-schema-novo-sem-fsync-do-database` — Colar num schema que ainda não existe criava a pasta dele sem `fsync` do database: a cópia sincronizada podia morar numa pasta que a queda leva
+- `porta-anunciada-em-pedacos` — A linha «porta de dados escutando em …» saía em várias escritas: quem lia o log no meio via a porta pela metade
 
 As guardas que esta corrida ainda cita, hoje aposentadas:
 
