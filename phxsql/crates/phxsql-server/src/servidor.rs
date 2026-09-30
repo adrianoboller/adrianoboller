@@ -16098,6 +16098,7 @@ impl Servidor {
                                 motivo: String::new(),
                                 cascata_na_lista: false,
                                 elo_do_empilhar: false,
+                                elo_da_cascata: false,
                             };
                             // ACID-C: o upsert que virou `atualizar` cascateia
                             // como qualquer alteracao. Planeja com a mae aberta
@@ -16204,6 +16205,7 @@ impl Servidor {
                     // Insercao nao cascateia: cascata e do `ao_alterar`.
                     cascata_na_lista: false,
                     elo_do_empilhar: false,
+                    elo_da_cascata: false,
                 }
             }
             Acao::Atualizar => {
@@ -16278,6 +16280,7 @@ impl Servidor {
                     // mae vira `true` no `empilhar_atualizar_com_cascata`.
                     cascata_na_lista: false,
                     elo_do_empilhar: false,
+                    elo_da_cascata: false,
                 }
             }
             _ => {
@@ -16329,6 +16332,7 @@ impl Servidor {
                     motivo,
                     cascata_na_lista: false,
                     elo_do_empilhar: false,
+                    elo_da_cascata: false,
                 }
             }
         };
@@ -16588,6 +16592,7 @@ impl Servidor {
                 // O retrato da filha e o de AGORA; o COMMIT o refaz sobre a
                 // linha de entao, levando so a chave (pedido 537).
                 elo_do_empilhar: true,
+                elo_da_cascata: true,
             });
         }
         self.empilhar_grupo(sessao, grupo, database, tabela, chaves_novas, marca)
@@ -17620,6 +17625,7 @@ impl Servidor {
                     motivo: String::new(),
                     cascata_na_lista: true,
                     elo_do_empilhar: false,
+                    elo_da_cascata: true,
                 })
                 .collect();
             // O elo trava a linha dele ANTES de se conferir (pedido 516) -- e
@@ -18209,6 +18215,14 @@ impl Servidor {
         let mut depois_de_rodar = Vec::new();
         let ha_gatilhos = self.ha_gatilhos.load(Ordering::Relaxed);
         for e in escritas {
+            // O elo da cascata nao dispara o AFTER da filha (pedido 562,
+            // `INTEGRIDADE.md` §7.3). Os motores empatam no voto -- PG 4 +
+            // SQLite 1 = 5 disparam, MariaDB 3 + MySQL 2 = 5 nao --, entao vale
+            // a decisao escrita. E ela mora AQUI, e nao em quem chama: a
+            // alteracao solta e o COMMIT passam por esta mesma passada, e
+            // antes so a solta descartava, dando auditoria diferente para a
+            // mesma cascata dentro e fora da transacao.
+            let dispara = ha_gatilhos && !e.elo_da_cascata;
             let ped = pedido_da_tabela(database, &e.tabela);
             #[cfg(test)]
             if self.passada_quebra_na_escrita.load(Ordering::SeqCst) == *aplicadas + 1 {
@@ -18241,7 +18255,7 @@ impl Servidor {
             let mut t = abertas
                 .remove(&e.tabela)
                 .expect("a tabela acabou de ser inserida no mapa");
-            let velha = if ha_gatilhos && e.acao != Acao::Inserir {
+            let velha = if dispara && e.acao != Acao::Inserir {
                 t.ler(e.rowid)?.map(|l| linha_para_json(&l, t.esquema()))
             } else {
                 None
@@ -18323,7 +18337,7 @@ impl Servidor {
                     t.restaurar_com_maes(e.rowid, &e.motivo, &mut maes)?;
                 }
             }
-            if ha_gatilhos {
+            if dispara {
                 let nova = match e.acao {
                     Acao::ExcluirSuave | Acao::ExcluirDeVez => None,
                     _ => t.ler(e.rowid)?.map(|l| linha_para_json(&l, t.esquema())),
@@ -22531,8 +22545,10 @@ impl Servidor {
     ///
     /// O preco e um `fsync` de marca por troca de chave COM filha, que e
     /// operacao rara; a alteracao sem filha nao paga nada disto. Os gatilhos
-    /// AFTER das filhas continuam nao rodando, como na cascata de antes: so os
-    /// da mae, que o `op_atualizar` roda.
+    /// AFTER das filhas nao rodam, e quem decide e a passada, pelo
+    /// `elo_da_cascata` (pedido 562) -- o mesmo lugar que decide no COMMIT.
+    /// A lista que ela devolve aqui so traz o AFTER da mae, e ele e
+    /// descartado porque o `op_atualizar` o roda.
     #[allow(clippy::too_many_arguments)]
     fn atualizar_com_a_marca(
         &self,
@@ -22557,6 +22573,7 @@ impl Servidor {
             motivo: String::new(),
             cascata_na_lista: true,
             elo_do_empilhar: false,
+            elo_da_cascata: false,
         });
         for elo in plano {
             escritas.push(Escrita {
@@ -22569,6 +22586,7 @@ impl Servidor {
                 motivo: String::new(),
                 cascata_na_lista: true,
                 elo_do_empilhar: false,
+                elo_da_cascata: true,
             });
         }
         // A MESMA pre-conferencia do COMMIT, antes da marca (pedido 567): a
@@ -45688,6 +45706,7 @@ mod testes_transacoes {
                 motivo: String::new(),
                 cascata_na_lista: false,
                 elo_do_empilhar: false,
+                elo_da_cascata: false,
             },
             crate::transacao::Escrita {
                 database: "loja".into(),
@@ -45699,6 +45718,7 @@ mod testes_transacoes {
                 motivo: String::new(),
                 cascata_na_lista: false,
                 elo_do_empilhar: false,
+                elo_da_cascata: false,
             },
         ];
         crate::transacao::gravar_marca(&dir.join("loja"), 77, crate::agora_ms(), &escritas)
@@ -45800,6 +45820,116 @@ mod testes_transacoes {
         );
     }
 
+    /// Os eventos da auditoria, na ordem de digitacao.
+    fn eventos_da_auditoria(s: &Arc<Servidor>, ses: &Sessao) -> Vec<String> {
+        let r = pede(
+            s,
+            ses,
+            r#""op":"varrer","database":"loja","tabela":"auditoria","max":100"#,
+        )
+        .unwrap();
+        r.campo("linhas")
+            .and_then(Json::lista)
+            .map(|l| {
+                l.iter()
+                    .map(|x| x.texto_ou("evento", "").to_string())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// **Pedido 562: a mesma cascata do `ao_alterar` da o MESMO resultado de
+    /// gatilho dentro e fora da transacao.** A `INTEGRIDADE.md` §7.3 decidiu
+    /// que a cascata nao dispara gatilho; a alteracao solta ja descartava o
+    /// AFTER do elo, e o COMMIT o rodava -- a auditoria ficava com `filha` so
+    /// quando havia `BEGIN`. Os dois caminhos passam pela mesma passada
+    /// (`aplicar_conjunto`), e e nela que a decisao mora agora.
+    ///
+    /// Prova real: com o `!e.elo_da_cascata` tirado do `dispara` da passada, o
+    /// COMMIT dispara o `audita_filha` (o aviso do 262 o nomeia) e o teste cai.
+    #[test]
+    fn a_cascata_dispara_os_mesmos_gatilhos_dentro_e_fora_da_transacao() {
+        let dir = dir_temp("562-gatilho-do-elo");
+        let s = servidor(&dir);
+        let ses = sessao(7);
+        base_com_fk(&s, &ses);
+        pede(
+            &s,
+            &ses,
+            r#""op":"criar_tabela","database":"loja","tabela":"auditoria",
+               "colunas":[{"nome":"evento","tipo":"Str(60)"}]"#,
+        )
+        .unwrap();
+        for texto in [
+            "CREATE TRIGGER audita_mae AFTER UPDATE ON clientes FOR EACH ROW \
+             INSERT INTO auditoria (evento) VALUES ('mae')",
+            "CREATE TRIGGER audita_filha AFTER UPDATE ON pedidos FOR EACH ROW \
+             INSERT INTO auditoria (evento) VALUES (CONCAT('filha ', NEW.id))",
+        ] {
+            let corpo = Json::objeto(vec![
+                ("op", Json::texto_de("sql")),
+                ("database", Json::texto_de("loja")),
+                ("texto", Json::texto_de(texto)),
+            ])
+            .escrever();
+            // `pede` embrulha o corpo em `{"token":..., <corpo>}`: tiro as chaves.
+            pede(&s, &ses, &corpo[1..corpo.len() - 1]).unwrap();
+        }
+        pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"clientes","linha":{"id":1,"nome":"Ana"}"#,
+        )
+        .unwrap();
+        pede(
+            &s,
+            &ses,
+            r#""op":"inserir","database":"loja","tabela":"pedidos","linha":{"id":10,"cliente_id":1}"#,
+        )
+        .unwrap();
+
+        // Fora da transacao: a mae troca a chave, a filha acompanha pela
+        // cascata, e so o AFTER da mae dispara.
+        pede(
+            &s,
+            &ses,
+            r#""op":"atualizar","database":"loja","tabela":"clientes","rowid":1,
+               "linha":{"id":2,"nome":"Ana"}"#,
+        )
+        .unwrap();
+        assert_eq!(cliente_id_do_pedido(&s, &ses), 2);
+        let solta = eventos_da_auditoria(&s, &ses);
+        assert_eq!(solta, vec!["mae".to_string()], "alteracao solta");
+
+        // Dentro da transacao: a MESMA cascata, e o mesmo resultado.
+        pede(&s, &ses, r#""op":"begin""#).unwrap();
+        pede(
+            &s,
+            &ses,
+            r#""op":"atualizar","database":"loja","tabela":"clientes","rowid":1,
+               "linha":{"id":3,"nome":"Ana"}"#,
+        )
+        .unwrap();
+        let r = pede(&s, &ses, r#""op":"commit""#).unwrap();
+        assert_eq!(r.campo("gravadas").and_then(Json::inteiro), Some(2));
+        assert_eq!(cliente_id_do_pedido(&s, &ses), 3);
+        // O AFTER que roda no COMMIT nao grava noutra tabela (pedido 262) e
+        // vira aviso nomeando o gatilho -- e o aviso e o que diz QUAIS
+        // dispararam. O da mae dispara nos dois caminhos; o da filha, em
+        // nenhum.
+        let avisos = r
+            .campo("gatilhos_avisos")
+            .map(Json::escrever)
+            .unwrap_or_default();
+        assert!(avisos.contains("audita_mae"), "{}", r.escrever());
+        assert!(
+            !avisos.contains("audita_filha"),
+            "o COMMIT disparou o AFTER do elo da cascata, que a solta nao dispara: {}",
+            r.escrever()
+        );
+        assert_eq!(eventos_da_auditoria(&s, &ses), solta);
+    }
+
     /// **O `ROLLBACK` alcanca a cascata, porque ela e escrita da lista.** Antes
     /// do ACID-C a cascata so acontecia no `aplicar_conjunto`, entao o
     /// `ROLLBACK` -- que so joga fora a lista -- nao a alcancava. Agora ela E a
@@ -45881,6 +46011,7 @@ mod testes_transacoes {
                 motivo: String::new(),
                 cascata_na_lista: true,
                 elo_do_empilhar: false,
+                elo_da_cascata: false,
             },
             crate::transacao::Escrita {
                 database: "loja".into(),
@@ -45892,6 +46023,7 @@ mod testes_transacoes {
                 motivo: String::new(),
                 cascata_na_lista: true,
                 elo_do_empilhar: false,
+                elo_da_cascata: false,
             },
         ];
         crate::transacao::gravar_marca(&dir.join("loja"), 55, crate::agora_ms(), &escritas)
@@ -47144,6 +47276,7 @@ mod testes_transacoes {
                 motivo: String::new(),
                 cascata_na_lista: false,
                 elo_do_empilhar: false,
+                elo_da_cascata: false,
             })
             .collect();
         crate::transacao::gravar_marca(&dir.join("loja"), 42, crate::agora_ms(), &escritas)
@@ -47177,6 +47310,7 @@ mod testes_transacoes {
             motivo: String::new(),
             cascata_na_lista: false,
             elo_do_empilhar: false,
+            elo_da_cascata: false,
         }];
         let caminho =
             crate::transacao::gravar_marca(&dir.join("loja"), 7, crate::agora_ms(), &escritas)
@@ -47329,6 +47463,7 @@ mod testes_transacoes {
             motivo: String::new(),
             cascata_na_lista: false,
             elo_do_empilhar: false,
+            elo_da_cascata: false,
         }]
     }
 

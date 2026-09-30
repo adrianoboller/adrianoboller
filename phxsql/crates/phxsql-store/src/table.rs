@@ -3334,6 +3334,7 @@ impl Table {
             motivo: String::new(),
             cascata_na_lista: true,
             elo_do_empilhar: false,
+            elo_da_cascata: false,
         });
         for elo in lista {
             escritas.push(Escrita {
@@ -3346,6 +3347,7 @@ impl Table {
                 motivo: String::new(),
                 cascata_na_lista: true,
                 elo_do_empilhar: false,
+                elo_da_cascata: true,
             });
         }
         let id = crate::marca::proximo_id_no_diretorio(&self.diretorio);

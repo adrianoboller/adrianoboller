@@ -17213,4 +17213,31 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "a_exclusao_cujo_motivo_falha_ainda_anota_no_diario",
         ],
     },
+    {
+        "id": "cascata-dispara-after-do-elo-so-no-commit",
+        "titulo": "a mesma cascata do `ao_alterar` dispara o AFTER da filha no COMMIT e não na alteração solta",
+        "porque": (
+            "pedido 562: a `INTEGRIDADE.md` §7.3 decidiu que a cascata nao "
+            "dispara gatilho (voto empatado 5x5: PG 4 + SQLite 1 disparam, "
+            "MariaDB 3 + MySQL 2 nao). A solta descartava o AFTER do elo em "
+            "quem chamava; o COMMIT, pela mesma passada, o rodava -- a mesma "
+            "cascata dava auditoria diferente com e sem BEGIN. A decisao mora "
+            "na passada (`aplicar_conjunto`), um lugar so para os dois."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """            let dispara = ha_gatilhos && !e.elo_da_cascata;
+""",
+        "troca": """            // DEFEITO REPOSTO (562): a passada junta o AFTER do elo.
+            let dispara = ha_gatilhos;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_transacoes::a_cascata_dispara_os_mesmos_gatilhos_dentro_e_fora_da_transacao",
+        ],
+        "seguem": [
+            "servidor::testes_transacoes::acidc_a_cascata_entra_no_conjunto_de_escrita_da_transacao",
+            "servidor::testes_gatilhos::after_insert_audita_noutra_tabela",
+        ],
+    },
 ]

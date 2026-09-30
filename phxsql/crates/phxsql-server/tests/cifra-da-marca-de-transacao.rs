@@ -71,6 +71,7 @@ fn escritas() -> Vec<Escrita> {
             motivo: String::new(),
             cascata_na_lista: true,
             elo_do_empilhar: false,
+            elo_da_cascata: false,
         },
         Escrita {
             database: "loja".into(),
@@ -82,6 +83,7 @@ fn escritas() -> Vec<Escrita> {
             motivo: SEGREDO_MOTIVO.into(),
             cascata_na_lista: false,
             elo_do_empilhar: false,
+            elo_da_cascata: false,
         },
     ]
 }

@@ -174,6 +174,7 @@ fn marca(db: &Database, id: u64, rowid: u64, antiga: &[Value]) {
             motivo: String::new(),
             cascata_na_lista: false,
             elo_do_empilhar: false,
+            elo_da_cascata: false,
         }],
     )
     .unwrap();
@@ -388,6 +389,7 @@ fn a_marca_da_versao_anterior_continua_sendo_completada() {
             motivo: String::new(),
             cascata_na_lista: false,
             elo_do_empilhar: false,
+            elo_da_cascata: false,
         }],
     )
     .unwrap();

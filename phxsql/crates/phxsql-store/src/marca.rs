@@ -182,6 +182,15 @@ pub struct Escrita {
     /// formato nao muda. Falso em todo o resto, inclusive no elo que o COMMIT
     /// acrescenta, que ja nasce sobre a linha atual.
     pub elo_do_empilhar: bool,
+    /// Pedido 562: esta escrita e um ELO que a cascata do `ao_alterar` pos na
+    /// lista (a filha, a neta...) -- e nao a mae nem uma escrita do cliente.
+    /// A passada nao junta o AFTER dela: a cascata nao dispara gatilho
+    /// (`docs/INTEGRIDADE.md` §7.3), e a decisao mora num lugar so para a
+    /// alteracao solta e o COMMIT darem o mesmo resultado.
+    ///
+    /// So em memoria, como o `elo_do_empilhar`: a recuperacao nao roda
+    /// gatilho nenhum, entao a marca nao precisa saber -- o formato nao muda.
+    pub elo_da_cascata: bool,
 }
 
 // ------------------------------------------------------- a linha em bytes
@@ -1551,6 +1560,7 @@ mod testes {
                 motivo: String::new(),
                 cascata_na_lista: false,
                 elo_do_empilhar: false,
+                elo_da_cascata: false,
             },
             Escrita {
                 database: "loja".into(),
@@ -1562,6 +1572,7 @@ mod testes {
                 motivo: "pedido do titular".into(),
                 cascata_na_lista: false,
                 elo_do_empilhar: false,
+                elo_da_cascata: false,
             },
         ];
         let caminho = gravar_marca(&d, 99, 1_700_000_000_000, &ops).unwrap();
@@ -1594,6 +1605,7 @@ mod testes {
             motivo: String::new(),
             cascata_na_lista: false,
             elo_do_empilhar: false,
+            elo_da_cascata: false,
         }];
         let caminho = gravar_marca(&d, 1, 0, &ops).unwrap();
         let mut b = std::fs::read(&caminho).unwrap();
@@ -1620,6 +1632,7 @@ mod testes {
             motivo: String::new(),
             cascata_na_lista: false,
             elo_do_empilhar: false,
+            elo_da_cascata: false,
         }];
         let caminho = gravar_marca(&d, 2, 0, &ops).unwrap();
         let b = std::fs::read(&caminho).unwrap();
@@ -1638,6 +1651,7 @@ mod testes {
             motivo: String::new(),
             cascata_na_lista: false,
             elo_do_empilhar: false,
+            elo_da_cascata: false,
         }]
     }
 
