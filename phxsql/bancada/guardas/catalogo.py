@@ -14811,6 +14811,23 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "seguem": [],
     },
     {
+        "id": "sal-falso-pelo-token",
+        "titulo": "o sal falso do `desafio` sai do token que todo cliente tem, e quem o tem sabe quem nao existe",
+        "porque": (
+            "pedido 528, frente do 520 e SEC: `HMAC(token, login)`, 6 de 6 "
+            "logins classificados, um pedido cada."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        let falso = phxsql_core::hash::hmac_sha256(&self.segredo_do_desafio, login.as_bytes());
+""",
+        "troca": """        let falso = phxsql_core::hash::hmac_sha256(self.config.token.as_bytes(), login.as_bytes());
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": ["servidor::testes_do_sal_falso::a_sonda_do_token_nao_acerta_o_sal_falso_e_ele_e_estavel"],
+        "seguem": [],
+    },
+    {
         "id": "scram-sem-teto-de-iteracoes",
         "titulo": "o `i=` do SCRAM que o par manda nao tem teto, e cada iteracao e CPU deste processo",
         "porque": (

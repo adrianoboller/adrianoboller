@@ -2173,29 +2173,15 @@ impl CifraFio {
         }
 
         let caminho = self.caminho_da_chave(config_em);
-        if caminho.exists() {
-            let texto = std::fs::read_to_string(&caminho).map_err(|e| {
-                PhxError::Esquema(format!("nao consegui ler {}: {e}", caminho.display()))
-            })?;
-            return Ok((
-                chave_de_hex(&texto, &caminho.display().to_string())?,
-                avisos,
-            ));
-        }
-
-        let nova = phxsql_core::x25519::gerar_privada();
-        if let Err(e) = gravar_chave(&caminho, &nova) {
-            // Nao derruba o servidor: ele estava funcionando antes disto
-            // existir. Mas AVISA alto, porque uma estatica que muda a cada
-            // arranque quebra o pino de todo cliente -- e quebra em silencio.
-            avisos.push(format!(
-                "cifra_fio: nao consegui gravar {} ({e}). A chave do fio vale \
-                 so enquanto este processo viver, entao o pino de todo cliente \
-                 quebra no proximo arranque",
-                caminho.display()
-            ));
-        }
-        Ok((nova, avisos))
+        let (chave, _nasceu) = segredo_em_arquivo(
+            &caminho,
+            phxsql_core::x25519::gerar_privada,
+            "a chave do fio vale so enquanto este processo viver, entao o pino \
+             de todo cliente quebra no proximo arranque",
+            "cifra_fio",
+            &mut avisos,
+        )?;
+        Ok((chave, avisos))
     }
 
     pub fn para_json(&self) -> Json {
@@ -2698,6 +2684,145 @@ fn abrir_privado(caminho: &Path) -> std::io::Result<std::fs::File> {
         opcoes.mode(0o600);
     }
     opcoes.open(caminho)
+}
+
+/// **O motor dos segredos de 32 bytes que moram num arquivo proprio** -- a
+/// chave estatica do fio e o segredo do desafio (pedido 528). Le o arquivo
+/// se ele existe; senao sorteia por `gerar`, grava 0600 desde o primeiro
+/// byte e devolve `true` em `nasceu`. Nao gravar nao derruba o servidor, que
+/// funcionava antes disto existir, mas AVISA alto com `consequencia`: um
+/// segredo que muda a cada arranque quebra quem dependia dele, e quebra em
+/// silencio. Um motor so -- as duas copias deste laco eram a que diverge.
+pub(crate) fn segredo_em_arquivo(
+    caminho: &Path,
+    gerar: impl FnOnce() -> [u8; 32],
+    consequencia: &str,
+    quem: &str,
+    avisos: &mut Vec<String>,
+) -> Result<([u8; 32], bool)> {
+    if caminho.exists() {
+        let texto = std::fs::read_to_string(caminho).map_err(|e| {
+            PhxError::Esquema(format!("nao consegui ler {}: {e}", caminho.display()))
+        })?;
+        return Ok((chave_de_hex(&texto, &caminho.display().to_string())?, false));
+    }
+    let novo = gerar();
+    if let Err(e) = gravar_chave(caminho, &novo) {
+        avisos.push(format!(
+            "{quem}: nao consegui gravar {} ({e}). {consequencia}",
+            caminho.display()
+        ));
+    }
+    Ok((novo, true))
+}
+
+/// **O segredo do sal falso do `desafio` -- pedido 528.**
+///
+/// O sal de quem NAO existe era `HMAC(token, login)`, e o token e a chave da
+/// porta que todo cliente tem: quem o tinha recalculava e comparava, e
+/// classificava 6 de 6 logins, um pedido cada. A chave do HMAC passa a ser um
+/// segredo que SO o servidor tem (PG 4 + MySQL 2 contra MariaDB 3: o falso
+/// sai de segredo do servidor; PG 4 contra MySQL 2: persistente).
+///
+/// A ordem e a da chave do fio: variavel de ambiente, `config.json`, arquivo
+/// proprio ao lado dele (criado 0600 na primeira subida). **Em cluster**, os
+/// nos que servem o mesmo cadastro tem de dar o MESMO sal falso -- senao
+/// perguntar o mesmo login a dois nos separa quem existe (o real coincide, o
+/// falso nao). Por isso o segredo pode viajar COM o cadastro, no
+/// `config.json` ou na variavel, igual em todos os nos; o arquivo local serve
+/// ao no sozinho, e o servidor em cluster que o usa avisa no arranque.
+#[derive(Clone)]
+pub struct Desafio {
+    /// PRIVADO: so o [`Desafio::segredo`] le, e o `Debug` nao o mostra.
+    segredo: Segredo,
+    pub segredo_env: String,
+    pub arquivo: PathBuf,
+}
+
+impl std::fmt::Debug for Desafio {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Desafio")
+            .field("segredo_env", &self.segredo_env)
+            .field("arquivo", &self.arquivo)
+            .finish_non_exhaustive()
+    }
+}
+
+impl Default for Desafio {
+    fn default() -> Self {
+        Desafio {
+            segredo: Segredo::default(),
+            segredo_env: String::new(),
+            arquivo: PathBuf::from("segredo-do-desafio.hex"),
+        }
+    }
+}
+
+impl Desafio {
+    fn de_json(j: &Json) -> Desafio {
+        let padrao = Desafio::default();
+        let Some(d) = j.campo("desafio") else {
+            return padrao;
+        };
+        let (segredo, segredo_env) = Segredo::ler(d, "segredo", "desafio");
+        Desafio {
+            segredo,
+            segredo_env,
+            arquivo: {
+                let a = d.texto_ou("arquivo", "").trim().to_string();
+                if a.is_empty() {
+                    padrao.arquivo
+                } else {
+                    PathBuf::from(a)
+                }
+            },
+        }
+    }
+
+    /// O segredo, de onde ele vier, e se ele veio do ARQUIVO LOCAL -- que e
+    /// o que o arranque em cluster precisa saber para avisar.
+    pub fn segredo(&self, config_em: Option<&Path>) -> Result<([u8; 32], bool, Vec<String>)> {
+        let mut avisos = Vec::new();
+        let declarado = self.segredo.valor()?;
+        if !self.segredo_env.is_empty() || !declarado.trim().is_empty() {
+            let de_onde = if self.segredo_env.is_empty() {
+                "desafio.segredo".to_string()
+            } else {
+                format!("a variavel {}", self.segredo_env)
+            };
+            let k = bytes32_de_hex(
+                declarado,
+                &format!("o segredo do desafio em {de_onde}"),
+                "e ele tem 32",
+            )
+            .map_err(PhxError::Esquema)?;
+            return Ok((k, false, avisos));
+        }
+        // Config montado sem `ler` (testes, uso programatico): nao ha «ao lado
+        // do config.json», e o relativo cairia no diretorio de trabalho --
+        // num `cargo test`, dentro do crate. Ai o segredo vale so na memoria,
+        // que e o que esse uso precisa; o servidor de verdade sobe sempre com
+        // o caminho do config.
+        if config_em.is_none() && self.arquivo.is_relative() {
+            let mut k = [0u8; 32];
+            phxsql_core::cifra::sortear(&mut k);
+            return Ok((k, false, avisos));
+        }
+        let caminho = resolver_caminho_do_config(&self.arquivo, config_em);
+        let (k, _) = segredo_em_arquivo(
+            &caminho,
+            || {
+                let mut k = [0u8; 32];
+                phxsql_core::cifra::sortear(&mut k);
+                k
+            },
+            "o sal falso do desafio muda a cada arranque, e perguntar o mesmo login \
+             antes e depois separa quem existe",
+            "desafio",
+            &mut avisos,
+        )?;
+        Ok((k, true, avisos))
+    }
 }
 
 /// Grava a estatica com permissao 0600 no Unix -- ver [`abrir_privado`].
@@ -4195,6 +4320,8 @@ pub struct Config {
     pub cifra: Cifra,
     /// A cifra do FIO -- o aperto de mao da porta de dados. Ver [`CifraFio`].
     pub cifra_fio: CifraFio,
+    /// O segredo do sal falso do `desafio` -- ver [`Desafio`].
+    pub desafio: Desafio,
     /// A trilha de dado pessoal. Ver [`Lgpd`].
     pub lgpd: Lgpd,
     /// As cores e os limiares do painel de bolhas. Ver [`Painel`].
@@ -4267,6 +4394,7 @@ impl std::fmt::Debug for Config {
             jobs,
             cifra,
             cifra_fio,
+            desafio,
             lgpd,
             telemetria,
             profiler,
@@ -4304,6 +4432,7 @@ impl std::fmt::Debug for Config {
             .field("jobs", jobs)
             .field("cifra", cifra)
             .field("cifra_fio", cifra_fio)
+            .field("desafio", desafio)
             .field("lgpd", lgpd)
             .field("telemetria", telemetria)
             .field("profiler", profiler)
@@ -4603,6 +4732,7 @@ impl Default for Config {
             jobs: PathBuf::from("jobs.json"),
             cifra: Cifra::default(),
             cifra_fio: CifraFio::default(),
+            desafio: Desafio::default(),
             lgpd: Lgpd::default(),
             telemetria: Painel::default(),
             profiler: PerfilEmDisco::default(),
@@ -4820,6 +4950,7 @@ impl Config {
             jobs: PathBuf::from(j.texto_ou("jobs", "jobs.json")),
             cifra: Cifra::de_json(j),
             cifra_fio: CifraFio::de_json(j),
+            desafio: Desafio::de_json(j),
             lgpd: Lgpd::de_json(j)?,
             telemetria: Painel::de_json(j, &mut avisos),
             profiler: PerfilEmDisco::de_json(j),

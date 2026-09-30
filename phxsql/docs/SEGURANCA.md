@@ -5674,7 +5674,7 @@ o driver ODBC e o `phxsql-cmd` são clientes. Os caminhos que sobram:
 | prova do desafio-resposta, não existe e inativo | 24–25 µs a menos que quem existe | ±1 µs | contador de provas |
 | o próprio `desafio`, não existe — cadastro de 3 usuários | +9 µs | 0,0 µs | só a sonda (sem guarda) |
 | `desafio` e prova com **cadastro grande** | a mesma varredura (com 20.000 usuários, quem não existe custava **+363 µs** sobre o primeiro da lista — debug, medido pelo SEC) | **FECHADO em 24/09/2026 (pedido 529, §26.7)** — em release, a diferença caiu de ~125,7 µs para −357 ns (ruído), com 20.000 usuários | contador de comparações (`comparacoes_de_login_nesta_thread`); o `por_login` varre o cadastro inteiro sempre, sem sair cedo |
-| o **conteúdo** do `desafio`: o sal falso | `HMAC(token, login)` — quem tem o token o recalcula | **igual: NÃO consertado** (§26.6) | sonda: 6 de 6 logins, um pedido cada |
+| o **conteúdo** do `desafio`: o sal falso | `HMAC(token, login)` — quem tem o token o recalculava | **consertado no pedido 528**: a chave é o `desafio.segredo` do servidor (§26.6) | sonda: 6 de 6 logins antes; a sonda erra depois |
 | amarração ao canal (`amarrar_canal`) | igual ao ramo da prova | igual | a recusa por política vem antes de olhar o login |
 | troca de senha (`usuario_alterar`, `ALTER USER`) | «não há usuário com o login» nomeado | igual | só administrador chama; não é oráculo |
 
@@ -5790,6 +5790,15 @@ teto» — e o teste ASCII de antes seguiu verde, que é o achado.
   (`scram_mock_salt`, com o `mock_auth_nonce` gravado no `pg_control` no
   `initdb`). Aqui isso pede um segredo persistente novo — arquivo ou campo de
   configuração —, que é decisão de formato e não do 520: vai como pedido novo.
+  **FECHADO em 30/09/2026 (pedido 528).** A chave do HMAC é `desafio.segredo`:
+  variável de ambiente, `config.json` ou, na falta dos dois, um arquivo 0600 ao
+  lado do config, criado na primeira subida pelo mesmo motor da chave estática do
+  fio (`segredo_em_arquivo`). A sonda que recalcula `HMAC(token, login)` passou a
+  errar, e o sal falso continua estável entre reinícios
+  (`a_sonda_do_token_nao_acerta_o_sal_falso_e_ele_e_estavel`). **Em cluster**, os
+  nós que servem o mesmo cadastro precisam do mesmo segredo: ele viaja com o
+  cadastro (no `config.json` ou na variável, igual em todos). O nó em cluster que
+  usa o arquivo local avisa no arranque.
 - **A varredura linear do `por_login` — achada pelo SEC, FECHADA em 24/09/2026
   (pedido 529).** Ver §26.7.
 - **O irmão do `desafio` não tem guarda.** Só a sonda pelo soquete o mede; um

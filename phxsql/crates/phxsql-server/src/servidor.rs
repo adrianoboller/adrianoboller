@@ -1100,6 +1100,10 @@ pub struct Servidor {
     /// acima pergunta «quanto falta»; esta pergunta «o disco ainda aceita
     /// escrita?» -- e a segunda nao espera relogio nenhum para avisar.
     saude: Arc<crate::saude_do_disco::SaudeDoDisco>,
+    /// A chave do HMAC do sal falso do `desafio` (pedido 528): segredo que so
+    /// o servidor tem, e nao o token que todo cliente tem. Nunca sai em
+    /// resposta, `Debug`, profiler nem `config`.
+    segredo_do_desafio: [u8; 32],
     /// O que esta chegando pela porta, quando alguem liga para olhar.
     /// Tabelas reservadas para carga (`BULKINSERT`).
     cargas: Mutex<crate::carga::Cargas>,
@@ -1700,6 +1704,22 @@ impl Servidor {
         let permissoes_de_dados = Semaforo::novo(config.conexoes_max);
         // A saude do disco nasce com o caminho do `base`, que e o disco que
         // interessa: e nele que todo `.reg` e todo `.ndx` moram.
+        // O segredo do sal falso, uma vez por subida. Em cluster, o que veio do
+        // ARQUIVO LOCAL da um sal falso diferente em cada no, e perguntar o
+        // mesmo login a dois nos separa quem existe: isso se diz alto.
+        let (segredo_do_desafio, do_arquivo_local, avisos) =
+            config.desafio.segredo(config.caminho.as_deref())?;
+        for a in avisos {
+            eprintln!("AVISO: {a}");
+        }
+        if do_arquivo_local && config.cluster.is_some() {
+            eprintln!(
+                "AVISO: desafio: este no esta em cluster e o segredo do sal falso veio \
+                 do arquivo local -- cada no tera o seu, e o mesmo login perguntado a \
+                 dois nos separa quem existe. Declare `desafio.segredo` (ou \
+                 `desafio.segredo_env`) IGUAL em todos os nos"
+            );
+        }
         let saude = Arc::new(crate::saude_do_disco::SaudeDoDisco::nova(
             config.alertas.disco.clone(),
             &config.base,
@@ -1761,6 +1781,7 @@ impl Servidor {
             endereco_swagger: Mutex::new(None),
             avisados: Mutex::new(HashMap::new()),
             saude,
+            segredo_do_desafio,
             permissoes_de_dados,
             permissoes_http,
             http_cheia_ate_ms: AtomicU64::new(0),
@@ -11635,13 +11656,12 @@ impl Servidor {
         // `ITERACOES_PADRAO`.
         let cadastro = self.cadastro();
         let achado = cadastro.por_login(&login);
-        // Sal falso, estavel por login. ATENCAO: ele NAO e indistinguivel de
-        // um real para quem tem o token -- que e quem chega aqui --, porque a
-        // chave do HMAC e o proprio token: quem o tem recalcula e compara, e
-        // sabe quem nao existe num pedido so (medido na frente do 520: 6 de
-        // 6, `docs/SEGURANCA.md` §26.6). Fechar isso pede um segredo do
-        // servidor que o token nao abra; fica para pedido proprio.
-        let falso = phxsql_core::hash::hmac_sha256(self.config.token.as_bytes(), login.as_bytes());
+        // Sal falso, estavel por login. A chave do HMAC era o TOKEN, que todo
+        // cliente tem: quem o tinha recalculava e comparava, e sabia quem nao
+        // existe num pedido so (6 de 6 na frente do 520, `SEGURANCA.md`
+        // §26.6). Desde o pedido 528 a chave e o segredo do servidor, que o
+        // token nao abre -- ver `config::Desafio`.
+        let falso = phxsql_core::hash::hmac_sha256(&self.segredo_do_desafio, login.as_bytes());
         let guardado = achado.map_or(phxsql_core::senha::hash_de_fachada(), |u| {
             u.senha_hash.as_str()
         });
@@ -57239,6 +57259,76 @@ mod testes_das_threads {
         let porta = porta_web(&s);
         let r = get_saude(porta);
         assert!(r.starts_with("HTTP/1.1 200 "), "{r}");
+    }
+}
+
+#[cfg(test)]
+mod testes_do_sal_falso {
+    use super::*;
+    use crate::apoio_teste::DirTemp;
+
+    fn config_com_caminho(dir: &std::path::Path) -> Config {
+        let mut c = Config {
+            base: dir.join("dados"),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            jobs: dir.join("jobs.json"),
+            token: "token-que-todo-cliente-tem".into(),
+            ..Config::default()
+        };
+        c.caminho = Some(dir.join("config.json"));
+        c
+    }
+
+    fn sal_de(s: &Servidor, login: &str) -> String {
+        let mut ses = Sessao::default();
+        let r = s
+            .op_desafio(
+                &Json::analisar(&format!(r#"{{"usuario":"{login}"}}"#)).unwrap(),
+                &mut ses,
+            )
+            .unwrap();
+        r.texto_ou("sal", "").to_string()
+    }
+
+    /// **Pedido 528:** o sal de quem NAO existe era `HMAC(token, login)`, e
+    /// quem tem o token -- todo cliente -- o recalculava e sabia quem nao
+    /// existe num pedido so. Agora a chave e um segredo do servidor, gravado
+    /// 0600 ao lado do config na primeira subida: a sonda erra, e o sal falso
+    /// continua ESTAVEL entre reinicios (senao perguntar antes e depois
+    /// separaria quem existe).
+    ///
+    /// # Prova real
+    ///
+    /// Com o `hmac_sha256` do `op_desafio` voltando a usar o token, a sonda
+    /// acerta -- o vermelho medido.
+    #[test]
+    fn a_sonda_do_token_nao_acerta_o_sal_falso_e_ele_e_estavel() {
+        let dir = DirTemp::novo("528-sal-falso");
+        let c = config_com_caminho(&dir);
+        let s = Servidor::novo(c.clone()).unwrap();
+        let sal = sal_de(&s, "fantasma");
+        let sonda = phxsql_core::hash::para_hex(
+            &phxsql_core::hash::hmac_sha256(c.token.as_bytes(), b"fantasma")[..16],
+        );
+        assert_eq!(sal.len(), 32, "{sal}");
+        assert_ne!(sal, sonda, "quem tem o token recalculou o sal falso");
+        drop(s);
+
+        let arquivo = dir.join("segredo-do-desafio.hex");
+        assert!(
+            arquivo.exists(),
+            "o segredo nao foi gravado ao lado do config"
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            let modo = std::fs::metadata(&arquivo).unwrap().permissions().mode() & 0o777;
+            assert_eq!(modo, 0o600, "o segredo nasceu {modo:o}");
+        }
+        let s = Servidor::novo(c).unwrap();
+        assert_eq!(sal_de(&s, "fantasma"), sal, "o sal falso mudou no reinicio");
     }
 }
 
