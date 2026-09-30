@@ -224,6 +224,13 @@ pub fn contexto_explicito(n: u8, itens: &[Vec<u8>]) -> Vec<u8> {
     tlv(tag_contexto(n), &concatenar(itens))
 }
 
+/// Tag de contexto `[n]` IMPLICITA e primitiva (`0x80 | n`): o valor entra
+/// sem a tag dele. E como o `subjectAltName` escreve `dNSName [2]` e
+/// `iPAddress [7]` (RFC 5280 §4.2.1.6).
+pub fn contexto_implicito(n: u8, conteudo: &[u8]) -> Vec<u8> {
+    tlv(0x80 | n, conteudo)
+}
+
 // ============================================================== LEITURA ====
 
 /// Um elemento lido: a tag e a fatia de conteudo, sem copia.

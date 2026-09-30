@@ -73,6 +73,11 @@ pub const ISENTOS: &[(&str, usize, &str)] = &[
         "o guarda local do teste de interoperabilidade com o OpenSSL -- o core nao tem apoio_teste, e ele apaga no Drop",
     ),
     (
+        "crates/phxsql-core/src/x509.rs",
+        1,
+        "o guarda local dos testes do certificado TLS contra o OpenSSL -- o core nao tem apoio_teste, e ele apaga no Drop",
+    ),
+    (
         "crates/phxsql-store/src/apoio_teste.rs",
         1,
         "e o proprio guarda: e ele quem chama o temp_dir e apaga no Drop",
