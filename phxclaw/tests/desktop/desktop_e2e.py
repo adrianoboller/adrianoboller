@@ -98,6 +98,9 @@ def main() -> int:
             if visivel: break
             time.sleep(0.25)
         check("splash conclui e revela o Command Center", bool(visivel))
+        # Pausa opcional para gravacao de demonstracao (padrao 0: o teste nao muda).
+        pausa = float(os.environ.get("PHXCLAW_E2E_PAUSA", "0"))
+        time.sleep(pausa)
         ponte = texto("nativeBridgeStatus", diferente_de="WEB PREVIEW")
         check("ponte IPC nativa (nao preview web)", ponte == "TAURI CONNECTED", ponte)
         sess = texto("hostSession")
@@ -131,6 +134,7 @@ def main() -> int:
               isinstance(verify, dict) and verify.get("valid") is True, json.dumps(verify)[:160])
 
         time.sleep(1.0)  # transicao CSS da splash, antes da captura
+        time.sleep(pausa)
         png = wd("GET", f"{s}/screenshot")
         (OUT / "desktop_e2e.png").write_bytes(base64.b64decode(png))
         check("captura da janela gravada", (OUT / "desktop_e2e.png").stat().st_size > 10_000,

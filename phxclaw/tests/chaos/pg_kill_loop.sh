@@ -12,7 +12,7 @@ fim=$((SECONDS + DUR)); mortes=0
 while [ $SECONDS -lt $fim ]; do
   sleep "$(awk 'BEGIN{srand(); printf "%.1f", 2 + rand()*3}')"
   pid=$(head -1 "$PGDATA/postmaster.pid" 2>/dev/null) || continue
-  kill -9 "$pid" 2>/dev/null && mortes=$((mortes + 1))
+  kill -9 "$pid" 2>/dev/null && mortes=$((mortes + 1)) && echo "SIGKILL #$mortes no postmaster (pid $pid) -- religando"
   # Filhos orfaos seguram a memoria compartilhada e o lock do socket: so sobe de novo
   # quando nenhum processo do cluster sobrou (um init de verdade faz o mesmo).
   for _ in $(seq 50); do
