@@ -441,6 +441,112 @@ fn panico_no_meio_do_reconstruir_fts_nao_grava_o_indice_pela_metade() {
     }
 }
 
+// ============================================ o `.fts` na escrita comum (472)
+
+fn esquema_notas() -> Schema {
+    Schema::new(
+        "notas",
+        vec![
+            Column::new("id", ColumnType::Int8).obrigatoria(),
+            Column::new("texto", ColumnType::Str(40)).obrigatoria(),
+        ],
+        vec![IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico()],
+    )
+    .unwrap()
+    .com_indices_de_texto(vec![phxsql_core::schema::IndiceDeTexto::new("porTexto", 1)])
+    .unwrap()
+}
+
+fn nota(id: i64, palavra: &str) -> Vec<Value> {
+    vec![Value::Int(id), Value::Str(format!("comum {palavra}"))]
+}
+
+/// `notas` com `w1x`..`wNx`, sincronizada e fechada.
+fn semear_notas(d: &Path, n: i64) -> Vec<RowId> {
+    let mut t = Table::criar(d, esquema_notas()).unwrap();
+    let rowids = (1..=n)
+        .map(|i| t.inserir(&nota(i, &format!("w{i}x"))).unwrap())
+        .collect();
+    t.sincronizar().unwrap();
+    rowids
+}
+
+/// Toda linha viva no `.reg` tem de ser achada pela palavra DELA na busca de
+/// texto -- ou a busca recusa dizendo que o indice precisa reconstruir. O
+/// que nao pode e responder sem ela, calada.
+fn conferir_linhas_na_busca_de_texto(d: &Path) {
+    let mut t = Table::abrir(d, "notas").unwrap();
+    for (rowid, linha) in t.varrer().unwrap() {
+        let Value::Str(texto) = &linha[1] else {
+            panic!("texto nao e Str: {:?}", linha[1])
+        };
+        let palavra = texto.split(' ').nth(1).unwrap().to_string();
+        match t.procurar_texto("porTexto", &palavra) {
+            Ok(a) => assert!(
+                a.rowids.contains(&rowid),
+                "linha viva fora da busca de texto: a linha {rowid} ({texto:?}) esta \
+                 viva no .reg e a busca por {palavra:?} devolve {:?}, sem aviso",
+                a.rowids
+            ),
+            Err(e) => assert!(e.to_string().contains("reconstru"), "{e}"),
+        }
+    }
+}
+
+/// **Pedido 472, o caminho da escrita comum -- o inserir.** O slot e o
+/// contador ja no `.reg`, e o `.fts` sem a linha. Sem a janela do `.fts`, o
+/// `Drop` do indice de texto (limpo: nada tinha mudado nele) mantinha o
+/// atestado, e a busca reaberta nao achava a linha viva.
+///
+/// # Prova real
+///
+/// Sem o `abrir_janela_do_texto` no `inserir`, `w4x` volta vazio -- o
+/// vermelho medido.
+#[test]
+fn panico_no_inserir_nao_deixa_a_linha_fora_da_busca_de_texto() {
+    let d = dir("fts-inserir");
+    semear_notas(&d, 3);
+    esperar_panico(Ponto::InserirDepoisDoContador, || {
+        let mut t = Table::abrir(&d, "notas").unwrap();
+        t.inserir(&nota(4, "w4x")).unwrap();
+    });
+    conferir_linhas_na_busca_de_texto(&d);
+}
+
+/// **O irmao do atualizar:** o `.reg` com o texto novo, e o `.fts` com o
+/// velho.
+///
+/// # Prova real
+///
+/// Sem o `abrir_janela_do_texto` no `atualizar`, `w9x` volta vazio.
+#[test]
+fn panico_no_atualizar_nao_deixa_o_texto_novo_fora_da_busca() {
+    let d = dir("fts-atualizar");
+    let rowids = semear_notas(&d, 3);
+    esperar_panico(Ponto::AtualizarDepoisDoReg, || {
+        let mut t = Table::abrir(&d, "notas").unwrap();
+        t.atualizar(rowids[0], &nota(10, "w9x")).unwrap();
+    });
+    conferir_linhas_na_busca_de_texto(&d);
+}
+
+/// **O irmao do excluir de vez:** o texto e as chaves ja sairam, e o slot
+/// continua vivo no `.reg`.
+///
+/// # Prova real
+///
+/// Sem o `abrir_janela_do_texto` no `excluir_de_vez`, `w2x` volta vazio.
+#[test]
+fn panico_no_excluir_nao_deixa_a_linha_viva_fora_da_busca() {
+    let d = dir("fts-excluir");
+    let rowids = semear_notas(&d, 3);
+    esperar_panico(Ponto::ExcluirEntreRemoverEExcluir, || {
+        let mut t = Table::abrir(&d, "notas").unwrap();
+        t.excluir_de_vez(rowids[1], "teste").unwrap();
+    });
+    conferir_linhas_na_busca_de_texto(&d);
+}
+
 // ================================================= o caminho do FFI, aqui
 
 /// O panico capturado, e o `Drop` DEPOIS, fora do desenrolar -- e o que o

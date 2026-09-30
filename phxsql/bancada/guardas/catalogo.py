@@ -11089,13 +11089,15 @@ pub fn limpar() {
             "`.reg`, e ai sim a arvore ficou atras."
         ),
         "arquivo": "crates/phxsql-store/src/table.rs",
-        "trecho": """                    let em_dia = self.reg.registros() == vivas_antes;
+        # ATUALIZADO em 30/09/2026 (pedido 472): o `em_dia` saiu de dentro do
+        # `if janela` para servir tambem a janela do `.fts`; so a indentacao.
+        "trecho": """                let em_dia = self.reg.registros() == vivas_antes;
 """,
-        "troca": """                    // DEFEITO REPOSTO (456): todo erro do `.reg` interrompe.
-                    let em_dia = {
-                        let _ = vivas_antes;
-                        false
-                    };
+        "troca": """                // DEFEITO REPOSTO (456): todo erro do `.reg` interrompe.
+                let em_dia = {
+                    let _ = vivas_antes;
+                    false
+                };
 """,
         "pacote": "phxsql-store",
         "alvo": ["--test", "panico-no-meio-da-escrita"],
@@ -14665,6 +14667,69 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "volume::tests::a_chave_da_familia_junta_as_grafias_que_o_pathbuf_ja_junta",
         ],
         "seguem": [],
+    },
+    {
+        "id": "inserir-sem-janela-do-texto",
+        "titulo": "o inserir deixa a linha viva fora da busca de texto num panico entre o `.reg` e o `indexar_texto`",
+        "porque": (
+            "pedido 472, achado da frente do 456: a janela do `.ndx` nao "
+            "cobria o `.fts`, e um panico entre o `.reg` e o texto deixava o "
+            "indice de texto atras e marcado limpo -- a busca nao achava a "
+            "linha viva, calada."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        let texto = match self.abrir_janela_do_texto(true) {
+            Ok(t) => t,
+            Err(e) => {
+                if janela {
+""",
+        "troca": """        let texto = match self.abrir_janela_do_texto(false) {
+            Ok(t) => t,
+            Err(e) => {
+                if janela {
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "panico-no-meio-da-escrita"],
+        "caem": ["panico_no_inserir_nao_deixa_a_linha_fora_da_busca_de_texto"],
+        "seguem": ["panico_no_atualizar_nao_deixa_o_texto_novo_fora_da_busca"],
+    },
+    {
+        "id": "atualizar-sem-janela-do-texto",
+        "titulo": "o atualizar deixa o texto novo fora da busca num panico entre o `.reg` e o `.fts`",
+        "porque": (
+            "pedido 472, achado da frente do 456: a janela do `.ndx` nao "
+            "cobria o `.fts`, e um panico entre o `.reg` e o texto deixava o "
+            "indice de texto atras e marcado limpo -- a busca nao achava a "
+            "linha viva, calada."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """            .and_then(|muda| self.abrir_janela_do_texto(muda))
+""",
+        "troca": """            .and_then(|_muda| self.abrir_janela_do_texto(false))
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "panico-no-meio-da-escrita"],
+        "caem": ["panico_no_atualizar_nao_deixa_o_texto_novo_fora_da_busca"],
+        "seguem": ["panico_no_inserir_nao_deixa_a_linha_fora_da_busca_de_texto"],
+    },
+    {
+        "id": "excluir-sem-janela-do-texto",
+        "titulo": "o excluir de vez deixa a linha viva fora da busca num panico entre o texto e o slot",
+        "porque": (
+            "pedido 472, achado da frente do 456: a janela do `.ndx` nao "
+            "cobria o `.fts`, e um panico entre o `.reg` e o texto deixava o "
+            "indice de texto atras e marcado limpo -- a busca nao achava a "
+            "linha viva, calada."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        let texto = self.abrir_janela_do_texto(true)?;
+""",
+        "troca": """        let texto = self.abrir_janela_do_texto(false)?;
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "panico-no-meio-da-escrita"],
+        "caem": ["panico_no_excluir_nao_deixa_a_linha_viva_fora_da_busca"],
+        "seguem": ["panico_no_inserir_nao_deixa_a_linha_fora_da_busca_de_texto"],
     },
     {
         "id": "reconstruir-fts-sem-janela",

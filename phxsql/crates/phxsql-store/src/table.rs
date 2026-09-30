@@ -4740,6 +4740,42 @@ impl Table {
         Ok(muda)
     }
 
+    /// A janela do `.fts`, irma da do `.ndx` (pedido 472): da primeira
+    /// escrita que o indice de texto ainda nao acompanha ate ele alcancar o
+    /// `.reg`. Sem ela, um panico no meio deixava o `Drop` do `.fts` baixar a
+    /// marca, e a busca de texto seguinte nao achava a linha viva -- calada.
+    ///
+    /// `muda` e o portao, como o de `abrir_janela_das_chaves`: sem texto
+    /// mudando o `.fts` nao se move, e abrir custaria o cabecalho dele (com
+    /// `fsync`) numa escrita que nunca o toca. Devolve se abriu.
+    fn abrir_janela_do_texto(&mut self, muda: bool) -> Result<bool> {
+        match self.fts.as_mut() {
+            Some(f) if muda => {
+                f.comecar_escrita()?;
+                Ok(true)
+            }
+            _ => Ok(false),
+        }
+    }
+
+    /// Fecha a janela de [`Table::abrir_janela_do_texto`]. `em_dia` diz se o
+    /// `.fts` voltou a concordar com o `.reg`.
+    fn fechar_janela_do_texto(&mut self, aberta: bool, em_dia: bool) {
+        if let Some(f) = self.fts.as_mut().filter(|_| aberta) {
+            f.terminar_escrita(em_dia);
+        }
+    }
+
+    /// O texto de algum indice de texto muda entre as duas linhas? So
+    /// pergunta quando ha `.fts`: tabela sem indice de texto nao decodifica
+    /// nada a mais.
+    fn texto_muda(&mut self, antigo: &[u8], novo: &[u8]) -> Result<bool> {
+        if self.fts.is_none() {
+            return Ok(false);
+        }
+        Ok(self.textos_da_linha(antigo)? != self.textos_da_linha(novo)?)
+    }
+
     /// Regrava a linha no `.reg` e poe o `.ndx` em dia com ela.
     ///
     /// Um lugar so para o `atualizar` e o `marcar`, que sao irmaos pela regra
@@ -5161,6 +5197,16 @@ impl Table {
         if janela {
             self.ndx.comecar_escrita()?;
         }
+        // E a do `.fts` (472), ate o `indexar_texto` la embaixo.
+        let texto = match self.abrir_janela_do_texto(true) {
+            Ok(t) => t,
+            Err(e) => {
+                if janela {
+                    self.ndx.terminar_escrita(true);
+                }
+                return Err(e);
+            }
+        };
         // A ultima guarda que recusa a linha ficou acima (a coluna obrigatoria
         // e a particao). Daqui para baixo ela vai ao disco: e AQUI que o
         // contador do `rownum` anda -- ver `numerar_linha`, pedido 291.
@@ -5176,10 +5222,11 @@ impl Table {
                 // «Tabela cheia» recusa antes de gravar, e o indice continua
                 // em dia. Se a contagem de vivas andou, o slot ja existe para
                 // quem le o `.reg`, e a arvore nao tem a chave dele.
+                let em_dia = self.reg.registros() == vivas_antes;
                 if janela {
-                    let em_dia = self.reg.registros() == vivas_antes;
                     self.ndx.terminar_escrita(em_dia);
                 }
+                self.fechar_janela_do_texto(texto, em_dia);
                 return Err(e);
             }
         };
@@ -5203,6 +5250,7 @@ impl Table {
                 desfez &= matches!(self.reg.excluir(rowid), Ok(true));
                 let _ = self.liberar_externos(&ponteiros);
                 self.ndx.terminar_escrita(desfez);
+                self.fechar_janela_do_texto(texto, desfez);
                 return Err(e);
             }
         }
@@ -5217,7 +5265,9 @@ impl Table {
         // um `.fts` que falhasse aqui deixaria a linha gravada e o indice
         // atrasado -- que e o estado que o `reconstruir_fts` conserta, e nao
         // uma linha perdida.
-        self.indexar_texto(rowid, &payload)?;
+        let indexado = self.indexar_texto(rowid, &payload);
+        self.fechar_janela_do_texto(texto, indexado.is_ok());
+        indexado?;
         self.anotar_imagem(Operacao::Inclusao, rowid, 1, &imagem)?;
         Ok(rowid)
     }
@@ -5707,19 +5757,40 @@ impl Table {
         // A janela abre antes do `rownum`, pelo mesmo motivo do `inserir`:
         // recusar depois do consumo gastaria um numero sem linha.
         let janela = self.abrir_janela_das_chaves(&chaves_antigas, &chaves_novas)?;
+        // E a do `.fts` (472), ate o texto novo entrar la embaixo.
+        let texto = match self
+            .texto_muda(&antigo, &payload)
+            .and_then(|muda| self.abrir_janela_do_texto(muda))
+        {
+            Ok(t) => t,
+            Err(e) => {
+                if janela {
+                    self.ndx.terminar_escrita(true);
+                }
+                return Err(e);
+            }
+        };
         self.consumir_rownum(rownum_reservado);
         // Daqui a mae pode ter escrito, mesmo que a chamada abaixo volte `Err`
         // ou o panico caia no meio dela: a marca fica, e a recuperacao anda
         // para a frente -- a mae e cada filha na chave nova.
         let _marca_fica = guarda.soltar();
-        let versao = self.regravar_com_chaves(
+        let versao = match self.regravar_com_chaves(
             janela,
             rowid,
             &payload,
             delta,
             &chaves_antigas,
             &chaves_novas,
-        )?;
+        ) {
+            Ok(v) => v,
+            Err(e) => {
+                // O `.reg` pode ter a linha nova e o `.fts` o texto velho: a
+                // janela fecha INTERROMPIDA, como a do `.ndx` ali dentro.
+                self.fechar_janela_do_texto(texto, false);
+                return Err(e);
+            }
+        };
         // A mae esta no disco na chave nova: daqui ate a cascata terminar, as
         // filhas estao atras dela (pedido 490). A marca em voo entra AGORA, e
         // nao so no `aplicar_ao_alterar`, porque o texto, o diario e a trilha
@@ -5754,10 +5825,11 @@ impl Table {
         // filha na chave velha e orfa -- a regra primordial. Cada passo roda,
         // e o PRIMEIRO erro volta no fim.
         let mut erros: Vec<PhxError> = Vec::new();
-        if let Err(e) = self
+        let trocado = self
             .desindexar_texto(rowid, &antigo)
-            .and_then(|()| self.indexar_texto(rowid, &payload))
-        {
+            .and_then(|()| self.indexar_texto(rowid, &payload));
+        self.fechar_janela_do_texto(texto, trocado.is_ok());
+        if let Err(e) = trocado {
             erros.push(e);
         }
         // O valor VELHO das colunas marcadas que moram fora do `.reg` se le
@@ -6001,9 +6073,22 @@ impl Table {
         // acharia nada, e os termos ficariam no indice apontando uma linha que
         // nao existe mais -- achar a MAIS, que e o defeito que este indice nao
         // pode ter.
-        self.desindexar_texto(rowid, &payload)?;
+        //
+        // E a janela do `.fts` (472) vai deste ponto ate o slot liberado: no
+        // meio a linha esta viva no `.reg` e fora da busca de texto.
+        let texto = self.abrir_janela_do_texto(true)?;
+        if let Err(e) = self.desindexar_texto(rowid, &payload) {
+            self.fechar_janela_do_texto(texto, false);
+            return Err(e);
+        }
 
-        let chaves = self.todas_as_chaves(&valores)?;
+        let chaves = match self.todas_as_chaves(&valores) {
+            Ok(c) => c,
+            Err(e) => {
+                self.fechar_janela_do_texto(texto, false);
+                return Err(e);
+            }
+        };
         // A janela vai da primeira chave tirada ate o slot liberado (pedido
         // 456): no meio, a linha esta viva no `.reg` e fora do indice, e se a
         // tabela e FILHA a busca reversa da mae nao a ve. O byte 52 ja subia
@@ -6011,12 +6096,16 @@ impl Table {
         // antes do slot --; o que faltava era o `Drop` nao gravar o meio.
         let janela = chaves.iter().any(Option::is_some);
         if janela {
-            self.ndx.comecar_escrita()?;
+            if let Err(e) = self.ndx.comecar_escrita() {
+                self.fechar_janela_do_texto(texto, false);
+                return Err(e);
+            }
         }
         let feito = self.tirar_chaves_e_liberar(rowid, &chaves, &payload);
         if janela {
             self.ndx.terminar_escrita(feito.is_ok());
         }
+        self.fechar_janela_do_texto(texto, feito.is_ok());
         let (removeu, estava_marcada) = feito?;
         if removeu {
             if estava_marcada {
