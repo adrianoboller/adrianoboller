@@ -62,6 +62,31 @@ async fn pedido_adiciona_itens_e_recalcula_total_no_chromium() {
         total.as_str().unwrap().replace('\u{a0}', " "),
         "R$ 1.244,75"
     );
+    // data digitada tecla a tecla, como o usuario: a mascara poe as barras e recusa 31/02
+    let data = "#pedido_documento [name=dt_emissao]";
+    for ch in "31022026".chars() {
+        p.type_text(data, &ch.to_string()).await.unwrap();
+    }
+    let v = p
+        .eval("(()=>{const i=document.querySelector('#pedido_documento [name=dt_emissao]');return [i.value,i.validity.valid]})()")
+        .await
+        .unwrap();
+    assert_eq!(
+        v,
+        serde_json::json!(["31/02/2026", false]),
+        "31/02 tem de ser recusada"
+    );
+    p.eval("document.querySelector('#pedido_documento [name=dt_emissao]').value=''")
+        .await
+        .unwrap();
+    for ch in "1503202699".chars() {
+        p.type_text(data, &ch.to_string()).await.unwrap();
+    }
+    let v = p
+        .eval("(()=>{const i=document.querySelector('#pedido_documento [name=dt_emissao]');return [i.value,i.validity.valid,i.placeholder]})()")
+        .await
+        .unwrap();
+    assert_eq!(v, serde_json::json!(["15/03/2026", true, "dd/mm/aaaa"]));
     // o cadastro de cliente tem obrigatorios marcados e o lookup do pedido aponta para cliente
     let obrig = p
         .eval("document.querySelectorAll('#cliente_cadastro [required]').length")

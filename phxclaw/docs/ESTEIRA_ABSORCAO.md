@@ -63,4 +63,4 @@ exigência do anexo): `schema.rs` produz o `App` do `ir.rs`; `html.rs` só lê o
 | U2 | Prompt → UI-IR (modelo preenche o IR, validado pelo serde) | ☐ |
 | U3 | Screenshot → UI-IR (visão) | ☐ bloqueado: modelo com visão |
 | U4 | renderizadores WinDev/WebDev (WLanguage), React, Flutter | ☐ |
-| U5 | data no formato do idioma (o print mostra `mm/dd/yyyy`: é o locale do navegador, não do IR) | ☐ |
+| U5 | data no formato do idioma | ✓ 30/09 — máscara dd/mm/aaaa própria (o nativo segue o idioma do navegador); 31/02 recusada no Chromium, RED medido |

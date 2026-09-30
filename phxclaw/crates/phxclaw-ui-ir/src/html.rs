@@ -45,8 +45,14 @@ fn controle(app: &App, f: &Field, id: &str) -> String {
         Widget::Money => format!(
             "<span class=\"moeda\"><span aria-hidden=\"true\">R$</span><input {base} inputmode=\"decimal\" class=\"num\" data-money placeholder=\"0,00\"></span>"
         ),
-        Widget::Date => format!("<input {base} type=\"date\">"),
-        Widget::DateTime => format!("<input {base} type=\"datetime-local\">"),
+        // Data com mascara propria, como o dinheiro: o <input type=date> segue o idioma do
+        // NAVEGADOR, e numa tela em portugues mostrava mm/dd/yyyy (visto no print).
+        Widget::Date => format!(
+            "<input {base} inputmode=\"numeric\" data-data placeholder=\"dd/mm/aaaa\" maxlength=\"10\" pattern=\"\\d{{2}}/\\d{{2}}/\\d{{4}}\">"
+        ),
+        Widget::DateTime => format!(
+            "<input {base} inputmode=\"numeric\" data-datahora placeholder=\"dd/mm/aaaa hh:mm\" maxlength=\"16\" pattern=\"\\d{{2}}/\\d{{2}}/\\d{{4}} \\d{{2}}:\\d{{2}}\">"
+        ),
         Widget::Checkbox => format!("<input {base} type=\"checkbox\" class=\"chk\">"),
         Widget::Email => format!("<input {base} type=\"email\"{ml}>"),
         Widget::Phone => format!("<input {base} type=\"tel\"{ml}>"),
@@ -287,4 +293,13 @@ const tr=document.createElement('tr');tr.innerHTML=t.dataset.modelo.replaceAll('
 const p=tr.querySelector('input,select');if(p)p.focus()}));
 document.addEventListener('click',e=>{const d=e.target.closest('[data-del-item]');if(d){const f=d.closest('form');d.closest('tr').remove();soma(f)}});
 document.addEventListener('input',e=>{if(e.target.closest('table.itens'))soma(e.target.closest('form'))});
+const mascara=(v,dh)=>{const d=v.replace(/\D/g,'').slice(0,dh?12:8);let r=d.slice(0,2);
+if(d.length>2)r+='/'+d.slice(2,4);if(d.length>4)r+='/'+d.slice(4,8);
+if(dh&&d.length>8)r+=' '+d.slice(8,10)+(d.length>10?':'+d.slice(10,12):'');return r};
+function dataOk(v,dh){const m=(dh?/^(\d{2})\/(\d{2})\/(\d{4}) (\d{2}):(\d{2})$/:/^(\d{2})\/(\d{2})\/(\d{4})$/).exec(v);
+if(!m)return false;const d=+m[1],mo=+m[2],a=+m[3],t=new Date(a,mo-1,d);
+return t.getFullYear()===a&&t.getMonth()===mo-1&&t.getDate()===d&&(!dh||(+m[4]<24&&+m[5]<60))}
+document.addEventListener('input',e=>{const i=e.target;if(!i.matches('[data-data],[data-datahora]'))return;
+const dh=i.hasAttribute('data-datahora');i.value=mascara(i.value,dh);
+i.setCustomValidity(i.value.length===(dh?16:10)&&!dataOk(i.value,dh)?'Data inexistente':'')});
 "#;
