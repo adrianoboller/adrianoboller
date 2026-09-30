@@ -24,8 +24,8 @@ Nada roda sem a capacidade concedida; a ferramenta negada nem aparece ao modelo.
 |---|---|---|
 | `web.search` | `web_search` (DuckDuckGo; SearXNG com `PHXCLAW_SEARXNG_URL`; Brave com `BRAVE_API_KEY`) | sim |
 | `web.browse` | `browser_open/read/click/type/screenshot` (Chromium headless; rede interna bloqueada) | sim |
-| `fs.read` / `fs.write` | `read_file`, `list_files`, `write_file`, `read_document` (só a pasta da tarefa) | sim |
-| `doc.write` | `create_document` (.docx), `create_spreadsheet` (.xlsx), `create_presentation` (.pptx) | sim |
+| `fs.read` / `fs.write` | `read_file` (faixa de linhas opcional), `list_files`, `write_file`, `edit_file` (troca um trecho único), `read_document` (só a pasta da tarefa) | sim |
+| `doc.write` | `create_document` (.docx), `create_spreadsheet` (.xlsx), `create_presentation` (.pptx), `design_erp_ui` (SQL → telas ERP + `ui-ir.json`) | sim |
 | `shell.exec` | `shell` (bwrap, `/work` persistente, **sem rede**) | sim |
 | `agent.spawn` | `parallel_research` (até 6 subagentes em paralelo) | sim |
 | `site.publish` | `publish_site` (servido em `/sites/<tarefa>/<pasta>/`, CSP sandbox) | sim |

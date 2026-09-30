@@ -3767,6 +3767,7 @@ dependencies = [
  "phxclaw-rustclaw-native",
  "phxclaw-sandbox",
  "phxclaw-types",
+ "phxclaw-ui-ir",
  "phxclaw-web-search",
  "reqwest",
  "serde",

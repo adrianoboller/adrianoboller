@@ -21,7 +21,7 @@ desenho nosso:
 | # | Lacuna | Estado no PhxClaw | Próximo passo |
 |---|---|---|---|
 | E1 | Processo de terminal em segundo plano (iniciar, ler saída parcial, matar) | só `shell` síncrono com prazo | ferramenta `shell_bg` no mesmo `run_in_workdir` (bwrap), com teto de processos por tarefa |
-| E2 | Edição precisa de arquivo (`str_replace`, ver faixa de linhas, inserir) | só `write_file` inteiro | ferramenta `edit_file` com substituição única exigida (recusa se 0 ou >1 ocorrência) |
+| E2 | Edição precisa de arquivo (`str_replace`, ver faixa de linhas, inserir) | `edit_file` (trecho único, recusa 0 ou >1) e `read_file` com faixa numerada; 4 testes, RED medido | ✓ 30/09 |
 | E3 | Limite de taxa por token na API | ausente | balde por token em `api.rs`, 429 com `Retry-After` |
 
 ## 2. Anexo — o que se estuda, por licença
@@ -59,7 +59,7 @@ exigência do anexo): `schema.rs` produz o `App` do `ir.rs`; `html.rs` só lê o
 
 | # | Próximo | Estado |
 |---|---|---|
-| U1 | ferramenta do agente `design_erp_ui` (grava `ui-ir.json` + `site/index.html`, publicável) | ☐ |
+| U1 | ferramenta do agente `design_erp_ui` (grava `ui-ir.json` + `index.html`, publicável) | ✓ 30/09 — qwen2.5:3b a chamou no 1º passo e concluiu |
 | U2 | Prompt → UI-IR (modelo preenche o IR, validado pelo serde) | ☐ |
 | U3 | Screenshot → UI-IR (visão) | ☐ bloqueado: modelo com visão |
 | U4 | renderizadores WinDev/WebDev (WLanguage), React, Flutter | ☐ |

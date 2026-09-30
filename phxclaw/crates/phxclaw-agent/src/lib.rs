@@ -13,10 +13,12 @@ pub mod montagem;
 pub mod motor;
 pub mod site;
 pub mod tarefa;
+pub mod ui;
 
 pub use agenda::{Agenda, Schedule};
 pub use ferramentas::{
-    ListFilesTool, ParallelAgentsTool, ReadFileTool, ScriptedLlm, ShellTool, WriteFileTool,
+    EditFileTool, ListFilesTool, ParallelAgentsTool, ReadFileTool, ScriptedLlm, ShellTool,
+    WriteFileTool,
 };
 pub use motor::{Agent, AgentConfig, CancelFlag, NoObserver, Observer};
 pub use tarefa::{StepRecord, Task, TaskStatus, TaskStore};

@@ -13,6 +13,7 @@ phxclaw-web-search = { path = "../phxclaw-web-search" }
 phxclaw-evidence-ledger = { path = "../phxclaw-evidence-ledger" }
 phxclaw-rustclaw-native = { path = "../phxclaw-rustclaw-native" }
 phxclaw-sandbox = { path = "../phxclaw-sandbox" }
+phxclaw-ui-ir = { path = "../phxclaw-ui-ir" }
 phxclaw-types = { path = "../phxclaw-types" }
 chrono.workspace = true
 futures-util.workspace = true

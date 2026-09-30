@@ -156,8 +156,11 @@ impl Tool for ReadFileTool {
     fn spec(&self) -> ToolSpec {
         ToolSpec {
             name: "read_file".into(),
-            description: "Read a text file from the task working directory.".into(),
-            parameters: json!({"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}),
+            description:
+                "Read a text file from the task working directory. With start_line/end_line \
+(1-based, inclusive) returns only that range, each line prefixed by its number."
+                    .into(),
+            parameters: json!({"type":"object","properties":{"path":{"type":"string"},"start_line":{"type":"integer"},"end_line":{"type":"integer"}},"required":["path"]}),
         }
     }
     fn capability(&self) -> &'static str {
@@ -172,7 +175,99 @@ impl Tool for ReadFileTool {
             let rel = arg_str(&args, "path")?;
             let alvo = confine(&ctx.workdir, rel).map_err(ToolError::Denied)?;
             let b = std::fs::read(&alvo).map_err(|e| ToolError::Failed(e.to_string()))?;
-            Ok(ToolOutput::text(String::from_utf8_lossy(&b).into_owned()))
+            let texto = String::from_utf8_lossy(&b).into_owned();
+            let ini = args.get("start_line").and_then(Value::as_u64);
+            let fim = args.get("end_line").and_then(Value::as_u64);
+            if ini.is_none() && fim.is_none() {
+                return Ok(ToolOutput::text(texto));
+            }
+            // Faixa numerada: e o que deixa o modelo citar a linha certa no edit_file
+            // sem reler o arquivo inteiro a cada passo.
+            let total = texto.lines().count() as u64;
+            let ini = ini.unwrap_or(1).max(1);
+            let fim = fim.unwrap_or(total).min(total);
+            if ini > fim {
+                return Err(ToolError::InvalidArguments(format!(
+                    "faixa vazia: {ini}..{fim} (o arquivo tem {total} linhas)"
+                )));
+            }
+            let faixa: Vec<String> = texto
+                .lines()
+                .enumerate()
+                .skip(ini as usize - 1)
+                .take((fim - ini + 1) as usize)
+                .map(|(i, l)| format!("{:>5}\t{l}", i + 1))
+                .collect();
+            Ok(ToolOutput::text(faixa.join("\n")))
+        })
+    }
+}
+
+/// Edicao precisa: troca UM trecho exato por outro. Reescrever o arquivo inteiro para
+/// mudar uma linha e onde o modelo pequeno perde o resto do conteudo; aqui o resto nao
+/// passa pela mao dele.
+pub struct EditFileTool;
+impl Tool for EditFileTool {
+    fn spec(&self) -> ToolSpec {
+        ToolSpec {
+            name: "edit_file".into(),
+            description:
+                "Replace one exact occurrence of old_text with new_text in a file of the task \
+directory. old_text must appear exactly once (include surrounding lines to make it unique). \
+Empty old_text appends new_text at the end of the file."
+                    .into(),
+            parameters: json!({"type":"object","properties":{"path":{"type":"string"},"old_text":{"type":"string"},"new_text":{"type":"string"}},"required":["path","old_text","new_text"]}),
+        }
+    }
+    fn capability(&self) -> &'static str {
+        "fs.write"
+    }
+    fn run<'a>(
+        &'a self,
+        args: Value,
+        ctx: &'a ToolContext,
+    ) -> BoxFut<'a, Result<ToolOutput, ToolError>> {
+        Box::pin(async move {
+            let rel = arg_str(&args, "path")?;
+            let velho = arg_str(&args, "old_text")?;
+            let novo = arg_str(&args, "new_text")?;
+            let alvo = confine(&ctx.workdir, rel).map_err(ToolError::Denied)?;
+            let atual =
+                std::fs::read_to_string(&alvo).map_err(|e| ToolError::Failed(e.to_string()))?;
+            let resultado = if velho.is_empty() {
+                format!("{atual}{novo}")
+            } else {
+                // Ambiguidade recusa em vez de adivinhar: trocar a ocorrencia errada
+                // e um defeito que ninguem ve no resumo do passo.
+                match atual.matches(velho).count() {
+                    1 => atual.replacen(velho, novo, 1),
+                    0 => {
+                        return Err(ToolError::InvalidArguments(format!(
+                            "old_text nao aparece em {rel}; leia o arquivo e copie o trecho exato"
+                        )));
+                    }
+                    n => {
+                        return Err(ToolError::InvalidArguments(format!(
+                            "old_text aparece {n} vezes em {rel}; inclua linhas vizinhas para ficar unico"
+                        )));
+                    }
+                }
+            };
+            std::fs::write(&alvo, &resultado).map_err(|e| ToolError::Failed(e.to_string()))?;
+            let a =
+                artifact_for(&ctx.workdir, rel).map_err(|e| ToolError::Failed(e.to_string()))?;
+            // Linha onde o trecho comecava: posicao no texto ANTIGO, nao busca do novo
+            // (o novo pode existir antes, e a conta de linhas() perde o fim de linha).
+            let pos = if velho.is_empty() {
+                atual.len()
+            } else {
+                atual.find(velho).unwrap_or(0)
+            };
+            let linha = atual[..pos].matches('\n').count() + 1;
+            Ok(ToolOutput {
+                content: format!("editado {rel} perto da linha {linha} ({} bytes)", a.bytes),
+                artifacts: vec![a],
+            })
         })
     }
 }

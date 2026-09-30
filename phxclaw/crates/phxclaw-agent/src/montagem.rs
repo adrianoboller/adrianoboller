@@ -3,7 +3,7 @@
 
 use crate::adaptadores::{BrowserSessions, WebSearchTool, browser_tools, office_tools};
 use crate::ferramentas::{
-    ListFilesTool, ParallelAgentsTool, ReadFileTool, ShellTool, WriteFileTool,
+    EditFileTool, ListFilesTool, ParallelAgentsTool, ReadFileTool, ShellTool, WriteFileTool,
 };
 use crate::motor::{Agent, AgentConfig};
 use crate::tarefa::TaskStore;
@@ -73,6 +73,8 @@ impl Montagem {
             Arc::new(WriteFileTool),
             Arc::new(ReadFileTool),
             Arc::new(ListFilesTool),
+            Arc::new(EditFileTool),
+            Arc::new(crate::ui::DesignErpUiTool),
         ];
         if let Some(bwrap) = ["/usr/bin/bwrap", "/bin/bwrap", "/usr/local/bin/bwrap"]
             .iter()
