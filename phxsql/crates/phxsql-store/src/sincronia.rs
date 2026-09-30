@@ -360,6 +360,9 @@ pub mod falha_de_teste {
         /// A gravacao de uma pagina do `.ndx` devolve ENOSPC -- o `write` do
         /// disco cheio, no despejo e no `descarregar`.
         PaginaDoIndice,
+        /// A gravacao de um registro da trilha (`.lgpd`) devolve ENOSPC --
+        /// o observador que falha DEPOIS de a linha estar gravada (pedido 486).
+        GravacaoDaTrilha,
     }
 
     #[cfg(debug_assertions)]
@@ -415,7 +418,7 @@ pub mod falha_de_teste {
         ALGUMA.store(a.len(), std::sync::atomic::Ordering::Release);
         Some(std::io::Error::from_raw_os_error(match onde {
             Onde::Fsync => 5,
-            Onde::PaginaDoIndice => 28,
+            Onde::PaginaDoIndice | Onde::GravacaoDaTrilha => 28,
         }))
     }
 }

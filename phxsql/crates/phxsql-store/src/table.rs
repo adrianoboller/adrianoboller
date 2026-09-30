@@ -4921,6 +4921,15 @@ impl Table {
 
         let payload = self.montar_payload(valores)?;
         let ponteiros = self.ponteiros(&payload)?;
+        // O diario confere que cabe ANTES de a linha ir ao disco (pedido
+        // 498): recusar depois deixava a linha sem evento.
+        let imagem = match self.preparar_diario(&payload) {
+            Ok(i) => i,
+            Err(e) => {
+                let _ = self.liberar_externos(&ponteiros);
+                return Err(e);
+            }
+        };
         // Linha que ja nasce marcada existe: a importacao traz o campo, e a
         // restauracao de uma lixeira tambem. O contador tem de saber.
         let nasce_marcada = self.marcada_no_payload(&payload)?;
@@ -4995,7 +5004,7 @@ impl Table {
         // atrasado -- que e o estado que o `reconstruir_fts` conserta, e nao
         // uma linha perdida.
         self.indexar_texto(rowid, &payload)?;
-        self.anotar(Operacao::Inclusao, rowid, 1, &payload)?;
+        self.anotar_imagem(Operacao::Inclusao, rowid, 1, &imagem)?;
         Ok(rowid)
     }
 
@@ -5005,12 +5014,30 @@ impl Table {
     /// replica receber o conteudo em vez de um ponteiro que so vale aqui. Por
     /// isso ela esta atras do interruptor, e por isso este caminho existe em
     /// vez de a chamada ao `log` estar espalhada.
-    fn anotar(
+    /// A imagem que o diario vai levar deste payload -- vazia quando a
+    /// tabela nao guarda imagem.
+    fn imagem_do_diario(&mut self, payload: &[u8]) -> Result<Vec<u8>> {
+        if self.imagem_no_diario {
+            self.imagem_da_linha(payload)
+        } else {
+            Ok(Vec::new())
+        }
+    }
+
+    /// A imagem do diario, e a conferencia de que ela CABE -- antes da
+    /// primeira escrita da linha (pedido 498).
+    fn preparar_diario(&mut self, payload: &[u8]) -> Result<Vec<u8>> {
+        let imagem = self.imagem_do_diario(payload)?;
+        self.log.conferir_teto(imagem.len())?;
+        Ok(imagem)
+    }
+
+    fn anotar_imagem(
         &mut self,
         operacao: Operacao,
         rowid: RowId,
         versao: u64,
-        payload: &[u8],
+        imagem: &[u8],
     ) -> Result<()> {
         // Consumido SEMPRE, mesmo sem imagem: um forcado que sobrasse para a
         // operacao seguinte carimbaria uma escrita local com relogio alheio.
@@ -5018,14 +5045,8 @@ impl Table {
             Some((c, o)) => (Some(c), o),
             None => (None, 0),
         };
-        if !self.imagem_no_diario {
-            self.log
-                .registrar_detalhado(operacao, rowid, versao, &[], carimbo, origem)?;
-            return Ok(());
-        }
-        let imagem = self.imagem_da_linha(payload)?;
         self.log
-            .registrar_detalhado(operacao, rowid, versao, &imagem, carimbo, origem)?;
+            .registrar_detalhado(operacao, rowid, versao, imagem, carimbo, origem)?;
         Ok(())
     }
 
@@ -5349,6 +5370,16 @@ impl Table {
 
         let ponteiros_antigos = self.ponteiros(&antigo)?;
         let payload = self.montar_payload(valores)?;
+        // Pedido 498: o diario confere que cabe ANTES da primeira escrita.
+        let imagem = match self.preparar_diario(&payload) {
+            Ok(i) => i,
+            Err(e) => {
+                if let Ok(novos) = self.ponteiros(&payload) {
+                    let _ = self.liberar_externos(&novos);
+                }
+                return Err(e);
+            }
+        };
         // `completar` herda a marca quando ela nao vem nos valores, mas quem
         // manda a coluna escrita pode virar o valor por aqui.
         let delta = i64::from(self.marcada_no_payload(&payload)?)
@@ -5383,8 +5414,18 @@ impl Table {
         //
         // E a saida vem antes de `liberar_externos`: o `.memo` da linha velha
         // precisa estar la para o texto antigo poder ser lido.
-        self.desindexar_texto(rowid, &antigo)?;
-        self.indexar_texto(rowid, &payload)?;
+        //
+        // Daqui para baixo a mae ESTA no disco, e nenhum erro pula a cascata
+        // (pedido 486): o texto, o diario e a trilha sao observadores, e a
+        // filha na chave velha e orfa -- a regra primordial. Cada passo roda,
+        // e o PRIMEIRO erro volta no fim.
+        let mut erros: Vec<PhxError> = Vec::new();
+        if let Err(e) = self
+            .desindexar_texto(rowid, &antigo)
+            .and_then(|()| self.indexar_texto(rowid, &payload))
+        {
+            erros.push(e);
+        }
         // O valor VELHO das colunas marcadas que moram fora do `.reg` se le
         // aqui, e nao junto da trilha la embaixo: a linha seguinte solta o
         // bloco, e depois dela a trilha so teria `Null` para comparar. Era o
@@ -5392,20 +5433,33 @@ impl Table {
         // que sabia o contrario ja tinha sido liberado. O irmao
         // `desindexar_texto` depende da MESMA janela, duas linhas acima.
         let externos_antigos = self.marcados_externos_antigos(&antigo);
-        self.liberar_externos(&ponteiros_antigos)?;
-        self.anotar(Operacao::Alteracao, rowid, versao, &payload)?;
+        if let Err(e) = self.liberar_externos(&ponteiros_antigos) {
+            erros.push(e);
+        }
+        if let Err(e) = self.anotar_imagem(Operacao::Alteracao, rowid, versao, &imagem) {
+            erros.push(e);
+        }
+        // As filhas acompanham DEPOIS de a mae estar gravada, e o `is_empty()`
+        // e o portao: alteracao sem cascata nao paga nem a chamada. E vem
+        // ANTES da trilha: a cascata nao depende do observador (486).
+        if !cascata.is_empty() {
+            if let Err(e) = self.aplicar_ao_alterar(cascata) {
+                erros.push(e);
+            }
+        }
         // A trilha vem DEPOIS de a linha estar gravada: uma trilha que
         // registra uma alteracao que falhou depois seria pior que nenhuma.
         // O `valores_antigos` ja esta decodificado aqui em cima por causa dos
         // indices, entao o par antes/depois das colunas INLINE nao custa
         // leitura nova.
-        self.trilhar_alteracao(rowid, &valores_antigos, valores, &externos_antigos)?;
-        // As filhas acompanham DEPOIS de a mae estar gravada, e o `is_empty()`
-        // e o portao: alteracao sem cascata nao paga nem a chamada.
-        if !cascata.is_empty() {
-            self.aplicar_ao_alterar(cascata)?;
+        if let Err(e) = self.trilhar_alteracao(rowid, &valores_antigos, valores, &externos_antigos)
+        {
+            erros.push(e);
         }
-        Ok(())
+        match erros.into_iter().next() {
+            Some(e) => Err(e),
+            None => Ok(()),
+        }
     }
 
     /// Grava na trilha as colunas marcadas que mudaram de valor.
@@ -5835,6 +5889,8 @@ impl Table {
         let chaves_antigas = self.todas_as_chaves(&antes)?;
         let chaves_novas = self.todas_as_chaves(&depois)?;
 
+        // Pedido 498: o diario confere que cabe ANTES da primeira escrita.
+        let imagem = self.preparar_diario(&payload)?;
         let janela = self.abrir_janela_das_chaves(&chaves_antigas, &chaves_novas)?;
         let versao = self.regravar_com_chaves(
             janela,
@@ -5846,7 +5902,7 @@ impl Table {
         )?;
         // A marca vai para a replica como ALTERACAO, que e o que ela e no
         // `.reg`: o byte da coluna de sistema mudou e nada mais.
-        self.anotar(Operacao::Alteracao, rowid, versao, &payload)?;
+        self.anotar_imagem(Operacao::Alteracao, rowid, versao, &imagem)?;
         Ok(true)
     }
 

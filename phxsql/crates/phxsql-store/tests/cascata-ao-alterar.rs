@@ -950,3 +950,48 @@ fn panico_depois_da_mae_e_antes_da_primeira_filha_tambem_recusa() {
          delas nao recusa"
     );
 }
+
+/// **Pedido 486: a cascata nao depende do observador.** Com a trilha LGPD
+/// falhando DEPOIS de a mae estar gravada (disco cheio no `.lgpd`), a
+/// alteracao responde o erro -- mas a filha acompanha. Antes, o `?` da trilha
+/// saia antes da cascata: a mae na chave nova e a filha apontando para a
+/// velha, orfa, que e a regra primordial quebrada.
+#[test]
+fn a_trilha_que_falha_nao_deixa_a_filha_orfa() {
+    use phxsql_core::types::DadoPessoal;
+    use phxsql_store::sincronia::falha_de_teste::{armar, desarmar, Onde};
+    let d = dir("trilha-486");
+    let e = Schema::new(
+        "clientes",
+        vec![
+            Column::new("id", ColumnType::Int4).obrigatoria(),
+            Column::new("nome", ColumnType::Str(40)).com_dado_pessoal(DadoPessoal::Sensivel),
+        ],
+        vec![IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico()],
+    )
+    .unwrap();
+    let mut m = Table::criar(&d, e).unwrap();
+    let r = m
+        .inserir(&[Value::Int(1), Value::Str("Ana".into())])
+        .unwrap();
+    m.sincronizar().unwrap();
+    let mut f = filha(&d, AcaoRi::Cascata);
+    let p1 = f.inserir(&[Value::Int(10), Value::Int(1)]).unwrap();
+    f.sincronizar().unwrap();
+    drop(f);
+
+    armar(&d.0, Onde::GravacaoDaTrilha, 1);
+    let res = m.atualizar(r, &[Value::Int(7), Value::Str("Bia".into())]);
+    desarmar(&d.0);
+    assert!(
+        res.is_err(),
+        "a trilha forjada nao falhou -- o teste nao mediu nada"
+    );
+
+    let mut f = Table::abrir(&d, "pedidos").unwrap();
+    assert_eq!(
+        aponta_para(&mut f, p1),
+        Value::Int(7),
+        "a trilha falhou e a filha ficou ORFA na chave velha"
+    );
+}

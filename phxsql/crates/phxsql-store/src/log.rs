@@ -479,21 +479,39 @@ impl LogFile {
         Ok(evento)
     }
 
-    fn anexar(&mut self, mut evento: Evento, imagem: &[u8]) -> Result<()> {
+    /// O volume onde um evento de `ocupa` bytes vai entrar, e se ele vira de
+    /// volume -- ou a recusa do teto. Uma decisao so, para o [`Self::anexar`]
+    /// e para o [`Self::conferir_teto`]: a conferencia de antes nao pode
+    /// responder diferente da gravacao de depois.
+    fn destino(&mut self, ocupa: u64) -> Result<(u32, bool, Cabecalho)> {
         let paginacao = self.volumes.paginacao();
         let atual = self.cab(self.volume_atual)?;
         let vazio = atual.fim <= atual.cab_len as u64;
-        let (volume, virou) =
-            paginacao.volume_externo(self.volume_atual, atual.fim, evento.ocupa(), vazio);
+        let (volume, virou) = paginacao.volume_externo(self.volume_atual, atual.fim, ocupa, vazio);
+        if virou && paginacao.ligada() && volume > paginacao.max_arquivos {
+            return Err(PhxError::LimiteExcedido(format!(
+                "diario de {} chegou ao teto de {} volumes",
+                self.volumes.nome(),
+                paginacao.max_arquivos
+            )));
+        }
+        Ok((volume, virou, atual))
+    }
+
+    /// Cabe mais um evento com imagem de `tam_imagem` bytes? Pedido 498: a
+    /// tabela pergunta ANTES de gravar a linha, porque recusar depois deixava
+    /// o valor novo no `.reg` sem diario -- replica divergindo e cascata
+    /// pulada. Nao escreve nada.
+    pub fn conferir_teto(&mut self, tam_imagem: usize) -> Result<()> {
+        let atual = self.cab(self.volume_atual)?;
+        let ocupa = EVENTO_CAB as u64 + atual.ocupa(tam_imagem) as u64;
+        self.destino(ocupa).map(|_| ())
+    }
+
+    fn anexar(&mut self, mut evento: Evento, imagem: &[u8]) -> Result<()> {
+        let (volume, virou, atual) = self.destino(evento.ocupa())?;
 
         let cab = if virou {
-            if paginacao.ligada() && volume > paginacao.max_arquivos {
-                return Err(PhxError::LimiteExcedido(format!(
-                    "diario de {} chegou ao teto de {} volumes",
-                    self.volumes.nome(),
-                    paginacao.max_arquivos
-                )));
-            }
             self.volumes.garantir(volume)?;
             // O volume NOVO sorteia o proprio sal, e por isso tem a propria
             // chave: e o que deixa o numero de ordem do nonce ser o offset
