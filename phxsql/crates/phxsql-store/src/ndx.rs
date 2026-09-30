@@ -2566,6 +2566,9 @@ pub mod panico_de_teste {
         /// O irmao do de cima: a mae ja gravada na chave nova, e o texto, o
         /// diario e a trilha dela ainda por fazer -- nenhuma filha acompanhou.
         CascataDepoisDaMae,
+        /// `Table::reconstruir_fts` (pedido 472): o `.fts` recriado VAZIO e a
+        /// primeira linha ja nele; as outras, nao.
+        NoMeioDoReconstruirFts,
     }
 
     #[cfg(debug_assertions)]

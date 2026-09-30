@@ -340,6 +340,20 @@ impl FtsFile {
         self.ndx.fechar()
     }
 
+    /// Abre a janela em que o `.reg` anda a frente deste indice: ver
+    /// [`NdxFile::comecar_escrita`]. O `.fts` e um `.ndx` por dentro, e sem
+    /// repassar a janela o `Drop` do meio de uma reconstrucao gravava a arvore
+    /// pela metade marcada limpa (pedido 472).
+    pub fn comecar_escrita(&mut self) -> Result<()> {
+        self.ndx.comecar_escrita()
+    }
+
+    /// Fecha a janela de [`FtsFile::comecar_escrita`]; ver
+    /// [`NdxFile::terminar_escrita`].
+    pub fn terminar_escrita(&mut self, em_dia: bool) {
+        self.ndx.terminar_escrita(em_dia)
+    }
+
     /// Ver [`NdxFile::marca_so_neste_processo`].
     pub fn marca_so_neste_processo(&self) -> bool {
         self.ndx.marca_so_neste_processo()

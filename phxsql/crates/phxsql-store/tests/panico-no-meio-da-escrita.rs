@@ -388,6 +388,59 @@ fn panico_no_meio_do_reindexar_depois_de_escrever_no_mesmo_punho() {
     assert_eq!(t.varrer_indice("porId").unwrap().len(), 3_010);
 }
 
+/// **Pedido 472, o caminho da reconstrucao:** o `reconstruir_fts` recria o
+/// `.fts` VAZIO e indexa linha a linha. Sem janela em volta do laco, um
+/// panico entre duas linhas deixava o `Drop` gravar o indice pela metade
+/// marcada limpa -- e o atestado e do processo, entao a reabertura AQUI
+/// confiava nele: a busca de texto devolvia 1 de 5, calada.
+///
+/// # Prova real
+///
+/// Sem o `comecar_escrita` do `.fts` no `reconstruir_fts`, a busca reaberta
+/// devolve 1 linha -- o vermelho medido.
+#[test]
+fn panico_no_meio_do_reconstruir_fts_nao_grava_o_indice_pela_metade() {
+    use phxsql_core::schema::IndiceDeTexto;
+    let d = dir("reconstruir-fts");
+    let esquema = Schema::new(
+        "notas",
+        vec![
+            Column::new("id", ColumnType::Int8).obrigatoria(),
+            Column::new("texto", ColumnType::Str(40)).obrigatoria(),
+        ],
+        vec![IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico()],
+    )
+    .unwrap()
+    .com_indices_de_texto(vec![IndiceDeTexto::new("porTexto", 1)])
+    .unwrap();
+    {
+        let mut t = Table::criar(&d, esquema).unwrap();
+        for i in 1..=5 {
+            t.inserir(&[Value::Int(i), Value::Str(format!("comum linha{i}"))])
+                .unwrap();
+        }
+        t.sincronizar().unwrap();
+    }
+
+    esperar_panico(Ponto::NoMeioDoReconstruirFts, || {
+        let mut t = Table::abrir(&d, "notas").unwrap();
+        t.reconstruir_fts().unwrap();
+    });
+
+    let mut t = Table::abrir(&d, "notas").unwrap();
+    match t.procurar_texto("porTexto", "comum") {
+        Ok(a) => assert_eq!(
+            a.rowids.len(),
+            5,
+            "a busca de texto voltou com {} de 5 linhas vivas, e sem aviso: o \
+             indice pela metade foi gravado limpo",
+            a.rowids.len()
+        ),
+        // Recusar dizendo que precisa reconstruir e o lado certo.
+        Err(e) => assert!(e.to_string().contains("reconstru"), "{e}"),
+    }
+}
+
 // ================================================= o caminho do FFI, aqui
 
 /// O panico capturado, e o `Drop` DEPOIS, fora do desenrolar -- e o que o

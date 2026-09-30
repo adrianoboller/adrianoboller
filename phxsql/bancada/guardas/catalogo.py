@@ -14629,6 +14629,35 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "seguem": [],
     },
     {
+        "id": "reconstruir-fts-sem-janela",
+        "titulo": "o panico no meio do `reconstruir_fts` grava o indice de texto pela metade marcado limpo",
+        "porque": (
+            "pedido 472, acrescimo do papel C na revisao do 533: o laco da "
+            "reconstrucao nao abria janela em volta, e o atestado e do "
+            "processo -- a reabertura confiava no `.fts` pela metade e a busca "
+            "devolvia 1 de 5 linhas, calada."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        if let Some(f) = self.fts.as_mut() {
+            f.comecar_escrita()?;
+        }
+        let feito = self.indexar_todo_o_texto();
+""",
+        "troca": """        if let Some(f) = self.fts.as_mut().filter(|_| false) {
+            f.comecar_escrita()?;
+        }
+        let feito = self.indexar_todo_o_texto();
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "panico-no-meio-da-escrita"],
+        "caem": [
+            "panico_no_meio_do_reconstruir_fts_nao_grava_o_indice_pela_metade",
+        ],
+        "seguem": [
+            "panico_no_meio_do_reindexar_nao_grava_o_indice_vazio",
+        ],
+    },
+    {
         "id": "carimbo-da-a-volta-no-teto",
         "titulo": "o rowstamp empurrado ao teto por evento replicado da a volta, e o filho nasce com carimbo menor que o pai",
         "porque": (

@@ -1936,6 +1936,23 @@ impl Table {
             texto_sobre_coluna_marcada(&self.esquema),
         )?);
 
+        // Da recriacao ate a ultima linha o `.fts` esta ATRAS do `.reg` -- e a
+        // janela do irmao `reindexar` para o `.ndx` (pedido 472). Sem ela, um
+        // panico entre duas linhas deixava o `Drop` gravar a arvore pela
+        // metade marcada limpa, e a busca de texto seguinte devolvia menos
+        // sem aviso.
+        if let Some(f) = self.fts.as_mut() {
+            f.comecar_escrita()?;
+        }
+        let feito = self.indexar_todo_o_texto();
+        if let Some(f) = self.fts.as_mut() {
+            f.terminar_escrita(feito.is_ok());
+        }
+        feito
+    }
+
+    /// O laco do [`Table::reconstruir_fts`], com a janela aberta por quem chama.
+    fn indexar_todo_o_texto(&mut self) -> Result<u64> {
         let mut feitas = 0u64;
         let mut depois = 0u64;
         loop {
@@ -1947,6 +1964,9 @@ impl Table {
                 if let Some(payload) = self.reg.ler(rowid)? {
                     self.indexar_texto(rowid, &payload)?;
                     feitas += 1;
+                    if feitas == 1 {
+                        panico_de_teste::passar(panico_de_teste::Ponto::NoMeioDoReconstruirFts);
+                    }
                 }
                 depois = rowid;
             }
