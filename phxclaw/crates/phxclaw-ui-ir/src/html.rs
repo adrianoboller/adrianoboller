@@ -251,7 +251,7 @@ pub fn render(app: &App) -> String {
     )
 }
 
-const CSS: &str = r#"
+pub(crate) const CSS: &str = r#"
 :root{--fundo:#07121d;--painel:#0b1b29;--borda:#1d3a50;--texto:#e6eef5;--fraco:#8aa4b8;--ouro:#f5c64d;
 --inclui:#3ecf8e;--altera:#f2c14e;--exclui:#ff5d5d;--consulta:#4fb3ff;--foco:#7fd1ff}
 @media (prefers-color-scheme: light){:root{--fundo:#f4f6f9;--painel:#fff;--borda:#c9d3de;--texto:#15212c;--fraco:#51606e;
@@ -265,7 +265,7 @@ fieldset{border:1px solid var(--borda);border-radius:8px;padding:12px 14px;margi
 .grade-form{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px 14px}.campo{display:flex;flex-direction:column;gap:4px}.campo.largo{grid-column:1/-1}
 label{font-size:12px;color:var(--fraco)}.obrig{color:var(--exclui)}
 input,select,textarea{background:var(--fundo);color:var(--texto);border:1px solid var(--borda);border-radius:6px;padding:7px 9px;font:inherit;min-width:0;width:100%}
-input.chk{width:auto;align-self:flex-start}input[readonly]{opacity:.7}:focus-visible{outline:2px solid var(--foco);outline-offset:1px}
+:user-invalid{border-color:var(--exclui);box-shadow:0 0 0 1px var(--exclui)}input.chk{width:auto;align-self:flex-start}input[readonly]{opacity:.7}:focus-visible{outline:2px solid var(--foco);outline-offset:1px}
 .moeda{display:flex;align-items:center;gap:6px}.num{text-align:right}.lookup{display:flex;gap:6px}
 .acoes{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}.acao{background:transparent;border:1px solid;border-radius:6px;padding:7px 14px;font:inherit;cursor:pointer;text-decoration:none;display:inline-block}
 .acao.mini{padding:4px 8px}.acao.include{color:var(--inclui)}.acao.alter{color:var(--altera)}.acao.delete{color:var(--exclui)}.acao.query,.acao.custom{color:var(--consulta)}

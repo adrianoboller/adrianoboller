@@ -24,7 +24,8 @@ CREATE TABLE statements. Give the DDL in 'sql' or a file of the task in 'sql_pat
                 "sql":{"type":"string"},
                 "sql_path":{"type":"string"},
                 "app_name":{"type":"string"},
-                "folder":{"type":"string","description":"output folder, default erp"}
+                "folder":{"type":"string","description":"output folder, default erp"},
+                "react":{"type":"boolean","description":"also write a React project in <folder>/react (npm install && npm run build)"}
             }}),
         }
     }
@@ -79,6 +80,21 @@ CREATE TABLE statements. Give the DDL in 'sql' or a file of the task in 'sql_pat
             std::fs::write(dir.join("index.html"), phxclaw_ui_ir::html::render(&app))
                 .map_err(|e| ToolError::Failed(e.to_string()))?;
             let mut artefatos = vec![];
+            let react = args.get("react").and_then(Value::as_bool) == Some(true);
+            if react {
+                for (p, c) in phxclaw_ui_ir::react::render(&app) {
+                    let rel = format!("{pasta}/react/{p}");
+                    let alvo = confine(&ctx.workdir, &rel).map_err(ToolError::Denied)?;
+                    if let Some(d) = alvo.parent() {
+                        std::fs::create_dir_all(d).map_err(|e| ToolError::Failed(e.to_string()))?;
+                    }
+                    std::fs::write(&alvo, c).map_err(|e| ToolError::Failed(e.to_string()))?;
+                    artefatos.push(
+                        artifact_for(&ctx.workdir, &rel)
+                            .map_err(|e| ToolError::Failed(e.to_string()))?,
+                    );
+                }
+            }
             for f in ["ui-ir.json", "index.html"] {
                 artefatos.push(
                     artifact_for(&ctx.workdir, &format!("{pasta}/{f}"))
@@ -92,6 +108,11 @@ CREATE TABLE statements. Give the DDL in 'sql' or a file of the task in 'sql_pat
                 telas.len(),
                 telas.join(", ")
             );
+            if react {
+                r.push_str(&format!(
+                    "\nprojeto React em {pasta}/react (npm install && npm run build)"
+                ));
+            }
             if !avisos.is_empty() {
                 r.push_str(&format!("\navisos: {}", avisos.join("; ")));
             }

@@ -130,6 +130,18 @@ async fn design_erp_ui_grava_ir_e_html_do_sql_em_arquivo() {
     assert_eq!(ir["name"], "Vendas");
     let html = std::fs::read_to_string(c.workdir.join("telas/index.html")).unwrap();
     assert!(html.contains("data-add-item"));
+    // sem pedir React, nao grava React; pedindo, grava o projeto
+    assert!(!c.workdir.join("telas/react").exists());
+    let r = DesignErpUiTool
+        .run(
+            json!({"sql_path":"banco.sql","folder":"telas","react":true}),
+            &c,
+        )
+        .await
+        .unwrap();
+    assert_eq!(r.artifacts.len(), 7, "html, ir e 5 arquivos do React");
+    let telas = std::fs::read_to_string(c.workdir.join("telas/react/src/telas.jsx")).unwrap();
+    assert!(telas.contains("export function TelaPedidoDocumento()"));
 }
 
 #[tokio::test]

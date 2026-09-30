@@ -62,5 +62,6 @@ exigência do anexo): `schema.rs` produz o `App` do `ir.rs`; `html.rs` só lê o
 | U1 | ferramenta do agente `design_erp_ui` (grava `ui-ir.json` + `index.html`, publicável) | ✓ 30/09 — qwen2.5:3b a chamou no 1º passo e concluiu |
 | U2 | Prompt → UI-IR (modelo preenche o IR, validado pelo serde) | ☐ |
 | U3 | Screenshot → UI-IR (visão) | ☐ bloqueado: modelo com visão |
-| U4 | renderizadores WinDev/WebDev (WLanguage), React, Flutter | ☐ |
+| U4a | renderizador React (esbuild; `design_erp_ui` com `react: true`) | ✓ 30/09 — construído com npm real e exercitado no Chromium: itens, total, remoção, data, menu; RED medido |
+| U4b | renderizadores WinDev/WebDev (WLanguage) e Flutter | ☐ sem WinDev/Flutter neste ambiente para provar |
 | U5 | data no formato do idioma | ✓ 30/09 — máscara dd/mm/aaaa própria (o nativo segue o idioma do navegador); 31/02 recusada no Chromium, RED medido |

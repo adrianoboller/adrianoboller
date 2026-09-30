@@ -7,6 +7,7 @@
 
 pub mod html;
 pub mod ir;
+pub mod react;
 pub mod schema;
 
 pub use ir::*;
