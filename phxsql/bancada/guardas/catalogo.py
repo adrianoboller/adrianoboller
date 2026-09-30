@@ -14777,6 +14777,30 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         ],
     },
     {
+        "id": "arranque-reconstroi-calado",
+        "titulo": "o arranque reconstroi indice marcado e so diz no `stderr`: quem opera nao fica sabendo da queda",
+        "porque": (
+            "pedido 255, decisao do dono de 30/09/2026: reconstruir sozinho E "
+            "avisar. Medido antes: a fila do carteiro da saude do disco saia "
+            "vazia com o indice reconstruido."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        ) {
+            saude.entregar(evento);
+        }
+""",
+        "troca": """        ) {
+            let _ = evento;
+        }
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_da_saude_do_disco::o_arranque_que_reconstroi_indice_avisa_pelo_carteiro",
+        ],
+        "seguem": [],
+    },
+    {
         "id": "reconstruir-fts-sem-janela",
         "titulo": "o panico no meio do `reconstruir_fts` grava o indice de texto pela metade marcado limpo",
         "porque": (

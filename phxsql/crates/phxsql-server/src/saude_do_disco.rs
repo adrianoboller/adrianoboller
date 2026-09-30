@@ -94,6 +94,12 @@ pub enum Tipo {
     /// entra no `ultimo_evento` nem pinta o painel: so pega carona no
     /// carteiro, com silencio proprio. Ver [`SaudeDoDisco::falha_do_backup`].
     Backup,
+    /// O ARRANQUE reconstruiu indices que uma queda deixou para tras, ou nao
+    /// conseguiu reconstruir algum -- pedido 255, decisao do dono de
+    /// 30/09/2026: reconstruir sozinho E avisar, para quem opera nao depender
+    /// do log. Como o `Backup`, nao e erro do disco: pega carona no carteiro
+    /// e nao pinta o painel. Ver [`evento_do_arranque`].
+    Arranque,
 }
 
 impl Tipo {
@@ -105,6 +111,7 @@ impl Tipo {
             Tipo::Conferencia => "conferencia",
             Tipo::Lento => "lento",
             Tipo::Backup => "backup",
+            Tipo::Arranque => "arranque",
         }
     }
 
@@ -124,6 +131,39 @@ impl Tipo {
             Tipo::Lento,
         ]
     }
+}
+
+/// O evento do arranque que reconstruiu (ou deixou pendente) indice marcado
+/// -- `None` no arranque de sempre, que nao avisa nada: aviso que chega em
+/// toda subida treina quem opera a nao ler aviso.
+pub fn evento_do_arranque(
+    agora_ms: i64,
+    reconstruidos: usize,
+    pendentes: &[String],
+) -> Option<Evento> {
+    if reconstruidos == 0 && pendentes.is_empty() {
+        return None;
+    }
+    let mut texto = format!(
+        "{reconstruidos} indice(s) que uma queda deixou para tras foram reconstruidos \
+         no arranque"
+    );
+    if !pendentes.is_empty() {
+        texto.push_str(&format!(
+            "; {} NAO se reconstruiram e a tabela continua recusando ate um \
+             `reindexar`: {}",
+            pendentes.len(),
+            pendentes.join("; ")
+        ));
+    }
+    Some(Evento {
+        quando_ms: agora_ms,
+        tipo: Tipo::Arranque,
+        origem: "arranque".into(),
+        database: String::new(),
+        tabela: String::new(),
+        texto,
+    })
 }
 
 /// Classifica um erro do sistema operacional pelo `kind` E pelo errno.

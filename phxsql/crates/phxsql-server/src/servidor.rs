@@ -1704,6 +1704,15 @@ impl Servidor {
             config.alertas.disco.clone(),
             &config.base,
         ));
+        // Pedido 255: o indice reconstruido no arranque tambem sai pelo
+        // carteiro, e nao so no log -- quem opera le e-mail, nao `stderr`.
+        if let Some(evento) = crate::saude_do_disco::evento_do_arranque(
+            crate::agora_ms(),
+            recuperacao.indices_reconstruidos,
+            &recuperacao.indices_pendentes,
+        ) {
+            saude.entregar(evento);
+        }
         let permissoes_http = match config.recursos.conexoes_web_max {
             0 => Semaforo::sem_teto(),
             teto => Semaforo::novo(teto),
@@ -26584,7 +26593,11 @@ impl Servidor {
         // dele: «detectou um problema no disco onde o banco grava» seria
         // mentira sobre um destino sem permissao.
         let backup = evento.tipo == crate::saude_do_disco::Tipo::Backup;
-        if !backup {
+        // O do arranque (255) tambem nao e do disco: texto proprio, e fora da
+        // conta dos avisos de saude, como o do backup.
+        let arranque = evento.tipo == crate::saude_do_disco::Tipo::Arranque;
+        let fora_do_disco = backup || arranque;
+        if !fora_do_disco {
             eprintln!(
                 "SAUDE DO DISCO ({}): {} em {}{} -- {}",
                 evento.tipo.nome(),
@@ -26606,6 +26619,8 @@ impl Servidor {
         let sms = self.config.alertas.sms.clone();
         let assunto = if backup {
             "PhxSql: o backup agendado FALHOU".to_string()
+        } else if arranque {
+            "PhxSql: o arranque reconstruiu indices depois de uma queda".to_string()
         } else {
             format!(
                 "PhxSql: saude do disco -- {} ({})",
@@ -26615,6 +26630,8 @@ impl Servidor {
         };
         let corpo = if backup {
             self.texto_do_aviso_de_backup(&evento)
+        } else if arranque {
+            self.texto_do_aviso_do_arranque(&evento)
         } else {
             self.texto_do_aviso_de_saude(&evento)
         };
@@ -26624,6 +26641,8 @@ impl Servidor {
         // fora da conta dela, com o log proprio.
         let de_que = if backup {
             "do backup agendado"
+        } else if arranque {
+            "do arranque"
         } else {
             "de saude do disco"
         };
@@ -26634,7 +26653,7 @@ impl Servidor {
             // Falhar em avisar tambem e noticia, como no disco cheio.
             Err(e) => eprintln!("aviso {de_que} NAO ENVIADO: {e}"),
         }
-        if !backup {
+        if !fora_do_disco {
             self.saude.anotar_aviso(
                 "email",
                 r.map(|_| ()).map_err(|e| e.to_string()),
@@ -26654,7 +26673,7 @@ impl Servidor {
             Ok(r) => eprintln!("SMS {de_que} enviado: {r}"),
             Err(e) => eprintln!("SMS {de_que} NAO ENVIADO: {e}"),
         }
-        if !backup {
+        if !fora_do_disco {
             self.saude.anotar_aviso(
                 "sms",
                 r.map(|_| ()).map_err(|e| e.to_string()),
@@ -26672,7 +26691,28 @@ impl Servidor {
             Tipo::Conferencia => "o dado voltou diferente do escrito",
             Tipo::Lento => "disco lento",
             Tipo::Backup => "o backup agendado falhou",
+            Tipo::Arranque => "o arranque reconstruiu indices",
         }
+    }
+
+    /// O corpo do e-mail do arranque que reconstruiu indices -- pedido 255.
+    /// Diz o que aconteceu, que o dado nao se perdeu por isso, e o que fazer
+    /// com a tabela que ficou pendente.
+    fn texto_do_aviso_do_arranque(&self, e: &crate::saude_do_disco::Evento) -> String {
+        format!(
+            "O PhxSql subiu depois de uma queda, e o arranque reconstruiu indices que \
+             ela deixou para tras.\n\n\x20 servidor   {}\n  base       {}\n  quando     \
+             {}\n  o que      {}\n\n\
+             O indice se reconstroi a partir do arquivo de dados: nenhuma linha se \
+             perdeu por isso. Se ha tabela pendente, ela recusa ate alguem rodar \
+             `reindexar` nela. Queda sem aviso se investiga: energia, SIGKILL, falta \
+             de memoria.\n\
+             Servidor PhxSql {VERSAO}\n",
+            crate::email::nome_da_maquina(),
+            self.config.base.display(),
+            phxsql_core::datahora::instante_iso(e.quando_ms),
+            e.texto
+        )
     }
 
     /// O corpo do e-mail do backup agendado que falhou -- pedido 510. Leva o
@@ -26761,6 +26801,11 @@ impl Servidor {
         let linha = if e.tipo == crate::saude_do_disco::Tipo::Backup {
             format!(
                 "PhxSql {}: o backup agendado FALHOU {hora} UTC",
+                crate::email::nome_da_maquina()
+            )
+        } else if e.tipo == crate::saude_do_disco::Tipo::Arranque {
+            format!(
+                "PhxSql {}: subiu depois de uma queda e reconstruiu indices {hora} UTC",
                 crate::email::nome_da_maquina()
             )
         } else {
@@ -56802,6 +56847,77 @@ mod testes_da_saude_do_disco {
         // errado -- teste que passa (ou falha) por engano.
         c.cifra_fio.exigir = false;
         c
+    }
+
+    /// **Pedido 255, decisao do dono de 30/09/2026:** o arranque que
+    /// reconstroi indice marcado tambem AVISA pelo carteiro da saude do
+    /// disco, e nao so no `stderr`. E o arranque de sempre nao avisa nada.
+    ///
+    /// # Prova real
+    ///
+    /// Sem o `evento_do_arranque` no `Servidor::novo`, a fila sai vazia com
+    /// o indice reconstruido -- o vermelho medido.
+    #[test]
+    fn o_arranque_que_reconstroi_indice_avisa_pelo_carteiro() {
+        use phxsql_core::schema::{Column, IndexColumn, IndexDef, Schema};
+        use phxsql_core::types::ColumnType;
+        let dir = DirTemp::novo("255-arranque");
+        {
+            let inst = phxsql_store::catalogo::Instancia::nova(&*dir).unwrap();
+            let db = inst.criar_database("loja").unwrap();
+            let e = Schema::new(
+                "itens",
+                vec![Column::new("id", ColumnType::Int8).obrigatoria()],
+                vec![IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico()],
+            )
+            .unwrap();
+            let mut t = db.criar_tabela(None, e).unwrap();
+            t.inserir(&[Value::Int(1)]).unwrap();
+            t.sincronizar().unwrap();
+        }
+        // O arranque de sempre: nada a dizer.
+        let limpo = Servidor::novo(config_base(&dir)).unwrap();
+        assert_eq!(limpo.saude.na_fila(), 0, "o arranque limpo avisou");
+        drop(limpo);
+
+        // A queda que deixa o `.ndx` marcado: escrita sem `sincronizar` -- o
+        // `fechar` nao baixa o byte 52 (pedido 522).
+        {
+            let inst = phxsql_store::catalogo::Instancia::nova(&*dir).unwrap();
+            let mut t = inst
+                .abrir_database("loja")
+                .unwrap()
+                .abrir_qualificada("itens")
+                .unwrap();
+            t.inserir(&[Value::Int(2)]).unwrap();
+        }
+        // O processo NOVO de depois da queda: o atestado deste nao vale la.
+        phxsql_store::ndx::esquecer_atestados_para_teste(&dir);
+        let s = Servidor::novo(config_base(&dir)).unwrap();
+        let eventos = s.saude.esperar(std::time::Duration::ZERO);
+        let ev = eventos
+            .iter()
+            .find(|e| e.tipo == crate::saude_do_disco::Tipo::Arranque)
+            .unwrap_or_else(|| panic!("o arranque reconstruiu e nao avisou: {eventos:?}"));
+        assert!(ev.texto.starts_with("1 indice(s)"), "{}", ev.texto);
+        // Nao e erro do disco: o painel continua sem evento de disco.
+        assert!(s.saude.ultimo_evento().is_none());
+        drop(s);
+
+        // E o que NAO se reconstruiu tambem avisa, dizendo qual: o cabecalho
+        // do `.ndx` rasgado -- byte mexido sem o CRC acompanhar.
+        let ndx = dir.join("loja").join("itens.ndx");
+        let mut b = std::fs::read(&ndx).unwrap();
+        b[52] ^= 1;
+        std::fs::write(&ndx, b).unwrap();
+        let s = Servidor::novo(config_base(&dir)).unwrap();
+        let eventos = s.saude.esperar(std::time::Duration::ZERO);
+        let ev = eventos
+            .iter()
+            .find(|e| e.tipo == crate::saude_do_disco::Tipo::Arranque)
+            .unwrap_or_else(|| panic!("o pendente nao avisou: {eventos:?}"));
+        assert!(ev.texto.contains("NAO se reconstruiram"), "{}", ev.texto);
+        assert!(ev.texto.contains("loja/itens"), "{}", ev.texto);
     }
 
     /// Liga o rele falso e, se pedido, o SMS pelo gateway.
