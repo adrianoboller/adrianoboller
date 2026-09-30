@@ -586,7 +586,7 @@ impl RegFile {
     fn terminar_troca_interrompida(&mut self) -> Result<()> {
         for (novo, alvo) in self.trocas_por_terminar() {
             self.volumes.fechar_todos();
-            std::fs::rename(&novo, &alvo)?;
+            crate::sincronia::trocar_duravel(&novo, &alvo)?;
         }
         Ok(())
     }
@@ -2662,7 +2662,7 @@ fn reescrever_volume(
     crate::sincronia::sync_all(&para, &tmp)?;
     drop(para);
     if trocar {
-        std::fs::rename(&tmp, caminho)?;
+        crate::sincronia::trocar_duravel(&tmp, caminho)?;
     }
     Ok(())
 }
@@ -2870,7 +2870,7 @@ fn retratar(primeiros: &[(u32, RowId, PathBuf, Option<PathBuf>)]) -> Vec<Retrato
 fn trocar_pelo_novo(caminho: &Path) -> Result<()> {
     let tmp = caminho_do_novo(caminho);
     if tmp.exists() {
-        std::fs::rename(&tmp, caminho)?;
+        crate::sincronia::trocar_duravel(&tmp, caminho)?;
     }
     Ok(())
 }

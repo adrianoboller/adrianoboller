@@ -2777,8 +2777,14 @@ pub(crate) fn gravar_privado(caminho: &Path, corpo: &[u8]) -> std::io::Result<()
     arq.sync_all()?;
     drop(arq);
     // Troca atomica: um corte de energia no meio deixa o arquivo antigo
-    // inteiro, e nao um pela metade -- que derrubaria o proximo arranque.
-    std::fs::rename(&temporario, caminho)
+    // inteiro, e nao um pela metade -- que derrubaria o proximo arranque. E
+    // DURAVEL (pedido 467): sem o `fsync` do diretorio, a queda logo depois
+    // podia voltar com o arquivo antigo -- no `dblink.json`, o claro de volta
+    // depois de a resposta dizer que as ligacoes estavam cifradas.
+    phxsql_store::sincronia::trocar_duravel(&temporario, caminho).map_err(|e| match e {
+        PhxError::Io(e) => e,
+        outro => std::io::Error::other(outro.to_string()),
+    })
 }
 
 /// Um servidor que a interface pode alcancar.
@@ -9638,6 +9644,19 @@ mod testes_gravacao {
             !temporario_de(&caminho).exists(),
             "o temporario ficou para tras"
         );
+    }
+
+    /// Pedido 467, o caso que o motivou: o `dblink.json` e o config passam
+    /// pelo `gravar_privado`, e ele so responde depois do `fsync` do
+    /// diretorio -- senao a queda voltava com o arquivo ANTIGO.
+    #[test]
+    fn gravar_privado_so_responde_depois_do_fsync_do_diretorio() {
+        use phxsql_store::sincronia::falha_de_teste::{armar, desarmar, Onde};
+        let dir = DirTemp::novo("gravar-privado-dir");
+        armar(&dir, Onde::Fsync, 1);
+        let r = gravar_privado(&dir.join("dblink.json"), b"{}");
+        desarmar(&dir);
+        assert!(r.is_err(), "respondeu sem o fsync do diretorio");
     }
 
     /// O molde em si: caminho novo nasce 0600, e um `.tmp` deixado por uma

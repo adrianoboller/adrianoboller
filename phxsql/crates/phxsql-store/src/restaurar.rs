@@ -708,7 +708,8 @@ fn palco_para(base: &Path) -> Result<PathBuf> {
 /// Move; se o `rename` nao servir -- outro sistema de arquivos --, copia.
 fn renomear_ou_copiar(de: &Path, para: &Path) -> Result<()> {
     if std::fs::rename(de, para).is_ok() {
-        return Ok(());
+        // Pedido 467: o nome novo so vale depois do `fsync` dos diretorios.
+        return crate::sincronia::sincronizar_os_diretorios(de, para, true);
     }
     copiar_arvore(de, para)?;
     std::fs::remove_dir_all(de)?;

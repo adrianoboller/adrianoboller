@@ -82,6 +82,9 @@ pub fn escrever(
     let texto = montar(nome, esquema, baldes, volumes);
     // Falhar aqui nao pode deixar o temporario para tras: quem falha uma vez
     // costuma falhar de novo, e o resto viraria permanente.
+    // So `rename`, e nao o `trocar_duravel` do pedido 467: aqui o conserto
+    // e de ATOMICIDADE e nao de durabilidade (ver acima). A catraca
+    // `TETO_FSYNC_POR_FECHO_V2` pegou quando ele passou pelo motor.
     // Pelo motor da permissao (pedido 542): o temporario nasce 0600, e um
     // `.pag.novo` largado por uma queda nao empresta o modo dele.
     if let Err(e) = crate::util::escrever_do_banco(&temporario, texto) {

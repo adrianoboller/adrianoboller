@@ -374,14 +374,13 @@ fn parcial(alvo: &Path) -> PathBuf {
 /// Sincroniza o ZIP parcial e o TROCA de nome para o final -- so agora ele
 /// existe para quem lista backups (pedido 524, condicao C2).
 ///
-/// O `rename` em si nao tem `fsync` de diretorio (isso e' o pedido 467, que
-/// vale para toda a casa, nao so para o backup); o que esta condicao fecha e
-/// o conteudo: nenhum `.zip` visivel chega pela metade.
+/// O `rename` passa pelo motor do pedido 467, com o `fsync` do diretorio --
+/// na versao que devolve `Err` em vez de derrubar o servidor, porque o
+/// destino do backup nao e o disco do banco.
 pub fn finalizar_zip(alvo: &Path) -> Result<()> {
     let parcial = parcial(alvo);
     sincronizar_arquivo(&parcial)?;
-    std::fs::rename(&parcial, alvo)?;
-    Ok(())
+    crate::sincronia::trocar_duravel_sem_abortar(&parcial, alvo)
 }
 
 /// Dos arquivos da pasta, quais apagar para sobrarem `manter`.

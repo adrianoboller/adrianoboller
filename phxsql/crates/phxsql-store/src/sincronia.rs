@@ -171,6 +171,64 @@ pub(crate) fn sync_all_sem_abortar(arquivo: &File, caminho: &Path) -> Result<()>
     sync_all_interno(arquivo, caminho, false, false)
 }
 
+/// Troca atomica DURAVEL: o `rename` e depois o `fsync` do diretorio -- dos
+/// DOIS, quando a troca atravessa diretorios. Pedido 467.
+///
+/// O `rename` so muda a entrada do diretorio, e a entrada e dado do
+/// DIRETORIO: sem o `fsync` dele, uma queda logo depois pode voltar com o
+/// nome apontando para o arquivo ANTIGO, depois de a resposta ter dito que a
+/// troca aconteceu. E o `durable_rename` do PostgreSQL (`fd.c`), que faz o
+/// `fsync` do arquivo, o `rename` e o `fsync` do diretorio pai -- com PANIC
+/// se ele falhar, que aqui e o mesmo gancho do [`sync_all`].
+///
+/// Um motor so para a casa inteira: espalhar o `fsync` do diretorio por cada
+/// `rename` e deixar o proximo `rename` nascer sem ele.
+///
+/// No Windows nao ha `fsync` de diretorio pela `std` (abrir um diretorio
+/// pede `FILE_FLAG_BACKUP_SEMANTICS`), e o NTFS registra a troca de nome no
+/// proprio diario de metadados: la a funcao e so o `rename`.
+pub fn trocar_duravel(de: &Path, para: &Path) -> Result<()> {
+    std::fs::rename(de, para)?;
+    sincronizar_os_diretorios(de, para, true)
+}
+
+/// A mesma troca para um destino que NAO e o disco do banco -- hoje so o
+/// [`crate::backup`]: a recusa vira `Err` em vez de chamar o gancho (a mesma
+/// razao do [`sync_all_sem_abortar`]).
+pub(crate) fn trocar_duravel_sem_abortar(de: &Path, para: &Path) -> Result<()> {
+    std::fs::rename(de, para)?;
+    sincronizar_os_diretorios(de, para, false)
+}
+
+/// O `fsync` dos diretorios de uma troca que JA aconteceu -- para quem fez o
+/// `rename` por conta propria porque precisa decidir o que fazer se ele
+/// falhar (a restauracao cai para a copia).
+pub(crate) fn sincronizar_os_diretorios(de: &Path, para: &Path, com_gancho: bool) -> Result<()> {
+    let pai = |p: &Path| -> PathBuf {
+        match p.parent() {
+            Some(d) if !d.as_os_str().is_empty() => d.to_path_buf(),
+            _ => PathBuf::from("."),
+        }
+    };
+    let (d_para, d_de) = (pai(para), pai(de));
+    sincronizar_diretorio(&d_para, para, com_gancho)?;
+    if absoluto(&d_de) != absoluto(&d_para) {
+        sincronizar_diretorio(&d_de, de, com_gancho)?;
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn sincronizar_diretorio(dir: &Path, de_quem: &Path, com_gancho: bool) -> Result<()> {
+    let f = File::open(dir)?;
+    sync_all_interno(&f, de_quem, com_gancho, false)
+}
+
+#[cfg(not(unix))]
+fn sincronizar_diretorio(_dir: &Path, _de_quem: &Path, _com_gancho: bool) -> Result<()> {
+    Ok(())
+}
+
 fn sync_all_interno(
     arquivo: &File,
     caminho: &Path,
@@ -359,5 +417,111 @@ pub mod falha_de_teste {
             Onde::Fsync => 5,
             Onde::PaginaDoIndice => 28,
         }))
+    }
+}
+
+#[cfg(test)]
+#[cfg(unix)]
+mod testes_da_troca {
+    use super::*;
+
+    use crate::apoio_teste::DirTemp;
+
+    /// A falha armada no `fsync` sob o diretorio chega a troca: prova que o
+    /// `fsync` do DIRETORIO acontece -- sem ele, a troca responderia Ok.
+    #[test]
+    fn a_troca_passa_pelo_fsync_do_diretorio() {
+        let t = DirTemp::novo("troca-fsync");
+        let d = t.0.clone();
+        std::fs::write(d.join("a.tmp"), b"novo").unwrap();
+        falha_de_teste::armar(&d, falha_de_teste::Onde::Fsync, 1);
+        let r = trocar_duravel(&d.join("a.tmp"), &d.join("a"));
+        falha_de_teste::desarmar(&d);
+        assert!(r.is_err(), "a troca nao fez fsync do diretorio");
+    }
+
+    /// A troca que atravessa diretorios sincroniza os DOIS: a entrada que
+    /// sai do de origem tambem e dado, e sem ela a queda deixa o arquivo nos
+    /// dois lugares ou em nenhum.
+    #[test]
+    fn a_troca_entre_diretorios_sincroniza_a_origem_tambem() {
+        let t = DirTemp::novo("troca-dois-dirs");
+        let (de, para) = (t.0.join("de"), t.0.join("para"));
+        std::fs::create_dir_all(&de).unwrap();
+        std::fs::create_dir_all(&para).unwrap();
+        std::fs::write(de.join("x"), b"1").unwrap();
+        // So a ORIGEM falha: o destino sincroniza bem.
+        falha_de_teste::armar(&de, falha_de_teste::Onde::Fsync, 1);
+        let r = trocar_duravel(&de.join("x"), &para.join("x"));
+        falha_de_teste::desarmar(&de);
+        assert!(r.is_err(), "a origem nao recebeu fsync");
+    }
+
+    /// O filho que o teste de baixo roda debaixo do `strace`.
+    #[test]
+    #[ignore = "roda so dentro de a_troca_e_duravel_pelo_strace"]
+    fn filho_da_troca_duravel() {
+        let d = PathBuf::from(std::env::var("PHX_TROCA_DIR").unwrap());
+        std::fs::write(d.join("alvo.tmp"), b"novo").unwrap();
+        trocar_duravel(&d.join("alvo.tmp"), &d.join("alvo")).unwrap();
+    }
+
+    /// Contra o sistema operacional: depois do `rename` do alvo, um
+    /// descritor aberto NO DIRETORIO recebe `fsync`.
+    #[test]
+    fn a_troca_e_duravel_pelo_strace() {
+        if std::process::Command::new("strace")
+            .arg("-V")
+            .output()
+            .is_err()
+        {
+            eprintln!("sem strace nesta maquina: a prova contra o SO nao rodou");
+            return;
+        }
+        let t = DirTemp::novo("troca-strace");
+        let d = std::fs::canonicalize(&t.0).unwrap();
+        let traco = d.join("traco.txt");
+        let saida = std::process::Command::new("strace")
+            .args([
+                "-f",
+                "-e",
+                "trace=openat,rename,renameat,renameat2,fsync",
+                "-o",
+            ])
+            .arg(&traco)
+            .arg(std::env::current_exe().unwrap())
+            .args([
+                "--ignored",
+                "--exact",
+                "sincronia::testes_da_troca::filho_da_troca_duravel",
+            ])
+            .env("PHX_TROCA_DIR", &d)
+            .output()
+            .unwrap();
+        assert!(
+            saida.status.success(),
+            "{}",
+            String::from_utf8_lossy(&saida.stderr)
+        );
+        let texto = std::fs::read_to_string(&traco).unwrap();
+        let dir_txt = format!("\"{}\"", d.display());
+        let mut depois_do_rename = false;
+        let mut fd_do_dir: Option<String> = None;
+        let mut sincronizou = false;
+        for l in texto.lines() {
+            if l.contains("rename") && l.contains("alvo.tmp") {
+                depois_do_rename = true;
+            } else if depois_do_rename && l.contains("openat(") && l.contains(&dir_txt) {
+                fd_do_dir = l.rsplit("= ").next().map(|s| s.trim().to_string());
+            } else if let Some(fd) = &fd_do_dir {
+                if l.contains(&format!("fsync({fd})")) && l.trim_end().ends_with("= 0") {
+                    sincronizou = true;
+                }
+            }
+        }
+        assert!(
+            sincronizou,
+            "sem fsync do diretorio depois do rename:\n{texto}"
+        );
     }
 }

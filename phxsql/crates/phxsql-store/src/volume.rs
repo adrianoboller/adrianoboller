@@ -520,7 +520,7 @@ impl Volumes {
         if let Some(pos) = self.ordem.iter().position(|v| *v == ativo) {
             self.ordem.remove(pos);
         }
-        std::fs::rename(&de, &para)?;
+        crate::sincronia::trocar_duravel(&de, &para)?;
         self.definir_ativo_da_trilha(ativo + 1);
         Ok(ativo)
     }
@@ -1430,15 +1430,23 @@ mod tests {
     /// plantado no nome.
     #[test]
     fn nenhum_caminho_de_escrita_novo_fora_do_volumes() {
+        // Pedido 467: cinco `rename` espalhados (3 no `reg.rs`, 1 no
+        // `volume.rs` e no `backup.rs`) passaram pelo motor unico da troca
+        // duravel, que mora no `sincronia.rs` com os 2 dele -- 32 caminhos
+        // viraram 29. O do `pag.rs` fica: o `.pag` e derivado, e ali basta
+        // atomicidade. O `catalogo.rs` e o `restaurar.rs` seguem
+        // com o `rename` proprio porque decidem o que fazer quando ele falha
+        // (desfazer; copiar), e so o `fsync` dos diretorios vem do motor.
         const HOJE: &[(&str, usize)] = &[
-            ("backup.rs", 3),
+            ("backup.rs", 2),
             ("catalogo.rs", 5),
             ("ndx.rs", 2),
             ("pag.rs", 2),
-            ("reg.rs", 5),
+            ("reg.rs", 2),
             ("restaurar.rs", 3),
+            ("sincronia.rs", 2),
             ("util.rs", 9),
-            ("volume.rs", 3),
+            ("volume.rs", 2),
         ];
         const ABRIDORES: [&str; 8] = [
             "OpenOptions::new()",

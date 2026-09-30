@@ -1107,6 +1107,12 @@ impl Database {
             }
             feitos.push((de.clone(), para.clone()));
         }
+        // Pedido 467: os nomes novos so valem depois do `fsync` dos dois
+        // diretorios. Um so, no fim: todos os arquivos da tabela moram no
+        // mesmo diretorio de origem e vao para o mesmo de destino.
+        if let Some((de, para)) = mover.first() {
+            crate::sincronia::sincronizar_os_diretorios(de, para, true)?;
+        }
         // O atestado do pedido 522 vai junto: e o mesmo inode, no caminho
         // novo. Sem isto, a tabela escrita desde o ultimo fecho da janela
         // abria no nome novo recusando tudo. Ver `ndx::levar_atestado`.
@@ -2022,6 +2028,30 @@ mod testes_copia_entre_bancos {
             "extensoes_de_uma_tabela() (a lista que o conferidor do pedido \
              213 le) nao tem \"fts\""
         );
+    }
+
+    /// Pedido 467: o renomear so responde depois do `fsync` do diretorio --
+    /// sem ele, uma queda logo depois podia voltar com o nome velho depois de
+    /// a resposta ter dito que a tabela mudou de nome.
+    #[test]
+    fn renomear_so_responde_depois_do_fsync_do_diretorio() {
+        let base = crate::apoio_teste::DirTemp::novo("phx-renom-fsync");
+        let cat = Instancia::nova(&base).unwrap();
+        let db = cat.criar_database("loja").unwrap();
+        let mut t = db.criar_tabela(None, esquema("pedidos")).unwrap();
+        t.inserir(&[Value::Int(1), Value::Str("um".into())])
+            .unwrap();
+        t.sincronizar().unwrap();
+        drop(t);
+        let dir = base.join("loja");
+        crate::sincronia::falha_de_teste::armar(
+            &dir,
+            crate::sincronia::falha_de_teste::Onde::Fsync,
+            1,
+        );
+        let r = db.renomear_tabela("pedidos", "pedidos_novo");
+        crate::sincronia::falha_de_teste::desarmar(&dir);
+        assert!(r.is_err(), "o renomear respondeu sem o fsync do diretorio");
     }
 
     /// O renomear MOVE: o nome velho some, o novo abre, e o dado e o mesmo.
