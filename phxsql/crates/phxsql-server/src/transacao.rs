@@ -1112,6 +1112,7 @@ mod testes {
                 motivo: String::new(),
                 cascata_na_lista: false,
                 elo_do_empilhar: false,
+                elo_da_cascata: false,
             }],
         )
         .unwrap();

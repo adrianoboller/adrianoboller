@@ -351,6 +351,15 @@ passa pela passada do `COMMIT`, que sabe de gatilho — e a decisão continua
 valendo por escrito: a porta da alteração solta descarta a lista de AFTER dos
 elos e roda só o da mãe, como antes.
 
+**Pedido 562: a decisão saiu de quem chama e foi para a passada.** Só a porta
+da alteração solta descartava o AFTER dos elos; o `COMMIT`, pela mesma passada,
+o rodava — a mesma cascata disparava o AFTER da filha com `BEGIN` e não sem
+ele. Hoje o elo carrega `elo_da_cascata` (só em memória, a marca não muda) e o
+`aplicar_conjunto` não junta o AFTER dele, nos dois caminhos. O voto dos
+motores empata — PostgreSQL 4 + SQLite 1 = **5** disparam, MariaDB 3 + MySQL 2
+= **5** não —, e por isso vale a decisão escrita acima. Guarda
+`cascata-dispara-after-do-elo-so-no-commit`.
+
 ### 7.4 A auto-referência: eles RECUSAM, nós passamos em silêncio — é defeito
 
 > «If `ON UPDATE CASCADE` or `ON UPDATE SET NULL` recurses to update the same
