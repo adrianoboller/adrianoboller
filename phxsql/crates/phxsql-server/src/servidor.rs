@@ -1353,6 +1353,13 @@ pub struct Servidor {
     passada_quebra_congelando: Mutex<Option<phxsql_store::congelamento::Congelada>>,
     #[cfg(test)]
     passada_quebra_congela: std::sync::atomic::AtomicBool,
+    /// So nos testes: roda UMA vez no meio da varredura da chave que nasce
+    /// conferida -- com a trava global SOLTA e as duas tabelas congeladas
+    /// (pedido 422). E o que torna a prova deterministica: o teste grava na
+    /// filha, apaga o pai e usa a vizinha exatamente dentro da janela, sem
+    /// depender de corrida nenhuma.
+    #[cfg(test)]
+    no_meio_da_varredura_da_fk: Mutex<Option<Box<dyn FnOnce() + Send>>>,
     /// So nos testes: a PROXIMA operacao com este nome arma, na thread que a
     /// atende, o panico de teste do motor (`ndx::panico_de_teste`) -- pedido
     /// 451. O panico e o do motor, no meio de uma escrita de verdade e com a
@@ -1566,6 +1573,18 @@ fn colunas_em_disco(dados: &Instancia, base: &str, tabela: &str) -> Result<Optio
     ))
 }
 
+/// A declaracao da chave com a trava SOLTA (pedido 422): a mae aberta antes
+/// do congelamento -- quando a chave varre e a mae existe --, e a posse das
+/// tabelas congeladas. Soltar a posse descongela, inclusive no `?` de um erro
+/// no meio.
+struct DeclaracaoSolta {
+    mae: Option<Table>,
+    _posse: (
+        phxsql_store::congelamento::Congelada,
+        Option<phxsql_store::congelamento::Congelada>,
+    ),
+}
+
 impl Servidor {
     pub fn novo(config: Config) -> Result<Arc<Servidor>> {
         // Antes de tudo, e antes da recuperacao abaixo -- que tambem
@@ -1746,6 +1765,8 @@ impl Servidor {
             passada_quebra_congelando: Mutex::new(None),
             #[cfg(test)]
             passada_quebra_congela: std::sync::atomic::AtomicBool::new(false),
+            #[cfg(test)]
+            no_meio_da_varredura_da_fk: Mutex::new(None),
             #[cfg(test)]
             panico_de_teste_na_op: Mutex::new(None),
             #[cfg(test)]
@@ -18891,6 +18912,7 @@ impl Servidor {
         let dados = self.travar_dados()?;
         let mut t = self.abrir_travada(&dados, p, sessao)?;
         let nova = crate::valores::chave_estrangeira_de_json(p, 0, t.esquema())?;
+        let fk_nova = nova.clone();
         let mut fks = t.esquema().chaves_estrangeiras().to_vec();
         if fks.iter().any(|f| f.nome == nova.nome) {
             return Err(PhxError::Duplicado(format!(
@@ -18907,7 +18929,31 @@ impl Servidor {
         // resposta dizia nao-imposta, o `esquema` dizia `verificar:true`).
         let imposta = nova.verificar;
         fks.push(nova);
-        let reescreveu = t.redeclarar_chaves_estrangeiras(fks)?;
+        // Pedido 422: a varredura roda com a trava SOLTA, e as tabelas
+        // congeladas -- ver `preparar_a_declaracao_solta`. O esquema se grava
+        // num ponto so, na trava retomada: e a mesma forma para a chave que
+        // varre e para a que nao varre.
+        let mut solta = self.preparar_a_declaracao_solta(&dados, p, &t, &fk_nova)?;
+        drop(dados);
+        #[cfg(test)]
+        {
+            let gancho = self
+                .no_meio_da_varredura_da_fk
+                .lock()
+                .ok()
+                .and_then(|mut g| g.take());
+            if let Some(g) = gancho {
+                g();
+            }
+        }
+        let recibo = t.conferir_chaves_que_nascem(&fks, solta.mae.as_mut())?;
+        solta.mae = None;
+        let dados = self.travar_dados()?;
+        let reescreveu = t.redeclarar_depois_de_conferir(fks, recibo)?;
+        // O congelamento sai antes da trava: quem estava esperando por ela
+        // encontra as tabelas ja abertas.
+        drop(solta);
+        drop(dados);
         Ok(Json::objeto(vec![
             ("database", Json::texto_de(p.texto_ou("database", ""))),
             ("tabela", Json::texto_de(p.texto_ou("tabela", ""))),
@@ -18921,6 +18967,87 @@ impl Servidor {
             ("imposta", Json::Bool(imposta)),
             ("arquivos_reescritos", Json::Bool(reescreveu)),
         ]))
+    }
+
+    /// **Pedido 422: a varredura da chave que nasce conferida roda FORA da
+    /// trava global**, com a filha e a mae congeladas.
+    ///
+    /// A varredura (`conferir_chave`) le a filha inteira e busca cada linha na
+    /// mae: O(linhas da filha), e com a trava global na mao era o servidor
+    /// inteiro parado por ela. O padrao e o da `acrescentar_coluna`: travar,
+    /// congelar, soltar, trabalhar, retravar, gravar. O que muda e o ALCANCE
+    /// do congelamento -- as DUAS tabelas, e esse e o «segundo escopo» que o
+    /// parecer pedia: com a filha congelada nenhuma linha nova escapa da
+    /// varredura; com a mae congelada nenhum pai sai de baixo de uma filha ja
+    /// conferida. Congelar so a filha compilaria, passaria na suite e
+    /// deixaria o `excluir` da mae abrir uma orfa dentro de uma chave
+    /// declarada conferida -- que e exatamente o «nunca» da regra primordial.
+    ///
+    /// A mae e aberta ANTES do congelamento: depois dele, o `Table::abrir`
+    /// dela seria recusado pelo proprio congelamento que protege a varredura.
+    ///
+    /// # Uma forma so, varra ou nao
+    ///
+    /// Toda declaracao congela, solta, confere, retoma e grava -- inclusive a
+    /// que nao varre (chave sem `verificar`, ja conferida, ou mae que ainda
+    /// nao existe), que so congela a filha e confere nada. Dois caminhos, um
+    /// sob a trava original e outro sob a retomada, seriam dois pontos
+    /// segurando a trava ate o `fsync` do cabecalho; um so e o que acontece
+    /// de fato, e e o que o mapa da trava consegue ver.
+    ///
+    /// # Transacao viva na vizinhanca: quem cede e a declaracao
+    ///
+    /// Congelar faria o `COMMIT` de uma transacao que alcanca a filha ou a
+    /// mae bater no congelamento (pedido 426). A declaracao recusa na hora com
+    /// `EM_TRANSACAO` e nada gravado, como a `acrescentar_coluna`: os quatro
+    /// motores convergem em que quem paga e o DDL, nunca a transacao
+    /// (`docs/propostas/commit-contra-ddl-4-motores.md`, D5).
+    ///
+    /// A regravacao do esquema -- inclusive a condicional, quando o bloco nao
+    /// cabe -- continua sob a trava retomada.
+    fn preparar_a_declaracao_solta(
+        &self,
+        dados: &Instancia,
+        p: &Json,
+        t: &Table,
+        nova: &phxsql_core::schema::ForeignKey,
+    ) -> Result<DeclaracaoSolta> {
+        let database = p.texto_ou("database", "");
+        let tabela = p.texto_ou("tabela", "");
+        if let Some(recado) = self.transacao_na_vizinhanca(dados, database, tabela, t)? {
+            return Err(PhxError::EmTransacao(recado));
+        }
+        // A mae so importa para a chave que varre, e so se ela ja existe: a
+        // que falta e ordem legitima de modelagem, e a conferencia diz isso.
+        let mae = if t.pede_varredura(nova) {
+            let nome_mae = phxsql_store::table::nome_simples(&nova.tabela_ref);
+            match Table::abrir(t.diretorio(), nome_mae) {
+                Ok(m) => Some(m),
+                Err(PhxError::NaoEncontrado(_)) => None,
+                Err(e) => return Err(e),
+            }
+        } else {
+            None
+        };
+        if let Some(m) = &mae {
+            if let Some(recado) = self.transacao_na_vizinhanca(dados, database, tabela, m)? {
+                return Err(PhxError::EmTransacao(recado));
+            }
+        }
+        let motivo = format!("declarando a chave {}", nova.nome);
+        let filha = phxsql_store::congelamento::congelar(t.diretorio(), t.nome(), motivo.clone())?;
+        // Autorreferencia: a mae E a filha, e congelar duas vezes a mesma
+        // tabela e o que o registro recusa -- uma posse basta.
+        let da_mae = match &mae {
+            Some(m) if !m.nome().eq_ignore_ascii_case(t.nome()) => Some(
+                phxsql_store::congelamento::congelar(m.diretorio(), m.nome(), motivo)?,
+            ),
+            _ => None,
+        };
+        Ok(DeclaracaoSolta {
+            mae,
+            _posse: (filha, da_mae),
+        })
     }
 
     /// Acrescenta uma coluna a uma tabela que ja tem dado.
@@ -57490,6 +57617,285 @@ mod testes_do_bit_indisponivel_na_trilha {
                 "a redacao nao entra nesta historia: {}",
                 e.escrever()
             );
+        }
+    }
+}
+
+/// **Pedido 422: a varredura da chave que nasce conferida roda com a trava
+/// global SOLTA, e com a filha E a mae congeladas.**
+///
+/// O gancho `no_meio_da_varredura_da_fk` roda na mesma thread do
+/// `declarar_fk`, entre soltar a trava e varrer -- por isso a prova nao
+/// depende de corrida: ou a trava esta solta e o gancho consegue pedir, ou
+/// ela esta presa e o teste nem termina.
+///
+/// As tres perguntas feitas dentro da janela, e o defeito que cada uma pega:
+///
+/// * a VIZINHA grava -- sem isso a trava nao saiu, e o pedido nao andou;
+/// * a FILHA recusa -- sem o congelamento dela, uma linha orfa entraria
+///   depois de a varredura passar pelo slot dela;
+/// * o PAI referenciado recusa sair -- sem congelar a MAE, o `excluir`
+///   (que ainda nao ve a chave, porque ela nao foi gravada) apagaria um pai
+///   com filha, e a chave nasceria «conferida» sobre uma orfa. E o «nunca» da
+///   regra primordial, e e a metade que um conserto so da filha esqueceria.
+#[cfg(test)]
+mod testes_da_varredura_da_fk_fora_da_trava {
+    use super::*;
+    use std::sync::Mutex as Mx;
+
+    fn pedido(txt: &str) -> Json {
+        Json::analisar(txt).unwrap()
+    }
+
+    fn preparar(nome: &str) -> (Arc<Servidor>, DirTemp) {
+        let dir = DirTemp::novo(&format!("fk-fora-da-trava-{nome}"));
+        let config = Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            token: "t".into(),
+            ..Config::default()
+        };
+        let s = Servidor::novo(config).unwrap();
+        let dono = Sessao::default();
+        for (op, txt) in [
+            ("criar_database", r#"{"database":"b"}"#),
+            (
+                "criar_tabela",
+                r#"{"database":"b","tabela":"clientes",
+                    "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true}],
+                    "indices":[{"nome":"porId","colunas":["id"],"unico":true}]}"#,
+            ),
+            (
+                "criar_tabela",
+                r#"{"database":"b","tabela":"pedidos",
+                    "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true},
+                               {"nome":"cliente_id","tipo":"Int4"}],
+                    "indices":[{"nome":"porId","colunas":["id"],"unico":true},
+                               {"nome":"porCliente","colunas":["cliente_id"]}]}"#,
+            ),
+            (
+                "criar_tabela",
+                r#"{"database":"b","tabela":"vizinha",
+                    "colunas":[{"nome":"id","tipo":"Int4"}]}"#,
+            ),
+            (
+                "inserir",
+                r#"{"database":"b","tabela":"clientes","linha":{"id":1}}"#,
+            ),
+            (
+                "inserir",
+                r#"{"database":"b","tabela":"pedidos","linha":{"id":10,"cliente_id":1}}"#,
+            ),
+        ] {
+            s.executar(op, &pedido(txt), &dono).unwrap();
+        }
+        (s, dir)
+    }
+
+    #[test]
+    fn a_janela_da_varredura_solta_a_vizinha_e_segura_filha_e_mae() {
+        let (s, _dir) = preparar("janela");
+        type Vistos = Vec<(&'static str, std::result::Result<(), String>)>;
+        let vistos: Arc<Mx<Vistos>> = Arc::new(Mx::new(Vec::new()));
+        {
+            let s2 = Arc::clone(&s);
+            let vistos = Arc::clone(&vistos);
+            *s.no_meio_da_varredura_da_fk.lock().unwrap() = Some(Box::new(move || {
+                let dono = Sessao::default();
+                let mut v = vistos.lock().unwrap();
+                for (rotulo, op, txt) in [
+                    (
+                        "vizinha",
+                        "inserir",
+                        r#"{"database":"b","tabela":"vizinha","linha":{"id":1}}"#,
+                    ),
+                    (
+                        "filha",
+                        "inserir",
+                        r#"{"database":"b","tabela":"pedidos","linha":{"id":11,"cliente_id":99}}"#,
+                    ),
+                    (
+                        "mae",
+                        "excluir",
+                        r#"{"database":"b","tabela":"clientes","rowid":1,"fisico":true}"#,
+                    ),
+                ] {
+                    let r = s2.executar(op, &pedido(txt), &dono);
+                    v.push((rotulo, r.map(|_| ()).map_err(|e| format!("{e:?}"))));
+                }
+            }));
+        }
+
+        s.executar(
+            "declarar_fk",
+            &pedido(
+                r#"{"database":"b","tabela":"pedidos","nome":"fk_cliente",
+                    "colunas":["cliente_id"],"tabela_ref":"clientes","colunas_ref":["id"]}"#,
+            ),
+            &Sessao::default(),
+        )
+        .expect("a chave sobre dado limpo tinha de nascer conferida");
+
+        let vistos = vistos.lock().unwrap().clone();
+        assert_eq!(
+            vistos.len(),
+            3,
+            "o gancho nao rodou: a varredura nao passou pela janela sem a trava"
+        );
+        let de = |r: &str| vistos.iter().find(|(x, _)| *x == r).unwrap().1.clone();
+        assert!(
+            de("vizinha").is_ok(),
+            "a vizinha nao gravou na janela: {:?}",
+            de("vizinha")
+        );
+        for r in ["filha", "mae"] {
+            let e = de(r).expect_err(&format!(
+                "a {r} GRAVOU no meio da varredura: a chave nasceu conferida sobre \
+                 dado que ela nao viu"
+            ));
+            assert!(
+                e.contains("EmMigracao"),
+                "{r} recusou por outro motivo: {e}"
+            );
+        }
+        // O pai continua la, e a filha que o citava tambem.
+        s.executar(
+            "ler",
+            &pedido(r#"{"database":"b","tabela":"clientes","rowid":1}"#),
+            &Sessao::default(),
+        )
+        .expect("o pai referenciado saiu durante a varredura");
+        s.executar(
+            "inserir",
+            &pedido(r#"{"database":"b","tabela":"clientes","linha":{"id":2}}"#),
+            &Sessao::default(),
+        )
+        .expect("a mae ficou congelada depois da declaracao");
+    }
+
+    /// Autorreferencia: filha e mae sao a MESMA tabela, e congelar duas vezes
+    /// a mesma chave e o que o registro recusa. Uma posse basta.
+    #[test]
+    fn a_chave_que_aponta_para_a_propria_tabela_declara() {
+        let (s, _dir) = preparar("auto");
+        let dono = Sessao::default();
+        s.executar(
+            "criar_tabela",
+            &pedido(
+                r#"{"database":"b","tabela":"arvore",
+                    "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true},
+                               {"nome":"pai","tipo":"Int4"}],
+                    "indices":[{"nome":"porId","colunas":["id"],"unico":true},
+                               {"nome":"porPai","colunas":["pai"]}]}"#,
+            ),
+            &dono,
+        )
+        .unwrap();
+        for txt in [
+            r#"{"database":"b","tabela":"arvore","linha":{"id":1,"pai":null}}"#,
+            r#"{"database":"b","tabela":"arvore","linha":{"id":2,"pai":1}}"#,
+        ] {
+            s.executar("inserir", &pedido(txt), &dono).unwrap();
+        }
+        s.executar(
+            "declarar_fk",
+            &pedido(
+                r#"{"database":"b","tabela":"arvore","nome":"fk_pai",
+                    "colunas":["pai"],"tabela_ref":"arvore","colunas_ref":["id"]}"#,
+            ),
+            &dono,
+        )
+        .expect("a autorreferencia nao declarou");
+        let e = s
+            .executar(
+                "inserir",
+                &pedido(r#"{"database":"b","tabela":"arvore","linha":{"id":3,"pai":77}}"#),
+                &dono,
+            )
+            .expect_err("a chave declarada nao ficou conferida");
+        assert!(!format!("{e:?}").contains("EmMigracao"), "{e:?}");
+    }
+
+    /// Transacao viva na FILHA: quem cede e a declaracao, na hora, com
+    /// `EM_TRANSACAO` e nada gravado (D5 do 426). Sem a pergunta, o
+    /// congelamento pegaria o `COMMIT` dela pela metade.
+    #[test]
+    fn transacao_viva_na_filha_segura_a_declaracao_e_ela_cede() {
+        let (s, _dir) = preparar("transacao");
+        let caixa = Sessao {
+            ligacao: 7,
+            ip: "127.0.0.1".into(),
+            ..Sessao::default()
+        };
+        let pede = |corpo: &str| {
+            let mut ses = Sessao {
+                ligacao: caixa.ligacao,
+                ip: caixa.ip.clone(),
+                ..Sessao::default()
+            };
+            s.despachar(
+                &format!(r#"{{"token":"t",{corpo}}}"#),
+                &mut ses,
+                "127.0.0.1",
+            )
+            .2
+        };
+        pede(r#""op":"begin""#).unwrap();
+        pede(
+            r#""op":"inserir","database":"b","tabela":"pedidos",
+               "linha":{"id":20,"cliente_id":1}"#,
+        )
+        .unwrap();
+        let declarar = || {
+            s.executar(
+                "declarar_fk",
+                &pedido(
+                    r#"{"database":"b","tabela":"pedidos","nome":"fk_cliente",
+                        "colunas":["cliente_id"],"tabela_ref":"clientes","colunas_ref":["id"]}"#,
+                ),
+                &Sessao::default(),
+            )
+        };
+        let e = declarar().expect_err("a declaracao congelou a filha de uma transacao viva");
+        assert_eq!(e.nome(), "EM_TRANSACAO", "{e}");
+        assert!(e.adianta_repetir(), "{e}");
+        pede(r#""op":"commit""#).expect("o COMMIT da transacao que segurou a declaracao");
+        declarar().expect("depois do COMMIT a declaracao tinha de passar");
+    }
+
+    /// O comportamento VELHO: dado sujo continua recusando a chave conferida,
+    /// agora dito pela varredura de fora da trava.
+    #[test]
+    fn dado_que_viola_continua_recusando() {
+        let (s, _dir) = preparar("sujo");
+        s.executar(
+            "inserir",
+            &pedido(r#"{"database":"b","tabela":"pedidos","linha":{"id":12,"cliente_id":5}}"#),
+            &Sessao::default(),
+        )
+        .unwrap();
+        let e = s
+            .executar(
+                "declarar_fk",
+                &pedido(
+                    r#"{"database":"b","tabela":"pedidos","nome":"fk_cliente",
+                        "colunas":["cliente_id"],"tabela_ref":"clientes","colunas_ref":["id"]}"#,
+                ),
+                &Sessao::default(),
+            )
+            .expect_err("a chave nasceu conferida sobre uma orfa");
+        assert!(e.to_string().contains("nao pode nascer conferida"), "{e}");
+        // O erro saiu no meio da janela: as duas tabelas tem de voltar a
+        // gravar. Contar `congelamento::quantas()` aqui flocaria -- ele e do
+        // processo, e os testes vizinhos congelam em paralelo.
+        for txt in [
+            r#"{"database":"b","tabela":"pedidos","linha":{"id":13,"cliente_id":1}}"#,
+            r#"{"database":"b","tabela":"clientes","linha":{"id":2}}"#,
+        ] {
+            s.executar("inserir", &pedido(txt), &Sessao::default())
+                .expect("o erro da varredura deixou a tabela congelada");
         }
     }
 }

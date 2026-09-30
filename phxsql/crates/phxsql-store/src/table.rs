@@ -879,7 +879,7 @@ fn fks_que_conferem(esquema: &Schema) -> impl Iterator<Item = &ForeignKey> {
 ///
 /// A qualificacao existe no NOME declarado da chave; o arquivo em disco mora
 /// no diretorio do database, e e por ele que se abre.
-pub(crate) fn nome_simples(qualificado: &str) -> &str {
+pub fn nome_simples(qualificado: &str) -> &str {
     qualificado.rsplit_once('.').map_or(qualificado, |(_, t)| t)
 }
 
@@ -927,6 +927,13 @@ fn resolver(diretorio: &Path) -> PathBuf {
     // A conta mora no `volume.rs`, e nao aqui: a chave da familia nasce la',
     // e duas copias da mesma resolucao e' o comeco de duas respostas.
     crate::volume::absoluto_lexico(diretorio).unwrap_or_else(|| diretorio.to_path_buf())
+}
+
+/// O recibo de que as chaves que nascem conferidas FORAM varridas contra o
+/// dado (pedido 422). So [`Table::conferir_chaves_que_nascem`] o constroi.
+#[derive(Debug)]
+pub struct ChavesConferidas {
+    chaves: Vec<ForeignKey>,
 }
 
 impl Table {
@@ -1104,11 +1111,39 @@ impl Table {
     /// Quem tem dado sujo e quer declarar assim mesmo continua podendo, com
     /// `"verificar": false` -- e ai e escolha escrita em vez de omissao.
     pub fn redeclarar_chaves_estrangeiras(&mut self, fks: Vec<ForeignKey>) -> Result<bool> {
-        for fk in &fks {
-            if !fk.verificar || self.ja_era_conferida(fk) {
-                continue;
-            }
-            let violacoes = crate::integridade::conferir_chave(self, fk, true)?;
+        let recibo = self.conferir_chaves_que_nascem(&fks, None)?;
+        self.redeclarar_depois_de_conferir(fks, recibo)
+    }
+
+    /// A metade CARA de [`Table::redeclarar_chaves_estrangeiras`]: a varredura
+    /// das chaves que passam a ser conferidas agora (pedido 422).
+    ///
+    /// Separada para o servidor poder rodá-la FORA da trava global, com a
+    /// filha e a mae congeladas. `mae` e a tabela mae ja aberta por quem chama
+    /// -- aberta ANTES do congelamento, porque depois dele o `Table::abrir`
+    /// da mae seria recusado. Chave cuja mae e outra tabela abre a dela por
+    /// dentro, como sempre.
+    ///
+    /// Devolve o recibo que [`Table::redeclarar_depois_de_conferir`] exige: e
+    /// ele, e nao a disciplina de quem chama, que impede declarar conferida
+    /// uma chave que ninguem varreu.
+    pub fn conferir_chaves_que_nascem(
+        &mut self,
+        fks: &[ForeignKey],
+        mut mae: Option<&mut Table>,
+    ) -> Result<ChavesConferidas> {
+        let a_conferir: Vec<ForeignKey> = fks
+            .iter()
+            .filter(|fk| self.pede_varredura(fk))
+            .cloned()
+            .collect();
+        for fk in &a_conferir {
+            let violacoes = match mae.as_deref_mut() {
+                Some(m) if m.nome() == nome_simples(&fk.tabela_ref) => {
+                    crate::integridade::conferir_chave_com_a_mae(self, m, fk, true)?
+                }
+                _ => crate::integridade::conferir_chave(self, fk, true)?,
+            };
             if let Some(v) = violacoes.iter().find(|v| !v.falha.e_de_estrutura()) {
                 return Err(PhxError::Integridade(format!(
                     "a chave {:?} nao pode nascer conferida em {}: {v}. Declarar \
@@ -1120,7 +1155,29 @@ impl Table {
                 )));
             }
         }
-        let moveu = self.reg.redeclarar_chaves_estrangeiras(fks)?;
+        Ok(ChavesConferidas { chaves: a_conferir })
+    }
+
+    /// A metade BARATA de [`Table::redeclarar_chaves_estrangeiras`]: grava o
+    /// esquema com as chaves, dado o recibo da varredura.
+    ///
+    /// Chave que pede varredura e nao esta no recibo e conferida AQUI, na
+    /// hora: o recibo pode ter sido tirado para outra lista, e declarar
+    /// conferida sem varrer e a promessa que a regra primordial proibe.
+    pub fn redeclarar_depois_de_conferir(
+        &mut self,
+        fks: Vec<ForeignKey>,
+        recibo: ChavesConferidas,
+    ) -> Result<bool> {
+        let faltam: Vec<ForeignKey> = fks
+            .iter()
+            .filter(|fk| self.pede_varredura(fk) && !recibo.chaves.contains(fk))
+            .cloned()
+            .collect();
+        if !faltam.is_empty() {
+            self.conferir_chaves_que_nascem(&faltam, None)?;
+        }
+        let moveu = self.reg.regravar_chaves_estrangeiras(fks)?;
         self.esquema = self.reg.esquema().clone();
         // Estado derivado do esquema se refaz JUNTO com ele -- e nao se
         // enumera aqui o que «pode ter mudado», porque enumerar excecao e como
@@ -1136,6 +1193,13 @@ impl Table {
         // tabela; desatualizado, ele viraria uma segunda verdade.
         self.gravar_pag()?;
         Ok(moveu)
+    }
+
+    /// Declarar esta chave exige varrer o dado? So a que PASSA a ser conferida
+    /// agora -- ver [`Table::redeclarar_chaves_estrangeiras`]. Uma decisao, um
+    /// lugar: a varredura, o recibo e o servidor perguntam aqui.
+    pub fn pede_varredura(&self, fk: &ForeignKey) -> bool {
+        fk.verificar && !self.ja_era_conferida(fk)
     }
 
     /// Esta chave ja estava declarada E ja conferia, do jeito que esta vindo?

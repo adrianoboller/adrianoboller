@@ -153,19 +153,61 @@ pub fn conferir_chave(
     fk: &ForeignKey,
     parar_na_primeira: bool,
 ) -> Result<Vec<Violacao>> {
-    let mut saida = Vec::new();
-    let nome_filha = filha.nome().to_string();
-    let violacao = |rowid, valor, falha| Violacao {
-        tabela: nome_filha.clone(),
+    let mut saida: Vec<Violacao> = falta_indice_na_filha(filha, fk).into_iter().collect();
+    let diretorio = filha.diretorio().to_path_buf();
+    let mut mae = match Table::abrir(&diretorio, nome_simples(&fk.tabela_ref)) {
+        Ok(m) => m,
+        Err(PhxError::NaoEncontrado(_)) => {
+            saida.push(violacao_de(
+                filha,
+                fk,
+                None,
+                Vec::new(),
+                Falha::TabelaMaeAusente,
+            ));
+            return Ok(saida);
+        }
+        Err(e) => return Err(e),
+    };
+    conferir_linhas(filha, &mut mae, fk, parar_na_primeira, saida)
+}
+
+/// [`conferir_chave`] com a MAE ja aberta por quem chama (pedido 422).
+///
+/// Existe para a declaracao da chave poder varrer FORA da trava global: quem
+/// chama abre a mae ANTES de congelar as duas tabelas -- depois do
+/// congelamento, o `Table::abrir` que o [`conferir_chave`] faz por dentro
+/// seria recusado pelo proprio congelamento que protege a varredura.
+pub fn conferir_chave_com_a_mae(
+    filha: &mut Table,
+    mae: &mut Table,
+    fk: &ForeignKey,
+    parar_na_primeira: bool,
+) -> Result<Vec<Violacao>> {
+    let saida = falta_indice_na_filha(filha, fk).into_iter().collect();
+    conferir_linhas(filha, mae, fk, parar_na_primeira, saida)
+}
+
+fn violacao_de(
+    filha: &Table,
+    fk: &ForeignKey,
+    rowid: Option<u64>,
+    valor: Vec<Value>,
+    falha: Falha,
+) -> Violacao {
+    Violacao {
+        tabela: filha.nome().to_string(),
         chave: fk.nome.clone(),
         rowid,
         valor,
         falha,
         conferida: fk.verificar,
-    };
+    }
+}
 
-    // A filha precisa de indice pela chave: e ele que responde «alguem aponta
-    // para esta linha?» quando a mae tenta sair.
+/// A filha precisa de indice pela chave: e ele que responde «alguem aponta
+/// para esta linha?» quando a mae tenta sair.
+fn falta_indice_na_filha(filha: &Table, fk: &ForeignKey) -> Option<Violacao> {
     let colunas_da_filha: Vec<String> = fk
         .colunas
         .iter()
@@ -174,20 +216,34 @@ pub fn conferir_chave(
     if colunas_da_filha.len() != fk.colunas.len()
         || indice_que_cobre(filha.esquema(), &colunas_da_filha).is_none()
     {
-        saida.push(violacao(None, Vec::new(), Falha::SemIndiceNaFilha));
+        return Some(violacao_de(
+            filha,
+            fk,
+            None,
+            Vec::new(),
+            Falha::SemIndiceNaFilha,
+        ));
     }
+    None
+}
 
-    let diretorio = filha.diretorio().to_path_buf();
-    let mut mae = match Table::abrir(&diretorio, nome_simples(&fk.tabela_ref)) {
-        Ok(m) => m,
-        Err(PhxError::NaoEncontrado(_)) => {
-            saida.push(violacao(None, Vec::new(), Falha::TabelaMaeAusente));
-            return Ok(saida);
-        }
-        Err(e) => return Err(e),
-    };
+/// A metade da conferencia que le as linhas: a mesma para quem abriu a mae
+/// por dentro e para quem a trouxe aberta -- uma decisao, um lugar.
+fn conferir_linhas(
+    filha: &mut Table,
+    mae: &mut Table,
+    fk: &ForeignKey,
+    parar_na_primeira: bool,
+    mut saida: Vec<Violacao>,
+) -> Result<Vec<Violacao>> {
     let Some(indice) = indice_que_cobre(mae.esquema(), &fk.colunas_ref) else {
-        saida.push(violacao(None, Vec::new(), Falha::SemIndiceNaMae));
+        saida.push(violacao_de(
+            filha,
+            fk,
+            None,
+            Vec::new(),
+            Falha::SemIndiceNaMae,
+        ));
         // Sem indice na mae nao ha como perguntar por linha: o motor procura
         // por indice, nunca por varredura, e inventar aqui uma varredura que a
         // gravacao recusa faria o relatorio medir outra coisa.
@@ -237,7 +293,7 @@ pub fn conferir_chave(
             }
         };
         if let Some(f) = falha {
-            saida.push(violacao(Some(rowid), chave, f));
+            saida.push(violacao_de(filha, fk, Some(rowid), chave, f));
             if parar_na_primeira {
                 return Ok(saida);
             }

@@ -3392,13 +3392,15 @@ pub fn limpar() {
             "mente\"."
         ),
         "arquivo": "crates/phxsql-store/src/table.rs",
-        "trecho": """            if !fk.verificar || self.ja_era_conferida(fk) {
-                continue;
-            }""",
-        "troca": """            // DEFEITO REPOSTO: a declaracao volta a nao olhar o dado gravado.
-            if true {
-                continue;
-            }""",
+        # ATUALIZADO em 29/09/2026 (pedido 422): a decisao de varrer virou
+        # `Table::pede_varredura`, perguntada pela varredura, pelo recibo e pelo
+        # servidor. O defeito reposto e o mesmo: nunca varrer.
+        "trecho": """        fk.verificar && !self.ja_era_conferida(fk)
+    }""",
+        "troca": """        // DEFEITO REPOSTO: a declaracao volta a nao olhar o dado gravado.
+        let _ = fk;
+        false
+    }""",
         "pacote": "phxsql-store",
         "alvo": ["--test", "verificador-de-consistencia"],
         "caem": [

@@ -1160,7 +1160,7 @@ impl RegFile {
     ///   e uma queda no meio deixa o arquivo velho inteiro ou o novo inteiro.
     ///
     /// Devolve `true` quando os arquivos foram reescritos (o caminho caro).
-    pub fn redeclarar_chaves_estrangeiras(&mut self, fks: Vec<ForeignKey>) -> Result<bool> {
+    pub fn regravar_chaves_estrangeiras(&mut self, fks: Vec<ForeignKey>) -> Result<bool> {
         let novo = self.esquema.clone().com_chaves_estrangeiras(fks)?;
         // O endereco de cada linha sai do slot_size, e este caminho nao pode
         // toca-lo. Se um dia a declaracao passar a mudar o payload, este e o
@@ -3518,9 +3518,7 @@ mod tests {
         // no lugar e nenhum arquivo e reescrito.
         let curta = ForeignKey::new("f", vec![0], "c", vec!["i".into()]);
         if cresce(curta.clone()) <= folga {
-            let moveu = r
-                .redeclarar_chaves_estrangeiras(vec![curta.clone()])
-                .unwrap();
+            let moveu = r.regravar_chaves_estrangeiras(vec![curta.clone()]).unwrap();
             assert!(!moveu, "coube na folga e mesmo assim reescreveu");
         }
 
@@ -3533,7 +3531,7 @@ mod tests {
             vec!["nome".into()],
         );
         let moveu = r
-            .redeclarar_chaves_estrangeiras(vec![curta, comprida])
+            .regravar_chaves_estrangeiras(vec![curta, comprida])
             .unwrap();
         assert!(moveu, "uma chave maior que a folga tinha de mover o slot 1");
         for n in 1..=5u8 {
@@ -3556,7 +3554,7 @@ mod tests {
         }
 
         // Tirar a declaracao encolhe o bloco: cabe sempre, nunca reescreve.
-        let moveu = r.redeclarar_chaves_estrangeiras(Vec::new()).unwrap();
+        let moveu = r.regravar_chaves_estrangeiras(Vec::new()).unwrap();
         assert!(!moveu, "encolher o bloco nao pode custar uma reescrita");
         drop(r);
         let mut r = RegFile::abrir(&d, "cadastroClientes").unwrap();
@@ -3586,7 +3584,7 @@ mod tests {
             "c",
             vec!["i".into()],
         );
-        assert!(r.redeclarar_chaves_estrangeiras(vec![comprida]).unwrap());
+        assert!(r.regravar_chaves_estrangeiras(vec![comprida]).unwrap());
         r.sincronizar().unwrap();
 
         // Estraga o slot 3 SO no principal: a segunda chance tem de vir do
