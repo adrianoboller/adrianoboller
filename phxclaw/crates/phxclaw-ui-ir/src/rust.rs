@@ -271,16 +271,30 @@ impl Data {
     pub fn vazia(&self) -> bool {
         *self == Data::default()
     }
-    /// Existe no calendario gregoriano (31/02 nao existe; 29/02 so em ano bissexto).
+    /// A mesma regra do `DateValid` do WLanguage (Help 3027003): anos 0001 a 9999;
+    /// calendario juliano ate 04/10/1582 (todo ano multiplo de 4 e bissexto), os dias de
+    /// 05 a 14/10/1582 nao existem, e gregoriano dali em diante.
     pub fn valida(&self) -> bool {
-        let bis = (self.ano % 4 == 0 && self.ano % 100 != 0) || self.ano % 400 == 0;
+        if !(1..=9999).contains(&self.ano) {
+            return false;
+        }
+        let dia = (self.ano, self.mes, self.dia);
+        if dia >= (1582, 10, 5) && dia <= (1582, 10, 14) {
+            return false;
+        }
+        let juliano = dia < (1582, 10, 5);
+        let bis = if juliano {
+            self.ano % 4 == 0
+        } else {
+            (self.ano % 4 == 0 && self.ano % 100 != 0) || self.ano % 400 == 0
+        };
         let dias = match self.mes {
             1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
             4 | 6 | 9 | 11 => 30,
             2 => if bis { 29 } else { 28 },
             _ => 0,
         };
-        self.ano >= 1 && self.dia >= 1 && self.dia <= dias
+        self.dia >= 1 && self.dia <= dias
     }
 }
 

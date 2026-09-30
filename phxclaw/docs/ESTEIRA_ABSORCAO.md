@@ -63,8 +63,9 @@ exigência do anexo): `schema.rs` produz o `App` do `ir.rs`; `html.rs` só lê o
 | U2 | Prompt → UI-IR | ✓ 30/09 — o modelo escreve o `CREATE TABLE` e o analisador determinístico faz o resto (hipótese «modelo preenche o IR» não foi preciso medir: SQL o modelo já sabe). qwen2.5:3b gerou a oficina com OS mestre/detalhe e total; desviou em 2 chamadas e numa planilha que ninguém pediu. Achou o defeito das tabelas no plural («Clienteses»), consertado com RED |
 | U3 | Screenshot → UI-IR (visão) | ☐ bloqueado: modelo com visão |
 | U4a | renderizador React (esbuild; `design_erp_ui` com `react: true`) | ✓ 30/09 — construído com npm real e exercitado no Chromium: itens, total, remoção, data, menu; RED medido |
-| U4b | regras em WLanguage (`Validar_`, `Incluir_`, `Excluir_`, `Total_` por arquivo HFSQL) | ☐ gerado e com as mesmas mensagens do Rust (teste de paridade, RED medido); **falta compilar no WinDev** — só o dono tem o WinDev |
+| U4b | regras em WLanguage (`Validar_`, `Incluir_`, `Excluir_`, `Total_` por arquivo HFSQL) | ☐ gerado; mesmas mensagens do Rust (teste de paridade); as 12 funções emitidas conferidas no Help WLanguage 2026 (corpus do plugin WX, página por função, guarda por teste). A conferência achou o `DateValid` juliano antes de 1582 e o Rust foi alinhado. **Falta compilar no WinDev**, e isso só o dono pode fazer |
 | U4c | Flutter | ☐ sem Flutter neste ambiente |
+| U5 | data no formato do idioma | ✓ 30/09 — máscara dd/mm/aaaa própria (o nativo segue o idioma do navegador); 31/02 recusada no Chromium, RED medido |
 | U6 | regras em Rust (crate só `std`: structs, validação, banco com FK e restringir, totais, sequência que não volta) | ✓ 30/09 — o teste gera o crate, compila com `cargo` de verdade e roda o comportamento; RED medido |
 
 **Decisão (30/09, pedido do dono: «todo código WLanguage será no final Rust»).** Hipóteses:
@@ -74,4 +75,20 @@ escrevemos, e a equivalência teria de ser provada por comportamento de qualquer
 venceu: `regras.rs` é o modelo único, `rust.rs` e `wlanguage.rs` o leem, e o teste de
 paridade reprova qualquer mensagem que exista num e não no outro. Tradução WLanguage→Rust
 de código **escrito à mão** (o legado) continua sendo o caminho do Octopus, fora desta esteira.
-| U5 | data no formato do idioma | ✓ 30/09 — máscara dd/mm/aaaa própria (o nativo segue o idioma do navegador); 31/02 recusada no Chromium, RED medido |
+
+## 4. Material WX do dono (30/09) — plugin de conversão e corpus do Help WLanguage
+
+- **Uso aqui:** o corpus Help_WL_12k (SHA-256 `a95ed553…`, estado DEGRADED/CONDITIONAL
+  declarado pelo próprio material) serve de **semântica técnica** das funções que o gerador
+  emite, que é o nível 6 da hierarquia de evidências do material. Não é fonte de regra de negócio.
+- **Fora do git:** o repositório é público e o próprio material pede para confirmar a
+  licença do corpus antes de qualquer distribuição. Ele é lido da área de trabalho da sessão,
+  sem extração, e aqui só entram os **identificadores de página**.
+- **Plugin (6 skills, 22 agentes, gates G0–G7):** é o caminho para converter **legado WX
+  escrito à mão**, com evidência e teste de equivalência. Não foi instalado: ele não se
+  instala sozinho, e hoje não há projeto WX real para o G0.
+
+| # | Próximo | Estado |
+|---|---|---|
+| W1 | Primeiro projeto WX real do dono pelo plugin (G0 intake → G4 piloto vertical, destino Rust) | ☐ aguardando o projeto |
+

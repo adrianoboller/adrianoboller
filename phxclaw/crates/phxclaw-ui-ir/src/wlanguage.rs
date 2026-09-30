@@ -13,6 +13,25 @@
 use crate::ir::App;
 use crate::regras::{self, Campo, Entidade, Tipo};
 
+/// Toda funcao que este gerador emite, com a pagina do Help WLanguage 2026 onde a
+/// assinatura foi conferida (corpus Help_WL_12k, 30/09/2026). Funcao nova so entra
+/// depois de conferida: o teste `so_emite_funcao_conferida_no_help` reprova a que
+/// aparecer no texto gerado sem estar aqui.
+pub const FUNCOES_CONFERIDAS: &[(&str, &str)] = &[
+    ("DateValid", "3027003"),
+    ("HAdd", "3044147"),
+    ("HDelete", "3044018"),
+    ("HErrorInfo", "3044071"),
+    ("HFound", "3044104"),
+    ("HReadNext", "3044037"),
+    ("HReadSeekFirst", "3044036"),
+    ("Left", "3024001"),
+    ("Length", "3024031"),
+    ("Middle", "3024023"),
+    ("NoSpace", "3024034"),
+    ("Val", "3024037"),
+];
+
 /// Literal WLanguage: aspas dobradas dentro da cadeia.
 fn lit(s: &str) -> String {
     format!("\"{}\"", s.replace('"', "\"\""))
@@ -35,8 +54,17 @@ fn procedimentos(app: &App, ents: &[Entidade]) -> String {
     let mut s = format!(
         "// GERADO do UI-IR v{} pelo PhxClaw: regras de negocio de {}.\n\
          // UNVERIFIED: nao compilado aqui. Espelho do crate Rust gerado do mesmo modelo.\n\
+         // Funcoes conferidas no Help WLanguage 2026: {}.\n\
+         // AND/OR avaliam a expressao inteira (sem curto-circuito); nenhuma condicao\n\
+         // gerada tem efeito colateral, entao o resultado e o mesmo do Rust.\n\
          // Cada procedimento devolve \"\" quando esta tudo certo, ou a mensagem do erro.\n\n",
-        app.ir_version, app.name
+        app.ir_version,
+        app.name,
+        FUNCOES_CONFERIDAS
+            .iter()
+            .map(|(f, id)| format!("{f} ({id})"))
+            .collect::<Vec<_>>()
+            .join(", ")
     );
     for e in ents {
         let t = &e.nome;
@@ -146,7 +174,7 @@ fn procedimentos(app: &App, ents: &[Entidade]) -> String {
 
         for tot in &e.totais {
             s.push_str(&format!(
-                "// {}\nPROCEDURE Total_{t}_{}(nCodigo)\nnTotal is currency = 0\n\
+                "// {}\nPROCEDURE Total_{t}_{}(nCodigo)\nnTotal is currency\nnTotal = 0\n\
                  HReadSeekFirst({f}, {fk}, nCodigo)\n\
                  WHILE HFound({f}) AND {f}.{fk} = nCodigo\n\
                  \tnTotal += {f}.{c}\n\

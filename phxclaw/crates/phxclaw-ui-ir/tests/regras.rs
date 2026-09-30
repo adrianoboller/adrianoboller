@@ -92,6 +92,13 @@ fn calendario() {
     assert!(!Data::nova(29, 2, 1900).valida());
     assert!(Data::nova(29, 2, 2000).valida());
     assert!(!Data::nova(31, 4, 2026).valida());
+    // o mesmo que o DateValid do WLanguage (Help 3027003): juliano ate 04/10/1582
+    assert!(Data::nova(29, 2, 1500).valida());
+    assert!(Data::nova(4, 10, 1582).valida());
+    assert!(!Data::nova(10, 10, 1582).valida());
+    assert!(Data::nova(15, 10, 1582).valida());
+    assert!(Data::nova(31, 12, 9999).valida());
+    assert!(!Data::nova(1, 1, 10000).valida());
 }
 "#;
 
@@ -159,4 +166,43 @@ fn crate_rust_gerado_compila_e_o_comportamento_passa() {
         String::from_utf8_lossy(&out.stdout).to_string() + &String::from_utf8_lossy(&out.stderr);
     assert!(out.status.success(), "crate gerado falhou:\n{txt}");
     assert!(txt.contains("2 passed"), "{txt}");
+}
+
+#[test]
+fn so_emite_funcao_conferida_no_help() {
+    // um SQL com data/hora tambem, para exercitar Left/Middle/Val
+    let sql = format!(
+        "{PEDIDOS}\nCREATE TABLE agenda (id serial PRIMARY KEY, quando timestamp NOT NULL, cliente_id int REFERENCES cliente(id));"
+    );
+    let (app, _) = phxclaw_ui_ir::from_sql("Vendas", &sql);
+    let wl = phxclaw_ui_ir::wlanguage::render(&app);
+    let regras = &wl.iter().find(|(p, _)| p == "Regras.wl").unwrap().1;
+    let conferidas: Vec<&str> = phxclaw_ui_ir::wlanguage::FUNCOES_CONFERIDAS
+        .iter()
+        .map(|(f, _)| *f)
+        .collect();
+    let mut emitidas = BTreeSet::new();
+    for linha in regras.lines().filter(|l| !l.trim_start().starts_with("//")) {
+        let b = linha.as_bytes();
+        for (i, _) in linha.match_indices('(') {
+            let ini = linha[..i]
+                .rfind(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+                .map_or(0, |p| p + 1);
+            let nome = &linha[ini..i];
+            if !nome.is_empty() && b[ini].is_ascii_uppercase() && !nome.contains('_') {
+                emitidas.insert(nome.to_string());
+            }
+        }
+    }
+    let fora: Vec<_> = emitidas
+        .iter()
+        .filter(|f| !conferidas.contains(&f.as_str()))
+        .collect();
+    assert!(fora.is_empty(), "funcao sem conferencia no Help: {fora:?}");
+    for f in ["Left", "Middle", "Val", "DateValid", "HReadSeekFirst"] {
+        assert!(
+            emitidas.contains(f),
+            "o teste nao exercitou {f}: {emitidas:?}"
+        );
+    }
 }
