@@ -1418,6 +1418,11 @@ pub struct Servidor {
     /// isto, o braco «erro do dado com parte gravada» ficaria sem prova.
     #[cfg(test)]
     pre_conferencia_desligada: std::sync::atomic::AtomicBool,
+    /// Desliga a pergunta pela trava de linha da escrita solta (pedido 561):
+    /// e o escritor que nao pergunta, e mantem exercitado o cinto do
+    /// `refazer_o_elo` (537), que o 561 deixou sem caminho pelo protocolo.
+    #[cfg(test)]
+    solto_sem_trava_de_linha: std::sync::atomic::AtomicBool,
     /// O estado vivo do cluster -- `None` quando o `config.json` nao traz o
     /// bloco `cluster`, e ai NADA disto existe: nenhuma thread, nenhum portao.
     cluster: Option<Arc<crate::cluster::EstadoCluster>>,
@@ -1806,6 +1811,8 @@ impl Servidor {
             fecho_falha_de_teste: Mutex::new(None),
             #[cfg(test)]
             pre_conferencia_desligada: std::sync::atomic::AtomicBool::new(false),
+            #[cfg(test)]
+            solto_sem_trava_de_linha: std::sync::atomic::AtomicBool::new(false),
             cargas: Mutex::new(crate::carga::Cargas::default()),
             marcas_pendentes: Mutex::new(Vec::new()),
             // Pedido 458: as duas travas da vida de uma transacao nao tem
@@ -17697,8 +17704,8 @@ impl Servidor {
     ///
     /// O elo traz a filha como ela estava no `empilhar`, com a chave nova. Se
     /// outra conexao mudou uma coluna dela depois -- solta, em transacao, ou
-    /// pela cascata SOLTA de outra mae dela, que nao pergunta por trava de
-    /// linha --, regravar a linha inteira apagava a mudanca: `x=1` voltava a
+    /// pela cascata SOLTA de outra mae dela, que ate o 561 nao perguntava por
+    /// trava de linha e hoje e o cinto disto --, regravar a linha inteira apagava a mudanca: `x=1` voltava a
     /// `x=0`, o update perdido medido pelo papel C. Aqui so a CHAVE viaja:
     /// cada coluna que o elo muda (a diferenca entre `linha` e
     /// `linha_antiga`) entra sobre a linha atual, e o resto fica como esta.
@@ -22261,7 +22268,23 @@ impl Servidor {
         rowid: u64,
         linha: &[Value],
     ) -> Result<AlteracaoSolta> {
+        let database = p.texto_ou("database", "").trim();
+        // A linha que esta alteracao grava, pelo portao que ela NAO passou: o
+        // upsert chega aqui pelo `inserir`, e o portao dele so pergunta pelo
+        // fim da tabela (pedido 561, d).
+        self.linhas_barradas_para_o_solto(
+            sessao,
+            database,
+            std::iter::once((p.texto_ou("tabela", "").trim(), rowid)),
+        )?;
         let (atual, plano) = Self::plano_da_cascata_solta(t, rowid, linha)?;
+        // E as filhas que a cascata grava sem que o pedido as nomeie (561,
+        // a-c): antes da marca, com nada gravado.
+        self.linhas_barradas_para_o_solto(
+            sessao,
+            database,
+            plano.iter().map(|e| (e.tabela.as_str(), e.rowid)),
+        )?;
         if plano.is_empty() {
             // O mesmo plano que o `atualizar` refaria por dentro, e ele saiu
             // vazio: refaze-lo repetiria a varredura das irmas.
@@ -22283,7 +22306,7 @@ impl Servidor {
         let aviso = self.atualizar_com_a_marca(
             trava,
             sessao,
-            p.texto_ou("database", "").trim(),
+            database,
             p.texto_ou("tabela", "").trim(),
             rowid,
             linha,
@@ -22295,6 +22318,52 @@ impl Servidor {
             pela_marca: true,
             aviso,
         })
+    }
+
+    /// **Pedido 561:** alguma das linhas que a escrita SOLTA vai gravar esta
+    /// travada por uma transacao? O `barrado_por_travas` so ve a linha que o
+    /// pedido nomeia; a filha da cascata, a linha do upsert e as da sincronia
+    /// do DbLink nao estao no pedido, e passavam por cima do X de T1 -- o
+    /// COMMIT dele recusava depois, ou apagava a escrita (update perdido).
+    ///
+    /// Mesma regra do portao: a escrita solta nao espera, recusa com
+    /// `EM_TRANSACAO` e `repetir`. Aqui dentro a trava de dados esta na mao, e
+    /// toda transacao toma a trava da linha ANTES dela (`empilhar`), entao
+    /// nenhuma trava nova nasce entre esta pergunta e a escrita.
+    fn linhas_barradas_para_o_solto<'a>(
+        &self,
+        sessao: &Sessao,
+        database: &str,
+        linhas: impl Iterator<Item = (&'a str, u64)>,
+    ) -> Result<()> {
+        #[cfg(test)]
+        if self.solto_sem_trava_de_linha.load(Ordering::SeqCst) {
+            return Ok(());
+        }
+        if self.transacoes_abertas.load(Ordering::Relaxed) == 0 {
+            return Ok(());
+        }
+        let meu = match self.transacoes.travar().de(sessao.ligacao) {
+            Some(tx) => tx.id,
+            None => 0,
+        };
+        let barrada = {
+            let travas = self.travas.travar();
+            linhas.into_iter().find_map(|(tabela, rowid)| {
+                let chave = crate::carga::chave(database, tabela);
+                travas.conflito_de_linha(&chave, meu, rowid)
+            })
+        };
+        match barrada {
+            Some(b) => {
+                let recado = self
+                    .transacoes
+                    .travar()
+                    .recado_da_barrada(&b, crate::agora_ms());
+                Err(PhxError::EmTransacao(recado))
+            }
+            None => Ok(()),
+        }
     }
 
     /// Pedido 540: o plano da cascata de uma alteracao SOLTA, e a linha de
@@ -49091,9 +49160,11 @@ mod testes_transacoes {
         }
 
         /// **Pedido 537, o refazer:** o COMMIT leva SO A CHAVE do elo, sobre
-        /// a linha atual. A trava da linha nao alcanca todo mundo: a cascata
-        /// SOLTA de outra mae da mesma filha escreve nela sem perguntar por
-        /// trava de linha. Aqui o vendedor 3 vira 4 fora de transacao, a filha
+        /// a linha atual. Quando o 537 entrou, a cascata SOLTA de outra mae da
+        /// mesma filha escrevia nela sem perguntar por trava de linha; desde o
+        /// 561 ela pergunta e espera, e o escritor que nao pergunta aqui e
+        /// simulado pelo `solto_sem_trava_de_linha` -- o refazer fica como
+        /// cinto, e continua provado. Aqui o vendedor 3 vira 4 fora de transacao, a filha
         /// vai junto, e o elo de T1 -- planejado com a filha em `cod_vend 3` --
         /// regravava a linha inteira: o COMMIT recusava pela FK (o vendedor 3
         /// ja nao existe) ou, sem conferencia, deixaria a filha orfa. Com o
@@ -49112,7 +49183,9 @@ mod testes_transacoes {
             base_duas_maes(&s, &t0);
             escreve(&s, &t1, r#""op":"begin","database":"loja""#);
             escreve(&s, &t1, &muda_mae("clientes", 6));
+            s.solto_sem_trava_de_linha.store(true, Ordering::SeqCst);
             escreve(&s, &t0, &muda_mae("vendedores", 4));
+            s.solto_sem_trava_de_linha.store(false, Ordering::SeqCst);
             assert_eq!(
                 a_filha(&s, &t0),
                 (5, 4, 0),
@@ -49199,6 +49272,80 @@ mod testes_transacoes {
                     "a filha {rowid} ficou orfa ou saiu da chave velha"
                 );
             }
+        }
+
+        /// **Pedido 561 (a):** T1 segura a FILHA (`x=1`, empilhado); a mae
+        /// muda de chave fora de transacao e a cascata solta levaria a filha
+        /// por cima do X de T1. Medido pelo papel C antes: a solta passava, e
+        /// o COMMIT de T1 recusava por `fk_vend` -- ou, com a chave renascida,
+        /// confirmava apontando para a mae errada. Agora a solta recusa
+        /// `EM_TRANSACAO` com `repetir`, com nada gravado, e passa depois.
+        ///
+        /// # Prova real
+        ///
+        /// Sem a pergunta pelas filhas do plano no `alterar_solto`, a solta
+        /// sai `Ok` -- o vermelho medido.
+        #[test]
+        fn a_cascata_solta_nao_passa_pela_trava_da_filha() {
+            let dir = dir_temp("561-filha");
+            let s = servidor(&dir);
+            let t0 = sessao(5610);
+            let t1 = sessao(5611);
+            base_duas_maes(&s, &t0);
+            escreve(&s, &t1, r#""op":"begin","database":"loja""#);
+            escreve(&s, &t1, &muda_x(5, 3, 1));
+            match pede(&s, &t0, &muda_mae("clientes", 6)) {
+                Err(e) => assert!(
+                    matches!(e, PhxError::EmTransacao(_)) && e.adianta_repetir(),
+                    "a cascata solta tem de esperar a filha de T1: {e}"
+                ),
+                Ok(j) => panic!(
+                    "a cascata solta passou por cima da filha que T1 segura: {}",
+                    j.escrever()
+                ),
+            }
+            assert_eq!(linha(&s, &t0, "clientes", 1).inteiro_ou("codigo", -1), 5);
+            confirma(&s, &t1);
+            assert_eq!(a_filha(&s, &t0), (5, 3, 1));
+            escreve(&s, &t0, &muda_mae("clientes", 6));
+            assert_eq!(a_filha(&s, &t0), (6, 3, 1));
+            assert_eq!(s.travas.travar().quantas(), 0);
+        }
+
+        /// **Pedido 561 (d):** o upsert solto altera uma linha que o pedido
+        /// nao nomeia por rowid, e o portao do `inserir` so pergunta pelo fim
+        /// da tabela. T1 segura a filha; o upsert solto nela respondia OK, e o
+        /// COMMIT de T1 o apagava -- update perdido.
+        ///
+        /// # Prova real
+        ///
+        /// Sem a pergunta pela linha da mae no `alterar_solto`, o upsert sai
+        /// `Ok` e o COMMIT de T1 deixa `x=1` -- o vermelho medido.
+        #[test]
+        fn o_upsert_solto_nao_passa_pela_trava_da_linha() {
+            let dir = dir_temp("561-upsert");
+            let s = servidor(&dir);
+            let t0 = sessao(5612);
+            let t1 = sessao(5613);
+            base_duas_maes(&s, &t0);
+            escreve(&s, &t1, r#""op":"begin","database":"loja""#);
+            escreve(&s, &t1, &muda_x(5, 3, 1));
+            let upsert = r#""op":"inserir","database":"loja","tabela":"pedidos",
+                   "linha":{"id":10,"cod_cliente":5,"cod_vend":3,"x":2},"se_existir":"atualizar""#;
+            match pede(&s, &t0, upsert) {
+                Err(e) => assert!(
+                    matches!(e, PhxError::EmTransacao(_)) && e.adianta_repetir(),
+                    "o upsert solto tem de esperar a linha de T1: {e}"
+                ),
+                Ok(j) => panic!(
+                    "o upsert solto passou por cima da linha que T1 segura: {}",
+                    j.escrever()
+                ),
+            }
+            confirma(&s, &t1);
+            assert_eq!(a_filha(&s, &t0), (5, 3, 1));
+            escreve(&s, &t0, upsert);
+            assert_eq!(a_filha(&s, &t0), (5, 3, 2));
         }
 
         // ------------------------------------------------------------- 538

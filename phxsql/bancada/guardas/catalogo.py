@@ -14564,6 +14564,50 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         ],
     },
     {
+        "id": "upsert-solto-sem-trava-da-linha",
+        "titulo": "o upsert solto altera a linha que uma transacao segura, e o COMMIT dela apaga a escrita",
+        "porque": (
+            "pedido 561 (d), P1 do parecer do papel C: o portao do `inserir` so "
+            "pergunta pelo fim da tabela; o upsert solto na linha que T1 segura "
+            "respondia OK, e o COMMIT de T1 o apagava -- update perdido."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """            std::iter::once((p.texto_ou("tabela", "").trim(), rowid)),
+""",
+        "troca": """            std::iter::once((p.texto_ou("tabela", "").trim(), rowid)).take(0),
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_transacoes::integridade_na_transacao::o_upsert_solto_nao_passa_pela_trava_da_linha",
+        ],
+        "seguem": [
+            "servidor::testes_transacoes::integridade_na_transacao::a_cascata_solta_nao_passa_pela_trava_da_filha",
+        ],
+    },
+    {
+        "id": "cascata-solta-sem-trava-da-filha",
+        "titulo": "a cascata solta grava a filha que uma transacao segura, por cima do X dela",
+        "porque": (
+            "pedido 561 (a-c), P1 do parecer do papel C: a filha da cascata "
+            "solta nao esta no pedido, e o portao nao a via; o COMMIT de T1 "
+            "recusava por `fk_vend` ou apontava a filha para a mae errada."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """            plano.iter().map(|e| (e.tabela.as_str(), e.rowid)),
+""",
+        "troca": """            plano.iter().map(|e| (e.tabela.as_str(), e.rowid)).take(0),
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_transacoes::integridade_na_transacao::a_cascata_solta_nao_passa_pela_trava_da_filha",
+        ],
+        "seguem": [
+            "servidor::testes_transacoes::integridade_na_transacao::o_upsert_solto_nao_passa_pela_trava_da_linha",
+        ],
+    },
+    {
         "id": "cascata-solta-sem-pre-conferencia",
         "titulo": "a cascata solta grava a mae antes de conferir a FK da filha para OUTRA mae, e deixa filhas orfas",
         "porque": (

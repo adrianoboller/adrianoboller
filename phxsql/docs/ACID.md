@@ -949,7 +949,13 @@ Agora são duas redes:
   viu `cod_vend 3`) regravava a linha inteira — o `COMMIT` recusava pela
   `fk_vend`. Agora confirma, com as duas chaves novas. Prova:
   `o_commit_leva_so_a_chave_do_elo_sobre_a_linha_atual`. A marca recebe a linha
-  refeita, e o formato não muda.
+  refeita, e o formato não muda. **Desde o pedido 561 (30/09/2026)** a cascata
+  solta, o upsert solto e a sincronia do DbLink perguntam pela trava de linha
+  de toda linha que gravam — a mãe e cada filha do plano — e recusam
+  `EM_TRANSACAO` com `repetir`, com nada gravado. O elo refeito vira **cinto**:
+  o teste dele simula o escritor que não pergunta. Provas:
+  `a_cascata_solta_nao_passa_pela_trava_da_filha` e
+  `o_upsert_solto_nao_passa_pela_trava_da_linha`.
 
 O desempate do 516 não reabre ciclo sem teto: a trava nova é de **instrução**
 (espera o `LOCK TIMEOUT`), e o ciclo de `COMMIT`s continua cedendo pela mais
