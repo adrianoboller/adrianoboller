@@ -1257,7 +1257,7 @@ fn limpar_com(j: &Json, normalizar: bool, normalizou: &mut bool) -> Json {
                     .map(|((k, v), sem)| {
                         // Por NOME, aparado e sem caixa -- o porque de cada
                         // escolha esta em `crate::segredos`, ao lado da lista.
-                        if crate::segredos::e_nome_de_segredo(k) {
+                        if crate::segredos::e_chave_sigilosa(k, pares) {
                             (k.clone(), Json::Texto("***".into()))
                         } else if let Some(sem) = sem {
                             (k.clone(), Json::Texto(sem))
@@ -1283,6 +1283,29 @@ fn limpar_com(j: &Json, normalizar: bool, normalizou: &mut bool) -> Json {
 #[cfg(test)]
 mod testes {
     use super::*;
+
+    /// **Pedido 560, o irmao pelo JSON:** o `diretiva_gravar` poe o segredo
+    /// no `valor` e o NOME dele no `campo` ao lado; o `config_gravar` poe o
+    /// caminho sigiloso como CHAVE. A lista de nome exato nao via nenhum dos
+    /// dois.
+    ///
+    /// # Prova real
+    ///
+    /// Com o `e_nome_de_segredo` de volta no lugar do `e_chave_sigilosa`, o
+    /// `segredo123` sai inteiro -- o vermelho medido.
+    #[test]
+    fn o_valor_do_campo_sigiloso_sai_redigido_pelo_json() {
+        for pedido in [
+            r#"{"op":"diretiva_gravar","campo":"alertas.email.senha","valor":"segredo123"}"#,
+            r#"{"op":"config_gravar","campos":{"alertas.email.senha":"segredo123"}}"#,
+        ] {
+            let s = redigir(pedido);
+            assert!(!s.contains("segredo123"), "{s}");
+        }
+        // Campo que nao e sigiloso continua aparecendo.
+        let s = redigir(r#"{"op":"diretiva_gravar","campo":"lote_operacoes","valor":"64"}"#);
+        assert!(s.contains("64"), "{s}");
+    }
 
     /// **A senha dentro da FRASE, e nao num campo.**
     ///

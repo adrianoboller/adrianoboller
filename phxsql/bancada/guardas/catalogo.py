@@ -13187,18 +13187,22 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "entre aspas duplas, que no MySQL(R) sao texto -- passava inteiro."
         ),
         "arquivo": "crates/phxsql-sql/src/usuario.rs",
-        "trecho": """            } => (texto.clone(), tem_letras_da_senha(texto)),
+        # ATUALIZADO em 30/09/2026 (pedido 560): o nome sigiloso da lista
+        # unica passou a abrir a redacao na mesma linha, e ele contem
+        # «password» -- sozinho ja cobre `MASTER_PASSWORD`. Medido: repor so
+        # a palavra exata e manter o `|| nome_sigiloso` NAO PEGA (0/1). Por
+        # isso a troca repoe a linha como era antes das duas voltas, e cai
+        # tambem o teste do 560: as duas protecoes moram na mesma linha.
+        "trecho": """                tem_letras_da_senha(texto) || phxsql_core::senha::nome_sigiloso(texto),
 """,
         "troca": """                // DEFEITO REPOSTO (497, 3a volta): so a palavra exata abre.
-            } => (
-                texto.clone(),
                 LETRAS_DA_SENHA.contains(&texto.to_uppercase().as_str()),
-            ),
 """,
         "pacote": "phxsql-sql",
         "alvo": ["--lib"],
         "caem": [
             "usuario::testes::o_portao_sao_as_letras_e_a_redacao_tapa_o_que_elas_abrem",
+            "usuario::testes::a_diretiva_do_campo_sigiloso_sai_redigida",
         ],
         "seguem": [
             "usuario::testes::o_portao_e_a_redacao_pelos_simbolos",
@@ -14808,6 +14812,40 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "caem": [
             "servidor::testes_da_saude_do_disco::o_arranque_que_reconstroi_indice_avisa_pelo_carteiro",
         ],
+        "seguem": [],
+    },
+    {
+        "id": "diretiva-sigilosa-sai-crua-no-sql",
+        "titulo": "`ALTER SERVER SET <campo sigiloso> = x` sai cru no perfil: a redacao do SQL so conhecia `PASSWORD`",
+        "porque": (
+            "pedido 560, SEC: a lista dos campos sigilosos morava no servidor, "
+            "e o `phxsql-sql` nao a via. Medido: a diretiva saia crua."
+        ),
+        "arquivo": "crates/phxsql-sql/src/usuario.rs",
+        "trecho": """    (menciona_senha(texto) || menciona_nome_sigiloso(texto)).then(|| sem_a_senha(texto))
+""",
+        "troca": """    (menciona_senha(texto) || (false && menciona_nome_sigiloso(texto))).then(|| sem_a_senha(texto))
+""",
+        "pacote": "phxsql-sql",
+        "alvo": ["--lib"],
+        "caem": ["usuario::testes::a_diretiva_do_campo_sigiloso_sai_redigida"],
+        "seguem": [],
+    },
+    {
+        "id": "diretiva-sigilosa-sai-crua-no-json",
+        "titulo": "o `valor` do `diretiva_gravar` e a chave do `config_gravar` com caminho sigiloso saem crus no perfil",
+        "porque": (
+            "pedido 560, o irmao pelo JSON: a lista de nome exato nao via o "
+            "`campo` ao lado do `valor`, nem o caminho com ponto."
+        ),
+        "arquivo": "crates/phxsql-server/src/profiler.rs",
+        "trecho": """                        if crate::segredos::e_chave_sigilosa(k, pares) {
+""",
+        "troca": """                        if crate::segredos::e_nome_de_segredo(k) {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": ["profiler::testes::o_valor_do_campo_sigiloso_sai_redigido_pelo_json"],
         "seguem": [],
     },
     {

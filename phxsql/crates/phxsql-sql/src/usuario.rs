@@ -219,7 +219,20 @@ pub fn menciona_senha(texto: &str) -> bool {
 /// comentada roda, e a resposta ecoava o texto inteiro (pedido 497, terceira
 /// volta).
 pub fn sem_a_senha_se_mencionada(texto: &str) -> Option<String> {
-    menciona_senha(texto).then(|| sem_a_senha(texto))
+    (menciona_senha(texto) || menciona_nome_sigiloso(texto)).then(|| sem_a_senha(texto))
+}
+
+/// Alguma palavra do texto e um nome sigiloso da lista unica da casa
+/// ([`phxsql_core::senha::nome_sigiloso`])? -- pedido 560: `ALTER SERVER SET
+/// alertas.email.senha = x` nao tem `PASSWORD` nenhum, e saia cru no perfil.
+///
+/// So para a REDACAO (Profiler e resposta da op `sql`). O portao do job
+/// continua o [`menciona_senha`]: estender a recusa do job a todo SQL que
+/// cite `token` ou `senha` seria guarda nova imposta sobre job que ja existe.
+fn menciona_nome_sigiloso(texto: &str) -> bool {
+    texto
+        .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+        .any(phxsql_core::senha::nome_sigiloso)
 }
 
 /// Este simbolo, em maiusculas, contem as letras da senha?
@@ -362,7 +375,12 @@ fn redigir(texto: &str, redacao: Redacao) -> Option<String> {
             Token::Palavra {
                 texto,
                 citado: false,
-            } => (texto.clone(), tem_letras_da_senha(texto)),
+            } => (
+                texto.clone(),
+                // O nome sigiloso abre a redacao como o `PASSWORD` (pedido
+                // 560): depois de `alertas.email.senha`, o que vem e o valor.
+                tem_letras_da_senha(texto) || phxsql_core::senha::nome_sigiloso(texto),
+            ),
             outro => (outro.descrever(), false),
         };
         saida.push_str(&texto_do_simbolo);
@@ -498,6 +516,30 @@ impl Passo<'_> {
 #[cfg(test)]
 mod testes {
     use super::*;
+
+    /// **Pedido 560:** a diretiva que nomeia um campo sigiloso nao tem
+    /// `PASSWORD` nenhum, e saia crua no perfil e no anel. O nome da lista
+    /// unica abre a redacao, e o valor depois dele vira o marcador.
+    ///
+    /// # Prova real
+    ///
+    /// Sem o `menciona_nome_sigiloso` no portao, o texto volta `None` e sai
+    /// como veio -- o vermelho medido.
+    #[test]
+    fn a_diretiva_do_campo_sigiloso_sai_redigida() {
+        for entrada in [
+            "ALTER SERVER SET alertas.email.senha = segredo123",
+            "ALTER SERVER SET rest.token = segredo123",
+        ] {
+            let r = sem_a_senha_se_mencionada(entrada)
+                .unwrap_or_else(|| panic!("saiu crua: {entrada}"));
+            assert!(!r.contains("segredo123"), "{r}");
+        }
+        // O que nao cita nome sigiloso continua saindo como veio.
+        assert!(sem_a_senha_se_mencionada("SELECT n FROM t").is_none());
+        // E o portao do JOB nao mudou: ele continua sendo so as letras.
+        assert!(!menciona_senha("ALTER SERVER SET alertas.email.senha = x"));
+    }
 
     fn c(texto: &str) -> Comando {
         comando(texto).unwrap().expect("devia reconhecer")

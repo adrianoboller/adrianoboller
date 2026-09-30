@@ -91,6 +91,31 @@ pub fn e_nome_de_segredo(nome: &str) -> bool {
     SEGREDOS.iter().any(|s| nome.trim().eq_ignore_ascii_case(s))
 }
 
+/// A chave deste objeto carrega segredo, olhando tambem os IRMAOS? -- pedido
+/// 560, o irmao pelo JSON.
+///
+/// Tres casos, e os dois ultimos sao o que a lista de nome exato nao via:
+/// o nome exato da lista ([`e_nome_de_segredo`]); o CAMINHO de configuracao
+/// (tem ponto, como `alertas.email.senha` nas chaves do `config_gravar`),
+/// pela lista unica por conteudo; e o `valor` cujo irmao `campo` nomeia um
+/// campo sigiloso -- o `diretiva_gravar`, em que o segredo e o valor e o nome
+/// dele esta ao lado. Coluna de tabela nao tem ponto no nome, entao o
+/// segundo caso nao alcanca linha de dado.
+pub fn e_chave_sigilosa(chave: &str, irmaos: &[(String, Json)]) -> bool {
+    if e_nome_de_segredo(chave) {
+        return true;
+    }
+    let c = chave.trim();
+    if c.contains('.') && phxsql_core::senha::nome_sigiloso(c) {
+        return true;
+    }
+    c.eq_ignore_ascii_case("valor")
+        && irmaos.iter().any(|(k, v)| {
+            k.trim().eq_ignore_ascii_case("campo")
+                && v.texto().is_some_and(phxsql_core::senha::nome_sigiloso)
+        })
+}
+
 /// O campo que carrega texto SQL -- onde uma senha mora DENTRO da frase.
 ///
 /// E o caso que a lista de nomes nao alcanca: `{"op":"sql","texto":"CREATE
@@ -113,7 +138,7 @@ pub fn achar_segredo(j: &Json) -> Option<String> {
     match j {
         Json::Objeto(pares) => {
             for (k, v) in pares {
-                if e_nome_de_segredo(k) {
+                if e_chave_sigilosa(k, pares) {
                     return Some(format!("o campo {:?}", k.trim()));
                 }
                 if e_campo_de_sql(k) {

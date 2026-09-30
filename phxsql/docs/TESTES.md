@@ -977,9 +977,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `carga-adiada-orfa-sem-reconstruir` | a carga adiada que sai sem o `bulkinsert(false)` (conexão caída, reserva vencida) deixa o índice suspenso até o próximo arranque | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**332 das 479 guardas do catálogo: 1 aposentada, 327 provadas, 4 redundantes** — 9057 s de mutação, medido em 2026-09-16 15:25.
+**332 das 481 guardas do catálogo: 1 aposentada, 327 provadas, 4 redundantes** — 9057 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 148 das 479 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 148 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 150 das 481 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 150 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
@@ -1058,6 +1058,8 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `cascata-embutida-sem-pre-conferencia` — a cascata do embutido grava a mae antes de conferir a FK da filha para OUTRA mae
 - `jobs-devolve-a-coluna-negada` — o `jobs` devolve o pedido salvo inteiro, com o valor da coluna negada que alguem digitou na definicao
 - `cabecalho-do-ndx-rasgado-trava-a-tabela` — o cabecalho do `.ndx` rasgado impede a tabela de abrir, e nem o arranque nem o `reindexar` o refazem
+- `diretiva-sigilosa-sai-crua-no-sql` — `ALTER SERVER SET <campo sigiloso> = x` sai cru no perfil: a redacao do SQL so conhecia `PASSWORD`
+- `diretiva-sigilosa-sai-crua-no-json` — o `valor` do `diretiva_gravar` e a chave do `config_gravar` com caminho sigiloso saem crus no perfil
 - `sal-falso-pelo-token` — o sal falso do `desafio` sai do token que todo cliente tem, e quem o tem sabe quem nao existe
 - `scram-sem-teto-de-iteracoes` — o `i=` do SCRAM que o par manda nao tem teto, e cada iteracao e CPU deste processo
 - `recado-de-trava-entrega-o-login` — o recado de trava mostra o login do dono dela a quem esbarrou, que pode nem ter direito na tabela

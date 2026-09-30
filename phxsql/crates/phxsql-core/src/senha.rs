@@ -70,6 +70,21 @@ pub const TETO_DA_SENHA: usize = 65_535;
 ///
 /// A mensagem diz o tamanho e nunca o conteudo: e a mesma regra do resto da
 /// casa para o que nao se pode mostrar -- vira o tamanho em bytes.
+/// **O nome carrega segredo?** -- a lista UNICA da casa, por conteudo e sem
+/// caixa: `alertas.email.senha`, `rest.token`, `cifra_fio.chave_privada_env`.
+///
+/// Morava no `diretivas.rs` do servidor, e o `phxsql-sql` -- que redige o SQL
+/// do Profiler -- nao a enxergava: `ALTER SERVER SET alertas.email.senha =
+/// x` saia cru, e a copia da lista la seria o defeito da lei «vem do mesmo
+/// motor» (pedido 560). Falso positivo custa um valor escondido; falso
+/// negativo, uma credencial em texto puro. A duvida vai para esconder.
+pub fn nome_sigiloso(nome: &str) -> bool {
+    let c = nome.to_ascii_lowercase();
+    ["token", "senha", "password", "secret", "chave_privada"]
+        .iter()
+        .any(|s| c.contains(s))
+}
+
 pub fn caber_no_teto(senha: &str) -> Result<()> {
     if senha.len() > TETO_DA_SENHA {
         return Err(PhxError::LimiteExcedido(format!(

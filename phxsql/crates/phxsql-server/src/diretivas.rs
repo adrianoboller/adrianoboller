@@ -118,10 +118,9 @@ impl Alteracao {
 /// no diario; falso negativo custa uma credencial em texto puro num arquivo de
 /// log. Os dois lados nao valem o mesmo, e a duvida vai para o lado de esconder.
 pub fn campo_sigiloso(campo: &str) -> bool {
-    let c = campo.to_ascii_lowercase();
-    ["token", "senha", "password", "secret", "chave_privada"]
-        .iter()
-        .any(|s| c.contains(s))
+    // A lista mora no core desde o pedido 560, para o `phxsql-sql` ver a
+    // MESMA -- ver `phxsql_core::senha::nome_sigiloso`.
+    phxsql_core::senha::nome_sigiloso(campo)
 }
 
 /// O diario, aberto para acrescentar.
