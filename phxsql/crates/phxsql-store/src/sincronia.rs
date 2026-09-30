@@ -249,6 +249,18 @@ pub(crate) fn sincronizar_os_diretorios(de: &Path, para: &Path, com_gancho: bool
     Ok(())
 }
 
+/// O `fsync` de UM diretorio de um destino que nao e o disco do banco --
+/// hoje so o [`crate::backup`], pedido 579: a entrada que a corrida criou ou
+/// APAGOU (o `backup.json` velho) e dado do diretorio, e sem isto uma queda
+/// pode devolver o nome antigo depois de a resposta ter dito «pronto».
+///
+/// `de_quem` e um nome DENTRO de `dir`, e nao o proprio `dir`: e por ele que
+/// [`recusar`] grava a marca (o PAI do caminho), e marcar o pai de `dir`
+/// envenenaria as pastas vizinhas do destino -- os outros backups agendados.
+pub(crate) fn sincronizar_pasta_sem_abortar(dir: &Path, de_quem: &Path) -> Result<()> {
+    sincronizar_diretorio(dir, de_quem, false)
+}
+
 #[cfg(unix)]
 fn sincronizar_diretorio(dir: &Path, de_quem: &Path, com_gancho: bool) -> Result<()> {
     let f = File::open(dir)?;

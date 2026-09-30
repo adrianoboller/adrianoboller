@@ -17225,10 +17225,10 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         ),
         "arquivo": "crates/phxsql-store/src/backup.rs",
         "trecho": """        descartar_parcial(&parcial);
-        return Err(e);
+        descartar_pastas(&zip.pastas);
 """,
         "troca": """        // DEFEITO REPOSTO (555): a recusa sobe e o `.part` fica.
-        return Err(e);
+        descartar_pastas(&zip.pastas);
 """,
         "pacote": "phxsql-store",
         "alvo": ["--test", "parcial-do-zip-nao-fica"],
@@ -17307,6 +17307,122 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "alvo": ["--test", "manifesto-velho-nao-fica"],
         "caem": ["o_zip_que_falha_nao_deixa_a_pasta_que_criou"],
         "seguem": ["a_corrida_que_falha_na_pasta_reaproveitada_leva_o_manifesto_velho"],
+    },
+    {
+        "id": "backup-fsync-reabre-a-copia",
+        "titulo": "o `fsync` da cópia do backup cai num descritor REABERTO, e não no de quem escreveu",
+        "porque": (
+            "pedido 552: fechar e reabrir para o `fsync` deixa o nucleo "
+            "despejar o inode no intervalo, e com ele o erro de writeback "
+            "(fsyncgate) -- o descritor novo responde Ok sem o dado. A prova "
+            "e do nucleo: sob `strace`, cada copia (e o manifesto) abre com "
+            "sucesso UMA vez e o `fsync` cai nesse mesmo descritor, sem "
+            "`close` no meio."
+        ),
+        "arquivo": "crates/phxsql-store/src/backup.rs",
+        "trecho": """            Some(arquivo) => crate::sincronia::sync_all_sem_abortar(arquivo, caminho)?,
+""",
+        "troca": """            // DEFEITO REPOSTO (552): reabre pelo caminho para o fsync.
+            Some(_) => sincronizar_arquivo(caminho)?,
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "fsync-no-descritor-que-escreveu"],
+        "caem": ["a_copia_sincroniza_no_descritor_que_a_escreveu"],
+        "seguem": [
+            "a_pasta_sincroniza_antes_do_manifesto_novo",
+            "os_descritores_das_copias_seguem_abertos_ate_o_fsync",
+        ],
+    },
+    {
+        "id": "backup-copia-fecha-o-descritor-antes-do-fsync",
+        "titulo": "a cópia do backup fecha o descritor na escrita, sob a trava, e o inode fica livre para sair da memória antes do `fsync`",
+        "porque": (
+            "pedido 552, o outro lado do mesmo conserto: o que atravessa a "
+            "fronteira da trava e o `File` aberto, nao o caminho. A prova "
+            "conta pelo `/proc/self/fd` um descritor aberto por copia entre "
+            "`executar` (sob a trava) e `concluir` (fora dela)."
+        ),
+        "arquivo": "crates/phxsql-store/src/backup.rs",
+        "trecho": """        copias.abertos.push((seguras < teto).then_some(arquivo));
+""",
+        "troca": """        // DEFEITO REPOSTO (552): o descritor fecha na escrita.
+        let _ = (seguras, teto);
+        drop(arquivo);
+        copias.abertos.push(None);
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "fsync-no-descritor-que-escreveu"],
+        "caem": [
+            "os_descritores_das_copias_seguem_abertos_ate_o_fsync",
+            "a_copia_sincroniza_no_descritor_que_a_escreveu",
+        ],
+        "seguem": ["o_rename_do_zip_que_recusa_nao_deixa_a_pasta_que_criou"],
+    },
+    {
+        "id": "zip-fsync-reabre-o-part",
+        "titulo": "o `fsync` do `.part` do backup em ZIP cai num descritor REABERTO, e não no de quem escreveu",
+        "porque": (
+            "pedido 552, o irmao do ZIP: `executar_zip` → `finalizar_zip` "
+            "chamam as mesmas funcoes na mesma ordem que `executar` → "
+            "`concluir`. Sob `strace`, o `.part` abre com sucesso UMA vez e o "
+            "`fsync` cai nesse descritor antes do `rename`."
+        ),
+        "arquivo": "crates/phxsql-store/src/backup.rs",
+        "trecho": """    let trocado = crate::sincronia::sync_all_sem_abortar(&zip.arquivo, &parcial)
+""",
+        "troca": """    // DEFEITO REPOSTO (552): reabre o .part para o fsync.
+    let trocado = sincronizar_arquivo(&parcial)
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "fsync-no-descritor-que-escreveu"],
+        "caem": ["o_zip_sincroniza_no_descritor_que_o_escreveu"],
+        "seguem": ["os_descritores_das_copias_seguem_abertos_ate_o_fsync"],
+    },
+    {
+        "id": "backup-manifesto-novo-sem-fsync-da-pasta",
+        "titulo": "o manifesto novo do backup nasce sem o `fsync` da pasta de onde o `backup.json` velho saiu",
+        "porque": (
+            "pedido 579: a remocao do manifesto velho (577) roda sob a trava "
+            "e nao pode ter `fsync` ali (catraca `alcancam-fsync-2`); sem o "
+            "`fsync` da pasta FORA da trava, antes do manifesto novo, uma "
+            "queda podia devolver o velho. A prova e a ORDEM no nucleo, sob "
+            "`strace`: `unlink` do velho, `fsync` de um descritor da pasta, "
+            "so entao o `openat` do novo. A queda em si nao e medida."
+        ),
+        "arquivo": "crates/phxsql-store/src/backup.rs",
+        "trecho": """    for pasta in pastas_tocadas(copias) {
+        sincronizar_pasta(&pasta)?;
+    }
+""",
+        "troca": """    // DEFEITO REPOSTO (579): nenhuma pasta sincroniza antes do manifesto.
+    let _ = pastas_tocadas(copias);
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "fsync-no-descritor-que-escreveu"],
+        "caem": ["a_pasta_sincroniza_antes_do_manifesto_novo"],
+        "seguem": ["a_copia_sincroniza_no_descritor_que_a_escreveu"],
+    },
+    {
+        "id": "zip-rename-que-recusa-deixa-a-pasta",
+        "titulo": "o `rename` final do backup em ZIP que recusa deixa vazia a pasta que a corrida criou",
+        "porque": (
+            "pedido 579, o menor: o `.part` ja saia (555), mas `finalizar_zip` "
+            "nao sabia quais pastas `executar_zip` fez nascer, e a vazia "
+            "ficava. O `ZipParcial` as carrega, e elas saem pelo motor do 576 "
+            "(`remove_dir`, so vazia). A prova derruba o `rename` de verdade "
+            "(o `.part` some por fora, `ENOENT` do nucleo)."
+        ),
+        "arquivo": "crates/phxsql-store/src/backup.rs",
+        "trecho": """        descartar_pastas(&zip.pastas);
+        return Err(e);
+""",
+        "troca": """        // DEFEITO REPOSTO (579): a pasta criada fica.
+        return Err(e);
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "fsync-no-descritor-que-escreveu"],
+        "caem": ["o_rename_do_zip_que_recusa_nao_deixa_a_pasta_que_criou"],
+        "seguem": ["os_descritores_das_copias_seguem_abertos_ate_o_fsync"],
     },
     {
         "id": "cascata-dispara-after-do-elo-so-no-commit",

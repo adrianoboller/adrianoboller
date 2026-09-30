@@ -786,7 +786,7 @@ mod tests {
         )
         .unwrap();
         crate::backup::finalizar_zip(&alvo).unwrap();
-        alvo
+        alvo.to_path_buf()
     }
 
     /// Os TRES passos de um backup de verdade (`executar`, `sincronizar`,

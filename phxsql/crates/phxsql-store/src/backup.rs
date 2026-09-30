@@ -46,7 +46,8 @@
 //! `alcancam-fsync-2` (`bancada/concorrencia/mapa-da-trava.py`) e quem cobra
 //! isso: ela conta secoes que alcancam `sync_all` com a trava na mao, e SO'
 //! DESCE. `executar`/`executar_zip` escrevem (sem sincronizar) e devolvem os
-//! caminhos escritos; [`sincronizar_copias`] roda DEPOIS, com a trava ja solta,
+//! descritores ainda abertos (pedido 552, abaixo); [`sincronizar_copias`] e
+//! [`finalizar_zip`] rodam DEPOIS, com a trava ja solta,
 //! chamado por quem tinha o `_trava` no escopo.
 //!
 //! # O manifesto -- e o ZIP -- so existem DEPOIS do `fsync` das copias --
@@ -63,9 +64,31 @@
 //! o equivalente e' o NOME: [`executar_zip`] escreve num `.part` que
 //! `op_backups` nao reconhece, e so' [`finalizar_zip`] sincroniza e RENOMEIA
 //! para o nome final, depois do `fsync`.
+//!
+//! # O `fsync` e no MESMO descritor que escreveu -- pedido 552
+//!
+//! O que atravessa a fronteira da trava nao e mais a lista de CAMINHOS: sao
+//! os `File`s abertos de quem escreveu ([`Copias`], [`ZipParcial`]). Fechar e
+//! reabrir para o `fsync` deixava o nucleo livre para despejar o inode no
+//! intervalo, e com ele o erro de *writeback* guardado no `address_space`
+//! (o caso *fsyncgate*): o descritor novo responderia Ok sem o dado. Um
+//! descritor aberto segura o inode na memoria, e o erro chega ao `fsync`.
+//!
+//! O preco e descritor aberto ate o fim da corrida, e por isso ha um teto
+//! ([`teto_de_abertos`]): as copias alem dele voltam ao caminho antigo
+//! (fechar e reabrir), dito em [`sincronizar_arquivo`]. Nenhuma corrida
+//! derruba o servidor por `EMFILE` para ganhar esta garantia.
+//!
+//! # E o diretorio tambem sincroniza, antes do manifesto -- pedido 579
+//!
+//! A remocao do `backup.json` velho (577) e as entradas das copias e das
+//! pastas novas sao dado de DIRETORIO. [`sincronizar_copias`] faz o `fsync`
+//! de cada pasta tocada depois do das copias, FORA da trava, e so entao
+//! [`finalizar_manifesto`] publica -- e sincroniza a pasta de novo, porque o
+//! nome do manifesto novo tambem e uma entrada de diretorio.
 
 use std::collections::BTreeMap;
-use std::fs::OpenOptions;
+use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
@@ -91,7 +114,10 @@ pub const MANIFESTO: &str = "backup.json";
 /// so reconhece o nome final. A recusa do proprio `open` NAO apaga nada: ali
 /// nada nosso nasceu, e o nome pode ser de outro (pedido 569). Mora aqui, e
 /// nao no chamador, para as tres gravacoes do backup pagarem o mesmo motor.
-fn escrever_sem_sync(alvo: &Path, dados: &[u8]) -> Result<()> {
+///
+/// Devolve o `File` ABERTO (pedido 552): o `fsync` de depois tem de ser neste
+/// mesmo descritor, e nao num reaberto -- ver a nota do modulo.
+fn escrever_sem_sync(alvo: &Path, dados: &[u8]) -> Result<File> {
     let arquivo = crate::util::recriar_do_banco(alvo, false)?;
     let escrito = (|| -> Result<()> {
         let mut w = std::io::BufWriter::new(&arquivo);
@@ -99,23 +125,25 @@ fn escrever_sem_sync(alvo: &Path, dados: &[u8]) -> Result<()> {
         w.flush()?;
         Ok(())
     })();
-    if escrito.is_err() {
+    if let Err(e) = escrito {
         drop(arquivo);
         descartar_parcial(alvo);
+        return Err(e);
     }
-    escrito
+    Ok(arquivo)
 }
 
-/// O `fsync` de UM arquivo ja gravado -- reabre porque quem escreveu pode
-/// ja ter fechado o `File` (a lista de caminhos atravessa a fronteira da
-/// trava). `read(true).write(true)`: o mesmo par que `NdxFile::abrir` usa,
-/// para o `sync_all` valer em qualquer SO, nao so' onde reabrir so' para
-/// ler ja bastaria.
+/// O `fsync` de UM arquivo ja gravado cujo descritor ja FECHOU -- so para a
+/// copia que passou do [`teto_de_abertos`] (pedido 552).
+/// `read(true).write(true)`: o mesmo par que `NdxFile::abrir` usa, para o
+/// `sync_all` valer em qualquer SO, nao so' onde reabrir so' para ler ja
+/// bastaria.
 ///
-/// **Nao medido:** reabrir pode perder o erro de *writeback* se o inode
-/// sair da memoria no intervalo entre escrever e este `fsync` (o caso
-/// *fsyncgate*) -- achado do parecer do DBA de 24/09/2026, fsync depois de
-/// reabrir, pedido a abrir.
+/// **O risco que fica, dito:** reabrir pode perder o erro de *writeback* se
+/// o inode sair da memoria no intervalo entre escrever e este `fsync` (o
+/// caso *fsyncgate*). So alcanca a corrida com mais copias do que o teto, e
+/// so as que passaram dele. Nao medido: forcar o despejo do inode com o erro
+/// pendente pede um disco que recusa de verdade (`CAP_SYS_ADMIN`).
 fn sincronizar_arquivo(alvo: &Path) -> Result<()> {
     let arquivo = OpenOptions::new().read(true).write(true).open(alvo)?;
     // `sem_abortar`: o destino do backup nao e o disco do banco que o
@@ -130,11 +158,97 @@ fn sincronizar_arquivo(alvo: &Path) -> Result<()> {
 /// manifesto chegar a existir.
 ///
 /// Chamada DEPOIS de soltar `travar_dados()` -- ver a nota do modulo.
-pub fn sincronizar_copias(caminhos: &[PathBuf]) -> Result<()> {
-    for caminho in caminhos {
-        sincronizar_arquivo(caminho)?;
+///
+/// Pedido 552: cada copia sincroniza no descritor de quem a escreveu, que
+/// [`executar`] devolveu aberto; so a que passou do teto reabre.
+///
+/// Pedido 579: depois das copias, o `fsync` de cada PASTA que a corrida
+/// tocou -- a do destino (de onde saiu o `backup.json` velho), a de cada
+/// copia e a mae de cada pasta criada. Sem isto, uma queda depois do
+/// manifesto novo podia voltar com o velho, ou sem o nome de uma copia.
+pub fn sincronizar_copias(copias: &Copias) -> Result<()> {
+    for (caminho, aberto) in copias.caminhos.iter().zip(&copias.abertos) {
+        match aberto {
+            Some(arquivo) => crate::sincronia::sync_all_sem_abortar(arquivo, caminho)?,
+            None => sincronizar_arquivo(caminho)?,
+        }
+    }
+    for pasta in pastas_tocadas(copias) {
+        sincronizar_pasta(&pasta)?;
     }
     Ok(())
+}
+
+/// O `fsync` de uma pasta do destino, pelo motor do `sincronia` (a marca da
+/// recusa e a arma de teste sao as mesmas dos arquivos). O nome passado e o
+/// do MANIFESTO dentro dela: a recusa marca a propria pasta, e nao a mae --
+/// que no backup agendado e a pasta dos backups vizinhos.
+fn sincronizar_pasta(pasta: &Path) -> Result<()> {
+    crate::sincronia::sincronizar_pasta_sem_abortar(pasta, &pasta.join(MANIFESTO))
+}
+
+/// As pastas cujas ENTRADAS esta corrida mudou, sem repetir: o destino, a
+/// pasta de cada copia, e a mae de cada pasta criada (a entrada da pasta nova
+/// mora na mae dela). Da mais funda para a mais rasa: a do destino -- a que
+/// perdeu o `backup.json` velho -- fica perto do fim, logo antes do manifesto.
+fn pastas_tocadas(copias: &Copias) -> Vec<PathBuf> {
+    let mut pastas: Vec<PathBuf> = Vec::new();
+    let mut anotar = |p: &Path| {
+        if !p.as_os_str().is_empty() && !pastas.iter().any(|q| q == p) {
+            pastas.push(p.to_path_buf());
+        }
+    };
+    for c in &copias.caminhos {
+        if let Some(pai) = c.parent() {
+            anotar(pai);
+        }
+    }
+    for p in &copias.pastas {
+        if let Some(mae) = p.parent() {
+            anotar(mae);
+        }
+    }
+    anotar(&copias.destino);
+    pastas.sort_by_key(|p| std::cmp::Reverse(p.components().count()));
+    pastas
+}
+
+/// Quantas copias de UMA corrida podem ficar com o descritor aberto ate o
+/// `fsync` -- pedido 552.
+///
+/// O servidor ja segura um descritor por arquivo de tabela aberta, e aceita
+/// conexoes enquanto o backup roda: segurar todas as copias poderia gastar o
+/// `RLIMIT_NOFILE` e fazer o `accept` de outra thread recusar com `EMFILE`.
+/// No Linux o teto e um QUARTO da folga medida agora (o limite brando menos
+/// os descritores ja abertos), nunca acima de [`MAXIMO_DE_ABERTOS`]; fora do
+/// Linux, sem `/proc`, e o fixo [`ABERTOS_SEM_MEDIDA`] -- o limite brando
+/// do macOS e 256.
+fn teto_de_abertos() -> usize {
+    #[cfg(target_os = "linux")]
+    if let Some(folga) = folga_de_descritores() {
+        return (folga / 4).min(MAXIMO_DE_ABERTOS);
+    }
+    ABERTOS_SEM_MEDIDA
+}
+
+/// Teto de descritores de copia seguros por corrida, mesmo com folga de sobra.
+const MAXIMO_DE_ABERTOS: usize = 1024;
+
+/// O teto quando a folga nao se mede.
+const ABERTOS_SEM_MEDIDA: usize = 64;
+
+/// O limite brando de descritores menos os abertos agora, lidos do `/proc`.
+/// `None` se algum dos dois nao se le -- e ai vale o fixo.
+#[cfg(target_os = "linux")]
+fn folga_de_descritores() -> Option<usize> {
+    let limites = std::fs::read_to_string("/proc/self/limits").ok()?;
+    let linha = limites.lines().find(|l| l.starts_with("Max open files"))?;
+    let brando = match linha.split_whitespace().nth(3)? {
+        "unlimited" => usize::MAX,
+        n => n.parse().ok()?,
+    };
+    let em_uso = std::fs::read_dir("/proc/self/fd").ok()?.count();
+    Some(brando.saturating_sub(em_uso))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -317,7 +431,7 @@ pub fn executar_zip(
     banco: &str,
     admin: &str,
     quando_ms: i64,
-) -> Result<(PathBuf, Relatorio)> {
+) -> Result<(ZipParcial, Relatorio)> {
     let origem = if banco.is_empty() {
         raiz.to_path_buf()
     } else {
@@ -343,7 +457,42 @@ pub fn executar_zip(
     if feito.is_err() {
         descartar_corrida(&criadas);
     }
-    feito
+    let (alvo, arquivo, r) = feito?;
+    let zip = ZipParcial {
+        alvo,
+        arquivo,
+        pastas: criadas.pastas,
+    };
+    Ok((zip, r))
+}
+
+/// O ZIP escrito com nome PARCIAL e ainda nao sincronizado -- o que
+/// [`executar_zip`] devolve e [`finalizar_zip`] conclui.
+///
+/// Carrega o `File` de quem escreveu o `.part` (pedido 552: o `fsync` e
+/// neste descritor, sem reabrir) e as pastas que a corrida criou (pedido
+/// 579: se o `rename` final recusa, elas saem junto com o `.part`).
+///
+/// Derefere para o caminho FINAL, que so existe depois de [`finalizar_zip`]
+/// -- e o que os chamadores mostram e anotam.
+#[derive(Debug)]
+pub struct ZipParcial {
+    alvo: PathBuf,
+    arquivo: File,
+    pastas: Vec<PathBuf>,
+}
+
+impl std::ops::Deref for ZipParcial {
+    type Target = Path;
+    fn deref(&self) -> &Path {
+        &self.alvo
+    }
+}
+
+impl AsRef<Path> for ZipParcial {
+    fn as_ref(&self) -> &Path {
+        &self.alvo
+    }
 }
 
 /// O corpo de [`executar_zip`] depois da pasta criada, separado para o erro
@@ -354,7 +503,7 @@ fn montar_zip(
     banco: &str,
     admin: &str,
     quando_ms: i64,
-) -> Result<(PathBuf, Relatorio)> {
+) -> Result<(PathBuf, File, Relatorio)> {
     let alvo = pasta.join(nome_do_zip(
         if banco.is_empty() { "dados" } else { banco },
         admin,
@@ -392,8 +541,8 @@ fn montar_zip(
     // `op_backups` so reconhece `.zip`, entao o `.part` fica invisivel para
     // quem lista backups ate o `rename` de [`finalizar_zip`] -- uma recusa
     // no meio nunca deixa um `.zip` pela metade parecendo pronto.
-    escrever_sem_sync(&parcial(&alvo), &bytes)?;
-    Ok((alvo, r))
+    let arquivo = escrever_sem_sync(&parcial(&alvo), &bytes)?;
+    Ok((alvo, arquivo, r))
 }
 
 /// Idade a partir da qual um `.part` nosso na pasta e ORFAO -- pedido 555.
@@ -508,14 +657,20 @@ fn parcial(alvo: &Path) -> PathBuf {
 /// erro -- um zip que nao chegou ao nome final nunca vai chegar, e a rotacao
 /// nao o enxerga. Deu certo, a faxina dos orfaos de corridas anteriores roda
 /// aqui, uma vez por backup, pelo motor de [`limpar_parciais_orfaos`].
-pub fn finalizar_zip(alvo: &Path) -> Result<()> {
+///
+/// Pedido 552: o `fsync` e no descritor que [`executar_zip`] escreveu. E
+/// pedido 579: na recusa saem tambem as pastas que a corrida criou, pelo
+/// motor do 576 (`remove_dir`, so vazia) -- antes ficava a pasta vazia.
+pub fn finalizar_zip(zip: &ZipParcial) -> Result<()> {
+    let alvo = zip.alvo.as_path();
     let parcial = parcial(alvo);
-    let trocado = sincronizar_arquivo(&parcial)
+    let trocado = crate::sincronia::sync_all_sem_abortar(&zip.arquivo, &parcial)
         .and_then(|()| crate::sincronia::trocar_duravel_sem_abortar(&parcial, alvo));
     if let Err(e) = trocado {
         // Depois de um `rename` que passou (recusa so no `fsync` do
         // diretorio) o `.part` ja nao existe, e apagar nao acha nada.
         descartar_parcial(&parcial);
+        descartar_pastas(&zip.pastas);
         return Err(e);
     }
     if let (Some(pasta), Ok(nosso)) = (alvo.parent(), std::fs::symlink_metadata(alvo)) {
@@ -579,6 +734,12 @@ pub fn escolher_para_apagar(nomes: &[String], manter: usize) -> Vec<String> {
 /// mediu. Sem manifesto, a pasta nunca parece um backup pronto -- nem para
 /// quem lista, nem para quem confere.
 pub fn executar(raiz: &Path, destino: &Path, _quando_ms: i64) -> Result<(Relatorio, Copias)> {
+    executar_com_teto(raiz, destino, teto_de_abertos())
+}
+
+/// [`executar`] com o teto de descritores dado -- separado para a prova do
+/// caminho alem do teto nao precisar de milhares de arquivos.
+fn executar_com_teto(raiz: &Path, destino: &Path, teto: usize) -> Result<(Relatorio, Copias)> {
     if !raiz.is_dir() {
         return Err(PhxError::NaoEncontrado(format!(
             "a raiz de dados {} nao existe",
@@ -592,11 +753,14 @@ pub fn executar(raiz: &Path, destino: &Path, _quando_ms: i64) -> Result<(Relator
         ));
     }
     let mut r = Relatorio::default();
-    let mut copias = Copias::default();
+    let mut copias = Copias {
+        destino: destino.to_path_buf(),
+        ..Copias::default()
+    };
     // Pedido 576: a recusa no meio da copia (disco cheio, `EFBIG`, nome
     // ocupado) sai daqui com o que esta corrida fez nascer ja apagado --
     // senao ficava uma pasta de copias sem manifesto que ninguem reconhece.
-    if let Err(e) = copiar_arvore(raiz, destino, &mut r, &mut copias) {
+    if let Err(e) = copiar_arvore(raiz, destino, teto, &mut r, &mut copias) {
         descartar_corrida(&copias);
         return Err(e);
     }
@@ -608,6 +772,7 @@ pub fn executar(raiz: &Path, destino: &Path, _quando_ms: i64) -> Result<(Relator
 fn copiar_arvore(
     raiz: &Path,
     destino: &Path,
+    teto: usize,
     r: &mut Relatorio,
     copias: &mut Copias,
 ) -> Result<()> {
@@ -633,10 +798,14 @@ fn copiar_arvore(
         // agora da que ja existia (destino reaproveitado): so' a primeira e'
         // desta corrida, e so' ela pode sair numa falha.
         let nasce = std::fs::symlink_metadata(&alvo).is_err();
-        escrever_sem_sync(&alvo, &dados)?;
+        let arquivo = escrever_sem_sync(&alvo, &dados)?;
         if nasce {
             copias.nascidas.push(alvo.clone());
         }
+        // Pedido 552: o descritor viaja ate o `fsync`, ate o teto; alem dele
+        // fecha aqui e a copia volta ao caminho de reabrir.
+        let seguras = copias.abertos.iter().filter(|a| a.is_some()).count();
+        copias.abertos.push((seguras < teto).then_some(arquivo));
         copias.caminhos.push(alvo);
         r.bytes += dados.len() as u64;
         r.arquivos.push(Arquivo {
@@ -657,10 +826,13 @@ fn copiar_arvore(
 /// sobrescrevendo copias com o manifesto velho no lugar e' o defeito que este
 /// passo existe para impedir, e ate aqui nenhuma copia mudou.
 ///
-/// **Nao medido:** o `unlink` nao ganha `fsync` do diretorio -- ele roda sob a
-/// trava de dados, e a catraca `alcancam-fsync-2` so' desce. Numa queda da
-/// MAQUINA antes do `fsync` das copias, o manifesto pode voltar junto com
-/// copias que nao voltaram inteiras.
+/// O `unlink` nao ganha `fsync` do diretorio AQUI -- ele roda sob a trava de
+/// dados, e a catraca `alcancam-fsync-2` so' desce. Ganha em
+/// [`sincronizar_copias`], fora da trava e antes do manifesto novo (pedido
+/// 579). **O que fica, nao medido:** uma queda da MAQUINA entre este `unlink`
+/// e aquele `fsync` ainda pode devolver o manifesto velho junto de copias ja
+/// sobrescritas -- e o [`conferir`] o acusa pelo SHA. Fechar essa janela pede
+/// o `fsync` sob a trava, ou a remocao antes dela em cada chamador.
 fn invalidar_manifesto_velho(destino: &Path) -> Result<()> {
     let manifesto = destino.join(MANIFESTO);
     match std::fs::symlink_metadata(&manifesto) {
@@ -682,9 +854,14 @@ fn invalidar_manifesto_velho(destino: &Path) -> Result<()> {
 /// [`sincronizar_copias`] percorre.
 #[derive(Debug, Default)]
 pub struct Copias {
+    /// A pasta do backup: a que perdeu o `backup.json` velho (pedido 579).
+    destino: PathBuf,
     /// Toda copia escrita, na ordem -- inclusive as que sobrescreveram um
     /// nome que ja existia; todas precisam de `fsync`.
     caminhos: Vec<PathBuf>,
+    /// Paralela a `caminhos`: o descritor de quem escreveu, ainda aberto
+    /// para o `fsync` (pedido 552); `None` na copia que passou do teto.
+    abertos: Vec<Option<File>>,
     /// Das copias, as cujo NOME nasceu nesta corrida: so' estas saem numa
     /// falha. A que sobrescreveu um nome antigo nao e' nossa para apagar.
     nascidas: Vec<PathBuf>,
@@ -736,7 +913,15 @@ fn descartar_corrida(copias: &Copias) {
     for arquivo in &copias.nascidas {
         descartar_parcial(arquivo);
     }
-    for pasta in copias.pastas.iter().rev() {
+    descartar_pastas(&copias.pastas);
+}
+
+/// A metade das pastas de [`descartar_corrida`], separada para o
+/// [`finalizar_zip`] -- que nao tem copia nenhuma, so o `.part` e as pastas
+/// -- pagar o MESMO motor (pedido 579) em vez de um segundo laco de
+/// `remove_dir`.
+fn descartar_pastas(pastas: &[PathBuf]) {
+    for pasta in pastas.iter().rev() {
         let _ = std::fs::remove_dir(pasta);
     }
 }
@@ -773,10 +958,15 @@ pub fn concluir(destino: &Path, quando_ms: i64, r: &Relatorio, copias: &Copias) 
 /// numa copia, no meio do caminho, nunca chega aqui, e a pasta fica sem
 /// `backup.json` -- o sinal de "nao terminou" que `op_backups` e
 /// [`conferir`] ja sabem ler.
+///
+/// O `fsync` e no descritor que escreveu (pedido 552), e depois vem o da
+/// pasta (pedido 579): o nome do manifesto e uma entrada de diretorio, e sem
+/// ela duravel a queda podia voltar sem ele -- ou com o velho.
 pub fn finalizar_manifesto(destino: &Path, quando_ms: i64, r: &Relatorio) -> Result<()> {
     let manifesto = destino.join(MANIFESTO);
-    escrever_sem_sync(&manifesto, r.para_json(quando_ms).escrever().as_bytes())?;
-    sincronizar_arquivo(&manifesto)
+    let arquivo = escrever_sem_sync(&manifesto, r.para_json(quando_ms).escrever().as_bytes())?;
+    crate::sincronia::sync_all_sem_abortar(&arquivo, &manifesto)?;
+    sincronizar_pasta(destino)
 }
 
 /// Le o manifesto e confere cada arquivo do destino, byte a byte.
@@ -883,7 +1073,7 @@ mod tests {
     ) -> (PathBuf, Relatorio) {
         let (alvo, r) = executar_zip(raiz, pasta, banco, admin, quando_ms).unwrap();
         finalizar_zip(&alvo).unwrap();
-        (alvo, r)
+        (alvo.to_path_buf(), r)
     }
 
     #[test]
@@ -1031,13 +1221,71 @@ mod tests {
         crate::sincronia::falha_de_teste::desarmar(&pasta);
         assert!(erro.is_err(), "o fsync do zip tinha de recusar");
         assert!(!zip.is_file(), "o nome final nao pode aparecer");
+        // A pasta nasceu nesta corrida e ficou vazia: desde o 579 ela sai
+        // junto -- entao «nao existe» tambem quer dizer «sem .part».
         assert!(
-            std::fs::read_dir(&pasta)
-                .unwrap()
+            std::fs::read_dir(&pasta).map_or(true, |l| l
                 .flatten()
-                .all(|e| !e.file_name().to_string_lossy().ends_with(".part")),
+                .all(|e| !e.file_name().to_string_lossy().ends_with(".part"))),
             "o .part do fsync recusado ficou na pasta"
         );
+        assert!(!pasta.exists(), "a pasta vazia que a corrida criou ficou");
+    }
+
+    /// Pedido 552: alem do teto de descritores, a copia fecha na escrita e
+    /// volta ao caminho de reabrir -- e o backup continua inteiro. As que
+    /// cabem no teto seguem com o descritor de quem escreveu.
+    #[test]
+    fn alem_do_teto_a_copia_reabre_e_o_backup_fica_inteiro() {
+        let base = temp("teto-de-abertos");
+        let raiz = base.join("dados");
+        let destino = base.join("copia");
+        std::fs::create_dir_all(&raiz).unwrap();
+        dados_de_exemplo(&raiz);
+
+        let (r, copias) = executar_com_teto(&raiz, &destino, 2).unwrap();
+        let seguros = copias.abertos.iter().filter(|a| a.is_some()).count();
+        assert_eq!(seguros, 2, "o teto nao segurou o numero de descritores");
+        assert_eq!(copias.abertos.len(), 4);
+        concluir(&destino, 1_787_000_000_000, &r, &copias).unwrap();
+        let c = conferir(&destino).unwrap();
+        assert!(c.ok(), "{:?}", c.divergencias);
+    }
+
+    /// O teto medido no Linux nunca e zero com a folga deste processo, nem
+    /// passa do fixo: zero faria todo backup voltar a reabrir calado.
+    #[test]
+    fn o_teto_de_abertos_fica_entre_um_e_o_fixo() {
+        let t = teto_de_abertos();
+        assert!((1..=MAXIMO_DE_ABERTOS).contains(&t), "teto {t}");
+    }
+
+    /// As pastas do `fsync` do 579: sem repetir, da mais funda para a mais
+    /// rasa, com o destino e a mae da pasta criada.
+    #[test]
+    fn as_pastas_tocadas_incluem_o_destino_e_a_mae_da_criada() {
+        let base = temp("pastas-tocadas");
+        let raiz = base.join("dados");
+        let destino = base.join("nova/copia");
+        std::fs::create_dir_all(&raiz).unwrap();
+        dados_de_exemplo(&raiz);
+        let (_, copias) = executar(&raiz, &destino, 0).unwrap();
+        let p = pastas_tocadas(&copias);
+        for esperada in [
+            destino.join("Z/schemaX"),
+            destino.join("Z"),
+            destino.clone(),
+            base.join("nova"),
+            base.to_path_buf(),
+        ] {
+            assert!(p.contains(&esperada), "faltou {esperada:?} em {p:?}");
+        }
+        let mut sem_repetir = p.clone();
+        sem_repetir.dedup();
+        assert_eq!(sem_repetir.len(), p.len());
+        assert!(p
+            .windows(2)
+            .all(|w| w[0].components().count() >= w[1].components().count()));
     }
 
     #[test]

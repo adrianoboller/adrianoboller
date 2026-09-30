@@ -507,6 +507,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let inicio = Instant::now();
     let (zip, _rel) = phxsql_store::backup::executar_zip(&dir, &destino, "", "medidor", 0)?;
     let s_backup = inicio.elapsed().as_secs_f64();
+    // Sem o `finalizar_zip` (condicao C2 do 524) o nome final nao existe, e
+    // o tamanho abaixo lia 0 do `.part` que ficava para tras. Fora do tempo
+    // medido, para o numero continuar sendo o mesmo trabalho de antes.
+    phxsql_store::backup::finalizar_zip(&zip)?;
     let bytes_zip = std::fs::metadata(&zip).map(|m| m.len()).unwrap_or(0);
 
     let s_sha = bytes_tabela as f64 / (sha_mib * 1_048_576.0);
