@@ -15645,17 +15645,14 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "servidor`, que testa so essa segunda linha."
         ),
         "arquivo": "crates/phxsql-store/src/backup.rs",
-        "trecho": """fn sincronizar_arquivo(alvo: &Path) -> Result<()> {
-    let arquivo = OpenOptions::new().read(true).write(true).open(alvo)?;
-    // `sem_abortar`: o destino do backup nao e o disco do banco que o
+        "trecho": """    // `sem_abortar`: o destino do backup nao e o disco do banco que o
     // gancho do 509 protege -- pedido 524, condicao C1 do parecer do DBA.
-    crate::sincronia::sync_all_sem_abortar(&arquivo, alvo)
+    crate::sincronia::sync_all_sem_abortar(&arquivo, mostrar)
 }
 """,
-        "troca": """fn sincronizar_arquivo(alvo: &Path) -> Result<()> {
-    // DEFEITO REPOSTO (524): nao sincroniza -- "concluido" pode nao
+        "troca": """    // DEFEITO REPOSTO (524): nao sincroniza -- "concluido" pode nao
     // estar no disco do destino.
-    let _ = alvo;
+    let _ = (&arquivo, mostrar);
     Ok(())
 }
 """,
@@ -15688,11 +15685,11 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "chamar o gancho."
         ),
         "arquivo": "crates/phxsql-store/src/backup.rs",
-        "trecho": """    crate::sincronia::sync_all_sem_abortar(&arquivo, alvo)
+        "trecho": """    crate::sincronia::sync_all_sem_abortar(&arquivo, mostrar)
 """,
         "troca": """    // DEFEITO REPOSTO (524, C1): volta a chamar o gancho do processo --
     // um disco de BACKUP que recusa agora derruba o servidor inteiro.
-    crate::sincronia::sync_all(&arquivo, alvo)
+    crate::sincronia::sync_all(&arquivo, mostrar)
 """,
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
@@ -16869,12 +16866,12 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "refaz, ele nao aperta."
         ),
         "arquivo": "crates/phxsql-store/src/util.rs",
-        "trecho": """    apertar_permissao(&arquivo);
-    Ok(arquivo)
+        "trecho": """        apertar_permissao(&arquivo);
+        return Ok(arquivo);
 """,
-        "troca": """    // DEFEITO REPOSTO (542): o arquivo refeito fica com o modo antigo.
-    let _ = apertar_permissao;
-    Ok(arquivo)
+        "troca": """        // DEFEITO REPOSTO (542): o arquivo refeito fica com o modo antigo.
+        let _ = apertar_permissao;
+        return Ok(arquivo);
 """,
         "pacote": "phxsql-store",
         "alvo": ["--test", "permissao-dos-arquivos"],
@@ -16892,7 +16889,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "alcanca o arquivo."
         ),
         "arquivo": "crates/phxsql-store/src/backup.rs",
-        "trecho": """    let arquivo = crate::util::recriar_do_banco(alvo, false)?;
+        "trecho": """    let arquivo = crate::util::recriar_no_destino(alvo, false)?;
 """,
         "troca": """    // DEFEITO REPOSTO (542): a copia nasce na permissao do umask.
     let arquivo = std::fs::File::create(alvo)?;
@@ -16959,38 +16956,24 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "(que o `O_CREAT` seguiria, criando o alvo) cai junto."
         ),
         "arquivo": "crates/phxsql-store/src/util.rs",
-        "trecho": """    match opcoes_do_banco()
-        .read(ler)
-        .write(true)
-        .create_new(true)
-        .open(caminho)
-    {
-        Ok(novo) => {
-            apertar_permissao(&novo);
-            return Ok(novo);
-        }
-        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
-        Err(e) => return Err(e),
-    }
-    let nome = std::fs::symlink_metadata(caminho)?;
-    if !nome.file_type().is_file() {
-        return Err(recusa_do_nome(caminho, &nome));
-    }
-    let arquivo = OpenOptions::new().read(ler).write(true).open(caminho)?;
-    if !mesmo_arquivo(&arquivo.metadata()?, &nome) {
-        return Err(recusa_do_nome(caminho, &nome));
-    }
-    arquivo.set_len(0)?;
+        "trecho": """        match opcoes_do_banco()
+            .read(ler)
+            .write(true)
+            .create_new(true)
+            .open(caminho)
+        {
 """,
-        "troca": """    // DEFEITO REPOSTO (SEC 542, achado 1): segue o link no ultimo nome.
-    let _ = (recusa_do_nome, mesmo_arquivo);
-    let arquivo = opcoes_do_banco()
-        .read(ler)
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(caminho)?;
+        "troca": """        // DEFEITO REPOSTO (SEC 542, achado 1): segue o link no ultimo nome.
+        let _ = (recusa_do_nome, mesmo_arquivo, &mut tirou_o_alheio);
+        match opcoes_do_banco()
+            .read(ler)
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(caminho)
+        {
 """,
+        "prazo": 300,
         "pacote": "phxsql-store",
         "alvo": ["--test", "permissao-dos-arquivos"],
         "caem": [
@@ -18124,5 +18107,117 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "alvo": ["--test", "anuncio-numa-escrita-so"],
         "caem": ["cada_linha_de_anuncio_sai_num_write_so"],
         "seguem": [],
+    },
+    {
+        "id": "backup-atravessa-link-na-pasta-do-meio",
+        "titulo": "o backup volta a criar e atravessar as pastas do destino pelo NOME: um link numa pasta do meio (`copias/loja -> dados/rh`) grava a cópia por cima da tabela viva de outro database",
+        "porque": (
+            "pedido 568, re-checagem SEC do 542 (prova_e), medido duas vezes: "
+            "com `dest/loja -> base/rh` o backup respondia `ok:true` e o "
+            "`rh/c.reg` vivo virava o `loja/c.reg` -- o `varrer` de `rh` caiu "
+            "de 2 para 1. O conserto do 542 so olhava o ULTIMO nome. Agora o "
+            "destino se percorre pelo descritor de cada pasta (`Pasta`, o "
+            "`openat` feito com `/proc/self/fd/N/nome` e `O_NOFOLLOW`). O "
+            "defeito reposto e o `create_dir_all` e o caminho por nome."
+        ),
+        "arquivo": "crates/phxsql-store/src/backup.rs",
+        "trecho": """        let pasta = entrar_na_pasta(copias, &mut ancora_de, rel_p.parent())?;
+        let por_dentro = copias.ancoras[pasta].por_dentro(nome);
+""",
+        "troca": """        // DEFEITO REPOSTO (568): a pasta do meio se cria e se atravessa pelo nome.
+        let _ = (nome, entrar_na_pasta, &mut ancora_de);
+        crate::util::criar_diretorio_do_banco(alvo.parent().unwrap())?;
+        let por_dentro = alvo.clone();
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "destino-do-backup-sem-atalho"],
+        "caem": ["o_backup_nao_atravessa_link_numa_pasta_do_meio"],
+        "seguem": ["o_backup_nao_escreve_no_arquivo_de_outro_dono"],
+        "prazo": 300,
+    },
+    {
+        "id": "backup-escreve-no-arquivo-de-outro-dono",
+        "titulo": "o backup volta a truncar e reescrever o arquivo regular de OUTRO dono (ou com link físico) que já está no destino: quem plantou fica dono da cópia do banco, e no ZIP o `.part` plantado vira o `.zip` final",
+        "porque": (
+            "pedido 569, re-checagem SEC do 542 (prova_d), medido em pasta e "
+            "em ZIP: a copia do `c.reg` ficava com uid 1234 e o conteudo do "
+            "banco; no ZIP bastava plantar o `.part` do minuto. O "
+            "`recriar_no_destino` tira o nome alheio e cria o nosso com "
+            "`create_new` -- o reuso do que ja e nosso segue no mesmo inode. "
+            "A prova planta com `chown` (a suite roda como root no conteiner) "
+            "e com `hard_link` (sem root)."
+        ),
+        "arquivo": "crates/phxsql-store/src/util.rs",
+        "trecho": """    recriar(caminho, ler, true)
+""",
+        "troca": """    // DEFEITO REPOSTO (569): o destino reescreve o inode que estiver no nome.
+    recriar(caminho, ler, false)
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "destino-do-backup-sem-atalho"],
+        "caem": ["o_backup_nao_escreve_no_arquivo_de_outro_dono"],
+        "seguem": ["o_backup_nao_atravessa_link_numa_pasta_do_meio"],
+        "prazo": 300,
+    },
+    {
+        "id": "fifo-trocada-na-janela-para-o-backup",
+        "titulo": "o motor da permissão volta a abrir pelo nome seguindo link e esperando leitor: trocar o nome por um link para FIFO entre o `lstat` e o `open` para o backup com a trava de dados na mão",
+        "porque": (
+            "pedido 570, re-checagem SEC do 542, medido pelo juiz: 1 parada "
+            "em 12 corridas, e um `inserir` no mesmo servidor 5,0 s sem "
+            "resposta ate o terceiro abrir a FIFO. O `open` do passo 3 passou "
+            "a levar `O_NOFOLLOW | O_NONBLOCK`. A prova alarga a janela com uma "
+            "thread trocando o nome por `rename` atomico; o defeito reposto "
+            "PARA, e o prazo de 20 s do teste vira a reprovacao."
+        ),
+        "arquivo": "crates/phxsql-store/src/util.rs",
+        "trecho": """        let arquivo = sem_seguir_nem_esperar(&mut abrir)
+            .open(caminho)
+""",
+        "troca": """        // DEFEITO REPOSTO (570): segue o link e espera o leitor da FIFO.
+        let arquivo = abrir
+            .open(caminho)
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "destino-do-backup-sem-atalho"],
+        "caem": ["a_fifo_trocada_na_janela_nao_para_o_motor"],
+        "seguem": [
+            "o_backup_nao_atravessa_link_numa_pasta_do_meio",
+            "o_backup_nao_escreve_no_arquivo_de_outro_dono",
+        ],
+        "prazo": 300,
+    },
+    {
+        "id": "copia-reaberta-pelo-nome-no-fsync",
+        "titulo": "a cópia além do teto de descritores volta a reabrir pelo NOME para o `fsync`: trocada por um link, o `fsync` cai noutro arquivo e o manifesto diz «pronto» sobre a cópia que nunca sincronizou",
+        "porque": (
+            "irmao do pedido 570, achado pelo juiz: o `sincronizar_arquivo` "
+            "reabre cada copia pelo nome FORA da trava. Link para FIFO dava "
+            "`EINVAL` e marcava o caminho; link para outro arquivo "
+            "sincronizava o outro e respondia Ok. Agora a reabertura nao segue "
+            "link e confere o inode que a escrita anotou."
+        ),
+        "arquivo": "crates/phxsql-store/src/backup.rs",
+        "trecho": """    let arquivo = crate::util::sem_seguir_nem_esperar(&mut abrir)
+        .open(alvo)
+        .map_err(|e| no_nome_real(e, alvo, mostrar))?;
+    let aberto = arquivo.metadata()?;
+    if !aberto.is_file() || identidade(&aberto) != anotado {
+""",
+        "troca": """    // DEFEITO REPOSTO (irmao do 570): reabre pelo nome e confia nele.
+    let _ = anotado;
+    let arquivo = OpenOptions::new().read(true).write(true).open(mostrar)?;
+    let aberto = arquivo.metadata()?;
+    if !aberto.is_file() && identidade(&aberto).is_none() {
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": [
+            "backup::tests::a_copia_trocada_antes_do_fsync_recusa_em_vez_de_sincronizar_outra"
+        ],
+        "seguem": [
+            "backup::tests::alem_do_teto_a_copia_reabre_e_o_backup_fica_inteiro",
+            "backup::tests::copia_tudo_e_confere",
+        ],
     },
 ]

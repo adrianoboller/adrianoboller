@@ -177,37 +177,325 @@ pub fn opcoes_do_banco() -> OpenOptions {
 /// `.ndx` que o `reindexar` refaz pode ter outro punho aberto neste processo,
 /// e ele tem de ver o arquivo novo, como via com o `O_TRUNC`.
 ///
-/// Fica de fora, dito: o link num nome INTERMEDIARIO (`dest/loja -> fora`).
-/// O `create_dir_all` o aceita como diretorio que ja existe, e o arquivo vai
-/// para o outro lado -- nasce novo, ou, se la ja houver um arquivo regular com
-/// o nome de um arquivo do banco (`c.reg`, `_database.json`), e truncado e
-/// apertado. Fechar isso pede abrir diretorio a diretorio sem seguir link
-/// (`openat`), que a `std` nao da; fica como achado para pedido proprio.
+/// # O que o 570 acrescentou: a abertura nao segue link nem espera leitor
+///
+/// Entre o `lstat` do passo 2 e o `open` do passo 3 ha uma janela: trocado o
+/// nome por um link para uma FIFO nela, o `open` de escrita (que seguia o
+/// link) ficava parado esperando leitor -- com a trava de dados na mao, o
+/// servidor inteiro parado (medido pelo juiz: 1 em 12 corridas, um `inserir`
+/// 5,0 s sem resposta). O passo 3 abre agora com `O_NOFOLLOW | O_NONBLOCK`
+/// ([`sem_seguir_nem_esperar`]): o link recusa (`ELOOP`), a FIFO sem leitor
+/// recusa (`ENXIO`), e a FIFO com leitor abre sem parar e cai no `fstat`, que
+/// exige arquivo REGULAR e o mesmo inode antes de truncar. O numero do
+/// `O_NOFOLLOW` digitado a mao continua perigoso -- o errado nao recusaria
+/// nada --, e por isso so existe nas arquiteturas conferidas ([`bandeiras`]),
+/// com o teste que prova a recusa contra o nucleo onde a suite roda.
+///
+/// O link num nome INTERMEDIARIO (`dest/loja -> fora`, pedido 568) nao e
+/// deste motor: quem precisa (o backup) chega ao nome pela [`Pasta`], que
+/// abre diretorio a diretorio sem seguir link, e passa aqui o nome ja
+/// alcancado pelo descritor.
 pub fn recriar_do_banco(caminho: &Path, ler: bool) -> std::io::Result<File> {
-    match opcoes_do_banco()
-        .read(ler)
-        .write(true)
-        .create_new(true)
-        .open(caminho)
-    {
-        Ok(novo) => {
-            apertar_permissao(&novo);
-            return Ok(novo);
+    recriar(caminho, ler, false)
+}
+
+/// [`recriar_do_banco`] para um nome num DESTINO onde outros escrevem -- a
+/// pasta do backup (pedido 569).
+///
+/// A diferenca e uma so: o arquivo regular que ja esta no nome mas NAO e
+/// nosso -- de outro dono, ou com outro nome no mesmo inode (`nlink > 1`, o
+/// link fisico) -- nao e truncado e reescrito: o NOME sai e o nosso nasce com
+/// `create_new`. Reescrever o inode alheio entregava o conteudo do banco a
+/// quem o plantou (medido pela SEC: a copia do `c.reg` com uid 1234, e no
+/// ZIP o `.part` plantado virava o `.zip` final). Trocar o nome, e nao
+/// recusar, e o conserto que a SEC pediu: o reuso do destino que ja e nosso
+/// continua igual, truncando o mesmo inode.
+///
+/// Por que nao vale para o banco inteiro: la, o arquivo de outro dono e o da
+/// base do servico mexida por um `sudo` do administrador -- trocar o nome
+/// daria o arquivo ao root e tiraria o acesso do servico. A pasta do backup e
+/// lugar onde terceiros escrevem por desenho; a raiz de dados, nao.
+pub fn recriar_no_destino(caminho: &Path, ler: bool) -> std::io::Result<File> {
+    recriar(caminho, ler, true)
+}
+
+/// O corpo de [`recriar_do_banco`] e [`recriar_no_destino`]: um motor so, e
+/// `destino` decide so o que fazer com o arquivo regular que nao e nosso.
+fn recriar(caminho: &Path, ler: bool, destino: bool) -> std::io::Result<File> {
+    // Duas voltas no maximo: a segunda so depois de o nome alheio sair
+    // (569). Se alguem o plantar de novo no intervalo, o `create_new` recusa
+    // -- o nosso conteudo nunca cai no inode dele.
+    let mut tirou_o_alheio = false;
+    loop {
+        match opcoes_do_banco()
+            .read(ler)
+            .write(true)
+            .create_new(true)
+            .open(caminho)
+        {
+            Ok(novo) => {
+                apertar_permissao(&novo);
+                return Ok(novo);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists && !tirou_o_alheio => {}
+            Err(e) => return Err(e),
         }
-        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
-        Err(e) => return Err(e),
+        let nome = std::fs::symlink_metadata(caminho)?;
+        if !nome.file_type().is_file() {
+            return Err(recusa_do_nome(caminho, &nome));
+        }
+        if destino && !e_nosso(&nome) {
+            std::fs::remove_file(caminho)?;
+            tirou_o_alheio = true;
+            continue;
+        }
+        let mut abrir = OpenOptions::new();
+        abrir.read(ler).write(true);
+        let arquivo = sem_seguir_nem_esperar(&mut abrir)
+            .open(caminho)
+            .map_err(|e| {
+                if trocado_na_janela(&e) {
+                    recusa_do_nome(caminho, &nome)
+                } else {
+                    e
+                }
+            })?;
+        // Quem decide e o `fstat` do que ABRIU, nunca o nome: o mesmo inode
+        // do `lstat`, regular, e (no destino) ainda nosso.
+        let aberto = arquivo.metadata()?;
+        if !aberto.is_file() || !mesmo_arquivo(&aberto, &nome) || (destino && !e_nosso(&aberto)) {
+            return Err(recusa_do_nome(caminho, &nome));
+        }
+        arquivo.set_len(0)?;
+        apertar_permissao(&arquivo);
+        return Ok(arquivo);
     }
-    let nome = std::fs::symlink_metadata(caminho)?;
-    if !nome.file_type().is_file() {
-        return Err(recusa_do_nome(caminho, &nome));
+}
+
+/// A recusa do `open` que so acontece porque o nome mudou entre o `lstat` e
+/// ele: `ELOOP` (virou link, e o `O_NOFOLLOW` recusou) ou `ENXIO` (virou
+/// FIFO sem leitor, e o `O_NONBLOCK` recusou em vez de esperar). Numeros do
+/// Linux, o unico SO onde as bandeiras existem aqui.
+fn trocado_na_janela(e: &std::io::Error) -> bool {
+    cfg!(target_os = "linux") && matches!(e.raw_os_error(), Some(6) | Some(40))
+}
+
+/// O arquivo e NOSSO para reescrever no lugar: um nome so (`nlink == 1`) e,
+/// onde o dono do processo se le, do mesmo dono. Fora do Unix a `std` nao da
+/// dono nem contagem de nomes, e vale o que valia.
+fn e_nosso(m: &std::fs::Metadata) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        m.nlink() == 1 && uid_do_processo().map_or(true, |u| u == m.uid())
     }
-    let arquivo = OpenOptions::new().read(ler).write(true).open(caminho)?;
-    if !mesmo_arquivo(&arquivo.metadata()?, &nome) {
-        return Err(recusa_do_nome(caminho, &nome));
+    #[cfg(not(unix))]
+    {
+        let _ = m;
+        true
     }
-    arquivo.set_len(0)?;
-    apertar_permissao(&arquivo);
-    Ok(arquivo)
+}
+
+/// O uid com que este processo CRIA arquivo (o *fsuid*, quarto numero da
+/// linha `Uid:` do `/proc/self/status`), lido uma vez. A `std` nao tem
+/// `geteuid`, e chama-lo pede FFI e `unsafe`; o `/proc` diz o mesmo sem os
+/// dois. `None` fora do Linux ou sem `/proc`: o crivo do dono cala e fica o
+/// do `nlink`, dito em [`e_nosso`].
+fn uid_do_processo() -> Option<u32> {
+    static UID: std::sync::OnceLock<Option<u32>> = std::sync::OnceLock::new();
+    *UID.get_or_init(|| {
+        let status = std::fs::read_to_string("/proc/self/status").ok()?;
+        let linha = status.lines().find(|l| l.starts_with("Uid:"))?;
+        linha.split_whitespace().nth(4)?.parse().ok()
+    })
+}
+
+// ------------------------- abrir sem seguir link (pedidos 568 e 570)
+
+/// As bandeiras do `open` que a `std` nao expoe: `O_NOFOLLOW`, `O_DIRECTORY`
+/// e `O_NONBLOCK`, nesta ordem.
+///
+/// O numero muda de arquitetura, e o errado nao recusaria nada, calado. Por
+/// isso so as conferidas no `fcntl.h` do nucleo tem valor: as do
+/// `asm-generic` (x86, x86_64, riscv64, loongarch64, s390x) e as que o
+/// sobrescrevem do mesmo jeito (arm, aarch64, powerpc). O teste
+/// `sem_seguir_recusa_link_e_fifo_de_verdade` prova a recusa contra o nucleo
+/// onde a suite roda. Fora delas (mips e sparc mudam ate o `O_NONBLOCK`, e
+/// todo SO que nao e Linux): `None`, e os chamadores ficam com o `lstat` de
+/// antes, que tem a janela dita.
+pub(crate) const fn bandeiras() -> Option<(i32, i32, i32)> {
+    #[cfg(all(
+        target_os = "linux",
+        any(
+            target_arch = "x86",
+            target_arch = "x86_64",
+            target_arch = "riscv64",
+            target_arch = "loongarch64",
+            target_arch = "s390x"
+        )
+    ))]
+    {
+        Some((0o400000, 0o200000, 0o4000))
+    }
+    #[cfg(all(
+        target_os = "linux",
+        any(
+            target_arch = "arm",
+            target_arch = "aarch64",
+            target_arch = "powerpc",
+            target_arch = "powerpc64"
+        )
+    ))]
+    {
+        Some((0o100000, 0o40000, 0o4000))
+    }
+    #[cfg(not(all(
+        target_os = "linux",
+        any(
+            target_arch = "x86",
+            target_arch = "x86_64",
+            target_arch = "riscv64",
+            target_arch = "loongarch64",
+            target_arch = "s390x",
+            target_arch = "arm",
+            target_arch = "aarch64",
+            target_arch = "powerpc",
+            target_arch = "powerpc64"
+        )
+    )))]
+    {
+        None
+    }
+}
+
+/// Acrescenta `O_NOFOLLOW | O_NONBLOCK` a quem vai ABRIR um nome que ja
+/// existe: link no ultimo nome recusa, FIFO sem leitor recusa na hora em vez
+/// de parar a thread (pedido 570). Em arquivo regular o `O_NONBLOCK` nao
+/// muda nada no Linux. Sem [`bandeiras`], devolve as opcoes como vieram.
+pub fn sem_seguir_nem_esperar(opcoes: &mut OpenOptions) -> &mut OpenOptions {
+    #[cfg(unix)]
+    if let Some((nofollow, _, nonblock)) = bandeiras() {
+        use std::os::unix::fs::OpenOptionsExt;
+        opcoes.custom_flags(nofollow | nonblock);
+    }
+    opcoes
+}
+
+/// Um diretorio ABERTO, por onde se chega aos nomes de dentro sem atravessar
+/// link simbolico em componente nenhum -- pedido 568.
+///
+/// O defeito: com `dest/loja -> base/rh` plantado no destino do backup, o
+/// `create_dir_all` aceitava o link como pasta que ja existe, e o `c.reg` da
+/// `loja` era gravado POR CIMA do `c.reg` vivo do `rh` (medido pela SEC: o
+/// `varrer` de `rh` caiu de 2 para 1 registro). Conferir cada componente com
+/// `lstat` e depois abrir pelo nome deixa a janela entre os dois; o que os
+/// primos fazem (o `my_open_parent_dir_nosymlinks` do MySQL e do MariaDB) e
+/// abrir componente a componente, relativo ao descritor do diretorio de cima
+/// (`openat`), com `O_NOFOLLOW`.
+///
+/// A `std` nao tem `openat`, e chama-lo pede FFI e `unsafe`. O mesmo efeito
+/// sai do `/proc/self/fd/N/nome`: o nucleo resolve o `N` pelo DESCRITOR (nao
+/// pelo nome que o diretorio tinha quando abriu), e so o `nome` se resolve por
+/// nome -- que e exatamente o `openat(N, nome)`. Quem abre com `O_NOFOLLOW`
+/// recusa o link nesse `nome`. Sem `/proc` ou sem [`bandeiras`], a `Pasta`
+/// cai no caminho real com o `lstat` de cada componente: fecha o link ja
+/// plantado, e a janela da troca fica, dita.
+#[derive(Debug)]
+pub struct Pasta {
+    /// O descritor do diretorio; `None` quando nao se chega por ele.
+    dir: Option<File>,
+    /// O caminho real: para a mensagem, e para quem nao tem `/proc`.
+    real: std::path::PathBuf,
+}
+
+impl Pasta {
+    /// Abre `caminho` SEGUINDO link: o destino e escolha de quem chama
+    /// (`/backups -> /mnt/usb` e instalacao comum). Daqui para dentro, nada
+    /// se segue.
+    pub fn abrir(caminho: &Path) -> std::io::Result<Pasta> {
+        let dir = if bandeiras().is_some() && Path::new("/proc/self/fd").is_dir() {
+            Some(abrir_diretorio(caminho, false)?)
+        } else {
+            None
+        };
+        Ok(Pasta {
+            dir,
+            real: caminho.to_path_buf(),
+        })
+    }
+
+    /// O nome `nome` DENTRO desta pasta, alcancado pelo descritor: e o que se
+    /// passa ao `open`, ao `remove_file`, ao `lstat`. So o ultimo componente
+    /// se resolve por nome, e quem abre decide se o segue.
+    pub fn por_dentro(&self, nome: &std::ffi::OsStr) -> std::path::PathBuf {
+        match &self.dir {
+            #[cfg(unix)]
+            Some(d) => {
+                use std::os::fd::AsRawFd;
+                Path::new("/proc/self/fd")
+                    .join(d.as_raw_fd().to_string())
+                    .join(nome)
+            }
+            _ => self.real.join(nome),
+        }
+    }
+
+    /// Entra na subpasta `nome`, criando-a 0700 se falta, e anota em
+    /// `criadas` (pelo caminho real) a que nasceu aqui -- para a faxina do
+    /// 576. Link, arquivo, ou qualquer coisa que nao e diretorio no nome
+    /// RECUSA: o backup nao grava atraves dele.
+    pub fn entrar(
+        &self,
+        nome: &std::ffi::OsStr,
+        criadas: &mut Vec<std::path::PathBuf>,
+    ) -> std::io::Result<Pasta> {
+        let alvo = self.por_dentro(nome);
+        let real = self.real.join(nome);
+        if std::fs::symlink_metadata(&alvo).is_err() {
+            criar_diretorio_do_banco(&alvo)?;
+            criadas.push(real.clone());
+        }
+        let recusa = || {
+            std::io::Error::other(format!(
+                "{}: o nome e um link simbolico ou nao e pasta, e o backup nao \
+                 grava atraves dele -- gravaria por cima de arquivos fora do \
+                 destino, de outro database inclusive. Tire o que esta nesse \
+                 nome e repita",
+                real.display()
+            ))
+        };
+        let dir = match &self.dir {
+            Some(_) => Some(abrir_diretorio(&alvo, true).map_err(|e| {
+                match std::fs::symlink_metadata(&alvo) {
+                    Ok(m) if !m.is_dir() => recusa(),
+                    _ => e,
+                }
+            })?),
+            None => {
+                if !std::fs::symlink_metadata(&alvo)?.is_dir() {
+                    return Err(recusa());
+                }
+                None
+            }
+        };
+        Ok(Pasta { dir, real })
+    }
+}
+
+/// O `open` de um diretorio com `O_DIRECTORY` -- e `O_NOFOLLOW` quando
+/// `sem_seguir`, que e todo componente menos a raiz da [`Pasta`]. So e
+/// chamado onde [`bandeiras`] existe.
+fn abrir_diretorio(caminho: &Path, sem_seguir: bool) -> std::io::Result<File> {
+    let mut opcoes = OpenOptions::new();
+    opcoes.read(true);
+    #[cfg(unix)]
+    if let Some((nofollow, diretorio, _)) = bandeiras() {
+        use std::os::unix::fs::OpenOptionsExt;
+        opcoes.custom_flags(diretorio | if sem_seguir { nofollow } else { 0 });
+    }
+    #[cfg(not(unix))]
+    let _ = sem_seguir;
+    opcoes.open(caminho)
 }
 
 /// O que o `fstat` do descritor aberto e o `lstat` do nome dizem do MESMO
@@ -377,5 +665,52 @@ pub fn permissao_larga(raiz: &Path) -> Option<String> {
     {
         let _ = raiz;
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// As bandeiras digitadas a mao ([`bandeiras`]) provadas contra o nucleo
+    /// desta arquitetura: o numero errado nao recusaria nada, calado, e so o
+    /// `open` de verdade diz qual e o certo. Link no ultimo nome da `ELOOP`,
+    /// FIFO sem leitor da `ENXIO` na hora (sem parar a thread), e arquivo
+    /// aberto como diretorio da `ENOTDIR`.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn sem_seguir_recusa_link_e_fifo_de_verdade() {
+        let Some((_, diretorio, _)) = bandeiras() else {
+            eprintln!("arquitetura sem bandeiras conferidas -- prova pulada");
+            return;
+        };
+        let d = crate::apoio_teste::DirTemp::novo("util-sem-seguir");
+        let regular = d.join("regular");
+        std::fs::write(&regular, b"x").unwrap();
+        let link = d.join("link");
+        std::os::unix::fs::symlink(&regular, &link).unwrap();
+        let mut abrir = OpenOptions::new();
+        abrir.write(true);
+        let e = sem_seguir_nem_esperar(&mut abrir).open(&link).unwrap_err();
+        assert_eq!(e.raw_os_error(), Some(40), "o O_NOFOLLOW nao recusou: {e}");
+        assert!(sem_seguir_nem_esperar(&mut abrir).open(&regular).is_ok());
+
+        let fifo = d.join("fifo");
+        if std::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .is_ok_and(|s| s.success())
+        {
+            let e = sem_seguir_nem_esperar(&mut abrir).open(&fifo).unwrap_err();
+            assert_eq!(e.raw_os_error(), Some(6), "o O_NONBLOCK nao valeu: {e}");
+        }
+
+        assert!(abrir_diretorio(&d, true).is_ok());
+        let e = abrir_diretorio(&regular, true).unwrap_err();
+        assert_eq!(
+            e.raw_os_error(),
+            Some(20),
+            "o O_DIRECTORY {diretorio:o} nao valeu: {e}"
+        );
     }
 }

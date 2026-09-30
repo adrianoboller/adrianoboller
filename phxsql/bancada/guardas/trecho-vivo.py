@@ -379,6 +379,13 @@ dia, nunca no desejado:
   ODBC so com silencio (`odbc-sem-prazo-total`) e o total do driver pela vida
   da conexao (`odbc-total-pela-vida-da-conexao`). Contado pelo `--catraca`:
   508 + 3.
+  **SUBIU para 525 em 30/09/2026** (pedidos 568, 569 e 570): quatro guardas
+  -- o link numa pasta do meio do destino
+  (`backup-atravessa-link-na-pasta-do-meio`), o arquivo de outro dono no
+  destino (`backup-escreve-no-arquivo-de-outro-dono`), a FIFO trocada entre o
+  `lstat` e o `open` (`fifo-trocada-na-janela-para-o-backup`) e a copia
+  reaberta pelo nome para o `fsync` (`copia-reaberta-pelo-nome-no-fsync`).
+  Medido no catalogo desta arvore: 525.
   impedir. Ele e a unica coisa nesta regua que reprova o APAGAMENTO; tudo o
   mais aqui reprova o envelhecimento.
 
@@ -487,7 +494,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 521
+PISO_DAS_ENTRADAS = 525
 
 # ------------------------------------------------------------- APOSENTADAS
 #

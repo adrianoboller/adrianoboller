@@ -117,8 +117,13 @@ pub const MANIFESTO: &str = "backup.json";
 ///
 /// Devolve o `File` ABERTO (pedido 552): o `fsync` de depois tem de ser neste
 /// mesmo descritor, e nao num reaberto -- ver a nota do modulo.
+///
+/// Pedido 569: abre pelo [`crate::util::recriar_no_destino`], e nao pelo
+/// motor da raiz de dados: o arquivo regular de OUTRO dono (ou com `nlink >
+/// 1`) que ja esta no nome nao recebe o conteudo do banco -- o nome sai e o
+/// nosso nasce. Vale para as tres gravacoes: copia, `.part` e manifesto.
 fn escrever_sem_sync(alvo: &Path, dados: &[u8]) -> Result<File> {
-    let arquivo = crate::util::recriar_do_banco(alvo, false)?;
+    let arquivo = crate::util::recriar_no_destino(alvo, false)?;
     let escrito = (|| -> Result<()> {
         let mut w = std::io::BufWriter::new(&arquivo);
         w.write_all(dados)?;
@@ -144,11 +149,67 @@ fn escrever_sem_sync(alvo: &Path, dados: &[u8]) -> Result<File> {
 /// caso *fsyncgate*). So alcanca a corrida com mais copias do que o teto, e
 /// so as que passaram dele. Nao medido: forcar o despejo do inode com o erro
 /// pendente pede um disco que recusa de verdade (`CAP_SYS_ADMIN`).
-fn sincronizar_arquivo(alvo: &Path) -> Result<()> {
-    let arquivo = OpenOptions::new().read(true).write(true).open(alvo)?;
+///
+/// **E a reabertura nao confia no nome -- irmao do pedido 570.** Ela roda
+/// FORA da trava, e o nome pode ter virado outra coisa desde a escrita: um
+/// link para uma FIFO dava `EINVAL` no `fsync` e marcava o caminho como
+/// «um fsync anterior foi recusado»; um link para outro arquivo sincronizava
+/// o outro, e a copia de verdade nunca. Agora `alvo` e o nome alcancado pelo
+/// descritor da pasta ([`crate::util::Pasta`]), a abertura nao segue link nem
+/// espera leitor, e o `fstat` tem de dar o MESMO inode que a escrita
+/// anotou -- senao a copia foi trocada, e isso sobe como erro do backup.
+/// `mostrar` e o caminho real, o da mensagem e o da marca.
+fn sincronizar_arquivo(alvo: &Path, anotado: Option<(u64, u64)>, mostrar: &Path) -> Result<()> {
+    let mut abrir = OpenOptions::new();
+    abrir.read(true).write(true);
+    let arquivo = crate::util::sem_seguir_nem_esperar(&mut abrir)
+        .open(alvo)
+        .map_err(|e| no_nome_real(e, alvo, mostrar))?;
+    let aberto = arquivo.metadata()?;
+    if !aberto.is_file() || identidade(&aberto) != anotado {
+        return Err(PhxError::Io(std::io::Error::other(format!(
+            "{}: a copia foi trocada depois de escrita (o nome ja nao e o \
+             arquivo que o backup gravou), e o backup nao sincroniza o que \
+             nao escreveu. Confira quem mexe nesta pasta e repita",
+            mostrar.display()
+        ))));
+    }
     // `sem_abortar`: o destino do backup nao e o disco do banco que o
     // gancho do 509 protege -- pedido 524, condicao C1 do parecer do DBA.
-    crate::sincronia::sync_all_sem_abortar(&arquivo, alvo)
+    crate::sincronia::sync_all_sem_abortar(&arquivo, mostrar)
+}
+
+/// O que identifica o arquivo que o backup escreveu, para a reabertura saber
+/// que e o mesmo: dispositivo e inode. Fora do Unix a `std` nao os da, e
+/// vale o que valia (`None == None`).
+fn identidade(m: &std::fs::Metadata) -> Option<(u64, u64)> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        Some((m.dev(), m.ino()))
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = m;
+        None
+    }
+}
+
+/// O erro de quem abriu pelo `/proc/self/fd/N/nome` da [`crate::util::Pasta`]
+/// dito pelo caminho REAL: `/proc/self/fd/7/c.reg` nao diz nada a quem le o
+/// log. So o texto muda; o tipo do erro fica.
+fn no_nome_real(e: impl Into<PhxError>, por_dentro: &Path, real: &Path) -> PhxError {
+    let e = e.into();
+    let (antes, depois) = (por_dentro.display().to_string(), real.display().to_string());
+    match e {
+        PhxError::Io(io) if antes != depois && io.to_string().contains(&antes) => PhxError::Io(
+            std::io::Error::new(io.kind(), io.to_string().replace(&antes, &depois)),
+        ),
+        PhxError::Io(io) if antes != depois => {
+            PhxError::Io(std::io::Error::new(io.kind(), format!("{depois}: {io}")))
+        }
+        outro => outro,
+    }
 }
 
 /// Sincroniza cada caminho de `caminhos`, NA ORDEM da lista -- as COPIAS de
@@ -167,10 +228,15 @@ fn sincronizar_arquivo(alvo: &Path) -> Result<()> {
 /// copia e a mae de cada pasta criada. Sem isto, uma queda depois do
 /// manifesto novo podia voltar com o velho, ou sem o nome de uma copia.
 pub fn sincronizar_copias(copias: &Copias) -> Result<()> {
-    for (caminho, aberto) in copias.caminhos.iter().zip(&copias.abertos) {
+    for ((caminho, aberto), (por_dentro, anotado)) in copias
+        .caminhos
+        .iter()
+        .zip(&copias.abertos)
+        .zip(&copias.reabrir)
+    {
         match aberto {
             Some(arquivo) => crate::sincronia::sync_all_sem_abortar(arquivo, caminho)?,
-            None => sincronizar_arquivo(caminho)?,
+            None => sincronizar_arquivo(por_dentro, *anotado, caminho)?,
         }
     }
     for pasta in pastas_tocadas(copias) {
@@ -777,6 +843,12 @@ fn copiar_arvore(
     copias: &mut Copias,
 ) -> Result<()> {
     criar_pasta_da_corrida(destino, &mut copias.pastas)?;
+    // Pedido 568: daqui para dentro o destino se percorre pelo descritor de
+    // cada pasta, sem seguir link em componente nenhum. O proprio `destino`
+    // e o unico nome que se segue: ele e escolha de quem chama.
+    copias.ancoras.push(crate::util::Pasta::abrir(destino)?);
+    let mut ancora_de: BTreeMap<PathBuf, usize> = BTreeMap::new();
+    ancora_de.insert(PathBuf::new(), 0);
     let arquivos = listar(raiz)?;
     // Pedido 577: o manifesto de uma corrida ANTERIOR sai antes da primeira
     // escrita. Pasta reaproveitada que falha no meio fica com copias ja
@@ -791,19 +863,27 @@ fn copiar_arvore(
         let rel = relativo(raiz, &arquivo);
         let dados = std::fs::read(&arquivo)?;
         let alvo = destino.join(&rel);
-        if let Some(pai) = alvo.parent() {
-            criar_pasta_da_corrida(pai, &mut copias.pastas)?;
-        }
+        let rel_p = Path::new(&rel);
+        let Some(nome) = rel_p.file_name() else {
+            continue;
+        };
+        let pasta = entrar_na_pasta(copias, &mut ancora_de, rel_p.parent())?;
+        let por_dentro = copias.ancoras[pasta].por_dentro(nome);
         // O `lstat` ANTES de escrever e' o que separa a copia que nasceu
         // agora da que ja existia (destino reaproveitado): so' a primeira e'
         // desta corrida, e so' ela pode sair numa falha.
-        let nasce = std::fs::symlink_metadata(&alvo).is_err();
-        let arquivo = escrever_sem_sync(&alvo, &dados)?;
+        let nasce = std::fs::symlink_metadata(&por_dentro).is_err();
+        let arquivo = escrever_sem_sync(&por_dentro, &dados)
+            .map_err(|e| no_nome_real(e, &por_dentro, &alvo))?;
         if nasce {
-            copias.nascidas.push(alvo.clone());
+            copias.nascidas.push(por_dentro.clone());
         }
         // Pedido 552: o descritor viaja ate o `fsync`, ate o teto; alem dele
-        // fecha aqui e a copia volta ao caminho de reabrir.
+        // fecha aqui e a copia volta ao caminho de reabrir -- que confere o
+        // inode anotado agora (irmao do 570).
+        copias
+            .reabrir
+            .push((por_dentro, identidade(&arquivo.metadata()?)));
         let seguras = copias.abertos.iter().filter(|a| a.is_some()).count();
         copias.abertos.push((seguras < teto).then_some(arquivo));
         copias.caminhos.push(alvo);
@@ -815,6 +895,33 @@ fn copiar_arvore(
         });
     }
     Ok(())
+}
+
+/// O indice, em `copias.ancoras`, da pasta `rel` (relativa ao destino) --
+/// aberta componente a componente pela [`crate::util::Pasta`], criando o que
+/// falta, e guardada para as copias seguintes da mesma pasta (o `listar`
+/// devolve em ordem, entao cada pasta se abre uma vez so). Pedido 568: um
+/// link em qualquer componente recusa aqui, antes de uma copia cair do outro
+/// lado dele.
+fn entrar_na_pasta(
+    copias: &mut Copias,
+    ancora_de: &mut BTreeMap<PathBuf, usize>,
+    rel: Option<&Path>,
+) -> Result<usize> {
+    let mut atual = PathBuf::new();
+    let mut indice = 0;
+    for componente in rel.into_iter().flat_map(Path::components) {
+        atual.push(componente);
+        if let Some(&i) = ancora_de.get(&atual) {
+            indice = i;
+            continue;
+        }
+        let nova = copias.ancoras[indice].entrar(componente.as_os_str(), &mut copias.pastas)?;
+        copias.ancoras.push(nova);
+        indice = copias.ancoras.len() - 1;
+        ancora_de.insert(atual.clone(), indice);
+    }
+    Ok(indice)
 }
 
 /// Apaga pelo NOME o `backup.json` que ja estava no destino -- pedido 577.
@@ -862,9 +969,19 @@ pub struct Copias {
     /// Paralela a `caminhos`: o descritor de quem escreveu, ainda aberto
     /// para o `fsync` (pedido 552); `None` na copia que passou do teto.
     abertos: Vec<Option<File>>,
+    /// Paralela a `caminhos`: o nome pelo descritor da pasta e o inode que a
+    /// escrita deixou -- o que a copia alem do teto reabre e confere (irmao
+    /// do pedido 570).
+    reabrir: Vec<(PathBuf, Option<(u64, u64)>)>,
     /// Das copias, as cujo NOME nasceu nesta corrida: so' estas saem numa
     /// falha. A que sobrescreveu um nome antigo nao e' nossa para apagar.
+    /// Guardadas pelo nome ALCANCADO PELO DESCRITOR da pasta (pedido 568): a
+    /// faxina nao atravessa um link que alguem pos no meio do caminho.
     nascidas: Vec<PathBuf>,
+    /// As pastas do destino abertas por descritor (pedido 568); a primeira e
+    /// o proprio destino. Vivem ate o fim da corrida: os nomes de `reabrir` e
+    /// `nascidas` so valem enquanto elas estao abertas.
+    ancoras: Vec<crate::util::Pasta>,
     /// Diretorios que esta corrida criou, do mais externo para o mais interno.
     pastas: Vec<PathBuf>,
 }
@@ -1250,6 +1367,38 @@ mod tests {
         concluir(&destino, 1_787_000_000_000, &r, &copias).unwrap();
         let c = conferir(&destino).unwrap();
         assert!(c.ok(), "{:?}", c.divergencias);
+    }
+
+    /// **Irmao do pedido 570: a copia reaberta para o `fsync` e a que o
+    /// backup ESCREVEU, nao o que estiver no nome.**
+    ///
+    /// Alem do teto, a copia fecha e reabre pelo nome FORA da trava. Trocado
+    /// o nome por um link para um arquivo de fora nesse intervalo, o `fsync`
+    /// caia no de fora, respondia Ok, e o manifesto dizia «pronto» sobre uma
+    /// copia que nunca sincronizou. Agora a reabertura nao segue link e
+    /// confere o inode que a escrita anotou: a corrida recusa, sem manifesto.
+    #[cfg(unix)]
+    #[test]
+    fn a_copia_trocada_antes_do_fsync_recusa_em_vez_de_sincronizar_outra() {
+        let base = temp("570-irmao-reabre");
+        let raiz = base.join("dados");
+        let destino = base.join("copia");
+        std::fs::create_dir_all(&raiz).unwrap();
+        dados_de_exemplo(&raiz);
+        let (r, copias) = executar_com_teto(&raiz, &destino, 0).unwrap();
+        let de_fora = base.join("de-fora.txt");
+        std::fs::write(&de_fora, b"de fora").unwrap();
+        let copia = destino.join("Z/cadastroClientes.reg");
+        std::fs::remove_file(&copia).unwrap();
+        std::os::unix::fs::symlink(&de_fora, &copia).unwrap();
+
+        let e = concluir(&destino, 1, &r, &copias)
+            .expect_err("o fsync caiu no arquivo de fora e o backup se disse pronto");
+        assert!(e.to_string().contains(&*copia.to_string_lossy()), "{e}");
+        assert!(
+            !destino.join(MANIFESTO).exists(),
+            "o manifesto nasceu sobre uma copia que nao sincronizou"
+        );
     }
 
     /// O teto medido no Linux nunca e zero com a folga deste processo, nem

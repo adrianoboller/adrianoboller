@@ -58,6 +58,10 @@ fn abertos_em(pasta: &Path) -> Vec<PathBuf> {
         .flatten()
         .filter_map(|e| std::fs::read_link(e.path()).ok())
         .filter(|alvo| alvo.starts_with(pasta))
+        // Pedido 568: as pastas do destino tambem ficam abertas (a `Pasta`
+        // por onde o backup chega aos nomes sem atravessar link); a pergunta
+        // aqui e so das COPIAS.
+        .filter(|alvo| alvo.is_file())
         .collect()
 }
 
@@ -165,6 +169,20 @@ fn primeiro_inteiro(linha: &str) -> Option<i64> {
 
 fn ler_registro(texto: &str) -> Vec<Chamada> {
     let mut v = Vec::new();
+    // Pedido 568: o backup abre as copias pelo descritor da pasta
+    // (`/proc/self/fd/N/nome`); o caminho real sai do que o `N` abriu.
+    let mut por_fd: std::collections::HashMap<i64, String> = Default::default();
+    let resolver = |p: String, por_fd: &std::collections::HashMap<i64, String>| {
+        let Some(resto) = p.strip_prefix("/proc/self/fd/") else {
+            return p;
+        };
+        let (n, nome) = resto.split_once('/').unwrap_or((resto, ""));
+        match n.parse::<i64>().ok().and_then(|n| por_fd.get(&n)) {
+            Some(pasta) if nome.is_empty() => pasta.clone(),
+            Some(pasta) => format!("{pasta}/{nome}"),
+            None => p,
+        }
+    };
     for bruta in texto.lines() {
         // `pid chamada(...) = ret`
         let linha = bruta.split_once(' ').map_or(bruta, |(_, r)| r).trim();
@@ -173,6 +191,8 @@ fn ler_registro(texto: &str) -> Vec<Chamada> {
         match nome {
             "openat" | "open" if ret >= 0 => {
                 if let Some(p) = aspas(linha).into_iter().next() {
+                    let p = resolver(p, &por_fd);
+                    por_fd.insert(ret, p.clone());
                     v.push(Chamada::Abriu(p, ret));
                 }
             }
@@ -180,9 +200,12 @@ fn ler_registro(texto: &str) -> Vec<Chamada> {
             "fsync" | "fdatasync" if ret == 0 => {
                 v.extend(primeiro_inteiro(linha).map(Chamada::Sincronizou))
             }
-            "unlink" | "unlinkat" if ret == 0 => {
-                v.extend(aspas(linha).into_iter().next().map(Chamada::Apagou))
-            }
+            "unlink" | "unlinkat" if ret == 0 => v.extend(
+                aspas(linha)
+                    .into_iter()
+                    .next()
+                    .map(|p| Chamada::Apagou(resolver(p, &por_fd))),
+            ),
             "rename" | "renameat" | "renameat2" if ret == 0 => {
                 let a = aspas(linha);
                 if a.len() >= 2 {

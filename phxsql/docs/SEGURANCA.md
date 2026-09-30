@@ -6359,3 +6359,86 @@ Guardas: `dblink-empurra-valor-pela-regua-de-nome`,
 **Fica de fora, dito:** a sincronia com PostgreSQL(R) continua montando SQL de
 MySQL(R) no resto da instrução (`SELECT * FROM` com crase, `ON DUPLICATE KEY
 UPDATE`, booleano `1`/`0`); o valor já sai no dialeto certo, a instrução não.
+
+## 33. O backup só escreve no que é dele: pasta do meio, arquivo alheio e FIFO na janela (pedidos 568, 569 e 570)
+
+Os três resíduos da re-checagem SEC do 542 (`docs/propostas/parecer-sec-542-2026-09-24.md`)
+são três jeitos de um terceiro com escrita no destino do backup fazer o backup
+escrever onde não devia. O destino é, por desenho, lugar onde outros escrevem
+(disco de rede, USB, pasta aberta).
+
+### 33.1 O que havia, medido pela SEC e pelo juiz
+
+- **568.** Com `dest/loja -> base/rh`, o `create_dir_all` aceitava o link como
+  pasta que já existe, e o `c.reg` da `loja` caía **por cima** do `c.reg` vivo
+  do `rh`: `ok:true`, e o `varrer` de `rh` de 2 para 1 registro.
+- **569.** Um arquivo regular de **outro dono** no nome (uid 1234, `0666`) era
+  truncado e reescrito no mesmo inode: o terceiro ficava dono de uma cópia do
+  banco. No ZIP bastava plantar o `.part` do minuto, e o `rename` o levava ao
+  nome final. O link físico (`nlink > 1`) abria a mesma porta.
+- **570.** Trocado o nome por um link para FIFO entre o `lstat` e o `open`, o
+  `open` de escrita (que seguia o link) parava esperando leitor — com a trava de
+  dados na mão: 1 parada em 12 corridas, e um `inserir` 5,0 s sem resposta. O
+  irmão: o `sincronizar_arquivo` reabria a cópia **pelo nome** para o `fsync`,
+  fora da trava — link para FIFO dava `EINVAL`, link para outro arquivo
+  sincronizava o outro e respondia Ok.
+
+### 33.2 O desenho, só com a `std`
+
+- **Pasta a pasta, pelo descritor (568).** `util::Pasta` abre o destino (o único
+  nome que se segue: é escolha de quem chama) e, daí para dentro, cada
+  componente com `O_DIRECTORY | O_NOFOLLOW`, **relativo ao descritor da pasta de
+  cima**. A `std` não tem `openat`, e chamá-lo pede FFI e `unsafe`; o mesmo
+  efeito sai de `/proc/self/fd/N/nome`, porque o núcleo resolve o `N` pelo
+  descritor e só o `nome` por nome. É o que MySQL e MariaDB fazem no
+  `my_open_parent_dir_nosymlinks`. A cópia, a faxina da corrida (576) e a
+  reabertura do `fsync` usam esse nome; a mensagem mostra o caminho real.
+- **O nome alheio sai, e o nosso nasce (569).** `recriar_no_destino` é o motor
+  do 542 com um crivo a mais: arquivo regular de outro dono (o *fsuid* do
+  `/proc/self/status`) ou com `nlink > 1` não é truncado — o nome sai e o nosso
+  nasce com `create_new`. O reuso do que já é nosso segue no **mesmo inode**. Só
+  o destino do backup paga isso: na raiz de dados o arquivo de outro dono é o da
+  base mexida por um `sudo`, e trocar o nome o daria ao root.
+- **Abrir sem seguir e sem esperar (570).** O `open` do passo 3 leva
+  `O_NOFOLLOW | O_NONBLOCK`: o link recusa (`ELOOP`), a FIFO sem leitor recusa
+  (`ENXIO`), e a com leitor cai no `fstat`, que exige regular e o mesmo inode do
+  `lstat` antes de truncar. Vale para todo chamador do motor, não só o backup. A
+  reabertura do `fsync` (irmão) abre igual e confere o inode que a escrita
+  anotou; trocado, o backup recusa sem manifesto.
+- **As constantes.** A `std` não expõe `O_NOFOLLOW`/`O_DIRECTORY`/`O_NONBLOCK`, e
+  o número muda de arquitetura; errado, não recusaria nada. Por isso só existem
+  nas arquiteturas conferidas no `fcntl.h` do núcleo (`util::bandeiras`), e
+  `util::tests::sem_seguir_recusa_link_e_fifo_de_verdade` prova `ELOOP`, `ENXIO`
+  e `ENOTDIR` contra o núcleo onde a suíte roda.
+
+### 33.3 A prova, nos dois sentidos
+
+| prova | com o conserto | com o defeito reposto |
+|---|---|---|
+| `destino-do-backup-sem-atalho::o_backup_nao_atravessa_link_numa_pasta_do_meio` | recusa nomeando o caminho real; o `rh/c.reg` intacto; o link fica; a pasta de verdade reaproveitada passa | «gravou ATRAVÉS do link na pasta do meio» |
+| `destino-do-backup-sem-atalho::o_backup_nao_escreve_no_arquivo_de_outro_dono` | na pasta e no `.part` (com `chown` 1234 — a suíte roda como root no contêiner) e pelo link físico (sem root): o inode do terceiro fica com o conteúdo dele, o nome é nosso e `0600`; o reuso do nosso segue no mesmo inode | «escreveu a cópia DENTRO do arquivo do terceiro» |
+| `destino-do-backup-sem-atalho::a_fifo_trocada_na_janela_nao_para_o_motor` | uma thread troca o nome por `rename` entre regular e link para FIFO; o motor deu 538.805 voltas em 4 s sem parar | «ficou PARADO abrindo a FIFO», no prazo de 20 s |
+| `backup::tests::a_copia_trocada_antes_do_fsync_recusa_em_vez_de_sincronizar_outra` | recusa nomeando a cópia; sem manifesto | o `fsync` cai no arquivo de fora e o backup se diz pronto |
+
+Guardas: `backup-atravessa-link-na-pasta-do-meio`,
+`backup-escreve-no-arquivo-de-outro-dono`, `fifo-trocada-na-janela-para-o-backup`
+e `copia-reaberta-pelo-nome-no-fsync`; a `backup-atravessa-link-plantado` (542)
+mudou de trecho, porque o motor mudou de corpo.
+
+### 33.4 O que fica de fora, dito
+
+- **Fora do Linux** (e nas arquiteturas sem constante conferida, como mips e
+  sparc) não há `O_NOFOLLOW` aqui nem `/proc/self/fd`: a `Pasta` cai no caminho
+  real com o `lstat` de cada componente — fecha o link já plantado, e a janela da
+  troca fica. O crivo do dono cai para só o `nlink` fora do Linux. No Windows
+  vale o que valia.
+- **Sem `/proc` montado** no Linux, o mesmo recuo da `Pasta`.
+- **O `fsync` das PASTAS** (`sincronizar_pasta`, pedido 579) ainda abre cada uma
+  pelo nome, fora da trava: trocada por link, sincroniza a pasta errada — não
+  escreve dado em lugar nenhum, mas a pasta certa pode ficar sem o `fsync`. E o
+  `remove_dir` da faxina das pastas criadas segue pelo nome real (só remove
+  pasta vazia).
+- **O destino em si** segue link, de propósito: é escolha de quem chama. O ZIP
+  grava direto nele, então só o último nome conta ali.
+- **A restauração** (`restaurar.rs`) escreve na raiz de dados, não no destino, e
+  não entrou nesta frente.
