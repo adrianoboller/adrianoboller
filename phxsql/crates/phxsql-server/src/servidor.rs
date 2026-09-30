@@ -251,9 +251,10 @@ impl NomeDaPassada {
         // tinham ido, e sobra `clientes [5]`, `pedidos [5, 5]` -- ninguem
         // orfao. A frase de antes do 540 dizia so «conserte-a antes de
         // seguir», sem dizer como.
-        conferida: "Antes da marca so a arvore da cascata foi conferida (restringir, \
-                    coluna calculada, CHECK, profundidade), e nao a unicidade nem a FK \
-                    de cada linha. As filhas que ficaram na chave velha estao ORFAS \
+        // Desde o 567 a cascata solta passa pela MESMA pre-conferencia do
+        // COMMIT (FK, arvore e unicidade), entao chegar aqui e defeito do motor.
+        conferida: "A conferencia de antes da marca tinha aprovado esta lista (FK, \
+                    arvore da cascata e unicidade): isto e DEFEITO DO MOTOR. As filhas que ficaram na chave velha estao ORFAS \
                     quando essa chave era so desta mae: volte a mae a chave velha, que \
                     as reencontra e leva de volta as que ja tinham ido, ou aponte as \
                     que faltam para a chave nova. Isto vale reportar",
@@ -17285,7 +17286,9 @@ impl Servidor {
         #[cfg(not(test))]
         let pre_conferir = true;
         let conferida = if pre_conferir {
-            self.pre_conferir_a_lista(&trava, &database, &mut escritas, sessao)
+            self.pre_conferir_a_lista(&trava, &database, &mut escritas, sessao, |i, elos| {
+                self.travar_os_elos(sessao, &database, i, elos)
+            })
         } else {
             Ok(Vec::new())
         };
@@ -17458,12 +17461,25 @@ impl Servidor {
     /// `empilhar`. O que so existe aqui e o que so a LISTA sabe: a cascata que
     /// ja esta nela tem de cobrir o plano refeito, e a que a passada fara por
     /// conta propria nao pode cair numa tabela que a propria lista escreveu.
+    ///
+    /// # Quem trava o elo novo
+    ///
+    /// `travar` recebe cada grupo de elos que a lista ganhou, antes de ele
+    /// se conferir. O COMMIT passa [`Self::travar_os_elos`]; a cascata solta
+    /// (pedido 567), que nao tem transacao, passa uma recusa -- o plano dela
+    /// ja esta achatado na lista, e elo novo ali e plano que o motor nao
+    /// encadeou. Ficar FORA daqui tambem tira a espera de trava do caminho da
+    /// alteracao solta, que a catraca `rede-ou-espera` do mapa da trava ve.
     fn pre_conferir_a_lista(
         &self,
         trava: &Instancia,
         database: &str,
         escritas: &mut [crate::transacao::Escrita],
         sessao: &Sessao,
+        mut travar: impl FnMut(
+            usize,
+            &[crate::transacao::Escrita],
+        ) -> std::result::Result<(), RecusaDaLista>,
     ) -> std::result::Result<Vec<(usize, Vec<crate::transacao::Escrita>)>, RecusaDaLista> {
         use crate::transacao::Acao;
         let recusa = |posicao: usize, elo: Option<(String, u64)>, erro: PhxError| RecusaDaLista {
@@ -17527,23 +17543,10 @@ impl Servidor {
                     elo_do_empilhar: false,
                 })
                 .collect();
-            // O elo que o COMMIT acrescenta escreve numa linha que a transacao
-            // pode nunca ter travado -- a filha que nasceu na chave velha
-            // depois do `empilhar` --, e passava por cima da leitura repetivel
-            // de outra transacao (pedido 516): T3 lia 5 e relia 6. Ele trava
-            // pelo mesmo caminho de toda escrita da transacao, sem esperar,
-            // porque a trava de dados esta na mao; quem ja tinha a trava (a
-            // linha que a lista escreveu) passa pela idempotencia do gestor.
-            for elo in &elos {
-                let chave = crate::carga::chave(database, &elo.tabela);
-                let barrada = self
-                    .travar_para_escrever(sessao, &chave, elo.rowid, Espera::Nenhuma)
-                    .map_err(|erro| recusa(i, Some((elo.tabela.clone(), elo.rowid)), erro))?;
-                if let Some(b) = barrada {
-                    let erro = self.elo_barrado(sessao, elo, &b);
-                    return Err(recusa(i, Some((elo.tabela.clone(), elo.rowid)), erro));
-                }
-            }
+            // O elo trava a linha dele ANTES de se conferir (pedido 516) -- e
+            // quem trava e quem chama, pelo `travar`: so o COMMIT tem
+            // transacao para travar em nome dela.
+            travar(i, &elos)?;
             for (k, elo) in elos.iter().enumerate() {
                 let chave = (elo.tabela.to_ascii_lowercase(), elo.rowid);
                 let aqui = (i, k + 1);
@@ -17583,6 +17586,37 @@ impl Servidor {
             elos_da_lista.push((i, elos));
         }
         Ok(elos_da_lista)
+    }
+
+    /// O elo que o COMMIT acrescenta escreve numa linha que a transacao pode
+    /// nunca ter travado -- a filha que nasceu na chave velha depois do
+    /// `empilhar` --, e passava por cima da leitura repetivel de outra
+    /// transacao (pedido 516): T3 lia 5 e relia 6. Ele trava pelo mesmo
+    /// caminho de toda escrita da transacao, sem esperar, porque a trava de
+    /// dados esta na mao; quem ja tinha a trava (a linha que a lista escreveu)
+    /// passa pela idempotencia do gestor.
+    fn travar_os_elos(
+        &self,
+        sessao: &Sessao,
+        database: &str,
+        i: usize,
+        elos: &[crate::transacao::Escrita],
+    ) -> std::result::Result<(), RecusaDaLista> {
+        for elo in elos {
+            let recusa = |erro| RecusaDaLista {
+                posicao: i,
+                elo: Some((elo.tabela.clone(), elo.rowid)),
+                erro,
+            };
+            let chave = crate::carga::chave(database, &elo.tabela);
+            let barrada = self
+                .travar_para_escrever(sessao, &chave, elo.rowid, Espera::Nenhuma)
+                .map_err(recusa)?;
+            if let Some(b) = barrada {
+                return Err(recusa(self.elo_barrado(sessao, elo, &b)));
+            }
+        }
+        Ok(())
     }
 
     /// O erro do COMMIT cujo elo esbarrou na trava de `b` -- e o desempate
@@ -22346,6 +22380,47 @@ impl Servidor {
                 elo_do_empilhar: false,
             });
         }
+        // A MESMA pre-conferencia do COMMIT, antes da marca (pedido 567): a
+        // arvore do plano so conferia restringir, CHECK e profundidade, e a FK
+        // da filha para OUTRA mae -- duas chaves na mesma coluna -- so
+        // aparecia na passada, depois da mae gravada: `ParouNoMeio` com as
+        // filhas orfas na chave velha. Aqui a recusa sai com nada gravado. O
+        // plano ja esta achatado na lista, entao elo novo nao nasce; se
+        // nascesse, nao ha transacao para travar a linha dele, e ele recusa
+        // -- recusa segura, nunca meia cascata.
+        let conferida =
+            self.pre_conferir_a_lista(trava, database, &mut escritas, sessao, |i, elos| {
+                let elo = &elos[0];
+                Err(RecusaDaLista {
+                    posicao: i,
+                    elo: Some((elo.tabela.clone(), elo.rowid)),
+                    erro: PhxError::Integridade(format!(
+                        "a cascata desta alteracao acha filhas que o plano dela nao \
+                         levou ({} rowid {}) -- faca a alteracao numa transacao",
+                        elo.tabela, elo.rowid
+                    )),
+                })
+            });
+        let elos = conferida.map_err(|recusa| {
+            let na_cascata = match &recusa.elo {
+                Some((t, r)) => format!(", no elo da cascata que ela leva a {t} rowid {r}"),
+                None => String::new(),
+            };
+            let w = &escritas[recusa.posicao];
+            com_nota(
+                recusa.erro,
+                &format!(
+                    "a alteracao com cascata foi recusada ANTES da marca ({} rowid \
+                         {}{na_cascata}): nada foi gravado, nem a mae nem as filhas",
+                    w.tabela, w.rowid
+                ),
+            )
+        })?;
+        let escritas = if elos.is_empty() {
+            escritas
+        } else {
+            costurar_os_elos(escritas, elos)
+        };
         let dir = trava.abrir_database(database)?.caminho().to_path_buf();
         // Dados antes de transacoes: a ordem unica das travas.
         let id = self.transacoes.travar().numero_de_marca();
@@ -49050,6 +49125,80 @@ mod testes_transacoes {
                 "(cod_cliente, cod_vend, x): o elo de T1 desfez a cascata do vendedor"
             );
             assert_eq!(s.travas.travar().quantas(), 0);
+        }
+
+        /// **Pedido 567:** a filha tem DUAS chaves na mesma coluna -- `fk_cli`
+        /// para clientes e `fk_vend` para vendedores. A mae 5->6 FORA de
+        /// transacao leva as filhas para 6, e vendedores nao tem 6. Medido
+        /// pelo papel C antes: `ParouNoMeio`, a mae em `[6]` e as filhas em
+        /// `[5, 5]` -- duas orfas. Agora a pre-conferencia do COMMIT roda
+        /// antes da marca, e a recusa sai com nada gravado.
+        ///
+        /// # Prova real
+        ///
+        /// Sem a `pre_conferir_a_lista` no `atualizar_com_a_marca`, a mae
+        /// fica em 6 e as filhas em 5 -- o vermelho medido.
+        #[test]
+        fn a_cascata_solta_recusa_antes_da_marca_a_fk_para_outra_mae() {
+            let dir = dir_temp("567-duas-fks");
+            let s = servidor(&dir);
+            let t0 = sessao(5670);
+            escreve(&s, &t0, r#""op":"criar_database","database":"loja""#);
+            for mae in ["clientes", "vendedores"] {
+                escreve(
+                    &s,
+                    &t0,
+                    &format!(
+                        r#""op":"criar_tabela","database":"loja","tabela":"{mae}",
+                           "colunas":[{{"nome":"id","tipo":"Int8","obrigatoria":true}},
+                                      {{"nome":"codigo","tipo":"Int8"}}],
+                           "indices":[{{"nome":"pk","colunas":["id"],"unico":true,"primario":true}},
+                                      {{"nome":"por_codigo","colunas":["codigo"],"unico":true}}]"#
+                    ),
+                );
+                escreve(
+                    &s,
+                    &t0,
+                    &format!(
+                        r#""op":"inserir","database":"loja","tabela":"{mae}","linha":{{"id":1,"codigo":5}}"#
+                    ),
+                );
+            }
+            escreve(
+                &s,
+                &t0,
+                r#""op":"criar_tabela","database":"loja","tabela":"pedidos",
+                   "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
+                              {"nome":"cod","tipo":"Int8"}],
+                   "indices":[{"nome":"pk","colunas":["id"],"unico":true,"primario":true},
+                              {"nome":"por_cod","colunas":["cod"]}],
+                   "chaves_estrangeiras":[
+                      {"nome":"fk_cli","colunas":["cod"],
+                       "tabela_ref":"clientes","colunas_ref":["codigo"]},
+                      {"nome":"fk_vend","colunas":["cod"],
+                       "tabela_ref":"vendedores","colunas_ref":["codigo"]}]"#,
+            );
+            for id in [10, 11] {
+                escreve(
+                    &s,
+                    &t0,
+                    &format!(
+                        r#""op":"inserir","database":"loja","tabela":"pedidos","linha":{{"id":{id},"cod":5}}"#
+                    ),
+                );
+            }
+            let e = pede(&s, &t0, &muda_mae("clientes", 6))
+                .expect_err("a cascata leva as filhas para 6, que vendedores nao tem");
+            assert!(matches!(e, PhxError::Integridade(_)), "{e}");
+            assert!(e.to_string().contains("nada foi gravado"), "{e}");
+            assert_eq!(linha(&s, &t0, "clientes", 1).inteiro_ou("codigo", -1), 5);
+            for rowid in [1, 2] {
+                assert_eq!(
+                    linha(&s, &t0, "pedidos", rowid).inteiro_ou("cod", -1),
+                    5,
+                    "a filha {rowid} ficou orfa ou saiu da chave velha"
+                );
+            }
         }
 
         // ------------------------------------------------------------- 538

@@ -12205,12 +12205,14 @@ pub const ITERACOES_MINIMAS_DO_CADASTRO: u32 = phxsql_store::cofre::ITERACOES_MI
         # ATUALIZADO em 24/09/2026 (pedido 537): a lista passa por
         # referencia MUTAVEL, porque a pre-conferencia refaz o elo do
         # `empilhar` sobre a linha atual; o ponto de reposicao e o mesmo `if`.
+        # ATUALIZADO em 30/09/2026 (pedido 567): a pre-conferencia recebe
+        # quem trava os elos; o ponto de reposicao e o mesmo `if`.
         "trecho": """        let conferida = if pre_conferir {
-            self.pre_conferir_a_lista(&trava, &database, &mut escritas, sessao)
+            self.pre_conferir_a_lista(&trava, &database, &mut escritas, sessao, |i, elos| {
 """,
         "troca": """        // DEFEITO REPOSTO (448): a lista vai para a marca sem conferir.
         let conferida = if false && pre_conferir {
-            self.pre_conferir_a_lista(&trava, &database, &mut escritas, sessao)
+            self.pre_conferir_a_lista(&trava, &database, &mut escritas, sessao, |i, elos| {
 """,
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
@@ -14562,6 +14564,30 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         ],
     },
     {
+        "id": "cascata-solta-sem-pre-conferencia",
+        "titulo": "a cascata solta grava a mae antes de conferir a FK da filha para OUTRA mae, e deixa filhas orfas",
+        "porque": (
+            "pedido 567, P5 do parecer do papel C: a filha com `fk_cli` e "
+            "`fk_vend` na mesma coluna; a mae 5->6 fora de transacao dava "
+            "`ParouNoMeio` com a mae em 6 e as filhas em 5 -- duas orfas. "
+            "Fere a regra primordial da integridade."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        let elos = conferida.map_err(|recusa| {
+""",
+        "troca": """        // DEFEITO REPOSTO (567): a recusa da pre-conferencia e ignorada.
+        let elos = conferida.or_else(|_| Ok(Vec::new())).map_err(|recusa: RecusaDaLista| {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_transacoes::integridade_na_transacao::a_cascata_solta_recusa_antes_da_marca_a_fk_para_outra_mae",
+        ],
+        "seguem": [
+            "servidor::testes_transacoes::integridade_na_transacao::o_commit_leva_so_a_chave_do_elo_sobre_a_linha_atual",
+        ],
+    },
+    {
         "id": "elo-implicito-sem-trava",
         "titulo": "o elo que só o COMMIT descobre escreve sem trava, e a leitura repetível de outra transação lê 5 e depois 6",
         "porque": (
@@ -14571,12 +14597,14 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "por cima da trava compartilhada de T3, que relia 6."
         ),
         "arquivo": "crates/phxsql-server/src/servidor.rs",
-        "trecho": """            for elo in &elos {
-                let chave = crate::carga::chave(database, &elo.tabela);
+        # ATUALIZADO em 30/09/2026 (pedido 567): a trava dos elos saiu da
+        # pre-conferencia para o `travar_os_elos`, que so o COMMIT passa.
+        "trecho": """        for elo in elos {
+            let recusa = |erro| RecusaDaLista {
 """,
-        "troca": """            // DEFEITO REPOSTO (516): o elo implicito nao trava.
-            for elo in elos.iter().take(0) {
-                let chave = crate::carga::chave(database, &elo.tabela);
+        "troca": """        // DEFEITO REPOSTO (516): o elo implicito nao trava.
+        for elo in elos.iter().take(0) {
+            let recusa = |erro| RecusaDaLista {
 """,
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
