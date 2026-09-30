@@ -14811,6 +14811,23 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "seguem": [],
     },
     {
+        "id": "scram-sem-teto-de-iteracoes",
+        "titulo": "o `i=` do SCRAM que o par manda nao tem teto, e cada iteracao e CPU deste processo",
+        "porque": (
+            "pedido 547, papel SEC: sem teto, o `u32` inteiro custava ~57 min "
+            "de CPU por tentativa (1.000.000 medido em 763-841 ms)."
+        ),
+        "arquivo": "crates/phxsql-server/src/pg/scram.rs",
+        "trecho": """    if let Some(i) = iteracoes.filter(|&i| i > TETO_DE_ITERACOES_DO_PAR) {
+""",
+        "troca": """    if let Some(i) = iteracoes.filter(|&i| false && i > TETO_DE_ITERACOES_DO_PAR) {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": ["pg::scram::testes::iteracoes_acima_do_teto_recusam_antes_de_derivar"],
+        "seguem": ["pg::scram::testes::troca_do_rfc_7677"],
+    },
+    {
         "id": "recado-de-trava-entrega-o-login",
         "titulo": "o recado de trava mostra o login do dono dela a quem esbarrou, que pode nem ter direito na tabela",
         "porque": (

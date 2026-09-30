@@ -144,6 +144,18 @@ impl Scram {
     }
 }
 
+/// O teto das iteracoes que o PAR pode pedir -- pedido 547.
+///
+/// O `i=` vem do outro lado, e cada iteracao e um PBKDF2 que ESTE processo
+/// paga. Sem teto, o `u32` inteiro custava ~57 min de uma CPU por tentativa
+/// (medido em 30/09/2026, release: 1.000.000 iteracoes em 763-841 ms, e o
+/// `u32` e 4.295 vezes isso). Nao ha convergencia a seguir -- o `libpq` aceita
+/// qualquer contagem --, e o numero e nosso: 1.000.000, cerca de 0,8 s, que e
+/// 244 vezes o padrao do PostgreSQL (4096) e 4,8 vezes as 210.000 que esta
+/// casa usa para as proprias senhas. Quem configurou o servidor acima disso
+/// recebe a recusa dizendo o numero.
+pub const TETO_DE_ITERACOES_DO_PAR: u32 = 1_000_000;
+
 /// `r=<nonce>,s=<sal em base64>,i=<iteracoes>`
 fn analisar_primeira_do_servidor(m: &str) -> Result<(String, Vec<u8>, u32)> {
     let (mut nonce, mut sal, mut iteracoes) = (None, None, None);
@@ -158,6 +170,13 @@ fn analisar_primeira_do_servidor(m: &str) -> Result<(String, Vec<u8>, u32)> {
                     .map_err(|_| erro(format!("contagem de iteracoes ilegivel: {v:?}")))?,
             );
         }
+    }
+    if let Some(i) = iteracoes.filter(|&i| i > TETO_DE_ITERACOES_DO_PAR) {
+        return Err(erro(format!(
+            "o servidor pediu {i} iteracoes de PBKDF2, acima do teto de \
+             {TETO_DE_ITERACOES_DO_PAR} (cerca de 0,8 s de CPU) -- recusado antes de \
+             derivar. Se o servidor e seu, baixe o `scram_iterations` dele"
+        )));
     }
     match (nonce, sal, iteracoes) {
         (Some(n), Some(s), Some(i)) if i > 0 => Ok((n, s, i)),
@@ -250,6 +269,35 @@ mod testes {
             .responder("x", "r=outroNonce,s=W22ZaJ0SNY7soEsUEjb6gQ==,i=4096")
             .unwrap_err();
         assert!(format!("{e}").contains("nonce"), "{e}");
+    }
+
+    /// Pedido 547: o par que pede iteracoes demais e recusado ANTES de o
+    /// PBKDF2 rodar. O teste pede o teto MAIS UM, e nao `u32::MAX`: com o
+    /// teto tirado, ele cai em segundos pelo relogio e pela mensagem, em vez
+    /// de derivar por 57 minutos -- prova que so termina por prazo nao prova.
+    #[test]
+    fn iteracoes_acima_do_teto_recusam_antes_de_derivar() {
+        let (mut s, _) = Scram::comecar("rOprNGfwEbeRWgbNEkqO");
+        let inicio = std::time::Instant::now();
+        let e = s
+            .responder(
+                "x",
+                &format!(
+                    "r=rOprNGfwEbeRWgbNEkqO%hvYDpWUa2RaTCAfuxFIlj)hNlF$k0,\
+                     s=W22ZaJ0SNY7soEsUEjb6gQ==,i={}",
+                    TETO_DE_ITERACOES_DO_PAR + 1
+                ),
+            )
+            .expect_err("uma iteracao acima do teto tem de recusar");
+        assert!(e.to_string().contains("teto"), "{e}");
+        assert!(inicio.elapsed() < std::time::Duration::from_secs(1));
+        // No teto ainda aceita: o limite e inclusivo.
+        let (mut s, _) = Scram::comecar("rOprNGfwEbeRWgbNEkqO");
+        assert!(analisar_primeira_do_servidor(&format!(
+            "r=x,s=W22ZaJ0SNY7soEsUEjb6gQ==,i={TETO_DE_ITERACOES_DO_PAR}"
+        ))
+        .is_ok());
+        let _ = &mut s;
     }
 
     #[test]
