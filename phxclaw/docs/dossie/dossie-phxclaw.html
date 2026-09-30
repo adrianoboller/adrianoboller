@@ -59,39 +59,39 @@ footer { font-size:.8rem; color:var(--suave); border-top:1px solid var(--linha);
 <div class="wrap">
 <header>
   <h1>Phx<span>Claw</span> · dossiê</h1>
-  <p class="sub">Versão 0.70.0 · branch <code>phxclaw/v070-nativo</code> · gerado em 30/09/2026 19:59 UTC</p>
+  <p class="sub">Versão 0.70.0 · branch <code>phxclaw/v070-nativo</code> · gerado em 30/09/2026 20:49 UTC</p>
 </header>
 
 <div class="capa">
   <svg class="rosca" width="140" height="140" viewBox="0 0 140 140" role="img"
-       aria-label="18 de 24 itens concluídos">
+       aria-label="20 de 24 itens concluídos">
     <circle cx="70" cy="70" r="52" fill="none" stroke="var(--linha)" stroke-width="14"/>
     <circle cx="70" cy="70" r="52" fill="none" stroke="var(--marca)" stroke-width="14"
-      stroke-dasharray="245.0 326.7" transform="rotate(-90 70 70)"/>
-    <text x="70" y="72" text-anchor="middle" font-size="26" font-weight="700">25.0%</text>
+      stroke-dasharray="272.3 326.7" transform="rotate(-90 70 70)"/>
+    <text x="70" y="72" text-anchor="middle" font-size="26" font-weight="700">16.7%</text>
     <text x="70" y="92" text-anchor="middle" font-size="11" fill="var(--suave)">falta</text>
   </svg>
   <div style="display:grid;gap:14px;min-width:0">
-    <span class="veredito">NOT_CERTIFIED · 8/13 portões obrigatórios</span>
+    <span class="veredito">NOT_CERTIFIED · 10/13 portões obrigatórios</span>
     <div class="tiles">
-      <div class="tile"><b>269</b><span>testes passam</span></div>
-      <div class="tile"><b class="ruim">1</b><span>testes falham</span></div>
-      <div class="tile"><b>61.053</b><span>linhas de Rust</span></div>
+      <div class="tile"><b>271</b><span>testes passam</span></div>
+      <div class="tile"><b class="">0</b><span>testes falham</span></div>
+      <div class="tile"><b>61.226</b><span>linhas de Rust</span></div>
       <div class="tile"><b>113</b><span>crates · 13 apps</span></div>
-      <div class="tile"><b>91</b><span>commits</span></div>
-      <div class="tile"><b>11</b><span>cognições</span></div>
+      <div class="tile"><b>1279</b><span>commits</span></div>
+      <div class="tile"><b>12</b><span>cognições</span></div>
     </div>
-    <p class="formula">falta = (5 portões obrigatórios não passados + 1 itens abertos da esteira) / (13 + 11) = 6/24</p>
+    <p class="formula">falta = (3 portões obrigatórios não passados + 1 itens abertos da esteira) / (13 + 11) = 4/24</p>
   </div>
 </div>
 
 <section>
-  <h2>Certificação de release <small>medida em 30/09/2026 18:21 UTC</small></h2>
+  <h2>Certificação de release <small>medida em 30/09/2026 20:47 UTC</small></h2>
   <div class="tab"><table>
     <thead><tr><th>Portão</th><th>Obrigatório</th><th>Estado</th><th>Motivo</th></tr></thead>
-    <tbody><tr><td>Formatação (cargo fmt)</td><td>sim</td><td><span class="pl pl-passed">passou</span></td><td class='mot'></td></tr><tr><td>Clippy sem avisos</td><td>sim</td><td><span class="pl pl-passed">passou</span></td><td class='mot'></td></tr><tr><td>Suíte de testes inteira</td><td>sim</td><td><span class="pl pl-failed">falhou</span></td><td class='mot'>1 teste falhou em phxclaw-plugin-registry — mesma causa da assinatura dos plugins (chave externa)</td></tr><tr><td>Auditoria de dependências</td><td>sim</td><td><span class="pl pl-passed">passou</span></td><td class='mot'></td></tr><tr><td>Agente autônomo</td><td>sim</td><td><span class="pl pl-passed">passou</span></td><td class='mot'></td></tr><tr><td>PostgreSQL ponta a ponta</td><td>sim</td><td><span class="pl pl-passed">passou</span></td><td class='mot'></td></tr><tr><td>Caos: SIGKILL no PostgreSQL</td><td>sim</td><td><span class="pl pl-passed">passou</span></td><td class='mot'></td></tr><tr><td>Modelo local (Ollama)</td><td>não</td><td><span class="pl pl-passed">passou</span></td><td class='mot'></td></tr><tr><td>Canais com credencial real</td><td>sim</td><td><span class="pl pl-blocked">bloqueado</span></td><td class='mot'>exige credenciais reais de Telegram/Discord/Slack/WhatsApp/Teams (decisao do dono)</td></tr><tr><td>Automação de desktop físico</td><td>sim</td><td><span class="pl pl-blocked">bloqueado</span></td><td class='mot'>exige desktop FISICO (teclado, mouse, captura reais); aqui so ha Xvfb</td></tr><tr><td>Pareamento de dispositivos</td><td>sim</td><td><span class="pl pl-blocked">bloqueado</span></td><td class='mot'>exige hardware multiplataforma (Windows, macOS, Android, iOS). O servidor WSS existe desde 30/09 e o pareamento esta provado em Linux entre processos, com TLS, token de uso unico, reconexao pela chave guardada e cerca crescente; falta o resto das plataformas</td></tr><tr><td>Desktop Tauri (WebDriver)</td><td>sim</td><td><span class="pl pl-passed">passou</span></td><td class='mot'></td></tr><tr><td>Voz para texto (modelo real)</td><td>sim</td><td><span class="pl pl-passed">passou</span></td><td class='mot'></td></tr><tr><td>Assinatura dos plugins nativos</td><td>sim</td><td><span class="pl pl-blocked">bloqueado</span></td><td class='mot'>6 manifestos builtin com digest/assinatura quebrados desde o rename da v0.41; reassinar exige a chave privada phxclaw-dev-root-2026-v05r2 (externa)</td></tr></tbody>
+    <tbody><tr><td>Formatação (cargo fmt)</td><td>sim</td><td><span class="pl pl-passed">passou</span></td><td class='mot'></td></tr><tr><td>Clippy sem avisos</td><td>sim</td><td><span class="pl pl-passed">passou</span></td><td class='mot'></td></tr><tr><td>Suíte de testes inteira</td><td>sim</td><td><span class="pl pl-passed">passou</span></td><td class='mot'></td></tr><tr><td>Auditoria de dependências</td><td>sim</td><td><span class="pl pl-passed">passou</span></td><td class='mot'></td></tr><tr><td>Agente autônomo</td><td>sim</td><td><span class="pl pl-passed">passou</span></td><td class='mot'></td></tr><tr><td>PostgreSQL ponta a ponta</td><td>sim</td><td><span class="pl pl-passed">passou</span></td><td class='mot'></td></tr><tr><td>Caos: SIGKILL no PostgreSQL</td><td>sim</td><td><span class="pl pl-passed">passou</span></td><td class='mot'></td></tr><tr><td>Modelo local (Ollama)</td><td>não</td><td><span class="pl pl-passed">passou</span></td><td class='mot'></td></tr><tr><td>Canais com credencial real</td><td>sim</td><td><span class="pl pl-blocked">bloqueado</span></td><td class='mot'>PHXCLAW_TELEGRAM_BOT_TOKEN/PHXCLAW_TELEGRAM_CHAT_ID nao definidos (bot do BotFather, nas variaveis do ambiente)</td></tr><tr><td>Automação de desktop físico</td><td>sim</td><td><span class="pl pl-blocked">bloqueado</span></td><td class='mot'>exige desktop FISICO (teclado, mouse, captura reais); aqui so ha Xvfb</td></tr><tr><td>Pareamento de dispositivos</td><td>sim</td><td><span class="pl pl-blocked">bloqueado</span></td><td class='mot'>exige hardware multiplataforma (Windows, macOS, Android, iOS). O servidor WSS existe desde 30/09 e o pareamento esta provado em Linux entre processos, com TLS, token de uso unico, reconexao pela chave guardada e cerca crescente; falta o resto das plataformas</td></tr><tr><td>Desktop Tauri (WebDriver)</td><td>sim</td><td><span class="pl pl-passed">passou</span></td><td class='mot'></td></tr><tr><td>Voz para texto (modelo real)</td><td>sim</td><td><span class="pl pl-passed">passou</span></td><td class='mot'></td></tr><tr><td>Assinatura dos plugins nativos</td><td>sim</td><td><span class="pl pl-passed">passou</span></td><td class='mot'></td></tr></tbody>
   </table></div>
-  <p class="formula">suíte: 269 passam, 1 falham, 11 ignorados · cargo test --workspace, rodado por este gerador · 30/09/2026 19:59 UTC</p>
+  <p class="formula">suíte: 271 passam, 0 falham, 12 ignorados · cargo test --workspace, rodado por este gerador · 30/09/2026 20:49 UTC</p>
 </section>
 
 <section>
@@ -104,7 +104,7 @@ footer { font-size:.8rem; color:var(--suave); border-top:1px solid var(--linha);
 
 <section>
   <h2>Últimos commits</h2>
-  <ul class="git"><li><code>5d08419</code><span class='dt'>30/09 19:57</span>ui-ir: prazo do teste Flutter volta a 15 min (saiu 2 s no commit anterior)</li><li><code>68d2847</code><span class='dt'>30/09 19:51</span>ui-ir: teste do Flutter com prazo, matando o grupo de processos</li><li><code>2ab6553</code><span class='dt'>30/09 18:21</span>certificacao remedida 8/13; receita do ambiente escrita no script</li><li><code>99c8a84</code><span class='dt'>30/09 18:14</span>plugins: assinador pronto para a chave do dono, recusando chave errada</li><li><code>7765bfb</code><span class='dt'>30/09 18:11</span>agente: print de tela vira telas ERP, com o modelo so escolhendo</li><li><code>604a4a3</code><span class='dt'>30/09 17:35</span>ui-ir: renderizador Flutter provado com o SDK; navegador declara idioma</li><li><code>869f42e</code><span class='dt'>30/09 16:37</span>dispositivos: servidor WSS que faltava, e chaveiro que fingia guardar</li><li><code>d246aaf</code><span class='dt'>30/09 16:23</span>dossie: remedido apos a conferencia do WLanguage no Help</li></ul>
+  <ul class="git"><li><code>4725d8f3</code><span class='dt'>30/09 20:47</span>certificacao v0.70: 10/13 obrigatorios, nenhum reprovado</li><li><code>52b62ef3</code><span class='dt'>30/09 20:44</span>certificacao: a receita exige o Ollama servindo, nao so instalado</li><li><code>699648d0</code><span class='dt'>30/09 20:40</span>gitignore: cache do Python fora do git em qualquer pasta</li><li><code>d230a8c9</code><span class='dt'>30/09 20:37</span>canais: E2E real do Telegram liga o portao de credencial</li><li><code>ae285446</code><span class='dt'>30/09 20:34</span>plugins: raiz de assinatura v07 e assinatura V2 que cobre o manifesto inteiro</li><li><code>53b06732</code><span class='dt'>30/09 20:28</span>phxclaw: licenca MIT do upstream dentro do crate; private/ fora do git</li><li><code>1a60240b</code><span class='dt'>30/09 20:04</span>backup-completo: poda todo target/, guarda todas as branches e nao esconde falha</li><li><code>40adad2a</code><span class='dt'>30/09 19:59</span>dossie: remedido -- falta 25,0% (6/24), certificacao 8/13, suite 269/1/11</li></ul>
 </section>
 
 <footer>Nenhum número desta página foi digitado: todos saem de
