@@ -374,6 +374,11 @@ dia, nunca no desejado:
   porta lida pela metade no apoio dos testes (`porta-lida-pela-metade`) e a
   copia de reserva do restaurar sem `fsync` (`copia-da-troca-sem-fsync`).
   Contado pelo `--catraca`: 502 + 2.
+  **SUBIU para 511 em 30/09/2026** (pedido 585): tres guardas -- o estouro do
+  prazo total da replica sem recuo (`replica-limite-sem-recuo`), o driver
+  ODBC so com silencio (`odbc-sem-prazo-total`) e o total do driver pela vida
+  da conexao (`odbc-total-pela-vida-da-conexao`). Contado pelo `--catraca`:
+  508 + 3.
   impedir. Ele e a unica coisa nesta regua que reprova o APAGAMENTO; tudo o
   mais aqui reprova o envelhecimento.
 
@@ -482,7 +487,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 508
+PISO_DAS_ENTRADAS = 511
 
 # ------------------------------------------------------------- APOSENTADAS
 #

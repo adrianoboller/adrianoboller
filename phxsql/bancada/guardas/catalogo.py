@@ -17668,8 +17668,8 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "dblink::conexao::testes_do_prazo_total::o_par_que_goteja_para_no_prazo_total",
         ],
         "seguem": [
-            "prazo::testes::o_total_recomeca_a_cada_operacao_e_corta_a_que_passa",
             "email::testes::o_rele_que_pinga_e_cortado_no_prazo_total",
+            "replica::testes_do_prazo_total_da_conversa::o_par_que_goteja_para_no_prazo_total",
         ],
     },
     {
@@ -17686,7 +17686,9 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "A replica saudavel com dois lotes de ~2,5 s (soma acima do total) "
             "continua, porque o total e por pedido."
         ),
-        "arquivo": "crates/phxsql-server/src/replica.rs",
+        # O `prazo_da_conversa` desceu para o motor no pedido 585 (o driver
+        # ODBC o usa tambem); a replica o reexporta, e a prova continua dela.
+        "arquivo": "crates/phxsql-core/src/prazo.rs",
         "trecho": """pub fn prazo_da_conversa(silencio: Duration) -> Prazo {
     Prazo::com_total(
         silencio,
@@ -17706,7 +17708,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         ],
         "seguem": [
             "replica::testes_do_prazo_total_da_conversa::a_replica_saudavel_com_lote_longo_continua",
-            "prazo::testes::o_total_recomeca_a_cada_operacao_e_corta_a_que_passa",
+            "email::testes::o_rele_que_pinga_e_cortado_no_prazo_total",
         ],
     },
     {
@@ -17781,5 +17783,85 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "restaurar::tests::por_cima_guarda_o_antigo_fora_da_raiz",
             "restaurar::tests::restaura_da_arvore_copiada_escolhendo_o_banco",
         ],
+    },
+    {
+        "id": "replica-limite-sem-recuo",
+        "titulo": "O estouro do prazo total da réplica caía em `Outra`: o par que goteja era retentado no intervalo fixo, sem recuo",
+        "porque": (
+            "pedido 585, resto do 580. `Falha::na_rodada` so distinguia `Io`; "
+            "o `LimiteExcedido` do prazo total virava `Outra`, e o laco voltava "
+            "ao mesmo par gotejante a cada `reconectar_em`, prendendo a thread "
+            "um total inteiro de cada vez. Os tres maduros tratam o estouro do "
+            "prazo da conversa como conexao caida (`replica_net_timeout` + "
+            "`MASTER_CONNECT_RETRY` no MySQL/MariaDB, `wal_receiver_timeout` + "
+            "`wal_retrieve_retry_interval` no PG): convergencia 9 contra 0. "
+            "Reposto o defeito, o erro tirado do soquete gotejante da as "
+            "esperas [1, 1, 1, 1] em vez de [1, 2, 4, 8]. A primeira espera e "
+            "a base nos dois estados: a replica que falha uma vez nao atrasa."
+        ),
+        "arquivo": "crates/phxsql-server/src/replica.rs",
+        "trecho": """            PhxError::Io(_) => Falha::Rede,
+            PhxError::LimiteExcedido(_) => Falha::Limite,
+            _ => Falha::Outra,""",
+        "troca": """            PhxError::Io(_) => Falha::Rede,
+            // DEFEITO REPOSTO (585): o estouro do total cai em Outra.
+            _ => Falha::Outra,""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "replica::testes_do_prazo_total_da_conversa::o_par_que_goteja_na_rodada_recua",
+            "replica::testes_do_ritmo::ao_ligar_separa_credencial_de_rede_e_do_resto",
+        ],
+        # O irmao da fase de ligar tem classificacao PROPRIA (`ao_ligar`), e o
+        # recuo do Ritmo nao depende da classificacao: se caissem junto, o
+        # trecho estaria escondendo mais de uma decisao.
+        "seguem": [
+            "replica::testes_do_prazo_total_da_conversa::o_par_que_goteja_no_desafio_recua",
+            "replica::testes_do_ritmo::limite_e_rede_recuam_no_mesmo_contador",
+        ],
+    },
+    {
+        "id": "odbc-sem-prazo-total",
+        "titulo": "O driver ODBC só tinha prazo por LEITURA: um servidor que goteja um byte antes de cada prazo prendia a thread do aplicativo dentro do SQLExecDirect",
+        "porque": (
+            "pedido 585. O driver armava 30 s de silencio no soquete cru e "
+            "nada mais -- e nao tem `SQLCancel`, entao a thread presa nao tem "
+            "quem a solte. O conserto veio do MESMO motor da replica: o "
+            "`prazo.rs` desceu para o `phxsql-core` e o `Canal` do driver passou "
+            "a ler e escrever por `ComPrazo` com o `prazo_da_conversa` (total = "
+            "silencio x 20, rearmado por pedido). Reposto so o silencio, o "
+            "pedido contra o servidor que goteja um byte a cada 20 ms nao volta "
+            "em 10 s; com o conserto volta 08S01 com o prazo total perto de 4 s."
+        ),
+        "arquivo": "crates/phxsql-odbc/src/conexao.rs",
+        "trecho": "ComPrazo::armar(tcp, prazo::prazo_da_conversa(silencio))",
+        "troca": "ComPrazo::armar(tcp, prazo::Prazo::so_silencio(silencio))",
+        "pacote": "phxsql-odbc",
+        "alvo": ["--lib"],
+        "caem": ["conexao::testes::o_servidor_que_goteja_para_no_prazo_total"],
+        "seguem": [
+            "conexao::testes::o_servidor_lento_e_legitimo_continua",
+            "conexao::testes::aperto_pelo_canal_fecha_e_fala_por_dentro",
+        ],
+    },
+    {
+        "id": "odbc-total-pela-vida-da-conexao",
+        "titulo": "O prazo total do driver ODBC contado pela vida da conexão, e não por pedido: o aplicativo que abre de manhã e consulta à tarde cairia no primeiro pedido depois do total",
+        "porque": (
+            "pedido 585, o outro lado do total. Sem o rearme em `Canal::pedir` "
+            "o relogio do total corre desde o `abrir`, e um servidor lento e "
+            "legitimo -- duas respostas de ~2,5 s, cada uma abaixo do total de "
+            "4 s, a soma acima -- derruba o segundo pedido. E o teste do "
+            "comportamento VELHO, que e o que mais importa numa guarda nova."
+        ),
+        "arquivo": "crates/phxsql-odbc/src/conexao.rs",
+        "trecho": """        let linha = Json::Objeto(todos).escrever();
+        self.rearmar();""",
+        "troca": """        let linha = Json::Objeto(todos).escrever();
+        // DEFEITO REPOSTO (585): o total corre pela vida da conexao.""",
+        "pacote": "phxsql-odbc",
+        "alvo": ["--lib"],
+        "caem": ["conexao::testes::o_servidor_lento_e_legitimo_continua"],
+        "seguem": ["conexao::testes::o_servidor_que_goteja_para_no_prazo_total"],
     },
 ]

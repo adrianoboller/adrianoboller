@@ -36,6 +36,7 @@ pub mod p256;
 pub mod paginacao;
 pub mod paralelo;
 pub mod pix;
+pub mod prazo;
 pub mod qr;
 pub mod schema;
 pub mod semaforo;

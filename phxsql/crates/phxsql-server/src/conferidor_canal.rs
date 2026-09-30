@@ -77,12 +77,10 @@ pub const ISENTOS: &[(&str, usize, &str)] = &[
         "le o TECLADO (`stdin`), e nao um soquete: do outro lado esta o \
          proprio operador",
     ),
-    (
-        "crates/phxsql-odbc/src/conexao.rs",
-        4,
-        "os servidores de MENTIRA dos testes do driver, dentro de \
-         `#[cfg(test)] mod testes`",
-    ),
+    // `crates/phxsql-odbc/src/conexao.rs` saiu daqui no pedido 585: os quatro
+    // servidores de mentira dos testes do driver passaram a ler pelo motor
+    // (`ler_pedido`, sobre o `Canal` em claro). Isencao que ninguem precisa
+    // mais e porta aberta para a quinta leitura crua entrar calada.
     (
         "crates/phxsql-odbc/src/lib.rs",
         1,
