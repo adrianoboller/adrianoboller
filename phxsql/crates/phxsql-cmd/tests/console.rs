@@ -478,3 +478,53 @@ fn com_o_servidor_sem_cifra_o_console_recusa_e_diz_a_saida() {
     let r = c.executar_linha("bancos");
     assert!(!r.texto().starts_with("erro"), "{}", r.texto());
 }
+
+/// **Pedido 580: o console para no prazo TOTAL contra o par que goteja.**
+///
+/// Um "servidor" que goteja um byte a cada 20 ms no aperto de mao, sem nunca
+/// fechar a linha: o silencio de 200 ms nunca estoura, e sem total o console
+/// ficava preso para sempre. Com o total (silencio x 20 = 4 s, pelo mesmo
+/// `replica::prazo_da_conversa`), volta com `LimiteExcedido` -- e SEM mandar
+/// chamar com `--sem-cifra`, que seria a ordem que o erro desmente.
+///
+/// Prova real: com `prazo_da_conversa` devolvendo so o silencio, o console
+/// nao volta em 10 s.
+#[test]
+fn o_console_para_no_prazo_total_contra_o_par_que_goteja() {
+    use phxsql_core::error::PhxError;
+    use std::time::Instant;
+
+    let ouvinte = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let porta = ouvinte.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        let Ok((mut s, _)) = ouvinte.accept() else {
+            return;
+        };
+        loop {
+            std::thread::sleep(Duration::from_millis(20));
+            if s.write_all(b"x").is_err() {
+                return;
+            }
+        }
+    });
+    let (avisar, aviso) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let inicio = Instant::now();
+        let r = Console::ligar("127.0.0.1", porta, TOKEN, Duration::from_millis(200)).map(|_| ());
+        let _ = avisar.send((r, inicio.elapsed()));
+    });
+    let Ok((r, durou)) = aviso.recv_timeout(Duration::from_secs(10)) else {
+        panic!("o console ficou preso alem de 10 s ao par que goteja: sem prazo total");
+    };
+    match r {
+        Err(PhxError::LimiteExcedido(m)) => {
+            assert!(m.contains("prazo total"), "{m}");
+            assert!(!m.contains("--sem-cifra"), "ordem que o erro desmente: {m}");
+        }
+        outro => panic!("esperava o prazo total, veio {outro:?}"),
+    }
+    assert!(
+        durou >= Duration::from_millis(3700),
+        "voltou em {durou:?}, antes do total de 4 s"
+    );
+}

@@ -124,6 +124,12 @@ impl Console {
             // réplica: aqui quem está do outro lado é o servidor a que a
             // pessoa quis se conectar.
             cliente.cifrar(None).map_err(|e| {
+                // O prazo total estourado (pedido 580) nao e recusa: o outro
+                // lado gotejou. Mandar desligar a cifra ali seria a ordem que
+                // o erro desmente -- o mesmo conserto do `dblink/phx.rs` (578).
+                if matches!(e, PhxError::LimiteExcedido(_)) {
+                    return e;
+                }
                 PhxError::Autorizacao(format!(
                     "{host}:{porta} recusou o aperto de mao da cifra do fio ({e}). \
                      Se este servidor tem \"cifra_fio\": {{\"ligada\": false}}, \

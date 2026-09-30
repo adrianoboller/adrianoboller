@@ -17672,4 +17672,41 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "email::testes::o_rele_que_pinga_e_cortado_no_prazo_total",
         ],
     },
+    {
+        "id": "replica-sem-prazo-total",
+        "titulo": "O laço da réplica, a sonda e o console só têm prazo por LEITURA: um par que goteja um byte antes de cada prazo prende a thread para sempre",
+        "porque": (
+            "pedido 580, irmao do 578. `replica::prazo_da_conversa` e o lugar "
+            "unico do prazo de quem conversa com outro PhxSql sem regra "
+            "propria (laco, `replicacao_testar`, console): total por PEDIDO, "
+            "silencio x 20, rearmado em `Cliente::pedir`. Reposto aqui o "
+            "caminho de antes -- so o silencio --, a replica nao volta em 10 s "
+            "contra o par que goteja um byte a cada 20 ms com silencio de "
+            "200 ms; com o conserto volta com `LimiteExcedido` perto dos 4 s. "
+            "A replica saudavel com dois lotes de ~2,5 s (soma acima do total) "
+            "continua, porque o total e por pedido."
+        ),
+        "arquivo": "crates/phxsql-server/src/replica.rs",
+        "trecho": """pub fn prazo_da_conversa(silencio: Duration) -> Prazo {
+    Prazo::com_total(
+        silencio,
+        silencio.saturating_mul(MULTIPLO_DO_TOTAL_DA_CONVERSA),
+        &ROTULO_DA_CONVERSA,
+    )
+}""",
+        "troca": """pub fn prazo_da_conversa(silencio: Duration) -> Prazo {
+    // DEFEITO REPOSTO (580): so o prazo de silencio, sem o total.
+    let _ = &ROTULO_DA_CONVERSA;
+    Prazo::so_silencio(silencio)
+}""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "replica::testes_do_prazo_total_da_conversa::o_par_que_goteja_para_no_prazo_total",
+        ],
+        "seguem": [
+            "replica::testes_do_prazo_total_da_conversa::a_replica_saudavel_com_lote_longo_continua",
+            "prazo::testes::o_total_recomeca_a_cada_operacao_e_corta_a_que_passa",
+        ],
+    },
 ]

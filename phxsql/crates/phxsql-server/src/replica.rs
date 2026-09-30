@@ -68,7 +68,9 @@ pub struct Cliente {
 }
 
 impl Cliente {
-    /// Conecta com o prazo padrao de conexao, [`PRAZO_DE_CONEXAO`].
+    /// Conecta com o prazo padrao de conexao, [`PRAZO_DE_CONEXAO`], e o
+    /// prazo da conversa de [`prazo_da_conversa`]: `espera` e o silencio, e o
+    /// total por pedido sai dele.
     ///
     /// Ate 17/09/2026 isto era um `TcpStream::connect` cru, que fica
     /// pendurado ate o sistema desistir do SYN (no Linux de fabrica, seis
@@ -79,34 +81,34 @@ impl Cliente {
     /// chamavam esta funcao (o dblink saiu para [`Cliente::conectar_com_total`]
     /// no pedido 578). Revisao SEC, A5. Ela continua existindo em vez de
     /// ser apagada porque os tres chamadores nao tem prazo proprio a dizer; o
-    /// que nao existe mais e um caminho SEM prazo.
+    /// que nao existe mais e um caminho SEM prazo -- nem de conexao, nem, desde
+    /// o pedido 580, de conversa.
     pub fn conectar(host: &str, porta: u16, token: &str, espera: Duration) -> Result<Cliente> {
-        Cliente::conectar_com_prazo(host, porta, token, espera, PRAZO_DE_CONEXAO)
+        Cliente::conectar_com_prazo(
+            host,
+            porta,
+            token,
+            prazo_da_conversa(espera),
+            PRAZO_DE_CONEXAO,
+        )
     }
 
-    /// Conecta com PRAZO dito por quem chama. O pulso do cluster usa 1-2 s:
-    /// um no morto nao pode segurar a conferencia dos vivos alem do proprio
-    /// pulso.
+    /// Conecta com os prazos ditos por quem chama: o da conversa (silencio e
+    /// total por pedido) e o do `connect`. O pulso do cluster usa 1-2 s de
+    /// conexao: um no morto nao pode segurar a conferencia dos vivos alem do
+    /// proprio pulso.
     pub fn conectar_com_prazo(
         host: &str,
         porta: u16,
         token: &str,
-        espera: Duration,
+        prazo: Prazo,
         prazo_conexao: Duration,
     ) -> Result<Cliente> {
-        Cliente::abrir(
-            host,
-            porta,
-            token,
-            Prazo::so_silencio(espera),
-            prazo_conexao,
-        )
+        Cliente::abrir(host, porta, token, prazo, prazo_conexao)
     }
 
-    /// Conecta com prazo TOTAL por pedido, alem do silencio -- pedido 578. E
-    /// o caminho do DbLink para outro PhxSql: la a thread presa e a de um job
-    /// ou de uma conexao do servidor. A replica, o pulso e o console
-    /// continuam so com o silencio, porque o total deles e outra decisao.
+    /// Conecta com prazo TOTAL por pedido e o `connect` de fabrica -- pedido
+    /// 578, o caminho do DbLink para outro PhxSql.
     pub fn conectar_com_total(
         host: &str,
         porta: u16,
@@ -556,22 +558,85 @@ fn puxar_ate(
 /// conferencia dos vivos; aqui o custo de esperar e so o atraso da replica.
 pub const PRAZO_DE_CONEXAO: Duration = Duration::from_secs(10);
 
-/// Abre a conexao e entra autenticado. Usado pelo laco e pelos testes.
-pub fn ligar(origem: &Origem) -> Result<Cliente> {
-    ligar_com_prazo(origem, PRAZO_DE_CONEXAO)
+/// O silencio da conversa da replica com a origem: quanto um pedido pode
+/// ficar sem um byte sequer. Abaixo dos 60 s do `replica_net_timeout`
+/// (MySQL/MariaDB) e do `wal_receiver_timeout` (PG) porque o nosso pedido e
+/// curto e a origem responde de uma vez; era o `30` cravado em `ligar`.
+pub const SILENCIO_DA_REPLICA: Duration = Duration::from_secs(30);
+
+/// Quantos silencios um PEDIDO inteiro pode durar -- pedido 580.
+///
+/// Decisao (papel J, regua do CLAUDE.md): os maduros convergem em SO
+/// silencio na replicacao (`wal_receiver_timeout`/`wal_sender_timeout` 60 s
+/// no PG, `replica_net_timeout` 60 s no MySQL e no MariaDB, `tcp_user_timeout`
+/// 0) e em total 0. Diverge aqui pela mesma restricao do 578: la quem opera
+/// derruba a sessao presa; aqui a thread do laco, da sonda ou do console fica
+/// presa ao par que goteja e nada a solta. O total e POR PEDIDO, rearmado em
+/// `Cliente::pedir` -- nunca pela vida da conexao, que no laco e longa e
+/// legitima. Vinte silencios de 30 s = 10 min por pedido, o mesmo total de
+/// fabrica do DbLink (10 s x 60): a maior linha que o fio aceita
+/// (`TETO_DO_REGISTRO`, 128 MiB) ainda chega a 218 KiB/s. Escolhido, nao
+/// medido.
+pub const MULTIPLO_DO_TOTAL_DA_CONVERSA: u32 = 20;
+
+static ROTULO_DA_CONVERSA: prazo::Rotulo = prazo::Rotulo {
+    quem: "a conversa com o outro PhxSql",
+    regra: "o total por pedido e o silencio vezes o multiplo do pedido 580 \
+            (10 min com o silencio de fabrica da replica)",
+};
+
+static ROTULO_DO_PULSO: prazo::Rotulo = prazo::Rotulo {
+    quem: "o pulso do cluster",
+    regra: "o pedido inteiro do pulso tem de caber num silencio \
+            (2 x pulso_s, no minimo 5 s) -- pedido 580",
+};
+
+/// O prazo da conversa com outro PhxSql para quem nao tem regra propria: o
+/// laco da replica, a sonda `replicacao_testar` e o console. UM lugar so --
+/// quem calculasse o seu seria o chamador que volta a prender a thread.
+pub fn prazo_da_conversa(silencio: Duration) -> Prazo {
+    Prazo::com_total(
+        silencio,
+        silencio.saturating_mul(MULTIPLO_DO_TOTAL_DA_CONVERSA),
+        &ROTULO_DA_CONVERSA,
+    )
 }
 
-/// [`ligar`] com o prazo de conexao dito por quem chama.
+/// O prazo do pulso do cluster e da propagacao das ordens dele -- pedido 580.
 ///
-/// Existe para a prova contra o sistema operacional: um host que engole o
-/// SYN nao pode prender quem liga, e o teste mede isso com um prazo curto em
-/// vez de esperar os dez segundos de [`PRAZO_DE_CONEXAO`].
-pub fn ligar_com_prazo(origem: &Origem, prazo_conexao: Duration) -> Result<Cliente> {
+/// O total e IGUAL ao silencio: a resposta de um pulso e pequena e sai de
+/// uma vez, entao um pedido que nao coube num silencio ja nao e pulso, e o
+/// no que goteja tem de sair da conta no mesmo prazo do no que calou. E a
+/// ideia do `MASTER_HEARTBEAT_PERIOD` (MySQL/MariaDB), que por padrao e a
+/// metade do `replica_net_timeout`: o sinal de vida cabe folgado dentro do
+/// prazo. Um lugar so para o pulso e para a propagacao, que chamam as mesmas
+/// funcoes na mesma ordem.
+pub fn prazo_do_pulso(pulso_s: u64) -> Prazo {
+    let espera = Duration::from_secs(pulso_s.saturating_mul(2).max(5));
+    Prazo::com_total(espera, espera, &ROTULO_DO_PULSO)
+}
+
+/// Abre a conexao e entra autenticado. Usado pelo laco e pelos testes.
+pub fn ligar(origem: &Origem) -> Result<Cliente> {
+    ligar_com_prazo(origem, SILENCIO_DA_REPLICA, PRAZO_DE_CONEXAO)
+}
+
+/// [`ligar`] com o silencio e o prazo de conexao ditos por quem chama.
+///
+/// Existe para as provas contra o sistema operacional: um host que engole o
+/// SYN nao pode prender quem liga, e um que goteja nao pode prender quem
+/// conversa -- e os testes medem isso com prazos curtos em vez de esperar os
+/// de fabrica. O total sai do silencio pelo MESMO [`prazo_da_conversa`].
+pub fn ligar_com_prazo(
+    origem: &Origem,
+    silencio: Duration,
+    prazo_conexao: Duration,
+) -> Result<Cliente> {
     let mut c = Cliente::conectar_com_prazo(
         &origem.host,
         origem.porta,
         &origem.token,
-        Duration::from_secs(30),
+        prazo_da_conversa(silencio),
         prazo_conexao,
     )?;
     // O tunel ANTES do login, de proposito: e a prova do desafio-resposta e o
@@ -883,7 +948,7 @@ mod testes_do_prazo_de_conexao {
         let (envio, volta) = mpsc::channel();
         std::thread::spawn(move || {
             let inicio = Instant::now();
-            let r = ligar_com_prazo(&origem_para(porta), prazo);
+            let r = ligar_com_prazo(&origem_para(porta), SILENCIO_DA_REPLICA, prazo);
             let _ = envio.send((
                 r.map(|_| ()).map_err(|e| Falha::ao_ligar(&e)),
                 inicio.elapsed(),
@@ -1029,6 +1094,191 @@ mod testes_do_teto_do_aperto {
         assert!(
             erro.to_string().contains("desligada"),
             "o motivo do source se perdeu: {erro}"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Pedido 580: o laco da replica e o pulso do cluster com prazo TOTAL
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod testes_do_prazo_total_da_conversa {
+    use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::mpsc;
+    use std::time::Instant;
+
+    /// O silencio curto dos testes. O total da replica sai dele pelo MESMO
+    /// `prazo_da_conversa` da producao: 200 ms x 20 = 4 s.
+    const SILENCIO: Duration = Duration::from_millis(200);
+    /// Um byte a cada passo, dez vezes abaixo do silencio: so uma parada de
+    /// 180 ms da thread que goteja estouraria o silencio antes do total.
+    const PASSO: Duration = Duration::from_millis(20);
+    /// Quanto se espera antes de declarar a thread presa. O maior total aqui
+    /// e o do pulso, 5 s; sem total a thread ficaria presa para sempre.
+    const PACIENCIA: Duration = Duration::from_secs(10);
+
+    fn origem_para(porta: u16) -> Origem {
+        Origem {
+            nome: "prova580".into(),
+            host: "127.0.0.1".into(),
+            porta,
+            token: String::new(),
+            databases: Vec::new(),
+            reconectar_em: 1,
+            usuario: String::new(),
+            senha_hash: String::new(),
+            senha: String::new(),
+            cada_minutos: 0,
+            hora: String::new(),
+            cifra: false,
+            chave_do_fio: String::new(),
+        }
+    }
+
+    /// Aceita, e goteja um byte a cada `PASSO` sem nunca fechar a linha. Para
+    /// quando o cliente fecha -- e o que o conserto faz ao cortar.
+    fn par_que_goteja() -> u16 {
+        let ouvinte = TcpListener::bind("127.0.0.1:0").unwrap();
+        let porta = ouvinte.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            let Ok((mut s, _)) = ouvinte.accept() else {
+                return;
+            };
+            loop {
+                std::thread::sleep(PASSO);
+                if s.write_all(b"x").is_err() {
+                    return;
+                }
+            }
+        });
+        porta
+    }
+
+    type Volta = (&'static str, Result<()>, Duration, Duration);
+
+    /// **580: o laco da replica e o pulso param no prazo total.** Cada um abre
+    /// pela porta que a producao usa (`ligar_com_prazo`, e o `prazo_do_pulso`
+    /// que o pulso e a propagacao chamam) contra um par que goteja, e tem de
+    /// voltar com `LimiteExcedido` perto do total -- nem antes (o silencio nao
+    /// estourou), nem nunca.
+    ///
+    /// # Prova real
+    ///
+    /// Com o defeito reposto (so o silencio, o de antes), nenhum dos dois
+    /// volta em `PACIENCIA`: o vermelho lista quais ficaram presos.
+    #[test]
+    fn o_par_que_goteja_para_no_prazo_total() {
+        let (avisar, avisos) = mpsc::channel::<Volta>();
+        {
+            let avisar = avisar.clone();
+            let porta = par_que_goteja();
+            std::thread::spawn(move || {
+                let inicio = Instant::now();
+                let r = ligar_com_prazo(&origem_para(porta), SILENCIO, Duration::from_secs(2))
+                    .and_then(|mut c| puxar(&mut c, "db", "t", 0).map(|_| ()));
+                let _ = avisar.send(("replica", r, inicio.elapsed(), Duration::from_secs(4)));
+            });
+        }
+        {
+            let porta = par_que_goteja();
+            std::thread::spawn(move || {
+                let inicio = Instant::now();
+                let r = Cliente::conectar_com_prazo(
+                    "127.0.0.1",
+                    porta,
+                    "",
+                    prazo_do_pulso(1),
+                    Duration::from_secs(2),
+                )
+                .and_then(|mut c| c.pedir(vec![("op", Json::texto_de("ping"))]).map(|_| ()));
+                let _ = avisar.send(("pulso", r, inicio.elapsed(), Duration::from_secs(5)));
+            });
+        }
+        let prazo_final = Instant::now() + PACIENCIA;
+        let mut voltaram = Vec::new();
+        while voltaram.len() < 2 {
+            let resta = prazo_final.saturating_duration_since(Instant::now());
+            match avisos.recv_timeout(resta) {
+                Ok(v) => voltaram.push(v),
+                Err(_) => break,
+            }
+        }
+        let presos: Vec<&str> = ["replica", "pulso"]
+            .into_iter()
+            .filter(|q| !voltaram.iter().any(|v| v.0 == *q))
+            .collect();
+        assert!(
+            presos.is_empty(),
+            "ficaram presos alem de {PACIENCIA:?} ao par que goteja: {presos:?}"
+        );
+        for (quem, r, durou, total) in voltaram {
+            match r {
+                Err(PhxError::LimiteExcedido(m)) => {
+                    assert!(m.contains("prazo total"), "{quem}: {m}");
+                }
+                outro => panic!("{quem}: esperava o prazo total, veio {outro:?}"),
+            }
+            // Perto do total, e nao do silencio: foi o total que cortou.
+            assert!(
+                durou + Duration::from_millis(300) >= total,
+                "{quem} voltou em {durou:?}, antes do total de {total:?}"
+            );
+        }
+    }
+
+    /// **O COMPORTAMENTO VELHO: a replica saudavel com lote longo continua.**
+    /// Um source que manda cada resposta devagar -- um byte a cada 25 ms,
+    /// ~2,5 s por lote, mais de doze silencios -- e legitimo: nenhum pedido
+    /// passa do total de 4 s, mas a SOMA dos dois passa. O total e por
+    /// pedido; se fosse pela vida da conexao, o segundo lote cairia, e e isso
+    /// que derrubaria uma replica saudavel.
+    #[test]
+    fn a_replica_saudavel_com_lote_longo_continua() {
+        let ouvinte = TcpListener::bind("127.0.0.1:0").unwrap();
+        let porta = ouvinte.local_addr().unwrap().port();
+        let resposta: &'static [u8] = br#"{"ok":true,"resultado":{"eventos":[],"ate":7,"fim":true,"folga":"................................"}}"#;
+        std::thread::spawn(move || {
+            let Ok((s, _)) = ouvinte.accept() else {
+                return;
+            };
+            let Ok(mut escrita) = s.try_clone() else {
+                return;
+            };
+            // O pedido se consome byte a byte ate a quebra: aqui so importa
+            // saber que ele chegou, e o `Canal` e o lado de quem e testado.
+            let mut leitor = s;
+            let mut byte = [0u8; 1];
+            loop {
+                loop {
+                    match leitor.read(&mut byte) {
+                        Ok(1) if byte[0] == b'\n' => break,
+                        Ok(1) => {}
+                        _ => return,
+                    }
+                }
+                for b in resposta.iter().chain(b"\n") {
+                    std::thread::sleep(Duration::from_millis(25));
+                    if escrita.write_all(&[*b]).is_err() {
+                        return;
+                    }
+                }
+            }
+        });
+        let mut c = ligar_com_prazo(&origem_para(porta), SILENCIO, Duration::from_secs(2)).unwrap();
+        let inicio = Instant::now();
+        for lote in 0..2 {
+            let r = puxar_lote(&mut c, "db", "t", 0, None)
+                .unwrap_or_else(|e| panic!("o lote {lote} de uma replica saudavel caiu: {e}"));
+            assert_eq!(r.ate, 7);
+        }
+        let total = SILENCIO.saturating_mul(MULTIPLO_DO_TOTAL_DA_CONVERSA);
+        assert!(
+            inicio.elapsed() > total,
+            "a soma dos lotes ({:?}) nao passou do total ({total:?}): a prova nao prova nada",
+            inicio.elapsed()
         );
     }
 }

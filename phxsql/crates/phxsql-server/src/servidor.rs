@@ -4276,13 +4276,14 @@ impl Servidor {
         no: &crate::config::NoCluster,
     ) -> Result<()> {
         let c = &estado.config;
-        let espera = Duration::from_secs((c.pulso_s * 2).max(5));
         let prazo = Duration::from_secs(c.pulso_s.clamp(1, 2));
+        // O pedido inteiro cabe num silencio (pedido 580): o no que goteja
+        // sai da conta no mesmo prazo do no que calou.
         let mut cliente = crate::replica::Cliente::conectar_com_prazo(
             &no.endereco,
             no.porta,
             &c.token,
-            espera,
+            crate::replica::prazo_do_pulso(c.pulso_s),
             prazo,
         )?;
         // O tunel ANTES do login e do primeiro pulso, de proposito: e o token
@@ -5135,7 +5136,10 @@ impl Servidor {
             return Json::Nulo;
         }
         let c = &estado.config;
-        let espera = Duration::from_secs((c.pulso_s * 2).max(5));
+        // O MESMO prazo do pulso (pedido 580): chama as mesmas funcoes na
+        // mesma ordem, e o irmao sem total seria a thread de quem escalona
+        // presa ao no que goteja.
+        let espera = crate::replica::prazo_do_pulso(c.pulso_s);
         let prazo = Duration::from_secs(c.pulso_s.clamp(1, 3));
         let mut vereditos = Vec::new();
         for no in estado.outros() {
