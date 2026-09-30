@@ -59,29 +59,29 @@ footer { font-size:.8rem; color:var(--suave); border-top:1px solid var(--linha);
 <div class="wrap">
 <header>
   <h1>Phx<span>Claw</span> · dossiê</h1>
-  <p class="sub">Versão 0.70.0 · branch <code>phxclaw/v070-nativo</code> · gerado em 30/09/2026 14:40 UTC</p>
+  <p class="sub">Versão 0.70.0 · branch <code>phxclaw/v070-nativo</code> · gerado em 30/09/2026 14:55 UTC</p>
 </header>
 
 <div class="capa">
   <svg class="rosca" width="140" height="140" viewBox="0 0 140 140" role="img"
-       aria-label="12 de 21 itens concluídos">
+       aria-label="15 de 22 itens concluídos">
     <circle cx="70" cy="70" r="52" fill="none" stroke="var(--linha)" stroke-width="14"/>
     <circle cx="70" cy="70" r="52" fill="none" stroke="var(--marca)" stroke-width="14"
-      stroke-dasharray="186.7 326.7" transform="rotate(-90 70 70)"/>
-    <text x="70" y="72" text-anchor="middle" font-size="26" font-weight="700">42.9%</text>
+      stroke-dasharray="222.8 326.7" transform="rotate(-90 70 70)"/>
+    <text x="70" y="72" text-anchor="middle" font-size="26" font-weight="700">31.8%</text>
     <text x="70" y="92" text-anchor="middle" font-size="11" fill="var(--suave)">falta</text>
   </svg>
   <div style="display:grid;gap:14px;min-width:0">
     <span class="veredito">NOT_CERTIFIED · 8/13 portões obrigatórios</span>
     <div class="tiles">
-      <div class="tile"><b>248</b><span>testes passam</span></div>
+      <div class="tile"><b>250</b><span>testes passam</span></div>
       <div class="tile"><b class="ruim">1</b><span>testes falham</span></div>
-      <div class="tile"><b>56.368</b><span>linhas de Rust</span></div>
+      <div class="tile"><b>57.076</b><span>linhas de Rust</span></div>
       <div class="tile"><b>113</b><span>crates · 13 apps</span></div>
-      <div class="tile"><b>73</b><span>commits</span></div>
-      <div class="tile"><b>6</b><span>cognições</span></div>
+      <div class="tile"><b>77</b><span>commits</span></div>
+      <div class="tile"><b>7</b><span>cognições</span></div>
     </div>
-    <p class="formula">falta = (5 portões obrigatórios não passados + 4 itens abertos da esteira) / (13 + 8) = 9/21</p>
+    <p class="formula">falta = (5 portões obrigatórios não passados + 2 itens abertos da esteira) / (13 + 9) = 7/22</p>
   </div>
 </div>
 
@@ -91,20 +91,20 @@ footer { font-size:.8rem; color:var(--suave); border-top:1px solid var(--linha);
     <thead><tr><th>Portão</th><th>Obrigatório</th><th>Estado</th><th>Motivo</th></tr></thead>
     <tbody><tr><td>Formatação (cargo fmt)</td><td>sim</td><td><span class="pl pl-passed">passou</span></td><td class='mot'></td></tr><tr><td>Clippy sem avisos</td><td>sim</td><td><span class="pl pl-passed">passou</span></td><td class='mot'></td></tr><tr><td>Suíte de testes inteira</td><td>sim</td><td><span class="pl pl-failed">falhou</span></td><td class='mot'>1 teste falhou em phxclaw-plugin-registry — mesma causa da assinatura dos plugins (chave externa)</td></tr><tr><td>Auditoria de dependências</td><td>sim</td><td><span class="pl pl-passed">passou</span></td><td class='mot'></td></tr><tr><td>Agente autônomo</td><td>sim</td><td><span class="pl pl-passed">passou</span></td><td class='mot'></td></tr><tr><td>PostgreSQL ponta a ponta</td><td>sim</td><td><span class="pl pl-passed">passou</span></td><td class='mot'></td></tr><tr><td>Caos: SIGKILL no PostgreSQL</td><td>sim</td><td><span class="pl pl-passed">passou</span></td><td class='mot'></td></tr><tr><td>Modelo local (Ollama)</td><td>não</td><td><span class="pl pl-passed">passou</span></td><td class='mot'></td></tr><tr><td>Canais com credencial real</td><td>sim</td><td><span class="pl pl-blocked">bloqueado</span></td><td class='mot'>exige credenciais reais de Telegram/Discord/Slack/WhatsApp/Teams (decisao do dono)</td></tr><tr><td>Automação de desktop físico</td><td>sim</td><td><span class="pl pl-blocked">bloqueado</span></td><td class='mot'>exige desktop FISICO (teclado, mouse, captura reais); aqui so ha Xvfb</td></tr><tr><td>Pareamento de dispositivos</td><td>sim</td><td><span class="pl pl-blocked">bloqueado</span></td><td class='mot'>exige hardware multiplataforma; e o servidor WSS de dispositivos NAO existe no fonte (DeviceEnvelope sem consumidor fora do device-transport)</td></tr><tr><td>Desktop Tauri (WebDriver)</td><td>sim</td><td><span class="pl pl-passed">passou</span></td><td class='mot'></td></tr><tr><td>Voz para texto (modelo real)</td><td>sim</td><td><span class="pl pl-passed">passou</span></td><td class='mot'></td></tr><tr><td>Assinatura dos plugins nativos</td><td>sim</td><td><span class="pl pl-blocked">bloqueado</span></td><td class='mot'>6 manifestos builtin com digest/assinatura quebrados desde o rename da v0.41; reassinar exige a chave privada phxclaw-dev-root-2026-v05r2 (externa)</td></tr></tbody>
   </table></div>
-  <p class="formula">suíte: 248 passam, 1 falham, 11 ignorados · cargo test --workspace, rodado por este gerador · 30/09/2026 14:40 UTC</p>
+  <p class="formula">suíte: 250 passam, 1 falham, 11 ignorados · cargo test --workspace, rodado por este gerador · 30/09/2026 14:55 UTC</p>
 </section>
 
 <section>
   <h2>Esteira de produção <small>docs/ESTEIRA_ABSORCAO.md</small></h2>
   <div class="tab"><table>
     <thead><tr><th>#</th><th>Item</th><th>Estado</th><th>Nota</th></tr></thead>
-    <tbody><tr><td class='num'>E1</td><td>Processo de terminal em segundo plano (iniciar, ler saída parcial, matar)</td><td><span class="pl pl-feito">feito</span></td><td class='mot'>✓ 30/09</td></tr><tr><td class='num'>E2</td><td>Edição precisa de arquivo (`str_replace`, ver faixa de linhas, inserir)</td><td><span class="pl pl-feito">feito</span></td><td class='mot'>✓ 30/09</td></tr><tr><td class='num'>E3</td><td>Limite de taxa por token na API</td><td><span class="pl pl-feito">feito</span></td><td class='mot'>✓ 30/09</td></tr><tr><td class='num'>U1</td><td>ferramenta do agente `design_erp_ui` (grava `ui-ir.json` + `index.html`, publicável)</td><td><span class="pl pl-feito">feito</span></td><td class='mot'>✓ 30/09 — qwen2.5:3b a chamou no 1º passo e concluiu</td></tr><tr><td class='num'>U2</td><td>Prompt → UI-IR (modelo preenche o IR, validado pelo serde)</td><td><span class="pl pl-aberto">aberto</span></td><td class='mot'></td></tr><tr><td class='num'>U3</td><td>Screenshot → UI-IR (visão)</td><td><span class="pl pl-bloqueado">bloqueado</span></td><td class='mot'>bloqueado: modelo com visão</td></tr><tr><td class='num'>U4</td><td>renderizadores WinDev/WebDev (WLanguage), React, Flutter</td><td><span class="pl pl-aberto">aberto</span></td><td class='mot'></td></tr><tr><td class='num'>U5</td><td>data no formato do idioma (o print mostra `mm/dd/yyyy`: é o locale do navegador, não do IR)</td><td><span class="pl pl-aberto">aberto</span></td><td class='mot'></td></tr></tbody>
+    <tbody><tr><td class='num'>E1</td><td>Processo de terminal em segundo plano (iniciar, ler saída parcial, matar)</td><td><span class="pl pl-feito">feito</span></td><td class='mot'>✓ 30/09</td></tr><tr><td class='num'>E2</td><td>Edição precisa de arquivo (`str_replace`, ver faixa de linhas, inserir)</td><td><span class="pl pl-feito">feito</span></td><td class='mot'>✓ 30/09</td></tr><tr><td class='num'>E3</td><td>Limite de taxa por token na API</td><td><span class="pl pl-feito">feito</span></td><td class='mot'>✓ 30/09</td></tr><tr><td class='num'>U1</td><td>ferramenta do agente `design_erp_ui` (grava `ui-ir.json` + `index.html`, publicável)</td><td><span class="pl pl-feito">feito</span></td><td class='mot'>✓ 30/09 — qwen2.5:3b a chamou no 1º passo e concluiu</td></tr><tr><td class='num'>U2</td><td>Prompt → UI-IR</td><td><span class="pl pl-feito">feito</span></td><td class='mot'>✓ 30/09 — o modelo escreve o `CREATE TABLE` e o analisador determinístico faz o resto (hipótese «modelo preenche o IR» não foi preciso medir: SQL o modelo já sabe). qwen2.5:3b gerou a oficina com OS mestre/detalhe e total; desviou em 2 chamadas e numa planilha que ninguém pediu. Achou o defeito das tabelas no plural («Clienteses»), consertado com RED</td></tr><tr><td class='num'>U3</td><td>Screenshot → UI-IR (visão)</td><td><span class="pl pl-bloqueado">bloqueado</span></td><td class='mot'>bloqueado: modelo com visão</td></tr><tr><td class='num'>U4a</td><td>renderizador React (esbuild; `design_erp_ui` com `react: true`)</td><td><span class="pl pl-feito">feito</span></td><td class='mot'>✓ 30/09 — construído com npm real e exercitado no Chromium: itens, total, remoção, data, menu; RED medido</td></tr><tr><td class='num'>U4b</td><td>renderizadores WinDev/WebDev (WLanguage) e Flutter</td><td><span class="pl pl-aberto">aberto</span></td><td class='mot'></td></tr><tr><td class='num'>U5</td><td>data no formato do idioma</td><td><span class="pl pl-feito">feito</span></td><td class='mot'>✓ 30/09 — máscara dd/mm/aaaa própria (o nativo segue o idioma do navegador); 31/02 recusada no Chromium, RED medido</td></tr></tbody>
   </table></div>
 </section>
 
 <section>
   <h2>Últimos commits</h2>
-  <ul class="git"><li><code>263c849</code><span class='dt'>30/09 14:39</span>agente: shell_bg roda processo em segundo plano no mesmo sandbox do shell</li><li><code>181a120</code><span class='dt'>30/09 14:37</span>api: criar tarefa passa por balde de fichas, 429 com Retry-After</li><li><code>728c51e</code><span class='dt'>30/09 14:35</span>agente: edit_file troca um trecho unico, read_file le faixa, design_erp_ui gera telas</li><li><code>5fb3588</code><span class='dt'>30/09 14:26</span>dossie do PhxClaw nasce de um gerador: certificacao, suite, esteira e git</li><li><code>37c2867</code><span class='dt'>30/09 13:38</span>ui-ir: designer de telas ERP (SQL -&gt; UI-IR -&gt; HTML) e esteira da absorcao</li><li><code>3a5aa4c</code><span class='dt'>30/09 13:28</span>PhxClaw: guia do agente autonomo, cognicoes da rodada e certificacao remedida (8/13)</li><li><code>894f2c1</code><span class='dt'>30/09 13:21</span>PhxClaw: e-mail e publicacao de site no agente; conclusao so com arquivo pedido existente</li><li><code>6787eb8</code><span class='dt'>30/09 13:01</span>PhxClaw: agente autonomo ligado de ponta a ponta -- documentos, adaptadores, binario e guardas contra modelo pequeno</li></ul>
+  <ul class="git"><li><code>80f3507</code><span class='dt'>30/09 14:54</span>ui-ir: tabela no plural da rotulo singular; prompt -&gt; telas pelo agente</li><li><code>577a055</code><span class='dt'>30/09 14:48</span>ui-ir: renderizador React do mesmo UI-IR, provado com esbuild e Chromium</li><li><code>0fd10ac</code><span class='dt'>30/09 14:43</span>ui-ir: data em dd/mm/aaaa por mascara propria, e 31/02 recusada</li><li><code>19df4db</code><span class='dt'>30/09 14:40</span>dossie: remedido apos E1, E2, E3 e U1 (falta 42,9%)</li><li><code>263c849</code><span class='dt'>30/09 14:39</span>agente: shell_bg roda processo em segundo plano no mesmo sandbox do shell</li><li><code>181a120</code><span class='dt'>30/09 14:37</span>api: criar tarefa passa por balde de fichas, 429 com Retry-After</li><li><code>728c51e</code><span class='dt'>30/09 14:35</span>agente: edit_file troca um trecho unico, read_file le faixa, design_erp_ui gera telas</li><li><code>5fb3588</code><span class='dt'>30/09 14:26</span>dossie do PhxClaw nasce de um gerador: certificacao, suite, esteira e git</li></ul>
 </section>
 
 <footer>Nenhum número desta página foi digitado: todos saem de
