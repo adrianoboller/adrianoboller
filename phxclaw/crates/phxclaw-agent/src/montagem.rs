@@ -75,6 +75,7 @@ impl Montagem {
             Arc::new(ListFilesTool),
             Arc::new(EditFileTool),
             Arc::new(crate::ui::DesignErpUiTool),
+            Arc::new(crate::ui::ScreenshotToErpUiTool),
         ];
         if let Some(bwrap) = ["/usr/bin/bwrap", "/bin/bwrap", "/usr/local/bin/bwrap"]
             .iter()

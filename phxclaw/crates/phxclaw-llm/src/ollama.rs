@@ -38,6 +38,36 @@ impl OllamaLlm {
         })
     }
 
+    /// Pergunta sobre uma imagem (modelo com visao, ex.: qwen2.5vl). Resposta em texto,
+    /// temperatura zero: quem chama valida o que volta, o modelo nao decide sozinho.
+    pub async fn perguntar_com_imagem(
+        &self,
+        pergunta: &str,
+        png: &[u8],
+    ) -> Result<String, LlmError> {
+        use base64::Engine as _;
+        let corpo = json!({
+            "model": self.modelo,
+            "messages": [{
+                "role": "user",
+                "content": pergunta,
+                "images": [base64::engine::general_purpose::STANDARD.encode(png)],
+            }],
+            "stream": false,
+            // teto: lista de rotulos cabe folgada; sem ele um laco degenerado ("R$", "R$", ...)
+            // consumia minutos de CPU
+            "options": { "temperature": 0, "num_predict": 600 },
+        });
+        let r = self
+            .transporte
+            .post_json(&self.url, &[], None, &corpo)
+            .await?;
+        r.pointer("/message/content")
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+            .ok_or_else(|| LlmError::Parse("resposta sem message.content".into()))
+    }
+
     fn corpo(&self, mensagens: &[Message], tools: &[ToolSpec], o: &LlmOptions) -> Value {
         let mut corpo = json!({
             "model": self.modelo,

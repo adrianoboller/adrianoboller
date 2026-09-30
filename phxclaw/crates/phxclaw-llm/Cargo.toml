@@ -7,6 +7,7 @@ license.workspace = true
 [dependencies]
 phxclaw-agent-core = { path = "../phxclaw-agent-core" }
 reqwest.workspace = true
+base64.workspace = true
 serde_json.workspace = true
 url.workspace = true
 uuid.workspace = true

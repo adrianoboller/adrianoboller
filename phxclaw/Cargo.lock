@@ -4669,6 +4669,7 @@ dependencies = [
 name = "phxclaw-llm"
 version = "0.70.0"
 dependencies = [
+ "base64 0.22.1",
  "phxclaw-agent-core",
  "reqwest",
  "serde_json",

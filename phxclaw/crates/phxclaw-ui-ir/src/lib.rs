@@ -7,6 +7,7 @@
 
 pub mod flutter;
 pub mod html;
+pub mod imagem;
 pub mod ir;
 pub mod react;
 pub mod regras;
