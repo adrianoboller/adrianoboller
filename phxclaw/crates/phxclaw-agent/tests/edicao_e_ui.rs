@@ -142,6 +142,17 @@ async fn design_erp_ui_grava_ir_e_html_do_sql_em_arquivo() {
     assert_eq!(r.artifacts.len(), 7, "html, ir e 5 arquivos do React");
     let telas = std::fs::read_to_string(c.workdir.join("telas/react/src/telas.jsx")).unwrap();
     assert!(telas.contains("export function TelaPedidoDocumento()"));
+    let r = DesignErpUiTool
+        .run(
+            json!({"sql_path":"banco.sql","folder":"telas","rust":true,"wlanguage":true}),
+            &c,
+        )
+        .await
+        .unwrap();
+    assert!(r.content.contains("WinDev"), "{}", r.content);
+    let wl = std::fs::read_to_string(c.workdir.join("telas/wlanguage/Regras.wl")).unwrap();
+    assert!(wl.contains("PROCEDURE Excluir_cliente(nCodigo)"));
+    assert!(c.workdir.join("telas/rust/src/lib.rs").is_file());
 }
 
 #[tokio::test]

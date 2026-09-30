@@ -25,7 +25,9 @@ CREATE TABLE statements. Give the DDL in 'sql' or a file of the task in 'sql_pat
                 "sql_path":{"type":"string"},
                 "app_name":{"type":"string"},
                 "folder":{"type":"string","description":"output folder, default erp"},
-                "react":{"type":"boolean","description":"also write a React project in <folder>/react (npm install && npm run build)"}
+                "react":{"type":"boolean","description":"also write a React project in <folder>/react (npm install && npm run build)"},
+                "rust":{"type":"boolean","description":"also write the business rules as a Rust crate in <folder>/rust (cargo test)"},
+                "wlanguage":{"type":"boolean","description":"also write the same business rules as WLanguage procedures in <folder>/wlanguage (for WinDev/WebDev)"}
             }}),
         }
     }
@@ -81,9 +83,20 @@ CREATE TABLE statements. Give the DDL in 'sql' or a file of the task in 'sql_pat
                 .map_err(|e| ToolError::Failed(e.to_string()))?;
             let mut artefatos = vec![];
             let react = args.get("react").and_then(Value::as_bool) == Some(true);
+            let quer = |k: &str| args.get(k).and_then(Value::as_bool) == Some(true);
+            let mut extras = vec![];
             if react {
-                for (p, c) in phxclaw_ui_ir::react::render(&app) {
-                    let rel = format!("{pasta}/react/{p}");
+                extras.push(("react", phxclaw_ui_ir::react::render(&app)));
+            }
+            if quer("rust") {
+                extras.push(("rust", phxclaw_ui_ir::rust::render(&app)));
+            }
+            if quer("wlanguage") {
+                extras.push(("wlanguage", phxclaw_ui_ir::wlanguage::render(&app)));
+            }
+            for (sub, lista) in extras {
+                for (p, c) in lista {
+                    let rel = format!("{pasta}/{sub}/{p}");
                     let alvo = confine(&ctx.workdir, &rel).map_err(ToolError::Denied)?;
                     if let Some(d) = alvo.parent() {
                         std::fs::create_dir_all(d).map_err(|e| ToolError::Failed(e.to_string()))?;
@@ -111,6 +124,14 @@ CREATE TABLE statements. Give the DDL in 'sql' or a file of the task in 'sql_pat
             if react {
                 r.push_str(&format!(
                     "\nprojeto React em {pasta}/react (npm install && npm run build)"
+                ));
+            }
+            if quer("rust") {
+                r.push_str(&format!("\nregras em Rust em {pasta}/rust (cargo test)"));
+            }
+            if quer("wlanguage") {
+                r.push_str(&format!(
+                    "\nregras em WLanguage em {pasta}/wlanguage (nao compiladas aqui: conferir no WinDev)"
                 ));
             }
             if !avisos.is_empty() {

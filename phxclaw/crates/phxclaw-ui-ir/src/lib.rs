@@ -8,7 +8,10 @@
 pub mod html;
 pub mod ir;
 pub mod react;
+pub mod regras;
+pub mod rust;
 pub mod schema;
+pub mod wlanguage;
 
 pub use ir::*;
 
