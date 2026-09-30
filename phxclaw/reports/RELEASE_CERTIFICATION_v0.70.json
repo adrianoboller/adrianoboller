@@ -1,10 +1,10 @@
 {
   "product": "PhxClaw",
   "version": "0.70.0",
-  "certified_at": "2026-09-30T18:21:25+00:00",
+  "certified_at": "2026-09-30T20:47:40+00:00",
   "environment": "Linux 6.18.44-fc-v50 x86_64",
   "verdict": "NOT_CERTIFIED",
-  "required_passed": 8,
+  "required_passed": 10,
   "required_total": 13,
   "gates": [
     {
@@ -12,7 +12,7 @@
       "required": true,
       "status": "passed",
       "command": "cargo fmt --all --check",
-      "seconds": 1.1,
+      "seconds": 0.9,
       "evidence_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "tail": []
     },
@@ -21,26 +21,26 @@
       "required": true,
       "status": "passed",
       "command": "cargo clippy --workspace --all-targets -q -- -D warnings",
-      "seconds": 2.5,
+      "seconds": 1.9,
       "evidence_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "tail": []
     },
     {
       "gate": "cargo_test_workspace",
       "required": true,
-      "status": "failed",
+      "status": "passed",
       "command": "cargo test --workspace --no-fail-fast 2>&1",
-      "seconds": 110.3,
-      "evidence_sha256": "6f6906fb7c26da6683eec41a82fff16013cdcf5da87a35a1c422f31b13ee3b60",
+      "seconds": 135.8,
+      "evidence_sha256": "5e8b00aa8287a5687b9b2f9b981e01c341ebeb25ae8f5efa22172c82474259c1",
       "tail": [
+        "running 0 tests",
         "",
-        "error: 1 target failed:",
-        "    `-p phxclaw-plugin-registry --lib`"
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ],
       "measured": {
-        "passed": 269,
-        "failed": 1,
-        "ignored": 11
+        "passed": 271,
+        "failed": 0,
+        "ignored": 12
       }
     },
     {
@@ -48,7 +48,7 @@
       "required": true,
       "status": "passed",
       "command": "cargo audit 2>&1",
-      "seconds": 2.1,
+      "seconds": 1.8,
       "evidence_sha256": "014e7b8517b76f8354ffdfb11c9f9d3e5ba2636124d249646cc16286b1041dbc",
       "tail": [
         "Warning:   yanked",
@@ -64,8 +64,8 @@
       "required": true,
       "status": "passed",
       "command": "cargo test -q -p phxclaw-agent -p phxclaw-llm -p phxclaw-browser -p phxclaw-web-search -p phxclaw-office 2>&1",
-      "seconds": 9.8,
-      "evidence_sha256": "dfd147b146684a897c1a27e7226b750e8f8feaa01dfde15b06022fdd8e8c4a5e",
+      "seconds": 9.4,
+      "evidence_sha256": "c0cb39446bf08f8b8852ca9d8b17d79917ea874f21268cbc40be3517a423f3a5",
       "tail": [
         "running 0 tests",
         "",
@@ -82,7 +82,7 @@
       "required": true,
       "status": "passed",
       "command": "tests/postgres/run_e2e.sh 2>&1",
-      "seconds": 7.0,
+      "seconds": 7.4,
       "evidence_sha256": "29bdec5521655f510f26ad8c0eb67f122263c67f9696579cee8a397909b6a2a7",
       "tail": [
         "ok   [rust/rls] phxclaw-bpm pg_e2e",
@@ -96,33 +96,33 @@
       "required": true,
       "status": "passed",
       "command": "(tests/chaos/pg_kill_loop.sh 30 >/dev/null 2>&1 &) ; cargo test -q -p phxclaw-hypothesis --test pg_chaos -- --ignored --nocapture 2>&1",
-      "seconds": 30.8,
-      "evidence_sha256": "409047d4e6164589cd7a87ffb018799fca3aeb14a0deac3f1c57369f33af3388",
+      "seconds": 31.3,
+      "evidence_sha256": "5499129fa7d961e411c327a95bd45b819ba92773d08bad3b742f6f8b48c241bf",
       "tail": [
-        "caos: 30 s, 6306 ok, 6 erros, 6 reconexoes, 2104 hipoteses no banco, 0 perdidas, 0 divergentes",
+        "caos: 30 s, 6449 ok, 5 erros, 5 reconexoes, 2151 hipoteses no banco, 0 perdidas, 0 divergentes",
         ".",
-        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 30.36s"
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 30.87s"
       ],
-      "measured": "caos: 30 s, 6306 ok, 6 erros, 6 reconexoes, 2104 hipoteses no banco, 0 perdidas, 0 divergentes"
+      "measured": "caos: 30 s, 6449 ok, 5 erros, 5 reconexoes, 2151 hipoteses no banco, 0 perdidas, 0 divergentes"
     },
     {
       "gate": "provider_local_ollama_e2e",
       "required": false,
       "status": "passed",
       "command": "cargo test -q -p phxclaw-ollama-adapter --test ollama_e2e -- --ignored 2>&1",
-      "seconds": 3.6,
-      "evidence_sha256": "c1f8df6284a2fb00e82d65646ee11eb9518d78e0678ac864c086264eb69d4d8f",
+      "seconds": 1.0,
+      "evidence_sha256": "72f68b3254068beb95fd749515970e7bb2940d7eac360a60579ecb3074622532",
       "tail": [
         "running 2 tests",
         "..",
-        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.07s"
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.49s"
       ]
     },
     {
       "gate": "channel_provider_credentialed_e2e",
       "required": true,
       "status": "blocked",
-      "reason": "exige credenciais reais de Telegram/Discord/Slack/WhatsApp/Teams (decisao do dono)",
+      "reason": "PHXCLAW_TELEGRAM_BOT_TOKEN/PHXCLAW_TELEGRAM_CHAT_ID nao definidos (bot do BotFather, nas variaveis do ambiente)",
       "evidence_sha256": null
     },
     {
@@ -145,9 +145,9 @@
       "status": "passed",
       "command": "cargo build -q -p phxclaw-desktop && python3 tests/desktop/desktop_e2e.py 2>&1",
       "seconds": 18.6,
-      "evidence_sha256": "f3114a188a05a430ffdadf7e3655ae5f2932adeb36dce90737fa1fc8a0d6cf28",
+      "evidence_sha256": "2a2b92f6cb605eccb448e16be2b0dbb4fa2ebb9f6db712c691f95e6d5f1daf25",
       "tail": [
-        "ok   verify_evidence continua valido depois da negacao :: {\"records\": 133, \"final_hash\": \"2639a431120244683042f5bf0a9abd71c7002403ee7d7f82d620fb86c5b5fa6c\", \"valid\": true, \"first_invalid_line\": null}",
+        "ok   verify_evidence continua valido depois da negacao :: {\"records\": 137, \"final_hash\": \"5877d0e9a2a89116e6b850c3e1014f5c78072628d213ada04bef3368dc2089af\", \"valid\": true, \"first_invalid_line\": null}",
         "ok   captura da janela gravada :: /home/user/adrianoboller/phxclaw/tests/desktop/out/desktop_e2e.png",
         "placar: 12/12"
       ],
@@ -158,21 +158,27 @@
       "required": true,
       "status": "passed",
       "command": "cargo test -q -p phxclaw-media-intelligence --test stt_e2e -- --ignored 2>&1",
-      "seconds": 7.6,
-      "evidence_sha256": "f44d16e83789116ff601807643e4c224c2e5c10d2c64624113762a5a8bc3a08b",
+      "seconds": 7.0,
+      "evidence_sha256": "9e01a1d2f22de6346e6cc6f6fdbc9d6255983562cc562291223af046ed4c1795",
       "tail": [
         "running 2 tests",
         "..",
-        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.59s"
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.62s"
       ],
       "measured": "test result: ok. 2 passed; 0 failed;"
     },
     {
       "gate": "builtin_plugin_signatures",
       "required": true,
-      "status": "blocked",
-      "reason": "6 manifestos builtin com digest/assinatura quebrados desde o rename da v0.41; reassinar exige a chave privada phxclaw-dev-root-2026-v05r2 (externa)",
-      "evidence_sha256": null
+      "status": "passed",
+      "command": "cargo test -p phxclaw-plugin-registry --lib 2>&1",
+      "seconds": 0.5,
+      "evidence_sha256": "096c117fe2487779b4bdc0418b420ba62c992bc742dfeb0bae2326c1f3b4c6e4",
+      "tail": [
+        "test tests::signed_builtin_agents_load ... ok",
+        "",
+        "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s"
+      ]
     }
   ]
 }
