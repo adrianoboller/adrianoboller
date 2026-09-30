@@ -17962,6 +17962,39 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         ],
     },
     {
+        "id": "cluster-replica-sem-recuo",
+        "titulo": "O laço da réplica do CLUSTER retentava a cada pulso sem o `Ritmo`: sem recuo nem para rede nem para limite",
+        "porque": (
+            "pedido 587, irmao do 585. O braco `Err((_, e)) => sleep(espera)` "
+            "do `laco_da_replica_do_cluster` dormia o pulso para toda falha, "
+            "enquanto o laco comum ja recuava pelo `replica::Ritmo` -- a mesma "
+            "pergunta com a decisao escrita duas vezes. Agora os dois passam "
+            "pelo `apos_a_falha_vigiando`. Reposto o defeito, o master que "
+            "derruba a conexao recebe seis tentativas em 5,5 s em vez de tres, "
+            "e o segundo intervalo sai ~1 s em vez de ~2 s. A falha unica e o "
+            "eleito procurado em ate ~1 s seguem nos dois estados."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """                    let master = no.id.clone();
+                    self.apos_a_falha_vigiando(&origem.nome, &mut ritmo, falha, &|| {""",
+        "troca": """                    let master = no.id.clone();
+                    // DEFEITO REPOSTO (587): o pulso fixo para toda falha.
+                    let _ = (&falha, &master);
+                    std::thread::sleep(espera);
+                    let _ = (&mut ritmo, 0, &|| {""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_recuo_no_cluster::o_master_que_derruba_e_retentado_com_recuo",
+        ],
+        # O comportamento velho e a troca de master nao dependem do recuo: se
+        # caissem junto, o defeito reposto estaria mexendo em mais que o recuo.
+        "seguem": [
+            "servidor::testes_do_recuo_no_cluster::a_falha_unica_volta_no_pulso_de_sempre",
+            "servidor::testes_do_recuo_no_cluster::o_recuo_nao_atrasa_seguir_o_master_eleito",
+        ],
+    },
+    {
         "id": "odbc-sem-prazo-total",
         "titulo": "O driver ODBC só tinha prazo por LEITURA: um servidor que goteja um byte antes de cada prazo prendia a thread do aplicativo dentro do SQLExecDirect",
         "porque": (
