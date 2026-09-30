@@ -26,3 +26,4 @@ phxsql-completo-*.tar.gz
 plugins/**/__pycache__/
 backups/
 phxclaw/private/
+__pycache__/
