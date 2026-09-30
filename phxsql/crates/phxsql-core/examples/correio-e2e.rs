@@ -29,10 +29,17 @@
 //!
 //! Rodar: cargo run -q --example correio-e2e -p phxsql-core
 
-use phxsql_core::{cifra, hkdf, x25519, CHAVE_LEN, NONCE_LEN, TAG_LEN};
+use phxsql_core::{cifra, ed25519, hkdf, x25519, CHAVE_LEN, NONCE_LEN, TAG_LEN};
 
 const ITER: u32 = 200_000;
 const INFO: &[u8] = b"phxsql-correio-v1";
+/// A identidade de ASSINATURA sai da privada X25519 por HKDF com rotulo
+/// proprio (pedido 251): um segredo so guardado, e as duas chaves separadas
+/// por dominio -- a de acordo nao assina, a de assinatura nao acorda.
+const INFO_ASSINATURA: &[u8] = b"phxsql-correio-assinatura-v1";
+/// O que a assinatura cobre comeca por este rotulo: uma assinatura de outra
+/// coisa com a mesma chave nunca vale como mensagem.
+const ROTULO_MSG: &[u8] = b"phxsql-correio-msg-v1";
 const TETO_PENDENTES: usize = 50;
 const PORTA_PADRAO: u16 = 8000;
 const DOMINIOS: [&str; 2] = ["phxsql.com.br", "phxmail.com.br"];
@@ -255,6 +262,10 @@ struct Usuario {
     endereco: String,
     empresa: String,
     publica: [u8; CHAVE_LEN],
+    /// A IDENTIDADE (pedido 251): a publica Ed25519. E ela, e nao o
+    /// endereco, que entra no AAD e que confere a assinatura -- o endereco
+    /// e rotulo, e rotulo muda.
+    assinatura_publica: [u8; CHAVE_LEN],
     sal: [u8; 16],
     nonce_priv: [u8; NONCE_LEN],
     priv_cifrada: Vec<u8>,
@@ -267,12 +278,14 @@ fn criar_usuario(endereco: &str, empresa: &str, senha: &str) -> Usuario {
     let sal = rnd16();
     let ksenha = cifra::chave_de_senha(senha, &sal, ITER);
     let nonce_priv = rnd_nonce();
-    let (priv_cifrada, tag_priv) =
-        cifra::selar(&ksenha, &nonce_priv, endereco.as_bytes(), &privada);
+    // O AAD da privada e a PUBLICA, e nao o endereco (pedido 251): selada
+    // pelo endereco, renomear a conta a deixava sem abrir.
+    let (priv_cifrada, tag_priv) = cifra::selar(&ksenha, &nonce_priv, &publica, &privada);
     Usuario {
         endereco: endereco.into(),
         empresa: empresa.into(),
         publica,
+        assinatura_publica: ed25519::chave_publica(&privada_de_assinatura(&privada)),
         sal,
         nonce_priv,
         priv_cifrada,
@@ -285,7 +298,7 @@ fn abrir_privada(u: &Usuario, senha: &str) -> Result<[u8; CHAVE_LEN], String> {
     let claro = cifra::abrir(
         &ksenha,
         &u.nonce_priv,
-        u.endereco.as_bytes(),
+        &u.publica,
         &u.priv_cifrada,
         &u.tag_priv,
     )
@@ -295,6 +308,18 @@ fn abrir_privada(u: &Usuario, senha: &str) -> Result<[u8; CHAVE_LEN], String> {
     Ok(p)
 }
 
+/// A privada Ed25519 da conta, derivada da X25519 -- ver `INFO_ASSINATURA`.
+fn privada_de_assinatura(privada: &[u8; CHAVE_LEN]) -> [u8; ed25519::CHAVE_LEN] {
+    let mut k = [0u8; ed25519::CHAVE_LEN];
+    hkdf::derivar(&[], privada, INFO_ASSINATURA, &mut k).expect("hkdf de 32 bytes");
+    k
+}
+
+fn hex(b: &[u8]) -> String {
+    b.iter().map(|x| format!("{x:02x}")).collect()
+}
+
+#[derive(Clone)]
 struct Anexo {
     id: u64,
     nome: String,
@@ -304,6 +329,7 @@ struct Anexo {
     tag: [u8; TAG_LEN],
 }
 
+#[derive(Clone)]
 struct Mensagem {
     de: String,
     para: String,
@@ -318,10 +344,51 @@ struct Mensagem {
     ct: Vec<u8>,
     tag: [u8; TAG_LEN],
     anexos: Vec<u64>,
+    /// Contador do REMETENTE, assinado: o rele nao o muda, entao reordenar
+    /// ou repetir aparece para quem le.
+    numero: u64,
+    /// Ed25519 do remetente sobre `o_que_se_assina` -- o canal deixa de
+    /// cobrir o conteudo quando a mensagem passa por um par-rele.
+    assinatura: [u8; ed25519::ASSINATURA_LEN],
 }
 
-fn aad(de: &str, para: &str, pri: Prioridade, tipo: Tipo) -> String {
-    format!("{de}|{para}|{}|{}", pri.rotulo(), tipo.rotulo())
+/// O AAD do selo: as IDENTIDADES (publicas Ed25519), e nao os enderecos --
+/// pedido 251, decisao do dono de 30/09/2026. O endereco preso no AAD fazia
+/// dele identidade imutavel; a identidade sem dominio do Pilar 2 e a chave.
+fn aad(de: &[u8; CHAVE_LEN], para: &[u8; CHAVE_LEN], pri: Prioridade, tipo: Tipo) -> String {
+    format!(
+        "{}|{}|{}|{}",
+        hex(de),
+        hex(para),
+        pri.rotulo(),
+        tipo.rotulo()
+    )
+}
+
+/// O que o remetente assina: rotulo, AAD, numero, nonce, cifrado, etiqueta e
+/// os anexos -- tudo o que um rele poderia trocar.
+fn o_que_se_assina(
+    aad: &str,
+    numero: u64,
+    m_nonce: &[u8],
+    ct: &[u8],
+    tag: &[u8],
+    anexos: &[u64],
+) -> Vec<u8> {
+    let mut v = Vec::with_capacity(ROTULO_MSG.len() + aad.len() + ct.len() + 64);
+    v.extend_from_slice(ROTULO_MSG);
+    v.extend_from_slice(&(aad.len() as u64).to_le_bytes());
+    v.extend_from_slice(aad.as_bytes());
+    v.extend_from_slice(&numero.to_le_bytes());
+    v.extend_from_slice(m_nonce);
+    v.extend_from_slice(&(ct.len() as u64).to_le_bytes());
+    v.extend_from_slice(ct);
+    v.extend_from_slice(tag);
+    v.extend_from_slice(&(anexos.len() as u64).to_le_bytes());
+    for a in anexos {
+        v.extend_from_slice(&a.to_le_bytes());
+    }
+    v
 }
 
 fn chave_derivada(segredo: &[u8; CHAVE_LEN], sal: &[u8; 16]) -> Result<[u8; CHAVE_LEN], String> {
@@ -342,6 +409,7 @@ struct Envio<'a> {
     masson: Option<&'a str>,       // flag X: 3a camada
 }
 
+#[derive(Clone)]
 struct Confianca {
     de: String,
     para: String,
@@ -355,6 +423,7 @@ struct Confianca {
     seguro_alto: bool,
 }
 
+#[derive(Clone)]
 struct Solicitacao {
     tipo: TipoSolicitacao,
     de: String,
@@ -375,6 +444,7 @@ struct StatusSolicitacoes {
     moderacao: Vec<(TipoSolicitacao, String, EstadoModeracao)>,
 }
 
+#[derive(Clone)]
 struct ServerMail {
     dominio_base: String,
     porta: u16,
@@ -390,6 +460,11 @@ struct ServerMail {
 }
 
 impl ServerMail {
+    /// Uma copia para a prova mexer como um rele mexeria, sem sujar a outra.
+    fn clone_para_prova(&self) -> Self {
+        self.clone()
+    }
+
     fn novo(dominio_base: &str) -> Self {
         ServerMail {
             dominio_base: dominio_base.into(),
@@ -709,7 +784,12 @@ impl ServerMail {
         let sal_kdf = rnd16();
         let kmsg = chave_derivada(&segredo, &sal_kdf)?;
         let nonce = rnd_nonce();
-        let a = aad(e.de, e.para, e.pri, e.tipo);
+        let a = aad(
+            &ud.assinatura_publica,
+            &up.assinatura_publica,
+            e.pri,
+            e.tipo,
+        );
         let (ct, tag) = cifra::selar(&kmsg, &nonce, a.as_bytes(), &payload);
 
         let mut refs = vec![];
@@ -732,6 +812,18 @@ impl ServerMail {
             refs.push(id);
         }
 
+        let numero = self
+            .mensagens
+            .iter()
+            .filter(|m| m.de == e.de)
+            .map(|m| m.numero)
+            .max()
+            .unwrap_or(0)
+            + 1;
+        let assinatura = ed25519::assinar(
+            &privada_de_assinatura(&priv_de),
+            &o_que_se_assina(&a, numero, &nonce, &ct, &tag, &refs),
+        );
         self.mensagens.push(Mensagem {
             de: e.de.into(),
             para: e.para.into(),
@@ -746,6 +838,8 @@ impl ServerMail {
             ct,
             tag,
             anexos: refs,
+            numero,
+            assinatura,
         });
         Ok(self.mensagens.len() - 1)
     }
@@ -768,9 +862,25 @@ impl ServerMail {
     ) -> Result<(String, Prioridade, Tipo), String> {
         let m = self.mensagens.get(idx).ok_or("mensagem inexistente")?;
         let outro = if m.de == quem { &m.para } else { &m.de };
+        let ude = self.achar(&m.de).ok_or("remetente inexistente")?;
+        let upara = self.achar(&m.para).ok_or("destinatario inexistente")?;
+        let a = aad(
+            &ude.assinatura_publica,
+            &upara.assinatura_publica,
+            m.prioridade,
+            m.tipo,
+        );
+        // A assinatura ANTES de decifrar: mensagem que o remetente nao
+        // assinou nao chega a ser lida, e o erro diz que foi o conteudo.
+        if !ed25519::conferir(
+            &ude.assinatura_publica,
+            &o_que_se_assina(&a, m.numero, &m.nonce, &m.ct, &m.tag, &m.anexos),
+            &m.assinatura,
+        ) {
+            return Err("assinatura do remetente nao confere: mensagem alterada no caminho".into());
+        }
         let segredo = self.segredo_de(quem, senha, outro)?;
         let kmsg = chave_derivada(&segredo, &m.sal_kdf)?;
-        let a = aad(&m.de, &m.para, m.prioridade, m.tipo);
         let interno = cifra::abrir(&kmsg, &m.nonce, a.as_bytes(), &m.ct, &m.tag)
             .map_err(|_| "nao decifra: chave/senha erradas ou prioridade adulterada".to_string())?;
         let corpo = desenvelopar(
@@ -884,6 +994,65 @@ fn main() {
         t == "Fechamento de setembro em anexo.",
         "joana le com a propria senha",
     );
+
+    println!("\n3b) pedido 251 -- identidade pela chave, assinatura por mensagem:");
+    {
+        // Um par-rele que troca um byte do cifrado: a etiqueta AEAD pegaria,
+        // mas quem acusa primeiro e a assinatura, dizendo que foi o conteudo.
+        let mut adulterado = srv.clone_para_prova();
+        adulterado.mensagens[idx].ct[0] ^= 1;
+        let e = adulterado.ler(idx, &b, "senha-da-joana-7k", None, None);
+        ok(
+            matches!(&e, Err(t) if t.contains("assinatura")),
+            "rele que muda o conteudo: a assinatura recusa",
+        );
+        // O rele que troca o NUMERO -- reordenar ou repetir: o numero e
+        // assinado, entao a troca aparece.
+        let mut reordenado = srv.clone_para_prova();
+        reordenado.mensagens[idx].numero += 1;
+        ok(
+            reordenado
+                .ler(idx, &b, "senha-da-joana-7k", None, None)
+                .is_err(),
+            "rele que troca o numero da mensagem: recusado",
+        );
+        // Terceiro que forja em nome do adriano, com a PROPRIA chave.
+        let mut forjado = srv.clone_para_prova();
+        let priv_ana = abrir_privada(forjado.achar(&ana).unwrap(), "senha-da-ana-5p").unwrap();
+        let m = &forjado.mensagens[idx];
+        let a3 = aad(
+            &forjado.achar(&a).unwrap().assinatura_publica,
+            &forjado.achar(&b).unwrap().assinatura_publica,
+            m.prioridade,
+            m.tipo,
+        );
+        let falsa = ed25519::assinar(
+            &privada_de_assinatura(&priv_ana),
+            &o_que_se_assina(&a3, m.numero, &m.nonce, &m.ct, &m.tag, &m.anexos),
+        );
+        forjado.mensagens[idx].assinatura = falsa;
+        ok(
+            forjado
+                .ler(idx, &b, "senha-da-joana-7k", None, None)
+                .is_err(),
+            "assinatura de outra conta em nome do remetente: recusada",
+        );
+        // Renomear o ENDERECO nao muda a identidade: a conta abre e o
+        // historico continua lendo. Com o endereco no AAD, nao lia.
+        let mut renomeado = srv.clone_para_prova();
+        let novo = "joana.prado@empresa.phxsql.com.br".to_string();
+        for u in renomeado.usuarios.iter_mut().filter(|u| u.endereco == b) {
+            u.endereco = novo.clone();
+        }
+        for m in renomeado.mensagens.iter_mut().filter(|m| m.para == b) {
+            m.para = novo.clone();
+        }
+        let lido = renomeado.ler(idx, &novo, "senha-da-joana-7k", None, None);
+        ok(
+            matches!(&lido, Ok((t, _, _)) if t == "Fechamento de setembro em anexo."),
+            "endereco renomeado: a conta abre e o historico continua lendo",
+        );
+    }
 
     println!("\n4) envio para outro dominio (phxmail): tem de exigir confianca e passar:");
     ok(

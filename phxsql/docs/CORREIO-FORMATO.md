@@ -114,7 +114,8 @@ Uma linha por caixa de correio.
 | `endereco` | `Str(320)` | não | `usuario@empresa.dominio`. **UNIQUE**. 320 = limite clássico (local 64 + `@` + domínio 255); RFC 5321 fixa 254, a folga cobre variações |
 | `empresa` | `Str(255)` | não | o host da conta. **Indexada** — serve à regra "mesma empresa" e à política de domínio |
 | `publica` | `Uuid256` | não | chave pública X25519, **32 bytes em claro** (pública não é segredo) |
-| `priv_selada` | `Bin` | não | a privada X25519 selada sob a senha. Bloco opaco `[sal 16][nonce 12][ct 32][tag 16]` = **76 bytes**, no `.bin` |
+| `identidade` | `Uuid256` | não | **a identidade da conta** (pedido 251): a pública **Ed25519**, 32 bytes em claro. **UNIQUE.** A privada dela não se grava: sai da privada X25519 por HKDF com o rótulo `phxsql-correio-assinatura-v1`, e assim há um segredo só guardado, com as duas chaves separadas por domínio |
+| `priv_selada` | `Bin` | não | a privada X25519 selada sob a senha, **com a `publica` como AAD** (e não o endereço: selada pelo endereço, renomear a conta a deixava sem abrir). Bloco opaco `[sal 16][nonce 12][ct 32][tag 16]` = **76 bytes**, no `.bin` |
 | `criada_em` | `DateTime` | não | quando a conta nasceu (dado da conta, não a coluna de sistema) |
 
 **Chaves e índices:**
@@ -217,7 +218,8 @@ ficam inline, em claro; o pacote opaco vai ao `.bin`.
 | `prioridade` | `UInt1` | não | 0 alta, 1 média, 2 baixa. **Vai no AAD** (ver abaixo) |
 | `tipo` | `UInt1` | não | 0 alerta, 1 aviso, 2 normal. **Vai no AAD** |
 | `camadas` | `UInt1` | não | bitmap: bit 0 alto segredo, bit 1 Masson. Diz o que abrir |
-| `envelope` | `Bin` | não | `[sal_kdf 16][sal_extra 16][sal_masson 16][nonce 12][tag 16][ct …]`, no `.bin` |
+| `numero` | `UInt8` | não | contador do **remetente**, crescente. Vai na assinatura: o relé não o troca, então reordenar ou repetir aparece para quem lê (pedido 251) |
+| `envelope` | `Bin` | não | `[sal_kdf 16][sal_extra 16][sal_masson 16][nonce 12][tag 16][assinatura 64][ct …]`, no `.bin`. A **assinatura** é Ed25519 do remetente sobre `rótulo ‖ AAD ‖ numero ‖ nonce ‖ ct ‖ tag ‖ anexos` (pedido 251) |
 | `lida` | `Bool` | não | conveniência da tela; nasce `false`. Opcional |
 | `enviada_em` | `DateTime` | não | carimbo de envio (dado; distinto da `rowts` de sistema) |
 
@@ -468,7 +470,16 @@ migração.
 
 6. **Bloqueio de domínio inteiro** — abrir `correio_bloqueios_dominio` ou tratar
    como política? (fica fora até a palavra do dono).
-7. **O AAD do selo usa endereço ou `id`?** O modelo provado usa o **endereço** no
+7. **DECIDIDO PELO DONO em 30/09/2026 (pedido 251): nem endereço nem `id` — a
+   chave.** O AAD é `identidade(de) | identidade(para) | prioridade | tipo`, com as
+   identidades Ed25519 em hex, e toda mensagem vai **assinada** pelo remetente.
+   Assim um par-relé não insere, não altera, não reordena nem repete sem acusar.
+   Provado no `examples/correio-e2e.rs` (42/42 checagens, bloco 3b): relé que muda
+   o conteúdo, que troca o número, e assinatura de outra conta em nome do
+   remetente, os três recusados. O endereço renomeado continua abrindo a conta e
+   lendo o histórico. Cada mutante derruba o seu caso: endereço no AAD da privada,
+   endereço no AAD da mensagem, e leitura sem conferir a assinatura.
+   *O texto de antes, que a decisão substitui:* o modelo provado usa o **endereço** no
    AAD. Como as FKs apontam para `id`, o endereço é resolvido da conta carregada
    (custo zero — o remetente/leitor já carrega as duas contas para o ECDH). Mas
    isso **fixa o endereço como identidade imutável**: renomear endereço quebraria
