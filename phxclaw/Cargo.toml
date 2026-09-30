@@ -120,6 +120,7 @@ members = [
   "crates/phxclaw-web-search",
   "crates/phxclaw-office",
   "crates/phxclaw-agent",
+  "crates/phxclaw-ui-ir",
 ]
 resolver = "3"
 
