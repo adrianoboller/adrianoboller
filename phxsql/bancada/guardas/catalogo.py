@@ -1616,7 +1616,7 @@ GUARDAS = [
             "do REST. Repor o defeito e apagar essa conferencia."
         ),
         "arquivo": "crates/phxsql-server/src/servidor.rs",
-        "trecho": """        if self.config.cifra_fio.exigir && !self.proxy_desta_porta_http(op).0 {
+        "trecho": """        if self.config.cifra_fio.exigir && !fluxo.cifrado() && !self.proxy_desta_porta_http(op).0 {
             self.recusar_http_em_claro(fluxo, ip, porta, op, agora);
             return false;
         }
@@ -5192,7 +5192,7 @@ pub fn limpar() {
         ),
         "arquivo": "crates/phxsql-server/src/servidor.rs",
         "trecho": """                    let Some(vaga) = servidor.vaga_http() else {
-                        servidor.recusar_http_cheio(&mut fluxo, par, familia);
+                        servidor.recusar_http_cheio(&mut fluxo, par, familia, tls.is_none());
                         continue;
                     };
 """,

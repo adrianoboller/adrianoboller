@@ -404,36 +404,36 @@ pub const FABRICA: &[MensagemFabrica] = &[
     // A terceira do mesmo interruptor, e ela fala com quem NAO pode fazer o
     // aperto: o navegador. Ele fala TLS ou fala claro, entao a saida nao e
     // "peca o aperto" -- e por isso a mensagem e outra, e nao um parametro da
-    // de cima. Ela tem de dizer as DUAS saidas escritas (o proxy declarado e o
-    // desligar), senao quem liga a exigencia perde a tela sem saber como
+    // de cima. Ela tem de dizer as TRES saidas escritas (o TLS nativo do pedido
+    // 572, o proxy declarado e o desligar), senao quem liga a exigencia perde a tela sem saber como
     // recupera-la.
     MensagemFabrica {
         nome: "erro.cifra_exigida_nesta_porta_http",
         textos: [
-            "este servidor exige comunicacao cifrada (cifra_fio.exigir) e esta \
-             porta HTTP e texto puro: ponha um proxy TLS na frente e escreva \
-             \"atras_de_proxy\": true na secao {secao}, ou \"exigir\": false em \
-             cifra_fio. Ver docs/SEGURANCA.md 7.1",
-            "ce serveur exige une communication chiffrée (cifra_fio.exigir) et \
-             ce port HTTP est en clair : placez un proxy TLS devant et écrivez \
-             \"atras_de_proxy\": true dans la section {secao}, ou \"exigir\": \
-             false dans cifra_fio. Voir docs/SEGURANCA.md 7.1",
-            "this server requires encrypted communication (cifra_fio.exigir) and \
-             this HTTP port is plain text: put a TLS proxy in front and write \
-             \"atras_de_proxy\": true in the {secao} section, or \"exigir\": \
-             false under cifra_fio. See docs/SEGURANCA.md 7.1",
-            "questo server richiede comunicazione cifrata (cifra_fio.exigir) e \
-             questa porta HTTP e in chiaro: metta un proxy TLS davanti e scriva \
-             \"atras_de_proxy\": true nella sezione {secao}, o \"exigir\": false \
-             in cifra_fio. Vedi docs/SEGURANCA.md 7.1",
-            "dieser Server verlangt verschlüsselte Kommunikation \
-             (cifra_fio.exigir), dieser HTTP-Port ist Klartext: TLS-Proxy \
-             davorstellen und \"atras_de_proxy\": true im Abschnitt {secao}, \
-             oder \"exigir\": false unter cifra_fio. Siehe docs/SEGURANCA.md 7.1",
-            "este servidor exige comunicación cifrada (cifra_fio.exigir) y este \
-             puerto HTTP es texto claro: ponga un proxy TLS delante y escriba \
-             \"atras_de_proxy\": true en la sección {secao}, o \"exigir\": false \
-             en cifra_fio. Ver docs/SEGURANCA.md 7.1",
+            "porta HTTP em texto puro e cifra exigida (cifra_fio.exigir): ligue \
+             \"tls\": true na secao {secao}, ou declare o proxy TLS com \
+             \"atras_de_proxy\": true, ou \"exigir\": false em cifra_fio. Ver \
+             docs/SEGURANCA.md 7.1",
+            "port HTTP en clair et chiffrement exigé (cifra_fio.exigir) : activez \
+             \"tls\": true dans la section {secao}, ou déclarez le proxy TLS avec \
+             \"atras_de_proxy\": true, ou \"exigir\": false dans cifra_fio. Voir \
+             docs/SEGURANCA.md 7.1",
+            "plain-text HTTP port and encryption required (cifra_fio.exigir): set \
+             \"tls\": true in the {secao} section, or declare the TLS proxy with \
+             \"atras_de_proxy\": true, or \"exigir\": false under cifra_fio. See \
+             docs/SEGURANCA.md 7.1",
+            "porta HTTP in chiaro e cifratura richiesta (cifra_fio.exigir): attivi \
+             \"tls\": true nella sezione {secao}, o dichiari il proxy TLS con \
+             \"atras_de_proxy\": true, o \"exigir\": false in cifra_fio. Vedi \
+             docs/SEGURANCA.md 7.1",
+            "HTTP-Port im Klartext, Verschlüsselung verlangt (cifra_fio.exigir): \
+             \"tls\": true im Abschnitt {secao} setzen, TLS-Proxy mit \
+             \"atras_de_proxy\": true erklären oder \"exigir\": false unter \
+             cifra_fio. Siehe docs/SEGURANCA.md 7.1",
+            "puerto HTTP en texto claro y cifrado exigido (cifra_fio.exigir): active \
+             \"tls\": true en la sección {secao}, o declare el proxy TLS con \
+             \"atras_de_proxy\": true, o \"exigir\": false en cifra_fio. Ver \
+             docs/SEGURANCA.md 7.1",
         ],
     },
     // A quarta do mesmo interruptor, e a unica que morde por TABELA e nao por

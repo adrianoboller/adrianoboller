@@ -4,7 +4,7 @@
      `--catraca` reprova se este arquivo nao bater com o que o extrator
      geraria agora; rode o comando sem flag para atualizar. -->
 
-Gerado dos `cognicao_*.md` com `**Estado:** FRUTIFERO` -- 5 hoje, de 345 cognicoes no total.
+Gerado dos `cognicao_*.md` com `**Estado:** FRUTIFERO` -- 6 hoje, de 346 cognicoes no total.
 
 ## Congelar a filha não basta: a varredura da chave congela a MÃE também
 
@@ -30,3 +30,8 @@ Gerado dos `cognicao_*.md` com `**Estado:** FRUTIFERO` -- 5 hoje, de 345 cognico
 
 - Evidencia: `crates/phxsql-odbc/src/lib.rs::sql_truncado_pelo_teto_avisa_01000`; `crates/phxsql-odbc/src/lib.rs::sql_sem_truncado_continua_sql_success_puro`; `testes-web/prova-truncado-sql.mjs` (rodada em 24/09/2026: 3/3 passos verdes com o conserto, 2/3 com a leitura de `r.truncado` removida do `claude.js` -- prova nos dois sentidos, pelo navegador, contra o `phxsqld` de verdade).
 - Arquivo: [cognicao_sqlstate-do-truncado-em-composicao_20260924_1308.md](cognicao_sqlstate-do-truncado-em-composicao_20260924_1308.md)
+
+## TLS: confira o tipo do registro ANTES do tamanho
+
+- Evidencia: `crates/phxsql-core/src/tls.rs::http_em_claro_recebe_o_alerta_na_hora` e `crates/phxsql-server/tests/tls-das-portas-http.rs::a_porta_tls_nao_responde_em_claro` — com a conferência do cabeçalho tirada, os dois ficam vermelhos (mutante `sem-conferir-cabecalho`, 30/09/2026).
+- Arquivo: [cognicao_tls-o-tipo-antes-do-tamanho_20260930_1500.md](cognicao_tls-o-tipo-antes-do-tamanho_20260930_1500.md)

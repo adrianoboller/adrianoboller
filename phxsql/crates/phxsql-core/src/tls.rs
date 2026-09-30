@@ -369,6 +369,13 @@ impl<S: Read + Write> Registro<S> {
             Err(e) => return Err(Falha(alerta::INTERNAL_ERROR, PhxError::Io(e))),
         }
         de_io(self.fluxo.read_exact(&mut cab[1..]))?;
+        // O tipo e a versao se conferem ANTES do tamanho: quem fala HTTP cru
+        // numa porta TLS manda "GET /", e o "T /" viraria um tamanho de 8 KiB
+        // que o servidor ficaria esperando ate o prazo -- sem o cliente
+        // receber resposta nenhuma.
+        if !(20..=23).contains(&cab[0]) || cab[1] != 3 {
+            return falha(alerta::UNEXPECTED_MESSAGE, "isto nao e um registro TLS");
+        }
         let n = u16::from_be_bytes([cab[3], cab[4]]) as usize;
         if n > MAX_CLARO + 256 {
             return falha(alerta::RECORD_OVERFLOW, "registro maior que 2^14 + 256");
@@ -1161,6 +1168,22 @@ mod testes {
         assert!(e.contains("1.3"), "{e}");
         let saida = String::from_utf8_lossy(&s.stderr);
         assert!(saida.contains("protocol version"), "{saida}");
+    }
+
+    #[test]
+    fn http_em_claro_recebe_o_alerta_na_hora() {
+        let (_d, id, _) = com_certificado("http-cru");
+        let (porta, h) = servir(id);
+        let mut c = TcpStream::connect(("127.0.0.1", porta)).unwrap();
+        c.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        c.write_all(b"GET /saude HTTP/1.1\r\nHost: x\r\n\r\n")
+            .unwrap();
+        let mut resposta = [0u8; 7];
+        c.read_exact(&mut resposta)
+            .expect("o servidor ficou esperando em vez de alertar");
+        assert_eq!(resposta, [21, 3, 3, 0, 2, 2, alerta::UNEXPECTED_MESSAGE]);
+        let e = h.join().unwrap().expect_err("aceitou HTTP cru");
+        assert!(e.contains("registro TLS"), "{e}");
     }
 
     #[test]

@@ -34,10 +34,104 @@
 use std::collections::HashMap;
 use std::io::{BufReader, Read, Write};
 use std::net::TcpStream;
+use std::time::Duration;
+
+use phxsql_core::tls::FluxoTls;
 
 use phxsql_core::fio::{Canal, Recebido};
 use phxsql_core::hash::digito_hex;
 use phxsql_core::json::Json;
+
+/// O fio de uma porta HTTP: o que a funcao de atendimento le e escreve,
+/// com o prazo de leitura que o `escoar` e o laco de atendimento ajustam.
+///
+/// Existe para que o TLS entre UMA vez, no laco de aceitacao, e o resto do
+/// atendimento nao saiba se o fio e claro ou cifrado -- a mesma razao do
+/// `Canal` da porta de dados (`phxsql-core/src/fio.rs`): espalhar `if tls`
+/// por cada leitura seria repetir a decisao, e a que alguem esquecesse
+/// mandaria claro por um fio que o navegador acha cifrado.
+pub trait FioHttp: Read + Write {
+    fn prazo(&self) -> Option<Duration>;
+    fn por_prazo(&self, prazo: Option<Duration>) -> std::io::Result<()>;
+}
+
+impl FioHttp for TcpStream {
+    fn prazo(&self) -> Option<Duration> {
+        self.read_timeout().ok().flatten()
+    }
+    fn por_prazo(&self, prazo: Option<Duration>) -> std::io::Result<()> {
+        self.set_read_timeout(prazo)
+    }
+}
+
+/// O fio de uma porta HTTP depois da aceitacao: claro, ou ja com o aperto
+/// TLS feito (pedido 572).
+pub enum FioWeb {
+    Claro(TcpStream),
+    Tls(Box<FluxoTls<TcpStream>>),
+}
+
+impl FioWeb {
+    fn tcp(&self) -> &TcpStream {
+        match self {
+            FioWeb::Claro(t) => t,
+            FioWeb::Tls(t) => t.fio(),
+        }
+    }
+
+    pub fn cifrado(&self) -> bool {
+        matches!(self, FioWeb::Tls(_))
+    }
+
+    pub fn set_read_timeout(&self, prazo: Option<Duration>) -> std::io::Result<()> {
+        self.tcp().set_read_timeout(prazo)
+    }
+}
+
+/// O TLS manda o `close_notify` ao fechar, para o cliente saber que a
+/// resposta acabou inteira e nao foi cortada no caminho (§6.1). No `Drop`, e
+/// nao numa chamada, porque o atendimento tem dezenas de saidas e a que
+/// alguem esquecesse fecharia sem ele.
+impl Drop for FioWeb {
+    fn drop(&mut self) {
+        if let FioWeb::Tls(t) = self {
+            let _ = t.despedir();
+        }
+    }
+}
+
+impl FioHttp for FioWeb {
+    fn prazo(&self) -> Option<Duration> {
+        self.tcp().read_timeout().ok().flatten()
+    }
+    fn por_prazo(&self, prazo: Option<Duration>) -> std::io::Result<()> {
+        self.tcp().set_read_timeout(prazo)
+    }
+}
+
+impl Read for FioWeb {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        match self {
+            FioWeb::Claro(t) => t.read(buf),
+            FioWeb::Tls(t) => t.read(buf),
+        }
+    }
+}
+
+impl Write for FioWeb {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        match self {
+            FioWeb::Claro(t) => t.write(buf),
+            FioWeb::Tls(t) => t.write(buf),
+        }
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        match self {
+            FioWeb::Claro(t) => t.flush(),
+            FioWeb::Tls(t) => t.flush(),
+        }
+    }
+}
 
 /// A interface, embutida no binario em tempo de compilacao.
 ///
@@ -168,7 +262,7 @@ impl Pedido {
 /// laco abaixo, quando o `lidos` dela somava a linha em branco do fim. O que
 /// muda e so QUANDO a recusa acontece -- antes de reservar a memoria, em vez
 /// de depois.
-pub fn ler_pedido(fluxo: &TcpStream) -> Option<Pedido> {
+pub fn ler_pedido<R: Read>(fluxo: R) -> Option<Pedido> {
     let mut leitor = BufReader::new(fluxo);
     let mut canal = Canal::Claro;
 
@@ -379,13 +473,12 @@ fn montar_com_folga_e_extras(
 ///
 /// O escoamento tem teto e prazo curto: quem foi barrado nao ganha o direito
 /// de fazer o servidor ler um corpo de megabytes.
-pub fn escoar(fluxo: &TcpStream) {
-    use std::time::Duration;
-    let antes = fluxo.read_timeout().ok().flatten();
-    let _ = fluxo.set_read_timeout(Some(Duration::from_millis(250)));
+pub fn escoar<F: FioHttp + ?Sized>(fluxo: &mut F) {
+    let antes = fluxo.prazo();
+    let _ = fluxo.por_prazo(Some(Duration::from_millis(250)));
     let mut resto = [0u8; 8192];
     let mut lidos = 0usize;
-    let mut leitor = fluxo;
+    let leitor = &mut *fluxo;
     // O teto e o mesmo de um pedido legitimo: escoar nao da a quem foi barrado
     // o direito de fazer o servidor ler MAIS do que ele ja leria de qualquer
     // um. E o primeiro teto (16 KiB) nao bastava -- um corpo de 20 KB ainda
@@ -396,12 +489,12 @@ pub fn escoar(fluxo: &TcpStream) {
             Ok(n) => lidos += n,
         }
     }
-    let _ = fluxo.set_read_timeout(antes);
+    let _ = fluxo.por_prazo(antes);
 }
 
 /// Envia a resposta.
-pub fn responder(
-    fluxo: &mut TcpStream,
+pub fn responder<F: Write + ?Sized>(
+    fluxo: &mut F,
     codigo: u16,
     tipo: &str,
     corpo: &str,
@@ -411,13 +504,21 @@ pub fn responder(
 }
 
 /// Serve uma pagina HTML com a politica fechada. Ver [`montar_resposta_fechada`].
-pub fn responder_pagina(fluxo: &mut TcpStream, codigo: u16, corpo: &str) -> std::io::Result<()> {
+pub fn responder_pagina<F: Write + ?Sized>(
+    fluxo: &mut F,
+    codigo: u16,
+    corpo: &str,
+) -> std::io::Result<()> {
     fluxo
         .write_all(montar_resposta_fechada(codigo, "text/html; charset=utf-8", corpo).as_bytes())?;
     fluxo.flush()
 }
 
-pub fn responder_json(fluxo: &mut TcpStream, codigo: u16, valor: &Json) -> std::io::Result<()> {
+pub fn responder_json<F: Write + ?Sized>(
+    fluxo: &mut F,
+    codigo: u16,
+    valor: &Json,
+) -> std::io::Result<()> {
     responder(
         fluxo,
         codigo,
@@ -426,7 +527,11 @@ pub fn responder_json(fluxo: &mut TcpStream, codigo: u16, valor: &Json) -> std::
     )
 }
 
-pub fn erro_json(fluxo: &mut TcpStream, codigo: u16, mensagem: &str) -> std::io::Result<()> {
+pub fn erro_json<F: Write + ?Sized>(
+    fluxo: &mut F,
+    codigo: u16,
+    mensagem: &str,
+) -> std::io::Result<()> {
     responder_json(
         fluxo,
         codigo,

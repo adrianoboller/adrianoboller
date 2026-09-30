@@ -173,6 +173,9 @@ ISENTOS = (
      "chave de MAPA -- `origem|db/tab`, o indice de `posicoes_bidi` no "
      "servidor. Guardada em vez de remontada para nao haver duas receitas "
      "da mesma chave; ve-la e o que diagnostica par parado (bidirecional.rs)"),
+    ("TlsPorta", "chave",
+     "CAMINHO do PEM da chave TLS, e nao a chave -- ve-lo e o que diagnostica "
+     "o par trocado; a chave em si nunca sai do arquivo (config.rs, pedido 572)"),
     ("Cru", "chave",
      "chave de MENSAGEM da fabrica de idiomas -- o que o relatorio do "
      "conferidor precisa imprimir para dizer QUAL texto esta cru. Esconde-la "

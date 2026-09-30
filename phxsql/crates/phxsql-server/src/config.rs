@@ -2895,6 +2895,138 @@ pub struct Web {
     /// sem proxy nenhum na frente esta mentindo para si mesmo, e nao para o
     /// motor.
     pub atras_de_proxy: bool,
+    /// TLS nativo nesta porta -- ver [`TlsPorta`].
+    pub tls: TlsPorta,
+}
+
+/// TLS nativo numa porta HTTP (pedido 572): `tls`, `tls_certificado` e
+/// `tls_chave`, na secao `web` (a interface) e na `rest` (webservice e
+/// explorador, as duas portas da secao -- a mesma regra do `atras_de_proxy`).
+///
+/// # A forma, decidida pelo pesquisador
+///
+/// PostgreSQL (`ssl_cert_file`/`ssl_key_file`), MySQL e MariaDB
+/// (`ssl_cert`/`ssl_key`) convergem em DOIS caminhos, certificado e chave: e
+/// o que entra. Gerar um autoassinado quando os dois faltam divide os tres
+/// (MySQL `auto_generate_certs` e MariaDB 11.4 geram; o PostgreSQL nao):
+/// 2 + 3 = 5 contra 4, e gera -- no diretorio de dados, como os dois fazem.
+///
+/// Guarda nova entra PEDIDA: `tls` nasce `false`, e quem nao escreve nada
+/// continua com a porta como era.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct TlsPorta {
+    pub ligado: bool,
+    /// PEM com o certificado da folha primeiro (e a cadeia depois, se houver).
+    pub certificado: String,
+    /// PEM da chave privada P-256, em SEC 1 ou PKCS#8.
+    pub chave: String,
+}
+
+impl TlsPorta {
+    fn de_json(secao: &Json) -> TlsPorta {
+        TlsPorta {
+            ligado: secao.booleano_ou("tls", false),
+            certificado: secao.texto_ou("tls_certificado", "").trim().to_string(),
+            chave: secao.texto_ou("tls_chave", "").trim().to_string(),
+        }
+    }
+
+    /// A identidade TLS desta porta, e os avisos da busca.
+    ///
+    /// Com os dois caminhos escritos, le os dois. Com os dois VAZIOS, le o par
+    /// autoassinado ao lado do `config.json` (`tls-<secao>-*.pem`), gerando-o
+    /// na primeira vez -- o mesmo lugar e o mesmo `abrir_privado` da chave do
+    /// fio. Um sem o outro e erro: meia identidade nao existe.
+    ///
+    /// E a chave tem de ser a do certificado. Sem esta conferencia o erro so
+    /// apareceria no CLIENTE, a cada aperto, como uma assinatura que nao
+    /// confere -- e nada nele apontaria para os dois arquivos trocados.
+    pub fn identidade(
+        &self,
+        secao: &str,
+        nomes: &[&str],
+        config_em: Option<&Path>,
+    ) -> Result<(phxsql_core::tls::Identidade, Vec<String>)> {
+        let mut avisos = Vec::new();
+        let perto = |nome: &str| resolver_caminho_do_config(Path::new(nome), config_em);
+        let (cert, chave) = match (self.certificado.is_empty(), self.chave.is_empty()) {
+            (false, false) => (perto(&self.certificado), perto(&self.chave)),
+            (true, true) => {
+                let c = perto(&format!("tls-{secao}-certificado.pem"));
+                let k = perto(&format!("tls-{secao}-chave.pem"));
+                if !c.exists() && !k.exists() {
+                    gerar_par_tls(&c, &k, nomes).map_err(|e| {
+                        PhxError::Esquema(format!(
+                            "{secao}.tls: nao consegui gravar o certificado autoassinado em {}: {e}",
+                            c.display()
+                        ))
+                    })?;
+                    avisos.push(format!(
+                        "{secao}.tls: certificado AUTOASSINADO gerado em {} para {}. O \
+                         trafego ja sai cifrado, mas o navegador vai avisar que nao \
+                         conhece quem assinou ate um certificado de verdade entrar em \
+                         {secao}.tls_certificado e {secao}.tls_chave",
+                        c.display(),
+                        nomes.join(", ")
+                    ));
+                }
+                (c, k)
+            }
+            _ => {
+                return Err(PhxError::Esquema(format!(
+                    "{secao}.tls_certificado e {secao}.tls_chave vao juntos: um sem \
+                     o outro nao forma identidade (deixe os dois vazios para um \
+                     autoassinado)"
+                )))
+            }
+        };
+        let ler = |p: &Path| {
+            std::fs::read_to_string(p).map_err(|e| {
+                PhxError::Esquema(format!(
+                    "{secao}.tls: nao consegui ler {}: {e}",
+                    p.display()
+                ))
+            })
+        };
+        let cadeia = phxsql_core::x509::blocos_pem(&ler(&cert)?, "CERTIFICATE")?;
+        if cadeia.is_empty() {
+            return Err(PhxError::Esquema(format!(
+                "{secao}.tls: {} nao tem nenhum CERTIFICATE em PEM",
+                cert.display()
+            )));
+        }
+        let privada = phxsql_core::x509::chave_p256_de_pem(&ler(&chave)?)?;
+        let casa = phxsql_core::p256::chave_publica(&privada)
+            .is_some_and(|q| cadeia[0].windows(q.len()).any(|w| w == q));
+        if !casa {
+            return Err(PhxError::Esquema(format!(
+                "{secao}.tls: a chave em {} nao e a do certificado em {} -- todo \
+                 aperto falharia no cliente",
+                chave.display(),
+                cert.display()
+            )));
+        }
+        Ok((phxsql_core::tls::Identidade::nova(cadeia, privada)?, avisos))
+    }
+}
+
+/// Gera e grava o par autoassinado: a chave com `abrir_privado` (so o dono
+/// le), o certificado depois -- e publico.
+fn gerar_par_tls(cert: &Path, chave: &Path, nomes: &[&str]) -> std::io::Result<()> {
+    use std::io::Write as _;
+    let privada = phxsql_core::p256::gerar_privada();
+    let mut serie = [0u8; 16];
+    phxsql_core::cifra::sortear(&mut serie);
+    serie[0] = (serie[0] & 0x7f) | 0x01;
+    let validade = phxsql_core::x509::Validade::de_agora_por_anos(1);
+    let invalido = || std::io::Error::other("a P-256 recusou a chave sorteada");
+    let der = phxsql_core::x509::cert_tls_p256(nomes, &validade, &serie, &privada)
+        .ok_or_else(invalido)?;
+    let pem_chave = phxsql_core::x509::pem_da_chave_p256(&privada).ok_or_else(invalido)?;
+    let mut arq = abrir_privado(chave)?;
+    arq.write_all(pem_chave.as_bytes())?;
+    arq.sync_all()?;
+    std::fs::write(cert, phxsql_core::x509::para_pem(&der, "CERTIFICATE"))
 }
 
 impl Default for Web {
@@ -2905,6 +3037,7 @@ impl Default for Web {
             sessao_minutos: 60,
             servidores: Vec::new(),
             atras_de_proxy: false,
+            tls: TlsPorta::default(),
         }
     }
 }
@@ -2922,6 +3055,7 @@ impl Web {
                     .max(1) as u64,
                 servidores: Web::servidores_de(w, saidas),
                 atras_de_proxy: w.booleano_ou("atras_de_proxy", padrao.atras_de_proxy),
+                tls: TlsPorta::de_json(w),
             },
         }
     }
@@ -3050,6 +3184,8 @@ pub struct Rest {
     /// terceiro interruptor so para o explorador da especificacao seria
     /// configuracao que ninguem ajusta separada.
     pub atras_de_proxy: bool,
+    /// TLS nativo nas DUAS portas da secao -- ver [`TlsPorta`].
+    pub tls: TlsPorta,
 }
 
 impl Rest {
@@ -3079,6 +3215,7 @@ impl std::fmt::Debug for Rest {
             swagger_ligado,
             swagger_bind,
             atras_de_proxy,
+            tls,
         } = self;
         f.debug_struct("Rest")
             .field("ligado", ligado)
@@ -3090,6 +3227,7 @@ impl std::fmt::Debug for Rest {
             .field("swagger_ligado", swagger_ligado)
             .field("swagger_bind", swagger_bind)
             .field("atras_de_proxy", atras_de_proxy)
+            .field("tls", tls)
             .finish()
     }
 }
@@ -3106,6 +3244,7 @@ impl Default for Rest {
             swagger_ligado: false,
             swagger_bind: format!("127.0.0.1:{PORTA_SWAGGER_PADRAO}"),
             atras_de_proxy: false,
+            tls: TlsPorta::default(),
         }
     }
 }
@@ -3133,6 +3272,7 @@ impl Rest {
                     .trim()
                     .to_string(),
                 atras_de_proxy: r.booleano_ou("atras_de_proxy", padrao.atras_de_proxy),
+                tls: TlsPorta::de_json(r),
             },
         }
     }
@@ -3156,6 +3296,9 @@ impl Rest {
             ("swagger_ligado", Json::Bool(self.swagger_ligado)),
             ("swagger_bind", Json::texto_de(&self.swagger_bind)),
             ("atras_de_proxy", Json::Bool(self.atras_de_proxy)),
+            ("tls", Json::Bool(self.tls.ligado)),
+            ("tls_certificado", Json::texto_de(&self.tls.certificado)),
+            ("tls_chave", Json::texto_de(&self.tls.chave)),
         ])
     }
 
@@ -4246,6 +4389,9 @@ const SECOES_CONHECIDAS: [(&str, &[&str]); 16] = [
             "sessao_minutos",
             "servidores",
             "atras_de_proxy",
+            "tls",
+            "tls_certificado",
+            "tls_chave",
         ],
     ),
     (
@@ -4260,6 +4406,9 @@ const SECOES_CONHECIDAS: [(&str, &[&str]); 16] = [
             "swagger_ligado",
             "swagger_bind",
             "atras_de_proxy",
+            "tls",
+            "tls_certificado",
+            "tls_chave",
         ],
     ),
     (
@@ -4827,40 +4976,40 @@ impl Config {
                 "web.bind",
                 self.web.ligado,
                 self.web.bind.as_str(),
-                self.web.atras_de_proxy,
+                self.web.atras_de_proxy || self.web.tls.ligado,
                 "web",
             ),
             (
                 "rest.bind",
                 self.rest.ligado,
                 self.rest.bind.as_str(),
-                self.rest.atras_de_proxy,
+                self.rest.atras_de_proxy || self.rest.tls.ligado,
                 "rest",
             ),
             (
                 "rest.swagger_bind",
                 self.rest.swagger_ligado,
                 self.rest.swagger_bind.as_str(),
-                self.rest.atras_de_proxy,
+                self.rest.atras_de_proxy || self.rest.tls.ligado,
                 "rest",
             ),
         ];
         let mut sem_proxy: Vec<&str> = Vec::new();
-        for (rotulo, ligada, bind, atras_de_proxy, secao) in portas {
+        for (rotulo, ligada, bind, protegida, secao) in portas {
             if !ligada {
                 continue;
             }
-            if !atras_de_proxy {
+            if !protegida {
                 sem_proxy.push(rotulo);
             }
-            if atras_de_proxy || !escuta_fora_da_maquina(bind) {
+            if protegida || !escuta_fora_da_maquina(bind) {
                 continue;
             }
             novos.push(format!(
                 "{rotulo} esta em {bind}, que atende de FORA desta \
                  maquina, e HTTP e texto puro: senha, token e dado viajam \
-                 legiveis para quem estiver no caminho. O PhxSql nao termina \
-                 TLS (petrea das zero dependencias) -- ponha um proxy reverso \
+                 legiveis para quem estiver no caminho. Ligue \"tls\": true na \
+                 secao {secao} (TLS 1.3 nativo), ou ponha um proxy reverso \
                  terminando TLS na frente e devolva esta porta para \
                  127.0.0.1. Se o proxy ja esta la, escreva \"atras_de_proxy\": \
                  true na secao {secao} para calar este aviso. Receita em \
@@ -4870,12 +5019,12 @@ impl Config {
         if self.cifra_fio.exigir && !sem_proxy.is_empty() {
             novos.push(format!(
                 "cifra_fio.exigir esta ligado, e por isso estas portas HTTP \
-                 RECUSAM todo pedido enquanto ninguem declarar o proxy: {}. \
-                 HTTP e texto puro e este servidor nao termina TLS (petrea das \
-                 zero dependencias) -- ponha um proxy reverso terminando TLS na \
-                 frente e escreva \"atras_de_proxy\": true na secao web ou rest, \
-                 ou escreva \"exigir\": false em cifra_fio para voltar ao claro. \
-                 Receita em docs/SEGURANCA.md 7.1.",
+                 RECUSAM todo pedido enquanto nao houver TLS nelas: {}. \
+                 Ligue \"tls\": true na secao web ou rest (TLS 1.3 nativo), ou \
+                 ponha um proxy reverso terminando TLS na frente e escreva \
+                 \"atras_de_proxy\": true na secao, ou escreva \"exigir\": false \
+                 em cifra_fio para voltar ao claro. Receita em docs/SEGURANCA.md \
+                 7.1.",
                 sem_proxy.join(", ")
             ));
         }
@@ -5406,6 +5555,9 @@ impl Config {
                     ("bind", Json::texto_de(&self.web.bind)),
                     ("sessao_minutos", Json::de_u64(self.web.sessao_minutos)),
                     ("atras_de_proxy", Json::Bool(self.web.atras_de_proxy)),
+                    ("tls", Json::Bool(self.web.tls.ligado)),
+                    ("tls_certificado", Json::texto_de(&self.web.tls.certificado)),
+                    ("tls_chave", Json::texto_de(&self.web.tls.chave)),
                     (
                         // So o endereco, como sempre foi -- a tela de
                         // Configuracoes junta esta lista num texto. O estado do
@@ -9726,5 +9878,54 @@ mod testes_gravacao {
             assert!(e.contains("cor"), "{torta:?} passou: {e}");
             assert_eq!(std::fs::read_to_string(&caminho).unwrap(), antes);
         }
+    }
+}
+
+#[cfg(test)]
+mod testes_tls {
+    use super::*;
+
+    fn porta(certificado: &str, chave: &str) -> TlsPorta {
+        TlsPorta {
+            ligado: true,
+            certificado: certificado.into(),
+            chave: chave.into(),
+        }
+    }
+
+    #[test]
+    fn meia_identidade_e_recusada_nomeando_os_dois_campos() {
+        let d = DirTemp::novo("tls-meia");
+        let config = d.join("config.json");
+        let e = porta("cert.pem", "")
+            .identidade("web", &["localhost"], Some(&config))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            e.contains("web.tls_certificado") && e.contains("web.tls_chave"),
+            "{e}"
+        );
+    }
+
+    #[test]
+    fn chave_de_outro_certificado_e_recusada_na_subida() {
+        let d = DirTemp::novo("tls-trocada");
+        let config = d.join("config.json");
+        // Dois pares gerados pelo motor, e o arquivo de um com a chave do outro.
+        porta("", "")
+            .identidade("web", &["localhost"], Some(&config))
+            .unwrap();
+        porta("", "")
+            .identidade("rest", &["localhost"], Some(&config))
+            .unwrap();
+        let e = porta("tls-web-certificado.pem", "tls-rest-chave.pem")
+            .identidade("web", &["localhost"], Some(&config))
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("nao e a do certificado"), "{e}");
+        // E o par certo, pelos mesmos caminhos escritos, passa.
+        porta("tls-web-certificado.pem", "tls-web-chave.pem")
+            .identidade("web", &["localhost"], Some(&config))
+            .unwrap();
     }
 }

@@ -8898,6 +8898,13 @@ impl Servidor {
                 return;
             }
         };
+        let tls = match self.identidade_http("web", &self.config.web.tls, &self.config.web.bind) {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!("interface web NAO subiu: {e}");
+                return;
+            }
+        };
         let ouvinte = match TcpListener::bind(endereco) {
             Ok(o) => o,
             Err(e) => {
@@ -8914,7 +8921,8 @@ impl Servidor {
             }
         }
         eprintln!(
-            "interface web em http://{endereco} | sessao de {} min",
+            "interface web em {}://{endereco} | sessao de {} min",
+            if tls.is_some() { "https" } else { "http" },
             self.config.web.sessao_minutos
         );
         // O estado do tunel de cada destino, dito ALTO no arranque -- e nao so
@@ -8945,7 +8953,9 @@ impl Servidor {
         // nascia «SEM TETO», declarado num comentario --, e o teto entrou no
         // `aceitar_http`. Conserto entra no caminho que o motivou e o irmao
         // fica: a copia era o irmao, e some para nao divergir de novo.
-        self.aceitar_http(ouvinte, "web", |s, fluxo, par| s.atender_http(fluxo, par));
+        self.aceitar_http(ouvinte, "web", tls, |s, fluxo, par| {
+            s.atender_http(fluxo, par)
+        });
     }
 
     /// Atende um pedido HTTP. Uma resposta por conexao -- `Connection: close`.
@@ -8956,7 +8966,7 @@ impl Servidor {
     /// cifra entrou no `portao_de_rede_http`. A copia era o irmao, e some para
     /// nao divergir de novo: e a mesma historia do laco de aceitacao no
     /// `subir_web`, que ja tinha sido paga aqui uma vez.
-    fn atender_http(&self, mut fluxo: TcpStream, par: SocketAddr) {
+    fn atender_http(&self, mut fluxo: http::FioWeb, par: SocketAddr) {
         let ip = par.ip().to_string();
         let porta = par.port();
         let _ = fluxo.set_read_timeout(Some(Duration::from_secs(self.config.timeout_s)));
@@ -8965,7 +8975,7 @@ impl Servidor {
             return;
         }
 
-        let pedido = match http::ler_pedido(&fluxo) {
+        let pedido = match http::ler_pedido(&mut fluxo) {
             Some(p) => p,
             None => {
                 let _ = http::erro_json(&mut fluxo, 400, "pedido HTTP invalido ou grande demais");
@@ -9107,6 +9117,15 @@ impl Servidor {
                 return;
             }
         };
+        let tls = match self.identidade_http("rest", &self.config.rest.tls, &self.config.rest.bind)
+        {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!("webservice REST NAO subiu: {e}");
+                return;
+            }
+        };
+        let esquema = if tls.is_some() { "https" } else { "http" };
         let ouvinte = match TcpListener::bind(endereco) {
             Ok(o) => o,
             Err(e) => {
@@ -9122,11 +9141,13 @@ impl Servidor {
             }
         }
         eprintln!(
-            "webservice REST em http://{endereco}{} | especificacao em \
-             http://{endereco}/openapi.json",
+            "webservice REST em {esquema}://{endereco}{} | especificacao em \
+             {esquema}://{endereco}/openapi.json",
             crate::rest::PREFIXO
         );
-        self.aceitar_http(ouvinte, "rest", |s, fluxo, par| s.atender_rest(fluxo, par));
+        self.aceitar_http(ouvinte, "rest", tls, |s, fluxo, par| {
+            s.atender_rest(fluxo, par)
+        });
     }
 
     /// Sobe o explorador da especificacao, se ligado -- a OUTRA porta.
@@ -9140,6 +9161,18 @@ impl Servidor {
         }
         let endereco = match self.config.rest.endereco_do_swagger() {
             Ok(e) => e,
+            Err(e) => {
+                eprintln!("explorador da API NAO subiu: {e}");
+                return;
+            }
+        };
+        // A secao `rest` cobre as DUAS portas dela, como o `atras_de_proxy`.
+        let tls = match self.identidade_http(
+            "rest",
+            &self.config.rest.tls,
+            &self.config.rest.swagger_bind,
+        ) {
+            Ok(t) => t,
             Err(e) => {
                 eprintln!("explorador da API NAO subiu: {e}");
                 return;
@@ -9159,8 +9192,11 @@ impl Servidor {
                 *atual = Some(e);
             }
         }
-        eprintln!("explorador da API REST em http://{endereco}");
-        self.aceitar_http(ouvinte, "swagger", |s, fluxo, par| {
+        eprintln!(
+            "explorador da API REST em {}://{endereco}",
+            if tls.is_some() { "https" } else { "http" }
+        );
+        self.aceitar_http(ouvinte, "swagger", tls, |s, fluxo, par| {
             s.atender_swagger(fluxo, par)
         });
     }
@@ -9175,7 +9211,8 @@ impl Servidor {
         self: &Arc<Self>,
         ouvinte: TcpListener,
         familia: &'static str,
-        atender: fn(&Arc<Self>, TcpStream, SocketAddr),
+        tls: Option<Arc<phxsql_core::tls::Identidade>>,
+        atender: fn(&Arc<Self>, http::FioWeb, SocketAddr),
     ) {
         let servidor = Arc::clone(self);
         self.telemetria.subir(
@@ -9202,9 +9239,10 @@ impl Servidor {
                     // trabalho. Sem vaga em `fila_web_ms`, 503 daqui mesmo,
                     // sem subir nada.
                     let Some(vaga) = servidor.vaga_http() else {
-                        servidor.recusar_http_cheio(&mut fluxo, par, familia);
+                        servidor.recusar_http_cheio(&mut fluxo, par, familia, tls.is_none());
                         continue;
                     };
+                    let tls = tls.clone();
                     let s = Arc::clone(&servidor);
                     s.telemetria.clone().subir(
                         format!("{familia}-{}", par.port()),
@@ -9217,7 +9255,28 @@ impl Servidor {
                             // panico dentro do atendimento.
                             let _vaga = vaga;
                             f.fazendo(&format!("pedido de {par}"));
-                            atender(&s, fluxo, par);
+                            // O aperto TLS entra AQUI, uma vez, e nao em cada
+                            // rota: daqui para baixo ninguem sabe se o fio e
+                            // claro ou cifrado (pedido 572). E ele roda na
+                            // thread da conexao, com o prazo de leitura de
+                            // sempre -- o laco de aceitacao nao espera o
+                            // aperto de ninguem.
+                            let fio = match &tls {
+                                None => http::FioWeb::Claro(fluxo),
+                                Some(id) => {
+                                    let _ = fluxo.set_read_timeout(Some(Duration::from_secs(
+                                        s.config.timeout_s,
+                                    )));
+                                    match phxsql_core::tls::aceitar(fluxo, id, &[b"http/1.1"]) {
+                                        Ok(t) => http::FioWeb::Tls(Box::new(t)),
+                                        Err(e) => {
+                                            s.anotar_aperto_tls_recusado(par, familia, &e);
+                                            return;
+                                        }
+                                    }
+                                }
+                            };
+                            atender(&s, fio, par);
                         },
                     );
                 }
@@ -9271,7 +9330,13 @@ impl Servidor {
     ///
     /// Roda no aceitador, entao nao le o pedido nem toma trava nenhuma: so
     /// escreve a recusa e escoa o que ja chegou (ver `http::responder_cheio`).
-    fn recusar_http_cheio(&self, fluxo: &mut TcpStream, par: SocketAddr, familia: &'static str) {
+    fn recusar_http_cheio(
+        &self,
+        fluxo: &mut TcpStream,
+        par: SocketAddr,
+        familia: &'static str,
+        em_claro: bool,
+    ) {
         let fila_ms = self.config.recursos.fila_web_ms;
         let teto = self.permissoes_http.teto().to_string();
         let ms = fila_ms.to_string();
@@ -9306,7 +9371,64 @@ impl Servidor {
             ),
             ("retry_after_s", Json::de_u64(segundos)),
         ]);
+        if !em_claro {
+            // Numa porta TLS o 503 em claro chegaria como lixo no lugar de um
+            // aperto, e fazer o aperto so para recusar gastaria na porta cheia
+            // exatamente o que esta faltando. Fecha; o navegador tenta de novo.
+            let _ = fluxo.shutdown(std::net::Shutdown::Both);
+            return;
+        }
         let _ = http::responder_cheio(fluxo, segundos, &corpo.escrever());
+    }
+
+    /// Aperto TLS que falhou numa porta HTTP: o cliente ja recebeu o alerta
+    /// da §6, e o operador precisa ver o motivo no registro de acessos -- um
+    /// navegador que desistiu do certificado e um robo mandando lixo sao
+    /// coisas diferentes, e sem a linha os dois somem.
+    fn anotar_aperto_tls_recusado(&self, par: SocketAddr, familia: &str, e: &PhxError) {
+        self.anotar(&Acesso {
+            quando_ms: crate::agora_ms(),
+            ip: par.ip().to_string(),
+            porta_origem: par.port(),
+            op: familia.into(),
+            usuario: String::new(),
+            autenticado: false,
+            ok: false,
+            duracao_ms: 0,
+            erro: Some(format!("aperto TLS recusado: {e}")),
+            database: String::new(),
+            tabela: String::new(),
+            codigo: 0,
+        });
+    }
+
+    /// A identidade TLS de uma porta HTTP, se a secao dela pedir (pedido 572).
+    ///
+    /// `Err` = pediu e nao deu, e a porta NAO sobe: cair calado para o claro
+    /// seria o rebaixamento silencioso que o fio de dados ja recusa
+    /// (`docs/CIFRA-DO-FIO.md` §2).
+    fn identidade_http(
+        &self,
+        secao: &str,
+        tls: &crate::config::TlsPorta,
+        bind: &str,
+    ) -> Result<Option<Arc<phxsql_core::tls::Identidade>>> {
+        if !tls.ligado {
+            return Ok(None);
+        }
+        let host = bind
+            .rsplit_once(':')
+            .map(|(h, _)| h.trim_matches(['[', ']']))
+            .unwrap_or("");
+        let mut nomes = vec!["localhost", "127.0.0.1"];
+        if !host.is_empty() && !["0.0.0.0", "::", "localhost", "127.0.0.1"].contains(&host) {
+            nomes.push(host);
+        }
+        let (id, avisos) = tls.identidade(secao, &nomes, self.config.caminho.as_deref())?;
+        for a in avisos {
+            eprintln!("aviso: {a}");
+        }
+        Ok(Some(Arc::new(id)))
     }
 
     /// Os portoes de rede que valem antes de qualquer rota HTTP.
@@ -9334,9 +9456,17 @@ impl Servidor {
     /// morde, ela recusa todo pedido desta porta, entao decidir aqui poupa ate
     /// a trava da lista -- o portao que decide se o trabalho acontece vem
     /// antes do trabalho.
-    fn portao_de_rede_http(&self, fluxo: &mut TcpStream, ip: &str, porta: u16, op: &str) -> bool {
+    fn portao_de_rede_http(
+        &self,
+        fluxo: &mut http::FioWeb,
+        ip: &str,
+        porta: u16,
+        op: &str,
+    ) -> bool {
         let agora = crate::agora_ms();
-        if self.config.cifra_fio.exigir && !self.proxy_desta_porta_http(op).0 {
+        // O fio TLS nativo (pedido 572) e cifrado de fato; o proxy e a
+        // DECLARACAO de que ha um na frente. Qualquer dos dois atende.
+        if self.config.cifra_fio.exigir && !fluxo.cifrado() && !self.proxy_desta_porta_http(op).0 {
             self.recusar_http_em_claro(fluxo, ip, porta, op, agora);
             return false;
         }
@@ -9421,7 +9551,7 @@ impl Servidor {
     /// fala TLS ou fala claro, e o aperto do fio nao e opcao para ele.
     fn recusar_http_em_claro(
         &self,
-        fluxo: &mut TcpStream,
+        fluxo: &mut http::FioWeb,
         ip: &str,
         porta: u16,
         familia: &str,
@@ -9456,14 +9586,14 @@ impl Servidor {
     /// [`ExecutorLocal`], que precisa de posse compartilhada do servidor -- a
     /// mesma que o `--mcp` por stdio usa. As rotas `/v1/<op>`, `/openapi.json`
     /// e `/saude` nao mudaram em nada com isso.
-    fn atender_rest(self: &Arc<Self>, mut fluxo: TcpStream, par: SocketAddr) {
+    fn atender_rest(self: &Arc<Self>, mut fluxo: http::FioWeb, par: SocketAddr) {
         let ip = par.ip().to_string();
         let porta = par.port();
         let _ = fluxo.set_read_timeout(Some(Duration::from_secs(self.config.timeout_s)));
         if !self.portao_de_rede_http(&mut fluxo, &ip, porta, "rest") {
             return;
         }
-        let pedido = match http::ler_pedido(&fluxo) {
+        let pedido = match http::ler_pedido(&mut fluxo) {
             Some(p) => p,
             None => {
                 let _ = http::erro_json(&mut fluxo, 400, "pedido HTTP invalido ou grande demais");
@@ -9544,14 +9674,14 @@ impl Servidor {
     /// Ela NAO despacha operacao nenhuma, e isso e desenho: a porta que
     /// documenta e a porta que executa sao coisas diferentes, e quem abre a
     /// primeira para a equipe nao quer abrir a segunda junto.
-    fn atender_swagger(&self, mut fluxo: TcpStream, par: SocketAddr) {
+    fn atender_swagger(&self, mut fluxo: http::FioWeb, par: SocketAddr) {
         let ip = par.ip().to_string();
         let porta = par.port();
         let _ = fluxo.set_read_timeout(Some(Duration::from_secs(self.config.timeout_s)));
         if !self.portao_de_rede_http(&mut fluxo, &ip, porta, "swagger") {
             return;
         }
-        let pedido = match http::ler_pedido(&fluxo) {
+        let pedido = match http::ler_pedido(&mut fluxo) {
             Some(p) => p,
             None => {
                 let _ = http::erro_json(&mut fluxo, 400, "pedido HTTP invalido ou grande demais");
@@ -9622,7 +9752,7 @@ impl Servidor {
     /// da porta da rede.
     fn token_do_rest(
         &self,
-        fluxo: &mut TcpStream,
+        fluxo: &mut http::FioWeb,
         pedido: &http::Pedido,
         ip: &str,
         porta: u16,
@@ -9709,7 +9839,7 @@ impl Servidor {
     /// em todo pedido pela ponte, e o modelo nunca escolhe a credencial.
     fn mcp_http(
         self: &Arc<Self>,
-        fluxo: &mut TcpStream,
+        fluxo: &mut http::FioWeb,
         pedido: &http::Pedido,
         ip: &str,
         porta: u16,
@@ -9746,7 +9876,7 @@ impl Servidor {
     /// de onde vem a sessao, e que codigo devolver.
     fn api_rest(
         &self,
-        fluxo: &mut TcpStream,
+        fluxo: &mut http::FioWeb,
         pedido: &http::Pedido,
         ip: &str,
         porta: u16,
@@ -10071,7 +10201,7 @@ impl Servidor {
     /// devolve um identificador, o navegador o repete no cabecalho `X-Sessao`,
     /// e o PBKDF2 de 210.000 iteracoes roda uma vez por login em vez de uma
     /// vez por clique.
-    fn api_http(&self, fluxo: &mut TcpStream, pedido: &http::Pedido, ip: &str, porta: u16) {
+    fn api_http(&self, fluxo: &mut http::FioWeb, pedido: &http::Pedido, ip: &str, porta: u16) {
         let duracao = self.config.web.sessao_ms();
         let agora = crate::agora_ms();
         let id_pedido = pedido
@@ -55568,7 +55698,9 @@ mod testes_das_threads {
     fn porta_web(s: &Arc<Servidor>) -> u16 {
         let ouvinte = TcpListener::bind("127.0.0.1:0").unwrap();
         let porta = ouvinte.local_addr().unwrap().port();
-        s.aceitar_http(ouvinte, "web", |s, fluxo, par| s.atender_http(fluxo, par));
+        s.aceitar_http(ouvinte, "web", None, |s, fluxo, par| {
+            s.atender_http(fluxo, par)
+        });
         porta
     }
 

@@ -937,6 +937,45 @@ de dados recusando ao lado; sem o conserto do campo,
 - **As tentativas vivem em memória** — as leves e as graves contadas.
   Reiniciar o servidor zera os contadores; os bloqueios já gravados, não.
 
+### 7.0b TLS 1.3 nativo nas portas HTTP (pedido 572, 30/09/2026)
+
+**A decisão de 10/09 mudou, pelo dono, em 30/09/2026:** *«TLS no transporte é um
+item super importante a ser feito»*, e o meio escolhido foi **TLS 1.3 escrito
+aqui** — a mesma receita do SHA-256 e do HMAC: a norma lida, reescrita e
+provada, sem crate. O proxy da §7.1 continua valendo como alternativa; deixou de
+ser a única saída.
+
+```json
+"web":  { "ligado": true, "bind": "0.0.0.0:5001", "tls": true },
+"rest": { "ligado": true, "bind": "0.0.0.0:6000", "tls": true,
+          "tls_certificado": "/etc/phxsql/api.pem", "tls_chave": "/etc/phxsql/api-chave.pem" }
+```
+
+- **`tls`** liga o TLS na porta (na seção `rest`, nas **duas** portas dela, como o
+  `atras_de_proxy`). Nasce `false`: guarda nova entra pedida.
+- **`tls_certificado` e `tls_chave`**: PEM do certificado (a folha primeiro) e da
+  chave privada **P-256** (SEC 1 ou PKCS#8). Os dois juntos, ou nenhum.
+- **Os dois vazios** → um autoassinado gerado na primeira subida, ao lado do
+  `config.json` (`tls-web-*.pem`, `tls-rest-*.pem`), com a chave em modo `0600`.
+  O navegador avisa até entrar um certificado de verdade; o tráfego já sai
+  cifrado. A forma saiu do pesquisador: os três maduros convergem em dois
+  caminhos; gerar o autoassinado divide (MySQL 2 + MariaDB 3 = 5 contra
+  PostgreSQL 4) e gera.
+- **A chave tem de ser a do certificado**, e isso se confere na subida: senão o
+  erro só apareceria no cliente, a cada aperto.
+- **Pediu e não deu, a porta não sobe.** Nunca cai calada para o claro.
+- Com `cifra_fio.exigir` (o padrão), a porta com `tls` **atende**: o fio é
+  cifrado de fato, e o portão das portas HTTP passou a olhar isso além do
+  `atras_de_proxy`.
+- **Porta TLS não responde em claro**: quem fala HTTP cru recebe um alerta TLS
+  na hora, e nenhum byte de HTTP.
+
+O que se oferece hoje: `TLS_CHACHA20_POLY1305_SHA256` com X25519 ou P-256, e
+assinatura `ecdsa_secp256r1_sha256`. O **AES-128-GCM** (obrigatório pela §9.1 da
+RFC 8446) é o T5 do pedido 572; a **porta 5000** e o DbLink, o T6. Provas:
+`phxsql-core/src/tls.rs` (curl, `openssl s_client`, Chromium e um cliente cru que
+adultera o `Finished`) e `tests/tls-das-portas-http.rs`.
+
 ### 7.1 A receita do proxy TLS — a saída para quem exige TLS nativo (pedido 239)
 
 Decisão do dono, 10/09/2026: **para TLS nativo, um proxy que termina o TLS na
@@ -1021,10 +1060,10 @@ certa. O que muda é que o endereço de fábrica é fechado e o endereço aberto
 ```
 web.bind esta em 0.0.0.0:5001, que atende de FORA desta maquina, e HTTP e
 texto puro: senha, token e dado viajam legiveis para quem estiver no caminho.
-O PhxSql nao termina TLS (petrea das zero dependencias) -- ponha um proxy
-reverso terminando TLS na frente e devolva esta porta para 127.0.0.1. Se o
-proxy ja esta la, escreva "atras_de_proxy": true na secao web para calar este
-aviso. Receita em docs/SEGURANCA.md 7.1.
+Ligue "tls": true na secao web (TLS 1.3 nativo), ou ponha um proxy reverso
+terminando TLS na frente e devolva esta porta para 127.0.0.1. Se o proxy ja
+esta la, escreva "atras_de_proxy": true na secao web para calar este aviso.
+Receita em docs/SEGURANCA.md 7.1.
 ```
 
 ```json
