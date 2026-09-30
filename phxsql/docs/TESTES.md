@@ -977,9 +977,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `carga-adiada-orfa-sem-reconstruir` | a carga adiada que sai sem o `bulkinsert(false)` (conexão caída, reserva vencida) deixa o índice suspenso até o próximo arranque | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**332 das 501 guardas do catálogo: 1 aposentada, 327 provadas, 4 redundantes** — 9057 s de mutação, medido em 2026-09-16 15:25.
+**332 das 503 guardas do catálogo: 1 aposentada, 327 provadas, 4 redundantes** — 9057 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 170 das 501 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 170 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 172 das 503 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 172 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
@@ -1151,6 +1151,8 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `dblink-troca-o-host-e-herda-a-senha` — trocar o host de uma ligação do DbLink sem mandar a senha herda a guardada, e ela sai para o destino novo
 - `dblink-no-fio-com-a-trava-de-dados` — `dblink_ligar` e `dblink_sincronizar` vão ao fio com a trava de dados global na mão: um par que goteja abaixo do prazo por leitura prende todo pedido de todo cliente
 - `dblink-sem-prazo-total` — Os três clientes do DbLink (mysql, pg e phx) só têm prazo por LEITURA: um par que goteja um byte antes de cada prazo prende a thread do job ou da conexão para sempre
+- `porta-lida-pela-metade` — O apoio dos testes lia a porta do phxsqld antes de a linha acabar: o eprintln! sai em várias escritas, e o parse do endereço pela metade dava AddrParseError (ou a porta errada)
+- `copia-da-troca-sem-fsync` — A cópia de reserva da troca no restaurar (o caminho sem rename) apagava a origem sem fsync da cópia: uma queda no meio deixava a única via de volta pela metade
 
 As guardas que esta corrida ainda cita, hoje aposentadas:
 

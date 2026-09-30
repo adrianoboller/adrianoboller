@@ -31,13 +31,13 @@ const ASSINATURA_7Z: &[u8] = b"7z\xbc\xaf\x27\x1c";
 /// quatro corridas seguintes. A porta 0 fecha a janela sem depender do
 /// diagnostico.
 fn porta_aberta(erro_padrao: &Path) -> u16 {
-    const LINHA: &str = "porta de dados escutando em ";
     let ate = Instant::now() + Duration::from_secs(10);
     while Instant::now() < ate {
         let texto = std::fs::read_to_string(erro_padrao).unwrap_or_default();
-        if let Some(resto) = texto.lines().find_map(|l| l.strip_prefix(LINHA)) {
-            let alvo: SocketAddr = resto.trim().parse().unwrap();
-            return alvo.port();
+        // Pedido 581: so a linha INTEIRA -- o `eprintln!` da porta sai em
+        // varias escritas, e o prefixo casava antes de o endereco chegar.
+        if let Some(porta) = comum::porta_no_texto(&texto) {
+            return porta.unwrap_or_else(|e| panic!("{e}"));
         }
         std::thread::sleep(Duration::from_millis(20));
     }

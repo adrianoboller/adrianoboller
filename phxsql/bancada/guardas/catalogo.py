@@ -17593,4 +17593,77 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "email::testes::o_rele_que_pinga_e_cortado_no_prazo_total",
         ],
     },
+    {
+        "id": "porta-lida-pela-metade",
+        "titulo": "O apoio dos testes lia a porta do phxsqld antes de a linha acabar: o eprintln! sai em várias escritas, e o parse do endereço pela metade dava AddrParseError (ou a porta errada)",
+        "porque": (
+            "pedido 581. Medido por `strace -e write` no `phxsqld`: o "
+            "`eprintln!(\"porta de dados escutando em {e}\")` sai em uma "
+            "syscall por pedaco (`\"porta de dados escutando em \"`, `\"127\"`, "
+            "`\".\"`, ...), e o `porta_do_phxsqld` do `tests/comum` casava o "
+            "prefixo sem esperar o `\\n`. No servidor de verdade a janela e de "
+            "microssegundos (0 quedas em 230 corridas sob 8 lacos de CPU); o "
+            "servidor falso do teste escreve a linha em dois pedacos com 400 "
+            "ms no meio, e o defeito reposto cai toda vez."
+        ),
+        "arquivo": "crates/phxsql-server/tests/comum/mod.rs",
+        "trecho": """    let inteiras = &texto[..texto.rfind('\\n').map_or(0, |i| i + 1)];""",
+        "troca": """    // DEFEITO REPOSTO (581): o texto inteiro, com a ultima linha pela metade.
+    let inteiras = texto;""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "porta-lida-pela-metade"],
+        "caem": [
+            "o_endereco_pela_metade_espera_o_resto",
+            "a_porta_pela_metade_nao_vira_outra_porta",
+        ],
+        "seguem": ["a_linha_inteira_ilegivel_e_erro_na_hora"],
+    },
+    {
+        "id": "copia-da-troca-sem-fsync",
+        "titulo": "A cópia de reserva da troca no restaurar (o caminho sem rename) apagava a origem sem fsync da cópia: uma queda no meio deixava a única via de volta pela metade",
+        "porque": (
+            "pedido 582, irmao do 552. Quando o `rename` recusa (a raiz de "
+            "dados e ponto de montagem), `renomear_ou_copiar` copia a arvore e "
+            "faz `remove_dir_all` da origem -- e `copiar_arvore` fechava cada "
+            "copia sem `fsync`, sem `fsync` das pastas e sem o do pai. Pelo "
+            "`strace -y`: com o conserto cada arquivo sincroniza no descritor "
+            "que o criou, cada pasta depois da ultima entrada, o pai depois de "
+            "a reserva nascer -- tudo antes do primeiro `unlink` da origem."
+        ),
+        "trocas": [
+            {
+                "arquivo": "crates/phxsql-store/src/restaurar.rs",
+                "trecho": """            let escrito = crate::util::copiar_do_banco(&origem, &alvo)?;
+            crate::sincronia::sync_all(&escrito, &alvo)?;""",
+                "troca": """            // DEFEITO REPOSTO (582): copia sem fsync.
+            crate::util::copiar_do_banco(&origem, &alvo)?;""",
+            },
+            {
+                "arquivo": "crates/phxsql-store/src/restaurar.rs",
+                "trecho": """    if let Some(entrada) = alguma {
+        crate::sincronia::sincronizar_os_diretorios(&entrada, &entrada, true)?;
+    }""",
+                "troca": """    // DEFEITO REPOSTO (582): pasta sem fsync.
+    let _ = alguma;""",
+            },
+            {
+                "arquivo": "crates/phxsql-store/src/restaurar.rs",
+                "trecho": """    copiar_arvore(de, para)?;
+    crate::sincronia::sincronizar_os_diretorios(para, para, true)?;
+    std::fs::remove_dir_all(de)?;
+    crate::sincronia::sincronizar_os_diretorios(de, de, true)""",
+                "troca": """    // DEFEITO REPOSTO (582): apaga a origem sem o fsync do pai.
+    copiar_arvore(de, para)?;
+    std::fs::remove_dir_all(de)?;
+    Ok(())""",
+            },
+        ],
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": ["restaurar::tests::a_copia_da_troca_vai_ao_disco_antes_de_apagar"],
+        "seguem": [
+            "restaurar::tests::por_cima_guarda_o_antigo_fora_da_raiz",
+            "restaurar::tests::restaura_da_arvore_copiada_escolhendo_o_banco",
+        ],
+    },
 ]

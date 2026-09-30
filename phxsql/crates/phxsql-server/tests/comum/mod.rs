@@ -171,13 +171,11 @@ impl Drop for Filho {
 /// 20 s.
 #[allow(dead_code)]
 pub fn porta_do_phxsqld(filho: &mut Filho, erro_padrao: &Path) -> Result<u16, String> {
-    const LINHA: &str = "porta de dados escutando em ";
     let ate = std::time::Instant::now() + std::time::Duration::from_secs(20);
     loop {
         let texto = std::fs::read_to_string(erro_padrao).unwrap_or_default();
-        if let Some(resto) = texto.lines().find_map(|l| l.strip_prefix(LINHA)) {
-            let alvo: std::net::SocketAddr = resto.trim().parse().unwrap();
-            return Ok(alvo.port());
+        if let Some(porta) = porta_no_texto(&texto) {
+            return porta;
         }
         if let Some(st) = filho.0.try_wait().unwrap() {
             let texto = std::fs::read_to_string(erro_padrao).unwrap_or_default();
@@ -188,6 +186,39 @@ pub fn porta_do_phxsqld(filho: &mut Filho, erro_padrao: &Path) -> Result<u16, St
         }
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
+}
+
+/// A porta da linha `porta de dados escutando em ...` do erro padrao, lida
+/// SO das linhas inteiras. `None` enquanto ela nao chegou inteira.
+///
+/// # Por que so a linha que ja tem o `\n` (pedido 581)
+///
+/// O `eprintln!` do `phxsqld` NAO e uma escrita so: o `stderr` da `std` nao
+/// tem buffer, e o `Display` do `SocketAddr` sai octeto por octeto. Medido
+/// por `strace -e write` no servidor: `"porta de dados escutando em "`,
+/// `"127"`, `"."`, `"0"`, ... -- uma syscall por pedaco. Quem le o arquivo no
+/// meio via `...escutando em 127.0.` e o `parse` dava `AddrParseError` (o
+/// floco); ou via `...:4` de `:43210` e o `parse` PASSAVA com a porta errada,
+/// que e pior, porque a queda aparece longe dali, no `connect`. O prefixo
+/// casa desde o primeiro pedaco; so o `\n` diz que a linha acabou.
+///
+/// Linha INTEIRA que nao se le e defeito de verdade, e volta `Err` com ela --
+/// esperar mais nao a consertaria.
+///
+/// Mora aqui para ser o motor unico de quem le essa linha: os testes que
+/// tinham a propria copia do `porta_aberta` chamam esta.
+#[allow(dead_code)]
+pub fn porta_no_texto(texto: &str) -> Option<Result<u16, String>> {
+    const LINHA: &str = "porta de dados escutando em ";
+    let inteiras = &texto[..texto.rfind('\n').map_or(0, |i| i + 1)];
+    let resto = inteiras.lines().find_map(|l| l.strip_prefix(LINHA))?;
+    Some(
+        resto
+            .trim()
+            .parse::<std::net::SocketAddr>()
+            .map(|a| a.port())
+            .map_err(|e| format!("a linha da porta chegou inteira e nao se le ({e}): {resto:?}")),
+    )
 }
 
 /// Um pedido de uma linha pela porta de dados, e a resposta de uma linha.

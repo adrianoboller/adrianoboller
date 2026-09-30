@@ -256,10 +256,17 @@ pub fn escrever_do_banco(caminho: &Path, corpo: impl AsRef<[u8]>) -> std::io::Re
 /// antiga faria a copia nascer `0644`, e a copia de backup e o caso que o
 /// pedido 542 mediu. Aqui o destino nasce pelo motor, e o conteudo vai por
 /// `io::copy` (no Linux, `copy_file_range`).
-pub fn copiar_do_banco(de: &Path, para: &Path) -> std::io::Result<u64> {
+///
+/// Devolve o descritor que ESCREVEU, ainda aberto (pedido 582): quem precisa
+/// do `fsync` da copia o faz NESTE, e nao num reaberto pelo caminho -- a
+/// licao do pedido 552 (o caso *fsyncgate*): fechado, o nucleo pode despejar
+/// o inode junto com o erro de *writeback*, e o descritor novo responde Ok
+/// sem o dado. Quem nao precisa so o solta.
+pub fn copiar_do_banco(de: &Path, para: &Path) -> std::io::Result<File> {
     let mut origem = File::open(de)?;
     let mut destino = recriar_do_banco(para, false)?;
-    std::io::copy(&mut origem, &mut destino)
+    std::io::copy(&mut origem, &mut destino)?;
+    Ok(destino)
 }
 
 /// O `create_dir_all` do banco: cada nivel que nasce AQUI nasce 0700; o que
