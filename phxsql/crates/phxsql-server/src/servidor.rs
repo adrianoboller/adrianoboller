@@ -671,6 +671,14 @@ struct Sessao {
     transcricao_do_fio: Option<[u8; 32]>,
     /// Por onde esta conexao entrou -- ver [`Entrada`].
     entrada: Entrada,
+    /// O `ip` acima e o do PROXY declarado, e nao o de quem pediu (pedido
+    /// 284).
+    ///
+    /// Numa porta HTTP com `atras_de_proxy`, o par do soquete e o proxy
+    /// reverso, e todo cliente de fora chega com o mesmo endereco. Mora na
+    /// SESSAO pelo mesmo motivo do `ip`: e propriedade da conexao, e o portao
+    /// que compara o IP com uma lista precisa saber se o IP diz quem pediu.
+    ip_do_proxy: bool,
 }
 
 impl Sessao {
@@ -2470,6 +2478,33 @@ impl Servidor {
                     ""
                 }
             );
+        }
+        // Pedido 284: a lista compara o par do soquete, e atras do proxy o par
+        // e o proxy. O portao 2a-bis recusa a replicacao nessas portas; dizer
+        // no arranque poupa quem apontou a replica para o proxy de descobrir
+        // pela recusa.
+        let lista_preenchida = !self.config.replicacao.replicas_autorizadas.is_empty();
+        for (ligada, proxy, secao) in [
+            (
+                self.config.web.ligado,
+                self.config.web.atras_de_proxy,
+                "web",
+            ),
+            (
+                self.config.rest.ligado,
+                self.config.rest.atras_de_proxy,
+                "rest",
+            ),
+        ] {
+            if lista_preenchida && ligada && proxy {
+                eprintln!(
+                    "replicacao: a secao {secao} declara atras_de_proxy, entao o IP \
+                     que ela ve e o do proxy e replicacao.replicas_autorizadas nao \
+                     decide ali -- `posicao`, `replicar`, `aplicar` e \
+                     `cluster_pulso` sao recusados por essa porta. A replica \
+                     entra pela porta de dados."
+                );
+            }
         }
 
         self.subir_web();
@@ -10336,7 +10371,7 @@ impl Servidor {
             .unwrap_or("")
             .trim()
             .to_string();
-        let (mut sessao, mut id_sessao) = self.sessao_do_cabecalho(&id_pedido, ip, agora);
+        let (mut sessao, mut id_sessao) = self.sessao_do_cabecalho(&id_pedido, ip, "rest", agora);
 
         // O pedido: o caminho manda a operacao, o corpo traz o resto, o
         // `config.json` estreita, e so entao o `despachar` decide.
@@ -10559,10 +10594,20 @@ impl Servidor {
     ///
     /// Devolve a sessao reconstruida e o identificador que continua valendo
     /// (vazio quando o cabecalho veio vazio, errado ou vencido).
-    fn sessao_do_cabecalho(&self, id_pedido: &str, ip: &str, agora: i64) -> (Sessao, String) {
+    fn sessao_do_cabecalho(
+        &self,
+        id_pedido: &str,
+        ip: &str,
+        familia: &str,
+        agora: i64,
+    ) -> (Sessao, String) {
         let duracao = self.config.web.sessao_ms();
         let mut sessao = Sessao {
             ip: ip.to_string(),
+            // A mesma pergunta do portao de rede, pela mesma funcao: uma
+            // segunda ideia de qual secao declara o proxy divergiria na
+            // primeira correcao feita numa so.
+            ip_do_proxy: self.proxy_desta_porta_http(familia).0,
             // Os DOIS caminhos HTTP passam por aqui -- a interface web e o
             // webservice REST --, e e por isso que a marca da entrada tambem
             // mora num lugar so: uma copia em cada lado seria duas ideias do
@@ -10649,7 +10694,7 @@ impl Servidor {
             .trim()
             .to_string();
 
-        let (mut sessao, mut id_sessao) = self.sessao_do_cabecalho(&id_pedido, ip, agora);
+        let (mut sessao, mut id_sessao) = self.sessao_do_cabecalho(&id_pedido, ip, "web", agora);
 
         // Abrir conexao para outro PhxSql, se o login pediu um servidor.
         //
@@ -11853,6 +11898,22 @@ impl Servidor {
         // Um portao so, aqui, e nao espalhado pelas tres operacoes.
         if OPS_DE_REPLICACAO.contains(&op) && !sessao.ip.is_empty() {
             let lista = &self.config.replicacao.replicas_autorizadas;
+            // Atras do proxy declarado o IP e o do PROXY (pedido 284): com
+            // `["127.0.0.1"]` na lista, todo cliente que chega por ele seria
+            // a replica autorizada. A lista nao tem como decidir ali, entao
+            // a porta HTTP com proxy recusa a replicacao -- a replica tem a
+            // porta de dados, onde o par do soquete e ela. Lista vazia nao
+            // entra aqui: guarda pedida, o comportamento de sempre fica.
+            //
+            // SEM `violacao_leve`, e de proposito: o IP aqui e o do proxy, e
+            // contar violacao contra ele levaria a lista negra a barrar TODO
+            // cliente que chega pelo proxy por causa de um. A recusa continua
+            // no `acessos.log`, que o chamador escreve.
+            if !lista.is_empty() && sessao.ip_do_proxy {
+                return Err(PhxError::Autorizacao(
+                    self.msg("erro.replica_atras_de_proxy", &[]),
+                ));
+            }
             if !lista.is_empty() && !lista.iter().any(|p| p == &sessao.ip) {
                 self.violacao_leve(&sessao.ip, op, "ip fora de replicas_autorizadas");
                 return Err(PhxError::Autorizacao(

@@ -332,6 +332,21 @@ pub struct EstadoCluster {
     /// operador precisa ver, cair no descarte. Cresce so ate a lista: todo
     /// `id` que chega aqui ja passou pelo crivo do pedido 441.
     avisos_contidos: TravaDaGuarda<(HashMap<String, i64>, HashMap<String, u64>)>,
+    /// Os pares para quem este no ASSINOU o pulso e ainda nao deixou de
+    /// assinar -- pedido 436 (SEC M4).
+    ///
+    /// E o outro lado do `provaram`: la, o par que ja provou nao volta a ser
+    /// ouvido sem prova; aqui, este no sabe que o par o pos nessa conta. Sair
+    /// deste conjunto e o EVENTO «deixei de provar para X», e e ele que se
+    /// anuncia -- uma vez por troca, e nao por pulso.
+    assinou_para: TravaDaGuarda<std::collections::HashSet<String>>,
+    /// Este no ja assinou para ALGUEM nesta vida? O portao do aviso acima.
+    ///
+    /// Um cluster que nunca configurou pino passa pelo caminho «sem pino» a
+    /// cada pulso, para sempre; sem este portao, o aviso que so serve a quem
+    /// ja assinou cobraria uma trava de todos. Um `load` relaxado decide antes
+    /// do trabalho.
+    assinou_alguma: AtomicBool,
     caminho_estado: PathBuf,
     /// Quando este estado nasceu. O arbitro da UMA janela de graca a partir
     /// daqui: no arranque o primeiro tique roda antes do primeiro pulso, e
@@ -488,6 +503,11 @@ impl EstadoCluster {
                 "do silencio dos diagnosticos do pulso",
                 (HashMap::new(), HashMap::new()),
             ),
+            assinou_para: TravaDaGuarda::nova(
+                "dos pares para quem este no assinou o pulso",
+                std::collections::HashSet::new(),
+            ),
+            assinou_alguma: AtomicBool::new(false),
             caminho_estado,
             nascido_ms: agora,
         }
@@ -642,7 +662,20 @@ impl EstadoCluster {
         destino: &crate::config::NoCluster,
         canal: Option<&[u8]>,
     ) -> Option<Vec<(&'static str, Json)>> {
-        let publica = destino.pino_do_fio().ok().flatten()?;
+        let publica = match destino.pino_do_fio() {
+            Ok(Some(p)) => p,
+            Ok(None) => {
+                self.deixou_de_provar(destino, "o chave_do_fio dele esta vazio NESTE no");
+                return None;
+            }
+            Err(e) => {
+                self.deixou_de_provar(
+                    destino,
+                    &format!("o chave_do_fio dele NESTE no nao se le ({e})"),
+                );
+                return None;
+            }
+        };
         let quando = crate::agora_ms();
         let nonce = crate::pulso::nonce();
         let campos = crate::pulso::Assinado {
@@ -656,13 +689,62 @@ impl EstadoCluster {
             quando,
             nonce: &nonce,
         };
-        let prova = crate::pulso::assinar(estatica, &publica, &campos, canal).ok()?;
+        let prova = match crate::pulso::assinar(estatica, &publica, &campos, canal) {
+            Ok(p) => p,
+            Err(e) => {
+                self.deixou_de_provar(destino, &format!("a assinatura falhou ({e})"));
+                return None;
+            }
+        };
+        self.marcar_assinado(&destino.id);
         Some(vec![
             ("para", Json::texto_de(&destino.id)),
             ("quando", Json::de_i64(quando)),
             ("nonce", Json::texto_de(&nonce)),
             ("prova", Json::texto_de(prova)),
         ])
+    }
+
+    fn marcar_assinado(&self, id: &str) {
+        self.assinou_alguma.store(true, Ordering::Relaxed);
+        let mut assinou = self.assinou_para.travar();
+        if !assinou.contains(id) {
+            assinou.insert(id.to_string());
+        }
+    }
+
+    /// Diz no stderr, UMA vez por troca, que este no deixou de assinar o
+    /// pulso para um par para quem ja assinava -- pedido 436 (SEC M4).
+    ///
+    /// O `campos_da_prova` devolvia `None` calado (`.ok()?`) quando o pino do
+    /// par sumia ou nao se lia, e o pulso saia sem prova. Do lado de la, o
+    /// par ja tinha este no no `provaram`, e o TOFU passa a recusar todo
+    /// pulso dele ate o par reiniciar: um escorregao de configuracao aqui
+    /// vira este no dado como morto la, e failover. O lado de la registra a
+    /// recusa no `acessos.log` dele; o motivo, que e configuracao DESTE no,
+    /// so este processo sabe -- e e aqui que ele tem de aparecer.
+    ///
+    /// Por que o TOFU continua sem expirar, com o numero, esta em
+    /// `docs/CLUSTER.md` §2.2 («O TOFU nao expira»).
+    fn deixou_de_provar(&self, destino: &crate::config::NoCluster, motivo: &str) {
+        // O portao antes do trabalho: um cluster que nunca assinou para
+        // ninguem nao paga trava nenhuma aqui, pulso apos pulso.
+        if !self.assinou_alguma.load(Ordering::Relaxed) {
+            return;
+        }
+        if !self.assinou_para.travar().remove(&destino.id) {
+            return;
+        }
+        let id = destino.id.as_str();
+        eprintln!(
+            "cluster: este no ASSINAVA o pulso para {id:?} e deixou de assinar -- \
+             {motivo}. O pulso agora sai SEM prova, e {id:?}, que ja recebeu \
+             prova deste no, passa a recusa-lo ate reiniciar (o TOFU do pedido \
+             278 nao expira na vida do processo): para {id:?} este no fica \
+             mudo, e isso pode virar failover. Restaure o chave_do_fio de \
+             {id:?} neste no, ou reinicie {id:?}. Este aviso sai uma vez por \
+             troca"
+        );
     }
 
     /// Este no ja provou a identidade dele alguma vez desde que subimos?
@@ -1463,6 +1545,96 @@ mod testes {
             assert!(!e2.escrita_liberada(), "corpo {corpo:?}");
             assert!(e2.recusa_de_escrita().is_some(), "corpo {corpo:?}");
         }
+    }
+
+    /// A sonda de `o_no_que_deixou_de_provar_diz_no_stderr`. So faz sentido
+    /// como processo FILHO: o que se mede e o stderr, e dentro da bateria o
+    /// `libtest` o captura.
+    ///
+    /// `no1` ganha pino, assina, perde o pino (tres pulsos sem ele), volta a
+    /// assinar e perde de novo. `no3` nunca teve pino: e o cluster que nunca
+    /// configurou nada, e nao pode receber aviso nenhum.
+    #[test]
+    #[ignore = "sonda: roda so reexecutada por o_no_que_deixou_de_provar_diz_no_stderr"]
+    fn sonda_deixou_de_provar() {
+        let d = DirTemp::novo("cluster-deixou-de-provar");
+        let e = EstadoCluster::novo(config_de_teste(), &d, crate::config::Papel::Replica);
+        let estatica = [7u8; 32];
+        let com_pino = |id: &str| crate::config::NoCluster {
+            chave_do_fio: phxsql_core::hash::para_hex(&phxsql_core::x25519::chave_publica(
+                &[9u8; 32],
+            )),
+            ..e.no(id).unwrap()
+        };
+        let sem_pino = |id: &str| e.no(id).unwrap();
+        // O cluster sem pino nenhum: nunca assinou, nunca avisa.
+        for _ in 0..3 {
+            assert!(e
+                .campos_da_prova(&estatica, &sem_pino("no3"), None)
+                .is_none());
+        }
+        assert!(e
+            .campos_da_prova(&estatica, &com_pino("no1"), None)
+            .is_some());
+        for _ in 0..3 {
+            assert!(e
+                .campos_da_prova(&estatica, &sem_pino("no1"), None)
+                .is_none());
+        }
+        assert!(e
+            .campos_da_prova(&estatica, &com_pino("no1"), None)
+            .is_some());
+        assert!(e
+            .campos_da_prova(&estatica, &sem_pino("no1"), None)
+            .is_none());
+        // O no3 continua calado mesmo depois de este no ter assinado para
+        // outro: o aviso e da troca DESTE par.
+        assert!(e
+            .campos_da_prova(&estatica, &sem_pino("no3"), None)
+            .is_none());
+    }
+
+    /// **Prova real do pedido 436, M4 (parte do aviso).** O no que deixa de
+    /// assinar o pulso para um par que ja recebeu prova dele diz isso no
+    /// stderr, uma vez por troca.
+    ///
+    /// # Os dois vermelhos
+    ///
+    /// Zero linhas e o defeito do achado: o `.ok()?` calado do
+    /// `campos_da_prova`, com o par recusando este no pelo TOFU e ninguem
+    /// aqui sabendo por que. Quatro linhas para o `no1` (uma por pulso sem
+    /// prova) e o aviso perpetuo que gasta a confianca do aviso verdadeiro. O
+    /// certo e duas: duas trocas. E zero para o `no3`, que nunca assinou.
+    #[test]
+    fn o_no_que_deixou_de_provar_diz_no_stderr() {
+        let saida = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "cluster::testes::sonda_deixou_de_provar",
+                "--exact",
+                "--ignored",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .output()
+            .expect("reexecutar o proprio binario de teste");
+        let erro = String::from_utf8_lossy(&saida.stderr);
+        assert!(
+            saida.status.success(),
+            "a sonda nao terminou limpa:\n{erro}"
+        );
+        let linhas_de = |id: &str| {
+            let marca = format!("{id:?}");
+            erro.lines()
+                .filter(|l| l.contains("deixou de assinar") && l.contains(&marca))
+                .count()
+        };
+        assert_eq!(
+            (linhas_de("no1"), linhas_de("no3")),
+            (2, 0),
+            "o certo e um aviso por troca (duas para o no1) e nenhum para quem \
+             nunca assinou. stderr da sonda:\n{erro}"
+        );
+        assert!(erro.contains("esta vazio NESTE no"), "{erro}");
     }
 
     /// O filho que o teste de baixo roda debaixo do `strace`.

@@ -563,6 +563,17 @@ pub const FABRICA: &[MensagemFabrica] = &[
         ],
     },
     MensagemFabrica {
+        nome: "erro.replica_atras_de_proxy",
+        textos: [
+            "replicacao.replicas_autorizadas nao vale numa porta HTTP com atras_de_proxy: o ip ali e o do proxy, e nao o da replica. A replica entra pela porta de dados",
+            "replicacao.replicas_autorizadas ne vaut pas sur un port HTTP avec atras_de_proxy : l'ip y est celle du proxy, pas celle de la replique. La replique entre par le port de donnees",
+            "replicacao.replicas_autorizadas does not apply on an HTTP port with atras_de_proxy: the ip there is the proxy's, not the replica's. The replica connects through the data port",
+            "replicacao.replicas_autorizadas non vale su una porta HTTP con atras_de_proxy: l'ip li e quello del proxy, non della replica. La replica entra dalla porta dati",
+            "replicacao.replicas_autorizadas gilt nicht auf einem HTTP-Port mit atras_de_proxy: die IP dort ist die des Proxys, nicht die der Replik. Die Replik verbindet sich ueber den Datenport",
+            "replicacao.replicas_autorizadas no vale en un puerto HTTP con atras_de_proxy: la ip alli es la del proxy, no la de la replica. La replica entra por el puerto de datos",
+        ],
+    },
+    MensagemFabrica {
         nome: "erro.aplicar_fora_de_replica",
         textos: [
             "`aplicar` grava sem conferir chave estrangeira, CHECK nem cascata, e so \

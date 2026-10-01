@@ -2658,8 +2658,9 @@ async function entrar() {
     // protocolo precisa (em MEMÓRIA, que cai no refresh), e o formulário fica
     // escondido até um `location.reload()`. Custo para quem usa: zero.
     //
-    // E NÃO se limpa no `catch`: entrada recusada tem de deixar o que foi
-    // digitado, senão consertar uma letra vira redigitar tudo.
+    // E a senha e o token NAO se limpam no `catch`: entrada recusada tem de
+    // deixar o que foi digitado, senao consertar uma letra vira redigitar
+    // tudo. A chave privada e a excecao, e o motivo esta no proprio `catch`.
     for (const campo of ["#s", "#t", "#k"]) $(campo).value = "";
     // Carimba a data DEPOIS de a entrada dar certo: uma tentativa recusada
     // nao e um uso, e a coluna diz «último uso», nao «última tentativa».
@@ -2668,6 +2669,18 @@ async function entrar() {
   } catch (e) {
     recado.className = "recado erro";
     recado.textContent = e.message || txt("tela.falhou", "não consegui entrar");
+    // A CHAVE PRIVADA sai do campo tambem na recusa (pedido 436, B5) -- a
+    // excecao a regra de cima, e so para ela. A senha e o token ficam para
+    // consertar uma letra; a chave Ed25519 nao se digita, se cola, e voltar
+    // a colar custa um gesto. Ela e a identidade que nao gira como uma
+    // senha, e uma entrada recusada deixava a chave inteira em `#k.value` ao
+    // alcance de qualquer script pelo tempo que a tela de entrada ficasse
+    // aberta. E diz que tirou: campo esvaziado calado manda procurar defeito.
+    if ($("#k").value) {
+      $("#k").value = "";
+      recado.textContent += " " + txt("tela.chave_privada_retirada",
+        "A chave privada saiu do campo: cole de novo para tentar outra vez.");
+    }
   }
 }
 

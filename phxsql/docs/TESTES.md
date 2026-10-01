@@ -1049,11 +1049,15 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `contador-do-congelamento-relativo` | o teste do contador do congelamento exigia `antes + 2`: o vizinho congelado na leitura de `antes` que soltava no meio derrubava o teste sem defeito nenhum | 1 | ✅ provada |
 | `drop-do-congelamento-esquece-o-contador` | o `Drop` do congelamento tirava a tabela do registro e esquecia o contador: o portão barato ficava caro para sempre, e o teste antigo não via | 2 | ✅ provada |
 | `arbitro-engole-o-rebaixar` | o árbitro do cluster engolia a falha de gravar o rebaixamento (`let _ = estado.rebaixar(...)`): o nó voltava mandando num reinício, sem pista nenhuma | 2 | ✅ provada |
+| `replica-atras-de-proxy-passa-pela-lista` | atrás do proxy declarado, `replicas_autorizadas` comparava o IP do PROXY e autorizava todo cliente que chegava por ele | 1 | ✅ provada |
+| `trilha-em-claro-depois-do-cofre` | o ativo do `.lgpd` nascido em claro continuava recebendo registro em claro depois de o cofre ligar | 2 | ✅ provada |
+| `trilha-ativo-vazio-em-claro` | com o cofre ligado, o ativo VAZIO do `.lgpd` em claro (o que um rodízio sem cofre deixa) recebia o primeiro registro em claro | 1 | ✅ provada |
+| `pulso-deixa-de-provar-calado` | o nó que deixava de assinar o pulso para um par que já recebera prova dele não dizia nada (`campos_da_prova` com `.ok()?`) | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**408 das 583 guardas do catálogo: 1 aposentada, 403 provadas, 4 redundantes** — 11740 s de mutação, medido em 2026-09-16 15:25.
+**412 das 587 guardas do catálogo: 1 aposentada, 407 provadas, 4 redundantes** — 11884 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 176 das 583 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 176 das 587 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação

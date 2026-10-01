@@ -1833,7 +1833,7 @@ Toda escolha aqui deixa algo em claro. Esconder isso seria pior que não cifrar.
 | **a marca `.tx` do `COMMIT`** | **FECHADO em 22/09/2026 — esta linha estava velha nas DUAS afirmações dela, e conferi as duas no fonte.** (1) «Nasce `0644`»: hoje `transacao::criar_privado` usa `create_new` + `mode(0o600)`, e há teste que falha se voltar a `File::create`. (2) «É o único lugar do motor que tira o valor do selo e o devolve ao disco sem selo»: a marca ganhou uma **v4** que carrega o material de cifra no cabeçalho e **sela o payload de cada operação** quando o cofre está ligado — o `transacao.rs` tinha **zero** menção a cofre/cifra/selar quando o pedido 354 nasceu e tem **30** hoje. A v3 continua sendo o que se escreve com o cofre desligado, e aí o `.tx` está em claro como todo o resto — o que não é vazamento **deste** arquivo. Pedido 354, **fechado**; o rótulo BLOQUEIO sai daqui. |
 | o **hash do bloco** numa tabela modo ledger | `sha256` **sem sal** do conteúdo canônico, gravado na coluna `hash`, que não é marcada e por isso não é cifrada (`ledger.rs:199`, `:218`). Ao lado do valor selado fica um oráculo de confirmação exato e offline — pedido 355, nomeado em 18/09/2026 |
 | o **`perfil.txt`** de uma tabela cifrada pela MARCA e ausente de `cifra.tabelas` | o Profiler cega por `config.cifra.tabelas` (`profiler.rs:721`) e a cifra acontece por `DadoPessoal` (`reg.rs:275`): dois campos, uma garantia — pedido 356, nomeado em 18/09/2026 |
-| o `antes`/`depois` de coluna marcada no **`.lgpd`** | a trilha redige por NOME de coluna e por análise de hash (`trilha.rs:400`, `:358-370`), nunca pela marca. O corpo do `.lgpd` é cifrado pelo cofre no mesmo interruptor, e por isso isto é **concentração** e não vazamento em repouso — mas é exatamente a condição que a §11.7 escreveu no futuro do pretérito, e ela chegou: pedido 357 |
+| o `antes`/`depois` de coluna marcada no **`.lgpd`** | a trilha redige por NOME de coluna e por análise de hash (`trilha.rs:400`, `:358-370`), nunca pela marca. O corpo do `.lgpd` é cifrado pelo cofre no mesmo interruptor, e por isso isto é **concentração** e não vazamento em repouso — mas é exatamente a condição que a §11.7 escreveu no futuro do pretérito, e ela chegou: pedido 357. Desde 01/10/2026 o ativo nascido em claro fecha (ou renasce) quando o cofre liga (§11.7) |
 | o **primeiro caractere** da coluna marcada, pelo `rowid` | `rowid = (balde-1)*rpa + usados + 1` é conta pública (`reg.rs:1609`, `pag.rs:148`), e vale **inclusive para quem tem a coluna negada** — pedidos 346 e 358. O 358 **RECUSOU** esconder o rowid, com o número: um mapa `rowid -> endereço` consultado em toda leitura é a mesma família do catálogo reverso que esta casa já recusou para a FK, e pior, porque cobraria no `ler` (o laço), não no `excluir` (o raro) |
 | ~~o histograma do `esquema` (`paginacao.baldes[].registros`)~~ **FECHADO em 24/09/2026 (pedido 369)** | Era a segunda porta que o 358 nomeou e deixou para o papel B: `("esquema", PorColuna::Estrutura)` é a única classe isenta da peneira do direito por coluna — certo para nome, tipo e índice, errado para a CONTAGEM de linhas por balde, que é agregado do dado e não estrutura. Hoje `direito_coluna::peneirar_baldes` tira `registros` de cada balde quando a coluna que particiona a tabela está em `sem_ler`; `letra`, `arquivo`, `existe` e `primeiro_rowid` continuam, porque não são dado. Sem regra de coluna nenhuma, ou com regra numa coluna que não particiona, o histograma sai como sempre — teste `baldes_perdem_a_contagem_so_quando_a_coluna_da_particao_esta_negada` (`servidor.rs`) trava os dois sentidos |
 
@@ -2115,6 +2115,25 @@ tabela nova com a cifra já ligada.
 valor-depois de coluna marcada, ela tem de gravar o texto cifrado ou uma marca
 de redação — nunca o claro.** Gravar o claro numa trilha que ninguém cifra
 desfaz tudo o que está nesta seção, e desfaz em silêncio.
+
+**A condição chegou, e a metade do volume ativo está fechada (pedido 357-1,
+01/10/2026).** A trilha grava `antes`/`depois`, e o corpo do `.lgpd` é cifrado
+pelo cofre — mas o **ativo** nascido em claro numa vida sem cofre continuava
+recebendo registro em claro depois de o cofre ligar. Hoje o `anexar` pergunta
+primeiro ao cabeçalho que já tem na mão (`cifrado()`, custo zero) e só o ativo
+em claro paga a trava do cofre: com registro, ele **fecha** (o que a vida em
+claro gravou fica num volume fechado que continua lendo); **vazio** — o que um
+rodízio sem cofre deixa, e que `fechar_ativo` não fecha —, ele se apaga e
+renasce cifrado. Provado nos bytes do disco, com reinício de verdade:
+`ligar_o_cofre_fecha_o_volume_da_trilha_em_claro` e
+`ligar_o_cofre_refaz_o_ativo_vazio_em_claro` (`tests/cifra-dos-diarios.rs`);
+guardas `trilha-em-claro-depois-do-cofre` e `trilha-ativo-vazio-em-claro`.
+O que continua: os volumes **fechados** antes do cofre seguem em claro (a
+mesma saída da §8), a redação por grau (357-2) e o aviso ao marcar coluna sem
+cofre (357-3). E o **irmão que fica**, com o mesmo desenho e por decisão
+escrita: o `.log`, a `.trash` e o `.reason` em claro continuam recebendo em
+claro depois do cofre — o teste `arquivo_escrito_antes_da_cifra_continua_abrindo`
+afirma isso de propósito («sem virar de versão no meio do arquivo»).
 
 ### 11.8 A replicação de uma coluna cifrada
 
@@ -6608,3 +6627,26 @@ cabeçalho do `congelamento.rs` deixou de dizer «todos, sem exceção»:
 `excluir_tabela` e `renomear_tabela` passaram a perguntar ao registro, e a
 restauração por cima fica nomeada como quem não pergunta (porta de dados
 parada, e o retrato da FASE B como rede).
+
+## 36. Proxy, trilha, pulso e a tela da IA: os ativos de 284, 357 e 436 (01/10/2026)
+
+Cinco achados ativos do inventário `docs/propostas/sec-restos-01-10-2026.md`,
+cada um com a prova nos dois sentidos.
+
+| achado | o defeito | o conserto | prova (vermelho com o defeito → verde) |
+|---|---|---|---|
+| **284** | atrás de proxy, `replicas_autorizadas` comparava o IP do **proxy**: com `["127.0.0.1"]`, todo cliente que chegava por ele levava o diário pelo `/api` | a sessão HTTP nasce com `ip_do_proxy` (a mesma `proxy_desta_porta_http` do portão de rede); com a lista **preenchida**, o portão 2a-bis recusa a replicação nessa porta (`erro.replica_atras_de_proxy`) e o arranque avisa por seção. Sem `violacao_leve`: o IP é do proxy, e puni-lo barraria todos | `tests/replica-atras-de-proxy.rs`, pelo soquete: o `replicar` devolvia a linha; agora recusa nomeando o proxy. Irmãos velhos verdes: sem proxy a lista autoriza pelo IP, com proxy e lista vazia nada muda. Guarda `replica-atras-de-proxy-passa-pela-lista` |
+| **357-1** | ativo do `.lgpd` nascido em claro seguia em claro depois do cofre | §11.7 | §11.7 |
+| **436 M4** | `campos_da_prova` devolvia `None` calado; o par recusava pelo TOFU até reiniciar | aviso no stderr, uma vez por troca, com portão atômico antes da trava; o TOFU **não expira** (decisão com o número em `docs/CLUSTER.md` §2.2) | `cluster::testes::o_no_que_deixou_de_provar_diz_no_stderr` (processo filho): 0 linhas → 2 (duas trocas), 0 para quem nunca assinou. Guarda `pulso-deixa-de-provar-calado` |
+| **436 M5** | `perguntar()` mandava a chave a qualquer endereço; `migrarDoDisco` promovia o endereço plantado no `localStorage` para toda aba nova | o portão mora no `perguntar`: endereço não oficial só leva a chave com `endpoint_confirmado` igual a ele (marca que mora com os segredos, fora do disco); do disco só a **chave** se promove | `testes-web/prova-436-tela.mjs`: o pedido com `x-api-key` para `origem/x` saía (2 casos: plantado no disco e já na aba); agora nenhum, e o endereço confirmado continua levando (o servidor falso da bateria) |
+| **436 B4** | a tela dizia que a chave «some ao fechar a aba» — falso: a janela destacada (`window.open` sem `noopener`) nasce com cópia do `sessionStorage`, que sobrevive à aba | as três frases (`ia_leia_chave`, `ia_chave_fim`, `ia_migrada`) dizem a cópia, nos seis idiomas, pela fábrica | a mesma prova mede o navegador (a cópia sobreviveu: sim) e lê a frase na tela |
+| **436 B5** | login recusado deixava a chave privada Ed25519 em `#k.value` | o `catch` esvazia `#k` (só ele: senha e token ficam para consertar uma letra) e diz que esvaziou | a mesma prova lê o `.value`, nunca o `page.content()`: 64 caracteres → 0 |
+
+**O que NÃO se consertou, e por quê.** No 284, o NAT na frente da porta de
+dados e o conserto de fundo (trancar a replicação por credencial, que
+atravessa proxy e NAT) ficam com o dono; e os **irmãos** que comparam o mesmo
+IP de proxy — `ips_permitidos` e a lista negra — continuam vendo o proxy (a
+lista negra atrás de proxy barra todos de uma vez). As guardas de tela não
+cabem no catálogo (`provar-guardas.py` repõe defeito e roda `cargo test`); a
+prova delas é o roteiro versionado acima, que reprova 4 de 5 com o binário de
+antes.

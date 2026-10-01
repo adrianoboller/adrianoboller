@@ -1729,9 +1729,9 @@
       "id": "replica-lista-e-pedida-nao-imposta",
       "titulo": "replicas_autorizadas vazia libera todos -- e so isso e' pedida, nao imposta",
       "veredito": "PROVADA",
-      "segundos": 36.33,
+      "segundos": 70.57,
       "notas": [],
-      "quando": "2026-09-17 04:50"
+      "quando": "2026-10-01 04:44"
     },
     {
       "id": "posicao-nao-encolhe-em-silencio",
@@ -3270,6 +3270,38 @@
       "segundos": 75.64,
       "notas": [],
       "quando": "2026-10-01 04:18"
+    },
+    {
+      "id": "replica-atras-de-proxy-passa-pela-lista",
+      "titulo": "atrás do proxy declarado, `replicas_autorizadas` comparava o IP do PROXY e autorizava todo cliente que chegava por ele",
+      "veredito": "PROVADA",
+      "segundos": 19.73,
+      "notas": [],
+      "quando": "2026-10-01 04:39"
+    },
+    {
+      "id": "trilha-em-claro-depois-do-cofre",
+      "titulo": "o ativo do `.lgpd` nascido em claro continuava recebendo registro em claro depois de o cofre ligar",
+      "veredito": "PROVADA",
+      "segundos": 9.49,
+      "notas": [],
+      "quando": "2026-10-01 04:39"
+    },
+    {
+      "id": "trilha-ativo-vazio-em-claro",
+      "titulo": "com o cofre ligado, o ativo VAZIO do `.lgpd` em claro (o que um rodízio sem cofre deixa) recebia o primeiro registro em claro",
+      "veredito": "PROVADA",
+      "segundos": 9.96,
+      "notas": [],
+      "quando": "2026-10-01 04:39"
+    },
+    {
+      "id": "pulso-deixa-de-provar-calado",
+      "titulo": "o nó que deixava de assinar o pulso para um par que já recebera prova dele não dizia nada (`campos_da_prova` com `.ok()?`)",
+      "veredito": "PROVADA",
+      "segundos": 70.45,
+      "notas": [],
+      "quando": "2026-10-01 04:42"
     },
     {
       "id": "cifra-do-fio-imposta",

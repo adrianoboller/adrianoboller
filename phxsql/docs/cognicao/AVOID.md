@@ -4,7 +4,13 @@
      `--catraca` reprova se este arquivo nao bater com o que o extrator
      geraria agora; rode o comando sem flag para atualizar. -->
 
-Gerado dos `cognicao_*.md` com `**Estado:** INFRUTIFERO` -- 5 hoje, de 368 cognicoes no total.
+Gerado dos `cognicao_*.md` com `**Estado:** INFRUTIFERO` -- 6 hoje, de 370 cognicoes no total.
+
+## «O branch da frente é ancestral do HEAD» não prova que o trabalho dela foi integrado
+
+- Causa: a limpeza de cópias de trabalho decidia «integrada» por `git merge-base --is-ancestor worktree-agent-X HEAD`. As frentes NÃO comitam — a regra da casa é que só o integrador comita —, então o branch de toda frente fica parado no commit de onde ela saiu, e esse commit é SEMPRE ancestral do HEAD. A conferência dizia «integrada» para frente cujo trabalho inteiro morava só na árvore de trabalho, e o `git worktree remove -f -f` o apagou: em 01/10/2026, quatro frentes prontas e com portões verdes (513 passo 1, 329+331, a catraca do 335, 600+601+245) sumiram assim. A prova de «nenhum processo usa» (cwd, descritores, mapas) passou — ela responde outra pergunta.
+- Prevencao: antes de apagar uma cópia de trabalho, exigir as DUAS coisas: `git -C <copia> status --porcelain` vazio (nada fora de commit) E o commit da ponta alcançável do HEAD. Árvore suja nunca é «integrada», seja qual for o grafo. E nunca `-f -f` numa cópia que a conferência não provou limpa: o `-f` existe para pular exatamente a proteção que teria parado o erro.
+- Arquivo: [cognicao_ancestral-do-head-nao-prova-que-o-trabalho-foi-integrado_20261001_0500.md](cognicao_ancestral-do-head-nao-prova-que-o-trabalho-foi-integrado_20261001_0500.md)
 
 ## Dono de arquivo é sinal FORTE, não um palpite como data ou conteúdo
 

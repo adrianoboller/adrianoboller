@@ -24,3 +24,13 @@ E matar o servidor de um agente vizinho já derrubou a própria sessão.
 
 **Como aplicar.** `scripts/zelador.sh` deste kit, com `--ver` antes de
 qualquer corrida de verdade.
+
+## E prova que nada ali está fora de commit (01/10/2026)
+
+«Nenhum processo usa» não basta para apagar a cópia de trabalho de uma frente.
+A conferência que dizia «integrada» por `git merge-base --is-ancestor ramo HEAD`
+acertou por acaso por doze limpezas e, na décima terceira, apagou quatro
+frentes prontas: frente não comita, então o ramo dela é sempre a base, e a base
+é sempre ancestral do HEAD. Antes de apagar, exija `git -C <copia> status
+--porcelain` vazio **e** a ponta alcançável do HEAD — e nunca `-f -f` numa cópia
+que a conferência não provou limpa.

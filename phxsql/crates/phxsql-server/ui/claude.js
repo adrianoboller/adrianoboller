@@ -154,7 +154,17 @@ window.PhxIA = (function () {
   const GAVETA = "phxsql.ia";            // preferências, no localStorage
   const COFRE  = "phxsql.ia.chave";      // segredo, no sessionStorage
 
-  const SEGREDOS = ["chave", "endpoint"];
+  /* `endpoint_confirmado` mora com os segredos de proposito (pedido 436,
+     M5): e a marca de que quem trocou o endereco o fez por querer, e uma
+     marca no `localStorage` seria plantavel do mesmo jeito que o endereco
+     -- o `cfg()` le o disco para tudo que nao e segredo. */
+  const SEGREDOS = ["chave", "endpoint", "endpoint_confirmado"];
+  /* Do disco para a aba, so a CHAVE se promove. O endereco que estiver no
+     disco e o caminho de um endereco plantado chegar a toda aba nova (SEC
+     M5): antes, `migrarDoDisco` o promovia para a aba, e a chave seguinte
+     saia por ele. Nao ha campo na tela que grave endereco no disco; o que
+     estiver la nao foi a tela quem pos. */
+  const PROMOVIDOS = ["chave"];
 
   /* O armazem chega como FUNCAO, e nao como referencia: em janela privada (e
      com cookies bloqueados no Chrome) quem estoura e o proprio acesso a
@@ -191,12 +201,16 @@ window.PhxIA = (function () {
     const achados = SEGREDOS.filter(k => velha[k] && k in velha);
     if (!achados.length) return false;
     const cofre = lerGaveta(ABA, COFRE);
-    for (const k of achados) if (!cofre[k]) cofre[k] = velha[k];
+    for (const k of achados)
+      if (PROMOVIDOS.includes(k) && !cofre[k]) cofre[k] = velha[k];
     for (const k of SEGREDOS) delete velha[k];
     gravarGaveta(ABA, COFRE, cofre);
     gravarGaveta(DISCO, GAVETA, velha);
-    migrou = true;
-    return true;
+    // O aviso «a chave foi movida» so quando uma CHAVE foi movida: um
+    // endereco descartado sozinho nao e chave nenhuma, e o aviso mentiria.
+    const moveuChave = achados.some(k => PROMOVIDOS.includes(k));
+    if (moveuChave) migrou = true;
+    return moveuChave;
   }
   const houveMigracao = () => migrou;
 
@@ -319,6 +333,17 @@ window.PhxIA = (function () {
     const c = cfg();
     if (!c.chave) throw new Error(txt("tela.ia_e_sem_chave", "Sem chave configurada."));
     const alvo = c.endpoint || ENDPOINT_OFICIAL;
+    // O portao mora AQUI, no unico lugar de onde a chave sai (pedido 436,
+    // M5). O aviso vermelho da tela de Configuracoes so existia para quem a
+    // abrisse; a Query perguntava direto. E a `connect-src 'self'` deixa
+    // passar endereco na propria origem, entao a politica da pagina nao
+    // segurava o `x-api-key` indo para o PhxSql e para o proxy a frente.
+    // Endereco que nao e o oficial so leva a chave com a marca de que foi
+    // trocado por querer, e a marca vale para AQUELE endereco.
+    if (!oficial(c) && c.endpoint_confirmado !== c.endpoint)
+      throw new Error(preencher(txt("tela.ia_e_endereco_sem_confirmar",
+        "A chave não saiu: o endereço da API ({onde}) não é o oficial, e nada nesta aba confirmou a troca. Se não foi você quem o trocou, remova a chave em Configurações → Integração com a Claude."),
+        { onde: alvo }));
 
     let r;
     try {
@@ -815,7 +840,7 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
            "**Leia antes de ligar.** Esta tela liga o Centro de Controle direto na API da Anthropic, **do seu navegador**. Em português claro:"))}
          <ul class="lista-limpa" style="margin-top:8px">
            <li>· ${marcado(txt("tela.ia_leia_chave",
-               "a chave fica **nesta aba** do navegador, e não no servidor nem no disco: ela some quando você fecha a aba, e sobrevive a recarregar a página. Quem sentar nesta máquina depois de você não a encontra;"))}</li>
+               "a chave fica **nesta aba**, e não no servidor nem no disco: some ao fechar a aba (cada **janela destacada** leva uma cópia, que some quando ela fecha), sobrevive a recarregar, e quem sentar aqui depois de você não a encontra;"))}</li>
            <li>· ${marcado(txt("tela.ia_leia_sobe",
                "as suas perguntas e o contexto que você mandar (o **esquema** do banco, e as linhas se você marcar) **vão para a Anthropic**, que é uma empresa de fora;"))}</li>
            <li>· ${marcado(txt("tela.ia_leia_servidor",
@@ -830,7 +855,7 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
            <input id="iaChave" type="password" autocomplete="off"
                   placeholder="${temChave ? E(txt("tela.ia_chave_guardada", "guardada — digite para trocar")) : "sk-ant-…"}">
            <span class="leg">${temChave
-             ? marcado(txt("tela.ia_chave_fim", "Há uma chave nesta aba, terminada em `{fim}` — ela some ao fechar a aba e sobrevive a recarregar a página."),
+             ? marcado(txt("tela.ia_chave_fim", "Há uma chave nesta aba, terminada em `{fim}` — ela some ao fechar a aba e sobrevive a recarregar a página. Cada janela destacada desta aba leva uma cópia, que só some quando ela fecha também."),
                        { fim: fim(c.chave) })
              : c.ligado
                ? marcado(txt("tela.ia_sem_chave_na_aba", "A integração está **ligada**, mas a chave não está nesta aba. Cole-a de novo para os botões da Claude voltarem à tela de Query."))
@@ -862,7 +887,7 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
          { onde: c.endpoint || ENDPOINT_OFICIAL })}</div>`}
 
        ${houveMigracao() ? `<div class="aviso" id="iaMigrada">${marcado(
-         txt("tela.ia_migrada", "A chave que estava guardada **no disco deste navegador** foi movida para esta aba, e apagada do disco. Ela continua valendo agora; vai sumir quando você fechar a aba."))}</div>` : ""}
+         txt("tela.ia_migrada", "A chave que estava guardada **no disco deste navegador** foi movida para esta aba, e apagada do disco. Ela continua valendo agora; vai sumir quando você fechar a aba e as janelas destacadas dela."))}</div>` : ""}
 
        <div class="dbl-titulo" style="margin-top:16px">
          <button class="botao incluir" id="iaSalvar">${E(txt("tela.salvar", "Salvar"))}</button>
@@ -893,7 +918,7 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
     };
 
     $("#iaRemover").onclick = () => {
-      gravar({ chave: "", endpoint: "", ligado: false });
+      gravar({ chave: "", endpoint: "", endpoint_confirmado: "", ligado: false });
       avisar(txt("tela.ia_removida", "chave removida desta aba e do disco deste navegador"));
       telaConfig();
     };

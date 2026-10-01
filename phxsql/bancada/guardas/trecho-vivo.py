@@ -449,6 +449,14 @@ dia, nunca no desejado:
   contador (`drop-do-congelamento-esquece-o-contador`) e o arbitro que
   engolia o rebaixar (`arbitro-engole-o-rebaixar`). 560 + 5 = 565.
   No merge com as frentes que levaram o piso a 579: 579 + 5 = 584.
+  **SUBIU para 588 em 01/10/2026** (pedidos 284, 357 e 436-M4), de 560
+  medido no catalogo do dia (559 entradas mais 1 aposentada): quatro guardas
+  -- a lista de replicas atras do proxy
+  (`replica-atras-de-proxy-passa-pela-lista`), o `.lgpd` em claro depois do
+  cofre (`trilha-em-claro-depois-do-cofre`), o ativo VAZIO em claro
+  (`trilha-ativo-vazio-em-claro`) e o no que deixa de provar calado
+  (`pulso-deixa-de-provar-calado`). Contado pelo `--catraca`; no merge com
+  as frentes que levaram o piso a 584: 584 + 4 = 588.
 
 # A QUINTA REGUA: a tabela publicada pode ser MENOR que o catalogo
 
@@ -555,7 +563,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 584
+PISO_DAS_ENTRADAS = 588
 
 # ------------------------------------------------------------- APOSENTADAS
 #

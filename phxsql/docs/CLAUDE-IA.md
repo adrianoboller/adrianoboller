@@ -501,7 +501,12 @@ discutir antes.
 - **O `endpoint` é configurável**, e existe para poder apontar a tela ao
   servidor falso. Como endereço trocado em silêncio seria a forma mais fácil de
   desviar uma chave, a tela de configuração **mostra o endereço** e o marca com
-  um pino vermelho *«NÃO é o oficial»* quando ele não é.
+  um pino vermelho *«NÃO é o oficial»* quando ele não é. Desde 01/10/2026 (pedido
+  436, M5) isso deixou de ser só aviso: o `perguntar()` — o único lugar de
+  onde a chave sai — recusa endereço não oficial sem a marca
+  `endpoint_confirmado` igual a ele, que mora com os segredos, na aba. E o
+  endereço que estiver no `localStorage` não se promove mais para a aba: do
+  disco, só a chave. Prova: `testes-web/prova-436-tela.mjs`.
 - **A integração é por navegador.** Não há como um administrador ligá-la para
   todo mundo de uma vez — e isso é consequência direta de a chave ser de quem
   usa, não um esquecimento.

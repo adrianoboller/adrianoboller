@@ -20,7 +20,7 @@ import { abrirPeloMenu } from './apoio.mjs';
  *  Nao ha campo na tela para editar o `endpoint` (so' um `<code>` que MOSTRA
  *  ele). Escrever aqui e' o caminho que a propria tela usaria se tivesse um
  *  formulario para isso -- nunca um atalho por dentro do modulo. */
-export const SEGREDOS_DA_TELA = ['chave', 'endpoint'];
+export const SEGREDOS_DA_TELA = ['chave', 'endpoint', 'endpoint_confirmado'];
 
 export async function definirIA(page, parcial) {
   await page.evaluate(([p, segredos]) => {
@@ -28,6 +28,12 @@ export async function definirIA(page, parcial) {
     const pref = ler(localStorage, 'phxsql.ia');
     const cofre = ler(sessionStorage, 'phxsql.ia.chave');
     for (const k of Object.keys(p)) (segredos.includes(k) ? cofre : pref)[k] = p[k];
+    // Quem troca o endereco aqui o troca POR QUERER -- e o servidor falso da
+    // bateria --, e desde o pedido 436 (M5) a chave so sai para endereco nao
+    // oficial com a marca de que a troca foi pedida, e para AQUELE endereco.
+    // O plantio que o M5 recusa e escrito por fora deste ajudante, de
+    // proposito (`prova-436-tela.mjs`).
+    if ('endpoint' in p && !('endpoint_confirmado' in p)) cofre.endpoint_confirmado = p.endpoint;
     localStorage.setItem('phxsql.ia', JSON.stringify(pref));
     sessionStorage.setItem('phxsql.ia.chave', JSON.stringify(cofre));
   }, [parcial, SEGREDOS_DA_TELA]);
