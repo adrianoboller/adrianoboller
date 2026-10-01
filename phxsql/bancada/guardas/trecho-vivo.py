@@ -530,6 +530,12 @@ dia, nunca no desejado:
   FFI que nao chegava ao motor (`faixa-da-cli-nao-chega-ao-motor`,
   `faixa-da-ffi-nao-chega-ao-motor`). 624, medido pelo `--numeros` nesta
   arvore.
+  **SUBIU para 630 em 01/10/2026** (628 + 2; pedido 309): a replica fiel e o
+  PITR que renumeravam o buraco historico do source
+  (`replica-renumera-o-buraco-do-source`) e o irmao que trava o velho, o
+  bidirecional honrando o `rownum` do outro
+  (`bidirecional-honra-o-rownum-do-outro`). 630, medido pelo `--numeros`
+  nesta arvore.
 
 # A QUINTA REGUA: a tabela publicada pode ser MENOR que o catalogo
 
@@ -636,7 +642,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 628
+PISO_DAS_ENTRADAS = 630
 
 # ------------------------------------------------------------- APOSENTADAS
 #

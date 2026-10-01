@@ -830,6 +830,18 @@ pub struct Table {
     ///
     /// Ver [`Table::julga_integridade`] para o motivo, que e medido.
     como_replica: bool,
+    /// A inclusao grava o `rownum` que veio na imagem em vez de numerar aqui
+    /// (pedido 309, via (b) do 291).
+    ///
+    /// Ligado so por [`Table::reaplicar_evento_do_proprio_diario`] -- a
+    /// replica fiel e o PITR, que aplicam pelo rowid --, e NAO pelo
+    /// `inserir_replicado` do bidirecional, mesmo os dois acendendo o
+    /// `como_replica`. A diferenca e a pergunta: na replica fiel a ordem de
+    /// digitacao e a do SOURCE, e numerar aqui renumera um buraco historico
+    /// dele (`1,2,4` vira `1,2,3`); no bidirecional cada servidor tem a sua
+    /// ordem de digitacao, e honrar o numero do outro faria as duas fontes de
+    /// numeracao colidirem no mesmo `.reg`.
+    honrar_rownum: bool,
 }
 
 /// A imagem da linha a partir do payload e do CONTEUDO dos externos. Uma so
@@ -1186,6 +1198,7 @@ impl Table {
             evento_forcado: None,
             sobreposta: None,
             como_replica: false,
+            honrar_rownum: false,
         };
         t.gravar_pag()?;
         Ok(t)
@@ -2012,6 +2025,7 @@ impl Table {
             evento_forcado: None,
             sobreposta: None,
             como_replica: false,
+            honrar_rownum: false,
         };
         if refazer {
             aberta.reconstruir_fts()?;
@@ -3772,7 +3786,9 @@ impl Table {
     /// Quem chama nao escolhe o numero: `rownum` e ordem de chegada, e um
     /// valor escolhido a mao seria uma ordem inventada. Valor diferente de
     /// zero que chegue de fora e ignorado -- e o caso de uma linha remontada
-    /// por um cliente antigo que devolveu tudo que recebeu.
+    /// por um cliente antigo que devolveu tudo que recebeu. A UNICA excecao e
+    /// a replica fiel (pedido 309): ali o numero nao foi escolhido a mao, foi
+    /// a ordem de chegada do source, e gerar outro renumeraria a historia dele.
     ///
     /// # Por que reservar e consumir sao dois passos (pedido 291)
     ///
@@ -3789,19 +3805,33 @@ impl Table {
     /// `Reg`, porque tudo acontece dentro do mesmo `&mut self`.
     fn numerar_linha(&mut self, valores: &mut [Value], anterior: Option<&Linha>) -> Option<u64> {
         let proximo = self.reg.rownum_atual();
-        self.rownum_para(valores, anterior, proximo)
+        self.rownum_para(valores, anterior, proximo, self.honrar_rownum)
     }
 
     /// O corpo do [`Table::numerar_linha`] com o proximo numero vindo de
     /// fora: do `.reg` na gravacao, da [`Previsao`] na sobreposicao. UMA
     /// regra para as duas, para a linha prevista sair igual a gravada.
+    ///
+    /// Com `honrar` (so a replica fiel e o PITR, ver o campo
+    /// `honrar_rownum`), a INCLUSAO que traz numero > 0 fica com ele: e a
+    /// ordem de chegada do source, que ja foi decidida la. Zero continua
+    /// numerando aqui -- e a imagem de um source anterior a coluna, e nao ha
+    /// o que honrar.
     fn rownum_para(
         &self,
         valores: &mut [Value],
         anterior: Option<&Linha>,
         proximo: u64,
+        honrar: bool,
     ) -> Option<u64> {
         let i = self.esquema.coluna_rownum()?;
+        if honrar && anterior.is_none() {
+            if let Value::UInt(n) = valores[i] {
+                if n > 0 {
+                    return Some(n);
+                }
+            }
+        }
         if let Some(linha) = anterior {
             // Alteracao: mantem o numero que a linha ja tinha.
             if let Value::UInt(n) = linha[i] {
@@ -3823,7 +3853,17 @@ impl Table {
     /// Chamada UMA vez por escrita, depois da ultima guarda que recusa a
     /// linha e antes de o `.reg` gravar: dali para baixo a linha vai ao disco
     /// com o numero que ja carrega, e o contador tem de acompanhar.
+    ///
+    /// Na replica fiel o numero reservado e o do source, e pode estar a
+    /// frente do contador daqui (o buraco historico): o contador vai para
+    /// depois dele, no espelho do `anotar_carimbo`, e nunca recua.
     fn consumir_rownum(&mut self, reservado: Option<u64>) {
+        if self.honrar_rownum {
+            if let Some(n) = reservado {
+                self.reg.anotar_rownum(n);
+            }
+            return;
+        }
         if let Some(n) = reservado {
             let entregue = self.reg.proximo_do_rownum();
             debug_assert_eq!(
@@ -4139,7 +4179,8 @@ impl Table {
             Some(v) => v,
             None => valores.to_vec(),
         };
-        if let Some(n) = self.rownum_para(&mut linha, anterior, previsao.rownum) {
+        // A previsao e da sobreposicao de uma escrita LOCAL: nunca honra.
+        if let Some(n) = self.rownum_para(&mut linha, anterior, previsao.rownum, false) {
             previsao.rownum = n + 1;
         }
         if let Some(a) = anterior {
@@ -7116,7 +7157,9 @@ impl Table {
         // que continuasse "sendo replica" depois do evento pararia de conferir
         // integridade numa escrita local. Ver [`Table::julga_integridade`].
         self.como_replica = true;
+        self.honrar_rownum = true;
         let r = self.aplicar_evento_interno(operacao, rowid, imagem);
+        self.honrar_rownum = false;
         self.como_replica = false;
         r
     }

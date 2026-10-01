@@ -400,3 +400,123 @@ fn as_ops_do_no_esbarram_na_trava_de_outra_transacao() {
     let r = exigir(porta, ESVAZIAR);
     assert_eq!(r.inteiro_ou("apagadas", -1), 1, "{}", r.escrever());
 }
+
+/// O registro do `.reason` para um `rowid`, e a entrada da lixeira -- cada
+/// um do servidor desta porta.
+fn motivo_e_lixeira(porta: u16, rowid: u64) -> (Json, Json) {
+    let m = exigir(
+        porta,
+        &format!(r#""op":"motivos","database":"loja","tabela":"clientes","rowid":{rowid}"#),
+    );
+    let motivo = m
+        .campo("motivos")
+        .and_then(Json::lista)
+        .and_then(|l| l.last().cloned())
+        .unwrap_or_else(|| panic!("sem motivo do rowid {rowid}: {}", m.escrever()));
+    let l = exigir(
+        porta,
+        r#""op":"lixeira","database":"loja","tabela":"clientes""#,
+    );
+    let entrada = l
+        .campo("descartadas")
+        .and_then(Json::lista)
+        .and_then(|v| {
+            v.iter()
+                .find(|e| e.inteiro_ou("rowid", -1) == rowid as i64)
+                .cloned()
+        })
+        .unwrap_or_else(|| panic!("sem a linha {rowid} na lixeira: {}", l.escrever()));
+    (motivo, entrada)
+}
+
+/// **Pedido 297: o `.trash`/`.reason` da replica e do NO, e a ressalva
+/// escrita no `INTEGRIDADE.md` §3 diz isso -- este teste a mede.**
+///
+/// A exclusao viaja como evento (com a imagem de antes, pedido 416), mas o
+/// motivo, o uuid da entrada e o carimbo do descarte NAO sao campos do
+/// evento: a replica guarda a linha no `.trash` DELA, com motivo
+/// `"replicacao"`, uuid sorteado aqui e o relogio daqui. O dado vivo e igual
+/// nos dois -- e e so ele que a fidelidade da replica promete.
+///
+/// Fixar o comportamento e o que impede a ressalva de envelhecer calada: no
+/// dia em que o motivo passar a viajar (mudanca de formato do evento de
+/// exclusao, que nao foi decidida), este teste cai e manda reescrever o §3.
+#[test]
+fn a_lixeira_da_replica_e_do_no_e_o_motivo_do_source_nao_viaja() {
+    let base_s = DirTemp::novo("motivo-source");
+    let base_r = DirTemp::novo("motivo-replica");
+
+    let mut c = config_base(&base_s);
+    c.replicacao.papel = Papel::Source;
+    c.replicacao.id_servidor = "source-do-motivo".into();
+    c.replicacao.imagem_da_linha = true;
+    let (_source, porta_s) = subir(c);
+    exigir(porta_s, r#""op":"criar_database","database":"loja""#);
+    exigir(
+        porta_s,
+        r#""op":"criar_tabela","database":"loja","tabela":"clientes",
+           "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true},
+                      {"nome":"cpf","tipo":"Str(14)"}],
+           "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true}]"#,
+    );
+    for id in 1..=3 {
+        exigir(
+            porta_s,
+            &format!(
+                r#""op":"inserir","database":"loja","tabela":"clientes","linha":{{"id":{id},"cpf":"{CPF}"}}"#
+            ),
+        );
+    }
+    let mut c = config_base(&base_r);
+    c.replicacao.papel = Papel::Replica;
+    c.replicacao.id_servidor = "replica-do-motivo".into();
+    c.somente_leitura = true;
+    c.replicacao.origens = vec![Origem {
+        nome: "fonte".into(),
+        host: "127.0.0.1".into(),
+        porta: porta_s,
+        token: TOKEN.into(),
+        databases: vec!["loja".into()],
+        reconectar_em: 1,
+        usuario: String::new(),
+        senha_hash: String::new(),
+        senha: String::new(),
+        cada_minutos: 0,
+        hora: String::new(),
+        cifra: false,
+        chave_do_fio: String::new(),
+    }];
+    let (_replica, porta_r) = subir(c);
+    esperar_eventos(porta_r, 3);
+
+    exigir(
+        porta_s,
+        r#""op":"excluir","database":"loja","tabela":"clientes","rowid":2,
+           "fisico":true,"motivo":"pedido do titular""#,
+    );
+    esperar_eventos(porta_r, 4);
+
+    let (motivo_s, lixo_s) = motivo_e_lixeira(porta_s, 2);
+    let (motivo_r, lixo_r) = motivo_e_lixeira(porta_r, 2);
+    // O motivo do operador fica no source; a replica diz de onde a exclusao
+    // veio, e nao por que ela aconteceu.
+    assert_eq!(motivo_s.texto_ou("motivo", ""), "pedido do titular");
+    assert_eq!(
+        motivo_r.texto_ou("motivo", ""),
+        "replicacao",
+        "a ressalva do INTEGRIDADE.md §3 envelheceu: {}",
+        motivo_r.escrever()
+    );
+    // A entrada da lixeira nasce aqui: uuid proprio.
+    assert_ne!(
+        lixo_s.texto_ou("uuid", "s"),
+        lixo_r.texto_ou("uuid", "r"),
+        "o uuid da lixeira passou a viajar -- reescreva o §3"
+    );
+    // E o dado guardado e o mesmo: a linha inteira, nos dois `.trash`.
+    assert_eq!(
+        lixo_s.campo("linha").map(Json::escrever),
+        lixo_r.campo("linha").map(Json::escrever),
+        "a linha guardada na lixeira da replica nao e a do source"
+    );
+}

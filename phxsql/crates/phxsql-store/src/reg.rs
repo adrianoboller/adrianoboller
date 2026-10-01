@@ -924,6 +924,17 @@ impl RegFile {
         v
     }
 
+    /// Empurra o contador do `rownum` para depois de um numero que veio de
+    /// FORA -- o da imagem, na replica fiel e no PITR (pedido 309). Nunca o
+    /// faz recuar: um numero honrado atras do contador nao pode fazer o
+    /// proximo local repetir um que ja saiu.
+    ///
+    /// Nao grava sozinho, como o `anotar_carimbo`: vai ao disco no mesmo
+    /// `gravar_contadores` da insercao que usou o numero.
+    pub fn anotar_rownum(&mut self, usado: u64) {
+        self.proximo_rownum = self.proximo_rownum.max(1).max(usado.saturating_add(1));
+    }
+
     /// Proximo `rownum` que a tabela vai entregar.
     pub fn rownum_atual(&self) -> u64 {
         self.proximo_rownum.max(1)

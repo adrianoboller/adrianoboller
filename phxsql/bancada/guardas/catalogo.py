@@ -3240,6 +3240,7 @@ pub fn limpar() {
         ),
         "arquivo": "crates/phxsql-store/src/table.rs",
         "trecho": """        let r = self.aplicar_evento_interno(operacao, rowid, imagem);
+        self.honrar_rownum = false;
         self.como_replica = false;
         r""",
         "troca": """        // DEFEITO REPOSTO: a marca fica acesa depois do evento.
@@ -20719,6 +20720,56 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "alvo": ["--test", "identidade-do-bidirecional"],
         "caem": ["com_numero_atribuido_o_caixa_inocente_recebe"],
         "seguem": ["sem_numero_atribuido_o_par_sem_colisao_replica_como_antes"],
+        "prazo": 600,
+    },
+    {
+        "id": "replica-renumera-o-buraco-do-source",
+        "titulo": "A réplica fiel e o PITR geravam o `rownum` deles: o buraco histórico do source (1,2,4) virava 1,2,3 na cópia, para sempre",
+        "porque": (
+            "pedido 309, via (b) do 291, decisao do papel J de 01/10/2026: os "
+            "quatro motores aplicam na replica o valor que veio. A via (a) so "
+            "impede buraco NOVO; o anterior a `eeb9925` divergia na replica e "
+            "no restaurado. Medido pelo soquete "
+            "(`tests/rownum-honrado-na-replica.rs`)."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        self.honrar_rownum = true;
+        let r = self.aplicar_evento_interno(operacao, rowid, imagem);
+""",
+        "troca": """        // DEFEITO REPOSTO (309): a replica numera pela ordem dela.
+        self.honrar_rownum = false;
+        let r = self.aplicar_evento_interno(operacao, rowid, imagem);
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "rownum-honrado-na-replica"],
+        "caem": [
+            "a_replica_fiel_honra_o_buraco_historico_do_source",
+            "o_pitr_devolve_o_buraco_do_original",
+        ],
+        "seguem": ["o_bidirecional_continua_numerando_na_ordem_daqui"],
+        "prazo": 600,
+    },
+    {
+        "id": "bidirecional-honra-o-rownum-do-outro",
+        "titulo": "O bidirecional honrando o `rownum` do outro servidor: as duas fontes de numeração colidem no mesmo `.reg`",
+        "porque": (
+            "irmao do pedido 309: o `inserir_replicado` tambem acende o "
+            "`como_replica`, e ligar o honrar ali seria o conserto plausivel e "
+            "errado -- no bidirecional cada servidor tem a sua ordem de "
+            "digitacao (`REPLICACAO.md` §12)."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        let r = self.inserir(valores);
+""",
+        "troca": """        // DEFEITO REPOSTO (309): o bidirecional honra o numero alheio.
+        self.honrar_rownum = true;
+        let r = self.inserir(valores);
+        self.honrar_rownum = false;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "rownum-honrado-na-replica"],
+        "caem": ["o_bidirecional_continua_numerando_na_ordem_daqui"],
+        "seguem": ["a_replica_fiel_honra_o_buraco_historico_do_source"],
         "prazo": 600,
     },
     {
