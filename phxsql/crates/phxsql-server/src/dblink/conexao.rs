@@ -252,6 +252,50 @@ impl Acumulador {
         Ok(())
     }
 
+    /// Quanto ainda cabe, em bytes -- o teto de LEITURA de quem recebe o
+    /// resultado inteiro numa mensagem so (pedido 610).
+    pub fn cabe(&self) -> u64 {
+        self.teto_de_bytes.saturating_sub(self.bytes)
+    }
+
+    /// Pesa a mensagem CRUA, antes de ela ser analisada -- pedido 610.
+    ///
+    /// O motor `phxsql` recebe o resultado inteiro numa linha do fio, e a
+    /// copia em `Linha` so nasce depois de `Json::analisar` montar a arvore
+    /// -- de 16 a 32 vezes a linha. Pesar so a copia deixava o `max_mib` sem
+    /// efeito sobre o pico: com `max_mib` 1, uma linha de 128 MiB ainda virava
+    /// gigabytes antes da primeira recusa. A crua conta no MESMO contador que
+    /// a copia, e continua contando enquanto a copia se faz: as duas estao
+    /// vivas ao mesmo tempo, e a arvore nunca e menor que a linha.
+    ///
+    /// `lidos` acima de [`Acumulador::cabe`] e recusa com a frase do teto; quem
+    /// le com `cabe()` de teto nunca chega aqui com mais, e usa
+    /// [`Acumulador::recusa_da_crua`] quando o fio estoura.
+    pub fn pesar_crua(&mut self, lidos: u64) -> Result<()> {
+        if lidos > self.cabe() {
+            return Err(self.recusa_da_crua());
+        }
+        self.bytes = self.bytes.saturating_add(lidos);
+        Ok(())
+    }
+
+    /// A recusa da mensagem que passou do que cabe ANTES de ser analisada:
+    /// a mesma classe e a mesma saida escrita da recusa por linha, porque o
+    /// interruptor que a resolve e o mesmo (`max_mib`).
+    pub fn recusa_da_crua(&self) -> PhxError {
+        PhxError::LimiteExcedido(format!(
+            "dblink: a resposta passaria do teto de {} MiB ({} bytes) antes de \
+             ser analisada, com {} bytes ja guardados -- quem decide o tamanho \
+             da resposta e o outro banco, e este lado nao a le inteira para \
+             depois recusar. Peca menos linhas ou colunas; se o resultado e \
+             legitimo, suba \"max_mib\" da ligacao (ate {} MiB)",
+            self.teto_de_bytes / MIB,
+            self.teto_de_bytes,
+            self.bytes,
+            MIB_DO_RESULTADO_MAXIMO
+        ))
+    }
+
     /// Quanto ja se guardou -- e o contador que a prova le, em vez da RAM.
     pub fn bytes(&self) -> u64 {
         self.bytes
@@ -574,10 +618,14 @@ mod testes_do_teto_de_bytes {
     type Conversa = fn(TcpStream, usize, usize) -> std::io::Result<()>;
 
     fn ligacao(motor: &str, porta: u16, extra: &str) -> Definicao {
+        // O par PostgreSQL(R) desta prova e `trust`, e `trust` com senha na
+        // ligacao e recusa desde o pedido 612: sem senha, ele e o que o
+        // cadastro escolheu.
+        let senha = if motor == "postgres" { "" } else { "s" };
         Definicao::de_json(
             &Json::analisar(&format!(
                 r#"{{"nome":"prova546","motor":"{motor}","host":"127.0.0.1","porta":{porta},
-                    "usuario":"","senha":"s","token_remoto":"t","cifra":false,
+                    "usuario":"","senha":"{senha}","token_remoto":"t","cifra":false,
                     "timeout_s":5{extra}}}"#
             ))
             .unwrap(),
@@ -798,8 +846,14 @@ mod testes_do_teto_de_bytes {
                 "{motor}"
             );
 
-            // 4 MiB no fio e `max_mib` 1, mas so 4 linhas guardadas.
-            let porta = par(conversa, LINHAS, CELULA);
+            // 4 MiB no fio e `max_mib` 1, mas so 4 linhas guardadas. No
+            // `phxsql` o resultado e UMA mensagem e ela pesa crua antes de
+            // ser analisada (pedido 610): 4 MiB numa linha so passariam do
+            // teto antes de qualquer corte. Ali a prova usa celulas de 12 KiB
+            // -- 768 KiB crus, que cabem, e que com as 64 copias somariam
+            // 1,5 MiB: o corte por linhas continua sendo o que decide.
+            let celula = if motor == "phxsql" { 12 * 1024 } else { CELULA };
+            let porta = par(conversa, LINHAS, celula);
             let d = ligacao(motor, porta, &format!(r#","max_mib":{MAX_MIB}"#));
             let r = d
                 .abrir()
@@ -807,6 +861,98 @@ mod testes_do_teto_de_bytes {
                 .unwrap_or_else(|e| panic!("{motor}: o corte por linhas virou recusa: {e}"));
             assert_eq!((r.linhas.len(), r.truncado), (4, true), "{motor}");
         }
+    }
+
+    /// Um par `phxsql` que responde ao `sql` com UMA linha de `total` bytes e
+    /// conta quantos o cliente aceitou antes de largar o soquete.
+    ///
+    /// A celula e um texto unico, e nao `0,0,0,...`: com o defeito reposto o
+    /// cliente analisa a linha inteira, e a lista de zeros viraria gigabytes
+    /// de arvore dentro da propria prova. O texto custa a linha e mais nada,
+    /// e o que a prova mede -- quanto o cliente LEU -- e o mesmo.
+    fn par_da_linha_enorme(total: usize) -> (u16, std::sync::mpsc::Receiver<usize>) {
+        let ouvinte = TcpListener::bind("127.0.0.1:0").unwrap();
+        let porta = ouvinte.local_addr().unwrap().port();
+        let (avisar, aviso) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let Ok((mut s, _)) = ouvinte.accept() else {
+                return;
+            };
+            let _ = s.set_write_timeout(Some(std::time::Duration::from_secs(20)));
+            let mut aceitos = 0usize;
+            let _ = (|| -> std::io::Result<()> {
+                engolir_pedido(&mut s)?;
+                s.write_all(
+                    b"{\"ok\":true,\"resultado\":{\"phxsql\":\"prova\",\"papel\":\"isolado\"}}\n",
+                )?;
+                engolir_pedido(&mut s)?;
+                let cabeca =
+                    b"{\"ok\":true,\"resultado\":{\"colunas\":[\"a\"],\"linhas\":[{\"a\":\"";
+                s.write_all(cabeca)?;
+                aceitos += cabeca.len();
+                let pedaco = vec![b'x'; 64 * 1024];
+                // Teto de voltas: `total` / 64 KiB, e o laco acaba quando o
+                // cliente larga o soquete (erro de escrita) ou quando tudo
+                // foi aceito.
+                while aceitos + pedaco.len() < total {
+                    s.write_all(&pedaco)?;
+                    aceitos += pedaco.len();
+                }
+                s.write_all(b"\"}]}}\n")?;
+                aceitos = total;
+                Ok(())
+            })();
+            let _ = avisar.send(aceitos);
+        });
+        (porta, aviso)
+    }
+
+    /// **610: no motor `phxsql` o teto de bytes vale ANTES da analise.** O
+    /// par responde com uma linha de 64 MiB e a ligacao tem `max_mib` 1. A
+    /// recusa tem de vir pelo `max_mib`, e o par tem de ter conseguido
+    /// entregar MUITO menos que a linha: o cliente para de ler no teto e larga
+    /// o soquete. O que se mede e QUANTO foi lido, e nao se recusou -- antes
+    /// do conserto o cliente tambem recusava, so que depois de ler os 64 MiB e
+    /// de montar a arvore deles.
+    ///
+    /// A folga de 32 MiB e a das memorias de soquete do nucleo (leitura do
+    /// cliente e escrita do par, no laco local); o conserto deixa o par perto
+    /// de 1 MiB mais elas, e o defeito, nos 64 MiB inteiros.
+    ///
+    /// # Prova real
+    ///
+    /// Com o defeito reposto (`pedir_pesado` lendo com o teto do `Canal` em
+    /// vez de `cabe()`), o par entrega os 64 MiB e o vermelho diz quanto.
+    #[test]
+    fn o_phxsql_pesa_a_linha_antes_de_analisar() {
+        const TOTAL: usize = 64 * 1024 * 1024;
+        let (porta, aviso) = par_da_linha_enorme(TOTAL);
+        let d = ligacao(
+            "phxsql",
+            porta,
+            &format!(r#","max_linhas":100000,"max_mib":{MAX_MIB}"#),
+        );
+        let mut c = d.abrir().expect("abrir");
+        let veredito = c.consultar_em("", "SELECT a FROM t", d.max_linhas);
+        drop(c);
+        let aceitos = aviso
+            .recv_timeout(std::time::Duration::from_secs(60))
+            .expect("o par nao terminou");
+        match veredito {
+            Err(PhxError::LimiteExcedido(m)) => {
+                assert!(m.contains("max_mib"), "{m}");
+                assert!(m.contains("antes de ser analisada"), "{m}");
+            }
+            Ok(_) => panic!("a linha de 64 MiB passou com max_mib 1"),
+            Err(outro) => panic!("esperava o teto de bytes, veio {outro}"),
+        }
+        // O numero vai para a saida: e ele que a documentacao cita.
+        eprintln!("610: o par entregou {aceitos} de {TOTAL} bytes antes da recusa");
+        assert!(
+            aceitos < 32 * 1024 * 1024,
+            "o cliente leu {aceitos} bytes da linha de {TOTAL} antes de recusar: \
+             o teto de max_mib {MAX_MIB} nao valeu antes da analise"
+        );
     }
 
     /// O peso conta a MOLDURA de cada celula, e nao so o texto: uma linha de

@@ -1029,7 +1029,7 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `rowid-revela-coluna-negada` | Com a coluna que particiona negada pelo direito, a primeira letra (ou o período) de cada linha saía pelo rowid, pelos baldes, pelo `slots` e pelo catálogo | 2 | ✅ provada |
 | `conta-cita-numero-de-coluna-marcada` | A recusa da expressão citava número e booleano, e a conta que parte de coluna marcada e cai em coluna sem marca saía com o valor | 1 | ✅ provada |
 | `externo-selado-gravado-como-anexo` | A réplica decidia pelo PRÓPRIO cofre se o externo marcado da imagem vinha selado: sem cofre gravava o texto cifrado como o anexo, calada; com a mesma senha acusava adulteração que não houve | 2 | ✅ provada |
-| `replicar-manda-o-externo-selado` | O `replicar` mandava ao fio o externo marcado selado com a chave do `.reg` da origem: nenhuma réplica o abria, nem com a mesma senha, porque o sal é por arquivo | 2 | ✅ provada |
+| `replicar-manda-o-externo-selado` | O `replicar` mandava ao fio o externo marcado selado com a chave do `.reg` da origem: nenhuma réplica o abria, nem com a mesma senha, porque o sal é por arquivo | 1 | ✅ provada |
 | `visoes-entrega-o-literal` | A op `visoes` pede só `ler` e devolvia o SQL da visão verbatim: o literal do `WHERE` e o comentário saíam para quem tinha a coluna negada | 1 | ✅ provada |
 | `congelamento-sensivel-a-caixa` | a chave do congelamento distinguia caixa: em NTFS e APFS o `inserir` em `"Clientes"` gravava no volume vivo durante a FASE A | 2 | ✅ provada |
 | `excluir-tabela-fura-o-congelamento` | `excluir_tabela` apagava os arquivos de uma tabela em reescrita: mexe no disco SEM abrir a tabela, e o portão do congelamento mora na abertura | 1 | ✅ provada |
@@ -1081,11 +1081,15 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `manifesto-velho-apagado-pelo-nome` | o backup apaga o manifesto velho pelo NOME do destino: um link trocado no meio da corrida apaga o backup.json de OUTRO backup | 1 | ✅ provada |
 | `destino-do-backup-conferido-so-pelo-nome` | o destino do backup é conferido pelo NOME e aberto depois pelo descritor: a troca de um link no meio põe as cópias dentro do database vivo | 1 | ✅ provada |
 | `chave-sem-urandom-pela-mistura` | sem /dev/urandom (Windows), a chave efêmera do TLS e do Noise e a do autoassinado saem de SHA-256 de relógio, PID e endereço | 2 | ✅ provada |
+| `dblink-phx-analisa-antes-de-pesar` | O teto de bytes do DbLink não valia para o motor `phxsql`: a linha de até 128 MiB do `Canal` virava árvore `Json` antes de ser pesada, e o `max_mib` só limitava a cópia | 1 | ✅ provada |
+| `pg-autenticado-sem-scram` | O cliente PostgreSQL do DbLink aceitava `AuthenticationOk` sem SCRAM, com senha na ligação: quem respondesse no endereço dizia «pode entrar» sem conhecer a senha | 1 | ✅ provada |
+| `replica-sem-cofre-grava-externo-marcado-em-claro` | A réplica SEM cofre gravava a coluna externa marcada em claro no disco: o 344 trocou o selado (lixo) pelo dado aberto, sem a palavra do dono | 1 | ✅ provada |
+| `restauracao-recusa-como-replica-sem-cofre` | A restauração do PRÓPRIO diário passaria pela recusa da réplica sem cofre: o servidor sem cofre deixaria de restaurar toda tabela com anexo marcado, sem proteger um byte | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**440 das 615 guardas do catálogo: 1 aposentada, 435 provadas, 4 redundantes** — 13254 s de mutação, medido em 2026-09-16 15:25.
+**444 das 619 guardas do catálogo: 1 aposentada, 439 provadas, 4 redundantes** — 13467 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 176 das 615 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 176 das 619 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação

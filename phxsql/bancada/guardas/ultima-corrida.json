@@ -2849,17 +2849,17 @@
       "id": "dblink-sem-teto-de-bytes",
       "titulo": "O resultado do DbLink só tem teto de LINHAS: o par decide quanto pesa cada uma (até 128 MiB no MySQL, 64 MiB no PostgreSQL) e o servidor guarda gigabytes",
       "veredito": "PROVADA",
-      "segundos": 73.81,
+      "segundos": 80.29,
       "notas": [],
-      "quando": "2026-10-01 00:40"
+      "quando": "2026-10-01 07:17"
     },
     {
       "id": "dblink-max-mib-sem-leitor",
       "titulo": "O `max_mib` da ligação do DbLink aparece no arquivo e na tela e nenhum cliente o lê: o teto de bytes fica o de fábrica, diga a ligação o que disser",
       "veredito": "PROVADA",
-      "segundos": 61.9,
+      "segundos": 81.46,
       "notas": [],
-      "quando": "2026-10-01 00:42"
+      "quando": "2026-10-01 07:17"
     },
     {
       "id": "criar-tabela-sem-fsync-dos-arquivos",
@@ -3107,17 +3107,17 @@
       "id": "externo-selado-gravado-como-anexo",
       "titulo": "A réplica decidia pelo PRÓPRIO cofre se o externo marcado da imagem vinha selado: sem cofre gravava o texto cifrado como o anexo, calada; com a mesma senha acusava adulteração que não houve",
       "veredito": "PROVADA",
-      "segundos": 8.25,
+      "segundos": 9.59,
       "notas": [],
-      "quando": "2026-10-01 03:14"
+      "quando": "2026-10-01 07:17"
     },
     {
       "id": "replicar-manda-o-externo-selado",
       "titulo": "O `replicar` mandava ao fio o externo marcado selado com a chave do `.reg` da origem: nenhuma réplica o abria, nem com a mesma senha, porque o sal é por arquivo",
       "veredito": "PROVADA",
-      "segundos": 59.5,
+      "segundos": 42.5,
       "notas": [],
-      "quando": "2026-10-01 03:16"
+      "quando": "2026-10-01 07:17"
     },
     {
       "id": "visoes-entrega-o-literal",
@@ -3451,9 +3451,9 @@
       "id": "fio-cifrado-perde-o-antes",
       "titulo": "A imagem aberta para o fio numa tabela cifrada era remontada só até os externos, e a troca de chave perdia o «antes» só ali",
       "veredito": "PROVADA",
-      "segundos": 8.99,
+      "segundos": 8.53,
       "notas": [],
-      "quando": "2026-10-01 06:50"
+      "quando": "2026-10-01 07:24"
     },
     {
       "id": "composta-casa-pela-primeira-coluna",
@@ -3526,6 +3526,38 @@
       "segundos": 9.94,
       "notas": [],
       "quando": "2026-10-01 06:59"
+    },
+    {
+      "id": "dblink-phx-analisa-antes-de-pesar",
+      "titulo": "O teto de bytes do DbLink não valia para o motor `phxsql`: a linha de até 128 MiB do `Canal` virava árvore `Json` antes de ser pesada, e o `max_mib` só limitava a cópia",
+      "veredito": "PROVADA",
+      "segundos": 81.09,
+      "notas": [],
+      "quando": "2026-10-01 07:17"
+    },
+    {
+      "id": "pg-autenticado-sem-scram",
+      "titulo": "O cliente PostgreSQL do DbLink aceitava `AuthenticationOk` sem SCRAM, com senha na ligação: quem respondesse no endereço dizia «pode entrar» sem conhecer a senha",
+      "veredito": "PROVADA",
+      "segundos": 20.12,
+      "notas": [],
+      "quando": "2026-10-01 07:17"
+    },
+    {
+      "id": "replica-sem-cofre-grava-externo-marcado-em-claro",
+      "titulo": "A réplica SEM cofre gravava a coluna externa marcada em claro no disco: o 344 trocou o selado (lixo) pelo dado aberto, sem a palavra do dono",
+      "veredito": "PROVADA",
+      "segundos": 21.42,
+      "notas": [],
+      "quando": "2026-10-01 07:17"
+    },
+    {
+      "id": "restauracao-recusa-como-replica-sem-cofre",
+      "titulo": "A restauração do PRÓPRIO diário passaria pela recusa da réplica sem cofre: o servidor sem cofre deixaria de restaurar toda tabela com anexo marcado, sem proteger um byte",
+      "veredito": "PROVADA",
+      "segundos": 80.98,
+      "notas": [],
+      "quando": "2026-10-01 07:17"
     },
     {
       "id": "cifra-do-fio-imposta",

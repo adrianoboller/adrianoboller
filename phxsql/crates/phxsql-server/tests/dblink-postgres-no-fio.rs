@@ -573,3 +573,91 @@ fn os_metodos_de_autenticacao_fracos_sao_recusados() {
         );
     }
 }
+
+/// Um par que responde `AuthenticationOk` como PRIMEIRA resposta -- o `trust`
+/// do `pg_hba.conf`, ou quem se pos no endereco sem conhecer senha nenhuma --
+/// e depois atende as consultas como se nada fosse. Conta quantas `Q` viu.
+fn par_que_nunca_pede_senha() -> (u16, mpsc::Receiver<usize>) {
+    let ouvinte = TcpListener::bind("127.0.0.1:0").unwrap();
+    let porta = ouvinte.local_addr().unwrap().port();
+    let (envia, recebe) = mpsc::channel();
+    thread::spawn(move || {
+        let (soquete, _) = ouvinte.accept().unwrap();
+        soquete
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
+        let mut fio = Fio { fluxo: soquete };
+        let mut tam = [0u8; 4];
+        fio.fluxo.read_exact(&mut tam).unwrap();
+        let mut corpo = vec![0u8; i32::from_be_bytes(tam) as usize - 4];
+        fio.fluxo.read_exact(&mut corpo).unwrap();
+        fio.autenticacao(0, &[]);
+        fio.escrever(b'Z', b"I");
+        let mut consultas = 0;
+        // Teto de voltas: o cliente fecha (fim) ou manda `X`; o prazo de
+        // leitura de 10 s acaba com o resto.
+        for _ in 0..16 {
+            match fio.ler() {
+                Some((b'Q', _, _)) => {
+                    consultas += 1;
+                    responder(&mut fio, &Resposta::default());
+                }
+                Some((b'X', _, _)) | None => break,
+                Some(_) => {}
+            }
+        }
+        let _ = envia.send(consultas);
+    });
+    (porta, recebe)
+}
+
+/// **612: com senha na ligacao, o `AuthenticationOk` sem SCRAM e recusa.**
+/// Antes, o cliente aceitava o `R 0` direto, conectava e mandava as
+/// consultas -- e a autenticacao mutua do SCRAM, que `conferir_servidor`
+/// promete, nao valia para quem simplesmente nao a pedia. A recusa tem de
+/// nomear o `pg_hba.conf`, nao pode citar a senha, e o par nao pode ter visto
+/// consulta nenhuma.
+///
+/// # Prova real
+///
+/// Com o defeito reposto (o `0 => Ok(true)` sem a guarda), `abrir` volta `Ok`
+/// e o `ping` chega ao par: o vermelho diz isso.
+#[test]
+fn o_autenticado_sem_scram_e_recusado_quando_ha_senha() {
+    let (porta, recebe) = par_que_nunca_pede_senha();
+    let d = ligacao(porta);
+    let texto = match d.abrir() {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("o cliente aceitou «autenticado» sem SCRAM, com senha na ligacao"),
+    };
+    assert!(texto.contains("pg_hba.conf"), "{texto}");
+    assert!(texto.contains("scram-sha-256"), "{texto}");
+    assert!(!texto.contains(SENHA), "a recusa citou a senha: {texto}");
+    let consultas = recebe
+        .recv_timeout(Duration::from_secs(15))
+        .expect("o par nao terminou");
+    assert_eq!(consultas, 0, "o par recebeu consulta sem provar a senha");
+}
+
+/// O comportamento velho: sem senha na ligacao, o `trust` e escolha de quem
+/// cadastrou e continua entrando.
+#[test]
+fn sem_senha_o_trust_continua_entrando() {
+    let (porta, recebe) = par_que_nunca_pede_senha();
+    let d = Definicao::de_json(
+        &Json::analisar(&format!(
+            r#"{{"nome":"falso","motor":"postgres","host":"127.0.0.1",
+                 "porta":{porta},"usuario":"adriano","database":"erp","timeout_s":10}}"#
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    let mut c = d.abrir().expect("o trust sem senha deixou de entrar");
+    c.ping().expect("ping");
+    c.encerrar();
+    drop(c);
+    let consultas = recebe
+        .recv_timeout(Duration::from_secs(15))
+        .expect("o par nao terminou");
+    assert!(consultas >= 1, "o ping nao chegou ao par");
+}

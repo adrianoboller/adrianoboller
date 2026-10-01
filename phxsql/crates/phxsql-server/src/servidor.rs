@@ -25251,9 +25251,11 @@ impl Servidor {
                             // `tv`. Abrir por ele deixa o restaurado selar com
                             // a dele, em vez de depender de os dois arquivos
                             // ainda dividirem o sal.
-                            let aplicado = tv
-                                .imagem_para_o_fio(imagem)
-                                .and_then(|i| td.aplicar_evento(e.operacao, e.rowid, &i));
+                            let aplicado = tv.imagem_para_o_fio(imagem).and_then(|i| {
+                                // O diario e DESTE servidor: a recusa da
+                                // replica sem cofre (pedido 613) nao cabe.
+                                td.reaplicar_evento_do_proprio_diario(e.operacao, e.rowid, &i)
+                            });
                             if let Err(erro) = aplicado {
                                 parou = Some(format!(
                                     "no evento {pos} do diario ({}): {erro}",
@@ -44528,6 +44530,80 @@ mod testes_pitr {
         while crate::agora_ms() == antes {
             std::hint::spin_loop();
         }
+    }
+
+    /// **613, a excecao:** a restauracao reaplica o diario do PROPRIO
+    /// servidor, e o anexo marcado de um servidor sem cofre volta. A recusa da
+    /// replica sem cofre (pedido 613) protege o dado que SAI da origem; aqui
+    /// ele nunca saiu -- o vivo e o restaurado moram no mesmo disco, com a
+    /// mesma falta de cofre.
+    ///
+    /// # Prova real
+    ///
+    /// Com o defeito reposto (a restauracao pelo `aplicar_evento`, que
+    /// recusa), a tabela para no instante da copia com «Falta o cofre» no
+    /// `parou_em`, e a linha 2 nao volta.
+    #[test]
+    fn restaurar_sem_cofre_reaplica_o_anexo_marcado() {
+        let dir = DirTemp::novo("pitr-anexo-marcado");
+        let s = servidor(&dir.0, true);
+        let ses = Sessao::default();
+        s.executar("criar_database", &ped(r#"{"database":"b"}"#), &ses)
+            .unwrap();
+        s.executar(
+            "criar_tabela",
+            &ped(r#"{"database":"b","tabela":"c",
+                 "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true},
+                            {"nome":"ficha","tipo":"Memo","dado_pessoal":"sensivel"}],
+                 "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true}]}"#),
+            &ses,
+        )
+        .unwrap();
+        let por = |id: i64, ficha: &str| {
+            s.executar(
+                "inserir",
+                &ped(&format!(
+                    r#"{{"database":"b","tabela":"c","linha":{{"id":{id},"ficha":"{ficha}"}}}}"#
+                )),
+                &ses,
+            )
+            .unwrap();
+        };
+        por(1, "antes da copia");
+        passa_um_ms();
+        let zip = backup(&s, &dir.0);
+        passa_um_ms();
+        por(2, "depois da copia");
+
+        let r = s
+            .executar(
+                "restaurar_backup",
+                &ped(&format!(
+                    r#"{{"origem":"{zip}","database":"b_volta","ate":"2099-01-01T00:00:00Z"}}"#
+                )),
+                &ses,
+            )
+            .unwrap();
+        let pitr = r.campo("pitr").expect("a resposta traz o bloco pitr");
+        assert!(
+            !pitr.escrever().contains("Falta o cofre"),
+            "a restauracao recusou como replica: {}",
+            pitr.escrever()
+        );
+        let fichas: Vec<String> = s
+            .executar(
+                "varrer",
+                &ped(r#"{"database":"b_volta","tabela":"c"}"#),
+                &ses,
+            )
+            .unwrap()
+            .campo("linhas")
+            .and_then(Json::lista)
+            .unwrap()
+            .iter()
+            .map(|l| l.texto_ou("ficha", "").to_string())
+            .collect();
+        assert_eq!(fichas, vec!["antes da copia", "depois da copia"]);
     }
 
     /// A PROVA DE PONTA A PONTA.

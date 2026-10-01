@@ -137,12 +137,40 @@ impl Conexao {
     /// corta a resposta AQUI, e a resposta diz que cortou (`truncado`) -- o
     /// mesmo contrato dos outros dois clientes.
     pub fn consultar(&mut self, database: &str, sql: &str, teto: u64) -> Result<Resultado> {
-        let r = self.cliente.pedir(vec![
-            ("op", Json::texto_de("sql")),
-            ("database", Json::texto_de(database)),
-            ("texto", Json::texto_de(sql)),
-        ])?;
-        resultado_do_sql(&r, teto, self.teto_de_bytes)
+        let mut guardado = Acumulador::novo(teto, self.teto_de_bytes);
+        let r = self.pedir_pesado(
+            vec![
+                ("op", Json::texto_de("sql")),
+                ("database", Json::texto_de(database)),
+                ("texto", Json::texto_de(sql)),
+            ],
+            &mut guardado,
+        )?;
+        resultado_do_sql(&r, guardado)
+    }
+
+    /// Um pedido cuja resposta e PESADA no `Acumulador` antes de ser
+    /// analisada -- pedido 610.
+    ///
+    /// O resultado do outro PhxSql chega numa linha so do fio, e a arvore que
+    /// `Json::analisar` monta dela custa de 16 a 32 vezes a linha. Ler com o
+    /// teto de 128 MiB do `Canal` e pesar so a copia deixava o `max_mib` sem
+    /// efeito no pico. Aqui a leitura para no que ainda CABE no teto da
+    /// ligacao, e a linha que cabe entra no mesmo contador da copia. Os dois
+    /// caminhos que guardam resultado (`consultar` e `ler`) passam por aqui:
+    /// um terceiro com o `pedir` cru seria o que volta a analisar antes de
+    /// pesar.
+    fn pedir_pesado(
+        &mut self,
+        campos: Vec<(&str, Json)>,
+        guardado: &mut Acumulador,
+    ) -> Result<Json> {
+        let crua = self
+            .cliente
+            .pedir_cru(campos, guardado.cabe())?
+            .ok_or_else(|| guardado.recusa_da_crua())?;
+        guardado.pesar_crua(crua.len() as u64)?;
+        Cliente::desembrulhar(&crua)
     }
 }
 
@@ -227,16 +255,15 @@ fn como_texto(v: &Json) -> Option<String> {
 /// mentiria no dia em que uma linha viesse sem um campo nulo.
 ///
 /// O corte -- por linhas e por bytes -- e o do motor comum aos tres clientes
-/// (pedido 546). Aqui a resposta inteira ja chegou numa linha do fio, com o
-/// teto do `Canal`; o que o motor limita e a COPIA em `Linha`, que e o que
-/// fica guardado e vira a resposta.
+/// (pedido 546). Aqui a resposta inteira ja chegou numa linha do fio, e o
+/// `guardado` ja traz o peso dela (pedido 610, [`Conexao::pedir_pesado`]): a
+/// copia em `Linha` soma no mesmo contador, porque a linha crua, a arvore e a
+/// copia estao vivas ao mesmo tempo.
 fn linhas_por_colunas(
     linhas: &[Json],
     colunas: &[Coluna],
-    teto: u64,
-    teto_de_bytes: u64,
+    mut guardado: Acumulador,
 ) -> Result<(Vec<Linha>, bool)> {
-    let mut guardado = Acumulador::novo(teto, teto_de_bytes);
     for l in linhas {
         if !guardado.quer_mais() {
             break;
@@ -272,7 +299,7 @@ fn coluna_texto(nome: &str) -> Coluna {
 ///   linha que vem junto faria um `SELECT COUNT(*)` mostrar um registro de
 ///   dado, e quem olha nao saberia se aquilo quer dizer alguma coisa -- o
 ///   mesmo defeito que exercitar o console achou no proprio servidor.
-fn resultado_do_sql(r: &Json, teto: u64, teto_de_bytes: u64) -> Result<Resultado> {
+fn resultado_do_sql(r: &Json, guardado: Acumulador) -> Result<Resultado> {
     if let Some(n) = r.campo("contagem").and_then(Json::inteiro) {
         return Ok(Resultado {
             colunas: vec![Coluna {
@@ -297,7 +324,7 @@ fn resultado_do_sql(r: &Json, teto: u64, teto_de_bytes: u64) -> Result<Resultado
             .unwrap_or_default(),
     };
     let colunas: Vec<Coluna> = nomes.iter().map(|n| coluna_texto(n)).collect();
-    let (linhas, truncado) = linhas_por_colunas(linhas, &colunas, teto, teto_de_bytes)?;
+    let (linhas, truncado) = linhas_por_colunas(linhas, &colunas, guardado)?;
     Ok(Resultado {
         colunas,
         linhas,
@@ -632,16 +659,20 @@ pub fn ler(d: &Definicao, mut c: Conexao, p: &Json) -> Result<Json> {
 
     // Uma linha a mais do que o teto: se ela vier, ha mais pagina. O mesmo
     // truque do caminho SQL, para a resposta dizer `tem_mais` sem contar.
-    let r = c.pedir(vec![
-        ("op", Json::texto_de("varrer")),
-        ("database", Json::texto_de(&base)),
-        ("tabela", Json::texto_de(&tabela)),
-        ("pular", Json::de_i64(salto)),
-        ("max", Json::de_i64(limite + 1)),
-    ])?;
+    let mut guardado = Acumulador::novo(limite as u64, c.teto_de_bytes);
+    let r = c.pedir_pesado(
+        vec![
+            ("op", Json::texto_de("varrer")),
+            ("database", Json::texto_de(&base)),
+            ("tabela", Json::texto_de(&tabela)),
+            ("pular", Json::de_i64(salto)),
+            ("max", Json::de_i64(limite + 1)),
+        ],
+        &mut guardado,
+    )?;
     let brutas = r.campo("linhas").and_then(Json::lista).unwrap_or(&[]);
     let tem_mais = brutas.len() as i64 > limite;
-    let (linhas, _) = linhas_por_colunas(brutas, &colunas, limite as u64, c.teto_de_bytes)?;
+    let (linhas, _) = linhas_por_colunas(brutas, &colunas, guardado)?;
     let resultado = Resultado {
         colunas,
         linhas,
@@ -803,7 +834,12 @@ mod testes {
         // A linha chega com os campos FORA de ordem, que e o que um objeto
         // JSON permite -- e e por isso que a ordem nao pode sair dela.
         let linha = Json::analisar(r#"[{"cidade":"Blumenau","rowid":3,"id":9}]"#).unwrap();
-        let (linhas, _) = linhas_por_colunas(linha.lista().unwrap(), &colunas, 10, BYTES).unwrap();
+        let (linhas, _) = linhas_por_colunas(
+            linha.lista().unwrap(),
+            &colunas,
+            Acumulador::novo(10, BYTES),
+        )
+        .unwrap();
         assert_eq!(
             linhas[0],
             vec![
@@ -821,7 +857,7 @@ mod testes {
     fn a_contagem_nao_devolve_linha_de_dado() {
         let r = Json::analisar(r#"{"sql":"SELECT COUNT(*) FROM c","contagem":3,"registros":3}"#)
             .unwrap();
-        let res = resultado_do_sql(&r, 100, BYTES).unwrap();
+        let res = resultado_do_sql(&r, Acumulador::novo(100, BYTES)).unwrap();
         assert_eq!(res.colunas.len(), 1);
         assert_eq!(res.colunas[0].nome, "contagem");
         assert_eq!(res.linhas, vec![vec![Some("3".to_string())]]);
@@ -832,12 +868,12 @@ mod testes {
     #[test]
     fn a_projecao_do_sql_manda_quando_ela_existe() {
         let r = Json::analisar(r#"{"colunas":["nome"],"linhas":[{"id":1,"nome":"Ana"}]}"#).unwrap();
-        let res = resultado_do_sql(&r, 100, BYTES).unwrap();
+        let res = resultado_do_sql(&r, Acumulador::novo(100, BYTES)).unwrap();
         assert_eq!(res.colunas.len(), 1);
         assert_eq!(res.celula(0, 0).unwrap(), "Ana");
 
         let inteira = Json::analisar(r#"{"linhas":[{"id":1,"nome":"Ana"}]}"#).unwrap();
-        let res = resultado_do_sql(&inteira, 100, BYTES).unwrap();
+        let res = resultado_do_sql(&inteira, Acumulador::novo(100, BYTES)).unwrap();
         let nomes: Vec<&str> = res.colunas.iter().map(|c| c.nome.as_str()).collect();
         assert_eq!(nomes, ["id", "nome"]);
     }
@@ -847,7 +883,7 @@ mod testes {
     #[test]
     fn o_teto_corta_e_a_resposta_avisa() {
         let r = Json::analisar(r#"{"linhas":[{"i":1},{"i":2},{"i":3}]}"#).unwrap();
-        let res = resultado_do_sql(&r, 2, BYTES).unwrap();
+        let res = resultado_do_sql(&r, Acumulador::novo(2, BYTES)).unwrap();
         assert_eq!(res.linhas.len(), 2);
         assert!(res.truncado);
     }

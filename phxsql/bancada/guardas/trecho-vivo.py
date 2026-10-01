@@ -508,6 +508,15 @@ dia, nunca no desejado:
   (`destino-do-backup-conferido-so-pelo-nome`) e a chave sem `/dev/urandom`
   saindo da mistura de relogio e PID (`chave-sem-urandom-pela-mistura`).
   594 + 3 = 597, contado pelo `--catraca` (596 entradas mais 1 aposentada).
+  **SUBIU para 620 em 01/10/2026** (no merge, 616 + 4; pedidos 610, 612 e 613): quatro guardas --
+  a linha do motor `phxsql` analisada antes de pesar
+  (`dblink-phx-analisa-antes-de-pesar`), o `AuthenticationOk` sem SCRAM com
+  senha na ligacao (`pg-autenticado-sem-scram`), a replica sem cofre que
+  grava o externo marcado em claro
+  (`replica-sem-cofre-grava-externo-marcado-em-claro`) e a restauracao do
+  proprio diario que recusaria como replica
+  (`restauracao-recusa-como-replica-sem-cofre`). 594 + 4 = 598, medido pelo
+  `--numeros` nesta arvore.
 
 # A QUINTA REGUA: a tabela publicada pode ser MENOR que o catalogo
 
@@ -614,7 +623,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 616
+PISO_DAS_ENTRADAS = 620
 
 # ------------------------------------------------------------- APOSENTADAS
 #
