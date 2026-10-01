@@ -133,7 +133,7 @@ def main():
 <div class="casca">
 <header class="topo"><img src="data:image/png;base64,{simbolo}" alt="">
 <div><h1>As telas do console, na sequência de uso</h1>
-<p class="sub">{total} telas em {len(rot["capitulos"])} capítulos · capturadas do servidor real, tema escuro, commit <code>{e(rot["commit"])}</code></p></div></header>
+<p class="sub">{total} telas em {len(rot["capitulos"])} capítulos · capturadas do servidor real, tema {e(ativos.get("_tema", "escuro"))}, commit <code>{e(rot["commit"])}</code></p></div></header>
 <nav class="indice" aria-label="Capítulos"><ol>{"".join(indice)}</ol></nav>
 <main>{"".join(corpo)}</main>
 <footer>Gerada por <code>docs/dossie/pagina-das-telas.py</code> a partir de <code>docs/dossie/telas/roteiro.json</code>. Seis itens do menu abrem diálogo do navegador, dois estão desligados no código e dez são ações, não telas: por isso não aparecem aqui. Clique numa captura para abri-la no tamanho original.</footer>
