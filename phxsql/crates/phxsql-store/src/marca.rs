@@ -1449,8 +1449,15 @@ impl Database {
         let mut r = Relatorio::default();
         let mut schemas: Vec<Database> = Vec::new();
         for s in self.schemas().unwrap_or_default() {
+            // O schema leva a POLITICA do database (pedido 601): a marca de
+            // uma tabela de schema mora na pasta do schema, e um `Database`
+            // novo nasceria com o padrao desligado -- o COMMIT completado ali
+            // iria sem imagem, o mesmo defeito do 564 um diretorio abaixo.
             if let Ok(d) = self.diretorio(Some(&s)) {
-                schemas.push(Database::no_diretorio(&d));
+                schemas.push(Database::no_diretorio_com_politica(
+                    &d,
+                    self.politica_do_diario(),
+                ));
             }
         }
         for db in std::iter::once(self).chain(schemas.iter()) {
@@ -1500,10 +1507,18 @@ pub fn marcas_em(dir: &Path) -> Vec<PathBuf> {
 /// recebe o diretorio e nao o database. E o mesmo laco da
 /// [`Database::recuperar_marcas`], sem o passe do indice marcado: quem chama
 /// reconstroi a tabela dele logo em seguida.
-pub fn recuperar_no_diretorio(dir: &Path) -> Relatorio {
+///
+/// A `politica` e parametro, e nao padrao, de proposito (pedido 601): quem
+/// recebe so o diretorio nao sabe se aquela base replica, e um padrao aqui
+/// seria o «desligado» decidido calado -- o COMMIT completado iria sem imagem
+/// e a replica pararia nele. Quem chama tem de dizer.
+pub fn recuperar_no_diretorio(
+    dir: &Path,
+    politica: crate::catalogo::PoliticaDoDiario,
+) -> Relatorio {
     let comeco = std::time::Instant::now();
     let mut r = Relatorio::default();
-    completar_as_marcas_de(&Database::no_diretorio(dir), &mut r);
+    completar_as_marcas_de(&Database::no_diretorio_com_politica(dir, politica), &mut r);
     r.ms = comeco.elapsed().as_millis() as u64;
     r
 }

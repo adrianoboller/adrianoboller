@@ -1319,10 +1319,10 @@ pub const OPERACOES: &[Operacao] = &[
             opc(
                 "check",
                 "string",
-                "a restrição CHECK da coluna. Ela NÃO é conferida contra as linhas \
-                 que já existem: a que a violar continua gravada, e só é recusada \
-                 no próximo `atualizar` dela. A resposta avisa quando isso pode \
-                 acontecer",
+                "a restrição CHECK da coluna. Ela é conferida contra as linhas \
+                 que já existem (inclusive as excluídas que voltam pelo \
+                 `restaurar`), com o `padrao` na coluna nova: se alguma a viola, \
+                 a coluna é RECUSADA, dizendo quantas",
             ),
             opc(
                 "calculada",

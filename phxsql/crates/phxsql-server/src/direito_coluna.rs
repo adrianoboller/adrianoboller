@@ -65,6 +65,16 @@ pub enum PorColuna {
     /// ler, entao ele passa linha a linha: na tabela cujo rowid revela coluna
     /// negada a este usuario, sai o que conta linha por balde (pedido 543).
     Catalogo,
+    /// Opera sobre UMA tabela e devolve, ao lado do que fez, a MARCA D'AGUA
+    /// dela -- `slots`, os volumes, o custo em slots de uma reescrita
+    /// (`verificar`, `migrar_esquema`, `acrescentar_coluna`,
+    /// `memoria_carregar`). Nada disso e coluna, e por isso nao e `Le`; mas na
+    /// tabela particionada pela coluna negada, a marca d'agua e a contagem do
+    /// balde mais alto, e o 543 ja tirou o mesmo numero do `esquema` (pedido
+    /// 600). O crivo e o do `esquema`, pela mesma pergunta
+    /// ([`coluna_do_rowid_negada`]); sem `tabela` no pedido (a varredura do
+    /// `migrar_esquema`), passa linha a linha como o [`PorColuna::Catalogo`].
+    MarcaDagua,
 }
 
 /// A classe de cada operacao do protocolo, incluindo os apelidos que o
@@ -245,18 +255,25 @@ pub const CLASSES: &[(&str, PorColuna)] = &[
     ("criar_tabela", PorColuna::Nenhum),
     ("declarar_fk", PorColuna::Nenhum),
     ("excluir_fk", PorColuna::Nenhum),
-    ("acrescentar_coluna", PorColuna::Nenhum),
-    // `Nenhum` e nao `Estrutura`, e a diferenca importa: ela nao devolve nem
-    // recebe dado de linha, e as unicas colunas que ela NOMEIA sao as de
-    // sistema do carimbo (`rowstamp`/`rowtime`), que nao sao de ninguem. Se um
-    // dia ela passar a listar coluna do usuario, muda de classe.
-    ("migrar_esquema", PorColuna::Nenhum),
+    // Devolve `slots_reescritos` -- a marca d'agua (pedido 600).
+    ("acrescentar_coluna", PorColuna::MarcaDagua),
+    // Nao e `Estrutura`, e a diferenca importa: ela nao devolve nem recebe
+    // dado de linha, e as unicas colunas que ela NOMEIA sao as de sistema do
+    // carimbo (`rowstamp`/`rowtime`), que nao sao de ninguem. Mas devolve
+    // `slots` e o custo da reescrita em slots, que sao a marca d'agua
+    // (pedido 600) -- dai `MarcaDagua`, e nao `Nenhum`.
+    ("migrar_esquema", PorColuna::MarcaDagua),
     ("excluir_tabela", PorColuna::Nenhum),
+    // `Nenhum` MEDIDO (pedido 600): a resposta e indice -> chaves, e o numero
+    // de chaves e o de linhas, que o `esquema` ja mostra. Nao ha slot nela.
     ("reindexar", PorColuna::Nenhum),
-    ("verificar", PorColuna::Nenhum),
+    // `slots` e quantos volumes do `.reg` existem -- o `existe` dos baldes
+    // somado (pedido 600).
+    ("verificar", PorColuna::MarcaDagua),
     ("reparar", PorColuna::Nenhum),
     // -------------------------------------------------------------- memoria
-    ("memoria_carregar", PorColuna::Nenhum),
+    // A ficha da residente traz `slots` (pedido 600).
+    ("memoria_carregar", PorColuna::MarcaDagua),
     ("memoria_liberar", PorColuna::Nenhum),
     ("memoria", PorColuna::Nenhum),
     // ----------------------------------------------------------- replicacao
@@ -292,6 +309,8 @@ pub const CLASSES: &[(&str, PorColuna)] = &[
     ("idiomas_padrao", PorColuna::Nenhum),
     ("idiomas_exportar", PorColuna::Nenhum),
     ("idiomas_importar", PorColuna::Nenhum),
+    // `Nenhum` MEDIDO (pedido 600): le o log de ACESSOS -- quantas vezes e
+    // quanto demorou --, e nao a tabela. Nao ha slot nela.
     ("estatisticas", PorColuna::Nenhum),
     ("estatisticas_uso", PorColuna::Nenhum),
     ("sessoes", PorColuna::Nenhum),
@@ -810,21 +829,39 @@ pub fn peneirar_oraculo_do_rowid(resposta: Json, sem_ler: &[String]) -> Json {
     )
 }
 
-/// A linha de UMA tabela do `sistabelas`, quando o rowid dela revela coluna
-/// negada: saem `slots` (a marca d'agua) e `volumes` (quantos periodos ha) --
-/// pedido 543. Quem decide se a coluna e negada e o chamador, por
-/// [`coluna_do_rowid_negada`]; aqui so se tira.
-pub fn peneirar_linha_do_catalogo(linha: Json) -> Json {
-    let Json::Objeto(pares) = linha else {
-        return linha;
+/// O que conta linha por balde numa resposta que descreve UMA tabela -- a
+/// linha do `sistabelas`, ou a resposta inteira do `verificar`, do
+/// `migrar_esquema`, do `acrescentar_coluna` e do `memoria_carregar` --
+/// quando o rowid dela revela coluna negada (pedidos 543 e 600). Quem decide
+/// se a coluna e negada e o chamador, por [`coluna_do_rowid_negada`]; aqui so
+/// se tira.
+///
+/// Uma lista so de chaves, e nao uma por operacao: o numero e o mesmo (a
+/// marca d'agua, ou quantos volumes existem) com nomes diferentes, e uma
+/// lista por operacao seria o lugar onde a proxima esquece um. O `aviso` sai
+/// junto porque o do `migrar_esquema` escreve o custo em slots por extenso --
+/// recortar o numero de dentro da frase e o que a petrea proibe.
+pub fn peneirar_marca_dagua(resposta: Json) -> Json {
+    let Json::Objeto(pares) = resposta else {
+        return resposta;
     };
     Json::Objeto(
         pares
             .into_iter()
-            .filter(|(k, _)| !matches!(k.as_str(), "slots" | "volumes"))
+            .filter(|(k, _)| !CHAVES_DA_MARCA_DAGUA.contains(&k.as_str()))
             .collect(),
     )
 }
+
+/// As chaves que [`peneirar_marca_dagua`] tira.
+pub const CHAVES_DA_MARCA_DAGUA: &[&str] = &[
+    "slots",
+    "slots_a_reescrever",
+    "slots_reescritos",
+    "volumes",
+    "arquivos",
+    "aviso",
+];
 
 fn peneirar_baldes_da_paginacao(paginacao: Json) -> Json {
     let Json::Objeto(pares) = paginacao else {

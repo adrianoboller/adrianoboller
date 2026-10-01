@@ -100,6 +100,7 @@ extern "C" {
 
 /* phx_base_abrir */
 #define PHX_CRIAR              1u
+#define PHX_IMAGEM_NO_DIARIO   2u
 
 /* phx_esquema_coluna */
 #define PHX_COL_OBRIGATORIA    1u

@@ -324,7 +324,7 @@ não se desfaz.
 
 | função | o que faz |
 |---|---|
-| `phx_base_abrir` | abre a raiz de dados e o database; `PHX_CRIAR` cria se faltar. Sem punho de tabela vivo daquele database, completa antes a marca `.tx` que uma queda deixou no meio de uma cascata do `ao_alterar` e reconstrói o índice que ficou marcado (pedido 563); a marca que nem se lê recusa a abertura |
+| `phx_base_abrir` | abre a raiz de dados e o database; `PHX_CRIAR` cria se faltar. Sem punho de tabela vivo daquele database, completa antes a marca `.tx` que uma queda deixou no meio de uma cascata do `ao_alterar` e reconstrói o índice que ficou marcado (pedido 563); a marca que nem se lê recusa a abertura. `PHX_IMAGEM_NO_DIARIO` diz que o aparelho replica: toda tabela desta base — e a marca completada na abertura — grava a imagem da linha no diário (pedido 601); sem ela a recuperação grava sem imagem, e a réplica para no evento |
 | `phx_base_fechar` | libera |
 | `phx_base_tabelas_qtd` / `phx_base_tabela_nome` | lista as tabelas, sem alocar |
 

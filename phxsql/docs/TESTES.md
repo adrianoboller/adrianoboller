@@ -1053,11 +1053,15 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `trilha-em-claro-depois-do-cofre` | o ativo do `.lgpd` nascido em claro continuava recebendo registro em claro depois de o cofre ligar | 2 | ✅ provada |
 | `trilha-ativo-vazio-em-claro` | com o cofre ligado, o ativo VAZIO do `.lgpd` em claro (o que um rodízio sem cofre deixa) recebia o primeiro registro em claro | 1 | ✅ provada |
 | `pulso-deixa-de-provar-calado` | o nó que deixava de assinar o pulso para um par que já recebera prova dele não dizia nada (`campos_da_prova` com `.ok()?`) | 1 | ✅ provada |
+| `marca-dagua-da-particao-negada` | com a coluna que particiona negada pelo direito, `verificar`, `migrar_esquema`, `acrescentar_coluna` e `memoria_carregar` devolviam a marca d'agua da tabela | 1 | ✅ provada |
+| `recuperacao-do-embutido-sem-politica` | o embutido que replica completa a marca da queda com a politica do diario PADRAO, e o evento recuperado sai sem imagem | 2 | ✅ provada |
+| `recuperacao-do-schema-sem-politica` | a recuperacao das marcas abre a pasta de cada schema como um `Database` novo, com a politica do diario padrao: o COMMIT completado ali sai sem imagem | 1 | ✅ provada |
+| `check-novo-contra-a-linha-velha` | `acrescentar_coluna` com CHECK que linhas que ja existem violam e aceito, e a tabela fica com duas verdades | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**412 das 587 guardas do catálogo: 1 aposentada, 407 provadas, 4 redundantes** — 11884 s de mutação, medido em 2026-09-16 15:25.
+**416 das 591 guardas do catálogo: 1 aposentada, 411 provadas, 4 redundantes** — 12086 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 176 das 587 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 176 das 591 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação

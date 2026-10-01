@@ -187,10 +187,14 @@ Veja o diario:
         bloco externo e de cada evento do diario. Confere tambem se a
         contagem de chaves de cada indice bate com a de registros vivos.
 
-    phxsql reindex   <dir> <tabela>
+    phxsql reindex   <dir> <tabela> [--imagem-no-diario]
         Recria o .ndx inteiro a partir do .reg. Use quando o indice se
         perdeu, ficou subocupado depois de muitas exclusoes, ou quando um
         indice novo foi acrescentado a uma tabela que ja tem dados.
+        Antes, completa a transacao que uma queda deixou marcada no
+        diretorio. Se a base replica (imagem_da_linha), passe
+        --imagem-no-diario: sem ela o evento completado vai ao diario sem
+        a imagem da linha, e a replica para nele.
 
     phxsql bancos    <base>
     phxsql tabelas   <base> <database>

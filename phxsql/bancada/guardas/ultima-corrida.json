@@ -1257,17 +1257,17 @@
       "id": "check-que-se-contradiz-no-alter",
       "titulo": "`acrescentar_coluna` aceita um `padrao` que viola o `check` declarado no MESMO comando, e todo `atualizar` da linha velha passa a recusar",
       "veredito": "PROVADA",
-      "segundos": 2.05,
+      "segundos": 7.9,
       "notas": [],
-      "quando": "2026-09-24 04:34"
+      "quando": "2026-10-01 05:32"
     },
     {
       "id": "alter-com-regra-sem-aviso",
       "titulo": "`acrescentar_coluna` com `check` ou `calculada` numa tabela com linha é aceito SEM AVISO, e a linha velha fica fora da regra",
       "veredito": "PROVADA",
-      "segundos": 40.1,
+      "segundos": 75.25,
       "notas": [],
-      "quando": "2026-09-24 04:34"
+      "quando": "2026-10-01 05:35"
     },
     {
       "id": "upsert-parcial-vira-mescla",
@@ -3302,6 +3302,38 @@
       "segundos": 70.45,
       "notas": [],
       "quando": "2026-10-01 04:42"
+    },
+    {
+      "id": "marca-dagua-da-particao-negada",
+      "titulo": "com a coluna que particiona negada pelo direito, `verificar`, `migrar_esquema`, `acrescentar_coluna` e `memoria_carregar` devolviam a marca d'agua da tabela",
+      "veredito": "PROVADA",
+      "segundos": 72.01,
+      "notas": [],
+      "quando": "2026-10-01 05:19"
+    },
+    {
+      "id": "recuperacao-do-embutido-sem-politica",
+      "titulo": "o embutido que replica completa a marca da queda com a politica do diario PADRAO, e o evento recuperado sai sem imagem",
+      "veredito": "PROVADA",
+      "segundos": 7.91,
+      "notas": [],
+      "quando": "2026-10-01 05:20"
+    },
+    {
+      "id": "recuperacao-do-schema-sem-politica",
+      "titulo": "a recuperacao das marcas abre a pasta de cada schema como um `Database` novo, com a politica do diario padrao: o COMMIT completado ali sai sem imagem",
+      "veredito": "PROVADA",
+      "segundos": 7.49,
+      "notas": [],
+      "quando": "2026-10-01 05:20"
+    },
+    {
+      "id": "check-novo-contra-a-linha-velha",
+      "titulo": "`acrescentar_coluna` com CHECK que linhas que ja existem violam e aceito, e a tabela fica com duas verdades",
+      "veredito": "PROVADA",
+      "segundos": 73.17,
+      "notas": [],
+      "quando": "2026-10-01 05:23"
     },
     {
       "id": "cifra-do-fio-imposta",

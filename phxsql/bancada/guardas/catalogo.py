@@ -6175,16 +6175,18 @@ pub fn limpar() {
             "aparecia no `atualizar` seguinte. Pedido 245, O2."
         ),
         "arquivo": "crates/phxsql-store/src/table.rs",
-        "trecho": "                if check.avaliar_bool(&resolver)? == Some(false) {\n",
+        # ATUALIZADO em 01/10/2026 (pedido 245, O2a): o crivo passou a avaliar
+        # cada linha VELHA, e o trecho desceu um nivel, para dentro do laco.
+        "trecho": "                    if check.avaliar_bool(&resolver)? == Some(false) {\n",
         "troca": (
-            "                // DEFEITO REPOSTO (pedido 245, O2): a contradicao passa.\n"
-            "                if false {\n"
+            "                    // DEFEITO REPOSTO (pedido 245, O2): a contradicao passa.\n"
+            "                    if false {\n"
         ),
         "pacote": "phxsql-store",
         "alvo": ["--test", "acrescentar-coluna"],
         "caem": ["padrao_que_viola_o_proprio_check_recusa_antes_de_tocar_no_reg"],
         "seguem": [
-            "o_crivo_do_check_nao_pega_quem_depende_da_linha_velha",
+            "o_crivo_do_check_so_pega_a_linha_que_o_viola",
             "obrigatoria_sem_padrao_com_linha_e_recusada",
             "sem_padrao_a_linha_antiga_recebe_nulo",
         ],
@@ -6202,10 +6204,12 @@ pub fn limpar() {
             "sem regra nao ganha campo novo na resposta."
         ),
         "arquivo": "crates/phxsql-server/src/servidor.rs",
-        "trecho": "        if registros > 0 && (coluna.check.is_some() || coluna.calculada.is_some()) {\n",
+        # ATUALIZADO em 01/10/2026 (pedido 245, O2a): o CHECK deixou de ser
+        # aviso e virou recusa; o aviso que sobra e o da `calculada`.
+        "trecho": "        if let (true, Some(calc)) = (registros > 0, &coluna.calculada) {\n",
         "troca": (
             "        // DEFEITO REPOSTO (pedido 245, O2): nenhum aviso sai.\n"
-            "        if false {\n"
+            "        if let (true, Some(calc)) = (false, &coluna.calculada) {\n"
         ),
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
@@ -20039,5 +20043,119 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "alvo": ["--lib"],
         "caem": ["cluster::testes::o_no_que_deixou_de_provar_diz_no_stderr"],
         "seguem": ["cluster::testes::o_estado_persiste_e_o_arquivo_ganha_do_config"],
+    },
+    {
+        "id": "marca-dagua-da-particao-negada",
+        "titulo": "com a coluna que particiona negada pelo direito, `verificar`, `migrar_esquema`, `acrescentar_coluna` e `memoria_carregar` devolviam a marca d'agua da tabela",
+        "porque": (
+            "pedido 600, irmao do 543: o `esquema` e o `sistabelas` perderam "
+            "`slots`/`volumes`/`arquivos`, e estas quatro devolviam o mesmo "
+            "numero com outro nome (`slots`, `slots_a_reescrever`, "
+            "`slots_reescritos`, `volumes`) -- a marca d'agua e a contagem do "
+            "balde mais alto. A pergunta e a mesma (`coluna_do_rowid_negada`); "
+            "o defeito reposto e a resposta que nao e peneirada."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """                Ok(if negada {
+                    dc::peneirar_marca_dagua(r)
+""",
+        "troca": """                // DEFEITO REPOSTO (600): a marca d'agua sai inteira.
+                Ok(if negada && false {
+                    dc::peneirar_marca_dagua(r)
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_direito_por_coluna::a_marca_dagua_da_particao_negada_nao_sai_pela_administracao",
+        ],
+        "seguem": [
+            "servidor::testes_direito_por_coluna::a_coluna_que_particiona_negada_nao_sai_pelo_rowid_nem_pelo_balde",
+        ],
+    },
+    {
+        "id": "recuperacao-do-embutido-sem-politica",
+        "titulo": "o embutido que replica completa a marca da queda com a politica do diario PADRAO, e o evento recuperado sai sem imagem",
+        "porque": (
+            "pedido 601, o resto do 564: a politica do diario mora na "
+            "`Instancia`, e o `phx_base_abrir` a criava sempre com o padrao "
+            "desligado -- a imagem era ligada tabela por tabela pelo "
+            "`phx_imagem_no_diario`, que chega DEPOIS da recuperacao. A "
+            "bandeira `PHX_IMAGEM_NO_DIARIO` leva a politica a instancia antes "
+            "do `recuperar_marcas`; o defeito reposto e a bandeira que nao chega."
+        ),
+        "arquivo": "crates/phxsql-ffi/src/lib.rs",
+        "trecho": """            Ok(i) => i.com_politica_do_diario(politica),
+""",
+        "troca": """            // DEFEITO REPOSTO (601): a bandeira nao chega a instancia.
+            Ok(i) => {
+                let _ = politica;
+                i
+            }
+""",
+        "pacote": "phxsql-ffi",
+        "alvo": ["--lib"],
+        "caem": [
+            "testes::a_recuperacao_da_base_que_replica_grava_com_imagem_na_raiz",
+            "testes::a_recuperacao_da_base_que_replica_grava_com_imagem_no_schema",
+        ],
+        "seguem": [
+            "testes::sem_a_bandeira_a_base_nao_liga_imagem",
+            "testes::panico_no_meio_da_cascata_completa_na_abertura_sem_punho_vivo",
+        ],
+    },
+    {
+        "id": "recuperacao-do-schema-sem-politica",
+        "titulo": "a recuperacao das marcas abre a pasta de cada schema como um `Database` novo, com a politica do diario padrao: o COMMIT completado ali sai sem imagem",
+        "porque": (
+            "pedido 601, o irmao do 564 um diretorio abaixo: a marca de uma "
+            "tabela de schema mora na pasta do schema, e o "
+            "`recuperar_marcas` montava o `Database` dela pelo "
+            "`no_diretorio`, que nasce desligado -- no servidor e no embutido. "
+            "Irmao e quem chama as mesmas funcoes na mesma ordem: o laco da "
+            "raiz e o do schema chamam o mesmo `completar_as_marcas_de`."
+        ),
+        "arquivo": "crates/phxsql-store/src/marca.rs",
+        "trecho": """                schemas.push(Database::no_diretorio_com_politica(
+                    &d,
+                    self.politica_do_diario(),
+                ));
+""",
+        "troca": """                // DEFEITO REPOSTO (601): o schema nasce com o padrao.
+                schemas.push(Database::no_diretorio_com_politica(
+                    &d,
+                    Default::default(),
+                ));
+""",
+        "pacote": "phxsql-ffi",
+        "alvo": ["--lib"],
+        "caem": ["testes::a_recuperacao_da_base_que_replica_grava_com_imagem_no_schema"],
+        "seguem": ["testes::a_recuperacao_da_base_que_replica_grava_com_imagem_na_raiz"],
+    },
+    {
+        "id": "check-novo-contra-a-linha-velha",
+        "titulo": "`acrescentar_coluna` com CHECK que linhas que ja existem violam e aceito, e a tabela fica com duas verdades",
+        "porque": (
+            "pedido 245, O2a -- decisao do dono de 17/09/2026: recusar a "
+            "declaracao nomeando quantas linhas violam. Antes so caia o padrao "
+            "que contradizia o proprio CHECK; um CHECK sobre coluna velha "
+            "(`a > 18`) entrava, a linha que o violava ficava, e todo "
+            "`atualizar` dela passava a recusar. PG, MySQL 8.0.16+ e MariaDB "
+            "conferem as linhas existentes e recusam o ALTER."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """                if violam > 0 {
+""",
+        "troca": """                // DEFEITO REPOSTO (245, O2a): a linha velha que viola passa.
+                if violam > 0 && false {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_regras_de_esquema::o_check_que_a_linha_velha_viola_recusa_a_coluna_dizendo_quantas",
+        ],
+        "seguem": [
+            "servidor::testes_regras_de_esquema::acrescentar_coluna_com_regra_avisa_o_que_a_linha_velha_nao_ganhou",
+            "servidor::testes_regras_de_esquema::check_recusa_menos_5_e_aceita_5",
+        ],
     },
 ]

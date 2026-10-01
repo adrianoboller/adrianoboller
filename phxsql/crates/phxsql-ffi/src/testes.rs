@@ -1594,6 +1594,14 @@ const AVISO_563: &str = "PHXSQL pausa de teste no meio da cascata do embutido (p
 /// o diretorio do database e os rowids das duas filhas.
 #[cfg(debug_assertions)]
 fn montar_mae_e_filhas_563(area: &Area) -> (PathBuf, u64, u64) {
+    montar_mae_e_filhas_em(area, None)
+}
+
+/// [`montar_mae_e_filhas_563`] num `schema` -- a marca da cascata mora na
+/// pasta da tabela, e a pasta do schema e outra (pedido 601). Devolve o
+/// diretorio das TABELAS.
+#[cfg(debug_assertions)]
+fn montar_mae_e_filhas_em(area: &Area, schema: Option<&str>) -> (PathBuf, u64, u64) {
     use phxsql_core::schema::{AcaoRi, Column, ForeignKey, IndexColumn, IndexDef, Schema};
     use phxsql_core::types::ColumnType;
     let inst = Instancia::nova(&area.0).unwrap();
@@ -1607,7 +1615,7 @@ fn montar_mae_e_filhas_563(area: &Area) -> (PathBuf, u64, u64) {
         vec![IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico()],
     )
     .unwrap();
-    let mut m = db.criar_tabela(None, mae).unwrap();
+    let mut m = db.criar_tabela(schema, mae).unwrap();
     let r = m
         .inserir(&[Value::Int(5), Value::Str("Ana".into())])
         .unwrap();
@@ -1635,11 +1643,11 @@ fn montar_mae_e_filhas_563(area: &Area) -> (PathBuf, u64, u64) {
     .ao_alterar(AcaoRi::Cascata)
     .conferindo(true)])
     .unwrap();
-    let mut f = db.criar_tabela(None, filha).unwrap();
+    let mut f = db.criar_tabela(schema, filha).unwrap();
     let p1 = f.inserir(&[Value::Int(10), Value::Int(5)]).unwrap();
     let p2 = f.inserir(&[Value::Int(11), Value::Int(5)]).unwrap();
     f.sincronizar().unwrap();
-    (db.caminho().to_path_buf(), p1, p2)
+    (db.diretorio(schema).unwrap(), p1, p2)
 }
 
 /// Para onde as duas filhas apontam, e quantas o indice acha em 5 e em 6 --
@@ -1673,6 +1681,121 @@ unsafe fn abrir_e_fechar_a_base(area: &Area) -> i32 {
         assert_eq!(phx_base_fechar(base), PHX_OK);
     }
     r
+}
+
+/// **Pedido 601: a base que replica completa a marca COM a imagem da linha.**
+///
+/// O panico no meio da cascata deixa a marca; fechado o punho, a abertura
+/// seguinte -- com `PHX_IMAGEM_NO_DIARIO` -- completa a filha que faltou, e o
+/// evento que a recuperacao grava no diario tem de levar a imagem. Na raiz e
+/// num schema: a marca mora na pasta da tabela, e a do schema e outro
+/// `Database` dentro da recuperacao (o irmao do 564 um diretorio abaixo).
+///
+/// **Defeito reposto (a)** (a bandeira ignorada: `Instancia::nova` sem
+/// `com_politica_do_diario`): a recuperacao abre com o padrao desligado, e os
+/// eventos que ela grava saem sem imagem -- os dois casos caem. **(b)** (o
+/// schema da recuperacao de volta a `Database::no_diretorio`): so o caso do
+/// schema cai.
+#[cfg(debug_assertions)]
+fn a_recuperacao_da_base_que_replica_grava_com_imagem(schema: Option<&str>, rotulo: &str) {
+    use phxsql_store::ndx::panico_de_teste::{armar, desarmar, Ponto};
+    let area = Area::nova(rotulo);
+    let (dir, _, _) = montar_mae_e_filhas_em(&area, schema);
+    let qualificado = |t: &str| match schema {
+        Some(s) => format!("{s}.{t}"),
+        None => t.to_string(),
+    };
+    let abrir = |base: &mut *mut Punho<BaseFFI>| unsafe {
+        let caminho = area.txt();
+        let (p, t) = par(&caminho);
+        let (n, nt) = par("app");
+        phx_base_abrir(p, t, n, nt, PHX_IMAGEM_NO_DIARIO, base)
+    };
+    unsafe {
+        let mut base: *mut Punho<BaseFFI> = std::ptr::null_mut();
+        assert_eq!(abrir(&mut base), PHX_OK, "{}", erro_agora());
+        let mut tab: *mut Punho<TabelaFFI> = std::ptr::null_mut();
+        let nome = qualificado("clientes");
+        let (p, t) = par(&nome);
+        assert_eq!(
+            phx_tabela_abrir(base, p, t, &mut tab),
+            PHX_OK,
+            "{}",
+            erro_agora()
+        );
+        armar(Ponto::CascataEntreFilhas);
+        let linha = [v_int(6), v_bytes(PHX_TEXTO, b"Ana")];
+        let r = phx_atualizar(tab, 1, linha.as_ptr(), linha.len());
+        desarmar();
+        assert_eq!(r, erro::PHX_ERRO_PANICO, "o gancho nao disparou");
+        assert_eq!(phx_tabela_fechar(tab), PHX_OK);
+        assert_eq!(phx_base_fechar(base), PHX_OK);
+    }
+    assert!(
+        !phxsql_store::marca::marcas_em(&dir).is_empty(),
+        "premissa: o panico tinha de deixar a marca em {}",
+        dir.display()
+    );
+    let antes = Table::abrir(&dir, "pedidos").unwrap().eventos().unwrap();
+
+    unsafe {
+        let mut base: *mut Punho<BaseFFI> = std::ptr::null_mut();
+        assert_eq!(abrir(&mut base), PHX_OK, "{}", erro_agora());
+        assert_eq!(phx_base_fechar(base), PHX_OK);
+    }
+    assert!(
+        phxsql_store::marca::marcas_em(&dir).is_empty(),
+        "a abertura nao completou a marca"
+    );
+    let mut f = Table::abrir(&dir, "pedidos").unwrap();
+    let novos = f.diario_com_imagem(antes, 1000).unwrap();
+    assert!(
+        !novos.is_empty(),
+        "a recuperacao nao gravou evento nenhum na filha (antes: {antes})"
+    );
+    let sem: Vec<u64> = novos
+        .iter()
+        .filter(|(_, img)| img.is_empty())
+        .map(|(e, _)| e.rowid)
+        .collect();
+    assert!(
+        sem.is_empty(),
+        "a recuperacao da base que replica gravou SEM imagem os rowids {sem:?} \
+         ({} evento(s) novos)",
+        novos.len()
+    );
+}
+
+#[cfg(debug_assertions)]
+#[test]
+fn a_recuperacao_da_base_que_replica_grava_com_imagem_na_raiz() {
+    a_recuperacao_da_base_que_replica_grava_com_imagem(None, "601-raiz");
+}
+
+#[cfg(debug_assertions)]
+#[test]
+fn a_recuperacao_da_base_que_replica_grava_com_imagem_no_schema() {
+    a_recuperacao_da_base_que_replica_grava_com_imagem(Some("vendas"), "601-schema");
+}
+
+/// **O comportamento velho**: sem a bandeira, a base abre como sempre abriu
+/// -- e a tabela aberta por ela nao grava imagem que ninguem pediu.
+#[test]
+fn sem_a_bandeira_a_base_nao_liga_imagem() {
+    unsafe {
+        let area = Area::nova("601-velho");
+        let (base, tab) = montar(&area, "clientes");
+        inserir(tab, 1, "Ana");
+        let mut ev = PhxEvento::default();
+        let mut img: *mut Punho<ImagemFFI> = std::ptr::null_mut();
+        assert_eq!(
+            phx_diario_evento_com_imagem(tab, 0, &mut ev, &mut img),
+            PHX_OK
+        );
+        assert!(img.is_null(), "a base sem bandeira gravou imagem");
+        assert_eq!(phx_tabela_fechar(tab), PHX_OK);
+        assert_eq!(phx_base_fechar(base), PHX_OK);
+    }
 }
 
 /// **Pedido 563, contra o SO: `SIGKILL` no meio da cascata do embutido.**
