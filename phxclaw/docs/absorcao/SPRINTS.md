@@ -23,17 +23,17 @@ abaixo aparece em exatamente uma sprint.
 | SP000006 | 4 | Editor e remoto | 7 | CONCLUÍDA (4670bc20) |
 | SP000007 | 4 | Voz e mídia | 5 | CONCLUÍDA (4670bc20) |
 | SP000008 | 4 | Integração da onda 4 e commit | — | CONCLUÍDA (4670bc20) |
-| SP000009 | 5 | Contexto e dados | 5 | EM EXECUÇÃO |
-| SP000010 | 5 | Credencial e CI | 4 | EM EXECUÇÃO |
-| SP000011 | 5 | Medição | 4 | EM EXECUÇÃO |
-| SP000012 | 5 | Integração da onda 5 e commit | — | PLANEJADA |
+| SP000009 | 5 | Contexto e dados | 5 | CONCLUÍDA (f27402e5) |
+| SP000010 | 5 | Credencial e CI | 4 | CONCLUÍDA (f27402e5) |
+| SP000011 | 5 | Medição | 4 | CONCLUÍDA (f27402e5) |
+| SP000012 | 5 | Integração da onda 5 e commit | — | CONCLUÍDA (f27402e5) |
 | SP000013 | — | Endurecimento (achados ⏸ das revisões) | — | PLANEJADA |
 | SP000014 | — | Prova real com credenciais | — | BLOQUEADA (dono) |
 | SP000015 | — | Ciclo de auto-evolução | — | BLOQUEADA (dono) |
 | SP000016 | — | Entrega v0.71 | — | PLANEJADA |
-| SP000017 | — | Provedores ElevenLabs (fala e transcrição) e Nano Banana (gerar e editar imagem) | — | EM EXECUÇÃO |
-| SP000018 | — | config.json central, fase 1: catálogo, precedência, recusa de segredo, `phxclaw config`, catraca | — | EM EXECUÇÃO |
-| SP000019 | — | Tela de configuração do config.json (GET/PUT /v1/config) e phx-grid nas listagens | — | EM EXECUÇÃO |
+| SP000017 | — | Provedores ElevenLabs (fala e transcrição) e Nano Banana (gerar e editar imagem) | — | CONCLUÍDA (f27402e5) |
+| SP000018 | — | config.json central, fase 1: catálogo, precedência, recusa de segredo, `phxclaw config`, catraca | — | CONCLUÍDA (f27402e5) |
+| SP000019 | — | Tela de configuração do config.json (GET/PUT /v1/config) e phx-grid nas listagens | — | CONCLUÍDA (f27402e5) |
 | SP000020 | — | config.json, fase 2: leitores migrados ao ponto único (catraca até 0); os 103 JSON de config/ | — | PLANEJADA |
 | SP000021 | 6 | Tela→UI-IR com layout pelas caixas do OCR; troca medida para qwen3-vl | — | PLANEJADA |
 | SP000022 | 6 | Prova de fidelidade da conversão de tela (ida e volta + bloco/texto/posição) | — | PLANEJADA |
