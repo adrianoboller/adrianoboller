@@ -1,4 +1,4 @@
-/* phx-grid v0.9.3 — tema claro (estilo T20). A versão é conferida contra o
+/* phx-grid v0.9.4 — tema claro (estilo T20). A versão é conferida contra o
    .js e o CHANGELOG por `grade_versao_nao_mente`, em http.rs. */
 .phx-grid{--phx-bg:#fff;--phx-bg2:#f6f8fa;--phx-fg:#1f2328;--phx-meta:#59636e;--phx-borda:#d0d7de;--phx-acc:#0969da;
   font:13px/1.45 -apple-system,"Segoe UI",Roboto,sans-serif;color:var(--phx-fg);background:var(--phx-bg);
@@ -165,4 +165,14 @@ tbody tr:hover td[data-fx]{background:#eef1f4}
 .phx-total-geral > td{
   font-weight:700;background:rgba(127,127,127,.13);
   border-top:2px solid currentColor;
+}
+
+/* Dedo grosso (revisao medida de 01/10/2026): em 390px com ponteiro de toque
+   a grade era a maior fonte de alvo abaixo de 32px -- o filtro do cabecalho
+   tinha 11x9, a paginacao 26x26 e o rodape inteiro 26 de altura. So no
+   `pointer:coarse`: no mouse a grade continua densa, que e o molde. */
+@media (pointer:coarse){
+  .phx-fbtn{min-width:32px;min-height:32px}
+  .phx-th-agg{min-height:32px;min-width:32px}
+  .phx-pg,.phx-colsel-btn,.phx-exp-btn{min-height:36px;min-width:36px}
 }

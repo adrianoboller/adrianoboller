@@ -2401,9 +2401,9 @@
       "id": "reparo-da-trava-sem-o-piso",
       "titulo": "o reparo da trava que falha deixa o processo de pé, servindo de estado incerto, em vez de abortar",
       "veredito": "PROVADA",
-      "segundos": 53.05,
+      "segundos": 85.33,
       "notas": [],
-      "quando": "2026-09-24 13:28"
+      "quando": "2026-10-01 16:40"
     },
     {
       "id": "reparo-da-trava-sem-as-marcas-orfas",
@@ -2441,9 +2441,9 @@
       "id": "panico-em-thread-de-servico-morre-calado",
       "titulo": "o pânico com a trava na mão numa thread de serviço é reparado e a thread morre calada: a janela de gravação para de fechar sozinha",
       "veredito": "PROVADA",
-      "segundos": 59.79,
+      "segundos": 80.06,
       "notas": [],
-      "quando": "2026-09-24 13:28"
+      "quando": "2026-10-01 16:40"
     },
     {
       "id": "reparo-no-desenrolar-de-panico-de-fora",
@@ -3707,9 +3707,41 @@
       "id": "bidi-absorve-o-diario-sob-a-exclusiva",
       "titulo": "A primeira rodada do bidirecional depois do arranque absorvia o diário local inteiro com a trava exclusiva na mão",
       "veredito": "PROVADA",
-      "segundos": 87.81,
+      "segundos": 79.44,
       "notas": [],
-      "quando": "2026-10-01 13:06"
+      "quando": "2026-10-01 16:40"
+    },
+    {
+      "id": "bidi-absorve-o-diario-sob-a-exclusiva-pelo-soquete",
+      "titulo": "A primeira rodada do bidirecional depois do arranque absorvia o diário local inteiro com a trava exclusiva na mão — a prova pelo soquete, com o escritor de cliente gravando",
+      "veredito": "PROVADA",
+      "segundos": 32.53,
+      "notas": [],
+      "quando": "2026-10-01 16:40"
+    },
+    {
+      "id": "pre-absorcao-fura-a-fila-do-escritor",
+      "titulo": "A absorção do bidirecional retomava a trava de leitura entre as fatias antes de o escritor acordado entrar, e o escritor esperava dezenas de fatias",
+      "veredito": "PROVADA",
+      "segundos": 33.68,
+      "notas": [],
+      "quando": "2026-10-01 16:40"
+    },
+    {
+      "id": "leitor-que-cede-volta-na-hora",
+      "titulo": "O leitor que cede a vez voltava sem esperar o escritor da fila pegar a ficha exclusiva",
+      "veredito": "PROVADA",
+      "segundos": 77.91,
+      "notas": [],
+      "quando": "2026-10-01 16:40"
+    },
+    {
+      "id": "fatia-com-o-prazo-vencido-nao-anda",
+      "titulo": "A fatia da absorção que chegava com o prazo já vencido saía sem lote nenhum, e a pré-absorção entregava o resto à trava exclusiva",
+      "veredito": "PROVADA",
+      "segundos": 78.26,
+      "notas": [],
+      "quando": "2026-10-01 16:40"
     },
     {
       "id": "diario-sob-a-compartilhada-recusa-a-cauda",

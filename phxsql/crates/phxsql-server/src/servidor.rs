@@ -976,6 +976,13 @@ const LOTE_PADRAO_DE_REPLICACAO: u64 = 500;
 /// Mais curta, a troca de trava passa a pesar; mais longa, o escritor sente.
 const FATIA_DA_PRE_ABSORCAO: Duration = Duration::from_millis(10);
 
+/// Quanto a pre-absorcao espera, entre duas fatias, o escritor da fila pegar
+/// a ficha exclusiva (pedido 623). Nao e a espera esperada -- essa e a de um
+/// escritor acordado ser escalado, microssegundos --, e a vida do laco se o
+/// escritor nunca entrar por um motivo que a fila nao ve. Vencido, a fatia
+/// seguinte anda e conta `fatias_que_furaram_a_fila`.
+const TETO_DA_VEZ_CEDIDA: Duration = Duration::from_secs(5);
+
 /// O maior lote que um `replicar` serve, pecam o que pedirem.
 ///
 /// Dez vezes o lote da replica: sobra para quem quiser lotes maiores, e nunca
@@ -2248,6 +2255,9 @@ impl Servidor {
         // So depois do `?`: trava envenenada nao chegou a ser tomada, e uma
         // marca deixada aqui trancaria esta thread para o resto da vida dela.
         let mut guarda = guarda?;
+        // A ficha chegou na mao: e isto que o leitor em laco espera ver andar
+        // quando cede a vez (pedido 623, `PortaoDoRetrato::ceder`).
+        passagem.entrou();
         COM_A_TRAVA.with(|c| c.set(true));
         // A ficha sai da vida do emprestimo e passa a viver ao lado do guard,
         // no mesmo `struct` -- ver `Exclusiva::sem_amarra`. Os dois morrem
@@ -6095,9 +6105,6 @@ impl Servidor {
         // entao a marca do diario faz cada lote continuar de onde o anterior
         // parou, sem recomecar a varredura.
         while mapa.vistos < total {
-            if prazo.is_some_and(|p| Instant::now() >= p) {
-                break;
-            }
             let lote = tabela.diario_com_imagem_ate(
                 mapa.vistos,
                 LOTE_PADRAO_DE_REPLICACAO,
@@ -6141,6 +6148,16 @@ impl Servidor {
             // deixa `vistos` andado, e a marca tem de andar junto -- ela so
             // serve para posicao DEPOIS dela, e a de um lote atras ainda vale.
             mapa.marca = tabela.marca_do_diario();
+            // O prazo DEPOIS do lote, e nao antes (pedido 623): conferido no
+            // topo do laco, a fatia que chegava aqui com o prazo ja vencido --
+            // abrir a tabela, esperar o `toques_bidi` de um `replicacao_estado`,
+            // um nucleo tomado -- saia sem lote nenhum, a falta nao encurtava,
+            // e a pre-absorcao entregava o resto a EXCLUSIVA. Medido sob carga
+            // de `fsync` e CPU (01/10/2026): 211.060 eventos sob a exclusiva e
+            // 3,3 s de escritor parado, numa fatia de 13 ms que nao andou.
+            if prazo.is_some_and(|p| Instant::now() >= p) {
+                break;
+            }
         }
         Ok(total.saturating_sub(mapa.vistos))
     }
@@ -6160,7 +6177,11 @@ impl Servidor {
     ///
     /// Aqui a absorcao anda sob a trava de LEITURA, em fatias de
     /// [`FATIA_DA_PRE_ABSORCAO`]: leitor nao espera, e escritor espera no
-    /// maximo uma fatia (mais o lote em que ela vence). Termina quando falta
+    /// maximo uma fatia (mais o lote em que ela vence) -- porque, entre uma
+    /// fatia e a seguinte, a absorcao CEDE a vez a quem esta na fila (pedido
+    /// 623). Sem ceder, a promessa era do papel: o `RwLock` deixa o leitor em
+    /// laco retomar a leitura antes de o escritor acordado ser escalado, e o
+    /// escritor esperava dezenas de fatias. Termina quando falta
     /// menos de um lote -- a cauda vai sob a exclusiva, no mesmo corpo, junto
     /// do que alguem escreveu entre as fatias -- ou quando uma fatia nao
     /// encurtou a falta (quem escreve anda mais rapido que quem absorve), e
@@ -6177,10 +6198,21 @@ impl Servidor {
         meu_hash: u16,
     ) -> Result<()> {
         let mut falta_antes = u64::MAX;
+        // A fila de escritores no fim da fatia anterior (pedido 623).
+        let mut cedida: Option<crate::retrato::Fila> = None;
         // O teto de voltas e o proprio progresso: cada volta encurta a falta
         // ou o laco sai. Nenhuma volta repete sem andar.
         loop {
             let trava = self.travar_dados_para_ler()?;
+            if let Some(foto) = cedida.take() {
+                let vez = self.retrato.depois_de_ceder(foto);
+                if vez.entraram > 0 || vez.furou {
+                    let mut guarda = self.toques_bidi.tomar("toques_bidi")?;
+                    let mapa = guarda.entry(chave_tab.to_string()).or_default();
+                    mapa.escritores_entre_as_fatias += vez.entraram;
+                    mapa.fatias_que_furaram_a_fila += u64::from(vez.furou);
+                }
+            }
             // `abrir_diario_para_ler`, e nao `abrir_para_ler`: a tabela escrita
             // desde o ultimo fecho da janela tem o cabecalho do `.log` atras
             // do arquivo, e a abertura de leitura comum recusa pedindo cura --
@@ -6206,12 +6238,20 @@ impl Servidor {
                 Some(prazo),
                 false,
             )?;
+            // Com a leitura AINDA na mao: so assim todo escritor contado esta
+            // esperando, e nenhum dentro.
+            let foto = self.retrato.fila();
             drop(t);
             drop(trava);
             if falta < LOTE_PADRAO_DE_REPLICACAO || falta >= falta_antes {
                 return Ok(());
             }
             falta_antes = falta;
+            // Cede a vez (pedido 623): pedir a leitura de novo agora a levaria
+            // antes de o escritor acordado ser escalado, e ele voltaria a
+            // dormir -- ver `crate::retrato`, «O leitor que CEDE a vez».
+            self.retrato.ceder(foto, TETO_DA_VEZ_CEDIDA);
+            cedida = Some(foto);
         }
     }
 
@@ -29929,7 +29969,8 @@ impl Servidor {
         ]))
     }
 
-    /// `{"db/tabela": {"chaves": N, "vistos": N, "sob_a_exclusiva": N}}` de
+    /// `{"db/tabela": {"chaves": N, "vistos": N, "sob_a_exclusiva": N,
+    /// "escritores_entre_fatias": N, "fatias_que_furaram_a_fila": N}}` de
     /// toda tabela com mapa de toques -- pedido 330. Trava envenenada vira
     /// objeto vazio, como os contadores irmaos acima.
     fn toques_no_mapa(&self) -> Json {
@@ -29947,6 +29988,14 @@ impl Servidor {
                         (
                             "sob_a_exclusiva",
                             Json::de_u64(m.absorvidos_sob_a_exclusiva),
+                        ),
+                        (
+                            "escritores_entre_fatias",
+                            Json::de_u64(m.escritores_entre_as_fatias),
+                        ),
+                        (
+                            "fatias_que_furaram_a_fila",
+                            Json::de_u64(m.fatias_que_furaram_a_fila),
                         ),
                     ]),
                 )
@@ -67102,42 +67151,88 @@ mod testes_do_panico_sob_a_trava {
     /// commit de uma rajada fica sem `fsync` e com a marca no disco para
     /// sempre. Com o conserto o processo cai; o processo novo sobe com o
     /// relogio, e a janela volta a fechar.
+    ///
+    /// # Condicao observada, e nao prazo de parede (pedido 623)
+    ///
+    /// A versao anterior mandava dois commits, dava 10 s ao filho para cair e,
+    /// de pe, 2 s ao relogio de 150 ms. Sob a suite inteira caiu sempre --
+    /// medido em 01/10/2026 com carga de `fsync` e CPU, 8 de 8 com o
+    /// diagnostico do filho VAZIO: o relogio nunca entrou em panico. A janela
+    /// fecha na propria gravacao quando ela chega 150 ms depois do ultimo
+    /// fecho (`Janela::hora_de_gravar`), e so fica pendente para o relogio a
+    /// gravacao que chega ANTES. Dois commits seguidos, com os nucleos
+    /// tomados, chegavam depois -- e a prova acusava o defeito sem o panico
+    /// ter acontecido.
+    ///
+    /// Agora quatro conexoes gravam ate um de dois fatos aparecer: o filho
+    /// CAIU (o conserto), ou o diagnostico dele traz o relatorio do REPARO da
+    /// trava, que so sai quando a thread repara e segue (o defeito). Nenhum
+    /// dos dois depende de quanto o disco demora. O teto de 120 s so existe
+    /// para a prova nao pendurar, e vencido ela diz que nao provou nada.
     #[cfg(unix)]
     #[test]
     fn panico_no_relogio_da_janela_derruba_o_processo_em_vez_de_parar_a_janela() {
         let dir = DirTemp::novo("panico-451-relogio");
         let (mut filho, porta) = subir_filho(&dir, "relogio");
         duas_tabelas(porta);
-        // Dois commits seguidos: o primeiro pode fechar a janela sozinho, pelo
-        // prazo; o segundo fica pendente para o relogio -- que cai no fecho.
-        // Sem conferir a resposta: com o conserto o processo pode cair NO MEIO
-        // deles, assim que o relogio acha a primeira escrita pendente.
-        for id in [1, 2] {
-            let Some(mut tx) = Ligacao::tentar(porta) else {
-                break;
-            };
-            let _ = falar(&mut tx, r#""op":"begin","database":"loja""#);
-            let _ = falar(
-                &mut tx,
-                &format!(
-                    r#""op":"inserir","database":"loja","tabela":"b","valores":{{"id":{id}}}"#
-                ),
-            );
-            let _ = falar(&mut tx, r#""op":"commit""#);
+        // Sem conferir as respostas: com o conserto o processo cai NO MEIO
+        // delas, assim que o relogio acha uma gravacao pendente.
+        let parar = Arc::new(AtomicBool::new(false));
+        let ids = Arc::new(AtomicU64::new(1));
+        let gravadores: Vec<_> = (0..4)
+            .map(|_| {
+                let (parar, ids) = (Arc::clone(&parar), Arc::clone(&ids));
+                std::thread::spawn(move || {
+                    while !parar.load(Ordering::SeqCst) {
+                        let Some(mut tx) = Ligacao::tentar(porta) else {
+                            return;
+                        };
+                        let id = ids.fetch_add(1, Ordering::SeqCst);
+                        let _ = falar(&mut tx, r#""op":"begin","database":"loja""#);
+                        let _ = falar(
+                            &mut tx,
+                            &format!(
+                                r#""op":"inserir","database":"loja","tabela":"b","valores":{{"id":{id}}}"#
+                            ),
+                        );
+                        let _ = falar(&mut tx, r#""op":"commit""#);
+                    }
+                })
+            })
+            .collect();
+        let ate = Instant::now() + Duration::from_secs(120);
+        let fim = loop {
+            if let Some(st) = filho.try_wait().unwrap() {
+                break Some(st);
+            }
+            if diagnostico(&dir).contains("Reparo da trava de dados") {
+                break None;
+            }
+            if Instant::now() >= ate {
+                let _ = filho.kill();
+                let _ = filho.wait();
+                parar.store(true, Ordering::SeqCst);
+                panic!(
+                    "em 120 s de commits o relogio-gravacao nao entrou em panico: a \
+                     prova NAO provou nada, nem o defeito nem o conserto\n{}",
+                    diagnostico(&dir)
+                );
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        };
+        parar.store(true, Ordering::SeqCst);
+        for g in gravadores {
+            let _ = g.join();
         }
-        let Some(st) = fim_do_filho(&mut filho, Duration::from_secs(10)) else {
-            // O processo ficou de pe: a janela ainda fecha?
-            commit_em(porta, "b", 3);
-            commit_em(porta, "b", 4);
-            std::thread::sleep(Duration::from_secs(2));
+        let Some(st) = fim else {
+            // O reparo rodou na thread de servico e o processo seguiu de pe.
             let sobrou = marcas(&dir);
             let _ = filho.kill();
             let _ = filho.wait();
             panic!(
-                "o panico no relogio-gravacao nao derrubou o processo, e a janela \
-                 parou de fechar sozinha: {} marca(s) de commit ainda no disco 2 s \
-                 depois de um relogio de 150 ms ({sobrou:?}) -- a thread morreu \
-                 calada e ninguem a subiu\n{}",
+                "o panico no relogio-gravacao nao derrubou o processo: a trava foi \
+                 reparada e a thread morreu calada, e ninguem a sobe -- a janela para \
+                 de fechar sozinha ({} marca(s) de commit no disco agora: {sobrou:?})\n{}",
                 sobrou.len(),
                 diagnostico(&dir)
             );
@@ -67148,15 +67243,17 @@ mod testes_do_panico_sob_a_trava {
             "o filho caiu sem nomear a thread de servico: {}",
             diagnostico(&dir)
         );
-        // O processo novo, com o relogio: a janela fecha de novo.
+        // O processo novo, com o relogio: a janela fecha de novo. A condicao e
+        // a marca sumir; o teto de 60 s so segura a prova de pendurar.
         let mut c = config_base(&dir);
         relogio_curto(&mut c);
         let s = Servidor::novo(c).unwrap();
         s.ligar_relogio_de_gravacao();
         let porta = porta_de_dados_de_verdade(&s);
-        commit_em(porta, "b", 5);
-        commit_em(porta, "b", 6);
-        let ate = Instant::now() + Duration::from_secs(5);
+        let proximo = i64::try_from(ids.load(Ordering::SeqCst)).unwrap();
+        commit_em(porta, "b", proximo);
+        commit_em(porta, "b", proximo + 1);
+        let ate = Instant::now() + Duration::from_secs(60);
         while !marcas(&dir).is_empty() && Instant::now() < ate {
             std::thread::sleep(Duration::from_millis(20));
         }
@@ -70945,6 +71042,43 @@ mod testes_da_absorcao_do_bidi {
             Some(3_000),
             "{}",
             e.escrever()
+        );
+    }
+
+    /// **Pedido 623: a fatia que ja chega com o prazo vencido absorve UM
+    /// lote.** E o caso que a carga produz -- a fatia gasta o prazo abrindo a
+    /// tabela ou esperando o `toques_bidi` -- e aqui ele vem pronto, sem
+    /// relogio nenhum na conta: o prazo e o proprio instante da chamada.
+    ///
+    /// O vermelho: com o prazo conferido no TOPO do laco (antes do lote), a
+    /// fatia sai com zero, a falta nao encurta e a pre-absorcao entrega o
+    /// resto a exclusiva -- medido sob carga, 211.060 eventos e 3,3 s de
+    /// escritor parado.
+    #[test]
+    fn a_fatia_com_o_prazo_ja_vencido_ainda_absorve_um_lote() {
+        let (s, _d) = com_diario("prazo-vencido", 1_200);
+        let meu_hash = s.config.replicacao.numero();
+        let trava = s.travar_dados_para_ler().unwrap();
+        let Ok(Aberta::Pronta(mut t)) = trava.abrir_diario_para_ler("b", "c") else {
+            panic!("b.c nao abriu para ler o diario");
+        };
+        let (_, pos_chave) = bidirecional::chave_unica(t.esquema_do_diario()).unwrap();
+        let falta = s
+            .absorver_diario_local(
+                &mut t,
+                "b/c",
+                &pos_chave,
+                meu_hash,
+                Some(Instant::now()),
+                false,
+            )
+            .unwrap();
+        drop(t);
+        drop(trava);
+        assert_eq!(
+            (mapa(&s).0, falta),
+            (LOTE_PADRAO_DE_REPLICACAO, 1_200 - LOTE_PADRAO_DE_REPLICACAO),
+            "a fatia com o prazo vencido tinha de absorver um lote inteiro"
         );
     }
 

@@ -12104,12 +12104,13 @@ pub const ITERACOES_MINIMAS_DO_CADASTRO: u32 = phxsql_store::cofre::ITERACOES_MI
             "pedido 451, A2 da revisao do DBA: o reparo cura a trava e NAO a "
             "thread. A de atendimento que morre leva a conexao, e o cliente ve; "
             "a de servico -- `relogio-gravacao`, `replica-*`, `replica-cluster`, "
-            "`backup-agendado`, `relogio-jobs` -- morre calada. Medido com o "
-            "relogio da janela: o processo ficou de pe e a marca do ultimo "
-            "commit de uma rajada seguiu no disco 2 s depois de um relogio de "
-            "150 ms. O conserto aborta (H5) quando a familia que o "
-            "`telemetria::subir` registrou e `servico`; o defeito reposto e a "
-            "familia que nunca casa."
+            "`backup-agendado`, `relogio-jobs` -- morre calada. O conserto "
+            "aborta (H5) quando a familia que o `telemetria::subir` registrou e "
+            "`servico`; o defeito reposto e a familia que nunca casa. Desde o "
+            "pedido 623 a prova nao tem prazo de parede: grava ate o filho CAIR "
+            "(conserto) ou o diagnostico trazer o relatorio do REPARO com o "
+            "processo de pe (defeito) -- o prazo de 2 s para o relogio de 150 ms "
+            "caia sob a suite sem o panico ter acontecido."
         ),
         "arquivo": "crates/phxsql-server/src/servidor.rs",
         "trecho": """        if crate::telemetria::familia_desta_thread() == Some("servico") {
@@ -21384,6 +21385,109 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         ],
         "seguem": [
             "servidor::testes_da_absorcao_do_bidi::sem_evento_novo_a_rodada_nao_absorve_nada",
+        ],
+        "prazo": 1800,
+    },
+    {
+        "id": "bidi-absorve-o-diario-sob-a-exclusiva-pelo-soquete",
+        "titulo": "A primeira rodada do bidirecional depois do arranque absorvia o diário local inteiro com a trava exclusiva na mão — a prova pelo soquete, com o escritor de cliente gravando",
+        "porque": (
+            "pedido 330, a mesma troca da `bidi-absorve-o-diario-sob-a-exclusiva` "
+            "provada pelo outro binario: dois servidores de verdade, 300.000 "
+            "eventos e um escritor gravando. Desde o pedido 623 a prova conta no "
+            "servidor os escritores que PEGARAM a trava entre as fatias, e nao os "
+            "`inserir` que terminaram (o fim carrega o disco). Reposto, nao ha "
+            "fatia: `sob_a_exclusiva` vira os 300.000 e ninguem entra entre fatias."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        self.pre_absorver_sob_leitura(
+            database,
+            &no.nome,
+            &format!("{database}/{}", no.nome),
+            meu_hash,
+        )?;""",
+        "troca": """        // DEFEITO REPOSTO (330): a absorcao inteira sob a exclusiva.
+        let _ = Self::pre_absorver_sob_leitura;""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "absorcao-do-bidi-no-arranque"],
+        "caem": ["a_primeira_rodada_nao_para_o_escritor"],
+        "seguem": [],
+        "prazo": 1800,
+    },
+    {
+        "id": "pre-absorcao-fura-a-fila-do-escritor",
+        "titulo": "A absorção do bidirecional retomava a trava de leitura entre as fatias antes de o escritor acordado entrar, e o escritor esperava dezenas de fatias",
+        "porque": (
+            "pedido 623. O `read_unlock` do `RwLock` acorda o escritor da fila e "
+            "limpa o bit de espera; o leitor em laco pede a leitura de novo antes "
+            "de o acordado ser escalado e a leva. Medido pelo soquete (build de "
+            "teste, 300.000 eventos): 115-360 ms por `inserir` com a maquina "
+            "parada, ate 2,1 s, e sob a suite nenhum `inserir` terminava durante "
+            "a absorcao -- o floco do pedido 623. Reposto (sem o `ceder` entre "
+            "as fatias), `fatias_que_furaram_a_fila` sai de zero."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """            self.retrato.ceder(foto, TETO_DA_VEZ_CEDIDA);""",
+        "troca": """            // DEFEITO REPOSTO (623): o leitor em laco nao cede a vez.
+            let _ = TETO_DA_VEZ_CEDIDA;""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "absorcao-do-bidi-no-arranque"],
+        "caem": ["a_primeira_rodada_nao_para_o_escritor"],
+        "seguem": [],
+        "prazo": 1800,
+    },
+    {
+        "id": "leitor-que-cede-volta-na-hora",
+        "titulo": "O leitor que cede a vez voltava sem esperar o escritor da fila pegar a ficha exclusiva",
+        "porque": (
+            "pedido 623: `PortaoDoRetrato::ceder` e o que faz a absorcao do "
+            "bidirecional nao furar a fila do escritor. Reposto (volta na hora), "
+            "o leitor com escritor na fila e nenhuma entrada sai antes do teto -- "
+            "cota de BAIXO no relogio, que carga nenhuma faz falhar."
+        ),
+        "arquivo": "crates/phxsql-server/src/retrato.rs",
+        "trecho": """        if foto.na_fila == 0 {
+            return;
+        }
+        let ate = Instant::now() + teto;""",
+        "troca": """        // DEFEITO REPOSTO (623): ceder volta na hora.
+        if foto.na_fila < usize::MAX {
+            return;
+        }
+        let ate = Instant::now() + teto;""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": ["retrato::testes::o_leitor_que_cede_espera_o_escritor_ate_o_teto"],
+        "seguem": ["retrato::testes::sem_escritor_na_fila_ceder_volta_na_hora"],
+        "prazo": 1800,
+    },
+    {
+        "id": "fatia-com-o-prazo-vencido-nao-anda",
+        "titulo": "A fatia da absorção que chegava com o prazo já vencido saía sem lote nenhum, e a pré-absorção entregava o resto à trava exclusiva",
+        "porque": (
+            "pedido 623, achado reproduzindo o floco sob carga: o prazo era "
+            "conferido no TOPO do laco, e a fatia que gastava os 10 ms abrindo a "
+            "tabela ou esperando o `toques_bidi` saia com zero -- a falta nao "
+            "encurtava e a pre-absorcao desistia para a exclusiva. Medido: "
+            "211.060 eventos sob a exclusiva e 3,3 s de escritor parado. Reposto, "
+            "a fatia com o prazo vencido absorve zero em vez de um lote."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        while mapa.vistos < total {
+            let lote = tabela.diario_com_imagem_ate(""",
+        "troca": """        while mapa.vistos < total {
+            // DEFEITO REPOSTO (623): o prazo conferido antes do lote.
+            if prazo.is_some_and(|p| Instant::now() >= p) {
+                break;
+            }
+            let lote = tabela.diario_com_imagem_ate(""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_da_absorcao_do_bidi::a_fatia_com_o_prazo_ja_vencido_ainda_absorve_um_lote",
+        ],
+        "seguem": [
+            "servidor::testes_da_absorcao_do_bidi::a_primeira_rodada_absorve_o_grosso_fora_da_exclusiva",
         ],
         "prazo": 1800,
     },

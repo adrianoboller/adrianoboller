@@ -20,15 +20,15 @@ decisão do dono de 01/10/2026 — estabilizar (fechar os defeitos da conta) →
 ## Estado medido
 
 <!-- SPRINTS:inicio -->
-_Contado do `PENDENCIAS.md` por `python3 docs/pmo/sprints.py`, gerado em 01/10/2026 14:57 UTC. Não se edita: muda a linha `**Pedidos**` da sprint ou o estado no `PENDENCIAS.md`, e roda o gerador._
+_Contado do `PENDENCIAS.md` por `python3 docs/pmo/sprints.py`, gerado em 01/10/2026 15:15 UTC. Não se edita: muda a linha `**Pedidos**` da sprint ou o estado no `PENDENCIAS.md`, e roda o gerador._
 
 | Sprint | Pedidos | ☑️ feitos | ◐ | ☐ | ⏸ | Abertos (◐ + ☐) |
 |---|---:|---:|---:|---:|---:|---|
 | SPR-01 · A onda em curso (integrar o que já está pronto) | 10 | 10 | 0 | 0 | 0 | 0 |
-| SPR-02 · Segurança que resta | 6 | 6 | 0 | 0 | 0 | 0 |
+| SPR-02 · Segurança que resta | 8 | 6 | 0 | 2 | 0 | 2: 618☐ 619☐ |
 | SPR-03 · Formato antes de selar (parecer do DBA) | 3 | 2 | 0 | 1 | 0 | 1: 605☐ |
-| SPR-04 · Garantias da replicação e do cluster | 7 | 3 | 4 | 0 | 0 | 4: 300◐ 330◐ 207◐ 513◐ |
-| SPR-05 · Higiene do motor, do ODBC e das guardas | 13 | 4 | 7 | 2 | 0 | 9: 229◐ 238◐ 245◐ 249◐ 259◐ 427☐ 524◐ 263◐ 268☐ |
+| SPR-04 · Garantias da replicação e do cluster | 8 | 3 | 4 | 1 | 0 | 5: 300◐ 330◐ 207◐ 513◐ 620☐ |
+| SPR-05 · Higiene do motor, do ODBC e das guardas | 16 | 4 | 7 | 5 | 0 | 12: 229◐ 238◐ 245◐ 249◐ 259◐ 427☐ 524◐ 263◐ 268☐ 621☐ 622☐ 623☐ |
 | SPR-06 · Selagem da 0.19.0 | 4 | 0 | 4 | 0 | 0 | 4: 338◐ 190◐ 326◐ 339◐ |
 | SPR-07 · T6b-1 cliente TLS por pino da chave + T6e (buracos do servidor) | — | — | — | — | — | sem lista de pedidos (não contada) |
 | SPR-08 · T6b-2 TLS no lugar do Noise (réplica/cluster/cmd/DbLink phx, Remoto, ODBC); servidor ainda aceita Noise | — | — | — | — | — | sem lista de pedidos (não contada) |
@@ -39,7 +39,7 @@ _Contado do `PENDENCIAS.md` por `python3 docs/pmo/sprints.py`, gerado em 01/10/2
 | SPR-13 · 454/455 — PhxZip como produto (web, PhxZipCmd, pacote, manual) | 2 | 0 | 1 | 1 | 0 | 2: 454☐ 455◐ |
 | SPR-14 · 333 — chat estilo WhatsApp e robô no PhxMail | 1 | 0 | 0 | 1 | 0 | 1: 333☐ |
 | SPR-15 · 495/496 — as duas IAs (crime cibernético; DBA sênior) | 2 | 0 | 0 | 2 | 0 | 2: 495☐ 496☐ |
-| **Total nas sprints** | 49 | 25 | 16 | 8 | 0 | 24 |
+| **Total nas sprints** | 55 | 25 | 16 | 14 | 0 | 30 |
 
 **Abertos (◐ + ☐) no `PENDENCIAS.md` fora de sprint nenhuma: 1** — 572.
 <!-- SPRINTS:fim -->
@@ -77,9 +77,9 @@ sozinho.
 | Campo | Conteúdo |
 |---|---|
 | **Itens** | 610 (teto de bytes no motor phxsql), 611 (manifesto e destino do backup pelo descritor), 612 (SCRAM final no cliente PG), 613 (réplica sem cofre recusa — decisão do dono), 606 (chave fraca no Windows = fatia T0 do TLS) |
-| **Pedidos** | 610 611 612 613 606 616 |
+| **Pedidos** | 610 611 612 613 606 616 618 619 |
 | **Fechou em 01/10** | 616 — coluna INLINE marcada sem cofre recusa também inline e no bidirecional (`b528b9d3`), achado da frente do 613 |
-| **Resta** | nada aberto; falta a SEC rerodar a revisão independente sobre o diff (aceite) |
+| **Resta** | 618 (M1, LGPD: `.fts.novo` órfão de redeclaração interrompida) e 619 (M2: redeclarar índice de texto pede só `Criar`), os dois da revisão SEC de 01/10 sobre o 364 |
 | **Papéis** | B (titular), SEC (revisão adversária no fim) |
 | **Aceite** | RED/GREEN por achado; a SEC reroda a revisão independente sobre o diff e não acha ATIVO |
 | **Risco** | 606 não se mede sem Windows: prova pelo motor da `std` em Linux + leitura |
@@ -101,9 +101,9 @@ sozinho.
 | Campo | Conteúdo |
 |---|---|
 | **Itens** | 297, 300, 309 (rownum honrado na réplica fiel), 330 (absorção sob trava de leitura), 424 (censo e aviso, pétrea ganhou), 207 (quórum: invisível até o ok, 10 s, degrada dizendo), 513 passo 2 |
-| **Pedidos** | 297 300 309 330 424 207 513 |
+| **Pedidos** | 297 300 309 330 424 207 513 620 |
 | **Fechou em 01/10** | 309 + 297 — réplica fiel honra o `rownum` da imagem; lixeira da réplica e do nó, por escrito (`f703f0e7`). 424 — censo do ledger (`b236d662`). 330 e 300 andaram e seguem ◐ (`b236d662`) |
-| **Resta** | 330 ◐: teto de RAM do mapa de toques (papel C). 300 ◐: item (4) escrita local na réplica pulando evento, contador de órfãs (§2.7), master contando tabela negada. 207 ◐: escrita com quórum (o «ok» já decidido pelo dono). 513 ◐: passo 2 (cópia sem trava + acerto curto, prova de 1 GB com escritor) |
+| **Resta** | 330 ◐: teto de RAM do mapa de toques (papel C). 300 ◐: item (4) escrita local na réplica pulando evento, contador de órfãs (§2.7), master contando tabela negada. 207 ◐: escrita com quórum (o «ok» já decidido pelo dono). 513 ◐: passo 2 (cópia sem trava + acerto curto, prova de 1 GB com escritor). 620 ☐: mapa de toques do bidirecional não zera quando a tabela some (SEC B1 sobre o 330) |
 | **Decisões** | todas já tomadas pelo J em `docs/propostas/decisoes-onda-01-10-2026.md` |
 | **Aceite** | replicação real entre servidores por soquete; 513 passo 2 com prova de 1 GB e escritor concorrente |
 
@@ -112,9 +112,9 @@ sozinho.
 | Campo | Conteúdo |
 |---|---|
 | **Itens** | 175, 229, 238, 245 O2(b), 249, 259, 322, 364, 427, 524 (resto), 263 (as 177 guardas nunca julgadas, em lotes de 1 compilação), 268 (ou ⏸ com motivo) |
-| **Pedidos** | 175 229 238 245 249 259 322 364 427 524 263 268 617 |
+| **Pedidos** | 175 229 238 245 249 259 322 364 427 524 263 268 617 621 622 623 |
 | **Fechou em 01/10** | 617 + 322 — veredito do libtest atravessado pelo stderr; Portão 4 lê todas as tabelas do pedido (`c17df0b0`). 175 + 364 ☑️ no `PENDENCIAS.md`, merge do integrador ainda não comitado |
-| **Resta** | ver o bloco: os ◐ de higiene (229, 238, 245, 249, 259, 263, 524) e os ☐ 427 e 268 |
+| **Resta** | ver o bloco: os ◐ de higiene (229, 238, 245, 249, 259, 263, 524), os ☐ 427 e 268, e três da auditoria QA de 01/10: 621 (páginas publicam `TETO_DE_COLUNAS = 0`), 622 (nove pétreas sem guarda que reponha o defeito), 623 (teste que floca) |
 | **Papéis** | B, G (guardas), C (245 O2b) |
 | **Aceite** | conta da F1 em 0% de ☐/◐ ativos fora de decisão do dono |
 

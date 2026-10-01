@@ -145,11 +145,16 @@ button{font-family:inherit;font-size:inherit;color:inherit;cursor:pointer}
 }
 .cartao .lema{
   font-size:9px;letter-spacing:.19em;text-transform:uppercase;
-  color:var(--texto-3);opacity:.62;margin:0 0 26px;text-align:center;
+  color:var(--texto-3);margin:0 0 26px;text-align:center;
 }
+/* SEM `opacity` em texto que ja e `--texto-3`, aqui e nas sete regras irmas
+   abaixo (revisao medida de 01/10/2026). O `--texto-3` foi clareado ate o
+   minimo que passa 4,5:1 no PIOR fundo; qualquer opacidade por cima o derruba
+   abaixo do piso -- a assinatura da marca media 2,72:1 no tema claro com o
+   `.62`. A hierarquia fica com o corpo menor e o italico, nao com o apagado. */
 label{display:block;font-size:11px;letter-spacing:.1em;text-transform:uppercase;
   color:var(--texto-3);margin:0 0 6px}
-label .opc{text-transform:none;letter-spacing:0;font-size:10.5px;opacity:.6;
+label .opc{text-transform:none;letter-spacing:0;font-size:10.5px;
   font-style:italic}
 .onde{display:grid;grid-template-columns:1fr 88px;gap:10px}
 input,select{
@@ -474,11 +479,15 @@ th input[type=checkbox],th input[type=radio]{
   color:var(--texto);font-family:inherit;min-width:140px}
 .mini-campo.largo input{min-width:320px}
 /* A caixa de marcar nao herda a largura minima dos campos de texto: sem isto
-   ela estica e vira um retangulo vazio do lado do quadradinho. */
-.mini-campo.caixa{flex-direction:row;align-items:center;gap:7px;text-transform:none;
+   ela estica e vira um retangulo vazio do lado do quadradinho.
+   O nome era `.caixa`, e `.caixa` e a CAIXA DE DIALOGO global (fundo, borda,
+   sombra de 50px, `width:100%`): o «só escrita» do Profiler aparecia como um
+   cartao flutuante por cima da tela -- achado na revisao medida de 01/10/2026,
+   so visivel no navegador. Nome de classe tambem e CSS global. */
+.mini-campo.de-marcar{flex-direction:row;align-items:center;gap:7px;text-transform:none;
   letter-spacing:0;font-size:12.5px;color:var(--texto-2);padding-bottom:7px;
   white-space:nowrap}
-.mini-campo.caixa input{min-width:0;width:15px;height:15px;padding:0;margin:0;
+.mini-campo.de-marcar input{min-width:0;width:15px;height:15px;padding:0;margin:0;
   border:1px solid var(--linha);accent-color:var(--acao-consultar)}
 table.prof{font-size:12.5px}
 table.prof td,table.prof th{padding:5px 10px}
@@ -554,12 +563,12 @@ tr.prof-mal td{background:color-mix(in srgb,var(--log) 8%,transparent)}
   font-family:"IBM Plex Mono",monospace;font-size:10px;width:16px;text-align:center;
   color:var(--texto-3);
 }
-.pv-campo em{font-style:normal;margin-left:auto;font-size:9.5px;color:var(--texto-3);opacity:.8}
+.pv-campo em{font-style:normal;margin-left:auto;font-size:9.5px;color:var(--texto-3)}
 
 .pv-zonas{display:flex;flex-direction:column;gap:10px}
 .pv-zona.sobre{border-color:var(--laranja);background:var(--realce)}
 .pv-zona-corpo{padding:9px 12px;display:flex;flex-wrap:wrap;gap:6px;min-height:42px;align-items:center}
-.pv-zona-vazia{font-size:11px;color:var(--texto-3);opacity:.7}
+.pv-zona-vazia{font-size:11px;color:var(--texto-3)}
 .pv-chip{
   display:inline-flex;align-items:center;gap:6px;cursor:grab;font-size:11.5px;
   padding:4px 6px 4px 10px;border-radius:99px;
@@ -633,7 +642,9 @@ table.montar.campos .pos{
 /* Coluna de sistema nao se classifica: `softdeleted` e `rownum` sao do motor
    e nao sao dado de ninguem. A celula fica visivelmente inerte em vez de
    sumir, para nao parecer que a coluna foi esquecida. */
-.lgpd-cel.fixa{opacity:.35}
+/* So os CONTROLES apagam: a legenda «coluna do motor» e o que explica por que
+   a celula esta inerte, e com a celula inteira a .35 ela media 2,25:1. */
+.lgpd-cel.fixa > :not(.leg){opacity:.35}
 .secao .chk{margin-left:auto;font-weight:400;white-space:nowrap;flex:0 0 auto}
 .leg.chave{
   margin:10px 0 0;padding:8px 11px;border-radius:5px;
@@ -705,7 +716,7 @@ table.montar.campos .pos{
   color:var(--texto-3);text-transform:none;letter-spacing:.02em;
   display:flex;flex-direction:column;gap:2px;
 }
-.criar label em{font-style:normal;opacity:.72;font-size:10.5px}
+.criar label em{font-style:normal;font-size:10.5px}
 .criar label em code{font-size:10px}
 .criar input,.criar select{
   background:var(--painel);border:1px solid var(--linha-forte);border-radius:5px;
@@ -716,7 +727,7 @@ table.montar.campos .pos{
   font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--texto-3);
   margin:20px 0 8px;display:flex;align-items:center;gap:10px;font-weight:600;
 }
-.secao em{font-style:normal;text-transform:none;letter-spacing:0;opacity:.75}
+.secao em{font-style:normal;text-transform:none;letter-spacing:0}
 .mini{
   font-family:inherit;font-size:10.5px;cursor:pointer;padding:3px 8px;
   background:var(--painel-2);border:1px solid var(--linha-forte);border-radius:4px;
@@ -728,7 +739,7 @@ table.montar input[type=text],table.montar input:not([type]),table.montar select
   background:var(--painel);border:1px solid var(--linha);border-radius:4px;
   padding:5px 7px;font-family:inherit;font-size:11.5px;color:var(--texto);width:100%;
 }
-table.montar th em{font-style:normal;font-weight:400;opacity:.7;text-transform:none}
+table.montar th em{font-style:normal;font-weight:400;text-transform:none}
 table.montar td{padding:5px 7px}
 
 /* --------------------------------------------------------------- creditos */
@@ -1066,7 +1077,7 @@ body,.cartao,.barra,.arvore,table,td,th{
 .ferramentas label{margin:0}
 .ferramentas select,.ferramentas input{width:auto;padding:6px 10px;font-size:13px}
 .conta{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--texto-3)}
-.dica{font-size:11.5px;color:var(--texto-3);opacity:.8;font-style:italic;margin-left:auto}
+.dica{font-size:11.5px;color:var(--texto-3);font-style:italic;margin-left:auto}
 /* O aviso de que a grade so enxerga uma janela da tabela. Fica ACIMA dela e
    nao no rodape: quem vai filtrar olha o topo. */
 .corte-da-vista{margin:0 0 12px;font-size:12.5px}
@@ -1967,8 +1978,25 @@ td label,td .rot-dado{text-transform:none;letter-spacing:0;font-size:inherit;
      (`.grupo .mais`) alcanca sem brigar com tres controles na mesma aba
      estreita. */
   .tira-aba{min-height:40px}
-  .tira-pino,.tira-x{min-width:28px;min-height:28px}
-  .tira-bt{min-height:40px}
+  /* 32px e o piso da revisao medida de 01/10/2026: com 28 o pino e o fechar
+     ainda ficavam abaixo dele em 13 telas, e os botoes do canto da tira
+     (nova tela, dividir) tinham 26px de LARGURA -- a altura de 40 sozinha
+     nao faz um alvo, o dedo erra pelo lado. */
+  .tira-pino,.tira-x{min-width:32px;min-height:32px}
+  .tira-bt{min-height:40px;min-width:40px}
+  /* A ajuda e o tema encolhiam para 24px de largura na barra apertada do
+     celular: o `flex` da barra os espremia, e o `width` acima perdia. */
+  .tema{flex:none;min-width:40px}
+  /* Campo de formulario: 24-30px de altura e mira, nao toque. A caixa de
+     marcar e o radio ficam de fora de proposito -- o alvo deles e o `label`
+     que os envolve, e o `css-global` reprova controle acima de 24px. */
+  input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=hidden]),
+  select{min-height:36px}
+  /* O resto do que a revisao achou abaixo de 32px com o dedo: botao de
+     formulario (26-28), os chips ativas/excluidas (22), a trilha e o
+     interruptor da legenda da telemetria (16-20) e o resumo do gestor de
+     threads (24). */
+  .botao,.chip-visao button,.tlm-passo,.tlm-link,.tlm-threads > summary{min-height:32px}
 }
 </style>
 
@@ -4157,7 +4185,12 @@ async function abrirAdmin(qual) {
           { campo:"usuario", titulo:txt("tela.col_usuario","usuário"), formato:v => esc(v || "—") },
           { campo:"ok", titulo:txt("tela.col_resultado","resultado"),
             formato:(v, x) => v ? `<span class="pino ok">${esc(txt("tela.ac_ok","ok"))}</span>`
-                                 : `<span class="pino mal">${esc(x.erro || txt("tela.ac_negado","negado"))}</span>` },
+                                 // O texto do erro e do SERVIDOR e traz nome de
+                                 // banco e de tabela: em caixa alta pelo `.pino`
+                                 // ele mentiria sobre o nome gravado. `crua` so
+                                 // quando e o erro; o «negado» nosso e rotulo.
+                                 : x.erro ? `<span class="pino mal crua">${esc(x.erro)}</span>`
+                                          : `<span class="pino mal">${esc(txt("tela.ac_negado","negado"))}</span>` },
           { campo:"ms", titulo:txt("tela.col_ms","ms"), tipo:"numero" },
         ],
         dados: a.acessos,
@@ -5324,7 +5357,7 @@ async function gerirTabelas(db) {
   folha(preencher(txt("tela.tt_tabelas_de","Tabelas de {db}"), {db}),
     preencher(txt("tela.st_n_tabelas_clique_gerir","{n} tabela(s) · clique numa linha para gerir"), {n: nomes.length}),
     `<div class="acoes">
-       <button class="botao" id="btNovaTab">✚ ${esc(txt("tela.tt_nova_tabela","Nova tabela"))}…</button>
+       <button class="botao incluir" id="btNovaTab">✚ ${esc(txt("tela.tt_nova_tabela","Nova tabela"))}…</button>
        <button class="botao secundario" id="btColar" ${est.copia ? "" : "disabled"}>
          ⧉ ${esc(txt("tela.gt_colar","Colar"))}${est.copia ? ` ${esc(est.copia.db)}.${esc(est.copia.tab)}` : ""}</button>
        <button class="botao secundario" id="btRecarregarTabs">↻ ${esc(txt("tela.gt_atualizar","Atualizar"))}</button>
@@ -5906,7 +5939,7 @@ function desenharNovaTabela(db) {
      </form>
 
      <div class="acoes">
-       <button class="botao" id="nt_criar">${esc(txt("tela.nt_criar_tabela","Criar tabela"))}</button>
+       <button class="botao incluir" id="nt_criar">${esc(txt("tela.nt_criar_tabela","Criar tabela"))}</button>
        <button class="botao secundario" id="nt_voltar">← ${esc(preencher(txt("tela.tt_tabelas_de","Tabelas de {db}"), {db}))}</button>
        <span class="leg" id="nt_recado"></span>
      </div>
@@ -6476,7 +6509,7 @@ async function pivotPasso2() {
     ${w.erro ? `<div class="nota mal"><p>${esc(w.erro)}</p></div>` : ""}
 
     <div class="acoes">
-      <button class="botao" id="pv_montar">Montar a tabela dinâmica</button>
+      <button class="botao consultar" id="pv_montar">${esc(txt("tela.pv_montar","Montar a tabela dinâmica"))}</button>
       <button class="botao secundario" id="pv_voltar1">← Tabelas</button>
       <button class="botao secundario" id="pv_limpar">Limpar os eixos</button>
     </div>
@@ -7018,7 +7051,7 @@ function telaCopiarColar(db) {
            </div>
          </form>
          <div class="acoes">
-           <button class="botao" id="btColarAgora">Colar</button>
+           <button class="botao incluir" id="btColarAgora">${esc(txt("tela.gt_colar","Colar"))}</button>
            <button class="botao secundario" id="btLimparCopia">Esvaziar a área</button>
            <span class="leg" id="ccRecado"></span>
          </div>
@@ -7107,13 +7140,13 @@ async function verDiretivasDoBanco(db) {
             ? (seg.bases_proibidas).map(x => `<code>${esc(x)}</code>`).join(" ") : "<span class=leg>nenhuma</span>"}</td></tr>
        <tr><td class="num dado">5</td><td class="dado">somente leitura</td>
          <td class="leg">recusa toda operação de escrita</td>
-         <td class="dado">${c.somente_leitura ? "<span class=\"pino mal\">ligado</span>" : "desligado"}</td></tr>
+         <td class="dado">${c.somente_leitura ? `<span class="pino mal">${esc(txt("tela.g_estado_ligado","ligado"))}</span>` : esc(txt("tela.g_estado_desligado","desligado"))}</td></tr>
        <tr><td class="num dado">6</td><td class="dado">permissão do usuário</td>
          <td class="leg">a atividade contra a base, pelas três regras</td>
          <td class="dado">por usuário, abaixo</td></tr>
      </tbody></table></div>
 
-     <h3 class="secao">Quem alcança ${esc(db)}</h3>
+     <h3 class="secao">${esc(txt("tela.dbd_quem_alcanca","Quem alcança"))} <em>${esc(db)}</em></h3>
      <div id="gradeDiretivas"></div>
 
      <div class="nota">
@@ -7508,7 +7541,7 @@ function editorDeMenu() {
 
   folha(txt("tela.tt_editor_menu","Editor de menu"), `${itens.length} rótulos · ${trocados} trocado(s) neste navegador`,
     `<div class="acoes">
-       <button class="botao" id="emSalvar">Aplicar</button>
+       <button class="botao alterar" id="emSalvar">${esc(txt("tela.em_aplicar","Aplicar"))}</button>
        <button class="botao secundario" id="emReverter">Voltar aos nomes de fábrica</button>
        <span class="leg">em branco = usa o nome original</span>
      </div>` +
@@ -10056,7 +10089,7 @@ async function telaJuncao(db) {
           </button>`).join("")}
      </div>
      <div class="acoes">
-       <button class="botao" id="jRodar">Juntar</button>
+       <button class="botao consultar" id="jRodar">${esc(txt("tela.jn_juntar","Juntar"))}</button>
        <button class="botao secundario" id="jUniao">União (UNION)…</button>
      </div>
      <div id="jSaida"></div>`);
@@ -10187,7 +10220,7 @@ async function telaUniao(db) {
        mais amigável e seria uma armadilha: duas tabelas com as mesmas colunas em
        ordem diferente empilhariam trocando os valores, caladas.</div>
      <div class="acoes">
-       <button class="botao" id="unRodar">Unir</button>
+       <button class="botao consultar" id="unRodar">${esc(txt("tela.un_unir","Unir"))}</button>
        <button class="botao secundario" id="unJuncao">← Junção</button>
      </div>
      <div id="unSaida"></div>`);
@@ -10864,7 +10897,7 @@ async function telaDbLinkDefinicoes() {
        nesse caso o teste diz exatamente isso e o que fazer.</p>
      </div>
      <div class="acoes">
-       <button class="botao" id="btNovaLig">Nova ligação…</button>
+       <button class="botao incluir" id="btNovaLig">${esc(txt("tela.dbl_nova_ligacao","Nova ligação…"))}</button>
        <button class="botao secundario" id="btIrDbl">← DbLink</button>
      </div>`);
   $("#btNovaLig").onclick = () => editarDbLink(null);
@@ -10963,7 +10996,7 @@ async function editarDbLink(nome) {
        banco do outro lado. Marcado é o padrão de fábrica, e é o certo para
        quase todo caso.</div>
      <div class="acoes">
-       <button class="botao" id="btGravar">Gravar</button>
+       <button class="botao ${l ? "alterar" : "incluir"}" id="btGravar">${esc(txt("tela.cl_bt_gravar","Gravar"))}</button>
        <button class="botao secundario" id="btTest2">Gravar e testar</button>
        ${l ? `<button class="botao perigo" id="btApagar">Excluir ligação</button>` : ""}
        <button class="botao secundario" id="btVolta2">← Definições</button>
@@ -13835,7 +13868,7 @@ async function verProfiler() {
        <label class="mini-campo largo">Arquivo de log (.txt) — opcional
          <input id="pfArq" placeholder="/var/log/phxsql-monitor.txt"
                 value="${esc(e.arquivo || "")}"></label>
-       <label class="mini-campo caixa"><input type="checkbox" id="pfEscrita"
+       <label class="mini-campo de-marcar"><input type="checkbox" id="pfEscrita"
          ${f.so_escrita ? "checked" : ""}> só escrita</label>
        <button class="botao consultar" id="pfLigar">${e.ligado ? "Reiniciar" : "Ligar"}</button>
        <button class="botao excluir" id="pfParar" ${e.ligado ? "" : "disabled"}>Parar</button>

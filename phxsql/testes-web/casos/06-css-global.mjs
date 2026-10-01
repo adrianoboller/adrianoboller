@@ -18,8 +18,8 @@ import { entrar, cenario, capturar, verdade, bancoDoCaso, api } from '../apoio.m
 const TETO_DO_CONTROLE = 24;
 
 /** Mede a tela que estiver aberta AGORA. Devolve o que estiver torto. */
-async function medir(page, ondeEstou) {
-  return await page.evaluate(onde => {
+async function medir(page, ondeEstou, nomes = []) {
+  return await page.evaluate(([onde, nomes]) => {
     const achados = [];
     const visivel = el => {
       const r = el.getBoundingClientRect();
@@ -71,7 +71,10 @@ async function medir(page, ondeEstou) {
       const tt = getComputedStyle(el).textTransform;
       if (tt !== 'uppercase') continue;
       // Rotulo em maiuscula e estilo; o que nao pode e o DADO.
-      if (dado(el)) {
+      // O `.pino` dentro de celula e ROTULO nosso por convencao («ok»,
+      // «você», «tudo»): o que carrega dado leva `.crua` e nunca chega aqui
+      // em maiuscula. Quem pega o pino que mente e a regra dos `nomes`.
+      if (dado(el) && !el.closest('.pino')) {
         achados.push(`${onde}: dado «${t.slice(0, 40)}» pintado em MAIUSCULA por `
           + 'text-transform — quem le nao sabe se esta gravado assim');
       }
@@ -83,6 +86,17 @@ async function medir(page, ondeEstou) {
       // nao tem maiuscula nenhuma no HTML; um nome de cidade, de coluna ou de
       // indice tem. E a diferenca entre estilo e mentira sobre o dado -- e
       // pega os dois casos sem acusar rotulo nenhum.
+      // O NOME conhecido do cenario (o banco, de caixa mista) em caixa alta,
+      // em QUALQUER lugar -- titulo de secao e pino de erro inclusive. A regra
+      // do texto misto abaixo so olha dentro de tabela, e por isso deixou
+      // passar «QUEM ALCANÇA BATCSSE» (um `h3.secao`) e o erro do servidor
+      // num `.pino` da tela de Acessos (revisao medida de 01/10/2026).
+      for (const n of nomes) {
+        if (t.includes(n)) {
+          achados.push(`${onde}: o nome «${n}» sai em caixa alta em «${t.slice(0, 40)}» `
+            + `(${el.tagName.toLowerCase()}.${el.className || ''}) — mentira sobre o nome gravado`);
+        }
+      }
       if (/[a-zà-ý]/.test(t) && /[A-ZÀ-Ý]/.test(t) && el.closest('table')
           && !el.closest('th') && !el.closest('label')) {
         achados.push(`${onde}: «${t.slice(0, 40)}» dentro de tabela sai em caixa alta`);
@@ -117,8 +131,16 @@ async function medir(page, ondeEstou) {
           + 'ficou em outra linha que o proprio texto — controle separado do rotulo dele');
       }
     }
+    // D: a classe `.caixa` e a CAIXA DE DIALOGO global. Fora de um dialogo
+    //    ela veste o elemento de cartao flutuante -- o «só escrita» do
+    //    Profiler era um `label.mini-campo.caixa` com sombra de 50px.
+    for (const el of document.querySelectorAll('.caixa')) {
+      if (!visivel(el) || el.getAttribute('role') === 'dialog') continue;
+      achados.push(`${onde}: ${el.tagName.toLowerCase()}.${el.className} usa a classe .caixa `
+        + 'do dialogo fora de um dialogo — veste-se de cartao flutuante');
+    }
     return achados;
-  }, ondeEstou);
+  }, [ondeEstou, nomes]);
 }
 
 export const caso = {
@@ -155,6 +177,14 @@ export const caso = {
       ['dado pessoal (LGPD)', () => page.evaluate(d => telaDadosPessoais(d), db)],
       ['nova tabela', () => page.evaluate(d => telaNovaTabela(d), db)],
       ['config do servidor', () => page.evaluate(() => verConfigServidor())],
+      ['profiler', () => page.evaluate(() => verProfiler())],
+      ['diretivas do banco', () => page.evaluate(d => verDiretivasDoBanco(d), db)],
+      // Uma recusa que CITA o banco, para a tela de Acessos ter um erro do
+      // servidor com o nome dentro.
+      ['acessos', async () => {
+        await api(page, 'esquema', { database: db, tabela: 'naoExiste' }).catch(() => {});
+        await page.evaluate(() => irPara('acessos'));
+      }],
       ['uniao de tabelas', () => page.evaluate(d => telaUniao(d), db)],
       ['juncao de tabelas', () => page.evaluate(d => telaJuncao(d), db)],
       ['importar carga', () => page.evaluate(([d, t]) => telaImportar(d, t), [db, tab])],
@@ -180,7 +210,7 @@ export const caso = {
     for (const [nome, abrir] of telas) {
       await abrir();
       await page.waitForTimeout(500);
-      achados.push(...await medir(page, nome));
+      achados.push(...await medir(page, nome, [db]));
       if (nome === 'dado pessoal (LGPD)' || nome === 'grade editavel') {
         await capturar(ctx, ctx.nomeCaptura(nome.replace(/[^a-z]+/gi, '-')));
       }

@@ -8,8 +8,8 @@ tela) e `docs/dossie/telas/ativos.json` (a URL de cada captura no deposito de
 arquivos da pagina publicada) e grava `docs/dossie/telas-na-sequencia.html`.
 
 Por que as imagens NAO vao embutidas, ao contrario das vinte da oitava pagina:
-sao 79 capturas de 1500 px, ~12 MB. Embutidas, a pagina passaria 26x o teto de
-republicacao de ~450 KiB (pedido 403) e nunca mais se republicaria. No deposito
+sao 79 capturas de 1500 px, 10.974.703 bytes (tema claro) e 14,6 MB em base64.
+Embutidas, a pagina passaria 31,8x o teto de republicacao de ~450 KiB (pedido 403) e nunca mais se republicaria. No deposito
 de arquivos da propria pagina (capacidade `assets`) elas sobem uma vez, e a
 pagina fica com poucos KiB. O preco, escrito: pagina que declara `assets` e
 interna da organizacao -- por isso as telas moram numa pagina propria e NAO no

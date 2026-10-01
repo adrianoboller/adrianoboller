@@ -39,9 +39,31 @@
 //! # O que custa a quem nao esta fazendo backup
 //!
 //! O portao vem ANTES do trabalho, e o caminho comum nao toca mutex nenhum:
-//! um `fetch_add` e um `load` na entrada, um `fetch_sub` e um `load` na
+//! um `fetch_add` e um `load` na entrada, mais um `fetch_add` quando a ficha
+//! chega na mao (as `entradas`, pedido 623), um `fetch_sub` e um `load` na
 //! saida. O mutex e o `Condvar` so existem para DORMIR -- quem espera um
 //! retrato, ou o retrato que espera o ultimo escritor.
+//!
+//! # O leitor que CEDE a vez -- pedido 623
+//!
+//! O mesmo `RwLock` tem um furo do outro lado, e quem o mostrou foi a
+//! absorcao do bidirecional (pedido 330), o unico leitor que toma a ficha
+//! compartilhada em LACO. Ao soltar a leitura com um escritor na fila, o
+//! `read_unlock` limpa o bit de escritor esperando e acorda o escritor; o
+//! leitor, que nao dormiu, pede a leitura de novo antes de o acordado ser
+//! escalado -- e a leva. O escritor acorda, acha a leitura tomada e volta a
+//! dormir. Medido pelo soquete (01/10/2026, build de teste, 300.000 eventos,
+//! fatias de 10 ms): o escritor esperava 115-360 ms por `inserir` com a
+//! maquina parada e ate **2,1 s** sozinho, e sob a suite inteira nenhum
+//! `inserir` terminou durante a absorcao. «Espera no maximo uma fatia» era a
+//! promessa, e o `RwLock` nao a cumpre para leitor em laco.
+//!
+//! Por isso a [`Fila`] e o [`PortaoDoRetrato::ceder`]: com a leitura AINDA na
+//! mao o leitor anota quantos escritores estao na fila e quantas entradas ja
+//! houve; depois de solta-la, espera ate uma entrada nova (o escritor PEGOU a
+//! ficha exclusiva -- nao terminou, pegou: o disco dele nao entra na conta),
+//! ou ate a fila esvaziar sem entrar (recuou para um retrato, ou achou o
+//! veneno). Nenhum escritor na fila, nenhuma espera.
 //!
 //! # Um retrato por vez
 //!
@@ -50,13 +72,17 @@
 //! desligar. Sem isso, duas copias para o MESMO destino se misturariam --
 //! a ficha compartilhada, sozinha, deixaria as duas entrarem juntas.
 
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Condvar, Mutex, MutexGuard};
+use std::time::{Duration, Instant};
 
 /// O portao. Um por servidor, ao lado da trava de dados.
 #[derive(Default)]
 pub(crate) struct PortaoDoRetrato {
     escritores: AtomicUsize,
+    /// Quantas vezes um escritor PEGOU a ficha exclusiva -- so sobe. E o que
+    /// o leitor que cede espera ver andar (ver [`PortaoDoRetrato::ceder`]).
+    entradas: AtomicU64,
     retrato: AtomicBool,
     /// So para dormir e acordar. O estado de verdade esta nos atomicos.
     sono: Mutex<()>,
@@ -68,6 +94,26 @@ pub(crate) struct PortaoDoRetrato {
 /// `TravaMedida`, e campo cai depois do guard declarado antes dele.
 pub(crate) struct Passagem<'a> {
     portao: &'a PortaoDoRetrato,
+}
+
+/// A fila dos escritores vista por um LEITOR, com a ficha compartilhada na
+/// mao -- e so com ela na mao a foto vale: nenhum escritor esta dentro, entao
+/// todo `escritores` contado esta esperando, e `entradas` nao anda.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Fila {
+    na_fila: usize,
+    entradas: u64,
+}
+
+/// O que um leitor que cedeu a vez viu na volta seguinte -- ver
+/// [`PortaoDoRetrato::depois_de_ceder`].
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Vez {
+    /// Escritores que pegaram a ficha exclusiva entre a foto e a volta.
+    pub(crate) entraram: u64,
+    /// Havia escritor na fila, nenhum entrou e ainda ha quem espere: o
+    /// leitor passou na frente dele.
+    pub(crate) furou: bool,
 }
 
 /// O retrato em curso. Religa a escrita no `Drop` -- inclusive no desenrolar
@@ -131,10 +177,66 @@ impl PortaoDoRetrato {
         Retrato { portao: self }
     }
 
+    /// A foto da fila, tirada por um leitor COM a ficha compartilhada na mao
+    /// (ver [`Fila`]). Dois `load`, nenhum mutex.
+    pub(crate) fn fila(&self) -> Fila {
+        Fila {
+            na_fila: self.escritores.load(Ordering::SeqCst),
+            entradas: self.entradas.load(Ordering::SeqCst),
+        }
+    }
+
+    /// O leitor, ja SEM a ficha, cede a vez a quem estava na fila da foto:
+    /// volta quando um escritor pegou a exclusiva, quando a fila esvaziou sem
+    /// ninguem entrar, ou no `teto`. Ninguem na fila, volta na hora.
+    ///
+    /// A espera e por ENTRADA e nao por saida: o escritor que pegou a ficha
+    /// ja exclui o leitor pela propria trava, e esperar a saida poria o disco
+    /// dele (um `fsync` lento) dentro da espera de quem cedeu. O `teto` e so
+    /// a vida do leitor -- sem ele, um escritor preso fora da fila do `RwLock`
+    /// por um motivo que esta conta nao ve pararia a absorcao para sempre.
+    pub(crate) fn ceder(&self, foto: Fila, teto: Duration) {
+        if foto.na_fila == 0 {
+            return;
+        }
+        let ate = Instant::now() + teto;
+        while self.entradas.load(Ordering::SeqCst) == foto.entradas
+            && self.escritores.load(Ordering::SeqCst) > 0
+            && Instant::now() < ate
+        {
+            // Dormir e nao girar: o escritor acordado precisa de um nucleo, e
+            // um leitor girando num conteiner de 4 nucleos e quem o tira dele.
+            std::thread::sleep(Duration::from_micros(100));
+        }
+    }
+
+    /// O que aconteceu com a fila da `foto` -- lido pelo leitor ao RETOMAR a
+    /// ficha compartilhada, e por isso independente de ele ter cedido: e a
+    /// medida que acusa o leitor que nao cede (`furou`).
+    pub(crate) fn depois_de_ceder(&self, foto: Fila) -> Vez {
+        let entraram = self
+            .entradas
+            .load(Ordering::SeqCst)
+            .saturating_sub(foto.entradas);
+        Vez {
+            entraram,
+            furou: foto.na_fila > 0 && entraram == 0 && self.escritores.load(Ordering::SeqCst) > 0,
+        }
+    }
+
     /// Ha retrato em curso? So para teste.
     #[cfg(test)]
     pub(crate) fn em_retrato(&self) -> bool {
         self.retrato.load(Ordering::SeqCst)
+    }
+}
+
+impl Passagem<'_> {
+    /// O escritor PEGOU a ficha exclusiva. Chamado por quem a tomou, logo
+    /// depois do `write()` -- um `fetch_add` por tomada exclusiva, o preco de
+    /// o leitor em laco saber que cedeu (pedido 623).
+    pub(crate) fn entrou(&self) {
+        self.portao.entradas.fetch_add(1, Ordering::SeqCst);
     }
 }
 
@@ -206,6 +308,73 @@ mod testes {
             barrado >= Duration::from_millis(50),
             "o escritor novo passou com o retrato ligado: {barrado:?}"
         );
+    }
+
+    /// Pedido 623: o leitor que cede a vez so volta quando o escritor da
+    /// fila PEGOU a ficha exclusiva. Sem prazo de parede na conta: a espera
+    /// termina pela entrada, e o teto de 30 s so existe para o teste nao
+    /// pendurar se o defeito voltar.
+    #[test]
+    fn o_leitor_que_cede_so_volta_com_o_escritor_dentro() {
+        let p = Arc::new(PortaoDoRetrato::default());
+        let trava = Arc::new(std::sync::RwLock::new(()));
+        let leitura = trava.read().unwrap();
+        let (p2, t2) = (Arc::clone(&p), Arc::clone(&trava));
+        let escritor = std::thread::spawn(move || {
+            let passagem = p2.passar();
+            let _w = t2.write().unwrap();
+            passagem.entrou();
+        });
+        while p.escritores.load(Ordering::SeqCst) == 0 {
+            std::thread::yield_now();
+        }
+        let foto = p.fila();
+        drop(leitura);
+        p.ceder(foto, Duration::from_secs(30));
+        assert!(
+            p.fila().entradas > foto.entradas,
+            "o leitor voltou sem o escritor da fila ter pegado a ficha"
+        );
+        let _de_novo = trava.read().unwrap();
+        assert_eq!(
+            p.depois_de_ceder(foto),
+            Vez {
+                entraram: 1,
+                furou: false
+            }
+        );
+        escritor.join().unwrap();
+    }
+
+    /// O escritor que nao consegue entrar (outro leitor segura a ficha) faz
+    /// quem cede esperar ate o teto -- e o que acusa um `ceder` que volta na
+    /// hora. Cota de BAIXO no relogio, que carga nenhuma faz falhar: carga
+    /// so alonga a espera.
+    #[test]
+    fn o_leitor_que_cede_espera_o_escritor_ate_o_teto() {
+        let p = PortaoDoRetrato::default();
+        let _outro_leitor_entra_e_fica = p.passar();
+        let foto = p.fila();
+        let inicio = Instant::now();
+        p.ceder(foto, Duration::from_millis(200));
+        assert!(
+            inicio.elapsed() >= Duration::from_millis(200),
+            "o leitor voltou em {:?} com um escritor na fila e nenhuma entrada",
+            inicio.elapsed()
+        );
+        assert!(p.depois_de_ceder(foto).furou);
+    }
+
+    /// Sem escritor na fila, ceder nao espera nada -- o comportamento VELHO
+    /// de quem le em laco sem ninguem gravar.
+    #[test]
+    fn sem_escritor_na_fila_ceder_volta_na_hora() {
+        let p = PortaoDoRetrato::default();
+        let foto = p.fila();
+        let inicio = Instant::now();
+        p.ceder(foto, Duration::from_secs(30));
+        assert!(inicio.elapsed() < Duration::from_secs(30));
+        assert_eq!(p.depois_de_ceder(foto), Vez::default());
     }
 
     /// O panico no meio da copia religa a escrita -- sem o `Drop`, o

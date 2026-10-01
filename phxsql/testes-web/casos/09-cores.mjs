@@ -242,6 +242,83 @@ export const caso = {
     }
     ctx.notas.push(`${pintados} elementos pintados medidos em ${telasVarridas.length} telas`);
 
+    // ------- o texto APAGADO por `opacity`, e o verbo de acao em fundo cheio
+    //
+    // A varredura de cima so mede quem pinta o PROPRIO fundo, e por isso nunca
+    // viu a outra armadilha: `--texto-3` ja foi clareado ate o minimo que passa
+    // 4,5:1, e um `opacity:.75` por cima o derruba para 3,36:1 no tema claro.
+    // Eram oito regras assim (a assinatura da marca na entrada, a 2,72:1),
+    // achadas pela revisao medida de 01/10/2026. Aqui a cor do texto se compoe
+    // com a opacidade de toda a linhagem e com o fundo EFETIVO.
+    //
+    // E na mesma passada: botao `.botao` laranja CHEIO com verbo de acao no
+    // rotulo («Nova tabela», «Criar tabela», «Nova ligação», «Juntar»...) --
+    // a cor da acao existe e ele a pulou.
+    const telasApagadas = [
+      ['gerir tabelas', () => page.evaluate(d => gerirTabelas(d), db)],
+      ['nova tabela', () => page.evaluate(d => telaNovaTabela(d), db)],
+      ['config do servidor', () => page.evaluate(() => verConfigServidor())],
+      ['config da tabela', () => page.evaluate(([d, t]) => verConfigTabela(d, t), [db, tab])],
+      ['telemetria', () => page.evaluate(() => telaTelemetria())],
+      ['dblink', () => page.evaluate(() => telaDbLinkDefinicoes())],
+      ['juncao', () => page.evaluate(d => telaJuncao(d), db)],
+      ['uniao', () => page.evaluate(d => telaUniao(d), db)],
+    ];
+    for (const [nome, abrir] of telasApagadas) {
+      await abrir();
+      await page.mouse.move(4, 4);
+      await page.waitForTimeout(700);
+      problemas.push(...await page.evaluate(onde => {
+        const rgb = t => {
+          const m = String(t).match(/[\d.]+/g) || [];
+          return { r: +m[0] || 0, g: +m[1] || 0, b: +m[2] || 0, a: m.length > 3 ? +m[3] : 1 };
+        };
+        const lum = c => {
+          const f = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+          return 0.2126 * f(c.r) + 0.7152 * f(c.g) + 0.0722 * f(c.b);
+        };
+        const sobre = (c, f) => ({ r: c.r * c.a + f.r * (1 - c.a), g: c.g * c.a + f.g * (1 - c.a), b: c.b * c.a + f.b * (1 - c.a), a: 1 });
+        const fundo = el => {
+          const cam = [];
+          for (let n = el; n; n = n.parentElement) {
+            const c = rgb(getComputedStyle(n).backgroundColor);
+            if (c.a > 0) cam.push(c);
+            if (c.a >= 0.99) break;
+          }
+          let f = cam.length && cam[cam.length - 1].a >= 0.99 ? cam.pop() : { r: 255, g: 255, b: 255, a: 1 };
+          while (cam.length) f = sobre(cam.pop(), f);
+          return f;
+        };
+        const saida = [];
+        for (const el of document.querySelectorAll('#painel *, #app .corpo *')) {
+          const r = el.getBoundingClientRect();
+          if (r.width < 1 || r.height < 1) continue;
+          if (el.closest('button:disabled, input:disabled, select:disabled, [aria-disabled="true"]')) continue;
+          const txt = [...el.childNodes].filter(n => n.nodeType === 3).map(n => n.nodeValue.trim()).join(' ').trim();
+          if (txt.length < 2) continue;
+          let op = 1;
+          for (let n = el; n; n = n.parentElement) op *= parseFloat(getComputedStyle(n).opacity);
+          if (op >= 0.99) continue;
+          const s = getComputedStyle(el);
+          const f = fundo(el), c = rgb(s.color); c.a *= op;
+          const a = lum(sobre(c, f)), b = lum(f);
+          const ct = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+          const tam = parseFloat(s.fontSize), peso = parseInt(s.fontWeight, 10) || 400;
+          const piso = (tam >= 24 || (tam >= 18.66 && peso >= 700)) ? 3.0 : 4.5;
+          if (ct < piso) saida.push(`${onde}: «${txt.slice(0, 30)}» apagado por opacity ${op.toFixed(2)} da ${ct.toFixed(2)}:1`);
+        }
+        const VERBO = /^\W*(nov[oa]|criar|incluir|colar|gravar|salvar|aplicar|alterar|excluir|apagar|juntar|unir|montar)\b/i;
+        for (const el of document.querySelectorAll('#painel .botao, #app .corpo .botao')) {
+          if (!el.getBoundingClientRect().width) continue;
+          if (/\b(incluir|alterar|marcar|excluir|consultar|secundario|perigo)\b/.test(el.className)) continue;
+          if (rgb(getComputedStyle(el).backgroundColor).a < 0.5) continue;
+          const rot = el.textContent.trim();
+          if (VERBO.test(rot)) saida.push(`${onde}: «${rot.slice(0, 30)}» (#${el.id}) e verbo de acao em fundo laranja cheio, sem a cor da acao`);
+        }
+        return saida;
+      }, nome));
+    }
+
     verdade(problemas.length === 0,
       `cores da acao / contraste:\n      ${[...new Set(problemas)].join('\n      ')}`);
   },

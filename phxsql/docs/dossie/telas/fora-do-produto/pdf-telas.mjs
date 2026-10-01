@@ -1,0 +1,11 @@
+import { chromium } from '/opt/node22/lib/node_modules/playwright/index.mjs';
+import { pathToFileURL } from 'node:url';
+const [ent, sai] = process.argv.slice(2);
+const nav = await chromium.launch(); const pag = await nav.newPage();
+await pag.goto(pathToFileURL(ent).href, { waitUntil: 'load' });
+await pag.evaluate(() => document.querySelectorAll('img[loading=lazy]').forEach(i => i.loading = 'eager'));
+const [prontas, pedidas] = await pag.evaluate(async () => { const is=[...document.images]; await Promise.all(is.map(i=>i.complete?0:new Promise(r=>{i.onload=i.onerror=r}))); return [is.filter(i=>i.naturalWidth>0).length, is.length]; });
+console.log(`imagens: ${prontas}/${pedidas}`);
+await pag.emulateMedia({ media: 'print' });
+await pag.pdf({ path: sai, printBackground: true, preferCSSPageSize: true });
+await nav.close();

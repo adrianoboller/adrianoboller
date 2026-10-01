@@ -10,8 +10,8 @@
 //!
 //! O desenho do J (01/10/2026, `decisoes-onda-01-10-2026.md` §330): o grosso
 //! sob a trava de LEITURA, em fatias de 10 ms; so a cauda sob a exclusiva. O
-//! que se mede aqui nao e o veredito da replicacao -- e quanto um `inserir`
-//! de cliente ESPEROU enquanto a absorcao acontecia.
+//! que se mede aqui nao e o veredito da replicacao -- e se o escritor de
+//! cliente PEGOU a trava enquanto a absorcao acontecia.
 
 mod comum;
 use comum::DirTemp;
@@ -34,24 +34,29 @@ const TOKEN: &str = "absorcao-do-bidi";
 /// absorcao inteira sob a exclusiva custar segundos num build de teste, e
 /// pequeno o bastante para o arranjo nao dominar a corrida.
 const EVENTOS: i64 = 300_000;
-/// Quantos `inserir` do escritor tem de TERMINAR enquanto a absorcao esta pela
-/// metade. Com o defeito, zero: a absorcao inteira acontece com a trava
-/// exclusiva na mao, e nenhum escritor anda nesse intervalo.
+/// Quantos escritores tem de PEGAR a trava exclusiva entre duas fatias da
+/// absorcao. Com o defeito, zero: a absorcao inteira acontece com a trava
+/// exclusiva na mao, e nao ha «entre fatias».
 ///
-/// # Por que contar, e nao cronometrar
+/// # Por que contar ENTRADAS, e nao `inserir` terminados nem espera
 ///
-/// A primeira versao desta prova punha teto na espera maxima de um `inserir`,
-/// e flocou: o `inserir` paga o `fsync` dele, e o disco deste conteiner e
-/// dividido com outras frentes compilando. Medido em 01/10/2026 (build de
-/// teste, 300.000 eventos), com o conserto e `sob_a_exclusiva` = 0 nas
-/// cinco: 225 ms, 447 ms, 460 ms e **2,01 s** de espera maxima -- o pico era
-/// o disco, nao a trava (a absorcao parou junto, no mesmo instante). Um teto
-/// que floca e pior que teto nenhum. Contar quem andou DURANTE a absorcao
-/// separa as duas coisas: o disco lento atrasa o escritor, a trava presa o
-/// zera. E por isso o minimo e UM, e nao uma taxa: com o escritor na mesma
-/// tabela, as corridas de 01/10/2026 deram 38, 14 e 5 no meio (a de 5 com um
-/// pico de 2,1 s de disco); com o defeito, o meio nem existe.
-const ANDARAM_NO_MEIO: u64 = 1;
+/// A primeira versao punha teto na espera maxima de um `inserir`, e flocou.
+/// A segunda contava os `inserir` que TERMINAVAM com o mapa pela metade, e
+/// flocou tambem (pedido 623): caiu em 2 de 2 corridas dos portoes com zero
+/// no meio e `sob_a_exclusiva` 22. O diagnostico escrito ali -- «o pico era o
+/// disco» -- era plausivel e nao medido. Medido em 01/10/2026, com a maquina
+/// parada: o escritor esperava 115-360 ms por `inserir` e ate 2,1 s, e as
+/// fatias corriam coladas, 11 ms cada, sem buraco. Era o `RwLock`: o leitor
+/// em laco retomava a leitura antes de o escritor acordado ser escalado
+/// (ver `retrato.rs`, «O leitor que CEDE a vez»). Sob a suite, com os
+/// nucleos tomados, o escritor perdia todas.
+///
+/// O conserto cede a vez, e a prova conta no SERVIDOR quem pegou a ficha
+/// entre as fatias: a entrada so depende da trava, o fim do `inserir` depende
+/// tambem do disco de quem escreve.
+const ENTRARAM_ENTRE_FATIAS: i64 = 1;
+/// Quantos escritores gravam ao mesmo tempo, cada um na sua conexao.
+const ESCRITORES: i64 = 2;
 
 struct NoAr {
     _s: Arc<Servidor>,
@@ -123,7 +128,8 @@ fn clientes() -> Schema {
 }
 
 /// Um campo do mapa de toques de `loja/clientes` em B, pelo
-/// `replicacao_estado`: `vistos`, `chaves` ou `sob_a_exclusiva`.
+/// `replicacao_estado`: `vistos`, `chaves`, `sob_a_exclusiva`,
+/// `escritores_entre_fatias` ou `fatias_que_furaram_a_fila`.
 fn do_mapa(porta: u16, campo: &str) -> i64 {
     tentar(porta, r#""op":"replicacao_estado""#)
         .and_then(|r| r.campo("resultado").cloned())
@@ -137,9 +143,10 @@ fn vistos_em(porta: u16) -> i64 {
     do_mapa(porta, "vistos")
 }
 
-/// O escritor: uma conexao so, um `inserir` atras do outro. Conta em `feitos`
-/// cada um que termina, e devolve a maior espera (so para o relatorio).
-fn escritor(porta: u16, parar: Arc<AtomicBool>, feitos: Arc<AtomicU64>) -> Duration {
+/// Um escritor: uma conexao so, um `inserir` atras do outro, com ids a partir
+/// de `base`. Conta em `feitos` cada um que termina, e devolve a maior espera
+/// -- os dois so para o relatorio: nenhum veredito sai do relogio.
+fn escritor(porta: u16, base: i64, parar: Arc<AtomicBool>, feitos: Arc<AtomicU64>) -> Duration {
     let alvo: SocketAddr = format!("127.0.0.1:{porta}").parse().unwrap();
     let fluxo = TcpStream::connect_timeout(&alvo, Duration::from_secs(2)).unwrap();
     fluxo
@@ -158,7 +165,7 @@ fn escritor(porta: u16, parar: Arc<AtomicBool>, feitos: Arc<AtomicU64>) -> Durat
         writeln!(
             escrita,
             r#"{{"token":"{TOKEN}","op":"inserir","database":"loja","tabela":"clientes","linha":{{"id":{}}}}}"#,
-            1_000_000 + i
+            base + i
         )
         .unwrap();
         let mut resposta = String::new();
@@ -179,15 +186,17 @@ fn escritor(porta: u16, parar: Arc<AtomicBool>, feitos: Arc<AtomicU64>) -> Durat
 /// e um escritor gravando na MESMA `loja/clientes` sem parar -- o caixa que
 /// trabalha enquanto sincroniza, e o caso em que a tabela vive com o cabecalho
 /// do `.log` atras do arquivo. A cria `clientes`, e a rodada seguinte de B
-/// absorve o diario local inteiro no mapa. Duas
-/// provas, as duas pelo soquete: o escritor ANDA enquanto a absorcao esta pela
-/// metade ([`ANDARAM_NO_MEIO`]), e o `replicacao_estado` de B diz que menos de
-/// um lote passou com a trava exclusiva na mao.
+/// absorve o diario local inteiro no mapa. Tres
+/// provas, todas pelo `replicacao_estado` de B: menos de um lote passou com a
+/// trava exclusiva na mao, escritor PEGOU a trava entre as fatias
+/// ([`ENTRARAM_ENTRE_FATIAS`]), e nenhuma fatia retomou a leitura passando na
+/// frente de escritor na fila.
 ///
-/// O vermelho: sem a chamada a `pre_absorver_sob_leitura` em
-/// `abrir_para_bidi`, a absorcao inteira roda sob a exclusiva -- o mapa nunca
-/// e visto pela metade (o `replicacao_estado` espera o mapa junto) e
-/// `sob_a_exclusiva` vira os 300.000. Medido em 01/10/2026.
+/// Os vermelhos, medidos em 01/10/2026: sem a chamada a
+/// `pre_absorver_sob_leitura` em `abrir_para_bidi`, a absorcao inteira roda
+/// sob a exclusiva -- `sob_a_exclusiva` vira os 300.000 e ninguem entra entre
+/// fatias, porque nao ha fatia; sem o `ceder` entre as fatias, o leitor fura
+/// a fila do escritor (pedido 623).
 #[test]
 fn a_primeira_rodada_nao_para_o_escritor() {
     let base_a = DirTemp::novo("absorcao330-a");
@@ -227,8 +236,12 @@ fn a_primeira_rodada_nao_para_o_escritor() {
     let parar = Arc::new(AtomicBool::new(false));
     let feitos = Arc::new(AtomicU64::new(0));
     let porta_b = b.porta;
-    let (sinal, conta) = (Arc::clone(&parar), Arc::clone(&feitos));
-    let fio = std::thread::spawn(move || escritor(porta_b, sinal, conta));
+    let fios: Vec<_> = (1..=ESCRITORES)
+        .map(|n| {
+            let (sinal, conta) = (Arc::clone(&parar), Arc::clone(&feitos));
+            std::thread::spawn(move || escritor(porta_b, n * 1_000_000, sinal, conta))
+        })
+        .collect();
     // O escritor ja esta gravando quando A passa a ter a tabela: a absorcao
     // acontece com ele no meio, e nao antes nem depois.
     std::thread::sleep(Duration::from_millis(300));
@@ -243,7 +256,7 @@ fn a_primeira_rodada_nao_para_o_escritor() {
     );
 
     // Quantos `inserir` terminaram na primeira vez que o mapa foi visto pela
-    // metade, e na primeira em que foi visto inteiro.
+    // metade, e na primeira em que foi visto inteiro -- so para o relatorio.
     let ate = Instant::now() + Duration::from_secs(120);
     let mut no_meio: Option<u64> = None;
     let no_fim = loop {
@@ -262,12 +275,19 @@ fn a_primeira_rodada_nao_para_o_escritor() {
         std::thread::sleep(Duration::from_millis(50));
     };
     parar.store(true, Ordering::SeqCst);
-    let maior = fio.join().unwrap();
+    let maior = fios
+        .into_iter()
+        .map(|f| f.join().unwrap())
+        .max()
+        .unwrap_or_default();
     let sob = do_mapa(b.porta, "sob_a_exclusiva");
+    let entraram = do_mapa(b.porta, "escritores_entre_fatias");
+    let furaram = do_mapa(b.porta, "fatias_que_furaram_a_fila");
     let andaram = no_meio.map(|m| no_fim - m);
     eprintln!(
-        "absorcao-do-bidi: {andaram:?} inserir durante a absorcao, maior espera {maior:?}, \
-         sob a exclusiva {sob}"
+        "absorcao-do-bidi: {andaram:?} inserir terminados durante a absorcao, maior espera \
+         {maior:?}, sob a exclusiva {sob}, entraram entre fatias {entraram}, \
+         fatias que furaram a fila {furaram}"
     );
     // Do diario inteiro, so a cauda -- menos de um lote -- passou com a trava
     // exclusiva na mao. Com o defeito reposto, os 300.000 passam.
@@ -277,14 +297,16 @@ fn a_primeira_rodada_nao_para_o_escritor() {
     );
     // O diario inteiro entrou: os 300.000 de antes e o que o escritor gravou.
     assert!(do_mapa(b.porta, "chaves") >= EVENTOS);
-    // E o escritor ANDOU enquanto a absorcao estava pela metade.
-    let andaram = andaram.expect(
-        "o mapa nunca foi visto pela metade: a absorcao aconteceu inteira de uma vez, \
-         com a trava exclusiva na mao",
-    );
+    // O escritor PEGOU a trava enquanto a absorcao estava pela metade.
     assert!(
-        andaram >= ANDARAM_NO_MEIO,
-        "so {andaram} inserir terminaram durante a absorcao (minimo {ANDARAM_NO_MEIO}): \
-         a absorcao do diario local segurou o escritor"
+        entraram >= ENTRARAM_ENTRE_FATIAS,
+        "so {entraram} escritor(es) pegaram a trava entre as fatias da absorcao \
+         (minimo {ENTRARAM_ENTRE_FATIAS}): a absorcao do diario local segurou o escritor"
+    );
+    // E nenhuma fatia passou na frente de quem esperava.
+    assert_eq!(
+        furaram, 0,
+        "{furaram} fatia(s) retomaram a leitura com escritor na fila e nenhum dentro: \
+         a absorcao nao cedeu a vez"
     );
 }

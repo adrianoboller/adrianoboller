@@ -54,6 +54,11 @@ async function subir() {
   writeFileSync(caminho, JSON.stringify({
     base, bind: `127.0.0.1:${PORTA_DADOS}`, token: TOKEN, max_linhas: 5000,
     web: { ligado: true, bind: `127.0.0.1:${PORTA_WEB}`, sessao_minutos: 60 },
+    // A porta HTTP da captura e texto puro em 127.0.0.1, de proposito: desde
+    // o pedido 370 `cifra_fio.exigir` nasce `true` e toda porta HTTP sem
+    // proxy TLS responde 403 -- a captura fotografava o JSON do 403 em vez
+    // da tela. O escape ESCRITO, o mesmo da `testes-web/servidor.mjs`.
+    cifra_fio: { exigir: false },
     recursos: { durabilidade: 'sistema', cache_paginas: 512 },
     usuarios: [{
       id: 10, nome: 'Adriano Boller', login: USUARIO,
@@ -379,10 +384,22 @@ async function rodada(navegador, servidor, tema, quais, primeira) {
 
   // --- multitela: quatro telas lado a lado
   if (q('multitela')) {
+    // A largura sai da PAGINA, e nao de um numero digitado: quatro regioes
+    // pedem 4 x MIN_REGIAO (660 px, `ui/multitela.js`) MAIS a lateral e as
+    // calhas. Os 2.800 px digitados antes nao cabiam -- o `dividir(4)`
+    // recusava com «não cabem 4 regiões» e a foto saia com uma tela so.
     await page.setViewportSize({ width: 2800, height: 1050 });
+    await dormir(300);
+    const larg = await page.evaluate(() => {
+      const reg = document.querySelector('#regioes');
+      const fora = window.innerWidth - (reg ? reg.getBoundingClientRect().width : 0);
+      return Math.ceil(4 * 660 + fora + 40);
+    });
+    await page.setViewportSize({ width: Math.max(2800, larg), height: 1050 });
     await dormir(700);
     await page.evaluate(async d => {
       const W = PhxTelas._W;
+      if (PhxTelas.maxRegioes() < 4) throw new Error(`cabem ${PhxTelas.maxRegioes()} regiões em ${innerWidth}px, não 4`);
       PhxTelas.dividir(4);
       const r = W.regioes;
       await PhxTelas.abrir('diagrama', { db: d }, { regiao: r[0] });

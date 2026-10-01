@@ -1104,6 +1104,10 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `evento-pre-344-ao-fio-sem-abrir` | o evento do diario gravado antes do 344 (externo selado, sem o bit) sai para o fio como veio: a replica grava o cifrado como se fosse o anexo | 1 | ✅ provada |
 | `portao-da-carga-le-um-campo-so` | O portão da carga (Portão 4) lia só `"tabela"`: a tabela reservada pelo `BULKINSERT` se lia como o lado B de um `juntar` | 2 | ✅ provada |
 | `bidi-absorve-o-diario-sob-a-exclusiva` | A primeira rodada do bidirecional depois do arranque absorvia o diário local inteiro com a trava exclusiva na mão | 1 | ✅ provada |
+| `bidi-absorve-o-diario-sob-a-exclusiva-pelo-soquete` | A primeira rodada do bidirecional depois do arranque absorvia o diário local inteiro com a trava exclusiva na mão — a prova pelo soquete, com o escritor de cliente gravando | 1 | ✅ provada |
+| `pre-absorcao-fura-a-fila-do-escritor` | A absorção do bidirecional retomava a trava de leitura entre as fatias antes de o escritor acordado entrar, e o escritor esperava dezenas de fatias | 1 | ✅ provada |
+| `leitor-que-cede-volta-na-hora` | O leitor que cede a vez voltava sem esperar o escritor da fila pegar a ficha exclusiva | 1 | ✅ provada |
+| `fatia-com-o-prazo-vencido-nao-anda` | A fatia da absorção que chegava com o prazo já vencido saía sem lote nenhum, e a pré-absorção entregava o resto à trava exclusiva | 1 | ✅ provada |
 | `diario-sob-a-compartilhada-recusa-a-cauda` | A leitura do diário sob a ficha compartilhada recusava a tabela escrita desde o último fecho da janela, e a absorção do bidirecional voltava inteira para a exclusiva | 1 | ✅ provada |
 | `bidi-rodada-seguinte-sem-a-marca-do-diario` | Cada rodada do bidirecional com um evento local novo caminhava o diário desde o começo do volume para lê-lo | 1 | ✅ provada |
 | `posicao-do-cluster-conta-tabela-que-nao-replica` | A posição somada do cluster contava tabela que não é replicada, e o nó com dado local ganhava a eleição | 2 | ✅ provada |
@@ -1116,9 +1120,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `fts-montado-pela-declaracao-velha` | A redeclaração do índice de texto montava o .fts novo pela declaração velha | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**473 das 648 guardas do catálogo: 1 aposentada, 468 provadas, 4 redundantes** — 14350 s de mutação, medido em 2026-09-16 15:25.
+**477 das 652 guardas do catálogo: 1 aposentada, 472 provadas, 4 redundantes** — 14616 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 176 das 648 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 176 das 652 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação

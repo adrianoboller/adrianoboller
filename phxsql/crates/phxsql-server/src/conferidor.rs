@@ -1404,7 +1404,13 @@ pub fn token_sem_definicao_e_sem_fallback() -> Vec<(&'static str, String)> {
 /// isso a guarda da paridade so vale para quem passa pelo `marcado()`.
 ///
 /// Medido pelo conferidor antes (904) e depois (880).
-pub const TETO_ROTULOS_E_CRASE: usize = 880;
+///
+/// A revisao medida da interface (01/10/2026) achou a catraca FROUXA em um:
+/// o conferidor contava 879 e o teto dizia 880 -- alguem traduziu e nao
+/// desceu. Desceu para o medido, e a mesma leva traduziu oito rotulos dos
+/// botoes que ganharam a cor da acao e do titulo de «Diretivas do banco»:
+/// medido 871.
+pub const TETO_ROTULOS_E_CRASE: usize = 871;
 #[cfg(test)]
 mod testes {
     use std::collections::HashSet;

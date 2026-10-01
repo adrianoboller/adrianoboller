@@ -36,18 +36,18 @@ foi estimado no lugar de uma medição que faltou.
 |---|---:|---:|---:|---:|---:|---:|
 | `phxsql-cli` | 1 | 866 | 104 | 148 | 81 | 1199 |
 | `phxsql-cmd` | 2 | 621 | 110 | 210 | 65 | 1006 |
-| `phxsql-core` | 40 | 15286 | 5934 | 4764 | 1989 | 27973 |
+| `phxsql-core` | 40 | 15358 | 6000 | 4812 | 2002 | 28172 |
 | `phxsql-ffi` | 7 | 1524 | 1786 | 930 | 297 | 4537 |
 | `phxsql-odbc` | 7 | 3164 | 1258 | 1108 | 279 | 5809 |
-| `phxsql-server` | 64 | 56415 | 48427 | 34618 | 7014 | 146474 |
+| `phxsql-server` | 64 | 56520 | 48427 | 34666 | 7016 | 146629 |
 | `phxsql-sql` | 10 | 7337 | 4124 | 2858 | 843 | 15162 |
-| `phxsql-store` | 29 | 23084 | 5544 | 10542 | 2338 | 41508 |
+| `phxsql-store` | 29 | 23216 | 5544 | 10650 | 2351 | 41761 |
 | `phxzip` | 9 | 3074 | 501 | 804 | 284 | 4663 |
-| **total** | **169** | **111371** | **67788** | **55982** | **13190** | **248331** |
+| **total** | **169** | **111680** | **67854** | **56186** | **13218** | **248938** |
 
-Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **67788/111371 = 0.61×**.
+Proporcao teste/codigo (so `src/`, sem comentario nem linha vazia): **67854/111680 = 0.61×**.
 
-Alem do `src/`: **94** programas de medicao em `examples/` (22821 linhas — bancada em Rust, nao produto nem teste) e **126** arquivos em `tests/` de integracao fora de `src/` (45237 linhas).
+Alem do `src/`: **94** programas de medicao em `examples/` (22821 linhas — bancada em Rust, nao produto nem teste) e **127** arquivos em `tests/` de integracao fora de `src/` (45713 linhas).
 <!-- /GERADO -->
 
 A proporção teste/código sai medida no bloco acima, não digitada aqui. O
@@ -74,8 +74,8 @@ Lista extraida de `crates/phxsql-server/src/http.rs` (todo `include_str!`/`inclu
 
 | arquivo embutido | linhas | KiB |
 |---|---:|---:|
-| `ui/index.html` | 15774 | 896.0 |
-| `ui/grid/phx-grid.css` | 168 | 12.3 |
+| `ui/index.html` | 15807 | 898.7 |
+| `ui/grid/phx-grid.css` | 178 | 12.8 |
 | `ui/grid/phx-grid.js` | 1860 | 90.1 |
 | `ui/diagrama-er.js` | 712 | 29.1 |
 | `ui/telemetria.css` | 447 | 19.8 |
@@ -83,8 +83,8 @@ Lista extraida de `crates/phxsql-server/src/http.rs` (todo `include_str!`/`inclu
 | `ui/multitela.css` | 156 | 8.6 |
 | `ui/multitela.js` | 1588 | 69.0 |
 | `ui/claude.js` | 1533 | 77.8 |
-| `ui/grid/CHANGELOG-phx-grid.md` | 224 | 29.7 |
-| **total (10 arquivos)** | **24282** | **1321.6** |
+| `ui/grid/CHANGELOG-phx-grid.md` | 232 | 30.2 |
+| **total (10 arquivos)** | **24333** | **1325.2** |
 
 Em `ui/` mas **fora** do `include_str!`/`include_bytes!` (4 arquivos, não embutidos no binário):
 - `crates/phxsql-server/ui/explorador.css`
@@ -108,11 +108,11 @@ mesmo motivo que o rodapé já errou uma vez.
 <!-- GERADO: bloco_outras_linguagens() -->
 | o que | onde | arquivos | linhas |
 |---|---|---:|---:|
-| JavaScript (prova ponta a ponta) | `testes-web/` | 59 | 13151 |
-| Python (bancada de medicao) | `bancada/` | 140 | 72203 |
-| Shell (empacotar, zelador, provas) | todo o repositorio | 26 | 3883 |
-| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 619 | 135899 |
-| Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | 39 | 18389 |
+| JavaScript (prova ponta a ponta) | `testes-web/` | 60 | 13601 |
+| Python (bancada de medicao) | `bancada/` | 140 | 72335 |
+| Shell (empacotar, zelador, provas) | todo o repositorio | 27 | 3925 |
+| Markdown (documentacao tecnica) | `docs/`, **recursivo** (inclui `cognicao/`, `dossie/`, `propostas/`, `pmo/`) | 621 | 136291 |
+| Python (geradores de documentacao) | `docs/`, **recursivo** (`dossie/`, `pmo/`, `status/`, `planilha/`, `tecnologias/`, `geradores/`) | 42 | 18770 |
 
 A linha «Markdown (documentacao tecnica)» acima **exclui o proprio `docs/TECNOLOGIAS.md`** da contagem — ele e a SAIDA deste extrator, e contar a saida como entrada faz cada gravacao mudar o numero que a gravacao seguinte vai ler (pedido 404: tres corridas seguidas sem edicao nenhuma publicaram 106.750 -> 106.752 -> 106.753 linhas, nunca um ponto fixo). Mesmo molde da §17 da setima pagina de status, que escreve «— (esta pagina)» em vez de medir a si mesma.
 <!-- /GERADO -->
@@ -317,7 +317,7 @@ Conferidores em `crates/phxsql-server/src/`: `conferidor.rs`, `conferidor_botoes
 | `TETO_DO_NOME_NO_PULSO` | 256 | `crates/phxsql-server/src/cluster.rs` |
 | `TETO_COLADO` | 0 | `crates/phxsql-server/src/conferidor.rs` |
 | `TETO_FRASE_REPETIDA` | 0 | `crates/phxsql-server/src/conferidor.rs` |
-| `TETO_ROTULOS_E_CRASE` | 880 | `crates/phxsql-server/src/conferidor.rs` |
+| `TETO_ROTULOS_E_CRASE` | 871 | `crates/phxsql-server/src/conferidor.rs` |
 | `TETO_BOTAO_SEM_PROVA` | 119 | `crates/phxsql-server/src/conferidor_botoes.rs` |
 | `TETO_LEITURA_FORA_DO_CANAL` | 0 | `crates/phxsql-server/src/conferidor_canal.rs` |
 | `TETO_TABELA_NA_MAO` | 0 | `crates/phxsql-server/src/conferidor_grades.rs` |
@@ -345,7 +345,7 @@ Conferidores em `crates/phxsql-server/src/`: `conferidor.rs`, `conferidor_botoes
 
 **31** catracas (`TETO*`) encontradas em `crates/phxsql-server/src/`.
 
-`bancada/guardas/catalogo.py` cataloga **643** defeitos repostos, contados de `len(GUARDAS)` depois de importar o modulo (nao por regex no texto -- entradas com `trocas` tem mais de um `{` cada, e uma contagem de chaves as conta em dobro ou mais). Linhas do arquivo: 21502. Refazer a prova: `python3 bancada/guardas/provar-guardas.py`.
+`bancada/guardas/catalogo.py` cataloga **648** defeitos repostos, contados de `len(GUARDAS)` depois de importar o modulo (nao por regex no texto -- entradas com `trocas` tem mais de um `{` cada, e uma contagem de chaves as conta em dobro ou mais). Linhas do arquivo: 21625. Refazer a prova: `python3 bancada/guardas/provar-guardas.py`.
 <!-- /GERADO -->
 
 - **Ponta a ponta, pelo navegador**: os arquivos `.mjs` de `testes-web/` —
@@ -430,6 +430,38 @@ O terceiro entrou em 23/09/2026 e é **prova real nos dois sentidos**: VERDE
 (saída 0) com o conserto, VERMELHO (saída 1, no caso do meio) com o defeito
 reposto. Roda em segundos e **não chama `cargo`** — cabe em rodada com o disco
 apertado.
+
+#### O material de apresentação, feito com ferramentas de FORA do produto (01/10/2026)
+
+As 79 telas do console viraram quatro saídas: a página `telas-na-sequencia.html`,
+um PPTX, um vídeo e dois PDF. Nenhuma ferramenta abaixo entra no binário nem no
+`Cargo.lock` — a pétrea de zero dependências é do **produto**; o trabalho usa o
+que o contêiner tem, e por isso esta lista existe: quem refaz precisa saber de
+onde veio cada arquivo.
+
+| saída | ferramenta | medido em 01/10/2026 | o roteiro, no repositório |
+|---|---|---|---|
+| capturas (79, tema claro e escuro) | Chromium do `playwright` contra o `phxsqld` real | 79 PNG do claro, 10.974.703 bytes | `docs/dossie/telas/capturar-telas.mjs` |
+| página das telas | Python 3 da `std`; imagens no **depósito de arquivos** da página (`assets`) | 50.271 bytes publicados | `docs/dossie/pagina-das-telas.py` |
+| PPTX | `pptxgenjs` 4.0.1 (npm, fora do repositório) | 12.397.319 bytes | `docs/dossie/telas/fora-do-produto/pptx-gerar.js` |
+| conferência do PPTX | `python-pptx` 1.0.2 + Pillow 12.3.0, renderizador aproximado (não há LibreOffice Impress no contêiner) | transbordo e forma fora do slide, por slide | `…/fora-do-produto/pptx-conferir.py` |
+| vídeo | `ffmpeg` 7.0.2 do pacote Python `imageio-ffmpeg` 0.6.0, `libx264` | 7.726.326 bytes, 5 min 16 s, 1920×1080, 4 s por tela | `…/fora-do-produto/video.sh` |
+| PDF das telas | Chromium do `playwright`, `page.pdf` na folha de impressão da página (A4 paisagem, uma tela por folha) | 25.208.809 bytes (claro) | `…/fora-do-produto/pdf-telas.mjs` + `docs/dossie/embutir-fontes.py` |
+
+Três ressalvas, ditas em vez de escondidas:
+
+- **Os roteiros moravam no `scratchpad` da sessão** e teriam morrido com ela; a
+  pasta `docs/dossie/telas/fora-do-produto/` os guarda. São **matéria-prima,
+  não pipeline**: o `pptx-gerar.js` lê um `telas.json` e uma pasta `png/` que o
+  `capturar-telas.mjs` não emite nessa forma, e traz o ROTEIRO como **cópia
+  digitada** do `roteiro.json` (conferida igual em 01/10: 79 ids na mesma
+  ordem). Lista copiada diverge na primeira mudança — é a dívida aberta dele.
+- **O `video.sh` foi reconstruído** do comando registrado na sessão e passou a
+  ler a ordem do `roteiro.json`, em vez da cópia `ordem.json` da corrida
+  original. Prova: rodado de novo sobre as mesmas capturas, saiu **byte a byte
+  igual** ao vídeo entregue (`cmp`, 7.726.326 bytes, 2 min 01 s de relógio).
+- O `pptxgenjs` foi instalado com `npm` numa pasta temporária; **não há
+  `node_modules` no repositório**, pela mesma razão do `playwright`.
 
 #### A árvore exata, para os portões rodarem sobre o que vai ser comitado
 
@@ -550,7 +582,7 @@ defeito.
 ### 4.5 Testes, medidos agora
 
 <!-- GERADO: bloco_testes() -->
-`cargo test --workspace`: **3489** testes passaram, **0** falharam (medido em 2026-10-01 01:45:03, commit `46bad091`, do `CAPABILITIES.json`).
+`cargo test --workspace`: **3632** testes passaram, **0** falharam (medido em 2026-10-01 13:43:47, commit `b236d662`, do `CAPABILITIES.json`).
 <!-- /GERADO -->
 
 Esta é a única linha deste documento que muda legitimamente a cada rodada, e
@@ -620,7 +652,7 @@ proposta de voltar sem medição nova.
 ### 5.1 Pedidos recusados, do próprio `PENDENCIAS.md`
 
 <!-- GERADO: bloco_recusados() -->
-`docs/PENDENCIAS.md` tem **617** pedidos numerados; **111** trazem a palavra RECUSADO no proprio texto:
+`docs/PENDENCIAS.md` tem **623** pedidos numerados; **113** trazem a palavra RECUSADO no proprio texto:
 
 | # | pedido |
 |---:|---|
@@ -636,6 +668,7 @@ proposta de voltar sem medição nova.
 | 164 | **A trava global e o MVCC, medidos antes de virarem plano — e duas premissas morreram** |
 | 169 | **A cascata só planejava um nível — a três, recusava DEPOIS de gravar** |
 | 174 | **A auto-referência sai da cascata em SILÊNCIO — e os dois motores de referência RECUSAM** |
+| 175 | **Índice da chave: havia uma terceira saída — CRIAR — e nós não a vimos** |
 | 176 | **A tabela que aponta para si devolve «o índice ficou para trás numa queda» quando não houve queda nenhuma** |
 | 179 | **O teto do MVCC morreu medido — a Sombra continua de pé, por outro motivo** |
 | 180 | **O comboio do fecho de janela é real, e nem `RwLock` nem MVCC o consertam** |
@@ -687,6 +720,7 @@ proposta de voltar sem medição nova.
 | 356 | **SEC ALTO — o Profiler decide por `cifra.tabelas` e a cifra acontece por `DadoPessoal`: dois campos, uma garantia** |
 | 357 | **SEC MEDIO-ALTO — a trilha `.lgpd` redige por NOME de coluna e por analise de hash, nunca pela marca `DadoPessoal`: a §11.7 escreveu a condicao no futuro do preterito, e ela chegou** |
 | 358 | **SEC MEDIO — o rowid E o balde, e o balde e o primeiro caractere: a particao por letra vaza pelo PROTOCOLO, para quem tem a coluna negada** |
+| 364 | **Nao existe caminho para REDECLARAR indice de texto numa tabela que ja existe: quem perdeu a declaracao fica com um `.fts` orfao e so recupera recriando a tabela** |
 | 366 | **ORDEM DO DONO, 18/09/2026 -- a comunicacao deve OBRIGATORIAMENTE ser cifrada** |
 | 372 | **SEC -- o `dblink.json` grava a senha do destino em texto puro, por padrao** |
 | 379 | **O assistente de replicacao da tela gera o bloco do `config.json` sem `cifra`** |
@@ -1046,6 +1080,21 @@ em `docs/dossie/prova-do-botao-de-baixar.mjs`; a medição, em
   (mesmo inode, mesmo CRC, sem tocar o disco), e `copiar`/`duplicar` só
   atesta a cópia quando a ORIGEM já estava atestada — o CRC copiado viaja
   junto do `.reg`, sob a mesma trava que já existia, sem `fsync` extra.
+
+### 5.11 As telas embutidas na página, e as telas dentro do dossiê — recusadas com o número (01/10/2026)
+
+- **Embutir as 79 capturas na página, como a oitava página embute as vinte
+  dela.** Medido: as 79 PNG do tema claro somam **10.974.703 bytes**, e em
+  base64 **14.633.032** — **31,8×** o teto de republicação de ~450 KiB
+  (pedido 403). Uma página assim publica uma vez e nunca mais se republica,
+  porque o guarda exige lê-la inteira antes. No depósito de arquivos
+  (`assets`) as imagens sobem uma vez e a página publicada tem **50.271
+  bytes**. *O docstring do `pagina-das-telas.py` diz «~12 MB» e «26×»: número
+  digitado, que não bate com a medição do tema claro — vale o desta linha.*
+- **Pôr as telas dentro do dossiê.** Página que declara `assets` fica
+  **interna da organização**, e o dossiê é compartilhado com quem está de fora
+  (pedido 326). Pôr as telas nele trocaria o alcance do dossiê inteiro pelas
+  imagens de uma seção. Ficaram numa página própria, ligada da §18.
 
 ---
 

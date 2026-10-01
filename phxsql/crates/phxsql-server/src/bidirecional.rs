@@ -411,6 +411,15 @@ pub struct MapaDeToques {
     /// prova onde a absorcao acontece: com o desenho certo, a primeira rodada
     /// depois do arranque deixa aqui so a cauda, menos de um lote.
     pub absorvidos_sob_a_exclusiva: u64,
+    /// Quantos escritores pegaram a ficha exclusiva ENTRE duas fatias da
+    /// pre-absorcao -- pedido 623. E a prova de que a absorcao nao segurou o
+    /// escritor, contada na ENTRADA dele e nao no fim do `inserir`: o fim
+    /// carrega o disco de quem escreve, a entrada so a trava.
+    pub escritores_entre_as_fatias: u64,
+    /// Fatias que retomaram a leitura com escritor na fila sem nenhum ter
+    /// entrado: o leitor passou na frente. Com a vez cedida, so o teto
+    /// (`TETO_DA_VEZ_CEDIDA`) poe numero aqui.
+    pub fatias_que_furaram_a_fila: u64,
     /// Chave canonica -> ultimo toque.
     pub toques: HashMap<String, Toque>,
     /// Quantas colisoes de criacao (defeito (a)) esta tabela ja sofreu neste

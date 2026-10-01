@@ -89,7 +89,7 @@
 }
 .tlm-faixa-leg span { display:inline-flex; align-items:center; gap:4px; }
 .tlm-faixa-leg i { width:8px; height:3px; border-radius:2px; display:inline-block; }
-.tlm-faixa-leg .tlm-topo { margin-left:auto; opacity:.75; }
+.tlm-faixa-leg .tlm-topo { margin-left:auto; }
 
 /* ------------------------------------------------------- painel de bolhas */
 
@@ -245,7 +245,7 @@ input.tlm-busca {
    do estado: a cor já está no círculo, e repeti-la na frase inteira deixaria
    quatro linhas berrando ao mesmo tempo — que é o mesmo defeito do painel
    todo vermelho, um andar acima. */
-.tlm-leg i { font-style:normal; color:var(--texto-3); opacity:.85; }
+.tlm-leg i { font-style:normal; color:var(--texto-3); }
 .tlm-leg svg { width:13px; height:13px; align-self:center; flex:none; }
 .tlm-leg circle { fill-opacity:.2; stroke-width:2; }
 .tlm-leg[data-n="normal"] circle { fill:var(--reg); stroke:var(--reg); }
