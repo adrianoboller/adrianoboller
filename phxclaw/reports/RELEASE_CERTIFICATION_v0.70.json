@@ -1,10 +1,11 @@
 {
   "product": "PhxClaw",
   "version": "0.70.0",
-  "certified_at": "2026-09-30T20:47:40+00:00",
+  "certified_at": "2026-10-01T01:49:11+00:00",
   "environment": "Linux 6.18.44-fc-v50 x86_64",
+  "target": "linux",
   "verdict": "NOT_CERTIFIED",
-  "required_passed": 10,
+  "required_passed": 11,
   "required_total": 13,
   "gates": [
     {
@@ -21,7 +22,7 @@
       "required": true,
       "status": "passed",
       "command": "cargo clippy --workspace --all-targets -q -- -D warnings",
-      "seconds": 1.9,
+      "seconds": 35.0,
       "evidence_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "tail": []
     },
@@ -30,15 +31,15 @@
       "required": true,
       "status": "passed",
       "command": "cargo test --workspace --no-fail-fast 2>&1",
-      "seconds": 135.8,
-      "evidence_sha256": "5e8b00aa8287a5687b9b2f9b981e01c341ebeb25ae8f5efa22172c82474259c1",
+      "seconds": 286.5,
+      "evidence_sha256": "9fcab4656eadc3d91c6ba4ba53279c55ef3703a87524ef60fb8bbb206fd62301",
       "tail": [
         "running 0 tests",
         "",
         "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ],
       "measured": {
-        "passed": 271,
+        "passed": 273,
         "failed": 0,
         "ignored": 12
       }
@@ -48,7 +49,7 @@
       "required": true,
       "status": "passed",
       "command": "cargo audit 2>&1",
-      "seconds": 1.8,
+      "seconds": 4.8,
       "evidence_sha256": "014e7b8517b76f8354ffdfb11c9f9d3e5ba2636124d249646cc16286b1041dbc",
       "tail": [
         "Warning:   yanked",
@@ -64,8 +65,8 @@
       "required": true,
       "status": "passed",
       "command": "cargo test -q -p phxclaw-agent -p phxclaw-llm -p phxclaw-browser -p phxclaw-web-search -p phxclaw-office 2>&1",
-      "seconds": 9.4,
-      "evidence_sha256": "c0cb39446bf08f8b8852ca9d8b17d79917ea874f21268cbc40be3517a423f3a5",
+      "seconds": 24.8,
+      "evidence_sha256": "531604e8a4726951a68a2251dc1477e308e39c717ffb8744f69eedb462f3c269",
       "tail": [
         "running 0 tests",
         "",
@@ -82,7 +83,7 @@
       "required": true,
       "status": "passed",
       "command": "tests/postgres/run_e2e.sh 2>&1",
-      "seconds": 7.4,
+      "seconds": 12.0,
       "evidence_sha256": "29bdec5521655f510f26ad8c0eb67f122263c67f9696579cee8a397909b6a2a7",
       "tail": [
         "ok   [rust/rls] phxclaw-bpm pg_e2e",
@@ -96,26 +97,26 @@
       "required": true,
       "status": "passed",
       "command": "(tests/chaos/pg_kill_loop.sh 30 >/dev/null 2>&1 &) ; cargo test -q -p phxclaw-hypothesis --test pg_chaos -- --ignored --nocapture 2>&1",
-      "seconds": 31.3,
-      "evidence_sha256": "5499129fa7d961e411c327a95bd45b819ba92773d08bad3b742f6f8b48c241bf",
+      "seconds": 30.8,
+      "evidence_sha256": "16fd1c219df086d492d464c39b7b70d0f524e0209cbd03f14ae881cb0a1c8c6e",
       "tail": [
-        "caos: 30 s, 6449 ok, 5 erros, 5 reconexoes, 2151 hipoteses no banco, 0 perdidas, 0 divergentes",
+        "caos: 30 s, 8653 ok, 5 erros, 5 reconexoes, 2887 hipoteses no banco, 0 perdidas, 0 divergentes",
         ".",
-        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 30.87s"
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 30.05s"
       ],
-      "measured": "caos: 30 s, 6449 ok, 5 erros, 5 reconexoes, 2151 hipoteses no banco, 0 perdidas, 0 divergentes"
+      "measured": "caos: 30 s, 8653 ok, 5 erros, 5 reconexoes, 2887 hipoteses no banco, 0 perdidas, 0 divergentes"
     },
     {
       "gate": "provider_local_ollama_e2e",
       "required": false,
       "status": "passed",
       "command": "cargo test -q -p phxclaw-ollama-adapter --test ollama_e2e -- --ignored 2>&1",
-      "seconds": 1.0,
-      "evidence_sha256": "72f68b3254068beb95fd749515970e7bb2940d7eac360a60579ecb3074622532",
+      "seconds": 32.5,
+      "evidence_sha256": "8af1ecdcf614e40e4b847a57c93544e034c22844678c53e763a67e6d8d162a88",
       "tail": [
         "running 2 tests",
         "..",
-        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.49s"
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 27.10s"
       ]
     },
     {
@@ -129,25 +130,53 @@
       "gate": "desktop_os_automation_e2e",
       "required": true,
       "status": "blocked",
-      "reason": "exige desktop FISICO (teclado, mouse, captura reais); aqui so ha Xvfb",
+      "reason": "sem display fisico (DISPLAY ausente ou de um Xvfb): rode a certificacao numa sessao grafica Linux de verdade",
       "evidence_sha256": null
     },
     {
+      "gate": "desktop_os_automation_xvfb",
+      "required": false,
+      "status": "passed",
+      "command": "Xvfb :94 -screen 0 1280x800x24 >/dev/null 2>&1 & X=$!; sleep 1; (DISPLAY=:94 timeout 60 xterm -geometry 40x10+600+500 -e 'sleep 55' &); sleep 2; DISPLAY=:94 cargo run -q -p phxclaw-system-automation --example prova-desktop --features desktop-input,screen-capture 2>&1; r=$?; kill $X; exit $r",
+      "seconds": 8.2,
+      "evidence_sha256": "9671c4ee0df643f12eefdc07fe12ad3d1250a16f12670503aabb440fca9b93db",
+      "tail": [
+        "placar: 4/4",
+        "xterm: cannot load font \"-misc-fixed-medium-r-semicondensed--13-120-75-75-c-60-iso10646-1\"",
+        "xterm: fatal IO error 11 (Resource temporarily unavailable) or KillClient on X server \":94\""
+      ],
+      "measured": "placar: 4/4"
+    },
+    {
       "gate": "device_pairing_wss_keyring_multiplatform_e2e",
-      "required": true,
+      "required": false,
       "status": "blocked",
-      "reason": "exige hardware multiplataforma (Windows, macOS, Android, iOS). O servidor WSS existe desde 30/09 e o pareamento esta provado em Linux entre processos, com TLS, token de uso unico, reconexao pela chave guardada e cerca crescente; falta o resto das plataformas",
+      "reason": "fora do alvo linux (Windows, macOS, Android, iOS): medido pelo kit do dono; ver device_pairing_wss_keyring_linux_e2e",
       "evidence_sha256": null
+    },
+    {
+      "gate": "device_pairing_wss_keyring_linux_e2e",
+      "required": true,
+      "status": "passed",
+      "command": "python3 tests/devices/pareamento_linux.py 2>&1",
+      "seconds": 24.1,
+      "evidence_sha256": "35fdf5d0c72e81f6aae41fa365e5a9ce53465213cc7c968d79921661d1fa9674",
+      "tail": [
+        "OK   religa pelo Secret Service, cerca sobe :: sessao 01a0f525-7910-7597-b272-0504a21acf8e cerca 3",
+        "OK   uma chave so no Secret Service :: 1",
+        "placar: 4/4"
+      ],
+      "measured": "placar: 4/4"
     },
     {
       "gate": "native_tauri_e2e",
       "required": true,
       "status": "passed",
       "command": "cargo build -q -p phxclaw-desktop && python3 tests/desktop/desktop_e2e.py 2>&1",
-      "seconds": 18.6,
-      "evidence_sha256": "2a2b92f6cb605eccb448e16be2b0dbb4fa2ebb9f6db712c691f95e6d5f1daf25",
+      "seconds": 58.9,
+      "evidence_sha256": "9950a6c8b14f1c835238a29ce093c412fe34cf8bcba2f62c3f03e2387ecf09a3",
       "tail": [
-        "ok   verify_evidence continua valido depois da negacao :: {\"records\": 137, \"final_hash\": \"5877d0e9a2a89116e6b850c3e1014f5c78072628d213ada04bef3368dc2089af\", \"valid\": true, \"first_invalid_line\": null}",
+        "ok   verify_evidence continua valido depois da negacao :: {\"records\": 139, \"final_hash\": \"707a2f3f78d7294093c96dc4721986309dd737a3977034a3f899b50c08eff2f5\", \"valid\": true, \"first_invalid_line\": null}",
         "ok   captura da janela gravada :: /home/user/adrianoboller/phxclaw/tests/desktop/out/desktop_e2e.png",
         "placar: 12/12"
       ],
@@ -158,12 +187,12 @@
       "required": true,
       "status": "passed",
       "command": "cargo test -q -p phxclaw-media-intelligence --test stt_e2e -- --ignored 2>&1",
-      "seconds": 7.0,
-      "evidence_sha256": "9e01a1d2f22de6346e6cc6f6fdbc9d6255983562cc562291223af046ed4c1795",
+      "seconds": 13.6,
+      "evidence_sha256": "de5e21cd70426ea253cceb63c1a22051758719e8f634a836b4acb73b10de2dec",
       "tail": [
         "running 2 tests",
         "..",
-        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.62s"
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 12.99s"
       ],
       "measured": "test result: ok. 2 passed; 0 failed;"
     },
@@ -172,8 +201,8 @@
       "required": true,
       "status": "passed",
       "command": "cargo test -p phxclaw-plugin-registry --lib 2>&1",
-      "seconds": 0.5,
-      "evidence_sha256": "096c117fe2487779b4bdc0418b420ba62c992bc742dfeb0bae2326c1f3b4c6e4",
+      "seconds": 2.3,
+      "evidence_sha256": "d66a4c02ae6fee6bdc1ecd079702f9ffbadb97d2074794a40ca6c9a31d0c1cee",
       "tail": [
         "test tests::signed_builtin_agents_load ... ok",
         "",
