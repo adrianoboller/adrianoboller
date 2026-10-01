@@ -102,7 +102,16 @@ MARCADORES = {
     # vocabulario do arquivo, e nao o que ele faz.
     "rede": [r"TcpStream::connect", r"TcpListener::bind", r"\bset_read_timeout\b",
              r"\bset_write_timeout\b", r"\bpeer_addr\b", r"\.shutdown\s*\("],
-    "espera": [r"\bthread::sleep\b", r"\bsleep\s*\("],
+    # Esperar por OUTRA thread com a trava na mao e espera tanto quanto
+    # dormir -- e pior, porque a duracao e a do trabalho do outro, que pode
+    # ser um `fsync` de pasta (pedido 627). Ate 01/10/2026 a agulha era so
+    # `sleep`, e a catraca dizia «zero espera» com a espera de garantia do
+    # 605 (`nascendo::esperar`, um `Condvar::wait`) dentro do `abrir_com`.
+    # A agulha e a CHAMADA de metodo (`.wait(`), e ela alcanca tambem o
+    # `Child::wait` e o `Barrier::wait` -- que sao espera do mesmo jeito.
+    "espera": [r"\bthread::sleep\b", r"\bsleep\s*\(", r"\.wait\s*\(",
+               r"\.wait_timeout\s*\(", r"\.wait_while\s*\(",
+               r"\.wait_timeout_while\s*\("],
     # O corpo de um gatilho BEFORE roda DENTRO da trava (o AFTER nao -- o
     # comentario do `rodar_gatilhos_depois` diz isso com todas as letras). Por
     # isso a agulha e o BEFORE e o interpretador, e nao a palavra «gatilho»:
@@ -125,6 +134,13 @@ MARCADORES = {
 LACO = re.compile(r"^\s*(for|while|loop)\b|\.iter\(\)|\.iter_mut\(\)|\.into_iter\(\)")
 
 CHAMADA = re.compile(r"\b([a-z_][a-z0-9_]*)\s*\(")
+# `modulo::funcao(` NAO e homonimo de ninguem: o caminho ja diz qual das
+# definicoes e. Sem isto, `crate::nascendo::esperar(` -- a espera de garantia
+# do 605, com a trava na mao -- resolvia para as QUATRO funcoes `esperar` da
+# arvore (o `asn1` que analisa bytes, o `email` que le soquete...), saia com
+# confianca 2/4 e nunca chegava a classe. Medido em 01/10/2026 (pedido 627):
+# com a agulha do `wait` e sem esta resolucao, a catraca continuava em zero.
+QUALIFICADA = re.compile(r"\b([a-z_][a-z0-9_]*)::([a-z_][a-z0-9_]*)\s*\(")
 # `let montar = |f, t| ...` e uma FUNCAO LOCAL, e ela nao e a `fn montar` de
 # outro arquivo. Sem isto, o `juntar` do `juncao.rs` -- que tem zero operacao
 # de rede, conferido a mao -- era classificado «atravessa a rede com a trava na
@@ -233,15 +249,30 @@ def fim_do_bloco(limpo: str, abre: int) -> int:
     return len(limpo) - 1
 
 
+def modulo_de(caminho):
+    """O nome pelo qual o Rust chama o modulo deste arquivo: `nascendo.rs` e
+    `nascendo`, `odbc/mod.rs` e `odbc`. `lib.rs` e `main.rs` nao tem nome de
+    modulo que alguem escreva antes de `::`, e ficam so com a chave nua."""
+    if caminho.stem == "mod":
+        return caminho.parent.name
+    if caminho.stem in ("lib", "main"):
+        return None
+    return caminho.stem
+
+
 def indexar_funcoes(arquivos):
     """nome da funcao -> lista de corpos (texto limpo).
 
     Lista, e nao um so, porque `impl` diferentes tem metodos homonimos: a
     resolucao aqui e por NOME, e ela une os homonimos de proposito. Sobre-
     aproximar e o erro seguro num mapa de secao critica.
+
+    Cada corpo entra tambem sob `modulo::nome`, para a chamada QUALIFICADA
+    (ver `QUALIFICADA`) resolver so para as definicoes daquele arquivo.
     """
     indice = {}
     for caminho in arquivos:
+        modulo = modulo_de(caminho)
         limpo = sem_comentario_nem_texto(caminho.read_text(encoding="utf-8"))
         for m in re.finditer(r"\bfn\s+([a-zA-Z_][a-zA-Z0-9_]*)", limpo):
             nome = m.group(1)
@@ -265,6 +296,8 @@ def indexar_funcoes(arquivos):
                 continue  # declaracao de trait, sem corpo
             fim = fim_do_bloco(limpo, k)
             indice.setdefault(nome, []).append(limpo[k:fim + 1])
+            if modulo:
+                indice.setdefault(f"{modulo}::{nome}", []).append(limpo[k:fim + 1])
     return indice
 
 
@@ -319,8 +352,22 @@ def alcancaveis(trecho, indice, saltos, memo=None):
     if saltos <= 0:
         return achados
     locais = set(FECHADURA.findall(trecho))
-    chamados = sorted({n for n in CHAMADA.findall(trecho)
-                       if n not in RUIDO and n not in locais and n in indice})
+    # A chamada qualificada resolve primeiro, e SAI do trecho antes da busca
+    # por nome nu -- senao o `esperar(` dentro de `nascendo::esperar(` voltaria
+    # a ser contado como os quatro homonimos.
+    qualificadas = set()
+
+    def tira(m):
+        chave = f"{m.group(1)}::{m.group(2)}"
+        if chave not in indice:
+            return m.group(0)
+        qualificadas.add(chave)
+        return " " * len(m.group(0))
+
+    nu = QUALIFICADA.sub(tira, trecho)
+    chamados = sorted(qualificadas | {n for n in CHAMADA.findall(nu)
+                                      if n not in RUIDO and n not in locais
+                                      and n in indice})
     for nome in chamados:
         chave = (nome, saltos)
         if chave not in memo:
@@ -563,7 +610,7 @@ def autoteste():
     """A prova real, nos dois sentidos: cada guarda FALHA com o defeito reposto.
 
     Medidor estatico e facil de acreditar e dificil de conferir -- ele nunca
-    quebra, so passa a responder outra coisa. Estas seis provas repoem, uma a
+    quebra, so passa a responder outra coisa. Estas oito provas repoem, uma a
     uma, os defeitos que este arquivo ja teve, e cada uma trava o conserto.
     """
     import tempfile
@@ -636,11 +683,35 @@ def autoteste():
             len(secoes) == 1 and secoes[0]["funcao"] == "op",
             f"achou {[s['funcao'] for s in secoes]}")
 
+    # 7. Esperar OUTRA thread e espera. O defeito real (pedido 627): a agulha
+    #    era so `sleep`, e a espera de garantia do 605 -- um `Condvar::wait`
+    #    dentro do `abrir_com`, com a trava na mao -- saia «zero espera».
+    confere("Condvar::wait e wait_timeout contam como espera",
+            "espera" in marcadores_em("{ m = PUBLICADA.wait(m).unwrap(); }")
+            and "espera" in marcadores_em("{ c.wait_timeout(g, d); }")
+            and "espera" not in marcadores_em("{ let espera = 1; }"),
+            "e a variavel que se chama espera nao")
+
+    # 8. `modulo::funcao(` resolve so para o modulo. O defeito real (pedido
+    #    627): `crate::nascendo::esperar(` virava os quatro `esperar` da
+    #    arvore, confianca 2/4, e a secao nunca chegava a classe.
+    indice = {"esperar": ["{ c.wait(g); }", "{ nada(); }"],
+              "nascendo::esperar": ["{ c.wait(g); }"],
+              "asn1::esperar": ["{ nada(); }"]}
+    c_qual = alcancaveis("{ crate::nascendo::esperar(d); }", indice, 2)
+    c_nu = alcancaveis("{ esperar(d); }", indice, 2)
+    c_outro = alcancaveis("{ asn1::esperar(d); }", indice, 2)
+    confere("chamada qualificada resolve so no modulo",
+            c_qual.get("espera", [((), 0)])[0][1] == 1.0
+            and abs(c_nu.get("espera", [((), 0)])[0][1] - 0.5) < 1e-9
+            and "espera" not in c_outro,
+            "nascendo:: -> 1,0; nu -> 0,5; asn1:: -> nada")
+
     print()
     if falhas:
         print(f"REPROVADO: {', '.join(falhas)}")
         return 1
-    print("as seis guardas passaram")
+    print("as oito guardas passaram")
     return 0
 
 
@@ -724,12 +795,37 @@ CATRACAS = [
         "secoes criticas que alcancam `fsync` com a trava na mao",
     ),
     (
-        "rede-ou-espera",
-        0,
-        "secoes esperam REDE com a trava global na mao. Este teto e zero e "
-        "nao e um numero como os outros: uma so ja ata o servidor inteiro ao "
-        "tempo de resposta de outra maquina.",
-        "secoes criticas que esperam REDE com a trava global na mao",
+        # APOSENTA a `rede-ou-espera` (teto 0), em 01/10/2026 (pedido 627),
+        # pela lei de cima: a regua passou a medir MAIS, e nao o codigo a
+        # piorar. Duas coisas mudaram nela de uma vez, e as duas eram a regua
+        # medindo menos do que dizia:
+        #
+        #   * a agulha de «espera» era so `sleep`; agora ve `Condvar::wait` e
+        #     `wait_timeout` -- esperar OUTRA thread com a trava na mao;
+        #   * `modulo::funcao(` resolve so no modulo (`QUALIFICADA`). Sem isso
+        #     `crate::nascendo::esperar(` era os quatro `esperar` da arvore,
+        #     confianca 2/4, e nunca chegava a classe -- so com a agulha nova
+        #     a catraca continuava em 0.
+        #
+        # O numero NASCE no medido do dia: 11, todas pela espera do 605
+        # (`nascendo::esperar`) nos caminhos que CRIAM sob a trava -- criar
+        # tabela/schema, copiar, duplicar, a replica e o dblink que criam a
+        # tabela que falta, e as cargas de idiomas/mensagens. Desde o 629 essa
+        # espera tem prazo (500 ms) e recusa com NASCENDO; continua sendo
+        # espera, e por isso continua contada. Daqui em diante so desce.
+        #
+        # O que ela AINDA nao ve, dito para nao virar o proximo 627: a mesma
+        # espera dentro do `Table::abrir_com` chega pelos homonimos de
+        # `abrir` (fracao baixa) e fica abaixo do `CERTO`. O 11 e piso do que
+        # existe, nao o total.
+        "rede-ou-espera-2",
+        11,
+        "secoes esperam REDE ou OUTRA THREAD (`sleep`, `Condvar::wait`) com "
+        "a trava global na mao. Cada uma ata o servidor inteiro ao tempo de "
+        "outra maquina ou de outro trabalho. SUBSTITUI a `rede-ou-espera` "
+        "(teto 0), aposentada em 01/10/2026 porque a regua mudou, nao o "
+        "codigo.",
+        "secoes criticas que esperam rede ou outra thread com a trava na mao",
     ),
 ]
 
@@ -749,8 +845,8 @@ def medir_para_a_catraca(secoes):
     return {
         "codigo-do-dono": sum(1 for s in secoes if "usuario" in certas(s)),
         "alcancam-fsync-2": sum(1 for s in secoes if "durabilidade" in certas(s)),
-        "rede-ou-espera": sum(1 for s in secoes
-                              if s["classe"] == "rede-ou-espera"),
+        "rede-ou-espera-2": sum(1 for s in secoes
+                                if s["classe"] == "rede-ou-espera"),
     }
 
 

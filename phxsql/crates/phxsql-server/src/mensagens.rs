@@ -296,6 +296,17 @@ pub const FABRICA: &[MensagemFabrica] = &[
         ],
     },
     MensagemFabrica {
+        nome: "erro.nascendo",
+        textos: [
+            "tabela nascendo: {detalhe}",
+            "table en cours de création : {detalhe}",
+            "table still being created: {detalhe}",
+            "tabella in creazione: {detalhe}",
+            "Tabelle wird gerade angelegt: {detalhe}",
+            "tabla en creación: {detalhe}",
+        ],
+    },
+    MensagemFabrica {
         nome: "erro.transacao_abortada",
         textos: [
             "transacao abortada: {detalhe}",
@@ -867,6 +878,7 @@ pub fn decompor(e: &PhxError) -> (&'static str, String) {
         PhxError::EmCarga(m) => ("erro.em_carga", m.clone()),
         PhxError::EmTransacao(m) => ("erro.em_transacao", m.clone()),
         PhxError::EmMigracao(m) => ("erro.em_migracao", m.clone()),
+        PhxError::Nascendo(m) => ("erro.nascendo", m.clone()),
         PhxError::TransacaoAbortada(m) => ("erro.transacao_abortada", m.clone()),
         PhxError::LimiteExcedido(m) => ("erro.limite_excedido", m.clone()),
         PhxError::Cancelado(m) => ("erro.cancelado", m.clone()),

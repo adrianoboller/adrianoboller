@@ -27,16 +27,21 @@
 //!
 //! # Onde se espera, e por que em dois lugares
 //!
-//! * **Fora da trava global**, no `executar` do servidor, para o nome que o
-//!   pedido traz nos campos `database`/`tabela` -- o caso comum. Quem espera ali
-//!   nao segura ninguem: as outras tabelas continuam atendendo.
+//! * **Fora da trava global**, no `executar` do servidor, para TODO nome que
+//!   o pedido alcanca -- a lista `direito_coluna::tabelas_do_pedido`, a mesma
+//!   do portao da carga (322): `juntar` esconde a tabela em `b.tabela`, `unir`
+//!   numa lista, `pivotar` num `juntar` aninhado. Quem espera ali nao segura
+//!   ninguem: as outras tabelas continuam atendendo. Sem prazo
+//!   ([`esperar_fora_da_trava`]), porque nao ha a quem segurar.
 //! * **Dentro dela**, em [`crate::table::Table::abrir_com`] -- o ponto por onde
 //!   toda abertura de tabela passa, pelo mesmo motivo do congelamento (ver o
-//!   cabecalho de `crate::congelamento`): a cascata, a conferencia da chave, a
-//!   juncao e o SQL nao trazem a tabela no campo que o servidor le. E a
-//!   GARANTIA; o de fora e o atalho que poupa a fila. A espera la dentro e
-//!   limitada pelo `fsync` de quem criou e nao trava ninguem para sempre:
-//!   publicar nao pede a trava global, so o mutex daqui.
+//!   cabecalho de `crate::congelamento`): a cascata e a conferencia da chave
+//!   nao trazem a tabela em campo nenhum do pedido. E a GARANTIA; o de fora e
+//!   o que poupa a fila. **E tem prazo** ([`PRAZO_SOB_A_TRAVA`], pedido 629):
+//!   quem espera ali segura a trava global, e sem prazo um `fsync` de pasta
+//!   lento -- ou alguem criando e apagando em laco -- parava TODO escritor do
+//!   servidor pelo tempo do disco de outro. Passado o prazo, recusa com
+//!   `NASCENDO` e `repetir: true`, sem ter aplicado nada.
 //!
 //! # Quem pode passar
 //!
@@ -56,6 +61,16 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Condvar, Mutex, MutexGuard};
 use std::thread::ThreadId;
+use std::time::{Duration, Instant};
+
+/// Quanto se espera pelo nome que nasce COM a trava global na mao.
+///
+/// 500 ms e o numero que esta casa ja usa para «quanto uma conexao pode
+/// segurar as outras»: o `transacao_lock_timeout_ms` de fabrica e o prazo de
+/// parede do gatilho BEFORE. Num disco sao o `fsync` de uma pasta leva
+/// milissegundos, entao o prazo so morde o disco doente -- e e justamente ai
+/// que esperar mais faria o servidor inteiro sentir o disco de uma criacao.
+pub const PRAZO_SOB_A_TRAVA: Duration = Duration::from_millis(500);
 
 /// Caminho que nasce (a chave do [`crate::congelamento::chave`]) -> a thread
 /// que o reservou.
@@ -122,12 +137,19 @@ pub fn reservar(diretorio: &Path, nome: &str) -> Result<Reserva> {
 /// As pastas acima contam porque a tabela gravada dentro de um database ou de
 /// um schema que ainda nasce perde a entrada da PASTA numa queda, e com ela a
 /// tabela: e o mesmo 605 um nivel acima.
-pub fn esperar(diretorio: &Path, nome: &str) {
+///
+/// Esta e a espera de DENTRO da trava global, e por isso tem prazo
+/// ([`PRAZO_SOB_A_TRAVA`]): passado ele, recusa com `NASCENDO` em vez de
+/// segurar o servidor inteiro pelo `fsync` de outra operacao. A recusa vem
+/// antes de qualquer byte -- quem chama ainda nao abriu nada --, entao o
+/// `repetir: true` do tipo diz a verdade.
+pub fn esperar(diretorio: &Path, nome: &str) -> Result<()> {
     // O portao ANTES do trabalho: sem nada nascendo nao se monta chave, nao
-    // se aloca e nao se toca no mutex.
+    // se aloca, nao se le relogio e nao se toca no mutex.
     if QUANTAS.load(Ordering::SeqCst) == 0 {
-        return;
+        return Ok(());
     }
+    let fim = Instant::now() + PRAZO_SOB_A_TRAVA;
     let alvo = crate::congelamento::chave(diretorio, nome);
     let eu = std::thread::current().id();
     let mut m = mapa();
@@ -135,8 +157,32 @@ pub fn esperar(diretorio: &Path, nome: &str) {
         .ancestors()
         .any(|a| m.get(a).is_some_and(|dono| *dono != eu))
     {
-        m = PUBLICADA.wait(m).unwrap_or_else(|e| e.into_inner());
+        let falta = fim.saturating_duration_since(Instant::now());
+        if falta.is_zero() {
+            return Err(PhxError::Nascendo(format!(
+                "{nome} acabou de ser criada por outra operacao e ainda vai ao \
+                 disco ha mais de {} ms; tente de novo",
+                PRAZO_SOB_A_TRAVA.as_millis()
+            )));
+        }
+        m = PUBLICADA
+            .wait_timeout(m, falta)
+            .unwrap_or_else(|e| e.into_inner())
+            .0;
     }
+    Ok(())
+}
+
+/// A espera SEM prazo, para quem espera sem segurar ninguem: o `executar` do
+/// servidor, antes da trava global. Chamada com a trava na mao seria o
+/// defeito do pedido 629 de volta -- por isso o nome diz onde ela vale.
+///
+/// E a de dentro repetida, e nao um segundo laco: a pergunta «quem ainda
+/// nasce acima deste nome?» fica escrita uma vez so. Cada volta custa uma
+/// recusa montada a cada [`PRAZO_SOB_A_TRAVA`] -- nada, perto do `fsync`
+/// que se espera.
+pub fn esperar_fora_da_trava(diretorio: &Path, nome: &str) {
+    while esperar(diretorio, nome).is_err() {}
 }
 
 /// `diretorio/nome` esta nascendo agora? So para teste e para medir.
@@ -161,7 +207,7 @@ mod testes {
         let voltou = Arc::new(AtomicBool::new(false));
         let v = Arc::clone(&voltou);
         std::thread::spawn(move || {
-            esperar(&dir, nome);
+            esperar_fora_da_trava(&dir, nome);
             v.store(true, Ordering::SeqCst);
         });
         voltou
@@ -181,7 +227,7 @@ mod testes {
     #[test]
     fn sem_nada_nascendo_nada_espera() {
         let d = Path::new("/tmp/phxsql-nascendo-vazio");
-        esperar(d, "clientes");
+        esperar(d, "clientes").unwrap();
         assert!(!reservada(d, "clientes"));
     }
 
@@ -196,7 +242,7 @@ mod testes {
             "o terceiro passou pelo nome que ainda nasce"
         );
         // A VIZINHA nao sente.
-        esperar(&d, "vizinha");
+        esperar(&d, "vizinha").unwrap();
         drop(posse);
         assert!(ate(&voltou), "a publicacao nao acordou quem esperava");
         assert!(!reservada(&d, "nova"));
@@ -207,7 +253,43 @@ mod testes {
     fn quem_reservou_passa() {
         let d = Path::new("/tmp/phxsql-nascendo-dono");
         let _posse = reservar(d, "nova").unwrap();
-        esperar(d, "nova");
+        esperar(d, "nova").unwrap();
+    }
+
+    /// **Pedido 629: a espera de dentro da trava tem PRAZO.** Sem ele, quem
+    /// abria o nome que nasce com a trava global na mao segurava o servidor
+    /// inteiro pelo `fsync` de outra operacao, sem fim.
+    #[test]
+    fn a_espera_de_dentro_recusa_no_prazo_em_vez_de_esperar_sem_fim() {
+        let d = PathBuf::from("/tmp/phxsql-nascendo-prazo");
+        let posse = reservar(&d, "nova").unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let d2 = d.clone();
+        std::thread::spawn(move || {
+            let antes = Instant::now();
+            let r = esperar(&d2, "nova");
+            let _ = tx.send((r, antes.elapsed()));
+        });
+        // Folga fixa, e nao um multiplo do prazo: com o defeito reposto (prazo
+        // sem fim) o multiplo tambem seria sem fim, e o teste penduraria em
+        // vez de reprovar.
+        let folga = Duration::from_secs(5);
+        let (r, levou) = rx
+            .recv_timeout(folga)
+            .expect("a espera de dentro da trava nao voltou: segue sem prazo");
+        drop(posse);
+        let e = r.expect_err("o nome ainda nascia e a espera disse que passou");
+        assert!(matches!(e, PhxError::Nascendo(_)), "{e:?}");
+        assert!(e.adianta_repetir(), "a recusa tem de dizer «tente de novo»");
+        assert!(
+            levou >= PRAZO_SOB_A_TRAVA,
+            "recusou antes do prazo: {levou:?}"
+        );
+        let texto = e.to_string();
+        assert!(
+            !texto.contains("/tmp/"),
+            "a recusa publica o caminho da pasta de dados: {texto}"
+        );
     }
 
     /// A tabela dentro de um database que ainda nasce espera o database.

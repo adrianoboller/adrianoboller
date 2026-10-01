@@ -2978,7 +2978,8 @@ impl Servidor {
     /// `descarregar_sujas_com`), e um `email::enviar` ali ataria o servidor
     /// inteiro ao tempo de resposta do rele -- no pior momento, o do disco
     /// doente. A catraca `rede-ou-espera` do `mapa-da-trava.py` acusou
-    /// exatamente isso na primeira versao, e o teto dela e zero.
+    /// exatamente isso na primeira versao (hoje `rede-ou-espera-2`, que
+    /// conta tambem a espera por outra thread -- pedido 627).
     fn evento_de_disco(
         &self,
         tipo: crate::saude_do_disco::Tipo,
@@ -13224,15 +13225,26 @@ impl Servidor {
         // Pedido 605: a tabela que outra conexao acabou de criar e ainda leva
         // ao disco nao se usa antes de chegar la -- e a espera e AQUI, sem a
         // trava global na mao, para quem espera nao segurar as outras tabelas.
-        // A garantia mora no `Table::abrir_com`, que espera tambem pelo nome
-        // que nao veio no campo `tabela`; esta e a que poupa a fila. Sem nada
-        // nascendo, um `load`.
+        // Sem nada nascendo, um `load`.
+        //
+        // # O campo que esta espera le, e quem NAO tem esse campo (pedido 629)
+        //
+        // Ela lia so `"tabela"`, e o `juntar` com a tabela nova em `b.tabela`
+        // passava direto para a espera de DENTRO da trava (`Table::abrir_com`)
+        // -- segurando todo escritor do servidor pelo `fsync` de outro. A
+        // lista de onde a tabela se esconde ja existe e e UMA:
+        // `direito_coluna::tabelas_do_pedido`, a mesma do portao da carga
+        // (322). O que ela nao alcanca (a cascata, a mae de uma chave
+        // conferida) cai na espera de dentro, que agora tem prazo.
         if phxsql_store::nascendo::quantas() > 0 && !COM_A_TRAVA.with(std::cell::Cell::get) {
-            phxsql_store::catalogo::esperar_pelo_nome(
-                &self.config.base,
-                p.texto_ou("database", "").trim(),
-                p.texto_ou("tabela", "").trim(),
-            );
+            let database = p.texto_ou("database", "").trim();
+            let tabelas = crate::direito_coluna::tabelas_do_pedido(op, p);
+            if tabelas.is_empty() {
+                phxsql_store::catalogo::esperar_pelo_nome(&self.config.base, database, "");
+            }
+            for t in &tabelas {
+                phxsql_store::catalogo::esperar_pelo_nome(&self.config.base, database, t);
+            }
         }
         // O PORTAO DAS TRANSACOES, e ele vem antes do despacho inteiro.
         //
@@ -18969,7 +18981,7 @@ impl Servidor {
     /// (pedido 567), que nao tem transacao, passa uma recusa -- o plano dela
     /// ja esta achatado na lista, e elo novo ali e plano que o motor nao
     /// encadeou. Ficar FORA daqui tambem tira a espera de trava do caminho da
-    /// alteracao solta, que a catraca `rede-ou-espera` do mapa da trava ve.
+    /// alteracao solta, que a catraca `rede-ou-espera-2` do mapa da trava ve.
     fn pre_conferir_a_lista(
         &self,
         trava: &Instancia,
@@ -71899,5 +71911,139 @@ mod testes_do_terceiro_na_tabela_que_nasce {
             antes.elapsed() < Duration::from_secs(5),
             "usar a tabela recem-criada na mesma conexao passou a esperar"
         );
+    }
+
+    /// O `fsync` lento de quem cria: o gancho dorme este tanto dentro da
+    /// janela, e tudo o que se mede acontece enquanto ele dorme.
+    const FSYNC_LENTO: Duration = Duration::from_secs(2);
+
+    /// Roda `dentro` na janela da criacao e dorme o resto do `FSYNC_LENTO`;
+    /// devolve o que `dentro` viu, depois de a criacao responder.
+    fn na_janela_lenta<T: Send + 'static>(
+        s: &Arc<Servidor>,
+        dentro: impl FnOnce(&Arc<Servidor>) -> T + Send + 'static,
+    ) -> T {
+        let visto: Arc<Mutex<Option<T>>> = Arc::new(Mutex::new(None));
+        {
+            let (s2, visto) = (Arc::clone(s), Arc::clone(&visto));
+            *s.na_janela_da_criacao.lock().unwrap() = Some(Box::new(move || {
+                let inicio = Instant::now();
+                let v = dentro(&s2);
+                *visto.lock().unwrap() = Some(v);
+                std::thread::sleep(FSYNC_LENTO.saturating_sub(inicio.elapsed()));
+            }));
+        }
+        s.executar("criar_tabela", &pedido(NOVA), &Sessao::default())
+            .expect("a criacao tinha de responder");
+        let v = visto.lock().unwrap().take();
+        v.expect("o gancho nao rodou: a criacao nao passou pela janela")
+    }
+
+    /// C insere na vizinha; devolve quanto levou, ou `None` se nao voltou
+    /// antes do fim do `fsync` lento.
+    fn a_vizinha_anda(s: &Arc<Servidor>) -> Option<Duration> {
+        let inicio = Instant::now();
+        let (c, rc) = noutra_thread(
+            s,
+            "inserir",
+            r#"{"database":"b","tabela":"vizinha","linha":{"id":7}}"#,
+        );
+        if !ate(&c, 1_600) {
+            return None;
+        }
+        let r = rc.lock().unwrap().clone().unwrap();
+        assert!(r.is_ok(), "a vizinha recusou: {r:?}");
+        Some(inicio.elapsed())
+    }
+
+    /// **Pedido 629 (SEC M1): o `fsync` lento de quem cria nao para o servidor
+    /// pelos pedidos que ESCONDEM a tabela.**
+    ///
+    /// A espera de fora lia so `"tabela"`. O `juntar` com a tabela nova em
+    /// `b.tabela` ia para a espera de DENTRO da trava global, e C, inserindo
+    /// numa vizinha, ficava parado o `fsync` inteiro de outro. Com a espera
+    /// de fora lendo `tabelas_do_pedido`, o `juntar` e o `sql` esperam sem
+    /// segurar ninguem -- e passam, sem recusa, quando a tabela publica.
+    #[test]
+    fn o_fsync_lento_de_quem_cria_nao_para_quem_esconde_a_tabela() {
+        let (s, _dir) = preparar("esconde");
+        type Bs = Vec<(&'static str, Arc<AtomicBool>, Resultado)>;
+        let (bs, c_levou): (Bs, Option<Duration>) = na_janela_lenta(&s, |s2| {
+            let mut bs = Vec::new();
+            for (op, txt) in [
+                ("sql", r#"{"database":"b","texto":"SELECT * FROM nova"}"#),
+                (
+                    "juntar",
+                    r#"{"database":"b","a":{"tabela":"vizinha","chave":"id"},
+                        "b":{"tabela":"nova","chave":"id"}}"#,
+                ),
+            ] {
+                let (v, r) = noutra_thread(s2, op, txt);
+                bs.push((op, v, r));
+            }
+            // Folga para os dois chegarem a esperar antes de C entrar.
+            std::thread::sleep(Duration::from_millis(150));
+            let c = a_vizinha_anda(s2);
+            (bs, c)
+        });
+        assert!(
+            c_levou.is_some(),
+            "a vizinha ficou parada o `fsync` inteiro de quem criava: alguem \
+             esperou a tabela que nasce com a trava global na mao"
+        );
+        for (op, v, r) in bs {
+            assert!(ate(&v, 5_000), "{op} nao acordou depois da publicacao");
+            let r = r.lock().unwrap().clone().unwrap();
+            assert!(
+                r.is_ok(),
+                "{op} foi recusado em vez de esperar fora da trava: {r:?}"
+            );
+        }
+    }
+
+    /// **Pedido 629: a espera de DENTRO da trava tem prazo.** A mae de uma
+    /// chave conferida nao vem em campo nenhum do pedido -- a espera de fora
+    /// nao tem como ve-la, e quem a abre e o `conferir_fks`, com a trava na
+    /// mao. Sem prazo, C ficava parado o `fsync` inteiro de quem criava a
+    /// mae; com ele, B ouve `NASCENDO` (repetir) e C anda.
+    #[test]
+    fn a_mae_que_nasce_recusa_no_prazo_e_a_vizinha_anda() {
+        let (s, _dir) = preparar("mae");
+        let dono = Sessao::default();
+        for (op, txt) in [
+            (
+                "criar_tabela",
+                r#"{"database":"b","tabela":"filha",
+                    "colunas":[{"nome":"id","tipo":"Int4"},{"nome":"mae","tipo":"Int4"}],
+                    "indices":[{"nome":"porMae","colunas":["mae"]}]}"#,
+            ),
+            (
+                "declarar_fk",
+                r#"{"database":"b","tabela":"filha","nome":"fk_mae",
+                    "colunas":["mae"],"tabela_ref":"nova","colunas_ref":["id"],
+                    "ao_alterar":"restringir"}"#,
+            ),
+        ] {
+            s.executar(op, &pedido(txt), &dono).unwrap();
+        }
+        let (b, rb, c_levou) = na_janela_lenta(&s, |s2| {
+            let (b, rb) = noutra_thread(
+                s2,
+                "inserir",
+                r#"{"database":"b","tabela":"filha","linha":{"id":1,"mae":1}}"#,
+            );
+            std::thread::sleep(Duration::from_millis(150));
+            let c = a_vizinha_anda(s2);
+            (b, rb, c)
+        });
+        assert!(
+            c_levou.is_some(),
+            "a vizinha ficou parada o `fsync` inteiro de quem criava a mae: a \
+             espera de dentro da trava nao tem prazo"
+        );
+        assert!(ate(&b, 5_000), "B nao voltou");
+        let r = rb.lock().unwrap().clone().unwrap();
+        let e = r.expect_err("B gravou a filha apontando para a mae que ainda nascia");
+        assert!(e.contains("Nascendo"), "B recusou com outra familia: {e}");
     }
 }

@@ -851,7 +851,7 @@ impl Database {
         let caminho = self.caminho.join(nome);
         // Pedido 605: a pasta que OUTRA operacao ainda leva ao disco nao serve
         // de morada antes de chegar la -- nem a do database acima dela.
-        crate::nascendo::esperar(&self.caminho, nome);
+        crate::nascendo::esperar(&self.caminho, nome)?;
         if caminho.is_dir() {
             return Ok((caminho, PorSincronizar::default()));
         }
@@ -983,7 +983,7 @@ impl Database {
         // (`crate::nascendo`). A pasta acima que ainda nasce por outra
         // operacao tambem segura: morar nela antes do `fsync` dela e o mesmo
         // defeito.
-        crate::nascendo::esperar(&dir, esquema.nome());
+        crate::nascendo::esperar(&dir, esquema.nome())?;
         pendente
             .reservas
             .push(crate::nascendo::reservar(&dir, esquema.nome())?);
@@ -1553,7 +1553,7 @@ impl Database {
         }
         // Pedido 605: a copia e uma tabela que NASCE, e o irmao do
         // `criar_tabela` -- a mesma reserva, antes do primeiro arquivo.
-        crate::nascendo::esperar(dir_d, nome_d);
+        crate::nascendo::esperar(dir_d, nome_d)?;
         let reservas = vec![crate::nascendo::reservar(dir_d, nome_d)?];
         let mut arquivos = Vec::new();
         // Copia e historia NOVA (pedido 601): UMA linhagem para todos os
@@ -1772,6 +1772,8 @@ pub fn reg_cifrado(base: &Path, database: &str, qualificado: &str) -> RegNoDisco
 /// caminho. `None` para nome que nao passa no [`validar_nome`].
 /// A espera do pedido 605 pelos NOMES do pedido, para quem ainda nao abriu
 /// nada -- o servidor, antes de tomar a trava global (ver `crate::nascendo`).
+/// Sem prazo, porque quem espera aqui nao segura ninguem; chamar com a trava
+/// na mao seria o pedido 629 de volta.
 ///
 /// Pela mesma resolucao de caminho do [`reg_cifrado`], e pelo mesmo motivo:
 /// compor `base/database/tabela` no servidor seria uma segunda copia da regra
@@ -1783,13 +1785,13 @@ pub fn esperar_pelo_nome(base: &Path, database: &str, qualificado: &str) {
     }
     if qualificado.is_empty() {
         if validar_nome("database", database).is_ok() {
-            crate::nascendo::esperar(base, database);
+            crate::nascendo::esperar_fora_da_trava(base, database);
         }
         return;
     }
     if let Some(dir) = diretorio_da_tabela(base, database, qualificado) {
         let (_, nome) = separar_qualificado(qualificado);
-        crate::nascendo::esperar(&dir, &nome);
+        crate::nascendo::esperar_fora_da_trava(&dir, &nome);
     }
 }
 

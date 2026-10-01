@@ -21951,7 +21951,7 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "Reposto, outra thread abre a tabela antes do `levar_ao_disco`."
         ),
         "arquivo": "crates/phxsql-store/src/table.rs",
-        "trecho": """        crate::nascendo::esperar(&diretorio, nome);""",
+        "trecho": """        crate::nascendo::esperar(&diretorio, nome)?;""",
         "troca": """        // DEFEITO REPOSTO (605): abrir nao espera o nome que nasce.""",
         "pacote": "phxsql-store",
         "alvo": ["--lib"],
@@ -22397,5 +22397,58 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "alvo": ["--test", "acrescentar-coluna"],
         "caem": ["a_recusa_da_calculada_sobre_coluna_marcada_nao_diz_a_linha"],
         "seguem": ["a_calculada_acrescentada_preenche_a_linha_velha_e_so_ela"],
+    },
+    {
+        "id": "espera-de-fora-so-le-o-campo-tabela-629",
+        "titulo": "A espera da tabela que nasce, fora da trava, lia só o campo «tabela» e mandava o juntar esperar com a trava global na mão",
+        "porque": (
+            "pedido 629 (SEC M1). O `juntar` com a tabela nova em `b.tabela` "
+            "passava pela espera de fora e caia na de DENTRO "
+            "(`Table::abrir_com`), segurando todo escritor pelo `fsync` de "
+            "outro. A espera de fora passou a ler `tabelas_do_pedido`, a mesma "
+            "lista do portao da carga (322). Reposto, o `juntar` e recusado "
+            "com NASCENDO em vez de esperar sem segurar ninguem."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """            let tabelas = crate::direito_coluna::tabelas_do_pedido(op, p);""",
+        "troca": """            // DEFEITO REPOSTO (629): a espera de fora so le o campo `tabela`.
+            let tabelas: Vec<String> = [p.texto_ou("tabela", "").trim().to_string()]
+                .into_iter()
+                .filter(|t| !t.is_empty())
+                .collect();""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_terceiro_na_tabela_que_nasce::o_fsync_lento_de_quem_cria_nao_para_quem_esconde_a_tabela",
+        ],
+        "seguem": [
+            "servidor::testes_do_terceiro_na_tabela_que_nasce::o_terceiro_so_ouve_ok_depois_do_fsync_da_pasta_e_espera_fora_da_trava",
+            "servidor::testes_do_terceiro_na_tabela_que_nasce::criar_e_usar_na_mesma_conexao_continua_igual",
+        ],
+        "prazo": 1800,
+    },
+    {
+        "id": "espera-de-dentro-sem-prazo-629",
+        "titulo": "A espera da tabela que nasce DENTRO da trava global não tinha prazo: um fsync lento de pasta parava o servidor inteiro",
+        "porque": (
+            "pedido 629 (SEC M1). A mae de uma chave conferida nao vem em campo "
+            "nenhum do pedido; quem a abre e o `conferir_fks`, com a trava na "
+            "mao, e o `Condvar::wait` sem prazo fazia a vizinha esperar o "
+            "`fsync` inteiro de quem criava. Reposto (prazo de uma hora), C "
+            "nao anda nos 2 s do `fsync` lento do gancho."
+        ),
+        "arquivo": "crates/phxsql-store/src/nascendo.rs",
+        "trecho": """pub const PRAZO_SOB_A_TRAVA: Duration = Duration::from_millis(500);""",
+        "troca": """// DEFEITO REPOSTO (629): a espera de dentro sem prazo que morda.
+pub const PRAZO_SOB_A_TRAVA: Duration = Duration::from_secs(3600);""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_terceiro_na_tabela_que_nasce::a_mae_que_nasce_recusa_no_prazo_e_a_vizinha_anda",
+        ],
+        "seguem": [
+            "servidor::testes_do_terceiro_na_tabela_que_nasce::o_terceiro_so_ouve_ok_depois_do_fsync_da_pasta_e_espera_fora_da_trava",
+        ],
+        "prazo": 1800,
     },
 ]

@@ -243,7 +243,10 @@ pub fn status_do_erro(e: &PhxError) -> u16 {
         PhxError::Autorizacao(_) => 403,
         // 503 pelo mesmo motivo do `EmCarga`: o recurso existe e esta
         // temporariamente indisponivel -- nao e erro do pedido.
-        PhxError::EmCarga(_) | PhxError::EmMigracao(_) | PhxError::SpareEmEspera(_) => 503,
+        PhxError::EmCarga(_)
+        | PhxError::EmMigracao(_)
+        | PhxError::Nascendo(_)
+        | PhxError::SpareEmEspera(_) => 503,
         PhxError::NaoEncontrado(_) => 404,
         PhxError::Duplicado(_) | PhxError::Conflito(_) => 409,
         PhxError::Cancelado(_) => 499,
