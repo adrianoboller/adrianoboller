@@ -598,6 +598,38 @@ pub fn chave_canonica(v: &Value) -> String {
     }
 }
 
+/// A chave de uma TUPLA, em texto canonico -- a forma composta da
+/// [`chave_canonica`] (pedido 331).
+///
+/// # Por que cada parte leva o tamanho na frente
+///
+/// Juntar as partes com um separador so (`"a|b"`) faria duas tuplas
+/// diferentes darem o mesmo texto quando o separador mora DENTRO de um valor:
+/// `("a|b", "c")` e `("a", "b|c")` virariam a mesma chave, e o casamento entre
+/// servidores escreveria uma linha por cima da outra. Com o tamanho na frente
+/// (`"3:a|b|1:c"` contra `"1:a|3:b|c"`) a leitura e unica sem escapar nada.
+///
+/// # Por que uma coluna so devolve EXATAMENTE o texto de antes
+///
+/// Porque a chave canonica e o que o mapa de toques do bidirecional guarda, e
+/// mudar o texto da tabela de uma coluna trocaria a identidade de toda linha
+/// que ja replica: o toque antigo e o novo deixariam de casar, e o «mais
+/// recente vence» perderia a memoria da chave. O comportamento VELHO e o que
+/// o teste `tupla_de_uma_coluna_e_a_chave_de_sempre` trava.
+pub fn chave_canonica_da_tupla(tupla: &[Value]) -> String {
+    if let [unica] = tupla {
+        return chave_canonica(unica);
+    }
+    tupla
+        .iter()
+        .map(|v| {
+            let t = chave_canonica(v);
+            format!("{}:{t}", t.len())
+        })
+        .collect::<Vec<_>>()
+        .join("|")
+}
+
 /// Grava no lado de ca as linhas que o plano mandou: upsert pelo indice unico.
 ///
 /// # O laco e daqui; a DECISAO e do `crate::upsert`
@@ -732,6 +764,40 @@ mod testes {
     // A parte que decide sem rede. Cada caso escreve o resultado esperado
     // ANTES de olhar o codigo: linha so de la, linha so de ca, a mesma linha
     // diferente nos dois -- nos tres sentidos e com os dois donos.
+
+    /// Pedido 331, o comportamento VELHO: a tupla de uma coluna e a chave de
+    /// sempre, letra por letra. Reposto o defeito (prefixar tambem a de uma
+    /// coluna), o toque gravado antes desta versao deixa de casar.
+    #[test]
+    fn tupla_de_uma_coluna_e_a_chave_de_sempre() {
+        for v in [Value::Int(7), Value::Str("abc".into()), Value::UInt(3)] {
+            assert_eq!(
+                chave_canonica_da_tupla(std::slice::from_ref(&v)),
+                chave_canonica(&v)
+            );
+        }
+    }
+
+    /// Pedido 331: o separador dentro do valor nao junta duas tuplas. Sem o
+    /// tamanho na frente, `("a|b","c")` e `("a","b|c")` dariam o mesmo texto.
+    #[test]
+    fn tupla_composta_nao_confunde_o_separador_com_o_valor() {
+        let um = [Value::Str("a|b".into()), Value::Str("c".into())];
+        let outro = [Value::Str("a".into()), Value::Str("b|c".into())];
+        assert_ne!(
+            chave_canonica_da_tupla(&um),
+            chave_canonica_da_tupla(&outro)
+        );
+        assert_eq!(
+            chave_canonica_da_tupla(&[Value::Str("abc".into()), Value::Int(7)]),
+            "3:abc|1:7"
+        );
+        // Coluna diferente e OUTRA linha, nao a mesma.
+        assert_ne!(
+            chave_canonica_da_tupla(&[Value::Int(1), Value::Int(1)]),
+            chave_canonica_da_tupla(&[Value::Int(1), Value::Int(2)])
+        );
+    }
 
     #[test]
     fn plano_dois_sentidos_cada_falta_atravessa_para_o_outro_lado() {

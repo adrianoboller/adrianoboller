@@ -304,3 +304,48 @@ fn imagem_aberta_para_o_fio_replica_com_e_sem_cofre() {
         let _ = std::fs::remove_dir_all(d);
     }
 }
+
+/// A abertura para o fio NAO perde o rabo do «antes» de uma troca de chave.
+///
+/// `imagem_para_o_fio` desmonta e remonta a imagem para abrir os externos
+/// selados -- e remontar so ate os externos jogava fora o que vem depois.
+/// Seria a troca de chave voltando a virar linha nova do outro lado SO na
+/// tabela cifrada, que e onde ninguem olharia.
+///
+/// **Defeito reposto**: tirar o `out.extend_from_slice(&imagem[fim..])` de
+/// `imagem_para_o_fio` -- a asercao do fio cai com `None`.
+#[test]
+fn o_fio_cifrado_leva_o_antes_da_troca_de_chave() {
+    let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
+    cofre::desligar();
+    let d = comum::DirTemp::novo("rabo-no-fio-cifrado");
+    cofre::definir(SENHA, RAPIDO).unwrap();
+    let mut t = Table::criar(&d, esquema_bin())
+        .unwrap()
+        .com_imagem_no_diario(true);
+    let rowid = t
+        .inserir(&[Value::Int(1), Value::Bin(FICHA.as_bytes().to_vec())])
+        .unwrap();
+    t.atualizar(
+        rowid,
+        &[Value::Int(2), Value::Bin(FICHA.as_bytes().to_vec())],
+    )
+    .unwrap();
+    assert!(t.cifrada(), "controle: a tabela tinha de estar cifrada");
+    let eventos = t.diario_com_imagem(0, 0).unwrap();
+    let (e, do_diario) = &eventos[1];
+    assert_eq!(e.operacao, Operacao::Alteracao);
+    assert!(
+        Table::payload_antes_da_imagem(do_diario).unwrap().is_some(),
+        "controle: o diario tinha de levar o antes"
+    );
+    let do_fio = t.imagem_para_o_fio(do_diario).unwrap();
+    let antes = t.valores_antes_da_imagem(&do_fio).unwrap();
+    assert_eq!(
+        antes.map(|v| v[0].clone()),
+        Some(Value::Int(1)),
+        "o fio cifrado perdeu o antes da troca de chave"
+    );
+    drop(t);
+    cofre::desligar();
+}

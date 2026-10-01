@@ -382,6 +382,10 @@ pub struct PosicaoDoSource {
     /// O `id_servidor` do source -- e com ele que o bidirecional confere a
     /// colisao de hash antes de confiar na supressao de origem.
     pub id_servidor: String,
+    /// O numero de origem EFETIVO do source (pedido 329). Zero quando o source
+    /// e de antes do campo -- e ai quem le usa o hash do id, que e o numero
+    /// que ele de fato grava (`bidirecional::numero_do_servidor`).
+    pub numero_servidor: u16,
     pub tabelas: Vec<NoSource>,
 }
 
@@ -411,6 +415,9 @@ pub fn posicao(cliente: &mut Cliente, database: &str) -> Result<PosicaoDoSource>
     Ok(PosicaoDoSource {
         com_imagem: r.booleano_ou("imagem_da_linha", false),
         id_servidor: r.texto_ou("id_servidor", "").to_string(),
+        // Fora da faixa vira zero, que e «nao disse»: um numero inventado por
+        // corte pertenceria a outro servidor.
+        numero_servidor: u16::try_from(r.inteiro_ou("numero_servidor", 0)).unwrap_or(0),
         tabelas: saida,
     })
 }
@@ -469,14 +476,16 @@ pub fn puxar(
 
 /// O mesmo que [`puxar`], dizendo QUEM pede -- e devolvendo a posicao.
 ///
-/// `para` e o `id_servidor` de quem puxa: o source nao devolve os eventos que
-/// nasceram nele, que e o que mata o laco do bidirecional.
+/// `para` e o `id_servidor` de quem puxa e o numero de origem dele: o source
+/// nao devolve os eventos que nasceram nele, que e o que mata o laco do
+/// bidirecional. O numero viaja junto (pedido 329) porque, ATRIBUIDO, ele nao
+/// se deduz do id do outro lado.
 pub fn puxar_lote(
     cliente: &mut Cliente,
     database: &str,
     tabela: &str,
     desde: u64,
-    para: Option<&str>,
+    para: Option<(&str, u16)>,
 ) -> Result<LoteRecebido> {
     puxar_ate(cliente, database, tabela, desde, para, LOTE)
 }
@@ -504,7 +513,7 @@ fn puxar_ate(
     database: &str,
     tabela: &str,
     desde: u64,
-    para: Option<&str>,
+    para: Option<(&str, u16)>,
     max: u64,
 ) -> Result<LoteRecebido> {
     let mut campos = vec![
@@ -514,8 +523,9 @@ fn puxar_ate(
         ("desde", Json::de_u64(desde)),
         ("max", Json::de_u64(max)),
     ];
-    if let Some(quem) = para {
+    if let Some((quem, numero)) = para {
         campos.push(("para", Json::texto_de(quem)));
+        campos.push(("para_numero", Json::de_u64(numero as u64)));
     }
     let r = cliente.pedir(campos)?;
     let mut eventos = Vec::new();

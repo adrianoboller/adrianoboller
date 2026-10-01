@@ -1722,7 +1722,47 @@ imagem que sai pelo `replicar` vem **aberta** e com o bit apagado. Coluna
 real nunca passa de 32.767, então o bit estava livre; imagem gravada antes
 desta versão não tem o bit e é lida como aberta (sem dado em produção ainda).
 
-Exclusão não leva imagem: o rowid basta.
+A exclusão leva imagem quando a política do diário pede — no papel `multi`,
+desde os pedidos 416 e 564, porque lá a identidade é a chave; fora dele o rowid
+basta e ela vai sem.
+
+#### O rabo do antes (01/10/2026)
+
+A alteração que **muda a chave de um índice único** leva, depois dos
+externos, o payload de **antes**:
+
+```
+imagem = [tam_payload u32][payload][qtd_externos u16][externos ...]
+         [0xA5 u8][tam_antes u32][payload antes]     <- só na troca de chave
+```
+
+Sem ele, quem casa por chave do outro lado (o bidirecional) procura a linha
+pela chave **nova**, não acha e insere — e a antiga fica: uma alteração virava
+duas linhas (medido, `tests/identidade-do-bidirecional.rs`). É o que o
+PostgreSQL manda quando a `REPLICA IDENTITY` muda, e o que o SQLite registra
+como DELETE+INSERT.
+
+- **No rabo, e não no meio**: um `.log` antigo — sem rabo — lê como «a chave
+  não mudou», que é o comportamento de antes. **Não muda a versão do `.log`.**
+- **Sobra desconhecida é RECUSADA** (parecer do DBA de 01/10/2026, §2). O
+  decodificador antes não conferia se sobrava byte depois dos externos, e um
+  campo novo ali seria ignorado **calado** por todo binário anterior — o par
+  de versões divergindo sem erro. Hoje depois dos externos só cabe nada ou o
+  rabo do «antes» **inteiro**, fechando a imagem exato; qualquer outra coisa
+  é erro que manda atualizar o servidor. Ressalva honesta: um binário de
+  **antes** desta regra ainda ignora o rabo calado — sem dado em produção, o
+  preço é aceito; daqui em diante a próxima versão falha fechado.
+- **Só o payload**, sem os externos: o que se quer dele é a chave, e chave
+  não mora em `Memo`/`Bin`. As colunas externas do «antes» voltam nulas.
+- **Só quando a chave muda** (qualquer índice único, não só a identidade do
+  bidirecional — quem escolhe a identidade é o servidor, e o store não repete
+  a regra). A alteração comum não paga um byte.
+- O primeiro byte é a **marca** (`0xA5`), própria, para não se confundir com
+  um byte de contagem caindo ali; marca desconhecida é a sobra recusada acima.
+- A imagem que sai pelo `replicar` numa tabela cifrada é remontada para abrir
+  os externos (`imagem_para_o_fio`), e **o rabo vai junto**.
+- O evento devido do pedido 498 se completa da linha como ela está — sem o
+  «antes», que já não existe.
 
 O CRC cobrir a imagem, e não só o cabeçalho, é o detalhe que importa: a imagem é
 o que a réplica grava **como dado**. Um byte trocado ali entraria na réplica sem
@@ -3792,7 +3832,7 @@ aceite a anterior.**
 ### O que fica FORA do `.phz`, e o motivo medido
 
 O `config.json` recusa alto quando não se lê: o binário anterior, diante de um
-`config.phz`, não sobe. Os outros cinco arquivos JSON que o servidor lê e
+`config.phz`, não sobe. Os outros seis arquivos JSON que o servidor lê e
 grava fazem o contrário — **leem o arquivo ilegível como vazio ou como o
 padrão**, e seguem. Empacotar qualquer um deles faria o binário anterior (ou
 este, diante de um arquivo que não sabe abrir) apagar em vez de recusar. Desde
@@ -3806,6 +3846,7 @@ decide o que o `.phz` custaria:
 | `blacklist.json` | `blacklist.rs:494-497` | nenhum bloqueio e nenhuma whitelist; a gravação seguinte perde os dois |
 | `jobs.json` | `jobs.rs`, `Registro::abrir_ou_trancar` | desde o irmão do pedido 466, cadastro **TRANCADO**: o motor sobe sem relógio de jobs, as operações de job recusam nomeando o arquivo, e nada o regrava. O binário anterior não subia com o arquivo torto e lia VAZIO o que não se lia |
 | `replicacao-posicoes.json` | `bidirecional::ler_posicoes` | posições do zero: custa releitura, não dado. Desde o pedido 535 grava pela troca durável (`gravar_privado`) e **só depois** do `fsync` do dado que ela conta |
+| `replicacao-numeros.json` | `bidirecional::ler_numeros` | desde o pedido 329 (01/10/2026), o dono de cada número de origem já visto (`{"7":"caixa-07"}`); ilegível = registro vazio, e a conferência de colisão recomeça do que se vê dali em diante — sem perder dado, mas sem lembrar quem já teve cada número. Grava pela troca durável, só quando aparece um par novo |
 | `cluster.estado.json` | `EstadoCluster::novo` | desde o pedido 534, **réplica sem escrita**, dizendo por quê — só o arquivo **ausente** cai no papel do `config.json` (primeiro arranque). Antes, o ilegível também caía, e um master destronado voltava **mandando**. Grava pela troca durável, e o `promover` grava **antes** de liberar a escrita |
 
 Os de catálogo e dado (`gatilhos.json`, `procedimentos.json`, `visoes.json`,

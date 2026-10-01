@@ -237,3 +237,76 @@ fn o_bidirecional_apaga_a_mae_cuja_filha_ainda_nao_saiu() {
     f.inserir(&[Value::Int(11), Value::Int(2)])
         .expect("a mãe 2 está viva");
 }
+
+/// A troca de chave leva o «antes» no rabo da imagem, e a alteracao comum
+/// nao leva nada. Medido pelo bidirecional em 01/10/2026: sem o «antes», o
+/// outro lado procura a linha pela chave NOVA, nao acha, insere -- e a antiga
+/// fica. A prova pelo soquete e `tests/identidade-do-bidirecional.rs` do
+/// servidor; aqui e a peca do store.
+///
+/// **Defeito reposto**: `Table::muda_chave_unica` devolvendo sempre `false`
+/// -- a primeira asercao cai, a imagem sai sem o rabo.
+#[test]
+fn a_troca_de_chave_leva_o_antes_e_a_alteracao_comum_nao() {
+    let d = DirTemp::novo("troca-de-chave");
+    let mut t = Table::criar(&d.0, esquema())
+        .unwrap()
+        .com_imagem_no_diario(true);
+    t.inserir(&linha(1, "ana")).unwrap();
+    t.atualizar(1, &linha(10, "ana")).unwrap();
+    t.atualizar(1, &linha(10, "ana maria")).unwrap();
+
+    let eventos = t.diario_com_imagem(0, 0).unwrap();
+    let antes = t.valores_antes_da_imagem(&eventos[1].1).unwrap();
+    assert_eq!(
+        antes.map(|v| v[0].clone()),
+        Some(Value::Int(1)),
+        "a troca de chave saiu sem a chave de antes"
+    );
+    // A imagem continua dizendo o «depois», e a replica fiel le igual.
+    assert_eq!(
+        t.valores_da_imagem(&eventos[1].1).unwrap()[0],
+        Value::Int(10)
+    );
+    // O comportamento VELHO: a alteracao que nao toca a chave nao paga um
+    // byte, e a insercao nunca tem rabo.
+    assert_eq!(t.valores_antes_da_imagem(&eventos[2].1).unwrap(), None);
+    assert_eq!(Table::payload_antes_da_imagem(&eventos[0].1).unwrap(), None);
+}
+
+/// O decodificador da imagem RECUSA o que sobra e ele nao conhece -- parecer
+/// do DBA de 01/10/2026, §2. Antes, um campo novo depois dos externos era
+/// ignorado CALADO por todo binario anterior, e o par de versoes divergia sem
+/// erro. O rabo do «antes», que e campo conhecido, continua aceito -- mas so
+/// INTEIRO, fechando a imagem exato.
+///
+/// **Defeito reposto**: tirar o `Table::ler_o_rabo(imagem, i)?` do fim de
+/// `desmontar_imagem` -- a primeira asercao cai, a sobra passa calada.
+#[test]
+fn a_imagem_com_sobra_desconhecida_e_recusada() {
+    let d = DirTemp::novo("sobra-na-imagem");
+    let mut t = Table::criar(&d.0, esquema())
+        .unwrap()
+        .com_imagem_no_diario(true);
+    t.inserir(&linha(1, "ana")).unwrap();
+    let limpa = t.imagem_da_linha_do_rowid(1).unwrap();
+
+    let mut com_sobra = limpa.clone();
+    com_sobra.push(0x01);
+    let e = t
+        .valores_da_imagem(&com_sobra)
+        .expect_err("a sobra desconhecida passou calada");
+    assert!(e.to_string().contains("atualize"), "{e}");
+
+    // O rabo conhecido, inteiro: aceito.
+    t.atualizar(1, &linha(2, "ana")).unwrap();
+    let eventos = t.diario_com_imagem(0, 0).unwrap();
+    let com_antes = eventos[1].1.clone();
+    assert!(t.valores_da_imagem(&com_antes).is_ok());
+    // E o rabo conhecido com um byte a mais depois dele: recusado tambem.
+    let mut rabo_e_mais = com_antes;
+    rabo_e_mais.push(0);
+    assert!(t.valores_da_imagem(&rabo_e_mais).is_err());
+    // A imagem sem rabo nenhum, a de sempre, continua lendo.
+    assert_eq!(t.valores_da_imagem(&limpa).unwrap()[0], Value::Int(1));
+}

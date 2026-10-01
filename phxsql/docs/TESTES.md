@@ -1051,9 +1051,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `arbitro-engole-o-rebaixar` | o árbitro do cluster engolia a falha de gravar o rebaixamento (`let _ = estado.rebaixar(...)`): o nó voltava mandando num reinício, sem pista nenhuma | 2 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**408 das 583 guardas do catálogo: 1 aposentada, 403 provadas, 4 redundantes** — 11740 s de mutação, medido em 2026-09-16 15:25.
+**408 das 591 guardas do catálogo: 1 aposentada, 403 provadas, 4 redundantes** — 11740 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 176 das 583 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 184 das 591 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 184 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
@@ -1231,6 +1231,14 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `garantir-schema-sem-fsync-do-database` — `criar_schema` e `criar_tabela` num schema novo criavam a pasta sem `fsync` do database: o schema que o cliente ouviu criar podia sumir numa queda
 - `criar-database-sem-fsync-da-base` — `criar_database` criava a pasta sem `fsync` da base: o database que o cliente ouviu criar podia sumir numa queda
 - `marca-do-database-sem-fsync` — O marcador `_database.json` nascia sem `fsync`: numa queda uma colmeia voltava como database padrão, calada
+- `troca-de-chave-vira-linha-nova` — No bidirecional, a alteração que troca a chave virava inserção nova do outro lado e a linha antiga ficava: a imagem só dizia o «depois»
+- `fio-cifrado-perde-o-antes` — A imagem aberta para o fio numa tabela cifrada era remontada só até os externos, e a troca de chave perdia o «antes» só ali
+- `composta-casa-pela-primeira-coluna` — A chave composta do bidirecional casando só pela primeira coluna: (1,2) e (1,3) caem na identidade de (1,1)
+- `numero-de-origem-conferido-so-no-par` — O número de origem do bidirecional conferido só contra o próprio: dois caixas com o mesmo número entre si não eram vistos, e o central suprimia os eventos de um ao servir o outro
+- `numero-de-origem-atribuido-ignorado` — O `numero_servidor` lido do config e ignorado na conta do número de origem: o caixa inocente continua no hash que colide
+- `imagem-com-sobra-ignorada` — O decodificador da imagem ignorava calado os bytes que sobravam depois dos externos: um campo novo passaria despercebido por todo binário anterior
+- `registro-de-numeros-ilegivel-vira-vazio` — O `replicacao-numeros.json` ilegível lido como vazio: a colisão que ele existe para recusar passaria e iria para dentro dos `.log`
+- `numero-aceito-antes-do-disco` — O par novo de número de origem entrava na memória antes de o registro ir ao disco: com o disco recusando, a chamada seguinte o aceitava sem nunca ter gravado
 
 As guardas que esta corrida ainda cita, hoje aposentadas:
 

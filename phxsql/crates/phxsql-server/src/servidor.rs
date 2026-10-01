@@ -1476,6 +1476,10 @@ pub struct Servidor {
     /// Posicao consumida por "origem|database/tabela" no modo bidirecional.
     /// Persistida em `replicacao-posicoes.json` ao lado dos dados.
     posicoes_bidi: Mutex<HashMap<String, u64>>,
+    /// Pedido 329: o dono de cada numero de origem que este no ja viu -- ele
+    /// mesmo, as origens que puxa e os que puxam dele. Persistido em
+    /// `replicacao-numeros.json`; ver `bidirecional::conferir_numero`.
+    numeros_bidi: Mutex<std::result::Result<bidirecional::Numeros, String>>,
     /// Os outros dois ajustes que a tela de configuracao muda A QUENTE.
     ///
     /// O `somente_leitura_vivo` acima serve aos DOIS caminhos que o mudam: a
@@ -1721,6 +1725,7 @@ impl Servidor {
         let papel = config.replicacao.papel;
         let posicoes_bidi =
             bidirecional::ler_posicoes(&config.base.join("replicacao-posicoes.json"));
+        let numeros_bidi = bidirecional::ler_numeros(&config.base.join("replicacao-numeros.json"));
         // Copiado ANTES de o `config` entrar no struct, que o consome -- pela
         // mesma razao que `max_linhas` e os outros dois acima.
         let cadastro_de_arranque = config.cadastro.clone();
@@ -1778,6 +1783,7 @@ impl Servidor {
             ha_varias_origens: AtomicBool::new(false),
             toques_bidi: Mutex::new(HashMap::new()),
             posicoes_bidi: Mutex::new(posicoes_bidi),
+            numeros_bidi: Mutex::new(numeros_bidi),
             janela: Janela::nova(&config.recursos),
             sujas: Mutex::new(std::collections::HashSet::new()),
             config,
@@ -5454,6 +5460,51 @@ impl Servidor {
         Ok(Json::objeto(resposta))
     }
 
+    /// Confere o numero de origem de um par contra TODOS os ja vistos, e
+    /// anota o novo no disco -- pedido 329.
+    ///
+    /// UM portao para os dois sentidos: a rodada que PUXA confere a origem
+    /// (o numero que o `posicao` dela diz), e o `replicar` que SERVE confere
+    /// quem pede (o numero do `para`). E o proprio numero entra antes de
+    /// qualquer outro, para que «o outro tem o MEU numero» seja so um caso da
+    /// mesma conta -- era a conferencia do par, e ela nao via dois caixas com
+    /// o mesmo numero entre si.
+    ///
+    /// # O disco ANTES de aceitar (parecer do DBA de 01/10/2026, §3)
+    ///
+    /// O par novo so e aceito depois de o registro estar no disco, pela troca
+    /// duravel: aceitar antes e cair perderia o registro e deixaria outro id
+    /// ganhar o mesmo numero -- e a ambiguidade iria para dentro dos `.log`,
+    /// onde nao se desfaz. Por isso a conta e feita numa COPIA, e a memoria so
+    /// recebe o par novo depois de a gravacao voltar `Ok`: com a memoria
+    /// atualizada antes, um disco que recusasse deixaria a proxima chamada
+    /// achar o par «ja conhecido» e aceita-lo sem nunca ter gravado.
+    fn conferir_numero_do_par(&self, numero: u16, id: &str) -> Result<()> {
+        let rep = &self.config.replicacao;
+        let mut guarda = self.numeros_bidi.tomar("numeros_bidi")?;
+        let vistos = match &*guarda {
+            Ok(v) => v,
+            Err(motivo) => return Err(PhxError::Esquema(motivo.clone())),
+        };
+        let mut copia = vistos.clone();
+        let mut novo = false;
+        let meu = rep.numero();
+        if meu != 0 {
+            novo |= bidirecional::conferir_numero(&mut copia, meu, &rep.id_servidor)
+                .map_err(PhxError::Esquema)?;
+        }
+        novo |= bidirecional::conferir_numero(&mut copia, numero, id).map_err(PhxError::Esquema)?;
+        if novo {
+            // Raro: so na primeira vez de cada par.
+            bidirecional::gravar_numeros(
+                &self.config.base.join("replicacao-numeros.json"),
+                &copia,
+            )?;
+            *guarda = Ok(copia);
+        }
+        Ok(())
+    }
+
     /// Uma passada bidirecional: puxa do outro lado e aplica POR CHAVE.
     ///
     /// E o modo multi-master. Difere da replica fiel em tres pontos, e os
@@ -5468,7 +5519,7 @@ impl Servidor {
         origem: &crate::config::Origem,
     ) -> Result<u64> {
         let meu_id = self.config.replicacao.id_servidor.trim().to_string();
-        let meu_hash = bidirecional::hash_id(&meu_id);
+        let meu_hash = self.config.replicacao.numero();
         // O mesmo filtro da replica fiel, e pela mesma razao: o bidirecional
         // casa linha por CHAVE, mas duas origens no mesmo database ainda
         // disputam a mesma tabela daqui -- e a posicao consumida e por
@@ -5508,16 +5559,13 @@ impl Servidor {
                      descarta tudo"
                 )));
             }
-            // A colisao de hash e improvavel e NAO e impossivel -- e falharia
-            // calada, suprimindo eventos de um servidor inocente. Conferir
-            // aqui custa uma comparacao; descobrir depois custaria dado.
-            if bidirecional::hash_id(&id_dele) == meu_hash {
-                return Err(PhxError::Esquema(format!(
-                    "colisao de identidade: {meu_id:?} e {id_dele:?} caem no \
-                     mesmo hash u16; troque um dos dois id_servidor"
-                )));
-            }
-            let hash_dele = bidirecional::hash_id(&id_dele);
+            // A colisao de numero falharia calada, suprimindo eventos de um
+            // servidor inocente -- e nao so entre os dois do par: contra TODO
+            // par que este no ja viu (pedido 329). O numero do outro e o que
+            // ele diz no `posicao`; um source de antes do campo nao diz, e ai
+            // vale o hash do id, que e o numero que ele de fato usa.
+            let hash_dele = bidirecional::numero_do_servidor(p.numero_servidor, &id_dele);
+            self.conferir_numero_do_par(hash_dele, &id_dele)?;
             for no in p.tabelas {
                 aplicados += self.alcancar_tabela_bidi(
                     &mut cliente,
@@ -5544,7 +5592,7 @@ impl Servidor {
         no: &crate::replica::NoSource,
         origem: &crate::config::Origem,
         meu_hash: u16,
-    ) -> Result<Option<(String, usize)>> {
+    ) -> Result<Option<bidirecional::Identidade>> {
         // Pedido 589: o que nasceu sob a trava vai ao disco depois de ela
         // soltar -- a trava e da funcao de dentro, e solta ao ela voltar.
         let (saida, pendente) = self.abrir_para_bidi_sob_a_trava(database, no, origem, meu_hash)?;
@@ -5560,7 +5608,7 @@ impl Servidor {
         no: &crate::replica::NoSource,
         origem: &crate::config::Origem,
         meu_hash: u16,
-    ) -> Result<(Option<(String, usize)>, PorSincronizar)> {
+    ) -> Result<(Option<bidirecional::Identidade>, PorSincronizar)> {
         let trava = self.travar_dados()?;
         let (tabela, pendente) = garantir_tabela_da_replica(&trava, database, no)?;
         let Some(mut tabela) = tabela else {
@@ -5587,7 +5635,7 @@ impl Servidor {
         });
         // O diario local que ainda nao passou pelo mapa de toques -- inclui a
         // escrita local desde a ultima rodada, que e quem disputa o conflito.
-        self.absorver_diario_local(&mut tabela, &chave_tab, pos_chave, meu_hash)?;
+        self.absorver_diario_local(&mut tabela, &chave_tab, &pos_chave, meu_hash)?;
         Ok((Some((indice, pos_chave)), pendente))
     }
 
@@ -5601,7 +5649,7 @@ impl Servidor {
         database: &str,
         no: &crate::replica::NoSource,
         indice: &str,
-        pos_chave: usize,
+        pos_chave: &[usize],
         eventos: &[crate::replica::EventoRecebido],
         meu_hash: u16,
         hash_dele: u16,
@@ -5700,8 +5748,13 @@ impl Servidor {
         let mut aplicados = 0u64;
         loop {
             // FORA da trava -- ver a nota da funcao.
-            let lote =
-                crate::replica::puxar_lote(cliente, database, &no.nome, desde, Some(meu_id))?;
+            let lote = crate::replica::puxar_lote(
+                cliente,
+                database,
+                &no.nome,
+                desde,
+                Some((meu_id, meu_hash)),
+            )?;
             if lote.ate <= desde {
                 break;
             }
@@ -5709,7 +5762,7 @@ impl Servidor {
                 database,
                 no,
                 &indice,
-                pos_chave,
+                &pos_chave,
                 &lote.eventos,
                 meu_hash,
                 hash_dele,
@@ -5791,7 +5844,7 @@ impl Servidor {
         &self,
         tabela: &mut Table,
         chave_tab: &str,
-        pos_chave: usize,
+        pos_chave: &[usize],
         meu_hash: u16,
     ) -> Result<()> {
         let total = tabela.eventos()?;
@@ -5818,18 +5871,28 @@ impl Servidor {
                 if imagem.is_empty() {
                     continue;
                 }
-                let valores = tabela.valores_da_imagem(&imagem)?;
-                let chave = crate::dblink::sincronia::chave_canonica(&valores[pos_chave]);
-                mapa.toques.insert(
-                    chave,
-                    Toque {
-                        carimbo: ev.carimbo,
-                        // Escrita local guarda o hash do PROPRIO servidor, para
-                        // o empate desempatar pela mesma conta nos dois lados.
-                        origem: if ev.origem == 0 { meu_hash } else { ev.origem },
-                        excluido: ev.operacao == Operacao::Exclusao,
-                    },
-                );
+                let (_, chave, antiga) =
+                    Self::identidades_do_evento(tabela, ev.operacao, &imagem, pos_chave)?;
+                let toque = Toque {
+                    carimbo: ev.carimbo,
+                    // Escrita local guarda o hash do PROPRIO servidor, para
+                    // o empate desempatar pela mesma conta nos dois lados.
+                    origem: if ev.origem == 0 { meu_hash } else { ev.origem },
+                    excluido: ev.operacao == Operacao::Exclusao,
+                };
+                // A troca de chave deixa uma LAPIDE na chave antiga: sem ela,
+                // uma alteracao mais velha do outro lado naquela chave nao
+                // acharia linha aqui e a ressuscitaria como linha nova.
+                if let Some((_, velha)) = antiga {
+                    mapa.toques.insert(
+                        velha,
+                        Toque {
+                            excluido: true,
+                            ..toque
+                        },
+                    );
+                }
+                mapa.toques.insert(chave, toque);
             }
         }
         Ok(())
@@ -5844,7 +5907,7 @@ impl Servidor {
         tabela: &mut Table,
         chave_tab: &str,
         indice: &str,
-        pos_chave: usize,
+        pos_chave: &[usize],
         e: &crate::replica::EventoRecebido,
         hash_dele: u16,
     ) -> Result<bidirecional::Aplicacao> {
@@ -5856,8 +5919,8 @@ impl Servidor {
                 e.operacao.nome()
             )));
         }
-        let valores = tabela.valores_da_imagem(&e.imagem)?;
-        let chave = crate::dblink::sincronia::chave_canonica(&valores[pos_chave]);
+        let (valores, chave, antiga) =
+            Self::identidades_do_evento(tabela, e.operacao, &e.imagem, pos_chave)?;
         // Um source antigo manda origem zero; zero aqui significaria "meu",
         // que e a leitura errada para um evento que veio DELE.
         let origem_ev = if e.origem == 0 { hash_dele } else { e.origem };
@@ -5895,18 +5958,20 @@ impl Servidor {
         // de disparar dos dois lados -- inclusive quando o LOCAL vence e o
         // evento remoto e descartado (a linha remota morre no outro `.reg`).
         // Ver `bidirecional::colisao_de_criacao`.
-        let (vence, colisao) = {
+        let (vence, colisao, vence_na_antiga) = {
             let guarda = self.toques_bidi.tomar("toques_bidi")?;
-            let local = guarda
-                .get(chave_tab)
-                .and_then(|m| m.toques.get(&chave))
-                .copied();
-            let vence = match local.as_ref() {
-                Some(l) => bidirecional::remoto_vence(carimbo, origem_ev, l),
+            let toque_de = |c: &str| guarda.get(chave_tab).and_then(|m| m.toques.get(c)).copied();
+            let vence_em = |c: &str| match toque_de(c) {
+                Some(l) => bidirecional::remoto_vence(carimbo, origem_ev, &l),
                 None => true,
             };
+            let local = toque_de(&chave);
             let colisao = bidirecional::colisao_de_criacao(e.operacao, origem_ev, local.as_ref());
-            (vence, colisao)
+            // A chave ANTIGA disputa pelo mesmo «mais recente vence»: uma
+            // escrita daqui na chave velha, mais nova que a troca de la, nao
+            // pode ser apagada por ela.
+            let vence_na_antiga = antiga.as_ref().is_some_and(|(_, c)| vence_em(c));
+            (vence_em(&chave), colisao, vence_na_antiga)
         };
         if colisao {
             // Nao para o laco (isso travaria o par para sempre -- ver
@@ -5931,21 +5996,54 @@ impl Servidor {
             return Ok(bidirecional::Aplicacao::Ignorado);
         }
 
-        let valor_chave = valores[pos_chave].clone();
+        let tupla = bidirecional::tupla(&valores, pos_chave);
         // A escrita vai num bloco proprio porque a recusa por chave duplicada
         // NAO pode subir pelo `?`: ela e tratada logo abaixo. Ver o comentario
         // da recusa, e `bidirecional::MapaDeToques::recusas_por_unicidade`.
         let escrita = (|| -> Result<()> {
             match e.operacao {
                 Operacao::Inclusao | Operacao::Alteracao => {
-                    let achadas = tabela.buscar(indice, &[valor_chave])?;
+                    let achadas = tabela.buscar(indice, &tupla)?;
                     let achada = Self::uma_linha_so(
                         tabela, chave_tab, indice, pos_chave, &valores, achadas,
                     )?;
+                    // A linha da chave ANTIGA, quando a alteracao trocou a
+                    // chave e a troca venceu la -- ver `anexar_o_antes` no
+                    // store. Sem isto, buscar so pela chave nova nao achava
+                    // nada, inseria, e a linha antiga FICAVA: uma alteracao
+                    // virava duas linhas deste lado.
+                    let velha = match &antiga {
+                        Some((t, _)) if vence_na_antiga => {
+                            let achadas = tabela.buscar(indice, t)?;
+                            Self::uma_linha_so(
+                                tabela, chave_tab, indice, pos_chave, &valores, achadas,
+                            )?
+                        }
+                        _ => None,
+                    };
                     // O evento local nasce com o carimbo e a origem do
                     // NASCIMENTO da escrita -- e o que faz o conflito ser justo
                     // e o evento nao voltar para de onde veio.
                     tabela.forcar_proximo_evento(carimbo, origem_ev);
+                    if let (None, Some(rowid)) = (achada, velha) {
+                        // A troca de chave chega como ALTERACAO da linha que
+                        // ja estava aqui: o rowid e o rownum daqui ficam, que e
+                        // a ordem de digitacao deste servidor. Excluir e
+                        // inserir de novo poria a linha no fim da fila.
+                        tabela.atualizar_replicado(rowid, &valores)?;
+                        return Ok(());
+                    }
+                    if let Some(rowid) = velha {
+                        // As duas chaves ocupadas aqui: a nova recebe a linha
+                        // logo abaixo, e a antiga sai -- e a exclusao da
+                        // antiga que o SQLite registra, chegando pelo mesmo
+                        // motor que a exclusao replicada usa.
+                        tabela.excluir_de_vez_replicado(
+                            rowid,
+                            "replicacao bidirecional: troca de chave",
+                        )?;
+                        tabela.forcar_proximo_evento(carimbo, origem_ev);
+                    }
                     match achada {
                         // O rowid e o rownum sao LOCAIS: `atualizar` mantem os
                         // daqui, `inserir` numera na ordem de chegada daqui. A
@@ -5963,7 +6061,7 @@ impl Servidor {
                     }
                 }
                 Operacao::Exclusao => {
-                    let achadas = tabela.buscar(indice, &[valor_chave])?;
+                    let achadas = tabela.buscar(indice, &tupla)?;
                     let achada = Self::uma_linha_so(
                         tabela, chave_tab, indice, pos_chave, &valores, achadas,
                     )?;
@@ -6023,18 +6121,25 @@ impl Servidor {
         escrita?;
 
         if let Ok(mut guarda) = self.toques_bidi.lock() {
-            guarda
-                .entry(chave_tab.to_string())
-                .or_default()
-                .toques
-                .insert(
-                    chave,
+            let toques = &mut guarda.entry(chave_tab.to_string()).or_default().toques;
+            let toque = Toque {
+                carimbo,
+                origem: origem_ev,
+                excluido: e.operacao == Operacao::Exclusao,
+            };
+            // A chave antiga vira LAPIDE, pelo mesmo motivo do
+            // `absorver_diario_local`: uma alteracao mais velha nela nao pode
+            // ressuscitar a linha que a troca levou embora.
+            if let Some((_, velha)) = antiga.filter(|_| vence_na_antiga) {
+                toques.insert(
+                    velha,
                     Toque {
-                        carimbo,
-                        origem: origem_ev,
-                        excluido: e.operacao == Operacao::Exclusao,
+                        excluido: true,
+                        ..toque
                     },
                 );
+            }
+            toques.insert(chave, toque);
         }
         Ok(bidirecional::Aplicacao::Aplicado)
     }
@@ -6051,7 +6156,7 @@ impl Servidor {
         tabela: &Table,
         chave_tab: &str,
         indice: &str,
-        pos_chave: usize,
+        pos_chave: &[usize],
         valores: &[Value],
         achadas: Vec<u64>,
     ) -> Result<Option<u64>> {
@@ -6072,14 +6177,52 @@ impl Servidor {
     /// A `chave` canonica que o mapa de toques usa e o dado cru, e serve para
     /// casar linha; para dizer, ela passa por `valor_redigido`. So se monta
     /// quando ha grito: no caminho sa ninguem paga nada.
-    fn chave_dita(tabela: &Table, pos_chave: usize, valores: &[Value]) -> String {
-        match (
-            tabela.esquema().colunas().get(pos_chave),
-            valores.get(pos_chave),
-        ) {
-            (Some(c), Some(v)) => bidirecional::valor_redigido(c, v),
-            _ => String::new(),
-        }
+    fn chave_dita(tabela: &Table, pos_chave: &[usize], valores: &[Value]) -> String {
+        // A composta sai coluna a coluna, cada uma pelo `valor_redigido`: a
+        // parte marcada como dado pessoal vira tamanho mesmo no meio da tupla.
+        pos_chave
+            .iter()
+            .map(
+                |p| match (tabela.esquema().colunas().get(*p), valores.get(*p)) {
+                    (Some(c), Some(v)) => bidirecional::valor_redigido(c, v),
+                    _ => String::new(),
+                },
+            )
+            .collect::<Vec<_>>()
+            .join("|")
+    }
+
+    /// O que um evento do bidirecional diz de IDENTIDADE: os valores da linha,
+    /// a chave canonica dela e -- quando a alteracao trocou a chave -- a tupla
+    /// e a chave de ANTES, lidas do rabo da imagem (`anexar_o_antes`).
+    ///
+    /// UM motor para quem aplica o evento remoto e para quem absorve o diario
+    /// local: as duas pontas fazem a mesma pergunta, e duas leituras do rabo
+    /// divergiriam no dia em que uma aprendesse um caso.
+    #[allow(clippy::type_complexity)]
+    fn identidades_do_evento(
+        tabela: &mut Table,
+        operacao: Operacao,
+        imagem: &[u8],
+        pos_chave: &[usize],
+    ) -> Result<(Vec<Value>, String, Option<(Vec<Value>, String)>)> {
+        let valores = tabela.valores_da_imagem(imagem)?;
+        let chave = bidirecional::chave_da_tupla(&valores, pos_chave);
+        let antiga = if operacao == Operacao::Alteracao {
+            match tabela.valores_antes_da_imagem(imagem)? {
+                Some(antes) => {
+                    let tupla = bidirecional::tupla(&antes, pos_chave);
+                    let velha = crate::dblink::sincronia::chave_canonica_da_tupla(&tupla);
+                    // O rabo vem quando QUALQUER unico mudou; se a identidade
+                    // nao mudou, nao ha troca de chave nenhuma a fazer.
+                    (velha != chave).then_some((tupla, velha))
+                }
+                None => None,
+            }
+        } else {
+            None
+        };
+        Ok((valores, chave, antiga))
     }
 
     /// Descobre QUAL indice unico recusou o evento, e com que linha.
@@ -6105,7 +6248,7 @@ impl Servidor {
         &self,
         tabela: &mut Table,
         indice: &str,
-        pos_chave: usize,
+        pos_chave: &[usize],
         valores: &[Value],
         qual: &str,
     ) -> Result<bidirecional::Conflito> {
@@ -6117,9 +6260,9 @@ impl Servidor {
         // e conflito com ela mesma: numa alteracao o indice do casamento acha
         // justamente o alvo, e conta-lo como culpado diria o indice errado a
         // quem opera.
-        let alvo = valores
-            .get(pos_chave)
-            .and_then(|v| tabela.buscar(indice, std::slice::from_ref(v)).ok())
+        let alvo = tabela
+            .buscar(indice, &bidirecional::tupla(valores, pos_chave))
+            .ok()
             .and_then(|r| r.first().copied());
         let unicos: Vec<(String, Vec<usize>)> = tabela
             .esquema()
@@ -28513,16 +28656,33 @@ impl Servidor {
                 }
             }
             let mut t = db.abrir_qualificada(&nome)?;
+            let identidade: Option<Vec<String>> =
+                bidirecional::chave_unica(t.esquema()).map(|(_, cols)| {
+                    cols.iter()
+                        .map(|c| t.esquema().colunas()[*c].nome.clone())
+                        .collect()
+                });
             let mut campos = vec![
                 ("eventos".to_string(), Json::de_u64(t.eventos()?)),
                 ("registros".to_string(), Json::de_u64(t.registros())),
-                // A chave unica de UMA coluna, se houver: e a identidade que
-                // o modo bidirecional exige, e e aqui que um assistente
-                // descobre ANTES de configurar que a tabela nao tem uma.
+                // A chave unica, se houver: e a identidade que o modo
+                // bidirecional exige, e e aqui que um assistente descobre
+                // ANTES de configurar que a tabela nao tem uma. `chave` segue
+                // com o NOME quando e uma coluna so -- quem le hoje continua
+                // lendo igual -- e a composta junta os nomes por virgula;
+                // `chave_colunas` e a lista, que e a forma sem ambiguidade
+                // (pedido 331).
                 (
                     "chave".to_string(),
-                    match bidirecional::chave_unica(t.esquema()) {
-                        Some((_, pos)) => Json::texto_de(&t.esquema().colunas()[pos].nome),
+                    match &identidade {
+                        Some(nomes) => Json::texto_de(nomes.join(",")),
+                        None => Json::Nulo,
+                    },
+                ),
+                (
+                    "chave_colunas".to_string(),
+                    match &identidade {
+                        Some(nomes) => Json::Lista(nomes.iter().map(Json::texto_de).collect()),
                         None => Json::Nulo,
                     },
                 ),
@@ -28547,6 +28707,14 @@ impl Servidor {
             (
                 "id_servidor",
                 Json::texto_de(&self.config.replicacao.id_servidor),
+            ),
+            // O numero de origem EFETIVO (pedido 329): o atribuido, senao o
+            // hash. Mandar o efetivo, e nao o configurado, poupa quem le de
+            // repetir a regra do «senao» -- e uma segunda copia dela
+            // divergiria no dia em que a primeira mudasse.
+            (
+                "numero_servidor",
+                Json::de_u64(self.config.replicacao.numero() as u64),
             ),
             // Sem a imagem ligada o diario existe mas nao replica, e a replica
             // precisa saber disso ANTES de puxar mil eventos inaplicaveis.
@@ -28595,6 +28763,23 @@ impl Servidor {
     fn op_replicar(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
         let desde = p.inteiro_ou("desde", 0).max(0) as u64;
         let max = lote_de_replicacao(p);
+        // `para` diz QUEM pede, e `para_numero` o numero de origem dele (pedido
+        // 329). Quem pede sem o numero e de antes do campo: o numero dele e o
+        // hash do id, que e o que ele de fato grava.
+        //
+        // A conferencia vem ANTES da trava e do diario: um par recusado nao
+        // custa leitura nenhuma, e o grito sai no primeiro pedido.
+        let hash_para = {
+            let para = p.texto_ou("para", "").trim();
+            if para.is_empty() {
+                None
+            } else {
+                let atribuido = p.inteiro_ou("para_numero", 0).clamp(0, u16::MAX as i64) as u16;
+                let numero = bidirecional::numero_do_servidor(atribuido, para);
+                self.conferir_numero_do_par(numero, para)?;
+                Some(numero)
+            }
+        };
         let _trava = self.travar_dados()?;
         let mut t = self.abrir_travada(&_trava, p, sessao)?;
 
@@ -28656,22 +28841,7 @@ impl Servidor {
         // laco infinito do bidirecional. A origem zero (escrita local) sai
         // traduzida para o hash DESTE servidor, para o outro lado guardar de
         // quem veio sem tabela de traducao nenhuma.
-        let meu_hash = {
-            let id = self.config.replicacao.id_servidor.trim();
-            if id.is_empty() {
-                0
-            } else {
-                bidirecional::hash_id(id)
-            }
-        };
-        let hash_para = {
-            let para = p.texto_ou("para", "").trim();
-            if para.is_empty() {
-                None
-            } else {
-                Some(bidirecional::hash_id(para))
-            }
-        };
+        let meu_hash = self.config.replicacao.numero();
 
         let mut lista: Vec<Json> = Vec::with_capacity(eventos.len());
         for (i, (e, imagem)) in eventos.into_iter().enumerate() {
@@ -28953,7 +29123,7 @@ impl Servidor {
         }
         if !sem_chave.is_empty() {
             impedimentos.push(Json::texto_de(format!(
-                "{} tabela(s) sem chave unica de uma coluna obrigatoria: elas \
+                "{} tabela(s) sem chave unica de colunas obrigatorias: elas \
                  replicam nos modos A, C e D, e o bidirecional as recusa, porque \
                  la a identidade entre servidores e a chave -- e chave que aceita \
                  nulo nao identifica ninguem",
@@ -60005,7 +60175,14 @@ mod testes_do_carimbo_do_futuro {
         let antes = crate::agora_ms();
         let e = evento(&mut t, i64::MAX);
         let aplicou = s
-            .aplicar_por_chave(&mut t, "b/c", "porId", 0, &e, bidirecional::hash_id("beta"))
+            .aplicar_por_chave(
+                &mut t,
+                "b/c",
+                "porId",
+                &[0],
+                &e,
+                bidirecional::hash_id("beta"),
+            )
             .unwrap();
         assert!(
             aplicou.entrou(),
@@ -60043,8 +60220,15 @@ mod testes_do_carimbo_do_futuro {
         let (s, mut t, _dir) = terreno("folga");
         let adiantado = crate::agora_ms() + bidirecional::FOLGA_DO_CARIMBO_MS - 1_000;
         let e = evento(&mut t, adiantado);
-        s.aplicar_por_chave(&mut t, "b/c", "porId", 0, &e, bidirecional::hash_id("beta"))
-            .unwrap();
+        s.aplicar_por_chave(
+            &mut t,
+            "b/c",
+            "porId",
+            &[0],
+            &e,
+            bidirecional::hash_id("beta"),
+        )
+        .unwrap();
         let (toque, contados) = toque_de(&s);
         assert_eq!(toque.carimbo, adiantado);
         assert_eq!(contados, 0);
@@ -60188,7 +60372,7 @@ mod testes_da_recusa_por_unicidade {
                 &mut aqui,
                 "b/c",
                 "porId",
-                0,
+                &[0],
                 &e,
                 bidirecional::hash_id("beta"),
             )
@@ -60234,7 +60418,7 @@ mod testes_da_recusa_por_unicidade {
                 &mut aqui,
                 "b/c",
                 "porId",
-                0,
+                &[0],
                 &e,
                 bidirecional::hash_id("beta"),
             )
@@ -60266,13 +60450,108 @@ mod testes_da_recusa_por_unicidade {
                 &mut aqui,
                 "b/c",
                 "porId",
-                0,
+                &[0],
                 &e,
                 bidirecional::hash_id("beta"),
             )
             .unwrap_err();
         assert!(erro.to_string().contains("sem imagem"), "{erro}");
         assert_eq!(contador(&s), 0, "erro de outro naipe virou recusa contada");
+    }
+}
+
+/// O registro dos numeros de origem -- pedido 329, com as condicoes do parecer
+/// do DBA de 01/10/2026 (§3): o registro vai ao disco ANTES de o par ser
+/// aceito, e o arquivo ilegivel recusa em vez de virar vazio. A prova do
+/// laco inteiro, com tres servidores, e `tests/identidade-do-bidirecional.rs`.
+#[cfg(test)]
+mod testes_dos_numeros_de_origem {
+    use super::*;
+
+    fn servidor(nome: &str, preparar: impl FnOnce(&Path)) -> (Arc<Servidor>, DirTemp) {
+        let dir = DirTemp::novo(&format!("numeros-{nome}"));
+        preparar(&dir);
+        let mut c = Config {
+            base: dir.to_path_buf(),
+            log_acessos: dir.join("acessos.log"),
+            blacklist: dir.join("blacklist.json"),
+            dblink: dir.join("dblink.json"),
+            token: "t".into(),
+            ..Config::default()
+        };
+        c.replicacao.id_servidor = "central".into();
+        (Servidor::novo(c).unwrap(), dir)
+    }
+
+    /// **O disco antes de aceitar.** Com o registro sem como ir ao disco (o
+    /// caminho dele e uma PASTA), o par novo e recusado -- e recusado de NOVO
+    /// na segunda chamada, porque a memoria nao recebeu o par que o disco
+    /// nao guardou.
+    ///
+    /// **Defeito reposto** (a memoria atualizada antes da gravacao, que era o
+    /// desenho da primeira versao desta frente): a segunda chamada acha o par
+    /// «ja conhecido», volta `Ok` sem nunca ter gravado, e a asercao cai.
+    #[test]
+    fn o_par_so_e_aceito_depois_de_o_registro_ir_ao_disco() {
+        let (s, dir) = servidor("disco", |_| {});
+        // Primeiro arranque, registro ausente: o primeiro par grava e passa.
+        s.conferir_numero_do_par(40, "caixa-a").unwrap();
+        assert!(dir.join("replicacao-numeros.json").is_file());
+
+        // O disco passa a recusar DEPOIS do arranque: o registro foi lido
+        // ausente (vazio, legitimo), e so a gravacao do par novo falha. Com o
+        // caminho ja tomado por uma pasta no arranque, a recusa seria a do
+        // registro ilegivel -- e o teste passaria por outro motivo.
+        let (s, dir) = servidor("sem-disco", |_| {});
+        std::fs::create_dir_all(dir.join("replicacao-numeros.json")).unwrap();
+        assert!(s.conferir_numero_do_par(40, "caixa-a").is_err());
+        assert!(
+            s.conferir_numero_do_par(40, "caixa-a").is_err(),
+            "o par entrou na memoria sem ter ido ao disco"
+        );
+        drop(dir);
+    }
+
+    /// **O numero nunca e reatribuido**, nem depois de o servidor reiniciar:
+    /// o registro relido do disco recusa outro id no mesmo numero, nomeando
+    /// os dois.
+    #[test]
+    fn o_numero_nao_e_reatribuido_a_outro_id_nem_depois_do_reinicio() {
+        let (s, dir) = servidor("reatribui", |_| {});
+        s.conferir_numero_do_par(40, "caixa-a").unwrap();
+        drop(s);
+        let base = dir.to_path_buf();
+        let mut c = Config {
+            base: base.clone(),
+            log_acessos: base.join("acessos.log"),
+            blacklist: base.join("blacklist.json"),
+            dblink: base.join("dblink.json"),
+            token: "t".into(),
+            ..Config::default()
+        };
+        c.replicacao.id_servidor = "central".into();
+        let s = Servidor::novo(c).unwrap();
+        let e = s
+            .conferir_numero_do_par(40, "caixa-b")
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("caixa-a") && e.contains("caixa-b"), "{e}");
+        // O dono de sempre continua passando.
+        s.conferir_numero_do_par(40, "caixa-a").unwrap();
+    }
+
+    /// **Ilegivel recusa.** O registro torto nao vira vazio no arranque: todo
+    /// par e recusado nomeando o arquivo, ate alguem consertar.
+    #[test]
+    fn o_registro_ilegivel_recusa_todo_par() {
+        let (s, _dir) = servidor("ilegivel", |d| {
+            std::fs::write(d.join("replicacao-numeros.json"), "{ torto").unwrap();
+        });
+        let e = s
+            .conferir_numero_do_par(40, "caixa-a")
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("replicacao-numeros.json"), "{e}");
     }
 }
 

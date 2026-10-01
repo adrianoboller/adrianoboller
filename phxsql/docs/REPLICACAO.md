@@ -397,13 +397,17 @@ nota existe para impedir.
 Mais quatro campos e três operações que os modos novos trouxeram:
 
 ```json
-{"token":"...","op":"replicar","database":"Z","tabela":"c","desde":0,"para":"belgica-01"}
+{"token":"...","op":"replicar","database":"Z","tabela":"c","desde":0,"para":"belgica-01","para_numero":7}
    ... eventos que NASCERAM em belgica-01 não voltam; `ate` anda por cima deles
    ... cada evento traz agora "carimbo_ms" e "origem"
+   ... "para_numero" (pedido 329): o número de origem de quem pede; ausente = o
+       hash do "para". Número que já é de outro id é recusado nomeando os dois
 
 {"token":"...","op":"posicao","database":"Z"}
-   ... a resposta traz "id_servidor" e, por tabela, "chave" (nula = sem
-       identidade replicável, e o modo bidirecional a recusa)
+   ... a resposta traz "id_servidor", "numero_servidor" (o efetivo) e, por
+       tabela, "chave" (nula = sem identidade replicável, e o modo
+       bidirecional a recusa; na composta, os nomes por vírgula) e
+       "chave_colunas" (a lista)
 
 {"token":"...","op":"replicacao_estado"}          → papel vivo, posição por
    origem e tabela, última rodada, último erro, recusas com o motivo
@@ -823,10 +827,52 @@ ser load-bearing. Fica pelos dois motivos, agora sabendo qual é qual.
 *Diagnóstico plausível não é diagnóstico medido — e o errado sobrevive melhor
 quando o conserto funciona por outro motivo.*
 
-O hash é CRC-32 dobrado em u16 e **pode colidir** (1 em 65.535 por par); a
-colisão suprimiria eventos de um servidor inocente, então a rodada confere ao
-conectar — ids diferentes com o mesmo hash param com erro que manda trocar um
-id. Os dois lados com o **mesmo** `id_servidor` idem.
+O hash é CRC-32 dobrado em u16 e **pode colidir**: 1 em 65.535 por par, e
+**0,32% com 21 nós** (209,7× o par). A colisão suprimiria eventos de um
+servidor inocente. Os dois lados com o **mesmo** `id_servidor` param com erro.
+
+### O número de origem: atribuído, e conferido contra todos (pedido 329)
+
+A conferência antiga era do **par** — o número do outro contra o **meu** — e
+não via dois caixas com o mesmo número **entre si**: o central guardava os
+eventos de um com aquele número, e o filtro `para` os suprimia ao servir o
+outro, calado. Medido em `tests/identidade-do-bidirecional.rs` (caixa X →
+central → caixa Y, ids achados por força bruta com o mesmo hash): sem a
+conferência do conjunto, Y nunca recebe a linha de X e nada grita.
+
+Decisão do papel J (`docs/propostas/decisoes-onda-01-10-2026.md` §329),
+convergência dos três maduros — o `RepOriginId` do PostgreSQL tem os mesmos 16
+bits e é **atribuído** (`origin.c` procura o primeiro livre), e o `server_id`
+do MySQL e da MariaDB é escolhido pelo operador:
+
+```json
+"replicacao": {"papel": "multi", "id_servidor": "caixa-07", "numero_servidor": 7}
+```
+
+- **`numero_servidor`** (1..65535) é o número que vai nos 2 bytes de origem de
+  cada evento. Ausente ou zero → o hash do `id_servidor`, que é o de sempre (a
+  guarda entra pedida). Fora da faixa → o servidor **não sobe**.
+- O número **viaja**: o `posicao` responde `numero_servidor` (o efetivo), e o
+  `replicar` recebe `para_numero` ao lado do `para`. Quem não manda é de antes
+  do campo, e o número dele é o hash — que é o que ele de fato grava.
+- Cada nó guarda **número → id** de todo par visto (ele mesmo, as origens que
+  puxa e quem puxa dele) em `replicacao-numeros.json`, e **recusa** o par cujo
+  número já é de outro id, nomeando os dois. A conferência vem antes do
+  trabalho: no `replicar`, antes da trava e do diário.
+- **As três condições do DBA** (parecer de 01/10/2026, §3), porque o número
+  vai para o `origem` de todo evento aplicado e o `.log` não se reescreve:
+  - **um número nunca é reatribuído** a outro id, nem depois de o id sair nem
+    depois de reiniciar — um id renumerado (do hash para o atribuído) fica com
+    os dois, e é o certo;
+  - **o registro vai ao disco ANTES de o par ser aceito**, pela troca durável;
+    a conta é feita numa cópia, e a memória só recebe o par depois do `Ok` da
+    gravação — senão um disco que recusasse deixaria a chamada seguinte
+    aceitar o par «já conhecido» sem nunca ter gravado;
+  - **arquivo ilegível recusa** todo par, nomeando o arquivo, em vez de virar
+    registro vazio (vazio aceitaria a colisão) — a decisão do 534 para o
+    estado do cluster. Ausente é o primeiro arranque, e vale vazio.
+- **O campo não alarga**: H2 (origem u32) compraria 4,9×10⁻⁸ e custaria um
+  `.log` v4; atribuído, 16 bits não colidem por construção.
 
 ### O conflito: modificação mais recente vence
 
@@ -856,9 +902,18 @@ determinístico e igual dos dois lados, que é o que faz os dois convergirem
 
 **A ordem de digitação é sagrada em cada servidor**: cada `.reg` mantém a SUA
 ordem de chegada, e o insert local de A e o de B podem ganhar o mesmo rowid.
-Entre servidores a linha se identifica pela **chave única de uma coluna**
-(chave primária, ou o primeiro índice único) — o mesmo desenho da sincronia do
-DbLink. O aplicador busca pela chave: achou, altera **mantendo o rowid e o
+Entre servidores a linha se identifica pela **chave única** (chave primária,
+ou o primeiro índice único) — o mesmo desenho da sincronia do DbLink. Desde o
+pedido 331 ela pode ser **composta**, e então a identidade é a **tupla
+inteira**: uma coluna diferente é **outra linha**, não um conflito, e o «mais
+recente vence» vale por tupla (convergência dos quatro: PG `REPLICA IDENTITY
+USING INDEX`, Galera e Group Replication com PK composta, a sessão do SQLite).
+Toda coluna da composta tem de ser **obrigatória** — NULL não identifica linha
+(pedido 448), e casar por ele sobrescreveria a de outro (517). A tupla vira
+texto pela `chave_canonica_da_tupla`, cada parte prefixada pelo tamanho
+(`"3:abc|1:7"`), e a de **uma coluna** devolve exatamente o texto de antes —
+o toque gravado antes do 331 continua casando. O `posicao` manda `chave` (o
+nome; na composta, os nomes por vírgula) e `chave_colunas` (a lista). O aplicador busca pela chave: achou, altera **mantendo o rowid e o
 rownum locais**; não achou, insere e a linha entra na ordem de chegada
 *daqui*.
 
@@ -884,14 +939,55 @@ defeito ativo (dado errado), não guarda nova.
 
 Consequência honesta: **o modo bidirecional exige tabela com chave única** —
 o HFSQL(R) também impõe identificador adequado para replicar. Tabela sem
-chave (ou só com chave composta, que fica para quando alguém precisar) é
-**recusada com o motivo escrito**, visível em `replicacao_estado`:
+chave (ou com composta que aceita NULL) é **recusada com o motivo escrito**,
+visível em `replicacao_estado`:
 
 ```json
-"recusas": {"loja/log_livre": "sem chave unica de uma coluna: o bidirecional
-            casa as linhas pela chave, e log_livre nao tem uma (crie um
-            indice unico, ou uma chave primaria)"}
+"recusas": {"loja/log_livre": "sem chave unica: o bidirecional casa as linhas
+            pela chave, e log_livre nao tem uma (crie um indice unico ou uma
+            chave primaria; a composta serve com todas as colunas
+            obrigatorias)"}
 ```
+
+A chave que existe e só falta ser obrigatória (pedido 517) tem frase própria,
+que nomeia o índice e a coluna — vale para a composta também, nomeando a
+primeira coluna que aceita nulo.
+
+### A alteração que troca a chave chega como alteração
+
+Medido em 01/10/2026 (`tests/identidade-do-bidirecional.rs`): a imagem do
+evento é o «depois», e o aplicador procurava a linha pela chave **nova** — não
+achava, inseria, e a antiga **ficava**. Trocar o `id` 1 por 10 em A deixava B
+com `[1, 2, 10]` em vez de `[2, 10]`.
+
+O PostgreSQL manda a chave antiga quando a identidade muda, e o SQLite registra
+a troca como DELETE+INSERT; os dois levam o «antes». Aqui ele vai no **rabo da
+imagem** (`docs/FORMATO.md` §4, «O rabo do antes»), só quando a alteração muda
+a chave de um índice único. Do outro lado, pelo mesmo motor de identidade
+(`identidades_do_evento`, o mesmo para quem aplica e para quem absorve o
+diário local):
+
+- a chave antiga disputa pelo mesmo «mais recente vence»;
+- vencendo, e a chave nova livre, a linha antiga é **alterada** — mantém o
+  rowid e o rownum daqui, que é a ordem de digitação deste servidor;
+- vencendo, e a chave nova já ocupada aqui, a nova recebe a linha e a antiga
+  **sai** (a exclusão replicada de sempre);
+- a chave antiga vira **lápide** no mapa de toques, para que uma alteração mais
+  velha nela não ressuscite a linha.
+
+Limite dito: a troca de chave concorrente com uma alteração **mais nova** da
+chave antiga do outro lado termina com as duas linhas nos dois lados —
+convergem, mas a troca não «ganha» da escrita mais nova. E o evento devido do
+pedido 498 (o diário que falhou e se completa na abertura seguinte) sai sem o
+rabo: o «antes» já não existe quando ele se completa.
+
+Versões misturadas: desde esta versão o decodificador **recusa** byte que
+sobra depois dos externos e não é o rabo conhecido (parecer do DBA, §2) — uma
+réplica diante de campo mais novo para dizendo «atualize», em vez de ignorá-lo
+calada. Um binário de **antes** desta versão ainda ignora o rabo; sem dado em
+produção, o preço é aceito. O anúncio da capacidade pelo `posicao` (a origem
+não mandar troca de chave a quem não a anuncia), que o parecer também cita,
+**não entrou** nesta frente.
 
 ### O índice único SECUNDÁRIO: a recusa é contada, e o laço segue
 

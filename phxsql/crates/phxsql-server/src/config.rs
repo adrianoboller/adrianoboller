@@ -391,6 +391,14 @@ pub struct Replicacao {
     pub retorno: String,
     /// Identidade deste servidor, usada na numeracao global dos eventos.
     pub id_servidor: String,
+    /// O numero de origem ATRIBUIDO a este servidor (1..65535), o que vai nos
+    /// 2 bytes de origem de cada evento do `.log`. Zero = ausente, e ai vale
+    /// o `hash_id` do `id_servidor`, que e o comportamento de antes.
+    ///
+    /// Pedido 329: o hash de 16 bits colide (0,32% com 21 nos), e o numero
+    /// atribuido nao colide por construcao -- o `RepOriginId` do PostgreSQL e
+    /// o `server_id` do MySQL e da MariaDB. Ver [`Replicacao::numero`].
+    pub numero_servidor: u16,
     /// IPs autorizados a pedir o fluxo de replicacao (so no source).
     pub replicas_autorizadas: Vec<String>,
     /// Origens de onde puxar (so na replica). Varias = multi-source.
@@ -430,6 +438,17 @@ impl Replicacao {
         Replicacao::resolver("retorno", &self.retorno)
     }
 
+    /// O numero de origem deste servidor: o atribuido, senao o hash do id.
+    ///
+    /// UM lugar so: a supressao do `replicar`, a origem que a rodada
+    /// bidirecional guarda no toque local e a conferencia de colisao perguntam
+    /// aqui. Tres contas do mesmo numero divergiriam no dia em que uma delas
+    /// aprendesse o atribuido e as outras nao -- e a que esquecesse suprimiria
+    /// o evento de um inocente.
+    pub fn numero(&self) -> u16 {
+        crate::bidirecional::numero_do_servidor(self.numero_servidor, &self.id_servidor)
+    }
+
     /// As portas configuradas, em ordem, para o arranque e para o `config`.
     pub fn portas(&self) -> Vec<(&'static str, &str)> {
         let mut v = Vec::new();
@@ -450,6 +469,7 @@ impl Default for Replicacao {
             envio: String::new(),
             retorno: String::new(),
             id_servidor: String::new(),
+            numero_servidor: 0,
             replicas_autorizadas: Vec::new(),
             origens: Vec::new(),
             imagem_da_linha: false,
@@ -4863,6 +4883,19 @@ impl Config {
                     .to_string(),
                 retorno: r.texto_ou("retorno", "").trim().to_string(),
                 id_servidor: r.texto_ou("id_servidor", "").to_string(),
+                numero_servidor: {
+                    // Fora da faixa e ERRO na subida, e nao um corte calado:
+                    // 65536 virando 0 ligaria o hash sem ninguem pedir, e
+                    // 70000 virando 4464 poria o servidor no numero de outro.
+                    let n = r.inteiro_ou("numero_servidor", 0);
+                    if !(0..=u16::MAX as i64).contains(&n) {
+                        return Err(PhxError::Esquema(format!(
+                            "replicacao.numero_servidor {n} fora da faixa: use 1..65535 \
+                             (0 ou ausente = derivado do id_servidor)"
+                        )));
+                    }
+                    n as u16
+                },
                 replicas_autorizadas: r.textos("replicas_autorizadas"),
                 origens: r
                     .campo("origens")
@@ -5602,6 +5635,10 @@ impl Config {
                     ("envio", Json::texto_de(&self.replicacao.envio)),
                     ("retorno", Json::texto_de(&self.replicacao.retorno)),
                     ("id_servidor", Json::texto_de(&self.replicacao.id_servidor)),
+                    (
+                        "numero_servidor",
+                        Json::de_u64(self.replicacao.numero_servidor as u64),
+                    ),
                     // O que a tela da replicacao precisa para dizer a verdade:
                     // sem a imagem no diario o servidor tem papel de source e
                     // nao replica, e a tela diria que esta tudo pronto.

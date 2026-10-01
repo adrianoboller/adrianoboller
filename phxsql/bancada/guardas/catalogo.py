@@ -19786,10 +19786,13 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "o unico de colunas NOT NULL: tres convergem, aceite automatico."
         ),
         "arquivo": "crates/phxsql-server/src/bidirecional.rs",
-        "trecho": """        unico_de_uma_coluna(esquema, i) && !esquema.colunas()[i.colunas[0].coluna].nullable
+        "trecho": """        unico_sem_coluna_de_sistema(esquema, i)
+            && i.colunas
+                .iter()
+                .all(|c| !esquema.colunas()[c.coluna].nullable)
 """,
         "troca": """        // DEFEITO REPOSTO (517): a coluna da chave pode aceitar nulo.
-        unico_de_uma_coluna(esquema, i)
+        unico_sem_coluna_de_sistema(esquema, i)
 """,
         "pacote": "phxsql-server",
         "alvo": ["--test", "imagem-pela-politica-do-servidor"],
@@ -19946,6 +19949,214 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         ],
         "seguem": [
             "servidor::testes_do_rebaixar_sem_disco::rebaixar_com_disco_nao_inventa_aviso",
+        ],
+    },
+    {
+        "id": "troca-de-chave-vira-linha-nova",
+        "titulo": "No bidirecional, a alteração que troca a chave virava inserção nova do outro lado e a linha antiga ficava: a imagem só dizia o «depois»",
+        "porque": (
+            "achado da onda de 01/10/2026, medido pelo soquete "
+            "(`tests/identidade-do-bidirecional.rs`): trocar o id 1 por 10 em "
+            "A deixava B com [1, 2, 10]. O PostgreSQL manda a chave antiga "
+            "quando a identidade muda e o SQLite registra DELETE+INSERT; aqui "
+            "o «antes» vai no rabo da imagem, so quando a chave de um unico "
+            "muda."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """            .any(|(i, d)| d.unico && chaves_antigas.get(i) != chaves_novas.get(i))
+""",
+        "troca": """            // DEFEITO REPOSTO: a imagem nunca leva o antes.
+            .any(|(i, d)| d.unico && chaves_antigas.get(i) != chaves_novas.get(i) && false)
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "bidirecional-no-store"],
+        "caem": ["a_troca_de_chave_leva_o_antes_e_a_alteracao_comum_nao"],
+        "seguem": [
+            "o_forcado_vale_para_alteracao_e_exclusao_tambem",
+            "a_exclusao_carrega_a_imagem_quando_o_bidirecional_pede",
+        ],
+    },
+    {
+        "id": "fio-cifrado-perde-o-antes",
+        "titulo": "A imagem aberta para o fio numa tabela cifrada era remontada só até os externos, e a troca de chave perdia o «antes» só ali",
+        "porque": (
+            "irmao do achado da troca de chave (01/10/2026): "
+            "`imagem_para_o_fio` desmonta e remonta a imagem para abrir os "
+            "externos selados (pedido 344). Remontar ate os externos jogava "
+            "fora o rabo, e a troca de chave voltava a virar linha nova do "
+            "outro lado so na tabela cifrada."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        out.extend_from_slice(&imagem[fim..]);
+""",
+        "troca": """        // DEFEITO REPOSTO: o rabo fica para tras.
+        let _ = fim;
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "imagem-de-replicacao-com-coluna-marcada"],
+        "caem": ["o_fio_cifrado_leva_o_antes_da_troca_de_chave"],
+        "seguem": [
+            "a_imagem_leva_o_inline_em_claro_e_o_externo_selado",
+            "imagem_aberta_para_o_fio_replica_com_e_sem_cofre",
+        ],
+    },
+    {
+        "id": "composta-casa-pela-primeira-coluna",
+        "titulo": "A chave composta do bidirecional casando só pela primeira coluna: (1,2) e (1,3) caem na identidade de (1,1)",
+        "porque": (
+            "pedido 331. Nos quatro motores a identidade e a TUPLA inteira: "
+            "coluna diferente e outra linha. Casar pela primeira coluna e o "
+            "jeito plausivel de errar -- e o que a prova pelo soquete mede "
+            "como rodada parada (`tests/identidade-do-bidirecional.rs`)."
+        ),
+        "arquivo": "crates/phxsql-server/src/bidirecional.rs",
+        "trecho": """pub fn tupla(valores: &[Value], colunas: &[usize]) -> Vec<Value> {
+    colunas
+        .iter()
+""",
+        "troca": """pub fn tupla(valores: &[Value], colunas: &[usize]) -> Vec<Value> {
+    // DEFEITO REPOSTO (331): so a primeira coluna da composta.
+    colunas[..1]
+        .iter()
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "bidirecional::testes::a_composta_de_colunas_obrigatorias_e_a_identidade",
+        ],
+        "seguem": [
+            "bidirecional::testes::sem_primaria_serve_o_primeiro_unico_de_uma_coluna",
+        ],
+    },
+    {
+        "id": "numero-de-origem-conferido-so-no-par",
+        "titulo": "O número de origem do bidirecional conferido só contra o próprio: dois caixas com o mesmo número entre si não eram vistos, e o central suprimia os eventos de um ao servir o outro",
+        "porque": (
+            "pedido 329. Com 21 nos a chance de colisao do hash de 16 bits e "
+            "0,32% (209,7x o par). A conferencia passa a ser do CONJUNTO de "
+            "pares vistos, e o numero pode ser atribuido "
+            "(`replicacao.numero_servidor`), como o `RepOriginId` do "
+            "PostgreSQL e o `server_id` do MySQL e da MariaDB."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        novo |= bidirecional::conferir_numero(&mut copia, numero, id).map_err(PhxError::Esquema)?;
+""",
+        "troca": """        // DEFEITO REPOSTO (329): so o par -- o numero do outro contra o MEU.
+        if numero == meu && id.trim() != rep.id_servidor.trim() {
+            return Err(PhxError::Esquema(format!("colisao com {id}")));
+        }
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "identidade-do-bidirecional"],
+        "caem": ["dois_caixas_com_o_mesmo_numero_sao_recusados_nomeando_os_dois"],
+        "seguem": [
+            "sem_numero_atribuido_o_par_sem_colisao_replica_como_antes",
+            "com_numero_atribuido_o_caixa_inocente_recebe",
+        ],
+        "prazo": 600,
+    },
+    {
+        "id": "numero-de-origem-atribuido-ignorado",
+        "titulo": "O `numero_servidor` lido do config e ignorado na conta do número de origem: o caixa inocente continua no hash que colide",
+        "porque": (
+            "pedido 329. Configuracao que nao e lida mente (o "
+            "`recursos.cache_paginas`): o numero atribuido tem de ser o que "
+            "vai no evento, na supressao do `para` e na conferencia -- as "
+            "tres perguntam a `Replicacao::numero`."
+        ),
+        "arquivo": "crates/phxsql-server/src/config.rs",
+        "trecho": """        crate::bidirecional::numero_do_servidor(self.numero_servidor, &self.id_servidor)
+""",
+        "troca": """        // DEFEITO REPOSTO (329): o atribuido nao e lido.
+        crate::bidirecional::numero_do_servidor(0, &self.id_servidor)
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "identidade-do-bidirecional"],
+        "caem": ["com_numero_atribuido_o_caixa_inocente_recebe"],
+        "seguem": ["sem_numero_atribuido_o_par_sem_colisao_replica_como_antes"],
+        "prazo": 600,
+    },
+    {
+        "id": "imagem-com-sobra-ignorada",
+        "titulo": "O decodificador da imagem ignorava calado os bytes que sobravam depois dos externos: um campo novo passaria despercebido por todo binário anterior",
+        "porque": (
+            "parecer do DBA de 01/10/2026 (`dba-parecer-formatos-01-10-2026.md` "
+            "§2): `abrir_imagem_com_selo` nao conferia `i == imagem.len()`, e o "
+            "par de versoes diferentes divergiria sem erro. Hoje depois dos "
+            "externos so cabe nada ou o rabo do «antes» inteiro."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        Table::ler_o_rabo(imagem, i)?;
+        Ok((payload, externos, i))
+""",
+        "troca": """        // DEFEITO REPOSTO: a sobra passa calada.
+        Ok((payload, externos, i))
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "bidirecional-no-store"],
+        "caem": ["a_imagem_com_sobra_desconhecida_e_recusada"],
+        "seguem": ["a_troca_de_chave_leva_o_antes_e_a_alteracao_comum_nao"],
+    },
+    {
+        "id": "registro-de-numeros-ilegivel-vira-vazio",
+        "titulo": "O `replicacao-numeros.json` ilegível lido como vazio: a colisão que ele existe para recusar passaria e iria para dentro dos `.log`",
+        "porque": (
+            "pedido 329, condicao do DBA (parecer de 01/10/2026, §3): vazio "
+            "aceita colisao, e o numero aceito vai para o `origem` de todo "
+            "evento aplicado, que nao se reescreve. Ilegivel recusa o par, como "
+            "o 534 fez com o estado do cluster."
+        ),
+        "arquivo": "crates/phxsql-server/src/bidirecional.rs",
+        "trecho": """        return Err(ilegivel("nao e um objeto JSON"));
+""",
+        "troca": """        // DEFEITO REPOSTO: ilegivel vira vazio.
+        let _ = ilegivel;
+        return Ok(Numeros::new());
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "bidirecional::testes::o_registro_ilegivel_recusa_e_nao_vira_vazio",
+            "servidor::testes_dos_numeros_de_origem::o_registro_ilegivel_recusa_todo_par",
+        ],
+        "seguem": ["bidirecional::testes::os_numeros_atravessam_o_arquivo"],
+    },
+    {
+        "id": "numero-aceito-antes-do-disco",
+        "titulo": "O par novo de número de origem entrava na memória antes de o registro ir ao disco: com o disco recusando, a chamada seguinte o aceitava sem nunca ter gravado",
+        "porque": (
+            "pedido 329, condicao do DBA (parecer de 01/10/2026, §3): o mapa "
+            "vai ao disco ANTES de o primeiro evento daquele numero ser aceito; "
+            "perde-lo e aceitar outro id com o mesmo numero grava a "
+            "ambiguidade nos `.log`. A conta e numa copia, e a memoria so "
+            "recebe depois do `Ok` da troca duravel."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        if novo {
+            // Raro: so na primeira vez de cada par.
+            bidirecional::gravar_numeros(
+                &self.config.base.join("replicacao-numeros.json"),
+                &copia,
+            )?;
+            *guarda = Ok(copia);
+        }
+""",
+        "troca": """        if novo {
+            // DEFEITO REPOSTO: a memoria antes do disco.
+            *guarda = Ok(copia.clone());
+            bidirecional::gravar_numeros(
+                &self.config.base.join("replicacao-numeros.json"),
+                &copia,
+            )?;
+        }
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_dos_numeros_de_origem::o_par_so_e_aceito_depois_de_o_registro_ir_ao_disco",
+        ],
+        "seguem": [
+            "servidor::testes_dos_numeros_de_origem::o_numero_nao_e_reatribuido_a_outro_id_nem_depois_do_reinicio",
         ],
     },
 ]

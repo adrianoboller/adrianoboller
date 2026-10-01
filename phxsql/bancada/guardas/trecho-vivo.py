@@ -449,6 +449,20 @@ dia, nunca no desejado:
   contador (`drop-do-congelamento-esquece-o-contador`) e o arbitro que
   engolia o rebaixar (`arbitro-engole-o-rebaixar`). 560 + 5 = 565.
   No merge com as frentes que levaram o piso a 579: 579 + 5 = 584.
+  **SUBIU para 589 em 01/10/2026** (pedidos 329 e 331, e a troca de chave no
+  bidirecional): cinco guardas -- a troca de chave sem o «antes»
+  (`troca-de-chave-vira-linha-nova`), o fio cifrado que perdia o rabo
+  (`fio-cifrado-perde-o-antes`), a composta casada pela primeira coluna
+  (`composta-casa-pela-primeira-coluna`), o numero de origem conferido so no
+  par (`numero-de-origem-conferido-so-no-par`) e o numero atribuido ignorado
+  (`numero-de-origem-atribuido-ignorado`). 584 + 5 = 589, medido pelo
+  `--catraca`.
+  **SUBIU para 592 em 01/10/2026** (as condicoes do parecer do DBA sobre 329
+  e 331): tres guardas -- a sobra da imagem ignorada calada
+  (`imagem-com-sobra-ignorada`), o registro de numeros ilegivel lido como
+  vazio (`registro-de-numeros-ilegivel-vira-vazio`) e o par aceito antes de
+  o registro ir ao disco (`numero-aceito-antes-do-disco`). 589 + 3 = 592,
+  medido pelo `--catraca`.
 
 # A QUINTA REGUA: a tabela publicada pode ser MENOR que o catalogo
 
@@ -555,7 +569,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 584
+PISO_DAS_ENTRADAS = 592
 
 # ------------------------------------------------------------- APOSENTADAS
 #
