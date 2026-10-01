@@ -811,6 +811,14 @@ Dois servidores, cada um réplica do outro, os dois recebendo escrita:
                "origens": [{"nome":"beta", "host":"10.2.1.10", "porta":5000, "...":"..."}]}
 ```
 
+**A faixa da `Sequence` de cada nó** (pedido 290): tabela criada com
+`"passo_da_sequencia": N` numera em N faixas disjuntas, e quem diz em qual
+ESTE servidor numera é `"inicio_da_sequencia"` dentro de `replicacao` (inteiro
+≥ 0, padrão 0) — o `auto_increment_offset` do MySQL/MariaDB. Com dois nós e
+passo 2, um declara `0` (2, 4, 6…) e o outro `1` (1, 3, 5…). Sem o campo os
+dois numeram na faixa 0 e colidem como antes; subir o nó com outra faixa sobre
+tabela que já numerou é **recusado** nomeando o campo. Ver `docs/FORMATO.md`.
+
 Os dois problemas reais, e a peça de cada um:
 
 ### O laço infinito, a origem no evento — e o que é mesmo que o mata

@@ -987,6 +987,17 @@ impl Database {
         self.abrir_tabela(schema.as_deref(), &nome)
     }
 
+    /// [`Table::realinhar_sequencia`] pelo nome qualificado, com as mesmas
+    /// conferencias do [`Database::abrir_tabela`] (motor, nome, «nao existe»)
+    /// -- a porta do pedido 290 para a tabela que a faixa recusa abrir.
+    pub fn realinhar_sequencia(&self, qualificado: &str) -> Result<(u64, u64, u64)> {
+        self.exigir_motor_padrao()?;
+        let (schema, nome) = separar_qualificado(qualificado);
+        validar_nome("tabela", &nome)?;
+        Table::realinhar_sequencia(self.diretorio(schema.as_deref())?, &nome)
+            .map_err(|e| self.tabela_que_nao_existe(e, schema.as_deref(), &nome))
+    }
+
     /// O que uma CÓPIA leva: os cinco arquivos da tabela mais o espelho
     /// `.bkp`. Nao inclui a lixeira nem os motivos -- uma copia nasce como a
     /// origem esta, e nao herda o que foi excluido dela.

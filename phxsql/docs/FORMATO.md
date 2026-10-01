@@ -564,6 +564,28 @@ nomeando as duas, em vez de reusar número calado. `proxima_sequencia == 0` é
 «nunca usada» e pula a conferência — é o que faz a tabela nascida por
 replicação adotar a faixa **deste** nó na primeira escrita.
 
+**O contador gravado é o PRÓXIMO NÚMERO DA FAIXA** (pedido 290, 01/10/2026):
+depois de entregar `v`, os bytes 36..44 do cabeçalho guardam o primeiro número
+`> v` na faixa — `v + passo` —, e não `v + 1`. Era `v + 1`, e a tabela saía da
+própria classe de resto na primeira inserção: a abertura seguinte a recusava
+como se fosse de outro nó, e pelo servidor (que reabre a tabela a cada pedido)
+a segunda inserção de toda tabela com `passo > 1` era recusada. Com `passo = 1`
+as duas contas dão `v + 1`, então nenhuma tabela sem faixa muda um byte.
+
+**De onde vem o `início`**: `replicacao.inicio_da_sequencia` no `config.json`
+(inteiro ≥ 0, padrão 0), aplicado no arranque do servidor **antes** da
+primeira tabela abrir — o `auto_increment_offset` do MySQL/MariaDB.
+
+**A tabela gravada com o contador `v + 1` tem saída** (parecer do DBA de
+01/10/2026, NÃO 290-b): ela não abre — a conferência recusa —, e a recusa nomeia
+as **duas** causas possíveis em vez de mandar trocar o `início` (obedecer poria
+este nó na faixa de outro). A saída é `ajustar_sequencia` com
+`"pelo_maior": true` (`Table::realinhar_sequencia`): abre **sem** a conferência,
+põe o contador no primeiro número da faixa deste nó acima do **maior valor
+gravado** e do próprio contador, sincroniza e fecha na mesma chamada. O alvo é o
+dado, não um palpite. O `reparar` reconcilia pela mesma conta
+(`RegFile::realinhar_sequencia`, motor único).
+
 **Lista com contagem, e não um `u64` solto**, mesmo só havendo uma `Sequence`
 por tabela hoje: lista com contagem detecta truncamento, campo solto não.
 

@@ -346,12 +346,68 @@ impl RegFile {
     }
 
     pub fn abrir(diretorio: impl AsRef<Path>, nome: &str) -> Result<RegFile> {
-        let mut r = RegFile::montar(diretorio, nome)?;
+        let r = RegFile::montar(diretorio, nome)?;
+        r.conferir_faixa_da_sequencia(nome)?;
+        r.curar_ao_abrir()
+    }
+
+    /// Abre SEM a conferencia da faixa da `Sequence` -- e so para
+    /// [`crate::table::Table::realinhar_sequencia`], que existe para tirar a
+    /// tabela do estado que essa conferencia recusa. Quem mais a usasse
+    /// numeraria na faixa errada, calado.
+    pub(crate) fn abrir_para_realinhar(diretorio: impl AsRef<Path>, nome: &str) -> Result<RegFile> {
+        RegFile::montar(diretorio, nome)?.curar_ao_abrir()
+    }
+
+    /// O que a abertura com a ficha exclusiva faz depois de montar: termina o
+    /// que ficou pela metade e rele o que a montagem nao le.
+    fn curar_ao_abrir(mut self) -> Result<RegFile> {
+        let r = &mut self;
         r.terminar_troca_interrompida()?;
         r.conferir_volumes_uniformes()?;
         r.reler_fronteiras()?;
         r.reler_baldes()?;
-        Ok(r)
+        Ok(self)
+    }
+
+    /// A faixa da `Sequence` (PSCH v10) se confere na ABERTURA, e custa ZERO
+    /// byte a mais: o valor ja esta gravado. A faixa e uma classe de resto, e
+    /// `proxima_sequencia` e o representante dela --
+    /// `proxima_sequencia = inicio (mod passo)` sempre que ela ja foi usada.
+    /// Entao nao ha um segundo lugar onde a verdade possa divergir de si
+    /// mesma.
+    ///
+    /// `proxima_sequencia == 0` e «nunca usada» e PULA a conferencia. E o que
+    /// faz a tabela nascida por replicacao funcionar: ela herda o `passo` do
+    /// bloco do source e adota a faixa DESTE no na primeira escrita.
+    ///
+    /// # As DUAS causas, e por que a frase nomeia as duas
+    ///
+    /// Ate 01/10/2026 a recusa mandava «ajuste o inicio deste servidor para
+    /// a faixa da tabela» -- e obedecer punha ESTE no a numerar na faixa de
+    /// outro, que e a colisao que a faixa existe para impedir (parecer do
+    /// DBA, NAO 290-b). E havia uma segunda causa que a frase nem conhecia: a
+    /// tabela gravada pelo defeito do contador `v + 1` do pedido 290, que
+    /// sai da propria faixa na primeira insercao. A saida dela e o
+    /// realinhamento pelo maior valor gravado, que e o dado e nao um palpite.
+    fn conferir_faixa_da_sequencia(&self, nome: &str) -> Result<()> {
+        let passo = self.esquema.passo_da_sequencia();
+        let inicio = crate::no::inicio_da_sequencia();
+        let proxima = self.proxima_sequencia;
+        if passo > 1 && proxima != 0 && proxima % passo != inicio % passo {
+            return Err(PhxError::Esquema(format!(
+                "a tabela {nome} tem o contador da sequencia fora da faixa deste \
+                 servidor ({} de {passo}; o contador esta em {proxima}). Duas causas \
+                 possiveis: (a) ela foi gravada por versao com o contador defeituoso \
+                 do pedido 290 -- realinhe pelo maior valor gravado com \
+                 `ajustar_sequencia` e `\"pelo_maior\": true`; (b) este servidor \
+                 subiu com o `replicacao.inicio_da_sequencia` errado -- confira o \
+                 config.json, e NAO o troque so para casar com a tabela: se ela veio \
+                 de outro no, isso poria este servidor na faixa dele",
+                inicio % passo
+            )));
+        }
+        Ok(())
     }
 
     /// Abre SEM escrever nada, e devolve `None` quando abrir exigiria escrever.
@@ -369,6 +425,10 @@ impl RegFile {
     /// trabalho por la, onde a troca se termina uma vez so.
     pub fn abrir_sem_escrever(diretorio: impl AsRef<Path>, nome: &str) -> Result<Option<RegFile>> {
         let mut r = RegFile::montar(diretorio, nome)?;
+        // O IRMAO da conferencia do `abrir`: a abertura para ler chama as
+        // mesmas pecas na mesma ordem, e sem ela a leitura serviria a tabela
+        // que a escrita recusa.
+        r.conferir_faixa_da_sequencia(nome)?;
         if !r.trocas_por_terminar().is_empty() {
             return Ok(None);
         }
@@ -496,30 +556,6 @@ impl RegFile {
         if slot_size != esperado {
             return Err(PhxError::Corrompido(format!(
                 "slot_size {slot_size} em {nome_arq} nao bate com o esquema ({esperado})"
-            )));
-        }
-
-        // A faixa da `Sequence` (PSCH v10) se confere AQUI, e custa ZERO byte
-        // a mais: o valor ja esta gravado. A faixa e uma classe de resto, e
-        // `proxima_sequencia` e o representante dela --
-        // `proxima_sequencia = inicio (mod passo)` sempre que ela ja foi
-        // usada. Entao nao ha um segundo lugar onde a verdade possa divergir
-        // de si mesma.
-        //
-        // `proxima_sequencia == 0` e «nunca usada» e PULA a conferencia. E o
-        // que faz a tabela nascida por replicacao funcionar: ela herda o
-        // `passo` do bloco do source e adota a faixa DESTE no na primeira
-        // escrita.
-        let passo = esquema.passo_da_sequencia();
-        let inicio = crate::no::inicio_da_sequencia();
-        if passo > 1 && proxima_sequencia != 0 && proxima_sequencia % passo != inicio % passo {
-            return Err(PhxError::Esquema(format!(
-                "{nome_arq} numera a sequencia na faixa {} de {passo}, e este \
-                 servidor esta declarado na faixa {}: continuar repetiria \
-                 numero ja gravado. Ajuste o inicio da faixa deste no para {}",
-                proxima_sequencia % passo,
-                inicio % passo,
-                proxima_sequencia % passo
             )));
         }
 
@@ -806,9 +842,16 @@ impl RegFile {
     /// FORA, sem andar o daqui: devolve o valor e o contador seguinte. E o
     /// que a sobreposicao da transacao usa para prever o numero que a
     /// gravacao vai dar -- pela mesma conta, com a faixa do no dentro.
+    ///
+    /// O contador seguinte e o PROXIMO NUMERO DA FAIXA, e nao `v + 1`: e o
+    /// valor que vai ao cabecalho, e a abertura confere
+    /// `proxima_sequencia = inicio (mod passo)`. Com `v + 1` a tabela saia da
+    /// propria faixa na primeira insercao e a abertura seguinte a recusava
+    /// como se fosse de outro no (pedido 290). Com `passo = 1` da `v + 1`,
+    /// como sempre deu.
     pub fn proxima_sem_andar(&self, contador: u64) -> (u64, u64) {
         let v = self.na_faixa(contador.max(1));
-        (v, v + 1)
+        (v, self.na_faixa(v + 1))
     }
 
     /// O primeiro numero `>= piso` que cai na faixa DESTE no.
@@ -931,6 +974,26 @@ impl RegFile {
         }
         self.proxima_sequencia = proxima;
         self.gravar_contadores(1)
+    }
+
+    /// Poe o contador da sequencia no primeiro numero da faixa deste no acima
+    /// de TUDO o que ja saiu: do maior valor gravado (`maior`) e do proprio
+    /// contador. Devolve o contador novo.
+    ///
+    /// Nunca recua: o contador so anda para tras pelo `ajustar_sequencia`, que
+    /// e ordem escrita do administrador. E e o motor UNICO das duas portas que
+    /// reconciliam -- a do `reparar` e a do realinhamento do pedido 290 --
+    /// para a conta da faixa nao ser escrita duas vezes. O contador fora da
+    /// faixa (o `v + 1` do defeito) entra na conta como piso e sai na faixa:
+    /// `na_faixa(v + 1)` e `v + passo`, o numero que o motor daria.
+    pub fn realinhar_sequencia(&mut self, maior: u64) -> Result<u64> {
+        let piso = self.proxima_sequencia.max(maior.saturating_add(1)).max(1);
+        let novo = self.na_faixa(piso);
+        if novo != self.proxima_sequencia {
+            self.proxima_sequencia = novo;
+            self.gravar_contadores(1)?;
+        }
+        Ok(novo)
     }
 
     /// Maior carimbo de criacao ja gravado nesta tabela. 0 = nenhum.

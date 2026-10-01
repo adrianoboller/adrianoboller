@@ -89,6 +89,21 @@ aviso): a origem passa a ser o master **corrente**, descoberto pelo pulso.
   outro. Um pulso velho, de antes do 211, não traz o campo `incompleta` e volta
   `false`: o significado de sempre — posição completa —, então um par que não
   sabe avisar conta como antes.
+- **A posição POR TABELA vai junto, como medida — nunca como voto** (pedido
+  294, decisão do dono de 17/09/2026). A soma tem um ponto cego: 1.000 eventos
+  em A e 0 em B empatam com 0 em A e 1.000 em B. A eleição **continua** pela
+  soma — comparar vetores exige uma ordem total que dois nós podem enxergar
+  diferente —, e o vetor `por_tabela` (`"database/tabela": eventos`, da mesma
+  passada que a soma) viaja no pedido e na resposta do pulso para o
+  `cluster_estado` mostrar, por nó, `por_tabela` e **`atras_em`** (as tabelas
+  em que ele está atrás do mais adiantado). A tela do cluster ganhou a coluna.
+  Teto de 512 tabelas por pulso (`por_tabela_cortado` diz quando cortou). Nó de
+  versão anterior não manda o vetor e aparece **«não medido»** (nulo), não
+  «atrás em tudo». O vetor fica **fora da prova** de identidade: assiná-lo
+  mudaria a mensagem assinada e o par da versão anterior recusaria o pulso; o
+  preço é que vetor forjado engana o painel, nunca a eleição. Se o número
+  mostrar que a assimetria acontece de verdade, a troca do critério vira
+  frente própria, com a premissa medida.
 - **A thread de pulso que morre em pânico volta, com recuo** (pedido 452). O
   supervisor sobe uma thread por nó e marca o id em `pulsando`; a desmarcação
   morava só na saída normal, e um pânico deixava o id marcado para sempre —

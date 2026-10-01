@@ -338,7 +338,17 @@ pub const OPERACOES: &[Operacao] = &[
         parametros: &[
             DB,
             TAB,
-            obr("proxima", "integer", "o próximo número a distribuir"),
+            opc(
+                "proxima",
+                "integer",
+                "o próximo número a distribuir (obrigatório sem `pelo_maior`)",
+            ),
+            opc(
+                "pelo_maior",
+                "boolean",
+                "realinha o contador pelo maior valor gravado, na faixa deste servidor — \
+                 a saída da tabela que a faixa recusa abrir (pedido 290)",
+            ),
         ],
         exemplo: r#"{"op":"ajustar_sequencia","database":"loja","tabela":"clientes","proxima":5000}"#,
         ferramenta_mcp: false,

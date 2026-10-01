@@ -2041,6 +2041,8 @@ pub const FABRICA_TELA: &[TextoDeFabrica] = &[
     texto!("tela.cl_col_no", "nó", "nœud", "node", "nodo", "Knoten", "nodo"),
     texto!("tela.cl_col_endereco", "endereço", "adresse", "address", "indirizzo", "Adresse", "dirección"),
     texto!("tela.cl_col_pulso", "último pulso", "dernier battement", "last heartbeat", "ultimo battito", "letzter Puls", "último pulso"),
+    texto!("tela.cl_col_atras", "atrás em", "en retard sur", "behind on", "indietro su", "zurück bei", "atrasado en"),
+    texto!("tela.cl_nao_medido", "não medido", "non mesuré", "not measured", "non misurato", "nicht gemessen", "no medido"),
     texto!("tela.cl_vivo", "vivo", "vivant", "alive", "vivo", "lebendig", "vivo"),
     texto!("tela.cl_calado", "calado", "silencieux", "silent", "silenzioso", "still", "callado"),
     texto!("tela.cl_nunca_pulsou", "nunca pulsou", "n'a jamais battu", "never pulsed", "mai battuto", "nie gepulst", "nunca pulsó"),

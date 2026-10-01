@@ -1059,11 +1059,16 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `check-novo-contra-a-linha-velha` | `acrescentar_coluna` com CHECK que linhas que ja existem violam e aceito, e a tabela fica com duas verdades | 1 | ✅ provada |
 | `backup-copia-sob-a-exclusiva` | O backup copiava com a ficha EXCLUSIVA da trava de dados: a leitura parava a cópia inteira (100 GB = 50 a 64 min sem ler nada) | 1 | ✅ provada |
 | `backup-sem-portao-do-retrato` | A cópia do backup com a ficha COMPARTILHADA e sem o portão do retrato: o primeiro escritor na fila do `RwLock` fazia toda leitura nova esperar a cópia inteira | 1 | ✅ provada |
+| `faixa-do-config-nao-lida` | o `inicio` da faixa da `Sequence` não tinha porta de produção: todo servidor numerava na faixa 0 e vinte caixas com passo 20 colidiam 100% | 3 | ✅ provada |
+| `faixa-sai-da-classe` | o contador da `Sequence` com faixa saía da própria classe na primeira inserção (`v + 1`), e a abertura seguinte recusava a tabela como se fosse de outro nó | 1 | ✅ provada |
+| `vetor-do-pulso-ignorado` | a posição POR TABELA do pulso não chegava ao painel: a soma escondia o nó em dia na tabela grande e cego na pequena | 1 | ✅ provada |
+| `faixa-sem-saida` | a tabela gravada pelo contador `v + 1` não abria (a faixa recusa) e o remédio exigia abrir: ficava sem saída | 1 | ✅ provada |
+| `reconciliar-fora-da-faixa` | o `reparar` reconciliava a `Sequence` com `maior + 1` cru: numa tabela com faixa o valor caía fora dela e o reparo virava erro | 2 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**418 das 593 guardas do catálogo: 1 aposentada, 413 provadas, 4 redundantes** — 12230 s de mutação, medido em 2026-09-16 15:25.
+**423 das 598 guardas do catálogo: 1 aposentada, 418 provadas, 4 redundantes** — 12387 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 176 das 593 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 176 das 598 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação

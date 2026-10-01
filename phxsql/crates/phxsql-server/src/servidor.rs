@@ -1618,6 +1618,13 @@ impl Servidor {
         // ANTES de a primeira tabela abrir: o teto vale para o que abrir
         // daqui para a frente.
         phxsql_store::ndx::definir_cache_paginas(config.recursos.cache_paginas);
+        // A faixa da `Sequence` deste no (pedido 290), e pelo mesmo motivo de
+        // morar aqui: ANTES de a primeira tabela abrir -- a recuperacao logo
+        // abaixo ja abre --, porque a abertura confere a faixa gravada contra
+        // esta. E DEFINE sempre, inclusive o zero de quem nao escreveu o
+        // campo: herdar a faixa de um arranque anterior no mesmo processo
+        // poria este servidor na faixa de outro, calado.
+        phxsql_store::no::definir_inicio_da_sequencia(config.replicacao.inicio_da_sequencia);
         // Copiados ANTES de o `config` entrar no struct, que o consome.
         let (max_linhas, somente_leitura, espelho) =
             (config.max_linhas, config.somente_leitura, config.espelho);
@@ -4455,6 +4462,9 @@ impl Servidor {
                 ("incompleta", Json::de_bool(estado.posicao_incompleta())),
                 ("prioridade", Json::de_i64(c.prioridade)),
             ];
+            // Pedido 294: o vetor por tabela, medida e nao voto -- e fora da
+            // prova, pelo motivo escrito em `cluster::campos_por_tabela`.
+            campos.extend(crate::cluster::campos_por_tabela(&estado.por_tabela()));
             // A prova de identidade -- pedido 278. So sai quando ha material
             // (a estatica deste no e o `chave_do_fio` do destino); sem pino do
             // outro lado o pulso sai como sempre saiu, e o outro lado nao
@@ -4514,8 +4524,7 @@ impl Servidor {
             // A posicao local no ritmo do pulso, e nao do tique: ela toma a
             // trava de dados, e o dobro da frequencia nao compraria nada.
             if agora - ultima_conta >= estado.config.pulso_s as i64 * 1_000 {
-                let (p, incompleta) = self.posicao_do_diario(&estado.config.databases);
-                estado.definir_posicao(p, incompleta);
+                self.contar_posicao_do_cluster(&estado);
                 ultima_conta = agora;
             }
             let motivos = self.rodada_do_arbitro(&estado, agora);
@@ -4813,11 +4822,29 @@ impl Servidor {
     /// E `true` sempre que faltou contar algo do que se devia: a trava nao
     /// veio, um database nao abriu, a lista de tabelas de um database falhou,
     /// uma tabela nao abriu, ou a contagem dela deu erro. Uma so basta.
-    fn posicao_do_diario(&self, so_estes: &[String]) -> (u64, bool) {
+    /// Conta a posicao do diario e a entrega ao estado do cluster -- a soma,
+    /// a bandeira e o vetor por tabela numa chamada so. E o que o arbitro faz
+    /// no ritmo do pulso; separado para a prova do pedido 294 contar sem
+    /// subir a thread.
+    fn contar_posicao_do_cluster(&self, estado: &crate::cluster::EstadoCluster) {
+        let (p, incompleta, por_tabela) = self.posicao_do_diario(&estado.config.databases);
+        estado.definir_posicao(p, incompleta, por_tabela);
+    }
+
+    /// A soma dos eventos das tabelas replicadas -- a posicao que o pulso
+    /// carrega e que a eleicao compara --, a bandeira de incompleta (pedido
+    /// 211) e, da MESMA passada, a contagem de cada tabela (pedido 294).
+    ///
+    /// O vetor e medida para o painel, nunca criterio: a decisao do dono de
+    /// 17/09/2026 mantem a soma no `vencedor`, porque comparar vetores exige
+    /// uma ordem total que dois nos podem enxergar diferente. Sair da mesma
+    /// passada e o que impede a soma publicada e o vetor publicado de
+    /// contarem coisas diferentes.
+    fn posicao_do_diario(&self, so_estes: &[String]) -> (u64, bool, Vec<(String, u64)>) {
         let Ok(trava) = self.travar_dados() else {
             // Sem a trava nao ha o que somar: posicao zero, e incompleta,
             // porque nao se contou nada do que se devia contar.
-            return (0, true);
+            return (0, true, Vec::new());
         };
         let bases = if so_estes.is_empty() {
             trava.databases().unwrap_or_default()
@@ -4826,6 +4853,7 @@ impl Servidor {
         };
         let mut total = 0u64;
         let mut incompleta = false;
+        let mut por_tabela = Vec::new();
         for b in bases {
             let Ok(db) = trava.abrir_database(&b) else {
                 incompleta = true;
@@ -4838,14 +4866,17 @@ impl Servidor {
             for t in tabelas {
                 match db.abrir_qualificada(&t) {
                     Ok(mut tab) => match tab.eventos() {
-                        Ok(n) => total += n,
+                        Ok(n) => {
+                            total += n;
+                            por_tabela.push((format!("{b}/{t}"), n));
+                        }
                         Err(_) => incompleta = true,
                     },
                     Err(_) => incompleta = true,
                 }
             }
         }
-        (total, incompleta)
+        (total, incompleta, por_tabela)
     }
 
     /// O laco que puxa do master CORRENTE -- e a unica diferenca para o laco
@@ -5026,6 +5057,9 @@ impl Servidor {
             ("incompleta", Json::de_bool(estado.posicao_incompleta())),
             ("prioridade", Json::de_i64(estado.config.prioridade)),
         ];
+        // O IRMAO do pedido: a resposta leva o vetor deste no, senao so um
+        // lado do par enxergaria a assimetria (pedido 294).
+        resposta.extend(crate::cluster::campos_por_tabela(&estado.por_tabela()));
         // A resposta tambem prova quem a manda, pelo mesmo motivo: ela entra
         // no mapa do outro lado exatamente como o pedido entra neste. Mas SO
         // quando o pedido provou (435 reaberto, SEC A2): assinar a resposta a
@@ -5426,9 +5460,25 @@ impl Servidor {
         } else {
             Vec::new()
         };
-        let nos: Vec<Json> = lista
+        // Pedido 294: o vetor de cada no e em que tabelas ele esta atras do
+        // mais adiantado. Calculado sobre a MESMA lista que vira `nos`, para o
+        // `atras_em` de um no nunca comparar com quem a tela nao mostra.
+        let meu_vetor = estado.por_tabela();
+        let vetores: Vec<Option<&[(String, u64)]>> = lista
             .iter()
             .map(|n| {
+                if n.id == c.id {
+                    Some(&meu_vetor[..])
+                } else {
+                    mapa.get(&n.id).and_then(|p| p.por_tabela.as_deref())
+                }
+            })
+            .collect();
+        let atras = crate::cluster::atras_em(&vetores);
+        let nos: Vec<Json> = lista
+            .iter()
+            .zip(vetores.iter().zip(atras))
+            .map(|(n, (vetor, atras))| {
                 let (papel, epoca, posicao, incompleta, idade_ms) = if n.id == c.id {
                     (
                         Some(estado.papel().nome()),
@@ -5465,6 +5515,26 @@ impl Servidor {
                     // Pedido 211: a posicao saiu incompleta (tabela nao abriu).
                     // A tela mostra isso ao lado da posicao -- a verdade visivel.
                     ("posicao_incompleta", Json::de_bool(incompleta)),
+                    // Pedido 294: MEDIDA ao lado da soma, nunca voto. Nulo =
+                    // o no nao mandou vetor (versao anterior), e nao «zero».
+                    (
+                        "por_tabela",
+                        match vetor {
+                            Some(v) => Json::Objeto(
+                                v.iter()
+                                    .map(|(t, n)| (t.clone(), Json::de_u64(*n)))
+                                    .collect(),
+                            ),
+                            None => Json::Nulo,
+                        },
+                    ),
+                    (
+                        "atras_em",
+                        match atras {
+                            Some(l) => Json::Lista(l.iter().map(Json::texto_de).collect()),
+                            None => Json::Nulo,
+                        },
+                    ),
                     // -1 = nunca deu pulso; 0 = este proprio no.
                     ("ultimo_pulso_ms", Json::de_i64(idade_ms)),
                     (
@@ -19659,11 +19729,17 @@ impl Servidor {
     /// faz a proxima insercao repetir, e o erro aparece longe de quem causou.
     /// Por isso a resposta diz o que era e o que passou a ser.
     fn op_ajustar_sequencia(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        // `"pelo_maior": true` -- o realinhamento do pedido 290 (parecer do
+        // DBA, NAO 290-b): o alvo sai do DADO, entao nao ha «proxima» a
+        // conferir. O braco dele mora DEPOIS da trava de baixo, e nao com uma
+        // trava propria: uma secao a mais alcancando `fsync` sob a trava sobe
+        // a catraca `alcancam-fsync-2` (`bancada/concorrencia/mapa-da-trava.py`).
+        let pelo_maior = p.booleano_ou("pelo_maior", false);
         // Um "proxima" cru acima de 2^53 ja chegou arredondado -- ajustar o
         // contador para um valor que nao foi o pedido e o mesmo estrago do
         // bloco 19, so que no contador em vez de na linha. Recusa cedo, com a
         // saida (texto) na mensagem. Ver `docs/AUTONUMBER.md`, bloco 16 e 19.
-        if p.campo("proxima").is_some_and(Json::inteiro_impreciso) {
+        if !pelo_maior && p.campo("proxima").is_some_and(Json::inteiro_impreciso) {
             return Err(PhxError::Tipo(format!(
                 "acima de {} o protocolo perde precisao num numero cru; \
                  envie \"proxima\" como texto se precisar dessa faixa",
@@ -19673,6 +19749,7 @@ impl Servidor {
         // Aceita "proxima" como texto tambem, pelo mesmo motivo do id: e a unica
         // forma que atravessa acima do teto sem perda.
         let proxima = match p.campo("proxima") {
+            _ if pelo_maior => 0,
             Some(Json::Texto(t)) => t.trim().parse::<i64>().unwrap_or(-1),
             _ => p.inteiro_ou("proxima", -1),
         };
@@ -19684,6 +19761,28 @@ impl Servidor {
             ));
         }
         let _trava = self.travar_dados()?;
+        if pelo_maior {
+            // A tabela gravada pelo contador defeituoso nao abre -- a
+            // conferencia da faixa recusa --, e o `abrir_travada` de baixo
+            // bateria nela: sem esta porta ela ficava sem saida.
+            let database = p.texto_ou("database", "");
+            let tabela = p.texto_ou("tabela", "");
+            if database.is_empty() || tabela.is_empty() {
+                return Err(PhxError::Esquema(
+                    "informe \"database\" e \"tabela\"".into(),
+                ));
+            }
+            let (antes, maior, depois) = _trava
+                .abrir_database(database)?
+                .realinhar_sequencia(tabela)?;
+            return Ok(Json::objeto(vec![
+                ("database", Json::texto_de(database)),
+                ("tabela", Json::texto_de(tabela)),
+                ("antes", Json::de_u64(antes)),
+                ("maior", Json::de_u64(maior)),
+                ("proxima", Json::de_u64(depois)),
+            ]));
+        }
         let mut t = self.abrir_travada(&_trava, p, sessao)?;
         if t.esquema().coluna_sequencia().is_none() {
             return Err(PhxError::Esquema(format!(
@@ -42946,6 +43045,138 @@ mod testes_config_gravar {
         ))
     }
 
+    /// O no de `cluster_estado` com este `id`.
+    fn no_do_estado(estado: &Json, id: &str) -> Json {
+        estado
+            .campo("nos")
+            .and_then(Json::lista)
+            .and_then(|l| l.iter().find(|n| n.texto_ou("id", "") == id).cloned())
+            .unwrap_or_else(|| panic!("{id} fora do cluster_estado: {}", estado.escrever()))
+    }
+
+    /// **Pedido 294: a posicao POR TABELA entra no pulso e no painel como
+    /// MEDIDA, ao lado da soma -- e o painel diz qual no esta atras em qual
+    /// tabela.**
+    ///
+    /// O caso do parecer de C, por extenso: este no tem 5 eventos em `b/uma`
+    /// e 5 em `b/outra` (soma 10); o no2 publica 10 em `b/uma` e 0 em
+    /// `b/outra` (soma 10). As somas empatam -- e na eleicao continuam
+    /// empatando, porque a soma segue sendo o criterio --, mas o painel tem de
+    /// mostrar que o no2 esta cego em `b/outra` e este no atras em `b/uma`.
+    ///
+    /// # O vermelho
+    ///
+    /// Sem o vetor no pulso (`PulsoDeNo::de_json` ignorando `por_tabela`), o
+    /// `cluster_estado` nao tem o que mostrar do no2 e o teste cai no
+    /// `por_tabela` dele; sem o calculo do `atras_em`, cai na assimetria.
+    #[test]
+    fn a_posicao_por_tabela_vai_ao_painel_e_nao_ao_voto() {
+        let (s, _caminho, _guarda) = servidor_em_cluster("por-tabela", Cadastro::default());
+        let sessao = Sessao::default();
+        s.executar("criar_database", &pedido(r#"{"database":"b"}"#), &sessao)
+            .unwrap();
+        for t in ["uma", "outra"] {
+            s.executar(
+                "criar_tabela",
+                &pedido(&format!(
+                    r#"{{"database":"b","tabela":"{t}",
+                        "colunas":[{{"nome":"id","tipo":"Int4","obrigatoria":true}}],
+                        "indices":[{{"nome":"porId","colunas":["id"],"unico":true,"primario":true}}]}}"#
+                )),
+                &sessao,
+            )
+            .unwrap();
+            for i in 1..=5 {
+                s.executar(
+                    "inserir",
+                    &pedido(&format!(
+                        r#"{{"database":"b","tabela":"{t}","linha":{{"id":{i}}}}}"#
+                    )),
+                    &sessao,
+                )
+                .unwrap();
+            }
+        }
+        let estado = s.cluster.clone().expect("cluster");
+        s.contar_posicao_do_cluster(&estado);
+        assert_eq!(estado.posicao(), 10, "a soma continua sendo a soma");
+
+        let pulso = pedido(
+            r#"{"op":"cluster_pulso","id":"no2","papel":"replica","epoca":0,"posicao":10,
+                "por_tabela":{"b/uma":10,"b/outra":0}}"#,
+        );
+        let resposta = s.executar("cluster_pulso", &pulso, &sessao).unwrap();
+        // O outro sentido: a RESPOSTA do pulso leva o vetor deste no, senao
+        // so um dos lados do par enxergaria a assimetria.
+        assert_eq!(
+            resposta
+                .campo("por_tabela")
+                .and_then(|v| v.campo("b/outra"))
+                .and_then(Json::inteiro),
+            Some(5),
+            "a resposta do pulso sem o vetor deste no: {}",
+            resposta.escrever()
+        );
+
+        let e = s
+            .executar("cluster_estado", &pedido("{}"), &sessao)
+            .unwrap();
+        let no1 = no_do_estado(&e, "no1");
+        let no2 = no_do_estado(&e, "no2");
+        assert_eq!(no1.inteiro_ou("posicao", -1), no2.inteiro_ou("posicao", -2));
+        assert_eq!(
+            no2.campo("por_tabela")
+                .and_then(|v| v.campo("b/uma"))
+                .and_then(Json::inteiro),
+            Some(10),
+            "o painel nao mostra o vetor que o no2 publicou: {}",
+            no2.escrever()
+        );
+        let atras = |n: &Json| -> Vec<String> {
+            n.campo("atras_em")
+                .and_then(Json::lista)
+                .map(|l| {
+                    l.iter()
+                        .filter_map(|x| x.texto().map(str::to_string))
+                        .collect()
+                })
+                .unwrap_or_else(|| panic!("sem atras_em: {}", n.escrever()))
+        };
+        assert_eq!(atras(&no2), vec!["b/outra".to_string()], "{}", e.escrever());
+        assert_eq!(atras(&no1), vec!["b/uma".to_string()], "{}", e.escrever());
+
+        // E a medida NAO vota: a eleicao ve os dois com a mesma posicao, que e
+        // a soma, exatamente como antes do vetor existir.
+        let vivos = estado.vivos(crate::agora_ms());
+        let pos: Vec<u64> = vivos.iter().map(|c| c.posicao).collect();
+        assert_eq!(pos, vec![10, 10]);
+    }
+
+    /// **O comportamento VELHO**: o pulso de um no anterior ao vetor nao traz
+    /// `por_tabela`, e o painel diz «nao medido» (nulo) em vez de acusar esse
+    /// no de estar atras em TODA tabela.
+    #[test]
+    fn pulso_sem_vetor_e_nao_medido_e_nao_atras_em_tudo() {
+        let (s, _caminho, _guarda) = servidor_em_cluster("sem-vetor", Cadastro::default());
+        let sessao = Sessao::default();
+        s.executar("cluster_pulso", &pulso_de("no2"), &sessao)
+            .expect("o pulso antigo continua aceito");
+        let e = s
+            .executar("cluster_estado", &pedido("{}"), &sessao)
+            .unwrap();
+        let no2 = no_do_estado(&e, "no2");
+        assert!(
+            matches!(no2.campo("por_tabela"), Some(Json::Nulo)),
+            "{}",
+            no2.escrever()
+        );
+        assert!(
+            matches!(no2.campo("atras_em"), Some(Json::Nulo)),
+            "{}",
+            no2.escrever()
+        );
+    }
+
     /// Pedido 217, os dois sentidos numa prova so: o pulso de um no que nao
     /// esta na lista e RECUSADO -- e passa a ser aceito assim que a operacao
     /// de escalonamento o acrescenta, sem reiniciar nada.
@@ -56434,7 +56665,10 @@ mod testes_posicao_do_diario {
         let d = dir_temp("engole");
         let s = com_duas(&d);
 
-        let (inteira, incompleta_antes) = s.posicao_do_diario(&[]);
+        let (inteira, incompleta_antes, vetor) = s.posicao_do_diario(&[]);
+        // Pedido 294: o vetor sai da MESMA passada, entao soma igual.
+        assert_eq!(vetor.iter().map(|(_, n)| n).sum::<u64>(), inteira);
+        assert_eq!(vetor.len(), 2, "{vetor:?}");
         assert!(
             inteira > 0,
             "as duas tabelas somadas tem de dar posicao maior que zero"
@@ -56452,7 +56686,7 @@ mod testes_posicao_do_diario {
         );
         std::fs::write(&alvo, b"nao sou um PHXREG").unwrap();
 
-        let (depois, incompleta_depois) = s.posicao_do_diario(&[]);
+        let (depois, incompleta_depois, _) = s.posicao_do_diario(&[]);
         assert!(
             incompleta_depois,
             "a tabela que nao abre NAO some em silencio: a posicao ({depois}) \
@@ -68664,6 +68898,7 @@ mod testes_do_recuo_no_cluster {
                     incompleta: false,
                     prioridade: 0,
                     quando_ms: crate::agora_ms(),
+                    por_tabela: None,
                 },
             )
             .unwrap();
@@ -68846,6 +69081,7 @@ mod testes_do_rebaixar_sem_disco {
                     incompleta: false,
                     prioridade: 0,
                     quando_ms: crate::agora_ms(),
+                    por_tabela: None,
                 },
             )
             .unwrap();
