@@ -12609,6 +12609,10 @@ async function verCluster() {
       epoca: v.epoca ?? 0,
       posicao: v.posicao ?? 0,
       pulso: idade === undefined || idade < 0 ? null : idade,
+      // Pedido 294: em que tabelas este nó está atrás do mais adiantado. É
+      // MEDIDA ao lado da posição somada, que continua sendo o voto. Nulo é
+      // «não medido» (nó de versão anterior), não «em dia».
+      atras: Array.isArray(v.atras_em) ? v.atras_em.join(", ") : null,
     };
   });
 
@@ -12703,6 +12707,8 @@ async function verCluster() {
       { campo: "posicao", titulo: txt("tela.col_posicao", "posição"), tipo: "numero" },
       { campo: "pulso", titulo: txt("tela.cl_col_pulso", "último pulso"), tipo: "numero",
         formato: v => v === null ? "—" : `${fmt(v)} ms` },
+      { campo: "atras", titulo: txt("tela.cl_col_atras", "atrás em"),
+        formato: v => v === null ? txt("tela.cl_nao_medido", "não medido") : (v || "—") },
     ],
     dados: linhas,
   });

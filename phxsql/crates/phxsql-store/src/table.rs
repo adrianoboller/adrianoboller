@@ -1711,7 +1711,7 @@ impl Table {
         // escrever: e este o caminho que cria o que falta e termina o que
         // ficou pela metade. Um `None` aqui seria defeito nosso, e o texto
         // diz isso -- um `unwrap` diria «alguem errou» sem dizer quem.
-        match Table::abrir_com(diretorio, nome, true)? {
+        match Table::abrir_com(diretorio, nome, true, true)? {
             SemEscrever::Aberta(t) => Ok(t),
             SemEscrever::PrecisaEscrever(o) => Err(PhxError::Corrompido(format!(
                 "abrir com a ficha exclusiva recusou por escrita: {o}"
@@ -1733,10 +1733,17 @@ impl Table {
     /// `None` nao e erro nem defeito: e «esta tabela quer a ficha exclusiva».
     /// Quem chama solta a ficha compartilhada e refaz o trabalho por la.
     pub fn abrir_para_ler(diretorio: impl AsRef<Path>, nome: &str) -> Result<SemEscrever> {
-        Table::abrir_com(diretorio, nome, false)
+        Table::abrir_com(diretorio, nome, false, true)
     }
 
-    fn abrir_com(diretorio: impl AsRef<Path>, nome: &str, escrever: bool) -> Result<SemEscrever> {
+    /// `conferir_faixa` falso e SO do [`Table::realinhar_sequencia`]: ver
+    /// `RegFile::abrir_para_realinhar`.
+    fn abrir_com(
+        diretorio: impl AsRef<Path>,
+        nome: &str,
+        escrever: bool,
+        conferir_faixa: bool,
+    ) -> Result<SemEscrever> {
         let diretorio = resolver(diretorio.as_ref());
         // O PONTO UNICO do congelamento, e e aqui porque e aqui que TODA
         // tabela gravavel nasce: o pedido do cliente
@@ -1752,7 +1759,9 @@ impl Table {
         if escrever {
             crate::congelamento::conferir(&diretorio, nome)?;
         }
-        let reg = if escrever {
+        let reg = if !conferir_faixa {
+            Some(RegFile::abrir_para_realinhar(&diretorio, nome)?)
+        } else if escrever {
             Some(RegFile::abrir(&diretorio, nome)?)
         } else {
             RegFile::abrir_sem_escrever(&diretorio, nome)?
@@ -5119,11 +5128,49 @@ impl Table {
                 maior = maior.max(n);
             }
         }
-        let alvo = maior.saturating_add(1);
-        if alvo > self.reg.sequencia_atual() {
-            self.reg.ajustar_sequencia(alvo)?;
-        }
+        // Pela conta da faixa (pedido 290): `maior + 1` cru, numa tabela com
+        // `passo > 1`, caia fora da faixa e o `ajustar_sequencia` o recusava --
+        // o reparo virava erro justamente onde o contador mais precisava.
+        self.reg.realinhar_sequencia(maior)?;
         Ok(maior)
+    }
+
+    /// Tira a tabela do estado em que a conferencia da faixa a recusa,
+    /// realinhando o contador pelo MAIOR valor gravado (pedido 290, parecer
+    /// do DBA NAO 290-b). Devolve `(contador antes, maior gravado, contador
+    /// depois)`.
+    ///
+    /// # Por que abre sem a conferencia, e por que so aqui
+    ///
+    /// A tabela gravada pelo contador defeituoso (`v + 1`) nao abre: a
+    /// abertura confere a faixa e recusa. O remedio de sempre,
+    /// `ajustar_sequencia`, exige abrir -- sem esta porta ela ficava sem
+    /// saida. A tabela aberta sem a conferencia nunca sai daqui: ela e
+    /// realinhada, sincronizada e fechada na mesma chamada, entao ninguem
+    /// grava por ela na faixa errada.
+    ///
+    /// O alvo e o dado, nao um palpite: o primeiro numero da faixa deste no
+    /// acima do maior valor gravado E do contador -- o contador cobre os
+    /// numeros de linhas ja excluidas de vez, que a varredura nao ve mais.
+    pub fn realinhar_sequencia(diretorio: impl AsRef<Path>, nome: &str) -> Result<(u64, u64, u64)> {
+        let mut t = match Table::abrir_com(diretorio, nome, true, false)? {
+            SemEscrever::Aberta(t) => t,
+            SemEscrever::PrecisaEscrever(o) => {
+                return Err(PhxError::Corrompido(format!(
+                    "abrir com a ficha exclusiva recusou por escrita: {o}"
+                )))
+            }
+        };
+        if t.esquema.coluna_sequencia().is_none() {
+            return Err(PhxError::Esquema(format!(
+                "a tabela {nome} nao tem coluna Sequence"
+            )));
+        }
+        let antes = t.reg.sequencia_atual();
+        let maior = t.reconciliar_sequencia()?;
+        let depois = t.reg.sequencia_atual();
+        t.sincronizar()?;
+        Ok((antes, maior, depois))
     }
 
     /// As fronteiras de volume do `.reg`, para quem quiser mostra-las.

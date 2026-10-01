@@ -1051,9 +1051,9 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `arbitro-engole-o-rebaixar` | o árbitro do cluster engolia a falha de gravar o rebaixamento (`let _ = estado.rebaixar(...)`): o nó voltava mandando num reinício, sem pista nenhuma | 2 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**408 das 583 guardas do catálogo: 1 aposentada, 403 provadas, 4 redundantes** — 11740 s de mutação, medido em 2026-09-16 15:25.
+**408 das 588 guardas do catálogo: 1 aposentada, 403 provadas, 4 redundantes** — 11740 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 176 das 583 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 181 das 588 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 181 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
@@ -1231,6 +1231,11 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 - `garantir-schema-sem-fsync-do-database` — `criar_schema` e `criar_tabela` num schema novo criavam a pasta sem `fsync` do database: o schema que o cliente ouviu criar podia sumir numa queda
 - `criar-database-sem-fsync-da-base` — `criar_database` criava a pasta sem `fsync` da base: o database que o cliente ouviu criar podia sumir numa queda
 - `marca-do-database-sem-fsync` — O marcador `_database.json` nascia sem `fsync`: numa queda uma colmeia voltava como database padrão, calada
+- `faixa-do-config-nao-lida` — o `inicio` da faixa da `Sequence` não tinha porta de produção: todo servidor numerava na faixa 0 e vinte caixas com passo 20 colidiam 100%
+- `faixa-sai-da-classe` — o contador da `Sequence` com faixa saía da própria classe na primeira inserção (`v + 1`), e a abertura seguinte recusava a tabela como se fosse de outro nó
+- `vetor-do-pulso-ignorado` — a posição POR TABELA do pulso não chegava ao painel: a soma escondia o nó em dia na tabela grande e cego na pequena
+- `faixa-sem-saida` — a tabela gravada pelo contador `v + 1` não abria (a faixa recusa) e o remédio exigia abrir: ficava sem saída
+- `reconciliar-fora-da-faixa` — o `reparar` reconciliava a `Sequence` com `maior + 1` cru: numa tabela com faixa o valor caía fora dela e o reparo virava erro
 
 As guardas que esta corrida ainda cita, hoje aposentadas:
 

@@ -4608,15 +4608,14 @@ pub fn limpar() {
             "docs/AUTONUMBER.md bloco 16 -- ajustar_sequencia para tras repete "
             "id calado, e o CRC do cabecalho nao pega ajuste legitimo. "
             "reconciliar_sequencia e o caminho de reparo que faltava, chamado "
-            "pelo reparar."
+            "pelo reparar. Desde o pedido 290 a conta mora em "
+            "`RegFile::realinhar_sequencia`, motor unico da reconciliacao e "
+            "do realinhamento pela faixa -- o defeito reposto e o mesmo: o "
+            "contador nao anda."
         ),
-        "arquivo": "crates/phxsql-store/src/table.rs",
-        "trecho": """        if alvo > self.reg.sequencia_atual() {
-            self.reg.ajustar_sequencia(alvo)?;
-        }""",
-        "troca": """        if false && alvo > self.reg.sequencia_atual() {
-            self.reg.ajustar_sequencia(alvo)?;
-        }""",
+        "arquivo": "crates/phxsql-store/src/reg.rs",
+        "trecho": """        if novo != self.proxima_sequencia {""",
+        "troca": """        if false && novo != self.proxima_sequencia {""",
         "pacote": "phxsql-store",
         "alvo": ["--test", "reconciliar-sequencia"],
         "caem": [
@@ -8662,7 +8661,10 @@ pub fn limpar() {
             for t in tabelas {
                 match db.abrir_qualificada(&t) {
                     Ok(mut tab) => match tab.eventos() {
-                        Ok(n) => total += n,
+                        Ok(n) => {
+                            total += n;
+                            por_tabela.push((format!("{b}/{t}"), n));
+                        }
                         Err(_) => incompleta = true,
                     },
                     Err(_) => incompleta = true,
@@ -8677,6 +8679,7 @@ pub fn limpar() {
                 if let Ok(mut tab) = db.abrir_qualificada(&t) {
                     if let Ok(n) = tab.eventos() {
                         total += n;
+                        por_tabela.push((format!("{b}/{t}"), n));
                     }
                 }
             }""",
@@ -19946,6 +19949,134 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         ],
         "seguem": [
             "servidor::testes_do_rebaixar_sem_disco::rebaixar_com_disco_nao_inventa_aviso",
+        ],
+    },
+    {
+        "id": "faixa-do-config-nao-lida",
+        "titulo": "o `inicio` da faixa da `Sequence` não tinha porta de produção: todo servidor numerava na faixa 0 e vinte caixas com passo 20 colidiam 100%",
+        "porque": (
+            "pedido 290, reaberto pelo DBA em 23/09/2026: "
+            "`no::definir_inicio_da_sequencia` tinha zero chamadores fora de "
+            "teste. O `replicacao.inicio_da_sequencia` do config.json e lido "
+            "e aplicado no `Servidor::novo`, antes da primeira tabela abrir. "
+            "Configuracao que nao e lida mente."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        phxsql_store::no::definir_inicio_da_sequencia(config.replicacao.inicio_da_sequencia);
+""",
+        "troca": """        // DEFEITO REPOSTO (290): o campo do config nao chega ao motor.
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "faixa-da-sequencia-pelo-config"],
+        "caem": [
+            "o_inicio_do_config_poe_o_servidor_na_faixa_dele",
+            "sem_o_campo_a_faixa_e_zero_e_nao_a_que_sobrou_no_processo",
+            "subir_com_outra_faixa_sobre_tabela_ja_numerada_recusa_nomeando_o_campo",
+        ],
+        "seguem": [
+            "tabela_sem_faixa_numera_como_sempre_com_qualquer_inicio",
+            "inicio_torto_recusa_o_config",
+        ],
+    },
+    {
+        "id": "faixa-sai-da-classe",
+        "titulo": "o contador da `Sequence` com faixa saía da própria classe na primeira inserção (`v + 1`), e a abertura seguinte recusava a tabela como se fosse de outro nó",
+        "porque": (
+            "pedido 290, achado ao ligar o `inicio` pelo config: o servidor "
+            "reabre a tabela a cada pedido, e a SEGUNDA insercao de toda "
+            "tabela com `passo_da_sequencia > 1` era recusada. O contador "
+            "gravado passou a ser o proximo numero da faixa; nenhum teste "
+            "reabria a tabela."
+        ),
+        "arquivo": "crates/phxsql-store/src/reg.rs",
+        "trecho": """        (v, self.na_faixa(v + 1))
+""",
+        "troca": """        (v, v + 1) // DEFEITO REPOSTO (290)
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "carimbo-e-faixa"],
+        "caem": [
+            "a_tabela_com_faixa_reabre_depois_de_numerar",
+        ],
+        "seguem": [
+            "dois_nos_com_faixas_diferentes_nunca_repetem_numero",
+            "o_passo_atravessa_o_disco",
+        ],
+    },
+    {
+        "id": "vetor-do-pulso-ignorado",
+        "titulo": "a posição POR TABELA do pulso não chegava ao painel: a soma escondia o nó em dia na tabela grande e cego na pequena",
+        "porque": (
+            "pedido 294, decisao do dono de 17/09/2026: manter a soma no "
+            "criterio da eleicao e medir por tabela AO LADO. O vetor viaja no "
+            "pulso e o `cluster_estado` diz `atras_em` por no; o `Candidato` "
+            "nao tem o campo, entao a medida nao vota."
+        ),
+        "arquivo": "crates/phxsql-server/src/cluster.rs",
+        "trecho": """                por_tabela: por_tabela_de_json(j),
+""",
+        "troca": """                por_tabela: None, // DEFEITO REPOSTO (294)
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_config_gravar::a_posicao_por_tabela_vai_ao_painel_e_nao_ao_voto",
+        ],
+        "seguem": [
+            "servidor::testes_config_gravar::pulso_sem_vetor_e_nao_medido_e_nao_atras_em_tudo",
+            "cluster::testes::atras_em_so_entre_quem_mediu",
+        ],
+    },
+    {
+        "id": "faixa-sem-saida",
+        "titulo": "a tabela gravada pelo contador `v + 1` não abria (a faixa recusa) e o remédio exigia abrir: ficava sem saída",
+        "porque": (
+            "parecer do DBA de 01/10/2026, NAO 290-b. `realinhar_sequencia` "
+            "abre SEM a conferencia da faixa, poe o contador no primeiro "
+            "numero da faixa acima do maior gravado e fecha na mesma chamada; "
+            "pelo protocolo e `ajustar_sequencia` com `pelo_maior`."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        let mut t = match Table::abrir_com(diretorio, nome, true, false)? {
+""",
+        "troca": """        let mut t = match Table::abrir_com(diretorio, nome, true, true)? { // DEFEITO REPOSTO (290-b)
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "reconciliar-sequencia"],
+        "caem": [
+            "a_tabela_com_o_contador_defeituoso_volta_a_abrir_pelo_maior_gravado",
+        ],
+        "seguem": [
+            "reconciliar_empurra_o_contador_para_depois_do_maior",
+            "reconciliar_numa_tabela_com_faixa_fica_na_faixa",
+        ],
+    },
+    {
+        "id": "reconciliar-fora-da-faixa",
+        "titulo": "o `reparar` reconciliava a `Sequence` com `maior + 1` cru: numa tabela com faixa o valor caía fora dela e o reparo virava erro",
+        "porque": (
+            "pedido 290: a reconciliacao do pedido 229 e o realinhamento do "
+            "290-b passaram a ter UM motor (`RegFile::realinhar_sequencia`), "
+            "com a conta da faixa dentro."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        self.reg.realinhar_sequencia(maior)?;
+""",
+        "troca": """        // DEFEITO REPOSTO (290): `maior + 1` cru, fora da faixa.
+        let alvo = maior.saturating_add(1);
+        if alvo > self.reg.sequencia_atual() {
+            self.reg.ajustar_sequencia(alvo)?;
+        }
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "reconciliar-sequencia"],
+        "caem": [
+            "reconciliar_numa_tabela_com_faixa_fica_na_faixa",
+            "a_tabela_com_o_contador_defeituoso_volta_a_abrir_pelo_maior_gravado",
+        ],
+        "seguem": [
+            "reconciliar_empurra_o_contador_para_depois_do_maior",
+            "reconciliar_nunca_recua_o_contador",
         ],
     },
 ]

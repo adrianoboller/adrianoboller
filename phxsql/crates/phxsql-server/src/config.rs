@@ -405,6 +405,20 @@ pub struct Replicacao {
     /// um source sem imagem no diario e um source que nao replica, e descobrir
     /// isso pela replica parada seria o pior jeito de descobrir.
     pub imagem_da_linha: bool,
+    /// Em que faixa da `Sequence` ESTE servidor numera (pedido 290) -- o
+    /// `auto_increment_offset` do MySQL e do MariaDB, e pelo mesmo motivo que
+    /// eles o fazem variavel de servidor e nao campo da tabela: o `passo` mora
+    /// no `PSCH` e viaja igual para todo no, entao o que DISTINGUE os nos tem
+    /// de morar fora do esquema replicado.
+    ///
+    /// Zero e o padrao, e com o `passo = 1` de toda tabela que nao declarou
+    /// faixa e exatamente a numeracao de sempre. So muda alguma coisa numa
+    /// tabela criada com `passo_da_sequencia` maior que 1.
+    ///
+    /// Numero declarado, nunca derivado do `id_servidor`: `hash mod passo`
+    /// colide em metade dos pares com `passo = 2`, e colidir e o defeito que a
+    /// faixa existe para consertar (ver `phxsql_store::no`).
+    pub inicio_da_sequencia: u64,
 }
 
 impl Replicacao {
@@ -453,6 +467,7 @@ impl Default for Replicacao {
             replicas_autorizadas: Vec::new(),
             origens: Vec::new(),
             imagem_da_linha: false,
+            inicio_da_sequencia: 0,
         }
     }
 }
@@ -4704,6 +4719,25 @@ const SECOES_CONHECIDAS: [(&str, &[&str]); 16] = [
     ("diretivas", &["arquivo_mib", "arquivos"]),
 ];
 
+/// O `replicacao.inicio_da_sequencia`, recusando o que nao for inteiro >= 0.
+///
+/// Recusa, e nao cai no padrao: um `-1` ou um `"2"` virando zero calado poria
+/// este no na faixa do vizinho, e as duas caixas voltariam a numerar igual --
+/// o defeito do pedido 290 produzido por um erro de digitacao, sem aviso.
+fn inicio_da_sequencia(r: &Json) -> Result<u64> {
+    match r.campo("inicio_da_sequencia") {
+        None | Some(Json::Nulo) => Ok(0),
+        Some(v) => match v.inteiro() {
+            Some(n) if n >= 0 => Ok(n as u64),
+            _ => Err(PhxError::Esquema(format!(
+                "replicacao.inicio_da_sequencia tem de ser um inteiro de 0 em diante \
+                 (a faixa deste servidor na Sequence); recebi {}",
+                v.escrever()
+            ))),
+        },
+    }
+}
+
 /// O que o arquivo trouxe e o servidor nao sabe ler.
 fn chaves_estranhas(j: &Json) -> Vec<String> {
     let mut fora: Vec<String> = j
@@ -4907,6 +4941,7 @@ impl Config {
                     // multi) liga, o resto nao.
                     Papel::de_texto(r.texto_ou("papel", "isolado"))?.exige_imagem(),
                 ),
+                inicio_da_sequencia: inicio_da_sequencia(r)?,
             },
         };
         let mut rep = rep;
@@ -5602,6 +5637,10 @@ impl Config {
                     ("envio", Json::texto_de(&self.replicacao.envio)),
                     ("retorno", Json::texto_de(&self.replicacao.retorno)),
                     ("id_servidor", Json::texto_de(&self.replicacao.id_servidor)),
+                    (
+                        "inicio_da_sequencia",
+                        Json::de_u64(self.replicacao.inicio_da_sequencia),
+                    ),
                     // O que a tela da replicacao precisa para dizer a verdade:
                     // sem a imagem no diario o servidor tem papel de source e
                     // nao replica, e a tela diria que esta tudo pronto.

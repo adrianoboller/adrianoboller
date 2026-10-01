@@ -425,6 +425,7 @@ fn bloco_v10_truncado_e_erro() {
 /// interseccao inteira.
 #[test]
 fn dois_nos_com_faixas_diferentes_nunca_repetem_numero() {
+    let _t = FAIXA_DO_PROCESSO.lock().unwrap_or_else(|e| e.into_inner());
     fn numeros_do_no(inicio: u64, quantos: i64) -> Vec<u64> {
         let d = DirTemp::novo(&format!("faixa-{inicio}"));
         no::definir_inicio_da_sequencia(inicio);
@@ -469,6 +470,54 @@ fn dois_nos_com_faixas_diferentes_nunca_repetem_numero() {
         !a.iter().any(|n| b.contains(n)),
         "os dois nos entregaram o mesmo numero"
     );
+}
+
+/// A faixa do no e do PROCESSO, e os testes deste arquivo rodam em threads
+/// do mesmo processo: quem a muda ou depende dela entra um de cada vez.
+static FAIXA_DO_PROCESSO: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// **A tabela com faixa REABRE depois de numerar** -- a faixa 0 e a 1, cada
+/// uma reaberta entre uma insercao e outra (pedido 290).
+///
+/// # O defeito que ela repoe
+///
+/// `proxima_sem_andar` devolvendo `(v, v + 1)`: o contador gravado no
+/// cabecalho saia da faixa logo na primeira insercao (faixa 0 de 2: deu 2,
+/// gravou 3), e a conferencia da abertura -- `proxima_sequencia = inicio (mod
+/// passo)` -- recusava a tabela dizendo que ela era de OUTRO no. Pelo
+/// servidor, que reabre a tabela a cada pedido, a segunda insercao de toda
+/// tabela com `passo_da_sequencia > 1` era recusada. Nenhum teste reabria.
+#[test]
+fn a_tabela_com_faixa_reabre_depois_de_numerar() {
+    let _t = FAIXA_DO_PROCESSO.lock().unwrap_or_else(|e| e.into_inner());
+    for (inicio, esperado) in [(0u64, [2u64, 4, 6]), (1, [1, 3, 5])] {
+        no::definir_inicio_da_sequencia(inicio);
+        let d = DirTemp::novo(&format!("faixa-reabre-{inicio}"));
+        let esq = Schema::new(
+            "numerada",
+            vec![
+                Column::new("id", ColumnType::Sequence),
+                Column::new("nome", ColumnType::Str(20)),
+            ],
+            vec![IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico()],
+        )
+        .unwrap()
+        .com_passo_da_sequencia(2)
+        .unwrap();
+        drop(Table::criar(&d.0, esq).unwrap());
+        let mut saida = Vec::new();
+        for _ in 0..3 {
+            let mut t = Table::abrir(&d.0, "numerada")
+                .unwrap_or_else(|e| panic!("faixa {inicio}: a tabela nao reabriu: {e}"));
+            let r = t.inserir(&[Value::Null, Value::Str("x".into())]).unwrap();
+            match &t.ler(r).unwrap().unwrap()[0] {
+                Value::UInt(n) => saida.push(*n),
+                outro => panic!("a sequencia nao e UInt: {outro:?}"),
+            }
+        }
+        assert_eq!(saida, esperado, "faixa {inicio}");
+    }
+    no::definir_inicio_da_sequencia(0);
 }
 
 // ---------------------------------- 314: a tabela-cadeia fica no formato anterior

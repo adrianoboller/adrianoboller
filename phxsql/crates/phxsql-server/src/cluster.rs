@@ -144,6 +144,11 @@ pub struct PulsoDeNo {
     pub incompleta: bool,
     pub prioridade: i64,
     pub quando_ms: i64,
+    /// A posicao POR TABELA que o no publicou (pedido 294) -- MEDIDA, nunca
+    /// voto: o [`Candidato`] nao tem este campo, entao a eleicao nao tem como
+    /// le-lo. `None` e o pulso de um no anterior ao vetor, e quer dizer «nao
+    /// medido», nao «zero em tudo».
+    pub por_tabela: Option<Vec<(String, u64)>>,
 }
 
 impl PulsoDeNo {
@@ -164,9 +169,101 @@ impl PulsoDeNo {
                 incompleta: j.booleano_ou("incompleta", false),
                 prioridade: j.inteiro_ou("prioridade", 0),
                 quando_ms: crate::agora_ms(),
+                por_tabela: por_tabela_de_json(j),
             },
         ))
     }
+}
+
+/// Quantas tabelas o vetor do pulso carrega, no maximo (pedido 294).
+///
+/// O pulso sai a cada `pulso_s` para cada par, e um database com milhares de
+/// tabelas faria dele o maior pedido do cluster por uma medida de painel. O
+/// teto vale dos DOIS lados: quem manda corta e diz que cortou
+/// (`por_tabela_cortado`), quem recebe ignora o que passar dele -- um pulso
+/// torto nao cresce o mapa em memoria sem limite.
+pub const TETO_DE_TABELAS_NO_PULSO: usize = 512;
+
+/// Nome de tabela maior que isto no vetor do pulso e torto, e fica de fora:
+/// `database/tabela` real cabe com folga.
+const TETO_DO_NOME_NO_PULSO: usize = 256;
+
+/// O vetor `por_tabela` de um pulso, ou `None` se o par nao o mandou.
+///
+/// O que nao e numero inteiro exato fica de fora, entrada por entrada, em vez
+/// de derrubar o pulso: a medida e acessoria, e o pulso carrega a eleicao.
+fn por_tabela_de_json(j: &Json) -> Option<Vec<(String, u64)>> {
+    let Json::Objeto(pares) = j.campo("por_tabela")? else {
+        return None;
+    };
+    Some(
+        pares
+            .iter()
+            .filter(|(k, _)| !k.is_empty() && k.len() <= TETO_DO_NOME_NO_PULSO)
+            .filter_map(|(k, v)| {
+                let n = v.inteiro()?;
+                (n >= 0 && (n as u64) < phxsql_core::json::INTEIRO_EXATO_MAX)
+                    .then(|| (k.clone(), n as u64))
+            })
+            .take(TETO_DE_TABELAS_NO_PULSO)
+            .collect(),
+    )
+}
+
+/// Os campos do vetor para o pulso que SAI -- pedido e resposta, um motor so.
+///
+/// Fora da prova de identidade (`pulso::Assinado`), de proposito: a prova
+/// amarra o que DECIDE a eleicao, e por isso a mensagem assinada e a mesma
+/// desde o pedido 278. Por o vetor nela mudaria o texto assinado, e todo par
+/// da versao anterior passaria a recusar o pulso deste -- o cluster perderia
+/// o failover numa atualizacao em sequencia por causa de uma medida de
+/// painel. O preco declarado: quem alcanca a porta do cluster pode publicar
+/// vetor falso de outro no, e o efeito disso e um painel errado, nunca um
+/// voto.
+pub fn campos_por_tabela(por_tabela: &[(String, u64)]) -> Vec<(&'static str, Json)> {
+    let mut v = vec![(
+        "por_tabela",
+        Json::Objeto(
+            por_tabela
+                .iter()
+                .take(TETO_DE_TABELAS_NO_PULSO)
+                .map(|(t, n)| (t.clone(), Json::de_u64(*n)))
+                .collect(),
+        ),
+    )];
+    if por_tabela.len() > TETO_DE_TABELAS_NO_PULSO {
+        v.push(("por_tabela_cortado", Json::Bool(true)));
+    }
+    v
+}
+
+/// Em que tabelas cada no esta ATRAS do mais adiantado (pedido 294).
+///
+/// So entre quem MEDIU: um no sem vetor (`None`, versao anterior) nao entra na
+/// conta do maior nem recebe lista -- acusa-lo de atraso em toda tabela seria
+/// inventar a medida que ele nao mandou. Devolve, na ordem da entrada, a lista
+/// de tabelas de cada no (vazia = em dia em todas que alguem mediu).
+pub fn atras_em(vetores: &[Option<&[(String, u64)]>]) -> Vec<Option<Vec<String>>> {
+    let mut maior: std::collections::BTreeMap<&str, u64> = std::collections::BTreeMap::new();
+    for v in vetores.iter().flatten() {
+        for (t, n) in v.iter() {
+            let m = maior.entry(t.as_str()).or_insert(0);
+            *m = (*m).max(*n);
+        }
+    }
+    vetores
+        .iter()
+        .map(|v| {
+            v.map(|v| {
+                let meu: HashMap<&str, u64> = v.iter().map(|(t, n)| (t.as_str(), *n)).collect();
+                maior
+                    .iter()
+                    .filter(|(t, m)| meu.get(*t).copied().unwrap_or(0) < **m)
+                    .map(|(t, _)| t.to_string())
+                    .collect()
+            })
+        })
+        .collect()
 }
 
 /// Um no vivo, do jeito que a eleicao o compara.
@@ -253,6 +350,10 @@ pub struct EstadoCluster {
     /// e a mesma medida: o numero e a confianca nele. O pulso publica os dois,
     /// e a eleicao prefere quem esta completo.
     posicao_incompleta: AtomicBool,
+    /// A mesma contagem, POR TABELA (pedido 294): o que o pulso publica e o
+    /// painel mostra ao lado da soma. Sai da MESMA passada que a soma
+    /// (`Servidor::posicao_do_diario`), entao as duas nunca divergem.
+    por_tabela: TravaDaGuarda<Vec<(String, u64)>>,
     /// Master COM maioria visivel = escrita liberada. Quem atualiza e o
     /// arbitro; o portao so le.
     escrita_liberada: AtomicBool,
@@ -461,6 +562,7 @@ impl EstadoCluster {
             epoca: AtomicU64::new(epoca),
             posicao: AtomicU64::new(0),
             posicao_incompleta: AtomicBool::new(false),
+            por_tabela: TravaDaGuarda::nova("da posicao por tabela do cluster", Vec::new()),
             // Nasce liberada para o master nao recusar escrita no arranque,
             // antes do primeiro pulso: a primeira rodada do arbitro corrige.
             escrita_liberada: AtomicBool::new(papel == PapelVivo::Master),
@@ -521,9 +623,19 @@ impl EstadoCluster {
     /// Grava a posicao E a confianca nela na MESMA chamada: sao a mesma medida,
     /// e deixar o `incompleta` de fora abriria a janela em que o pulso publica
     /// um numero novo com a bandeira velha.
-    pub fn definir_posicao(&self, p: u64, incompleta: bool) {
+    ///
+    /// O vetor por tabela entra na mesma chamada pelo mesmo motivo (pedido
+    /// 294): e a mesma passada, e publicar a soma nova com o vetor velho
+    /// mostraria no painel uma assimetria que nao existe.
+    pub fn definir_posicao(&self, p: u64, incompleta: bool, por_tabela: Vec<(String, u64)>) {
+        *self.por_tabela.travar() = por_tabela;
         self.posicao.store(p, Ordering::SeqCst);
         self.posicao_incompleta.store(incompleta, Ordering::SeqCst);
+    }
+
+    /// A ultima posicao contada, por tabela (pedido 294). Medida, nunca voto.
+    pub fn por_tabela(&self) -> Vec<(String, u64)> {
+        self.por_tabela.travar().clone()
     }
 
     pub fn escrita_liberada(&self) -> bool {
@@ -1355,6 +1467,46 @@ mod testes {
         assert!(vencedor(&[c("a", 1, 0), c("b", 1, 0)], 3).is_some());
     }
 
+    /// Pedido 294: o vetor que chega no pulso tem teto de entradas e deixa
+    /// de fora o que nao e contagem -- a medida e acessoria e nao pode crescer
+    /// o mapa em memoria sem limite nem derrubar o pulso que carrega a eleicao.
+    #[test]
+    fn o_vetor_do_pulso_tem_teto_e_peneira() {
+        let mut campos: Vec<(String, Json)> = (0..TETO_DE_TABELAS_NO_PULSO + 88)
+            .map(|i| (format!("b/t{i:04}"), Json::de_u64(i as u64)))
+            .collect();
+        campos.insert(0, ("b/negativa".into(), Json::de_i64(-1)));
+        campos.insert(0, ("b/texto".into(), Json::texto_de("7")));
+        campos.insert(0, ("x".repeat(TETO_DO_NOME_NO_PULSO + 1), Json::de_u64(1)));
+        let j = Json::objeto(vec![("por_tabela", Json::Objeto(campos))]);
+        let v = por_tabela_de_json(&j).expect("o vetor veio");
+        assert_eq!(v.len(), TETO_DE_TABELAS_NO_PULSO);
+        assert_eq!(v[0], ("b/t0000".to_string(), 0));
+        assert!(por_tabela_de_json(&Json::objeto(vec![])).is_none());
+
+        // E quem manda corta e DIZ que cortou.
+        let longo: Vec<(String, u64)> = (0..TETO_DE_TABELAS_NO_PULSO + 1)
+            .map(|i| (format!("b/t{i}"), 1))
+            .collect();
+        let saida = campos_por_tabela(&longo);
+        assert!(saida.iter().any(|(k, _)| *k == "por_tabela_cortado"));
+        assert!(!campos_por_tabela(&longo[..3])
+            .iter()
+            .any(|(k, _)| *k == "por_tabela_cortado"));
+    }
+
+    /// O `atras_em` compara so entre quem mediu, e a tabela que um no nem
+    /// tem conta como zero para ele.
+    #[test]
+    fn atras_em_so_entre_quem_mediu() {
+        let a = [("b/uma".to_string(), 5), ("b/outra".to_string(), 5)];
+        let b = [("b/uma".to_string(), 10)];
+        let r = atras_em(&[Some(&a[..]), Some(&b[..]), None]);
+        assert_eq!(r[0], Some(vec!["b/uma".to_string()]));
+        assert_eq!(r[1], Some(vec!["b/outra".to_string()]));
+        assert_eq!(r[2], None);
+    }
+
     /// Entre os elegiveis vence quem tem MAIS diario -- promover um atrasado
     /// jogaria fora o que os outros ja aplicaram.
     #[test]
@@ -1636,6 +1788,7 @@ mod testes {
                 incompleta: false,
                 prioridade: 0,
                 quando_ms: crate::agora_ms(),
+                por_tabela: None,
             },
         );
         assert!(
@@ -1677,6 +1830,7 @@ mod testes {
                 incompleta: false,
                 prioridade: 0,
                 quando_ms: crate::agora_ms(),
+                por_tabela: None,
             },
         )
         .unwrap();
@@ -1716,6 +1870,7 @@ mod testes {
                 incompleta: false,
                 prioridade: 0,
                 quando_ms: crate::agora_ms(),
+                por_tabela: None,
             },
         )
         .unwrap();
@@ -1732,6 +1887,7 @@ mod testes {
                 incompleta: false,
                 prioridade: 0,
                 quando_ms: crate::agora_ms(),
+                por_tabela: None,
             },
         )
         .unwrap();
@@ -1749,6 +1905,7 @@ mod testes {
             incompleta: false,
             prioridade: 0,
             quando_ms: crate::agora_ms(),
+            por_tabela: None,
         }
     }
 
@@ -2073,7 +2230,7 @@ mod testes {
     fn o_mapa_com_a_trava_envenenada_continua_vendo_os_vivos() {
         let dir = DirTemp::novo("cluster-mapa-veneno");
         let e = EstadoCluster::novo(config_de_teste(), &dir, crate::config::Papel::Replica);
-        e.definir_posicao(10, false);
+        e.definir_posicao(10, false, Vec::new());
         let mut calado = pulso(PapelVivo::Master, 2, 10);
         calado.quando_ms -= 60_000;
         e.registrar("no1", calado).unwrap();

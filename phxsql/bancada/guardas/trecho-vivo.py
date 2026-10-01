@@ -449,6 +449,16 @@ dia, nunca no desejado:
   contador (`drop-do-congelamento-esquece-o-contador`) e o arbitro que
   engolia o rebaixar (`arbitro-engole-o-rebaixar`). 560 + 5 = 565.
   No merge com as frentes que levaram o piso a 579: 579 + 5 = 584.
+  **SUBIU para 587 em 01/10/2026** (pedidos 290 e 294): tres guardas -- o
+  `inicio` da faixa que o config nao levava ao motor
+  (`faixa-do-config-nao-lida`), o contador da `Sequence` que saia da propria
+  faixa na primeira insercao (`faixa-sai-da-classe`) e o vetor por tabela do
+  pulso que nao chegava ao painel (`vetor-do-pulso-ignorado`). 584 + 3 = 587,
+  medido pelo `--numeros`.
+  **SUBIU para 589 em 01/10/2026** (pedido 290, parecer do DBA NAO 290-b):
+  duas guardas -- a tabela do contador defeituoso sem saida
+  (`faixa-sem-saida`) e a reconciliacao do `reparar` fora da faixa
+  (`reconciliar-fora-da-faixa`). 587 + 2 = 589, medido pelo `--numeros`.
 
 # A QUINTA REGUA: a tabela publicada pode ser MENOR que o catalogo
 
@@ -555,7 +565,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 584
+PISO_DAS_ENTRADAS = 589
 
 # ------------------------------------------------------------- APOSENTADAS
 #
