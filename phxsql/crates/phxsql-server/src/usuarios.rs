@@ -306,11 +306,12 @@ impl Atividade {
             "criar_database" | "criar_schema" | "criar_tabela" | "duplicar_tabela"
             | "copiar_tabela" => Atividade::Criar,
             // Declarar e desdeclarar chave estrangeira e desenhar o MODELO, e
-            // nao mexer em dado: a chave e catalogo e o motor nao a impoe (ha
-            // teste que trava isso). Pede o mesmo poder de quem cria tabela --
-            // que sempre pode declara-la no proprio criar_tabela -- e o portao
-            // por tabela vale, porque as duas operacoes tem o campo "tabela".
-            "declarar_fk" | "excluir_fk" => Atividade::Criar,
+            // nao mexer em dado. Pede o mesmo poder de quem cria tabela -- que
+            // sempre pode declara-la no proprio criar_tabela -- e o portao por
+            // tabela vale, porque as operacoes tem o campo "tabela". O indice
+            // de texto e o mesmo caso (pedido 364): o `criar_tabela` sempre
+            // pode declara-lo, e redeclarar nao pode pedir mais que nascer.
+            "declarar_fk" | "excluir_fk" | "redeclarar_indices_texto" => Atividade::Criar,
             // Acrescentar coluna reescreve o `.reg` INTEIRO -- e a maior
             // escrita de estrutura do motor, e a que nao tem desfazer barato.
             // Nao basta poder criar tabela: isto exige administrar, como o

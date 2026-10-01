@@ -8,6 +8,8 @@ merece, e a página que mostra isso ao dono. Nada aqui é entregável de produto
 |---|---|---|
 | `BACKLOG.md` | o board: quatro tabelas de item (Pilar 1, 2, 3, Governança) com dono, escalão e estado | **sim** — é a avaliação datada de escalão e dono; o bloco entre `<!-- ROLLUP:inicio -->` e `<!-- ROLLUP:fim -->` **não**, é gerado |
 | `rollup.py` | conta aberto / entregue-fechado / parado por pilar e os «forte» abertos, e regrava o bloco do rollup no `BACKLOG.md` | — |
+| `SPRINTS.md` | o plano das sprints SPR-01…15: quais pedidos cada uma leva (linha `**Pedidos**`) e o que resta | **sim** — menos o bloco entre `<!-- SPRINTS:inicio -->` e `<!-- SPRINTS:fim -->`, que é gerado |
+| `sprints.py` | conta, pelo `ler()` do `pagina-dos-pedidos.py`, feitos/◐/☐/⏸ de cada sprint, e nomeia o pedido aberto que não está em sprint nenhuma; sprint sem lista sai «não contada», nunca zero | — |
 | `pagina-do-status-do-projeto.py` | gera o painel PMO (três vistas: painel, fluxo, equipe) | — |
 | `status-do-projeto.html` | a página gerada, publicada em https://claude.ai/artifact/VEC7fc38SF5t2fRqrwEy8p | **não** — mexeu numa fonte, rode o gerador |
 | `RODADA-*.md` | o quadro de uma rodada: medições, contratos das frentes, encontro das frentes | sim |
@@ -16,11 +18,12 @@ merece, e a página que mostra isso ao dono. Nada aqui é entregável de produto
 
 ```bash
 python3 docs/pmo/rollup.py                         # regrava o rollup do board
+python3 docs/pmo/sprints.py                        # regrava o estado das sprints
 python3 docs/pmo/pagina-do-status-do-projeto.py    # regrava a página
 python3 docs/dossie/portao-dos-geradores.py        # confere que nenhum derivado esta velho
 ```
 
-Os dois geradores estão no **portão dos geradores** em modo `sem-carimbo`
+Os três geradores estão no **portão dos geradores** em modo `sem-carimbo`
 (o carimbo «gerado em … UTC» é relógio de parede; qualquer outro número que
 mude ao re-rodar reprova). Publique a página **passando a URL acima**, para
 cair na mesma página em vez de criar outra.

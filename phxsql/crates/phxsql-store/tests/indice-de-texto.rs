@@ -511,3 +511,96 @@ fn palavra_longa_confere_a_linha_em_vez_de_achar_a_mais() {
     );
     assert_eq!(t.procurar_texto("porCorpo", beta).unwrap().rowids, vec![b]);
 }
+
+/// Pedido 364: a lista nova substitui a velha, e o `.fts` se refaz do `.reg`
+/// para ela -- inclusive trocando de coluna com o MESMO numero de indices,
+/// que e o caso em que um `.fts` velho abriria sem reclamar.
+#[test]
+fn redeclarar_troca_a_coluna_e_o_fts_acompanha() {
+    let (mut t, d) = nova("redeclarar");
+    let a = t
+        .inserir(&linha(1, "pedido urgente", "o cliente fenix pediu"))
+        .unwrap();
+    let linhas = t
+        .redeclarar_indices_de_texto(vec![
+            IndiceDeTexto::new("porTitulo", 2),
+            IndiceDeTexto::new("porCorpo", 1),
+        ])
+        .unwrap();
+    assert_eq!(linhas, 1);
+    assert_eq!(
+        t.procurar_texto("porTitulo", "fenix").unwrap().rowids,
+        vec![a]
+    );
+    drop(t);
+    let mut t = Table::abrir(&d, "docs").unwrap();
+    assert_eq!(
+        t.procurar_texto("porTitulo", "fenix").unwrap().rowids,
+        vec![a]
+    );
+    assert!(t
+        .procurar_texto("porTitulo", "pedido")
+        .unwrap()
+        .rowids
+        .is_empty());
+    assert!(
+        !d.join("docs.fts.novo").exists(),
+        "sobrou o montado ao lado"
+    );
+}
+
+/// A FASE A nao toca em nada vivo: descartada, a tabela e a mesma de antes.
+#[test]
+fn a_troca_descartada_deixa_a_tabela_como_estava() {
+    let (mut t, d) = nova("descartar");
+    let a = t.inserir(&linha(1, "pedido", "fenix")).unwrap();
+    let troca = t
+        .preparar_indices_de_texto(vec![IndiceDeTexto::new("porOutro", 2)])
+        .unwrap();
+    assert!(d.join("docs.fts.novo").exists());
+    troca.descartar();
+    assert!(!d.join("docs.fts.novo").exists());
+    assert_eq!(
+        t.procurar_texto("porTitulo", "pedido").unwrap().rowids,
+        vec![a]
+    );
+    drop(t);
+    let mut t = Table::abrir(&d, "docs").unwrap();
+    assert_eq!(t.esquema().indices_de_texto().len(), 2);
+    assert_eq!(
+        t.procurar_texto("porCorpo", "fenix").unwrap().rowids,
+        vec![a]
+    );
+}
+
+/// A queda logo depois do primeiro passo da FASE B -- o `.fts` velho ja
+/// saiu, o `.reg` ainda nao trocou. O esquema no disco e o velho, sem `.fts`,
+/// e a abertura o refaz do `.reg` pela declaracao velha: nenhum `.fts`
+/// montado para uma declaracao serve a outra.
+#[test]
+fn queda_entre_apagar_o_fts_e_trocar_o_reg_reabre_pelo_esquema_velho() {
+    let (mut t, d) = nova("queda");
+    let a = t.inserir(&linha(1, "pedido", "fenix")).unwrap();
+    t.sincronizar().unwrap();
+    let troca = t
+        .preparar_indices_de_texto(vec![IndiceDeTexto::new("porTitulo", 2)])
+        .unwrap();
+    // O passo 1 da FASE B, e a queda: nada mais acontece.
+    std::fs::remove_file(d.join("docs.fts")).unwrap();
+    drop(troca);
+    drop(t);
+    let mut t = Table::abrir(&d, "docs").unwrap();
+    assert_eq!(
+        t.esquema().indices_de_texto().len(),
+        2,
+        "o esquema velho ficou"
+    );
+    assert_eq!(
+        t.procurar_texto("porTitulo", "pedido").unwrap().rowids,
+        vec![a]
+    );
+    assert_eq!(
+        t.procurar_texto("porCorpo", "fenix").unwrap().rowids,
+        vec![a]
+    );
+}

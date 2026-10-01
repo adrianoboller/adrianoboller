@@ -323,6 +323,11 @@ PLANO = [
     ("docs/pmo/rollup.py", ["docs/pmo/BACKLOG.md"], "sem-carimbo",
      "conta aberto/entregue-fechado/parado por pilar do proprio BACKLOG.md; "
      "funcao pura da fonte versionada, so' o carimbo de hora e' relogio"),
+    # 01/10/2026: o estado das sprints era prosa digitada («290/294 prontos,
+    # em integracao») e envelheceu no mesmo dia. Mesma familia do rollup.
+    ("docs/pmo/sprints.py", ["docs/pmo/SPRINTS.md"], "sem-carimbo",
+     "conta feito/parcial/planejado por sprint do PENDENCIAS.md pelo ler() "
+     "dos pedidos; so' o carimbo de hora e' relogio"),
     # O painel PMO (as tres vistas que o dono pediu no molde do Phoenix Cast).
     # Mesmo motivo do rollup: gerador de bloco/pagina a partir de fonte
     # versionada, e a rodada pode esquecer de roda-lo. "sem-carimbo" porque a

@@ -4397,8 +4397,10 @@ pub fn limpar() {
             "defeito virar invisivel."
         ),
         "arquivo": "crates/phxsql-store/src/table.rs",
+        # O caminho virou `destino` no pedido 364, quando o laco passou a
+        # montar tambem o `.fts` AO LADO; o defeito e o mesmo.
         "trecho": """        self.fts = Some(FtsFile::recriar(
-            caminho(&self.diretorio, &self.nome, EXT_FTS),
+            destino,
             dobra,
             texto_sobre_coluna_marcada(&self.esquema),
         )?);
@@ -4481,7 +4483,7 @@ pub fn limpar() {
 """,
         "troca": """        } else if refazer {
             // DEFEITO REPOSTO: o `.fts` volta a nascer sem olhar a ficha.
-            Some(FtsFile::recriar(&caminho_fts, dobra)?)
+            Some(FtsFile::recriar(&caminho_fts, dobra, selar_o_fts)?)
 """,
         "pacote": "phxsql-store",
         "alvo": ["--test", "indice-de-texto"],
@@ -21496,6 +21498,127 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
         "caem": ["ledger::testes::o_censo_acha_a_cadeia_marcada_e_so_ela"],
         "seguem": [
             "ledger::testes::cadeia_marcada_gravada_antes_da_guarda_abre_le_e_grava",
+        ],
+        "prazo": 1200,
+    },
+    {
+        "id": "indice-da-chave-nao-nasce-no-criar-tabela",
+        "titulo": "A chave conferida nascia no criar_tabela sem o índice da filha, e a mãe perdia todo excluir",
+        "porque": (
+            "pedido 175, `docs/PARECER-175-INDICE-NA-DECLARACAO.md` §1.2: sem "
+            "indice na filha o motor nao consegue perguntar «alguem aponta "
+            "para esta linha?» e recusa TODO excluir da mae, inclusive da "
+            "linha sem filha. O exemplo do `MANUAL.txt` caia nisso. Reposto, "
+            "a linha 7 (sem filha) nao sai."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        let criados = esquema.indices_que_as_chaves_pedem();""",
+        "troca": """        // DEFEITO REPOSTO (175): a chave nasce sem o indice da filha.
+        let criados: Vec<phxsql_core::schema::IndexDef> = Vec::new();""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "indice-da-chave-e-de-texto"],
+        "caem": ["o_exemplo_do_manual_nasce_com_o_indice_da_chave"],
+        "seguem": [
+            "com_o_indice_ja_la_ou_sem_conferir_nada_nasce",
+            "declarar_a_chave_numa_filha_com_dado_cria_o_indice_e_o_monta",
+        ],
+        "prazo": 1800,
+    },
+    {
+        "id": "indice-da-chave-nao-nasce-no-declarar-fk",
+        "titulo": "A chave declarada numa filha que já existe não ganhava o índice, e a mãe perdia todo excluir",
+        "porque": (
+            "pedido 175, o caminho IRMAO do `criar_tabela`: a `declarar_fk` e "
+            "o que o diagrama ER chama, e e a porta em que a filha ja tem "
+            "dado -- o indice tem de nascer E ser montado do `.reg`. Reposto, "
+            "a linha 7 (sem filha) nao sai."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """        let novo_indice = t.esquema().indice_que_a_chave_pede(&fk_nova);""",
+        "troca": """        // DEFEITO REPOSTO (175): a chave declarada nao cria o indice.
+        let novo_indice: Option<phxsql_core::schema::IndexDef> = None;""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "indice-da-chave-e-de-texto"],
+        "caem": ["declarar_a_chave_numa_filha_com_dado_cria_o_indice_e_o_monta"],
+        "seguem": [
+            "com_o_indice_ja_la_ou_sem_conferir_nada_nasce",
+            "o_exemplo_do_manual_nasce_com_o_indice_da_chave",
+        ],
+        "prazo": 1800,
+    },
+    {
+        "id": "fts-orfao-reaproveitado-na-redeclaracao",
+        "titulo": "Redeclarar o índice de texto reaproveitava o .fts órfão, e a busca achava menos que a varredura",
+        "porque": (
+            "pedido 364: o `.fts` que sobreviveu ao defeito do 353 nao "
+            "acompanhou as gravacoes feitas sem declaracao. Reaproveita-lo "
+            "deixa fora da busca toda linha gravada nesse meio-tempo, calado. "
+            "Reposto -- o orfao fica no lugar e o montado ao lado so entra "
+            "onde nao ha arquivo --, a `fenix de vidro` gravada com o orfao no "
+            "disco nao e achada."
+        ),
+        "trocas": [
+            {
+                "arquivo": "crates/phxsql-store/src/table.rs",
+                "trecho": """        let apagado = match std::fs::remove_file(&vivo) {""",
+                "troca": """        // DEFEITO REPOSTO (364, 1/2): o .fts que estava la fica.
+        let apagado = match Ok::<(), std::io::Error>(()) {""",
+            },
+            {
+                "arquivo": "crates/phxsql-store/src/table.rs",
+                "trecho": """            crate::sincronia::trocar_duravel(&t.ao_lado, &vivo)?;""",
+                "troca": """            // DEFEITO REPOSTO (364, 2/2): o montado so entra onde nao ha arquivo.
+            if !vivo.exists() {
+                crate::sincronia::trocar_duravel(&t.ao_lado, &vivo)?;
+            }""",
+            },
+        ],
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "indice-da-chave-e-de-texto"],
+        "caem": ["o_fts_orfao_e_reconstruido_e_nao_reaproveitado"],
+        "seguem": ["o_exemplo_do_manual_nasce_com_o_indice_da_chave"],
+        "prazo": 1800,
+    },
+    {
+        "id": "fts-orfao-na-lista-vazia",
+        "titulo": "Redeclarar o índice de texto como lista vazia deixava o .fts órfão no disco",
+        "porque": (
+            "pedido 364: declaracao vazia com o `.fts` ao lado e exatamente o "
+            "orfao que o pedido existe para nao deixar -- 12.288 bytes medidos "
+            "na sonda do 353, e o `reconstruir_fts` anunciando sucesso sobre "
+            "ele. Reposto, o arquivo continua la."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        let apagado = match std::fs::remove_file(&vivo) {""",
+        "troca": """        // DEFEITO REPOSTO (364): a declaracao sai e o arquivo fica.
+        let apagado = match Ok::<(), std::io::Error>(()) {""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "indice-da-chave-e-de-texto"],
+        "caem": ["o_indice_de_texto_se_redeclara_numa_tabela_que_ja_existe"],
+        "seguem": ["o_fts_orfao_e_reconstruido_e_nao_reaproveitado"],
+        "prazo": 1800,
+    },
+    {
+        "id": "fts-montado-pela-declaracao-velha",
+        "titulo": "A redeclaração do índice de texto montava o .fts novo pela declaração velha",
+        "porque": (
+            "pedido 364: o laco unico de reconstrucao le a declaracao do "
+            "punho, e a montagem ao lado so serve a lista nova se a troca "
+            "temporaria acontecer. Reposto, trocar `porTitulo` de coluna "
+            "mantendo dois indices -- o caso em que um `.fts` errado abre sem "
+            "reclamar -- deixa a busca pela coluna nova vazia."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """        let textos_vivos = std::mem::replace(&mut self.indices_de_texto, textos_do_esquema(novo));""",
+        "troca": """        // DEFEITO REPOSTO (364): o laco monta pela declaracao velha.
+        let textos_vivos =
+            std::mem::replace(&mut self.indices_de_texto, textos_do_esquema(&esquema_vivo));""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "indice-de-texto"],
+        "caem": ["redeclarar_troca_a_coluna_e_o_fts_acompanha"],
+        "seguem": [
+            "a_troca_descartada_deixa_a_tabela_como_estava",
+            "queda_entre_apagar_o_fts_e_trocar_o_reg_reabre_pelo_esquema_velho",
         ],
         "prazo": 1200,
     },

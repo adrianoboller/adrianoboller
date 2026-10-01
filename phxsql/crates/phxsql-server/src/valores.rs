@@ -520,6 +520,47 @@ fn expressao_de_json(c: &Json, campo: &str) -> String {
     }
 }
 
+/// Os indices de TEXTO de um pedido, conferidos contra as colunas do esquema.
+///
+/// Um leitor so para as duas portas que os declaram -- o `criar_tabela` e o
+/// `redeclarar_indices_texto` (pedido 364). Dois leitores seriam duas
+/// respostas para «o que `dobrar` vale quando nao vem?», e a que divergisse
+/// criaria um indice que acha menos que a varredura por uma porta so.
+pub fn indices_de_texto_de_json(lista: &[Json], esquema: &Schema) -> Result<Vec<IndiceDeTexto>> {
+    let mut textos = Vec::with_capacity(lista.len());
+    for (i, it) in lista.iter().enumerate() {
+        let nome = it.texto_ou("nome", "").trim().to_string();
+        if nome.is_empty() {
+            return Err(PhxError::Esquema(format!("indice de texto {i} sem nome")));
+        }
+        let coluna = it.texto_ou("coluna", "").trim().to_string();
+        if coluna.is_empty() {
+            return Err(PhxError::Esquema(format!(
+                "indice de texto {nome} sem \"coluna\""
+            )));
+        }
+        let pos = esquema
+            .colunas()
+            .iter()
+            .position(|c| c.nome == coluna)
+            .ok_or_else(|| {
+                PhxError::Esquema(format!(
+                    "indice de texto {nome} usa coluna inexistente: {coluna:?}"
+                ))
+            })?;
+        textos.push(IndiceDeTexto {
+            nome,
+            coluna: pos,
+            // Nasce LIGADO, e o motivo esta medido no `docs/FTS.md`
+            // 5.1: a busca de hoje nao dobra acento, entao um indice
+            // sem dobra acharia MENOS que a varredura -- e indice que
+            // acha menos que a varredura e pior que nao ter indice.
+            dobrar: it.booleano_ou("dobrar", true),
+        });
+    }
+    Ok(textos)
+}
+
 pub fn esquema_de_json(j: &Json) -> Result<Schema> {
     let nome = j.texto_ou("tabela", "").trim().to_string();
     if nome.is_empty() {
@@ -724,37 +765,7 @@ pub fn esquema_de_json(j: &Json) -> Result<Schema> {
     {
         None => esquema,
         Some(lista) => {
-            let mut textos = Vec::with_capacity(lista.len());
-            for (i, it) in lista.iter().enumerate() {
-                let nome = it.texto_ou("nome", "").trim().to_string();
-                if nome.is_empty() {
-                    return Err(PhxError::Esquema(format!("indice de texto {i} sem nome")));
-                }
-                let coluna = it.texto_ou("coluna", "").trim().to_string();
-                if coluna.is_empty() {
-                    return Err(PhxError::Esquema(format!(
-                        "indice de texto {nome} sem \"coluna\""
-                    )));
-                }
-                let pos = esquema
-                    .colunas()
-                    .iter()
-                    .position(|c| c.nome == coluna)
-                    .ok_or_else(|| {
-                        PhxError::Esquema(format!(
-                            "indice de texto {nome} usa coluna inexistente: {coluna:?}"
-                        ))
-                    })?;
-                textos.push(IndiceDeTexto {
-                    nome,
-                    coluna: pos,
-                    // Nasce LIGADO, e o motivo esta medido no `docs/FTS.md`
-                    // 5.1: a busca de hoje nao dobra acento, entao um indice
-                    // sem dobra acharia MENOS que a varredura -- e indice que
-                    // acha menos que a varredura e pior que nao ter indice.
-                    dobrar: it.booleano_ou("dobrar", true),
-                });
-            }
+            let textos = indices_de_texto_de_json(lista, &esquema)?;
             esquema.com_indices_de_texto(textos)?
         }
     };

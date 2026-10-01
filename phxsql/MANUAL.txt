@@ -654,6 +654,20 @@ CHAVE ESTRANGEIRA NO criar_tabela
     filha, entao a mae pergunta as irmas. Excluir e raro, inserir e o laco
     quente -- pagar ali mantem o inserir sem custo nenhum.
 
+    O INDICE DA FILHA NASCE COM A CHAVE (pedido 175). Sem ele a mae perdia o
+    excluir INTEIRO -- inclusive da linha que ninguem referencia --, e o
+    exemplo acima, com um indice so, caia nisso. Agora o criar_tabela e o
+    declarar_fk criam o indice que falta na filha, com o nome da chave, e
+    dizem que criaram:
+
+        "indices_criados": ["idx_fk_cliente"]
+
+    So na FILHA, e so para chave conferida: "verificar": false nao ganha
+    indice, e chave declarada antes desta versao fica como estava. O da MAE
+    continua sendo seu -- criar indice em tabela alheia nao cabe a quem
+    declara a chave. Custo medido: ~70 microssegundos na tabela vazia;
+    numa tabela cheia o .ndx se refaz inteiro (180 ms a 100.000 linhas).
+
     NOTA DE ATUALIZACAO (pedido 491) -- a tabela que aponta para SI MESMA
     (funcionarios.chefe_id -> funcionarios.id). Ate aqui o excluir dela nao
     perguntava pelos subordinados, e o chefe que tinha subordinado saia,

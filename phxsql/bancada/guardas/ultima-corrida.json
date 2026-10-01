@@ -881,9 +881,9 @@
       "id": "fts-reconstruir-sem-recriar",
       "titulo": "reconstruir o índice de texto sem recriar o arquivo não é idempotente",
       "veredito": "PROVADA",
-      "segundos": 2.17,
+      "segundos": 7.98,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-10-01 14:51"
     },
     {
       "id": "fts-abrir-recusa-a-tabela",
@@ -897,9 +897,9 @@
       "id": "fts-nasce-na-pista-de-leitura",
       "titulo": "a pista de leitura cria o .fts, e escrever sob a ficha compartilhada é o que ela existe para impedir",
       "veredito": "PROVADA",
-      "segundos": 2.01,
+      "segundos": 8.67,
       "notas": [],
-      "quando": "2026-09-16 15:25"
+      "quando": "2026-10-01 14:51"
     },
     {
       "id": "fts-chave-truncada-nao-se-declara",
@@ -3750,6 +3750,46 @@
       "segundos": 13.66,
       "notas": [],
       "quando": "2026-10-01 13:06"
+    },
+    {
+      "id": "indice-da-chave-nao-nasce-no-criar-tabela",
+      "titulo": "A chave conferida nascia no criar_tabela sem o índice da filha, e a mãe perdia todo excluir",
+      "veredito": "PROVADA",
+      "segundos": 24.26,
+      "notas": [],
+      "quando": "2026-10-01 14:51"
+    },
+    {
+      "id": "indice-da-chave-nao-nasce-no-declarar-fk",
+      "titulo": "A chave declarada numa filha que já existe não ganhava o índice, e a mãe perdia todo excluir",
+      "veredito": "PROVADA",
+      "segundos": 22.95,
+      "notas": [],
+      "quando": "2026-10-01 14:51"
+    },
+    {
+      "id": "fts-orfao-reaproveitado-na-redeclaracao",
+      "titulo": "Redeclarar o índice de texto reaproveitava o .fts órfão, e a busca achava menos que a varredura",
+      "veredito": "PROVADA",
+      "segundos": 24.3,
+      "notas": [],
+      "quando": "2026-10-01 14:51"
+    },
+    {
+      "id": "fts-orfao-na-lista-vazia",
+      "titulo": "Redeclarar o índice de texto como lista vazia deixava o .fts órfão no disco",
+      "veredito": "PROVADA",
+      "segundos": 23.68,
+      "notas": [],
+      "quando": "2026-10-01 14:51"
+    },
+    {
+      "id": "fts-montado-pela-declaracao-velha",
+      "titulo": "A redeclaração do índice de texto montava o .fts novo pela declaração velha",
+      "veredito": "PROVADA",
+      "segundos": 7.91,
+      "notas": [],
+      "quando": "2026-10-01 14:51"
     },
     {
       "id": "cifra-do-fio-imposta",

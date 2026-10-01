@@ -1109,11 +1109,16 @@ python3 bancada/guardas/tabela-no-testes.py /tmp/guardas.json
 | `posicao-do-cluster-conta-tabela-que-nao-replica` | A posição somada do cluster contava tabela que não é replicada, e o nó com dado local ganhava a eleição | 2 | ✅ provada |
 | `ledger-marcado-recebido-calado` | A réplica criava a cadeia de ledger com coluna marcada sem gritar nem contar | 1 | ✅ provada |
 | `censo-do-ledger-le-a-forma-e-nao-a-marca` | O censo do ledger achava a cadeia pela forma e não lia o byte de marca: a cadeia marcada saía limpa | 1 | ✅ provada |
+| `indice-da-chave-nao-nasce-no-criar-tabela` | A chave conferida nascia no criar_tabela sem o índice da filha, e a mãe perdia todo excluir | 1 | ✅ provada |
+| `indice-da-chave-nao-nasce-no-declarar-fk` | A chave declarada numa filha que já existe não ganhava o índice, e a mãe perdia todo excluir | 1 | ✅ provada |
+| `fts-orfao-reaproveitado-na-redeclaracao` | Redeclarar o índice de texto reaproveitava o .fts órfão, e a busca achava menos que a varredura | 1 | ✅ provada |
+| `fts-orfao-na-lista-vazia` | Redeclarar o índice de texto como lista vazia deixava o .fts órfão no disco | 1 | ✅ provada |
+| `fts-montado-pela-declaracao-velha` | A redeclaração do índice de texto montava o .fts novo pela declaração velha | 1 | ✅ provada |
 | `cifra-do-fio-imposta` | a cifra do fio EXIGIDA por padrão, quebrando todo cliente velho | — | 🪦 aposentada (18/09/2026) |
 
-**468 das 643 guardas do catálogo: 1 aposentada, 463 provadas, 4 redundantes** — 14234 s de mutação, medido em 2026-09-16 15:25.
+**473 das 648 guardas do catálogo: 1 aposentada, 468 provadas, 4 redundantes** — 14350 s de mutação, medido em 2026-09-16 15:25.
 
-> **Esta rodada NÃO julgou 176 das 643 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
+> **Esta rodada NÃO julgou 176 das 648 entradas do catálogo.** Elas não estão provadas nem reprovadas — a rodada não chegou nelas, e ler a tabela acima como inventário do catálogo a lê 176 entradas curta. Para julgá-las é preciso uma corrida do `provar-guardas.py` que as alcance.
 
 - `fk-antes-do-default` — a chave estrangeira confere a linha crua, e o DEFAULT sem mãe grava a filha órfã
 - `fk-antes-do-default-pelo-servidor` — o DEFAULT e a calculada sem mãe gravam a órfã pelo servidor, fora e dentro da transação
