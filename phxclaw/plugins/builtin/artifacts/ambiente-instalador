@@ -1,0 +1,150 @@
+#!/usr/bin/env bash
+# Plugin com.phxclaw.tool.ambiente: instala e atualiza o ambiente de desenvolvimento do
+# PhxClaw no Linux (Debian/Ubuntu): Rust, PostgreSQL e Python com as bibliotecas de
+# desenvolvimento de sistemas. Pedido do dono, 01/10/2026.
+#
+#   ambiente-instalador [--rust VERSAO] [--postgres MAJOR] [--python VERSAO] [tudo|rust|postgres|python]
+#   ambiente-instalador --health        # so confere e imprime as versoes; sai 0 se tudo esta la
+#
+# Sem argumento de versao, pega a MAIS NOVA de cada fonte oficial, lida na hora:
+# o channel-rust-stable.toml, o indice do PGDG e o indice do python.org. Idempotente:
+# cada passo confere antes de agir, entao rodar duas vezes nao refaz nada.
+#
+# Exige root (instala pacote de sistema). As fontes sao so as oficiais, e a chave do
+# repositorio PGDG e conferida pela impressao digital publicada pelo projeto, nunca
+# aceita como vier.
+set -euo pipefail
+
+RUST_VER="" PG_MAJOR="" PY_VER="" ALVO="tudo"
+PY_ENV=${PHXCLAW_PYTHON_ENV:-/opt/phxclaw-python}
+PGDG_DIGITAL="B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8"
+# Bibliotecas de desenvolvimento de sistemas, por papel. O maturin e a ponte Rust<->Python
+# (PyO3); o psycopg fala com o PostgreSQL; o resto e web, dados, documentos e qualidade.
+PY_LIBS=(
+  maturin
+  requests httpx fastapi uvicorn pydantic
+  sqlalchemy alembic "psycopg[binary]"
+  pytest pytest-cov ruff mypy
+  rich typer click jinja2 pyyaml orjson python-dotenv
+  numpy pandas openpyxl python-docx lxml
+  cryptography
+)
+
+saude() {
+  local ok=0
+  printf 'rust     %s\n' "$(rustc --version 2>/dev/null || echo AUSENTE)"
+  printf 'cargo    %s\n' "$(cargo --version 2>/dev/null || echo AUSENTE)"
+  printf 'postgres %s\n' "$(ls /usr/lib/postgresql 2>/dev/null | sort -n | tr '\n' ' ' || true)"
+  printf 'python   %s\n' "$("$PY_ENV/bin/python" --version 2>/dev/null || echo AUSENTE)"
+  command -v rustc >/dev/null || ok=1
+  [ -n "$(ls /usr/lib/postgresql 2>/dev/null)" ] || ok=1
+  [ -x "$PY_ENV/bin/python" ] || ok=1
+  if [ -x "$PY_ENV/bin/python" ]; then
+    for m in maturin fastapi sqlalchemy psycopg pytest numpy pandas; do
+      "$PY_ENV/bin/python" -c "import $m" 2>/dev/null || { echo "python: falta $m"; ok=1; }
+    done
+  fi
+  return $ok
+}
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --health) saude; exit $? ;;
+    --rust) RUST_VER=$2; shift 2 ;;
+    --postgres) PG_MAJOR=$2; shift 2 ;;
+    --python) PY_VER=$2; shift 2 ;;
+    tudo|rust|postgres|python) ALVO=$1; shift ;;
+    *) echo "argumento desconhecido: $1" >&2; exit 2 ;;
+  esac
+done
+[ "$(id -u)" = 0 ] || { echo "precisa de root: instala pacote de sistema" >&2; exit 2; }
+
+rust() {
+  [ -n "$RUST_VER" ] || RUST_VER=$(curl -fsS https://static.rust-lang.org/dist/channel-rust-stable.toml \
+    | awk '/^\[pkg.rust\]/{f=1} f&&/^version/{print $3; exit}' | tr -d '"')
+  if ! command -v rustup >/dev/null; then
+    curl -fsS https://sh.rustup.rs | sh -s -- -y --default-toolchain none
+    # shellcheck disable=SC1091
+    . "$HOME/.cargo/env"
+  fi
+  rustup toolchain install "$RUST_VER" --profile minimal -c rustfmt -c clippy
+  rustup default "$RUST_VER"
+  echo "rust: $(rustc +"$RUST_VER" --version)"
+}
+
+postgres() {
+  if [ -z "$PG_MAJOR" ]; then
+    PG_MAJOR=$(curl -fsS "https://apt.postgresql.org/pub/repos/apt/dists/$(. /etc/os-release; echo "$VERSION_CODENAME")-pgdg/main/binary-amd64/Packages.gz" \
+      | gunzip | grep -oE '^Package: postgresql-[0-9]+$' | grep -oE '[0-9]+$' | sort -n | tail -1)
+  fi
+  if [ -x "/usr/lib/postgresql/$PG_MAJOR/bin/postgres" ]; then
+    echo "postgres: $PG_MAJOR ja instalado"; return
+  fi
+  local chave=/usr/share/keyrings/pgdg.gpg
+  if [ ! -f "$chave" ]; then
+    local t; t=$(mktemp)
+    curl -fsS https://www.postgresql.org/media/keys/ACCC4CF8.asc -o "$t"
+    local achado
+    achado=$(gpg --show-keys --with-colons "$t" | awk -F: '/^fpr/{print $10; exit}')
+    [ "$achado" = "$PGDG_DIGITAL" ] || { echo "chave PGDG NAO confere: $achado" >&2; rm -f "$t"; exit 3; }
+    gpg --dearmor -o "$chave" "$t"; rm -f "$t"
+  fi
+  echo "deb [signed-by=$chave] https://apt.postgresql.org/pub/repos/apt $(. /etc/os-release; echo "$VERSION_CODENAME")-pgdg main" \
+    > /etc/apt/sources.list.d/pgdg.list
+  # Todas as listas, nao so a do PGDG: o postgresql novo depende de pacote do proprio
+  # Ubuntu (liburing2, medido em 01/10), e lista velha da distro o da como inexistente.
+  apt-get update -q >/dev/null
+  # Lado a lado com o que ja existe: um cluster de outra versao continua rodando.
+  DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends \
+    "postgresql-$PG_MAJOR" "postgresql-client-$PG_MAJOR"
+  echo "postgres: $("/usr/lib/postgresql/$PG_MAJOR/bin/postgres" --version)"
+}
+
+python() {
+  command -v uv >/dev/null || curl -fsSL https://astral.sh/uv/install.sh | sh
+  export PATH="$HOME/.local/bin:$PATH"
+  # A mais nova ESTAVEL: a pasta do python.org existe tambem para alfa e rc (a 3.15.0 so
+  # tinha a1..a5 em 01/10), entao so conta versao que tem o tarball final.
+  if [ -z "$PY_VER" ]; then
+    for v in $(curl -fsS https://www.python.org/ftp/python/ | grep -oE 'href="3\.[0-9]+\.[0-9]+/"' \
+        | grep -oE '3\.[0-9]+\.[0-9]+' | sort -t. -k2,2nr -k3,3nr); do
+      curl -fsS -o /dev/null --head "https://www.python.org/ftp/python/$v/Python-$v.tgz" && { PY_VER=$v; break; }
+    done
+  fi
+  local prefixo="/opt/python-$PY_VER" py="/opt/python-$PY_VER/bin/python${PY_VER%.*}"
+  if [ ! -x "$py" ]; then
+    # O binario pronto que o uv baixa vem de release do GitHub (403 nesta rede, medido),
+    # entao compila-se o tarball oficial. Desde a 3.14 a assinatura e Sigstore (PEP 761),
+    # nao GPG: a identidade conferida e a do gerente de lancamento da serie.
+    local t; t=$(mktemp -d)
+    curl -fsS -o "$t/py.tgz" "https://www.python.org/ftp/python/$PY_VER/Python-$PY_VER.tgz"
+    curl -fsS -o "$t/py.tgz.sigstore" "https://www.python.org/ftp/python/$PY_VER/Python-$PY_VER.tgz.sigstore"
+    python3 -m venv "$t/v" && "$t/v/bin/pip" install -q sigstore
+    "$t/v/bin/python" -m sigstore verify identity --bundle "$t/py.tgz.sigstore" \
+      --cert-identity "${PY_ASSINANTE:-hugo@python.org}" \
+      --cert-oidc-issuer https://github.com/login/oauth "$t/py.tgz"
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends build-essential \
+      libssl-dev zlib1g-dev libffi-dev libbz2-dev libreadline-dev libsqlite3-dev liblzma-dev \
+      uuid-dev libncursesw5-dev libgdbm-dev libzstd-dev >/dev/null
+    tar -xzf "$t/py.tgz" -C "$t"
+    (cd "$t/Python-$PY_VER" && ./configure --prefix="$prefixo" --with-ensurepip=install >/dev/null \
+      && make -j"$(nproc)" >/dev/null && make install >/dev/null)
+    rm -rf "$t"
+  fi
+  "$py" -c "import ssl, sqlite3, zlib, ctypes, lzma, bz2, uuid" \
+    || { echo "python $PY_VER sem modulo essencial" >&2; exit 3; }
+  [ -x "$PY_ENV/bin/python" ] && "$PY_ENV/bin/python" --version | grep -q "$PY_VER" \
+    || uv venv --python "$py" "$PY_ENV"
+  uv pip install --python "$PY_ENV/bin/python" "${PY_LIBS[@]}"
+  # As versoes que de fato entraram ficam escritas ao lado: "a mais nova" muda todo dia.
+  uv pip freeze --python "$PY_ENV/bin/python" > "$PY_ENV/versoes.txt"
+  echo "python: $("$PY_ENV/bin/python" --version), $(wc -l < "$PY_ENV/versoes.txt") pacotes em $PY_ENV"
+}
+
+case "$ALVO" in
+  tudo) rust; postgres; python ;;
+  rust) rust ;;
+  postgres) postgres ;;
+  python) python ;;
+esac
+saude
