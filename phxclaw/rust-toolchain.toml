@@ -5,4 +5,4 @@
 # O PhxSql fixa a dele (1.94.1) no proprio diretorio; as duas convivem no rustup.
 [toolchain]
 channel = "1.98.1"
-components = ["rustfmt", "clippy"]
+components = ["rustfmt", "clippy", "rust-analyzer"]

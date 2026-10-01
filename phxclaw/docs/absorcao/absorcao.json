@@ -70,11 +70,11 @@
  },
  "claude_code": {
   "total": 41,
-  "no_agente": 23,
-  "parcial": 7,
+  "no_agente": 24,
+  "parcial": 6,
   "nao": 11,
-  "pct_agente": 56.1,
-  "pct_com_bibliotecas": 64.6,
+  "pct_agente": 58.5,
+  "pct_com_bibliotecas": 65.9,
   "falta": [
    "notebook",
    "hooks",
@@ -94,18 +94,17 @@
    "workflows",
    "plugins",
    "checkpoints",
-   "ide",
    "lsp"
   ],
   "lido_em": "01/10/2026"
  },
  "codex": {
   "total": 43,
-  "no_agente": 20,
-  "parcial": 7,
+  "no_agente": 21,
+  "parcial": 6,
   "nao": 16,
-  "pct_agente": 46.5,
-  "pct_com_bibliotecas": 54.7,
+  "pct_agente": 48.8,
+  "pct_com_bibliotecas": 55.8,
   "falta": [
    "geracao_midia",
    "hooks",
@@ -130,8 +129,7 @@
    "instrucoes_projeto",
    "regras_comando",
    "canal_slack",
-   "tarefas_nuvem_paralelas",
-   "ide"
+   "tarefas_nuvem_paralelas"
   ],
   "lido_em": "01/10/2026"
  },

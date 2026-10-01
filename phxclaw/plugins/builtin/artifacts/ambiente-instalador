@@ -71,7 +71,9 @@ rust() {
     # shellcheck disable=SC1091
     . "$HOME/.cargo/env"
   fi
-  rustup toolchain install "$RUST_VER" --profile minimal -c rustfmt -c clippy
+  rustup toolchain install "$RUST_VER" --profile minimal -c rustfmt -c clippy -c rust-analyzer
+  # rust-analyzer: o Helix do IDE do PhxClaw o usa como servidor LSP; sem o componente, o
+  # atalho do rustup existe e falha (medido em 01/10: "Language server exited").
   rustup default "$RUST_VER"
   echo "rust: $(rustc +"$RUST_VER" --version)"
 }

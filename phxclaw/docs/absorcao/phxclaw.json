@@ -230,8 +230,8 @@
    "evidencia": ""
   },
   "ide": {
-   "estado": "parcial",
-   "evidencia": "terminal Rust na janela pronto; o Helix ainda nao esta instalado (roteiro em tools/instalar_helix.sh, parado por disco)"
+   "estado": "agente",
+   "evidencia": "Helix 25.07.1 (a05c151b) no motor de terminal Rust da janela (crates/phxclaw-terminal), com rust-analyzer; grade conferida em 01/10"
   },
   "busca_x": {
    "estado": "nao",

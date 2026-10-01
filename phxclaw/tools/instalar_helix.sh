@@ -15,7 +15,10 @@
 set -euo pipefail
 
 TAG=25.07.1
-COMMIT=ac94841019910ff405f31a8668389a06a169e0e5
+# O COMMIT da tag, e nao o objeto da tag: 25.07.1 e tag ANOTADA, e o objeto dela
+# (ac94841...) e outro numero. Medido em 01/10: comparado com o HEAD, o objeto da tag
+# parava toda instalacao; o commit e o que o `git ls-remote` da como 25.07.1^{}.
+COMMIT=a05c151bb6e8e9c65ec390b0ae2afe7a5efd619b
 DESTINO=${DESTINO:-/opt/helix}
 FONTE=${FONTE:-/var/tmp/helix-src}
 export CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-/var/tmp/helix-target}
@@ -49,6 +52,11 @@ if [[ ! -d "$FONTE/.git" ]]; then
   git clone --depth 1 --branch "$TAG" https://github.com/helix-editor/helix "$FONTE"
 fi
 ACHADO=$(git -C "$FONTE" rev-parse HEAD)
+TAG_APONTA=$(git -C "$FONTE" rev-parse "$TAG^{commit}" 2>/dev/null || echo "?")
+if [[ "$TAG_APONTA" != "$COMMIT" ]]; then
+  echo "PARADO: a tag $TAG aponta para $TAG_APONTA, e o fixado e $COMMIT (tag movida?)" >&2
+  exit 4
+fi
 if [[ "$ACHADO" != "$COMMIT" ]]; then
   echo "PARADO: $FONTE esta em $ACHADO, a tag $TAG fixada e $COMMIT" >&2
   exit 4

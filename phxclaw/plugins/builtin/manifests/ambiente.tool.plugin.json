@@ -18,10 +18,10 @@
  "extension_points": [],
  "integrity": {
   "artifact": "plugins/builtin/artifacts/ambiente-instalador",
-  "digest": "80487a4778b00dfef71907100164d07dc0e9b94a268dce3a09162d33da6218e8",
+  "digest": "d09c13fdc7a7d6b612bdd40a9aedb7f6717ebd31c88c1cb662928fc1eab2b72b",
   "hash_algorithm": "sha256",
   "provenance": "PhxClaw v0.70 / plugin de ambiente, 01/10/2026",
-  "signature": "m3FK9mSjzBeY4AXD2dHzytBfMQwbk2PuLv9gGD/yeRs2v0PCe5DJBYkGWXamAmDWcCUwuybYKxyxf/anY15LDA==",
+  "signature": "/NheQeumampC+ebVw0M0mzhINZCeX89xEQXnxclzXUX7UDcXWSkkHTUauEzqA2DC3pqUlAFl03tXyoNI8CkIAw==",
   "signature_algorithm": "ed25519",
   "signer": "phxclaw-dev-root-2026-v07"
  },
