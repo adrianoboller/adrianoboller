@@ -415,6 +415,13 @@ dia, nunca no desejado:
   (`erro-no-meio-da-exclusao-sem-fsync`). 540 + 4 = 544, contado pelo
   `--catraca`.
   No merge com o 546 e o 534/535 (que levaram o piso a 547): 547 + 4 = 551.
+  **SUBIU para 564 em 01/10/2026** (pedidos 284, 357 e 436-M4), de 560
+  medido no catalogo do dia (559 entradas mais 1 aposentada): quatro guardas
+  -- a lista de replicas atras do proxy
+  (`replica-atras-de-proxy-passa-pela-lista`), o `.lgpd` em claro depois do
+  cofre (`trilha-em-claro-depois-do-cofre`), o ativo VAZIO em claro
+  (`trilha-ativo-vazio-em-claro`) e o no que deixa de provar calado
+  (`pulso-deixa-de-provar-calado`). Contado pelo `--catraca`.
   impedir. Ele e a unica coisa nesta regua que reprova o APAGAMENTO; tudo o
   mais aqui reprova o envelhecimento.
 
@@ -523,7 +530,7 @@ TETO_TESTE_MORTO = 0
 TETO_TRECHO_AMBIGUO = 0
 TETO_TESTE_FORA_DO_BINARIO = 0
 TETO_TESTE_SEM_MODULO = 0
-PISO_DAS_ENTRADAS = 560
+PISO_DAS_ENTRADAS = 564
 
 # ------------------------------------------------------------- APOSENTADAS
 #

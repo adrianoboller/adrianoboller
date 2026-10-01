@@ -795,3 +795,104 @@ fn o_expurgo_da_trilha_cifrada_decide_sem_abrir_o_corpo() {
 
     cofre::desligar();
 }
+
+/// A tabela de `ligar_o_cofre_*`: uma coluna marcada, para a trilha gravar o
+/// antes e o depois dela.
+fn clientes_com_cpf(d: &std::path::Path) -> Table {
+    let esquema = Schema::new(
+        "clientes",
+        vec![
+            Column::new("id", ColumnType::Int8).obrigatoria(),
+            Column::new("cpf", ColumnType::Str(14))
+                .com_dado_pessoal(phxsql_core::types::DadoPessoal::Pessoal),
+        ],
+        vec![IndexDef::new("porId", vec![IndexColumn::asc(0)]).unico()],
+    )
+    .unwrap();
+    let mut t = Table::criar(d, esquema).unwrap();
+    t.inserir(&[Value::Int(1), Value::Str("00000000000".into())])
+        .unwrap();
+    t
+}
+
+/// Todos os `.lgpd` da pasta, crus, numa tira so.
+fn bytes_da_trilha(d: &std::path::Path) -> Vec<u8> {
+    let mut tudo = Vec::new();
+    for v in std::fs::read_dir(d).unwrap() {
+        let caminho = v.unwrap().path();
+        if caminho.to_string_lossy().ends_with(".lgpd") {
+            tudo.extend(std::fs::read(&caminho).unwrap());
+        }
+    }
+    tudo
+}
+
+/// **Prova real do pedido 357-1 (§11.7 do SEGURANCA.md).** O ativo da trilha
+/// que nasceu em claro continuava recebendo registro em claro depois de o
+/// cofre ligar: o `anexar` usava o cabecalho do ativo que existia sem
+/// perguntar se ele era cifrado, e o CPF de depois do reinicio ia para o disco
+/// legivel -- com o cofre ligado anunciando o contrario. Tirando a troca do
+/// ativo em claro do `anexar`, a primeira asercao cai.
+///
+/// E o reinicio e de verdade (a tabela fecha e reabre), porque e assim que o
+/// cofre liga num servidor: no arranque, sobre o que a vida anterior gravou.
+#[test]
+fn ligar_o_cofre_fecha_o_volume_da_trilha_em_claro() {
+    let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
+    cofre::desligar();
+    let d = dir("lgpd-claro-depois-cifra");
+    {
+        let mut t = clientes_com_cpf(&d);
+        t.atualizar(1, &[Value::Int(1), Value::Str("11111111111".into())])
+            .unwrap();
+    }
+    cofre::definir(SENHA, RAPIDO).unwrap();
+    let mut t = Table::abrir(&d, "clientes").unwrap();
+    t.atualizar(1, &[Value::Int(1), Value::Str("22222222222".into())])
+        .unwrap();
+    assert!(
+        !contem(b"22222222222", &bytes_da_trilha(&d)),
+        "cofre ligado e o registro novo da trilha foi para o disco em claro"
+    );
+    // O que a vida em claro gravou continua lendo, e o novo decifra: fechar o
+    // volume nao perde nada.
+    let todos = t.trilha(0, 0).unwrap();
+    assert_eq!(todos.len(), 2);
+    assert_eq!(todos[0].depois, "11111111111");
+    assert_eq!(todos[1].depois, "22222222222");
+    cofre::desligar();
+}
+
+/// O irmao do caso acima, e o que um `fechar_ativo` sozinho NAO resolve: o
+/// ativo VAZIO em claro. Depois de um rodizio sem cofre, o ativo novo nasce
+/// vazio e em claro, e `fechar_ativo` nao fecha volume sem registro -- o
+/// primeiro registro com o cofre ligado iria para ele, em claro. Ali o ativo
+/// renasce cifrado, porque nao ha registro nenhum a preservar.
+#[test]
+fn ligar_o_cofre_refaz_o_ativo_vazio_em_claro() {
+    let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
+    cofre::desligar();
+    let d = dir("lgpd-vazio-depois-cifra");
+    {
+        let mut t = clientes_com_cpf(&d);
+        t.atualizar(1, &[Value::Int(1), Value::Str("11111111111".into())])
+            .unwrap();
+        t.fechar_volume_da_trilha(true, 0).unwrap();
+    }
+    assert!(
+        d.join("clientes.lgpd").exists(),
+        "o rodizio deixa o ativo vazio"
+    );
+    cofre::definir(SENHA, RAPIDO).unwrap();
+    let mut t = Table::abrir(&d, "clientes").unwrap();
+    t.atualizar(1, &[Value::Int(1), Value::Str("33333333333".into())])
+        .unwrap();
+    assert!(
+        !contem(b"33333333333", &bytes_da_trilha(&d)),
+        "cofre ligado e o ativo vazio em claro recebeu o registro em claro"
+    );
+    let todos = t.trilha(0, 0).unwrap();
+    assert_eq!(todos.len(), 2);
+    assert_eq!(todos[1].depois, "33333333333");
+    cofre::desligar();
+}

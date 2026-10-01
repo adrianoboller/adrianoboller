@@ -498,6 +498,29 @@ tem o próprio pulso barrado, o que degrada o cluster sem um aviso próprio (o
 aviso de `replicacao_aberta` acima é sobre `posicao`/`replicar`/`aplicar`, não
 sobre o pulso). Ver `docs/CLUSTER.md` §2.2.
 
+### A lista compara o par do soquete — e atrás de proxy o par é o proxy (pedido 284)
+
+`replicas_autorizadas` compara o **IP da conexão**, e ele não é falsificável
+por cabeçalho (nenhuma leitura de `X-Forwarded-For` existe). Só que o `/api`
+das portas HTTP cai no mesmo `despachar` da porta de dados, e numa porta HTTP
+**atrás de proxy reverso** o par do soquete é o **proxy**: com
+`["127.0.0.1"]` na lista, todo cliente que chegasse pelo proxy seria a réplica
+autorizada e levaria o diário. Atrás de NAT o efeito é o mesmo, com o IP da
+borda — e esse o servidor **não** tem como saber.
+
+O que o servidor sabe, porque quem implanta declara, é o proxy:
+`web.atras_de_proxy` / `rest.atras_de_proxy`. Com a lista **preenchida**, a
+porta HTTP que declara proxy **recusa** `posicao`, `replicar`, `aplicar` e
+`cluster_pulso` (`[erro.replica_atras_de_proxy]`), e o arranque diz isso numa
+linha por seção. A réplica entra pela **porta de dados**, onde o par do soquete
+é ela. Com a lista **vazia** nada muda — a guarda continua pedida. Prova pelo
+soquete: `tests/replica-atras-de-proxy.rs`, com os dois irmãos velhos (sem
+proxy a lista autoriza pelo IP; com proxy e lista vazia o `replicar` entrega).
+
+**O que isto não resolve:** NAT na frente da porta de dados e trancar por
+credencial em vez de endereço — que atravessa proxy e NAT — continuam com o
+dono (pedido 284, conserto de fundo).
+
 Vale dizer o que a lista de IPs **não** resolve, e o contêiner tornou isso
 visível: num orquestrador o IP do vizinho muda a cada recriação. Lista por IP
 só é operável com endereçamento fixo — no `compose-e-firewall.yml` isso é o
@@ -2097,9 +2120,11 @@ nó ao pulso exigiria prova por Diffie-Hellman das estáticas que já existem
 (`chave_do_fio` já é, de fato, um `known_hosts`) ou trocar o padrão do aperto
 para XX/IK — as duas são desenho de protocolo cifrado, e ficam com o dono.
 
-**Só A7 continua inteiramente aberto** (pedido 284 — `replicas_autorizadas`
-colapsa atrás de proxy/NAT), porque o conserto ali é de infraestrutura
-(trancar por credencial em vez de IP) e não entrou em nenhuma das duas ondas.
+**A7 ficou pela metade** (pedido 284 — `replicas_autorizadas` colapsa atrás
+de proxy/NAT): em 01/10/2026 a porta HTTP com `atras_de_proxy` declarado passou
+a recusar a replicação quando a lista está preenchida (§7); o NAT e o conserto
+de fundo (trancar por credencial em vez de IP) são de infraestrutura e não
+entraram.
 Ver o texto de cada pedido em `docs/PENDENCIAS.md` para o antes e o depois de
 todos.
 

@@ -892,6 +892,24 @@ impl TrilhaFile {
         Ok(Some(fechado))
     }
 
+    /// Troca o ativo em claro por um que nasce com o cofre ligado.
+    ///
+    /// Com registro, ele FECHA: o que a vida em claro gravou fica num volume
+    /// fechado que continua lendo, e nada se re-sela num offset novo. VAZIO,
+    /// `fechar_ativo` nao faz nada -- volume sem registro nao fecha --, e e
+    /// exatamente o ativo que um rodizio sem cofre deixa; ali ele se apaga e
+    /// renasce, porque nao ha registro a preservar.
+    fn trocar_ativo_em_claro(&mut self) -> Result<Cabecalho> {
+        if self.fechar_ativo()?.is_none() {
+            let ativo = self.ativo;
+            self.volumes.apagar_volume(ativo)?;
+            self.cabs.remove(&ativo);
+            self.ativo_existe = false;
+            self.nascer_ativo()?;
+        }
+        self.cab(self.ativo)
+    }
+
     /// Fecha o ativo se o PRIMEIRO registro dele e mais velho que o corte por
     /// idade (`lgpd.volume_dias`), contado a partir de `agora`.
     ///
@@ -1013,6 +1031,15 @@ impl TrilhaFile {
         } else {
             self.nascer_ativo()?
         };
+        // Pedido 357-1: o ativo nascido em claro numa vida sem cofre
+        // continuava recebendo registro em claro depois de o cofre ligar --
+        // a §11.7 do SEGURANCA.md dizia «nunca o claro», e o corpo do `.lgpd`
+        // e cifrado pelo mesmo interruptor. A ordem das perguntas e o custo:
+        // `cifrado()` e um campo do `cab` que ja esta na mao, e so o ativo em
+        // claro paga a trava do cofre.
+        if !cab.cifrado() && cofre::ligado() {
+            cab = self.trocar_ativo_em_claro()?;
+        }
         let ocupa = (REGISTRO_CAB + cab.ocupa(e.texto_len())) as u64;
         let vazio = cab.fim <= cab.cab_len as u64;
         if !vazio && cab.fim + ocupa > self.corte_bytes {

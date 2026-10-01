@@ -8606,17 +8606,15 @@ pub fn limpar() {
             "no catalogo, ninguem reprova de novo a cada rodada se o portao continua ali."
         ),
         "arquivo": "crates/phxsql-server/src/servidor.rs",
-        "trecho": """        if OPS_DE_REPLICACAO.contains(&op) && !sessao.ip.is_empty() {
-            let lista = &self.config.replicacao.replicas_autorizadas;
-            if !lista.is_empty() && !lista.iter().any(|p| p == &sessao.ip) {
+        "trecho": """            if !lista.is_empty() && !lista.iter().any(|p| p == &sessao.ip) {
                 self.violacao_leve(&sessao.ip, op, "ip fora de replicas_autorizadas");
                 return Err(PhxError::Autorizacao(
                     self.msg("erro.replica_nao_autorizada", &[]),
                 ));
-            }
-        }""",
-        "troca": """        // DEFEITO REPOSTO: o portao 2a-bis nao confere mais `replicas_autorizadas`
-        // -- qualquer IP com token passa, pedida ou nao a lista.""",
+            }""",
+        "troca": """            // DEFEITO REPOSTO: o portao 2a-bis nao confere mais
+            // `replicas_autorizadas` -- qualquer IP com token passa, pedida ou
+            // nao a lista.""",
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
         "caem": [
@@ -19248,5 +19246,102 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "catalogo::testes_excluir_vai_ao_disco::excluir_esvaziar_e_expurgar_vao_ao_disco",
             "catalogo::testes_excluir_vai_ao_disco::o_erro_no_meio_leva_ao_disco_o_que_saiu",
         ],
+    },
+    # -----------------------------------------------------------------------
+    # Pedidos 284, 357 e 436 (M4) -- a frente de 01/10/2026
+    # -----------------------------------------------------------------------
+    {
+        "id": "replica-atras-de-proxy-passa-pela-lista",
+        "titulo": "atrás do proxy declarado, `replicas_autorizadas` comparava o IP do PROXY e autorizava todo cliente que chegava por ele",
+        "porque": (
+            "pedido 284 (SEC A7). Numa porta HTTP com `atras_de_proxy`, o par "
+            "do soquete e o proxy: com `[\"127.0.0.1\"]` na lista, qualquer "
+            "cliente de fora com o token levava o diario pelo `/api`. Provado "
+            "PELO SOQUETE: a sessao HTTP nasce com `ip_do_proxy` lido pela "
+            "mesma `proxy_desta_porta_http` do portao de rede."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """            if !lista.is_empty() && sessao.ip_do_proxy {
+""",
+        "troca": """            // DEFEITO REPOSTO (284): o portao nao pergunta pelo proxy.
+            if !lista.is_empty() && sessao.ip_do_proxy && false {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "replica-atras-de-proxy"],
+        "caem": ["replicar_pela_porta_web_atras_de_proxy_nao_passa_pela_lista"],
+        "seguem": [
+            "sem_proxy_a_lista_continua_autorizando_pelo_ip",
+            "atras_de_proxy_sem_lista_nada_muda",
+        ],
+    },
+    {
+        "id": "trilha-em-claro-depois-do-cofre",
+        "titulo": "o ativo do `.lgpd` nascido em claro continuava recebendo registro em claro depois de o cofre ligar",
+        "porque": (
+            "pedido 357-1: a §11.7 do SEGURANCA.md escreveu «nunca o claro» no "
+            "futuro do preterito, e o `anexar` usava o cabecalho do ativo que "
+            "existia sem perguntar se ele era cifrado. Provado nos BYTES do "
+            "disco, com reinicio de verdade entre a vida sem cofre e a com."
+        ),
+        "arquivo": "crates/phxsql-store/src/trilha.rs",
+        "trecho": """        if !cab.cifrado() && cofre::ligado() {
+""",
+        "troca": """        // DEFEITO REPOSTO (357): o ativo em claro segue recebendo.
+        if false && !cab.cifrado() && cofre::ligado() {
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "cifra-dos-diarios"],
+        "caem": [
+            "ligar_o_cofre_fecha_o_volume_da_trilha_em_claro",
+            "ligar_o_cofre_refaz_o_ativo_vazio_em_claro",
+        ],
+        "seguem": [
+            "arquivo_escrito_antes_da_cifra_continua_abrindo",
+            "o_expurgo_da_trilha_cifrada_decide_sem_abrir_o_corpo",
+        ],
+    },
+    {
+        "id": "trilha-ativo-vazio-em-claro",
+        "titulo": "com o cofre ligado, o ativo VAZIO do `.lgpd` em claro (o que um rodízio sem cofre deixa) recebia o primeiro registro em claro",
+        "porque": (
+            "pedido 357-1, a metade que o conserto proposto pela SEC nao "
+            "cobria: `fechar_ativo` nao fecha volume sem registro, entao so "
+            "chamar ele deixava o ativo vazio em claro no lugar. Ali o ativo "
+            "se apaga e renasce cifrado."
+        ),
+        "arquivo": "crates/phxsql-store/src/trilha.rs",
+        "trecho": """        if self.fechar_ativo()?.is_none() {
+""",
+        "troca": """        // DEFEITO REPOSTO (357): so o fechar, como a SEC propos.
+        if self.fechar_ativo()?.is_none() && false {
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "cifra-dos-diarios"],
+        "caem": ["ligar_o_cofre_refaz_o_ativo_vazio_em_claro"],
+        "seguem": [
+            "ligar_o_cofre_fecha_o_volume_da_trilha_em_claro",
+            "arquivo_escrito_antes_da_cifra_continua_abrindo",
+        ],
+    },
+    {
+        "id": "pulso-deixa-de-provar-calado",
+        "titulo": "o nó que deixava de assinar o pulso para um par que já recebera prova dele não dizia nada (`campos_da_prova` com `.ok()?`)",
+        "porque": (
+            "pedido 436, SEC M4: o par recusa pelo TOFU todo pulso sem prova "
+            "de quem ja provou, ate reiniciar, e o motivo -- configuracao "
+            "DESTE no -- so este processo sabe. Provado pelo stderr de um "
+            "processo filho: duas trocas, dois avisos; quem nunca assinou, "
+            "nenhum."
+        ),
+        "arquivo": "crates/phxsql-server/src/cluster.rs",
+        "trecho": """        if !self.assinou_para.travar().remove(&destino.id) {
+""",
+        "troca": """        // DEFEITO REPOSTO (436 M4): calado, como o `.ok()?` de antes.
+        if true || !self.assinou_para.travar().remove(&destino.id) {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": ["cluster::testes::o_no_que_deixou_de_provar_diz_no_stderr"],
+        "seguem": ["cluster::testes::o_estado_persiste_e_o_arquivo_ganha_do_config"],
     },
 ]

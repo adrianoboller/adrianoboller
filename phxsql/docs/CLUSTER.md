@@ -185,6 +185,38 @@ aviso): a origem passa a ser o master **corrente**, descoberto pelo pulso.
       ao log **uma vez**. Falhar fechado custaria um failover do cluster
       inteiro por um único pânico, porque o envenenamento de trava é
       permanente.
+    - **O nó que deixa de provar diz isso** (pedido 436, M4, 01/10/2026). Se
+      este nó já assinou o pulso para um par e deixa de assinar — o
+      `chave_do_fio` do par sumiu ou não se lê na lista **deste** nó, ou a
+      assinatura falhou —, sai **uma linha no stderr por troca** («este nó
+      ASSINAVA o pulso para X e deixou de assinar»). Antes o
+      `campos_da_prova` devolvia `None` calado (`.ok()?`), o pulso saía sem
+      prova, e o par — que já tinha este nó no TOFU — passava a recusá-lo até
+      reiniciar, com o motivo (configuração **deste** lado) invisível aqui. Um
+      cluster que nunca configurou pino não paga nada: o aviso tem portão
+      atômico antes de qualquer trava. Prova pelo stderr de um processo
+      filho: `cluster::testes::o_no_que_deixou_de_provar_diz_no_stderr`.
+    - **O TOFU não expira na vida do processo — decisão, com o número**
+      (pedido 436, M4). Hipóteses escritas antes de medir: **(H1)** não
+      expira, e a troca se anuncia alto; **(H2)** expira por prazo sem prova
+      válida (*max-age*); **(H3)** obedece ao interruptor
+      `exigir_prova_do_pulso`. A régua dos quatro motores **não alcança**:
+      nenhum de PostgreSQL, MariaDB, MySQL e SQLite tem TOFU de identidade
+      entre pares (a replicação deles autentica por senha ou certificado com
+      CA) — **0 de 10 pontos** para qualquer lado. Fora da régua, os
+      equivalentes: o `known_hosts` do SSH **não expira** e recusa com aviso
+      alto na troca de chave (H1); o HSTS tem *max-age*, mas o recomendado é
+      **31.536.000 s (1 ano)**, maior que a vida de qualquer processo nosso
+      (H1 na prática); o *pinning* HTTP (HPKP) tinha *max-age* e foi
+      **removido** dos navegadores (Chrome 72, 2019) justamente porque pino
+      errado derrubava o site — o próprio M4. Vivos e a favor de H1: **2 de
+      2**. H2 com prazo curto seria mais fraco que os dois, e reabriria o
+      rebaixamento exatamente quando o par legítimo está calado — que é a
+      hora do failover. H3 morre de saída: o interruptor desligado é o
+      padrão, e o TOFU existe para proteger quem não o ligou. **Decidido
+      H1**: o «prazo» do TOFU é a vida do processo que recusa (reiniciar o
+      par limpa), e o que muda é o aviso do lado que deixou de provar. Não
+      sobe ao dono: não é empate, não choca pétrea, não é produto.
     - **E nenhuma trava do estado do cluster responde «vazio» ao veneno**
       (pedido 447). O mapa de pulsos, a lista viva, o master corrente, as
       threads de pulso, os motivos de degradação e o aviso de promoção usam a
