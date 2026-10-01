@@ -67,15 +67,15 @@ function stubTauri(grade) {
   };
 }
 
-async function abrirPagina(browser, { semEquipe = false } = {}) {
+async function abrirPagina(browser, { semEquipe = false, sem = [] } = {}) {
   const page = await browser.newPage({ viewport: { width: 1560, height: 960 } });
   const erros = [];
   page.on('pageerror', e => erros.push(String(e)));
-  page.on('console', m => { if (m.type() === 'error') erros.push(m.text()); });
+  page.on('console', m => { if (m.type() === 'error') erros.push(`${m.text()} @ ${m.location()?.url ?? ''}`); });
   await page.route(`${ORIGEM}/**`, route => {
     const caminho = decodeURIComponent(new URL(route.request().url()).pathname);
     const arq = join(UI, caminho === '/' ? 'index.html' : caminho);
-    if ((semEquipe && caminho.endsWith('/equipe.json')) || !arq.startsWith(UI) || !existsSync(arq)) {
+    if ((semEquipe && caminho.endsWith('/equipe.json')) || sem.some(n => caminho.endsWith(`/${n}`)) || !arq.startsWith(UI) || !existsSync(arq)) {
       return route.fulfill({ status: 404, body: 'nao existe' });
     }
     return route.fulfill({ status: 200, body: readFileSync(arq), contentType: TIPOS[extname(arq)] || 'application/octet-stream' });
@@ -112,6 +112,50 @@ try {
   check('selo Ferramentas = total do ferramentas.json', seloDe('seloFerramentas') === String(ferramentas.total), `${seloDe('seloFerramentas')} / ${ferramentas.total}`);
   check('nenhum selo sem id (numero digitado)', selos.every(([id]) => id), JSON.stringify(selos));
 
+  // Visao geral: nenhum numero solto. Todo texto com numero isolado (8 formatos, 7 TRUSTED,
+  // 3x, 78%) e toda largura em estilo tem de morar dentro de um [data-fonte]; e os numeros
+  // que estao la batem com os JSON.
+  await page.click('.nav[data-tela="geral"]');
+  await page.waitForTimeout(400);
+  const soltos = await page.evaluate(() => {
+    const raiz = document.getElementById('tela-geral');
+    const num = /(^|[\s(•/])\d+([.,]\d+)?\s*(%|×|x)?(?=$|[\s)•/–-])/;
+    const fora = [];
+    const w = document.createTreeWalker(raiz, NodeFilter.SHOW_TEXT);
+    for (let n = w.nextNode(); n; n = w.nextNode()) {
+      const t = n.textContent.trim();
+      if (t && num.test(t) && !n.parentElement.closest('[data-fonte]')) fora.push(t);
+    }
+    for (const e of raiz.querySelectorAll('[style]')) if (!e.closest('[data-fonte]')) fora.push(`style:${e.getAttribute('style')}`);
+    return fora;
+  });
+  check('Visao geral: nenhum numero ou largura fora de [data-fonte]', soltos.length === 0, soltos.join(' | ').slice(0, 200));
+  const geral = await page.evaluate(() => ({
+    agentes: document.getElementById('geralAgentes').textContent,
+    ferramentas: document.getElementById('geralFerramentas').textContent,
+    macros: [...document.querySelectorAll('#geralMacro .macro b')].map(b => Number(b.textContent)),
+    familias: [...document.querySelectorAll('#geralCapacidades em')].map(e => e.textContent),
+    barra: document.querySelector('#geralFerramentasBarra span').style.width,
+    mini: document.querySelectorAll('#geralAbsorcaoLista .mini .tri').length,
+    fixos: document.getElementById('tela-geral').textContent.match(/formatos|TRUSTED|Retries|Mission Pipeline|Task Graph/g),
+  }));
+  const concF = ferramentas.ferramentas.filter(f => f.concedida).length;
+  const familiasEsperadas = new Set(ferramentas.ferramentas.map(f => f.grupo)).size;
+  const somaFam = geral.familias.reduce((a, t) => a + Number(t.split('/')[1]), 0);
+  check('Visao geral: cartoes de agentes e ferramentas = JSON', geral.agentes === String(equipe.total) && geral.ferramentas === String(ferramentas.total), `${geral.agentes} ${geral.ferramentas}`);
+  check('Visao geral: macroareas e familias de capability saem dos JSON', JSON.stringify(geral.macros) === JSON.stringify(equipe.macroareas.map(m => m.total)) && geral.familias.length === familiasEsperadas && somaFam === ferramentas.total, `${geral.macros.length} macro, ${geral.familias.length} fam, soma ${somaFam}`);
+  check('Visao geral: barra de concessao = concedidas/total', Math.abs(parseFloat(geral.barra) - (concF / ferramentas.total) * 100) < 0.01 && geral.mini === Object.keys(absorcao).length, `${geral.barra} mini=${geral.mini}`);
+  check('Visao geral: sem os textos de enfeite (formatos, TRUSTED, Retries, pipeline e task graph estaticos)', !geral.fixos, String(geral.fixos));
+  await page.screenshot({ path: join(OUT, 'ui_geral.png'), fullPage: false });
+  await page.$eval('#tela-geral', t => { t.scrollTop = t.scrollHeight; });
+  await page.screenshot({ path: join(OUT, 'ui_geral_rolada.png') });
+  await page.$eval('#tela-geral', t => { t.scrollTop = 0; });
+  await page.click('.hero-actions [data-ir="ferramentas"]');
+  await page.waitForTimeout(200);
+  check('Visao geral: VER FERRAMENTAS abre a tela Ferramentas', (await visiveis(page)).join() === 'ferramentas');
+  const acoesCheias = await page.$$eval('.acao', bs => bs.filter(b => { const c = getComputedStyle(b).backgroundColor; return c !== 'rgba(0, 0, 0, 0)' && c !== 'transparent'; }).map(b => b.textContent));
+  check('acoes so contorno (fundo transparente fora do hover)', acoesCheias.length === 0, acoesCheias.join(','));
+
   await page.click('.nav[data-tela="agentes"]');
   await page.waitForTimeout(200);
   const fichasAgentes = await page.$$eval('#agentesConteudo .ficha', f => f.length);
@@ -127,14 +171,107 @@ try {
   await page.waitForTimeout(200);
   const fichasF = await page.$$eval('#ferramentasConteudo .ficha', f => f.length);
   const gruposF = await page.$$eval('#ferramentasConteudo .grupo', g => g.length);
-  const nGrupos = new Set(ferramentas.ferramentas.map(f => f.grupo)).size;
+  const nGrupos = new Set(ferramentas.ferramentas.map(f => f.capacidade)).size;
   check('Ferramentas: uma ficha por ferramenta montada', fichasF === ferramentas.total, `${fichasF} / ${ferramentas.total}`);
-  check('Ferramentas: agrupadas por capacidade', gruposF === nGrupos, `${gruposF} / ${nGrupos}`);
+  check('Ferramentas: um grupo por capability exata', gruposF === nGrupos, `${gruposF} / ${nGrupos}`);
+  // Cada ficha mostra a capability que exige, e ela e a do grupo onde esta (nada de ficha no
+  // grupo errado por um find() que parou na primeira).
+  const exigencias = await page.$$eval('#ferramentasConteudo .grupo', gs => gs.map(g => ({
+    cap: g.dataset.capacidade,
+    titulo: g.querySelector('header code.cap')?.textContent,
+    fichas: [...g.querySelectorAll('.ficha')].map(f => [f.querySelector('b').textContent, f.querySelector('.exige code')?.textContent]),
+  })));
+  const esperado = new Map(ferramentas.ferramentas.map(f => [f.nome, f.capacidade]));
+  const erradas = exigencias.flatMap(g => g.fichas.filter(([n, c]) => c !== g.cap || c !== esperado.get(n) || g.titulo !== g.cap).map(([n, c]) => `${n}:${c}@${g.cap}`));
+  check('Ferramentas: cada ficha mostra a capability exigida, igual a do JSON e a do grupo', erradas.length === 0 && exigencias.length === nGrupos, erradas.join(' ').slice(0, 200));
 
   await page.click('.nav[data-tela="absorcao"]');
   await page.waitForTimeout(200);
   const produtos = await page.$$eval('#absorcaoConteudo .produto', p => p.length);
   check('Absorcao: um cartao por produto do absorcao.json', produtos === Object.keys(absorcao).length, `${produtos}`);
+  // Barra de tres estados: a soma dos segmentos e o total do JSON, e cada estado tem FORMA
+  // propria (cheio / hachurado / so contorno tracejado), conferida pelo estilo computado --
+  // o que sobra em escala de cinza.
+  const tri = await page.$$eval('#absorcaoConteudo .produto', ps => ps.map(p => ({
+    k: p.dataset.produto,
+    segs: [...p.querySelectorAll('.tri .seg')].map(s => {
+      const cs = getComputedStyle(s);
+      return { e: s.dataset.estado, n: Number(s.dataset.n), img: cs.backgroundImage !== 'none', borda: cs.borderTopStyle,
+        cheio: cs.backgroundColor !== 'rgba(0, 0, 0, 0)' && cs.backgroundColor !== 'transparent', w: s.getBoundingClientRect().width };
+    }),
+  })));
+  const somaErrada = tri.filter(t => {
+    const p = absorcao[t.k];
+    const de = e => t.segs.find(s => s.e === e)?.n || 0;
+    return de('agente') !== p.no_agente || de('parcial') !== p.parcial || de('nao') !== p.nao;
+  }).map(t => t.k);
+  check('Absorcao: segmentos agente/parcial/nao batem com o absorcao.json', tri.length && somaErrada.length === 0, somaErrada.join(','));
+  const todos = tri.flatMap(t => t.segs);
+  const formaOk = todos.every(s => (s.e === 'agente' && s.cheio && !s.img && s.borda === 'solid')
+    || (s.e === 'parcial' && s.img && s.borda === 'solid')
+    || (s.e === 'nao' && !s.cheio && !s.img && s.borda === 'dashed'));
+  check('Absorcao: os tres estados diferem por forma (cheio / hachurado / tracejado), nao so cor', formaOk && new Set(todos.map(s => s.e)).size === 3, JSON.stringify(todos.slice(0, 3)));
+  const proporcional = tri.every(t => {
+    const tot = t.segs.reduce((a, s) => a + s.n, 0), largura = t.segs.reduce((a, s) => a + s.w, 0);
+    return t.segs.every(s => Math.abs(s.w / largura - s.n / tot) < 0.06);
+  });
+  check('Absorcao: largura de cada segmento proporcional a contagem', proporcional);
+  const legenda = await page.$$eval('#tela-absorcao .tela-head .tri-legenda .amostra', a => a.map(x => x.className));
+  check('Absorcao: legenda unica com as tres amostras de forma', legenda.length === 3, legenda.join(','));
+  await page.screenshot({ path: join(OUT, 'ui_absorcao.png') });
+  // Troca de idioma com a tela aberta: o que o JS desenhou se redesenha pela CHAVE, e volta.
+  const textos = lerAsset('textos.json').textos;
+  const lerRotulos = () => page.evaluate(() => ({
+    legenda: [...document.querySelectorAll('#absorcaoLegenda .tri-legenda > span > span')].map(s => s.textContent),
+    resumo: document.getElementById('absorcaoResumo').textContent,
+  }));
+  await page.click('#trocarIdioma');
+  await page.waitForTimeout(200);
+  const emEn = await lerRotulos();
+  await page.click('#trocarIdioma');
+  await page.waitForTimeout(200);
+  const emPt = await lerRotulos();
+  const esperaEn = ['absorcao.no_agente', 'absorcao.parcial', 'absorcao.nao'].map(k => textos[k].en);
+  const esperaPt = ['absorcao.no_agente', 'absorcao.parcial', 'absorcao.nao'].map(k => textos[k].pt);
+  check('Absorcao: trocar idioma redesenha a legenda pela chave, e volta', JSON.stringify(emEn.legenda) === JSON.stringify(esperaEn)
+    && JSON.stringify(emPt.legenda) === JSON.stringify(esperaPt) && emEn.resumo !== emPt.resumo, `${emEn.legenda} / ${emPt.legenda}`);
+
+  // Troca PT -> EN -> PT nas tres telas desenhadas pelo JS: rotulo muda pela chave, DADO nao
+  // muda nunca (nome de papel, de ferramenta, capability, produto, numero).
+  const fab = lerAsset('textos.json').textos;
+  const DADO = {
+    geral: '#geralAgentes, #geralFerramentas, #geralAbsorcao, #geralMacro .macro > span, #geralMacro .macro b, #geralCapacidades code, #geralCapacidades em, #geralAbsorcaoLista .mini > span, #geralAbsorcaoLista .seg em, #geralAbsorcaoLista .mini b',
+    ferramentas: '#ferramentasConteudo header code.cap, #ferramentasConteudo .ficha b, #ferramentasConteudo .ficha p, #ferramentasConteudo .exige code',
+    absorcao: '#absorcaoConteudo h2, #absorcaoConteudo .seg em, #absorcaoConteudo li',
+  };
+  const ROTULO_JS = {
+    geral: '#geralAgentesNota, #geralFerramentasNota, #geralAbsorcaoNota, #geralAbsorcaoLista .tri-legenda',
+    ferramentas: '#ferramentasResumo, #ferramentasConteudo .rotulo-cap, #ferramentasConteudo .exige > span, #ferramentasConteudo .marcas span',
+    absorcao: '#absorcaoResumo, #absorcaoLegenda, #absorcaoConteudo .tri-legenda, #absorcaoConteudo small, #absorcaoConteudo summary',
+  };
+  const foto = tela => page.evaluate(([tela, dado, rot]) => {
+    const sec = document.getElementById(`tela-${tela}`);
+    const textos = sel => [...sec.querySelectorAll(sel)].map(e => e.textContent);
+    return { chaves: [...sec.querySelectorAll('[data-txt]')].map(e => [e.dataset.txt, e.textContent]), dado: textos(dado), rotulo: textos(rot) };
+  }, [tela, DADO[tela], ROTULO_JS[tela]]);
+  for (const tela of ['geral', 'ferramentas', 'absorcao']) {
+    await page.click(`.nav[data-tela="${tela}"]`);
+    await page.waitForTimeout(250);
+    const pt1 = await foto(tela);
+    await page.click('#trocarIdioma');
+    await page.waitForTimeout(250);
+    const en = await foto(tela);
+    if (tela === 'ferramentas') await page.screenshot({ path: join(OUT, 'ui_ferramentas_en.png') });
+    await page.click('#trocarIdioma');
+    await page.waitForTimeout(250);
+    const pt2 = await foto(tela);
+    const chavesOk = en.chaves.length > 0 && en.chaves.every(([k, t]) => t === fab[k].en) && pt2.chaves.every(([k, t]) => t === fab[k].pt);
+    const dadoOk = pt1.dado.length > 0 && JSON.stringify(pt1.dado) === JSON.stringify(en.dado) && JSON.stringify(en.dado) === JSON.stringify(pt2.dado);
+    const rotuloOk = pt1.rotulo.length > 0 && JSON.stringify(pt1.rotulo) === JSON.stringify(pt2.rotulo) && pt1.rotulo.every((t, i) => t !== en.rotulo[i]);
+    const ruins = pt1.rotulo.filter((t, i) => t === en.rotulo[i]);
+    check(`Idioma em ${tela}: PT->EN->PT muda ${en.chaves.length} rotulos do HTML e ${pt1.rotulo.length} do JS, e ${pt1.dado.length} dados ficam iguais`,
+      chavesOk && dadoOk && rotuloOk, `chaves=${chavesOk} dado=${dadoOk} rotulo=${rotuloOk} ${ruins.slice(0, 3).join(' | ')}`);
+  }
 
   // IDE: abrir bash, ver a grade desenhada, digitar e conferir o que foi pedido ao host.
   await page.click('.nav[data-tela="ide"]');
@@ -185,6 +322,17 @@ try {
   const selo2 = await p2.textContent('#seloAgentes');
   check('sem equipe.json: aviso, zero fichas e selo vazio', aviso.includes('não existe') && fichas2 === 0 && selo2 === '', `${aviso.slice(0, 60)} / ${fichas2} / "${selo2}"`);
   await p2.screenshot({ path: join(OUT, 'ui_agentes_sem_equipe.png') });
+
+  const { page: p3 } = await abrirPagina(browser, { sem: ['equipe.json', 'ferramentas.json', 'absorcao.json'] });
+  await p3.click('.nav[data-tela="geral"]');
+  await p3.waitForTimeout(400);
+  const vazio = await p3.evaluate(() => ({
+    nums: ['geralAgentes', 'geralFerramentas', 'geralAbsorcao'].map(id => document.getElementById(id).textContent),
+    avisos: document.querySelectorAll('#tela-geral .vazio.aviso').length,
+    barra: document.getElementById('geralFerramentasBarra').hidden,
+  }));
+  check('sem os tres JSON: Visao geral mostra travessao e tres avisos, sem barra', vazio.nums.every(n => n === '—') && vazio.avisos === 3 && vazio.barra, JSON.stringify(vazio));
+  await p3.screenshot({ path: join(OUT, 'ui_geral_sem_json.png') });
 } catch (e) {
   check('roteiro', false, String(e).slice(0, 300));
 } finally {

@@ -309,7 +309,7 @@ function el(tag, classe, texto) {
 }
 
 function avisoAusente(resumo, conteudo, arquivo, comando) {
-  resumo.textContent = `assets/${arquivo} não existe — a tela não mostra número sem fonte. Gere com: ${comando}`;
+  resumo.textContent = txt('aviso.sem_arquivo', 'assets/{arquivo} não existe — a tela não mostra número sem fonte. Gere com: {comando}', { arquivo, comando });
   resumo.classList.add('aviso');
   conteudo.replaceChildren();
 }
@@ -346,7 +346,8 @@ carregadores.agentes = async () => {
     return;
   }
   resumo.classList.remove('aviso');
-  resumo.textContent = `${d.total} papéis em ${d.macroareas.length} macroáreas • fonte: ${d.fonte}`;
+  resumo.textContent = txt('agentes.resumo', '{total} papéis em {macroareas} macroáreas • fonte: {fonte}',
+    { total: d.total, macroareas: d.macroareas.length, fonte: d.fonte });
   const desenhar = () => {
     const q = filtro.value.trim().toLowerCase();
     const casa = p => !q || [p.nome, p.missao, p.capability_principal, p.nucleo]
@@ -355,10 +356,10 @@ carregadores.agentes = async () => {
     for (const m of d.macroareas) {
       const papeis = m.papeis.filter(casa);
       if (!papeis.length) continue;
-      grupos.push(grupoDeFichas(m.nome, q ? `${papeis.length} de ${m.total}` : `${m.total}`, papeis.map(p => {
+      grupos.push(grupoDeFichas(m.nome, q ? txt('agentes.filtrados', '{n} de {total}', { n: papeis.length, total: m.total }) : `${m.total}`, papeis.map(p => {
         const f = el('div', 'ficha');
         f.append(el('b', null, p.nome), el('p', null, p.missao), el('code', null, p.capability_principal),
-          marcas([[p.humano ? 'HUMANO' : 'AGENTE', p.humano ? 'nao' : 'sim'], [p.criticidade], [p.execucao],
+          marcas([[p.humano ? txt('agentes.humano', 'HUMANO') : txt('agentes.agente', 'AGENTE'), p.humano ? 'nao' : 'sim'], [p.criticidade], [p.execucao],
             [(p.modelos || []).join(' • ')]]));
         return f;
       })));
@@ -368,6 +369,23 @@ carregadores.agentes = async () => {
   filtro.oninput = desenhar;
   desenhar();
 };
+// O que o JS escreveu nao tem data-txt: trocar o idioma redesenha a tela, que relê o JSON do cache.
+idiomas.aoTrocar(() => { if (document.body.dataset.tela === 'agentes') carregadores.agentes(); });
+
+// Uma ferramenta exige UMA capability (`capacidade`, ex. fs.read); a familia (`grupo`) e o
+// prefixo dela. A tela agrupa pela capability exata -- e o que o portao confere --, na ordem
+// da familia, para fs.read e fs.write ficarem vizinhas.
+function porCapacidade(ferramentas) {
+  const m = new Map();
+  for (const f of ferramentas) {
+    if (!m.has(f.capacidade)) m.set(f.capacidade, { capacidade: f.capacidade, grupo: f.grupo, lista: [] });
+    m.get(f.capacidade).lista.push(f);
+  }
+  const familia = new Map();
+  for (const c of m.values()) familia.set(c.grupo, (familia.get(c.grupo) || 0) + c.lista.length);
+  return [...m.values()].sort((a, b) => familia.get(b.grupo) - familia.get(a.grupo)
+    || a.grupo.localeCompare(b.grupo) || b.lista.length - a.lista.length || a.capacidade.localeCompare(b.capacidade));
+}
 
 carregadores.ferramentas = async () => {
   const resumo = document.getElementById('ferramentasResumo');
@@ -378,24 +396,73 @@ carregadores.ferramentas = async () => {
     return;
   }
   const concedidas = d.ferramentas.filter(f => f.concedida).length;
+  const caps = porCapacidade(d.ferramentas);
   resumo.classList.remove('aviso');
-  resumo.textContent = `${d.total} ferramentas montadas por \`${d.gerado_por}\` v${d.versao} • ${concedidas} concedidas por padrão • ${d.observacao}`;
-  const porGrupo = new Map();
-  for (const f of d.ferramentas) {
-    if (!porGrupo.has(f.grupo)) porGrupo.set(f.grupo, []);
-    porGrupo.get(f.grupo).push(f);
-  }
-  const grupos = [...porGrupo.entries()].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
-  conteudo.replaceChildren(...grupos.map(([grupo, lista]) => grupoDeFichas(grupo, String(lista.length), lista.map(f => {
-    const c = el('div', 'ficha');
-    const desc = f.descricao.length > 240 ? `${f.descricao.slice(0, 240)}…` : f.descricao;
-    c.append(el('b', null, f.nome), el('p', null, desc), el('code', null, f.capacidade),
-      marcas([[f.concedida ? 'CONCEDIDA POR PADRÃO' : 'EXIGE CONCESSÃO', f.concedida ? 'sim' : 'nao']]));
-    return c;
-  }))));
+  resumo.textContent = txt('ferramentas.resumo', '{total} ferramentas em {capabilities} capacidades, montadas por `{gerado_por}` v{versao} • {concedidas} concedidas por padrão • {observacao}',
+    { total: d.total, capabilities: caps.length, gerado_por: d.gerado_por, versao: d.versao, concedidas, observacao: d.observacao });
+  conteudo.replaceChildren(...caps.map(c => {
+    const g = el('article', 'grupo');
+    g.dataset.capacidade = c.capacidade;
+    const h = el('header');
+    const t = el('h2');
+    t.append(el('span', 'rotulo-cap', txt('ferramentas.capability', 'capacidade')), el('code', 'cap', c.capacidade));
+    const conc = c.lista.filter(f => f.concedida).length;
+    h.append(t, el('span', null, txt('ferramentas.grupo', '{n} • família {grupo} • {concedidas} de {n} concedidas', { n: c.lista.length, grupo: c.grupo, concedidas: conc })));
+    const lista = el('div', 'fichas');
+    lista.append(...c.lista.map(f => {
+      const fi = el('div', 'ficha');
+      fi.dataset.capacidade = f.capacidade;
+      const desc = f.descricao.length > 240 ? `${f.descricao.slice(0, 240)}…` : f.descricao;
+      const exige = el('div', 'exige');
+      exige.append(el('span', null, txt('ferramentas.exige', 'exige')), el('code', null, f.capacidade));
+      fi.append(el('b', null, f.nome), el('p', null, desc), exige,
+        marcas([[f.concedida ? txt('ferramentas.concedida', 'CONCEDIDA POR PADRÃO') : txt('ferramentas.exige_concessao', 'EXIGE CONCESSÃO'), f.concedida ? 'sim' : 'nao']]));
+      return fi;
+    }));
+    g.append(h, lista);
+    return g;
+  }));
 };
 
 const NOMES_PRODUTO = { openclaw: 'OpenClaw', hermes: 'Hermes', claude_code: 'Claude Code', codex: 'Codex', openjarvis: 'OpenJarvis' };
+
+// Os tres estados se distinguem pela FORMA, nao so pela cor: no agente = cheio, pela metade =
+// hachurado, nao = so contorno tracejado. Em escala de cinza (ou para quem nao ve a cor) a
+// barra continua legivel; a legenda repete a mesma forma em miniatura.
+// O rotulo e funcao, nao string: le a fabrica na hora de desenhar, para seguir a troca de idioma.
+const ESTADOS = [
+  ['no_agente', 'agente', () => txt('absorcao.no_agente', 'no agente')],
+  ['parcial', 'parcial', () => txt('absorcao.parcial', 'pela metade')],
+  ['nao', 'nao', () => txt('absorcao.nao', 'não')],
+];
+
+function barraTresEstados(p) {
+  const b = el('div', 'tri');
+  b.setAttribute('role', 'img');
+  b.setAttribute('aria-label', txt('absorcao.barra', '{partes} — total {total}', { partes: ESTADOS.map(([k, , r]) => `${p[k]} ${r()}`).join(', '), total: p.total }));
+  for (const [k, classe, rotulo] of ESTADOS) {
+    const n = Number(p[k]) || 0;
+    if (!n) continue;
+    const s = el('i', `seg ${classe}`);
+    s.dataset.estado = classe;
+    s.dataset.n = String(n);
+    s.style.flexGrow = String(n);
+    s.title = `${n} ${rotulo()}`;
+    s.append(el('em', null, n));
+    b.append(s);
+  }
+  return b;
+}
+
+function legendaTresEstados(p) {
+  const l = el('div', 'tri-legenda');
+  for (const [k, classe, rotulo] of ESTADOS) {
+    const item = el('span');
+    item.append(el('i', `amostra ${classe}`), el('span', null, p ? `${p[k]} ${rotulo()}` : rotulo()));
+    l.append(item);
+  }
+  return l;
+}
 
 carregadores.absorcao = async () => {
   const resumo = document.getElementById('absorcaoResumo');
@@ -407,24 +474,22 @@ carregadores.absorcao = async () => {
   }
   const chaves = Object.keys(d);
   resumo.classList.remove('aviso');
-  resumo.textContent = `${chaves.length} produtos medidos capacidade por capacidade (docs/absorcao/gerar_absorcao.py). Barra cheia: no agente. Hachurada: contando bibliotecas.`;
+  resumo.textContent = txt('absorcao.resumo', '{n} produtos medidos capacidade por capacidade ({gerador}).', { n: chaves.length, gerador: 'docs/absorcao/gerar_absorcao.py' });
+  document.getElementById('absorcaoLegenda').replaceChildren(legendaTresEstados(null));
   conteudo.replaceChildren(...chaves.map(k => {
     const p = d[k];
     const c = el('article', 'produto');
-    c.append(el('h2', null, NOMES_PRODUTO[k] || k));
-    for (const [rotulo, pct, classe] of [['No agente', p.pct_agente, 'barra'], ['Com bibliotecas', p.pct_com_bibliotecas, 'barra lib']]) {
-      c.append(el('small', null, `${rotulo}: ${pct}%`));
-      const b = el('div', classe);
-      const i = el('i');
-      i.style.width = `${Math.max(0, Math.min(100, Number(pct) || 0))}%`;
-      b.append(i);
-      c.append(b);
-    }
-    c.append(el('small', null, `${p.no_agente} de ${p.total} no agente • ${p.parcial} pela metade • ${p.nao} não • lido em ${p.lido_em}`));
-    for (const [rotulo, lista] of [['Falta', p.falta], ['Pela metade', p.pela_metade]]) {
+    c.dataset.produto = k;
+    c.append(el('h2', null, NOMES_PRODUTO[k] || k), barraTresEstados(p), legendaTresEstados(p),
+      el('small', null, txt('absorcao.rodape', '{pct_agente}% no agente • {pct_lib}% contando bibliotecas • {total} capacidades • lido em {lido_em}',
+        { pct_agente: p.pct_agente, pct_lib: p.pct_com_bibliotecas, total: p.total, lido_em: p.lido_em })));
+    for (const [rotulo, lista] of [
+      [n => txt('absorcao.falta', 'Falta ({n})', { n }), p.falta],
+      [n => txt('absorcao.pela_metade', 'Pela metade ({n})', { n }), p.pela_metade],
+    ]) {
       if (!lista?.length) continue;
       const det = el('details');
-      det.append(el('summary', null, `${rotulo} (${lista.length})`));
+      det.append(el('summary', null, rotulo(lista.length)));
       const ul = el('ul');
       ul.append(...lista.map(x => el('li', null, x)));
       det.append(ul);
@@ -433,6 +498,92 @@ carregadores.absorcao = async () => {
     return c;
   }));
 };
+
+/* ===================== VISAO GERAL ===================== */
+// So o que tem fonte: os tres JSON gerados e o host. Cada painel que perde a fonte diz qual
+// arquivo falta, em vez de manter um numero de enfeite.
+function semFonte(alvo, arquivo) {
+  alvo.replaceChildren(el('p', 'vazio aviso', txt('geral.sem_fonte', 'assets/{arquivo} não existe — sem fonte, sem número.', { arquivo })));
+}
+
+document.querySelectorAll('[data-ir]').forEach(b => b.addEventListener('click', () => mostrarTela(b.dataset.ir)));
+
+carregadores.geral = async () => {
+  const [eq, fe, ab] = await Promise.allSettled(['equipe.json', 'ferramentas.json', 'absorcao.json'].map(lerJson));
+  const $ = id => document.getElementById(id);
+
+  if (eq.status === 'fulfilled') {
+    const d = eq.value;
+    const humanos = d.macroareas.reduce((n, m) => n + m.papeis.filter(p => p.humano).length, 0);
+    $('geralAgentes').textContent = String(d.total);
+    $('geralAgentesNota').textContent = txt('geral.agentes_nota', '{macroareas} macroáreas • humanos: {humanos}', { macroareas: d.macroareas.length, humanos });
+    const maior = Math.max(...d.macroareas.map(m => m.total));
+    $('geralMacro').replaceChildren(...d.macroareas.map(m => {
+      const r = el('div', 'macro');
+      const b = el('div', 'macro-barra');
+      const i = el('i');
+      i.style.width = `${(m.total / maior) * 100}%`;
+      b.append(i);
+      r.append(el('span', null, m.nome), b, el('b', null, m.total));
+      return r;
+    }));
+  } else {
+    $('geralAgentesNota').textContent = txt('geral.ausente', '{arquivo} ausente', { arquivo: 'equipe.json' });
+    semFonte($('geralMacro'), 'equipe.json');
+  }
+
+  if (fe.status === 'fulfilled') {
+    const d = fe.value;
+    const conc = d.ferramentas.filter(f => f.concedida).length;
+    const caps = porCapacidade(d.ferramentas);
+    $('geralFerramentas').textContent = String(d.total);
+    $('geralFerramentasNota').textContent = txt('geral.ferramentas_nota', '{concedidas} concedidas por padrão • {capabilities} capacidades', { concedidas: conc, capabilities: caps.length });
+    const barra = $('geralFerramentasBarra');
+    barra.hidden = false;
+    barra.firstElementChild.style.width = `${(conc / d.total) * 100}%`;
+    barra.title = txt('geral.barra_concedidas', '{concedidas} de {total} concedidas por padrão', { concedidas: conc, total: d.total });
+    const familias = new Map();
+    for (const c of caps) {
+      if (!familias.has(c.grupo)) familias.set(c.grupo, { n: 0, conc: 0, caps: [] });
+      const f = familias.get(c.grupo);
+      f.n += c.lista.length;
+      f.conc += c.lista.filter(x => x.concedida).length;
+      f.caps.push(c.capacidade);
+    }
+    $('geralCapacidades').replaceChildren(...[...familias.entries()].map(([g, f]) => {
+      const r = el('div');
+      r.title = f.caps.join(', ');
+      r.append(el('code', null, g), el('span', null, f.caps.map(c => c.slice(g.length + 1) || c).join(' • ')),
+        el('em', f.conc === f.n ? 'sim' : f.conc ? 'meio' : 'nao', `${f.conc}/${f.n}`));
+      return r;
+    }));
+  } else {
+    $('geralFerramentasNota').textContent = txt('geral.ausente', '{arquivo} ausente', { arquivo: 'ferramentas.json' });
+    semFonte($('geralCapacidades'), 'ferramentas.json');
+  }
+
+  if (ab.status === 'fulfilled') {
+    const d = ab.value;
+    const pcts = Object.values(d).map(p => Number(p.pct_agente));
+    $('geralAbsorcao').textContent = pcts.length ? `${Math.min(...pcts)}–${Math.max(...pcts)}%` : '—';
+    $('geralAbsorcaoNota').textContent = txt('geral.absorcao_nota', 'no agente • faixa de {n} produtos', { n: pcts.length });
+    const lista = Object.entries(d).map(([k, p]) => {
+      const r = el('div', 'mini');
+      r.append(el('span', null, NOMES_PRODUTO[k] || k), barraTresEstados(p), el('b', null, `${p.pct_agente}%`));
+      return r;
+    });
+    $('geralAbsorcaoLista').replaceChildren(legendaTresEstados(null), ...lista);
+  } else {
+    $('geralAbsorcaoNota').textContent = txt('geral.ausente', '{arquivo} ausente', { arquivo: 'absorcao.json' });
+    semFonte($('geralAbsorcaoLista'), 'absorcao.json');
+  }
+};
+
+// Trocar o idioma redesenha a tela aberta que escreveu texto pelo JS (o JSON vem do cache).
+idiomas.aoTrocar(() => {
+  const t = document.body.dataset.tela;
+  if (['geral', 'ferramentas', 'absorcao'].includes(t)) carregadores[t]();
+});
 
 /* ===================== IDE: cliente do motor de terminal ===================== */
 // A tela so desenha e repassa tecla: PTY, emulador, traducao de tecla pelo modo do terminal
@@ -567,10 +718,19 @@ const ide = (() => {
     seloIde.textContent = sessoes.size ? String(sessoes.size) : '';
     vazio.hidden = !!ativa;
     botaoFechar.disabled = !ativa;
-    if (!ativa) { status.textContent = 'Nenhum terminal aberto.'; return; }
-    const fim = ativa.encerrado ? ` • encerrado (código ${ativa.encerrado.codigo ?? 'sinal'})` : '';
-    status.textContent = `${ativa.programa === 'helix' ? 'Helix' : 'bash'} • pid ${ativa.pid} • ${ativa.colunas}×${ativa.linhas} • ${ativa.cwd}${fim}`;
+    if (!ativa) { status.textContent = txt('ide.nenhum', 'Nenhum terminal aberto.'); return; }
+    const fim = ativa.encerrado
+      ? txt('ide.encerrado', ' • encerrado (código {codigo})', { codigo: ativa.encerrado.codigo ?? txt('ide.sinal', 'sinal') }) : '';
+    status.textContent = txt('ide.status', '{programa} • pid {pid} • {colunas}×{linhas} • {cwd}{fim}', {
+      programa: ativa.programa === 'helix' ? 'Helix' : 'bash', pid: ativa.pid, colunas: ativa.colunas, linhas: ativa.linhas, cwd: ativa.cwd, fim,
+    });
   }
+  // Troca de idioma: reescreve o status, menos quando ele mostra erro vindo do host (dado).
+  const semHost = () => txt('ide.sem_host', 'O terminal exige o host nativo (Tauri); esta é a prévia web.');
+  idiomas.aoTrocar(() => {
+    if (!status.classList.contains('aviso')) atualizarAbas();
+    else if (!invoke) status.textContent = semHost();
+  });
 
   function ativar(s) {
     ativa = s;
@@ -581,7 +741,7 @@ const ide = (() => {
   }
 
   async function abrir(programa) {
-    if (!invoke) { status.textContent = 'O terminal exige o host nativo (Tauri); esta é a prévia web.'; status.classList.add('aviso'); return; }
+    if (!invoke) { status.textContent = semHost(); status.classList.add('aviso'); return; }
     const t = tamanhoQueCabe() || { colunas: 100, linhas: 30 };
     try {
       const r = await invoke('terminal_abrir', { programa, colunas: t.colunas, linhas: t.linhas });

@@ -108,10 +108,61 @@ body.force-dashboard .splash{display:none}body.force-dashboard .app-shell{opacit
 .absorcao{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:12px}
 .produto{border:1px solid #173a50;border-radius:8px;background:rgba(9,25,38,.85);padding:12px 14px}
 .produto h2{margin:0 0 8px;font-size:15px}
-.barra{height:8px;border-radius:5px;background:#0b1e2b;border:1px solid #16374a;overflow:hidden;margin:4px 0 2px}
-.barra i{display:block;height:100%;background:#ffc43d}
-.barra.lib i{background:repeating-linear-gradient(45deg,#ff8a1c 0 4px,transparent 4px 8px)}
 .produto small{color:#8aa4b8;font-size:11px}
 .produto details{margin-top:8px;font-size:11px;color:#9bb3c5}
 .produto summary{cursor:pointer;color:#c5d1de}
 .produto ul{margin:6px 0 0;padding-left:18px;columns:2;column-gap:14px}
+
+/* TRES ESTADOS (absorcao): a forma carrega o estado, a cor so reforca.
+   no agente = cheio; pela metade = hachurado; nao = so contorno tracejado. */
+.tri{display:flex;gap:2px;height:20px;margin:6px 0 4px}
+.tri .seg{position:relative;display:flex;align-items:center;justify-content:center;min-width:18px;border-radius:3px;font-style:normal}
+.tri .seg em{font-style:normal;font-size:10px;font-weight:700;line-height:1;padding:1px 3px;border-radius:2px}
+.seg.agente,.amostra.agente{background:#57e6a8;border:1px solid #57e6a8}
+.seg.agente em{color:#010418}
+.seg.parcial,.amostra.parcial{background:repeating-linear-gradient(45deg,#ffc43d 0 3px,transparent 3px 7px);border:1px solid #ffc43d}
+.seg.parcial em{color:#ffd77a;background:#010418}
+.seg.nao,.amostra.nao{background:transparent;border:1px dashed #8aa4b8}
+.seg.nao em{color:#c5d1de}
+.tri-legenda{display:flex;flex-wrap:wrap;gap:12px;font-size:11px;color:#9bb3c5;margin:2px 0 6px}
+.tri-legenda>span{display:inline-flex;align-items:center;gap:5px}
+.amostra{display:inline-block;width:16px;height:10px;border-radius:2px}
+.tela-head .tri-legenda{margin-top:8px}
+
+/* VISAO GERAL ligada a dados: rola em vez de recortar painel. */
+#tela-geral{overflow:auto;padding-bottom:16px}
+.hero-actions .acao{padding:9px 13px;font-size:10px}
+.panel-head .acao{background:transparent;padding:7px 10px;font-size:9px}
+.metric small{font-size:11px;color:#8aa4b8}
+.metric .budget[hidden]{display:none}
+.dashboard-grid{flex:none;grid-template-columns:1fr 1fr;grid-template-rows:auto auto}
+.dashboard-grid .panel{overflow:visible}
+.capability-panel{grid-column:1/-1}
+.vazio{margin:0;padding:12px 16px;color:#8aa4b8;font-size:12px}
+.vazio.aviso{color:#ffc43d}
+.macro-lista{padding:10px 16px 14px;display:flex;flex-direction:column;gap:6px}
+.macro{display:grid;grid-template-columns:minmax(150px,1.1fr) 1fr 28px;align-items:center;gap:10px;font-size:12px;color:#c5d1de}
+.macro b{text-align:right;color:#eaf4ff;font-size:12px}
+.macro-barra{height:8px;border:1px solid #1d4053;border-radius:4px;overflow:hidden}
+.macro-barra i{display:block;height:100%;background:#36d7ff}
+.absorcao-mini{padding:10px 16px 14px;display:flex;flex-direction:column;gap:6px}
+.mini{display:grid;grid-template-columns:100px 1fr 48px;align-items:center;gap:10px;font-size:12px;color:#c5d1de}
+.mini b{text-align:right;color:#eaf4ff}
+.mini .tri{margin:0;height:18px}
+.cap-list{grid-template-columns:repeat(auto-fill,minmax(250px,1fr));padding:12px 16px 14px;gap:8px}
+.cap-list>div{height:auto;min-height:36px;padding:6px 10px}
+.cap-list code{color:#5ecfea;font-size:12px;min-width:56px}
+.cap-list span{font-size:11px;color:#a8bdca}
+.cap-list em{font-size:10px;letter-spacing:.04em;border-radius:3px;padding:2px 6px}
+.cap-list em.sim{color:#86f2c0;border-color:rgba(87,230,168,.45)}
+.cap-list em.meio{color:#ffd77a;border-color:rgba(255,196,61,.45)}
+.cap-list em.nao{color:#ffd77a;border:1px dashed rgba(255,196,61,.55)}
+.policy{font-size:9px}
+
+/* FERRAMENTAS: o grupo e a capability exigida; a ficha repete a exigencia. */
+.grupo>header h2{display:flex;align-items:baseline;gap:8px}
+.grupo>header .rotulo-cap{font-size:9px;letter-spacing:.14em;color:#7894aa;font-weight:700}
+.grupo>header code.cap{font-size:14px;color:#5ecfea}
+.ficha .exige{display:flex;align-items:center;gap:6px;margin-top:2px}
+.ficha .exige span{font-size:9px;letter-spacing:.12em;color:#7894aa;font-weight:700}
+.cap-list>.vazio{grid-column:1/-1}
