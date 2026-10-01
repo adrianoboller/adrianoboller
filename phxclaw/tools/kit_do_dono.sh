@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Kit dos portoes que so o dono fecha, na maquina Windows dele:
+#   - desktop: teclado, mouse, captura e shell governado num desktop fisico
 #   - dispositivos: phxclaw.exe (servidor WSS) + phxclaw-device-node.exe, com CA de TESTE
 #   - U4b: o WLanguage gerado do mesmo SQL que o Rust compila e testa, para o WinDev
 # Uso: tools/kit_do_dono.sh <pasta-de-saida>     (gera <pasta>/ e <pasta>.zip)
@@ -9,12 +10,17 @@ set -euo pipefail
 SAIDA=$(realpath -m "${1:?uso: kit_do_dono.sh <pasta-de-saida>}")
 RAIZ=$(cd "$(dirname "$0")/.." && pwd)
 ALVO=x86_64-pc-windows-gnu
-rm -rf "$SAIDA" && mkdir -p "$SAIDA/dispositivos" "$SAIDA/u4b-wlanguage"
+rm -rf "$SAIDA" && mkdir -p "$SAIDA/dispositivos" "$SAIDA/u4b-wlanguage" "$SAIDA/desktop"
 
 export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc
 (cd "$RAIZ" && cargo build --release -q -p phxclaw -p phxclaw-device-node --target $ALVO)
 cp "$RAIZ/target/$ALVO/release/phxclaw.exe" "$RAIZ/target/$ALVO/release/phxclaw-device-node.exe" \
    "$SAIDA/dispositivos/"
+(cd "$RAIZ" && cargo build --release -q -p phxclaw-system-automation --example prova-desktop \
+  --features desktop-input,screen-capture --target $ALVO)
+cp "$RAIZ/target/$ALVO/release/examples/prova-desktop.exe" "$SAIDA/desktop/"
+printf '@echo off\r\nrem Nao mexa no teclado nem no mouse por uns 15 s.\r\nprova-desktop.exe\r\npause\r\n' \
+  > "$SAIDA/desktop/prova-desktop.bat"
 
 # CA de teste + folha para localhost: o no fixa a CA, o servidor apresenta a folha
 cd "$SAIDA/dispositivos"

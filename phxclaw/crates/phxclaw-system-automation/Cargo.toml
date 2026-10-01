@@ -17,3 +17,7 @@ phxclaw-types = { path = "../phxclaw-types" }
 default = []
 desktop-input = ["dep:enigo"]
 screen-capture = ["dep:xcap"]
+
+[[example]]
+name = "prova-desktop"
+required-features = ["desktop-input", "screen-capture"]

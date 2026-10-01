@@ -41,7 +41,11 @@ RLS_URL = f"host={PGHOST} port={PGPORT} user=phx_rls dbname={DB}"
 # Gates do catalogo que este ambiente NAO alcanca, e por que. O motivo e fato medido
 # nesta rodada; o gate continua obrigatorio e continua no relatorio.
 BLOQUEIOS = {
-    "desktop_os_automation_e2e": "exige desktop FISICO (teclado, mouse, captura reais); aqui so ha Xvfb",
+    "desktop_os_automation_e2e": (
+        "exige desktop FISICO. A prova existe desde 01/10 (exemplo prova-desktop do "
+        "phxclaw-system-automation: politica, captura, mouse, e no Windows o Bloco de Notas "
+        "pelo executor governado recebendo um codigo pelo teclado): 3/3 no Xvfb, 4/4 no Wine; "
+        "o kit do dono leva o .exe para a maquina fisica"),
     "device_pairing_wss_keyring_multiplatform_e2e": (
         "exige hardware multiplataforma (Windows, macOS, Android, iOS). O pareamento esta "
         "provado em Linux entre processos (TLS, token de uso unico, reconexao pela chave "

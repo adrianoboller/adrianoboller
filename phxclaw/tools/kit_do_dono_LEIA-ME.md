@@ -1,6 +1,6 @@
 # Kit do dono: os portões que só fecham na sua máquina Windows
 
-Gerado por `tools/kit_do_dono.sh`, não montado à mão. Duas pastas, e cada uma fecha um item.
+Gerado por `tools/kit_do_dono.sh`, não montado à mão. Três pastas, e cada uma fecha um item.
 
 ## 1. `dispositivos/`: pareamento no Windows real
 
@@ -36,9 +36,21 @@ cole o `Regras.wl` numa coleção de procedimentos e compile.
 Mande os erros de compilação, se houver, com o número da linha. Cada erro vira um conserto no
 gerador, com teste, e não no arquivo gerado.
 
+## 3. `desktop/`: teclado, mouse, captura e shell governado
+
+Dê dois cliques em `prova-desktop.bat` e não toque em nada por uns 15 s. A prova:
+
+- confere que a política padrão **nega** lançar programa e que `cmd.exe` negado é recusado;
+- captura a tela e confere que a imagem não é de uma cor só, gravando
+  `prova-desktop-captura.png` ao lado;
+- move o mouse ao centro e confere a posição que o Windows devolve;
+- abre o Bloco de Notas pelo executor governado, digita um código aleatório, salva com
+  Ctrl+S e confere o código no arquivo gravado.
+
+Tem de terminar em `placar: 4/4`. Mande o texto da janela. No Wine deu 4/4; e digitando
+outro texto no lugar do código, deu 3/4, prova de que a checagem não passa sozinha.
+
 ## O que fica fora deste kit
 
-- **Desktop físico** (`desktop_os_automation_e2e`): a prova atual roda em Linux com Xvfb, e
-  ainda não há versão dela para Windows.
 - **macOS, Android e iOS**: precisam de compilação nativa em cada plataforma, que não se
   faz a partir deste contêiner.

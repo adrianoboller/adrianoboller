@@ -312,6 +312,13 @@ impl EnigoInputProvider {
         let inner = enigo::Enigo::new(&Settings::default()).map_err(|e| e.to_string())?;
         Ok(Self { inner })
     }
+
+    /// Onde o sistema diz que o cursor esta: e o que prova que o `MoveMouse` chegou ao SO
+    /// e nao so saiu daqui.
+    pub fn posicao_do_mouse(&self) -> Result<(i32, i32), String> {
+        use enigo::Mouse;
+        self.inner.location().map_err(|e| e.to_string())
+    }
 }
 
 #[cfg(feature = "desktop-input")]
@@ -422,17 +429,28 @@ impl InputProvider for EnigoInputProvider {
 
 #[cfg(feature = "screen-capture")]
 pub fn capture_primary_monitor(output: &std::path::Path) -> Result<(), AutomationError> {
+    capturar_monitor_principal()?
+        .save(output)
+        .map_err(|e| AutomationError::Io(std::io::Error::other(e.to_string())))
+}
+
+/// A captura em memoria, para quem precisa olhar os pixels antes de gravar.
+#[cfg(feature = "screen-capture")]
+pub fn capturar_monitor_principal() -> Result<xcap::image::RgbaImage, AutomationError> {
     let monitors = xcap::Monitor::all()
         .map_err(|e| AutomationError::Io(std::io::Error::other(e.to_string())))?;
+    // X11 sem saida marcada como primaria (Xvfb, e desktop com um monitor so) nao tem
+    // "primario": fica o primeiro, senao o agente perde a captura nessas maquinas inteiras
+    // (medido no Xvfb: "no primary monitor" com um monitor ligado)
+    let primario = monitors
+        .iter()
+        .position(|m| m.is_primary().unwrap_or(false))
+        .unwrap_or(0);
     let monitor = monitors
         .into_iter()
-        .find(|m| m.is_primary().unwrap_or(false))
-        .ok_or_else(|| AutomationError::Io(std::io::Error::other("no primary monitor")))?;
-    let image = monitor
+        .nth(primario)
+        .ok_or_else(|| AutomationError::Io(std::io::Error::other("no monitor")))?;
+    monitor
         .capture_image()
-        .map_err(|e| AutomationError::Io(std::io::Error::other(e.to_string())))?;
-    image
-        .save(output)
-        .map_err(|e| AutomationError::Io(std::io::Error::other(e.to_string())))?;
-    Ok(())
+        .map_err(|e| AutomationError::Io(std::io::Error::other(e.to_string())))
 }
