@@ -29,3 +29,15 @@ reescrita contra as nossas restrições, e a divergência fica registrada.
 - as «chaves» que uma varredura acha aqui são exemplos do próprio módulo de segurança
   deles e de testes (`AKIAIOSFODNN7EXAMPLE`, sequências do alfabeto, cabeçalhos PEM sem
   corpo válido), não credenciais.
+
+## Firewall de proveniência
+
+`cargo run -p phxclaw-provenance-core --example avaliar` (a mesma função `evaluate` do
+harvester):
+
+- primeira passada, 01/10: **QUARANTINE [HashEvidenceMissing]**. O campo `hash` é «o
+  conteúdo foi conferido?», e ainda não tinha sido;
+- conferência feita: cada um dos 2.167 arquivos desta pasta (fora este) tem o mesmo hash
+  de blob do git (`git hash-object`) que o arquivo do commit `f0ecea0` no `git ls-tree`
+  de um clone novo; nenhum divergente, e os únicos ausentes são os dois excluídos acima;
+- segunda passada, com `hash: true`: **ALLOW**.
