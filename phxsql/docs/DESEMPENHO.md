@@ -3662,6 +3662,89 @@ cargo build --release --examples -p phxsql-store    # binario velho mede o passa
 cargo run --release --example custo-do-excluir -- 200000 20000
 ```
 
+### 24.7 A busca reversa lembrada pelo carimbo: 441,12 → 51,51 µs com 30 irmãs (01/10/2026)
+
+A decisão do dono de 17/09 mandou **pular a busca reversa quando nenhuma
+tabela declara chave para esta**, sem tocar formato e sem catálogo reverso
+guardado. A premissa foi medida antes (mesma máquina, load 1,2–3,1, que é
+carga de outras frentes e não parada):
+
+| antes (`HEAD` 7b099a22), N = 200.000, 20.000 exclusões | µs/exclusão |
+|---|---:|
+| excluir direto, tabela sozinha | 30,48 (19,7% dele é listar o diretório: 5,99) |
+| com 30 irmãs sem chave | 449,45 (as irmãs: +418,98, **14,7×**) |
+| `openat`/`read`/`lseek` por exclusão com 30 irmãs | 34,5 / 67,5 / 75 |
+
+**O que não deu para fazer, e por quê.** «A informação já está nos
+esquemas» é verdade, mas sabê-la exige lê-los — e lê-los é a varredura. Um
+catálogo reverso, em disco ou em memória com invalidação, é o que a pétrea
+recusou: cobra de toda criação e alteração, e o em memória não vê outro
+processo (a FFI embarcada).
+
+**O que entrou (`phxsql-store/src/irmas.rs`).** A resposta de cada irmã —
+as chaves conferidas que ela declara — se lembra junto do **carimbo** do
+arquivo de onde saiu, `(dispositivo, inode, tamanho, mtime, ctime)`, e se
+revalida a cada pergunta por **um `statx`**. A lista do diretório, igual,
+pelo carimbo do diretório. Ninguém mantém nada: quem cria ou altera tabela não
+paga e não avisa, porque o núcleo muda o carimbo sozinho — inclusive para o
+outro processo. Duas travas fecham o risco, que é lembrar «ninguém aponta»
+depois de alguém apontar (o pai com filha sairia):
+
+- **o carimbo se lê ANTES do conteúdo** — se o arquivo muda no meio, guarda-se
+  o carimbo velho, e o erro possível é reler a mais;
+- **carimbo com menos de 3 s não se lembra** — o relógio dos tempos de arquivo
+  é grosso (milissegundos; 2 s no FAT), e duas mudanças no mesmo tique deixam
+  o mesmo carimbo. É o «racy» do índice do git. A declaração de chave regrava
+  o esquema **no lugar** (mesmo inode, mesmo tamanho), então são os tempos que
+  a denunciam.
+
+**Medido**, três pares `antes`/`depois` intercalados, `HEAD` contra a árvore
+com o conserto, mesmo minuto e mesma máquina; a mediana de três, e a faixa:
+
+| regime | antes | depois | |
+|---|---:|---:|---:|
+| tabela sozinha, diretório **parado** (> 3 s) | **30,39** (29,98–32,08) | **21,88** (21,49–22,96) | **1,39×** |
+| 30 irmãs, diretório **parado** | **441,12** (414,98–451,79) | **51,51** (48,66–52,69) | **8,56×** |
+| tabela sozinha, diretório recém-criado | 31,05 (27,88–33,28) | 30,29 (28,16–30,47) | dentro do ruído |
+| 30 irmãs, recém-criadas | 442,78 (422,59–444,68) | 182,29 (181,42–186,95) | 2,43× |
+
+As faixas dos dois regimes parados **não se cruzam**. No recém-criado a tabela
+sozinha não ganha nada, de propósito: o carimbo de quem acabou de nascer não se
+lembra. As 30 irmãs recém-criadas ganham em parte porque envelhecem os 3 s
+durante as 200.000 inserções da tabela, e o medidor conta isso: **9,47–9,90
+esquemas relidos por exclusão**, contra 30 antes e **0,00** parado.
+
+Chamadas de sistema por exclusão (`strace -f -y`, 1.000 − 200), diretório
+parado:
+
+| | antes | depois |
+|---|---:|---:|
+| tabela sozinha: `openat` no diretório, `getdents64` | 1 e 2 | **0 e 0** |
+| 30 irmãs: `openat` / `read` / `lseek` / `close` | 34,4–35,0 / 67,4–68,0 / 75 / 34,4–35,0 | **3,8–4,0 / 7,8–8,0 / 15 / 3,8–4,0** |
+| 30 irmãs: `statx` | 61 | **31** (um por irmã, mais o diretório) |
+| `write` | 11 | 11 |
+
+**O que sobrou, e de quem é** — os `openat` que restam são **todos**
+`/dev/urandom` (2,2–4,0 por exclusão: o `sortear` do `uuid.rs`, §24.6, da
+frente do `uuid.rs`), e dos 11 `write` os 4 do `.ndx` incluem o cabeçalho
+sem a condição `estrutura_mudou` (§24.6, papel C, adia o contador que o
+`verificar` julga). Os outros 7 (`.reg` 2, `.trash` 2, `.reason` 2, `.log` 1)
+são o que a pétrea manda escrever, e nenhum abre arquivo. Os 31 `statx` com
+30 irmãs custam ~1 µs cada: é o preço de ver o outro processo, e o
+catálogo que o evitaria é o recusado.
+
+**Prova real nos dois sentidos** (`irmas::testes`):
+`a_segunda_exclusao_nao_rele_o_esquema_das_irmas` (3 relidos na primeira, 0
+na segunda; cai relendo sempre), `a_chave_declarada_depois_tranca_o_pai`
+(chave declarada no lugar depois de lembrado o esquema; cai com o carimbo sem
+os tempos) e `carimbo_recente_nao_e_confiavel_e_velho_e` (cai confiando no
+carimbo de agora). Três guardas no catálogo.
+
+```bash
+cargo build --release --examples -p phxsql-store    # binario velho mede o passado
+cargo run --release --example custo-do-excluir -- 200000 20000   # agora com a secao PARADO
+```
+
 ## 25. O `empilhar` sob a trava: a premissa do 164 morreu medida, e a medição achou o conserto que não era do gatilho (17/09/2026)
 
 Pedido 164 (`docs/PENDENCIAS.md` #164, commit `20d2c59`). O pedido mandava

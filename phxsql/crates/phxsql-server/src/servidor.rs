@@ -20960,26 +20960,7 @@ impl Servidor {
         drop(congelada);
         let ms = inicio.elapsed().as_secs_f64() * 1e3;
 
-        // O que a linha VELHA nao ganhou, dito na resposta (pedido 245, O2).
-        //
-        // So a `calculada`: o CHECK passou a ser conferido contra as linhas
-        // velhas na fase A (245, O2a), e quem chega aqui com CHECK e porque
-        // nenhuma o viola -- avisar que «nao foi conferido» seria mentira. A
-        // `calculada` que nasce NULA na linha velha continua sendo o que a
-        // resposta precisa dizer. O portao vem antes do trabalho: um
-        // `is_some()` de campo ja carregado.
-        let mut avisos: Vec<String> = Vec::new();
-        if let (true, Some(calc)) = (registros > 0, &coluna.calculada) {
-            avisos.push(format!(
-                "a coluna calculada {} ({:?}) ficou NULA nas {registros} linha(s) que \
-                 ja existiam: cada uma so recebe o valor calculado no proximo \
-                 `atualizar` dela",
-                coluna.nome,
-                calc.texto()
-            ));
-        }
-
-        let mut pares = vec![
+        let pares = vec![
             ("database", Json::texto_de(p.texto_ou("database", ""))),
             ("tabela", Json::texto_de(p.texto_ou("tabela", ""))),
             ("coluna", Json::texto_de(coluna.nome.clone())),
@@ -20995,14 +20976,9 @@ impl Servidor {
             // foi refeito porque nao precisou.
             ("indices_refeitos", Json::Bool(false)),
         ];
-        // So quando ha, como no `criar_tabela`: a resposta de sempre nao ganha
-        // campo vazio.
-        if !avisos.is_empty() {
-            pares.push((
-                "avisos",
-                Json::Lista(avisos.iter().map(Json::texto_de).collect()),
-            ));
-        }
+        // Sem `avisos`: o CHECK e conferido contra a linha velha (245, O2a)
+        // e a calculada e preenchida nela (245, O2b) -- nao sobrou o que a
+        // linha velha deixe de ganhar, e aviso que diz o contrario mente.
         Ok(Json::objeto(pares))
     }
 
@@ -59470,20 +59446,25 @@ mod testes_regras_de_esquema {
         assert!(e.contains("check de v") && e.contains("\"w\""), "{e}");
     }
 
-    /// **O que a linha VELHA nao ganhou, dito na resposta** -- pedido 245, O2.
+    /// **Pedido 245, O2b: a calculada acrescentada PREENCHE a linha velha** --
+    /// parecer do papel C (`docs/propostas/parecer-dba-check-e-calculada-contra-linha-velha-2026-09.md`
+    /// §4.2 e §9): os quatro motores convergem em que a linha velha nunca le
+    /// nulo numa calculada computavel, e o preenchimento acontece no ALTER.
     ///
-    /// Medido em 16/09/2026: `acrescentar_coluna` com `calculada` era aceito
-    /// SEM AVISO NENHUM -- e so aparecia numa leitura que mostrava NULO onde
-    /// o esquema promete uma conta. O CHECK que a linha velha viola deixou de
-    /// ser aviso e virou RECUSA (O2a, decisao do dono de 17/09/2026 -- ver
-    /// `o_check_que_a_linha_velha_viola_recusa_a_coluna_dizendo_quantas`); o
-    /// que sobra aqui e o CHECK que as linhas cumprem, que entra calado.
+    /// Medido antes do conserto (16/09/2026): `b = a*2` sobre a = 3 e 7 lia
+    /// NULO nas duas, e `SUM(b)` devolvia 10 sobre uma tabela cuja soma e 24
+    /// depois que UMA delas era tocada. Aqui: as duas linhas leem 6 e 14, a
+    /// excluida suave tambem ganha o valor (volta pelo `restaurar`), a
+    /// resposta nao traz mais o aviso de NULA, e tres recusas da declaracao
+    /// deixam a tabela como estava -- padrao numa calculada, a conta que nao
+    /// cabe no tipo (nomeando o rowid) e o CHECK julgado com o valor
+    /// CALCULADO.
     ///
-    /// Reponha o defeito tirando o bloco `let mut avisos` de
-    /// `op_acrescentar_coluna`: a busca por `avisos` da calculada cai.
+    /// Reponha o defeito passando `None` no lugar do `preencher` do
+    /// `acrescentar_coluna_fase_a_recusando`: as leituras de 6 e 14 caem.
     #[test]
-    fn acrescentar_coluna_com_regra_avisa_o_que_a_linha_velha_nao_ganhou() {
-        let d = DirTemp::novo("regras-aviso");
+    fn acrescentar_calculada_preenche_a_linha_velha() {
+        let d = DirTemp::novo("regras-o2b");
         let s = servidor(&d.0);
         roda(
             &s,
@@ -59494,26 +59475,70 @@ mod testes_regras_de_esquema {
             "indices":[{"nome":"pk","colunas":["id"],"unico":true}]}"#,
         )
         .unwrap();
-        roda(
+        for (id, a) in [(1, 3), (2, 7), (3, 100)] {
+            roda(
+                &s,
+                "inserir",
+                &format!(r#"{{"database":"cmp","tabela":"t_av","linha":{{"id":{id},"a":{a}}}}}"#),
+            )
+            .unwrap();
+        }
+        let x = roda(
             &s,
-            "inserir",
-            r#"{"database":"cmp","tabela":"t_av","linha":{"id":1,"a":3}}"#,
+            "excluir",
+            r#"{"database":"cmp","tabela":"t_av","rowid":3,"motivo":"teste"}"#,
         )
         .unwrap();
+        assert_eq!(x.texto_ou("modo", ""), "suave", "{}", x.escrever());
+        let colunas = |s: &Arc<Servidor>| {
+            roda(s, "esquema", r#"{"database":"cmp","tabela":"t_av"}"#)
+                .unwrap()
+                .campo("colunas")
+                .and_then(Json::lista)
+                .map(|l| l.len())
+                .unwrap()
+        };
+        let antes = colunas(&s);
 
-        // (a) CHECK que fala de coluna velha e que a linha CUMPRE: entra, e
-        //     sem aviso -- foi conferido contra ela (O2a).
-        let r = roda(
+        // RECUSA 1: padrao numa calculada e um valor que a proxima gravacao
+        // apaga (o `default 999` sobre `a*3` do parecer, §3).
+        let e = roda(
             &s,
             "acrescentar_coluna",
             r#"{"database":"cmp","tabela":"t_av",
-                "coluna":{"nome":"nota","tipo":"Int8","check":"a > 0"}}"#,
+                "coluna":{"nome":"c","tipo":"Int8","calculada":"a*3"},"default":999}"#,
         )
-        .unwrap();
-        assert!(r.campo("avisos").is_none(), "{}", r.escrever());
+        .unwrap_err()
+        .to_string();
+        assert!(e.contains("calculada") && e.contains("padrao"), "{e}");
 
-        // (b) calculada: entra, e diz que a linha velha ficou NULA -- que e o
-        //     que a leitura mostra logo abaixo.
+        // RECUSA 2: a conta que nao cabe no tipo, na linha que ja existe --
+        // 100 * 2 = 200 nao cabe num Int1 -- nomeia o rowid, e recusa ANTES
+        // de reescrever: a excluida suave conta.
+        let e = roda(
+            &s,
+            "acrescentar_coluna",
+            r#"{"database":"cmp","tabela":"t_av",
+                "coluna":{"nome":"c","tipo":"Int1","calculada":"a*2"}}"#,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(e.contains("linha 3") && e.contains("calculada c"), "{e}");
+
+        // RECUSA 3: o CHECK da propria calculada e julgado com o valor que a
+        // linha VAI ter. a*2 > 10 falha em a = 3 (6) -- e so em a = 3.
+        let e = roda(
+            &s,
+            "acrescentar_coluna",
+            r#"{"database":"cmp","tabela":"t_av",
+                "coluna":{"nome":"c","tipo":"Int8","calculada":"a*2","check":"c > 10"}}"#,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(e.contains("1 das 3"), "{e}");
+        assert_eq!(antes, colunas(&s), "uma recusa tocou no esquema");
+
+        // O caso: entra, sem aviso, e a linha velha le o valor calculado.
         let r = roda(
             &s,
             "acrescentar_coluna",
@@ -59521,15 +59546,29 @@ mod testes_regras_de_esquema {
                 "coluna":{"nome":"b","tipo":"Int8","calculada":"a*2"}}"#,
         )
         .unwrap();
-        let texto = r.campo("avisos").and_then(Json::lista).unwrap()[0]
-            .texto()
-            .unwrap();
-        assert!(texto.contains("NULA"), "{texto}");
-        assert!(linha(&s, "t_av", 1).campo("b").unwrap().e_nulo());
+        assert!(r.campo("avisos").is_none(), "{}", r.escrever());
+        assert_eq!(
+            linha(&s, "t_av", 1).campo("b").and_then(Json::inteiro),
+            Some(6)
+        );
+        assert_eq!(
+            linha(&s, "t_av", 2).campo("b").and_then(Json::inteiro),
+            Some(14)
+        );
+        roda(
+            &s,
+            "restaurar",
+            r#"{"database":"cmp","tabela":"t_av","rowid":3}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            linha(&s, "t_av", 3).campo("b").and_then(Json::inteiro),
+            Some(200),
+            "a excluida suave volta pelo `restaurar` sem passar pela calculada"
+        );
 
-        // **O CONTROLE, e ele e o que importa:** coluna SEM regra nenhuma nao
-        // ganha campo novo na resposta. Aviso que aparece sempre e ruido, e
-        // ruido e o que faz ninguem ler o aviso que importa.
+        // CONTROLE (o comportamento velho): coluna SEM regra nenhuma continua
+        // nascendo nula e sem campo novo na resposta.
         let r = roda(
             &s,
             "acrescentar_coluna",
@@ -59537,24 +59576,7 @@ mod testes_regras_de_esquema {
         )
         .unwrap();
         assert!(r.campo("avisos").is_none(), "{}", r.escrever());
-
-        // E numa tabela VAZIA nao ha linha velha, entao nao ha o que avisar.
-        roda(
-            &s,
-            "criar_tabela",
-            r#"{"database":"cmp","tabela":"t_vz",
-            "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true},
-                       {"nome":"a","tipo":"Int8"}]}"#,
-        )
-        .unwrap();
-        let r = roda(
-            &s,
-            "acrescentar_coluna",
-            r#"{"database":"cmp","tabela":"t_vz",
-                "coluna":{"nome":"b","tipo":"Int8","calculada":"a*2"}}"#,
-        )
-        .unwrap();
-        assert!(r.campo("avisos").is_none(), "{}", r.escrever());
+        assert!(linha(&s, "t_av", 1).campo("c").unwrap().e_nulo());
     }
 
     /// **Pedido 245, O2a: o CHECK que linha velha viola recusa a coluna,

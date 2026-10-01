@@ -25,6 +25,7 @@ pub mod congelamento;
 pub mod diario;
 pub mod fts;
 pub mod integridade;
+pub mod irmas;
 pub mod ledger;
 pub mod leitura;
 pub mod lixeira;

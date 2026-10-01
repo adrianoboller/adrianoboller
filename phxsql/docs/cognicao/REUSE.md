@@ -4,7 +4,12 @@
      `--catraca` reprova se este arquivo nao bater com o que o extrator
      geraria agora; rode o comando sem flag para atualizar. -->
 
-Gerado dos `cognicao_*.md` com `**Estado:** FRUTIFERO` -- 8 hoje, de 384 cognicoes no total.
+Gerado dos `cognicao_*.md` com `**Estado:** FRUTIFERO` -- 9 hoje, de 385 cognicoes no total.
+
+## O carimbo do arquivo faz o papel do catálogo reverso sem cobrar de ninguém — e o medidor do diretório recém-criado não o vê
+
+- Evidencia: `crates/phxsql-store/src/irmas.rs::a_segunda_exclusao_nao_rele_o_esquema_das_irmas`; `crates/phxsql-store/src/irmas.rs::a_chave_declarada_depois_tranca_o_pai`; `crates/phxsql-store/src/irmas.rs::carimbo_recente_nao_e_confiavel_e_velho_e`
+- Arquivo: [cognicao_carimbo-de-arquivo-no-lugar-do-catalogo-reverso_20261001_1758.md](cognicao_carimbo-de-arquivo-no-lugar-do-catalogo-reverso_20261001_1758.md)
 
 ## Chave por caminho não segue o `rename`: mudar o nome nas sujas não bastava
 

@@ -1358,9 +1358,11 @@ pub const OPERACOES: &[Operacao] = &[
             opc(
                 "calculada",
                 "string",
-                "a expressão da coluna calculada. As linhas que já existem ficam \
-                 NULAS nela -- cada uma só recebe o valor no próximo `atualizar`. A \
-                 resposta avisa",
+                "a expressão da coluna calculada. As linhas que já existem \
+                 recebem o valor calculado na mesma reescrita (inclusive as \
+                 excluídas que voltam pelo `restaurar`); a linha em que a conta \
+                 não cabe no tipo RECUSA a coluna, dizendo qual. Não aceita \
+                 `padrao`, e com a tabela cheia não pode ser Memo",
             ),
             opc("caption", "string", "o rótulo de tela"),
             opc("descricao", "string", "para que a coluna serve"),

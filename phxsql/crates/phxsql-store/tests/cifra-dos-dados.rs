@@ -1226,3 +1226,49 @@ fn dois_reg_novos_nascem_com_sais_diferentes() {
     cofre::desligar();
     let _ = std::fs::remove_dir_all(&d);
 }
+
+/// **Pedido 245, O2b, pelo lado da cifra:** a calculada acrescentada que fala
+/// de uma coluna EXTERNA marcada (`LENGTH(obs)`, o `.memo` selado) e
+/// preenchida na linha velha com o comprimento do TEXTO, e nao do envelope.
+///
+/// O preenchimento roda dentro da reescrita do `.reg`, com o arquivo
+/// emprestado a ela, e abre o externo pelo abridor que a reescrita lhe passa.
+/// Reponha o defeito trocando esse abridor por um que devolve o guardado como
+/// veio (o envelope selado): o comprimento sai o do nonce mais o texto
+/// cifrado, e a igualdade abaixo cai.
+#[test]
+fn calculada_acrescentada_abre_o_externo_selado_da_linha_velha() {
+    let _t = UM_DE_CADA_VEZ.lock().unwrap_or_else(|e| e.into_inner());
+    cofre::desligar();
+    let d = dir("calculada-externa");
+    cofre::definir(SENHA, RAPIDO).unwrap();
+    {
+        let mut t = Table::criar(&d, esquema_so_externas("fichas")).unwrap();
+        assert!(t.cifrada());
+        for i in 1..=12 {
+            t.inserir(&ficha(i)).unwrap();
+        }
+        t.sincronizar().unwrap();
+    }
+    {
+        let mut t = Table::abrir(&d, "fichas").unwrap();
+        let n = t
+            .acrescentar_coluna(
+                Column::new("tamanho", ColumnType::Int8)
+                    .com_calculada("LENGTH(obs)")
+                    .unwrap(),
+                None,
+            )
+            .unwrap();
+        assert_eq!(n, 12);
+    }
+    let mut t = Table::abrir(&d, "fichas").unwrap();
+    let pos = t.esquema().coluna_por_nome("tamanho").unwrap();
+    for i in 1..=12i64 {
+        let l = t.ler(i as u64).unwrap().unwrap();
+        let esperado = format!("{MEMO_SECRETO} numero {i}").chars().count() as i64;
+        assert_eq!(l[pos], Value::Int(esperado), "linha {i}: {l:?}");
+    }
+    drop(t);
+    cofre::desligar();
+}
