@@ -635,10 +635,11 @@ o código, não contra a lembrança — foi assim que a chave estrangeira saiu d
 | ☐ | 610 | **SEC MEDIO -- o teto de bytes do 546 nao vale para o motor `phxsql`: a linha de 128 MiB e analisada inteira antes do teto (~2–4 GiB transitorios)** | Revisao SEC independente (01/10/2026, `docs/propostas/sec-revisao-independente-01-10-2026.md`), por conta, **nao medido**. Pesar antes de analisar, no mesmo `Acumulador`. |
 | ☐ | 611 | **SEC MEDIO -- `invalidar_manifesto_velho` apaga o `backup.json` pelo nome; e o destino do backup e conferido pelo nome e aberto depois pelo descritor -- uma troca no meio pode por copias dentro da base** | Revisao SEC independente (01/10/2026, `docs/propostas/sec-revisao-independente-01-10-2026.md`) (S6 e S7): irmaos que o 593 e o 554 deixaram. Pelo descritor da `util::Pasta`, como o resto do backup. |
 | ☐ | 612 | **SEC BAIXO -- o cliente PostgreSQL do DbLink aceita «autenticado» sem SCRAM: a autenticacao mutua que o codigo promete nao vale** | Revisao SEC independente (01/10/2026, `docs/propostas/sec-revisao-independente-01-10-2026.md`) (S8). Exigir o SCRAM final do servidor quando a credencial foi por SCRAM. |
+| ☐ | 613 | **DECIDIDO PELO DONO em 01/10/2026: replica SEM cofre RECUSA replicar a tabela com coluna externa marcada, dizendo que falta o cofre -- dado pessoal nunca fica em claro fora da origem** | S5 da revisao SEC independente: o 344 aceitou, sem a palavra do dono, que a replica sem cofre guardasse o externo marcado em claro. Decisao: recusar (opcao recomendada). Espera engenharia: a recusa na replica, pelo `RegFile::externo_selado`; o teste do comportamento com cofre segue replicando. |
 <!-- pedidos:contagem:inicio -->
-**612 pedidos: 480 feitos · 14 parciais · 33 planejados · 85 depois da versão.**
+**613 pedidos: 480 feitos · 14 parciais · 34 planejados · 85 depois da versão.**
 
-**Falta 8,9% da versão** — (parciais + planejados) / (feitos + parciais + planejados). Desde 24/09/2026 os `⏸` saem dos dois lados da conta (decisão A do dono); antes dessa data o denominador era o total.
+**Falta 9,1% da versão** — (parciais + planejados) / (feitos + parciais + planejados). Desde 24/09/2026 os `⏸` saem dos dois lados da conta (decisão A do dono); antes dessa data o denominador era o total.
 
 *(Gerado por `docs/dossie/pagina-dos-pedidos.py` — não conte à mão. A
 conta sai da primeira coluna da tabela acima, e é a mesma que as

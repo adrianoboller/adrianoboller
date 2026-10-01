@@ -223,7 +223,7 @@ footer{
 <div class="envelope">
 <header>
   <div class="rotulo">PhxSql · o dossiê do que foi pedido — página 7 de 7</div>
-  <h1>Pedidos 501 em diante<br>de 612 ao todo</h1>
+  <h1>Pedidos 501 em diante<br>de 613 ao todo</h1>
   <p class="chamada">Uma linha por pedido seu, na ordem em que você pediu. O
   estado é <strong>medido contra o código</strong>, não contra a lembrança — foi
   assim que a chave estrangeira saiu de «pronto» para «parcial», e o Centro de
@@ -238,25 +238,25 @@ footer{
   <nav class="faixas" aria-label="As 7 páginas de pedidos, por faixa"><a href="https://claude.ai/artifact/4jSZ5yZFnjEnbGGbE3i5nz">1–190</a><a href="https://claude.ai/artifact/MAc3CcjfCPbjVm5sQZwYoC">191–260</a><a href="https://claude.ai/artifact/R4iGBeRQt7ao6yffQkmGCp">261–310</a><a href="https://claude.ai/artifact/S1oHX53g9q4oqHSn7Yv3vm">311–350</a><a href="https://claude.ai/artifact/GPpyFuyY9gzCGtSh7o4x1W">351–410</a><a href="https://claude.ai/artifact/GgPYzTX4rx12BX4SxmfQKK">411–500</a><a href="https://claude.ai/artifact/HrYgYQ6UYNTBP1hPt127b2" class="ativa" aria-current="page">501 em diante</a></nav>
 
   <div class="placar">
-    <div class="c"><div class="v">612</div><div class="r">pedidos, ao todo</div></div>
+    <div class="c"><div class="v">613</div><div class="r">pedidos, ao todo</div></div>
     <div class="c feito"><div class="v">480</div><div class="r">feitos</div></div>
     <div class="c parcial"><div class="v">14</div><div class="r">parciais</div></div>
-    <div class="c planejado"><div class="v">33</div><div class="r">planejados</div></div>
+    <div class="c planejado"><div class="v">34</div><div class="r">planejados</div></div>
     <div class="c depois"><div class="v">85</div><div class="r">depois da versão</div></div>
   </div>
 
   <div class="faixa-info">
     <span class="rotulo-inline">Nesta página</span>
-    <strong>112</strong> pedidos (faixa 501 em diante) ·
+    <strong>113</strong> pedidos (faixa 501 em diante) ·
     <span class="feito">79 feitos</span> ·
     <span class="parcial">2 parciais</span> ·
-    <span class="planejado">13 planejados</span> ·
+    <span class="planejado">14 planejados</span> ·
     <span class="depois">18 depois da versão</span>
   </div>
 </header>
 
 <h2>O que está aberto, nesta faixa</h2>
-<p class="sub">Os 15 que não fecharam nesta faixa (2 pela metade e 13 sem começar), com o motivo de cada um. O motivo importa mais que o estado: uns esperam trabalho, outros esperam uma decisão sua, e outros esperam coisa de fora deste repositório. (18 ficaram para depois desta versão — veja a lista completa abaixo.)</p>
+<p class="sub">Os 16 que não fecharam nesta faixa (2 pela metade e 14 sem começar), com o motivo de cada um. O motivo importa mais que o estado: uns esperam trabalho, outros esperam uma decisão sua, e outros esperam coisa de fora deste repositório. (18 ficaram para depois desta versão — veja a lista completa abaixo.)</p>
 <div class="rolo">
   <table>
     <thead><tr><th class="n">#</th><th class="st">estado</th><th>o que você pediu</th><th>onde está</th></tr></thead>
@@ -276,6 +276,7 @@ footer{
       <tr data-e="planejado"><td class="n mono">610</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>SEC MEDIO -- o teto de bytes do 546 nao vale para o motor <code>phxsql</code>: a linha de 128 MiB e analisada inteira antes do teto (~2–4 GiB transitorios)</strong></td><td class="e">Revisao SEC independente (01/10/2026, <code>docs/propostas/sec-revisao-independente-01-10-2026.md</code>), por conta, <strong>nao medido</strong>. Pesar antes de analisar, no mesmo <code>Acumulador</code>.</td></tr>
       <tr data-e="planejado"><td class="n mono">611</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>SEC MEDIO -- <code>invalidar_manifesto_velho</code> apaga o <code>backup.json</code> pelo nome; e o destino do backup e conferido pelo nome e aberto depois pelo descritor -- uma troca no meio pode por copias dentro da base</strong></td><td class="e">Revisao SEC independente (01/10/2026, <code>docs/propostas/sec-revisao-independente-01-10-2026.md</code>) (S6 e S7): irmaos que o 593 e o 554 deixaram. Pelo descritor da <code>util::Pasta</code>, como o resto do backup.</td></tr>
       <tr data-e="planejado"><td class="n mono">612</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>SEC BAIXO -- o cliente PostgreSQL do DbLink aceita «autenticado» sem SCRAM: a autenticacao mutua que o codigo promete nao vale</strong></td><td class="e">Revisao SEC independente (01/10/2026, <code>docs/propostas/sec-revisao-independente-01-10-2026.md</code>) (S8). Exigir o SCRAM final do servidor quando a credencial foi por SCRAM.</td></tr>
+      <tr data-e="planejado"><td class="n mono">613</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>DECIDIDO PELO DONO em 01/10/2026: replica SEM cofre RECUSA replicar a tabela com coluna externa marcada, dizendo que falta o cofre -- dado pessoal nunca fica em claro fora da origem</strong></td><td class="e">S5 da revisao SEC independente: o 344 aceitou, sem a palavra do dono, que a replica sem cofre guardasse o externo marcado em claro. Decisao: recusar (opcao recomendada). Espera engenharia: a recusa na replica, pelo <code>RegFile::externo_selado</code>; o teste do comportamento com cofre segue replicando.</td></tr>
     </tbody>
   </table>
 </div>
@@ -289,7 +290,7 @@ footer{
   não tem opinião própria sobre nenhum item.
 </div>
 
-<h2 id="todos">Os 112 desta faixa (501 em diante), na ordem em que você pediu</h2>
+<h2 id="todos">Os 113 desta faixa (501 em diante), na ordem em que você pediu</h2>
 <p class="sub">A numeração é a sequência real dos seus pedidos — ela diz
 <em>quando</em> cada coisa foi pedida, e é por isso que vale mantê-la. As
 outras 6 faixas estão no menu acima.</p>
@@ -422,6 +423,7 @@ outras 6 faixas estão no menu acima.</p>
       <tr data-e="planejado"><td class="n mono">610</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>SEC MEDIO -- o teto de bytes do 546 nao vale para o motor <code>phxsql</code>: a linha de 128 MiB e analisada inteira antes do teto (~2–4 GiB transitorios)</strong></td><td class="e">Revisao SEC independente (01/10/2026, <code>docs/propostas/sec-revisao-independente-01-10-2026.md</code>), por conta, <strong>nao medido</strong>. Pesar antes de analisar, no mesmo <code>Acumulador</code>.</td></tr>
       <tr data-e="planejado"><td class="n mono">611</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>SEC MEDIO -- <code>invalidar_manifesto_velho</code> apaga o <code>backup.json</code> pelo nome; e o destino do backup e conferido pelo nome e aberto depois pelo descritor -- uma troca no meio pode por copias dentro da base</strong></td><td class="e">Revisao SEC independente (01/10/2026, <code>docs/propostas/sec-revisao-independente-01-10-2026.md</code>) (S6 e S7): irmaos que o 593 e o 554 deixaram. Pelo descritor da <code>util::Pasta</code>, como o resto do backup.</td></tr>
       <tr data-e="planejado"><td class="n mono">612</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>SEC BAIXO -- o cliente PostgreSQL do DbLink aceita «autenticado» sem SCRAM: a autenticacao mutua que o codigo promete nao vale</strong></td><td class="e">Revisao SEC independente (01/10/2026, <code>docs/propostas/sec-revisao-independente-01-10-2026.md</code>) (S8). Exigir o SCRAM final do servidor quando a credencial foi por SCRAM.</td></tr>
+      <tr data-e="planejado"><td class="n mono">613</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>DECIDIDO PELO DONO em 01/10/2026: replica SEM cofre RECUSA replicar a tabela com coluna externa marcada, dizendo que falta o cofre -- dado pessoal nunca fica em claro fora da origem</strong></td><td class="e">S5 da revisao SEC independente: o 344 aceitou, sem a palavra do dono, que a replica sem cofre guardasse o externo marcado em claro. Decisao: recusar (opcao recomendada). Espera engenharia: a recusa na replica, pelo <code>RegFile::externo_selado</code>; o teste do comportamento com cofre segue replicando.</td></tr>
     </tbody>
   </table>
   <div class="vazio" id="vazio" hidden>Nenhum pedido bate com isso.</div>
